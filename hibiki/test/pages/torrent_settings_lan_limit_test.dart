@@ -55,7 +55,7 @@ class _TestAppModel extends AppModel {
 }
 
 Widget _harness(QbConnectionConfig config) {
-  final HibikiDatabase db = HibikiDatabase.forTesting(
+  final FushiDatabase db = FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
@@ -82,7 +82,7 @@ Widget _harness(QbConnectionConfig config) {
         platform: TargetPlatform.android,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
         extensions: <ThemeExtension<dynamic>>[
-          HibikiDesignSystemTheme(themeNotifier.designSystemTheme),
+          FushiDesignSystemTheme(themeNotifier.designSystemTheme),
         ],
       ),
       home: Scaffold(

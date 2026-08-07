@@ -11,8 +11,8 @@ import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
 
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
@@ -43,7 +43,7 @@ void main() {
   late int prevMaxSize;
   late int prevMaxSizeBytes;
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late PreferencesRepository prefs;
   late Directory storeDir;
   late AppModel appModel;

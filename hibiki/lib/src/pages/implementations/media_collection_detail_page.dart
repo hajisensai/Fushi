@@ -59,7 +59,7 @@ class MediaCollectionDetailPage extends StatefulWidget {
     super.key,
   });
 
-  final HibikiDatabase database;
+  final FushiDatabase database;
   final MediaCollectionRow collection;
 
   /// 解析本合集**有序**成员的 VideoBooks 行（调用方持 repo + collectionId）。
@@ -143,7 +143,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       const <String, VideoScrapeMetaRow>{};
 
   @override
-  HibikiDatabase get detailDatabase => widget.database;
+  FushiDatabase get detailDatabase => widget.database;
   @override
   MediaCollectionRow get detailCollection => widget.collection;
   @override
@@ -425,7 +425,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     widget.onChanged();
   }
 
-  /// 拖拽精修：HibikiReorderableColumn 语义（newIndex 即最终下标，无 SDK
+  /// 拖拽精修：FushiReorderableColumn 语义（newIndex 即最终下标，无 SDK
   /// ReorderableListView 的「移除前下标」修正）→ 内存 move → 落盘。
   ///
   /// 分季 tab 下拖的是**本季**列表：下标是节内的，先在节内 move，再把各节按
@@ -550,7 +550,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         await widget.database.getCollectionScrapeMeta(widget.collection.id);
     if (!mounted) return;
     if (meta == null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.collection_episode_scrape_unbound,
         severity: ToastSeverity.info,
       );
@@ -575,7 +575,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       if (!mounted) return;
       if (outcome.updated == 0 && outcome.errors.isNotEmpty) {
         // 源级失败（网络/无 key/movie 无分集）：如实报错，不装作「0 集成功」。
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.collection_episode_scrape_failed(
             error: outcome.errors.values.first,
           ),
@@ -583,7 +583,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         );
         return;
       }
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.collection_episode_scrape_result(
           updated: outcome.updated,
           skipped: outcome.unmatched,
@@ -610,7 +610,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
     if (!mounted) return;
     if (proposals.isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.collection_episode_rename_empty,
         severity: ToastSeverity.info,
       );
@@ -637,7 +637,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     }
     if (!mounted) return;
     if (firstError != null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.collection_episode_rename_partial(
           n: renamed,
           m: chosen.length - renamed,
@@ -645,7 +645,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         severity: ToastSeverity.warning,
       );
     } else {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.collection_episode_rename_apply(n: renamed),
         severity: ToastSeverity.success,
       );
@@ -758,7 +758,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           }
         }
         if (episodeId == null) {
-          HibikiToast.show(
+          FushiToast.show(
             msg: t.collection_episode_bangumi_not_found,
             severity: ToastSeverity.warning,
           );
@@ -766,13 +766,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       } else {
         // 集号都解析不出（文件名无集号且无集级刮削）：同样明示降级去向，
         // 不静默换成条目页（复核意见）。
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.collection_episode_bangumi_not_found,
           severity: ToastSeverity.warning,
         );
       }
     } on ScrapeNetworkException catch (e) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.collection_episode_bangumi_open_failed(error: e.toString()),
         severity: ToastSeverity.error,
       );
@@ -809,7 +809,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       }
     }
     if (firstMissing == null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.collection_episode_no_missing,
         severity: ToastSeverity.info,
       );
@@ -819,7 +819,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   }
 
   /// 逐集「移出合集」（整理排序页删除后本页是视频侧唯一移出入口）：确认 →
-  /// [HibikiDatabase.removeFromCollection]（空合集自动删）→ 重载；合集被清空则
+  /// [FushiDatabase.removeFromCollection]（空合集自动删）→ 重载；合集被清空则
   /// 退回上层。条目本身绝不删除。
   Future<void> _removeEpisode(VideoBookRow ep) async {
     if (!await confirmDetailRemoveMember()) return;
@@ -828,7 +828,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         widget.collection.id, MediaKind.video, ep.bookUid);
     if (!mounted) return;
     widget.onChanged();
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.collection_member_removed,
       severity: ToastSeverity.success,
     );
@@ -924,7 +924,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     }
     if (!mounted) return;
     widget.onChanged();
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.collection_split_done(n: newIds.length),
       severity: ToastSeverity.success,
     );
@@ -957,10 +957,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Future<void> _delete() async {
     // 仅当调用方注入了删本体回调、且合集当前有成员时，才给用户「连同视频一起删」
     // 勾选行；否则退回纯解链删除（老行为，零变化）。确认框统一走 PR-0 的
-    // [HibikiDestructiveConfirmDialog]（经 [confirmDetailCollectionDelete]）。
+    // [FushiDestructiveConfirmDialog]（经 [confirmDetailCollectionDelete]）。
     final bool canDeleteMembers =
         widget.onDeleteMembersMedia != null && _members.isNotEmpty;
-    final HibikiDestructiveConfirmResult? result =
+    final FushiDestructiveConfirmResult? result =
         await confirmDetailCollectionDelete(
       checkboxLabel: canDeleteMembers ? t.delete_collection_also_videos : null,
     );
@@ -996,7 +996,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
     if (cover != null) {
       return ClipRRect(
-        borderRadius: HibikiBorderRadius.card,
+        borderRadius: FushiBorderRadius.card,
         child: SizedBox(
           width: w,
           height: h,
@@ -1017,7 +1017,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         height: h,
         decoration: BoxDecoration(
           color: cs.surfaceContainerHighest,
-          borderRadius: HibikiBorderRadius.card,
+          borderRadius: FushiBorderRadius.card,
         ),
         child: Icon(Icons.movie_outlined, color: cs.onSurfaceVariant, size: 20),
       );
@@ -1025,7 +1025,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Widget _buildHero(
     BuildContext context,
     ColorScheme cs,
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
   ) {
     final Size screen = MediaQuery.sizeOf(context);
     final double height = (screen.height * 0.62).clamp(400.0, 600.0);
@@ -1169,7 +1169,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Widget _buildHeroPosterCard(ImageProvider cover, double heroHeight) {
     final double posterHeight = (heroHeight * 0.62).clamp(180.0, 340.0);
     return ClipRRect(
-      borderRadius: HibikiBorderRadius.card,
+      borderRadius: FushiBorderRadius.card,
       child: SizedBox(
         key: const ValueKey<String>('collection-hero-poster'),
         height: posterHeight,
@@ -1185,7 +1185,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 本功能前的老形态——标题 + 进度 + 播放，逐像素不变（Never break userspace）。
   Widget _buildHeroInfo(
     BuildContext context,
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     VideoBookRow episode,
   ) {
     final TextTheme text = Theme.of(context).textTheme;
@@ -1411,7 +1411,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Widget _buildEpisodeSection(
     BuildContext context,
     ColorScheme cs,
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
   ) {
     return Padding(
       padding: EdgeInsets.only(
@@ -1458,7 +1458,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Widget _buildSeasonTabs(
     BuildContext context,
     ColorScheme cs,
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
   ) {
     return Padding(
       key: const ValueKey<String>('collection-season-tabs'),
@@ -1485,11 +1485,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   }
 
   /// 集列表（hayase 式宽卡网格）：宽度 ≥ [_kEpisodeTwoColumnMinWidth] 两列，
-  /// 否则一列。拖拽重排/右键/长按菜单由 [HibikiReorderableGrid] 统一接管（鼠标
+  /// 否则一列。拖拽重排/右键/长按菜单由 [FushiReorderableGrid] 统一接管（鼠标
   /// 按住即拖 + 右键菜单；触摸长按起拖、原地松手出菜单——BUG-778 缩放安全一族）。
   /// 分季时只列本季（[_visibleMembers]），拖拽是节内重排，由 [_onReorder] 拼回
   /// 全序落盘。
-  Widget _buildEpisodeGrid(ColorScheme cs, HibikiDesignTokens tokens) {
+  Widget _buildEpisodeGrid(ColorScheme cs, FushiDesignTokens tokens) {
     final List<VideoBookRow> visible = _visibleMembers;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -1498,13 +1498,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             constraints.maxWidth >= _kEpisodeTwoColumnMinWidth ? 2 : 1;
         final double columnWidth =
             (constraints.maxWidth - spacing * (columns - 1)) / columns;
-        return HibikiReorderableGrid(
+        return FushiReorderableGrid(
           itemCount: visible.length,
           crossAxisCount: columns,
           childAspectRatio: columnWidth / _kEpisodeCardHeight,
           crossAxisSpacing: spacing,
           mainAxisSpacing: spacing,
-          feedbackBorderRadius: HibikiBorderRadius.card,
+          feedbackBorderRadius: FushiBorderRadius.card,
           keyForIndex: (int i) =>
               ValueKey<String>('collection-episode-row-${visible[i].bookUid}'),
           onReorder: _onReorder,
@@ -1524,14 +1524,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// （TODO-1346 同一约束），看了一半算不出百分比——不造假条，改在状态行给
   /// 「看到 mm:ss」（lastPositionMs 是真数据）。
   ///
-  /// 纯视觉（手势归 [HibikiReorderableGrid]），故整卡 [IgnorePointer]；键盘/手柄
-  /// 焦点不走指针，[HibikiFocusTarget] 照常可聚焦、Enter 开播。
+  /// 纯视觉（手势归 [FushiReorderableGrid]），故整卡 [IgnorePointer]；键盘/手柄
+  /// 焦点不走指针，[FushiFocusTarget] 照常可聚焦、Enter 开播。
   Widget _buildEpisodeCard(
     BuildContext context,
     VideoBookRow episode,
     int index,
     ColorScheme cs,
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
   ) {
     final bool completed = episode.completedAt != null;
     final bool started = episode.lastPositionMs > 0 && !completed;
@@ -1545,7 +1545,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         color: isContinue
             ? cs.primaryContainer.withValues(alpha: 0.35)
             : cs.surfaceContainerLow,
-        borderRadius: HibikiBorderRadius.card,
+        borderRadius: FushiBorderRadius.card,
         clipBehavior: Clip.antiAlias,
         child: Stack(
           children: <Widget>[
@@ -1632,7 +1632,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         ),
       ),
     );
-    if (HibikiFocusRoot.maybeControllerOf(context) == null) return card;
+    if (FushiFocusRoot.maybeControllerOf(context) == null) return card;
     return Actions(
       actions: <Type, Action<Intent>>{
         ActivateIntent: CallbackAction<ActivateIntent>(
@@ -1642,15 +1642,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           },
         ),
       },
-      child: HibikiFocusTarget(
-        id: HibikiFocusId('collection-episode-${episode.bookUid}'),
+      child: FushiFocusTarget(
+        id: FushiFocusId('collection-episode-${episode.bookUid}'),
         child: card,
       ),
     );
   }
 
   /// 集卡上下文菜单（右键 / 触摸长按原地松手）。坐标经 Overlay `globalToLocal`
-  /// 消掉 HibikiAppUiScale 缩放（BUG-781 同族纪律）。管理能力从旧管理列表的行内
+  /// 消掉 FushiAppUiScale 缩放（BUG-781 同族纪律）。管理能力从旧管理列表的行内
   /// 按钮收进本菜单（拖拽排序仍是直接拖卡）。
   Future<void> _showEpisodeMenu(
     VideoBookRow episode,
@@ -1731,53 +1731,53 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       actions: narrowAwareAppBarActions(
         availableWidth: availableWidth,
         alwaysVisible: <Widget>[_buildSortMenu()],
-        collapsible: <HibikiAppBarAction>[
+        collapsible: <FushiAppBarAction>[
           // 季 tab 的排序补充：tab 展示是派生的、进页面即生效，本动作只把
           // **落盘全序**整理成季→集连续（单季合集执行后无可见变化，幂等）。
-          HibikiAppBarAction(
+          FushiAppBarAction(
             icon: Icons.segment,
             label: t.collection_sort_by_season,
             onPressed: _members.isEmpty ? null : _sortBySeason,
           ),
-          HibikiAppBarAction(
+          FushiAppBarAction(
             icon: Icons.subtitles_outlined,
             label: t.video_jimaku_batch_title,
             onPressed: _members.isEmpty ? null : _fetchCollectionSubtitles,
           ),
           // 集级刮削两连：先刮分集资料，再（可选）按刮削结果批量改集名。
-          HibikiAppBarAction(
+          FushiAppBarAction(
             icon: Icons.movie_filter_outlined,
             label: t.collection_episode_scrape,
             onPressed: _members.isEmpty ? null : _scrapeEpisodes,
           ),
-          HibikiAppBarAction(
+          FushiAppBarAction(
             icon: Icons.format_list_numbered,
             label: t.collection_episode_rename,
             onPressed: _members.isEmpty ? null : _renameEpisodesFromScrape,
           ),
           // 「补齐缺集」（TODO-2485）：按文件名集号找缺口，预填第一个缺集开下载。
-          HibikiAppBarAction(
+          FushiAppBarAction(
             icon: Icons.playlist_add,
             label: t.collection_episode_fill_missing,
             onPressed: _members.isEmpty ? null : _fillMissingEpisodes,
           ),
           // 「按季拆分合集」（TODO-2489）：仅多季合集可用（单季拆分无意义）。
-          HibikiAppBarAction(
+          FushiAppBarAction(
             icon: Icons.call_split,
             label: t.collection_split_by_season,
             onPressed: _hasSeasonTabs ? _splitBySeason : null,
           ),
-          HibikiAppBarAction(
+          FushiAppBarAction(
             icon: Icons.drive_file_rename_outline,
             label: t.rename_collection,
             onPressed: renameDetailCollection,
           ),
-          HibikiAppBarAction(
+          FushiAppBarAction(
             icon: Icons.sell_outlined,
             label: t.tag_label,
             onPressed: editDetailCollectionTags,
           ),
-          HibikiAppBarAction(
+          FushiAppBarAction(
             icon: Icons.delete_outline,
             label: t.delete_collection,
             onPressed: _delete,
@@ -1790,7 +1790,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool cinematic = !_loading && _members.isNotEmpty;
     return Scaffold(
       extendBodyBehindAppBar: cinematic,
@@ -1811,7 +1811,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             )
           : _members.isEmpty
               ? SafeArea(
-                  child: HibikiPlaceholderMessage(
+                  child: FushiPlaceholderMessage(
                     icon: Icons.collections_bookmark_outlined,
                     message: t.collection_empty,
                   ),

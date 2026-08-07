@@ -9,7 +9,7 @@ import 'widget_test_helpers.dart';
 
 void main() {
   testWidgets(
-      'HibikiPageScaffold page-scrolls its body from a header-area context '
+      'FushiPageScaffold page-scrolls its body from a header-area context '
       '(where the gamepad focus actually sits) via PrimaryScrollController',
       (WidgetTester tester) async {
     // The gamepad dispatch context is the focused control — on a page WITH a
@@ -17,7 +17,7 @@ void main() {
     // OUTSIDE the body scroll view but INSIDE the scaffold PrimaryScrollController.
     late BuildContext headerCtx;
     await tester.pumpWidget(buildTestApp(
-      HibikiPageScaffold(
+      FushiPageScaffold(
         title: 'Stats',
         actions: <Widget>[
           Builder(builder: (BuildContext c) {
@@ -41,7 +41,7 @@ void main() {
     await tester.pump();
     expect(find.text('row 0'), findsOneWidget);
 
-    final bool scrolled = HibikiFocusScroll.scrollPrimary(headerCtx, 0.9);
+    final bool scrolled = FushiFocusScroll.scrollPrimary(headerCtx, 0.9);
     expect(scrolled, isTrue,
         reason: 'header-area context reaches the scaffold '
             'PrimaryScrollController the body attached to');
@@ -56,8 +56,8 @@ void main() {
       (WidgetTester tester) async {
     PageScrollRegistry.debugClear();
     await tester.pumpWidget(buildTestApp(
-      HibikiFocusRoot(
-        child: HibikiPageScaffold(
+      FushiFocusRoot(
+        child: FushiPageScaffold(
           title: 'Stats',
           // Nothing focusable anywhere -> focus rests on the fallback node,
           // which is the real dispatch context on a pure-display page.
@@ -78,7 +78,7 @@ void main() {
     await tester.pump();
     expect(find.text('row 0'), findsOneWidget);
 
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.text('row 0')),
     );
     controller.ensureFocus();
@@ -90,7 +90,7 @@ void main() {
     // PrimaryScrollController) can NEVER find the page controller — this is the
     // exact bug.
     expect(
-      HibikiFocusScroll.scrollPrimary(controller.fallbackNode.context!, 0.9),
+      FushiFocusScroll.scrollPrimary(controller.fallbackNode.context!, 0.9),
       isFalse,
       reason: 'context lookup from the fallback node cannot reach the page '
           'controller (the root cause of C1)',
@@ -100,8 +100,8 @@ void main() {
     // where focus sits.
     final ScrollController? page = PageScrollRegistry.current;
     expect(page, isNotNull,
-        reason: 'HibikiPageScaffold registered its body scroll controller');
-    expect(HibikiFocusScroll.scrollController(page!, 0.9), isTrue);
+        reason: 'FushiPageScaffold registered its body scroll controller');
+    expect(FushiFocusScroll.scrollController(page!, 0.9), isTrue);
     await tester.pumpAndSettle();
     expect(find.text('row 0'), findsNothing,
         reason: 'LB/RB now page-scrolls the pure-display page');
@@ -111,7 +111,7 @@ void main() {
       (WidgetTester tester) async {
     PageScrollRegistry.debugClear();
     await tester.pumpWidget(buildTestApp(
-      HibikiPageScaffold(
+      FushiPageScaffold(
         title: 'Stats',
         body: ListView(
           children: <Widget>[

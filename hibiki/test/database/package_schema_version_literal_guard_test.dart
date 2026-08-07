@@ -7,7 +7,7 @@ import '../helpers/scan_scale.dart';
 
 /// BUG-1352 守卫：`packages/*/test/` 下不得再出现 schemaVersion 的**等值**断言。
 ///
-/// 背景：`HibikiDatabase.schemaVersion` 每次加迁移都 +1，而「当前恰好是第几版」
+/// 背景：`FushiDatabase.schemaVersion` 每次加迁移都 +1，而「当前恰好是第几版」
 /// 的等值断言散落在两个互不相干的测试根：
 ///   - `hibiki/test/` —— 由本仓约定的本地全量门（`flutter_test_failures.dart`
 ///     在 `hibiki/` 下跑）覆盖，schema bump 时作者一次批量替换就全改到；

@@ -9,7 +9,7 @@ import 'package:fushi/src/mining/galgame_waveform_select_dialog.dart';
 import 'package:fushi/utils.dart';
 
 /// galgame 波形选区对话框 MD3 收口的 widget 行为守卫：
-/// 走共享对话框骨架（HibikiDialogFrame + HibikiModalSheetFrame）、肯定动作
+/// 走共享对话框骨架（FushiDialogFrame + FushiModalSheetFrame）、肯定动作
 /// FilledButton 强调、文案走 i18n（t.game_waveform_select_title /
 /// t.dialog_ok / t.dialog_cancel），同时锁「确定」返回选区、「取消」返回 null
 /// 的既有契约不变。
@@ -56,8 +56,8 @@ void main() {
   testWidgets('走共享 MD3 骨架：frame + i18n 标题 + FilledButton 肯定动作',
       (WidgetTester tester) async {
     await openDialog(tester);
-    expect(find.byType(HibikiDialogFrame), findsOneWidget);
-    expect(find.byType(HibikiModalSheetFrame), findsOneWidget);
+    expect(find.byType(FushiDialogFrame), findsOneWidget);
+    expect(find.byType(FushiModalSheetFrame), findsOneWidget);
     expect(find.text(t.game_waveform_select_title), findsOneWidget);
     expect(find.widgetWithText(FilledButton, t.dialog_ok), findsOneWidget);
     expect(find.widgetWithText(TextButton, t.dialog_cancel), findsOneWidget);

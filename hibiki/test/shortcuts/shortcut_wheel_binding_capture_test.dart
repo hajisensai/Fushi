@@ -30,12 +30,12 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   }
 
-  HibikiShortcutRegistry buildRegistry(TargetPlatform platform) =>
-      HibikiShortcutRegistry()..loadDefaults(platform);
+  FushiShortcutRegistry buildRegistry(TargetPlatform platform) =>
+      FushiShortcutRegistry()..loadDefaults(platform);
 
   Future<void> pumpDialogHost(
     WidgetTester tester,
-    HibikiShortcutRegistry registry, {
+    FushiShortcutRegistry registry, {
     required ShortcutAction action,
     ShortcutBindingSet initial = const ShortcutBindingSet(),
   }) async {
@@ -103,7 +103,7 @@ void main() {
 
   testWidgets('Alt+滚轮下被录成 Alt+WheelDown 并写穿注册表', (WidgetTester tester) async {
     usePlatform(TargetPlatform.windows);
-    final HibikiShortcutRegistry registry =
+    final FushiShortcutRegistry registry =
         buildRegistry(TargetPlatform.windows);
     // 先清空默认，避免录同一条时命中「已绑定到本动作」的重复分支。
     registry.updateBinding(
@@ -139,7 +139,7 @@ void main() {
 
   testWidgets('裸滚轮不记录绑定，只提示需要修饰键（捕获保持开启）', (WidgetTester tester) async {
     usePlatform(TargetPlatform.windows);
-    final HibikiShortcutRegistry registry =
+    final FushiShortcutRegistry registry =
         buildRegistry(TargetPlatform.windows);
     registry.updateBinding(
         ShortcutAction.popupNextEntry, const ShortcutBindingSet());
@@ -169,7 +169,7 @@ void main() {
 
   testWidgets('冲突：Alt+滚轮上已属「上一个词条」，重分配后从旧动作摘掉', (WidgetTester tester) async {
     usePlatform(TargetPlatform.windows);
-    final HibikiShortcutRegistry registry =
+    final FushiShortcutRegistry registry =
         buildRegistry(TargetPlatform.windows);
     await pumpDialogHost(
       tester,
@@ -214,7 +214,7 @@ void main() {
     // 键盘绑定表覆盖三个动作（mine/next/prev）、popup.js 统一分派——词条导航同样能绑键盘
     // 并真的生效，而不是渲染出一个按了没反应的入口。手柄/鼠标仍无解析入口，保持不给。
     usePlatform(TargetPlatform.windows);
-    final HibikiShortcutRegistry registry =
+    final FushiShortcutRegistry registry =
         buildRegistry(TargetPlatform.windows);
     await pumpDialogHost(
       tester,
@@ -232,7 +232,7 @@ void main() {
 
   testWidgets('页面 scope 不因新通道而多出滚轮入口（既有对话框不变）', (WidgetTester tester) async {
     usePlatform(TargetPlatform.windows);
-    final HibikiShortcutRegistry registry =
+    final FushiShortcutRegistry registry =
         buildRegistry(TargetPlatform.windows);
     await pumpDialogHost(
       tester,

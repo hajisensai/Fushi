@@ -48,7 +48,7 @@ void main() {
     }
   });
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late PreferencesRepository prefs;
   late PlatformServices platformServices;
   late FakeAnkiRepository ankiRepository;
@@ -59,7 +59,7 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     LocaleSettings.setLocale(AppLocale.zhCn);
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     storeDir = Directory.systemTemp.createTempSync('hibiki_collapse');

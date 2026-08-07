@@ -14,7 +14,7 @@ Widget _buildHarness({
   required TargetPlatform platform,
   required Widget child,
   TextScaler? textScaler,
-  HibikiDesignSystem designSystem = HibikiDesignSystem.auto,
+  FushiDesignSystem designSystem = FushiDesignSystem.auto,
 }) {
   return MaterialApp(
     theme: ThemeData(
@@ -22,7 +22,7 @@ Widget _buildHarness({
       platform: platform,
       colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
       extensions: <ThemeExtension<dynamic>>[
-        HibikiDesignSystemTheme(designSystem),
+        FushiDesignSystemTheme(designSystem),
       ],
     ),
     home: textScaler == null
@@ -120,7 +120,7 @@ void main() {
     final ColorScheme scheme = Theme.of(
       tester.element(find.byType(AdaptiveSettingsSection)),
     ).colorScheme;
-    final HibikiCard card = tester.widget<HibikiCard>(find.byType(HibikiCard));
+    final FushiCard card = tester.widget<FushiCard>(find.byType(FushiCard));
     expect(card.color, scheme.surfaceContainer);
     expect(card.borderColor, scheme.outlineVariant);
     expect(find.byType(Switch), findsOneWidget);
@@ -147,18 +147,18 @@ void main() {
       ),
     );
 
-    expect(find.byType(HibikiCard), findsOneWidget);
+    expect(find.byType(FushiCard), findsOneWidget);
     expect(
       find.ancestor(
         of: find.text('Behavior'),
-        matching: find.byType(HibikiCard),
+        matching: find.byType(FushiCard),
       ),
       findsOneWidget,
     );
     expect(
       find.ancestor(
         of: find.text('Highlight on tap'),
-        matching: find.byType(HibikiCard),
+        matching: find.byType(FushiCard),
       ),
       findsOneWidget,
     );
@@ -184,7 +184,7 @@ void main() {
       ),
     );
 
-    expect(find.byType(HibikiBadge), findsOneWidget);
+    expect(find.byType(FushiBadge), findsOneWidget);
     expect(find.byIcon(Icons.tune_outlined), findsOneWidget);
   });
 
@@ -269,7 +269,7 @@ void main() {
     await tester.pumpWidget(
       _buildHarness(
         platform: TargetPlatform.iOS,
-        designSystem: HibikiDesignSystem.cupertino,
+        designSystem: FushiDesignSystem.cupertino,
         child: AdaptiveSettingsScaffold(
           title: const Text('Reader settings'),
           children: [
@@ -290,7 +290,7 @@ void main() {
 
     expect(find.byType(CupertinoSwitch), findsOneWidget);
     expect(find.byType(Switch), findsNothing);
-    expect(find.byType(HibikiCard), findsNothing);
+    expect(find.byType(FushiCard), findsNothing);
     expect(find.byType(CupertinoPageScaffold), findsOneWidget);
     expect(find.byType(CupertinoSliverNavigationBar), findsOneWidget);
     expect(find.byType(Scaffold), findsNothing);
@@ -342,7 +342,7 @@ void main() {
     await tester.pumpWidget(
       _buildHarness(
         platform: TargetPlatform.iOS,
-        designSystem: HibikiDesignSystem.cupertino,
+        designSystem: FushiDesignSystem.cupertino,
         child: AdaptiveSettingsScaffold(
           title: const Text('Reader settings'),
           children: [
@@ -696,7 +696,7 @@ void main() {
     await tester.pumpWidget(
       _buildHarness(
         platform: TargetPlatform.iOS,
-        designSystem: HibikiDesignSystem.cupertino,
+        designSystem: FushiDesignSystem.cupertino,
         child: AdaptiveSettingsScaffold(
           title: const Text('Reader settings'),
           children: [

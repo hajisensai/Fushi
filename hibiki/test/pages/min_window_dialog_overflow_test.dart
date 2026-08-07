@@ -5,7 +5,7 @@
 // reproduces, at the min window height, three height-capped-frame + non
 // -scrolling-body bottom overflows and locks the fix (scroll viewport or
 // scrollable:true):
-//   1. MediaSourcesDialog: HibikiReorderableColumn is non-scrolling and was the
+//   1. MediaSourcesDialog: FushiReorderableColumn is non-scrolling and was the
 //      one dialog MISSING the SingleChildScrollView wrap (BUG-445 shape; the
 //      sibling local_audio_sources_dialog already had it).
 //   2. sasayaki rematch desktop dialog: non-scrolling two-slider Column capped
@@ -52,11 +52,11 @@ void main() {
         theme: theme(),
         home: Scaffold(
           body: Center(
-            child: HibikiDialogFrame(
+            child: FushiDialogFrame(
               maxWidth: 480,
               maxHeightFactor: maxHeightFactor,
               scrollable: false,
-              child: HibikiModalSheetFrame(
+              child: FushiModalSheetFrame(
                 title: 'T',
                 leadingIcon: Icons.info_outline,
                 scrollable: innerScrollable,
@@ -120,7 +120,7 @@ void main() {
       expect(tester.takeException(), isNull, reason: 'scrollable true scrolls');
       expect(
         find.descendant(
-          of: find.byType(HibikiModalSheetFrame),
+          of: find.byType(FushiModalSheetFrame),
           matching: find.byType(Scrollable),
         ),
         findsWidgets,
@@ -157,8 +157,8 @@ void main() {
   });
 
   group('MediaSourcesDialog (real widget, BUG-445 shape)', () {
-    Future<HibikiDatabase> seededDb(int sourceCount) async {
-      final HibikiDatabase db = HibikiDatabase.forTesting(
+    Future<FushiDatabase> seededDb(int sourceCount) async {
+      final FushiDatabase db = FushiDatabase.forTesting(
           DatabaseConnection(NativeDatabase.memory()));
       for (int i = 0; i < sourceCount; i++) {
         await db.insertMediaSource(
@@ -175,7 +175,7 @@ void main() {
 
     Future<void> pumpDialog(
       WidgetTester tester, {
-      required HibikiDatabase db,
+      required FushiDatabase db,
       required Size screen,
     }) async {
       tester.view.physicalSize = screen;
@@ -205,14 +205,14 @@ void main() {
     testWidgets(
         'TODO-1389 many sources scroll without overflow under min window cap',
         (WidgetTester tester) async {
-      final HibikiDatabase db = await seededDb(24);
+      final FushiDatabase db = await seededDb(24);
       addTearDown(db.close);
       await pumpDialog(tester, db: db, screen: const Size(520, 440));
 
       expect(tester.takeException(), isNull,
           reason: 'overflowing sources should scroll, not RenderFlex-overflow');
 
-      final Finder reorderable = find.byType(HibikiReorderableColumn);
+      final Finder reorderable = find.byType(FushiReorderableColumn);
       expect(reorderable, findsOneWidget);
       final Finder outerScrollable = find.ancestor(
         of: reorderable,

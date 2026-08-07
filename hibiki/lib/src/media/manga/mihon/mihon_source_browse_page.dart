@@ -181,7 +181,7 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
         _error = error;
       });
       if (_items.isNotEmpty) {
-        HibikiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
     }
   }
@@ -215,7 +215,7 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
 
   @override
   Widget build(BuildContext context) {
-    return HibikiPageScaffold(
+    return FushiPageScaffold(
       title: switch (widget.target) {
         MihonInstalledTarget(:final MangaOnlineSourceRow row) => row.name,
         MihonPreviewTarget(:final MihonSource source) => source.name,
@@ -321,10 +321,10 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
               );
             }
             final MihonManga manga = _items[index];
-            return HibikiCard(
+            return FushiCard(
               padding: EdgeInsets.zero,
               onTap: _readOnly ? null : () => _openDetails(manga),
-              // HibikiCard 内部已用 Material(clipBehavior: antiAlias) 按同一
+              // FushiCard 内部已用 Material(clipBehavior: antiAlias) 按同一
               // 圆角 token 裁剪，这里不再多包一层 ClipRRect。
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -446,7 +446,7 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
           .log('MihonMangaDetailPage.addToBookshelf', error, stack);
       debugPrint('[Mihon] add to bookshelf failed: $error');
       if (mounted) {
-        HibikiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
     } finally {
       if (mounted) setState(() => _libraryBusy = false);
@@ -497,7 +497,7 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
   @override
   Widget build(BuildContext context) {
     final MihonManga details = _details ?? widget.manga;
-    return HibikiPageScaffold(
+    return FushiPageScaffold(
       title: details.title,
       subtitle: widget.sourceContext.source.name,
       body: _error != null
@@ -514,7 +514,7 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
                           width: 150,
                           height: 220,
                           child: ClipRRect(
-                            borderRadius: HibikiBorderRadius.poster,
+                            borderRadius: FushiBorderRadius.poster,
                             child: MihonSourceImage(
                               runtime: widget.manager.runtime,
                               context: widget.sourceContext,
@@ -585,9 +585,9 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
                     ),
                     const SizedBox(height: 8),
                     for (final MihonChapter chapter in _chapters)
-                      HibikiCard(
+                      FushiCard(
                         padding: EdgeInsets.zero,
-                        child: HibikiListItem(
+                        child: FushiListItem(
                           title: Text(chapter.name),
                           subtitle: chapter.scanlator?.isNotEmpty == true
                               ? Text(chapter.scanlator!)
@@ -795,7 +795,7 @@ class _MihonFilterDialogState extends State<_MihonFilterDialog> {
     ValueChanged<MihonFilter> onChanged,
   ) {
     return switch (filter.kind) {
-      MihonFilterKind.header => HibikiListItem(
+      MihonFilterKind.header => FushiListItem(
           title: Text(
             filter.name,
             style: Theme.of(context).textTheme.titleMedium,
@@ -867,7 +867,7 @@ class _MihonFilterDialogState extends State<_MihonFilterDialog> {
           filter: filter,
           onChanged: (Object? state) => onChanged(_withState(filter, state)),
         ),
-      _ => HibikiListItem(
+      _ => FushiListItem(
           title: Text(filter.name),
           subtitle: Text(t.mihon_extension_incompatible),
         ),
@@ -944,7 +944,7 @@ class _MihonSortFilterField extends StatelessWidget {
           ],
           onChanged: (int? value) => update(nextIndex: value ?? 0),
         ),
-        HibikiListItem(
+        FushiListItem(
           title: Text(
             ascending ? t.mihon_filter_ascending : t.mihon_filter_descending,
           ),
@@ -962,7 +962,7 @@ class _MihonSortFilterField extends StatelessWidget {
 /// 扩展筛选器里的复选行。
 ///
 /// 框架的 `CheckboxListTile` 是被 MD3 守卫禁用的本地 chrome；共享的
-/// [HibikiListItem] 没有内建复选语义，所以这里把「点整行 = 切换」显式接上，
+/// [FushiListItem] 没有内建复选语义，所以这里把「点整行 = 切换」显式接上，
 /// 与 `CheckboxListTile` 的交互等价。
 class _MihonCheckRow extends StatelessWidget {
   const _MihonCheckRow({
@@ -976,7 +976,7 @@ class _MihonCheckRow extends StatelessWidget {
   final ValueChanged<bool> onChanged;
 
   @override
-  Widget build(BuildContext context) => HibikiListItem(
+  Widget build(BuildContext context) => FushiListItem(
         title: Text(label),
         leading: Checkbox(
           value: selected,

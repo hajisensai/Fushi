@@ -19,12 +19,12 @@ import 'package:fushi_core/fushi_core.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late int collectionId;
 
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.zhCn);
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() => db.close());
@@ -32,7 +32,7 @@ void main() {
   /// 集列表里的标题（顶部大图也会渲染「续播集」标题，不限定范围会误判）。
   /// hayase 式集卡的标题带「N. 」前缀，故用 textContaining。
   Finder railText(String title) => find.descendant(
-        of: find.byType(HibikiReorderableGrid),
+        of: find.byType(FushiReorderableGrid),
         matching: find.textContaining(title),
       );
 
@@ -124,7 +124,7 @@ void main() {
 
     // hayase 式改版（TODO-2491）：集列表默认全量可见，不再有折叠的管理列表。
     expect(
-      find.byType(HibikiReorderableGrid),
+      find.byType(FushiReorderableGrid),
       findsOneWidget,
       reason: '集列表（宽卡网格）必须默认可见，无需任何展开动作',
     );
@@ -249,8 +249,8 @@ void main() {
   });
 
   test('合集成员表没有任何分组/季列（分组不落库，存量合集零迁移）', () {
-    final HibikiDatabase database =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase database =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(database.close);
     final List<String> columns = database.mediaCollectionItems.$columns
         .map((GeneratedColumn<Object> c) => c.name.toLowerCase())

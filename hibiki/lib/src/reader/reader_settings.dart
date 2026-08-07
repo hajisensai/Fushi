@@ -38,7 +38,7 @@ enum FontTarget {
 class ReaderSettings {
   ReaderSettings(this._db);
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
   final Map<String, dynamic> _cache = <String, dynamic>{};
 
   /// 经单一真相编码器 [dbSourcePrefKey] 得到 `src:reader_ttu:`；`reader_ttu`

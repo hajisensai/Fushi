@@ -1655,7 +1655,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     final Widget webView = InAppWebView(
       key: const ValueKey<String>('hoshi_webview'),
       // TODO-954：Windows 的文字选区右键改用 Flutter 菜单（`_showReaderTextContextMenu`，
-      // 经 GestureDetector.onSecondaryTapDown 触发），它在 HibikiAppUiScale 内能跟随界面
+      // 经 GestureDetector.onSecondaryTapDown 触发），它在 FushiAppUiScale 内能跟随界面
       // 大小缩放；故 Windows 下禁掉平台原生 WebView2 菜单（它不在 Flutter 树里、永远不
       // 缩放）。移动端无 onSecondaryTapDown，仍走原生 ContextMenu。
       // BUG-544：移动端此前不隐藏系统默认项（该标志曾设为 false），保留系统默认项
@@ -1697,7 +1697,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
                     if (!mounted) return;
                     if (sel == null) {
                       appModel.currentMediaSource?.setCurrentSentence(
-                        selection: HibikiTextSelection(text: text),
+                        selection: FushiTextSelection(text: text),
                       );
                     }
                     // BUG-1344：先保留原生选区完成句子/夹图采集，再在打开弹窗前清除。
@@ -1730,7 +1730,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
                     final text = await _controller?.getSelectedText();
                     if (text == null || text.isEmpty) return;
                     await Clipboard.setData(ClipboardData(text: text));
-                    HibikiToast.show(
+                    FushiToast.show(
                         msg: t.copied_to_clipboard,
                         severity: ToastSeverity.success);
                     // 复制后清掉 ActionMode 残留的原生选区，和桌面右键 'copy' 对齐，
@@ -1749,7 +1749,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
                           .instance
                           .shareText(text);
                       if (mounted && !shared) {
-                        HibikiToast.show(
+                        FushiToast.show(
                             msg: t.selection_share_failed,
                             severity: ToastSeverity.error);
                       }
@@ -1767,7 +1767,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
                           .instance
                           .searchWeb(text);
                       if (mounted && !opened) {
-                        HibikiToast.show(
+                        FushiToast.show(
                             msg: t.selection_web_search_unavailable,
                             severity: ToastSeverity.error);
                       }
@@ -2481,7 +2481,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           ErrorLogService.instance.log(
               'ReaderHibiki.onWebViewCreationFailed', error.description, null);
           if (!mounted) return;
-          HibikiToast.show(
+          FushiToast.show(
               msg: t.reader_open_failed, severity: ToastSeverity.error);
           Navigator.of(context).pop();
           return;

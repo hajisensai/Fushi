@@ -172,7 +172,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   @override
   Widget build(BuildContext context) {
-    return HibikiFileDropTarget(
+    return FushiFileDropTarget(
       enabled: !importing,
       debugLabel: 'audiobook-import-dialog',
       onDrop: _handleDialogDrop,
@@ -206,7 +206,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   }
 
   Widget _buildContent(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     if (!_existingLoaded) {
       return AudiobookImportDialogFrame(
         title: widget.audioOnly ? t.audio_import : t.audiobook_import,
@@ -258,7 +258,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   }
 
   Widget _buildAttachedView(Audiobook ab) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String audioLabel =
         (ab.audioPaths != null && ab.audioPaths!.isNotEmpty)
             ? t.srt_import_files_selected(n: ab.audioPaths!.length)
@@ -276,7 +276,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           children: [
             AdaptiveSettingsSection(
               children: [
-                HibikiFilePickerRow(
+                FushiFilePickerRow(
                   title: (ab.audioPaths != null && ab.audioPaths!.isNotEmpty)
                       ? t.srt_import_pick_audio_files
                       : t.srt_import_pick_audio_dir,
@@ -285,7 +285,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
                       ? Icons.audio_file_outlined
                       : Icons.folder_open_outlined,
                 ),
-                HibikiFilePickerRow(
+                FushiFilePickerRow(
                   title: t.audiobook_pick_alignment,
                   subtitle: ab.alignmentPath,
                   icon: Icons.align_horizontal_left,
@@ -334,7 +334,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   /// 已附加有声书时展示匹配状态。notApplicable / unrun → 不渲染（无信息可看）。
   /// reason 来自 matcher（如 "123/140 cues matched"），直接展示给用户。
   Widget? _buildHealthRow(AudiobookHealth health) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     IconData icon;
     Color color;
     String label;
@@ -379,7 +379,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   }
 
   Widget _buildImportForm() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -433,13 +433,13 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   /// 真正的多段章节有声书（一本书 N 个章节音频）仍可通过「选文件」多选精确选中，
   /// 由用户明确挑文件而非盲目吞整个目录 —— 多段有声书语义完好保留。
   Widget _audioSourceRow() {
-    return HibikiFilePickerRow(
+    return FushiFilePickerRow(
       title: t.srt_import_pick_audio_files,
       subtitle: _hasAudioSource ? _audioSourceLabel : null,
       icon: Icons.audio_file_outlined,
       onTap: _pickAudioFiles,
       actions: [
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.audio_file_outlined,
           tooltip: t.srt_import_pick_audio_files,
           isWideTapArea: true,
@@ -451,7 +451,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   /// 对齐文件行：标签 + [选文件] 按钮。
   Widget _alignmentRow() {
-    return HibikiFilePickerRow(
+    return FushiFilePickerRow(
       title: t.audiobook_pick_alignment,
       subtitle: _alignmentPath == null
           ? null
@@ -459,7 +459,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       icon: Icons.align_horizontal_left,
       onTap: _pickAlignment,
       actions: [
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.align_horizontal_left,
           tooltip: t.audiobook_pick_alignment,
           isWideTapArea: true,
@@ -519,7 +519,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       if (path == null || !mounted) return;
       final String ext = p.extension(path).toLowerCase().replaceFirst('.', '');
       if (!_alignmentExtensions.contains(ext)) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.import_unsupported_file_format(ext: '.$ext'),
           severity: ToastSeverity.error,
         );
@@ -597,7 +597,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   Future<void> _doImport() async {
     if (!_hasAudioSource || (!widget.audioOnly && _alignmentPath == null)) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.audiobook_import_error,
         severity: ToastSeverity.error,
       );
@@ -627,7 +627,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         // error. Bail early with a format-specific message instead.
         if (!_alignmentExtensions.contains(ext)) {
           if (mounted) {
-            HibikiToast.show(
+            FushiToast.show(
               msg: t.import_unsupported_file_format(ext: '.$ext'),
               severity: ToastSeverity.error,
             );
@@ -792,7 +792,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         final String msg = tail == null
             ? t.audiobook_import_success
             : '${t.audiobook_import_success} · $tail';
-        HibikiToast.show(msg: msg, severity: ToastSeverity.success);
+        FushiToast.show(msg: msg, severity: ToastSeverity.success);
         Navigator.pop(context, true); // true = reload player
       }
     } on FileSystemException catch (e, stack) {
@@ -802,7 +802,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         final bool diskFull = e.osError?.errorCode == 28 ||
             e.message.toLowerCase().contains('no space');
         if (diskFull) {
-          HibikiToast.show(
+          FushiToast.show(
             msg: t.audiobook_import_error_disk_full(
               size: _formatBytes(grandTotal),
             ),
@@ -810,7 +810,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
             severity: ToastSeverity.error,
           );
         } else {
-          HibikiToast.show(
+          FushiToast.show(
             msg: t.audiobook_import_error_copy_failed(
               name: e.path ?? '',
             ),
@@ -822,7 +822,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       ErrorLogService.instance.log('AudiobookImport.doImport', e, stack);
       debugPrint('AudiobookImportDialog import error: $e');
       if (mounted) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.audiobook_import_error,
           severity: ToastSeverity.error,
         );
@@ -839,7 +839,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   /// 字节写坏）。
   Future<void> _openReMatchSheet(Audiobook ab) async {
     if (!_hasEpub) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.reader_not_bound_cannot_rematch,
         severity: ToastSeverity.error,
       );
@@ -1030,7 +1030,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       ErrorLogService.instance.log('AudiobookImport.deleteAudiobook', e, st);
       debugPrint('AudiobookImportDialog: deleteAudiobook failed: $e\n$st');
       if (mounted) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.audiobook_import_error,
           severity: ToastSeverity.error,
         );
@@ -1046,7 +1046,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   Future<Directory> _ensurePersistDir() =>
       AudiobookStorage.ensurePersistDir(widget.bookKey);
 
-  static String _formatBytes(int bytes) => HibikiByteFormat.bytes(bytes);
+  static String _formatBytes(int bytes) => FushiByteFormat.bytes(bytes);
 }
 
 @visibleForTesting
@@ -1084,12 +1084,12 @@ class AudiobookRemoveConfirmationDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.72,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.dialog_delete,
         leadingIcon: Icons.delete_outline,
         bodyPadding: EdgeInsets.fromLTRB(

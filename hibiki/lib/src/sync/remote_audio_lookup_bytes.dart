@@ -4,7 +4,7 @@ import 'package:fushi/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:fushi/src/utils/misc/audio_mime.dart';
 
 /// TODO-1335 ②：把 `resolveLookupAudioUrl` 解析出的单词音频 URL/路径归一成字节 +
-/// contentType，供浏览器扩展 `/api/lookup/audio`（以及 `HibikiSyncServer` 同款端点）经本地
+/// contentType，供浏览器扩展 `/api/lookup/audio`（以及 `FushiSyncServer` 同款端点）经本地
 /// 短命 token 播放。
 ///
 /// 此前 server 端音频解析（`_AppModelRemoteLookupService.lookupAudio`）只查本地音频库，忽略

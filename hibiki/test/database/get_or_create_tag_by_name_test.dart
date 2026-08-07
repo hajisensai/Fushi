@@ -5,16 +5,16 @@ import 'package:fushi_core/fushi_core.dart';
 /// TODO-1165：getOrCreateTagByName 是跨设备按名重建标签映射的核心原语。
 /// 契约：命中同名返回既有 id（幂等，不建重复行）；未命中新建并返回 id。
 void main() {
-  Future<HibikiDatabase> openDb() async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+  Future<FushiDatabase> openDb() async {
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     return db;
   }
 
   group('getOrCreateTagByName', () {
     test('空库首次调用新建标签并返回 id', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int id = await db.getOrCreateTagByName('日语');
       expect(id, greaterThan(0));
       final List<BookTagRow> all = await db.getAllTags();
@@ -24,7 +24,7 @@ void main() {
     });
 
     test('重复同名幂等：不建重复标签、始终返回同一 id', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int first = await db.getOrCreateTagByName('N1');
       final int second = await db.getOrCreateTagByName('N1');
       final int third = await db.getOrCreateTagByName('N1');
@@ -34,7 +34,7 @@ void main() {
     });
 
     test('命中 createTag 已建的同名标签返回其既有 id', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int created = await db.createTag('小说', 0xFF112233);
       final int fetched = await db.getOrCreateTagByName('小说');
       expect(fetched, created);
@@ -45,7 +45,7 @@ void main() {
     });
 
     test('并发同名 get-or-create 都不抛、返回同一 id、只建一行（竞态守卫）', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       // 逼近两条下载流交错：三个同名调用一并发出（不在中间 await），旧的
       // select-then-insert 实现会 A/B 都 select 到 null、第二个 insert 撞 UNIQUE 抛；
       // 原子 insertOrIgnore 实现下全部成功且归一到同一 id。
@@ -62,7 +62,7 @@ void main() {
     });
 
     test('不同名分别新建、各自独立 id', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int a = await db.getOrCreateTagByName('A');
       final int b = await db.getOrCreateTagByName('B');
       expect(a, isNot(b));

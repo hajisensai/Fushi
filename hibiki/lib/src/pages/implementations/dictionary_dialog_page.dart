@@ -57,8 +57,8 @@ class _DictionaryDialogPageState extends BasePageState {
     final bool cupertino = isCupertinoPlatform(context);
     final bool compact = MediaQuery.sizeOf(context).width < 480;
     // 桌面三端：整页包一层文件拖放区，把拖入的词典包接到与「导入词典」按钮同源的
-    // 导入路径（TODO-059）。移动端 HibikiFileDropTarget 直接透传 child，零开销。
-    return HibikiFileDropTarget(
+    // 导入路径（TODO-059）。移动端 FushiFileDropTarget 直接透传 child，零开销。
+    return FushiFileDropTarget(
       debugLabel: 'dictionary-dialog',
       onDrop: _handleDictionaryDrop,
       child: AdaptiveSettingsScaffold(
@@ -88,7 +88,7 @@ class _DictionaryDialogPageState extends BasePageState {
   /// 与 [PreferencesRepository.autoUpdateDictionaries] 的 defaultValue: false 对齐；
   /// TODO-1075 修正原「默认 true」误注释）。
   Widget _buildAutoUpdateCard() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool autoUpdate = appModel.autoUpdateDictionaries;
     final DictionaryUpdateInterval interval = appModel.dictionaryUpdateInterval;
     final DateTime? lastUpdate = appModel.lastDictionaryUpdateAt;
@@ -106,7 +106,7 @@ class _DictionaryDialogPageState extends BasePageState {
         top: tokens.spacing.gap + tokens.spacing.gap / 2,
         bottom: tokens.spacing.gap,
       ),
-      child: HibikiCard(
+      child: FushiCard(
         padding: EdgeInsets.zero,
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -153,7 +153,7 @@ class _DictionaryDialogPageState extends BasePageState {
                   },
                 ),
               ),
-            HibikiListItem(
+            FushiListItem(
               minHeight: 44,
               leading: const Icon(Icons.schedule_outlined, size: 18),
               title: Text(
@@ -170,7 +170,7 @@ class _DictionaryDialogPageState extends BasePageState {
   /// Material in-page action bar: labeled import/clear buttons that wrap on
   /// narrow widths. Replaces the bare app-bar icon buttons on Material.
   Widget _buildActionBar() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = theme.colorScheme;
     return Padding(
       padding: EdgeInsets.only(
@@ -227,7 +227,7 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   /// A labeled action button that is mouse/touch tappable and, under a
-  /// [HibikiFocusRoot], a single gamepad/keyboard focus stop (A/Enter fires
+  /// [FushiFocusRoot], a single gamepad/keyboard focus stop (A/Enter fires
   /// [onTap]). Same idiom as the reader quick-settings action strip: the
   /// underlying button is removed from focus traversal so it does not grab a
   /// competing, unregistered focus node.
@@ -244,10 +244,10 @@ class _DictionaryDialogPageState extends BasePageState {
       icon: Icon(icon, size: 18),
       label: Text(label),
     );
-    if (HibikiFocusRoot.maybeControllerOf(context) == null) {
+    if (FushiFocusRoot.maybeControllerOf(context) == null) {
       return button;
     }
-    return HibikiActivatableFocusTarget(
+    return FushiActivatableFocusTarget(
       focusIdPrefix: focusPrefix,
       onTap: onTap,
       child: ExcludeFocus(child: button),
@@ -256,23 +256,23 @@ class _DictionaryDialogPageState extends BasePageState {
 
   List<Widget> _buildDesktopPageActions() {
     return [
-      HibikiIconButton(
+      FushiIconButton(
         tooltip: t.dict_download_browse,
         icon: Icons.cloud_download_outlined,
         onTap: _showDownloadSelectionDialog,
       ),
       if (!Platform.isIOS)
-        HibikiIconButton(
+        FushiIconButton(
           tooltip: t.dialog_import_folder,
           icon: Icons.drive_folder_upload_outlined,
           onTap: _importDictionaryFolder,
         ),
-      HibikiIconButton(
+      FushiIconButton(
         tooltip: t.dialog_import_dictionary,
         icon: Icons.upload_file_outlined,
         onTap: _importDictionaryFiles,
       ),
-      HibikiIconButton(
+      FushiIconButton(
         tooltip: t.dialog_clear_all_dictionaries,
         icon: Icons.delete_sweep_outlined,
         enabledColor: theme.colorScheme.error,
@@ -283,7 +283,7 @@ class _DictionaryDialogPageState extends BasePageState {
 
   List<Widget> _buildMobilePageActions() {
     return [
-      HibikiOverflowMenu<VoidCallback>(
+      FushiOverflowMenu<VoidCallback>(
         tooltip: t.show_options,
         icon: Icons.more_vert,
         onSelected: (VoidCallback action) => action(),
@@ -450,7 +450,7 @@ class _DictionaryDialogPageState extends BasePageState {
     );
     // TODO-082：导入一开始就给用户一个明确反馈（开始后台导入），不只让用户盯着
     // 模态进度框猜测进度。
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.dict_import_started,
       severity: ToastSeverity.info,
     );
@@ -491,7 +491,7 @@ class _DictionaryDialogPageState extends BasePageState {
     }
 
     if (failedNames.isNotEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: DictionaryImportManager.formatImportFailureSummary(failedNames),
         toastLength: Toast.LENGTH_LONG,
         severity: ToastSeverity.error,
@@ -502,7 +502,7 @@ class _DictionaryDialogPageState extends BasePageState {
     // （失败的另由上面的失败汇总文案告知，两者可同时出现：部分成功部分失败）。
     final int successCount = dictFiles.length - failedNames.length;
     if (successCount > 0) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.dict_import_success_summary(n: successCount),
         severity: ToastSeverity.success,
       );
@@ -518,7 +518,7 @@ class _DictionaryDialogPageState extends BasePageState {
 
   /// 桌面拖放落地处理：把拖入文件按扩展名分类，取出词典包（`.zip`/`.dsl`/`.mdx`）+
   /// 同批拖入的 `.css` 样式附件，交给与「导入词典」按钮同源的 [_importDictionaryPaths]。
-  /// 没有词典包时给用户明确反馈；移动端无桌面拖放，[HibikiFileDropTarget] 已直接
+  /// 没有词典包时给用户明确反馈；移动端无桌面拖放，[FushiFileDropTarget] 已直接
   /// 透传 child，本回调在移动端永不触发。纯分类逻辑见 [classifyDroppedFilesForDictionary]。
   void _handleDictionaryDrop(List<String> paths, Offset globalPosition) {
     final ModalRoute<dynamic>? route = ModalRoute.of(context);
@@ -531,7 +531,7 @@ class _DictionaryDialogPageState extends BasePageState {
     );
     if (importPaths.isEmpty) {
       debugPrint('[fushi-drop] [dictionary-dialog] intent=unsupportedSurface');
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.drag_drop_unsupported_on_dictionary,
         severity: ToastSeverity.error,
       );
@@ -647,7 +647,7 @@ class _DictionaryDialogPageState extends BasePageState {
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
             final int downloadCount = checked.length;
-            final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+            final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
             return DictionaryDownloadSelectionDialogFrame(
               content: SizedBox(
                 width: double.maxFinite,
@@ -745,7 +745,7 @@ class _DictionaryDialogPageState extends BasePageState {
     required ValueChanged<String> onChanged,
   }) {
     const Map<String, String> langs = DictionaryDownloader.availableLanguages;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Row(
       children: [
         Text(label, style: tokens.type.controlLabel),
@@ -774,15 +774,15 @@ class _DictionaryDialogPageState extends BasePageState {
     required ValueChanged<bool> onExpansionChanged,
     required void Function(int idx, bool val) onChanged,
   }) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-      child: HibikiCard(
+      child: FushiCard(
         padding: EdgeInsets.zero,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            HibikiListItem(
+            FushiListItem(
               minHeight: 52,
               title: Text(
                 _categoryLabel(cat),
@@ -823,8 +823,8 @@ class _DictionaryDialogPageState extends BasePageState {
     final int idx = recIndex[rec] ?? -1;
     final bool installed = installedIndices.contains(idx);
     final bool selected = checked.contains(idx);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiListItem(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiListItem(
       minHeight: 68,
       padding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
@@ -949,7 +949,7 @@ class _DictionaryDialogPageState extends BasePageState {
     // BUG-927：进度框关闭后，把失败的词典名持久汇总给用户（LENGTH_LONG），而不是
     // 只在那个 2 秒就消失的进度框里一闪而过。与文件导入路径同一套失败汇总文案。
     if (failedNames.isNotEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: DictionaryImportManager.formatImportFailureSummary(failedNames),
         toastLength: Toast.LENGTH_LONG,
         severity: ToastSeverity.error,
@@ -1000,7 +1000,7 @@ class _DictionaryDialogPageState extends BasePageState {
     }
   }
 
-  static const _safChannel = HibikiChannels.saf;
+  static const _safChannel = FushiChannels.saf;
 
   Future<({Directory directory, Directory? cleanupDir})?>
       _pickDictionaryImportDirectory() async {
@@ -1046,7 +1046,7 @@ class _DictionaryDialogPageState extends BasePageState {
       );
       // TODO-082：目录导入也在开始时给明确反馈（成功/失败提示由
       // DictionaryImportManager.importFromDirectory 在完成时弹出）。
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.dict_import_started,
         severity: ToastSeverity.info,
       );
@@ -1088,7 +1088,7 @@ class _DictionaryDialogPageState extends BasePageState {
     }
 
     if (folderImportError != null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: folderImportError,
         toastLength: Toast.LENGTH_LONG,
         severity: ToastSeverity.error,
@@ -1123,7 +1123,7 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Widget _buildCategorySelector() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: EdgeInsets.only(
         bottom: tokens.spacing.gap + tokens.spacing.gap / 2,
@@ -1139,7 +1139,7 @@ class _DictionaryDialogPageState extends BasePageState {
                 // cycles the category). A bare segmented button is a cluster of
                 // unregistered native buttons that the directional focus
                 // controller skips over to the dictionary tiles below.
-                child: HibikiAdjustableSegmented<DictionaryType>(
+                child: FushiAdjustableSegmented<DictionaryType>(
                   focusIdPrefix: 'dict-type',
                   values: const <DictionaryType>[
                     DictionaryType.term,
@@ -1227,14 +1227,14 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Widget buildEmptyMessage() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return AdaptiveSettingsSection(
       children: [
         Padding(
           padding: EdgeInsets.symmetric(
             vertical: tokens.spacing.card + tokens.spacing.gap,
           ),
-          child: HibikiPlaceholderMessage(
+          child: FushiPlaceholderMessage(
             icon: DictionaryMediaType.instance.outlinedIcon,
             message: t.dictionaries_menu_empty,
           ),
@@ -1244,7 +1244,7 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Widget _buildEmptyCategoryRow() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // Mirror buildEmptyMessage (the all-empty state) so switching to a
     // dictionary-type tab that happens to have no dictionary of that type reads
     // the same: a centred icon + message, not a cramped left-aligned grey card
@@ -1253,7 +1253,7 @@ class _DictionaryDialogPageState extends BasePageState {
       padding: EdgeInsets.symmetric(
         vertical: tokens.spacing.card + tokens.spacing.gap,
       ),
-      child: HibikiPlaceholderMessage(
+      child: FushiPlaceholderMessage(
         icon: DictionaryMediaType.instance.outlinedIcon,
         message: t.dictionaries_menu_empty,
       ),
@@ -1271,7 +1271,7 @@ class _DictionaryDialogPageState extends BasePageState {
         appModel.dictionaryFormats[dictionary.formatKey]!;
     final bool enabled = !dictionary.isHidden(JapaneseLanguage.instance);
     final ColorScheme scheme = theme.colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color titleColor =
         enabled ? scheme.onSurface : scheme.onSurfaceVariant;
     final Color subtitleColor = scheme.onSurfaceVariant;
@@ -1280,7 +1280,7 @@ class _DictionaryDialogPageState extends BasePageState {
     // 折叠 + 上/下/Switch/(更新)/删除 共 6-7 个固有宽控件占去约 176px，中段 title 只
     // 剩约 80px ≈ 5 个汉字 → 长词典名被省略号截短。修复=窄屏改两行布局：标题独占
     // 整行宽（不再与 trailing 抢宽），控件串挪到标题下方一行；桌面宽屏仍是单行
-    // HibikiListItem（向后兼容）。这从结构上消除「窄屏 trailing 抢 title 宽」的特殊
+    // FushiListItem（向后兼容）。这从结构上消除「窄屏 trailing 抢 title 宽」的特殊
     // 情况，四个 tab（term/kanji/frequency/pitch）共用本 tile 一处修复全覆盖。
     final bool compact = MediaQuery.sizeOf(context).width < 480;
     final Text nameText = Text(
@@ -1306,9 +1306,9 @@ class _DictionaryDialogPageState extends BasePageState {
       onMoveUp: onMoveUp,
       onMoveDown: onMoveDown,
     );
-    // 行内容本身不含拖拽监听：长按拖拽由外层 HibikiReorderableColumn 统一接管
+    // 行内容本身不含拖拽监听：长按拖拽由外层 FushiReorderableColumn 统一接管
     // （局部坐标，缩放下零偏移），不再用 SDK 的 ReorderableDelayedDragStartListener。
-    // 行间距交给 HibikiReorderableColumn 的 spacing（见 _buildDictionaryList），
+    // 行间距交给 FushiReorderableColumn 的 spacing（见 _buildDictionaryList），
     // 此处不再包 bottom padding——否则拖拽浮层会把行间空隙连同卡片一起涂成背景，
     // 表现为「被拖行下方多出一条背景」（BUG-078 第二症状）。
     if (compact) {
@@ -1316,7 +1316,7 @@ class _DictionaryDialogPageState extends BasePageState {
       // 拿满整行剩余宽，不再被右侧控件串抢宽）；第二行 = 副标题；第三行 = 控件串
       // （上/下/Switch/更新/删除）右对齐。彻底消除「窄屏 trailing 抢 title 宽」的
       // 结构（TODO-749/751）。
-      return HibikiCard(
+      return FushiCard(
         padding: EdgeInsets.zero,
         child: Padding(
           padding: EdgeInsets.symmetric(
@@ -1347,9 +1347,9 @@ class _DictionaryDialogPageState extends BasePageState {
         ),
       );
     }
-    return HibikiCard(
+    return FushiCard(
       padding: EdgeInsets.zero,
-      child: HibikiListItem(
+      child: FushiListItem(
         minHeight: 70,
         padding: EdgeInsets.symmetric(
           horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
@@ -1359,7 +1359,7 @@ class _DictionaryDialogPageState extends BasePageState {
         // toggle for a row, so it is promoted to the row leading (leftmost):
         // visible at a glance, reachable with one finger, no longer buried in
         // the trailing control cluster. The name sits in the middle and uses
-        // HibikiListItem own Expanded + ellipsis to take the full middle width,
+        // FushiListItem own Expanded + ellipsis to take the full middle width,
         // so even on narrow widths it shows as much as fits (graceful ellipsis)
         // and is never squeezed out by the trailing controls.
         leading: _buildDictionaryCollapseButton(dictionary),
@@ -1376,7 +1376,7 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   /// 词典行尾的控件串（上/下重排箭头 + 显示/隐藏 Switch + 可选更新按钮 + 独立删除
-  /// 按钮）。桌面宽屏放进 HibikiListItem 的 trailing（与标题同一行），窄屏挪到标题
+  /// 按钮）。桌面宽屏放进 FushiListItem 的 trailing（与标题同一行），窄屏挪到标题
   /// 下方（两行布局，见 _buildDictionaryTile），两处共用这一份避免重复。
   Row _buildDictionaryTileControls({
     required Dictionary dictionary,
@@ -1386,21 +1386,21 @@ class _DictionaryDialogPageState extends BasePageState {
     required VoidCallback onMoveUp,
     required VoidCallback onMoveDown,
   }) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 行尾控件串（窄屏挪到标题下方，桌面在标题右侧）；末尾是独立删除按钮
     //（TODO-422 取代旧三点菜单），不含旧的三点溢出菜单图标。
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         // Gamepad/keyboard reorder equivalent for the drag handle.
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.keyboard_arrow_up,
           size: 18,
           tooltip: t.move_up,
           enabled: index > 0,
           onTap: onMoveUp,
         ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.keyboard_arrow_down,
           size: 18,
           tooltip: t.move_down,
@@ -1415,7 +1415,7 @@ class _DictionaryDialogPageState extends BasePageState {
         //   - 本地导入 / 旧词典（isUpdatable=false）→ 走 _updateDictionaryFromFile（从
         //     文件重选 force 覆盖；异名先弹确认，避免静默改判成新增导入）。
         SizedBox(width: tokens.spacing.gap / 2),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.system_update_alt,
           size: 20,
           tooltip: t.dict_update_tooltip,
@@ -1425,7 +1425,7 @@ class _DictionaryDialogPageState extends BasePageState {
         ),
         SizedBox(width: tokens.spacing.gap / 2),
         // 行尾独立删除按钮（取代旧三点菜单），仍走原删除确认对话框流程。
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.delete_outline,
           size: 20,
           tooltip: t.options_delete,
@@ -1466,7 +1466,7 @@ class _DictionaryDialogPageState extends BasePageState {
   Widget _buildDictionaryCollapseButton(Dictionary dictionary) {
     final bool collapsed = dictionary.isCollapsed(JapaneseLanguage.instance);
     final String tooltip = collapsed ? t.options_expand : t.options_collapse;
-    return HibikiIconButton(
+    return FushiIconButton(
       // 已折叠 → 展开图标（点了会展开）；已展开 → 折叠图标（点了会折叠）。
       icon: collapsed ? Icons.unfold_more : Icons.unfold_less,
       size: 20,
@@ -1478,21 +1478,21 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  // 用自实现的 HibikiReorderableColumn（局部坐标长按拖拽），而非 SDK 的
-  // ReorderableListView：后者的 Overlay 拖拽代理不认祖先 HibikiAppUiScale 的
+  // 用自实现的 FushiReorderableColumn（局部坐标长按拖拽），而非 SDK 的
+  // ReorderableListView：后者的 Overlay 拖拽代理不认祖先 FushiAppUiScale 的
   // Transform.scale，缩放界面下长按拖拽反馈会按 (1−s)×距离 向右下漂移、飞离原位
   // （BUG-044）。前者把拖拽反馈渲染在列表自身坐标系、用 globalToLocal 消掉祖先缩放
   // → 任意缩放下都精确跟手、零偏移且视觉一致。上下箭头按钮仍是无障碍/手柄重排路径。
   Widget _buildDictionaryList(List<Dictionary> dictionaries) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiReorderableColumn(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiReorderableColumn(
       itemCount: dictionaries.length,
       // 行间距由列表统一插入（见 _buildDictionaryTile 不再自带 bottom padding）；
       // 圆角传卡片半径，让拖拽浮层裁成圆角、不在卡片四角露出底色。
       spacing: tokens.spacing.rowVertical,
       feedbackBorderRadius: tokens.radii.cardRadius,
       keyForIndex: (int index) => ValueKey<String>(dictionaries[index].name),
-      // HibikiReorderableColumn 的 to 已是最终下标，直接 removeAt(from)/insert(to)。
+      // FushiReorderableColumn 的 to 已是最终下标，直接 removeAt(from)/insert(to)。
       onReorder: (int from, int to) =>
           _reorderDictionaries(from, to, dictionaries),
       itemBuilder: (BuildContext context, int index) => _buildDictionaryTile(
@@ -1561,13 +1561,13 @@ class _DictionaryDialogPageState extends BasePageState {
     setState(() {});
   }
 
-  HibikiPopupMenuItem<VoidCallback> buildPopupItem({
+  FushiPopupMenuItem<VoidCallback> buildPopupItem({
     required String label,
     required VoidCallback action,
     IconData? icon,
     Color? color,
   }) {
-    return HibikiPopupMenuItem<VoidCallback>(
+    return FushiPopupMenuItem<VoidCallback>(
       label: label,
       value: action,
       icon: icon,
@@ -1660,7 +1660,7 @@ class _DictionaryDialogPageState extends BasePageState {
         }
       },
     );
-    HibikiToast.show(msg: resultMsg, severity: resultSeverity);
+    FushiToast.show(msg: resultMsg, severity: resultSeverity);
   }
 
   /// TODO-839：本地导入 / 旧词典（isUpdatable=false，无在线来源）的「从文件重选覆盖
@@ -1738,7 +1738,7 @@ class _DictionaryDialogPageState extends BasePageState {
     if (Platform.isAndroid || Platform.isIOS) {
       await FilePicker.platform.clearTemporaryFiles();
     }
-    HibikiToast.show(msg: resultMsg, severity: resultSeverity);
+    FushiToast.show(msg: resultMsg, severity: resultSeverity);
   }
 
   /// 异名覆盖确认对话框：所选文件包名 [incoming] 与被更新词典 [existing] 不同时弹出，
@@ -1781,7 +1781,7 @@ class _DictionaryDialogPageState extends BasePageState {
     final List<Dictionary> updatable =
         appModel.dictionaries.where((Dictionary d) => d.isUpdatable).toList();
     if (updatable.isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.dict_update_none,
         severity: ToastSeverity.info,
       );
@@ -1830,7 +1830,7 @@ class _DictionaryDialogPageState extends BasePageState {
         }
       },
     );
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.dict_update_summary(
         updated: updated.toString(),
         current: current.toString(),
@@ -1863,12 +1863,12 @@ class DictionaryConfirmationDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 440,
       maxHeightFactor: 0.78,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         leadingIcon: Icons.warning_amber_outlined,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
@@ -1925,13 +1925,13 @@ class DictionaryDownloadSelectionDialogFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 560,
       maxHeightFactor: 0.86,
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.dict_download_select_title,
         leadingIcon: Icons.cloud_download_outlined,
         scrollable: true,
@@ -1972,13 +1972,13 @@ class DictionaryDownloadProgressDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.72,
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: message,
         leadingIcon: Icons.cloud_download_outlined,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -2004,12 +2004,12 @@ class DictionaryLowMemoryDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.72,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.low_memory_mode,
         leadingIcon: Icons.memory_outlined,
         bodyPadding: EdgeInsets.fromLTRB(

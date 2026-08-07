@@ -205,7 +205,7 @@ void main() {
       size: const Size(1200, 800),
     );
 
-    final Finder card = find.byType(HibikiCard);
+    final Finder card = find.byType(FushiCard);
     expect(card, findsWidgets);
     expect(
       tester.getSize(card.last).width,

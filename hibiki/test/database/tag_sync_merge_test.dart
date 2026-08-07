@@ -6,9 +6,9 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
-Future<void> _seedBook(HibikiDatabase db, String bookKey) =>
+Future<void> _seedBook(FushiDatabase db, String bookKey) =>
     db.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: bookKey,
       title: bookKey,
@@ -19,11 +19,11 @@ Future<void> _seedBook(HibikiDatabase db, String bookKey) =>
       importedAt: 0,
     ));
 
-Future<Set<String>> _bookTagNames(HibikiDatabase db, String bookKey) async =>
+Future<Set<String>> _bookTagNames(FushiDatabase db, String bookKey) async =>
     (await db.getTagsForBook(bookKey)).map((BookTagRow t) => t.name).toSet();
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
   setUp(() => db = _memDb());
   tearDown(() => db.close());
 

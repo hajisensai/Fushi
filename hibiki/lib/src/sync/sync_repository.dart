@@ -6,8 +6,8 @@ import 'package:fushi_core/fushi_core.dart';
 
 /// 触达一台 Hibiki 同步服务器的一个候选地址。同一台服务器通常可经多条路由
 /// 触达（局域网、外网），它们共享同一个 token，按列表顺序尝试、第一个可达者胜出。
-class HibikiClientUrl {
-  const HibikiClientUrl({
+class FushiClientUrl {
+  const FushiClientUrl({
     required this.url,
     this.enabled = true,
     this.fingerprintSha256,
@@ -32,8 +32,8 @@ class HibikiClientUrl {
         if (deviceName != null) 'deviceName': deviceName,
       };
 
-  factory HibikiClientUrl.fromJson(Map<String, dynamic> json) =>
-      HibikiClientUrl(
+  factory FushiClientUrl.fromJson(Map<String, dynamic> json) =>
+      FushiClientUrl(
         url: json['url'] as String,
         enabled: json['enabled'] as bool? ?? true,
         fingerprintSha256: json['fingerprintSha256'] as String?,
@@ -41,13 +41,13 @@ class HibikiClientUrl {
       );
 
   /// 复制并覆盖部分字段（不可变更新）。`null` 入参保留原值；要显式清空请直接构造。
-  HibikiClientUrl copyWith({
+  FushiClientUrl copyWith({
     String? url,
     bool? enabled,
     String? fingerprintSha256,
     String? deviceName,
   }) =>
-      HibikiClientUrl(
+      FushiClientUrl(
         url: url ?? this.url,
         enabled: enabled ?? this.enabled,
         fingerprintSha256: fingerprintSha256 ?? this.fingerprintSha256,
@@ -58,8 +58,8 @@ class HibikiClientUrl {
 /// TODO-961 M1：当一个已记录非空指纹的 https 候选地址再次出现、但带来的新指纹与
 /// 已存指纹不符时抛出（疑似 MITM 或 host 重置了证书）。**绝不静默覆盖已存指纹**——
 /// 由调用方告警并要求用户显式重置该条目，这是 TOFU 钉扎的硬约束（设计稿 §3.5）。
-class HibikiFingerprintMismatchException implements Exception {
-  const HibikiFingerprintMismatchException({
+class FushiFingerprintMismatchException implements Exception {
+  const FushiFingerprintMismatchException({
     required this.url,
     required this.storedFingerprint,
     required this.incomingFingerprint,
@@ -71,7 +71,7 @@ class HibikiFingerprintMismatchException implements Exception {
 
   @override
   String toString() =>
-      'HibikiFingerprintMismatchException($url: stored=$storedFingerprint '
+      'FushiFingerprintMismatchException($url: stored=$storedFingerprint '
       'incoming=$incomingFingerprint)';
 }
 
@@ -82,7 +82,7 @@ class HibikiFingerprintMismatchException implements Exception {
 /// 依赖操作系统文件权限保护用户数据目录。
 class SyncRepository {
   SyncRepository(this._db);
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
 
   static const _keyRootFolderId = 'sync_root_folder_id';
   static const _keyFolderCache = 'sync_folder_cache';
@@ -668,7 +668,7 @@ class SyncRepository {
 
   /// TODO-961 取舍 A：LAN 自动发现的对端是否仍需 PIN 才能配对。默认 false=
   /// 自家局域网免 PIN（公网入站恒强制，与本开关无关，见配对协议
-  /// [HibikiPairingProtocol.computePinRequired]）。
+  /// [FushiPairingProtocol.computePinRequired]）。
   Future<bool> getLanRequiresPin() =>
       _db.getPrefTyped<bool>(_keyLanRequiresPin, false);
   Future<void> setLanRequiresPin(bool v) =>
@@ -676,7 +676,7 @@ class SyncRepository {
 
   /// TODO-961 M1：host 是否以 HTTPS（自签证书 + 指纹钉扎）对外服务。默认 false=
   /// 明文 HTTP 老路径（Never break userspace：现有 LAN 用户升级后行为不变，直到
-  /// 主动开 TLS）。开启后 [HibikiSyncServerController] 用 [HibikiTlsIdentityStore]
+  /// 主动开 TLS）。开启后 [FushiSyncServerController] 用 [FushiTlsIdentityStore]
   /// 起 TLS 并在配对响应里回传指纹供 client TOFU 钉扎。
   Future<bool> getServerTlsEnabled() =>
       _db.getPrefTyped<bool>(_keyServerTlsEnabled, false);
@@ -714,7 +714,7 @@ class SyncRepository {
   Future<String> getOrCreateDeviceId() async {
     final existing = await _getStringOrNull(_keyDeviceId);
     if (existing != null && existing.isNotEmpty) return existing;
-    final String id = HibikiSyncServer.generateToken();
+    final String id = FushiSyncServer.generateToken();
     await _setString(_keyDeviceId, id);
     return id;
   }
@@ -734,27 +734,27 @@ class SyncRepository {
 
   /// 有序候选地址列表（下标即优先级）。新键缺失时，从旧的单地址键迁移种子，
   /// 保证老用户无感。
-  Future<List<HibikiClientUrl>> getHibikiClientUrls() async {
+  Future<List<FushiClientUrl>> getHibikiClientUrls() async {
     final raw = await _getStringOrNull(_keyHibikiClientUrls);
     if (raw != null) {
       final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
-      return list.map(HibikiClientUrl.fromJson).toList();
+      return list.map(FushiClientUrl.fromJson).toList();
     }
     final legacy = await _getStringOrNull(_keyHibikiClientUrl);
     if (legacy != null && legacy.isNotEmpty) {
-      return <HibikiClientUrl>[HibikiClientUrl(url: legacy)];
+      return <FushiClientUrl>[FushiClientUrl(url: legacy)];
     }
-    return const <HibikiClientUrl>[];
+    return const <FushiClientUrl>[];
   }
 
-  Future<void> setHibikiClientUrls(List<HibikiClientUrl> urls) async {
+  Future<void> setHibikiClientUrls(List<FushiClientUrl> urls) async {
     if (urls.isEmpty) {
       await _deleteKey(_keyHibikiClientUrls);
       return;
     }
     await _setString(
       _keyHibikiClientUrls,
-      jsonEncode(urls.map((HibikiClientUrl u) => u.toJson()).toList()),
+      jsonEncode(urls.map((FushiClientUrl u) => u.toJson()).toList()),
     );
   }
 
@@ -765,30 +765,30 @@ class SyncRepository {
   /// - [fingerprint] 非空（https 钉扎指纹）时，把它写进对应条目；这是「首次信任并
   ///   记录」(TOFU) 的落脚点。
   /// - 若该 URL 已存在且**已记录非空指纹**，而本次新指纹与之**不符**，抛
-  ///   [HibikiFingerprintMismatchException]，**绝不覆盖已存指纹**（疑似 MITM）。
+  ///   [FushiFingerprintMismatchException]，**绝不覆盖已存指纹**（疑似 MITM）。
   /// - 已存指纹为空（明文老条目）→ 允许首次写入指纹（http 升级为 https 钉扎）。
   /// - 指纹相同 / 本次 [fingerprint] 为 null（明文 http）→ 幂等：仅补 deviceName。
-  Future<List<HibikiClientUrl>> addHibikiClientUrl(
+  Future<List<FushiClientUrl>> addHibikiClientUrl(
     String url, {
     String? fingerprint,
     String? deviceName,
   }) async {
-    final List<HibikiClientUrl> urls = await getHibikiClientUrls();
+    final List<FushiClientUrl> urls = await getHibikiClientUrls();
     final int existingIdx =
-        urls.indexWhere((HibikiClientUrl u) => u.url == url);
+        urls.indexWhere((FushiClientUrl u) => u.url == url);
 
     final String? incomingFp =
         (fingerprint != null && fingerprint.isNotEmpty) ? fingerprint : null;
 
     if (existingIdx >= 0) {
-      final HibikiClientUrl existing = urls[existingIdx];
+      final FushiClientUrl existing = urls[existingIdx];
       final String? storedFp = existing.fingerprintSha256;
       // MITM 守卫：已记录非空指纹且新指纹非空且不符 → 拒绝覆盖，抛异常告警。
       if (incomingFp != null &&
           storedFp != null &&
           storedFp.isNotEmpty &&
           !_fingerprintEquals(storedFp, incomingFp)) {
-        throw HibikiFingerprintMismatchException(
+        throw FushiFingerprintMismatchException(
           url: url,
           storedFingerprint: storedFp,
           incomingFingerprint: incomingFp,
@@ -798,7 +798,7 @@ class SyncRepository {
       // 不被新写法（大小写/冒号差异）改写；已存为空 → 首次写入新指纹（http→https 升级）。
       final String? nextFp =
           (storedFp != null && storedFp.isNotEmpty) ? storedFp : incomingFp;
-      final HibikiClientUrl upgraded = existing.copyWith(
+      final FushiClientUrl upgraded = existing.copyWith(
         fingerprintSha256: nextFp,
         deviceName: deviceName,
       );
@@ -806,15 +806,15 @@ class SyncRepository {
           upgraded.deviceName == existing.deviceName) {
         return urls; // 无变化，避免无谓写盘。
       }
-      final List<HibikiClientUrl> updated = <HibikiClientUrl>[...urls];
+      final List<FushiClientUrl> updated = <FushiClientUrl>[...urls];
       updated[existingIdx] = upgraded;
       await setHibikiClientUrls(updated);
       return updated;
     }
 
-    final List<HibikiClientUrl> updated = <HibikiClientUrl>[
+    final List<FushiClientUrl> updated = <FushiClientUrl>[
       ...urls,
-      HibikiClientUrl(
+      FushiClientUrl(
         url: url,
         fingerprintSha256: incomingFp,
         deviceName: deviceName,

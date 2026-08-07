@@ -693,14 +693,14 @@ void main() {
   // [ClipboardHistoryRepository] + 内存 Drift 库上，钉死「剪贴板来源写穿到历史 /
   // 非剪贴板来源不写 / 重复复制不堆重复行」三条契约。
   group('剪贴板复制历史采集 (BUG-1145)', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late ClipboardHistoryRepository repo;
     late DateTime fakeNow;
 
     setUp(() {
       // 外层 setUp 已跑过 debugReset（会把 onClipboardCaptured 清成 null），故本组的
       // 装配必须在它之后——group 的 setUp 恒后于外层 setUp 执行。
-      db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
       repo = ClipboardHistoryRepository(db);
       fakeNow = DateTime(2026, 7, 27, 9, 0, 0);
       final DesktopLookupService service = DesktopLookupService.instance;

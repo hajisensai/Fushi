@@ -3,20 +3,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/hibiki_focus_scroll.dart';
 
 void main() {
-  group('HibikiFocusScroll.signedFractionFor', () {
+  group('FushiFocusScroll.signedFractionFor', () {
     test('down/right 为正、up/left 为负', () {
-      expect(HibikiFocusScroll.signedFractionFor(TraversalDirection.down, 0.8),
+      expect(FushiFocusScroll.signedFractionFor(TraversalDirection.down, 0.8),
           0.8);
-      expect(HibikiFocusScroll.signedFractionFor(TraversalDirection.right, 0.8),
+      expect(FushiFocusScroll.signedFractionFor(TraversalDirection.right, 0.8),
           0.8);
-      expect(HibikiFocusScroll.signedFractionFor(TraversalDirection.up, 0.8),
+      expect(FushiFocusScroll.signedFractionFor(TraversalDirection.up, 0.8),
           -0.8);
-      expect(HibikiFocusScroll.signedFractionFor(TraversalDirection.left, 0.8),
+      expect(FushiFocusScroll.signedFractionFor(TraversalDirection.left, 0.8),
           -0.8);
     });
   });
 
-  group('HibikiFocusScroll.scrollByViewportFraction', () {
+  group('FushiFocusScroll.scrollByViewportFraction', () {
     testWidgets('无 Scrollable 祖先返回 false', (WidgetTester tester) async {
       late BuildContext ctx;
       await tester.pumpWidget(MaterialApp(
@@ -26,7 +26,7 @@ void main() {
         }),
       ));
       expect(
-          HibikiFocusScroll.scrollByViewportFraction(ctx, null, 0.8), isFalse);
+          FushiFocusScroll.scrollByViewportFraction(ctx, null, 0.8), isFalse);
     });
 
     testWidgets('有 Scrollable 时滚动并返回 true；已到底返回 false',
@@ -55,7 +55,7 @@ void main() {
       ));
       final double vp = controller.position.viewportDimension;
       expect(
-          HibikiFocusScroll.scrollByViewportFraction(
+          FushiFocusScroll.scrollByViewportFraction(
               itemCtx, AxisDirection.down, 0.8),
           isTrue);
       await tester.pumpAndSettle();
@@ -64,7 +64,7 @@ void main() {
       controller.jumpTo(controller.position.maxScrollExtent);
       await tester.pump();
       expect(
-          HibikiFocusScroll.scrollByViewportFraction(
+          FushiFocusScroll.scrollByViewportFraction(
               itemCtx, AxisDirection.down, 0.8),
           isFalse);
     });
@@ -96,7 +96,7 @@ void main() {
         ),
       ));
       final double vp = controller.position.viewportDimension;
-      expect(HibikiFocusScroll.scrollPrimary(ctx, 0.9), isTrue);
+      expect(FushiFocusScroll.scrollPrimary(ctx, 0.9), isTrue);
       await tester.pumpAndSettle();
       expect(controller.offset, closeTo(vp * 0.9, 1.0));
     });
@@ -110,7 +110,7 @@ void main() {
           return const SizedBox();
         }),
       ));
-      expect(HibikiFocusScroll.scrollPrimary(ctx, 0.9), isFalse);
+      expect(FushiFocusScroll.scrollPrimary(ctx, 0.9), isFalse);
     });
 
     testWidgets('wantAxis 与 position.axis 不匹配返回 false（垂直页 left/right 不误翻）',
@@ -138,7 +138,7 @@ void main() {
         ),
       ));
       expect(
-          HibikiFocusScroll.scrollByViewportFraction(
+          FushiFocusScroll.scrollByViewportFraction(
               itemCtx, AxisDirection.right, 0.8),
           isFalse);
     });

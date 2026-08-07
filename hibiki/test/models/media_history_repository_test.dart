@@ -5,8 +5,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
 
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
@@ -37,7 +37,7 @@ MediaItem _item({
 }
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late MediaHistoryRepository repo;
 
   setUp(() async {

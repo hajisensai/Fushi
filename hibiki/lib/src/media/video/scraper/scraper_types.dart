@@ -278,7 +278,7 @@ class ScrapedMediaImage {
 /// 合集刮削此前只产出一张海报路径（`downloadCollectionCover` 返回 String），资料与
 /// 附加图无处安放。本类型把三样东西一次带回给调用方写库：封面、附加图组、条目资料。
 ///
-/// 为什么由调用方写库而不是本层直接写：刮削 service 刻意不持有 [HibikiDatabase]
+/// 为什么由调用方写库而不是本层直接写：刮削 service 刻意不持有 [FushiDatabase]
 /// （见 `cover_scraper_service.dart` 顶注），不该为几列写入把整个数据库拖进它的依赖面。
 class CollectionScrapeResult {
   const CollectionScrapeResult({

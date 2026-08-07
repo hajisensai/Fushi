@@ -114,11 +114,11 @@ const MangaOcrRemoteTarget _unknownReadinessTarget = MangaOcrRemoteTarget(
 );
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late Directory imageDir;
 
   setUp(() {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     imageDir = Directory.systemTemp.createTempSync('manga_ocr_remote_wiz');
     File(p.join(imageDir.path, 'p001.jpg')).writeAsBytesSync(<int>[1, 2, 3]);
   });

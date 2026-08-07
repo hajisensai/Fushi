@@ -14,8 +14,8 @@ import 'package:fushi_core/fushi_core.dart';
 ///  ③ 新列可写可读可清；
 ///  ④ user_version 升到当前代码 schemaVersion。
 void main() {
-  Future<HibikiDatabase> openV60Db() async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+  Future<FushiDatabase> openV60Db() async {
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (rawDb) {
           rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -64,7 +64,7 @@ CREATE TABLE media_collection_items (
   }
 
   test('v61：media_collections 加 cover_path，既有合集行零破坏且新列全 NULL', () async {
-    final HibikiDatabase db = await openV60Db();
+    final FushiDatabase db = await openV60Db();
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
@@ -90,7 +90,7 @@ CREATE TABLE media_collection_items (
   });
 
   test('v61：新列可写可读可清', () async {
-    final HibikiDatabase db = await openV60Db();
+    final FushiDatabase db = await openV60Db();
 
     await db.updateMediaCollectionCoverPath(7, r'D:\covers\collections\7.jpg');
     expect((await db.getMediaCollectionById(7))?.coverPath,

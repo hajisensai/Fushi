@@ -12,7 +12,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:fushi/src/sync/yomitan_api_server.dart';
 
-class _FakeLookup implements HibikiRemoteLookupService {
+class _FakeLookup implements FushiRemoteLookupService {
   @override
   Future<DictionarySearchResult?> searchDictionary({
     required String term,

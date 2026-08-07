@@ -15,7 +15,7 @@ int _now() => DateTime.now().millisecondsSinceEpoch;
 
 /// Exports [srcDb] (in [srcDir]) to a backup zip at [zipPath].
 Future<void> _exportZip(
-  HibikiDatabase srcDb,
+  FushiDatabase srcDb,
   String srcDir,
   String zipPath,
 ) async {
@@ -50,14 +50,14 @@ void main() {
   test('union: device keeps its books, backup adds the missing ones', () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     await cur.insertEpubBook(_book('local-only'));
     await cur.insertEpubBook(_book('shared'));
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     await src.insertEpubBook(_book('shared'));
     await src.insertEpubBook(_book('backup-only'));
     final zipDir = await _tempDir('mg_zip_');
@@ -71,7 +71,7 @@ void main() {
       zipPath: zip,
     );
 
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final keys = (await after.getAllEpubBooks()).map((b) => b.bookKey).toSet();
     expect(keys, <String>{'local-only', 'shared', 'backup-only'});
@@ -90,7 +90,7 @@ void main() {
       () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     await cur.setReadingStatistic(ReadingStatisticsCompanion.insert(
       title: 'A',
       dateKey: '2026-01-01',
@@ -102,7 +102,7 @@ void main() {
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     await src.setReadingStatistic(ReadingStatisticsCompanion.insert(
       title: 'A',
       dateKey: '2026-01-01',
@@ -122,7 +122,7 @@ void main() {
     await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final rows = await after.getAllReadingStatistics();
     expect(rows, hasLength(1));
@@ -134,7 +134,7 @@ void main() {
       () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     await cur.addHourlyReadingTime(
         dateKey: '2026-01-01',
         hour: 9,
@@ -151,7 +151,7 @@ void main() {
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     await src.addHourlyReadingTime(
         dateKey: '2026-01-01',
         hour: 9,
@@ -174,7 +174,7 @@ void main() {
     await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final rows = await after.getAllReadingHourlyLogs();
     expect(rows, hasLength(3));
@@ -204,7 +204,7 @@ void main() {
       () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     await cur.setReadingStatistic(ReadingStatisticsCompanion.insert(
       title: 'BookA',
       dateKey: '2026-02-02',
@@ -216,7 +216,7 @@ void main() {
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     // Two DIFFERENT titles, SAME dateKey.
     await src.setReadingStatistic(ReadingStatisticsCompanion.insert(
       title: 'BookA',
@@ -241,7 +241,7 @@ void main() {
     await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final rows = await after.getAllReadingStatistics();
     // Two distinct (title, dateKey) rows — NOT folded into one.
@@ -255,14 +255,14 @@ void main() {
       () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     await cur.setMiningCount(
         sourceType: 'book', dateKey: '2026-03-03', count: 5);
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     await src.setMiningCount(
         sourceType: 'book', dateKey: '2026-03-03', count: 3);
     final zipDir = await _tempDir('mg_zip_');
@@ -276,7 +276,7 @@ void main() {
     await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final rows = await after.getMiningStatisticsBySource('book');
     expect(rows, hasLength(1));
@@ -287,7 +287,7 @@ void main() {
       () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     // Device: lookup 10, mine 2 on Book A; a no-book lookup bucket (title='').
     await cur.setLookupCount(
       bookKey: 'keyA',
@@ -313,7 +313,7 @@ void main() {
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     // Backup: lookup 4 (lower), mine 9 (higher) on the same Book A bucket, and a
     // brand-new Book B bucket the device lacks.
     await src.setLookupCount(
@@ -349,7 +349,7 @@ void main() {
     await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final rows = await after.getLookupMiningCountersBySource('book');
     final byTitle = {for (final r in rows) r.title: r};
@@ -367,7 +367,7 @@ void main() {
   test('favorite words dedupe-union keeps earlier createdAt', () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     await cur.addFavoriteWord(
       expression: '表現',
       reading: 'ひょうげん',
@@ -379,7 +379,7 @@ void main() {
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     await src.addFavoriteWord(
       expression: '表現',
       reading: 'ひょうげん',
@@ -403,7 +403,7 @@ void main() {
     await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final all = await after.getAllFavoriteWords();
     expect(all, hasLength(2)); // dup dropped, 'new' added
@@ -415,7 +415,7 @@ void main() {
       () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     // Device already has SOME tags so its autoincrement ids differ from src.
     await cur.createTag('existing-a', 0xFF111111);
     await cur.createTag('existing-b', 0xFF222222);
@@ -424,7 +424,7 @@ void main() {
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     final int srcTagId = await src.createTag('shared-tag', 0xFF333333);
     await src.insertEpubBook(_book('book1'));
     await src.addTagToBook('book1', srcTagId);
@@ -437,7 +437,7 @@ void main() {
     await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     // The new tag landed with a FRESH id (not the src id).
     final tagRows = await after
@@ -464,7 +464,7 @@ void main() {
       () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     // Device already has a profile so its ids diverge from src.
     await cur.insertProfile(
         ProfilesCompanion.insert(name: 'Default', createdAt: 1, updatedAt: 1));
@@ -473,7 +473,7 @@ void main() {
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     final int srcProfileId = await src.insertProfile(
         ProfilesCompanion.insert(name: 'Reading', createdAt: 2, updatedAt: 2));
     await src.upsertProfileSetting(ProfileSettingsCompanion.insert(
@@ -493,7 +493,7 @@ void main() {
     await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final pr = await after
         .customSelect("SELECT id FROM profiles WHERE name = 'Reading'")
@@ -533,7 +533,7 @@ void main() {
       () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     await cur.addMinedSentence(
       source: 'book',
       dateKey: '2026-01-01',
@@ -547,7 +547,7 @@ void main() {
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     // Same fingerprint (duplicate) — must be dropped.
     await src.into(src.minedSentences).insert(MinedSentencesCompanion.insert(
           source: 'book',
@@ -572,7 +572,7 @@ void main() {
     await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final rows = await after.getAllMinedSentences();
     expect(rows, hasLength(2)); // dup dropped, distinct one added
@@ -582,7 +582,7 @@ void main() {
       () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     await cur.insertEpubBook(_book('lwwbook'));
     await cur.upsertReaderPosition(ReaderPositionsCompanion.insert(
       bookKey: 'lwwbook',
@@ -594,7 +594,7 @@ void main() {
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     await src.insertEpubBook(_book('lwwbook'));
     await src.upsertReaderPosition(ReaderPositionsCompanion.insert(
       bookKey: 'lwwbook',
@@ -611,7 +611,7 @@ void main() {
     await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final pos = await after.getReaderPosition('lwwbook');
     expect(pos!.sectionIndex, 9); // backup (newer) won
@@ -620,7 +620,7 @@ void main() {
     // Now re-merge a backup whose updatedAt is OLDER — must not clobber.
     final src2Dir = await _tempDir('mg_src2_');
     addTearDown(() => cleanupTempDir(src2Dir));
-    final src2 = HibikiDatabase(src2Dir.path);
+    final src2 = FushiDatabase(src2Dir.path);
     await src2.insertEpubBook(_book('lwwbook'));
     await src2.upsertReaderPosition(ReaderPositionsCompanion.insert(
       bookKey: 'lwwbook',
@@ -641,7 +641,7 @@ void main() {
       () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     await cur.close();
 
     // This device's books tree: one existing file with LOCAL content.
@@ -653,7 +653,7 @@ void main() {
     // Backup carries the SAME relative file (different content) + a NEW file.
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     final srcBooks = await _tempDir('mg_srcbooks_');
     addTearDown(() => cleanupTempDir(srcBooks));
     await File(p.join(srcBooks.path, 'shared.txt')).writeAsString('BACKUP');
@@ -684,13 +684,13 @@ void main() {
       () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     await cur.insertEpubBook(_book('owned'));
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     // Bookmark whose owning book is NOT in the backup (and not on device).
     await src.insertEpubBook(_book('owned'));
     await src.customStatement(
@@ -719,7 +719,7 @@ void main() {
     await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final labels =
         (await after.customSelect('SELECT label FROM bookmarks').get())
@@ -740,7 +740,7 @@ void main() {
       () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     await cur.insertEpubBook(_book('survivor'));
     await cur.close();
 
@@ -762,7 +762,7 @@ void main() {
     );
 
     // Live DB still has exactly the original content.
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final keys = (await after.getAllEpubBooks()).map((b) => b.bookKey).toSet();
     expect(keys, <String>{'survivor'});
@@ -772,7 +772,7 @@ void main() {
       () async {
     final tDir = await _tempDir('mg_eng_');
     addTearDown(() => cleanupTempDir(tDir));
-    final target = HibikiDatabase(tDir.path);
+    final target = FushiDatabase(tDir.path);
     addTearDown(target.close);
     await target.insertEpubBook(_book('orig'));
 
@@ -780,7 +780,7 @@ void main() {
     // a book that succeeds, then force a failure, and assert nothing committed.
     final sDir = await _tempDir('mg_engsrc_');
     addTearDown(() => cleanupTempDir(sDir));
-    final srcDb = HibikiDatabase(sDir.path);
+    final srcDb = FushiDatabase(sDir.path);
     await srcDb.insertEpubBook(_book('from-src'));
     await srcDb.close();
 
@@ -811,13 +811,13 @@ void main() {
       () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     await cur.insertEpubBook(_book('device-book'));
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     await src.insertEpubBook(_book('backup-book'));
     final zipDir = await _tempDir('mg_zip_');
     addTearDown(() => cleanupTempDir(zipDir));
@@ -827,7 +827,7 @@ void main() {
 
     await BackupService.restoreBackup(dbDirectory: curDir.path, zipPath: zip);
 
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     // OVERWRITE: only the backup's book survives (device book gone).
     final keys = (await after.getAllEpubBooks()).map((b) => b.bookKey).toSet();
@@ -839,7 +839,7 @@ void main() {
       () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     await cur.insertEpubBook(_book('deleted-book'));
     await cur.insertEpubBook(_book('kept-book'));
     // User deletes one book → a tombstone is recorded.
@@ -850,7 +850,7 @@ void main() {
     // An OLDER backup still carries the deleted book plus a brand-new one.
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     await src.insertEpubBook(_book('deleted-book'));
     await src.insertEpubBook(_book('new-book'));
     final zipDir = await _tempDir('mg_zip_');
@@ -862,7 +862,7 @@ void main() {
     await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final keys = (await after.getAllEpubBooks()).map((b) => b.bookKey).toSet();
     // deleted-book stays gone; the new book is still added.
@@ -872,7 +872,7 @@ void main() {
   test('re-adding a deleted book clears its tombstone', () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     addTearDown(cur.close);
     await cur.insertEpubBook(_book('b'));
     await cur.deleteEpubBook('b', tombstone: true);
@@ -885,7 +885,7 @@ void main() {
   test('previewMergeRestore counts new books and updated positions', () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     addTearDown(cur.close);
     await cur.insertEpubBook(_book('shared'));
     await cur.upsertReaderPosition(ReaderPositionsCompanion.insert(
@@ -897,7 +897,7 @@ void main() {
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     await src.insertEpubBook(_book('shared'));
     await src.insertEpubBook(_book('new1'));
     await src.insertEpubBook(_book('new2'));
@@ -934,14 +934,14 @@ void main() {
       () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     addTearDown(cur.close);
     // The device deleted 'gone' earlier (tombstoned) and never had 'fresh'.
     await cur.insertBookTombstone('gone');
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     await src.insertEpubBook(_book('gone'));
     await src.insertEpubBook(_book('fresh'));
     final zipDir = await _tempDir('mg_zip_');
@@ -964,7 +964,7 @@ void main() {
       '(TODO-1204 后续)', () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     // Device once had "A" stats then the user deleted them -> tombstone, and a
     // surviving "Keep" book.
     await cur.addReadingStatistic(
@@ -982,7 +982,7 @@ void main() {
     // An old backup still carries A's stats + counters.
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     await src.addReadingStatistic(
         title: 'A', dateKey: '2026-01-01', charsRead: 999, timeMs: 99999);
     await src.addLookupCount(
@@ -1001,7 +1001,7 @@ void main() {
       zipPath: zip,
     );
 
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final Set<String> titles = (await after.getAllReadingStatistics())
         .map((ReadingStatisticRow r) => r.title)
@@ -1022,7 +1022,7 @@ void main() {
     // 真正检验 remap（不是靠 id 数字巧合相等蒙混）。Dupe(playlist) 含成员 keep-target。
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     await cur.createMediaCollection('Filler');
     final int tDupe =
         await cur.createMediaCollection('Dupe', collectionType: 'playlist');
@@ -1033,7 +1033,7 @@ void main() {
     // NewOne(collection)（src id 2）含 b1。
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     final int sDupe =
         await src.createMediaCollection('Dupe', collectionType: 'playlist');
     await src.addToCollection(sDupe, MediaKind.video, 'from-src');
@@ -1054,7 +1054,7 @@ void main() {
       zipPath: zip,
     );
 
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final List<MediaCollectionRow> cols = await after.getAllMediaCollections();
     // Dupe 按自然键幂等（不重复），NewOne 新增 → 连同 Filler 恰好三个。
@@ -1082,12 +1082,12 @@ void main() {
   test('media collections merge: 重复导入同一备份幂等（成员不翻倍）', () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     final int sCol =
         await src.createMediaCollection('Show', collectionType: 'playlist');
     await src.addToCollection(sCol, MediaKind.video, 'e1');
@@ -1104,7 +1104,7 @@ void main() {
     await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final List<MediaCollectionRow> cols = await after.getAllMediaCollections();
     expect(cols, hasLength(1), reason: '同名同类型合集第二次导入必须复用，不新建');

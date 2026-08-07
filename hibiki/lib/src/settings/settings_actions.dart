@@ -48,8 +48,8 @@ Future<bool> showSettingsConfirmationDialog(
   final bool? confirmed = await showAppDialog<bool>(
     context: context,
     builder: (BuildContext ctx) {
-      final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
-      return HibikiDialogFrame(
+      final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+      return FushiDialogFrame(
         maxWidth: 420,
         maxHeightFactor: 0.86,
         insetPadding: EdgeInsets.symmetric(
@@ -57,7 +57,7 @@ Future<bool> showSettingsConfirmationDialog(
           vertical: tokens.spacing.card,
         ),
         scrollable: false,
-        child: HibikiModalSheetFrame(
+        child: FushiModalSheetFrame(
           title: title,
           scrollable: true,
           bodyPadding: EdgeInsets.fromLTRB(
@@ -268,7 +268,7 @@ Widget buildLanguageSelector(SettingsContext settingsContext) {
     selected: current,
     options: <AdaptiveSettingsPickerOption<String>>[
       for (final MapEntry<String, String> entry
-          in HibikiLocalisations.localeNames.entries)
+          in FushiLocalisations.localeNames.entries)
         AdaptiveSettingsPickerOption<String>(
           value: entry.key,
           label: entry.value,
@@ -304,8 +304,8 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
   final AppModel appModel = settingsContext.appModel;
   final Color systemColor =
       appModel.systemPrimaryColor ?? const Color(0xFF1F4959);
-  final HibikiDesignTokens tokens =
-      HibikiDesignTokens.of(settingsContext.context);
+  final FushiDesignTokens tokens =
+      FushiDesignTokens.of(settingsContext.context);
 
   return AdaptiveSettingsRow(
     title: t.reader_theme,
@@ -317,7 +317,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
       spacing: tokens.spacing.gap,
       runSpacing: tokens.spacing.gap,
       children: <Widget>[
-        HibikiSchemeSwatch(
+        FushiSchemeSwatch(
           colors: hibikiSchemeSwatchColors(
             buildHibikiColorScheme(
               seedColor: systemColor,
@@ -326,7 +326,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
           ),
           size: _swatchSize,
           selected: appModel.appThemeKey == 'system-theme',
-          // Size inherited from HibikiSchemeSwatch's badge IconTheme (14) so the
+          // Size inherited from FushiSchemeSwatch's badge IconTheme (14) so the
           // icon fits the smaller inner dot; an explicit size here would override
           // it and crowd the dot.
           overlay: const Icon(Icons.auto_awesome_outlined),
@@ -344,7 +344,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
                     DynamicSchemeVariant variant
                   })>
               entry) {
-            return HibikiSchemeSwatch(
+            return FushiSchemeSwatch(
               colors: hibikiSchemeSwatchColors(
                 buildHibikiColorScheme(
                   seedColor: entry.value.seed,
@@ -370,7 +370,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
         // 不再因自定义带 label 而比预设高）。主题名仍可在长按/编辑按钮进入的编辑页查看修改。
         ...appModel.customThemes.map((CustomThemeEntry e) {
           final String key = 'custom-theme:${e.id}';
-          return HibikiSchemeSwatch(
+          return FushiSchemeSwatch(
             colors: hibikiSchemeSwatchColors(
               buildHibikiColorScheme(
                 seedColor: Color(e.seed),
@@ -407,7 +407,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
         // TODO-930 M1: 末尾「+新建」圈。新建一个空 entry（种子取当前全局明暗对应
         // 的品牌默认色，沿用 928），upsert 后进编辑页编辑它。焦点/手柄用户单击
         // （Enter / A）即可新建，无需长按。
-        HibikiSchemeSwatch(
+        FushiSchemeSwatch(
           colors: hibikiSchemeSwatchColors(
             buildHibikiColorScheme(
               seedColor: const Color(kCustomThemeDefaultSeed),
@@ -432,11 +432,11 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
         // TODO-930 M1: 焦点/手柄没有长按，故保留一个焦点可达的「编辑」按钮，编辑
         // 当前活跃的自定义主题（先切到某个自定义 swatch，再用此按钮编辑它）。
         // 列表为空时无活跃 entry，按钮新建一个再编辑。
-        // Material 祖先：Cupertino 渲染器下没有 Material，HibikiIconButton 的
+        // Material 祖先：Cupertino 渲染器下没有 Material，FushiIconButton 的
         // InkWell 需要 Material 祖先；各 swatch 自带 Material，独立按钮要自己补。
         Material(
           type: MaterialType.transparency,
-          child: HibikiIconButton(
+          child: FushiIconButton(
             icon: Icons.edit_outlined,
             tooltip: t.edit_custom_theme,
             constraints: BoxConstraints.tightFor(

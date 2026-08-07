@@ -20,13 +20,13 @@ import 'package:fushi_core/fushi_core.dart';
 /// 痕迹、temp 文件按 keep 语义处置、拒绝对已安装扩展预览、崩溃标记会被清理。
 void main() {
   late Directory root;
-  late HibikiDatabase database;
+  late FushiDatabase database;
   late _PreviewRuntime runtime;
   late MihonManager manager;
 
   setUp(() async {
     root = await Directory.systemTemp.createTemp('hibiki-mihon-preview-');
-    database = HibikiDatabase.forTesting(NativeDatabase.memory());
+    database = FushiDatabase.forTesting(NativeDatabase.memory());
     runtime = _PreviewRuntime();
     manager = MihonManager(
       database: database,

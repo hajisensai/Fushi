@@ -34,7 +34,7 @@ void main() {
     expect(source, contains('TextStyle _videoControlTitleStyle()'));
 
     // TODO-067:控制条尺寸 getter 必须乘以 _videoUiScale,让顶/底栏图标、按钮条高度、
-    // 播放键、标题字号都随「界面大小」缩放(视频页被 HibikiAppUiScaleNeutralizer 中和,
+    // 播放键、标题字号都随「界面大小」缩放(视频页被 FushiAppUiScaleNeutralizer 中和,
     // 否则控制条不吃缩放)。撤掉任一 * _videoUiScale 即转红。
     expect(
       source,
@@ -153,7 +153,7 @@ void main() {
     expect(end, greaterThan(helper));
     final String helperBody = source.substring(helper, end);
 
-    expect(helperBody, contains('HibikiAppUiScaleNeutralizer('),
+    expect(helperBody, contains('FushiAppUiScaleNeutralizer('),
         reason: 'fullscreen route must cancel the app-wide UI scale too');
     expect(helperBody, contains('VideoStateInheritedWidget('),
         reason: 'fullscreen route must preserve media_kit video state');

@@ -45,7 +45,7 @@ List<(String, int, int)> splitWatchTime(DateTime start, DateTime now) {
   return <(String, int, int)>[(_dateKey(start), start.hour, elapsed)];
 }
 
-String _dateKey(DateTime d) => HibikiTimeFormat.dayKey(d);
+String _dateKey(DateTime d) => FushiTimeFormat.dayKey(d);
 
 /// 视频观看统计采集器：观看时长（仅播放时累加）+ 字幕字数（单调去重）+ 完成标记。
 ///

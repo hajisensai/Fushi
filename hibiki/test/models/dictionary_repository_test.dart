@@ -6,15 +6,15 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
 
 /// BUG-712 P2：数一数整表历史重写的真实次数，让 debounce 用例能断言
 /// 「N 次连续变更 → 恰好 1 次 DB 写」，而不是只从时序侧面猜。
-class _CountingDb extends HibikiDatabase {
+class _CountingDb extends FushiDatabase {
   _CountingDb() : super.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
   int replaceAllCalls = 0;
@@ -63,7 +63,7 @@ DictionarySearchResult _result({
 }
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late DictionaryRepository repo;
   int rebuildCount = 0;
 

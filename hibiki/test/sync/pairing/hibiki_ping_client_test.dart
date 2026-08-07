@@ -21,7 +21,7 @@ void main() {
       );
     });
 
-    final HibikiPingResult? r =
+    final FushiPingResult? r =
         await fetchHibikiPing('https://host:38765', httpClient: mock);
     expect(r, isNotNull);
     expect(r!.isHibiki, isTrue);
@@ -35,7 +35,7 @@ void main() {
     final MockClient mock = MockClient((http.Request req) async {
       return http.Response(jsonEncode(<String, dynamic>{'app': 'other'}), 200);
     });
-    final HibikiPingResult? r =
+    final FushiPingResult? r =
         await fetchHibikiPing('http://host:8080', httpClient: mock);
     expect(r, isNull);
   });
@@ -43,7 +43,7 @@ void main() {
   test('非 200 → null', () async {
     final MockClient mock =
         MockClient((http.Request req) async => http.Response('nope', 404));
-    final HibikiPingResult? r =
+    final FushiPingResult? r =
         await fetchHibikiPing('http://host:8080', httpClient: mock);
     expect(r, isNull);
   });
@@ -59,7 +59,7 @@ void main() {
         200,
       );
     });
-    final HibikiPingResult? r =
+    final FushiPingResult? r =
         await fetchHibikiPing('http://host:38765', httpClient: mock);
     expect(r, isNotNull);
     expect(r!.tlsEnabled, isFalse);

@@ -25,7 +25,7 @@ class CollectionRelationsSection extends StatefulWidget {
     super.key,
   });
 
-  final HibikiDatabase database;
+  final FushiDatabase database;
   final int collectionId;
 
   /// 打开已绑定的本地合集详情（调用方持导航上下文）。
@@ -75,7 +75,7 @@ class _CollectionRelationsSectionState
   }
 
   /// 未绑定边的点击菜单：去下载 / 绑定到已有合集。坐标经 Overlay
-  /// globalToLocal 消掉 HibikiAppUiScale 缩放（BUG-781 同族纪律）。
+  /// globalToLocal 消掉 FushiAppUiScale 缩放（BUG-781 同族纪律）。
   Future<void> _showUnboundMenu(
     CollectionRelationRow relation,
     Offset globalPosition,
@@ -150,7 +150,7 @@ class _CollectionRelationsSectionState
     if (chosen == null || !mounted) return;
     await widget.database.bindCollectionRelationTarget(relation.id, chosen.id);
     if (!mounted) return;
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.collection_relation_bound(name: chosen.name),
       severity: ToastSeverity.success,
     );
@@ -200,7 +200,7 @@ class _CollectionRelationsSectionState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             ClipRRect(
-              borderRadius: HibikiBorderRadius.card,
+              borderRadius: FushiBorderRadius.card,
               child: SizedBox(
                 width: _cardWidth,
                 height: _coverHeight,
@@ -256,12 +256,12 @@ class _CollectionRelationsSectionState
   Widget _coverPlaceholder(BuildContext context) => ShelfCoverPlaceholder(
         icon: Icons.movie_outlined,
         iconSize: 28,
-        backgroundColor: HibikiDesignTokens.of(context).surfaces.overlay,
+        backgroundColor: FushiDesignTokens.of(context).surfaces.overlay,
       );
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return FutureBuilder<List<CollectionRelationRow>>(
       key: ValueKey<int>(_refresh),
       future: widget.database.getCollectionRelations(widget.collectionId),

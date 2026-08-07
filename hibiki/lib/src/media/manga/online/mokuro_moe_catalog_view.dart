@@ -79,7 +79,7 @@ class MokuroMoeCatalogView extends ConsumerStatefulWidget {
   });
 
   /// 目标数据库（查已在库书目用；下载落库由队列持有的 db 完成）。
-  final HibikiDatabase db;
+  final FushiDatabase db;
 
   /// 测试用 client（null = 按偏好 base URL 构造真实 client）。
   final MokuroMoeClient? clientOverride;
@@ -226,7 +226,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     }
     setState(() {});
     if (completed) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.manga_ocr_wizard_done,
         severity: ToastSeverity.success,
       );
@@ -306,7 +306,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
         .toList();
     _queue.enqueue(seriesName: series.name, volumeNames: volumes);
     setState(() => _selectedVolumes.clear());
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.manga_online_queue_added,
       severity: ToastSeverity.info,
     );
@@ -316,7 +316,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     if (!_enabled) {
       return Center(
         child: Padding(
@@ -357,7 +357,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
   /// 页面语境的底部动作行：照 book_css_editor_page.dart 底栏的
   /// OutlinedButton（次要）+ FilledButton（主要）范式；关闭按钮只属于
   /// 对话框语境，这里不画。
-  Widget _buildEmbeddedActions(HibikiDesignTokens tokens) {
+  Widget _buildEmbeddedActions(FushiDesignTokens tokens) {
     return Padding(
       padding: EdgeInsets.only(top: tokens.spacing.gap),
       child: Row(
@@ -377,7 +377,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     );
   }
 
-  Widget _buildBrowse(HibikiDesignTokens tokens) {
+  Widget _buildBrowse(FushiDesignTokens tokens) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -397,7 +397,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     );
   }
 
-  Widget _buildBrowseBody(HibikiDesignTokens tokens) {
+  Widget _buildBrowseBody(FushiDesignTokens tokens) {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -439,7 +439,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     );
   }
 
-  Widget _buildSeriesTile(HibikiDesignTokens tokens, MokuroMoeSeries series) {
+  Widget _buildSeriesTile(FushiDesignTokens tokens, MokuroMoeSeries series) {
     // 无封面占位：MD3 tokens 面色（overlay = 最高 tonal 层），不裸引 scheme 角色。
     final Widget placeholder = ColoredBox(
       color: tokens.surfaces.overlay,
@@ -480,7 +480,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     );
   }
 
-  Widget _buildSeries(HibikiDesignTokens tokens) {
+  Widget _buildSeries(FushiDesignTokens tokens) {
     final MokuroMoeSeries? series = _series;
     if (series == null) return const SizedBox.shrink();
     return Column(
@@ -498,7 +498,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     );
   }
 
-  Widget _buildVolumeRow(HibikiDesignTokens tokens, MokuroMoeVolume volume) {
+  Widget _buildVolumeRow(FushiDesignTokens tokens, MokuroMoeVolume volume) {
     final MokuroMoeSeries? series = _series;
     final bool imported = _isImported(volume.name);
     final MokuroMoeDownloadTask? pending =
@@ -579,7 +579,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
 
   /// 共享队列的内联进度面板（有未完成任务时显示）：`x/y · 当前卷阶段` +
   /// 进度条 + 取消当前卷。与「下载」页任务 tab 同源（同队列 + 同换算）。
-  Widget _buildQueuePanel(HibikiDesignTokens tokens) {
+  Widget _buildQueuePanel(FushiDesignTokens tokens) {
     final MokuroMoeDownloadTask? running = _queue.runningTask;
     final String label = running == null
         ? t.download_status_queued
@@ -602,7 +602,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
                 ),
               ),
               if (running != null)
-                HibikiIconButton(
+                FushiIconButton(
                   tooltip: t.dialog_cancel,
                   icon: Icons.close,
                   size: 18,

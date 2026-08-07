@@ -10,15 +10,15 @@ import 'package:fushi_core/fushi_core.dart';
 //   1) 默认哨兵 0（= 只当前行 = 今天单行观感，never-break userspace）；
 //   2) 读写往返 + 跨 reload 持久化 + 归一夹到 [0, 3]；
 //   3) session/channel/app_model/settings 各层把 N 接对（源级守卫，原生渲染另需真机）。
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
 
 void main() {
   group('PreferencesRepository 上下文行数（对称单值，0=只当前行）', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late PreferencesRepository repo;
 
     setUp(() async {

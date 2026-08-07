@@ -17,7 +17,7 @@ DateTime _uniqueSubtitleCacheMtime(String seed) {
 /// Fake 库服务：视频方法真实、其他方法存根。
 ///
 /// 包含一个 id 含斜杠的视频（bookUid = `video/sample`），指向临时视频文件和字幕文件。
-class _FakeLibraryService implements HibikiLibraryHostService {
+class _FakeLibraryService implements FushiLibraryHostService {
   @override
   Future<List<RemoteActivityEvent>> listActivityEvents(
           {int limit = 100}) async =>
@@ -308,7 +308,7 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 }
 
 void main() {
-  late HibikiSyncServer server;
+  late FushiSyncServer server;
   late _FakeLibraryService lib;
   late _EmbeddedSubtitleFfmpegBackend ffmpeg;
   const String token = 'test-token-video';
@@ -319,7 +319,7 @@ void main() {
     ffmpeg = _EmbeddedSubtitleFfmpegBackend();
     setFfmpegBackendForTesting(ffmpeg);
     lib = _FakeLibraryService();
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir: Directory.systemTemp.createTempSync('hbk_vid_srv').path,
       port: 0,
       token: token,
@@ -740,7 +740,7 @@ void main() {
   // ── no service injected ───────────────────────────────────────────────────────
 
   test('无 service 注入时视频端点返回 404', () async {
-    final HibikiSyncServer bare = HibikiSyncServer(
+    final FushiSyncServer bare = FushiSyncServer(
       syncDataDir: Directory.systemTemp.createTempSync('hbk_vid_bare').path,
       port: 0,
       token: token,

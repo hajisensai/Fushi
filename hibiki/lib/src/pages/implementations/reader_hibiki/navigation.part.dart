@@ -65,7 +65,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
         // 里建/启，而这条路径正是「JS 迟迟不回 onRestoreComplete」——遮罩已摘、书能
         // 读，却一秒都不记时长（字数照常累计 ⇒ 速度又爆表）。
         _ensureReadingTimeTracker();
-        HibikiToast.show(
+        FushiToast.show(
             msg: t.reader_content_timeout, severity: ToastSeverity.warning);
       },
     );
@@ -729,7 +729,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     );
   }
 
-  Future<void> _initSpreadMap(HibikiDatabase db) async {
+  Future<void> _initSpreadMap(FushiDatabase db) async {
     if (_book == null || _settings == null) return;
     final String bookKey = widget.bookKey;
     if (_settings!.spreadMode == 'auto') {
@@ -742,7 +742,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     }
   }
 
-  Future<void> _runEdgeAnalysis(HibikiDatabase db, String bookKey) async {
+  Future<void> _runEdgeAnalysis(FushiDatabase db, String bookKey) async {
     if (_book == null) return;
     try {
       final Map<int, bool> results = await EpubSpreadAnalyzer.analyze(_book!);

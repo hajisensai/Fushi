@@ -116,8 +116,8 @@ void main() {
 
   group('displayTitleForVideo', () {
     test('显式 no-op：raw 列值即显示名（视频改名直写列）', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       await db.upsertVideoBook(
         VideoBooksCompanion.insert(

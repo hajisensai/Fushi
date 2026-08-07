@@ -23,13 +23,13 @@ void mockClipboard(WidgetTester tester, String? text) {
 }
 
 void main() {
-  group('HibikiGamepadKeyboard', () {
+  group('FushiGamepadKeyboard', () {
     testWidgets('A (ActivateIntent) on a focused key emits its character',
         (WidgetTester tester) async {
       final List<String> typed = <String>[];
       await tester.pumpWidget(buildTestApp(
-        HibikiFocusRoot(
-          child: HibikiGamepadKeyboard(
+        FushiFocusRoot(
+          child: FushiGamepadKeyboard(
             onChar: typed.add,
             onBackspace: () => typed.add('<BS>'),
           ),
@@ -37,8 +37,8 @@ void main() {
       ));
       await tester.pump();
 
-      final HibikiFocusController controller =
-          HibikiFocusRoot.controllerOf(tester.element(find.text('q')));
+      final FushiFocusController controller =
+          FushiFocusRoot.controllerOf(tester.element(find.text('q')));
       controller.ensureFocus();
       await tester.pump();
       expect(controller.activeId, isNotNull,
@@ -54,8 +54,8 @@ void main() {
         (WidgetTester tester) async {
       final List<String> typed = <String>[];
       await tester.pumpWidget(buildTestApp(
-        HibikiFocusRoot(
-          child: HibikiGamepadKeyboard(
+        FushiFocusRoot(
+          child: FushiGamepadKeyboard(
             onChar: typed.add,
             onBackspace: () {},
           ),
@@ -63,12 +63,12 @@ void main() {
       ));
       await tester.pump();
 
-      final HibikiFocusController controller =
-          HibikiFocusRoot.controllerOf(tester.element(find.text('q')));
+      final FushiFocusController controller =
+          FushiFocusRoot.controllerOf(tester.element(find.text('q')));
       controller.ensureFocus();
       await tester.pump();
 
-      expect(controller.move(HibikiFocusDirection.right), isTrue,
+      expect(controller.move(FushiFocusDirection.right), isTrue,
           reason: 'D-pad right moves q → w');
       await tester.pump();
       Actions.maybeInvoke<ActivateIntent>(
@@ -80,8 +80,8 @@ void main() {
     testWidgets('the ⇧ / abc key cycles lower → upper → symbols',
         (WidgetTester tester) async {
       await tester.pumpWidget(buildTestApp(
-        HibikiFocusRoot(
-          child: HibikiGamepadKeyboard(onChar: (_) {}, onBackspace: () {}),
+        FushiFocusRoot(
+          child: FushiGamepadKeyboard(onChar: (_) {}, onBackspace: () {}),
         ),
       ));
       await tester.pump();
@@ -107,8 +107,8 @@ void main() {
       int backspaces = 0;
       int submits = 0;
       await tester.pumpWidget(buildTestApp(
-        HibikiFocusRoot(
-          child: HibikiGamepadKeyboard(
+        FushiFocusRoot(
+          child: FushiGamepadKeyboard(
             onChar: typed.add,
             onBackspace: () => backspaces++,
             onSubmit: () => submits++,
@@ -133,16 +133,16 @@ void main() {
     testWidgets('paste key renders only when onPaste is provided',
         (WidgetTester tester) async {
       await tester.pumpWidget(buildTestApp(
-        HibikiFocusRoot(
-          child: HibikiGamepadKeyboard(onChar: (_) {}, onBackspace: () {}),
+        FushiFocusRoot(
+          child: FushiGamepadKeyboard(onChar: (_) {}, onBackspace: () {}),
         ),
       ));
       await tester.pump();
       expect(find.byIcon(Icons.content_paste_outlined), findsNothing);
 
       await tester.pumpWidget(buildTestApp(
-        HibikiFocusRoot(
-          child: HibikiGamepadKeyboard(
+        FushiFocusRoot(
+          child: FushiGamepadKeyboard(
               onChar: (_) {}, onBackspace: () {}, onPaste: () {}),
         ),
       ));
@@ -154,8 +154,8 @@ void main() {
         (WidgetTester tester) async {
       int pastes = 0;
       await tester.pumpWidget(buildTestApp(
-        HibikiFocusRoot(
-          child: HibikiGamepadKeyboard(
+        FushiFocusRoot(
+          child: FushiGamepadKeyboard(
               onChar: (_) {}, onBackspace: () {}, onPaste: () => pastes++),
         ),
       ));

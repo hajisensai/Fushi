@@ -39,7 +39,7 @@ void main() {
   // 刮削落盘点走 evictLocalCoverCache（需要 PaintingBinding）。
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late VideoBookRepository repo;
   late Directory tmp;
   late Directory collectionCovers;
@@ -48,7 +48,7 @@ void main() {
   late int posterDownloads;
 
   setUp(() async {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     repo = VideoBookRepository(db);
     tmp = await Directory.systemTemp.createTemp('member_cover_gate_');
     collectionCovers = Directory(p.join(tmp.path, 'collections'));

@@ -5,10 +5,10 @@ import 'package:fushi/src/utils/components/hibiki_list_tile.dart';
 import 'widget_test_helpers.dart';
 
 void main() {
-  group('HibikiListTile', () {
+  group('FushiListTile', () {
     testWidgets('renders title, subtitle and icon', (tester) async {
       await tester.pumpWidget(buildTestApp(
-        const HibikiListTile(
+        const FushiListTile(
           title: 'My Dictionary',
           subtitle: 'JMDict English',
           icon: Icons.book,
@@ -23,7 +23,7 @@ void main() {
 
     testWidgets('trailing only shows when selected', (tester) async {
       await tester.pumpWidget(buildTestApp(
-        const HibikiListTile(
+        const FushiListTile(
           title: 'Item',
           subtitle: 'Sub',
           icon: Icons.star,
@@ -35,7 +35,7 @@ void main() {
       expect(find.byIcon(Icons.check), findsNothing);
 
       await tester.pumpWidget(buildTestApp(
-        const HibikiListTile(
+        const FushiListTile(
           title: 'Item',
           subtitle: 'Sub',
           icon: Icons.star,
@@ -51,7 +51,7 @@ void main() {
     testWidgets('calls onTap callback', (tester) async {
       bool tapped = false;
       await tester.pumpWidget(buildTestApp(
-        HibikiListTile(
+        FushiListTile(
           title: 'Tap Me',
           subtitle: 'Sub',
           icon: Icons.touch_app,

@@ -31,8 +31,8 @@ void main() {
       ),
     );
 
-    expect(find.byType(HibikiOverlayScaffold), findsOneWidget);
-    expect(find.byType(HibikiPopupSurface), findsOneWidget);
-    expect(find.byType(HibikiCompactSearchRow), findsOneWidget);
+    expect(find.byType(FushiOverlayScaffold), findsOneWidget);
+    expect(find.byType(FushiPopupSurface), findsOneWidget);
+    expect(find.byType(FushiCompactSearchRow), findsOneWidget);
   });
 }

@@ -39,12 +39,12 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
   });
 
-  HibikiShortcutRegistry buildRegistry() =>
-      HibikiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
+  FushiShortcutRegistry buildRegistry() =>
+      FushiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
 
   Future<void> pumpGamepadView(
     WidgetTester tester,
-    HibikiShortcutRegistry registry,
+    FushiShortcutRegistry registry,
     ShortcutScope scope, {
     void Function(GamepadButton)? onEmptyGamepadTap,
     void Function(GamepadButton, List<ShortcutAction>)? onGamepadTap,
@@ -77,7 +77,7 @@ void main() {
 
   Future<void> pumpKeyboardView(
     WidgetTester tester,
-    HibikiShortcutRegistry registry,
+    FushiShortcutRegistry registry,
     ShortcutScope scope, {
     void Function(LogicalKeyboardKey)? onEmptyKeyTap,
     Size surfaceSize = const Size(1200, 2400),
@@ -107,7 +107,7 @@ void main() {
   testWidgets(
       'gamepad face buttons render with Xbox Kenney icons (A/B/X/Y) by default',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     await pumpGamepadView(tester, registry, ShortcutScope.reader);
 
     // The gamepad figure renders one keyed knob per known button.
@@ -127,7 +127,7 @@ void main() {
 
   testWidgets('PlayStation brand renders ✕○□△ Kenney face-button icons',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     await pumpGamepadView(tester, registry, ShortcutScope.reader,
         brand: GamepadBrand.playstation);
 
@@ -141,7 +141,7 @@ void main() {
   testWidgets(
       'Nintendo Switch brand icons keep ABXY physical swap (.a -> B icon, '
       '.b -> A icon)', (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     await pumpGamepadView(tester, registry, ShortcutScope.reader,
         brand: GamepadBrand.nintendoSwitch);
 
@@ -170,7 +170,7 @@ void main() {
 
   testWidgets('a bound gamepad button is tappable and routes onGamepadTap',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     // Seed a gamepad binding so its knob is bound + tappable.
     registry.updateBinding(
       ShortcutAction.readerToggleFurigana,
@@ -195,7 +195,7 @@ void main() {
 
   testWidgets('an unbound gamepad button routes onEmptyGamepadTap',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     GamepadButton? emptyTapped;
     await pumpGamepadView(
       tester,
@@ -212,7 +212,7 @@ void main() {
   testWidgets(
       'TODO-1060②: tapping an UNBOUND keycap fires onEmptyKeyTap (un-deferred)',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     LogicalKeyboardKey? tappedEmpty;
     await pumpKeyboardView(
       tester,
@@ -233,7 +233,7 @@ void main() {
   testWidgets(
       'empty keycap stays non-tappable when no onEmptyKeyTap is provided '
       '(back-compat)', (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     // No onEmptyKeyTap passed -> unbound keys must have no InkWell (old default).
     await pumpKeyboardView(tester, registry, ShortcutScope.reader);
     final Finder f9InkWell = find.descendant(

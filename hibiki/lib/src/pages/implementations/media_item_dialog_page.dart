@@ -10,7 +10,7 @@ import 'package:fushi/utils.dart';
 //
 // Every action carries a label + icon + onPressed. The three subtypes differ in
 // placement / weight in the below-cover action column:
-//   * [DialogQuickAction]  -> equal-width quick-action chip (HibikiActionChip).
+//   * [DialogQuickAction]  -> equal-width quick-action chip (FushiActionChip).
 //   * [DialogListAction]   -> a labelled list row under a divider.
 //   * [DialogDangerAction] -> a muted, centred destructive button at the bottom.
 
@@ -266,10 +266,10 @@ class MediaItemDialogFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final double screenHeight = MediaQuery.sizeOf(context).height;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -297,7 +297,7 @@ class MediaItemDialogFrame extends StatelessWidget {
                   title,
                   // TODO-2490：本弹窗是库页卡片长按/右键「看全名」的兜底路径——
                   // 卡上标题最多两行省略，这里再截断则超长条目名到处都看不全。
-                  // 外层 HibikiDialogFrame 默认可滚动且限高，不会撑出屏。
+                  // 外层 FushiDialogFrame 默认可滚动且限高，不会撑出屏。
                   style: tokens.type.pageTitle.copyWith(
                     color: colors.onSurface,
                     fontWeight: FontWeight.w700,
@@ -334,9 +334,9 @@ class MediaItemDialogFrame extends StatelessWidget {
                 if (quickActions.isNotEmpty) _buildQuickActions(tokens),
                 if (listActions.isNotEmpty) ...<Widget>[
                   SizedBox(height: tokens.spacing.gap),
-                  const HibikiDivider(),
+                  const FushiDivider(),
                   for (final DialogListAction action in listActions)
-                    HibikiListItem(
+                    FushiListItem(
                       minHeight: 44,
                       padding: EdgeInsets.zero,
                       leading: Icon(action.icon),
@@ -350,7 +350,7 @@ class MediaItemDialogFrame extends StatelessWidget {
                 ],
                 if (dangerActions.isNotEmpty) ...<Widget>[
                   SizedBox(height: tokens.spacing.gap),
-                  const HibikiDivider(),
+                  const FushiDivider(),
                   SizedBox(height: tokens.spacing.gap / 2),
                   for (final DialogDangerAction action in dangerActions)
                     Center(
@@ -381,7 +381,7 @@ class MediaItemDialogFrame extends StatelessWidget {
   /// 平分后低于此宽度就降级成竖排整行，避免 intrinsic-width 横排被 ellipsis 截断。
   static const double _quickActionMinChipWidth = 96.0;
 
-  Widget _buildQuickActions(HibikiDesignTokens tokens) {
+  Widget _buildQuickActions(FushiDesignTokens tokens) {
     final double gap = tokens.spacing.gap;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -408,7 +408,7 @@ class MediaItemDialogFrame extends StatelessWidget {
   }
 
   Widget _quickActionChip(DialogQuickAction action) {
-    return HibikiActionChip(
+    return FushiActionChip(
       label: action.label,
       icon: action.icon,
       onPressed: action.onPressed,

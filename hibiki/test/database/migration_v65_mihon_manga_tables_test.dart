@@ -75,7 +75,7 @@ CREATE TABLE galgames (
   db.execute('PRAGMA user_version = $userVersion');
 }
 
-Future<Set<String>> _tableNames(HibikiDatabase db) async {
+Future<Set<String>> _tableNames(FushiDatabase db) async {
   final List<QueryRow> rows = await db
       .customSelect(
         "SELECT name FROM sqlite_master WHERE type = 'table' "
@@ -85,12 +85,12 @@ Future<Set<String>> _tableNames(HibikiDatabase db) async {
   return rows.map((QueryRow row) => row.read<String>('name')).toSet();
 }
 
-Future<int> _userVersion(HibikiDatabase db) async {
+Future<int> _userVersion(FushiDatabase db) async {
   final QueryRow row = await db.customSelect('PRAGMA user_version').getSingle();
   return row.read<int>('user_version');
 }
 
-Future<int> _countRows(HibikiDatabase db, String sql) async {
+Future<int> _countRows(FushiDatabase db, String sql) async {
   final QueryRow row =
       await db.customSelect('SELECT COUNT(*) AS n FROM ($sql)').getSingle();
   return row.read<int>('n');
@@ -100,7 +100,7 @@ void main() {
   test(
       'v62 -> current runs BOTH v63 (obsolete pref delete) and v65 '
       '(Mihon tables); neither swallows the other', () async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(setup: _seedV62),
     );
     addTearDown(db.close);
@@ -157,7 +157,7 @@ void main() {
       () async {
     // 已经跑过 v63 的库（废弃行本就不在），还差 v64（collection_scrape_meta）
     // 和 v65（Mihon 五表）。这里只断言 v65 那一段照跑，不依赖它是最后一步。
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (sqlite3.Database raw) => _seedV62(
           raw,
@@ -176,7 +176,7 @@ void main() {
   });
 
   test('v65 is idempotent when the Mihon tables already exist', () async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (sqlite3.Database raw) =>
             _seedV62(raw, preCreateMangaTables: true),
@@ -201,7 +201,7 @@ void main() {
   });
 
   test('reopening an already-migrated DB is a no-op', () async {
-    final HibikiDatabase first = HibikiDatabase.forTesting(
+    final FushiDatabase first = FushiDatabase.forTesting(
       NativeDatabase.memory(setup: _seedV62),
     );
     expect(await _userVersion(first), 68);
@@ -209,7 +209,7 @@ void main() {
 
     // 同一份内存库不能跨实例复用，这里改用「第二次打开已是 v65 的形状」：
     // 直接 seed user_version = 64 且五张表齐全，断言不再触发任何迁移副作用。
-    final HibikiDatabase second = HibikiDatabase.forTesting(
+    final FushiDatabase second = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (sqlite3.Database raw) => _seedV62(
           raw,

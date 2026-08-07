@@ -55,7 +55,7 @@ void main() {
     }
   });
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late PlatformServices platformServices;
   late FakeAnkiRepository ankiRepository;
   late AppModel appModel;
@@ -67,7 +67,7 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     LocaleSettings.setLocale(AppLocale.zhCn);
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     storeDir = Directory.systemTemp.createTempSync('hibiki_dashboard');
@@ -138,7 +138,7 @@ void main() {
 
   Future<void> seedSampleData() async {
     final DateTime now = DateTime.now();
-    final String todayKey = HibikiTimeFormat.dayKey(now);
+    final String todayKey = FushiTimeFormat.dayKey(now);
     await db.addReadingStatistic(
       title: '吾輩は猫である',
       dateKey: todayKey,
@@ -205,7 +205,7 @@ void main() {
     final DateTime now = DateTime.now();
     for (int i = 0; i < 20; i++) {
       final String dk =
-          HibikiTimeFormat.dayKey(now.subtract(Duration(days: i)));
+          FushiTimeFormat.dayKey(now.subtract(Duration(days: i)));
       await db.addReadingStatistic(
         title: '书$i',
         dateKey: dk,
@@ -358,7 +358,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final DateTime now = DateTime.now();
-    final String todayKey = HibikiTimeFormat.dayKey(now);
+    final String todayKey = FushiTimeFormat.dayKey(now);
     await db.upsertVideoBook(const VideoBooksCompanion(
       bookUid: Value('v1'),
       title: Value('S01E01'),
@@ -468,7 +468,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final DateTime now = DateTime.now();
-    final String todayKey = HibikiTimeFormat.dayKey(now);
+    final String todayKey = FushiTimeFormat.dayKey(now);
     await db.upsertVideoBook(const VideoBooksCompanion(
       bookUid: Value('v1'),
       title: Value('S01E01'),
@@ -573,7 +573,7 @@ void main() {
         startMs: Value(playedAt.millisecondsSinceEpoch - 60000),
         endMs: Value(playedAt.millisecondsSinceEpoch),
         durationSeconds: const Value(60),
-        dateKey: Value(HibikiTimeFormat.dayKey(playedAt)),
+        dateKey: Value(FushiTimeFormat.dayKey(playedAt)),
       ));
     }
   }
@@ -712,7 +712,7 @@ void main() {
       eventType: kActivityGame,
       mediaType: kActivityMediaGame,
       title: '有封面的游戏',
-      dateKey: HibikiTimeFormat.dayKey(now),
+      dateKey: FushiTimeFormat.dayKey(now),
       timestampMs: now.millisecondsSinceEpoch,
       mediaKey: r'\ABS\G-3.EXE',
       durationMs: 60000,
@@ -787,7 +787,7 @@ void main() {
           eventType: kActivityGame,
           mediaType: kActivityMediaGame,
           title: title,
-          dateKey: HibikiTimeFormat.dayKey(now),
+          dateKey: FushiTimeFormat.dayKey(now),
           timestampMs: now.millisecondsSinceEpoch - offsetMs,
           mediaKey: mediaKey,
           durationMs: 60000,
@@ -841,7 +841,7 @@ void main() {
       eventType: kActivityGame,
       mediaType: kActivityMediaGame,
       title: '点开的游戏',
-      dateKey: HibikiTimeFormat.dayKey(now),
+      dateKey: FushiTimeFormat.dayKey(now),
       timestampMs: now.millisecondsSinceEpoch,
       mediaKey: 'g-4',
       durationMs: 60000,
@@ -1041,8 +1041,8 @@ void main() {
     final Finder heatmapFinder = find.byType(StatContributionHeatmap);
     final StatContributionHeatmap heatmap =
         tester.widget<StatContributionHeatmap>(heatmapFinder);
-    final HibikiDesignTokens tokens =
-        HibikiDesignTokens.of(tester.element(heatmapFinder));
+    final FushiDesignTokens tokens =
+        FushiDesignTokens.of(tester.element(heatmapFinder));
     // 此前传的是 surfaces.card（surfaceContainer），与区块卡底 surfaces.group
     // （surfaceContainerLow）几乎同色 → 没活动的周等于没画（用户看到「大片死黑」）。
     expect(heatmap.emptyColor, isNot(tokens.surfaces.group));

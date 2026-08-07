@@ -27,7 +27,7 @@ import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
-// 只取语义枚举与调色板：视频页的通知一律走左上角 _showOsd，不得用 HibikiToast
+// 只取语义枚举与调色板：视频页的通知一律走左上角 _showOsd，不得用 FushiToast
 // （BUG-931 有守卫），故刻意不 import 整套 toast API。
 import 'package:fushi/src/utils/misc/toast_severity.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
@@ -190,11 +190,11 @@ part 'video_hibiki/layout.part.dart';
 ///
 /// 查词浮层用**根 Overlay**（`Overlay.of(context, rootOverlay: true)`）渲染，而非本页
 /// `Stack`——这样全屏（media_kit 推到根 navigator 的独立路由）时浮层也能浮在全屏画面
-/// **之上**，窗口/全屏统一一套。根 Overlay 在 [HibikiAppUiScale] 的 `FittedBox` 之内
+/// **之上**，窗口/全屏统一一套。根 Overlay 在 [FushiAppUiScale] 的 `FittedBox` 之内
 /// （挂在 `MaterialApp.builder`），其坐标空间是**缩放后的小画布（view/s）**；若浮层直接在
 /// 此渲染，其词典 WebView 会按小画布尺寸栅格化、再被外层 `FittedBox` 拉大 → **字糊**
 /// （与 BUG-039 阅读器同源；BUG-051）。故 [_buildPopupOverlay] 把整棵浮层子树用
-/// [HibikiAppUiScaleNeutralizer] 中和回**真实视口尺寸、净缩放=1**，WebView 按原生像素密度
+/// [FushiAppUiScaleNeutralizer] 中和回**真实视口尺寸、净缩放=1**，WebView 按原生像素密度
 /// 渲染 → 清晰。中和后浮层坐标系即真实屏幕空间（净变换=1），与 `localToGlobal` 的字符
 /// rect 同系，故 [_lookupAt] **直接**用该屏幕 rect 定位（不再 ÷s 换算到画布），界面任意
 /// 缩放下定位都不偏。
@@ -462,10 +462,10 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   /// （见 [_VideoEpisode._switchEpisode]）；首开 / 远端恒 false。
   final bool initialFullscreen;
 
-  /// 打开视频播放页的**唯一入口**：在路由层用 [HibikiAppUiScaleNeutralizer] 把整页中和
+  /// 打开视频播放页的**唯一入口**：在路由层用 [FushiAppUiScaleNeutralizer] 把整页中和
   /// （与阅读器 [ReaderHibikiSource.buildLaunchPage] 同范式）。
   ///
-  /// 根因（用户报「视频没画面」）：全局 [HibikiAppUiScale] 用 `FittedBox(BoxFit.fill)` 把
+  /// 根因（用户报「视频没画面」）：全局 [FushiAppUiScale] 用 `FittedBox(BoxFit.fill)` 把
   /// 整棵子树渲染进一个缩放画布再拉大；media_kit 的 [Video] 在桌面是平台 Texture，落在
   /// 缩放画布里会被栅格化再放大 → 糊甚至空白（无画面）。阅读器早已在路由层中和，视频页
   /// 此前三个 push 点都漏了这层 → 用户调过界面缩放后视频就没画面。统一收口到这里，让
@@ -479,7 +479,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
     bool initialSubtitleListVisible = false,
     bool initialFullscreen = false,
   }) =>
-      HibikiAppUiScaleNeutralizer(
+      FushiAppUiScaleNeutralizer(
         child: VideoHibikiPage(
           bookUid: bookUid,
           repo: repo,
@@ -500,7 +500,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
     bool initialSubtitleListVisible = false,
     List<RemoteVideoInfo>? remoteCollectionMembers,
   }) =>
-      HibikiAppUiScaleNeutralizer(
+      FushiAppUiScaleNeutralizer(
         child: VideoHibikiPage.remote(
           info: info,
           repo: repo,
@@ -700,7 +700,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     with DictionaryPageMixin, WidgetsBindingObserver
     implements VideoHibikiTestHooks, DictionaryCaretHost {
   // 控制条尺寸基线（界面缩放 ×1.0 时的值）。视频页整页被
-  // [HibikiAppUiScaleNeutralizer] 中和回 scale=1.0（保证 WebView 查词坐标一致），
+  // [FushiAppUiScaleNeutralizer] 中和回 scale=1.0（保证 WebView 查词坐标一致），
   // 故 media_kit 控制条不会自动吃全局「界面大小」——这些基线再乘 [_videoUiScale]
   // 暴露成下面的实例 getter，让顶/底栏图标、按钮条高度、播放键与查词弹窗同一口径
   // 随界面缩放一起放大缩小（TODO-067）。
@@ -3034,7 +3034,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
     // 首次 load 建观看统计采集器；换片复用同一 controller 实例，已 attach 不重建。
     if (!_isRemote && _watchTracker == null) {
-      final HibikiDatabase db = appModel.database;
+      final FushiDatabase db = appModel.database;
       _watchTracker = VideoWatchTracker(
         title: title,
         bookUid: widget.bookUid,
@@ -3669,7 +3669,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // 「左簇 A−/A+ 与右簇关闭之间的有界宽」，**收缩由内容侧负责**——reader 音频行
         // 早就用 [FittedBox]`(scaleDown)` 做了，视频端此前只有 1 颗星标（36px）永远放
         // 得下，加到 4 颗后必溢出：中段可用宽 = 弹窗宽 − 108（左 36×2 + 右 36），
-        // 4 颗 [HibikiIconButton]（icon 20 + padding gap 8 ×2 = 36）合计 144，
+        // 4 颗 [FushiIconButton]（icon 20 + padding gap 8 ×2 = 36）合计 144，
         // 而弹窗宽下限 [kLookupPopupMinWidth] = 250 ⇒ 142 < 144，实测
         // 「RenderFlex overflowed by 2.0 pixels」。界面缩放 <1 时更窄。
         // `mainAxisSize: min` 让行取按钮总宽（有限内在宽），FittedBox 才量得到并等比缩小。
@@ -3679,7 +3679,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
-              HibikiIconButton(
+              FushiIconButton(
                 key: const Key('video_popup_replay_cue_button'),
                 tooltip: t.video_subtitle_replay,
                 icon: Icons.replay,
@@ -3687,7 +3687,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 enabled: hasCue,
                 onTap: _replayLookupCue,
               ),
-              HibikiIconButton(
+              FushiIconButton(
                 key: const Key('video_popup_jump_to_cue_button'),
                 // 复用字幕跳转列表行尾 ▶ 的图标与文案：同一动作同一表征，不造第二套说法。
                 tooltip: t.video_subtitle_list_jump,
@@ -3696,14 +3696,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 enabled: hasCue,
                 onTap: _jumpToLookupCue,
               ),
-              HibikiIconButton(
+              FushiIconButton(
                 key: const Key('video_popup_copy_sentence_button'),
                 tooltip: t.copy,
                 icon: Icons.content_copy_outlined,
                 size: 20,
                 onTap: _copyLookupSentence,
               ),
-              HibikiIconButton(
+              FushiIconButton(
                 key: const Key('video_favorite_sentence_button'),
                 // tooltip 用「句子收藏」（已有 i18n），描述按钮职责；不复用 toast 文案
                 // favorite_added/removed——那是动作结果提示，做静态 tooltip 会反向误导。
@@ -4044,8 +4044,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   /// 根 Overlay 里的查词浮层栈内容：透明遮罩（点击关栈）+ 各层 [DictionaryPopupLayer]。
   ///
-  /// 根 Overlay 在 [HibikiAppUiScale] 的 `FittedBox` 之内＝缩放后的小画布，浮层 WebView
-  /// 在此栅格化再被拉大会字糊（BUG-051）。用 [HibikiAppUiScaleNeutralizer] 把整棵浮层
+  /// 根 Overlay 在 [FushiAppUiScale] 的 `FittedBox` 之内＝缩放后的小画布，浮层 WebView
+  /// 在此栅格化再被拉大会字糊（BUG-051）。用 [FushiAppUiScaleNeutralizer] 把整棵浮层
   /// 子树中和回真实视口尺寸、净缩放=1，WebView 按原生密度渲染＝清晰。中和后 `screen`
   /// （内层 [LayoutBuilder] 约束）即真实视口，与 [_lookupAt] 直接传入的 `localToGlobal`
   /// 屏幕 rect 同坐标系（净变换=1），定位自洽。
@@ -4056,7 +4056,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // （用户报「退视频红屏」）。故：State 失效就不渲染浮层；Theme 也改用 entry 自己的
     // `overlayContext`（与本 entry 同寿命）而非借用更短命的 State `context`。
     if (!mounted || _overlayInert) return const SizedBox.shrink();
-    return HibikiAppUiScaleNeutralizer(
+    return FushiAppUiScaleNeutralizer(
       child: Theme(
         data: appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
         child: LayoutBuilder(
@@ -6684,7 +6684,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 去重防护兜住。全屏时本页被全屏路由 Offstage、renderBox 尺寸归零 → 本目标不命中，
   /// 只剩内层生效，不会双触发。
   Widget _pageDropTarget(VideoPlayerController controller, Widget child) {
-    return HibikiFileDropTarget(
+    return FushiFileDropTarget(
       debugLabel: 'video-playback-page',
       onDrop: (List<String> paths, Offset _) {
         _handlePlaybackDrop(controller, paths);
@@ -6864,11 +6864,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 这里再门控一次（[_isDesktopVideoControls]）双保险。右键菜单含完整播放控制，沉浸锁
   /// 仅 full 模式允许打开；shortcutAndLookup / lookupOnly / unlockOnly 均不能绕过四段 gate。
   ///
-  /// 界面缩放坐标对齐（BUG-260）：视频页整页被 [HibikiAppUiScaleNeutralizer] 中和回
+  /// 界面缩放坐标对齐（BUG-260）：视频页整页被 [FushiAppUiScaleNeutralizer] 中和回
   /// 净缩放=1 的**真实视口空间**（见 [VideoHibikiPage.neutralized]），故
   /// [_videoControlsContext] 的 RenderBox 在真实屏幕坐标系；而 [showMenu] 把
   /// [RelativeRect] 解读为路由 **Overlay** 的坐标系——该 Overlay 在全局
-  /// [HibikiAppUiScale] 的 `FittedBox(BoxFit.fill)` 之内＝缩放后的画布空间。两套坐标差
+  /// [FushiAppUiScale] 的 `FittedBox(BoxFit.fill)` 之内＝缩放后的画布空间。两套坐标差
   /// 一个 factor=scale，原实现直接拿 controls 盒子的 `globalToLocal` 当锚点（真实空间），
   /// 界面大小≠100% 时菜单偏离鼠标 factor≈scale（用户报「调界面大小后右键菜单不在鼠标处」）。
   ///

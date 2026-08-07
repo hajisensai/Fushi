@@ -34,9 +34,9 @@ class MokuroMoeSourceRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final AppModel appModel = ref.watch(appProvider);
     final bool ready = appModel.isPreferencesReady;
-    return HibikiCard(
+    return FushiCard(
       padding: EdgeInsets.zero,
-      child: HibikiListItem(
+      child: FushiListItem(
         leading: Switch.adaptive(
           value: isMokuroMoeSourceEnabled(appModel),
           onChanged: ready

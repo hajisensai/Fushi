@@ -10,10 +10,10 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'sync_settings_schema_source_corpus.dart';
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
-HibikiSyncServerController _controller(HibikiDatabase db) =>
-    HibikiSyncServerController(
+FushiSyncServerController _controller(FushiDatabase db) =>
+    FushiSyncServerController(
       navigatorKey: GlobalKey<NavigatorState>(),
       database: () => db,
       syncDataDir: () => Directory.systemTemp.path,
@@ -31,11 +31,11 @@ HibikiSyncServerController _controller(HibikiDatabase db) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('HibikiSyncServerController.shutdownForExit', () {
+  group('FushiSyncServerController.shutdownForExit', () {
     test('disposes every registered discovery browser', () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
-      final HibikiSyncServerController controller = _controller(db);
+      final FushiSyncServerController controller = _controller(db);
 
       final LanDiscoveryService a = LanDiscoveryService(deviceId: 'a');
       final LanDiscoveryService b = LanDiscoveryService(deviceId: 'b');
@@ -53,9 +53,9 @@ void main() {
     });
 
     test('unregistered discovery is NOT disposed by the controller', () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
-      final HibikiSyncServerController controller = _controller(db);
+      final FushiSyncServerController controller = _controller(db);
 
       final LanDiscoveryService a = LanDiscoveryService(deviceId: 'a');
       controller.registerDiscovery(a);
@@ -69,9 +69,9 @@ void main() {
     });
 
     test('is idempotent and safe with nothing registered', () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
-      final HibikiSyncServerController controller = _controller(db);
+      final FushiSyncServerController controller = _controller(db);
 
       // No broadcast started, no discovery registered: must be a clean no-op.
       await controller.shutdownForExit();
@@ -82,13 +82,13 @@ void main() {
 
     test('does NOT persist serverEnabled=false (app exit is not a toggle-off)',
         () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
       // Simulate the user having enabled hosting in a previous session.
       await repo.setServerEnabled(true);
 
-      final HibikiSyncServerController controller = _controller(db);
+      final FushiSyncServerController controller = _controller(db);
       await controller.shutdownForExit();
 
       expect(await repo.isServerEnabled(), isTrue,
@@ -177,11 +177,11 @@ void main() {
     });
   });
 
-  group('HibikiSyncServerController.shutdownForExitFast (TODO-086)', () {
+  group('FushiSyncServerController.shutdownForExitFast (TODO-086)', () {
     test('cuts every registered discovery event source', () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
-      final HibikiSyncServerController controller = _controller(db);
+      final FushiSyncServerController controller = _controller(db);
       final LanDiscoveryService a = LanDiscoveryService(deviceId: 'a');
       final LanDiscoveryService b = LanDiscoveryService(deviceId: 'b');
       controller.registerDiscovery(a);
@@ -195,9 +195,9 @@ void main() {
     });
 
     test('is idempotent and safe with nothing registered', () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
-      final HibikiSyncServerController controller = _controller(db);
+      final FushiSyncServerController controller = _controller(db);
       await controller.shutdownForExitFast();
       await controller.shutdownForExitFast();
       expect(controller.isRunning, isFalse);

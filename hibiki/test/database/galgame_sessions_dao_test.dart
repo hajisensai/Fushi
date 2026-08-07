@@ -9,14 +9,14 @@ import 'package:fushi_core/fushi_core.dart';
 /// 「投影与事实表不一致」的一整类 bug，代价只是每次现算。所以这些聚合的正确性就是
 /// 全部统计 UI 的正确性，必须钉死。
 void main() {
-  Future<HibikiDatabase> openDb() async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+  Future<FushiDatabase> openDb() async {
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     return db;
   }
 
-  Future<void> addGame(HibikiDatabase db, String id) => db.upsertGalgame(
+  Future<void> addGame(FushiDatabase db, String id) => db.upsertGalgame(
         GalgamesCompanion.insert(
           id: id,
           name: id,
@@ -27,7 +27,7 @@ void main() {
       );
 
   Future<void> addSession(
-    HibikiDatabase db,
+    FushiDatabase db,
     String gameId, {
     required int startMs,
     required int endMs,
@@ -45,7 +45,7 @@ void main() {
       );
 
   test('getGalgamePlayTotals：按游戏聚合总时长/次数/最后游玩', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     await addGame(db, 'a');
     await addGame(db, 'b');
     await addGame(db, 'c'); // 一次都没玩过
@@ -81,12 +81,12 @@ void main() {
   });
 
   test('getGalgamePlayTotals：空表返回空 map 而不是抛异常', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     expect(await db.getGalgamePlayTotals(), isEmpty);
   });
 
   test('getGalgameDailySeconds：按天聚合且闭区间过滤', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     await addGame(db, 'a');
     await addGame(db, 'b');
 
@@ -116,7 +116,7 @@ void main() {
   });
 
   test('getGalgameDailySeconds：边界日包含在闭区间内', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     await addGame(db, 'a');
     await addSession(db, 'a',
         startMs: 1, endMs: 2, durationSeconds: 10, dateKey: '2026-07-01');
@@ -132,7 +132,7 @@ void main() {
   });
 
   test('getGalgameSecondsForDay：跨全部游戏聚合某一天', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     await addGame(db, 'a');
     await addGame(db, 'b');
 
@@ -150,7 +150,7 @@ void main() {
   });
 
   test('getAllGalgameDailyTotals：跨游戏按天聚合时长与会话数', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     await addGame(db, 'a');
     await addGame(db, 'b');
 
@@ -167,7 +167,7 @@ void main() {
   });
 
   test('getGalgameSessions：按起始时间倒序并支持分页', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     await addGame(db, 'a');
     for (int i = 0; i < 5; i++) {
       await addSession(db, 'a',
@@ -190,7 +190,7 @@ void main() {
   });
 
   test('deleteGalgameSession：删单条后聚合值同步变化（无投影表可失配）', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     await addGame(db, 'a');
     await addSession(db, 'a',
         startMs: 1000,
@@ -218,7 +218,7 @@ void main() {
   });
 
   test('clearAllGalgameStatistics：只清会话，保留游戏库与活动时间线', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     await addGame(db, 'a');
     await addSession(
       db,
@@ -251,7 +251,7 @@ void main() {
   });
 
   test('galgame_sources：同 (gameId, source) 覆盖而不是插重复行', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     await addGame(db, 'a');
 
     await db.upsertGalgameSource(
@@ -292,7 +292,7 @@ void main() {
   });
 
   test('getAllGalgameSources：按 gameId 分组，避免库页 N+1', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     await addGame(db, 'a');
     await addGame(db, 'b');
     await db.upsertGalgameSource(GalgameSourcesCompanion.insert(
@@ -309,7 +309,7 @@ void main() {
   });
 
   test('playStatus / customData / cover / 刮削结果的定点更新互不干扰', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     await addGame(db, 'a');
 
     await db.setGalgamePlayStatus('a', 3); // 在玩

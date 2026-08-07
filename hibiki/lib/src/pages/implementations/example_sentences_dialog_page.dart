@@ -53,13 +53,13 @@ class _ExampleSentencesDialogPageState
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 720,
       maxHeightFactor: 0.82,
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.creator_enhancement_sentence_picker,
         leadingIcon: Icons.format_quote_outlined,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -90,7 +90,7 @@ class _ExampleSentencesDialogPageState
   }
 
   Widget buildEmptyMessage() {
-    return HibikiPlaceholderMessage(
+    return FushiPlaceholderMessage(
       icon: Icons.search_off,
       message: t.no_sentences_found,
     );
@@ -119,8 +119,8 @@ class _ExampleSentencesDialogPageState
               MediaQuery.of(context).orientation == Orientation.portrait
                   ? 1
                   : 3),
-      mainAxisSpacing: HibikiDesignTokens.of(context).spacing.gap,
-      crossAxisSpacing: HibikiDesignTokens.of(context).spacing.gap,
+      mainAxisSpacing: FushiDesignTokens.of(context).spacing.gap,
+      crossAxisSpacing: FushiDesignTokens.of(context).spacing.gap,
       itemCount: widget.exampleSentences.length,
       itemBuilder: (context, index) {
         String sentence = widget.exampleSentences[index];
@@ -198,10 +198,10 @@ class _SentenceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
 
-    return HibikiCard(
+    return FushiCard(
       onTap: onTap,
       padding: EdgeInsets.all(tokens.spacing.card),
       color: selected ? colors.primaryContainer : null,

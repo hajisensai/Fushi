@@ -8,7 +8,7 @@ import 'package:fushi/utils.dart';
 /// [MediaLibraryShell] 的行为守卫（PR#550 审查补）。
 ///
 /// 这三条是壳的**卖点**，此前全靠源码注释声明、零测试：
-///  1. 分段条包在 [HibikiAdjustableSegmented] 里——裸 `SegmentedButton` 会被只遍历
+///  1. 分段条包在 [FushiAdjustableSegmented] 里——裸 `SegmentedButton` 会被只遍历
 ///     已注册 target 的方向焦点控制器整个跳过，手柄/键盘用户切不了视图。
 ///  2. 惰性构建——没访问过的视图**根本不构造**，所以在线目录不会因为壳挂载就发网络
 ///     请求。这里直接数 builder 调用次数：builder 没跑 ⇒ 它内部的 initState /
@@ -92,14 +92,14 @@ void main() {
     WidgetTester tester,
     MediaLibraryViewKind kind,
   ) async {
-    final HibikiSegmentedStrip<MediaLibraryViewKind> strip = tester.widget(
-      find.byType(HibikiSegmentedStrip<MediaLibraryViewKind>),
+    final FushiSegmentedStrip<MediaLibraryViewKind> strip = tester.widget(
+      find.byType(FushiSegmentedStrip<MediaLibraryViewKind>),
     );
     strip.onChanged(kind);
     await tester.pumpAndSettle();
   }
 
-  testWidgets('分段条包在 HibikiAdjustableSegmented 里（裸 SegmentedButton 即转红）',
+  testWidgets('分段条包在 FushiAdjustableSegmented 里（裸 SegmentedButton 即转红）',
       (WidgetTester tester) async {
     await tester.pumpWidget(harness(<MediaLibraryViewSpec>[
       spec(0, MediaLibraryViewKind.library, '书架'),
@@ -108,7 +108,7 @@ void main() {
     ]));
 
     expect(
-      find.byType(HibikiAdjustableSegmented<MediaLibraryViewKind>),
+      find.byType(FushiAdjustableSegmented<MediaLibraryViewKind>),
       findsOneWidget,
       reason: '方向焦点控制器只遍历已注册 target；裸 SegmentedButton 会被整个跳过，'
           '手柄/键盘用户切不了视图',
@@ -116,14 +116,14 @@ void main() {
     // 且它必须真的包着本壳的分段条（不是树里别处碰巧有一个）。
     expect(
       find.descendant(
-        of: find.byType(HibikiAdjustableSegmented<MediaLibraryViewKind>),
-        matching: find.byType(HibikiSegmentedStrip<MediaLibraryViewKind>),
+        of: find.byType(FushiAdjustableSegmented<MediaLibraryViewKind>),
+        matching: find.byType(FushiSegmentedStrip<MediaLibraryViewKind>),
       ),
       findsOneWidget,
     );
     // focusIdPrefix 必须透传：多域同时挂载时靠它区分停靠点。
-    final HibikiAdjustableSegmented<MediaLibraryViewKind> seg = tester
-        .widget(find.byType(HibikiAdjustableSegmented<MediaLibraryViewKind>));
+    final FushiAdjustableSegmented<MediaLibraryViewKind> seg = tester
+        .widget(find.byType(FushiAdjustableSegmented<MediaLibraryViewKind>));
     expect(seg.focusIdPrefix, 'test-library-view');
   });
 
@@ -175,7 +175,7 @@ void main() {
     expect(probe.gotRealNavigation[0], isFalse,
         reason: '隐藏视图必须拿空占位，否则同一 focusIdPrefix 被注册两次');
     // 全树自始至终只有一个分段条。
-    expect(find.byType(HibikiAdjustableSegmented<MediaLibraryViewKind>),
+    expect(find.byType(FushiAdjustableSegmented<MediaLibraryViewKind>),
         findsOneWidget);
   });
 
@@ -184,7 +184,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: HibikiFocusRoot(
+          body: FushiFocusRoot(
             child: MediaLibraryShell(
               focusIdPrefix: 'test-library-view',
               views: <MediaLibraryViewSpec>[
@@ -198,11 +198,11 @@ void main() {
     );
     await tester.pump();
 
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(MediaLibraryShell)),
     );
-    const HibikiFocusId sectionsId =
-        HibikiFocusId('test-library-view-sections');
+    const FushiFocusId sectionsId =
+        FushiFocusId('test-library-view-sections');
     expect(controller.requestById(sectionsId), isTrue);
     await tester.pump();
     expect(controller.activeId, sectionsId);
@@ -213,7 +213,7 @@ void main() {
     await tester.pumpWidget(harness(<MediaLibraryViewSpec>[
       spec(0, MediaLibraryViewKind.library, '书架'),
     ]));
-    expect(find.byType(HibikiAdjustableSegmented<MediaLibraryViewKind>),
+    expect(find.byType(FushiAdjustableSegmented<MediaLibraryViewKind>),
         findsNothing);
     expect(probe.gotRealNavigation[0], isFalse);
   });

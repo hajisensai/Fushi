@@ -451,7 +451,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// watch-stats 最近观看，外加偏好里的排序方式。
   Future<void> _loadLibraryMaps() async {
     final AppModel appModel = ref.read(appProvider);
-    final HibikiDatabase db = appModel.database;
+    final FushiDatabase db = appModel.database;
     final ShelfSortMode sortMode =
         ShelfSortMode.fromName(appModel.prefsRepo.videoSortModeName);
     final List<MediaCollectionRow> collections =
@@ -734,7 +734,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   // ── 批量选择（与书架 tab 对齐）────────────────────────────────────
   // 书架 [reader_hibiki_history_page] 早有这套（_selectionMode / _selectedKeys /
-  // 批量打标签 + 删除）；视频 tab 共用同一 [HibikiTagFilterBar]（其 selectionMode /
+  // 批量打标签 + 删除）；视频 tab 共用同一 [FushiTagFilterBar]（其 selectionMode /
   // onToggleSelectionMode 入参书架已用、视频此前没传）。这里给视频补上 wiring，
   // 批量操作语义对齐书架（批量打标签 + 批量删除），但因视频书是扁平 bookUid，
   // 选择集与 picker 比书架简单一层（无 epub/srt 双类分支）。
@@ -813,7 +813,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
     if (dropped == 0) return _selection.isNotEmpty;
     setState(() {});
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.batch_selection_stale_skipped(
         n: dropped + _selection.length,
         m: dropped,
@@ -824,7 +824,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   /// 块4：批量删除区分解散/删媒体。
-  /// - 选中合集 → 解散（[HibikiDatabase.deleteMediaCollection]：只解除分组，不删媒体本体）；
+  /// - 选中合集 → 解散（[FushiDatabase.deleteMediaCollection]：只解除分组，不删媒体本体）；
   /// - 选中散卡 → 删媒体本体（[VideoBookRepository.deleteVideoBook]，现状语义）；
   /// - 混选 → 确认框文案写明「删 N 个媒体、解散 M 个合集」。
   Future<void> _batchDeleteConfirm() async {
@@ -874,7 +874,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
     if (scope == null || !mounted) return;
 
-    final HibikiDatabase db = ref.read(appProvider).database;
+    final FushiDatabase db = ref.read(appProvider).database;
     // 先解散选中合集（只删合集容器 + 成员引用行，绝不删媒体本体）。
     final Set<int> toDissolve = Set<int>.of(_selectedCollectionIds);
     int dissolved = 0;
@@ -920,7 +920,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             : collectionCount == 0
                 ? t.batch_delete_success_video(n: deleted)
                 : t.batch_dissolve_success(m: dissolved);
-    HibikiToast.show(
+    FushiToast.show(
       msg: successMsg,
       severity: deleted > 0 || dissolved > 0
           ? ToastSeverity.success
@@ -944,8 +944,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   /// 批量打标签：弹 [_VideoBatchTagPickerDialog]（每个标签三态：保持/添加/移除），
-  /// 应用到所有选中视频书（经 [HibikiDatabase.addTagToVideoBook] /
-  /// [HibikiDatabase.removeTagFromVideoBook]），关闭后刷新映射。
+  /// 应用到所有选中视频书（经 [FushiDatabase.addTagToVideoBook] /
+  /// [FushiDatabase.removeTagFromVideoBook]），关闭后刷新映射。
   Future<void> _batchShowTagPicker() async {
     // 幽灵键会让 bookTags 的外键插入抛异常，而弹窗把落库 await 在 loading 态里，
     // 一抛就永远转圈（卡死）。必须在开弹窗前剔干净。
@@ -953,7 +953,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (_selectedUids.isEmpty) return;
     final List<BookTagRow>? allTags = ref.read(allTagsProvider).valueOrNull;
     if (allTags == null || allTags.isEmpty) {
-      HibikiToast.show(msg: t.tag_no_tags_hint, severity: ToastSeverity.info);
+      FushiToast.show(msg: t.tag_no_tags_hint, severity: ToastSeverity.info);
       return;
     }
     await showAppDialog<void>(
@@ -991,7 +991,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 拖放到视频 tab 时的处理：分类文件 → 局部坐标转屏幕坐标命中卡片 → 决策意图。
   ///
-  /// [globalPosition] 为 [HibikiFileDropTarget] 透出的 Flutter global/view 坐标，
+  /// [globalPosition] 为 [FushiFileDropTarget] 透出的 Flutter global/view 坐标，
   /// 可直接交给卡片注册表命中（注册表存的是同一坐标系的屏幕矩形）。
   void _handleVideoDrop(List<String> paths, Offset globalPosition) {
     final ModalRoute<dynamic>? route = ModalRoute.of(context);
@@ -1176,7 +1176,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 幽灵键会让 addToCollection 撞外键，且它挂在无人 catch 的路径上——用户只会
     // 看到「点了没反应」，以为合集建好了。先剔干净再分档。
     if (!await _pruneStaleSelection() || !mounted) return;
-    final HibikiDatabase db = ref.read(appProvider).database;
+    final FushiDatabase db = ref.read(appProvider).database;
     final List<int> collectionIds = _selectedCollectionIds.toList()..sort();
     // 成员序按标题自然序落盘，不用 `_selectedUids`（LinkedHashSet）的点选顺序：
     // 框选一整季建出来的合集此前「选集」列表是乱的（BUG-1436）。三档共用同一份
@@ -1211,7 +1211,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 档1：仅散卡 → 命名弹窗新建合集，逐条 addToCollection。
   Future<void> _combineCreateNew(
-    HibikiDatabase db,
+    FushiDatabase db,
     List<ShelfEntryRef> refs,
   ) async {
     // TODO-1125 B：预填合集默认名——把选中视频标题经 parseVideoFilename 去集号得系列名，
@@ -1245,12 +1245,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (!mounted) return;
     _exitSelectionMode();
     await _loadLibraryMaps();
-    HibikiToast.show(msg: t.series_created, severity: ToastSeverity.success);
+    FushiToast.show(msg: t.series_created, severity: ToastSeverity.success);
   }
 
   /// 档2：恰 1 合集 + 若干散卡 → 散卡并入该合集（不弹命名）。
   Future<void> _combineAddToExisting(
-    HibikiDatabase db,
+    FushiDatabase db,
     int collectionId,
     List<ShelfEntryRef> refs,
   ) async {
@@ -1260,7 +1260,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (!mounted) return;
     _exitSelectionMode();
     await _loadLibraryMaps();
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.batch_add_to_collection_success(n: refs.length),
       severity: ToastSeverity.success,
     );
@@ -1270,7 +1270,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 确认框可改名）；目标吸收其余合集成员（addToCollection）+ 散卡加入，其余合集
   /// deleteMediaCollection 解散（只解除分组，不删媒体本体）。
   Future<void> _combineMergeCollections(
-    HibikiDatabase db,
+    FushiDatabase db,
     List<int> collectionIds,
     List<ShelfEntryRef> refs,
   ) async {
@@ -1318,7 +1318,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (!mounted) return;
     _exitSelectionMode();
     await _loadLibraryMaps();
-    HibikiToast.show(msg: t.collection_merged, severity: ToastSeverity.success);
+    FushiToast.show(msg: t.collection_merged, severity: ToastSeverity.success);
   }
 
   /// 打开收藏夹页（书签 + 收藏句子，含视频来源的收藏句子，TODO-047 ③a）。与书架页头
@@ -1833,7 +1833,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
     if (outcome != CollectionAddOutcome.added || !mounted) return;
     await _loadLibraryMaps();
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.batch_add_to_collection_success(n: 1),
       severity: ToastSeverity.success,
     );
@@ -1858,7 +1858,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final bool alreadyHas =
         existing?[bookUid]?.any((BookTagRow t) => t.id == tag.id) ?? false;
     if (alreadyHas) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.tag_already_on_book(name: tag.name),
         severity: ToastSeverity.warning,
       );
@@ -1869,7 +1869,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ref.invalidate(videoBookTagMapProvider);
     ref.invalidate(filteredVideoBookUidsProvider);
     if (mounted) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.tag_added_to_video(name: tag.name),
         severity: ToastSeverity.success,
       );
@@ -1883,11 +1883,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 合集卡显隐立即刷新（详情页标签行走 FutureBuilder，重进即新）。
   Future<void> _addTagToVideoCollection(
       int collectionId, BookTagRow tag) async {
-    final HibikiDatabase db = ref.read(appProvider).database;
+    final FushiDatabase db = ref.read(appProvider).database;
     final List<BookTagRow> existing =
         await db.getTagsForCollection(collectionId);
     if (existing.any((BookTagRow t) => t.id == tag.id)) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.tag_already_on_collection(name: tag.name),
         severity: ToastSeverity.warning,
       );
@@ -1897,7 +1897,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ref.invalidate(collectionTagMapProvider);
     ref.invalidate(filteredCollectionIdsProvider);
     if (mounted) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.tag_added_to_collection(name: tag.name),
         severity: ToastSeverity.success,
       );
@@ -2164,7 +2164,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ref.watch(allTagsProvider).valueOrNull ?? const <BookTagRow>[];
     // 页头/布局与书架 [reader_hibiki_history_page]、词典 [home_dictionary_page]
     // 统一：不再用自带 Scaffold + adaptiveAppBar（小标题 + 标准 IconButton），改成
-    // DesktopContentLayout + HibikiPageHeader（大标题 + HibikiIconButton），三个
+    // DesktopContentLayout + FushiPageHeader（大标题 + FushiIconButton），三个
     // 首页 tab 的标题字号与动作按钮位置因此完全一致。外层 Scaffold 由 HomePage 提供。
     // BUG-250: 视频 tab 的批量选择模式（[_selectionMode]）和书架一样活在 tab
     // 内容里、不是独立 route。顶层 HomePage 的 PopScope 对它无感，返回键会直接
@@ -2176,7 +2176,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         if (didPop) return;
         if (_selectionMode) _exitSelectionMode();
       },
-      child: HibikiFileDropTarget(
+      child: FushiFileDropTarget(
         debugLabel: 'home-video',
         onDrop: _handleVideoDrop,
         child: CardDropScope<VideoBookRow>(
@@ -2312,8 +2312,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               onRefresh: _pullToRefresh,
               child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints constraints) {
-                  final HibikiDesignTokens tokens =
-                      HibikiDesignTokens.of(context);
+                  final FushiDesignTokens tokens =
+                      FushiDesignTokens.of(context);
                   // 卡目标宽与书架同源（[readerShelfGridExtentForWidth]）：手机窄屏
                   // （宽<600）用 150 → 至少 2 列，不再「1 列铺满整屏、卡片过大」；宽屏
                   // 按断点收敛列数。此前硬编码 240 使手机可用宽≈380 时 floor 出 1 列。
@@ -2369,7 +2369,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     double availableWidth,
     ({int columns, double cardWidth}) cardLayout,
   ) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double coverHeight =
         videoCoverHeightForPortraitWidth(cardLayout.cardWidth);
     final Widget? hero = _buildHeroCarousel(
@@ -2482,13 +2482,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Widget? _buildHeroCarousel(List<VideoBookRow> all, double availableWidth) {
     final List<_VideoHeroItem> items = _heroItems(all);
     if (items.isEmpty) return null;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double height = videoHeroHeightForWidth(availableWidth);
     final int page = _heroPage.clamp(0, items.length - 1);
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.gap),
       child: ClipRRect(
-        borderRadius: HibikiBorderRadius.card,
+        borderRadius: FushiBorderRadius.card,
         child: SizedBox(
           height: height,
           child: Stack(
@@ -2927,7 +2927,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     required double coverHeight,
     required List<_VideoRowItem> items,
   }) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.gap),
       child: Column(
@@ -2966,7 +2966,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   ///
   Widget _buildRowMediaCard({
     required Key cardKey,
-    required HibikiFocusId focusId,
+    required FushiFocusId focusId,
     required ImageProvider? cover,
     required String title,
     required double coverHeight,
@@ -2985,7 +2985,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       );
       return SizedBox(
         width: width,
-        child: HibikiCard(
+        child: FushiCard(
           key: cardKey,
           focusId: focusId,
           padding: EdgeInsets.zero,
@@ -3099,7 +3099,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final int episodeCount = playlistEpisodeCount(book.playlistJson);
     return _buildRowMediaCard(
       cardKey: ValueKey<String>('home_video_continue_${book.bookUid}'),
-      focusId: HibikiFocusId('home-video-continue-${book.bookUid}'),
+      focusId: FushiFocusId('home-video-continue-${book.bookUid}'),
       cover: _mediaImageProvider(
             _mediaImagesByBookUid[book.bookUid],
             const <MediaImageKind>[
@@ -3132,7 +3132,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     return _buildRowMediaCard(
       cardKey:
           ValueKey<String>('home_video_continue_collection_${collection.id}'),
-      focusId: HibikiFocusId('home-video-continue-collection-${collection.id}'),
+      focusId: FushiFocusId('home-video-continue-collection-${collection.id}'),
       // v68 选图链（Jellyfin preferThumb 口径）：带字横图 → 无字背景 →
       // 成员封面借用链；卡朝向随选中那张图探测（混排语义，见散卡注释）。
       cover: _mediaImageProvider(
@@ -3172,7 +3172,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final String safeKey = _safeRemoteKey(video.id);
     return _buildRowMediaCard(
       cardKey: ValueKey<String>('home_video_continue_remote_$safeKey'),
-      focusId: HibikiFocusId('home-video-continue-remote-$safeKey'),
+      focusId: FushiFocusId('home-video-continue-remote-$safeKey'),
       cover: _remoteCoverProvider(video),
       title: video.title,
       coverHeight: coverHeight,
@@ -3189,7 +3189,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         _primaryCollectionByEntry[MediaKind.video.compositeKey(book.bookUid)];
     return _buildRowMediaCard(
       cardKey: ValueKey<String>('home_video_recent_${book.bookUid}'),
-      focusId: HibikiFocusId('home-video-recent-${book.bookUid}'),
+      focusId: FushiFocusId('home-video-recent-${book.bookUid}'),
       cover: _localCoverProvider(book),
       title: book.title,
       coverHeight: coverHeight,
@@ -3247,7 +3247,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         SliverFillRemaining(hasScrollBody: false, child: _buildFilteredEmpty()),
       ];
     }
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 多端库联合视图 §2.3 任务10：把「远端有本地无」视频的**主合集归属**（host 下发的
     // RemoteVideoInfo.collection）注入折叠映射，使远端占位卡折进对应本地合集行。远端合集
     // 本地无 id——按 (name, type) 对本地合集表解析（[_resolveLocalCollectionId]），解析不到
@@ -3526,9 +3526,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         (CollectionOrderingItem<_VideoSlot> it) => it.payload.remote != null);
     final bool selected =
         _selectionMode && _selectedCollectionIds.contains(collection.id);
-    final HibikiCard card = HibikiCard(
+    final FushiCard card = FushiCard(
       key: ValueKey<String>('home_video_collection_card_${collection.id}'),
-      focusId: HibikiFocusId('home-video-collection-${collection.id}'),
+      focusId: FushiFocusId('home-video-collection-${collection.id}'),
       padding: EdgeInsets.zero,
       selected: selected,
       // 多选态整卡点击 = 整选合集；平时点击 = 进详情（原「查看全部」）。
@@ -3631,7 +3631,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       _collectionProgressLabel(group),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: HibikiDesignTokens.of(context).type.metadata,
+                      style: FushiDesignTokens.of(context).type.metadata,
                     ),
                   ),
                 ),
@@ -3767,9 +3767,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final String safeKey = _safeRemoteKey(video.id);
     // 不再固定 260 宽：和本地 [_buildCard] 一样让卡片填满网格 cell，宽度由
     // 响应式网格决定（TODO-593）。
-    return HibikiCard(
+    return FushiCard(
       key: ValueKey<String>('remote_video_card_$safeKey'),
-      focusId: HibikiFocusId('home-video-remote-$safeKey'),
+      focusId: FushiFocusId('home-video-remote-$safeKey'),
       padding: EdgeInsets.zero,
       // 合集行内点远端成员：带合集成员上下文进播放器（连播）；散卡区无上下文（单视频）。
       onTap: () => _openRemote(video,
@@ -3974,7 +3974,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 页头：与书架/词典统一，用 [HibikiPageHeader] 大标题 + [HibikiIconButton] 动作
+  /// 页头：与书架/词典统一，用 [FushiPageHeader] 大标题 + [FushiIconButton] 动作
   /// （统计 + 导入），保证标题字号与按钮位置三 tab 一致。与书架一致仅在非 Cupertino
   /// 渲染（Cupertino 走平台导航，由 HomePage 外壳承担）。
   Widget _buildPageHeader(bool canImport) {
@@ -3987,13 +3987,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 宽窗（非 compact）时四个动作展开成「图标+文字」药丸（用户 mockup：把
       // 「导入视频、媒体库」等按钮可展开时展开）；窄窗自动回落纯图标。
       if (canImport)
-        HibikiIconButton(
+        FushiIconButton(
           tooltip: t.video_import_action,
           label: t.video_import_action,
           icon: Icons.add,
           onTap: _openImport,
         ),
-      HibikiIconButton(
+      FushiIconButton(
         tooltip: t.scrape_all,
         label: t.scrape_all,
         icon: Icons.manage_search_outlined,
@@ -4004,19 +4004,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
       // 按钮就是同一件事的两个入口。只有本页被独立使用（无导航条）时才保留按钮。
       if (canImport && widget.navigation == null)
-        HibikiIconButton(
+        FushiIconButton(
           tooltip: t.media_source_manage_title,
           label: t.media_source_manage_title,
           icon: Icons.folder_copy_outlined,
           onTap: _openManageSources,
         ),
-      HibikiIconButton(
+      FushiIconButton(
         tooltip: t.collections,
         label: t.collections,
         icon: Icons.collections_bookmark_outlined,
         onTap: _openCollections,
       ),
-      HibikiIconButton(
+      FushiIconButton(
         tooltip: t.video_statistics,
         label: t.video_statistics,
         icon: Icons.bar_chart_outlined,
@@ -4030,12 +4030,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ];
     final Widget? navigation = widget.navigation;
     if (navigation != null) {
-      return HibikiPageHeader.customTitle(
+      return FushiPageHeader.customTitle(
         title: navigation,
         actions: actions,
       );
     }
-    return HibikiPageHeader(
+    return FushiPageHeader(
       title: t.nav_video,
       actions: actions,
     );
@@ -4189,7 +4189,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 标签筛选栏：与书架完全一致——复用 [HibikiTagFilterBar]（内联 chip 点选筛选、
+  /// 标签筛选栏：与书架完全一致——复用 [FushiTagFilterBar]（内联 chip 点选筛选、
   /// 长按拖拽重排、末尾「管理标签」齿轮 + 「批量选择」动作）。共享
   /// [selectedTagIdsProvider] 与书架联动；批量选择动作经 [onToggleSelectionMode]
   /// 与书架对齐（TODO-063：此前视频 tab 没传，缺了「标签设置旁的选择」）。
@@ -4344,7 +4344,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   Widget _buildTagFilterBar(List<BookTagRow> tags) {
-    return HibikiTagFilterBar(
+    return FushiTagFilterBar(
       tags: tags,
       onToggleFilter: _toggleFilter,
       onReorder: _reorderTags,
@@ -4386,10 +4386,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ref.invalidate(allTagsProvider);
   }
 
-  /// 空库占位（UI 巡检 PR-4）：收敛到共享 [HibikiPlaceholderMessage] 骨架并补
+  /// 空库占位（UI 巡检 PR-4）：收敛到共享 [FushiPlaceholderMessage] 骨架并补
   /// 「导入视频」CTA——此前只有图标 + 一句话，新用户没有下一步动作入口。
   Widget _buildEmpty() {
-    return HibikiPlaceholderMessage(
+    return FushiPlaceholderMessage(
       icon: Icons.movie_outlined,
       message: t.video_library_empty,
       action: FilledButton.tonalIcon(
@@ -4438,7 +4438,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       Theme.of(context).textTheme.bodyMedium ?? const TextStyle(fontSize: 14),
     );
     final double metaLine =
-        textLineHeight(context, HibikiDesignTokens.of(context).type.metadata);
+        textLineHeight(context, FushiDesignTokens.of(context).type.metadata);
     // 标题 padding 6(top)+2(bottom)，进度行 padding 0(top)+6(bottom)。
     return titleLine * 2 + 8 + metaLine + 6 + kTextBlockSlack;
   }
@@ -4488,7 +4488,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// `onDeleteMembersMedia` 同一删除纪律）。
   Future<void> _showCollectionContextMenu(MediaCollectionRow collection) {
     final VideoBookRepository repo = widget.repo;
-    final HibikiDatabase db = ref.read(appProvider).database;
+    final FushiDatabase db = ref.read(appProvider).database;
     return showCollectionContextDialog(
       context: context,
       db: db,
@@ -4548,7 +4548,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// `getCollectionItems` + 逐 uid 查 repo 才知道，为每次右键都付这份 IO 不划算；
   /// 用扩展名式的近似预判去置灰则会撒谎（灰的其实能用 / 亮的其实不能用）。
   Future<void> _openCollectionCoverMatch(MediaCollectionRow collection) async {
-    final HibikiDatabase db = ref.read(appProvider).database;
+    final FushiDatabase db = ref.read(appProvider).database;
     final List<MediaCollectionItemRow> items =
         await db.getCollectionItems(collection.id);
     final List<String> uids = <String>[
@@ -4606,7 +4606,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 合集刮削后的「相关作品」拉取（TODO-2484）。独立函数：applyScrape 闭包只管
   /// 触发；失败（含逐源错误）统一进 ErrorLogService，不上 UI。
   Future<void> _scrapeCollectionRelations(
-    HibikiDatabase db,
+    FushiDatabase db,
     int collectionId,
   ) async {
     // 用户自填 key 优先，其次内置 key（resolveTmdbApiKey）——与封面刮削同一
@@ -4646,7 +4646,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// anilistId 快照作对话框初值；无本地视频成员时无从拉取，给可见提示而不是静默返回
   /// （理由同 [_openCollectionCoverMatch]）。
   Future<void> _openCollectionSubtitles(MediaCollectionRow collection) async {
-    final HibikiDatabase db = ref.read(appProvider).database;
+    final FushiDatabase db = ref.read(appProvider).database;
     final List<MediaCollectionItemRow> items =
         await db.getCollectionItems(collection.id);
     final List<VideoBookRow> members = <VideoBookRow>[];
@@ -4674,11 +4674,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 打开合集详情页（Jellyfin 式）。有序成员从 [HibikiDatabase.getCollectionItems] 解析，
+  /// 打开合集详情页（Jellyfin 式）。有序成员从 [FushiDatabase.getCollectionItems] 解析，
   /// 点某集经 playlistCollectionId 进播放器带剧集面板/上下集/连播；写库后重载库页。
   void _openCollectionDetail(MediaCollectionRow collection) {
     final VideoBookRepository repo = widget.repo;
-    final HibikiDatabase db = ref.read(appProvider).database;
+    final FushiDatabase db = ref.read(appProvider).database;
     Navigator.push<void>(
       context,
       adaptivePageRoute<void>(
@@ -4759,9 +4759,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       _open(book, playlistCollectionId: playlistCollectionId);
     }
 
-    final HibikiCard hibikiCard = HibikiCard(
+    final FushiCard hibikiCard = FushiCard(
       key: ValueKey<String>('home_video_${book.bookUid}'),
-      focusId: HibikiFocusId('home-video-${book.bookUid}'),
+      focusId: FushiFocusId('home-video-${book.bookUid}'),
       padding: EdgeInsets.zero,
       selected: selected,
       // 选择态：点击切换勾选、长按交给祖先的扫选接管区（与书架 _bookCardShell 一致）。
@@ -4876,7 +4876,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                         meta,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: HibikiDesignTokens.of(context).type.metadata,
+                        style: FushiDesignTokens.of(context).type.metadata,
                       ),
                     ),
                   ),
@@ -4935,7 +4935,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 与书架 [reader_hibiki_history_page._buildBatchActionBar] 对齐。
   Widget _buildBatchActionBar() {
     final ThemeData theme = Theme.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 块2/3/4：计数与按钮可用态涵盖散卡选中集 + 合集选中集。
     final int selectedCount =
         _selectedUids.length + _selectedCollectionIds.length;
@@ -4976,7 +4976,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 child: Text(t.batch_invert_selection),
               ),
               const Spacer(),
-              HibikiIconButton(
+              FushiIconButton(
                 key: const ValueKey<String>('home_video_batch_combine'),
                 enabled: canCombine,
                 onTap: _batchCombineIntoSeries,
@@ -4986,7 +4986,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 tooltip: t.combine_into_series,
               ),
               SizedBox(width: tokens.spacing.gap / 2),
-              HibikiIconButton(
+              FushiIconButton(
                 // 打标签只作用于散卡媒体（合集无直接标签），故按散卡选中集可用态。
                 enabled: _selectedUids.isNotEmpty,
                 onTap: _batchShowTagPicker,
@@ -4994,7 +4994,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 tooltip: t.tag_label,
               ),
               SizedBox(width: tokens.spacing.gap / 2),
-              HibikiIconButton(
+              FushiIconButton(
                 key: const ValueKey<String>('home_video_batch_delete'),
                 enabled: hasSelection,
                 onTap: _batchDeleteConfirm,
@@ -5030,9 +5030,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         for (final BookTagRow tag in visible)
           Padding(
             padding: const EdgeInsets.only(bottom: 2),
-            child: HibikiTagChip(label: tag.name, color: Color(tag.colorValue)),
+            child: FushiTagChip(label: tag.name, color: Color(tag.colorValue)),
           ),
-        if (overflow > 0) HibikiTagChip(label: '+$overflow'),
+        if (overflow > 0) FushiTagChip(label: '+$overflow'),
       ],
     );
   }
@@ -5085,16 +5085,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 }
 
 /// 远端视频信息弹窗的文件大小格式化（UI 巡检 PR-4）：1024 进制 B/KB/MB/GB，
-/// 保留 1 位小数（B 档不带小数）。委托 [HibikiByteFormat]（G4 收敛），纯函数，
+/// 保留 1 位小数（B 档不带小数）。委托 [FushiByteFormat]（G4 收敛），纯函数，
 /// 测试同源。
-String formatRemoteVideoSize(int bytes) => HibikiByteFormat.bytes(bytes);
+String formatRemoteVideoSize(int bytes) => FushiByteFormat.bytes(bytes);
 
 /// 视频批量打标签的三态意图：保持不变 / 添加该标签 / 移除该标签。
 enum _VideoBatchTagIntent { keep, add, remove }
 
 /// 视频 tab 批量打标签对话框（TODO-063）。对一组选中视频书（扁平 bookUid）逐标签
-/// 设三态意图，应用时对每个 bookUid 调 [HibikiDatabase.addTagToVideoBook] /
-/// [HibikiDatabase.removeTagFromVideoBook]。与书架的 `_BatchTagPickerDialog` 同语义，
+/// 设三态意图，应用时对每个 bookUid 调 [FushiDatabase.addTagToVideoBook] /
+/// [FushiDatabase.removeTagFromVideoBook]。与书架的 `_BatchTagPickerDialog` 同语义，
 /// 但视频是单一 uid 集合（无 epub `mediaIdentifier` + `srt_` 双类分支），故独立、更简单。
 class _VideoBatchTagPickerDialog extends StatefulWidget {
   const _VideoBatchTagPickerDialog({
@@ -5105,7 +5105,7 @@ class _VideoBatchTagPickerDialog extends StatefulWidget {
 
   final List<BookTagRow> allTags;
   final Set<String> selectedUids;
-  final HibikiDatabase database;
+  final FushiDatabase database;
 
   @override
   State<_VideoBatchTagPickerDialog> createState() =>
@@ -5118,7 +5118,7 @@ class _VideoBatchTagPickerDialogState
   final Set<int> _removeTagIds = <int>{};
 
   Future<void> _apply() async {
-    final HibikiDatabase db = widget.database;
+    final FushiDatabase db = widget.database;
 
     for (final int tagId in _addTagIds) {
       for (final String bookUid in widget.selectedUids) {
@@ -5135,7 +5135,7 @@ class _VideoBatchTagPickerDialogState
     for (final int tagId in _addTagIds) {
       final BookTagRow tag =
           widget.allTags.firstWhere((BookTagRow row) => row.id == tagId);
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.batch_tag_added_video(
           name: tag.name,
           n: widget.selectedUids.length,
@@ -5146,7 +5146,7 @@ class _VideoBatchTagPickerDialogState
     for (final int tagId in _removeTagIds) {
       final BookTagRow tag =
           widget.allTags.firstWhere((BookTagRow row) => row.id == tagId);
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.batch_tag_removed_video(
           name: tag.name,
           n: widget.selectedUids.length,
@@ -5219,7 +5219,7 @@ class _VideoBatchTagIntentRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Color tagColor = Color(tag.colorValue);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     return AdaptiveSettingsRow(
       title: tag.name,

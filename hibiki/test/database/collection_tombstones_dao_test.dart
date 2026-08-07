@@ -9,15 +9,15 @@ import 'package:fushi_core/fushi_core.dart';
 ///  - deleteMediaCollection 写合集级哨兵墓碑 + 清残留成员墓碑；
 ///  - createMediaCollection 清同自然键的合集级墓碑（重建撤销删除）；
 ///  - 同步应用端原语不产生用户路径的副作用（不写 now 墓碑/时间戳）。
-Future<HibikiDatabase> _openDb() async {
-  final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
 
 /// 某合集自然键下的全部墓碑行。
 Future<List<CollectionMemberTombstoneRow>> _tombsFor(
-    HibikiDatabase db, String name, String type) async {
+    FushiDatabase db, String name, String type) async {
   return (await db.getAllCollectionMemberTombstones())
       .where((r) => r.collectionName == name && r.collectionType == type)
       .toList();
@@ -25,7 +25,7 @@ Future<List<CollectionMemberTombstoneRow>> _tombsFor(
 
 void main() {
   test('reorderCollectionItems 同事务 bump orderUpdatedAt', () async {
-    final HibikiDatabase db = await _openDb();
+    final FushiDatabase db = await _openDb();
     final int c = await db.createMediaCollection('C');
     await db.addToCollection(c, MediaKind.video, 'v1');
     await db.addToCollection(c, MediaKind.video, 'v2');
@@ -45,7 +45,7 @@ void main() {
   });
 
   test('removeFromCollection 写成员墓碑；addToCollection 清同键墓碑', () async {
-    final HibikiDatabase db = await _openDb();
+    final FushiDatabase db = await _openDb();
     final int c =
         await db.createMediaCollection('C', collectionType: 'playlist');
     await db.addToCollection(c, MediaKind.video, 'v1');
@@ -68,7 +68,7 @@ void main() {
   });
 
   test('移空自删只留成员墓碑，不写合集级哨兵', () async {
-    final HibikiDatabase db = await _openDb();
+    final FushiDatabase db = await _openDb();
     final int c = await db.createMediaCollection('C');
     await db.addToCollection(c, MediaKind.video, 'v1');
     await db.removeFromCollection(c, MediaKind.video, 'v1');
@@ -79,15 +79,15 @@ void main() {
     expect(tombs.single.entryKey, 'v1', reason: '只有成员墓碑');
     expect(
       tombs.any((r) =>
-          r.entryKey == HibikiDatabase.collectionTombstoneSentinel &&
-          r.mediaType == HibikiDatabase.collectionTombstoneSentinel),
+          r.entryKey == FushiDatabase.collectionTombstoneSentinel &&
+          r.mediaType == FushiDatabase.collectionTombstoneSentinel),
       isFalse,
       reason: '用户意图是移出成员而非删合集，合集在对端应可继续存在',
     );
   });
 
   test('deleteMediaCollection 写合集级哨兵 + 清残留成员墓碑', () async {
-    final HibikiDatabase db = await _openDb();
+    final FushiDatabase db = await _openDb();
     final int c = await db.createMediaCollection('C');
     await db.addToCollection(c, MediaKind.video, 'v1');
     await db.addToCollection(c, MediaKind.video, 'v2');
@@ -99,13 +99,13 @@ void main() {
     final List<CollectionMemberTombstoneRow> tombs =
         await _tombsFor(db, 'C', 'collection');
     expect(tombs, hasLength(1), reason: '只剩哨兵——残留成员墓碑一并清除');
-    expect(tombs.single.mediaType, HibikiDatabase.collectionTombstoneSentinel);
-    expect(tombs.single.entryKey, HibikiDatabase.collectionTombstoneSentinel);
+    expect(tombs.single.mediaType, FushiDatabase.collectionTombstoneSentinel);
+    expect(tombs.single.entryKey, FushiDatabase.collectionTombstoneSentinel);
     expect(tombs.single.deletedAt, greaterThanOrEqualTo(before));
   });
 
   test('createMediaCollection 清同自然键合集级墓碑（重建撤销删除）', () async {
-    final HibikiDatabase db = await _openDb();
+    final FushiDatabase db = await _openDb();
     final int c = await db.createMediaCollection('C');
     await db.addToCollection(c, MediaKind.video, 'v1');
     await db.deleteMediaCollection(c);
@@ -126,7 +126,7 @@ void main() {
   });
 
   test('同步应用端原语：镜像时间戳/成员，不产生用户路径副作用', () async {
-    final HibikiDatabase db = await _openDb();
+    final FushiDatabase db = await _openDb();
     final int c = await db.createMediaCollection('C');
     // upsertCollectionItemAt 显式 sortIndex，不走尾插。
     await db.upsertCollectionItemAt(c, 'video', 'v1', 5);

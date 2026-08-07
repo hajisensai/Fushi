@@ -10,7 +10,7 @@ import 'widget_test_helpers.dart';
 // The Material bottom bar / side rail render each destination as its OWN
 // gamepad/keyboard focus target, so the app focus ring hugs the single selected
 // item instead of wrapping the whole bar. Directional focus steps between
-// adjacent tiles through the normal HibikiFocus geometry; A/Enter selects.
+// adjacent tiles through the normal FushiFocus geometry; A/Enter selects.
 void main() {
   const List<AdaptiveNavItem> items = <AdaptiveNavItem>[
     AdaptiveNavItem(icon: Icons.menu_book_outlined, label: 'Books'),
@@ -38,14 +38,14 @@ void main() {
               items: items,
             ),
     );
-    return HibikiFocusRoot(
+    return FushiFocusRoot(
       child: SizedBox(
         width: 320,
         height: 600,
         child: Column(
           children: <Widget>[
-            const HibikiFocusTarget(
-              id: HibikiFocusId('content'),
+            const FushiFocusTarget(
+              id: FushiFocusId('content'),
               child: SizedBox(width: 320, height: 120),
             ),
             // The rail fills the remaining height (as it does inside the app's
@@ -69,17 +69,17 @@ void main() {
       ),
     ));
     await tester.pump();
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(Column).first),
     );
 
-    controller.requestById(const HibikiFocusId('content'));
+    controller.requestById(const FushiFocusId('content'));
     await tester.pump();
 
     // Down from the content lands on a single destination tile (not the bar).
-    expect(controller.move(HibikiFocusDirection.down), isTrue);
+    expect(controller.move(FushiFocusDirection.down), isTrue);
     await tester.pump();
-    final HibikiFocusId? onTile = controller.activeId;
+    final FushiFocusId? onTile = controller.activeId;
     expect(onTile, isNotNull);
     expect(onTile!.value, startsWith('nav-bar-'));
     expect(index, 0, reason: 'moving focus onto a tile must NOT switch tabs');
@@ -97,16 +97,16 @@ void main() {
       ),
     ));
     await tester.pump();
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(Column).first),
     );
 
     // Focus the middle tile directly, then step right to the next one.
-    controller.requestById(const HibikiFocusId('nav-bar-1'));
+    controller.requestById(const FushiFocusId('nav-bar-1'));
     await tester.pump();
-    expect(controller.move(HibikiFocusDirection.right), isTrue);
+    expect(controller.move(FushiFocusDirection.right), isTrue);
     await tester.pump();
-    expect(controller.activeId, const HibikiFocusId('nav-bar-2'));
+    expect(controller.activeId, const FushiFocusId('nav-bar-2'));
     expect(index, 1, reason: 'stepping focus does not select; A/Enter does');
   });
 
@@ -122,11 +122,11 @@ void main() {
       ),
     ));
     await tester.pump();
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(Column).first),
     );
 
-    controller.requestById(const HibikiFocusId('nav-bar-2'));
+    controller.requestById(const FushiFocusId('nav-bar-2'));
     await tester.pump();
     // The gamepad/keyboard path dispatches ActivateIntent at the focused
     // context; the tile maps it to onSelect (the action returns null, so assert
@@ -137,7 +137,7 @@ void main() {
     );
     await tester.pump();
     expect(index, 2);
-    expect(controller.activeId, const HibikiFocusId('nav-bar-2'),
+    expect(controller.activeId, const FushiFocusId('nav-bar-2'),
         reason: 'focus stays on the tile after selecting');
   });
 
@@ -153,11 +153,11 @@ void main() {
       ),
     ));
     await tester.pump();
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(Column).first),
     );
 
-    controller.requestById(const HibikiFocusId('nav-bar-2'));
+    controller.requestById(const FushiFocusId('nav-bar-2'));
     await tester.pump();
     // Keyboard activation: a focused tile must select on Enter, not just on a
     // direct Actions.invoke or a gamepad A. This guards desktop keyboard a11y
@@ -197,16 +197,16 @@ void main() {
       ),
     ));
     await tester.pump();
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(Column).first),
     );
 
-    controller.requestById(const HibikiFocusId('nav-rail-0'));
+    controller.requestById(const FushiFocusId('nav-rail-0'));
     await tester.pump();
     // Down steps to the next rail tile (vertical axis); no tab switch.
-    expect(controller.move(HibikiFocusDirection.down), isTrue);
+    expect(controller.move(FushiFocusDirection.down), isTrue);
     await tester.pump();
-    expect(controller.activeId, const HibikiFocusId('nav-rail-1'));
+    expect(controller.activeId, const FushiFocusId('nav-rail-1'));
     expect(index, 0);
   });
 }

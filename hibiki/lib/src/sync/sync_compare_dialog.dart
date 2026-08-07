@@ -146,13 +146,13 @@ Future<bool> _remoteFolderHasContent(
 /// Test seam for [_fetchCompareData] (the production builder is private).
 @visibleForTesting
 Future<List<SyncCompareEntry>> fetchCompareDataForTest(
-  HibikiDatabase db,
+  FushiDatabase db,
   SyncBackend backend,
 ) =>
     _fetchCompareData(db, backend);
 
 Future<List<SyncCompareEntry>> _fetchCompareData(
-  HibikiDatabase db,
+  FushiDatabase db,
   SyncBackend backend,
 ) async {
   final repo = SyncRepository(db);
@@ -302,7 +302,7 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
 }
 
 Future<List<SyncDictEntry>> _fetchDictEntries(
-  HibikiDatabase db,
+  FushiDatabase db,
   SyncBackend backend, {
   required bool includeLocalOnly,
 }) async {
@@ -431,7 +431,7 @@ String _unsanitize(String name) {
 
 Future<void> showSyncCompareDialog(
   BuildContext context,
-  HibikiDatabase db, {
+  FushiDatabase db, {
   bool conflictsOnly = false,
   Directory? tempDir,
   Directory? audioDatabaseRoot,
@@ -490,7 +490,7 @@ class SyncCompareDialog extends StatefulWidget {
     this.audioDatabaseRoot,
     super.key,
   });
-  final HibikiDatabase db;
+  final FushiDatabase db;
   final SyncBackend backend;
 
   /// 只显示真分叉冲突项（隐藏自动可解的书与词典分组）。冲突解决弹窗用。
@@ -885,7 +885,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   Future<bool> _confirmDelete(String name) async {
     final bool? ok = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => HibikiDialogFrame(
+      builder: (BuildContext ctx) => FushiDialogFrame(
         maxWidth: 420,
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -973,7 +973,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final tokens = HibikiDesignTokens.of(context);
+    final tokens = FushiDesignTokens.of(context);
     final size = MediaQuery.sizeOf(context);
 
     Widget body;
@@ -1033,7 +1033,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     final maxWidth = (size.width * 0.7).clamp(400.0, 720.0);
     final maxBodyHeight = (size.height * 0.7).clamp(400.0, 640.0);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: maxWidth,
       scrollable: false,
       padding: EdgeInsets.all(tokens.spacing.card + 4),
@@ -1054,7 +1054,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                 ),
               ),
               if (_entries != null && _entries!.isNotEmpty)
-                HibikiOverflowMenu<SyncChoice>(
+                FushiOverflowMenu<SyncChoice>(
                   iconWidget: const Icon(Icons.checklist, size: 20),
                   tooltip: t.sync_compare_select_all,
                   onSelected: (choice) {
@@ -1067,17 +1067,17 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                     });
                   },
                   items: [
-                    HibikiPopupMenuItem<SyncChoice>(
+                    FushiPopupMenuItem<SyncChoice>(
                       label: t.sync_compare_all_local,
                       icon: Icons.phone_android_outlined,
                       value: SyncChoice.useLocal,
                     ),
-                    HibikiPopupMenuItem<SyncChoice>(
+                    FushiPopupMenuItem<SyncChoice>(
                       label: t.sync_compare_all_remote,
                       icon: Icons.cloud_outlined,
                       value: SyncChoice.useRemote,
                     ),
-                    HibikiPopupMenuItem<SyncChoice>(
+                    FushiPopupMenuItem<SyncChoice>(
                       label: t.sync_compare_all_skip,
                       icon: Icons.block_outlined,
                       value: SyncChoice.skip,
@@ -1162,7 +1162,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     final choice = _choices[entry.title] ?? SyncChoice.skip;
     final isConflict = entry.hasConflict;
 
-    return HibikiCard(
+    return FushiCard(
       color: isConflict
           ? theme.colorScheme.errorContainer.withValues(alpha: 0.15)
           : Colors.transparent,
@@ -1192,7 +1192,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                 ),
               if (entry.remoteFolderId != null ||
                   entry.remoteAudioBookId != null)
-                HibikiOverflowMenu<String>(
+                FushiOverflowMenu<String>(
                   iconWidget: const Icon(Icons.delete_outline, size: 18),
                   tooltip: t.dialog_delete,
                   onSelected: (String sel) {
@@ -1223,13 +1223,13 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                   },
                   items: <PopupMenuEntry<String>>[
                     if (entry.remoteFolderId != null)
-                      HibikiPopupMenuItem<String>(
+                      FushiPopupMenuItem<String>(
                         label: t.sync_compare_delete_book,
                         icon: Icons.menu_book_outlined,
                         value: 'book',
                       ),
                     if (entry.remoteAudioBookId != null)
-                      HibikiPopupMenuItem<String>(
+                      FushiPopupMenuItem<String>(
                         label: t.sync_compare_delete_audiobook,
                         icon: Icons.headphones_outlined,
                         value: 'audiobook',
@@ -1292,7 +1292,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   }
 
   Widget _buildDictEntry(SyncDictEntry d, ThemeData theme) {
-    return HibikiCard(
+    return FushiCard(
       color: Colors.transparent,
       margin: const EdgeInsets.symmetric(vertical: 2),
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
@@ -1315,7 +1315,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
           if (d.hasRemote)
-            HibikiOverflowMenu<String>(
+            FushiOverflowMenu<String>(
               iconWidget: const Icon(Icons.delete_outline, size: 18),
               tooltip: t.dialog_delete,
               onSelected: (String _) => _deleteRemote(
@@ -1325,7 +1325,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                 onSuccess: () => _dicts!.remove(d),
               ),
               items: <PopupMenuEntry<String>>[
-                HibikiPopupMenuItem<String>(
+                FushiPopupMenuItem<String>(
                   label: t.sync_compare_delete_dict,
                   icon: Icons.delete_outline,
                   value: 'dict',
@@ -1365,7 +1365,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     // native cluster; with only the header overflow menu registered, directional
     // nav would never land here and the user could not pick a choice or reach
     // Apply.
-    return HibikiAdjustableSegmented<SyncChoice>(
+    return FushiAdjustableSegmented<SyncChoice>(
       focusIdPrefix: 'sync-choice',
       values: const <SyncChoice>[
         SyncChoice.useLocal,
@@ -1437,7 +1437,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   }
 
   static String _formatTime(int ms) =>
-      HibikiTimeFormat.dateHourMinute(DateTime.fromMillisecondsSinceEpoch(ms));
+      FushiTimeFormat.dateHourMinute(DateTime.fromMillisecondsSinceEpoch(ms));
 
   static String _pad(int n) => n.toString().padLeft(2, '0');
 

@@ -33,13 +33,13 @@ class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 720,
       maxHeightFactor: 0.86,
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.creator_enhancement_crop_image,
         leadingIcon: Icons.crop_outlined,
         bodyPadding: EdgeInsets.fromLTRB(

@@ -13,7 +13,7 @@ void main() {
   testWidgets('开关行在焦点根下只有一个 Tab 停靠点，整行点击仍可切换', (WidgetTester tester) async {
     bool value = false;
     await tester.pumpWidget(MaterialApp(
-      home: HibikiFocusRoot(
+      home: FushiFocusRoot(
         child: Scaffold(
           body: StatefulBuilder(
             builder: (BuildContext context, StateSetter setState) {

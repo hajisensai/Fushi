@@ -9,12 +9,12 @@ import 'package:fushi_core/fushi_core.dart';
 ///  - 四个删书 DAO 方法同事务清 shelf_entry（删后无孤儿），含幂等删 0 行。
 ///  - deleteSeries FK setNull 把成员 seriesId 归 NULL（散回，不连坐删）。
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() {
     // FK setNull (deleteSeries 散回成员) only fires when foreign_keys is ON,
     // mirroring production (database.dart sets `PRAGMA foreign_keys = ON`).
-    db = HibikiDatabase.forTesting(
+    db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (rawDb) => rawDb.execute('PRAGMA foreign_keys = ON'),
       ),

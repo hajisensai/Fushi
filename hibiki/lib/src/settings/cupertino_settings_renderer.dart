@@ -125,7 +125,7 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
             return CupertinoPageRoute<void>(builder: builder);
           },
           footerStyle: (BuildContext context) =>
-              HibikiDesignTokens.of(context).type.metadata.copyWith(
+              FushiDesignTokens.of(context).type.metadata.copyWith(
                     color: CupertinoColors.secondaryLabel.resolveFrom(context),
                   ),
         );

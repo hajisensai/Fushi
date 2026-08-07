@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// Safety-net for the per-table column guards in the v15->v16 book-key
-/// migration (HibikiDatabase._runBookKeyMigrationBodyV16), the boundary fixed
+/// migration (FushiDatabase._runBookKeyMigrationBodyV16), the boundary fixed
 /// by 7adf38353 ("v16 migration robust to v16-shaped/partial pre-v16 schemas").
 ///
 /// The existing migration_book_key_test seeds a FULLY legacy v15 DB (every
@@ -34,13 +34,13 @@ import 'package:fushi_core/fushi_core.dart';
 /// pre-migration — the realistic state is a freshly-created EMPTY table (built
 /// earlier in the ladder via m.createTable). reader_positions has no FK, so it
 /// can carry a real row to prove the no-op preserves data.
-HibikiDatabase _openPartialV16Shaped() {
+FushiDatabase _openPartialV16Shaped() {
   // The re-keyed book lands on this key. 'Mixed Book' has no sanitized chars,
   // so sanitizeTtuFilename(title) == the title itself.
   const String kBookKey = 'Mixed Book';
   const String kLegacyUid = 'reader_ttu/hoshi://book/1';
 
-  return HibikiDatabase.forTesting(
+  return FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (raw) {
         raw.execute('PRAGMA foreign_keys = ON');
@@ -220,7 +220,7 @@ CREATE TABLE preferences (
 void main() {
   test('partial pre-v16 schema: already-v16 tables no-op, legacy tables re-key',
       () async {
-    final HibikiDatabase db = _openPartialV16Shaped();
+    final FushiDatabase db = _openPartialV16Shaped();
     addTearDown(db.close);
 
     // Opening forces onUpgrade(15 -> current); the partial-shape guards (run in

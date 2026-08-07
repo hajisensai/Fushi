@@ -33,10 +33,10 @@ void main() {
   }
 
   group('reader font size cap (schema)', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
 
     setUp(() async {
-      db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
       MediaSource.setDatabase(db);
       final ReaderSettings readerSettings = ReaderSettings(db);
       await readerSettings.refreshFromDb();
@@ -83,8 +83,8 @@ void main() {
 
   group('reader font size cap (behavior)', () {
     test('a font size above 64 persists and reaches the body CSS', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();

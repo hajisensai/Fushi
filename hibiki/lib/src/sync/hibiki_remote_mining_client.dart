@@ -22,7 +22,7 @@ enum RemoteDuplicateCheck {
 }
 
 /// 「制卡到服务端」发送器的窄接口（供 [RemoteMiningAnkiRepository] 依赖，便于单测注入假实现，
-/// 不必拉起真实 HTTP + SyncRepository）。生产实现是 [HibikiRemoteMiningClient]。
+/// 不必拉起真实 HTTP + SyncRepository）。生产实现是 [FushiRemoteMiningClient]。
 abstract class RemoteMineSender {
   /// 转发一次制卡；返回服务端 `{result, message?, detail?}`，无可达候选/全失败返回 null，
   /// token 被拒抛 [SyncAuthError]。
@@ -40,8 +40,8 @@ abstract class RemoteMineSender {
 /// （enabled 候选按序 fallback / `Basic base64(hibiki:token)` / https 带指纹走钉扎 client /
 /// 每候选独立回收），本类只管端点 `/api/mine/forward` 与 `/api/duplicate`，以及更长的
 /// 默认超时（制卡请求体带媒体字节，LAN 上可能几 MB）。
-class HibikiRemoteMiningClient implements RemoteMineSender {
-  HibikiRemoteMiningClient({
+class FushiRemoteMiningClient implements RemoteMineSender {
+  FushiRemoteMiningClient({
     required SyncRepository repo,
     http.Client? httpClient,
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,
@@ -63,8 +63,8 @@ class HibikiRemoteMiningClient implements RemoteMineSender {
 
   /// 是否已配置可达的已配对主机（enabled 候选 + token）。用于设置页/开关判断能否远端制卡。
   Future<bool> hasTarget() async {
-    final List<HibikiClientUrl> candidates = (await _repo.getHibikiClientUrls())
-        .where((HibikiClientUrl u) => u.enabled)
+    final List<FushiClientUrl> candidates = (await _repo.getHibikiClientUrls())
+        .where((FushiClientUrl u) => u.enabled)
         .toList(growable: false);
     final String? token = await _repo.getHibikiClientToken();
     return candidates.isNotEmpty && token != null && token.isNotEmpty;

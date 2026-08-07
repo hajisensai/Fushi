@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 /// Text and a range for a highlighted selection.
-class HibikiTextSelection {
+class FushiTextSelection {
   /// Initialise an instance of this entity.
-  HibikiTextSelection({
+  FushiTextSelection({
     required this.text,
     this.range = TextRange.empty,
   });
@@ -44,7 +44,7 @@ class HibikiTextSelection {
   @override
   String toString() {
     return '''
-HibikiTextSelection(
+FushiTextSelection(
   text: $text
   range: $range
   before: $textBefore

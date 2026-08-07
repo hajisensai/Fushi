@@ -35,7 +35,7 @@ class SentencePickerEnhancement extends Enhancement {
     String sourceText = creatorModel.getFieldController(field).text;
 
     if (sourceText.trim().isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.no_text,
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
@@ -52,7 +52,7 @@ class SentencePickerEnhancement extends Enhancement {
           .toList(),
       onSelect: (selection) {
         creatorModel.setSentenceAndCloze(
-          HibikiTextSelection(
+          FushiTextSelection(
             text: selection
                 .join(JapaneseLanguage.instance.isSpaceDelimited ? ' ' : '')
                 .trim(),

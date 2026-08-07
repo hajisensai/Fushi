@@ -113,8 +113,8 @@ void main() {
       await writeFile(p.join(audio, 'h', 'a.mp3'), 'MP3');
       await writeFile(p.join(videos, 'Film.mp4'), 'MP4');
 
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       await db.insertEpubBook(EpubBooksCompanion.insert(
         bookKey: 'Bk',
         title: 'Bk',
@@ -170,7 +170,7 @@ void main() {
           reason: 'videos unticked - video tree not restored');
 
       // The DB library index still restored the book row wholesale.
-      final HibikiDatabase restored = HibikiDatabase(dstDbDir);
+      final FushiDatabase restored = FushiDatabase(dstDbDir);
       try {
         expect((await restored.getAllEpubBooks()).length, 1);
       } finally {

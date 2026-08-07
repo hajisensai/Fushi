@@ -278,10 +278,10 @@ void main() {
       expect(find.byTooltip(t.anime_download_play_now), findsNothing);
       expect(find.byTooltip(t.anime_download_relocate), findsOneWidget);
       expect(find.byTooltip(t.anime_download_delete), findsOneWidget);
-      final HibikiIconButton deleteButton = tester.widget<HibikiIconButton>(
+      final FushiIconButton deleteButton = tester.widget<FushiIconButton>(
         find.byWidgetPredicate(
           (Widget widget) =>
-              widget is HibikiIconButton &&
+              widget is FushiIconButton &&
               widget.tooltip == t.anime_download_delete,
         ),
       );

@@ -2,20 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 
-/// One selectable (value, label) entry for [HibikiOptionSelectionPage].
-class HibikiOptionSelectionOption<T> {
-  const HibikiOptionSelectionOption({required this.value, required this.label});
+/// One selectable (value, label) entry for [FushiOptionSelectionPage].
+class FushiOptionSelectionOption<T> {
+  const FushiOptionSelectionOption({required this.value, required this.label});
 
   final T value;
   final String label;
 }
 
-/// Pushes a [HibikiOptionSelectionPage] and resolves to the chosen value, or
+/// Pushes a [FushiOptionSelectionPage] and resolves to the chosen value, or
 /// null when the user backs out without picking.
 Future<T?> pickOption<T>(
   BuildContext context, {
   required String title,
-  required List<HibikiOptionSelectionOption<T>> options,
+  required List<FushiOptionSelectionOption<T>> options,
   required T? selected,
 }) {
   return Navigator.of(context).push<T>(
@@ -23,7 +23,7 @@ Future<T?> pickOption<T>(
     // gesture (the page body already adapts via AdaptiveSettingsScaffold).
     adaptivePageRoute<T>(
       context: context,
-      builder: (_) => HibikiOptionSelectionPage<T>(
+      builder: (_) => FushiOptionSelectionPage<T>(
         title: title,
         options: options,
         selected: selected,
@@ -38,8 +38,8 @@ Future<T?> pickOption<T>(
 /// [AdaptiveSettingsScaffold], so every entry is reachable and the last option
 /// can never be clipped off the bottom. The selected entry shows a trailing
 /// check; tapping any other entry pops the page with that entry's value.
-class HibikiOptionSelectionPage<T> extends StatelessWidget {
-  const HibikiOptionSelectionPage({
+class FushiOptionSelectionPage<T> extends StatelessWidget {
+  const FushiOptionSelectionPage({
     required this.title,
     required this.options,
     required this.selected,
@@ -47,7 +47,7 @@ class HibikiOptionSelectionPage<T> extends StatelessWidget {
   });
 
   final String title;
-  final List<HibikiOptionSelectionOption<T>> options;
+  final List<FushiOptionSelectionOption<T>> options;
   final T? selected;
 
   @override
@@ -58,7 +58,7 @@ class HibikiOptionSelectionPage<T> extends StatelessWidget {
     // other entry is a plain tappable row. No navigation chevron — tapping an
     // option pops this page with its value, it does not drill into a subpage,
     // so a `chevron_right` would falsely imply a deeper level.
-    final List<Widget> rows = options.map((HibikiOptionSelectionOption<T> o) {
+    final List<Widget> rows = options.map((FushiOptionSelectionOption<T> o) {
       final bool isSelected = o.value == selected;
       return AdaptiveSettingsRow(
         title: o.label,

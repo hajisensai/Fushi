@@ -163,7 +163,7 @@ void main() {
 
     expect(
       shell,
-      isNot(contains('HibikiCard(')),
+      isNot(contains('FushiCard(')),
       reason:
           'the whole touch target may not draw the visual card around the footer',
     );
@@ -171,7 +171,7 @@ void main() {
         reason: 'tap/long-press/right-click must still cover the whole card');
     expect(
         shell, contains('onSecondaryTap: _selectionMode ? null : onLongPress'));
-    expect(shell, contains('HibikiFocusTarget('),
+    expect(shell, contains('FushiFocusTarget('),
         reason: 'keyboard/gamepad activation must stay on the full card');
 
     final int coverStack = layout.indexOf('Stack(');
@@ -196,7 +196,7 @@ void main() {
     );
 
     expect(source, contains('const double kShelfTitleFooterHeight ='));
-    expect(footer, contains('HibikiDesignTokens.of(context)'));
+    expect(footer, contains('FushiDesignTokens.of(context)'));
     expect(footer, contains('maxLines: 2'));
     expect(footer, contains('overflow: TextOverflow.ellipsis'));
     expect(footer, contains('textAlign: TextAlign.center'));
@@ -229,7 +229,7 @@ void main() {
     final String layout = _functionSource(source, 'Widget _bookCardLayout({');
 
     // The badge box equals the badge intrinsic size (22px). With BoxFit.contain
-    // the 22px HibikiBadge is neither enlarged nor shrunk, so it renders at its
+    // the 22px FushiBadge is neither enlarged nor shrunk, so it renders at its
     // normal size. TODO-361 had wrongly shrunk it to 16px ("too small").
     expect(
       layout,

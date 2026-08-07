@@ -17,7 +17,7 @@ GlobalKey<NavigatorState>? _toastNavigatorKey;
 
 /// Cross-platform toast that uses native Fluttertoast on mobile
 /// and an overlay-based widget on desktop.
-abstract final class HibikiToast {
+abstract final class FushiToast {
   /// Assign the app's navigator key so desktop toasts can find the overlay.
   static set navigatorKey(GlobalKey<NavigatorState> key) =>
       _toastNavigatorKey = key;
@@ -210,7 +210,7 @@ class _DesktopToastWidgetState extends State<_DesktopToastWidget>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final tokens = HibikiDesignTokens.of(context);
+    final tokens = FushiDesignTokens.of(context);
     return Positioned(
       bottom: 50,
       left: 0,
@@ -282,7 +282,7 @@ class _SeverityToastWidgetState extends State<_SeverityToastWidget>
 
   @override
   Widget build(BuildContext context) {
-    final tokens = HibikiDesignTokens.of(context);
+    final tokens = FushiDesignTokens.of(context);
     final ({Color background, Color foreground, IconData icon}) palette =
         widget.palette;
     return Positioned(

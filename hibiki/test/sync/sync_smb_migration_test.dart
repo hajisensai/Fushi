@@ -7,14 +7,14 @@ import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _testDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 String _b64(String s) => base64Encode(utf8.encode(s));
 
 void main() {
   test('migrates an active SMB backend into WebDAV', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
 
@@ -38,7 +38,7 @@ void main() {
   });
 
   test('never overwrites an existing WebDAV config', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
 
@@ -54,7 +54,7 @@ void main() {
   });
 
   test('clears dead SMB keys even when the backend is not SMB', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
 
@@ -72,7 +72,7 @@ void main() {
   });
 
   test('is a no-op (and idempotent) with no SMB data', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
 

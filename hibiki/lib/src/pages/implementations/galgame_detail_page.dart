@@ -56,7 +56,7 @@ class GalgameDetailPage extends ConsumerStatefulWidget {
 class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     with
         SingleTickerProviderStateMixin,
-        HibikiPagePlaceholders<GalgameDetailPage> {
+        FushiPagePlaceholders<GalgameDetailPage> {
   late final AppModel _appModel = ref.read(appProvider);
   late final GalgameRepository _repo = _appModel.galgameRepo;
   late final TabController _tabs = TabController(
@@ -253,7 +253,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   /// 头部常驻（契约 §2）：封面居左 + 右侧富信息列（元信息网格 / 评分行 / 标签区）。
   /// 窄屏降级成封面在上、信息在下的单列。
   Widget _buildHeader(BuildContext context, GalgameEntry game) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget cover = _coverBlock(context, game);
     final Widget info = _infoColumn(context, game);
     return Padding(
@@ -294,7 +294,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
       constraints: const BoxConstraints(maxWidth: 160, maxHeight: 260),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        borderRadius: HibikiBorderRadius.card,
+        borderRadius: FushiBorderRadius.card,
         boxShadow: <BoxShadow>[
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.28),
@@ -323,7 +323,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
           overflow: TextOverflow.ellipsis,
         ),
         const SizedBox(height: 6),
-        HibikiTagChip(
+        FushiTagChip(
           label: galgamePlayStatusLabel(game.playStatus),
           selected: true,
         ),
@@ -357,12 +357,12 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
         crossAxisAlignment: WrapCrossAlignment.center,
         children: <Widget>[
           for (final BookTagRow tag in _userTags)
-            HibikiTagChip(
+            FushiTagChip(
               label: tag.name,
               color: Color(tag.colorValue),
-              tone: HibikiTagChipTone.surface,
+              tone: FushiTagChipTone.surface,
             ),
-          HibikiActionChip(
+          FushiActionChip(
             label: t.tag_manage,
             icon: Icons.sell_outlined,
             onPressed: () => unawaited(_editUserTags(game)),
@@ -402,7 +402,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
         _metaCell(
           context,
           t.game_edit_developer,
-          HibikiTagChip(label: game.developer!),
+          FushiTagChip(label: game.developer!),
         ),
       if (game.effectiveReleaseDate != null)
         _metaTextCell(
@@ -421,7 +421,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
 
   /// 一个「粗体 label + 值 widget」的网格单元。
   Widget _metaCell(BuildContext context, String label, Widget value) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: const EdgeInsets.only(right: 24, bottom: 8),
       child: Column(
@@ -452,7 +452,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     );
   }
 
-  /// 数据来源 chips：可点者用 [HibikiActionChip] 开外链，无链回落展示 chip。
+  /// 数据来源 chips：可点者用 [FushiActionChip] 开外链，无链回落展示 chip。
   Widget _sourceChips(BuildContext context) {
     return Wrap(
       spacing: 6,
@@ -463,8 +463,8 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
             final String label =
                 GalgameMetadataSource.fromKey(row.source)?.label ?? row.source;
             final String? url = _externalUrl(row);
-            if (url == null) return HibikiTagChip(label: label);
-            return HibikiActionChip(
+            if (url == null) return FushiTagChip(label: label);
+            return FushiActionChip(
               label: label,
               icon: Icons.open_in_new,
               onPressed: () => unawaited(_openUrl(url)),
@@ -478,11 +478,11 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   Widget _scoreRow(BuildContext context, GalgameEntry game) {
     final List<Widget> chips = <Widget>[
       if (game.siteScore != null)
-        HibikiTagChip(
+        FushiTagChip(
           label: '${t.game_site_score} ${game.siteScore!.toStringAsFixed(1)}',
         ),
       if (game.userRating != null)
-        HibikiTagChip(
+        FushiTagChip(
           label: '${t.game_user_rating} ${game.userRating!.toStringAsFixed(1)}',
           selected: true,
         ),
@@ -515,7 +515,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
               ),
               const Spacer(),
               if (_selectedTags.isNotEmpty)
-                HibikiActionChip(
+                FushiActionChip(
                   label: t.game_tags_clear,
                   icon: Icons.clear,
                   onPressed: () => setState(_selectedTags.clear),
@@ -528,9 +528,9 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
             runSpacing: 4,
             children: <Widget>[
               for (final String tag in shown)
-                HibikiTagChip(
+                FushiTagChip(
                   label: tag,
-                  tone: HibikiTagChipTone.surface,
+                  tone: FushiTagChipTone.surface,
                   selected: _selectedTags.contains(tag),
                   onTap: () => _toggleTag(tag),
                 ),
@@ -574,7 +574,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     final Widget placeholder = ShelfCoverPlaceholder(
       icon: Icons.videogame_asset,
       iconSize: 40,
-      backgroundColor: HibikiDesignTokens.of(context).surfaces.overlay,
+      backgroundColor: FushiDesignTokens.of(context).surfaces.overlay,
     );
     final String? cover = game.coverPath;
     if (cover != null && cover.isNotEmpty && File(cover).existsSync()) {
@@ -641,8 +641,8 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
           )
         else
           for (final GalgameSessionRow row in _sessions)
-            HibikiListItem(
-              density: HibikiListDensity.compact,
+            FushiListItem(
+              density: FushiListDensity.compact,
               padding: EdgeInsets.zero,
               title: Text(formatGalgameSessionRange(row)),
               subtitle: Text(formatStatTime(row.durationSeconds * 1000)),
@@ -659,7 +659,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   /// 每日游玩时长折线图（契约 §4）：线色主题色、Y 轴时长、X 轴日期、双向淡网格。
   /// 复用 [StatLineChartPainter]（阅读/视频统计同款自绘），不引图表库。
   Widget _buildDailyLineChart(BuildContext context, ThemeData theme) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = theme.colorScheme;
     final List<StatDayData> points =
         buildGalgameRangeChartData(DateTime.now(), _rangeDays, _dailyRange);
@@ -793,12 +793,12 @@ String formatGalgameDurationAxis(double ms) =>
     formatStatDurationAxis(ms.round());
 
 /// 一条会话的时间范围文案：`2026-07-24 21:03 → 22:41`。
-/// 委托 [HibikiTimeFormat]（G5 收敛：起点 = dateHourMinute，终点 = hourMinute）。
+/// 委托 [FushiTimeFormat]（G5 收敛：起点 = dateHourMinute，终点 = hourMinute）。
 String formatGalgameSessionRange(GalgameSessionRow row) {
   final DateTime start = DateTime.fromMillisecondsSinceEpoch(row.startMs);
   final DateTime end = DateTime.fromMillisecondsSinceEpoch(row.endMs);
-  return '${HibikiTimeFormat.dateHourMinute(start)} → '
-      '${HibikiTimeFormat.hourMinute(end)}';
+  return '${FushiTimeFormat.dateHourMinute(start)} → '
+      '${FushiTimeFormat.hourMinute(end)}';
 }
 
 /// 编辑 tab：改显示名 / 简介 / 标签 / 开发商 / 日期 / NSFW / 我的评分 / 我的评价，
@@ -868,7 +868,7 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
     final String rawDate = _releaseDate.text.trim();
     final String? date = rawDate.isEmpty ? null : draftDate(rawDate);
     if (rawDate.isNotEmpty && date == null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_edit_invalid_date,
         severity: ToastSeverity.error,
       );
@@ -909,7 +909,7 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
     await widget.repo.updateEntry(next);
     await widget.onSaved();
     if (!mounted) return;
-    HibikiToast.show(msg: t.game_edit_saved, severity: ToastSeverity.success);
+    FushiToast.show(msg: t.game_edit_saved, severity: ToastSeverity.success);
   }
 
   /// 刮削：打开统一刮削弹窗（与库页卡菜单「刮削元数据」同一个入口，

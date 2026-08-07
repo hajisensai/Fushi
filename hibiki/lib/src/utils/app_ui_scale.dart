@@ -13,8 +13,8 @@ import 'package:flutter/widgets.dart';
 /// 软化，正文字号请用阅读器自带设置）。**不要**单独对 WebView 做反向缩放——那会让
 /// WebView 处于原生坐标空间、而其上的划词弹窗/高亮浮层仍在缩放后的 canvas 空间，
 /// 两套坐标错位 factor scale，书内查词弹窗与高亮会全部偏位（曾如此回归过）。
-class HibikiAppUiScale extends StatelessWidget {
-  const HibikiAppUiScale({
+class FushiAppUiScale extends StatelessWidget {
+  const FushiAppUiScale({
     required this.scale,
     required this.child,
     super.key,
@@ -125,26 +125,26 @@ class HibikiAppUiScale extends StatelessWidget {
   }
 }
 
-/// 在阅读器等需要原生清晰度的全屏子树里「中和」祖先 [HibikiAppUiScale] 的整体缩放。
+/// 在阅读器等需要原生清晰度的全屏子树里「中和」祖先 [FushiAppUiScale] 的整体缩放。
 ///
 /// 逆变换：把子树重新按**真实视口尺寸**布局、净缩放回到 1.0，使其中的 WebView 平台
 /// 视图按原生像素密度渲染（放大不再栅格软化）。正文大小改由阅读器自带字号控制。
 ///
 /// **关键**：必须整棵子树（WebView + 划词弹窗 + 高亮 + 铬层）一起中和——它们处于
 /// 同一坐标空间，所以 JS 报的 selectionRect 定位不会错位。**不要**只中和 WebView：
-/// 那正是被撤销的 HibikiNativeScale 老坑（只反缩放 WebView、弹窗没跟上 → 错位）。
+/// 那正是被撤销的 FushiNativeScale 老坑（只反缩放 WebView、弹窗没跟上 → 错位）。
 ///
 /// 必须从**路由层**包在页面外，使页面 State.context 也落在本中和器之下，辅助方法
 /// 经 State.context 读到的 MediaQuery 才是真实几何。
-class HibikiAppUiScaleNeutralizer extends StatelessWidget {
-  const HibikiAppUiScaleNeutralizer({required this.child, super.key});
+class FushiAppUiScaleNeutralizer extends StatelessWidget {
+  const FushiAppUiScaleNeutralizer({required this.child, super.key});
 
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final double s = HibikiAppUiScale.of(context);
-    if (s == HibikiAppUiScale.defaultScale) return child;
+    final double s = FushiAppUiScale.of(context);
+    if (s == FushiAppUiScale.defaultScale) return child;
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -162,7 +162,7 @@ class HibikiAppUiScaleNeutralizer extends StatelessWidget {
             child: MediaQuery(
               data: _scaleMediaQuery(mq, s), // ×s 还原真实 size/inset
               child: _AppUiScaleScope(
-                scale: HibikiAppUiScale.defaultScale, // 子树视角:净缩放=1
+                scale: FushiAppUiScale.defaultScale, // 子树视角:净缩放=1
                 child: child,
               ),
             ),

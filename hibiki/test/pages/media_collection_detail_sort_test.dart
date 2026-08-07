@@ -16,12 +16,12 @@ import 'package:fushi_core/fushi_core.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late int collectionId;
 
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.zhCn);
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     // 三集：加入顺序（= 初始 sortIndex）故意乱序——Beta, 第10话, 第9话。
     await db.upsertVideoBook(VideoBooksCompanion(
       bookUid: const Value('video/beta'),
@@ -158,7 +158,7 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    // BUG-778 后拖拽走 HibikiReorderableGrid：触摸 = 长按整卡起拖（鼠标即
+    // BUG-778 后拖拽走 FushiReorderableGrid：触摸 = 长按整卡起拖（鼠标即
     // 拖）。三卡从上到下 = Beta / 第10话 / 第9话；长按首卡（Beta）往下拖两卡。
     final Finder betaRow = find.byKey(
       const ValueKey<String>('collection-episode-row-video/beta'),

@@ -14,7 +14,7 @@
 // This test reproduces the user's full path on the real Windows engine:
 //   1. Seed a cue-backed audiobook (seedAudiobook), enable the floating-lyric
 //      preference, focus-drive the book open -> AudiobookSession shows the
-//      native strip (HibikiFloatingLyricWindow).
+//      native strip (FushiFloatingLyricWindow).
 //   2. Post REAL WM_LBUTTONDOWN/WM_LBUTTONUP to the native strip over the
 //      subtitle text (PostMessageW) - the strip is a bare Win32 window, its
 //      word-tap has no Flutter focus equivalent; every Flutter-side action
@@ -271,7 +271,7 @@ void main() {
           // Wait for the native strip window to really exist + be visible.
           int stripHwnd = 0;
           for (int i = 0; i < 60; i++) {
-            stripHwnd = _findWindowByClass('HibikiFloatingLyricWindow');
+            stripHwnd = _findWindowByClass('FushiFloatingLyricWindow');
             if (stripHwnd != 0 && _isWindowVisible(stripHwnd) != 0) break;
             await tester.pump(const Duration(milliseconds: 500));
           }
@@ -348,7 +348,7 @@ void main() {
 
           final bool overlayShowing = await GlobalLookupChannel.isShowing();
           final int overlayHwnd =
-              _findWindowByClass('HibikiGlobalLookupWindow');
+              _findWindowByClass('FushiGlobalLookupWindow');
           final bool overlayVisibleNative =
               overlayHwnd != 0 && _isWindowVisible(overlayHwnd) != 0;
           debugPrint('[float-tap] overlay isShowing=$overlayShowing '

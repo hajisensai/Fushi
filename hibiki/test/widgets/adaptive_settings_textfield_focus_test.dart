@@ -5,7 +5,7 @@ import 'package:fushi/src/utils/components/settings_shared.dart';
 
 /// BUG-048: An [AdaptiveSettingsTextField] with no explicit focusId must still
 /// register as a geometric focus anchor. Otherwise, when an arrow key escapes
-/// the focused single-line field, [HibikiFocusController.move] cannot find the
+/// the focused single-line field, [FushiFocusController.move] cannot find the
 /// active entry and dead-reckons to the FIRST registered row — which can sit
 /// ABOVE the field (e.g. the AnkiConnect Host field below the "从 AnkiDroid 获取"
 /// row), so Down jumps UP.
@@ -23,7 +23,7 @@ void main() {
 
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
-        body: HibikiFocusRoot(
+        body: FushiFocusRoot(
           child: Column(
             children: <Widget>[
               // A registered, tappable row ABOVE the fields — this is the row
@@ -44,7 +44,7 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.text('Fetch')),
     );
 
@@ -54,7 +54,7 @@ void main() {
     expect(hostNode.hasPrimaryFocus, isTrue);
 
     // Down must step to Port (the field directly below) — NOT the Fetch row.
-    controller.move(HibikiFocusDirection.down);
+    controller.move(FushiFocusDirection.down);
     await tester.pump();
     expect(portNode.hasPrimaryFocus, isTrue,
         reason: 'Down from Host must move to Port, not jump up to the row '
@@ -62,12 +62,12 @@ void main() {
     expect(fetchTaps, 0);
 
     // Down again steps to the API key field.
-    controller.move(HibikiFocusDirection.down);
+    controller.move(FushiFocusDirection.down);
     await tester.pump();
     expect(apiNode.hasPrimaryFocus, isTrue);
 
     // Up walks back to Port.
-    controller.move(HibikiFocusDirection.up);
+    controller.move(FushiFocusDirection.up);
     await tester.pump();
     expect(portNode.hasPrimaryFocus, isTrue);
   });

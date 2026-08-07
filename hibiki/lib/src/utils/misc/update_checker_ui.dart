@@ -1,14 +1,14 @@
 part of 'update_checker.dart';
 
-/// G4 收敛：算法本体移入 [HibikiByteFormat]（本函数曾是全仓 7 份手写副本的基底），
+/// G4 收敛：算法本体移入 [FushiByteFormat]（本函数曾是全仓 7 份手写副本的基底），
 /// 这里保留同名薄委托，既有调用点/测试零改动。
 @visibleForTesting
 String formatUpdateDownloadByteCount(int? bytes) =>
-    HibikiByteFormat.bytes(bytes);
+    FushiByteFormat.bytes(bytes);
 
 @visibleForTesting
 String formatUpdateDownloadSpeed(double? bytesPerSecond) =>
-    HibikiByteFormat.speed(bytesPerSecond);
+    FushiByteFormat.speed(bytesPerSecond);
 
 @visibleForTesting
 double? updateDownloadBytesPerSecond({
@@ -39,15 +39,15 @@ class UpdateAvailableDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 520,
       maxHeightFactor: 0.9,
       scrollable: false,
       insetPadding: EdgeInsets.all(tokens.spacing.gap),
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.update_available,
         leadingIcon: Icons.system_update_alt_outlined,
         scrollable: true,
@@ -128,13 +128,13 @@ class InstallPermissionRetryDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiDialogFrame(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiDialogFrame(
       maxWidth: 520,
       maxHeightFactor: 0.9,
       scrollable: false,
       insetPadding: EdgeInsets.all(tokens.spacing.gap),
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.update_install_permission_title,
         leadingIcon: Icons.security_outlined,
         scrollable: true,
@@ -187,7 +187,7 @@ class WindowsUpdateHandoffResultDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final WindowsUpdateHandoffRecord record = result.record;
     final String title = switch (result.status) {
       WindowsUpdateHandoffStatus.installed => t.update_install_success_title,
@@ -210,12 +210,12 @@ class WindowsUpdateHandoffResultDialog extends StatelessWidget {
       WindowsUpdateHandoffStatus.launchFailed => Icons.warning_amber_outlined,
     };
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 520,
       maxHeightFactor: 0.9,
       scrollable: false,
       insetPadding: EdgeInsets.all(tokens.spacing.gap),
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: title,
         leadingIcon: icon,
         scrollable: true,
@@ -437,7 +437,7 @@ class _DownloadOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Positioned.fill(
       child: Material(
         color: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.54),
@@ -447,7 +447,7 @@ class _DownloadOverlay extends StatelessWidget {
               horizontal: tokens.spacing.gap,
               vertical: tokens.spacing.gap,
             ),
-            child: HibikiCard(
+            child: FushiCard(
               margin: EdgeInsets.zero,
               padding: EdgeInsets.all(tokens.spacing.card),
               child: ConstrainedBox(
@@ -526,7 +526,7 @@ class _DownloadDiagnosticsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final TextStyle? style = Theme.of(context).textTheme.bodySmall;
     final String resumeStatus = value.restartedFromZero
         ? t.update_download_restarted_from_zero

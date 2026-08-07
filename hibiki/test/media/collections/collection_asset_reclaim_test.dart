@@ -17,8 +17,8 @@ import '../../helpers/scan_scale.dart';
 ///   丢失 —— 删除时不回收 = 确定性空间泄漏。
 /// - 误删（修复本身的风险）：这是**删文件**的代码，判据必须精确到「这个文件确实
 ///   只属于这个被删的合集」。别的合集的封面、目录外的用户图片一律不许碰。
-Future<HibikiDatabase> _openDb() async {
-  final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
@@ -34,7 +34,7 @@ Future<Directory> _tempCoversDir() async {
 
 /// 在合集封面目录内建一个占位封面文件，并把路径写进合集行。
 Future<File> _giveCover(
-  HibikiDatabase db,
+  FushiDatabase db,
   Directory coversDir,
   int collectionId,
 ) async {
@@ -47,7 +47,7 @@ Future<File> _giveCover(
 void main() {
   group('deleteMediaCollectionWithAssets', () {
     test('回收被删合集自己的封面文件，同时删掉 DB 行', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       final Directory covers = await _tempCoversDir();
       final int id = await db.createMediaCollection('A');
       final File cover = await _giveCover(db, covers, id);
@@ -66,7 +66,7 @@ void main() {
     });
 
     test('别的合集的封面文件一根汗毛都不许动', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       final Directory covers = await _tempCoversDir();
       final int victim = await db.createMediaCollection('victim');
       final int bystander = await db.createMediaCollection('bystander');
@@ -87,7 +87,7 @@ void main() {
     });
 
     test('两个合集共用同一张封面时，另一个还引用着就保留', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       final Directory covers = await _tempCoversDir();
       final int victim = await db.createMediaCollection('victim');
       final int sharer = await db.createMediaCollection('sharer');
@@ -104,7 +104,7 @@ void main() {
     });
 
     test('落在合集封面目录之外的文件绝不删（用户外部图片）', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       final Directory covers = await _tempCoversDir();
       final Directory outside =
           await Directory.systemTemp.createTemp('user_pictures_');
@@ -126,7 +126,7 @@ void main() {
     });
 
     test('无封面的合集不碰文件系统，且删除照常完成', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       final Directory covers = await _tempCoversDir();
       final int id = await db.createMediaCollection('A');
 
@@ -142,7 +142,7 @@ void main() {
     });
 
     test('合集不存在时不抛、返回 0', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       final Directory covers = await _tempCoversDir();
       expect(
         await deleteMediaCollectionWithAssets(
@@ -157,7 +157,7 @@ void main() {
 
   group('reclaimDeletedCollectionAssets（事务外回收，同步删除传播用）', () {
     test('批量回收多个已删合集的封面，存活合集的封面不受影响', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       final Directory covers = await _tempCoversDir();
       final int a = await db.createMediaCollection('A');
       final int b = await db.createMediaCollection('B');

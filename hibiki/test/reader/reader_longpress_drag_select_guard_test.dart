@@ -127,15 +127,15 @@ void main() {
   });
 
   group('TODO-1279 无双选区未被破坏', () {
-    Future<ReaderSettings> defaultSettings(HibikiDatabase db) async {
+    Future<ReaderSettings> defaultSettings(FushiDatabase db) async {
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
       return settings;
     }
 
     test('触屏 user-select:none（pointer: coarse）仍在--拖选走 app 高亮不复活原生选区', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = await defaultSettings(db);
 

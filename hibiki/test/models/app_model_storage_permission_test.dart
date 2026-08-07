@@ -80,14 +80,14 @@ void main() {
     }
   });
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late PreferencesRepository prefs;
   late Directory storeDir;
   late _RecordingPermissionService permission;
   late AppModel appModel;
 
   setUp(() async {
-    db = HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+    db = FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     storeDir = Directory.systemTemp.createTempSync('hibiki_app_model_perm');
@@ -145,7 +145,7 @@ void main() {
 
       final List<String> safCalls = <String>[];
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        HibikiChannels.saf,
+        FushiChannels.saf,
         (MethodCall call) async {
           safCalls.add(call.method);
           return '/storage/emulated/0/Books';
@@ -153,7 +153,7 @@ void main() {
       );
       addTearDown(() {
         binding.defaultBinaryMessenger
-            .setMockMethodCallHandler(HibikiChannels.saf, null);
+            .setMockMethodCallHandler(FushiChannels.saf, null);
       });
 
       late BuildContext capturedContext;

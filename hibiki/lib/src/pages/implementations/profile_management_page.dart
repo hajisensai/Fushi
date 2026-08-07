@@ -53,7 +53,7 @@ class ProfileManagementBody extends ConsumerStatefulWidget {
 class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final uiState = ref.watch(profileViewModelProvider);
     final vm = ref.read(profileViewModelProvider.notifier);
 
@@ -161,7 +161,7 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
   ) {
     final isOnly = uiState.profiles.length <= 1;
     final bool cupertino = isCupertinoPlatform(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return [
       for (final profile in uiState.profiles)
         AdaptiveSettingsRow(
@@ -428,7 +428,7 @@ class _ProfileActionButton extends StatelessWidget {
       );
     }
 
-    return HibikiIconButton(
+    return FushiIconButton(
       icon: materialIcon,
       size: 20,
       tooltip: tooltip,
@@ -453,9 +453,9 @@ class ProfileDeleteDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.9,
       insetPadding: EdgeInsets.symmetric(
@@ -463,7 +463,7 @@ class ProfileDeleteDialog extends StatelessWidget {
         vertical: tokens.spacing.card,
       ),
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.profile_delete,
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -539,9 +539,9 @@ class _ProfileNameDialogState extends State<ProfileNameDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.9,
       insetPadding: EdgeInsets.symmetric(
@@ -549,7 +549,7 @@ class _ProfileNameDialogState extends State<ProfileNameDialog> {
         vertical: tokens.spacing.card,
       ),
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: widget.title,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
@@ -563,7 +563,7 @@ class _ProfileNameDialogState extends State<ProfileNameDialog> {
           tokens.spacing.card,
           tokens.spacing.card,
         ),
-        body: HibikiTextField(
+        body: FushiTextField(
           controller: _controller,
           autofocus: true,
           hintText: t.profile_name_hint,

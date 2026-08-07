@@ -63,7 +63,7 @@ class GamepadButtonWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String? assetPath = GamepadButtonAssets.assetFor(button, brand);
 
     final bool isPill = shape == GamepadPadShape.pill;
@@ -115,7 +115,7 @@ class GamepadButtonWidget extends StatelessWidget {
   Widget _buildGlyphKnob(
     ThemeData theme,
     ColorScheme scheme,
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     bool isPill,
   ) {
     final GamepadButtonGlyph glyph = GamepadGlyphs.glyphFor(button, brand);

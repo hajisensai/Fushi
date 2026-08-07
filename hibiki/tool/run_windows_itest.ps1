@@ -139,7 +139,7 @@ function Write-JsonFile {
     Out-File -LiteralPath $Path -Encoding UTF8
 }
 
-function Get-HibikiProcessSnapshot {
+function Get-FushiProcessSnapshot {
   param(
     [Parameter(Mandatory = $true)][string]$CurrentRunId,
     [Parameter(Mandatory = $true)][string]$RunnerPathPrefix
@@ -212,7 +212,7 @@ try {
   Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
-public static class HibikiWinShot {
+public static class FushiWinShot {
   [StructLayout(LayoutKind.Sequential)]
   public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
   [DllImport("user32.dll", SetLastError = true)]
@@ -251,8 +251,8 @@ function Save-WindowShot {
     [switch]$ScreenGrab
   )
   try {
-    $rect = New-Object 'HibikiWinShot+RECT'
-    if (-not [HibikiWinShot]::GetWindowRect($Handle, [ref]$rect)) { return $false }
+    $rect = New-Object 'FushiWinShot+RECT'
+    if (-not [FushiWinShot]::GetWindowRect($Handle, [ref]$rect)) { return $false }
     $width = $rect.Right - $rect.Left
     $height = $rect.Bottom - $rect.Top
     if ($width -le 0 -or $height -le 0) { return $false }
@@ -266,7 +266,7 @@ function Save-WindowShot {
         $hdc = $graphics.GetHdc()
         try {
           # PW_RENDERFULLCONTENT = 2
-          [void][HibikiWinShot]::PrintWindow($Handle, $hdc, 2)
+          [void][FushiWinShot]::PrintWindow($Handle, $hdc, 2)
         } finally {
           $graphics.ReleaseHdc($hdc)
         }
@@ -330,7 +330,7 @@ foreach ($path in @(
 }
 
 $RunnerPathPrefix = Join-Path $AppRoot "build\windows\x64\runner"
-$before = @(Get-HibikiProcessSnapshot -CurrentRunId $RunId `
+$before = @(Get-FushiProcessSnapshot -CurrentRunId $RunId `
   -RunnerPathPrefix $RunnerPathPrefix)
 Write-JsonFile $before (Join-Path $EvidenceDir "process-before.json") -AsArray
 Write-JsonFile $Paths (Join-Path $EvidenceDir "paths.json")
@@ -370,7 +370,7 @@ $runnerInfoPath = Join-Path $EvidenceDir "runner-info.json"
 
 # Reap stale TEST-RUNNER processes left by a PREVIOUS crashed run of THIS runner.
 # Scope is strictly this worktree's build\windows\x64\runner path (isTestRunner is
-# set by exact path-prefix match in Get-HibikiProcessSnapshot), so this NEVER kills
+# set by exact path-prefix match in Get-FushiProcessSnapshot), so this NEVER kills
 # the user's installed Hibiki (e.g. D:\APP\Hibiki\fushi.exe) or IDE dart/flutter
 # processes. A stuck prior test-runner locks the build output / debug port and is a
 # known cause of "Unable to start the app on the device". Never hand-kill by name.
@@ -491,7 +491,7 @@ if ($DryRun) {
     $shotIteration = 0
     $shotCount = 0
     while (-not $process.HasExited) {
-      $snapshot = @(Get-HibikiProcessSnapshot -CurrentRunId $RunId `
+      $snapshot = @(Get-FushiProcessSnapshot -CurrentRunId $RunId `
         -RunnerPathPrefix $RunnerPathPrefix)
       Add-RunnerSnapshot -RunnerRecords $runnerRecords -Snapshot $snapshot
       # Throttled OS screen-grab of the runner window: ~1 shot / 2s, capped at
@@ -554,7 +554,7 @@ if ($DryRun) {
   }
 }
 
-$after = @(Get-HibikiProcessSnapshot -CurrentRunId $RunId `
+$after = @(Get-FushiProcessSnapshot -CurrentRunId $RunId `
   -RunnerPathPrefix $RunnerPathPrefix)
 Write-JsonFile $after (Join-Path $EvidenceDir "process-after.json") -AsArray
 Write-JsonFile ([pscustomobject]@{

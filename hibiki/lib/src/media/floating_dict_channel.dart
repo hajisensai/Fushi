@@ -11,7 +11,7 @@ typedef FloatingDictAnkiHandler = Future<void> Function(
     String word, String reading, String meaning);
 
 class FloatingDictChannel extends FloatingOverlayChannel {
-  FloatingDictChannel._() : super(HibikiChannels.floatingDict);
+  FloatingDictChannel._() : super(FushiChannels.floatingDict);
 
   static final FloatingDictChannel _instance = FloatingDictChannel._();
 

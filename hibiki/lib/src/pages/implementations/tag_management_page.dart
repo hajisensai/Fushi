@@ -59,7 +59,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
     }
   }
 
-  HibikiDatabase get _db => ref.read(appProvider).database;
+  FushiDatabase get _db => ref.read(appProvider).database;
 
   Future<void> _createTag() async {
     final result = await _showTagEditDialog(
@@ -207,8 +207,8 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiPageScaffold(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiPageScaffold(
       title: t.tag_manage_title,
       actions: <Widget>[
         IconButton(
@@ -224,7 +224,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
       ),
       body: _tags.isEmpty
           ? Center(
-              child: HibikiPlaceholderMessage(
+              child: FushiPlaceholderMessage(
                 icon: Icons.label_outline,
                 message: t.tag_no_tags_hint,
               ),
@@ -272,7 +272,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
                           _showTagMenu(tag, d.globalPosition),
                       onSecondaryTapDown: (TapDownDetails d) =>
                           _showTagMenu(tag, d.globalPosition),
-                      child: HibikiListItem(
+                      child: FushiListItem(
                         leading: CircleAvatar(
                           backgroundColor: Color(tag.colorValue),
                           radius: 14,
@@ -300,9 +300,9 @@ class TagDeleteConfirmationDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.92,
       insetPadding: EdgeInsets.symmetric(
@@ -310,7 +310,7 @@ class TagDeleteConfirmationDialog extends StatelessWidget {
         vertical: tokens.spacing.card,
       ),
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.dialog_delete,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
@@ -385,9 +385,9 @@ class TagEditDialogState extends State<TagEditDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.96,
       insetPadding: EdgeInsets.symmetric(
@@ -395,7 +395,7 @@ class TagEditDialogState extends State<TagEditDialog> {
         vertical: tokens.spacing.card,
       ),
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: widget.title,
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -414,7 +414,7 @@ class TagEditDialogState extends State<TagEditDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            HibikiTextField(
+            FushiTextField(
               controller: _nameController,
               labelText: t.tag_name_hint,
               autofocus: true,
@@ -427,10 +427,10 @@ class TagEditDialogState extends State<TagEditDialog> {
               runSpacing: tokens.spacing.gap,
               children: kTagPresetColors.map((color) {
                 final isSelected = _selectedColor == color;
-                return HibikiColorSwatch(
+                return FushiColorSwatch(
                   color: Color(color),
                   size: 32,
-                  shape: HibikiColorSwatchShape.dot,
+                  shape: FushiColorSwatchShape.dot,
                   selected: isSelected,
                   onTap: () => setState(() => _selectedColor = color),
                 );

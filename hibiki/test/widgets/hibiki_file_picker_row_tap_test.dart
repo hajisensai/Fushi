@@ -1,6 +1,6 @@
 // BUG-251 / TODO-307: import file-picker rows were not tappable on the whole
-// row — only the trailing icon fired a pick action. HibikiFilePickerRow has an
-// `onTap` that wires HibikiListItem.onTap, but the import dialogs left it null.
+// row — only the trailing icon fired a pick action. FushiFilePickerRow has an
+// `onTap` that wires FushiListItem.onTap, but the import dialogs left it null.
 // These tests guard the component contract (whole-row tap fires onTap, trailing
 // icon taps stay scoped to the icon) plus a source-scan guard that the import
 // dialog rows actually pass onTap so they can't silently regress to icon-only.
@@ -19,11 +19,11 @@ void main() {
     );
   }
 
-  group('HibikiFilePickerRow whole-row tap', () {
+  group('FushiFilePickerRow whole-row tap', () {
     testWidgets('tapping the title text fires onTap', (tester) async {
       bool rowTapped = false;
       await tester.pumpWidget(buildSubject(
-        HibikiFilePickerRow(
+        FushiFilePickerRow(
           title: 'Pick EPUB',
           icon: Icons.menu_book_outlined,
           onTap: () => rowTapped = true,
@@ -39,7 +39,7 @@ void main() {
     testWidgets('disabled row does not fire onTap', (tester) async {
       bool rowTapped = false;
       await tester.pumpWidget(buildSubject(
-        HibikiFilePickerRow(
+        FushiFilePickerRow(
           title: 'Pick EPUB',
           icon: Icons.menu_book_outlined,
           enabled: false,
@@ -58,12 +58,12 @@ void main() {
       bool rowTapped = false;
       bool iconTapped = false;
       await tester.pumpWidget(buildSubject(
-        HibikiFilePickerRow(
+        FushiFilePickerRow(
           title: 'Pick subtitle',
           icon: Icons.subtitles_outlined,
           onTap: () => rowTapped = true,
           actions: [
-            HibikiIconButton(
+            FushiIconButton(
               icon: Icons.close,
               tooltip: 'Clear',
               isWideTapArea: true,
@@ -91,9 +91,9 @@ void main() {
         final int start = source.indexOf('Widget $methodName()');
         expect(start, greaterThanOrEqualTo(0),
             reason: 'missing $methodName in book_import_dialog.dart');
-        // Each *Row method returns a single HibikiFilePickerRow; slice up to the
+        // Each *Row method returns a single FushiFilePickerRow; slice up to the
         // closing `);` of that return statement followed by the method `}`.
-        final int rowStart = source.indexOf('HibikiFilePickerRow(', start);
+        final int rowStart = source.indexOf('FushiFilePickerRow(', start);
         final int rowEnd = source.indexOf('actions:', rowStart);
         return source.substring(rowStart, rowEnd);
       }
@@ -111,7 +111,7 @@ void main() {
 
       final int start = source.indexOf('Widget _alignmentRow()');
       expect(start, greaterThanOrEqualTo(0));
-      final int rowStart = source.indexOf('HibikiFilePickerRow(', start);
+      final int rowStart = source.indexOf('FushiFilePickerRow(', start);
       final int rowEnd = source.indexOf('actions:', rowStart);
       expect(source.substring(rowStart, rowEnd), contains('onTap:'));
     });

@@ -18,7 +18,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'fake_asset_store.dart';
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 /// Minimal [SyncBackend] test double: asset-store methods delegate to a shared
 /// in-memory [FakeAssetStore]; book-folder/metadata methods are stubbed only as
@@ -155,7 +155,7 @@ class FakeSyncBackend implements SyncBackend {
 }
 
 SyncOrchestrator _orchestrator(
-  HibikiDatabase db,
+  FushiDatabase db,
   SyncBackend backend,
   Directory dictRoot,
   Directory audioRoot,
@@ -192,7 +192,7 @@ void main() {
     final Directory tmp = Directory('${work.path}/tmp')..createSync();
 
     // ── Source device: one dictionary + its resource files ──
-    final HibikiDatabase srcDb = _memDb();
+    final FushiDatabase srcDb = _memDb();
     addTearDown(srcDb.close);
     await srcDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
       name: 'testdict',
@@ -216,7 +216,7 @@ void main() {
     expect(pushReport.errors, isEmpty);
 
     // ── Target device: empty DB + empty resource root ──
-    final HibikiDatabase tgtDb = _memDb();
+    final FushiDatabase tgtDb = _memDb();
     addTearDown(tgtDb.close);
     final Directory tgtDictRoot = Directory('${work.path}/tgt_dicts')
       ..createSync();
@@ -242,7 +242,7 @@ void main() {
     final FakeSyncBackend backend = FakeSyncBackend(store);
     final Directory tmp = Directory('${work.path}/tmp')..createSync();
 
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     await db.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
       name: 'progdict',
@@ -291,7 +291,7 @@ void main() {
     final FakeSyncBackend backend = FakeSyncBackend(store);
     final Directory tmp = Directory('${work.path}/tmp')..createSync();
 
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     await db.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
       name: 'shared',
@@ -331,7 +331,7 @@ void main() {
     final Directory tgtAudioRoot = Directory('${work.path}/tgt_audio')
       ..createSync();
 
-    SyncOrchestrator orch(HibikiDatabase db, Directory audioRoot) =>
+    SyncOrchestrator orch(FushiDatabase db, Directory audioRoot) =>
         SyncOrchestrator(
           db: db,
           backend: backend,
@@ -347,7 +347,7 @@ void main() {
         );
 
     // ── Source device: book keyed by title + its audiobook/srt/cues/files ──
-    final HibikiDatabase srcDb = _memDb();
+    final FushiDatabase srcDb = _memDb();
     addTearDown(srcDb.close);
     final String srcKey = await srcDb.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: 'MyBook',
@@ -398,7 +398,7 @@ void main() {
 
     // ── Target device: SAME title → SAME bookKey (stable identity across
     // devices), NO audiobook yet ──
-    final HibikiDatabase tgtDb = _memDb();
+    final FushiDatabase tgtDb = _memDb();
     addTearDown(tgtDb.close);
     final String tgtKey = await tgtDb.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: 'MyBook',
@@ -433,7 +433,7 @@ void main() {
 
   group('local audio phase', () {
     SyncOrchestrator orch(
-      HibikiDatabase db,
+      FushiDatabase db,
       SyncBackend backend,
       Directory tmp, {
       required bool syncLocalAudio,
@@ -474,7 +474,7 @@ void main() {
       final FakeAssetStore store = FakeAssetStore();
       final FakeSyncBackend backend = FakeSyncBackend(store);
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       final LocalAudioDbEntry entry = seedDb(tmp, 'NHK Audio');
@@ -498,7 +498,7 @@ void main() {
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
 
       // Source pushes one entry into the shared backend.
-      final HibikiDatabase srcDb = _memDb();
+      final FushiDatabase srcDb = _memDb();
       addTearDown(srcDb.close);
       final LocalAudioDbEntry srcEntry = seedDb(tmp, 'Forvo');
       final SyncRunReport push = SyncRunReport();
@@ -508,7 +508,7 @@ void main() {
       expect(push.localAudioExported, 1);
 
       // Target has no local entries → pulls + invokes the import callback.
-      final HibikiDatabase tgtDb = _memDb();
+      final FushiDatabase tgtDb = _memDb();
       addTearDown(tgtDb.close);
       final List<LocalAudioPackageContents> imported =
           <LocalAudioPackageContents>[];
@@ -548,7 +548,7 @@ void main() {
       final FakeAssetStore store = FakeAssetStore();
       final FakeSyncBackend backend = FakeSyncBackend(store);
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       final LocalAudioDbEntry entry = seedDb(tmp, 'Shared');
@@ -581,7 +581,7 @@ void main() {
       final FakeAssetStore store = FakeAssetStore();
       final FakeSyncBackend backend = FakeSyncBackend(store);
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       final LocalAudioDbEntry entry = seedDb(tmp, 'Disabled');
@@ -610,7 +610,7 @@ void main() {
       final FakeAssetStore store = FakeAssetStore();
       final FakeSyncBackend backend = FakeSyncBackend(store);
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       // 整轮 sweep 前：从未同步过 -> 无冷却时间戳。
@@ -631,7 +631,7 @@ void main() {
       final _InterruptDuringDictBackend backend =
           _InterruptDuringDictBackend(store);
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       await expectLater(

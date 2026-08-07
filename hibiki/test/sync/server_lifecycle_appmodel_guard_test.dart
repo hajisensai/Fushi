@@ -8,21 +8,21 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'sync_settings_schema_source_corpus.dart';
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 /// BUG-085: the Hibiki LAN sync server must be owned app-wide by AppModel, not
 /// by the sync-settings page widget — leaving the page must not kill the host.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('HibikiSyncServerController behavior', () {
+  group('FushiSyncServerController behavior', () {
     test('startIfEnabled does not bind when hosting is disabled', () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       // A fresh DB has hosting disabled → the controller must short-circuit
       // BEFORE constructing the server, so the (throwing) lookup factory proves
       // it never tried to bind.
-      final HibikiSyncServerController controller = HibikiSyncServerController(
+      final FushiSyncServerController controller = FushiSyncServerController(
         navigatorKey: GlobalKey<NavigatorState>(),
         database: () => db,
         syncDataDir: () => Directory.systemTemp.path,
@@ -33,17 +33,17 @@ void main() {
       expect(controller.isRunning, isFalse);
       expect(controller.boundPort, isNull);
 
-      final HibikiServerStartOutcome outcome =
+      final FushiServerStartOutcome outcome =
           await controller.startIfEnabled();
 
-      expect(outcome, isA<HibikiServerStarted>());
+      expect(outcome, isA<FushiServerStarted>());
       expect(controller.isRunning, isFalse,
           reason: 'disabled hosting must never bind a socket');
     });
   });
 
   group('source guards: controller wires library service (Task-6)', () {
-    test('controller forwards libraryService into HibikiSyncServer', () {
+    test('controller forwards libraryService into FushiSyncServer', () {
       final String src =
           File('lib/src/sync/hibiki_server_controller.dart').readAsStringSync();
       expect(src.contains('libraryService:'), isTrue,
@@ -162,7 +162,7 @@ void main() {
       final String schema = readSyncSettingsSchemaSource();
       // Ownership moved out of the widget: it must not declare its own server /
       // broadcast fields, nor stop them (its dispose used to kill the host).
-      expect(schema, isNot(contains('HibikiSyncServer? _server')),
+      expect(schema, isNot(contains('FushiSyncServer? _server')),
           reason: 'the settings widget must not own the server instance');
       expect(schema, isNot(contains('_server?.stop()')),
           reason: 'leaving the settings page must not stop the host');
@@ -177,7 +177,7 @@ void main() {
       final String appModel =
           File('lib/src/models/app_model.dart').readAsStringSync();
       expect(
-          appModel, contains('HibikiSyncServerController syncServerController'),
+          appModel, contains('FushiSyncServerController syncServerController'),
           reason: 'AppModel must own the server controller for the session');
       expect(appModel, contains('syncServerController.startIfEnabled()'),
           reason: 'the host must start app-wide on launch when enabled');

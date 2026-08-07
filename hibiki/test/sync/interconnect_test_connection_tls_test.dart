@@ -14,22 +14,22 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 /// 用裸 WebDavOps（无指纹）→ 自签 TLS 握手必失败 → 把可连 host 误报「连接失败」。
 /// 本测试用真实自签 HTTPS server 端到端证明：带指纹 → 通；不带指纹 → 握手失败。
 void main() {
-  late HibikiTlsIdentity identity;
+  late FushiTlsIdentity identity;
   late HttpServer server;
   late String baseUrl;
   const String token = 'peer-token-abc';
 
   setUp(() async {
     final ({String certificatePem, String privateKeyPem}) generated =
-        HibikiSelfSignedCertGenerator.generate(
+        FushiSelfSignedCertGenerator.generate(
       commonName: 'hibiki-testconn',
       sanIpAddresses: <String>['127.0.0.1'],
     );
-    identity = HibikiTlsIdentity(
+    identity = FushiTlsIdentity(
       certificatePem: generated.certificatePem,
       privateKeyPem: generated.privateKeyPem,
       fingerprintSha256:
-          HibikiTlsIdentityStore.fingerprintOf(generated.certificatePem),
+          FushiTlsIdentityStore.fingerprintOf(generated.certificatePem),
     );
     final SecurityContext serverCtx = SecurityContext()
       ..useCertificateChainBytes(identity.certificatePem.codeUnits)

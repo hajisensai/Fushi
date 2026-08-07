@@ -18,8 +18,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// 4. 源码：reader 页 `_showTopProgress` 与门并入 showTopProgressBar，
 ///    且顶栏构建仍以 `_showTopProgress` 为唯一门控（关后顶栏 'hoshi_progress' 不渲染）。
 
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
@@ -39,7 +39,7 @@ List<SettingsItem> _behaviorItems() {
 }
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() {
     db = _testDb();

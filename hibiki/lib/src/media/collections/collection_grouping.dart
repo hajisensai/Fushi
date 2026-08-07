@@ -3,7 +3,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 统一合集 Phase 4：库网格分组核心（纯函数，widget-free 单测）。
 ///
 /// 把媒体条目按「所属合集」折叠——不属任何合集的条目单卡；属某合集的条目折进
-/// 该合集卡。折叠归属用 [HibikiDatabase.getPrimaryCollectionIdByEntry] 的「最小
+/// 该合集卡。折叠归属用 [FushiDatabase.getPrimaryCollectionIdByEntry] 的「最小
 /// collectionId」（一条目属多合集时只折进 id 最小的那张；其余合集卡照常显示、详情页
 /// 照常含该条目）。
 ///
@@ -89,7 +89,7 @@ bool keepMemberUnderTagFilter({
 /// 首成员位置；卡片间最终排序由页面按排序模式完成）。
 ///
 /// [primaryCollectionIdByEntry]：`'<mediaType>|<entryKey>'` → 该条目折叠归属的最小
-///   collectionId（[HibikiDatabase.getPrimaryCollectionIdByEntry]）。
+///   collectionId（[FushiDatabase.getPrimaryCollectionIdByEntry]）。
 /// [collectionsById]：collectionId → 合集行。归属 id 不在此映射（合集已删的孤儿
 ///   引用）→ 该条目退化为散条目。
 /// [memberSortIndex]：`'<mediaType>|<entryKey>'` → 该条目在其主折叠合集里的

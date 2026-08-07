@@ -2,7 +2,7 @@
 ///
 /// 拖拽源 [MediaCardDraggable] 挂在各库页的媒体卡上，payload 是统一媒体身份
 /// [MediaRef]；接收端 [CollectionDropTarget] 挂在合集行头（书架 / 游戏）与合集
-/// 封面卡（视频），落下即 `HibikiDatabase.addToCollection`（幂等：同一张卡重复
+/// 封面卡（视频），落下即 `FushiDatabase.addToCollection`（幂等：同一张卡重复
 /// 拖同一个合集是 no-op，调用方据回调自行提示）。
 ///
 /// 泛型刻意选 [MediaRef] 而**不复用**标签拖放的 `BookTagRow`：合集行头同时挂着
@@ -30,7 +30,7 @@ enum CollectionAddOutcome {
   failed,
 }
 
-/// 提示通道。默认 [HibikiToast.show]；测试注入自己的收集器。
+/// 提示通道。默认 [FushiToast.show]；测试注入自己的收集器。
 ///
 /// 刻意**不带** `ToastSeverity`：这一个通道要送两种语义（已存在=warning、落库
 /// 失败=error），要着色就得把语义塞进 typedef，而 typedef 一改，注入自己收集器的
@@ -48,13 +48,13 @@ typedef CollectionAddNotifier = void Function(String message);
 /// 故本函数**永不抛出**：任何失败都归到 [CollectionAddOutcome.failed] 并给出
 /// 明确提示。调用方只需按返回值决定要不要刷新 + 报成功。
 Future<CollectionAddOutcome> addMediaRefToCollection({
-  required HibikiDatabase database,
+  required FushiDatabase database,
   required int collectionId,
   required MediaRef mediaRef,
   CollectionAddNotifier? notify,
 }) async {
   final CollectionAddNotifier tell =
-      notify ?? (String message) => HibikiToast.show(msg: message);
+      notify ?? (String message) => FushiToast.show(msg: message);
   try {
     final List<MediaCollectionItemRow> items =
         await database.getCollectionItems(collectionId);
@@ -150,7 +150,7 @@ class MediaCardDraggable extends StatelessWidget {
 
 /// 拖拽浮层：紧凑 chip（图标 + 条目名），不复用卡片本体。
 ///
-/// 刻意不拿 [MediaCardDraggable.child] 当 feedback：卡片内含 `HibikiFocusTarget`
+/// 刻意不拿 [MediaCardDraggable.child] 当 feedback：卡片内含 `FushiFocusTarget`
 /// （焦点 id 唯一）与 `InkWell`，同一棵树里渲染第二份会造成焦点 id 撞车。
 class _DragFeedback extends StatelessWidget {
   const _DragFeedback({required this.label});
@@ -159,7 +159,7 @@ class _DragFeedback extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Material(
       color: Colors.transparent,
       elevation: 4,
@@ -243,7 +243,7 @@ class _CollectionDropTargetState extends State<CollectionDropTarget> {
   @override
   Widget build(BuildContext context) {
     if (!widget.enabled) return widget.child;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color hoverColor = tokens.surfaces.primary;
     final bool eink = isEinkTheme(context);
     return DragTarget<MediaRef>(

@@ -115,7 +115,7 @@ void main() {
     tearDown(() => ReaderHibikiSource.readerSettings = null);
 
     test('topProgressFloating defaults true; autoHide defaults 3000', () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -128,7 +128,7 @@ void main() {
 
     test('topProgressFloating round-trips through per-reader ReaderSettings',
         () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -150,7 +150,7 @@ void main() {
 
     test('autoHideChromeMillis round-trips + normalizes a bad stored value',
         () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -171,8 +171,8 @@ void main() {
 
     test('two books do not cross-contaminate top floating', () async {
       await _withMultipleDatabaseWarningDisabled(() async {
-        final dbA = HibikiDatabase.forTesting(NativeDatabase.memory());
-        final dbB = HibikiDatabase.forTesting(NativeDatabase.memory());
+        final dbA = FushiDatabase.forTesting(NativeDatabase.memory());
+        final dbB = FushiDatabase.forTesting(NativeDatabase.memory());
         addTearDown(dbA.close);
         addTearDown(dbB.close);
 

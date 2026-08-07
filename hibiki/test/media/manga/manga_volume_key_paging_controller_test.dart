@@ -15,7 +15,7 @@ void main() {
   Future<void> sendNative(String method) async {
     final Completer<void> replied = Completer<void>();
     messenger.handlePlatformMessage(
-      HibikiChannels.volumeKeys.name,
+      FushiChannels.volumeKeys.name,
       codec.encodeMethodCall(MethodCall(method)),
       (_) => replied.complete(),
     );
@@ -25,12 +25,12 @@ void main() {
   test('Android ownership, repeat throttling and release use the real channel',
       () async {
     final List<MethodCall> outbound = <MethodCall>[];
-    messenger.setMockMethodCallHandler(HibikiChannels.volumeKeys, (call) async {
+    messenger.setMockMethodCallHandler(FushiChannels.volumeKeys, (call) async {
       outbound.add(call);
       return null;
     });
     addTearDown(() {
-      messenger.setMockMethodCallHandler(HibikiChannels.volumeKeys, null);
+      messenger.setMockMethodCallHandler(FushiChannels.volumeKeys, null);
     });
 
     DateTime now = DateTime(2026);
@@ -66,12 +66,12 @@ void main() {
 
   test('unsupported platform never takes native ownership', () async {
     final List<MethodCall> outbound = <MethodCall>[];
-    messenger.setMockMethodCallHandler(HibikiChannels.volumeKeys, (call) async {
+    messenger.setMockMethodCallHandler(FushiChannels.volumeKeys, (call) async {
       outbound.add(call);
       return null;
     });
     addTearDown(() {
-      messenger.setMockMethodCallHandler(HibikiChannels.volumeKeys, null);
+      messenger.setMockMethodCallHandler(FushiChannels.volumeKeys, null);
     });
     final MangaVolumeKeyPagingController controller =
         MangaVolumeKeyPagingController(onPrevious: () {}, onNext: () {});

@@ -31,7 +31,7 @@ import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/focus/hibiki_focus_controller.dart'
-    show HibikiFocusController, HibikiFocusRoot;
+    show FushiFocusController, FushiFocusRoot;
 import 'package:fushi/src/shortcuts/input_binding.dart'
     show GamepadButton, ModifierKey;
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
@@ -488,10 +488,10 @@ class _HomePageState extends BasePageState<HomePage>
 
   /// TODO-900：app 回前台时把 Flutter 焦点收回首页键事件入口，修复「切窗回来后
   /// 首页 / 全局快捷键整体失灵、只能重启复活」。两态分支（对齐 [_wrapFocusNavigation]）：
-  /// - 实验焦点导航开（存在 [HibikiFocusRoot] 控制器）→ `controller.ensureFocus()`，
+  /// - 实验焦点导航开（存在 [FushiFocusRoot] 控制器）→ `controller.ensureFocus()`，
   ///   把焦点 home 到一个真实可聚焦目标（仍落在首页 Focus 子树内，键事件照常冒泡到
   ///   [_handleKeyEvent]）。
-  /// - 关（默认，无 HibikiFocusRoot）→ 直接 requestFocus **既有** [_keyboardFocusNode]
+  /// - 关（默认，无 FushiFocusRoot）→ 直接 requestFocus **既有** [_keyboardFocusNode]
   ///   （绑定 [_handleKeyEvent] 的同一节点，不新造节点）。
   /// 路由门控：首页非当前路由（上方压着对话框）时不抢焦点，避免夺走对话框焦点
   /// （Never break userspace）——对话框关闭时各自的返回点会归还焦点。
@@ -499,8 +499,8 @@ class _HomePageState extends BasePageState<HomePage>
     if (!mounted) return;
     final ModalRoute<Object?>? owner = ModalRoute.of(context);
     if (owner != null && !owner.isCurrent) return;
-    final HibikiFocusController? controller =
-        HibikiFocusRoot.maybeControllerOf(context, listen: false);
+    final FushiFocusController? controller =
+        FushiFocusRoot.maybeControllerOf(context, listen: false);
     if (controller != null) {
       controller.ensureFocus();
       return;
@@ -790,7 +790,7 @@ class _HomePageState extends BasePageState<HomePage>
                   builder: (context, constraints) {
                     // BUG-401: classify on the real physical width
                     // (logical × appUiScale). This LayoutBuilder sits INSIDE
-                    // HibikiAppUiScale, so `constraints.maxWidth` is the
+                    // FushiAppUiScale, so `constraints.maxWidth` is the
                     // inflated logical canvas width; reading it directly kept
                     // desktop locked to the nav-rail layout and the phone
                     // (bottom-bar) layout was unreachable however narrow the
@@ -805,7 +805,7 @@ class _HomePageState extends BasePageState<HomePage>
                     }
                     final sizeClass = windowSizeClassReal(
                       constraints.maxWidth,
-                      HibikiAppUiScale.of(context),
+                      FushiAppUiScale.of(context),
                     );
                     // compact(<600) → 底栏；medium/expanded(≥600，含竖屏平板) → 侧边布局。
                     if (sizeClass == WindowSizeClass.compact) {
@@ -1139,7 +1139,7 @@ class _HomePageState extends BasePageState<HomePage>
 /// （见 [shouldWarnOnExit]，TODO-698）。非设置 tab 不构造此 widget，仍走顶层 PopScope
 /// 的正常退出/同步告警逻辑。
 ///
-/// 设置内容默认是 [HibikiSettingsContent]；[child] 仅供 widget 测试注入轻量占位以独立
+/// 设置内容默认是 [FushiSettingsContent]；[child] 仅供 widget 测试注入轻量占位以独立
 /// 验证 PopScope 拦截行为（生产路径始终用默认值）。
 class HomeSettingsTabContent extends StatelessWidget {
   const HomeSettingsTabContent({
@@ -1155,7 +1155,7 @@ class HomeSettingsTabContent extends StatelessWidget {
   /// 是否在设置页头左侧显示返回箭头（宽屏隐藏图标侧栏的全屏设置场景）。
   final bool showBackButton;
 
-  /// 设置内容；为空时回落到默认的 [HibikiSettingsContent]。
+  /// 设置内容；为空时回落到默认的 [FushiSettingsContent]。
   final Widget? child;
 
   @override
@@ -1167,7 +1167,7 @@ class HomeSettingsTabContent extends StatelessWidget {
         onReturnToPreviousTab();
       },
       child: child ??
-          HibikiSettingsContent(
+          FushiSettingsContent(
             onBack: showBackButton ? onReturnToPreviousTab : null,
           ),
     );
@@ -1185,11 +1185,11 @@ class _SyncExitWarningDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     final TextTheme textTheme = Theme.of(context).textTheme;
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 380,
       padding: EdgeInsets.all(tokens.spacing.card + 4),
       child: Column(

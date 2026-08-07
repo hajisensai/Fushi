@@ -222,9 +222,9 @@ RemoteContinueEntry? pickRemoteContinueEntry(
   return best;
 }
 
-/// 毫秒 → `m:ss` / `h:mm:ss`（视频「已看至」外显）。委托 [HibikiTimeFormat.clock]。
+/// 毫秒 → `m:ss` / `h:mm:ss`（视频「已看至」外显）。委托 [FushiTimeFormat.clock]。
 String formatVideoPosition(int positionMs) =>
-    HibikiTimeFormat.clock(Duration(milliseconds: positionMs));
+    FushiTimeFormat.clock(Duration(milliseconds: positionMs));
 
 /// `VideoWatchStatistics` 行投影（键 + lastModified 毫秒）→ 每键最近观看时间
 /// 映射。键 = bookUid（v39 新行）或 title（迁移遗留 NULL-uid 行的回退键），

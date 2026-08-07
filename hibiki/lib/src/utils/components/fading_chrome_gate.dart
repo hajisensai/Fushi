@@ -7,7 +7,7 @@ import 'package:flutter/widgets.dart';
 /// **留在树里**做 fade/slide 动画，旧实现只包 [IgnorePointer] 挡指针——但
 /// [IgnorePointer] 挡不住焦点遍历：手柄 D-pad / Tab 仍能把焦点落进（或留在）
 /// opacity=0 的 `InkWell(canRequestFocus: true)` 上。焦点高亮开启
-/// （`FocusHighlightMode.traditional`）时，`HibikiFocusRing` 按 primaryFocus 的
+/// （`FocusHighlightMode.traditional`）时，`FushiFocusRing` 按 primaryFocus 的
 /// RenderBox 画 2.5px 空心框 → 画面上凭空出现一个空焦点框（BUG-1301 用户截图）。
 ///
 /// [ExcludeFocus] 翻 excluding=true 时 Flutter 会自动把已持焦的子孙 unfocus 回

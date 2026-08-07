@@ -6,7 +6,7 @@ String _navigationBranch(String source) {
   final int branchStart = source.indexOf('if (navigation != null)');
   if (branchStart < 0) return '';
   final int branchEnd = source.indexOf(
-    'return HibikiPageHeader(',
+    'return FushiPageHeader(',
     branchStart,
   );
   if (branchEnd <= branchStart) return '';

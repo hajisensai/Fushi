@@ -516,15 +516,15 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext ctx) {
-        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
-        return HibikiDialogFrame(
+        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+        return FushiDialogFrame(
           maxWidth: 420,
           insetPadding: EdgeInsets.symmetric(
             horizontal: tokens.spacing.card,
             vertical: tokens.spacing.card,
           ),
           scrollable: false,
-          child: HibikiModalSheetFrame(
+          child: FushiModalSheetFrame(
             title: t.data_storage_change_confirm_title,
             scrollable: true,
             bodyPadding: EdgeInsets.fromLTRB(

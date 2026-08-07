@@ -7,7 +7,7 @@ import 'package:fushi/src/sync/hibiki_sync_server.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// Regression guard for BUG-035: a freshly started [HibikiSyncServer] serves
+/// Regression guard for BUG-035: a freshly started [FushiSyncServer] serves
 /// `<syncDataDir>/sync-data` as its WebDAV root, and the client's reachability
 /// probe (PROPFIND on '/') gates EVERY other op. If `start()` does not create
 /// that directory, the probe gets a 404 and reports the (reachable, correctly
@@ -31,8 +31,8 @@ void main() {
     expect(servedRoot.existsSync(), isFalse,
         reason: 'precondition: the served WebDAV root must not exist yet');
 
-    final String token = HibikiSyncServer.generateToken();
-    final HibikiSyncServer server = HibikiSyncServer(
+    final String token = FushiSyncServer.generateToken();
+    final FushiSyncServer server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0, // ephemeral
       token: token,
@@ -46,12 +46,12 @@ void main() {
     expect(servedRoot.existsSync(), isTrue,
         reason: 'start() must create the served root so PROPFIND / is 207');
 
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
-    await repo.setHibikiClientUrls(<HibikiClientUrl>[
-      HibikiClientUrl(url: 'http://127.0.0.1:${server.port}'),
+    await repo.setHibikiClientUrls(<FushiClientUrl>[
+      FushiClientUrl(url: 'http://127.0.0.1:${server.port}'),
     ]);
     await repo.setHibikiClientToken(token);
 

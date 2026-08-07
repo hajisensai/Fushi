@@ -149,13 +149,13 @@ void main() {
   });
 
   group('GalgameRepository（内存 DB）', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late GalgameRepository repo;
 
     setUp(() {
       // 生产开库在 `_openWithRecovery` 里 `PRAGMA foreign_keys = ON`；内存测试库
       // 必须自己打开，否则 cascade 断言测的是一个 app 里不存在的行为。
-      db = HibikiDatabase.forTesting(
+      db = FushiDatabase.forTesting(
         NativeDatabase.memory(
           setup: (rawDb) => rawDb.execute('PRAGMA foreign_keys = ON'),
         ),

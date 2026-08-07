@@ -8,10 +8,10 @@ import 'package:fushi/src/utils/components/hibiki_marquee.dart';
 import 'golden_test_helpers.dart';
 
 void main() {
-  group('HibikiMarquee golden', () {
+  group('FushiMarquee golden', () {
     testWidgets('short text fits without scrolling', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiMarquee(
+        const FushiMarquee(
           text: 'Short',
           style: TextStyle(fontSize: 16),
         ),
@@ -27,7 +27,7 @@ void main() {
 
     testWidgets('Japanese text fits at adequate width', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiMarquee(
+        const FushiMarquee(
           text: '吾輩は猫',
           style: TextStyle(fontSize: 16),
         ),
@@ -43,7 +43,7 @@ void main() {
 
     testWidgets('with custom style non-overflow', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiMarquee(
+        const FushiMarquee(
           text: 'Styled',
           style: TextStyle(
             fontSize: 20,
@@ -63,7 +63,7 @@ void main() {
 
     testWidgets('dark theme non-overflow', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiMarquee(
+        const FushiMarquee(
           text: 'Dark mode',
           style: TextStyle(fontSize: 16, color: Colors.white),
         ),

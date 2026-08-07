@@ -141,7 +141,7 @@ void main() {
   // ── BUG-826 视频端：查词浮层顶栏加到 4 颗动作按钮后的窄宽实测 ──────────────
   //
   // 上面那条锁的是 reader 的源码契约，用的 header 语料是 4×48 的 SizedBox。视频端
-  // 用的是真 [HibikiIconButton]（icon 20 + 默认 padding gap 8 ×2 = **36px/颗**），
+  // 用的是真 [FushiIconButton]（icon 20 + 默认 padding gap 8 ×2 = **36px/颗**），
   // 尺寸不同、算术也不同：中段可用宽 = 弹窗宽 − 108（左 A−/A+ 各 36 + 右关闭 36），
   // 4 颗 = 144，弹窗宽下限 [kLookupPopupMinWidth] = 250 ⇒ 142 < 144。
   //
@@ -158,7 +158,7 @@ void main() {
             Icons.content_copy_outlined,
             Icons.star_border,
           ])
-            HibikiIconButton(
+            FushiIconButton(
               icon: icon,
               tooltip: 'action',
               size: 20,
@@ -181,7 +181,7 @@ void main() {
       bare,
       isNotNull,
       reason: '负向对照失效：裸 Row 在最窄弹窗竟没溢出，说明这条判据已量不到真实尺寸，'
-          '正向断言随之变成恒绿。请复核 HibikiIconButton 尺寸或顶栏左右簇宽度。',
+          '正向断言随之变成恒绿。请复核 FushiIconButton 尺寸或顶栏左右簇宽度。',
     );
     expect('$bare', contains('overflowed'));
 

@@ -10,7 +10,7 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 String formatCueTimestamp(int startMs) =>
-    HibikiTimeFormat.clock(Duration(milliseconds: startMs < 0 ? 0 : startMs));
+    FushiTimeFormat.clock(Duration(milliseconds: startMs < 0 ? 0 : startMs));
 
 /// 把 ASS **逐字卡拉OK 事件**合并回整句（TODO-1384）。纯函数，列表与测试同源。
 ///
@@ -496,7 +496,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   static const double _kRowHoverThresholdPx = 8;
 
   /// 只给当前/待滚动目标行保留 [GlobalKey]，供自适应行高下精确
-  /// [HibikiFocusScroll.ensureVisible]。普通可见行走 [ValueKey]，避免长列表滚动后
+  /// [FushiFocusScroll.ensureVisible]。普通可见行走 [ValueKey]，避免长列表滚动后
   /// [GlobalKey] map 按历史 visibleIndex 无限制增长。
   final Map<int, GlobalKey> _rowKeys = <int, GlobalKey>{};
 
@@ -883,7 +883,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     // 再精确居中（TODO-340）。
     final BuildContext? rowContext = _rowKeys[currentIndex]?.currentContext;
     if (rowContext != null) {
-      HibikiFocusScroll.ensureVisible(rowContext, duration: duration);
+      FushiFocusScroll.ensureVisible(rowContext, duration: duration);
       return;
     }
     final double viewport = _scrollController.position.viewportDimension;
@@ -915,7 +915,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       if (!mounted) return;
       final BuildContext? settled = _rowKeys[currentIndex]?.currentContext;
       if (settled != null) {
-        HibikiFocusScroll.ensureVisible(settled, duration: duration);
+        FushiFocusScroll.ensureVisible(settled, duration: duration);
       }
     });
   }

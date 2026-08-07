@@ -12,14 +12,14 @@ import 'package:fushi_core/fushi_core.dart';
 /// 覆盖 DTO round-trip、缺字段向后兼容、copyWith 保留，以及 host 端
 /// listBooks/listVideos 从 DB 标签映射填充 tags。
 void main() {
-  HibikiDatabase openDb() {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+  FushiDatabase openDb() {
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     return db;
   }
 
-  AppModelLibraryHostService buildSvc(HibikiDatabase db) =>
+  AppModelLibraryHostService buildSvc(FushiDatabase db) =>
       AppModelLibraryHostService(
         db: db,
         dictionaryResourceRoot: Directory.systemTemp,
@@ -87,7 +87,7 @@ void main() {
 
   group('host listBooks/listVideos 填充 tags', () {
     test('listBooks 从 book_tag_mappings 填充书标签名', () async {
-      final HibikiDatabase db = openDb();
+      final FushiDatabase db = openDb();
       await db.insertEpubBook(EpubBooksCompanion.insert(
         bookKey: 'BookA',
         title: 'BookA',
@@ -107,7 +107,7 @@ void main() {
     });
 
     test('listBooks 对无标签的书返回空 tags', () async {
-      final HibikiDatabase db = openDb();
+      final FushiDatabase db = openDb();
       await db.insertEpubBook(EpubBooksCompanion.insert(
         bookKey: 'Bare',
         title: 'Bare',
@@ -122,7 +122,7 @@ void main() {
     });
 
     test('listVideos 从 video_book_tag_mappings 填充视频标签名', () async {
-      final HibikiDatabase db = openDb();
+      final FushiDatabase db = openDb();
       await db.upsertVideoBook(VideoBooksCompanion.insert(
         bookUid: 'vid-uid',
         title: 'MyVideo',

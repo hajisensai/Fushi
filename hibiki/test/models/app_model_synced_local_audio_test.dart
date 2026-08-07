@@ -14,8 +14,8 @@ import 'package:path/path.dart' as p;
 
 import '../helpers/test_platform_services.dart';
 
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
@@ -72,7 +72,7 @@ void main() {
     }
   });
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late PreferencesRepository prefs;
   late Directory libraryDir; // == databaseDirectory，库目录
   late Directory stagingDir; // 模拟 orchestrator 的 _tempDir，解压落点

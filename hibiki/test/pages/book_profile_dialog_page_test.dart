@@ -52,7 +52,7 @@ void main() {
   testWidgets('book profile dialog frame fits a compact window', (
     WidgetTester tester,
   ) async {
-    // Mounts the full HibikiDialogFrame -> HibikiModalSheetFrame chain (not just
+    // Mounts the full FushiDialogFrame -> FushiModalSheetFrame chain (not just
     // the inner content) on a short screen. Regression for the unbounded-height
     // crash: the dialog frame must pass scrollable:false so the sheet's Flexible
     // body gets a bounded height instead of throwing inside a SingleChildScrollView.
@@ -109,7 +109,7 @@ void main() {
           theme: ThemeData(
             platform: TargetPlatform.iOS,
             extensions: const <ThemeExtension<dynamic>>[
-              HibikiDesignSystemTheme(HibikiDesignSystem.cupertino),
+              FushiDesignSystemTheme(FushiDesignSystem.cupertino),
             ],
           ),
           home: BookProfileDialogContent(

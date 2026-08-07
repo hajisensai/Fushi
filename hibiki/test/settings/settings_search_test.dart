@@ -295,9 +295,9 @@ void main() {
   test('reveal target scrolls into view after the first frame', () {
     final String search =
         File('lib/src/settings/settings_search.dart').readAsStringSync();
-    // 滚动必须委托 HibikiFocusScroll（焦点架构守卫禁止 lib/src 自持
+    // 滚动必须委托 FushiFocusScroll（焦点架构守卫禁止 lib/src 自持
     // Scrollable.ensureVisible，见 focus_architecture_static_test）。
-    expect(search, contains('HibikiFocusScroll.ensureVisible('));
+    expect(search, contains('FushiFocusScroll.ensureVisible('));
     expect(search, contains('addPostFrameCallback'));
   });
 

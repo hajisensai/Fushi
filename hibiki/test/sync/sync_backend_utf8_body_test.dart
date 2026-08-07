@@ -21,14 +21,14 @@ import 'package:drift/native.dart';
 //
 // Fix: Content-Type with charset=utf-8 + req.add(utf8.encode(jsonEncode(...)))
 // (byte-level write, bypassing the latin1 default encoder). This test starts a
-// real HibikiSyncServer, drives the client aggregate/progress PUT path with a
+// real FushiSyncServer, drives the client aggregate/progress PUT path with a
 // Japanese title, has the server UTF-8-decode the body into the fake library,
 // and asserts the Japanese title round-trips intact. The old code throws at
 // write time, so this test is red on old code and green after the fix.
 
 /// Fake library service: captures the aggregate snapshot and book progress the
 /// client PUTs, so the test can assert the UTF-8 round-trip.
-class _CapturingLibraryService implements HibikiLibraryHostService {
+class _CapturingLibraryService implements FushiLibraryHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
   Future<File?> clipVideoAudio(String id,
@@ -209,17 +209,17 @@ class _CapturingLibraryService implements HibikiLibraryHostService {
   }) async {}
 }
 
-HibikiDatabase _testDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 Future<InterconnectSyncBackend> _buildBackend({
   required String base,
   required String token,
 }) async {
-  final HibikiDatabase db = _testDb();
+  final FushiDatabase db = _testDb();
   final SyncRepository repo = SyncRepository(db);
-  await repo.setHibikiClientUrls(<HibikiClientUrl>[
-    HibikiClientUrl(url: base, enabled: true),
+  await repo.setHibikiClientUrls(<FushiClientUrl>[
+    FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
   final InterconnectSyncBackend backend =
@@ -230,7 +230,7 @@ Future<InterconnectSyncBackend> _buildBackend({
 }
 
 void main() {
-  late HibikiSyncServer server;
+  late FushiSyncServer server;
   late _CapturingLibraryService lib;
   late String base;
   const String token = 'utf8-body-token';
@@ -239,7 +239,7 @@ void main() {
 
   setUp(() async {
     lib = _CapturingLibraryService();
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir:
           Directory.systemTemp.createTempSync('hbk_utf8_body_srv').path,
       port: 0,

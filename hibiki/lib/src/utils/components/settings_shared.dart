@@ -26,7 +26,7 @@ class SettingsSectionHeader extends StatelessWidget {
       padding: padding ?? const EdgeInsets.only(top: 16, bottom: 4),
       child: Text(
         text,
-        style: HibikiDesignTokens.of(context).type.sectionLabel,
+        style: FushiDesignTokens.of(context).type.sectionLabel,
       ),
     );
   }
@@ -107,7 +107,7 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
       );
     }
 
-    return HibikiToolScaffold.customTitle(
+    return FushiToolScaffold.customTitle(
       title: title,
       actions: actions ?? const <Widget>[],
       body: ListView(
@@ -146,7 +146,7 @@ class AdaptiveSettingsSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget content = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -174,7 +174,7 @@ class AdaptiveSettingsSurface extends StatelessWidget {
       );
     }
 
-    return HibikiCard(
+    return FushiCard(
       padding: EdgeInsets.zero,
       borderRadius: tokens.radii.groupRadius,
       color: color ?? tokens.surfaces.card,
@@ -185,7 +185,7 @@ class AdaptiveSettingsSurface extends StatelessWidget {
 
   Widget _buildContainedTitle(
     BuildContext context,
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     bool cupertino,
   ) {
     // 折叠头（onTitleTap != null）是带尾随箭头的可点整头：箭头在 Row 里按
@@ -231,7 +231,7 @@ class AdaptiveSettingsSurface extends StatelessWidget {
       ],
     );
     final bool hasFocusRoot =
-        HibikiFocusRoot.maybeControllerOf(context) != null;
+        FushiFocusRoot.maybeControllerOf(context) != null;
     final Widget tappable = cupertino
         ? GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -241,7 +241,7 @@ class AdaptiveSettingsSurface extends StatelessWidget {
         : InkWell(onTap: onTitleTap, child: header);
     if (!hasFocusRoot) {
       return cupertino
-          ? HibikiFocusable(
+          ? FushiFocusable(
               onTap: onTitleTap!,
               borderRadius: BorderRadius.zero,
               child: header,
@@ -306,7 +306,7 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
     if (widget.children.isEmpty) return const SizedBox.shrink();
 
     final bool cupertino = isCupertinoPlatform(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool titleInside =
         widget.titlePlacement == SettingsSectionTitlePlacement.inside;
     final bool collapsible = widget.collapsible &&
@@ -388,7 +388,7 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
 
   List<Widget> _withDividers(BuildContext context, List<Widget> rows) {
     final bool cupertino = isCupertinoPlatform(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color dividerColor = cupertino
         ? CupertinoColors.separator.resolveFrom(context)
         : Theme.of(context).colorScheme.outlineVariant;
@@ -483,7 +483,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // Auto-stack a non-flex trailing under the label only when the row is
     // genuinely too narrow to host both side by side — NOT on every typical
     // phone. The label is already `Expanded` and the trailing is self-sizing,
@@ -531,13 +531,13 @@ class AdaptiveSettingsRow extends StatelessWidget {
 
     if (onTap == null) return content;
     final bool hasFocusRoot =
-        HibikiFocusRoot.maybeControllerOf(context) != null;
+        FushiFocusRoot.maybeControllerOf(context) != null;
     if (cupertino) {
       // Cupertino 是隐藏内部能力，维持原有两分支（结构恒定化只做 Material
-      // 主路径）。无焦点根时 HibikiFocusable 保持方向键可达（GestureDetector
+      // 主路径）。无焦点根时 FushiFocusable 保持方向键可达（GestureDetector
       // 本身不可聚焦）。
       if (!hasFocusRoot) {
-        return HibikiFocusable(
+        return FushiFocusable(
           onTap: onTap,
           borderRadius: BorderRadius.zero,
           child: content,
@@ -575,7 +575,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
   }
 
   Widget _buildRowLayout(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return ConstrainedBox(
       constraints: BoxConstraints(
         minHeight:
@@ -617,7 +617,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
   }
 
   Widget _buildColumnLayout(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return ConstrainedBox(
       constraints: BoxConstraints(
         minHeight: isCupertinoPlatform(context)
@@ -665,12 +665,12 @@ class _SettingsRowFocusTarget extends StatefulWidget {
   final Widget child;
 
   /// False = 目标保持挂载但不参与遍历/注册（无焦点根时的恒定结构模式，
-  /// 见调用处注释）。透传 [HibikiFocusTarget.enabled]。
+  /// 见调用处注释）。透传 [FushiFocusTarget.enabled]。
   final bool focusEnabled;
 
   /// False for a collapsible section's fold header: it stays keyboard/gamepad
   /// reachable but passive focus auto-home skips it so the cursor lands on the
-  /// first real setting row (see [HibikiFocusTargetEntry.autoHome]).
+  /// first real setting row (see [FushiFocusTargetEntry.autoHome]).
   final bool autoHome;
 
   @override
@@ -679,7 +679,7 @@ class _SettingsRowFocusTarget extends StatefulWidget {
 }
 
 class _SettingsRowFocusTargetState extends State<_SettingsRowFocusTarget> {
-  late final HibikiFocusId _focusId = HibikiFocusId(
+  late final FushiFocusId _focusId = FushiFocusId(
     'settings-row-${identityHashCode(this)}',
   );
 
@@ -694,7 +694,7 @@ class _SettingsRowFocusTargetState extends State<_SettingsRowFocusTarget> {
           },
         ),
       },
-      child: HibikiFocusTarget(
+      child: FushiFocusTarget(
         id: _focusId,
         autoHome: widget.autoHome,
         enabled: widget.focusEnabled,
@@ -929,7 +929,7 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
     // gamepad/keyboard focus stop (like the stepper/slider rows) so geometric
     // focus navigation can land on it, and D-pad Left/Right steps the segment
     // in place (clamped at the ends, no wrap). Without this wrapper the row
-    // carries no HibikiFocusTarget (its
+    // carries no FushiFocusTarget (its
     // AdaptiveSettingsRow has no onTap), so it is invisible to directional
     // navigation — the cursor skips the whole layout section.
     final int currentIndex =
@@ -1028,7 +1028,7 @@ class _SegmentedStripHost extends StatelessWidget {
     // shrink-and-scroll behaviour untouched.
     if (!controlBelow) return scrolling;
 
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double fontSize = tokens.type.controlLabel.fontSize ?? 14.0;
     final double textScale = MediaQuery.textScalerOf(context).scale(1);
 
@@ -1075,8 +1075,8 @@ class _SegmentedStripHost extends StatelessWidget {
 ///
 /// [alignment] 只在装得下时生效（默认左对齐，与既有裸调用点的外观一致）；装不下
 /// 时整条让位给横向滚动视图。
-class HibikiSegmentedStrip<T extends Object> extends StatelessWidget {
-  const HibikiSegmentedStrip({
+class FushiSegmentedStrip<T extends Object> extends StatelessWidget {
+  const FushiSegmentedStrip({
     required this.segments,
     required this.selected,
     required this.onChanged,
@@ -1093,7 +1093,7 @@ class HibikiSegmentedStrip<T extends Object> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double fontSize = tokens.type.controlLabel.fontSize ?? 14.0;
     final double textScale = MediaQuery.textScalerOf(context).scale(1);
     // 与 [_SegmentedStripHost] 同一份估算：只取 Text 段的文案，图标段按固定宽计。
@@ -1142,12 +1142,12 @@ class HibikiSegmentedStrip<T extends Object> extends StatelessWidget {
 /// [AdaptiveSettingsSegmentedRow] — e.g. a segmented selector inside a dialog
 /// header) as a single gamepad/keyboard focus stop, with D-pad Left/Right
 /// cycling the selection in place. Without this the segmented strip is a cluster
-/// of native buttons that the directional [HibikiFocusController] — which walks
+/// of native buttons that the directional [FushiFocusController] — which walks
 /// only registered targets — skips entirely. Pass the already-built segmented
 /// button (or its scroll wrapper) as [child]; it is excluded from inner focus
 /// traversal so this is the one stop, while staying mouse/touch-tappable.
-class HibikiAdjustableSegmented<T extends Object> extends StatelessWidget {
-  const HibikiAdjustableSegmented({
+class FushiAdjustableSegmented<T extends Object> extends StatelessWidget {
+  const FushiAdjustableSegmented({
     required this.values,
     required this.selected,
     required this.onChanged,
@@ -1163,7 +1163,7 @@ class HibikiAdjustableSegmented<T extends Object> extends StatelessWidget {
   final ValueChanged<T> onChanged;
   final Widget child;
   final String focusIdPrefix;
-  final HibikiFocusId? focusId;
+  final FushiFocusId? focusId;
 
   @override
   Widget build(BuildContext context) {
@@ -1245,7 +1245,7 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
   }
 
   /// Long option sets route to a bounded full-page selector
-  /// ([HibikiOptionSelectionPage]) instead of an anchored overlay that could
+  /// ([FushiOptionSelectionPage]) instead of an anchored overlay that could
   /// overflow the screen. The chosen entry is reported through [onChanged];
   /// backing out (null result) leaves the selection unchanged. Index-keyed so
   /// the page never needs `==`/hashCode on [T].
@@ -1260,9 +1260,9 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
           context,
           title: title,
           selected: _selectedIndex,
-          options: <HibikiOptionSelectionOption<int>>[
+          options: <FushiOptionSelectionOption<int>>[
             for (int i = 0; i < options.length; i++)
-              HibikiOptionSelectionOption<int>(
+              FushiOptionSelectionOption<int>(
                 value: i,
                 label: options[i].label,
               ),
@@ -1316,7 +1316,7 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
   }
 
   Widget _buildCupertinoTrailing(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color labelColor = CupertinoColors.secondaryLabel.resolveFrom(
       context,
     );
@@ -1423,7 +1423,7 @@ class AdaptiveSettingsTextField extends StatefulWidget {
 
   /// Explicit geometric-focus id; when null a stable per-instance fallback is
   /// used so the field is always a directional-navigation anchor (see below).
-  final HibikiFocusId? focusId;
+  final FushiFocusId? focusId;
 
   @override
   State<AdaptiveSettingsTextField> createState() =>
@@ -1433,17 +1433,17 @@ class AdaptiveSettingsTextField extends StatefulWidget {
 class _AdaptiveSettingsTextFieldState extends State<AdaptiveSettingsTextField> {
   // A settings text field MUST register with the directional focus controller,
   // otherwise it is invisible to geometric navigation: when an arrow key escapes
-  // the focused (single-line) field, [HibikiFocusController.move] cannot locate
+  // the focused (single-line) field, [FushiFocusController.move] cannot locate
   // the active entry and dead-reckons to the FIRST registered row — which can
-  // sit ABOVE the field, so Down jumps up (BUG-048). [HibikiTextField] only
+  // sit ABOVE the field, so Down jumps up (BUG-048). [FushiTextField] only
   // registers when given a focusId, so we always supply one. The id is owned by
   // the State (stable across rebuilds), mirroring [_SettingsRowFocusTarget].
-  late final HibikiFocusId _fallbackFocusId =
-      HibikiFocusId('settings-textfield-${identityHashCode(this)}');
+  late final FushiFocusId _fallbackFocusId =
+      FushiFocusId('settings-textfield-${identityHashCode(this)}');
 
   @override
   Widget build(BuildContext context) {
-    return HibikiTextField(
+    return FushiTextField(
       controller: widget.controller,
       focusNode: widget.focusNode,
       initialValue: widget.initialValue,
@@ -1541,7 +1541,7 @@ class _GamepadAdjustableValue extends StatefulWidget {
   });
 
   final String focusIdPrefix;
-  final HibikiFocusId? focusId;
+  final FushiFocusId? focusId;
   final VoidCallback onIncrement;
   final VoidCallback onDecrement;
   final Widget child;
@@ -1552,8 +1552,8 @@ class _GamepadAdjustableValue extends StatefulWidget {
 }
 
 class _GamepadAdjustableValueState extends State<_GamepadAdjustableValue> {
-  late final HibikiFocusId _fallbackFocusId =
-      HibikiFocusId('${widget.focusIdPrefix}-${identityHashCode(this)}');
+  late final FushiFocusId _fallbackFocusId =
+      FushiFocusId('${widget.focusIdPrefix}-${identityHashCode(this)}');
 
   @override
   Widget build(BuildContext context) {
@@ -1585,7 +1585,7 @@ class _GamepadAdjustableValueState extends State<_GamepadAdjustableValue> {
           SingleActivator(LogicalKeyboardKey.arrowRight): _AdjustUpIntent(),
           SingleActivator(LogicalKeyboardKey.arrowLeft): _AdjustDownIntent(),
         },
-        child: HibikiFocusTarget(
+        child: FushiFocusTarget(
           id: widget.focusId ?? _fallbackFocusId,
           child: ExcludeFocus(child: widget.child),
         ),
@@ -1629,7 +1629,7 @@ class _GamepadAdjustAction extends Action<GamepadButtonIntent> {
 /// mouse-clickable but are removed from focus traversal so they never become
 /// separate, value-less tab stops.
 ///
-/// The focus highlight comes from the app-wide [HibikiFocusRing] (drawn around
+/// The focus highlight comes from the app-wide [FushiFocusRing] (drawn around
 /// whichever widget holds primary focus in keyboard/gamepad mode), so no local
 /// border is reserved here — the control's layout is unchanged.
 class _KeyboardStepper extends StatelessWidget {
@@ -1920,7 +1920,7 @@ class _SettingsLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final TextStyle? titleStyle = cupertino
         ? tokens.type.listTitle
         : Theme.of(context).textTheme.bodyMedium;
@@ -1966,10 +1966,10 @@ class _SettingsIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     if (!cupertino) {
-      return HibikiBadge(
+      return FushiBadge(
         icon: icon,
         background: scheme.secondaryContainer,
         foreground: scheme.onSecondaryContainer,

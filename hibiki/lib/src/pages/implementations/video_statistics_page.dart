@@ -153,16 +153,16 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return HibikiPageScaffold(
+    return FushiPageScaffold(
       title: t.video_statistics,
       actions: <Widget>[
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.refresh,
           tooltip: t.stat_refresh,
           enabled: !_loading,
           onTap: _syncAndLoad,
         ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.delete_sweep_outlined,
           tooltip: t.stat_clear_all,
           enabled: !_loading,
@@ -183,7 +183,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   }
 
   Widget _buildContent() {
-    final tokens = HibikiDesignTokens.of(context);
+    final tokens = FushiDesignTokens.of(context);
 
     return CustomScrollView(
       slivers: [
@@ -325,7 +325,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
         _agg.byVideo.isEmpty ? 1 : _agg.byVideo.first.ms.clamp(1, 1 << 50);
     final fraction = video.ms / maxMs;
     final colorScheme = Theme.of(context).colorScheme;
-    final tokens = HibikiDesignTokens.of(context);
+    final tokens = FushiDesignTokens.of(context);
 
     return Material(
       type: MaterialType.transparency,

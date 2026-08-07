@@ -9,14 +9,14 @@ import 'widget_test_helpers.dart';
 
 // Regression for the reported gamepad bug: in 排版设置, D-pad Down from a stepper
 // could not reach the segmented rows below (跨页模式 etc.) because a segmented row
-// was never registered as a HibikiFocusTarget. It is now a single focus stop with
+// was never registered as a FushiFocusTarget. It is now a single focus stop with
 // D-pad Left/Right cycling the segment in place.
 void main() {
   Widget stepperThenSegmented({
     required String selected,
     required ValueChanged<String> onChanged,
   }) {
-    return HibikiFocusRoot(
+    return FushiFocusRoot(
       child: Column(
         children: <Widget>[
           AdaptiveSettingsStepperRow(
@@ -56,7 +56,7 @@ void main() {
     ));
     await tester.pump();
 
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.text('Columns')),
     );
     // Focus bootstraps onto the first registered target (the stepper).
@@ -66,7 +66,7 @@ void main() {
 
     // Down must land on the segmented row — it is now a registered focus stop,
     // not skipped. Before the fix this returned false / stayed on the stepper.
-    expect(controller.move(HibikiFocusDirection.down), isTrue,
+    expect(controller.move(FushiFocusDirection.down), isTrue,
         reason: 'the segmented row is reachable by geometric down');
     await tester.pump();
 
@@ -95,12 +95,12 @@ void main() {
       ),
     ));
     await tester.pump();
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.text('Spread')),
     );
     controller.ensureFocus(); // stepper (first target)
     await tester.pump();
-    controller.move(HibikiFocusDirection.down); // stepper → segmented
+    controller.move(FushiFocusDirection.down); // stepper → segmented
     await tester.pump();
     final BuildContext ctx = controller.activeContext!;
 
@@ -140,12 +140,12 @@ void main() {
           }),
     ));
     await tester.pump();
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.text('Spread')),
     );
     controller.ensureFocus();
     await tester.pump();
-    controller.move(HibikiFocusDirection.down); // onto the segmented row
+    controller.move(FushiFocusDirection.down); // onto the segmented row
     await tester.pump();
     final BuildContext ctx = controller.activeContext!;
 

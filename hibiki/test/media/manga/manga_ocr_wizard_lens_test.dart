@@ -59,12 +59,12 @@ class _FakeLensRunner implements GoogleLensMangaOcrRunner {
 
 void main() {
   late Directory imageDir;
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() {
     imageDir = Directory.systemTemp.createTempSync('lens_wizard_');
     File(p.join(imageDir.path, 'page.png')).writeAsBytesSync(<int>[1]);
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() async {

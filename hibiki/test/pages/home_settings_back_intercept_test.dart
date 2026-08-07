@@ -78,7 +78,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    // 注入了 child，HibikiSettingsContent 不渲染，无箭头；但 PopScope 仍生效。
+    // 注入了 child，FushiSettingsContent 不渲染，无箭头；但 PopScope 仍生效。
     final bool handled = await tester.binding.handlePopRoute();
     await tester.pump();
     expect(handled, isTrue);

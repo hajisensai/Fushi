@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
-import 'package:fushi/utils.dart' show t, HibikiToast, ToastSeverity;
+import 'package:fushi/utils.dart' show t, FushiToast, ToastSeverity;
 
 /// BUG-1040：把「一段期间内让查词弹窗让位」的执行权交回宿主页面的钩子。
 ///
@@ -105,7 +105,7 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.anki_card_action_failed,
         severity: ToastSeverity.error,
       );
@@ -129,7 +129,7 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.anki_card_action_failed,
         severity: ToastSeverity.error,
       );
@@ -297,7 +297,7 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (!ok) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.anki_note_open_failed,
         severity: ToastSeverity.error,
       );
@@ -314,7 +314,7 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.anki_card_action_failed,
         severity: ToastSeverity.error,
       );
@@ -447,7 +447,7 @@ Future<void> openMinedCardInAnki({
 }) async {
   final matches = await repo.findMatchingNotes(expression, reading);
   if (matches.isEmpty) {
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.anki_open_no_card,
       severity: ToastSeverity.error,
     );
@@ -456,7 +456,7 @@ Future<void> openMinedCardInAnki({
   if (matches.length == 1) {
     final ok = await repo.openNoteInAnki(matches.first.noteId);
     if (!ok) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.anki_note_open_failed,
         severity: ToastSeverity.error,
       );
@@ -508,7 +508,7 @@ class _OpenNotePickerState extends State<_OpenNotePicker> {
     if (!mounted) return;
     if (!ok) {
       setState(() => _busy = false);
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.anki_note_open_failed,
         severity: ToastSeverity.error,
       );

@@ -22,8 +22,8 @@ Widget _target(String id, Rect r) => Positioned(
       top: r.top,
       width: r.width,
       height: r.height,
-      child: HibikiFocusTarget(
-        id: HibikiFocusId(id),
+      child: FushiFocusTarget(
+        id: FushiFocusId(id),
         child: const SizedBox.expand(),
       ),
     );
@@ -32,7 +32,7 @@ Widget _shelf({required GlobalKey rootKey}) {
   return MaterialApp(
     theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
     home: Scaffold(
-      body: HibikiFocusRoot(
+      body: FushiFocusRoot(
         child: FocusTraversalGroup(
           child: Stack(
             key: rootKey,
@@ -59,30 +59,30 @@ Widget _shelf({required GlobalKey rootKey}) {
 }
 
 void main() {
-  Future<HibikiFocusController> pump(
+  Future<FushiFocusController> pump(
       WidgetTester tester, GlobalKey rootKey) async {
     await tester.binding.setSurfaceSize(const Size(1000, 700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(_shelf(rootKey: rootKey));
     await tester.pump();
-    return HibikiFocusRoot.controllerOf(rootKey.currentContext!);
+    return FushiFocusRoot.controllerOf(rootKey.currentContext!);
   }
 
   testWidgets(
       'baseline: Right from organize overshoots past import to manage-source',
       (WidgetTester tester) async {
     final GlobalKey rootKey = GlobalKey();
-    final HibikiFocusController controller = await pump(tester, rootKey);
+    final FushiFocusController controller = await pump(tester, rootKey);
 
     expect(
       controller
-          .requestById(const HibikiFocusId('reader-shelf-tagbar-organize')),
+          .requestById(const FushiFocusId('reader-shelf-tagbar-organize')),
       isTrue,
     );
     await tester.pump();
-    controller.move(HibikiFocusDirection.right);
+    controller.move(FushiFocusDirection.right);
     await tester.pump();
-    expect(controller.activeId, const HibikiFocusId('reader-shelf-manage'),
+    expect(controller.activeId, const FushiFocusId('reader-shelf-manage'),
         reason: 'pure geometry picks the cleanly-clearing manage-source, '
             'overshooting import (the reported bug B)');
   });
@@ -90,93 +90,93 @@ void main() {
   testWidgets('Right anchor lands on import, never manage-source (B fix)',
       (WidgetTester tester) async {
     final GlobalKey rootKey = GlobalKey();
-    final HibikiFocusController controller = await pump(tester, rootKey);
+    final FushiFocusController controller = await pump(tester, rootKey);
 
     controller.registerDirectionalAnchor(
-      const HibikiFocusId('reader-shelf-tagbar-organize'),
-      HibikiFocusDirection.right,
-      const HibikiFocusId('reader-shelf-import'),
+      const FushiFocusId('reader-shelf-tagbar-organize'),
+      FushiFocusDirection.right,
+      const FushiFocusId('reader-shelf-import'),
     );
     expect(
       controller
-          .requestById(const HibikiFocusId('reader-shelf-tagbar-organize')),
+          .requestById(const FushiFocusId('reader-shelf-tagbar-organize')),
       isTrue,
     );
     await tester.pump();
-    controller.move(HibikiFocusDirection.right);
+    controller.move(FushiFocusDirection.right);
     await tester.pump();
-    expect(controller.activeId, const HibikiFocusId('reader-shelf-import'));
+    expect(controller.activeId, const FushiFocusId('reader-shelf-import'));
     expect(
-        controller.activeId, isNot(const HibikiFocusId('reader-shelf-manage')));
+        controller.activeId, isNot(const FushiFocusId('reader-shelf-manage')));
   });
 
   testWidgets('Down anchor from organize enters the grid first card (A2 fix)',
       (WidgetTester tester) async {
     final GlobalKey rootKey = GlobalKey();
-    final HibikiFocusController controller = await pump(tester, rootKey);
+    final FushiFocusController controller = await pump(tester, rootKey);
 
     controller.registerDirectionalAnchor(
-      const HibikiFocusId('reader-shelf-tagbar-organize'),
-      HibikiFocusDirection.down,
-      const HibikiFocusId('reader-shelf-book-A'),
+      const FushiFocusId('reader-shelf-tagbar-organize'),
+      FushiFocusDirection.down,
+      const FushiFocusId('reader-shelf-book-A'),
     );
     expect(
       controller
-          .requestById(const HibikiFocusId('reader-shelf-tagbar-organize')),
+          .requestById(const FushiFocusId('reader-shelf-tagbar-organize')),
       isTrue,
     );
     await tester.pump();
-    controller.move(HibikiFocusDirection.down);
+    controller.move(FushiFocusDirection.down);
     await tester.pump();
-    expect(controller.activeId, const HibikiFocusId('reader-shelf-book-A'),
+    expect(controller.activeId, const FushiFocusId('reader-shelf-book-A'),
         reason: 'Down from the tag bar must enter the grid first card');
   });
 
   testWidgets('anchor with a non-focusable target falls through to geometry',
       (WidgetTester tester) async {
     final GlobalKey rootKey = GlobalKey();
-    final HibikiFocusController controller = await pump(tester, rootKey);
+    final FushiFocusController controller = await pump(tester, rootKey);
 
     controller.registerDirectionalAnchor(
-      const HibikiFocusId('reader-shelf-tagbar-organize'),
-      HibikiFocusDirection.right,
-      const HibikiFocusId('does-not-exist'),
+      const FushiFocusId('reader-shelf-tagbar-organize'),
+      FushiFocusDirection.right,
+      const FushiFocusId('does-not-exist'),
     );
     expect(
       controller
-          .requestById(const HibikiFocusId('reader-shelf-tagbar-organize')),
+          .requestById(const FushiFocusId('reader-shelf-tagbar-organize')),
       isTrue,
     );
     await tester.pump();
-    controller.move(HibikiFocusDirection.right);
+    controller.move(FushiFocusDirection.right);
     await tester.pump();
     // Identical to the no-anchor baseline: geometry runs unchanged.
-    expect(controller.activeId, const HibikiFocusId('reader-shelf-manage'));
+    expect(controller.activeId, const FushiFocusId('reader-shelf-manage'));
   });
 
   testWidgets('unregisterDirectionalAnchor restores pure geometry',
       (WidgetTester tester) async {
     final GlobalKey rootKey = GlobalKey();
-    final HibikiFocusController controller = await pump(tester, rootKey);
+    final FushiFocusController controller = await pump(tester, rootKey);
 
     controller.registerDirectionalAnchor(
-      const HibikiFocusId('reader-shelf-tagbar-organize'),
-      HibikiFocusDirection.right,
-      const HibikiFocusId('reader-shelf-import'),
+      const FushiFocusId('reader-shelf-tagbar-organize'),
+      FushiFocusDirection.right,
+      const FushiFocusId('reader-shelf-import'),
     );
     controller.unregisterDirectionalAnchor(
-      const HibikiFocusId('reader-shelf-tagbar-organize'),
-      HibikiFocusDirection.right,
-      const HibikiFocusId('reader-shelf-import'),
+      const FushiFocusId('reader-shelf-tagbar-organize'),
+      FushiFocusDirection.right,
+      const FushiFocusId('reader-shelf-import'),
     );
     expect(
       controller
-          .requestById(const HibikiFocusId('reader-shelf-tagbar-organize')),
+          .requestById(const FushiFocusId('reader-shelf-tagbar-organize')),
       isTrue,
     );
     await tester.pump();
-    controller.move(HibikiFocusDirection.right);
+    controller.move(FushiFocusDirection.right);
     await tester.pump();
-    expect(controller.activeId, const HibikiFocusId('reader-shelf-manage'));
+    expect(controller.activeId, const FushiFocusId('reader-shelf-manage'));
   });
 }

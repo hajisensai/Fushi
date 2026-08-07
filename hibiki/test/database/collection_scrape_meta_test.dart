@@ -18,8 +18,8 @@ void main() {
   /// 必须显式开 `foreign_keys`：`NativeDatabase.memory()` 默认关闭外键，而生产
   /// 路径是在 `applyPragmas` 里开的。不开的话本文件的 cascade 用例会「通过得毫无
   /// 意义」——它测的正是删合集连带清资料行这条约束。
-  Future<HibikiDatabase> openDb() async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+  Future<FushiDatabase> openDb() async {
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (CommonDatabase rawDb) =>
             rawDb.execute('PRAGMA foreign_keys = ON'),
@@ -29,7 +29,7 @@ void main() {
     return db;
   }
 
-  Future<int> newCollection(HibikiDatabase db, {String name = 'v2 播放列表'}) =>
+  Future<int> newCollection(FushiDatabase db, {String name = 'v2 播放列表'}) =>
       db.createMediaCollection(name);
 
   ScrapeMetadata meta({
@@ -61,7 +61,7 @@ void main() {
       );
 
   test('落库 → 读回：全字段往返，附加图组落 media_images（v68）', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     final int id = await newCollection(db);
 
     await applyCollectionScrape(
@@ -132,7 +132,7 @@ void main() {
   });
 
   test('删合集 → media_images 行 FK cascade 清空（v68）', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     final int id = await newCollection(db);
     await applyCollectionScrape(
       db,
@@ -160,7 +160,7 @@ void main() {
   });
 
   test('用户确认后才回写合集名：文件夹名 → 条目正名', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     final int id = await newCollection(db, name: 'Tensei Oujo v2 播放列表');
 
     await applyCollectionScrape(
@@ -187,7 +187,7 @@ void main() {
   // 会给旧 (name,type) 写合集级墓碑，同步出去后**其他设备上的旧名副本会被删掉**。
   // 用户没点确认时这条链一环都不许启动。
   test('用户不确认 → 合集名一字不动，且不产生任何旧名同步墓碑', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     final int id = await newCollection(db, name: 'Tensei Oujo v2 播放列表');
     final int tombstonesBefore =
         (await db.select(db.collectionMemberTombstones).get()).length;
@@ -228,7 +228,7 @@ void main() {
   });
 
   test('确认名为空白 → 保留原合集名，绝不改成空名字', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     final int id = await newCollection(db, name: '我的播放列表');
 
     await applyCollectionScrape(
@@ -286,7 +286,7 @@ void main() {
   });
 
   test('原始条目名独立保存：事后手动改合集名不篡改「刮到的是什么」', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     final int id = await newCollection(db);
     await applyCollectionScrape(
       db,
@@ -304,7 +304,7 @@ void main() {
   });
 
   test('重刮覆盖同一行（不堆积历史行）', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     final int id = await newCollection(db);
     await applyCollectionScrape(
         db,
@@ -325,7 +325,7 @@ void main() {
   });
 
   test('删合集 → FK cascade 连带清资料行（刮削缓存不留孤儿）', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     final int id = await newCollection(db);
     await applyCollectionScrape(
         db, id, CollectionScrapeResult(coverPath: '/c.jpg', metadata: meta()),
@@ -342,14 +342,14 @@ void main() {
   });
 
   test('未刮过 → 返回 null（详情页据此回落到旧形态）', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     final int id = await newCollection(db);
     expect(decodeCollectionScrapeMeta(await db.getCollectionScrapeMeta(id)),
         isNull);
   });
 
   test('JSON 列损坏 → 该列降级空列表，其余字段照常返回', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     final int id = await newCollection(db);
     await applyCollectionScrape(
         db, id, CollectionScrapeResult(coverPath: '/c.jpg', metadata: meta()),

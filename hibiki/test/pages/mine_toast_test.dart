@@ -1,4 +1,4 @@
-// TODO-1325 #6 制卡结果 MD3 toast 的 widget 守卫：HibikiToast.showMine 按状态
+// TODO-1325 #6 制卡结果 MD3 toast 的 widget 守卫：FushiToast.showMine 按状态
 // （added 绿 / duplicate 橙 / failed 红 / pending 蓝）着色并配 Material 图标，走
 // 应用 navigator overlay 的自绘路径。这正是本次新增的、区别于弹窗内 mine 按钮图标
 // 变化的、可见的桌面/移动统一制卡反馈通道。
@@ -8,7 +8,7 @@ import 'package:fushi/src/utils/misc/hibiki_toast.dart';
 
 Future<void> _pumpToastHost(WidgetTester tester) async {
   final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-  HibikiToast.navigatorKey = navKey;
+  FushiToast.navigatorKey = navKey;
   await tester.pumpWidget(
     MaterialApp(
       navigatorKey: navKey,
@@ -62,7 +62,7 @@ void main() {
   testWidgets('added：toast 渲染绿色卡片 + check 图标 + 文案',
       (WidgetTester tester) async {
     await _pumpToastHost(tester);
-    HibikiToast.showMine(msg: '已添加到牌组', status: MineToastStatus.added);
+    FushiToast.showMine(msg: '已添加到牌组', status: MineToastStatus.added);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
@@ -75,7 +75,7 @@ void main() {
 
   testWidgets('duplicate：橙色卡片 + 重复图标', (WidgetTester tester) async {
     await _pumpToastHost(tester);
-    HibikiToast.showMine(msg: '重复卡片', status: MineToastStatus.duplicate);
+    FushiToast.showMine(msg: '重复卡片', status: MineToastStatus.duplicate);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
@@ -86,7 +86,7 @@ void main() {
 
   testWidgets('failed：红色卡片 + 错误图标', (WidgetTester tester) async {
     await _pumpToastHost(tester);
-    HibikiToast.showMine(msg: '制卡失败', status: MineToastStatus.failed);
+    FushiToast.showMine(msg: '制卡失败', status: MineToastStatus.failed);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
@@ -98,7 +98,7 @@ void main() {
   testWidgets('pending：蓝色卡片 + 同步图标，随后被结果 toast 顶替',
       (WidgetTester tester) async {
     await _pumpToastHost(tester);
-    HibikiToast.showMine(msg: '制卡中…', status: MineToastStatus.pending);
+    FushiToast.showMine(msg: '制卡中…', status: MineToastStatus.pending);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
@@ -106,7 +106,7 @@ void main() {
     expect(_toastBg(tester), const Color(0xFF1565C0));
 
     // 结果 toast 顶替 pending：只剩一张 added 绿卡片。
-    HibikiToast.showMine(msg: '已添加', status: MineToastStatus.added);
+    FushiToast.showMine(msg: '已添加', status: MineToastStatus.added);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.byIcon(Icons.sync_rounded), findsNothing,

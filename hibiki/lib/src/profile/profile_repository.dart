@@ -62,7 +62,7 @@ class ProfileSettingEntry {
 
 class ProfileRepository {
   ProfileRepository(this._db, this._ankiRepo);
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
   final BaseAnkiRepository _ankiRepo;
 
   Future<List<ProfileRow>> getAllProfiles() => _db.getAllProfiles();
@@ -244,7 +244,7 @@ class ProfileRepository {
         }
       }
       for (final entry in prefMap.entries) {
-        // [HibikiDatabase.setPref] auto-bumps the persisted prefs-version
+        // [FushiDatabase.setPref] auto-bumps the persisted prefs-version
         // (TODO-855) for every non-version key written here, so the common
         // profile switch (which always writes at least one pref) is already
         // signalled to the :popup process.

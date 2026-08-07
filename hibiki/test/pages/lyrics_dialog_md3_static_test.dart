@@ -8,9 +8,9 @@ void main() {
       'lib/src/pages/implementations/lyrics_dialog_page.dart',
     ).readAsStringSync();
 
-    expect(source, contains('HibikiDialogFrame('));
-    expect(source, contains('HibikiModalSheetFrame('));
-    expect(source, contains('HibikiDesignTokens.of(context)'));
+    expect(source, contains('FushiDialogFrame('));
+    expect(source, contains('FushiModalSheetFrame('));
+    expect(source, contains('FushiDesignTokens.of(context)'));
     expect(source, isNot(contains('adaptiveAlertDialog(')));
     expect(source, isNot(contains('Spacing.of(context)')));
   });

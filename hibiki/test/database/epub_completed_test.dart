@@ -2,13 +2,13 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-Future<HibikiDatabase> _openDb() async {
-  final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
 
-Future<String> _insertBook(HibikiDatabase db, String key) => db.insertEpubBook(
+Future<String> _insertBook(FushiDatabase db, String key) => db.insertEpubBook(
       EpubBooksCompanion.insert(
         bookKey: key,
         title: key,

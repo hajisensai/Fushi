@@ -84,8 +84,8 @@ class _MiscellaneousSettingsBodyState
   Future<void> _loadCurrentIcon() async {
     if (Platform.isAndroid) {
       final results = await Future.wait([
-        HibikiChannels.iconSwitch.invokeMethod<String>('getCurrentIcon'),
-        HibikiChannels.iconSwitch
+        FushiChannels.iconSwitch.invokeMethod<String>('getCurrentIcon'),
+        FushiChannels.iconSwitch
             .invokeMethod<bool>('isCustomShortcutSupported'),
       ]);
       if (!mounted) return;
@@ -110,7 +110,7 @@ class _MiscellaneousSettingsBodyState
     try {
       bool ok = false;
       if (Platform.isAndroid) {
-        ok = (await HibikiChannels.iconSwitch.invokeMethod<bool>(
+        ok = (await FushiChannels.iconSwitch.invokeMethod<bool>(
               'switchPresetIcon',
               {'alias': key},
             )) ==
@@ -142,12 +142,12 @@ class _MiscellaneousSettingsBodyState
     final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) {
-        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
-        return HibikiDialogFrame(
+        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+        return FushiDialogFrame(
           maxWidth: 420,
           maxHeightFactor: 0.78,
           scrollable: false,
-          child: HibikiModalSheetFrame(
+          child: FushiModalSheetFrame(
             title: t.icon_custom_confirm_title,
             leadingIcon: Icons.add_photo_alternate_outlined,
             scrollable: true,
@@ -202,7 +202,7 @@ class _MiscellaneousSettingsBodyState
     bool ok = false;
     if (Platform.isAndroid) {
       final bytes = await File(pickedPath).readAsBytes();
-      ok = (await HibikiChannels.iconSwitch.invokeMethod<bool>(
+      ok = (await FushiChannels.iconSwitch.invokeMethod<bool>(
             'createCustomShortcut',
             {'imageBytes': bytes},
           )) ==
@@ -231,16 +231,16 @@ class _MiscellaneousSettingsBodyState
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 静态提示不再伪装成设置行（行标题会被 titleMaxLines 截断、还带行高/分隔线
     // 语义），改用与 schema section footer 同款的说明文字样式。
     TextStyle? footerStyle(BuildContext context) =>
         Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: HibikiDesignTokens.of(context).surfaces.onVariant,
+              color: FushiDesignTokens.of(context).surfaces.onVariant,
             );
     if (!Platform.isAndroid && !Platform.isWindows) {
       // 本平台不支持换图标：占位说明，不渲染空设置卡。
-      return HibikiPlaceholderMessage(
+      return FushiPlaceholderMessage(
         icon: Icons.widgets_outlined,
         message: t.icon_shortcut_unsupported,
       );
@@ -269,7 +269,7 @@ class _MiscellaneousSettingsBodyState
   }
 
   Widget _buildIconGrid() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final presets = [
       _IconOption(
         key: 'default',
@@ -300,7 +300,7 @@ class _MiscellaneousSettingsBodyState
 
   Widget _buildPresetTile(_IconOption option) {
     final bool selected = _currentIcon == option.key;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return _AppIconTile(
       label: option.label,
       selected: selected,
@@ -346,7 +346,7 @@ class _AppIconTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final TextTheme textTheme = theme.textTheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return SizedBox(
       width: 80,
       child: Column(
@@ -354,7 +354,7 @@ class _AppIconTile extends StatelessWidget {
         children: [
           SizedBox.square(
             dimension: 72,
-            child: HibikiCard(
+            child: FushiCard(
               padding: EdgeInsets.all(tokens.spacing.gap / 2),
               selected: selected,
               borderColor: selected
@@ -368,7 +368,7 @@ class _AppIconTile extends StatelessWidget {
                   if (selected)
                     Align(
                       alignment: Alignment.bottomRight,
-                      child: HibikiBadge(
+                      child: FushiBadge(
                         icon: Icons.check,
                         background: theme.colorScheme.primary,
                         foreground: theme.colorScheme.onPrimary,

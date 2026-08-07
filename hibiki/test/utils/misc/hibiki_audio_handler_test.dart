@@ -2,9 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/hibiki_audio_handler.dart';
 
 void main() {
-  group('HibikiAudioHandler notification subtitles', () {
-    HibikiAudioHandler buildHandler() {
-      return HibikiAudioHandler(
+  group('FushiAudioHandler notification subtitles', () {
+    FushiAudioHandler buildHandler() {
+      return FushiAudioHandler(
         onPlayPause: () {},
         onSeek: (_) {},
         onRewind: () {},
@@ -13,7 +13,7 @@ void main() {
     }
 
     test('uses current cue text in every media subtitle field', () {
-      final HibikiAudioHandler handler = buildHandler();
+      final FushiAudioHandler handler = buildHandler();
 
       handler.setMediaItemInfo(title: 'Book title', artist: 'Author');
       handler.updateNotificationSubtitle(
@@ -32,7 +32,7 @@ void main() {
 
     test('restores fallback artist and clears display subtitle when disabled',
         () {
-      final HibikiAudioHandler handler = buildHandler();
+      final FushiAudioHandler handler = buildHandler();
 
       handler.setMediaItemInfo(title: 'Book title', artist: 'Author');
       handler.updateNotificationSubtitle(

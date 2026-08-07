@@ -4,9 +4,9 @@ import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
 /// Used to show information or error messages across the application.
 /// For example, this is used for the empty placeholder messages on the home
 /// tabs when there are no media item entries in them.
-class HibikiPlaceholderMessage extends StatelessWidget {
+class FushiPlaceholderMessage extends StatelessWidget {
   /// Instantiate a decorative information/error message with an icon.
-  const HibikiPlaceholderMessage({
+  const FushiPlaceholderMessage({
     required this.icon,
     required this.message,
     this.color,
@@ -44,7 +44,7 @@ class HibikiPlaceholderMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color foreground = color ?? tokens.surfaces.onVariant;
     return Center(
       child: Padding(

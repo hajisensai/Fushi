@@ -60,7 +60,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     final uiState = ref.watch(ankiViewModelProvider);
     final vm = ref.read(ankiViewModelProvider.notifier);
     final settings = uiState.settings;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1324,10 +1324,10 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    // 弹窗整体高度只由外层 [HibikiDialogFrame.maxHeightFactor]（0.96）封顶：
-    // sheet 不再叠加更紧的内层上限，由 [HibikiModalSheetFrame] 的 [Flexible] body
+    // 弹窗整体高度只由外层 [FushiDialogFrame.maxHeightFactor]（0.96）封顶：
+    // sheet 不再叠加更紧的内层上限，由 [FushiModalSheetFrame] 的 [Flexible] body
     // 在 DialogFrame 给的空间里自然填满并滚动（header / 搜索框 / footer 固定，选项
     // ListView 吃掉剩余高度）。早先这里用 `(height * 0.24).clamp(56, 320)` 的内层
     // ConstrainedBox 把整个 body（搜索框 + 十几~三十个选项的 ListView）死压在屏高
@@ -1339,7 +1339,7 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
     // 注意：不要在 sheet 上设比 0.96 更小的 maxHeightFactor——那会在小窗口把 sheet
     // 夹得连 header+footer 都装不下而溢出（实测 240 高 + 0.82 factor → 196.8px 不够，
     // RenderFlex overflowed 20px）。
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 560,
       maxHeightFactor: 0.96,
       insetPadding: EdgeInsets.symmetric(
@@ -1347,7 +1347,7 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
         vertical: tokens.spacing.gap,
       ),
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: widget.title,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,

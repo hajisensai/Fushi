@@ -8,10 +8,10 @@ import 'package:fushi/src/utils/components/hibiki_icon_button.dart';
 import 'widget_test_helpers.dart';
 
 void main() {
-  group('HibikiIconButton', () {
+  group('FushiIconButton', () {
     testWidgets('renders icon and tooltip via Semantics', (tester) async {
       await tester.pumpWidget(buildTestApp(
-        const HibikiIconButton(
+        const FushiIconButton(
           icon: Icons.play_arrow,
           tooltip: 'Play',
         ),
@@ -24,7 +24,7 @@ void main() {
     testWidgets('calls onTap when enabled and tapped', (tester) async {
       bool tapped = false;
       await tester.pumpWidget(buildTestApp(
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.add,
           tooltip: 'Add',
           onTap: () => tapped = true,
@@ -40,7 +40,7 @@ void main() {
     testWidgets('disabled button does not fire onTap', (tester) async {
       bool tapped = false;
       await tester.pumpWidget(buildTestApp(
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.delete,
           tooltip: 'Delete',
           enabled: false,
@@ -59,7 +59,7 @@ void main() {
       int tapCount = 0;
 
       await tester.pumpWidget(buildTestApp(
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.sync,
           tooltip: 'Sync',
           busy: true,
@@ -86,7 +86,7 @@ void main() {
     testWidgets('isWideTapArea uses IconButton instead of InkWell',
         (tester) async {
       await tester.pumpWidget(buildTestApp(
-        const HibikiIconButton(
+        const FushiIconButton(
           icon: Icons.settings,
           tooltip: 'Settings',
           isWideTapArea: true,
@@ -101,7 +101,7 @@ void main() {
     testWidgets('plain icon button wraps in a Material Tooltip',
         (tester) async {
       await tester.pumpWidget(buildTestApp(
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.playlist_add,
           tooltip: 'Combine',
           onTap: () {},
@@ -115,7 +115,7 @@ void main() {
     testWidgets('wide tap area icon button also wraps in a Material Tooltip',
         (tester) async {
       await tester.pumpWidget(buildTestApp(
-        const HibikiIconButton(
+        const FushiIconButton(
           icon: Icons.settings,
           tooltip: 'Settings',
           isWideTapArea: true,
@@ -129,7 +129,7 @@ void main() {
     testWidgets('empty tooltip adds no Tooltip wrapper (no empty hover box)',
         (tester) async {
       await tester.pumpWidget(buildTestApp(
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.add,
           tooltip: '',
           onTap: () {},
@@ -143,9 +143,9 @@ void main() {
         (tester) async {
       bool tapped = false;
       await tester.pumpWidget(buildTestApp(
-        HibikiFocusRoot(
-          child: HibikiIconButton(
-            focusId: const HibikiFocusId('play-button'),
+        FushiFocusRoot(
+          child: FushiIconButton(
+            focusId: const FushiFocusId('play-button'),
             icon: Icons.play_arrow,
             tooltip: 'Play',
             onTap: () => tapped = true,
@@ -154,12 +154,12 @@ void main() {
       ));
       await tester.pump();
 
-      final HibikiFocusController root = HibikiFocusRoot.controllerOf(
+      final FushiFocusController root = FushiFocusRoot.controllerOf(
         tester.element(find.byIcon(Icons.play_arrow)),
       );
-      expect(root.requestById(const HibikiFocusId('play-button')), isTrue);
+      expect(root.requestById(const FushiFocusId('play-button')), isTrue);
       await tester.pump();
-      expect(root.activeId, const HibikiFocusId('play-button'));
+      expect(root.activeId, const FushiFocusId('play-button'));
 
       Actions.maybeInvoke<ActivateIntent>(
         root.activeContext!,

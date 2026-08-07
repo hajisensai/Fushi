@@ -48,7 +48,7 @@ class _RecordingBackend implements SyncBackend {
 
 // ── live 分支集成：验证 InterconnectSyncBackend 路由到 host DELETE 端点 ─────
 
-class _FakeLibraryService implements HibikiLibraryHostService {
+class _FakeLibraryService implements FushiLibraryHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
   Future<File?> clipVideoAudio(String id,
@@ -236,18 +236,18 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   }) async {}
 }
 
-HibikiDatabase _memDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _memDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 /// 构造一个已认证的 InterconnectSyncBackend，指向给定 base url。
 Future<InterconnectSyncBackend> _buildBackend({
   required String base,
   required String token,
 }) async {
-  final HibikiDatabase db = _memDb();
+  final FushiDatabase db = _memDb();
   final SyncRepository repo = SyncRepository(db);
-  await repo.setHibikiClientUrls(<HibikiClientUrl>[
-    HibikiClientUrl(url: base, enabled: true),
+  await repo.setHibikiClientUrls(<FushiClientUrl>[
+    FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
   final InterconnectSyncBackend backend =
@@ -296,7 +296,7 @@ void main() {
         () async {
       const String token = 'test-token-propagate';
       final _FakeLibraryService lib = _FakeLibraryService();
-      final HibikiSyncServer server = HibikiSyncServer(
+      final FushiSyncServer server = FushiSyncServer(
         syncDataDir: Directory.systemTemp.createTempSync('hbk_del_prop').path,
         port: 0,
         token: token,

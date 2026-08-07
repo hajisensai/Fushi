@@ -54,7 +54,7 @@ class EpisodeRenameProposal {
 ///  - 零填充宽度取合集内最大集号的十进制宽度（至少 2）；
 ///  - 新旧同名不产出提案。
 Future<List<EpisodeRenameProposal>> renameCollectionEpisodes({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required int collectionId,
   required bool dryRun,
 }) async {

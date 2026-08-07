@@ -10,21 +10,21 @@ import 'package:http/http.dart' as http;
 // 只发 pair/v2 不 confirm 的攻击者不得让 _pairSessions 永久堆积（慢速 DoS）。
 void main() {
   late Directory tempDir;
-  late HibikiSyncServer server;
+  late FushiSyncServer server;
   // 可控时钟：测试通过推进它模拟会话过期。
   DateTime fakeNow = DateTime.utc(2026, 1, 1, 12, 0, 0);
 
   Future<void> startServer() async {
     tempDir = Directory.systemTemp.createTempSync('hibiki_pair_prune_test');
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0,
       token: 'tok',
       allowLan: true,
       now: () => fakeNow,
     )
-      ..onPairRequest = ((HibikiPairRequest _) async => true)
-      ..onPairPinGenerated = ((HibikiPairSession s) => '000000')
+      ..onPairRequest = ((FushiPairRequest _) async => true)
+      ..onPairPinGenerated = ((FushiPairSession s) => '000000')
       ..lanRequiresPinProvider = (() async => false);
     await server.start();
   }

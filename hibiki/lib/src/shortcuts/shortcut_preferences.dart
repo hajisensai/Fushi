@@ -5,7 +5,7 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 const String _prefKey = 'shortcut_bindings_json';
 
 Future<void> loadShortcutRegistry(
-  HibikiShortcutRegistry registry,
+  FushiShortcutRegistry registry,
   ReaderHibikiSource source,
   TargetPlatform platform,
 ) async {
@@ -24,7 +24,7 @@ Future<void> loadShortcutRegistry(
 }
 
 Future<void> saveShortcutRegistry(
-  HibikiShortcutRegistry registry,
+  FushiShortcutRegistry registry,
   ReaderHibikiSource source,
 ) async {
   await source.setPreference<String>(

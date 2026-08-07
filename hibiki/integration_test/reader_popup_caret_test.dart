@@ -280,7 +280,7 @@ void main() {
 Future<void> _importTestDictionary(
     WidgetTester tester, AppModel appModel) async {
   final Map<String, dynamic> index = <String, dynamic>{
-    'title': 'HibikiCaretTestDict',
+    'title': 'FushiCaretTestDict',
     'format': 3,
     'revision': 'caret-test-1',
     'sequenced': false,

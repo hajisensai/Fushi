@@ -19,7 +19,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 // 待遇。以下三层守卫：CSS 生成器 / JS 分类逻辑 / 点击 URL 解析源码扫描。
 
 Future<ReaderSettings> _defaultSettings() async {
-  final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   final ReaderSettings settings = ReaderSettings(db);
   await settings.refreshFromDb();

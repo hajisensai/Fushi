@@ -44,11 +44,11 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
   });
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late AppModel appModel;
 
   setUp(() async {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     appModel = AppModel(testPlatformServices())..wireDatabaseForTesting(db);
@@ -85,7 +85,7 @@ void main() {
 
   // 巡检 PR-3：分享图标从 iOS 专属 ios_share_outlined 统一为 Material share_outlined。
   Finder exportButton() => find.widgetWithIcon(
-        HibikiIconButton,
+        FushiIconButton,
         Icons.share_outlined,
       );
 
@@ -119,7 +119,7 @@ void main() {
     expect(exportButton(), findsOneWidget);
 
     // 焦点驱动：Tab 遍历直到导出按钮的 InkWell 持焦，再 Enter 激活打开面板。
-    // （CollectionsPage 测试树外无 HibikiFocusRoot，HibikiIconButton 退化为可聚焦
+    // （CollectionsPage 测试树外无 FushiFocusRoot，FushiIconButton 退化为可聚焦
     //  InkWell，标准焦点遍历可达。）
     final Finder buttonInkWell = find.descendant(
       of: exportButton(),
@@ -312,7 +312,7 @@ void main() {
         reason: 'focus-driven open failed');
 
     // 默认：制卡句 + 收藏句两个 Checkbox 都勾，去重 Switch 开。
-    // TODO-936：复选/开关行已迁到共享 HibikiListItem + 裸 Checkbox/Switch，故按裸
+    // TODO-936：复选/开关行已迁到共享 FushiListItem + 裸 Checkbox/Switch，故按裸
     // 控件类型断言（行为等价：value/onChanged 不变）。
     final List<Checkbox> checkboxes =
         tester.widgetList<Checkbox>(find.byType(Checkbox)).toList();
@@ -384,7 +384,7 @@ void main() {
 
     // 焦点驱动：Tab 遍历，当 primaryFocus 落在某个 value==true 的 Checkbox 子树上
     // 时按 Enter 翻转它（禁 tester.tap、禁裸空格）。TODO-936 迁移后复选项是共享
-    // HibikiListItem 内的裸 Checkbox（自身可聚焦），重复直到两项都取消。
+    // FushiListItem 内的裸 Checkbox（自身可聚焦），重复直到两项都取消。
     bool focusOnCheckedCheckbox() {
       final BuildContext? ctx = FocusManager.instance.primaryFocus?.context;
       if (ctx is! Element) return false;

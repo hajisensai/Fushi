@@ -37,7 +37,7 @@ class JimakuBatchDialog extends ConsumerStatefulWidget {
     super.key,
   });
 
-  final HibikiDatabase database;
+  final FushiDatabase database;
   final MediaCollectionRow collection;
 
   /// 合集里**有序**的视频成员（调用方已按 sortIndex 加载）。
@@ -544,7 +544,7 @@ class _JimakuBatchDialogState extends ConsumerState<JimakuBatchDialog> {
       loadingEntryIds: _loadingInventoryIds,
       failedEntryIds: _failedInventoryIds,
     );
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 720,
       maxHeightFactor: 0.86,
       scrollable: false,

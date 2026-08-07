@@ -42,7 +42,7 @@ void main() {
     await f.writeAsString(content);
   }
 
-  Future<int> countRows(HibikiDatabase db, String table) async {
+  Future<int> countRows(FushiDatabase db, String table) async {
     final row =
         await db.customSelect('SELECT COUNT(*) AS c FROM $table').getSingle();
     return row.data['c'] as int;
@@ -56,8 +56,8 @@ void main() {
       await writeFile(p.join(videos, 'A.mp4'), 'VID-A');
       await writeFile(p.join(videos, 'B.mp4'), 'VID-B');
 
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       for (final String k in <String>['A', 'B']) {
         await db.upsertVideoBook(VideoBooksCompanion.insert(
           bookUid: 'video/$k',
@@ -130,7 +130,7 @@ void main() {
     // videoBookCount.
     final String oldDbDir = p.join(src.path, 'olddb');
     Directory(oldDbDir).createSync(recursive: true);
-    final HibikiDatabase db = HibikiDatabase(oldDbDir);
+    final FushiDatabase db = FushiDatabase(oldDbDir);
     for (final String k in <String>['1', '2']) {
       await db.upsertVideoBook(VideoBooksCompanion.insert(
         bookUid: 'v/$k',
@@ -157,8 +157,8 @@ void main() {
     final String zip = p.join(src.path, 'old_backup.zip');
     File(zip).writeAsBytesSync(ZipEncoder().encode(archive)!);
 
-    final HibikiDatabase dummy =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase dummy =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     final BackupService service =
         BackupService(db: dummy, dbDirectory: src.path, appVersion: '1.0.0');
     final BackupContentSummary summary = await service.summarizeBackupFile(zip);
@@ -176,8 +176,8 @@ void main() {
       Directory(dbDir).createSync(recursive: true);
       await writeFile(p.join(videos, 'A.mp4'), 'VID-A');
       await writeFile(p.join(videos, 'B.mp4'), 'VID-B');
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       for (final String k in <String>['A', 'B']) {
         await db.upsertVideoBook(VideoBooksCompanion.insert(
           bookUid: 'video/$k',
@@ -205,7 +205,7 @@ void main() {
           ..remove(BackupCategory.videos),
       );
 
-      final HibikiDatabase after = HibikiDatabase(dstDbDir);
+      final FushiDatabase after = FushiDatabase(dstDbDir);
       addTearDown(after.close);
       expect(await countRows(after, 'video_books'), 0);
     });
@@ -220,7 +220,7 @@ void main() {
         zipPath: zip, // null categories = restore everything (incl. videos)
       );
 
-      final HibikiDatabase after = HibikiDatabase(dstDbDir);
+      final FushiDatabase after = FushiDatabase(dstDbDir);
       addTearDown(after.close);
       expect(await countRows(after, 'video_books'), 2);
     });

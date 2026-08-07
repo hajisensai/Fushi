@@ -24,7 +24,7 @@ import '../helpers/source_guard.dart';
 
 import '../helpers/test_platform_services.dart';
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(
+FushiDatabase _memDb() => FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (rawDb) => rawDb.execute('PRAGMA foreign_keys = ON'),
       ),
@@ -32,7 +32,7 @@ HibikiDatabase _memDb() => HibikiDatabase.forTesting(
 
 Future<void> _pumpDialog(
   WidgetTester tester,
-  HibikiDatabase db,
+  FushiDatabase db,
   String mediaKind,
 ) async {
   final AppModel appModel = AppModel(testPlatformServices())
@@ -57,7 +57,7 @@ Future<void> _pumpDialog(
 }
 
 Future<int> _seedSource(
-  HibikiDatabase db, {
+  FushiDatabase db, {
   required String label,
   required String mediaKind,
   required String rootPath,
@@ -81,7 +81,7 @@ Future<int> _seedSource(
 
 /// 插入一条归属 [sourceId] 的视频条目（TODO-1036 累计计数用）。
 Future<void> _seedVideo(
-  HibikiDatabase db,
+  FushiDatabase db,
   String bookUid, {
   required int sourceId,
 }) =>
@@ -95,7 +95,7 @@ Future<void> _seedVideo(
 
 /// 插入一条归属 [sourceId] 的 EPUB 条目（TODO-1036 累计计数用）。
 Future<void> _seedBook(
-  HibikiDatabase db,
+  FushiDatabase db,
   String bookKey, {
   required int sourceId,
 }) =>
@@ -115,7 +115,7 @@ void main() {
 
   testWidgets('empty scan-root list still shows Fushi Interconnect',
       (tester) async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     await _pumpDialog(tester, db, 'video');
     expect(find.text('Fushi Interconnect'), findsOneWidget);
@@ -124,7 +124,7 @@ void main() {
 
   testWidgets('manga sources compose interconnect and every folder — 但不含在线站点',
       (tester) async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     await _seedSource(
       db,
@@ -155,7 +155,7 @@ void main() {
 
   testWidgets('video sources render label / rootPath / count + last scan',
       (tester) async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     // TODO-1036：统计显示的是来源**累计拥有**的条目数（直接 COUNT video_books），
     // 不是 mediaCount（上次扫描新增数）。这里给 Anime 实插 2 条视频，mediaCount
@@ -187,7 +187,7 @@ void main() {
   });
 
   testWidgets('scan error row shows scan-failed text', (tester) async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     await _seedSource(db,
         label: 'Broken',
@@ -200,7 +200,7 @@ void main() {
 
   testWidgets('remove confirms, keeps imported media (FK setNull)',
       (tester) async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final int sid = await _seedSource(db,
         label: 'Anime', mediaKind: 'video', rootPath: '/srv/anime');
@@ -235,7 +235,7 @@ void main() {
   testWidgets(
       'book mediaKind uses book count phrase (cumulative, not '
       'mediaCount)', (tester) async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     // TODO-1036：mediaCount=12（上次扫描新增）但实际只有 3 本归属本来源，UI 必须
     // 显示累计 3，不是 12（重扫已全导入的来源 mediaCount 会回落 0）。
@@ -262,7 +262,7 @@ void main() {
   // 后不得抛异常。真正把不变量钉死的是下方源码守卫（`ref.` 只允许出现在 initState）。
   testWidgets('rescan then dispose dialog mid-scan drains without throwing',
       (tester) async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     await _seedSource(db,
         label: 'Ghost',
@@ -311,10 +311,10 @@ void main() {
     });
 
     test('_db is a captured field, not a per-call ref.read getter', () {
-      // 修复前是 `HibikiDatabase get _db => ref.read(appProvider).database;`。
+      // 修复前是 `FushiDatabase get _db => ref.read(appProvider).database;`。
       expect(src.contains('get _db =>'), isFalse,
           reason: 'a getter re-reads ref on every async-gap access (BUG-513)');
-      expect(src.contains('late final HibikiDatabase _db'), isTrue,
+      expect(src.contains('late final FushiDatabase _db'), isTrue,
           reason: 'database must be captured once in initState');
     });
 
@@ -385,8 +385,8 @@ void main() {
           reason: '只把 encodeSourceConfig 的结果作为 configJson 落库');
     });
 
-    test('uses HibikiReorderableColumn, not SDK ReorderableListView', () {
-      expect(src.contains('HibikiReorderableColumn'), isTrue);
+    test('uses FushiReorderableColumn, not SDK ReorderableListView', () {
+      expect(src.contains('FushiReorderableColumn'), isTrue);
       expect(src.contains('ReorderableListView('), isFalse);
     });
 

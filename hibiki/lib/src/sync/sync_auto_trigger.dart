@@ -229,7 +229,7 @@ Future<ChannelSyncFlags> resolveChannelSyncFlags(
 /// null，调用方视为该通道 no-op 跳过。云备份通道与互联通道各调一次（见
 /// [enabledSyncChannelBackends]），互不排斥（option B 双通道）。
 Future<SyncRunReport?> _runSyncChannel({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required SyncRepository repo,
   required SyncBackend backend,
   required bool isInterconnect,
@@ -268,7 +268,7 @@ Future<SyncRunReport?> _runSyncChannel({
 }
 
 void triggerAutoSyncAfterClose({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required String mediaIdentifier,
   required ScaffoldMessengerState messenger,
   SyncReportCallback? onReport,
@@ -290,7 +290,7 @@ void triggerAutoSyncAfterClose({
 }
 
 void triggerAutoSyncOnBackground({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required String mediaIdentifier,
 }) {
   // Background (app→paused) intentionally has NO onReport: the user can't see a
@@ -303,7 +303,7 @@ void triggerAutoSyncOnBackground({
 /// The asset directories come from [AppModel] (the sync layer must not depend
 /// on it) — [audioDatabaseRoot] is where pulled audiobook packages land.
 void triggerAutoSyncOnAppOpen({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required Directory dictionaryResourceRoot,
   required Directory audioDatabaseRoot,
   required Directory tempDir,
@@ -328,7 +328,7 @@ void triggerAutoSyncOnAppOpen({
 const _syncCooldownMs = 5 * 60 * 1000;
 
 Future<void> _runAutoSyncAll({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required Directory dictionaryResourceRoot,
   required Directory audioDatabaseRoot,
   required Directory tempDir,
@@ -440,7 +440,7 @@ class ManualSyncResult {
 /// 但绕过自动同步开关与 5 分钟冷却（手动是显式意图）。仍尊重各资产 gate 与后端
 /// 认证；与后台同步共用 [_autoSyncMutex]，避免并发改 singleton backend 状态。
 Future<ManualSyncResult> runManualFullSync({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required Directory dictionaryResourceRoot,
   required Directory audioDatabaseRoot,
   required Directory tempDir,
@@ -529,7 +529,7 @@ Duration _collectionsSyncDebounceDuration = const Duration(seconds: 8);
 /// 不成环：同步自身 apply 的写入会再触发一轮，但清单 canonicalJson 相等即不
 /// 回写、目标态调和无 diff 即不写库——第二轮收敛为纯读 no-op 后不再有表事件。
 void installCollectionsSyncWatcher({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   Duration debounce = const Duration(seconds: 8),
 }) {
   uninstallCollectionsSyncWatcher();
@@ -556,7 +556,7 @@ void uninstallCollectionsSyncWatcher() {
 @visibleForTesting
 int collectionsSyncScheduledForTest = 0;
 
-void _scheduleCollectionsSync(HibikiDatabase db) {
+void _scheduleCollectionsSync(FushiDatabase db) {
   collectionsSyncScheduledForTest++;
   _collectionsSyncDebounce?.cancel();
   _collectionsSyncDebounce = Timer(_collectionsSyncDebounceDuration, () {
@@ -569,10 +569,10 @@ void _scheduleCollectionsSync(HibikiDatabase db) {
 /// 全量 sweep 进行中则重排到下个防抖窗——sweep 本就带合集维度，且它 apply 的
 /// 表写入还会再触发一次本观察者，最终收敛。
 @visibleForTesting
-Future<void> runCollectionsSyncNow({required HibikiDatabase db}) =>
+Future<void> runCollectionsSyncNow({required FushiDatabase db}) =>
     _runCollectionsSync(db: db);
 
-Future<void> _runCollectionsSync({required HibikiDatabase db}) async {
+Future<void> _runCollectionsSync({required FushiDatabase db}) async {
   if (_syncingIds.contains('__all__')) {
     _scheduleCollectionsSync(db);
     return;
@@ -638,7 +638,7 @@ Future<void> _runCollectionsSync({required HibikiDatabase db}) async {
 }
 
 Future<void> _runAutoSync({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required String mediaIdentifier,
   required ScaffoldMessengerState? messenger,
   SyncReportCallback? onReport,

@@ -8,10 +8,10 @@ import 'package:fushi/src/utils/components/hibiki_placeholder_message.dart';
 import 'golden_test_helpers.dart';
 
 void main() {
-  group('HibikiPlaceholderMessage golden', () {
+  group('FushiPlaceholderMessage golden', () {
     testWidgets('default style', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiPlaceholderMessage(
+        const FushiPlaceholderMessage(
           icon: Icons.book,
           message: 'No books yet',
         ),
@@ -27,7 +27,7 @@ void main() {
 
     testWidgets('custom color', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiPlaceholderMessage(
+        const FushiPlaceholderMessage(
           icon: Icons.error_outline,
           message: 'Something went wrong',
           color: Colors.red,
@@ -44,7 +44,7 @@ void main() {
 
     testWidgets('dark theme', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiPlaceholderMessage(
+        const FushiPlaceholderMessage(
           icon: Icons.search_off,
           message: 'No results found',
         ),

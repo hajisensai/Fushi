@@ -309,14 +309,14 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
     if (!applied) {
       // 失败：复位转圈（否则按钮永久禁用），弹窗保留让用户改选/重试。
       setState(() => _applyingCandidate = null);
-      HibikiToast.show(
+      FushiToast.show(
         msg: failureMessage ?? t.game_scrape_no_result,
         severity: ToastSeverity.error,
       );
       return;
     }
     Navigator.of(context).pop(true);
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.game_scrape_applied,
       severity: ToastSeverity.success,
     );
@@ -324,11 +324,11 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiDialogFrame(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiDialogFrame(
       maxWidth: 560,
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.game_scrape,
         leadingIcon: Icons.cloud_download_outlined,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -396,7 +396,7 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
     );
   }
 
-  Widget _buildResults(ThemeData theme, HibikiDesignTokens tokens) {
+  Widget _buildResults(ThemeData theme, FushiDesignTokens tokens) {
     if (_searching) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -433,7 +433,7 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
 
   Widget _buildCandidateTile(
     ThemeData theme,
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     SourceCandidate candidate,
   ) {
     final String metaLine = <String>[

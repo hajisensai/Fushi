@@ -122,7 +122,7 @@ Future<String?> pickRealFilePath({
 /// （文件），对应 MainActivity 的 SAF channel handler。
 Future<String?> _pickRealPathViaSaf(String method) async {
   try {
-    return await HibikiChannels.saf.invokeMethod<String>(method);
+    return await FushiChannels.saf.invokeMethod<String>(method);
   } on PlatformException {
     return null;
   } on MissingPluginException {
@@ -255,7 +255,7 @@ List<String> _filterPickedFilesByExtension({
   }
   if (rejected.isNotEmpty && context != null && context.mounted) {
     final String ext = p.extension(rejected.first).toLowerCase();
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.import_unsupported_file_format(
         ext: ext.isEmpty ? p.basename(rejected.first) : ext,
       ),

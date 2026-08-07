@@ -12,7 +12,7 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 ///
 /// 按 [ShortcutScope.coactiveScopes] 过滤：同一物理键在不同 co-active 组里可能绑给
 /// 不同 action，可视化图一次只渲染一个 scope 视角，故构造时按传入 scope 的整组
-/// （含 co-active）展开，与 [HibikiShortcutRegistry.resolveKeyboard] 的解析口径一致。
+/// （含 co-active）展开，与 [FushiShortcutRegistry.resolveKeyboard] 的解析口径一致。
 ///
 /// 纯数据类：给定相同的注册表绑定 + scope，反向结果完全确定。
 @immutable
@@ -39,7 +39,7 @@ class ReverseBindingIndex {
   /// 从注册表为指定 [scope] 构建反向索引：展开该 scope 的整个 co-active 组，让
   /// 高亮口径与运行时解析（resolveKeyboard 按 coactiveScopes 扫描）一致。
   factory ReverseBindingIndex.fromRegistry(
-    HibikiShortcutRegistry registry,
+    FushiShortcutRegistry registry,
     ShortcutScope scope,
   ) {
     final Map<LogicalKeyboardKey, List<ShortcutAction>> keyboard =

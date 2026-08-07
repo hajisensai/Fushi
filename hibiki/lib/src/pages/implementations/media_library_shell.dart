@@ -125,16 +125,16 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
     final List<MediaLibraryViewKind> values = views
         .map((MediaLibraryViewSpec spec) => spec.kind)
         .toList(growable: false);
-    // 分段条必须包 [HibikiAdjustableSegmented]：否则它只是一堆原生按钮，只遍历已注册
+    // 分段条必须包 [FushiAdjustableSegmented]：否则它只是一堆原生按钮，只遍历已注册
     // target 的方向焦点控制器会整个跳过（手柄/键盘用户切不了视图）。包上后是单个焦点
     // 停靠点，左右方向键原地切视图。
-    return HibikiAdjustableSegmented<MediaLibraryViewKind>(
+    return FushiAdjustableSegmented<MediaLibraryViewKind>(
       values: values,
       selected: selected,
       onChanged: _select,
       focusIdPrefix: widget.focusIdPrefix,
-      focusId: HibikiFocusId('${widget.focusIdPrefix}-sections'),
-      child: HibikiSegmentedStrip<MediaLibraryViewKind>(
+      focusId: FushiFocusId('${widget.focusIdPrefix}-sections'),
+      child: FushiSegmentedStrip<MediaLibraryViewKind>(
         segments: <ButtonSegment<MediaLibraryViewKind>>[
           for (final MediaLibraryViewSpec spec in views)
             ButtonSegment<MediaLibraryViewKind>(

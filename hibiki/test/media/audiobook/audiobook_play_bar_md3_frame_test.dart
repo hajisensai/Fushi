@@ -5,8 +5,8 @@ import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 
 /// TODO-297 守卫：阅读器有声书播放条的播放/暂停键必须是 MD3 圆框
 /// （[IconButton.filledTonal] —— 标准 filled-tonal 圆形容器 + state-layer +
-/// ripple），而不是扁平的自定义 [HibikiIconButton]。提交 48a8d2044 曾把它换成
-/// 无框的 HibikiIconButton，本守卫锁住「图标 + 圆框 md3」旧观感的还原。
+/// ripple），而不是扁平的自定义 [FushiIconButton]。提交 48a8d2044 曾把它换成
+/// 无框的 FushiIconButton，本守卫锁住「图标 + 圆框 md3」旧观感的还原。
 ///
 /// 「filled-tonal」在 Flutter 里通过一个私有的 `_IconButtonVariant` 区分，外部
 /// 不可直接读取；但 filled-tonal 变体会渲染一个**非透明背景**的圆形容器，而无框

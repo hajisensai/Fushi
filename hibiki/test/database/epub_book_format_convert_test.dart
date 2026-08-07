@@ -10,8 +10,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// `(mediaType='epub', entryKey=bookKey)` 完全不动——本测试的重点不是「字段写对了」，
 /// 而是**连带引用一条都不断**：合集成员、标签、阅读进度、完成标记在转化后仍然指向
 /// 同一本书。这是「转化不会让用户丢东西」的地基。
-Future<HibikiDatabase> _openDb() async {
-  final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
@@ -19,8 +19,8 @@ Future<HibikiDatabase> _openDb() async {
 void main() {
   const String key = 'Scanned Volume 01';
 
-  Future<HibikiDatabase> seedImageEpub() async {
-    final HibikiDatabase db = await _openDb();
+  Future<FushiDatabase> seedImageEpub() async {
+    final FushiDatabase db = await _openDb();
     await db.insertEpubBook(
       EpubBooksCompanion.insert(
         bookKey: key,
@@ -38,7 +38,7 @@ void main() {
   }
 
   test('转成漫画：format / 产物指针列一次写穿，extractDir 与身份不动', () async {
-    final HibikiDatabase db = await seedImageEpub();
+    final FushiDatabase db = await seedImageEpub();
 
     await db.updateEpubBookFormat(
       key,
@@ -66,7 +66,7 @@ void main() {
   });
 
   test('转回书：指回原始文件并清掉 mangaReadingMode（表约定：非漫画恒 null）', () async {
-    final HibikiDatabase db = await seedImageEpub();
+    final FushiDatabase db = await seedImageEpub();
     await db.updateEpubBookFormat(
       key,
       format: BookFormat.manga,
@@ -97,7 +97,7 @@ void main() {
   });
 
   test('转化后合集成员仍指向这本书（身份不变 → 零悬挂引用）', () async {
-    final HibikiDatabase db = await seedImageEpub();
+    final FushiDatabase db = await seedImageEpub();
     final int collectionId = await db.createMediaCollection('扫描本');
     await db.addToCollection(collectionId, MediaKind.epub, key);
 
@@ -119,7 +119,7 @@ void main() {
   });
 
   test('转化后阅读进度与完成标记仍在（进度单位换轨是另一回事，行不能丢）', () async {
-    final HibikiDatabase db = await seedImageEpub();
+    final FushiDatabase db = await seedImageEpub();
     await db.upsertReaderPosition(
       ReaderPositionsCompanion.insert(
         bookKey: key,
@@ -146,7 +146,7 @@ void main() {
   });
 
   test('不传 coverPath = 保持原封面不变（绝不静默清空）', () async {
-    final HibikiDatabase db = await seedImageEpub();
+    final FushiDatabase db = await seedImageEpub();
     expect((await db.getEpubBook(key))!.coverPath, 'cover.jpg');
 
     // 调用方只关心身份格式、没打算动封面：省略 coverPath。
@@ -167,7 +167,7 @@ void main() {
   });
 
   test('显式传 coverPath 仍然覆盖（「不变」只适用于省略的情况）', () async {
-    final HibikiDatabase db = await seedImageEpub();
+    final FushiDatabase db = await seedImageEpub();
     await db.updateEpubBookFormat(
       key,
       format: BookFormat.manga,
@@ -180,7 +180,7 @@ void main() {
   });
 
   test('只影响目标行，同库其它书不受牵连', () async {
-    final HibikiDatabase db = await seedImageEpub();
+    final FushiDatabase db = await seedImageEpub();
     await db.insertEpubBook(
       EpubBooksCompanion.insert(
         bookKey: 'Another',

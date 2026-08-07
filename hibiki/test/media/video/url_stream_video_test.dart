@@ -359,7 +359,7 @@ void main() {
         subtitleUrl: 'https://cdn.example.com/sub.srt',
         subtitleFileName: 'sub.srt',
         referer: 'https://example.com/',
-        userAgent: 'HibikiAgent/1.0',
+        userAgent: 'FushiAgent/1.0',
       );
       expect(spec.isEmpty, isFalse);
       final String? json = spec.toStorageJson();
@@ -371,7 +371,7 @@ void main() {
       expect(back.userAgent, spec.userAgent);
       expect(back.httpHeaderFields, <String, String>{
         'Referer': 'https://example.com/',
-        'User-Agent': 'HibikiAgent/1.0',
+        'User-Agent': 'FushiAgent/1.0',
       });
     });
 

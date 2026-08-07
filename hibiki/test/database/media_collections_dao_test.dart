@@ -3,8 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// [MediaCollections] / [MediaCollectionItems] DAO 测试（统一合集 Phase 1）。
-Future<HibikiDatabase> _openDb() async {
-  final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
@@ -118,7 +118,7 @@ void main() {
   group('reorderCollectionItems 子集契约（BUG-1194 根因）', () {
     /// 交错基线：video/g1/video/e1/video —— 非 video 成员夹在 video 之间，只回写
     /// 可见 video 键时它们的相对位置必然被打乱。
-    Future<int> seedMixed(HibikiDatabase db) async {
+    Future<int> seedMixed(FushiDatabase db) async {
       final int c = await db.createMediaCollection('Mixed');
       await db.addToCollection(c, MediaKind.video, 'v1');
       await db.addToCollection(c, MediaKind.game, 'g1');
@@ -128,12 +128,12 @@ void main() {
       return c;
     }
 
-    Future<List<String>> members(HibikiDatabase db, int c) async => <String>[
+    Future<List<String>> members(FushiDatabase db, int c) async => <String>[
           for (final MediaCollectionItemRow r in await db.getCollectionItems(c))
             '${r.mediaType}|${r.entryKey}',
         ];
 
-    Future<List<int>> indices(HibikiDatabase db, int c) async => <int>[
+    Future<List<int>> indices(FushiDatabase db, int c) async => <int>[
           for (final MediaCollectionItemRow r in await db.getCollectionItems(c))
             r.sortIndex,
         ];
@@ -326,7 +326,7 @@ void main() {
   // （media_collection_grid_detail_page._removeMember 的明文契约），否则
   // tryParse 丢弃会让这条成员**永远移不掉**——用户点「移出合集」毫无反应。
   test('removeFromCollectionRaw 能移出未知种类成员（typed 入口覆盖不到的行值）', () async {
-    final HibikiDatabase db = await _openDb();
+    final FushiDatabase db = await _openDb();
     final int c = await db.createMediaCollection('C');
     // 'manga' 不在 MediaKind 值域内 —— 模拟对端新增种类同步进来的成员行。
     const String unknownKind = 'manga';
@@ -356,7 +356,7 @@ void main() {
   });
 
   test('removeFromCollection typed 入口与 raw 入口对已知种类等价', () async {
-    final HibikiDatabase db = await _openDb();
+    final FushiDatabase db = await _openDb();
     final int c = await db.createMediaCollection('C');
     await db.addToCollection(c, MediaKind.video, 'v1');
     await db.addToCollection(c, MediaKind.epub, 'b1');

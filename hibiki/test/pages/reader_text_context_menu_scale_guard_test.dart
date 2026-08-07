@@ -9,8 +9,8 @@ import 'reader_hibiki_page_source_corpus.dart';
 ///
 /// BUG-1438 修正了本守卫原来的方向：它曾要求菜单尺寸乘 `menuScale =
 /// _readerImageMenuScale`。那是**双重缩放**——菜单挂在根 Overlay，即全局
-/// HibikiAppUiScale 的缩放画布内，画布→屏幕这一跳已经按 scale 放大过一次；
-/// 而阅读器 chrome 需要手动乘，是因为它在 HibikiAppUiScaleNeutralizer **之内**
+/// FushiAppUiScale 的缩放画布内，画布→屏幕这一跳已经按 scale 放大过一次；
+/// 而阅读器 chrome 需要手动乘，是因为它在 FushiAppUiScaleNeutralizer **之内**
 /// （净缩放=1）。两者在中和器的两侧，规则不能互抄。实测 scale=2 时同样写
 /// `fontSize: 14 * menuScale`，chrome 渲染 40px 而菜单 80px。
 /// 「菜单随界面大小缩放」这个诉求本身没变，只是由画布负责，代码写常量即可。

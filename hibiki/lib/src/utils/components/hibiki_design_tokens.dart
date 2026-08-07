@@ -19,8 +19,8 @@ double textLineHeight(BuildContext context, TextStyle style) {
   return MediaQuery.textScalerOf(context).scale(fontSize) * factor;
 }
 
-class HibikiDesignTokens {
-  const HibikiDesignTokens({
+class FushiDesignTokens {
+  const FushiDesignTokens({
     required this.radii,
     required this.surfaces,
     required this.type,
@@ -28,11 +28,11 @@ class HibikiDesignTokens {
     required this.density,
   });
 
-  final HibikiRadii radii;
-  final HibikiSurfaceColors surfaces;
-  final HibikiTypeRoles type;
-  final HibikiSpacingTokens spacing;
-  final HibikiDensityTokens density;
+  final FushiRadii radii;
+  final FushiSurfaceColors surfaces;
+  final FushiTypeRoles type;
+  final FushiSpacingTokens spacing;
+  final FushiDensityTokens density;
 
   // HBK-AUDIT-150: `of` is named like an O(1) lookup but used to build a fresh
   // token graph (11 Color reads + 6 TextStyle.copyWith allocations) on every
@@ -43,24 +43,24 @@ class HibikiDesignTokens {
   // theme actually changes, and repeat calls within a frame return the cache.
   static ColorScheme? _cachedScheme;
   static TextTheme? _cachedTextTheme;
-  static HibikiDesignTokens? _cached;
+  static FushiDesignTokens? _cached;
 
-  static HibikiDesignTokens of(BuildContext context) {
+  static FushiDesignTokens of(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final TextTheme textTheme = theme.textTheme;
-    final HibikiDesignTokens? cached = _cached;
+    final FushiDesignTokens? cached = _cached;
     if (cached != null &&
         identical(_cachedScheme, scheme) &&
         identical(_cachedTextTheme, textTheme)) {
       return cached;
     }
-    final HibikiDesignTokens tokens = HibikiDesignTokens(
-      radii: const HibikiRadii(),
-      surfaces: HibikiSurfaceColors.fromScheme(scheme),
-      type: HibikiTypeRoles.fromTheme(theme),
-      spacing: const HibikiSpacingTokens(),
-      density: const HibikiDensityTokens(),
+    final FushiDesignTokens tokens = FushiDesignTokens(
+      radii: const FushiRadii(),
+      surfaces: FushiSurfaceColors.fromScheme(scheme),
+      type: FushiTypeRoles.fromTheme(theme),
+      spacing: const FushiSpacingTokens(),
+      density: const FushiDensityTokens(),
     );
     _cachedScheme = scheme;
     _cachedTextTheme = textTheme;
@@ -69,8 +69,8 @@ class HibikiDesignTokens {
   }
 }
 
-class HibikiRadii {
-  const HibikiRadii({
+class FushiRadii {
+  const FushiRadii({
     this.group = groupValue,
     this.card = cardValue,
     this.control = controlValue,
@@ -81,7 +81,7 @@ class HibikiRadii {
   });
 
   // Single value source for the radii scale (used by both these field defaults
-  // and [HibikiBorderRadius]'s const BorderRadius objects).
+  // and [FushiBorderRadius]'s const BorderRadius objects).
   // Editorial scale: sharper, more geometric than M3 default (was 12/12/16/8/12/28/28).
   static const double groupValue = 10;
   static const double cardValue = 10;
@@ -118,29 +118,29 @@ class HibikiRadii {
 /// across theme config and widget call sites. Radii are theme-independent, so
 /// these stay `const`: migrating a hardcoded `BorderRadius.circular(N)` to one
 /// of these preserves const-ness at the call site (routing through
-/// `HibikiDesignTokens.of(context)` would not). Values come from [HibikiRadii].
-abstract final class HibikiBorderRadius {
+/// `FushiDesignTokens.of(context)` would not). Values come from [FushiRadii].
+abstract final class FushiBorderRadius {
   static const BorderRadius group =
-      BorderRadius.all(Radius.circular(HibikiRadii.groupValue));
+      BorderRadius.all(Radius.circular(FushiRadii.groupValue));
   static const BorderRadius card =
-      BorderRadius.all(Radius.circular(HibikiRadii.cardValue));
+      BorderRadius.all(Radius.circular(FushiRadii.cardValue));
   static const BorderRadius poster =
-      BorderRadius.all(Radius.circular(HibikiRadii.posterValue));
+      BorderRadius.all(Radius.circular(FushiRadii.posterValue));
   static const BorderRadius control =
-      BorderRadius.all(Radius.circular(HibikiRadii.controlValue));
+      BorderRadius.all(Radius.circular(FushiRadii.controlValue));
   static const BorderRadius chip =
-      BorderRadius.all(Radius.circular(HibikiRadii.chipValue));
+      BorderRadius.all(Radius.circular(FushiRadii.chipValue));
   static const BorderRadius menu =
-      BorderRadius.all(Radius.circular(HibikiRadii.menuValue));
+      BorderRadius.all(Radius.circular(FushiRadii.menuValue));
   static const BorderRadius dialog =
-      BorderRadius.all(Radius.circular(HibikiRadii.dialogValue));
+      BorderRadius.all(Radius.circular(FushiRadii.dialogValue));
   static const BorderRadius sheet =
-      BorderRadius.vertical(top: Radius.circular(HibikiRadii.sheetValue));
-  static const Radius chipCorner = Radius.circular(HibikiRadii.chipValue);
+      BorderRadius.vertical(top: Radius.circular(FushiRadii.sheetValue));
+  static const Radius chipCorner = Radius.circular(FushiRadii.chipValue);
 }
 
-class HibikiSurfaceColors {
-  const HibikiSurfaceColors({
+class FushiSurfaceColors {
+  const FushiSurfaceColors({
     required this.primary,
     required this.primaryContainer,
     required this.page,
@@ -166,8 +166,8 @@ class HibikiSurfaceColors {
   final Color onSurface;
   final Color onVariant;
 
-  factory HibikiSurfaceColors.fromScheme(ColorScheme scheme) {
-    return HibikiSurfaceColors(
+  factory FushiSurfaceColors.fromScheme(ColorScheme scheme) {
+    return FushiSurfaceColors(
       primary: scheme.primary,
       primaryContainer: scheme.primaryContainer,
       page: scheme.surface,
@@ -183,8 +183,8 @@ class HibikiSurfaceColors {
   }
 }
 
-class HibikiTypeRoles {
-  const HibikiTypeRoles({
+class FushiTypeRoles {
+  const FushiTypeRoles({
     required this.pageTitle,
     required this.listTitle,
     required this.listSubtitle,
@@ -200,10 +200,10 @@ class HibikiTypeRoles {
   final TextStyle sectionLabel;
   final TextStyle controlLabel;
 
-  factory HibikiTypeRoles.fromTheme(ThemeData theme) {
+  factory FushiTypeRoles.fromTheme(ThemeData theme) {
     final TextTheme textTheme = theme.textTheme;
     final ColorScheme scheme = theme.colorScheme;
-    return HibikiTypeRoles(
+    return FushiTypeRoles(
       listTitle: (textTheme.bodyLarge ?? const TextStyle()).copyWith(
         color: scheme.onSurface,
         fontWeight: FontWeight.w500,
@@ -227,8 +227,8 @@ class HibikiTypeRoles {
   }
 }
 
-class HibikiSpacingTokens {
-  const HibikiSpacingTokens({
+class FushiSpacingTokens {
+  const FushiSpacingTokens({
     this.page = 20,
     this.rowHorizontal = 16,
     this.rowVertical = 12,
@@ -247,8 +247,8 @@ class HibikiSpacingTokens {
   final double section;
 }
 
-class HibikiDensityTokens {
-  const HibikiDensityTokens({
+class FushiDensityTokens {
+  const FushiDensityTokens({
     this.listMinHeight = 56,
     this.compactListMinHeight = 44,
     this.controlHeight = 48,
@@ -264,8 +264,8 @@ class HibikiDensityTokens {
 /// One role's type spec (size/weight/line-height/tracking). Applied onto the
 /// locale-aware base [TextStyle] so the per-locale fontFamily/fontFeatures/
 /// baseline injection is preserved while size/weight/height come from the scale.
-class HibikiTypeSpec {
-  const HibikiTypeSpec(
+class FushiTypeSpec {
+  const FushiTypeSpec(
     this.size,
     this.weight,
     this.height, [
@@ -292,37 +292,37 @@ class HibikiTypeSpec {
 /// and a slightly larger, more legible reading body. Tracking is kept at 0 for
 /// most roles because the UI locale is often CJK (positive tracking spaces out
 /// ideographs badly); only the single largest display size gets mild tightening.
-abstract final class HibikiTypeScale {
-  static const HibikiTypeSpec displayLarge =
-      HibikiTypeSpec(40, FontWeight.w400, 1.15, -0.25);
-  static const HibikiTypeSpec displayMedium =
-      HibikiTypeSpec(33, FontWeight.w400, 1.16);
-  static const HibikiTypeSpec displaySmall =
-      HibikiTypeSpec(28, FontWeight.w400, 1.18);
-  static const HibikiTypeSpec headlineLarge =
-      HibikiTypeSpec(24, FontWeight.w600, 1.25);
-  static const HibikiTypeSpec headlineMedium =
-      HibikiTypeSpec(22, FontWeight.w600, 1.27);
-  static const HibikiTypeSpec headlineSmall =
-      HibikiTypeSpec(20, FontWeight.w600, 1.3);
-  static const HibikiTypeSpec titleLarge =
-      HibikiTypeSpec(18, FontWeight.w600, 1.33);
-  static const HibikiTypeSpec titleMedium =
-      HibikiTypeSpec(16, FontWeight.w600, 1.4);
-  static const HibikiTypeSpec titleSmall =
-      HibikiTypeSpec(15, FontWeight.w600, 1.4);
-  static const HibikiTypeSpec bodyLarge =
-      HibikiTypeSpec(17, FontWeight.w400, 1.5);
-  static const HibikiTypeSpec bodyMedium =
-      HibikiTypeSpec(15, FontWeight.w400, 1.5);
-  static const HibikiTypeSpec bodySmall =
-      HibikiTypeSpec(13, FontWeight.w400, 1.45);
-  static const HibikiTypeSpec labelLarge =
-      HibikiTypeSpec(13, FontWeight.w500, 1.4);
-  static const HibikiTypeSpec labelMedium =
-      HibikiTypeSpec(12, FontWeight.w500, 1.35);
-  static const HibikiTypeSpec labelSmall =
-      HibikiTypeSpec(11, FontWeight.w500, 1.45);
+abstract final class FushiTypeScale {
+  static const FushiTypeSpec displayLarge =
+      FushiTypeSpec(40, FontWeight.w400, 1.15, -0.25);
+  static const FushiTypeSpec displayMedium =
+      FushiTypeSpec(33, FontWeight.w400, 1.16);
+  static const FushiTypeSpec displaySmall =
+      FushiTypeSpec(28, FontWeight.w400, 1.18);
+  static const FushiTypeSpec headlineLarge =
+      FushiTypeSpec(24, FontWeight.w600, 1.25);
+  static const FushiTypeSpec headlineMedium =
+      FushiTypeSpec(22, FontWeight.w600, 1.27);
+  static const FushiTypeSpec headlineSmall =
+      FushiTypeSpec(20, FontWeight.w600, 1.3);
+  static const FushiTypeSpec titleLarge =
+      FushiTypeSpec(18, FontWeight.w600, 1.33);
+  static const FushiTypeSpec titleMedium =
+      FushiTypeSpec(16, FontWeight.w600, 1.4);
+  static const FushiTypeSpec titleSmall =
+      FushiTypeSpec(15, FontWeight.w600, 1.4);
+  static const FushiTypeSpec bodyLarge =
+      FushiTypeSpec(17, FontWeight.w400, 1.5);
+  static const FushiTypeSpec bodyMedium =
+      FushiTypeSpec(15, FontWeight.w400, 1.5);
+  static const FushiTypeSpec bodySmall =
+      FushiTypeSpec(13, FontWeight.w400, 1.45);
+  static const FushiTypeSpec labelLarge =
+      FushiTypeSpec(13, FontWeight.w500, 1.4);
+  static const FushiTypeSpec labelMedium =
+      FushiTypeSpec(12, FontWeight.w500, 1.35);
+  static const FushiTypeSpec labelSmall =
+      FushiTypeSpec(11, FontWeight.w500, 1.45);
 
   /// Build the full 15-slot [TextTheme] by applying the scale onto [base]
   /// (the locale-aware app text style). Explicit sizes survive the geometry

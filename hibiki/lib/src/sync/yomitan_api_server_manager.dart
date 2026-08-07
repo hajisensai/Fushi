@@ -7,11 +7,11 @@ import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 /// 在这个（扩展被自动配置指向的）server 上真正可用。
 class YomitanApiServerManager {
   YomitanApiServerManager({
-    required HibikiRemoteLookupService lookupService,
+    required FushiRemoteLookupService lookupService,
     required Tokenizer tokenizer,
     required ReadingResolver readingResolver,
-    HibikiRemoteMiningService? miningService,
-    HibikiRemoteHistoryService? historyService,
+    FushiRemoteMiningService? miningService,
+    FushiRemoteHistoryService? historyService,
     Map<String, String> Function()? themeColorsProvider,
     List<String> Function()? audioSourcesProvider,
     String? Function()? extensionBuildProvider,
@@ -30,9 +30,9 @@ class YomitanApiServerManager {
         _onExtensionSeen = onExtensionSeen,
         _onExtensionReport = onExtensionReport;
 
-  final HibikiRemoteLookupService _lookup;
-  final HibikiRemoteMiningService? _mining;
-  final HibikiRemoteHistoryService? _history;
+  final FushiRemoteLookupService _lookup;
+  final FushiRemoteMiningService? _mining;
+  final FushiRemoteHistoryService? _history;
   final Tokenizer _tokenizer;
   final ReadingResolver _readingResolver;
   // BUG-530：主题 CSS 变量供给器，透传给 [YomitanApiServer]，随查词响应下发给扩展弹窗。

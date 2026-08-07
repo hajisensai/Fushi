@@ -26,8 +26,8 @@ import '../helpers/test_platform_services.dart';
 /// Jimaku 界面打开时的**语言预选**上——没有该系列的语言记忆时用它兜底。故用
 /// 三层咬住：偏好往返 → AppModel 归一（含仓库未就绪的回退）→ 番剧下载对话框
 /// 真的按它预选语言 chip。
-HibikiDatabase _testDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 const AniListMedia _kMedia = AniListMedia(
   id: 1,
@@ -108,7 +108,7 @@ void main() {
   });
 
   group('偏好往返', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late PreferencesRepository repo;
 
     setUp(() async {

@@ -367,13 +367,13 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return PopScope(
       canPop: _allowPop,
       onPopInvokedWithResult: (bool didPop, _) {
         if (!didPop) unawaited(_attemptClose());
       },
-      child: HibikiToolScaffold(
+      child: FushiToolScaffold(
         title: t.anki_lapis_visual_editor,
         actions: <Widget>[
           SegmentedButton<bool>(
@@ -458,7 +458,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
     );
   }
 
-  Widget _buildPreview(HibikiDesignTokens tokens) {
+  Widget _buildPreview(FushiDesignTokens tokens) {
     final Widget? testPreview = widget.previewBuilder?.call(
       context,
       _selectedField,
@@ -549,7 +549,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
     );
   }
 
-  Widget _buildControls(HibikiDesignTokens tokens) {
+  Widget _buildControls(FushiDesignTokens tokens) {
     final LapisVisualRule rule = _selectedRule;
     return SingleChildScrollView(
       child: Column(
@@ -611,7 +611,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
                       LapisVisualField.dictionaryName,
                       LapisVisualField.definitionExample,
                     ])
-                      HibikiSelectableChip(
+                      FushiSelectableChip(
                         label: _fieldLabel(field),
                         selected: field == _selectedField,
                         onSelected: (_) => _selectField(field),
@@ -926,7 +926,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
       }.contains(field);
 
   Widget _buildTargetGroup({
-    required HibikiDesignTokens tokens,
+    required FushiDesignTokens tokens,
     required String label,
     required List<LapisVisualField> fields,
   }) =>
@@ -940,7 +940,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
             runSpacing: tokens.spacing.gap,
             children: <Widget>[
               for (final LapisVisualField field in fields)
-                HibikiSelectableChip(
+                FushiSelectableChip(
                   label: _fieldLabel(field),
                   selected: field == _selectedField,
                   onSelected: (_) => _selectField(field),
@@ -965,7 +965,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   /// 选中态原本只体现在一排 chip 里某个的底色上，外加一行细灰字面包屑——在深色
   /// 主题下几乎看不出来（用户反馈「右排的不明显」）。用实底容器 + 主色把当前
   /// 目标单独拎出来，选中态就不再依赖用户去分辨哪个 chip 稍亮一点。
-  Widget _buildCurrentTargetBanner(HibikiDesignTokens tokens) {
+  Widget _buildCurrentTargetBanner(FushiDesignTokens tokens) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     return Container(
       padding: EdgeInsets.symmetric(
@@ -1034,7 +1034,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   /// 区域**只改显示**——它把卡型里已有的字段摆到另一个位置，不新增也不删除任何
   /// Anki 字段。所以新建/删除区域都不会让 Anki 要求 full sync，更不会删掉卡片
   /// 数据；这也是为什么这里没有「新建字段」入口。
-  Widget _buildBlocksSection(HibikiDesignTokens tokens) {
+  Widget _buildBlocksSection(FushiDesignTokens tokens) {
     final LapisCustomBlock? selected = _selectedBlock;
     return ExpansionTile(
       tilePadding: EdgeInsets.zero,
@@ -1045,7 +1045,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
       initiallyExpanded: _blocks.isNotEmpty,
       children: <Widget>[
         for (final LapisCustomBlock block in _blocks)
-          HibikiListItem(
+          FushiListItem(
             padding: EdgeInsets.zero,
             selected: block.id == _selectedBlockId,
             leading: const Icon(Icons.crop_free_outlined),
@@ -1128,7 +1128,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
                   // 候选只来自**当前卡型**：区域摆的是已有字段，列一个卡型里
                   // 不存在的名字只会生成一段永远为空的 handlebar。
                   for (final String field in widget.noteTypeFields)
-                    HibikiSelectableChip(
+                    FushiSelectableChip(
                       label: field,
                       selected: selected.fields.contains(field),
                       onSelected: (_) => _updateBlock(
@@ -1152,7 +1152,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
 
   /// 卡片区块位置。三项都直接映射 vendored Lapis 自己的 user settings 变量
   /// （见 [LapisVisualLayout]）——空值 = 不覆写 = 保持出厂布局。
-  Widget _buildLayoutSection(HibikiDesignTokens tokens) => ExpansionTile(
+  Widget _buildLayoutSection(FushiDesignTokens tokens) => ExpansionTile(
         tilePadding: EdgeInsets.zero,
         childrenPadding: EdgeInsets.only(bottom: tokens.spacing.gap),
         leading: const Icon(Icons.dashboard_customize_outlined),
@@ -1260,7 +1260,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
 
   /// 选中区域由哪些 Anki 字段填充。只列**当前卡型真有**的字段：用户选的不是
   /// Lapis 时这里自然空掉，不会把 Lapis 的字段名写到别的卡型头上。
-  Widget _buildFieldMappingSection(HibikiDesignTokens tokens) {
+  Widget _buildFieldMappingSection(FushiDesignTokens tokens) {
     if (widget.pickHandlebar == null || widget.noteTypeFields.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -1288,7 +1288,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           style: tokens.type.listSubtitle,
         ),
         for (final String ankiField in present)
-          HibikiListItem(
+          FushiListItem(
             padding: EdgeInsets.zero,
             title: Text(ankiField),
             subtitle: Text(
@@ -1305,7 +1305,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
 
   /// 一行色板：默认 + 预设 + 当前自定义色 + 取色器入口。
   Widget _buildColorRow({
-    required HibikiDesignTokens tokens,
+    required FushiDesignTokens tokens,
     required String label,
     required String? selectedHex,
     required List<String> presets,
@@ -1450,7 +1450,7 @@ class _LapisColorChoice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color color = colorHex == null || showPaletteIcon
         ? tokens.surfaces.overlay
         : lapisColorFromHex(colorHex!);

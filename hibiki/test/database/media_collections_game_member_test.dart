@@ -8,15 +8,15 @@ import 'package:fushi_core/fushi_core.dart';
 /// 合集成员表对 mediaType 是自由字符串（无 CHECK / 无 FK），本测试钉住 'game'
 /// 成员的完整生命周期：加入（含墓碑清理路径）→ 读取 → 主折叠归属映射 → 移出
 /// （移空自删）→ 删合集 cascade，全程与 epub/video 成员同一条 DAO 路径。
-Future<HibikiDatabase> _openDb() async {
-  final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
 
 void main() {
   test('addToCollection game 成员往返：写入 → 读取 → 归属映射', () async {
-    final HibikiDatabase db = await _openDb();
+    final FushiDatabase db = await _openDb();
     // 真实 galgames 行（entryKey = galgames.id，微秒时间戳字符串）。
     await db.upsertGalgame(
       GalgamesCompanion.insert(
@@ -50,7 +50,7 @@ void main() {
   });
 
   test('removeFromCollection game 成员 → 移空自删 + 重加回不被墓碑吞', () async {
-    final HibikiDatabase db = await _openDb();
+    final FushiDatabase db = await _openDb();
     final int c = await db.createMediaCollection('G');
     await db.addToCollection(c, MediaKind.game, 'g1');
 
@@ -65,7 +65,7 @@ void main() {
   });
 
   test('deleteMediaCollection cascade 清 game 引用行，不动 galgames 本体', () async {
-    final HibikiDatabase db = await _openDb();
+    final FushiDatabase db = await _openDb();
     await db.upsertGalgame(
       GalgamesCompanion.insert(
         id: 'g-keep',

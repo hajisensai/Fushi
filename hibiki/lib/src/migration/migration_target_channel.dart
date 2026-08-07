@@ -21,7 +21,7 @@ class MigrationTargetChannel {
   /// 指定包是否已安装（Android 11+ 依赖 manifest `<queries>` 声明该包）。
   Future<bool> isPackageInstalled(String packageName) async {
     if (!_supported) return false;
-    final bool? installed = await HibikiChannels.migration
+    final bool? installed = await FushiChannels.migration
         .invokeMethod<bool>('isPackageInstalled', <String, Object?>{
       'package': packageName,
     });
@@ -35,7 +35,7 @@ class MigrationTargetChannel {
   /// 返回是否成功发出启动 intent。
   Future<bool> launchFushi() async {
     if (!_supported) return false;
-    final bool? ok = await HibikiChannels.migration
+    final bool? ok = await FushiChannels.migration
         .invokeMethod<bool>('launchPackage', <String, Object?>{
       'package': kFushiPackageName,
     });
@@ -46,7 +46,7 @@ class MigrationTargetChannel {
   /// 事后用 [isFushiInstalled]/包探测复查，不得乐观标记成功（计划 P2-3）。
   Future<void> requestUninstall(String packageName) async {
     if (!_supported) return;
-    await HibikiChannels.migration
+    await FushiChannels.migration
         .invokeMethod<void>('requestUninstall', <String, Object?>{
       'package': packageName,
     });
@@ -55,7 +55,7 @@ class MigrationTargetChannel {
   /// 启/停 PROCESS_TEXT 系统取词入口（组件级，系统菜单里真的少一项）。
   Future<void> setProcessTextEnabled(bool enabled) async {
     if (!_supported) return;
-    await HibikiChannels.migration
+    await FushiChannels.migration
         .invokeMethod<void>('setProcessTextEnabled', <String, Object?>{
       'enabled': enabled,
     });

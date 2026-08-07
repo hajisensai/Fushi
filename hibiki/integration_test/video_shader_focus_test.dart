@@ -203,7 +203,7 @@ void main() {
           final ProviderContainer container = ProviderScope.containerOf(
             tester.element(find.byType(MaterialApp).first),
           );
-          final HibikiDatabase db = container.read(appProvider).database;
+          final FushiDatabase db = container.read(appProvider).database;
           await (db.delete(db.videoBooks)
                 ..where((VideoBooks t) => t.bookUid.equals(_kVideoBookUid)))
               .go();

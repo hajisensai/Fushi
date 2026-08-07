@@ -22,12 +22,12 @@ void main() {
       'lib/src/utils/components/hibiki_material_components.dart',
     ).readAsStringSync();
     final String logPanel = source.substring(
-      source.indexOf('class HibikiLogPanel'),
-      source.indexOf('class HibikiEditorPanel'),
+      source.indexOf('class FushiLogPanel'),
+      source.indexOf('class FushiEditorPanel'),
     );
     final String editorPanel = source.substring(
-      source.indexOf('class HibikiEditorPanel'),
-      source.indexOf('class HibikiPopupSurface'),
+      source.indexOf('class FushiEditorPanel'),
+      source.indexOf('class FushiPopupSurface'),
     );
 
     expect(logPanel, contains('tokens.type.metadata.copyWith'));
@@ -36,12 +36,12 @@ void main() {
     expect(editorPanel, isNot(contains('fontSize: 12')));
   });
 
-  testWidgets('HibikiSelectableChip uses MD3 selected and outline tokens',
+  testWidgets('FushiSelectableChip uses MD3 selected and outline tokens',
       (WidgetTester tester) async {
     bool selected = true;
     await tester.pumpWidget(
       buildSubject(
-        HibikiSelectableChip(
+        FushiSelectableChip(
           label: 'Theme',
           selected: selected,
           onSelected: (bool value) => selected = value,
@@ -66,13 +66,13 @@ void main() {
     expect(selected, isFalse);
   });
 
-  testWidgets('HibikiSelectableChip registers with the focus root',
+  testWidgets('FushiSelectableChip registers with the focus root',
       (WidgetTester tester) async {
     bool selected = false;
     await tester.pumpWidget(buildSubject(
-      HibikiFocusRoot(
-        child: HibikiSelectableChip(
-          focusId: const HibikiFocusId('theme-chip'),
+      FushiFocusRoot(
+        child: FushiSelectableChip(
+          focusId: const FushiFocusId('theme-chip'),
           label: 'Theme',
           selected: selected,
           onSelected: (bool value) => selected = value,
@@ -81,12 +81,12 @@ void main() {
     ));
     await tester.pump();
 
-    final HibikiFocusController root = HibikiFocusRoot.controllerOf(
+    final FushiFocusController root = FushiFocusRoot.controllerOf(
       tester.element(find.byType(ChoiceChip)),
     );
-    expect(root.requestById(const HibikiFocusId('theme-chip')), isTrue);
+    expect(root.requestById(const FushiFocusId('theme-chip')), isTrue);
     await tester.pump();
-    expect(root.activeId, const HibikiFocusId('theme-chip'));
+    expect(root.activeId, const FushiFocusId('theme-chip'));
 
     Actions.maybeInvoke<ActivateIntent>(
       root.activeContext!,
@@ -95,12 +95,12 @@ void main() {
     expect(selected, isTrue);
   });
 
-  testWidgets('HibikiActionChip uses shared outline action styling',
+  testWidgets('FushiActionChip uses shared outline action styling',
       (WidgetTester tester) async {
     bool tapped = false;
     await tester.pumpWidget(
       buildSubject(
-        HibikiActionChip(
+        FushiActionChip(
           label: 'Open',
           icon: Icons.open_in_new,
           onPressed: () => tapped = true,
@@ -116,21 +116,21 @@ void main() {
     expect(shape.borderRadius, BorderRadius.circular(6));
     expect(find.byIcon(Icons.open_in_new), findsOneWidget);
 
-    await tester.tap(find.byType(HibikiActionChip));
+    await tester.tap(find.byType(FushiActionChip));
     expect(tapped, isTrue);
   });
 
-  testWidgets('HibikiListItem resolves standard and compact density heights',
+  testWidgets('FushiListItem resolves standard and compact density heights',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       buildSubject(
         const Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            HibikiListItem(title: Text('Standard')),
-            HibikiListItem(
+            FushiListItem(title: Text('Standard')),
+            FushiListItem(
               title: Text('Compact'),
-              density: HibikiListDensity.compact,
+              density: FushiListDensity.compact,
             ),
           ],
         ),
@@ -158,13 +158,13 @@ void main() {
     expect(compact.size.height, 48);
   });
 
-  testWidgets('HibikiActionChip registers with the focus root',
+  testWidgets('FushiActionChip registers with the focus root',
       (WidgetTester tester) async {
     bool tapped = false;
     await tester.pumpWidget(buildSubject(
-      HibikiFocusRoot(
-        child: HibikiActionChip(
-          focusId: const HibikiFocusId('open-chip'),
+      FushiFocusRoot(
+        child: FushiActionChip(
+          focusId: const FushiFocusId('open-chip'),
           label: 'Open',
           icon: Icons.open_in_new,
           onPressed: () => tapped = true,
@@ -173,10 +173,10 @@ void main() {
     ));
     await tester.pump();
 
-    final HibikiFocusController root = HibikiFocusRoot.controllerOf(
+    final FushiFocusController root = FushiFocusRoot.controllerOf(
       tester.element(find.byType(OutlinedButton)),
     );
-    expect(root.requestById(const HibikiFocusId('open-chip')), isTrue);
+    expect(root.requestById(const FushiFocusId('open-chip')), isTrue);
     await tester.pump();
 
     Actions.maybeInvoke<ActivateIntent>(
@@ -186,14 +186,14 @@ void main() {
     expect(tapped, isTrue);
   });
 
-  testWidgets('HibikiTagChip derives readable text color from tag color',
+  testWidgets('FushiTagChip derives readable text color from tag color',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       buildSubject(
         const Wrap(
           children: <Widget>[
-            HibikiTagChip(label: 'Dark', color: Colors.black),
-            HibikiTagChip(label: 'Light', color: Colors.white),
+            FushiTagChip(label: 'Dark', color: Colors.black),
+            FushiTagChip(label: 'Light', color: Colors.white),
           ],
         ),
       ),
@@ -217,15 +217,15 @@ void main() {
     );
   });
 
-  testWidgets('HibikiTagChip surface tone keeps a tag color swatch',
+  testWidgets('FushiTagChip surface tone keeps a tag color swatch',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       buildSubject(
-        const HibikiTagChip(
+        const FushiTagChip(
           label: 'Fiction',
           color: Colors.red,
           selected: true,
-          tone: HibikiTagChipTone.surface,
+          tone: FushiTagChipTone.surface,
         ),
       ),
     );
@@ -254,14 +254,14 @@ void main() {
     expect(swatchDecoration.shape, BoxShape.circle);
   });
 
-  testWidgets('HibikiTagChip exposes a compact delete affordance',
+  testWidgets('FushiTagChip exposes a compact delete affordance',
       (WidgetTester tester) async {
     bool deleted = false;
     await tester.pumpWidget(
       buildSubject(
-        HibikiTagChip(
+        FushiTagChip(
           label: 'Ctrl+K',
-          tone: HibikiTagChipTone.surface,
+          tone: FushiTagChipTone.surface,
           onDeleted: () => deleted = true,
         ),
       ),
@@ -273,17 +273,17 @@ void main() {
     expect(deleted, isTrue);
   });
 
-  testWidgets('HibikiOverflowMenu registers with the focus root and opens',
+  testWidgets('FushiOverflowMenu registers with the focus root and opens',
       (WidgetTester tester) async {
     int? selected;
     await tester.pumpWidget(
       buildSubject(
-        HibikiFocusRoot(
+        FushiFocusRoot(
           child: Column(
             children: <Widget>[
-              HibikiOverflowMenu<int>(
+              FushiOverflowMenu<int>(
                 items: <PopupMenuEntry<int>>[
-                  HibikiPopupMenuItem<int>(label: 'Delete', value: 1),
+                  FushiPopupMenuItem<int>(label: 'Delete', value: 1),
                 ],
                 onSelected: (int value) => selected = value,
               ),
@@ -294,8 +294,8 @@ void main() {
     );
     await tester.pump();
 
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
-      tester.element(find.byType(HibikiOverflowMenu<int>)),
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
+      tester.element(find.byType(FushiOverflowMenu<int>)),
     );
     controller.ensureFocus();
     await tester.pump();
@@ -315,29 +315,29 @@ void main() {
     expect(selected, 1);
   });
 
-  testWidgets('HibikiPageHeader keeps actions on one row when content fits',
+  testWidgets('FushiPageHeader keeps actions on one row when content fits',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       buildSubject(
         SizedBox(
           width: 360,
-          child: HibikiPageHeader(
+          child: FushiPageHeader(
             title: '书架',
             padding: EdgeInsets.zero,
             actions: <Widget>[
-              HibikiIconButton(
+              FushiIconButton(
                 tooltip: 'Import',
                 icon: Icons.library_add_outlined,
                 size: 48,
                 onTap: () {},
               ),
-              HibikiIconButton(
+              FushiIconButton(
                 tooltip: 'Collections',
                 icon: Icons.collections_bookmark_outlined,
                 size: 48,
                 onTap: () {},
               ),
-              HibikiIconButton(
+              FushiIconButton(
                 tooltip: 'Statistics',
                 icon: Icons.bar_chart_outlined,
                 size: 48,
@@ -361,13 +361,13 @@ void main() {
   });
 
   testWidgets(
-      'HibikiPageHeader custom title aligns segmented navigation with actions',
+      'FushiPageHeader custom title aligns segmented navigation with actions',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       buildSubject(
         SizedBox(
           width: 520,
-          child: HibikiPageHeader.customTitle(
+          child: FushiPageHeader.customTitle(
             padding: EdgeInsets.zero,
             title: SegmentedButton<String>(
               showSelectedIcon: false,
@@ -379,7 +379,7 @@ void main() {
               onSelectionChanged: (_) {},
             ),
             actions: <Widget>[
-              HibikiIconButton(
+              FushiIconButton(
                 tooltip: 'Import',
                 icon: Icons.library_add_outlined,
                 onTap: () {},
@@ -405,7 +405,7 @@ void main() {
   // 守卫：整窗放宽到 1200(expanded)、页头本地宽压到 720(medium) 时，带 label 动作回落
   // 纯图标（无文字），标题不再被挤。
   testWidgets(
-      'HibikiPageHeader collapses labeled actions to icons by local width '
+      'FushiPageHeader collapses labeled actions to icons by local width '
       'even when the window is wide', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1200, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -418,29 +418,29 @@ void main() {
           alignment: Alignment.topLeft,
           child: SizedBox(
             width: 720, // 页头本地宽 = medium（600–840），整窗 1200 = expanded
-            child: HibikiPageHeader(
+            child: FushiPageHeader(
               title: '书架',
               padding: EdgeInsets.zero,
               actions: <Widget>[
-                HibikiIconButton(
+                FushiIconButton(
                   tooltip: 'Import',
                   label: 'Import',
                   icon: Icons.library_add_outlined,
                   onTap: () {},
                 ),
-                HibikiIconButton(
+                FushiIconButton(
                   tooltip: 'Manage',
                   label: 'Manage sources',
                   icon: Icons.folder_copy_outlined,
                   onTap: () {},
                 ),
-                HibikiIconButton(
+                FushiIconButton(
                   tooltip: 'Collections',
                   label: 'Collections',
                   icon: Icons.collections_bookmark_outlined,
                   onTap: () {},
                 ),
-                HibikiIconButton(
+                FushiIconButton(
                   tooltip: 'Statistics',
                   label: 'Statistics',
                   icon: Icons.bar_chart_outlined,
@@ -477,7 +477,7 @@ void main() {
   // 反向守卫：页头本地宽达到 expanded（≥840）时，带 label 动作展开成图标+文字药丸
   // （宽窗零行为变化）。
   testWidgets(
-      'HibikiPageHeader expands labeled actions when local width is expanded',
+      'FushiPageHeader expands labeled actions when local width is expanded',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1200, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -490,17 +490,17 @@ void main() {
           alignment: Alignment.topLeft,
           child: SizedBox(
             width: 1000, // 页头本地宽 = expanded（≥840）
-            child: HibikiPageHeader(
+            child: FushiPageHeader(
               title: '书架',
               padding: EdgeInsets.zero,
               actions: <Widget>[
-                HibikiIconButton(
+                FushiIconButton(
                   tooltip: 'Import',
                   label: 'Import',
                   icon: Icons.library_add_outlined,
                   onTap: () {},
                 ),
-                HibikiIconButton(
+                FushiIconButton(
                   tooltip: 'Statistics',
                   label: 'Statistics',
                   icon: Icons.bar_chart_outlined,
@@ -521,29 +521,29 @@ void main() {
   // TODO-955: 内容放得下时，4 个动作 icon 必须贴页头最右侧（回归前被 7ce19740c 的
   // Flexible+反向 ScrollView 平分宽度推到了页头中间）。断言最右动作的右缘 ~= 页头右
   // 内边界，而非停在中部。
-  testWidgets('HibikiPageHeader right-aligns actions when content fits',
+  testWidgets('FushiPageHeader right-aligns actions when content fits',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       buildSubject(
         SizedBox(
           width: 600,
-          child: HibikiPageHeader(
+          child: FushiPageHeader(
             title: '书架',
             padding: EdgeInsets.zero,
             actions: <Widget>[
-              HibikiIconButton(
+              FushiIconButton(
                 tooltip: 'Import',
                 icon: Icons.library_add_outlined,
                 size: 48,
                 onTap: () {},
               ),
-              HibikiIconButton(
+              FushiIconButton(
                 tooltip: 'Collections',
                 icon: Icons.collections_bookmark_outlined,
                 size: 48,
                 onTap: () {},
               ),
-              HibikiIconButton(
+              FushiIconButton(
                 tooltip: 'Statistics',
                 icon: Icons.bar_chart_outlined,
                 size: 48,
@@ -556,12 +556,12 @@ void main() {
     );
 
     final double headerRight =
-        tester.getTopRight(find.byType(HibikiPageHeader)).dx;
+        tester.getTopRight(find.byType(FushiPageHeader)).dx;
     // bar_chart 是 _buildActionRow 里最后一个动作，视觉上最靠右。
     final double lastActionRight =
         tester.getTopRight(find.byIcon(Icons.bar_chart_outlined)).dx;
     final double headerLeft =
-        tester.getTopLeft(find.byType(HibikiPageHeader)).dx;
+        tester.getTopLeft(find.byType(FushiPageHeader)).dx;
     final double headerMid = headerLeft + (headerRight - headerLeft) / 2;
 
     // 必须贴右（48px 按钮内 icon 居中，icon 右缘距按钮右缘约 12px，留 40px 余量）。
@@ -573,29 +573,29 @@ void main() {
   // TODO-955 / TODO-616: 窄窗动作总宽超过可用宽时仍不得抛 RenderFlex overflow（动作区
   // 收缩 + 横向可滚），守住 616 修的溢出场景不被 955 的靠右修复带回归。
   testWidgets(
-      'HibikiPageHeader scrolls actions without overflow on narrow width',
+      'FushiPageHeader scrolls actions without overflow on narrow width',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       buildSubject(
         SizedBox(
           width: 160,
-          child: HibikiPageHeader(
+          child: FushiPageHeader(
             title: '一本标题很长很长很长很长很长很长的书',
             padding: EdgeInsets.zero,
             actions: <Widget>[
-              HibikiIconButton(
+              FushiIconButton(
                 tooltip: 'Import',
                 icon: Icons.library_add_outlined,
                 size: 48,
                 onTap: () {},
               ),
-              HibikiIconButton(
+              FushiIconButton(
                 tooltip: 'Collections',
                 icon: Icons.collections_bookmark_outlined,
                 size: 48,
                 onTap: () {},
               ),
-              HibikiIconButton(
+              FushiIconButton(
                 tooltip: 'Statistics',
                 icon: Icons.bar_chart_outlined,
                 size: 48,
@@ -624,29 +624,29 @@ void main() {
       buildSubject(
         SizedBox(
           width: width,
-          child: HibikiPageHeader(
+          child: FushiPageHeader(
             title: '视频',
             padding: EdgeInsets.zero,
             actions: <Widget>[
-              HibikiIconButton(
+              FushiIconButton(
                 tooltip: 'Add',
                 icon: Icons.add,
                 size: 48,
                 onTap: () {},
               ),
-              HibikiIconButton(
+              FushiIconButton(
                 tooltip: 'Import',
                 icon: Icons.folder_copy_outlined,
                 size: 48,
                 onTap: () {},
               ),
-              HibikiIconButton(
+              FushiIconButton(
                 tooltip: 'Collections',
                 icon: Icons.collections_bookmark_outlined,
                 size: 48,
                 onTap: () {},
               ),
-              HibikiIconButton(
+              FushiIconButton(
                 tooltip: 'Statistics',
                 icon: Icons.bar_chart_outlined,
                 size: 48,
@@ -661,14 +661,14 @@ void main() {
 
   for (final double narrowWidth in <double>[300, 208]) {
     testWidgets(
-      'HibikiPageHeader keeps leftmost add action visible at ${narrowWidth}px',
+      'FushiPageHeader keeps leftmost add action visible at ${narrowWidth}px',
       (WidgetTester tester) async {
         await pumpNarrowHeader(tester, width: narrowWidth);
 
         // 无 RenderFlex overflow（旧实现窄窗会抛 OVERFLOWING）。
         expect(tester.takeException(), isNull);
 
-        final Rect headerRect = tester.getRect(find.byType(HibikiPageHeader));
+        final Rect headerRect = tester.getRect(find.byType(FushiPageHeader));
 
         // 4 个动作图标都存在（未被折叠成菜单或丢失）。
         for (final IconData icon in <IconData>[
@@ -720,7 +720,7 @@ void main() {
               alignment: Alignment.topLeft,
               child: SizedBox(
                 width: width,
-                child: HibikiPageHeader(
+                child: FushiPageHeader(
                   title: '书架',
                   compact: compact,
                 ),
@@ -731,19 +731,19 @@ void main() {
       ),
     );
     final double headerTop =
-        tester.getTopLeft(find.byType(HibikiPageHeader)).dy;
+        tester.getTopLeft(find.byType(FushiPageHeader)).dy;
     final double titleTop = tester.getTopLeft(find.text('书架')).dy;
     return titleTop - headerTop;
   }
 
-  testWidgets('HibikiPageHeader trims top gap to page on compact (phone) width',
+  testWidgets('FushiPageHeader trims top gap to page on compact (phone) width',
       (WidgetTester tester) async {
     final double phoneTop = await measureHeaderTop(tester, width: 360);
     // page = 20；不再是 page + 8 = 28。
     expect(phoneTop, moreOrLessEquals(20, epsilon: 0.5));
   });
 
-  testWidgets('HibikiPageHeader keeps page + 8 top gap on desktop/tablet width',
+  testWidgets('FushiPageHeader keeps page + 8 top gap on desktop/tablet width',
       (WidgetTester tester) async {
     final double tabletTop = await measureHeaderTop(tester, width: 700);
     final double desktopTop = await measureHeaderTop(tester, width: 1000);
@@ -753,7 +753,7 @@ void main() {
   });
 
   testWidgets(
-      'HibikiPageHeader compact mode uses the smallest gap regardless '
+      'FushiPageHeader compact mode uses the smallest gap regardless '
       'of window width', (WidgetTester tester) async {
     final double phoneCompact =
         await measureHeaderTop(tester, width: 360, compact: true);
@@ -764,11 +764,11 @@ void main() {
     expect(desktopCompact, moreOrLessEquals(8, epsilon: 0.5));
   });
 
-  testWidgets('HibikiBadge uses the shared compact radius',
+  testWidgets('FushiBadge uses the shared compact radius',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       buildSubject(
-        const HibikiBadge(
+        const FushiBadge(
           icon: Icons.headphones_outlined,
         ),
       ),
@@ -783,12 +783,12 @@ void main() {
     expect(find.byIcon(Icons.headphones_outlined), findsOneWidget);
   });
 
-  testWidgets('HibikiColorSwatch uses token radius and selected border',
+  testWidgets('FushiColorSwatch uses token radius and selected border',
       (WidgetTester tester) async {
     bool tapped = false;
     await tester.pumpWidget(
       buildSubject(
-        HibikiColorSwatch(
+        FushiColorSwatch(
           color: Colors.green,
           selected: true,
           onTap: () => tapped = true,
@@ -808,15 +808,15 @@ void main() {
     expect(decoration.borderRadius, BorderRadius.circular(6));
     expect(decoration.border, isNotNull);
 
-    await tester.tap(find.byType(HibikiColorSwatch));
+    await tester.tap(find.byType(FushiColorSwatch));
     expect(tapped, isTrue);
   });
 
-  testWidgets('HibikiPreviewSwitch renders a real disabled MD3 switch',
+  testWidgets('FushiPreviewSwitch renders a real disabled MD3 switch',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       buildSubject(
-        const HibikiPreviewSwitch(
+        const FushiPreviewSwitch(
           trackColor: Colors.blue,
           thumbColor: Colors.white,
         ),
@@ -837,11 +837,11 @@ void main() {
     expect(thumbColor, Colors.white);
   });
 
-  testWidgets('HibikiTransientScaffold uses the page surface',
+  testWidgets('FushiTransientScaffold uses the page surface',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       const MaterialApp(
-        home: HibikiTransientScaffold(
+        home: FushiTransientScaffold(
           body: Text('loading'),
         ),
       ),
@@ -853,11 +853,11 @@ void main() {
     expect(find.text('loading'), findsOneWidget);
   });
 
-  testWidgets('HibikiOverlayScaffold preserves transparent overlay chrome',
+  testWidgets('FushiOverlayScaffold preserves transparent overlay chrome',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       const MaterialApp(
-        home: HibikiOverlayScaffold(
+        home: FushiOverlayScaffold(
           body: Text('popup'),
         ),
       ),
@@ -869,11 +869,11 @@ void main() {
     expect(find.text('popup'), findsOneWidget);
   });
 
-  testWidgets('HibikiModalSheetFrame owns sheet header and footer chrome',
+  testWidgets('FushiModalSheetFrame owns sheet header and footer chrome',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       buildSubject(
-        const HibikiModalSheetFrame(
+        const FushiModalSheetFrame(
           title: 'Filters',
           leadingIcon: Icons.sell_outlined,
           body: Text('Body'),
@@ -893,11 +893,11 @@ void main() {
     expect(divider.height, 1);
   });
 
-  testWidgets('HibikiModalSheetFrame makes long sheet bodies scrollable',
+  testWidgets('FushiModalSheetFrame makes long sheet bodies scrollable',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       buildSubject(
-        HibikiModalSheetFrame(
+        FushiModalSheetFrame(
           title: 'Long sheet',
           scrollable: true,
           body: Column(
@@ -915,12 +915,12 @@ void main() {
     expect(find.text('Long sheet'), findsOneWidget);
   });
 
-  testWidgets('HibikiModalSheetFrame can constrain tall sheet height', (
+  testWidgets('FushiModalSheetFrame can constrain tall sheet height', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
       buildSubject(
-        const HibikiModalSheetFrame(
+        const FushiModalSheetFrame(
           maxHeightFactor: 0.5,
           scrollable: true,
           body: SizedBox(height: 1000, child: Text('Tall body')),
@@ -937,12 +937,12 @@ void main() {
     expect(find.text('Tall body'), findsOneWidget);
   });
 
-  testWidgets('HibikiDialogFrame owns MD3 dialog shell chrome', (
+  testWidgets('FushiDialogFrame owns MD3 dialog shell chrome', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
       buildSubject(
-        const HibikiDialogFrame(
+        const FushiDialogFrame(
           child: Text('Dialog body'),
         ),
       ),
@@ -958,11 +958,11 @@ void main() {
     expect(find.byType(SingleChildScrollView), findsOneWidget);
   });
 
-  testWidgets('HibikiPopupSurface can render a borderless popup shell',
+  testWidgets('FushiPopupSurface can render a borderless popup shell',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       buildSubject(
-        const HibikiPopupSurface(
+        const FushiPopupSurface(
           showBorder: false,
           clipBehavior: Clip.none,
           child: Text('Popup'),
@@ -971,7 +971,7 @@ void main() {
     );
 
     final Finder surfaceMaterial = find.descendant(
-      of: find.byType(HibikiPopupSurface),
+      of: find.byType(FushiPopupSurface),
       matching: find.byType(Material),
     );
     final Material material = tester.widget<Material>(surfaceMaterial);
@@ -984,7 +984,7 @@ void main() {
   });
 
   testWidgets(
-      'HibikiToolScaffold default back button registers with focus root',
+      'FushiToolScaffold default back button registers with focus root',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -994,8 +994,8 @@ void main() {
         ),
         home: const Scaffold(body: Text('home')),
         routes: <String, WidgetBuilder>{
-          '/tool': (BuildContext context) => const HibikiFocusRoot(
-                child: HibikiToolScaffold(
+          '/tool': (BuildContext context) => const FushiFocusRoot(
+                child: FushiToolScaffold(
                   title: 'Tool',
                   body: Text('tool'),
                 ),
@@ -1006,7 +1006,7 @@ void main() {
     Navigator.of(tester.element(find.text('home'))).pushNamed('/tool');
     await tester.pumpAndSettle();
 
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.text('Tool')),
     );
     controller.ensureFocus();
@@ -1024,7 +1024,7 @@ void main() {
     expect(find.text('home'), findsOneWidget);
   });
 
-  testWidgets('HibikiCompactSearchRow icon buttons register with focus root',
+  testWidgets('FushiCompactSearchRow icon buttons register with focus root',
       (WidgetTester tester) async {
     final TextEditingController textController =
         TextEditingController(text: 'term');
@@ -1036,8 +1036,8 @@ void main() {
 
     await tester.pumpWidget(
       buildSubject(
-        HibikiFocusRoot(
-          child: HibikiCompactSearchRow(
+        FushiFocusRoot(
+          child: FushiCompactSearchRow(
             controller: textController,
             focusNode: fieldFocus,
             hintText: 'Search',
@@ -1049,8 +1049,8 @@ void main() {
     );
     await tester.pump();
 
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
-      tester.element(find.byType(HibikiCompactSearchRow)),
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
+      tester.element(find.byType(FushiCompactSearchRow)),
     );
     controller.ensureFocus();
     await tester.pump();
@@ -1067,9 +1067,9 @@ void main() {
     // Row order on mobile is [close] [field] [paste] [search]: the default test
     // platform is android, where the input suffix is now a one-tap paste button
     // sitting between the field and the search button. Step right past it.
-    expect(controller.move(HibikiFocusDirection.right), isTrue);
+    expect(controller.move(FushiFocusDirection.right), isTrue);
     await tester.pump();
-    expect(controller.move(HibikiFocusDirection.right), isTrue);
+    expect(controller.move(FushiFocusDirection.right), isTrue);
     await tester.pump();
     Actions.maybeInvoke<ActivateIntent>(
       controller.activeContext!,

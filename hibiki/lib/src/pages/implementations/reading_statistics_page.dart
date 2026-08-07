@@ -408,25 +408,25 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return HibikiPageScaffold(
+    return FushiPageScaffold(
       title: t.reading_statistics,
       actions: <Widget>[
         // BUG-970：目标设置入口恒驻顶栏——目标卡在两目标皆 0 时整块隐藏
         // (_buildGoalPanel -> SizedBox.shrink)，卡内 edit 图标随之消失，
         // 否则从未设过目标的用户没有任何 UI 能首次设置目标。
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.flag_outlined,
           tooltip: t.stat_goal_set,
           enabled: !_loading,
           onTap: _editGoals,
         ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.refresh,
           tooltip: t.stat_refresh,
           enabled: !_loading,
           onTap: _syncAndLoad,
         ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.delete_sweep_outlined,
           tooltip: t.stat_clear_all,
           enabled: !_loading,
@@ -447,7 +447,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   }
 
   Widget _buildContent() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double card = tokens.spacing.card;
     final EdgeInsets hPad = EdgeInsets.symmetric(horizontal: card);
     return LayoutBuilder(
@@ -510,7 +510,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
   /// 「今天」环 + 「速度摘要」：宽屏并排，窄屏堆叠。
   Widget _buildMidSection(bool wide) {
-    final double gap = HibikiDesignTokens.of(context).spacing.card;
+    final double gap = FushiDesignTokens.of(context).spacing.card;
     final Widget today = _buildTodayPanel();
     final Widget summary = _buildSpeedSummaryPanel();
     if (wide) {
@@ -585,8 +585,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     required Widget child,
     Widget? trailing,
   }) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiCard(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -613,7 +613,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
   /// 阅读域「各来源」卡：普通书与漫画各自的字数 + 时长，漫画额外显示页数。
   Widget _buildSourceBreakdown() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<Widget> rows = <Widget>[];
     for (final StatBreakdownSource source in const <StatBreakdownSource>[
       StatBreakdownSource.book,
@@ -654,7 +654,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
-  Widget _breakdownWindowChip(String label, int window) => HibikiSelectableChip(
+  Widget _breakdownWindowChip(String label, int window) => FushiSelectableChip(
         label: label,
         selected: _breakdownWindow == window,
         onSelected: (_) => setState(() {
@@ -665,7 +665,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
   /// 单个来源一行：图标 + 名称 + 「字数 · 时长（· 页数）」。
   Widget _breakdownRow(StatBreakdownSource source, StatSourceTotals totals) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final (IconData icon, String label) = switch (source) {
       StatBreakdownSource.book => (Icons.menu_book, t.home_filter_read),
@@ -760,7 +760,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       return const SizedBox.shrink();
     }
 
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
     final List<Widget> rows = <Widget>[];
     if (dailyGoal > 0) {
@@ -775,7 +775,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
-      child: HibikiCard(
+      child: FushiCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -789,7 +789,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                         ),
                   ),
                 ),
-                HibikiIconButton(
+                FushiIconButton(
                   icon: Icons.edit,
                   tooltip: t.stat_goal_set,
                   onTap: _editGoals,
@@ -808,7 +808,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   /// reached ([goalReached]) the bar switches to the tertiary color as a
   /// positive accent. A goal of 0 never reaches here (the card gates on it).
   Widget _buildGoalRow(String label, int read, int goal) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
     final double? fraction = goalProgressFraction(read, goal);
     final bool reached = goalReached(read, goal);
@@ -881,7 +881,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final bool? saved = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
-        final HibikiDesignTokens tokens = HibikiDesignTokens.of(dialogContext);
+        final FushiDesignTokens tokens = FushiDesignTokens.of(dialogContext);
         return AlertDialog(
           title: Text(t.stat_goal_set),
           // helperText 让内容变高：横屏/小窗下用滚动兜底，不再顶到溢出。
@@ -944,7 +944,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   /// 「今天」环形进度卡：字数目标环（复用持久化每日目标，未设则回退默认仅作可视化）
   /// + 时长目标环 + 速度 / 制卡 / 收藏迷你块。
   Widget _buildTodayPanel() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
 
     final int dailyGoal = appModelNoUpdate.readingGoalDailyChars;
@@ -1085,7 +1085,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   /// 「范围与趋势」折线卡：指标（字数/时长/速度）+ 粒度（日/周/月）切换 +
   /// 原始线 + 移动平均虚线（速度指标额外标异常点）。
   Widget _buildTrendPanel() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
 
     final List<StatTrendPoint> points =
@@ -1122,7 +1122,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
             spacing: tokens.spacing.gap,
             runSpacing: tokens.spacing.gap,
             children: StatTrendMetric.values
-                .map((StatTrendMetric m) => HibikiSelectableChip(
+                .map((StatTrendMetric m) => FushiSelectableChip(
                       label: _metricLabel(m),
                       selected: _trendMetric == m,
                       onSelected: (_) => setState(() => _trendMetric = m),
@@ -1172,7 +1172,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   }
 
   Widget _granChip(String label, StatTrendGranularity g) {
-    return HibikiSelectableChip(
+    return FushiSelectableChip(
       label: label,
       selected: _trendGranularity == g,
       onSelected: (_) => setState(() => _trendGranularity = g),
@@ -1181,7 +1181,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
   Widget _trendLegend() {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final TextStyle? style = Theme.of(context).textTheme.bodySmall?.copyWith(
           color: scheme.onSurfaceVariant,
         );
@@ -1198,7 +1198,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   }
 
   Widget _legendItem(Color color, String label, TextStyle? style) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -1217,7 +1217,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   }
 
   Widget _buildByBookHeader() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -1227,17 +1227,17 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         Wrap(
           spacing: tokens.spacing.gap,
           children: <Widget>[
-            HibikiSelectableChip(
+            FushiSelectableChip(
               label: t.stat_sort_by_chars,
               selected: _bookSort == _BookSort.chars,
               onSelected: (_) => _changeBookSort(_BookSort.chars),
             ),
-            HibikiSelectableChip(
+            FushiSelectableChip(
               label: t.stat_sort_by_time,
               selected: _bookSort == _BookSort.time,
               onSelected: (_) => _changeBookSort(_BookSort.time),
             ),
-            HibikiSelectableChip(
+            FushiSelectableChip(
               label: t.stat_sort_by_speed,
               selected: _bookSort == _BookSort.speed,
               onSelected: (_) => _changeBookSort(_BookSort.speed),
@@ -1312,7 +1312,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         _bookData.isEmpty ? 0 : _sortMetric(_bookData.first);
     final double fraction = bookProgressFraction(_sortMetric(book), topMetric);
     final colorScheme = Theme.of(context).colorScheme;
-    final tokens = HibikiDesignTokens.of(context);
+    final tokens = FushiDesignTokens.of(context);
 
     return Material(
       type: MaterialType.transparency,
@@ -1402,7 +1402,7 @@ class StatMiniTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Container(
       margin: EdgeInsets.only(right: tokens.spacing.gap),
       padding: EdgeInsets.symmetric(
@@ -1462,7 +1462,7 @@ class StatSummaryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: EdgeInsets.only(
         right: tokens.spacing.gap,

@@ -83,8 +83,8 @@ void main() {
   //    （`FocusNode._doRequestFocus` 在 `hasPrimaryFocus` 上快返；
   //     `FocusManager._markNeedsUpdate` 还用 `_haveScheduledUpdate` 合并同帧请求。）
   // ② reclaim **不做 reveal**：绝不把节点滚进视口。历史上「触屏快速滚动被拉回居中
-  //    某控件」的根因正是被动焦点修复带的 `HibikiFocusScroll.ensureVisible(alignment:
-  //    0.5)`（`focus_repair_touch_no_scroll_test.dart`）。那是 `HibikiFocusController`
+  //    某控件」的根因正是被动焦点修复带的 `FushiFocusScroll.ensureVisible(alignment:
+  //    0.5)`（`focus_repair_touch_no_scroll_test.dart`）。那是 `FushiFocusController`
   //    的路径；一旦有人把同样的 reveal 搬进本类，高频 wheel tick 就会当场重演它。
   //
   // 任一条被破坏，高频调用方就必须改成去抖——所以这两条测试红了不要放宽，
@@ -177,7 +177,7 @@ void main() {
 
       expect(controller.offset, offsetBefore,
           reason: '焦点回收不得把视口滚动到节点上——用户正在滑动时这就是「滚一半被拉回去」，'
-              '与 HibikiFocusController 那次触屏回归同一形态');
+              '与 FushiFocusController 那次触屏回归同一形态');
       expect(node.hasPrimaryFocus, isTrue);
     });
   });

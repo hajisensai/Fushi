@@ -24,14 +24,14 @@ class _DictionaryDialogDeletePageState
     extends BasePageState<DictionaryDialogDeletePage> {
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     return PopScope(
       canPop: false,
-      child: HibikiDialogFrame(
+      child: FushiDialogFrame(
         maxWidth: 420,
         scrollable: false,
-        child: HibikiModalSheetFrame(
+        child: FushiModalSheetFrame(
           bodyPadding: EdgeInsets.all(tokens.spacing.card),
           body: buildProgressMessage(),
         ),

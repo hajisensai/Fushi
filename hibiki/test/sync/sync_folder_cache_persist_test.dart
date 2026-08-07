@@ -67,7 +67,7 @@ class _StableFolderBackend implements SyncBackend {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-Future<EpubBookRow> _insertBook(HibikiDatabase db, String title) async {
+Future<EpubBookRow> _insertBook(FushiDatabase db, String title) async {
   await db.insertEpubBook(EpubBooksCompanion.insert(
     bookKey: title,
     title: title,
@@ -82,8 +82,8 @@ Future<EpubBookRow> _insertBook(HibikiDatabase db, String title) async {
 
 void main() {
   test('an unchanged folder cache is not rewritten for every book', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
 
@@ -126,8 +126,8 @@ void main() {
 
   test('a newly learned folder id is persisted before that book returns',
       () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
 
@@ -165,8 +165,8 @@ void main() {
 
   test('a slash-less persisted folder id still self-heals on the next persist',
       () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
 

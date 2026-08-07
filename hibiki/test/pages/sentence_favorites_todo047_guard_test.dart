@@ -187,7 +187,7 @@ void main() {
       // 修前 _playItemAudio 在 result!=null 时才 playFile，else 什么都不做。
       expect(
         compactCode(src),
-        contains(compactCode('HibikiToast.show(msg: t.audio_clip_failed,')),
+        contains(compactCode('FushiToast.show(msg: t.audio_clip_failed,')),
         reason: 'ffmpeg 抽音失败必须给用户可见反馈，否则点了像没反应',
       );
       // 失败提示必须挂在 extractAudioSegment 返回 null 的 else 分支上。

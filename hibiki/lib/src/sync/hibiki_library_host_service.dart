@@ -172,7 +172,7 @@ SyncKeyDiff computeDictionarySyncDiff({
 
 // ── 合集归属（多端库联合视图 §2.3 任务5.1）────────────────────────────────────
 
-/// 一条目在 host 端的**主合集归属**（跟随 [HibikiDatabase.getPrimaryCollectionIdByEntry]
+/// 一条目在 host 端的**主合集归属**（跟随 [FushiDatabase.getPrimaryCollectionIdByEntry]
 /// 的「最小 collectionId」折叠语义：一条目可属多合集，只带它折进的那一张）。
 ///
 /// 远端占位卡据此归进对应合集行（UI 批任务 8-10 消费）：[collectionName] +
@@ -1190,7 +1190,7 @@ List<RemoteVideoInfo> dedupeRemoteVideos({
 /// host 侧「库感知」服务：把 host 的实时库即时 export/import/delete/list。
 /// 抽象不依赖 AppModel，便于测试用 fake 注入。所有实现里的库变动必须串行
 /// （经 runExclusiveWithSync）——见 AppModelLibraryHostService（后续任务实现）。
-abstract class HibikiLibraryHostService {
+abstract class FushiLibraryHostService {
   /// host 当前实时词典清单（从 DictionaryMeta 表读，不是从任何暂存目录）。
   Future<List<RemoteDictionaryInfo>> listDictionaries();
 
@@ -1447,7 +1447,7 @@ abstract class HibikiLibraryHostService {
 }
 
 /// host 端「列删除墓碑」的**可选**能力（显式确认式删除传播，host→client 消费方向）。
-/// 与 [HibikiLibraryHostService] 分开：不是每个 host 实现（尤其测试 fake）都需要它，
+/// 与 [FushiLibraryHostService] 分开：不是每个 host 实现（尤其测试 fake）都需要它，
 /// 塞进主接口会强制全部实现者补方法（Never break userspace）。真实 host
 /// （[AppModelLibraryHostService]）额外 implements 本接口；server 用 `is` 探测——不实现
 /// 就 GET `/api/tombstones` → 404，client 侧 [getRemoteDeletionTombstones] 已优雅降级。
@@ -1460,7 +1460,7 @@ abstract interface class DeletionTombstoneHost {
 
 /// host 端「删除视频」的**可选**能力（client→host 删除方向）。
 ///
-/// 与 [HibikiLibraryHostService] 分开的理由同 [DeletionTombstoneHost]：主接口有十余个
+/// 与 [FushiLibraryHostService] 分开的理由同 [DeletionTombstoneHost]：主接口有十余个
 /// 测试 fake 用 `implements` 全量实现，往主接口加方法会强制它们全部补桩（Never break
 /// userspace）。书 / 有声书 / 本地音频 / 词典的 delete 是主接口的历史既成事实，新增的
 /// 视频删除不再扩大那个面。

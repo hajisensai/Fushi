@@ -3,17 +3,17 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-Future<HibikiDatabase> _openDb() async {
-  final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
 
 /// Opens a `user_version = 33` database that lacks the statistics_tombstones
 /// table, forcing the real `if (from < 34) createTable(statisticsTombstones)`
-/// onUpgrade branch (TODO-1204 后续) to run when HibikiDatabase opens it.
-Future<HibikiDatabase> _openV33DbWithoutStatisticsTombstones() async {
-  final db = HibikiDatabase.forTesting(
+/// onUpgrade branch (TODO-1204 后续) to run when FushiDatabase opens it.
+Future<FushiDatabase> _openV33DbWithoutStatisticsTombstones() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         rawDb.execute('PRAGMA user_version = 33');
@@ -27,8 +27,8 @@ Future<HibikiDatabase> _openV33DbWithoutStatisticsTombstones() async {
 /// Opens a `user_version = 34` database whose video_books table lacks the
 /// stream_spec_json column, forcing the real `if (from < 35) addColumn(
 /// videoBooks.streamSpecJson)` onUpgrade branch (TODO-1157) to run.
-Future<HibikiDatabase> _openV34DbWithoutStreamSpecJson() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV34DbWithoutStreamSpecJson() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         // Minimal video_books shaped like the v34 schema (no stream_spec_json).
@@ -63,8 +63,8 @@ Future<HibikiDatabase> _openV34DbWithoutStreamSpecJson() async {
 /// Opens a `user_version = 44` database whose media_collections table lacks the
 /// anilist_id column, forcing the real `if (from < 45) addColumn(
 /// mediaCollections.anilistId)` onUpgrade branch (合集字幕批量下载) to run.
-Future<HibikiDatabase> _openV44DbWithoutCollectionAnilistId() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV44DbWithoutCollectionAnilistId() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         // Minimal media_collections shaped like the v44 schema (no anilist_id).
@@ -89,8 +89,8 @@ Future<HibikiDatabase> _openV44DbWithoutCollectionAnilistId() async {
 /// Opens a `user_version = 35` database whose favorite_words table lacks the
 /// book_key / title columns, forcing the real `if (from < 36) addColumn(
 /// favoriteWords.bookKey / .title)` onUpgrade branch (TODO-1252) to run.
-Future<HibikiDatabase> _openV35DbWithoutFavoriteBookColumns() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV35DbWithoutFavoriteBookColumns() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         // Minimal favorite_words shaped like the v35 schema (no book_key/title).
@@ -116,9 +116,9 @@ Future<HibikiDatabase> _openV35DbWithoutFavoriteBookColumns() async {
 
 /// Opens a `user_version = 14` database that lacks the sync_baselines table,
 /// forcing the real `if (from < 15) createTable(syncBaselines)` onUpgrade
-/// branch in database.dart to run when HibikiDatabase opens it.
-Future<HibikiDatabase> _openV14DbWithoutSyncBaselines() async {
-  final db = HibikiDatabase.forTesting(
+/// branch in database.dart to run when FushiDatabase opens it.
+Future<FushiDatabase> _openV14DbWithoutSyncBaselines() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         // A v14 DB created before SyncBaselines existed: no sync_baselines
@@ -134,9 +134,9 @@ Future<HibikiDatabase> _openV14DbWithoutSyncBaselines() async {
 
 /// Opens a `user_version = 15` database that lacks the video_books table,
 /// forcing the real `if (from < 16) createTable(videoBooks)` onUpgrade branch
-/// in database.dart to run when HibikiDatabase opens it.
-Future<HibikiDatabase> _openV15DbWithoutVideoBooks() async {
-  final db = HibikiDatabase.forTesting(
+/// in database.dart to run when FushiDatabase opens it.
+Future<FushiDatabase> _openV15DbWithoutVideoBooks() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         // A v15 DB created before VideoBooks existed: no video_books table.
@@ -154,8 +154,8 @@ Future<HibikiDatabase> _openV15DbWithoutVideoBooks() async {
 /// Opens a `user_version = 20` database that has a book_uid-keyed video_books
 /// table but lacks video_book_tag_mappings, forcing the real
 /// `if (from < 21) createTable(videoBookTagMappings)` onUpgrade branch to run.
-Future<HibikiDatabase> _openV20DbWithoutVideoTagMappings() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV20DbWithoutVideoTagMappings() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         // Minimal but realistic v20 video_books (book_uid PK) so the FK target
@@ -196,8 +196,8 @@ Future<HibikiDatabase> _openV20DbWithoutVideoTagMappings() async {
 /// table (WITHOUT completed_at) and no video stats tables, forcing the real
 /// `if (from < 22)` onUpgrade branch (create two stats tables + addColumn
 /// completed_at) to run.
-Future<HibikiDatabase> _openV21DbWithoutVideoStats() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV21DbWithoutVideoStats() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         // Realistic v21 video_books: book_uid PK, full v17 column set, but no
@@ -234,8 +234,8 @@ Future<HibikiDatabase> _openV21DbWithoutVideoStats() async {
 /// forcing the real `if (from < 23)` onUpgrade branch (create both tables) to run.
 /// The activity-stats migration is self-contained (only creates two tables), so a
 /// bare v22 DB is enough to exercise it without seeding other v22 baseline tables.
-Future<HibikiDatabase> _openV22DbWithoutActivityTables() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV22DbWithoutActivityTables() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         rawDb.execute('PRAGMA user_version = 22');
@@ -256,8 +256,8 @@ Future<HibikiDatabase> _openV22DbWithoutActivityTables() async {
 /// `bookKeyA` / `bookKeyB` are the sanitized keys the re-key derives from the
 /// seeded titles; for ASCII titles with no reserved chars the key equals the
 /// title verbatim, which the test asserts via getReaderPosition.
-Future<HibikiDatabase> _openV15DbWithReaderRowsKeyedByTtuId() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV15DbWithReaderRowsKeyedByTtuId() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -342,8 +342,8 @@ CREATE TABLE bookmarks (
 /// `if (from < 25)` onUpgrade branch (create the table) to run. The mined-sentence
 /// history migration is self-contained (only creates one table), so a bare v24 DB is
 /// enough to exercise it without seeding other v24 baseline tables.
-Future<HibikiDatabase> _openV24DbWithoutMinedSentences() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV24DbWithoutMinedSentences() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         rawDb.execute('PRAGMA user_version = 24');
@@ -360,8 +360,8 @@ Future<HibikiDatabase> _openV24DbWithoutMinedSentences() async {
 /// add source_id to both book tables) to run. This is the TODO-817 lossless-
 /// migration check: the seeded rows must survive with source_id defaulting to
 /// NULL. The DDL mirrors the v26 generated shape minus the new column.
-Future<HibikiDatabase> _openV26DbWithBookRows() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV26DbWithBookRows() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -424,8 +424,8 @@ CREATE TABLE video_books (
 /// video_books) to run. This is the TODO-857 lossless-migration check: the
 /// seeded video row must survive with secondary_subtitle_source defaulting to
 /// NULL. The DDL mirrors the v27 generated shape minus the new column.
-Future<HibikiDatabase> _openV27DbWithVideoRow() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV27DbWithVideoRow() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -469,8 +469,8 @@ CREATE TABLE video_books (
 ///  - a standalone subtitle book (epub_books + a srt_books row with a non-empty
 ///    book_key but NO audiobooks row) — the天然豁免对照 that must survive
 ///    untouched (it never enters `FROM audiobooks a`).
-Future<HibikiDatabase> _openV28DbWithUnpairedAudiobook() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV28DbWithUnpairedAudiobook() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -569,8 +569,8 @@ VALUES ('srtbook_222', 'Standalone Sub', '/abs/persist/S/s.srt',
 /// 不再被自愈。v37 self-heal（重跑幂等 backfill）必须把它治好。
 ///
 /// 同时种一条 standalone 字幕书（有 srt_books、无 audiobooks 行）作对照，必须原封不动。
-Future<HibikiDatabase> _openV36DbWithUnpairedAudiobook() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV36DbWithUnpairedAudiobook() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -665,8 +665,8 @@ VALUES ('srtbook_444', 'Standalone Sub B', '/abs/persist/SB/sb.srt',
 /// forcing the real `if (from < 30) createTable(series/shelfEntries)` onUpgrade
 /// branch to run. No audiobooks/srt_books seeding needed: the from<29 backfill
 /// only INSERTs paired rows for EPUB-backed audiobooks, and this DB seeds none.
-Future<HibikiDatabase> _openV29Db() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV29Db() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -1646,13 +1646,13 @@ void main() {
 }
 
 /// 打开一个 `user_version = 63` 的库：有 media_collections 及其数据，但**没有**
-/// collection_scrape_meta，强制 HibikiDatabase 打开时跑真实的
+/// collection_scrape_meta，强制 FushiDatabase 打开时跑真实的
 /// `if (from < 64) createTable(collectionScrapeMeta)` 分支（BUG-1310）。
 ///
 /// from=63 时迁移阶梯上只有 `from < 64` 这一个条件成立，因此这里只需备齐该分支
 /// 触碰到的表，不必重建整个 v63 schema。
-Future<HibikiDatabase> _openV63DbWithoutCollectionScrapeMeta() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV63DbWithoutCollectionScrapeMeta() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         rawDb.execute('''
@@ -1685,13 +1685,13 @@ CREATE TABLE media_collections (
 }
 
 /// 打开一个 `user_version = 66` 的库：reading_hourly_logs 还是旧形状（无 format
-/// 列、唯一键 {date_key, hour}）且已有跨面加总过的历史行，强制 HibikiDatabase
+/// 列、唯一键 {date_key, hour}）且已有跨面加总过的历史行，强制 FushiDatabase
 /// 打开时跑真实的 `if (from < 67) alterTable(readingHourlyLogs)` 重建分支。
 ///
 /// from=66 时迁移阶梯上只有 `from < 67` 这一个条件成立，因此只备齐该分支触碰
 /// 的表（风格同 [_openV63DbWithoutCollectionScrapeMeta]）。
-Future<HibikiDatabase> _openV66DbWithLegacyReadingHourlyLogs() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV66DbWithLegacyReadingHourlyLogs() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         rawDb.execute('''

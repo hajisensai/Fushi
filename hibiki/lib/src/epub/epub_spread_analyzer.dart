@@ -18,7 +18,7 @@ class EpubSpreadAnalyzer {
 
   /// Load cached results. Returns `null` if no cache exists.
   static Future<Map<int, bool>?> loadCached(
-    HibikiDatabase db,
+    FushiDatabase db,
     String bookId,
   ) async {
     final String? raw = await db.getPref(_cacheKey(bookId));
@@ -65,7 +65,7 @@ class EpubSpreadAnalyzer {
 
   /// Save results to Drift preferences.
   static Future<void> saveCache(
-    HibikiDatabase db,
+    FushiDatabase db,
     String bookId,
     Map<int, bool> results,
   ) async {

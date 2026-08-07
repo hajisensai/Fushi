@@ -100,7 +100,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final VideoQuickSettingsHost host = widget.host;
     // 拖动中显示预览值，否则显示已落盘的权威值。
     final int shownMs = _delayDragMs ?? _delayMs;
@@ -118,19 +118,19 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
       spacing: tokens.spacing.gap / 2,
       runSpacing: tokens.spacing.gap / 2,
       children: <Widget>[
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.keyboard_double_arrow_left,
           tooltip: '-1000ms',
           padding: EdgeInsets.all(tokens.spacing.gap / 2),
           onTap: () => _commitDelay(_delayMs - 1000),
         ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.chevron_left,
           tooltip: '-50ms',
           padding: EdgeInsets.all(tokens.spacing.gap / 2),
           onTap: () => _commitDelay(_delayMs - 50),
         ),
-        HibikiFocusable(
+        FushiFocusable(
           onTap: shownMs == 0 ? null : () => _commitDelay(0),
           child: ConstrainedBox(
             constraints: const BoxConstraints(minWidth: 84, maxWidth: 140),
@@ -148,13 +148,13 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
             ),
           ),
         ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.chevron_right,
           tooltip: '+50ms',
           padding: EdgeInsets.all(tokens.spacing.gap / 2),
           onTap: () => _commitDelay(_delayMs + 50),
         ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.keyboard_double_arrow_right,
           tooltip: '+1000ms',
           padding: EdgeInsets.all(tokens.spacing.gap / 2),
@@ -177,7 +177,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
                     ),
                   ),
                 )
-              : HibikiIconButton(
+              : FushiIconButton(
                   icon: Icons.auto_fix_high,
                   tooltip: t.video_subtitle_auto_align,
                   padding: EdgeInsets.all(tokens.spacing.gap / 2),
@@ -196,7 +196,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
         children: <Widget>[
           // 可拉滑条（细调 ±10s）：拖动只本地预览，松手才落盘+实时生效（避免每 tick 写 DB）。
           // TODO-742：必须走 [adaptiveSlider] 而非裸 [Slider]——本面板可能处在全局
-          // [HibikiAppUiScale] 的 Transform.scale 子树里，裸 Slider 的值指示器水平钳制在两
+          // [FushiAppUiScale] 的 Transform.scale 子树里，裸 Slider 的值指示器水平钳制在两
           // 空间差 s² 下会把气泡甩到拇指反方向（根因与守卫见 adaptive_widgets.dart /
           // slider_value_indicator_scale_test.dart）。
           adaptiveSlider(

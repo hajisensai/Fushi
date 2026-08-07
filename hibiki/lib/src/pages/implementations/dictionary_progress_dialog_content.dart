@@ -15,7 +15,7 @@ class DictionaryProgressDialogContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     return ConstrainedBox(
       constraints: const BoxConstraints(maxHeight: 156),

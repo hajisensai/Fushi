@@ -21,10 +21,10 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-HibikiDatabase _memDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _memDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
-Future<void> _seedBook(HibikiDatabase db, String title) =>
+Future<void> _seedBook(FushiDatabase db, String title) =>
     db.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: title,
       title: title,
@@ -36,7 +36,7 @@ Future<void> _seedBook(HibikiDatabase db, String title) =>
     ));
 
 Future<void> _seedPosition(
-  HibikiDatabase db,
+  FushiDatabase db,
   String bookKey, {
   required int section,
   required int norm,
@@ -52,7 +52,7 @@ Future<void> _seedPosition(
     ));
 
 Future<void> _seedHostVideo(
-  HibikiDatabase db,
+  FushiDatabase db,
   Directory dir,
   String uid,
   String title,
@@ -69,7 +69,7 @@ Future<void> _seedHostVideo(
 
 /// 在 host DB 种一本可经 live-sync 列出的有声书：Audiobooks 行 + SrtBooks 行齐备
 /// （host listAudiobooks 要求两表同源，缺一不列出，见 AppModelLibraryHostService）。
-Future<void> _seedHostAudiobook(HibikiDatabase db, String bookKey) async {
+Future<void> _seedHostAudiobook(FushiDatabase db, String bookKey) async {
   await db.upsertAudiobook(AudiobooksCompanion.insert(
     bookKey: bookKey,
     alignmentFormat: 'srt',
@@ -88,10 +88,10 @@ Future<InterconnectSyncBackend> _buildClientBackend({
   required String base,
   required String token,
 }) async {
-  final HibikiDatabase db = _memDb();
+  final FushiDatabase db = _memDb();
   final SyncRepository repo = SyncRepository(db);
-  await repo.setHibikiClientUrls(<HibikiClientUrl>[
-    HibikiClientUrl(url: base, enabled: true),
+  await repo.setHibikiClientUrls(<FushiClientUrl>[
+    FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
   final InterconnectSyncBackend backend =
@@ -102,7 +102,7 @@ Future<InterconnectSyncBackend> _buildClientBackend({
 }
 
 SyncOrchestrator _orchestrator({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required SyncBackend backend,
   required Directory tmp,
 }) =>
@@ -122,8 +122,8 @@ SyncOrchestrator _orchestrator({
 
 void main() {
   late Directory work;
-  late HibikiSyncServer server;
-  late HibikiDatabase hostDb;
+  late FushiSyncServer server;
+  late FushiDatabase hostDb;
   late String base;
   const String token = 'orch-live-progress-token';
 
@@ -137,7 +137,7 @@ void main() {
       refreshDictionaryCache: () async {},
       runExclusive: (Future<void> Function() body) => body(),
     );
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir: p.join(work.path, 'server_data'),
       port: 0,
       token: token,
@@ -160,7 +160,7 @@ void main() {
       // host 也有这本书（真实互联场景：syncContent 已把内容推成 host 书，或两端
       // 各自有同名书）——putBookProgress 的书存在性闸门要求 host 书库先有该书。
       await _seedBook(hostDb, 'BookA');
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await _seedBook(localDb, 'BookA');
       await _seedPosition(localDb, 'BookA',
@@ -189,7 +189,7 @@ void main() {
       await _seedPosition(hostDb, 'BookB',
           section: 9, norm: 9000, charOffset: 90, updatedAt: 5000);
 
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await _seedBook(localDb, 'BookB');
       await _seedPosition(localDb, 'BookB',
@@ -214,7 +214,7 @@ void main() {
       await _seedPosition(hostDb, 'BookC',
           section: 1, norm: 10, charOffset: 1, updatedAt: 1000);
 
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await _seedBook(localDb, 'BookC');
       await _seedPosition(localDb, 'BookC',
@@ -250,7 +250,7 @@ void main() {
       await _seedPosition(hostDb, 'BookRefresh',
           section: 9, norm: 9000, charOffset: 90, updatedAt: 5000);
 
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await _seedBook(localDb, 'BookRefresh');
       await _seedPosition(localDb, 'BookRefresh',
@@ -281,7 +281,7 @@ void main() {
       await _seedPosition(hostDb, 'BookPushOnly',
           section: 1, norm: 10, charOffset: 1, updatedAt: 1000);
 
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await _seedBook(localDb, 'BookPushOnly');
       await _seedPosition(localDb, 'BookPushOnly',
@@ -307,7 +307,7 @@ void main() {
     test('local has lastPositionMs, host none -> push to host video prefs',
         () async {
       await _seedHostVideo(hostDb, work, 'video/v1', 'V1');
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await localDb.upsertVideoBook(VideoBooksCompanion.insert(
         bookUid: 'video/v1',
@@ -342,7 +342,7 @@ void main() {
       await hostDb.setPrefTyped<int>(
           videoRemotePositionAtPrefKey('video/v2'), 8000);
 
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await localDb.upsertVideoBook(VideoBooksCompanion.insert(
         bookUid: 'video/v2',
@@ -370,7 +370,7 @@ void main() {
       // client 流式看远端视频：本地无 VideoBooks 行，只有 resume 路径写的
       // video_remote_position_<uid> + _at_<uid> prefs（断点①回归）。
       await _seedHostVideo(hostDb, work, 'video/stream', 'Stream');
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await localDb.setPrefTyped<int>(
           videoRemotePositionPrefKey('video/stream'), 720000);
@@ -404,7 +404,7 @@ void main() {
       await hostDb.setPrefTyped<int>(
           videoRemotePositionAtPrefKey('video/stream2'), 9000);
 
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await localDb.setPrefTyped<int>(
           videoRemotePositionPrefKey('video/stream2'), 100000);
@@ -436,7 +436,7 @@ void main() {
     test('local has audiobook position, host none -> push to host prefs',
         () async {
       await _seedHostAudiobook(hostDb, 'AB1');
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await localDb.setPrefTyped<int>(audiobookPositionPrefKey('AB1'), 480000);
       await localDb.setPrefTyped<int>(audiobookPositionAtPrefKey('AB1'), 3000);
@@ -463,7 +463,7 @@ void main() {
       await hostDb.setPrefTyped<int>(audiobookPositionPrefKey('AB2'), 990000);
       await hostDb.setPrefTyped<int>(audiobookPositionAtPrefKey('AB2'), 8000);
 
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await localDb.setPrefTyped<int>(audiobookPositionPrefKey('AB2'), 100000);
       await localDb.setPrefTyped<int>(audiobookPositionAtPrefKey('AB2'), 2000);
@@ -489,7 +489,7 @@ void main() {
       await hostDb.setPrefTyped<int>(audiobookPositionPrefKey('AB3'), 1000);
       await hostDb.setPrefTyped<int>(audiobookPositionAtPrefKey('AB3'), 1000);
 
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await localDb.setPrefTyped<int>(audiobookPositionPrefKey('AB3'), 700000);
       await localDb.setPrefTyped<int>(audiobookPositionAtPrefKey('AB3'), 9000);
@@ -515,7 +515,7 @@ void main() {
 
     test('local has audiobook but host does not -> skip (no error)', () async {
       // host 没有这本有声书：listAudiobooks 不含它 → 跳过，不报错。
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await localDb.setPrefTyped<int>(
           audiobookPositionPrefKey('AB_local_only'), 60000);
@@ -541,7 +541,7 @@ void main() {
 
   group('full run() syncs book + video progress together', () {
     test('interconnect run() runs book + video progress live sweep', () async {
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await _seedHostVideo(hostDb, work, 'video/run', 'VRun');
       await _seedBook(hostDb, 'BookRun');

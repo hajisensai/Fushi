@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 /// A render box's bounds in GLOBAL (view) coordinates, accounting for any
-/// scale/translation between the box and the view — notably HibikiAppUiScale's
+/// scale/translation between the box and the view — notably FushiAppUiScale's
 /// app-level `Transform.scale` (the "界面大小" browser-style zoom).
 ///
 /// It maps BOTH corners through [RenderBox.localToGlobal] so the rect carries

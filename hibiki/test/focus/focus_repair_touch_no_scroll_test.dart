@@ -6,7 +6,7 @@ import 'package:fushi/src/focus/hibiki_focus_target.dart';
 // User report: on a pure-touch phone, fast-scrolling a long settings list rolls
 // back to a centred control. Mechanism: as rows recycle, the active focus
 // target unregisters → scheduleRepair → ensureFocus() re-homes focus onto a
-// visible control and reveals (centres) it via HibikiFocusScroll.ensureVisible
+// visible control and reveals (centres) it via FushiFocusScroll.ensureVisible
 // (alignment 0.5), fighting the scroll. This PASSIVE repair reveal must be
 // suppressed in touch highlight mode (no focus cursor → nothing to follow),
 // while explicit gamepad/keyboard navigation (requestById/move) must still
@@ -18,14 +18,14 @@ Widget _list(ScrollController controller) {
     home: Scaffold(
       body: SizedBox(
         height: 240,
-        child: HibikiFocusRoot(
+        child: FushiFocusRoot(
           child: ListView.builder(
             controller: controller,
             itemExtent: 56,
             itemCount: 60,
             itemBuilder: (BuildContext context, int index) {
-              return HibikiFocusTarget(
-                id: HibikiFocusId('row-$index'),
+              return FushiFocusTarget(
+                id: FushiFocusId('row-$index'),
                 child: TextButton(onPressed: () {}, child: Text('Row $index')),
               );
             },
@@ -51,8 +51,8 @@ void main() {
     await tester.pumpWidget(_list(controller));
     await tester.pumpAndSettle();
 
-    final HibikiFocusController focus =
-        HibikiFocusRoot.controllerOf(tester.element(find.byType(ListView)));
+    final FushiFocusController focus =
+        FushiFocusRoot.controllerOf(tester.element(find.byType(ListView)));
 
     // User scrolled deep into the list; the originally-focused top row has
     // recycled away, so focus has fallen off its target.
@@ -83,12 +83,12 @@ void main() {
     await tester.pumpWidget(_list(controller));
     await tester.pumpAndSettle();
 
-    final HibikiFocusController focus =
-        HibikiFocusRoot.controllerOf(tester.element(find.byType(ListView)));
-    focus.requestById(const HibikiFocusId('row-0'));
+    final FushiFocusController focus =
+        FushiFocusRoot.controllerOf(tester.element(find.byType(ListView)));
+    focus.requestById(const FushiFocusId('row-0'));
     await tester.pump();
     for (int i = 0; i < 8; i++) {
-      focus.move(HibikiFocusDirection.down);
+      focus.move(FushiFocusDirection.down);
       await tester.pump();
     }
     await tester.pumpAndSettle();

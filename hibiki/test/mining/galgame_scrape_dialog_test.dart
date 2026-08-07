@@ -28,8 +28,8 @@ void main() {
   });
 
   Future<(GalgameRepository, GalgameEntry)> buildRepo() async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final GalgameRepository repo = GalgameRepository(db);
     final GalgameEntry entry = GalgameEntry(
@@ -53,7 +53,7 @@ void main() {
   }) async {
     Future<bool?>? result;
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    HibikiToast.navigatorKey = navKey;
+    FushiToast.navigatorKey = navKey;
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(

@@ -859,7 +859,7 @@ class MediaCollections extends Table {
   IntColumn get createdAt => integer()();
 
   /// 合集内手动序（成员 sortIndex）最后一次人为改动的毫秒戳（schema v40，多端库
-  /// 联合视图 §2.3）。仅 [HibikiDatabase.reorderCollectionItems]（用户拖拽落盘）
+  /// 联合视图 §2.3）。仅 [FushiDatabase.reorderCollectionItems]（用户拖拽落盘）
   /// bump 为 now；同步应用对端顺序时**镜像对端时间戳而非 now**（否则同步会伪装成
   /// 更新的人为改序，两端时间戳互相追赶）。跨端手动序整合集 LWW 的比较键：新者
   /// 整表覆盖成员 sortIndex。默认 0 = 从未手动排序，任何真实改序都能盖过它。
@@ -933,8 +933,8 @@ class MediaCollectionItems extends Table {
 // 范式仿 [BookTombstones] 单行 LWW：重复移出 upsert 刷新 deletedAt）。
 // v57 前列名 removed_at；v57 统一为 deleted_at（与 [BookTombstones] 等墓碑表对齐；
 // sync 清单 wire JSON 的 `removedAt` 键是冻结的 wire 契约，与本列名解耦）。
-// 重新加入清同键墓碑（[HibikiDatabase.addToCollection]）；重建同名合集清合集级
-// 墓碑（[HibikiDatabase.createMediaCollection]），同插书清书墓碑一律。
+// 重新加入清同键墓碑（[FushiDatabase.addToCollection]）；重建同名合集清合集级
+// 墓碑（[FushiDatabase.createMediaCollection]），同插书清书墓碑一律。
 @DataClassName('CollectionMemberTombstoneRow')
 class CollectionMemberTombstones extends Table {
   /// 合集自然键：名字。
@@ -964,8 +964,14 @@ class CollectionMemberTombstones extends Table {
 // [MediaSources]（自增 id + text().unique() 身份列 + int 毫秒戳时间列）。本阶段
 // 仅建表 + DB 方法 + 迁移，不接线 auth（阶段2 再改 server controller），空表 =
 // 无人读 = 行为零变化（Never break userspace）。
-@DataClassName('HibikiPairedPeerRow')
-class HibikiPairedPeers extends Table {
+@DataClassName('FushiPairedPeerRow')
+class FushiPairedPeers extends Table {
+  /// Fushi 改名只换 Dart 类名；SQL 表名是既有用户库的持久化契约，永远钉死
+  /// 旧 snake 名（不显式钉的话 drift 默认按类名 snake_case，一次 build_runner
+  /// 重生成就会静默漂成 fushi_paired_peers 破 schema）。
+  @override
+  String get tableName => 'hibiki_paired_peers';
+
   IntColumn get id => integer().autoIncrement()();
 
   /// 对端设备的稳定身份（配对握手时对端上报的 device/installation id）。

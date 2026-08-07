@@ -129,14 +129,14 @@ void main() {
   late _VolumeServer server;
   late Directory appDocDir;
   late Directory stagingRoot;
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() async {
     server = await _VolumeServer.start();
     appDocDir = await Directory.systemTemp.createTemp('mokuromoe_app');
     stagingRoot = await Directory.systemTemp.createTemp('mokuromoe_staging');
     EpubStorage.debugBaseDirectoryOverride = appDocDir.path;
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() async {

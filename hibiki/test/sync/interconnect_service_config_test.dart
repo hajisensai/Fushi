@@ -9,10 +9,10 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() => db.close());
@@ -127,8 +127,8 @@ void main() {
     }));
 
     final SyncRepository repo = SyncRepository(db);
-    await repo.setHibikiClientUrls(<HibikiClientUrl>[
-      HibikiClientUrl(url: 'http://127.0.0.1:${server.port}', enabled: true),
+    await repo.setHibikiClientUrls(<FushiClientUrl>[
+      FushiClientUrl(url: 'http://127.0.0.1:${server.port}', enabled: true),
     ]);
     await repo.setHibikiClientToken('peer-token');
     final InterconnectSyncBackend backend =

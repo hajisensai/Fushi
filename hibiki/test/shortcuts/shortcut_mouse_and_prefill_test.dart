@@ -15,12 +15,12 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
   });
 
-  HibikiShortcutRegistry buildRegistry() =>
-      HibikiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
+  FushiShortcutRegistry buildRegistry() =>
+      FushiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
 
   Future<void> pumpDialog(
     WidgetTester tester,
-    HibikiShortcutRegistry registry, {
+    FushiShortcutRegistry registry, {
     required ShortcutAction action,
     ShortcutBindingSet initial = const ShortcutBindingSet(),
     LogicalKeyboardKey? prefillKey,
@@ -53,7 +53,7 @@ void main() {
   testWidgets(
       'TODO-1050b: existing mouse binding renders a small icon + localized label',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     // audiobookSeekToClickedSentence ships a MouseBinding(1) = middle click.
     await pumpDialog(
       tester,
@@ -71,7 +71,7 @@ void main() {
 
   testWidgets('right-click mouse binding uses the filled mouse icon + label',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     await pumpDialog(
       tester,
       registry,
@@ -87,7 +87,7 @@ void main() {
   testWidgets(
       'TODO-1060②: prefillKey seeds the keyboard draft with the tapped key',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     await pumpDialog(
       tester,
       registry,
@@ -96,26 +96,26 @@ void main() {
     );
 
     // Opening on an empty slot pre-adds an F9 chip (user can delete/confirm).
-    expect(find.widgetWithText(HibikiTagChip, 'F9'), findsOneWidget);
+    expect(find.widgetWithText(FushiTagChip, 'F9'), findsOneWidget);
   });
 
   testWidgets(
       'TODO-1060②: prefillButton seeds the gamepad draft with the tapped button',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     await pumpDialog(
       tester,
       registry,
       action: ShortcutAction.homeFocusSearch,
       prefillButton: GamepadButton.y,
     );
-    expect(find.widgetWithText(HibikiTagChip, GamepadButton.y.label),
+    expect(find.widgetWithText(FushiTagChip, GamepadButton.y.label),
         findsOneWidget);
   });
 
   testWidgets('prefillKey does not duplicate an already-bound key',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     // Seed the action with F9 already, then prefill F9 again: must stay single.
     await pumpDialog(
       tester,
@@ -128,6 +128,6 @@ void main() {
       ),
       prefillKey: LogicalKeyboardKey.f9,
     );
-    expect(find.widgetWithText(HibikiTagChip, 'F9'), findsOneWidget);
+    expect(find.widgetWithText(FushiTagChip, 'F9'), findsOneWidget);
   });
 }

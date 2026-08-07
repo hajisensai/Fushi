@@ -14,11 +14,11 @@ Widget _harness(Widget child) {
   );
 }
 
-List<HibikiOptionSelectionOption<String>> _langs() =>
-    const <HibikiOptionSelectionOption<String>>[
-      HibikiOptionSelectionOption<String>(value: 'en-US', label: 'English'),
-      HibikiOptionSelectionOption<String>(value: 'ja', label: '日本語'),
-      HibikiOptionSelectionOption<String>(value: 'zh-CN', label: '简体中文'),
+List<FushiOptionSelectionOption<String>> _langs() =>
+    const <FushiOptionSelectionOption<String>>[
+      FushiOptionSelectionOption<String>(value: 'en-US', label: 'English'),
+      FushiOptionSelectionOption<String>(value: 'ja', label: '日本語'),
+      FushiOptionSelectionOption<String>(value: 'zh-CN', label: '简体中文'),
     ];
 
 void main() {
@@ -60,14 +60,14 @@ void main() {
 
   testWidgets('never renders a search field, even for long option sets',
       (WidgetTester tester) async {
-    final List<HibikiOptionSelectionOption<int>> many =
-        List<HibikiOptionSelectionOption<int>>.generate(
+    final List<FushiOptionSelectionOption<int>> many =
+        List<FushiOptionSelectionOption<int>>.generate(
       20,
-      (int i) => HibikiOptionSelectionOption<int>(value: i, label: 'Item $i'),
+      (int i) => FushiOptionSelectionOption<int>(value: i, label: 'Item $i'),
     );
     await tester.pumpWidget(
       _harness(
-        HibikiOptionSelectionPage<int>(
+        FushiOptionSelectionPage<int>(
           title: 'Pick',
           options: many,
           selected: 0,
@@ -76,7 +76,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byType(HibikiTextField), findsNothing);
+    expect(find.byType(FushiTextField), findsNothing);
     expect(find.byType(TextField), findsNothing);
   });
 }

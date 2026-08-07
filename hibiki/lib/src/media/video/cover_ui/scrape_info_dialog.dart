@@ -156,11 +156,11 @@ class ScrapeInfoDialog extends StatelessWidget {
           const SizedBox(height: 16),
           Text(t.video_scrape_tags, style: theme.textTheme.titleSmall),
           const SizedBox(height: 8),
-          // 标签走共享 MD3 [HibikiTag]（与词典条目标签同一视觉），不自造 Chip 密度。
+          // 标签走共享 MD3 [FushiTag]（与词典条目标签同一视觉），不自造 Chip 密度。
           Wrap(
             children: <Widget>[
               for (final ScrapeTag tag in meta.tags.take(_maxTags))
-                HibikiTag(
+                FushiTag(
                   text: tag.name,
                   backgroundColor: colors.secondaryContainer,
                 ),
@@ -227,7 +227,7 @@ class ScrapeInfoDialog extends StatelessWidget {
     try {
       await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
     } catch (_) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.video_scrape_apply_failed,
         severity: ToastSeverity.error,
       );

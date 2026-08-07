@@ -7,10 +7,10 @@ import 'package:fushi_core/fushi_core.dart';
 /// keyed on srt_books.uid (e.g. "srtbook_..."), NOT on the epub bookKey, so a
 /// cascade that only deleted cues by the epub bookKey left them orphaned.
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
   tearDown(() => db.close());
 

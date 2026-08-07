@@ -6,10 +6,10 @@ import 'package:fushi/src/utils/components/hibiki_dropdown.dart';
 import 'widget_test_helpers.dart';
 
 void main() {
-  group('HibikiDropdown', () {
+  group('FushiDropdown', () {
     testWidgets('shows initial option label', (tester) async {
       await tester.pumpWidget(buildTestApp(
-        HibikiDropdown<String>(
+        FushiDropdown<String>(
           options: const ['Apple', 'Banana', 'Cherry'],
           initialOption: 'Banana',
           generateLabel: (v) => v,
@@ -24,7 +24,7 @@ void main() {
     testWidgets('calls onChanged when new option selected', (tester) async {
       String? selected;
       await tester.pumpWidget(buildTestApp(
-        HibikiDropdown<String>(
+        FushiDropdown<String>(
           options: const ['A', 'B'],
           initialOption: 'A',
           generateLabel: (v) => v,
@@ -44,7 +44,7 @@ void main() {
     testWidgets('disabled dropdown does not call onChanged', (tester) async {
       bool changed = false;
       await tester.pumpWidget(buildTestApp(
-        HibikiDropdown<String>(
+        FushiDropdown<String>(
           options: const ['X', 'Y'],
           initialOption: 'X',
           generateLabel: (v) => v,
@@ -61,7 +61,7 @@ void main() {
 
     testWidgets('deduplicates options via toSet', (tester) async {
       await tester.pumpWidget(buildTestApp(
-        HibikiDropdown<String>(
+        FushiDropdown<String>(
           options: const ['A', 'A', 'B'],
           initialOption: 'A',
           generateLabel: (v) => v,
@@ -79,7 +79,7 @@ void main() {
     testWidgets('falls back to first option when initial not in list',
         (tester) async {
       await tester.pumpWidget(buildTestApp(
-        HibikiDropdown<String>(
+        FushiDropdown<String>(
           options: const ['X', 'Y'],
           initialOption: 'Z',
           generateLabel: (v) => v,
@@ -91,14 +91,14 @@ void main() {
     });
   });
 
-  group('HibikiDropdown platform routing', () {
+  group('FushiDropdown platform routing', () {
     // Every polled platform (Windows/Linux/iOS/macOS) must use the
     // gamepad-enterable MenuAnchor; only Android — whose engine delivers real
     // key events — keeps the stock DropdownMenu. Guards the unification so a
     // gamepad can enter the menu on iOS/macOS, not just on desktop.
     Widget dropdownOn(TargetPlatform platform) {
       return buildTestApp(
-        HibikiDropdown<String>(
+        FushiDropdown<String>(
           options: const ['A', 'B'],
           initialOption: 'A',
           generateLabel: (v) => v,
@@ -142,7 +142,7 @@ void main() {
           Center(
             child: SizedBox(
               width: 240,
-              child: HibikiDropdown<String>(
+              child: FushiDropdown<String>(
                 options: const <String>[longLabel, 'Stretch'],
                 initialOption: longLabel,
                 generateLabel: (String v) => v,
@@ -179,7 +179,7 @@ void main() {
           List<String>.generate(40, (int i) => 'Option $i');
       await tester.pumpWidget(
         buildTestApp(
-          HibikiDropdown<String>(
+          FushiDropdown<String>(
             options: many,
             initialOption: 'Option 0',
             generateLabel: (String v) => v,
@@ -203,9 +203,9 @@ void main() {
     testWidgets('MenuAnchor trigger registers with the focus root',
         (tester) async {
       await tester.pumpWidget(buildTestApp(
-        HibikiFocusRoot(
-          child: HibikiDropdown<String>(
-            focusId: const HibikiFocusId('fruit-dropdown'),
+        FushiFocusRoot(
+          child: FushiDropdown<String>(
+            focusId: const FushiFocusId('fruit-dropdown'),
             options: const ['A', 'B'],
             initialOption: 'A',
             generateLabel: (v) => v,
@@ -218,16 +218,16 @@ void main() {
       ));
       await tester.pump();
 
-      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.text('A')),
       );
 
       expect(
-        controller.requestById(const HibikiFocusId('fruit-dropdown')),
+        controller.requestById(const FushiFocusId('fruit-dropdown')),
         isTrue,
       );
       await tester.pump();
-      expect(controller.activeId, const HibikiFocusId('fruit-dropdown'));
+      expect(controller.activeId, const FushiFocusId('fruit-dropdown'));
 
       expect(find.byType(MenuItemButton), findsNothing);
       Actions.maybeInvoke<ActivateIntent>(

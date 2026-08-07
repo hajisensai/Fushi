@@ -14,14 +14,14 @@ import 'package:crypto/crypto.dart';
 /// - 双重确认：pinProof 校验通过 **且** host 端人工点允许，二者缺一不派 token。
 ///
 /// 本文件只负责「算」与「判」；会话生命周期 / token 派发 / 弹窗由
-/// [HibikiSyncServer] 与 [HibikiSyncServerController] 编排。
+/// [FushiSyncServer] 与 [FushiSyncServerController] 编排。
 
 /// 一次 client 发起的配对会话（host 侧持有，pair/v2 创建、pair/v2/confirm 消费）。
 ///
 /// nonce 是 host 与 client 各自一次性随机数；[consumed] 在第一次 confirm 成功或被
 /// 拒后置位，杜绝同一 sessionId 重放（同 nonce 二次提交一律拒）。
-class HibikiPairSession {
-  HibikiPairSession({
+class FushiPairSession {
+  FushiPairSession({
     required this.sessionId,
     required this.clientNonce,
     required this.hostNonce,
@@ -46,7 +46,7 @@ class HibikiPairSession {
   final String pin;
 
   /// 本会话是否要求 PIN 校验（公网入站恒 true；LAN 自动发现且 host 允许免 PIN 时
-  /// false——见 [HibikiPairingProtocol.computePinRequired]）。
+  /// false——见 [FushiPairingProtocol.computePinRequired]）。
   final bool pinRequired;
 
   /// client 自报名（弹窗展示用，可空）。
@@ -70,8 +70,8 @@ class HibikiPairSession {
 
 /// 配对协议的纯函数集合：nonce 生成、PIN 生成、pinProof 计算与校验、pinRequired
 /// 分支判定。全部静态、无副作用，可独立单测。
-class HibikiPairingProtocol {
-  HibikiPairingProtocol._();
+class FushiPairingProtocol {
+  FushiPairingProtocol._();
 
   /// 生成一个一次性随机 nonce（24 字节 → base64url，无填充）。供 host / client 各
   /// 自调用；clientNonce 由 client 生成并随 pair/v2 提交，hostNonce 由 host 生成。
@@ -194,21 +194,21 @@ class HibikiPairingProtocol {
 /// TODO-961 M3: 配对 PIN 爆破限速的纯状态跟踪器（无 IO / 无 Flutter，可完整单测）。
 ///
 /// 威胁模型（设计稿 §3.1 承诺「靠限速防爆破」）：6 位 PIN 只有 100 万空间，
-/// [HibikiPairSession.consumed] 让**单个会话**只能 confirm 一次，所以真正的爆破面
+/// [FushiPairSession.consumed] 让**单个会话**只能 confirm 一次，所以真正的爆破面
 /// 不是「对一个会话反复撞」，而是攻击者**不断 pair/v2 开新会话、每个 confirm 一次**
 /// 撞不同 PIN。故计数粒度必须落在**来源**（client），而非会话——否则每次开新会话就
 /// 把失败计数重置为零，限速形同虚设。
 ///
 /// 来源标识（[sourceKey]）由调用方给出：优先 client 自报的稳定 `clientDeviceId`，
 /// 回退请求来源 IP（`remoteAddress`）。二者都缺时调用方应退化为不限速的单会话路径
-/// （无稳定身份可锁，见 [HibikiSyncServer]）。
+/// （无稳定身份可锁，见 [FushiSyncServer]）。
 ///
 /// 语义：同一来源在滑动窗口 [failureWindow] 内累计 [maxFailures] 次 PIN 校验失败即
 /// 进入锁定，锁定持续 [lockoutDuration]（退避有界、可恢复）。锁定窗口内该来源的
 /// confirm 一律被拒（不再触碰 PIN 比对，杜绝继续撞）。成功配对或来源记录过期后计数
 /// 清零，绝不永久株连。清理复用注入时钟，配合会话 prune 一并调用防内存泄漏。
-class HibikiPinRateLimiter {
-  HibikiPinRateLimiter({
+class FushiPinRateLimiter {
+  FushiPinRateLimiter({
     this.maxFailures = 5,
     this.failureWindow = const Duration(minutes: 5),
     this.lockoutDuration = const Duration(minutes: 15),
@@ -312,7 +312,7 @@ class HibikiPinRateLimiter {
   }
 }
 
-/// 单个来源的 PIN 失败记录（[HibikiPinRateLimiter] 内部值对象，不可变）。
+/// 单个来源的 PIN 失败记录（[FushiPinRateLimiter] 内部值对象，不可变）。
 class _PinFailureRecord {
   const _PinFailureRecord({
     required this.failureCount,

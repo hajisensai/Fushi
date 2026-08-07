@@ -308,8 +308,8 @@ void main() {
       ),
     );
 
-    final HibikiIconButton button = tester.widget<HibikiIconButton>(
-      find.widgetWithIcon(HibikiIconButton, Icons.close),
+    final FushiIconButton button = tester.widget<FushiIconButton>(
+      find.widgetWithIcon(FushiIconButton, Icons.close),
     );
     expect(button.size, 20);
     expect(

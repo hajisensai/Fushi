@@ -234,10 +234,10 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
 
   Widget _buildWithSpacing(BuildContext context, Widget? child) {
     final AppModel appModel = ref.watch(appProvider);
-    return HibikiAppUiScale(
+    return FushiAppUiScale(
       scale: appModel.isInitialised
           ? appModel.appUiScale
-          : HibikiAppUiScale.defaultScale,
+          : FushiAppUiScale.defaultScale,
       child: child ?? const SizedBox.shrink(),
     );
   }

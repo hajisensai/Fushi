@@ -34,8 +34,8 @@ import '../helpers/test_platform_services.dart';
 /// 悄悄发陈旧数据，这是本改动唯一的真风险。
 void main() {
   Future<SettingsContext> makeContext(WidgetTester tester) async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+    final FushiDatabase db =
+        FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
     addTearDown(db.close);
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();

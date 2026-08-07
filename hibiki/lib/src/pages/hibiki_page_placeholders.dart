@@ -6,18 +6,18 @@ import 'package:fushi/utils.dart';
 /// 此前 [buildError] / [buildLoading] 绑在 `BasePageState` 基类上，不挂
 /// jidoujisho 体系 BasePage 的自立骨架页（游戏域、各对话框、manga/pdf 源页等）
 /// 只能手抄 `Center(child: CircularProgressIndicator())` 与各自的错误占位。
-/// 现收口到本 mixin：任何 [State] 子类 `with HibikiPagePlaceholders<T>` 即可
+/// 现收口到本 mixin：任何 [State] 子类 `with FushiPagePlaceholders<T>` 即可
 /// 复用，无须挂进 BasePage 家族；`BasePageState` 也改为混入本 mixin。
 ///
 /// 默认样式取全 app 被最多页面使用的那份：
 /// - 加载：居中不定尺寸 [adaptiveIndicator]（Material 下 = 裸
 ///   `CircularProgressIndicator()`：36 逻辑像素、主题主色，与既有手抄处逐像素
 ///   一致）。
-/// - 出错：[HibikiPlaceholderMessage]（error_outline + 通用 i18n 文案 + 可选
+/// - 出错：[FushiPlaceholderMessage]（error_outline + 通用 i18n 文案 + 可选
 ///   重试按钮）。
 /// 真实存在的样式差异（BasePage 家族历史的 25×25 主色圈、部分对话框的 24
 /// 内边距等）通过参数保留，各调用点视觉不变。
-mixin HibikiPagePlaceholders<T extends StatefulWidget> on State<T> {
+mixin FushiPagePlaceholders<T extends StatefulWidget> on State<T> {
   /// Standard loading circle for use across the application.
   ///
   /// [size]：给指示器套 [SizedBox] 的边长（BasePage 家族历史样式传 25）；
@@ -50,7 +50,7 @@ mixin HibikiPagePlaceholders<T extends StatefulWidget> on State<T> {
     Function()? refresh,
   }) {
     return Center(
-      child: HibikiPlaceholderMessage(
+      child: FushiPlaceholderMessage(
         icon: Icons.error_outline,
         message: t.error_load_failed,
         detail: error != null ? '$error' : null,

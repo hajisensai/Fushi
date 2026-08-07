@@ -21,8 +21,8 @@ import 'package:sqlite3/common.dart' show CommonDatabase;
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  Future<HibikiDatabase> openDb() async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+  Future<FushiDatabase> openDb() async {
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (CommonDatabase rawDb) =>
             rawDb.execute('PRAGMA foreign_keys = ON'),
@@ -33,7 +33,7 @@ void main() {
   }
 
   Future<int> boundCollection(
-    HibikiDatabase db, {
+    FushiDatabase db, {
     String name = '本篇',
     String source = 'bangumi',
     String subjectId = '100',
@@ -52,7 +52,7 @@ void main() {
   }
 
   Future<void> addVideoMember(
-    HibikiDatabase db,
+    FushiDatabase db,
     int collectionId,
     String uid,
     String fileName, {
@@ -131,7 +131,7 @@ void main() {
     test(
         'writes per-episode meta, counts unmatched (no episode number / '
         'missing on source), duplicates both written', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int id = await boundCollection(db);
       await addVideoMember(db, id, 'u1', '[Grp] Show - 01.mkv');
       await addVideoMember(db, id, 'u1b', '[Grp] Show - 01v2.mkv');
@@ -177,7 +177,7 @@ void main() {
 
     test('episode title falls back to work title when source omits it',
         () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int id = await boundCollection(db, name: '作品名');
       await addVideoMember(db, id, 'u1', 'Show - 01.mkv');
       final BangumiClient bangumi = BangumiClient(
@@ -192,7 +192,7 @@ void main() {
     });
 
     test('source failure reports error and writes nothing', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int id = await boundCollection(db);
       await addVideoMember(db, id, 'u1', 'Show - 01.mkv');
       final BangumiClient bangumi = BangumiClient(
@@ -209,7 +209,7 @@ void main() {
     });
 
     test('missing scrape binding throws StateError', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int bare = await db.createMediaCollection('未刮削');
       expect(
         () => EpisodeScrapeService(db: db).scrapeCollectionEpisodes(bare),
@@ -236,7 +236,7 @@ void main() {
     test(
         'applies stills as episode covers, never overwrites user-chosen '
         'cover, season from filename majority', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int id = await boundCollection(
         db,
         source: 'tmdb',
@@ -322,7 +322,7 @@ void main() {
     });
 
     test('movie subject has no episodes and says so', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int id = await boundCollection(
         db,
         source: 'tmdb',
@@ -348,7 +348,7 @@ void main() {
   group('mixed seasons and pagination', () {
     test('mixed-season members each align against their own season table',
         () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int id = await boundCollection(
         db,
         source: 'tmdb',

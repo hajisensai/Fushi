@@ -11,8 +11,8 @@ import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-HibikiDatabase _testDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 ArchiveFile _textFile(String name, String content) {
   final List<int> bytes = utf8.encode(content);
@@ -26,8 +26,8 @@ void main() {
         'hibiki-dict-package-',
       );
       addTearDown(() => temp.delete(recursive: true));
-      final HibikiDatabase sourceDb = _testDb();
-      final HibikiDatabase targetDb = _testDb();
+      final FushiDatabase sourceDb = _testDb();
+      final FushiDatabase targetDb = _testDb();
       addTearDown(sourceDb.close);
       addTearDown(targetDb.close);
 
@@ -99,7 +99,7 @@ void main() {
         'hibiki-dict-traversal-',
       );
       addTearDown(() => temp.delete(recursive: true));
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
 
       final Archive archive = Archive()
@@ -139,8 +139,8 @@ void main() {
         'hibiki-audio-package-',
       );
       addTearDown(() => temp.delete(recursive: true));
-      final HibikiDatabase sourceDb = _testDb();
-      final HibikiDatabase targetDb = _testDb();
+      final FushiDatabase sourceDb = _testDb();
+      final FushiDatabase targetDb = _testDb();
       addTearDown(sourceDb.close);
       addTearDown(targetDb.close);
 
@@ -236,8 +236,8 @@ void main() {
       final Directory temp =
           await Directory.systemTemp.createTemp('hibiki-audio-standalone-');
       addTearDown(() => temp.delete(recursive: true));
-      final HibikiDatabase sourceDb = _testDb();
-      final HibikiDatabase targetDb = _testDb();
+      final FushiDatabase sourceDb = _testDb();
+      final FushiDatabase targetDb = _testDb();
       addTearDown(sourceDb.close);
       addTearDown(targetDb.close);
 
@@ -341,8 +341,8 @@ void main() {
         'hibiki-audio-large-',
       );
       addTearDown(() => temp.delete(recursive: true));
-      final HibikiDatabase sourceDb = _testDb();
-      final HibikiDatabase targetDb = _testDb();
+      final FushiDatabase sourceDb = _testDb();
+      final FushiDatabase targetDb = _testDb();
       addTearDown(sourceDb.close);
       addTearDown(targetDb.close);
 
@@ -423,8 +423,8 @@ void main() {
         'hibiki-local-audio-package-',
       );
       addTearDown(() => temp.delete(recursive: true));
-      final HibikiDatabase sourceDb = _testDb();
-      final HibikiDatabase targetDb = _testDb();
+      final FushiDatabase sourceDb = _testDb();
+      final FushiDatabase targetDb = _testDb();
       addTearDown(sourceDb.close);
       addTearDown(targetDb.close);
 

@@ -14,8 +14,8 @@ import 'package:fushi_core/fushi_core.dart';
 void main() {
   group('pauseOnLookup default (TODO-1108)', () {
     test('defaults to true when never set', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -27,8 +27,8 @@ void main() {
 
     test('an explicit stored false wins over the new default (userspace)',
         () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -48,8 +48,8 @@ void main() {
     });
 
     test('an explicit stored true round-trips', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 

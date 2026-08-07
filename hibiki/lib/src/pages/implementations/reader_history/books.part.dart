@@ -68,7 +68,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('srt_entry_${book.uid}'),
-      focusId: HibikiFocusId('${focusIdPrefix}reader-shelf-srt-${book.uid}'),
+      focusId: FushiFocusId('${focusIdPrefix}reader-shelf-srt-${book.uid}'),
       selectionKey: selectable ? selKey : null,
       dragBookId: srtBookId,
       onTagDropped:
@@ -190,7 +190,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
 
   Future<void> _openSrtBook(SrtBook book) async {
     if (book.bookKey.isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.srt_epub_not_ready, severity: ToastSeverity.error);
       return;
     }
@@ -374,7 +374,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     if (mounted) {
       _refreshSrtBooks();
       _rebuild(() {});
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.audiobook_relocate_done, severity: ToastSeverity.success);
     }
   }
@@ -414,7 +414,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   }
 
   Widget _buildBatchActionBar() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 块2/3/4：计数与按钮可用态涵盖散卡选中集 + 合集选中集。
     final int selectedCount =
         _selectedKeys.length + _selectedCollectionIds.length;
@@ -468,7 +468,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
                   ],
                 ),
               ),
-              HibikiIconButton(
+              FushiIconButton(
                 key: const ValueKey<String>('reader_shelf_batch_combine'),
                 enabled: canCombine,
                 onTap: _batchCombineIntoSeries,
@@ -478,7 +478,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
                 tooltip: t.combine_into_series,
               ),
               SizedBox(width: tokens.spacing.gap / 2),
-              HibikiIconButton(
+              FushiIconButton(
                 // 打标签只作用于散卡媒体（合集无直接标签），故按散卡选中集可用态。
                 enabled: _selectedKeys.isNotEmpty,
                 onTap: _batchShowTagPicker,
@@ -486,7 +486,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
                 tooltip: t.tag_label,
               ),
               SizedBox(width: tokens.spacing.gap / 2),
-              HibikiIconButton(
+              FushiIconButton(
                 key: const ValueKey<String>('reader_shelf_batch_delete'),
                 enabled: hasSelection,
                 onTap: _batchDeleteConfirm,
@@ -502,7 +502,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   }
 
   /// 块4：批量删除区分解散/删媒体。
-  /// - 选中合集 → 解散（[HibikiDatabase.deleteMediaCollection]：只解除分组，不删媒体本体）；
+  /// - 选中合集 → 解散（[FushiDatabase.deleteMediaCollection]：只解除分组，不删媒体本体）；
   /// - 选中散卡 → 删媒体本体（EPUB/SRT，现状语义）；
   /// - 混选 → 确认框文案写明「删 N 个媒体、解散 M 个合集」。
   Future<void> _batchDeleteConfirm() async {
@@ -605,7 +605,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
             : collectionCount == 0
                 ? t.batch_delete_success(n: deleted)
                 : t.batch_dissolve_success(m: dissolved);
-    HibikiToast.show(
+    FushiToast.show(
       msg: successMsg,
       severity: deleted > 0 || dissolved > 0
           ? ToastSeverity.success
@@ -625,7 +625,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   /// 返回剔完后是否还有东西可做。
   Future<bool> _pruneStaleSelection() async {
     if (_selection.isEmpty) return false;
-    final HibikiDatabase db = appModel.database;
+    final FushiDatabase db = appModel.database;
     // 存在性真值必须取自**书架选择键的来源表**，不是名字相近的 `media_items`：
     // 书架 EPUB 卡的选择键是 `ReaderHibikiSource.mediaIdentifierFor(bookKey)`，
     // bookKey 的真值在 `epub_books`（`hibikiBooksProvider` 也是从这里取的）；
@@ -646,7 +646,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     );
     if (dropped == 0) return _selection.isNotEmpty;
     _rebuild(() {});
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.batch_selection_stale_skipped(
         n: dropped + _selection.length,
         m: dropped,
@@ -662,7 +662,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     if (!await _pruneStaleSelection() || !mounted) return;
     final allTags = ref.read(allTagsProvider).valueOrNull;
     if (allTags == null || allTags.isEmpty) {
-      HibikiToast.show(msg: t.tag_no_tags_hint, severity: ToastSeverity.info);
+      FushiToast.show(msg: t.tag_no_tags_hint, severity: ToastSeverity.info);
       return;
     }
     await showAppDialog<void>(
@@ -784,7 +784,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     _exitSelectionMode();
     _shelfMapsFuture = _loadShelfMaps();
     _rebuild(() {});
-    HibikiToast.show(msg: t.series_created, severity: ToastSeverity.success);
+    FushiToast.show(msg: t.series_created, severity: ToastSeverity.success);
   }
 
   /// 档2：恰 1 合集 + 若干散卡 → 散卡并入该合集（不弹命名）。
@@ -800,7 +800,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     _exitSelectionMode();
     _shelfMapsFuture = _loadShelfMaps();
     _rebuild(() {});
-    HibikiToast.show(
+    FushiToast.show(
         msg: t.batch_add_to_collection_success(n: refs.length),
         severity: ToastSeverity.success);
   }
@@ -812,7 +812,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     List<int> collectionIds,
     List<ShelfEntryRef> refs,
   ) async {
-    final HibikiDatabase db = appModel.database;
+    final FushiDatabase db = appModel.database;
     final Map<int, List<MediaCollectionItemRow>> itemsById =
         <int, List<MediaCollectionItemRow>>{};
     for (final int id in collectionIds) {
@@ -858,7 +858,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     _exitSelectionMode();
     _shelfMapsFuture = _loadShelfMaps();
     _rebuild(() {});
-    HibikiToast.show(msg: t.collection_merged, severity: ToastSeverity.success);
+    FushiToast.show(msg: t.collection_merged, severity: ToastSeverity.success);
   }
 
   Future<void> _confirmDeleteSrtBook(SrtBook book) async {
@@ -914,11 +914,11 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       case BackgroundListenResult.started:
         break;
       case BackgroundListenResult.noAudio:
-        HibikiToast.show(
+        FushiToast.show(
             msg: t.floating_lyric_no_audio, severity: ToastSeverity.error);
         break;
       case BackgroundListenResult.loadFailed:
-        HibikiToast.show(
+        FushiToast.show(
             msg: t.audiobook_load_error, severity: ToastSeverity.error);
         break;
     }
@@ -950,7 +950,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       // TODO-1359：不再只弹笼统的「删除书籍失败」——把 deleteBook 回报的原因（同时已
       // 写入 ErrorLogService，可在日志页导出）拼进 toast，让用户知道为什么删不掉。
       final String reason = result.failureReason ?? '';
-      HibikiToast.show(
+      FushiToast.show(
         msg: reason.isEmpty
             ? t.epub_delete_error
             : '${t.epub_delete_error}: $reason',
@@ -990,21 +990,21 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     final List<String> picked = await _pickSrtAudioFiles();
     if (picked.isEmpty || !mounted) return;
 
-    HibikiToast.show(msg: t.dialog_importing, severity: ToastSeverity.info);
+    FushiToast.show(msg: t.dialog_importing, severity: ToastSeverity.info);
     try {
       await SrtBookRepository(appModel.database)
           .replaceAudio(uid: book.uid, pickedPaths: picked);
       if (mounted) {
         _refreshSrtBooks();
         _rebuild(() {});
-        HibikiToast.show(
+        FushiToast.show(
             msg: t.audiobook_import_success, severity: ToastSeverity.success);
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHistory.openAudioImport', e, stack);
       debugPrint('[ReaderHistory] openAudioImport failed: $e');
       if (mounted) {
-        HibikiToast.show(
+        FushiToast.show(
             msg: t.audiobook_import_error, severity: ToastSeverity.error);
       }
     }
@@ -1041,7 +1041,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   }
 
   /// 文件拖入书架后的路由：分类 → 命中测试 → 决策 → 打开对应对话框/提示。
-  /// [globalPosition] 为 [HibikiFileDropTarget] 透出的 Flutter global/view 坐标，
+  /// [globalPosition] 为 [FushiFileDropTarget] 透出的 Flutter global/view 坐标，
   /// 可直接与卡片登记表（同坐标系屏幕矩形）命中测试。
   void _handleShelfDrop(List<String> paths, Offset globalPosition) {
     final ModalRoute<dynamic>? route = ModalRoute.of(context);

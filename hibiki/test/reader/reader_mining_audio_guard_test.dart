@@ -212,7 +212,7 @@ void main() {
         compactCode(source),
         contains(
           compactCode(
-              'HibikiToast.show(msg: t.card_mined_without_sentence_audio,'),
+              'FushiToast.show(msg: t.card_mined_without_sentence_audio,'),
         ),
         reason:
             'A card created with audio files present but no resolvable sentence '

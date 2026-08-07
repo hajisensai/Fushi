@@ -413,7 +413,7 @@ class BackupContentSummary {
 
 class BackupService {
   BackupService({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required String dbDirectory,
     required String appVersion,
     String? dictionaryResourceDirectory,
@@ -428,7 +428,7 @@ class BackupService {
         _fontsRootDirectory = fontsRootDirectory,
         _appVersion = appVersion;
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
   final String _dbDirectory;
   final String? _dictionaryResourceDirectory;
 
@@ -1338,7 +1338,7 @@ class BackupService {
   }
 
   /// Strips device-local config and credentials from the standalone DB copy in
-  /// [dbDirectory] before it leaves the device. Opened via [HibikiDatabase]
+  /// [dbDirectory] before it leaves the device. Opened via [FushiDatabase]
   /// (the copy is already at the current schema, so no migration runs).
   ///
   /// What counts as "must not leave this device" is [PrefRedactionPolicy] —
@@ -1363,7 +1363,7 @@ class BackupService {
   ///
   /// VACUUM + checkpoint so values are not recoverable from freelist/WAL pages.
   static Future<void> _stripCredentials(String dbDirectory) async {
-    final db = HibikiDatabase(dbDirectory);
+    final db = FushiDatabase(dbDirectory);
     try {
       final Map<String, String> allPrefs = await db.getAllPrefs();
       final List<String> redactedPrefKeys = allPrefs.keys
@@ -1403,7 +1403,7 @@ class BackupService {
   /// The keys are resolved in Dart (one predicate, no SQL LIKE dialect of it)
   /// and deleted in a single parameterised statement.
   static Future<void> _stripCredentialRowsFromProfileSnapshots(
-    HibikiDatabase db,
+    FushiDatabase db,
   ) async {
     final List<QueryRow> rows = await db.customSelect(
       'SELECT DISTINCT key FROM profile_settings WHERE category = ?',
@@ -1446,9 +1446,9 @@ class BackupService {
           'preserved on import.');
       return;
     }
-    HibikiDatabase? db;
+    FushiDatabase? db;
     try {
-      db = HibikiDatabase(dbDirectory);
+      db = FushiDatabase(dbDirectory);
       final String safeBak =
           bakPath.replaceAll(r'\', '/').replaceAll("'", "''");
       await db.customStatement("ATTACH DATABASE '$safeBak' AS devbak");
@@ -1476,7 +1476,7 @@ class BackupService {
   /// disabled. Keeping DB metadata without matching `dictionaryResources/`
   /// files would restore ghost dictionaries that cannot be queried.
   static Future<void> _stripDictionaryState(String dbDirectory) async {
-    final db = HibikiDatabase(dbDirectory);
+    final db = FushiDatabase(dbDirectory);
     try {
       await db.clearDictionaryHistory();
       await db.clearAllDictionaryMeta();
@@ -1489,7 +1489,7 @@ class BackupService {
 
   /// Strips the four DB-only data categories (TODO-1193) from the standalone
   /// exported DB copy in [dbDirectory] when the user unticked them. Opened via
-  /// [HibikiDatabase] (the copy is already at the current schema, so no
+  /// [FushiDatabase] (the copy is already at the current schema, so no
   /// migration runs). Operates ONLY on the export copy — the live user DB is
   /// never touched.
   ///
@@ -1511,7 +1511,7 @@ class BackupService {
     required bool stripSettings,
     required bool stripProfiles,
   }) async {
-    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    final FushiDatabase db = FushiDatabase(dbDirectory);
     try {
       if (stripProgress) {
         await db.customStatement('DELETE FROM reader_positions');
@@ -1595,7 +1595,7 @@ class BackupService {
     required bool includeVideos,
     required bool includeStatistics,
   }) async {
-    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    final FushiDatabase db = FushiDatabase(dbDirectory);
     try {
       // (1) Always-wipe: search history and recent dictionary lookups are
       // private usage traces (BUG-832) — no content to follow, never wanted on
@@ -1721,7 +1721,7 @@ class BackupService {
     required bool stripLocalAudio,
   }) async {
     if (!stripFavorites && !stripFonts && !stripLocalAudio) return;
-    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    final FushiDatabase db = FushiDatabase(dbDirectory);
     try {
       if (stripFavorites) {
         await db.customStatement(
@@ -1753,7 +1753,7 @@ class BackupService {
   /// on write. No-op if the pref is absent, unparseable, or has no local-audio
   /// entry.
   static Future<void> _filterLocalAudioFromAudioSourceConfigs(
-      HibikiDatabase db) async {
+      FushiDatabase db) async {
     final rows = await db
         .customSelect('SELECT value FROM preferences '
             "WHERE key = '$_audioSourceConfigsPrefKey'")
@@ -1811,9 +1811,9 @@ class BackupService {
           'not be preserved for a category-excluded backup.');
       return;
     }
-    HibikiDatabase? db;
+    FushiDatabase? db;
     try {
-      db = HibikiDatabase(dbDirectory);
+      db = FushiDatabase(dbDirectory);
       final String safeBak =
           bakPath.replaceAll(r'\', '/').replaceAll("'", "''");
       final String inList =
@@ -2261,7 +2261,7 @@ class BackupService {
   ///
   /// The caller must close the app's DB first (same contract as
   /// [restoreBackup]); this opens its own connections. Crash safety: the
-  /// whole row merge is ONE [HibikiDatabase.transaction] (rolled back on any
+  /// whole row merge is ONE [FushiDatabase.transaction] (rolled back on any
   /// failure) plus a `pre-merge.bak` snapshot for manual recovery, and a
   /// `mode:'merge'` sidecar so [recoverPendingRestore] cleans up temp files.
   static Future<void> mergeRestoreBackup({
@@ -2316,8 +2316,8 @@ class BackupService {
       // 2) Migrate the backup DB up to the current schema so its columns align
       //    with the live DB for the ATTACH-based row merge. (Its schemaVersion
       //    is <= current — validated by the caller.) Opening + closing
-      //    HibikiDatabase on its file runs onUpgrade if needed.
-      final HibikiDatabase srcMigrate = HibikiDatabase.atFile(mergeSrcPath);
+      //    FushiDatabase on its file runs onUpgrade if needed.
+      final FushiDatabase srcMigrate = FushiDatabase.atFile(mergeSrcPath);
       try {
         await srcMigrate.customStatement('PRAGMA user_version');
       } finally {
@@ -2339,7 +2339,7 @@ class BackupService {
 
       // 4) Open the live DB, ATTACH the backup, run the whole row merge in one
       //    transaction (rolled back on any failure -> DB unchanged).
-      final HibikiDatabase db = HibikiDatabase(dbDirectory);
+      final FushiDatabase db = FushiDatabase(dbDirectory);
       try {
         final String safeSrc =
             mergeSrcPath.replaceAll(r'\', '/').replaceAll("'", "''");
@@ -2438,7 +2438,7 @@ class BackupService {
   /// extracted (only row counts matter), so this stays cheap even for a
   /// multi-GB backup.
   static Future<BackupMergePreview?> previewMergeRestore({
-    required HibikiDatabase liveDb,
+    required FushiDatabase liveDb,
     required String dbDirectory,
     required String zipPath,
   }) async {
@@ -2473,7 +2473,7 @@ class BackupService {
 
       // Migrate the extracted DB up to the current schema so its columns align
       // for the ATTACH-based COUNT queries (same contract as the real merge).
-      final HibikiDatabase srcMigrate = HibikiDatabase.atFile(tmpSrc);
+      final FushiDatabase srcMigrate = FushiDatabase.atFile(tmpSrc);
       try {
         await srcMigrate.customStatement('PRAGMA user_version');
       } finally {
@@ -2625,7 +2625,7 @@ class BackupService {
           '— local settings/profiles could not be preserved on import.');
       return;
     }
-    final db = HibikiDatabase(dbDirectory);
+    final db = FushiDatabase(dbDirectory);
     try {
       final String safeBak =
           bakPath.replaceAll(r'\', '/').replaceAll("'", "''");
@@ -2682,7 +2682,7 @@ class BackupService {
           'preserved for a settings/profiles-excluded backup.');
       return;
     }
-    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    final FushiDatabase db = FushiDatabase(dbDirectory);
     try {
       final String safeBak =
           bakPath.replaceAll(r'\', '/').replaceAll("'", "''");
@@ -2742,7 +2742,7 @@ class BackupService {
           'preserved on import.');
       return;
     }
-    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    final FushiDatabase db = FushiDatabase(dbDirectory);
     try {
       final String safeBak =
           bakPath.replaceAll(r'\', '/').replaceAll("'", "''");
@@ -2773,9 +2773,9 @@ class BackupService {
   /// silently wiping this device's own SFTP passwords / API keys on import.
   static Future<Map<String, String>> _readDeviceLocalPrefs(
       String dbDirectory) async {
-    HibikiDatabase? db;
+    FushiDatabase? db;
     try {
-      db = HibikiDatabase(dbDirectory);
+      db = FushiDatabase(dbDirectory);
       final all = await db.getAllPrefs();
       final out = <String, String>{};
       for (final MapEntry<String, String> entry in all.entries) {
@@ -2801,7 +2801,7 @@ class BackupService {
   /// preserved backend account, then durably flushes.
   static Future<void> _applyPreservedConfig(
       String dbDirectory, Map<String, String> prefs) async {
-    final db = HibikiDatabase(dbDirectory);
+    final db = FushiDatabase(dbDirectory);
     try {
       for (final entry in prefs.entries) {
         await db.setPref(entry.key, entry.value);
@@ -2835,7 +2835,7 @@ class BackupService {
 
   /// Deletes from the exported DB copy in [dbDirectory] every epub book whose
   /// `book_key` is NOT in [keep], plus all of that book's dependent rows via the
-  /// canonical [HibikiDatabase.deleteEpubBook] cascade (reader position,
+  /// canonical [FushiDatabase.deleteEpubBook] cascade (reader position,
   /// bookmarks, tag mappings, audiobook + cues, srt rows, shelf entry). [keep]
   /// empty strips every book (the "book content" category was unticked);
   /// a non-empty set keeps only the user-selected books (per-book export).
@@ -2850,7 +2850,7 @@ class BackupService {
     String dbDirectory,
     Set<String> keep,
   ) async {
-    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    final FushiDatabase db = FushiDatabase(dbDirectory);
     try {
       for (final EpubBookRow b in await db.getAllEpubBooks()) {
         if (keep.contains(b.bookKey)) continue;
@@ -2868,7 +2868,7 @@ class BackupService {
 
   /// Per-video analogue of [_retainBooks]: DELETEs every `video_books` row whose
   /// `book_uid` is NOT in [keep] (plus its dependent rows — subtitle cues, tag
-  /// mappings, shelf entry — via the canonical [HibikiDatabase.deleteVideoBook]
+  /// mappings, shelf entry — via the canonical [FushiDatabase.deleteVideoBook]
   /// cascade). [keep] empty strips every video (the video category was
   /// unticked); a non-empty set keeps only the user-selected videos (per-video
   /// export). Same root fix as books: without stripping the row a restore/merge
@@ -2878,7 +2878,7 @@ class BackupService {
     String dbDirectory,
     Set<String> keep,
   ) async {
-    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    final FushiDatabase db = FushiDatabase(dbDirectory);
     try {
       for (final VideoBookRow v in await db.allVideoBooks()) {
         if (keep.contains(v.bookUid)) continue;
@@ -2893,7 +2893,7 @@ class BackupService {
 
   /// Audiobook analogue of [_retainVideos] (BUG-781): DELETEs every `audiobooks`
   /// row whose `bookKey` is NOT in [keep], via the canonical
-  /// [HibikiDatabase.deleteAudiobookByBookKey] cascade (its `audio_cues` rows +
+  /// [FushiDatabase.deleteAudiobookByBookKey] cascade (its `audio_cues` rows +
   /// the `srt` shelf entry). [keep] empty strips every audiobook (the audiobooks
   /// category was unticked). Same root fix as books/videos: an audiobook whose
   /// audio never travelled must not survive as a "ghost audiobook" (a shelf entry
@@ -2905,7 +2905,7 @@ class BackupService {
     String dbDirectory,
     Set<String> keep,
   ) async {
-    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    final FushiDatabase db = FushiDatabase(dbDirectory);
     try {
       for (final AudiobookRow a in await db.getAllAudiobooks()) {
         if (keep.contains(a.bookKey)) continue;
@@ -3470,7 +3470,7 @@ class BackupService {
     final bool canAudio = oldAudio != null && newAudiobooksRoot != null;
     if (!canBooks && !canAudio) return;
 
-    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    final FushiDatabase db = FushiDatabase(dbDirectory);
     try {
       if (canBooks) {
         for (final EpubBookRow b in await db.getAllEpubBooks()) {
@@ -3535,7 +3535,7 @@ class BackupService {
   }) async {
     final String? oldFonts = meta.fontsRoot;
     if (oldFonts == null || newFontsRoot == null) return;
-    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    final FushiDatabase db = FushiDatabase(dbDirectory);
     try {
       final Map<String, String> prefs = await db.getAllPrefs();
       final String? catalog = prefs[_fontCatalogPrefKey];
@@ -3583,7 +3583,7 @@ class BackupService {
     required String? newLocalAudioRoot,
   }) async {
     if (meta.localAudioRoot == null || newLocalAudioRoot == null) return;
-    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    final FushiDatabase db = FushiDatabase(dbDirectory);
     try {
       final Map<String, String> prefs = await db.getAllPrefs();
       await _normalizePrefInPlace(
@@ -3610,7 +3610,7 @@ class BackupService {
   /// value, and writes it back when it changed. No-op when the key is absent or
   /// the value is unchanged.
   static Future<void> _normalizePrefInPlace(
-    HibikiDatabase db,
+    FushiDatabase db,
     Map<String, String> prefs,
     String key,
     String Function(String storedValue) transform,
@@ -3653,7 +3653,7 @@ class BackupService {
     required String? newVideosRoot,
   }) async {
     if (newVideosRoot == null || meta.videoFiles.isEmpty) return;
-    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    final FushiDatabase db = FushiDatabase(dbDirectory);
     try {
       for (final VideoBookRow row in await db.allVideoBooks()) {
         final String videoPath =
@@ -3940,7 +3940,7 @@ class BackupService {
   }
 
   String defaultFilename() {
-    final String date = HibikiTimeFormat.dayKey(DateTime.now());
+    final String date = FushiTimeFormat.dayKey(DateTime.now());
     return 'hibiki-backup-$date.hibiki.zip';
   }
 
@@ -4047,7 +4047,7 @@ class BackupService {
   /// 旧名兼容：已改名 [previewMergeRestore]。
   @Deprecated('已改名 previewMergeRestore，请改用新名')
   static Future<BackupMergePreview?> previewMergeImport({
-    required HibikiDatabase liveDb,
+    required FushiDatabase liveDb,
     required String dbDirectory,
     required String zipPath,
   }) =>

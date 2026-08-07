@@ -17,9 +17,9 @@ class StatActivityBuckets {
 
 /// 统计行 dateKey 的权威格式器：形如 `2026-06-07`（零填充月/日，可字典序比较），
 /// 与 DB 里 reading_statistics / mining_statistics / favorite_words 的 dateKey 同格式。
-/// 收藏/制卡记账、活动分桶共用此一处实现（委托 [HibikiTimeFormat.dayKey]），
+/// 收藏/制卡记账、活动分桶共用此一处实现（委托 [FushiTimeFormat.dayKey]），
 /// 避免各调用点各写一遍。
-String statDateKey(DateTime d) => HibikiTimeFormat.dayKey(d);
+String statDateKey(DateTime d) => FushiTimeFormat.dayKey(d);
 
 /// 「今天」的统计 dateKey（按本地时区当天）。记账写入（[addMiningCount] 等）取此值。
 String statTodayKey() => statDateKey(DateTime.now());

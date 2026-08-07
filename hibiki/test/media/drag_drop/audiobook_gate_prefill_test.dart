@@ -28,8 +28,8 @@ void main() {
   testWidgets(
     'prefill forces the import form even when the book already has audio',
     (WidgetTester tester) async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final AudiobookRepository repo = AudiobookRepository(db);
 

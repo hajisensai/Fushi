@@ -26,9 +26,9 @@ class LocalAudioPackageContents {
 }
 
 class SyncAssetPackageService {
-  SyncAssetPackageService({required HibikiDatabase db}) : _db = db;
+  SyncAssetPackageService({required FushiDatabase db}) : _db = db;
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
 
   Future<File> exportDictionaryPackage({
     required String dictionaryName,

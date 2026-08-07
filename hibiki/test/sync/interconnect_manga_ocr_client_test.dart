@@ -1,6 +1,6 @@
 /// 漫画 P3：互联「已配对主机代跑 OCR」客户端测试。
 ///
-/// 对真实 [HibikiSyncServer]（host 端 [MangaOcrService] 注 fake）走全流程：
+/// 对真实 [FushiSyncServer]（host 端 [MangaOcrService] 注 fake）走全流程：
 /// 能力探测 → 创建 → 有限并发上传 → start → 轮询退避 → 取结果写本地 →
 /// finished；外加能力缺失隐藏（老 host）、错误码映射、取消清理、退避纯函数。
 library;
@@ -101,12 +101,12 @@ class _FakeOcrService implements MangaOcrService {
 
 void main() {
   late Directory tmpRoot;
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late SyncRepository repo;
 
   setUp(() {
     tmpRoot = Directory.systemTemp.createTempSync('hbk_manga_ocr_cli');
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     repo = SyncRepository(db);
   });
 
@@ -115,9 +115,9 @@ void main() {
     if (tmpRoot.existsSync()) tmpRoot.deleteSync(recursive: true);
   });
 
-  Future<HibikiSyncServer> startHost(_FakeOcrService service,
+  Future<FushiSyncServer> startHost(_FakeOcrService service,
       {bool wireManager = true, MangaOcrHostJobManager? manager}) async {
-    final HibikiSyncServer server = HibikiSyncServer(
+    final FushiSyncServer server = FushiSyncServer(
       syncDataDir: Directory(p.join(tmpRoot.path, 'sync')).path,
       port: 0,
       token: 'tok',
@@ -131,8 +131,8 @@ void main() {
     );
     await server.start();
     addTearDown(server.stop);
-    await repo.setHibikiClientUrls(<HibikiClientUrl>[
-      HibikiClientUrl(url: 'http://127.0.0.1:${server.port}'),
+    await repo.setHibikiClientUrls(<FushiClientUrl>[
+      FushiClientUrl(url: 'http://127.0.0.1:${server.port}'),
     ]);
     await repo.setHibikiClientToken('tok');
     return server;
@@ -213,8 +213,8 @@ void main() {
 
   test('probe prefers a models-ready host over an earlier not-ready one',
       () async {
-    Future<HibikiSyncServer> spawn(bool ready) async {
-      final HibikiSyncServer server = HibikiSyncServer(
+    Future<FushiSyncServer> spawn(bool ready) async {
+      final FushiSyncServer server = FushiSyncServer(
         syncDataDir: Directory(p.join(tmpRoot.path, 'sync_$ready')).path,
         port: 0,
         token: 'tok',
@@ -228,12 +228,12 @@ void main() {
       return server;
     }
 
-    final HibikiSyncServer notReady = await spawn(false);
-    final HibikiSyncServer isReady = await spawn(true);
+    final FushiSyncServer notReady = await spawn(false);
+    final FushiSyncServer isReady = await spawn(true);
     // 未就绪的排在前面：修复前会被第一个命中并返回，就绪的那台永远选不上。
-    await repo.setHibikiClientUrls(<HibikiClientUrl>[
-      HibikiClientUrl(url: 'http://127.0.0.1:${notReady.port}'),
-      HibikiClientUrl(url: 'http://127.0.0.1:${isReady.port}'),
+    await repo.setHibikiClientUrls(<FushiClientUrl>[
+      FushiClientUrl(url: 'http://127.0.0.1:${notReady.port}'),
+      FushiClientUrl(url: 'http://127.0.0.1:${isReady.port}'),
     ]);
     await repo.setHibikiClientToken('tok');
 

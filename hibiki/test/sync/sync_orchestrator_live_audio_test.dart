@@ -38,15 +38,15 @@ import 'fake_asset_store.dart';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-HibikiDatabase _memDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _memDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 /// 在 host [db] 里植入一本「带内容」的 EPUB：把一个 [EpubImporter] 能真正解析的
 /// 最小 EPUB 结构（mimetype + container.xml + content.opf + 一个 xhtml 章节）写入
 /// [extractDir]，并插入 EpubBooks 行。host 的 `exportBook` 会把该目录重打包成 .epub
 /// 供 `getRemoteBook` 下载，client 再走真实 `EpubImporter.importFromPath` 导入。
 Future<void> _seedHostBookWithContent({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required String title,
   required String bookKey,
   required String extractDir,
@@ -104,10 +104,10 @@ Future<InterconnectSyncBackend> _buildClientBackend({
   required String base,
   required String token,
 }) async {
-  final HibikiDatabase db = _memDb();
+  final FushiDatabase db = _memDb();
   final SyncRepository repo = SyncRepository(db);
-  await repo.setHibikiClientUrls(<HibikiClientUrl>[
-    HibikiClientUrl(url: base, enabled: true),
+  await repo.setHibikiClientUrls(<FushiClientUrl>[
+    FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
   final InterconnectSyncBackend backend =
@@ -119,7 +119,7 @@ Future<InterconnectSyncBackend> _buildClientBackend({
 
 /// 构造只开 syncLocalAudio 或 syncAudioBookFiles 的 orchestrator。
 SyncOrchestrator _audioOrchestrator({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required SyncBackend backend,
   required Directory tmp,
   bool syncLocalAudio = false,
@@ -272,7 +272,7 @@ class _FakeSyncBackend implements SyncBackend {
 // ── main ──────────────────────────────────────────────────────────────────────
 
 void main() {
-  // 这些用例跑真实 HibikiSyncServer（真 socket），故**不能**初始化
+  // 这些用例跑真实 FushiSyncServer（真 socket），故**不能**初始化
   // TestWidgetsFlutterBinding（它会把所有 HttpClient 请求拦成 HTTP 400）。
   // 用例 B2 的 client 侧真实 EpubImporter 需要书籍存储基目录，而 path_provider
   // 在无 binding 时不可用 → 改用 EpubStorage.debugBaseDirectoryOverride 注入。
@@ -296,8 +296,8 @@ void main() {
   // ── 用例 A：互联 live + syncLocalAudio=true ──────────────────────────────
 
   group('用例A: 互联 live 路径（syncLocalAudio=true）', () {
-    late HibikiSyncServer server;
-    late HibikiDatabase hostDb;
+    late FushiSyncServer server;
+    late FushiDatabase hostDb;
     late String serverBase;
     const String token = 'orch-live-audio-token';
 
@@ -341,7 +341,7 @@ void main() {
         onLocalAudioImported: (LocalAudioPackageContents c) async {},
       );
 
-      server = HibikiSyncServer(
+      server = FushiSyncServer(
         syncDataDir: p.join(work.path, 'server_data'),
         port: 0,
         token: token,
@@ -356,7 +356,7 @@ void main() {
 
     test('pull：本地无 NHK ラジオ，syncLocalAudio=true → 拉取并注册，localAudioImported=1',
         () async {
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_pull'))
@@ -386,7 +386,7 @@ void main() {
     });
 
     test('push：本地有 Local ライブラリ，host 无 → 推送到 host', () async {
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
 
       // 本地音频来源：写最小 SQLite 文件头（exportLocalAudioPackage 只 zip，不解析）
@@ -443,7 +443,7 @@ void main() {
     });
 
     test('live 路径不经 __local_audio__ 暂存目录（服务端 sync-data 下无该目录）', () async {
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_no_staging'))
@@ -481,8 +481,8 @@ void main() {
   // ── 用例 B：互联 live + syncAudioBookFiles=true（上传语义）───────────────
 
   group('用例B: 互联 live 上传路径（syncAudioBookFiles=true）', () {
-    late HibikiSyncServer server;
-    late HibikiDatabase hostDb;
+    late FushiSyncServer server;
+    late FushiDatabase hostDb;
     late String serverBase;
     const String token = 'orch-live-audiobook-token';
 
@@ -543,7 +543,7 @@ void main() {
         onLocalAudioImported: (LocalAudioPackageContents c) async {},
       );
 
-      server = HibikiSyncServer(
+      server = FushiSyncServer(
         syncDataDir: p.join(work.path, 'server_data_b'),
         port: 0,
         token: token,
@@ -557,7 +557,7 @@ void main() {
     tearDown(() async => server.stop());
 
     test('本地无 HostAudioBook 有声书 → 不自动拉取远端独有有声书', () async {
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_ab_pull'))
@@ -584,7 +584,7 @@ void main() {
     test(
         'pull（TODO-809）：本地有 HostAudioBook 的 EPUB 但缺音频，host 有 → '
         '双向拉取下载并解包落盘', () async {
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
 
       // 本地已有同 bookKey 的 EPUB 书行，但没有 Audiobook/SrtBook（缺音频）。
@@ -628,7 +628,7 @@ void main() {
     });
 
     test('push：本地有 LocalAudioBook 有声书，host 无 → 推送到 host', () async {
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
 
       // 插入本地有声书（本地独有，host 不含此 bookKey）
@@ -694,8 +694,8 @@ void main() {
   // ── 用例 B2：互联 live + 远端-only 带有声书**不再**自动灌 EPUB+音频（TODO-1291 决策 A）─
 
   group('用例B2: 远端-only 带有声书 → 不自动下载/灌书架，等手动下载（TODO-1291）', () {
-    late HibikiSyncServer server;
-    late HibikiDatabase hostDb;
+    late FushiSyncServer server;
+    late FushiDatabase hostDb;
     late String serverBase;
     const String token = 'orch-live-remote-only-token';
 
@@ -760,7 +760,7 @@ void main() {
         onLocalAudioImported: (LocalAudioPackageContents c) async {},
       );
 
-      server = HibikiSyncServer(
+      server = FushiSyncServer(
         syncDataDir: p.join(work.path, 'server_data_b2'),
         port: 0,
         token: token,
@@ -776,7 +776,7 @@ void main() {
     test(
         'TODO-1291 解耦：远端-only 带有声书的书 → sweep 后本地**不**新增 '
         'EpubBooks/Audiobooks 行（不自动灌书架，等手动下载）', () async {
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
 
       // 前置：本地完全没有这本书。
@@ -817,7 +817,7 @@ void main() {
     });
 
     test('回归：远端-only 纯文本书（无有声书）→ sweep 后本地仍无此书（守边界）', () async {
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_b2_text'))
@@ -849,8 +849,8 @@ void main() {
   // ── 用例 C：互联 + 开关关 ────────────────────────────────────────────────
 
   group('用例C: 互联 + 开关关（syncLocalAudio=false / syncAudioBookFiles=false）', () {
-    late HibikiSyncServer server;
-    late HibikiDatabase hostDb;
+    late FushiSyncServer server;
+    late FushiDatabase hostDb;
     late String serverBase;
     const String token = 'orch-live-audio-off-token';
 
@@ -867,7 +867,7 @@ void main() {
           fail('onLocalAudioImported 不应在开关关时被调用');
         },
       );
-      server = HibikiSyncServer(
+      server = FushiSyncServer(
         syncDataDir: p.join(work.path, 'server_data_c'),
         port: 0,
         token: token,
@@ -883,7 +883,7 @@ void main() {
     test(
         'syncLocalAudio=false → run() 不触发本地音频传输（localAudioImported=0, localAudioExported=0）',
         () async {
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_c_audio'))
@@ -915,14 +915,14 @@ void main() {
 
   // ── 用例 D：云后端走原 syncLocalAudioPackages 路径 ───────────────────────
 
-  group('用例D: 云后端（非 HibikiClient）走 __local_audio__ 暂存路径', () {
+  group('用例D: 云后端（非 FushiClient）走 __local_audio__ 暂存路径', () {
     test(
         'FakeSyncBackend + syncLocalAudio=true → 调用 ensureNamespace(__local_audio__)，不走 live 端点',
         () async {
       final FakeAssetStore store = FakeAssetStore();
       final _FakeSyncBackend backend = _FakeSyncBackend(store);
       final Directory tmp = Directory(p.join(work.path, 'tmp_d'))..createSync();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       final SyncOrchestrator orch = _audioOrchestrator(
@@ -948,7 +948,7 @@ void main() {
       final _FakeSyncBackend backend = _FakeSyncBackend(store);
       final Directory tmp = Directory(p.join(work.path, 'tmp_d2'))
         ..createSync();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       // 无本地有声书，syncAudiobookPackages 扫 getAllEpubBooks 返空列表 → 无传输
@@ -979,8 +979,8 @@ void main() {
   // 有配对 → 导出计数 +1（整本上传）；无配对 → skip（守住正确的防御契约）。
 
   group('用例E: 两条 push 路径都受配对 SrtBook 门控（TODO-894）', () {
-    late HibikiSyncServer server;
-    late HibikiDatabase hostDb;
+    late FushiSyncServer server;
+    late FushiDatabase hostDb;
     late String serverBase;
     const String token = 'orch-todo894-token';
 
@@ -998,7 +998,7 @@ void main() {
         audioDatabaseRoot: hostAudioRoot,
         onLocalAudioImported: (LocalAudioPackageContents c) async {},
       );
-      server = HibikiSyncServer(
+      server = FushiSyncServer(
         syncDataDir: p.join(work.path, 'server_data_e'),
         port: 0,
         token: token,
@@ -1014,7 +1014,7 @@ void main() {
     /// [withSrtBook] is true also writes the paired srt_books row (the TODO-894
     /// fix). Returns the bookKey.
     Future<String> seedLocalAudiobook(
-      HibikiDatabase db, {
+      FushiDatabase db, {
       required bool withSrtBook,
     }) async {
       const String bookKey = 'Todo894Book';
@@ -1054,7 +1054,7 @@ void main() {
     }
 
     test('① live push：有配对 SrtBook → 整本上传（audiobooksExported=1）', () async {
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await seedLocalAudiobook(localDb, withSrtBook: true);
 
@@ -1077,7 +1077,7 @@ void main() {
 
     test('① live push：无配对 SrtBook → skip（audiobooksExported=0，守防御分支）',
         () async {
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await seedLocalAudiobook(localDb, withSrtBook: false);
 
@@ -1105,7 +1105,7 @@ void main() {
         () async {
       final FakeAssetStore store = FakeAssetStore();
       final _FakeSyncBackend backend = _FakeSyncBackend(store);
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await seedLocalAudiobook(localDb, withSrtBook: true);
 
@@ -1130,7 +1130,7 @@ void main() {
         () async {
       final FakeAssetStore store = FakeAssetStore();
       final _FakeSyncBackend backend = _FakeSyncBackend(store);
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await seedLocalAudiobook(localDb, withSrtBook: false);
 

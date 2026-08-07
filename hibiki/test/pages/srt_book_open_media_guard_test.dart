@@ -31,7 +31,7 @@ void main() {
           'currentMediaSource null for SRT books.',
     );
     expect(openSrtBook, isNot(contains('ReaderHibikiPage(')));
-    expect(openSrtBook, isNot(contains('HibikiAppUiScaleNeutralizer(')));
+    expect(openSrtBook, isNot(contains('FushiAppUiScaleNeutralizer(')));
   });
 
   test('SRT shelf tap still delegates to the SRT open method', () {

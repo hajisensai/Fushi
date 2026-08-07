@@ -489,7 +489,7 @@ class GalgameHelperInstaller {
     }
     if (!context.mounted) return false;
     if (ensured) return true;
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.game_helper_bundle_missing,
       severity: ToastSeverity.error,
     );

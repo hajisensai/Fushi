@@ -8,7 +8,7 @@ import 'package:fushi/src/sync/immersion_mine_payload.dart';
 /// `message`（失败原因 / 音频落空警告）与 `detail`（技术细节）——浏览器扩展 content.js
 /// 据此 toast 显因、区分「真成功 / 卡建了但没音频」。此前只回 `{result}`，失败原因被
 /// [buildRemoteMineResponse] 丢弃 → 「制卡失败报成功 + 诊断黑洞」。
-class _DiagMining implements HibikiRemoteMiningService {
+class _DiagMining implements FushiRemoteMiningService {
   RemoteMineResult entryResult = const RemoteMineResult(result: 'success');
   RemoteMineResult immersionResult = const RemoteMineResult(result: 'success');
 

@@ -14,8 +14,8 @@ import 'package:fushi/src/profile/profile_repository.dart';
 // depend on: pinned-id selection (M1), new+delete flow (M2), per-Profile
 // snapshot carry of the new keys (M3).
 
-HibikiDatabase _testDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 class _FakeAnkiRepository extends BaseAnkiRepository {
   AnkiSettings _settings = const AnkiSettings();
@@ -49,7 +49,7 @@ class _FakeAnkiRepository extends BaseAnkiRepository {
   Future<bool> createDeck(String name) => throw UnimplementedError();
 }
 
-ThemeNotifier _notifier(HibikiDatabase db) {
+ThemeNotifier _notifier(FushiDatabase db) {
   int counter = 0;
   return ThemeNotifier(
     db,
@@ -59,7 +59,7 @@ ThemeNotifier _notifier(HibikiDatabase db) {
 }
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late ThemeNotifier n;
 
   setUp(() async {

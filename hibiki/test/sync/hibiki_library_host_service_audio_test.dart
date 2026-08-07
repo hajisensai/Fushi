@@ -16,12 +16,12 @@ import 'package:path/path.dart' as p;
 
 // ── 辅助 ──────────────────────────────────────────────────────────────────────
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 /// 在 [db] 中插入一个有声书（Audiobooks + SrtBooks + AudioCues）。
 /// 同时在 [audioDir] 写入假音频/对齐文件以满足 exportAudioDatabasePackage。
 Future<String> _insertAudiobook({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required String bookKey,
   required Directory audioDir,
 }) async {
@@ -66,7 +66,7 @@ Future<String> _insertAudiobook({
 
 /// 构造一个用于音频测试的 [AppModelLibraryHostService]。
 AppModelLibraryHostService _buildSvc({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   List<LocalAudioDbEntry> localAudioEntries = const <LocalAudioDbEntry>[],
   Directory? localAudioStagingDir,
   List<LocalAudioPackageContents>? importedAudioContents,
@@ -248,7 +248,7 @@ void main() {
   // ══════════════════════════════════════════════════════════════════════════
 
   group('纯 SRT standalone 有声书', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late Directory temp;
 
     setUp(() async {
@@ -322,7 +322,7 @@ void main() {
         } catch (_) {}
       });
 
-      final HibikiDatabase targetDb = _memDb();
+      final FushiDatabase targetDb = _memDb();
       addTearDown(targetDb.close);
       final Directory targetAudio = Directory(p.join(temp.path, 'target'));
       await SyncAssetPackageService(db: targetDb).importAudioDatabasePackage(
@@ -344,7 +344,7 @@ void main() {
   // ══════════════════════════════════════════════════════════════════════════
 
   group('_assertSafeName 对 displayName/bookKey 的路径穿越防护', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
 
     setUp(() {
       db = _memDb();
@@ -417,7 +417,7 @@ void main() {
 
   group('AppModelLibraryHostService 本地音频', () {
     late Directory tmp;
-    late HibikiDatabase db;
+    late FushiDatabase db;
 
     setUp(() {
       tmp = Directory.systemTemp.createTempSync('hibiki_local_audio_svc');
@@ -575,7 +575,7 @@ void main() {
 
   group('AppModelLibraryHostService 有声书', () {
     late Directory tmp;
-    late HibikiDatabase db;
+    late FushiDatabase db;
 
     setUp(() {
       tmp = Directory.systemTemp.createTempSync('hibiki_audiobook_svc');
@@ -699,7 +699,7 @@ void main() {
       });
 
       // 用不同 DB 和 audioDatabaseRoot 来 import，模拟跨设备场景
-      final HibikiDatabase targetDb = _memDb();
+      final FushiDatabase targetDb = _memDb();
       addTearDown(targetDb.close);
       final Directory targetAudioRoot = Directory(p.join(tmp.path, 'target'))
         ..createSync();

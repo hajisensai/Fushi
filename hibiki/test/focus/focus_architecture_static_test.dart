@@ -23,7 +23,7 @@ void main() {
         source,
         isNot(contains('Scrollable.ensureVisible')),
         reason: '$normalized should delegate focus-driven scroll to '
-            'HibikiFocusScroll instead of owning it locally.',
+            'FushiFocusScroll instead of owning it locally.',
       );
     }
   });

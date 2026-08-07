@@ -19,7 +19,7 @@ void main() {
 
   /// 读某合集（自然键）当前成员的 entryKey 列表；合集不存在返回 null。
   Future<List<String>?> membersOf(
-      HibikiDatabase db, String name, String type) async {
+      FushiDatabase db, String name, String type) async {
     final MediaCollectionRow? row =
         await db.getMediaCollectionByNaturalKey(name, type);
     if (row == null) return null;
@@ -32,7 +32,7 @@ void main() {
     // ── target（当前设备）：制造两类墓碑 ─────────────────────────────────────
     final Directory curDir = await tempDir('mg_tomb_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final HibikiDatabase cur = HibikiDatabase(curDir.path);
+    final FushiDatabase cur = FushiDatabase(curDir.path);
 
     // Keep 合集：曾有 [a, b]，用户移出 b → 留成员墓碑 {Keep, epub, b}。
     final int keep = await cur.createMediaCollection('Keep');
@@ -48,7 +48,7 @@ void main() {
     // ── src（备份，更旧快照）：含被移出成员 + 已删合集 + 全新合集/成员 ─────────
     final Directory srcDir = await tempDir('mg_tomb_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final HibikiDatabase src = HibikiDatabase(srcDir.path);
+    final FushiDatabase src = FushiDatabase(srcDir.path);
     // Keep：备份仍有 b（应被墓碑挡下）+ 新成员 c（无墓碑，应正常合入）。
     final int sKeep = await src.createMediaCollection('Keep');
     await src.addToCollection(sKeep, MediaKind.epub, 'a');
@@ -75,7 +75,7 @@ void main() {
     );
 
     // ── 断言 ──────────────────────────────────────────────────────────────────
-    final HibikiDatabase after = HibikiDatabase(curDir.path);
+    final FushiDatabase after = FushiDatabase(curDir.path);
     addTearDown(after.close);
 
     // Keep：b 被成员墓碑挡下不复活；a 保留；c（无墓碑）正常合入。

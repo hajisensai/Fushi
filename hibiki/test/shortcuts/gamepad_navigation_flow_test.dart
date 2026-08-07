@@ -12,14 +12,14 @@ import 'package:fushi/src/utils/components/hibiki_focus_ring.dart';
 /// the integration test exercises the same flow on a real device.
 void main() {
   // TODO-700 T1：B 经注册表 globalBack 解析（可改键）；默认表已把 B 绑到 globalBack。
-  HibikiShortcutRegistry windowsRegistry() =>
-      HibikiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
+  FushiShortcutRegistry windowsRegistry() =>
+      FushiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
 
   Widget appWithLayer(Widget home, GlobalKey<NavigatorState> navKey) {
     return MaterialApp(
       navigatorKey: navKey,
       home: home,
-      builder: (context, child) => HibikiFocusRing(
+      builder: (context, child) => FushiFocusRing(
         child: wrapWithGlobalNavigation(
           navigatorKey: navKey,
           registry: windowsRegistry(),

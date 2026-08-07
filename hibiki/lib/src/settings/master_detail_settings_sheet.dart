@@ -6,13 +6,13 @@ import 'package:fushi/utils.dart';
 /// 设置子页（push 进去的二级页）顶部的返回页头：左侧返回按钮 + 标题。
 ///
 /// 平台自适应：Cupertino 用 [CupertinoButton] + `chevron_back`，其余平台用共享的
-/// [HibikiIconButton] + `arrow_back`，标题用主题排版（不写死字号）。
+/// [FushiIconButton] + `arrow_back`，标题用主题排版（不写死字号）。
 ///
 /// 由阅读器（[ReaderQuickSettingsSheet]）与视频（[VideoQuickSettingsSheet]）的窄窗
 /// push 子页共用——两边原本各有一份逐字符相同的私有 `_InBookSettingsHeader` /
 /// `_VideoSettingsHeader`，抽到此处消除重复（TODO-583，零行为变化）。
-class HibikiSettingsSubPageHeader extends StatelessWidget {
-  const HibikiSettingsSubPageHeader({
+class FushiSettingsSubPageHeader extends StatelessWidget {
+  const FushiSettingsSubPageHeader({
     required this.title,
     required this.onBack,
     super.key,
@@ -24,7 +24,7 @@ class HibikiSettingsSubPageHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final TextStyle? titleStyle = cupertino
         ? CupertinoTheme.of(context).textTheme.navTitleTextStyle
         : Theme.of(context).textTheme.titleMedium;
@@ -45,7 +45,7 @@ class HibikiSettingsSubPageHeader extends StatelessWidget {
             ),
           )
         else
-          HibikiIconButton(
+          FushiIconButton(
             icon: icon,
             tooltip: t.back,
             padding: EdgeInsets.all(tokens.spacing.gap / 2),
@@ -66,7 +66,7 @@ class HibikiSettingsSubPageHeader extends StatelessWidget {
 }
 
 /// 「快速设置」类弹窗的 master-detail 外壳骨架：阅读器与视频两张设置 sheet 的
-/// `build` 方法原本是逐字构造相同的外壳（[PopScope] + [HibikiModalSheetFrame] +
+/// `build` 方法原本是逐字构造相同的外壳（[PopScope] + [FushiModalSheetFrame] +
 /// [LayoutBuilder] 按宽高判定宽/窄 + 窄窗 [SingleChildScrollView] + [AnimatedSize]），
 /// 抽到此处共享（TODO-583，零行为变化）。
 ///
@@ -82,8 +82,8 @@ class HibikiSettingsSubPageHeader extends StatelessWidget {
 /// 高度——同设备同尺寸下书籍/视频表现一致，高度不足时直接 push 而非出滚动条。判定结果
 /// 经 [onWideChanged] 回写给调用方的 `_isWide` State 字段，供 [PopScope.canPop] 在下一
 /// 帧读取（宽窗下返回键直接关弹窗，不卡在「返回上一级」）。
-class HibikiMasterDetailSettingsSheet extends StatelessWidget {
-  const HibikiMasterDetailSettingsSheet({
+class FushiMasterDetailSettingsSheet extends StatelessWidget {
+  const FushiMasterDetailSettingsSheet({
     required this.subPageActive,
     required this.onPopToParent,
     required this.isWide,
@@ -138,7 +138,7 @@ class HibikiMasterDetailSettingsSheet extends StatelessWidget {
     required double horizontal,
     required double top,
   }) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return EdgeInsets.fromLTRB(
       horizontal,
       top,
@@ -160,7 +160,7 @@ class HibikiMasterDetailSettingsSheet extends StatelessWidget {
           onPopToParent();
         }
       },
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         maxHeightFactor: maxHeightFactor,
         // master-detail 绝不能套外层滚动：外层 SingleChildScrollView 会给 supporting
         // pane 布局「无界高度」→ Row(stretch) 拿 h=Infinity（debug 崩 / release 两 pane
@@ -184,7 +184,7 @@ class HibikiMasterDetailSettingsSheet extends StatelessWidget {
               // 滚动性能：窄窗（含手机 bottom sheet）用一个非懒的
               // SingleChildScrollView + Column（BUG-037/042 刻意非懒，保证滚动
               // 范围恒定）。但 SingleChildScrollView 滚动时会重绘整棵子树，正文里
-              // 未加 RepaintBoundary 的 CustomPaint（如主题色卡 HibikiSchemeSwatch
+              // 未加 RepaintBoundary 的 CustomPaint（如主题色卡 FushiSchemeSwatch
               // 的 SchemeDiagonalPainter）每帧都会重跑 paint() → 滚动掉帧。这里把
               // 整块正文包一层 RepaintBoundary：正文只栅格化一次进缓存层，滚动仅
               // 按偏移合成该层、不再重绘子树。不改布局/滚动语义，纯合成优化。

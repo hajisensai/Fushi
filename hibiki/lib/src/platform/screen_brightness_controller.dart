@@ -23,7 +23,7 @@ class ScreenBrightnessController {
   static final ScreenBrightnessController instance =
       ScreenBrightnessController._();
 
-  static const MethodChannel _channel = HibikiChannels.screenBrightness;
+  static const MethodChannel _channel = FushiChannels.screenBrightness;
 
   /// 是否真能调节屏幕亮度。桌面恒 false（诚实门控），移动端 true。
   bool get canControl => isMobilePlatform;

@@ -14,7 +14,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 // ── fake 库服务（与 hibiki_sync_server_library_test 同款）─────────────────
 
-class _FakeLibraryService implements HibikiLibraryHostService {
+class _FakeLibraryService implements FushiLibraryHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
   Future<File?> clipVideoAudio(String id,
@@ -211,19 +211,19 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 
 // ── helper: 建 SyncRepository + 配置 backend ─────────────────────────────
 
-HibikiDatabase _testDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 /// 把 url + token 写库，restoreAuth + authenticate，返回配好的 backend。
 Future<InterconnectSyncBackend> _buildBackend({
   required String base,
   required String token,
 }) async {
-  final HibikiDatabase db = _testDb();
+  final FushiDatabase db = _testDb();
   final SyncRepository repo = SyncRepository(db);
 
-  await repo.setHibikiClientUrls(<HibikiClientUrl>[
-    HibikiClientUrl(url: base, enabled: true),
+  await repo.setHibikiClientUrls(<FushiClientUrl>[
+    FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
 
@@ -236,14 +236,14 @@ Future<InterconnectSyncBackend> _buildBackend({
 }
 
 void main() {
-  late HibikiSyncServer server;
+  late FushiSyncServer server;
   late _FakeLibraryService lib;
   late String base;
   const String token = 'live-dict-token';
 
   setUp(() async {
     lib = _FakeLibraryService();
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir: Directory.systemTemp.createTempSync('hbk_live_srv').path,
       port: 0,
       token: token,
@@ -315,10 +315,10 @@ void main() {
 
   test('listRemoteDictionaries with wrong token throws SyncAuthError',
       () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     final SyncRepository repo = SyncRepository(db);
-    await repo.setHibikiClientUrls(<HibikiClientUrl>[
-      HibikiClientUrl(url: base, enabled: true),
+    await repo.setHibikiClientUrls(<FushiClientUrl>[
+      FushiClientUrl(url: base, enabled: true),
     ]);
     // 故意用错误 token。
     await repo.setHibikiClientToken('wrong-token');

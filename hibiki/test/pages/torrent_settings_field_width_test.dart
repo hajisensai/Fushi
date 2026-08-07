@@ -43,7 +43,7 @@ class _TestAppModel extends AppModel {
 }
 
 Widget _harness({required double paneWidth}) {
-  final HibikiDatabase db = HibikiDatabase.forTesting(
+  final FushiDatabase db = FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
@@ -69,7 +69,7 @@ Widget _harness({required double paneWidth}) {
         platform: TargetPlatform.android,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
         extensions: <ThemeExtension<dynamic>>[
-          HibikiDesignSystemTheme(themeNotifier.designSystemTheme),
+          FushiDesignSystemTheme(themeNotifier.designSystemTheme),
         ],
       ),
       home: Scaffold(
@@ -114,13 +114,13 @@ void main() {
     );
 
     final double contentLeft = tester.getTopLeft(content).dx;
-    // HibikiSegmentedStrip 是泛型控件，实例的 runtimeType 是
-    // HibikiSegmentedStrip<DownloadNetworkProxyMode> / <String> / <int>；
+    // FushiSegmentedStrip 是泛型控件，实例的 runtimeType 是
+    // FushiSegmentedStrip<DownloadNetworkProxyMode> / <String> / <int>；
     // find.byType 走 runtimeType 精确相等，对泛型永远 0 命中。按 Dart 的协变
-    // 子类型关系用 `is HibikiSegmentedStrip<Object>` 判定才能覆盖全部实参。
+    // 子类型关系用 `is FushiSegmentedStrip<Object>` 判定才能覆盖全部实参。
     final Finder strips = find.byWidgetPredicate(
-      (Widget widget) => widget is HibikiSegmentedStrip<Object>,
-      description: 'HibikiSegmentedStrip<*>',
+      (Widget widget) => widget is FushiSegmentedStrip<Object>,
+      description: 'FushiSegmentedStrip<*>',
     );
     expect(strips, findsWidgets);
     expect(

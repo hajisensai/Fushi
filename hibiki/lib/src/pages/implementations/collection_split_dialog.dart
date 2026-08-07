@@ -108,9 +108,9 @@ class _CollectionSplitDialogState extends State<CollectionSplitDialog> {
               const SizedBox(height: 8),
               // 共享 MD3 行 + 裸 Checkbox 为 leading，整行 onTap 翻转——等价旧
               // CheckboxListTile 的取值/回调/标题，但走设计令牌的行高与内边距。
-              HibikiListItem(
+              FushiListItem(
                 key: const ValueKey<String>('collection-split-keep-original'),
-                density: HibikiListDensity.compact,
+                density: FushiListDensity.compact,
                 padding: EdgeInsets.zero,
                 onTap: () => setState(() => _keepOriginal = !_keepOriginal),
                 leading: Checkbox(

@@ -4,12 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 
 // TODO-1143 行为守卫：宽窗阅读器快捷设置左父菜单固定 208px，长分类标签「布局与显示」
-// (选中加粗) 曾被 HibikiListItem 默认 titleMaxLines:1 + ellipsis 截断成「布局与…」。
+// (选中加粗) 曾被 FushiListItem 默认 titleMaxLines:1 + ellipsis 截断成「布局与…」。
 // 修复给 _buildWidePane 的分类项传 titleMaxLines: 2。
 //
 // widget 测试用固定的测试字体（度量与真机中日韩字体不同），无法在 208px 下可靠复现
 // 真机的字符级截断；因此这里守两条字体无关的不变量：
-//   1. HibikiListItem 真把 titleMaxLines 透传到标题的 RenderParagraph（修复所依赖的
+//   1. FushiListItem 真把 titleMaxLines 透传到标题的 RenderParagraph（修复所依赖的
 //      机制）——默认 1（会截断），传 2 后放行第二行。
 //   2. 用标题的真实文字样式跑 TextPainter：在「单行放不下」的净宽内，titleMaxLines:1
 //      会 didExceedMaxLines（触发 ellipsis），titleMaxLines:2 则不会（两行救回）。
@@ -23,9 +23,9 @@ void main() {
           alignment: Alignment.topLeft,
           child: SizedBox(
             width: 208, // 左父菜单 kHibikiSettingsSupportingPaneWidth。
-            child: HibikiListItem(
+            child: FushiListItem(
               selected: true,
-              selectedShape: HibikiListItemSelectedShape.pill,
+              selectedShape: FushiListItemSelectedShape.pill,
               leading: const Icon(Icons.view_agenda_outlined),
               title: const Text(longLabel),
               titleMaxLines: titleMaxLines,
@@ -42,7 +42,7 @@ void main() {
   }
 
   testWidgets(
-    'TODO-1143: HibikiListItem forwards titleMaxLines to the nav label so the '
+    'TODO-1143: FushiListItem forwards titleMaxLines to the nav label so the '
     'wide-pane fix (2) actually lifts the truncating default (1)',
     (WidgetTester tester) async {
       // 默认（1）——正是截断长标签成「布局与…」的根因。
@@ -50,7 +50,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       expect(titleParagraph(tester).maxLines, 1,
-          reason: 'HibikiListItem 默认 titleMaxLines:1（截断根因）');
+          reason: 'FushiListItem 默认 titleMaxLines:1（截断根因）');
 
       // 修复值（2）——第二行放行。
       await tester.pumpWidget(wrap(2));

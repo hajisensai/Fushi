@@ -107,7 +107,7 @@ void main() {
     }
   });
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late PlatformServices platformServices;
   late FakeAnkiRepository ankiRepository;
   late AppModel appModel;
@@ -122,7 +122,7 @@ void main() {
     // 不完整，断言计数偏少）。给空初值让其即时回退默认根（mock 的 path_provider）。
     SharedPreferences.setMockInitialValues(<String, Object>{});
     LocaleSettings.setLocale(AppLocale.zhCn);
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     storeDir = Directory.systemTemp.createTempSync('hibiki_home_video_store');
@@ -270,7 +270,7 @@ void main() {
             navigatorKey: captureToasts ? toastNavigatorKey : null,
             // HomeVideoPage 不再自带 Scaffold（与书架/词典 tab 统一，运行时挂在
             // HomePage 的外层 Scaffold 内）；测试照样在 Scaffold 内 pump，
-            // HibikiPageHeader 的 HibikiIconButton(InkWell) 才有 Material 祖先。
+            // FushiPageHeader 的 FushiIconButton(InkWell) 才有 Material 祖先。
             home: Scaffold(
               body: HomeVideoPage(repo: repo ?? VideoBookRepository(db)),
             ),
@@ -281,8 +281,8 @@ void main() {
   Future<void> dragTopTagToVideoCard(WidgetTester tester) async {
     final Finder tagChip = find
         .descendant(
-          of: find.byType(HibikiTagFilterBar),
-          matching: find.widgetWithText(HibikiTagChip, 'Anime'),
+          of: find.byType(FushiTagFilterBar),
+          matching: find.widgetWithText(FushiTagChip, 'Anime'),
         )
         .first;
     final Finder card =
@@ -305,12 +305,12 @@ void main() {
 
     expect(find.text('My Episode'), findsOneWidget);
     // 标签来自共享 BookTags 池，经 video_book_tag_mappings 映射。
-    // 卡片与顶部筛选条现都用同款共享 HibikiTagChip，故按卡片范围定位避免与
+    // 卡片与顶部筛选条现都用同款共享 FushiTagChip，故按卡片范围定位避免与
     // 筛选条里的同名标签冲突。
     expect(
       find.descendant(
-        of: find.byType(HibikiCard),
-        matching: find.widgetWithText(HibikiTagChip, 'Anime'),
+        of: find.byType(FushiCard),
+        matching: find.widgetWithText(FushiTagChip, 'Anime'),
       ),
       findsOneWidget,
     );
@@ -327,11 +327,11 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await openCardMenu(tester, find.byType(HibikiCard).first);
+    await openCardMenu(tester, find.byType(FushiCard).first);
 
     expect(find.text(t.batch_selected_count(n: 1)), findsNothing,
         reason: '触屏必须先点明确的「选择」入口，长按不能暗中进入多选');
-    expect(find.byType(HibikiDialogFrame), findsOneWidget);
+    expect(find.byType(FushiDialogFrame), findsOneWidget);
     expect(find.text(t.tag_label), findsOneWidget);
     expect(find.text(t.video_rename), findsOneWidget);
     expect(find.text(t.srt_import_pick_cover), findsOneWidget);
@@ -352,10 +352,10 @@ void main() {
       await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
 
-      await openCardMenu(tester, find.byType(HibikiCard).first);
+      await openCardMenu(tester, find.byType(FushiCard).first);
 
       expect(find.text(t.batch_selected_count(n: 1)), findsNothing);
-      expect(find.byType(HibikiDialogFrame), findsOneWidget);
+      expect(find.byType(FushiDialogFrame), findsOneWidget);
       expect(find.text(t.video_rename), findsOneWidget);
       expect(find.text(t.add_to_collection), findsOneWidget);
     } finally {
@@ -370,11 +370,11 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byType(HibikiCard).first, buttons: kSecondaryButton);
+    await tester.tap(find.byType(FushiCard).first, buttons: kSecondaryButton);
     await tester.pumpAndSettle();
 
     // 右键与长按同链路（都走 _showVideoMenu）：应弹出同一封面背景动作面板。
-    expect(find.byType(HibikiDialogFrame), findsOneWidget);
+    expect(find.byType(FushiDialogFrame), findsOneWidget);
     expect(find.text(t.tag_label), findsOneWidget);
     expect(find.text(t.video_rename), findsOneWidget);
     expect(find.text(t.srt_import_pick_cover), findsOneWidget);
@@ -457,7 +457,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey<String>('home_video_video/1')),
-        matching: find.widgetWithText(HibikiTagChip, 'Anime'),
+        matching: find.widgetWithText(FushiTagChip, 'Anime'),
       ),
       findsOneWidget,
     );
@@ -465,7 +465,7 @@ void main() {
 
   testWidgets('顶部标签拖到视频卡成功提示使用视频文案', (WidgetTester tester) async {
     await seedVideoAndLooseTag();
-    HibikiToast.navigatorKey = toastNavigatorKey;
+    FushiToast.navigatorKey = toastNavigatorKey;
     await tester.pumpWidget(buildApp(captureToasts: true));
     await tester.pumpAndSettle();
 
@@ -492,11 +492,11 @@ void main() {
 
   // ── TODO-063 视频批量选择（标签栏旁的「选择」+ 批量打标签/删除）──────────
 
-  /// 点标签栏旁的「批量选择」按钮进入选择态。该按钮是 [HibikiTagFilterBar] 末尾的
+  /// 点标签栏旁的「批量选择」按钮进入选择态。该按钮是 [FushiTagFilterBar] 末尾的
   /// checklist 图标按钮（tooltip = batch_select）。
   Future<void> enterSelectionMode(WidgetTester tester) async {
     final Finder selectBtn = find.descendant(
-      of: find.byType(HibikiTagFilterBar),
+      of: find.byType(FushiTagFilterBar),
       matching: find.byIcon(Icons.checklist_outlined),
     );
     expect(selectBtn, findsOneWidget, reason: '视频标签栏旁应有「批量选择」按钮（用户报的「视频少了选择」）');
@@ -812,7 +812,7 @@ void main() {
     expect(find.text(t.batch_selected_count(n: 2)), findsOneWidget);
 
     // 点批量打标签按钮（批量栏的 sell_outlined）→ 打开三态 picker。dialog 打开前
-    // 页面上只有批量栏一个 sell_outlined（卡片标签层用 HibikiTagChip，不是该图标）。
+    // 页面上只有批量栏一个 sell_outlined（卡片标签层用 FushiTagChip，不是该图标）。
     await tester.tap(find.byIcon(Icons.sell_outlined).last);
     await tester.pumpAndSettle();
     expect(find.text(t.batch_tag_title), findsOneWidget);

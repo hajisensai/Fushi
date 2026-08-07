@@ -39,7 +39,7 @@ void main() {
         subtitleUrl: 'https://cdn.example.com/s.srt',
         subtitleFileName: 's.srt',
         referer: 'https://example.com/',
-        userAgent: 'HibikiAgent/1.0',
+        userAgent: 'FushiAgent/1.0',
       );
       final launch = await buildStreamVideoLaunch(_row(
         videoPath: 'https://cdn.example.com/live.m3u8',
@@ -50,7 +50,7 @@ void main() {
       expect(launch.client.subtitleFileName, 's.srt');
       expect(launch.client.httpHeaderFields, <String, String>{
         'Referer': 'https://example.com/',
-        'User-Agent': 'HibikiAgent/1.0',
+        'User-Agent': 'FushiAgent/1.0',
       });
       expect(launch.info.id, 'video/stream/abc');
       launch.client.close();

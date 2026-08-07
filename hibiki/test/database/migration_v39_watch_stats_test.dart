@@ -13,8 +13,8 @@ import 'package:fushi_core/fushi_core.dart';
 ///  3. 键控写穿：同名两个视频同一天各写各行（旧唯一键下第二个会撞约束/互串）；
 ///     无 uid 的旧式调用只命中遗留 NULL-uid 行。
 void main() {
-  Future<HibikiDatabase> openV38Db() async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+  Future<FushiDatabase> openV38Db() async {
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (rawDb) {
           rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -83,7 +83,7 @@ CREATE TABLE video_watch_statistics (
   }
 
   test('v39：表重建保数据 + title 唯一匹配回填 uid、同名/孤儿保持 NULL', () async {
-    final HibikiDatabase db = await openV38Db();
+    final FushiDatabase db = await openV38Db();
     final List<VideoWatchStatisticRow> rows =
         await db.getAllVideoWatchStatistics();
     expect(rows, hasLength(3), reason: '旧行原样保留');
@@ -102,7 +102,7 @@ CREATE TABLE video_watch_statistics (
   });
 
   test('v39 后：同名两个视频同一天各写各行（不再互串/撞约束）', () async {
-    final HibikiDatabase db = await openV38Db();
+    final FushiDatabase db = await openV38Db();
     await db.addVideoWatchStatistic(
       title: 'Dup',
       dateKey: '2026-07-11',
@@ -139,7 +139,7 @@ CREATE TABLE video_watch_statistics (
   });
 
   test('v39 后：无 uid 的旧式调用只命中遗留 NULL-uid 行，不污染新键控行', () async {
-    final HibikiDatabase db = await openV38Db();
+    final FushiDatabase db = await openV38Db();
     // 遗留 Dup 行（NULL uid，2026-07-10 watch=120000）继续被旧式调用累计。
     await db.addVideoWatchStatistic(
       title: 'Dup',
@@ -165,7 +165,7 @@ CREATE TABLE video_watch_statistics (
   });
 
   test('user_version 升到当前 schemaVersion', () async {
-    final HibikiDatabase db = await openV38Db();
+    final FushiDatabase db = await openV38Db();
     await db.getAllVideoWatchStatistics(); // 触发 open/migrate。
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();

@@ -5,8 +5,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// activity_events 表（schema v49）的 CRUD 守卫：写入 / 倒序读取 / limit / 类别过滤 /
 /// 按标题删除 / 清空。fresh DB 走 onCreate.createAll 建表，验证迁移与查询契约。
 
-Future<HibikiDatabase> _openDb() async {
-  final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }

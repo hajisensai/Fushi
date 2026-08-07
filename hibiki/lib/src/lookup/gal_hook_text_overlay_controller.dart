@@ -511,7 +511,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
     }
     final String? lineId = _displayedLineId;
     if (lineId == null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_hook_line_unavailable,
         severity: ToastSeverity.error,
       );
@@ -520,14 +520,14 @@ class GalHookTextOverlayController extends ChangeNotifier {
     final GalTrackPreview? preview =
         await _session.exportLineAudioPreview(lineId);
     if (preview == null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_line_preview_failed,
         severity: ToastSeverity.error,
       );
       return;
     }
     if (!await DesktopAudioPlayback.playFile(preview.filePath)) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_line_preview_failed,
         severity: ToastSeverity.error,
       );
@@ -566,7 +566,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
     if (!_started) return;
     if (_session.isRecapturing) {
       final bool saved = await _session.finishLineRecapture();
-      HibikiToast.show(
+      FushiToast.show(
         msg: saved ? t.game_hook_recapture_saved : t.game_hook_recapture_empty,
         // 补录窗口空手而归不是崩溃，是「这次没录到」——warning 而非 error。
         severity: saved ? ToastSeverity.success : ToastSeverity.warning,
@@ -577,14 +577,14 @@ class GalHookTextOverlayController extends ChangeNotifier {
     }
     final String? lineId = _displayedLineId;
     if (lineId == null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_hook_line_unavailable,
         severity: ToastSeverity.error,
       );
       return;
     }
     final bool started = await _session.startLineRecapture(lineId);
-    HibikiToast.show(
+    FushiToast.show(
       msg: started
           ? t.game_hook_recapture_started
           : t.game_hook_recapture_unavailable,
@@ -629,7 +629,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
         entry == null ||
         entry.text != text ||
         !_session.isLineInCurrentSession(entry)) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_hook_line_unavailable,
         severity: ToastSeverity.error,
       );
@@ -670,7 +670,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
         'noteId': null,
       };
     }
-    HibikiToast.showMine(
+    FushiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
     );
@@ -694,7 +694,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       animatedFormat: model.galMiningAnimatedFormat,
     );
     if (result.aborted) {
-      HibikiToast.showMine(
+      FushiToast.showMine(
         msg:
             '${t.external_window_capture_failed}：${result.failureReason ?? ''}',
         status: MineToastStatus.failed,
@@ -710,16 +710,16 @@ class GalHookTextOverlayController extends ChangeNotifier {
       deckName: deckName,
       overwrite: updateNoteId != null,
     );
-    HibikiToast.showMine(msg: described.message, status: described.status);
+    FushiToast.showMine(msg: described.message, status: described.status);
     if (result.sentenceAudioMissing) {
       // 卡片建成了、只是缺句子音频 = 部分成功。
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_card_sentence_audio_missing,
         severity: ToastSeverity.warning,
       );
     }
     if (result.unmappedTokens.isNotEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: '${t.game_card_mapping_missing}: '
             '${result.unmappedTokens.join(', ')}',
         severity: ToastSeverity.warning,

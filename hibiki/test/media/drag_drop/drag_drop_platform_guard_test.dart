@@ -29,7 +29,7 @@ void main() {
     expectScanScale(scanned,
         what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
     expect(offenders, isEmpty,
-        reason: 'desktop_drop should only be imported by HibikiFileDropTarget');
+        reason: 'desktop_drop should only be imported by FushiFileDropTarget');
   });
 
   test('wrapper forwards globalPosition, gates route state, and logs', () {

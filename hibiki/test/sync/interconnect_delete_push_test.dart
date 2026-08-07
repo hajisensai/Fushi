@@ -30,12 +30,12 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-HibikiDatabase _memDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _memDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 /// 旧版本 host：实现主接口但**不**实现 [VideoDeletionHost]，用来钉能力探测降级。
 /// DELETE 路由在调 deleteVideo 之前就 `is!` 判掉并返 404，故这里一个方法都不用真写。
-class _LegacyHostWithoutVideoDelete implements HibikiLibraryHostService {
+class _LegacyHostWithoutVideoDelete implements FushiLibraryHostService {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnimplementedError('${invocation.memberName} not needed here');
@@ -45,11 +45,11 @@ Future<InterconnectSyncBackend> _buildClientBackend({
   required String base,
   required String token,
 }) async {
-  final HibikiDatabase db = _memDb();
+  final FushiDatabase db = _memDb();
   addTearDown(db.close);
   final SyncRepository repo = SyncRepository(db);
-  await repo.setHibikiClientUrls(<HibikiClientUrl>[
-    HibikiClientUrl(url: base, enabled: true),
+  await repo.setHibikiClientUrls(<FushiClientUrl>[
+    FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
   final InterconnectSyncBackend backend =
@@ -60,7 +60,7 @@ Future<InterconnectSyncBackend> _buildClientBackend({
 }
 
 SyncOrchestrator _orchestrator({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required SyncBackend backend,
   required Directory tmp,
 }) =>
@@ -81,8 +81,8 @@ SyncOrchestrator _orchestrator({
 
 void main() {
   late Directory work;
-  late HibikiSyncServer server;
-  late HibikiDatabase hostDb;
+  late FushiSyncServer server;
+  late FushiDatabase hostDb;
   late Directory hostUploads;
   late String base;
   const String token = 'delete-push-token';
@@ -105,7 +105,7 @@ void main() {
       runExclusive: (Future<void> Function() body) => body(),
       uploadedVideoRoot: hostUploads,
     );
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir: p.join(work.path, 'server_data'),
       port: 0,
       token: token,
@@ -130,7 +130,7 @@ void main() {
       videoPath: hostOwnVideo.path,
     ));
 
-    final HibikiDatabase localDb = _memDb();
+    final FushiDatabase localDb = _memDb();
     addTearDown(localDb.close);
     // 用户在 client 上选「从所有设备删除」→ 各删除路径写下这条墓碑。
     final int deletedAt = DateTime.now().millisecondsSinceEpoch - 1000;
@@ -173,7 +173,7 @@ void main() {
       videoPath: hostOwnVideo.path,
     ));
 
-    final HibikiDatabase localDb = _memDb();
+    final FushiDatabase localDb = _memDb();
     addTearDown(localDb.close);
     await localDb.writeSyncDeletionTombstone(
       SyncTombstoneKind.video.dbValue,
@@ -206,7 +206,7 @@ void main() {
       title: 'Mine',
       videoPath: hostOwnVideo.path,
     ));
-    final HibikiDatabase localDb = _memDb();
+    final FushiDatabase localDb = _memDb();
     addTearDown(localDb.close);
     await localDb.writeSyncDeletionTombstone(
       SyncTombstoneKind.video.dbValue,
@@ -237,7 +237,7 @@ void main() {
   });
 
   test('收藏词/收藏句墓碑无互联删除通道：跳过且不阻塞基线推进', () async {
-    final HibikiDatabase localDb = _memDb();
+    final FushiDatabase localDb = _memDb();
     addTearDown(localDb.close);
     await localDb.writeSyncDeletionTombstone(
       SyncTombstoneKind.favoriteword.dbValue,
@@ -262,7 +262,7 @@ void main() {
 
   test('旧 host 不支持视频删除：DELETE 返 404，client 判 false，基线仍推进', () async {
     // 换一台「旧版本」host（不实现 VideoDeletionHost）。
-    final HibikiSyncServer legacy = HibikiSyncServer(
+    final FushiSyncServer legacy = FushiSyncServer(
       syncDataDir: p.join(work.path, 'legacy_data'),
       port: 0,
       token: token,
@@ -279,7 +279,7 @@ void main() {
     // client 侧能力探测：404 → false（而不是抛异常）。
     expect(await backend.deleteRemoteVideo('video/whatever'), isFalse);
 
-    final HibikiDatabase localDb = _memDb();
+    final FushiDatabase localDb = _memDb();
     addTearDown(localDb.close);
     await localDb.writeSyncDeletionTombstone(
       SyncTombstoneKind.video.dbValue,

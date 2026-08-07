@@ -39,7 +39,7 @@ class SearchDictionaryEnhancement extends Enhancement {
       Field fallbackField = SentenceField.instance;
       searchTerm = creatorModel.getFieldController(fallbackField).text.trim();
       if (searchTerm.isEmpty) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.no_text_to_search,
           toastLength: Toast.LENGTH_SHORT,
           gravity: ToastGravity.BOTTOM,
@@ -47,7 +47,7 @@ class SearchDictionaryEnhancement extends Enhancement {
         );
         return;
       } else {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.field_fallback_used(
             field: field.getLocalisedLabel(appModel),
             secondField: fallbackField.getLocalisedLabel(appModel),

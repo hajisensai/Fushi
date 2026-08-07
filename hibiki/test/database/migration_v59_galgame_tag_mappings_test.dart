@@ -12,8 +12,8 @@ import 'package:fushi_core/fushi_core.dart';
 ///  ③ 外键 cascade 双向生效（删游戏 / 删标签都自动清映射，不留孤儿）；
 ///  ④ user_version 升到当前代码 schemaVersion。
 void main() {
-  Future<HibikiDatabase> openV58Db() async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+  Future<FushiDatabase> openV58Db() async {
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (rawDb) {
           rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -81,7 +81,7 @@ CREATE TABLE galgame_sessions (
   }
 
   test('v59：建出 galgame_tag_mappings，既有游戏行零破坏且升级后无任何用户标签', () async {
-    final HibikiDatabase db = await openV58Db();
+    final FushiDatabase db = await openV58Db();
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
@@ -99,7 +99,7 @@ CREATE TABLE galgame_sessions (
   });
 
   test('v59：新表可写可读，标签挂到升级前就存在的游戏上', () async {
-    final HibikiDatabase db = await openV58Db();
+    final FushiDatabase db = await openV58Db();
 
     final int tagId = await db.createTag('通关', 0xFF00FF00);
     await db.addTagToGame('legacy_game', tagId);
@@ -112,8 +112,8 @@ CREATE TABLE galgame_sessions (
   });
 
   test('v59：fresh 库由 onCreate 直接建出该表（不依赖迁移梯子）', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     expect(await db.getAllGameTagMappings(), isEmpty,

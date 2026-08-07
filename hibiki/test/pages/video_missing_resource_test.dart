@@ -28,20 +28,20 @@ class _MissingTestAppModel extends AppModel {
   _MissingTestAppModel(PlatformServices platformServices, this._db)
       : super(platformServices);
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
 
   @override
   double get appUiScale => 1.0;
 
   @override
-  HibikiDatabase get database => _db;
+  FushiDatabase get database => _db;
 }
 
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late PreferencesRepository prefs;
   late Directory storeDir;
   late PlatformServices platformServices;
@@ -63,7 +63,7 @@ void main() {
   });
 
   setUp(() async {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     storeDir = Directory.systemTemp.createTempSync('hibiki_todo897');

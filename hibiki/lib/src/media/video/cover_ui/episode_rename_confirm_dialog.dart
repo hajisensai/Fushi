@@ -73,9 +73,9 @@ class _EpisodeRenameConfirmDialogState
           children: <Widget>[
             // 全选/取消行：共享 MD3 行 + 裸 [Checkbox] 为 leading，整行 onTap
             // 翻转——等价旧 CheckboxListTile 的取值/回调/标题，走设计令牌行高。
-            HibikiListItem(
+            FushiListItem(
               key: const ValueKey<String>('episode-rename-select-all'),
-              density: HibikiListDensity.compact,
+              density: FushiListDensity.compact,
               onTap: () => _setAllChecked(!_allChecked),
               leading: Checkbox(
                 value: _allChecked,
@@ -91,9 +91,9 @@ class _EpisodeRenameConfirmDialogState
                 itemBuilder: (BuildContext context, int index) {
                   final EpisodeRenameProposal p = widget.proposals[index];
                   final bool checked = _checked.contains(p.bookUid);
-                  return HibikiListItem(
+                  return FushiListItem(
                     key: ValueKey<String>('episode-rename-row-${p.bookUid}'),
-                    density: HibikiListDensity.compact,
+                    density: FushiListDensity.compact,
                     onTap: () => _setChecked(p.bookUid, !checked),
                     leading: Checkbox(
                       value: checked,

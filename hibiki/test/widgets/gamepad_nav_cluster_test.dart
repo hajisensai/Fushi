@@ -18,11 +18,11 @@ void main() {
     required ValueChanged<int> onSelect,
     Axis axis = Axis.horizontal,
   }) {
-    return HibikiFocusRoot(
+    return FushiFocusRoot(
       child: Column(
         children: <Widget>[
-          const HibikiFocusTarget(
-            id: HibikiFocusId('content'),
+          const FushiFocusTarget(
+            id: FushiFocusId('content'),
             child: SizedBox(width: 240, height: 80),
           ),
           GamepadNavCluster(
@@ -49,18 +49,18 @@ void main() {
       ),
     ));
     await tester.pump();
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(Column)),
     );
-    controller.requestById(const HibikiFocusId('content'));
+    controller.requestById(const FushiFocusId('content'));
     await tester.pump();
 
     // Down from the content lands on the nav bar (now a registered focus stop).
-    expect(controller.move(HibikiFocusDirection.down), isTrue,
+    expect(controller.move(FushiFocusDirection.down), isTrue,
         reason: 'the bottom bar is reachable, not a focus dead zone');
     await tester.pump();
-    final HibikiFocusId? onBar = controller.activeId;
-    expect(onBar, isNot(const HibikiFocusId('content')));
+    final FushiFocusId? onBar = controller.activeId;
+    expect(onBar, isNot(const FushiFocusId('content')));
 
     // D-pad Right switches to the next tab, staying on the bar.
     expect(
@@ -96,12 +96,12 @@ void main() {
       ),
     ));
     await tester.pump();
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(Column)),
     );
     controller.ensureFocus();
     await tester.pump();
-    controller.move(HibikiFocusDirection.down); // onto the bar
+    controller.move(FushiFocusDirection.down); // onto the bar
     await tester.pump();
     final BuildContext ctx = controller.activeContext!;
 
@@ -132,12 +132,12 @@ void main() {
       ),
     ));
     await tester.pump();
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(Column)),
     );
     controller.ensureFocus();
     await tester.pump();
-    controller.move(HibikiFocusDirection.down); // onto the rail cluster
+    controller.move(FushiFocusDirection.down); // onto the rail cluster
     await tester.pump();
     final BuildContext ctx = controller.activeContext!;
 

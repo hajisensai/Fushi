@@ -47,7 +47,7 @@ class _ScrapeFailureViewState extends State<ScrapeFailureView> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Center(
       // 结果区高度由弹窗决定，可能比本列矮（窄窗/小屏）：外层滚动兜底，避免
       // RenderFlex overflow 把失败态本身变成一条黄黑警告。
@@ -91,7 +91,7 @@ class _ScrapeFailureViewState extends State<ScrapeFailureView> {
                 constraints: const BoxConstraints(maxHeight: 132),
                 child: SizedBox(
                   width: double.infinity,
-                  child: HibikiCard(
+                  child: FushiCard(
                     padding: EdgeInsets.all(tokens.spacing.gap),
                     color: tokens.surfaces.overlay,
                     borderRadius: tokens.radii.cardRadius,
@@ -112,7 +112,7 @@ class _ScrapeFailureViewState extends State<ScrapeFailureView> {
                 label: Text(t.copy_error),
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: widget.detail));
-                  HibikiToast.show(
+                  FushiToast.show(
                     msg: t.error_copied,
                     severity: ToastSeverity.success,
                   );

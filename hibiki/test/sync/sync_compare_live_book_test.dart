@@ -12,9 +12,9 @@ import 'package:fushi/src/sync/sync_compare_dialog.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
-class _LiveBookLibraryService implements HibikiLibraryHostService {
+class _LiveBookLibraryService implements FushiLibraryHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
   Future<File?> clipVideoAudio(String id,
@@ -203,13 +203,13 @@ class _LiveBookLibraryService implements HibikiLibraryHostService {
 }
 
 Future<InterconnectSyncBackend> _buildLiveBackend({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required String base,
   required String token,
 }) async {
   final SyncRepository repo = SyncRepository(db);
-  await repo.setHibikiClientUrls(<HibikiClientUrl>[
-    HibikiClientUrl(url: base, enabled: true),
+  await repo.setHibikiClientUrls(<FushiClientUrl>[
+    FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
   final InterconnectSyncBackend backend =
@@ -223,7 +223,7 @@ void main() {
   test(
       'Hibiki interconnect compare lists remote-only live book as downloadable',
       () async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final Directory tempDir =
         Directory.systemTemp.createTempSync('hibiki_compare_live_tmp');
@@ -233,7 +233,7 @@ void main() {
       } catch (_) {}
     });
 
-    final HibikiSyncServer server = HibikiSyncServer(
+    final FushiSyncServer server = FushiSyncServer(
       syncDataDir: '${tempDir.path}/server',
       port: 0,
       token: 'compare-live-token',

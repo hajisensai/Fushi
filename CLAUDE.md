@@ -44,7 +44,7 @@
 - Flutter 版本分两处：本地钉 `.fvmrc` = `3.41.6`（pubspec `flutter: "^3.41.6"`），CI workflows 用 `3.44.0`；Dart SDK 约束 `>=3.5.0 <4.0.0`。最低 Android API 24，`compileSdk 36` / `targetSdk 35`。
 - 状态管理 Riverpod；音频 just_audio（桌面经 just_audio_media_kit）；录音 record 6.0.0；视频播放走 **media_kit**（third_party vendored 全套）+ youtube_explode_dart。
 - torrent 走内部包 `packages/fushi_torrent`（libtorrent 2.x C ABI FFI，native 在 `native/hibiki_torrent/`；Windows 预编译 DLL 随包，缺失时回退外接 qBittorrent）。
-- 主存储是 Drift SQLite（`HibikiDatabase`，schema v62），偏好落 Drift `preferences` 表 + `profile_settings` 每 Profile 快照。**已无 Isar/Hive 依赖**；旧注释里的 Isar/Hive 不代表当前事实，先查代码再判断。
+- 主存储是 Drift SQLite（`FushiDatabase`，schema v62），偏好落 Drift `preferences` 表 + `profile_settings` 每 Profile 快照。**已无 Isar/Hive 依赖**；旧注释里的 Isar/Hive 不代表当前事实，先查代码再判断。
 - EPUB 阅读器走 reader_hibiki 实现（见仓库地图）。`reader_ttu` key、`setTtu*` 方法、`ttu_*` i18n 只是旧数据兼容残留，不代表还有 TTU 阅读器；没有迁移方案别随手改这些持久化 key。（旧文档提过的 `ttuBookId` 列在当前 schema 已不存在，只活在迁移阶梯里。）
 - 旧 TTU 迁移代码已移除（develop `90c37b472`：`TtuMigrationServer` / `TtuIdbReader` / `assets/ttu-ebook-reader` 均已删除）；只剩上述命名残留作旧数据兼容。阅读器渲染/交互问题按 reader_hibiki 路径修，不要去上游 ttu fork 仓库改。
 - 词典导入/查询核心走 `hoshidicts` C++ FFI；格式 UI 或旧 Dart format 类不一定是真实导入路径。
@@ -65,7 +65,7 @@
 | 首页面板 | `dashboard` | — |
 | 续播三层 | 选条目 `continue*` / 定起点 `resolve*ResumePoint` / 落地执行 `restoreTo*` | 三层动词混用 |
 | torrent 恢复数据 | `fastResume*`（对齐 qBittorrent） | 裸 resume |
-| 互联对端 | 已配对对端 `peer` / 提供库角色 `host` / 对端数据 DTO `Remote*` / 未配对发现 `device`；子系统名 `Interconnect*` | 混用；`HibikiClient*` 作类名前缀 |
+| 互联对端 | 已配对对端 `peer` / 提供库角色 `host` / 对端数据 DTO `Remote*` / 未配对发现 `device`；子系统名 `Interconnect*` | 混用；`FushiClient*` 作类名前缀 |
 | 备份操作 | 顶层 `createBackup`/`restoreBackup`；内部子步骤 `reapply*`；export/import 只留给单资产 | 内部子步骤叫 restore* |
 | 时刻列 | `<名>At`（int 毫秒，无 Ms 后缀） | `Ms` 后缀用于时刻（仅时长/偏移可用） |
 | 墓碑删除时刻 | `deletedAt` | removedAt |

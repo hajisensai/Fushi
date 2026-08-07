@@ -155,8 +155,8 @@ void main() {
     test(
         '封面文件在盘上 imageUrl 解析成功；随后模拟瞬时探测落空(删文件)后重建，'
         'imageUrl 仍回落 last-good 不塌成 null', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 

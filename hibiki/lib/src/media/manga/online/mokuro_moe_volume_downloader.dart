@@ -116,7 +116,7 @@ class MokuroMoeVolumeDownloader {
   /// 跑完一卷全流程。事件流以 done 事件正常结束；取消以
   /// [MokuroMoeDownloadCancelled] 错误结束；其余失败以原始异常结束。
   Stream<MokuroMoeVolumeDownloadEvent> run({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required String seriesName,
     required String volumeName,
   }) {
@@ -135,7 +135,7 @@ class MokuroMoeVolumeDownloader {
 
   Future<void> _run(
     StreamController<MokuroMoeVolumeDownloadEvent> controller, {
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required String seriesName,
     required String volumeName,
   }) async {

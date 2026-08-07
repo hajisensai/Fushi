@@ -3,8 +3,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-Future<HibikiDatabase> _openDb() async {
-  final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
@@ -120,7 +120,7 @@ void main() {
   // TODO-1036：累计拥有数，区别于 mediaCount（上次扫描新增数）。
   group('countMediaBySourceId', () {
     Future<void> insertEpub(
-      HibikiDatabase db,
+      FushiDatabase db,
       String bookKey, {
       int? sourceId,
     }) =>
@@ -138,7 +138,7 @@ void main() {
         );
 
     Future<void> insertVideo(
-      HibikiDatabase db,
+      FushiDatabase db,
       String bookUid, {
       int? sourceId,
     }) =>

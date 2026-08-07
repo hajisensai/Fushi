@@ -287,7 +287,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
       });
 }
 
-final hibikiDatabaseProvider = Provider<HibikiDatabase>((ref) {
+final hibikiDatabaseProvider = Provider<FushiDatabase>((ref) {
   final appModel = ref.watch(appProvider);
   return appModel.database;
 });

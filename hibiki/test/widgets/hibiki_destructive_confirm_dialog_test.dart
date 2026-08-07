@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/hibiki_destructive_confirm_dialog.dart';
 
 void main() {
-  Future<HibikiDestructiveConfirmResult?>? dialogResult;
+  Future<FushiDestructiveConfirmResult?>? dialogResult;
 
   Future<void> openDialog(
     WidgetTester tester, {
@@ -16,9 +16,9 @@ void main() {
         body: Builder(
           builder: (BuildContext context) => TextButton(
             onPressed: () {
-              dialogResult = showDialog<HibikiDestructiveConfirmResult>(
+              dialogResult = showDialog<FushiDestructiveConfirmResult>(
                 context: context,
-                builder: (_) => HibikiDestructiveConfirmDialog(
+                builder: (_) => FushiDestructiveConfirmDialog(
                   title: '删除书籍',
                   message: '此操作不可撤销。',
                   checkboxLabel: checkboxLabel,
@@ -48,7 +48,7 @@ void main() {
     await openDialog(tester);
     await tester.tap(find.text('DELETE'));
     await tester.pumpAndSettle();
-    final HibikiDestructiveConfirmResult? value = await dialogResult;
+    final FushiDestructiveConfirmResult? value = await dialogResult;
     expect(value, isNotNull);
     expect(value!.checked, isFalse);
   });
@@ -67,7 +67,7 @@ void main() {
     expect((await dialogResult)!.checked, isTrue);
   });
 
-  // BUG-1291：勾选文案是整句解释而非标题短语，被 [HibikiListItem] 默认的
+  // BUG-1291：勾选文案是整句解释而非标题短语，被 [FushiListItem] 默认的
   // titleMaxLines: 1 + ellipsis 切成「…保留你的原始视…」，括号里的免责说明
   // （最需要看清的那半句）整段看不到。
   //

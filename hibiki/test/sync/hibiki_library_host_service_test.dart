@@ -43,12 +43,12 @@ void main() {
 
   group('AppModelLibraryHostService dictionaries', () {
     late Directory tmp;
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late Directory dictRoot;
 
     setUp(() async {
       tmp = Directory.systemTemp.createTempSync('hibiki_lib_host');
-      db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
       dictRoot = Directory(p.join(tmp.path, 'dicts'))
         ..createSync(recursive: true);
     });

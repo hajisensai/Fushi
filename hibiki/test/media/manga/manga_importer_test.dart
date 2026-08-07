@@ -62,13 +62,13 @@ void main() {
 
   late Directory appDocDir;
   late Directory srcRoot;
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() async {
     appDocDir = await Directory.systemTemp.createTemp('manga_importer_app');
     srcRoot = await Directory.systemTemp.createTemp('manga_importer_src');
     EpubStorage.debugBaseDirectoryOverride = appDocDir.path;
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() async {

@@ -7,7 +7,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 合集同步引擎收敛性测试（多端库联合视图 §2.3 任务4，spec 任务表「引擎级单测
 /// （双库互推收敛）」）。
 ///
-/// 用两个真实内存 [HibikiDatabase]（A/B）+ 一份共享云清单模拟编排器的
+/// 用两个真实内存 [FushiDatabase]（A/B）+ 一份共享云清单模拟编排器的
 /// 读-合并-应用-写循环：`sync(dev)` = loadLocal → merge(基线) → apply → 推清单
 /// → 推进基线。全链路覆盖 DAO 墓碑写清、清单构建、引擎裁决、应用端镜像。
 void main() {
@@ -16,8 +16,8 @@ void main() {
   late _Cloud cloud;
 
   setUp(() {
-    a = _Device(HibikiDatabase.forTesting(NativeDatabase.memory()));
-    b = _Device(HibikiDatabase.forTesting(NativeDatabase.memory()));
+    a = _Device(FushiDatabase.forTesting(NativeDatabase.memory()));
+    b = _Device(FushiDatabase.forTesting(NativeDatabase.memory()));
     cloud = _Cloud();
     addTearDown(() async {
       await a.db.close();
@@ -28,7 +28,7 @@ void main() {
   /// 让墙钟前进：基线/墓碑裁决按毫秒比较，步骤之间隔开避免同毫秒歧义。
   Future<void> tick() => Future<void>.delayed(const Duration(milliseconds: 3));
 
-  Future<List<String>> orderOf(HibikiDatabase db, String name,
+  Future<List<String>> orderOf(FushiDatabase db, String name,
       [String type = 'playlist']) async {
     final MediaCollectionRow? row =
         await db.getMediaCollectionByNaturalKey(name, type);
@@ -660,8 +660,8 @@ void main() {
 
   // ── collection-tags Task 9：DB ↔ 清单标签物化（load 读标签 / apply 写标签）──────
   test('load reads collection tags; apply materializes them', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final int cid =
         await db.createMediaCollection('C', collectionType: 'collection');
@@ -674,8 +674,8 @@ void main() {
         reason: 'load 从 DB 读合集标签进清单');
 
     // 反向：清单里带一个本地没有的标签，apply 应物化到 DB。
-    final HibikiDatabase db2 =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db2 =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db2.close);
     final int cid2 =
         await db2.createMediaCollection('C', collectionType: 'collection');
@@ -709,7 +709,7 @@ class _Cloud {
 class _Device {
   _Device(this.db);
 
-  final HibikiDatabase db;
+  final FushiDatabase db;
   int baselineMs = 0;
 
   /// 读本地 → 合并 → 应用本地变更 → 推合并清单 → 推进基线。返回应用的合集数。

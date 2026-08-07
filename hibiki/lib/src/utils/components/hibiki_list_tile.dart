@@ -4,9 +4,9 @@ import 'package:fushi/utils.dart';
 
 /// Used for various dialogs, such as the dictionary, profiles and enhancements
 /// menus. Used for listing, selecting and reordering items.
-class HibikiListTile extends StatelessWidget {
+class FushiListTile extends StatelessWidget {
   /// Initialise this widget.
-  const HibikiListTile({
+  const FushiListTile({
     required this.title,
     required this.subtitle,
     required this.icon,
@@ -40,19 +40,19 @@ class HibikiListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return HibikiListItem(
+    return FushiListItem(
       selected: selected,
       onTap: onTap,
       leading: Icon(
         icon,
         color: foregroundColor,
       ),
-      title: HibikiMarquee(
+      title: FushiMarquee(
         text: title,
         style:
             foregroundColor == null ? null : TextStyle(color: foregroundColor),
       ),
-      subtitle: HibikiMarquee(
+      subtitle: FushiMarquee(
         text: subtitle,
         style:
             foregroundColor == null ? null : TextStyle(color: foregroundColor),

@@ -14,7 +14,7 @@ void main() {
   const Size physical = Size(1000, 800);
 
   Widget harness({required double scale, required Widget home}) =>
-      HibikiAppUiScale(scale: scale, child: MaterialApp(home: home));
+      FushiAppUiScale(scale: scale, child: MaterialApp(home: home));
 
   Future<(Rect, OverlayEntry)> insertPopup(
     WidgetTester tester,
@@ -46,7 +46,7 @@ void main() {
       },
     );
     if (neutralize) {
-      overlayChild = HibikiAppUiScaleNeutralizer(child: overlayChild);
+      overlayChild = FushiAppUiScaleNeutralizer(child: overlayChild);
     }
     final OverlayEntry entry = OverlayEntry(builder: (BuildContext _) {
       return overlayChild;
@@ -206,7 +206,7 @@ void main() {
         reason: 'home popup stack must mount in the root Overlay');
     expect(page.contains('OverlayEntry'), isTrue,
         reason: 'home popup overlay uses an OverlayEntry like video');
-    expect(page.contains('HibikiAppUiScaleNeutralizer('), isTrue,
+    expect(page.contains('FushiAppUiScaleNeutralizer('), isTrue,
         reason: 'overlay popup subtree must be neutralized for native density');
     expect(page.contains('clipBehavior: Clip.none'), isTrue,
         reason: 'overlay popup Stack must be Clip.none');

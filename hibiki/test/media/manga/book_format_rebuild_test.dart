@@ -33,13 +33,13 @@ void main() {
   const String bookKey = 'Scanned Volume 01';
   late Directory root;
   late String bookDir;
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() {
     root = Directory.systemTemp.createTempSync('book_convert_');
     bookDir = p.join(root.path, bookKey);
     Directory(bookDir).createSync(recursive: true);
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() async {

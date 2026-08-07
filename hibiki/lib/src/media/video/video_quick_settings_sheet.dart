@@ -21,8 +21,8 @@ import 'package:fushi/utils.dart';
 /// 并独立滚动，分类条固定在顶部），窄窗降级单列 push。书籍设置面板仍保持左右
 /// master-detail，互不影响。
 ///
-/// 配色用标准浅色 MD3（与阅读器一致），由 `HibikiModalSheetFrame` 提供 sheet 外壳，
-/// 桌面经 `HibikiDialogFrame(maxWidth: 900)` 进入分栏、移动端走 bottom sheet。
+/// 配色用标准浅色 MD3（与阅读器一致），由 `FushiModalSheetFrame` 提供 sheet 外壳，
+/// 桌面经 `FushiDialogFrame(maxWidth: 900)` 进入分栏、移动端走 bottom sheet。
 class VideoQuickSettingsSheet extends StatefulWidget {
   const VideoQuickSettingsSheet({
     required this.appModel,
@@ -112,9 +112,9 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiMasterDetailSettingsSheet(
+    return FushiMasterDetailSettingsSheet(
       // 宽窗 master-detail 选中态恒有值（默认 playback），返回键应直接关面板；
       // 窄窗 push 时保留「先回主页」语义。
       subPageActive: _subPage != null,
@@ -126,9 +126,9 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
       // TODO-344：四边按 MD3 spacing 放宽，消除「上下左右贴死」。水平用
       // page + gap（28），垂直顶部用 card（20）让内容离 sheet header / 分栏
       // divider 留出呼吸位，底部叠 card + gap + 键盘 inset（共享公式
-      // [HibikiMasterDetailSettingsSheet.paneInsets]）。全部走 token，无裸值。
+      // [FushiMasterDetailSettingsSheet.paneInsets]）。全部走 token，无裸值。
       narrowPadding: (BuildContext context, BoxConstraints constraints) {
-        return HibikiMasterDetailSettingsSheet.paneInsets(
+        return FushiMasterDetailSettingsSheet.paneInsets(
           context,
           horizontal: tokens.spacing.page + tokens.spacing.gap,
           top: tokens.spacing.card,
@@ -156,7 +156,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
         );
         // 详情区四边走共享公式（底部 = card + gap + 键盘 inset）。
         final EdgeInsets widePrimaryPadding =
-            HibikiMasterDetailSettingsSheet.paneInsets(
+            FushiMasterDetailSettingsSheet.paneInsets(
           context,
           horizontal: horizontalInset,
           top: topInset,
@@ -260,10 +260,10 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
   ///
   /// TODO-1351（用户复诉）：分类 tab 是「图标 + 完整文字」（参考「检查器」式 tab），不得
   /// 截成省略号、也不得压成纯图标 + tooltip。标签经
-  /// [HibikiSelectableChip.allowLabelOverflow] 按固有宽度完整渲染（无 ellipsis）；换行由
+  /// [FushiSelectableChip.allowLabelOverflow] 按固有宽度完整渲染（无 ellipsis）；换行由
   /// [Wrap] 承载，单个标签永不截断。
   Widget _buildTopCategoryBar(String selectedId) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Wrap(
       // 大分类 chip 行整体居中（用户诉求）：一行放不下换行时每行也居中，视觉更聚焦，
       // 不再左对齐贴边。
@@ -274,7 +274,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
       children: <Widget>[
         for (final ({String id, IconData icon, String label}) cat
             in _categories())
-          HibikiSelectableChip(
+          FushiSelectableChip(
             // 稳定 key：测试 / 焦点驱动靠 id key 命中分类（不依赖标签文案）。
             key: ValueKey<String>('video-settings-cat-${cat.id}'),
             label: cat.label,
@@ -289,7 +289,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
   }
 
   /// 宽窗详情区顶部的当前分类标题（TODO-640 引入，TODO-1351 顶栏恢复完整文字标签后
-  /// 保留作详情区页头）。与窄窗 push 子页头 [HibikiSettingsSubPageHeader] /
+  /// 保留作详情区页头）。与窄窗 push 子页头 [FushiSettingsSubPageHeader] /
   /// 侧栏面板标题语义一致，但无返回箭头（宽窗顶栏不走 push）。
   Widget _buildWideDetailTitle(String selectedId) {
     final ThemeData theme = Theme.of(context);
@@ -326,13 +326,13 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
 
   /// 窄窗子页：返回页头 + 详情。
   Widget _buildSubPage(ThemeData theme) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String page = _subPage!;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        HibikiSettingsSubPageHeader(
+        FushiSettingsSubPageHeader(
           title: _subPageTitle(page),
           onBack: () => setState(() => _subPage = null),
         ),

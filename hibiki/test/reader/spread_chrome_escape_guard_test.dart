@@ -178,10 +178,10 @@ void main() {
   });
 
   group('spreadMode 默认不再自动进双页 (BUG-1280)', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
 
     setUp(() {
-      db = HibikiDatabase.forTesting(
+      db = FushiDatabase.forTesting(
         DatabaseConnection(NativeDatabase.memory()),
       );
     });

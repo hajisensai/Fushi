@@ -6,19 +6,19 @@ import 'package:fushi/src/focus/hibiki_focus_controller.dart';
 import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 
 /// BUG-038：桌面端书架卡片只能长按才弹上下文菜单，PC 用户惯例是鼠标右键。
-/// 根因 = `HibikiCard`/`_bookCardShell` 从不配线 secondary tap（右键），
+/// 根因 = `FushiCard`/`_bookCardShell` 从不配线 secondary tap（右键），
 /// 仅有 `onTap` / `onLongPress` / 手柄长按。
 void main() {
-  group('HibikiCard secondary tap (BUG-038 桌面右键上下文菜单)', () {
+  group('FushiCard secondary tap (BUG-038 桌面右键上下文菜单)', () {
     testWidgets('右键触发 onSecondaryTap，且不误触 onTap', (WidgetTester tester) async {
       int taps = 0;
       int secondaryTaps = 0;
       int longPresses = 0;
       await tester.pumpWidget(MaterialApp(
-        home: HibikiFocusRoot(
+        home: FushiFocusRoot(
           child: Center(
-            child: HibikiCard(
-              focusId: const HibikiFocusId('book-card'),
+            child: FushiCard(
+              focusId: const FushiFocusId('book-card'),
               onTap: () => taps += 1,
               onLongPress: () => longPresses += 1,
               onSecondaryTap: () => secondaryTaps += 1,
@@ -30,7 +30,7 @@ void main() {
       await tester.pump();
 
       // 鼠标右键 = secondary button tap。
-      await tester.tap(find.byType(HibikiCard), buttons: kSecondaryButton);
+      await tester.tap(find.byType(FushiCard), buttons: kSecondaryButton);
       await tester.pump();
 
       expect(secondaryTaps, 1, reason: '右键应触发上下文菜单回调');
@@ -42,10 +42,10 @@ void main() {
         (WidgetTester tester) async {
       int taps = 0;
       await tester.pumpWidget(MaterialApp(
-        home: HibikiFocusRoot(
+        home: FushiFocusRoot(
           child: Center(
-            child: HibikiCard(
-              focusId: const HibikiFocusId('plain-card'),
+            child: FushiCard(
+              focusId: const FushiFocusId('plain-card'),
               onTap: () => taps += 1,
               child: const SizedBox(width: 120, height: 160),
             ),
@@ -54,7 +54,7 @@ void main() {
       ));
       await tester.pump();
 
-      await tester.tap(find.byType(HibikiCard), buttons: kSecondaryButton);
+      await tester.tap(find.byType(FushiCard), buttons: kSecondaryButton);
       await tester.pump();
 
       expect(taps, 0, reason: '右键不触发 onTap，且不抛异常');

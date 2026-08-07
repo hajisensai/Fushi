@@ -1,8 +1,8 @@
 /// Used for formatting byte-size strings.
 ///
-/// 与 [HibikiTimeFormat] 风格对称的字节大小格式化唯一真相源（命名统一 G4 收敛，
+/// 与 [FushiTimeFormat] 风格对称的字节大小格式化唯一真相源（命名统一 G4 收敛，
 /// 基底取自原 `update_checker_ui.dart` 的 `formatUpdateDownloadByteCount`）。
-class HibikiByteFormat {
+class FushiByteFormat {
   /// 1024 进制人类可读大小：B 档整数（`512 B`），KB/MB/GB 保留 1 位小数
   /// （`1.5 KB` / `12.0 MB` / `1.2 GB`）。`null` → `—`（未知大小占位）。
   static String bytes(int? bytes) {

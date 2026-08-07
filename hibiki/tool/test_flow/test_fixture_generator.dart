@@ -42,7 +42,7 @@ Future<FixtureGenerationResult> generateComprehensiveFixtures({
 
 List<int> _buildDictionaryZip() {
   final Map<String, Object> index = <String, Object>{
-    'title': 'HibikiComprehensiveTestDictionary',
+    'title': 'FushiComprehensiveTestDictionary',
     'format': 3,
     'revision': 'generated-1',
     'sequenced': false,

@@ -138,7 +138,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
 
   Future<_PdfBookLoad?> _load() async {
     await PdfEngine.ensureInitialized();
-    final HibikiDatabase db = appModel.database;
+    final FushiDatabase db = appModel.database;
     final EpubBookRow? row = await db.getEpubBook(widget.bookKey);
     if (row == null) return null;
     final String path = p.join(row.extractDir, row.epubPath);
@@ -191,7 +191,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
 
   Future<void> _persistPosition(int pageIndex) async {
     _lastSavedPageIndex = pageIndex;
-    final HibikiDatabase db = appModel.database;
+    final FushiDatabase db = appModel.database;
     try {
       await ReaderPositionRepository(db).save(
         bookKey: widget.bookKey,
@@ -375,7 +375,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     _lastSentenceOffset = extracted.selStart;
     if (_lastSentence.isNotEmpty) {
       appModel.currentMediaSource?.setCurrentSentence(
-        selection: HibikiTextSelection(text: _lastSentence),
+        selection: FushiTextSelection(text: _lastSentence),
       );
     }
 
@@ -437,7 +437,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   void _notifyNoTextLayer() {
     if (_noTextLayerNotified) return;
     _noTextLayerNotified = true;
-    HibikiToast.show(msg: t.pdf_no_text_layer, severity: ToastSeverity.error);
+    FushiToast.show(msg: t.pdf_no_text_layer, severity: ToastSeverity.error);
   }
 
   // ── Phase 5：书签（复用 EPUB 的 Bookmarks 表）───────────────────────
@@ -462,7 +462,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
         ),
       );
       if (!mounted) return;
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.pdf_bookmark_added, severity: ToastSeverity.success);
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderPdfPage.addBookmark', e, stack);
@@ -480,7 +480,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     }
     if (!mounted) return;
     if (bookmarks.isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.pdf_bookmarks_empty, severity: ToastSeverity.info);
       return;
     }
@@ -526,7 +526,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     }
     if (!mounted) return;
     if (outline.isEmpty) {
-      HibikiToast.show(msg: t.pdf_outline_empty, severity: ToastSeverity.info);
+      FushiToast.show(msg: t.pdf_outline_empty, severity: ToastSeverity.info);
       return;
     }
     await showAppDialog<void>(
@@ -576,7 +576,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
             : null,
       );
 
-      HibikiToast.showMine(
+      FushiToast.showMine(
         msg: t.card_mining_pending,
         status: MineToastStatus.pending,
       );
@@ -591,7 +591,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       if (described.record) {
         unawaited(_recordMinedCount());
       }
-      HibikiToast.showMine(msg: described.message, status: described.status);
+      FushiToast.showMine(msg: described.message, status: described.status);
       if (described.success) {
         return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
       }
@@ -813,11 +813,11 @@ class _PdfBookmarkSheetState extends State<_PdfBookmarkSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 520,
       maxHeightFactor: 0.82,
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.pdf_bookmarks,
         leadingIcon: Icons.bookmarks_outlined,
         body: _items.isEmpty
@@ -830,7 +830,7 @@ class _PdfBookmarkSheetState extends State<_PdfBookmarkSheet> {
                 itemCount: _items.length,
                 itemBuilder: (BuildContext context, int index) {
                   final Bookmark bookmark = _items[index];
-                  return HibikiListItem(
+                  return FushiListItem(
                     leading: const Icon(Icons.bookmark_outline),
                     title: Text(bookmark.label),
                     trailing: IconButton(
@@ -880,11 +880,11 @@ class _PdfOutlineSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final List<({PdfOutlineNode node, int depth})> flat = _flatten(nodes);
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 520,
       maxHeightFactor: 0.82,
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.pdf_outline,
         leadingIcon: Icons.list_alt_outlined,
         body: ListView.builder(
@@ -893,8 +893,8 @@ class _PdfOutlineSheet extends StatelessWidget {
           itemBuilder: (BuildContext context, int index) {
             final ({PdfOutlineNode node, int depth}) entry = flat[index];
             final int? pageNumber = entry.node.dest?.pageNumber;
-            return HibikiListItem(
-              // 层级用左内边距表达（HibikiListItem 的 padding 是整体内边距）。
+            return FushiListItem(
+              // 层级用左内边距表达（FushiListItem 的 padding 是整体内边距）。
               padding:
                   EdgeInsets.only(left: 8.0 + entry.depth * 16.0, right: 8),
               title: Text(

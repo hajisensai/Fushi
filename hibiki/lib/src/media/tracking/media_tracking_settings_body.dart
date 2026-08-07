@@ -325,7 +325,7 @@ class _AddMappingDialog extends StatefulWidget {
     this.initialMediaKey,
   });
 
-  final HibikiDatabase database;
+  final FushiDatabase database;
   final MediaTrackingService service;
   final TrackingMediaType? initialMediaType;
   final String? initialMediaKey;
@@ -648,8 +648,8 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
                   ),
                 ),
                 for (final BangumiSubject subject in _results)
-                  HibikiListItem(
-                    density: HibikiListDensity.compact,
+                  FushiListItem(
+                    density: FushiListDensity.compact,
                     padding: EdgeInsets.zero,
                     leading: subject.coverUrl == null
                         ? const Icon(Icons.auto_stories_outlined)

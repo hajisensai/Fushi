@@ -23,7 +23,7 @@ Widget buildStatPageBody({
   if (error != null) return errorBuilder(error);
   if (isEmpty) {
     return Center(
-      child: HibikiPlaceholderMessage(
+      child: FushiPlaceholderMessage(
         icon: Icons.bar_chart_outlined,
         message: emptyMessage,
       ),
@@ -58,7 +58,7 @@ Widget buildStatPeriodSummaryGrid(
   BuildContext context,
   List<StatPeriodSummary> summaries,
 ) {
-  final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   final double gap = tokens.spacing.gap + tokens.spacing.gap / 2;
   final List<Widget> panels = summaries
       .map((StatPeriodSummary summary) =>
@@ -105,11 +105,11 @@ class _StatPeriodSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final TextStyle? subStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
           color: colorScheme.onSurfaceVariant,
         );
-    return HibikiCard(
+    return FushiCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -150,7 +150,7 @@ Widget buildStatDailyDurationChartSection(
   BuildContext context,
   List<StatDayData> daily,
 ) {
-  final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   final ColorScheme colorScheme = Theme.of(context).colorScheme;
   return Padding(
     padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
@@ -420,7 +420,7 @@ Widget _buildStatHourlyChartSection(
   required List<StatHourlyFormatBand> legendBands,
   required bool showUnattributedNote,
 }) {
-  final tokens = HibikiDesignTokens.of(context);
+  final tokens = FushiDesignTokens.of(context);
   final colorScheme = Theme.of(context).colorScheme;
   return Padding(
     padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
@@ -478,7 +478,7 @@ class _StatHourlyLegendChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = HibikiDesignTokens.of(context);
+    final tokens = FushiDesignTokens.of(context);
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
     return Row(
       mainAxisSize: MainAxisSize.min,

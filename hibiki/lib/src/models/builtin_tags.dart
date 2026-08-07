@@ -28,7 +28,7 @@ const List<int> kBuiltInStarTagColors = <int>[
 /// **只增不删**：命中同名已存在标签就跳过（既不新建重复行，也不覆盖用户改过的
 /// 颜色/排序），因此绝不会误删用户自建标签或其书籍映射。既用于新装首次播种
 /// （空池时一次性种入全部 5 个），也用于老用户在标签管理页「一键补齐星级标签」。
-Future<int> seedStarRatingTags(HibikiDatabase db) async {
+Future<int> seedStarRatingTags(FushiDatabase db) async {
   final List<BookTagRow> existing = await db.getAllTags();
   final Set<String> existingNames =
       existing.map((BookTagRow row) => row.name).toSet();

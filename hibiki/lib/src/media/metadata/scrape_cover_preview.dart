@@ -18,14 +18,14 @@ class ScrapeCoverPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String? normalized =
         url?.trim().isEmpty == false ? url!.trim() : null;
     final Widget preview = SizedBox(
       width: kScrapeCoverPreviewWidth,
       height: kScrapeCoverPreviewHeight,
       child: ClipRRect(
-        borderRadius: HibikiBorderRadius.chip,
+        borderRadius: FushiBorderRadius.chip,
         child: normalized == null
             ? _buildPlaceholder(tokens)
             : Image.network(
@@ -43,7 +43,7 @@ class ScrapeCoverPreview extends StatelessWidget {
         label: t.preview,
         child: InkWell(
           mouseCursor: SystemMouseCursors.click,
-          borderRadius: HibikiBorderRadius.chip,
+          borderRadius: FushiBorderRadius.chip,
           onTap: () => _showLargePreview(context, normalized),
           child: preview,
         ),
@@ -53,7 +53,7 @@ class ScrapeCoverPreview extends StatelessWidget {
 }
 
 Widget _buildPlaceholder(
-  HibikiDesignTokens tokens, {
+  FushiDesignTokens tokens, {
   double iconSize = 28,
 }) {
   return ColoredBox(
@@ -76,8 +76,8 @@ Future<void> _showLargePreview(BuildContext context, String url) async {
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.82),
     builder: (BuildContext dialogContext) {
-      final HibikiDesignTokens tokens = HibikiDesignTokens.of(dialogContext);
-      return HibikiDialogFrame(
+      final FushiDesignTokens tokens = FushiDesignTokens.of(dialogContext);
+      return FushiDialogFrame(
         key: const ValueKey<String>('scrape_cover_large_preview'),
         maxWidth: 720,
         maxHeightFactor: 0.9,

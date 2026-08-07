@@ -16,7 +16,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 const List<int> _coverBytes = <int>[0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4];
 
-class _FakeLibraryService implements HibikiLibraryHostService {
+class _FakeLibraryService implements FushiLibraryHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
   Future<File?> clipVideoAudio(String id,
@@ -255,8 +255,8 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   }
 }
 
-HibikiDatabase _testDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 DateTime _uniqueSubtitleCacheMtime(String seed) {
   final int offsetMs = seed.hashCode & 0x3fffffff;
@@ -267,11 +267,11 @@ Future<InterconnectSyncBackend> _buildBackend({
   required String base,
   required String token,
 }) async {
-  final HibikiDatabase db = _testDb();
+  final FushiDatabase db = _testDb();
   addTearDown(() async => db.close());
   final SyncRepository repo = SyncRepository(db);
-  await repo.setHibikiClientUrls(<HibikiClientUrl>[
-    HibikiClientUrl(url: base, enabled: true),
+  await repo.setHibikiClientUrls(<FushiClientUrl>[
+    FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
 
@@ -283,7 +283,7 @@ Future<InterconnectSyncBackend> _buildBackend({
 }
 
 void main() {
-  late HibikiSyncServer server;
+  late FushiSyncServer server;
   late String base;
   late _EmbeddedSubtitleFfmpegBackend ffmpeg;
   late _FakeLibraryService library;
@@ -293,7 +293,7 @@ void main() {
     ffmpeg = _EmbeddedSubtitleFfmpegBackend();
     setFfmpegBackendForTesting(ffmpeg);
     library = _FakeLibraryService();
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir:
           Directory.systemTemp.createTempSync('hbk_live_video_srv').path,
       port: 0,
@@ -428,11 +428,11 @@ void main() {
   });
 
   test('listRemoteVideos with wrong token throws SyncAuthError', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(() async => db.close());
     final SyncRepository repo = SyncRepository(db);
-    await repo.setHibikiClientUrls(<HibikiClientUrl>[
-      HibikiClientUrl(url: base, enabled: true),
+    await repo.setHibikiClientUrls(<FushiClientUrl>[
+      FushiClientUrl(url: base, enabled: true),
     ]);
     await repo.setHibikiClientToken('wrong-token');
 
@@ -483,21 +483,21 @@ void main() {
   // Image.network 走 Flutter 内部 HttpClient，拿不到 TOFU 钉扎指纹，https 自签握手
   // 必失败 → 空封面。这里端到端证明 fetchRemoteCover 复用 pinned client 能拉回封面。
   group('TODO-1235 pinned cover fetch over TLS', () {
-    late HibikiSyncServer tlsServer;
+    late FushiSyncServer tlsServer;
     late String tlsBase;
     late String fingerprint;
 
     setUp(() async {
       final ({String certificatePem, String privateKeyPem}) cert =
-          HibikiSelfSignedCertGenerator.generate(
+          FushiSelfSignedCertGenerator.generate(
         commonName: 'hibiki-test',
         sanIpAddresses: <String>['127.0.0.1'],
       );
-      fingerprint = HibikiTlsIdentityStore.fingerprintOf(cert.certificatePem);
+      fingerprint = FushiTlsIdentityStore.fingerprintOf(cert.certificatePem);
       final SecurityContext ctx = SecurityContext()
         ..useCertificateChainBytes(cert.certificatePem.codeUnits)
         ..usePrivateKeyBytes(cert.privateKeyPem.codeUnits);
-      tlsServer = HibikiSyncServer(
+      tlsServer = FushiSyncServer(
         syncDataDir: Directory.systemTemp.createTempSync('hbk_tls_cover').path,
         port: 0,
         token: token,
@@ -513,11 +513,11 @@ void main() {
     tearDown(() async => tlsServer.stop());
 
     Future<InterconnectSyncBackend> buildPinnedBackend(String? fp) async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(() async => db.close());
       final SyncRepository repo = SyncRepository(db);
-      await repo.setHibikiClientUrls(<HibikiClientUrl>[
-        HibikiClientUrl(url: tlsBase, enabled: true, fingerprintSha256: fp),
+      await repo.setHibikiClientUrls(<FushiClientUrl>[
+        FushiClientUrl(url: tlsBase, enabled: true, fingerprintSha256: fp),
       ]);
       await repo.setHibikiClientToken(token);
       final InterconnectSyncBackend backend =

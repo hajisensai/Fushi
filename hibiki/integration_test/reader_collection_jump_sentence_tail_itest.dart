@@ -104,7 +104,7 @@ void main() {
               reason: 'home (nav bar) must render');
           await tester.pump(const Duration(seconds: 2));
 
-          // 焦点驱动需要 HibikiFocusRoot（默认 OFF；开关后 main.dart 重建装上壳）。
+          // 焦点驱动需要 FushiFocusRoot（默认 OFF；开关后 main.dart 重建装上壳）。
           final AppModel appModel = await readyAppModel(tester);
           await appModel.setExperimentalFocusNavigationEnabled(true);
           for (int i = 0; i < 8; i++) {

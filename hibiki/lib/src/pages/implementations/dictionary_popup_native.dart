@@ -114,7 +114,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final tokens = HibikiDesignTokens.of(context);
+    final tokens = FushiDesignTokens.of(context);
     final textColor = cs.onSurface;
     final subColor = cs.onSurfaceVariant;
     final tagBg = cs.surfaceContainerHighest;
@@ -145,7 +145,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
     Color textColor,
     Color subColor,
     Color tagBg,
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
   ) {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
@@ -166,7 +166,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
     _GroupedEntry entry,
     Color textColor,
     Color subColor,
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
   ) {
     return Row(
       children: [
@@ -187,7 +187,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
     _GroupedEntry entry,
     Color textColor,
     Color subColor,
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
   ) {
     final TextStyle expressionStyle = tokens.type.pageTitle.copyWith(
       color: textColor,
@@ -212,13 +212,13 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
   Widget _buildMineButton(
     _GroupedEntry entry,
     Color subColor,
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
   ) {
     return SizedBox(
       width: tokens.spacing.card * 2,
       height: tokens.spacing.card * 2,
       child: Center(
-        child: HibikiIconButton(
+        child: FushiIconButton(
           icon: Icons.add_circle_outline,
           tooltip: t.creator_export_card,
           size: tokens.spacing.card + tokens.spacing.gap / 2,
@@ -242,14 +242,14 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
   Widget _buildDeinflection(
     _GroupedEntry entry,
     Color tagBg,
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
   ) {
     return Padding(
       padding: EdgeInsets.only(top: tokens.spacing.gap / 4),
       child: Wrap(
         spacing: tokens.spacing.gap / 4,
         children: entry.deinflectionTrace.map((trace) {
-          return HibikiTagChip(
+          return FushiTagChip(
             label: trace['name'] ?? '',
             color: tagBg,
           );
@@ -263,7 +263,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
     Color textColor,
     Color subColor,
     Color tagBg,
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
   ) {
     final Map<String, List<_GlossaryItem>> byDict = {};
     for (final g in entry.glossaries) {

@@ -10,9 +10,9 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 /// TODO-961 M0 spike：证伪 basic_utils EC P-256 自签证书 + PKCS#8 私钥 PEM 能否被
 /// dart:io SecurityContext 直接接受，并打通 pinned HTTPS server <-> pinned client。
 void main() {
-  group('HibikiSelfSignedCertGenerator / SecurityContext 接受性（M0 最大不确定性）', () {
+  group('FushiSelfSignedCertGenerator / SecurityContext 接受性（M0 最大不确定性）', () {
     test('生成的 PKCS#8 私钥 PEM 能被 SecurityContext.usePrivateKeyBytes 接受', () {
-      final generated = HibikiSelfSignedCertGenerator.generate(
+      final generated = FushiSelfSignedCertGenerator.generate(
         commonName: 'hibiki-test',
         sanIpAddresses: <String>['127.0.0.1'],
       );
@@ -28,14 +28,14 @@ void main() {
     });
 
     test('fingerprintOf 对同一证书稳定、为 64 hex (32 字节冒号分隔)', () {
-      final generated = HibikiSelfSignedCertGenerator.generate(
+      final generated = FushiSelfSignedCertGenerator.generate(
         commonName: 'hibiki-test',
         sanIpAddresses: <String>['127.0.0.1'],
       );
       final fp1 =
-          HibikiTlsIdentityStore.fingerprintOf(generated.certificatePem);
+          FushiTlsIdentityStore.fingerprintOf(generated.certificatePem);
       final fp2 =
-          HibikiTlsIdentityStore.fingerprintOf(generated.certificatePem);
+          FushiTlsIdentityStore.fingerprintOf(generated.certificatePem);
       expect(fp1, fp2);
       // 32 字节 -> 32 个两位 hex，31 个冒号分隔。
       final parts = fp1.split(':');
@@ -47,7 +47,7 @@ void main() {
     });
 
     test('fingerprintOf == 对 DER 直接算的 SHA-256（已知算法一致）', () {
-      final generated = HibikiSelfSignedCertGenerator.generate(
+      final generated = FushiSelfSignedCertGenerator.generate(
         commonName: 'hibiki-test',
         sanIpAddresses: <String>['127.0.0.1'],
       );
@@ -55,14 +55,14 @@ void main() {
       final ctx = SecurityContext();
       ctx.useCertificateChainBytes(generated.certificatePem.codeUnits);
       final storeFp =
-          HibikiTlsIdentityStore.fingerprintOf(generated.certificatePem);
+          FushiTlsIdentityStore.fingerprintOf(generated.certificatePem);
       // store 走 PEM->DER->sha256；pinning 走 cert.der->sha256。两者比对在
       // 下面的 handshake 测试里被端到端验证；这里仅断言 store 自洽且非空。
       expect(storeFp.isNotEmpty, isTrue);
     });
   });
 
-  group('HibikiTlsIdentityStore loadOrCreate / regenerate', () {
+  group('FushiTlsIdentityStore loadOrCreate / regenerate', () {
     late Directory tmp;
     setUp(() async {
       tmp = await Directory.systemTemp.createTemp('hibiki_tls_test_');
@@ -72,7 +72,7 @@ void main() {
     });
 
     test('loadOrCreate 首次生成并落盘，二次加载返回同指纹', () async {
-      final store = HibikiTlsIdentityStore(dataDir: tmp.path);
+      final store = FushiTlsIdentityStore(dataDir: tmp.path);
       final first = await store.loadOrCreate();
       expect(first.certificatePem, contains('-----BEGIN CERTIFICATE-----'));
       expect(first.privateKeyPem, contains('-----BEGIN PRIVATE KEY-----'));
@@ -84,7 +84,7 @@ void main() {
     });
 
     test('regenerate 产出新证书（指纹变化，旧钉扎失效）', () async {
-      final store = HibikiTlsIdentityStore(dataDir: tmp.path);
+      final store = FushiTlsIdentityStore(dataDir: tmp.path);
       final first = await store.loadOrCreate();
       final regen = await store.regenerate();
       expect(regen.fingerprintSha256, isNot(first.fingerprintSha256));
@@ -92,21 +92,21 @@ void main() {
   });
 
   group('headless pinned HTTPS 冒烟（M0 核心证伪）', () {
-    late HibikiTlsIdentity identity;
+    late FushiTlsIdentity identity;
     late SecurityContext serverCtx;
     late HttpServer server;
     late int port;
 
     setUp(() async {
-      final generated = HibikiSelfSignedCertGenerator.generate(
+      final generated = FushiSelfSignedCertGenerator.generate(
         commonName: 'hibiki-smoke',
         sanIpAddresses: <String>['127.0.0.1'],
       );
-      identity = HibikiTlsIdentity(
+      identity = FushiTlsIdentity(
         certificatePem: generated.certificatePem,
         privateKeyPem: generated.privateKeyPem,
         fingerprintSha256:
-            HibikiTlsIdentityStore.fingerprintOf(generated.certificatePem),
+            FushiTlsIdentityStore.fingerprintOf(generated.certificatePem),
       );
       serverCtx = SecurityContext()
         ..useCertificateChainBytes(identity.certificatePem.codeUnits)

@@ -11,57 +11,57 @@ void main() {
   const Map<String, List<String>> requiredComponentTokens =
       <String, List<String>>{
     'lib/src/utils/components/hibiki_design_tokens.dart': <String>[
-      'class HibikiDesignTokens',
-      'class HibikiRadii',
-      'class HibikiSurfaceColors',
-      'class HibikiTypeRoles',
-      'class HibikiDensityTokens',
-      'final HibikiDensityTokens density',
-      'static HibikiDesignTokens of',
+      'class FushiDesignTokens',
+      'class FushiRadii',
+      'class FushiSurfaceColors',
+      'class FushiTypeRoles',
+      'class FushiDensityTokens',
+      'final FushiDensityTokens density',
+      'static FushiDesignTokens of',
     ],
     'lib/src/utils/components/hibiki_material_components.dart': <String>[
-      'class HibikiCard',
-      'class HibikiListItem',
-      'enum HibikiListDensity',
-      'HibikiListDensity.compact',
-      'class HibikiSearchField',
-      'class HibikiTextField',
-      'class HibikiSelectableChip',
-      'class HibikiActionChip',
-      'class HibikiTagChip',
-      'class HibikiBadge',
-      'class HibikiColorSwatch',
-      'class HibikiPreviewSwitch',
-      'class HibikiPageHeader',
-      'class HibikiPageScaffold',
-      'class HibikiToolScaffold',
-      'class HibikiTransientScaffold',
-      'class HibikiOverlayScaffold',
-      'class HibikiModalSheetFrame',
-      'class HibikiDialogFrame',
-      'class HibikiOverflowMenu',
-      'class HibikiPopupMenuItem',
-      'class HibikiFilePickerRow',
-      'class HibikiLogPanel',
-      'class HibikiPopupSurface',
-      'class HibikiCompactSearchRow',
-      'class HibikiEditorPanel',
+      'class FushiCard',
+      'class FushiListItem',
+      'enum FushiListDensity',
+      'FushiListDensity.compact',
+      'class FushiSearchField',
+      'class FushiTextField',
+      'class FushiSelectableChip',
+      'class FushiActionChip',
+      'class FushiTagChip',
+      'class FushiBadge',
+      'class FushiColorSwatch',
+      'class FushiPreviewSwitch',
+      'class FushiPageHeader',
+      'class FushiPageScaffold',
+      'class FushiToolScaffold',
+      'class FushiTransientScaffold',
+      'class FushiOverlayScaffold',
+      'class FushiModalSheetFrame',
+      'class FushiDialogFrame',
+      'class FushiOverflowMenu',
+      'class FushiPopupMenuItem',
+      'class FushiFilePickerRow',
+      'class FushiLogPanel',
+      'class FushiPopupSurface',
+      'class FushiCompactSearchRow',
+      'class FushiEditorPanel',
       'onLongPress',
     ],
     'lib/src/utils/components/settings_shared.dart': <String>[
       'class AdaptiveSettingsTextField',
-      'HibikiCard(',
-      'HibikiBadge(',
+      'FushiCard(',
+      'FushiBadge(',
     ],
   };
 
   const Map<String, List<String>> migratedSurfaces = <String, List<String>>{
     'lib/src/settings/material_settings_renderer.dart': <String>[
-      'HibikiListItem',
+      'FushiListItem',
       // schema 行的自适应组件已收口到 settings_schema_widgets（见下条）；渲染器只
       // 复用共享 SettingsSchemaSection。
       'SettingsSchemaSection',
-      'HibikiPageScaffold',
+      'FushiPageScaffold',
     ],
     'lib/src/settings/settings_schema_widgets.dart': <String>[
       'AdaptiveSettingsSection',
@@ -70,127 +70,127 @@ void main() {
       'AdaptiveSettingsSliderRow',
     ],
     'lib/src/settings/settings_home_page.dart': <String>[
-      'HibikiPageHeader',
+      'FushiPageHeader',
     ],
     'lib/src/utils/components/hibiki_list_tile.dart': <String>[
-      'HibikiListItem',
+      'FushiListItem',
     ],
     'lib/src/utils/components/hibiki_text_selection_controls.dart': <String>[
-      'HibikiCard',
-      'HibikiOverflowMenu',
+      'FushiCard',
+      'FushiOverflowMenu',
     ],
     'lib/src/pages/implementations/home_dictionary_page.dart': <String>[
-      'HibikiPageHeader',
-      'HibikiSearchField',
-      'HibikiCard',
-      'HibikiListItem',
+      'FushiPageHeader',
+      'FushiSearchField',
+      'FushiCard',
+      'FushiListItem',
     ],
     'lib/src/pages/implementations/home_page.dart': <String>[
-      'HibikiDialogFrame',
+      'FushiDialogFrame',
     ],
     'lib/src/pages/implementations/media_source_picker_dialog_page.dart':
         <String>[
-      'HibikiListItem',
+      'FushiListItem',
     ],
     'lib/src/pages/base_source_page.dart': <String>[
-      'HibikiPopupSurface',
+      'FushiPopupSurface',
     ],
     'lib/src/pages/implementations/reading_statistics_page.dart': <String>[
-      'HibikiPageScaffold',
-      'HibikiCard',
-      'HibikiDesignTokens',
+      'FushiPageScaffold',
+      'FushiCard',
+      'FushiDesignTokens',
     ],
     'lib/src/pages/implementations/collections_page.dart': <String>[
-      'HibikiPageScaffold',
-      'HibikiListItem',
+      'FushiPageScaffold',
+      'FushiListItem',
     ],
     'lib/src/pages/implementations/tag_management_page.dart': <String>[
-      'HibikiPageScaffold',
-      'HibikiListItem',
-      'HibikiTextField',
-      'HibikiColorSwatch',
+      'FushiPageScaffold',
+      'FushiListItem',
+      'FushiTextField',
+      'FushiColorSwatch',
     ],
-    // TODO-293 长按媒体对话框重设计：旧版用 HibikiListItem 行 + HibikiActionChip 列举动作；
+    // TODO-293 长按媒体对话框重设计：旧版用 FushiListItem 行 + FushiActionChip 列举动作；
     // 重设计后封面即「阅读」点击目标，动作改为叠在封面上的半透明胶囊（_TranslucentActionChip）
     // + 危险动作藏进溢出菜单（内容性视觉，不再是 list 行 / 通用 chip）。共享 MD3 锚点收敛到
-    // 仍真实使用的 HibikiDialogFrame（外框 chrome）+ HibikiDesignTokens（spacing/type/surface 令牌）。
+    // 仍真实使用的 FushiDialogFrame（外框 chrome）+ FushiDesignTokens（spacing/type/surface 令牌）。
     'lib/src/pages/implementations/media_item_dialog_page.dart': <String>[
-      'HibikiDialogFrame',
-      'HibikiDesignTokens',
+      'FushiDialogFrame',
+      'FushiDesignTokens',
     ],
     'lib/src/utils/misc/update_checker_ui.dart': <String>[
-      'HibikiCard',
+      'FushiCard',
     ],
     'lib/src/sync/sync_compare_dialog.dart': <String>[
-      'HibikiOverflowMenu',
-      'HibikiCard',
-      'HibikiDialogFrame',
+      'FushiOverflowMenu',
+      'FushiCard',
+      'FushiDialogFrame',
     ],
     'lib/src/media/audiobook/book_import_dialog.dart': <String>[
       'AdaptiveSettingsSection',
       'AdaptiveSettingsSwitchRow',
-      'HibikiFilePickerRow',
-      'HibikiTextField',
+      'FushiFilePickerRow',
+      'FushiTextField',
     ],
     'lib/src/media/audiobook/audiobook_import_dialog.dart': <String>[
       'AdaptiveSettingsSection',
-      'HibikiFilePickerRow',
+      'FushiFilePickerRow',
     ],
     'lib/src/pages/implementations/reader_hibiki_history_page.dart': <String>[
-      'HibikiPageHeader',
-      'HibikiCard',
-      'HibikiTagChip',
-      'HibikiBadge',
+      'FushiPageHeader',
+      'FushiCard',
+      'FushiTagChip',
+      'FushiBadge',
       '_bookCardShell',
     ],
     'lib/src/pages/implementations/dictionary_dialog_page.dart': <String>[
-      'HibikiCard',
-      'HibikiListItem',
+      'FushiCard',
+      'FushiListItem',
       '_buildCategoryTile',
       '_buildDictCheckbox',
     ],
     'lib/src/pages/implementations/tag_picker_page.dart': <String>[
-      'HibikiPageScaffold',
-      'HibikiCard',
-      'HibikiListItem',
+      'FushiPageScaffold',
+      'FushiCard',
+      'FushiListItem',
     ],
     'lib/src/pages/implementations/illustrations_viewer_page.dart': <String>[
-      'HibikiPageScaffold',
-      'HibikiToolScaffold',
-      'HibikiCard',
+      'FushiPageScaffold',
+      'FushiToolScaffold',
+      'FushiCard',
     ],
     'lib/src/pages/base_history_page.dart': <String>[
-      'HibikiCard',
+      'FushiCard',
     ],
     'lib/src/pages/implementations/history_reader_page.dart': <String>[
-      'HibikiDesignTokens',
+      'FushiDesignTokens',
     ],
     'lib/src/pages/implementations/debug_log_page.dart': <String>[
-      'HibikiPageScaffold',
-      'HibikiLogPanel',
+      'FushiPageScaffold',
+      'FushiLogPanel',
     ],
     'lib/src/pages/implementations/error_log_page.dart': <String>[
-      'HibikiPageScaffold',
-      'HibikiLogPanel',
+      'FushiPageScaffold',
+      'FushiLogPanel',
     ],
     'lib/src/pages/implementations/popup_dictionary_page.dart': <String>[
-      'HibikiPopupSurface',
-      'HibikiCompactSearchRow',
-      'HibikiOverlayScaffold',
+      'FushiPopupSurface',
+      'FushiCompactSearchRow',
+      'FushiOverlayScaffold',
     ],
     'lib/src/pages/implementations/dictionary_popup_layer.dart': <String>[
-      'HibikiPopupSurface',
+      'FushiPopupSurface',
     ],
     'lib/src/pages/implementations/floating_dict_page.dart': <String>[
-      'HibikiPopupSurface',
-      'HibikiCompactSearchRow',
-      'HibikiOverlayScaffold',
+      'FushiPopupSurface',
+      'FushiCompactSearchRow',
+      'FushiOverlayScaffold',
     ],
     'lib/src/pages/implementations/book_css_editor_page.dart': <String>[
-      'HibikiToolScaffold',
-      'HibikiEditorPanel',
-      'HibikiSelectableChip',
-      'HibikiPlaceholderMessage',
+      'FushiToolScaffold',
+      'FushiEditorPanel',
+      'FushiSelectableChip',
+      'FushiPlaceholderMessage',
     ],
     'lib/src/pages/implementations/anki_settings_page.dart': <String>[
       'AdaptiveSettingsTextField',
@@ -198,77 +198,77 @@ void main() {
     'lib/src/pages/implementations/dictionary_settings_dialog_page.dart':
         <String>[
       'AdaptiveSettingsTextField',
-      'HibikiEditorPanel',
+      'FushiEditorPanel',
     ],
-    // TODO-586：HibikiTextField 随 SettingsNumberField 搬到共享 fields 文件。
+    // TODO-586：FushiTextField 随 SettingsNumberField 搬到共享 fields 文件。
     'lib/src/settings/settings_schema_fields.dart': <String>[
-      'HibikiTextField',
+      'FushiTextField',
     ],
     'lib/src/sync/sync_settings_schema.dart': <String>[
-      'HibikiTextField',
+      'FushiTextField',
     ],
     'lib/src/pages/implementations/custom_theme_page.dart': <String>[
-      'HibikiTextField',
-      'HibikiDesignTokens',
-      'HibikiColorSwatch',
-      'HibikiPreviewSwitch',
+      'FushiTextField',
+      'FushiDesignTokens',
+      'FushiColorSwatch',
+      'FushiPreviewSwitch',
     ],
     'lib/src/pages/implementations/custom_fonts_page.dart': <String>[
-      'HibikiTextField',
+      'FushiTextField',
     ],
     'lib/src/pages/implementations/lyrics_dialog_page.dart': <String>[
-      'HibikiTextField',
+      'FushiTextField',
     ],
     'lib/src/pages/implementations/profile_management_page.dart': <String>[
-      'HibikiTextField',
+      'FushiTextField',
     ],
     'lib/src/pages/implementations/miscellaneous_settings_page.dart': <String>[
-      'HibikiCard',
-      'HibikiBadge',
+      'FushiCard',
+      'FushiBadge',
     ],
     'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>[
-      'HibikiTextField',
+      'FushiTextField',
     ],
-    // BUG-244 / TODO-297：阅读器有声书播放条的播放/暂停键从扁平 HibikiIconButton
+    // BUG-244 / TODO-297：阅读器有声书播放条的播放/暂停键从扁平 FushiIconButton
     // 还原成原生 MD3 [IconButton.filledTonal]（标准圆形 filled-tonal 容器 +
     // state-layer + ripple），上一句/下一句/follow/设置改无框原生 IconButton。
-    // 共享 MD3 锚点收敛到原生 filled-tonal 框 + HibikiDesignTokens（spacing 令牌）；
+    // 共享 MD3 锚点收敛到原生 filled-tonal 框 + FushiDesignTokens（spacing 令牌）；
     // 「圆框 md3 观感」由专用守卫 audiobook_play_bar_md3_frame_test.dart 锁定。
     'lib/src/media/audiobook/audiobook_play_bar.dart': <String>[
       'IconButton.filledTonal',
-      'HibikiDesignTokens',
+      'FushiDesignTokens',
     ],
     'lib/src/pages/implementations/tag_filter_sheet.dart': <String>[
-      'HibikiSelectableChip',
-      'HibikiModalSheetFrame',
+      'FushiSelectableChip',
+      'FushiModalSheetFrame',
     ],
     'lib/src/media/audiobook/subtitle_rematch.dart': <String>[
-      'HibikiModalSheetFrame',
-      'HibikiDialogFrame',
+      'FushiModalSheetFrame',
+      'FushiDialogFrame',
     ],
     'lib/src/pages/implementations/dictionary_popup_native.dart': <String>[
-      'HibikiTagChip',
-      'HibikiDesignTokens',
+      'FushiTagChip',
+      'FushiDesignTokens',
     ],
     'lib/src/utils/misc/hibiki_toast.dart': <String>[
-      'HibikiDesignTokens',
+      'FushiDesignTokens',
     ],
     // Merged from app_model_popup_dictionary_md3_static_test.dart: the desktop
     // popup dictionary lookup (AppModel.openPopupDictionaryLookup) uses the shared
     // MD3 dialog frame + PopupDictionaryPage instead of a bespoke Dialog shell.
     'lib/src/models/app_model.dart': <String>[
-      'HibikiDialogFrame(',
+      'FushiDialogFrame(',
       'PopupDictionaryPage(',
     ],
     // galgame 弹窗 MD3 收口：统一走 showAppDialog 入口（MD3 弹窗动画 + Cupertino
-    // 分支）+ 共享对话框骨架（HibikiDialogFrame + HibikiModalSheetFrame）+
+    // 分支）+ 共享对话框骨架（FushiDialogFrame + FushiModalSheetFrame）+
     // adaptiveDialogAction（肯定动作 FilledButton 强调），与同子系统
     // galgame_helper_installer 的确认/进度框同一套样板；波形选区框文案改走 i18n，
-    // 游戏库筛选面板改走 adaptiveModalSheet + HibikiModalSheetFrame。
+    // 游戏库筛选面板改走 adaptiveModalSheet + FushiModalSheetFrame。
     'lib/src/mining/galgame_waveform_select_dialog.dart': <String>[
       'showAppDialog<GalWaveformRange>(',
-      'HibikiDialogFrame',
-      'HibikiModalSheetFrame',
+      'FushiDialogFrame',
+      'FushiModalSheetFrame',
       'adaptiveDialogAction',
       't.game_waveform_select_title',
       't.game_waveform_range_label',
@@ -280,23 +280,23 @@ void main() {
     // 统一刮削弹窗本体（库页卡菜单与详情页编辑 tab 共用）走共享对话框骨架。
     'lib/src/mining/galgame_scrape_dialog.dart': <String>[
       'showAppDialog<bool>(',
-      'HibikiDialogFrame',
-      'HibikiModalSheetFrame',
+      'FushiDialogFrame',
+      'FushiModalSheetFrame',
       'adaptiveDialogAction',
     ],
     'lib/src/pages/implementations/games_library_page.dart': <String>[
       'showAppDialog<GalgamePlayStatus>(',
       'showAppDialog<String>(',
       'adaptiveModalSheet<void>(',
-      'HibikiDialogFrame',
-      'HibikiModalSheetFrame',
-      'HibikiTextField',
+      'FushiDialogFrame',
+      'FushiModalSheetFrame',
+      'FushiTextField',
       'adaptiveDialogAction',
       'AdaptiveSettingsSwitchRow',
       // 卡菜单「刮削元数据」直开统一弹窗；「移除」先过统一销毁确认框；
       // 合集横排行长按/右键有统一合集上下文菜单。
       'showGalgameScrapeDialog(',
-      'HibikiDestructiveConfirmDialog(',
+      'FushiDestructiveConfirmDialog(',
       'showCollectionContextDialog(',
     ],
     'lib/src/pages/implementations/texthooker_page.dart': <String>[
@@ -442,7 +442,7 @@ void main() {
         'TextStyle(',
         'BorderRadius.circular(4)',
         "Text('+",
-        'HibikiFocusable(',
+        'FushiFocusable(',
         'fontSize: 10',
         'fontSize: 11',
         'EdgeInsets.symmetric(horizontal: 10, vertical: 4)',
@@ -534,7 +534,7 @@ void main() {
         'TextField(',
       ],
       // TODO-586：SettingsSecretField/SettingsNumberField（含 AdaptiveSettingsTextField
-      // / HibikiTextField，子串带 'TextField('）搬到共享 fields 文件。
+      // / FushiTextField，子串带 'TextField('）搬到共享 fields 文件。
       'lib/src/settings/settings_schema_fields.dart': <String>[
         'TextField(',
       ],
@@ -577,7 +577,7 @@ void main() {
         'FilterChip(',
         'ChoiceChip(',
         'SafeArea(',
-        'HibikiDivider()',
+        'FushiDivider()',
       ],
       'lib/src/media/audiobook/subtitle_rematch.dart': <String>[
         '=> Dialog(',
@@ -589,7 +589,7 @@ void main() {
       ],
       // Merged from app_model_popup_dictionary_md3_static_test.dart: the popup
       // dictionary lookup must not fall back to a bespoke Dialog + ConstrainedBox
-      // shell (it flows through HibikiDialogFrame instead).
+      // shell (it flows through FushiDialogFrame instead).
       'lib/src/models/app_model.dart': <String>[
         '=> Dialog(',
         'child: ConstrainedBox(',
@@ -614,7 +614,7 @@ void main() {
       'lib/src/pages/implementations/games_library_page.dart': <String>[
         'showDialog<',
         'AlertDialog(',
-        // 游玩状态选择框已收口设计系统骨架（HibikiListItem 行），不再裸 SimpleDialog。
+        // 游玩状态选择框已收口设计系统骨架（FushiListItem 行），不再裸 SimpleDialog。
         'SimpleDialog(',
         'showModalBottomSheet<',
         'SwitchListTile(',
@@ -879,7 +879,7 @@ void main() {
               'not ordinary page chrome — same content rationale as the '
               'allowlisted reading/video statistics pages. Interactive chrome '
               '(entry button surface, delay/view controls) routes through '
-              'HibikiDesignTokens + shared MD3 components (HibikiIconButton / '
+              'FushiDesignTokens + shared MD3 components (FushiIconButton / '
               'adaptiveSlider / AdaptiveSettingsTextField).',
       'lib/src/media/video/video_danmaku_text_metrics.dart':
           'BUG-1297/PR#627 danmaku font-size single source of truth, shared '
@@ -1501,7 +1501,7 @@ void main() {
     // 章节面板：行骨架是共享组件，不是裸 ListTile（其豁免只覆盖行字号）。
     final String chapterPanel =
         File('lib/src/media/video/video_chapter_panel.dart').readAsStringSync();
-    expect(chapterPanel, contains('HibikiListItem('));
+    expect(chapterPanel, contains('FushiListItem('));
     expect(_containsForbiddenChrome(chapterPanel, 'ListTile('), isFalse,
         reason: 'video_chapter_panel is allowlisted for row font size only; '
             'its row skeleton must stay a shared MD3 component');
@@ -1510,7 +1510,7 @@ void main() {
     final String texthooker =
         File('lib/src/pages/implementations/texthooker_page.dart')
             .readAsStringSync();
-    expect(texthooker, contains('HibikiListItem('));
+    expect(texthooker, contains('FushiListItem('));
     expect(_containsForbiddenChrome(texthooker, 'ListTile('), isFalse,
         reason: 'texthooker_page is allowlisted for hook status pills only; '
             'its dialog rows must stay shared MD3 components');
@@ -1520,7 +1520,7 @@ void main() {
     final String shaderDialog =
         File('lib/src/pages/implementations/video_shader_dialog.dart')
             .readAsStringSync();
-    expect(shaderDialog, contains('HibikiListItem('));
+    expect(shaderDialog, contains('FushiListItem('));
     expect(shaderDialog, contains('CheckboxListTile('),
         reason: 'the reviewed reason is about the shader-file checkbox rows; '
             'if they are gone the reason must be rewritten, not inherited');
@@ -1628,8 +1628,8 @@ void main() {
       'lib/src/media/metadata/scrape_failure_view.dart',
     ).readAsStringSync();
 
-    expect(source, contains('HibikiCard('));
-    expect(source, contains('HibikiDesignTokens.of(context)'));
+    expect(source, contains('FushiCard('));
+    expect(source, contains('FushiDesignTokens.of(context)'));
     expect(source, contains('tokens.surfaces.overlay'));
     expect(source, contains('tokens.radii.cardRadius'));
     expect(source, contains('tokens.spacing.gap'));
@@ -1649,20 +1649,20 @@ void main() {
       source.length,
     );
 
-    expect(tagDropTarget, contains('HibikiDesignTokens.of(context)'));
+    expect(tagDropTarget, contains('FushiDesignTokens.of(context)'));
     expect(tagDropTarget, isNot(contains('BorderRadius.circular(12)')));
   });
 
   test('shared tag filter bar uses shared MD3 tag chips', () {
     // 标签筛选栏已从书架页内联类 _TagBarContent 提取为共享组件
-    // HibikiTagFilterBar（书架 + 视频 tab 共用），此处对整份共享组件文件做约束。
+    // FushiTagFilterBar（书架 + 视频 tab 共用），此处对整份共享组件文件做约束。
     final String tagBar = File(
       'lib/src/pages/implementations/tag_filter_bar.dart',
     ).readAsStringSync();
 
-    expect(tagBar, contains('class HibikiTagFilterBar'));
-    expect(tagBar, contains('HibikiTagChip('));
-    expect(tagBar, contains('HibikiIconButton('));
+    expect(tagBar, contains('class FushiTagFilterBar'));
+    expect(tagBar, contains('FushiTagChip('));
+    expect(tagBar, contains('FushiIconButton('));
     expect(tagBar, contains('tokens.spacing'));
     expect(tagBar, contains('tokens.surfaces.outline'));
     expect(tagBar, isNot(contains('class _TagChip')));
@@ -1687,7 +1687,7 @@ void main() {
       source.length,
     );
 
-    expect(buildSource, contains('HibikiDesignTokens.of(context)'));
+    expect(buildSource, contains('FushiDesignTokens.of(context)'));
     expect(buildSource, contains('tokens.spacing'));
     expect(buildSource, isNot(contains('Spacing.of(context)')));
     expect(buildSource, isNot(contains('const EdgeInsets.all(8)')));
@@ -1706,7 +1706,7 @@ void main() {
       'Widget buildMediaItem(MediaItem item)',
     );
 
-    expect(cardLayout, contains('HibikiDesignTokens.of(context)'));
+    expect(cardLayout, contains('FushiDesignTokens.of(context)'));
     expect(cardLayout, contains('tokens.spacing'));
     // 巡检 PR-3：footer 提取到共享 ShelfCardFooter（与 SeriesShelfCard 共用）。
     expect(cardLayout, contains('ShelfCardFooter(title: title)'));
@@ -1747,14 +1747,14 @@ void main() {
     );
 
     // 共享 MD3 对话框框 + 顶部可见封面块（限高 + letterbox 背景）。
-    expect(frame, contains('HibikiDialogFrame('));
+    expect(frame, contains('FushiDialogFrame('));
     expect(frame, contains('ConstrainedBox('));
     expect(frame, contains('ColoredBox('));
     expect(frame, contains('tokens.surfaces.overlay'));
     // MD3 action layout：快捷动作 chip 网格 + 列表动作 + 危险文字按钮。
     expect(frame, contains('Wrap('));
-    expect(frame, contains('HibikiActionChip('));
-    expect(frame, contains('HibikiListItem('));
+    expect(frame, contains('FushiActionChip('));
+    expect(frame, contains('FushiListItem('));
     expect(frame, contains('TextButton('));
     expect(frame, contains('final bool showLaunchAction;'));
     expect(frame, contains('showLaunchAction &&'));
@@ -1798,7 +1798,7 @@ void main() {
       'Widget _bookCardLayout({',
     );
 
-    expect(cardShell, contains('HibikiDesignTokens.of(context)'));
+    expect(cardShell, contains('FushiDesignTokens.of(context)'));
     expect(cardShell, contains('tokens.spacing'));
     // 巡检 PR-3：勾选圈 / 选中罩视觉提取到共享 ShelfSelectionCheck /
     // ShelfSelectedOverlay（与 SeriesShelfCard 共用，eink 实底统一处理），
@@ -1817,7 +1817,7 @@ void main() {
     final String sharedSelection = File(
       'lib/src/utils/components/shelf_card_widgets.dart',
     ).readAsStringSync();
-    expect(sharedSelection, contains('HibikiDesignTokens.of(context)'));
+    expect(sharedSelection, contains('FushiDesignTokens.of(context)'));
     expect(sharedSelection, contains('tokens.surfaces'));
     expect(sharedSelection, isNot(contains('theme.colorScheme.outline')));
   });
@@ -1845,7 +1845,7 @@ void main() {
       placeholder,
       batchTagIntentRow,
     ]) {
-      expect(section, contains('HibikiDesignTokens'));
+      expect(section, contains('FushiDesignTokens'));
       expect(section, contains('tokens.spacing'));
       expect(section, isNot(contains('const SizedBox(height: 12)')));
       expect(section, isNot(contains('const SizedBox(width: 12)')));
@@ -1888,7 +1888,7 @@ void main() {
 
     // 书名 footer 用共享 token，不允许退回封面内暗角覆盖层或硬编码颜色/像素。
     expect(source, isNot(contains('Widget _titleOverlay(String title)')));
-    expect(titleFooter, contains('HibikiDesignTokens.of(context)'));
+    expect(titleFooter, contains('FushiDesignTokens.of(context)'));
     expect(titleFooter, contains('tokens.spacing'));
     expect(titleFooter, contains('tokens.surfaces'));
     expect(titleFooter, contains('tokens.surfaces.onSurface'));
@@ -1899,7 +1899,7 @@ void main() {
     expect(titleFooter, isNot(contains('theme.colorScheme.surface')));
     expect(titleFooter, isNot(contains('theme.colorScheme.onSurface')));
 
-    expect(dragTarget, contains('HibikiDesignTokens.of(context)'));
+    expect(dragTarget, contains('FushiDesignTokens.of(context)'));
     expect(dragTarget, contains('tokens.spacing'));
     expect(dragTarget, contains('tokens.surfaces'));
     expect(dragTarget, isNot(contains('final ThemeData theme')));
@@ -1921,8 +1921,8 @@ void main() {
       'enum _BatchTagIntent',
     );
 
-    expect(deleteDialog, contains('HibikiDialogFrame('));
-    expect(deleteDialog, contains('HibikiModalSheetFrame('));
+    expect(deleteDialog, contains('FushiDialogFrame('));
+    expect(deleteDialog, contains('FushiModalSheetFrame('));
     // 批量标签对话框的 MD3 chrome 已抽到与视频 tab 共用的
     // BatchTagPickerDialogFrame；切片断言走共享外壳，再对共享外壳文件
     // 断言真实 chrome，保证 MD3 保证传递闭环。
@@ -1930,8 +1930,8 @@ void main() {
     final String sharedBatchTagFrame = File(
       'lib/src/utils/components/batch_tag_dialog_frame.dart',
     ).readAsStringSync();
-    expect(sharedBatchTagFrame, contains('HibikiDialogFrame('));
-    expect(sharedBatchTagFrame, contains('HibikiModalSheetFrame('));
+    expect(sharedBatchTagFrame, contains('FushiDialogFrame('));
+    expect(sharedBatchTagFrame, contains('FushiModalSheetFrame('));
     for (final String dialogSource in <String>[
       deleteDialog,
       batchTagDialog,
@@ -1975,7 +1975,7 @@ void main() {
 
     expect(lyricsFlow, contains('ReaderLyricsModeHintDialog('));
     expect(pickerFlow, contains('ReaderSrtAudioPickerDialog('));
-    expect(settingsBar, contains('HibikiDesignTokens.of(context)'));
+    expect(settingsBar, contains('FushiDesignTokens.of(context)'));
     expect(settingsBar, contains('tokens.spacing'));
     expect(
       settingsBar,
@@ -1993,10 +1993,10 @@ void main() {
       lyricsHint,
       srtAudioPicker,
     ]) {
-      expect(dialogSource, contains('HibikiDialogFrame('));
-      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, contains('FushiDialogFrame('));
+      expect(dialogSource, contains('FushiModalSheetFrame('));
     }
-    expect(sentenceActionBar, contains('HibikiDesignTokens.of(context)'));
+    expect(sentenceActionBar, contains('FushiDesignTokens.of(context)'));
     expect(sentenceActionBar, contains('tokens.spacing'));
     expect(sentenceActionBar, isNot(contains('const SizedBox(width: 8)')));
   });
@@ -2048,10 +2048,10 @@ void main() {
     ).readAsStringSync();
     expect(bookImportFrame, contains('return ImportDialogFrame('));
     expect(audiobookFrame, contains('return ImportDialogFrame('));
-    expect(sharedImportFrame, contains('HibikiDialogFrame('));
-    expect(sharedImportFrame, contains('HibikiModalSheetFrame('));
-    expect(removeFrame, contains('HibikiDialogFrame('));
-    expect(removeFrame, contains('HibikiModalSheetFrame('));
+    expect(sharedImportFrame, contains('FushiDialogFrame('));
+    expect(sharedImportFrame, contains('FushiModalSheetFrame('));
+    expect(removeFrame, contains('FushiDialogFrame('));
+    expect(removeFrame, contains('FushiModalSheetFrame('));
     for (final String dialogSource in <String>[
       bookImportFrame,
       audiobookFrame,
@@ -2085,9 +2085,9 @@ void main() {
           _nextWidgetAfter(source, startToken),
         );
 
-        expect(section, contains('HibikiFilePickerRow('));
-        expect(section, contains('HibikiIconButton('));
-        // 原写法先把 HibikiIconButton 换名再做裸子串匹配 —— 那是白名单，白名单
+        expect(section, contains('FushiFilePickerRow('));
+        expect(section, contains('FushiIconButton('));
+        // 原写法先把 FushiIconButton 换名再做裸子串匹配 —— 那是白名单，白名单
         // 永远漏：仓内还有 `_RepeatIconButton(` / `_InBookIconButton(` /
         // `_CompactSearchIconButton(` 没登记，用上任何一个就假红；反向也漏，裸子串
         // 匹配不到本仓真实在用的 `IconButton.filledTonal(`。带标识符边界的匹配
@@ -2133,7 +2133,7 @@ void main() {
       'Widget buildImportAction(',
       '  List<Widget> buildProgressSection(',
     );
-    expect(importActionBody, contains('HibikiDesignTokens.of(context)'));
+    expect(importActionBody, contains('FushiDesignTokens.of(context)'));
     expect(importActionBody, contains('tokens.surfaces.primary'));
     expect(
       importActionBody,
@@ -2144,7 +2144,7 @@ void main() {
       bookImportFlow,
       audiobookImportFlow,
     ]) {
-      expect(section, contains('HibikiDesignTokens.of(context)'));
+      expect(section, contains('FushiDesignTokens.of(context)'));
       expect(section, contains('tokens.spacing'));
       expect(section, contains('tokens.type.metadata'));
       expect(section, contains('buildImportAction('));
@@ -2190,7 +2190,7 @@ void main() {
       windowSlider,
       thresholdSlider,
     ]) {
-      expect(section, contains('HibikiDesignTokens.of('));
+      expect(section, contains('FushiDesignTokens.of('));
       expect(section, contains('tokens.spacing'));
       expect(section, isNot(contains('const SizedBox(height: 4)')));
       expect(section, isNot(contains('const SizedBox(height: 8)')));
@@ -2221,7 +2221,7 @@ void main() {
       '/// Follow audio',
     );
 
-    expect(playBarBuild, contains('HibikiDesignTokens.of(context)'));
+    expect(playBarBuild, contains('FushiDesignTokens.of(context)'));
     expect(playBarBuild, contains('tokens.spacing'));
     expect(
       playBarBuild,
@@ -2246,8 +2246,8 @@ void main() {
 
     expect(apiFlow, contains('AnkiApiMessageDialog('));
     expect(apiFlow, isNot(contains('adaptiveAlertDialog(')));
-    expect(apiDialog, contains('HibikiDialogFrame('));
-    expect(apiDialog, contains('HibikiModalSheetFrame('));
+    expect(apiDialog, contains('FushiDialogFrame('));
+    expect(apiDialog, contains('FushiModalSheetFrame('));
     expect(apiDialog, isNot(contains('adaptiveAlertDialog(')));
   });
 
@@ -2279,8 +2279,8 @@ void main() {
     expect(fallbackFlow, contains('UpdateAvailableDialog('));
     expect(updateFlow, isNot(contains('adaptiveAlertDialog(')));
     expect(fallbackFlow, isNot(contains('adaptiveAlertDialog(')));
-    expect(dialogSource, contains('HibikiDialogFrame('));
-    expect(dialogSource, contains('HibikiModalSheetFrame('));
+    expect(dialogSource, contains('FushiDialogFrame('));
+    expect(dialogSource, contains('FushiModalSheetFrame('));
     expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
   });
 
@@ -2295,8 +2295,8 @@ void main() {
     final String combined = '$messageSource\n$compareSource\n$settingsSource';
 
     expect(messageSource, contains('class SyncMessageDialog'));
-    expect(messageSource, contains('HibikiDialogFrame('));
-    expect(messageSource, contains('HibikiModalSheetFrame('));
+    expect(messageSource, contains('FushiDialogFrame('));
+    expect(messageSource, contains('FushiModalSheetFrame('));
     expect(compareSource, contains('showSyncMessage('));
     expect(settingsSource, contains('showSyncMessage('));
     expect(combined, isNot(contains('CupertinoAlertDialog(')));
@@ -2312,9 +2312,9 @@ void main() {
       'void notifyReaderSettingsChanged(',
     );
 
-    expect(confirmationDialog, contains('HibikiDialogFrame('));
-    expect(confirmationDialog, contains('HibikiModalSheetFrame('));
-    expect(confirmationDialog, contains('HibikiDesignTokens.of(ctx)'));
+    expect(confirmationDialog, contains('FushiDialogFrame('));
+    expect(confirmationDialog, contains('FushiModalSheetFrame('));
+    expect(confirmationDialog, contains('FushiDesignTokens.of(ctx)'));
     expect(confirmationDialog, contains('insetPadding: EdgeInsets.symmetric('));
     expect(confirmationDialog, contains('horizontal: tokens.spacing.card'));
     expect(confirmationDialog, contains('vertical: tokens.spacing.card'));
@@ -2328,13 +2328,13 @@ void main() {
 
   test('sync settings custom controls use shared MD3 rows', () {
     // TODO-585: schema 拆成主库 + 5 个 part；读合并语料，AdaptiveSettingsSwitchRow/
-    // PickerRow/HibikiListItem 正向断言与 Dropdown/SwitchListTile/ListTile 负向断言
+    // PickerRow/FushiListItem 正向断言与 Dropdown/SwitchListTile/ListTile 负向断言
     // 都覆盖全部 part。
     final String source = readSyncSettingsSchemaSource();
 
     expect(source, contains('AdaptiveSettingsSwitchRow('));
     expect(source, contains('AdaptiveSettingsPickerRow<SyncBackendType>('));
-    expect(source, contains('HibikiListItem('));
+    expect(source, contains('FushiListItem('));
     expect(source, isNot(contains('DropdownButton<SyncBackendType>(')));
     expect(source, isNot(contains('SwitchListTile')));
     expect(source, isNot(contains('ListTile(')));
@@ -2354,7 +2354,7 @@ void main() {
     final String sharedMenu = File(
       'lib/src/utils/components/hibiki_material_components.dart',
     ).readAsStringSync();
-    expect(sharedMenu, contains('class HibikiPopupMenuItem<T>'));
+    expect(sharedMenu, contains('class FushiPopupMenuItem<T>'));
     expect(sharedMenu, contains('minHeight: 48'));
     expect(sharedMenu, contains('tokens.radii.menuRadius'));
     expect(sharedMenu, contains('PopupMenuPosition.under'));
@@ -2372,11 +2372,11 @@ void main() {
     for (final String path in menuFiles) {
       final String source = File(path).readAsStringSync();
       final String withoutSharedMenuItems =
-          source.replaceAll('HibikiPopupMenuItem', 'SharedMenuItem');
+          source.replaceAll('FushiPopupMenuItem', 'SharedMenuItem');
 
       expect(
         source,
-        contains('HibikiPopupMenuItem'),
+        contains('FushiPopupMenuItem'),
         reason: '$path should route menu rows through the shared MD3 item.',
       );
       expect(
@@ -2440,14 +2440,14 @@ void main() {
       'lib/src/utils/components/hibiki_material_components.dart',
     ).readAsStringSync();
     for (final (String start, String end) in <(String, String)>[
-      ('class HibikiCard', 'enum HibikiListDensity'),
-      ('class HibikiListItem', 'class HibikiSearchField'),
-      ('class HibikiTagChip', 'class HibikiBadge'),
-      ('class HibikiColorSwatch', 'Color _swatchForegroundFor'),
+      ('class FushiCard', 'enum FushiListDensity'),
+      ('class FushiListItem', 'class FushiSearchField'),
+      ('class FushiTagChip', 'class FushiBadge'),
+      ('class FushiColorSwatch', 'Color _swatchForegroundFor'),
     ]) {
       final String section = _sectionSource(components, start, end);
       expect(section, contains('AnimatedContainer('));
-      // MD3 状态动画时长必须来自 hibikiMd3StateDuration；HibikiCard 经
+      // MD3 状态动画时长必须来自 hibikiMd3StateDuration；FushiCard 经
       // einkSafeDuration 包装（eink 下归零，非 eink 恒等于 MD3 token）也算
       // 合规——守卫的意图是「用 MD3 token」，不是「禁止 eink 例外」。
       expect(
@@ -2468,8 +2468,8 @@ void main() {
     ).readAsStringSync();
     final String listItem = _sectionSource(
       components,
-      'class HibikiListItem',
-      'class HibikiSearchField',
+      'class FushiListItem',
+      'class FushiSearchField',
     );
 
     expect(listItem, contains('selectedForeground'));
@@ -2494,8 +2494,8 @@ void main() {
       'Widget _buildDictionaryList(',
     );
     // TODO-422：词典行尾的三点菜单已改为独立删除按钮，词典管理界面剩下的
-    // HibikiOverflowMenu 在移动端页头的溢出菜单 _buildMobilePageActions 里，
-    // 仍守卫它用共享 MD3 原语（HibikiOverflowMenu，而非裸 PopupMenuButton）。
+    // FushiOverflowMenu 在移动端页头的溢出菜单 _buildMobilePageActions 里，
+    // 仍守卫它用共享 MD3 原语（FushiOverflowMenu，而非裸 PopupMenuButton）。
     final String managerMenu = _functionSource(
       dictionaryManager,
       'List<Widget> _buildMobilePageActions() {',
@@ -2503,18 +2503,18 @@ void main() {
     );
     final String managerPopupItem = _functionSource(
       dictionaryManager,
-      'HibikiPopupMenuItem<VoidCallback> buildPopupItem({',
+      'FushiPopupMenuItem<VoidCallback> buildPopupItem({',
       '  // TODO-422：',
     );
 
-    // 空分类行与全空状态统一成居中的 HibikiPlaceholderMessage（共享 MD3 原语），
-    // 不再是左对齐灰卡 HibikiCard（BUG-058 空状态样式一致化）。
-    expect(managerEmptyState, contains('HibikiPlaceholderMessage('));
+    // 空分类行与全空状态统一成居中的 FushiPlaceholderMessage（共享 MD3 原语），
+    // 不再是左对齐灰卡 FushiCard（BUG-058 空状态样式一致化）。
+    expect(managerEmptyState, contains('FushiPlaceholderMessage('));
     expect(managerEmptyState, isNot(contains('DecoratedBox(')));
     expect(managerEmptyState, isNot(contains('surfaceContainerLowest')));
-    expect(managerTile, contains('HibikiCard('));
-    expect(managerTile, contains('HibikiListItem('));
-    expect(managerTile, contains('HibikiDesignTokens.of(context)'));
+    expect(managerTile, contains('FushiCard('));
+    expect(managerTile, contains('FushiListItem('));
+    expect(managerTile, contains('FushiDesignTokens.of(context)'));
     expect(managerTile, contains('tokens.spacing'));
     expect(managerTile, isNot(contains('DecoratedBox(')));
     expect(managerTile, isNot(contains('surfaceContainerLowest')));
@@ -2525,11 +2525,11 @@ void main() {
     );
     expect(managerTile, isNot(contains('const SizedBox(width: 8)')));
     expect(managerTile, isNot(contains('const SizedBox(height: 8)')));
-    expect(managerMenu, contains('HibikiOverflowMenu<VoidCallback>('));
+    expect(managerMenu, contains('FushiOverflowMenu<VoidCallback>('));
     expect(managerMenu, isNot(contains('PopupMenuButton')));
     expect(managerMenu, isNot(contains('Material(')));
     expect(managerMenu, isNot(contains('BorderRadius.circular(24)')));
-    expect(managerPopupItem, contains('HibikiPopupMenuItem<VoidCallback>('));
+    expect(managerPopupItem, contains('FushiPopupMenuItem<VoidCallback>('));
     // 裸子串 `Row(` 会被仓内几十个 `*Row(` 组件（`AdaptiveSettingsSwitchRow(` /
     // `AudioCueRow(` / `AnkiMappingRow(` …）命中，菜单项引用任何一个就假红。
     expect(containsIdentifierCall(managerPopupItem, 'Row'), isFalse);
@@ -2545,8 +2545,8 @@ void main() {
       // 改成 Future<MinePopupResult>，守卫的区段结束锚点跟随新签名。
       'Future<MinePopupResult> onMineFromPopup',
     );
-    expect(dictionaryLoading, contains('HibikiCard('));
-    // 免白名单：`HibikiCard(` 本身含子串 `Card(`，旧写法靠换名绕开；但仓内还有
+    expect(dictionaryLoading, contains('FushiCard('));
+    // 免白名单：`FushiCard(` 本身含子串 `Card(`，旧写法靠换名绕开；但仓内还有
     // `_EndpointCard(` / `_EpisodeRailCard(` / `SeriesShelfCard(` 等一堆以 Card
     // 结尾的组件没登记。标识符边界匹配只认裸 `Card` 构造。
     expect(containsIdentifierCall(dictionaryLoading, 'Card'), isFalse);
@@ -2565,14 +2565,14 @@ void main() {
       'Widget _buildMineButton(',
       '  Widget _buildDeinflection(',
     );
-    expect(mineButton, contains('HibikiIconButton('));
+    expect(mineButton, contains('FushiIconButton('));
     expect(mineButton, contains('Icons.add_circle_outline'));
     expect(mineButton, contains('tokens.spacing'));
     expect(mineButton, contains('creator_export_card'));
     expect(containsIdentifierCall(mineButton, 'IconButton'), isFalse,
         reason: '制卡按钮不得用裸 IconButton（含 IconButton.filledTonal）');
     expect(mineButton, isNot(contains("Text('+")));
-    expect(mineButton, isNot(contains('HibikiFocusable(')));
+    expect(mineButton, isNot(contains('FushiFocusable(')));
 
     final String floatingSource = File(
       'lib/src/pages/implementations/floating_dict_page.dart',
@@ -2588,7 +2588,7 @@ void main() {
       'Widget _buildResults()',
     );
     for (final String section in <String>[floatingTitle, floatingSearch]) {
-      expect(section, contains('HibikiDesignTokens.of(context)'));
+      expect(section, contains('FushiDesignTokens.of(context)'));
       expect(section, contains('tokens.spacing'));
       expect(section, isNot(contains('const EdgeInsets.symmetric(')));
     }
@@ -2617,7 +2617,7 @@ void main() {
       'Widget _buildPreviewCard(ColorScheme cs)',
       'Widget _swatch(',
     );
-    expect(previewCard, contains('HibikiCard('));
+    expect(previewCard, contains('FushiCard('));
     final String normalized = _withoutSharedComponentNames(previewCard);
     expect(normalized, isNot(contains('return Card(')));
     expect(normalized, isNot(contains('child: Card(')));
@@ -2628,7 +2628,7 @@ void main() {
       'lib/src/pages/implementations/custom_theme_page.dart',
     ).readAsStringSync();
 
-    expect(source, contains('HibikiDesignTokens.of(context)'));
+    expect(source, contains('FushiDesignTokens.of(context)'));
     expect(source, isNot(contains('const SizedBox(height: 16)')));
     expect(source, isNot(contains('const SizedBox(height: 12)')));
     expect(source, isNot(contains('const SizedBox(height: 8)')));
@@ -2650,9 +2650,9 @@ void main() {
     );
 
     // Theme circles preview the generated scheme (primary/secondary/tertiary/
-    // surface) via the four-quadrant HibikiSchemeSwatch, not a single seed
+    // surface) via the four-quadrant FushiSchemeSwatch, not a single seed
     // colour — see hibikiSchemeSwatchColors.
-    expect(themeSelector, contains('HibikiSchemeSwatch('));
+    expect(themeSelector, contains('FushiSchemeSwatch('));
     expect(themeSelector, contains('hibikiSchemeSwatchColors('));
     expect(source, isNot(contains('class _ColorSwatch')));
     expect(themeSelector, isNot(contains('_ColorSwatch(')));
@@ -2670,8 +2670,8 @@ void main() {
       '  Widget _buildPreviewCard(ColorScheme cs)',
     );
 
-    expect(importDialog, contains('HibikiDialogFrame('));
-    expect(importDialog, contains('HibikiModalSheetFrame('));
+    expect(importDialog, contains('FushiDialogFrame('));
+    expect(importDialog, contains('FushiModalSheetFrame('));
     expect(importDialog, isNot(contains('adaptiveAlertDialog(')));
   });
 
@@ -2680,7 +2680,7 @@ void main() {
       'lib/src/pages/implementations/tag_filter_sheet.dart',
     ).readAsStringSync();
 
-    expect(source, contains('HibikiDesignTokens.of(context)'));
+    expect(source, contains('FushiDesignTokens.of(context)'));
     expect(source, contains('tokens.spacing'));
     expect(
       source,
@@ -2702,8 +2702,8 @@ void main() {
       '  @override',
     );
 
-    expect(confirmDialog, contains('HibikiDialogFrame('));
-    expect(confirmDialog, contains('HibikiModalSheetFrame('));
+    expect(confirmDialog, contains('FushiDialogFrame('));
+    expect(confirmDialog, contains('FushiModalSheetFrame('));
     expect(confirmDialog, isNot(contains('adaptiveAlertDialog(')));
   });
 
@@ -2717,8 +2717,8 @@ void main() {
       '  Future<void> _editBinding(',
     );
 
-    expect(confirmDialog, contains('HibikiDialogFrame('));
-    expect(confirmDialog, contains('HibikiModalSheetFrame('));
+    expect(confirmDialog, contains('FushiDialogFrame('));
+    expect(confirmDialog, contains('FushiModalSheetFrame('));
     expect(confirmDialog, isNot(contains('adaptiveAlertDialog(')));
   });
 
@@ -2733,8 +2733,8 @@ void main() {
       source.length,
     );
 
-    expect(editDialog, contains('HibikiDialogFrame('));
-    expect(editDialog, contains('HibikiModalSheetFrame('));
+    expect(editDialog, contains('FushiDialogFrame('));
+    expect(editDialog, contains('FushiModalSheetFrame('));
     expect(editDialog, isNot(contains('adaptiveAlertDialog(')));
   });
 
@@ -2750,8 +2750,8 @@ void main() {
       source.length,
     );
 
-    expect(tileSource, contains('HibikiListItem('));
-    expect(tileSource, contains('HibikiTagChip('));
+    expect(tileSource, contains('FushiListItem('));
+    expect(tileSource, contains('FushiTagChip('));
     expect(tileSource, isNot(contains('ListTile(')));
     expect(tileSource, isNot(contains('=> Chip(')));
     expect(tileSource, isNot(contains('child: Chip(')));
@@ -2761,7 +2761,7 @@ void main() {
     // TODO-317: each scope is now an AdaptiveSettingsSection card (shared
     // SettingsSectionHeader title via AdaptiveSettingsSection.title) projected
     // through the unified settings detail shell — the bespoke primary-coloured
-    // _ScopeSectionHeader and the standalone HibikiPageScaffold/ListView are
+    // _ScopeSectionHeader and the standalone FushiPageScaffold/ListView are
     // gone. Reset is an in-card AdaptiveSettingsRow action.
     final String source = File(
       'lib/src/pages/implementations/shortcut_settings_page.dart',
@@ -2798,9 +2798,9 @@ void main() {
       source.length,
     );
 
-    expect(editDialog, contains('HibikiTagChip('));
+    expect(editDialog, contains('FushiTagChip('));
     expect(editDialog, contains('onDeleted:'));
-    expect(editDialog, contains('HibikiOverflowMenu<GamepadButton>('));
+    expect(editDialog, contains('FushiOverflowMenu<GamepadButton>('));
     expect(editDialog, contains('tokens.radii.controlRadius'));
     expect(editDialog, contains('tokens.spacing'));
     expect(editDialog, isNot(contains('PopupMenuButton')));
@@ -2830,8 +2830,8 @@ void main() {
     );
 
     for (final String dialogSource in <String>[progressDialog, urlDialog]) {
-      expect(dialogSource, contains('HibikiDialogFrame('));
-      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, contains('FushiDialogFrame('));
+      expect(dialogSource, contains('FushiModalSheetFrame('));
       expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
     }
   });
@@ -2846,12 +2846,12 @@ void main() {
       'class CustomFontDownloadProgressDialog',
     );
 
-    // 自实现的 HibikiReorderableColumn，**不是** SDK ReorderableListView：整棵树
-    // 活在 HibikiAppUiScale 的 Transform.scale 下，SDK 的 _DragItemProxy 用
+    // 自实现的 FushiReorderableColumn，**不是** SDK ReorderableListView：整棵树
+    // 活在 FushiAppUiScale 的 Transform.scale 下，SDK 的 _DragItemProxy 用
     // 「全局坐标 − overlay 原点」纯平移、不认祖先缩放，「界面大小」非 100% 时
     // 拖拽浮层会漂移、缩小时一拖即飞出屏幕（BUG-778 同根因）。此前这条断言正向
     // 钉死了 `ReorderableListView.builder(`，等于把缺陷焊在原地。
-    expect(pageSource, contains('HibikiReorderableColumn('));
+    expect(pageSource, contains('FushiReorderableColumn('));
     expect(
       pageSource,
       isNot(contains('ReorderableListView.builder(')),
@@ -2875,7 +2875,7 @@ void main() {
       'class CustomFontsPage',
     );
 
-    expect(pickerSource, contains('HibikiDesignTokens.of(context)'));
+    expect(pickerSource, contains('FushiDesignTokens.of(context)'));
     expect(pickerSource, contains('tokens.spacing'));
     expect(
       pickerSource,
@@ -2893,8 +2893,8 @@ void main() {
       source.length,
     );
 
-    expect(dialogSource, contains('HibikiDialogFrame('));
-    expect(dialogSource, contains('HibikiModalSheetFrame('));
+    expect(dialogSource, contains('FushiDialogFrame('));
+    expect(dialogSource, contains('FushiModalSheetFrame('));
     expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
   });
 
@@ -2908,10 +2908,10 @@ void main() {
       '@visibleForTesting',
     );
 
-    expect(editorBuild, contains('HibikiDesignTokens.of(context)'));
+    expect(editorBuild, contains('FushiDesignTokens.of(context)'));
     expect(editorBuild, contains('tokens.spacing'));
-    expect(editorBuild, contains('HibikiSelectableChip('));
-    expect(editorBuild, contains('HibikiEditorPanel('));
+    expect(editorBuild, contains('FushiSelectableChip('));
+    expect(editorBuild, contains('FushiEditorPanel('));
     expect(editorBuild, isNot(contains('height: 40')));
     expect(
       editorBuild,
@@ -2943,8 +2943,8 @@ void main() {
     );
 
     for (final String dialogSource in <String>[itemDialog, deleteDialog]) {
-      expect(dialogSource, contains('HibikiDialogFrame('));
-      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, contains('FushiDialogFrame('));
+      expect(dialogSource, contains('FushiModalSheetFrame('));
       expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
     }
   });
@@ -2958,14 +2958,14 @@ void main() {
       'Widget _buildItem(_CollectionItem item)',
       'class CollectionItemDialogFrame',
     );
-    expect(itemSource, contains('HibikiListItem('));
-    expect(itemSource, contains('HibikiIconButton('));
+    expect(itemSource, contains('FushiListItem('));
+    expect(itemSource, contains('FushiIconButton('));
     expect(itemSource, contains('tokens.spacing'));
     expect(itemSource, contains('_hasAudio(item)'));
     expect(itemSource, contains('_playItemAudio(item)'));
     expect(itemSource, contains('onLongPress: () => _showItemDialog(item)'));
     // 三条判据都换成标识符边界匹配，_withoutSharedComponentNames 白名单在此不再需要：
-    // 共享组件（HibikiIconButton / HibikiListTile / HibikiCard）天然不匹配，
+    // 共享组件（FushiIconButton / FushiListTile / FushiCard）天然不匹配，
     // 未登记的 `_RepeatIconButton(` / `_EndpointCard(` 也不再假红，
     // 而 `IconButton.filledTonal(` 这类命名构造器回归反而能被抓到。
     expect(containsIdentifierCall(itemSource, 'IconButton'), isFalse);
@@ -2984,8 +2984,8 @@ void main() {
       'class MediaItemCoverOverrideField',
     );
 
-    expect(dialogSource, contains('HibikiDialogFrame('));
-    expect(dialogSource, contains('HibikiModalSheetFrame('));
+    expect(dialogSource, contains('FushiDialogFrame('));
+    expect(dialogSource, contains('FushiModalSheetFrame('));
     expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
   });
 
@@ -3000,10 +3000,10 @@ void main() {
       source.length,
     );
 
-    expect(coverField, contains('HibikiCard('));
-    expect(coverField, contains('HibikiDesignTokens.of(context)'));
+    expect(coverField, contains('FushiCard('));
+    expect(coverField, contains('FushiDesignTokens.of(context)'));
     expect(coverField, contains('tokens.spacing'));
-    expect(coverField, isNot(contains('HibikiTextField(')));
+    expect(coverField, isNot(contains('FushiTextField(')));
     expect(coverField, isNot(contains('TextStyle(color: Colors.transparent)')));
     expect(coverField, isNot(contains('contentPadding: EdgeInsets.zero')));
     expect(coverField, isNot(contains('const BoxConstraints(')));
@@ -3022,7 +3022,7 @@ void main() {
       'Widget _buildItem(_CollectionItem item)',
       '@visibleForTesting',
     );
-    expect(collectionItem, contains('HibikiDesignTokens.of(context)'));
+    expect(collectionItem, contains('FushiDesignTokens.of(context)'));
     expect(collectionItem, contains('tokens.spacing'));
     expect(
       collectionItem,
@@ -3037,7 +3037,7 @@ void main() {
       'Widget build(BuildContext context)',
       'class TagDeleteConfirmationDialog',
     );
-    expect(tagList, contains('HibikiDesignTokens.of(context)'));
+    expect(tagList, contains('FushiDesignTokens.of(context)'));
     expect(tagList, contains('tokens.spacing'));
     expect(
       tagList,
@@ -3052,7 +3052,7 @@ void main() {
       'Widget buildHistory(List<MediaItem> items)',
       '/// Build the widget visually',
     );
-    expect(historyGrid, contains('HibikiDesignTokens.of(context)'));
+    expect(historyGrid, contains('FushiDesignTokens.of(context)'));
     expect(historyGrid, contains('tokens.spacing'));
     expect(
       historyGrid,
@@ -3065,7 +3065,7 @@ void main() {
       'Widget buildMediaItemContent(MediaItem item)',
       historySource.length,
     );
-    expect(historyTile, contains('HibikiDesignTokens.of(context)'));
+    expect(historyTile, contains('FushiDesignTokens.of(context)'));
     expect(historyTile, contains('tokens.spacing'));
     expect(
       historyTile,
@@ -3077,7 +3077,7 @@ void main() {
     ).readAsStringSync();
     final String illustrationsBody = _functionSource(
       illustrationsSource,
-      'Widget _buildBody(ThemeData theme, HibikiDesignTokens tokens)',
+      'Widget _buildBody(ThemeData theme, FushiDesignTokens tokens)',
       'class _FullScreenGallery',
     );
     expect(illustrationsBody, contains('tokens.spacing'));
@@ -3096,7 +3096,7 @@ void main() {
       'class _ProfileManagementBodyState',
       'class _ProfileActionButton',
     );
-    expect(profileState, contains('HibikiDesignTokens.of(context)'));
+    expect(profileState, contains('FushiDesignTokens.of(context)'));
     expect(profileState, contains('tokens.spacing'));
     expect(
       profileState,
@@ -3111,8 +3111,8 @@ void main() {
 
     expect(source, contains('class OpenStashDialogFrame'));
     expect(source, contains('class OpenStashClearDialog'));
-    expect(source, contains('HibikiDialogFrame('));
-    expect(source, contains('HibikiModalSheetFrame('));
+    expect(source, contains('FushiDialogFrame('));
+    expect(source, contains('FushiModalSheetFrame('));
     expect(source, isNot(contains('adaptiveAlertDialog(')));
   });
 
@@ -3133,8 +3133,8 @@ void main() {
 
     expect(flow, contains('HomeDictionaryClearHistoryDialog('));
     expect(flow, isNot(contains('adaptiveAlertDialog(')));
-    expect(dialogSource, contains('HibikiDialogFrame('));
-    expect(dialogSource, contains('HibikiModalSheetFrame('));
+    expect(dialogSource, contains('FushiDialogFrame('));
+    expect(dialogSource, contains('FushiModalSheetFrame('));
     expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
   });
 
@@ -3154,7 +3154,7 @@ void main() {
     );
 
     for (final String section in <String>[searchHeader, historyList]) {
-      expect(section, contains('HibikiDesignTokens.of(context)'));
+      expect(section, contains('FushiDesignTokens.of(context)'));
       expect(section, contains('tokens.spacing'));
     }
     expect(
@@ -3220,8 +3220,8 @@ void main() {
       confirmationFrame,
       lowMemoryDialog,
     ]) {
-      expect(dialogSource, contains('HibikiDialogFrame('));
-      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, contains('FushiDialogFrame('));
+      expect(dialogSource, contains('FushiModalSheetFrame('));
       expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
     }
   });
@@ -3238,7 +3238,7 @@ void main() {
     final String progressFlow = _functionSource(
       source,
       'Future<void> _downloadSelectedDictionaries(',
-      '  static const _safChannel = HibikiChannels.saf;',
+      '  static const _safChannel = FushiChannels.saf;',
     );
     final String selectionFrame = _sectionSource(
       source,
@@ -3263,8 +3263,8 @@ void main() {
       selectionFrame,
       progressFrame,
     ]) {
-      expect(dialogSource, contains('HibikiDialogFrame('));
-      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, contains('FushiDialogFrame('));
+      expect(dialogSource, contains('FushiModalSheetFrame('));
       expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
     }
   });
@@ -3279,7 +3279,7 @@ void main() {
       '  // ── Helpers ',
     );
 
-    expect(popupAudio, contains('HibikiDesignTokens.of(context)'));
+    expect(popupAudio, contains('FushiDesignTokens.of(context)'));
     expect(popupAudio, contains('tokens.spacing'));
     expect(
       popupAudio,
@@ -3313,16 +3313,16 @@ void main() {
 
 String _withoutSharedComponentNames(String source) {
   return source
-      .replaceAll('HibikiCard(', 'HibikiSharedPanel(')
-      .replaceAll('HibikiListItem(', 'HibikiSharedRow(')
-      .replaceAll('HibikiListTile(', 'HibikiSharedTile(')
-      .replaceAll('HibikiIconButton(', 'HibikiSharedIconControl(')
-      .replaceAll('HibikiSearchField(', 'HibikiSharedSearch(')
-      .replaceAll('HibikiTextField(', 'HibikiSharedField(')
+      .replaceAll('FushiCard(', 'FushiSharedPanel(')
+      .replaceAll('FushiListItem(', 'FushiSharedRow(')
+      .replaceAll('FushiListTile(', 'FushiSharedTile(')
+      .replaceAll('FushiIconButton(', 'FushiSharedIconControl(')
+      .replaceAll('FushiSearchField(', 'FushiSharedSearch(')
+      .replaceAll('FushiTextField(', 'FushiSharedField(')
       .replaceAll('AdaptiveSettingsTextField(', 'AdaptiveSettingsSharedField(')
-      .replaceAll('HibikiOverflowMenu(', 'HibikiSharedOverflow(')
-      .replaceAll('HibikiTransientScaffold(', 'HibikiSharedTransient(')
-      .replaceAll('HibikiOverlayScaffold(', 'HibikiSharedOverlay(');
+      .replaceAll('FushiOverflowMenu(', 'FushiSharedOverflow(')
+      .replaceAll('FushiTransientScaffold(', 'FushiSharedTransient(')
+      .replaceAll('FushiOverlayScaffold(', 'FushiSharedOverlay(');
 }
 
 String _withoutTransparentInkHosts(String source) {
@@ -3348,7 +3348,7 @@ List<String> _forbiddenChromeHits(String source, List<String> forbidden) {
 
 bool _containsForbiddenChrome(String source, String token) {
   if (_identifierCallTokens.contains(token)) {
-    // 左边界：`HibikiCard(` / `CheckboxListTile(` 不是裸 `Card(` / `ListTile(`。
+    // 左边界：`FushiCard(` / `CheckboxListTile(` 不是裸 `Card(` / `ListTile(`。
     // 共享组件正是本守卫要求你改用的东西，裸子串会在「改对那一刻」把它判成违规。
     return RegExp(r'(?<![A-Za-z0-9_])' + RegExp.escape(token)).hasMatch(source);
   }

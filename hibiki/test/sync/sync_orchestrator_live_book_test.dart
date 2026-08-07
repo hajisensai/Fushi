@@ -5,7 +5,7 @@
 /// 用例 B：互联 + syncContent=false
 ///   → 不传任何 epub 内容（booksImported=0、无 toPull/toPush 动作），
 ///   但元数据路径仍正常运行。
-/// 用例 C：云后端（非 HibikiClient）+ syncContent=true
+/// 用例 C：云后端（非 FushiClient）+ syncContent=true
 ///   → 不走 live 端点；本地已有书仍走 SyncManager 书文件夹路径上传内容/元数据。
 ///
 /// **进度/统计/有声书位置回归**：只检查互联分支把 syncContent=false 传给
@@ -35,12 +35,12 @@ import 'fake_asset_store.dart';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-HibikiDatabase _memDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _memDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 /// 在 [db] 里插入一本书，同时在 [extractDir] 写入最小 EPUB 结构。
 Future<void> _seedBook({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required String title,
   required String extractDir,
 }) async {
@@ -80,10 +80,10 @@ Future<InterconnectSyncBackend> _buildClientBackend({
   required String base,
   required String token,
 }) async {
-  final HibikiDatabase db = _memDb();
+  final FushiDatabase db = _memDb();
   final SyncRepository repo = SyncRepository(db);
-  await repo.setHibikiClientUrls(<HibikiClientUrl>[
-    HibikiClientUrl(url: base, enabled: true),
+  await repo.setHibikiClientUrls(<FushiClientUrl>[
+    FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
   final InterconnectSyncBackend backend =
@@ -95,7 +95,7 @@ Future<InterconnectSyncBackend> _buildClientBackend({
 
 /// 构造只开 syncContent 的 orchestrator（用于书籍内容 live 测试）。
 SyncOrchestrator _bookOrchestrator({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required SyncBackend backend,
   required Directory tmp,
   required bool syncContent,
@@ -260,8 +260,8 @@ void main() {
   // ── 用例 A：互联 live + syncContent=true（上传语义）──────────────────────
 
   group('用例A: 互联 live 上传路径（syncContent=true）', () {
-    late HibikiSyncServer server;
-    late HibikiDatabase hostDb;
+    late FushiSyncServer server;
+    late FushiDatabase hostDb;
     late String serverBase;
     const String token = 'orch-live-book-token';
 
@@ -287,7 +287,7 @@ void main() {
         },
       );
 
-      server = HibikiSyncServer(
+      server = FushiSyncServer(
         syncDataDir: p.join(work.path, 'server_data'),
         port: 0,
         token: token,
@@ -302,7 +302,7 @@ void main() {
 
     test('本地无 BookY，syncContent=true → 不自动拉取远端独有 BookY', () async {
       // 本地：只有 BookX，没有 BookY
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       final String localExtractX = p.join(work.path, 'local_extract_X');
       await _seedBook(db: localDb, title: 'BookX', extractDir: localExtractX);
@@ -335,7 +335,7 @@ void main() {
     test('push：host 无 BookX，syncContent=true → 推送 BookX，且 host 收到 epub',
         () async {
       // 本地：只有 BookX，没有 BookY
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       final String localExtractX = p.join(work.path, 'local_extract_X_push');
       await _seedBook(db: localDb, title: 'BookX', extractDir: localExtractX);
@@ -366,7 +366,7 @@ void main() {
     });
 
     test('upload-only：本地 BookX，host BookY → 只推 BookX，不拉 BookY', () async {
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       final String localExtractX = p.join(work.path, 'local_extract_X_rt');
       await _seedBook(db: localDb, title: 'BookX', extractDir: localExtractX);
@@ -400,7 +400,7 @@ void main() {
     });
 
     test('live 路径不经 sync-data 书文件夹暂存 epub', () async {
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_no_staging'))
@@ -432,8 +432,8 @@ void main() {
   // ── 用例 B：互联 + syncContent=false ─────────────────────────────────────
 
   group('用例B: 互联 + syncContent=false', () {
-    late HibikiSyncServer server;
-    late HibikiDatabase hostDb;
+    late FushiSyncServer server;
+    late FushiDatabase hostDb;
     late String serverBase;
     const String token = 'orch-live-book-token-b';
 
@@ -454,7 +454,7 @@ void main() {
         },
       );
 
-      server = HibikiSyncServer(
+      server = FushiSyncServer(
         syncDataDir: p.join(work.path, 'server_data_b'),
         port: 0,
         token: token,
@@ -469,7 +469,7 @@ void main() {
 
     test('syncContent=false → orchestrator.run() 不传 epub 内容（booksImported=0）',
         () async {
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       final String localExtractX = p.join(work.path, 'local_extract_X_b');
       await _seedBook(db: localDb, title: 'BookX', extractDir: localExtractX);
@@ -494,13 +494,13 @@ void main() {
 
   // ── 用例 C：云后端仍走 SyncManager 书文件夹路径 ───────────────────────────
 
-  group('用例C: 云后端（非 HibikiClient）走书文件夹上传路径', () {
+  group('用例C: 云后端（非 FushiClient）走书文件夹上传路径', () {
     test('FakeSyncBackend + syncContent=true → 不走 live 端点', () async {
       // 云后端：FakeSyncBackend，listBooks 返回空（模拟无远端书可导入）
       final FakeAssetStore store = FakeAssetStore();
       final _FakeSyncBackend backend = _FakeSyncBackend(store);
       final Directory tmp = Directory(p.join(work.path, 'tmp_c'))..createSync();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       // 本地有一本书

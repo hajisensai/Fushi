@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 
-/// BUG-755 守卫：互联「手动填写令牌」折叠区里的 [HibikiTextField] 是带浮动标签的
+/// BUG-755 守卫：互联「手动填写令牌」折叠区里的 [FushiTextField] 是带浮动标签的
 /// OutlineInputBorder 字段。浮动标签会骑在字段顶边、上半部分溢出到字段上方；而
 /// [ExpansionTile] 的展开体被 Flutter `Expansible` 包在 `ClipRect` 里，若
 /// `childrenPadding` 顶部为 0，溢出的半个标签会被裁掉（「对端访问令牌」只剩下半截）。
@@ -30,7 +30,7 @@ Future<double> _labelTopMinusClipTop(
               childrenPadding: childrenPadding,
               title: const Text('手动填写令牌'),
               children: <Widget>[
-                HibikiTextField(
+                FushiTextField(
                   controller: controller,
                   labelText: '对端访问令牌',
                 ),

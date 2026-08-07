@@ -15,5 +15,5 @@ class AndroidLifecycleService implements PlatformLifecycleService {
 
   @override
   Future<void> moveTaskToBack() async =>
-      HibikiChannels.lifecycle.invokeMethod<void>('moveTaskToBack');
+      FushiChannels.lifecycle.invokeMethod<void>('moveTaskToBack');
 }

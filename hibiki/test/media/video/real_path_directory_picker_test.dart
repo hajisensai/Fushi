@@ -58,7 +58,7 @@ void main() {
         reason: '文件选择必须调原生 SAF pickRealFile 方法',
       );
       expect(
-        src.contains('HibikiChannels.saf'),
+        src.contains('FushiChannels.saf'),
         isTrue,
         reason: '必须经统一 SAF channel 常量调用原生 handler',
       );

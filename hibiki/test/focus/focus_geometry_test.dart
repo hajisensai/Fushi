@@ -8,14 +8,14 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 void main() {
   // The shared primitive every focus geometry consumer depends on. The bug it
   // fixes: `box.localToGlobal(Offset.zero) & box.size` pairs a SCALED top-left
-  // with an UNSCALED size, so under HibikiAppUiScale's Transform the returned
+  // with an UNSCALED size, so under FushiAppUiScale's Transform the returned
   // rect had the right position but the wrong (un-zoomed) size.
   group('globalRectOfBox', () {
     const Key target = ValueKey<String>('geometry-target');
 
     Future<RenderBox> pumpScaled(WidgetTester tester, double scale) async {
       await tester.pumpWidget(MaterialApp(
-        home: HibikiAppUiScale(
+        home: FushiAppUiScale(
           scale: scale,
           child: const Scaffold(
             body: Center(
@@ -80,9 +80,9 @@ void main() {
   testWidgets('directional nav still lands correctly under a 2.0x UI scale',
       (WidgetTester tester) async {
     await tester.pumpWidget(MaterialApp(
-      home: HibikiAppUiScale(
+      home: FushiAppUiScale(
         scale: 2.0,
-        child: HibikiFocusRoot(
+        child: FushiFocusRoot(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
@@ -94,8 +94,8 @@ void main() {
               ])
                 Align(
                   alignment: row.align,
-                  child: HibikiFocusTarget(
-                    id: HibikiFocusId(row.id),
+                  child: FushiFocusTarget(
+                    id: FushiFocusId(row.id),
                     child: TextButton(
                       onPressed: () {},
                       child: Text(row.id),
@@ -110,24 +110,24 @@ void main() {
     await tester.pump();
 
     final BuildContext context = tester.element(find.byType(Column));
-    final HibikiFocusController controller =
-        HibikiFocusRoot.controllerOf(context);
+    final FushiFocusController controller =
+        FushiFocusRoot.controllerOf(context);
 
-    expect(controller.requestById(const HibikiFocusId('top-right')), isTrue);
+    expect(controller.requestById(const FushiFocusId('top-right')), isTrue);
     await tester.pump();
 
-    expect(controller.move(HibikiFocusDirection.down), isTrue);
+    expect(controller.move(FushiFocusDirection.down), isTrue);
     await tester.pump();
-    expect(controller.activeId, const HibikiFocusId('mid-left'),
+    expect(controller.activeId, const FushiFocusId('mid-left'),
         reason: 'down must reach the immediately-next row even under 2.0x');
 
-    expect(controller.move(HibikiFocusDirection.down), isTrue);
+    expect(controller.move(FushiFocusDirection.down), isTrue);
     await tester.pump();
-    expect(controller.activeId, const HibikiFocusId('bottom-right'));
+    expect(controller.activeId, const FushiFocusId('bottom-right'));
 
-    expect(controller.move(HibikiFocusDirection.up), isTrue);
+    expect(controller.move(FushiFocusDirection.up), isTrue);
     await tester.pump();
-    expect(controller.activeId, const HibikiFocusId('mid-left'),
+    expect(controller.activeId, const FushiFocusId('mid-left'),
         reason: 'up is symmetric under scale too');
   });
 }

@@ -10,15 +10,15 @@ import 'package:fushi/src/reader/reader_settings.dart';
 /// [ReaderSettings.swipePageTurnDistThresholds]，所以「改系数 → 阈值变」在 UI 与 JS
 /// 两侧一致；真正的触摸翻页手感走 WebView，归设备集成验证。
 void main() {
-  Future<ReaderSettings> defaultSettings(HibikiDatabase db) async {
+  Future<ReaderSettings> defaultSettings(FushiDatabase db) async {
     final ReaderSettings settings = ReaderSettings(db);
     await settings.refreshFromDb();
     return settings;
   }
 
   test('swipePageTurnSensitivity defaults to 1.0', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = await defaultSettings(db);
 
@@ -26,8 +26,8 @@ void main() {
   });
 
   test('setSwipePageTurnSensitivity round-trips through DB', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = await defaultSettings(db);
 
@@ -38,8 +38,8 @@ void main() {
   });
 
   test('sensitivity is clamped to [0.3, 2.0] on read and write', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = await defaultSettings(db);
 

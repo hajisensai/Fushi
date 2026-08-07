@@ -17,13 +17,13 @@ void main() {
 
   late Directory root;
   late Directory app;
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() {
     root = Directory.systemTemp.createTempSync('manga_archive_');
     app = Directory.systemTemp.createTempSync('manga_archive_app_');
     EpubStorage.debugBaseDirectoryOverride = app.path;
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() async {

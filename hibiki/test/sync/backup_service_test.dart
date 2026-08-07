@@ -61,11 +61,11 @@ void main() {
   });
 
   group('BackupService', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late Directory tmpDir;
 
     setUp(() async {
-      db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
       tmpDir = await Directory.systemTemp.createTemp('backup_test_');
     });
 
@@ -232,7 +232,7 @@ void main() {
     test('createBackup produces valid zip with db and metadata', () async {
       // Use an on-disk DB so VACUUM INTO or fallback works
       final dbDir = await Directory.systemTemp.createTemp('backup_export_');
-      final onDiskDb = HibikiDatabase(dbDir.path);
+      final onDiskDb = FushiDatabase(dbDir.path);
       try {
         // Insert a book so the metadata has a real count
         await onDiskDb.insertEpubBook(EpubBooksCompanion.insert(
@@ -273,7 +273,7 @@ void main() {
         'createBackup strips sync credentials from the DB copy '
         '(HBK-AUDIT-012)', () async {
       final dbDir = await Directory.systemTemp.createTemp('backup_creds_');
-      final onDiskDb = HibikiDatabase(dbDir.path);
+      final onDiskDb = FushiDatabase(dbDir.path);
       try {
         await onDiskDb.setPref('sync_dropbox_token', 's:SECRET_TOKEN');
         await onDiskDb.setPref('sync_ftp_password', 's:hunter2');
@@ -296,7 +296,7 @@ void main() {
         final restoreDir =
             await Directory.systemTemp.createTemp('backup_creds_r_');
         await File('${restoreDir.path}/hibiki.db').writeAsBytes(dbBytes);
-        final restored = HibikiDatabase(restoreDir.path);
+        final restored = FushiDatabase(restoreDir.path);
         try {
           // Credentials must be gone.
           expect(await restored.getPref('sync_dropbox_token'), isNull);
@@ -320,7 +320,7 @@ void main() {
     test('createBackup strips dictionary state without touching source DB',
         () async {
       final dbDir = await Directory.systemTemp.createTemp('backup_dict_');
-      final onDiskDb = HibikiDatabase(dbDir.path);
+      final onDiskDb = FushiDatabase(dbDir.path);
       try {
         await onDiskDb.upsertDictionaryMeta(
           DictionaryMetadataCompanion.insert(
@@ -353,7 +353,7 @@ void main() {
         final restoreDir =
             await Directory.systemTemp.createTemp('backup_dict_r_');
         await File('${restoreDir.path}/hibiki.db').writeAsBytes(dbBytes);
-        final restored = HibikiDatabase(restoreDir.path);
+        final restored = FushiDatabase(restoreDir.path);
         try {
           expect(await restored.getAllDictionaryMetadata(), isEmpty);
           expect(await restored.getAllDictionaryHistory(), isEmpty);
@@ -376,7 +376,7 @@ void main() {
           await Directory.systemTemp.createTemp('backup_dict_enabled_');
       final dictDir =
           await Directory.systemTemp.createTemp('backup_dict_resources_');
-      final onDiskDb = HibikiDatabase(dbDir.path);
+      final onDiskDb = FushiDatabase(dbDir.path);
       try {
         await Directory('${dictDir.path}/JMdict/media').create(recursive: true);
         await File('${dictDir.path}/JMdict/blobs.bin')
@@ -425,7 +425,7 @@ void main() {
           zipPath: outputPath,
           dictionaryResourceDirectory: restoredDictDir.path,
         );
-        final restored = HibikiDatabase(restoreDir.path);
+        final restored = FushiDatabase(restoreDir.path);
         try {
           expect(await restored.getAllDictionaryMetadata(), hasLength(1));
           // BUG-832: recent-lookup history is a private usage trace and is
@@ -465,7 +465,7 @@ void main() {
           await Directory.systemTemp.createTemp('backup_dict_missing_');
       final missingDictDir =
           Directory('${tmpDir.path}/missing_dictionary_resources');
-      final onDiskDb = HibikiDatabase(dbDir.path);
+      final onDiskDb = FushiDatabase(dbDir.path);
       try {
         await Directory('${missingDictDir.path}/download_temp')
             .create(recursive: true);
@@ -508,7 +508,7 @@ void main() {
         final restoreDir =
             await Directory.systemTemp.createTemp('backup_dict_missing_r_');
         await File('${restoreDir.path}/hibiki.db').writeAsBytes(dbBytes);
-        final restored = HibikiDatabase(restoreDir.path);
+        final restored = FushiDatabase(restoreDir.path);
         try {
           expect(await restored.getAllDictionaryMetadata(), isEmpty);
           expect(await restored.getAllDictionaryHistory(), isEmpty);
@@ -530,7 +530,7 @@ void main() {
         "not wipe this device's dictionaries)", () async {
       final srcDir =
           await Directory.systemTemp.createTemp('backup_no_dict_src_');
-      final srcDb = HibikiDatabase(srcDir.path);
+      final srcDb = FushiDatabase(srcDir.path);
       try {
         final service = BackupService(
           db: srcDb,
@@ -646,7 +646,7 @@ void main() {
     test('export then import round-trip preserves database content', () async {
       // Source DB on disk: insert a book and a reading statistic.
       final srcDir = await Directory.systemTemp.createTemp('backup_src_');
-      final srcDb = HibikiDatabase(srcDir.path);
+      final srcDb = FushiDatabase(srcDir.path);
       try {
         await srcDb.insertEpubBook(EpubBooksCompanion.insert(
           bookKey: 'かがみの孤城',
@@ -687,7 +687,7 @@ void main() {
           zipPath: '${tmpDir.path}/round_trip.zip',
         );
 
-        final restored = HibikiDatabase(dstDir.path);
+        final restored = FushiDatabase(dstDir.path);
         try {
           final books = await restored.getAllEpubBooks();
           expect(books, hasLength(1));
@@ -745,7 +745,7 @@ void main() {
         () async {
       final srcDir = await Directory.systemTemp.createTemp('hibiki_strip_src_');
       addTearDown(() => cleanupTempDir(srcDir));
-      final srcDb = HibikiDatabase(srcDir.path);
+      final srcDb = FushiDatabase(srcDir.path);
       // Seed every device-local key with a sentinel value.
       for (final String key in SyncRepository.deviceLocalPrefKeys) {
         await srcDb.setPref(key, 'sentinel-$key');
@@ -781,7 +781,7 @@ void main() {
         zipPath: zipPath,
       );
 
-      final dstDb = HibikiDatabase(dstDir.path);
+      final dstDb = FushiDatabase(dstDir.path);
       addTearDown(dstDb.close);
       for (final String key in SyncRepository.deviceLocalPrefKeys) {
         expect(await dstDb.getPref(key), isNull,
@@ -823,7 +823,7 @@ void main() {
       // credential owned by another subsystem travelled in the clear.
       final srcDir = await Directory.systemTemp.createTemp('hibiki_ns_src_');
       addTearDown(() => cleanupTempDir(srcDir));
-      final srcDb = HibikiDatabase(srcDir.path);
+      final srcDb = FushiDatabase(srcDir.path);
       const Map<String, String> credentials = <String, String>{
         'media_source_secret_1': 'BASE64-SFTP-PASSWORD',
         'media_source_secret_2': 'BASE64-PRIVATE-KEY-PEM',
@@ -854,7 +854,7 @@ void main() {
       await BackupService.restoreBackup(
           dbDirectory: dstDir.path, zipPath: zipPath);
 
-      final dstDb = HibikiDatabase(dstDir.path);
+      final dstDb = FushiDatabase(dstDir.path);
       addTearDown(dstDb.close);
       for (final String key in credentials.keys) {
         expect(await dstDb.getPref(key), isNull,
@@ -872,7 +872,7 @@ void main() {
       // snapshot was taken BEFORE the writer learned to skip credentials.
       final srcDir = await Directory.systemTemp.createTemp('hibiki_ps_src_');
       addTearDown(() => cleanupTempDir(srcDir));
-      final srcDb = HibikiDatabase(srcDir.path);
+      final srcDb = FushiDatabase(srcDir.path);
       final int nowMs = DateTime.now().millisecondsSinceEpoch;
       final int profileId = await srcDb.insertProfile(ProfilesCompanion.insert(
         name: 'Leaky',
@@ -917,7 +917,7 @@ void main() {
       await BackupService.restoreBackup(
           dbDirectory: dstDir.path, zipPath: zipPath);
 
-      final dstDb = HibikiDatabase(dstDir.path);
+      final dstDb = FushiDatabase(dstDir.path);
       addTearDown(dstDb.close);
       final List<ProfileSettingRow> rows =
           await dstDb.getProfileSettings(profileId);
@@ -939,7 +939,7 @@ void main() {
       // wipe the importing device's own SFTP password / API keys.
       final srcDir = await Directory.systemTemp.createTemp('hibiki_sym_src_');
       addTearDown(() => cleanupTempDir(srcDir));
-      final srcDb = HibikiDatabase(srcDir.path);
+      final srcDb = FushiDatabase(srcDir.path);
       await srcDb.setPref('reader_font_size', '18');
       final zipDir = await Directory.systemTemp.createTemp('hibiki_sym_zip_');
       addTearDown(() => cleanupTempDir(zipDir));
@@ -954,7 +954,7 @@ void main() {
       // The importing device already has its own credentials configured.
       final dstDir = await Directory.systemTemp.createTemp('hibiki_sym_dst_');
       addTearDown(() => cleanupTempDir(dstDir));
-      final localDb = HibikiDatabase(dstDir.path);
+      final localDb = FushiDatabase(dstDir.path);
       const Map<String, String> localCredentials = <String, String>{
         'sync_webdav_password': 'LOCAL-WEBDAV-PW',
         'media_source_secret_1': 'LOCAL-SFTP-PASSWORD',
@@ -969,7 +969,7 @@ void main() {
       await BackupService.restoreBackup(
           dbDirectory: dstDir.path, zipPath: zipPath);
 
-      final dstDb = HibikiDatabase(dstDir.path);
+      final dstDb = FushiDatabase(dstDir.path);
       addTearDown(dstDb.close);
       for (final MapEntry<String, String> e in localCredentials.entries) {
         expect(await dstDb.getPref(e.key), e.value,
@@ -987,7 +987,7 @@ void main() {
       // ── This device: UI pref + profile + binding + sync + local book ──
       final curDir = await Directory.systemTemp.createTemp('hibiki_keep_cur_');
       addTearDown(() => cleanupTempDir(curDir));
-      final curDb = HibikiDatabase(curDir.path);
+      final curDb = FushiDatabase(curDir.path);
       await curDb.setPref('reader_appearance', 'LOCAL'); // UI pref (keep)
       await curDb.setPref('sync_backend_type', 'webDav'); // device-local (keep)
       await curDb.setPrefTyped<int>('audiobook_pos_99', 999); // content (drop)
@@ -1016,7 +1016,7 @@ void main() {
       // ── Backup from another device: different settings/profile/book ──
       final srcDir = await Directory.systemTemp.createTemp('hibiki_keep_src_');
       addTearDown(() => cleanupTempDir(srcDir));
-      final srcDb = HibikiDatabase(srcDir.path);
+      final srcDb = FushiDatabase(srcDir.path);
       await srcDb.setPref('reader_appearance', 'BACKUP');
       await srcDb.insertProfile(ProfilesCompanion.insert(
           name: 'BackupProfile', createdAt: 2, updatedAt: 2));
@@ -1050,7 +1050,7 @@ void main() {
       );
       await BackupService.recoverPendingRestore(curDir.path);
 
-      final after = HibikiDatabase(curDir.path);
+      final after = FushiDatabase(curDir.path);
       addTearDown(after.close);
 
       // Settings + profiles + binding kept local:
@@ -1095,7 +1095,7 @@ void main() {
       // Backup with its own settings + content.
       final srcDir = await Directory.systemTemp.createTemp('hibiki_fresh_src_');
       addTearDown(() => cleanupTempDir(srcDir));
-      final srcDb = HibikiDatabase(srcDir.path);
+      final srcDb = FushiDatabase(srcDir.path);
       await srcDb.setPref('reader_appearance', 'BACKUP');
       await srcDb.insertEpubBook(EpubBooksCompanion.insert(
         bookKey: 'BackupBook',
@@ -1124,7 +1124,7 @@ void main() {
       );
       await BackupService.recoverPendingRestore(dstDir.path);
 
-      final after = HibikiDatabase(dstDir.path);
+      final after = FushiDatabase(dstDir.path);
       addTearDown(after.close);
       // Nothing local to preserve → backup applied verbatim (settings included).
       expect(await after.getPref('reader_appearance'), 'BACKUP');
@@ -1140,7 +1140,7 @@ void main() {
         () async {
       final dir = await Directory.systemTemp.createTemp('hibiki_nobak_');
       addTearDown(() => cleanupTempDir(dir));
-      final db = HibikiDatabase(dir.path);
+      final db = FushiDatabase(dir.path);
       await db.setPref('reader_appearance', 'INTACT');
       await db.close();
 
@@ -1150,7 +1150,7 @@ void main() {
 
       await BackupService.recoverPendingRestore(dir.path); // must not throw
 
-      final after = HibikiDatabase(dir.path);
+      final after = FushiDatabase(dir.path);
       addTearDown(after.close);
       // DB untouched, sidecar cleaned up.
       expect(await after.getPref('reader_appearance'), 'INTACT');

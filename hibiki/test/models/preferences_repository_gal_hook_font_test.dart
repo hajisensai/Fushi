@@ -12,11 +12,11 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late PreferencesRepository repo;
 
   setUp(() async {
-    db = HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+    db = FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
     repo = PreferencesRepository(db);
     await repo.loadFromDb();
   });

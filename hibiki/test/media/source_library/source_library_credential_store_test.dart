@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 void main() {
   test('prefKeyForSource is a stable per-source namespace', () {
@@ -21,7 +21,7 @@ void main() {
   });
 
   test('save then read round-trips password + private key', () async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final SourceLibraryCredentialStore store = SourceLibraryCredentialStore(db);
 
@@ -35,7 +35,7 @@ void main() {
 
   test('🔴 red line: stored preference is base64, not plaintext password',
       () async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final SourceLibraryCredentialStore store = SourceLibraryCredentialStore(db);
 
@@ -52,7 +52,7 @@ void main() {
   });
 
   test('empty credentials delete the entry (read yields empty)', () async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final SourceLibraryCredentialStore store = SourceLibraryCredentialStore(db);
 
@@ -67,7 +67,7 @@ void main() {
   });
 
   test('deleteSecret is idempotent and scoped to the source id', () async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final SourceLibraryCredentialStore store = SourceLibraryCredentialStore(db);
 
@@ -85,7 +85,7 @@ void main() {
   });
 
   test('missing / corrupt preference reads back as empty (no throw)', () async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final SourceLibraryCredentialStore store = SourceLibraryCredentialStore(db);
 

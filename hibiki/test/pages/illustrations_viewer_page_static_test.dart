@@ -3,12 +3,12 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/illustrations_viewer_page.dart';
-import 'package:fushi_core/fushi_core.dart' show HibikiDatabase;
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 
 void main() {
   test('illustrations viewer page library compiles', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     expect(
       IllustrationsViewerPage(

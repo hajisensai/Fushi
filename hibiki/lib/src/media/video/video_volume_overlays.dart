@@ -52,7 +52,7 @@ class VideoVolumePopoverCard extends StatelessWidget {
         key: frameKey,
         decoration: BoxDecoration(
           color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.94),
-          borderRadius: HibikiBorderRadius.menu,
+          borderRadius: FushiBorderRadius.menu,
           border: Border.all(
             color: colorScheme.outlineVariant.withValues(alpha: 0.7),
           ),

@@ -156,7 +156,7 @@ abstract final class BookFormatRebuild {
   /// **失败不改行**：产物重建整段跑完才写库。半途失败只可能在书目录里留下多余的
   /// 页图，行仍指向原格式，书照旧能打开——这比「行已改、产物没建完」安全得多。
   static Future<void> convert({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required EpubBookRow row,
     required BookFormatTarget target,
     void Function(int done, int total)? onProgress,
@@ -182,7 +182,7 @@ abstract final class BookFormatRebuild {
   // ── 转成漫画 ────────────────────────────────────────────────────────
 
   static Future<void> _rebuildToManga({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required EpubBookRow row,
     required String sourcePath,
     required BookFormat sourceFormat,
@@ -347,7 +347,7 @@ abstract final class BookFormatRebuild {
   // ── 转回书 ──────────────────────────────────────────────────────────
 
   static Future<void> _rebuildToBook({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required EpubBookRow row,
     required String sourcePath,
   }) async {

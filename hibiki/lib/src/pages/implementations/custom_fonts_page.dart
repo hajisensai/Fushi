@@ -382,7 +382,7 @@ bool _isFontFile(String path) {
 
 // ── 系统字体扫描 ─────────────────────────────────────────────────────────────
 
-const _fontsChannel = HibikiChannels.fonts;
+const _fontsChannel = FushiChannels.fonts;
 List<String>? _cachedSystemFonts;
 
 Future<List<String>> _getSystemFonts() async {
@@ -501,7 +501,7 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final List<Widget> fontRows = _loading
         ? <Widget>[
@@ -544,7 +544,7 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
               controlBelow: true,
               trailing: SizedBox(
                 width: double.infinity,
-                child: HibikiTextField(
+                child: FushiTextField(
                   controller: _searchController,
                   hintText: t.custom_fonts_search_hint,
                   contentPadding: EdgeInsets.symmetric(
@@ -698,7 +698,7 @@ class _CustomFontsPageState extends BasePageState {
 
     if (count > 0) {
       await _save();
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.custom_fonts_imported_count(count: count),
         severity: ToastSeverity.success,
       );
@@ -866,7 +866,7 @@ class _CustomFontsPageState extends BasePageState {
     } catch (e, stack) {
       ErrorLogService.instance.log('CustomFontsPage.extractArchive', e, stack);
       debugPrint('[fushi-fonts] archive extract failed: $e');
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.custom_fonts_archive_error,
         severity: ToastSeverity.error,
       );
@@ -990,12 +990,12 @@ class _CustomFontsPageState extends BasePageState {
 
       if (count > 0) {
         await _save();
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.custom_fonts_imported_count(count: count),
           severity: ToastSeverity.success,
         );
       } else {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.custom_fonts_no_fonts_in_archive,
           severity: ToastSeverity.error,
         );
@@ -1006,7 +1006,7 @@ class _CustomFontsPageState extends BasePageState {
         debugPrint('[fushi-fonts] DioError: type=${e.type} '
             'status=${e.response?.statusCode} msg=${e.message}');
         debugPrint('[fushi-fonts] stack: $stack');
-        HibikiToast.show(
+        FushiToast.show(
           msg: '${t.custom_fonts_download_failed}: ${e.type.name}',
           toastLength: Toast.LENGTH_LONG,
           severity: ToastSeverity.error,
@@ -1018,7 +1018,7 @@ class _CustomFontsPageState extends BasePageState {
       if (mounted) Navigator.pop(context);
       debugPrint('[fushi-fonts] download failed: $e');
       debugPrint('[fushi-fonts] stack: $stack');
-      HibikiToast.show(
+      FushiToast.show(
         msg: '${t.custom_fonts_download_failed}: $e',
         toastLength: Toast.LENGTH_LONG,
         severity: ToastSeverity.error,
@@ -1116,13 +1116,13 @@ class _CustomFontsPageState extends BasePageState {
         debugPrint('[Fushi] failed to delete font file $filePath: $e');
       }
     }
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.custom_fonts_removed,
       severity: ToastSeverity.success,
     );
   }
 
-  /// [newIndex] 是**最终下标**（HibikiReorderableColumn 语义），不是 SDK
+  /// [newIndex] 是**最终下标**（FushiReorderableColumn 语义），不是 SDK
   /// `ReorderableListView` 的「移除前下标」——故这里没有 `newIndex--` 修正。
   /// 上/下移按钮同样按最终下标传（下移传 index+1）。
   void _onReorder(int oldIndex, int newIndex) {
@@ -1195,14 +1195,14 @@ class _CustomFontsPageState extends BasePageState {
                 title: t.custom_fonts_manage,
                 icon: Icons.format_size,
                 controlBelow: true,
-                // 自实现的 HibikiReorderableColumn 而非 SDK ReorderableListView：
-                // 整棵树活在 HibikiAppUiScale 的 Transform.scale 之下，而 SDK 的
+                // 自实现的 FushiReorderableColumn 而非 SDK ReorderableListView：
+                // 整棵树活在 FushiAppUiScale 的 Transform.scale 之下，而 SDK 的
                 // _DragItemProxy 用「全局坐标 − overlay 原点」纯平移、不认祖先
                 // 缩放，「界面大小」非 100% 时拖拽浮层按 (1−s)×距离 漂移、缩小时
                 // 一拖即飞出屏幕（BUG-778 同根因，当时只修了合集与词典两条链路，
                 // 这里漏了）。原本就是 shrinkWrap + NeverScrollableScrollPhysics
                 //（外层滚动），与本组件语义一致。
-                trailing: HibikiReorderableColumn(
+                trailing: FushiReorderableColumn(
                   itemCount: _fonts.length,
                   keyForIndex: (int index) =>
                       ValueKey<String>('${_fonts[index].name}-$index'),
@@ -1246,12 +1246,12 @@ class CustomFontDownloadProgressDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiDialogFrame(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.72,
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: title,
         leadingIcon: Icons.download_outlined,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -1321,11 +1321,11 @@ class _CustomFontUrlImportDialogState extends State<CustomFontUrlImportDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiDialogFrame(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiDialogFrame(
       maxWidth: 480,
       maxHeightFactor: 0.72,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.custom_fonts_import_url,
         leadingIcon: Icons.link_outlined,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -1340,7 +1340,7 @@ class _CustomFontUrlImportDialogState extends State<CustomFontUrlImportDialog> {
           tokens.spacing.card,
           tokens.spacing.card,
         ),
-        body: HibikiTextField(
+        body: FushiTextField(
           controller: _urlController,
           hintText: 'https://example.com/fonts.zip',
           keyboardType: TextInputType.url,
@@ -1454,7 +1454,7 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool cupertino = isCupertinoPlatform(context);
     final TextStyle? titleStyle = cupertino
         ? tokens.type.listTitle
@@ -1463,7 +1463,7 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
         Theme.of(context).textTheme.bodySmall?.copyWith(
               color: scheme.onSurfaceVariant,
             );
-    // ☰ 拖拽手柄：整行本就可拖（外层 HibikiReorderDragListener——桌面按下即拖、
+    // ☰ 拖拽手柄：整行本就可拖（外层 FushiReorderDragListener——桌面按下即拖、
     // 移动端长按再拖），这枚手柄是把「可拖拽重排」画出来的视觉锚点，替代原先
     // 单列一行的「拖拽以调整优先级」文字提示。
     final Widget dragHandle = Tooltip(
@@ -1480,7 +1480,7 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
     final Widget actions = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.keyboard_arrow_up,
           size: 18,
           tooltip: t.move_up,
@@ -1488,7 +1488,7 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
           onTap: widget.onMoveUp,
         ),
         SizedBox(width: tokens.spacing.gap),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.keyboard_arrow_down,
           size: 18,
           tooltip: t.move_down,
@@ -1496,7 +1496,7 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
           onTap: widget.onMoveDown,
         ),
         SizedBox(width: tokens.spacing.gap),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.delete_outline,
           size: 18,
           enabledColor: scheme.error,
@@ -1505,7 +1505,7 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
         ),
       ],
     );
-    // 折叠头：点一下展开/收起 4 个用途开关。用普通 Icon（非 HibikiIconButton）
+    // 折叠头：点一下展开/收起 4 个用途开关。用普通 Icon（非 FushiIconButton）
     // 与 InkWell，避免破坏「每行恰好 3 个动作按钮」的布局守卫。
     final Widget rolesHeader = InkWell(
       onTap: () => setState(() => _rolesExpanded = !_rolesExpanded),
@@ -1537,7 +1537,7 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
         ),
       ),
     );
-    // 不再自带拖拽监听：整行拖拽由外层 HibikiReorderableColumn 统一接管
+    // 不再自带拖拽监听：整行拖拽由外层 FushiReorderableColumn 统一接管
     //（它按输入设备分流起拖：鼠标按下即拖、触摸长按），行内容保持纯净。
     return Padding(
       padding: EdgeInsets.symmetric(

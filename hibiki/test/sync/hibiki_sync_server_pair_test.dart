@@ -7,11 +7,11 @@ import 'package:http/http.dart' as http;
 
 void main() {
   late Directory tempDir;
-  late HibikiSyncServer server;
+  late FushiSyncServer server;
 
   setUp(() async {
     tempDir = Directory.systemTemp.createTempSync('hibiki_pair_test');
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0, // ephemeral
       token: 'super-secret-token',
@@ -38,7 +38,7 @@ void main() {
   });
 
   test('POST /api/pair returns the token when the host approves', () async {
-    server.onPairRequest = (HibikiPairRequest _) async => true;
+    server.onPairRequest = (FushiPairRequest _) async => true;
     final http.Response resp = await http.post(pairUri());
     expect(resp.statusCode, 200);
     final Map<String, dynamic> body =
@@ -47,7 +47,7 @@ void main() {
   });
 
   test('POST /api/pair returns 403/declined when the host declines', () async {
-    server.onPairRequest = (HibikiPairRequest _) async => false;
+    server.onPairRequest = (FushiPairRequest _) async => false;
     final http.Response resp = await http.post(pairUri());
     expect(resp.statusCode, 403);
     expect(
@@ -58,8 +58,8 @@ void main() {
 
   test('the approval handler receives the client name and remote address',
       () async {
-    HibikiPairRequest? seen;
-    server.onPairRequest = (HibikiPairRequest req) async {
+    FushiPairRequest? seen;
+    server.onPairRequest = (FushiPairRequest req) async {
       seen = req;
       return true;
     };
@@ -75,7 +75,7 @@ void main() {
   });
 
   test('GET /api/pair is rejected with 405', () async {
-    server.onPairRequest = (HibikiPairRequest _) async => true;
+    server.onPairRequest = (FushiPairRequest _) async => true;
     final http.Response resp = await http.get(pairUri());
     expect(resp.statusCode, 405);
   });
@@ -85,7 +85,7 @@ void main() {
     final http.Response davResp =
         await http.get(Uri.parse('http://127.0.0.1:${server.port}/'));
     expect(davResp.statusCode, 401);
-    server.onPairRequest = (HibikiPairRequest _) async => true;
+    server.onPairRequest = (FushiPairRequest _) async => true;
     final http.Response pairResp = await http.post(pairUri());
     expect(pairResp.statusCode, 200);
   });

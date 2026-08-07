@@ -251,7 +251,7 @@ class PendingTrackingUpdate {
 class MediaTrackingRepository {
   const MediaTrackingRepository(this._db);
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
 
   Future<List<MediaTrackingMappingRow>> listMappings() =>
       (_db.select(_db.mediaTrackingMappings)

@@ -184,7 +184,7 @@ class AnimeDownloadDialog extends ConsumerStatefulWidget {
 }
 
 class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
-    with HibikiPagePlaceholders<AnimeDownloadDialog> {
+    with FushiPagePlaceholders<AnimeDownloadDialog> {
   final TextEditingController _animeQueryCtrl = TextEditingController();
   final TextEditingController _nyaaQueryCtrl = TextEditingController();
   late final TextEditingController _jimakuKeyCtrl;
@@ -1287,7 +1287,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   /// 压缩，分段条拿到的是「剩余宽/3」——360dp 上每段只剩约 48px，`自动/视频/书`
   /// 三个标签全被裁成半个字。这里按**估算宽度**（随文案与文字缩放变化，不写死断点）
   /// 判断放不放得下：放得下维持原来的一行；放不下就让分段条独占一行、按钮换到下一
-  /// 行右对齐，两者都保持完整可读。分段条本身走 [HibikiSegmentedStrip]，即使单独
+  /// 行右对齐，两者都保持完整可读。分段条本身走 [FushiSegmentedStrip]，即使单独
   /// 一行仍不够宽也是横向滚动而非裁字。
   Widget _buildGenericKindRow(BuildContext context) {
     final List<ButtonSegment<String>> segments = <ButtonSegment<String>>[
@@ -1304,7 +1304,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         label: Text(t.anime_download_kind_book),
       ),
     ];
-    final Widget strip = HibikiSegmentedStrip<String>(
+    final Widget strip = FushiSegmentedStrip<String>(
       segments: segments,
       selected: _genericKind,
       onChanged: (String kind) {
@@ -2337,7 +2337,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     };
   }
 
-  /// 单条任务行（[HibikiListItem] compact，自动接焦点系统）。
+  /// 单条任务行（[FushiListItem] compact，自动接焦点系统）。
   ///
   /// - 下载中：轮询服务透传的真实进度（[AnimeDownloadService.downloadProgress]）
   ///   渲染确定进度环 + 行内百分比；进度未知（服务未接/后端未上列表）回退
@@ -2426,9 +2426,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             '${(progress * 100).toStringAsFixed(0)}%',
             if (statusLabel != null) statusLabel,
             if (stats != null) ...<String>[
-              '↓ ${HibikiByteFormat.speed(stats.downRateBps.toDouble())}',
-              '↑ ${HibikiByteFormat.speed(stats.upRateBps.toDouble())}',
-              HibikiByteFormat.bytes(stats.downloadedBytes),
+              '↓ ${FushiByteFormat.speed(stats.downRateBps.toDouble())}',
+              '↑ ${FushiByteFormat.speed(stats.upRateBps.toDouble())}',
+              FushiByteFormat.bytes(stats.downloadedBytes),
             ],
             if (etaText != null) '${t.download_task_eta} $etaText',
             if (ratioText != null) '${t.download_task_ratio} $ratioText',
@@ -2452,8 +2452,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         ),
       _ => null,
     };
-    return HibikiListItem(
-      density: HibikiListDensity.compact,
+    return FushiListItem(
+      density: FushiListDensity.compact,
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       // TODO-2482：行点击 = 打开任务详情（四 tab）。详情对话框自己探测
       // 后端能力并降级，这里不做前置门槛。
@@ -2508,40 +2508,40 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           // 状态切换；操作成功由 tick 刷出新状态，无本地乐观态。
           if (downloading && _pauseCapable)
             if (displayStatus == TorrentDisplayStatus.paused)
-              HibikiIconButton(
+              FushiIconButton(
                 tooltip: t.download_task_resume,
                 icon: Icons.play_arrow_outlined,
                 size: 20,
                 onTap: () => _togglePausePlan(plan, pause: false),
               )
             else
-              HibikiIconButton(
+              FushiIconButton(
                 tooltip: t.download_task_pause,
                 icon: Icons.pause_circle_outline,
                 size: 20,
                 onTap: () => _togglePausePlan(plan, pause: true),
               ),
           if (downloading && !plan.importedEarly)
-            HibikiIconButton(
+            FushiIconButton(
               tooltip: t.anime_download_play_now,
               icon: Icons.play_circle_outline,
               size: 20,
               onTap: () => _playNow(plan),
             ),
           if (failed)
-            HibikiIconButton(
+            FushiIconButton(
               tooltip: t.anime_download_retry,
               icon: Icons.refresh,
               size: 20,
               onTap: () => _retryPlan(plan),
             ),
-          HibikiIconButton(
+          FushiIconButton(
             tooltip: t.anime_download_relocate,
             icon: Icons.drive_file_move_outline,
             size: 20,
             onTap: () => _relocatePlan(plan),
           ),
-          HibikiIconButton(
+          FushiIconButton(
             tooltip: t.anime_download_delete,
             icon: Icons.delete_outline,
             size: 20,
@@ -2631,7 +2631,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
 
     // scrollable:false：maxHeight 给整个对话框有界高度，Flexible 正常分配空间、
     // 各阶段内部 ListView 正常滚动（同 JimakuSubtitleDialog 的 BUG-279 不变量）。
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 720,
       maxHeightFactor: 0.86,
       scrollable: false,
@@ -2803,7 +2803,7 @@ class _RelocateDialogState extends State<_RelocateDialog> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        HibikiIconButton(
+                        FushiIconButton(
                           tooltip: t.anime_download_relocate_rename_title,
                           icon: Icons.drive_file_rename_outline,
                           size: 20,

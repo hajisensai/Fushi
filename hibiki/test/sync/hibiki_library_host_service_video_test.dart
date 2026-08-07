@@ -13,7 +13,7 @@ import 'package:path/path.dart' as p;
 
 /// 最小 AppModelLibraryHostService 实例（不需要词典/书籍功能）。
 AppModelLibraryHostService _makeService({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required Directory tmp,
   String langCode = 'ja',
   Directory? uploadedVideoRoot,
@@ -37,11 +37,11 @@ AppModelLibraryHostService _makeService({
 
 void main() {
   late Directory tmp;
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() {
     tmp = Directory.systemTemp.createTempSync('hbk_video_svc_test');
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() async {

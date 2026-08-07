@@ -14,7 +14,7 @@ import 'package:fushi/src/sync/tls/hibiki_pinning_http.dart';
 /// - 它不无条件「信任」证书：它信任的是「本次握手所见的指纹」这一事实，并把该指纹
 ///   原样交还由 TOFU / 用户裁决。`onBadCertificate` 返回的是「是否已成功捕获到指纹」
 ///   这一计算结果，而非硬编码放行——捕获失败（理论上不会）即拒绝握手。
-class HibikiTofuProbe {
+class FushiTofuProbe {
   /// 连到 [host]:[port] 做一次 TLS 握手，返回 host 证书的 SHA-256 指纹
   /// （aa:bb:.. 形式）。失败（连不上 / 非 TLS / 超时）返回 null。
   static Future<String?> captureFingerprint(

@@ -9,11 +9,11 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 守卫 TODO-790-B：每个导入对话框（book/manga/audiobook/video）的 build 必须把根
-/// frame 包进 [HibikiFileDropTarget]，否则拖文件进打开的模态对话框会被页级
+/// frame 包进 [FushiFileDropTarget]，否则拖文件进打开的模态对话框会被页级
 /// drop target 因 `isCurrent` 守卫静默忽略。
 ///
 /// 源码扫描守卫（仿 drag_drop_platform_guard_test.dart）：断言各文件都引用
-/// `HibikiFileDropTarget` 且各自定义 `_handleDialogDrop`。漫画从书籍框分家后是
+/// `FushiFileDropTarget` 且各自定义 `_handleDialogDrop`。漫画从书籍框分家后是
 /// 独立对话框，同样是模态落点，故一并纳入守卫——否则「漫画框拖不进东西」会成为
 /// 一个没人看守的回归。
 void main() {
@@ -25,9 +25,9 @@ void main() {
   };
 
   dialogs.forEach((String name, String path) {
-    test('$name import dialog wraps its frame in HibikiFileDropTarget', () {
+    test('$name import dialog wraps its frame in FushiFileDropTarget', () {
       final String src = File(path).readAsStringSync();
-      expect(src.contains('HibikiFileDropTarget('), isTrue,
+      expect(src.contains('FushiFileDropTarget('), isTrue,
           reason: '$name dialog must accept drops onto the modal route');
       expect(src.contains('_handleDialogDrop'), isTrue,
           reason: '$name dialog must route drops into its fields');
@@ -45,8 +45,8 @@ void main() {
 
   testWidgets('BookImportDialog prefills dragged audio into the audio row',
       (WidgetTester tester) async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     await tester.pumpWidget(

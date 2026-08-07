@@ -102,8 +102,8 @@ void main() {
       await writeFile(laPath, 'FORVO');
       await writeFile('$laPath-wal', 'WAL');
 
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       await db.setPref(
         'local_audio_dbs',
         PrefCodec.encode(jsonEncode(<Map<String, Object?>>[
@@ -139,7 +139,7 @@ void main() {
 
       expect(File(p.join(dstDbDir, 'local_audio_111.db')).existsSync(), isTrue);
 
-      final HibikiDatabase restored = HibikiDatabase(dstDbDir);
+      final FushiDatabase restored = FushiDatabase(dstDbDir);
       try {
         final Map<String, String> prefs = await restored.getAllPrefs();
         expect(prefs['local_audio_dbs']!, startsWith('s:'));
@@ -174,8 +174,8 @@ void main() {
       final String laPath = p.join(srcDbDir, 'local_audio_333.db');
       await writeFile(laPath, 'NHK');
 
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       await db.setPref(
         'local_audio_dbs',
         PrefCodec.encode(jsonEncode(<Map<String, Object?>>[
@@ -202,7 +202,7 @@ void main() {
       // the imported registry is simply absent.
       await BackupService.restoreBackup(dbDirectory: dstDbDir, zipPath: zip);
 
-      final HibikiDatabase restored = HibikiDatabase(dstDbDir);
+      final FushiDatabase restored = FushiDatabase(dstDbDir);
       try {
         final Map<String, String> prefs = await restored.getAllPrefs();
         expect(prefs.containsKey('local_audio_dbs'), isFalse,

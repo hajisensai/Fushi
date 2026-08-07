@@ -3,8 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-1204: lookup / mining per-book counters (lookup_mining_counters).
-Future<HibikiDatabase> _openDb() async {
-  final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
@@ -28,7 +28,7 @@ LookupMiningCounterRow? _rowFor(
 void main() {
   group('LookupMiningCounters addLookupCount', () {
     test('accumulates +1 per call on the same (title, source, date)', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       const String title = 'BookA';
       for (int i = 0; i < 3; i++) {
         await db.addLookupCount(
@@ -49,7 +49,7 @@ void main() {
     });
 
     test('no-book lookup (title empty, bookKey null) stays global', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       await db.addLookupCount(sourceType: 'book', dateKey: '2026-07-05');
       await db.addLookupCount(sourceType: 'book', dateKey: '2026-07-05');
       final List<LookupMiningCounterRow> rows =
@@ -61,7 +61,7 @@ void main() {
     });
 
     test('different dates / sources create separate rows', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       await db.addLookupCount(
           title: 'X', sourceType: 'book', dateKey: '2026-07-05');
       await db.addLookupCount(
@@ -75,7 +75,7 @@ void main() {
 
   group('LookupMiningCounters addMineCountPerBook', () {
     test('accumulates mineCount independently of lookupCount', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       await db.addLookupCount(
           bookKey: 'book/A', title: 'A', sourceType: 'book', dateKey: 'd1');
       await db.addMineCountPerBook(
@@ -92,7 +92,7 @@ void main() {
   group('LookupMiningCounters MAX-union set*', () {
     test('is idempotent: re-applying the same snapshot never double-counts',
         () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       for (int i = 0; i < 2; i++) {
         await db.setLookupCount(
             title: 'A', sourceType: 'book', dateKey: 'd1', count: 7);
@@ -106,7 +106,7 @@ void main() {
     });
 
     test('set only raises to the max, never lowers', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       await db.setLookupCount(
           title: 'A', sourceType: 'book', dateKey: 'd1', count: 10);
       await db.setLookupCount(
@@ -119,7 +119,7 @@ void main() {
 
   group('LookupMiningCounters aggregation by source/title', () {
     test('getLookupMiningCountersBySource filters by sourceType', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       await db.addLookupCount(title: 'A', sourceType: 'book', dateKey: 'd1');
       await db.addLookupCount(title: 'V', sourceType: 'video', dateKey: 'd1');
       expect(
@@ -129,7 +129,7 @@ void main() {
     });
 
     test('per-title totals across dates aggregate correctly', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       await db.addLookupCount(title: 'A', sourceType: 'book', dateKey: 'd1');
       await db.addLookupCount(title: 'A', sourceType: 'book', dateKey: 'd2');
       await db.addMineCountPerBook(
@@ -155,7 +155,7 @@ void main() {
 
     test('getAllLookupMiningCounters returns rows across all sources',
         () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       await db.addLookupCount(title: 'A', sourceType: 'book', dateKey: 'd1');
       await db.addLookupCount(title: 'V', sourceType: 'video', dateKey: 'd1');
       final List<LookupMiningCounterRow> all =

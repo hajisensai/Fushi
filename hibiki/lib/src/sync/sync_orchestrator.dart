@@ -319,7 +319,7 @@ class SyncAuthFailure {
 /// separate opt-in sharing pools.
 class SyncOrchestrator {
   SyncOrchestrator({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required SyncBackend backend,
     required Directory dictionaryResourceRoot,
     required Directory audioDatabaseRoot,
@@ -343,7 +343,7 @@ class SyncOrchestrator {
         _tempDir = tempDir,
         _packages = SyncAssetPackageService(db: db);
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
   final SyncBackend _backend;
   final Directory _dictionaryResourceRoot;
   final Directory _audioDatabaseRoot;
@@ -886,7 +886,7 @@ class SyncOrchestrator {
       },
       SyncTombstoneKind.favoriteword.dbValue: <String>{
         for (final FavoriteWordRow r in await _db.getAllFavoriteWords())
-          HibikiDatabase.favoriteWordItemKey(
+          FushiDatabase.favoriteWordItemKey(
               r.expression, r.reading, r.sourceType),
       },
       // 收藏句无稳定 id，用内容键（[FavoriteSentenceRepository.itemKeyOf]）；与写墓碑点、
@@ -2609,7 +2609,7 @@ class SyncOrchestrator {
 /// 返回 true=导入成功；false=该文件夹没有 `.epub`（发送方关了内容同步，跳过）。
 /// 传输/导入失败时抛出，交调用方决定如何提示。临时文件用后即删。
 Future<bool> importRemoteBookFolder({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required SyncBackend backend,
   required String folderId,
   required Directory tempDir,
@@ -2673,7 +2673,7 @@ Future<bool> importRemoteBookFolder({
 /// 「只上传拿不回」缺口）。无音频资产是常态（普通书）——静默返回。best-effort：下载/
 /// 解包失败仅吞掉（EPUB 已成功导入，不因音频回退整本失败）。
 Future<void> _pullRemoteFolderAudiobook({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required SyncBackend backend,
   required List<AssetEntry> children,
   required String bookKey,
@@ -2717,7 +2717,7 @@ Future<void> _pullRemoteFolderAudiobook({
 /// tagTombstones → 按名 max(add) vs max(removed) 裁决（删除/改名传播、防复活）；v1 旧
 /// sidecar 只有 tags 名单 → 合成 addedAt=1，退化为「只增且尊重本地移除墓碑」（向后兼容）。
 Future<void> _applyRemoteBookFolderTags(
-  HibikiDatabase db,
+  FushiDatabase db,
   SyncBackend backend,
   List<AssetEntry> children,
   String bookKey,
@@ -2745,7 +2745,7 @@ Future<void> _applyRemoteBookFolderTags(
 /// 按 relativePath 取 updatedAt 较新，把内容/重置写穿书的 extractDir（磁盘是渲染真相源，
 /// DB 只是时间戳载体）。缺 sidecar / 本书无对应 CSS 文件 / 反查不到 extractDir 一律安全跳过。
 Future<void> _applyRemoteBookFolderCss(
-  HibikiDatabase db,
+  FushiDatabase db,
   SyncBackend backend,
   List<AssetEntry> children,
   String bookKey,

@@ -6,13 +6,13 @@ import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 import 'widget_test_helpers.dart';
 
 void main() {
-  group('HibikiTextField on-screen keyboard affordance', () {
+  group('FushiTextField on-screen keyboard affordance', () {
     testWidgets('desktop + controller shows the ⌨ button',
         (WidgetTester tester) async {
       final TextEditingController c = TextEditingController();
       addTearDown(c.dispose);
       await tester.pumpWidget(buildTestApp(
-        HibikiTextField(controller: c),
+        FushiTextField(controller: c),
         theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
       ));
       await tester.pump();
@@ -25,7 +25,7 @@ void main() {
       final TextEditingController c = TextEditingController();
       addTearDown(c.dispose);
       await tester.pumpWidget(buildTestApp(
-        HibikiTextField(controller: c),
+        FushiTextField(controller: c),
         theme: ThemeData(useMaterial3: true, platform: TargetPlatform.android),
       ));
       await tester.pump();
@@ -37,7 +37,7 @@ void main() {
       final TextEditingController c = TextEditingController();
       addTearDown(c.dispose);
       await tester.pumpWidget(buildTestApp(
-        HibikiTextField(controller: c, suffixIcon: const Icon(Icons.clear)),
+        FushiTextField(controller: c, suffixIcon: const Icon(Icons.clear)),
         theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
       ));
       await tester.pump();
@@ -49,7 +49,7 @@ void main() {
         'no controller (initialValue) shows no ⌨ (nothing to type into)',
         (WidgetTester tester) async {
       await tester.pumpWidget(buildTestApp(
-        const HibikiTextField(initialValue: 'x'),
+        const FushiTextField(initialValue: 'x'),
         theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
       ));
       await tester.pump();
@@ -61,7 +61,7 @@ void main() {
       final TextEditingController c = TextEditingController();
       addTearDown(c.dispose);
       await tester.pumpWidget(buildTestApp(
-        HibikiTextField(controller: c),
+        FushiTextField(controller: c),
         theme: ThemeData(useMaterial3: true, platform: TargetPlatform.android),
       ));
       await tester.pump();
@@ -75,7 +75,7 @@ void main() {
       final TextEditingController c = TextEditingController();
       addTearDown(c.dispose);
       await tester.pumpWidget(buildTestApp(
-        HibikiTextField(controller: c),
+        FushiTextField(controller: c),
         theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
       ));
       await tester.pump();
@@ -99,7 +99,7 @@ void main() {
       c.selection = const TextSelection.collapsed(offset: 1);
       final List<String> changes = <String>[];
       await tester.pumpWidget(buildTestApp(
-        HibikiTextField(controller: c, onChanged: changes.add),
+        FushiTextField(controller: c, onChanged: changes.add),
         theme: ThemeData(useMaterial3: true, platform: TargetPlatform.android),
       ));
       await tester.pump();
@@ -112,7 +112,7 @@ void main() {
     testWidgets('mobile no-controller shows no paste button',
         (WidgetTester tester) async {
       await tester.pumpWidget(buildTestApp(
-        const HibikiTextField(initialValue: 'x'),
+        const FushiTextField(initialValue: 'x'),
         theme: ThemeData(useMaterial3: true, platform: TargetPlatform.android),
       ));
       await tester.pump();
@@ -121,7 +121,7 @@ void main() {
   });
 
   group('search fields on-screen keyboard affordance', () {
-    testWidgets('desktop HibikiSearchField shows the ⌨ button',
+    testWidgets('desktop FushiSearchField shows the ⌨ button',
         (WidgetTester tester) async {
       final TextEditingController c = TextEditingController();
       final FocusNode focusNode = FocusNode();
@@ -129,7 +129,7 @@ void main() {
       addTearDown(focusNode.dispose);
 
       await tester.pumpWidget(buildTestApp(
-        HibikiSearchField(
+        FushiSearchField(
           controller: c,
           focusNode: focusNode,
           hintText: 'Search',
@@ -152,7 +152,7 @@ void main() {
       addTearDown(focusNode.dispose);
 
       await tester.pumpWidget(buildTestApp(
-        HibikiSearchField(
+        FushiSearchField(
           controller: c,
           focusNode: focusNode,
           hintText: 'Search',
@@ -193,7 +193,7 @@ void main() {
       addTearDown(focusNode.dispose);
 
       await tester.pumpWidget(buildTestApp(
-        HibikiCompactSearchRow(
+        FushiCompactSearchRow(
           controller: c,
           focusNode: focusNode,
           hintText: 'Search',
@@ -207,7 +207,7 @@ void main() {
     });
   });
 
-  testWidgets('desktop HibikiEditorPanel shows the ⌨ button',
+  testWidgets('desktop FushiEditorPanel shows the ⌨ button',
       (WidgetTester tester) async {
     final TextEditingController c = TextEditingController();
     addTearDown(c.dispose);
@@ -216,7 +216,7 @@ void main() {
       SizedBox(
         width: 480,
         height: 320,
-        child: HibikiEditorPanel(controller: c),
+        child: FushiEditorPanel(controller: c),
       ),
       theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
     ));

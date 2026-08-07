@@ -25,8 +25,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../helpers/test_platform_services.dart';
 
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
@@ -154,13 +154,13 @@ Widget _harness({
   required Widget Function(SettingsContext) builder,
   CupertinoThemeData? cupertinoTheme,
   String designSystem = 'auto',
-  HibikiDesignSystemTheme? designSystemTheme,
+  FushiDesignSystemTheme? designSystemTheme,
   AppModel? appModel,
-  HibikiDatabase? database,
+  FushiDatabase? database,
   Map<String, String> extraThemePrefs = const <String, String>{},
   TextScaler? textScaler,
 }) {
-  final HibikiDatabase db = database ?? _testDb();
+  final FushiDatabase db = database ?? _testDb();
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
     ..loadFromPrefsSnapshot(<String, String>{
       'design_system': PrefCodec.encode(designSystem),
@@ -187,7 +187,7 @@ Widget _harness({
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
         extensions: <ThemeExtension<dynamic>>[
           designSystemTheme ??
-              HibikiDesignSystemTheme(themeNotifier.designSystemTheme),
+              FushiDesignSystemTheme(themeNotifier.designSystemTheme),
         ],
       ),
       home: _buildHome(cupertinoTheme, builder, textScaler),
@@ -196,7 +196,7 @@ Widget _harness({
 }
 
 Future<AppModel> _prefsBackedAppModel(
-  HibikiDatabase db, {
+  FushiDatabase db, {
   PackageInfo? packageInfo,
 }) async {
   final PreferencesRepository prefsRepo = PreferencesRepository(db);
@@ -388,7 +388,7 @@ void main() {
       _harness(
         platform: TargetPlatform.iOS,
         designSystemTheme:
-            const HibikiDesignSystemTheme(HibikiDesignSystem.cupertino),
+            const FushiDesignSystemTheme(FushiDesignSystem.cupertino),
         builder: (SettingsContext settingsContext) {
           return CupertinoSettingsRenderer().buildDetailPage(
             settingsContext: settingsContext,
@@ -456,7 +456,7 @@ void main() {
         platform: TargetPlatform.iOS,
         cupertinoTheme: const CupertinoThemeData(primaryColor: customPrimary),
         designSystemTheme:
-            const HibikiDesignSystemTheme(HibikiDesignSystem.cupertino),
+            const FushiDesignSystemTheme(FushiDesignSystem.cupertino),
         builder: (SettingsContext settingsContext) {
           return CupertinoSettingsRenderer().buildDetailPage(
             settingsContext: settingsContext,
@@ -481,7 +481,7 @@ void main() {
         platform: TargetPlatform.iOS,
         cupertinoTheme: const CupertinoThemeData(primaryColor: customPrimary),
         designSystemTheme:
-            const HibikiDesignSystemTheme(HibikiDesignSystem.cupertino),
+            const FushiDesignSystemTheme(FushiDesignSystem.cupertino),
         builder: (SettingsContext settingsContext) {
           return CupertinoSettingsRenderer().buildDestinationList(
             settingsContext: settingsContext,
@@ -518,11 +518,11 @@ void main() {
     );
 
     expect(find.byType(AdaptiveSettingsSection), findsOneWidget);
-    HibikiListItem item = tester.widget<HibikiListItem>(
-      find.widgetWithText(HibikiListItem, 'Appearance'),
+    FushiListItem item = tester.widget<FushiListItem>(
+      find.widgetWithText(FushiListItem, 'Appearance'),
     );
     expect(item.selected, isTrue);
-    expect(item.selectedShape, HibikiListItemSelectedShape.pill);
+    expect(item.selectedShape, FushiListItemSelectedShape.pill);
     expect(item.trailing, isNull);
   });
 
@@ -543,11 +543,11 @@ void main() {
     );
 
     expect(find.byType(AdaptiveSettingsSection), findsOneWidget);
-    final HibikiListItem item = tester.widget<HibikiListItem>(
-      find.widgetWithText(HibikiListItem, 'Appearance'),
+    final FushiListItem item = tester.widget<FushiListItem>(
+      find.widgetWithText(FushiListItem, 'Appearance'),
     );
     expect(item.selected, isTrue);
-    expect(item.selectedShape, HibikiListItemSelectedShape.fill);
+    expect(item.selectedShape, FushiListItemSelectedShape.fill);
     expect(item.trailing, isA<Icon>());
   });
 
@@ -575,7 +575,7 @@ void main() {
 
   testWidgets('system settings exposes the runtime app version',
       (WidgetTester tester) async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final AppModel appModel = await _prefsBackedAppModel(
       db,
@@ -647,7 +647,7 @@ void main() {
 
   testWidgets('pushed settings detail refreshes dynamic log row counts',
       (WidgetTester tester) async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final AppModel appModel = await _prefsBackedAppModel(db);
     await ErrorLogService.instance.clear();
@@ -749,7 +749,7 @@ void main() {
   testWidgets('lookup settings can edit the Yomitan API key', (
     WidgetTester tester,
   ) async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final AppModel appModel = await _prefsBackedAppModel(db);
 
@@ -792,7 +792,7 @@ void main() {
   testWidgets('lookup settings exposes lookup audio volume slider', (
     WidgetTester tester,
   ) async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final AppModel appModel = await _prefsBackedAppModel(db);
     final ReaderSettings readerSettings = ReaderSettings(db);
@@ -883,7 +883,7 @@ void main() {
     expect(appModel.appUiScale, 1.0);
 
     // 拖动中：onChanged 只更新本地显示值，绝不提交真实缩放——否则全局
-    // HibikiAppUiScale 的 Transform 会实时重排，滑块在手指下被缩放位移导致
+    // FushiAppUiScale 的 Transform 会实时重排，滑块在手指下被缩放位移导致
     // 拖动断裂（本次修复的根因）。
     row().onChanged(2.0);
     await tester.pump();
@@ -903,7 +903,7 @@ void main() {
       _harness(
         platform: TargetPlatform.iOS,
         designSystemTheme:
-            const HibikiDesignSystemTheme(HibikiDesignSystem.cupertino),
+            const FushiDesignSystemTheme(FushiDesignSystem.cupertino),
         builder: (SettingsContext settingsContext) {
           final SettingsDestination appearance =
               buildSettingsSchema(settingsContext).firstWhere(
@@ -1025,7 +1025,7 @@ void main() {
     await tester.pumpWidget(_harness(
       platform: TargetPlatform.iOS,
       designSystemTheme:
-          const HibikiDesignSystemTheme(HibikiDesignSystem.cupertino),
+          const FushiDesignSystemTheme(FushiDesignSystem.cupertino),
       builder: (SettingsContext sctx) => CupertinoSettingsRenderer()
           .buildDetailPage(
               settingsContext: sctx,
@@ -1048,7 +1048,7 @@ void main() {
       _harness(
         platform: TargetPlatform.iOS,
         designSystemTheme:
-            const HibikiDesignSystemTheme(HibikiDesignSystem.cupertino),
+            const FushiDesignSystemTheme(FushiDesignSystem.cupertino),
         builder: (SettingsContext settingsContext) {
           // 模拟宽屏 primary：固定矮高度面板，内容远超其高度。
           return Align(
@@ -1084,7 +1084,7 @@ void main() {
     // 默认选中分类改为「外观」后，首屏详情会渲染读 prefsRepo 的开关行
     //（反转导航栏/启动词典 tab），故 harness 需要 prefs-backed AppModel
     //（轻量 _RendererTestAppModel 无 prefsRepo 会空指针）。
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final AppModel appModel = await _prefsBackedAppModel(db);
     await tester.pumpWidget(
@@ -1092,7 +1092,7 @@ void main() {
         // 复现用户场景：Windows 主机 + 外观强制 iOS(Cupertino) 覆盖。
         platform: TargetPlatform.windows,
         designSystemTheme:
-            const HibikiDesignSystemTheme(HibikiDesignSystem.cupertino),
+            const FushiDesignSystemTheme(FushiDesignSystem.cupertino),
         appModel: appModel,
         builder: (SettingsContext _) =>
             SettingsHomePage(embedded: true, onBack: () {}),
@@ -1115,7 +1115,7 @@ void main() {
 
   // TODO-1143：master-detail 左父菜单在最窄布局（supportingPaneWidthForLayout
   // clamp 280..360，下界 280px）下曾把长分类标签（如「同步与备份（实验性）」）用
-  // HibikiListItem 默认 titleMaxLines:1 + ellipsis 截成「同步与…」。修复给
+  // FushiListItem 默认 titleMaxLines:1 + ellipsis 截成「同步与…」。修复给
   // buildDestinationList 的分类项传 titleMaxLines: 2（全宽本不换行，无害）。
   testWidgets(
       'TODO-1143: narrow (280px) master-detail destination rows allow two title '
@@ -1153,8 +1153,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // 机制（字体无关）：分类项真拿到 titleMaxLines: 2（放行第二行）。
-    final HibikiListItem item = tester.widget<HibikiListItem>(
-      find.widgetWithText(HibikiListItem, longTitle),
+    final FushiListItem item = tester.widget<FushiListItem>(
+      find.widgetWithText(FushiListItem, longTitle),
     );
     expect(item.titleMaxLines, 2,
         reason: 'TODO-1143 左父菜单分类项必须传 titleMaxLines: 2');

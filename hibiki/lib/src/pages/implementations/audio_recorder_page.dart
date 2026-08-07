@@ -60,9 +60,9 @@ class _AudioRecorderDialogPageState
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 520,
       maxHeightFactor: 0.92,
       insetPadding: EdgeInsets.symmetric(
@@ -70,7 +70,7 @@ class _AudioRecorderDialogPageState
         vertical: tokens.spacing.card,
       ),
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.creator_enhancement_audio_recorder,
         leadingIcon: Icons.mic_none_outlined,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -152,7 +152,7 @@ class _AudioRecorderDialogPageState
         _playerStateNotifier,
       ],
       builder: (context, values, _) {
-        final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+        final FushiDesignTokens tokens = FushiDesignTokens.of(context);
         PlayerState? playerState = values.elementAt(0);
 
         IconData iconData = Icons.play_arrow_outlined;
@@ -166,7 +166,7 @@ class _AudioRecorderDialogPageState
           iconData = Icons.play_arrow_outlined;
         }
 
-        return HibikiIconButton(
+        return FushiIconButton(
           icon: iconData,
           size: 24,
           padding: EdgeInsets.all(tokens.spacing.gap),
@@ -247,11 +247,11 @@ class _AudioRecorderDialogPageState
             position = Duration.zero;
           }
 
-          return HibikiTimeFormat.getVideoDurationText(position).trim();
+          return FushiTimeFormat.getVideoDurationText(position).trim();
         }
 
         String getDurationText() {
-          return HibikiTimeFormat.getVideoDurationText(duration).trim();
+          return FushiTimeFormat.getVideoDurationText(duration).trim();
         }
 
         return Text(
@@ -318,7 +318,7 @@ class _AudioRecorderDialogPageState
 
   /// Buiid the audio player.
   Widget buildDisabledPlayer() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     return SizedBox(
       height: 48,
@@ -343,7 +343,7 @@ class _AudioRecorderDialogPageState
                 else
                   Opacity(
                     opacity: 0.5,
-                    child: HibikiIconButton(
+                    child: FushiIconButton(
                       icon: Icons.play_arrow_outlined,
                       size: 24,
                       enabled: false,
@@ -406,7 +406,7 @@ class _AudioRecorderDialogPageState
       onPressed: () async {
         await _audioPlayer.stop();
         if (!await _recorder.hasPermission()) {
-          HibikiToast.show(
+          FushiToast.show(
             msg: t.microphone_permission_denied,
             severity: ToastSeverity.error,
           );
@@ -441,7 +441,7 @@ class _AudioRecorderDialogPageState
 
   void executeSave() {
     if (_audioFile == null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.no_audio_file,
         severity: ToastSeverity.error,
       );

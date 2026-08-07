@@ -4,7 +4,7 @@ import 'package:fushi/utils.dart';
 /// TODO-1204 后续：统计页 per-book / per-video 行长按删除该项统计的确认弹窗。
 ///
 /// 删除范围只含**纯统计数字**（阅读 / 观看时长、字数、查词 / 制卡计数），不动用户
-/// 收藏的词句与制卡历史（见 `HibikiDatabase.deleteReadingStatisticsForTitle` /
+/// 收藏的词句与制卡历史（见 `FushiDatabase.deleteReadingStatisticsForTitle` /
 /// `deleteVideoStatisticsForTitle`）。自适应（Material / Cupertino）走 [showAppDialog]，
 /// 与书架删除确认（`ReaderHistoryDeleteDialog` / `_SeriesConfirmDialog`）同结构。
 @visibleForTesting
@@ -16,11 +16,11 @@ class StatDeleteConfirmDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiDialogFrame(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.74,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.stat_delete_title,
         leadingIcon: Icons.delete_outline,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -76,7 +76,7 @@ Future<bool> confirmDeleteStatistics(
 }
 
 /// TODO-1322：统计页「清空全部统计」的危险操作确认弹窗。与 [StatDeleteConfirmDialog]
-/// 同结构（自适应 [showAppDialog] + [HibikiModalSheetFrame] + 破坏性动作），但清空范围
+/// 同结构（自适应 [showAppDialog] + [FushiModalSheetFrame] + 破坏性动作），但清空范围
 /// 是**整个域**（全部书 / 全部视频）的纯统计数字，故独立标题、破坏性确认按钮，正文
 /// [message] 由调用页按阅读 / 视频域各自传入（明确列出清什么、保留什么、不可逆）。
 @visibleForTesting
@@ -89,11 +89,11 @@ class StatClearAllConfirmDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiDialogFrame(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.74,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.stat_clear_all_title,
         leadingIcon: Icons.delete_sweep_outlined,
         bodyPadding: EdgeInsets.fromLTRB(

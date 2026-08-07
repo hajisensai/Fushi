@@ -8,13 +8,13 @@ import 'widget_test_helpers.dart';
 
 // Regression for the reported bug: in 外观设置 the 主题 swatch row could not be
 // reached by gamepad/keyboard directional navigation ("到不了主题的位置"). The
-// swatches were bare InkWells — never registered as HibikiFocusTargets — so the
+// swatches were bare InkWells — never registered as FushiFocusTargets — so the
 // directional controller, which walks ONLY registered targets, skipped the
 // whole row (设计系统 → 深色模式). Each onTap swatch is now a single focus stop
 // that A/Enter activates.
 void main() {
-  // The shipped theme picker uses HibikiSchemeSwatch; the single-colour
-  // HibikiColorSwatch is still used elsewhere. Both wrap their visual through the
+  // The shipped theme picker uses FushiSchemeSwatch; the single-colour
+  // FushiColorSwatch is still used elsewhere. Both wrap their visual through the
   // shared _buildSwatchInteractive helper, so parameterise the swatch builder to
   // prove BOTH register as focus stops (a regression in either must be caught).
   Widget stepperThenSwatches({
@@ -23,13 +23,13 @@ void main() {
     Widget Function(int index, VoidCallback onTap)? swatchBuilder,
   }) {
     final Widget Function(int, VoidCallback) builder = swatchBuilder ??
-        (int i, VoidCallback onTap) => HibikiColorSwatch(
+        (int i, VoidCallback onTap) => FushiColorSwatch(
               key: ValueKey<int>(i),
               color: Colors.primaries[i],
-              shape: HibikiColorSwatchShape.dot,
+              shape: FushiColorSwatchShape.dot,
               onTap: onTap,
             );
-    return HibikiFocusRoot(
+    return FushiFocusRoot(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -52,7 +52,7 @@ void main() {
     );
   }
 
-  Widget schemeSwatch(int i, VoidCallback onTap) => HibikiSchemeSwatch(
+  Widget schemeSwatch(int i, VoidCallback onTap) => FushiSchemeSwatch(
         key: ValueKey<int>(i),
         colors: <Color>[
           Colors.primaries[i],
@@ -71,7 +71,7 @@ void main() {
     ));
     await tester.pump();
 
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.text('Scale')),
     );
     controller.ensureFocus(); // bootstraps onto the stepper (first target)
@@ -80,7 +80,7 @@ void main() {
 
     // Before the fix this returned false: with no registered swatch below, the
     // controller had nothing to move onto and the cursor stayed on the stepper.
-    expect(controller.move(HibikiFocusDirection.down), isTrue,
+    expect(controller.move(FushiFocusDirection.down), isTrue,
         reason: 'the swatch row is now a registered focus stop');
     await tester.pump();
 
@@ -101,23 +101,23 @@ void main() {
     ));
     await tester.pump();
 
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.text('Scale')),
     );
     controller.ensureFocus();
     await tester.pump();
-    controller.move(HibikiFocusDirection.down); // onto some swatch
+    controller.move(FushiFocusDirection.down); // onto some swatch
     await tester.pump();
 
     // Clamp left to the leftmost swatch deterministically (no wrap), so the
     // assertion below does not depend on which swatch Down geometrically picked.
-    controller.move(HibikiFocusDirection.left);
+    controller.move(FushiFocusDirection.left);
     await tester.pump();
-    controller.move(HibikiFocusDirection.left);
+    controller.move(FushiFocusDirection.left);
     await tester.pump();
-    final HibikiFocusId? leftmostId = controller.activeId;
+    final FushiFocusId? leftmostId = controller.activeId;
 
-    expect(controller.move(HibikiFocusDirection.right), isTrue,
+    expect(controller.move(FushiFocusDirection.right), isTrue,
         reason: 'right reaches the next swatch in the row');
     await tester.pump();
     expect(controller.activeId, isNot(leftmostId));
@@ -131,7 +131,7 @@ void main() {
         reason: 'one right from the first swatch lands on index 1');
   });
 
-  testWidgets('D-pad Down reaches a four-quadrant HibikiSchemeSwatch',
+  testWidgets('D-pad Down reaches a four-quadrant FushiSchemeSwatch',
       (WidgetTester tester) async {
     int? picked;
     await tester.pumpWidget(buildTestApp(
@@ -142,13 +142,13 @@ void main() {
     ));
     await tester.pump();
 
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.text('Scale')),
     );
     controller.ensureFocus();
     await tester.pump();
 
-    expect(controller.move(HibikiFocusDirection.down), isTrue,
+    expect(controller.move(FushiFocusDirection.down), isTrue,
         reason: 'the scheme swatch row is a registered focus stop too');
     await tester.pump();
 

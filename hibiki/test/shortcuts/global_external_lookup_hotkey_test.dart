@@ -101,7 +101,7 @@ void main() {
     });
 
     test('legacy snapshot without the key upgrades to default Ctrl+Alt+D', () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry();
+      final FushiShortcutRegistry registry = FushiShortcutRegistry();
       const String legacyJson = '{'
           '"__schema_version__": 3,'
           '"reader_page_forward": {"keyboard": ["KeyN"], "gamepad": [], "mouse": []}'
@@ -124,7 +124,7 @@ void main() {
     });
 
     test('user-cleared hotkey is not refilled on upgrade', () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry();
+      final FushiShortcutRegistry registry = FushiShortcutRegistry();
       const String json = '{'
           '"__schema_version__": 4,'
           '"global_external_lookup": {"keyboard": [], "gamepad": [], "mouse": []}'

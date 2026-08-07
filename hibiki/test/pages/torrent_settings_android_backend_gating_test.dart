@@ -56,7 +56,7 @@ const QbConnectionConfig _explicitEmbedded = QbConnectionConfig(
 );
 
 Widget _harness({required bool desktop}) {
-  final HibikiDatabase db = HibikiDatabase.forTesting(
+  final FushiDatabase db = FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
@@ -83,7 +83,7 @@ Widget _harness({required bool desktop}) {
         platform: TargetPlatform.android,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
         extensions: <ThemeExtension<dynamic>>[
-          HibikiDesignSystemTheme(themeNotifier.designSystemTheme),
+          FushiDesignSystemTheme(themeNotifier.designSystemTheme),
         ],
       ),
       home: Scaffold(
@@ -144,9 +144,9 @@ void main() {
     await tester.pumpAndSettle();
 
     // ① 后端二选一整个控件不存在——用户点不到一个够不着的档位。
-    //    （代理模式那条 strip 是 HibikiSegmentedStrip<DownloadNetworkProxyMode>，
+    //    （代理模式那条 strip 是 FushiSegmentedStrip<DownloadNetworkProxyMode>，
     //     泛型不同，不会被这个 finder 命中。）
-    expect(find.byType(HibikiSegmentedStrip<String>), findsNothing,
+    expect(find.byType(FushiSegmentedStrip<String>), findsNothing,
         reason: '移动端没有第二个可用后端，选择器必须整块不渲染');
     expect(find.text(t.video_setting_torrent_backend_embedded), findsNothing,
         reason: '「内置引擎」在本平台不存在，不得出现在界面上');
@@ -174,7 +174,7 @@ void main() {
     await tester.pumpWidget(_harness(desktop: true));
     await tester.pumpAndSettle();
 
-    expect(find.byType(HibikiSegmentedStrip<String>), findsOneWidget);
+    expect(find.byType(FushiSegmentedStrip<String>), findsOneWidget);
     expect(find.text(t.video_setting_torrent_backend_embedded), findsOneWidget);
     expect(find.text(t.download_save_root_title), findsOneWidget,
         reason: '桌面内置引擎真会读这个目录，必须保留');

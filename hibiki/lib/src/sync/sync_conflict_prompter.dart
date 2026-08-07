@@ -50,7 +50,7 @@ class SyncConflictPrompter {
   /// 计数，无法满足「用注入 backend + 观察是否已解决以决定 snooze」这两点。
   Future<void> present({
     required GlobalKey<NavigatorState> navigatorKey,
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required SyncBackend backend,
     required List<SyncConflict> conflicts,
     required ConflictSource source,

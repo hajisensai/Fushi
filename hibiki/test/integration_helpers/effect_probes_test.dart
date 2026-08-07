@@ -7,8 +7,8 @@ import '../../integration_test/helpers/effect_probes.dart';
 
 void main() {
   test('readerCssProbe detects a font-size change taking effect', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = ReaderSettings(db);
     await settings.refreshFromDb();
@@ -29,8 +29,8 @@ void main() {
   });
 
   test('readerCssProbe reports unchanged when nothing changes', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = ReaderSettings(db);
     await settings.refreshFromDb();

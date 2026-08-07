@@ -11,7 +11,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// host-apply 测试（TODO-767 / BUG-417）：互联书籍进度 live 端点必须真读写 host
 /// 自己的 `reader_positions` DB（修复根因：旧路径只把进度写进 host 永不回灌 DB 的
 /// WebDAV 文件箱 progress_*.json）。
-AppModelLibraryHostService _svc(HibikiDatabase db) =>
+AppModelLibraryHostService _svc(FushiDatabase db) =>
     AppModelLibraryHostService(
       db: db,
       dictionaryResourceRoot: Directory.systemTemp,
@@ -21,7 +21,7 @@ AppModelLibraryHostService _svc(HibikiDatabase db) =>
     );
 
 Future<void> _seedLocalPosition(
-  HibikiDatabase db, {
+  FushiDatabase db, {
   required String bookKey,
   required int sectionIndex,
   required int normCharOffset,
@@ -38,7 +38,7 @@ Future<void> _seedLocalPosition(
 
 /// 把书 [bookKey] 插进 host 自己的 epub_books 表（真实场景：host 有这本书才允许
 /// 接受其进度 PUT；putBookProgress 的存在性闸门要求 host 书库先有该书）。
-Future<void> _seedHostBook(HibikiDatabase db, String bookKey) =>
+Future<void> _seedHostBook(FushiDatabase db, String bookKey) =>
     db.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: bookKey,
       title: bookKey,
@@ -50,10 +50,10 @@ Future<void> _seedHostBook(HibikiDatabase db, String bookKey) =>
     ));
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() async {

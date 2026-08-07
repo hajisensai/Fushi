@@ -23,13 +23,13 @@ import '../helpers/test_platform_services.dart';
 /// TODO-108：底部固定弹窗开关的专项 widget 测试——验证 lookup 设置页确实渲染该开关、
 /// 默认 OFF，且切换后真写穿偏好（[AppModel.popupBottomDocked] → prefsRepo → DB）。
 /// 与 dictionary_popup_layer_test.dart 的纯函数测试互补（一个证开关、一个证位置算法）。
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
 
-Future<AppModel> _prefsBackedAppModel(HibikiDatabase db) async {
+Future<AppModel> _prefsBackedAppModel(FushiDatabase db) async {
   final PreferencesRepository prefsRepo = PreferencesRepository(db);
   await prefsRepo.loadFromDb();
   final Directory tempDir =
@@ -42,7 +42,7 @@ Future<AppModel> _prefsBackedAppModel(HibikiDatabase db) async {
     ..wireDatabaseForTesting(db);
 }
 
-Widget _harness(HibikiDatabase db, AppModel appModel) {
+Widget _harness(FushiDatabase db, AppModel appModel) {
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
     ..loadFromPrefsSnapshot(<String, String>{
       'design_system': PrefCodec.encode('material'),
@@ -63,7 +63,7 @@ Widget _harness(HibikiDatabase db, AppModel appModel) {
         platform: TargetPlatform.android,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
         extensions: <ThemeExtension<dynamic>>[
-          HibikiDesignSystemTheme(themeNotifier.designSystemTheme),
+          FushiDesignSystemTheme(themeNotifier.designSystemTheme),
         ],
       ),
       home: Consumer(
@@ -98,7 +98,7 @@ void main() {
   testWidgets(
       'lookup settings exposes a Bottom-docked popup switch (default OFF)',
       (WidgetTester tester) async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final AppModel appModel = await _prefsBackedAppModel(db);
 
@@ -122,7 +122,7 @@ void main() {
 
   testWidgets('toggling the switch writes popup_bottom_docked through to prefs',
       (WidgetTester tester) async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final AppModel appModel = await _prefsBackedAppModel(db);
 

@@ -3,7 +3,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _openV45Seed() => HibikiDatabase.forTesting(
+FushiDatabase _openV45Seed() => FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (raw) {
           raw.execute('''
@@ -26,7 +26,7 @@ CREATE TABLE epub_books (
       ),
     );
 
-HibikiDatabase _openExistingV48Seed() => HibikiDatabase.forTesting(
+FushiDatabase _openExistingV48Seed() => FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (raw) {
           raw.execute('''
@@ -44,7 +44,7 @@ CREATE TABLE preferences (
     );
 
 Future<Set<String>> _columnNames(
-  HibikiDatabase db,
+  FushiDatabase db,
   String table,
 ) async {
   final List<QueryRow> rows =
@@ -52,7 +52,7 @@ Future<Set<String>> _columnNames(
   return rows.map((QueryRow row) => row.read<String>('name')).toSet();
 }
 
-Future<Set<String>> _indexNames(HibikiDatabase db) async {
+Future<Set<String>> _indexNames(FushiDatabase db) async {
   final List<QueryRow> rows = await db
       .customSelect(
         "SELECT name FROM sqlite_master WHERE type = 'index'",
@@ -64,7 +64,7 @@ Future<Set<String>> _indexNames(HibikiDatabase db) async {
 void main() {
   test('existing schema v48 database opens without downgrade refusal',
       () async {
-    final HibikiDatabase db = _openExistingV48Seed();
+    final FushiDatabase db = _openExistingV48Seed();
     addTearDown(db.close);
 
     // 代码目标版本随 develop 演进（写此测试时为 v48，现已更高）；这里只断言
@@ -76,7 +76,7 @@ void main() {
 
   test('v45 migration adds the v46 and v47 schema before landing on v48',
       () async {
-    final HibikiDatabase db = _openV45Seed();
+    final FushiDatabase db = _openV45Seed();
     addTearDown(db.close);
 
     final QueryRow version =
@@ -91,8 +91,8 @@ void main() {
   });
 
   test('fresh v48 database contains all v48 hot-path indexes', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     await db.getPref('force-open');

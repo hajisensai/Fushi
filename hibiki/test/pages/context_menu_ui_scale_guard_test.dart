@@ -12,11 +12,11 @@ import '../helpers/source_guard.dart';
 /// 时的坐标空间与内容尺寸**。
 ///
 /// 生产拓扑（两层，必须同时理解才不会改错）：
-///  1. 全局 [HibikiAppUiScale] 挂在 `MaterialApp.builder`（main.dart），用
+///  1. 全局 [FushiAppUiScale] 挂在 `MaterialApp.builder`（main.dart），用
 ///     `FittedBox(BoxFit.fill)` 把整棵子树渲染进一个「缩放画布」（尺寸 = 真实视口 /
 ///     scale）再拉满屏。**根 Navigator / 根 Overlay 都在它之内** → Overlay 本地坐标
 ///     是画布空间，且画布→屏幕这一跳会把其中一切按 scale 放大一次。
-///  2. 阅读器 / 漫画 / PDF / 视频页在**路由层**再套 [HibikiAppUiScaleNeutralizer]，
+///  2. 阅读器 / 漫画 / PDF / 视频页在**路由层**再套 [FushiAppUiScaleNeutralizer]，
 ///     把页面子树净缩放还原成 1.0（让 WebView / Texture 按原生密度渲染）→ 页面内部
 ///     拿到的坐标和 `MediaQuery.size` 都是**真实屏幕**空间。
 ///
@@ -30,8 +30,8 @@ void main() {
   /// 复刻生产拓扑：全局缩放包住 Navigator/Overlay，页面再被中和。
   Widget wrap({required double scale, required Widget page}) => MaterialApp(
         builder: (BuildContext context, Widget? child) =>
-            HibikiAppUiScale(scale: scale, child: child!),
-        home: HibikiAppUiScaleNeutralizer(child: page),
+            FushiAppUiScale(scale: scale, child: child!),
+        home: FushiAppUiScaleNeutralizer(child: page),
       );
 
   group('不变式 A：菜单锚点经 Overlay 换算后贴住真实点击点', () {

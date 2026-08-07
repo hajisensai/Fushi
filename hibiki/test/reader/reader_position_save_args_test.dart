@@ -64,11 +64,11 @@ void main() {
   });
 
   group('端到端往返（归一化 → 真 repo → 恢复端映射）', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late ReaderPositionRepository repo;
 
     setUp(() {
-      db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
       repo = ReaderPositionRepository(db);
     });
 

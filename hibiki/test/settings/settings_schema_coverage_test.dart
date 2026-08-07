@@ -206,7 +206,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
           'test/sync/hibiki_remote_mining_service_test.dart',
   'system/Low memory mode': 'test/models/app_model_low_memory_mode_test.dart',
   'system/Keyboard & gamepad focus navigation':
-      'test/shortcuts/global_space_no_activate_test.dart + main.dart 门控安装 HibikiFocusRoot/Ring',
+      'test/shortcuts/global_space_no_activate_test.dart + main.dart 门控安装 FushiFocusRoot/Ring',
   'lookup/Swipe dismiss sensitivity':
       'test/widgets/swipe_dismiss_wrapper_test.dart',
   'reading/Reverse keyboard left/right page-turn direction':
@@ -547,8 +547,8 @@ void main() {
     // mock 空初值让其确定性成功，不依赖异步异常逃逸 takeException 窗口。
     SharedPreferences.setMockInitialValues(<String, Object>{});
 
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     final ReaderSettings? prevReaderSettings =
@@ -622,7 +622,7 @@ void main() {
           platform: TargetPlatform.android,
           colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
           extensions: <ThemeExtension<dynamic>>[
-            HibikiDesignSystemTheme(themeNotifier.designSystemTheme),
+            FushiDesignSystemTheme(themeNotifier.designSystemTheme),
           ],
         ),
         home: Consumer(
@@ -837,7 +837,7 @@ _FocusedRow? _focusedSettingsRow() {
 Future<ItemVerdict> _verifyFocusedNode({
   required WidgetTester tester,
   required FocusDriver driver,
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required ReaderSettings readerSettings,
   required EffectProbe? probe,
   required String destId,

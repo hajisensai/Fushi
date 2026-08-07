@@ -87,14 +87,14 @@ const MangaOcrRemoteTarget _capableTarget = MangaOcrRemoteTarget(
 );
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late Directory imageDir;
   late Directory tmpDir;
   late AppModel appModel;
   final _UnsupportedOcrService service = _UnsupportedOcrService();
 
   setUp(() async {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     imageDir = Directory.systemTemp.createTempSync('manga_module_ocr_entry');
     File(p.join(imageDir.path, 'p001.jpg')).writeAsBytesSync(<int>[1, 2, 3]);
     tmpDir = Directory.systemTemp.createTempSync('manga_module_ocr_entry_db');

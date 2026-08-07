@@ -13,10 +13,10 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 /// 任一已映射的视频快捷键先关浮层」，BUG-924），所以与弹窗内动作撞键的概率最高——
 /// 减法这一条必须锁死，否则弹窗里切词条/制卡会被宿主抢走。
 void main() {
-  HibikiShortcutRegistry registryWith(
+  FushiShortcutRegistry registryWith(
     Map<ShortcutAction, ShortcutBindingSet> bindings,
   ) {
-    final HibikiShortcutRegistry registry = HibikiShortcutRegistry();
+    final FushiShortcutRegistry registry = FushiShortcutRegistry();
     registry.loadFromJson(<String, dynamic>{
       for (final MapEntry<ShortcutAction, ShortcutBindingSet> e
           in bindings.entries)
@@ -26,7 +26,7 @@ void main() {
   }
 
   test('导出宿主动作的当前键盘/鼠标绑定（改键自动跟随）', () {
-    final HibikiShortcutRegistry registry =
+    final FushiShortcutRegistry registry =
         registryWith(<ShortcutAction, ShortcutBindingSet>{
       ShortcutAction.readerDismissDict: const ShortcutBindingSet(
         keyboardBindings: <InputBinding>[
@@ -51,7 +51,7 @@ void main() {
 
   test('恒减去 dictionaryPopup scope 已占用的键（弹窗内动作优先于宿主）', () {
     // 用户把视频的某个动作和弹窗「上一个词条」绑到了同一个键 / 同一个鼠标键。
-    final HibikiShortcutRegistry registry =
+    final FushiShortcutRegistry registry =
         registryWith(<ShortcutAction, ShortcutBindingSet>{
       ShortcutAction.videoTogglePlayPause: const ShortcutBindingSet(
         keyboardBindings: <InputBinding>[
@@ -81,7 +81,7 @@ void main() {
   test('注册表未装载时返回空表（空表 ≠ 用户清空了绑定，但下发空表安全）', () {
     expect(
       dictionaryPopupInputSpecFor(
-        registry: HibikiShortcutRegistry(),
+        registry: FushiShortcutRegistry(),
         actions: <ShortcutAction>{ShortcutAction.readerDismissDict},
       ).isEmpty,
       isTrue,
@@ -89,7 +89,7 @@ void main() {
   });
 
   test('token → 动作解析：键盘与鼠标取值域不相交，共用一个入口', () {
-    final HibikiShortcutRegistry registry =
+    final FushiShortcutRegistry registry =
         registryWith(<ShortcutAction, ShortcutBindingSet>{
       ShortcutAction.readerDismissDict: const ShortcutBindingSet(
         keyboardBindings: <InputBinding>[

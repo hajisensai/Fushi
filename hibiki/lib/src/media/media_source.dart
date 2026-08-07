@@ -93,16 +93,16 @@ abstract class MediaSource {
 
   /// Shared database reference, set once by [AppModel.initialise] before
   /// any source is initialised.
-  static HibikiDatabase? _sharedDb;
+  static FushiDatabase? _sharedDb;
 
   /// Call from [AppModel.initialise] before initialising media sources.
-  static void setDatabase(HibikiDatabase db) => _sharedDb = db;
+  static void setDatabase(FushiDatabase db) => _sharedDb = db;
 
   /// Shared database for subclasses that persist beyond the preference cache
   /// (e.g. ReaderHibikiSource writing back epubBooks.author for BUG-220). Null
   /// until [setDatabase] runs in [AppModel.initialise].
   @protected
-  HibikiDatabase? get sharedDatabase => _sharedDb;
+  FushiDatabase? get sharedDatabase => _sharedDb;
 
   /// In-memory preference cache for this source. Loaded from the Drift
   /// database on [initialise] and written through on [setPreference].
@@ -225,7 +225,7 @@ abstract class MediaSource {
   ///
   /// Returns a plain [Widget] (not [BaseSourcePage]) so an implementation may
   /// wrap its page in a non-page widget (e.g. the reader wraps it in a
-  /// [HibikiAppUiScaleNeutralizer] so the WebView renders at native density).
+  /// [FushiAppUiScaleNeutralizer] so the WebView renders at native density).
   /// The only caller feeds this straight into a [WidgetBuilder], so the wider
   /// return type is contract-compatible.
   Widget buildLaunchPage({MediaItem? item, Bookmark? initialBookmarkJump});
@@ -251,39 +251,39 @@ abstract class MediaSource {
   /// Supplies a sentence that can be used for the sentence field when making
   /// a card while this source is active. Can be set with [setCurrentSentence]
   /// and [clearCurrentSentence] in a source page.
-  HibikiTextSelection get currentSentence => _currentSentence;
-  HibikiTextSelection _currentSentence = HibikiTextSelection(
+  FushiTextSelection get currentSentence => _currentSentence;
+  FushiTextSelection _currentSentence = FushiTextSelection(
     text: '',
   );
 
   /// Update the current sentence.
   void setCurrentSentence({
-    required HibikiTextSelection selection,
+    required FushiTextSelection selection,
   }) {
     _currentSentence = selection;
   }
 
   /// Clear the current sentence.
   void clearCurrentSentence() {
-    _currentSentence = HibikiTextSelection(
+    _currentSentence = FushiTextSelection(
       text: '',
     );
   }
 
   /// Full subtitle-cue text (not punctuation-segmented).
-  HibikiTextSelection get currentCueSentence => _currentCueSentence;
-  HibikiTextSelection _currentCueSentence = HibikiTextSelection(
+  FushiTextSelection get currentCueSentence => _currentCueSentence;
+  FushiTextSelection _currentCueSentence = FushiTextSelection(
     text: '',
   );
 
   void setCurrentCueSentence({
-    required HibikiTextSelection selection,
+    required FushiTextSelection selection,
   }) {
     _currentCueSentence = selection;
   }
 
   void clearCurrentCueSentence() {
-    _currentCueSentence = HibikiTextSelection(
+    _currentCueSentence = FushiTextSelection(
       text: '',
     );
   }

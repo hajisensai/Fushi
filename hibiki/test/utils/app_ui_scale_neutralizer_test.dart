@@ -9,7 +9,7 @@ void main() {
   Widget appScaled({required double scale, required Widget child}) =>
       Directionality(
         textDirection: TextDirection.ltr,
-        child: HibikiAppUiScale(scale: scale, child: child),
+        child: FushiAppUiScale(scale: scale, child: child),
       );
 
   testWidgets('neutralizer restores real view size, MQ and reports scale 1.0',
@@ -24,12 +24,12 @@ void main() {
 
     await tester.pumpWidget(appScaled(
       scale: 2.0,
-      child: HibikiAppUiScaleNeutralizer(
+      child: FushiAppUiScaleNeutralizer(
         child: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints c) {
             gotConstraintBiggest = c.biggest;
             gotMqSize = MediaQuery.of(context).size;
-            gotScale = HibikiAppUiScale.of(context);
+            gotScale = FushiAppUiScale.of(context);
             return const SizedBox.expand();
           },
         ),
@@ -50,7 +50,7 @@ void main() {
     late Size gotConstraintBiggest;
     await tester.pumpWidget(appScaled(
       scale: 1.0,
-      child: HibikiAppUiScaleNeutralizer(
+      child: FushiAppUiScaleNeutralizer(
         child: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints c) {
             gotConstraintBiggest = c.biggest;
@@ -79,7 +79,7 @@ void main() {
     final GlobalKey k1 = GlobalKey();
     await tester.pumpWidget(appScaled(
       scale: 1.0,
-      child: HibikiAppUiScaleNeutralizer(child: probe(k1)),
+      child: FushiAppUiScaleNeutralizer(child: probe(k1)),
     ));
     final Rect baseline =
         globalRectOfBox(k1.currentContext!.findRenderObject()! as RenderBox);
@@ -87,7 +87,7 @@ void main() {
     final GlobalKey k2 = GlobalKey();
     await tester.pumpWidget(appScaled(
       scale: 2.0,
-      child: HibikiAppUiScaleNeutralizer(child: probe(k2)),
+      child: FushiAppUiScaleNeutralizer(child: probe(k2)),
     ));
     final Rect scaled =
         globalRectOfBox(k2.currentContext!.findRenderObject()! as RenderBox);

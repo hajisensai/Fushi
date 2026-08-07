@@ -31,7 +31,7 @@ class SourceLibrarySecret {
 class SourceLibraryCredentialStore {
   SourceLibraryCredentialStore(this._db);
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
 
   /// 某来源的凭据 Preferences 键。公开供守卫测试断言命名空间稳定。
   static String prefKeyForSource(int sourceId) =>

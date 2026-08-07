@@ -7,7 +7,7 @@ import 'reader_hibiki_page_source_corpus.dart';
 ///
 /// 阅读器整页含真实 InAppWebView，普通 widget 测试无法稳定挂载完整弹窗栈；
 /// 这里锁住最强可落地的源码契约：
-/// - 弹窗 header 工具栏按钮必须注册进 HibikiFocusRoot，不能再用裸 IconButton；
+/// - 弹窗 header 工具栏按钮必须注册进 FushiFocusRoot，不能再用裸 IconButton；
 /// - reader/popup 的 WebView 字级 caret 属于焦点导航，必须跟随全局焦点导航开关。
 void main() {
   final String source = readReaderPageSource();
@@ -24,11 +24,11 @@ void main() {
 
     expect(
       popupHeader,
-      contains('HibikiIconButton('),
+      contains('FushiIconButton('),
       reason: '查词弹窗 header 是 Flutter 兄弟层，手柄/键盘方向导航只走 '
-          'HibikiFocusTarget；裸 IconButton 会被自定义焦点系统跳过。',
+          'FushiFocusTarget；裸 IconButton 会被自定义焦点系统跳过。',
     );
-    // 原写法靠 replaceAll 抠掉 HibikiIconButton 再做裸子串匹配——那是白名单，
+    // 原写法靠 replaceAll 抠掉 FushiIconButton 再做裸子串匹配——那是白名单，
     // 白名单永远漏：仓内还有 `_RepeatIconButton(` / `_InBookIconButton(` /
     // `_CompactSearchIconButton(` 没登记，header 用上任何一个都会假红。
     // 反向也漏：裸子串匹配不到 `IconButton.filledTonal(`（本仓真实在用），而那

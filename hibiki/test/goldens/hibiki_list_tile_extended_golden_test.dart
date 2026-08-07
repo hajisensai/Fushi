@@ -8,10 +8,10 @@ import 'package:fushi/src/utils/components/hibiki_list_tile.dart';
 import 'golden_test_helpers.dart';
 
 void main() {
-  group('HibikiListTile extended golden', () {
+  group('FushiListTile extended golden', () {
     testWidgets('multi-word title and subtitle', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiListTile(
+        const FushiListTile(
           title: '明鏡国語辞典 第三版',
           subtitle: 'JA-JA monolingual',
           icon: Icons.menu_book,
@@ -29,7 +29,7 @@ void main() {
 
     testWidgets('narrow width', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiListTile(
+        const FushiListTile(
           title: 'Dict',
           subtitle: 'JA',
           icon: Icons.book,
@@ -47,7 +47,7 @@ void main() {
 
     testWidgets('wide layout', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiListTile(
+        const FushiListTile(
           title: '明鏡国語辞典',
           subtitle: 'JA-JA 国語辞典',
           icon: Icons.translate,
@@ -66,7 +66,7 @@ void main() {
 
     testWidgets('custom seed color theme selected', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiListTile(
+        const FushiListTile(
           title: 'Seeded theme',
           subtitle: 'Material You color',
           icon: Icons.palette,
@@ -88,7 +88,7 @@ void main() {
 
     testWidgets('high contrast dark theme', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiListTile(
+        const FushiListTile(
           title: 'High Contrast',
           subtitle: 'Dark variant',
           icon: Icons.contrast,

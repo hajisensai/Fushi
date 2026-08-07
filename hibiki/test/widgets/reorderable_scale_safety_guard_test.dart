@@ -7,14 +7,14 @@ import '../helpers/scan_scale.dart';
 
 /// BUG-778 同根因的全仓收口守卫。
 ///
-/// 整棵 widget 树活在 `HibikiAppUiScale` 的 `Transform.scale` 之下（main.dart 在
+/// 整棵 widget 树活在 `FushiAppUiScale` 的 `Transform.scale` 之下（main.dart 在
 /// 应用根部套的浏览器式整体缩放），而 Flutter SDK 的重排拖拽代理
 /// （`reorderable_list.dart` 的 `_DragItemProxy`）用「全局坐标 − overlay 原点」
 /// 的纯平移把代理放进 Overlay 本地坐标系、**不认祖先缩放变换**：用户把「界面
 /// 大小」调成非 100% 后，拖拽浮层就按 `(1−s)×(指针到 overlay 原点距离)` 漂移，
 /// 缩小时一拖即飞出屏幕。这是 SDK 的坐标缺陷，app 内改不了那段数学。
 ///
-/// BUG-778 当时只把合集与词典两条链路换成了自实现的 HibikiReorderable*，
+/// BUG-778 当时只把合集与词典两条链路换成了自实现的 FushiReorderable*，
 /// `custom_fonts_page` 与互联设备排序两处漏网，且 `md3_design_system_static_test`
 /// 还**正向断言**字体页必须含 `ReorderableListView.builder(`——一条守卫把缺陷焊
 /// 在了原地。这里改为反向钉死：全仓不得再实际使用 SDK 的重排组件。
@@ -27,7 +27,7 @@ void main() {
     // 它」，那些恰恰是应当保留的设计记录）。
     //
     // 判据本身已是 identifierCall 那套纪律：负向后顾 `(?<![\w.])` 挡掉
-    // `HibikiReorderableListView(` 这类更长标识符与 `x.ReorderableListView(` 这类
+    // `FushiReorderableListView(` 这类更长标识符与 `x.ReorderableListView(` 这类
     // 成员访问，`(\.\s*\w+\s*)?` 覆盖 `.builder(` 命名构造——两个方向都堵住了，
     // 故不改判据，只换注释剥离。
     final RegExp constructorCall = RegExp(
@@ -66,7 +66,7 @@ void main() {
       isEmpty,
       reason: 'SDK 重排组件的 Overlay 拖拽代理不认祖先 Transform.scale，'
           '「界面大小」非 100% 时拖拽浮层漂移（BUG-778）。'
-          '改用 HibikiReorderableColumn / HibikiReorderableGrid'
+          '改用 FushiReorderableColumn / FushiReorderableGrid'
           '（浮层渲染在列表自身 Stack、指针经 globalToLocal 消掉祖先缩放）：\n'
           '${offenders.join('\n')}',
     );

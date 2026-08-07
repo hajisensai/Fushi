@@ -21,7 +21,7 @@ void main() {
 
   late Directory tmp;
   late Directory docs; // 模拟平台 Documents 根（当前根）
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() {
     AppPaths.debugResetDocumentsLayoutCache();
@@ -46,7 +46,7 @@ void main() {
     );
     final Directory dbDir = Directory(p.join(tmp.path, 'db'))
       ..createSync(recursive: true);
-    db = HibikiDatabase(dbDir.path);
+    db = FushiDatabase(dbDir.path);
   });
 
   tearDown(() async {

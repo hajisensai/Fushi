@@ -29,13 +29,13 @@ import 'test_platform_services.dart';
 class VideoSheetHarness {
   VideoSheetHarness._(this.db, this.appModel, this._tmpDir);
 
-  final HibikiDatabase db;
+  final FushiDatabase db;
   final AppModel appModel;
   final Directory _tmpDir;
 
   static Future<VideoSheetHarness> create() async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
     final Directory tmpDir =

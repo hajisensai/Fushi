@@ -62,7 +62,7 @@ void main() {
           reason: '$fileName still uses SwitchListTile');
       expect(source, isNot(contains('adaptiveSwitch(')),
           reason: '$fileName still hand-rolls switch rows');
-      // 带标识符边界：裸子串 `ListTile(` 会被共享组件 `HibikiListTile(` 命中
+      // 带标识符边界：裸子串 `ListTile(` 会被共享组件 `FushiListTile(` 命中
       // （`_withoutSharedComponentNames` 白名单里已把它列为合法共享组件），
       // 设置页哪天改用共享行组件就假红。Radio/Cupertino 变体在下面显式补回，
       // 保住原裸子串顺带盖住的范围。

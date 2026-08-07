@@ -24,13 +24,13 @@ import 'package:fushi_core/fushi_core.dart';
 import 'fake_asset_store.dart';
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late FakeAssetStore store;
   late _FakeBackend backend;
   late Directory tmp;
 
   setUp(() async {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     store = FakeAssetStore();
     backend = _FakeBackend(store);
     tmp = await Directory.systemTemp.createTemp('srt_tombstone_sync');

@@ -12,19 +12,19 @@ import 'package:flutter/material.dart';
 /// 旧代码对所有平台一律用 `ReorderableDelayedDragStartListener`，导致桌面端鼠标
 /// 也必须长按等待 ~500ms 才能拖动重排——本组件消除这个「所有平台都长按」的特例。
 ///
-/// 与本仓自实现的 `HibikiReorderableColumn` 不同：那个组件按**输入设备**区分
+/// 与本仓自实现的 `FushiReorderableColumn` 不同：那个组件按**输入设备**区分
 /// （鼠标即时 / 触摸长按），因为它要在祖先 `Transform.scale` 下手搓拖拽坐标；
 /// 本组件服务于普通（未缩放）的 SDK `ReorderableListView`，沿用 SDK 的按平台范式即可。
 ///
 /// ⚠️ **当前无调用方，新代码不要用它。** 上面那句「普通（未缩放）的
 /// `ReorderableListView`」在本 app 里**不成立**——`main.dart` 在应用根部套了
-/// `HibikiAppUiScale` 的 `Transform.scale`，全 app 没有未缩放的树，任何 SDK
+/// `FushiAppUiScale` 的 `Transform.scale`，全 app 没有未缩放的树，任何 SDK
 /// 重排组件的 Overlay 拖拽代理都会在「界面大小」非 100% 时漂移（BUG-778）。
 /// 最后两个调用方（`custom_fonts_page` 与互联设备排序）已改用
-/// `HibikiReorderableColumn`。保留本文件只为不破坏可能存在的外部引用；
+/// `FushiReorderableColumn`。保留本文件只为不破坏可能存在的外部引用；
 /// 守卫见 `test/widgets/reorderable_scale_safety_guard_test.dart`。
-class HibikiReorderDragListener extends StatelessWidget {
-  const HibikiReorderDragListener({
+class FushiReorderDragListener extends StatelessWidget {
+  const FushiReorderDragListener({
     required this.index,
     required this.child,
     super.key,

@@ -30,11 +30,11 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double maxHeight =
         (MediaQuery.of(context).size.height * 0.55).clamp(160.0, 480.0);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 520,
       maxHeightFactor: 0.92,
       insetPadding: EdgeInsets.symmetric(
@@ -42,7 +42,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
         vertical: tokens.spacing.card,
       ),
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.media_source_manage_title,
         leadingIcon: Icons.folder_copy_outlined,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -62,7 +62,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
             maxWidth: double.maxFinite,
             maxHeight: maxHeight,
           ),
-          // 整体可滚动：HibikiReorderableColumn 自身不带滚动（内部 Stack + Column.min），
+          // 整体可滚动：FushiReorderableColumn 自身不带滚动（内部 Stack + Column.min），
           // 来源多到超过 maxHeight 时会 RenderFlex 底部溢出、且下方行无法滚动查看
           // （BUG-445；TODO-1389：桌面最小窗高降到 480 后 maxHeight 被 clamp 到 ~242px，
           // ≥4 条来源即触发）。外层套 SingleChildScrollView：内容超高时整体滚动而非溢出，
@@ -75,7 +75,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
             ),
           ),
         ),
-        // BUG-1184：这是全仓唯一一个还用 Row 的 [HibikiModalSheetFrame] 页脚（其余
+        // BUG-1184：这是全仓唯一一个还用 Row 的 [FushiModalSheetFrame] 页脚（其余
         // 十几处都已是 Wrap），窄屏对话框里两个按钮相加就会溢出。与其余页脚对齐。
         footer: Wrap(
           alignment: WrapAlignment.spaceBetween,

@@ -150,7 +150,7 @@ class _GalWaveformSelectDialogState extends State<_GalWaveformSelectDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme cs = Theme.of(context).colorScheme;
     final String rangeLabel = t.game_waveform_range_label(
       start: _fmtSeconds(_range.startMs),
@@ -158,10 +158,10 @@ class _GalWaveformSelectDialogState extends State<_GalWaveformSelectDialog> {
       duration: _fmtSeconds(_range.durationMs),
       total: _fmtSeconds(_totalMs),
     );
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 520,
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.game_waveform_select_title,
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(

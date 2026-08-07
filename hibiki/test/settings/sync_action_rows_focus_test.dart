@@ -8,7 +8,7 @@ import '../widgets/widget_test_helpers.dart';
 
 // BUG-016 regression. 同步设置里「立即同步 / 导出备份 / 导入备份」的动作落在行内的
 // 尾部按钮上，而这些行（AdaptiveSettingsRow）当时没有 onTap —— 于是整行不会注册成
-// HibikiFocusTarget（只有带 onTap 的行才注册，见 settings_shared.dart），裸 Material
+// FushiFocusTarget（只有带 onTap 的行才注册，见 settings_shared.dart），裸 Material
 // 按钮也不是 Hibiki 焦点目标。方向导航只走已注册目标，结果：① 「立即同步」根本到不了；
 // ② 焦点在「Compare Data」按下，因为同面板下方没有可达目标，落到了左侧导航面板。
 //
@@ -21,12 +21,12 @@ Widget _syncLikeTwoPane({
   required VoidCallback onCompare,
   required VoidCallback onSync,
 }) {
-  Widget navTarget(String id) => HibikiFocusTarget(
-        id: HibikiFocusId(id),
+  Widget navTarget(String id) => FushiFocusTarget(
+        id: FushiFocusId(id),
         child: const SizedBox(width: 200, height: 56),
       );
   return buildTestApp(
-    HibikiFocusRoot(
+    FushiFocusRoot(
       child: Row(
         key: rootKey,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -51,8 +51,8 @@ Widget _syncLikeTwoPane({
             height: 400,
             child: ListView(
               children: <Widget>[
-                const HibikiFocusTarget(
-                  id: HibikiFocusId('detail-top'),
+                const FushiFocusTarget(
+                  id: FushiFocusId('detail-top'),
                   child: SizedBox(width: 400, height: 48),
                 ),
                 AdaptiveSettingsRow(
@@ -94,14 +94,14 @@ void main() {
     ));
     await tester.pump();
 
-    final HibikiFocusController controller =
-        HibikiFocusRoot.controllerOf(rootKey.currentContext!);
+    final FushiFocusController controller =
+        FushiFocusRoot.controllerOf(rootKey.currentContext!);
 
-    expect(controller.requestById(const HibikiFocusId('detail-top')), isTrue);
+    expect(controller.requestById(const FushiFocusId('detail-top')), isTrue);
     await tester.pump();
 
     // Down 一步：落到 Compare 行，Activate 触发它（证明落点正确）。
-    expect(controller.move(HibikiFocusDirection.down), isTrue);
+    expect(controller.move(FushiFocusDirection.down), isTrue);
     await tester.pump();
     Actions.maybeInvoke<ActivateIntent>(
       controller.activeContext!,
@@ -112,7 +112,7 @@ void main() {
 
     // Down 再一步：必须落到 Sync 行（同面板、下一行）——这正是修复点。修复前 Sync
     // 行未注册，这一步会跳到左侧导航面板，syncActivated 保持 false。
-    expect(controller.move(HibikiFocusDirection.down), isTrue);
+    expect(controller.move(FushiFocusDirection.down), isTrue);
     await tester.pump();
     Actions.maybeInvoke<ActivateIntent>(
       controller.activeContext!,

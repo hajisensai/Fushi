@@ -94,7 +94,7 @@ class Bookmark {
 class BookmarkRepository {
   BookmarkRepository(this._db);
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
 
   String _key(String bookKey) => 'bookmarks_$bookKey';
 

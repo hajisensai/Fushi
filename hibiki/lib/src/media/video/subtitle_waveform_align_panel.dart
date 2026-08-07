@@ -190,7 +190,7 @@ class _SubtitleWaveformAlignPanelState
   /// **常驻可见**（挂载即显、不预探测），点击才懒抽波形并弹放大视图；探测中显示 spinner，
   /// 空包络（降级）副标题改显不可用提示。
   Widget _buildEntryButton(ThemeData theme, ColorScheme cs) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double gap = tokens.spacing.gap;
     final String hint = _probeUnavailable
         ? t.video_subtitle_waveform_unavailable
@@ -512,7 +512,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
 
   /// 毫秒 -> `m:ss` / `h:mm:ss` 时间标签。
   String _formatTime(int ms) =>
-      HibikiTimeFormat.clock(Duration(milliseconds: ms < 0 ? 0 : ms));
+      FushiTimeFormat.clock(Duration(milliseconds: ms < 0 ? 0 : ms));
 
   /// cue 边界（start/end 混合，未加延迟）。painter 内部叠加延迟画竖线。
   List<int> get _cueBoundariesMs {
@@ -625,10 +625,10 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double gap = tokens.spacing.gap;
 
-    final Widget frame = HibikiDialogFrame(
+    final Widget frame = FushiDialogFrame(
       maxWidth: 980,
       maxHeightFactor: 0.9,
       scrollable: true,
@@ -1187,7 +1187,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
 
   /// 底部调轴控件条（自动对轴 / 滑条 / 步进 / 归零 / 数值输入）：写回上方权威 `_delayMs`。
   Widget _buildDelayControls(
-      ThemeData theme, ColorScheme cs, HibikiDesignTokens tokens) {
+      ThemeData theme, ColorScheme cs, FushiDesignTokens tokens) {
     final int shownMs = _dragMs ?? _delayMs;
     final String label = '${shownMs >= 0 ? '+' : ''}$shownMs ms';
     final double sliderValue =
@@ -1235,19 +1235,19 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
       spacing: gap / 2,
       runSpacing: gap / 2,
       children: <Widget>[
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.keyboard_double_arrow_left,
           tooltip: '-1000ms',
           padding: EdgeInsets.all(gap / 2),
           onTap: () => _commit(_delayMs - 1000),
         ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.chevron_left,
           tooltip: '-50ms',
           padding: EdgeInsets.all(gap / 2),
           onTap: () => _commit(_delayMs - 50),
         ),
-        HibikiFocusable(
+        FushiFocusable(
           onTap: shownMs == 0 ? null : () => _commit(0),
           child: ConstrainedBox(
             constraints: const BoxConstraints(minWidth: 84, maxWidth: 140),
@@ -1263,13 +1263,13 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
             ),
           ),
         ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.chevron_right,
           tooltip: '+50ms',
           padding: EdgeInsets.all(gap / 2),
           onTap: () => _commit(_delayMs + 50),
         ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.keyboard_double_arrow_right,
           tooltip: '+1000ms',
           padding: EdgeInsets.all(gap / 2),

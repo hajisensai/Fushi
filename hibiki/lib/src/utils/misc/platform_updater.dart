@@ -372,7 +372,7 @@ class UnsupportedUpdater extends PlatformUpdater {
 /// 带 HBK-AUDIT-058 路径校验，见 MainActivity.java）。
 class AndroidInstaller {
   static Future<void> install(String apkPath) async {
-    await HibikiChannels.update.invokeMethod('installApk', <String, String>{
+    await FushiChannels.update.invokeMethod('installApk', <String, String>{
       'path': apkPath,
     });
   }
@@ -688,7 +688,7 @@ class WindowsInstaller {
   ///
   /// 根因（TODO-1181）：`hibiki.iss` 的 `InitializeSetup()` 在 Inno 的 AppMutex 检查
   /// 之前，先对 `hibiki.exe` 树发 `WM_CLOSE`（优雅关闭，给正在写 DB 的其他实例落盘机会）、
-  /// 轮询 `HibikiSingleInstanceMutex` 释放，再按 image 名强制结束 `hibiki.exe` +
+  /// 轮询 `FushiSingleInstanceMutex` 释放，再按 image 名强制结束 `hibiki.exe` +
   /// `msedgewebview2.exe`。即安装器本就能自己关掉其他 Hibiki 实例并解开 mutex 死锁。旧的
   /// Dart 预检却在**启动安装器之前**就因「检测到其他 hibiki.exe」硬 throw，用户永远走不到
   /// 这段自愈，只能被迫手动关进程——是过度防御。故这里改为：安装器杀得掉的占用进程只记警告、

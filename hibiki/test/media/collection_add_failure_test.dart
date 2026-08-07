@@ -21,9 +21,9 @@ void main() {
   const MediaRef bookRef = MediaRef(kind: MediaKind.epub, entryKey: 'book-key');
   const int collectionId = 1;
 
-  Future<HibikiDatabase> openDb() async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+  Future<FushiDatabase> openDb() async {
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(() async {
       try {
         await db.close();
@@ -67,7 +67,7 @@ void main() {
   });
 
   test('首次加入 → 返回 added，且不抢调用方的成功提示', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     final List<String> messages = <String>[];
 
     final CollectionAddOutcome outcome = await addMediaRefToCollection(
@@ -87,7 +87,7 @@ void main() {
   });
 
   test('重复拖入 → 返回 alreadyPresent 并提示（幂等 no-op 不得静默）', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     await db.addToCollection(collectionId, bookRef.kind, bookRef.entryKey);
     final List<String> messages = <String>[];
 
@@ -132,7 +132,7 @@ void main() {
 
 /// 写入必失败的库：只让 `addToCollection` 抛（读成员照常成功），精确复现
 /// 「查得到、写不进」这条真实故障面（DB 锁 / 磁盘满 / 约束冲突）。
-class _FailingWriteDatabase extends HibikiDatabase {
+class _FailingWriteDatabase extends FushiDatabase {
   _FailingWriteDatabase() : super.forTesting(NativeDatabase.memory());
 
   @override

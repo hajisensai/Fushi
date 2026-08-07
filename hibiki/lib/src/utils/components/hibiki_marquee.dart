@@ -5,9 +5,9 @@ import 'package:marquee/marquee.dart';
 /// is insufficient space, and not all the time. Taken directly from:
 /// https://gist.github.com/rtybanana/2b0639052cd5bfd701b8d892f2d1088b
 /// https://github.com/MarcelGarus/marquee/issues/36
-class HibikiMarquee extends StatelessWidget {
+class FushiMarquee extends StatelessWidget {
   /// Create a Marquee that handles the overflow effect.
-  const HibikiMarquee({
+  const FushiMarquee({
     required this.text,
     this.style,
     this.textScaleFactor,

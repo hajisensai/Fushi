@@ -4,10 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 void main() {
-  late HibikiDatabase database;
+  late FushiDatabase database;
 
   setUp(() {
-    database = HibikiDatabase.forTesting(NativeDatabase.memory());
+    database = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() => database.close());

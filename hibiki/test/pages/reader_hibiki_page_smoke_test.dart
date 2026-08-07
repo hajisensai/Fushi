@@ -29,8 +29,8 @@ import '../helpers/test_platform_services.dart';
 void main() {
   testWidgets('missing book pops back to shelf instead of a stuck loader',
       (WidgetTester tester) async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final PlatformServices platformServices = testPlatformServices();
     final PreferencesRepository prefsRepo = PreferencesRepository(db);

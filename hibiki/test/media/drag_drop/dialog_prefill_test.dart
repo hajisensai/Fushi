@@ -19,8 +19,8 @@ void main() {
 
   testWidgets('VideoImportDialog prefills dragged video path into UI',
       (WidgetTester tester) async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final VideoBookRepository repo = VideoBookRepository(db);
 

@@ -9,7 +9,7 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 /// BUG-160: 绑定失败不能抹掉用户的持久化"想开服"意图。
 ///
@@ -34,7 +34,7 @@ void main() {
           await Directory.systemTemp.createTemp('hibiki_ctl_persist_');
       addTearDown(() => dir.delete(recursive: true));
 
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -42,21 +42,21 @@ void main() {
       await repo.setServerEnabled(true);
       await repo.setServerPort(takenPort);
 
-      // 注意：_remoteLookupServiceFactory 在 HibikiSyncServer 构造时（绑定前）被调用，
+      // 注意：_remoteLookupServiceFactory 在 FushiSyncServer 构造时（绑定前）被调用，
       // 不是在绑定成功后。所以即使端口被占用，factory 也会被调用——使用 no-op 桩。
-      final HibikiSyncServerController controller = HibikiSyncServerController(
+      final FushiSyncServerController controller = FushiSyncServerController(
         navigatorKey: GlobalKey<NavigatorState>(),
         database: () => db,
         syncDataDir: () => dir.path,
         remoteLookupServiceFactory: () => _NoopLookupService(),
       );
 
-      final HibikiServerStartOutcome outcome = await controller.start();
+      final FushiServerStartOutcome outcome = await controller.start();
 
       // 必须返回 PortInUse outcome（断言 start() 真的失败了）。
-      expect(outcome, isA<HibikiServerPortInUse>(),
+      expect(outcome, isA<FushiServerPortInUse>(),
           reason: '端口被占用，start() 必须返回 PortInUse');
-      expect((outcome as HibikiServerPortInUse).port, equals(takenPort));
+      expect((outcome as FushiServerPortInUse).port, equals(takenPort));
 
       // 核心断言：持久化意图必须仍为 true（修复前此处为 false）。
       expect(await repo.isServerEnabled(), isTrue,
@@ -78,7 +78,7 @@ void main() {
 
       // 定位 start() 方法体（从方法签名到下一个顶层方法）
       final int startIdx =
-          src.indexOf('Future<HibikiServerStartOutcome> start()');
+          src.indexOf('Future<FushiServerStartOutcome> start()');
       final int stopIdx = src.indexOf('Future<void> stop(', startIdx);
       expect(startIdx, isNot(-1), reason: 'start() 方法必须存在');
       expect(stopIdx, isNot(-1), reason: 'stop() 方法必须存在');
@@ -108,7 +108,7 @@ void main() {
           await Directory.systemTemp.createTemp('hibiki_ctl_ok_');
       addTearDown(() => dir.delete(recursive: true));
 
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -116,7 +116,7 @@ void main() {
       await repo.setServerEnabled(true);
       await repo.setServerPort(0);
 
-      final HibikiSyncServerController controller = HibikiSyncServerController(
+      final FushiSyncServerController controller = FushiSyncServerController(
         navigatorKey: GlobalKey<NavigatorState>(),
         database: () => db,
         syncDataDir: () => dir.path,
@@ -124,9 +124,9 @@ void main() {
       );
       addTearDown(() => controller.stop());
 
-      final HibikiServerStartOutcome outcome = await controller.start();
+      final FushiServerStartOutcome outcome = await controller.start();
 
-      expect(outcome, isA<HibikiServerStarted>(), reason: '端口 0 应当绑定成功');
+      expect(outcome, isA<FushiServerStarted>(), reason: '端口 0 应当绑定成功');
       expect(await repo.isServerEnabled(), isTrue,
           reason: '成功路径必须保持/写入 serverEnabled=true');
       expect(controller.isRunning, isTrue);
@@ -137,14 +137,14 @@ void main() {
           await Directory.systemTemp.createTemp('hibiki_ctl_stop_');
       addTearDown(() => dir.delete(recursive: true));
 
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
       await repo.setServerEnabled(true);
       await repo.setServerPort(0);
 
-      final HibikiSyncServerController controller = HibikiSyncServerController(
+      final FushiSyncServerController controller = FushiSyncServerController(
         navigatorKey: GlobalKey<NavigatorState>(),
         database: () => db,
         syncDataDir: () => dir.path,
@@ -166,14 +166,14 @@ void main() {
           await Directory.systemTemp.createTemp('hibiki_ctl_transient_');
       addTearDown(() => dir.delete(recursive: true));
 
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
       await repo.setServerEnabled(true);
       await repo.setServerPort(0);
 
-      final HibikiSyncServerController controller = HibikiSyncServerController(
+      final FushiSyncServerController controller = FushiSyncServerController(
         navigatorKey: GlobalKey<NavigatorState>(),
         database: () => db,
         syncDataDir: () => dir.path,
@@ -193,7 +193,7 @@ void main() {
 }
 
 /// 最小 no-op 查词服务桩，用于需要真实绑定的测试。
-class _NoopLookupService implements HibikiRemoteLookupService {
+class _NoopLookupService implements FushiRemoteLookupService {
   @override
   Future<DictionarySearchResult?> searchDictionary({
     required String term,

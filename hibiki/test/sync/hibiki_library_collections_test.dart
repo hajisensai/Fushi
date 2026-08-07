@@ -19,14 +19,14 @@ import 'package:fushi_core/fushi_core.dart';
 /// - 双端各建合集→经真实 server + client backend + orchestrator 互推→收敛
 ///   （把 collection_sync_engine_test 的收敛场景搬到 endpoint 全链路层）。
 void main() {
-  HibikiDatabase memDb() {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+  FushiDatabase memDb() {
+    final FushiDatabase db =
+        FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
     addTearDown(db.close);
     return db;
   }
 
-  AppModelLibraryHostService buildSvc(HibikiDatabase db) =>
+  AppModelLibraryHostService buildSvc(FushiDatabase db) =>
       AppModelLibraryHostService(
         db: db,
         dictionaryResourceRoot: Directory.systemTemp,
@@ -39,7 +39,7 @@ void main() {
 
   group('目录响应含合集归属（任务5.1）', () {
     test('listBooks 附主合集归属（name/type/sortIndex）', () async {
-      final HibikiDatabase db = memDb();
+      final FushiDatabase db = memDb();
       await db.insertEpubBook(EpubBooksCompanion.insert(
         bookKey: 'BookA',
         title: 'BookA',
@@ -64,7 +64,7 @@ void main() {
     });
 
     test('listBooks 对不属任何合集的书归属为 null（散卡）', () async {
-      final HibikiDatabase db = memDb();
+      final FushiDatabase db = memDb();
       await db.insertEpubBook(EpubBooksCompanion.insert(
         bookKey: 'Bare',
         title: 'Bare',
@@ -79,7 +79,7 @@ void main() {
     });
 
     test('一书属多合集 → 归属跟随最小 collectionId（主归属折叠语义）', () async {
-      final HibikiDatabase db = memDb();
+      final FushiDatabase db = memDb();
       await db.insertEpubBook(EpubBooksCompanion.insert(
         bookKey: 'Multi',
         title: 'Multi',
@@ -103,7 +103,7 @@ void main() {
     });
 
     test('BUG-812: srt-backed 有声书经 srt|uid 成员键折进合集（listBooks 兜底）', () async {
-      final HibikiDatabase db = memDb();
+      final FushiDatabase db = memDb();
       // srt-backed 有声书：同 bookKey 既有 EpubBooks 又有 SrtBooks 行。
       await db.insertEpubBook(EpubBooksCompanion.insert(
         bookKey: 'AudioVol1',
@@ -137,7 +137,7 @@ void main() {
     });
 
     test('BUG-812: 无 srt 成员的 srt-backed 书归属仍为 null（散卡不误折）', () async {
-      final HibikiDatabase db = memDb();
+      final FushiDatabase db = memDb();
       await db.insertEpubBook(EpubBooksCompanion.insert(
         bookKey: 'LoneAudio',
         title: 'LoneAudio',
@@ -160,7 +160,7 @@ void main() {
     });
 
     test('listVideos 附主合集归属', () async {
-      final HibikiDatabase db = memDb();
+      final FushiDatabase db = memDb();
       await db.upsertVideoBook(VideoBooksCompanion.insert(
         bookUid: 'video/ep1',
         title: 'Ep1',
@@ -181,7 +181,7 @@ void main() {
     });
 
     test('BUG-814: listVideos 对存在的视频文件不做内嵌字幕 ffmpeg 探测（延迟到播放）', () async {
-      final HibikiDatabase db = memDb();
+      final FushiDatabase db = memDb();
       final Directory tmp =
           Directory.systemTemp.createTempSync('hbk_video_probe');
       addTearDown(() => tmp.deleteSync(recursive: true));
@@ -265,14 +265,14 @@ void main() {
   // ── 任务5.2/5.3：清单 endpoint GET/POST + 双端收敛（全链路）──────────────────
 
   group('合集清单 endpoint + 双端收敛（任务5.2/5.3）', () {
-    late HibikiSyncServer server;
-    late HibikiDatabase hostDb;
+    late FushiSyncServer server;
+    late FushiDatabase hostDb;
     const String token = 'collections-token';
     late String base;
 
     setUp(() async {
       hostDb = memDb();
-      server = HibikiSyncServer(
+      server = FushiSyncServer(
         syncDataDir: Directory.systemTemp.createTempSync('hbk_coll_srv').path,
         port: 0,
         token: token,
@@ -286,10 +286,10 @@ void main() {
     tearDown(() async => server.stop());
 
     Future<InterconnectSyncBackend> buildBackend(
-        HibikiDatabase clientDb) async {
+        FushiDatabase clientDb) async {
       final SyncRepository repo = SyncRepository(clientDb);
-      await repo.setHibikiClientUrls(<HibikiClientUrl>[
-        HibikiClientUrl(url: base, enabled: true),
+      await repo.setHibikiClientUrls(<FushiClientUrl>[
+        FushiClientUrl(url: base, enabled: true),
       ]);
       await repo.setHibikiClientToken(token);
       final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
@@ -300,7 +300,7 @@ void main() {
     }
 
     SyncOrchestrator orchestrator(
-            HibikiDatabase clientDb, InterconnectSyncBackend backend) =>
+            FushiDatabase clientDb, InterconnectSyncBackend backend) =>
         SyncOrchestrator(
           db: clientDb,
           backend: backend,
@@ -318,7 +318,7 @@ void main() {
     Future<void> tick() =>
         Future<void>.delayed(const Duration(milliseconds: 3));
 
-    Future<List<String>> orderOf(HibikiDatabase db, String name,
+    Future<List<String>> orderOf(FushiDatabase db, String name,
         [String type = 'playlist']) async {
       final MediaCollectionRow? row =
           await db.getMediaCollectionByNaturalKey(name, type);
@@ -333,7 +333,7 @@ void main() {
           await hostDb.createMediaCollection('S', collectionType: 'playlist');
       await hostDb.addToCollection(hc, MediaKind.video, 'v1');
 
-      final HibikiDatabase clientDb = memDb();
+      final FushiDatabase clientDb = memDb();
       final InterconnectSyncBackend backend = await buildBackend(clientDb);
 
       // GET：host 清单含 S{v1}。
@@ -370,7 +370,7 @@ void main() {
       await hostDb.addToCollection(hc, MediaKind.video, 'v2');
       await tick();
 
-      final HibikiDatabase clientDb = memDb();
+      final FushiDatabase clientDb = memDb();
       final InterconnectSyncBackend backend = await buildBackend(clientDb);
       final int cc =
           await clientDb.createMediaCollection('S', collectionType: 'playlist');
@@ -396,7 +396,7 @@ void main() {
       await hostDb.addToCollection(hc, MediaKind.video, 'v3');
       await tick();
 
-      final HibikiDatabase clientDb = memDb();
+      final FushiDatabase clientDb = memDb();
       final InterconnectSyncBackend backend = await buildBackend(clientDb);
       await orchestrator(clientDb, backend)
           .syncCollectionsLiveForTest(SyncRunReport(), backend);
@@ -429,7 +429,7 @@ void main() {
       await hostDb.addToCollection(hc, MediaKind.video, 'v3');
       await tick();
 
-      final HibikiDatabase clientDb = memDb();
+      final FushiDatabase clientDb = memDb();
       final InterconnectSyncBackend backend = await buildBackend(clientDb);
       await orchestrator(clientDb, backend)
           .syncCollectionsLiveForTest(SyncRunReport(), backend);

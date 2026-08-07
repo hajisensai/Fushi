@@ -96,10 +96,10 @@ String _themeVariablesJs({
   // 墨水屏模式：给 <html> 挂 eink class（popup.css 末尾的 html.eink 覆盖块吃它，
   // 纯黑白/方角/实线边框/关过渡）。用 toggle 而非 add——in-app 热槽 WebView 跨渲染
   // 持久，开关关掉后重注入必须能把 class 摘掉。标志从传入的 ThemeData 扩展读
-  // （HibikiEinkTheme，_buildThemeData 挂上），不走 appModel.themeNotifier——
+  // （FushiEinkTheme，_buildThemeData 挂上），不走 appModel.themeNotifier——
   // 本函数在弹窗 widget 测试里会被未 initialise 的裸 AppModel 调到（late
   // themeNotifier 未初始化），theme 才是这里已有的真相源。
-  final bool eink = theme.extension<HibikiEinkTheme>()?.einkMode ?? false;
+  final bool eink = theme.extension<FushiEinkTheme>()?.einkMode ?? false;
   final String einkLine =
       "document.documentElement.classList.toggle('eink', $eink);\n";
   return '''
@@ -376,7 +376,7 @@ String buildPopupEntriesJs(DictionarySearchResult result) {
 /// （popup.js 侧全等比对，Alt+滚轮绝不会被 Ctrl+Alt+滚轮误触）。绑定为空时发空表，
 /// popup.js 据此关掉该方向（而不是回退到默认，否则用户清空绑定等于没清）。
 String popupEntryWheelBindingsJson(
-  HibikiShortcutRegistry registry,
+  FushiShortcutRegistry registry,
   TargetPlatform platform,
 ) {
   // 注册表还没装载时（弹窗进程的精简初始化早于 loadShortcutRegistry，或测试里的
@@ -434,7 +434,7 @@ String _webKeyName(LogicalKeyboardKey key) {
 /// Ctrl+Shift+Enter 误触）。空表 = 未绑/用户清空 → popup.js 关掉该动作的键盘触发（而不是
 /// 回退默认，否则「清空」等于没清）。注册表未装载时回落平台默认，理由同滚轮那条。
 String popupKeyBindingsJson(
-  HibikiShortcutRegistry registry,
+  FushiShortcutRegistry registry,
   TargetPlatform platform,
 ) {
   final Map<ShortcutAction, ShortcutBindingSet>? fallback =

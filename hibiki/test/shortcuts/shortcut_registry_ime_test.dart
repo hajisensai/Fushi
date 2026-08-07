@@ -34,10 +34,10 @@ void main() {
   // 注：本 group 内 'normal path unchanged: real pageDown still resolves' 一条是不含
   // process 的对照用例，仍是有效断言；其余 6 条均依赖已证伪的前提。
   group('[假绿·前提已证伪] resolveKeyboard IME physicalKey fallback (TODO-847)', () {
-    late HibikiShortcutRegistry registry;
+    late FushiShortcutRegistry registry;
 
     setUp(() {
-      registry = HibikiShortcutRegistry();
+      registry = FushiShortcutRegistry();
       registry.loadDefaults(TargetPlatform.windows);
     });
 

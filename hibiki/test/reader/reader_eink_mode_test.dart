@@ -15,7 +15,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 ///     surfaceTint/shadow 透明（e-ink 不能有 elevation 灰阶）。
 ///  3. eink_mode 必须在 Profile 快照黑名单里（设备属性，切 Profile 不回滚）。
 Future<ReaderSettings> _defaultSettings() async {
-  final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   final ReaderSettings settings = ReaderSettings(db);
   await settings.refreshFromDb();

@@ -63,8 +63,8 @@ void main() {
   });
 
   testWidgets('合集详情页渲染 game 成员卡；孤儿与书成员被跳过', (WidgetTester tester) async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final int c = await db.createMediaCollection('ネコぱら全集');
     await db.addToCollection(c, MediaKind.game, 'g1');

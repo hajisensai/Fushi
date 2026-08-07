@@ -4,8 +4,8 @@ import 'package:fushi/src/sync/tls/hibiki_pinning_http.dart';
 import 'package:http/http.dart' as http;
 
 /// TODO-963 M2: `/api/ping` 的 client 侧响应模型。无鉴权探测，配对前用。
-class HibikiPingResult {
-  const HibikiPingResult({
+class FushiPingResult {
+  const FushiPingResult({
     required this.isHibiki,
     required this.supportsPairV2,
     required this.tlsEnabled,
@@ -34,11 +34,11 @@ class HibikiPingResult {
 /// - 明文 http baseUrl：用普通 client。
 /// - https baseUrl 且已知 [pinnedFingerprint]：走钉扎 client（指纹必须相等）。
 /// - https baseUrl 但 **未知** 指纹（首次 TOFU）：调用方应先用
-///   [HibikiTofuProbe.captureFingerprint] 取指纹核对后再传进来；此处不接受裸 https
+///   [FushiTofuProbe.captureFingerprint] 取指纹核对后再传进来；此处不接受裸 https
 ///   无指纹探测（避免无钉扎读 https）。
 ///
 /// 失败（连不上 / 非 hibiki / 解析失败）返回 null。绝不返回部分可信结果。
-Future<HibikiPingResult?> fetchHibikiPing(
+Future<FushiPingResult?> fetchHibikiPing(
   String baseUrl, {
   String? pinnedFingerprint,
   http.Client? httpClient,
@@ -66,7 +66,7 @@ Future<HibikiPingResult?> fetchHibikiPing(
     final bool tlsEnabled = tls is Map && tls['enabled'] == true;
     final String? fingerprint =
         tls is Map ? tls['fingerprint'] as String? : null;
-    return HibikiPingResult(
+    return FushiPingResult(
       isHibiki: true,
       supportsPairV2: supportsPairV2,
       tlsEnabled: tlsEnabled,

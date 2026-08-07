@@ -2,10 +2,10 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-Future<HibikiDatabase> _openDb() async {
+Future<FushiDatabase> _openDb() async {
   // 生产连接经 applyPragmas 开启 foreign_keys；forTesting 直接吃传入 executor 不套
   // 那层 pragma，故此处显式开启（同 foreign_keys_test.dart），否则 cascade 不生效。
-  final db = HibikiDatabase.forTesting(
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) => rawDb.execute('PRAGMA foreign_keys = ON'),
     ),

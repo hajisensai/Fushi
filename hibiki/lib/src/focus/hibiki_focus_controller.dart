@@ -7,14 +7,14 @@ import 'package:fushi/src/focus/focus_geometry.dart';
 import 'package:fushi/src/focus/hibiki_focus_scroll.dart';
 
 @immutable
-class HibikiFocusId {
-  const HibikiFocusId(this.value);
+class FushiFocusId {
+  const FushiFocusId(this.value);
 
   final String value;
 
   @override
   bool operator ==(Object other) =>
-      identical(this, other) || other is HibikiFocusId && other.value == value;
+      identical(this, other) || other is FushiFocusId && other.value == value;
 
   @override
   int get hashCode => value.hashCode;
@@ -23,25 +23,25 @@ class HibikiFocusId {
   String toString() => value;
 }
 
-enum HibikiFocusDirection { up, down, left, right }
+enum FushiFocusDirection { up, down, left, right }
 
-HibikiFocusDirection hibikiFocusDirectionFromTraversal(
+FushiFocusDirection hibikiFocusDirectionFromTraversal(
   TraversalDirection direction,
 ) {
   switch (direction) {
     case TraversalDirection.up:
-      return HibikiFocusDirection.up;
+      return FushiFocusDirection.up;
     case TraversalDirection.down:
-      return HibikiFocusDirection.down;
+      return FushiFocusDirection.down;
     case TraversalDirection.left:
-      return HibikiFocusDirection.left;
+      return FushiFocusDirection.left;
     case TraversalDirection.right:
-      return HibikiFocusDirection.right;
+      return FushiFocusDirection.right;
   }
 }
 
-class HibikiFocusTargetEntry {
-  const HibikiFocusTargetEntry({
+class FushiFocusTargetEntry {
+  const FushiFocusTargetEntry({
     required this.id,
     required this.focusNode,
     required this.context,
@@ -50,7 +50,7 @@ class HibikiFocusTargetEntry {
     this.autoHome = true,
   });
 
-  final HibikiFocusId id;
+  final FushiFocusId id;
   final FocusNode focusNode;
   final BuildContext context;
   final bool enabled;
@@ -68,16 +68,16 @@ class HibikiFocusTargetEntry {
   bool get canFocus => enabled && focusNode.canRequestFocus;
 }
 
-class HibikiFocusController extends ChangeNotifier {
-  HibikiFocusController()
+class FushiFocusController extends ChangeNotifier {
+  FushiFocusController()
       : fallbackNode = FocusNode(
           debugLabel: 'hibiki-focus-fallback',
           skipTraversal: true,
         );
 
   final FocusNode fallbackNode;
-  final LinkedHashMap<HibikiFocusId, HibikiFocusTargetEntry> _entries =
-      LinkedHashMap<HibikiFocusId, HibikiFocusTargetEntry>();
+  final LinkedHashMap<FushiFocusId, FushiFocusTargetEntry> _entries =
+      LinkedHashMap<FushiFocusId, FushiFocusTargetEntry>();
 
   // Directional anchors: an explicit `(sourceId, direction) -> targetId`
   // short-circuit consulted BEFORE geometric selection in [move]. It exists to
@@ -88,22 +88,22 @@ class HibikiFocusController extends ChangeNotifier {
   // cleanly-clearing icon would otherwise beat the intended one). An anchor is a
   // PURE OPTION: if its target isn't currently a focusable entry it is ignored
   // and geometry runs unchanged, so scenes without anchors behave identically.
-  final Map<_AnchorKey, HibikiFocusId> _directionalAnchors =
-      <_AnchorKey, HibikiFocusId>{};
+  final Map<_AnchorKey, FushiFocusId> _directionalAnchors =
+      <_AnchorKey, FushiFocusId>{};
 
   BuildContext? _rootContext;
-  HibikiFocusId? _activeId;
+  FushiFocusId? _activeId;
   bool _attached = false;
   bool _repairScheduled = false;
   bool _repairMicrotaskScheduled = false;
 
   BuildContext? get activeContext {
-    final HibikiFocusTargetEntry? active = _currentEntry();
+    final FushiFocusTargetEntry? active = _currentEntry();
     if (active != null && active.context.mounted) return active.context;
     return fallbackNode.context ?? _rootContext;
   }
 
-  HibikiFocusId? get activeId => _activeId;
+  FushiFocusId? get activeId => _activeId;
 
   /// Whether the current [FocusManager.primaryFocus] is one of THIS controller's
   /// registered, focusable targets — i.e. focus actually sits on a directional-
@@ -118,20 +118,20 @@ class HibikiFocusController extends ChangeNotifier {
   bool get primaryFocusIsManagedTarget {
     final FocusNode? primary = FocusManager.instance.primaryFocus;
     if (primary == null) return false;
-    for (final HibikiFocusTargetEntry entry in _entries.values) {
+    for (final FushiFocusTargetEntry entry in _entries.values) {
       if (identical(entry.focusNode, primary)) return _entryCanFocus(entry);
     }
     return false;
   }
 
   bool get activeIsOnlyFocusableInNearestScrollable {
-    final HibikiFocusTargetEntry? active = _currentEntry();
+    final FushiFocusTargetEntry? active = _currentEntry();
     if (active == null || !active.context.mounted) return false;
     final ScrollableState? activeScrollable = Scrollable.maybeOf(
       active.context,
     );
     if (activeScrollable == null) return false;
-    for (final HibikiFocusTargetEntry entry in _entries.values) {
+    for (final FushiFocusTargetEntry entry in _entries.values) {
       if (identical(entry, active) || !_entryCanFocus(entry)) continue;
       if (!entry.context.mounted) continue;
       if (identical(Scrollable.maybeOf(entry.context), activeScrollable)) {
@@ -162,7 +162,7 @@ class HibikiFocusController extends ChangeNotifier {
   }
 
   void register(
-    HibikiFocusTargetEntry entry, {
+    FushiFocusTargetEntry entry, {
     bool repairBeforeNextFrame = false,
   }) {
     _entries[entry.id] = entry;
@@ -186,8 +186,8 @@ class HibikiFocusController extends ChangeNotifier {
     scheduleRepair();
   }
 
-  void unregister(HibikiFocusId id, FocusNode node, Object owner) {
-    final HibikiFocusTargetEntry? current = _entries[id];
+  void unregister(FushiFocusId id, FocusNode node, Object owner) {
+    final FushiFocusTargetEntry? current = _entries[id];
     if (current == null ||
         !identical(current.focusNode, node) ||
         !identical(current.owner, owner)) {
@@ -208,9 +208,9 @@ class HibikiFocusController extends ChangeNotifier {
   /// the same `(source, direction)` overwrites. Type signatures are explicit so
   /// callers can register from a declarative widget without casts.
   void registerDirectionalAnchor(
-    HibikiFocusId source,
-    HibikiFocusDirection direction,
-    HibikiFocusId target,
+    FushiFocusId source,
+    FushiFocusDirection direction,
+    FushiFocusId target,
   ) {
     _directionalAnchors[_AnchorKey(source, direction)] = target;
   }
@@ -219,9 +219,9 @@ class HibikiFocusController extends ChangeNotifier {
   /// not match [target] (so a stale unregister from a rebuilt widget cannot
   /// clobber a newer registration).
   void unregisterDirectionalAnchor(
-    HibikiFocusId source,
-    HibikiFocusDirection direction,
-    HibikiFocusId target,
+    FushiFocusId source,
+    FushiFocusDirection direction,
+    FushiFocusId target,
   ) {
     final _AnchorKey key = _AnchorKey(source, direction);
     if (_directionalAnchors[key] == target) {
@@ -233,20 +233,20 @@ class HibikiFocusController extends ChangeNotifier {
   /// when that target is a currently-focusable registered entry. Returns null
   /// when there is no anchor or its target is not (yet) focusable, so [move]
   /// cleanly falls through to geometry.
-  HibikiFocusTargetEntry? _anchoredTarget(
-    HibikiFocusId source,
-    HibikiFocusDirection direction,
+  FushiFocusTargetEntry? _anchoredTarget(
+    FushiFocusId source,
+    FushiFocusDirection direction,
   ) {
-    final HibikiFocusId? targetId =
+    final FushiFocusId? targetId =
         _directionalAnchors[_AnchorKey(source, direction)];
     if (targetId == null) return null;
-    final HibikiFocusTargetEntry? entry = _entries[targetId];
+    final FushiFocusTargetEntry? entry = _entries[targetId];
     if (entry == null || !_entryCanFocus(entry)) return null;
     return entry;
   }
 
-  bool requestById(HibikiFocusId id) {
-    final HibikiFocusTargetEntry? entry = _entries[id];
+  bool requestById(FushiFocusId id) {
+    final FushiFocusTargetEntry? entry = _entries[id];
     if (entry == null || !_entryCanFocus(entry)) return false;
     entry.focusNode.requestFocus();
     _activeId = id;
@@ -255,19 +255,19 @@ class HibikiFocusController extends ChangeNotifier {
     return true;
   }
 
-  bool move(HibikiFocusDirection direction) {
-    final List<HibikiFocusTargetEntry> targets = _focusableEntries();
+  bool move(FushiFocusDirection direction) {
+    final List<FushiFocusTargetEntry> targets = _focusableEntries();
     if (targets.isEmpty) {
       ensureFocus();
       return fallbackNode.hasPrimaryFocus;
     }
 
-    final HibikiFocusTargetEntry? active = _currentEntry();
+    final FushiFocusTargetEntry? active = _currentEntry();
     final int currentIndex = active == null ? -1 : targets.indexOf(active);
     if (active != null) {
       // Explicit directional anchor wins over geometry (see _directionalAnchors).
       // requestById reveals the target if it scrolled off-screen.
-      final HibikiFocusTargetEntry? anchored =
+      final FushiFocusTargetEntry? anchored =
           _anchoredTarget(active.id, direction);
       if (anchored != null) return requestById(anchored.id);
       final _GeometricMoveResult geometric =
@@ -279,7 +279,7 @@ class HibikiFocusController extends ChangeNotifier {
           targets: targets,
         );
       }
-      final HibikiFocusTargetEntry? target = geometric.target;
+      final FushiFocusTargetEntry? target = geometric.target;
       return target != null && requestById(target.id);
     }
 
@@ -297,7 +297,7 @@ class HibikiFocusController extends ChangeNotifier {
       return;
     }
 
-    final HibikiFocusTargetEntry? active = _currentEntry();
+    final FushiFocusTargetEntry? active = _currentEntry();
     if (active != null && _entryCanFocus(active)) {
       active.focusNode.requestFocus();
       _activeId = active.id;
@@ -305,15 +305,15 @@ class HibikiFocusController extends ChangeNotifier {
       return;
     }
 
-    final List<HibikiFocusTargetEntry> targets = _focusableEntriesInReadOrder();
+    final List<FushiFocusTargetEntry> targets = _focusableEntriesInReadOrder();
     if (targets.isNotEmpty) {
       // Passive auto-home prefers real content over interactive chrome (e.g. a
       // collapsible section's fold header): landing on a toggle above the first
       // row and then not revealing anything is a regression. Chrome stays
       // reachable by explicit navigation; fall back to it only when there is no
       // content target (a page of pure headers).
-      final HibikiFocusTargetEntry landing = targets.firstWhere(
-        (HibikiFocusTargetEntry entry) => entry.autoHome,
+      final FushiFocusTargetEntry landing = targets.firstWhere(
+        (FushiFocusTargetEntry entry) => entry.autoHome,
         orElse: () => targets.first,
       );
       landing.focusNode.requestFocus();
@@ -328,17 +328,17 @@ class HibikiFocusController extends ChangeNotifier {
     }
   }
 
-  void _scheduleReveal(HibikiFocusTargetEntry entry) {
+  void _scheduleReveal(FushiFocusTargetEntry entry) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (entry.context.mounted && entry.focusNode.hasFocus) {
-        HibikiFocusScroll.ensureVisible(entry.context);
+        FushiFocusScroll.ensureVisible(entry.context);
       }
     });
   }
 
   // Reveal driven by PASSIVE focus repair (page entry, async reflow re-homing
   // the cursor) — gated to keyboard/gamepad highlight mode, mirroring
-  // HibikiFocusRing: the viewport follows focus only when there is a visible
+  // FushiFocusRing: the viewport follows focus only when there is a visible
   // focus cursor. In touch mode there is no cursor, so moving the scroll offset
   // to "reveal" a programmatically grabbed target is an unwanted jump — e.g.
   // the sync/backup page, whose async backend load reflows the list taller
@@ -346,7 +346,7 @@ class HibikiFocusController extends ChangeNotifier {
   // yank the page down on open. Explicit gamepad/keyboard navigation
   // (requestById/move) still reveals unconditionally — that input IS the
   // traditional-mode cursor.
-  void _maybeRevealOnRepair(HibikiFocusTargetEntry entry) {
+  void _maybeRevealOnRepair(FushiFocusTargetEntry entry) {
     if (FocusManager.instance.highlightMode != FocusHighlightMode.traditional) {
       return;
     }
@@ -373,35 +373,35 @@ class HibikiFocusController extends ChangeNotifier {
     });
   }
 
-  HibikiFocusTargetEntry? _currentEntry() {
+  FushiFocusTargetEntry? _currentEntry() {
     final FocusNode? primary = FocusManager.instance.primaryFocus;
-    for (final HibikiFocusTargetEntry entry in _entries.values) {
+    for (final FushiFocusTargetEntry entry in _entries.values) {
       if (_entryCanFocus(entry) && identical(entry.focusNode, primary)) {
         _activeId = entry.id;
         return entry;
       }
     }
     if (_activeId == null) return null;
-    final HibikiFocusTargetEntry? active = _entries[_activeId!];
+    final FushiFocusTargetEntry? active = _entries[_activeId!];
     if (active == null || !_entryCanFocus(active)) return null;
     return active;
   }
 
-  List<HibikiFocusTargetEntry> _focusableEntries() {
+  List<FushiFocusTargetEntry> _focusableEntries() {
     return _entries.values
-        .where((HibikiFocusTargetEntry entry) => _entryCanFocus(entry))
+        .where((FushiFocusTargetEntry entry) => _entryCanFocus(entry))
         .toList(growable: false);
   }
 
-  List<HibikiFocusTargetEntry> _focusableEntriesInReadOrder() {
-    final List<HibikiFocusTargetEntry> targets = _focusableEntries();
+  List<FushiFocusTargetEntry> _focusableEntriesInReadOrder() {
+    final List<FushiFocusTargetEntry> targets = _focusableEntries();
     targets.sort(_compareEntriesByReadOrder);
     return targets;
   }
 
   int _compareEntriesByReadOrder(
-    HibikiFocusTargetEntry a,
-    HibikiFocusTargetEntry b,
+    FushiFocusTargetEntry a,
+    FushiFocusTargetEntry b,
   ) {
     final Rect? aRect = globalRectOfContext(a.context);
     final Rect? bRect = globalRectOfContext(b.context);
@@ -428,7 +428,7 @@ class HibikiFocusController extends ChangeNotifier {
     if (identical(primary, fallbackNode)) return _focusableEntries().isEmpty;
     if (primary is FocusScopeNode) return false;
     if (primary.skipTraversal) return false;
-    for (final HibikiFocusTargetEntry entry in _entries.values) {
+    for (final FushiFocusTargetEntry entry in _entries.values) {
       if (identical(entry.focusNode, primary)) return _entryCanFocus(entry);
     }
     final BuildContext? context = primary.context;
@@ -437,7 +437,7 @@ class HibikiFocusController extends ChangeNotifier {
         _isCurrentRoute(context);
   }
 
-  bool _entryCanFocus(HibikiFocusTargetEntry entry) {
+  bool _entryCanFocus(FushiFocusTargetEntry entry) {
     return entry.canFocus && _isCurrentRoute(entry.context);
   }
 
@@ -448,9 +448,9 @@ class HibikiFocusController extends ChangeNotifier {
   }
 
   _GeometricMoveResult _geometricTarget(
-    HibikiFocusTargetEntry active,
-    List<HibikiFocusTargetEntry> targets,
-    HibikiFocusDirection direction,
+    FushiFocusTargetEntry active,
+    List<FushiFocusTargetEntry> targets,
+    FushiFocusDirection direction,
   ) {
     final Rect? activeRect = globalRectOfContext(active.context);
     if (activeRect == null) return const _GeometricMoveResult.noGeometry();
@@ -464,7 +464,7 @@ class HibikiFocusController extends ChangeNotifier {
         Scrollable.maybeOf(active.context);
     final Element? activeGroup = _nearestTraversalGroup(active.context);
     final Offset activeCenter = activeRect.center;
-    HibikiFocusTargetEntry? best;
+    FushiFocusTargetEntry? best;
     int bestSamePane = -1;
     int bestClears = -1;
     int bestBeam = -1;
@@ -472,7 +472,7 @@ class HibikiFocusController extends ChangeNotifier {
     double bestCross = double.infinity;
     const double epsilon = 2;
 
-    for (final HibikiFocusTargetEntry target in targets) {
+    for (final FushiFocusTargetEntry target in targets) {
       if (identical(target, active)) continue;
       final Rect? targetRect = globalRectOfContext(target.context);
       if (targetRect == null) continue;
@@ -499,7 +499,7 @@ class HibikiFocusController extends ChangeNotifier {
       // beats the same-row neighbour.
       final bool clears;
       switch (direction) {
-        case HibikiFocusDirection.up:
+        case FushiFocusDirection.up:
           ahead = dy < -epsilon;
           along = -dy;
           cross = dx.abs();
@@ -507,7 +507,7 @@ class HibikiFocusController extends ChangeNotifier {
               targetRect.right);
           clears = targetRect.bottom <= activeRect.top + epsilon;
           break;
-        case HibikiFocusDirection.down:
+        case FushiFocusDirection.down:
           ahead = dy > epsilon;
           along = dy;
           cross = dx.abs();
@@ -515,7 +515,7 @@ class HibikiFocusController extends ChangeNotifier {
               targetRect.right);
           clears = targetRect.top >= activeRect.bottom - epsilon;
           break;
-        case HibikiFocusDirection.left:
+        case FushiFocusDirection.left:
           ahead = dx < -epsilon;
           along = -dx;
           cross = dy.abs();
@@ -523,7 +523,7 @@ class HibikiFocusController extends ChangeNotifier {
               targetRect.bottom);
           clears = targetRect.right <= activeRect.left + epsilon;
           break;
-        case HibikiFocusDirection.right:
+        case FushiFocusDirection.right:
           ahead = dx > epsilon;
           along = dx;
           cross = dy.abs();
@@ -616,8 +616,8 @@ class HibikiFocusController extends ChangeNotifier {
 
   bool _moveByReadingOrder({
     required int currentIndex,
-    required HibikiFocusDirection direction,
-    required List<HibikiFocusTargetEntry> targets,
+    required FushiFocusDirection direction,
+    required List<FushiFocusTargetEntry> targets,
   }) {
     final int nextIndex = _nextIndex(
       currentIndex: currentIndex,
@@ -633,23 +633,23 @@ class HibikiFocusController extends ChangeNotifier {
 
   int _nextIndex({
     required int currentIndex,
-    required HibikiFocusDirection direction,
+    required FushiFocusDirection direction,
     required int count,
   }) {
     if (currentIndex < 0) return 0;
     switch (direction) {
-      case HibikiFocusDirection.down:
-      case HibikiFocusDirection.right:
+      case FushiFocusDirection.down:
+      case FushiFocusDirection.right:
         return (currentIndex + 1).clamp(0, count - 1);
-      case HibikiFocusDirection.up:
-      case HibikiFocusDirection.left:
+      case FushiFocusDirection.up:
+      case FushiFocusDirection.left:
         return (currentIndex - 1).clamp(0, count - 1);
     }
   }
 
   void _handleFocusChange() {
     final FocusNode? primary = FocusManager.instance.primaryFocus;
-    for (final HibikiFocusTargetEntry entry in _entries.values) {
+    for (final FushiFocusTargetEntry entry in _entries.values) {
       if (identical(entry.focusNode, primary)) {
         if (!_entryCanFocus(entry)) {
           scheduleRepair();
@@ -669,8 +669,8 @@ class HibikiFocusController extends ChangeNotifier {
 class _AnchorKey {
   const _AnchorKey(this.source, this.direction);
 
-  final HibikiFocusId source;
-  final HibikiFocusDirection direction;
+  final FushiFocusId source;
+  final FushiFocusDirection direction;
 
   @override
   bool operator ==(Object other) =>
@@ -694,12 +694,12 @@ class _GeometricMoveResult {
       : target = null,
         hasGeometry = false;
 
-  final HibikiFocusTargetEntry? target;
+  final FushiFocusTargetEntry? target;
   final bool hasGeometry;
 }
 
-class HibikiFocusRoot extends StatefulWidget {
-  const HibikiFocusRoot({super.key, this.enabled = true, required this.child});
+class FushiFocusRoot extends StatefulWidget {
+  const FushiFocusRoot({super.key, this.enabled = true, required this.child});
 
   final Widget child;
 
@@ -709,33 +709,33 @@ class HibikiFocusRoot extends StatefulWidget {
   /// 全保留（开关滑块动画、各页滚动位置不丢）。
   final bool enabled;
 
-  static HibikiFocusController controllerOf(BuildContext context) {
-    final _HibikiFocusScope? scope =
-        context.dependOnInheritedWidgetOfExactType<_HibikiFocusScope>();
-    assert(scope?.controller != null, 'No HibikiFocusRoot found in context');
+  static FushiFocusController controllerOf(BuildContext context) {
+    final _FushiFocusScope? scope =
+        context.dependOnInheritedWidgetOfExactType<_FushiFocusScope>();
+    assert(scope?.controller != null, 'No FushiFocusRoot found in context');
     return scope!.controller!;
   }
 
-  static HibikiFocusController? maybeControllerOf(
+  static FushiFocusController? maybeControllerOf(
     BuildContext context, {
     bool listen = true,
   }) {
     if (listen) {
       return context
-          .dependOnInheritedWidgetOfExactType<_HibikiFocusScope>()
+          .dependOnInheritedWidgetOfExactType<_FushiFocusScope>()
           ?.controller;
     }
     return context
-        .getInheritedWidgetOfExactType<_HibikiFocusScope>()
+        .getInheritedWidgetOfExactType<_FushiFocusScope>()
         ?.controller;
   }
 
   @override
-  State<HibikiFocusRoot> createState() => _HibikiFocusRootState();
+  State<FushiFocusRoot> createState() => _FushiFocusRootState();
 }
 
-class _HibikiFocusRootState extends State<HibikiFocusRoot> {
-  late final HibikiFocusController _controller = HibikiFocusController();
+class _FushiFocusRootState extends State<FushiFocusRoot> {
+  late final FushiFocusController _controller = FushiFocusController();
 
   @override
   void didChangeDependencies() {
@@ -757,7 +757,7 @@ class _HibikiFocusRootState extends State<HibikiFocusRoot> {
       focusNode: _controller.fallbackNode,
       canRequestFocus: widget.enabled,
       skipTraversal: true,
-      child: _HibikiFocusScope(
+      child: _FushiFocusScope(
         controller: widget.enabled ? _controller : null,
         child: widget.child,
       ),
@@ -765,12 +765,12 @@ class _HibikiFocusRootState extends State<HibikiFocusRoot> {
   }
 }
 
-class _HibikiFocusScope extends InheritedNotifier<HibikiFocusController> {
-  const _HibikiFocusScope({
+class _FushiFocusScope extends InheritedNotifier<FushiFocusController> {
+  const _FushiFocusScope({
     required this.controller,
     required super.child,
   }) : super(notifier: controller);
 
-  /// null = 焦点导航禁用（HibikiFocusRoot.enabled == false）。
-  final HibikiFocusController? controller;
+  /// null = 焦点导航禁用（FushiFocusRoot.enabled == false）。
+  final FushiFocusController? controller;
 }

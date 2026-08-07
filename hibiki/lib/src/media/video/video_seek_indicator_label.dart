@@ -33,6 +33,6 @@ class VideoSeekIndicatorLabel {
   }
 
   /// 把非负 [value] 格式化成时钟串：不足 1 小时 `M:SS`（分不补前导零，如 `9:05`），
-  /// 满 1 小时 `H:MM:SS`。负值由调用方先取绝对值。委托 [HibikiTimeFormat.clock]。
-  static String clock(Duration value) => HibikiTimeFormat.clock(value);
+  /// 满 1 小时 `H:MM:SS`。负值由调用方先取绝对值。委托 [FushiTimeFormat.clock]。
+  static String clock(Duration value) => FushiTimeFormat.clock(value);
 }

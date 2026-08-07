@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:fushi/src/sync/backup_service.dart';
 
 /// Recursively deletes a temp dir used by a DB-heavy sync test, tolerating the
-/// Windows transient FS-busy race. A `HibikiDatabase` opens its sqlite
+/// Windows transient FS-busy race. A `FushiDatabase` opens its sqlite
 /// connection via `NativeDatabase.createInBackground` (a background isolate);
 /// on Windows the OS / Defender / search-indexer can keep a handle on the
 /// just-written `hibiki.db` (or its `-wal`/`-shm` sidecars) open for a brief

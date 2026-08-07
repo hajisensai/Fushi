@@ -4,32 +4,32 @@ import 'package:flutter/material.dart';
 /// 网格单元内容构造器：返回**纯视觉**卡片内容（自身手势由本组件统一接管，
 /// 调用方应把卡片包在 [IgnorePointer] 里避免内部 InkWell 的 long-press 与本组件的
 /// 触摸长按拖拽争用手势竞技场——详见类注释）。
-typedef HibikiReorderGridItemBuilder = Widget Function(
+typedef FushiReorderGridItemBuilder = Widget Function(
     BuildContext context, int index);
 
 /// 为某个 index 返回稳定 Key（单元身份，拖拽中 display 重排时保留同一
 /// RawGestureDetector 元素与其活跃识别器，拖拽不中断）。
-typedef HibikiReorderGridKeyBuilder = Key Function(int index);
+typedef FushiReorderGridKeyBuilder = Key Function(int index);
 
 /// 「item[from] 移到最终下标 to」——调用方实现为 `removeAt(from); insert(to, item)`。
-typedef HibikiReorderGridCallback = void Function(int from, int to);
+typedef FushiReorderGridCallback = void Function(int from, int to);
 
 /// 单元被激活（主指针轻点，未拖拽）——用于「点卡片打开条目」。
-typedef HibikiReorderGridActivate = void Function(int index);
+typedef FushiReorderGridActivate = void Function(int index);
 
 /// 单元请求上下文菜单：桌面鼠标右键（secondary tap）/ 触摸长按后原地松手（未拖动）。
 /// [globalPosition] 为触发点全局坐标，供调用方 `showMenu` 定位。
-typedef HibikiReorderGridContextMenu = void Function(
+typedef FushiReorderGridContextMenu = void Function(
     int index, Offset globalPosition);
 
 /// 自实现的**二维**「拖拽重排」网格，专为运行在祖先 [Transform.scale]
-/// （`HibikiAppUiScale` 的浏览器式整体缩放）之下而设计。是
-/// [HibikiReorderableColumn]（一维竖列）的 2D 姊妹件，同一套「浮层渲染在组件自身
+/// （`FushiAppUiScale` 的浏览器式整体缩放）之下而设计。是
+/// [FushiReorderableColumn]（一维竖列）的 2D 姊妹件，同一套「浮层渲染在组件自身
 /// [Stack]、指针 `globalToLocal` 消缩放」机制，差异只在几何：**均匀网格**（列数由
 /// 调用方传入、每卡等宽等高），拖拽中实时腾位（display 重排），目标槽 = 浮层中心所在
 /// 网格坑位。
 ///
-/// **起拖时机按输入设备区分**（与 [HibikiReorderableColumn] 一致）：
+/// **起拖时机按输入设备区分**（与 [FushiReorderableColumn] 一致）：
 /// - 鼠标 / 触控板 / 触控笔等精确指针 → [ImmediateMultiDragGestureRecognizer]，
 ///   按下移动即拖（桌面「按住左键就能拖」的预期）；右键（secondary tap）→ 上下文菜单。
 /// - 触摸屏 → [LongPressGestureRecognizer]：长按后**移动**才起拖（重排），长按后
@@ -43,8 +43,8 @@ typedef HibikiReorderGridContextMenu = void Function(
 /// （`Positioned`，本地坐标），随子树被祖先 `Transform.scale` 统一缩放 → 视觉与其余
 /// 缩放界面一致；所有指针坐标都用本 [Stack] 的 `RenderBox.globalToLocal(globalPosition)`
 /// 转成本地坐标，自动消掉祖先缩放/平移，浮层任意缩放系数下都精确跟手、零偏移。
-class HibikiReorderableGrid extends StatefulWidget {
-  const HibikiReorderableGrid({
+class FushiReorderableGrid extends StatefulWidget {
+  const FushiReorderableGrid({
     required this.itemCount,
     required this.crossAxisCount,
     required this.childAspectRatio,
@@ -67,29 +67,29 @@ class HibikiReorderableGrid extends StatefulWidget {
   /// 单元宽 / 单元高（如 160/260），用于从列宽推导行高。
   final double childAspectRatio;
 
-  final HibikiReorderGridItemBuilder itemBuilder;
-  final HibikiReorderGridKeyBuilder keyForIndex;
+  final FushiReorderGridItemBuilder itemBuilder;
+  final FushiReorderGridKeyBuilder keyForIndex;
 
   /// 「item[from] 移到最终下标 to」。起拖时机按输入设备区分（见类注释）。
-  final HibikiReorderGridCallback onReorder;
+  final FushiReorderGridCallback onReorder;
 
   final double crossAxisSpacing;
   final double mainAxisSpacing;
 
   /// 主指针轻点单元（未拖拽）回调（点卡片打开条目）；null = 不接管主轻点。
-  final HibikiReorderGridActivate? onActivateItem;
+  final FushiReorderGridActivate? onActivateItem;
 
   /// 上下文菜单回调（右键 / 触摸长按原地松手）；null = 不提供菜单。
-  final HibikiReorderGridContextMenu? onContextMenu;
+  final FushiReorderGridContextMenu? onContextMenu;
 
   /// 拖拽浮层复制的圆角（裁切到此半径）；null = 直角。
   final BorderRadius? feedbackBorderRadius;
 
   @override
-  State<HibikiReorderableGrid> createState() => _HibikiReorderableGridState();
+  State<FushiReorderableGrid> createState() => _FushiReorderableGridState();
 }
 
-class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
+class _FushiReorderableGridState extends State<FushiReorderableGrid> {
   /// 显示顺序：display 位置 → 原始 index（拖拽中实时变化；提交后重置为恒等）。
   late List<int> _display;
 
@@ -134,7 +134,7 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
   }
 
   @override
-  void didUpdateWidget(covariant HibikiReorderableGrid oldWidget) {
+  void didUpdateWidget(covariant FushiReorderableGrid oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.itemCount != widget.itemCount) {
       _resetDisplay();
@@ -284,7 +284,7 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
       return;
     }
     final ScrollPosition pos = sc.position;
-    // 完整变换取**屏幕**矩形：本组件运行在 HibikiAppUiScale 的祖先缩放之下
+    // 完整变换取**屏幕**矩形：本组件运行在 FushiAppUiScale 的祖先缩放之下
     //（BUG-778），`localToGlobal(zero) & size` 把缩放后的原点和未缩放的布局
     // 尺寸混拼——scale<1 时底边高估、边缘带够不到（自动滚动失效），scale>1
     // 时边缘带侵入视口中部（误触发）。transformRect 连尺寸一起过变换。
@@ -457,8 +457,8 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
             GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
           () => TapGestureRecognizer(),
           (TapGestureRecognizer instance) {
-            final HibikiReorderGridActivate? activate = widget.onActivateItem;
-            final HibikiReorderGridContextMenu? menu = widget.onContextMenu;
+            final FushiReorderGridActivate? activate = widget.onActivateItem;
+            final FushiReorderGridContextMenu? menu = widget.onContextMenu;
             instance.onTap = activate == null ? null : () => activate(original);
             instance.onSecondaryTapUp = menu == null
                 ? null
@@ -498,7 +498,7 @@ class _HibikiReorderableGridState extends State<HibikiReorderableGrid> {
   }
 }
 
-/// 把 [MultiDragGestureRecognizer] 的拖拽回调桥接到 [_HibikiReorderableGridState]
+/// 把 [MultiDragGestureRecognizer] 的拖拽回调桥接到 [_FushiReorderableGridState]
 /// 的全局坐标拖拽逻辑（内部再用 `globalToLocal` 消祖先缩放）。
 class _ReorderGridDrag extends Drag {
   _ReorderGridDrag({

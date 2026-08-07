@@ -12,9 +12,9 @@ import '../helpers/source_guard.dart';
 ///    那些操作本就需要看进度，所以守卫只针对收藏这一处。
 ///
 /// 2) 视频页所有短提示统一走左上角 OSD `_showOsd(...)`，**不得**再用底部全局
-///    `HibikiToast.show(...)`（桌面 `bottom:50` 居中 / 移动端 `ToastGravity.BOTTOM`）。
+///    `FushiToast.show(...)`（桌面 `bottom:50` 居中 / 移动端 `ToastGravity.BOTTOM`）。
 ///    这样收藏加/移除、复制、无句可选、资源重链、需重启渲染等提示都落在屏幕左上角，
-///    与字幕 / 锁定 / 画质切换的 OSD 一致。全局 `HibikiToast` 本身不动（阅读器等其它
+///    与字幕 / 锁定 / 画质切换的 OSD 一致。全局 `FushiToast` 本身不动（阅读器等其它
 ///    页面继续用底部 toast）。
 ///
 /// 提取 `_toggleFavoriteCurrentCue` 方法体：从签名起，到下一个 2 空格缩进的成员声明
@@ -52,13 +52,13 @@ void main() {
       );
     });
 
-    test('视频页所有短提示走左上角 OSD，全域无 HibikiToast.show（底部 toast）', () {
+    test('视频页所有短提示走左上角 OSD，全域无 FushiToast.show（底部 toast）', () {
       final String src = readVideoHibikiSource();
       expect(
-        src.contains('HibikiToast.show'),
+        src.contains('FushiToast.show'),
         isFalse,
         reason: 'BUG-931：视频页短提示统一走左上角 `_showOsd(...)`；出现 '
-            '`HibikiToast.show` 说明有提示回退到了屏幕底部。',
+            '`FushiToast.show` 说明有提示回退到了屏幕底部。',
       );
       // 收藏加/移除确实用 OSD（防止有人把提示整个删掉来「绕过」守卫）。
       expect(compactCode(src).contains(compactCode('_showOsd(t.favorite_added,')),

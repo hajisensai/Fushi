@@ -4,12 +4,12 @@ import 'package:fushi/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:fushi/src/sync/immersion_mine_payload.dart';
 
 void main() {
-  test('HibikiRemoteMiningService is an abstract contract with mineEntry', () {
-    expect(_FakeMining(), isA<HibikiRemoteMiningService>());
+  test('FushiRemoteMiningService is an abstract contract with mineEntry', () {
+    expect(_FakeMining(), isA<FushiRemoteMiningService>());
   });
 }
 
-class _FakeMining implements HibikiRemoteMiningService {
+class _FakeMining implements FushiRemoteMiningService {
   @override
   Future<RemoteMineResult> mineEntry({
     required Map<String, String> fields,

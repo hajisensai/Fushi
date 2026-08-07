@@ -143,7 +143,7 @@ void main() {
     }
   });
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late VideoBookRepository repo;
   late Directory tmp;
   late AppModel appModel;
@@ -153,7 +153,7 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     LocaleSettings.setLocale(AppLocale.zhCn);
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     repo = VideoBookRepository(db);
     tmp = await Directory.systemTemp.createTemp('hibiki_poster_match_');
     prefs = PreferencesRepository(db);

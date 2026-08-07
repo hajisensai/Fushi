@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/hibiki_reorder_drag_listener.dart';
 
-/// 守卫 [HibikiReorderDragListener] 的「按平台选即时/延迟起拖」分支——
+/// 守卫 [FushiReorderDragListener] 的「按平台选即时/延迟起拖」分支——
 /// 修「Win 等桌面端鼠标必须长按 ~500ms 才能拖动重排」的回归防线。
 void main() {
   Future<void> pumpUnder(WidgetTester tester, TargetPlatform platform) async {
@@ -11,11 +11,11 @@ void main() {
         theme: ThemeData(platform: platform),
         home: Scaffold(
           body: ReorderableListView(
-            // 关掉 SDK 默认手柄，确保下面只剩 HibikiReorderDragListener 产生的监听器。
+            // 关掉 SDK 默认手柄，确保下面只剩 FushiReorderDragListener 产生的监听器。
             buildDefaultDragHandles: false,
             onReorder: (int oldIndex, int newIndex) {},
             children: const <Widget>[
-              HibikiReorderDragListener(
+              FushiReorderDragListener(
                 key: ValueKey<String>('row0'),
                 index: 0,
                 child: SizedBox(height: 40, child: Text('row0')),

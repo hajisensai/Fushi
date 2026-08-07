@@ -11,8 +11,8 @@ import 'package:sqlite3/common.dart' show CommonDatabase;
 /// 集名缺失（集级刮削回退写了作品名）时提案退化为纯 `E01` 式；未刮成员零提案
 /// （自动刮削路径永不改名——改名只能从这里、经用户确认走）。
 void main() {
-  Future<HibikiDatabase> openDb() async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+  Future<FushiDatabase> openDb() async {
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (CommonDatabase rawDb) =>
             rawDb.execute('PRAGMA foreign_keys = ON'),
@@ -22,7 +22,7 @@ void main() {
     return db;
   }
 
-  Future<int> boundCollection(HibikiDatabase db, {String name = '作品名'}) async {
+  Future<int> boundCollection(FushiDatabase db, {String name = '作品名'}) async {
     final int id = await db.createMediaCollection(name);
     await db.upsertCollectionScrapeMeta(CollectionScrapeMetaCompanion.insert(
       collectionId: Value<int>(id),
@@ -35,7 +35,7 @@ void main() {
   }
 
   Future<void> addScrapedEpisode(
-    HibikiDatabase db,
+    FushiDatabase db,
     int collectionId,
     String uid, {
     required String title,
@@ -82,7 +82,7 @@ void main() {
 
   group('renameCollectionEpisodes', () {
     test('dryRun returns old->new table without writing', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int id = await boundCollection(db);
       await addScrapedEpisode(db, id, 'u1',
           title: 'Show - 01', episodeNumber: 1, episodeTitle: '出会い');
@@ -108,7 +108,7 @@ void main() {
 
     test('execute writes titles through video_books and skips already-equal',
         () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int id = await boundCollection(db);
       await addScrapedEpisode(db, id, 'u1',
           title: 'Show - 01', episodeNumber: 1, episodeTitle: '出会い');
@@ -127,7 +127,7 @@ void main() {
     });
 
     test('episode title equal to work title degrades to bare E<n>', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int id = await boundCollection(db, name: '孤独摇滚！');
       // 集级刮削在集名缺失时回退写了作品名——提案不能拼成「E01 孤独摇滚！」。
       await addScrapedEpisode(db, id, 'u1',
@@ -143,7 +143,7 @@ void main() {
     });
 
     test('pad width follows max episode number (three digits)', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int id = await boundCollection(db);
       await addScrapedEpisode(db, id, 'u1',
           title: 'a', episodeNumber: 1, episodeTitle: '一');

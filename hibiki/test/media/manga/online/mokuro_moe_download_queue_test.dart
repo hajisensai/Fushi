@@ -12,10 +12,10 @@ import 'package:fushi_core/fushi_core.dart';
 /// 状态迁移、importedCount 口径、失败继续、取消与去重（统一下载中心的队列
 /// 契约——对话框关闭与否与这里无关）。
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() async {

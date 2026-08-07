@@ -1,6 +1,6 @@
 /// TODO-1056 phase C: 互联（LAN server）聚合（统计 + 收藏）live 双向合并端到端测试。
 ///
-/// 真 server（HibikiSyncServer + AppModelLibraryHostService + host DB）+ 真 client
+/// 真 server（FushiSyncServer + AppModelLibraryHostService + host DB）+ 真 client
 /// backend（client DB）+ orchestrator，验证：
 ///   1. GET/PUT round-trip：client materialize → GET host → 并集折叠 → 写回本地 →
 ///      PUT 回 host，两端收敛到并集（统计 MAX、收藏词并集）。
@@ -24,11 +24,11 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-HibikiDatabase _memDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _memDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 Future<void> _seedReading(
-  HibikiDatabase db, {
+  FushiDatabase db, {
   required String title,
   required String dateKey,
   required int chars,
@@ -47,10 +47,10 @@ Future<InterconnectSyncBackend> _buildClientBackend({
   required String base,
   required String token,
 }) async {
-  final HibikiDatabase db = _memDb();
+  final FushiDatabase db = _memDb();
   final SyncRepository repo = SyncRepository(db);
-  await repo.setHibikiClientUrls(<HibikiClientUrl>[
-    HibikiClientUrl(url: base, enabled: true),
+  await repo.setHibikiClientUrls(<FushiClientUrl>[
+    FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
   final InterconnectSyncBackend backend =
@@ -61,7 +61,7 @@ Future<InterconnectSyncBackend> _buildClientBackend({
 }
 
 SyncOrchestrator _orchestrator({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required SyncBackend backend,
   required Directory tmp,
 }) =>
@@ -81,8 +81,8 @@ SyncOrchestrator _orchestrator({
 
 void main() {
   late Directory work;
-  late HibikiSyncServer server;
-  late HibikiDatabase hostDb;
+  late FushiSyncServer server;
+  late FushiDatabase hostDb;
   late String base;
   const String token = 'orch-live-aggregate-token';
 
@@ -99,7 +99,7 @@ void main() {
         runExclusive: (Future<void> Function() body) => body(),
       );
     }
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir: p.join(work.path, 'server_data'),
       port: 0,
       token: token,
@@ -145,7 +145,7 @@ void main() {
     );
 
     // client 有 Book A(chars=100, time=1000) + wLocal。
-    final HibikiDatabase localDb = _memDb();
+    final FushiDatabase localDb = _memDb();
     addTearDown(localDb.close);
     await _seedReading(localDb,
         title: 'Book A',
@@ -207,7 +207,7 @@ void main() {
     await hostDb.setMiningCount(
         sourceType: 'book', dateKey: '2026-06-01', count: 5);
 
-    final HibikiDatabase localDb = _memDb();
+    final FushiDatabase localDb = _memDb();
     addTearDown(localDb.close);
     await localDb.setMiningCount(
         sourceType: 'book', dateKey: '2026-06-01', count: 3);
@@ -229,7 +229,7 @@ void main() {
   test('老 server（无 libraryService）→ aggregate 404 → client 只推不崩', () async {
     await startServer(withLibraryService: false);
 
-    final HibikiDatabase localDb = _memDb();
+    final FushiDatabase localDb = _memDb();
     addTearDown(localDb.close);
     await localDb.setMiningCount(
         sourceType: 'book', dateKey: '2026-06-01', count: 7);

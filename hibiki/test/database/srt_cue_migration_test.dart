@@ -5,8 +5,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// Regression test for HBK-AUDIT-001: the v12 orphan cleanup must NOT wipe
 /// audio_cues owned by srt_books (standalone SRT subtitle books have no row in
 /// the audiobooks table). It must still delete cues orphaned from BOTH owners.
-Future<HibikiDatabase> _openV11DbWithSrtCues() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV11DbWithSrtCues() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         rawDb.execute('PRAGMA foreign_keys = ON');
@@ -132,7 +132,7 @@ CREATE TABLE audio_cues (
   return db;
 }
 
-Future<int> _cueCount(HibikiDatabase db, String bookKey) async {
+Future<int> _cueCount(FushiDatabase db, String bookKey) async {
   // After v16 the audio_cues owner column is book_key. The seed's srt-owned and
   // non-legacy-uid audiobook cues carry their owner string over verbatim, so
   // these literals are unchanged. bookKey is a test-controlled literal; safe to

@@ -14,8 +14,8 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _memDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _memDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 /// One chapter of 1000 characters keeps fraction math simple: explored chars
 /// map linearly to normCharOffset in 0..10000.
@@ -232,7 +232,7 @@ class _RemoteBook {
   }
 }
 
-Future<EpubBookRow> _seedBook(HibikiDatabase db, String title) async {
+Future<EpubBookRow> _seedBook(FushiDatabase db, String title) async {
   await db.insertEpubBook(EpubBooksCompanion.insert(
     bookKey: title,
     title: title,
@@ -246,7 +246,7 @@ Future<EpubBookRow> _seedBook(HibikiDatabase db, String title) async {
 }
 
 Future<void> _seedPosition(
-  HibikiDatabase db,
+  FushiDatabase db,
   String bookKey, {
   required int updatedAt,
   required double fraction,
@@ -269,7 +269,7 @@ void main() {
   /// books/positions/baselines first), waits for `_load` to settle.
   Future<void> pumpDialog(
     WidgetTester tester,
-    HibikiDatabase db,
+    FushiDatabase db,
     _FakeSyncBackend fake, {
     bool conflictsOnly = false,
   }) async {
@@ -295,7 +295,7 @@ void main() {
 
   testWidgets('single-sided change is not a conflict (local == base)',
       (WidgetTester tester) async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
 
     final EpubBookRow book = await _seedBook(db, 'BookA');
@@ -321,7 +321,7 @@ void main() {
 
   testWidgets('both sides diverged from base is a conflict',
       (WidgetTester tester) async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
 
     final EpubBookRow book = await _seedBook(db, 'BookA');
@@ -346,7 +346,7 @@ void main() {
 
   testWidgets('conflictsOnly hides non-conflict books and dictionaries',
       (WidgetTester tester) async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
 
     // Conflict book: both sides off base.
@@ -384,7 +384,7 @@ void main() {
   testWidgets(
       'conflictsOnly Apply only syncs conflict books, not hidden non-conflict ones',
       (WidgetTester tester) async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
 
     // Conflict book: both sides off base → manual choice required.
@@ -436,7 +436,7 @@ void main() {
 
   testWidgets('conflictsOnly with zero conflicts shows the empty state',
       (WidgetTester tester) async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
 
     // A library with one non-conflict (single-sided) book and no conflicts.
@@ -462,7 +462,7 @@ void main() {
 
   testWidgets('resolving a conflict via Apply writes the baseline',
       (WidgetTester tester) async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
 
     final EpubBookRow book = await _seedBook(db, 'BookA');

@@ -13,8 +13,8 @@ import 'package:fushi_core/fushi_core.dart';
 ///  ② 新列可写可读，含空格与引号的整行原样往返（不能被 DB 层擅自转义/裁剪）；
 ///  ③ user_version 升到当前 schemaVersion。
 void main() {
-  Future<HibikiDatabase> openV55Db() async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+  Future<FushiDatabase> openV55Db() async {
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (rawDb) {
           rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -69,7 +69,7 @@ CREATE TABLE galgame_sessions (
   }
 
   test('v56：既有游戏行零破坏，launch_args 回填空串（= 旧启动命令行）', () async {
-    final HibikiDatabase db = await openV55Db();
+    final FushiDatabase db = await openV55Db();
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
@@ -88,7 +88,7 @@ CREATE TABLE galgame_sessions (
   });
 
   test('v56：整行参数原样往返，含空格与引号不被 DB 层改写', () async {
-    final HibikiDatabase db = await openV55Db();
+    final FushiDatabase db = await openV55Db();
 
     const String raw = r'-windowed --save="Z:\My Saves\slot 1" -lang ja';
     await db.upsertGalgame(GalgamesCompanion.insert(
@@ -136,8 +136,8 @@ CREATE TABLE galgame_sessions (
   });
 
   test('v56：fresh 库由 onCreate 建出 launch_args，默认空串', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     await db.upsertGalgame(GalgamesCompanion.insert(

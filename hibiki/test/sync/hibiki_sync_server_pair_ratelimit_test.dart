@@ -13,21 +13,21 @@ import 'package:http/http.dart' as http;
 // backoff window; success and the legitimate single-shot flow are unaffected.
 void main() {
   late Directory tempDir;
-  late HibikiSyncServer server;
+  late FushiSyncServer server;
   String shownPin = '482913';
   DateTime fakeNow = DateTime.utc(2026, 1, 1, 12, 0, 0);
 
   Future<void> startServer({bool approve = true}) async {
     tempDir = Directory.systemTemp.createTempSync('hibiki_pair_rl_test');
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0,
       token: 'super-secret-token',
       allowLan: true,
       now: () => fakeNow,
     )
-      ..onPairRequest = ((HibikiPairRequest _) async => approve)
-      ..onPairPinGenerated = ((HibikiPairSession _) => shownPin)
+      ..onPairRequest = ((FushiPairRequest _) async => approve)
+      ..onPairPinGenerated = ((FushiPairSession _) => shownPin)
       ..lanRequiresPinProvider = (() async => true);
     await server.start();
   }
@@ -59,7 +59,7 @@ void main() {
   Future<http.Response> confirmWrongPin(int attempt) async {
     final String clientNonce = 'cn-wrong-$attempt';
     final Map<String, dynamic> start = await startSession(clientNonce);
-    final String wrongProof = HibikiPairingProtocol.computePinProof(
+    final String wrongProof = FushiPairingProtocol.computePinProof(
       pin: '000000',
       clientNonce: clientNonce,
       hostNonce: start['hostNonce'] as String,
@@ -77,7 +77,7 @@ void main() {
   Future<http.Response> confirmCorrectPin(String tag) async {
     final String clientNonce = 'cn-ok-$tag';
     final Map<String, dynamic> start = await startSession(clientNonce);
-    final String proof = HibikiPairingProtocol.computePinProof(
+    final String proof = FushiPairingProtocol.computePinProof(
       pin: shownPin,
       clientNonce: clientNonce,
       hostNonce: start['hostNonce'] as String,
@@ -153,15 +153,15 @@ void main() {
 
   test('PIN-free sessions are never rate limited', () async {
     tempDir = Directory.systemTemp.createTempSync('hibiki_pair_rl_free_test');
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0,
       token: 'super-secret-token',
       allowLan: true,
       now: () => fakeNow,
     )
-      ..onPairRequest = ((HibikiPairRequest _) async => true)
-      ..onPairPinGenerated = ((HibikiPairSession _) => shownPin)
+      ..onPairRequest = ((FushiPairRequest _) async => true)
+      ..onPairPinGenerated = ((FushiPairSession _) => shownPin)
       ..lanRequiresPinProvider = (() async => false);
     await server.start();
     for (int i = 0; i < 10; i++) {

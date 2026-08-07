@@ -13,8 +13,8 @@ import 'package:fushi_core/fushi_core.dart';
 ///  ② 迁移后能插入并读回 format='pdf' 的新行（PDF 落库路径可用）；
 ///  ③ user_version 升到当前 schemaVersion（51）。
 void main() {
-  Future<HibikiDatabase> openV50Db() async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+  Future<FushiDatabase> openV50Db() async {
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (rawDb) {
           rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -54,7 +54,7 @@ CREATE TABLE epub_books (
   }
 
   test('v51：既有 EPUB 行 format 回填为 epub（旧行零破坏）', () async {
-    final HibikiDatabase db = await openV50Db();
+    final FushiDatabase db = await openV50Db();
     final EpubBookRow? legacy = await db.getEpubBook('legacy_book');
     expect(legacy, isNotNull, reason: '旧行原样保留');
     expect(legacy!.title, '旧书');
@@ -66,8 +66,8 @@ CREATE TABLE epub_books (
   test('v51：可插入并读回 format=pdf 的 PDF 行（完整 schema，走真 insertEpubBook）', () async {
     // 用完整 schema 的 forTesting 库（onCreate 建全表 @v51，含 book_tombstones 等
     // insertEpubBook 依赖的表）——手搭 v50 shape 只有 epub_books，跑不了真插入 DAO。
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final String key = await db.insertEpubBook(
       EpubBooksCompanion.insert(
@@ -105,7 +105,7 @@ CREATE TABLE epub_books (
   });
 
   test('v51：user_version 升到当前 schemaVersion', () async {
-    final HibikiDatabase db = await openV50Db();
+    final FushiDatabase db = await openV50Db();
     await db.getEpubBook('legacy_book'); // 触发 open/migrate。
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();

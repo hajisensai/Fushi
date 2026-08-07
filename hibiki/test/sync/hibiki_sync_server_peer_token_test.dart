@@ -15,24 +15,24 @@ import 'package:http/http.dart' as http;
 /// (4) 向后兼容：confirm 不带 clientDeviceId（旧 client）-> 回退共享 token，不落 per-peer 行。
 void main() {
   late Directory tempDir;
-  late HibikiSyncServer server;
+  late FushiSyncServer server;
   // Fake per-peer 表：peerId -> token。onPeerPaired 写入、provider 读出全部 token。
   late Map<String, String> peerTable;
 
   Future<void> startServer({bool wirePeerCallbacks = true}) async {
     tempDir = Directory.systemTemp.createTempSync('hibiki_peer_token_test');
     peerTable = <String, String>{};
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0,
       token: 'shared-token',
       allowLan: true,
     )
-      ..onPairRequest = ((HibikiPairRequest _) async => true)
+      ..onPairRequest = ((FushiPairRequest _) async => true)
       ..lanRequiresPinProvider = (() async => false);
     if (wirePeerCallbacks) {
       server
-        ..onPeerPaired = ((HibikiPairedPeerRegistration reg) async {
+        ..onPeerPaired = ((FushiPairedPeerRegistration reg) async {
           peerTable[reg.peerId] = reg.token;
         })
         ..pairedPeerTokensProvider = (() async => peerTable.values.toSet());

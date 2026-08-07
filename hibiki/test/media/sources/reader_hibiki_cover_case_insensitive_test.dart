@@ -94,8 +94,8 @@ void main() {
     test(
         'coverPath 大小写与磁盘不符(小写)时，书架仍解析出磁盘上大小写保留的真实'
         '封面文件(case-sensitive 平台上修复前 imageUrl 会塌成 null)', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 

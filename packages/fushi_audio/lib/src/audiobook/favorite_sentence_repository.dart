@@ -41,7 +41,7 @@ SentenceSourceKind sentenceSourceKindOf(String? raw) =>
     SentenceSourceKind.tryParse(raw) ?? SentenceSourceKind.book;
 
 /// 收藏句删除传播墓碑的 mediaType（与收藏词 `'favoriteword'` 并列）。存进统一表
-/// [HibikiDatabase.writeSyncDeletionTombstone]，供 aggregate 并集抑制复活 + orchestrator
+/// [FushiDatabase.writeSyncDeletionTombstone]，供 aggregate 并集抑制复活 + orchestrator
 /// 逐条确认删对端两条通道共用。
 const String kFavoriteSentenceTombstoneType = 'favoritesentence';
 
@@ -123,7 +123,7 @@ class FavoriteSentence {
 class FavoriteSentenceRepository {
   FavoriteSentenceRepository(this._db);
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
 
   static const String _key = 'favorite_sentences';
 

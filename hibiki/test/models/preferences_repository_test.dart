@@ -5,14 +5,14 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late PreferencesRepository repo;
 
   setUp(() async {
@@ -760,7 +760,7 @@ void main() {
   // ── prefs-version cross-process change signal (TODO-855) ──────────────
   //
   // The bump now lives at the single lowest write choke point
-  // [HibikiDatabase.setPref], so EVERY writer advances it automatically. The
+  // [FushiDatabase.setPref], so EVERY writer advances it automatically. The
   // authoritative value is the DB row (read via [readPrefsVersionFromDb]); the
   // in-memory [prefsVersion] getter is only refreshed on a full [loadFromDb]
   // reload, NOT by this process's own setPref calls — hence the assertions
@@ -823,7 +823,7 @@ void main() {
     test('a direct DB write of an ordinary key also bumps (sunk into setPref)',
         () async {
       // Writers that bypass PreferencesRepository (ThemeNotifier, MediaSource,
-      // profile switch) go straight through HibikiDatabase.setPref and must
+      // profile switch) go straight through FushiDatabase.setPref and must
       // still bump — that is the whole point of sinking the bump down a layer.
       expect(await repo.readPrefsVersionFromDb(), 0);
       await db.setPref('app_ui_scale', PrefCodec.encode(1.25));

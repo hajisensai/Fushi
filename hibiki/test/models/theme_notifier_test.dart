@@ -13,13 +13,13 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
 
-class _DesignSystemMigrationRaceDatabase extends HibikiDatabase {
+class _DesignSystemMigrationRaceDatabase extends FushiDatabase {
   _DesignSystemMigrationRaceDatabase()
       : super.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
@@ -54,7 +54,7 @@ class _DesignSystemMigrationRaceDatabase extends HibikiDatabase {
 }
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late ThemeNotifier notifier;
 
   TextTheme textThemeBuilder() => const TextTheme();
@@ -463,7 +463,7 @@ void main() {
         });
 
         expect(notifier.designSystem, 'auto');
-        expect(notifier.designSystemTheme, HibikiDesignSystem.auto);
+        expect(notifier.designSystemTheme, FushiDesignSystem.auto);
         final Map<String, String> prefs = await db.getAllPrefs();
         expect(PrefCodec.decode(prefs['design_system']!, ''), 'auto');
       });
@@ -487,10 +487,10 @@ void main() {
       });
 
       expect(notifier.designSystem, 'material');
-      expect(notifier.designSystemTheme, HibikiDesignSystem.material);
+      expect(notifier.designSystemTheme, FushiDesignSystem.material);
       expect(
-        notifier.theme.extension<HibikiDesignSystemTheme>()!.designSystem,
-        HibikiDesignSystem.material,
+        notifier.theme.extension<FushiDesignSystemTheme>()!.designSystem,
+        FushiDesignSystem.material,
       );
     });
 
@@ -498,10 +498,10 @@ void main() {
       notifier.loadFromPrefsSnapshot(<String, String>{});
 
       expect(notifier.designSystem, 'auto');
-      expect(notifier.designSystemTheme, HibikiDesignSystem.auto);
+      expect(notifier.designSystemTheme, FushiDesignSystem.auto);
       expect(
-        notifier.theme.extension<HibikiDesignSystemTheme>()!.designSystem,
-        HibikiDesignSystem.auto,
+        notifier.theme.extension<FushiDesignSystemTheme>()!.designSystem,
+        FushiDesignSystem.auto,
       );
     });
 
@@ -511,7 +511,7 @@ void main() {
       });
 
       expect(notifier.designSystem, 'auto');
-      expect(notifier.designSystemTheme, HibikiDesignSystem.auto);
+      expect(notifier.designSystemTheme, FushiDesignSystem.auto);
     });
 
     test('setDesignSystem rejects hidden values by normalizing to auto',
@@ -534,7 +534,7 @@ void main() {
       // 模拟另一进程在本进程拿到旧 snapshot 后已选择 material。
       await db.setPref('design_system', materialRaw);
       final String versionBeforeMigration =
-          (await db.getPref(HibikiDatabase.prefsVersionKey))!;
+          (await db.getPref(FushiDatabase.prefsVersionKey))!;
       int notifyCount = 0;
       notifier.addListener(() => notifyCount++);
 
@@ -544,7 +544,7 @@ void main() {
       expect(await db.getPref('design_system'), materialRaw);
       expect(notifier.designSystem, 'material');
       expect(
-        await db.getPref(HibikiDatabase.prefsVersionKey),
+        await db.getPref(FushiDatabase.prefsVersionKey),
         versionBeforeMigration,
         reason: 'CAS 失败不能 bump prefs_version',
       );
@@ -619,10 +619,10 @@ void main() {
       final File databaseFile = File(
         '${tempDirectory.path}${Platform.pathSeparator}preferences.sqlite',
       );
-      final HibikiDatabase processADb = HibikiDatabase.forTesting(
+      final FushiDatabase processADb = FushiDatabase.forTesting(
         DatabaseConnection(NativeDatabase(databaseFile)),
       );
-      final HibikiDatabase processBDb = HibikiDatabase.forTesting(
+      final FushiDatabase processBDb = FushiDatabase.forTesting(
         DatabaseConnection(NativeDatabase(databaseFile)),
       );
       final ThemeNotifier processANotifier =
@@ -647,7 +647,7 @@ void main() {
           PrefCodec.encode('material'),
         );
         final String versionBeforeMigration =
-            (await processBDb.getPref(HibikiDatabase.prefsVersionKey))!;
+            (await processBDb.getPref(FushiDatabase.prefsVersionKey))!;
         releaseStaleSnapshot.complete();
         await delayedMigration;
 
@@ -657,7 +657,7 @@ void main() {
         );
         expect(processANotifier.designSystem, 'material');
         expect(
-          await processBDb.getPref(HibikiDatabase.prefsVersionKey),
+          await processBDb.getPref(FushiDatabase.prefsVersionKey),
           versionBeforeMigration,
         );
       } finally {
@@ -682,7 +682,7 @@ void main() {
       notifier.loadFromPrefsSnapshot(staleSnapshot);
       await pumpEventQueue(times: 10);
       final String versionAfterFirstMigration =
-          (await db.getPref(HibikiDatabase.prefsVersionKey))!;
+          (await db.getPref(FushiDatabase.prefsVersionKey))!;
       expect(
         PrefCodec.decode<int>(versionAfterFirstMigration, 0),
         2,
@@ -700,7 +700,7 @@ void main() {
         'auto',
       );
       expect(
-        await db.getPref(HibikiDatabase.prefsVersionKey),
+        await db.getPref(FushiDatabase.prefsVersionKey),
         versionAfterFirstMigration,
         reason: '重复旧 snapshot 的 CAS 失败不能再次 bump',
       );
@@ -752,7 +752,7 @@ void main() {
       });
 
       expect(notifier.appUiScale, 1.5);
-      expect(notifier.appUiScale, HibikiAppUiScale.normalize(1.5));
+      expect(notifier.appUiScale, FushiAppUiScale.normalize(1.5));
     });
 
     test('out-of-range app_ui_scale=5.0 → clamped to maxScale (3.0)', () {
@@ -760,8 +760,8 @@ void main() {
         'app_ui_scale': PrefCodec.encode(5.0),
       });
 
-      expect(HibikiAppUiScale.maxScale, 3.0);
-      expect(notifier.appUiScale, HibikiAppUiScale.maxScale);
+      expect(FushiAppUiScale.maxScale, 3.0);
+      expect(notifier.appUiScale, FushiAppUiScale.maxScale);
       expect(notifier.appUiScale, 3.0);
     });
 
@@ -770,8 +770,8 @@ void main() {
         'app_ui_scale': PrefCodec.encode(0.1),
       });
 
-      expect(HibikiAppUiScale.minScale, 0.3);
-      expect(notifier.appUiScale, HibikiAppUiScale.minScale);
+      expect(FushiAppUiScale.minScale, 0.3);
+      expect(notifier.appUiScale, FushiAppUiScale.minScale);
       expect(notifier.appUiScale, 0.3);
     });
 
@@ -779,9 +779,9 @@ void main() {
         () {
       notifier.loadFromPrefsSnapshot(<String, String>{});
 
-      expect(HibikiAppUiScale.defaultScale, 1.0);
+      expect(FushiAppUiScale.defaultScale, 1.0);
       // 种子前（无视口解析）退回当前自动值，默认 1.0。
-      expect(notifier.appUiScale, HibikiAppUiScale.defaultScale);
+      expect(notifier.appUiScale, FushiAppUiScale.defaultScale);
       expect(notifier.appUiScale, 1.0);
     });
 
@@ -820,7 +820,7 @@ void main() {
         'app_ui_scale_mode': PrefCodec.encode(ThemeNotifier.appUiScaleModeAuto),
         'app_ui_scale': PrefCodec.encode(2),
       });
-      expect(notifier.appUiScale, HibikiAppUiScale.defaultScale,
+      expect(notifier.appUiScale, FushiAppUiScale.defaultScale,
           reason: '种子前旧 auto 用户不使用陈旧的 app_ui_scale 值');
 
       // 首次按真实视口解析：算出合适值并落盘成具体数值，覆盖陈旧值。

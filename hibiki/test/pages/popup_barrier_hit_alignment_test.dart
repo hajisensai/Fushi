@@ -12,7 +12,7 @@ import '../widgets/widget_test_helpers.dart';
 /// TODO-834 后点真空白清整栈）同处一个 `Stack`，弹窗在 barrier 之上。点弹窗内应
 /// 被弹窗吃掉、点弹窗外才落到 barrier（命中区几何不受 TODO-834 关闭语义改动影响）。
 ///
-/// 根因：弹窗 surface（[HibikiPopupSurface] = `Material`）本身不吸收指针；只有
+/// 根因：弹窗 surface（[FushiPopupSurface] = `Material`）本身不吸收指针；只有
 /// 内部 WebView 正文区与按钮命中真值。带顶栏（音频控制 / X / 返回）时，顶栏的
 /// **空白区**、surface 的边框/圆角余白都不吸收点击 → 落到下面的 barrier → 关窗。
 /// 用户因此感到「点击消失的位置和弹窗外边有差异」：明明点在弹窗可视范围内（顶栏

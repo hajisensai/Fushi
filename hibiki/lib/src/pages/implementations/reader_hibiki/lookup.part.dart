@@ -175,7 +175,7 @@ extension _ReaderLookup on _ReaderHibikiPageState {
       data.text,
     );
     appModel.currentMediaSource?.setCurrentSentence(
-      selection: HibikiTextSelection(text: sentenceText),
+      selection: FushiTextSelection(text: sentenceText),
     );
     _cachedSentenceOffset = data.sentenceOffset;
 

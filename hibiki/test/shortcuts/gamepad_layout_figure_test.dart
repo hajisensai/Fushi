@@ -177,12 +177,12 @@ void main() {
       LocaleSettings.setLocale(AppLocale.en);
     });
 
-    HibikiShortcutRegistry buildRegistry() =>
-        HibikiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
+    FushiShortcutRegistry buildRegistry() =>
+        FushiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
 
     Future<void> pumpView(
       WidgetTester tester,
-      HibikiShortcutRegistry registry,
+      FushiShortcutRegistry registry,
       ShortcutScope scope, {
       void Function(GamepadButton)? onEmptyGamepadTap,
       void Function(GamepadButton, List<ShortcutAction>)? onGamepadTap,
@@ -215,7 +215,7 @@ void main() {
 
     testWidgets('renders all 17 keyed buttons in one figure',
         (WidgetTester tester) async {
-      final HibikiShortcutRegistry registry = buildRegistry();
+      final FushiShortcutRegistry registry = buildRegistry();
       await pumpView(tester, registry, ShortcutScope.reader);
       for (final GamepadButton button in GamepadButton.values) {
         expect(find.byKey(Key('gamepad_btn_${button.label}')), findsOneWidget,
@@ -226,7 +226,7 @@ void main() {
     testWidgets(
         'the controller chassis silhouette is painted behind the buttons '
         '(TODO-942 v2)', (WidgetTester tester) async {
-      final HibikiShortcutRegistry registry = buildRegistry();
+      final FushiShortcutRegistry registry = buildRegistry();
       await pumpView(tester, registry, ShortcutScope.reader);
       // The "后面的手柄图案" the user demanded: a controller-body silhouette
       // drawn behind the button icons. Pin its CustomPainter presence so a
@@ -250,7 +250,7 @@ void main() {
 
     testWidgets('the dpad renders as ONE unified cross cluster (TODO-942 v3)',
         (WidgetTester tester) async {
-      final HibikiShortcutRegistry registry = buildRegistry();
+      final FushiShortcutRegistry registry = buildRegistry();
       await pumpView(tester, registry, ShortcutScope.reader);
       // 用户截图回归：十字键不许再裂成四颗散装钮——四臂必须都住在同一个
       // GamepadDpadCluster 里（视觉聚合），但每臂保留独立 Key/绑定/高亮。
@@ -272,7 +272,7 @@ void main() {
     testWidgets(
         'a dpad arm stays independently bindable and taps route with its '
         'actions', (WidgetTester tester) async {
-      final HibikiShortcutRegistry registry = buildRegistry();
+      final FushiShortcutRegistry registry = buildRegistry();
       registry.updateBinding(
         ShortcutAction.readerToggleFurigana,
         const ShortcutBindingSet(
@@ -301,7 +301,7 @@ void main() {
 
     testWidgets('a bound button renders highlighted (bound=true)',
         (WidgetTester tester) async {
-      final HibikiShortcutRegistry registry = buildRegistry();
+      final FushiShortcutRegistry registry = buildRegistry();
       registry.updateBinding(
         ShortcutAction.readerToggleFurigana,
         const ShortcutBindingSet(
@@ -322,7 +322,7 @@ void main() {
 
     testWidgets('bound tap routes onGamepadTap with the bound actions',
         (WidgetTester tester) async {
-      final HibikiShortcutRegistry registry = buildRegistry();
+      final FushiShortcutRegistry registry = buildRegistry();
       registry.updateBinding(
         ShortcutAction.readerToggleFurigana,
         const ShortcutBindingSet(
@@ -348,7 +348,7 @@ void main() {
 
     testWidgets('unbound tap routes onEmptyGamepadTap (key-first assignment)',
         (WidgetTester tester) async {
-      final HibikiShortcutRegistry registry = buildRegistry();
+      final FushiShortcutRegistry registry = buildRegistry();
       GamepadButton? emptyTapped;
       await pumpView(
         tester,
@@ -364,7 +364,7 @@ void main() {
     testWidgets(
         'narrow screen falls back to a horizontal scroll, no overflow '
         '(TODO-942 P1)', (WidgetTester tester) async {
-      final HibikiShortcutRegistry registry = buildRegistry();
+      final FushiShortcutRegistry registry = buildRegistry();
       // 320 logical px is below minFigureWidth: the figure must keep its ideal
       // width inside a horizontal scroll instead of squashing/overflowing.
       await pumpView(tester, registry, ShortcutScope.reader,
@@ -389,7 +389,7 @@ void main() {
 
     testWidgets('brand switch re-skins icons without touching keys',
         (WidgetTester tester) async {
-      final HibikiShortcutRegistry registry = buildRegistry();
+      final FushiShortcutRegistry registry = buildRegistry();
       await pumpView(tester, registry, ShortcutScope.reader,
           brand: GamepadBrand.playstation);
       // TODO-942: face buttons render the PlayStation Kenney icon (✕ cross),

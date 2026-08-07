@@ -447,7 +447,7 @@ class VideoSubtitleStyle {
   }
 
   static double _normalizeUiScale(double uiScale) {
-    return HibikiAppUiScale.normalize(uiScale);
+    return FushiAppUiScale.normalize(uiScale);
   }
 }
 

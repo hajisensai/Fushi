@@ -232,7 +232,7 @@ class GamepadService {
   final GlobalKey<NavigatorState> navigatorKey;
 
   /// TODO-1113 P3: reads whether the experimental focus-navigation layer is
-  /// currently enabled (the [HibikiFocusRoot] is mounted). When it is, a mouse
+  /// currently enabled (the [FushiFocusRoot] is mounted). When it is, a mouse
   /// DOWN on a focus target carries directional focus there, so [_onPointerGlobal]
   /// must NOT immediately drop the ring back to touch on that press — otherwise
   /// the focus a click just placed would be invisible. Hover/move still hide the
@@ -244,7 +244,7 @@ class GamepadService {
   /// Resolves which action a controller button is bound to, used by the global
   /// LB/RB scroll-page fallback so a user-rebound key still works. Null in tests
   /// that don't exercise scrolling.
-  final HibikiShortcutRegistry? registry;
+  final FushiShortcutRegistry? registry;
 
   _PluginGamepadPoller? _poller;
 
@@ -485,13 +485,13 @@ class GamepadService {
     // (statistics/logs) focus is the top-level fallback node, which sits ABOVE
     // the page scaffold's PrimaryScrollController, so a context lookup from
     // focus can never reach it. Fall back to a context lookup for pages not
-    // built on HibikiPageScaffold (e.g. home tab content, focus inside list).
+    // built on FushiPageScaffold (e.g. home tab content, focus inside list).
     final ScrollController? pageController = PageScrollRegistry.current;
     if (pageController != null &&
-        HibikiFocusScroll.scrollController(pageController, fraction)) {
+        FushiFocusScroll.scrollController(pageController, fraction)) {
       return true;
     }
-    return HibikiFocusScroll.scrollPrimary(context, fraction);
+    return FushiFocusScroll.scrollPrimary(context, fraction);
   }
 
   /// Routes a long-press (A held past the threshold) to the focused widget as a
@@ -536,7 +536,7 @@ class GamepadService {
         event is PointerMoveEvent ||
         event is PointerPanZoomStartEvent) {
       // TODO-1113 P3: when focus navigation is enabled, a mouse DOWN carries
-      // directional focus to the clicked target (HibikiFocusTarget), so the ring
+      // directional focus to the clicked target (FushiFocusTarget), so the ring
       // must stay lit on that press to show where focus landed. Hover/move/pan
       // still hide it (a mouse merely passing over must not keep a ring — 保守
       // 方案 b: no ring flicker for pure-mouse users). Everything else, and when
@@ -739,8 +739,8 @@ bool gamepadMoveFocusInDirection(
   BuildContext context,
   TraversalDirection direction,
 ) {
-  final HibikiFocusController? controller =
-      HibikiFocusRoot.maybeControllerOf(context);
+  final FushiFocusController? controller =
+      FushiFocusRoot.maybeControllerOf(context);
   if (controller != null) {
     if (controller.move(hibikiFocusDirectionFromTraversal(direction))) {
       return true;
@@ -755,10 +755,10 @@ bool gamepadMoveFocusInDirection(
         controller.activeContext ?? FocusManager.instance.primaryFocus?.context;
     if (controller.activeIsOnlyFocusableInNearestScrollable &&
         focusContext != null &&
-        HibikiFocusScroll.scrollByViewportFraction(
+        FushiFocusScroll.scrollByViewportFraction(
           focusContext,
           axisDirectionFromTraversal(direction),
-          HibikiFocusScroll.signedFractionFor(direction, 0.8),
+          FushiFocusScroll.signedFractionFor(direction, 0.8),
         )) {
       return true;
     }

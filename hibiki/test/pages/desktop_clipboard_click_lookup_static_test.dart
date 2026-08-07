@@ -54,7 +54,7 @@ void main() {
 
     final int panelIndex = resultBody.indexOf('SourceLookupTextPanel(');
     final int neutralizerIndex =
-        resultBody.indexOf('HibikiAppUiScaleNeutralizer(');
+        resultBody.indexOf('FushiAppUiScaleNeutralizer(');
     final int webViewIndex = resultBody.indexOf('DictionaryPopupWebView(');
     expect(panelIndex, isNonNegative);
     expect(neutralizerIndex, isNonNegative);

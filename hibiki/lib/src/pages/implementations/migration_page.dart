@@ -160,7 +160,7 @@ class _MigrationPageState extends State<MigrationPage> {
           Text(t.migration_intro),
           const SizedBox(height: 16),
           if (_allDone)
-            HibikiCard(
+            FushiCard(
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Text(t.migration_readonly_note),
@@ -189,8 +189,8 @@ class _MigrationPageState extends State<MigrationPage> {
             ),
             const SizedBox(height: 8),
             for (final MigrationBatch batch in batches)
-              HibikiListItem(
-                density: HibikiListDensity.compact,
+              FushiListItem(
+                density: FushiListDensity.compact,
                 leading: _doneBatches.contains(batch.name)
                     ? const Icon(Icons.check_circle_outline)
                     : (_currentBatch == batch.name

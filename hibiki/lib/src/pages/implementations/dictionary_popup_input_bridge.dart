@@ -62,7 +62,7 @@ class DictionaryPopupInputSpec {
 /// 靠 spec 相等性决定要不要重新注入，顺序抖动会造成无谓的重复注入）。同一 token
 /// 在多个 action 上重复绑定时只保留一次。
 ///
-/// 注册表尚未装载（[HibikiShortcutRegistry.isLoaded] 为 false）时返回空 spec：那时
+/// 注册表尚未装载（[FushiShortcutRegistry.isLoaded] 为 false）时返回空 spec：那时
 /// `bindingsFor` 对每个动作都返回空集，与「用户主动清空了绑定」在数据上不可区分，
 /// 按空表下发即可（弹窗侧不拦任何键），等装载完成宿主会再注入一次真表。
 ///
@@ -72,7 +72,7 @@ class DictionaryPopupInputSpec {
 /// （BUG-924），整个 video scope 都要转发，与弹窗内动作撞键的概率最高。放在数据层做
 /// 减法，JS 侧就不必再判一次 scope。
 DictionaryPopupInputSpec dictionaryPopupInputSpecFor({
-  required HibikiShortcutRegistry registry,
+  required FushiShortcutRegistry registry,
   required Iterable<ShortcutAction> actions,
 }) {
   if (!registry.isLoaded) return const DictionaryPopupInputSpec();
@@ -118,7 +118,7 @@ DictionaryPopupInputSpec dictionaryPopupInputSpecFor({
 /// Esc 关词典会在**弹窗持焦时**整条失效：Esc 现在绑在 universal 的 globalBack 上，
 /// 而宿主 scope 里根本没有它——BUG-1071 修好的正是这条弹窗持焦路径，不能重开。
 ShortcutAction? resolveDictionaryPopupInputToken({
-  required HibikiShortcutRegistry registry,
+  required FushiShortcutRegistry registry,
   required String token,
   required ShortcutScope scope,
 }) {

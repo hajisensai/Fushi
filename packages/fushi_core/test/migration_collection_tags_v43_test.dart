@@ -18,8 +18,8 @@ import 'package:fushi_core/fushi_core.dart';
 
 /// 手写一个 v42 库：media_collections（含一条真实合集行）+ user_version=42。
 /// 开库触发 onUpgrade(42 -> 当前)，只有 from<43 步会 createTable(collectionTagMappings)。
-HibikiDatabase _openMigratedFromV42() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _openMigratedFromV42() {
+  return FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (raw) {
         raw.execute('PRAGMA foreign_keys = ON');
@@ -49,7 +49,7 @@ CREATE TABLE media_collections (
 void main() {
   test('v42 -> v43 creates collection_tag_mappings with zero loss of old rows',
       () async {
-    final HibikiDatabase db = _openMigratedFromV42();
+    final FushiDatabase db = _openMigratedFromV42();
     addTearDown(db.close);
 
     // Opening runs onUpgrade(42 -> current). Compare to the live schemaVersion
@@ -77,8 +77,8 @@ void main() {
 
   test('fresh DB has collection_tag_mappings from createAll (no onUpgrade)',
       () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     // onCreate's createAll must include the new table; querying it proves it

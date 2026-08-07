@@ -275,11 +275,11 @@ abstract class BaseAudioField extends AudioExportField {
             position = Duration.zero;
           }
 
-          return HibikiTimeFormat.getVideoDurationText(position).trim();
+          return FushiTimeFormat.getVideoDurationText(position).trim();
         }
 
         String getDurationText() {
-          return HibikiTimeFormat.getVideoDurationText(duration).trim();
+          return FushiTimeFormat.getVideoDurationText(duration).trim();
         }
 
         return Text(

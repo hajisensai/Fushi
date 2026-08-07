@@ -61,7 +61,7 @@ void main() {
           reason: 'Windows itest must never terminate the user app.');
 
       final int snapshotStart =
-          script.indexOf('function Get-HibikiProcessSnapshot');
+          script.indexOf('function Get-FushiProcessSnapshot');
       final int snapshotEnd = script.indexOf('function Add-RunnerSnapshot');
       expect(snapshotStart, isNot(-1),
           reason: 'Process classification helper must exist.');

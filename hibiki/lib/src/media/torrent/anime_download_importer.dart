@@ -51,7 +51,7 @@ Future<AnimeDownloadImportOutcome?> Function(
   AnimeDownloadPlan plan,
   List<String> videoAbsolutePaths,
 ) buildAnimeDownloadImporter(
-  HibikiDatabase db, {
+  FushiDatabase db, {
   http.Client? httpClient,
   Directory? collectionCoversDirectory,
 }) {

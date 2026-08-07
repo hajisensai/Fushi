@@ -104,11 +104,11 @@ void main() {
 
   group('键桥 token 表按注册表当前绑定导出 (BUG-1426)', () {
     test('未装载的注册表给空表（与「用户清空绑定」同等对待）', () {
-      expect(spreadKeyBridgeTokens(HibikiShortcutRegistry()), isEmpty);
+      expect(spreadKeyBridgeTokens(FushiShortcutRegistry()), isEmpty);
     });
 
     test('导出翻页/唤栏/退出的当前绑定，且恒排除裸 Space', () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadDefaults(TargetPlatform.windows);
 
       final List<String> tokens = spreadKeyBridgeTokens(registry);
@@ -144,7 +144,7 @@ void main() {
     });
 
     test('改键后 token 表跟着变（不是硬编码键名）', () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadDefaults(TargetPlatform.windows)
         ..updateBinding(
           ShortcutAction.readerPageForward,
@@ -179,8 +179,8 @@ void main() {
     /// scope 一概不试」。
     const InputBinding notBridged = InputBinding(key: LogicalKeyboardKey.keyL);
 
-    HibikiShortcutRegistry loadedRegistry() =>
-        HibikiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
+    FushiShortcutRegistry loadedRegistry() =>
+        FushiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
 
     /// PR#722 落地后生产动作集里已经混进了 universal scope 的「返回上一级」
     /// （[ShortcutAction.globalBack]），这正是 BUG-1442 修完要让它跑起来的那件事：
@@ -222,7 +222,7 @@ void main() {
     });
 
     test('动作集里混入别的 scope 时，那个 scope 的键真能解析到', () {
-      final HibikiShortcutRegistry registry = loadedRegistry()
+      final FushiShortcutRegistry registry = loadedRegistry()
         ..updateBinding(
           ShortcutAction.globalBack,
           const ShortcutBindingSet(
@@ -265,7 +265,7 @@ void main() {
     });
 
     test('同键被页面 scope 与兜底 scope 都绑时，页面专属胜出', () {
-      final HibikiShortcutRegistry registry = loadedRegistry()
+      final FushiShortcutRegistry registry = loadedRegistry()
         ..updateBinding(
           ShortcutAction.readerPageForward,
           const ShortcutBindingSet(keyboardBindings: <InputBinding>[shared]),
@@ -291,7 +291,7 @@ void main() {
     });
 
     test('裸 Space 的排除与 scope 无关：兜底 scope 的动作绑裸 Space 也进不了表', () {
-      final HibikiShortcutRegistry registry = loadedRegistry()
+      final FushiShortcutRegistry registry = loadedRegistry()
         ..updateBinding(
           ShortcutAction.globalBack,
           const ShortcutBindingSet(
@@ -325,7 +325,7 @@ void main() {
     });
 
     test('spread 专属键（翻页/唤栏/退书）解析结果一字不变', () {
-      final HibikiShortcutRegistry registry = loadedRegistry();
+      final FushiShortcutRegistry registry = loadedRegistry();
       // 默认绑定下逐个动作的每条键盘绑定都必须解析回它自己（裸 Space 那条走
       // onSpaceKey 桥，不在本表，故按同一规则跳过）。
       for (final ShortcutAction action in kSpreadBridgedActions) {

@@ -67,7 +67,7 @@ void main() {
   // 刮削落盘点走 evictLocalCoverCache（需要 PaintingBinding）。
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late VideoBookRepository repo;
   late Directory tmp;
 
@@ -79,7 +79,7 @@ void main() {
     // 显式开 foreign_keys：`forTesting` 直接吃裸 NativeDatabase，不走 _openDb 的
     // PRAGMA 设置，默认 FK 是关的。真实 app 恒开，cascade 断言必须在同样语义下跑
     // 才有意义（否则「删视频不清资料行」这种真缺陷会被测试放过）。
-    db = HibikiDatabase.forTesting(NativeDatabase.memory(
+    db = FushiDatabase.forTesting(NativeDatabase.memory(
       setup: (rawDb) => rawDb.execute('PRAGMA foreign_keys = ON'),
     ));
     repo = VideoBookRepository(db);

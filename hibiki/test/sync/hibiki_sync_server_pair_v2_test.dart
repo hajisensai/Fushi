@@ -9,7 +9,7 @@ import 'package:http/http.dart' as http;
 // TODO-961 M1 §3.6 behavior tests for /api/pair/v2 + /api/pair/v2/confirm.
 void main() {
   late Directory tempDir;
-  late HibikiSyncServer server;
+  late FushiSyncServer server;
   String? shownPin;
   // TODO-1296 / BUG-592: record each host-approval invocation's pinRequired so
   // tests can assert *when* (create vs confirm) the PIN-showing approval fires.
@@ -25,17 +25,17 @@ void main() {
     approvalPinRequired = <bool>[];
     sessionResolvedCount = 0;
     tempDir = Directory.systemTemp.createTempSync('hibiki_pair_v2_test');
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0,
       token: 'super-secret-token',
       allowLan: true,
     )
-      ..onPairRequest = ((HibikiPairRequest r) async {
+      ..onPairRequest = ((FushiPairRequest r) async {
         approvalPinRequired.add(r.pinRequired);
         return approve;
       })
-      ..onPairPinGenerated = ((HibikiPairSession s) {
+      ..onPairPinGenerated = ((FushiPairSession s) {
         shownPin = '482913';
         return shownPin!;
       })
@@ -103,7 +103,7 @@ void main() {
     await startServer(lanRequiresPin: true);
     const String clientNonce = 'cn-4';
     final Map<String, dynamic> start = await startSession(clientNonce);
-    final String pinProof = HibikiPairingProtocol.computePinProof(
+    final String pinProof = FushiPairingProtocol.computePinProof(
       pin: shownPin!,
       clientNonce: clientNonce,
       hostNonce: start['hostNonce'] as String,
@@ -125,7 +125,7 @@ void main() {
     await startServer(lanRequiresPin: true);
     const String clientNonce = 'cn-5';
     final Map<String, dynamic> start = await startSession(clientNonce);
-    final String wrongProof = HibikiPairingProtocol.computePinProof(
+    final String wrongProof = FushiPairingProtocol.computePinProof(
       pin: '000000',
       clientNonce: clientNonce,
       hostNonce: start['hostNonce'] as String,
@@ -177,7 +177,7 @@ void main() {
     expect(approvalPinRequired, <bool>[true],
         reason: 'host approval (PIN display) must happen during /api/pair/v2');
     // Confirm with the correct proof must NOT trigger a second approval prompt.
-    final String pinProof = HibikiPairingProtocol.computePinProof(
+    final String pinProof = FushiPairingProtocol.computePinProof(
       pin: shownPin!,
       clientNonce: clientNonce,
       hostNonce: start['hostNonce'] as String,
@@ -224,7 +224,7 @@ void main() {
     final Map<String, dynamic> start = await startSession(clientNonce);
     expect(sessionResolvedCount, 0,
         reason: 'CREATE 阶段不算「已解决」——client 还没读到 PIN。');
-    final String pinProof = HibikiPairingProtocol.computePinProof(
+    final String pinProof = FushiPairingProtocol.computePinProof(
       pin: shownPin!,
       clientNonce: clientNonce,
       hostNonce: start['hostNonce'] as String,
@@ -247,7 +247,7 @@ void main() {
     await startServer(lanRequiresPin: true);
     const String clientNonce = 'cn-resolve-wrong';
     final Map<String, dynamic> start = await startSession(clientNonce);
-    final String wrongProof = HibikiPairingProtocol.computePinProof(
+    final String wrongProof = FushiPairingProtocol.computePinProof(
       pin: '000000',
       clientNonce: clientNonce,
       hostNonce: start['hostNonce'] as String,
@@ -320,7 +320,7 @@ void main() {
 
   test('no approval UI yields pair v2 403 unavailable', () async {
     tempDir = Directory.systemTemp.createTempSync('hibiki_pair_v2_test');
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0,
       token: 't',

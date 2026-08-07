@@ -67,7 +67,7 @@ void main() {
 
       expect(tester.takeException(), isNull);
 
-      final Size sheetSize = tester.getSize(find.byType(HibikiModalSheetFrame));
+      final Size sheetSize = tester.getSize(find.byType(FushiModalSheetFrame));
       // Old behaviour capped the body at 320px; the sheet (header + body +
       // footer) is even larger now. Assert it clears that old ceiling with
       // margin so a regression to the cap is caught.

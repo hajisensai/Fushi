@@ -17,8 +17,8 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _memDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _memDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 /// One chapter of 1000 characters keeps fraction math simple.
 const String _chaptersJson = '[{"characters":1000}]';
@@ -219,7 +219,7 @@ class _RemoteBook {
   }
 }
 
-Future<EpubBookRow> _seedBook(HibikiDatabase db, String title) async {
+Future<EpubBookRow> _seedBook(FushiDatabase db, String title) async {
   await db.insertEpubBook(EpubBooksCompanion.insert(
     bookKey: title,
     title: title,
@@ -233,7 +233,7 @@ Future<EpubBookRow> _seedBook(HibikiDatabase db, String title) async {
 }
 
 Future<void> _seedPosition(
-  HibikiDatabase db,
+  FushiDatabase db,
   String bookKey, {
   required int updatedAt,
   required double fraction,
@@ -266,8 +266,8 @@ void main() {
 
   /// Seeds a forked BookA (both sides off baseline 50) so the conflictsOnly
   /// dialog has a real conflict row to render.
-  Future<(HibikiDatabase, _FakeSyncBackend)> seedForkedLibrary() async {
-    final HibikiDatabase db = _memDb();
+  Future<(FushiDatabase, _FakeSyncBackend)> seedForkedLibrary() async {
+    final FushiDatabase db = _memDb();
     final EpubBookRow book = await _seedBook(db, 'BookA');
     await _seedPosition(db, book.bookKey, updatedAt: 120, fraction: 0.6);
     await db.setSyncBaseline(sanitizeTtuFilename('BookA'), 'progress', 50);
@@ -331,7 +331,7 @@ void main() {
 
   testWidgets('manual source presents the conflict resolution dialog',
       (WidgetTester tester) async {
-    final (HibikiDatabase db, _FakeSyncBackend fake) =
+    final (FushiDatabase db, _FakeSyncBackend fake) =
         await seedForkedLibrary();
     addTearDown(db.close);
     final SyncConflictPrompter prompter = SyncConflictPrompter();
@@ -360,7 +360,7 @@ void main() {
 
   testWidgets('auto source while in-book does NOT present',
       (WidgetTester tester) async {
-    final (HibikiDatabase db, _FakeSyncBackend fake) =
+    final (FushiDatabase db, _FakeSyncBackend fake) =
         await seedForkedLibrary();
     addTearDown(db.close);
     final SyncConflictPrompter prompter = SyncConflictPrompter();
@@ -384,7 +384,7 @@ void main() {
   });
 
   testWidgets('background source never presents', (WidgetTester tester) async {
-    final (HibikiDatabase db, _FakeSyncBackend fake) =
+    final (FushiDatabase db, _FakeSyncBackend fake) =
         await seedForkedLibrary();
     addTearDown(db.close);
     final SyncConflictPrompter prompter = SyncConflictPrompter();
@@ -409,7 +409,7 @@ void main() {
 
   testWidgets('auto source out-of-book presents the dialog',
       (WidgetTester tester) async {
-    final (HibikiDatabase db, _FakeSyncBackend fake) =
+    final (FushiDatabase db, _FakeSyncBackend fake) =
         await seedForkedLibrary();
     addTearDown(db.close);
     final SyncConflictPrompter prompter = SyncConflictPrompter();

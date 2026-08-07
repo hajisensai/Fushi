@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// Losslessness proof for the v15 -> v16 book-key migration
-/// (HibikiDatabase._migrateBookKeyV16). Seeds a raw v15 schema with the
+/// (FushiDatabase._migrateBookKeyV16). Seeds a raw v15 schema with the
 /// autoincrement int id and every relation table, then opens it through
 /// `forTesting` to trigger onUpgrade, and asserts every reading-data row is
 /// still reachable by its new bookKey = sanitizeTtuFilename(title).
@@ -12,8 +12,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// Seed follows the migration_downgrade_test seed-raw-DB pattern: hand-written
 /// CREATE/INSERT of the v15 column shapes (NOT the current drift schema) so the
 /// migration is exercised against real legacy data.
-HibikiDatabase _openMigratedFromV15() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _openMigratedFromV15() {
+  return FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (raw) {
         // Mirror the production _openDb setup: FK enforcement ON. Without this
@@ -295,7 +295,7 @@ CREATE TABLE reading_statistics (
 
 void main() {
   test('v15->v16 re-keys all reading data to bookKey losslessly', () async {
-    final HibikiDatabase db = _openMigratedFromV15();
+    final FushiDatabase db = _openMigratedFromV15();
     addTearDown(db.close);
 
     // Opening forces the lazy DB to run onUpgrade(15 -> current). The v16

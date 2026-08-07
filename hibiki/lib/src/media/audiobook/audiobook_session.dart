@@ -26,7 +26,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 /// [controller] 引用喂给 play bar / 查词等 UI，不再拥有它。
 class AudiobookSession extends ChangeNotifier {
   AudiobookSession({
-    required HibikiAudioHandler? Function() audioHandler,
+    required FushiAudioHandler? Function() audioHandler,
     required bool Function() showFloatingLyric,
     required bool Function() showMediaNotification,
     required FloatingLyricStyle Function() floatingLyricStyle,
@@ -45,7 +45,7 @@ class AudiobookSession extends ChangeNotifier {
         _defaultFloatingLyricLookup = onFloatingLyricLookup,
         _controlStreams = controlStreams;
 
-  final HibikiAudioHandler? Function() _audioHandlerGetter;
+  final FushiAudioHandler? Function() _audioHandlerGetter;
   final bool Function() _showFloatingLyric;
   final bool Function() _showMediaNotification;
   final bool Function() _floatingLyricClickLookup;
@@ -421,7 +421,7 @@ class AudiobookSession extends ChangeNotifier {
 
   void _syncMediaNotification(AudiobookPlayerController controller) {
     if (!_showMediaNotification()) return;
-    final HibikiAudioHandler? handler = _audioHandlerGetter();
+    final FushiAudioHandler? handler = _audioHandlerGetter();
     if (handler == null) return;
     handler.updatePlaybackState(
       playing: controller.isPlaying,
@@ -593,7 +593,7 @@ class AudiobookSession extends ChangeNotifier {
   }
 
   void _setMediaItemWithCover(AudiobookPlayerController controller) {
-    final HibikiAudioHandler? handler = _audioHandlerGetter();
+    final FushiAudioHandler? handler = _audioHandlerGetter();
     if (handler == null) return;
     Uri? artUri;
     final String? coverPath = _book?.coverPath;

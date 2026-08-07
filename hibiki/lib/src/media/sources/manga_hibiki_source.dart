@@ -74,7 +74,7 @@ class MangaHibikiSource extends ReaderMediaSource {
         ReaderHibikiSource.parseBookKey(item?.mediaIdentifier ?? '') ?? '';
     // 漫画在 WebView 里按原生密度渲染；与阅读器一致包 UI-scale 中和层，
     // 保证弹窗坐标契约（JS getClientRects 视口坐标 → 屏幕坐标恒等映射）。
-    return HibikiAppUiScaleNeutralizer(
+    return FushiAppUiScaleNeutralizer(
       child: MangaHibikiPage(item: item, bookKey: bookKey),
     );
   }
@@ -102,10 +102,10 @@ class MangaHibikiSource extends ReaderMediaSource {
     required BuildContext context,
     required WidgetRef ref,
     required AppModel appModel,
-    HibikiFocusId? focusId,
+    FushiFocusId? focusId,
     String? label,
   }) {
-    return HibikiIconButton(
+    return FushiIconButton(
       tooltip: t.manga_import_action,
       label: label,
       icon: Icons.library_add_outlined,

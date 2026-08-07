@@ -120,7 +120,7 @@ void main() {
 
     test('default video keys resolve through the registry (asbplayer/mpv map)',
         () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadDefaults(TargetPlatform.windows);
       expect(
         registry.resolveKeyboard(LogicalKeyboardKey.space,
@@ -172,7 +172,7 @@ void main() {
     test(
         'rebind -> save (toJson) -> load (fromJson) -> resolves to the NEW key, '
         'and the player activator map points the new key at the action', () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadDefaults(TargetPlatform.windows);
       expect(
         registry.resolveKeyboard(LogicalKeyboardKey.keyS,
@@ -190,7 +190,7 @@ void main() {
       );
 
       final String json = registry.toJsonString();
-      final HibikiShortcutRegistry reloaded = HibikiShortcutRegistry()
+      final FushiShortcutRegistry reloaded = FushiShortcutRegistry()
         ..loadFromJsonString(json, TargetPlatform.windows);
 
       expect(
@@ -231,7 +231,7 @@ void main() {
     test(
         'buildVideoPlayerShortcutsFromRegistry keeps subtitle-blur '
         'press-edge-only (includeRepeats:false) while others repeat', () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadDefaults(TargetPlatform.windows);
       final Map<ShortcutActivator, VoidCallback> activators =
           buildVideoPlayerShortcutsFromRegistry(
@@ -263,7 +263,7 @@ void main() {
 
   test('toJson exposes a video action key (registry persistence covers video)',
       () {
-    final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+    final FushiShortcutRegistry registry = FushiShortcutRegistry()
       ..loadDefaults(TargetPlatform.windows);
     final Map<String, dynamic> json = registry.toJson();
     expect(json.containsKey(ShortcutAction.videoScreenshot.key), isTrue);
@@ -295,7 +295,7 @@ void main() {
         'legacy snapshot (only F, no schema version) regains F12 after load '
         '— this is the F12-no-response fix; reverting the migration makes F12 '
         'resolve to null', () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadFromJsonString(legacyFullscreenJson(), TargetPlatform.windows);
 
       // F (the user's preserved key) still works.
@@ -329,7 +329,7 @@ void main() {
     test(
         'a snapshot the user actually rebound (fullscreen on G, not F) is NOT '
         'force-fed F12 — migration only touches untouched actions', () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadFromJsonString(
           legacyFullscreenJson(fullscreenKeyboard: <String>['KeyG']),
           TargetPlatform.windows,
@@ -364,7 +364,7 @@ void main() {
           'mouse': <String>[],
         },
       });
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadFromJsonString(currentJson, TargetPlatform.windows);
 
       expect(
@@ -382,7 +382,7 @@ void main() {
     });
 
     test('toJson now stamps the current schema version', () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadDefaults(TargetPlatform.windows);
       final Map<String, dynamic> json = registry.toJson();
       expect(json[kShortcutSchemaVersionKey], kShortcutSchemaVersion);

@@ -104,7 +104,7 @@ void main() {
 
           debugPrint('[M4] ✓ $item — opened successfully');
 
-          // Navigate back via the global HibikiPopIntent (gameButtonB) — no
+          // Navigate back via the global FushiPopIntent (gameButtonB) — no
           // coordinate tap, locale-independent.
           await driver.back();
           await tester.pump(const Duration(milliseconds: 250));
@@ -273,7 +273,7 @@ Future<void> _navigateToSettingsItem(
 }
 
 Future<void> _goBack(WidgetTester tester) async {
-  // Focus-driven back: the global HibikiPopIntent (gameButtonB) pops the route
+  // Focus-driven back: the global FushiPopIntent (gameButtonB) pops the route
   // without depending on a Back button's coordinates / tooltip locale.
   await FocusDriver(tester).back();
   await tester.pump(const Duration(milliseconds: 250));

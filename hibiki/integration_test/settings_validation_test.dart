@@ -298,7 +298,7 @@ Future<void> _scrollToFind(WidgetTester tester, String text) async {
 }
 
 Future<void> _goBack(WidgetTester tester) async {
-  // Focus-driven back: the global HibikiPopIntent (gameButtonB) pops the route
+  // Focus-driven back: the global FushiPopIntent (gameButtonB) pops the route
   // without depending on a Back button's coordinates / tooltip locale.
   await FocusDriver(tester).back();
   await tester.pump(const Duration(milliseconds: 250));

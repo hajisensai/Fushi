@@ -60,7 +60,7 @@ class MediaSourcesView extends ConsumerStatefulWidget {
 }
 
 class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
-    with HibikiPagePlaceholders<MediaSourcesView> {
+    with FushiPagePlaceholders<MediaSourcesView> {
   /// null = 仍在加载；非 null = 已加载（可能为空列表）。
   List<SourceLibraryRow>? _rows;
 
@@ -84,7 +84,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 对话框，扫描完成的 finally 里若再 `ref.read(appProvider)`，此 State 的
   /// ConsumerStatefulElement 已 dispose、ProviderScope 已销毁，
   /// `containerOf` 抛 `Bad state: No ProviderScope found`（BUG-513）。
-  late final HibikiDatabase _db;
+  late final FushiDatabase _db;
 
   /// 同 [_db]：`AppModel` 也在 initState 捕获。`_addLocalFolder` 要把它交给
   /// `pickRealDirectoryPath`（安卓那条腿用它申请全文件访问），而系统目录选择器是一段
@@ -140,12 +140,12 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget body = _buildBody(tokens);
     return widget.scrollable ? SingleChildScrollView(child: body) : body;
   }
 
-  Widget _buildBody(HibikiDesignTokens tokens) {
+  Widget _buildBody(FushiDesignTokens tokens) {
     final List<SourceLibraryRow>? rows = _rows;
     final bool? interconnectEnabled = _interconnectEnabled;
     if (rows == null || interconnectEnabled == null) {
@@ -172,12 +172,12 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   }
 
   Widget _buildFolderRows(
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     List<SourceLibraryRow> rows,
   ) {
-    // 自实现的 HibikiReorderableColumn（局部坐标长按拖拽，消祖先 HibikiAppUiScale
+    // 自实现的 FushiReorderableColumn（局部坐标长按拖拽，消祖先 FushiAppUiScale
     // 缩放），与 LocalAudioSourcesDialog 同款，而非 SDK ReorderableListView。
-    return HibikiReorderableColumn(
+    return FushiReorderableColumn(
       itemCount: rows.length,
       keyForIndex: (int index) =>
           ValueKey<String>('media_source_${rows[index].id}'),
@@ -194,7 +194,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   }
 
   Widget _buildVirtualSourceRow(
-    HibikiDesignTokens tokens, {
+    FushiDesignTokens tokens, {
     required IconData icon,
     required String title,
     required String subtitle,
@@ -247,7 +247,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     }
   }
 
-  Widget _buildRow(HibikiDesignTokens tokens, SourceLibraryRow row) {
+  Widget _buildRow(FushiDesignTokens tokens, SourceLibraryRow row) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
     final TextStyle? subStyle =
@@ -290,7 +290,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              HibikiIconButton(
+              FushiIconButton(
                 icon: Icons.refresh,
                 size: 18,
                 tooltip: t.media_source_rescan,
@@ -299,7 +299,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                 padding: EdgeInsets.all(tokens.spacing.gap / 2),
                 onTap: () => _rescan(row),
               ),
-              HibikiIconButton(
+              FushiIconButton(
                 icon: Icons.folder_open,
                 size: 18,
                 tooltip: t.media_source_open_folder,
@@ -308,7 +308,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                 padding: EdgeInsets.all(tokens.spacing.gap / 2),
                 onTap: () => _openFolder(row),
               ),
-              HibikiIconButton(
+              FushiIconButton(
                 icon: Icons.remove_circle_outline,
                 size: 18,
                 tooltip: t.media_source_remove,
@@ -372,7 +372,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   }
 
   /// 本地化无关的简洁时间格式（YYYY-MM-DD HH:MM）；不引 intl，跨 17 语言一致。
-  String _formatTime(DateTime time) => HibikiTimeFormat.dateHourMinute(time);
+  String _formatTime(DateTime time) => FushiTimeFormat.dateHourMinute(time);
 
   /// 拖拽重排后逐行回写 sortOrder（与 DAO orderBy(sortOrder, id) 对齐）。
   Future<void> _persistOrder() async {
@@ -468,7 +468,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final bool dup = existing.any(
         (SourceLibraryRow r) => r.transport == 'local' && r.rootPath == norm);
     if (dup) {
-      HibikiToast.show(msg: norm, severity: ToastSeverity.warning);
+      FushiToast.show(msg: norm, severity: ToastSeverity.warning);
       return;
     }
 
@@ -508,7 +508,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       return (cfg['host'] as String?) == result.host;
     });
     if (dup) {
-      HibikiToast.show(msg: norm, severity: ToastSeverity.warning);
+      FushiToast.show(msg: norm, severity: ToastSeverity.warning);
       return;
     }
 
@@ -734,7 +734,7 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
   Future<void> _testConnection() async {
     final String? error = _validate();
     if (error != null) {
-      HibikiToast.show(msg: error, severity: ToastSeverity.error);
+      FushiToast.show(msg: error, severity: ToastSeverity.error);
       return;
     }
     setState(() => _testing = true);
@@ -768,14 +768,14 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
         );
       }
       if (mounted) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.sync_connection_success,
           severity: ToastSeverity.success,
         );
       }
     } catch (e) {
       if (mounted) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: '${t.sync_connection_failed}: $e',
           severity: ToastSeverity.error,
         );
@@ -788,7 +788,7 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
   void _submit() {
     final String? error = _validate();
     if (error != null) {
-      HibikiToast.show(msg: error, severity: ToastSeverity.error);
+      FushiToast.show(msg: error, severity: ToastSeverity.error);
       return;
     }
     final String pass = _passwordController.text;
@@ -853,7 +853,7 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
               // WebDAV：整库定位靠单个集合 URL（含 scheme/host/端口/路径），故不显示
               // host/port/远端路径，只填 URL + 账号密码；SFTP/FTP 走 host/port/路径。
               if (_isWebDav) ...<Widget>[
-                HibikiTextField(
+                FushiTextField(
                   controller: _urlController,
                   labelText: t.sync_webdav_url,
                   hintText: 'https://dav.example.com/dav/books',
@@ -861,13 +861,13 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
                 const SizedBox(height: 12),
               ],
               if (!_isWebDav) ...<Widget>[
-                HibikiTextField(
+                FushiTextField(
                   controller: _hostController,
                   labelText: t.sync_host,
                   hintText: _isSftp ? 'ssh.example.com' : 'ftp.example.com',
                 ),
                 const SizedBox(height: 12),
-                HibikiTextField(
+                FushiTextField(
                   controller: _portController,
                   labelText: t.sync_port,
                   keyboardType: TextInputType.number,
@@ -875,19 +875,19 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
                 ),
                 const SizedBox(height: 12),
               ],
-              HibikiTextField(
+              FushiTextField(
                 controller: _userController,
                 labelText: t.sync_username,
               ),
               const SizedBox(height: 12),
-              HibikiTextField(
+              FushiTextField(
                 controller: _passwordController,
                 labelText: t.sync_password,
                 obscureText: true,
               ),
               if (_isSftp) ...<Widget>[
                 const SizedBox(height: 12),
-                HibikiTextField(
+                FushiTextField(
                   controller: _keyController,
                   labelText: t.sync_private_key,
                   hintText: '-----BEGIN OPENSSH PRIVATE KEY-----',
@@ -904,14 +904,14 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
               ],
               if (!_isWebDav) ...<Widget>[
                 const SizedBox(height: 12),
-                HibikiTextField(
+                FushiTextField(
                   controller: _pathController,
                   labelText: t.media_source_network_remote_path,
                   hintText: '/books',
                 ),
               ],
               const SizedBox(height: 12),
-              HibikiTextField(
+              FushiTextField(
                 controller: _labelController,
                 labelText: t.media_source_network_label_optional,
               ),

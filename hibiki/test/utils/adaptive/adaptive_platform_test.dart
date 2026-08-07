@@ -19,7 +19,7 @@ class _RecordingNavigatorObserver extends NavigatorObserver {
 Future<Route<dynamic>?> _pushAdaptiveRoute(
   WidgetTester tester, {
   required TargetPlatform platform,
-  required HibikiDesignSystem? designSystem,
+  required FushiDesignSystem? designSystem,
 }) async {
   final _RecordingNavigatorObserver observer = _RecordingNavigatorObserver();
   await tester.pumpWidget(
@@ -31,7 +31,7 @@ Future<Route<dynamic>?> _pushAdaptiveRoute(
         extensions: designSystem == null
             ? const <ThemeExtension<dynamic>>[]
             : <ThemeExtension<dynamic>>[
-                HibikiDesignSystemTheme(designSystem),
+                FushiDesignSystemTheme(designSystem),
               ],
       ),
       home: Builder(
@@ -61,7 +61,7 @@ void main() {
   Future<({bool cupertino, bool macos})> resolve(
     WidgetTester tester, {
     required TargetPlatform platform,
-    required HibikiDesignSystem designSystem,
+    required FushiDesignSystem designSystem,
   }) async {
     late ({bool cupertino, bool macos}) result;
     await tester.pumpWidget(
@@ -69,7 +69,7 @@ void main() {
         theme: ThemeData(
           platform: platform,
           extensions: <ThemeExtension<dynamic>>[
-            HibikiDesignSystemTheme(designSystem),
+            FushiDesignSystemTheme(designSystem),
           ],
         ),
         home: Builder(
@@ -94,7 +94,7 @@ void main() {
       final result = await resolve(
         tester,
         platform: platform,
-        designSystem: HibikiDesignSystem.auto,
+        designSystem: FushiDesignSystem.auto,
       );
       expect(result.cupertino, isFalse, reason: '$platform');
       expect(result.macos, isFalse, reason: '$platform');
@@ -107,13 +107,13 @@ void main() {
     final cupertino = await resolve(
       tester,
       platform: TargetPlatform.iOS,
-      designSystem: HibikiDesignSystem.cupertino,
+      designSystem: FushiDesignSystem.cupertino,
     );
     expect(cupertino.cupertino, isTrue);
     final macos = await resolve(
       tester,
       platform: TargetPlatform.macOS,
-      designSystem: HibikiDesignSystem.macos,
+      designSystem: FushiDesignSystem.macos,
     );
     expect(macos.macos, Platform.isMacOS);
   });
@@ -162,7 +162,7 @@ void main() {
     final Route<dynamic>? route = await _pushAdaptiveRoute(
       tester,
       platform: TargetPlatform.iOS,
-      designSystem: HibikiDesignSystem.cupertino,
+      designSystem: FushiDesignSystem.cupertino,
     );
 
     expect(route, isA<CupertinoPageRoute<void>>());
@@ -175,7 +175,7 @@ void main() {
       final Route<dynamic>? autoRoute = await _pushAdaptiveRoute(
         tester,
         platform: platform,
-        designSystem: HibikiDesignSystem.auto,
+        designSystem: FushiDesignSystem.auto,
       );
       expect(autoRoute, isA<MaterialPageRoute<void>>(),
           reason: '$platform auto');

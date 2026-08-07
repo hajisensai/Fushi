@@ -3,7 +3,7 @@
 
 import 'package:flutter/services.dart';
 
-abstract final class HibikiChannels {
+abstract final class FushiChannels {
   static const String _prefix = 'app.fushi.reader';
 
   static const MethodChannel splash = MethodChannel('$_prefix/splash');

@@ -7,11 +7,11 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
 void main() {
-  group('HibikiShortcutRegistry', () {
-    late HibikiShortcutRegistry registry;
+  group('FushiShortcutRegistry', () {
+    late FushiShortcutRegistry registry;
 
     setUp(() {
-      registry = HibikiShortcutRegistry();
+      registry = FushiShortcutRegistry();
       registry.loadDefaults(TargetPlatform.windows);
     });
 
@@ -266,7 +266,7 @@ void main() {
       final json = registry.toJson();
       final jsonString = jsonEncode(json);
       final decoded = jsonDecode(jsonString) as Map<String, dynamic>;
-      final restored = HibikiShortcutRegistry();
+      final restored = FushiShortcutRegistry();
       restored.loadDefaults(TargetPlatform.windows);
       restored.loadFromJson(decoded);
       for (final action in ShortcutAction.values) {
@@ -285,7 +285,7 @@ void main() {
           'gamepad': <String>[],
         },
       };
-      final reg = HibikiShortcutRegistry();
+      final reg = FushiShortcutRegistry();
       reg.loadDefaults(TargetPlatform.windows);
       reg.loadFromJson(partial);
       expect(
@@ -390,7 +390,7 @@ void main() {
           'gamepad': ['A'],
         },
       };
-      final reg = HibikiShortcutRegistry();
+      final reg = FushiShortcutRegistry();
       reg.loadDefaults(TargetPlatform.windows);
       reg.loadFromJson(jsonWithUnknown);
 
@@ -407,7 +407,7 @@ void main() {
           'gamepad': <String>[],
         },
       };
-      final reg = HibikiShortcutRegistry();
+      final reg = FushiShortcutRegistry();
       reg.loadDefaults(TargetPlatform.windows);
       reg.loadFromJson(jsonWithUnknown);
       expect(reg.toJson().containsKey('future_action_v99'), isTrue);

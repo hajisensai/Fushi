@@ -3,9 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 void main() {
-  group('HibikiTextSelection', () {
+  group('FushiTextSelection', () {
     test('splits text into before, inside, after for mid-word selection', () {
-      final sel = HibikiTextSelection(
+      final sel = FushiTextSelection(
         text: '吾輩は猫である',
         range: const TextRange(start: 3, end: 4),
       );
@@ -16,7 +16,7 @@ void main() {
     });
 
     test('selection at start yields empty textBefore', () {
-      final sel = HibikiTextSelection(
+      final sel = FushiTextSelection(
         text: 'Hello World',
         range: const TextRange(start: 0, end: 5),
       );
@@ -27,7 +27,7 @@ void main() {
     });
 
     test('selection at end yields empty textAfter', () {
-      final sel = HibikiTextSelection(
+      final sel = FushiTextSelection(
         text: 'Hello World',
         range: const TextRange(start: 6, end: 11),
       );
@@ -38,7 +38,7 @@ void main() {
     });
 
     test('full text selection', () {
-      final sel = HibikiTextSelection(
+      final sel = FushiTextSelection(
         text: 'abc',
         range: const TextRange(start: 0, end: 3),
       );
@@ -49,7 +49,7 @@ void main() {
     });
 
     test('empty range returns empty strings for all parts', () {
-      final sel = HibikiTextSelection(
+      final sel = FushiTextSelection(
         text: 'some text',
         range: TextRange.empty,
       );
@@ -60,7 +60,7 @@ void main() {
     });
 
     test('default range is TextRange.empty', () {
-      final sel = HibikiTextSelection(text: 'test');
+      final sel = FushiTextSelection(text: 'test');
 
       expect(sel.textBefore, isEmpty);
       expect(sel.textInside, isEmpty);
@@ -68,13 +68,13 @@ void main() {
     });
 
     test('toString contains all parts', () {
-      final sel = HibikiTextSelection(
+      final sel = FushiTextSelection(
         text: 'abc',
         range: const TextRange(start: 1, end: 2),
       );
 
       final str = sel.toString();
-      expect(str, contains('HibikiTextSelection'));
+      expect(str, contains('FushiTextSelection'));
       expect(str, contains('abc'));
     });
   });

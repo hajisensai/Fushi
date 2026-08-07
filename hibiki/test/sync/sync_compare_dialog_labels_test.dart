@@ -22,8 +22,8 @@ import 'package:fushi_core/fushi_core.dart';
 // These widget tests pin both the labels AND the behavior: Close must only
 // pop (never run a sync); Sync-now must run _applyChoices (an export here).
 
-HibikiDatabase _memDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _memDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 const String _chaptersJson = '[{"characters":1000}]';
 
@@ -224,7 +224,7 @@ class _RemoteBook {
   }
 }
 
-Future<EpubBookRow> _seedBook(HibikiDatabase db, String title) async {
+Future<EpubBookRow> _seedBook(FushiDatabase db, String title) async {
   await db.insertEpubBook(EpubBooksCompanion.insert(
     bookKey: title,
     title: title,
@@ -238,7 +238,7 @@ Future<EpubBookRow> _seedBook(HibikiDatabase db, String title) async {
 }
 
 Future<void> _seedPosition(
-  HibikiDatabase db,
+  FushiDatabase db,
   String bookKey, {
   required int updatedAt,
   required double fraction,
@@ -254,7 +254,7 @@ Future<void> _seedPosition(
 
 // Seeds one book whose local and remote both diverged from base (a conflict),
 // so the dialog renders entries and the primary action button is present.
-Future<_FakeSyncBackend> _seedConflict(HibikiDatabase db) async {
+Future<_FakeSyncBackend> _seedConflict(FushiDatabase db) async {
   final EpubBookRow book = await _seedBook(db, 'BookA');
   await _seedPosition(db, book.bookKey, updatedAt: 120, fraction: 0.6);
   await db.setSyncBaseline(sanitizeTtuFilename('BookA'), 'progress', 50);
@@ -271,7 +271,7 @@ Future<_FakeSyncBackend> _seedConflict(HibikiDatabase db) async {
 
 Future<void> _pumpDialog(
   WidgetTester tester,
-  HibikiDatabase db,
+  FushiDatabase db,
   _FakeSyncBackend fake,
 ) async {
   tester.view.physicalSize = const Size(1200, 1600);
@@ -310,7 +310,7 @@ void main() {
   testWidgets(
       'footer uses sync_compare_close (not shared dialog_done) and tapping it '
       'only pops, no sync runs', (WidgetTester tester) async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final _FakeSyncBackend fake = await _seedConflict(db);
 
@@ -334,7 +334,7 @@ void main() {
   testWidgets(
       'primary action reads sync_compare_apply(count) and tapping it runs '
       '_applyChoices (an export)', (WidgetTester tester) async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final _FakeSyncBackend fake = await _seedConflict(db);
 

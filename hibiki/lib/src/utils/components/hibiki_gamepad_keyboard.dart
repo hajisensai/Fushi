@@ -6,19 +6,19 @@ import 'package:fushi/src/focus/hibiki_focus_target.dart';
 import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
 
 /// An on-screen keyboard driven entirely by a game controller / keyboard: the
-/// D-pad moves focus between keys (geometric, via [HibikiFocusController]) and A
+/// D-pad moves focus between keys (geometric, via [FushiFocusController]) and A
 /// (ActivateIntent) presses the focused key. It exists because text fields on
 /// desktop/console need a way to type without a physical keyboard — the system
 /// IME is unavailable there.
 ///
 /// Pure Flutter (no WebView), so its behaviour is unit-testable: pump it inside
-/// a [HibikiFocusRoot], move focus with the controller, invoke ActivateIntent,
+/// a [FushiFocusRoot], move focus with the controller, invoke ActivateIntent,
 /// and assert the emitted characters.
 ///
 /// Layers cycle abc → ABC → 123 (symbols) via the `⇧`/`123` key. Control keys
 /// (space, backspace, done) sit in the bottom row.
-class HibikiGamepadKeyboard extends StatefulWidget {
-  const HibikiGamepadKeyboard({
+class FushiGamepadKeyboard extends StatefulWidget {
+  const FushiGamepadKeyboard({
     required this.onChar,
     required this.onBackspace,
     super.key,
@@ -39,12 +39,12 @@ class HibikiGamepadKeyboard extends StatefulWidget {
   final VoidCallback? onPaste;
 
   @override
-  State<HibikiGamepadKeyboard> createState() => _HibikiGamepadKeyboardState();
+  State<FushiGamepadKeyboard> createState() => _FushiGamepadKeyboardState();
 }
 
 enum _KbLayer { lower, upper, symbols }
 
-class _HibikiGamepadKeyboardState extends State<HibikiGamepadKeyboard> {
+class _FushiGamepadKeyboardState extends State<FushiGamepadKeyboard> {
   _KbLayer _layer = _KbLayer.lower;
 
   static const List<String> _lowerRows = <String>[
@@ -90,7 +90,7 @@ class _HibikiGamepadKeyboardState extends State<HibikiGamepadKeyboard> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<String> rows = _rows;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -163,12 +163,12 @@ class _KbKey extends StatefulWidget {
 }
 
 class _KbKeyState extends State<_KbKey> {
-  late final HibikiFocusId _focusId =
-      HibikiFocusId('gamepad-key-${identityHashCode(this)}');
+  late final FushiFocusId _focusId =
+      FushiFocusId('gamepad-key-${identityHashCode(this)}');
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     final Widget key = Padding(
       padding: EdgeInsets.all(tokens.spacing.gap / 4),
@@ -195,11 +195,11 @@ class _KbKeyState extends State<_KbKey> {
     final Widget tipped = widget.tooltip == null
         ? key
         : Tooltip(message: widget.tooltip!, child: key);
-    // Outside a HibikiFocusRoot (plain widget tests) the key stays a bare
+    // Outside a FushiFocusRoot (plain widget tests) the key stays a bare
     // tappable; under one it becomes a gamepad focus target. Expanded wraps the
     // WHOLE thing so it remains a direct child of the Row (Expanded must be a
-    // direct Flex child, not nested under HibikiFocusTarget).
-    final Widget focusable = HibikiFocusRoot.maybeControllerOf(context) == null
+    // direct Flex child, not nested under FushiFocusTarget).
+    final Widget focusable = FushiFocusRoot.maybeControllerOf(context) == null
         ? tipped
         : Actions(
             actions: <Type, Action<Intent>>{
@@ -208,7 +208,7 @@ class _KbKeyState extends State<_KbKey> {
                 return null;
               }),
             },
-            child: HibikiFocusTarget(id: _focusId, child: tipped),
+            child: FushiFocusTarget(id: _focusId, child: tipped),
           );
     return Expanded(flex: widget.flex, child: focusable);
   }
@@ -257,7 +257,7 @@ Future<bool> gamepadKeyboardPaste(TextEditingController controller) async {
   return true;
 }
 
-/// Shows [HibikiGamepadKeyboard] in a bottom sheet wired to [controller] — text
+/// Shows [FushiGamepadKeyboard] in a bottom sheet wired to [controller] — text
 /// entry for desktop/console where no system IME exists. Characters insert at
 /// the cursor, ⌫ deletes, 📋 pastes the clipboard, ✓ dismisses.
 ///
@@ -274,7 +274,7 @@ Future<void> showGamepadKeyboard(
     builder: (BuildContext ctx) => SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(8),
-        child: HibikiGamepadKeyboard(
+        child: FushiGamepadKeyboard(
           onChar: (String ch) {
             gamepadKeyboardInsert(controller, ch);
             onChanged?.call(controller.text);

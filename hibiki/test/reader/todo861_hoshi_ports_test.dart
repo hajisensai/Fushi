@@ -7,7 +7,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _testDb() => HibikiDatabase.forTesting(
+FushiDatabase _testDb() => FushiDatabase.forTesting(
       DatabaseConnection(NativeDatabase.memory()),
     );
 
@@ -16,7 +16,7 @@ String _read(String relPath) => File(relPath).readAsStringSync();
 void main() {
   group('TODO-861① paragraph spacing persistence (ReaderSettings)', () {
     test('默认 0、写穿读回', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final ReaderSettings s = ReaderSettings(db);
       await s.refreshFromDb();
@@ -28,7 +28,7 @@ void main() {
 
   group('TODO-861④ blur images persistence (ReaderSettings)', () {
     test('默认 false、写穿读回', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final ReaderSettings s = ReaderSettings(db);
       await s.refreshFromDb();
@@ -40,7 +40,7 @@ void main() {
 
   group('TODO-861② scanNonJapaneseText persistence (PreferencesRepository)',
       () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late PreferencesRepository repo;
 
     setUp(() async {
@@ -64,7 +64,7 @@ void main() {
   });
 
   group('TODO-861③ dictionary auto-update prefs (PreferencesRepository)', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late PreferencesRepository repo;
 
     setUp(() async {

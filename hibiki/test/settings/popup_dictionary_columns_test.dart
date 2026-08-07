@@ -31,8 +31,8 @@ import '../helpers/test_platform_services.dart';
 ///  3. UI 行为：真实 schema 的 Result Display 组里有这条滑块，min1/max4/divisions3，
 ///     副标题带「实验性」后缀。
 void main() {
-  HibikiDatabase testDb() {
-    return HibikiDatabase.forTesting(
+  FushiDatabase testDb() {
+    return FushiDatabase.forTesting(
       DatabaseConnection(NativeDatabase.memory()),
     );
   }
@@ -40,7 +40,7 @@ void main() {
   /// 轻量 AppModel：不跑 initialise()，但用真实 PreferencesRepository 接上
   /// prefsRepo，让 appModel.popupDictionaryColumns 读到真实偏好。TODO-1357 起未设过
   /// 时按平台三态解析——flutter test 跑在桌面 host（isDesktopPlatform=true），故默认 2。
-  Future<AppModel> prefsBackedAppModel(HibikiDatabase db) async {
+  Future<AppModel> prefsBackedAppModel(FushiDatabase db) async {
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
     final Directory tempDir =
@@ -113,7 +113,7 @@ void main() {
     );
   }
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() async {
     db = testDb();

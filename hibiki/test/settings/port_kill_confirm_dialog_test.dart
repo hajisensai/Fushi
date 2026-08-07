@@ -56,7 +56,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byType(HibikiDestructiveConfirmDialog), findsOneWidget);
+    expect(find.byType(FushiDestructiveConfirmDialog), findsOneWidget);
     expect(
       find.text(t.yomitan_port_kill_confirm_title(port: 19633)),
       findsOneWidget,
@@ -76,7 +76,7 @@ void main() {
     expect(decision.kind, PortKillDecisionKind.cancelled);
     // 未确认 → 不做杀前复核（finder 只调一次），terminate 更无从谈起。
     expect(finderCalls, 1);
-    expect(find.byType(HibikiDestructiveConfirmDialog), findsNothing);
+    expect(find.byType(FushiDestructiveConfirmDialog), findsNothing);
   });
 
   testWidgets('占用者是 hibiki 自身旧实例 → 弹窗明确标注本应用另一实例', (WidgetTester tester) async {
@@ -113,7 +113,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byType(HibikiDestructiveConfirmDialog), findsNothing);
+    expect(find.byType(FushiDestructiveConfirmDialog), findsNothing);
     final PortKillDecision decision = await decisionFuture;
     expect(decision.kind, PortKillDecisionKind.refusedProtected);
     expect(decision.listener!.processName, 'svchost.exe');

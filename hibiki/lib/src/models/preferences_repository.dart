@@ -113,15 +113,15 @@ class PreferencesRepository extends ChangeNotifier {
   /// separate :popup process reads via [readPrefsVersionFromDb] to decide
   /// whether to reload its warm-reuse pref cache, instead of unconditionally
   /// re-scanning the whole preferences table on every lookup. The bump itself
-  /// lives at the single lowest write choke point [HibikiDatabase.setPref], so
+  /// lives at the single lowest write choke point [FushiDatabase.setPref], so
   /// EVERY writer (this repository, ThemeNotifier, MediaSource, profile switch,
   /// sync/backup restore) advances it automatically. This is an alias to that
   /// DB-layer key so app-layer call sites (ProfileKeys, tests) share one truth.
   /// Excluded from profile snapshots (see ProfileKeys) so it stays app-global
   /// and monotonic.
-  static const String prefsVersionKey = HibikiDatabase.prefsVersionKey;
+  static const String prefsVersionKey = FushiDatabase.prefsVersionKey;
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
   final Map<String, String> _prefCache = {};
 
   Future<void> loadFromDb() async {
@@ -155,7 +155,7 @@ class PreferencesRepository extends ChangeNotifier {
   Future<void> setPref(String key, dynamic value) async {
     final String strVal = PrefCodec.encode(value);
     _prefCache[key] = strVal;
-    // [HibikiDatabase.setPref] also bumps the persisted prefs-version (TODO-855)
+    // [FushiDatabase.setPref] also bumps the persisted prefs-version (TODO-855)
     // for any key other than the version key itself; no explicit bump needed
     // here. The in-memory [prefsVersion] getter intentionally does NOT track
     // that same-process bump — change detection is cross-process and goes
@@ -164,7 +164,7 @@ class PreferencesRepository extends ChangeNotifier {
   }
 
   /// 一个**逻辑设置**由多个 key 承载时（三态投影成两个 bool 键、值 + 判别键……）的写入
-  /// 入口：全部 key 一次性进内存缓存、再走 [HibikiDatabase.setPrefs] 的**单事务**落盘。
+  /// 入口：全部 key 一次性进内存缓存、再走 [FushiDatabase.setPrefs] 的**单事务**落盘。
   ///
   /// 对比逐个 [setPref]：省掉每键一次事务提交（Windows/WAL 实测 12.3ms → 5.1ms），并且
   /// 消除「半个设置已落盘」的可观察窗口——:popup 进程不会读到 blur=true / hide 尚未写入
@@ -388,7 +388,7 @@ class PreferencesRepository extends ChangeNotifier {
   }
 
   // ── 实验性：键盘/手柄焦点导航 ──────────────────────────────────────────
-  // 整套自定义焦点导航（HibikiFocusRoot/Ring + 手柄/方向键焦点移动）默认关闭，
+  // 整套自定义焦点导航（FushiFocusRoot/Ring + 手柄/方向键焦点移动）默认关闭，
   // 关闭时回退到 Flutter 原生焦点遍历。空格不再确认焦点的行为不受此开关影响。
 
   bool get experimentalFocusNavigationEnabled =>

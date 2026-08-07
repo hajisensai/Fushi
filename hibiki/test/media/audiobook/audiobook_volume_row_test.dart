@@ -25,7 +25,7 @@ void main() {
     GlobalKey<NavigatorState>? navKey,
   }) {
     double value = initial;
-    final Widget body = HibikiFocusRoot(
+    final Widget body = FushiFocusRoot(
       child: StatefulBuilder(
         builder: (BuildContext c, StateSetter setState) => AudiobookVolumeRow(
           volume: value,
@@ -79,7 +79,7 @@ void main() {
       );
       await tester.pump();
 
-      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.byType(Slider)),
       );
       controller.ensureFocus();
@@ -108,7 +108,7 @@ void main() {
           .pumpWidget(buildRow(initial: 1.0, onValue: (v) => value = v));
       await tester.pump();
 
-      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.byType(Slider)),
       );
       controller.ensureFocus();
@@ -141,7 +141,7 @@ void main() {
           .pumpWidget(buildRow(initial: 1.98, onValue: (v) => value = v));
       await tester.pump();
 
-      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.byType(Slider)),
       );
       controller.ensureFocus();

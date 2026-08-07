@@ -22,7 +22,7 @@ void main() {
 
     test('defaults to true and round-trips through the global source pref',
         () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -43,7 +43,7 @@ void main() {
 
     test('reads/writes through ReaderSettings (per-reader) when open',
         () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -70,8 +70,8 @@ void main() {
     test('two ReaderSettings instances (two books) do not cross-contaminate',
         () async {
       // per-reader 隔离用两个独立 DB 模拟两本书各自的 profile 快照。
-      final dbA = HibikiDatabase.forTesting(NativeDatabase.memory());
-      final dbB = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final dbA = FushiDatabase.forTesting(NativeDatabase.memory());
+      final dbB = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(dbA.close);
       addTearDown(dbB.close);
 
@@ -98,7 +98,7 @@ void main() {
 
     test('defaults to center and round-trips through the global source pref',
         () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -117,7 +117,7 @@ void main() {
     });
 
     test('an unknown stored value degrades to center', () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -130,7 +130,7 @@ void main() {
 
     test('reads/writes through ReaderSettings (per-reader) when open',
         () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -156,8 +156,8 @@ void main() {
     });
 
     test('two books do not cross-contaminate', () async {
-      final dbA = HibikiDatabase.forTesting(NativeDatabase.memory());
-      final dbB = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final dbA = FushiDatabase.forTesting(NativeDatabase.memory());
+      final dbB = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(dbA.close);
       addTearDown(dbB.close);
 

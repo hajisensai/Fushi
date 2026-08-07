@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
 
-/// 回归守卫：锁死应用的 editorial type scale（[HibikiTypeScale]）真正渲染出来，
+/// 回归守卫：锁死应用的 editorial type scale（[FushiTypeScale]）真正渲染出来，
 /// 而不是被 Flutter 的 geometry 盖回 M3 默认。
 ///
 /// 背景（实证得出）：Flutter 的字号来自 Typography 的 geometry，由 MaterialApp/Theme
 /// 在 widget 树内按 locale 应用。若 TextTheme 槽位**无**显式字号，geometry 会供给
-/// M3 默认字号；但只要给了**显式**字号（[HibikiTypeScale] 就是这么做的），显式值会
+/// M3 默认字号；但只要给了**显式**字号（[FushiTypeScale] 就是这么做的），显式值会
 /// 穿过 geometry 合并保留下来。这条守卫防止：
 ///  1. 有人把显式字号去掉（退回 flat）→ 渲染出 M3 默认而非 editorial 阶梯；
-///  2. 有人误改 [HibikiTypeScale] 的锚点值。
+///  2. 有人误改 [FushiTypeScale] 的锚点值。
 void main() {
   // 复刻 AppModel.textStyle：locale-aware、只带 fontFamily/关连字、无字号。
   const TextStyle base = TextStyle(fontFamily: 'GuardFont');
@@ -20,7 +20,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       theme: ThemeData(
         useMaterial3: true,
-        textTheme: HibikiTypeScale.buildTextTheme(base),
+        textTheme: FushiTypeScale.buildTextTheme(base),
       ),
       home: Builder(builder: (context) {
         tt = Theme.of(context).textTheme;

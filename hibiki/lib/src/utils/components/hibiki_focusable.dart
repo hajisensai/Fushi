@@ -7,8 +7,8 @@ import 'package:fushi/src/focus/hibiki_focus_target.dart';
 /// navigation. Use ONLY for discrete buttons — not for swipe/drag/long-press
 /// gesture surfaces. Standard Material widgets (InkWell, ListTile, IconButton)
 /// are already focusable and should be preferred.
-class HibikiFocusable extends StatefulWidget {
-  const HibikiFocusable({
+class FushiFocusable extends StatefulWidget {
+  const FushiFocusable({
     super.key,
     required this.child,
     required this.onTap,
@@ -26,21 +26,21 @@ class HibikiFocusable extends StatefulWidget {
   final HitTestBehavior behavior;
 
   @override
-  State<HibikiFocusable> createState() => _HibikiFocusableState();
+  State<FushiFocusable> createState() => _FushiFocusableState();
 }
 
-class _HibikiFocusableState extends State<HibikiFocusable> {
-  late final HibikiFocusId _fallbackId = HibikiFocusId(
+class _FushiFocusableState extends State<FushiFocusable> {
+  late final FushiFocusId _fallbackId = FushiFocusId(
     'focusable-${identityHashCode(this)}',
   );
 
   @override
   Widget build(BuildContext context) {
     final Color focusColor = Theme.of(context).colorScheme.primary;
-    if (HibikiFocusRoot.maybeControllerOf(context) != null) {
+    if (FushiFocusRoot.maybeControllerOf(context) != null) {
       return MouseRegion(
         cursor: _mouseCursor,
-        child: HibikiFocusTarget(
+        child: FushiFocusTarget(
           id: _focusId,
           focusNode: widget.focusNode,
           enabled: widget.onTap != null,
@@ -68,12 +68,12 @@ class _HibikiFocusableState extends State<HibikiFocusable> {
     return detector;
   }
 
-  HibikiFocusId get _focusId {
+  FushiFocusId get _focusId {
     final Key? key = widget.key;
     final FocusNode? node = widget.focusNode;
-    if (key != null) return HibikiFocusId('focusable-key-$key');
+    if (key != null) return FushiFocusId('focusable-key-$key');
     if (node != null) {
-      return HibikiFocusId('focusable-node-${identityHashCode(node)}');
+      return FushiFocusId('focusable-node-${identityHashCode(node)}');
     }
     return _fallbackId;
   }

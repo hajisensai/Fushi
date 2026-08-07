@@ -15,8 +15,8 @@ import 'package:fushi_core/fushi_core.dart';
 ///  ② 迁移后列存在且可写回 'spread' / 'webtoon'（漫画手动覆盖路径可用）；
 ///  ③ user_version 升到当前 schemaVersion（53）。
 void main() {
-  Future<HibikiDatabase> openV51Db() async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+  Future<FushiDatabase> openV51Db() async {
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (rawDb) {
           rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -57,7 +57,7 @@ CREATE TABLE epub_books (
   }
 
   test('v53：既有行 mangaReadingMode 回填为 null（旧行零破坏）', () async {
-    final HibikiDatabase db = await openV51Db();
+    final FushiDatabase db = await openV51Db();
     final EpubBookRow? legacy = await db.getEpubBook('legacy_book');
     expect(legacy, isNotNull, reason: '旧行原样保留');
     expect(legacy!.title, '旧书');
@@ -70,8 +70,8 @@ CREATE TABLE epub_books (
   test('v53：可插入并读回 format=manga 的漫画行 + mangaReadingMode 覆盖值', () async {
     // 用完整 schema 的 forTesting 库（onCreate 建全表 @v53，含 insertEpubBook
     // 依赖的表）——手搭 v51 shape 只有 epub_books，跑不了真插入 DAO。
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     // 漫画行，手动覆盖为 webtoon。
@@ -112,7 +112,7 @@ CREATE TABLE epub_books (
   });
 
   test('v53：user_version 升到当前 schemaVersion', () async {
-    final HibikiDatabase db = await openV51Db();
+    final FushiDatabase db = await openV51Db();
     await db.getEpubBook('legacy_book'); // 触发 open/migrate。
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();

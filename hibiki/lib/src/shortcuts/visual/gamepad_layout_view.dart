@@ -183,7 +183,7 @@ class GamepadLayoutView extends StatelessWidget {
     this.gamepadBrand = GamepadBrand.xbox,
   });
 
-  final HibikiShortcutRegistry registry;
+  final FushiShortcutRegistry registry;
   final ShortcutScope scope;
 
   /// 点击一个**已绑**手柄按钮（回传该按钮上的 action 列表）。

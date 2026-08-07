@@ -13,12 +13,12 @@ import 'package:path/path.dart' as p;
 
 void main() {
   late Directory root;
-  late HibikiDatabase database;
+  late FushiDatabase database;
   late MihonManager manager;
 
   setUp(() async {
     root = await Directory.systemTemp.createTemp('hibiki-mihon-library-');
-    database = HibikiDatabase.forTesting(NativeDatabase.memory());
+    database = FushiDatabase.forTesting(NativeDatabase.memory());
     manager = MihonManager(
       database: database,
       rootDirectory: root,

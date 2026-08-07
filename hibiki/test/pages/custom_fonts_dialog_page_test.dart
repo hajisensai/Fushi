@@ -137,7 +137,7 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.byType(HibikiIconButton), findsNWidgets(3));
+    expect(find.byType(FushiIconButton), findsNWidgets(3));
 
     final Rect titleRect =
         tester.getRect(find.text('Aozora Mincho Super Family'));

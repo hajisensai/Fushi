@@ -46,12 +46,12 @@ void main() {
     }
   });
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late AppModel appModel;
 
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.en);
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     final Directory storeDir =
@@ -87,10 +87,10 @@ void main() {
   }
 
   Future<void> enterSelectionMode(WidgetTester tester) async {
-    // 标签栏旁的「批量选择」按钮：HibikiIconButton 用 Semantics(label) 而非
+    // 标签栏旁的「批量选择」按钮：FushiIconButton 用 Semantics(label) 而非
     // Tooltip，故按 checklist 图标定位（与 home_video_page_menu_test 一致）。
     final Finder selectBtn = find.descendant(
-      of: find.byType(HibikiTagFilterBar),
+      of: find.byType(FushiTagFilterBar),
       matching: find.byIcon(Icons.checklist_outlined),
     );
     expect(selectBtn, findsOneWidget, reason: '视频标签栏旁应有「批量选择」按钮');
@@ -150,14 +150,14 @@ void main() {
     }.entries) {
       final int buildStart = e.value.indexOf('Widget build(BuildContext');
       expect(buildStart, isNonNegative, reason: '${e.key} 应有 build 方法');
-      // build 根第一个返回的 widget 必须是 PopScope（在 HibikiFileDropTarget 外）。
+      // build 根第一个返回的 widget 必须是 PopScope（在 FushiFileDropTarget 外）。
       final int popScope = e.value.indexOf('return PopScope(', buildStart);
       final int dropTarget =
-          e.value.indexOf('HibikiFileDropTarget(', buildStart);
+          e.value.indexOf('FushiFileDropTarget(', buildStart);
       expect(popScope, isNonNegative,
           reason: '${e.key} build 根应包一层 PopScope 拦截多选态返回');
       expect(popScope, lessThan(dropTarget),
-          reason: '${e.key} 的 PopScope 必须包在 HibikiFileDropTarget 外层');
+          reason: '${e.key} 的 PopScope 必须包在 FushiFileDropTarget 外层');
 
       final String region = e.value.substring(popScope, dropTarget);
       expect(region, contains('canPop: !_selectionMode'),

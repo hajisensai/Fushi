@@ -23,7 +23,7 @@ typedef FloatingLyricLockHandler = void Function(bool locked);
 /// macOS / Linux have no native back-end yet, so [isSupported] excludes them
 /// and every outgoing call is short-circuited by [FloatingOverlayChannel].
 class FloatingLyricChannel extends FloatingOverlayChannel {
-  FloatingLyricChannel._() : super(HibikiChannels.floatingLyric);
+  FloatingLyricChannel._() : super(FushiChannels.floatingLyric);
 
   static final FloatingLyricChannel _instance = FloatingLyricChannel._();
 

@@ -21,8 +21,8 @@ import 'package:fushi_core/fushi_core.dart';
 // path contract: an empty sanitized title is never turned into a folder, and the
 // per-book sync loop skips such a row entirely (no write ever targets the root).
 
-HibikiDatabase _testDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 /// Records the folders `SyncManager` resolves and writes to, so a test can prove
 /// no transfer ever targets the sync root. `ensureBookFolder` mirrors the real
@@ -171,7 +171,7 @@ class _RecordingBackend implements SyncBackend {
       throw UnimplementedError();
 }
 
-Future<EpubBookRow> _insertBook(HibikiDatabase db, String title) async {
+Future<EpubBookRow> _insertBook(FushiDatabase db, String title) async {
   final String bookKey = sanitizeTtuFilename(title);
   await db.insertEpubBook(EpubBooksCompanion.insert(
     bookKey: bookKey,
@@ -212,7 +212,7 @@ void main() {
   group('SyncManager skips empty-title books (no root spill)', () {
     test('empty title: skipped, backend never resolves or writes a folder',
         () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
 
       // A degenerate empty-title row that WOULD export (has a reading position
@@ -246,7 +246,7 @@ void main() {
 
     test('normal title: exports into the per-book folder, never the root',
         () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
 
       final EpubBookRow book = await _insertBook(db, 'Normal Book');

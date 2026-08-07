@@ -95,7 +95,7 @@ class MokuroMoeDownloadTask {
 /// 顺序执行的 mokuro.moe 卷下载队列。
 class MokuroMoeDownloadQueue extends ChangeNotifier {
   MokuroMoeDownloadQueue({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required MokuroMoeClient Function() clientFactory,
     @visibleForTesting MokuroMoeVolumeRunner? runnerOverride,
     @visibleForTesting List<Duration>? retryBackoffOverride,
@@ -104,7 +104,7 @@ class MokuroMoeDownloadQueue extends ChangeNotifier {
         _runnerOverride = runnerOverride,
         _retryBackoff = retryBackoffOverride ?? kMokuroMoeRetryBackoff;
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
   final MokuroMoeClient Function() _clientFactory;
   final MokuroMoeVolumeRunner? _runnerOverride;
   final List<Duration> _retryBackoff;

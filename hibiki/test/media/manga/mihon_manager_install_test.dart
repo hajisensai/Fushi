@@ -14,13 +14,13 @@ import 'package:fushi_core/fushi_core.dart';
 
 void main() {
   late Directory root;
-  late HibikiDatabase database;
+  late FushiDatabase database;
   late _InstallRuntime runtime;
   late MihonManager manager;
 
   setUp(() async {
     root = await Directory.systemTemp.createTemp('hibiki-mihon-manager-');
-    database = HibikiDatabase.forTesting(NativeDatabase.memory());
+    database = FushiDatabase.forTesting(NativeDatabase.memory());
     runtime = _InstallRuntime();
     manager = MihonManager(
       database: database,
@@ -231,7 +231,7 @@ MihonExtensionInspection _inspection({
     );
 
 Future<void> _seedInstalled(
-  HibikiDatabase database, {
+  FushiDatabase database, {
   required int versionCode,
   required String signer,
 }) =>

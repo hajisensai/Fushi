@@ -114,7 +114,7 @@ void main() {
   testWidgets('tags 非空时行头下方展示标签 chip（用户实报：打了标签但列表上看不见）',
       (WidgetTester tester) async {
     await pump(tester, buildRow(tags: const <BookTagRow>[tag]));
-    // chip 以标签名渲染（合集详情页同款 HibikiTagChip）。
+    // chip 以标签名渲染（合集详情页同款 FushiTagChip）。
     expect(find.text('お気に入り'), findsOneWidget);
   });
 

@@ -161,7 +161,7 @@ class _MangaOcrSettingsSectionState
           _downloading = false;
           _downloadSub = null;
         });
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.manga_ocr_download_failed,
           severity: ToastSeverity.error,
         );
@@ -170,7 +170,7 @@ class _MangaOcrSettingsSectionState
         _downloadSub = null;
         if (!mounted) return;
         setState(() => _downloading = false);
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.manga_ocr_download_done,
           severity: ToastSeverity.success,
         );
@@ -212,7 +212,7 @@ class _MangaOcrSettingsSectionState
       if (mounted) setState(() => _deleting = false);
     }
     if (!mounted) return;
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.manga_ocr_delete_done,
       severity: ToastSeverity.success,
     );
@@ -270,7 +270,7 @@ class _MangaOcrSettingsSectionState
   Widget _inset(Widget child) {
     return Padding(
       padding: EdgeInsets.symmetric(
-        horizontal: HibikiDesignTokens.of(context).spacing.rowHorizontal,
+        horizontal: FushiDesignTokens.of(context).spacing.rowHorizontal,
       ),
       child: child,
     );
@@ -484,5 +484,5 @@ class _MangaOcrSettingsSectionState
     );
   }
 
-  static String _formatBytes(int bytes) => HibikiByteFormat.bytes(bytes);
+  static String _formatBytes(int bytes) => FushiByteFormat.bytes(bytes);
 }

@@ -183,14 +183,14 @@ void main() {
       };
     }
 
-    HibikiShortcutRegistry load(Map<String, dynamic> json) {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry();
+    FushiShortcutRegistry load(Map<String, dynamic> json) {
+      final FushiShortcutRegistry registry = FushiShortcutRegistry();
       registry.loadFromJsonString(jsonEncode(json), TargetPlatform.windows);
       return registry;
     }
 
     test('没动过任何键的老用户：Esc 补进 globalBack，两个 dismissDict 的 Esc 收回', () {
-      final HibikiShortcutRegistry registry = load(v7Snapshot());
+      final FushiShortcutRegistry registry = load(v7Snapshot());
       expect(
         registry.bindingsFor(ShortcutAction.globalBack).keyboardBindings,
         containsAll(<InputBinding>[esc, altLeft]),
@@ -225,7 +225,7 @@ void main() {
     });
 
     test('用户改过「关闭词典」键：保留其自定义，不强行收回', () {
-      final HibikiShortcutRegistry registry = load(
+      final FushiShortcutRegistry registry = load(
         v7Snapshot(
           readerDismissDict: const ShortcutBindingSet(
             keyboardBindings: <InputBinding>[
@@ -241,7 +241,7 @@ void main() {
     });
 
     test('用户绑在「关闭词典」上的鼠标侧键必须活下来（BUG-1071 的唯一鼠标通道）', () {
-      final HibikiShortcutRegistry registry = load(
+      final FushiShortcutRegistry registry = load(
         v7Snapshot(
           readerDismissDict: const ShortcutBindingSet(
             keyboardBindings: <InputBinding>[esc],
@@ -257,7 +257,7 @@ void main() {
     });
 
     test('已删除动作：默认值直接丢弃（不给 globalBack 塞多余键位）', () {
-      final HibikiShortcutRegistry registry = load(v7Snapshot());
+      final FushiShortcutRegistry registry = load(v7Snapshot());
       final List<InputBinding> keys =
           registry.bindingsFor(ShortcutAction.globalBack).keyboardBindings;
       expect(keys, isNot(contains(ctrlW)),
@@ -266,7 +266,7 @@ void main() {
 
     test('已删除动作：用户改过的键搬进 globalBack（改键不丢）', () {
       const InputBinding f4 = InputBinding(key: LogicalKeyboardKey.f4);
-      final HibikiShortcutRegistry registry = load(
+      final FushiShortcutRegistry registry = load(
         v7Snapshot(
           readerExitBook: const ShortcutBindingSet(
             keyboardBindings: <InputBinding>[f4],
@@ -289,7 +289,7 @@ void main() {
     });
 
     test('已删除动作的 legacy key 不会永久回写（迁移后从快照里消失）', () {
-      final HibikiShortcutRegistry registry = load(
+      final FushiShortcutRegistry registry = load(
         v7Snapshot(
           videoEscape: const ShortcutBindingSet(
             keyboardBindings: <InputBinding>[
@@ -305,7 +305,7 @@ void main() {
     });
 
     test('用户改过 globalBack 自己的键：不被新默认覆盖', () {
-      final HibikiShortcutRegistry registry = load(
+      final FushiShortcutRegistry registry = load(
         v7Snapshot(
           globalBack: const ShortcutBindingSet(
             keyboardBindings: <InputBinding>[

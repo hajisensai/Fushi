@@ -22,17 +22,17 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-HibikiDatabase _memDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _memDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 Future<InterconnectSyncBackend> _buildClientBackend({
   required String base,
   required String token,
 }) async {
-  final HibikiDatabase db = _memDb();
+  final FushiDatabase db = _memDb();
   final SyncRepository repo = SyncRepository(db);
-  await repo.setHibikiClientUrls(<HibikiClientUrl>[
-    HibikiClientUrl(url: base, enabled: true),
+  await repo.setHibikiClientUrls(<FushiClientUrl>[
+    FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
   final InterconnectSyncBackend backend =
@@ -43,7 +43,7 @@ Future<InterconnectSyncBackend> _buildClientBackend({
 }
 
 SyncOrchestrator _orchestrator({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required SyncBackend backend,
   required Directory tmp,
 }) =>
@@ -64,8 +64,8 @@ SyncOrchestrator _orchestrator({
 
 void main() {
   late Directory work;
-  late HibikiSyncServer server;
-  late HibikiDatabase hostDb;
+  late FushiSyncServer server;
+  late FushiDatabase hostDb;
   late Directory hostUploads;
   late String base;
   const String token = 'orch-live-video-token';
@@ -83,7 +83,7 @@ void main() {
       runExclusive: (Future<void> Function() body) => body(),
       uploadedVideoRoot: hostUploads,
     );
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir: p.join(work.path, 'server_data'),
       port: 0,
       token: token,
@@ -101,7 +101,7 @@ void main() {
   });
 
   test('本地单文件视频上传到 host；流媒体/播放列表跳过；同尺寸幂等', () async {
-    final HibikiDatabase localDb = _memDb();
+    final FushiDatabase localDb = _memDb();
     addTearDown(localDb.close);
 
     // 可上传：真实本地单文件视频。

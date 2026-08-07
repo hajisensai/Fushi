@@ -6,11 +6,11 @@ import 'package:fushi_core/fushi_core.dart';
 
 /// 统一合集 Phase 2：[VideoBookRepository.importSplitPlaylist] 把一个多集播放列表拆成
 /// N 条独立 VideoBooks 行 + 一个 playlist 合集（成员按序），与 v38 迁移落库形状对齐。
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 void main() {
   test('拆成 N 条独立集行 + playlist 合集，每集自带进度、首集不与他集撞 uid', () async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final VideoBookRepository repo = VideoBookRepository(db);
 
@@ -69,7 +69,7 @@ void main() {
   });
 
   test('下载 importer 崩溃重放：归一化路径作业务键，单事务不重复媒体/合集/成员', () async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final VideoBookRepository repo = VideoBookRepository(db);
     const List<PlaylistEntry> first = <PlaylistEntry>[
@@ -100,7 +100,7 @@ void main() {
   });
 
   test('删某集清合集引用；删空则合集自删', () async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final VideoBookRepository repo = VideoBookRepository(db);
 
@@ -133,7 +133,7 @@ void main() {
   group('reconcileSplitPlaylist：重扫按清单对齐成员（BUG-830）', () {
     /// 取合集当前成员对应的 videoPath 集（成员引用 bookUid → VideoBook.videoPath）。
     Future<Set<String>> memberPaths(
-      HibikiDatabase db,
+      FushiDatabase db,
       VideoBookRepository repo,
       int collectionId,
     ) async {
@@ -148,7 +148,7 @@ void main() {
     }
 
     test('清单增删某集 → 合集成员随之增删（只解绑不删本体）', () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final VideoBookRepository repo = VideoBookRepository(db);
 
@@ -188,7 +188,7 @@ void main() {
     });
 
     test('清单未变 → 幂等零改动，不产生重复 VideoBook', () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final VideoBookRepository repo = VideoBookRepository(db);
 
@@ -215,7 +215,7 @@ void main() {
     });
 
     test('整批替换清单 → 先加后删，合集不被移空自删', () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final VideoBookRepository repo = VideoBookRepository(db);
 

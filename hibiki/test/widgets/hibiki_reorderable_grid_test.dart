@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/hibiki_reorderable_grid.dart';
 
-/// 把列表交给 [HibikiReorderableGrid]，onReorder 时真正改顺序后重建——模拟真实调用方
+/// 把列表交给 [FushiReorderableGrid]，onReorder 时真正改顺序后重建——模拟真实调用方
 /// （合集详情页）用法。固定 300 宽、3 列、方形单元（cellW=cellH=100，无间距），几何
 /// 确定：A@(50,50) B@(150,50) C@(250,50)，第二行 D/E/F。
 class _Harness extends StatefulWidget {
@@ -28,7 +28,7 @@ class _HarnessState extends State<_Harness> {
 
   @override
   Widget build(BuildContext context) {
-    return HibikiReorderableGrid(
+    return FushiReorderableGrid(
       itemCount: _items.length,
       crossAxisCount: 3,
       childAspectRatio: 1,
@@ -71,7 +71,7 @@ Future<void> _pumpGrid(
     ),
   );
   if (scale != 1.0) {
-    grid = HibikiAppUiScale(scale: scale, child: grid);
+    grid = FushiAppUiScale(scale: scale, child: grid);
   }
   await tester.pumpWidget(MaterialApp(home: Scaffold(body: grid)));
 }

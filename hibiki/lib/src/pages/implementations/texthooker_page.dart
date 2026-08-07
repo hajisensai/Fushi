@@ -139,7 +139,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         await _session.exportLineAudioPreview(line.id);
     if (!mounted) return;
     if (preview == null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_line_preview_failed,
         severity: ToastSeverity.error,
       );
@@ -148,7 +148,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final bool started = await DesktopAudioPlayback.playFile(preview.filePath);
     if (!mounted) return;
     if (!started) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_line_preview_failed,
         severity: ToastSeverity.error,
       );
@@ -175,7 +175,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   Future<void> _pickLineTrack(TexthookerLineEntry line) async {
     final List<GalAudioTrack> tracks = _session.state.audioTracks;
     if (tracks.isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_no_tracks,
         severity: ToastSeverity.error,
       );
@@ -197,11 +197,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                   // reviewed 豁免只覆盖「hook 状态胶囊是实时内容指示器」，从不覆盖
                   // 对话框行骨架。`ListTile.enabled` 的两个作用分开落地：不可选走
                   // onTap: null（本来就有），置灰走显式 disabled 前景色。
-                  final Color disabledColor = HibikiDesignTokens.of(context)
+                  final Color disabledColor = FushiDesignTokens.of(context)
                       .surfaces
                       .onSurface
                       .withValues(alpha: 0.38);
-                  return HibikiListItem(
+                  return FushiListItem(
                     leading: Icon(
                       excluded ? Icons.music_off_outlined : Icons.graphic_eq,
                       color: excluded ? disabledColor : null,
@@ -224,7 +224,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     trailing: Wrap(
                       spacing: 4,
                       children: <Widget>[
-                        HibikiIconButton(
+                        FushiIconButton(
                           icon: Icons.play_circle_outline,
                           tooltip: t.game_track_preview,
                           onTap: () => unawaited(
@@ -234,7 +234,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                             ),
                           ),
                         ),
-                        HibikiIconButton(
+                        FushiIconButton(
                           icon:
                               excluded ? Icons.undo : Icons.music_off_outlined,
                           tooltip: excluded
@@ -265,7 +265,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (picked == null || !mounted) return;
     final bool applied = await _session.setLineVoiceTrack(line.id, picked);
     if (!mounted) return;
-    HibikiToast.show(
+    FushiToast.show(
       msg: applied ? t.game_line_track_applied : t.game_line_track_failed,
       severity: applied ? ToastSeverity.success : ToastSeverity.error,
     );
@@ -276,14 +276,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final GalTrackPreview? preview =
         await _session.exportLineTrackPreview(lineId, sourcePtr);
     if (preview == null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_track_preview_failed,
         severity: ToastSeverity.error,
       );
       return;
     }
     if (!await DesktopAudioPlayback.playFile(preview.filePath)) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_track_preview_failed,
         severity: ToastSeverity.error,
       );
@@ -313,7 +313,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                   await _session.exportTrackPreview(track.sourcePtr);
               if (!dialogContext.mounted) return;
               if (preview == null) {
-                HibikiToast.show(
+                FushiToast.show(
                   msg: t.game_track_preview_failed,
                   severity: ToastSeverity.error,
                 );
@@ -323,7 +323,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                   await DesktopAudioPlayback.playFile(preview.filePath);
               if (!dialogContext.mounted) return;
               if (!started) {
-                HibikiToast.show(
+                FushiToast.show(
                   msg: t.game_track_preview_failed,
                   severity: ToastSeverity.error,
                 );
@@ -382,7 +382,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   Future<void> _toggleLineRecapture(TexthookerLineEntry line) async {
     if (_session.recapturingLineId == line.id) {
       final bool ok = await _session.finishLineRecapture();
-      HibikiToast.show(
+      FushiToast.show(
         msg: ok ? t.game_hook_recapture_saved : t.game_hook_recapture_empty,
         // 补录窗口空手而归不是崩溃，是「这次没录到」——warning 而非 error。
         severity: ok ? ToastSeverity.success : ToastSeverity.warning,
@@ -390,7 +390,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       return;
     }
     final bool started = await _session.startLineRecapture(line.id);
-    HibikiToast.show(
+    FushiToast.show(
       msg: started
           ? t.game_hook_recapture_started
           : t.game_hook_recapture_unavailable,
@@ -587,7 +587,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final TexthookerLineEntry? entry =
         lineId == null ? null : _session.entryById(lineId);
     if (entry == null) {
-      HibikiToast.showMine(
+      FushiToast.showMine(
         msg: t.game_hook_line_unavailable,
         status: MineToastStatus.failed,
       );
@@ -595,7 +595,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     }
     final Map<String, String> effectiveFields = Map<String, String>.from(fields)
       ..['sentence'] = entry.text;
-    HibikiToast.showMine(
+    FushiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
     );
@@ -620,7 +620,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       animatedFormat: mixinAppModel.galMiningAnimatedFormat,
     );
     if (result.aborted) {
-      HibikiToast.showMine(
+      FushiToast.showMine(
         msg: result.audioFallbackDisabled
             ? t.game_audio_fallback_disabled_missing
             : result.failureReason != null
@@ -643,17 +643,17 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       unawaited(recordMined());
       unawaited(recordMinedSentence(effectiveFields, outcome.noteId));
     }
-    HibikiToast.showMine(msg: described.message, status: described.status);
+    FushiToast.showMine(msg: described.message, status: described.status);
     if (result.sentenceAudioMissing) {
       // 卡片建成了、只是缺句子音频 = 部分成功。
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_card_sentence_audio_missing,
         severity: ToastSeverity.warning,
       );
     }
     if (result.unmappedTokens.isNotEmpty) {
       // 冒号统一全角（与上方 external_window_capture_failed toast 一致）。
-      HibikiToast.show(
+      FushiToast.show(
         msg: '${t.game_card_mapping_missing}：'
             '${result.unmappedTokens.join(', ')}',
         severity: ToastSeverity.warning,
@@ -693,7 +693,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 把处置塞进选择器会逼出模式参数。
   Future<ExternalWindowInfo?> _showExternalWindowPicker() async {
     if (!Platform.isWindows) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.external_window_unsupported,
         severity: ToastSeverity.error,
       );
@@ -702,7 +702,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final List<ExternalWindowInfo> windows =
         await WindowCaptureChannel.listWindows();
     if (windows.isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.external_window_no_windows,
         severity: ToastSeverity.error,
       );
@@ -728,8 +728,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           for (final ExternalWindowInfo window in ordered)
             // BUG-1425：行骨架走共享 MD3 组件，不再裸 ListTile（豁免理由只覆盖
             // hook 状态胶囊）。autofocus 是 BUG-1049 的焦点驱动行为，随之收进
-            // [HibikiListItem]，不能在收口时悄悄丢掉。
-            HibikiListItem(
+            // [FushiListItem]，不能在收口时悄悄丢掉。
+            FushiListItem(
               // 焦点驱动纪律：这一项拿到初始焦点，Tab/方向键从它开始，Enter 直接确认。
               autofocus: gamePid != null
                   ? window.pid == gamePid
@@ -789,7 +789,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _launchingGalHook = true;
     try {
       if (!Platform.isWindows) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.external_window_unsupported,
           severity: ToastSeverity.error,
         );
@@ -813,7 +813,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         context: context,
       );
       if (!installed || !mounted) return;
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_capture_launching,
         severity: ToastSeverity.info,
       );
@@ -852,7 +852,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       // BUG-1089 的着色面：outcome 已经把「跑起来了 / 只剩整机混音兜底 / 根本没起来」
       // 分好了，toast 的颜色跟着同一份判定走，别再让三种结局长成同一条无色提示。
       if (message != null) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: message,
           severity: switch (outcome) {
             GalHookLaunchOutcome.running => ToastSeverity.success,
@@ -883,17 +883,17 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       final LunaHookCodeProfileStore store =
           await LunaHookCodeProfileStore.openDefault();
       await store.replaceFrom(File(path));
-      HibikiToast.show(
+      FushiToast.show(
         msg: 'Hook Code · ${t.dialog_import}',
         severity: ToastSeverity.success,
       );
     } on FormatException {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.audiobook_import_error,
         severity: ToastSeverity.error,
       );
     } catch (_) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.audiobook_import_error,
         severity: ToastSeverity.error,
       );
@@ -911,12 +911,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       final LunaHookCodeProfileStore store =
           await LunaHookCodeProfileStore.openDefault();
       await store.exportTo(File(path));
-      HibikiToast.show(
+      FushiToast.show(
         msg: 'Hook Code · ${t.dialog_export}',
         severity: ToastSeverity.success,
       );
     } catch (_) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.audiobook_import_error,
         severity: ToastSeverity.error,
       );
@@ -929,7 +929,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final String? hookCode = thread?.hookCode;
     if (executable == null || hookCode == null || hookCode.trim().isEmpty) {
       // 没选文本线程就点保存＝前置条件不满足、什么都没存下，必须让用户看出这次没成。
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_text_thread_hint,
         severity: ToastSeverity.error,
       );
@@ -951,12 +951,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           label: label,
         ),
       );
-      HibikiToast.show(
+      FushiToast.show(
         msg: 'Hook Code · ${t.dialog_save}',
         severity: ToastSeverity.success,
       );
     } catch (_) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.audiobook_import_error,
         severity: ToastSeverity.error,
       );
@@ -976,7 +976,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     return Material(
       // 走共享设计 token 的语义 overlay 面（顶层容器面调性），不在页面里直接引原始
       // ColorScheme 面 token（MD3 守卫要求 ordinary chrome 走共享组件）。
-      color: HibikiDesignTokens.of(context).surfaces.overlay,
+      color: FushiDesignTokens.of(context).surfaces.overlay,
       child: InkWell(
         onTap: _pickExternalWindow,
         child: Padding(
@@ -996,13 +996,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 ),
               ),
               if (bound != null)
-                HibikiIconButton(
+                FushiIconButton(
                   icon: Icons.link_off,
                   size: 18,
                   tooltip: t.external_window_unbind,
                   onTap: () => unawaited(_session.bindWindow(null)),
                 ),
-              HibikiIconButton(
+              FushiIconButton(
                 icon: Icons.refresh,
                 size: 18,
                 tooltip: t.external_window_refresh,
@@ -1186,17 +1186,17 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       return Column(
         children: <Widget>[
           if (sectionTabs != null)
-            HibikiPageHeader.customTitle(
+            FushiPageHeader.customTitle(
               title: sectionTabs,
               actions: actions,
             )
           else
-            HibikiPageHeader(
+            FushiPageHeader(
               title: t.game_capture_workbench,
               subtitle: t.game_capture_description,
               leading: widget.onShowLibrary == null
                   ? null
-                  : HibikiIconButton(
+                  : FushiIconButton(
                       icon: Icons.arrow_back,
                       tooltip: t.game_back_to_library,
                       onTap: widget.onShowLibrary,
@@ -1243,7 +1243,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     String? labelOf(String value) => embedded ? value : null;
     return <Widget>[
       if (Platform.isWindows)
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.rocket_launch_outlined,
           tooltip: t.game_launch_and_capture,
           label: labelOf(t.game_launch_and_capture),
@@ -1253,15 +1253,15 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       // 转区工具拉起的进程都属此列），attach 能力也一直都在，只是入口此前藏在「更多」
       // 菜单的模式开关里。两条起点并列摆出来，用户不必再为了捕获而重启游戏。
       if (Platform.isWindows)
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.cable_outlined,
           tooltip: t.game_attach_and_capture,
           label: labelOf(t.game_attach_and_capture),
-          focusId: const HibikiFocusId('game-toolbar-attach'),
+          focusId: const FushiFocusId('game-toolbar-attach'),
           onTap: _attachToRunningGame,
         ),
       if (state.isActive)
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.stop_circle_outlined,
           tooltip: t.game_stop_listening,
           label: labelOf(t.game_stop_listening),
@@ -1272,14 +1272,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       if (Platform.isWindows &&
           state.isActive &&
           _session.selectedTextThreadKey != null)
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.multitrack_audio_outlined,
           tooltip: t.game_audio_tracks,
           label: labelOf(t.game_audio_tracks),
-          focusId: const HibikiFocusId('game-toolbar-tracks'),
+          focusId: const FushiFocusId('game-toolbar-tracks'),
           onTap: () => unawaited(_showSessionTrackPanel()),
         ),
-      HibikiIconButton(
+      FushiIconButton(
         icon: Icons.delete_outline,
         tooltip: t.clear,
         label: labelOf(t.clear),
@@ -1591,7 +1591,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     // 重名线程（同 hookName + 地址、不同调用上下文）补 `#N` 序号，供下拉区分。
     final Map<String, String> threadDisplayLabels =
         assignThreadDisplayLabels(textThreads);
-    return HibikiCard(
+    return FushiCard(
       padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1684,7 +1684,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 // 语义保持）。
                 GamepadMenuDropdown<String>(
                   key: const ValueKey<String>('game-text-thread-selector'),
-                  focusId: const HibikiFocusId('game-text-thread-selector'),
+                  focusId: const FushiFocusId('game-text-thread-selector'),
                   label: t.game_text_thread,
                   enabled: textThreads.isNotEmpty,
                   selected: textThreads.any(
@@ -1885,11 +1885,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
               int count,
               IconData icon
             ) in specs)
-          HibikiSelectableChip(
+          FushiSelectableChip(
             label: '$label $count',
             leadingIcon: icon,
             selected: _lineFilter == filter,
-            focusId: HibikiFocusId('game-line-filter-${filter.name}'),
+            focusId: FushiFocusId('game-line-filter-${filter.name}'),
             onSelected: (_) => setState(() => _lineFilter = filter),
           ),
       ],
@@ -2006,7 +2006,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   Widget _buildPopupOverlay(BuildContext overlayContext) {
     if (!mounted || _overlayInert) return const SizedBox.shrink();
-    return HibikiAppUiScaleNeutralizer(
+    return FushiAppUiScaleNeutralizer(
       child: Theme(
         data: _appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
         child: Builder(
@@ -2045,7 +2045,7 @@ class _SessionOverviewCard extends StatelessWidget {
         : '${state.audioFormat!.sampleRate} Hz · '
             '${state.audioFormat!.channels} ch · '
             '${state.audioFormat!.bitsPerSample} bit';
-    return HibikiCard(
+    return FushiCard(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Row(
         children: <Widget>[
@@ -2149,7 +2149,7 @@ class _ThreadSelectionRequiredCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return HibikiCard(
+    return FushiCard(
       child: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -2263,7 +2263,7 @@ class _LineTracksCardState extends State<_LineTracksCard> {
         await widget.session.exportLineTrackPreview(lineId, track.sourcePtr);
     if (!mounted) return;
     if (preview == null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_track_preview_failed,
         severity: ToastSeverity.error,
       );
@@ -2272,7 +2272,7 @@ class _LineTracksCardState extends State<_LineTracksCard> {
     final bool started = await DesktopAudioPlayback.playFile(preview.filePath);
     if (!mounted) return;
     if (!started) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_track_preview_failed,
         severity: ToastSeverity.error,
       );
@@ -2294,7 +2294,7 @@ class _LineTracksCardState extends State<_LineTracksCard> {
       sourcePtr,
     );
     if (!mounted) return;
-    HibikiToast.show(
+    FushiToast.show(
       msg: applied ? t.game_line_track_applied : t.game_line_track_failed,
       severity: applied ? ToastSeverity.success : ToastSeverity.error,
     );
@@ -2306,7 +2306,7 @@ class _LineTracksCardState extends State<_LineTracksCard> {
     final GalHookSessionState state = widget.session.state;
     final int? lineVoicePtr =
         line == null ? null : widget.session.lineVoiceSourcePtr(line.id);
-    return HibikiCard(
+    return FushiCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -2320,11 +2320,11 @@ class _LineTracksCardState extends State<_LineTracksCard> {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
-              HibikiIconButton(
+              FushiIconButton(
                 icon: Icons.refresh,
                 tooltip: t.game_refresh_tracks,
                 size: 18,
-                focusId: const HibikiFocusId('game-line-tracks-refresh'),
+                focusId: const FushiFocusId('game-line-tracks-refresh'),
                 onTap: () => unawaited(_syncTracks(force: true)),
               ),
             ],
@@ -2424,7 +2424,7 @@ class _CaptureHealthCard extends StatelessWidget {
     final int connected = endpoints
         .where((e) => e.phase == TexthookerEndpointPhase.connected)
         .length;
-    return HibikiCard(
+    return FushiCard(
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2699,10 +2699,10 @@ class _TexthookerLine extends StatelessWidget {
         line.sourceLabel ?? texthookerLineSourceLabel(line.source);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: HibikiCard(
+      child: FushiCard(
         key: ValueKey<String>('game-line-${line.id}'),
         selected: selected,
-        focusId: HibikiFocusId('game-line-${line.id}'),
+        focusId: FushiFocusId('game-line-${line.id}'),
         onTap: () => onSelectLine(line),
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -2737,7 +2737,7 @@ class _TexthookerLine extends StatelessWidget {
                 // 行内试听已配音频（用户实拍：音频就绪却听不了）。仅 hasAudio 行显示；
                 // 试听中变停止钮。样式对齐收藏星。
                 if (line.hasAudio) ...<Widget>[
-                  HibikiIconButton(
+                  FushiIconButton(
                     icon: previewingAudio
                         ? Icons.stop_circle_outlined
                         : Icons.play_circle_outline,
@@ -2746,7 +2746,7 @@ class _TexthookerLine extends StatelessWidget {
                         : t.game_line_preview_tooltip,
                     size: 18,
                     enabledColor: previewingAudio ? colors.primary : null,
-                    focusId: HibikiFocusId('game-line-preview-${line.id}'),
+                    focusId: FushiFocusId('game-line-preview-${line.id}'),
                     onTap: () => onPreviewAudio(line),
                   ),
                   const SizedBox(width: 4),
@@ -2754,11 +2754,11 @@ class _TexthookerLine extends StatelessWidget {
                 // 逐行改音轨（BUG-1102）：自动选源在真机上会误选 BGM/旁白轨，
                 // 用户必须能对**这一句**直接指定用哪条轨重抓。
                 if (canPickTrack) ...<Widget>[
-                  HibikiIconButton(
+                  FushiIconButton(
                     icon: Icons.multitrack_audio_outlined,
                     tooltip: t.game_line_track_tooltip,
                     size: 18,
-                    focusId: HibikiFocusId('game-line-track-${line.id}'),
+                    focusId: FushiFocusId('game-line-track-${line.id}'),
                     onTap: () => onPickTrack(line),
                   ),
                   const SizedBox(width: 4),
@@ -2766,7 +2766,7 @@ class _TexthookerLine extends StatelessWidget {
                 // 行内补录：missing/兜底行的一键补救此前只在浮窗有入口，工作台里
                 // 用户对着红标没有任何补救手段。录音中变停止钮（收束并落定）。
                 if (canRecapture) ...<Widget>[
-                  HibikiIconButton(
+                  FushiIconButton(
                     icon: recapturing
                         ? Icons.stop_circle_outlined
                         : Icons.mic_none_outlined,
@@ -2775,13 +2775,13 @@ class _TexthookerLine extends StatelessWidget {
                         : t.game_line_recapture,
                     size: 18,
                     enabledColor: recapturing ? colors.error : null,
-                    focusId: HibikiFocusId('game-line-recapture-${line.id}'),
+                    focusId: FushiFocusId('game-line-recapture-${line.id}'),
                     onTap: () => onRecapture(line),
                   ),
                   const SizedBox(width: 4),
                 ],
                 // 会话内存态收藏星（不落 DB）；已收藏填充金黄星，未收藏描边星。
-                HibikiIconButton(
+                FushiIconButton(
                   icon: line.favorited ? Icons.star : Icons.star_border,
                   tooltip: line.favorited
                       ? t.game_line_unfavorite_tooltip
@@ -2987,7 +2987,7 @@ class _WordSpan extends StatelessWidget {
   Widget build(BuildContext context) {
     // 巡检 G2（鼠标部分）：手型光标 + hover 底色让「可点查词」在桌面可发现。
     // InkWell 不抢焦点（canRequestFocus:false）——行内逐词键盘导航不在本轮范围，
-    // 行级焦点站点仍由外层 HibikiCard 提供。
+    // 行级焦点站点仍由外层 FushiCard 提供。
     return InkWell(
       canRequestFocus: false,
       hoverColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),

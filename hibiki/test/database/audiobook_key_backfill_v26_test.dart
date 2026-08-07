@@ -19,8 +19,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// already-taken rows stay untouched. Single transaction, idempotent.
 ///
 /// Version asserts always use `db.schemaVersion` (never a hard-coded 26).
-Future<HibikiDatabase> _openV25(void Function(Database db) seed) async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV25(void Function(Database db) seed) async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         rawDb.execute(_kEpubBooksSql);
@@ -131,7 +131,7 @@ void _insertCue(Database db, String bookKey, int i) {
   );
 }
 
-Future<List<String>> _bookKeys(HibikiDatabase db, String table) async {
+Future<List<String>> _bookKeys(FushiDatabase db, String table) async {
   final rows =
       await db.customSelect('SELECT book_key FROM $table ORDER BY id').get();
   return rows.map((r) => r.read<String>('book_key')).toList();
@@ -246,7 +246,7 @@ void main() {
     });
 
     test('partial DB without srt_books/epub_books does not throw', () async {
-      final db = HibikiDatabase.forTesting(
+      final db = FushiDatabase.forTesting(
         NativeDatabase.memory(
           setup: (rawDb) {
             rawDb.execute(_kAudiobooksSql);

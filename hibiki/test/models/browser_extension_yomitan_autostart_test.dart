@@ -20,14 +20,14 @@ import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
 
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
 
 /// 用内存 DB + prefsRepo 接线一个最小 AppModel，只驱动 yomitan 相关 getter/setter。
-Future<AppModel> _prefsBackedAppModel(HibikiDatabase db) async {
+Future<AppModel> _prefsBackedAppModel(FushiDatabase db) async {
   final PreferencesRepository prefsRepo = PreferencesRepository(db);
   await prefsRepo.loadFromDb();
   final Directory tempDir =
@@ -48,7 +48,7 @@ class _TestAppModel extends AppModel {
 void main() {
   test('disabled server → enables and starts, seeds token, returns true',
       () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final AppModel appModel = await _prefsBackedAppModel(db);
     // 绑临时端口（0=系统分配空闲端口），避免与真机 app 的 19633 冲突/端口占用抖动。
@@ -70,7 +70,7 @@ void main() {
 
   test('non-empty token is preserved (never overwritten → avoids 401)',
       () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final AppModel appModel = await _prefsBackedAppModel(db);
     // server 已启用 → 方法走「跳过不重启」早退分支，不绑 socket，纯确定性。
@@ -88,7 +88,7 @@ void main() {
 
   test('empty token seeded even when server already enabled, no restart',
       () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final AppModel appModel = await _prefsBackedAppModel(db);
     await appModel.setYomitanApiServerEnabled(true);
@@ -104,17 +104,17 @@ void main() {
 
   // 用户诉求核心（TODO-1266 复核）：装扩展走 yomitan-api（查词 API），与「Hibiki 互联/
   // 同步」是两个独立子系统。装扩展只能开 yomitan-api server，绝不能连带启动互联/同步
-  // server（HibikiSyncServerController）。本测试锁死子系统隔离，防止把「装扩展默认开」
+  // server（FushiSyncServerController）。本测试锁死子系统隔离，防止把「装扩展默认开」
   // 误绑到互联子系统。
   test('装扩展只开 yomitan-api server，绝不启动 Hibiki 互联/同步 server', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final AppModel appModel = await _prefsBackedAppModel(db);
     // 绑临时端口（0=系统分配空闲端口），仅让 yomitan-api server 起在空闲端口。
     await appModel.setYomitanApiPort(0);
     addTearDown(appModel.stopYomitanApiServer);
 
-    // 前置：互联/同步 server（HibikiSyncServerController）未启动。
+    // 前置：互联/同步 server（FushiSyncServerController）未启动。
     expect(appModel.syncServerController.isRunning, isFalse,
         reason: '前置：Hibiki 互联/同步 server 应处于未启动');
 

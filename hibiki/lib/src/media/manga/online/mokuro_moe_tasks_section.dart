@@ -142,8 +142,8 @@ class MokuroMoeTasksSection extends ConsumerWidget {
     };
     final bool errorTone = task.status == MokuroMoeTaskStatus.failed ||
         task.status == MokuroMoeTaskStatus.waitingRetry;
-    return HibikiListItem(
-      density: HibikiListDensity.compact,
+    return FushiListItem(
+      density: FushiListDensity.compact,
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       subtitleMaxLines: 2,
       // BUG-1184：漫画标题（常带卷号/作者）在窄屏单行只看得到开头几个字；这一行在
@@ -165,7 +165,7 @@ class MokuroMoeTasksSection extends ConsumerWidget {
       trailing: switch (task.status) {
         MokuroMoeTaskStatus.failed ||
         MokuroMoeTaskStatus.cancelled =>
-          HibikiIconButton(
+          FushiIconButton(
             tooltip: t.retry,
             icon: Icons.refresh,
             size: 20,
@@ -175,7 +175,7 @@ class MokuroMoeTasksSection extends ConsumerWidget {
         MokuroMoeTaskStatus.queued ||
         MokuroMoeTaskStatus.running ||
         MokuroMoeTaskStatus.waitingRetry =>
-          HibikiIconButton(
+          FushiIconButton(
             tooltip: t.dialog_cancel,
             icon: Icons.close,
             size: 20,

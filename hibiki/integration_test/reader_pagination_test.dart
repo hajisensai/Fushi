@@ -393,7 +393,7 @@ void main() {
 /// Open the seeded reader book deterministically.
 ///
 /// The shelf book card's Enter→activate→openMedia binding is only installed
-/// when the card lives under a [HibikiFocusRoot]; the shelf does not wrap its
+/// when the card lives under a [FushiFocusRoot]; the shelf does not wrap its
 /// cards in one, so a focus-driven Enter is a no-op and the reader never opens
 /// (TODO-783). Bypass the UI focus tree entirely: resolve the book's
 /// [MediaItem] from its key and drive [AppModel.openMedia] directly — the same

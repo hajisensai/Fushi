@@ -33,7 +33,7 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.byType(HibikiCard), findsOneWidget);
+    expect(find.byType(FushiCard), findsOneWidget);
     expect(find.byType(TextField), findsNothing);
     expect(find.byIcon(Icons.file_upload_outlined), findsOneWidget);
     expect(find.byIcon(Icons.undo_outlined), findsOneWidget);

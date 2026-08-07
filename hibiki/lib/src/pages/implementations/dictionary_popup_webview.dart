@@ -112,7 +112,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   final bool hasChildPopup;
 
   /// TODO-1065：本弹窗宿主是「app 外 / 悬浮字幕」独立查词窗（popup_main 宿主）时置 true。
-  /// 该路径的圆角卡由 Flutter [HibikiPopupSurface] 画，弹窗 WebView 跑在透明浮动窗里；
+  /// 该路径的圆角卡由 Flutter [FushiPopupSurface] 画，弹窗 WebView 跑在透明浮动窗里；
   /// 若 `<html>` documentElement 被填不透明近白的主题 surface（`--background-color`）铺满
   /// 整个 WebView 视口，就盖在 Flutter 卡片之上、浅色主题下读成整窗泛白。为 true 时给
   /// `<html>` 加 `mobile-external` class（popup.css `html.mobile-external{background:transparent}`）
@@ -1246,18 +1246,18 @@ JSON.stringify((function(){
     // 不变式（根因守卫，BUG-039/054 同因）：词典 WebView 必须在「净缩放=1」的原生
     // 密度空间里渲染。全局「界面大小」用 FittedBox 把整棵树当一张画布拉伸，WebView
     // 是平台视图纹理、被拉大必糊；唯一干净解法是让它永远在原生密度渲染（内容大小走
-    // WebView 自带字号），即必须处在 HibikiAppUiScaleNeutralizer 之下。
+    // WebView 自带字号），即必须处在 FushiAppUiScaleNeutralizer 之下。
     // of()==defaultScale 同时覆盖「全局未缩放」与「已被中和器中和」两种合法情形；
     // 唯一会触发的是「被全局缩放且未中和」——正是发糊的精确条件。任何新增词典
     // WebView 表面若忘了套中和器，会在此 debug/集成测试里立刻炸，而非等用户撞糊。
-    final double appUiScale = HibikiAppUiScale.of(context);
+    final double appUiScale = FushiAppUiScale.of(context);
     assert(
-      appUiScale == HibikiAppUiScale.defaultScale,
-      'DictionaryPopupWebView 必须渲染在 HibikiAppUiScaleNeutralizer 之下'
+      appUiScale == FushiAppUiScale.defaultScale,
+      'DictionaryPopupWebView 必须渲染在 FushiAppUiScaleNeutralizer 之下'
       '（净缩放=1），否则会被全局界面缩放的 FittedBox 拉糊。'
       '当前 scale=$appUiScale。'
       '修法：把承载本 WebView 及其同坐标系弹窗的整块区域用 '
-      'HibikiAppUiScaleNeutralizer 包裹（参见 reader_hibiki_source / '
+      'FushiAppUiScaleNeutralizer 包裹（参见 reader_hibiki_source / '
       'home_dictionary_page / popup_dictionary_page）。',
     );
     final t = Translations.of(context);
@@ -1346,7 +1346,7 @@ JSON.stringify((function(){
                 final bool shared =
                     await SelectionExternalActions.instance.shareText(text);
                 if (!shared) {
-                  HibikiToast.show(
+                  FushiToast.show(
                     msg: t.selection_share_failed,
                     severity: ToastSeverity.error,
                   );
@@ -1364,7 +1364,7 @@ JSON.stringify((function(){
                 final bool opened =
                     await SelectionExternalActions.instance.searchWeb(text);
                 if (!opened) {
-                  HibikiToast.show(
+                  FushiToast.show(
                     msg: t.selection_web_search_unavailable,
                     severity: ToastSeverity.error,
                   );
@@ -2268,7 +2268,7 @@ JSON.stringify((function(){
     // 已被 dismiss。unmounted 时读 State.context 会抛异常，故必须先 return。
     if (!mounted) return;
     final t = Translations.of(context);
-    HibikiToast.show(
+    FushiToast.show(
       msg: copied ? t.copied_to_clipboard : t.selection_copy_empty,
     );
   }

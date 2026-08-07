@@ -22,13 +22,13 @@ void main() {
     panelCalls.clear();
     lastPanelCall = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(HibikiChannels.globalLookup,
+        .setMockMethodCallHandler(FushiChannels.globalLookup,
             (MethodCall call) async {
       globalCalls.add(call.method);
       return null;
     });
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(HibikiChannels.clipboardPanel,
+        .setMockMethodCallHandler(FushiChannels.clipboardPanel,
             (MethodCall call) async {
       panelCalls.add(call.method);
       lastPanelCall = call;
@@ -39,9 +39,9 @@ void main() {
 
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(HibikiChannels.globalLookup, null);
+        .setMockMethodCallHandler(FushiChannels.globalLookup, null);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(HibikiChannels.clipboardPanel, null);
+        .setMockMethodCallHandler(FushiChannels.clipboardPanel, null);
   });
 
   test('GlobalLookupChannel 静态门面仍走 global_lookup channel', () async {
@@ -53,7 +53,7 @@ void main() {
 
   test('面板实例走 clipboard_panel channel，与 global_lookup 互不串线', () async {
     const OverlayWindowChannel panel =
-        OverlayWindowChannel(HibikiChannels.clipboardPanel);
+        OverlayWindowChannel(FushiChannels.clipboardPanel);
     await panel.hide();
     await panel.setPinned(true);
     expect(await panel.applyBackdrop(), isTrue);
@@ -63,7 +63,7 @@ void main() {
 
   test('resolveBridge 保持双重 jsonEncode 契约（adapter JSON.parse(arg)）', () async {
     const OverlayWindowChannel panel =
-        OverlayWindowChannel(HibikiChannels.clipboardPanel);
+        OverlayWindowChannel(FushiChannels.clipboardPanel);
     await panel.resolveBridge(7, <String, Object?>{'ok': true});
     final Map<Object?, Object?> args =
         lastPanelCall!.arguments as Map<Object?, Object?>;
@@ -74,7 +74,7 @@ void main() {
 
   test('showAt 解析 native map 回复（work area + 窗口原点偏移）', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(HibikiChannels.clipboardPanel,
+        .setMockMethodCallHandler(FushiChannels.clipboardPanel,
             (MethodCall call) async {
       return <String, Object?>{
         'ok': true,
@@ -88,7 +88,7 @@ void main() {
       };
     });
     const OverlayWindowChannel panel =
-        OverlayWindowChannel(HibikiChannels.clipboardPanel);
+        OverlayWindowChannel(FushiChannels.clipboardPanel);
     final GlobalLookupShowResult r =
         await panel.showAt(x: 100, y: 60, width: 380, height: 520);
     expect(r.ok, isTrue);
@@ -103,12 +103,12 @@ void main() {
     // BUG-859 — 旧 native / 查询失败：monitorDpr 缺省 0，controller 据此回退主窗口
     // dpr（行为与修复前逐字节一致，Never break userspace）。
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(HibikiChannels.clipboardPanel,
+        .setMockMethodCallHandler(FushiChannels.clipboardPanel,
             (MethodCall call) async {
       return <String, Object?>{'ok': true, 'workW': 1920, 'workH': 1040};
     });
     const OverlayWindowChannel panel =
-        OverlayWindowChannel(HibikiChannels.clipboardPanel);
+        OverlayWindowChannel(FushiChannels.clipboardPanel);
     final GlobalLookupShowResult r =
         await panel.showAt(x: 0, y: 0, width: 380, height: 520);
     expect(r.monitorDpr, 0);

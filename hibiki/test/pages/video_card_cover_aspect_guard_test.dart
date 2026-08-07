@@ -127,7 +127,7 @@ void main() {
           );
           final double metaLine = textLineHeight(
             context,
-            HibikiDesignTokens.of(context).type.metadata,
+            FushiDesignTokens.of(context).type.metadata,
           );
           measured = titleLine * 2 + 8 + metaLine + 6 + kTextBlockSlack;
           return const SizedBox.shrink();

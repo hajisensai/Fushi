@@ -72,7 +72,7 @@ void main() {
         '本机作为 client 向 host 查词的传输层封装，返回给上层表面渲染；'
             '朗读由那个表面负责，这里重复朗读会双读。',
     'lib/src/sync/hibiki_remote_lookup_service.dart':
-        '上一条的抽象接口声明（HibikiRemoteLookupService），只有方法签名没有实现体，'
+        '上一条的抽象接口声明（FushiRemoteLookupService），只有方法签名没有实现体，'
             '不产生任何结果也不呈现 UI，谈不上朗读。',
   };
 

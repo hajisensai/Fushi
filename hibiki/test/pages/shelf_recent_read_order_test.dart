@@ -45,11 +45,11 @@ void main() {
   });
 
   group('bookLastReadAtProvider（真 DB 读 reader_positions.updatedAt）', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late ProviderContainer container;
 
     setUp(() {
-      db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
       final AppModel appModel = AppModel(testPlatformServices())
         ..wireDatabaseForTesting(db);
       container = ProviderContainer(overrides: <Override>[

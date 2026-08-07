@@ -35,8 +35,8 @@ import '../helpers/test_platform_services.dart';
 // SingleChildScrollView + Column), so the extent is exact and constant. This
 // test pins that: `maxScrollExtent` must be identical at the top, middle, and
 // bottom of the same content.
-HibikiDatabase _testDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 Future<ScrollController> _pumpSyncDetail(
   WidgetTester tester,
@@ -44,7 +44,7 @@ Future<ScrollController> _pumpSyncDetail(
 ) async {
   FocusManager.instance.highlightStrategy = FocusHighlightStrategy.alwaysTouch;
 
-  final HibikiDatabase db = _testDb();
+  final FushiDatabase db = _testDb();
   final PreferencesRepository prefs = PreferencesRepository(db);
   await prefs.loadFromDb();
   final Directory storeDir = Directory.systemTemp.createTempSync('hibiki_sync');
@@ -52,12 +52,12 @@ Future<ScrollController> _pumpSyncDetail(
   await repo.setBackendType(SyncBackendType.hibikiServer);
   // Several URLs → a tall, variable-height URL list, exaggerating the unequal
   // section heights that destabilise a lazy list's extent estimate.
-  await repo.setHibikiClientUrls(<HibikiClientUrl>[
-    const HibikiClientUrl(url: 'http://192.168.1.10:38765'),
-    const HibikiClientUrl(url: 'http://192.168.1.11:38765'),
-    const HibikiClientUrl(url: 'http://192.168.1.12:38765'),
-    const HibikiClientUrl(url: 'http://192.168.1.13:38765'),
-    const HibikiClientUrl(url: 'http://192.168.1.14:38765'),
+  await repo.setHibikiClientUrls(<FushiClientUrl>[
+    const FushiClientUrl(url: 'http://192.168.1.10:38765'),
+    const FushiClientUrl(url: 'http://192.168.1.11:38765'),
+    const FushiClientUrl(url: 'http://192.168.1.12:38765'),
+    const FushiClientUrl(url: 'http://192.168.1.13:38765'),
+    const FushiClientUrl(url: 'http://192.168.1.14:38765'),
   ]);
 
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
@@ -88,11 +88,11 @@ Future<ScrollController> _pumpSyncDetail(
         platform: TargetPlatform.android,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
         extensions: <ThemeExtension<dynamic>>[
-          HibikiDesignSystemTheme(themeNotifier.designSystemTheme),
+          FushiDesignSystemTheme(themeNotifier.designSystemTheme),
         ],
       ),
       home: Scaffold(
-        body: HibikiFocusRoot(
+        body: FushiFocusRoot(
           child: SizedBox(
             height: 360,
             child: Consumer(

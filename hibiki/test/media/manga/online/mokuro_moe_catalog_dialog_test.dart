@@ -44,10 +44,10 @@ const List<MokuroMoeSeries> _library = <MokuroMoeSeries>[
 ];
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() async {
@@ -245,7 +245,7 @@ void main() {
     expect(q.queue.tasks.single.status, MokuroMoeTaskStatus.done);
 
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    HibikiToast.navigatorKey = navKey;
+    FushiToast.navigatorKey = navKey;
     await tester.pumpWidget(
       ProviderScope(
         child: TranslationProvider(

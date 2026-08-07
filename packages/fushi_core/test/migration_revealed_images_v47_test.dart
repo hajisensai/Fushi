@@ -17,8 +17,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// 只需 `PRAGMA user_version = 45`（revealed_images 的 FK 指向 epub_books 在 CREATE TABLE
 /// 时不要求目标表已存在，纯 select 也不触发 FK 检查）。
 
-HibikiDatabase _openMigratedFromV45() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _openMigratedFromV45() {
+  return FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (raw) {
         raw.execute('PRAGMA foreign_keys = ON');
@@ -31,7 +31,7 @@ HibikiDatabase _openMigratedFromV45() {
 void main() {
   test('v45 -> v47 creates revealed_images, lands on current version, empty',
       () async {
-    final HibikiDatabase db = _openMigratedFromV45();
+    final FushiDatabase db = _openMigratedFromV45();
     addTearDown(db.close);
 
     final QueryRow ver =
@@ -48,8 +48,8 @@ void main() {
   });
 
   test('fresh DB round-trips revealed image keys, isolated per book', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     expect(db.schemaVersion, greaterThanOrEqualTo(47));

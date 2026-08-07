@@ -97,7 +97,7 @@ class PlayAudioAction extends QuickAction {
       return;
     }
 
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.audio_unavailable,
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.BOTTOM,

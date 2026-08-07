@@ -17,7 +17,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 /// 用可控时钟做确定性时间旅行：t=0 签发 → t=4min 访问（刷新）→ t=8min 再访问。
 /// 距首次签发已 8min（>5min），但距上次访问只 4min（<5min）：命中续期下仍 200，
 /// 撤掉续期则 404。
-class _FakeAudioLookupService implements HibikiRemoteLookupService {
+class _FakeAudioLookupService implements FushiRemoteLookupService {
   _FakeAudioLookupService(this._bytes);
 
   final Uint8List _bytes;
@@ -42,7 +42,7 @@ class _FakeAudioLookupService implements HibikiRemoteLookupService {
 }
 
 void main() {
-  late HibikiSyncServer server;
+  late FushiSyncServer server;
   late _FakeAudioLookupService lookup;
   const String token = 'test-token-refresh';
   late String base;
@@ -55,7 +55,7 @@ void main() {
     lookup = _FakeAudioLookupService(
       Uint8List.fromList(utf8.encode('MP3-AUDIO-BYTES')),
     );
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir: Directory.systemTemp.createTempSync('hbk_tok_refresh').path,
       port: 0,
       token: token,

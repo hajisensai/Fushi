@@ -147,7 +147,7 @@ class _EpisodeRailCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const BorderRadius radius = HibikiBorderRadius.card;
+    const BorderRadius radius = FushiBorderRadius.card;
     final Color borderColor =
         selected ? colorScheme.primary : Colors.white.withValues(alpha: 0.14);
     return Semantics(

@@ -3199,7 +3199,7 @@ $_sharedJs
     });
   },
   // TODO-693: appUiScale（整体界面缩放）变化时，连续模式的阅读位置只是裸 window.scrollY，
-  // 没有分页模式的 registerSnapScroll/lockRootViewport 保护。HibikiAppUiScale 用新 s 重建
+  // 没有分页模式的 registerSnapScroll/lockRootViewport 保护。FushiAppUiScale 用新 s 重建
   // 两层 FittedBox/SizedBox → WebView 平台视图 box.size 过渡帧抖动 → 击穿 SetSizeDedup →
   // native put_Bounds → WebView2 reflow 把 document scrollY 瞬时归 0，归零后无任何机制拉回，
   // 于是被章内 scroll 回传通道当作真实滚动落库 progress≈0 → 弹回章节开头。

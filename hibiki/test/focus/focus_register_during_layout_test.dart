@@ -4,7 +4,7 @@ import 'package:fushi/src/focus/hibiki_focus_controller.dart';
 import 'package:fushi/src/focus/hibiki_focus_target.dart';
 
 void main() {
-  // Regression: a HibikiFocusTarget first mounts (and register()s) as a
+  // Regression: a FushiFocusTarget first mounts (and register()s) as a
   // lazily-built SliverList child inside a layout callback
   // (RenderSliverMultiBoxAdaptor.createChild → didChangeDependencies). When an
   // off-screen sibling that still holds primary focus is being recycled in the
@@ -23,14 +23,14 @@ void main() {
 
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
-        body: HibikiFocusRoot(
+        body: FushiFocusRoot(
           child: ListView.builder(
             controller: controller,
             itemExtent: 80,
             itemCount: 600,
             itemBuilder: (BuildContext context, int index) {
-              return HibikiFocusTarget(
-                id: HibikiFocusId('row-$index'),
+              return FushiFocusTarget(
+                id: FushiFocusId('row-$index'),
                 child: TextButton(
                   onPressed: () {},
                   child: Text('Row $index'),
@@ -42,11 +42,11 @@ void main() {
       ),
     ));
 
-    final HibikiFocusController focus = HibikiFocusRoot.controllerOf(
+    final FushiFocusController focus = FushiFocusRoot.controllerOf(
       tester.element(find.byType(ListView)),
     );
     // Focus a row that is currently on-screen so its node becomes primary.
-    focus.requestById(const HibikiFocusId('row-0'));
+    focus.requestById(const FushiFocusId('row-0'));
     await tester.pump();
     expect(tester.takeException(), isNull);
 

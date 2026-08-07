@@ -19,7 +19,7 @@ import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
 
-/// 落 `activity_events` 的一条游戏活动写入契约。默认实现走 [HibikiDatabase.
+/// 落 `activity_events` 的一条游戏活动写入契约。默认实现走 [FushiDatabase.
 /// addActivityEvent]（[kActivityGame] / [kActivityMediaGame]）；单测可注入假写入方
 /// 断言 flush 时机与聚合值，无需真实 DB。
 ///
@@ -420,7 +420,7 @@ class GalHookSessionState {
   final GalHookInjectorFailure injectorFailure;
 
   /// 与 [injectorFailure] 同生共死的**一手证据**（`exit=<码>` + native 诊断末行，例如
-  /// `voice_hook open access_denied name=Local\HibikiVoiceHook_1234 win32=5`）。
+  /// `voice_hook open access_denied name=Local\FushiVoiceHook_1234 win32=5`）。
   ///
   /// 降级路径的启动结果是「已启动」，诊断挂不到 `GalHookLaunchResult` 上；没有这个字段，
   /// 用户在降级 toast 里只看得到一句归类结论，另一台机器上跑得通/跑不通无从对比
@@ -858,7 +858,7 @@ class GalHookSessionController extends ChangeNotifier {
   /// 由桌面启动流程注入的 DB 惰性解析器（见 [attachActivityDatabase]）。flush 时才
   /// 解析——App 未初始化完/未注入时解析到 null 静默不落库（累计保留，下次再试），
   /// 避免 start 时急切解引用未初始化的 late 字段。
-  HibikiDatabase? Function()? _activityDatabaseResolver;
+  FushiDatabase? Function()? _activityDatabaseResolver;
 
   /// 由桌面启动流程注入的窗口超分编排器（见 [attachMagpieUpscaling]）。
   ///
@@ -2820,7 +2820,7 @@ class GalHookSessionController extends ChangeNotifier {
   /// 注入 activity_events 落库用的 DB 惰性解析器（桌面启动流程
   /// [GalHookTextOverlayController.start] 调用一次；解析在每次 flush 时发生，
   /// App 尚未初始化完则返回 null 跳过本次落库）。是首页「游戏」活动的唯一数据来源。
-  void attachActivityDatabase(HibikiDatabase? Function() resolve) {
+  void attachActivityDatabase(FushiDatabase? Function() resolve) {
     _activityDatabaseResolver = resolve;
   }
 
@@ -2913,7 +2913,7 @@ class GalHookSessionController extends ChangeNotifier {
   GalHookActivityWriter? _resolveActivityWriter() {
     final GalHookActivityWriter? injected = _activityWriter;
     if (injected != null) return injected;
-    final HibikiDatabase? database = _activityDatabaseResolver?.call();
+    final FushiDatabase? database = _activityDatabaseResolver?.call();
     if (database == null) return null;
     return ({
       required String title,
@@ -2945,7 +2945,7 @@ class GalHookSessionController extends ChangeNotifier {
       await writer(
         title: title,
         mediaKey: mediaKey,
-        dateKey: HibikiTimeFormat.dayKey(now),
+        dateKey: FushiTimeFormat.dayKey(now),
         timestampMs: now.millisecondsSinceEpoch,
         charsDelta: charsDelta,
       );

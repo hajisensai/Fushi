@@ -6,15 +6,15 @@ import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
 
 void main() {
   group('PreferencesRepository video danmaku prefs', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late PreferencesRepository repo;
 
     setUp(() async {
@@ -74,7 +74,7 @@ void main() {
       DandanplayConfig.current =
           const DandanplayConfig(baseUrl: 'https://stale.example');
       await _withMultipleDatabaseWarningDisabled(() async {
-        final HibikiDatabase freshDb = _testDb();
+        final FushiDatabase freshDb = _testDb();
         addTearDown(freshDb.close);
         final PreferencesRepository fresh = PreferencesRepository(freshDb);
         addTearDown(fresh.dispose);
@@ -85,7 +85,7 @@ void main() {
   });
 
   group('PreferencesRepository video auto-play-next pref (TODO-639)', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late PreferencesRepository repo;
 
     setUp(() async {
@@ -113,7 +113,7 @@ void main() {
     });
   });
   group('PreferencesRepository videoRespectAssStyle (TODO-1105)', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late PreferencesRepository repo;
 
     setUp(() async {
@@ -142,7 +142,7 @@ void main() {
   });
 
   group('PreferencesRepository video danmaku style + block rules', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late PreferencesRepository repo;
 
     setUp(() async {

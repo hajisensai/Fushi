@@ -350,7 +350,7 @@ void main() {
     });
 
     test('peer address list keeps its title and empty-state guidance', () {
-      // 对端地址列表的标题与空态引导是 _HibikiServerConfigWidget 内的纯 widget
+      // 对端地址列表的标题与空态引导是 _FushiServerConfigWidget 内的纯 widget
       // 文案，进不了 SettingsSection 树，只能源码扫描守：任一处被删即红。同样只断
       // key 引用 + 语义锚点，不做整串字面量匹配。
       final String source = File(

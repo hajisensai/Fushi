@@ -519,7 +519,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
   void clearDictionaryResult() => _dismissPopupAt(0);
 
-  // 弹窗盒子尺寸随「界面大小」一起放大：阅读器/词典页整树被 HibikiAppUiScaleNeutralizer
+  // 弹窗盒子尺寸随「界面大小」一起放大：阅读器/词典页整树被 FushiAppUiScaleNeutralizer
   // 中和回原生密度（净缩放=1），弹窗盒子若不乘 appUiScale，界面 200% 时它仍是原生小尺寸
   // （内容放大走 WebView 内 CSS zoom，见 DictionaryPopupWebView）。
   //
@@ -701,7 +701,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       top: pos.top,
       width: pos.width,
       height: pos.height,
-      child: HibikiPopupSurface(
+      child: FushiPopupSurface(
         color: fillColor,
         child: Column(
           children: [
@@ -1150,7 +1150,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           child: SizedBox(
             height: double.infinity,
             width: double.infinity,
-            child: HibikiCard(
+            child: FushiCard(
               padding: EdgeInsets.zero,
               color: Colors.transparent,
               borderColor: Colors.transparent,
@@ -1240,7 +1240,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   ({String? bookKey, String? title})? get lookupBookIdentity => null;
 
   /// TODO-1204：[DictionaryPopupController.onLookupStarted] 注入点——每次查词
-  /// （顶层 / 嵌套 / 重复查各一次）累加 [HibikiDatabase.addLookupCount]。best-effort，
+  /// （顶层 / 嵌套 / 重复查各一次）累加 [FushiDatabase.addLookupCount]。best-effort，
   /// 失败吞掉并记日志（与 [addMiningCount] 记账同容错口径）。
   void _recordLookupCounter() {
     // best-effort：连同同步阶段（[AppModel.database] late 字段 getter 在 DB 未初始化
@@ -1288,7 +1288,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       // favoriteEntry），桌面可能收不到 → 星标不变色 → 用户判定「点了没用」（DB 其实
       // 已写）。DB 写成功后**与 callHandler 返回值解耦**直接弹 toast，保证两宿主都有
       // 确定反馈，不依赖也不改动返回值通道。
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.word_favorite_removed,
         severity: ToastSeverity.success,
       );
@@ -1306,7 +1306,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       bookKey: favIdentity?.bookKey,
       title: favIdentity?.title ?? '',
     );
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.word_favorite_added,
       severity: ToastSeverity.success,
     );
@@ -1327,7 +1327,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// Placeholder when there are no search results.
   Widget buildNoSearchResultsPlaceholderMessage() {
     return Center(
-      child: HibikiPlaceholderMessage(
+      child: FushiPlaceholderMessage(
         icon: Icons.search_off,
         message: t.no_search_results,
       ),

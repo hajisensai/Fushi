@@ -104,7 +104,7 @@ void _seedThreeBooks(dynamic rawDb) {
 /// schemaVersion (now 23 — favorite_words / mining_statistics landed on top of
 /// the v22 video watch-statistics step), so the version marker is asserted as
 /// the live schema version.
-Future<void> _expectUnifiedV20(HibikiDatabase db,
+Future<void> _expectUnifiedV20(FushiDatabase db,
     {int expectedBooks = 3}) async {
   final version = await db.customSelect('PRAGMA user_version').getSingle();
   expect(version.read<int>('user_version'), db.schemaVersion);
@@ -159,7 +159,7 @@ void main() {
       // from<16/from<17 steps silently skip. The convergence must run name-PK
       // late AND rebuild the legacy video_books.
       final db =
-          HibikiDatabase.forTesting(NativeDatabase.memory(setup: (rawDb) {
+          FushiDatabase.forTesting(NativeDatabase.memory(setup: (rawDb) {
         rawDb.execute(_legacyEpubBooksDdl);
         _seedThreeBooks(rawDb);
         rawDb.execute(_legacyVideoBooksDdl);
@@ -178,7 +178,7 @@ void main() {
         'PATH B: develop name-PK v16 (book_key epub, no video_books) '
         '-> v20 adds book_uid video_books, epub untouched', () async {
       final db =
-          HibikiDatabase.forTesting(NativeDatabase.memory(setup: (rawDb) {
+          FushiDatabase.forTesting(NativeDatabase.memory(setup: (rawDb) {
         rawDb.execute(_namePkEpubBooksDdl);
         // Name-PK rows: book_key directly.
         rawDb.execute(
@@ -197,7 +197,7 @@ void main() {
     test('PATH C: clean ancestor v15 (id-PK epub, no video_books) -> v20',
         () async {
       final db =
-          HibikiDatabase.forTesting(NativeDatabase.memory(setup: (rawDb) {
+          FushiDatabase.forTesting(NativeDatabase.memory(setup: (rawDb) {
         rawDb.execute(_legacyEpubBooksDdl);
         _seedThreeBooks(rawDb);
         rawDb.execute('PRAGMA user_version = 15');

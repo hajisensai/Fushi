@@ -15,7 +15,7 @@ import 'package:fushi/src/pages/implementations/home_page.dart';
 ///   「切回本 tab 时刷新」的 [homeShellTabNotifier] 监听三件套
 ///   （原 home_video_page 的 BUG-994 手搓样板收口）；
 /// - 经 [BasePageState] 继承 appModel / theme 快捷入口与
-///   `HibikiPagePlaceholders` 的 buildLoading / buildError 骨架占位。
+///   `FushiPagePlaceholders` 的 buildLoading / buildError 骨架占位。
 ///
 /// [BaseTabPage] 改为本类的 MediaSource 特化子类。HomeGamePage 因测试需要在
 /// 无 ProviderScope 下单独 pump（见 home_game_page_test.dart 的桩说明），

@@ -131,8 +131,8 @@ void main() {
     /// 「本机没有任何同步通道」并据此收起勾选框——这条覆盖的是用户真实遭遇的路径
     /// （全新装、从没配过同步，删书时勾了「从所有设备删除」）。
     testWidgets('传零配置的 db → 自动收起勾选框', (WidgetTester tester) async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
 
       await tester.pumpWidget(app(Builder(

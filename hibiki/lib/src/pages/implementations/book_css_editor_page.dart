@@ -17,7 +17,7 @@ class BookCssEditorPage extends ConsumerStatefulWidget {
 }
 
 class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
-    with HibikiPagePlaceholders<BookCssEditorPage> {
+    with FushiPagePlaceholders<BookCssEditorPage> {
   late BookCssRepository _repo;
   List<CssFileEntry> _entries = [];
   int _selectedIndex = 0;
@@ -290,22 +290,22 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
     // BUG-040: while the off-thread load is in flight, show a progress
     // indicator instead of a blank/blocked frame.
     if (_loading) {
-      return HibikiToolScaffold(
+      return FushiToolScaffold(
         title: t.book_css_editor_title,
         body: buildLoading(),
       );
     }
     if (_entries.isEmpty) {
-      return HibikiToolScaffold(
+      return FushiToolScaffold(
         title: t.book_css_editor_title,
-        body: HibikiPlaceholderMessage(
+        body: FushiPlaceholderMessage(
           icon: Icons.code,
           message: t.book_css_editor_no_css_files,
         ),
       );
     }
 
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, _) async {
@@ -315,7 +315,7 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
           Navigator.of(context).pop();
         }
       },
-      child: HibikiToolScaffold(
+      child: FushiToolScaffold(
         title: t.book_css_editor_title,
         actions: [
           TextButton(
@@ -332,7 +332,7 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
                 children: List.generate(_entries.length, (i) {
                   return Padding(
                     padding: EdgeInsets.only(right: tokens.spacing.gap),
-                    child: HibikiSelectableChip(
+                    child: FushiSelectableChip(
                       label: _tabLabel(i),
                       selected: i == _selectedIndex,
                       onSelected: (_) => _attemptSwitchTab(i),
@@ -357,7 +357,7 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
               child: IndexedStack(
                 index: _selectedIndex,
                 children: List.generate(_entries.length, (i) {
-                  return HibikiEditorPanel(controller: _textControllers[i]!);
+                  return FushiEditorPanel(controller: _textControllers[i]!);
                 }),
               ),
             ),
@@ -437,12 +437,12 @@ class BookCssConfirmationDialog<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.78,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: title,
         leadingIcon: Icons.code_outlined,
         bodyPadding: EdgeInsets.fromLTRB(

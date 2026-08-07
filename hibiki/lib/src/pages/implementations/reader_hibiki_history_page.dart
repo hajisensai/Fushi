@@ -95,10 +95,10 @@ part 'reader_history/books.part.dart';
 part 'reader_history/dialogs.part.dart';
 
 /// Stable gamepad/keyboard focus ids for the shelf chrome, used both to place
-/// [HibikiFocusTarget]s and to wire directional anchors (see
-/// [HibikiFocusController.registerDirectionalAnchor]). Kept as constants (not
+/// [FushiFocusTarget]s and to wire directional anchors (see
+/// [FushiFocusController.registerDirectionalAnchor]). Kept as constants (not
 /// derived per-instance ids) precisely so anchors can point at them by name.
-const HibikiFocusId kShelfImportFocusId = HibikiFocusId('reader-shelf-import');
+const FushiFocusId kShelfImportFocusId = FushiFocusId('reader-shelf-import');
 
 /// 库页条目分流：漫画独立书架只收 manga 源条目，普通书架反向排除它们。
 ///
@@ -509,7 +509,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         if (didPop) return;
         if (_selectionMode) _exitSelectionMode();
       },
-      child: HibikiFileDropTarget(
+      child: FushiFileDropTarget(
         debugLabel: 'reader-shelf',
         onDrop: _handleShelfDrop,
         child: CardDropScope<String>(
@@ -631,7 +631,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget _buildTagBar(List<BookTagRow> allTags) {
-    return HibikiTagFilterBar(
+    return FushiTagFilterBar(
       tags: allTags,
       onToggleFilter: _toggleFilter,
       onReorder: _reorderTags,
@@ -707,12 +707,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     ];
     final Widget? navigation = _pageWidget.navigation;
     if (navigation != null) {
-      return HibikiPageHeader.customTitle(
+      return FushiPageHeader.customTitle(
         title: navigation,
         actions: actions,
       );
     }
-    return HibikiPageHeader(
+    return FushiPageHeader(
       title: _mangaOnly ? t.manga_library : t.books,
       actions: actions,
     );
@@ -723,7 +723,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     required IconData icon,
     required VoidCallback onTap,
   }) {
-    return HibikiIconButton(
+    return FushiIconButton(
       tooltip: tooltip,
       // 页头动作宽窗展开文字（tooltip 即标签文案）；窄窗由组件自动回落纯图标。
       label: tooltip,
@@ -953,7 +953,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     required String successMsg,
   }) async {
     if (alreadyHas) {
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.tag_already_on_book(name: tag.name),
           severity: ToastSeverity.warning);
       return;
@@ -963,7 +963,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       ref.invalidate(p);
     }
     if (mounted) {
-      HibikiToast.show(msg: successMsg, severity: ToastSeverity.success);
+      FushiToast.show(msg: successMsg, severity: ToastSeverity.success);
     }
   }
 
@@ -1002,11 +1002,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// 文案不对。`addTagToCollection` 幂等，这里先查现有标签给合集专属提示，成功后失效
   /// [filteredCollectionIdsProvider] 让标签过滤下合集卡显隐立即刷新。
   Future<void> _addTagToCollection(int collectionId, BookTagRow tag) async {
-    final HibikiDatabase db = ref.read(appProvider).database;
+    final FushiDatabase db = ref.read(appProvider).database;
     final List<BookTagRow> existing =
         await db.getTagsForCollection(collectionId);
     if (existing.any((BookTagRow t) => t.id == tag.id)) {
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.tag_already_on_collection(name: tag.name),
           severity: ToastSeverity.warning);
       return;
@@ -1015,7 +1015,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     ref.invalidate(collectionTagMapProvider);
     ref.invalidate(filteredCollectionIdsProvider);
     if (mounted) {
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.tag_added_to_collection(name: tag.name),
           severity: ToastSeverity.success);
     }
@@ -1039,7 +1039,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     if (outcome != CollectionAddOutcome.added || !mounted) return;
     _shelfMapsFuture = _loadShelfMaps();
     _rebuild(() {});
-    HibikiToast.show(
+    FushiToast.show(
         msg: t.batch_add_to_collection_success(n: 1),
         severity: ToastSeverity.success);
   }
@@ -1085,7 +1085,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// 原并排的「统计」三格（总数/在读/已完成，BUG-991 的口径修正随之退役）已按
   /// 用户反馈移除——与右上角「阅读统计」入口重复。
   Widget _buildShelfOverviewSection(List<MediaItem> progressBooks) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ShelfProgressTally<MediaItem> tally = tallyShelfProgress<MediaItem>(
       progressBooks,
       (MediaItem item) => item.position,
@@ -1109,13 +1109,13 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   /// 继续阅读 hero：封面缩略 + 标题 + 已读 % 。整卡点击开书。
-  Widget _buildContinueReadingHero(MediaItem hero, HibikiDesignTokens tokens) {
+  Widget _buildContinueReadingHero(MediaItem hero, FushiDesignTokens tokens) {
     final int percent = hero.duration > 0
         ? ((hero.position / hero.duration) * 100).clamp(0, 100).round()
         : 0;
-    return HibikiCard(
+    return FushiCard(
       key: const ValueKey<String>('reader_shelf_continue_hero'),
-      focusId: const HibikiFocusId('reader-shelf-continue-hero'),
+      focusId: const FushiFocusId('reader-shelf-continue-hero'),
       onTap: () async {
         final MediaSource source = hero.getMediaSource(appModel: appModel);
         await appModel.openMedia(ref: ref, mediaSource: source, item: hero);
@@ -1123,7 +1123,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       child: Row(
         children: <Widget>[
           ClipRRect(
-            borderRadius: HibikiBorderRadius.card,
+            borderRadius: FushiBorderRadius.card,
             child: SizedBox(
               width: 56,
               height: 84,
@@ -1193,7 +1193,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     List<SrtBook> allSrtBooks,
     AsyncSnapshot<_RemoteBookState?>? remoteSnapshot,
   ) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // BUG-963：这三张「从 EPUB 借用」的展示映射（封面 / 有 EPUB 背书门控 / 借用进度）
     // 必须以**未筛选的全量 EpubBooks 行**为源，而不是筛选后的 `books`。标签筛选只裁剪
     // 参与网格展示的列表；合集内只打了标签的有声书（SRT）成员会向其关联 EPUB 借封面 /
@@ -1433,7 +1433,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         remoteSrtBooks.isEmpty) {
       return hasActiveFilter
           ? Center(
-              child: HibikiPlaceholderMessage(
+              child: FushiPlaceholderMessage(
                 icon: Icons.filter_list_off,
                 message: t.tag_no_books_for_filter,
               ),
@@ -1546,7 +1546,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     Map<String, String> epubCoverUrisByBookKey,
     ({int columns, double cardWidth}) cardLayout,
   ) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final MediaCollectionRow collection = group.collection!;
     // 与散书网格 cell 同宽（unifiedShelfCardLayout）；书卡槽比 = 宽/高
     // （kShelfBookCardAspectRatio=160/260）→ 行高按同比换算，行内卡与网格卡同形。
@@ -1575,7 +1575,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           // 书卡自带 12px 内边距 → 行内间距归零，与散书网格视觉间距一致。
           itemGap: 0,
           headerFocusId:
-              HibikiFocusId('reader-shelf-collection-${collection.id}'),
+              FushiFocusId('reader-shelf-collection-${collection.id}'),
           onOpenDetail: () => _openCollectionDetail(collection),
           collapsed:
               appModel.prefsRepo.collapsedCollectionIds.contains(collection.id),
@@ -1674,7 +1674,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       slotAspectRatio: kShelfBookCardAspectRatio,
       // Gamepad/keyboard focus id：与散书卡同 'reader-shelf-<kind>-<id>' 方案，
       // 折叠合集可被 D-pad 到达。
-      focusId: HibikiFocusId('reader-shelf-collection-${collection.id}'),
+      focusId: FushiFocusId('reader-shelf-collection-${collection.id}'),
       covers: covers,
       onTap: () => _openCollectionDetail(collection),
     );
@@ -1821,7 +1821,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Widget? _buildCollectionMemberCard(String mediaType, String entryKey,
       {VoidCallback? onRemoveFromCollection}) {
     // BUG-1009：详情页与书架是两条同时存活的路由（详情页 push 在书架之上），成员卡
-    // 若复用书架同名 focusId，两个 HibikiFocusTarget 撞号——焦点注册表按 id 覆盖，
+    // 若复用书架同名 focusId，两个 FushiFocusTarget 撞号——焦点注册表按 id 覆盖，
     // 后注册者赢、pop 后书架卡失焦。详情页渲染路径统一加 route 前缀隔离命名空间。
     const String prefix = 'collection-detail-';
     final MediaKind? kind = MediaKind.tryParse(mediaType);
@@ -1909,13 +1909,13 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   Widget buildPlaceholder() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          HibikiPlaceholderMessage(
+          FushiPlaceholderMessage(
             icon: mediaSource.icon,
             message: t.reader_no_books_added,
           ),
@@ -2005,7 +2005,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     final Widget card = _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('book_entry_${item.mediaIdentifier}'),
-      focusId: HibikiFocusId(
+      focusId: FushiFocusId(
           '${focusIdPrefix}reader-shelf-book-${item.mediaIdentifier}'),
       selectionKey: selectable ? item.mediaIdentifier : null,
       dragBookId: bookKey,
@@ -2335,7 +2335,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     if (!mounted) return;
     _shelfMapsFuture = _loadShelfMaps();
     _rebuild(() {});
-    HibikiToast.show(
+    FushiToast.show(
       msg: wasCompleted ? t.book_marked_uncompleted : t.book_marked_completed,
       severity: ToastSeverity.success,
     );
@@ -2367,12 +2367,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         BookFormatRebuild.resolveVerdict(row: row, target: target);
     final BookConvertBlocker? blocker = verdict.blocker;
     if (blocker != null) {
-      HibikiToast.show(
+      FushiToast.show(
           msg: _bookConvertBlockerMessage(blocker),
           severity: ToastSeverity.error);
       return;
     }
-    HibikiToast.show(msg: t.book_convert_running, severity: ToastSeverity.info);
+    FushiToast.show(msg: t.book_convert_running, severity: ToastSeverity.info);
     try {
       await BookFormatRebuild.convert(
         db: appModel.database,
@@ -2382,7 +2382,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHistory.convertBookFormat', e, stack);
       if (mounted) {
-        HibikiToast.show(
+        FushiToast.show(
             msg: t.book_convert_failed, severity: ToastSeverity.error);
       }
       return;
@@ -2392,7 +2392,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // 集合去重 —— 不显式 invalidate，书架会一直画着旧格式的卡。
     ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
     _rebuild(() {});
-    HibikiToast.show(msg: t.book_convert_done, severity: ToastSeverity.success);
+    FushiToast.show(msg: t.book_convert_done, severity: ToastSeverity.success);
   }
 
   /// 把「为什么不能转」翻译成一句给用户看的话。每一条都说清具体原因，不是笼统

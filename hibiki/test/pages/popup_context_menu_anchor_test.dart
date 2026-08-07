@@ -3,11 +3,11 @@
 //
 // 为什么值得单独锁：这是 BUG-129/260/261/381/781 反复回归的同一族——菜单永远渲染在
 // **中和器之外**（showMenu 把 PopupMenuRoute 推到根 Overlay，而根 Overlay 在全局
-// HibikiAppUiScale 的 FittedBox 之内 = 缩放画布空间），而查词浮层子树在**中和器之内**
+// FushiAppUiScale 的 FittedBox 之内 = 缩放画布空间），而查词浮层子树在**中和器之内**
 // （净缩放=1 = 真实视口空间）。两套坐标差一个 factor=scale，把真实视口坐标直接当
 // RelativeRect 喂 showMenu，菜单就渲染在「点击点×scale」处。
 //
-// 本测试复刻真实层级：根 Overlay 手动 insert 的 entry + HibikiAppUiScaleNeutralizer +
+// 本测试复刻真实层级：根 Overlay 手动 insert 的 entry + FushiAppUiScaleNeutralizer +
 // 弹窗 Positioned 盒，然后按 dictionary_popup_webview.dart `_showWindowsContextMenu`
 // 的同一算法定位，断言菜单贴住点击点。
 //
@@ -69,7 +69,7 @@ class _HostPageState extends State<_HostPage> {
 
   // 镜像 video_hibiki_page._buildPopupOverlay：整棵浮层子树中和回真实视口。
   Widget _buildPopupOverlay(BuildContext overlayContext) {
-    return HibikiAppUiScaleNeutralizer(
+    return FushiAppUiScaleNeutralizer(
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           return Stack(
@@ -124,7 +124,7 @@ Future<Rect> _rightClickAndMeasureMenu(
   await tester.pumpWidget(
     MaterialApp(
       builder: (BuildContext context, Widget? child) =>
-          HibikiAppUiScale(scale: scale, child: child!),
+          FushiAppUiScale(scale: scale, child: child!),
       home: const _HostPage(),
     ),
   );

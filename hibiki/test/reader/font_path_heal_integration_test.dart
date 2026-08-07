@@ -21,7 +21,7 @@ void main() {
   const String prefix = 'src:reader_ttu:';
   late Directory tmp;
   late Directory fontsDir; // current <documents>/custom_fonts
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() {
     tmp = Directory.systemTemp.createTempSync('hibiki_font_heal_');
@@ -29,7 +29,7 @@ void main() {
       ..createSync(recursive: true);
     final Directory dbDir = Directory(p.join(tmp.path, 'db'))
       ..createSync(recursive: true);
-    db = HibikiDatabase(dbDir.path);
+    db = FushiDatabase(dbDir.path);
   });
 
   tearDown(() async {

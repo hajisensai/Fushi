@@ -33,7 +33,7 @@ class PopFromStashEnhancement extends Enhancement {
   }) async {
     List<String> stashContents = appModel.getStash();
     if (stashContents.isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.stash_nothing_to_pop,
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,

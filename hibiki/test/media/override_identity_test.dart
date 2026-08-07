@@ -81,8 +81,8 @@ void main() {
     });
 
     test('setAuthorFromMediaItem writes through to srt_books.author', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
       final SrtBookRepository repo = SrtBookRepository(db);
@@ -105,8 +105,8 @@ void main() {
 
     test('setAuthorFromMediaItem on an unknown srt uid is a safe no-op',
         () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -121,11 +121,11 @@ void main() {
 
   group('override thumbnail file hygiene (BUG-1018 附带)', () {
     late Directory storeDir;
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late AppModel appModel;
 
     setUp(() async {
-      db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
       final PreferencesRepository prefs = PreferencesRepository(db);
       await prefs.loadFromDb();
       storeDir = Directory.systemTemp.createTempSync('hibiki_override_thumb');
@@ -255,8 +255,8 @@ void main() {
     }
 
     setUp(() async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
     });
@@ -408,7 +408,7 @@ void main() {
   /// BUG-1317 封面侧：旧文件名把源键烧进 hashCode，转化 / 改名后读不回来。
   group('override cover identity is per-book, not per-reader (BUG-1317)', () {
     late Directory storeDir;
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late AppModel appModel;
 
     MediaItem coverItem(MediaSource source, String bookKey) {
@@ -425,7 +425,7 @@ void main() {
     }
 
     setUp(() async {
-      db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
       final PreferencesRepository prefs = PreferencesRepository(db);
       await prefs.loadFromDb();
       storeDir = Directory.systemTemp.createTempSync('hibiki_override_1317');

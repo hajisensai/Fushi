@@ -12,7 +12,7 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 /// Minimal [SyncBackend] test double for the compare dialog: only the read
 /// methods the dialog's `_load` path actually touches return controllable data
@@ -197,11 +197,11 @@ void main() {
 
   /// Pumps the compare dialog with [fake] injected, then waits for its async
   /// `_load` to settle so the book/dictionary rows are rendered.
-  Future<HibikiDatabase> pumpDialog(
+  Future<FushiDatabase> pumpDialog(
     WidgetTester tester,
     _FakeSyncBackend fake,
   ) async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     tester.view.physicalSize = const Size(1200, 1600);
     tester.view.devicePixelRatio = 1;

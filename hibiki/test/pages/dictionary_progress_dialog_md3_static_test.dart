@@ -15,10 +15,10 @@ void main() {
       final String source = File(path).readAsStringSync();
 
       if (!path.endsWith('dictionary_progress_dialog_content.dart')) {
-        expect(source, contains('HibikiDialogFrame('), reason: path);
-        expect(source, contains('HibikiModalSheetFrame('), reason: path);
+        expect(source, contains('FushiDialogFrame('), reason: path);
+        expect(source, contains('FushiModalSheetFrame('), reason: path);
       }
-      expect(source, contains('HibikiDesignTokens.of(context)'), reason: path);
+      expect(source, contains('FushiDesignTokens.of(context)'), reason: path);
       expect(source, contains('tokens.spacing'), reason: path);
       expect(source, isNot(contains('adaptiveAlertDialog(')), reason: path);
       expect(source, isNot(contains('Spacing.of(context)')), reason: path);

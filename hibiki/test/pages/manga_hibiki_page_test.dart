@@ -29,10 +29,10 @@ import '../helpers/test_platform_services.dart';
 class _MangaTestAppModel extends AppModel {
   _MangaTestAppModel(this._db) : super(testPlatformServices());
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
 
   @override
-  HibikiDatabase get database => _db;
+  FushiDatabase get database => _db;
 
   @override
   bool get lowMemoryMode => false;
@@ -162,8 +162,8 @@ void main() {
   });
 
   testWidgets('无 DB 行时页面安全降级（挂载 + 词典宿主在树里）', (WidgetTester tester) async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final _MangaTestAppModel appModel = _MangaTestAppModel(db);
 
@@ -196,8 +196,8 @@ void main() {
     tester.view.physicalSize = const Size(600, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final _MangaTestAppModel appModel = _MangaTestAppModel(db);
 
@@ -261,8 +261,8 @@ void main() {
     tester.view.physicalSize = const Size(600, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final _MangaTestAppModel appModel = _MangaTestAppModel(db);
 
@@ -318,8 +318,8 @@ void main() {
 
   testWidgets('整卷 OCR 入口：加载失败（无书行）时 chrome 不构建 → 无按钮',
       (WidgetTester tester) async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final _MangaTestAppModel appModel = _MangaTestAppModel(db);
 
@@ -428,8 +428,8 @@ void main() {
   });
 
   test('webtoon 进度经 ReaderPositions 写穿：charOffset 千分比往返', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     const String bookKey = 'webtoon_book';
     final ReaderPositionRepository repo = ReaderPositionRepository(db);

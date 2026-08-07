@@ -4,7 +4,7 @@ import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 
 // TODO-749/751：手机词典管理「词典名显示不全」回归守卫。
 //
-// 旧症状：窄屏（手机）下 _buildDictionaryTile 用单行 HibikiListItem，行尾控件串
+// 旧症状：窄屏（手机）下 _buildDictionaryTile 用单行 FushiListItem，行尾控件串
 // （折叠 + 上/下/Switch/(更新)/删除 共 6-7 个固有宽控件，约 176px）以 MainAxisSize.min
 // 占去固有宽，中段 title 只分到约 80px（≈5 个汉字），长词典名被省略号截短。
 //
@@ -65,7 +65,7 @@ void main() {
     );
   }
 
-  // 旧单行布局（修复前）：HibikiListItem(leading 折叠, title 名字, trailing 控件串)。
+  // 旧单行布局（修复前）：FushiListItem(leading 折叠, title 名字, trailing 控件串)。
   // 控件串以 MainAxisSize.min 抢宽，title 只剩很窄。
   Widget buildOldSingleRow({required double width}) {
     return MaterialApp(
@@ -73,7 +73,7 @@ void main() {
         body: Center(
           child: SizedBox(
             width: width,
-            child: HibikiListItem(
+            child: FushiListItem(
               minHeight: 70,
               leading: const Icon(Icons.unfold_less, size: 20),
               title: const Text(

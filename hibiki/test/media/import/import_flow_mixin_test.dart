@@ -25,7 +25,7 @@ class _ProbeHostState extends State<_ProbeHost>
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -89,7 +89,7 @@ void main() {
 
     final List<Widget> section = state.buildProgressSection(
       state.context,
-      HibikiDesignTokens.of(state.context),
+      FushiDesignTokens.of(state.context),
     );
     // 间距 + 进度条 + 间距 + 文案 = 4 个 widget，直接 spread 进父 Column，
     // 不包额外布局层（保持抽取前的渲染树等价）。
@@ -180,7 +180,7 @@ void main() {
     });
 
     test('failure path shows a toast (source scan)', () {
-      // HibikiToast 桌面实现挂在真实 app 的 navigator overlay 上，widget 测试
+      // FushiToast 桌面实现挂在真实 app 的 navigator overlay 上，widget 测试
       // 环境不可达——「失败必有提示」这半边契约用源码扫描锁住（「失败必有日志」
       // 半边在上面的 widget 测试已验真行为）。测试 cwd 是 hibiki/，相对路径稳定。
       final String source = File('lib/src/media/import/import_flow_mixin.dart')
@@ -192,7 +192,7 @@ void main() {
       );
       expect(
         compactCode(source).contains(
-          compactCode(r"HibikiToast.show(msg: '${t.srt_import_error}: $e',"),
+          compactCode(r"FushiToast.show(msg: '${t.srt_import_error}: $e',"),
         ),
         isTrue,
         reason: 'runImport 的 catch 必须给用户失败提示（toast）',

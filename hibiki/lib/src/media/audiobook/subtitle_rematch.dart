@@ -52,7 +52,7 @@ class SubtitleRematch {
     void Function(bool running)? onRunningChanged,
   }) async {
     if (extractDir.isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.reader_not_bound_cannot_rematch,
         severity: ToastSeverity.error,
       );
@@ -115,7 +115,7 @@ class SubtitleRematch {
     List<EpubSection>? probedSections;
     List<AudioCue>? probedCues;
     Widget buildSheetBody(BuildContext sheetCtx, StateSetter setSheet) {
-      final HibikiDesignTokens tokens = HibikiDesignTokens.of(sheetCtx);
+      final FushiDesignTokens tokens = FushiDesignTokens.of(sheetCtx);
       Future<void> handleAuto() async {
         setSheet(() => autoBusy = true);
         try {
@@ -135,10 +135,10 @@ class SubtitleRematch {
         }
       }
 
-      return HibikiModalSheetFrame(
+      return FushiModalSheetFrame(
         title: t.rematch_adjust_window,
         leadingIcon: Icons.manage_search_outlined,
-        // TODO-1389：桌面路径外层 HibikiDialogFrame(maxHeightFactor:0.62, scrollable:false)
+        // TODO-1389：桌面路径外层 FushiDialogFrame(maxHeightFactor:0.62, scrollable:false)
         // 只给有界高度；最小窗高 480（客户区≈440）下 0.62 界不足以容下双滑条 Column
         // （~270-300px），非滚动 body 会 RenderFlex 底部溢出。scrollable:true 让 body
         // 在 Flexible 内滚动，矮窗可滚不溢出。
@@ -187,7 +187,7 @@ class SubtitleRematch {
     if (isDesktopPlatform) {
       return showAppDialog<_MatchParams>(
         context: context,
-        builder: (ctx) => HibikiDialogFrame(
+        builder: (ctx) => FushiDialogFrame(
           maxWidth: 480,
           maxHeightFactor: 0.62,
           scrollable: false,
@@ -208,14 +208,14 @@ class SubtitleRematch {
     List<int> windows = EpubCueMatcher.defaultProbeWindows,
   }) async {
     if (sections.isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.audiobook_rematch_no_sections,
         severity: ToastSeverity.error,
       );
       return null;
     }
     if (cues.isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.audiobook_rematch_no_cues_to_match,
         severity: ToastSeverity.error,
       );
@@ -229,21 +229,21 @@ class SubtitleRematch {
       );
       final MapEntry<int, double>? best = r.best;
       if (best == null || best.value <= 0) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.audiobook_rematch_all_zero,
           severity: ToastSeverity.warning,
         );
         return null;
       }
       final String pctStr = (best.value * 100).toStringAsFixed(2);
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.audiobook_rematch_auto_picked(window: best.key, pct: pctStr),
         severity: ToastSeverity.success,
       );
       return best.key;
     } catch (e, st) {
       debugPrint('[fushi-audiobook] autoProbe failed: $e\n$st');
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.audiobook_rematch_auto_failed(error: e),
         severity: ToastSeverity.error,
       );
@@ -273,7 +273,7 @@ class SubtitleRematch {
     try {
       final List<AudioCue> cues = await repo.cuesForBook(ab.bookKey);
       if (cues.isEmpty) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.audiobook_rematch_no_stored_cues,
           severity: ToastSeverity.error,
         );
@@ -281,7 +281,7 @@ class SubtitleRematch {
       }
       final List<EpubSection> sections = epubSectionsFromExtractDir(extractDir);
       if (sections.isEmpty) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.audiobook_rematch_no_chapters,
           severity: ToastSeverity.error,
         );
@@ -306,13 +306,13 @@ class SubtitleRematch {
             '(window=$searchWindow threshold=$similarityThreshold)',
       );
       await repo.updateHealthOverlay(bookKey: ab.bookKey, health: health);
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.audiobook_rematch_result(pct: pctStr, window: searchWindow),
         severity: ToastSeverity.success,
       );
     } catch (e, st) {
       debugPrint('[fushi-audiobook] SubtitleRematch failed: $e\n$st');
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.audiobook_rematch_failed(error: e),
         severity: ToastSeverity.error,
       );
@@ -348,7 +348,7 @@ class SubtitleRematchWindowSlider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -427,7 +427,7 @@ class SubtitleRematchThresholdSlider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,

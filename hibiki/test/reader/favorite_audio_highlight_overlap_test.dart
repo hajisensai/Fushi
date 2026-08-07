@@ -7,7 +7,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 Future<ReaderSettings> _defaultSettings() async {
-  final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   final ReaderSettings settings = ReaderSettings(db);
   await settings.refreshFromDb();

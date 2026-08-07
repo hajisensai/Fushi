@@ -62,7 +62,7 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
   /// This is shown as the body when [shouldPlaceholderBeShown] is false.
   @override
   Widget buildHistory(List<MediaItem> items) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return RawScrollbar(
       thumbVisibility: true,
       thickness: 3,
@@ -95,7 +95,7 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
   /// Build the widget visually representing the [MediaItem]'s history tile.
   @override
   Widget buildMediaItemContent(MediaItem item) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Stack(
       alignment: Alignment.bottomLeft,
       fit: StackFit.expand,

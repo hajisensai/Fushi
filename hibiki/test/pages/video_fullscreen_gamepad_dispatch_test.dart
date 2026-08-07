@@ -25,7 +25,7 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 ///
 /// 真实 VideoHibikiPage 无法 headless 加载（media_kit 测试宿主无 libmpv），本文件
 /// 沿 video_fullscreen_focus_gate_test.dart 的既定范式，在与页面逐行同构的 harness 上
-/// 验证机制本身——所有关键件都用真实实现：真实 [HibikiShortcutRegistry]（Windows
+/// 验证机制本身——所有关键件都用真实实现：真实 [FushiShortcutRegistry]（Windows
 /// 默认表）、真实 [videoActionCallbacks] / [VideoPlayerShortcutActions]、真实
 /// [dispatchGamepadButtonIntent] / [gamepadMoveFocusInDirection]，service 的
 /// 分发决策树按 gamepad_service._dispatchButton 逐分支镜像（私有，无法直接调用）。
@@ -105,10 +105,10 @@ void main() {
 /// 真实 intent 派发；[counts] 记录每个被触发的 video 动作次数。
 class _Rig {
   _Rig()
-      : registry = HibikiShortcutRegistry()
+      : registry = FushiShortcutRegistry()
           ..loadDefaults(TargetPlatform.windows);
 
-  final HibikiShortcutRegistry registry;
+  final FushiShortcutRegistry registry;
   final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
   final FocusNode videoNode = FocusNode(debugLabel: 'videoKeyboard');
   final Map<ShortcutAction, int> counts = <ShortcutAction, int>{

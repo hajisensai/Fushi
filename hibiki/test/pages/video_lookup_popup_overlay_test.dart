@@ -8,12 +8,12 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 
 /// 视频查词浮层「调整界面大小后字糊」修复（BUG-051）的守卫，不依赖 media_kit/libmpv。
 ///
-/// **根因**：查词浮层渲染在**根 Overlay**（在 [HibikiAppUiScale] 的 `FittedBox` 之内
+/// **根因**：查词浮层渲染在**根 Overlay**（在 [FushiAppUiScale] 的 `FittedBox` 之内
 /// ＝缩放后的小画布 `view/s`）。浮层的词典 WebView 在小画布尺寸栅格化、再被外层
 /// `FittedBox` 拉大 → 字糊（与 BUG-039 阅读器同源）。
 ///
 /// **修法**：[VideoHibikiPage._buildPopupOverlay] 把整棵浮层子树用
-/// [HibikiAppUiScaleNeutralizer] 中和回**真实视口尺寸、净缩放=1**，WebView 按原生像素
+/// [FushiAppUiScaleNeutralizer] 中和回**真实视口尺寸、净缩放=1**，WebView 按原生像素
 /// 密度渲染＝清晰；坐标随之统一到真实屏幕空间，故 `_lookupAt` **直接**用 `localToGlobal`
 /// 的字符屏幕 rect 定位（不再经 `scaledRectToCanvas` ÷s 换算到画布）。
 ///
@@ -21,14 +21,14 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 /// 已由 `app_ui_scale_neutralizer_test.dart` 单测。本文件守的是**接线 + 坐标自洽**：
 /// 1. 行为：中和后的浮层用屏幕 rect 定位，浮层在**屏幕上**紧贴被点字符（任意缩放都不偏）；
 /// 2. 对照（红）：去掉中和器、同样直传屏幕 rect，浮层会偏 factor s（证明中和器不可省）；
-/// 3. 源码守卫：`_buildPopupOverlay` 含 `HibikiAppUiScaleNeutralizer`、全页不再 `scaledRectToCanvas`。
+/// 3. 源码守卫：`_buildPopupOverlay` 含 `FushiAppUiScaleNeutralizer`、全页不再 `scaledRectToCanvas`。
 void main() {
   const Size physical = Size(1000, 800);
 
-  /// 复刻 main.dart 的层级：[HibikiAppUiScale] 在根 Navigator/Overlay 之外
+  /// 复刻 main.dart 的层级：[FushiAppUiScale] 在根 Navigator/Overlay 之外
   /// （`FittedBox` 之内才是根 Overlay）。这里用 MaterialApp 提供根 Overlay，外层套缩放。
   Widget harness({required double scale, required Widget home}) =>
-      HibikiAppUiScale(scale: scale, child: MaterialApp(home: home));
+      FushiAppUiScale(scale: scale, child: MaterialApp(home: home));
 
   /// 在 [pageContext] 的根 Overlay 插入一层定位浮层（[neutralize] 决定是否中和），浮层
   /// 定位到 [selectionRect]（生产里即字符的 `localToGlobal` 屏幕 rect）。返回 (浮层 box 的
@@ -63,7 +63,7 @@ void main() {
     );
     // 生产 _buildPopupOverlay 用中和器包裹整棵浮层子树。
     if (neutralize) {
-      overlayChild = HibikiAppUiScaleNeutralizer(child: overlayChild);
+      overlayChild = FushiAppUiScaleNeutralizer(child: overlayChild);
     }
     final OverlayEntry entry = OverlayEntry(builder: (BuildContext _) {
       return overlayChild;
@@ -173,12 +173,12 @@ void main() {
   });
 
   test(
-      '_buildPopupOverlay wraps the popup in HibikiAppUiScaleNeutralizer and '
+      '_buildPopupOverlay wraps the popup in FushiAppUiScaleNeutralizer and '
       'the manual scaledRectToCanvas conversion is gone', () {
     final String page = File(
       'lib/src/pages/implementations/video_hibiki_page.dart',
     ).readAsStringSync();
-    expect(page.contains('HibikiAppUiScaleNeutralizer('), isTrue,
+    expect(page.contains('FushiAppUiScaleNeutralizer('), isTrue,
         reason: 'video popup overlay must be neutralized for native density');
     expect(page.contains('scaledRectToCanvas'), isFalse,
         reason: 'neutralized overlay uses the raw screen rect directly');

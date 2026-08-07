@@ -26,7 +26,7 @@ void main() {
       File('lib/src/mining/gal_audio_tracks_panel.dart').readAsStringSync();
 
   test('工作台顶栏有音轨面板直达入口（BUG-1128 ①）', () {
-    final int entryAt = pageSrc.indexOf("HibikiFocusId('game-toolbar-tracks')");
+    final int entryAt = pageSrc.indexOf("FushiFocusId('game-toolbar-tracks')");
     expect(
       entryAt,
       greaterThan(0),

@@ -9,7 +9,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 // 焦点停在 rail 的某个导航项，按「右」方向键必须跨出 rail 进入右侧内容区（书架），
 // 绝不在 rail 内纵向遍历（往上/往下）。结构对齐 home_page._buildDesktopLayout：
 // 左 rail（独立 FocusTraversalGroup + SingleChildScrollView 居中）+
-// 右 body（独立 FocusTraversalGroup + 内容网格，卡片为受管 HibikiFocusTarget），
+// 右 body（独立 FocusTraversalGroup + 内容网格，卡片为受管 FushiFocusTarget），
 // 两区之间不绘制侧栏分隔线。
 //
 // 走真实分发路径 [gamepadMoveFocusInDirection]（键盘方向键与手柄 D-pad/摇杆共用），
@@ -20,14 +20,14 @@ Widget _shell({required GlobalKey rootKey}) {
     AdaptiveNavItem(icon: Icons.search_outlined, label: '查词'),
     AdaptiveNavItem(icon: Icons.tune_outlined, label: '设置'),
   ];
-  Widget card(String id) => HibikiFocusTarget(
-        id: HibikiFocusId(id),
+  Widget card(String id) => FushiFocusTarget(
+        id: FushiFocusId(id),
         child: const SizedBox(width: 200, height: 120),
       );
   return MaterialApp(
     theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
     home: Scaffold(
-      body: HibikiFocusRoot(
+      body: FushiFocusRoot(
         child: Row(
           key: rootKey,
           children: <Widget>[
@@ -67,11 +67,11 @@ void main() {
     final GlobalKey rootKey = GlobalKey();
     await tester.pumpWidget(_shell(rootKey: rootKey));
     await tester.pump();
-    final HibikiFocusController controller =
-        HibikiFocusRoot.controllerOf(rootKey.currentContext!);
+    final FushiFocusController controller =
+        FushiFocusRoot.controllerOf(rootKey.currentContext!);
 
     // 焦点停在 rail 中间项（nav-rail-1）。
-    expect(controller.requestById(const HibikiFocusId('nav-rail-1')), isTrue);
+    expect(controller.requestById(const FushiFocusId('nav-rail-1')), isTrue);
     await tester.pump();
 
     gamepadMoveFocusInDirection(
@@ -97,15 +97,15 @@ void main() {
     final GlobalKey rootKey = GlobalKey();
     await tester.pumpWidget(_shell(rootKey: rootKey));
     await tester.pump();
-    final HibikiFocusController controller =
-        HibikiFocusRoot.controllerOf(rootKey.currentContext!);
+    final FushiFocusController controller =
+        FushiFocusRoot.controllerOf(rootKey.currentContext!);
 
-    expect(controller.requestById(const HibikiFocusId('nav-rail-0')), isTrue);
+    expect(controller.requestById(const FushiFocusId('nav-rail-0')), isTrue);
     await tester.pump();
     gamepadMoveFocusInDirection(
         rootKey.currentContext!, TraversalDirection.down);
     await tester.pump();
-    expect(controller.activeId, const HibikiFocusId('nav-rail-1'),
+    expect(controller.activeId, const FushiFocusId('nav-rail-1'),
         reason: 'Down within the rail still steps to the next destination');
   });
 }

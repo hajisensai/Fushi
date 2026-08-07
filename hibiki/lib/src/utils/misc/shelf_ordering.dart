@@ -8,7 +8,7 @@ library;
 import 'package:fushi_core/fushi_core.dart';
 
 /// 一条书架 / 视频选择键解码后的稳定身份 `(mediaType, entryKey)`。
-/// 直接喂 [HibikiDatabase.addToCollection] / [HibikiDatabase.upsertShelfOrder]。
+/// 直接喂 [FushiDatabase.addToCollection] / [FushiDatabase.upsertShelfOrder]。
 ///
 /// 命名统一 Phase 3.3：身份二元组语义收口进 hibiki_core 的 [MediaRef]——
 /// `==` / [hashCode] 委托 [ref] 视图（字段本体仍留在本类：Dart const 构造的

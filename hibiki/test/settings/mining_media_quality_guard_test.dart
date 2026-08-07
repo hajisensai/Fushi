@@ -21,15 +21,15 @@ import '../helpers/source_guard.dart';
 ///    /miningAudioQuality 经 resolve 选档并把档喂进底层；
 /// 4. Anki 设置页有这两个滑块行，wire 到 AppModel.miningImageQuality / miningAudioQuality。
 
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
 
 void main() {
   group('偏好层', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late PreferencesRepository repo;
 
     setUp(() async {

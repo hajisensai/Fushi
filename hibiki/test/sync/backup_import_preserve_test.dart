@@ -19,7 +19,7 @@ void main() {
     // ── This device: a configured WebDAV account + behavior flag + cache ──
     final currentDir = await _tempDir('hibiki_cur_');
     addTearDown(() => cleanupTempDir(currentDir));
-    final curDb = HibikiDatabase(currentDir.path);
+    final curDb = FushiDatabase(currentDir.path);
     final curRepo = SyncRepository(curDb);
     await curRepo.setBackendType(SyncBackendType.webDav);
     await curRepo.setWebDavUrl('https://local.example/dav');
@@ -31,7 +31,7 @@ void main() {
     // ── A backup from ANOTHER device with different config + a book ──
     final srcDir = await _tempDir('hibiki_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final srcDb = HibikiDatabase(srcDir.path);
+    final srcDb = FushiDatabase(srcDir.path);
     final srcRepo = SyncRepository(srcDb);
     await srcRepo.setBackendType(SyncBackendType.ftp);
     await srcRepo.setWebDavUrl('https://backup.example/dav');
@@ -63,7 +63,7 @@ void main() {
       zipPath: zipPath,
     );
 
-    final afterDb = HibikiDatabase(currentDir.path);
+    final afterDb = FushiDatabase(currentDir.path);
     addTearDown(afterDb.close);
     final afterRepo = SyncRepository(afterDb);
 
@@ -94,7 +94,7 @@ void main() {
     addTearDown(() => cleanupTempDir(dir));
 
     // Simulate a DB whose sync config was wiped by a crashed import.
-    final db = HibikiDatabase(dir.path);
+    final db = FushiDatabase(dir.path);
     await SyncRepository(db).setRootFolderId('stale-root');
     await db.close();
 
@@ -108,7 +108,7 @@ void main() {
 
     await BackupService.recoverPendingRestore(dir.path);
 
-    final db2 = HibikiDatabase(dir.path);
+    final db2 = FushiDatabase(dir.path);
     addTearDown(db2.close);
     final repo = SyncRepository(db2);
     expect(await repo.getBackendType(), SyncBackendType.dropbox);
@@ -128,7 +128,7 @@ void main() {
     final dictResDir = await _tempDir('hibiki_dictres_');
     addTearDown(() => cleanupTempDir(dictResDir));
 
-    final curDb = HibikiDatabase(currentDir.path);
+    final curDb = FushiDatabase(currentDir.path);
     await curDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
       name: '大辞泉',
       formatKey: 'yomitan',
@@ -150,7 +150,7 @@ void main() {
     addTearDown(() => cleanupTempDir(srcDir));
     final srcDictResDir = await _tempDir('hibiki_src_dictres_');
     addTearDown(() => cleanupTempDir(srcDictResDir));
-    final srcDb = HibikiDatabase(srcDir.path);
+    final srcDb = FushiDatabase(srcDir.path);
     // Source HAS a dictionary, but we export with categories that EXCLUDE it,
     // so the export strips its rows + packs no resource files.
     await srcDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
@@ -185,7 +185,7 @@ void main() {
       dictionaryResourceDirectory: dictResDir.path,
     );
 
-    final afterDb = HibikiDatabase(currentDir.path);
+    final afterDb = FushiDatabase(currentDir.path);
     addTearDown(afterDb.close);
 
     // Dictionary metadata + history PRESERVED (this device's, not the backup's
@@ -217,7 +217,7 @@ void main() {
     addTearDown(() => cleanupTempDir(dictResDir));
 
     // This device has a local-only dictionary.
-    final curDb = HibikiDatabase(currentDir.path);
+    final curDb = FushiDatabase(currentDir.path);
     await curDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
       name: 'local-only',
       formatKey: 'yomitan',
@@ -231,7 +231,7 @@ void main() {
     addTearDown(() => cleanupTempDir(srcDir));
     final srcDictResDir = await _tempDir('hibiki_src_dictres_with_');
     addTearDown(() => cleanupTempDir(srcDictResDir));
-    final srcDb = HibikiDatabase(srcDir.path);
+    final srcDb = FushiDatabase(srcDir.path);
     await srcDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
       name: 'backup-dict',
       formatKey: 'yomitan',
@@ -243,7 +243,7 @@ void main() {
     Directory('${srcDictResDir.path}/backup-dict').createSync(recursive: true);
     File('${srcDictResDir.path}/backup-dict/index.json')
         .writeAsStringSync('{"backup":true}');
-    final srcDb2 = HibikiDatabase(srcDir.path);
+    final srcDb2 = FushiDatabase(srcDir.path);
     final zipDir = await _tempDir('hibiki_zip_withdict_');
     addTearDown(() => cleanupTempDir(zipDir));
     final zipPath = '${zipDir.path}/backup.zip';
@@ -261,7 +261,7 @@ void main() {
       dictionaryResourceDirectory: dictResDir.path,
     );
 
-    final afterDb = HibikiDatabase(currentDir.path);
+    final afterDb = FushiDatabase(currentDir.path);
     addTearDown(afterDb.close);
     final List<DictionaryMetaRow> dicts =
         await afterDb.getAllDictionaryMetadata();

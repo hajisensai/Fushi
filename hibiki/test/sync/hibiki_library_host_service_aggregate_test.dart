@@ -11,7 +11,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// service 层 getAggregateSnapshot / applyAggregateSnapshot 必须复用云后端 phase B
 /// 的 AggregateSyncService（materialize/apply），保证 MAX / 并集 / 幂等语义在互联
 /// 通道与云通道完全一致（不是第二套实现）。
-AppModelLibraryHostService _svc(HibikiDatabase db) =>
+AppModelLibraryHostService _svc(FushiDatabase db) =>
     AppModelLibraryHostService(
       db: db,
       dictionaryResourceRoot: Directory.systemTemp,
@@ -21,10 +21,10 @@ AppModelLibraryHostService _svc(HibikiDatabase db) =>
     );
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() async {

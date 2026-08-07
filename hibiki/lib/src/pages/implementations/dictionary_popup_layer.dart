@@ -652,7 +652,7 @@ class DictionaryPopupLayer extends StatelessWidget {
       surfaceChild = body;
     }
 
-    final Widget surface = HibikiPopupSurface(
+    final Widget surface = FushiPopupSurface(
       color: fillColor,
       showBorder: showBorder,
       clipBehavior: showBorder ? Clip.antiAlias : Clip.none,
@@ -661,7 +661,7 @@ class DictionaryPopupLayer extends StatelessWidget {
 
     // TODO-805：弹窗的「关闭命中区」必须等于弹窗的可视矩形。宿主把弹窗摆在
     // [parkedPopupLayer] 的 `Positioned` 矩形里，全屏 dismiss barrier 是这块矩形的
-    // **补集**（点矩形外 → barrier → 关一层）。但 [HibikiPopupSurface] 是 `Material`，
+    // **补集**（点矩形外 → barrier → 关一层）。但 [FushiPopupSurface] 是 `Material`，
     // 圆角 `Clip.antiAlias` 让 `RenderPhysicalShape.hitTest` 按圆角形状裁剪命中：圆角
     // 弧外的角落（仍在 `Positioned` 矩形内、视觉上仍是弹窗）命中假 → 漏到下面的
     // barrier → 关窗；透明 WebView 正文外的余白、顶栏空白同理。用户因此感到「点击
@@ -835,7 +835,7 @@ class DictionaryPopupLayer extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         if (onBack != null)
-          HibikiIconButton(
+          FushiIconButton(
             icon: Icons.arrow_back,
             size: 20,
             tooltip: backTooltip,
@@ -850,7 +850,7 @@ class DictionaryPopupLayer extends StatelessWidget {
 
     // 右簇：关闭按钮（可选）。定宽，钉在行尾。缺省时用 0 宽占位保持 Row 结构一致。
     final Widget rightCluster = onClose != null
-        ? HibikiIconButton(
+        ? FushiIconButton(
             icon: Icons.close,
             size: 20,
             tooltip: t.dialog_close,
@@ -880,11 +880,11 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// （同 [8,72] 夹紧、就地改 zoom 即时生效不闪烁、popupZoomFont 回调持久化到
   /// dictionaryFontSize），三端一致；WebView 未挂载（无结果占位/搜索中）时安全 no-op。
   ///
-  /// BUG-1033：这里原本在 [HibikiIconButton] 外面**又**套了一层 [Tooltip]，而
-  /// [HibikiIconButton] 自己已经为纯图标形态包了一层。两层嵌套下，更靠近 child 的内层
+  /// BUG-1033：这里原本在 [FushiIconButton] 外面**又**套了一层 [Tooltip]，而
+  /// [FushiIconButton] 自己已经为纯图标形态包了一层。两层嵌套下，更靠近 child 的内层
   /// 先命中 hover，外层那句「Ctrl+滚轮也可缩放」从来没机会显示——桌面用户看到的一直是
   /// 只有标签的单行气泡，TODO-1353 想给的提示等于没给。现在收成一层：把完整 message 直接
-  /// 交给 [HibikiIconButton.tooltip]，由那唯一一层负责显示（并带
+  /// 交给 [FushiIconButton.tooltip]，由那唯一一层负责显示（并带
   /// [kIconButtonTooltipHoverDelay] 悬停延迟，避免子弹窗落到光标下就自动冒泡盖住父层正文）。
   Widget _buildZoomFontButton(BuildContext context, {required bool zoomIn}) {
     final String label =
@@ -893,7 +893,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     final String message = isDesktopPlatform
         ? '$label\n${t.dictionary_font_size_zoom_hint}'
         : label;
-    return HibikiIconButton(
+    return FushiIconButton(
       icon: zoomIn ? Icons.text_increase : Icons.text_decrease,
       size: 20,
       tooltip: message,
@@ -911,7 +911,7 @@ class DictionaryPopupLayer extends StatelessWidget {
       (result!.entries.isNotEmpty || result!.kanjiResults.isNotEmpty);
 
   Widget _buildBody(BuildContext context, Color fillColor) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     final bool hasRenderableResults = _hasRenderableResults;
     final bool isSeedWarmSlot = keepWebViewWarm &&
@@ -993,7 +993,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     return Center(
       child: SingleChildScrollView(
         padding: EdgeInsets.all(tokens.spacing.gap),
-        child: HibikiPlaceholderMessage(
+        child: FushiPlaceholderMessage(
           icon: Icons.search_off,
           message: t.no_search_results,
           iconSize: 20,

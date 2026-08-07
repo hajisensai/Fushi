@@ -4,7 +4,7 @@
 /// [MangaOcrService]（ONNX 流水线）跑整卷 OCR，client 轮询进度后取回 manga.json。
 /// 设计 docs/specs/2026-07-24-manga-ocr-design.md §5.3 生产者 C。
 ///
-/// 端点（全部走 HibikiSyncServer 的既有 Basic 鉴权，无一豁免）：
+/// 端点（全部走 FushiSyncServer 的既有 Basic 鉴权，无一豁免）：
 /// - `POST   /api/ocr/job`                       → `{jobId, pagesExpected}` 创建任务
 /// - `PUT    /api/ocr/job/<id>/page/<i>?name=..` → 逐页上传（body=图片字节）
 /// - `POST   /api/ocr/job/<id>/start`            → 开始跑（串行单并发队列）
@@ -120,7 +120,7 @@ class MangaOcrHostJobManager {
 
   final Map<String, MangaOcrHostJob> _jobs = <String, MangaOcrHostJob>{};
 
-  /// 串行执行队列尾（对照 HibikiSyncServer._davWriteChain 的链式 future 模式）：
+  /// 串行执行队列尾（对照 FushiSyncServer._davWriteChain 的链式 future 模式）：
   /// 新 start 挂到链尾，前一整卷跑完才轮到下一卷——OCR 是重活，绝不并行两卷。
   Future<void> _queueTail = Future<void>.value();
 
@@ -406,7 +406,7 @@ class MangaOcrHostJobManager {
   }
 }
 
-/// `/api/ocr/*` 的 shelf 路由处理（由 [HibikiSyncServer._handleRequest] 分发进来，
+/// `/api/ocr/*` 的 shelf 路由处理（由 [FushiSyncServer._handleRequest] 分发进来，
 /// 鉴权已在其 middleware 完成）。[reqPath] 是已解码、带前导 `/` 的路径。
 Future<shelf.Response> handleMangaOcrRequest(
   MangaOcrHostJobManager manager,

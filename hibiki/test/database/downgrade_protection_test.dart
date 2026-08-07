@@ -10,7 +10,7 @@ import 'package:sqlite3/sqlite3.dart' as sqlite3;
 ///
 /// Constructs an on-disk DB whose user_version (99) is far HIGHER than the
 /// code's schemaVersion, with a real table + rows, then opens it via
-/// HibikiDatabase. The open MUST be refused with HibikiDatabaseDowngradeException
+/// FushiDatabase. The open MUST be refused with FushiDatabaseDowngradeException
 /// and — crucially — the DB file's tables and rows MUST be left completely
 /// intact (no DROP / migrate / rebuild). This locks "downgrade = refuse + data
 /// untouched" so the destructive behaviour can never regress.
@@ -81,12 +81,12 @@ void main() {
     }
   }
 
-  test('opening a newer-version DB throws HibikiDatabaseDowngradeException',
+  test('opening a newer-version DB throws FushiDatabaseDowngradeException',
       () async {
     seedFutureVersionDb();
 
-    final HibikiDatabase database =
-        HibikiDatabase.forTesting(NativeDatabase(File(dbPath)));
+    final FushiDatabase database =
+        FushiDatabase.forTesting(NativeDatabase(File(dbPath)));
     addTearDown(() async {
       try {
         await database.close();
@@ -98,7 +98,7 @@ void main() {
     // drift opens lazily; the refusal surfaces on the first query.
     await expectLater(
       database.getAllEpubBooks(),
-      throwsA(isA<HibikiDatabaseDowngradeException>()),
+      throwsA(isA<FushiDatabaseDowngradeException>()),
     );
   });
 
@@ -106,8 +106,8 @@ void main() {
       () async {
     seedFutureVersionDb();
 
-    final HibikiDatabase database =
-        HibikiDatabase.forTesting(NativeDatabase(File(dbPath)));
+    final FushiDatabase database =
+        FushiDatabase.forTesting(NativeDatabase(File(dbPath)));
     addTearDown(() async {
       try {
         await database.close();
@@ -117,7 +117,7 @@ void main() {
     // Trigger the (refused) open.
     await expectLater(
       database.getAllEpubBooks(),
-      throwsA(isA<HibikiDatabaseDowngradeException>()),
+      throwsA(isA<FushiDatabaseDowngradeException>()),
     );
     // Release the file handle before reopening read-only.
     try {
@@ -132,8 +132,8 @@ void main() {
       () async {
     seedFutureVersionDb();
 
-    final HibikiDatabase database =
-        HibikiDatabase.forTesting(NativeDatabase(File(dbPath)));
+    final FushiDatabase database =
+        FushiDatabase.forTesting(NativeDatabase(File(dbPath)));
     addTearDown(() async {
       try {
         await database.close();
@@ -142,8 +142,8 @@ void main() {
 
     try {
       await database.getAllEpubBooks();
-      fail('expected HibikiDatabaseDowngradeException');
-    } on HibikiDatabaseDowngradeException catch (e) {
+      fail('expected FushiDatabaseDowngradeException');
+    } on FushiDatabaseDowngradeException catch (e) {
       expect(e.dbVersion, 99);
       expect(e.appSchemaVersion, database.schemaVersion);
       expect(e.appSchemaVersion, lessThan(e.dbVersion));

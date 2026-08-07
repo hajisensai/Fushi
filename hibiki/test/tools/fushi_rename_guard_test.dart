@@ -110,6 +110,16 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     name: 'package:hibiki',
     regex: RegExp('package:hibiki'),
   ),
+  _ForbiddenPattern(
+    // 类名族清算：Hibiki* → Fushi*（HibikiDatabase/HibikiToast/_HibikiCardState
+    // 等词首形态，含 _$Hibiki* 生成类）。词中内嵌形态不属类名族、刻意不匹配：
+    // MangaHibikiPage 等含 hibiki 文件名的类（本轮不 git mv，半径控制）、
+    // kMagpieHibikiProfilePrefix（值 'Hibiki: ' 是 Magpie 配置持久化契约）、
+    // 'runningHibikiProcesses'（update-handoff JSON wire 键）、
+    // 'hibiki_paired_peers'（SQL 表名，见 tables.dart 的 tableName 钉死注释）。
+    name: 'Hibiki*-类名族',
+    regex: RegExp(r'(?<![A-Za-z0-9])Hibiki[A-Z]'),
+  ),
 ];
 
 /// 扫描根（相对 `hibiki/`，即 flutter test 的 cwd）。

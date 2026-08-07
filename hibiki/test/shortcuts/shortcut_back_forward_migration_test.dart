@@ -46,7 +46,7 @@ void main() {
   }
 
   test('老快照 (v1) 加载后 globalBack 自动补回手柄 B（必做回归闸门）', () {
-    final HibikiShortcutRegistry registry = HibikiShortcutRegistry();
+    final FushiShortcutRegistry registry = FushiShortcutRegistry();
     registry.loadFromJsonString(oldV1Snapshot(), TargetPlatform.windows);
     expect(
       hasGamepad(
@@ -57,7 +57,7 @@ void main() {
   });
 
   test('老快照 (v1) 加载后句子导航补回 B(prev)/X(next)', () {
-    final HibikiShortcutRegistry registry = HibikiShortcutRegistry();
+    final FushiShortcutRegistry registry = FushiShortcutRegistry();
     registry.loadFromJsonString(oldV1Snapshot(), TargetPlatform.windows);
     expect(
       hasGamepad(registry.bindingsFor(ShortcutAction.audiobookPrevSentence),
@@ -72,7 +72,7 @@ void main() {
   });
 
   test('用户改过返回键（globalBack 键盘改成单 keyB）→ 迁移不动其绑定', () {
-    final HibikiShortcutRegistry registry = HibikiShortcutRegistry();
+    final FushiShortcutRegistry registry = FushiShortcutRegistry();
     final String snapshot = jsonEncode(<String, dynamic>{
       kShortcutSchemaVersionKey: 1,
       ShortcutAction.globalBack.key: const ShortcutBindingSet(
@@ -97,7 +97,7 @@ void main() {
   });
 
   test('macOS 老快照：键盘默认是 Meta+Ctrl 变体仍能识别 untouched 并补回手柄', () {
-    final HibikiShortcutRegistry registry = HibikiShortcutRegistry();
+    final FushiShortcutRegistry registry = FushiShortcutRegistry();
     // macOS 上 Ctrl→Meta；globalBack 的 Alt+Left 不含 Ctrl 故不变。句子导航 Ctrl→Meta。
     final String snapshot = jsonEncode(<String, dynamic>{
       kShortcutSchemaVersionKey: 1,

@@ -8,15 +8,15 @@ import 'package:path/path.dart' as p;
 
 /// 互联传输层性能守卫（BUG-937 / 提速批次）：
 ///
-/// 1. 封面端点必须走单行直查（[HibikiLibraryHostService.videoCoverPath] /
-///    [HibikiLibraryHostService.bookCoverPath]），**绝不** materialize 整份
+/// 1. 封面端点必须走单行直查（[FushiLibraryHostService.videoCoverPath] /
+///    [FushiLibraryHostService.bookCoverPath]），**绝不** materialize 整份
 ///    listVideos()/listBooks() 清单——旧实现每张封面重跑全量清单（每行一次目录
 ///    扫描 + 多次 DB 查询），N 张封面 = O(N²)，500 视频的封面墙浏览一次拖成分钟
 ///    级（「互联视频极慢」的主根因）。fake 的 list* 直接抛错，端点仍须 200。
 /// 2. JSON 清单响应按 `Accept-Encoding: gzip` 内容协商压缩；不带该头的旧 client
 ///    收到原样明文（零协议破坏）。文件流（封面/视频，含 Range/206）不压——
 ///    `Content-Encoding` 会与断点续传/libmpv 的字节账语义交叉。
-class _CoverGuardService implements HibikiLibraryHostService {
+class _CoverGuardService implements FushiLibraryHostService {
   _CoverGuardService(this.videoCover, this.bookCover);
 
   final File videoCover;
@@ -50,7 +50,7 @@ class _CoverGuardService implements HibikiLibraryHostService {
 }
 
 /// gzip 协商测试用：清单返回固定条目（listVideos 可用），封面单查可用。
-class _GzipListService implements HibikiLibraryHostService {
+class _GzipListService implements FushiLibraryHostService {
   _GzipListService(this.cover);
 
   final File cover;
@@ -91,7 +91,7 @@ void main() {
   });
 
   group('封面端点单行直查守卫', () {
-    late HibikiSyncServer server;
+    late FushiSyncServer server;
     late _CoverGuardService lib;
     late String base;
 
@@ -101,7 +101,7 @@ void main() {
       final File bookCover = File(p.join(tmp.path, 'b.jpg'))
         ..writeAsBytesSync(<int>[5, 6, 7]);
       lib = _CoverGuardService(videoCover, bookCover);
-      server = HibikiSyncServer(
+      server = FushiSyncServer(
         syncDataDir: p.join(tmp.path, 'sync1'),
         port: 0,
         token: token,
@@ -159,13 +159,13 @@ void main() {
   });
 
   group('JSON gzip 内容协商', () {
-    late HibikiSyncServer server;
+    late FushiSyncServer server;
     late File cover;
 
     setUp(() async {
       cover = File(p.join(tmp.path, 'gz.jpg'))
         ..writeAsBytesSync(List<int>.filled(64, 9));
-      server = HibikiSyncServer(
+      server = FushiSyncServer(
         syncDataDir: p.join(tmp.path, 'sync2'),
         port: 0,
         token: token,

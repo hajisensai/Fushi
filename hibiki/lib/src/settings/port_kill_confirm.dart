@@ -78,10 +78,10 @@ Future<PortKillDecision> decidePortKill(
       ..write(t.yomitan_port_kill_self_instance);
   }
 
-  final HibikiDestructiveConfirmResult? confirmed =
-      await showAppDialog<HibikiDestructiveConfirmResult>(
+  final FushiDestructiveConfirmResult? confirmed =
+      await showAppDialog<FushiDestructiveConfirmResult>(
     context: context,
-    builder: (_) => HibikiDestructiveConfirmDialog(
+    builder: (_) => FushiDestructiveConfirmDialog(
       title: t.yomitan_port_kill_confirm_title(port: port),
       message: message.toString(),
       confirmLabel: t.yomitan_port_kill_confirm,

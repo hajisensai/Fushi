@@ -15,12 +15,12 @@ import '../helpers/source_guard.dart';
 // 修复 = DB 写成功后**与 callHandler 返回值解耦**直接弹 toast（reader/有声书走
 // base_source_page.onFavoriteFromPopup；视频走 dictionary_page_mixin.onFavoriteEntry）。
 //
-// 受影响的就是桌面（Windows fork）。本测试真执行 [HibikiToast.show] 的桌面 overlay
+// 受影响的就是桌面（Windows fork）。本测试真执行 [FushiToast.show] 的桌面 overlay
 // 路径——构造带 navigatorKey 的 MaterialApp，调 show 后断言 overlay 真渲染出本地化
 // 文案。这正是修复新增的、不依赖任何 WebView 返回值的可见反馈通道。
 Future<void> _pumpToastHost(WidgetTester tester) async {
   final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-  HibikiToast.navigatorKey = navKey;
+  FushiToast.navigatorKey = navKey;
   await tester.pumpWidget(
     MaterialApp(
       navigatorKey: navKey,
@@ -36,7 +36,7 @@ void main() {
   testWidgets('收藏词条时桌面 toast 真渲染出「已收藏」本地化文案', (WidgetTester tester) async {
     await _pumpToastHost(tester);
 
-    HibikiToast.show(msg: t.word_favorite_added);
+    FushiToast.show(msg: t.word_favorite_added);
     await tester.pump(); // 插入 overlay
     await tester.pump(const Duration(milliseconds: 250)); // 走完淡入
 
@@ -51,7 +51,7 @@ void main() {
   testWidgets('取消收藏时桌面 toast 真渲染出「已取消收藏」本地化文案', (WidgetTester tester) async {
     await _pumpToastHost(tester);
 
-    HibikiToast.show(msg: t.word_favorite_removed);
+    FushiToast.show(msg: t.word_favorite_removed);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
@@ -75,15 +75,15 @@ void main() {
       expect(handlerStart, greaterThan(0));
       final String body = compactCode(src.substring(handlerStart));
       expect(body,
-          contains(compactCode('HibikiToast.show(msg: t.word_favorite_added,')),
+          contains(compactCode('FushiToast.show(msg: t.word_favorite_added,')),
           reason: '收藏成功后必须弹「已收藏」toast');
       expect(body,
-          contains(compactCode('HibikiToast.show(msg: t.word_favorite_removed,')),
+          contains(compactCode('FushiToast.show(msg: t.word_favorite_removed,')),
           reason: '取消收藏后必须弹「已取消收藏」toast');
       expect(
         body.indexOf('addFavoriteWord(') <
             body.indexOf(
-                compactCode('HibikiToast.show(msg: t.word_favorite_added,')),
+                compactCode('FushiToast.show(msg: t.word_favorite_added,')),
         isTrue,
         reason: 'add 的 toast 必须在 addFavoriteWord 写库之后（解耦于返回值通道）',
       );
@@ -97,13 +97,13 @@ void main() {
       expect(handlerStart, greaterThan(0));
       final String body = compactCode(src.substring(handlerStart));
       expect(body,
-          contains(compactCode('HibikiToast.show(msg: t.word_favorite_added,')));
+          contains(compactCode('FushiToast.show(msg: t.word_favorite_added,')));
       expect(body,
-          contains(compactCode('HibikiToast.show(msg: t.word_favorite_removed,')));
+          contains(compactCode('FushiToast.show(msg: t.word_favorite_removed,')));
       expect(
         body.indexOf('addFavoriteWord(') <
             body.indexOf(
-                compactCode('HibikiToast.show(msg: t.word_favorite_added,')),
+                compactCode('FushiToast.show(msg: t.word_favorite_added,')),
         isTrue,
       );
     });

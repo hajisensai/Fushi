@@ -5,7 +5,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 void main() {
   test('v57 upgrade creates mappings before the outbox foreign key', () async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (rawDb) {
           rawDb.execute('PRAGMA user_version = 57');

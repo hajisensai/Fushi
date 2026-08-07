@@ -4,23 +4,23 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// 守卫：WebView 查词弹窗内部 card 表面的圆角走 Dart token 单一真相源。
 ///
-/// 机制：Dart 侧把 `HibikiRadii.cardValue` 作为 `--hibiki-radius-card` CSS 变量
+/// 机制：Dart 侧把 `FushiRadii.cardValue` 作为 `--hibiki-radius-card` CSS 变量
 /// 注入 popup WebView（与 `--md-*` 颜色变量同一注入点），popup.css 的卡片表面
 /// （`.kanji-card` / `.global-lookup-sentence`）用 `var(--hibiki-radius-card, 10px)`
-/// 而不是硬编码，从而与 Dart 侧 `HibikiPopupSurface`（card=10）统一。
+/// 而不是硬编码，从而与 Dart 侧 `FushiPopupSurface`（card=10）统一。
 /// 变量值的单一真源已收敛到 popup_theme_css.dart 的 buildPopupThemeCssVars，
-/// 两个注入器改为从该 map 取值（不再各自手抄 HibikiRadii.cardValue）。
+/// 两个注入器改为从该 map 取值（不再各自手抄 FushiRadii.cardValue）。
 ///
 /// 这条防止：有人把卡片圆角改回硬编码 `8px`（回到「弹窗不统一」），或删掉注入。
 void main() {
   String read(String p) => File(p).readAsStringSync();
 
-  test('共享真源把 --hibiki-radius-card 从 HibikiRadii.cardValue 派生', () {
+  test('共享真源把 --hibiki-radius-card 从 FushiRadii.cardValue 派生', () {
     final String src = read('lib/src/utils/popup_theme_css.dart');
     expect(src, contains("'--hibiki-radius-card'"),
         reason: 'popup_theme_css.dart 应产出 --hibiki-radius-card');
-    expect(src, contains('HibikiRadii.cardValue'),
-        reason: '圆角值应取自 token HibikiRadii.cardValue，非硬编码');
+    expect(src, contains('FushiRadii.cardValue'),
+        reason: '圆角值应取自 token FushiRadii.cardValue，非硬编码');
   });
 
   test('两个注入点都经 buildPopupThemeCssVars 注入 --hibiki-radius-card', () {

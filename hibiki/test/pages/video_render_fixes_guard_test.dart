@@ -7,7 +7,7 @@ import '../helpers/source_guard.dart';
 /// 视频渲染三修复的源码守卫（media_kit 驱动的 VideoHibikiPage 无法 headless 行为测试，
 /// 故锁定关键配线）：
 ///  1. 「视频没画面」——所有打开视频页的入口都经 [VideoHibikiPage.neutralized] 在路由层
-///     用 HibikiAppUiScaleNeutralizer 中和全局缩放，使 media_kit Texture 按原生密度渲染。
+///     用 FushiAppUiScaleNeutralizer 中和全局缩放，使 media_kit Texture 按原生密度渲染。
 ///  2. 「退视频红屏」——根 Overlay 浮层 builder 用自身 overlayContext + !mounted 守卫，
 ///     销毁期先摘 entry 再清栈，杜绝用失效 State context 重建浮层抛异常。
 void main() {
@@ -16,11 +16,11 @@ void main() {
 
   test('视频页打开入口统一经 neutralized 中和缩放（视频没画面）', () {
     final String src = File(videoPage).readAsStringSync();
-    // 工厂存在，且确实用 HibikiAppUiScaleNeutralizer 包裹整页。
+    // 工厂存在，且确实用 FushiAppUiScaleNeutralizer 包裹整页。
     expect(src, contains('static Widget neutralized('));
     expect(
       src,
-      contains('HibikiAppUiScaleNeutralizer(\n        child: VideoHibikiPage('),
+      contains('FushiAppUiScaleNeutralizer(\n        child: VideoHibikiPage('),
       reason: 'neutralized() 必须在路由层用中和器包裹整页',
     );
 

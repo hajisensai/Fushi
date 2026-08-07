@@ -26,7 +26,7 @@ void main() {
   /// 该区间内做，避免命中页面其它位置的同名 tooltip / 图标。
   ///
   /// 两种等价写法都认：内联的 `actions: <Widget>[`，以及先落成局部变量再传的
-  /// `List<Widget> actions = <Widget>[`（页头统一成 [HibikiPageHeader] 后走后者）。
+  /// `List<Widget> actions = <Widget>[`（页头统一成 [FushiPageHeader] 后走后者）。
   /// 区间终点用方括号配对求出，而不是「下一个 `],`」——后者在列表以 `];` 收尾时会
   /// 直接越过方法体，把断言范围放大到整个文件。
   ///

@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 确定性归还加载态（记真实异常 + toast 提示打开失败 + Navigator.pop 退回书架）。
 ///
 /// 守卫断言修复结构在位：①`_initBook` 含 try{ await _initBookInner ... } catch；
-/// ②catch 分支调恢复路径（HibikiToast.show + Navigator.of(context).pop()）；
+/// ②catch 分支调恢复路径（FushiToast.show + Navigator.of(context).pop()）；
 /// ③真正的 init 逻辑（DB await 链入口 _resolveProfileAndSettings）搬进 `_initBookInner`。
 /// 删掉 try/catch 或恢复路径即红。ReaderHibikiPage 过重（WebView + 音频 + 全
 /// ProviderContainer），无法在 widget test 可靠拉起跑 _initBook，故落在最强可靠可落地的
@@ -54,7 +54,7 @@ void main() {
     final String catchBody = bookBody.substring(catchIdx);
     expect(catchBody.contains('if (!mounted) return;'), isTrue,
         reason: 'catch 内 setState/Navigator 前必须 mounted 守卫');
-    expect(catchBody.contains('HibikiToast.show('), isTrue,
+    expect(catchBody.contains('FushiToast.show('), isTrue,
         reason: 'catch 必须提示用户打开失败');
     expect(catchBody.contains('Navigator.of(context).pop()'), isTrue,
         reason: 'catch 必须退回书架，不让 spinner 永挂');

@@ -23,10 +23,10 @@ import 'package:fushi_core/fushi_core.dart';
 /// at v23 the table is already book_key-keyed by the v16 re-key). Opening it
 /// drives ONLY the `from < 24` onUpgrade branch. [seededOffsets] maps book_key
 /// to the seeded `ttu_char_offset` value (the column dropped by v24).
-Future<HibikiDatabase> _openV23ReaderPositions(
+Future<FushiDatabase> _openV23ReaderPositions(
   Map<String, int> seededOffsets,
 ) async {
-  final db = HibikiDatabase.forTesting(
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         // Pre-v24 reader_positions: book_key UNIQUE (post-v16 re-key shape),
@@ -60,7 +60,7 @@ CREATE TABLE reader_positions (
   return db;
 }
 
-Future<Set<String>> _columnNames(HibikiDatabase db, String table) async {
+Future<Set<String>> _columnNames(FushiDatabase db, String table) async {
   final rows = await db.customSelect("PRAGMA table_info('$table')").get();
   return rows.map((r) => r.data['name'] as String).toSet();
 }
@@ -146,7 +146,7 @@ void main() {
       // ttu_char_offset. The from<24 step guards the ADD with
       // !_columnExists('reader_positions','char_offset'), so it must not error,
       // and must still DROP the stale ttu_char_offset.
-      final db = HibikiDatabase.forTesting(
+      final db = FushiDatabase.forTesting(
         NativeDatabase.memory(
           setup: (rawDb) {
             rawDb.execute('''
@@ -195,7 +195,7 @@ CREATE TABLE reader_positions (
       // missing table. (onCreate does not run for an existing-versioned DB, so
       // the table is legitimately absent afterwards — the contract under test is
       // "the guard prevents an ALTER on a non-existent table".)
-      final db = HibikiDatabase.forTesting(
+      final db = FushiDatabase.forTesting(
         NativeDatabase.memory(
           setup: (rawDb) {
             rawDb.execute('PRAGMA user_version = 23');

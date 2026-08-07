@@ -35,11 +35,11 @@ const String _srtContent = '1\n'
     '00:00:03,000 --> 00:00:04,000\n'
     'さようなら\n';
 
-HibikiDatabase _memDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _memDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 AppModelLibraryHostService _hostService({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required Directory work,
   Directory? uploads,
 }) =>
@@ -57,10 +57,10 @@ Future<InterconnectSyncBackend> _clientBackend({
   required String base,
   required String token,
 }) async {
-  final HibikiDatabase db = _memDb();
+  final FushiDatabase db = _memDb();
   final SyncRepository repo = SyncRepository(db);
-  await repo.setHibikiClientUrls(<HibikiClientUrl>[
-    HibikiClientUrl(url: base, enabled: true),
+  await repo.setHibikiClientUrls(<FushiClientUrl>[
+    FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
   final InterconnectSyncBackend backend =
@@ -71,7 +71,7 @@ Future<InterconnectSyncBackend> _clientBackend({
 }
 
 SyncOrchestrator _orchestrator({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required SyncBackend backend,
   required Directory tmp,
 }) =>
@@ -124,7 +124,7 @@ void main() {
 
   group('host importVideoSubtitle', () {
     late Directory work;
-    late HibikiDatabase db;
+    late FushiDatabase db;
 
     setUp(() async {
       work = await Directory.systemTemp.createTemp('subtitle_import_');
@@ -191,8 +191,8 @@ void main() {
 
   group('端到端 live push', () {
     late Directory work;
-    late HibikiSyncServer server;
-    late HibikiDatabase hostDb;
+    late FushiSyncServer server;
+    late FushiDatabase hostDb;
     late Directory hostUploads;
     late String base;
     const String token = 'subtitle-sync-token';
@@ -202,7 +202,7 @@ void main() {
       hostDb = _memDb();
       hostUploads = Directory(p.join(work.path, 'host_uploads'))
         ..createSync(recursive: true);
-      server = HibikiSyncServer(
+      server = FushiSyncServer(
         syncDataDir: p.join(work.path, 'server_data'),
         port: 0,
         token: token,
@@ -221,7 +221,7 @@ void main() {
     });
 
     test('视频连同全部 sidecar 一并推送；重复 sweep 幂等', () async {
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       final Directory vidDir = Directory(p.join(work.path, 'local_vids'))
         ..createSync(recursive: true);
@@ -271,7 +271,7 @@ void main() {
     });
 
     test('host 已有视频但缺字幕：只补推字幕，不重传视频', () async {
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       final Directory vidDir = Directory(p.join(work.path, 'local_vids2'))
         ..createSync(recursive: true);

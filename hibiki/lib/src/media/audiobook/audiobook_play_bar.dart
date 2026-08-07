@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/focus/hibiki_focus_controller.dart'
-    show HibikiFocusId;
+    show FushiFocusId;
 import 'package:fushi/src/focus/hibiki_focus_target.dart';
 import 'package:fushi/utils.dart';
 
@@ -64,7 +64,7 @@ class AudiobookPlayBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color? fg = foregroundColor;
     // 播放/暂停键回到原生 [IconButton.filledTonal]：标准 MD3 圆形 tonal 容器 +
     // state-layer + ripple（TODO-297 还原「图标 + 圆框 md3」旧版观感）。注入纸张
@@ -137,7 +137,7 @@ class AudiobookPlayBar extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         _FocusableBarButton(
-          id: const HibikiFocusId('audiobook_prev'),
+          id: const FushiFocusId('audiobook_prev'),
           icon: Icon(leftKey.icon),
           iconSize: 22,
           style: flatStyle,
@@ -145,7 +145,7 @@ class AudiobookPlayBar extends StatelessWidget {
           onPressed: leftKey.onPressed,
         ),
         _FocusableBarButton(
-          id: const HibikiFocusId('audiobook_play'),
+          id: const FushiFocusId('audiobook_play'),
           filledTonal: true,
           icon: Icon(
             controller.isPlaying
@@ -158,7 +158,7 @@ class AudiobookPlayBar extends StatelessWidget {
           tooltip: controller.isPlaying ? t.pause : t.play,
         ),
         _FocusableBarButton(
-          id: const HibikiFocusId('audiobook_next'),
+          id: const FushiFocusId('audiobook_next'),
           icon: Icon(rightKey.icon),
           iconSize: 22,
           style: flatStyle,
@@ -187,7 +187,7 @@ class AudiobookPlayBar extends StatelessWidget {
         foregroundColor: fg,
       ),
       _FocusableBarButton(
-        id: const HibikiFocusId('audiobook_settings'),
+        id: const FushiFocusId('audiobook_settings'),
         key: const ValueKey<String>('fushi_reader_audiobook_settings_button'),
         semanticsIdentifier: 'hibiki.reader.audiobook.settings',
         icon: const Icon(Icons.tune_outlined),
@@ -244,7 +244,7 @@ class AudiobookFollowAudioButton extends StatelessWidget {
         // 旧版 follow 键是无框原生 [IconButton]（仅图标着色），还原其观感的同时
         // 保留 c3dbe59a1 的纸张前景色注入：开启态用满前景色 / 关闭态 60%。
         return _FocusableBarButton(
-          id: const HibikiFocusId('audiobook_follow'),
+          id: const FushiFocusId('audiobook_follow'),
           icon: Icon(on ? Icons.link : Icons.link_off),
           iconSize: 20,
           color: on ? onColor : offColor,
@@ -261,18 +261,18 @@ class AudiobookFollowAudioButton extends StatelessWidget {
   }
 }
 
-/// 有声书播放控制条上的一个图标按钮，已注册为应用焦点目标（[HibikiFocusTarget]）。
+/// 有声书播放控制条上的一个图标按钮，已注册为应用焦点目标（[FushiFocusTarget]）。
 ///
-/// 裸 Material [IconButton] 的焦点节点不会进入 [HibikiFocusController] 的目标表，
+/// 裸 Material [IconButton] 的焦点节点不会进入 [FushiFocusController] 的目标表，
 /// 所以在 `experimentalFocusNavigation` 下方向键 / 手柄方向只在已注册的
-/// [HibikiFocusTarget] 之间移动，永远跳不到播放条这几个按钮（TODO-712：用户报
-/// 「这三个按钮好像没焦点」）。这里把按钮包进 [HibikiFocusTarget] 让它成为可达
+/// [FushiFocusTarget] 之间移动，永远跳不到播放条这几个按钮（TODO-712：用户报
+/// 「这三个按钮好像没焦点」）。这里把按钮包进 [FushiFocusTarget] 让它成为可达
 /// 的焦点目标。
 ///
-/// [HibikiFocusTarget] 自己持有焦点节点（[Focus]）；A / Enter 经
+/// [FushiFocusTarget] 自己持有焦点节点（[Focus]）；A / Enter 经
 /// `Actions.maybeInvoke<ActivateIntent>(primaryFocus.context, ...)` 从该焦点节点
 /// **向上**走 Actions 链分发，而 [IconButton] 内建的 [ActivateIntent] 处理器在
-/// 子树**下方**够不到——所以这里在 [HibikiFocusTarget] 之上显式挂一层
+/// 子树**下方**够不到——所以这里在 [FushiFocusTarget] 之上显式挂一层
 /// `Actions{ActivateIntent → onPressed}`，与导航项 `_NavFocusCell` 同款做法，
 /// 否则焦点能到但确认键按不动按钮。
 class _FocusableBarButton extends StatelessWidget {
@@ -289,7 +289,7 @@ class _FocusableBarButton extends StatelessWidget {
     super.key,
   });
 
-  final HibikiFocusId id;
+  final FushiFocusId id;
   final Widget icon;
   final double iconSize;
   final VoidCallback onPressed;
@@ -341,7 +341,7 @@ class _FocusableBarButton extends StatelessWidget {
           },
         ),
       },
-      child: HibikiFocusTarget(id: id, child: button),
+      child: FushiFocusTarget(id: id, child: button),
     );
   }
 }

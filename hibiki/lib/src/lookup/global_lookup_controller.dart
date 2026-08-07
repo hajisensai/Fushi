@@ -59,7 +59,7 @@ class GlobalLookupController {
   // from (was a hard-coded Ctrl+Alt+D). Listened to so a user remapping the
   // key in settings (or a profile switch that reloads bindings) re-registers
   // the OS hotkey immediately, instead of the key being a compile-time const.
-  HibikiShortcutRegistry? _registry;
+  FushiShortcutRegistry? _registry;
   bool _started = false;
   // TODO-1233 -- optional consumer notified when the overlay is GENUINELY
   // dismissed (foreground hook / click-outside / JS dismiss), so a caller can
@@ -274,7 +274,7 @@ class GlobalLookupController {
         glog('hotkey: unregister previous FAILED (non-fatal): $e');
       }
     }
-    final HibikiShortcutRegistry? registry = _registry;
+    final FushiShortcutRegistry? registry = _registry;
     if (registry == null) {
       return;
     }

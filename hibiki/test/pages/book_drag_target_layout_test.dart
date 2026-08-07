@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/book_drag_target.dart';
 
 void main() {
-  // Mirrors the real bookshelf card: a margin (HibikiCard) wrapping an
+  // Mirrors the real bookshelf card: a margin (FushiCard) wrapping an
   // AspectRatio whose ratio equals the grid cell ratio. The grid cell hands
   // down tight constraints, so the bare card must fill (cell - margin).
   // Wrapping the card in BookDragTarget (non-selection mode) must not change

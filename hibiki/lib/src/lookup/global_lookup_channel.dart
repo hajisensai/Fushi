@@ -25,7 +25,7 @@ export 'package:fushi/src/lookup/overlay_window_channel.dart'
 
 abstract final class GlobalLookupChannel {
   static const OverlayWindowChannel _impl =
-      OverlayWindowChannel(HibikiChannels.globalLookup);
+      OverlayWindowChannel(FushiChannels.globalLookup);
 
   static Future<void> prepare(String assetsDir) => _impl.prepare(assetsDir);
 

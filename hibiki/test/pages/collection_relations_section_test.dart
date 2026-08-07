@@ -17,13 +17,13 @@ import 'package:fushi_core/fushi_core.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late int collectionId;
   late int otherCollectionId;
 
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.zhCn);
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     collectionId =
         await db.createMediaCollection('本篇', collectionType: 'playlist');
     otherCollectionId =

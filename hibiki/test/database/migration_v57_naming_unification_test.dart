@@ -15,8 +15,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// 打开一个 user_version=56 的库（v56 shape：旧列名 + imported_at 存秒），触发真实
 /// 的 `if (from < 57)` alterTable 阶梯，逐项断言数据无损 + 新列名 + FK 行为。
 void main() {
-  Future<HibikiDatabase> openV56Db() async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+  Future<FushiDatabase> openV56Db() async {
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (rawDb) {
           rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -159,13 +159,13 @@ CREATE TABLE book_tag_membership_tombstones (
     return db;
   }
 
-  Future<Set<String>> columnsOf(HibikiDatabase db, String table) async {
+  Future<Set<String>> columnsOf(FushiDatabase db, String table) async {
     final rows = await db.customSelect('PRAGMA table_info($table)').get();
     return rows.map((r) => r.read<String>('name')).toSet();
   }
 
   test('v57：三张表落新列名、旧列名消失，并升到当前 user_version', () async {
-    final HibikiDatabase db = await openV56Db();
+    final FushiDatabase db = await openV56Db();
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
@@ -191,7 +191,7 @@ CREATE TABLE book_tag_membership_tombstones (
   });
 
   test('v57 ③：imported_at 秒→毫秒无损（NULL 保持），completed_at 不受影响', () async {
-    final HibikiDatabase db = await openV56Db();
+    final FushiDatabase db = await openV56Db();
 
     final VideoBookRow? a = await db.getVideoBookByBookUid('video/a');
     expect(a, isNotNull);
@@ -208,7 +208,7 @@ CREATE TABLE book_tag_membership_tombstones (
   });
 
   test('v57 ①：映射行值保真，重建后的 FK ON DELETE CASCADE 仍生效', () async {
-    final HibikiDatabase db = await openV56Db();
+    final FushiDatabase db = await openV56Db();
 
     final List<VideoBookTagMappingRow> rows =
         await db.getAllVideoBookTagMappings();
@@ -229,7 +229,7 @@ CREATE TABLE book_tag_membership_tombstones (
   });
 
   test('v57 ②：两张墓碑表值保真、主键/upsert 语义不变', () async {
-    final HibikiDatabase db = await openV56Db();
+    final FushiDatabase db = await openV56Db();
 
     final List<CollectionMemberTombstoneRow> tombs =
         await db.getAllCollectionMemberTombstones();
@@ -239,7 +239,7 @@ CREATE TABLE book_tag_membership_tombstones (
     expect(member.collectionName, 'C');
     expect(member.deletedAt, 1234, reason: 'removed_at 值原样搬进 deleted_at');
     final CollectionMemberTombstoneRow sentinel = tombs.firstWhere(
-        (r) => r.entryKey == HibikiDatabase.collectionTombstoneSentinel);
+        (r) => r.entryKey == FushiDatabase.collectionTombstoneSentinel);
     expect(sentinel.collectionName, 'Dead');
     expect(sentinel.deletedAt, 5678, reason: '合集级哨兵行同样保真');
 
@@ -263,8 +263,8 @@ CREATE TABLE book_tag_membership_tombstones (
   });
 
   test('v57：fresh 库由 onCreate 直接建出新 shape，可写可读', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     expect(

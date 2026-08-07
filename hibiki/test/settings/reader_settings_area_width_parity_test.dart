@@ -26,8 +26,8 @@ import '../helpers/test_platform_services.dart';
 // audiobook sub-pages. Root fix: buildDetailContent gained insetHorizontally;
 // when false it drops its own horizontal inset and lets the embedder own the
 // margins (matching the Cupertino renderer), so the body spans the full pane.
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
@@ -71,7 +71,7 @@ SettingsDestination _oneSwitchDestination() {
 }
 
 Widget _harness({required Widget Function(SettingsContext) builder}) {
-  final HibikiDatabase db = _testDb();
+  final FushiDatabase db = _testDb();
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
     ..loadFromPrefsSnapshot(<String, String>{
       'design_system': PrefCodec.encode('material'),
@@ -95,7 +95,7 @@ Widget _harness({required Widget Function(SettingsContext) builder}) {
         platform: TargetPlatform.android,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
         extensions: <ThemeExtension<dynamic>>[
-          HibikiDesignSystemTheme(themeNotifier.designSystemTheme),
+          FushiDesignSystemTheme(themeNotifier.designSystemTheme),
         ],
       ),
       home: Consumer(
@@ -126,7 +126,7 @@ void main() {
     Widget variant(bool inset) => _harness(
           builder: (SettingsContext ctx) {
             shared = MaterialSettingsRenderer.detailHorizontalInsets(
-              HibikiDesignTokens.of(ctx.context),
+              FushiDesignTokens.of(ctx.context),
             );
             return Align(
               alignment: Alignment.topLeft,

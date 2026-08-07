@@ -21,7 +21,7 @@ import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 Uint8List _encodeArchive(List<ArchiveFile> files) {
   final Archive archive = Archive();
@@ -190,7 +190,7 @@ void main() {
   test(
       'network VIDEO source is rejected: scan records error, no video inserted',
       () async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
 
     final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
@@ -245,7 +245,7 @@ void main() {
 
     testWidgets('remote EPUB is copyToLocal-downloaded then imported',
         (WidgetTester tester) async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       // A real on-disk EPUB standing in for the remote file the fake fs serves.

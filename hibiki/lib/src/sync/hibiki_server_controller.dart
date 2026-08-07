@@ -22,30 +22,30 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_platform/fushi_platform.dart';
 
-/// Result of a [HibikiSyncServerController.start] attempt, so the caller (the
+/// Result of a [FushiSyncServerController.start] attempt, so the caller (the
 /// settings toggle) can surface the right message while a headless app-init
 /// start can just log a failure.
-sealed class HibikiServerStartOutcome {
-  const HibikiServerStartOutcome();
+sealed class FushiServerStartOutcome {
+  const FushiServerStartOutcome();
 }
 
-class HibikiServerStarted extends HibikiServerStartOutcome {
-  const HibikiServerStarted();
+class FushiServerStarted extends FushiServerStartOutcome {
+  const FushiServerStarted();
 }
 
-class HibikiServerPortInUse extends HibikiServerStartOutcome {
-  const HibikiServerPortInUse(this.port);
+class FushiServerPortInUse extends FushiServerStartOutcome {
+  const FushiServerPortInUse(this.port);
   final int port;
 }
 
-class HibikiServerStartError extends HibikiServerStartOutcome {
-  const HibikiServerStartError(this.message);
+class FushiServerStartError extends FushiServerStartOutcome {
+  const FushiServerStartError(this.message);
   final String message;
 }
 
 /// App-level owner of the embedded Hibiki LAN sync server + its broadcast.
 ///
-/// Previously the [HibikiSyncServer] and [LanBroadcastService] were owned by the
+/// Previously the [FushiSyncServer] and [LanBroadcastService] were owned by the
 /// sync-settings page widget, whose `dispose()` stopped them — so simply
 /// navigating away from "Sync & backup" killed the host (BUG-085). This
 /// controller is owned by [AppModel] for the whole session (mirroring
@@ -55,15 +55,15 @@ class HibikiServerStartError extends HibikiServerStartOutcome {
 ///
 /// The pairing-approval prompt runs through the app-wide [navigatorKey], so a
 /// peer can pair even while the user is on another screen.
-class HibikiSyncServerController extends ChangeNotifier {
-  HibikiSyncServerController({
+class FushiSyncServerController extends ChangeNotifier {
+  FushiSyncServerController({
     required GlobalKey<NavigatorState> navigatorKey,
-    required HibikiDatabase Function() database,
+    required FushiDatabase Function() database,
     required String Function() syncDataDir,
-    required HibikiRemoteLookupService Function() remoteLookupServiceFactory,
-    HibikiRemoteMiningService Function()? miningServiceFactory,
-    HibikiRemoteHistoryService Function()? historyServiceFactory,
-    HibikiLibraryHostService Function()? libraryServiceFactory,
+    required FushiRemoteLookupService Function() remoteLookupServiceFactory,
+    FushiRemoteMiningService Function()? miningServiceFactory,
+    FushiRemoteHistoryService Function()? historyServiceFactory,
+    FushiLibraryHostService Function()? libraryServiceFactory,
     MangaOcrService Function()? mangaOcrServiceFactory,
     PlatformDeviceInfoService? deviceInfo,
   })  : _navigatorKey = navigatorKey,
@@ -81,19 +81,19 @@ class HibikiSyncServerController extends ChangeNotifier {
         _deviceInfo = deviceInfo ?? DesktopDeviceInfoService();
 
   final GlobalKey<NavigatorState> _navigatorKey;
-  final HibikiDatabase Function() _database;
+  final FushiDatabase Function() _database;
   final String Function() _syncDataDir;
-  final HibikiRemoteLookupService Function() _remoteLookupServiceFactory;
-  final HibikiRemoteMiningService Function()? _miningServiceFactory;
-  final HibikiRemoteHistoryService Function()? _historyServiceFactory;
-  final HibikiLibraryHostService Function()? _libraryServiceFactory;
+  final FushiRemoteLookupService Function() _remoteLookupServiceFactory;
+  final FushiRemoteMiningService Function()? _miningServiceFactory;
+  final FushiRemoteHistoryService Function()? _historyServiceFactory;
+  final FushiLibraryHostService Function()? _libraryServiceFactory;
 
   /// 漫画 P3：互联 host 代跑 OCR 的服务工厂。null（headless/单测）= 不接线，
   /// server 的 `/api/ocr/*` 端点 404、capabilities 不带 `mangaOcr` 字段。
   final MangaOcrService Function()? _mangaOcrServiceFactory;
   final PlatformDeviceInfoService _deviceInfo;
 
-  HibikiSyncServer? _server;
+  FushiSyncServer? _server;
   LanBroadcastService? _broadcast;
   // Active LAN discovery browsers registered for app-exit teardown. Discovery is
   // owned by the sync-settings page widget (it lives only while that page is
@@ -200,8 +200,8 @@ class HibikiSyncServerController extends ChangeNotifier {
   /// Start the host on launch iff the user previously enabled it. Fire-and-
   /// forget friendly: any bind failure self-disables + is reported via the
   /// returned outcome (callers at init just log it).
-  Future<HibikiServerStartOutcome> startIfEnabled() async {
-    if (!await _repo.isServerEnabled()) return const HibikiServerStarted();
+  Future<FushiServerStartOutcome> startIfEnabled() async {
+    if (!await _repo.isServerEnabled()) return const FushiServerStarted();
     return start();
   }
 
@@ -214,13 +214,13 @@ class HibikiSyncServerController extends ChangeNotifier {
   /// launch will retry automatically (BUG-160 / HBK-AUDIT-167 revised).
   /// The intent is only cleared when the user explicitly disables hosting via
   /// [stop(persistDisabled: true)].
-  Future<HibikiServerStartOutcome> start() async {
-    if (isRunning) return const HibikiServerStarted();
+  Future<FushiServerStartOutcome> start() async {
+    if (isRunning) return const FushiServerStarted();
     final SyncRepository repo = _repo;
     final int port = await repo.getServerPort();
     String? token = await repo.getServerPassword();
     if (token == null) {
-      token = HibikiSyncServer.generateToken();
+      token = FushiSyncServer.generateToken();
       await repo.setServerPassword(token);
     }
     // TODO-961 M1: 仅当用户显式开启 TLS 时，加载（必要时生成）自签证书身份并起
@@ -229,15 +229,15 @@ class HibikiSyncServerController extends ChangeNotifier {
     SecurityContext? securityContext;
     String? hostFingerprint;
     if (await repo.getServerTlsEnabled()) {
-      final HibikiTlsIdentity identity =
-          await HibikiTlsIdentityStore(dataDir: _syncDataDir()).loadOrCreate();
+      final FushiTlsIdentity identity =
+          await FushiTlsIdentityStore(dataDir: _syncDataDir()).loadOrCreate();
       securityContext = SecurityContext()
         ..useCertificateChainBytes(utf8.encode(identity.certificatePem))
         ..usePrivateKeyBytes(utf8.encode(identity.privateKeyPem));
       hostFingerprint = identity.fingerprintSha256;
     }
     final String deviceName = await _deviceName();
-    final HibikiSyncServer server = HibikiSyncServer(
+    final FushiSyncServer server = FushiSyncServer(
       syncDataDir: _syncDataDir(),
       port: port,
       token: token,
@@ -278,7 +278,7 @@ class HibikiSyncServerController extends ChangeNotifier {
     await migrateLegacySyncRootDirectory(
       syncDataDir: server.syncDataDir,
       onError: (Object e, StackTrace st) => ErrorLogService.instance
-          .log('HibikiServerController.migrateLegacySyncRoot', e, st),
+          .log('FushiServerController.migrateLegacySyncRoot', e, st),
     );
     try {
       await server.start();
@@ -289,20 +289,20 @@ class HibikiSyncServerController extends ChangeNotifier {
       // TODO-961: TXT 带上 tls 标志，发现方按它优先走 https 探测。
       await _startBroadcast(server.port, tlsEnabled: securityContext != null);
       notifyListeners();
-      return const HibikiServerStarted();
+      return const FushiServerStarted();
     } on SyncServerPortInUseException catch (e) {
       _server = null;
       // Do NOT clear serverEnabled: the bind failure is transient (another
       // process holds the port).  The intent remains true so the next launch
       // retries automatically.
       notifyListeners();
-      return HibikiServerPortInUse(e.port);
+      return FushiServerPortInUse(e.port);
     } catch (e) {
       _server = null;
       // Same rationale: a general error at bind time must not permanently erase
       // the user's hosting preference.
       notifyListeners();
-      return HibikiServerStartError(friendlySyncErrorDetail(e));
+      return FushiServerStartError(friendlySyncErrorDetail(e));
     }
   }
 
@@ -333,7 +333,7 @@ class HibikiSyncServerController extends ChangeNotifier {
   }
 
   /// Bounce the server so a freshly-persisted token / port takes effect.
-  Future<HibikiServerStartOutcome> restart() async {
+  Future<FushiServerStartOutcome> restart() async {
     await stop();
     return start();
   }
@@ -362,8 +362,8 @@ class HibikiSyncServerController extends ChangeNotifier {
   /// TODO-961 M1: server 在 pair/v2 创建会话时回调，host 生成本会话 6 位 PIN 并
   /// 暂存，供随后的 confirm 审批弹窗显示给用户。返回的 PIN 同时被 server 用于
   /// confirm 阶段重算 HMAC proof 比对——同一值，绝不过线。
-  String _generatePairPin(HibikiPairSession session) {
-    final String pin = HibikiPairingProtocol.generatePin();
+  String _generatePairPin(FushiPairSession session) {
+    final String pin = FushiPairingProtocol.generatePin();
     _pendingPairPin = pin;
     return pin;
   }
@@ -372,8 +372,8 @@ class HibikiSyncServerController extends ChangeNotifier {
   /// 进 `hibiki_paired_peers`（peerId UNIQUE，重复配对同一设备只轮换其 token）。
   /// token 是敏感凭据，绝不写日志。
   Future<void> _persistPairedPeer(
-      HibikiPairedPeerRegistration registration) async {
-    await _database().upsertPairedPeer(HibikiPairedPeersCompanion.insert(
+      FushiPairedPeerRegistration registration) async {
+    await _database().upsertPairedPeer(FushiPairedPeersCompanion.insert(
       peerId: registration.peerId,
       token: registration.token,
       pairedAtMs: DateTime.now().millisecondsSinceEpoch,
@@ -385,12 +385,12 @@ class HibikiSyncServerController extends ChangeNotifier {
   /// TODO-961 M1b: 供给 server auth 校验用的全部有效（未吊销）per-peer token 集合。
   /// 吊销 = 删行，故只需读全表 token。
   Future<Set<String>> _loadPairedPeerTokens() async {
-    final List<HibikiPairedPeerRow> peers = await _database().getPairedPeers();
-    return peers.map((HibikiPairedPeerRow p) => p.token).toSet();
+    final List<FushiPairedPeerRow> peers = await _database().getPairedPeers();
+    return peers.map((FushiPairedPeerRow p) => p.token).toSet();
   }
 
   /// 全部已配对设备（供「移除已配对设备」UI 列表）。按配对先后升序。
-  Future<List<HibikiPairedPeerRow>> pairedPeers() =>
+  Future<List<FushiPairedPeerRow>> pairedPeers() =>
       _database().getPairedPeers();
 
   /// TODO-961 M1b: 吊销一台已配对设备（删其 per-peer token 行），返回是否真的删了。
@@ -402,7 +402,7 @@ class HibikiSyncServerController extends ChangeNotifier {
   }
 
   /// TODO-1330 / BUG：client 提交 confirm 后收起 host 那个常驻显示 PIN 的审批弹窗
-  /// （见 [_promptPairApproval]）。作为 server 的 [HibikiSyncServer.onPairSessionResolved]
+  /// （见 [_promptPairApproval]）。作为 server 的 [FushiSyncServer.onPairSessionResolved]
   /// 回调接线；无常驻弹窗时（免 PIN / 已关）为 no-op。
   void _dismissPendingPairPinDialog() {
     _pendingPairPinDismiss?.call();
@@ -414,7 +414,7 @@ class HibikiSyncServerController extends ChangeNotifier {
   /// 弹窗显示。返回值与真实审批一致（true=允许 / false=拒绝或被叠弹挡下）。
   @visibleForTesting
   Future<bool> debugPromptPairApproval(
-    HibikiPairRequest request, {
+    FushiPairRequest request, {
     String? seedPin,
   }) {
     if (seedPin != null) _pendingPairPin = seedPin;
@@ -433,7 +433,7 @@ class HibikiSyncServerController extends ChangeNotifier {
   /// 会话去弹 PIN 框），但对 **pinRequired** 会话**不关窗**，继续常驻显示 PIN，直到
   /// client 提交 confirm（[onPairSessionResolved] → [_dismissPendingPairPinDialog]）、
   /// 用户手动关、或会话 TTL 超时。免 PIN 会话行为不变（无 PIN 可显示，点选即关）。
-  Future<bool> _promptPairApproval(HibikiPairRequest request) async {
+  Future<bool> _promptPairApproval(FushiPairRequest request) async {
     // 先收起一个应被本次新请求取代的旧弹窗，等它彻底 teardown（whenComplete 清共享单值
     // 态）再开新框，并把本会话刚生成的 PIN（可能被旧 teardown 清空）恢复回来。两种取代：
     //   (a) TODO-1330 / BUG-708：旧弹窗是「已允许、常驻显示 PIN 等对方输入」（lingering）——
@@ -470,7 +470,7 @@ class HibikiSyncServerController extends ChangeNotifier {
   /// 「收起上一个常驻弹窗」的异步收尾后调用）。本方法内**没有任何 await**——弹窗用
   /// unawaited 打开、结果经 [approval] completer 回传——故其对 [_navigatorKey] 当前
   /// context 的使用不跨异步间隙（避免误用陈旧 BuildContext）。
-  Future<bool> _showPairApprovalDialog(HibikiPairRequest request) {
+  Future<bool> _showPairApprovalDialog(FushiPairRequest request) {
     // 仍处于「审批未决」的弹窗才真正占槽——此时拒绝新请求（防恶意 peer 叠弹审批）。
     if (_pairDialogOpen) return Future<bool>.value(false);
     final BuildContext? ctx = _navigatorKey.currentContext;
@@ -540,19 +540,19 @@ class HibikiSyncServerController extends ChangeNotifier {
         return StatefulBuilder(
           builder: (BuildContext c, StateSetter setLocal) {
             setDialogState = setLocal;
-            final HibikiDesignTokens tokens = HibikiDesignTokens.of(c);
+            final FushiDesignTokens tokens = FushiDesignTokens.of(c);
             final bool waiting = approvedPhase;
             // PIN 只在 host 屏幕显示，绝不过线（client 只回传 HMAC proof）。仅当本会话
             // 真要求 PIN（request.pinRequired）才显示，免 PIN 会话不显示「幽灵 PIN」。
             final bool showPin = request.pinRequired && _pendingPairPin != null;
-            return HibikiDialogFrame(
+            return FushiDialogFrame(
               maxWidth: 420,
               insetPadding: EdgeInsets.symmetric(
                 horizontal: tokens.spacing.card,
                 vertical: tokens.spacing.card,
               ),
               scrollable: false,
-              child: HibikiModalSheetFrame(
+              child: FushiModalSheetFrame(
                 title: t.sync_pair_request_title,
                 scrollable: true,
                 bodyPadding: EdgeInsets.fromLTRB(
@@ -654,7 +654,7 @@ class HibikiSyncServerController extends ChangeNotifier {
 
   /// "<name> · <ip>" when both are known, else whichever is present, else a
   /// generic label so the prompt always names a requester.
-  String _pairRequesterLabel(HibikiPairRequest request) {
+  String _pairRequesterLabel(FushiPairRequest request) {
     final String name = request.deviceName?.trim() ?? '';
     final String ip = request.remoteAddress?.trim() ?? '';
     if (name.isNotEmpty && ip.isNotEmpty) return '$name · $ip';

@@ -36,11 +36,11 @@ void main() {
   }
 
   group('page columns visibility (schema)', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late ReaderSettings readerSettings;
 
     setUp(() async {
-      db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
       MediaSource.setDatabase(db);
       readerSettings = ReaderSettings(db);
       await readerSettings.refreshFromDb();
@@ -94,11 +94,11 @@ void main() {
   });
 
   group('page columns CSS effect (behavior)', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late ReaderSettings settings;
 
     setUp(() async {
-      db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
       settings = ReaderSettings(db);
       await settings.refreshFromDb();
       // 用户实测场景：竖排、列数设成 4。

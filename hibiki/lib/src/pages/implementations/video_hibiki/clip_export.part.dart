@@ -146,7 +146,7 @@ extension _VideoClipExport on _VideoHibikiPageState {
         severity: ToastSeverity.success,
       );
       if (!(Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
-        await HibikiShare.shareFiles(<XFile>[
+        await FushiShare.shareFiles(<XFile>[
           XFile(exported),
         ], subject: p.basename(exported));
       }
@@ -332,7 +332,7 @@ extension _VideoClipExport on _VideoHibikiPageState {
           );
         }
       } else {
-        await HibikiShare.shareFiles(<XFile>[
+        await FushiShare.shareFiles(<XFile>[
           XFile(tmp.path, mimeType: 'image/jpeg'),
         ], subject: screenshotName);
         _showOsd(

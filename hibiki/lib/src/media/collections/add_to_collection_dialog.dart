@@ -8,14 +8,14 @@ import 'package:fushi/utils.dart';
 ///
 /// 列出全部现有合集（名称 + 成员数，已含本条目的合集置灰打勾），首项「新建
 /// 合集」走 [showCollectionNameDialog] 命名后创建。落库统一走
-/// [HibikiDatabase.createMediaCollection] / [HibikiDatabase.addToCollection]
+/// [FushiDatabase.createMediaCollection] / [FushiDatabase.addToCollection]
 /// （后者自带成员墓碑清理——重加回被移出的成员不会被同步复活逻辑吞掉），与
 /// 多选批量「组合成合集」三档共用同一条 DAO 路径。
 ///
 /// 返回是否真的加入了合集（调用方据此刷新分组/网格）。
 Future<bool> showAddToCollectionDialog({
   required BuildContext context,
-  required HibikiDatabase database,
+  required FushiDatabase database,
   required MediaKind mediaType,
   required String entryKey,
   String defaultNewName = '',
@@ -63,7 +63,7 @@ Future<bool> showAddToCollectionDialog({
     collectionId = picked;
   }
   await database.addToCollection(collectionId, mediaType, entryKey);
-  HibikiToast.show(
+  FushiToast.show(
     msg: t.batch_add_to_collection_success(n: 1),
     severity: ToastSeverity.success,
   );
@@ -85,12 +85,12 @@ class _AddToCollectionDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiDialogFrame(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.74,
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.add_to_collection,
         leadingIcon: Icons.collections_bookmark_outlined,
         scrollable: true,
@@ -101,14 +101,14 @@ class _AddToCollectionDialog extends StatelessWidget {
         body: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            HibikiListItem(
+            FushiListItem(
               key: const ValueKey<String>('add_to_collection_create_new'),
               leading: const Icon(Icons.add),
               title: Text(t.create_series),
               onTap: () => Navigator.pop(context, createNewSentinel),
             ),
             for (final MediaCollectionRow collection in collections)
-              HibikiListItem(
+              FushiListItem(
                 key: ValueKey<String>('add_to_collection_${collection.id}'),
                 leading: const Icon(Icons.collections_bookmark_outlined),
                 title: Text(collection.name),

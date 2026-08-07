@@ -16,21 +16,21 @@ import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
 /// the control — and therefore the ring — is brought into view ("把视角转过去").
 /// A deliberate manual scroll that leaves focus behind is NOT yanked back; the
 /// ring simply tracks the control to its new (possibly off-screen) position.
-class HibikiFocusRing extends StatefulWidget {
-  const HibikiFocusRing({super.key, this.enabled = true, required this.child});
+class FushiFocusRing extends StatefulWidget {
+  const FushiFocusRing({super.key, this.enabled = true, required this.child});
 
   final Widget child;
 
   /// False = 焦点环禁用但保持挂载（不绘制、不做几何计算）。与
-  /// [HibikiFocusRoot.enabled] 同步门控：实验开关切换只改行为不改树结构，
+  /// [FushiFocusRoot.enabled] 同步门控：实验开关切换只改行为不改树结构，
   /// child 的 Element 全保留（见 main.dart `_wrapFocusNavigation`）。
   final bool enabled;
 
   @override
-  State<HibikiFocusRing> createState() => _HibikiFocusRingState();
+  State<FushiFocusRing> createState() => _FushiFocusRingState();
 }
 
-class _HibikiFocusRingState extends State<HibikiFocusRing>
+class _FushiFocusRingState extends State<FushiFocusRing>
     with WidgetsBindingObserver {
   final FocusManager _fm = FocusManager.instance;
 
@@ -52,7 +52,7 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
   // and from a manual scroll (which must never trigger a scroll-back).
   FocusNode? _lastFocused;
 
-  // The in-app UI scale (exposed by HibikiAppUiScale via _AppUiScaleScope) seen
+  // The in-app UI scale (exposed by FushiAppUiScale via _AppUiScaleScope) seen
   // at the last didChangeDependencies. Used to tell a geometry-changing scale
   // reflow (must reveal + recompute) apart from a theme-only dependency change
   // (must only recompute the ring, never scroll).
@@ -77,7 +77,7 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
   }
 
   // Fires on ANY inherited dependency read in build() changing — that is both
-  // the in-app UI scale (HibikiAppUiScale exposes it via _AppUiScaleScope,
+  // the in-app UI scale (FushiAppUiScale exposes it via _AppUiScaleScope,
   // read below) AND the theme (Theme.of in build()). We must distinguish them:
   //
   //  - A scale change reflows the whole subtree, moving the focused control,
@@ -93,7 +93,7 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Depend on the actual in-app UI scale. HibikiAppUiScale exposes it via an
+    // Depend on the actual in-app UI scale. FushiAppUiScale exposes it via an
     // InheritedWidget (_AppUiScaleScope); a scale change always notifies this
     // dependent — unlike the old MediaQuery.textScaler aspect, which the
     // Transform-based scale no longer touches (changing scale only moves the
@@ -101,7 +101,7 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
     // moves the focused control without any window-metrics/focus/scroll/highlight
     // change, so detect it here and reveal the control. Removing this read
     // silently brings back the original "焦点不跟着动" bug.
-    final double uiScale = HibikiAppUiScale.of(context);
+    final double uiScale = FushiAppUiScale.of(context);
     final bool scaleChanged = _lastUiScale != null && uiScale != _lastUiScale;
     _lastUiScale = uiScale;
     if (scaleChanged) _scheduleEnsureVisible();
@@ -109,7 +109,7 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
   }
 
   @override
-  void didUpdateWidget(HibikiFocusRing oldWidget) {
+  void didUpdateWidget(FushiFocusRing oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.enabled && !widget.enabled) {
       // 关闭时立刻收掉残留的环（不等下一次焦点事件）。
@@ -171,7 +171,7 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
   /// 主题），但布局位移本身没有事件——首页 dashboard 异步数据（热力图 / 各区块）
   /// 加载后整页 reflow，焦点控件被推走，环钉死在旧矩形上悬空（用户截图：环横跨
   /// 两个区块之间的空白）。此前的 UI-scale 特例（didChangeDependencies 读
-  /// HibikiAppUiScale）正是同一类病灶的单点补丁；本跟踪器把「矩形 = 焦点控件的
+  /// FushiAppUiScale）正是同一类病灶的单点补丁；本跟踪器把「矩形 = 焦点控件的
   /// 实时几何」变成持续成立的导出状态，一并吸收滚动/缩放/任意 reflow。
   ///
   /// 成本：post-frame 回调**不催帧**——没有帧渲染时回调只是挂起（零开销）；有帧
@@ -225,7 +225,7 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
     if (_fm.highlightMode != FocusHighlightMode.traditional) return;
     final BuildContext? ctx = _fm.primaryFocus?.context;
     if (ctx == null || !ctx.mounted) return;
-    HibikiFocusScroll.ensureVisibleIfHidden(ctx);
+    FushiFocusScroll.ensureVisibleIfHidden(ctx);
   }
 
   Rect? _computeFocusRect() {
@@ -251,7 +251,7 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
     return rect;
   }
 
-  // Scale a rect about the top-left origin (matches HibikiAppUiScale's
+  // Scale a rect about the top-left origin (matches FushiAppUiScale's
   // Transform.scale alignment: topLeft). Used to map a global-coord ring rect
   // into this widget's scaled-down local canvas.
   static Rect _scaleRect(Rect rect, double factor) => Rect.fromLTWH(
@@ -263,10 +263,10 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color color = Theme.of(context).colorScheme.primary;
     // _rect comes from RenderBox.localToGlobal — it is in GLOBAL (view) coords.
-    // HibikiFocusRing sits INSIDE HibikiAppUiScale's Transform.scale (alignment
+    // FushiFocusRing sits INSIDE FushiAppUiScale's Transform.scale (alignment
     // topLeft), so this Stack's local coord system is the un-scaled logical
     // canvas: local = global / scale. Build the 2px-inflated ring in GLOBAL
     // coords (so the visual gap around the control stays a constant 2px at any
@@ -277,12 +277,12 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
     //
     // ASSUMPTION: the ONLY transform between this Stack and any focusable is that
     // single app-level Transform.scale, so `local = global / scale` holds exactly.
-    // True for the app tree (HibikiAppUiScale → HibikiFocusRoot → HibikiFocusRing
+    // True for the app tree (FushiAppUiScale → FushiFocusRoot → FushiFocusRing
     // → Navigator; routes/dialogs add offsets, never another scale). If a nested
     // Transform/InteractiveViewer is ever placed between the ring and a focusable,
     // this single-scale mapping breaks — switch to localToGlobal(ancestor: <this
     // Stack's RenderObject>) to resolve the focused rect in local space directly.
-    final double scale = HibikiAppUiScale.of(context);
+    final double scale = FushiAppUiScale.of(context);
     final Rect? globalRect = widget.enabled ? _rect : null;
     final Rect? ringRect = globalRect == null
         ? null

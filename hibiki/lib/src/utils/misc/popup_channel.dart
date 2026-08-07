@@ -8,7 +8,7 @@ class PopupChannel {
   PopupChannel._();
   static final PopupChannel instance = PopupChannel._();
 
-  static const _channel = HibikiChannels.popup;
+  static const _channel = FushiChannels.popup;
 
   void Function(String text, int charIndex, Rect? anchor, Rect? subtitle)?
       _onNewProcessText;

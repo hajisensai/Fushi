@@ -43,8 +43,8 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 
 /// A pairing attempt from a peer that POSTed /api/pair. Carries what the host
 /// UI needs to identify the requester in its confirmation prompt.
-class HibikiPairRequest {
-  const HibikiPairRequest({
+class FushiPairRequest {
+  const FushiPairRequest({
     required this.deviceName,
     required this.remoteAddress,
     this.pinVerified,
@@ -71,10 +71,10 @@ class HibikiPairRequest {
 }
 
 /// TODO-961 M1b: confirm 成功后要落库的一条 per-peer 授权凭据。server 生成 token、
-/// 通过注入的 [HibikiSyncServer.onPeerPaired] 回调把本记录交给 controller 写进
+/// 通过注入的 [FushiSyncServer.onPeerPaired] 回调把本记录交给 controller 写进
 /// `hibiki_paired_peers` 表（server 不直连 DB，保持可单测 / 存储层无依赖）。
-class HibikiPairedPeerRegistration {
-  const HibikiPairedPeerRegistration({
+class FushiPairedPeerRegistration {
+  const FushiPairedPeerRegistration({
     required this.peerId,
     required this.token,
     required this.deviceName,
@@ -94,7 +94,7 @@ class HibikiPairedPeerRegistration {
   final String? remoteAddress;
 }
 
-/// Thrown by [HibikiSyncServer.start] when the requested port is already bound
+/// Thrown by [FushiSyncServer.start] when the requested port is already bound
 /// by another process. Carries the [port] so the UI can name it.
 class SyncServerPortInUseException implements Exception {
   SyncServerPortInUseException(this.port);
@@ -132,16 +132,16 @@ const List<String> _kDictionaryMediaTokenParams = <String>[
   'yomitan_api_key',
 ];
 
-class HibikiSyncServer {
-  HibikiSyncServer({
+class FushiSyncServer {
+  FushiSyncServer({
     required String syncDataDir,
     required int port,
     required String token,
     bool allowLan = false,
-    HibikiRemoteLookupService? remoteLookupService,
-    HibikiRemoteMiningService? miningService,
-    HibikiRemoteHistoryService? historyService,
-    HibikiLibraryHostService? libraryService,
+    FushiRemoteLookupService? remoteLookupService,
+    FushiRemoteMiningService? miningService,
+    FushiRemoteHistoryService? historyService,
+    FushiLibraryHostService? libraryService,
     MangaOcrHostJobManager? mangaOcrJobs,
     SecurityContext? securityContext,
     String? hostFingerprint,
@@ -180,10 +180,10 @@ class HibikiSyncServer {
   /// TODO-961 M1: 本 host 自签证书的 SHA-256 指纹（aa:bb:.. 形式），仅在 TLS 开启
   /// 时非 null。配对成功响应回传给 client 做 TOFU 钉扎核对（首连记录）。
   final String? _hostFingerprint;
-  final HibikiRemoteLookupService? _remoteLookupService;
-  final HibikiRemoteMiningService? _miningService;
-  final HibikiRemoteHistoryService? _historyService;
-  final HibikiLibraryHostService? _libraryService;
+  final FushiRemoteLookupService? _remoteLookupService;
+  final FushiRemoteMiningService? _miningService;
+  final FushiRemoteHistoryService? _historyService;
+  final FushiLibraryHostService? _libraryService;
 
   /// 漫画 P3：互联 host 代跑 OCR 的任务管理器（`/api/ocr/*` + capabilities
   /// `mangaOcr` 字段）。null = 未接线（headless/单测/host 未启用），端点 404、
@@ -217,13 +217,13 @@ class HibikiSyncServer {
 
   /// TODO-961 M1：进行中的 v2 配对会话（pair/v2 创建、pair/v2/confirm 消费）。
   /// 内存态、不落盘；server 重启即清空（半截配对作废，安全侧）。
-  final Map<String, HibikiPairSession> _pairSessions =
-      <String, HibikiPairSession>{};
+  final Map<String, FushiPairSession> _pairSessions =
+      <String, FushiPairSession>{};
 
   /// TODO-961 M1（会话 TTL/上限，对照 audio/video token 的 prune 模式）：只发
   /// pair/v2 却不 confirm 的攻击者会留下永久驻留会话（慢速 DoS）。每个会话
   /// [_pairSessionTtl] 后过期，超过 [_maxPairSessions] 时先 prune 再淘汰最旧者。
-  /// TTL 与现有 host 60s 自动 deny（[HibikiSyncServerController]）对齐：会话生命周期
+  /// TTL 与现有 host 60s 自动 deny（[FushiSyncServerController]）对齐：会话生命周期
   /// 不应长于一次审批窗口（留 90s 余量覆盖审批弹窗 + 用户输 PIN）。
   static const Duration _pairSessionTtl = Duration(seconds: 90);
   static const int _maxPairSessions = 64;
@@ -231,10 +231,10 @@ class HibikiSyncServer {
   /// TODO-961 M3：PIN 爆破限速器。按来源（client 自报 deviceId，回退来源 IP）聚合
   /// PIN 校验失败；同一来源在滑动窗口内累计到阈值即锁定退避一段时间，期间 confirm
   /// 直接被拒（不再触碰 PIN 比对）。粒度选「来源」而非「会话」的理由见
-  /// [HibikiPinRateLimiter] 文档：[HibikiPairSession.consumed] 已让单会话只能撞一次，
+  /// [FushiPinRateLimiter] 文档：[FushiPairSession.consumed] 已让单会话只能撞一次，
   /// 真正的爆破面是不断开新会话逐个撞——只有按来源聚合才挡得住。纯内存态，随
   /// [_prunePairSessions] 一并 prune 防泄漏；server 重启即清空。
-  final HibikiPinRateLimiter _pinRateLimiter = HibikiPinRateLimiter();
+  final FushiPinRateLimiter _pinRateLimiter = FushiPinRateLimiter();
 
   HttpServer? _server;
 
@@ -243,13 +243,13 @@ class HibikiSyncServer {
   /// pair — allow?") and only hands out [_token] when it resolves true. While
   /// null (no UI wired), every pairing request is refused, so the raw token is
   /// never handed out without a deliberate human approval on the host device.
-  Future<bool> Function(HibikiPairRequest request)? onPairRequest;
+  Future<bool> Function(FushiPairRequest request)? onPairRequest;
 
   /// TODO-961 M1: host 生成 6 位 PIN 并喂给审批弹窗显示的供给器。pair/v2 创建会话时
   /// 调用一次拿到本会话 PIN（同一 PIN 显示给用户、又用于 confirm 时重算比对）。
-  /// null（无 UI 接线）时 server 自行用 [HibikiPairingProtocol.generatePin] 兜底，
+  /// null（无 UI 接线）时 server 自行用 [FushiPairingProtocol.generatePin] 兜底，
   /// 但因 PIN 不显示给任何人，pinRequired=true 的会话将无法被 confirm（安全侧默认拒）。
-  String Function(HibikiPairSession session)? onPairPinGenerated;
+  String Function(FushiPairSession session)? onPairPinGenerated;
 
   /// TODO-961 M1: host 偏好「LAN 自动发现也要 PIN」的供给器（默认 false=自家免）。
   /// 注入而非直读 DB，保持 server 对存储层无依赖、可单测。
@@ -266,7 +266,7 @@ class HibikiSyncServer {
   /// `hibiki_paired_peers` 表）。注入而非直连 DB，保持 server 存储层无依赖、可单测。
   /// null（未接线，如纯协议单测）时 confirm 回退派发共享 [_token]，不落 per-peer 行
   /// ——既有 pair_v2 行为零变化（Never break userspace）。
-  Future<void> Function(HibikiPairedPeerRegistration registration)?
+  Future<void> Function(FushiPairedPeerRegistration registration)?
       onPeerPaired;
 
   /// TODO-961 M1b: 供给当前全部未吊销的 per-peer token（auth 校验入站请求时，除共享
@@ -555,9 +555,10 @@ class HibikiSyncServer {
     if (reqPath == '/api/extension/status') {
       if (method != 'POST') return shelf.Response(405);
       return _jsonResponse(<String, dynamic>{
-        // 'app': 'hibiki' 是浏览器扩展 wire 契约（connection-diagnostics.js 严格
-        // 比对 body.app === 'hibiki'；扩展经商店发布有滞后，不随 app 同版本），
-        // 冻结不改；待扩展端先兼容 'fushi' 并铺开后再切。
+        // 'app': 'hibiki' 是浏览器扩展 wire 契约：商店里的旧扩展严格比对
+        // body.app === 'hibiki'，切了就断连。扩展仓 connection-diagnostics.js
+        // 已改为接受 'fushi' | 'hibiki' 双值；等扩展商店版本普及双值兼容后
+        // 这里才切 'fushi'（进度台账有案）。
         'app': 'hibiki',
         'ready': true,
         'port': port,
@@ -678,7 +679,7 @@ class HibikiSyncServer {
 
   Future<shelf.Response> _handlePair(shelf.Request request) async {
     if (request.method.toUpperCase() != 'POST') return shelf.Response(405);
-    final Future<bool> Function(HibikiPairRequest)? approve = onPairRequest;
+    final Future<bool> Function(FushiPairRequest)? approve = onPairRequest;
     // No UI wired to approve → never hand out the token unattended. A distinct
     // reason lets the client say "peer not ready" instead of "peer declined".
     if (approve == null) return _pairDenied('unavailable');
@@ -693,7 +694,7 @@ class HibikiSyncServer {
         !isMeaninglessDeviceName(reported)) {
       name = reported;
     }
-    final bool approved = await approve(HibikiPairRequest(
+    final bool approved = await approve(FushiPairRequest(
       deviceName: name,
       remoteAddress: _remoteAddress(request),
     ));
@@ -741,22 +742,22 @@ class HibikiSyncServer {
             : null;
     final String? remote = _remoteAddress(request);
 
-    final bool isLanPeer = HibikiPairingProtocol.isPrivateLanAddress(remote);
+    final bool isLanPeer = FushiPairingProtocol.isPrivateLanAddress(remote);
     final bool lanRequiresPin =
         await (lanRequiresPinProvider?.call() ?? Future<bool>.value(false));
-    final bool pinRequired = HibikiPairingProtocol.computePinRequired(
+    final bool pinRequired = FushiPairingProtocol.computePinRequired(
       isLanPeer: isLanPeer,
       lanRequiresPin: lanRequiresPin,
     );
 
-    final String sessionId = HibikiPairingProtocol.generateNonce();
-    final String hostNonce = HibikiPairingProtocol.generateNonce();
-    final HibikiPairSession session = HibikiPairSession(
+    final String sessionId = FushiPairingProtocol.generateNonce();
+    final String hostNonce = FushiPairingProtocol.generateNonce();
+    final FushiPairSession session = FushiPairSession(
       sessionId: sessionId,
       clientNonce: clientNonce,
       hostNonce: hostNonce,
       // PIN 先用安全随机兜底，下面交给 host UI 供给器（若接线）覆盖为屏显值。
-      pin: HibikiPairingProtocol.generatePin(),
+      pin: FushiPairingProtocol.generatePin(),
       pinRequired: pinRequired,
       deviceName: deviceName,
       remoteAddress: remote,
@@ -773,7 +774,7 @@ class HibikiSyncServer {
     // host UI 供给器返回真正显示给用户的 PIN（同值用于 confirm 重算比对）。未接线
     // 时保留随机兜底 PIN——它不显示给任何人，故 pinRequired 会话无法被 confirm（拒）。
     final String shownPin = onPairPinGenerated?.call(session) ?? session.pin;
-    final HibikiPairSession stored = HibikiPairSession(
+    final FushiPairSession stored = FushiPairSession(
       sessionId: sessionId,
       clientNonce: clientNonce,
       hostNonce: hostNonce,
@@ -792,7 +793,7 @@ class HibikiSyncServer {
     // 远不显示、配对永远走不通。免 PIN 会话（LAN 自动发现且 host 允许免 PIN）审批仍留在
     // confirm（本就无 PIN 可显示，行为零变化，Never break userspace）。
     if (pinRequired) {
-      final bool approved = await onPairRequest!(HibikiPairRequest(
+      final bool approved = await onPairRequest!(FushiPairRequest(
         deviceName: deviceName,
         remoteAddress: remote,
         // pinVerified 尚未校验（那在 confirm）；pinRequired=true 让审批弹窗显示 PIN。
@@ -817,7 +818,7 @@ class HibikiSyncServer {
   /// 点允许（双重确认）才派 token。同一 sessionId 二次 confirm（重放）一律拒。
   Future<shelf.Response> _handlePairConfirm(shelf.Request request) async {
     if (request.method.toUpperCase() != 'POST') return shelf.Response(405);
-    final Future<bool> Function(HibikiPairRequest)? approve = onPairRequest;
+    final Future<bool> Function(FushiPairRequest)? approve = onPairRequest;
     if (approve == null) return _pairDenied('unavailable');
     final Map<String, dynamic>? body = await _readJsonObject(request);
     final String? sessionId = body?['sessionId']?.toString();
@@ -828,7 +829,7 @@ class HibikiSyncServer {
     _prunePairSessions();
     // 同步回收已冷却的 PIN 失败记录（锁定中的保留到期满），防限速器内存泄漏。
     _pinRateLimiter.prune(_now());
-    final HibikiPairSession? session = _pairSessions[sessionId];
+    final FushiPairSession? session = _pairSessions[sessionId];
     // 未知会话（过期/伪造）或已被消费过（重放）→ 拒。consumed 防同 nonce 二次提交。
     if (session == null || session.consumed) {
       return _pairDenied('declined');
@@ -864,7 +865,7 @@ class HibikiSyncServer {
         // 401：PIN 校验未通过（缺 proof）——不再问 host（不弹窗）。
         return _pairUnauthorized();
       }
-      final bool ok = HibikiPairingProtocol.verifyPinProof(
+      final bool ok = FushiPairingProtocol.verifyPinProof(
         pin: session.pin,
         clientNonce: session.clientNonce,
         hostNonce: session.hostNonce,
@@ -886,7 +887,7 @@ class HibikiSyncServer {
     // 校验，两者仍缺一不可）。免 PIN 会话（pinRequired=false）没有 CREATE 阶段审批，仍在
     // 此弹审批（无 PIN 可显示，行为不变）。
     if (!session.pinRequired) {
-      final bool approved = await approve(HibikiPairRequest(
+      final bool approved = await approve(FushiPairRequest(
         deviceName: session.deviceName,
         remoteAddress: session.remoteAddress,
         pinVerified: true,
@@ -913,15 +914,15 @@ class HibikiSyncServer {
   /// confirm 成功后派发访问 token：有 [onPeerPaired] 回调且会话带 clientDeviceId
   /// 时生成 per-peer token、经回调落库并清 token 缓存（吊销/新增即时生效），返回该
   /// token；否则回退共享 [_token]（无 DB 接线 / 旧 client 无 deviceId 的兼容路径）。
-  Future<String> _issuePeerTokenOrFallback(HibikiPairSession session) async {
-    final Future<void> Function(HibikiPairedPeerRegistration)? persist =
+  Future<String> _issuePeerTokenOrFallback(FushiPairSession session) async {
+    final Future<void> Function(FushiPairedPeerRegistration)? persist =
         onPeerPaired;
     final String? peerId = session.clientDeviceId?.trim();
     if (persist == null || peerId == null || peerId.isEmpty) {
       return _token;
     }
     final String peerToken = generateToken();
-    await persist(HibikiPairedPeerRegistration(
+    await persist(FushiPairedPeerRegistration(
       peerId: peerId,
       token: peerToken,
       deviceName: session.deviceName,
@@ -952,7 +953,7 @@ class HibikiSyncServer {
   /// TODO-961 M3：本会话在 PIN 爆破限速里的来源标识。优先 client 自报的稳定
   /// deviceId（同一物理设备换 IP 也锁得住），回退请求来源 IP。二者都缺（无稳定身份）
   /// 时返回 null → 调用方退化为不限速的单会话路径（已由 consumed 单次消费保护）。
-  static String? _pinRateLimitSourceKey(HibikiPairSession session) {
+  static String? _pinRateLimitSourceKey(FushiPairSession session) {
     final String? deviceId = session.clientDeviceId?.trim();
     if (deviceId != null && deviceId.isNotEmpty) return 'dev:$deviceId';
     final String? remote = session.remoteAddress?.trim();
@@ -989,7 +990,7 @@ class HibikiSyncServer {
   }
 
   Future<shelf.Response> _handleDictionaryLookup(shelf.Request request) async {
-    final HibikiRemoteLookupService? service = _remoteLookupService;
+    final FushiRemoteLookupService? service = _remoteLookupService;
     if (service == null) return shelf.Response.notFound('Remote lookup off');
     final Map<String, dynamic>? body = await _readJsonObject(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
@@ -1002,7 +1003,7 @@ class HibikiSyncServer {
   }
 
   Future<shelf.Response> _handleAudioLookup(shelf.Request request) async {
-    final HibikiRemoteLookupService? service = _remoteLookupService;
+    final FushiRemoteLookupService? service = _remoteLookupService;
     if (service == null) return shelf.Response.notFound('Remote lookup off');
     final Map<String, dynamic>? body = await _readJsonObject(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
@@ -1120,7 +1121,7 @@ class HibikiSyncServer {
   }
 
   Future<shelf.Response> _handleMine(shelf.Request request) async {
-    final HibikiRemoteMiningService? svc = _miningService;
+    final FushiRemoteMiningService? svc = _miningService;
     if (svc == null) return shelf.Response.notFound('Mining off');
     final Map<String, dynamic>? body = await _readJsonObject(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
@@ -1136,7 +1137,7 @@ class HibikiSyncServer {
   /// 配置落卡。契约与 YomitanApiServer 共享（buildForwardedMineResponse，单一真相源）。
   /// rawPayloadJson 缺失/类型错 → 400；未注入挖词 service → 404。
   Future<shelf.Response> _handleMineForward(shelf.Request request) async {
-    final HibikiRemoteMiningService? svc = _miningService;
+    final FushiRemoteMiningService? svc = _miningService;
     if (svc == null) return shelf.Response.notFound('Mining off');
     final Map<String, dynamic>? body = await _readJsonObject(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
@@ -1151,7 +1152,7 @@ class HibikiSyncServer {
   /// 共享（单一真相源）。未注入挖词 service 时返回 `{duplicate:false}`（弹窗降级为「+」，
   /// 绝不阻断查词）。
   Future<shelf.Response> _handleDuplicate(shelf.Request request) async {
-    final HibikiRemoteMiningService? svc = _miningService;
+    final FushiRemoteMiningService? svc = _miningService;
     final Map<String, dynamic>? body = await _readJsonObject(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
     if (svc == null) {
@@ -1292,7 +1293,7 @@ class HibikiSyncServer {
     String method,
     String reqPath,
   ) async {
-    final HibikiLibraryHostService? svc = _libraryService;
+    final FushiLibraryHostService? svc = _libraryService;
     if (svc == null) return shelf.Response.notFound('Library service off');
 
     if (reqPath == '/api/library/dictionaries') {
@@ -1335,7 +1336,7 @@ class HibikiSyncServer {
     String method,
     String reqPath,
   ) async {
-    final HibikiLibraryHostService? svc = _libraryService;
+    final FushiLibraryHostService? svc = _libraryService;
     if (svc == null) return shelf.Response.notFound('Library service off');
 
     if (reqPath == '/api/library/books') {
@@ -1445,7 +1446,7 @@ class HibikiSyncServer {
   }
 
   Future<File?> _resolveBookCover(
-    HibikiLibraryHostService service,
+    FushiLibraryHostService service,
     String bookId,
   ) async {
     // 单行直查（bookCoverPath 按 bookKey 优先、title 兜底），不再每张封面重跑
@@ -1458,7 +1459,7 @@ class HibikiSyncServer {
     String method,
     String reqPath,
   ) async {
-    final HibikiLibraryHostService? svc = _libraryService;
+    final FushiLibraryHostService? svc = _libraryService;
     if (svc == null) return shelf.Response.notFound('Library service off');
 
     if (reqPath == '/api/library/localaudio') {
@@ -1498,7 +1499,7 @@ class HibikiSyncServer {
     String method,
     String reqPath,
   ) async {
-    final HibikiLibraryHostService? svc = _libraryService;
+    final FushiLibraryHostService? svc = _libraryService;
     if (svc == null) return shelf.Response.notFound('Library service off');
 
     if (reqPath == '/api/library/audiobooks') {
@@ -1647,7 +1648,7 @@ class HibikiSyncServer {
     shelf.Request request,
     String method,
   ) async {
-    final HibikiLibraryHostService? svc = _libraryService;
+    final FushiLibraryHostService? svc = _libraryService;
     if (svc == null) return shelf.Response.notFound('Library service off');
     if (method != 'GET') return shelf.Response(405);
     final int limit =
@@ -1668,7 +1669,7 @@ class HibikiSyncServer {
     String method,
     String reqPath,
   ) async {
-    final HibikiLibraryHostService? svc = _libraryService;
+    final FushiLibraryHostService? svc = _libraryService;
     if (svc == null) return shelf.Response.notFound('Library service off');
 
     // GET /api/library/videos — 列表（需 Basic 鉴权，中间件已处理）
@@ -1981,7 +1982,7 @@ class HibikiSyncServer {
       if (id == null) {
         return shelf.Response(400, body: 'Invalid video id');
       }
-      // 显式 `as` 而不是靠类型提升：[VideoDeletionHost] 不是 [HibikiLibraryHostService]
+      // 显式 `as` 而不是靠类型提升：[VideoDeletionHost] 不是 [FushiLibraryHostService]
       // 的子类型，Dart 不做交集提升（写 `svc.deleteVideo` 会报未定义）。与
       // [DeletionTombstoneHost] 的探测写法一致。
       if (svc is! VideoDeletionHost) {
@@ -2087,7 +2088,7 @@ class HibikiSyncServer {
   }
 
   Future<File?> _resolveEmbeddedVideoSubtitle(
-    HibikiLibraryHostService service,
+    FushiLibraryHostService service,
     String id,
     int? streamIndex,
     int episodeIndex,
@@ -2111,7 +2112,7 @@ class HibikiSyncServer {
   }
 
   Future<File?> _resolveVideoCover(
-    HibikiLibraryHostService service,
+    FushiLibraryHostService service,
     String id,
   ) async {
     // 单行直查（videoCoverPath = 1 次 DB 查询 + stat）。旧实现每张封面请求重跑
@@ -2154,7 +2155,7 @@ class HibikiSyncServer {
     String method,
     String reqPath,
   ) async {
-    final HibikiLibraryHostService? svc = _libraryService;
+    final FushiLibraryHostService? svc = _libraryService;
     if (svc == null) return shelf.Response.notFound('Library service off');
 
     switch (method) {
@@ -2183,10 +2184,10 @@ class HibikiSyncServer {
   /// 合集清单跨设备 live 端点（多端库联合视图 §2.3 任务5.2）。
   ///
   /// GET /api/library/collections — 返回 host 当前合集全量快照清单
-  /// （[HibikiLibraryHostService.getCollectionManifest] 的 canonicalJson），供 client
+  /// （[FushiLibraryHostService.getCollectionManifest] 的 canonicalJson），供 client
   /// 拉取 host 合集真相源做读-合并-写。
   /// POST /api/library/collections — client 上报本端合集清单，host 经
-  /// [HibikiLibraryHostService.mergeCollectionManifest] 并入自己 DB（成员并集 + 移出/
+  /// [FushiLibraryHostService.mergeCollectionManifest] 并入自己 DB（成员并集 + 移出/
   /// 删除墓碑防复活 + 手动序整合集 LWW，语义在 CollectionSyncEngine），返回合并后清单。
   ///
   /// 鉴权：不在中间件豁免名单，故自动走 Basic token 全量校验（已配对 peer 才可访问，
@@ -2197,7 +2198,7 @@ class HibikiSyncServer {
     String method,
     String reqPath,
   ) async {
-    final HibikiLibraryHostService? svc = _libraryService;
+    final FushiLibraryHostService? svc = _libraryService;
     if (svc == null) return shelf.Response.notFound('Library service off');
 
     switch (method) {
@@ -2251,7 +2252,7 @@ class HibikiSyncServer {
     if (!await _validatePeerAuth(request.headers['authorization'])) {
       return shelf.Response.forbidden('Paired-device token required');
     }
-    final HibikiLibraryHostService? library = _libraryService;
+    final FushiLibraryHostService? library = _libraryService;
     if (library is! InterconnectServiceConfigHost) {
       return shelf.Response.notFound('Service config capability off');
     }
@@ -2275,7 +2276,7 @@ class HibikiSyncServer {
     String method,
   ) async {
     if (method != 'GET') return shelf.Response(405);
-    final HibikiLibraryHostService? svc = _libraryService;
+    final FushiLibraryHostService? svc = _libraryService;
     if (svc == null) return shelf.Response.notFound('Library service off');
     // 可选能力探测：host 未实现删除墓碑列举（老 host / 测试 fake）→ 404，client 侧
     // getRemoteDeletionTombstones 已优雅降级（不崩、跳过删除墓碑消费）。
@@ -2367,7 +2368,7 @@ class HibikiSyncServer {
   void _prunePairSessions() {
     final DateTime cutoff = _now().subtract(_pairSessionTtl);
     _pairSessions.removeWhere(
-      (String _, HibikiPairSession s) => s.createdAt.isBefore(cutoff),
+      (String _, FushiPairSession s) => s.createdAt.isBefore(cutoff),
     );
   }
 
@@ -2378,7 +2379,7 @@ class HibikiSyncServer {
     while (_pairSessions.length >= _maxPairSessions) {
       String? oldestKey;
       DateTime? oldestAt;
-      for (final MapEntry<String, HibikiPairSession> e
+      for (final MapEntry<String, FushiPairSession> e
           in _pairSessions.entries) {
         if (oldestAt == null || e.value.createdAt.isBefore(oldestAt)) {
           oldestAt = e.value.createdAt;
@@ -2657,14 +2658,14 @@ ByteRange? parseByteRange(String? rangeHeader, int fileLength) {
 /// - 不可满足的 Range → `416 Range Not Satisfiable` + `Content-Range: bytes */total`。
 ///
 /// 所有路径均加 `Accept-Ranges: bytes`（告知客户端支持 Range）。
-/// Content-Type 由 [HibikiSyncServer._guessContentType] 按扩展名确定。
+/// Content-Type 由 [FushiSyncServer._guessContentType] 按扩展名确定。
 /// 响应体全程流式（`file.openRead(start, end+1)`），不把文件读入内存。
 ///
 /// [etag] 非空时：所有响应带 `ETag` 头；且 Range 请求按 RFC 7233 §3.2 校验
 /// `If-Range`——验证器不匹配（服务端字节已换代，如导出缓存过期重导出）时**忽略
 /// Range 降级 200 全量**，绝不让 client 把两代字节拼成损坏文件。这是导出包
 /// （epub/词典/有声书/本地音频）断点续传的正确性前提：`export*` 重打包不保证
-/// 字节稳定，续传必须钉在同一份缓存文件上（见 [HibikiSyncServer._exportCache]）。
+/// 字节稳定，续传必须钉在同一份缓存文件上（见 [FushiSyncServer._exportCache]）。
 ///
 /// 函数名无下划线前缀（公开），便于测试文件直接导入使用。
 Future<shelf.Response> serveFileWithRange(
@@ -2677,7 +2678,7 @@ Future<shelf.Response> serveFileWithRange(
   }
 
   final int fileLength = file.lengthSync();
-  final String contentType = HibikiSyncServer._guessContentType(file.path);
+  final String contentType = FushiSyncServer._guessContentType(file.path);
   String? rangeHeader = request.headers['range'];
   if (etag != null && rangeHeader != null) {
     final String? ifRange = request.headers['if-range'];

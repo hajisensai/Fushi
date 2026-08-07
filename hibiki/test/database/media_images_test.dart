@@ -15,8 +15,8 @@ import 'package:fushi_core/fushi_core.dart';
 void main() {
   /// 必须显式开 `foreign_keys`：`NativeDatabase.memory()` 默认关闭外键，cascade
   /// 用例不开就是假绿（与 collection_scrape_meta_test 同一教训）。
-  Future<HibikiDatabase> openDb() async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+  Future<FushiDatabase> openDb() async {
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (CommonDatabase rawDb) =>
             rawDb.execute('PRAGMA foreign_keys = ON'),
@@ -42,7 +42,7 @@ void main() {
       );
 
   test('合集归属：整组替换幂等 + 读回按 kind/position 排序', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     final int id = await db.createMediaCollection('c1');
 
     await db.replaceMediaImagesForCollection(id, <MediaImagesCompanion>[
@@ -67,7 +67,7 @@ void main() {
   });
 
   test('视频归属：整组替换 + 与合集归属互不串桶', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     final int cid = await db.createMediaCollection('c1');
     await db.upsertVideoBook(const VideoBooksCompanion(
       bookUid: Value<String>('video/movie1'),
@@ -94,7 +94,7 @@ void main() {
   });
 
   test('CHECK 单一归属：双归属与零归属都被 DB 拒绝', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     final int cid = await db.createMediaCollection('c1');
     await db.upsertVideoBook(const VideoBooksCompanion(
       bookUid: Value<String>('video/movie1'),
@@ -125,7 +125,7 @@ void main() {
   });
 
   test('删视频 → 视频归属行 FK cascade 清空', () async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     await db.upsertVideoBook(const VideoBooksCompanion(
       bookUid: Value<String>('video/movie1'),
       title: Value<String>('Movie 1'),
@@ -146,7 +146,7 @@ void main() {
   });
 
   test('v67→v68 迁移：遗留 backdrop_path 搬进 media_images，hero 背景零丢失', () async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (CommonDatabase rawDb) {
           // v67 时代的最小片段：只建迁移会读写的两张表（onUpgrade 的 from<68

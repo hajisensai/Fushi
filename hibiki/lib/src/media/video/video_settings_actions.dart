@@ -89,7 +89,7 @@ VideoSubtitleStyle currentVideoSubtitleStyle(SettingsContext context) {
   return VideoSubtitleStyle.decode(context.appModel.videoSubtitleStyle);
 }
 
-/// 字幕字重/阴影 resolve 用的 UI scale：视频路由把 [HibikiAppUiScale] 中和为 1.0，
+/// 字幕字重/阴影 resolve 用的 UI scale：视频路由把 [FushiAppUiScale] 中和为 1.0，
 /// 播放中必须用 host 显式带入的实际 scale；全局设置页用 appModel 值。
 double videoSubtitleUiScale(SettingsContext context) {
   final VideoQuickSettingsHost? host = videoQuickSettingsHostOf(context);
@@ -372,7 +372,7 @@ Widget _buildSubtitleColorRow(
     title: title,
     icon: icon,
     showIcon: true,
-    trailing: HibikiColorSwatch(
+    trailing: FushiColorSwatch(
       color: current,
       size: 24,
       borderColor: Theme.of(buildContext).dividerColor,
@@ -553,7 +553,7 @@ class _VideoMpvRawConfFieldState extends State<_VideoMpvRawConfField> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.gap + tokens.spacing.gap / 2,
@@ -630,7 +630,7 @@ class _VideoDanmakuBlockRulesFieldState
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.gap + tokens.spacing.gap / 2,

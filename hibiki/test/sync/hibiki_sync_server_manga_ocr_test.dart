@@ -144,9 +144,9 @@ void main() {
     if (tmpRoot.existsSync()) tmpRoot.deleteSync(recursive: true);
   });
 
-  HibikiSyncServer buildServer(_FakeOcrService service,
+  FushiSyncServer buildServer(_FakeOcrService service,
       {MangaOcrHostJobManager? manager}) {
-    return HibikiSyncServer(
+    return FushiSyncServer(
       syncDataDir: Directory(p.join(tmpRoot.path, 'sync')).path,
       port: 0,
       token: 'tok',
@@ -160,7 +160,7 @@ void main() {
 
   test('full flow: create → upload → start → poll → result', () async {
     final _FakeOcrService service = _FakeOcrService();
-    final HibikiSyncServer server = buildServer(service);
+    final FushiSyncServer server = buildServer(service);
     await server.start();
     addTearDown(server.stop);
 
@@ -235,7 +235,7 @@ void main() {
   });
 
   test('unauthenticated /api/ocr/* is 401', () async {
-    final HibikiSyncServer server = buildServer(_FakeOcrService());
+    final FushiSyncServer server = buildServer(_FakeOcrService());
     await server.start();
     addTearDown(server.stop);
     final HttpClientResponse resp = await _request(
@@ -246,7 +246,7 @@ void main() {
 
   test('endpoints are 404 and capabilities has no mangaOcr when not wired',
       () async {
-    final HibikiSyncServer server = HibikiSyncServer(
+    final FushiSyncServer server = FushiSyncServer(
       syncDataDir: Directory(p.join(tmpRoot.path, 'sync')).path,
       port: 0,
       token: 'tok',
@@ -264,7 +264,7 @@ void main() {
 
   test('capabilities reports mangaOcr supported/modelsReady', () async {
     final _FakeOcrService service = _FakeOcrService(ready: false);
-    final HibikiSyncServer server = buildServer(service);
+    final FushiSyncServer server = buildServer(service);
     await server.start();
     addTearDown(server.stop);
     Map<String, dynamic> caps = await _json(
@@ -284,7 +284,7 @@ void main() {
 
   test('start with models not ready → 503 models_not_ready', () async {
     final _FakeOcrService service = _FakeOcrService(ready: false);
-    final HibikiSyncServer server = buildServer(service);
+    final FushiSyncServer server = buildServer(service);
     await server.start();
     addTearDown(server.stop);
     final Map<String, dynamic> created = await _json(await _request(
@@ -303,7 +303,7 @@ void main() {
 
   test('unsupported platform → 503 not_supported', () async {
     final _FakeOcrService service = _FakeOcrService(supported: false);
-    final HibikiSyncServer server = buildServer(service);
+    final FushiSyncServer server = buildServer(service);
     await server.start();
     addTearDown(server.stop);
     final Map<String, dynamic> created = await _json(await _request(
@@ -320,7 +320,7 @@ void main() {
   });
 
   test('page upload rejects traversal / absolute / reserved names', () async {
-    final HibikiSyncServer server = buildServer(_FakeOcrService());
+    final FushiSyncServer server = buildServer(_FakeOcrService());
     await server.start();
     addTearDown(server.stop);
     final Map<String, dynamic> created = await _json(await _request(
@@ -342,7 +342,7 @@ void main() {
   });
 
   test('unknown job → 404 unknown_job', () async {
-    final HibikiSyncServer server = buildServer(_FakeOcrService());
+    final FushiSyncServer server = buildServer(_FakeOcrService());
     await server.start();
     addTearDown(server.stop);
     final HttpClientResponse resp =
@@ -387,7 +387,7 @@ void main() {
     final Directory jobRoot = Directory(p.join(tmpRoot.path, 'jobs'));
     final MangaOcrHostJobManager manager =
         MangaOcrHostJobManager(service: service, jobRoot: jobRoot);
-    final HibikiSyncServer server = buildServer(service, manager: manager);
+    final FushiSyncServer server = buildServer(service, manager: manager);
     await server.start();
     addTearDown(server.stop);
 

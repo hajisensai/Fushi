@@ -8,11 +8,11 @@ import 'package:http/http.dart' as http;
 // TODO-963 M2: /api/ping 无鉴权轻量探测端点的行为测试。
 void main() {
   late Directory tempDir;
-  late HibikiSyncServer server;
+  late FushiSyncServer server;
 
   Future<void> startServer({String? deviceName}) async {
     tempDir = Directory.systemTemp.createTempSync('hibiki_ping_test');
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0,
       token: 'tok',

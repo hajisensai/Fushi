@@ -114,14 +114,14 @@ class _FakeBangumiApi implements BangumiTrackingApi {
 }
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late PreferencesRepository preferences;
   late MediaTrackingRepository repository;
   late _FakeBangumiApi api;
   late MediaTrackingService service;
 
   setUp(() async {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     preferences = PreferencesRepository(db);
     await preferences.loadFromDb();
     await preferences.setPref(kBangumiAccessTokenPref, 'token');

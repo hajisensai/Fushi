@@ -44,7 +44,7 @@ void main() {
   /// db row that gives the dictionary tree real metadata (so
   /// `_hasCompleteDictionaryResources` accepts it). Returns the built service +
   /// roots so each test can export with a different category set.
-  Future<({BackupService service, HibikiDatabase db, String dictRoot})>
+  Future<({BackupService service, FushiDatabase db, String dictRoot})>
       buildFullSource() async {
     final String dbDir = p.join(src.path, 'db');
     final String books = p.join(src.path, 'hoshi_books');
@@ -61,7 +61,7 @@ void main() {
     await writeFile(p.join(videos, 'Film.mp4'), 'MP4');
     await writeFile(p.join(videos, 'Episode1.mkv'), 'EP1');
 
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     await db.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: 'Bk',
       title: 'Bk',
@@ -134,28 +134,28 @@ void main() {
 
   /// Extracts the packed `hibiki.db` from [zipPath] into a fresh dir under [into]
   /// and opens it, so a test can assert on the exported DB blob's rows directly.
-  Future<HibikiDatabase> openBackupDb(String zipPath, Directory into) async {
+  Future<FushiDatabase> openBackupDb(String zipPath, Directory into) async {
     final Archive archive = await readZip(zipPath);
     final ArchiveFile dbFile = archive.findFile('hibiki.db')!;
     final Directory dir = Directory(p.join(into.path, 'exdb'))
       ..createSync(recursive: true);
     File(p.join(dir.path, 'hibiki.db'))
         .writeAsBytesSync(dbFile.content as List<int>);
-    return HibikiDatabase(dir.path);
+    return FushiDatabase(dir.path);
   }
 
-  Future<int> countRows(HibikiDatabase db, String table) async {
+  Future<int> countRows(FushiDatabase db, String table) async {
     final row =
         await db.customSelect('SELECT COUNT(*) AS c FROM $table').getSingle();
     return row.data['c'] as int;
   }
 
-  Future<({BackupService service, HibikiDatabase db, String dbDir})>
+  Future<({BackupService service, FushiDatabase db, String dbDir})>
       buildDataSource() async {
     final String dbDir = p.join(src.path, 'db');
     Directory(dbDir).createSync(recursive: true);
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     await db.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: 'Bk',
       title: 'Bk',
@@ -295,7 +295,7 @@ void main() {
       videosRootDirectory: dstVideos,
     );
 
-    final HibikiDatabase restored = HibikiDatabase(dstDbDir);
+    final FushiDatabase restored = FushiDatabase(dstDbDir);
     try {
       final VideoBookRow? row =
           await restored.getVideoBookByBookUid('video/film');
@@ -425,8 +425,8 @@ void main() {
     // An unrelated support file that must NOT be swept into the backup.
     await writeFile(p.join(dbDir, 'unrelated.db'), 'NOPE');
 
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     await db.setPref(
       'local_audio_dbs',
       jsonEncode(<Map<String, Object?>>[
@@ -481,7 +481,7 @@ void main() {
     expect(
         File(p.join(dstDbDir, 'local_audio_222.db')).readAsStringSync(), 'LA2');
 
-    final HibikiDatabase restored = HibikiDatabase(dstDbDir);
+    final FushiDatabase restored = FushiDatabase(dstDbDir);
     try {
       final Map<String, String> prefs = await restored.getAllPrefs();
       final List<dynamic> dbs =
@@ -541,7 +541,7 @@ void main() {
     await built.db.close();
 
     expect(meta.bookCount, 0, reason: 'no book records were exported');
-    final HibikiDatabase db = await openBackupDb(zip, dst);
+    final FushiDatabase db = await openBackupDb(zip, dst);
     try {
       expect(await db.getAllEpubBooks(), isEmpty,
           reason:
@@ -567,7 +567,7 @@ void main() {
       dbDirectory: dstDbDir,
       zipPath: zip,
     );
-    final HibikiDatabase restored = HibikiDatabase(dstDbDir);
+    final FushiDatabase restored = FushiDatabase(dstDbDir);
     try {
       expect(await restored.getAllEpubBooks(), isEmpty,
           reason: 'a book-excluded backup must not resurrect books on merge');
@@ -587,8 +587,8 @@ void main() {
     await writeFile(p.join(books, 'Keep', 'text', 'c1.html'), 'HK');
     await writeFile(p.join(books, 'Drop', 'd.epub'), 'DROP');
 
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     await db.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: 'Keep',
       title: 'Keep',
@@ -630,7 +630,7 @@ void main() {
     // Unselected book's content is absent from the archive.
     expect(archive.findFile('hoshi_books/Drop/d.epub'), isNull);
     // And its record is stripped from the DB blob (no ghost).
-    final HibikiDatabase restored = await openBackupDb(zip, dst);
+    final FushiDatabase restored = await openBackupDb(zip, dst);
     try {
       final Set<String> keys =
           (await restored.getAllEpubBooks()).map((b) => b.bookKey).toSet();
@@ -654,7 +654,7 @@ void main() {
     expect(meta.bookCount, 1);
     final Archive archive = await readZip(zip);
     expect(archive.findFile('hoshi_books/Bk/original.epub'), isNotNull);
-    final HibikiDatabase restored = await openBackupDb(zip, dst);
+    final FushiDatabase restored = await openBackupDb(zip, dst);
     try {
       final Set<String> keys =
           (await restored.getAllEpubBooks()).map((b) => b.bookKey).toSet();
@@ -675,7 +675,7 @@ void main() {
         .createBackup(zip, categories: allExcept(BackupCategory.progress));
     await built.db.close();
 
-    final HibikiDatabase db = await openBackupDb(zip, dst);
+    final FushiDatabase db = await openBackupDb(zip, dst);
     try {
       expect(await countRows(db, 'reader_positions'), 0);
       expect(await countRows(db, 'bookmarks'), 0);
@@ -697,7 +697,7 @@ void main() {
         .createBackup(zip, categories: allExcept(BackupCategory.statistics));
     await built.db.close();
 
-    final HibikiDatabase db = await openBackupDb(zip, dst);
+    final FushiDatabase db = await openBackupDb(zip, dst);
     try {
       expect(await countRows(db, 'reading_statistics'), 0);
       expect(await countRows(db, 'reader_positions'), 1);
@@ -715,7 +715,7 @@ void main() {
         .createBackup(zip, categories: allExcept(BackupCategory.settings));
     await built.db.close();
 
-    final HibikiDatabase db = await openBackupDb(zip, dst);
+    final FushiDatabase db = await openBackupDb(zip, dst);
     try {
       final Map<String, String> prefs = await db.getAllPrefs();
       expect(prefs.containsKey('theme_mode'), isFalse,
@@ -738,7 +738,7 @@ void main() {
         .createBackup(zip, categories: allExcept(BackupCategory.profiles));
     await built.db.close();
 
-    final HibikiDatabase db = await openBackupDb(zip, dst);
+    final FushiDatabase db = await openBackupDb(zip, dst);
     try {
       expect(await countRows(db, 'profiles'), 0);
       expect(await countRows(db, 'profile_settings'), 0);
@@ -765,7 +765,7 @@ void main() {
 
     final String dstDbDir = p.join(dst.path, 'db');
     Directory(dstDbDir).createSync(recursive: true);
-    final HibikiDatabase local = HibikiDatabase(dstDbDir);
+    final FushiDatabase local = FushiDatabase(dstDbDir);
     await local.setPref('theme_mode', 'local_dark');
     await local.insertProfile(ProfilesCompanion.insert(
         name: 'LocalProfile', createdAt: 9, updatedAt: 9));
@@ -776,7 +776,7 @@ void main() {
       zipPath: zip,
     );
 
-    final HibikiDatabase restored = HibikiDatabase(dstDbDir);
+    final FushiDatabase restored = FushiDatabase(dstDbDir);
     try {
       expect((await restored.getAllEpubBooks()).map((b) => b.bookKey).toSet(),
           contains('Bk'));
@@ -802,13 +802,13 @@ void main() {
 
     final String dstDbDir = p.join(dst.path, 'db');
     Directory(dstDbDir).createSync(recursive: true);
-    final HibikiDatabase local = HibikiDatabase(dstDbDir);
+    final FushiDatabase local = FushiDatabase(dstDbDir);
     await local.setPref('theme_mode', 'local_dark');
     await local.close();
 
     await BackupService.restoreBackup(dbDirectory: dstDbDir, zipPath: zip);
 
-    final HibikiDatabase restored = HibikiDatabase(dstDbDir);
+    final FushiDatabase restored = FushiDatabase(dstDbDir);
     try {
       final Map<String, String> prefs = await restored.getAllPrefs();
       expect(prefs['theme_mode'], 'dark',
@@ -824,7 +824,7 @@ void main() {
   // 'Bk' book (buildDataSource already inserts epub 'Bk'), plus search history
   // and every deletion tombstone. The three "always-wipe" tables must vanish
   // regardless of categories; collections/shelf/tags must FOLLOW the book.
-  Future<void> seedOrphanRows(HibikiDatabase db) async {
+  Future<void> seedOrphanRows(FushiDatabase db) async {
     final int cid = await db.createMediaCollection('C1');
     await db.addToCollection(cid, MediaKind.epub, 'Bk');
     await db.upsertShelfOrder(MediaKind.epub, 'Bk', 0);
@@ -851,7 +851,7 @@ void main() {
     await built.service.createBackup(zip); // null = every category
     await built.db.close();
 
-    final HibikiDatabase db = await openBackupDb(zip, dst);
+    final FushiDatabase db = await openBackupDb(zip, dst);
     try {
       expect(await countRows(db, 'search_history_items'), 0);
       expect(await countRows(db, 'book_tombstones'), 1,
@@ -875,7 +875,7 @@ void main() {
     await built.service.createBackup(zip, categories: <BackupCategory>{});
     await built.db.close();
 
-    final HibikiDatabase db = await openBackupDb(zip, dst);
+    final FushiDatabase db = await openBackupDb(zip, dst);
     try {
       expect(await countRows(db, 'search_history_items'), 0);
       expect(await countRows(db, 'book_tombstones'), 0);
@@ -898,7 +898,7 @@ void main() {
     final fzip = p.join(src.path, 'srt_full.zip');
     await full.service.createBackup(fzip);
     await full.db.close();
-    final HibikiDatabase fdb = await openBackupDb(fzip, dst);
+    final FushiDatabase fdb = await openBackupDb(fzip, dst);
     try {
       expect(await countRows(fdb, 'media_collection_items'), 1,
           reason: 'full export keeps the dangling srt member for merge-union');
@@ -915,7 +915,7 @@ void main() {
     final nzip = p.join(src.path, 'srt_none.zip');
     await none.service.createBackup(nzip, categories: <BackupCategory>{});
     await none.db.close();
-    final HibikiDatabase ndb = await openBackupDb(nzip, dst);
+    final FushiDatabase ndb = await openBackupDb(nzip, dst);
     try {
       expect(await countRows(ndb, 'media_collection_items'), 0,
           reason: 'dangling srt member dropped (no srt_books to resolve)');
@@ -938,7 +938,7 @@ void main() {
     await built.service.createBackup(zip);
     await built.db.close();
 
-    final HibikiDatabase db = await openBackupDb(zip, dst);
+    final FushiDatabase db = await openBackupDb(zip, dst);
     try {
       expect(await countRows(db, 'media_collections'), 1,
           reason: 'always-empty tag carrier is preserved, not strip-dropped');
@@ -948,7 +948,7 @@ void main() {
   });
 
   // ── BUG-832: dictionary_history (private) + media_sources (local paths) ──
-  Future<void> seedHistoryAndSources(HibikiDatabase db) async {
+  Future<void> seedHistoryAndSources(FushiDatabase db) async {
     await db.replaceAllDictionaryHistory(<DictionaryHistoryCompanion>[
       DictionaryHistoryCompanion.insert(
           position: 0, resultJson: '{"searchTerm":"猫"}'),
@@ -971,7 +971,7 @@ void main() {
     await built.service.createBackup(zip);
     await built.db.close();
 
-    final HibikiDatabase db = await openBackupDb(zip, dst);
+    final FushiDatabase db = await openBackupDb(zip, dst);
     try {
       expect(await countRows(db, 'dictionary_history'), 0,
           reason: 'recent lookups are a private trace, never travel');
@@ -991,7 +991,7 @@ void main() {
     await built.service.createBackup(zip, categories: <BackupCategory>{});
     await built.db.close();
 
-    final HibikiDatabase db = await openBackupDb(zip, dst);
+    final FushiDatabase db = await openBackupDb(zip, dst);
     try {
       expect(await countRows(db, 'dictionary_history'), 0);
       expect(await countRows(db, 'media_sources'), 0,
@@ -1011,7 +1011,7 @@ void main() {
         .createBackup(zip, categories: allExcept(BackupCategory.videos));
     await built.db.close();
 
-    final HibikiDatabase db = await openBackupDb(zip, dst);
+    final FushiDatabase db = await openBackupDb(zip, dst);
     try {
       final rows =
           await db.customSelect('SELECT media_kind FROM media_sources').get();
@@ -1032,7 +1032,7 @@ void main() {
     await built.service.createBackup(zip); // book 'Bk' travels
     await built.db.close();
 
-    final HibikiDatabase db = await openBackupDb(zip, dst);
+    final FushiDatabase db = await openBackupDb(zip, dst);
     try {
       expect(await countRows(db, 'media_collections'), 1);
       expect(await countRows(db, 'media_collection_items'), 1);
@@ -1057,7 +1057,7 @@ void main() {
         .createBackup(zip, categories: allExcept(BackupCategory.books));
     await built.db.close();
 
-    final HibikiDatabase db = await openBackupDb(zip, dst);
+    final FushiDatabase db = await openBackupDb(zip, dst);
     try {
       expect(await countRows(db, 'epub_books'), 0, reason: 'book stripped');
       expect(await countRows(db, 'media_collection_items'), 0);

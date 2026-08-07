@@ -16,8 +16,8 @@ import '../helpers/test_platform_services.dart';
 void main() {
   testWidgets('missing book resolves to error state, not a stuck loader',
       (WidgetTester tester) async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final PlatformServices platformServices = testPlatformServices();
     final AppModel appModel = AppModel(platformServices)

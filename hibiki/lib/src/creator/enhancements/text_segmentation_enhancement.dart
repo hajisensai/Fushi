@@ -34,7 +34,7 @@ class TextSegmentationEnhancement extends Enhancement {
     String sourceText = creatorModel.getFieldController(field).text;
 
     if (sourceText.trim().isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.no_text,
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,

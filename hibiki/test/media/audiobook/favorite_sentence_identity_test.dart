@@ -14,11 +14,11 @@ import 'package:fushi_core/fushi_core.dart';
 /// collapse），removeById 按精确 id 删单条，matchedFavoriteId 返回命中条目 id 供
 /// reader 精确删除。本测试断言两条 offset 均 null 的同内容记录能被 id 精确区分。
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late FavoriteSentenceRepository repo;
 
   setUp(() {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     repo = FavoriteSentenceRepository(db);
   });
 

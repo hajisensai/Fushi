@@ -60,9 +60,9 @@ void main() {
     expect(source, contains('Future<void> _showReaderImageContextMenu('));
     expect(source, contains('Future<void> _shareReaderImage(String imgUrl)'));
     expect(source, contains('Future<void> _copyReaderImageToClipboard('));
-    expect(source, contains('HibikiShare.shareFiles'));
+    expect(source, contains('FushiShare.shareFiles'));
     expect(source, contains('XFile(file.path'));
-    expect(source, contains('HibikiChannels.clipboardImage'));
+    expect(source, contains('FushiChannels.clipboardImage'));
     expect(source, contains('invokeMethod<void>('));
     expect(source, contains("'copyImageFile'"));
     // NOTE(BUG-402): reader text-selection copy (Ctrl+C, caret.part.dart) legitimately
@@ -75,9 +75,9 @@ void main() {
     final String source = readReaderPageSource();
 
     // BUG-1438：本用例原先要求菜单尺寸乘 `_readerImageMenuScale`，方向是反的。
-    // 菜单由 PopupMenuRoute 承载，挂在根 Overlay = 全局 HibikiAppUiScale 的缩放画布
+    // 菜单由 PopupMenuRoute 承载，挂在根 Overlay = 全局 FushiAppUiScale 的缩放画布
     // 内，画布→屏幕这一跳已按 scale 放大过一次；阅读器 chrome 之所以要手动乘，是因为
-    // chrome 在 HibikiAppUiScaleNeutralizer **之内**（净缩放=1）。把 chrome 的规则套到
+    // chrome 在 FushiAppUiScaleNeutralizer **之内**（净缩放=1）。把 chrome 的规则套到
     // 菜单上 → 视觉尺寸 scale²（实测 scale=2 时 chrome 文字 40px、菜单 80px）。
     // 现在菜单尺寸一律写常量，"随界面大小缩放"由它所在的画布负责。
     // 真行为断言见 test/pages/context_menu_ui_scale_guard_test.dart。
@@ -105,7 +105,7 @@ void main() {
     );
 
     // The menu anchor must be mapped through the Overlay RenderBox so the global
-    // HibikiAppUiScale FittedBox transform is absorbed; scaling the menu must not
+    // FushiAppUiScale FittedBox transform is absorbed; scaling the menu must not
     // also scale or rebase the anchor (BUG-381 — same fix family as BUG-129/261).
     expect(menu, contains('Rect.fromLTWH('));
     // Anchor is mapped from real screen coords into the menu host Overlay's local

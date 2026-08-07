@@ -30,7 +30,7 @@ void main() {
 
   test('single video: attaches subtitle to the SAME bookUid (no duplicate row)',
       () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
 
@@ -77,7 +77,7 @@ void main() {
 
   test('playlist card: does NOT persist, asks to attach per-episode in player',
       () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
 
@@ -110,7 +110,7 @@ void main() {
   });
 
   test('unsupported extension -> unsupported, nothing written', () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
     await repo.saveVideoBook(const VideoBooksCompanion(
@@ -134,7 +134,7 @@ void main() {
 
   test('empty/garbage subtitle parses 0 cues -> emptyCues, not persisted',
       () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
     await repo.saveVideoBook(const VideoBooksCompanion(

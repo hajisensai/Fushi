@@ -103,7 +103,7 @@ abstract final class MangaArchiveImporter {
   }
 
   static Future<String> importArchive({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required String archivePath,
     String? title,
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),

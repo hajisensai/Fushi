@@ -8,8 +8,8 @@ import 'package:fushi/src/models/preferences_repository.dart';
 
 import 'video_hibiki_page_source_corpus.dart';
 
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
@@ -45,7 +45,7 @@ void main() {
   });
 
   group('PreferencesRepository.videoFitMode', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late PreferencesRepository repo;
 
     setUp(() async {

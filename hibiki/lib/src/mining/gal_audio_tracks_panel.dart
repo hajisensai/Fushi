@@ -140,7 +140,7 @@ class GalTrackTile extends StatelessWidget {
       ignoring: silent,
       child: Opacity(
         opacity: silent ? 0.56 : 1,
-        child: HibikiListItem(
+        child: FushiListItem(
           padding: EdgeInsets.zero,
           selected: selected,
           leading: Icon(
@@ -166,7 +166,7 @@ class GalTrackTile extends StatelessWidget {
             children: <Widget>[
               // BUG-1027：逐轨试听——抓该轨最近整句 PCM 播放，帮用户判断这条轨
               // 是语音还是 BGM，再决定选轨/排除。播放中变停止按钮。
-              HibikiIconButton(
+              FushiIconButton(
                 icon: previewing
                     ? Icons.stop_circle_outlined
                     : Icons.play_circle_outline,
@@ -175,13 +175,13 @@ class GalTrackTile extends StatelessWidget {
                     : t.game_track_preview,
                 onTap: onPreview,
               ),
-              HibikiIconButton(
+              FushiIconButton(
                 icon: selected ? Icons.check_circle : Icons.circle_outlined,
                 tooltip: selectTooltip ?? t.game_track_select_as_voice,
                 enabled: selectable && !excluded,
                 onTap: onSelect,
               ),
-              HibikiIconButton(
+              FushiIconButton(
                 icon: excluded ? Icons.undo : Icons.music_off_outlined,
                 tooltip:
                     excluded ? t.game_track_restore : t.game_track_exclude_bgm,
@@ -206,7 +206,7 @@ class _PanelHintBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Container(
       margin: EdgeInsets.only(top: tokens.spacing.gap),
       padding: EdgeInsets.all(tokens.spacing.gap + 2),

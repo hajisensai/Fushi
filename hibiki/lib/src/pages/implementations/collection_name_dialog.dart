@@ -63,15 +63,15 @@ class _CollectionNameDialogState extends State<_CollectionNameDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiDialogFrame(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.74,
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: widget.title,
         leadingIcon: Icons.collections_bookmark_outlined,
-        // TODO-1389：外层 HibikiDialogFrame(maxHeightFactor:0.74, scrollable:false) 给有界
+        // TODO-1389：外层 FushiDialogFrame(maxHeightFactor:0.74, scrollable:false) 给有界
         // 高度；body 是含 92x120 封面大图 + 输入框的非滚动 Column，最小窗高 480（客户区
         // ≈440）下会顶破 0.74 界底部溢出（尤其更大字号 / 紧凑间距）。scrollable:true 提供
         // 滚动兜底，矮窗可滚不溢出。
@@ -97,7 +97,7 @@ class _CollectionNameDialogState extends State<_CollectionNameDialog> {
                 child: SizedBox(
                   width: 92,
                   height: 120,
-                  child: HibikiCard(
+                  child: FushiCard(
                     padding: EdgeInsets.zero,
                     margin: EdgeInsets.zero,
                     child: ClipRRect(
@@ -109,7 +109,7 @@ class _CollectionNameDialogState extends State<_CollectionNameDialog> {
               ),
               SizedBox(height: tokens.spacing.gap),
             ],
-            HibikiTextField(
+            FushiTextField(
               controller: _controller,
               labelText: t.series_name_hint,
               autofocus: true,

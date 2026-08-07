@@ -36,7 +36,7 @@ class SaveTagsEnhancement extends Enhancement {
         creatorModel.getFieldController(TagsField.instance).text.trim();
     appModel.setSavedTags(tags);
 
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.saved_tags,
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.BOTTOM,

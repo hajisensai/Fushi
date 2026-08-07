@@ -18,7 +18,7 @@ import 'package:path/path.dart' as p;
 ///
 /// 最小 EPUB 需要 `mimetype` 文件（EPUB 规范要求）位于 extractDir 根。
 Future<String> _insertBookWithExtractDir({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required String title,
   required String extractDir,
   String? bookKey,
@@ -58,7 +58,7 @@ Future<String> _insertBookWithExtractDir({
 
 /// 构造一个 [AppModelLibraryHostService]，[importBookFromFile] 为 fake（记录调用）。
 AppModelLibraryHostService _buildSvc({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   List<File>? importedFiles,
   List<EpubBookRow>? deletedRows,
 }) {
@@ -170,11 +170,11 @@ void main() {
   // ── AppModelLibraryHostService 书籍 round-trip ─────────────────────────
   group('AppModelLibraryHostService books', () {
     late Directory tmp;
-    late HibikiDatabase db;
+    late FushiDatabase db;
 
     setUp(() {
       tmp = Directory.systemTemp.createTempSync('hibiki_books_host');
-      db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
     });
 
     tearDown(() async {

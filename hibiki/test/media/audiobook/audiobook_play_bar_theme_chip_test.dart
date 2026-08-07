@@ -22,7 +22,7 @@ class _FakeInAppWebViewController implements InAppWebViewController {
 }
 
 AppModel _testAppModel() {
-  final HibikiDatabase db = HibikiDatabase.forTesting(
+  final FushiDatabase db = FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
@@ -103,7 +103,7 @@ void main() {
     // 主页不渲染内联「排版设置」卡标题 / 主题选择器 / 字号步进（都在 layout 子页）。
     expect(find.text(t.display_settings), findsNothing);
     expect(find.text(t.reader_theme), findsNothing);
-    expect(find.byType(HibikiSchemeSwatch), findsNothing);
+    expect(find.byType(FushiSchemeSwatch), findsNothing);
     expect(find.text(t.reader_font_size), findsNothing);
     expect(find.byType(ListTile), findsNothing);
 
@@ -122,7 +122,7 @@ void main() {
 
     // TODO-802：主题选择器并入「布局与显示」子页顶部（外观组已删）。
     expect(find.text(t.reader_theme), findsOneWidget);
-    expect(find.byType(HibikiSchemeSwatch), findsWidgets);
+    expect(find.byType(FushiSchemeSwatch), findsWidgets);
     // TODO-774：字号/行高（schema 投影）也在 layout 子页。
     expect(find.text(t.reader_font_size), findsOneWidget);
     expect(find.text(t.reader_line_height), findsOneWidget);

@@ -34,7 +34,7 @@ class ShelfCardFooter extends StatelessWidget {
   /// 直接切掉——书名看起来像被咬了一口。卡片封面区是 [Expanded]，footer 变高只是
   /// 等量压缩封面、不会撑破网格，所以这里让高度跟着文字缩放走。
   static double heightFor(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double lineHeight = textLineHeight(context, tokens.type.metadata);
     final double topPad = tokens.spacing.gap / 2;
     return math.max(height, topPad + lineHeight * 2 + kTextBlockSlack);
@@ -44,7 +44,7 @@ class ShelfCardFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final TextStyle style = tokens.type.metadata.copyWith(
       color: tokens.surfaces.onSurface,
       fontWeight: FontWeight.w600,
@@ -90,7 +90,7 @@ class ShelfSelectionCheck extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
     final Color selectionColor = tokens.surfaces.primary;
     final bool eink = isEinkTheme(context);
@@ -121,13 +121,13 @@ class ShelfSelectionCheck extends StatelessWidget {
 /// 选中态整卡覆盖罩（书卡 / 系列折叠卡共用），配 `Positioned.fill` 使用。
 ///
 /// 常规主题为 primary 12% 半透明罩；eink 半透明罩合成抖动灰且 primary 已塌缩，
-/// 改 2px 实心描边作唯一选中信号（与 HibikiCard eink 选中态同语义）。
+/// 改 2px 实心描边作唯一选中信号（与 FushiCard eink 选中态同语义）。
 class ShelfSelectedOverlay extends StatelessWidget {
   const ShelfSelectedOverlay({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool eink = isEinkTheme(context);
     return IgnorePointer(
       child: DecoratedBox(
@@ -149,7 +149,7 @@ class ShelfSelectedOverlay extends StatelessWidget {
 ///
 /// 巡检 B11：深色主题下无封面占位（卡面色 ≈ 页面背景）与背景零对比，占位卡读作
 /// 一块空洞——统一补 1px 描边（tokens.surfaces.outline，全主题恒有；eink 的卡级
-/// 描边另由 HibikiCard 兜，叠加无害）。[backgroundColor] 供视频/游戏库保留各自的
+/// 描边另由 FushiCard 兜，叠加无害）。[backgroundColor] 供视频/游戏库保留各自的
 /// 高阶容器底色，书架传 null 维持无底色原样。
 class ShelfCoverPlaceholder extends StatelessWidget {
   const ShelfCoverPlaceholder({
@@ -167,7 +167,7 @@ class ShelfCoverPlaceholder extends StatelessWidget {
   Widget build(BuildContext context) {
     // 全走 tokens（tokens.surfaces.outline 即 scheme 的 outlineVariant、onVariant
     // 即 onSurfaceVariant）：本文件被 MD3 静态守卫盯着，不许直读 scheme 的描边角色。
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: backgroundColor,

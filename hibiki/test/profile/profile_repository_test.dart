@@ -43,24 +43,24 @@ class _FakeAnkiRepository extends BaseAnkiRepository {
   Future<bool> createDeck(String name) => throw UnimplementedError();
 }
 
-Future<HibikiDatabase> _openDb() async {
-  final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
 
-ProfileRepository _repo(HibikiDatabase db) =>
+ProfileRepository _repo(FushiDatabase db) =>
     ProfileRepository(db, _FakeAnkiRepository());
 
 /// Collects the 'pref'-category keys of a profile's snapshot.
-Future<Set<String>> _prefKeys(HibikiDatabase db, int profileId) async {
+Future<Set<String>> _prefKeys(FushiDatabase db, int profileId) async {
   final rows = await db.getProfileSettings(profileId);
   return rows.where((r) => r.category == 'pref').map((r) => r.key).toSet();
 }
 
 /// Seeds one dictionary_metadata row (TODO-1077 fixtures).
 Future<void> _seedDict(
-  HibikiDatabase db, {
+  FushiDatabase db, {
   required String name,
   required int order,
   String formatKey = 'yomitan',
@@ -79,7 +79,7 @@ Future<void> _seedDict(
 }
 
 /// name -> row, keyed for stable assertions.
-Future<Map<String, DictionaryMetaRow>> _dictByName(HibikiDatabase db) async {
+Future<Map<String, DictionaryMetaRow>> _dictByName(FushiDatabase db) async {
   final rows = await db.getAllDictionaryMetadata();
   return {for (final r in rows) r.name: r};
 }

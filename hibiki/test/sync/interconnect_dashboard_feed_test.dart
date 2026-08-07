@@ -27,7 +27,7 @@ import 'package:path/path.dart' as p;
 ///    而非 isVideo 二元降维（远端 SRT 书不再被抹成 epub、游戏等第三种媒体
 ///    结构上装得下）。
 AppModelLibraryHostService _makeService({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required Directory tmp,
 }) {
   final Directory dictRoot = Directory(p.join(tmp.path, 'dicts'))
@@ -64,11 +64,11 @@ ActivityEventRow _row({
 void main() {
   group('host listBooks 内联阅读进度', () {
     late Directory tmp;
-    late HibikiDatabase db;
+    late FushiDatabase db;
 
     setUp(() {
       tmp = Directory.systemTemp.createTempSync('hbk_dash_feed');
-      db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
     });
 
     tearDown(() async {
@@ -134,8 +134,8 @@ void main() {
     const String token = 'dash-feed-token';
 
     test('GET /api/library/activity 下发 host 最近事件（JSON roundtrip）', () async {
-      final HibikiDatabase hostDb =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase hostDb =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(hostDb.close);
       final Directory tmp = Directory.systemTemp.createTempSync('hbk_act_srv');
       addTearDown(() => tmp.delete(recursive: true));
@@ -148,7 +148,7 @@ void main() {
         mediaKey: 'video/s01e01',
         durationMs: 1200000,
       );
-      final HibikiSyncServer server = HibikiSyncServer(
+      final FushiSyncServer server = FushiSyncServer(
         syncDataDir: p.join(tmp.path, 'sync'),
         port: 0,
         token: token,
@@ -178,7 +178,7 @@ void main() {
     });
 
     test('老 host 无端点 → client listRemoteActivity 降级空表', () async {
-      final HibikiSyncServer server = HibikiSyncServer(
+      final FushiSyncServer server = FushiSyncServer(
         syncDataDir: Directory.systemTemp.createTempSync('hbk_act_old').path,
         port: 0,
         token: token,
@@ -187,12 +187,12 @@ void main() {
       await server.start();
       addTearDown(server.stop);
 
-      final HibikiDatabase clientDb =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase clientDb =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(clientDb.close);
       final SyncRepository repo = SyncRepository(clientDb);
-      await repo.setHibikiClientUrls(<HibikiClientUrl>[
-        HibikiClientUrl(url: 'http://127.0.0.1:${server.port}', enabled: true),
+      await repo.setHibikiClientUrls(<FushiClientUrl>[
+        FushiClientUrl(url: 'http://127.0.0.1:${server.port}', enabled: true),
       ]);
       await repo.setHibikiClientToken(token);
       final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(

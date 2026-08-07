@@ -29,8 +29,8 @@ void main() {
 
   /// 构造一个接好 in-memory DB + 偏好的 [AppModel]。
   Future<AppModel> buildAppModel(WidgetTester tester) async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
@@ -134,7 +134,7 @@ void main() {
         startMs: now.millisecondsSinceEpoch - 600000,
         endMs: now.millisecondsSinceEpoch,
         durationSeconds: 600,
-        dateKey: HibikiTimeFormat.dayKey(now),
+        dateKey: FushiTimeFormat.dayKey(now),
       ),
     );
 

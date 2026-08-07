@@ -48,13 +48,13 @@ class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 520,
       maxHeightFactor: 0.76,
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.lyrics_mode,
         leadingIcon: Icons.lyrics_outlined,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -83,7 +83,7 @@ class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
   List<Widget> get actions => [buildSearchButton()];
 
   Widget buildContent() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     return RawScrollbar(
       thickness: 3,
@@ -96,11 +96,11 @@ class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              HibikiTextField(
+              FushiTextField(
                 autofocus: true,
                 controller: _titleController,
                 labelText: t.lyrics_title,
-                suffixIcon: HibikiIconButton(
+                suffixIcon: FushiIconButton(
                   size: 18,
                   tooltip: t.clear,
                   onTap: _titleController.clear,
@@ -108,10 +108,10 @@ class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
                 ),
               ),
               SizedBox(height: tokens.spacing.gap),
-              HibikiTextField(
+              FushiTextField(
                 controller: _artistController,
                 labelText: t.lyrics_artist,
-                suffixIcon: HibikiIconButton(
+                suffixIcon: FushiIconButton(
                   size: 18,
                   tooltip: t.clear,
                   onTap: _artistController.clear,

@@ -6,7 +6,7 @@ import 'package:flutter/widgets.dart';
 /// the gamepad LB/RB page-scroll fallback runs from the focused widget's
 /// context. On a *pure-display* page (e.g. reading statistics) there is nothing
 /// focusable in the body, so focus rests on the single top-level
-/// [HibikiFocusRoot] fallback node — which lives ABOVE every route, i.e. above
+/// [FushiFocusRoot] fallback node — which lives ABOVE every route, i.e. above
 /// the page scaffold's [PrimaryScrollController]. `maybeOf` only walks
 /// ancestors, so it can never reach a controller that sits *below* the focus.
 ///

@@ -286,7 +286,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
     );
     if (!mounted || m.subtitlePath == null || _subtitlePath != null) return;
     setState(() => _subtitlePath = m.subtitlePath);
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.import_sidecar_subtitle(name: p.basename(m.subtitlePath!)),
       severity: ToastSeverity.info,
     );
@@ -729,7 +729,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
   Widget build(BuildContext context) {
     // 外框走统一 ImportDialogFrame（审计 §1-K：与书/有声书/漫画导入同一 chrome）；
     // 表单内容与动作按钮形态不变。
-    return HibikiFileDropTarget(
+    return FushiFileDropTarget(
       enabled: !importing,
       debugLabel: 'video-import-dialog',
       onDrop: _handleDialogDrop,

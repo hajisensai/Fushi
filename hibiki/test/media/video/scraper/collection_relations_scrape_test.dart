@@ -13,8 +13,8 @@ import 'package:drift/drift.dart' show Value;
 
 /// TODO-2484：合集「相关作品」抓取层守卫。全部走内存 DB + MockClient，无真实网络。
 void main() {
-  Future<HibikiDatabase> openDb() async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+  Future<FushiDatabase> openDb() async {
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (CommonDatabase rawDb) =>
             rawDb.execute('PRAGMA foreign_keys = ON'),
@@ -25,7 +25,7 @@ void main() {
   }
 
   Future<int> boundCollection(
-    HibikiDatabase db, {
+    FushiDatabase db, {
     String name = '本篇',
     String source = 'bangumi',
     String subjectId = '100',
@@ -187,7 +187,7 @@ void main() {
 
     test('writes edges, auto-binds local collections by subject and by title',
         () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int self = await boundCollection(db);
       // 目标 A：另一合集已刮过 subject 201 → 按 (source, subjectId) 绑定。
       final int targetA =
@@ -247,7 +247,7 @@ void main() {
     });
 
     test('source failure keeps previous edges and reports the error', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int self = await boundCollection(db);
       final BangumiClient good = BangumiClient(
         client: bangumiRelationsClient(<Object?>[
@@ -281,7 +281,7 @@ void main() {
     });
 
     test('missing scrape binding throws StateError', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int bare = await db.createMediaCollection('未刮削');
       expect(
         () => scrapeCollectionRelations(db: db, collectionId: bare),
@@ -292,7 +292,7 @@ void main() {
     test(
         'duplicate subjects from source are deduped first-wins '
         '(no unique-key rollback)', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int self = await boundCollection(db);
       final BangumiClient bangumi = BangumiClient(
         client: bangumiRelationsClient(<Object?>[
@@ -341,7 +341,7 @@ void main() {
     test(
         'tv seasons become edges (specials=side_story) and season edges '
         'never bind by subject id', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int self = await boundCollection(
         db,
         source: 'tmdb',
@@ -413,7 +413,7 @@ void main() {
 
     test('movie parts typed by release date relative to self, self excluded',
         () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int self = await boundCollection(
         db,
         source: 'tmdb',
@@ -476,7 +476,7 @@ void main() {
 
     test('detailUrl-less subject probes tv first, falls back to movie on 404',
         () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int self = await boundCollection(
         db,
         source: 'tmdb',

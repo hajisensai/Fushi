@@ -11,8 +11,8 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _testDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 /// Backend that always fails `findOrCreateRootFolder` with a RETRYABLE error.
 /// `syncBook` therefore takes the retry path and gives up — exactly the code
@@ -157,7 +157,7 @@ class _AlwaysRetryableBackend implements SyncBackend {
 void main() {
   test('retryable error keeps the persisted folder cache (F1 regression)',
       () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
 

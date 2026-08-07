@@ -131,7 +131,7 @@ const String _utf8Bom = '﻿';
 
 const String _csvNewline = '\r\n';
 
-String _formatDateTime(DateTime dt) => HibikiTimeFormat.dateHourMinute(dt);
+String _formatDateTime(DateTime dt) => FushiTimeFormat.dateHourMinute(dt);
 
 /// CSV（RFC4180）字段转义：含逗号/引号/换行的字段加双引号包裹并把内部 `"` 翻倍。
 String _csvEscape(String field) {
@@ -910,7 +910,7 @@ Future<void> saveOrShareExport({
         notify(t.collection_export_saved);
       }
     } else {
-      await HibikiShare.shareFiles(
+      await FushiShare.shareFiles(
         <XFile>[XFile(tmpPath, mimeType: mimeType)],
         subject: subject,
       );

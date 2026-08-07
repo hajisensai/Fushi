@@ -15,7 +15,7 @@ const List<int> _webpCoverBytes = <int>[
 ];
 
 /// Fake service：dict 方法存根（不抛，返回空），books 方法真实记录调用。
-class _FakeLibraryService implements HibikiLibraryHostService {
+class _FakeLibraryService implements FushiLibraryHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
   Future<File?> clipVideoAudio(String id,
@@ -218,7 +218,7 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 }
 
 void main() {
-  late HibikiSyncServer server;
+  late FushiSyncServer server;
   late _FakeLibraryService lib;
   const String token = 'test-token';
   late String base;
@@ -226,7 +226,7 @@ void main() {
 
   setUp(() async {
     lib = _FakeLibraryService();
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir: Directory.systemTemp.createTempSync('hbk_books_srv').path,
       port: 0,
       token: token,
@@ -523,7 +523,7 @@ void main() {
   // ── no service injected ──────────────────────────────────────────────────────
 
   test('books endpoints return 404 when no service injected', () async {
-    final HibikiSyncServer bare = HibikiSyncServer(
+    final FushiSyncServer bare = FushiSyncServer(
       syncDataDir: Directory.systemTemp.createTempSync('hbk_bare').path,
       port: 0,
       token: token,

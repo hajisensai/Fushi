@@ -13,7 +13,7 @@ void main() {
       expect(ReaderChromeScaler.scaledHeight(56, 1.5), closeTo(84, 1e-9));
     });
 
-    test('out-of-range scale is clamped via HibikiAppUiScale.normalize', () {
+    test('out-of-range scale is clamped via FushiAppUiScale.normalize', () {
       // maxScale = 3.0 → 56*3 = 168
       expect(ReaderChromeScaler.scaledHeight(56, 99), closeTo(168, 1e-9));
       // minScale = 0.3 → 56*0.3 = 16.8
@@ -73,7 +73,7 @@ void main() {
 
   group('ReaderChromeScaler defaultScale contract', () {
     test('defaultScale constant is 1.0 (passthrough relies on it)', () {
-      expect(HibikiAppUiScale.defaultScale, 1.0);
+      expect(FushiAppUiScale.defaultScale, 1.0);
     });
   });
 }

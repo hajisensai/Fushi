@@ -162,7 +162,7 @@ class DictionaryImportManager {
         }
       }
       if (failedNames.isNotEmpty) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: formatImportFailureSummary(failedNames),
           toastLength: Toast.LENGTH_LONG,
           severity: ToastSeverity.error,
@@ -172,7 +172,7 @@ class DictionaryImportManager {
       // 可同时出现（部分成功部分失败）。
       final int succeeded = zipFiles.length - failedNames.length;
       if (succeeded > 0) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.dict_import_success_summary(n: succeeded),
           severity: ToastSeverity.success,
         );
@@ -299,7 +299,7 @@ class DictionaryImportManager {
         progressNotifier.value = t.import_complete;
         onImportSuccess();
         // TODO-082：单目录导入成功，给一条明确成功提示（与文件/批量路径一致）。
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.dict_import_success_summary(n: 1),
           severity: ToastSeverity.success,
         );

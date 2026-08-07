@@ -23,8 +23,8 @@ import 'package:fushi/src/models/preferences_repository.dart';
 /// 2. 源码守卫：断言 `_initRemote` 读 prefs 而非硬编码 0、`onPositionWrite` 远端走
 ///    `_persistRemotePosition` 而非 null。撤任一修复即转红。
 
-HibikiDatabase _testDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 /// 远端位置 prefs key（与 video_hibiki_page.dart 的同一公式，单一真相）。
 String remotePositionPrefKey(String bookUid) =>
@@ -32,7 +32,7 @@ String remotePositionPrefKey(String bookUid) =>
 
 void main() {
   group('TODO-559 remote video resume — behavioral round-trip', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late PreferencesRepository repo;
 
     setUp(() async {

@@ -104,7 +104,7 @@ abstract class AudioExportField extends Field with ExportFieldSearch {
         );
       } else {
         if (cause == EnhancementTriggerCause.manual) {
-          HibikiToast.show(
+          FushiToast.show(
             msg: t.audio_unavailable,
             toastLength: Toast.LENGTH_SHORT,
             gravity: ToastGravity.BOTTOM,

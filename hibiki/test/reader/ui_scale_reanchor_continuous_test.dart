@@ -10,7 +10,7 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// TODO-693：改 appUiScale（整体界面缩放）时，**连续/滚动模式**阅读位置被弹回章节开头。
 ///
 /// 根因：连续模式阅读位置是裸 `window.scrollY`，没有分页模式的
-/// `registerSnapScroll`/`lockRootViewport` 保护。HibikiAppUiScale 用新 scale 重建两层
+/// `registerSnapScroll`/`lockRootViewport` 保护。FushiAppUiScale 用新 scale 重建两层
 /// FittedBox/SizedBox → reader 子树（含 WebView 平台视图）box.size 过渡帧抖动 → 击穿
 /// SetSizeDedup → native put_Bounds → WebView2 reflow 把 document scrollY 瞬时归 0；归零
 /// 后连续模式无机制拉回，被章内 scroll 回传通道（onReaderScroll）当作真实滚动落库

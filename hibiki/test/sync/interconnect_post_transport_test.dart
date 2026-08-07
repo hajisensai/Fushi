@@ -18,13 +18,13 @@ import 'package:http/testing.dart';
 /// GET 版与 `InterconnectSyncBackend` 走 WebDavOps 的第四份。抄漏一处钉扎/回收就是真
 /// 事故（TODO-961 gap①），故收敛成一份并在此直接锁语义——制卡侧原本只有 1 个测试，
 /// 收敛后它的传输层由本文件与 lookup 的用例共同覆盖。
-HibikiDatabase _testDb() => HibikiDatabase.forTesting(
+FushiDatabase _testDb() => FushiDatabase.forTesting(
       DatabaseConnection(NativeDatabase.memory()),
     );
 
 Future<SyncRepository> _repo({
-  required HibikiDatabase db,
-  required List<HibikiClientUrl> urls,
+  required FushiDatabase db,
+  required List<FushiClientUrl> urls,
   String? token = 'tok',
 }) async {
   final SyncRepository repo = SyncRepository(db);
@@ -45,13 +45,13 @@ Future<InterconnectPostOutcome> _post(
 
 void main() {
   test('按序 fallback：前一个候选非 2xx 时试下一个', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = await _repo(
       db: db,
-      urls: const <HibikiClientUrl>[
-        HibikiClientUrl(url: 'http://lan:8765'),
-        HibikiClientUrl(url: 'http://wan:8765'),
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(url: 'http://lan:8765'),
+        FushiClientUrl(url: 'http://wan:8765'),
       ],
     );
     final List<String> hosts = <String>[];
@@ -71,13 +71,13 @@ void main() {
   });
 
   test('disabled 候选被跳过', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = await _repo(
       db: db,
-      urls: const <HibikiClientUrl>[
-        HibikiClientUrl(url: 'http://off:8765', enabled: false),
-        HibikiClientUrl(url: 'http://on:8765'),
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(url: 'http://off:8765', enabled: false),
+        FushiClientUrl(url: 'http://on:8765'),
       ],
     );
     final List<String> hosts = <String>[];
@@ -94,11 +94,11 @@ void main() {
   });
 
   test('Basic 鉴权头用 base64(hibiki:token)', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = await _repo(
       db: db,
-      urls: const <HibikiClientUrl>[HibikiClientUrl(url: 'http://h:8765')],
+      urls: const <FushiClientUrl>[FushiClientUrl(url: 'http://h:8765')],
       token: 'secret',
     );
     String? auth;
@@ -115,13 +115,13 @@ void main() {
   });
 
   test('401 抛 SyncAuthError 且不再试下一个候选（共用同一 token）', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = await _repo(
       db: db,
-      urls: const <HibikiClientUrl>[
-        HibikiClientUrl(url: 'http://a:8765'),
-        HibikiClientUrl(url: 'http://b:8765'),
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(url: 'http://a:8765'),
+        FushiClientUrl(url: 'http://b:8765'),
       ],
     );
     int calls = 0;
@@ -138,13 +138,13 @@ void main() {
   });
 
   test('404/405 视为老 host 无此端点，继续下一个候选', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = await _repo(
       db: db,
-      urls: const <HibikiClientUrl>[
-        HibikiClientUrl(url: 'http://old:8765'),
-        HibikiClientUrl(url: 'http://new:8765'),
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(url: 'http://old:8765'),
+        FushiClientUrl(url: 'http://new:8765'),
       ],
     );
     final InterconnectPostTransport transport = InterconnectPostTransport(
@@ -160,13 +160,13 @@ void main() {
   });
 
   test('全部候选传输层失败 → allUnreachable（配对设备死了）', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = await _repo(
       db: db,
-      urls: const <HibikiClientUrl>[
-        HibikiClientUrl(url: 'http://a:8765'),
-        HibikiClientUrl(url: 'http://b:8765'),
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(url: 'http://a:8765'),
+        FushiClientUrl(url: 'http://b:8765'),
       ],
     );
     final InterconnectPostTransport transport = InterconnectPostTransport(
@@ -183,11 +183,11 @@ void main() {
   });
 
   test('可达但没结果 ≠ 不可达（失败冷却不得被误触发）', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = await _repo(
       db: db,
-      urls: const <HibikiClientUrl>[HibikiClientUrl(url: 'http://a:8765')],
+      urls: const <FushiClientUrl>[FushiClientUrl(url: 'http://a:8765')],
     );
     final InterconnectPostTransport transport = InterconnectPostTransport(
       repo: repo,
@@ -203,11 +203,11 @@ void main() {
   });
 
   test('未配对 / 无 token 不算不可达', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository noUrls = await _repo(
       db: db,
-      urls: const <HibikiClientUrl>[],
+      urls: const <FushiClientUrl>[],
     );
     final InterconnectPostOutcome a = await _post(
       InterconnectPostTransport(
@@ -219,7 +219,7 @@ void main() {
 
     final SyncRepository noToken = await _repo(
       db: db,
-      urls: const <HibikiClientUrl>[HibikiClientUrl(url: 'http://a:8765')],
+      urls: const <FushiClientUrl>[FushiClientUrl(url: 'http://a:8765')],
       token: null,
     );
     final InterconnectPostOutcome b = await _post(
@@ -232,12 +232,12 @@ void main() {
   });
 
   test('https 带指纹的候选强制走钉扎 client，不碰注入的共享 client (TODO-961 gap①)', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = await _repo(
       db: db,
-      urls: const <HibikiClientUrl>[
-        HibikiClientUrl(
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(
           url: 'https://secure:8765',
           fingerprintSha256: 'aa:bb:cc',
         ),
@@ -272,11 +272,11 @@ void main() {
   });
 
   test('明文 http 候选用共享 client，且绝不在此关闭它', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = await _repo(
       db: db,
-      urls: const <HibikiClientUrl>[HibikiClientUrl(url: 'http://plain:8765')],
+      urls: const <FushiClientUrl>[FushiClientUrl(url: 'http://plain:8765')],
     );
     bool sharedClosed = false;
     final InterconnectPostTransport transport = InterconnectPostTransport(
@@ -294,11 +294,11 @@ void main() {
   });
 
   test('https 无指纹不走钉扎（老配置向后兼容）', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = await _repo(
       db: db,
-      urls: const <HibikiClientUrl>[HibikiClientUrl(url: 'https://nofp:8765')],
+      urls: const <FushiClientUrl>[FushiClientUrl(url: 'https://nofp:8765')],
     );
     bool sharedUsed = false;
     final InterconnectPostTransport transport = InterconnectPostTransport(
@@ -315,13 +315,13 @@ void main() {
   });
 
   test('畸形候选 URL 被跳过，不影响后续候选', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = await _repo(
       db: db,
-      urls: const <HibikiClientUrl>[
-        HibikiClientUrl(url: '::::not a url::::'),
-        HibikiClientUrl(url: 'http://good:8765'),
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(url: '::::not a url::::'),
+        FushiClientUrl(url: 'http://good:8765'),
       ],
     );
     final List<String> hosts = <String>[];

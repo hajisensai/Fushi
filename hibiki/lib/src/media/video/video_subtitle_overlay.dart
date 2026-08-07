@@ -2270,7 +2270,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       }
 
       final (double w1, double h1) = measure(family);
-      final (double w2, double h2) = measure('HibikiNoSuchFontSentinel7f3a');
+      final (double w2, double h2) = measure('FushiNoSuchFontSentinel7f3a');
       return (w1 - w2).abs() > 0.25 || (h1 - h2).abs() > 0.25;
     });
   }

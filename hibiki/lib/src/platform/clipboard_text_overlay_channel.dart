@@ -16,9 +16,9 @@ typedef ClipboardTextTransparencyHandler = void Function();
 /// 回到 app 内查词覆盖窗（复用 [GlobalLookupController.lookupText]）。
 ///
 /// 契约是 [FloatingLyricChannel] 的精简子集（去掉播放态/歌词行/锁/高亮/标签），
-/// 走独立通道 [HibikiChannels.clipboardText] 的独立 native 窗口，二者互不影响。
+/// 走独立通道 [FushiChannels.clipboardText] 的独立 native 窗口，二者互不影响。
 class ClipboardTextOverlayChannel extends FloatingOverlayChannel {
-  ClipboardTextOverlayChannel._() : super(HibikiChannels.clipboardText);
+  ClipboardTextOverlayChannel._() : super(FushiChannels.clipboardText);
 
   static final ClipboardTextOverlayChannel _instance =
       ClipboardTextOverlayChannel._();

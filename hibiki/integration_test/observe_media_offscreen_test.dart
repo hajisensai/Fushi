@@ -192,7 +192,7 @@ void main() {
           '${videoTab.nonBlank} card(onstage=${cardOnstage(uid)} '
           'anyStage=$anyStage allHomeVideoCards=$allCards)');
 
-      // 视频卡（HibikiCard key=home_video_<uid>）：seed 后经 debugRefreshVideos 重查；
+      // 视频卡（FushiCard key=home_video_<uid>）：seed 后经 debugRefreshVideos 重查；
       // 若导航后仍未上屏，再补一次刷新 + 轮询。
       final Finder videoCard = find.byKey(ValueKey<String>('home_video_$uid'));
       for (int i = 0; i < 60; i++) {
@@ -206,7 +206,7 @@ void main() {
       }
       expect(videoCard, findsOneWidget, reason: '播种的视频卡应出现在视频页');
 
-      // 焦点卡片 + Enter（HibikiCard 把 ActivateIntent 映射到 onTap=_open）打开
+      // 焦点卡片 + Enter（FushiCard 把 ActivateIntent 映射到 onTap=_open）打开
       // VideoHibikiPage，禁坐标点击。
       final bool focusedCard = await driver.focusWidget(videoCard);
       expect(focusedCard, isTrue, reason: '视频卡应可被焦点到达（否则离屏打不开视频）');

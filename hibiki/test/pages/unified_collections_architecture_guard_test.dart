@@ -145,13 +145,13 @@ void main() {
     final File reorderGrid =
         File('lib/src/utils/components/hibiki_reorderable_grid.dart');
     expect(reorderGrid.existsSync(), isTrue,
-        reason: '书籍合集详情页网格拖排依赖消缩放 2D 组件 HibikiReorderableGrid');
+        reason: '书籍合集详情页网格拖排依赖消缩放 2D 组件 FushiReorderableGrid');
     expect(reorderGrid.readAsStringSync().contains('globalToLocal'), isTrue,
         reason: '消缩放核心：所有指针坐标必经根 Stack 的 globalToLocal 转本地（消祖先缩放）');
     final String gridPageSrc = File(
       'lib/src/pages/implementations/media_collection_grid_detail_page.dart',
     ).readAsStringSync();
-    expect(gridPageSrc.contains('HibikiReorderableGrid'), isTrue,
+    expect(gridPageSrc.contains('FushiReorderableGrid'), isTrue,
         reason: '书籍合集详情页必须用消缩放 2D 拖排网格（不得裸用 SDK/pub Reorderable 网格）');
     for (final String banned in <String>[
       'ReorderableListView.builder(',
@@ -252,8 +252,8 @@ void main() {
     ).readAsStringSync();
     // BUG-778：SDK ReorderableListView 的拖拽代理不认祖先 Transform.scale
     // （界面大小缩放下拖动漂移），详情页拖拽必须用自实现的
-    // HibikiReorderableColumn（本地坐标消缩放）；裸 SDK 组件回潮即转红。
-    expect(videoDetailSrc.contains('HibikiReorderableColumn'), isTrue,
+    // FushiReorderableColumn（本地坐标消缩放）；裸 SDK 组件回潮即转红。
+    expect(videoDetailSrc.contains('FushiReorderableColumn'), isTrue,
         reason: '视频合集详情页必须支持拖拽排集（消缩放组件，手动排序的唯一形态）');
     // 盯真实使用 token（注释里提及组件名做解释是允许的）。
     for (final String banned in <String>[

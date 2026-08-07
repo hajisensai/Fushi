@@ -457,7 +457,7 @@ class CollectionLocalChanges {
 /// 从本地 DB 构建合集全量快照清单。成员 sortIndex 用**位置序号 0..n-1**（而非
 /// 历史稀疏 sortIndex 原值）：清单只关心序列，归一化让「内容相等 ⇒ 字节相等」。
 Future<CollectionManifest> loadLocalCollectionManifest(
-    HibikiDatabase db) async {
+    FushiDatabase db) async {
   final List<MediaCollectionRow> rows = await db.getAllMediaCollections();
   final List<CollectionMemberTombstoneRow> tombRows =
       await db.getAllCollectionMemberTombstones();
@@ -470,8 +470,8 @@ Future<CollectionManifest> loadLocalCollectionManifest(
   for (final CollectionMemberTombstoneRow t in tombRows) {
     final String key = nk(t.collectionName, t.collectionType);
     final bool isSentinel =
-        t.mediaType == HibikiDatabase.collectionTombstoneSentinel &&
-            t.entryKey == HibikiDatabase.collectionTombstoneSentinel;
+        t.mediaType == FushiDatabase.collectionTombstoneSentinel &&
+            t.entryKey == FushiDatabase.collectionTombstoneSentinel;
     if (isSentinel) {
       deletedAtByKey[key] = t.deletedAt;
     } else {
@@ -571,10 +571,10 @@ Future<CollectionManifest> loadLocalCollectionManifest(
 /// 半套合集。返回实际处理的合集条目数（计入 SyncRunReport.collectionsUpdated）。
 ///
 /// 与用户路径的关键差异：这里**镜像**清单里的时间戳/墓碑，绝不写 now、绝不经
-/// [HibikiDatabase.removeFromCollection]/[HibikiDatabase.deleteMediaCollection]
+/// [FushiDatabase.removeFromCollection]/[FushiDatabase.deleteMediaCollection]
 /// （那两条会写全新墓碑，把同步应用伪装成本端的人为操作）。
 Future<int> applyCollectionLocalChanges(
-    HibikiDatabase db, CollectionLocalChanges changes) async {
+    FushiDatabase db, CollectionLocalChanges changes) async {
   if (changes.isEmpty) return 0;
   // 被本轮解散的合集行快照：删行发生在事务里，而回收自有封面是文件 IO，必须挪到
   // 事务提交之后做（BUG-1319）。路径只能在行还活着时取，故在删之前入列。
@@ -599,8 +599,8 @@ Future<int> applyCollectionLocalChanges(
           CollectionMemberTombstonesCompanion.insert(
             collectionName: e.name,
             collectionType: e.collectionType,
-            mediaType: HibikiDatabase.collectionTombstoneSentinel,
-            entryKey: HibikiDatabase.collectionTombstoneSentinel,
+            mediaType: FushiDatabase.collectionTombstoneSentinel,
+            entryKey: FushiDatabase.collectionTombstoneSentinel,
             deletedAt: e.deletedAt!,
           ),
         ]);

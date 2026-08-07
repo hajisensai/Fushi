@@ -9,8 +9,8 @@ import 'package:fushi/src/sync/sync_utils.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 void main() {
-  group('HibikiSyncServer', () {
-    late HibikiSyncServer server;
+  group('FushiSyncServer', () {
+    late FushiSyncServer server;
     late Directory tempDir;
     late String token;
 
@@ -30,8 +30,8 @@ void main() {
         'lastBookmarkModified': 1234,
       }));
 
-      token = HibikiSyncServer.generateToken();
-      server = HibikiSyncServer(
+      token = FushiSyncServer.generateToken();
+      server = FushiSyncServer(
         syncDataDir: tempDir.path,
         port: 0,
         token: token,
@@ -45,7 +45,7 @@ void main() {
     });
 
     test('generateToken produces 256-bit+ base64url token', () {
-      final t = HibikiSyncServer.generateToken();
+      final t = FushiSyncServer.generateToken();
       expect(t.length, greaterThanOrEqualTo(40));
       final decoded = base64Url.decode(base64Url.normalize(t));
       expect(decoded.length, 32); // 256 bits
@@ -228,7 +228,7 @@ void main() {
 
     test('remote dictionary lookup requires auth and returns popup payload',
         () async {
-      final HibikiSyncServer lookupServer = HibikiSyncServer(
+      final FushiSyncServer lookupServer = FushiSyncServer(
         syncDataDir: tempDir.path,
         port: 0,
         token: token,
@@ -278,7 +278,7 @@ void main() {
 
     test('remote audio lookup returns a naked-player URL guarded by opaque id',
         () async {
-      final HibikiSyncServer lookupServer = HibikiSyncServer(
+      final FushiSyncServer lookupServer = FushiSyncServer(
         syncDataDir: tempDir.path,
         port: 0,
         token: token,
@@ -346,7 +346,7 @@ void main() {
 
     test('remote audio file id expires before naked playback', () async {
       DateTime now = DateTime(2026, 1, 1, 12);
-      final HibikiSyncServer lookupServer = HibikiSyncServer(
+      final FushiSyncServer lookupServer = FushiSyncServer(
         syncDataDir: tempDir.path,
         port: 0,
         token: token,
@@ -386,15 +386,15 @@ void main() {
     });
   });
 
-  group('HibikiSyncServer.generateToken', () {
+  group('FushiSyncServer.generateToken', () {
     test('produces unique tokens', () {
-      final tokens = List.generate(10, (_) => HibikiSyncServer.generateToken());
+      final tokens = List.generate(10, (_) => FushiSyncServer.generateToken());
       expect(tokens.toSet().length, 10);
     });
   });
 }
 
-class _FakeRemoteLookupService implements HibikiRemoteLookupService {
+class _FakeRemoteLookupService implements FushiRemoteLookupService {
   @override
   Future<DictionarySearchResult?> searchDictionary({
     required String term,

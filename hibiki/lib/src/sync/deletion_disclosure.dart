@@ -41,7 +41,7 @@ DeletionDisclosure buildDeletionDisclosure({
   switch (target) {
     case DeletionDisclosureTarget.shelfBook:
       // 真实删除集合见 ReaderHibikiSource.deleteBook：
-      //   1) HibikiDatabase.deleteEpubBook 事务删阅读进度/书签/字幕 cue/有声书行/
+      //   1) FushiDatabase.deleteEpubBook 事务删阅读进度/书签/字幕 cue/有声书行/
       //      书架行/标签映射；
       //   2) AudiobookStorage.deletePersistDir(bookKey) 与 (srt.uid) 递归删
       //      `<documents>/audiobooks/<hash>`；
@@ -89,7 +89,7 @@ class DeleteScopeUnavailableNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -119,7 +119,7 @@ class DeletionDisclosureView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
 
     Widget section({

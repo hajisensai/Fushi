@@ -5,21 +5,21 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 import '../pages/reader_history_source_corpus.dart';
 
-/// 合并守卫：MD3 对话框壳（HibikiDialogFrame / HibikiModalSheetFrame / 设计令牌）
+/// 合并守卫：MD3 对话框壳（FushiDialogFrame / FushiModalSheetFrame / 设计令牌）
 /// 一致性静态守卫。原来每个对话框各占一个 *_md3_static_test.dart 文件，断言同形但
 /// 各自钉死本文件差异化的 inline-state spacing / insetPadding / EdgeInsets 切片标记。
 ///
 /// 【B 类要求型锚点整改，2026-08-01】本文件原来 43 条断言全部是
 /// `expect(rawSource, contains('实现写法字面量'))`，四类塌陷同时存在：
 ///
-/// 1. **零词法防护**：读的是原始源码。把 `HibikiDialogFrame(` 写进任意一条注释，
+/// 1. **零词法防护**：读的是原始源码。把 `FushiDialogFrame(` 写进任意一条注释，
 ///    整组要求型断言当场变绿——要求型锚点最典型的假绿。现在一律先过
 ///    [maskCommentsAndStrings]（本文件锚点全是代码标识符，没有一条需要读串内容）。
-/// 2. **锚点即写法**：`'HibikiDialogFrame('` 漏命名构造器形态、又被
-///    `XxxHibikiDialogFrame(` 假命中；`'HibikiDesignTokens.of(context)'` 把**局部
+/// 2. **锚点即写法**：`'FushiDialogFrame('` 漏命名构造器形态、又被
+///    `XxxHibikiDialogFrame(` 假命中；`'FushiDesignTokens.of(context)'` 把**局部
 ///    变量名** `context` 写进了契约；`'return IconButton(' / 'child: IconButton(' /
 ///    'trailing: IconButton(' / 'suffixIcon: IconButton('` 四条前缀只是为了绕开
-///    `HibikiIconButton(` 含子串 `IconButton(`，换个调用位置就整条漏。全部换成带
+///    `FushiIconButton(` 含子串 `IconButton(`，换个调用位置就整条漏。全部换成带
 ///    标识符边界的 [containsIdentifierCall]，四条前缀合并成一条「不得裸用
 ///    IconButton（含 `IconButton.filledTonal(`）」。
 /// 3. **间距契约钉死拼写**：`contains('insetPadding: EdgeInsets.symmetric(')` +
@@ -46,7 +46,7 @@ void main() {
       final String pageCode = methodBody(code, 'class _AnkiSettingsBodyState');
 
       expect(
-        containsIdentifierCall(pageCode, 'HibikiDesignTokens'),
+        containsIdentifierCall(pageCode, 'FushiDesignTokens'),
         isTrue,
         reason: 'Anki 设置页正文的尺寸必须取自设计令牌',
       );
@@ -164,9 +164,9 @@ void main() {
 
       _expectMd3DialogChrome(code, '媒体来源选择对话框', requireTokens: false);
       expect(
-        containsIdentifierCall(code, 'HibikiListItem'),
+        containsIdentifierCall(code, 'FushiListItem'),
         isTrue,
-        reason: '媒体来源选择对话框的行必须用共享 HibikiListItem',
+        reason: '媒体来源选择对话框的行必须用共享 FushiListItem',
       );
       _expectNoLegacySpacingFacade(code, '媒体来源选择对话框');
     });
@@ -180,9 +180,9 @@ void main() {
 
       _expectMd3DialogChrome(code, '例句对话框');
       expect(
-        containsIdentifierCall(code, 'HibikiCard'),
+        containsIdentifierCall(code, 'FushiCard'),
         isTrue,
-        reason: '例句卡片必须用共享 HibikiCard',
+        reason: '例句卡片必须用共享 FushiCard',
       );
       _expectNoLegacySpacingFacade(code, '例句对话框');
       // 裸 Container / GestureDetector 是「自己糊一套卡片与点击态」的形态；
@@ -224,7 +224,7 @@ void main() {
       expect(
         actionCode.contains('VisualDensity.compact'),
         isFalse,
-        reason: 'Profile 操作按钮的密度由共享 HibikiIconButton 决定',
+        reason: 'Profile 操作按钮的密度由共享 FushiIconButton 决定',
       );
     });
   });
@@ -249,9 +249,9 @@ void main() {
 
       _expectMd3DialogChrome(code, '分词对话框', requireTokens: false);
       expect(
-        containsIdentifierCall(code, 'HibikiSelectableChip'),
+        containsIdentifierCall(code, 'FushiSelectableChip'),
         isTrue,
-        reason: '分词对话框的词块必须用共享 HibikiSelectableChip',
+        reason: '分词对话框的词块必须用共享 FushiSelectableChip',
       );
       _expectNoLegacySpacingFacade(code, '分词对话框');
       expect(
@@ -277,7 +277,7 @@ void main() {
 /// 读源码并把**注释和字符串内容**一起掩成等长空白。
 ///
 /// 本文件的锚点全是代码标识符，没有一条需要读字符串内容，所以掩得越干净越好：
-/// 注释里的 `HibikiDialogFrame(`、串里的 `'adaptiveAlertDialog('` 都不该算数。
+/// 注释里的 `FushiDialogFrame(`、串里的 `'adaptiveAlertDialog('` 都不该算数。
 String _readCode(String path) =>
     maskCommentsAndStrings(File(path).readAsStringSync());
 
@@ -327,12 +327,12 @@ void _expectMd3DialogChrome(
   bool requireTokens = true,
 }) {
   expect(
-    containsIdentifierCall(code, 'HibikiDialogFrame'),
+    containsIdentifierCall(code, 'FushiDialogFrame'),
     isTrue,
     reason: '$label 必须用共享 MD3 对话框壳',
   );
   expect(
-    containsIdentifierCall(code, 'HibikiModalSheetFrame'),
+    containsIdentifierCall(code, 'FushiModalSheetFrame'),
     isTrue,
     reason: '$label 必须用共享 MD3 底部弹层壳',
   );
@@ -343,7 +343,7 @@ void _expectMd3DialogChrome(
   );
   if (requireTokens) {
     expect(
-      containsIdentifierCall(code, 'HibikiDesignTokens'),
+      containsIdentifierCall(code, 'FushiDesignTokens'),
       isTrue,
       reason: '$label 的尺寸必须取自设计令牌（`.of(context)` 的变量名不入契约）',
     );
@@ -376,21 +376,21 @@ void _expectNoLegacySpacingFacade(String code, String label) {
   expect(
     containsIdentifierCall(code, 'Spacing'),
     isFalse,
-    reason: '$label 不得回到旧 Spacing 门面，间距统一走 HibikiDesignTokens',
+    reason: '$label 不得回到旧 Spacing 门面，间距统一走 FushiDesignTokens',
   );
 }
 
-/// 图标按钮必须走共享 [HibikiIconButton]。
+/// 图标按钮必须走共享 [FushiIconButton]。
 ///
 /// 旧守卫写成 `isNot(contains('return IconButton('))` 等四条**调用位置前缀**，
-/// 唯一目的是绕开「`HibikiIconButton(` 含子串 `IconButton(`」；代价是换个调用位置
+/// 唯一目的是绕开「`FushiIconButton(` 含子串 `IconButton(`」；代价是换个调用位置
 /// （`actions: <Widget>[IconButton(...)]`）就整条漏，也匹配不到
 /// `IconButton.filledTonal(`。带标识符边界后一条顶四条，且严格更强。
 void _expectSharedIconButtons(String code, String label) {
   expect(
-    containsIdentifierCall(code, 'HibikiIconButton'),
+    containsIdentifierCall(code, 'FushiIconButton'),
     isTrue,
-    reason: '$label 必须用共享 HibikiIconButton',
+    reason: '$label 必须用共享 FushiIconButton',
   );
   expect(
     containsIdentifierCall(code, 'IconButton'),

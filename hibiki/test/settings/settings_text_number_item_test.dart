@@ -92,7 +92,7 @@ void main() {
   }
 
   Widget harness({required bool cupertino}) {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+    final FushiDatabase db = FushiDatabase.forTesting(
       DatabaseConnection(NativeDatabase.memory()),
     );
     final ThemeNotifier themeNotifier =
@@ -118,7 +118,7 @@ void main() {
           useMaterial3: true,
           platform: cupertino ? TargetPlatform.iOS : TargetPlatform.android,
           extensions: <ThemeExtension<dynamic>>[
-            HibikiDesignSystemTheme(themeNotifier.designSystemTheme),
+            FushiDesignSystemTheme(themeNotifier.designSystemTheme),
           ],
         ),
         home: Consumer(

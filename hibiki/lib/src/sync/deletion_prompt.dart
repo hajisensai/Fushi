@@ -21,7 +21,7 @@ Future<DeleteScope?> showDeleteScopeConfirm(
   required String title,
   required String message,
   DeletionDisclosure? disclosure,
-  HibikiDatabase? db,
+  FushiDatabase? db,
 }) async {
   final bool canSyncEverywhere =
       db == null || await hasDeletionPropagationChannel(SyncRepository(db));
@@ -61,11 +61,11 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiDialogFrame(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.74,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: widget.title,
         leadingIcon: Icons.delete_outline,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -176,12 +176,12 @@ class _DeletionPromptDialogState extends State<DeletionPromptDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiDialogFrame(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiDialogFrame(
       maxWidth: 460,
       maxHeightFactor: 0.8,
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.delete_prompt_title,
         leadingIcon: Icons.delete_sweep_outlined,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -304,7 +304,7 @@ class DeletionPromptPrompter {
   /// 静默这批候选、不推进基线（下次会话再提醒）。
   Future<void> present({
     required GlobalKey<NavigatorState> navigatorKey,
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required List<DeletionCandidateView> views,
     required int highWaterMs,
     required ApplyDeletions applyDeletions,

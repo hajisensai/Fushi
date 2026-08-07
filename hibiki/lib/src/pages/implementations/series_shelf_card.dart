@@ -41,11 +41,11 @@ class SeriesShelfCard extends StatelessWidget {
   final VoidCallback onTap;
   final double slotAspectRatio;
 
-  /// Gamepad/keyboard focus id. When non-null and a [HibikiFocusRoot] is present
+  /// Gamepad/keyboard focus id. When non-null and a [FushiFocusRoot] is present
   /// the card becomes a directional-focus target that opens on Enter / gamepad A,
   /// mirroring the loose book cards ([_bookCardShell]). Without it (or outside a
   /// focus root) the card stays a plain, tap-only InkWell as before.
-  final HibikiFocusId? focusId;
+  final FushiFocusId? focusId;
 
   /// Optional selection wiring (so a series card is selectable in batch mode
   /// just like a normal card). When [selectionMode] is on, tap toggles
@@ -62,7 +62,7 @@ class SeriesShelfCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
     final double overlayInset = tokens.spacing.gap * 0.75;
     final VoidCallback effectiveTap =
@@ -88,7 +88,7 @@ class SeriesShelfCard extends StatelessWidget {
                     fit: StackFit.expand,
                     children: <Widget>[
                       Positioned.fill(
-                        child: HibikiCard(
+                        child: FushiCard(
                           padding: EdgeInsets.zero,
                           margin: EdgeInsets.zero,
                           child: ClipRRect(
@@ -127,11 +127,11 @@ class SeriesShelfCard extends StatelessWidget {
 
     // Loose book cards are gamepad/keyboard focusable via _bookCardShell; a
     // folded series card must be too, else a shelf with series can't be entered
-    // by D-pad. Only wrap when a focusId is supplied AND a HibikiFocusRoot exists
+    // by D-pad. Only wrap when a focusId is supplied AND a FushiFocusRoot exists
     // (plain tests / no-controller contexts keep the bare InkWell). Enter /
     // gamepad A activate the same tap as a mouse; in selection mode that tap
     // toggles selection (effectiveTap), matching the InkWell.
-    if (focusId != null && HibikiFocusRoot.maybeControllerOf(context) != null) {
+    if (focusId != null && FushiFocusRoot.maybeControllerOf(context) != null) {
       return Actions(
         actions: <Type, Action<Intent>>{
           ActivateIntent: CallbackAction<ActivateIntent>(
@@ -141,13 +141,13 @@ class SeriesShelfCard extends StatelessWidget {
             },
           ),
         },
-        child: HibikiFocusTarget(id: focusId!, child: card),
+        child: FushiFocusTarget(id: focusId!, child: card),
       );
     }
     return card;
   }
 
-  Widget _countBadge(ThemeData theme, HibikiDesignTokens tokens) {
+  Widget _countBadge(ThemeData theme, FushiDesignTokens tokens) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
@@ -198,7 +198,7 @@ class SeriesFolderCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 单张成员：整封面填满（与散书卡视觉一致，never break 单成员合集）。
     if (covers.length <= 1) {
       return covers.isEmpty ? const SizedBox.shrink() : covers.first;

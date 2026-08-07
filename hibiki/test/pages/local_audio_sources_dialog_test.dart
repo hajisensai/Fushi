@@ -10,11 +10,11 @@ void main() {
   Widget buildApp(Widget home) =>
       TranslationProvider(child: MaterialApp(home: Scaffold(body: home)));
 
-  // 把对话框放进指定缩放的 HibikiAppUiScale 下（验证 BUG-029 的拖拽门控）。
+  // 把对话框放进指定缩放的 FushiAppUiScale 下（验证 BUG-029 的拖拽门控）。
   Widget buildScaledApp(Widget home, double scale) => TranslationProvider(
         child: MaterialApp(
           home: Scaffold(
-            body: HibikiAppUiScale(scale: scale, child: home),
+            body: FushiAppUiScale(scale: scale, child: home),
           ),
         ),
       );
@@ -105,7 +105,7 @@ void main() {
   });
 
   // BUG-029：缩放态下 SDK ReorderableListView 的 Overlay 拖拽代理会飞出屏幕；改用自实现的
-  // HibikiReorderableColumn（局部坐标拖拽），缩放下精确跟手、零偏移、视觉一致。
+  // FushiReorderableColumn（局部坐标拖拽），缩放下精确跟手、零偏移、视觉一致。
   LocalAudioSourcesDialog threeSourceDialog(
           void Function(List<LocalAudioSourcePref>) onApply) =>
       LocalAudioSourcesDialog(
@@ -115,11 +115,11 @@ void main() {
         onApply: (List<LocalAudioSourcePref> p) async => onApply(p),
       );
 
-  testWidgets('uses HibikiReorderableColumn (not SDK ReorderableListView)',
+  testWidgets('uses FushiReorderableColumn (not SDK ReorderableListView)',
       (WidgetTester tester) async {
     await tester.pumpWidget(buildApp(threeSourceDialog((_) {})));
     await tester.pumpAndSettle();
-    expect(find.byType(HibikiReorderableColumn), findsOneWidget);
+    expect(find.byType(FushiReorderableColumn), findsOneWidget);
     expect(find.byType(ReorderableListView), findsNothing);
   });
 
@@ -157,7 +157,7 @@ void main() {
   });
 
   // BUG-445：行数多到超过对话框受限高度时，列表必须可滚动且不 RenderFlex 溢出
-  // （此前 HibikiReorderableColumn 自身不滚动、直接塞进 maxHeight 受限的 ConstrainedBox
+  // （此前 FushiReorderableColumn 自身不滚动、直接塞进 maxHeight 受限的 ConstrainedBox
   // → 出框 + 无法滚动看到下面的行）。修复后外层包了 SingleChildScrollView。
   testWidgets(
       'many sources scroll without overflow inside the constrained dialog '
@@ -188,12 +188,12 @@ void main() {
 
     // 2) 列表确实落在一个可滚动视口里（出框无法滚动的根因就是缺这一层）。
     final Finder scrollable = find.descendant(
-      of: find.byType(HibikiReorderableColumn),
+      of: find.byType(FushiReorderableColumn),
       matching: find.byType(Scrollable),
     );
-    // HibikiReorderableColumn 自身不含 Scrollable，故这里命中的是包住它的外层视口。
+    // FushiReorderableColumn 自身不含 Scrollable，故这里命中的是包住它的外层视口。
     final Finder outerScrollable = find.ancestor(
-      of: find.byType(HibikiReorderableColumn),
+      of: find.byType(FushiReorderableColumn),
       matching: find.byType(Scrollable),
     );
     expect(scrollable, findsNothing); // 组件本体仍不带滚动（向后兼容）

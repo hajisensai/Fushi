@@ -41,7 +41,7 @@ void main() {
 
   group('windowSizeClassReal (BUG-401)', () {
     // Breakpoints must classify on the REAL physical viewport width, not the
-    // virtually-inflated logical width handed down inside HibikiAppUiScale.
+    // virtually-inflated logical width handed down inside FushiAppUiScale.
     // realW = logicalWidth * appUiScale.
     test('scale=1 is identity across all bands (regression guard)', () {
       expect(windowSizeClassReal(599, 1.0), WindowSizeClass.compact);
@@ -194,7 +194,7 @@ void main() {
       // 共享侧向留白归零，是因为媒体墙**卡片自带内边距**。但这两页的内容体
       // （MediaSourcesView / MokuroMoeCatalogView）是裸的文字行与搜索框 + 封面网格，
       // 自身零内边距——共享留白一撤就直接贴窗口边 0px。所以它们必须在页面壳里自己
-      // 补，量级与其余媒体墙页一致（这里取 spacing.page，与同页 HibikiPageHeader 的
+      // 补，量级与其余媒体墙页一致（这里取 spacing.page，与同页 FushiPageHeader 的
       // 横向内边距同源，标题与正文左缘对齐）。注释先剥掉，防止说明文字假绿。
       for (final ({String path, String label}) page
           in const <({String path, String label})>[

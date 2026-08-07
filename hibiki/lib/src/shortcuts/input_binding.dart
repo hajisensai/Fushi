@@ -175,7 +175,7 @@ class InputBinding {
   // TODO-847 / BUG: Windows 微软 IME 激活时，Flutter 引擎把 KeyDownEvent 的
   // logicalKey 改写成 LogicalKeyboardKey.process（输入法占用），导致 [==] 精确相等
   // 永远失败、全表面快捷键失效。physicalKey（USB HID 扫描码）不受 IME 改写影响，
-  // 故 [HibikiShortcutRegistry.resolveKeyboard] 仅在 key==process 时启用 physical
+  // 故 [FushiShortcutRegistry.resolveKeyboard] 仅在 key==process 时启用 physical
   // 回退。这里把每个 binding 的逻辑键映射到对应物理键，供回退分支按物理键比对。
   //
   // 覆盖与 [_knownKeys] 相同的非 game* 键集；缺键会让该键在 IME 下仍然失效，由
@@ -291,7 +291,7 @@ class InputBinding {
   ///
   /// Windows 微软 IME 激活时引擎会把按下字母的 [KeyEvent.logicalKey] 改写成
   /// [LogicalKeyboardKey.process]，而 USB-HID 的 [KeyEvent.physicalKey] 不受影响。
-  /// 运行时解析（`HibikiShortcutRegistry.resolveKeyboard`）早就有这条物理键回退，
+  /// 运行时解析（`FushiShortcutRegistry.resolveKeyboard`）早就有这条物理键回退，
   /// **录入侧却直接存 `event.logicalKey`**：于是 IME 下按物理 Z 存进去的是
   /// `Process`（显示成一个没人认识的键，且运行时永远匹配不上），用户看到的就是
   /// 「录不进去 / 录完没反应」。捕获侧与运行时必须共用同一条契约。

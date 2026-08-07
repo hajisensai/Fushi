@@ -25,8 +25,8 @@ import '../helpers/source_guard.dart';
 ///
 /// 本文件锁两件事：绑定表序列化的**值**，以及三条路径「各归各」的**接线**。
 void main() {
-  HibikiShortcutRegistry registryFor(TargetPlatform platform) =>
-      HibikiShortcutRegistry()..loadDefaults(platform);
+  FushiShortcutRegistry registryFor(TargetPlatform platform) =>
+      FushiShortcutRegistry()..loadDefaults(platform);
 
   Map<String, dynamic> decode(String json) =>
       jsonDecode(json) as Map<String, dynamic>;
@@ -76,7 +76,7 @@ void main() {
     });
 
     test('用户改键后下发的是改后的键', () {
-      final HibikiShortcutRegistry registry =
+      final FushiShortcutRegistry registry =
           registryFor(TargetPlatform.windows);
       registry.updateBinding(
         ShortcutAction.popupMineEntry,
@@ -100,7 +100,7 @@ void main() {
     });
 
     test('用户清空绑定 → 下发空表（而不是回退默认，否则「清空」等于没清）', () {
-      final HibikiShortcutRegistry registry =
+      final FushiShortcutRegistry registry =
           registryFor(TargetPlatform.windows);
       registry.updateBinding(
         ShortcutAction.popupMineEntry,
@@ -115,7 +115,7 @@ void main() {
     test('注册表未装载 → 回落平台默认（弹窗进程的精简初始化早于 loadShortcutRegistry）', () {
       // 裸 registry（isLoaded=false）若照读空绑定，Ctrl+Enter 会在弹窗进程里静默失效。
       final Map<String, dynamic> cfg = decode(popupKeyBindingsJson(
-        HibikiShortcutRegistry(),
+        FushiShortcutRegistry(),
         TargetPlatform.windows,
       ));
       expect((cfg['mine'] as List<dynamic>).single, <String, Object>{

@@ -174,7 +174,7 @@ extension _VideoSidePanel on _VideoHibikiPageState {
       child: _buildVideoSidePanelChild(kind, controller),
     );
     if (kind != _VideoSidePanelKind.settings) return panel;
-    return HibikiAppUiScale(
+    return FushiAppUiScale(
       scale: _videoUiScale,
       child: panel,
     );

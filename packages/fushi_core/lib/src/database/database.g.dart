@@ -13316,7 +13316,7 @@ class MediaCollectionRow extends DataClass
   final int createdAt;
 
   /// 合集内手动序（成员 sortIndex）最后一次人为改动的毫秒戳（schema v40，多端库
-  /// 联合视图 §2.3）。仅 [HibikiDatabase.reorderCollectionItems]（用户拖拽落盘）
+  /// 联合视图 §2.3）。仅 [FushiDatabase.reorderCollectionItems]（用户拖拽落盘）
   /// bump 为 now；同步应用对端顺序时**镜像对端时间戳而非 now**（否则同步会伪装成
   /// 更新的人为改序，两端时间戳互相追赶）。跨端手动序整合集 LWW 的比较键：新者
   /// 整表覆盖成员 sortIndex。默认 0 = 从未手动排序，任何真实改序都能盖过它。
@@ -14326,12 +14326,12 @@ class CollectionMemberTombstonesCompanion
   }
 }
 
-class $HibikiPairedPeersTable extends HibikiPairedPeers
-    with TableInfo<$HibikiPairedPeersTable, HibikiPairedPeerRow> {
+class $FushiPairedPeersTable extends FushiPairedPeers
+    with TableInfo<$FushiPairedPeersTable, FushiPairedPeerRow> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
-  $HibikiPairedPeersTable(this.attachedDatabase, [this._alias]);
+  $FushiPairedPeersTable(this.attachedDatabase, [this._alias]);
   static const VerificationMeta _idMeta = const VerificationMeta('id');
   @override
   late final GeneratedColumn<int> id = GeneratedColumn<int>(
@@ -14381,7 +14381,7 @@ class $HibikiPairedPeersTable extends HibikiPairedPeers
   static const String $name = 'hibiki_paired_peers';
   @override
   VerificationContext validateIntegrity(
-      Insertable<HibikiPairedPeerRow> instance,
+      Insertable<FushiPairedPeerRow> instance,
       {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
@@ -14426,9 +14426,9 @@ class $HibikiPairedPeersTable extends HibikiPairedPeers
   @override
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
-  HibikiPairedPeerRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+  FushiPairedPeerRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return HibikiPairedPeerRow(
+    return FushiPairedPeerRow(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
       peerId: attachedDatabase.typeMapping
@@ -14445,13 +14445,13 @@ class $HibikiPairedPeersTable extends HibikiPairedPeers
   }
 
   @override
-  $HibikiPairedPeersTable createAlias(String alias) {
-    return $HibikiPairedPeersTable(attachedDatabase, alias);
+  $FushiPairedPeersTable createAlias(String alias) {
+    return $FushiPairedPeersTable(attachedDatabase, alias);
   }
 }
 
-class HibikiPairedPeerRow extends DataClass
-    implements Insertable<HibikiPairedPeerRow> {
+class FushiPairedPeerRow extends DataClass
+    implements Insertable<FushiPairedPeerRow> {
   final int id;
 
   /// 对端设备的稳定身份（配对握手时对端上报的 device/installation id）。
@@ -14471,7 +14471,7 @@ class HibikiPairedPeerRow extends DataClass
 
   /// 对端上次访问时的来源 IP（诊断/展示用，可为空）。
   final String? lastSeenIp;
-  const HibikiPairedPeerRow(
+  const FushiPairedPeerRow(
       {required this.id,
       required this.peerId,
       this.deviceName,
@@ -14494,8 +14494,8 @@ class HibikiPairedPeerRow extends DataClass
     return map;
   }
 
-  HibikiPairedPeersCompanion toCompanion(bool nullToAbsent) {
-    return HibikiPairedPeersCompanion(
+  FushiPairedPeersCompanion toCompanion(bool nullToAbsent) {
+    return FushiPairedPeersCompanion(
       id: Value(id),
       peerId: Value(peerId),
       deviceName: deviceName == null && nullToAbsent
@@ -14509,10 +14509,10 @@ class HibikiPairedPeerRow extends DataClass
     );
   }
 
-  factory HibikiPairedPeerRow.fromJson(Map<String, dynamic> json,
+  factory FushiPairedPeerRow.fromJson(Map<String, dynamic> json,
       {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return HibikiPairedPeerRow(
+    return FushiPairedPeerRow(
       id: serializer.fromJson<int>(json['id']),
       peerId: serializer.fromJson<String>(json['peerId']),
       deviceName: serializer.fromJson<String?>(json['deviceName']),
@@ -14534,14 +14534,14 @@ class HibikiPairedPeerRow extends DataClass
     };
   }
 
-  HibikiPairedPeerRow copyWith(
+  FushiPairedPeerRow copyWith(
           {int? id,
           String? peerId,
           Value<String?> deviceName = const Value.absent(),
           String? token,
           int? pairedAtMs,
           Value<String?> lastSeenIp = const Value.absent()}) =>
-      HibikiPairedPeerRow(
+      FushiPairedPeerRow(
         id: id ?? this.id,
         peerId: peerId ?? this.peerId,
         deviceName: deviceName.present ? deviceName.value : this.deviceName,
@@ -14549,8 +14549,8 @@ class HibikiPairedPeerRow extends DataClass
         pairedAtMs: pairedAtMs ?? this.pairedAtMs,
         lastSeenIp: lastSeenIp.present ? lastSeenIp.value : this.lastSeenIp,
       );
-  HibikiPairedPeerRow copyWithCompanion(HibikiPairedPeersCompanion data) {
-    return HibikiPairedPeerRow(
+  FushiPairedPeerRow copyWithCompanion(FushiPairedPeersCompanion data) {
+    return FushiPairedPeerRow(
       id: data.id.present ? data.id.value : this.id,
       peerId: data.peerId.present ? data.peerId.value : this.peerId,
       deviceName:
@@ -14565,7 +14565,7 @@ class HibikiPairedPeerRow extends DataClass
 
   @override
   String toString() {
-    return (StringBuffer('HibikiPairedPeerRow(')
+    return (StringBuffer('FushiPairedPeerRow(')
           ..write('id: $id, ')
           ..write('peerId: $peerId, ')
           ..write('deviceName: $deviceName, ')
@@ -14582,7 +14582,7 @@ class HibikiPairedPeerRow extends DataClass
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is HibikiPairedPeerRow &&
+      (other is FushiPairedPeerRow &&
           other.id == this.id &&
           other.peerId == this.peerId &&
           other.deviceName == this.deviceName &&
@@ -14591,14 +14591,14 @@ class HibikiPairedPeerRow extends DataClass
           other.lastSeenIp == this.lastSeenIp);
 }
 
-class HibikiPairedPeersCompanion extends UpdateCompanion<HibikiPairedPeerRow> {
+class FushiPairedPeersCompanion extends UpdateCompanion<FushiPairedPeerRow> {
   final Value<int> id;
   final Value<String> peerId;
   final Value<String?> deviceName;
   final Value<String> token;
   final Value<int> pairedAtMs;
   final Value<String?> lastSeenIp;
-  const HibikiPairedPeersCompanion({
+  const FushiPairedPeersCompanion({
     this.id = const Value.absent(),
     this.peerId = const Value.absent(),
     this.deviceName = const Value.absent(),
@@ -14606,7 +14606,7 @@ class HibikiPairedPeersCompanion extends UpdateCompanion<HibikiPairedPeerRow> {
     this.pairedAtMs = const Value.absent(),
     this.lastSeenIp = const Value.absent(),
   });
-  HibikiPairedPeersCompanion.insert({
+  FushiPairedPeersCompanion.insert({
     this.id = const Value.absent(),
     required String peerId,
     this.deviceName = const Value.absent(),
@@ -14616,7 +14616,7 @@ class HibikiPairedPeersCompanion extends UpdateCompanion<HibikiPairedPeerRow> {
   })  : peerId = Value(peerId),
         token = Value(token),
         pairedAtMs = Value(pairedAtMs);
-  static Insertable<HibikiPairedPeerRow> custom({
+  static Insertable<FushiPairedPeerRow> custom({
     Expression<int>? id,
     Expression<String>? peerId,
     Expression<String>? deviceName,
@@ -14634,14 +14634,14 @@ class HibikiPairedPeersCompanion extends UpdateCompanion<HibikiPairedPeerRow> {
     });
   }
 
-  HibikiPairedPeersCompanion copyWith(
+  FushiPairedPeersCompanion copyWith(
       {Value<int>? id,
       Value<String>? peerId,
       Value<String?>? deviceName,
       Value<String>? token,
       Value<int>? pairedAtMs,
       Value<String?>? lastSeenIp}) {
-    return HibikiPairedPeersCompanion(
+    return FushiPairedPeersCompanion(
       id: id ?? this.id,
       peerId: peerId ?? this.peerId,
       deviceName: deviceName ?? this.deviceName,
@@ -14677,7 +14677,7 @@ class HibikiPairedPeersCompanion extends UpdateCompanion<HibikiPairedPeerRow> {
 
   @override
   String toString() {
-    return (StringBuffer('HibikiPairedPeersCompanion(')
+    return (StringBuffer('FushiPairedPeersCompanion(')
           ..write('id: $id, ')
           ..write('peerId: $peerId, ')
           ..write('deviceName: $deviceName, ')
@@ -25234,9 +25234,9 @@ class MediaImagesCompanion extends UpdateCompanion<MediaImageRow> {
   }
 }
 
-abstract class _$HibikiDatabase extends GeneratedDatabase {
-  _$HibikiDatabase(QueryExecutor e) : super(e);
-  $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
+abstract class _$FushiDatabase extends GeneratedDatabase {
+  _$FushiDatabase(QueryExecutor e) : super(e);
+  $FushiDatabaseManager get managers => $FushiDatabaseManager(this);
   late final $MediaItemsTable mediaItems = $MediaItemsTable(this);
   late final $AnkiMappingsTable ankiMappings = $AnkiMappingsTable(this);
   late final $SearchHistoryItemsTable searchHistoryItems =
@@ -25289,8 +25289,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
       $MediaCollectionItemsTable(this);
   late final $CollectionMemberTombstonesTable collectionMemberTombstones =
       $CollectionMemberTombstonesTable(this);
-  late final $HibikiPairedPeersTable hibikiPairedPeers =
-      $HibikiPairedPeersTable(this);
+  late final $FushiPairedPeersTable hibikiPairedPeers =
+      $FushiPairedPeersTable(this);
   late final $BookTombstonesTable bookTombstones = $BookTombstonesTable(this);
   late final $LookupMiningCountersTable lookupMiningCounters =
       $LookupMiningCountersTable(this);
@@ -25648,7 +25648,7 @@ typedef $$MediaItemsTableUpdateCompanionBuilder = MediaItemsCompanion Function({
 });
 
 class $$MediaItemsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $MediaItemsTable> {
+    extends Composer<_$FushiDatabase, $MediaItemsTable> {
   $$MediaItemsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -25720,7 +25720,7 @@ class $$MediaItemsTableFilterComposer
 }
 
 class $$MediaItemsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $MediaItemsTable> {
+    extends Composer<_$FushiDatabase, $MediaItemsTable> {
   $$MediaItemsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -25792,7 +25792,7 @@ class $$MediaItemsTableOrderingComposer
 }
 
 class $$MediaItemsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $MediaItemsTable> {
+    extends Composer<_$FushiDatabase, $MediaItemsTable> {
   $$MediaItemsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -25859,7 +25859,7 @@ class $$MediaItemsTableAnnotationComposer
 }
 
 class $$MediaItemsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MediaItemsTable,
     MediaItemRow,
     $$MediaItemsTableFilterComposer,
@@ -25869,11 +25869,11 @@ class $$MediaItemsTableTableManager extends RootTableManager<
     $$MediaItemsTableUpdateCompanionBuilder,
     (
       MediaItemRow,
-      BaseReferences<_$HibikiDatabase, $MediaItemsTable, MediaItemRow>
+      BaseReferences<_$FushiDatabase, $MediaItemsTable, MediaItemRow>
     ),
     MediaItemRow,
     PrefetchHooks Function()> {
-  $$MediaItemsTableTableManager(_$HibikiDatabase db, $MediaItemsTable table)
+  $$MediaItemsTableTableManager(_$FushiDatabase db, $MediaItemsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -25975,7 +25975,7 @@ class $$MediaItemsTableTableManager extends RootTableManager<
 }
 
 typedef $$MediaItemsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MediaItemsTable,
     MediaItemRow,
     $$MediaItemsTableFilterComposer,
@@ -25985,7 +25985,7 @@ typedef $$MediaItemsTableProcessedTableManager = ProcessedTableManager<
     $$MediaItemsTableUpdateCompanionBuilder,
     (
       MediaItemRow,
-      BaseReferences<_$HibikiDatabase, $MediaItemsTable, MediaItemRow>
+      BaseReferences<_$FushiDatabase, $MediaItemsTable, MediaItemRow>
     ),
     MediaItemRow,
     PrefetchHooks Function()>;
@@ -26023,7 +26023,7 @@ typedef $$AnkiMappingsTableUpdateCompanionBuilder = AnkiMappingsCompanion
 });
 
 class $$AnkiMappingsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $AnkiMappingsTable> {
+    extends Composer<_$FushiDatabase, $AnkiMappingsTable> {
   $$AnkiMappingsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -26078,7 +26078,7 @@ class $$AnkiMappingsTableFilterComposer
 }
 
 class $$AnkiMappingsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $AnkiMappingsTable> {
+    extends Composer<_$FushiDatabase, $AnkiMappingsTable> {
   $$AnkiMappingsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -26134,7 +26134,7 @@ class $$AnkiMappingsTableOrderingComposer
 }
 
 class $$AnkiMappingsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $AnkiMappingsTable> {
+    extends Composer<_$FushiDatabase, $AnkiMappingsTable> {
   $$AnkiMappingsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -26185,7 +26185,7 @@ class $$AnkiMappingsTableAnnotationComposer
 }
 
 class $$AnkiMappingsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $AnkiMappingsTable,
     AnkiMappingRow,
     $$AnkiMappingsTableFilterComposer,
@@ -26195,11 +26195,11 @@ class $$AnkiMappingsTableTableManager extends RootTableManager<
     $$AnkiMappingsTableUpdateCompanionBuilder,
     (
       AnkiMappingRow,
-      BaseReferences<_$HibikiDatabase, $AnkiMappingsTable, AnkiMappingRow>
+      BaseReferences<_$FushiDatabase, $AnkiMappingsTable, AnkiMappingRow>
     ),
     AnkiMappingRow,
     PrefetchHooks Function()> {
-  $$AnkiMappingsTableTableManager(_$HibikiDatabase db, $AnkiMappingsTable table)
+  $$AnkiMappingsTableTableManager(_$FushiDatabase db, $AnkiMappingsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -26277,7 +26277,7 @@ class $$AnkiMappingsTableTableManager extends RootTableManager<
 }
 
 typedef $$AnkiMappingsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $AnkiMappingsTable,
     AnkiMappingRow,
     $$AnkiMappingsTableFilterComposer,
@@ -26287,7 +26287,7 @@ typedef $$AnkiMappingsTableProcessedTableManager = ProcessedTableManager<
     $$AnkiMappingsTableUpdateCompanionBuilder,
     (
       AnkiMappingRow,
-      BaseReferences<_$HibikiDatabase, $AnkiMappingsTable, AnkiMappingRow>
+      BaseReferences<_$FushiDatabase, $AnkiMappingsTable, AnkiMappingRow>
     ),
     AnkiMappingRow,
     PrefetchHooks Function()>;
@@ -26307,7 +26307,7 @@ typedef $$SearchHistoryItemsTableUpdateCompanionBuilder
 });
 
 class $$SearchHistoryItemsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $SearchHistoryItemsTable> {
+    extends Composer<_$FushiDatabase, $SearchHistoryItemsTable> {
   $$SearchHistoryItemsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -26329,7 +26329,7 @@ class $$SearchHistoryItemsTableFilterComposer
 }
 
 class $$SearchHistoryItemsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $SearchHistoryItemsTable> {
+    extends Composer<_$FushiDatabase, $SearchHistoryItemsTable> {
   $$SearchHistoryItemsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -26351,7 +26351,7 @@ class $$SearchHistoryItemsTableOrderingComposer
 }
 
 class $$SearchHistoryItemsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $SearchHistoryItemsTable> {
+    extends Composer<_$FushiDatabase, $SearchHistoryItemsTable> {
   $$SearchHistoryItemsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -26373,7 +26373,7 @@ class $$SearchHistoryItemsTableAnnotationComposer
 }
 
 class $$SearchHistoryItemsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $SearchHistoryItemsTable,
     SearchHistoryItemRow,
     $$SearchHistoryItemsTableFilterComposer,
@@ -26383,13 +26383,13 @@ class $$SearchHistoryItemsTableTableManager extends RootTableManager<
     $$SearchHistoryItemsTableUpdateCompanionBuilder,
     (
       SearchHistoryItemRow,
-      BaseReferences<_$HibikiDatabase, $SearchHistoryItemsTable,
+      BaseReferences<_$FushiDatabase, $SearchHistoryItemsTable,
           SearchHistoryItemRow>
     ),
     SearchHistoryItemRow,
     PrefetchHooks Function()> {
   $$SearchHistoryItemsTableTableManager(
-      _$HibikiDatabase db, $SearchHistoryItemsTable table)
+      _$FushiDatabase db, $SearchHistoryItemsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -26432,7 +26432,7 @@ class $$SearchHistoryItemsTableTableManager extends RootTableManager<
 }
 
 typedef $$SearchHistoryItemsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $SearchHistoryItemsTable,
     SearchHistoryItemRow,
     $$SearchHistoryItemsTableFilterComposer,
@@ -26442,7 +26442,7 @@ typedef $$SearchHistoryItemsTableProcessedTableManager = ProcessedTableManager<
     $$SearchHistoryItemsTableUpdateCompanionBuilder,
     (
       SearchHistoryItemRow,
-      BaseReferences<_$HibikiDatabase, $SearchHistoryItemsTable,
+      BaseReferences<_$FushiDatabase, $SearchHistoryItemsTable,
           SearchHistoryItemRow>
     ),
     SearchHistoryItemRow,
@@ -26475,7 +26475,7 @@ typedef $$AudiobooksTableUpdateCompanionBuilder = AudiobooksCompanion Function({
 });
 
 class $$AudiobooksTableFilterComposer
-    extends Composer<_$HibikiDatabase, $AudiobooksTable> {
+    extends Composer<_$FushiDatabase, $AudiobooksTable> {
   $$AudiobooksTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -26521,7 +26521,7 @@ class $$AudiobooksTableFilterComposer
 }
 
 class $$AudiobooksTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $AudiobooksTable> {
+    extends Composer<_$FushiDatabase, $AudiobooksTable> {
   $$AudiobooksTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -26571,7 +26571,7 @@ class $$AudiobooksTableOrderingComposer
 }
 
 class $$AudiobooksTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $AudiobooksTable> {
+    extends Composer<_$FushiDatabase, $AudiobooksTable> {
   $$AudiobooksTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -26614,7 +26614,7 @@ class $$AudiobooksTableAnnotationComposer
 }
 
 class $$AudiobooksTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $AudiobooksTable,
     AudiobookRow,
     $$AudiobooksTableFilterComposer,
@@ -26624,11 +26624,11 @@ class $$AudiobooksTableTableManager extends RootTableManager<
     $$AudiobooksTableUpdateCompanionBuilder,
     (
       AudiobookRow,
-      BaseReferences<_$HibikiDatabase, $AudiobooksTable, AudiobookRow>
+      BaseReferences<_$FushiDatabase, $AudiobooksTable, AudiobookRow>
     ),
     AudiobookRow,
     PrefetchHooks Function()> {
-  $$AudiobooksTableTableManager(_$HibikiDatabase db, $AudiobooksTable table)
+  $$AudiobooksTableTableManager(_$FushiDatabase db, $AudiobooksTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -26698,7 +26698,7 @@ class $$AudiobooksTableTableManager extends RootTableManager<
 }
 
 typedef $$AudiobooksTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $AudiobooksTable,
     AudiobookRow,
     $$AudiobooksTableFilterComposer,
@@ -26708,7 +26708,7 @@ typedef $$AudiobooksTableProcessedTableManager = ProcessedTableManager<
     $$AudiobooksTableUpdateCompanionBuilder,
     (
       AudiobookRow,
-      BaseReferences<_$HibikiDatabase, $AudiobooksTable, AudiobookRow>
+      BaseReferences<_$FushiDatabase, $AudiobooksTable, AudiobookRow>
     ),
     AudiobookRow,
     PrefetchHooks Function()>;
@@ -26736,7 +26736,7 @@ typedef $$AudioCuesTableUpdateCompanionBuilder = AudioCuesCompanion Function({
 });
 
 class $$AudioCuesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $AudioCuesTable> {
+    extends Composer<_$FushiDatabase, $AudioCuesTable> {
   $$AudioCuesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -26775,7 +26775,7 @@ class $$AudioCuesTableFilterComposer
 }
 
 class $$AudioCuesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $AudioCuesTable> {
+    extends Composer<_$FushiDatabase, $AudioCuesTable> {
   $$AudioCuesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -26815,7 +26815,7 @@ class $$AudioCuesTableOrderingComposer
 }
 
 class $$AudioCuesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $AudioCuesTable> {
+    extends Composer<_$FushiDatabase, $AudioCuesTable> {
   $$AudioCuesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -26852,7 +26852,7 @@ class $$AudioCuesTableAnnotationComposer
 }
 
 class $$AudioCuesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $AudioCuesTable,
     AudioCueRow,
     $$AudioCuesTableFilterComposer,
@@ -26862,11 +26862,11 @@ class $$AudioCuesTableTableManager extends RootTableManager<
     $$AudioCuesTableUpdateCompanionBuilder,
     (
       AudioCueRow,
-      BaseReferences<_$HibikiDatabase, $AudioCuesTable, AudioCueRow>
+      BaseReferences<_$FushiDatabase, $AudioCuesTable, AudioCueRow>
     ),
     AudioCueRow,
     PrefetchHooks Function()> {
-  $$AudioCuesTableTableManager(_$HibikiDatabase db, $AudioCuesTable table)
+  $$AudioCuesTableTableManager(_$FushiDatabase db, $AudioCuesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -26928,7 +26928,7 @@ class $$AudioCuesTableTableManager extends RootTableManager<
 }
 
 typedef $$AudioCuesTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $AudioCuesTable,
     AudioCueRow,
     $$AudioCuesTableFilterComposer,
@@ -26938,7 +26938,7 @@ typedef $$AudioCuesTableProcessedTableManager = ProcessedTableManager<
     $$AudioCuesTableUpdateCompanionBuilder,
     (
       AudioCueRow,
-      BaseReferences<_$HibikiDatabase, $AudioCuesTable, AudioCueRow>
+      BaseReferences<_$FushiDatabase, $AudioCuesTable, AudioCueRow>
     ),
     AudioCueRow,
     PrefetchHooks Function()>;
@@ -26968,12 +26968,12 @@ typedef $$SrtBooksTableUpdateCompanionBuilder = SrtBooksCompanion Function({
 });
 
 final class $$SrtBooksTableReferences
-    extends BaseReferences<_$HibikiDatabase, $SrtBooksTable, SrtBookRow> {
+    extends BaseReferences<_$FushiDatabase, $SrtBooksTable, SrtBookRow> {
   $$SrtBooksTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static MultiTypedResultKey<$SrtBookTagMappingsTable,
       List<SrtBookTagMappingRow>> _srtBookTagMappingsRefsTable(
-          _$HibikiDatabase db) =>
+          _$FushiDatabase db) =>
       MultiTypedResultKey.fromTable(db.srtBookTagMappings,
           aliasName: 'srt_books__id__srt_book_tag_mappings__srt_book_id');
 
@@ -26990,7 +26990,7 @@ final class $$SrtBooksTableReferences
 }
 
 class $$SrtBooksTableFilterComposer
-    extends Composer<_$HibikiDatabase, $SrtBooksTable> {
+    extends Composer<_$FushiDatabase, $SrtBooksTable> {
   $$SrtBooksTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -27052,7 +27052,7 @@ class $$SrtBooksTableFilterComposer
 }
 
 class $$SrtBooksTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $SrtBooksTable> {
+    extends Composer<_$FushiDatabase, $SrtBooksTable> {
   $$SrtBooksTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -27093,7 +27093,7 @@ class $$SrtBooksTableOrderingComposer
 }
 
 class $$SrtBooksTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $SrtBooksTable> {
+    extends Composer<_$FushiDatabase, $SrtBooksTable> {
   $$SrtBooksTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -27155,7 +27155,7 @@ class $$SrtBooksTableAnnotationComposer
 }
 
 class $$SrtBooksTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $SrtBooksTable,
     SrtBookRow,
     $$SrtBooksTableFilterComposer,
@@ -27166,7 +27166,7 @@ class $$SrtBooksTableTableManager extends RootTableManager<
     (SrtBookRow, $$SrtBooksTableReferences),
     SrtBookRow,
     PrefetchHooks Function({bool srtBookTagMappingsRefs})> {
-  $$SrtBooksTableTableManager(_$HibikiDatabase db, $SrtBooksTable table)
+  $$SrtBooksTableTableManager(_$FushiDatabase db, $SrtBooksTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -27258,7 +27258,7 @@ class $$SrtBooksTableTableManager extends RootTableManager<
 }
 
 typedef $$SrtBooksTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $SrtBooksTable,
     SrtBookRow,
     $$SrtBooksTableFilterComposer,
@@ -27289,7 +27289,7 @@ typedef $$ReaderPositionsTableUpdateCompanionBuilder = ReaderPositionsCompanion
 });
 
 class $$ReaderPositionsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $ReaderPositionsTable> {
+    extends Composer<_$FushiDatabase, $ReaderPositionsTable> {
   $$ReaderPositionsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -27318,7 +27318,7 @@ class $$ReaderPositionsTableFilterComposer
 }
 
 class $$ReaderPositionsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $ReaderPositionsTable> {
+    extends Composer<_$FushiDatabase, $ReaderPositionsTable> {
   $$ReaderPositionsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -27348,7 +27348,7 @@ class $$ReaderPositionsTableOrderingComposer
 }
 
 class $$ReaderPositionsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $ReaderPositionsTable> {
+    extends Composer<_$FushiDatabase, $ReaderPositionsTable> {
   $$ReaderPositionsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -27376,7 +27376,7 @@ class $$ReaderPositionsTableAnnotationComposer
 }
 
 class $$ReaderPositionsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $ReaderPositionsTable,
     ReaderPositionRow,
     $$ReaderPositionsTableFilterComposer,
@@ -27386,12 +27386,12 @@ class $$ReaderPositionsTableTableManager extends RootTableManager<
     $$ReaderPositionsTableUpdateCompanionBuilder,
     (
       ReaderPositionRow,
-      BaseReferences<_$HibikiDatabase, $ReaderPositionsTable, ReaderPositionRow>
+      BaseReferences<_$FushiDatabase, $ReaderPositionsTable, ReaderPositionRow>
     ),
     ReaderPositionRow,
     PrefetchHooks Function()> {
   $$ReaderPositionsTableTableManager(
-      _$HibikiDatabase db, $ReaderPositionsTable table)
+      _$FushiDatabase db, $ReaderPositionsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -27441,7 +27441,7 @@ class $$ReaderPositionsTableTableManager extends RootTableManager<
 }
 
 typedef $$ReaderPositionsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $ReaderPositionsTable,
     ReaderPositionRow,
     $$ReaderPositionsTableFilterComposer,
@@ -27451,7 +27451,7 @@ typedef $$ReaderPositionsTableProcessedTableManager = ProcessedTableManager<
     $$ReaderPositionsTableUpdateCompanionBuilder,
     (
       ReaderPositionRow,
-      BaseReferences<_$HibikiDatabase, $ReaderPositionsTable, ReaderPositionRow>
+      BaseReferences<_$FushiDatabase, $ReaderPositionsTable, ReaderPositionRow>
     ),
     ReaderPositionRow,
     PrefetchHooks Function()>;
@@ -27487,11 +27487,11 @@ typedef $$MediaSourcesTableUpdateCompanionBuilder = MediaSourcesCompanion
 });
 
 final class $$MediaSourcesTableReferences extends BaseReferences<
-    _$HibikiDatabase, $MediaSourcesTable, MediaSourceRow> {
+    _$FushiDatabase, $MediaSourcesTable, MediaSourceRow> {
   $$MediaSourcesTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static MultiTypedResultKey<$EpubBooksTable, List<EpubBookRow>>
-      _epubBooksRefsTable(_$HibikiDatabase db) =>
+      _epubBooksRefsTable(_$FushiDatabase db) =>
           MultiTypedResultKey.fromTable(db.epubBooks,
               aliasName: 'media_sources__id__epub_books__source_id');
 
@@ -27505,7 +27505,7 @@ final class $$MediaSourcesTableReferences extends BaseReferences<
   }
 
   static MultiTypedResultKey<$VideoBooksTable, List<VideoBookRow>>
-      _videoBooksRefsTable(_$HibikiDatabase db) =>
+      _videoBooksRefsTable(_$FushiDatabase db) =>
           MultiTypedResultKey.fromTable(db.videoBooks,
               aliasName: 'media_sources__id__video_books__source_id');
 
@@ -27520,7 +27520,7 @@ final class $$MediaSourcesTableReferences extends BaseReferences<
 }
 
 class $$MediaSourcesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $MediaSourcesTable> {
+    extends Composer<_$FushiDatabase, $MediaSourcesTable> {
   $$MediaSourcesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -27608,7 +27608,7 @@ class $$MediaSourcesTableFilterComposer
 }
 
 class $$MediaSourcesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $MediaSourcesTable> {
+    extends Composer<_$FushiDatabase, $MediaSourcesTable> {
   $$MediaSourcesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -27656,7 +27656,7 @@ class $$MediaSourcesTableOrderingComposer
 }
 
 class $$MediaSourcesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $MediaSourcesTable> {
+    extends Composer<_$FushiDatabase, $MediaSourcesTable> {
   $$MediaSourcesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -27744,7 +27744,7 @@ class $$MediaSourcesTableAnnotationComposer
 }
 
 class $$MediaSourcesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MediaSourcesTable,
     MediaSourceRow,
     $$MediaSourcesTableFilterComposer,
@@ -27755,7 +27755,7 @@ class $$MediaSourcesTableTableManager extends RootTableManager<
     (MediaSourceRow, $$MediaSourcesTableReferences),
     MediaSourceRow,
     PrefetchHooks Function({bool epubBooksRefs, bool videoBooksRefs})> {
-  $$MediaSourcesTableTableManager(_$HibikiDatabase db, $MediaSourcesTable table)
+  $$MediaSourcesTableTableManager(_$FushiDatabase db, $MediaSourcesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -27872,7 +27872,7 @@ class $$MediaSourcesTableTableManager extends RootTableManager<
 }
 
 typedef $$MediaSourcesTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MediaSourcesTable,
     MediaSourceRow,
     $$MediaSourcesTableFilterComposer,
@@ -27921,10 +27921,10 @@ typedef $$EpubBooksTableUpdateCompanionBuilder = EpubBooksCompanion Function({
 });
 
 final class $$EpubBooksTableReferences
-    extends BaseReferences<_$HibikiDatabase, $EpubBooksTable, EpubBookRow> {
+    extends BaseReferences<_$FushiDatabase, $EpubBooksTable, EpubBookRow> {
   $$EpubBooksTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $MediaSourcesTable _sourceIdTable(_$HibikiDatabase db) =>
+  static $MediaSourcesTable _sourceIdTable(_$FushiDatabase db) =>
       db.mediaSources.createAlias('epub_books__source_id__media_sources__id');
 
   $$MediaSourcesTableProcessedTableManager? get sourceId {
@@ -27939,7 +27939,7 @@ final class $$EpubBooksTableReferences
   }
 
   static MultiTypedResultKey<$BookmarksTable, List<BookmarkRow>>
-      _bookmarksRefsTable(_$HibikiDatabase db) =>
+      _bookmarksRefsTable(_$FushiDatabase db) =>
           MultiTypedResultKey.fromTable(db.bookmarks,
               aliasName: 'epub_books__book_key__bookmarks__book_key');
 
@@ -27953,7 +27953,7 @@ final class $$EpubBooksTableReferences
   }
 
   static MultiTypedResultKey<$BookTagMappingsTable, List<BookTagMappingRow>>
-      _bookTagMappingsRefsTable(_$HibikiDatabase db) =>
+      _bookTagMappingsRefsTable(_$FushiDatabase db) =>
           MultiTypedResultKey.fromTable(db.bookTagMappings,
               aliasName: 'epub_books__book_key__book_tag_mappings__book_key');
 
@@ -27970,7 +27970,7 @@ final class $$EpubBooksTableReferences
   }
 
   static MultiTypedResultKey<$RevealedImagesTable, List<RevealedImageRow>>
-      _revealedImagesRefsTable(_$HibikiDatabase db) =>
+      _revealedImagesRefsTable(_$FushiDatabase db) =>
           MultiTypedResultKey.fromTable(db.revealedImages,
               aliasName: 'epub_books__book_key__revealed_images__book_key');
 
@@ -27986,7 +27986,7 @@ final class $$EpubBooksTableReferences
 }
 
 class $$EpubBooksTableFilterComposer
-    extends Composer<_$HibikiDatabase, $EpubBooksTable> {
+    extends Composer<_$FushiDatabase, $EpubBooksTable> {
   $$EpubBooksTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -28123,7 +28123,7 @@ class $$EpubBooksTableFilterComposer
 }
 
 class $$EpubBooksTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $EpubBooksTable> {
+    extends Composer<_$FushiDatabase, $EpubBooksTable> {
   $$EpubBooksTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -28199,7 +28199,7 @@ class $$EpubBooksTableOrderingComposer
 }
 
 class $$EpubBooksTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $EpubBooksTable> {
+    extends Composer<_$FushiDatabase, $EpubBooksTable> {
   $$EpubBooksTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -28334,7 +28334,7 @@ class $$EpubBooksTableAnnotationComposer
 }
 
 class $$EpubBooksTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $EpubBooksTable,
     EpubBookRow,
     $$EpubBooksTableFilterComposer,
@@ -28349,7 +28349,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
         bool bookmarksRefs,
         bool bookTagMappingsRefs,
         bool revealedImagesRefs})> {
-  $$EpubBooksTableTableManager(_$HibikiDatabase db, $EpubBooksTable table)
+  $$EpubBooksTableTableManager(_$FushiDatabase db, $EpubBooksTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -28524,7 +28524,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
 }
 
 typedef $$EpubBooksTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $EpubBooksTable,
     EpubBookRow,
     $$EpubBooksTableFilterComposer,
@@ -28563,10 +28563,10 @@ typedef $$BookmarksTableUpdateCompanionBuilder = BookmarksCompanion Function({
 });
 
 final class $$BookmarksTableReferences
-    extends BaseReferences<_$HibikiDatabase, $BookmarksTable, BookmarkRow> {
+    extends BaseReferences<_$FushiDatabase, $BookmarksTable, BookmarkRow> {
   $$BookmarksTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $EpubBooksTable _bookKeyTable(_$HibikiDatabase db) =>
+  static $EpubBooksTable _bookKeyTable(_$FushiDatabase db) =>
       db.epubBooks.createAlias('bookmarks__book_key__epub_books__book_key');
 
   $$EpubBooksTableProcessedTableManager get bookKey {
@@ -28582,7 +28582,7 @@ final class $$BookmarksTableReferences
 }
 
 class $$BookmarksTableFilterComposer
-    extends Composer<_$HibikiDatabase, $BookmarksTable> {
+    extends Composer<_$FushiDatabase, $BookmarksTable> {
   $$BookmarksTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -28638,7 +28638,7 @@ class $$BookmarksTableFilterComposer
 }
 
 class $$BookmarksTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $BookmarksTable> {
+    extends Composer<_$FushiDatabase, $BookmarksTable> {
   $$BookmarksTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -28696,7 +28696,7 @@ class $$BookmarksTableOrderingComposer
 }
 
 class $$BookmarksTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $BookmarksTable> {
+    extends Composer<_$FushiDatabase, $BookmarksTable> {
   $$BookmarksTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -28750,7 +28750,7 @@ class $$BookmarksTableAnnotationComposer
 }
 
 class $$BookmarksTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $BookmarksTable,
     BookmarkRow,
     $$BookmarksTableFilterComposer,
@@ -28761,7 +28761,7 @@ class $$BookmarksTableTableManager extends RootTableManager<
     (BookmarkRow, $$BookmarksTableReferences),
     BookmarkRow,
     PrefetchHooks Function({bool bookKey})> {
-  $$BookmarksTableTableManager(_$HibikiDatabase db, $BookmarksTable table)
+  $$BookmarksTableTableManager(_$FushiDatabase db, $BookmarksTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -28860,7 +28860,7 @@ class $$BookmarksTableTableManager extends RootTableManager<
 }
 
 typedef $$BookmarksTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $BookmarksTable,
     BookmarkRow,
     $$BookmarksTableFilterComposer,
@@ -28893,7 +28893,7 @@ typedef $$ReadingStatisticsTableUpdateCompanionBuilder
 });
 
 class $$ReadingStatisticsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $ReadingStatisticsTable> {
+    extends Composer<_$FushiDatabase, $ReadingStatisticsTable> {
   $$ReadingStatisticsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -28926,7 +28926,7 @@ class $$ReadingStatisticsTableFilterComposer
 }
 
 class $$ReadingStatisticsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $ReadingStatisticsTable> {
+    extends Composer<_$FushiDatabase, $ReadingStatisticsTable> {
   $$ReadingStatisticsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -28960,7 +28960,7 @@ class $$ReadingStatisticsTableOrderingComposer
 }
 
 class $$ReadingStatisticsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $ReadingStatisticsTable> {
+    extends Composer<_$FushiDatabase, $ReadingStatisticsTable> {
   $$ReadingStatisticsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -28991,7 +28991,7 @@ class $$ReadingStatisticsTableAnnotationComposer
 }
 
 class $$ReadingStatisticsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $ReadingStatisticsTable,
     ReadingStatisticRow,
     $$ReadingStatisticsTableFilterComposer,
@@ -29001,13 +29001,13 @@ class $$ReadingStatisticsTableTableManager extends RootTableManager<
     $$ReadingStatisticsTableUpdateCompanionBuilder,
     (
       ReadingStatisticRow,
-      BaseReferences<_$HibikiDatabase, $ReadingStatisticsTable,
+      BaseReferences<_$FushiDatabase, $ReadingStatisticsTable,
           ReadingStatisticRow>
     ),
     ReadingStatisticRow,
     PrefetchHooks Function()> {
   $$ReadingStatisticsTableTableManager(
-      _$HibikiDatabase db, $ReadingStatisticsTable table)
+      _$FushiDatabase db, $ReadingStatisticsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -29062,7 +29062,7 @@ class $$ReadingStatisticsTableTableManager extends RootTableManager<
 }
 
 typedef $$ReadingStatisticsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $ReadingStatisticsTable,
     ReadingStatisticRow,
     $$ReadingStatisticsTableFilterComposer,
@@ -29072,7 +29072,7 @@ typedef $$ReadingStatisticsTableProcessedTableManager = ProcessedTableManager<
     $$ReadingStatisticsTableUpdateCompanionBuilder,
     (
       ReadingStatisticRow,
-      BaseReferences<_$HibikiDatabase, $ReadingStatisticsTable,
+      BaseReferences<_$FushiDatabase, $ReadingStatisticsTable,
           ReadingStatisticRow>
     ),
     ReadingStatisticRow,
@@ -29095,7 +29095,7 @@ typedef $$ReadingHourlyLogsTableUpdateCompanionBuilder
 });
 
 class $$ReadingHourlyLogsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $ReadingHourlyLogsTable> {
+    extends Composer<_$FushiDatabase, $ReadingHourlyLogsTable> {
   $$ReadingHourlyLogsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -29120,7 +29120,7 @@ class $$ReadingHourlyLogsTableFilterComposer
 }
 
 class $$ReadingHourlyLogsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $ReadingHourlyLogsTable> {
+    extends Composer<_$FushiDatabase, $ReadingHourlyLogsTable> {
   $$ReadingHourlyLogsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -29146,7 +29146,7 @@ class $$ReadingHourlyLogsTableOrderingComposer
 }
 
 class $$ReadingHourlyLogsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $ReadingHourlyLogsTable> {
+    extends Composer<_$FushiDatabase, $ReadingHourlyLogsTable> {
   $$ReadingHourlyLogsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -29171,7 +29171,7 @@ class $$ReadingHourlyLogsTableAnnotationComposer
 }
 
 class $$ReadingHourlyLogsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $ReadingHourlyLogsTable,
     ReadingHourlyLogRow,
     $$ReadingHourlyLogsTableFilterComposer,
@@ -29181,13 +29181,13 @@ class $$ReadingHourlyLogsTableTableManager extends RootTableManager<
     $$ReadingHourlyLogsTableUpdateCompanionBuilder,
     (
       ReadingHourlyLogRow,
-      BaseReferences<_$HibikiDatabase, $ReadingHourlyLogsTable,
+      BaseReferences<_$FushiDatabase, $ReadingHourlyLogsTable,
           ReadingHourlyLogRow>
     ),
     ReadingHourlyLogRow,
     PrefetchHooks Function()> {
   $$ReadingHourlyLogsTableTableManager(
-      _$HibikiDatabase db, $ReadingHourlyLogsTable table)
+      _$FushiDatabase db, $ReadingHourlyLogsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -29234,7 +29234,7 @@ class $$ReadingHourlyLogsTableTableManager extends RootTableManager<
 }
 
 typedef $$ReadingHourlyLogsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $ReadingHourlyLogsTable,
     ReadingHourlyLogRow,
     $$ReadingHourlyLogsTableFilterComposer,
@@ -29244,7 +29244,7 @@ typedef $$ReadingHourlyLogsTableProcessedTableManager = ProcessedTableManager<
     $$ReadingHourlyLogsTableUpdateCompanionBuilder,
     (
       ReadingHourlyLogRow,
-      BaseReferences<_$HibikiDatabase, $ReadingHourlyLogsTable,
+      BaseReferences<_$FushiDatabase, $ReadingHourlyLogsTable,
           ReadingHourlyLogRow>
     ),
     ReadingHourlyLogRow,
@@ -29263,7 +29263,7 @@ typedef $$PreferencesTableUpdateCompanionBuilder = PreferencesCompanion
 });
 
 class $$PreferencesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $PreferencesTable> {
+    extends Composer<_$FushiDatabase, $PreferencesTable> {
   $$PreferencesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -29279,7 +29279,7 @@ class $$PreferencesTableFilterComposer
 }
 
 class $$PreferencesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $PreferencesTable> {
+    extends Composer<_$FushiDatabase, $PreferencesTable> {
   $$PreferencesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -29295,7 +29295,7 @@ class $$PreferencesTableOrderingComposer
 }
 
 class $$PreferencesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $PreferencesTable> {
+    extends Composer<_$FushiDatabase, $PreferencesTable> {
   $$PreferencesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -29311,7 +29311,7 @@ class $$PreferencesTableAnnotationComposer
 }
 
 class $$PreferencesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $PreferencesTable,
     PreferenceRow,
     $$PreferencesTableFilterComposer,
@@ -29321,11 +29321,11 @@ class $$PreferencesTableTableManager extends RootTableManager<
     $$PreferencesTableUpdateCompanionBuilder,
     (
       PreferenceRow,
-      BaseReferences<_$HibikiDatabase, $PreferencesTable, PreferenceRow>
+      BaseReferences<_$FushiDatabase, $PreferencesTable, PreferenceRow>
     ),
     PreferenceRow,
     PrefetchHooks Function()> {
-  $$PreferencesTableTableManager(_$HibikiDatabase db, $PreferencesTable table)
+  $$PreferencesTableTableManager(_$FushiDatabase db, $PreferencesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -29363,7 +29363,7 @@ class $$PreferencesTableTableManager extends RootTableManager<
 }
 
 typedef $$PreferencesTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $PreferencesTable,
     PreferenceRow,
     $$PreferencesTableFilterComposer,
@@ -29373,7 +29373,7 @@ typedef $$PreferencesTableProcessedTableManager = ProcessedTableManager<
     $$PreferencesTableUpdateCompanionBuilder,
     (
       PreferenceRow,
-      BaseReferences<_$HibikiDatabase, $PreferencesTable, PreferenceRow>
+      BaseReferences<_$FushiDatabase, $PreferencesTable, PreferenceRow>
     ),
     PreferenceRow,
     PrefetchHooks Function()>;
@@ -29401,7 +29401,7 @@ typedef $$DictionaryMetadataTableUpdateCompanionBuilder
 });
 
 class $$DictionaryMetadataTableFilterComposer
-    extends Composer<_$HibikiDatabase, $DictionaryMetadataTable> {
+    extends Composer<_$FushiDatabase, $DictionaryMetadataTable> {
   $$DictionaryMetadataTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -29434,7 +29434,7 @@ class $$DictionaryMetadataTableFilterComposer
 }
 
 class $$DictionaryMetadataTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $DictionaryMetadataTable> {
+    extends Composer<_$FushiDatabase, $DictionaryMetadataTable> {
   $$DictionaryMetadataTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -29468,7 +29468,7 @@ class $$DictionaryMetadataTableOrderingComposer
 }
 
 class $$DictionaryMetadataTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $DictionaryMetadataTable> {
+    extends Composer<_$FushiDatabase, $DictionaryMetadataTable> {
   $$DictionaryMetadataTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -29499,7 +29499,7 @@ class $$DictionaryMetadataTableAnnotationComposer
 }
 
 class $$DictionaryMetadataTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $DictionaryMetadataTable,
     DictionaryMetaRow,
     $$DictionaryMetadataTableFilterComposer,
@@ -29509,13 +29509,13 @@ class $$DictionaryMetadataTableTableManager extends RootTableManager<
     $$DictionaryMetadataTableUpdateCompanionBuilder,
     (
       DictionaryMetaRow,
-      BaseReferences<_$HibikiDatabase, $DictionaryMetadataTable,
+      BaseReferences<_$FushiDatabase, $DictionaryMetadataTable,
           DictionaryMetaRow>
     ),
     DictionaryMetaRow,
     PrefetchHooks Function()> {
   $$DictionaryMetadataTableTableManager(
-      _$HibikiDatabase db, $DictionaryMetadataTable table)
+      _$FushiDatabase db, $DictionaryMetadataTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -29574,7 +29574,7 @@ class $$DictionaryMetadataTableTableManager extends RootTableManager<
 }
 
 typedef $$DictionaryMetadataTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $DictionaryMetadataTable,
     DictionaryMetaRow,
     $$DictionaryMetadataTableFilterComposer,
@@ -29584,7 +29584,7 @@ typedef $$DictionaryMetadataTableProcessedTableManager = ProcessedTableManager<
     $$DictionaryMetadataTableUpdateCompanionBuilder,
     (
       DictionaryMetaRow,
-      BaseReferences<_$HibikiDatabase, $DictionaryMetadataTable,
+      BaseReferences<_$FushiDatabase, $DictionaryMetadataTable,
           DictionaryMetaRow>
     ),
     DictionaryMetaRow,
@@ -29603,7 +29603,7 @@ typedef $$DictionaryHistoryTableUpdateCompanionBuilder
 });
 
 class $$DictionaryHistoryTableFilterComposer
-    extends Composer<_$HibikiDatabase, $DictionaryHistoryTable> {
+    extends Composer<_$FushiDatabase, $DictionaryHistoryTable> {
   $$DictionaryHistoryTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -29622,7 +29622,7 @@ class $$DictionaryHistoryTableFilterComposer
 }
 
 class $$DictionaryHistoryTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $DictionaryHistoryTable> {
+    extends Composer<_$FushiDatabase, $DictionaryHistoryTable> {
   $$DictionaryHistoryTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -29641,7 +29641,7 @@ class $$DictionaryHistoryTableOrderingComposer
 }
 
 class $$DictionaryHistoryTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $DictionaryHistoryTable> {
+    extends Composer<_$FushiDatabase, $DictionaryHistoryTable> {
   $$DictionaryHistoryTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -29660,7 +29660,7 @@ class $$DictionaryHistoryTableAnnotationComposer
 }
 
 class $$DictionaryHistoryTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $DictionaryHistoryTable,
     DictionaryHistoryRow,
     $$DictionaryHistoryTableFilterComposer,
@@ -29670,13 +29670,13 @@ class $$DictionaryHistoryTableTableManager extends RootTableManager<
     $$DictionaryHistoryTableUpdateCompanionBuilder,
     (
       DictionaryHistoryRow,
-      BaseReferences<_$HibikiDatabase, $DictionaryHistoryTable,
+      BaseReferences<_$FushiDatabase, $DictionaryHistoryTable,
           DictionaryHistoryRow>
     ),
     DictionaryHistoryRow,
     PrefetchHooks Function()> {
   $$DictionaryHistoryTableTableManager(
-      _$HibikiDatabase db, $DictionaryHistoryTable table)
+      _$FushiDatabase db, $DictionaryHistoryTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -29715,7 +29715,7 @@ class $$DictionaryHistoryTableTableManager extends RootTableManager<
 }
 
 typedef $$DictionaryHistoryTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $DictionaryHistoryTable,
     DictionaryHistoryRow,
     $$DictionaryHistoryTableFilterComposer,
@@ -29725,7 +29725,7 @@ typedef $$DictionaryHistoryTableProcessedTableManager = ProcessedTableManager<
     $$DictionaryHistoryTableUpdateCompanionBuilder,
     (
       DictionaryHistoryRow,
-      BaseReferences<_$HibikiDatabase, $DictionaryHistoryTable,
+      BaseReferences<_$FushiDatabase, $DictionaryHistoryTable,
           DictionaryHistoryRow>
     ),
     DictionaryHistoryRow,
@@ -29746,11 +29746,11 @@ typedef $$BookTagsTableUpdateCompanionBuilder = BookTagsCompanion Function({
 });
 
 final class $$BookTagsTableReferences
-    extends BaseReferences<_$HibikiDatabase, $BookTagsTable, BookTagRow> {
+    extends BaseReferences<_$FushiDatabase, $BookTagsTable, BookTagRow> {
   $$BookTagsTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static MultiTypedResultKey<$BookTagMappingsTable, List<BookTagMappingRow>>
-      _bookTagMappingsRefsTable(_$HibikiDatabase db) =>
+      _bookTagMappingsRefsTable(_$FushiDatabase db) =>
           MultiTypedResultKey.fromTable(db.bookTagMappings,
               aliasName: 'book_tags__id__book_tag_mappings__tag_id');
 
@@ -29767,7 +29767,7 @@ final class $$BookTagsTableReferences
 
   static MultiTypedResultKey<$SrtBookTagMappingsTable,
       List<SrtBookTagMappingRow>> _srtBookTagMappingsRefsTable(
-          _$HibikiDatabase db) =>
+          _$FushiDatabase db) =>
       MultiTypedResultKey.fromTable(db.srtBookTagMappings,
           aliasName: 'book_tags__id__srt_book_tag_mappings__tag_id');
 
@@ -29784,7 +29784,7 @@ final class $$BookTagsTableReferences
 
   static MultiTypedResultKey<$VideoBookTagMappingsTable,
       List<VideoBookTagMappingRow>> _videoBookTagMappingsRefsTable(
-          _$HibikiDatabase db) =>
+          _$FushiDatabase db) =>
       MultiTypedResultKey.fromTable(db.videoBookTagMappings,
           aliasName: 'book_tags__id__video_book_tag_mappings__tag_id');
 
@@ -29802,7 +29802,7 @@ final class $$BookTagsTableReferences
 
   static MultiTypedResultKey<$CollectionTagMappingsTable,
       List<CollectionTagMappingRow>> _collectionTagMappingsRefsTable(
-          _$HibikiDatabase db) =>
+          _$FushiDatabase db) =>
       MultiTypedResultKey.fromTable(db.collectionTagMappings,
           aliasName: 'book_tags__id__collection_tag_mappings__tag_id');
 
@@ -29820,7 +29820,7 @@ final class $$BookTagsTableReferences
 
   static MultiTypedResultKey<$GalgameTagMappingsTable,
       List<GalgameTagMappingRow>> _galgameTagMappingsRefsTable(
-          _$HibikiDatabase db) =>
+          _$FushiDatabase db) =>
       MultiTypedResultKey.fromTable(db.galgameTagMappings,
           aliasName: 'book_tags__id__galgame_tag_mappings__tag_id');
 
@@ -29837,7 +29837,7 @@ final class $$BookTagsTableReferences
 }
 
 class $$BookTagsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $BookTagsTable> {
+    extends Composer<_$FushiDatabase, $BookTagsTable> {
   $$BookTagsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -29970,7 +29970,7 @@ class $$BookTagsTableFilterComposer
 }
 
 class $$BookTagsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $BookTagsTable> {
+    extends Composer<_$FushiDatabase, $BookTagsTable> {
   $$BookTagsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -29995,7 +29995,7 @@ class $$BookTagsTableOrderingComposer
 }
 
 class $$BookTagsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $BookTagsTable> {
+    extends Composer<_$FushiDatabase, $BookTagsTable> {
   $$BookTagsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -30131,7 +30131,7 @@ class $$BookTagsTableAnnotationComposer
 }
 
 class $$BookTagsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $BookTagsTable,
     BookTagRow,
     $$BookTagsTableFilterComposer,
@@ -30147,7 +30147,7 @@ class $$BookTagsTableTableManager extends RootTableManager<
         bool videoBookTagMappingsRefs,
         bool collectionTagMappingsRefs,
         bool galgameTagMappingsRefs})> {
-  $$BookTagsTableTableManager(_$HibikiDatabase db, $BookTagsTable table)
+  $$BookTagsTableTableManager(_$FushiDatabase db, $BookTagsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -30280,7 +30280,7 @@ class $$BookTagsTableTableManager extends RootTableManager<
 }
 
 typedef $$BookTagsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $BookTagsTable,
     BookTagRow,
     $$BookTagsTableFilterComposer,
@@ -30312,11 +30312,11 @@ typedef $$BookTagMappingsTableUpdateCompanionBuilder = BookTagMappingsCompanion
 });
 
 final class $$BookTagMappingsTableReferences extends BaseReferences<
-    _$HibikiDatabase, $BookTagMappingsTable, BookTagMappingRow> {
+    _$FushiDatabase, $BookTagMappingsTable, BookTagMappingRow> {
   $$BookTagMappingsTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $EpubBooksTable _bookKeyTable(_$HibikiDatabase db) => db.epubBooks
+  static $EpubBooksTable _bookKeyTable(_$FushiDatabase db) => db.epubBooks
       .createAlias('book_tag_mappings__book_key__epub_books__book_key');
 
   $$EpubBooksTableProcessedTableManager get bookKey {
@@ -30330,7 +30330,7 @@ final class $$BookTagMappingsTableReferences extends BaseReferences<
         manager.$state.copyWith(prefetchedData: [item]));
   }
 
-  static $BookTagsTable _tagIdTable(_$HibikiDatabase db) =>
+  static $BookTagsTable _tagIdTable(_$FushiDatabase db) =>
       db.bookTags.createAlias('book_tag_mappings__tag_id__book_tags__id');
 
   $$BookTagsTableProcessedTableManager get tagId {
@@ -30346,7 +30346,7 @@ final class $$BookTagMappingsTableReferences extends BaseReferences<
 }
 
 class $$BookTagMappingsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $BookTagMappingsTable> {
+    extends Composer<_$FushiDatabase, $BookTagMappingsTable> {
   $$BookTagMappingsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -30402,7 +30402,7 @@ class $$BookTagMappingsTableFilterComposer
 }
 
 class $$BookTagMappingsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $BookTagMappingsTable> {
+    extends Composer<_$FushiDatabase, $BookTagMappingsTable> {
   $$BookTagMappingsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -30458,7 +30458,7 @@ class $$BookTagMappingsTableOrderingComposer
 }
 
 class $$BookTagMappingsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $BookTagMappingsTable> {
+    extends Composer<_$FushiDatabase, $BookTagMappingsTable> {
   $$BookTagMappingsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -30514,7 +30514,7 @@ class $$BookTagMappingsTableAnnotationComposer
 }
 
 class $$BookTagMappingsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $BookTagMappingsTable,
     BookTagMappingRow,
     $$BookTagMappingsTableFilterComposer,
@@ -30526,7 +30526,7 @@ class $$BookTagMappingsTableTableManager extends RootTableManager<
     BookTagMappingRow,
     PrefetchHooks Function({bool bookKey, bool tagId})> {
   $$BookTagMappingsTableTableManager(
-      _$HibikiDatabase db, $BookTagMappingsTable table)
+      _$FushiDatabase db, $BookTagMappingsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -30616,7 +30616,7 @@ class $$BookTagMappingsTableTableManager extends RootTableManager<
 }
 
 typedef $$BookTagMappingsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $BookTagMappingsTable,
     BookTagMappingRow,
     $$BookTagMappingsTableFilterComposer,
@@ -30641,11 +30641,11 @@ typedef $$SrtBookTagMappingsTableUpdateCompanionBuilder
 });
 
 final class $$SrtBookTagMappingsTableReferences extends BaseReferences<
-    _$HibikiDatabase, $SrtBookTagMappingsTable, SrtBookTagMappingRow> {
+    _$FushiDatabase, $SrtBookTagMappingsTable, SrtBookTagMappingRow> {
   $$SrtBookTagMappingsTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $SrtBooksTable _srtBookIdTable(_$HibikiDatabase db) => db.srtBooks
+  static $SrtBooksTable _srtBookIdTable(_$FushiDatabase db) => db.srtBooks
       .createAlias('srt_book_tag_mappings__srt_book_id__srt_books__id');
 
   $$SrtBooksTableProcessedTableManager get srtBookId {
@@ -30659,7 +30659,7 @@ final class $$SrtBookTagMappingsTableReferences extends BaseReferences<
         manager.$state.copyWith(prefetchedData: [item]));
   }
 
-  static $BookTagsTable _tagIdTable(_$HibikiDatabase db) =>
+  static $BookTagsTable _tagIdTable(_$FushiDatabase db) =>
       db.bookTags.createAlias('srt_book_tag_mappings__tag_id__book_tags__id');
 
   $$BookTagsTableProcessedTableManager get tagId {
@@ -30675,7 +30675,7 @@ final class $$SrtBookTagMappingsTableReferences extends BaseReferences<
 }
 
 class $$SrtBookTagMappingsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $SrtBookTagMappingsTable> {
+    extends Composer<_$FushiDatabase, $SrtBookTagMappingsTable> {
   $$SrtBookTagMappingsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -30728,7 +30728,7 @@ class $$SrtBookTagMappingsTableFilterComposer
 }
 
 class $$SrtBookTagMappingsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $SrtBookTagMappingsTable> {
+    extends Composer<_$FushiDatabase, $SrtBookTagMappingsTable> {
   $$SrtBookTagMappingsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -30781,7 +30781,7 @@ class $$SrtBookTagMappingsTableOrderingComposer
 }
 
 class $$SrtBookTagMappingsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $SrtBookTagMappingsTable> {
+    extends Composer<_$FushiDatabase, $SrtBookTagMappingsTable> {
   $$SrtBookTagMappingsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -30834,7 +30834,7 @@ class $$SrtBookTagMappingsTableAnnotationComposer
 }
 
 class $$SrtBookTagMappingsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $SrtBookTagMappingsTable,
     SrtBookTagMappingRow,
     $$SrtBookTagMappingsTableFilterComposer,
@@ -30846,7 +30846,7 @@ class $$SrtBookTagMappingsTableTableManager extends RootTableManager<
     SrtBookTagMappingRow,
     PrefetchHooks Function({bool srtBookId, bool tagId})> {
   $$SrtBookTagMappingsTableTableManager(
-      _$HibikiDatabase db, $SrtBookTagMappingsTable table)
+      _$FushiDatabase db, $SrtBookTagMappingsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -30933,7 +30933,7 @@ class $$SrtBookTagMappingsTableTableManager extends RootTableManager<
 }
 
 typedef $$SrtBookTagMappingsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $SrtBookTagMappingsTable,
     SrtBookTagMappingRow,
     $$SrtBookTagMappingsTableFilterComposer,
@@ -30958,11 +30958,11 @@ typedef $$ProfilesTableUpdateCompanionBuilder = ProfilesCompanion Function({
 });
 
 final class $$ProfilesTableReferences
-    extends BaseReferences<_$HibikiDatabase, $ProfilesTable, ProfileRow> {
+    extends BaseReferences<_$FushiDatabase, $ProfilesTable, ProfileRow> {
   $$ProfilesTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static MultiTypedResultKey<$ProfileSettingsTable, List<ProfileSettingRow>>
-      _profileSettingsRefsTable(_$HibikiDatabase db) =>
+      _profileSettingsRefsTable(_$FushiDatabase db) =>
           MultiTypedResultKey.fromTable(db.profileSettings,
               aliasName: 'profiles__id__profile_settings__profile_id');
 
@@ -30978,7 +30978,7 @@ final class $$ProfilesTableReferences
   }
 
   static MultiTypedResultKey<$MediaTypeProfilesTable, List<MediaTypeProfileRow>>
-      _mediaTypeProfilesRefsTable(_$HibikiDatabase db) =>
+      _mediaTypeProfilesRefsTable(_$FushiDatabase db) =>
           MultiTypedResultKey.fromTable(db.mediaTypeProfiles,
               aliasName: 'profiles__id__media_type_profiles__profile_id');
 
@@ -30994,7 +30994,7 @@ final class $$ProfilesTableReferences
   }
 
   static MultiTypedResultKey<$BookProfilesTable, List<BookProfileRow>>
-      _bookProfilesRefsTable(_$HibikiDatabase db) =>
+      _bookProfilesRefsTable(_$FushiDatabase db) =>
           MultiTypedResultKey.fromTable(db.bookProfiles,
               aliasName: 'profiles__id__book_profiles__profile_id');
 
@@ -31009,7 +31009,7 @@ final class $$ProfilesTableReferences
 }
 
 class $$ProfilesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $ProfilesTable> {
+    extends Composer<_$FushiDatabase, $ProfilesTable> {
   $$ProfilesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -31094,7 +31094,7 @@ class $$ProfilesTableFilterComposer
 }
 
 class $$ProfilesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $ProfilesTable> {
+    extends Composer<_$FushiDatabase, $ProfilesTable> {
   $$ProfilesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -31116,7 +31116,7 @@ class $$ProfilesTableOrderingComposer
 }
 
 class $$ProfilesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $ProfilesTable> {
+    extends Composer<_$FushiDatabase, $ProfilesTable> {
   $$ProfilesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -31202,7 +31202,7 @@ class $$ProfilesTableAnnotationComposer
 }
 
 class $$ProfilesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $ProfilesTable,
     ProfileRow,
     $$ProfilesTableFilterComposer,
@@ -31216,7 +31216,7 @@ class $$ProfilesTableTableManager extends RootTableManager<
         {bool profileSettingsRefs,
         bool mediaTypeProfilesRefs,
         bool bookProfilesRefs})> {
-  $$ProfilesTableTableManager(_$HibikiDatabase db, $ProfilesTable table)
+  $$ProfilesTableTableManager(_$FushiDatabase db, $ProfilesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -31315,7 +31315,7 @@ class $$ProfilesTableTableManager extends RootTableManager<
 }
 
 typedef $$ProfilesTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $ProfilesTable,
     ProfileRow,
     $$ProfilesTableFilterComposer,
@@ -31347,11 +31347,11 @@ typedef $$ProfileSettingsTableUpdateCompanionBuilder = ProfileSettingsCompanion
 });
 
 final class $$ProfileSettingsTableReferences extends BaseReferences<
-    _$HibikiDatabase, $ProfileSettingsTable, ProfileSettingRow> {
+    _$FushiDatabase, $ProfileSettingsTable, ProfileSettingRow> {
   $$ProfileSettingsTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $ProfilesTable _profileIdTable(_$HibikiDatabase db) =>
+  static $ProfilesTable _profileIdTable(_$FushiDatabase db) =>
       db.profiles.createAlias('profile_settings__profile_id__profiles__id');
 
   $$ProfilesTableProcessedTableManager get profileId {
@@ -31367,7 +31367,7 @@ final class $$ProfileSettingsTableReferences extends BaseReferences<
 }
 
 class $$ProfileSettingsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $ProfileSettingsTable> {
+    extends Composer<_$FushiDatabase, $ProfileSettingsTable> {
   $$ProfileSettingsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -31409,7 +31409,7 @@ class $$ProfileSettingsTableFilterComposer
 }
 
 class $$ProfileSettingsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $ProfileSettingsTable> {
+    extends Composer<_$FushiDatabase, $ProfileSettingsTable> {
   $$ProfileSettingsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -31451,7 +31451,7 @@ class $$ProfileSettingsTableOrderingComposer
 }
 
 class $$ProfileSettingsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $ProfileSettingsTable> {
+    extends Composer<_$FushiDatabase, $ProfileSettingsTable> {
   $$ProfileSettingsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -31493,7 +31493,7 @@ class $$ProfileSettingsTableAnnotationComposer
 }
 
 class $$ProfileSettingsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $ProfileSettingsTable,
     ProfileSettingRow,
     $$ProfileSettingsTableFilterComposer,
@@ -31505,7 +31505,7 @@ class $$ProfileSettingsTableTableManager extends RootTableManager<
     ProfileSettingRow,
     PrefetchHooks Function({bool profileId})> {
   $$ProfileSettingsTableTableManager(
-      _$HibikiDatabase db, $ProfileSettingsTable table)
+      _$FushiDatabase db, $ProfileSettingsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -31588,7 +31588,7 @@ class $$ProfileSettingsTableTableManager extends RootTableManager<
 }
 
 typedef $$ProfileSettingsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $ProfileSettingsTable,
     ProfileSettingRow,
     $$ProfileSettingsTableFilterComposer,
@@ -31613,11 +31613,11 @@ typedef $$MediaTypeProfilesTableUpdateCompanionBuilder
 });
 
 final class $$MediaTypeProfilesTableReferences extends BaseReferences<
-    _$HibikiDatabase, $MediaTypeProfilesTable, MediaTypeProfileRow> {
+    _$FushiDatabase, $MediaTypeProfilesTable, MediaTypeProfileRow> {
   $$MediaTypeProfilesTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $ProfilesTable _profileIdTable(_$HibikiDatabase db) =>
+  static $ProfilesTable _profileIdTable(_$FushiDatabase db) =>
       db.profiles.createAlias('media_type_profiles__profile_id__profiles__id');
 
   $$ProfilesTableProcessedTableManager get profileId {
@@ -31633,7 +31633,7 @@ final class $$MediaTypeProfilesTableReferences extends BaseReferences<
 }
 
 class $$MediaTypeProfilesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $MediaTypeProfilesTable> {
+    extends Composer<_$FushiDatabase, $MediaTypeProfilesTable> {
   $$MediaTypeProfilesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -31666,7 +31666,7 @@ class $$MediaTypeProfilesTableFilterComposer
 }
 
 class $$MediaTypeProfilesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $MediaTypeProfilesTable> {
+    extends Composer<_$FushiDatabase, $MediaTypeProfilesTable> {
   $$MediaTypeProfilesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -31699,7 +31699,7 @@ class $$MediaTypeProfilesTableOrderingComposer
 }
 
 class $$MediaTypeProfilesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $MediaTypeProfilesTable> {
+    extends Composer<_$FushiDatabase, $MediaTypeProfilesTable> {
   $$MediaTypeProfilesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -31732,7 +31732,7 @@ class $$MediaTypeProfilesTableAnnotationComposer
 }
 
 class $$MediaTypeProfilesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MediaTypeProfilesTable,
     MediaTypeProfileRow,
     $$MediaTypeProfilesTableFilterComposer,
@@ -31744,7 +31744,7 @@ class $$MediaTypeProfilesTableTableManager extends RootTableManager<
     MediaTypeProfileRow,
     PrefetchHooks Function({bool profileId})> {
   $$MediaTypeProfilesTableTableManager(
-      _$HibikiDatabase db, $MediaTypeProfilesTable table)
+      _$FushiDatabase db, $MediaTypeProfilesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -31821,7 +31821,7 @@ class $$MediaTypeProfilesTableTableManager extends RootTableManager<
 }
 
 typedef $$MediaTypeProfilesTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MediaTypeProfilesTable,
     MediaTypeProfileRow,
     $$MediaTypeProfilesTableFilterComposer,
@@ -31846,10 +31846,10 @@ typedef $$BookProfilesTableUpdateCompanionBuilder = BookProfilesCompanion
 });
 
 final class $$BookProfilesTableReferences extends BaseReferences<
-    _$HibikiDatabase, $BookProfilesTable, BookProfileRow> {
+    _$FushiDatabase, $BookProfilesTable, BookProfileRow> {
   $$BookProfilesTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $ProfilesTable _profileIdTable(_$HibikiDatabase db) =>
+  static $ProfilesTable _profileIdTable(_$FushiDatabase db) =>
       db.profiles.createAlias('book_profiles__profile_id__profiles__id');
 
   $$ProfilesTableProcessedTableManager get profileId {
@@ -31865,7 +31865,7 @@ final class $$BookProfilesTableReferences extends BaseReferences<
 }
 
 class $$BookProfilesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $BookProfilesTable> {
+    extends Composer<_$FushiDatabase, $BookProfilesTable> {
   $$BookProfilesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -31898,7 +31898,7 @@ class $$BookProfilesTableFilterComposer
 }
 
 class $$BookProfilesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $BookProfilesTable> {
+    extends Composer<_$FushiDatabase, $BookProfilesTable> {
   $$BookProfilesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -31931,7 +31931,7 @@ class $$BookProfilesTableOrderingComposer
 }
 
 class $$BookProfilesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $BookProfilesTable> {
+    extends Composer<_$FushiDatabase, $BookProfilesTable> {
   $$BookProfilesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -31964,7 +31964,7 @@ class $$BookProfilesTableAnnotationComposer
 }
 
 class $$BookProfilesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $BookProfilesTable,
     BookProfileRow,
     $$BookProfilesTableFilterComposer,
@@ -31975,7 +31975,7 @@ class $$BookProfilesTableTableManager extends RootTableManager<
     (BookProfileRow, $$BookProfilesTableReferences),
     BookProfileRow,
     PrefetchHooks Function({bool profileId})> {
-  $$BookProfilesTableTableManager(_$HibikiDatabase db, $BookProfilesTable table)
+  $$BookProfilesTableTableManager(_$FushiDatabase db, $BookProfilesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -32050,7 +32050,7 @@ class $$BookProfilesTableTableManager extends RootTableManager<
 }
 
 typedef $$BookProfilesTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $BookProfilesTable,
     BookProfileRow,
     $$BookProfilesTableFilterComposer,
@@ -32077,7 +32077,7 @@ typedef $$SyncBaselinesTableUpdateCompanionBuilder = SyncBaselinesCompanion
 });
 
 class $$SyncBaselinesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $SyncBaselinesTable> {
+    extends Composer<_$FushiDatabase, $SyncBaselinesTable> {
   $$SyncBaselinesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -32096,7 +32096,7 @@ class $$SyncBaselinesTableFilterComposer
 }
 
 class $$SyncBaselinesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $SyncBaselinesTable> {
+    extends Composer<_$FushiDatabase, $SyncBaselinesTable> {
   $$SyncBaselinesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -32115,7 +32115,7 @@ class $$SyncBaselinesTableOrderingComposer
 }
 
 class $$SyncBaselinesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $SyncBaselinesTable> {
+    extends Composer<_$FushiDatabase, $SyncBaselinesTable> {
   $$SyncBaselinesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -32134,7 +32134,7 @@ class $$SyncBaselinesTableAnnotationComposer
 }
 
 class $$SyncBaselinesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $SyncBaselinesTable,
     SyncBaselineRow,
     $$SyncBaselinesTableFilterComposer,
@@ -32144,12 +32144,12 @@ class $$SyncBaselinesTableTableManager extends RootTableManager<
     $$SyncBaselinesTableUpdateCompanionBuilder,
     (
       SyncBaselineRow,
-      BaseReferences<_$HibikiDatabase, $SyncBaselinesTable, SyncBaselineRow>
+      BaseReferences<_$FushiDatabase, $SyncBaselinesTable, SyncBaselineRow>
     ),
     SyncBaselineRow,
     PrefetchHooks Function()> {
   $$SyncBaselinesTableTableManager(
-      _$HibikiDatabase db, $SyncBaselinesTable table)
+      _$FushiDatabase db, $SyncBaselinesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -32191,7 +32191,7 @@ class $$SyncBaselinesTableTableManager extends RootTableManager<
 }
 
 typedef $$SyncBaselinesTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $SyncBaselinesTable,
     SyncBaselineRow,
     $$SyncBaselinesTableFilterComposer,
@@ -32201,7 +32201,7 @@ typedef $$SyncBaselinesTableProcessedTableManager = ProcessedTableManager<
     $$SyncBaselinesTableUpdateCompanionBuilder,
     (
       SyncBaselineRow,
-      BaseReferences<_$HibikiDatabase, $SyncBaselinesTable, SyncBaselineRow>
+      BaseReferences<_$FushiDatabase, $SyncBaselinesTable, SyncBaselineRow>
     ),
     SyncBaselineRow,
     PrefetchHooks Function()>;
@@ -32247,10 +32247,10 @@ typedef $$VideoBooksTableUpdateCompanionBuilder = VideoBooksCompanion Function({
 });
 
 final class $$VideoBooksTableReferences
-    extends BaseReferences<_$HibikiDatabase, $VideoBooksTable, VideoBookRow> {
+    extends BaseReferences<_$FushiDatabase, $VideoBooksTable, VideoBookRow> {
   $$VideoBooksTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $MediaSourcesTable _sourceIdTable(_$HibikiDatabase db) =>
+  static $MediaSourcesTable _sourceIdTable(_$FushiDatabase db) =>
       db.mediaSources.createAlias('video_books__source_id__media_sources__id');
 
   $$MediaSourcesTableProcessedTableManager? get sourceId {
@@ -32266,7 +32266,7 @@ final class $$VideoBooksTableReferences
 
   static MultiTypedResultKey<$VideoBookTagMappingsTable,
       List<VideoBookTagMappingRow>> _videoBookTagMappingsRefsTable(
-          _$HibikiDatabase db) =>
+          _$FushiDatabase db) =>
       MultiTypedResultKey.fromTable(db.videoBookTagMappings,
           aliasName:
               'video_books__book_uid__video_book_tag_mappings__book_uid');
@@ -32285,7 +32285,7 @@ final class $$VideoBooksTableReferences
   }
 
   static MultiTypedResultKey<$VideoScrapeMetaTable, List<VideoScrapeMetaRow>>
-      _videoScrapeMetaRefsTable(_$HibikiDatabase db) =>
+      _videoScrapeMetaRefsTable(_$FushiDatabase db) =>
           MultiTypedResultKey.fromTable(db.videoScrapeMeta,
               aliasName: 'video_books__book_uid__video_scrape_meta__book_uid');
 
@@ -32302,7 +32302,7 @@ final class $$VideoBooksTableReferences
   }
 
   static MultiTypedResultKey<$MediaImagesTable, List<MediaImageRow>>
-      _mediaImagesRefsTable(_$HibikiDatabase db) =>
+      _mediaImagesRefsTable(_$FushiDatabase db) =>
           MultiTypedResultKey.fromTable(db.mediaImages,
               aliasName: 'video_books__book_uid__media_images__book_uid');
 
@@ -32318,7 +32318,7 @@ final class $$VideoBooksTableReferences
 }
 
 class $$VideoBooksTableFilterComposer
-    extends Composer<_$HibikiDatabase, $VideoBooksTable> {
+    extends Composer<_$FushiDatabase, $VideoBooksTable> {
   $$VideoBooksTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -32467,7 +32467,7 @@ class $$VideoBooksTableFilterComposer
 }
 
 class $$VideoBooksTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $VideoBooksTable> {
+    extends Composer<_$FushiDatabase, $VideoBooksTable> {
   $$VideoBooksTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -32554,7 +32554,7 @@ class $$VideoBooksTableOrderingComposer
 }
 
 class $$VideoBooksTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $VideoBooksTable> {
+    extends Composer<_$FushiDatabase, $VideoBooksTable> {
   $$VideoBooksTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -32697,7 +32697,7 @@ class $$VideoBooksTableAnnotationComposer
 }
 
 class $$VideoBooksTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $VideoBooksTable,
     VideoBookRow,
     $$VideoBooksTableFilterComposer,
@@ -32712,7 +32712,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
         bool videoBookTagMappingsRefs,
         bool videoScrapeMetaRefs,
         bool mediaImagesRefs})> {
-  $$VideoBooksTableTableManager(_$HibikiDatabase db, $VideoBooksTable table)
+  $$VideoBooksTableTableManager(_$FushiDatabase db, $VideoBooksTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -32895,7 +32895,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
 }
 
 typedef $$VideoBooksTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $VideoBooksTable,
     VideoBookRow,
     $$VideoBooksTableFilterComposer,
@@ -32926,11 +32926,11 @@ typedef $$VideoBookTagMappingsTableUpdateCompanionBuilder
 });
 
 final class $$VideoBookTagMappingsTableReferences extends BaseReferences<
-    _$HibikiDatabase, $VideoBookTagMappingsTable, VideoBookTagMappingRow> {
+    _$FushiDatabase, $VideoBookTagMappingsTable, VideoBookTagMappingRow> {
   $$VideoBookTagMappingsTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $VideoBooksTable _bookUidTable(_$HibikiDatabase db) => db.videoBooks
+  static $VideoBooksTable _bookUidTable(_$FushiDatabase db) => db.videoBooks
       .createAlias('video_book_tag_mappings__book_uid__video_books__book_uid');
 
   $$VideoBooksTableProcessedTableManager get bookUid {
@@ -32944,7 +32944,7 @@ final class $$VideoBookTagMappingsTableReferences extends BaseReferences<
         manager.$state.copyWith(prefetchedData: [item]));
   }
 
-  static $BookTagsTable _tagIdTable(_$HibikiDatabase db) =>
+  static $BookTagsTable _tagIdTable(_$FushiDatabase db) =>
       db.bookTags.createAlias('video_book_tag_mappings__tag_id__book_tags__id');
 
   $$BookTagsTableProcessedTableManager get tagId {
@@ -32960,7 +32960,7 @@ final class $$VideoBookTagMappingsTableReferences extends BaseReferences<
 }
 
 class $$VideoBookTagMappingsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $VideoBookTagMappingsTable> {
+    extends Composer<_$FushiDatabase, $VideoBookTagMappingsTable> {
   $$VideoBookTagMappingsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -33016,7 +33016,7 @@ class $$VideoBookTagMappingsTableFilterComposer
 }
 
 class $$VideoBookTagMappingsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $VideoBookTagMappingsTable> {
+    extends Composer<_$FushiDatabase, $VideoBookTagMappingsTable> {
   $$VideoBookTagMappingsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -33072,7 +33072,7 @@ class $$VideoBookTagMappingsTableOrderingComposer
 }
 
 class $$VideoBookTagMappingsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $VideoBookTagMappingsTable> {
+    extends Composer<_$FushiDatabase, $VideoBookTagMappingsTable> {
   $$VideoBookTagMappingsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -33128,7 +33128,7 @@ class $$VideoBookTagMappingsTableAnnotationComposer
 }
 
 class $$VideoBookTagMappingsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $VideoBookTagMappingsTable,
     VideoBookTagMappingRow,
     $$VideoBookTagMappingsTableFilterComposer,
@@ -33140,7 +33140,7 @@ class $$VideoBookTagMappingsTableTableManager extends RootTableManager<
     VideoBookTagMappingRow,
     PrefetchHooks Function({bool bookUid, bool tagId})> {
   $$VideoBookTagMappingsTableTableManager(
-      _$HibikiDatabase db, $VideoBookTagMappingsTable table)
+      _$FushiDatabase db, $VideoBookTagMappingsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -33234,7 +33234,7 @@ class $$VideoBookTagMappingsTableTableManager extends RootTableManager<
 
 typedef $$VideoBookTagMappingsTableProcessedTableManager
     = ProcessedTableManager<
-        _$HibikiDatabase,
+        _$FushiDatabase,
         $VideoBookTagMappingsTable,
         VideoBookTagMappingRow,
         $$VideoBookTagMappingsTableFilterComposer,
@@ -33267,7 +33267,7 @@ typedef $$VideoWatchStatisticsTableUpdateCompanionBuilder
 });
 
 class $$VideoWatchStatisticsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $VideoWatchStatisticsTable> {
+    extends Composer<_$FushiDatabase, $VideoWatchStatisticsTable> {
   $$VideoWatchStatisticsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -33298,7 +33298,7 @@ class $$VideoWatchStatisticsTableFilterComposer
 }
 
 class $$VideoWatchStatisticsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $VideoWatchStatisticsTable> {
+    extends Composer<_$FushiDatabase, $VideoWatchStatisticsTable> {
   $$VideoWatchStatisticsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -33331,7 +33331,7 @@ class $$VideoWatchStatisticsTableOrderingComposer
 }
 
 class $$VideoWatchStatisticsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $VideoWatchStatisticsTable> {
+    extends Composer<_$FushiDatabase, $VideoWatchStatisticsTable> {
   $$VideoWatchStatisticsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -33362,7 +33362,7 @@ class $$VideoWatchStatisticsTableAnnotationComposer
 }
 
 class $$VideoWatchStatisticsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $VideoWatchStatisticsTable,
     VideoWatchStatisticRow,
     $$VideoWatchStatisticsTableFilterComposer,
@@ -33372,13 +33372,13 @@ class $$VideoWatchStatisticsTableTableManager extends RootTableManager<
     $$VideoWatchStatisticsTableUpdateCompanionBuilder,
     (
       VideoWatchStatisticRow,
-      BaseReferences<_$HibikiDatabase, $VideoWatchStatisticsTable,
+      BaseReferences<_$FushiDatabase, $VideoWatchStatisticsTable,
           VideoWatchStatisticRow>
     ),
     VideoWatchStatisticRow,
     PrefetchHooks Function()> {
   $$VideoWatchStatisticsTableTableManager(
-      _$HibikiDatabase db, $VideoWatchStatisticsTable table)
+      _$FushiDatabase db, $VideoWatchStatisticsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -33435,7 +33435,7 @@ class $$VideoWatchStatisticsTableTableManager extends RootTableManager<
 
 typedef $$VideoWatchStatisticsTableProcessedTableManager
     = ProcessedTableManager<
-        _$HibikiDatabase,
+        _$FushiDatabase,
         $VideoWatchStatisticsTable,
         VideoWatchStatisticRow,
         $$VideoWatchStatisticsTableFilterComposer,
@@ -33445,7 +33445,7 @@ typedef $$VideoWatchStatisticsTableProcessedTableManager
         $$VideoWatchStatisticsTableUpdateCompanionBuilder,
         (
           VideoWatchStatisticRow,
-          BaseReferences<_$HibikiDatabase, $VideoWatchStatisticsTable,
+          BaseReferences<_$FushiDatabase, $VideoWatchStatisticsTable,
               VideoWatchStatisticRow>
         ),
         VideoWatchStatisticRow,
@@ -33466,7 +33466,7 @@ typedef $$VideoHourlyLogsTableUpdateCompanionBuilder = VideoHourlyLogsCompanion
 });
 
 class $$VideoHourlyLogsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $VideoHourlyLogsTable> {
+    extends Composer<_$FushiDatabase, $VideoHourlyLogsTable> {
   $$VideoHourlyLogsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -33488,7 +33488,7 @@ class $$VideoHourlyLogsTableFilterComposer
 }
 
 class $$VideoHourlyLogsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $VideoHourlyLogsTable> {
+    extends Composer<_$FushiDatabase, $VideoHourlyLogsTable> {
   $$VideoHourlyLogsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -33510,7 +33510,7 @@ class $$VideoHourlyLogsTableOrderingComposer
 }
 
 class $$VideoHourlyLogsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $VideoHourlyLogsTable> {
+    extends Composer<_$FushiDatabase, $VideoHourlyLogsTable> {
   $$VideoHourlyLogsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -33532,7 +33532,7 @@ class $$VideoHourlyLogsTableAnnotationComposer
 }
 
 class $$VideoHourlyLogsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $VideoHourlyLogsTable,
     VideoHourlyLogRow,
     $$VideoHourlyLogsTableFilterComposer,
@@ -33542,12 +33542,12 @@ class $$VideoHourlyLogsTableTableManager extends RootTableManager<
     $$VideoHourlyLogsTableUpdateCompanionBuilder,
     (
       VideoHourlyLogRow,
-      BaseReferences<_$HibikiDatabase, $VideoHourlyLogsTable, VideoHourlyLogRow>
+      BaseReferences<_$FushiDatabase, $VideoHourlyLogsTable, VideoHourlyLogRow>
     ),
     VideoHourlyLogRow,
     PrefetchHooks Function()> {
   $$VideoHourlyLogsTableTableManager(
-      _$HibikiDatabase db, $VideoHourlyLogsTable table)
+      _$FushiDatabase db, $VideoHourlyLogsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -33589,7 +33589,7 @@ class $$VideoHourlyLogsTableTableManager extends RootTableManager<
 }
 
 typedef $$VideoHourlyLogsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $VideoHourlyLogsTable,
     VideoHourlyLogRow,
     $$VideoHourlyLogsTableFilterComposer,
@@ -33599,7 +33599,7 @@ typedef $$VideoHourlyLogsTableProcessedTableManager = ProcessedTableManager<
     $$VideoHourlyLogsTableUpdateCompanionBuilder,
     (
       VideoHourlyLogRow,
-      BaseReferences<_$HibikiDatabase, $VideoHourlyLogsTable, VideoHourlyLogRow>
+      BaseReferences<_$FushiDatabase, $VideoHourlyLogsTable, VideoHourlyLogRow>
     ),
     VideoHourlyLogRow,
     PrefetchHooks Function()>;
@@ -33629,7 +33629,7 @@ typedef $$FavoriteWordsTableUpdateCompanionBuilder = FavoriteWordsCompanion
 });
 
 class $$FavoriteWordsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $FavoriteWordsTable> {
+    extends Composer<_$FushiDatabase, $FavoriteWordsTable> {
   $$FavoriteWordsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -33666,7 +33666,7 @@ class $$FavoriteWordsTableFilterComposer
 }
 
 class $$FavoriteWordsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $FavoriteWordsTable> {
+    extends Composer<_$FushiDatabase, $FavoriteWordsTable> {
   $$FavoriteWordsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -33703,7 +33703,7 @@ class $$FavoriteWordsTableOrderingComposer
 }
 
 class $$FavoriteWordsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $FavoriteWordsTable> {
+    extends Composer<_$FushiDatabase, $FavoriteWordsTable> {
   $$FavoriteWordsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -33740,7 +33740,7 @@ class $$FavoriteWordsTableAnnotationComposer
 }
 
 class $$FavoriteWordsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $FavoriteWordsTable,
     FavoriteWordRow,
     $$FavoriteWordsTableFilterComposer,
@@ -33750,12 +33750,12 @@ class $$FavoriteWordsTableTableManager extends RootTableManager<
     $$FavoriteWordsTableUpdateCompanionBuilder,
     (
       FavoriteWordRow,
-      BaseReferences<_$HibikiDatabase, $FavoriteWordsTable, FavoriteWordRow>
+      BaseReferences<_$FushiDatabase, $FavoriteWordsTable, FavoriteWordRow>
     ),
     FavoriteWordRow,
     PrefetchHooks Function()> {
   $$FavoriteWordsTableTableManager(
-      _$HibikiDatabase db, $FavoriteWordsTable table)
+      _$FushiDatabase db, $FavoriteWordsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -33817,7 +33817,7 @@ class $$FavoriteWordsTableTableManager extends RootTableManager<
 }
 
 typedef $$FavoriteWordsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $FavoriteWordsTable,
     FavoriteWordRow,
     $$FavoriteWordsTableFilterComposer,
@@ -33827,7 +33827,7 @@ typedef $$FavoriteWordsTableProcessedTableManager = ProcessedTableManager<
     $$FavoriteWordsTableUpdateCompanionBuilder,
     (
       FavoriteWordRow,
-      BaseReferences<_$HibikiDatabase, $FavoriteWordsTable, FavoriteWordRow>
+      BaseReferences<_$FushiDatabase, $FavoriteWordsTable, FavoriteWordRow>
     ),
     FavoriteWordRow,
     PrefetchHooks Function()>;
@@ -33847,7 +33847,7 @@ typedef $$MiningStatisticsTableUpdateCompanionBuilder
 });
 
 class $$MiningStatisticsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $MiningStatisticsTable> {
+    extends Composer<_$FushiDatabase, $MiningStatisticsTable> {
   $$MiningStatisticsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -33869,7 +33869,7 @@ class $$MiningStatisticsTableFilterComposer
 }
 
 class $$MiningStatisticsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $MiningStatisticsTable> {
+    extends Composer<_$FushiDatabase, $MiningStatisticsTable> {
   $$MiningStatisticsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -33891,7 +33891,7 @@ class $$MiningStatisticsTableOrderingComposer
 }
 
 class $$MiningStatisticsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $MiningStatisticsTable> {
+    extends Composer<_$FushiDatabase, $MiningStatisticsTable> {
   $$MiningStatisticsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -33913,7 +33913,7 @@ class $$MiningStatisticsTableAnnotationComposer
 }
 
 class $$MiningStatisticsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MiningStatisticsTable,
     MiningStatisticRow,
     $$MiningStatisticsTableFilterComposer,
@@ -33923,13 +33923,13 @@ class $$MiningStatisticsTableTableManager extends RootTableManager<
     $$MiningStatisticsTableUpdateCompanionBuilder,
     (
       MiningStatisticRow,
-      BaseReferences<_$HibikiDatabase, $MiningStatisticsTable,
+      BaseReferences<_$FushiDatabase, $MiningStatisticsTable,
           MiningStatisticRow>
     ),
     MiningStatisticRow,
     PrefetchHooks Function()> {
   $$MiningStatisticsTableTableManager(
-      _$HibikiDatabase db, $MiningStatisticsTable table)
+      _$FushiDatabase db, $MiningStatisticsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -33971,7 +33971,7 @@ class $$MiningStatisticsTableTableManager extends RootTableManager<
 }
 
 typedef $$MiningStatisticsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MiningStatisticsTable,
     MiningStatisticRow,
     $$MiningStatisticsTableFilterComposer,
@@ -33981,7 +33981,7 @@ typedef $$MiningStatisticsTableProcessedTableManager = ProcessedTableManager<
     $$MiningStatisticsTableUpdateCompanionBuilder,
     (
       MiningStatisticRow,
-      BaseReferences<_$HibikiDatabase, $MiningStatisticsTable,
+      BaseReferences<_$FushiDatabase, $MiningStatisticsTable,
           MiningStatisticRow>
     ),
     MiningStatisticRow,
@@ -34024,7 +34024,7 @@ typedef $$MinedSentencesTableUpdateCompanionBuilder = MinedSentencesCompanion
 });
 
 class $$MinedSentencesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $MinedSentencesTable> {
+    extends Composer<_$FushiDatabase, $MinedSentencesTable> {
   $$MinedSentencesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -34081,7 +34081,7 @@ class $$MinedSentencesTableFilterComposer
 }
 
 class $$MinedSentencesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $MinedSentencesTable> {
+    extends Composer<_$FushiDatabase, $MinedSentencesTable> {
   $$MinedSentencesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -34141,7 +34141,7 @@ class $$MinedSentencesTableOrderingComposer
 }
 
 class $$MinedSentencesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $MinedSentencesTable> {
+    extends Composer<_$FushiDatabase, $MinedSentencesTable> {
   $$MinedSentencesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -34196,7 +34196,7 @@ class $$MinedSentencesTableAnnotationComposer
 }
 
 class $$MinedSentencesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MinedSentencesTable,
     MinedSentenceRow,
     $$MinedSentencesTableFilterComposer,
@@ -34206,12 +34206,12 @@ class $$MinedSentencesTableTableManager extends RootTableManager<
     $$MinedSentencesTableUpdateCompanionBuilder,
     (
       MinedSentenceRow,
-      BaseReferences<_$HibikiDatabase, $MinedSentencesTable, MinedSentenceRow>
+      BaseReferences<_$FushiDatabase, $MinedSentencesTable, MinedSentenceRow>
     ),
     MinedSentenceRow,
     PrefetchHooks Function()> {
   $$MinedSentencesTableTableManager(
-      _$HibikiDatabase db, $MinedSentencesTable table)
+      _$FushiDatabase db, $MinedSentencesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -34297,7 +34297,7 @@ class $$MinedSentencesTableTableManager extends RootTableManager<
 }
 
 typedef $$MinedSentencesTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MinedSentencesTable,
     MinedSentenceRow,
     $$MinedSentencesTableFilterComposer,
@@ -34307,7 +34307,7 @@ typedef $$MinedSentencesTableProcessedTableManager = ProcessedTableManager<
     $$MinedSentencesTableUpdateCompanionBuilder,
     (
       MinedSentenceRow,
-      BaseReferences<_$HibikiDatabase, $MinedSentencesTable, MinedSentenceRow>
+      BaseReferences<_$FushiDatabase, $MinedSentencesTable, MinedSentenceRow>
     ),
     MinedSentenceRow,
     PrefetchHooks Function()>;
@@ -34327,11 +34327,11 @@ typedef $$SeriesTableUpdateCompanionBuilder = SeriesCompanion Function({
 });
 
 final class $$SeriesTableReferences
-    extends BaseReferences<_$HibikiDatabase, $SeriesTable, SeriesRow> {
+    extends BaseReferences<_$FushiDatabase, $SeriesTable, SeriesRow> {
   $$SeriesTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static MultiTypedResultKey<$ShelfEntriesTable, List<ShelfEntryRow>>
-      _shelfEntriesRefsTable(_$HibikiDatabase db) =>
+      _shelfEntriesRefsTable(_$FushiDatabase db) =>
           MultiTypedResultKey.fromTable(db.shelfEntries,
               aliasName: 'series__id__shelf_entries__series_id');
 
@@ -34346,7 +34346,7 @@ final class $$SeriesTableReferences
 }
 
 class $$SeriesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $SeriesTable> {
+    extends Composer<_$FushiDatabase, $SeriesTable> {
   $$SeriesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -34392,7 +34392,7 @@ class $$SeriesTableFilterComposer
 }
 
 class $$SeriesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $SeriesTable> {
+    extends Composer<_$FushiDatabase, $SeriesTable> {
   $$SeriesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -34417,7 +34417,7 @@ class $$SeriesTableOrderingComposer
 }
 
 class $$SeriesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $SeriesTable> {
+    extends Composer<_$FushiDatabase, $SeriesTable> {
   $$SeriesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -34463,7 +34463,7 @@ class $$SeriesTableAnnotationComposer
 }
 
 class $$SeriesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $SeriesTable,
     SeriesRow,
     $$SeriesTableFilterComposer,
@@ -34474,7 +34474,7 @@ class $$SeriesTableTableManager extends RootTableManager<
     (SeriesRow, $$SeriesTableReferences),
     SeriesRow,
     PrefetchHooks Function({bool shelfEntriesRefs})> {
-  $$SeriesTableTableManager(_$HibikiDatabase db, $SeriesTable table)
+  $$SeriesTableTableManager(_$FushiDatabase db, $SeriesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -34544,7 +34544,7 @@ class $$SeriesTableTableManager extends RootTableManager<
 }
 
 typedef $$SeriesTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $SeriesTable,
     SeriesRow,
     $$SeriesTableFilterComposer,
@@ -34573,10 +34573,10 @@ typedef $$ShelfEntriesTableUpdateCompanionBuilder = ShelfEntriesCompanion
 });
 
 final class $$ShelfEntriesTableReferences extends BaseReferences<
-    _$HibikiDatabase, $ShelfEntriesTable, ShelfEntryRow> {
+    _$FushiDatabase, $ShelfEntriesTable, ShelfEntryRow> {
   $$ShelfEntriesTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $SeriesTable _seriesIdTable(_$HibikiDatabase db) =>
+  static $SeriesTable _seriesIdTable(_$FushiDatabase db) =>
       db.series.createAlias('shelf_entries__series_id__series__id');
 
   $$SeriesTableProcessedTableManager? get seriesId {
@@ -34592,7 +34592,7 @@ final class $$ShelfEntriesTableReferences extends BaseReferences<
 }
 
 class $$ShelfEntriesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $ShelfEntriesTable> {
+    extends Composer<_$FushiDatabase, $ShelfEntriesTable> {
   $$ShelfEntriesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -34631,7 +34631,7 @@ class $$ShelfEntriesTableFilterComposer
 }
 
 class $$ShelfEntriesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $ShelfEntriesTable> {
+    extends Composer<_$FushiDatabase, $ShelfEntriesTable> {
   $$ShelfEntriesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -34670,7 +34670,7 @@ class $$ShelfEntriesTableOrderingComposer
 }
 
 class $$ShelfEntriesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $ShelfEntriesTable> {
+    extends Composer<_$FushiDatabase, $ShelfEntriesTable> {
   $$ShelfEntriesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -34709,7 +34709,7 @@ class $$ShelfEntriesTableAnnotationComposer
 }
 
 class $$ShelfEntriesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $ShelfEntriesTable,
     ShelfEntryRow,
     $$ShelfEntriesTableFilterComposer,
@@ -34720,7 +34720,7 @@ class $$ShelfEntriesTableTableManager extends RootTableManager<
     (ShelfEntryRow, $$ShelfEntriesTableReferences),
     ShelfEntryRow,
     PrefetchHooks Function({bool seriesId})> {
-  $$ShelfEntriesTableTableManager(_$HibikiDatabase db, $ShelfEntriesTable table)
+  $$ShelfEntriesTableTableManager(_$FushiDatabase db, $ShelfEntriesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -34803,7 +34803,7 @@ class $$ShelfEntriesTableTableManager extends RootTableManager<
 }
 
 typedef $$ShelfEntriesTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $ShelfEntriesTable,
     ShelfEntryRow,
     $$ShelfEntriesTableFilterComposer,
@@ -34844,13 +34844,13 @@ typedef $$MediaCollectionsTableUpdateCompanionBuilder
 });
 
 final class $$MediaCollectionsTableReferences extends BaseReferences<
-    _$HibikiDatabase, $MediaCollectionsTable, MediaCollectionRow> {
+    _$FushiDatabase, $MediaCollectionsTable, MediaCollectionRow> {
   $$MediaCollectionsTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
   static MultiTypedResultKey<$MediaCollectionItemsTable,
       List<MediaCollectionItemRow>> _mediaCollectionItemsRefsTable(
-          _$HibikiDatabase db) =>
+          _$FushiDatabase db) =>
       MultiTypedResultKey.fromTable(db.mediaCollectionItems,
           aliasName:
               'media_collections__id__media_collection_items__collection_id');
@@ -34869,7 +34869,7 @@ final class $$MediaCollectionsTableReferences extends BaseReferences<
 
   static MultiTypedResultKey<$CollectionTagMappingsTable,
       List<CollectionTagMappingRow>> _collectionTagMappingsRefsTable(
-          _$HibikiDatabase db) =>
+          _$FushiDatabase db) =>
       MultiTypedResultKey.fromTable(db.collectionTagMappings,
           aliasName:
               'media_collections__id__collection_tag_mappings__collection_id');
@@ -34888,7 +34888,7 @@ final class $$MediaCollectionsTableReferences extends BaseReferences<
 
   static MultiTypedResultKey<$CollectionScrapeMetaTable,
       List<CollectionScrapeMetaRow>> _collectionScrapeMetaRefsTable(
-          _$HibikiDatabase db) =>
+          _$FushiDatabase db) =>
       MultiTypedResultKey.fromTable(db.collectionScrapeMeta,
           aliasName:
               'media_collections__id__collection_scrape_meta__collection_id');
@@ -34906,7 +34906,7 @@ final class $$MediaCollectionsTableReferences extends BaseReferences<
   }
 
   static MultiTypedResultKey<$MediaImagesTable, List<MediaImageRow>>
-      _mediaImagesRefsTable(_$HibikiDatabase db) =>
+      _mediaImagesRefsTable(_$FushiDatabase db) =>
           MultiTypedResultKey.fromTable(db.mediaImages,
               aliasName: 'media_collections__id__media_images__collection_id');
 
@@ -34921,7 +34921,7 @@ final class $$MediaCollectionsTableReferences extends BaseReferences<
 }
 
 class $$MediaCollectionsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $MediaCollectionsTable> {
+    extends Composer<_$FushiDatabase, $MediaCollectionsTable> {
   $$MediaCollectionsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -35055,7 +35055,7 @@ class $$MediaCollectionsTableFilterComposer
 }
 
 class $$MediaCollectionsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $MediaCollectionsTable> {
+    extends Composer<_$FushiDatabase, $MediaCollectionsTable> {
   $$MediaCollectionsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -35102,7 +35102,7 @@ class $$MediaCollectionsTableOrderingComposer
 }
 
 class $$MediaCollectionsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $MediaCollectionsTable> {
+    extends Composer<_$FushiDatabase, $MediaCollectionsTable> {
   $$MediaCollectionsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -35235,7 +35235,7 @@ class $$MediaCollectionsTableAnnotationComposer
 }
 
 class $$MediaCollectionsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MediaCollectionsTable,
     MediaCollectionRow,
     $$MediaCollectionsTableFilterComposer,
@@ -35251,7 +35251,7 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
         bool collectionScrapeMetaRefs,
         bool mediaImagesRefs})> {
   $$MediaCollectionsTableTableManager(
-      _$HibikiDatabase db, $MediaCollectionsTable table)
+      _$FushiDatabase db, $MediaCollectionsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -35395,7 +35395,7 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
 }
 
 typedef $$MediaCollectionsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MediaCollectionsTable,
     MediaCollectionRow,
     $$MediaCollectionsTableFilterComposer,
@@ -35428,11 +35428,11 @@ typedef $$MediaCollectionItemsTableUpdateCompanionBuilder
 });
 
 final class $$MediaCollectionItemsTableReferences extends BaseReferences<
-    _$HibikiDatabase, $MediaCollectionItemsTable, MediaCollectionItemRow> {
+    _$FushiDatabase, $MediaCollectionItemsTable, MediaCollectionItemRow> {
   $$MediaCollectionItemsTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $MediaCollectionsTable _collectionIdTable(_$HibikiDatabase db) =>
+  static $MediaCollectionsTable _collectionIdTable(_$FushiDatabase db) =>
       db.mediaCollections.createAlias(
           'media_collection_items__collection_id__media_collections__id');
 
@@ -35450,7 +35450,7 @@ final class $$MediaCollectionItemsTableReferences extends BaseReferences<
 }
 
 class $$MediaCollectionItemsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $MediaCollectionItemsTable> {
+    extends Composer<_$FushiDatabase, $MediaCollectionItemsTable> {
   $$MediaCollectionItemsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -35489,7 +35489,7 @@ class $$MediaCollectionItemsTableFilterComposer
 }
 
 class $$MediaCollectionItemsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $MediaCollectionItemsTable> {
+    extends Composer<_$FushiDatabase, $MediaCollectionItemsTable> {
   $$MediaCollectionItemsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -35528,7 +35528,7 @@ class $$MediaCollectionItemsTableOrderingComposer
 }
 
 class $$MediaCollectionItemsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $MediaCollectionItemsTable> {
+    extends Composer<_$FushiDatabase, $MediaCollectionItemsTable> {
   $$MediaCollectionItemsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -35567,7 +35567,7 @@ class $$MediaCollectionItemsTableAnnotationComposer
 }
 
 class $$MediaCollectionItemsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MediaCollectionItemsTable,
     MediaCollectionItemRow,
     $$MediaCollectionItemsTableFilterComposer,
@@ -35579,7 +35579,7 @@ class $$MediaCollectionItemsTableTableManager extends RootTableManager<
     MediaCollectionItemRow,
     PrefetchHooks Function({bool collectionId})> {
   $$MediaCollectionItemsTableTableManager(
-      _$HibikiDatabase db, $MediaCollectionItemsTable table)
+      _$FushiDatabase db, $MediaCollectionItemsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -35666,7 +35666,7 @@ class $$MediaCollectionItemsTableTableManager extends RootTableManager<
 
 typedef $$MediaCollectionItemsTableProcessedTableManager
     = ProcessedTableManager<
-        _$HibikiDatabase,
+        _$FushiDatabase,
         $MediaCollectionItemsTable,
         MediaCollectionItemRow,
         $$MediaCollectionItemsTableFilterComposer,
@@ -35697,7 +35697,7 @@ typedef $$CollectionMemberTombstonesTableUpdateCompanionBuilder
 });
 
 class $$CollectionMemberTombstonesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $CollectionMemberTombstonesTable> {
+    extends Composer<_$FushiDatabase, $CollectionMemberTombstonesTable> {
   $$CollectionMemberTombstonesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -35724,7 +35724,7 @@ class $$CollectionMemberTombstonesTableFilterComposer
 }
 
 class $$CollectionMemberTombstonesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $CollectionMemberTombstonesTable> {
+    extends Composer<_$FushiDatabase, $CollectionMemberTombstonesTable> {
   $$CollectionMemberTombstonesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -35751,7 +35751,7 @@ class $$CollectionMemberTombstonesTableOrderingComposer
 }
 
 class $$CollectionMemberTombstonesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $CollectionMemberTombstonesTable> {
+    extends Composer<_$FushiDatabase, $CollectionMemberTombstonesTable> {
   $$CollectionMemberTombstonesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -35776,7 +35776,7 @@ class $$CollectionMemberTombstonesTableAnnotationComposer
 }
 
 class $$CollectionMemberTombstonesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $CollectionMemberTombstonesTable,
     CollectionMemberTombstoneRow,
     $$CollectionMemberTombstonesTableFilterComposer,
@@ -35786,13 +35786,13 @@ class $$CollectionMemberTombstonesTableTableManager extends RootTableManager<
     $$CollectionMemberTombstonesTableUpdateCompanionBuilder,
     (
       CollectionMemberTombstoneRow,
-      BaseReferences<_$HibikiDatabase, $CollectionMemberTombstonesTable,
+      BaseReferences<_$FushiDatabase, $CollectionMemberTombstonesTable,
           CollectionMemberTombstoneRow>
     ),
     CollectionMemberTombstoneRow,
     PrefetchHooks Function()> {
   $$CollectionMemberTombstonesTableTableManager(
-      _$HibikiDatabase db, $CollectionMemberTombstonesTable table)
+      _$FushiDatabase db, $CollectionMemberTombstonesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -35846,7 +35846,7 @@ class $$CollectionMemberTombstonesTableTableManager extends RootTableManager<
 
 typedef $$CollectionMemberTombstonesTableProcessedTableManager
     = ProcessedTableManager<
-        _$HibikiDatabase,
+        _$FushiDatabase,
         $CollectionMemberTombstonesTable,
         CollectionMemberTombstoneRow,
         $$CollectionMemberTombstonesTableFilterComposer,
@@ -35856,13 +35856,13 @@ typedef $$CollectionMemberTombstonesTableProcessedTableManager
         $$CollectionMemberTombstonesTableUpdateCompanionBuilder,
         (
           CollectionMemberTombstoneRow,
-          BaseReferences<_$HibikiDatabase, $CollectionMemberTombstonesTable,
+          BaseReferences<_$FushiDatabase, $CollectionMemberTombstonesTable,
               CollectionMemberTombstoneRow>
         ),
         CollectionMemberTombstoneRow,
         PrefetchHooks Function()>;
-typedef $$HibikiPairedPeersTableCreateCompanionBuilder
-    = HibikiPairedPeersCompanion Function({
+typedef $$FushiPairedPeersTableCreateCompanionBuilder
+    = FushiPairedPeersCompanion Function({
   Value<int> id,
   required String peerId,
   Value<String?> deviceName,
@@ -35870,8 +35870,8 @@ typedef $$HibikiPairedPeersTableCreateCompanionBuilder
   required int pairedAtMs,
   Value<String?> lastSeenIp,
 });
-typedef $$HibikiPairedPeersTableUpdateCompanionBuilder
-    = HibikiPairedPeersCompanion Function({
+typedef $$FushiPairedPeersTableUpdateCompanionBuilder
+    = FushiPairedPeersCompanion Function({
   Value<int> id,
   Value<String> peerId,
   Value<String?> deviceName,
@@ -35880,9 +35880,9 @@ typedef $$HibikiPairedPeersTableUpdateCompanionBuilder
   Value<String?> lastSeenIp,
 });
 
-class $$HibikiPairedPeersTableFilterComposer
-    extends Composer<_$HibikiDatabase, $HibikiPairedPeersTable> {
-  $$HibikiPairedPeersTableFilterComposer({
+class $$FushiPairedPeersTableFilterComposer
+    extends Composer<_$FushiDatabase, $FushiPairedPeersTable> {
+  $$FushiPairedPeersTableFilterComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -35908,9 +35908,9 @@ class $$HibikiPairedPeersTableFilterComposer
       column: $table.lastSeenIp, builder: (column) => ColumnFilters(column));
 }
 
-class $$HibikiPairedPeersTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $HibikiPairedPeersTable> {
-  $$HibikiPairedPeersTableOrderingComposer({
+class $$FushiPairedPeersTableOrderingComposer
+    extends Composer<_$FushiDatabase, $FushiPairedPeersTable> {
+  $$FushiPairedPeersTableOrderingComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -35936,9 +35936,9 @@ class $$HibikiPairedPeersTableOrderingComposer
       column: $table.lastSeenIp, builder: (column) => ColumnOrderings(column));
 }
 
-class $$HibikiPairedPeersTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $HibikiPairedPeersTable> {
-  $$HibikiPairedPeersTableAnnotationComposer({
+class $$FushiPairedPeersTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $FushiPairedPeersTable> {
+  $$FushiPairedPeersTableAnnotationComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -35964,33 +35964,33 @@ class $$HibikiPairedPeersTableAnnotationComposer
       column: $table.lastSeenIp, builder: (column) => column);
 }
 
-class $$HibikiPairedPeersTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
-    $HibikiPairedPeersTable,
-    HibikiPairedPeerRow,
-    $$HibikiPairedPeersTableFilterComposer,
-    $$HibikiPairedPeersTableOrderingComposer,
-    $$HibikiPairedPeersTableAnnotationComposer,
-    $$HibikiPairedPeersTableCreateCompanionBuilder,
-    $$HibikiPairedPeersTableUpdateCompanionBuilder,
+class $$FushiPairedPeersTableTableManager extends RootTableManager<
+    _$FushiDatabase,
+    $FushiPairedPeersTable,
+    FushiPairedPeerRow,
+    $$FushiPairedPeersTableFilterComposer,
+    $$FushiPairedPeersTableOrderingComposer,
+    $$FushiPairedPeersTableAnnotationComposer,
+    $$FushiPairedPeersTableCreateCompanionBuilder,
+    $$FushiPairedPeersTableUpdateCompanionBuilder,
     (
-      HibikiPairedPeerRow,
-      BaseReferences<_$HibikiDatabase, $HibikiPairedPeersTable,
-          HibikiPairedPeerRow>
+      FushiPairedPeerRow,
+      BaseReferences<_$FushiDatabase, $FushiPairedPeersTable,
+          FushiPairedPeerRow>
     ),
-    HibikiPairedPeerRow,
+    FushiPairedPeerRow,
     PrefetchHooks Function()> {
-  $$HibikiPairedPeersTableTableManager(
-      _$HibikiDatabase db, $HibikiPairedPeersTable table)
+  $$FushiPairedPeersTableTableManager(
+      _$FushiDatabase db, $FushiPairedPeersTable table)
       : super(TableManagerState(
           db: db,
           table: table,
           createFilteringComposer: () =>
-              $$HibikiPairedPeersTableFilterComposer($db: db, $table: table),
+              $$FushiPairedPeersTableFilterComposer($db: db, $table: table),
           createOrderingComposer: () =>
-              $$HibikiPairedPeersTableOrderingComposer($db: db, $table: table),
+              $$FushiPairedPeersTableOrderingComposer($db: db, $table: table),
           createComputedFieldComposer: () =>
-              $$HibikiPairedPeersTableAnnotationComposer(
+              $$FushiPairedPeersTableAnnotationComposer(
                   $db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
@@ -36000,7 +36000,7 @@ class $$HibikiPairedPeersTableTableManager extends RootTableManager<
             Value<int> pairedAtMs = const Value.absent(),
             Value<String?> lastSeenIp = const Value.absent(),
           }) =>
-              HibikiPairedPeersCompanion(
+              FushiPairedPeersCompanion(
             id: id,
             peerId: peerId,
             deviceName: deviceName,
@@ -36016,7 +36016,7 @@ class $$HibikiPairedPeersTableTableManager extends RootTableManager<
             required int pairedAtMs,
             Value<String?> lastSeenIp = const Value.absent(),
           }) =>
-              HibikiPairedPeersCompanion.insert(
+              FushiPairedPeersCompanion.insert(
             id: id,
             peerId: peerId,
             deviceName: deviceName,
@@ -36031,21 +36031,21 @@ class $$HibikiPairedPeersTableTableManager extends RootTableManager<
         ));
 }
 
-typedef $$HibikiPairedPeersTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
-    $HibikiPairedPeersTable,
-    HibikiPairedPeerRow,
-    $$HibikiPairedPeersTableFilterComposer,
-    $$HibikiPairedPeersTableOrderingComposer,
-    $$HibikiPairedPeersTableAnnotationComposer,
-    $$HibikiPairedPeersTableCreateCompanionBuilder,
-    $$HibikiPairedPeersTableUpdateCompanionBuilder,
+typedef $$FushiPairedPeersTableProcessedTableManager = ProcessedTableManager<
+    _$FushiDatabase,
+    $FushiPairedPeersTable,
+    FushiPairedPeerRow,
+    $$FushiPairedPeersTableFilterComposer,
+    $$FushiPairedPeersTableOrderingComposer,
+    $$FushiPairedPeersTableAnnotationComposer,
+    $$FushiPairedPeersTableCreateCompanionBuilder,
+    $$FushiPairedPeersTableUpdateCompanionBuilder,
     (
-      HibikiPairedPeerRow,
-      BaseReferences<_$HibikiDatabase, $HibikiPairedPeersTable,
-          HibikiPairedPeerRow>
+      FushiPairedPeerRow,
+      BaseReferences<_$FushiDatabase, $FushiPairedPeersTable,
+          FushiPairedPeerRow>
     ),
-    HibikiPairedPeerRow,
+    FushiPairedPeerRow,
     PrefetchHooks Function()>;
 typedef $$BookTombstonesTableCreateCompanionBuilder = BookTombstonesCompanion
     Function({
@@ -36061,7 +36061,7 @@ typedef $$BookTombstonesTableUpdateCompanionBuilder = BookTombstonesCompanion
 });
 
 class $$BookTombstonesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $BookTombstonesTable> {
+    extends Composer<_$FushiDatabase, $BookTombstonesTable> {
   $$BookTombstonesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -36077,7 +36077,7 @@ class $$BookTombstonesTableFilterComposer
 }
 
 class $$BookTombstonesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $BookTombstonesTable> {
+    extends Composer<_$FushiDatabase, $BookTombstonesTable> {
   $$BookTombstonesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -36093,7 +36093,7 @@ class $$BookTombstonesTableOrderingComposer
 }
 
 class $$BookTombstonesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $BookTombstonesTable> {
+    extends Composer<_$FushiDatabase, $BookTombstonesTable> {
   $$BookTombstonesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -36109,7 +36109,7 @@ class $$BookTombstonesTableAnnotationComposer
 }
 
 class $$BookTombstonesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $BookTombstonesTable,
     BookTombstoneRow,
     $$BookTombstonesTableFilterComposer,
@@ -36119,12 +36119,12 @@ class $$BookTombstonesTableTableManager extends RootTableManager<
     $$BookTombstonesTableUpdateCompanionBuilder,
     (
       BookTombstoneRow,
-      BaseReferences<_$HibikiDatabase, $BookTombstonesTable, BookTombstoneRow>
+      BaseReferences<_$FushiDatabase, $BookTombstonesTable, BookTombstoneRow>
     ),
     BookTombstoneRow,
     PrefetchHooks Function()> {
   $$BookTombstonesTableTableManager(
-      _$HibikiDatabase db, $BookTombstonesTable table)
+      _$FushiDatabase db, $BookTombstonesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -36162,7 +36162,7 @@ class $$BookTombstonesTableTableManager extends RootTableManager<
 }
 
 typedef $$BookTombstonesTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $BookTombstonesTable,
     BookTombstoneRow,
     $$BookTombstonesTableFilterComposer,
@@ -36172,7 +36172,7 @@ typedef $$BookTombstonesTableProcessedTableManager = ProcessedTableManager<
     $$BookTombstonesTableUpdateCompanionBuilder,
     (
       BookTombstoneRow,
-      BaseReferences<_$HibikiDatabase, $BookTombstonesTable, BookTombstoneRow>
+      BaseReferences<_$FushiDatabase, $BookTombstonesTable, BookTombstoneRow>
     ),
     BookTombstoneRow,
     PrefetchHooks Function()>;
@@ -36198,7 +36198,7 @@ typedef $$LookupMiningCountersTableUpdateCompanionBuilder
 });
 
 class $$LookupMiningCountersTableFilterComposer
-    extends Composer<_$HibikiDatabase, $LookupMiningCountersTable> {
+    extends Composer<_$FushiDatabase, $LookupMiningCountersTable> {
   $$LookupMiningCountersTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -36229,7 +36229,7 @@ class $$LookupMiningCountersTableFilterComposer
 }
 
 class $$LookupMiningCountersTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $LookupMiningCountersTable> {
+    extends Composer<_$FushiDatabase, $LookupMiningCountersTable> {
   $$LookupMiningCountersTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -36260,7 +36260,7 @@ class $$LookupMiningCountersTableOrderingComposer
 }
 
 class $$LookupMiningCountersTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $LookupMiningCountersTable> {
+    extends Composer<_$FushiDatabase, $LookupMiningCountersTable> {
   $$LookupMiningCountersTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -36291,7 +36291,7 @@ class $$LookupMiningCountersTableAnnotationComposer
 }
 
 class $$LookupMiningCountersTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $LookupMiningCountersTable,
     LookupMiningCounterRow,
     $$LookupMiningCountersTableFilterComposer,
@@ -36301,13 +36301,13 @@ class $$LookupMiningCountersTableTableManager extends RootTableManager<
     $$LookupMiningCountersTableUpdateCompanionBuilder,
     (
       LookupMiningCounterRow,
-      BaseReferences<_$HibikiDatabase, $LookupMiningCountersTable,
+      BaseReferences<_$FushiDatabase, $LookupMiningCountersTable,
           LookupMiningCounterRow>
     ),
     LookupMiningCounterRow,
     PrefetchHooks Function()> {
   $$LookupMiningCountersTableTableManager(
-      _$HibikiDatabase db, $LookupMiningCountersTable table)
+      _$FushiDatabase db, $LookupMiningCountersTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -36364,7 +36364,7 @@ class $$LookupMiningCountersTableTableManager extends RootTableManager<
 
 typedef $$LookupMiningCountersTableProcessedTableManager
     = ProcessedTableManager<
-        _$HibikiDatabase,
+        _$FushiDatabase,
         $LookupMiningCountersTable,
         LookupMiningCounterRow,
         $$LookupMiningCountersTableFilterComposer,
@@ -36374,7 +36374,7 @@ typedef $$LookupMiningCountersTableProcessedTableManager
         $$LookupMiningCountersTableUpdateCompanionBuilder,
         (
           LookupMiningCounterRow,
-          BaseReferences<_$HibikiDatabase, $LookupMiningCountersTable,
+          BaseReferences<_$FushiDatabase, $LookupMiningCountersTable,
               LookupMiningCounterRow>
         ),
         LookupMiningCounterRow,
@@ -36395,7 +36395,7 @@ typedef $$StatisticsTombstonesTableUpdateCompanionBuilder
 });
 
 class $$StatisticsTombstonesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $StatisticsTombstonesTable> {
+    extends Composer<_$FushiDatabase, $StatisticsTombstonesTable> {
   $$StatisticsTombstonesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -36414,7 +36414,7 @@ class $$StatisticsTombstonesTableFilterComposer
 }
 
 class $$StatisticsTombstonesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $StatisticsTombstonesTable> {
+    extends Composer<_$FushiDatabase, $StatisticsTombstonesTable> {
   $$StatisticsTombstonesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -36433,7 +36433,7 @@ class $$StatisticsTombstonesTableOrderingComposer
 }
 
 class $$StatisticsTombstonesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $StatisticsTombstonesTable> {
+    extends Composer<_$FushiDatabase, $StatisticsTombstonesTable> {
   $$StatisticsTombstonesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -36452,7 +36452,7 @@ class $$StatisticsTombstonesTableAnnotationComposer
 }
 
 class $$StatisticsTombstonesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $StatisticsTombstonesTable,
     StatisticsTombstoneRow,
     $$StatisticsTombstonesTableFilterComposer,
@@ -36462,13 +36462,13 @@ class $$StatisticsTombstonesTableTableManager extends RootTableManager<
     $$StatisticsTombstonesTableUpdateCompanionBuilder,
     (
       StatisticsTombstoneRow,
-      BaseReferences<_$HibikiDatabase, $StatisticsTombstonesTable,
+      BaseReferences<_$FushiDatabase, $StatisticsTombstonesTable,
           StatisticsTombstoneRow>
     ),
     StatisticsTombstoneRow,
     PrefetchHooks Function()> {
   $$StatisticsTombstonesTableTableManager(
-      _$HibikiDatabase db, $StatisticsTombstonesTable table)
+      _$FushiDatabase db, $StatisticsTombstonesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -36513,7 +36513,7 @@ class $$StatisticsTombstonesTableTableManager extends RootTableManager<
 
 typedef $$StatisticsTombstonesTableProcessedTableManager
     = ProcessedTableManager<
-        _$HibikiDatabase,
+        _$FushiDatabase,
         $StatisticsTombstonesTable,
         StatisticsTombstoneRow,
         $$StatisticsTombstonesTableFilterComposer,
@@ -36523,7 +36523,7 @@ typedef $$StatisticsTombstonesTableProcessedTableManager
         $$StatisticsTombstonesTableUpdateCompanionBuilder,
         (
           StatisticsTombstoneRow,
-          BaseReferences<_$HibikiDatabase, $StatisticsTombstonesTable,
+          BaseReferences<_$FushiDatabase, $StatisticsTombstonesTable,
               StatisticsTombstoneRow>
         ),
         StatisticsTombstoneRow,
@@ -36546,7 +36546,7 @@ typedef $$BookTagMembershipTombstonesTableUpdateCompanionBuilder
 });
 
 class $$BookTagMembershipTombstonesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $BookTagMembershipTombstonesTable> {
+    extends Composer<_$FushiDatabase, $BookTagMembershipTombstonesTable> {
   $$BookTagMembershipTombstonesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -36568,7 +36568,7 @@ class $$BookTagMembershipTombstonesTableFilterComposer
 }
 
 class $$BookTagMembershipTombstonesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $BookTagMembershipTombstonesTable> {
+    extends Composer<_$FushiDatabase, $BookTagMembershipTombstonesTable> {
   $$BookTagMembershipTombstonesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -36590,7 +36590,7 @@ class $$BookTagMembershipTombstonesTableOrderingComposer
 }
 
 class $$BookTagMembershipTombstonesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $BookTagMembershipTombstonesTable> {
+    extends Composer<_$FushiDatabase, $BookTagMembershipTombstonesTable> {
   $$BookTagMembershipTombstonesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -36612,7 +36612,7 @@ class $$BookTagMembershipTombstonesTableAnnotationComposer
 }
 
 class $$BookTagMembershipTombstonesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $BookTagMembershipTombstonesTable,
     BookTagMembershipTombstoneRow,
     $$BookTagMembershipTombstonesTableFilterComposer,
@@ -36622,13 +36622,13 @@ class $$BookTagMembershipTombstonesTableTableManager extends RootTableManager<
     $$BookTagMembershipTombstonesTableUpdateCompanionBuilder,
     (
       BookTagMembershipTombstoneRow,
-      BaseReferences<_$HibikiDatabase, $BookTagMembershipTombstonesTable,
+      BaseReferences<_$FushiDatabase, $BookTagMembershipTombstonesTable,
           BookTagMembershipTombstoneRow>
     ),
     BookTagMembershipTombstoneRow,
     PrefetchHooks Function()> {
   $$BookTagMembershipTombstonesTableTableManager(
-      _$HibikiDatabase db, $BookTagMembershipTombstonesTable table)
+      _$FushiDatabase db, $BookTagMembershipTombstonesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -36678,7 +36678,7 @@ class $$BookTagMembershipTombstonesTableTableManager extends RootTableManager<
 
 typedef $$BookTagMembershipTombstonesTableProcessedTableManager
     = ProcessedTableManager<
-        _$HibikiDatabase,
+        _$FushiDatabase,
         $BookTagMembershipTombstonesTable,
         BookTagMembershipTombstoneRow,
         $$BookTagMembershipTombstonesTableFilterComposer,
@@ -36688,7 +36688,7 @@ typedef $$BookTagMembershipTombstonesTableProcessedTableManager
         $$BookTagMembershipTombstonesTableUpdateCompanionBuilder,
         (
           BookTagMembershipTombstoneRow,
-          BaseReferences<_$HibikiDatabase, $BookTagMembershipTombstonesTable,
+          BaseReferences<_$FushiDatabase, $BookTagMembershipTombstonesTable,
               BookTagMembershipTombstoneRow>
         ),
         BookTagMembershipTombstoneRow,
@@ -36713,7 +36713,7 @@ typedef $$BookCustomCssTableUpdateCompanionBuilder = BookCustomCssCompanion
 });
 
 class $$BookCustomCssTableFilterComposer
-    extends Composer<_$HibikiDatabase, $BookCustomCssTable> {
+    extends Composer<_$FushiDatabase, $BookCustomCssTable> {
   $$BookCustomCssTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -36738,7 +36738,7 @@ class $$BookCustomCssTableFilterComposer
 }
 
 class $$BookCustomCssTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $BookCustomCssTable> {
+    extends Composer<_$FushiDatabase, $BookCustomCssTable> {
   $$BookCustomCssTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -36764,7 +36764,7 @@ class $$BookCustomCssTableOrderingComposer
 }
 
 class $$BookCustomCssTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $BookCustomCssTable> {
+    extends Composer<_$FushiDatabase, $BookCustomCssTable> {
   $$BookCustomCssTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -36789,7 +36789,7 @@ class $$BookCustomCssTableAnnotationComposer
 }
 
 class $$BookCustomCssTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $BookCustomCssTable,
     BookCustomCssRow,
     $$BookCustomCssTableFilterComposer,
@@ -36799,12 +36799,12 @@ class $$BookCustomCssTableTableManager extends RootTableManager<
     $$BookCustomCssTableUpdateCompanionBuilder,
     (
       BookCustomCssRow,
-      BaseReferences<_$HibikiDatabase, $BookCustomCssTable, BookCustomCssRow>
+      BaseReferences<_$FushiDatabase, $BookCustomCssTable, BookCustomCssRow>
     ),
     BookCustomCssRow,
     PrefetchHooks Function()> {
   $$BookCustomCssTableTableManager(
-      _$HibikiDatabase db, $BookCustomCssTable table)
+      _$FushiDatabase db, $BookCustomCssTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -36854,7 +36854,7 @@ class $$BookCustomCssTableTableManager extends RootTableManager<
 }
 
 typedef $$BookCustomCssTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $BookCustomCssTable,
     BookCustomCssRow,
     $$BookCustomCssTableFilterComposer,
@@ -36864,7 +36864,7 @@ typedef $$BookCustomCssTableProcessedTableManager = ProcessedTableManager<
     $$BookCustomCssTableUpdateCompanionBuilder,
     (
       BookCustomCssRow,
-      BaseReferences<_$HibikiDatabase, $BookCustomCssTable, BookCustomCssRow>
+      BaseReferences<_$FushiDatabase, $BookCustomCssTable, BookCustomCssRow>
     ),
     BookCustomCssRow,
     PrefetchHooks Function()>;
@@ -36882,11 +36882,11 @@ typedef $$CollectionTagMappingsTableUpdateCompanionBuilder
 });
 
 final class $$CollectionTagMappingsTableReferences extends BaseReferences<
-    _$HibikiDatabase, $CollectionTagMappingsTable, CollectionTagMappingRow> {
+    _$FushiDatabase, $CollectionTagMappingsTable, CollectionTagMappingRow> {
   $$CollectionTagMappingsTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $MediaCollectionsTable _collectionIdTable(_$HibikiDatabase db) =>
+  static $MediaCollectionsTable _collectionIdTable(_$FushiDatabase db) =>
       db.mediaCollections.createAlias(
           'collection_tag_mappings__collection_id__media_collections__id');
 
@@ -36902,7 +36902,7 @@ final class $$CollectionTagMappingsTableReferences extends BaseReferences<
         manager.$state.copyWith(prefetchedData: [item]));
   }
 
-  static $BookTagsTable _tagIdTable(_$HibikiDatabase db) =>
+  static $BookTagsTable _tagIdTable(_$FushiDatabase db) =>
       db.bookTags.createAlias('collection_tag_mappings__tag_id__book_tags__id');
 
   $$BookTagsTableProcessedTableManager get tagId {
@@ -36918,7 +36918,7 @@ final class $$CollectionTagMappingsTableReferences extends BaseReferences<
 }
 
 class $$CollectionTagMappingsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $CollectionTagMappingsTable> {
+    extends Composer<_$FushiDatabase, $CollectionTagMappingsTable> {
   $$CollectionTagMappingsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -36971,7 +36971,7 @@ class $$CollectionTagMappingsTableFilterComposer
 }
 
 class $$CollectionTagMappingsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $CollectionTagMappingsTable> {
+    extends Composer<_$FushiDatabase, $CollectionTagMappingsTable> {
   $$CollectionTagMappingsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -37024,7 +37024,7 @@ class $$CollectionTagMappingsTableOrderingComposer
 }
 
 class $$CollectionTagMappingsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $CollectionTagMappingsTable> {
+    extends Composer<_$FushiDatabase, $CollectionTagMappingsTable> {
   $$CollectionTagMappingsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -37077,7 +37077,7 @@ class $$CollectionTagMappingsTableAnnotationComposer
 }
 
 class $$CollectionTagMappingsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $CollectionTagMappingsTable,
     CollectionTagMappingRow,
     $$CollectionTagMappingsTableFilterComposer,
@@ -37089,7 +37089,7 @@ class $$CollectionTagMappingsTableTableManager extends RootTableManager<
     CollectionTagMappingRow,
     PrefetchHooks Function({bool collectionId, bool tagId})> {
   $$CollectionTagMappingsTableTableManager(
-      _$HibikiDatabase db, $CollectionTagMappingsTable table)
+      _$FushiDatabase db, $CollectionTagMappingsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -37180,7 +37180,7 @@ class $$CollectionTagMappingsTableTableManager extends RootTableManager<
 
 typedef $$CollectionTagMappingsTableProcessedTableManager
     = ProcessedTableManager<
-        _$HibikiDatabase,
+        _$FushiDatabase,
         $CollectionTagMappingsTable,
         CollectionTagMappingRow,
         $$CollectionTagMappingsTableFilterComposer,
@@ -37209,7 +37209,7 @@ typedef $$SyncDeletionTombstonesTableUpdateCompanionBuilder
 });
 
 class $$SyncDeletionTombstonesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $SyncDeletionTombstonesTable> {
+    extends Composer<_$FushiDatabase, $SyncDeletionTombstonesTable> {
   $$SyncDeletionTombstonesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -37232,7 +37232,7 @@ class $$SyncDeletionTombstonesTableFilterComposer
 }
 
 class $$SyncDeletionTombstonesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $SyncDeletionTombstonesTable> {
+    extends Composer<_$FushiDatabase, $SyncDeletionTombstonesTable> {
   $$SyncDeletionTombstonesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -37255,7 +37255,7 @@ class $$SyncDeletionTombstonesTableOrderingComposer
 }
 
 class $$SyncDeletionTombstonesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $SyncDeletionTombstonesTable> {
+    extends Composer<_$FushiDatabase, $SyncDeletionTombstonesTable> {
   $$SyncDeletionTombstonesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -37277,7 +37277,7 @@ class $$SyncDeletionTombstonesTableAnnotationComposer
 }
 
 class $$SyncDeletionTombstonesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $SyncDeletionTombstonesTable,
     SyncDeletionTombstoneRow,
     $$SyncDeletionTombstonesTableFilterComposer,
@@ -37287,13 +37287,13 @@ class $$SyncDeletionTombstonesTableTableManager extends RootTableManager<
     $$SyncDeletionTombstonesTableUpdateCompanionBuilder,
     (
       SyncDeletionTombstoneRow,
-      BaseReferences<_$HibikiDatabase, $SyncDeletionTombstonesTable,
+      BaseReferences<_$FushiDatabase, $SyncDeletionTombstonesTable,
           SyncDeletionTombstoneRow>
     ),
     SyncDeletionTombstoneRow,
     PrefetchHooks Function()> {
   $$SyncDeletionTombstonesTableTableManager(
-      _$HibikiDatabase db, $SyncDeletionTombstonesTable table)
+      _$FushiDatabase db, $SyncDeletionTombstonesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -37343,7 +37343,7 @@ class $$SyncDeletionTombstonesTableTableManager extends RootTableManager<
 
 typedef $$SyncDeletionTombstonesTableProcessedTableManager
     = ProcessedTableManager<
-        _$HibikiDatabase,
+        _$FushiDatabase,
         $SyncDeletionTombstonesTable,
         SyncDeletionTombstoneRow,
         $$SyncDeletionTombstonesTableFilterComposer,
@@ -37353,7 +37353,7 @@ typedef $$SyncDeletionTombstonesTableProcessedTableManager
         $$SyncDeletionTombstonesTableUpdateCompanionBuilder,
         (
           SyncDeletionTombstoneRow,
-          BaseReferences<_$HibikiDatabase, $SyncDeletionTombstonesTable,
+          BaseReferences<_$FushiDatabase, $SyncDeletionTombstonesTable,
               SyncDeletionTombstoneRow>
         ),
         SyncDeletionTombstoneRow,
@@ -37374,11 +37374,11 @@ typedef $$RevealedImagesTableUpdateCompanionBuilder = RevealedImagesCompanion
 });
 
 final class $$RevealedImagesTableReferences extends BaseReferences<
-    _$HibikiDatabase, $RevealedImagesTable, RevealedImageRow> {
+    _$FushiDatabase, $RevealedImagesTable, RevealedImageRow> {
   $$RevealedImagesTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $EpubBooksTable _bookKeyTable(_$HibikiDatabase db) => db.epubBooks
+  static $EpubBooksTable _bookKeyTable(_$FushiDatabase db) => db.epubBooks
       .createAlias('revealed_images__book_key__epub_books__book_key');
 
   $$EpubBooksTableProcessedTableManager get bookKey {
@@ -37394,7 +37394,7 @@ final class $$RevealedImagesTableReferences extends BaseReferences<
 }
 
 class $$RevealedImagesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $RevealedImagesTable> {
+    extends Composer<_$FushiDatabase, $RevealedImagesTable> {
   $$RevealedImagesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -37430,7 +37430,7 @@ class $$RevealedImagesTableFilterComposer
 }
 
 class $$RevealedImagesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $RevealedImagesTable> {
+    extends Composer<_$FushiDatabase, $RevealedImagesTable> {
   $$RevealedImagesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -37466,7 +37466,7 @@ class $$RevealedImagesTableOrderingComposer
 }
 
 class $$RevealedImagesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $RevealedImagesTable> {
+    extends Composer<_$FushiDatabase, $RevealedImagesTable> {
   $$RevealedImagesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -37502,7 +37502,7 @@ class $$RevealedImagesTableAnnotationComposer
 }
 
 class $$RevealedImagesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $RevealedImagesTable,
     RevealedImageRow,
     $$RevealedImagesTableFilterComposer,
@@ -37514,7 +37514,7 @@ class $$RevealedImagesTableTableManager extends RootTableManager<
     RevealedImageRow,
     PrefetchHooks Function({bool bookKey})> {
   $$RevealedImagesTableTableManager(
-      _$HibikiDatabase db, $RevealedImagesTable table)
+      _$FushiDatabase db, $RevealedImagesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -37594,7 +37594,7 @@ class $$RevealedImagesTableTableManager extends RootTableManager<
 }
 
 typedef $$RevealedImagesTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $RevealedImagesTable,
     RevealedImageRow,
     $$RevealedImagesTableFilterComposer,
@@ -37631,7 +37631,7 @@ typedef $$ActivityEventsTableUpdateCompanionBuilder = ActivityEventsCompanion
 });
 
 class $$ActivityEventsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $ActivityEventsTable> {
+    extends Composer<_$FushiDatabase, $ActivityEventsTable> {
   $$ActivityEventsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -37668,7 +37668,7 @@ class $$ActivityEventsTableFilterComposer
 }
 
 class $$ActivityEventsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $ActivityEventsTable> {
+    extends Composer<_$FushiDatabase, $ActivityEventsTable> {
   $$ActivityEventsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -37705,7 +37705,7 @@ class $$ActivityEventsTableOrderingComposer
 }
 
 class $$ActivityEventsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $ActivityEventsTable> {
+    extends Composer<_$FushiDatabase, $ActivityEventsTable> {
   $$ActivityEventsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -37742,7 +37742,7 @@ class $$ActivityEventsTableAnnotationComposer
 }
 
 class $$ActivityEventsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $ActivityEventsTable,
     ActivityEventRow,
     $$ActivityEventsTableFilterComposer,
@@ -37752,12 +37752,12 @@ class $$ActivityEventsTableTableManager extends RootTableManager<
     $$ActivityEventsTableUpdateCompanionBuilder,
     (
       ActivityEventRow,
-      BaseReferences<_$HibikiDatabase, $ActivityEventsTable, ActivityEventRow>
+      BaseReferences<_$FushiDatabase, $ActivityEventsTable, ActivityEventRow>
     ),
     ActivityEventRow,
     PrefetchHooks Function()> {
   $$ActivityEventsTableTableManager(
-      _$HibikiDatabase db, $ActivityEventsTable table)
+      _$FushiDatabase db, $ActivityEventsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -37819,7 +37819,7 @@ class $$ActivityEventsTableTableManager extends RootTableManager<
 }
 
 typedef $$ActivityEventsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $ActivityEventsTable,
     ActivityEventRow,
     $$ActivityEventsTableFilterComposer,
@@ -37829,7 +37829,7 @@ typedef $$ActivityEventsTableProcessedTableManager = ProcessedTableManager<
     $$ActivityEventsTableUpdateCompanionBuilder,
     (
       ActivityEventRow,
-      BaseReferences<_$HibikiDatabase, $ActivityEventsTable, ActivityEventRow>
+      BaseReferences<_$FushiDatabase, $ActivityEventsTable, ActivityEventRow>
     ),
     ActivityEventRow,
     PrefetchHooks Function()>;
@@ -37849,7 +37849,7 @@ typedef $$ClipboardHistoryTableUpdateCompanionBuilder
 });
 
 class $$ClipboardHistoryTableFilterComposer
-    extends Composer<_$HibikiDatabase, $ClipboardHistoryTable> {
+    extends Composer<_$FushiDatabase, $ClipboardHistoryTable> {
   $$ClipboardHistoryTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -37868,7 +37868,7 @@ class $$ClipboardHistoryTableFilterComposer
 }
 
 class $$ClipboardHistoryTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $ClipboardHistoryTable> {
+    extends Composer<_$FushiDatabase, $ClipboardHistoryTable> {
   $$ClipboardHistoryTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -37887,7 +37887,7 @@ class $$ClipboardHistoryTableOrderingComposer
 }
 
 class $$ClipboardHistoryTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $ClipboardHistoryTable> {
+    extends Composer<_$FushiDatabase, $ClipboardHistoryTable> {
   $$ClipboardHistoryTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -37906,7 +37906,7 @@ class $$ClipboardHistoryTableAnnotationComposer
 }
 
 class $$ClipboardHistoryTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $ClipboardHistoryTable,
     ClipboardHistoryRow,
     $$ClipboardHistoryTableFilterComposer,
@@ -37916,13 +37916,13 @@ class $$ClipboardHistoryTableTableManager extends RootTableManager<
     $$ClipboardHistoryTableUpdateCompanionBuilder,
     (
       ClipboardHistoryRow,
-      BaseReferences<_$HibikiDatabase, $ClipboardHistoryTable,
+      BaseReferences<_$FushiDatabase, $ClipboardHistoryTable,
           ClipboardHistoryRow>
     ),
     ClipboardHistoryRow,
     PrefetchHooks Function()> {
   $$ClipboardHistoryTableTableManager(
-      _$HibikiDatabase db, $ClipboardHistoryTable table)
+      _$FushiDatabase db, $ClipboardHistoryTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -37964,7 +37964,7 @@ class $$ClipboardHistoryTableTableManager extends RootTableManager<
 }
 
 typedef $$ClipboardHistoryTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $ClipboardHistoryTable,
     ClipboardHistoryRow,
     $$ClipboardHistoryTableFilterComposer,
@@ -37974,7 +37974,7 @@ typedef $$ClipboardHistoryTableProcessedTableManager = ProcessedTableManager<
     $$ClipboardHistoryTableUpdateCompanionBuilder,
     (
       ClipboardHistoryRow,
-      BaseReferences<_$HibikiDatabase, $ClipboardHistoryTable,
+      BaseReferences<_$FushiDatabase, $ClipboardHistoryTable,
           ClipboardHistoryRow>
     ),
     ClipboardHistoryRow,
@@ -38019,11 +38019,11 @@ typedef $$VideoScrapeMetaTableUpdateCompanionBuilder = VideoScrapeMetaCompanion
 });
 
 final class $$VideoScrapeMetaTableReferences extends BaseReferences<
-    _$HibikiDatabase, $VideoScrapeMetaTable, VideoScrapeMetaRow> {
+    _$FushiDatabase, $VideoScrapeMetaTable, VideoScrapeMetaRow> {
   $$VideoScrapeMetaTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $VideoBooksTable _bookUidTable(_$HibikiDatabase db) => db.videoBooks
+  static $VideoBooksTable _bookUidTable(_$FushiDatabase db) => db.videoBooks
       .createAlias('video_scrape_meta__book_uid__video_books__book_uid');
 
   $$VideoBooksTableProcessedTableManager get bookUid {
@@ -38039,7 +38039,7 @@ final class $$VideoScrapeMetaTableReferences extends BaseReferences<
 }
 
 class $$VideoScrapeMetaTableFilterComposer
-    extends Composer<_$HibikiDatabase, $VideoScrapeMetaTable> {
+    extends Composer<_$FushiDatabase, $VideoScrapeMetaTable> {
   $$VideoScrapeMetaTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -38111,7 +38111,7 @@ class $$VideoScrapeMetaTableFilterComposer
 }
 
 class $$VideoScrapeMetaTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $VideoScrapeMetaTable> {
+    extends Composer<_$FushiDatabase, $VideoScrapeMetaTable> {
   $$VideoScrapeMetaTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -38186,7 +38186,7 @@ class $$VideoScrapeMetaTableOrderingComposer
 }
 
 class $$VideoScrapeMetaTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $VideoScrapeMetaTable> {
+    extends Composer<_$FushiDatabase, $VideoScrapeMetaTable> {
   $$VideoScrapeMetaTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -38258,7 +38258,7 @@ class $$VideoScrapeMetaTableAnnotationComposer
 }
 
 class $$VideoScrapeMetaTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $VideoScrapeMetaTable,
     VideoScrapeMetaRow,
     $$VideoScrapeMetaTableFilterComposer,
@@ -38270,7 +38270,7 @@ class $$VideoScrapeMetaTableTableManager extends RootTableManager<
     VideoScrapeMetaRow,
     PrefetchHooks Function({bool bookUid})> {
   $$VideoScrapeMetaTableTableManager(
-      _$HibikiDatabase db, $VideoScrapeMetaTable table)
+      _$FushiDatabase db, $VideoScrapeMetaTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -38398,7 +38398,7 @@ class $$VideoScrapeMetaTableTableManager extends RootTableManager<
 }
 
 typedef $$VideoScrapeMetaTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $VideoScrapeMetaTable,
     VideoScrapeMetaRow,
     $$VideoScrapeMetaTableFilterComposer,
@@ -38447,11 +38447,11 @@ typedef $$CollectionScrapeMetaTableUpdateCompanionBuilder
 });
 
 final class $$CollectionScrapeMetaTableReferences extends BaseReferences<
-    _$HibikiDatabase, $CollectionScrapeMetaTable, CollectionScrapeMetaRow> {
+    _$FushiDatabase, $CollectionScrapeMetaTable, CollectionScrapeMetaRow> {
   $$CollectionScrapeMetaTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $MediaCollectionsTable _collectionIdTable(_$HibikiDatabase db) =>
+  static $MediaCollectionsTable _collectionIdTable(_$FushiDatabase db) =>
       db.mediaCollections.createAlias(
           'collection_scrape_meta__collection_id__media_collections__id');
 
@@ -38469,7 +38469,7 @@ final class $$CollectionScrapeMetaTableReferences extends BaseReferences<
 }
 
 class $$CollectionScrapeMetaTableFilterComposer
-    extends Composer<_$HibikiDatabase, $CollectionScrapeMetaTable> {
+    extends Composer<_$FushiDatabase, $CollectionScrapeMetaTable> {
   $$CollectionScrapeMetaTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -38541,7 +38541,7 @@ class $$CollectionScrapeMetaTableFilterComposer
 }
 
 class $$CollectionScrapeMetaTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $CollectionScrapeMetaTable> {
+    extends Composer<_$FushiDatabase, $CollectionScrapeMetaTable> {
   $$CollectionScrapeMetaTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -38616,7 +38616,7 @@ class $$CollectionScrapeMetaTableOrderingComposer
 }
 
 class $$CollectionScrapeMetaTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $CollectionScrapeMetaTable> {
+    extends Composer<_$FushiDatabase, $CollectionScrapeMetaTable> {
   $$CollectionScrapeMetaTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -38688,7 +38688,7 @@ class $$CollectionScrapeMetaTableAnnotationComposer
 }
 
 class $$CollectionScrapeMetaTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $CollectionScrapeMetaTable,
     CollectionScrapeMetaRow,
     $$CollectionScrapeMetaTableFilterComposer,
@@ -38700,7 +38700,7 @@ class $$CollectionScrapeMetaTableTableManager extends RootTableManager<
     CollectionScrapeMetaRow,
     PrefetchHooks Function({bool collectionId})> {
   $$CollectionScrapeMetaTableTableManager(
-      _$HibikiDatabase db, $CollectionScrapeMetaTable table)
+      _$FushiDatabase db, $CollectionScrapeMetaTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -38827,7 +38827,7 @@ class $$CollectionScrapeMetaTableTableManager extends RootTableManager<
 
 typedef $$CollectionScrapeMetaTableProcessedTableManager
     = ProcessedTableManager<
-        _$HibikiDatabase,
+        _$FushiDatabase,
         $CollectionScrapeMetaTable,
         CollectionScrapeMetaRow,
         $$CollectionScrapeMetaTableFilterComposer,
@@ -38870,13 +38870,13 @@ typedef $$MediaTrackingMappingsTableUpdateCompanionBuilder
 });
 
 final class $$MediaTrackingMappingsTableReferences extends BaseReferences<
-    _$HibikiDatabase, $MediaTrackingMappingsTable, MediaTrackingMappingRow> {
+    _$FushiDatabase, $MediaTrackingMappingsTable, MediaTrackingMappingRow> {
   $$MediaTrackingMappingsTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
   static MultiTypedResultKey<$MediaTrackingOutboxTable,
       List<MediaTrackingOutboxRow>> _mediaTrackingOutboxRefsTable(
-          _$HibikiDatabase db) =>
+          _$FushiDatabase db) =>
       MultiTypedResultKey.fromTable(db.mediaTrackingOutbox,
           aliasName:
               'media_tracking_mappings__id__media_tracking_outbox__mapping_id');
@@ -38894,7 +38894,7 @@ final class $$MediaTrackingMappingsTableReferences extends BaseReferences<
 }
 
 class $$MediaTrackingMappingsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $MediaTrackingMappingsTable> {
+    extends Composer<_$FushiDatabase, $MediaTrackingMappingsTable> {
   $$MediaTrackingMappingsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -38962,7 +38962,7 @@ class $$MediaTrackingMappingsTableFilterComposer
 }
 
 class $$MediaTrackingMappingsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $MediaTrackingMappingsTable> {
+    extends Composer<_$FushiDatabase, $MediaTrackingMappingsTable> {
   $$MediaTrackingMappingsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -39010,7 +39010,7 @@ class $$MediaTrackingMappingsTableOrderingComposer
 }
 
 class $$MediaTrackingMappingsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $MediaTrackingMappingsTable> {
+    extends Composer<_$FushiDatabase, $MediaTrackingMappingsTable> {
   $$MediaTrackingMappingsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -39079,7 +39079,7 @@ class $$MediaTrackingMappingsTableAnnotationComposer
 }
 
 class $$MediaTrackingMappingsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MediaTrackingMappingsTable,
     MediaTrackingMappingRow,
     $$MediaTrackingMappingsTableFilterComposer,
@@ -39091,7 +39091,7 @@ class $$MediaTrackingMappingsTableTableManager extends RootTableManager<
     MediaTrackingMappingRow,
     PrefetchHooks Function({bool mediaTrackingOutboxRefs})> {
   $$MediaTrackingMappingsTableTableManager(
-      _$HibikiDatabase db, $MediaTrackingMappingsTable table)
+      _$FushiDatabase db, $MediaTrackingMappingsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -39200,7 +39200,7 @@ class $$MediaTrackingMappingsTableTableManager extends RootTableManager<
 
 typedef $$MediaTrackingMappingsTableProcessedTableManager
     = ProcessedTableManager<
-        _$HibikiDatabase,
+        _$FushiDatabase,
         $MediaTrackingMappingsTable,
         MediaTrackingMappingRow,
         $$MediaTrackingMappingsTableFilterComposer,
@@ -39235,11 +39235,11 @@ typedef $$MediaTrackingOutboxTableUpdateCompanionBuilder
 });
 
 final class $$MediaTrackingOutboxTableReferences extends BaseReferences<
-    _$HibikiDatabase, $MediaTrackingOutboxTable, MediaTrackingOutboxRow> {
+    _$FushiDatabase, $MediaTrackingOutboxTable, MediaTrackingOutboxRow> {
   $$MediaTrackingOutboxTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $MediaTrackingMappingsTable _mappingIdTable(_$HibikiDatabase db) =>
+  static $MediaTrackingMappingsTable _mappingIdTable(_$FushiDatabase db) =>
       db.mediaTrackingMappings.createAlias(
           'media_tracking_outbox__mapping_id__media_tracking_mappings__id');
 
@@ -39257,7 +39257,7 @@ final class $$MediaTrackingOutboxTableReferences extends BaseReferences<
 }
 
 class $$MediaTrackingOutboxTableFilterComposer
-    extends Composer<_$HibikiDatabase, $MediaTrackingOutboxTable> {
+    extends Composer<_$FushiDatabase, $MediaTrackingOutboxTable> {
   $$MediaTrackingOutboxTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -39309,7 +39309,7 @@ class $$MediaTrackingOutboxTableFilterComposer
 }
 
 class $$MediaTrackingOutboxTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $MediaTrackingOutboxTable> {
+    extends Composer<_$FushiDatabase, $MediaTrackingOutboxTable> {
   $$MediaTrackingOutboxTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -39363,7 +39363,7 @@ class $$MediaTrackingOutboxTableOrderingComposer
 }
 
 class $$MediaTrackingOutboxTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $MediaTrackingOutboxTable> {
+    extends Composer<_$FushiDatabase, $MediaTrackingOutboxTable> {
   $$MediaTrackingOutboxTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -39415,7 +39415,7 @@ class $$MediaTrackingOutboxTableAnnotationComposer
 }
 
 class $$MediaTrackingOutboxTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MediaTrackingOutboxTable,
     MediaTrackingOutboxRow,
     $$MediaTrackingOutboxTableFilterComposer,
@@ -39427,7 +39427,7 @@ class $$MediaTrackingOutboxTableTableManager extends RootTableManager<
     MediaTrackingOutboxRow,
     PrefetchHooks Function({bool mappingId})> {
   $$MediaTrackingOutboxTableTableManager(
-      _$HibikiDatabase db, $MediaTrackingOutboxTable table)
+      _$FushiDatabase db, $MediaTrackingOutboxTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -39525,7 +39525,7 @@ class $$MediaTrackingOutboxTableTableManager extends RootTableManager<
 }
 
 typedef $$MediaTrackingOutboxTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MediaTrackingOutboxTable,
     MediaTrackingOutboxRow,
     $$MediaTrackingOutboxTableFilterComposer,
@@ -39570,11 +39570,11 @@ typedef $$GalgamesTableUpdateCompanionBuilder = GalgamesCompanion Function({
 });
 
 final class $$GalgamesTableReferences
-    extends BaseReferences<_$HibikiDatabase, $GalgamesTable, GalgameRow> {
+    extends BaseReferences<_$FushiDatabase, $GalgamesTable, GalgameRow> {
   $$GalgamesTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static MultiTypedResultKey<$GalgameSourcesTable, List<GalgameSourceRow>>
-      _galgameSourcesRefsTable(_$HibikiDatabase db) =>
+      _galgameSourcesRefsTable(_$FushiDatabase db) =>
           MultiTypedResultKey.fromTable(db.galgameSources,
               aliasName: 'galgames__id__galgame_sources__game_id');
 
@@ -39588,7 +39588,7 @@ final class $$GalgamesTableReferences
   }
 
   static MultiTypedResultKey<$GalgameSessionsTable, List<GalgameSessionRow>>
-      _galgameSessionsRefsTable(_$HibikiDatabase db) =>
+      _galgameSessionsRefsTable(_$FushiDatabase db) =>
           MultiTypedResultKey.fromTable(db.galgameSessions,
               aliasName: 'galgames__id__galgame_sessions__game_id');
 
@@ -39605,7 +39605,7 @@ final class $$GalgamesTableReferences
 
   static MultiTypedResultKey<$GalgameTagMappingsTable,
       List<GalgameTagMappingRow>> _galgameTagMappingsRefsTable(
-          _$HibikiDatabase db) =>
+          _$FushiDatabase db) =>
       MultiTypedResultKey.fromTable(db.galgameTagMappings,
           aliasName: 'galgames__id__galgame_tag_mappings__game_id');
 
@@ -39622,7 +39622,7 @@ final class $$GalgamesTableReferences
 }
 
 class $$GalgamesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $GalgamesTable> {
+    extends Composer<_$FushiDatabase, $GalgamesTable> {
   $$GalgamesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -39735,7 +39735,7 @@ class $$GalgamesTableFilterComposer
 }
 
 class $$GalgamesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $GalgamesTable> {
+    extends Composer<_$FushiDatabase, $GalgamesTable> {
   $$GalgamesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -39787,7 +39787,7 @@ class $$GalgamesTableOrderingComposer
 }
 
 class $$GalgamesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $GalgamesTable> {
+    extends Composer<_$FushiDatabase, $GalgamesTable> {
   $$GalgamesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -39900,7 +39900,7 @@ class $$GalgamesTableAnnotationComposer
 }
 
 class $$GalgamesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $GalgamesTable,
     GalgameRow,
     $$GalgamesTableFilterComposer,
@@ -39914,7 +39914,7 @@ class $$GalgamesTableTableManager extends RootTableManager<
         {bool galgameSourcesRefs,
         bool galgameSessionsRefs,
         bool galgameTagMappingsRefs})> {
-  $$GalgamesTableTableManager(_$HibikiDatabase db, $GalgamesTable table)
+  $$GalgamesTableTableManager(_$FushiDatabase db, $GalgamesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -40053,7 +40053,7 @@ class $$GalgamesTableTableManager extends RootTableManager<
 }
 
 typedef $$GalgamesTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $GalgamesTable,
     GalgameRow,
     $$GalgamesTableFilterComposer,
@@ -40091,11 +40091,11 @@ typedef $$GalgameSourcesTableUpdateCompanionBuilder = GalgameSourcesCompanion
 });
 
 final class $$GalgameSourcesTableReferences extends BaseReferences<
-    _$HibikiDatabase, $GalgameSourcesTable, GalgameSourceRow> {
+    _$FushiDatabase, $GalgameSourcesTable, GalgameSourceRow> {
   $$GalgameSourcesTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $GalgamesTable _gameIdTable(_$HibikiDatabase db) =>
+  static $GalgamesTable _gameIdTable(_$FushiDatabase db) =>
       db.galgames.createAlias('galgame_sources__game_id__galgames__id');
 
   $$GalgamesTableProcessedTableManager get gameId {
@@ -40111,7 +40111,7 @@ final class $$GalgameSourcesTableReferences extends BaseReferences<
 }
 
 class $$GalgameSourcesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $GalgameSourcesTable> {
+    extends Composer<_$FushiDatabase, $GalgameSourcesTable> {
   $$GalgameSourcesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -40159,7 +40159,7 @@ class $$GalgameSourcesTableFilterComposer
 }
 
 class $$GalgameSourcesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $GalgameSourcesTable> {
+    extends Composer<_$FushiDatabase, $GalgameSourcesTable> {
   $$GalgameSourcesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -40207,7 +40207,7 @@ class $$GalgameSourcesTableOrderingComposer
 }
 
 class $$GalgameSourcesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $GalgameSourcesTable> {
+    extends Composer<_$FushiDatabase, $GalgameSourcesTable> {
   $$GalgameSourcesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -40255,7 +40255,7 @@ class $$GalgameSourcesTableAnnotationComposer
 }
 
 class $$GalgameSourcesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $GalgameSourcesTable,
     GalgameSourceRow,
     $$GalgameSourcesTableFilterComposer,
@@ -40267,7 +40267,7 @@ class $$GalgameSourcesTableTableManager extends RootTableManager<
     GalgameSourceRow,
     PrefetchHooks Function({bool gameId})> {
   $$GalgameSourcesTableTableManager(
-      _$HibikiDatabase db, $GalgameSourcesTable table)
+      _$FushiDatabase db, $GalgameSourcesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -40362,7 +40362,7 @@ class $$GalgameSourcesTableTableManager extends RootTableManager<
 }
 
 typedef $$GalgameSourcesTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $GalgameSourcesTable,
     GalgameSourceRow,
     $$GalgameSourcesTableFilterComposer,
@@ -40393,11 +40393,11 @@ typedef $$GalgameSessionsTableUpdateCompanionBuilder = GalgameSessionsCompanion
 });
 
 final class $$GalgameSessionsTableReferences extends BaseReferences<
-    _$HibikiDatabase, $GalgameSessionsTable, GalgameSessionRow> {
+    _$FushiDatabase, $GalgameSessionsTable, GalgameSessionRow> {
   $$GalgameSessionsTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $GalgamesTable _gameIdTable(_$HibikiDatabase db) =>
+  static $GalgamesTable _gameIdTable(_$FushiDatabase db) =>
       db.galgames.createAlias('galgame_sessions__game_id__galgames__id');
 
   $$GalgamesTableProcessedTableManager get gameId {
@@ -40413,7 +40413,7 @@ final class $$GalgameSessionsTableReferences extends BaseReferences<
 }
 
 class $$GalgameSessionsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $GalgameSessionsTable> {
+    extends Composer<_$FushiDatabase, $GalgameSessionsTable> {
   $$GalgameSessionsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -40459,7 +40459,7 @@ class $$GalgameSessionsTableFilterComposer
 }
 
 class $$GalgameSessionsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $GalgameSessionsTable> {
+    extends Composer<_$FushiDatabase, $GalgameSessionsTable> {
   $$GalgameSessionsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -40505,7 +40505,7 @@ class $$GalgameSessionsTableOrderingComposer
 }
 
 class $$GalgameSessionsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $GalgameSessionsTable> {
+    extends Composer<_$FushiDatabase, $GalgameSessionsTable> {
   $$GalgameSessionsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -40550,7 +40550,7 @@ class $$GalgameSessionsTableAnnotationComposer
 }
 
 class $$GalgameSessionsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $GalgameSessionsTable,
     GalgameSessionRow,
     $$GalgameSessionsTableFilterComposer,
@@ -40562,7 +40562,7 @@ class $$GalgameSessionsTableTableManager extends RootTableManager<
     GalgameSessionRow,
     PrefetchHooks Function({bool gameId})> {
   $$GalgameSessionsTableTableManager(
-      _$HibikiDatabase db, $GalgameSessionsTable table)
+      _$FushiDatabase db, $GalgameSessionsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -40649,7 +40649,7 @@ class $$GalgameSessionsTableTableManager extends RootTableManager<
 }
 
 typedef $$GalgameSessionsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $GalgameSessionsTable,
     GalgameSessionRow,
     $$GalgameSessionsTableFilterComposer,
@@ -40674,11 +40674,11 @@ typedef $$GalgameTagMappingsTableUpdateCompanionBuilder
 });
 
 final class $$GalgameTagMappingsTableReferences extends BaseReferences<
-    _$HibikiDatabase, $GalgameTagMappingsTable, GalgameTagMappingRow> {
+    _$FushiDatabase, $GalgameTagMappingsTable, GalgameTagMappingRow> {
   $$GalgameTagMappingsTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $GalgamesTable _gameIdTable(_$HibikiDatabase db) =>
+  static $GalgamesTable _gameIdTable(_$FushiDatabase db) =>
       db.galgames.createAlias('galgame_tag_mappings__game_id__galgames__id');
 
   $$GalgamesTableProcessedTableManager get gameId {
@@ -40692,7 +40692,7 @@ final class $$GalgameTagMappingsTableReferences extends BaseReferences<
         manager.$state.copyWith(prefetchedData: [item]));
   }
 
-  static $BookTagsTable _tagIdTable(_$HibikiDatabase db) =>
+  static $BookTagsTable _tagIdTable(_$FushiDatabase db) =>
       db.bookTags.createAlias('galgame_tag_mappings__tag_id__book_tags__id');
 
   $$BookTagsTableProcessedTableManager get tagId {
@@ -40708,7 +40708,7 @@ final class $$GalgameTagMappingsTableReferences extends BaseReferences<
 }
 
 class $$GalgameTagMappingsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $GalgameTagMappingsTable> {
+    extends Composer<_$FushiDatabase, $GalgameTagMappingsTable> {
   $$GalgameTagMappingsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -40761,7 +40761,7 @@ class $$GalgameTagMappingsTableFilterComposer
 }
 
 class $$GalgameTagMappingsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $GalgameTagMappingsTable> {
+    extends Composer<_$FushiDatabase, $GalgameTagMappingsTable> {
   $$GalgameTagMappingsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -40814,7 +40814,7 @@ class $$GalgameTagMappingsTableOrderingComposer
 }
 
 class $$GalgameTagMappingsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $GalgameTagMappingsTable> {
+    extends Composer<_$FushiDatabase, $GalgameTagMappingsTable> {
   $$GalgameTagMappingsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -40867,7 +40867,7 @@ class $$GalgameTagMappingsTableAnnotationComposer
 }
 
 class $$GalgameTagMappingsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $GalgameTagMappingsTable,
     GalgameTagMappingRow,
     $$GalgameTagMappingsTableFilterComposer,
@@ -40879,7 +40879,7 @@ class $$GalgameTagMappingsTableTableManager extends RootTableManager<
     GalgameTagMappingRow,
     PrefetchHooks Function({bool gameId, bool tagId})> {
   $$GalgameTagMappingsTableTableManager(
-      _$HibikiDatabase db, $GalgameTagMappingsTable table)
+      _$FushiDatabase db, $GalgameTagMappingsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -40965,7 +40965,7 @@ class $$GalgameTagMappingsTableTableManager extends RootTableManager<
 }
 
 typedef $$GalgameTagMappingsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $GalgameTagMappingsTable,
     GalgameTagMappingRow,
     $$GalgameTagMappingsTableFilterComposer,
@@ -41012,7 +41012,7 @@ typedef $$MangaExtensionStoresTableUpdateCompanionBuilder
 });
 
 class $$MangaExtensionStoresTableFilterComposer
-    extends Composer<_$HibikiDatabase, $MangaExtensionStoresTable> {
+    extends Composer<_$FushiDatabase, $MangaExtensionStoresTable> {
   $$MangaExtensionStoresTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -41062,7 +41062,7 @@ class $$MangaExtensionStoresTableFilterComposer
 }
 
 class $$MangaExtensionStoresTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $MangaExtensionStoresTable> {
+    extends Composer<_$FushiDatabase, $MangaExtensionStoresTable> {
   $$MangaExtensionStoresTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -41113,7 +41113,7 @@ class $$MangaExtensionStoresTableOrderingComposer
 }
 
 class $$MangaExtensionStoresTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $MangaExtensionStoresTable> {
+    extends Composer<_$FushiDatabase, $MangaExtensionStoresTable> {
   $$MangaExtensionStoresTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -41162,7 +41162,7 @@ class $$MangaExtensionStoresTableAnnotationComposer
 }
 
 class $$MangaExtensionStoresTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MangaExtensionStoresTable,
     MangaExtensionStoreRow,
     $$MangaExtensionStoresTableFilterComposer,
@@ -41172,13 +41172,13 @@ class $$MangaExtensionStoresTableTableManager extends RootTableManager<
     $$MangaExtensionStoresTableUpdateCompanionBuilder,
     (
       MangaExtensionStoreRow,
-      BaseReferences<_$HibikiDatabase, $MangaExtensionStoresTable,
+      BaseReferences<_$FushiDatabase, $MangaExtensionStoresTable,
           MangaExtensionStoreRow>
     ),
     MangaExtensionStoreRow,
     PrefetchHooks Function()> {
   $$MangaExtensionStoresTableTableManager(
-      _$HibikiDatabase db, $MangaExtensionStoresTable table)
+      _$FushiDatabase db, $MangaExtensionStoresTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -41263,7 +41263,7 @@ class $$MangaExtensionStoresTableTableManager extends RootTableManager<
 
 typedef $$MangaExtensionStoresTableProcessedTableManager
     = ProcessedTableManager<
-        _$HibikiDatabase,
+        _$FushiDatabase,
         $MangaExtensionStoresTable,
         MangaExtensionStoreRow,
         $$MangaExtensionStoresTableFilterComposer,
@@ -41273,7 +41273,7 @@ typedef $$MangaExtensionStoresTableProcessedTableManager
         $$MangaExtensionStoresTableUpdateCompanionBuilder,
         (
           MangaExtensionStoreRow,
-          BaseReferences<_$HibikiDatabase, $MangaExtensionStoresTable,
+          BaseReferences<_$FushiDatabase, $MangaExtensionStoresTable,
               MangaExtensionStoreRow>
         ),
         MangaExtensionStoreRow,
@@ -41314,7 +41314,7 @@ typedef $$MangaExtensionsTableUpdateCompanionBuilder = MangaExtensionsCompanion
 });
 
 class $$MangaExtensionsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $MangaExtensionsTable> {
+    extends Composer<_$FushiDatabase, $MangaExtensionsTable> {
   $$MangaExtensionsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -41364,7 +41364,7 @@ class $$MangaExtensionsTableFilterComposer
 }
 
 class $$MangaExtensionsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $MangaExtensionsTable> {
+    extends Composer<_$FushiDatabase, $MangaExtensionsTable> {
   $$MangaExtensionsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -41415,7 +41415,7 @@ class $$MangaExtensionsTableOrderingComposer
 }
 
 class $$MangaExtensionsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $MangaExtensionsTable> {
+    extends Composer<_$FushiDatabase, $MangaExtensionsTable> {
   $$MangaExtensionsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -41464,7 +41464,7 @@ class $$MangaExtensionsTableAnnotationComposer
 }
 
 class $$MangaExtensionsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MangaExtensionsTable,
     MangaExtensionRow,
     $$MangaExtensionsTableFilterComposer,
@@ -41474,12 +41474,12 @@ class $$MangaExtensionsTableTableManager extends RootTableManager<
     $$MangaExtensionsTableUpdateCompanionBuilder,
     (
       MangaExtensionRow,
-      BaseReferences<_$HibikiDatabase, $MangaExtensionsTable, MangaExtensionRow>
+      BaseReferences<_$FushiDatabase, $MangaExtensionsTable, MangaExtensionRow>
     ),
     MangaExtensionRow,
     PrefetchHooks Function()> {
   $$MangaExtensionsTableTableManager(
-      _$HibikiDatabase db, $MangaExtensionsTable table)
+      _$FushiDatabase db, $MangaExtensionsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -41561,7 +41561,7 @@ class $$MangaExtensionsTableTableManager extends RootTableManager<
 }
 
 typedef $$MangaExtensionsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MangaExtensionsTable,
     MangaExtensionRow,
     $$MangaExtensionsTableFilterComposer,
@@ -41571,7 +41571,7 @@ typedef $$MangaExtensionsTableProcessedTableManager = ProcessedTableManager<
     $$MangaExtensionsTableUpdateCompanionBuilder,
     (
       MangaExtensionRow,
-      BaseReferences<_$HibikiDatabase, $MangaExtensionsTable, MangaExtensionRow>
+      BaseReferences<_$FushiDatabase, $MangaExtensionsTable, MangaExtensionRow>
     ),
     MangaExtensionRow,
     PrefetchHooks Function()>;
@@ -41601,7 +41601,7 @@ typedef $$MangaOnlineSourcesTableUpdateCompanionBuilder
 });
 
 class $$MangaOnlineSourcesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $MangaOnlineSourcesTable> {
+    extends Composer<_$FushiDatabase, $MangaOnlineSourcesTable> {
   $$MangaOnlineSourcesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -41636,7 +41636,7 @@ class $$MangaOnlineSourcesTableFilterComposer
 }
 
 class $$MangaOnlineSourcesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $MangaOnlineSourcesTable> {
+    extends Composer<_$FushiDatabase, $MangaOnlineSourcesTable> {
   $$MangaOnlineSourcesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -41671,7 +41671,7 @@ class $$MangaOnlineSourcesTableOrderingComposer
 }
 
 class $$MangaOnlineSourcesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $MangaOnlineSourcesTable> {
+    extends Composer<_$FushiDatabase, $MangaOnlineSourcesTable> {
   $$MangaOnlineSourcesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -41705,7 +41705,7 @@ class $$MangaOnlineSourcesTableAnnotationComposer
 }
 
 class $$MangaOnlineSourcesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MangaOnlineSourcesTable,
     MangaOnlineSourceRow,
     $$MangaOnlineSourcesTableFilterComposer,
@@ -41715,13 +41715,13 @@ class $$MangaOnlineSourcesTableTableManager extends RootTableManager<
     $$MangaOnlineSourcesTableUpdateCompanionBuilder,
     (
       MangaOnlineSourceRow,
-      BaseReferences<_$HibikiDatabase, $MangaOnlineSourcesTable,
+      BaseReferences<_$FushiDatabase, $MangaOnlineSourcesTable,
           MangaOnlineSourceRow>
     ),
     MangaOnlineSourceRow,
     PrefetchHooks Function()> {
   $$MangaOnlineSourcesTableTableManager(
-      _$HibikiDatabase db, $MangaOnlineSourcesTable table)
+      _$FushiDatabase db, $MangaOnlineSourcesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -41784,7 +41784,7 @@ class $$MangaOnlineSourcesTableTableManager extends RootTableManager<
 }
 
 typedef $$MangaOnlineSourcesTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MangaOnlineSourcesTable,
     MangaOnlineSourceRow,
     $$MangaOnlineSourcesTableFilterComposer,
@@ -41794,7 +41794,7 @@ typedef $$MangaOnlineSourcesTableProcessedTableManager = ProcessedTableManager<
     $$MangaOnlineSourcesTableUpdateCompanionBuilder,
     (
       MangaOnlineSourceRow,
-      BaseReferences<_$HibikiDatabase, $MangaOnlineSourcesTable,
+      BaseReferences<_$FushiDatabase, $MangaOnlineSourcesTable,
           MangaOnlineSourceRow>
     ),
     MangaOnlineSourceRow,
@@ -41821,7 +41821,7 @@ typedef $$MangaSourcePreferencesTableUpdateCompanionBuilder
 });
 
 class $$MangaSourcePreferencesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $MangaSourcePreferencesTable> {
+    extends Composer<_$FushiDatabase, $MangaSourcePreferencesTable> {
   $$MangaSourcePreferencesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -41851,7 +41851,7 @@ class $$MangaSourcePreferencesTableFilterComposer
 }
 
 class $$MangaSourcePreferencesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $MangaSourcePreferencesTable> {
+    extends Composer<_$FushiDatabase, $MangaSourcePreferencesTable> {
   $$MangaSourcePreferencesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -41882,7 +41882,7 @@ class $$MangaSourcePreferencesTableOrderingComposer
 }
 
 class $$MangaSourcePreferencesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $MangaSourcePreferencesTable> {
+    extends Composer<_$FushiDatabase, $MangaSourcePreferencesTable> {
   $$MangaSourcePreferencesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -41910,7 +41910,7 @@ class $$MangaSourcePreferencesTableAnnotationComposer
 }
 
 class $$MangaSourcePreferencesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MangaSourcePreferencesTable,
     MangaSourcePreferenceRow,
     $$MangaSourcePreferencesTableFilterComposer,
@@ -41920,13 +41920,13 @@ class $$MangaSourcePreferencesTableTableManager extends RootTableManager<
     $$MangaSourcePreferencesTableUpdateCompanionBuilder,
     (
       MangaSourcePreferenceRow,
-      BaseReferences<_$HibikiDatabase, $MangaSourcePreferencesTable,
+      BaseReferences<_$FushiDatabase, $MangaSourcePreferencesTable,
           MangaSourcePreferenceRow>
     ),
     MangaSourcePreferenceRow,
     PrefetchHooks Function()> {
   $$MangaSourcePreferencesTableTableManager(
-      _$HibikiDatabase db, $MangaSourcePreferencesTable table)
+      _$FushiDatabase db, $MangaSourcePreferencesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -41984,7 +41984,7 @@ class $$MangaSourcePreferencesTableTableManager extends RootTableManager<
 
 typedef $$MangaSourcePreferencesTableProcessedTableManager
     = ProcessedTableManager<
-        _$HibikiDatabase,
+        _$FushiDatabase,
         $MangaSourcePreferencesTable,
         MangaSourcePreferenceRow,
         $$MangaSourcePreferencesTableFilterComposer,
@@ -41994,7 +41994,7 @@ typedef $$MangaSourcePreferencesTableProcessedTableManager
         $$MangaSourcePreferencesTableUpdateCompanionBuilder,
         (
           MangaSourcePreferenceRow,
-          BaseReferences<_$HibikiDatabase, $MangaSourcePreferencesTable,
+          BaseReferences<_$FushiDatabase, $MangaSourcePreferencesTable,
               MangaSourcePreferenceRow>
         ),
         MangaSourcePreferenceRow,
@@ -42017,7 +42017,7 @@ typedef $$MangaTrustedSignersTableUpdateCompanionBuilder
 });
 
 class $$MangaTrustedSignersTableFilterComposer
-    extends Composer<_$HibikiDatabase, $MangaTrustedSignersTable> {
+    extends Composer<_$FushiDatabase, $MangaTrustedSignersTable> {
   $$MangaTrustedSignersTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -42039,7 +42039,7 @@ class $$MangaTrustedSignersTableFilterComposer
 }
 
 class $$MangaTrustedSignersTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $MangaTrustedSignersTable> {
+    extends Composer<_$FushiDatabase, $MangaTrustedSignersTable> {
   $$MangaTrustedSignersTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -42061,7 +42061,7 @@ class $$MangaTrustedSignersTableOrderingComposer
 }
 
 class $$MangaTrustedSignersTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $MangaTrustedSignersTable> {
+    extends Composer<_$FushiDatabase, $MangaTrustedSignersTable> {
   $$MangaTrustedSignersTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -42083,7 +42083,7 @@ class $$MangaTrustedSignersTableAnnotationComposer
 }
 
 class $$MangaTrustedSignersTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MangaTrustedSignersTable,
     MangaTrustedSignerRow,
     $$MangaTrustedSignersTableFilterComposer,
@@ -42093,13 +42093,13 @@ class $$MangaTrustedSignersTableTableManager extends RootTableManager<
     $$MangaTrustedSignersTableUpdateCompanionBuilder,
     (
       MangaTrustedSignerRow,
-      BaseReferences<_$HibikiDatabase, $MangaTrustedSignersTable,
+      BaseReferences<_$FushiDatabase, $MangaTrustedSignersTable,
           MangaTrustedSignerRow>
     ),
     MangaTrustedSignerRow,
     PrefetchHooks Function()> {
   $$MangaTrustedSignersTableTableManager(
-      _$HibikiDatabase db, $MangaTrustedSignersTable table)
+      _$FushiDatabase db, $MangaTrustedSignersTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -42147,7 +42147,7 @@ class $$MangaTrustedSignersTableTableManager extends RootTableManager<
 }
 
 typedef $$MangaTrustedSignersTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MangaTrustedSignersTable,
     MangaTrustedSignerRow,
     $$MangaTrustedSignersTableFilterComposer,
@@ -42157,7 +42157,7 @@ typedef $$MangaTrustedSignersTableProcessedTableManager = ProcessedTableManager<
     $$MangaTrustedSignersTableUpdateCompanionBuilder,
     (
       MangaTrustedSignerRow,
-      BaseReferences<_$HibikiDatabase, $MangaTrustedSignersTable,
+      BaseReferences<_$FushiDatabase, $MangaTrustedSignersTable,
           MangaTrustedSignerRow>
     ),
     MangaTrustedSignerRow,
@@ -42190,11 +42190,11 @@ typedef $$CollectionRelationsTableUpdateCompanionBuilder
 });
 
 final class $$CollectionRelationsTableReferences extends BaseReferences<
-    _$HibikiDatabase, $CollectionRelationsTable, CollectionRelationRow> {
+    _$FushiDatabase, $CollectionRelationsTable, CollectionRelationRow> {
   $$CollectionRelationsTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $MediaCollectionsTable _collectionIdTable(_$HibikiDatabase db) =>
+  static $MediaCollectionsTable _collectionIdTable(_$FushiDatabase db) =>
       db.mediaCollections.createAlias(
           'collection_relations__collection_id__media_collections__id');
 
@@ -42210,7 +42210,7 @@ final class $$CollectionRelationsTableReferences extends BaseReferences<
         manager.$state.copyWith(prefetchedData: [item]));
   }
 
-  static $MediaCollectionsTable _targetCollectionIdTable(_$HibikiDatabase db) =>
+  static $MediaCollectionsTable _targetCollectionIdTable(_$FushiDatabase db) =>
       db.mediaCollections.createAlias(
           'collection_relations__target_collection_id__media_collections__id');
 
@@ -42228,7 +42228,7 @@ final class $$CollectionRelationsTableReferences extends BaseReferences<
 }
 
 class $$CollectionRelationsTableFilterComposer
-    extends Composer<_$HibikiDatabase, $CollectionRelationsTable> {
+    extends Composer<_$FushiDatabase, $CollectionRelationsTable> {
   $$CollectionRelationsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -42302,7 +42302,7 @@ class $$CollectionRelationsTableFilterComposer
 }
 
 class $$CollectionRelationsTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $CollectionRelationsTable> {
+    extends Composer<_$FushiDatabase, $CollectionRelationsTable> {
   $$CollectionRelationsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -42377,7 +42377,7 @@ class $$CollectionRelationsTableOrderingComposer
 }
 
 class $$CollectionRelationsTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $CollectionRelationsTable> {
+    extends Composer<_$FushiDatabase, $CollectionRelationsTable> {
   $$CollectionRelationsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -42451,7 +42451,7 @@ class $$CollectionRelationsTableAnnotationComposer
 }
 
 class $$CollectionRelationsTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $CollectionRelationsTable,
     CollectionRelationRow,
     $$CollectionRelationsTableFilterComposer,
@@ -42463,7 +42463,7 @@ class $$CollectionRelationsTableTableManager extends RootTableManager<
     CollectionRelationRow,
     PrefetchHooks Function({bool collectionId, bool targetCollectionId})> {
   $$CollectionRelationsTableTableManager(
-      _$HibikiDatabase db, $CollectionRelationsTable table)
+      _$FushiDatabase db, $CollectionRelationsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -42581,7 +42581,7 @@ class $$CollectionRelationsTableTableManager extends RootTableManager<
 }
 
 typedef $$CollectionRelationsTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $CollectionRelationsTable,
     CollectionRelationRow,
     $$CollectionRelationsTableFilterComposer,
@@ -42614,10 +42614,10 @@ typedef $$MediaImagesTableUpdateCompanionBuilder = MediaImagesCompanion
 });
 
 final class $$MediaImagesTableReferences
-    extends BaseReferences<_$HibikiDatabase, $MediaImagesTable, MediaImageRow> {
+    extends BaseReferences<_$FushiDatabase, $MediaImagesTable, MediaImageRow> {
   $$MediaImagesTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $MediaCollectionsTable _collectionIdTable(_$HibikiDatabase db) =>
+  static $MediaCollectionsTable _collectionIdTable(_$FushiDatabase db) =>
       db.mediaCollections
           .createAlias('media_images__collection_id__media_collections__id');
 
@@ -42633,7 +42633,7 @@ final class $$MediaImagesTableReferences
         manager.$state.copyWith(prefetchedData: [item]));
   }
 
-  static $VideoBooksTable _bookUidTable(_$HibikiDatabase db) => db.videoBooks
+  static $VideoBooksTable _bookUidTable(_$FushiDatabase db) => db.videoBooks
       .createAlias('media_images__book_uid__video_books__book_uid');
 
   $$VideoBooksTableProcessedTableManager? get bookUid {
@@ -42649,7 +42649,7 @@ final class $$MediaImagesTableReferences
 }
 
 class $$MediaImagesTableFilterComposer
-    extends Composer<_$HibikiDatabase, $MediaImagesTable> {
+    extends Composer<_$FushiDatabase, $MediaImagesTable> {
   $$MediaImagesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -42714,7 +42714,7 @@ class $$MediaImagesTableFilterComposer
 }
 
 class $$MediaImagesTableOrderingComposer
-    extends Composer<_$HibikiDatabase, $MediaImagesTable> {
+    extends Composer<_$FushiDatabase, $MediaImagesTable> {
   $$MediaImagesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -42779,7 +42779,7 @@ class $$MediaImagesTableOrderingComposer
 }
 
 class $$MediaImagesTableAnnotationComposer
-    extends Composer<_$HibikiDatabase, $MediaImagesTable> {
+    extends Composer<_$FushiDatabase, $MediaImagesTable> {
   $$MediaImagesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -42844,7 +42844,7 @@ class $$MediaImagesTableAnnotationComposer
 }
 
 class $$MediaImagesTableTableManager extends RootTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MediaImagesTable,
     MediaImageRow,
     $$MediaImagesTableFilterComposer,
@@ -42855,7 +42855,7 @@ class $$MediaImagesTableTableManager extends RootTableManager<
     (MediaImageRow, $$MediaImagesTableReferences),
     MediaImageRow,
     PrefetchHooks Function({bool collectionId, bool bookUid})> {
-  $$MediaImagesTableTableManager(_$HibikiDatabase db, $MediaImagesTable table)
+  $$MediaImagesTableTableManager(_$FushiDatabase db, $MediaImagesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
@@ -42956,7 +42956,7 @@ class $$MediaImagesTableTableManager extends RootTableManager<
 }
 
 typedef $$MediaImagesTableProcessedTableManager = ProcessedTableManager<
-    _$HibikiDatabase,
+    _$FushiDatabase,
     $MediaImagesTable,
     MediaImageRow,
     $$MediaImagesTableFilterComposer,
@@ -42968,9 +42968,9 @@ typedef $$MediaImagesTableProcessedTableManager = ProcessedTableManager<
     MediaImageRow,
     PrefetchHooks Function({bool collectionId, bool bookUid})>;
 
-class $HibikiDatabaseManager {
-  final _$HibikiDatabase _db;
-  $HibikiDatabaseManager(this._db);
+class $FushiDatabaseManager {
+  final _$FushiDatabase _db;
+  $FushiDatabaseManager(this._db);
   $$MediaItemsTableTableManager get mediaItems =>
       $$MediaItemsTableTableManager(_db, _db.mediaItems);
   $$AnkiMappingsTableTableManager get ankiMappings =>
@@ -43043,8 +43043,8 @@ class $HibikiDatabaseManager {
       get collectionMemberTombstones =>
           $$CollectionMemberTombstonesTableTableManager(
               _db, _db.collectionMemberTombstones);
-  $$HibikiPairedPeersTableTableManager get hibikiPairedPeers =>
-      $$HibikiPairedPeersTableTableManager(_db, _db.hibikiPairedPeers);
+  $$FushiPairedPeersTableTableManager get hibikiPairedPeers =>
+      $$FushiPairedPeersTableTableManager(_db, _db.hibikiPairedPeers);
   $$BookTombstonesTableTableManager get bookTombstones =>
       $$BookTombstonesTableTableManager(_db, _db.bookTombstones);
   $$LookupMiningCountersTableTableManager get lookupMiningCounters =>

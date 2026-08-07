@@ -75,10 +75,10 @@ List<T> sortNewCollectionMembersNaturally<T>(
 /// 即显示名。
 ///
 /// 排序规则本身走共享的 [compareCollectionMembers]。落盘走
-/// [HibikiDatabase.reorderCollectionItems]，库页合集行 / 播放器换集读同一
+/// [FushiDatabase.reorderCollectionItems]，库页合集行 / 播放器换集读同一
 /// `getCollectionItems`，落盘即同序。
 Future<List<MediaCollectionItemRow>> sortedCollectionRows({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required List<MediaCollectionItemRow> rows,
   required bool byTitle,
 }) async {
@@ -136,7 +136,7 @@ Future<List<MediaCollectionItemRow>> sortedCollectionRows({
 /// 从库页合集右键菜单触发的一键整理：取成员 → [sortedCollectionRows] →
 /// 一次落盘 sortIndex。成员少于 2 个时无序可整，直接返回（不空写库）。
 Future<void> applyCollectionOneKeySort({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required int collectionId,
   required bool byTitle,
 }) async {

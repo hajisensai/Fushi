@@ -261,9 +261,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiMasterDetailSettingsSheet(
+    return FushiMasterDetailSettingsSheet(
       // 宽窗 master-detail：选中态始终有值（默认 appearance），返回键应直接关
       // 弹窗而非退回「未选中」；窄窗 push 时保留原「先回主页」语义。
       subPageActive: _subPage != null,
@@ -273,9 +273,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       narrowKey: () => ValueKey<String>(_subPage ?? 'main'),
       // 窄窗 padding：水平 page + gap/2，底部叠 card + gap + 键盘 inset（与视频不同，
       // 视频用 page + gap，不可统一；底部走共享公式
-      // [HibikiMasterDetailSettingsSheet.paneInsets]）。
+      // [FushiMasterDetailSettingsSheet.paneInsets]）。
       narrowPadding: (BuildContext context, BoxConstraints constraints) {
-        return HibikiMasterDetailSettingsSheet.paneInsets(
+        return FushiMasterDetailSettingsSheet.paneInsets(
           context,
           horizontal: tokens.spacing.page + tokens.spacing.gap / 2,
           top: tokens.spacing.gap / 2,
@@ -294,11 +294,11 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         final String selectedId = _subPage ?? 'location';
         final Color dividerColor = isCupertinoPlatform(context)
             ? CupertinoColors.separator.resolveFrom(context)
-            : HibikiDesignTokens.of(context).surfaces.outline;
+            : FushiDesignTokens.of(context).surfaces.outline;
         // 左父菜单与右详情两个 pane 同一份 padding（此前两份逐字相同的
         // EdgeInsets.fromLTRB，收敛为共享公式 paneInsets 的一次调用）。
         final EdgeInsets widePanePadding =
-            HibikiMasterDetailSettingsSheet.paneInsets(
+            FushiMasterDetailSettingsSheet.paneInsets(
           context,
           horizontal: tokens.spacing.page + tokens.spacing.gap / 2,
           top: tokens.spacing.gap / 2,
@@ -358,7 +358,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     ThemeData theme,
     String selectedId,
   ) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
     // 左父菜单只留「分类导航 + 动作」，做矮以让更多窗口进宽窗（阅读进度已移到右侧
     // 外观详情顶部，见 [_buildWidePrimary]）。项少时整体垂直居中、不贴顶。
@@ -368,9 +368,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (final cat in _wideCategories())
-          HibikiListItem(
+          FushiListItem(
             selected: cat.id == selectedId,
-            selectedShape: HibikiListItemSelectedShape.pill,
+            selectedShape: FushiListItemSelectedShape.pill,
             leading: Icon(cat.icon),
             title: Text(cat.label),
             // 左父菜单固定 208px，长标签（如「布局与显示」选中加粗后 ~80px）
@@ -394,7 +394,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     if (selectedId != 'location') {
       return _subPageContent(selectedId);
     }
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
     final Widget progress = _buildProgressSection(theme);
     return Column(
@@ -447,7 +447,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   }
 
   Widget _buildMainPage(BuildContext context, ThemeData theme) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
     // TODO-725（手机/窄窗折叠）/ TODO-802：主页只剩「阅读进度 + 分类导航行 + 动作
     // 行」。「外观」组已删，主题选择器并入 layout 子页顶部（见 _buildLayoutDetail）。
@@ -496,13 +496,13 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   }
 
   Widget _buildSubPage(BuildContext context, ThemeData theme) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String page = _subPage!;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        HibikiSettingsSubPageHeader(
+        FushiSettingsSubPageHeader(
           title: _subPageTitle(page),
           onBack: () => setState(() => _subPage = null),
         ),
@@ -687,7 +687,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   }
 
   Widget _buildLocationSection(ThemeData theme) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -750,7 +750,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     if (lines.isEmpty && ctrl == null && !hasTitle && !hasChapter) {
       return const SizedBox.shrink();
     }
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -791,7 +791,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         final double fraction = dur.inMilliseconds > 0
             ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0)
             : 0.0;
-        final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+        final FushiDesignTokens tokens = FushiDesignTokens.of(context);
         return Padding(
           padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
           child: Column(
@@ -817,7 +817,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     );
   }
 
-  static String _formatDuration(Duration d) => HibikiTimeFormat.clockPadded(d);
+  static String _formatDuration(Duration d) => FushiTimeFormat.clockPadded(d);
 
   Future<void> _doSearch() async {
     final String query = _searchController.text.trim();
@@ -847,7 +847,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   }
 
   Widget _buildSearchSection(ThemeData theme) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -858,7 +858,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         Row(
           children: [
             Expanded(
-              child: HibikiTextField(
+              child: FushiTextField(
                 controller: _searchController,
                 hintText: t.book_search_hint,
                 contentPadding: EdgeInsets.symmetric(
@@ -880,7 +880,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                         child:
                             adaptiveIndicator(context: context, strokeWidth: 2),
                       )
-                    : HibikiIconButton(
+                    : FushiIconButton(
                         icon: Icons.search,
                         size: 20,
                         backgroundColor: theme.colorScheme.secondaryContainer,
@@ -955,7 +955,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     final int? current = widget.charProgress?.$1;
     final int? total = widget.charProgress?.$2;
     final bool hasProgress = current != null && total != null && total > 0;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -975,7 +975,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         Row(
           children: [
             Expanded(
-              child: HibikiTextField(
+              child: FushiTextField(
                 controller: _charJumpController,
                 keyboardType: TextInputType.number,
                 hintText: t.jump_to_char_hint,
@@ -991,7 +991,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
             SizedBox.square(
               dimension: 40,
               child: Center(
-                child: HibikiIconButton(
+                child: FushiIconButton(
                   icon: Icons.arrow_forward,
                   size: 20,
                   backgroundColor: theme.colorScheme.secondaryContainer,
@@ -1051,7 +1051,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     return ListenableBuilder(
       listenable: ctrl,
       builder: (context, _) {
-        final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+        final FushiDesignTokens tokens = FushiDesignTokens.of(context);
         final double current = ctrl.speed;
         return AdaptiveSettingsRow(
           title: '${t.playback_speed} (${current.toStringAsFixed(2)}x)',
@@ -1072,7 +1072,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
               ),
               Align(
                 alignment: Alignment.centerRight,
-                child: HibikiIconButton(
+                child: FushiIconButton(
                   icon: Icons.restart_alt_outlined,
                   size: 18,
                   enabled: (current - 1.0).abs() >= 0.001,
@@ -1116,7 +1116,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                 tooltip: '-50ms',
                 onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value - 50),
               ),
-              HibikiFocusable(
+              FushiFocusable(
                 onTap: ms == 0 ? null : () => ctrl.setDelayMs(0),
                 child: SizedBox(
                   width: 72,
@@ -1441,10 +1441,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       },
       body: Row(
         children: [
-          HibikiColorSwatch(
+          FushiColorSwatch(
             color: current,
             size: 20,
-            shape: HibikiColorSwatchShape.dot,
+            shape: FushiColorSwatchShape.dot,
             borderColor: Theme.of(context).dividerColor,
           ),
         ],
@@ -1534,7 +1534,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                       },
             onCopy: () {
               Clipboard.setData(ClipboardData(text: favorite.text));
-              HibikiToast.show(msg: t.copy, severity: ToastSeverity.success);
+              FushiToast.show(msg: t.copy, severity: ToastSeverity.success);
             },
             onDelete: () async {
               await widget.onDeleteFavorite?.call(favorite);
@@ -1561,7 +1561,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       case 'purple':
         return const Color(0xFFAA00FF);
       default:
-        return HibikiColor.defaultHighlightYellow;
+        return FushiColor.defaultHighlightYellow;
     }
   }
 
@@ -1619,14 +1619,14 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     required VoidCallback onTap,
   }) {
     final ThemeData theme = Theme.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget button = InkWell(
       key: key,
       onTap: onTap,
-      // Under HibikiFocusRoot the registered HibikiActivatableFocusTarget below
+      // Under FushiFocusRoot the registered FushiActivatableFocusTarget below
       // is the single focus stop; keep the InkWell ripple for mouse/touch but
       // stop it grabbing a competing, unregistered focus node.
-      canRequestFocus: HibikiFocusRoot.maybeControllerOf(context) == null,
+      canRequestFocus: FushiFocusRoot.maybeControllerOf(context) == null,
       borderRadius: tokens.radii.controlRadius,
       child: Padding(
         padding: EdgeInsets.symmetric(
@@ -1652,8 +1652,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     // A bare InkWell is invisible to the directional focus controller (it walks
     // only registered targets), so the whole action strip was skipped. Register
     // each button as a single focus stop that A/Enter activates.
-    if (HibikiFocusRoot.maybeControllerOf(context) == null) return button;
-    return HibikiActivatableFocusTarget(
+    if (FushiFocusRoot.maybeControllerOf(context) == null) return button;
+    return FushiActivatableFocusTarget(
       focusIdPrefix: 'reader-action',
       onTap: onTap,
       child: button,
@@ -1675,7 +1675,7 @@ class _InBookTocRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String title = entry.label.isEmpty ? t.untitled_chapter : entry.label;
     final double indent = entry.depth * tokens.spacing.card;
 
@@ -1747,7 +1747,7 @@ class _InBookSearchResultRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
     final ThemeData theme = Theme.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color primary = cupertino
         ? CupertinoTheme.of(context).primaryColor
         : theme.colorScheme.primary;
@@ -1842,7 +1842,7 @@ class _InBookFavoriteRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return AdaptiveSettingsRow(
       title: favorite.text,
       subtitle: metaLabel,
@@ -1886,7 +1886,7 @@ class _InBookFavoriteRow extends StatelessWidget {
   }
 
   Widget _buildColorRail(BuildContext context, Color railColor) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Container(
       width: 4,
       height: 32,
@@ -1916,7 +1916,7 @@ class _InBookIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color color = destructive
         ? (cupertino
             ? CupertinoColors.destructiveRed.resolveFrom(context)
@@ -1938,7 +1938,7 @@ class _InBookIconButton extends StatelessWidget {
       );
     }
 
-    return HibikiIconButton(
+    return FushiIconButton(
       icon: materialIcon,
       size: 18,
       enabledColor: color,
@@ -2004,7 +2004,7 @@ class _RepeatIconButtonState extends State<_RepeatIconButton> {
       // widget.onPressed()（数值狂涨 / 狂降）直到 dispose。与 video_hibiki_page.dart
       // 的 _VideoRepeatGestureButton 对齐。
       onLongPressCancel: () => _stop(),
-      child: HibikiIconButton(
+      child: FushiIconButton(
         icon: widget.icon,
         size: 18,
         tooltip: widget.tooltip,

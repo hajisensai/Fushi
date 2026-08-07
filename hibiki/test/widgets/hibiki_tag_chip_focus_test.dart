@@ -8,24 +8,24 @@ import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 import 'widget_test_helpers.dart';
 
 void main() {
-  group('HibikiTagChip default focusability', () {
+  group('FushiTagChip default focusability', () {
     testWidgets(
-        'a tappable HibikiTagChip registers under the focus root WITHOUT focusId',
+        'a tappable FushiTagChip registers under the focus root WITHOUT focusId',
         (WidgetTester tester) async {
       int taps = 0;
       await tester.pumpWidget(buildTestApp(
-        HibikiFocusRoot(
+        FushiFocusRoot(
           child: Column(
             children: <Widget>[
-              HibikiTagChip(label: 'A', onTap: () => taps += 1),
-              HibikiTagChip(label: 'B', onTap: () => taps += 1),
+              FushiTagChip(label: 'A', onTap: () => taps += 1),
+              FushiTagChip(label: 'B', onTap: () => taps += 1),
             ],
           ),
         ),
       ));
       await tester.pump();
 
-      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.text('A')),
       );
       controller.ensureFocus();
@@ -41,44 +41,44 @@ void main() {
       expect(taps, 1);
     });
 
-    testWidgets('a passive HibikiTagChip (onTap == null) is not a focus target',
+    testWidgets('a passive FushiTagChip (onTap == null) is not a focus target',
         (WidgetTester tester) async {
       await tester.pumpWidget(buildTestApp(
-        const HibikiFocusRoot(
+        const FushiFocusRoot(
           child: Column(
             children: <Widget>[
-              HibikiTagChip(label: 'Passive'),
+              FushiTagChip(label: 'Passive'),
             ],
           ),
         ),
       ));
       await tester.pump();
 
-      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.text('Passive')),
       );
-      controller.move(HibikiFocusDirection.down);
+      controller.move(FushiFocusDirection.down);
       await tester.pump();
       expect(controller.activeId, isNull);
       expect(controller.fallbackNode.hasPrimaryFocus, isTrue);
     });
 
     testWidgets(
-        'a deletable HibikiTagChip registers and deletes with gamepad X',
+        'a deletable FushiTagChip registers and deletes with gamepad X',
         (WidgetTester tester) async {
       int deletes = 0;
       await tester.pumpWidget(buildTestApp(
-        HibikiFocusRoot(
+        FushiFocusRoot(
           child: Column(
             children: <Widget>[
-              HibikiTagChip(label: 'Ctrl+K', onDeleted: () => deletes += 1),
+              FushiTagChip(label: 'Ctrl+K', onDeleted: () => deletes += 1),
             ],
           ),
         ),
       ));
       await tester.pump();
 
-      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.text('Ctrl+K')),
       );
       controller.ensureFocus();

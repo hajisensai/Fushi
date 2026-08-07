@@ -38,7 +38,7 @@ void main() {
     expect(source, contains('_subtitleStyle.resolveFontWeight('));
     expect(source, contains('_subtitleStyle.resolveShadowThickness('));
     expect(source, contains('uiScale: _videoUiScale'));
-    expect(source, isNot(contains('HibikiAppUiScale.of(context)')));
+    expect(source, isNot(contains('FushiAppUiScale.of(context)')));
     expect(source, isNot(contains('fontWeight: _subtitleStyle.fontWeight')));
     expect(source,
         isNot(contains('shadowThickness: _subtitleStyle.shadowThickness')));

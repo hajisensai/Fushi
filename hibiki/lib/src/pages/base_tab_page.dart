@@ -64,7 +64,7 @@ abstract class BaseTabPageState<T extends BaseTabPage>
   }
 
   Widget buildChangeSourceButton() {
-    return HibikiIconButton(
+    return FushiIconButton(
       size: textTheme.titleLarge?.fontSize,
       tooltip: t.change_source,
       icon: mediaSource.icon,
@@ -83,7 +83,7 @@ abstract class BaseTabPageState<T extends BaseTabPage>
   Widget buildBackButton({
     required VoidCallback onTap,
   }) {
-    return HibikiIconButton(
+    return FushiIconButton(
       size: textTheme.titleLarge?.fontSize,
       tooltip: t.back,
       icon: Icons.arrow_back,

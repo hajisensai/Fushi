@@ -13,14 +13,14 @@ Widget _twoPane({
   // 左面板（导航 ListView）：nav0 / nav-阅读 / nav2，各高 56。
   // 右面板（详情 ListView）：seg（高 56）/ 非聚焦留白（高 80）/ theme（高 56）。
   // 两面板顶端对齐：seg 中心≈28，theme 中心≈164；nav-阅读 中心≈84（比 theme 更近）。
-  Widget target(String id, double height, double width) => HibikiFocusTarget(
-        id: HibikiFocusId(id),
+  Widget target(String id, double height, double width) => FushiFocusTarget(
+        id: FushiFocusId(id),
         child: SizedBox(height: height, width: width),
       );
   return MaterialApp(
     theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
     home: Scaffold(
-      body: HibikiFocusRoot(
+      body: FushiFocusRoot(
         child: Row(
           key: rootKey,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -62,18 +62,18 @@ void main() {
     await tester.pumpWidget(_twoPane(rootKey: rootKey));
     await tester.pump();
 
-    final HibikiFocusController controller =
-        HibikiFocusRoot.controllerOf(rootKey.currentContext!);
+    final FushiFocusController controller =
+        FushiFocusRoot.controllerOf(rootKey.currentContext!);
 
-    expect(controller.requestById(const HibikiFocusId('detail-seg')), isTrue);
+    expect(controller.requestById(const FushiFocusId('detail-seg')), isTrue);
     await tester.pump();
 
-    expect(controller.move(HibikiFocusDirection.down), isTrue);
+    expect(controller.move(FushiFocusDirection.down), isTrue);
     await tester.pump();
 
     expect(
       controller.activeId,
-      const HibikiFocusId('detail-theme'),
+      const FushiFocusId('detail-theme'),
       reason: 'Down must prefer the same-pane control below, not the closer '
           'cross-pane nav item',
     );
@@ -85,14 +85,14 @@ void main() {
     await tester.pumpWidget(_twoPane(rootKey: rootKey));
     await tester.pump();
 
-    final HibikiFocusController controller =
-        HibikiFocusRoot.controllerOf(rootKey.currentContext!);
+    final FushiFocusController controller =
+        FushiFocusRoot.controllerOf(rootKey.currentContext!);
 
-    expect(controller.requestById(const HibikiFocusId('nav-0')), isTrue);
+    expect(controller.requestById(const FushiFocusId('nav-0')), isTrue);
     await tester.pump();
 
     // 导航面板单列、右侧无同面板候选 → Right 必须跨到详情面板（不被同面板档锁死）。
-    expect(controller.move(HibikiFocusDirection.right), isTrue);
+    expect(controller.move(FushiFocusDirection.right), isTrue);
     await tester.pump();
     expect(
       controller.activeId?.value.startsWith('detail-'),

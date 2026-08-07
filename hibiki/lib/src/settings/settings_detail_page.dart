@@ -9,7 +9,7 @@ import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/utils.dart';
 
 /// Renders [destination] through the active platform's settings detail shell
-/// (Material → [HibikiPageScaffold] + 24px padding + [AdaptiveSettingsSection];
+/// (Material → [FushiPageScaffold] + 24px padding + [AdaptiveSettingsSection];
 /// Cupertino → grouped sliver list). This is the SAME chrome the master-detail
 /// renderer uses, so any pushed settings sub-page built on top of it is visually
 /// indistinguishable from a real schema destination — no scaffold/padding/card

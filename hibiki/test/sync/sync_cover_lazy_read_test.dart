@@ -21,7 +21,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 这里从两端钉死：
 ///  - `SyncManager` 侧：调用 `ensureBookFolder` **之前**不许碰磁盘（用「回调被调用
 ///    时封面文件才刚被创建」做判别器 —— eager 版只能读到 null）；
-///  - 真后端侧（`InterconnectSyncBackend` 打真 `HibikiSyncServer`）：cache-miss 那
+///  - 真后端侧（`InterconnectSyncBackend` 打真 `FushiSyncServer`）：cache-miss 那
 ///    轮的行为一字不变（封面照旧上传、字节逐字节一致），cache-hit 那轮回调一次都
 ///    不许被调用。
 
@@ -101,7 +101,7 @@ class _LazyCoverBackend implements SyncBackend {
 }
 
 Future<EpubBookRow> _insertBook(
-  HibikiDatabase db, {
+  FushiDatabase db, {
   required String title,
   required String coverPath,
 }) async {
@@ -126,8 +126,8 @@ void main() {
     addTearDown(() => tempDir.delete(recursive: true));
     final File coverFile = File('${tempDir.path}/cover.png');
 
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final EpubBookRow book =
         await _insertBook(db, title: 'Book', coverPath: coverFile.path);
@@ -161,8 +161,8 @@ void main() {
     final File coverFile = File('${tempDir.path}/cover.png');
     await coverFile.writeAsBytes(_kCoverBytes);
 
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final EpubBookRow book =
         await _insertBook(db, title: 'Book', coverPath: coverFile.path);
@@ -191,8 +191,8 @@ void main() {
     addTearDown(() => tempDir.delete(recursive: true));
     await Directory('${tempDir.path}/sync-data').create(recursive: true);
 
-    final String token = HibikiSyncServer.generateToken();
-    final HibikiSyncServer server = HibikiSyncServer(
+    final String token = FushiSyncServer.generateToken();
+    final FushiSyncServer server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0,
       token: token,
@@ -201,12 +201,12 @@ void main() {
     await server.start();
     addTearDown(server.stop);
 
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
-    await repo.setHibikiClientUrls(<HibikiClientUrl>[
-      HibikiClientUrl(url: 'http://127.0.0.1:${server.port}'),
+    await repo.setHibikiClientUrls(<FushiClientUrl>[
+      FushiClientUrl(url: 'http://127.0.0.1:${server.port}'),
     ]);
     await repo.setHibikiClientToken(token);
 

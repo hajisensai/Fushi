@@ -3,7 +3,7 @@
 /// ⚠️ 与合集/书架域（`MediaKind`）**互不通用**：`book` ≠ `epub`（本域的
 /// `book` 指「书资产」整体，itemKey=bookKey）。表注释只列了 4 个资产种类，
 /// 但收藏词 / 收藏句的删除传播墓碑也存进同一列（写入点
-/// `HibikiDatabase.removeFavoriteWord` / `FavoriteSentenceRepository`），
+/// `FushiDatabase.removeFavoriteWord` / `FavoriteSentenceRepository`），
 /// 故本枚举含全部 7 个已落库值。
 library;
 

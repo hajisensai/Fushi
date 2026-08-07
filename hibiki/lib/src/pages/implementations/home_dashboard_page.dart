@@ -209,7 +209,7 @@ class _DailyGoalDialogState extends State<_DailyGoalDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return AlertDialog(
       title: Text(t.stat_goal_set),
       content: SingleChildScrollView(
@@ -325,7 +325,7 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
               itemBuilder: (BuildContext context, int index) {
                 final BangumiWatchedItem item = watched[index];
                 final String? coverUrl = item.subject.coverUrl;
-                return HibikiListItem(
+                return FushiListItem(
                   padding: EdgeInsets.zero,
                   titleMaxLines: 2,
                   leading: SizedBox(
@@ -334,7 +334,7 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
                     child: coverUrl == null
                         ? const Icon(Icons.movie_outlined)
                         : ClipRRect(
-                            borderRadius: HibikiBorderRadius.chip,
+                            borderRadius: FushiBorderRadius.chip,
                             child: Image.network(
                               coverUrl,
                               fit: BoxFit.cover,
@@ -397,7 +397,7 @@ class _HomeDashboardPageState
   /// 只显示得到日文书名的五六个字。放宽到两行就必须同步抬高行高，而且这个高度
   /// 本来也该随文字缩放走——旧的 196 在 textScale≥1.5 时连「单行标题 + 副标题」
   /// 都装不下，会直接竖向溢出。
-  double _continueRowHeight(BuildContext context, HibikiDesignTokens tokens) {
+  double _continueRowHeight(BuildContext context, FushiDesignTokens tokens) {
     final double titleLine = textLineHeight(context, tokens.type.listTitle);
     final double metaLine = textLineHeight(context, tokens.type.metadata);
     return _kContinueCoverHeight +
@@ -445,7 +445,7 @@ class _HomeDashboardPageState
   /// 远端封面取图器（互联 client 可用时非空；喂 [RemoteCoverImage]）。
   RemoteCoverFetcher? _remoteCoverFetcher;
 
-  /// 互联 host 设备显示名（配对时存进 [HibikiClientUrl.deviceName]；取不到时
+  /// 互联 host 设备显示名（配对时存进 [FushiClientUrl.deviceName]；取不到时
   /// 渲染层回退通用「远端」文案）。「标明设备来源」的数据源。
   String? _remoteDeviceName;
 
@@ -568,7 +568,7 @@ class _HomeDashboardPageState
 
   Future<void> _loadDashboardDataUnsafe() async {
     final AppModel appModel = ref.read(appProvider);
-    final HibikiDatabase db = appModel.database;
+    final FushiDatabase db = appModel.database;
     final List<VideoBookRow> videos = await widget.videoRepo.listForShelf();
     final List<ActivityEventRow> events =
         await db.getRecentActivityEvents(limit: 200);
@@ -782,9 +782,9 @@ class _HomeDashboardPageState
         remoteVideos: remoteVideos,
       );
       // 设备来源标注：配对时存下的 host 设备名（多地址时取第一个启用且有名的）。
-      final List<HibikiClientUrl> urls = await syncRepo.getHibikiClientUrls();
+      final List<FushiClientUrl> urls = await syncRepo.getHibikiClientUrls();
       String? deviceName;
-      for (final HibikiClientUrl u in urls) {
+      for (final FushiClientUrl u in urls) {
         final String? name = u.deviceName;
         if (u.enabled && name != null && name.isNotEmpty) {
           deviceName = name;
@@ -812,7 +812,7 @@ class _HomeDashboardPageState
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final AppModel appModel = ref.watch(appProvider);
     final List<MediaItem> books =
         ref.watch(hibikiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
@@ -941,7 +941,7 @@ class _HomeDashboardPageState
   /// 「继续」区块：把在读的书（0<position<duration）与在看的视频
   /// （lastPositionMs>0 且未完成）合并、按最近活动时刻倒序，分段筛选后取前 10 条。
   Widget _buildContinueSection(
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     AppModel appModel,
     List<MediaItem> books,
     Map<String, int> lastReadByKey,
@@ -1115,7 +1115,7 @@ class _HomeDashboardPageState
   /// 添加」传 false 维持全竖版现状。行高不变：两种卡封面同高、宽度不同，底边
   /// 天然对齐（video_home_layout 同款几何）。
   Widget _continueCardsRow(
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     AppModel appModel,
     List<_ContinueEntry> entries, {
     bool videoLandscape = false,
@@ -1148,7 +1148,7 @@ class _HomeDashboardPageState
   /// 倒序混排取前 12，复用继续卡组件（不画进度条，副标题=「类型 · 相对时间」）。
   /// 无可排条目（空库/无时间戳）返回 null 不占位。
   Widget? _buildRecentlyAddedSection(
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     AppModel appModel,
     List<MediaItem> books,
     DateTime now,
@@ -1324,7 +1324,7 @@ class _HomeDashboardPageState
   /// 副标题=「条目名 · 状态」；散卡标题=条目名、副标题=状态。状态：书=「阅读 ·
   /// x%」/ 视频=「观看」，远端条目再缀设备名。
   Widget _buildContinueCard(
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     AppModel appModel,
     _ContinueEntry entry, {
     bool videoLandscape = false,
@@ -1370,7 +1370,7 @@ class _HomeDashboardPageState
   }
 
   Widget _buildContinueCardBody(
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     AppModel appModel,
     _ContinueEntry entry, {
     required bool landscape,
@@ -1400,13 +1400,13 @@ class _HomeDashboardPageState
       width: coverWidth,
       child: InkWell(
         onTap: () => _openContinueEntry(appModel, entry),
-        borderRadius: HibikiBorderRadius.card,
+        borderRadius: FushiBorderRadius.card,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             ClipRRect(
-              borderRadius: HibikiBorderRadius.card,
+              borderRadius: FushiBorderRadius.card,
               child: SizedBox(
                 width: coverWidth,
                 height: _kContinueCoverHeight,
@@ -1460,7 +1460,7 @@ class _HomeDashboardPageState
 
   /// 「继续」卡封面本体（远端/视频/书三路，与旧列表行同源取图逻辑）。
   Widget _continueCover(
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     AppModel appModel,
     _ContinueEntry entry, {
     bool landscapeSlot = false,
@@ -1499,7 +1499,7 @@ class _HomeDashboardPageState
   /// 远端条目封面：互联 coverUrl + 取图器可用则 [RemoteCoverImage]（按稳定 id
   /// 磁盘缓存），否则占位图标。
   Widget _remoteCover(
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     _ContinueEntry entry, {
     bool landscapeSlot = false,
   }) {
@@ -1547,7 +1547,7 @@ class _HomeDashboardPageState
   /// [PortraitCoverImage] 做槽向自适应，不再 `BoxFit.cover` 硬裁。
   /// [landscapeSlot] 跟随调用方槽位朝向（继续卡竖版 / 活动条缩略 68×40 横版）。
   Widget _videoCover(
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     VideoBookRow video, {
     bool landscapeSlot = false,
   }) {
@@ -1563,7 +1563,7 @@ class _HomeDashboardPageState
   /// `galgames.coverPath`，显示侧交给统一来源解析器，不在页面重复同步文件探测。
   /// exe 内嵌图标是方图，走 [PortraitCoverImage] 垫底完整显示而非硬裁（BUG-1299）。
   Widget _gameCover(
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     GalgameEntry game, {
     bool landscapeSlot = false,
   }) {
@@ -1576,7 +1576,7 @@ class _HomeDashboardPageState
   }
 
   Widget _localCover(
-    HibikiDesignTokens tokens, {
+    FushiDesignTokens tokens, {
     required MediaKind kind,
     required String? path,
     bool landscapeSlot = false,
@@ -1597,7 +1597,7 @@ class _HomeDashboardPageState
   }
 
   /// 封面占位：中性底色 + 图标。
-  Widget _coverPlaceholder(HibikiDesignTokens tokens, IconData icon) {
+  Widget _coverPlaceholder(FushiDesignTokens tokens, IconData icon) {
     return DecoratedBox(
       decoration: BoxDecoration(color: tokens.surfaces.card),
       child: Center(child: Icon(icon, color: tokens.type.metadata.color)),
@@ -1662,7 +1662,7 @@ class _HomeDashboardPageState
   /// 学习活动热力图卡（复用 [StatContributionHeatmap]，按每日字数铺格）：header
   /// 加来源筛选（全部/阅读/观看/游戏），格下加「今日目标」行，点选某日弹当日明细
   /// sheet（用户反馈「点了只有日期和字数，分不清干了什么」三连的解药）。
-  Widget _buildHeatmapCard(HibikiDesignTokens tokens) {
+  Widget _buildHeatmapCard(FushiDesignTokens tokens) {
     final Map<String, int> charsByDay = _heatmapCharsByDay();
     final Map<String, int> timeMsByDay = _heatmapTimeMsByDay();
     final Widget card = _sectionCard(
@@ -1762,7 +1762,7 @@ class _HomeDashboardPageState
   /// 「今日目标」行：全来源合计今日字数 vs 每日字数目标（与阅读统计页同一持久化
   /// [AppModel.readingGoalDailyChars]，不随热力图筛选变）。目标为 0 → 只留设定
   /// 入口按钮；否则进度条 + 「X / Y 字」，点击行弹编辑对话框。
-  Widget _buildDailyGoalRow(HibikiDesignTokens tokens) {
+  Widget _buildDailyGoalRow(FushiDesignTokens tokens) {
     final int goal = ref.read(appProvider).readingGoalDailyChars;
     if (goal <= 0) {
       // BUG-1073 病灶 2：此前是热力图下方孤零零一个左对齐按钮。改成与已设目标态
@@ -1795,12 +1795,12 @@ class _HomeDashboardPageState
         ),
       );
     }
-    final String todayKey = HibikiTimeFormat.dayKey(DateTime.now());
+    final String todayKey = FushiTimeFormat.dayKey(DateTime.now());
     final int todayChars = _readingCharsByDay[todayKey] ?? 0;
     final double fraction = (todayChars / goal).clamp(0.0, 1.0);
     return InkWell(
       onTap: () => unawaited(_editDailyGoal()),
-      borderRadius: HibikiBorderRadius.card,
+      borderRadius: FushiBorderRadius.card,
       child: Padding(
         padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
         child: Row(
@@ -1855,7 +1855,7 @@ class _HomeDashboardPageState
     int total = 0;
     for (int i = 0; i < days; i++) {
       final String key =
-          HibikiTimeFormat.dayKey(today.subtract(Duration(days: i)));
+          FushiTimeFormat.dayKey(today.subtract(Duration(days: i)));
       total += _readingCharsByDay[key] ?? 0;
     }
     return total ~/ days;
@@ -1865,7 +1865,7 @@ class _HomeDashboardPageState
   /// 阅读/观看/游戏分节列出每条目的字数+时长（空节不显示）。阅读/观看直接过滤
   /// 已加载统计行，游戏按日按标题现查 DB 聚合。
   Future<void> _showDayDetailSheet(String dateKey) async {
-    final HibikiDatabase db = ref.read(appProvider).database;
+    final FushiDatabase db = ref.read(appProvider).database;
     final List<(String, int, int)> gameRows =
         await db.getActivityTitleTotalsForDay(kActivityGame, dateKey);
     if (!mounted) return;
@@ -1986,7 +1986,7 @@ class _HomeDashboardPageState
     List<({String title, int chars, int timeMs})> watch,
     List<({String title, int chars, int timeMs})> game,
   ) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final int totalChars = _readingCharsByDay[dateKey] ?? 0;
     final int totalMs = _readingTimeMsByDay[dateKey] ?? 0;
     final String summary = totalMs > 0
@@ -2019,7 +2019,7 @@ class _HomeDashboardPageState
 
   /// 明细 sheet 的一节：节标题 + 每行「图标 + 显示名 + 字数 · 时长」；空节不渲染。
   List<Widget> _dayDetailSection(
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     String label,
     IconData icon,
     List<({String title, int chars, int timeMs})> rows,
@@ -2063,7 +2063,7 @@ class _HomeDashboardPageState
   /// [booksByKey] / [videosByUid] 是「mediaKey → 本地条目」反查映射（封面缩略 +
   /// 点击直达用；查不到回退图标/切 tab）。
   Widget _buildActivitySection(
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     DateTime now,
     AppModel appModel,
     Map<String, MediaItem> booksByKey,
@@ -2082,9 +2082,9 @@ class _HomeDashboardPageState
           ? (_remoteDeviceName ?? t.home_remote_source)
           : null,
     );
-    final String todayKey = HibikiTimeFormat.dayKey(now);
+    final String todayKey = FushiTimeFormat.dayKey(now);
     final String yesterdayKey =
-        HibikiTimeFormat.dayKey(now.subtract(const Duration(days: 1)));
+        FushiTimeFormat.dayKey(now.subtract(const Duration(days: 1)));
 
     return _sectionCard(
       tokens,
@@ -2116,7 +2116,7 @@ class _HomeDashboardPageState
 
   /// 单个日期分组：日期头 + 该日的条目。
   Widget _buildActivityGroup(
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     ActivityDateGroup group,
     String todayKey,
     String yesterdayKey,
@@ -2154,7 +2154,7 @@ class _HomeDashboardPageState
   /// （动作词 · 相对时间 · [时长] · [session 数]）。整行可点：命中本地条目直接
   /// 打开（视频续播/书 openMedia），查不到回退切 tab。
   Widget _buildActivityEntry(
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     ActivityEntry entry,
     DateTime now,
     AppModel appModel,
@@ -2172,7 +2172,7 @@ class _HomeDashboardPageState
     return InkWell(
       onTap: () => unawaited(
           _openActivityEntry(appModel, entry, booksByKey, videosByUid)),
-      borderRadius: HibikiBorderRadius.card,
+      borderRadius: FushiBorderRadius.card,
       child: Padding(
         padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
         child: Row(
@@ -2260,7 +2260,7 @@ class _HomeDashboardPageState
   /// 横版，圆角裁切，与继续卡同源取图），查不到（已删/远端 display-only 行/导入
   /// 无封面）回退原类型图标（用户反馈时间轴只有小图标认不出条目）。
   Widget _activityLeading(
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     AppModel appModel,
     ActivityEntry entry,
     Map<String, MediaItem> booksByKey,
@@ -2277,7 +2277,7 @@ class _HomeDashboardPageState
       );
       if (game != null) {
         return ClipRRect(
-          borderRadius: HibikiBorderRadius.card,
+          borderRadius: FushiBorderRadius.card,
           child: SizedBox(
             width: 40,
             height: 56,
@@ -2290,7 +2290,7 @@ class _HomeDashboardPageState
         final VideoBookRow? video = videosByUid[key];
         if (video != null) {
           return ClipRRect(
-            borderRadius: HibikiBorderRadius.card,
+            borderRadius: FushiBorderRadius.card,
             child: SizedBox(
               width: 68,
               height: 40,
@@ -2303,7 +2303,7 @@ class _HomeDashboardPageState
         final MediaItem? book = booksByKey[key];
         if (book != null) {
           return ClipRRect(
-            borderRadius: HibikiBorderRadius.card,
+            borderRadius: FushiBorderRadius.card,
             child: SizedBox(
               width: 40,
               height: 56,
@@ -2420,7 +2420,7 @@ class _HomeDashboardPageState
   /// 于是「看完一部作品」之后没有任何反馈可看。这张卡按链路的三段（连接 → 关联 →
   /// 发送）依次给出当前事实与下一步动作：哪一段断了，卡上就只可能显示那一段的文案。
   Widget _buildTrackingCard(
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     AppModel appModel,
     DateTime now,
   ) {
@@ -2471,7 +2471,7 @@ class _HomeDashboardPageState
             message: t.media_tracking_watched_show,
             child: InkWell(
               onTap: () => unawaited(_showBangumiWatched()),
-              borderRadius: HibikiBorderRadius.card,
+              borderRadius: FushiBorderRadius.card,
               child: Padding(
                 padding: EdgeInsets.symmetric(
                   vertical: tokens.spacing.gap / 2,
@@ -2615,13 +2615,13 @@ class _HomeDashboardPageState
   }
 
   Widget _buildTrackingUnlinkedRow(
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     MediaTrackingUnlinkedItem item,
   ) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return InkWell(
       onTap: _openTrackingSettings,
-      borderRadius: HibikiBorderRadius.card,
+      borderRadius: FushiBorderRadius.card,
       child: Padding(
         padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
         child: Row(
@@ -2661,14 +2661,14 @@ class _HomeDashboardPageState
   /// 打开 bgm.tv 是「怎么查看这个 bangumi 数据」的落点：远端收藏与进度的真相在
   /// Bangumi，app 内不镜像一份（镜像就得再养一套失效逻辑，且永远可能与远端不符）。
   Widget _buildTrackingMappingRow(
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     MediaTrackingMappingRow mapping,
     MediaTrackingFailure? failure,
   ) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return InkWell(
       onTap: () => unawaited(_openBangumiSubject(mapping.subjectId)),
-      borderRadius: HibikiBorderRadius.card,
+      borderRadius: FushiBorderRadius.card,
       child: Padding(
         padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
         child: Row(
@@ -2813,10 +2813,10 @@ class _HomeDashboardPageState
   /// 统一的分区卡：标题（+ 可选右侧 header 控件）+ 内容，套 group 底色圆角。
   /// [_sectionCard] 的内边距。单独抽出来是因为 [_buildHeatmapCard] 要按「网格自然
   /// 最大宽度 + 两侧内边距」给卡片限宽，两处必须用同一个值。
-  double _sectionCardInset(HibikiDesignTokens tokens) => tokens.spacing.gap + 4;
+  double _sectionCardInset(FushiDesignTokens tokens) => tokens.spacing.gap + 4;
 
   Widget _sectionCard(
-    HibikiDesignTokens tokens, {
+    FushiDesignTokens tokens, {
     required String title,
     required Widget child,
     Widget? header,
@@ -2825,7 +2825,7 @@ class _HomeDashboardPageState
       decoration: ShapeDecoration(
         color: tokens.surfaces.group,
         shape: const RoundedRectangleBorder(
-          borderRadius: HibikiBorderRadius.card,
+          borderRadius: FushiBorderRadius.card,
         ),
       ),
       child: Padding(
@@ -2849,7 +2849,7 @@ class _HomeDashboardPageState
 
   /// 泛型筛选 chip 行：[ChoiceChip] 的 [Wrap]（窄屏自动换行，不溢出）。
   Widget _filterChips<T>({
-    required HibikiDesignTokens tokens,
+    required FushiDesignTokens tokens,
     required T selected,
     required ValueChanged<T> onSelected,
     required List<(T value, String label)> options,
@@ -2882,7 +2882,7 @@ class _MigrationReadonlyBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return HibikiCard(
+    return FushiCard(
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -2972,7 +2972,7 @@ class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     Widget? inner;
     if (!_importDone && _hasTransferData) {
       inner = Column(
@@ -3010,7 +3010,7 @@ class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
     if (inner == null) return const SizedBox.shrink();
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.card),
-      child: HibikiCard(
+      child: FushiCard(
         child: Padding(padding: const EdgeInsets.all(12), child: inner),
       ),
     );

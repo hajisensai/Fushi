@@ -84,7 +84,7 @@ class _MihonChapterReaderPageState extends State<MihonChapterReaderPage> {
   Widget build(BuildContext context) {
     final MihonReaderChapter? resolved = _resolved;
     if (resolved != null) {
-      return HibikiAppUiScaleNeutralizer(
+      return FushiAppUiScaleNeutralizer(
         child: MangaHibikiPage(
           item: null,
           bookKey: _readerBookKey,

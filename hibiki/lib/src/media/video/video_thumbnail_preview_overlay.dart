@@ -27,7 +27,7 @@ double thumbnailPreviewLeft(
 
 /// 把毫秒格式化成 `mm:ss` / `h:mm:ss`（>=1 小时带小时）。负值 clamp 到 0。纯函数。
 String formatThumbnailTimestamp(int ms) =>
-    HibikiTimeFormat.clockPadded(Duration(milliseconds: ms < 0 ? 0 : ms));
+    FushiTimeFormat.clockPadded(Duration(milliseconds: ms < 0 ? 0 : ms));
 
 /// 视频进度条 hover 缩略图预览浮层（TODO-669，方案 A）。
 ///

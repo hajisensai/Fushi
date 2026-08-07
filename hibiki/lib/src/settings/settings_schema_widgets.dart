@@ -420,7 +420,7 @@ class SettingsSectionFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.gap + tokens.spacing.gap / 2,

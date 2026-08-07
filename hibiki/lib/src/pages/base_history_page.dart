@@ -42,7 +42,7 @@ abstract class BaseHistoryPageState<T extends BaseHistoryPage>
   /// This is shown as the body when [shouldPlaceholderBeShown] is true.
   Widget buildPlaceholder() {
     return Center(
-      child: HibikiPlaceholderMessage(
+      child: FushiPlaceholderMessage(
         icon: mediaType.outlinedIcon,
         message: t.info_empty_home_tab,
       ),
@@ -75,7 +75,7 @@ abstract class BaseHistoryPageState<T extends BaseHistoryPage>
     // SAME callback as the mouse long-press on the focused card.
     return GamepadLongPressActions(
       onLongPress: onLongPress,
-      child: HibikiCard(
+      child: FushiCard(
         padding: EdgeInsets.zero,
         borderColor: Colors.transparent,
         onTap: () async {

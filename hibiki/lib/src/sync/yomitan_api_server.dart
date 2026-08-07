@@ -36,7 +36,7 @@ const List<String> _apiKeyParameterNames = <String>[
 /// x-api-key / Bearer / 裸 Authorization / query / body，也支持扩展用的
 /// `Basic base64('hibiki:'+key)`）。端点：serverVersion/yomitanVersion/termEntries/tokenize
 /// （yomitan-api 兼容）+ `/api/lookup/dictionary` + `/api/mine`（BUG-530：浏览器扩展契约，
-/// 与 HibikiSyncServer 共享 [buildRemoteDictionaryLookupResponse]/[buildRemoteMineResponse]）。
+/// 与 FushiSyncServer 共享 [buildRemoteDictionaryLookupResponse]/[buildRemoteMineResponse]）。
 /// 浏览器扩展连接探活的 POST 端点集合：命中其一即视作「扩展（或 in-app 弹窗）活跃」。
 /// 只列扩展真正会主动打的端点——状态探测 + 查词/制卡/查重/音频，不含裸 GET 音频文件。
 const Set<String> _kExtensionSeenPaths = <String>{
@@ -50,11 +50,11 @@ const Set<String> _kExtensionSeenPaths = <String>{
 class YomitanApiServer {
   YomitanApiServer({
     required int port,
-    required HibikiRemoteLookupService lookupService,
+    required FushiRemoteLookupService lookupService,
     required Tokenizer tokenizer,
     required ReadingResolver readingResolver,
-    HibikiRemoteMiningService? miningService,
-    HibikiRemoteHistoryService? historyService,
+    FushiRemoteMiningService? miningService,
+    FushiRemoteHistoryService? historyService,
     Map<String, String> Function()? themeColorsProvider,
     List<String> Function()? audioSourcesProvider,
     String? Function()? extensionBuildProvider,
@@ -79,9 +79,9 @@ class YomitanApiServer {
         _allowLan = allowLan;
 
   final int _requestedPort;
-  final HibikiRemoteLookupService _lookup;
-  final HibikiRemoteMiningService? _mining;
-  final HibikiRemoteHistoryService? _history;
+  final FushiRemoteLookupService _lookup;
+  final FushiRemoteMiningService? _mining;
+  final FushiRemoteHistoryService? _history;
   final Tokenizer _tokenizer;
   final ReadingResolver _readingResolver;
   // BUG-530：当前 app 主题的 CSS 变量供给器，随查词响应下发给浏览器扩展弹窗。
@@ -107,7 +107,7 @@ class YomitanApiServer {
 
   HttpServer? _server;
 
-  // 单词音频短命 token（与 HibikiSyncServer 同款模型）：/api/lookup/audio 存字节、返
+  // 单词音频短命 token（与 FushiSyncServer 同款模型）：/api/lookup/audio 存字节、返
   // 免鉴权的 /api/lookup/audio/file?id= URL；命中即续期，5 分钟无访问后 prune。
   final Map<String, _YomitanAudioToken> _remoteAudioTokens =
       <String, _YomitanAudioToken>{};
@@ -143,7 +143,7 @@ class YomitanApiServer {
     return (shelf.Handler inner) {
       return (shelf.Request request) async {
         // 单词音频文件端点是裸 GET（HTML5 Audio 无 Authorization）→ 免鉴权放行，靠
-        // 不可猜的短命 id 兜底（与 HibikiSyncServer 的 /api/lookup/audio/file 同策略）。
+        // 不可猜的短命 id 兜底（与 FushiSyncServer 的 /api/lookup/audio/file 同策略）。
         if (request.url.path == 'api/lookup/audio/file') return inner(request);
         final String? key = _apiKey;
         if (key == null || key.isEmpty) return inner(request);
@@ -173,7 +173,7 @@ class YomitanApiServer {
           authorization.toLowerCase().startsWith(bearerPrefix.toLowerCase())) {
         return authorization.substring(bearerPrefix.length);
       }
-      // BUG-530：Hibiki 浏览器扩展用 `Basic base64('hibiki:'+key)`（与 HibikiSyncServer
+      // BUG-530：Hibiki 浏览器扩展用 `Basic base64('hibiki:'+key)`（与 FushiSyncServer
       // 同款鉴权），密码段=API key。解码取冒号后的 password 段与 _apiKey 比对。
       const String basicPrefix = 'Basic ';
       if (authorization.length > basicPrefix.length &&
@@ -284,8 +284,9 @@ class YomitanApiServer {
     }
     final String? extensionBuild = _extensionBuildProvider?.call();
     return _json(<String, dynamic>{
-      // 'app': 'hibiki' 是浏览器扩展 wire 契约（connection-diagnostics.js 严格
-      // 比对；扩展经商店发布有滞后），冻结不改；待扩展端兼容 'fushi' 后再切。
+      // 'app': 'hibiki' 是浏览器扩展 wire 契约：商店里的旧扩展严格比对，切了
+      // 就断连。扩展仓 connection-diagnostics.js 已改为接受 'fushi' | 'hibiki'
+      // 双值；等扩展商店版本普及双值兼容后这里才切 'fushi'（进度台账有案）。
       'app': 'hibiki',
       'ready': true,
       'port': port,
@@ -293,7 +294,7 @@ class YomitanApiServer {
     });
   }
 
-  /// BUG-530：浏览器扩展查词端点（与 HibikiSyncServer 共享契约）。
+  /// BUG-530：浏览器扩展查词端点（与 FushiSyncServer 共享契约）。
   Future<shelf.Response> _handleDictionaryLookup(shelf.Request request) async {
     final Map<String, dynamic>? body = await _readJson(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
@@ -307,10 +308,10 @@ class YomitanApiServer {
     ));
   }
 
-  /// BUG-530：浏览器扩展制卡端点（与 HibikiSyncServer 共享契约）。未注入挖词 service
+  /// BUG-530：浏览器扩展制卡端点（与 FushiSyncServer 共享契约）。未注入挖词 service
   /// 时 404（mining off）；fields 缺失/类型错 → 400。
   Future<shelf.Response> _handleMine(shelf.Request request) async {
-    final HibikiRemoteMiningService? mining = _mining;
+    final FushiRemoteMiningService? mining = _mining;
     if (mining == null) return shelf.Response.notFound('Mining off');
     final Map<String, dynamic>? body = await _readJson(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
@@ -321,10 +322,10 @@ class YomitanApiServer {
     }
   }
 
-  /// 互联「制卡到服务端」端点（与 HibikiSyncServer 共享契约 buildForwardedMineResponse）。
+  /// 互联「制卡到服务端」端点（与 FushiSyncServer 共享契约 buildForwardedMineResponse）。
   /// 未注入挖词 service → 404；rawPayloadJson 缺失/类型错 → 400。
   Future<shelf.Response> _handleMineForward(shelf.Request request) async {
-    final HibikiRemoteMiningService? mining = _mining;
+    final FushiRemoteMiningService? mining = _mining;
     if (mining == null) return shelf.Response.notFound('Mining off');
     final Map<String, dynamic>? body = await _readJson(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
@@ -335,11 +336,11 @@ class YomitanApiServer {
     }
   }
 
-  /// TODO-1176：浏览器扩展查词弹窗制卡按钮真查重端点（`+`→`✓`，与 HibikiSyncServer 共享
+  /// TODO-1176：浏览器扩展查词弹窗制卡按钮真查重端点（`+`→`✓`，与 FushiSyncServer 共享
   /// 契约）。扩展默认指向本 server（19633），故这里是真正被命中的路径。未注入挖词 service
   /// 时返回 `{duplicate:false}`（弹窗降级为「+」）。
   Future<shelf.Response> _handleDuplicate(shelf.Request request) async {
-    final HibikiRemoteMiningService? mining = _mining;
+    final FushiRemoteMiningService? mining = _mining;
     final Map<String, dynamic>? body = await _readJson(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
     if (mining == null) {
@@ -404,9 +405,9 @@ class YomitanApiServer {
   }
 
   /// 单词音频①解析：POST /api/lookup/audio {expression,reading}。用与 app 同一
-  /// [HibikiRemoteLookupService.lookupAudio]（本地音频库）解析出字节，存进短命 token，
+  /// [FushiRemoteLookupService.lookupAudio]（本地音频库）解析出字节，存进短命 token，
   /// 返回免鉴权的 /api/lookup/audio/file?id= URL 供扩展 HTML5 Audio 直接播放。未命中
-  /// 返回 {url:null}（弹窗降级为 ✕，与 app 一致）。与 HibikiSyncServer 同款实现。
+  /// 返回 {url:null}（弹窗降级为 ✕，与 app 一致）。与 FushiSyncServer 同款实现。
   Future<shelf.Response> _handleAudioLookup(shelf.Request request) async {
     final Map<String, dynamic>? body = await _readJson(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
@@ -543,7 +544,7 @@ class YomitanApiServer {
       );
 }
 
-/// 单词音频短命 token（[YomitanApiServer] 私有，镜像 HibikiSyncServer 的同款模型）。
+/// 单词音频短命 token（[YomitanApiServer] 私有，镜像 FushiSyncServer 的同款模型）。
 /// createdAt 非 final——每次被 [YomitanApiServer._handleAudioFile] 命中即刷新，重置 5
 /// 分钟过期窗口，使正在被访问的音频不会中途过期。
 class _YomitanAudioToken {

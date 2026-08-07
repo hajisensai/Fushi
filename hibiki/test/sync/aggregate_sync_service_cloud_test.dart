@@ -11,21 +11,21 @@ import 'fake_asset_store.dart';
 import 'temp_dir_cleanup.dart';
 
 // Cloud-channel tests for the aggregate sync dimension (TODO-1056 phase B):
-// a real on-disk HibikiDatabase + the in-memory FakeAssetStore standing in for
+// a real on-disk FushiDatabase + the in-memory FakeAssetStore standing in for
 // a cloud backend. They pin the DB materialise/apply round-trip, the per-device
 // snapshot layout, two-device union over the store, second-sync idempotency,
 // and the first-sync (empty namespace) no-op degradation.
 
-Future<HibikiDatabase> _freshDb(String prefix) async {
+Future<FushiDatabase> _freshDb(String prefix) async {
   final Directory dir = await Directory.systemTemp.createTemp(prefix);
   addTearDown(() => cleanupTempDir(dir));
-  return HibikiDatabase(dir.path);
+  return FushiDatabase(dir.path);
 }
 
 void main() {
   test('materialize then apply on empty peer round-trips local state',
       () async {
-    final HibikiDatabase db = await _freshDb('agg_rt_');
+    final FushiDatabase db = await _freshDb('agg_rt_');
     addTearDown(db.close);
     await db.setReadingStatistic(ReadingStatisticsCompanion.insert(
       title: 'Book A',
@@ -62,7 +62,7 @@ void main() {
   test('hourly formats: materialize splits, old-peer totals lift unattributed',
       () async {
     // v67：本地按写入面分桶（epub 20s + manga 10s，同一小时）。
-    final HibikiDatabase db = await _freshDb('agg_hourly_fmt_');
+    final FushiDatabase db = await _freshDb('agg_hourly_fmt_');
     addTearDown(db.close);
     await db.addHourlyReadingTime(
         dateKey: '2026-06-01',
@@ -120,7 +120,7 @@ void main() {
 
   test('first sync with empty namespace uploads own snapshot, no crash',
       () async {
-    final HibikiDatabase db = await _freshDb('agg_first_');
+    final FushiDatabase db = await _freshDb('agg_first_');
     addTearDown(db.close);
     await db.setMiningCount(
         sourceType: 'book', dateKey: '2026-06-01', count: 2);
@@ -138,7 +138,7 @@ void main() {
   });
 
   test('empty device with empty namespace uploads nothing', () async {
-    final HibikiDatabase db = await _freshDb('agg_empty_');
+    final FushiDatabase db = await _freshDb('agg_empty_');
     addTearDown(db.close);
     final FakeAssetStore store = FakeAssetStore();
     await AggregateSyncService(db).sync(store: store, deviceId: 'dev-A');
@@ -147,7 +147,7 @@ void main() {
   });
 
   test('取消收藏句后 peer 快照并集不复活（favoritesentence 墓碑抑制）', () async {
-    final HibikiDatabase db = await _freshDb('agg_fs_tomb_');
+    final FushiDatabase db = await _freshDb('agg_fs_tomb_');
     addTearDown(db.close);
     final FavoriteSentenceRepository repo = FavoriteSentenceRepository(db);
     final FavoriteSentence s = FavoriteSentence(
@@ -190,7 +190,7 @@ void main() {
   test('two devices converge to the union via the store', () async {
     final FakeAssetStore store = FakeAssetStore();
 
-    final HibikiDatabase dbA = await _freshDb('agg_A_');
+    final FushiDatabase dbA = await _freshDb('agg_A_');
     addTearDown(dbA.close);
     await dbA.setReadingStatistic(ReadingStatisticsCompanion.insert(
       title: 'Book A',
@@ -210,7 +210,7 @@ void main() {
     );
     await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
 
-    final HibikiDatabase dbB = await _freshDb('agg_B_');
+    final FushiDatabase dbB = await _freshDb('agg_B_');
     addTearDown(dbB.close);
     await dbB.setReadingStatistic(ReadingStatisticsCompanion.insert(
       title: 'Book A',
@@ -259,7 +259,7 @@ void main() {
       () async {
     final FakeAssetStore store = FakeAssetStore();
 
-    final HibikiDatabase dbA = await _freshDb('agg_lmcA_');
+    final FushiDatabase dbA = await _freshDb('agg_lmcA_');
     addTearDown(dbA.close);
     // A: 10 lookups, 2 mines on Book A / 2026-06-01, plus a no-book lookup.
     await dbA.setLookupCount(
@@ -284,7 +284,7 @@ void main() {
     );
     await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
 
-    final HibikiDatabase dbB = await _freshDb('agg_lmcB_');
+    final FushiDatabase dbB = await _freshDb('agg_lmcB_');
     addTearDown(dbB.close);
     // B: 4 lookups (lower), 9 mines (higher) on the same bucket.
     await dbB.setLookupCount(
@@ -331,13 +331,13 @@ void main() {
       () async {
     final FakeAssetStore store = FakeAssetStore();
 
-    final HibikiDatabase dbA = await _freshDb('agg_idA_');
+    final FushiDatabase dbA = await _freshDb('agg_idA_');
     addTearDown(dbA.close);
     await dbA.setMiningCount(
         sourceType: 'book', dateKey: '2026-06-01', count: 4);
     await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
 
-    final HibikiDatabase dbB = await _freshDb('agg_idB_');
+    final FushiDatabase dbB = await _freshDb('agg_idB_');
     addTearDown(dbB.close);
     await dbB.setMiningCount(
         sourceType: 'book', dateKey: '2026-06-01', count: 4);
@@ -353,7 +353,7 @@ void main() {
     // not propagate」断言已随删除传播作废）。
     final FakeAssetStore store = FakeAssetStore();
 
-    final HibikiDatabase dbA = await _freshDb('agg_delA_');
+    final FushiDatabase dbA = await _freshDb('agg_delA_');
     addTearDown(dbA.close);
     await dbA.addFavoriteWord(
       expression: 'wShared',
@@ -364,7 +364,7 @@ void main() {
     );
     await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
 
-    final HibikiDatabase dbB = await _freshDb('agg_delB_');
+    final FushiDatabase dbB = await _freshDb('agg_delB_');
     addTearDown(dbB.close);
     await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
     expect((await dbB.getAllFavoriteWords()).length, 1);
@@ -395,7 +395,7 @@ void main() {
       'a tombstoned book stat is NOT resurrected by a peer snapshot '
       '(TODO-1204 后续)', () async {
     final FakeAssetStore store = FakeAssetStore();
-    final HibikiDatabase dbA = await _freshDb('agg_tombA_');
+    final FushiDatabase dbA = await _freshDb('agg_tombA_');
     addTearDown(dbA.close);
     await dbA.addReadingStatistic(
         title: 'Ghost', dateKey: '2026-06-01', charsRead: 100, timeMs: 6000);
@@ -406,7 +406,7 @@ void main() {
         dateKey: '2026-06-01');
     await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
 
-    final HibikiDatabase dbB = await _freshDb('agg_tombB_');
+    final FushiDatabase dbB = await _freshDb('agg_tombB_');
     addTearDown(dbB.close);
     await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
     expect((await dbB.getAllReadingStatistics()).length, 1,

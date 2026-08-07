@@ -102,7 +102,7 @@ void main() {
           reason: 'freshly seeded paginated book must appear on the shelf');
 
       // 经 AppModel.openMedia 确定性打开（与卡片 onTap 同一调用）。书架卡片的
-      // Enter→activate 绑定只在卡片处于 HibikiFocusRoot 下才装上，测试书架没包它，
+      // Enter→activate 绑定只在卡片处于 FushiFocusRoot 下才装上，测试书架没包它，
       // 故焦点驱动 Enter 是 no-op、阅读器永远打不开（见 reader_pagination_test.dart
       // _activateBook / TODO-783）。直接 openMedia 绕过焦点树。
       await _activateBook(tester, bookKey);
@@ -298,7 +298,7 @@ Future<String> _seedTestBook(WidgetTester tester) async {
 }
 
 /// 确定性打开书架书（与 reader_pagination_test._activateBook 同一手法）：书架卡片的
-/// Enter→activate→openMedia 绑定只在卡片处于 HibikiFocusRoot 下才装上，测试书架没包它，
+/// Enter→activate→openMedia 绑定只在卡片处于 FushiFocusRoot 下才装上，测试书架没包它，
 /// 故焦点驱动 Enter 是 no-op、阅读器永远打不开（TODO-783）。绕过焦点树：从 key 解析
 /// MediaItem，直接驱动 AppModel.openMedia（与真实卡片 tap 同一调用），把 ReaderHibikiPage
 /// push 上导航栈，与焦点树状态无关。

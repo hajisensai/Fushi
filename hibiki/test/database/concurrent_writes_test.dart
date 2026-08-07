@@ -2,8 +2,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-Future<HibikiDatabase> _openDb() async {
-  final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
@@ -164,7 +164,7 @@ void main() {
       expect(await db.getPref('design_system'), autoRaw);
       expect(
         PrefCodec.decode<int>(
-          (await db.getPref(HibikiDatabase.prefsVersionKey))!,
+          (await db.getPref(FushiDatabase.prefsVersionKey))!,
           0,
         ),
         2,
@@ -177,7 +177,7 @@ void main() {
       final String materialRaw = PrefCodec.encode('material');
       await db.setPref('design_system', materialRaw);
       final String versionBefore =
-          (await db.getPref(HibikiDatabase.prefsVersionKey))!;
+          (await db.getPref(FushiDatabase.prefsVersionKey))!;
 
       final bool changed = await db.compareAndSetPref(
         'design_system',
@@ -188,7 +188,7 @@ void main() {
       expect(changed, isFalse);
       expect(await db.getPref('design_system'), materialRaw);
       expect(
-        await db.getPref(HibikiDatabase.prefsVersionKey),
+        await db.getPref(FushiDatabase.prefsVersionKey),
         versionBefore,
       );
     });
@@ -215,7 +215,7 @@ void main() {
       expect(results.where((bool changed) => changed), hasLength(1));
       expect(
         PrefCodec.decode<int>(
-          (await db.getPref(HibikiDatabase.prefsVersionKey))!,
+          (await db.getPref(FushiDatabase.prefsVersionKey))!,
           0,
         ),
         2,
@@ -236,7 +236,7 @@ void main() {
       // cross-process change counter (TODO-855), adding one bookkeeping row on
       // top of the n user keys.
       final userKeys = all.keys
-          .where((String k) => k != HibikiDatabase.prefsVersionKey)
+          .where((String k) => k != FushiDatabase.prefsVersionKey)
           .toList();
       expect(userKeys.length, n);
       for (int i = 0; i < n; i++) {

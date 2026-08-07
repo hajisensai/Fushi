@@ -22,11 +22,11 @@ import '../../helpers/source_guard.dart';
 
 void main() {
   late Directory root;
-  late HibikiDatabase database;
+  late FushiDatabase database;
 
   setUp(() async {
     root = await Directory.systemTemp.createTemp('hibiki-mihon-seed-');
-    database = HibikiDatabase.forTesting(NativeDatabase.memory());
+    database = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() async {

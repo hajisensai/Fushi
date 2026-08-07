@@ -14,7 +14,7 @@ void main() {
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>';
   final Uint8List svgBytes = Uint8List.fromList(utf8.encode(svg));
 
-  late HibikiSyncServer server;
+  late FushiSyncServer server;
   late String base;
   final List<(String, String)> providerCalls = <(String, String)>[];
 
@@ -26,7 +26,7 @@ void main() {
 
   setUp(() async {
     providerCalls.clear();
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir: Directory.systemTemp.createTempSync('hbk_media_srv').path,
       port: 0,
       token: token,
@@ -141,7 +141,7 @@ void main() {
   });
 
   test('media endpoint returns 404 when no provider injected', () async {
-    final HibikiSyncServer bare = HibikiSyncServer(
+    final FushiSyncServer bare = FushiSyncServer(
       syncDataDir: Directory.systemTemp.createTempSync('hbk_media_bare').path,
       port: 0,
       token: token,

@@ -66,7 +66,7 @@ import 'package:fushi/utils.dart';
 /// code does not own manga rendering, interaction, or OCR overlay behavior.
 /// 选区 payload → 弹窗锚点视口矩形。
 ///
-/// 漫画 WebView 以 scale 1.0、零 inset 渲染（[HibikiAppUiScaleNeutralizer] 中和层），
+/// 漫画 WebView 以 scale 1.0、零 inset 渲染（[FushiAppUiScaleNeutralizer] 中和层），
 /// JS `getClientRects` 的视口坐标可直接当屏幕坐标用（恒等映射）。payload 不带 `rect`
 /// 时（块级兜底命中）锚到屏幕中心 1x1 矩形，镜像阅读器的回退。
 Rect mangaSelectionRectFromPayload(
@@ -900,7 +900,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   // ── 加载 / 恢复 ───────────────────────────────────────────────────────
 
   Future<void> _loadBook() async {
-    final HibikiDatabase db = appModel.database;
+    final FushiDatabase db = appModel.database;
     final MihonReaderChapter? directOnlineChapter = widget.onlineChapter;
     if (directOnlineChapter != null) {
       final EpubBookRow? persisted = directOnlineChapter.persistProgress
@@ -2004,7 +2004,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     LogicalKeyboardKey key,
     Set<ModifierKey> modifiers,
   ) {
-    final HibikiShortcutRegistry registry = appModel.shortcutRegistry;
+    final FushiShortcutRegistry registry = appModel.shortcutRegistry;
     final ShortcutAction? bound = registry.resolveKeyboard(
           key,
           modifiers: modifiers,
@@ -2194,7 +2194,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
           );
           if (!mounted) return;
           setState(() => _wholeVolumeOcrRunning = false);
-          HibikiToast.show(
+          FushiToast.show(
             msg: '${t.manga_ocr_wizard_failed}: $error',
             severity: ToastSeverity.error,
           );
@@ -2213,7 +2213,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         stack,
       );
       if (mounted) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: '${t.manga_ocr_wizard_failed}: $error',
           severity: ToastSeverity.error,
         );
@@ -2266,7 +2266,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     setState(() => _wholeVolumeOcrAcceleration = acceleration);
     if (!acceleration.degraded || _wholeVolumeOcrDegradeNotified) return;
     _wholeVolumeOcrDegradeNotified = true;
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.manga_ocr_acceleration_degraded(
         engine: acceleration.label,
         reason: acceleration.degradeReasons.join('; '),
@@ -2325,7 +2325,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     // 整卷 OCR 只是就地重写已入库书的 manga.json，没有发生任何导入：这里必须用
     // OCR 语义的文案，不能复用向导的「漫画已导入」（用户在阅读器里跑完 OCR 却看到
     // 「导入已完成」）。
-    HibikiToast.show(msg: t.manga_ocr_done, severity: ToastSeverity.success);
+    FushiToast.show(msg: t.manga_ocr_done, severity: ToastSeverity.success);
   }
 
   void _cancelWholeVolumeOcr() {
@@ -2371,7 +2371,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     final MangaBoxRescanService service =
         _rescanService ??= MangaBoxRescanService();
     if (!service.isLocalRescanSupported) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.manga_ocr_unsupported,
         severity: ToastSeverity.error,
       );
@@ -2381,7 +2381,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       await _refreshRescanModelReady();
       if (!mounted) return;
       if (!_rescanModelReady) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.manga_rescan_model_missing,
           severity: ToastSeverity.error,
         );
@@ -2400,7 +2400,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
           'window.__mangaSetRescanMode(${on ? 'true' : 'false'});',
     );
     if (on) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.manga_rescan_hint,
         severity: ToastSeverity.info,
       );
@@ -2435,14 +2435,14 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       MangaHibikiPage.mangaImageRelativePath(payload.images[pageIndex].url),
     );
     if (imagePath == null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.manga_rescan_failed,
         severity: ToastSeverity.error,
       );
       return;
     }
     _rescanBusy = true;
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.manga_rescan_running,
       severity: ToastSeverity.info,
     );
@@ -2461,7 +2461,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaHibikiPage.rescan', error, stack);
       if (mounted) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.manga_rescan_failed,
           severity: ToastSeverity.error,
         );
@@ -2514,7 +2514,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     _lastSentence = text;
     _lastSentenceOffset = 0;
     appModel.currentMediaSource?.setCurrentSentence(
-      selection: HibikiTextSelection(text: text),
+      selection: FushiTextSelection(text: text),
     );
     final Size screen = MediaQuery.of(context).size;
     prunePopupStack(0);
@@ -2555,14 +2555,14 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       if (!mounted) return;
       setState(() => _payload = payload);
       await _loadInitialWindow();
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.manga_rescan_writeback_done,
         severity: ToastSeverity.success,
       );
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaHibikiPage.rescanWrite', error, stack);
       if (mounted) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.manga_rescan_writeback_failed,
           severity: ToastSeverity.error,
         );
@@ -2657,7 +2657,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         _lastSentence = resolved;
         _lastSentenceOffset = data.sentenceOffset;
         appModel.currentMediaSource?.setCurrentSentence(
-          selection: HibikiTextSelection(text: resolved),
+          selection: FushiTextSelection(text: resolved),
         );
       },
       search: (
@@ -2708,7 +2708,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
             : null,
       );
 
-      HibikiToast.showMine(
+      FushiToast.showMine(
         msg: t.card_mining_pending,
         status: MineToastStatus.pending,
       );
@@ -2723,7 +2723,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       if (described.record) {
         unawaited(_recordMinedCount());
       }
-      HibikiToast.showMine(msg: described.message, status: described.status);
+      FushiToast.showMine(msg: described.message, status: described.status);
       if (described.success) {
         return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
       }
@@ -2755,7 +2755,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     final MangaReadingMode next = MangaHibikiPage.toggleMangaMode(_mode);
     final int currentPage =
         MangaHibikiPage.firstPageOfSpread(_spreads, _currentSpread);
-    final HibikiDatabase db = appModel.database;
+    final FushiDatabase db = appModel.database;
     try {
       await (db.update(db.epubBooks)
             ..where(($EpubBooksTable t) => t.bookKey.equals(widget.bookKey)))
@@ -2778,7 +2778,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     await _loadInitialWindow();
     // 布局变化会换掉当前 spread 背后的页（ERRATA C2）。
     _updateCurrentPageImagePath();
-    HibikiToast.show(
+    FushiToast.show(
       msg: next == MangaReadingMode.webtoon
           ? t.manga_reading_mode_webtoon
           : t.manga_reading_mode_spread,
@@ -2834,7 +2834,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     _lastSavedPage = page;
     _lastSavedFraction = fraction;
     if (!_persistProgress) return;
-    final HibikiDatabase db = appModel.database;
+    final FushiDatabase db = appModel.database;
     final bool isWebtoon = _mode == MangaReadingMode.webtoon;
     try {
       await ReaderPositionRepository(db).save(
@@ -3002,10 +3002,10 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     final double x = (decoded['x'] as num?)?.toDouble() ?? 0;
     final double y = (decoded['y'] as num?)?.toDouble() ?? 0;
     // BUG-1438（与 BUG-129/261/381/781 同族）：JS 报的 clientX/clientY 是 **真实屏幕
-    // 坐标**——漫画页整棵子树被 HibikiAppUiScaleNeutralizer 中和回净缩放=1（见
+    // 坐标**——漫画页整棵子树被 FushiAppUiScaleNeutralizer 中和回净缩放=1（见
     // manga_hibiki_source.dart），WebView 全出血铺满真实视口。但 showMenu 的
     // RelativeRect 落在根 Navigator 的 Overlay 坐标系，而该 Overlay 在全局
-    // HibikiAppUiScale 的 FittedBox 之内（**缩放画布**空间，尺寸 = 真实视口 / scale）。
+    // FushiAppUiScale 的 FittedBox 之内（**缩放画布**空间，尺寸 = 真实视口 / scale）。
     //
     // 修复前把真实坐标直接当画布坐标喂进去，菜单实际渲染在「点击点 × scale」：
     // 界面大小 125% 时右键点在 (800,600) 菜单跑到 (1000,750)，越靠右下偏得越远；
@@ -3253,7 +3253,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
             decoration: BoxDecoration(
               color: Colors.black87,
               border: Border.all(color: Colors.lightGreenAccent),
-              borderRadius: HibikiBorderRadius.chip,
+              borderRadius: FushiBorderRadius.chip,
             ),
             child: Text(
               '${_debugOcrHitOrientation == 'vertical' ? '竖排' : '横排'}'

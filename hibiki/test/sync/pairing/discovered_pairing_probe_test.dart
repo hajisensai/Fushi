@@ -9,14 +9,14 @@ import 'package:fushi/src/sync/pairing/hibiki_ping_client.dart';
 /// - 探测编排：https 先 TOFU 捕获指纹（取不到 → 跳过，绝不裸读 https）、钉扎
 ///   ping 定案；全部失败返回 null（调用方回落 v1 明文老路径）。
 void main() {
-  const HibikiPingResult v2TlsPing = HibikiPingResult(
+  const FushiPingResult v2TlsPing = FushiPingResult(
     isHibiki: true,
     supportsPairV2: true,
     tlsEnabled: true,
     fingerprint: 'aa:bb:cc',
     deviceName: 'Host PC',
   );
-  const HibikiPingResult v2PlainPing = HibikiPingResult(
+  const FushiPingResult v2PlainPing = FushiPingResult(
     isHibiki: true,
     supportsPairV2: true,
     tlsEnabled: false,
@@ -133,7 +133,7 @@ void main() {
     });
 
     test('ping 未回传指纹时以 TOFU 捕获值钉扎', () async {
-      const HibikiPingResult noFpPing = HibikiPingResult(
+      const FushiPingResult noFpPing = FushiPingResult(
         isHibiki: true,
         supportsPairV2: true,
         tlsEnabled: true,

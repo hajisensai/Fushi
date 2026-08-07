@@ -8,7 +8,7 @@ import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 /// galgame 竖版海报卡（对齐 ReinaManager 库页/首页的卡片观感，见
 /// `docs/design/galgame-library-reina-visual-parity.md` §1）。
 ///
-/// 共享设计系统组件：封面 3:4、圆角 [HibikiBorderRadius.poster]、hover 放大 1.05 +
+/// 共享设计系统组件：封面 3:4、圆角 [FushiBorderRadius.poster]、hover 放大 1.05 +
 /// 阴影加深、选中 2px 主色环、封面底部可选「排序信息」渐变浮层、封面下方居中单行标题。
 ///
 /// 刻意**不做文件 IO**：[cover] 由调用方传入（`Image.file` / 占位图 / 网络图都行），
@@ -58,9 +58,9 @@ class GalgamePosterCard extends StatefulWidget {
 
   final String? semanticLabel;
 
-  /// 焦点站点 id（手柄/键盘导航）。传入时注册到 [HibikiFocusRoot]，`Enter`/A 键
+  /// 焦点站点 id（手柄/键盘导航）。传入时注册到 [FushiFocusRoot]，`Enter`/A 键
   /// 触发 [onTap]。库页靠它保持 `game-card-<id>` 焦点站点可被 requestById 聚焦。
-  final HibikiFocusId? focusId;
+  final FushiFocusId? focusId;
 
   @override
   State<GalgamePosterCard> createState() => _GalgamePosterCardState();
@@ -142,10 +142,10 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
       child: interactive,
     );
 
-    // 焦点注册：与 HibikiCard 同款——有 onTap 且存在焦点根时，注册焦点站点并把
+    // 焦点注册：与 FushiCard 同款——有 onTap 且存在焦点根时，注册焦点站点并把
     // ActivateIntent（Enter / 手柄 A）接到 onTap。无焦点根（纯 widget-test）直接返回。
     if (widget.onTap == null ||
-        HibikiFocusRoot.maybeControllerOf(context) == null) {
+        FushiFocusRoot.maybeControllerOf(context) == null) {
       return semantic;
     }
     return Actions(
@@ -157,18 +157,18 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
           },
         ),
       },
-      child: HibikiFocusTarget(
+      child: FushiFocusTarget(
         id: widget.focusId ?? _fallbackFocusId,
         child: semantic,
       ),
     );
   }
 
-  late final HibikiFocusId _fallbackFocusId =
-      HibikiFocusId('galgame-poster-${identityHashCode(this)}');
+  late final FushiFocusId _fallbackFocusId =
+      FushiFocusId('galgame-poster-${identityHashCode(this)}');
 
   Widget _buildCover(BuildContext context, ColorScheme colors) {
-    const BorderRadius radius = HibikiBorderRadius.poster;
+    const BorderRadius radius = FushiBorderRadius.poster;
     final bool elevated = _hovering || widget.selected;
 
     return AspectRatio(
@@ -259,7 +259,7 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
         height: 20,
         decoration: BoxDecoration(
           color: colors.primary,
-          borderRadius: HibikiBorderRadius.chip,
+          borderRadius: FushiBorderRadius.chip,
         ),
         child: Icon(Icons.check, size: 14, color: colors.onPrimary),
       ),

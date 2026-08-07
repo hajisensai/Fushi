@@ -14,7 +14,7 @@ import 'package:fushi_core/fushi_core.dart';
 class AudiobookSessionLauncher {
   AudiobookSessionLauncher(this._db);
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
 
   /// 解析一本书的会话启动材料。优先 Audiobook 记录，回退 SrtBook（与 reader
   /// `_resolveAudioSlot` 同序）。

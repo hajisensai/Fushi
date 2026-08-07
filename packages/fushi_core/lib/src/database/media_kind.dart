@@ -23,7 +23,7 @@ library;
 ///
 /// Drift 列本身保持 `TEXT`（不引入 TypeConverter）：
 /// - `MediaCollectionItems.mediaType` 有 `''` 哨兵
-///   （`HibikiDatabase.collectionTombstoneSentinel`）；
+///   （`FushiDatabase.collectionTombstoneSentinel`）；
 /// - 同步引擎必须原样透传对端未来新增的未知种类。
 /// 因此边界上用 [tryParse] 显式解析、用 [dbValue] 显式落库。
 enum MediaKind {

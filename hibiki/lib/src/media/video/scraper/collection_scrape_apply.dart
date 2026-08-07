@@ -34,7 +34,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 原始条目名同时独立存在 `collection_scrape_meta.title` 里：用户拒绝改名、或事后再
 /// 手动改合集名，都不篡改「刮到的条目叫什么」这一事实。
 Future<void> applyCollectionScrape(
-  HibikiDatabase db,
+  FushiDatabase db,
   int collectionId,
   CollectionScrapeResult result, {
   required String? confirmedTitle,
@@ -99,7 +99,7 @@ Future<void> applyCollectionScrape(
 /// 护栏与 collection_asset_reclaim 同纪律：只删**落在合集封面目录内 + 替换后全库
 /// 无任何行引用**的文件；失败静默（合集刮削已成功是既成事实）。
 Future<void> _reclaimReplacedCollectionImages(
-  HibikiDatabase db,
+  FushiDatabase db,
   List<MediaImageRow> before,
   List<ScrapedMediaImage> after, {
   Directory? collectionCoversDirectory,

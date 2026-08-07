@@ -21,7 +21,7 @@ import 'package:path/path.dart' as p;
 /// 3. [ExportPackageCache] TTL 过期后重导出，ETag 必换代。
 /// 4. 老 host 缺合集端点：`_syncCollectionsLive` 不再静默跳过，进
 ///    `report.errors`（错误日志 + 手动同步失败计数可见，BUG-938 次因）。
-class _PkgService implements HibikiLibraryHostService {
+class _PkgService implements FushiLibraryHostService {
   int exportCalls = 0;
 
   @override
@@ -50,13 +50,13 @@ void main() {
   String authHeader() => 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}';
 
   group('包端点 Range/If-Range', () {
-    late HibikiSyncServer server;
+    late FushiSyncServer server;
     late _PkgService lib;
     late String base;
 
     setUp(() async {
       lib = _PkgService();
-      server = HibikiSyncServer(
+      server = FushiSyncServer(
         syncDataDir: Directory.systemTemp.createTempSync('pkg_srv').path,
         port: 0,
         token: token,
@@ -170,7 +170,7 @@ void main() {
   group('老 host 缺合集端点可见性（BUG-938 次因）', () {
     test('_syncCollectionsLive 不再静默跳过，错误可见', () async {
       // 老 host 模拟：不挂 libraryService → /api/library/collections 404。
-      final HibikiSyncServer server = HibikiSyncServer(
+      final FushiSyncServer server = FushiSyncServer(
         syncDataDir: Directory.systemTemp.createTempSync('old_host').path,
         port: 0,
         token: token,
@@ -179,12 +179,12 @@ void main() {
       await server.start();
       addTearDown(server.stop);
 
-      final HibikiDatabase clientDb =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase clientDb =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(clientDb.close);
       final SyncRepository repo = SyncRepository(clientDb);
-      await repo.setHibikiClientUrls(<HibikiClientUrl>[
-        HibikiClientUrl(url: 'http://127.0.0.1:${server.port}', enabled: true),
+      await repo.setHibikiClientUrls(<FushiClientUrl>[
+        FushiClientUrl(url: 'http://127.0.0.1:${server.port}', enabled: true),
       ]);
       await repo.setHibikiClientToken(token);
       final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(

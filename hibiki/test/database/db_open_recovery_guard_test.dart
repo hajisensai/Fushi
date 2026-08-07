@@ -59,16 +59,16 @@ void main() {
   });
 
   test('a dedicated unrecoverable exception breaks the retry loop', () {
-    expect(src.contains('class HibikiDatabaseUnrecoverableException'), isTrue,
+    expect(src.contains('class FushiDatabaseUnrecoverableException'), isTrue,
         reason: 'app layer needs a recognisable terminal type so Retry stops '
             'looping (no new infinite loop)');
-    expect(src.contains('throw HibikiDatabaseUnrecoverableException'), isTrue);
+    expect(src.contains('throw FushiDatabaseUnrecoverableException'), isTrue);
   });
 
   test('the :popup process is gated out of sidecar deletion (D3)', () {
     expect(src.contains('allowSidecarDelete'), isTrue,
         reason: 'recovery must gate sidecar deletion per-process');
     expect(src.contains('isMainProcess'), isTrue,
-        reason: 'the HibikiDatabase constructor must thread the process role');
+        reason: 'the FushiDatabase constructor must thread the process role');
   });
 }

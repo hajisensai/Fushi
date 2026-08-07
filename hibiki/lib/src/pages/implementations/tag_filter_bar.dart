@@ -16,8 +16,8 @@ import 'package:fushi/utils.dart';
 ///
 /// 筛选状态走共享的 [selectedTagIdsProvider]（与书架联动）；管理标签返回后刷新
 /// [allTagsProvider] 并回调 [onTagsChanged]，让调用方刷新各自的 book/video 标签映射。
-class HibikiTagFilterBar extends ConsumerStatefulWidget {
-  const HibikiTagFilterBar({
+class FushiTagFilterBar extends ConsumerStatefulWidget {
+  const FushiTagFilterBar({
     required this.tags,
     required this.onToggleFilter,
     required this.onReorder,
@@ -54,17 +54,17 @@ class HibikiTagFilterBar extends ConsumerStatefulWidget {
   final VoidCallback? onTagsChanged;
 
   @override
-  ConsumerState<HibikiTagFilterBar> createState() => _HibikiTagFilterBarState();
+  ConsumerState<FushiTagFilterBar> createState() => _FushiTagFilterBarState();
 }
 
-class _HibikiTagFilterBarState extends ConsumerState<HibikiTagFilterBar> {
+class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
   final MenuController _sortMenu = MenuController();
 
   @override
   Widget build(BuildContext context) {
     final Set<int> selectedIds = ref.watch(selectedTagIdsProvider);
     final t = Translations.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     // 末尾动作：先「管理标签」（有标签才显示），再可选「批量选择」。
     final List<Widget> trailing = <Widget>[
@@ -198,8 +198,8 @@ class _HibikiTagFilterBarState extends ConsumerState<HibikiTagFilterBar> {
     required VoidCallback onTap,
     bool selected = false,
   }) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiIconButton(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiIconButton(
       icon: icon,
       tooltip: tooltip,
       size: tokens.spacing.gap * 2.25,
@@ -213,7 +213,7 @@ class _HibikiTagFilterBarState extends ConsumerState<HibikiTagFilterBar> {
   /// 「排序方式」三项单选菜单：MenuAnchor + 选中项 autofocus（手柄/键盘打开即落进
   /// 菜单，D-pad 可遍历、A/Enter 选中、B 关闭——与 [GamepadMenuDropdown] 的
   /// polled 路径同款交互，样式走同一组 menu tokens）。
-  Widget _sortMenuAction(HibikiDesignTokens tokens) {
+  Widget _sortMenuAction(FushiDesignTokens tokens) {
     final t = Translations.of(context);
     final ShelfSortMode selectedMode = widget.sortMode!;
     return MenuAnchor(
@@ -245,7 +245,7 @@ class _HibikiTagFilterBarState extends ConsumerState<HibikiTagFilterBar> {
   }
 
   Widget _sortMenuItem(
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     ShelfSortMode mode,
     ShelfSortMode selectedMode,
   ) {
@@ -307,12 +307,12 @@ class _HibikiTagFilterBarState extends ConsumerState<HibikiTagFilterBar> {
     required bool isDimmed,
     VoidCallback? onTap,
   }) {
-    return HibikiTagChip(
+    return FushiTagChip(
       label: tag.name,
       color: Color(tag.colorValue),
       selected: isSelected,
       dimmed: isDimmed,
-      tone: HibikiTagChipTone.surface,
+      tone: FushiTagChipTone.surface,
       onTap: onTap,
     );
   }

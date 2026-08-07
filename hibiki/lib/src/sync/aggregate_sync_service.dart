@@ -52,7 +52,7 @@ const String _favoriteSentencesPrefKey = 'favorite_sentences';
 class AggregateSyncService {
   AggregateSyncService(this._db);
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
 
   /// Runs one aggregate sync over [store]. [deviceId] is this device's stable id
   /// (SyncRepository.getOrCreateDeviceId), used to name its own snapshot asset.
@@ -578,7 +578,7 @@ class AggregateSyncService {
     final Set<(String, String)> tombstoned =
         await _db.getStatisticsTombstoneKeys();
     for (final ReadingStatRecord r in snapshot.readingStats) {
-      if (tombstoned.contains((r.title, HibikiDatabase.statSourceBook))) {
+      if (tombstoned.contains((r.title, FushiDatabase.statSourceBook))) {
         continue;
       }
       await _db.setReadingStatistic(ReadingStatisticsCompanion(
@@ -590,7 +590,7 @@ class AggregateSyncService {
       ));
     }
     for (final VideoStatRecord r in snapshot.videoStats) {
-      if (tombstoned.contains((r.title, HibikiDatabase.statSourceVideo))) {
+      if (tombstoned.contains((r.title, FushiDatabase.statSourceVideo))) {
         continue;
       }
       await _db.setVideoWatchStatistic(VideoWatchStatisticsCompanion(
@@ -680,7 +680,7 @@ class AggregateSyncService {
         row.itemKey,
     };
     for (final FavoriteWordRecord r in snapshot.favoriteWords) {
-      if (favTombstoned.contains(HibikiDatabase.favoriteWordItemKey(
+      if (favTombstoned.contains(FushiDatabase.favoriteWordItemKey(
           r.expression, r.reading, r.sourceType))) {
         continue;
       }

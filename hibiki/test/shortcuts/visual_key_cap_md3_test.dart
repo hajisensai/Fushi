@@ -82,8 +82,8 @@ void main() {
             'the settings panel and are banned in the chassis');
   });
 
-  test('key cap routes radii/surfaces through HibikiDesignTokens', () {
-    expect(keyCapSrc.contains('HibikiDesignTokens.of(context)'), isTrue);
+  test('key cap routes radii/surfaces through FushiDesignTokens', () {
+    expect(keyCapSrc.contains('FushiDesignTokens.of(context)'), isTrue);
     expect(keyCapSrc.contains('tokens.radii.chipRadius'), isTrue,
         reason: 'corner radius must come from the token, not a literal');
     expect(keyCapSrc.contains('tokens.surfaces.'), isTrue,

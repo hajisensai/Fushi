@@ -11,8 +11,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// order_updated_at、无墓碑表），触发真实 `if (from < 40)`，验证列/表可用、
 /// 旧数据无损、user_version 升到当前 schemaVersion。
 void main() {
-  Future<HibikiDatabase> openV39Db() async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+  Future<FushiDatabase> openV39Db() async {
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (rawDb) {
           rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -56,7 +56,7 @@ CREATE TABLE media_collection_items (
   }
 
   test('v40：order_updated_at 补列默认 0，旧行/成员原样保留', () async {
-    final HibikiDatabase db = await openV39Db();
+    final FushiDatabase db = await openV39Db();
     final List<MediaCollectionRow> cols = await db.getAllMediaCollections();
     expect(cols, hasLength(1), reason: '旧行原样保留');
     expect(cols.single.name, '旧合集');
@@ -69,7 +69,7 @@ CREATE TABLE media_collection_items (
   });
 
   test('v40：collection_member_tombstones 新表可写可读（成员 + 哨兵）', () async {
-    final HibikiDatabase db = await openV39Db();
+    final FushiDatabase db = await openV39Db();
     await db.upsertCollectionMemberTombstone(
       collectionName: '旧合集',
       collectionType: 'playlist',
@@ -80,8 +80,8 @@ CREATE TABLE media_collection_items (
     await db.upsertCollectionMemberTombstone(
       collectionName: '已删合集',
       collectionType: 'collection',
-      mediaType: HibikiDatabase.collectionTombstoneSentinel,
-      entryKey: HibikiDatabase.collectionTombstoneSentinel,
+      mediaType: FushiDatabase.collectionTombstoneSentinel,
+      entryKey: FushiDatabase.collectionTombstoneSentinel,
       deletedAt: 5678,
     );
     final List<CollectionMemberTombstoneRow> rows =
@@ -92,7 +92,7 @@ CREATE TABLE media_collection_items (
     expect(member.collectionName, '旧合集');
     expect(member.deletedAt, 1234);
     final CollectionMemberTombstoneRow sentinel = rows.firstWhere(
-        (r) => r.entryKey == HibikiDatabase.collectionTombstoneSentinel);
+        (r) => r.entryKey == FushiDatabase.collectionTombstoneSentinel);
     expect(sentinel.collectionName, '已删合集');
     expect(sentinel.deletedAt, 5678);
 
@@ -111,7 +111,7 @@ CREATE TABLE media_collection_items (
   });
 
   test('user_version 升到当前 schemaVersion', () async {
-    final HibikiDatabase db = await openV39Db();
+    final FushiDatabase db = await openV39Db();
     await db.getAllMediaCollections(); // 触发 open/migrate。
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();

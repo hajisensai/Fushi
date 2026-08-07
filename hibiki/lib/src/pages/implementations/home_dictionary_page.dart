@@ -377,7 +377,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
           _clearSearch();
         }
       },
-      child: HibikiFileDropTarget(
+      child: FushiFileDropTarget(
         debugLabel: 'home-dictionary',
         onDrop: _handleDictionaryHomeDrop,
         child: DesktopContentLayout(
@@ -407,7 +407,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     );
     if (importPaths.isEmpty) {
       debugPrint('[fushi-drop] [home-dictionary] intent=unsupportedSurface');
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.drag_drop_unsupported_on_dictionary,
         severity: ToastSeverity.error,
       );
@@ -417,10 +417,10 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   }
 
   Widget _buildPageHeader() {
-    return HibikiPageHeader(
+    return FushiPageHeader(
       title: t.nav_lookup,
       actions: <Widget>[
-        HibikiIconButton(
+        FushiIconButton(
           tooltip: t.clear_dictionary_title,
           icon: Icons.delete_sweep_outlined,
           onTap: _showDeleteDictionaryHistoryPrompt,
@@ -430,7 +430,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   }
 
   Widget _buildSearchHeader() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double horizontalPadding =
         isCupertinoPlatform(context) ? tokens.spacing.gap : tokens.spacing.page;
     return Padding(
@@ -445,7 +445,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
-            child: HibikiSearchField(
+            child: FushiSearchField(
               fieldKey: const ValueKey<String>('home_dictionary_search_field'),
               clearButtonKey: const ValueKey<String>(
                 'home_dictionary_search_clear_button',
@@ -459,7 +459,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
             ),
           ),
           if (isCupertinoPlatform(context))
-            HibikiIconButton(
+            FushiIconButton(
               tooltip: t.clear_dictionary_title,
               icon: Icons.delete_sweep_outlined,
               onTap: _showDeleteDictionaryHistoryPrompt,
@@ -491,7 +491,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       return Center(child: adaptiveIndicator(context: context));
     }
     return Center(
-      child: HibikiPlaceholderMessage(
+      child: FushiPlaceholderMessage(
         icon: Icons.search_off,
         message: t.no_search_results,
       ),
@@ -499,12 +499,12 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   }
 
   Widget _buildPlaceholder() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final noDictionaries = appModel.dictionaries.isEmpty;
     final Widget content = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        HibikiPlaceholderMessage(
+        FushiPlaceholderMessage(
           icon: mediaType.outlinedIcon,
           message: noDictionaries
               ? t.dictionaries_menu_empty
@@ -538,7 +538,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   // ── dictionary history list ────────────────────────────────────────
 
   Widget _buildDictionaryHistory() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final historyResults = appModel.dictionaryHistory.reversed.toList();
     if (historyResults.every((r) => r.entries.isEmpty)) {
       return _buildPlaceholder();
@@ -566,7 +566,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
             reading.isNotEmpty && reading != word && reading != searchTerm;
         final dictCount =
             result.entries.map((e) => e.dictionaryName).toSet().length;
-        return HibikiCard(
+        return FushiCard(
           margin: EdgeInsets.symmetric(
             horizontal: tokens.spacing.page,
             vertical: tokens.spacing.gap / 4,
@@ -578,7 +578,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
             _showCachedResult(result);
           },
           padding: EdgeInsets.zero,
-          child: HibikiListItem(
+          child: FushiListItem(
             title: Text(searchTerm.replaceAll('\n', ' ')),
             subtitle: hasWordInfo || hasReading
                 ? Text([
@@ -810,7 +810,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         // TODO-617：嵌套弹窗栈不再挂在此页内 Stack（会被结果子区域 / DesktopContentLayout
         // 限宽 + padding + 默认 hardEdge 裁住），改由 [_buildPopupOverlay] 渲染在根 Overlay。
         Expanded(
-          child: HibikiAppUiScaleNeutralizer(
+          child: FushiAppUiScaleNeutralizer(
             child: Stack(
               key: _resultStackKey,
               children: [
@@ -895,8 +895,8 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   }
 
   /// TODO-617：根 Overlay 里的查词弹窗栈内容——透明 dismiss 遮罩 + 搜索期加载占位卡 + 各层
-  /// [DictionaryPopupLayer]。根 Overlay 在 [HibikiAppUiScale] 的 FittedBox 之内（缩放后的
-  /// 小画布），WebView 在此栅格化再拉大会字糊（BUG-051）；[HibikiAppUiScaleNeutralizer] 把
+  /// [DictionaryPopupLayer]。根 Overlay 在 [FushiAppUiScale] 的 FittedBox 之内（缩放后的
+  /// 小画布），WebView 在此栅格化再拉大会字糊（BUG-051）；[FushiAppUiScaleNeutralizer] 把
   /// 整棵子树中和回真实视口、净缩放=1（清晰），其坐标系即真实屏幕空间，与顶层 / 嵌套选区的
   /// localToGlobal 屏幕 rect 同系，定位自洽。`Clip.none` 让飘出窗的弹窗 / 屏外热槽不被裁
   /// （BUG-135）。`screen` = 中和后内层 LayoutBuilder 约束 = 整窗。
@@ -905,7 +905,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     // 会红屏（BUG-121）。State 失效 / 销毁期标志置位则空渲染兜底；Theme 用 entry 自己的
     // overlayContext（与本 entry 同寿命）而非更短命的 State context。
     if (!mounted || _overlayInert) return const SizedBox.shrink();
-    return HibikiAppUiScaleNeutralizer(
+    return FushiAppUiScaleNeutralizer(
       child: Theme(
         data: appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
         child: LayoutBuilder(
@@ -1043,12 +1043,12 @@ class HomeDictionaryClearHistoryDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.72,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.clear_dictionary_title,
         leadingIcon: Icons.delete_sweep_outlined,
         bodyPadding: EdgeInsets.fromLTRB(

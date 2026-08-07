@@ -4,8 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
@@ -13,7 +13,7 @@ HibikiDatabase _testDb() {
 void main() {
   test('sync preferences use typed pref codec and read legacy raw values',
       () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
 
@@ -41,7 +41,7 @@ void main() {
   });
 
   test('dictionary sync preference defaults to false', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
 
@@ -56,7 +56,7 @@ void main() {
 
   test('audiobook-files sync preference defaults false and round-trips',
       () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
 
@@ -68,7 +68,7 @@ void main() {
   });
 
   test('auto sync preference defaults to false', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
 
@@ -83,25 +83,25 @@ void main() {
 
   group('hibiki client url list', () {
     test('round-trips order and enabled flags', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      await repo.setHibikiClientUrls(const <HibikiClientUrl>[
-        HibikiClientUrl(url: 'http://192.168.1.5:8765'),
-        HibikiClientUrl(url: 'http://home.ddns.net:8765', enabled: false),
+      await repo.setHibikiClientUrls(const <FushiClientUrl>[
+        FushiClientUrl(url: 'http://192.168.1.5:8765'),
+        FushiClientUrl(url: 'http://home.ddns.net:8765', enabled: false),
       ]);
 
-      final List<HibikiClientUrl> urls = await repo.getHibikiClientUrls();
-      expect(urls.map((HibikiClientUrl u) => u.url).toList(),
+      final List<FushiClientUrl> urls = await repo.getHibikiClientUrls();
+      expect(urls.map((FushiClientUrl u) => u.url).toList(),
           <String>['http://192.168.1.5:8765', 'http://home.ddns.net:8765']);
-      expect(urls.map((HibikiClientUrl u) => u.enabled).toList(),
+      expect(urls.map((FushiClientUrl u) => u.enabled).toList(),
           <bool>[true, false]);
     });
 
     test('migrates legacy single url into a one-element enabled list',
         () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -109,14 +109,14 @@ void main() {
       // single-url key is set (no new list key).
       await db.setPref('sync_hibiki_client_url', 'http://192.168.1.5:8765');
 
-      final List<HibikiClientUrl> urls = await repo.getHibikiClientUrls();
+      final List<FushiClientUrl> urls = await repo.getHibikiClientUrls();
       expect(urls, hasLength(1));
       expect(urls.first.url, 'http://192.168.1.5:8765');
       expect(urls.first.enabled, isTrue);
     });
 
     test('returns empty list when nothing is configured', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -124,47 +124,47 @@ void main() {
     });
 
     test('new list takes precedence over the legacy single url', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
       await db.setPref('sync_hibiki_client_url', 'http://legacy.example:8765');
-      await repo.setHibikiClientUrls(const <HibikiClientUrl>[
-        HibikiClientUrl(url: 'http://new.example:8765'),
+      await repo.setHibikiClientUrls(const <FushiClientUrl>[
+        FushiClientUrl(url: 'http://new.example:8765'),
       ]);
 
-      final List<HibikiClientUrl> urls = await repo.getHibikiClientUrls();
+      final List<FushiClientUrl> urls = await repo.getHibikiClientUrls();
       expect(urls, hasLength(1));
       expect(urls.first.url, 'http://new.example:8765');
     });
 
     test('addHibikiClientUrl appends a new url, keeping order and token',
         () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
       await repo.setHibikiClientUrls(
-          const <HibikiClientUrl>[HibikiClientUrl(url: 'http://lan:8765')]);
+          const <FushiClientUrl>[FushiClientUrl(url: 'http://lan:8765')]);
       await repo.setHibikiClientToken('tok');
 
-      final List<HibikiClientUrl> result =
+      final List<FushiClientUrl> result =
           await repo.addHibikiClientUrl('http://wan:8765');
 
-      expect(result.map((HibikiClientUrl u) => u.url).toList(),
+      expect(result.map((FushiClientUrl u) => u.url).toList(),
           <String>['http://lan:8765', 'http://wan:8765']);
       expect(await repo.getHibikiClientToken(), 'tok'); // token untouched
     });
 
     test('addHibikiClientUrl does not add a duplicate', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
       await repo.setHibikiClientUrls(
-          const <HibikiClientUrl>[HibikiClientUrl(url: 'http://lan:8765')]);
+          const <FushiClientUrl>[FushiClientUrl(url: 'http://lan:8765')]);
 
-      final List<HibikiClientUrl> result =
+      final List<FushiClientUrl> result =
           await repo.addHibikiClientUrl('http://lan:8765');
 
       expect(result, hasLength(1));
@@ -173,11 +173,11 @@ void main() {
 
     // ── TODO-961 M1: TOFU 指纹记录器 ────────────────────────────────────
     test('addHibikiClientUrl 新增 https 条目即带指纹与展示名（创建即钉扎）', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      final List<HibikiClientUrl> result = await repo.addHibikiClientUrl(
+      final List<FushiClientUrl> result = await repo.addHibikiClientUrl(
         'https://host:38765',
         fingerprint: 'aa:bb:cc',
         deviceName: 'Hibiki · mac',
@@ -187,19 +187,19 @@ void main() {
       expect(result.first.fingerprintSha256, 'aa:bb:cc');
       expect(result.first.deviceName, 'Hibiki · mac');
       // 落盘后回读一致。
-      final List<HibikiClientUrl> reread = await repo.getHibikiClientUrls();
+      final List<FushiClientUrl> reread = await repo.getHibikiClientUrls();
       expect(reread.first.fingerprintSha256, 'aa:bb:cc');
     });
 
     test('addHibikiClientUrl 指纹相同时幂等（不变更，含大小写/冒号归一化）', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
       await repo.addHibikiClientUrl('https://host:38765',
           fingerprint: 'aa:bb:cc');
       // 同一指纹换大小写 + 去冒号：归一化后相等，不应抛、不应改。
-      final List<HibikiClientUrl> result = await repo
+      final List<FushiClientUrl> result = await repo
           .addHibikiClientUrl('https://host:38765', fingerprint: 'AABBCC');
 
       expect(result, hasLength(1));
@@ -207,14 +207,14 @@ void main() {
     });
 
     test('addHibikiClientUrl 把明文老条目首次升级为 https 指纹（storedFp 空允许写入）', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
       await repo.setHibikiClientUrls(
-          const <HibikiClientUrl>[HibikiClientUrl(url: 'https://host:38765')]);
+          const <FushiClientUrl>[FushiClientUrl(url: 'https://host:38765')]);
 
-      final List<HibikiClientUrl> result = await repo
+      final List<FushiClientUrl> result = await repo
           .addHibikiClientUrl('https://host:38765', fingerprint: 'aa:bb:cc');
 
       expect(result, hasLength(1));
@@ -222,9 +222,9 @@ void main() {
     });
 
     test(
-        'addHibikiClientUrl 指纹变更必抛 HibikiFingerprintMismatchException 且不覆盖（MITM 守卫）',
+        'addHibikiClientUrl 指纹变更必抛 FushiFingerprintMismatchException 且不覆盖（MITM 守卫）',
         () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -235,21 +235,21 @@ void main() {
       expect(
         () => repo.addHibikiClientUrl('https://host:38765',
             fingerprint: 'de:ad:be'),
-        throwsA(isA<HibikiFingerprintMismatchException>()),
+        throwsA(isA<FushiFingerprintMismatchException>()),
       );
 
       // 已存指纹绝不被覆盖：仍是首记录值。
-      final List<HibikiClientUrl> reread = await repo.getHibikiClientUrls();
+      final List<FushiClientUrl> reread = await repo.getHibikiClientUrls();
       expect(reread, hasLength(1));
       expect(reread.first.fingerprintSha256, 'aa:bb:cc');
     });
 
     test('addHibikiClientUrl 明文 http（无指纹）路径保持向后兼容', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      final List<HibikiClientUrl> result =
+      final List<FushiClientUrl> result =
           await repo.addHibikiClientUrl('http://lan:8765');
 
       expect(result, hasLength(1));
@@ -257,7 +257,7 @@ void main() {
     });
 
     test('getServerTlsEnabled 默认 false，可持久化', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -268,7 +268,7 @@ void main() {
 
     // TODO-961 B 段：首次启用 hosting 默认开 TLS——判据是两个偏好 key 都从未写入。
     test('applyFirstHostingTlsDefault 全新设备首次 hosting 默认开 TLS', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -279,7 +279,7 @@ void main() {
     });
 
     test('applyFirstHostingTlsDefault 对存量 hosting 用户零破坏（不翻开 TLS）', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -290,7 +290,7 @@ void main() {
     });
 
     test('applyFirstHostingTlsDefault 不覆盖显式关掉的 TLS', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -302,7 +302,7 @@ void main() {
 
   group('audiobook position', () {
     test('round-trips through the typed accessor', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -314,7 +314,7 @@ void main() {
 
     test('uses the exact legacy key so old values read back identically',
         () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -330,7 +330,7 @@ void main() {
 
   group('device id', () {
     test('getOrCreateDeviceId is stable across calls', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 

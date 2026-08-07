@@ -174,7 +174,7 @@ Future<bool> _hasLookupEntry(
   if (result.entries.any((entry) =>
       entry.word == term &&
       (entry.meaning.contains(expectedGloss) ||
-          entry.dictionaryName == 'HibikiGeneratedTestDict'))) {
+          entry.dictionaryName == 'FushiGeneratedTestDict'))) {
     return true;
   }
   return result.popupJson?.contains(expectedGloss) ?? false;

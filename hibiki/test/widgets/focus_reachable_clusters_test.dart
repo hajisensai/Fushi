@@ -10,14 +10,14 @@ import 'widget_test_helpers.dart';
 
 // Regression for the family of gamepad/keyboard focus-skip bugs (same root cause
 // as the theme color swatches): native interactive CLUSTERS placed among
-// registered HibikiFocusTargets were skipped by the directional controller,
+// registered FushiFocusTargets were skipped by the directional controller,
 // which walks only registered targets. These cover the three primitives the
-// page fixes now route through: HibikiSelectableChip(focusId) (reader theme
-// chips), HibikiAdjustableSegmented (dictionary type / sync conflict selectors),
-// and HibikiFocusable (reader bottom action buttons).
+// page fixes now route through: FushiSelectableChip(focusId) (reader theme
+// chips), FushiAdjustableSegmented (dictionary type / sync conflict selectors),
+// and FushiFocusable (reader bottom action buttons).
 void main() {
   Widget stepperThen(Widget below) {
-    return HibikiFocusRoot(
+    return FushiFocusRoot(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -36,25 +36,25 @@ void main() {
     );
   }
 
-  HibikiFocusController controllerFor(WidgetTester tester) =>
-      HibikiFocusRoot.controllerOf(tester.element(find.text('Scale')));
+  FushiFocusController controllerFor(WidgetTester tester) =>
+      FushiFocusRoot.controllerOf(tester.element(find.text('Scale')));
 
-  testWidgets('HibikiSelectableChip with focusId is a reachable focus stop',
+  testWidgets('FushiSelectableChip with focusId is a reachable focus stop',
       (WidgetTester tester) async {
     String? picked;
     await tester.pumpWidget(buildTestApp(stepperThen(
       Wrap(
         children: <Widget>[
-          HibikiSelectableChip(
+          FushiSelectableChip(
             label: 'A',
             selected: false,
-            focusId: const HibikiFocusId('chip-a'),
+            focusId: const FushiFocusId('chip-a'),
             onSelected: (_) => picked = 'a',
           ),
-          HibikiSelectableChip(
+          FushiSelectableChip(
             label: 'B',
             selected: false,
-            focusId: const HibikiFocusId('chip-b'),
+            focusId: const FushiFocusId('chip-b'),
             onSelected: (_) => picked = 'b',
           ),
         ],
@@ -62,11 +62,11 @@ void main() {
     )));
     await tester.pump();
 
-    final HibikiFocusController controller = controllerFor(tester);
+    final FushiFocusController controller = controllerFor(tester);
     controller.ensureFocus(); // stepper
     await tester.pump();
 
-    expect(controller.move(HibikiFocusDirection.down), isTrue,
+    expect(controller.move(FushiFocusDirection.down), isTrue,
         reason: 'a registered chip sits below the stepper');
     await tester.pump();
     Actions.maybeInvoke<ActivateIntent>(
@@ -77,13 +77,13 @@ void main() {
     expect(picked, isNotNull, reason: 'A on the focused chip selects it');
   });
 
-  testWidgets('HibikiAdjustableSegmented is reachable and D-pad Right cycles',
+  testWidgets('FushiAdjustableSegmented is reachable and D-pad Right cycles',
       (WidgetTester tester) async {
     String value = 'a';
     await tester.pumpWidget(buildTestApp(
       StatefulBuilder(
         builder: (BuildContext c, StateSetter setState) => stepperThen(
-          HibikiAdjustableSegmented<String>(
+          FushiAdjustableSegmented<String>(
             focusIdPrefix: 'seg',
             values: const <String>['a', 'b', 'c'],
             selected: value,
@@ -95,11 +95,11 @@ void main() {
     ));
     await tester.pump();
 
-    final HibikiFocusController controller = controllerFor(tester);
+    final FushiFocusController controller = controllerFor(tester);
     controller.ensureFocus(); // stepper
     await tester.pump();
 
-    expect(controller.move(HibikiFocusDirection.down), isTrue,
+    expect(controller.move(FushiFocusDirection.down), isTrue,
         reason: 'the segmented selector is a registered focus stop');
     await tester.pump();
     expect(
@@ -114,13 +114,13 @@ void main() {
     expect(value, 'b', reason: 'a → b (next value)');
   });
 
-  testWidgets('HibikiActivatableFocusTarget action button is a reachable stop',
+  testWidgets('FushiActivatableFocusTarget action button is a reachable stop',
       (WidgetTester tester) async {
     bool tapped = false;
     await tester.pumpWidget(buildTestApp(stepperThen(
       Row(
         children: <Widget>[
-          HibikiActivatableFocusTarget(
+          FushiActivatableFocusTarget(
             focusIdPrefix: 'action',
             onTap: () => tapped = true,
             child: const SizedBox(width: 60, height: 48),
@@ -130,11 +130,11 @@ void main() {
     )));
     await tester.pump();
 
-    final HibikiFocusController controller = controllerFor(tester);
+    final FushiFocusController controller = controllerFor(tester);
     controller.ensureFocus(); // stepper
     await tester.pump();
 
-    expect(controller.move(HibikiFocusDirection.down), isTrue,
+    expect(controller.move(FushiFocusDirection.down), isTrue,
         reason: 'the action button is a registered focus stop');
     await tester.pump();
     Actions.maybeInvoke<ActivateIntent>(

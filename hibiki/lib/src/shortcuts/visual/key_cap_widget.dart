@@ -11,7 +11,7 @@ import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
 ///
 /// 立体观感（TODO-942）：双层结构——底层「键帽侧壁」用更深的容器色 + 底部偏移，顶层
 /// 「键面」上移露出侧壁台阶，顶面顶部一条淡高光。所有颜色/圆角/字号走 MD3 token
-/// （`HibikiDesignTokens` + `colorScheme` 派生），不含任何裸圆角/裸字号/裸容器层级
+/// （`FushiDesignTokens` + `colorScheme` 派生），不含任何裸圆角/裸字号/裸容器层级
 /// 字面量（过 md3 静态守卫）。
 class KeyCapWidget extends StatelessWidget {
   const KeyCapWidget({
@@ -49,7 +49,7 @@ class KeyCapWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final BorderRadius radius = tokens.radii.chipRadius;
     final ColorScheme scheme = theme.colorScheme;
 

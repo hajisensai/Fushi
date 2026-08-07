@@ -32,7 +32,7 @@ class ChangelogPage extends StatefulWidget {
 }
 
 class _ChangelogPageState extends State<ChangelogPage>
-    with HibikiPagePlaceholders<ChangelogPage> {
+    with FushiPagePlaceholders<ChangelogPage> {
   bool _loading = true;
   List<Map<String, dynamic>> _releases = const <Map<String, dynamic>>[];
 
@@ -70,15 +70,15 @@ class _ChangelogPageState extends State<ChangelogPage>
 
   @override
   Widget build(BuildContext context) {
-    return HibikiPageScaffold(
+    return FushiPageScaffold(
       title: t.settings_view_changelog,
       actions: <Widget>[
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.open_in_new_outlined,
           tooltip: t.changelog_open_releases,
           onTap: _openReleasesPage,
         ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.refresh,
           tooltip: t.refresh,
           onTap: _loading ? null : _load,
@@ -98,7 +98,7 @@ class _ChangelogPageState extends State<ChangelogPage>
         onOpenReleases: _openReleasesPage,
       );
     }
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return ListView.builder(
       padding: EdgeInsets.all(tokens.spacing.gap),
       itemCount: _releases.length,
@@ -124,7 +124,7 @@ class _ChangelogEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Center(
       child: Padding(
         padding: EdgeInsets.all(tokens.spacing.card),
@@ -187,7 +187,7 @@ class _ReleaseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
     final Object? tagName = release['tag_name'];
     final String title =
@@ -196,7 +196,7 @@ class _ReleaseCard extends StatelessWidget {
     final String body = bodyRaw is String ? bodyRaw.trim() : '';
     final String date = _publishedDate;
 
-    return HibikiCard(
+    return FushiCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -254,7 +254,7 @@ class _ChannelBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return Container(
       padding: EdgeInsets.symmetric(

@@ -42,7 +42,7 @@ void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late AppModel appModel;
   late PlatformServices platformServices;
   late ThemeNotifier themeNotifier;
@@ -73,7 +73,7 @@ void main() {
   });
 
   Future<void> wire() async {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     prevReaderSettings = ReaderHibikiSource.readerSettings;
     final ReaderSettings readerSettings = ReaderSettings(db);
     await readerSettings.refreshFromDb();
@@ -128,7 +128,7 @@ void main() {
           platform: TargetPlatform.android,
           colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
           extensions: <ThemeExtension<dynamic>>[
-            HibikiDesignSystemTheme(themeNotifier.designSystemTheme),
+            FushiDesignSystemTheme(themeNotifier.designSystemTheme),
           ],
         ),
         home: Consumer(

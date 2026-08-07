@@ -20,7 +20,7 @@ void main() {
     // ── target（当前设备）：已有同名合集 C，尚无标签 ───────────────────────────
     final Directory curDir = await tempDir('mg_ctag_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final HibikiDatabase cur = HibikiDatabase(curDir.path);
+    final FushiDatabase cur = FushiDatabase(curDir.path);
     final int targetCid =
         await cur.createMediaCollection('C', collectionType: 'collection');
     await cur.close();
@@ -30,7 +30,7 @@ void main() {
     // `_mergeMediaCollections` 建到 target，其标签也应随 `_mergeCollectionTags` 并入。
     final Directory srcDir = await tempDir('mg_ctag_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final HibikiDatabase src = HibikiDatabase(srcDir.path);
+    final FushiDatabase src = FushiDatabase(srcDir.path);
     final int sC =
         await src.createMediaCollection('C', collectionType: 'collection');
     final int sTag = await src.createTag('日语', 0xFF0000FF);
@@ -54,7 +54,7 @@ void main() {
     );
 
     // ── 断言 ──────────────────────────────────────────────────────────────────
-    final HibikiDatabase after = HibikiDatabase(curDir.path);
+    final FushiDatabase after = FushiDatabase(curDir.path);
     addTearDown(after.close);
 
     final List<BookTagRow> tags = await after.getTagsForCollection(targetCid);

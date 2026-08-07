@@ -14,8 +14,8 @@ import 'package:fushi_core/fushi_core.dart';
 ///  ② 新列可写可累加，且与字数互不影响；
 ///  ③ fresh 库由 onCreate 直接建出该列。
 void main() {
-  Future<HibikiDatabase> openV59Db() async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+  Future<FushiDatabase> openV59Db() async {
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (rawDb) {
           rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -55,7 +55,7 @@ CREATE TABLE statistics_tombstones (
   }
 
   test('v60：旧统计行零破坏，pages_read 回填 0', () async {
-    final HibikiDatabase db = await openV59Db();
+    final FushiDatabase db = await openV59Db();
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
@@ -70,7 +70,7 @@ CREATE TABLE statistics_tombstones (
   });
 
   test('v60：页数与字数各自独立累加', () async {
-    final HibikiDatabase db = await openV59Db();
+    final FushiDatabase db = await openV59Db();
 
     // 漫画：同一天两段会话，字数与页数分别累加。
     await db.addReadingStatistic(
@@ -107,8 +107,8 @@ CREATE TABLE statistics_tombstones (
   });
 
   test('v60：fresh 库由 onCreate 直接建出该列（不依赖迁移梯子）', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     await db.addReadingStatistic(

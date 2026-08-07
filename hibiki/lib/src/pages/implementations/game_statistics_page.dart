@@ -56,16 +56,16 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return HibikiPageScaffold(
+    return FushiPageScaffold(
       title: t.game_statistics,
       actions: <Widget>[
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.refresh,
           tooltip: t.stat_refresh,
           enabled: !_loading,
           onTap: _load,
         ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.delete_sweep_outlined,
           tooltip: t.stat_clear_all,
           enabled: !_loading,
@@ -86,7 +86,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
   }
 
   Widget _buildContent() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return CustomScrollView(
       slivers: <Widget>[
         SliverToBoxAdapter(child: _buildSummaryCards()),
@@ -166,7 +166,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
   }
 
   Widget _buildGameRow(GalgameEntry game) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     final String lastPlayed = game.lastPlayedMs <= 0
         ? '-'
@@ -178,7 +178,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
         horizontal: tokens.spacing.card,
         vertical: tokens.spacing.gap / 2,
       ),
-      child: HibikiCard(
+      child: FushiCard(
         onTap: () => _openGame(game),
         child: Row(
           children: <Widget>[

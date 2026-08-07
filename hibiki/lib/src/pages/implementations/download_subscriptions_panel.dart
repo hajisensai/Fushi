@@ -20,7 +20,7 @@ class DownloadSubscriptionsPanel extends ConsumerStatefulWidget {
 
 class _DownloadSubscriptionsPanelState
     extends ConsumerState<DownloadSubscriptionsPanel>
-    with HibikiPagePlaceholders<DownloadSubscriptionsPanel> {
+    with FushiPagePlaceholders<DownloadSubscriptionsPanel> {
   AnimeDownloadSubscriptionStore? _store;
   List<AnimeDownloadSubscription> _subscriptions =
       const <AnimeDownloadSubscription>[];
@@ -121,7 +121,7 @@ class _DownloadSubscriptionsPanelState
     if (milliseconds == null) return t.download_subscription_never_checked;
     final DateTime value =
         DateTime.fromMillisecondsSinceEpoch(milliseconds).toLocal();
-    return HibikiTimeFormat.dateHourMinute(value);
+    return FushiTimeFormat.dateHourMinute(value);
   }
 
   @override
@@ -170,7 +170,7 @@ class _DownloadSubscriptionsPanelState
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760),
-          child: HibikiCard(
+          child: FushiCard(
             padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
             child: Row(
               children: <Widget>[
@@ -259,9 +259,9 @@ class _DownloadSubscriptionsPanelState
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 760),
-        child: HibikiCard(
+        child: FushiCard(
           padding: EdgeInsets.zero,
-          child: HibikiListItem(
+          child: FushiListItem(
             subtitleMaxLines: 4,
             // BUG-1184：标题是番剧名，右侧 trailing 挂着开关 + 刷新 + 删除（≈150px
             // 不可压缩），窄屏上留给番剧名的宽度只剩几十像素。行高自由，放宽到两行。
@@ -312,12 +312,12 @@ class _DownloadSubscriptionsPanelState
                       ? null
                       : (bool value) => _setEnabled(subscription, value),
                 ),
-                HibikiIconButton(
+                FushiIconButton(
                   tooltip: t.download_subscription_check_now,
                   icon: Icons.refresh,
                   onTap: checking ? null : () => _checkOne(subscription),
                 ),
-                HibikiIconButton(
+                FushiIconButton(
                   tooltip: t.download_subscription_delete,
                   icon: Icons.delete_outline,
                   onTap: () => _delete(subscription),

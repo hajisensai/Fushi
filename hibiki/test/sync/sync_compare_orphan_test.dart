@@ -10,7 +10,7 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 /// One remote book folder. [hasEpub] toggles whether the folder carries a
 /// downloadable `.epub` content asset; when false it is an orphan that holds
@@ -150,7 +150,7 @@ class _OrphanFakeBackend implements SyncBackend {
 void main() {
   test('metadata-only remote folder is kept but not downloadable (BUG-049)',
       () async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
 
     final List<SyncCompareEntry> orphan = await fetchCompareDataForTest(

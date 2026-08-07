@@ -44,8 +44,8 @@ void main() {
 
   testWidgets('shortcut settings entry is visible in system settings only',
       (WidgetTester tester) async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     final ReaderSettings? prevReaderSettings =

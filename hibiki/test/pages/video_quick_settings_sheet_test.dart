@@ -101,7 +101,7 @@ Future<VideoSheetHarness> _pumpSheet(
   );
   Widget body = wrap != null ? wrap(sheet) : sheet;
   if (wrapScale != null) {
-    body = HibikiAppUiScale(scale: wrapScale, child: body);
+    body = FushiAppUiScale(scale: wrapScale, child: body);
   }
   await tester.pumpWidget(
     MaterialApp(
@@ -373,11 +373,11 @@ void main() {
     expect(find.byIcon(Icons.arrow_back), findsNothing);
 
     // TODO-556：大分类从左栏 master-detail 改成顶部横滑 chip 行（入口置顶）。
-    // 不再有左右 master-detail（无 MaterialSupportingPaneLayout / 左栏 HibikiListItem）。
+    // 不再有左右 master-detail（无 MaterialSupportingPaneLayout / 左栏 FushiListItem）。
     expect(find.byType(MaterialSupportingPaneLayout), findsNothing);
-    expect(find.byType(HibikiListItem), findsNothing);
-    // 每个分类一个 HibikiSelectableChip（六分类 → 至少 6 个）。
-    expect(find.byType(HibikiSelectableChip), findsAtLeastNWidgets(6));
+    expect(find.byType(FushiListItem), findsNothing);
+    // 每个分类一个 FushiSelectableChip（六分类 → 至少 6 个）。
+    expect(find.byType(FushiSelectableChip), findsAtLeastNWidgets(6));
 
     // 分类 chip 在上、详情在下（顶栏）：分类条的 dy 必须小于详情的 dy。
     final double categoryY = tester.getTopLeft(_categoryChip('subtitle')).dy;
@@ -1239,7 +1239,7 @@ void main() {
   test(
     'TODO-742②源码守卫：字幕调轴滑条走 adaptiveSlider（修值指示器气泡方向相反）',
     () {
-      // 根因：本面板经 showModalBottomSheet 推入根 Overlay，处在全局 HibikiAppUiScale 的
+      // 根因：本面板经 showModalBottomSheet 推入根 Overlay，处在全局 FushiAppUiScale 的
       // Transform.scale 子树。裸 [Slider] 的值指示器水平钳制（getHorizontalShift）把
       // localToGlobal（含 ×scale 的 GLOBAL/view 坐标）与被缩成 view/scale 的
       // MediaQuery.size 比较，两空间差 s²，算出巨大负 shift，把数字气泡甩到拇指**左侧**
@@ -1641,7 +1641,7 @@ void main() {
     // 顶部分类 chip 条外层 Padding：水平 inset = page+gap=28，顶部 card=20（不再贴死），
     // 底部留 gap/2=4 与下方分隔线呼吸。chip 条本身是横向 scroll（无 padding 属性），
     // 故 padding 落在它外层那个 Padding widget 上，按值精确定位。
-    final Finder firstCategoryChip = find.byType(HibikiSelectableChip).first;
+    final Finder firstCategoryChip = find.byType(FushiSelectableChip).first;
     final Iterable<Padding> categoryPads = tester.widgetList<Padding>(
       find.ancestor(
         of: firstCategoryChip,
@@ -2272,7 +2272,7 @@ void main() {
       // 大分类一律渲染成顶栏 chip（无左右 master-detail、无左栏列表项），按 id
       // key 命中（不依赖标签文案）。
       expect(find.byType(MaterialSupportingPaneLayout), findsNothing);
-      expect(find.byType(HibikiListItem), findsNothing);
+      expect(find.byType(FushiListItem), findsNothing);
       for (final String id in <String>[
         'playback',
         'shaders',

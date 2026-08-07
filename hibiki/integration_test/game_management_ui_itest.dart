@@ -38,7 +38,7 @@ void main() {
         for (int i = 0; i < 8; i++) {
           await tester.pump(const Duration(milliseconds: 250));
         }
-        expect(find.byType(HibikiFocusRoot), findsOneWidget);
+        expect(find.byType(FushiFocusRoot), findsOneWidget);
         await windowManager.setSize(const Size(1440, 900));
         await tester.pump(const Duration(seconds: 2));
 
@@ -55,12 +55,12 @@ void main() {
 
         final FocusDriver driver = FocusDriver(tester);
         final Finder gameSections =
-            find.byType(HibikiAdjustableSegmented<GameSection>);
+            find.byType(FushiAdjustableSegmented<GameSection>);
         expect(gameSections, findsOneWidget);
         expect(
           find.descendant(
             of: gameSections,
-            matching: find.byType(HibikiFocusTarget),
+            matching: find.byType(FushiFocusTarget),
           ),
           findsOneWidget,
           reason: '游戏分段导航应在真 app 中注册单一 Hibiki 焦点目标',
@@ -69,7 +69,7 @@ void main() {
           await _focusThroughHibiki(
             driver,
             gameSections,
-            const HibikiFocusId('game-library-tab-sections'),
+            const FushiFocusId('game-library-tab-sections'),
           ),
           isTrue,
           reason: '游戏分段导航必须可由 Hibiki 焦点系统聚焦',
@@ -94,7 +94,7 @@ void main() {
           await _activateHibikiTarget(
             driver,
             lineCard,
-            HibikiFocusId('game-line-${line.id}'),
+            FushiFocusId('game-line-${line.id}'),
           ),
           isTrue,
           reason: '一整条台词应只有一个稳定确认目标',
@@ -115,13 +115,13 @@ void main() {
         await _capture(tester, 'game-capture-after-tab-switch');
 
         final Finder captureSections =
-            find.byType(HibikiAdjustableSegmented<GameSection>);
+            find.byType(FushiAdjustableSegmented<GameSection>);
         expect(captureSections, findsOneWidget);
         expect(
           await _focusThroughHibiki(
             driver,
             captureSections,
-            const HibikiFocusId('game-capture-tab-sections'),
+            const FushiFocusId('game-capture-tab-sections'),
           ),
           isTrue,
           reason: '捕获页分段导航必须可由 Hibiki 焦点系统聚焦',
@@ -139,7 +139,7 @@ void main() {
 Future<bool> _activateHibikiTarget(
   FocusDriver driver,
   Finder target,
-  HibikiFocusId focusId,
+  FushiFocusId focusId,
 ) async {
   if (await _focusThroughHibiki(driver, target, focusId)) {
     await driver.activate();
@@ -147,7 +147,7 @@ Future<bool> _activateHibikiTarget(
   }
   final Finder managedTarget = find.descendant(
     of: target,
-    matching: find.byType(HibikiFocusTarget),
+    matching: find.byType(FushiFocusTarget),
   );
   if (!_invokeActivateIntent(driver.tester, managedTarget)) return false;
   await driver.tester.pump(const Duration(milliseconds: 250));
@@ -168,9 +168,9 @@ bool _invokeActivateIntent(WidgetTester tester, Finder managedTarget) {
 Future<bool> _focusThroughHibiki(
   FocusDriver driver,
   Finder target,
-  HibikiFocusId focusId,
+  FushiFocusId focusId,
 ) async {
-  final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+  final FushiFocusController controller = FushiFocusRoot.controllerOf(
     driver.tester.element(target),
   );
   if (controller.requestById(focusId)) {

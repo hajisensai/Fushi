@@ -14,7 +14,7 @@ import 'package:fushi/src/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'temp_dir_cleanup.dart';
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 /// Recording fake [SyncBackend]: drives `syncBook` through a successful EXPORT
 /// so we can observe which sync channels each gate opens. Unrelated members
@@ -174,7 +174,7 @@ class _RecordingExportBackend implements SyncBackend {
       throw UnimplementedError();
 }
 
-Future<EpubBookRow> _seedBookWithPosition(HibikiDatabase db) async {
+Future<EpubBookRow> _seedBookWithPosition(FushiDatabase db) async {
   await db.insertEpubBook(EpubBooksCompanion.insert(
     bookKey: 'Book',
     title: 'Book',
@@ -203,7 +203,7 @@ Future<EpubBookRow> _seedBookWithPosition(HibikiDatabase db) async {
 
 void main() {
   group('SyncRepository gating toggles (defaults + flip)', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late SyncRepository repo;
 
     setUp(() {
@@ -245,7 +245,7 @@ void main() {
 
   group('syncBook honours the statistics gate', () {
     test('syncStats:false skips updateStatsFile', () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final EpubBookRow book = await _seedBookWithPosition(db);
 
@@ -271,7 +271,7 @@ void main() {
 
     test('syncStats:true exports statistics using the discovered file id',
         () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final EpubBookRow book = await _seedBookWithPosition(db);
 
@@ -298,7 +298,7 @@ void main() {
 
     test('syncContent:true imports remote metadata without downloading files',
         () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final EpubBookRow book = await _seedBookWithPosition(db);
 
@@ -332,7 +332,7 @@ void main() {
   group('progress tie-break compares at storage resolution (BUG-162)', () {
     test('imported-then-unmoved re-sync is synced, not a spurious re-export',
         () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       // 本地 (section 0, norm 5000)，chaptersJson characters=100 →
       // explored 50 / 100 = 0.5（落在 normCharOffset 存储网格上）；updatedAt=1000。
@@ -376,7 +376,7 @@ void main() {
           await Directory.systemTemp.createTemp('t4_dict_res_');
       final Directory outDir =
           await Directory.systemTemp.createTemp('t4_dict_out_');
-      final HibikiDatabase onDiskDb = HibikiDatabase(dbDir.path);
+      final FushiDatabase onDiskDb = FushiDatabase(dbDir.path);
       try {
         await Directory('${dictDir.path}/JMdict').create(recursive: true);
         await File('${dictDir.path}/JMdict/blobs.bin')

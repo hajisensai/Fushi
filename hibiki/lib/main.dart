@@ -274,7 +274,7 @@ void main([List<String> args = const <String>[]]) {
     if (Platform.isAndroid || Platform.isIOS) {
       try {
         final raw =
-            await HibikiChannels.splash.invokeMethod<int>('getSplashColor');
+            await FushiChannels.splash.invokeMethod<int>('getSplashColor');
         if (raw != null && raw != 0) _savedSplashColor = Color(raw);
       } catch (e) {
         debugPrint('[Fushi] getSplashColor failed: $e');
@@ -621,7 +621,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _externalVideoChannel.setMethodCallHandler(_handleExternalVideoChannel);
       _systemThemeChannel.setMethodCallHandler(_handleSystemThemeChannel);
     }
-    HibikiToast.navigatorKey = ref.read(appProvider).navigatorKey;
+    FushiToast.navigatorKey = ref.read(appProvider).navigatorKey;
 
     if (Platform.isAndroid) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -894,12 +894,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     switch (result) {
       case AnkiFetchSuccess():
         await ref.read(ankiViewModelProvider.notifier).reloadSettings();
-        HibikiToast.show(
+        FushiToast.show(
           msg: 'AnkiMobile configuration imported.',
           severity: ToastSeverity.success,
         );
       case AnkiFetchError(:final message, :final code):
-        HibikiToast.show(
+        FushiToast.show(
           msg: AnkiViewModel.localizeAnkiFetchError(message, code),
           severity: ToastSeverity.error,
         );
@@ -917,7 +917,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     final String? code = uri.queryParameters['code'];
     final String? error = uri.queryParameters['error'];
     if (code == null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.sync_auth_error(message: error ?? 'missing code'),
         severity: ToastSeverity.error,
       );
@@ -933,17 +933,17 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         default:
           return;
       }
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.sync_signed_in,
         severity: ToastSeverity.success,
       );
     } on SyncAuthError catch (e) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.sync_auth_error(message: friendlySyncErrorDetail(e)),
         severity: ToastSeverity.error,
       );
     } catch (e) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: friendlySyncError(e),
         severity: ToastSeverity.error,
       );
@@ -1011,7 +1011,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     // 此处首帧入库之间文件可能被移动/删除（或检查与使用间的竞态），故再校验一次；
     // 文件不存在则不入库、不静默吞，给与既有失败路径一致的 toast 反馈（TODO-903）。
     if (!await File(videoPath).exists()) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.video_file_not_found,
         severity: ToastSeverity.error,
       );
@@ -1389,7 +1389,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                         color: cs.onSurfaceVariant,
                       ),
                       textAlign: TextAlign.center,
-                      selectionControls: HibikiTextSelectionControls(
+                      selectionControls: FushiTextSelectionControls(
                         shareAction: (text) => Share.share(text),
                         allowCopy: true,
                         allowCut: false,
@@ -1415,7 +1415,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                             Clipboard.setData(
                               ClipboardData(text: appModel.initError!),
                             );
-                            HibikiToast.show(
+                            FushiToast.show(
                               msg: t.error_copied,
                               severity: ToastSeverity.success,
                             );
@@ -1602,7 +1602,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                           appModel.experimentalFocusNavigationEnabled,
                       registry: appModel.shortcutRegistry,
 
-                      // BUG-1349（第二处根因）：焦点导航层（HibikiFocusRoot 的
+                      // BUG-1349（第二处根因）：焦点导航层（FushiFocusRoot 的
                       // fallbackNode）必须在全局导航层**之内**。键事件沿焦点树
                       // 冒泡：fallbackNode 若在 wrapWithGlobalNavigation 之外，
                       // 零受管目标页把焦点回收到兜底节点后，Esc/全局快捷键根本
@@ -1669,7 +1669,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                         ),
                       );
                     }
-                    return HibikiAppUiScale(scale: uiScale, child: navigation);
+                    return FushiAppUiScale(scale: uiScale, child: navigation);
                   },
                 ),
               ),
@@ -1692,8 +1692,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   Locale get locale => appModel.appLocale;
 }
 
-/// 焦点导航层（[HibikiFocusRoot] 焦点控制器 + [HibikiFocusRing] 可见焦点环）
-/// **恒定挂载，行为按实验开关门控**。禁用时 [HibikiFocusRoot.maybeControllerOf]
+/// 焦点导航层（[FushiFocusRoot] 焦点控制器 + [FushiFocusRing] 可见焦点环）
+/// **恒定挂载，行为按实验开关门控**。禁用时 [FushiFocusRoot.maybeControllerOf]
 /// 返回 null（各组件据此走原生焦点遍历，语义与「未包裹」时代逐字节一致）、
 /// 焦点环不绘制。
 ///
@@ -1707,8 +1707,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
 /// 滑块动画消失（其余开关都有动画）。结构恒定后 Element 全保留，动画回归，
 /// 顺带不再丢各页滚动位置。
 Widget _wrapFocusNavigation({required bool enabled, required Widget child}) {
-  return HibikiFocusRoot(
+  return FushiFocusRoot(
     enabled: enabled,
-    child: HibikiFocusRing(enabled: enabled, child: child),
+    child: FushiFocusRing(enabled: enabled, child: child),
   );
 }

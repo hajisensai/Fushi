@@ -16,8 +16,8 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
   });
 
-  HibikiSyncServerController buildController(GlobalKey<NavigatorState> navKey) {
-    return HibikiSyncServerController(
+  FushiSyncServerController buildController(GlobalKey<NavigatorState> navKey) {
+    return FushiSyncServerController(
       navigatorKey: navKey,
       database: () => throw UnimplementedError('db not used in this test'),
       syncDataDir: () => '.',
@@ -38,12 +38,12 @@ void main() {
 
   testWidgets('同源重试取代滞留的未决申请框、重开新框（BUG-987）', (WidgetTester tester) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    final HibikiSyncServerController controller = buildController(navKey);
+    final FushiSyncServerController controller = buildController(navKey);
     addTearDown(controller.dispose);
     await pumpHost(tester, navKey);
 
     // 第一次配对（LAN 免 PIN，审批未决）：故意不点「允许」，模拟发起端超时/取消放弃。
-    const HibikiPairRequest firstReq = HibikiPairRequest(
+    const FushiPairRequest firstReq = FushiPairRequest(
       deviceName: 'Phone A',
       remoteAddress: '192.168.1.50',
       pinRequired: false,
@@ -56,7 +56,7 @@ void main() {
 
     // 第二次同源重试（同 remoteAddress，展示名不同以便区分是新框）：修复前会命中
     // `if (_pairDialogOpen) return false` 被静默拒绝、界面仍是旧框；修复后应收起旧框、弹新框。
-    const HibikiPairRequest retryReq = HibikiPairRequest(
+    const FushiPairRequest retryReq = FushiPairRequest(
       deviceName: 'Phone A (retry)',
       remoteAddress: '192.168.1.50',
       pinRequired: false,
@@ -82,11 +82,11 @@ void main() {
   testWidgets('不同来源的新请求仍被防叠弹拒绝、旧未决框保留（BUG-987 未回退防护）',
       (WidgetTester tester) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    final HibikiSyncServerController controller = buildController(navKey);
+    final FushiSyncServerController controller = buildController(navKey);
     addTearDown(controller.dispose);
     await pumpHost(tester, navKey);
 
-    const HibikiPairRequest reqA = HibikiPairRequest(
+    const FushiPairRequest reqA = FushiPairRequest(
       deviceName: 'Phone A',
       remoteAddress: '192.168.1.50',
       pinRequired: false,
@@ -96,7 +96,7 @@ void main() {
     expect(find.text('Phone A · 192.168.1.50'), findsOneWidget);
 
     // 不同来源(不同 IP)在旧框未决时发起 → 应立即被防叠弹拒绝(false)，旧框不受影响。
-    const HibikiPairRequest reqB = HibikiPairRequest(
+    const FushiPairRequest reqB = FushiPairRequest(
       deviceName: 'Attacker B',
       remoteAddress: '192.168.1.99',
       pinRequired: false,

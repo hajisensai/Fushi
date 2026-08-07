@@ -548,7 +548,7 @@ void main() {
     await pumpDialog(tester, appModel, torrent: _kTorrent);
 
     // 判据锚点更新（原契约不变）：条目选择器早已不是 `ChoiceChip` —— `384ccc09f`
-    // 把它统一到共享 `HibikiCard`（单选圆点 + 主色描边），文件里仅剩的 `ChoiceChip`
+    // 把它统一到共享 `FushiCard`（单选圆点 + 主色描边），文件里仅剩的 `ChoiceChip`
     // 是下面的语言选择器，所以按 chip label 取条目必然 `Bad state: No element`。
     // 要守的契约还是那一条「谁被选中」，换成读用户真正看到的那张卡的 `selected`
     // （与 `JimakuEntryPicker.selectedEntryId` 同源，且比读 model 更贴近渲染）。
@@ -558,7 +558,7 @@ void main() {
       final JimakuEntry entry =
           picker.entries.singleWhere((JimakuEntry e) => e.name == name);
       return tester
-          .widget<HibikiCard>(
+          .widget<FushiCard>(
             find.byKey(ValueKey<String>('jimaku_entry_${entry.id}')),
           )
           .selected;

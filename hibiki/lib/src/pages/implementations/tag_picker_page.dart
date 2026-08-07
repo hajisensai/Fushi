@@ -38,7 +38,7 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
     _load();
   }
 
-  HibikiDatabase get _db => ref.read(appProvider).database;
+  FushiDatabase get _db => ref.read(appProvider).database;
 
   /// SRT 书标签映射按 SrtBooks 整型主键落库；[MediaRef.entryKey]（= uid）在此
   /// 解析成行 id（构造点只持有稳定 uid，不强迫调用方先查 id）。
@@ -151,9 +151,9 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiPageScaffold(
+    return FushiPageScaffold(
       title: t.tag_label,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _quickCreateTag,
@@ -164,8 +164,8 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
           ? Center(
               child: Padding(
                 padding: EdgeInsets.all(tokens.spacing.card),
-                child: HibikiCard(
-                  child: HibikiPlaceholderMessage(
+                child: FushiCard(
+                  child: FushiPlaceholderMessage(
                     icon: Icons.label_outline,
                     message: t.tag_no_tags_hint,
                   ),
@@ -179,10 +179,10 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
               itemBuilder: (context, index) {
                 final BookTagRow tag = _allTags[index];
                 final bool selected = _selectedTagIds.contains(tag.id);
-                return HibikiCard(
+                return FushiCard(
                   padding: EdgeInsets.zero,
                   selected: selected,
-                  child: HibikiListItem(
+                  child: FushiListItem(
                     minHeight: 64,
                     selected: selected,
                     onTap: () => _toggle(tag.id, !selected),

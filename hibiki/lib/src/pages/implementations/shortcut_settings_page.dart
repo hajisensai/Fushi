@@ -42,7 +42,7 @@ class ShortcutSettingsPage extends BasePage {
 }
 
 class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
-  HibikiShortcutRegistry get _registry => appModel.shortcutRegistry;
+  FushiShortcutRegistry get _registry => appModel.shortcutRegistry;
 
   // TODO-612: list vs keyboard-visual view toggle. The figure is a new
   // read+remap surface over the SAME registry write-through path; the list
@@ -102,12 +102,12 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext ctx) {
-        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
-        return HibikiDialogFrame(
+        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+        return FushiDialogFrame(
           maxWidth: 420,
           maxHeightFactor: 0.78,
           scrollable: false,
-          child: HibikiModalSheetFrame(
+          child: FushiModalSheetFrame(
             title: t.shortcut_reset_defaults,
             leadingIcon: Icons.restore_outlined,
             scrollable: true,
@@ -236,12 +236,12 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
     return showAppDialog<ShortcutAction>(
       context: context,
       builder: (BuildContext ctx) {
-        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
-        return HibikiDialogFrame(
+        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+        return FushiDialogFrame(
           maxWidth: 480,
           maxHeightFactor: 0.82,
           scrollable: false,
-          child: HibikiModalSheetFrame(
+          child: FushiModalSheetFrame(
             title: t.shortcut_assign_pick_action,
             leadingIcon: Icons.add_link_outlined,
             scrollable: true,
@@ -256,7 +256,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 for (final ShortcutAction action in actions)
-                  HibikiListItem(
+                  FushiListItem(
                     key: Key('pick_action_${action.name}'),
                     onTap: () => Navigator.pop(ctx, action),
                     title: Text(action.label),
@@ -274,7 +274,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   /// 动作行，其后是各 action 行。返回裸内容（无脚手架），由统一详情壳承载滚动与
   /// 内边距，使从统一设置详情面板点进来不再有风格跳变。
   Widget _buildScopeSections(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -288,14 +288,14 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
           child: Align(
             alignment: Alignment.centerLeft,
             // Wrap the list/keyboard segmented toggle in a
-            // HibikiAdjustableSegmented so it becomes a single gamepad/keyboard
+            // FushiAdjustableSegmented so it becomes a single gamepad/keyboard
             // focus stop with D-pad / arrow Left-Right flipping between the two
             // views (TODO-942 residual: a bare SegmentedButton is a cluster of
-            // native buttons the directional HibikiFocusController skips
+            // native buttons the directional FushiFocusController skips
             // entirely, leaving pure-gamepad users unable to reach the
             // keyboard-skin view at all). The inner SegmentedButton keeps its
             // Key so it stays mouse/touch-tappable and test-addressable.
-            child: HibikiAdjustableSegmented<bool>(
+            child: FushiAdjustableSegmented<bool>(
               focusIdPrefix: 'shortcut-view-toggle',
               values: const <bool>[false, true],
               selected: _visualMode,
@@ -346,7 +346,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   /// blocking dialog) so it informs without interrupting.
   Widget _buildGameInputHint(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color fg = theme.colorScheme.onSecondaryContainer;
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.gap),
@@ -376,10 +376,10 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   /// TODO-1113: gamepad button-style (brand) selector. Display-only — switches
   /// how face buttons render in the visual figure (Xbox A/B/X/Y, PlayStation
   /// ✕○□△, Nintendo Switch B/A/Y/X). Only visible in the visual figure mode.
-  /// Wrapped in HibikiAdjustableSegmented so it is a single directional focus
+  /// Wrapped in FushiAdjustableSegmented so it is a single directional focus
   /// stop reachable by pure-gamepad users (same pattern as the view toggle).
   Widget _buildGamepadBrandSelector() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.gap),
       child: Column(
@@ -396,7 +396,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
           ),
           Align(
             alignment: Alignment.centerLeft,
-            child: HibikiAdjustableSegmented<GamepadBrand>(
+            child: FushiAdjustableSegmented<GamepadBrand>(
               focusIdPrefix: 'gamepad-brand-select',
               values: GamepadBrand.values,
               selected: _gamepadBrand,
@@ -437,7 +437,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   /// remap row. On desktop the same scope is a real, editable Ctrl+Alt+D binding
   /// and renders like every other scope.
   Widget _buildScopeSection(ShortcutScope scope) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool isMobilePlatform =
         defaultTargetPlatform == TargetPlatform.android ||
             defaultTargetPlatform == TargetPlatform.iOS;

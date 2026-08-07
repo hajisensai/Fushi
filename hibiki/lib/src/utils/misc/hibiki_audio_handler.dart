@@ -1,7 +1,7 @@
 import 'package:audio_service/audio_service.dart' as ag;
 
-class HibikiAudioHandler extends ag.BaseAudioHandler {
-  HibikiAudioHandler({
+class FushiAudioHandler extends ag.BaseAudioHandler {
+  FushiAudioHandler({
     required this.onPlayPause,
     required this.onSeek,
     required this.onRewind,

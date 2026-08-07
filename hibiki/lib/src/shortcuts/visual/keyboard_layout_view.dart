@@ -244,7 +244,7 @@ class KeyboardLayoutView extends StatelessWidget {
     this.onEmptyKeyTap,
   });
 
-  final HibikiShortcutRegistry registry;
+  final FushiShortcutRegistry registry;
   final ShortcutScope scope;
 
   /// 点击一个已绑键位（回传该键上的 action 列表，走 action-first 编辑）。

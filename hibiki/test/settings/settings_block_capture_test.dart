@@ -42,7 +42,7 @@ void main() {
     // 面板窗 native 通道的 mock：记录 setBlockCapture（即时重应用的落点），
     // 同时避免测试机上真调 native 抛 MissingPluginException。
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      HibikiChannels.clipboardPanel,
+      FushiChannels.clipboardPanel,
       (MethodCall call) async {
         channelCalls.add(call);
         return null;
@@ -53,7 +53,7 @@ void main() {
     // 面板内点词弹出的瞬态窗泄露面板承诺保护的内容）。
     final List<MethodCall> overlayCalls = <MethodCall>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      HibikiChannels.globalLookup,
+      FushiChannels.globalLookup,
       (MethodCall call) async {
         overlayCalls.add(call);
         return null;
@@ -61,11 +61,11 @@ void main() {
     );
     addTearDown(() {
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        HibikiChannels.clipboardPanel,
+        FushiChannels.clipboardPanel,
         null,
       );
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        HibikiChannels.globalLookup,
+        FushiChannels.globalLookup,
         null,
       );
     });

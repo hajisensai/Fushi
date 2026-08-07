@@ -20,7 +20,7 @@ import 'package:fushi/utils.dart';
 /// 独立页形态（[embedded] 为 false）只剩测试和将来可能的 push 路由在用。
 ///
 /// [embedded] 为 true 时：
-/// - 不再包 `DesktopContentLayout` / `HibikiPageHeader`（外层已有一套 chrome），
+/// - 不再包 `DesktopContentLayout` / `FushiPageHeader`（外层已有一套 chrome），
 ///   页头那三个动作（刷新仓库 / 导入 APK / 添加仓库）降级成本节顶部的按钮行；
 /// - `build` 返回的是**sliver**（[SliverMainAxisGroup]），由外层 `CustomScrollView`
 ///   直接消费。
@@ -82,7 +82,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
         title: Text(t.mihon_store_add),
-        content: HibikiTextField(
+        content: FushiTextField(
           controller: controller,
           labelText: t.mihon_store_url,
           hintText: 'https://example.org/repo.json',
@@ -115,7 +115,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       await _manager!.addStore(url, allowInsecure: allowInsecure);
     } catch (error) {
       if (mounted) {
-        HibikiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
     }
   }
@@ -158,7 +158,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       await _confirmAndInstall(proposal);
     } catch (error) {
       if (mounted) {
-        HibikiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
     }
   }
@@ -170,7 +170,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       await _confirmAndInstall(proposal);
     } catch (error) {
       if (mounted) {
-        HibikiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
     }
   }
@@ -231,7 +231,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           // 同上：保留原始预览错误；残留 staging 会在下次启动清理。
         }
       }
-      if (mounted) HibikiToast.show(msg: '$error');
+      if (mounted) FushiToast.show(msg: '$error');
     }
   }
 
@@ -250,7 +250,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
             shrinkWrap: true,
             children: <Widget>[
               for (final MihonSource source in session.sources)
-                HibikiListItem(
+                FushiListItem(
                   title: Text(source.name),
                   subtitle: Text(
                     source.baseUrl.isEmpty
@@ -344,7 +344,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       return true;
     } catch (error) {
       if (mounted) {
-        HibikiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
       return false;
     }
@@ -378,20 +378,20 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
 
   /// 页头三动作。内嵌时降级成本节顶部的按钮行，能力一个不少。
   List<Widget> _actions(MihonManager manager) => <Widget>[
-        HibikiIconButton(
+        FushiIconButton(
           tooltip: t.mihon_store_refresh,
           label: t.mihon_store_refresh,
           icon: Icons.refresh,
           onTap:
               manager.loading ? null : () => unawaited(manager.refreshStores()),
         ),
-        HibikiIconButton(
+        FushiIconButton(
           tooltip: t.mihon_extension_import,
           label: t.mihon_extension_import,
           icon: Icons.file_open_outlined,
           onTap: manager.loading ? null : _importApk,
         ),
-        HibikiIconButton(
+        FushiIconButton(
           tooltip: t.mihon_store_add,
           label: t.mihon_store_add,
           icon: Icons.add_link,
@@ -429,7 +429,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       child: Column(
         children: <Widget>[
           if (!isCupertinoPlatform(context))
-            HibikiPageHeader(
+            FushiPageHeader(
               title: t.mihon_extensions_title,
               bottom: widget.navigation,
               actions: _actions(manager),
@@ -566,9 +566,9 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         itemCount: manager.stores.length,
         itemBuilder: (BuildContext context, int index) {
           final MangaExtensionStoreRow store = manager.stores[index];
-          return HibikiCard(
+          return FushiCard(
             padding: EdgeInsets.zero,
-            child: HibikiListItem(
+            child: FushiListItem(
               leading: const Icon(Icons.hub_outlined),
               title: Text(store.name),
               subtitle: Text(
@@ -755,9 +755,9 @@ class _AvailableExtensionTile extends StatelessWidget {
     final bool update =
         installed != null && extension.versionCode > installed!.versionCode;
     final ThemeData theme = Theme.of(context);
-    return HibikiCard(
+    return FushiCard(
       padding: EdgeInsets.zero,
-      child: HibikiListItem(
+      child: FushiListItem(
         leading: _ExtensionIcon(url: extension.iconUrl),
         title: Row(
           children: <Widget>[
@@ -848,7 +848,7 @@ class _PreviewFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return ColoredBox(
       color: tokens.surfaces.overlay,
       child: SafeArea(
@@ -931,7 +931,7 @@ class _NsfwBadge extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(
           color: theme.colorScheme.errorContainer,
-          borderRadius: HibikiDesignTokens.of(context).radii.chipRadius,
+          borderRadius: FushiDesignTokens.of(context).radii.chipRadius,
         ),
         child: Text(
           '18+',
@@ -954,9 +954,9 @@ class _InstalledExtensionTile extends StatelessWidget {
   final ValueChanged<bool> onEnabledChanged;
 
   @override
-  Widget build(BuildContext context) => HibikiCard(
+  Widget build(BuildContext context) => FushiCard(
         padding: EdgeInsets.zero,
-        child: HibikiListItem(
+        child: FushiListItem(
           leading: const Icon(Icons.extension_outlined),
           title: Text(extension.name),
           subtitle: Text(

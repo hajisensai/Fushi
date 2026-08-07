@@ -335,7 +335,7 @@ mixin DictionaryPageMixin {
     );
     // TODO-1325 #6：制卡可能要走网络（AnkiConnect）+ 下音频，先弹「制卡中…」蓝色
     // pending toast 给即时反馈；结果 toast 会顶替它。
-    HibikiToast.showMine(
+    FushiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
     );
@@ -358,7 +358,7 @@ mixin DictionaryPageMixin {
     }
     // TODO-1325 #6：MD3 着色 + 图标 toast。着色状态由 describeMineOutcome 单一真相
     // 带出（added 绿 / duplicate 橙 / failed 红），此处不再本地 switch。
-    HibikiToast.showMine(msg: described.message, status: described.status);
+    FushiToast.showMine(msg: described.message, status: described.status);
     if (described.success) {
       // TODO-270 D：带回 note id 让弹窗把刚制的这张标记为「最新可改」第三态
       // （AnkiConnect 非空，AnkiDroid 恒 null = 优雅降级进不了第三态）。
@@ -380,7 +380,7 @@ mixin DictionaryPageMixin {
       source: miningSource,
     );
     // TODO-1325 #6：覆写同样先弹 pending。
-    HibikiToast.showMine(
+    FushiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
     );
@@ -396,7 +396,7 @@ mixin DictionaryPageMixin {
     final described =
         describeMineOutcome(outcome, deckName: deckName, overwrite: true);
     // TODO-1325 #6：覆写成功也是 added（绿），失败按状态着色。状态取自单一真相。
-    HibikiToast.showMine(msg: described.message, status: described.status);
+    FushiToast.showMine(msg: described.message, status: described.status);
     if (described.success) {
       return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
@@ -531,7 +531,7 @@ mixin DictionaryPageMixin {
   ({String? bookKey, String? title})? get lookupBookIdentity => null;
 
   /// TODO-1204：[DictionaryPopupController.onLookupStarted] 注入点——每次查词
-  /// （顶层 / 嵌套 / 重复查各一次）累加 [HibikiDatabase.addLookupCount]。宿主构造
+  /// （顶层 / 嵌套 / 重复查各一次）累加 [FushiDatabase.addLookupCount]。宿主构造
   /// controller 后调 [attachLookupCounter] 接线。best-effort。
   @protected
   void recordLookup() {
@@ -606,7 +606,7 @@ mixin DictionaryPageMixin {
       // TODO-956 A：与 [base_source_page] 同因——桌面 callHandler 返回值不一定回传
       // JS，弹窗 ☆→★ 变色不可靠。视频弹窗走本 mixin，DB 写成功后同样解耦弹 toast，
       // 保证 reader / 有声书 / 视频三宿主收藏反馈一致。
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.word_favorite_removed,
         severity: ToastSeverity.success,
       );
@@ -624,7 +624,7 @@ mixin DictionaryPageMixin {
       bookKey: favIdentity?.bookKey,
       title: favIdentity?.title ?? '',
     );
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.word_favorite_added,
       severity: ToastSeverity.success,
     );
@@ -837,7 +837,7 @@ mixin DictionaryPageMixin {
       child: Visibility(
         // BUG-1364：与 [parkedPopupLayer] 的 `visible` 同源，纳入同一个嵌套安全计数。
         visible: _popupHidingDialogDepth == 0,
-        child: HibikiPopupSurface(
+        child: FushiPopupSurface(
           color: fill,
           child: Column(
             children: <Widget>[

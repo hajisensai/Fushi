@@ -14,7 +14,7 @@ import 'package:fushi/src/utils/misc/channel_constants.dart';
 ///
 /// 机制：Impeller 是**引擎初始化期**从 AndroidManifest meta-data 或命令行 shell
 /// arg 读取的决定，Dart 运行时无法直接翻转它。因此本开关只把用户意图**持久化到
-/// native**（[HibikiChannels.render] → `MainActivity` 写自有 SharedPreferences
+/// native**（[FushiChannels.render] → `MainActivity` 写自有 SharedPreferences
 /// 文件）；`MainActivity` 在**下次启动**的 `getFlutterShellArgs` 里读它，命中则
 /// 追加 `--enable-impeller=false`（命令行值优先于 manifest 默认）。所以语义天然
 /// 是「重启后生效」。仅 Android 接线，其它平台 channel 缺失，读写静默降级。
@@ -52,7 +52,7 @@ class RenderBackendService {
 
   /// 可注入的 channel（测试替换成 mock messenger）；生产走真实 native channel。
   @visibleForTesting
-  MethodChannel channel = HibikiChannels.render;
+  MethodChannel channel = FushiChannels.render;
 
   bool _impellerDisabled = false;
 

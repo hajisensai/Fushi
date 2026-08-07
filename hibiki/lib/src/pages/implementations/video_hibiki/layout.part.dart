@@ -124,7 +124,7 @@ extension _VideoLayout on _VideoHibikiPageState {
     // overlay 层（而非 [_buildVideoBody] 外层）：media_kit 全屏推独立 root 路由、
     // 复用同一 controls builder，故拖拽目标随全屏一起进路由——窗口与全屏两种场景
     // 用同一个目标都能挂载（覆盖 overlay 即视频可视区）。仅桌面三端启用
-    // （[HibikiFileDropTarget] 内部门控），其余平台透传 child 零开销。只取第一个
+    // （[FushiFileDropTarget] 内部门控），其余平台透传 child 零开销。只取第一个
     // 受支持字幕；拖入纯视频/图片等忽略。desktop_drop 只接管 OS 文件拖放、不吃
     // Flutter 指针事件，故内层字幕点击查词（onCharTap）不受影响；不夺焦故无需
     // _focusOwnership。
@@ -226,7 +226,7 @@ extension _VideoLayout on _VideoHibikiPageState {
           mobile: controlsTheme.mobile,
           desktop: controlsTheme.desktop,
           child: _videoControlsHoverWrap(
-            child: HibikiFileDropTarget(
+            child: FushiFileDropTarget(
               debugLabel: 'video-playback-controls',
               onDrop: (List<String> paths, Offset _) {
                 _handlePlaybackDrop(controller, paths);

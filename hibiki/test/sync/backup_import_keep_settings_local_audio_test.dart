@@ -34,7 +34,7 @@ void main() {
     final String dstDbDir = p.join(dst.path, 'db');
     Directory(dstDbDir).createSync(recursive: true);
 
-    final HibikiDatabase curDb = HibikiDatabase(dstDbDir);
+    final FushiDatabase curDb = FushiDatabase(dstDbDir);
     await curDb.setPref(
         'test_pure_setting', 'device-value'); // kept from device
     await curDb.setPref(
@@ -52,7 +52,7 @@ void main() {
     final String laPath = p.join(srcDbDir, 'local_audio_777.db');
     await File(laPath).writeAsString('FORVO-DB-BYTES');
 
-    final HibikiDatabase srcDb = HibikiDatabase(srcDbDir);
+    final FushiDatabase srcDb = FushiDatabase(srcDbDir);
     await srcDb.setPref('test_pure_setting', 'backup-value'); // must NOT win
     await srcDb.setPref(
       'local_audio_dbs',
@@ -91,7 +91,7 @@ void main() {
       importSettings: false,
     );
 
-    final HibikiDatabase after = HibikiDatabase(dstDbDir);
+    final FushiDatabase after = FushiDatabase(dstDbDir);
     addTearDown(after.close);
     final Map<String, String> prefs = await after.getAllPrefs();
 

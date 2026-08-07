@@ -15,7 +15,7 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 /// 一个最小但 [EpubImporter] 能真正解析的 EPUB：mimetype + container.xml +
 /// content.opf + 一个 xhtml 章节。返回 zip 字节（与 test/epub 里的构造同款）。
@@ -248,7 +248,7 @@ void main() {
   testWidgets(
       'remote-only book renders a direct download action and tapping it '
       'imports it', (WidgetTester tester) async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final Directory tempDir =
         Directory.systemTemp.createTempSync('hibiki_compare_download_tmp');

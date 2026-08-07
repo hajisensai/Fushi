@@ -194,7 +194,7 @@ void main() {
     test(
         'refreshPreferencesFromDb drops keys deleted from the DB '
         '(profile switch with no custom value restores default)', () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -239,7 +239,7 @@ void main() {
     test(
         '视频上下文：DB(=当前 profile)关闭自动阅读时 autoReadOnLookup 为 false，'
         '即使阅读器遗留的静态 readerSettings 快照仍是 true', () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -274,7 +274,7 @@ void main() {
 
     test('profile 切换(refreshPreferencesFromDb)后 autoReadOnLookup 立即跟随',
         () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -296,7 +296,7 @@ void main() {
     });
 
     test('toggleAutoReadOnLookup 写穿 DB 且读写对称(不再依赖静态 readerSettings)', () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -337,7 +337,7 @@ void main() {
     test(
         'source enableSwipeToClose follows current DB/cache even when '
         'readerSettings snapshot is stale', () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -374,7 +374,7 @@ void main() {
     });
 
     test('defaults to false and round-trips through DB', () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -402,7 +402,7 @@ void main() {
     });
 
     test('profile switch (refreshPreferencesFromDb) is reflected', () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -428,7 +428,7 @@ void main() {
     test(
         'defaults to false and round-trips through the global source pref '
         'when no reader page is open', () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -451,7 +451,7 @@ void main() {
     test(
         'reads/writes through ReaderSettings (per-reader) when a reader page '
         'is open, mirroring invert_swipe / reverse_arrow', () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -500,7 +500,7 @@ void main() {
 
     test('setAuthorFromMediaItem writes the author into epubBooks.author',
         () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
       await db.insertEpubBook(bookWithAuthor('Kokoro'));
@@ -526,7 +526,7 @@ void main() {
 
     test('MangaHibikiSource 也支持作者编辑并委托写入 epubBooks.author（BUG-1083）',
         () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
       // 漫画是 format=='manga' 的 EpubBooks 行；作者列与 EPUB 共用。
@@ -555,7 +555,7 @@ void main() {
 
     test('setAuthorFromMediaItem trims and clears a blank author to NULL',
         () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
       await db.insertEpubBook(bookWithAuthor('Botchan', author: '夏目漱石'));
@@ -584,7 +584,7 @@ void main() {
     test(
         'updateEpubBookAuthor is a plain UPDATE that keeps the bookKey (not a '
         're-key like the title)', () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       await db.insertEpubBook(bookWithAuthor('SameKey', author: 'old'));
 
@@ -631,7 +631,7 @@ void main() {
 
     test('returns true and removes the row when the EPUB book exists',
         () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
       await db.insertEpubBook(epubBook('Kokoro'));
@@ -650,7 +650,7 @@ void main() {
     test(
         'returns false when the bookKey matches no EPUB/SRT row '
         '(orphan shell / missing key must not fake success)', () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -696,7 +696,7 @@ void main() {
         'on-disk extract-dir cleanup failure does NOT flip a committed DB '
         'delete to failure (Windows file-lock; deleted==true, row gone)',
         () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -771,7 +771,7 @@ void main() {
     // 日志呢」有据可查）。
     test('failure result carries a non-empty reason mentioning the bookKey',
         () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -873,7 +873,7 @@ void main() {
     test(
         'end-to-end: a %-key book resolves and deletes through the shelf '
         'identifier (import -> open lookup -> delete闭环)', () async {
-      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 

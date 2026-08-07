@@ -5,12 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// TODO-829 平台分流守卫。
 ///
 /// 硬约束：桌面（含 Linux）严格走 [FilePicker.saveFile]，移动端才用
-/// [HibikiShare.shareFiles]。Linux 无 share_plus 注册，桌面分支误调 Share 会崩。本守卫
+/// [FushiShare.shareFiles]。Linux 无 share_plus 注册，桌面分支误调 Share 会崩。本守卫
 /// 锁定 `collection_exporter.dart` 里 `Share.` 调用只出现在 `else`（非桌面）分支，
 /// `FilePicker.platform.saveFile` 只出现在 `if (_isDesktop)` 分支——回归把它们移出
 /// 各自分支即报红。
 void main() {
-  test('HibikiShare.shareFiles is only reached in the non-desktop branch', () {
+  test('FushiShare.shareFiles is only reached in the non-desktop branch', () {
     final String src = File('lib/src/utils/misc/collection_exporter.dart')
         .readAsStringSync()
         .replaceAll('\r\n', '\n');
@@ -35,7 +35,7 @@ void main() {
     expect(desktopBody, isNot(contains('Share.')),
         reason: '桌面分支绝不能调 Share.（Linux 无 share_plus 注册会崩）');
 
-    expect(mobileBody, contains('HibikiShare.shareFiles'),
-        reason: '移动分支才用 HibikiShare.shareFiles');
+    expect(mobileBody, contains('FushiShare.shareFiles'),
+        reason: '移动分支才用 FushiShare.shareFiles');
   });
 }

@@ -11,14 +11,14 @@ import 'package:fushi/src/focus/hibiki_focus_target.dart';
 // 导航项。修复后 `clears` 高于 `samePane`，左移落到导航面板。
 Widget _twoPane({required GlobalKey rootKey}) {
   Widget target(String id, {required double width, required double height}) =>
-      HibikiFocusTarget(
-        id: HibikiFocusId(id),
+      FushiFocusTarget(
+        id: FushiFocusId(id),
         child: SizedBox(width: width, height: height),
       );
   return MaterialApp(
     theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
     home: Scaffold(
-      body: HibikiFocusRoot(
+      body: FushiFocusRoot(
         child: Row(
           key: rootKey,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -67,16 +67,16 @@ void main() {
     await tester.pumpWidget(_twoPane(rootKey: rootKey));
     await tester.pump();
 
-    final HibikiFocusController controller =
-        HibikiFocusRoot.controllerOf(rootKey.currentContext!);
+    final FushiFocusController controller =
+        FushiFocusRoot.controllerOf(rootKey.currentContext!);
 
     expect(
-      controller.requestById(const HibikiFocusId('detail-switch')),
+      controller.requestById(const FushiFocusId('detail-switch')),
       isTrue,
     );
     await tester.pump();
 
-    expect(controller.move(HibikiFocusDirection.left), isTrue);
+    expect(controller.move(FushiFocusDirection.left), isTrue);
     await tester.pump();
 
     // 修复前会落到 'detail-swatch'（同面板斜上方）。修复后落到导航面板的某一项。

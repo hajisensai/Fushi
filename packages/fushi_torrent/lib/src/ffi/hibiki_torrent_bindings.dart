@@ -10,17 +10,17 @@
 import 'dart:ffi' as ffi;
 
 /// Dart FFI bindings for the hibiki_torrent C ABI bridge over libtorrent.
-class HibikiTorrentBindings {
+class FushiTorrentBindings {
   /// Holds the symbol lookup function.
   final ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName)
       _lookup;
 
   /// The symbols are looked up in [dynamicLibrary].
-  HibikiTorrentBindings(ffi.DynamicLibrary dynamicLibrary)
+  FushiTorrentBindings(ffi.DynamicLibrary dynamicLibrary)
       : _lookup = dynamicLibrary.lookup;
 
   /// The symbols are looked up with [lookup].
-  HibikiTorrentBindings.fromLookup(
+  FushiTorrentBindings.fromLookup(
     ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName) lookup,
   ) : _lookup = lookup;
 

@@ -268,11 +268,11 @@ void main() {
   });
 
   group('applyVideoCoverManual（video_covers/<uid>.jpg + manual 保护）', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late VideoBookRepository repo;
 
     setUp(() async {
-      db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
       repo = VideoBookRepository(db);
       await repo.saveVideoBook(VideoBooksCompanion(
         bookUid: const Value('video/test_ep'),
@@ -332,11 +332,11 @@ void main() {
 
   group('applyBookCoverOverride（thumbnails/<hashCode> override）', () {
     late Directory storeDir;
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late AppModel appModel;
 
     setUp(() async {
-      db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
       final PreferencesRepository prefs = PreferencesRepository(db);
       await prefs.loadFromDb();
       storeDir = Directory(p.join(tempDir.path, 'store'))

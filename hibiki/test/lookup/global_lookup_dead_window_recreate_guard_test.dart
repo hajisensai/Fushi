@@ -15,7 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///   往不存在的窗口渲染并记 `panel: updated`/`reveal(box)` 成功。
 ///
 /// 用户症状：手动关闭第一个弹窗/面板后，第二个**弹不出来**，Dart 日志却一切正常，
-/// 且**不重启 app 永远回不来**（实测探测 0 个 `HibikiGlobalLookupWindow` 窗口，
+/// 且**不重启 app 永远回不来**（实测探测 0 个 `FushiGlobalLookupWindow` 窗口，
 /// 但 Dart 持续记 reveal 成功；重启后恢复）。
 ///
 /// 修复契约：

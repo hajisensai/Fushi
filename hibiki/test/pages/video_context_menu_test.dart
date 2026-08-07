@@ -70,9 +70,9 @@ void main() {
 
     // BUG-260：界面缩放（appUiScale ≠ 1）下右键菜单落点必须与鼠标对齐。
     //
-    // 根因：视频页整页被 [HibikiAppUiScaleNeutralizer] 中和回净缩放=1 的真实视口空间，
+    // 根因：视频页整页被 [FushiAppUiScaleNeutralizer] 中和回净缩放=1 的真实视口空间，
     // 故 controls 盒子在真实屏幕坐标系；而 showMenu 的 RelativeRect 解读为路由 Overlay
-    // 坐标系（在全局 HibikiAppUiScale 的 FittedBox 缩放画布内）。两套坐标差 factor=scale。
+    // 坐标系（在全局 FushiAppUiScale 的 FittedBox 缩放画布内）。两套坐标差 factor=scale。
     // 修复：用 `localToGlobal(..., ancestor: overlay)` 把右键点沿真实渲染变换链映射到
     // showMenu 所用 Overlay 的 RenderBox 坐标系——FittedBox 缩放被 ancestor 变换自动吸收，
     // 与查词浮层 charRect 走同一「锚点跟随真实渲染几何」范式，对任意 scale 自洽无残差。

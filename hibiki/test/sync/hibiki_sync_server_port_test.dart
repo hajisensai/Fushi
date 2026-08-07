@@ -55,7 +55,7 @@ void main() {
         await Directory.systemTemp.createTemp('hibiki_srv_port_');
     addTearDown(() => dir.delete(recursive: true));
 
-    final HibikiSyncServer server = HibikiSyncServer(
+    final FushiSyncServer server = FushiSyncServer(
       syncDataDir: dir.path,
       port: takenPort,
       token: 'tok',

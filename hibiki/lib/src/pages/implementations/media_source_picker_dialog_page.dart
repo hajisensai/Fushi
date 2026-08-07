@@ -30,13 +30,13 @@ class _MediaSourcePickerDialogPageState
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 520,
       maxHeightFactor: 0.82,
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.change_source,
         leadingIcon: Icons.source_outlined,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -69,7 +69,7 @@ class _MediaSourcePickerDialogPageState
         controller: _scrollController,
         shrinkWrap: true,
         itemCount: mediaSources.length,
-        separatorBuilder: (_, __) => const HibikiDivider(),
+        separatorBuilder: (_, __) => const FushiDivider(),
         itemBuilder: (context, index) => buildSourceTile(mediaSources[index]),
       ),
     );
@@ -78,7 +78,7 @@ class _MediaSourcePickerDialogPageState
   Widget buildSourceTile(MediaSource mediaSource) {
     return KeyedSubtree(
       key: ValueKey(mediaSource.uniqueKey),
-      child: HibikiListItem(
+      child: FushiListItem(
         leading: Icon(
           mediaSource.icon,
           color: theme.appBarTheme.foregroundColor,

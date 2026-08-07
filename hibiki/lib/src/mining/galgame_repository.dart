@@ -18,7 +18,7 @@ import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
 
-/// 某游戏的游玩聚合（[HibikiDatabase.getGalgamePlayTotals] 的一行）。
+/// 某游戏的游玩聚合（[FushiDatabase.getGalgamePlayTotals] 的一行）。
 typedef GalgamePlayTotals = (
   int totalSeconds,
   int sessionCount,
@@ -100,7 +100,7 @@ GalgamesCompanion galgamesCompanionFromEntry(GalgameEntry entry) {
 class GalgameRepository extends ChangeNotifier {
   GalgameRepository(this._db, {this.onPlayStatusChanged});
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
 
   /// 游玩状态落库后的通知钩子（可选，测试与纯本地场景可不接）。
   ///

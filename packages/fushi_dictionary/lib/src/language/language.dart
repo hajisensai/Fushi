@@ -114,7 +114,7 @@ abstract class Language {
   /// Given paragraph text and an index, yield the part of the text such that
   /// the result is a sentence. Different languages may decide to use different
   /// delimiters.
-  HibikiTextSelection getSentenceFromParagraph({
+  FushiTextSelection getSentenceFromParagraph({
     required String paragraph,
     required int index,
     required int startOffset,
@@ -142,7 +142,7 @@ abstract class Language {
       start: rawStart.clamp(0, sentenceToReturn.length),
       end: rawEnd.clamp(0, sentenceToReturn.length),
     );
-    return HibikiTextSelection(
+    return FushiTextSelection(
       text: sentenceToReturn,
       range: range,
     );
@@ -282,7 +282,7 @@ abstract class Language {
   /// this will return the starting index of a clicked word. Otherwise, this
   /// returns the clicked index itself.
   TextRange getWordRange({
-    required HibikiTextSelection selection,
+    required FushiTextSelection selection,
   }) {
     final workingBuffer = StringBuffer();
     String selectedWord = '';
@@ -306,10 +306,10 @@ abstract class Language {
   }
 
   /// Get preliminary highlight length before a dictionary search.
-  HibikiTextSelection getGuessHighlight({
-    required HibikiTextSelection selection,
+  FushiTextSelection getGuessHighlight({
+    required FushiTextSelection selection,
   }) {
-    return HibikiTextSelection(
+    return FushiTextSelection(
       text: selection.text,
       range: getWordRange(selection: selection),
     );

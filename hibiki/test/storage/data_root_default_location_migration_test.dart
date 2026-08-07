@@ -78,7 +78,7 @@ void main() {
       ..createSync(recursive: true)
       ..writeAsBytesSync(<int>[9]);
 
-    final HibikiDatabase db = HibikiDatabase(supportRoot.path);
+    final FushiDatabase db = FushiDatabase(supportRoot.path);
     try {
       await db.insertEpubBook(EpubBooksCompanion.insert(
         bookKey: 'Bk',
@@ -113,7 +113,7 @@ void main() {
   }
 
   Future<Map<String, String?>> dbSnapshot(String supportDir) async {
-    final HibikiDatabase db = HibikiDatabase(supportDir);
+    final FushiDatabase db = FushiDatabase(supportDir);
     try {
       final EpubBookRow b = (await db.getAllEpubBooks()).single;
       final VideoBookRow v = (await db.allVideoBooks()).single;

@@ -105,7 +105,7 @@ class DictionaryPopupController extends ChangeNotifier {
   bool lowMemory;
 
   /// TODO-1204：每次「查词开始」的注入回调（每个宿主在安全时机设入，解析本表面的书
-  /// 身份后写 [HibikiDatabase.addLookupCount]）。在 [beginTop] / [pushChild] 头部触发，
+  /// 身份后写 [FushiDatabase.addLookupCount]）。在 [beginTop] / [pushChild] 头部触发，
   /// **每次查词 +1**（顶层 / 嵌套 / 重复查各算一次，不去重；seed 热槽不算）。与
   /// [onLookupStackDepthChanged] 同理由用注入回调而非让 controller 直接碰 DB——保持
   /// controller 纯逻辑可测（纯逻辑测试缺省不设，为空则不触发）。

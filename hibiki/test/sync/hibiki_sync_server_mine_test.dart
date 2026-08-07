@@ -6,7 +6,7 @@ import 'package:fushi/src/sync/forwarded_mine_payload.dart';
 import 'package:fushi/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:fushi/src/sync/immersion_mine_payload.dart';
 
-class _FakeMining implements HibikiRemoteMiningService {
+class _FakeMining implements FushiRemoteMiningService {
   Map<String, String>? lastFields;
   String? lastSentence;
   ImmersionMinePayload? lastImmersion;
@@ -60,7 +60,7 @@ Future<HttpClientResponse> _post(
 void main() {
   test('POST /api/mine maps result to JSON', () async {
     final mining = _FakeMining();
-    final server = HibikiSyncServer(
+    final server = FushiSyncServer(
         syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
         port: 0,
         token: 'tok',
@@ -84,7 +84,7 @@ void main() {
 
   test('POST /api/mine with screenshot routes to mineImmersion', () async {
     final mining = _FakeMining();
-    final server = HibikiSyncServer(
+    final server = FushiSyncServer(
         syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
         port: 0,
         token: 'tok',
@@ -112,7 +112,7 @@ void main() {
   });
 
   test('POST /api/mine without auth is 401', () async {
-    final server = HibikiSyncServer(
+    final server = FushiSyncServer(
         syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
         port: 0,
         token: 'tok',
@@ -129,7 +129,7 @@ void main() {
 
   test('POST /api/duplicate returns real duplicate flag (TODO-1176)', () async {
     final mining = _FakeMining()..dupResult = true;
-    final server = HibikiSyncServer(
+    final server = FushiSyncServer(
         syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
         port: 0,
         token: 'tok',
@@ -148,7 +148,7 @@ void main() {
   test('POST /api/duplicate with empty expression short-circuits to false',
       () async {
     final mining = _FakeMining()..dupResult = true;
-    final server = HibikiSyncServer(
+    final server = FushiSyncServer(
         syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
         port: 0,
         token: 'tok',
@@ -164,7 +164,7 @@ void main() {
   });
 
   test('POST /api/duplicate without auth is 401', () async {
-    final server = HibikiSyncServer(
+    final server = FushiSyncServer(
         syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
         port: 0,
         token: 'tok',

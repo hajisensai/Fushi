@@ -5,7 +5,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/sync/hibiki_sync_server.dart';
 import 'package:fushi/src/sync/hibiki_remote_lookup_service.dart';
 
-class _StubLookup implements HibikiRemoteLookupService {
+class _StubLookup implements FushiRemoteLookupService {
   @override
   Future<DictionarySearchResult?> searchDictionary(
       {required String term,
@@ -31,7 +31,7 @@ class _StubLookup implements HibikiRemoteLookupService {
       null;
 }
 
-class _RecordingHistory implements HibikiRemoteHistoryService {
+class _RecordingHistory implements FushiRemoteHistoryService {
   int historyWrites = 0;
   @override
   void recordHistory(DictionarySearchResult result) {
@@ -52,7 +52,7 @@ Future<HttpClientResponse> _post(int port, Object body, String token) async {
 void main() {
   test('record:true writes history, default does not', () async {
     final history = _RecordingHistory();
-    final server = HibikiSyncServer(
+    final server = FushiSyncServer(
         syncDataDir: Directory.systemTemp.createTempSync('h').path,
         port: 0,
         token: 't',

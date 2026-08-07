@@ -12,7 +12,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// the current schema and ATTACHed as [_srcAlias]) is the source. Every table
 /// is merged row-by-row by its BUSINESS key, never by autoincrement `id` (two
 /// DBs' ids collide and carry no cross-device meaning). The whole run executes
-/// inside ONE [HibikiDatabase.transaction] so a mid-merge failure rolls the
+/// inside ONE [FushiDatabase.transaction] so a mid-merge failure rolls the
 /// target back to byte-for-byte its pre-merge state (the caller also keeps a
 /// `pre-merge.bak` copy as a belt-and-braces net).
 ///
@@ -49,7 +49,7 @@ class BackupMergeEngine {
         _carriedVideoSourcePaths = carriedVideoSourcePaths,
         _enabledCategoryNames = enabledCategoryNames;
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
   final String _srcAlias;
 
   /// Per-category merge gate (the `BackupCategory.name`s the user kept ticked in
@@ -321,8 +321,8 @@ class BackupMergeEngine {
   ///   （否则并入会复活用户已移出的成员，与在线合集同步的移出墓碑防复活同一律）；
   /// - 命中合集级删除墓碑（空哨兵行，同自然键）的整个 src 合集：跳过——不新建目标
   ///   合集、不映射其 id、不插入其任何成员（否则复活用户已删的合集）。
-  /// 用户日后可手动重加成员 / 重建合集（[HibikiDatabase.addToCollection] /
-  /// [HibikiDatabase.createMediaCollection] 会清对应墓碑），撤销「不复活」。
+  /// 用户日后可手动重加成员 / 重建合集（[FushiDatabase.addToCollection] /
+  /// [FushiDatabase.createMediaCollection] 会清对应墓碑），撤销「不复活」。
   ///
   /// 说明：备份 DB 已在 ATTACH 前迁到当前 schema，故其 series/playlist 已经过 v38
   /// 迁移落进 media_collections，这里搬的就是「合集分组」本身。孤儿成员引用（其条目文件

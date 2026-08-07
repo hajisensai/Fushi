@@ -6,17 +6,17 @@ part of '../sync_settings_schema.dart';
 
 // ── Hibiki server config widget (connect to another Hibiki instance) ─
 
-class _HibikiServerConfigWidget extends StatefulWidget {
-  const _HibikiServerConfigWidget({required this.settingsContext});
+class _FushiServerConfigWidget extends StatefulWidget {
+  const _FushiServerConfigWidget({required this.settingsContext});
   final SettingsContext settingsContext;
 
   @override
-  State<_HibikiServerConfigWidget> createState() =>
-      _HibikiServerConfigWidgetState();
+  State<_FushiServerConfigWidget> createState() =>
+      _FushiServerConfigWidgetState();
 }
 
-class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
-    with _PairingV2FlowMixin<_HibikiServerConfigWidget> {
+class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
+    with _PairingV2FlowMixin<_FushiServerConfigWidget> {
   @override
   SettingsContext get _pairSettingsContext => widget.settingsContext;
 
@@ -27,7 +27,7 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
 
   late final TextEditingController _tokenController;
   late final FocusNode _tokenFocus;
-  List<HibikiClientUrl> _urls = <HibikiClientUrl>[];
+  List<FushiClientUrl> _urls = <FushiClientUrl>[];
   // url -> last test-connection result (null = not tested this session).
   final Map<String, bool> _reachable = <String, bool>{};
   bool _isTesting = false;
@@ -72,7 +72,7 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
   }
 
   Future<void> _load() async {
-    final List<HibikiClientUrl> urls = await _repo.getHibikiClientUrls();
+    final List<FushiClientUrl> urls = await _repo.getHibikiClientUrls();
     final String? token = await _repo.getHibikiClientToken();
     if (!mounted) return;
     setState(() {
@@ -92,7 +92,7 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
   /// pairing). The URL list always reloads; the token field only reloads when
   /// it has no focus, so we never clobber text the user is actively typing.
   Future<void> _reloadFromStore() async {
-    final List<HibikiClientUrl> urls = await _repo.getHibikiClientUrls();
+    final List<FushiClientUrl> urls = await _repo.getHibikiClientUrls();
     final String? token = await _repo.getHibikiClientToken();
     if (!mounted) return;
     setState(() {
@@ -131,15 +131,15 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
     final String? result = await showAppDialog<String>(
       context: context,
       builder: (BuildContext ctx) {
-        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
-        return HibikiDialogFrame(
+        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+        return FushiDialogFrame(
           maxWidth: 420,
           insetPadding: EdgeInsets.symmetric(
             horizontal: tokens.spacing.card,
             vertical: tokens.spacing.card,
           ),
           scrollable: false,
-          child: HibikiModalSheetFrame(
+          child: FushiModalSheetFrame(
             title: 'URL',
             scrollable: true,
             bodyPadding: EdgeInsets.fromLTRB(
@@ -154,7 +154,7 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
               tokens.spacing.card,
               tokens.spacing.card,
             ),
-            body: HibikiTextField(
+            body: FushiTextField(
               controller: controller,
               labelText: 'URL',
               hintText: 'http://192.168.1.100:38765',
@@ -198,10 +198,10 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
     // （尤其首次配对失败后用户想靠再点「添加」重试）。
     bool shouldPair = false;
     setState(() {
-      final List<HibikiClientUrl> copy = <HibikiClientUrl>[..._urls];
+      final List<FushiClientUrl> copy = <FushiClientUrl>[..._urls];
       if (index != null) {
         final bool dupElsewhere = copy.asMap().entries.any(
-            (MapEntry<int, HibikiClientUrl> e) =>
+            (MapEntry<int, FushiClientUrl> e) =>
                 e.key != index && e.value.url == normalizedResult);
         if (!dupElsewhere) {
           // 编辑保留已有指纹/展示名（copyWith），只换 URL 文本。
@@ -209,8 +209,8 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
         }
       } else {
         // 新地址才加进列表（去重防重复条目）；已存在则不重复加，但仍会在下方发起配对。
-        if (!copy.any((HibikiClientUrl u) => u.url == normalizedResult)) {
-          copy.add(HibikiClientUrl(url: normalizedResult));
+        if (!copy.any((FushiClientUrl u) => u.url == normalizedResult)) {
+          copy.add(FushiClientUrl(url: normalizedResult));
         }
         shouldPair = true;
       }
@@ -241,12 +241,12 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
     if (isHttps) {
       final int port = parsed.hasPort ? parsed.port : 443;
       capturedFingerprint =
-          await HibikiTofuProbe.captureFingerprint(parsed.host, port);
+          await FushiTofuProbe.captureFingerprint(parsed.host, port);
       if (!mounted) return;
     }
 
     // /api/ping 探测：确认 hibiki + 支持 v2 + 取展示名/指纹（https 用捕获指纹钉扎读）。
-    final HibikiPingResult? ping = await fetchHibikiPing(
+    final FushiPingResult? ping = await fetchHibikiPing(
       baseUrl,
       pinnedFingerprint: capturedFingerprint,
     );
@@ -273,8 +273,8 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
 
   Future<void> _toggleUrl(int index) async {
     setState(() {
-      final List<HibikiClientUrl> copy = <HibikiClientUrl>[..._urls];
-      final HibikiClientUrl u = copy[index];
+      final List<FushiClientUrl> copy = <FushiClientUrl>[..._urls];
+      final FushiClientUrl u = copy[index];
       // TODO-961 gap②：copyWith 保留指纹/展示名（对齐编辑路径）；裸构造会把已
       // TOFU 钉扎的 fingerprintSha256 静默清掉，回明文降级。
       copy[index] = u.copyWith(enabled: !u.enabled);
@@ -285,19 +285,19 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
 
   Future<void> _deleteUrl(int index) async {
     setState(() {
-      _urls = <HibikiClientUrl>[..._urls]..removeAt(index);
+      _urls = <FushiClientUrl>[..._urls]..removeAt(index);
     });
     await _persistUrls();
   }
 
-  /// [newIndex] 是**最终下标**（HibikiReorderableColumn 语义），不是 SDK
+  /// [newIndex] 是**最终下标**（FushiReorderableColumn 语义），不是 SDK
   /// `ReorderableListView` 的「移除前下标」——故这里没有 `newIndex--` 修正。
   /// 上/下移按钮同样按最终下标传（下移传 index+1）。
   Future<void> _reorderUrls(int oldIndex, int newIndex) async {
     if (oldIndex == newIndex) return;
     setState(() {
-      final List<HibikiClientUrl> copy = <HibikiClientUrl>[..._urls];
-      final HibikiClientUrl item = copy.removeAt(oldIndex);
+      final List<FushiClientUrl> copy = <FushiClientUrl>[..._urls];
+      final FushiClientUrl item = copy.removeAt(oldIndex);
       copy.insert(newIndex, item);
       _urls = copy;
     });
@@ -312,7 +312,7 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
       return;
     }
     setState(() => _isTesting = true);
-    for (final HibikiClientUrl u in _urls) {
+    for (final FushiClientUrl u in _urls) {
       bool ok;
       try {
         // 必须带上该地址钉扎的证书指纹：新版 host 默认走 https 自签证书，漏传指纹会
@@ -365,25 +365,25 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
               ),
             ),
           if (_urls.isNotEmpty)
-            // 自实现的 HibikiReorderableColumn 而非 SDK ReorderableListView：
-            // 整棵树活在 HibikiAppUiScale 的 Transform.scale 之下，而 SDK 的
+            // 自实现的 FushiReorderableColumn 而非 SDK ReorderableListView：
+            // 整棵树活在 FushiAppUiScale 的 Transform.scale 之下，而 SDK 的
             // _DragItemProxy 用「全局坐标 − overlay 原点」纯平移、不认祖先缩放，
             // 「界面大小」非 100% 时拖拽浮层按 (1−s)×距离 漂移、缩小时一拖即飞出
             // 屏幕（BUG-778 同根因，当时只修了合集与词典两条链路，这里漏了）。
             // 本组件把浮层渲染在列表自身 Stack、指针经 globalToLocal 消掉祖先
             // 缩放，任意缩放系数下都精确跟手。原本就是 shrinkWrap +
             // NeverScrollableScrollPhysics（外层滚动），与本组件语义一致。
-            HibikiReorderableColumn(
+            FushiReorderableColumn(
               itemCount: _urls.length,
               keyForIndex: (int index) => ValueKey<String>(_urls[index].url),
               onReorder: _reorderUrls,
               itemBuilder: (BuildContext context, int index) {
-                final HibikiClientUrl u = _urls[index];
+                final FushiClientUrl u = _urls[index];
                 final bool? ok = _reachable[u.url];
-                return HibikiReorderDragListener(
+                return FushiReorderDragListener(
                   key: ValueKey<String>(u.url),
                   index: index,
-                  child: HibikiListItem(
+                  child: FushiListItem(
                     padding: EdgeInsets.zero,
                     // BUG-1184：标题是对端 URL，右侧还有一排控件；单行 ellipsis 在窄屏
                     // 上只显示得到 `http…`，等于认不出是哪台设备。行高自由，放宽两行。
@@ -417,14 +417,14 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
                         // Gamepad/keyboard reorder equivalent for the drag handle.
-                        HibikiIconButton(
+                        FushiIconButton(
                           icon: Icons.keyboard_arrow_up,
                           size: 18,
                           tooltip: t.move_up,
                           enabled: index > 0,
                           onTap: () => _reorderUrls(index, index - 1),
                         ),
-                        HibikiIconButton(
+                        FushiIconButton(
                           icon: Icons.keyboard_arrow_down,
                           size: 18,
                           tooltip: t.move_down,
@@ -440,14 +440,14 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
                         // 的 v2 编排（探测 → 确认身份 → 按需输 PIN → 落 token+指纹），
                         // 不必删地址再手动重加。LAN 免 PIN 会话重配对无需任何输入；公网
                         // 会话仍需按对方 PIN（安全设计使然，host 屏此时会常驻显示 PIN）。
-                        HibikiIconButton(
+                        FushiIconButton(
                           icon: Icons.sync,
                           size: 18,
                           tooltip: t.sync_pair_repair,
                           enabled: !lockedByServer && !_pairingManual,
                           onTap: () => _attemptManualPair(u.url),
                         ),
-                        HibikiIconButton(
+                        FushiIconButton(
                           icon: Icons.delete_outline,
                           size: 18,
                           tooltip: t.dialog_delete,
@@ -523,7 +523,7 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
             children: <Widget>[
-              HibikiTextField(
+              FushiTextField(
                 controller: _tokenController,
                 focusNode: _tokenFocus,
                 labelText: t.sync_client_token,
@@ -560,7 +560,7 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
 
 // ── Shared v2 pairing orchestration ─────────────────────────────────
 
-/// TODO-961: v2 配对编排共享层——手动 IP（[_HibikiServerConfigWidget]）与 LAN 发现
+/// TODO-961: v2 配对编排共享层——手动 IP（[_FushiServerConfigWidget]）与 LAN 发现
 /// （[_LanDiscoveryWidget]）共用同一套「确认身份 → 收 PIN → pair/v2 → 落
 /// token+指纹」流程，杜绝两份编排漂移。宿主只需提供 [SettingsContext] 与忙态回调。
 mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
@@ -576,7 +576,7 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
 
   /// TODO-963 M2: 双确认 v2 配对的共享编排（手动 IP + LAN 发现复用）。
   /// 第一步弹窗确认 host 身份（展示名 + 指纹），第二步收 6 位 PIN（host pinRequired
-  /// 时），随后跑 [HibikiPairV2Client.pair]，成功后经 TOFU 记录器落 url+指纹+token。
+  /// 时），随后跑 [FushiPairV2Client.pair]，成功后经 TOFU 记录器落 url+指纹+token。
   /// [fingerprint] 为 null 表示明文 http（无钉扎，pinned 探测退化为普通连接）。
   Future<void> _runPairingV2({
     required String baseUrl,
@@ -598,7 +598,7 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     _setPairV2Busy(true);
     String? message;
     try {
-      final HibikiPairV2Client client = HibikiPairV2Client(
+      final FushiPairV2Client client = FushiPairV2Client(
         baseUrl: baseUrl,
         // 明文 http 无指纹钉扎：传空指纹时 pinned client 仍会构造但 http 不触发
         // 证书校验，故安全；真正的 https 必有指纹。
@@ -606,7 +606,7 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
       );
       // TODO-961 M1b: 上报本机稳定 deviceId，host 据此发 per-peer token 并落库。
       final String clientDeviceId = await _pairRepo.getOrCreateDeviceId();
-      final HibikiPairV2Outcome outcome = await client.pair(
+      final FushiPairV2Outcome outcome = await client.pair(
         deviceName: await _localDeviceName(),
         // 仅当 host 回报 pinRequired 时才被调用；LAN 免 PIN 全程不弹 PIN 框。
         pinProvider: _promptPairPinInput,
@@ -614,9 +614,9 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
       );
       if (!mounted) return;
       switch (outcome) {
-        case HibikiPairV2Success(:final String token):
+        case FushiPairV2Success(:final String token):
           message = await _onPairSuccess(baseUrl, token, fingerprint);
-        case HibikiPairV2Failure(:final String reason):
+        case FushiPairV2Failure(:final String reason):
           // 'cancelled' = 用户在 PIN 输入框点了取消，静默收场不弹提示。
           message =
               reason == 'cancelled' ? null : _pairV2FailureMessage(reason);
@@ -631,7 +631,7 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
   }
 
   /// 配对成功收尾：经 TOFU 记录器把 url+指纹+展示名写进候选列表（指纹变更会抛
-  /// [HibikiFingerprintMismatchException] → 告警，绝不覆盖），落 token，bump
+  /// [FushiFingerprintMismatchException] → 告警，绝不覆盖），落 token，bump
   /// clientConfigRevision（client-config widget 监听后自动重载，单一真相源）。
   Future<String> _onPairSuccess(
     String baseUrl,
@@ -644,7 +644,7 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
         fingerprint: fingerprint,
         deviceName: null,
       );
-    } on HibikiFingerprintMismatchException catch (e, stack) {
+    } on FushiFingerprintMismatchException catch (e, stack) {
       ErrorLogService.instance.log('PairV2.fingerprintChanged', e, stack);
       return t.sync_pair_fingerprint_changed;
     }
@@ -674,15 +674,15 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     final bool? ok = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext ctx) {
-        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
-        return HibikiDialogFrame(
+        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+        return FushiDialogFrame(
           maxWidth: 460,
           insetPadding: EdgeInsets.symmetric(
             horizontal: tokens.spacing.card,
             vertical: tokens.spacing.card,
           ),
           scrollable: false,
-          child: HibikiModalSheetFrame(
+          child: FushiModalSheetFrame(
             title: t.sync_pair_confirm_identity_title,
             scrollable: true,
             bodyPadding: EdgeInsets.fromLTRB(
@@ -750,15 +750,15 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     final String? pin = await showAppDialog<String>(
       context: context,
       builder: (BuildContext ctx) {
-        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
-        return HibikiDialogFrame(
+        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+        return FushiDialogFrame(
           maxWidth: 420,
           insetPadding: EdgeInsets.symmetric(
             horizontal: tokens.spacing.card,
             vertical: tokens.spacing.card,
           ),
           scrollable: false,
-          child: HibikiModalSheetFrame(
+          child: FushiModalSheetFrame(
             title: t.sync_pair_enter_pin_title,
             scrollable: true,
             bodyPadding: EdgeInsets.fromLTRB(
@@ -779,7 +779,7 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
               children: <Widget>[
                 Text(t.sync_pair_enter_pin_body),
                 SizedBox(height: tokens.spacing.gap),
-                HibikiTextField(
+                FushiTextField(
                   controller: pinController,
                   labelText: t.sync_pair_enter_pin_title,
                   keyboardType: TextInputType.number,
@@ -844,12 +844,12 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
 
   // TODO-961 M1b: 已配对设备（per-peer token 表 hibiki_paired_peers 的行）。开启
   // 主机时加载，用于「移除已配对设备」列表；吊销后刷新。
-  List<HibikiPairedPeerRow> _pairedPeers = const <HibikiPairedPeerRow>[];
+  List<FushiPairedPeerRow> _pairedPeers = const <FushiPairedPeerRow>[];
 
-  // The HibikiSyncServer + LAN broadcast are owned app-wide by
+  // The FushiSyncServer + LAN broadcast are owned app-wide by
   // appModel.syncServerController now, NOT by this page (BUG-085). This widget
   // is a thin view that drives start/stop and reflects its running state.
-  HibikiSyncServerController get _serverController =>
+  FushiSyncServerController get _serverController =>
       widget.settingsContext.appModel.syncServerController;
 
   @override
@@ -891,11 +891,11 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     final bool tlsEnabled = await repo.getServerTlsEnabled();
     var token = await repo.getServerPassword();
     if (token == null) {
-      token = HibikiSyncServer.generateToken();
+      token = FushiSyncServer.generateToken();
       await repo.setServerPassword(token);
     }
     // TODO-961 M1b: 预取已配对设备（server 开启时才展示列表，但不阻塞开关加载）。
-    final List<HibikiPairedPeerRow> peers =
+    final List<FushiPairedPeerRow> peers =
         await _serverController.pairedPeers();
     if (mounted) {
       setState(() {
@@ -938,7 +938,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
   }
 
   Future<void> _regenerateToken() async {
-    final newToken = HibikiSyncServer.generateToken();
+    final newToken = FushiSyncServer.generateToken();
     final repo = SyncRepository(widget.settingsContext.appModel.database);
     await repo.setServerPassword(newToken);
     setState(() => _token = newToken);
@@ -959,14 +959,14 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
 
   /// TODO-961 M1b: 重新拉取已配对设备列表（吊销 / 页面重进后刷新）。
   Future<void> _reloadPairedPeers() async {
-    final List<HibikiPairedPeerRow> peers =
+    final List<FushiPairedPeerRow> peers =
         await _serverController.pairedPeers();
     if (mounted) setState(() => _pairedPeers = peers);
   }
 
   /// TODO-961 M1b: 移除一台已配对设备——删其 per-peer token 行，该设备下次请求即被
   /// 401 拒绝（吊销即时生效，controller 内部会清 server token 缓存）。
-  Future<void> _revokePeer(HibikiPairedPeerRow peer) async {
+  Future<void> _revokePeer(FushiPairedPeerRow peer) async {
     final bool removed = await _serverController.revokePeer(peer.peerId);
     await _reloadPairedPeers();
     if (mounted && removed) {
@@ -1010,15 +1010,15 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                       // persists enabled on success and resets it on failure
                       // (HBK-AUDIT-167).
                       setState(() => _enabled = true);
-                      final HibikiServerStartOutcome outcome =
+                      final FushiServerStartOutcome outcome =
                           await _serverController.start();
                       if (!mounted) return;
                       switch (outcome) {
-                        case HibikiServerStarted():
+                        case FushiServerStarted():
                           _syncSettings(widget.settingsContext)
                               .setServerEnabled(true);
                           setState(() {});
-                        case HibikiServerPortInUse(:final int port):
+                        case FushiServerPortInUse(:final int port):
                           setState(() => _enabled = false);
                           _syncSettings(widget.settingsContext)
                               .setServerEnabled(false);
@@ -1026,7 +1026,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                           // !mounted early-return above.
                           _showSnackBar(this.context,
                               t.sync_server_port_in_use(port: port));
-                        case HibikiServerStartError(:final String message):
+                        case FushiServerStartError(:final String message):
                           setState(() => _enabled = false);
                           _syncSettings(widget.settingsContext)
                               .setServerEnabled(false);
@@ -1043,7 +1043,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
           ),
           if (_enabled) ...<Widget>[
             const SizedBox(height: 8),
-            HibikiTextField(
+            FushiTextField(
               controller: _portController,
               labelText: t.sync_server_port,
               keyboardType: TextInputType.number,
@@ -1117,7 +1117,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
               )
             else
               ..._pairedPeers.map(
-                (HibikiPairedPeerRow peer) => HibikiListItem(
+                (FushiPairedPeerRow peer) => FushiListItem(
                   padding: EdgeInsets.zero,
                   // BUG-1184：设备名由用户自定义，可以很长；行高自由，放宽两行。
                   titleMaxLines: 2,
@@ -1136,7 +1136,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                           style: Theme.of(context).textTheme.bodySmall,
                         )
                       : null,
-                  trailing: HibikiIconButton(
+                  trailing: FushiIconButton(
                     icon: Icons.delete_outline,
                     size: 18,
                     tooltip: t.sync_paired_peer_remove,
@@ -1172,10 +1172,10 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
   void _setPairV2Busy(bool active) {}
 
   LanDiscoveryService? _discovery;
-  List<HibikiDevice> _devices = <HibikiDevice>[];
+  List<FushiDevice> _devices = <FushiDevice>[];
   bool _scanning = false;
   bool _scanFailed = false;
-  StreamSubscription<List<HibikiDevice>>? _devicesSub;
+  StreamSubscription<List<FushiDevice>>? _devicesSub;
   // webDavUrl of the device currently awaiting the host's pairing approval, or
   // null when idle. Drives the per-row spinner and blocks concurrent attempts.
   String? _pairingUrl;
@@ -1241,7 +1241,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
       _scanning = true;
       _scanFailed = false;
     });
-    _devicesSub = discovery.devices.listen((List<HibikiDevice> devices) {
+    _devicesSub = discovery.devices.listen((List<FushiDevice> devices) {
       if (mounted) setState(() => _devices = devices);
     });
     try {
@@ -1260,7 +1260,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
   /// /api/ping 定案；https 先 TOFU 捕获指纹再钉扎读），再复用与手动 IP 同一条
   /// [_runPairingV2] 编排（TOFU→PIN→token+指纹落库）。老 host（无 /api/ping 或
   /// 不支持 v2）回落 [_pairLegacyV1] 明文老路径，行为零变化。
-  Future<void> _connectToDevice(HibikiDevice device) async {
+  Future<void> _connectToDevice(FushiDevice device) async {
     // One pairing attempt at a time: the awaited flow can hang for up to a
     // minute waiting on the host's approval dialog.
     if (_pairingUrl != null) return;
@@ -1307,7 +1307,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
   /// v1 明文配对（旧版 host 兼容路径，与 v2 化前的实现一致）：直接 POST
   /// /api/pair 等 host 审批发 token。仅在对端不支持 v2 时走到。
   Future<void> _pairLegacyV1(
-    HibikiDevice device,
+    FushiDevice device,
     SyncRepository repo,
     _SyncSettingsState state,
   ) async {
@@ -1411,8 +1411,8 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
           else if (_devices.isEmpty)
             Text(t.sync_lan_no_devices,
                 style: Theme.of(context).textTheme.bodySmall),
-          for (final HibikiDevice device in _devices)
-            HibikiListItem(
+          for (final FushiDevice device in _devices)
+            FushiListItem(
               leading: const Icon(Icons.devices_outlined, size: 20),
               // BUG-1184：发现到的设备名 + WebDAV URL 都可能超出窄屏一行。
               titleMaxLines: 2,

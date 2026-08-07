@@ -17,7 +17,7 @@ class VolumeKeyChannel {
   /// enough for the whole app.
   static final VolumeKeyChannel instance = VolumeKeyChannel._();
 
-  static const MethodChannel _channel = HibikiChannels.volumeKeys;
+  static const MethodChannel _channel = FushiChannels.volumeKeys;
 
   VoidCallback? _onVolumeUp;
   VoidCallback? _onVolumeDown;

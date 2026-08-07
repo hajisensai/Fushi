@@ -8,7 +8,7 @@ import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 class AnkiIntegration {
-  static const MethodChannel methodChannel = HibikiChannels.anki;
+  static const MethodChannel methodChannel = FushiChannels.anki;
 
   Future<void> requestPermissions() async {
     if (!Platform.isAndroid) return;
@@ -87,12 +87,12 @@ class AnkiApiMessageDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 460,
       maxHeightFactor: 0.78,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.error_ankidroid_api,
         leadingIcon: Icons.error_outline,
         bodyPadding: EdgeInsets.fromLTRB(

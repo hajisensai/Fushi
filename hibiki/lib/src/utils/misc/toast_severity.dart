@@ -1,12 +1,12 @@
 /// 应用内短时通知的**语义**与配色，供两套互不相干的通知系统共用：
-/// 底部 [HibikiToast]（`hibiki_toast.dart`）与视频页左上角 OSD
+/// 底部 [FushiToast]（`hibiki_toast.dart`）与视频页左上角 OSD
 /// （`video_hibiki/volume_osd.part.dart`）。
 ///
 /// 独立成文件而不是塞进 `hibiki_toast.dart`：视频页有一条守卫测试禁止它出现
-/// `HibikiToast.show`（BUG-931，两套通知必须各归各位），若语义枚举住在 toast 文件
+/// `FushiToast.show`（BUG-931，两套通知必须各归各位），若语义枚举住在 toast 文件
 /// 里，视频页就得为了一个枚举 import 整套 toast API——那正是守卫想避免的耦合。
 ///
-/// 背景：改这套之前，326 个 `HibikiToast.show` 里 325 个走默认无色（其中 170 余条
+/// 背景：改这套之前，326 个 `FushiToast.show` 里 325 个走默认无色（其中 170 余条
 /// 是失败、70 余条是成功），70 个 `_showOsd` 100% 无色，只有 18 个制卡 toast 有颜色。
 /// 用户只能靠读文字分辨「成了还是崩了」。
 library;

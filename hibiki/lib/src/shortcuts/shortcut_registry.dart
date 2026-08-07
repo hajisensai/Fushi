@@ -7,11 +7,11 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 
 /// 持久化快照的 schema 版本。每当给某个**已存在**的 [ShortcutAction] 在默认表里
-/// 新增（而非改写）一个键位时 +1，并在 [HibikiShortcutRegistry._migratePersistedDefaults]
+/// 新增（而非改写）一个键位时 +1，并在 [FushiShortcutRegistry._migratePersistedDefaults]
 /// 里登记一条迁移。
 ///
 /// 为什么需要它（BUG-318 / TODO-562 的根因）：持久化语义是「用户快照即真相，整体
-/// 覆盖默认」（见 [HibikiShortcutRegistry.loadFromJson]）。所以一旦给老 action 增加
+/// 覆盖默认」（见 [FushiShortcutRegistry.loadFromJson]）。所以一旦给老 action 增加
 /// 默认键（例：TODO-302 给 `videoToggleFullscreen` 加 F12），任何在该版本**之前**保存
 /// 过快捷键设置的用户，其快照里该 action 仍是「旧版本的完整默认」（仅 F），覆盖后新键
 /// （F12）永久丢失 —— 表现为「按 F12 没反应」。迁移只对「用户从未动过该 action（键集
@@ -22,7 +22,7 @@ const int kShortcutSchemaVersion = 8;
 /// 处理，不进 _unknownEntries，也不会被 [ShortcutAction.fromKey] 误解析）。
 const String kShortcutSchemaVersionKey = '__schema_version__';
 
-class HibikiShortcutRegistry extends ChangeNotifier {
+class FushiShortcutRegistry extends ChangeNotifier {
   final Map<ShortcutAction, ShortcutBindingSet> _bindings = {};
   final Map<String, dynamic> _unknownEntries = {};
 

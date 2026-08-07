@@ -22,10 +22,10 @@ import 'package:fushi_core/fushi_core.dart'
 /// 不落成员。
 ///
 /// 一条目跨多个多成员合集时取**最小 collectionId**（与
-/// `HibikiDatabase.getPrimaryCollectionIdByEntry` 的折叠归属同口径：库网格里该
+/// `FushiDatabase.getPrimaryCollectionIdByEntry` 的折叠归属同口径：库网格里该
 /// 条目折进 id 最小的合集卡，海报也该落到用户看得见的那张卡上）。
 ///
-/// 纯函数、无 IO、输入序无关；输入取 `HibikiDatabase.getAllCollectionItems()`
+/// 纯函数、无 IO、输入序无关；输入取 `FushiDatabase.getAllCollectionItems()`
 /// 一次全量（消 N+1，与该查询的注释口径一致）。
 Map<String, int> multiMemberCollectionIdByVideoUid(
   List<MediaCollectionItemRow> items,

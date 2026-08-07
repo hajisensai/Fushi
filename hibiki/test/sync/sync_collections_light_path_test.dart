@@ -16,16 +16,16 @@ import 'sync_orchestrator_test.dart' show FakeSyncBackend;
 /// 用户高频触发的关书/切后台同步走单本路径、从不同步合集。修复 =
 /// ① [SyncOrchestrator.runCollectionsOnly] 轻量入口（只跑合集维度，不写冷却戳）；
 /// ② `installCollectionsSyncWatcher` 观察合集表写入 → 防抖调度轻量同步。
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 void main() {
   group('SyncOrchestrator.runCollectionsOnly', () {
     late Directory work;
     late FakeAssetStore store;
-    late HibikiDatabase dbA;
-    late HibikiDatabase dbB;
+    late FushiDatabase dbA;
+    late FushiDatabase dbB;
 
-    SyncOrchestrator orch(HibikiDatabase db, String deviceId) =>
+    SyncOrchestrator orch(FushiDatabase db, String deviceId) =>
         SyncOrchestrator(
           db: db,
           backend: FakeSyncBackend(store),
@@ -78,7 +78,7 @@ void main() {
 
   group('installCollectionsSyncWatcher', () {
     test('合集表写入触发防抖调度；uninstall 后不再触发', () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(() async {
         uninstallCollectionsSyncWatcher();
         await db.close();

@@ -274,7 +274,7 @@ Future<bool> _toggleOrCheckFavorite(
   required String expression,
   required String reading,
 }) async {
-  final HibikiDatabase db = model.database;
+  final FushiDatabase db = model.database;
   final bool already = await db.isFavoriteWord(
     expression: expression,
     reading: reading,
@@ -401,7 +401,7 @@ Future<void> _recordMinedStats(
   String sentence,
 ) async {
   try {
-    final HibikiDatabase db = model.database;
+    final FushiDatabase db = model.database;
     final String dateKey = statTodayKey();
     await db.addMiningCount(sourceType: kStatSourceBook, dateKey: dateKey);
     // TODO-1204：并行写 per-book 制卡计数（app 外查词无书 → bookKey/title 空，

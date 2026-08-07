@@ -43,7 +43,7 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
   });
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late ReaderHibikiSource source;
 
   // A non-default custom binding for a video action: KeyG (no modifiers) mapped
@@ -60,7 +60,7 @@ void main() {
   });
 
   setUp(() async {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     MediaSource.setDatabase(db);
     source = ReaderHibikiSource.instance;
     // Start every test from an empty in-memory cache so prior tests (or the
@@ -92,7 +92,7 @@ void main() {
     await db.setPref('src:${source.uniqueKey}:$_prefKey', customJson);
     // NOTE: intentionally do NOT refresh the cache here.
 
-    final HibikiShortcutRegistry registry = HibikiShortcutRegistry();
+    final FushiShortcutRegistry registry = FushiShortcutRegistry();
     await loadShortcutRegistry(registry, source, TargetPlatform.windows);
 
     // Custom key KeyG is NOT recognised — the registry only has defaults.
@@ -125,7 +125,7 @@ void main() {
     // the registry (initialise()/refreshPreferencesFromDb does this at startup).
     await source.refreshPreferencesFromDb();
 
-    final HibikiShortcutRegistry registry = HibikiShortcutRegistry();
+    final FushiShortcutRegistry registry = FushiShortcutRegistry();
     await loadShortcutRegistry(registry, source, TargetPlatform.windows);
 
     // The custom KeyG binding for toggle-play-pause is now active.

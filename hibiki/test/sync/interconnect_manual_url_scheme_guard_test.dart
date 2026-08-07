@@ -22,7 +22,7 @@ void main() {
       expect(source, contains('normalizeHibikiInterconnectManualUrl(result)'));
       expect(
         source,
-        contains('copy.add(HibikiClientUrl(url: normalizedResult))'),
+        contains('copy.add(FushiClientUrl(url: normalizedResult))'),
       );
     });
   });

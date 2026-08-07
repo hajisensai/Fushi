@@ -20,8 +20,8 @@ import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
 import 'package:fushi/src/utils/components/hibiki_motion_tokens.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
-class HibikiCard extends StatefulWidget {
-  const HibikiCard({
+class FushiCard extends StatefulWidget {
+  const FushiCard({
     required this.child,
     super.key,
     this.padding,
@@ -49,27 +49,27 @@ class HibikiCard extends StatefulWidget {
   /// 桌面端鼠标右键（secondary tap）触发，通常映射到与 [onLongPress] 相同的
   /// 上下文菜单。触摸/手柄设备没有 secondary tap，故配线全平台无副作用。
   final VoidCallback? onSecondaryTap;
-  final HibikiFocusId? focusId;
+  final FushiFocusId? focusId;
 
   @override
-  State<HibikiCard> createState() => _HibikiCardState();
+  State<FushiCard> createState() => _FushiCardState();
 }
 
-class _HibikiCardState extends State<HibikiCard> {
-  late final HibikiFocusId _fallbackFocusId = HibikiFocusId(
+class _FushiCardState extends State<FushiCard> {
+  late final FushiFocusId _fallbackFocusId = FushiFocusId(
     'hibiki-card-${identityHashCode(this)}',
   );
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool eink = isEinkTheme(context);
     final Color effectiveColor = widget.color ??
         (widget.selected ? tokens.surfaces.selected : tokens.surfaces.card);
     final BorderRadius radius = widget.borderRadius ?? tokens.radii.cardRadius;
     // eink 把所有 surface container 塌缩为背景色（theme_notifier eink scheme），
     // 卡片没有边就与页面融为一体；主题层只给裸 Card 补了描边（CardThemeData），
-    // HibikiCard 在这里自己补。选中态加粗到 2px——eink 下 selected 填充色同样
+    // FushiCard 在这里自己补。选中态加粗到 2px——eink 下 selected 填充色同样
     // 塌缩，边宽是唯一可辨的选中信号。
     final BorderSide side = widget.borderColor != null
         ? BorderSide(color: widget.borderColor!)
@@ -113,7 +113,7 @@ class _HibikiCardState extends State<HibikiCard> {
       ),
     );
     if (widget.onTap == null) return card;
-    if (HibikiFocusRoot.maybeControllerOf(context) == null) return card;
+    if (FushiFocusRoot.maybeControllerOf(context) == null) return card;
 
     return Actions(
       actions: <Type, Action<Intent>>{
@@ -124,7 +124,7 @@ class _HibikiCardState extends State<HibikiCard> {
           },
         ),
       },
-      child: HibikiFocusTarget(
+      child: FushiFocusTarget(
         id: widget.focusId ?? _fallbackFocusId,
         child: card,
       ),
@@ -132,23 +132,23 @@ class _HibikiCardState extends State<HibikiCard> {
   }
 }
 
-enum HibikiListDensity { standard, compact }
+enum FushiListDensity { standard, compact }
 
 /// 选中态高亮形状：fill = 满宽方角（平铺列表），pill = 内缩圆角（导航列表）。
-enum HibikiListItemSelectedShape { fill, pill }
+enum FushiListItemSelectedShape { fill, pill }
 
-class HibikiListItem extends StatefulWidget {
-  const HibikiListItem({
+class FushiListItem extends StatefulWidget {
+  const FushiListItem({
     required this.title,
     super.key,
     this.subtitle,
     this.leading,
     this.trailing,
     this.selected = false,
-    this.selectedShape = HibikiListItemSelectedShape.fill,
+    this.selectedShape = FushiListItemSelectedShape.fill,
     this.onTap,
     this.minHeight,
-    this.density = HibikiListDensity.standard,
+    this.density = FushiListDensity.standard,
     this.padding,
     this.titleMaxLines = 1,
     this.subtitleMaxLines = 2,
@@ -161,10 +161,10 @@ class HibikiListItem extends StatefulWidget {
   final Widget? leading;
   final Widget? trailing;
   final bool selected;
-  final HibikiListItemSelectedShape selectedShape;
+  final FushiListItemSelectedShape selectedShape;
   final VoidCallback? onTap;
   final double? minHeight;
-  final HibikiListDensity density;
+  final FushiListDensity density;
   final EdgeInsetsGeometry? padding;
 
   /// 标题最多几行，默认 1。
@@ -177,7 +177,7 @@ class HibikiListItem extends StatefulWidget {
   /// 的地方传 `titleMaxLines: 2`，而不是改默认值连带影响每一个既有调用点。
   final int titleMaxLines;
   final int subtitleMaxLines;
-  final HibikiFocusId? focusId;
+  final FushiFocusId? focusId;
 
   /// 本行开屏即拿到键盘焦点（等价于框架 `ListTile.autofocus`）。
   ///
@@ -188,17 +188,17 @@ class HibikiListItem extends StatefulWidget {
   final bool autofocus;
 
   @override
-  State<HibikiListItem> createState() => _HibikiListItemState();
+  State<FushiListItem> createState() => _FushiListItemState();
 }
 
-class _HibikiListItemState extends State<HibikiListItem> {
-  late final HibikiFocusId _fallbackFocusId = HibikiFocusId(
+class _FushiListItemState extends State<FushiListItem> {
+  late final FushiFocusId _fallbackFocusId = FushiFocusId(
     'hibiki-list-item-${identityHashCode(this)}',
   );
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color color =
         widget.selected ? tokens.surfaces.selected : Colors.transparent;
     final Color selectedForeground = tokens.surfaces.primary;
@@ -224,8 +224,8 @@ class _HibikiListItemState extends State<HibikiListItem> {
     );
     final double resolvedMinHeight = widget.minHeight ??
         switch (widget.density) {
-          HibikiListDensity.standard => tokens.density.listMinHeight,
-          HibikiListDensity.compact => tokens.density.compactListMinHeight,
+          FushiListDensity.standard => tokens.density.listMinHeight,
+          FushiListDensity.compact => tokens.density.compactListMinHeight,
         };
     final Widget content = ConstrainedBox(
       constraints: BoxConstraints(minHeight: resolvedMinHeight),
@@ -283,7 +283,7 @@ class _HibikiListItemState extends State<HibikiListItem> {
       ),
     );
 
-    final bool pill = widget.selectedShape == HibikiListItemSelectedShape.pill;
+    final bool pill = widget.selectedShape == FushiListItemSelectedShape.pill;
     final BorderRadius? highlightRadius =
         pill ? tokens.radii.groupRadius : null;
     final BoxBorder? pillBorder = widget.selected
@@ -319,7 +319,7 @@ class _HibikiListItemState extends State<HibikiListItem> {
     );
     if (widget.onTap == null) return material;
 
-    final HibikiFocusId effectiveFocusId = widget.focusId ?? _fallbackFocusId;
+    final FushiFocusId effectiveFocusId = widget.focusId ?? _fallbackFocusId;
     final Widget target = Actions(
       actions: <Type, Action<Intent>>{
         ActivateIntent: CallbackAction<ActivateIntent>(
@@ -329,18 +329,18 @@ class _HibikiListItemState extends State<HibikiListItem> {
           },
         ),
       },
-      child: HibikiFocusTarget(
+      child: FushiFocusTarget(
         id: effectiveFocusId,
         child: material,
       ),
     );
-    if (HibikiFocusRoot.maybeControllerOf(context) == null) return material;
+    if (FushiFocusRoot.maybeControllerOf(context) == null) return material;
     return target;
   }
 }
 
-class HibikiSearchField extends StatelessWidget {
-  const HibikiSearchField({
+class FushiSearchField extends StatelessWidget {
+  const FushiSearchField({
     required this.controller,
     required this.focusNode,
     required this.hintText,
@@ -355,7 +355,7 @@ class HibikiSearchField extends StatelessWidget {
 
   final Key? fieldKey;
   final Key? clearButtonKey;
-  final HibikiFocusId? focusId;
+  final FushiFocusId? focusId;
   final TextEditingController controller;
   final FocusNode focusNode;
   final String hintText;
@@ -365,7 +365,7 @@ class HibikiSearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget searchBar;
     if (isMacosPlatform(context)) {
       // macOS-native: MacosTextField maps the search field faithfully —
@@ -395,7 +395,7 @@ class HibikiSearchField extends StatelessWidget {
           );
           final List<Widget> trailing = <Widget>[
             if (onClear != null && value.text.isNotEmpty)
-              HibikiIconButton(
+              FushiIconButton(
                 key: clearButtonKey,
                 icon: Icons.close,
                 tooltip: t.clear,
@@ -431,8 +431,8 @@ class HibikiSearchField extends StatelessWidget {
       );
     }
     if (focusId == null) return searchBar;
-    if (HibikiFocusRoot.maybeControllerOf(context) == null) return searchBar;
-    return HibikiFocusRegistration(
+    if (FushiFocusRoot.maybeControllerOf(context) == null) return searchBar;
+    return FushiFocusRegistration(
       id: focusId!,
       focusNode: focusNode,
       child: searchBar,
@@ -440,8 +440,8 @@ class HibikiSearchField extends StatelessWidget {
   }
 }
 
-class HibikiTextField extends StatefulWidget {
-  const HibikiTextField({
+class FushiTextField extends StatefulWidget {
+  const FushiTextField({
     super.key,
     this.controller,
     this.initialValue,
@@ -488,13 +488,13 @@ class HibikiTextField extends StatefulWidget {
   final TextAlignVertical? textAlignVertical;
   final TextStyle? style;
   final EdgeInsetsGeometry? contentPadding;
-  final HibikiFocusId? focusId;
+  final FushiFocusId? focusId;
 
   @override
-  State<HibikiTextField> createState() => _HibikiTextFieldState();
+  State<FushiTextField> createState() => _FushiTextFieldState();
 }
 
-class _HibikiTextFieldState extends State<HibikiTextField> {
+class _FushiTextFieldState extends State<FushiTextField> {
   late final FocusNode _ownedFocusNode = FocusNode(
     debugLabel: widget.hintText ?? widget.labelText ?? 'hibiki-text-field',
   );
@@ -509,7 +509,7 @@ class _HibikiTextFieldState extends State<HibikiTextField> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget? effectiveSuffix = widget.suffixIcon ??
         _hibikiTextFieldInputSuffix(
           context: context,
@@ -560,8 +560,8 @@ class _HibikiTextFieldState extends State<HibikiTextField> {
       onFieldSubmitted: widget.onSubmitted,
     );
     if (widget.focusId == null) return textField;
-    if (HibikiFocusRoot.maybeControllerOf(context) == null) return textField;
-    return HibikiFocusRegistration(
+    if (FushiFocusRoot.maybeControllerOf(context) == null) return textField;
+    return FushiFocusRegistration(
       id: widget.focusId!,
       focusNode: _effectiveFocusNode,
       child: textField,
@@ -586,14 +586,14 @@ Widget? _hibikiTextFieldInputSuffix({
       platform == TargetPlatform.linux ||
       platform == TargetPlatform.macOS;
   if (isDesktop) {
-    return HibikiIconButton(
+    return FushiIconButton(
       icon: Icons.keyboard_outlined,
       tooltip: t.on_screen_keyboard,
       onTap: () =>
           showGamepadKeyboard(context, controller, onChanged: onChanged),
     );
   }
-  return HibikiIconButton(
+  return FushiIconButton(
     icon: Icons.content_paste_outlined,
     tooltip: t.paste,
     onTap: () async {
@@ -604,8 +604,8 @@ Widget? _hibikiTextFieldInputSuffix({
   );
 }
 
-class HibikiSelectableChip extends StatelessWidget {
-  const HibikiSelectableChip({
+class FushiSelectableChip extends StatelessWidget {
+  const FushiSelectableChip({
     required this.label,
     required this.selected,
     required this.onSelected,
@@ -624,7 +624,7 @@ class HibikiSelectableChip extends StatelessWidget {
   final Widget? avatar;
   final IconData? leadingIcon;
   final String? tooltip;
-  final HibikiFocusId? focusId;
+  final FushiFocusId? focusId;
 
   /// 仅图标模式（TODO-640）：置 true 时 chip 只渲染 [leadingIcon]、不显示文字标签，
   /// 把横排「图标 + 文字」压成紧凑「纯图标」（解决顶栏挤不下 / 显示不全）。文字说明
@@ -643,7 +643,7 @@ class HibikiSelectableChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     final Color foreground =
         selected ? colors.onPrimaryContainer : tokens.surfaces.onSurface;
@@ -690,7 +690,7 @@ class HibikiSelectableChip extends StatelessWidget {
         ? chip
         : Tooltip(message: effectiveTooltip, child: chip);
     if (focusId == null) return withTooltip;
-    if (HibikiFocusRoot.maybeControllerOf(context) == null) return withTooltip;
+    if (FushiFocusRoot.maybeControllerOf(context) == null) return withTooltip;
     return Actions(
       actions: <Type, Action<Intent>>{
         ActivateIntent: CallbackAction<ActivateIntent>(
@@ -700,7 +700,7 @@ class HibikiSelectableChip extends StatelessWidget {
           },
         ),
       },
-      child: HibikiFocusTarget(
+      child: FushiFocusTarget(
         id: focusId!,
         enabled: onSelected != null,
         child: withTooltip,
@@ -709,8 +709,8 @@ class HibikiSelectableChip extends StatelessWidget {
   }
 }
 
-class HibikiActionChip extends StatelessWidget {
-  const HibikiActionChip({
+class FushiActionChip extends StatelessWidget {
+  const FushiActionChip({
     required this.label,
     required this.icon,
     required this.onPressed,
@@ -721,11 +721,11 @@ class HibikiActionChip extends StatelessWidget {
   final String label;
   final IconData icon;
   final VoidCallback onPressed;
-  final HibikiFocusId? focusId;
+  final FushiFocusId? focusId;
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     final OutlinedButton button = OutlinedButton.icon(
       onPressed: onPressed,
@@ -745,7 +745,7 @@ class HibikiActionChip extends StatelessWidget {
       ),
     );
     if (focusId == null) return button;
-    if (HibikiFocusRoot.maybeControllerOf(context) == null) return button;
+    if (FushiFocusRoot.maybeControllerOf(context) == null) return button;
     return Actions(
       actions: <Type, Action<Intent>>{
         ActivateIntent: CallbackAction<ActivateIntent>(
@@ -755,7 +755,7 @@ class HibikiActionChip extends StatelessWidget {
           },
         ),
       },
-      child: HibikiFocusTarget(
+      child: FushiFocusTarget(
         id: focusId!,
         child: button,
       ),
@@ -763,16 +763,16 @@ class HibikiActionChip extends StatelessWidget {
   }
 }
 
-enum HibikiTagChipTone { filled, surface }
+enum FushiTagChipTone { filled, surface }
 
-class HibikiTagChip extends StatefulWidget {
-  const HibikiTagChip({
+class FushiTagChip extends StatefulWidget {
+  const FushiTagChip({
     required this.label,
     super.key,
     this.color,
     this.selected = false,
     this.dimmed = false,
-    this.tone = HibikiTagChipTone.filled,
+    this.tone = FushiTagChipTone.filled,
     this.onTap,
     this.onDeleted,
     this.focusId,
@@ -782,46 +782,46 @@ class HibikiTagChip extends StatefulWidget {
   final Color? color;
   final bool selected;
   final bool dimmed;
-  final HibikiTagChipTone tone;
+  final FushiTagChipTone tone;
   final VoidCallback? onTap;
   final VoidCallback? onDeleted;
-  final HibikiFocusId? focusId;
+  final FushiFocusId? focusId;
 
   @override
-  State<HibikiTagChip> createState() => _HibikiTagChipState();
+  State<FushiTagChip> createState() => _FushiTagChipState();
 }
 
-class _HibikiTagChipState extends State<HibikiTagChip> {
+class _FushiTagChipState extends State<FushiTagChip> {
   /// Stable derived id so a tappable chip is a gamepad/keyboard focus target by
   /// default — Stateful (not Stateless) so identityHashCode is stable across
-  /// rebuilds. Mirrors HibikiCard / HibikiListItem.
-  late final HibikiFocusId _fallbackFocusId =
-      HibikiFocusId('hibiki-tag-chip-${identityHashCode(this)}');
+  /// rebuilds. Mirrors FushiCard / FushiListItem.
+  late final FushiFocusId _fallbackFocusId =
+      FushiFocusId('hibiki-tag-chip-${identityHashCode(this)}');
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     final Color tagColor = widget.color ?? colors.primary;
     final Color baseColor = widget.color ??
         (widget.selected ? colors.primaryContainer : tokens.surfaces.overlay);
     final Color background = switch (widget.tone) {
-      HibikiTagChipTone.filled => widget.dimmed
+      FushiTagChipTone.filled => widget.dimmed
           ? baseColor.withValues(alpha: 0.44)
           : baseColor.withValues(alpha: widget.color == null ? 1 : 0.88),
-      HibikiTagChipTone.surface => widget.selected
+      FushiTagChipTone.surface => widget.selected
           ? tagColor.withValues(alpha: widget.dimmed ? 0.12 : 0.2)
           : tokens.surfaces.overlay.withValues(alpha: widget.dimmed ? 0.44 : 1),
     };
     final Color foreground = switch (widget.tone) {
-      HibikiTagChipTone.filled => _foregroundFor(background),
-      HibikiTagChipTone.surface => widget.dimmed
+      FushiTagChipTone.filled => _foregroundFor(background),
+      FushiTagChipTone.surface => widget.dimmed
           ? colors.onSurface.withValues(alpha: 0.4)
           : colors.onSurface,
     };
     final BoxBorder? border = widget.selected
         ? Border.all(
-            color: widget.tone == HibikiTagChipTone.surface
+            color: widget.tone == FushiTagChipTone.surface
                 ? tagColor
                 : colors.primary,
           )
@@ -836,7 +836,7 @@ class _HibikiTagChipState extends State<HibikiTagChip> {
       ),
     );
     final List<Widget> contentChildren = <Widget>[
-      if (widget.tone == HibikiTagChipTone.surface &&
+      if (widget.tone == FushiTagChipTone.surface &&
           widget.color != null) ...<Widget>[
         DecoratedBox(
           decoration: BoxDecoration(
@@ -891,8 +891,8 @@ class _HibikiTagChipState extends State<HibikiTagChip> {
             ),
           );
     if (widget.onTap == null && widget.onDeleted == null) return surface;
-    // Outside a HibikiFocusRoot stay a bare tappable chip (zero overhead).
-    if (HibikiFocusRoot.maybeControllerOf(context) == null) return surface;
+    // Outside a FushiFocusRoot stay a bare tappable chip (zero overhead).
+    if (FushiFocusRoot.maybeControllerOf(context) == null) return surface;
     return Actions(
       actions: <Type, Action<Intent>>{
         ActivateIntent: CallbackAction<ActivateIntent>(
@@ -911,7 +911,7 @@ class _HibikiTagChipState extends State<HibikiTagChip> {
           },
         ),
       },
-      child: HibikiFocusTarget(
+      child: FushiFocusTarget(
         id: widget.focusId ?? _fallbackFocusId,
         child: surface,
       ),
@@ -925,8 +925,8 @@ class _HibikiTagChipState extends State<HibikiTagChip> {
   }
 }
 
-class HibikiBadge extends StatelessWidget {
-  const HibikiBadge({
+class FushiBadge extends StatelessWidget {
+  const FushiBadge({
     required this.icon,
     super.key,
     this.background,
@@ -943,7 +943,7 @@ class HibikiBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     return Container(
       padding: padding ?? EdgeInsets.all(tokens.spacing.gap / 2),
@@ -960,8 +960,8 @@ class HibikiBadge extends StatelessWidget {
   }
 }
 
-class HibikiModalSheetFrame extends StatelessWidget {
-  const HibikiModalSheetFrame({
+class FushiModalSheetFrame extends StatelessWidget {
+  const FushiModalSheetFrame({
     required this.body,
     super.key,
     this.title,
@@ -986,7 +986,7 @@ class HibikiModalSheetFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     final List<Widget> children = <Widget>[
       if (_hasHeader) _buildHeader(tokens, colors),
@@ -1027,7 +1027,7 @@ class HibikiModalSheetFrame extends StatelessWidget {
   bool get _hasHeader =>
       title != null || subtitle != null || leadingIcon != null;
 
-  Widget _buildHeader(HibikiDesignTokens tokens, ColorScheme colors) {
+  Widget _buildHeader(FushiDesignTokens tokens, ColorScheme colors) {
     final Widget text = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -1082,7 +1082,7 @@ class HibikiModalSheetFrame extends StatelessWidget {
     );
   }
 
-  Widget _buildBody(HibikiDesignTokens tokens) {
+  Widget _buildBody(FushiDesignTokens tokens) {
     final Widget padded = Padding(
       padding: bodyPadding ?? EdgeInsets.zero,
       child: body,
@@ -1105,8 +1105,8 @@ class HibikiModalSheetFrame extends StatelessWidget {
 /// [label] 既是宽屏 [IconButton] 的 tooltip，也是窄屏菜单项的文案——同一句话，
 /// 不需要为「折叠版」另造 i18n key。[onPressed] 为 null 时该项禁用（菜单项同样
 /// 置灰），语义与 [IconButton.onPressed] 一致。
-class HibikiAppBarAction {
-  const HibikiAppBarAction({
+class FushiAppBarAction {
+  const FushiAppBarAction({
     required this.icon,
     required this.label,
     required this.onPressed,
@@ -1130,7 +1130,7 @@ class HibikiAppBarAction {
 ///
 /// BUG-1186：判「窄」必须用**这条 AppBar 实际拿到的约束宽**，不是 `MediaQuery`
 /// 的整窗宽。页面嵌进分栏 / 受限宽容器 / 对话框时，整窗很宽而本行很窄，按整窗判
-/// 定就永远不折叠，标题照样被挤没——与 [HibikiToolScaffold] 里 BUG-1184 修掉的
+/// 定就永远不折叠，标题照样被挤没——与 [FushiToolScaffold] 里 BUG-1184 修掉的
 /// 是同一类错误（那边已改用 [LayoutBuilder] 的局部约束）。
 ///
 /// [availableWidth] 故意做成必填、且不提供「取不到就退回整窗宽」的默认值：有默认
@@ -1143,7 +1143,7 @@ class HibikiAppBarAction {
 /// [windowSizeClassReal] 那样按 UI 缩放还原真实物理宽。
 List<Widget> narrowAwareAppBarActions({
   required double availableWidth,
-  required List<HibikiAppBarAction> collapsible,
+  required List<FushiAppBarAction> collapsible,
   List<Widget> alwaysVisible = const <Widget>[],
   double narrowWidth = 480,
 }) {
@@ -1151,7 +1151,7 @@ List<Widget> narrowAwareAppBarActions({
   if (!narrow || collapsible.length < 2) {
     return <Widget>[
       ...alwaysVisible,
-      for (final HibikiAppBarAction action in collapsible)
+      for (final FushiAppBarAction action in collapsible)
         IconButton(
           tooltip: action.label,
           icon: Icon(action.icon),
@@ -1183,8 +1183,8 @@ List<Widget> narrowAwareAppBarActions({
   ];
 }
 
-class HibikiDialogFrame extends StatelessWidget {
-  const HibikiDialogFrame({
+class FushiDialogFrame extends StatelessWidget {
+  const FushiDialogFrame({
     required this.child,
     super.key,
     this.maxWidth = 420,
@@ -1201,7 +1201,7 @@ class HibikiDialogFrame extends StatelessWidget {
   /// 对话框与屏幕边缘的留白。null = 按屏宽自适应（见 [_resolveInsetPadding]）。
   ///
   /// BUG-1184：此前默认硬编码 `horizontal: 40`。窄屏上这 80px 是纯损失——320dp 的
-  /// 手机上对话框正文只剩 240px，再扣掉 [HibikiModalSheetFrame] 的头部内边距和
+  /// 手机上对话框正文只剩 240px，再扣掉 [FushiModalSheetFrame] 的头部内边距和
   /// 52px 的图标徽标，标题只剩约 144px，于是几乎所有对话框标题都被省略成「…」。
   /// 40 这个值只对宽屏合理（且宽屏本来就被 [maxWidth] 420 兜住，边距几乎不起作用），
   /// 真正需要它自适应的恰恰是窄屏。少数已经手动传 `tokens.spacing.card` 绕开该默认
@@ -1221,7 +1221,7 @@ class HibikiDialogFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Size screenSize = MediaQuery.sizeOf(context);
     final double screenHeight = screenSize.height;
     final Widget padded = Padding(
@@ -1243,16 +1243,16 @@ class HibikiDialogFrame extends StatelessWidget {
   }
 }
 
-enum HibikiColorSwatchShape { block, dot }
+enum FushiColorSwatchShape { block, dot }
 
-class HibikiColorSwatch extends StatelessWidget {
-  const HibikiColorSwatch({
+class FushiColorSwatch extends StatelessWidget {
+  const FushiColorSwatch({
     required this.color,
     super.key,
     this.size = 20,
     this.width,
     this.height,
-    this.shape = HibikiColorSwatchShape.block,
+    this.shape = FushiColorSwatchShape.block,
     this.selected = false,
     this.onTap,
     this.label,
@@ -1265,7 +1265,7 @@ class HibikiColorSwatch extends StatelessWidget {
   final double size;
   final double? width;
   final double? height;
-  final HibikiColorSwatchShape shape;
+  final FushiColorSwatchShape shape;
   final bool selected;
   final VoidCallback? onTap;
   final String? label;
@@ -1275,9 +1275,9 @@ class HibikiColorSwatch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
-    final bool isDot = shape == HibikiColorSwatchShape.dot;
+    final bool isDot = shape == FushiColorSwatchShape.dot;
     final double resolvedWidth = width ?? size;
     final double resolvedHeight = height ?? size;
     final BorderRadius inkRadius = isDot
@@ -1328,10 +1328,10 @@ class HibikiColorSwatch extends StatelessWidget {
 /// gamepad/keyboard focus stop + selection semantics + optional caption label.
 ///
 /// [visual] is the bare painted swatch (it owns its own size/shape/border).
-/// [inkRadius] clips the ripple. Factored out of [HibikiColorSwatch] so
-/// [HibikiSchemeSwatch] inherits the EXACT focus-stop behaviour: under a
-/// [HibikiFocusRoot] the directional controller navigates ONLY between
-/// registered HibikiFocusTargets — a bare InkWell makes its own (unregistered)
+/// [inkRadius] clips the ripple. Factored out of [FushiColorSwatch] so
+/// [FushiSchemeSwatch] inherits the EXACT focus-stop behaviour: under a
+/// [FushiFocusRoot] the directional controller navigates ONLY between
+/// registered FushiFocusTargets — a bare InkWell makes its own (unregistered)
 /// Focus node, so gamepad/keyboard navigation skips the whole swatch row (the
 /// theme picker was unreachable: "到不了主题的位置"). We register each swatch as a
 /// single focus stop (A/Enter activates onTap), keeping the InkWell for
@@ -1352,7 +1352,7 @@ Widget _buildSwatchInteractive(
     interactiveSwatch = visual;
   } else {
     final bool underFocusRoot =
-        HibikiFocusRoot.maybeControllerOf(context) != null;
+        FushiFocusRoot.maybeControllerOf(context) != null;
     final Widget inkSwatch = Material(
       color: Colors.transparent,
       borderRadius: inkRadius,
@@ -1360,14 +1360,14 @@ Widget _buildSwatchInteractive(
         borderRadius: inkRadius,
         onTap: onTap,
         // TODO-928: 长按是鼠标/触摸语义；手柄/焦点路径走下面的
-        // HibikiActivatableFocusTarget（只有 onTap），长按在那里不生效，符合现状无障碍。
+        // FushiActivatableFocusTarget（只有 onTap），长按在那里不生效，符合现状无障碍。
         onLongPress: onLongPress,
         canRequestFocus: !underFocusRoot,
         child: visual,
       ),
     );
     interactiveSwatch = underFocusRoot
-        ? HibikiActivatableFocusTarget(
+        ? FushiActivatableFocusTarget(
             focusIdPrefix: 'color-swatch',
             onTap: onTap,
             child: inkSwatch,
@@ -1380,7 +1380,7 @@ Widget _buildSwatchInteractive(
     child: interactiveSwatch,
   );
   if (label == null) return semanticSwatch;
-  final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   return Column(
     mainAxisSize: MainAxisSize.min,
     children: <Widget>[
@@ -1400,15 +1400,15 @@ Widget _buildSwatchInteractive(
 
 /// Registers [child] as a single gamepad/keyboard focus stop whose A/Enter
 /// ([ActivateIntent]) fires [onTap]. The [Actions] sits ABOVE the
-/// [HibikiFocusTarget] on purpose: the gamepad A path dispatches the intent at
+/// [FushiFocusTarget] on purpose: the gamepad A path dispatches the intent at
 /// the focused node's context (gamepad_service `_dispatchButton`), which finds
 /// an Actions handler only by walking UP — so a handler placed *inside*
-/// HibikiFocusTarget (as [HibikiFocusable] does) would never fire. Use this for
+/// FushiFocusTarget (as [FushiFocusable] does) would never fire. Use this for
 /// a discrete tap target whose own visual (e.g. an InkWell with
 /// `canRequestFocus: false`) must stay mouse/touch-tappable without grabbing a
-/// competing, unregistered focus node. Only meaningful under a [HibikiFocusRoot].
-class HibikiActivatableFocusTarget extends StatefulWidget {
-  const HibikiActivatableFocusTarget({
+/// competing, unregistered focus node. Only meaningful under a [FushiFocusRoot].
+class FushiActivatableFocusTarget extends StatefulWidget {
+  const FushiActivatableFocusTarget({
     required this.onTap,
     required this.child,
     super.key,
@@ -1420,13 +1420,13 @@ class HibikiActivatableFocusTarget extends StatefulWidget {
   final String focusIdPrefix;
 
   @override
-  State<HibikiActivatableFocusTarget> createState() =>
-      _HibikiActivatableFocusTargetState();
+  State<FushiActivatableFocusTarget> createState() =>
+      _FushiActivatableFocusTargetState();
 }
 
-class _HibikiActivatableFocusTargetState
-    extends State<HibikiActivatableFocusTarget> {
-  late final HibikiFocusId _focusId = HibikiFocusId(
+class _FushiActivatableFocusTargetState
+    extends State<FushiActivatableFocusTarget> {
+  late final FushiFocusId _focusId = FushiFocusId(
     '${widget.focusIdPrefix}-${identityHashCode(this)}',
   );
 
@@ -1441,7 +1441,7 @@ class _HibikiActivatableFocusTargetState
           },
         ),
       },
-      child: HibikiFocusTarget(
+      child: FushiFocusTarget(
         id: _focusId,
         child: widget.child,
       ),
@@ -1455,7 +1455,7 @@ Color _swatchForegroundFor(Color background) {
       : Colors.black;
 }
 
-/// The four colours a [HibikiSchemeSwatch] previews for a generated
+/// The four colours a [FushiSchemeSwatch] previews for a generated
 /// [ColorScheme], in the order the swatch paints them:
 /// `[text, background, button, menu]` =
 /// `[onSurface, surface, primary, surfaceContainerHigh]`.
@@ -1483,9 +1483,9 @@ List<Color> hibikiSchemeSwatchColors(ColorScheme scheme) => <Color>[
 /// predicts the applied theme; a single-colour seed swatch could not (e.g.
 /// light/dark presets share one seed, the three dark presets look identical).
 /// Single-colour swatches (tag colour, custom-colour preview) keep using
-/// [HibikiColorSwatch].
-class HibikiSchemeSwatch extends StatelessWidget {
-  const HibikiSchemeSwatch({
+/// [FushiColorSwatch].
+class FushiSchemeSwatch extends StatelessWidget {
+  const FushiSchemeSwatch({
     required this.colors,
     super.key,
     this.size = 48,
@@ -1511,12 +1511,12 @@ class HibikiSchemeSwatch extends StatelessWidget {
   final Widget? overlay;
   // TODO-1320: 主题卡片一律不带 caption 文字（无 label/textColor）——系统/预设/自定义
   // 所有 swatch 统一只显示完整对角预览、无底部多余文字。带文字标签的单色 swatch 仍走
-  // HibikiColorSwatch（它保留 label/textColor）。
+  // FushiColorSwatch（它保留 label/textColor）。
   final Color? borderColor;
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme cs = Theme.of(context).colorScheme;
     final Color textRole = colors[0];
     final Color backgroundRole = colors[1];
@@ -1549,7 +1549,7 @@ class HibikiSchemeSwatch extends StatelessWidget {
               // Borrowing `cs.onSurface` made the icon track a different
               // colorScheme than the disc behind it: under a dark app theme a
               // light custom scheme gave a light icon on a light disc → the
-              // palette/auto glyph vanished. Mirrors `HibikiColorSwatch`'s
+              // palette/auto glyph vanished. Mirrors `FushiColorSwatch`'s
               // `_swatchForegroundFor(color)` so the badge foreground always
               // reads on its own background, in every theme combination.
               data: IconThemeData(
@@ -1714,8 +1714,8 @@ class SchemeDiagonalPainter extends CustomPainter {
       oldDelegate.textDirection != textDirection;
 }
 
-class HibikiPreviewSwitch extends StatelessWidget {
-  const HibikiPreviewSwitch({
+class FushiPreviewSwitch extends StatelessWidget {
+  const FushiPreviewSwitch({
     required this.trackColor,
     required this.thumbColor,
     super.key,
@@ -1736,8 +1736,8 @@ class HibikiPreviewSwitch extends StatelessWidget {
   }
 }
 
-class HibikiPageHeader extends StatelessWidget {
-  const HibikiPageHeader({
+class FushiPageHeader extends StatelessWidget {
+  const FushiPageHeader({
     required this.title,
     super.key,
     this.subtitle,
@@ -1750,7 +1750,7 @@ class HibikiPageHeader extends StatelessWidget {
 
   /// 用任意组件占据页头主位。适合把分段导航直接放进页头动作同一行，避免再渲染
   /// 一个重复标题；自定义标题与 [subtitle] 互斥。
-  const HibikiPageHeader.customTitle({
+  const FushiPageHeader.customTitle({
     required Widget title,
     super.key,
     this.leading,
@@ -1773,9 +1773,9 @@ class HibikiPageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // TODO-667: 顶部留白分三档。
-    // - [compact] 模式（上方已有 AppBar，由 [HibikiPageScaffold] 传入）顶距最小，
+    // - [compact] 模式（上方已有 AppBar，由 [FushiPageScaffold] 传入）顶距最小，
     //   只留一个 gap，标题紧贴 AppBar 下沿。
     // - 非 compact 但窗口是手机竖屏 / 窄窗（[WindowSizeClass.compact]，宽 < 600）：
     //   页头本身就是顶部锚点，外层 [SafeArea] 已让出状态栏 / 刘海，再叠
@@ -1783,13 +1783,13 @@ class HibikiPageHeader extends StatelessWidget {
     //   收到普通 `page = 16`，保留必要呼吸又不顶到摄像头。
     // - 非 compact 的中 / 宽窗（桌面 / 平板，宽 >= 600）：窗口顶部无系统栏遮挡、
     //   内容区另有左右留白，`page + 8 = 24` 的标题区呼吸感合适，保持不变。
-    // BUG-401: classify on the real physical width. HibikiPageHeader renders
-    // inside HibikiAppUiScale, so MediaQuery.sizeOf here is the inflated
+    // BUG-401: classify on the real physical width. FushiPageHeader renders
+    // inside FushiAppUiScale, so MediaQuery.sizeOf here is the inflated
     // logical width; multiply by the net app UI scale to recover the real
     // viewport width before applying the compact breakpoint.
     final bool narrowWindow = windowSizeClassReal(
           MediaQuery.sizeOf(context).width,
-          HibikiAppUiScale.of(context),
+          FushiAppUiScale.of(context),
         ) ==
         WindowSizeClass.compact;
     final double resolvedTop = compact
@@ -1832,7 +1832,7 @@ class HibikiPageHeader extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          _HibikiPageHeaderRow(
+          _FushiPageHeaderRow(
             tokens: tokens,
             leading: leading,
             title: resolvedTitle,
@@ -1849,7 +1849,7 @@ class HibikiPageHeader extends StatelessWidget {
     );
   }
 
-  Widget _buildActionRow(HibikiDesignTokens tokens) {
+  Widget _buildActionRow(FushiDesignTokens tokens) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1863,7 +1863,7 @@ class HibikiPageHeader extends StatelessWidget {
   }
 }
 
-/// TODO-1126 / BUG-541: [HibikiPageHeader] 的标题 + 动作行。
+/// TODO-1126 / BUG-541: [FushiPageHeader] 的标题 + 动作行。
 ///
 /// 根因：旧实现（7ce19740c + 3df631aaf）标题 [Expanded](flex:1) 与动作区
 /// [Flexible](flex:1) **均分**剩余宽，动作格恒占页头右半幅（与图标实际总宽无关），
@@ -1879,8 +1879,8 @@ class HibikiPageHeader extends StatelessWidget {
 /// [SingleChildScrollView] 收缩 + 可横滚兜底，消除 RenderFlex overflow，滚动起始边在
 /// 左、最左侧动作（回归态被裁的 [Icons.add]）默认可见。三个 home tab（视频/书架/词典）
 /// 页头均无 leading + actions 并存，故不必为 leading 额外预留。
-class _HibikiPageHeaderRow extends StatelessWidget {
-  const _HibikiPageHeaderRow({
+class _FushiPageHeaderRow extends StatelessWidget {
+  const _FushiPageHeaderRow({
     required this.tokens,
     required this.title,
     required this.leading,
@@ -1888,7 +1888,7 @@ class _HibikiPageHeaderRow extends StatelessWidget {
     required this.centerVertically,
   });
 
-  final HibikiDesignTokens tokens;
+  final FushiDesignTokens tokens;
   final Widget title;
   final Widget? leading;
   final Widget? actions;
@@ -1940,11 +1940,11 @@ class _HibikiPageHeaderRow extends StatelessWidget {
           // 带 label 的动作是否展开成药丸：按**页头本地可用宽**（而非整窗宽）判定，经
           // UI 缩放还原真实宽后仅 expanded（≥840）才展开。桌面带导航栏 / 分栏时整窗
           // ≥840 但本地宽更窄，若按整窗判定会误展开、把 [Expanded] 标题挤到贴按钮/折行
-          // （用户反馈「已经重叠了还没降级成无字」）。经 [HibikiHeaderLabelScope] 下发。
+          // （用户反馈「已经重叠了还没降级成无字」）。经 [FushiHeaderLabelScope] 下发。
           final bool expandLabels = constraints.maxWidth.isFinite &&
               windowSizeClassReal(
                     constraints.maxWidth,
-                    HibikiAppUiScale.of(context),
+                    FushiAppUiScale.of(context),
                   ) ==
                   WindowSizeClass.expanded;
           children
@@ -1956,7 +1956,7 @@ class _HibikiPageHeaderRow extends StatelessWidget {
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     physics: const ClampingScrollPhysics(),
-                    child: HibikiHeaderLabelScope(
+                    child: FushiHeaderLabelScope(
                       expandLabels: expandLabels,
                       child: actions!,
                     ),
@@ -1977,8 +1977,8 @@ class _HibikiPageHeaderRow extends StatelessWidget {
   }
 }
 
-class HibikiPageScaffold extends StatefulWidget {
-  const HibikiPageScaffold({
+class FushiPageScaffold extends StatefulWidget {
+  const FushiPageScaffold({
     required this.title,
     required this.body,
     super.key,
@@ -2006,10 +2006,10 @@ class HibikiPageScaffold extends StatefulWidget {
   final bool? headerCompact;
 
   @override
-  State<HibikiPageScaffold> createState() => _HibikiPageScaffoldState();
+  State<FushiPageScaffold> createState() => _FushiPageScaffoldState();
 }
 
-class _HibikiPageScaffoldState extends State<HibikiPageScaffold> {
+class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   // Owns a PrimaryScrollController so a [body] built from a primary ScrollView
   // (CustomScrollView/ListView with no explicit controller) attaches here. The
   // gamepad LB/RB page-scroll fallback reaches it via
@@ -2037,7 +2037,7 @@ class _HibikiPageScaffoldState extends State<HibikiPageScaffold> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return PrimaryScrollController(
       controller: _scrollController,
       // Inherit on EVERY platform. The default is mobile-only, which would
@@ -2067,13 +2067,13 @@ class _HibikiPageScaffoldState extends State<HibikiPageScaffold> {
           // stretch (not start) so every page body receives a tight full-width
           // constraint. Under start the cross axis stays loose, and any body
           // that shrink-wraps its width (e.g. a vertical SingleChildScrollView
-          // like HibikiLogPanel) collapses into a tall, content-width column on
+          // like FushiLogPanel) collapses into a tall, content-width column on
           // the left instead of filling the page. The header left-aligns its
           // own content internally, so it is unaffected by stretch.
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              HibikiPageHeader(
+              FushiPageHeader(
                 title: widget.title,
                 subtitle: widget.subtitle,
                 leading: widget.showAppBar ? null : widget.leading,
@@ -2090,8 +2090,8 @@ class _HibikiPageScaffoldState extends State<HibikiPageScaffold> {
   }
 }
 
-class HibikiToolScaffold extends StatelessWidget {
-  const HibikiToolScaffold({
+class FushiToolScaffold extends StatelessWidget {
+  const FushiToolScaffold({
     required this.title,
     required this.body,
     super.key,
@@ -2102,7 +2102,7 @@ class HibikiToolScaffold extends StatelessWidget {
     this.backgroundColor,
   }) : titleWidget = null;
 
-  const HibikiToolScaffold.customTitle({
+  const FushiToolScaffold.customTitle({
     required Widget title,
     required this.body,
     super.key,
@@ -2125,7 +2125,7 @@ class HibikiToolScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget? effectiveLeading = leading ?? _defaultLeading(context);
 
     return Scaffold(
@@ -2147,7 +2147,7 @@ class HibikiToolScaffold extends StatelessWidget {
                 // BUG-1184：动作区上界原先取 `MediaQuery.sizeOf(context).width * 0.48`
                 // ——**整窗宽**。这个脚手架并不总是占满窗口（嵌在分栏/对话框/受限宽面板
                 // 里时更常见），此时 0.48×整窗可以超过本行的真实可用宽，Row 直接右溢出。
-                // 与 [_HibikiPageHeaderRow] 同一类错误，那边已按本地约束修过；这里改用
+                // 与 [_FushiPageHeaderRow] 同一类错误，那边已按本地约束修过；这里改用
                 // LayoutBuilder 的局部约束，并同样给标题留保底宽，超出的动作横向滚动。
                 child: LayoutBuilder(
                   builder: (BuildContext context, BoxConstraints constraints) {
@@ -2221,7 +2221,7 @@ class HibikiToolScaffold extends StatelessWidget {
 
   Widget? _defaultLeading(BuildContext context) {
     if (!Navigator.of(context).canPop()) return null;
-    return HibikiIconButton(
+    return FushiIconButton(
       tooltip: MaterialLocalizations.of(context).backButtonTooltip,
       icon: Icons.arrow_back,
       padding: EdgeInsets.zero,
@@ -2229,7 +2229,7 @@ class HibikiToolScaffold extends StatelessWidget {
     );
   }
 
-  Widget _buildTitle(HibikiDesignTokens tokens) {
+  Widget _buildTitle(FushiDesignTokens tokens) {
     final TextStyle titleStyle = tokens.type.listTitle.copyWith(
       color: tokens.surfaces.onSurface,
     );
@@ -2251,8 +2251,8 @@ class HibikiToolScaffold extends StatelessWidget {
   }
 }
 
-class HibikiTransientScaffold extends StatelessWidget {
-  const HibikiTransientScaffold({
+class FushiTransientScaffold extends StatelessWidget {
+  const FushiTransientScaffold({
     required this.body,
     super.key,
     this.backgroundColor,
@@ -2265,7 +2265,7 @@ class HibikiTransientScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget content = safeArea ? SafeArea(child: body) : body;
     return Scaffold(
       backgroundColor: backgroundColor ?? tokens.surfaces.page,
@@ -2274,8 +2274,8 @@ class HibikiTransientScaffold extends StatelessWidget {
   }
 }
 
-class HibikiOverlayScaffold extends StatelessWidget {
-  const HibikiOverlayScaffold({
+class FushiOverlayScaffold extends StatelessWidget {
+  const FushiOverlayScaffold({
     required this.body,
     super.key,
     this.safeArea = true,
@@ -2294,8 +2294,8 @@ class HibikiOverlayScaffold extends StatelessWidget {
   }
 }
 
-class HibikiFilePickerRow extends StatelessWidget {
-  const HibikiFilePickerRow({
+class FushiFilePickerRow extends StatelessWidget {
+  const FushiFilePickerRow({
     required this.title,
     required this.icon,
     super.key,
@@ -2314,11 +2314,11 @@ class HibikiFilePickerRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color foreground = enabled
         ? tokens.surfaces.onVariant
         : tokens.surfaces.onVariant.withValues(alpha: 0.38);
-    return HibikiListItem(
+    return FushiListItem(
       onTap: enabled ? onTap : null,
       minHeight: 60,
       leading: Icon(icon, size: 22, color: foreground),
@@ -2334,8 +2334,8 @@ class HibikiFilePickerRow extends StatelessWidget {
   }
 }
 
-class HibikiOverflowMenu<T> extends StatefulWidget {
-  const HibikiOverflowMenu({
+class FushiOverflowMenu<T> extends StatefulWidget {
+  const FushiOverflowMenu({
     required this.items,
     required this.onSelected,
     super.key,
@@ -2359,18 +2359,18 @@ class HibikiOverflowMenu<T> extends StatefulWidget {
   final double? splashRadius;
 
   @override
-  State<HibikiOverflowMenu<T>> createState() => _HibikiOverflowMenuState<T>();
+  State<FushiOverflowMenu<T>> createState() => _FushiOverflowMenuState<T>();
 }
 
-class _HibikiOverflowMenuState<T> extends State<HibikiOverflowMenu<T>> {
+class _FushiOverflowMenuState<T> extends State<FushiOverflowMenu<T>> {
   final GlobalKey<PopupMenuButtonState<T>> _menuKey =
       GlobalKey<PopupMenuButtonState<T>>();
-  late final HibikiFocusId _fallbackFocusId =
-      HibikiFocusId('hibiki-overflow-menu-${identityHashCode(this)}');
+  late final FushiFocusId _fallbackFocusId =
+      FushiFocusId('hibiki-overflow-menu-${identityHashCode(this)}');
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final PopupMenuButton<T> menu = PopupMenuButton<T>(
       key: _menuKey,
       tooltip: widget.tooltip,
@@ -2389,7 +2389,7 @@ class _HibikiOverflowMenuState<T> extends State<HibikiOverflowMenu<T>> {
       itemBuilder: (BuildContext context) => widget.items,
       child: widget.child,
     );
-    if (HibikiFocusRoot.maybeControllerOf(context) == null) return menu;
+    if (FushiFocusRoot.maybeControllerOf(context) == null) return menu;
     return Actions(
       actions: <Type, Action<Intent>>{
         ActivateIntent: CallbackAction<ActivateIntent>(
@@ -2399,7 +2399,7 @@ class _HibikiOverflowMenuState<T> extends State<HibikiOverflowMenu<T>> {
           },
         ),
       },
-      child: HibikiFocusTarget(
+      child: FushiFocusTarget(
         id: _fallbackFocusId,
         child: menu,
       ),
@@ -2407,8 +2407,8 @@ class _HibikiOverflowMenuState<T> extends State<HibikiOverflowMenu<T>> {
   }
 }
 
-class HibikiPopupMenuItem<T> extends PopupMenuItem<T> {
-  HibikiPopupMenuItem({
+class FushiPopupMenuItem<T> extends PopupMenuItem<T> {
+  FushiPopupMenuItem({
     required String label,
     required T value,
     super.key,
@@ -2420,7 +2420,7 @@ class HibikiPopupMenuItem<T> extends PopupMenuItem<T> {
           value: value,
           enabled: enabled,
           height: 48,
-          child: _HibikiPopupMenuItemContent(
+          child: _FushiPopupMenuItemContent(
             label: label,
             icon: icon,
             color: color,
@@ -2429,8 +2429,8 @@ class HibikiPopupMenuItem<T> extends PopupMenuItem<T> {
         );
 }
 
-class _HibikiPopupMenuItemContent extends StatelessWidget {
-  const _HibikiPopupMenuItemContent({
+class _FushiPopupMenuItemContent extends StatelessWidget {
+  const _FushiPopupMenuItemContent({
     required this.label,
     this.icon,
     this.color,
@@ -2444,7 +2444,7 @@ class _HibikiPopupMenuItemContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color foreground = color ??
         (selected ? tokens.surfaces.primary : tokens.surfaces.onSurface);
     final TextStyle textStyle = tokens.type.listTitle.copyWith(
@@ -2478,8 +2478,8 @@ class _HibikiPopupMenuItemContent extends StatelessWidget {
   }
 }
 
-class HibikiLogPanel extends StatefulWidget {
-  const HibikiLogPanel({
+class FushiLogPanel extends StatefulWidget {
+  const FushiLogPanel({
     required this.log,
     required this.shareAction,
     super.key,
@@ -2489,10 +2489,10 @@ class HibikiLogPanel extends StatefulWidget {
   final ValueChanged<String> shareAction;
 
   @override
-  State<HibikiLogPanel> createState() => _HibikiLogPanelState();
+  State<FushiLogPanel> createState() => _FushiLogPanelState();
 }
 
-class _HibikiLogPanelState extends State<HibikiLogPanel> {
+class _FushiLogPanelState extends State<FushiLogPanel> {
   // TODO-762：日志正文从「单个 `TextField`（maxLines:null, expands:true）全量渲染」
   // 改为按行 `ListView.builder` 懒加载。错误/调试日志最大 ~512KB、数万行
   // monospace，旧实现把整段一次性在 UI 线程做 `TextPainter.layout`（无行虚拟化），
@@ -2528,7 +2528,7 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
   Offset? _lastPointerDownGlobalPosition;
 
   @override
-  void didUpdateWidget(covariant HibikiLogPanel oldWidget) {
+  void didUpdateWidget(covariant FushiLogPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.log != widget.log) {
       _lines = _splitLines(widget.log);
@@ -2553,7 +2553,7 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
     try {
       await Clipboard.setData(ClipboardData(text: widget.log));
     } catch (e) {
-      debugPrint('[HibikiLogPanel] copy-all to clipboard failed: $e');
+      debugPrint('[FushiLogPanel] copy-all to clipboard failed: $e');
     }
   }
 
@@ -2586,7 +2586,7 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
     ];
     // BUG-1438（与 BUG-129/261/381/781 同族）：[_lastPointerDownGlobalPosition] 是
     // 真实屏幕坐标，而本 toolbar 由 SelectionOverlay 挂进根 Overlay——后者落在全局
-    // HibikiAppUiScale 的 FittedBox 缩放画布内，锚点被当画布坐标解读。界面大小≠100%
+    // FushiAppUiScale 的 FittedBox 缩放画布内，锚点被当画布坐标解读。界面大小≠100%
     // 时工具条会偏到「右键点 × scale」处（离屏幕原点越远偏得越多）。经 Overlay 的
     // RenderBox 沿真实渲染变换链换算，缩放被 render transform 自动吸收；scale=1 时
     // 为单位阵，逐像素等价。
@@ -2608,7 +2608,7 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final TextStyle lineStyle = tokens.type.metadata.copyWith(
       color: tokens.surfaces.onSurface,
       fontFamily: 'monospace',
@@ -2617,7 +2617,7 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
       top: false,
       child: Padding(
         padding: EdgeInsets.all(tokens.spacing.page),
-        child: HibikiCard(
+        child: FushiCard(
           padding: EdgeInsets.zero,
           child: LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
@@ -2846,8 +2846,8 @@ class _LogSelectionScrollPosition extends ScrollPositionWithSingleContext {
   }
 }
 
-class HibikiEditorPanel extends StatelessWidget {
-  const HibikiEditorPanel({
+class FushiEditorPanel extends StatelessWidget {
+  const FushiEditorPanel({
     required this.controller,
     super.key,
     this.focusNode,
@@ -2858,10 +2858,10 @@ class HibikiEditorPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: EdgeInsets.all(tokens.spacing.page),
-      child: HibikiCard(
+      child: FushiCard(
         padding: EdgeInsets.zero,
         child: Stack(
           children: <Widget>[
@@ -2898,8 +2898,8 @@ class HibikiEditorPanel extends StatelessWidget {
   }
 }
 
-class HibikiPopupSurface extends StatelessWidget {
-  const HibikiPopupSurface({
+class FushiPopupSurface extends StatelessWidget {
+  const FushiPopupSurface({
     required this.child,
     super.key,
     this.color,
@@ -2918,7 +2918,7 @@ class HibikiPopupSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Material(
       color: color ?? tokens.surfaces.card,
       elevation: elevation,
@@ -2937,8 +2937,8 @@ class HibikiPopupSurface extends StatelessWidget {
   }
 }
 
-class HibikiCompactSearchRow extends StatelessWidget {
-  const HibikiCompactSearchRow({
+class FushiCompactSearchRow extends StatelessWidget {
+  const FushiCompactSearchRow({
     required this.controller,
     required this.focusNode,
     required this.hintText,
@@ -2967,14 +2967,14 @@ class HibikiCompactSearchRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String closeTooltip =
         MaterialLocalizations.of(context).closeButtonTooltip;
     final Widget? keyboardSuffix = _hibikiTextFieldInputSuffix(
       context: context,
       controller: controller,
     );
-    return HibikiCard(
+    return FushiCard(
       color: tokens.surfaces.search,
       borderRadius: tokens.radii.controlRadius,
       padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -3036,11 +3036,11 @@ class _CompactSearchIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return SizedBox(
       width: 36,
       height: 36,
-      child: HibikiIconButton(
+      child: FushiIconButton(
         icon: icon,
         enabledColor: tokens.surfaces.onVariant,
         size: 20,

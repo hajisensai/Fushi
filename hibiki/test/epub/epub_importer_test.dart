@@ -11,7 +11,7 @@ import 'package:fushi/src/sync/ttu_filename.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 Uint8List _minimalEpub(String title) {
   final Archive archive = Archive();
@@ -59,7 +59,7 @@ void main() {
 
   group('EpubImporter', () {
     late Directory tempRoot;
-    late HibikiDatabase db;
+    late FushiDatabase db;
 
     setUp(() {
       tempRoot = Directory.systemTemp.createTempSync('epub_importer_');

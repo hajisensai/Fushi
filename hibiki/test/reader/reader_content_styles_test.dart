@@ -11,7 +11,7 @@ import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
 import '../helpers/source_guard.dart';
 
 Future<ReaderSettings> _defaultSettings() async {
-  final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   final ReaderSettings settings = ReaderSettings(db);
   await settings.refreshFromDb();
@@ -163,8 +163,8 @@ void main() {
 
   group('ReaderContentStyles.css with custom settings', () {
     test('horizontal writing mode produces horizontal-tb', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -176,8 +176,8 @@ void main() {
     });
 
     test('continuous mode produces different layout', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -310,8 +310,8 @@ void main() {
 
     test('hide furigana mode via themeOverride still renders rt rule',
         () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -553,8 +553,8 @@ void main() {
 
     test('continuous layout contains --chrome-top-inset in padding-top',
         () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -567,8 +567,8 @@ void main() {
 
     test('continuous layout contains --chrome-bottom-inset in padding-bottom',
         () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -586,8 +586,8 @@ void main() {
     test(
         'continuous layout padding-bottom is only marginBottom + chrome-bottom-inset (no independent fontSize term)',
         () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -632,8 +632,8 @@ void main() {
 
     test('horizontal paginated column-gap is the same fixed constant',
         () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -659,8 +659,8 @@ void main() {
     // 22px（单量纲）。与 JS getScrollContext 的 pageStep = columnCount·(usedColW+gap) 成对，
     // N·(subW+gap) == content-box+gap，翻页网格不动（保 TODO-729/753/792 不变式）。
     test('TODO-1285 每页 N 列：column-count:N + column-width 均分成子列宽（横排）', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -690,8 +690,8 @@ void main() {
     });
 
     test('TODO-1285 每页列数=0（自动/单列）：无 column-count、列宽仍整页（字节等价）', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -709,8 +709,8 @@ void main() {
     });
 
     test('TODO-1285 竖排每页 3 列：子列宽 = (竖排 content-box − 2·22px)/3', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -767,8 +767,8 @@ void main() {
         (mode: 'vertical-rl', cols: 3),
         (mode: 'horizontal-tb', cols: 0),
       ]) {
-        final HibikiDatabase db =
-            HibikiDatabase.forTesting(NativeDatabase.memory());
+        final FushiDatabase db =
+            FushiDatabase.forTesting(NativeDatabase.memory());
         addTearDown(db.close);
         final ReaderSettings settings = ReaderSettings(db);
         await settings.refreshFromDb();
@@ -787,8 +787,8 @@ void main() {
     // 兜底：在未被 body clip-path 裁剪的 html 上加 ::before 覆盖条，四边 border 宽 == body
     // 四边 padding、border-color=背景色、pointer-events:none、z-index 压正文之上但低于 caret。
     test('TODO-1285 分页 html::before 覆盖条：引擎无关遮 padding 泄露带', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -824,8 +824,8 @@ void main() {
 
     // 覆盖条只属分页：连续模式不发 html::before（避免连续滚动被 padding 条错遮）。
     test('TODO-1285 连续模式不发 html::before 覆盖条', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -932,8 +932,8 @@ void main() {
 
   group('ReaderContentStyles negative margin clamping', () {
     test('negative margins are clamped to 0 in padding CSS', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -986,8 +986,8 @@ void main() {
     test(
         'reading a default margin writes the 2% default through to the DB '
         '(existing users get 2% on first open)', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1022,8 +1022,8 @@ void main() {
     // TODO-299 的上限 128，断言底部预留 = 128px（不是 22px），否则大字号竖排正文被底栏遮挡。
     test('vertical bottom reserve scales with fontSize, not a hardcoded const',
         () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1051,8 +1051,8 @@ void main() {
     });
 
     test('horizontal bottom reserve also scales with fontSize', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1067,8 +1067,8 @@ void main() {
     });
 
     test('source margin getters fall back to the 2% defaults', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1082,8 +1082,8 @@ void main() {
     });
 
     test('source margin setters normalize out-of-range input', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1099,8 +1099,8 @@ void main() {
 
   group('ReaderHibikiSource live settings callbacks', () {
     test('style setting writes trigger the live callback', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1121,8 +1121,8 @@ void main() {
 
   group('ReaderContentStyles vertical-only CSS probes (T1)', () {
     Future<ReaderSettings> verticalSettings() async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1131,8 +1131,8 @@ void main() {
     }
 
     Future<ReaderSettings> horizontalSettings() async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1223,8 +1223,8 @@ void main() {
 
     test('continuous body clips top/bottom inset bands via clip-path inset',
         () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1240,8 +1240,8 @@ void main() {
 
     test('vertical paginated still clips (notch leak path is vertical)',
         () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1260,8 +1260,8 @@ void main() {
   // 竖排恢复(scrollToCharOffset 写 root.scrollLeft)幽灵→视口留章首。守卫两种写向。
   group('TODO-718 连续溢出轴只放 html（防 body 成滚动容器回归）', () {
     Future<String> continuousCss(String writingMode) async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1343,8 +1343,8 @@ void main() {
   // ReaderSettings.setPageColumns → preferences 表 `ttu_page_columns`。getter 反读一致。
   group('TODO-1285 每页列数写穿 DB', () {
     test('setPageColumns 写穿 preferences 且 getter 反读一致', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1364,8 +1364,8 @@ void main() {
     });
 
     test('source.setReaderPageColumns 经 ReaderSettings 写穿并反读', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();

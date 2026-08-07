@@ -33,8 +33,8 @@ void main() {
   });
 
   Future<AppModel> buildModel() async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
@@ -95,14 +95,14 @@ void main() {
 
   Future<void> pumpPage(WidgetTester tester, AppModel appModel) async {
     navKey = GlobalKey<NavigatorState>();
-    HibikiToast.navigatorKey = navKey;
+    FushiToast.navigatorKey = navKey;
     await tester.pumpWidget(
       ProviderScope(
         overrides: <Override>[appProvider.overrideWith((_) => appModel)],
         child: TranslationProvider(
           child: MaterialApp(
             navigatorKey: navKey,
-            home: const HibikiFocusRoot(child: GamesLibraryPage()),
+            home: const FushiFocusRoot(child: GamesLibraryPage()),
           ),
         ),
       ),

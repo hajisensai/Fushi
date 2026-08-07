@@ -14,12 +14,12 @@ import 'package:fushi_core/fushi_core.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late int collectionId;
 
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.zhCn);
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     for (final (String uid, String title) in const <(String, String)>[
       ('video/s1e1', 'Show S01E01'),
       ('video/s1e2', 'Show S01E02'),

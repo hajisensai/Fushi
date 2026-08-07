@@ -5,13 +5,13 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
 import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 
-/// [HibikiDestructiveConfirmDialog] 的返回值。
+/// [FushiDestructiveConfirmDialog] 的返回值。
 ///
 /// pop `null` = 取消；非 null = 已确认，[checked] 携带可选勾选项状态
-/// （无 [HibikiDestructiveConfirmDialog.checkboxLabel] 时恒为 false）。
+/// （无 [FushiDestructiveConfirmDialog.checkboxLabel] 时恒为 false）。
 @immutable
-class HibikiDestructiveConfirmResult {
-  const HibikiDestructiveConfirmResult({required this.checked});
+class FushiDestructiveConfirmResult {
+  const FushiDestructiveConfirmResult({required this.checked});
 
   final bool checked;
 }
@@ -21,13 +21,13 @@ class HibikiDestructiveConfirmResult {
 /// 巡检（docs/reviews/2026-07-22-ui-ux-survey.md）发现同一语义至少四种实现
 /// 并存：ReaderHistoryDeleteDialog、CollectionDeleteDialog、两个合集详情页的
 /// 裸 AlertDialog。本组件以 ReaderHistoryDeleteDialog 的观感为基准
-/// （HibikiDialogFrame + HibikiModalSheetFrame + adaptiveDialogAction），
+/// （FushiDialogFrame + FushiModalSheetFrame + adaptiveDialogAction），
 /// 增加可选勾选项（如「连同书籍本体一起删除」），供各处收口。
 ///
-/// 用法：`showAppDialog<HibikiDestructiveConfirmResult>(...)` 后判空即可；
+/// 用法：`showAppDialog<FushiDestructiveConfirmResult>(...)` 后判空即可；
 /// 确认按钮文案默认 t.dialog_delete，可换（如「清空」「移除」）。
-class HibikiDestructiveConfirmDialog extends StatefulWidget {
-  const HibikiDestructiveConfirmDialog({
+class FushiDestructiveConfirmDialog extends StatefulWidget {
+  const FushiDestructiveConfirmDialog({
     required this.title,
     required this.message,
     this.confirmLabel,
@@ -60,22 +60,22 @@ class HibikiDestructiveConfirmDialog extends StatefulWidget {
   final DeletionDisclosure? checkedDisclosure;
 
   @override
-  State<HibikiDestructiveConfirmDialog> createState() =>
-      _HibikiDestructiveConfirmDialogState();
+  State<FushiDestructiveConfirmDialog> createState() =>
+      _FushiDestructiveConfirmDialogState();
 }
 
-class _HibikiDestructiveConfirmDialogState
-    extends State<HibikiDestructiveConfirmDialog> {
+class _FushiDestructiveConfirmDialogState
+    extends State<FushiDestructiveConfirmDialog> {
   late bool _checked = widget.checkboxInitialValue;
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.74,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: widget.title,
         leadingIcon: widget.leadingIcon,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -97,15 +97,15 @@ class _HibikiDestructiveConfirmDialogState
             Text(widget.message, style: tokens.type.listSubtitle),
             if (widget.checkboxLabel != null) ...[
               SizedBox(height: tokens.spacing.gap),
-              HibikiListItem(
-                density: HibikiListDensity.compact,
+              FushiListItem(
+                density: FushiListDensity.compact,
                 padding: EdgeInsets.zero,
                 // BUG-1291：勾选文案是整句解释（「同时删除其中的视频（保留你的
-                // 原始视频文件）」），不是列表里的标题短语。[HibikiListItem] 的
+                // 原始视频文件）」），不是列表里的标题短语。[FushiListItem] 的
                 // titleMaxLines 默认 1 + ellipsis，在 420 宽的对话框里会把括号
                 // 里的免责说明整段吃掉，用户读到的是「…保留你的原始视…」——恰好
                 // 是最需要看清的那半句。此处父容器高度自由（外层
-                // [HibikiDialogFrame] 默认 scrollable），放开行数不会像
+                // [FushiDialogFrame] 默认 scrollable），放开行数不会像
                 // BUG-1184 的固定高容器那样撑破布局。
                 titleMaxLines: 3,
                 title: Text(widget.checkboxLabel!),
@@ -145,7 +145,7 @@ class _HibikiDestructiveConfirmDialogState
               isDestructiveAction: true,
               onPressed: () => Navigator.pop(
                 context,
-                HibikiDestructiveConfirmResult(checked: _checked),
+                FushiDestructiveConfirmResult(checked: _checked),
               ),
               child: Text(widget.confirmLabel ?? t.dialog_delete),
             ),

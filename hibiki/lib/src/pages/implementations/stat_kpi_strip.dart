@@ -58,7 +58,7 @@ class StatKpiStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double gap = tokens.spacing.gap;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -95,8 +95,8 @@ class StatKpiStrip extends StatelessWidget {
 
   Widget _tile(BuildContext context, StatKpiItem item) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiCard(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[

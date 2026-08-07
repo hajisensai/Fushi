@@ -5,14 +5,14 @@ import 'package:fushi_core/fushi_core.dart';
 /// TODO-1322: 统计页顶栏「清空全部统计」——只清纯统计数字（阅读 / 观看时长、字数、
 /// 时段日志、查词 / 制卡计数），保留收藏词 / 制卡历史 / 书籍等用户内容，且阅读域与
 /// 视频域互不牵连。
-Future<HibikiDatabase> _openDb() async {
-  final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
 
 /// 播下阅读域纯统计（4 张统计表 book 行）。
-Future<void> _seedReadingStats(HibikiDatabase db) async {
+Future<void> _seedReadingStats(FushiDatabase db) async {
   await db.addReadingStatistic(
       title: 'A', dateKey: '2026-07-05', charsRead: 100, timeMs: 6000);
   await db.addReadingStatistic(
@@ -27,7 +27,7 @@ Future<void> _seedReadingStats(HibikiDatabase db) async {
 }
 
 /// 播下视频域纯统计（4 张统计表 video 行）。
-Future<void> _seedVideoStats(HibikiDatabase db) async {
+Future<void> _seedVideoStats(FushiDatabase db) async {
   await db.addVideoWatchStatistic(
       title: 'V', dateKey: '2026-07-05', subtitleChars: 10, watchTimeMs: 5000);
   await db.addVideoHourlyWatchTime(
@@ -42,7 +42,7 @@ void main() {
     test(
         'wipes every book-domain statistic but keeps user content and all '
         'video-domain statistics', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       await _seedReadingStats(db);
       await _seedVideoStats(db);
       // 用户内容（绝不该被清）。
@@ -81,7 +81,7 @@ void main() {
     });
 
     test('is a no-op on an empty database (idempotent, no throw)', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       await db.clearAllReadingStatistics();
       await db.clearAllReadingStatistics();
       expect(await db.getAllReadingStatistics(), isEmpty);
@@ -92,7 +92,7 @@ void main() {
     test(
         'wipes every video-domain statistic but keeps user content and all '
         'reading-domain statistics', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       await _seedReadingStats(db);
       await _seedVideoStats(db);
       await db.addFavoriteWord(

@@ -37,7 +37,7 @@ class MangaImportDialog extends StatefulWidget {
     super.key,
   });
 
-  final HibikiDatabase db;
+  final FushiDatabase db;
 
   /// 拖放/书籍框转交时预填的漫画路径（目录 / `.cbz` / `.zip` 页图包 / `.mokuro`）。
   final String? initialPath;
@@ -107,7 +107,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
 
   @override
   Widget build(BuildContext context) {
-    return HibikiFileDropTarget(
+    return FushiFileDropTarget(
       enabled: !importing,
       debugLabel: 'manga-import-dialog',
       onDrop: _handleDialogDrop,
@@ -133,7 +133,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   }
 
   Widget _buildForm() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -142,7 +142,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         SizedBox(height: tokens.spacing.gap),
         AdaptiveSettingsSection(children: <Widget>[_mangaRow()]),
         SizedBox(height: tokens.spacing.rowVertical),
-        HibikiTextField(
+        FushiTextField(
           controller: _titleCtrl,
           labelText: t.srt_import_title_hint,
           onChanged: (String _) => _titleFromUser = true,
@@ -153,7 +153,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   }
 
   Widget _mangaRow() {
-    return HibikiFilePickerRow(
+    return FushiFilePickerRow(
       title: t.manga_import_pick_file,
       subtitle: _pathName,
       icon: Icons.auto_stories_outlined,
@@ -161,13 +161,13 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       actions: <Widget>[
         // 漫画载体可以是**文件**（.cbz/.zip/.mokuro）也可以是**目录**（一卷页图），
         // 两种选择器在系统层是两个不同的对话框，故并列两个入口而非合成一个。
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.folder_open_outlined,
           tooltip: t.manga_import_pick_folder,
           isWideTapArea: true,
           onTap: _pickFolder,
         ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.insert_drive_file_outlined,
           tooltip: t.manga_import_pick_file,
           isWideTapArea: true,
@@ -229,7 +229,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     final ImportCarrier carrier = _classify(path);
     if (!carrier.isManga) {
       final String ext = p.extension(path).toLowerCase();
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.import_unsupported_file_format(ext: ext.isEmpty ? path : ext),
         severity: ToastSeverity.error,
       );
@@ -256,7 +256,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     }
     if (paths.isNotEmpty) {
       final String ext = p.extension(paths.first).toLowerCase();
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.import_unsupported_file_format(
           ext: ext.isEmpty ? paths.first : ext,
         ),
@@ -320,7 +320,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     final String? path = _path;
     final ImportCarrier? carrier = _carrier;
     if (path == null || carrier == null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.manga_import_missing_input,
         severity: ToastSeverity.error,
       );
@@ -328,7 +328,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     }
     final String title = _titleCtrl.text.trim();
     if (title.isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.srt_import_missing_title,
         severity: ToastSeverity.error,
       );
@@ -341,7 +341,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       isCancelled: (Object e) => e is DuplicateImportCancelledException,
       onCancelled: () {
         if (mounted) {
-          HibikiToast.show(
+          FushiToast.show(
             msg: t.book_import_duplicate_cancelled,
             severity: ToastSeverity.info,
           );
@@ -389,7 +389,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
 
         reportProgress(1, t.import_step_done);
         if (mounted) {
-          HibikiToast.show(
+          FushiToast.show(
             msg: t.srt_import_success,
             severity: ToastSeverity.success,
           );

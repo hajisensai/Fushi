@@ -8,10 +8,10 @@ import 'package:fushi/src/utils/components/hibiki_divider.dart';
 import 'golden_test_helpers.dart';
 
 void main() {
-  group('HibikiDivider golden', () {
+  group('FushiDivider golden', () {
     testWidgets('light theme', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiDivider(),
+        const FushiDivider(),
         size: const Size(300, 30),
       ));
       await tester.pumpAndSettle();
@@ -24,7 +24,7 @@ void main() {
 
     testWidgets('dark theme', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiDivider(),
+        const FushiDivider(),
         theme: ThemeData.dark(useMaterial3: true),
         size: const Size(300, 30),
       ));

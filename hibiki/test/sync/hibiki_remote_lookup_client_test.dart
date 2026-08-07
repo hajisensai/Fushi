@@ -12,15 +12,15 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
 
 Future<SyncRepository> _repo({
-  required HibikiDatabase db,
-  required List<HibikiClientUrl> urls,
+  required FushiDatabase db,
+  required List<FushiClientUrl> urls,
   String token = 'tok',
 }) async {
   final SyncRepository repo = SyncRepository(db);
@@ -31,17 +31,17 @@ Future<SyncRepository> _repo({
 
 void main() {
   test('dictionary lookup fails over enabled candidate urls', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = await _repo(
       db: db,
-      urls: const <HibikiClientUrl>[
-        HibikiClientUrl(url: 'http://lan:8765'),
-        HibikiClientUrl(url: 'http://wan:8765'),
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(url: 'http://lan:8765'),
+        FushiClientUrl(url: 'http://wan:8765'),
       ],
     );
     final List<String> requestedHosts = <String>[];
-    final HibikiRemoteLookupClient client = HibikiRemoteLookupClient(
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
       repo: repo,
       httpClient: MockClient((http.Request request) async {
         requestedHosts.add(request.url.host);
@@ -87,17 +87,17 @@ void main() {
 
   test('401 stops lookup instead of trying another address with same token',
       () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = await _repo(
       db: db,
-      urls: const <HibikiClientUrl>[
-        HibikiClientUrl(url: 'http://lan:8765'),
-        HibikiClientUrl(url: 'http://wan:8765'),
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(url: 'http://lan:8765'),
+        FushiClientUrl(url: 'http://wan:8765'),
       ],
     );
     final List<String> requestedHosts = <String>[];
-    final HibikiRemoteLookupClient client = HibikiRemoteLookupClient(
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
       repo: repo,
       httpClient: MockClient((http.Request request) async {
         requestedHosts.add(request.url.host);
@@ -118,17 +118,17 @@ void main() {
 
   test('remote audio lookup returns url and treats 404 as unsupported',
       () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = await _repo(
       db: db,
-      urls: const <HibikiClientUrl>[
-        HibikiClientUrl(url: 'http://old:8765'),
-        HibikiClientUrl(url: 'http://new:8765'),
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(url: 'http://old:8765'),
+        FushiClientUrl(url: 'http://new:8765'),
       ],
     );
     final List<String> requestedHosts = <String>[];
-    final HibikiRemoteLookupClient client = HibikiRemoteLookupClient(
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
       repo: repo,
       httpClient: MockClient((http.Request request) async {
         requestedHosts.add(request.url.host);
@@ -160,16 +160,16 @@ void main() {
   // keep-alive client（生产 AppModel 就是注入的）——注入 client 只服务明文 http。
   test('https candidate with fingerprint always uses the pinned client',
       () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = await _repo(
       db: db,
-      urls: const <HibikiClientUrl>[
-        HibikiClientUrl(
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(
           url: 'https://pinned:38765',
           fingerprintSha256: 'aa:bb:cc',
         ),
-        HibikiClientUrl(url: 'http://plain:38765'),
+        FushiClientUrl(url: 'http://plain:38765'),
       ],
     );
 
@@ -196,7 +196,7 @@ void main() {
     final List<String> pinnedFingerprints = <String>[];
     final List<String> pinnedClientHosts = <String>[];
 
-    final HibikiRemoteLookupClient client = HibikiRemoteLookupClient(
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
       repo: repo,
       // 生产同款：注入共享明文 keep-alive client（TODO-744）。
       httpClient: MockClient((http.Request request) async {
@@ -226,23 +226,23 @@ void main() {
   });
 
   test('plain http candidates still use the injected shared client', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = await _repo(
       db: db,
-      urls: const <HibikiClientUrl>[
-        HibikiClientUrl(
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(
           url: 'https://pinned:38765',
           fingerprintSha256: 'aa:bb:cc',
         ),
-        HibikiClientUrl(url: 'http://plain:38765'),
+        FushiClientUrl(url: 'http://plain:38765'),
       ],
     );
 
     final List<String> injectedClientHosts = <String>[];
     bool pinnedFactoryCalledForPlain = false;
 
-    final HibikiRemoteLookupClient client = HibikiRemoteLookupClient(
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
       repo: repo,
       httpClient: MockClient((http.Request request) async {
         injectedClientHosts.add(request.url.host);
@@ -285,17 +285,17 @@ void main() {
         'all candidates failing at the transport layer throws '
         'RemoteLookupUnreachableError (connection refused + timeout)',
         () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = await _repo(
         db: db,
-        urls: const <HibikiClientUrl>[
-          HibikiClientUrl(url: 'http://refused:8765'),
-          HibikiClientUrl(url: 'http://slow:8765'),
+        urls: const <FushiClientUrl>[
+          FushiClientUrl(url: 'http://refused:8765'),
+          FushiClientUrl(url: 'http://slow:8765'),
         ],
       );
       final List<String> requestedHosts = <String>[];
-      final HibikiRemoteLookupClient client = HibikiRemoteLookupClient(
+      final FushiRemoteLookupClient client = FushiRemoteLookupClient(
         repo: repo,
         timeout: const Duration(milliseconds: 50),
         httpClient: MockClient((http.Request request) async {
@@ -320,16 +320,16 @@ void main() {
     test(
         'a reachable candidate answering 404 means "no audio" (null), even '
         'when other candidates are transport-dead', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = await _repo(
         db: db,
-        urls: const <HibikiClientUrl>[
-          HibikiClientUrl(url: 'http://dead:8765'),
-          HibikiClientUrl(url: 'http://alive:8765'),
+        urls: const <FushiClientUrl>[
+          FushiClientUrl(url: 'http://dead:8765'),
+          FushiClientUrl(url: 'http://alive:8765'),
         ],
       );
-      final HibikiRemoteLookupClient client = HibikiRemoteLookupClient(
+      final FushiRemoteLookupClient client = FushiRemoteLookupClient(
         repo: repo,
         httpClient: MockClient((http.Request request) async {
           if (request.url.host == 'dead') {
@@ -350,15 +350,15 @@ void main() {
 
     test('200 with an empty audio url is reachable-no-audio (null, no throw)',
         () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = await _repo(
         db: db,
-        urls: const <HibikiClientUrl>[
-          HibikiClientUrl(url: 'http://alive:8765'),
+        urls: const <FushiClientUrl>[
+          FushiClientUrl(url: 'http://alive:8765'),
         ],
       );
-      final HibikiRemoteLookupClient client = HibikiRemoteLookupClient(
+      final FushiRemoteLookupClient client = FushiRemoteLookupClient(
         repo: repo,
         httpClient: MockClient((http.Request request) async {
           return http.Response.bytes(
@@ -384,13 +384,13 @@ void main() {
 
     test('no paired candidates configured returns null instead of throwing',
         () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = await _repo(
         db: db,
-        urls: const <HibikiClientUrl>[],
+        urls: const <FushiClientUrl>[],
       );
-      final HibikiRemoteLookupClient client = HibikiRemoteLookupClient(
+      final FushiRemoteLookupClient client = FushiRemoteLookupClient(
         repo: repo,
         httpClient: MockClient((http.Request request) async {
           fail('no request should be issued without candidates');
@@ -414,15 +414,15 @@ void main() {
     test(
         'dictionary lookup throws RemoteLookupUnreachableError when all '
         'candidates are transport-dead (BUG-1302)', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = await _repo(
         db: db,
-        urls: const <HibikiClientUrl>[
-          HibikiClientUrl(url: 'http://dead:8765'),
+        urls: const <FushiClientUrl>[
+          FushiClientUrl(url: 'http://dead:8765'),
         ],
       );
-      final HibikiRemoteLookupClient client = HibikiRemoteLookupClient(
+      final FushiRemoteLookupClient client = FushiRemoteLookupClient(
         repo: repo,
         httpClient: MockClient((http.Request request) async {
           throw const SocketException('Connection refused');
@@ -442,16 +442,16 @@ void main() {
     test(
         'dictionary lookup on a reachable host with no match still returns '
         'null (no false cooldown)', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = await _repo(
         db: db,
-        urls: const <HibikiClientUrl>[
-          HibikiClientUrl(url: 'http://dead:8765'),
-          HibikiClientUrl(url: 'http://alive:8765'),
+        urls: const <FushiClientUrl>[
+          FushiClientUrl(url: 'http://dead:8765'),
+          FushiClientUrl(url: 'http://alive:8765'),
         ],
       );
-      final HibikiRemoteLookupClient client = HibikiRemoteLookupClient(
+      final FushiRemoteLookupClient client = FushiRemoteLookupClient(
         repo: repo,
         httpClient: MockClient((http.Request request) async {
           if (request.url.host == 'dead') {
@@ -475,13 +475,13 @@ void main() {
     test(
         'dictionary lookup without paired candidates returns null instead of '
         'throwing', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = await _repo(
         db: db,
-        urls: const <HibikiClientUrl>[],
+        urls: const <FushiClientUrl>[],
       );
-      final HibikiRemoteLookupClient client = HibikiRemoteLookupClient(
+      final FushiRemoteLookupClient client = FushiRemoteLookupClient(
         repo: repo,
         httpClient: MockClient((http.Request request) async {
           fail('no request should be issued without candidates');

@@ -126,7 +126,7 @@ void main() {
       'Widget _pageDropTarget(',
       'Widget _buildVideoBody(',
     );
-    expect(pageDrop.contains('HibikiFileDropTarget('), isTrue);
+    expect(pageDrop.contains('FushiFileDropTarget('), isTrue);
     expect(pageDrop.contains('_handlePlaybackDrop('), isTrue);
 
     // 去重防护：页级 + 内层两个目标可能对同一次拖放都触发。

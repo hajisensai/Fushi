@@ -35,9 +35,9 @@ void main() {
     final String source = readSyncSettingsSchemaSource();
     // 「测试连接」按钮多个后端都有（WebDav/FTP/SFTP/互联客户端），只切互联客户端
     // 配置 widget 的类区块来断言，避免误伤其它后端的同名按钮。
-    final int start = source.indexOf('class _HibikiServerConfigWidgetState');
+    final int start = source.indexOf('class _FushiServerConfigWidgetState');
     expect(start, greaterThanOrEqualTo(0),
-        reason: '_HibikiServerConfigWidgetState 丢失');
+        reason: '_FushiServerConfigWidgetState 丢失');
     final int end = source.indexOf('mixin _PairingV2FlowMixin', start);
     expect(end, greaterThan(start));
     final String widgetSrc = source.substring(start, end);

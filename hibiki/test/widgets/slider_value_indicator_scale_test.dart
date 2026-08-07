@@ -6,7 +6,7 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 void main() {
   // 根因回归：Material [Slider] 的值指示器水平钳制（getHorizontalShift）用
   // parentBox.localToGlobal(center) 取 GLOBAL/view 坐标，再与 sizeWithOverflow
-  // (= MediaQuery.sizeOf) 比较，SDK 假定两者同空间。HibikiAppUiScale 把整棵树
+  // (= MediaQuery.sizeOf) 比较，SDK 假定两者同空间。FushiAppUiScale 把整棵树
   // Transform.scale(s) 放大、同时把 MediaQuery.size 缩成 view/s，导致两者差 s²，
   // 钳制算出巨大负 shift，把「220%」气泡甩到拇指左侧、压住描述文字。
   //
@@ -21,7 +21,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        builder: (BuildContext context, Widget? child) => HibikiAppUiScale(
+        builder: (BuildContext context, Widget? child) => FushiAppUiScale(
           scale: 2.0,
           child: child ?? const SizedBox.shrink(),
         ),
@@ -41,7 +41,7 @@ void main() {
     );
 
     // Slider 自身 context 解析到的 MediaQuery.size 应为 GLOBAL/view 宽度 900，
-    // 而非 HibikiAppUiScale 缩小后的逻辑画布 450。
+    // 而非 FushiAppUiScale 缩小后的逻辑画布 450。
     final Element sliderEl = tester.element(find.byType(Slider));
     final Size sliderScreenSize = MediaQuery.sizeOf(sliderEl);
     expect(sliderScreenSize.width, closeTo(900, 0.5));
@@ -57,7 +57,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        builder: (BuildContext context, Widget? child) => HibikiAppUiScale(
+        builder: (BuildContext context, Widget? child) => FushiAppUiScale(
           scale: 1.0,
           child: child ?? const SizedBox.shrink(),
         ),

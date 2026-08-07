@@ -16,8 +16,8 @@ import 'package:fushi_core/fushi_core.dart';
 ///  ③ FK cascade 生效：删视频连带清资料行，不留孤儿；
 ///  ④ user_version 升到当前 schemaVersion（54）。
 void main() {
-  Future<HibikiDatabase> openV53Db() async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+  Future<FushiDatabase> openV53Db() async {
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (rawDb) {
           rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -59,7 +59,7 @@ CREATE TABLE video_books (
   }
 
   test('v54：既有 video_books 行零破坏，新表建出且初始为空', () async {
-    final HibikiDatabase db = await openV53Db();
+    final FushiDatabase db = await openV53Db();
 
     final VideoBookRow? legacy = await db.getVideoBookByBookUid('legacy_video');
     expect(legacy, isNotNull, reason: '旧视频行原样保留');
@@ -73,7 +73,7 @@ CREATE TABLE video_books (
   });
 
   test('v54：条目资料可写可读，可空列与 JSON 列往返', () async {
-    final HibikiDatabase db = await openV53Db();
+    final FushiDatabase db = await openV53Db();
 
     await db.upsertVideoScrapeMeta(VideoScrapeMetaCompanion.insert(
       bookUid: 'legacy_video',
@@ -124,7 +124,7 @@ CREATE TABLE video_books (
   test('v54：删视频经 FK cascade 连带清资料行（fresh DB，FK 打开）', () async {
     // 用完整 schema 的 fresh 库 + 真实的 foreign_keys=ON（forTesting 吃裸
     // NativeDatabase，不走 _openDb 的 PRAGMA，默认 FK 是关的）。
-    final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory(
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory(
       setup: (rawDb) => rawDb.execute('PRAGMA foreign_keys = ON'),
     ));
     addTearDown(db.close);
@@ -149,7 +149,7 @@ CREATE TABLE video_books (
   });
 
   test('v54：user_version 升到当前 schemaVersion', () async {
-    final HibikiDatabase db = await openV53Db();
+    final FushiDatabase db = await openV53Db();
     await db.getVideoBookByBookUid('legacy_video'); // 触发 open/migrate。
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();

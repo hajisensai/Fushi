@@ -85,7 +85,7 @@ void main() {
     // 比例锁：宽度由原图 viewBox 算死 + BoxFit.contain，杜绝拉伸变形。
     expect(schema, contains('_kTmdbLogoHeight * 190.24 / 81.52'));
     expect(schema, contains('fit: BoxFit.contain'));
-    // 显眼度上限：24dp 与设置行图标徽标（`HibikiBadge` 18+6*2 = 30dp）同量级；
+    // 显眼度上限：24dp 与设置行图标徽标（`FushiBadge` 18+6*2 = 30dp）同量级；
     // 应用自身图标在 Flutter 里唯一的渲染点是设置 › 外观 › 应用图标的预设瓦片
     // （62×62dp），逐条依据见 `_kTmdbLogoHeight` 的文档注释。
     final RegExp height = RegExp(r'_kTmdbLogoHeight = (\d+(?:\.\d+)?)');

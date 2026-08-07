@@ -14,7 +14,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 // ── fake 库服务（local audio + audiobook 完整 round-trip）─────────────────
 
-class _FakeLibraryService implements HibikiLibraryHostService {
+class _FakeLibraryService implements FushiLibraryHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
   Future<File?> clipVideoAudio(String id,
@@ -239,19 +239,19 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 
 // ── helper: 建 SyncRepository + 配置 backend ──────────────────────────────
 
-HibikiDatabase _testDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 /// 把 url + token 写库，restoreAuth + authenticate，返回配好的 backend。
 Future<InterconnectSyncBackend> _buildBackend({
   required String base,
   required String token,
 }) async {
-  final HibikiDatabase db = _testDb();
+  final FushiDatabase db = _testDb();
   final SyncRepository repo = SyncRepository(db);
 
-  await repo.setHibikiClientUrls(<HibikiClientUrl>[
-    HibikiClientUrl(url: base, enabled: true),
+  await repo.setHibikiClientUrls(<FushiClientUrl>[
+    FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
 
@@ -268,14 +268,14 @@ Future<InterconnectSyncBackend> _buildBackend({
 // ════════════════════════════════════════════════════════════════════════════
 
 void main() {
-  late HibikiSyncServer server;
+  late FushiSyncServer server;
   late _FakeLibraryService lib;
   late String base;
   const String token = 'live-audio-token';
 
   setUp(() async {
     lib = _FakeLibraryService();
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir:
           Directory.systemTemp.createTempSync('hbk_live_audio_srv').path,
       port: 0,
@@ -349,10 +349,10 @@ void main() {
   // ── auth guard (local audio) ──────────────────────────────────────────────
 
   test('listRemoteLocalAudio with wrong token throws SyncAuthError', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     final SyncRepository repo = SyncRepository(db);
-    await repo.setHibikiClientUrls(<HibikiClientUrl>[
-      HibikiClientUrl(url: base, enabled: true),
+    await repo.setHibikiClientUrls(<FushiClientUrl>[
+      FushiClientUrl(url: base, enabled: true),
     ]);
     await repo.setHibikiClientToken('wrong-token');
 
@@ -449,10 +449,10 @@ void main() {
   // ── auth guard (audiobooks) ───────────────────────────────────────────────
 
   test('listRemoteAudiobooks with wrong token throws SyncAuthError', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     final SyncRepository repo = SyncRepository(db);
-    await repo.setHibikiClientUrls(<HibikiClientUrl>[
-      HibikiClientUrl(url: base, enabled: true),
+    await repo.setHibikiClientUrls(<FushiClientUrl>[
+      FushiClientUrl(url: base, enabled: true),
     ]);
     await repo.setHibikiClientToken('wrong-token');
 

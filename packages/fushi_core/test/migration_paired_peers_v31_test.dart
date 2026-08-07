@@ -12,15 +12,15 @@ import 'package:fushi_core/fushi_core.dart';
 /// ② fresh DB：onCreate 的 createAll 已含新表，多次开库幂等（表已存在不重建）。
 /// ③ upsertPairedPeer 幂等（peerId UNIQUE 冲突键整行更新，不新增行）、
 ///    getPairedPeers 按 pairedAtMs 升序、revokePairedPeer 返回删除行数。
-/// ④ 降级（DB 版本 > 代码 schemaVersion）抛 HibikiDatabaseDowngradeException。
+/// ④ 降级（DB 版本 > 代码 schemaVersion）抛 FushiDatabaseDowngradeException。
 ///
 /// 迁移测试沿用 migration_book_key_test 的「手写旧 schema raw seed」范式：只建
 /// v30 时已存在的表并写真实行，PRAGMA user_version = 30 触发 onUpgrade(30 -> 当前)。
 
 /// 手写一个 v30 库：epub_books（v16 book-key 形态）+ 一条真实行，user_version=30。
 /// 开库触发 onUpgrade(30 -> 当前)，只有 from<31 步会 createTable(hibikiPairedPeers)。
-HibikiDatabase _openMigratedFromV30() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _openMigratedFromV30() {
+  return FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (raw) {
         raw.execute('PRAGMA foreign_keys = ON');
@@ -52,8 +52,8 @@ CREATE TABLE epub_books (
 
 /// 手写一个「未来版本」库（user_version = 99 > 代码 schemaVersion）以强制走降级
 /// 保护分支，且 99 恒大于任何未来 bump 不会 stale。
-HibikiDatabase _openDowngradedFromFuture() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _openDowngradedFromFuture() {
+  return FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (raw) {
         raw.execute('''
@@ -78,7 +78,7 @@ CREATE TABLE hibiki_paired_peers (
 void main() {
   test('v30 -> v31 creates hibiki_paired_peers with zero loss of old rows',
       () async {
-    final HibikiDatabase db = _openMigratedFromV30();
+    final FushiDatabase db = _openMigratedFromV30();
     addTearDown(db.close);
 
     // Opening runs onUpgrade(30 -> current). Compare to the live schemaVersion
@@ -99,14 +99,14 @@ void main() {
     expect(books.single.importedAt, 42);
 
     // The new table now exists and starts empty.
-    final List<HibikiPairedPeerRow> peers = await db.getPairedPeers();
+    final List<FushiPairedPeerRow> peers = await db.getPairedPeers();
     expect(peers, isEmpty, reason: '空表 = 无已配对对端 = auth 未接线前行为零变化');
   });
 
   test('fresh DB has hibiki_paired_peers from createAll and is idempotent',
       () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     // onCreate's createAll must include the new table; querying it proves it
@@ -119,30 +119,30 @@ void main() {
   test(
       'upsert is idempotent, getPairedPeers sorts by pairedAtMs, revoke counts',
       () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     // Insert two peers OUT of pairedAtMs order to prove the sort.
-    await db.upsertPairedPeer(HibikiPairedPeersCompanion.insert(
+    await db.upsertPairedPeer(FushiPairedPeersCompanion.insert(
       peerId: 'peer-b',
       token: 'tok-b',
       pairedAtMs: 2000,
       deviceName: const Value('Device B'),
     ));
-    await db.upsertPairedPeer(HibikiPairedPeersCompanion.insert(
+    await db.upsertPairedPeer(FushiPairedPeersCompanion.insert(
       peerId: 'peer-a',
       token: 'tok-a',
       pairedAtMs: 1000,
     ));
 
-    List<HibikiPairedPeerRow> peers = await db.getPairedPeers();
+    List<FushiPairedPeerRow> peers = await db.getPairedPeers();
     expect(peers.map((p) => p.peerId).toList(), <String>['peer-a', 'peer-b'],
         reason: 'ordered by pairedAtMs ascending');
 
     // upsert on the SAME peerId updates the row in place (UNIQUE conflict),
     // never inserts a duplicate.
-    await db.upsertPairedPeer(HibikiPairedPeersCompanion.insert(
+    await db.upsertPairedPeer(FushiPairedPeersCompanion.insert(
       peerId: 'peer-a',
       token: 'tok-a-rotated',
       pairedAtMs: 1500,
@@ -150,7 +150,7 @@ void main() {
     ));
     peers = await db.getPairedPeers();
     expect(peers.length, 2, reason: 'upsert must not create a duplicate row');
-    final HibikiPairedPeerRow a = peers.firstWhere((p) => p.peerId == 'peer-a');
+    final FushiPairedPeerRow a = peers.firstWhere((p) => p.peerId == 'peer-a');
     expect(a.token, 'tok-a-rotated');
     expect(a.pairedAtMs, 1500);
     expect(a.lastSeenIp, '192.168.1.7');
@@ -165,15 +165,15 @@ void main() {
 
   test('opening a future-version DB is refused with the downgrade exception',
       () async {
-    final HibikiDatabase db = _openDowngradedFromFuture();
+    final FushiDatabase db = _openDowngradedFromFuture();
     addTearDown(db.close);
 
     await expectLater(
       db.customSelect('PRAGMA user_version').getSingle(),
-      throwsA(isA<HibikiDatabaseDowngradeException>()
-          .having((HibikiDatabaseDowngradeException e) => e.dbVersion,
+      throwsA(isA<FushiDatabaseDowngradeException>()
+          .having((FushiDatabaseDowngradeException e) => e.dbVersion,
               'dbVersion', 99)
-          .having((HibikiDatabaseDowngradeException e) => e.appSchemaVersion,
+          .having((FushiDatabaseDowngradeException e) => e.appSchemaVersion,
               'appSchemaVersion', db.schemaVersion)),
       reason: 'a newer-schema DB must be refused, never destructively rebuilt',
     );

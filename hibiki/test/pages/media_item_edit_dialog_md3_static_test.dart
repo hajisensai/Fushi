@@ -13,9 +13,9 @@ void main() {
       'class MediaItemCoverOverrideField',
     );
 
-    expect(dialogSource, contains('HibikiDialogFrame('));
-    expect(dialogSource, contains('HibikiModalSheetFrame('));
-    expect(dialogSource, contains('HibikiDesignTokens.of(context)'));
+    expect(dialogSource, contains('FushiDialogFrame('));
+    expect(dialogSource, contains('FushiModalSheetFrame('));
+    expect(dialogSource, contains('FushiDesignTokens.of(context)'));
     expect(dialogSource, contains('insetPadding: EdgeInsets.symmetric('));
     expect(dialogSource, contains('horizontal: tokens.spacing.card'));
     expect(dialogSource, contains('vertical: tokens.spacing.gap'));

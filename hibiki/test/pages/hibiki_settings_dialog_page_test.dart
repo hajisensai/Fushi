@@ -23,7 +23,7 @@ void main() {
     tester.view.physicalSize = const Size(360, 420);
     addTearDown(tester.view.reset);
 
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+    final FushiDatabase db = FushiDatabase.forTesting(
       DatabaseConnection(NativeDatabase.memory()),
     );
     final ThemeNotifier themeNotifier =
@@ -49,7 +49,7 @@ void main() {
         child: TranslationProvider(
           child: MaterialApp(
             theme: ThemeData(useMaterial3: true),
-            home: const HibikiSettingsDialogPage(),
+            home: const FushiSettingsDialogPage(),
           ),
         ),
       ),

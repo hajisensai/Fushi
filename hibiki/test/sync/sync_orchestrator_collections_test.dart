@@ -11,13 +11,13 @@ import 'package:fushi_core/fushi_core.dart';
 import 'fake_asset_store.dart';
 import 'sync_orchestrator_test.dart' show FakeSyncBackend;
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 /// 一台设备：自有 DB + deviceId，共享同一 FakeAssetStore（模拟同一云命名空间）。
 /// [syncCollections] 复刻编排器的云后端合集阶段（per-device 文件读-合-写）。
 class _Dev {
   _Dev(this.db, this.backend, this.tmp, this.deviceId);
-  final HibikiDatabase db;
+  final FushiDatabase db;
   final FakeSyncBackend backend;
   final Directory tmp;
   final String deviceId;

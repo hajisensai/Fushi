@@ -172,7 +172,7 @@ class _TorrentTaskDetailDialogState
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 720,
       maxHeightFactor: 0.86,
       scrollable: false,
@@ -331,7 +331,7 @@ class _TorrentTaskDetailDialogState
                 states: pieces.states,
                 haveColor: theme.colorScheme.primary,
                 downloadingColor: theme.colorScheme.tertiary,
-                missingColor: HibikiDesignTokens.of(context).surfaces.overlay,
+                missingColor: FushiDesignTokens.of(context).surfaces.overlay,
               ),
             ),
           ),
@@ -350,13 +350,13 @@ class _TorrentTaskDetailDialogState
         _statRow(
           theme,
           '↓ / ↑',
-          '${HibikiByteFormat.speed(snapshot.downRateBps.toDouble())} / '
-              '${HibikiByteFormat.speed(snapshot.upRateBps.toDouble())}',
+          '${FushiByteFormat.speed(snapshot.downRateBps.toDouble())} / '
+              '${FushiByteFormat.speed(snapshot.upRateBps.toDouble())}',
         ),
         _statRow(
           theme,
-          '↓ ${HibikiByteFormat.bytes(snapshot.downloadedBytes)}',
-          '↑ ${HibikiByteFormat.bytes(snapshot.uploadedBytes)}',
+          '↓ ${FushiByteFormat.bytes(snapshot.downloadedBytes)}',
+          '↑ ${FushiByteFormat.bytes(snapshot.uploadedBytes)}',
         ),
         if (eta != null) _statRow(theme, t.download_task_eta, eta),
         if (ratio != null) _statRow(theme, t.download_task_ratio, ratio),
@@ -444,8 +444,8 @@ class _TorrentTaskDetailDialogState
         _statRow(
           theme,
           t.download_detail_session_rates,
-          '↓ ${HibikiByteFormat.speed(session.downRateBps.toDouble())} · '
-          '↑ ${HibikiByteFormat.speed(session.upRateBps.toDouble())}',
+          '↓ ${FushiByteFormat.speed(session.downRateBps.toDouble())} · '
+          '↑ ${FushiByteFormat.speed(session.upRateBps.toDouble())}',
         ),
       for (final TorrentPortMappingInfo mapping in session.portMappings)
         _statRow(
@@ -485,8 +485,8 @@ class _TorrentTaskDetailDialogState
                 file.index < priorities.length)
             ? priorities[file.index]
             : null;
-        return HibikiListItem(
-          density: HibikiListDensity.compact,
+        return FushiListItem(
+          density: FushiListDensity.compact,
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
           titleMaxLines: 2,
           title: Text(file.name),
@@ -501,7 +501,7 @@ class _TorrentTaskDetailDialogState
               const SizedBox(width: 8),
               Text(
                 '${(file.progress * 100).toStringAsFixed(0)}% · '
-                '${HibikiByteFormat.bytes(file.size)}',
+                '${FushiByteFormat.bytes(file.size)}',
                 style: theme.textTheme.bodySmall,
               ),
             ],
@@ -547,8 +547,8 @@ class _TorrentTaskDetailDialogState
       itemCount: peers.length,
       itemBuilder: (BuildContext context, int index) {
         final TorrentPeerDetail peer = peers[index];
-        return HibikiListItem(
-          density: HibikiListDensity.compact,
+        return FushiListItem(
+          density: FushiListDensity.compact,
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
           title: Text('${peer.address}:${peer.port}'),
           subtitle: Text(
@@ -565,13 +565,13 @@ class _TorrentTaskDetailDialogState
             crossAxisAlignment: CrossAxisAlignment.end,
             children: <Widget>[
               Text(
-                '↓ ${HibikiByteFormat.speed(peer.downSpeedBps.toDouble())} '
-                '↑ ${HibikiByteFormat.speed(peer.upSpeedBps.toDouble())}',
+                '↓ ${FushiByteFormat.speed(peer.downSpeedBps.toDouble())} '
+                '↑ ${FushiByteFormat.speed(peer.upSpeedBps.toDouble())}',
                 style: theme.textTheme.bodySmall,
               ),
               Text(
-                '↓ ${HibikiByteFormat.bytes(peer.downloadedBytes)} '
-                '↑ ${HibikiByteFormat.bytes(peer.uploadedBytes)}',
+                '↓ ${FushiByteFormat.bytes(peer.downloadedBytes)} '
+                '↑ ${FushiByteFormat.bytes(peer.uploadedBytes)}',
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
               ),
@@ -608,8 +608,8 @@ class _TorrentTaskDetailDialogState
       itemBuilder: (BuildContext context, int index) {
         final TorrentTrackerDetail tracker = trackers[index];
         final bool failing = tracker.status == TorrentTrackerStatus.notWorking;
-        return HibikiListItem(
-          density: HibikiListDensity.compact,
+        return FushiListItem(
+          density: FushiListDensity.compact,
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
           titleMaxLines: 2,
           title: Text(tracker.url),

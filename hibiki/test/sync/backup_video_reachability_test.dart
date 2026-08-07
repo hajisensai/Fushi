@@ -14,7 +14,7 @@ Future<Directory> _tempDir(String prefix) =>
     Directory.systemTemp.createTemp(prefix);
 
 Future<void> _exportZip(
-  HibikiDatabase srcDb,
+  FushiDatabase srcDb,
   String srcDir,
   String zipPath,
 ) async {
@@ -35,12 +35,12 @@ void main() {
       'video shell)', () async {
     final curDir = await _tempDir('vr_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     await cur.close();
 
     final srcDir = await _tempDir('vr_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     // A local-file video whose file does not exist → nothing to pack.
     await src.upsertVideoBook(_video('local-vid', '/fake/missing.mp4'));
     // A streaming video (http) is self-contained → must be kept.
@@ -55,7 +55,7 @@ void main() {
     await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final uids = (await after.allVideoBooks()).map((v) => v.bookUid).toSet();
     // Only the streaming video imported; the dead local shell was skipped.
@@ -66,7 +66,7 @@ void main() {
       () async {
     final curDir = await _tempDir('vr_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     await cur.close();
 
     // Source device: a real video file under its videos root.
@@ -77,7 +77,7 @@ void main() {
 
     final srcDir = await _tempDir('vr_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     await src.upsertVideoBook(_video('real-vid', srcFile.path));
     final zipDir = await _tempDir('vr_zip_');
     addTearDown(() => cleanupTempDir(zipDir));
@@ -97,7 +97,7 @@ void main() {
       videosRootDirectory: curVideos.path,
     );
 
-    final after = HibikiDatabase(curDir.path);
+    final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final uids = (await after.allVideoBooks()).map((v) => v.bookUid).toSet();
     expect(uids, <String>{'real-vid'}); // reachable local video imported
@@ -107,12 +107,12 @@ void main() {
       () async {
     final curDir = await _tempDir('vr_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final cur = HibikiDatabase(curDir.path);
+    final cur = FushiDatabase(curDir.path);
     addTearDown(cur.close);
 
     final srcDir = await _tempDir('vr_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     await src.upsertVideoBook(_video('local-vid', '/fake/missing.mp4'));
     await src.upsertVideoBook(_video('stream-vid', 'https://example.com/v'));
     final zipDir = await _tempDir('vr_zip_');
@@ -137,7 +137,7 @@ void main() {
       'not reported as 0 books)', () async {
     final srcDir = await _tempDir('vr_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final src = HibikiDatabase(srcDir.path);
+    final src = FushiDatabase(srcDir.path);
     // Two streaming videos, zero EPUBs.
     await src.upsertVideoBook(_video('v1', 'https://example.com/a'));
     await src.upsertVideoBook(_video('v2', 'https://example.com/b'));

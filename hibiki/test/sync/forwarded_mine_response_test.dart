@@ -6,7 +6,7 @@ import 'package:fushi/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:fushi/src/sync/immersion_mine_payload.dart';
 
 /// 假挖词 service：捕获转发来的 payload，回预设结果。
-class _FakeMining implements HibikiRemoteMiningService {
+class _FakeMining implements FushiRemoteMiningService {
   ForwardedMinePayload? forwarded;
   RemoteMineResult result =
       const RemoteMineResult(result: 'success', message: 'ok');

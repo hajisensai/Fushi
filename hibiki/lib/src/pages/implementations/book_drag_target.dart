@@ -28,7 +28,7 @@ class _BookDragTargetState extends State<BookDragTarget> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color hoverColor = tokens.surfaces.primary;
     return DragTarget<BookTagRow>(
       onWillAcceptWithDetails: (_) => true,

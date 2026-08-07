@@ -12,28 +12,28 @@ import 'package:http/http.dart' as http;
 /// 该指纹钉扎，client 只接受指纹相等的自签证书。PIN 绝不过线——只过 HMAC proof。
 
 /// v2 配对一次往返的结果。
-sealed class HibikiPairV2Outcome {
-  const HibikiPairV2Outcome();
+sealed class FushiPairV2Outcome {
+  const FushiPairV2Outcome();
 }
 
 /// 配对成功：拿到 host 派发的 token（及可选的 host 指纹回执用于 TOFU 复核）。
-class HibikiPairV2Success extends HibikiPairV2Outcome {
-  const HibikiPairV2Success({required this.token, this.hostFingerprint});
+class FushiPairV2Success extends FushiPairV2Outcome {
+  const FushiPairV2Success({required this.token, this.hostFingerprint});
   final String token;
   final String? hostFingerprint;
 }
 
 /// 配对失败：machine-readable [reason]（'pin' = PIN 错；'declined' = host 拒绝；
 /// 'unavailable' = host 无审批 UI；'error' = 传输/解析失败）。
-class HibikiPairV2Failure extends HibikiPairV2Outcome {
-  const HibikiPairV2Failure(this.reason);
+class FushiPairV2Failure extends FushiPairV2Outcome {
+  const FushiPairV2Failure(this.reason);
   final String reason;
 }
 
 /// client 侧 v2 配对驱动。[baseUrl] 应为 https host 根，[expectedFingerprint] 是
 /// TOFU 首连记录的 host 证书指纹（用于 pinned client）。
-class HibikiPairV2Client {
-  HibikiPairV2Client({
+class FushiPairV2Client {
+  FushiPairV2Client({
     required this.baseUrl,
     required this.expectedFingerprint,
     http.Client? httpClient,
@@ -64,14 +64,14 @@ class HibikiPairV2Client {
   /// [clientDeviceId] 是本机稳定 deviceId（TODO-961 M1b）：随 pair/v2 上报，host 用它
   /// 作 `hibiki_paired_peers.peerId` 落库并回派本设备专属 per-peer token。可空——host
   /// 侧无此字段时回退共享 token（向后兼容）。
-  Future<HibikiPairV2Outcome> pair({
+  Future<FushiPairV2Outcome> pair({
     required String deviceName,
     Future<String?> Function()? pinProvider,
     String? clientDeviceId,
   }) async {
     final http.Client client = _client();
     try {
-      final String clientNonce = HibikiPairingProtocol.generateNonce();
+      final String clientNonce = FushiPairingProtocol.generateNonce();
       final http.Response startResp = await client
           .post(
             Uri.parse('$baseUrl/api/pair/v2'),
@@ -85,10 +85,10 @@ class HibikiPairV2Client {
           )
           .timeout(timeout);
       if (startResp.statusCode == 403) {
-        return HibikiPairV2Failure(_reasonOf(startResp.body, 'unavailable'));
+        return FushiPairV2Failure(_reasonOf(startResp.body, 'unavailable'));
       }
       if (startResp.statusCode != 200) {
-        return const HibikiPairV2Failure('error');
+        return const FushiPairV2Failure('error');
       }
       final Map<String, dynamic> startBody =
           jsonDecode(startResp.body) as Map<String, dynamic>;
@@ -96,7 +96,7 @@ class HibikiPairV2Client {
       final String? hostNonce = startBody['hostNonce'] as String?;
       final bool pinRequired = startBody['pinRequired'] as bool? ?? true;
       if (sessionId == null || hostNonce == null) {
-        return const HibikiPairV2Failure('error');
+        return const FushiPairV2Failure('error');
       }
 
       final Map<String, dynamic> confirmBody = <String, dynamic>{
@@ -108,10 +108,10 @@ class HibikiPairV2Client {
         final String? pin = pinProvider == null ? null : await pinProvider();
         if (pin == null) {
           // pinProvider 返回 null = 用户取消；未接线（pinProvider==null）= 无从取得。
-          return HibikiPairV2Failure(pinProvider == null ? 'pin' : 'cancelled');
+          return FushiPairV2Failure(pinProvider == null ? 'pin' : 'cancelled');
         }
-        if (pin.isEmpty) return const HibikiPairV2Failure('pin');
-        confirmBody['pinProof'] = HibikiPairingProtocol.computePinProof(
+        if (pin.isEmpty) return const FushiPairV2Failure('pin');
+        confirmBody['pinProof'] = FushiPairingProtocol.computePinProof(
           pin: pin,
           clientNonce: clientNonce,
           hostNonce: hostNonce,
@@ -126,26 +126,26 @@ class HibikiPairV2Client {
           )
           .timeout(timeout);
       if (confirmResp.statusCode == 401) {
-        return HibikiPairV2Failure(_reasonOf(confirmResp.body, 'pin'));
+        return FushiPairV2Failure(_reasonOf(confirmResp.body, 'pin'));
       }
       if (confirmResp.statusCode == 403) {
-        return HibikiPairV2Failure(_reasonOf(confirmResp.body, 'declined'));
+        return FushiPairV2Failure(_reasonOf(confirmResp.body, 'declined'));
       }
       if (confirmResp.statusCode != 200) {
-        return const HibikiPairV2Failure('error');
+        return const FushiPairV2Failure('error');
       }
       final Map<String, dynamic> confirmJson =
           jsonDecode(confirmResp.body) as Map<String, dynamic>;
       final String? token = confirmJson['token'] as String?;
       if (token == null || token.isEmpty) {
-        return const HibikiPairV2Failure('error');
+        return const FushiPairV2Failure('error');
       }
-      return HibikiPairV2Success(
+      return FushiPairV2Success(
         token: token,
         hostFingerprint: confirmJson['hostFingerprint'] as String?,
       );
     } catch (_) {
-      return const HibikiPairV2Failure('error');
+      return const FushiPairV2Failure('error');
     } finally {
       if (_ownsClient) client.close();
     }

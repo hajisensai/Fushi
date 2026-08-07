@@ -29,8 +29,8 @@ void main() {
   });
 
   Future<AppModel> buildModel({bool withSessions = true}) async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
@@ -110,7 +110,7 @@ void main() {
     int initialTab = 0,
   }) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    HibikiToast.navigatorKey = navKey;
+    FushiToast.navigatorKey = navKey;
     await tester.pumpWidget(
       ProviderScope(
         overrides: <Override>[appProvider.overrideWith((_) => appModel)],

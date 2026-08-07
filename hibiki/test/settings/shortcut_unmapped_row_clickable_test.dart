@@ -40,11 +40,11 @@ void main() {
       contains('onTap: onEdit'),
       reason: '整行必须挂 onTap: onEdit，未映射行才可点击/可焦点导航并进入分配流程',
     );
-    // HibikiListItem 必须收到 onTap（不是只有 trailing 图标按钮可点）。
+    // FushiListItem 必须收到 onTap（不是只有 trailing 图标按钮可点）。
     expect(
-      RegExp(r'return HibikiListItem\(\s*\n\s*onTap: onEdit').hasMatch(body),
+      RegExp(r'return FushiListItem\(\s*\n\s*onTap: onEdit').hasMatch(body),
       isTrue,
-      reason: 'HibikiListItem 必须在构造时传入 onTap: onEdit',
+      reason: 'FushiListItem 必须在构造时传入 onTap: onEdit',
     );
   });
 

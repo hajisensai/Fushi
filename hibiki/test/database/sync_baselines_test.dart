@@ -3,8 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 void main() {
-  late HibikiDatabase db;
-  setUp(() => db = HibikiDatabase.forTesting(NativeDatabase.memory()));
+  late FushiDatabase db;
+  setUp(() => db = FushiDatabase.forTesting(NativeDatabase.memory()));
   tearDown(() => db.close());
 
   test('getSyncBaseline returns null when absent', () async {

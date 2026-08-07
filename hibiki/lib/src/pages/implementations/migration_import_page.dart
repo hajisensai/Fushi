@@ -166,15 +166,15 @@ class _MigrationImportPageState extends State<MigrationImportPage> {
             Text(t.migration_import_nothing)
           else ...<Widget>[
             for (final MigrationImportBatch batch in scan.ready)
-              HibikiListItem(
-                density: HibikiListDensity.compact,
+              FushiListItem(
+                density: FushiListDensity.compact,
                 leading: const Icon(Icons.inventory_2_outlined),
                 title: Text(_batchLabel(batch.batch)),
               ),
             for (final MapEntry<String, List<String>> e
                 in scan.problems.entries)
-              HibikiListItem(
-                density: HibikiListDensity.compact,
+              FushiListItem(
+                density: FushiListDensity.compact,
                 leading: Icon(Icons.error_outline,
                     color: Theme.of(context).colorScheme.error),
                 title: Text(t.migration_import_verify_failed(

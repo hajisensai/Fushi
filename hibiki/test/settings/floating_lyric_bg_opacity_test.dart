@@ -14,15 +14,15 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// 可调，唯独没动条本身的背景（硬编码 `bg.withAlpha(230/220)` ≈ 90%/86% 不透明）。
 /// 本任务新增 `floating_lyric_bg_opacity` 偏好（0..100%），缩放条背景 alpha，并把默认
 /// 值定为 70，使「默认就更透」满足用户诉求，同时滑杆可继续微调。
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
 
 void main() {
   group('PreferencesRepository floatingLyricBgOpacity', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late PreferencesRepository repo;
 
     setUp(() async {

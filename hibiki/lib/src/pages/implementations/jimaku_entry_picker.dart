@@ -59,7 +59,7 @@ class JimakuEntryPicker extends StatelessWidget {
   Widget _buildEntryChoice(BuildContext context, JimakuEntry entry) {
     final ThemeData theme = Theme.of(context);
     final bool selected = selectedEntryId == entry.id;
-    return HibikiCard(
+    return FushiCard(
       key: ValueKey<String>('jimaku_entry_${entry.id}'),
       selected: selected,
       borderColor: selected

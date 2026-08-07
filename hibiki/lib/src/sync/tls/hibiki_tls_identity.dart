@@ -6,8 +6,8 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
 /// host 自身的 TLS 身份：一对 EC P-256 密钥 + 自签证书，落盘 PEM。
-class HibikiTlsIdentity {
-  const HibikiTlsIdentity({
+class FushiTlsIdentity {
+  const FushiTlsIdentity({
     required this.certificatePem,
     required this.privateKeyPem,
     required this.fingerprintSha256,
@@ -20,8 +20,8 @@ class HibikiTlsIdentity {
 
 /// 用 basic_utils（纯 Dart：pointycastle + asn1lib，无原生）生成自签
 /// EC P-256 证书 + 私钥 PEM 的纯函数封装。私钥以 PKCS#8 PEM 输出。
-class HibikiSelfSignedCertGenerator {
-  HibikiSelfSignedCertGenerator._();
+class FushiSelfSignedCertGenerator {
+  FushiSelfSignedCertGenerator._();
 
   /// 生成自签 EC P-256 证书 + 私钥 PEM。
   ///
@@ -82,8 +82,8 @@ class HibikiSelfSignedCertGenerator {
 
 /// 生成 / 加载 / 持久化 host TLS 身份。私钥仅落数据目录下 sync-tls/ 子目录，
 /// 靠 OS 文件权限保护（取舍 D：不接系统密钥库）。
-class HibikiTlsIdentityStore {
-  HibikiTlsIdentityStore({required this.dataDir});
+class FushiTlsIdentityStore {
+  FushiTlsIdentityStore({required this.dataDir});
 
   /// 数据目录（通常是 getApplicationSupportDirectory 的路径）。私钥落
   /// <dataDir>/sync-tls/。
@@ -98,13 +98,13 @@ class HibikiTlsIdentityStore {
   String get _keyPath => p.join(_tlsDir, _keyFile);
 
   /// 已有则加载，否则生成 EC P-256 自签证书并落盘。
-  Future<HibikiTlsIdentity> loadOrCreate() async {
+  Future<FushiTlsIdentity> loadOrCreate() async {
     final certFile = File(_certPath);
     final keyFile = File(_keyPath);
     if (await certFile.exists() && await keyFile.exists()) {
       final certificatePem = await certFile.readAsString();
       final privateKeyPem = await keyFile.readAsString();
-      return HibikiTlsIdentity(
+      return FushiTlsIdentity(
         certificatePem: certificatePem,
         privateKeyPem: privateKeyPem,
         fingerprintSha256: fingerprintOf(certificatePem),
@@ -114,9 +114,9 @@ class HibikiTlsIdentityStore {
   }
 
   /// 强制重新生成（用户重置证书时调用，会使旧指纹钉扎失效）。
-  Future<HibikiTlsIdentity> regenerate() => _generateAndPersist();
+  Future<FushiTlsIdentity> regenerate() => _generateAndPersist();
 
-  Future<HibikiTlsIdentity> _generateAndPersist() async {
+  Future<FushiTlsIdentity> _generateAndPersist() async {
     await Directory(_tlsDir).create(recursive: true);
 
     final String commonName = Platform.localHostname.isNotEmpty
@@ -125,7 +125,7 @@ class HibikiTlsIdentityStore {
     final List<String> ipv4 = await _localIpv4Addresses();
 
     final ({String certificatePem, String privateKeyPem}) generated =
-        HibikiSelfSignedCertGenerator.generate(
+        FushiSelfSignedCertGenerator.generate(
       commonName: commonName,
       sanIpAddresses: ipv4,
     );
@@ -138,7 +138,7 @@ class HibikiTlsIdentityStore {
     final certFile = File(_certPath);
     await certFile.writeAsString(generated.certificatePem, flush: true);
 
-    return HibikiTlsIdentity(
+    return FushiTlsIdentity(
       certificatePem: generated.certificatePem,
       privateKeyPem: generated.privateKeyPem,
       fingerprintSha256: fingerprintOf(generated.certificatePem),

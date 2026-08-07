@@ -82,7 +82,7 @@ void main() {
         reason: 'onReceivedError 必须先判 sentinel 区分创建失败');
     expect(
         compactCode(block)
-            .contains(compactCode('HibikiToast.show(msg: t.reader_open_failed,')),
+            .contains(compactCode('FushiToast.show(msg: t.reader_open_failed,')),
         isTrue,
         reason: '命中创建失败必须提示用户打开失败');
     expect(block.contains('Navigator.of(context).pop()'), isTrue,

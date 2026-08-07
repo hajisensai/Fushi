@@ -12,7 +12,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 /// (a) 音频查词 token POST 侧无 prune 无 cap → 内存膨胀（行为单测）。
 /// (b) PROPFIND 逐项 stat 同步阻塞 → 改异步（源码扫描守卫）。
 /// (d) WebDAV 并发写无互斥 → 按路径串行闸门（源码扫描守卫）。
-class _FloodLookupService implements HibikiRemoteLookupService {
+class _FloodLookupService implements FushiRemoteLookupService {
   _FloodLookupService(this._bytes);
 
   final Uint8List _bytes;
@@ -52,7 +52,7 @@ String _sliceMethod(String source, String startMarker, String endMarker) {
 
 void main() {
   group('BUG-908(a) 音频 token 数量上限', () {
-    late HibikiSyncServer server;
+    late FushiSyncServer server;
     late Directory tempDir;
     const String token = 'bug901-audio-cap';
     late String base;
@@ -63,7 +63,7 @@ void main() {
 
     setUp(() async {
       tempDir = Directory.systemTemp.createTempSync('hbk_audio_cap');
-      server = HibikiSyncServer(
+      server = FushiSyncServer(
         syncDataDir: tempDir.path,
         port: 0,
         token: token,

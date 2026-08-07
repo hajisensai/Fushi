@@ -13,7 +13,7 @@ import 'package:http/http.dart' as http;
 /// **为什么抽出来**——这套逻辑此前被逐行复制过多份：
 /// `hibiki_remote_lookup_client.dart` 的 `_postLookup`、
 /// `hibiki_remote_mining_client.dart` 的 `_post`（它的类注释自己就写着「传输契约与
-/// [HibikiRemoteLookupClient] 完全同构」），
+/// [FushiRemoteLookupClient] 完全同构」），
 /// 另有 `interconnect_manga_ocr_client.dart` 的 GET 版 `probe` 和
 /// `InterconnectSyncBackend` 走 `WebDavOps` 的第四份。每加一个互联端点就再抄一遍，
 /// 而钉扎、401 语义、socket 回收这些安全相关的细节一旦有一份抄漏就是真事故
@@ -61,8 +61,8 @@ class InterconnectPostTransport {
     required Duration timeout,
     required String authErrorMessage,
   }) async {
-    final List<HibikiClientUrl> candidates = (await _repo.getHibikiClientUrls())
-        .where((HibikiClientUrl u) => u.enabled)
+    final List<FushiClientUrl> candidates = (await _repo.getHibikiClientUrls())
+        .where((FushiClientUrl u) => u.enabled)
         .toList(growable: false);
     final String? token = await _repo.getHibikiClientToken();
     if (candidates.isEmpty || token == null || token.isEmpty) {
@@ -72,7 +72,7 @@ class InterconnectPostTransport {
 
     bool attempted = false;
     bool anyResponse = false;
-    for (final HibikiClientUrl candidate in candidates) {
+    for (final FushiClientUrl candidate in candidates) {
       final Uri? uri = interconnectEndpointUri(candidate.url, path);
       if (uri == null) continue;
       // TODO-961 M1/gap①: https 带指纹的候选**始终**走钉扎 client，与是否注入了

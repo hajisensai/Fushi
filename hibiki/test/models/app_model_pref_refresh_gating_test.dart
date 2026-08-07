@@ -55,12 +55,12 @@ void main() {
     }
   });
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late PreferencesRepository prefs;
   late _RecordingAppModel appModel;
 
   setUp(() async {
-    db = HibikiDatabase.forTesting(
+    db = FushiDatabase.forTesting(
       DatabaseConnection(NativeDatabase.memory()),
     );
     prefs = PreferencesRepository(db);
@@ -124,7 +124,7 @@ void main() {
         reason: 'profile switch (direct DB version bump) must be detected');
   });
 
-  // The bump now lives in HibikiDatabase.setPref, so writers that bypass
+  // The bump now lives in FushiDatabase.setPref, so writers that bypass
   // PreferencesRepository (ThemeNotifier, MediaSource) also signal the popup.
   // Both notifiers write through _db.setPref, exactly as simulated below.
 

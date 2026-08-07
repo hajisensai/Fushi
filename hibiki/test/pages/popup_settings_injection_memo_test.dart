@@ -333,8 +333,8 @@ void main() {
     test('memo 键字段失效：lookupAudioVolume（查词发音音量）', () async {
       final Directory tempDir =
           await Directory.systemTemp.createTemp('hibiki_volmemo');
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       final ReaderSettings settings = ReaderSettings(db);
       await settings.loadFromPrefsSnapshot(const <String, String>{});
       ReaderHibikiSource.readerSettings = settings;
@@ -428,7 +428,7 @@ void main() {
 
   group('换字体：dictionary font JS memo（(name,path,mtime,size) 指纹键）', () {
     late Directory tempDir;
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late MemoAppModel appModel;
     late File fontFile;
 
@@ -439,7 +439,7 @@ void main() {
       fontFile = File('${fontsDir.path}/MemoFont.ttf');
       await fontFile.writeAsBytes(<int>[0x00, 0x01, 0x02, 0x03]); // AAECAw==
 
-      db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
       final ReaderSettings settings = ReaderSettings(db);
       await settings.loadFromPrefsSnapshot(<String, String>{
         'src:reader_ttu:dict_fonts': jsonEncode(<Map<String, dynamic>>[

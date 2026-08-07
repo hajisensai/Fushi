@@ -17,8 +17,8 @@ import 'package:fushi_core/fushi_core.dart';
 // 断言方式是**同一组输入跑两遍**（一遍喂快照、一遍让后端逐本列举），比对方向与
 // 网络调用次数。只断言"结果对"是不够的：那样两条路各自算错成同一个值也会通过。
 
-HibikiDatabase _testDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 /// 逐本列举后端：按书文件夹名返回预置的远端文件，并数清被问了多少次。
 class _PerBookBackend implements SyncBackend {
@@ -108,7 +108,7 @@ RemoteListingSnapshot _snapshotOf(Map<String, String?> remote) {
 /// [baseline] = 共同祖先（上次双方达成一致的进度时间戳）。同步过一次之后它必然存在；
 /// 缺了它、且两边时间戳又不同，既有的三方判定会正确地报 conflict 而不是自动选边。
 Future<void> _seedBook(
-  HibikiDatabase db, {
+  FushiDatabase db, {
   required String title,
   int? updatedAt,
   int normCharOffset = 5000,
@@ -137,7 +137,7 @@ Future<void> _seedBook(
 }
 
 Future<List<SyncBookResult>> _run(
-  HibikiDatabase db,
+  FushiDatabase db,
   SyncBackend backend, {
   RemoteListingSnapshot? listing,
 }) =>
@@ -152,16 +152,16 @@ Future<List<SyncBookResult>> _run(
 Future<({List<SyncResult> viaSnapshot, List<SyncResult> viaPerBook, int calls})>
     _bothPaths(
   Map<String, String?> remote,
-  Future<void> Function(HibikiDatabase db) seed,
+  Future<void> Function(FushiDatabase db) seed,
 ) async {
-  final HibikiDatabase dbA = _testDb();
+  final FushiDatabase dbA = _testDb();
   addTearDown(dbA.close);
   await seed(dbA);
   final _PerBookBackend backendA = _PerBookBackend(remote);
   final List<SyncBookResult> a =
       await _run(dbA, backendA, listing: _snapshotOf(remote));
 
-  final HibikiDatabase dbB = _testDb();
+  final FushiDatabase dbB = _testDb();
   addTearDown(dbB.close);
   await seed(dbB);
   final _PerBookBackend backendB = _PerBookBackend(remote);
@@ -178,7 +178,7 @@ void main() {
   test('双方一致：两条路都判 synced，快照路零列举请求', () async {
     final r = await _bothPaths(
       <String, String?>{'Book A': 'progress_1_6_1000_0.5.json'},
-      (HibikiDatabase db) => _seedBook(db, title: 'Book A', updatedAt: 1000),
+      (FushiDatabase db) => _seedBook(db, title: 'Book A', updatedAt: 1000),
     );
     expect(r.viaSnapshot, r.viaPerBook);
     expect(r.viaSnapshot, <SyncResult>[SyncResult.synced]);
@@ -188,7 +188,7 @@ void main() {
   test('本地更新：两条路都判 exported', () async {
     final r = await _bothPaths(
       <String, String?>{'Book A': 'progress_1_6_1000_0.5.json'},
-      (HibikiDatabase db) => _seedBook(db,
+      (FushiDatabase db) => _seedBook(db,
           title: 'Book A',
           updatedAt: 2000,
           normCharOffset: 6000,
@@ -202,7 +202,7 @@ void main() {
   test('远端更新：两条路都判 imported——快照绝不会让这次拉取被跳掉', () async {
     final r = await _bothPaths(
       <String, String?>{'Book A': 'progress_1_6_9000_0.9.json'},
-      (HibikiDatabase db) =>
+      (FushiDatabase db) =>
           _seedBook(db, title: 'Book A', updatedAt: 1000, baseline: 1000),
     );
     expect(r.viaSnapshot, r.viaPerBook);
@@ -212,7 +212,7 @@ void main() {
   test('远端没有 progress：两条路都判 exported', () async {
     final r = await _bothPaths(
       <String, String?>{'Book A': null},
-      (HibikiDatabase db) => _seedBook(db, title: 'Book A', updatedAt: 1000),
+      (FushiDatabase db) => _seedBook(db, title: 'Book A', updatedAt: 1000),
     );
     expect(r.viaSnapshot, r.viaPerBook);
     expect(r.viaSnapshot, <SyncResult>[SyncResult.exported]);
@@ -221,7 +221,7 @@ void main() {
   test('两边都没有进度：两条路都判 synced', () async {
     final r = await _bothPaths(
       <String, String?>{'Book A': null},
-      (HibikiDatabase db) => _seedBook(db, title: 'Book A'),
+      (FushiDatabase db) => _seedBook(db, title: 'Book A'),
     );
     expect(r.viaSnapshot, r.viaPerBook);
     expect(r.viaSnapshot, <SyncResult>[SyncResult.synced]);
@@ -230,7 +230,7 @@ void main() {
   test('时间戳相同但分数不同：两条路都按内容 tie-break，结论一致', () async {
     final r = await _bothPaths(
       <String, String?>{'Book A': 'progress_1_6_1000_0.1.json'},
-      (HibikiDatabase db) =>
+      (FushiDatabase db) =>
           _seedBook(db, title: 'Book A', updatedAt: 1000, normCharOffset: 9000),
     );
     expect(r.viaSnapshot, r.viaPerBook);
@@ -241,14 +241,14 @@ void main() {
   test('快照里没有这本书（远端全新）：两条路都判 exported，不会被当成一致', () async {
     // 快照说"没有这个文件夹"与逐本列举一个不存在的文件夹必须同义。若把"快照里查
     // 不到"误当成"双方一致"，一本从没上传过的书就永远传不上去。
-    final HibikiDatabase dbA = _testDb();
+    final FushiDatabase dbA = _testDb();
     addTearDown(dbA.close);
     await _seedBook(dbA, title: 'Book A', updatedAt: 1000);
     final _PerBookBackend backendA = _PerBookBackend(<String, String?>{});
     final List<SyncBookResult> a =
         await _run(dbA, backendA, listing: RemoteListingBuilder().build());
 
-    final HibikiDatabase dbB = _testDb();
+    final FushiDatabase dbB = _testDb();
     addTearDown(dbB.close);
     await _seedBook(dbB, title: 'Book A', updatedAt: 1000);
     final _PerBookBackend backendB = _PerBookBackend(<String, String?>{});
@@ -266,7 +266,7 @@ void main() {
       'RemoteNewer': 'progress_1_6_9000_0.9.json',
       'RemoteMissing': null,
     };
-    final r = await _bothPaths(remote, (HibikiDatabase db) async {
+    final r = await _bothPaths(remote, (FushiDatabase db) async {
       await _seedBook(db, title: 'Same', updatedAt: 1000, baseline: 1000);
       await _seedBook(db,
           title: 'LocalNewer',
@@ -291,14 +291,14 @@ void main() {
   test('无共同祖先且双边分叉：两条路都判 conflict（快照不会把冲突吞成一致）', () async {
     final r = await _bothPaths(
       <String, String?>{'Book A': 'progress_1_6_9000_0.9.json'},
-      (HibikiDatabase db) => _seedBook(db, title: 'Book A', updatedAt: 1000),
+      (FushiDatabase db) => _seedBook(db, title: 'Book A', updatedAt: 1000),
     );
     expect(r.viaSnapshot, r.viaPerBook);
     expect(r.viaSnapshot, <SyncResult>[SyncResult.conflict]);
   });
 
   test('不传快照（后端不支持）→ 逐本列举，行为与改动前逐字相同', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     await _seedBook(db, title: 'Book A', updatedAt: 1000);
     await _seedBook(db, title: 'Book B', updatedAt: 1000);

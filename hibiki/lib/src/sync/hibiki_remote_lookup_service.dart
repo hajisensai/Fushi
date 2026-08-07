@@ -5,7 +5,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/sync/forwarded_mine_payload.dart';
 import 'package:fushi/src/sync/immersion_mine_payload.dart';
 
-abstract class HibikiRemoteLookupService {
+abstract class FushiRemoteLookupService {
   Future<DictionarySearchResult?> searchDictionary({
     required String term,
     required bool wildcards,
@@ -19,7 +19,7 @@ abstract class HibikiRemoteLookupService {
 }
 
 /// 浏览器扩展挖词的窄接口（与查词分离，避免 server 直接依赖 AnkiRepository）。
-abstract class HibikiRemoteMiningService {
+abstract class FushiRemoteMiningService {
   /// 返回 [RemoteMineResult]（结果名 + 失败/部分成功诊断）。
   Future<RemoteMineResult> mineEntry({
     required Map<String, String> fields,
@@ -51,7 +51,7 @@ abstract class HibikiRemoteMiningService {
 }
 
 /// 把一次查词结果写入 Hibiki 查词历史（无 UI 副作用）。浏览器扩展 record 用。
-abstract class HibikiRemoteHistoryService {
+abstract class FushiRemoteHistoryService {
   void recordHistory(DictionarySearchResult result);
 }
 

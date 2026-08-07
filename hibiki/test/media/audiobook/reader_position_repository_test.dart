@@ -4,11 +4,11 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late ReaderPositionRepository repo;
 
   setUp(() {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     repo = ReaderPositionRepository(db);
   });
 

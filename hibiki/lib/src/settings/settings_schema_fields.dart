@@ -99,7 +99,7 @@ class SettingsSecretFieldState extends State<SettingsSecretField> {
   Widget? _suffix() {
     final List<Widget> actions = <Widget>[
       if (widget.revealToggle)
-        HibikiIconButton(
+        FushiIconButton(
           tooltip: _obscured ? t.settings_secret_show : t.settings_secret_hide,
           size: 18,
           icon: _obscured
@@ -108,7 +108,7 @@ class SettingsSecretFieldState extends State<SettingsSecretField> {
           onTap: () => setState(() => _obscured = !_obscured),
         ),
       if (widget.resetValue != null && widget.onReset != null)
-        HibikiIconButton(
+        FushiIconButton(
           tooltip: t.reset,
           size: 18,
           icon: Icons.undo_outlined,
@@ -220,13 +220,13 @@ class SettingsNumberFieldState extends State<SettingsNumberField> {
       icon: widget.icon,
       showIcon: widget.showIcon,
       controlBelow: true,
-      trailing: HibikiTextField(
+      trailing: FushiTextField(
         controller: _controller,
         focusNode: _focusNode,
         keyboardType: TextInputType.number,
         suffixText: widget.suffixText,
         suffixIcon: resettable
-            ? HibikiIconButton(
+            ? FushiIconButton(
                 tooltip: t.reset,
                 size: 18,
                 icon: Icons.undo_outlined,

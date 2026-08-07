@@ -71,7 +71,7 @@ const double kGalHookTextFontSize = 30.0;
 
 /// Windows Hook 台词浮窗的专用 MethodChannel 契约。
 class GalHookTextOverlayChannel extends FloatingOverlayChannel {
-  GalHookTextOverlayChannel._() : super(HibikiChannels.galHookText);
+  GalHookTextOverlayChannel._() : super(FushiChannels.galHookText);
 
   static final GalHookTextOverlayChannel _instance =
       GalHookTextOverlayChannel._();

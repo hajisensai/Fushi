@@ -36,12 +36,12 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.74,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: widget.title,
         leadingIcon: Icons.delete_outline,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -211,18 +211,18 @@ class BookProfileDialogFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = Translations.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 500,
       maxHeightFactor: 0.86,
-      // HibikiModalSheetFrame manages its own header/body/footer layout and
+      // FushiModalSheetFrame manages its own header/body/footer layout and
       // scrolls its body internally. Leaving the dialog frame's default
       // scrollable:true would wrap it in a second SingleChildScrollView, giving
       // a confusing nested outer+inner double scroll. scrollable:false makes the
       // ConstrainedBox bound the sheet directly, matching every other dialog.
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.profile_book_profile,
         leadingIcon: Icons.manage_accounts_outlined,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -360,7 +360,7 @@ class _BatchTagPickerDialog extends StatefulWidget {
 
   final List<BookTagRow> allTags;
   final Set<String> selectedKeys;
-  final HibikiDatabase database;
+  final FushiDatabase database;
   final String? Function(String) parseBookKey;
 
   @override
@@ -408,7 +408,7 @@ class _BatchTagPickerDialogState extends State<_BatchTagPickerDialog> {
     if (!mounted) return;
     for (final tagId in _addTagIds) {
       final tag = widget.allTags.firstWhere((row) => row.id == tagId);
-      HibikiToast.show(
+      FushiToast.show(
         msg: tr.batch_tag_added(
           name: tag.name,
           n: widget.selectedKeys.length,
@@ -418,7 +418,7 @@ class _BatchTagPickerDialogState extends State<_BatchTagPickerDialog> {
     }
     for (final tagId in _removeTagIds) {
       final tag = widget.allTags.firstWhere((row) => row.id == tagId);
-      HibikiToast.show(
+      FushiToast.show(
         msg: tr.batch_tag_removed(
           name: tag.name,
           n: widget.selectedKeys.length,
@@ -525,7 +525,7 @@ class _BatchTagIntentRow extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final ColorScheme colors = theme.colorScheme;
     final Color tagColor = Color(tag.colorValue);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     // TODO-308: 三段意图原来用 keep=`horizontal_rule`、remove=`remove` 两个几乎
     // 一样的横杠（语义相反却长得一样），且纯图标无可见文字（tooltip 只有桌面悬停

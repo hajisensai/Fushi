@@ -82,7 +82,7 @@ class _SourceEpisode {
 /// 集级刮削服务。构造注入网络客户端与封面设施（测试注入 mock / 临时目录）。
 class EpisodeScrapeService {
   EpisodeScrapeService({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     BangumiClient? bangumiClient,
     TmdbClient? tmdbClient,
     CoverDownloader? coverDownloader,
@@ -95,7 +95,7 @@ class EpisodeScrapeService {
         _coverMetaStore = coverMetaStore,
         _coversDirectory = coversDirectory;
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
   final BangumiClient? _bangumi;
   final TmdbClient? _tmdb;
 

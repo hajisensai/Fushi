@@ -6,7 +6,7 @@ import 'reader_position_model.dart';
 class ReaderPositionRepository {
   const ReaderPositionRepository(this._db);
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
 
   Future<ReaderPosition?> findByBookKey(String bookKey) async {
     final row = await _db.getReaderPosition(bookKey);

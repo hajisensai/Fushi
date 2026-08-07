@@ -17,7 +17,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 此前合集管理动作只存在于合集详情页 AppBar，三页的合集入口本身没有任何
 /// 上下文菜单（与单卡的长按对话框割裂，用户实报）。本对话框复用单卡同款
 /// [MediaItemDialogFrame] 骨架，动作语义与详情页 AppBar 完全同源：
-/// 重命名走 [HibikiDatabase.renameMediaCollection]，标签走 [TagPickerPage]
+/// 重命名走 [FushiDatabase.renameMediaCollection]，标签走 [TagPickerPage]
 /// （合集路），删除走 [deleteMediaCollectionWithAssets]（纯解链 + 回收合集自有
 /// 封面，不删成员本体，可选
 /// 「连同成员本体一起删」勾选，与详情页 `_delete` 同一纪律）。
@@ -33,7 +33,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 各页零接线成本。
 Future<void> showCollectionContextDialog({
   required BuildContext context,
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required MediaCollectionRow collection,
   required VoidCallback onOpenDetail,
   required VoidCallback onChanged,
@@ -137,12 +137,12 @@ Future<void> showCollectionContextDialog({
   );
 }
 
-/// 重命名合集：命名弹窗 → [HibikiDatabase.renameMediaCollection]。与
+/// 重命名合集：命名弹窗 → [FushiDatabase.renameMediaCollection]。与
 /// `CollectionDetailShared.renameDetailCollection` 同语义（那边还要同步页题，
 /// 库页语境由 [onChanged] 整页重载覆盖）。
 Future<void> _renameCollection({
   required BuildContext context,
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required MediaCollectionRow collection,
   required VoidCallback onChanged,
 }) async {
@@ -174,7 +174,7 @@ Future<void> _editCollectionTags({
 /// 一键整理：按名称 / 按导入时间重排全表并落盘 sortIndex（共享
 /// [applyCollectionOneKeySort]），完成后 [onChanged] 让库页合集行立即同序。
 Future<void> _sortCollection({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required MediaCollectionRow collection,
   required bool byTitle,
   required VoidCallback onChanged,
@@ -193,7 +193,7 @@ Future<void> _sortCollection({
 /// 同一顺序、同一入口（BUG-1319：回收必须挂在删除动作上，不能各入口各写一遍）。
 Future<void> _deleteCollection({
   required BuildContext context,
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required MediaCollectionRow collection,
   required VoidCallback onChanged,
   required Future<void> Function(List<MediaCollectionItemRow> members)?
@@ -206,10 +206,10 @@ Future<void> _deleteCollection({
   if (!context.mounted) return;
   final bool canDeleteMembers =
       onDeleteMembersMedia != null && members.isNotEmpty;
-  final HibikiDestructiveConfirmResult? result =
-      await showAppDialog<HibikiDestructiveConfirmResult>(
+  final FushiDestructiveConfirmResult? result =
+      await showAppDialog<FushiDestructiveConfirmResult>(
     context: context,
-    builder: (_) => HibikiDestructiveConfirmDialog(
+    builder: (_) => FushiDestructiveConfirmDialog(
       title: t.delete_collection,
       message: t.delete_collection_confirm,
       confirmLabel: t.delete_collection,

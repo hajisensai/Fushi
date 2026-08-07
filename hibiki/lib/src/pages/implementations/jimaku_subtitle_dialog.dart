@@ -172,7 +172,7 @@ class JimakuSubtitleDialog extends StatefulWidget {
 }
 
 class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
-    with HibikiPagePlaceholders<JimakuSubtitleDialog> {
+    with FushiPagePlaceholders<JimakuSubtitleDialog> {
   late final TextEditingController _apiKeyCtrl =
       TextEditingController(text: widget.initialApiKey);
   late final TextEditingController _queryCtrl =
@@ -703,14 +703,14 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    // 外壳用仓库标准 HibikiDialogFrame（内部仍是 Dialog）：scrollable:false 仍由
+    // 外壳用仓库标准 FushiDialogFrame（内部仍是 Dialog）：scrollable:false 仍由
     // maxHeight 给整个对话框有界高度天花板，于是 Column(min) 拿到有界高度，正文的
     // Flexible 能正确分到剩余空间，候选列表内部普通（非 shrinkWrap）ListView 正常
     // 滚动，保留 BUG-279 不变量。若用 frame 默认 scrollable:true 包
     // SingleChildScrollView 给无界高度，Flexible 会坍缩成 0 高 → 回归 BUG-279，故此
     // 处必须 scrollable:false。maxWidth 720 让大屏走两栏；insetPadding 保留
     // horizontal:16（手机宽=屏宽-32，大屏由 720 封顶居中）。
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 720,
       maxHeightFactor: 0.86,
       scrollable: false,
@@ -748,7 +748,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
 
 /// 可下载 Jimaku 候选的滚动列表区（从对话框抽出便于在小屏约束下做 widget 测试）。
 ///
-/// 关键不变量：由外层（对话框里的 [Flexible]，其祖先 [HibikiDialogFrame]（内部仍是
+/// 关键不变量：由外层（对话框里的 [Flexible]，其祖先 [FushiDialogFrame]（内部仍是
 /// [Dialog]，且 `scrollable:false` 仍由 maxHeight 给 [Flexible] 有界高度）已把整个对话框
 /// 高度有界化）给定有界高度，内部用普通可滚动 [ListView]（**非** `shrinkWrap`），从而在矮屏
 /// 上保持非 0 高度且能正常滚动，保留 BUG-279 不变量。

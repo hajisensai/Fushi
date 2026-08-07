@@ -12,7 +12,7 @@ import '../parsers/srt_parser.dart';
 class SrtBookRepository {
   const SrtBookRepository(this._db);
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
 
   Future<List<SrtBook>> listAll() async {
     final rows = await _db.getAllSrtBooks();

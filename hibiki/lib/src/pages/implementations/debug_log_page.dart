@@ -29,17 +29,17 @@ class _DebugLogPageState extends State<DebugLogPage> {
   Widget build(BuildContext context) {
     final int count = DebugLogService.instance.entries.length;
 
-    return HibikiPageScaffold(
+    return FushiPageScaffold(
       title: t.debug_log_title(count: count),
       actions: <Widget>[
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.refresh,
           tooltip: t.stat_refresh,
           onTap: () => setState(() {
             _log = DebugLogService.instance.getFullLog();
           }),
         ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.copy_outlined,
           tooltip: t.copy,
           onTap: () async {
@@ -51,7 +51,7 @@ class _DebugLogPageState extends State<DebugLogPage> {
             }
           },
         ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.share_outlined,
           tooltip: t.share,
           onTap: () {
@@ -61,11 +61,11 @@ class _DebugLogPageState extends State<DebugLogPage> {
               name: 'hibiki_debug_log.txt',
               mimeType: 'text/plain',
             );
-            HibikiShare.shareFiles([xFile], subject: t.debug_log_share_subject);
+            FushiShare.shareFiles([xFile], subject: t.debug_log_share_subject);
           },
         ),
         if (showUploadLogAction)
-          HibikiIconButton(
+          FushiIconButton(
             icon: Icons.cloud_upload_outlined,
             tooltip: t.log_upload_action,
             onTap: () => uploadLogToServer(
@@ -75,7 +75,7 @@ class _DebugLogPageState extends State<DebugLogPage> {
             ),
           ),
         if (showSaveLogAction)
-          HibikiIconButton(
+          FushiIconButton(
             icon: Icons.save_alt_outlined,
             tooltip: t.log_export_file,
             onTap: () => saveLogToFile(
@@ -85,7 +85,7 @@ class _DebugLogPageState extends State<DebugLogPage> {
               subject: t.debug_log_share_subject,
             ),
           ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.delete_outline,
           tooltip: t.clear,
           onTap: () {
@@ -96,7 +96,7 @@ class _DebugLogPageState extends State<DebugLogPage> {
           },
         ),
       ],
-      body: HibikiLogPanel(
+      body: FushiLogPanel(
         log: _log,
         shareAction: (text) => Share.share(text),
       ),

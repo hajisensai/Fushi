@@ -6,22 +6,22 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/hibiki_focus_ring.dart';
 
 void main() {
-  test('HibikiFocusRing uses design token radius', () {
+  test('FushiFocusRing uses design token radius', () {
     final String source =
         File('lib/src/utils/components/hibiki_focus_ring.dart')
             .readAsStringSync();
 
-    expect(source, contains('HibikiDesignTokens.of(context)'));
+    expect(source, contains('FushiDesignTokens.of(context)'));
     expect(source, contains('tokens.radii.chipRadius'));
-    expect(source, contains('HibikiFocusScroll.ensureVisibleIfHidden'));
+    expect(source, contains('FushiFocusScroll.ensureVisibleIfHidden'));
     expect(source, isNot(contains('BorderRadius.circular(8)')));
     expect(source, isNot(contains('Scrollable.ensureVisible')));
   });
 
-  testWidgets('HibikiFocusRing builds and overlays its child',
+  testWidgets('FushiFocusRing builds and overlays its child',
       (WidgetTester tester) async {
     await tester.pumpWidget(MaterialApp(
-      home: HibikiFocusRing(
+      home: FushiFocusRing(
         child: Scaffold(
           body: Center(
             child: ElevatedButton(onPressed: () {}, child: const Text('x')),
@@ -31,7 +31,7 @@ void main() {
     ));
     await tester.pump();
     expect(find.text('x'), findsOneWidget);
-    expect(find.byType(HibikiFocusRing), findsOneWidget);
+    expect(find.byType(FushiFocusRing), findsOneWidget);
   });
 
   testWidgets(
@@ -73,7 +73,7 @@ void main() {
                     autofocus: true,
                     child: const SizedBox(width: 30, height: 30),
                   ),
-                HibikiFocusRing(
+                FushiFocusRing(
                   // Child identity changes with `show`, forcing the ring to
                   // rebuild in the same pass that removes the focused sibling.
                   child: SizedBox(
@@ -107,7 +107,7 @@ void main() {
     addTearDown(node.dispose);
 
     await tester.pumpWidget(MaterialApp(
-      home: HibikiFocusRing(
+      home: FushiFocusRing(
         child: Scaffold(
           body: Center(
             child: Focus(
@@ -131,7 +131,7 @@ void main() {
       'ring follows the focused control when the in-app UI scale changes',
       (WidgetTester tester) async {
     // Regression: dragging the "界面大小" (app UI scale) slider reflows the whole
-    // subtree via HibikiAppUiScale's Transform — moving the focused control —
+    // subtree via FushiAppUiScale's Transform — moving the focused control —
     // without any window-metrics, focus, scroll, or highlight change. None of
     // the ring's recompute triggers fired, so the ring stayed pinned to the
     // control's old position ("焦点不跟着动").
@@ -150,9 +150,9 @@ void main() {
       home: StatefulBuilder(
         builder: (BuildContext context, StateSetter setState) {
           setOuter = setState;
-          return HibikiAppUiScale(
+          return FushiAppUiScale(
             scale: scale,
-            child: HibikiFocusRing(
+            child: FushiFocusRing(
               child: Scaffold(
                 body: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -182,7 +182,7 @@ void main() {
 
     // The ring is the only bordered DecoratedBox in the subtree.
     final Finder ringIndicator = find.descendant(
-      of: find.byType(HibikiFocusRing),
+      of: find.byType(FushiFocusRing),
       matching: find.byWidgetPredicate((Widget w) =>
           w is DecoratedBox &&
           w.decoration is BoxDecoration &&
@@ -239,9 +239,9 @@ void main() {
       home: StatefulBuilder(
         builder: (BuildContext context, StateSetter setState) {
           setOuter = setState;
-          return HibikiAppUiScale(
+          return FushiAppUiScale(
             scale: scale,
-            child: HibikiFocusRing(
+            child: FushiFocusRing(
               child: Scaffold(
                 body: Center(
                   child: Focus(
@@ -260,7 +260,7 @@ void main() {
     await tester.pump();
 
     final Finder ring = find.descendant(
-      of: find.byType(HibikiFocusRing),
+      of: find.byType(FushiFocusRing),
       matching: find.byWidgetPredicate((Widget w) =>
           w is DecoratedBox &&
           w.decoration is BoxDecoration &&
@@ -321,9 +321,9 @@ void main() {
       home: StatefulBuilder(
         builder: (BuildContext context, StateSetter setState) {
           setOuter = setState;
-          return HibikiAppUiScale(
+          return FushiAppUiScale(
             scale: 1.0,
-            child: HibikiFocusRing(
+            child: FushiFocusRing(
               child: Scaffold(
                 body: Column(
                   children: <Widget>[
@@ -347,7 +347,7 @@ void main() {
     await tester.pump(); // setState -> ring drawn
 
     final Finder ring = find.descendant(
-      of: find.byType(HibikiFocusRing),
+      of: find.byType(FushiFocusRing),
       matching: find.byWidgetPredicate((Widget w) =>
           w is DecoratedBox &&
           w.decoration is BoxDecoration &&
@@ -399,9 +399,9 @@ void main() {
           theme: ThemeData(brightness: Brightness.light),
           darkTheme: ThemeData(brightness: Brightness.dark),
           themeMode: dark ? ThemeMode.dark : ThemeMode.light,
-          home: HibikiAppUiScale(
+          home: FushiAppUiScale(
             scale: 1.0,
-            child: HibikiFocusRing(
+            child: FushiFocusRing(
               child: Scaffold(
                 // SingleChildScrollView keeps every child mounted regardless of
                 // scroll, so the focused node stays alive (and primary) when we

@@ -23,8 +23,8 @@ void main() {
 
   // TODO-700 T1：B 经注册表 globalBack 解析才返回（可改键）。测试里显式绑 B→globalBack
   // 模拟「用户/默认把返回放在 B」。
-  HibikiShortcutRegistry registryWithBackOnB() {
-    final HibikiShortcutRegistry registry = HibikiShortcutRegistry();
+  FushiShortcutRegistry registryWithBackOnB() {
+    final FushiShortcutRegistry registry = FushiShortcutRegistry();
     registry.loadDefaults(TargetPlatform.windows);
     registry.updateBinding(
       ShortcutAction.globalBack,
@@ -63,7 +63,7 @@ void main() {
   testWidgets('gameButtonB does NOT pop when unbound from globalBack',
       (WidgetTester tester) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+    final FushiShortcutRegistry registry = FushiShortcutRegistry()
       ..loadDefaults(TargetPlatform.windows)
       ..updateBinding(ShortcutAction.globalBack, const ShortcutBindingSet());
     await tester.pumpWidget(MaterialApp(

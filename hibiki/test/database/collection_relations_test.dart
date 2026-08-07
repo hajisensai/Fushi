@@ -13,8 +13,8 @@ void main() {
   /// 必须显式开 `foreign_keys`：`NativeDatabase.memory()` 默认关闭外键，而生产
   /// 路径在 `applyPragmas` 里开。不开的话 cascade / setNull 用例会「通过得毫无
   /// 意义」——它们测的正是 FK 行为本身。
-  Future<HibikiDatabase> openDb() async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+  Future<FushiDatabase> openDb() async {
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (CommonDatabase rawDb) =>
             rawDb.execute('PRAGMA foreign_keys = ON'),
@@ -49,7 +49,7 @@ void main() {
     test(
         'fresh DB (v66) has collection_relations table and '
         'video_scrape_meta.episode_number column', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       expect(db.schemaVersion, 68);
       final List<QueryRow> tables = await db
           .customSelect(
@@ -69,7 +69,7 @@ void main() {
     test(
         'real v64->v66 creates collection_relations, adds episode_number, '
         'preserves rows, bumps user_version', () async {
-      final HibikiDatabase db = await _openV64Db();
+      final FushiDatabase db = await _openV64Db();
 
       final List<QueryRow> tables = await db
           .customSelect(
@@ -102,7 +102,7 @@ void main() {
     test(
         'replaceCollectionRelations swaps whole edge set and orders by '
         'sortIndex', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int id = await db.createMediaCollection('本篇');
       await db.replaceCollectionRelations(id, <CollectionRelationsCompanion>[
         relation(id, subjectId: '2', title: 'B', sortIndex: 1),
@@ -129,7 +129,7 @@ void main() {
     test(
         'bindCollectionRelationTarget upgrades scrape-only edge to local '
         'binding and back', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int id = await db.createMediaCollection('本篇');
       final int target = await db.createMediaCollection('续篇');
       await db.replaceCollectionRelations(
@@ -151,7 +151,7 @@ void main() {
     test(
         'collectionIdsByScrapeSubject finds collections scraped from the '
         'same subject', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int a = await db.createMediaCollection('A');
       final int b = await db.createMediaCollection('B');
       await db.upsertCollectionScrapeMeta(CollectionScrapeMetaCompanion.insert(
@@ -171,7 +171,7 @@ void main() {
     test(
         'unique key (collectionId, source, subjectId) rejects duplicate '
         'edges', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int id = await db.createMediaCollection('本篇');
       await db.replaceCollectionRelations(
           id, <CollectionRelationsCompanion>[relation(id)]);
@@ -188,7 +188,7 @@ void main() {
 
   group('foreign keys', () {
     test('deleting the collection cascades its relation edges', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int id = await db.createMediaCollection('本篇');
       await db.replaceCollectionRelations(
           id, <CollectionRelationsCompanion>[relation(id)]);
@@ -204,7 +204,7 @@ void main() {
     test(
         'deleting the bound target collection nulls targetCollectionId '
         '(back to scrape-only)', () async {
-      final HibikiDatabase db = await openDb();
+      final FushiDatabase db = await openDb();
       final int id = await db.createMediaCollection('本篇');
       final int target = await db.createMediaCollection('续篇');
       await db.replaceCollectionRelations(id, <CollectionRelationsCompanion>[
@@ -225,14 +225,14 @@ void main() {
 
 /// 打开一个 `user_version = 64` 的库：有 media_collections /
 /// collection_scrape_meta / video_scrape_meta（v64 shape，无 episode_number）
-/// 及其数据，但**没有** collection_relations，强制 HibikiDatabase 打开时跑真实
+/// 及其数据，但**没有** collection_relations，强制 FushiDatabase 打开时跑真实
 /// 的 `if (from < 66)` 分支。
 ///
 /// from=64 时会先跑 develop 的 v65（Mihon 五表，纯 createTable 无外部依赖），
 /// 再跑本表的 v66 分支；seed 只需备齐 v66 分支触碰到的表，不必重建整个 v64
 /// schema。
-Future<HibikiDatabase> _openV64Db() async {
-  final HibikiDatabase db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV64Db() async {
+  final FushiDatabase db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (CommonDatabase rawDb) {
         rawDb.execute('''

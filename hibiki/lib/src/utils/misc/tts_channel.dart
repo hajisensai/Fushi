@@ -46,7 +46,7 @@ class TtsChannel {
   /// Whether TTS is available on the current platform.
   /// UI code can use this to show/hide TTS buttons.
   static bool get isSupported => _isSupported;
-  static const _channel = HibikiChannels.tts;
+  static const _channel = FushiChannels.tts;
 
   /// Desktop only: the configured local-audio SQLite DB configs (path +
   /// per-db enabled source order), mirrored here by [setLocalAudioDbs]

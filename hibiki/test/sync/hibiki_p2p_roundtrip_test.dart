@@ -10,7 +10,7 @@ import 'package:fushi/src/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// End-to-end interop for the Hibiki P2P path (the Windows-host server ↔
-/// Android-client scenario): a REAL [HibikiSyncServer] and the REAL
+/// Android-client scenario): a REAL [FushiSyncServer] and the REAL
 /// [InterconnectSyncBackend] do a full upload → download round-trip over a
 /// loopback socket. Exercises the exact protocol both ends use; the only thing
 /// it doesn't cover is the emulator's 10.0.2.2 network hop (checked separately).
@@ -24,8 +24,8 @@ void main() {
     // client's connection probe (PROPFIND on root) succeeds.
     await Directory('${tempDir.path}/sync-data').create(recursive: true);
 
-    final String token = HibikiSyncServer.generateToken();
-    final HibikiSyncServer server = HibikiSyncServer(
+    final String token = FushiSyncServer.generateToken();
+    final FushiSyncServer server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0, // ephemeral
       token: token,
@@ -34,12 +34,12 @@ void main() {
     await server.start();
     addTearDown(server.stop);
 
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
-    await repo.setHibikiClientUrls(<HibikiClientUrl>[
-      HibikiClientUrl(url: 'http://127.0.0.1:${server.port}'),
+    await repo.setHibikiClientUrls(<FushiClientUrl>[
+      FushiClientUrl(url: 'http://127.0.0.1:${server.port}'),
     ]);
     await repo.setHibikiClientToken(token);
 

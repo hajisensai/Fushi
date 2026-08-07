@@ -65,14 +65,14 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
   /// 有别的入口绕过禁用又变回静默无反应。
   void _handleSelectVoice(int sourcePtr) {
     if (!_controller.hasEngineSource) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_track_select_requires_engine,
         severity: ToastSeverity.error,
       );
     } else if (!galTrackSelectionAffectsCapture(
       _controller.state.audioBackend,
     )) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_tracks_pcm_only_hint,
         severity: ToastSeverity.warning,
       );
@@ -94,7 +94,7 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
         await _controller.exportTrackPreview(track.sourcePtr);
     if (!mounted) return;
     if (preview == null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_track_preview_failed,
         severity: ToastSeverity.error,
       );
@@ -103,7 +103,7 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
     final bool started = await DesktopAudioPlayback.playFile(preview.filePath);
     if (!mounted) return;
     if (!started) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_track_preview_failed,
         severity: ToastSeverity.error,
       );
@@ -138,7 +138,7 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
               : _controller.events;
           return Column(
             children: <Widget>[
-              HibikiPageHeader.customTitle(
+              FushiPageHeader.customTitle(
                 title: GameSectionTabs(
                   selected: GameSection.settings,
                   focusIdPrefix: 'game-diagnostics-tab',
@@ -148,7 +148,7 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
                       gameSectionNotifier.value = GameSection.settings,
                 ),
                 actions: <Widget>[
-                  HibikiIconButton(
+                  FushiIconButton(
                     key: const ValueKey<String>(
                       'game-diagnostics-back-to-settings',
                     ),
@@ -159,7 +159,7 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
                   ),
                   // BUG-1027：「刷新音轨」已就近移入「活跃音轨」卡片标题行；
                   // 页头只保留全局性的清事件动作。
-                  HibikiIconButton(
+                  FushiIconButton(
                     icon: Icons.delete_sweep_outlined,
                     tooltip: t.game_clear_events,
                     onTap: _controller.clearEvents,
@@ -384,7 +384,7 @@ class _EndpointCard extends StatelessWidget {
         ),
       );
     }
-    return HibikiCard(
+    return FushiCard(
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
@@ -477,7 +477,7 @@ class _AudioTracksCard extends StatelessWidget {
     return _SectionCard(
       title: t.game_audio_tracks,
       icon: Icons.multitrack_audio_outlined,
-      trailing: HibikiIconButton(
+      trailing: FushiIconButton(
         icon: Icons.refresh,
         tooltip: t.game_refresh_tracks,
         onTap: onRefresh,
@@ -513,16 +513,16 @@ class _EventsCard extends StatelessWidget {
       trailing: Wrap(
         spacing: 8,
         children: <Widget>[
-          HibikiSelectableChip(
+          FushiSelectableChip(
             label: t.game_event_all,
             selected: !warningsOnly,
-            focusId: const HibikiFocusId('game-diagnostics-event-all'),
+            focusId: const FushiFocusId('game-diagnostics-event-all'),
             onSelected: (_) => onWarningsOnlyChanged(false),
           ),
-          HibikiSelectableChip(
+          FushiSelectableChip(
             label: t.game_event_warnings,
             selected: warningsOnly,
-            focusId: const HibikiFocusId('game-diagnostics-event-warnings'),
+            focusId: const FushiFocusId('game-diagnostics-event-warnings'),
             onSelected: (_) => onWarningsOnlyChanged(true),
           ),
         ],
@@ -597,7 +597,7 @@ class _SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return HibikiCard(
+    return FushiCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[

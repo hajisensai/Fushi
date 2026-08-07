@@ -6,7 +6,7 @@ import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 
 /// 书架书卡封面右上角类型徽章尺寸守卫（TODO-361 / TODO-552）。
 ///
-/// 徽章内在尺寸是 22px（HibikiBadge：icon 14 + padding gap 8）。TODO-361 曾把方框收到
+/// 徽章内在尺寸是 22px（FushiBadge：icon 14 + padding gap 8）。TODO-361 曾把方框收到
 /// 16px + `BoxFit.contain`，把徽章硬缩到 16px，结果「太小看不清」（TODO-552 报回归）。
 /// 修复把方框设为徽章内在尺寸 [kShelfCoverBadgeDimension]=22，配合 `BoxFit.contain`
 /// 既不放大也不缩小，徽章按 22px 满尺寸（正常大小）渲染。
@@ -49,7 +49,7 @@ void main() {
               dimension: kShelfCoverBadgeDimension,
               child: FittedBox(
                 fit: BoxFit.contain,
-                child: HibikiBadge(
+                child: FushiBadge(
                   key: badgeKey,
                   icon: Icons.headphones_outlined,
                 ),

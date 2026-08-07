@@ -28,7 +28,7 @@ class ClipboardHistoryRepository {
     _exitFlush = ExitFlushRegistry.instance.register(flushNow);
   }
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
   late final ExitFlushCallback _exitFlush;
 
   final List<ClipboardHistoryEntry> _entries = <ClipboardHistoryEntry>[];

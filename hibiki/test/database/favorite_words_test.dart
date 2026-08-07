@@ -3,8 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-829：getAllFavoriteWords 全量倒序（供收藏夹导出）。
-Future<HibikiDatabase> _openDb() async {
-  final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
@@ -12,7 +12,7 @@ Future<HibikiDatabase> _openDb() async {
 void main() {
   group('FavoriteWords getAllFavoriteWords', () {
     test('returns all rows newest-first across sources', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
 
       await db.addFavoriteWord(
         expression: '古い',
@@ -41,7 +41,7 @@ void main() {
     });
 
     test('returns empty list when there are no favorite words', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       expect(await db.getAllFavoriteWords(), isEmpty);
     });
   });
@@ -60,7 +60,7 @@ void main() {
     }
 
     test('addFavoriteWord persists bookKey + title', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       await db.addFavoriteWord(
         expression: '語',
         reading: 'ご',
@@ -79,7 +79,7 @@ void main() {
 
     test('omitting bookKey/title defaults to null/empty (no tile attribution)',
         () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       // 无书来源（首页 / 独立查词 / 同步回灌）不传归属 → title 空 → 只进汇总。
       await db.addFavoriteWord(
         expression: '無所属',
@@ -96,7 +96,7 @@ void main() {
     });
 
     test('aggregates favorites per title; empty title excluded', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       await db.addFavoriteWord(
         expression: 'A',
         reading: 'a',
@@ -138,7 +138,7 @@ void main() {
     });
 
     test('unfavorite removes the row so per-title count falls back', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       await db.addFavoriteWord(
         expression: 'A',
         reading: 'a',
@@ -167,7 +167,7 @@ void main() {
     });
 
     test('global dedup unchanged: same word twice stays one row', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       final bool first = await db.addFavoriteWord(
         expression: '重複',
         reading: 'ちょうふく',

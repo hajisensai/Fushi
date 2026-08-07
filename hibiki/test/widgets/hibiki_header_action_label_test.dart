@@ -4,7 +4,7 @@ import 'package:fushi/src/utils/components/hibiki_icon_button.dart';
 
 /// 统一合集 UI v2 Phase A：页头动作按钮的可展开文字标签。
 ///
-/// [HibikiIconButton.label] 非空时——宽窗（真实视口非 compact，≥600）渲染
+/// [FushiIconButton.label] 非空时——宽窗（真实视口非 compact，≥600）渲染
 /// 「图标 + 文字」药丸；窄窗（<600）自动回落纯图标；label 为 null 永远纯图标。
 /// busy/enabled/onTap 两种形态共享同一路径（这里锁 onTap 在展开态可用）。
 void main() {
@@ -27,7 +27,7 @@ void main() {
     await pump(
       tester,
       viewSize: const Size(1000, 800),
-      child: HibikiIconButton(
+      child: FushiIconButton(
         tooltip: 'Import video',
         label: 'Import video',
         icon: Icons.add,
@@ -45,7 +45,7 @@ void main() {
     await pump(
       tester,
       viewSize: const Size(400, 800),
-      child: HibikiIconButton(
+      child: FushiIconButton(
         tooltip: 'Import video',
         label: 'Import video',
         icon: Icons.add,
@@ -60,7 +60,7 @@ void main() {
     await pump(
       tester,
       viewSize: const Size(1000, 800),
-      child: HibikiIconButton(
+      child: FushiIconButton(
         tooltip: 'Stats',
         icon: Icons.bar_chart_outlined,
         onTap: () {},
@@ -75,7 +75,7 @@ void main() {
     await pump(
       tester,
       viewSize: const Size(1000, 800),
-      child: HibikiIconButton(
+      child: FushiIconButton(
         tooltip: 'Import video',
         label: 'Import video',
         icon: Icons.add,

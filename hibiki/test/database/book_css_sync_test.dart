@@ -6,10 +6,10 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
   setUp(() => db = _memDb());
   tearDown(() => db.close());
 

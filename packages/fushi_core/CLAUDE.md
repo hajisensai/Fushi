@@ -9,14 +9,14 @@
 ## 入口与启动
 
 - 库入口：`lib/hibiki_core.dart`
-- 数据库在 `lib/src/database/database.dart` 中通过 `HibikiDatabase(dbDirectory)` 构造，内部使用 `NativeDatabase.createInBackground()` 在后台线程打开 `hibiki.db`。
+- 数据库在 `lib/src/database/database.dart` 中通过 `FushiDatabase(dbDirectory)` 构造，内部使用 `NativeDatabase.createInBackground()` 在后台线程打开 `hibiki.db`。
 - PRAGMA 配置：`journal_mode=WAL`，`foreign_keys=ON`。
 
 ## 对外接口
 
-- `HibikiDatabase` -- 全部数据访问层，提供 media items / anki mappings / search history / audiobooks / audio cues / srt books / reader positions / bookmarks / reading statistics / preferences / dictionary metadata / epub books / book tags / profiles 等完整 CRUD API。
+- `FushiDatabase` -- 全部数据访问层，提供 media items / anki mappings / search history / audiobooks / audio cues / srt books / reader positions / bookmarks / reading statistics / preferences / dictionary metadata / epub books / book tags / profiles 等完整 CRUD API。
 - `PrefCodec` -- 偏好值的 `encode<T>` / `decode<T>` 泛型编解码。
-- `HibikiTextSelection` -- 跨模块共享的文本选区数据模型。
+- `FushiTextSelection` -- 跨模块共享的文本选区数据模型。
 
 ## 关键依赖与配置
 
@@ -48,7 +48,7 @@
 | 视频 | `VideoBooks`, `VideoBookTagMappings`, `VideoWatchStatistics`, `VideoHourlyLogs` |
 | 收藏/制卡 | `FavoriteWords`, `MiningStatistics`, `MinedSentences`, `LookupMiningCounters` |
 | 合集/系列 | `MediaCollections`, `MediaCollectionItems`, `Series`, `ShelfEntries` |
-| 互联 | `HibikiPairedPeers` |
+| 互联 | `FushiPairedPeers` |
 | 游戏库 | `Galgames`, `GalgameSources`, `GalgameSessions`, `GalgameTagMappings` |
 | 删除墓碑 | `BookTombstones`, `StatisticsTombstones`, `CollectionMemberTombstones`, `BookTagMembershipTombstones`, `SyncDeletionTombstones` |
 
@@ -65,7 +65,7 @@
 - `MediaCollectionItems` -- 合集成员引用（复合键按合集去重，同一条目可属多个合集）。
 - `CollectionMemberTombstones` -- 合集成员移出/合集删除墓碑，防跨端并集同步复活。
 - `CollectionTagMappings` -- 合集 ↔ 标签 多对多映射（复用共享 `BookTags` 标签池）。
-- `HibikiPairedPeers` -- 互联（局域网配对）的 per-peer 授权凭据表，token 明文列存（红线：不进日志/明文导出）。
+- `FushiPairedPeers` -- 互联（局域网配对）的 per-peer 授权凭据表，token 明文列存（红线：不进日志/明文导出）。
 - `BookTombstones` -- 已删书墓碑，供备份「合并导入」跳过、避免复活已删的书。
 - `StatisticsTombstones` -- per-book/video 统计删除墓碑，防 MAX-union 同步/备份把删掉的统计加回。
 - `BookTagMembershipTombstones` -- 书/视频标签移除墓碑（LWW-element-set add/remove 裁决，防跨端复活/误删）。

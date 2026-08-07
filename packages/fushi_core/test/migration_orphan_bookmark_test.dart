@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// Safety-net for the orphan-bookmark skip in
-/// HibikiDatabase.migrateLegacyBookmarkPreferences() (database.dart ~468-549),
+/// FushiDatabase.migrateLegacyBookmarkPreferences() (database.dart ~468-549),
 /// re-establishing the coverage that the milestone-2 cleanup deleted
 /// (HBK-AUDIT-007).
 ///
@@ -24,9 +24,9 @@ import 'package:fushi_core/fushi_core.dart';
 /// invokes the public drainer directly (user_version = 16 so onUpgrade does NOT
 /// run — the method is self-guarded by table/column probes and is the unit
 /// under test). Seed follows the migration_downgrade_test raw-DB pattern.
-late HibikiDatabase _orphanDb;
+late FushiDatabase _orphanDb;
 
-HibikiDatabase _openPreV16WithLegacyBookmarkPrefs() {
+FushiDatabase _openPreV16WithLegacyBookmarkPrefs() {
   // book 1 keeps two bookmarks (one orphan ttuBookId mixed in); book 999 is a
   // pure-orphan pref (no matching epub at all). Real entries must land; orphans
   // must be skipped; every legacy key must be cleared.
@@ -57,7 +57,7 @@ HibikiDatabase _openPreV16WithLegacyBookmarkPrefs() {
     },
   ]);
 
-  _orphanDb = HibikiDatabase.forTesting(
+  _orphanDb = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (raw) {
         // FK enforcement ON, mirroring production _openDb. Without it the
@@ -134,7 +134,7 @@ CREATE TABLE preferences (
 void main() {
   test('orphan legacy bookmark prefs are skipped, not aborting the upgrade',
       () async {
-    final HibikiDatabase db = _openPreV16WithLegacyBookmarkPrefs();
+    final FushiDatabase db = _openPreV16WithLegacyBookmarkPrefs();
     addTearDown(db.close);
 
     // Must NOT throw on the orphan FK target (the regression this guards).

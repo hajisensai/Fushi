@@ -160,7 +160,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('remote_book_card_$safeKey'),
-      focusId: HibikiFocusId('reader-shelf-remote-book-$safeKey'),
+      focusId: FushiFocusId('reader-shelf-remote-book-$safeKey'),
       onTap: () => _downloadRemoteBook(book),
       // 短按仍直接下载（无本地副本不能直接读，下载合理）；长按 / 桌面右键
       // （_bookCardShell.onSecondaryTap 同绑 onLongPress）改弹选项面板，与本地
@@ -689,7 +689,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('remote_srt_card_$safeKey'),
-      focusId: HibikiFocusId('reader-shelf-remote-srt-$safeKey'),
+      focusId: FushiFocusId('reader-shelf-remote-srt-$safeKey'),
       onTap: () => _downloadRemoteSrtAudiobook(book),
       // 长按 / 右键：弹动作面板，与远端 EPUB 卡（[_showRemoteBookDialog]）一致
       // （巡检 PR-3——旧行为长按直接开始下载，重手势与轻点击等价且不可预览动作）。

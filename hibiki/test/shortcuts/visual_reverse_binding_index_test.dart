@@ -7,12 +7,12 @@ import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';
 import 'package:fushi/src/shortcuts/visual/reverse_binding_index.dart';
 
 void main() {
-  HibikiShortcutRegistry buildRegistry() =>
-      HibikiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
+  FushiShortcutRegistry buildRegistry() =>
+      FushiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
 
   group('ReverseBindingIndex (TODO-612 stage 0)', () {
     test('reverses keyboard defaults into key -> actions for the scope', () {
-      final HibikiShortcutRegistry registry = buildRegistry();
+      final FushiShortcutRegistry registry = buildRegistry();
       final ReverseBindingIndex index = ReverseBindingIndex.fromRegistry(
         registry,
         ShortcutScope.reader,
@@ -44,7 +44,7 @@ void main() {
     });
 
     test('includes co-active scope bindings (reader + audiobook)', () {
-      final HibikiShortcutRegistry registry = buildRegistry();
+      final FushiShortcutRegistry registry = buildRegistry();
       final ReverseBindingIndex index = ReverseBindingIndex.fromRegistry(
         registry,
         ShortcutScope.reader,
@@ -61,7 +61,7 @@ void main() {
     });
 
     test('reverses gamepad bindings into button -> actions', () {
-      final HibikiShortcutRegistry registry = buildRegistry();
+      final FushiShortcutRegistry registry = buildRegistry();
       // Find any action with a gamepad default and assert the reverse mapping.
       GamepadButton? sample;
       ShortcutAction? owner;
@@ -83,7 +83,7 @@ void main() {
     });
 
     test('keyboardBindingsFor preserves modifiers', () {
-      final HibikiShortcutRegistry registry = buildRegistry();
+      final FushiShortcutRegistry registry = buildRegistry();
       // Bind Ctrl+KeyG to a reader action explicitly, then reverse.
       const InputBinding ctrlG = InputBinding(
         key: LogicalKeyboardKey.keyG,

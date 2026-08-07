@@ -68,7 +68,7 @@ class ReaderPdfSource extends ReaderMediaSource {
   }) {
     final String bookKey =
         ReaderHibikiSource.parseBookKey(item?.mediaIdentifier ?? '') ?? '';
-    return HibikiAppUiScaleNeutralizer(
+    return FushiAppUiScaleNeutralizer(
       child: ReaderPdfPage(item: item, bookKey: bookKey),
     );
   }

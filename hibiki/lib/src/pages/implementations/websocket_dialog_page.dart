@@ -41,13 +41,13 @@ class _WebsocketDialogPageState extends BasePageState<WebsocketDialogPage> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 520,
       maxHeightFactor: 0.72,
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.server_address,
         leadingIcon: Icons.sensors_outlined,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -87,12 +87,12 @@ class _WebsocketDialogPageState extends BasePageState<WebsocketDialogPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              HibikiTextField(
+              FushiTextField(
                 autofocus: true,
                 controller: _addressController,
                 hintText: 'wss://',
                 labelText: t.server_address,
-                suffixIcon: HibikiIconButton(
+                suffixIcon: FushiIconButton(
                   size: 18,
                   tooltip: t.clear,
                   onTap: _addressController.clear,

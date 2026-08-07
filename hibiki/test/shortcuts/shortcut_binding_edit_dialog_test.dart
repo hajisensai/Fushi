@@ -15,12 +15,12 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
   });
 
-  HibikiShortcutRegistry buildRegistry() =>
-      HibikiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
+  FushiShortcutRegistry buildRegistry() =>
+      FushiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
 
   Future<void> pumpDialog(
     WidgetTester tester,
-    HibikiShortcutRegistry registry, {
+    FushiShortcutRegistry registry, {
     ShortcutAction action = ShortcutAction.readerToggleFurigana,
   }) async {
     await tester.pumpWidget(
@@ -46,7 +46,7 @@ void main() {
   // bare letter/digit keys bubble up here and get silently swallowed — TODO-838.
   Future<void> pumpDialogWithGlobalNav(
     WidgetTester tester,
-    HibikiShortcutRegistry registry, {
+    FushiShortcutRegistry registry, {
     ShortcutAction action = ShortcutAction.readerToggleFurigana,
   }) async {
     final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -82,7 +82,7 @@ void main() {
 
   Future<void> pumpDialogHost(
     WidgetTester tester,
-    HibikiShortcutRegistry registry, {
+    FushiShortcutRegistry registry, {
     ShortcutAction action = ShortcutAction.readerToggleFurigana,
   }) async {
     await tester.pumpWidget(
@@ -130,7 +130,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Tab recorded as a chip, capture prompt gone, dialog still open.
-    expect(find.widgetWithText(HibikiTagChip, 'Tab'), findsOneWidget);
+    expect(find.widgetWithText(FushiTagChip, 'Tab'), findsOneWidget);
     expect(find.text(t.shortcut_press_key), findsNothing);
     expect(find.byType(ShortcutBindingEditDialog), findsOneWidget);
   });
@@ -147,7 +147,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(HibikiTagChip, 'Escape'), findsOneWidget);
+    expect(find.widgetWithText(FushiTagChip, 'Escape'), findsOneWidget);
     expect(find.byType(ShortcutBindingEditDialog), findsOneWidget);
   });
 
@@ -174,7 +174,7 @@ void main() {
     await tester.tap(find.text(t.dialog_cancel).last);
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(HibikiTagChip, 'M'), findsNothing);
+    expect(find.widgetWithText(FushiTagChip, 'M'), findsNothing);
     expect(
       find.text(t.shortcut_conflict(s: t.shortcut_action_reader_toggle_chrome)),
       findsOneWidget,
@@ -184,7 +184,7 @@ void main() {
   testWidgets(
       'conflict confirmation reassigns from old action to new action on OK',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     await pumpDialogHost(
       tester,
       registry,
@@ -197,7 +197,7 @@ void main() {
     await tester.tap(find.text('OK').last);
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(HibikiTagChip, 'PageDown'), findsOneWidget);
+    expect(find.widgetWithText(FushiTagChip, 'PageDown'), findsOneWidget);
     await tester.tap(find.text('OK').last);
     await tester.pumpAndSettle();
 
@@ -218,7 +218,7 @@ void main() {
   testWidgets(
       'deleting a confirmed keyboard conflict chip keeps the old action binding',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     await pumpDialogHost(
       tester,
       registry,
@@ -231,7 +231,7 @@ void main() {
     await tester.tap(find.text('OK').last);
     await tester.pumpAndSettle();
 
-    final Finder pageDownChip = find.widgetWithText(HibikiTagChip, 'PageDown');
+    final Finder pageDownChip = find.widgetWithText(FushiTagChip, 'PageDown');
     expect(pageDownChip, findsOneWidget);
     await tester.tap(find.descendant(
       of: pageDownChip,
@@ -258,7 +258,7 @@ void main() {
   testWidgets(
       'deleting a confirmed gamepad conflict chip keeps the old action binding',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     await pumpDialogHost(
       tester,
       registry,
@@ -274,7 +274,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final Finder dpadChip =
-        find.widgetWithText(HibikiTagChip, GamepadButton.dpadRight.label);
+        find.widgetWithText(FushiTagChip, GamepadButton.dpadRight.label);
     expect(dpadChip, findsOneWidget);
     await tester.tap(find.descendant(
       of: dpadChip,
@@ -305,7 +305,7 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(HibikiTagChip, 'Ctrl+KeyB'), findsOneWidget);
+    expect(find.widgetWithText(FushiTagChip, 'Ctrl+KeyB'), findsOneWidget);
   });
 
   testWidgets(
@@ -323,7 +323,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(HibikiTagChip, 'KeyB'), findsOneWidget);
+    expect(find.widgetWithText(FushiTagChip, 'KeyB'), findsOneWidget);
     expect(find.text(t.shortcut_press_key), findsNothing);
     expect(find.byType(ShortcutBindingEditDialog), findsOneWidget);
   });
@@ -339,7 +339,7 @@ void main() {
 
     // Capture aborted: prompt gone, no chips added, dialog still open.
     expect(find.text(t.shortcut_press_key), findsNothing);
-    expect(find.byType(HibikiTagChip), findsNothing);
+    expect(find.byType(FushiTagChip), findsNothing);
     expect(find.byType(ShortcutBindingEditDialog), findsOneWidget);
   });
 }

@@ -45,7 +45,7 @@ class ShortcutBindingEditDialog extends StatefulWidget {
   });
 
   final ShortcutAction action;
-  final HibikiShortcutRegistry registry;
+  final FushiShortcutRegistry registry;
   final ShortcutBindingSet initial;
 
   /// TODO-1060②: 从可视化图上点空白键位进入时预填的逻辑键——打开即把它加进键盘草稿
@@ -366,7 +366,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
 
     // BUG-1422：IME（Windows 微软输入法）激活时引擎把 logicalKey 改写成
     // LogicalKeyboardKey.process，物理键不受影响。运行时解析
-    // (HibikiShortcutRegistry.resolveKeyboard) 早有这条回退，录入侧必须用同一条
+    // (FushiShortcutRegistry.resolveKeyboard) 早有这条回退，录入侧必须用同一条
     // 契约，否则物理 Z 会被存成 `Process` —— 既显示成看不懂的键，运行时也永远
     // 匹配不上，用户看到的是「录不进去 / 录完没反应」。
     final LogicalKeyboardKey key = InputBinding.normalizeCapturedKey(
@@ -446,12 +446,12 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext ctx) {
-        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
-        return HibikiDialogFrame(
+        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+        return FushiDialogFrame(
           maxWidth: 420,
           maxHeightFactor: 0.78,
           scrollable: false,
-          child: HibikiModalSheetFrame(
+          child: FushiModalSheetFrame(
             title: t.shortcut_conflict(s: conflict.label),
             leadingIcon: Icons.warning_amber_outlined,
             scrollable: true,
@@ -574,7 +574,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
   @override
   Widget build(BuildContext context) {
     final ThemeData themeData = Theme.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 只渲染这个 scope 真正会被消费的通道（见 [ShortcutScope.channels]）：查词弹窗
     // 的词条导航只由弹窗 WebView 的滚轮触发，给它键盘/手柄入口等于制造死绑定。
     // 已有绑定即使通道被关也照常显示（历史快照不隐身，可删）。
@@ -598,11 +598,11 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
         _mouseBindingSupported(defaultTargetPlatform);
     final bool canAddWheel = channels.contains(ShortcutChannel.wheel);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 520,
       maxHeightFactor: 0.86,
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: widget.action.label,
         leadingIcon: Icons.keyboard_outlined,
         scrollable: true,
@@ -634,9 +634,9 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                 runSpacing: tokens.spacing.gap / 2,
                 children: <Widget>[
                   for (int i = 0; i < _keyboard.length; i++)
-                    HibikiTagChip(
+                    FushiTagChip(
                       label: _keyboard[i].displayLabel,
-                      tone: HibikiTagChipTone.surface,
+                      tone: FushiTagChipTone.surface,
                       onDeleted: () => _removeKeyboard(i),
                     ),
                 ],
@@ -702,9 +702,9 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                 runSpacing: tokens.spacing.gap / 2,
                 children: <Widget>[
                   for (int i = 0; i < _gamepad.length; i++)
-                    HibikiTagChip(
+                    FushiTagChip(
                       label: _gamepad[i].button.label,
-                      tone: HibikiTagChipTone.surface,
+                      tone: FushiTagChipTone.surface,
                       onDeleted: () => _removeGamepad(i),
                     ),
                 ],
@@ -776,13 +776,13 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                       onPressed: _startGamepadCapture,
                     ),
                     // 无手柄在手/远程配置时的兜底：仍可从列表点选按钮。
-                    HibikiOverflowMenu<GamepadButton>(
+                    FushiOverflowMenu<GamepadButton>(
                       onSelected: (GamepadButton button) {
                         unawaited(_addGamepad(button));
                       },
                       items: <PopupMenuEntry<GamepadButton>>[
                         for (final GamepadButton btn in GamepadButton.values)
-                          HibikiPopupMenuItem<GamepadButton>(
+                          FushiPopupMenuItem<GamepadButton>(
                             label: btn.label,
                             icon: Icons.gamepad_outlined,
                             value: btn,

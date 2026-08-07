@@ -33,8 +33,8 @@ import '../helpers/test_platform_services.dart';
 //    builder, asserting the two real i18n strings mount (real render, not scan).
 // 2. Asserts the gating direction: visibleCopy keeps the item only on Windows
 //    hosts and filters it out elsewhere (Windows shows / non-Windows hides).
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
@@ -62,7 +62,7 @@ SettingsDestination _noticeOnlyDestination() {
 Widget _harness({
   required Widget Function(SettingsContext) builder,
 }) {
-  final HibikiDatabase db = _testDb();
+  final FushiDatabase db = _testDb();
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
     ..loadFromPrefsSnapshot(<String, String>{
       'design_system': PrefCodec.encode('material'),
@@ -87,7 +87,7 @@ Widget _harness({
         platform: TargetPlatform.windows,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
         extensions: <ThemeExtension<dynamic>>[
-          HibikiDesignSystemTheme(themeNotifier.designSystemTheme),
+          FushiDesignSystemTheme(themeNotifier.designSystemTheme),
         ],
       ),
       home: Consumer(

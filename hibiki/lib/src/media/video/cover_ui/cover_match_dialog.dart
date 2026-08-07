@@ -26,7 +26,7 @@ import 'package:fushi_core/fushi_core.dart' show VideoBookRow;
 /// - 不出「同时应用到本合集全部 N 集」勾选——合集入口下那个选项本身就是错的。
 ///
 /// [applyScrape] 由调用方注入（生产 = 写 `MediaCollections.coverPath` +
-/// `collection_scrape_meta` + 回写合集名），弹窗因此不必持有 [HibikiDatabase]，
+/// `collection_scrape_meta` + 回写合集名），弹窗因此不必持有 [FushiDatabase]，
 /// widget 测试也能直接断言「写了合集、没写成员」。
 class CoverMatchCollectionTarget {
   const CoverMatchCollectionTarget({
@@ -466,7 +466,7 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
     }
     if (!mounted) return;
     Navigator.of(context).pop();
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.video_scrape_applied,
       severity: ToastSeverity.success,
     );

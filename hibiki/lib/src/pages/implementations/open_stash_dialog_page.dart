@@ -46,8 +46,8 @@ class _OpenStashDialogPage extends BasePageState<OpenStashDialogPage> {
   Widget buildEmptyMessage() {
     return Padding(
       padding:
-          EdgeInsets.only(bottom: HibikiDesignTokens.of(context).spacing.gap),
-      child: HibikiPlaceholderMessage(
+          EdgeInsets.only(bottom: FushiDesignTokens.of(context).spacing.gap),
+      child: FushiPlaceholderMessage(
         icon: Icons.inventory_2_outlined,
         message: t.stash_placeholder,
       ),
@@ -86,7 +86,7 @@ class _OpenStashDialogPage extends BasePageState<OpenStashDialogPage> {
         child: ValueListenableBuilder<int?>(
           valueListenable: _selectionNotifier,
           builder: (context, value, child) {
-            final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+            final FushiDesignTokens tokens = FushiDesignTokens.of(context);
             return Container(
               padding: EdgeInsets.symmetric(
                 vertical: tokens.spacing.gap,
@@ -209,12 +209,12 @@ class OpenStashDialogFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 520,
       maxHeightFactor: 0.82,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.creator_enhancement_open_stash,
         leadingIcon: Icons.inventory_2_outlined,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -254,12 +254,12 @@ class OpenStashClearDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.72,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.stash_clear_title,
         leadingIcon: Icons.delete_sweep_outlined,
         bodyPadding: EdgeInsets.fromLTRB(

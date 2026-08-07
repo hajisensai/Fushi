@@ -28,14 +28,14 @@ class SyncMessageDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.82,
       insetPadding: EdgeInsets.all(tokens.spacing.gap),
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         leadingIcon: Icons.info_outline,
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(

@@ -49,7 +49,7 @@ List<String?> collectionOwnedAssetPaths(MediaCollectionRow collection) {
 /// 某合集当前的附加图文件路径（v68）。**必须在删行前调用**：`media_images` 行
 /// 随删合集 cascade 消失，删后再查恒为空、文件永久泄漏。
 Future<List<String>> collectionOwnedImagePaths(
-  HibikiDatabase db,
+  FushiDatabase db,
   int collectionId,
 ) async {
   return <String>[
@@ -59,15 +59,15 @@ Future<List<String>> collectionOwnedImagePaths(
   ];
 }
 
-/// 删除合集的**唯一入口**：删 DB 行（[HibikiDatabase.deleteMediaCollection]，
+/// 删除合集的**唯一入口**：删 DB 行（[FushiDatabase.deleteMediaCollection]，
 /// 清成员引用行 + 写合集级墓碑）→ 回收该合集自有的磁盘资产。
 ///
-/// 返回值透传 [HibikiDatabase.deleteMediaCollection]（被删的合集行数），调用方
+/// 返回值透传 [FushiDatabase.deleteMediaCollection]（被删的合集行数），调用方
 /// 原有的 `removed > 0` 判据零变化。
 ///
 /// [collectionCoversDirectory] 仅供测试注入；生产走 [VideoStorage] 的真实目录。
 Future<int> deleteMediaCollectionWithAssets(
-  HibikiDatabase db,
+  FushiDatabase db,
   int collectionId, {
   Directory? collectionCoversDirectory,
 }) async {
@@ -94,7 +94,7 @@ Future<int> deleteMediaCollectionWithAssets(
 /// 返回实际删掉的文件数（便于测试断言）。删除失败 / 异常不抛——合集已经删掉是
 /// 既成事实，一张残留图不该让整个删除流程报错。
 Future<int> reclaimDeletedCollectionAssets(
-  HibikiDatabase db,
+  FushiDatabase db,
   Iterable<MediaCollectionRow> deletedCollections, {
   List<String> ownedImagePaths = const <String>[],
   Directory? collectionCoversDirectory,

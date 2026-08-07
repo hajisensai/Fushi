@@ -82,11 +82,11 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double maxHeight =
         (MediaQuery.of(context).size.height * 0.55).clamp(128.0, 420.0);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 560,
       maxHeightFactor: 0.92,
       insetPadding: EdgeInsets.symmetric(
@@ -94,7 +94,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
         vertical: tokens.spacing.card,
       ),
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.manage_audio_sources,
         leadingIcon: Icons.graphic_eq_outlined,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -180,13 +180,13 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   }
 
   // ── 统一来源列表 ───────────────────────────────────────────────────────
-  // 用自实现的 HibikiReorderableColumn（局部坐标长按拖拽），而非 SDK 的
-  // ReorderableListView：后者的 Overlay 拖拽代理不认祖先 HibikiAppUiScale 的
+  // 用自实现的 FushiReorderableColumn（局部坐标长按拖拽），而非 SDK 的
+  // ReorderableListView：后者的 Overlay 拖拽代理不认祖先 FushiAppUiScale 的
   // Transform.scale，缩放界面下长按拖拽会飞出屏幕。前者把拖拽反馈渲染在列表自身坐标系、
   // 用 globalToLocal 消掉祖先缩放 → 任意缩放下都精确跟手、零偏移且视觉一致。
   // 上下箭头按钮仍是无障碍/手柄重排路径。
-  Widget _buildSourceList(HibikiDesignTokens tokens) {
-    return HibikiReorderableColumn(
+  Widget _buildSourceList(FushiDesignTokens tokens) {
+    return FushiReorderableColumn(
       itemCount: _sources.length,
       keyForIndex: (int index) => ValueKey<String>(_sourceKeyId(index)),
       onReorder: (int from, int to) {
@@ -208,7 +208,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
         : 'audio_remote_${source.kind.wireName}_${source.url ?? index}';
   }
 
-  Widget _buildSourceRow(HibikiDesignTokens tokens, int index) {
+  Widget _buildSourceRow(FushiDesignTokens tokens, int index) {
     final AudioSourceConfig source = _sources[index];
     final bool isHibiki = source.kind == AudioSourceKind.hibikiRemote;
     final bool isLocal = source.kind == AudioSourceKind.localAudio;
@@ -240,7 +240,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
           if (isLocal &&
               widget.onEditLocalSources != null &&
               (source.path?.isNotEmpty ?? false))
-            HibikiIconButton(
+            FushiIconButton(
               icon: Icons.tune,
               size: 18,
               tooltip: t.local_audio_edit_sources,
@@ -251,7 +251,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
           // （开关左侧）→ 两类行各多一个同尺寸按钮，开关/↑/↓/删除四列仍跨行右贴边
           // 对齐（BUG-027）。hibikiRemote 无 URL 可改、本地库路径由选择器决定，都不给。
           if (isRemoteUrl)
-            HibikiIconButton(
+            FushiIconButton(
               icon: isEditingThis ? Icons.edit : Icons.edit_outlined,
               size: 18,
               tooltip: t.dialog_edit,
@@ -268,7 +268,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
           ),
           // Gamepad/keyboard reorder equivalent for the drag handle
           // (which a controller cannot grab).
-          HibikiIconButton(
+          FushiIconButton(
             icon: Icons.keyboard_arrow_up,
             size: 18,
             tooltip: t.move_up,
@@ -279,7 +279,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
               _sources.insert(index - 1, item);
             }),
           ),
-          HibikiIconButton(
+          FushiIconButton(
             icon: Icons.keyboard_arrow_down,
             size: 18,
             tooltip: t.move_down,
@@ -290,7 +290,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
               _sources.insert(index + 1, item);
             }),
           ),
-          HibikiIconButton(
+          FushiIconButton(
             icon: Icons.delete_outline,
             size: 18,
             tooltip: t.dialog_delete,
@@ -308,7 +308,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
     );
   }
 
-  Widget _buildUrlField(HibikiDesignTokens tokens) {
+  Widget _buildUrlField(FushiDesignTokens tokens) {
     final bool showError = _controller.text.trim().isNotEmpty && !_urlValid;
     final bool editing = _editingSource != null;
     return Column(
@@ -334,7 +334,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
               if (!editing &&
                   !_sources.any((AudioSourceConfig s) =>
                       s.kind == AudioSourceKind.hibikiRemote))
-                HibikiIconButton(
+                FushiIconButton(
                   icon: Icons.hub_outlined,
                   tooltip: t.audio_source_hibiki_interconnect,
                   padding: EdgeInsets.all(tokens.spacing.gap / 2),
@@ -344,13 +344,13 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                       )),
                 ),
               if (editing)
-                HibikiIconButton(
+                FushiIconButton(
                   icon: Icons.close,
                   tooltip: t.dialog_cancel,
                   padding: EdgeInsets.all(tokens.spacing.gap / 2),
                   onTap: () => setState(_cancelEdit),
                 ),
-              HibikiIconButton(
+              FushiIconButton(
                 icon: editing ? Icons.check : Icons.add,
                 tooltip: editing ? t.dialog_save : t.dialog_add,
                 enabled: _urlValid,
@@ -389,8 +389,8 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
       final BuildContext? fieldContext = _urlFieldKey.currentContext;
       if (fieldContext != null && mounted) {
         // 焦点驱动滚动收口在 focus 包（守卫 test/focus/focus_architecture_static_test.dart）：
-        // 页面不自持滚动实现，统一走 HibikiFocusScroll。
-        HibikiFocusScroll.ensureVisible(
+        // 页面不自持滚动实现，统一走 FushiFocusScroll。
+        FushiFocusScroll.ensureVisible(
           fieldContext,
           duration: const Duration(milliseconds: 150),
         );
@@ -666,11 +666,11 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Size mediaSize = MediaQuery.of(context).size;
     final double contentHeight = (mediaSize.height * 0.55).clamp(280.0, 480.0);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 640,
       maxHeightFactor: 0.88,
       insetPadding: EdgeInsets.symmetric(
@@ -678,7 +678,7 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
         vertical: tokens.spacing.card,
       ),
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.custom_dict_css,
         leadingIcon: Icons.code_outlined,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -702,7 +702,7 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
               _buildScopeDropdown(context),
               SizedBox(height: tokens.spacing.gap),
               Expanded(
-                child: HibikiEditorPanel(
+                child: FushiEditorPanel(
                   controller: _cssController,
                 ),
               ),

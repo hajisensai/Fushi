@@ -8,10 +8,10 @@ void main() {
   testWidgets('pill selected shape renders a rounded inset highlight',
       (WidgetTester tester) async {
     await tester.pumpWidget(_host(
-      HibikiListItem(
+      FushiListItem(
         title: const Text('基础'),
         selected: true,
-        selectedShape: HibikiListItemSelectedShape.pill,
+        selectedShape: FushiListItemSelectedShape.pill,
         onTap: () {},
       ),
     ));
@@ -32,7 +32,7 @@ void main() {
   testWidgets('default fill shape keeps square full-bleed highlight',
       (WidgetTester tester) async {
     await tester.pumpWidget(_host(
-      HibikiListItem(
+      FushiListItem(
         title: const Text('基础'),
         selected: true,
         onTap: () {},

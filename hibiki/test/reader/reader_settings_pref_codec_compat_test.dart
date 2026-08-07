@@ -16,14 +16,14 @@ import 'package:fushi_core/fushi_core.dart';
 /// 静默回落默认（用户偏好丢失），String 更糟——整串 's:xxx' 被当值吃进（污染）。
 /// 修复后 _parseValue 委托 PrefCodec.decodeUntyped（严格超集：标签 + 裸值都认，
 /// 裸值分支与旧启发式逐行等价）。
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() {
     db = _testDb();

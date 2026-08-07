@@ -10,8 +10,8 @@ import 'package:http/http.dart' as http;
 /// 「配对设备不可达」。与「设备可达但没有这个词的结果」（返回 null，含
 /// 404/405/非 2xx/正常空结果）在传输层严格区分，供上层（WordAudioResolver）
 /// 对 hibiki-remote 音频源做失败冷却（对齐 remoteAudio 源的 TODO-1057/BUG-488
-/// 机制）。音频路径 [HibikiRemoteLookupClient.lookupAudioUrl] 与词典路径
-/// [HibikiRemoteLookupClient.searchDictionary] 现在**对称**抛出：词典路径此前是
+/// 机制）。音频路径 [FushiRemoteLookupClient.lookupAudioUrl] 与词典路径
+/// [FushiRemoteLookupClient.searchDictionary] 现在**对称**抛出：词典路径此前是
 /// 全仓唯一不消费 `allUnreachable` 的调用点，导致配对设备离线时每次查词都要把
 /// 「3s × 候选数」重付一遍（BUG-1302）。
 class RemoteLookupUnreachableError implements Exception {
@@ -31,8 +31,8 @@ class RemoteLookupUnreachableError implements Exception {
 /// 「可达但无结果」不进冷却。
 const Duration kRemoteDictionaryFailureCooldown = Duration(seconds: 45);
 
-class HibikiRemoteLookupClient {
-  HibikiRemoteLookupClient({
+class FushiRemoteLookupClient {
+  FushiRemoteLookupClient({
     required SyncRepository repo,
     http.Client? httpClient,
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,

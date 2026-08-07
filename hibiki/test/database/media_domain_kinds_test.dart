@@ -37,8 +37,8 @@ void main() {
     });
 
     test('typed 写入落库串不变：addActivityEvent → DB 读回裸 book 串', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       await db.addActivityEvent(
         eventType: kActivityRead,
@@ -151,8 +151,8 @@ void main() {
     });
 
     test('typed 写入落库串不变：writeSyncDeletionTombstone → DB 读回裸串', () async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       await db.writeSyncDeletionTombstone(
           SyncTombstoneKind.localaudio.dbValue, 'Lib', 100);

@@ -12,7 +12,7 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 /// Minimal [SyncBackend] test double for the compare dialog: only the read
 /// methods the dialog's `_load` path actually touches return controllable data
@@ -184,7 +184,7 @@ void main() {
   Future<void> pumpDialog(
     WidgetTester tester,
     _CacheTrackingBackend backend,
-    HibikiDatabase db,
+    FushiDatabase db,
   ) async {
     tester.view.physicalSize = const Size(1200, 1600);
     tester.view.devicePixelRatio = 1;
@@ -219,7 +219,7 @@ void main() {
     const String sanitizedTitle = 'BookA';
     const String folderId = 'folderX';
 
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
 

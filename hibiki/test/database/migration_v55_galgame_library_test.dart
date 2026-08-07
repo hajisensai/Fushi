@@ -22,8 +22,8 @@ import 'package:fushi_core/fushi_core.dart';
 void main() {
   /// v53 shape 的最小库：只建 preferences（回填源）+ 写入 user_version=53。
   /// 其余 v53 表不建——迁移里的建表都有 `_tableExists` 守卫，缺表不影响本用例。
-  Future<HibikiDatabase> openV53Db(String? galgameLibraryJson) async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+  Future<FushiDatabase> openV53Db(String? galgameLibraryJson) async {
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (rawDb) {
           rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -48,7 +48,7 @@ CREATE TABLE preferences (
   }
 
   /// 读当前 user_version（无现成访问器，按仓库既有测试的写法直接 PRAGMA）。
-  Future<int> userVersionOf(HibikiDatabase db) async {
+  Future<int> userVersionOf(FushiDatabase db) async {
     final QueryRow row =
         await db.customSelect('PRAGMA user_version').getSingle();
     return row.read<int>('user_version');
@@ -89,7 +89,7 @@ CREATE TABLE preferences (
         addedAt: 1700000000001,
       ),
     ]);
-    final HibikiDatabase db = await openV53Db(raw);
+    final FushiDatabase db = await openV53Db(raw);
 
     final List<GalgameRow> rows = await db.getAllGalgames();
     expect(rows, hasLength(2));
@@ -154,7 +154,7 @@ CREATE TABLE preferences (
         addedAt: 2,
       ),
     ]);
-    final HibikiDatabase db = await openV53Db(raw);
+    final FushiDatabase db = await openV53Db(raw);
 
     final List<GalgameRow> rows = await db.getAllGalgames();
     expect(rows.map((GalgameRow r) => r.id), <String>['ok-1', 'ok-2']);
@@ -167,7 +167,7 @@ CREATE TABLE preferences (
       '{"a":1}', // 合法 JSON 但不是数组
       '',
     ]) {
-      final HibikiDatabase db = await openV53Db(raw);
+      final FushiDatabase db = await openV53Db(raw);
       expect(await db.getAllGalgames(), isEmpty, reason: 'raw=$raw');
       expect(await userVersionOf(db), 68, reason: 'raw=$raw');
       await db.close();
@@ -175,7 +175,7 @@ CREATE TABLE preferences (
   });
 
   test('偏好里根本没有 galgame_library 时迁移正常，表为空', () async {
-    final HibikiDatabase db = await openV53Db(null);
+    final FushiDatabase db = await openV53Db(null);
     expect(await db.getAllGalgames(), isEmpty);
     expect(await userVersionOf(db), 68);
   });
@@ -191,7 +191,7 @@ CREATE TABLE preferences (
     ]);
 
     // 第一次开库：走迁移，回填 1 条。
-    final HibikiDatabase first = await openV53Db(raw);
+    final FushiDatabase first = await openV53Db(raw);
     expect(await first.getAllGalgames(), hasLength(1));
 
     // 直接再调一次迁移路径的回填不会重复（表非空即短路）。这里用「已有行 + 再开一次
@@ -212,8 +212,8 @@ CREATE TABLE preferences (
   });
 
   test('fresh 库（onCreate）直接就有三张表，无需回填', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     expect(await db.getAllGalgames(), isEmpty);
@@ -231,8 +231,8 @@ CREATE TABLE preferences (
   });
 
   test('删游戏经 FK cascade 连带清掉 sources 与 sessions', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     await db.customStatement('PRAGMA foreign_keys = ON');
 

@@ -1,6 +1,6 @@
 /// 显式确认式删除传播的纯决策核心 + 远端墓碑标记编解码（多端库联合视图 / 删除传播）。
 ///
-/// 数据流：本地删资产 → sync_deletion_tombstones 记墓碑（见 HibikiDatabase）→ 同步时发布
+/// 数据流：本地删资产 → sync_deletion_tombstones 记墓碑（见 FushiDatabase）→ 同步时发布
 /// 成远端标记（云 `__tombstones__/<marker>.json` / 互联 host 暴露）→ compare 对话框读双方
 /// 墓碑与在库态，经 [computeDeletionPropagation] 算出**待用户逐条确认**的候选，绝不静默自动删
 /// （与 union-only 的安全取舍一致）。纯 Dart：零 IO、零 Flutter 依赖，便于单测。
@@ -145,7 +145,7 @@ Map<String, Object?> deletionTombstoneJson(
   return (mediaType: mediaType, itemKey: itemKey, deletedAt: deletedAt);
 }
 
-/// 解析 `favoriteword` 删除墓碑的 itemKey（= `HibikiDatabase.favoriteWordItemKey` 的
+/// 解析 `favoriteword` 删除墓碑的 itemKey（= `FushiDatabase.favoriteWordItemKey` 的
 /// NUL 连接串 `expression\u0000reading\u0000sourceType`）。非法（段数≠3）返回 null。
 ({String expression, String reading, String sourceType})?
     parseFavoriteWordItemKey(String key) {

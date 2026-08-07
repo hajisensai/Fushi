@@ -50,17 +50,17 @@ void main() {
     }
   }
 
-  Future<HibikiDatabase> openBackupDb(String zipPath, Directory into) async {
+  Future<FushiDatabase> openBackupDb(String zipPath, Directory into) async {
     final Archive archive = await readZip(zipPath);
     final ArchiveFile dbFile = archive.findFile('hibiki.db')!;
     final Directory dir = Directory(p.join(into.path, 'exdb'))
       ..createSync(recursive: true);
     File(p.join(dir.path, 'hibiki.db'))
         .writeAsBytesSync(dbFile.content as List<int>);
-    return HibikiDatabase(dir.path);
+    return FushiDatabase(dir.path);
   }
 
-  Future<int> countRows(HibikiDatabase db, String table) async {
+  Future<int> countRows(FushiDatabase db, String table) async {
     final row =
         await db.customSelect('SELECT COUNT(*) AS c FROM $table').getSingle();
     return row.data['c'] as int;
@@ -81,8 +81,8 @@ void main() {
       await writeFile(p.join(fonts, 'OldDeleted.ttf'), 'ORPHAN-1');
       await writeFile(p.join(fonts, 'AlsoUnreferenced.woff2'), 'ORPHAN-2');
 
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       await db.setPref(
         'src:reader_ttu:font_catalog',
         jsonEncode(<String, Object?>{
@@ -142,8 +142,8 @@ void main() {
       await writeFile(p.join(fonts, 'Legacy.ttf'), 'FONT');
       await writeFile(p.join(fonts, '_tmp_999'), 'ORPHAN');
 
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       await db.setPref(
         'src:reader_ttu:custom_fonts',
         jsonEncode(<Map<String, Object?>>[
@@ -173,8 +173,8 @@ void main() {
       await writeFile(p.join(fonts, '_tmp_1'), 'ORPHAN');
       await writeFile(p.join(fonts, 'strays.ttf'), 'ORPHAN');
 
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       final BackupService service = BackupService(
         db: db,
         dbDirectory: dbDir,
@@ -189,7 +189,7 @@ void main() {
 
   group('per-video export selection (videoKeys)', () {
     /// Lays out three local videos (A/B/C) and returns the service + db.
-    Future<({BackupService service, HibikiDatabase db})>
+    Future<({BackupService service, FushiDatabase db})>
         buildThreeVideos() async {
       final String dbDir = p.join(src.path, 'db');
       final String videos = p.join(src.path, 'external_videos');
@@ -198,8 +198,8 @@ void main() {
       await writeFile(p.join(videos, 'B.mp4'), 'VID-B');
       await writeFile(p.join(videos, 'C.mp4'), 'VID-C');
 
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       for (final String k in <String>['A', 'B', 'C']) {
         await db.upsertVideoBook(VideoBooksCompanion.insert(
           bookUid: 'video/$k',
@@ -216,7 +216,7 @@ void main() {
     }
 
     test('videoKeys packs only selected files AND strips other rows', () async {
-      final ({BackupService service, HibikiDatabase db}) built =
+      final ({BackupService service, FushiDatabase db}) built =
           await buildThreeVideos();
       final String zip = p.join(src.path, 'videos.zip');
       final BackupMeta meta = await built.service.createBackup(
@@ -237,7 +237,7 @@ void main() {
       expect(videoNames.any((String n) => n.contains('B')), isFalse);
 
       // The deselected video's DB row is stripped (no ghost video on restore).
-      final HibikiDatabase exdb = await openBackupDb(zip, dst);
+      final FushiDatabase exdb = await openBackupDb(zip, dst);
       final List<VideoBookRow> rows = await exdb.allVideoBooks();
       await exdb.close();
       expect(rows.map((VideoBookRow v) => v.bookUid).toSet(),
@@ -247,20 +247,20 @@ void main() {
     });
 
     test('null videoKeys exports every video (legacy full export)', () async {
-      final ({BackupService service, HibikiDatabase db}) built =
+      final ({BackupService service, FushiDatabase db}) built =
           await buildThreeVideos();
       final String zip = p.join(src.path, 'videos_all.zip');
       final BackupMeta meta = await built.service.createBackup(zip);
       await built.db.close();
 
-      final HibikiDatabase exdb = await openBackupDb(zip, dst);
+      final FushiDatabase exdb = await openBackupDb(zip, dst);
       expect(await countRows(exdb, 'video_books'), 3);
       await exdb.close();
       expect(meta.bookCount, 3);
     });
 
     test('excluding the videos category strips every video row', () async {
-      final ({BackupService service, HibikiDatabase db}) built =
+      final ({BackupService service, FushiDatabase db}) built =
           await buildThreeVideos();
       final String zip = p.join(src.path, 'no_videos.zip');
       final BackupMeta meta = await built.service.createBackup(
@@ -275,7 +275,7 @@ void main() {
         archive.files.any((ArchiveFile f) => f.name.startsWith('videos/')),
         isFalse,
       );
-      final HibikiDatabase exdb = await openBackupDb(zip, dst);
+      final FushiDatabase exdb = await openBackupDb(zip, dst);
       expect(await countRows(exdb, 'video_books'), 0);
       await exdb.close();
       expect(meta.bookCount, 0);

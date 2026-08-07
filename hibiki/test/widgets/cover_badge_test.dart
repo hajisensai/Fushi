@@ -6,7 +6,7 @@ import 'package:fushi/src/utils/components/cover_badge.dart';
 Widget _app({required bool eink, required Widget child}) {
   return MaterialApp(
     theme: ThemeData(
-      extensions: <ThemeExtension<dynamic>>[HibikiEinkTheme(eink)],
+      extensions: <ThemeExtension<dynamic>>[FushiEinkTheme(eink)],
     ),
     home: Scaffold(body: Center(child: child)),
   );

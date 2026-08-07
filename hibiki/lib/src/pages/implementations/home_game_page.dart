@@ -190,9 +190,9 @@ class _HomeGamePageState extends State<HomeGamePage> {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          HibikiPageHeader.customTitle(
+          FushiPageHeader.customTitle(
             actions: <Widget>[
-              HibikiIconButton(
+              FushiIconButton(
                 icon: Icons.bar_chart_outlined,
                 tooltip: t.game_statistics,
                 label: t.game_statistics,
@@ -303,9 +303,9 @@ class _CaptureStatusStrip extends StatelessWidget {
             ),
           );
 
-    return HibikiCard(
+    return FushiCard(
       key: HomeGamePage.captureStatusKey,
-      focusId: const HibikiFocusId('game-capture-status'),
+      focusId: const FushiFocusId('game-capture-status'),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       color: active ? colors.primaryContainer.withValues(alpha: 0.45) : null,
       onTap: onOpen,

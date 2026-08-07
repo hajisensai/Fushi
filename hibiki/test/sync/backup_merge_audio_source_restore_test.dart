@@ -25,7 +25,7 @@ void main() {
     File(srcLadb).writeAsStringSync('LADB');
     final String srcLadbJson = srcLadb.replaceAll(r'\', r'\\');
 
-    final HibikiDatabase src = HibikiDatabase(srcDbDir);
+    final FushiDatabase src = FushiDatabase(srcDbDir);
     await src.setPref('local_audio_dbs',
         's:[{"path":"$srcLadbJson","displayName":"x","enabled":true}]');
     await src.setPref('audio_source_configs',
@@ -46,7 +46,7 @@ void main() {
     addTearDown(() => cleanupTempDir(curRoot));
     final String curDbDir = p.join(curRoot.path, 'support');
     Directory(curDbDir).createSync(recursive: true);
-    final HibikiDatabase seed = HibikiDatabase(curDbDir);
+    final FushiDatabase seed = FushiDatabase(curDbDir);
     await seed.setPref('local_audio_dbs', 's:[]');
     await seed.setPref('audio_source_configs', 'j:[]');
     await seed.close();
@@ -56,7 +56,7 @@ void main() {
       zipPath: zip,
     );
 
-    final HibikiDatabase cur = HibikiDatabase(curDbDir);
+    final FushiDatabase cur = FushiDatabase(curDbDir);
     addTearDown(cur.close);
     final String? audioCfg = await cur.getPref('audio_source_configs');
     final String? localAudio = await cur.getPref('local_audio_dbs');
@@ -84,7 +84,7 @@ void main() {
     addTearDown(() => cleanupTempDir(srcRoot));
     final String srcDbDir = p.join(srcRoot.path, 'support');
     Directory(srcDbDir).createSync(recursive: true);
-    final HibikiDatabase src = HibikiDatabase(srcDbDir);
+    final FushiDatabase src = FushiDatabase(srcDbDir);
     await src.setPref('audio_source_configs',
         'j:[{"kind":"localAudio","label":"FROM_BACKUP"}]');
     final Directory zipDir =
@@ -100,7 +100,7 @@ void main() {
     addTearDown(() => cleanupTempDir(curRoot));
     final String curDbDir = p.join(curRoot.path, 'support');
     Directory(curDbDir).createSync(recursive: true);
-    final HibikiDatabase seed = HibikiDatabase(curDbDir);
+    final FushiDatabase seed = FushiDatabase(curDbDir);
     await seed.setPref('audio_source_configs',
         'j:[{"kind":"localAudio","label":"DEVICE_OWN"}]');
     await seed.close();
@@ -110,7 +110,7 @@ void main() {
       zipPath: zip,
     );
 
-    final HibikiDatabase cur = HibikiDatabase(curDbDir);
+    final FushiDatabase cur = FushiDatabase(curDbDir);
     addTearDown(cur.close);
     final String? audioCfg = await cur.getPref('audio_source_configs');
     expect(audioCfg, contains('DEVICE_OWN'));

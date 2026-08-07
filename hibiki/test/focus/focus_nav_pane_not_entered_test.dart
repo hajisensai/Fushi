@@ -8,12 +8,12 @@ import 'package:fushi/src/focus/hibiki_focus_target.dart';
 // 的内容，而不是另一组（rail）的导航项——即便某个 rail 项纵向更近。
 Widget _shell({required GlobalKey rootKey}) {
   Widget t(String id, {required double w, required double h}) =>
-      HibikiFocusTarget(
-          id: HibikiFocusId(id), child: SizedBox(width: w, height: h));
+      FushiFocusTarget(
+          id: FushiFocusId(id), child: SizedBox(width: w, height: h));
   return MaterialApp(
     theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
     home: Scaffold(
-      body: HibikiFocusRoot(
+      body: FushiFocusRoot(
         child: Row(
           key: rootKey,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -69,13 +69,13 @@ void main() {
     final GlobalKey rootKey = GlobalKey();
     await tester.pumpWidget(_shell(rootKey: rootKey));
     await tester.pump();
-    final HibikiFocusController controller =
-        HibikiFocusRoot.controllerOf(rootKey.currentContext!);
+    final FushiFocusController controller =
+        FushiFocusRoot.controllerOf(rootKey.currentContext!);
 
-    expect(controller.requestById(const HibikiFocusId('header-btn')), isTrue);
+    expect(controller.requestById(const FushiFocusId('header-btn')), isTrue);
     await tester.pump();
 
-    expect(controller.move(HibikiFocusDirection.down), isTrue);
+    expect(controller.move(FushiFocusDirection.down), isTrue);
     await tester.pump();
     expect(
       controller.activeId?.value.startsWith('content-'),
@@ -89,13 +89,13 @@ void main() {
     final GlobalKey rootKey = GlobalKey();
     await tester.pumpWidget(_shell(rootKey: rootKey));
     await tester.pump();
-    final HibikiFocusController controller =
-        HibikiFocusRoot.controllerOf(rootKey.currentContext!);
+    final FushiFocusController controller =
+        FushiFocusRoot.controllerOf(rootKey.currentContext!);
 
-    expect(controller.requestById(const HibikiFocusId('content-0')), isTrue);
+    expect(controller.requestById(const FushiFocusId('content-0')), isTrue);
     await tester.pump();
 
-    expect(controller.move(HibikiFocusDirection.left), isTrue);
+    expect(controller.move(FushiFocusDirection.left), isTrue);
     await tester.pump();
     expect(
       controller.activeId?.value.startsWith('nav-'),

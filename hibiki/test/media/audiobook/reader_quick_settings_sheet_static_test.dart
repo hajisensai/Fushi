@@ -130,11 +130,11 @@ void main() {
         File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
             .readAsStringSync();
 
-    // sheet 外壳骨架已抽到共享 HibikiMasterDetailSettingsSheet（TODO-583）：阅读器
-    // 经它进入 PopScope + HibikiModalSheetFrame + master-detail；frame / maxHeightFactor
+    // sheet 外壳骨架已抽到共享 FushiMasterDetailSettingsSheet（TODO-583）：阅读器
+    // 经它进入 PopScope + FushiModalSheetFrame + master-detail；frame / maxHeightFactor
     // 的断言下沉到 master_detail_settings_sheet_test。这里只锁阅读器仍走共享外壳，
     // 且没退回旧的 SafeArea / 2px 拖拽手柄 bespoke chrome。
-    expect(source, contains('HibikiMasterDetailSettingsSheet('));
+    expect(source, contains('FushiMasterDetailSettingsSheet('));
     expect(source, isNot(contains('child: SafeArea(')));
     expect(source, isNot(contains('BorderRadius.circular(2)')));
   });
@@ -143,14 +143,14 @@ void main() {
     final String source =
         File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
             .readAsStringSync();
-    // 返回页头已抽到共享 HibikiSettingsSubPageHeader（TODO-583）：从共享文件读它。
+    // 返回页头已抽到共享 FushiSettingsSubPageHeader（TODO-583）：从共享文件读它。
     final String sharedSheetSource =
         File('lib/src/settings/master_detail_settings_sheet.dart')
             .readAsStringSync();
     final String headerSource = _between(
       sharedSheetSource,
-      'class HibikiSettingsSubPageHeader',
-      'class HibikiMasterDetailSettingsSheet',
+      'class FushiSettingsSubPageHeader',
+      'class FushiMasterDetailSettingsSheet',
     );
     final String favoriteActionSource = _between(
       source,
@@ -163,7 +163,7 @@ void main() {
       source.length,
     );
 
-    expect(source, contains('HibikiIconButton('));
+    expect(source, contains('FushiIconButton('));
     expect(source, contains('class _InBookIconButton'));
     expect(source, contains('class _RepeatIconButton'));
     for (final String actionSource in <String>[
@@ -187,14 +187,14 @@ void main() {
       '  Widget _buildSearchSection(ThemeData theme)',
       'class _InBookTocRow',
     );
-    expect(inBookSource, contains('HibikiIconButton('));
+    expect(inBookSource, contains('FushiIconButton('));
     expect(inBookSource, isNot(contains('FilledButton.tonal(')));
     expect(inBookSource, isNot(contains('VisualDensity.compact')));
   });
 
   test('audiobook play bar restores the MD3 filled-tonal play frame (TODO-297)',
       () {
-    // 代际守卫翻转：48a8d2044 曾把播放条全部按钮换成扁平的 HibikiIconButton，
+    // 代际守卫翻转：48a8d2044 曾把播放条全部按钮换成扁平的 FushiIconButton，
     // TODO-297 把主操作（播放/暂停）还原成原生 [IconButton.filledTonal]（MD3 圆框
     // + state-layer + ripple），其余键（上一句/下一句/follow/设置）还原成无框原生
     // [IconButton]。锁住「图标 + 圆框 md3」旧观感不再回退到扁平自定义按钮。
@@ -204,8 +204,8 @@ void main() {
 
     // 播放/暂停键是 filled-tonal 圆框。
     expect(source, contains('IconButton.filledTonal('));
-    // 不再用扁平的共享 HibikiIconButton 渲染播放条按钮。
-    expect(source, isNot(contains('HibikiIconButton(')));
+    // 不再用扁平的共享 FushiIconButton 渲染播放条按钮。
+    expect(source, isNot(contains('FushiIconButton(')));
   });
 
   test('reader quick settings sheet uses MD3 spacing tokens', () {
@@ -213,7 +213,7 @@ void main() {
         File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
             .readAsStringSync();
 
-    expect(source, contains('HibikiDesignTokens.of(context)'));
+    expect(source, contains('FushiDesignTokens.of(context)'));
     expect(source, isNot(contains('const SizedBox(height: 12)')));
     expect(source, isNot(contains('const SizedBox(height: 8)')));
     expect(source, isNot(contains('const SizedBox(width: 8)')));
@@ -248,13 +248,13 @@ void main() {
 
   test('in-book settings header uses theme typography without hardcoded size',
       () {
-    // 返回页头已抽到共享 HibikiSettingsSubPageHeader（TODO-583）：扫共享文件。
+    // 返回页头已抽到共享 FushiSettingsSubPageHeader（TODO-583）：扫共享文件。
     final String source =
         File('lib/src/settings/master_detail_settings_sheet.dart')
             .readAsStringSync();
     final String headerSource = source.substring(
-      source.indexOf('class HibikiSettingsSubPageHeader'),
-      source.indexOf('class HibikiMasterDetailSettingsSheet'),
+      source.indexOf('class FushiSettingsSubPageHeader'),
+      source.indexOf('class FushiMasterDetailSettingsSheet'),
     );
 
     expect(headerSource, contains('navTitleTextStyle'));
@@ -386,7 +386,7 @@ void main() {
 
     final String desktopSource =
         readerSource.substring(desktopBranch, mobileBranch);
-    expect(desktopSource, contains('HibikiDialogFrame('));
+    expect(desktopSource, contains('FushiDialogFrame('));
     // master-detail 需要更宽画布（左父菜单 + 右详情）；520 太窄进不了分栏。
     // TODO-1142：魔法数 900 抽成共享 kHibikiSettingsDialogMaxWidth（全屏 push 的
     // 书籍 CSS 编辑页也引用它约束正文宽度，与限宽弹窗兄弟页同宽）。
@@ -414,13 +414,13 @@ void main() {
     expect(source, contains('isWide: _isWide'));
     expect(source, contains('onWideChanged:'));
     // 宽屏两 pane 逐字相同的内边距局部量已合并为单一 widePanePadding
-    //（数值走 HibikiMasterDetailSettingsSheet.paneInsets 共享公式，清理 wave2）。
+    //（数值走 FushiMasterDetailSettingsSheet.paneInsets 共享公式，清理 wave2）。
     // 不变量不变：两个 pane 都用共享局部量、无内联 EdgeInsets。
     expect(
       'padding: widePanePadding'.allMatches(source).length,
       greaterThanOrEqualTo(2),
     );
-    expect(source, contains('HibikiMasterDetailSettingsSheet.paneInsets('));
+    expect(source, contains('FushiMasterDetailSettingsSheet.paneInsets('));
     expect(source, contains('Widget _buildWidePane('));
     expect(source, contains('_wideCategories()'));
 
@@ -431,9 +431,9 @@ void main() {
     expect(source, contains("_subPage ?? 'location'"));
     expect(source, contains('_subPageContent(selectedId)'));
     // 左 pane 分类用带选中态的 MD3 列表项（pill 高亮，无 chevron 误导 push）。
-    expect(source, contains('HibikiListItemSelectedShape.pill'));
+    expect(source, contains('FushiListItemSelectedShape.pill'));
     // TODO-1143：左父菜单固定 208px，长分类标签（如「布局与显示」选中加粗）会被
-    // HibikiListItem 默认 titleMaxLines:1 + ellipsis 截断成「布局与…」。守卫
+    // FushiListItem 默认 titleMaxLines:1 + ellipsis 截断成「布局与…」。守卫
     // _buildWidePane 的分类项显式传 titleMaxLines: 2 让长标签换行而非省略。
     final String widePaneSource = _between(
       source,
@@ -469,10 +469,10 @@ void main() {
         contains('supportingWidth: kHibikiSettingsSupportingPaneWidth'));
 
     // 确定性几何判据（宽且高都 >= 共享阈值）已下沉到共享外壳
-    // HibikiMasterDetailSettingsSheet（master_detail_settings_sheet_test 守它）；阅读器
+    // FushiMasterDetailSettingsSheet（master_detail_settings_sheet_test 守它）；阅读器
     // 经 isWide / onWideChanged 与外壳交互，本文件只锁阅读器仍用共享外壳 + 没退回
     // 旧的 post-frame 测内容溢出回退判据。
-    expect(source, contains('HibikiMasterDetailSettingsSheet('));
+    expect(source, contains('FushiMasterDetailSettingsSheet('));
     expect(source, contains('onWideChanged:'));
 
     // 旧的「post-frame 测左父菜单内容溢出回退」已移除（会随内容高度发散 → 同设备
@@ -621,7 +621,7 @@ void main() {
 }
 
 String _withoutSharedIconButton(String source) {
-  return source.replaceAll('HibikiIconButton(', 'HibikiSharedIconControl(');
+  return source.replaceAll('FushiIconButton(', 'FushiSharedIconControl(');
 }
 
 String _between(String source, Object start, Object end) {

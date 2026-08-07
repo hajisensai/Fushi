@@ -97,8 +97,8 @@ void main() {
 
   testWidgets('vertical-rl ruby annotation alignment under real reader CSS',
       (WidgetTester tester) async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = ReaderSettings(db);
     await settings.refreshFromDb();

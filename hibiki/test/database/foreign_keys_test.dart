@@ -5,25 +5,25 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-Future<HibikiDatabase> _openRealDb() async {
+Future<FushiDatabase> _openRealDb() async {
   final dir = await Directory.systemTemp.createTemp('hibiki_fk_test_');
   addTearDown(() async {
     await dir.delete(recursive: true);
   });
 
-  final db = HibikiDatabase(dir.path);
+  final db = FushiDatabase(dir.path);
   addTearDown(db.close);
   return db;
 }
 
-Future<int> _count(HibikiDatabase db, String table) async {
+Future<int> _count(FushiDatabase db, String table) async {
   final row =
       await db.customSelect('SELECT COUNT(*) AS c FROM $table').getSingle();
   return row.read<int>('c');
 }
 
-Future<HibikiDatabase> _openLegacyDbWithExistingSortOrder() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openLegacyDbWithExistingSortOrder() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         rawDb.execute('PRAGMA foreign_keys = ON');
@@ -67,8 +67,8 @@ CREATE TABLE book_tag_mappings (
   return db;
 }
 
-Future<HibikiDatabase> _openLegacyDbWithExistingReaderPositionOffset() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openLegacyDbWithExistingReaderPositionOffset() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         rawDb.execute('''
@@ -89,8 +89,8 @@ CREATE TABLE reader_positions (
   return db;
 }
 
-Future<HibikiDatabase> _openLegacyDbWithExistingDictionaryType() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openLegacyDbWithExistingDictionaryType() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         rawDb.execute('''

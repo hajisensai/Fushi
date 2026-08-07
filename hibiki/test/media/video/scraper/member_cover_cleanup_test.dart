@@ -156,7 +156,7 @@ void main() {
 
   // ── 落地层：真 DB + 真文件 ──────────────────────────────────────
   group('runMemberCoverCleanup 落地', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late VideoBookRepository repo;
     late Directory covers;
     late Directory collectionCovers;
@@ -178,7 +178,7 @@ void main() {
     }
 
     setUp(() async {
-      db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
       repo = VideoBookRepository(db);
       covers = await Directory.systemTemp.createTemp('member_cleanup_');
       collectionCovers = Directory(p.join(covers.path, 'collections'));

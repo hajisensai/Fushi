@@ -25,19 +25,19 @@ import 'package:fushi/src/sync/webdav_ops.dart';
 /// Probes whether a single Hibiki server URL is reachable with [token].
 /// Returns true if reachable, false on connectivity failure/timeout, and
 /// throws [SyncAuthError] if the server rejects the token.
-typedef HibikiProbe = Future<bool> Function(String url, String token);
+typedef FushiProbe = Future<bool> Function(String url, String token);
 
 /// TODO-961 M1: 按顺序探测 [candidates]（跳过 disabled），返回第一个可达的
-/// [HibikiClientUrl]（而非裸 URL），让调用方能取到该地址的钉扎指纹（https 走 pinned
+/// [FushiClientUrl]（而非裸 URL），让调用方能取到该地址的钉扎指纹（https 走 pinned
 /// client）。探测中的 [SyncAuthError] 立即向上传播——所有候选共用一个 token，一次拒绝
 /// 即全部失败；无可达候选时抛可重试的 [SyncBackendError]。指纹是地址身份的一部分，
 /// 故必须随选中地址一起流出。
-Future<HibikiClientUrl> resolveReachableHibikiCandidate(
-  List<HibikiClientUrl> candidates,
+Future<FushiClientUrl> resolveReachableHibikiCandidate(
+  List<FushiClientUrl> candidates,
   String token,
-  HibikiProbe probe,
+  FushiProbe probe,
 ) async {
-  for (final HibikiClientUrl candidate in candidates) {
+  for (final FushiClientUrl candidate in candidates) {
     if (!candidate.enabled) continue;
     final String? fp = candidate.fingerprintSha256;
     // https 端点（带指纹）的可达性必须用 pinned client 探测——裸 [probe] 会因自签
@@ -118,13 +118,13 @@ Future<bool> _defaultHibikiProbe(String url, String token) async {
 class InterconnectSyncBackend extends SyncBackend
     with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults
     implements RemoteBookClient, RemoteVideoClient, RemoteCoverFetcher {
-  InterconnectSyncBackend._({HibikiProbe? probe})
+  InterconnectSyncBackend._({FushiProbe? probe})
       : _probe = probe ?? _defaultHibikiProbe;
   static final InterconnectSyncBackend instance = InterconnectSyncBackend._();
 
   /// Test seam: inject a fake reachability probe.
   @visibleForTesting
-  InterconnectSyncBackend.withProbe(HibikiProbe probe) : _probe = probe;
+  InterconnectSyncBackend.withProbe(FushiProbe probe) : _probe = probe;
 
   /// How long to wait for a single address probe before treating it as
   /// unreachable and trying the next candidate. Short so LAN-first failover
@@ -149,8 +149,8 @@ class InterconnectSyncBackend extends SyncBackend
   static const Duration videoFirstByteTimeout = Duration(seconds: 30);
   static const Duration packageFirstByteTimeout = Duration(minutes: 5);
 
-  final HibikiProbe _probe;
-  List<HibikiClientUrl> _candidates = const <HibikiClientUrl>[];
+  final FushiProbe _probe;
+  List<FushiClientUrl> _candidates = const <FushiClientUrl>[];
   String? _token;
   bool _sessionResolved = false;
 
@@ -208,8 +208,8 @@ class InterconnectSyncBackend extends SyncBackend
   Future<String?> get currentEmail async => 'hibiki';
 
   Future<void> _loadConfig(SyncRepository repo) async {
-    final List<HibikiClientUrl> candidates = (await repo.getHibikiClientUrls())
-        .where((HibikiClientUrl u) => u.enabled)
+    final List<FushiClientUrl> candidates = (await repo.getHibikiClientUrls())
+        .where((FushiClientUrl u) => u.enabled)
         .toList();
     final String? token = await repo.getHibikiClientToken();
     // BUG-1183：这里原本无条件 `_sessionResolved = false`，而 [restoreAuth] 又是每个
@@ -237,12 +237,12 @@ class InterconnectSyncBackend extends SyncBackend
   /// 会话身份指纹：只包含影响「该连哪个地址、用什么凭据」的字段。`deviceName`
   /// 是纯展示名，改它不该触发全候选重探测，故不进签名。
   static String _sessionSignature(
-    List<HibikiClientUrl> candidates,
+    List<FushiClientUrl> candidates,
     String? token,
   ) {
     // 换行做分隔符：URL 与指纹里都不可能出现裸换行，不会拼出歧义签名。
     final StringBuffer buffer = StringBuffer(token ?? '');
-    for (final HibikiClientUrl candidate in candidates) {
+    for (final FushiClientUrl candidate in candidates) {
       buffer
         ..write('\n')
         ..write(candidate.url)
@@ -259,7 +259,7 @@ class InterconnectSyncBackend extends SyncBackend
     _ops?.close();
     _ops = null;
     if (_token == null) return;
-    for (final HibikiClientUrl candidate in _candidates) {
+    for (final FushiClientUrl candidate in _candidates) {
       try {
         _ops = WebDavOps(
           baseUrl: WebDavOps.normalizeUrl(candidate.url),
@@ -284,7 +284,7 @@ class InterconnectSyncBackend extends SyncBackend
     if (token == null) {
       throw SyncAuthError('Fushi server credentials not configured');
     }
-    final HibikiClientUrl chosen =
+    final FushiClientUrl chosen =
         await resolveReachableHibikiCandidate(_candidates, token, _probe);
     final String normalized = WebDavOps.normalizeUrl(chosen.url);
     if (_ops == null ||
@@ -318,12 +318,12 @@ class InterconnectSyncBackend extends SyncBackend
   Future<void> signOut({required SyncRepository repo}) async {
     _ops?.close();
     _ops = null;
-    _candidates = const <HibikiClientUrl>[];
+    _candidates = const <FushiClientUrl>[];
     _token = null;
     _sessionResolved = false;
     // 登出后配置身份归零，下次 restoreAuth 必然重探测（BUG-1183）。
     _configSignature = null;
-    await repo.setHibikiClientUrls(const <HibikiClientUrl>[]);
+    await repo.setHibikiClientUrls(const <FushiClientUrl>[]);
     // Also wipe the legacy single-url key, else getHibikiClientUrls would
     // migrate it back on the next read.
     // ignore: deprecated_member_use_from_same_package

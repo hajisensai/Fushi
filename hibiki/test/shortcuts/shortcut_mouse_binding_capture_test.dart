@@ -30,12 +30,12 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   }
 
-  HibikiShortcutRegistry buildRegistry(TargetPlatform platform) =>
-      HibikiShortcutRegistry()..loadDefaults(platform);
+  FushiShortcutRegistry buildRegistry(TargetPlatform platform) =>
+      FushiShortcutRegistry()..loadDefaults(platform);
 
   Future<void> pumpDialog(
     WidgetTester tester,
-    HibikiShortcutRegistry registry, {
+    FushiShortcutRegistry registry, {
     required ShortcutAction action,
     ShortcutBindingSet initial = const ShortcutBindingSet(),
   }) async {
@@ -63,7 +63,7 @@ void main() {
 
   Future<void> pumpDialogHost(
     WidgetTester tester,
-    HibikiShortcutRegistry registry, {
+    FushiShortcutRegistry registry, {
     required ShortcutAction action,
     ShortcutBindingSet initial = const ShortcutBindingSet(),
   }) async {
@@ -134,7 +134,7 @@ void main() {
       'desktop: capturing the right button records a MouseBinding(2) chip',
       (WidgetTester tester) async {
     usePlatform(TargetPlatform.windows);
-    final HibikiShortcutRegistry registry =
+    final FushiShortcutRegistry registry =
         buildRegistry(TargetPlatform.windows);
     await pumpDialog(
       tester,
@@ -157,7 +157,7 @@ void main() {
   testWidgets('desktop: the primary (left) button is not bindable',
       (WidgetTester tester) async {
     usePlatform(TargetPlatform.windows);
-    final HibikiShortcutRegistry registry =
+    final FushiShortcutRegistry registry =
         buildRegistry(TargetPlatform.windows);
     await pumpDialog(
       tester,
@@ -179,7 +179,7 @@ void main() {
   testWidgets('desktop: captured mouse binding is written through the registry',
       (WidgetTester tester) async {
     usePlatform(TargetPlatform.windows);
-    final HibikiShortcutRegistry registry =
+    final FushiShortcutRegistry registry =
         buildRegistry(TargetPlatform.windows);
     await pumpDialogHost(
       tester,
@@ -208,7 +208,7 @@ void main() {
   testWidgets('desktop: 通道已摘的 scope 仍显示并可删除历史鼠标绑定（但没有捕获入口）',
       (WidgetTester tester) async {
     usePlatform(TargetPlatform.windows);
-    final HibikiShortcutRegistry registry =
+    final FushiShortcutRegistry registry =
         buildRegistry(TargetPlatform.windows);
     await pumpDialogHost(
       tester,
@@ -239,7 +239,7 @@ void main() {
       'mobile: no mouse capture entry and inherited bindings still render',
       (WidgetTester tester) async {
     usePlatform(TargetPlatform.android);
-    final HibikiShortcutRegistry registry =
+    final FushiShortcutRegistry registry =
         buildRegistry(TargetPlatform.android);
     await pumpDialog(
       tester,

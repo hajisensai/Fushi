@@ -215,7 +215,7 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
   /// ThemeData 的 ColorScheme 完全一致，颜色不变），明暗按 [_isReaderThemeDark] 派生，
   /// 彻底去掉对 reader State.context 的脆弱依赖。
   Color _readerLyricAccentColor() {
-    if (_isReaderThemeDark) return HibikiColor.defaultHighlightYellow;
+    if (_isReaderThemeDark) return FushiColor.defaultHighlightYellow;
     return appModel.buildColorScheme(Brightness.light).primary;
   }
 

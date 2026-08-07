@@ -35,8 +35,8 @@ void main() {
         timeStamp: Duration.zero,
       );
 
-  HibikiShortcutRegistry registryWithBackOn(GamepadButton button) {
-    final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+  FushiShortcutRegistry registryWithBackOn(GamepadButton button) {
+    final FushiShortcutRegistry registry = FushiShortcutRegistry()
       ..loadDefaults(TargetPlatform.android)
       ..updateBinding(
         ShortcutAction.globalBack,
@@ -50,7 +50,7 @@ void main() {
   /// 建一棵「首页 + 已 push 的第二页」，全局导航层按 [focusNavigationEnabled] 挂载。
   Future<GlobalKey<NavigatorState>> pumpTwoRoutes(
     WidgetTester tester, {
-    required HibikiShortcutRegistry registry,
+    required FushiShortcutRegistry registry,
     required bool focusNavigationEnabled,
   }) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();

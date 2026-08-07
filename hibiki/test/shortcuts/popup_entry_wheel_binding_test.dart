@@ -153,7 +153,7 @@ void main() {
 
   group('冲突检测', () {
     test('同一 scope 内同一「修饰键 + 方向」只能属于一个动作', () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadDefaults(TargetPlatform.windows);
       const WheelBinding altDown = WheelBinding(
         WheelDirection.down,
@@ -183,7 +183,7 @@ void main() {
     });
 
     test('重分配会把绑定从旧动作上摘掉（与键盘/手柄/鼠标同形）', () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadDefaults(TargetPlatform.windows);
       const WheelBinding altDown = WheelBinding(
         WheelDirection.down,
@@ -214,7 +214,7 @@ void main() {
 
   group('注入 → popup.js 契约', () {
     test('popupEntryWheelBindingsJson 输出 popup.js 能直接比对的形状', () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadDefaults(TargetPlatform.windows);
       final Map<String, dynamic> decoded = jsonDecode(
               popupEntryWheelBindingsJson(registry, TargetPlatform.windows))
@@ -234,7 +234,7 @@ void main() {
     });
 
     test('用户清空绑定 → 发空表（popup.js 据此关掉该方向，而不是回落默认）', () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadDefaults(TargetPlatform.windows)
         ..updateBinding(
             ShortcutAction.popupNextEntry, const ShortcutBindingSet());
@@ -251,13 +251,13 @@ void main() {
       // 会认为用户关掉了这个功能 → Alt+滚轮在独立弹窗窗口里静默失效。
       final Map<String, dynamic> decoded = jsonDecode(
               popupEntryWheelBindingsJson(
-                  HibikiShortcutRegistry(), TargetPlatform.windows))
+                  FushiShortcutRegistry(), TargetPlatform.windows))
           as Map<String, dynamic>;
       expect(decoded['next'], isNotEmpty);
       expect(decoded['prev'], isNotEmpty);
-      expect(HibikiShortcutRegistry().isLoaded, isFalse);
+      expect(FushiShortcutRegistry().isLoaded, isFalse);
       expect(
-        (HibikiShortcutRegistry()..loadDefaults(TargetPlatform.windows))
+        (FushiShortcutRegistry()..loadDefaults(TargetPlatform.windows))
             .isLoaded,
         isTrue,
       );

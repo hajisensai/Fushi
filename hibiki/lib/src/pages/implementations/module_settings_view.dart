@@ -51,7 +51,7 @@ class _ModuleSettingsViewState extends ConsumerState<ModuleSettingsView>
       kind: DesktopContentKind.settings,
       child: Column(
         children: <Widget>[
-          HibikiPageHeader.customTitle(title: widget.navigation),
+          FushiPageHeader.customTitle(title: widget.navigation),
           Expanded(
             child: renderer.buildDetailContent(
               settingsContext: settingsContext,

@@ -102,7 +102,7 @@ class JapaneseLanguage extends Language {
 
   @override
   TextRange getWordRange({
-    required HibikiTextSelection selection,
+    required FushiTextSelection selection,
   }) {
     final index = selection.range.start;
     if (index < 0 || index >= selection.text.length) {

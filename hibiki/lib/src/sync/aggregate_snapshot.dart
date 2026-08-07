@@ -10,7 +10,7 @@ import 'package:fushi_audio/fushi_audio.dart' show FavoriteSentence;
 /// folds use.
 ///
 /// The snapshot is a pure value object: toJson / fromJson round-trip it, and
-/// AggregateSyncService materialises it from a HibikiDatabase and applies a
+/// AggregateSyncService materialises it from a FushiDatabase and applies a
 /// merged snapshot back. Keeping the shape here (not inline in the orchestrator)
 /// makes the round-trip and the merge unit-testable without any backend, and
 /// pins the wire format under one guard.

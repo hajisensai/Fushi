@@ -10,8 +10,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// per-target membership/order/enabled rows. The old public list API remains
 /// intact while legacy `custom_fonts` / `app_ui_fonts` / `dict_fonts` data can
 /// be read as the new model.
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
@@ -41,7 +41,7 @@ List<Map<String, dynamic>> _fonts(
     ];
 
 Future<Map<String, dynamic>> _storedJson(
-  HibikiDatabase db,
+  FushiDatabase db,
   String key,
 ) async {
   final Map<String, String> prefs = await db.getAllPrefs();
@@ -63,7 +63,7 @@ Map<String, String> _catalogIdsByPath(Map<String, dynamic> catalog) {
 }
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() {
     db = _testDb();

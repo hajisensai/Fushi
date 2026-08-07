@@ -7,7 +7,7 @@
 /// 排，用户在别处排好的跨种类顺序就被静默打乱。
 ///
 /// 这条规则原本被复制在两个页面里（且各写各的身份键），本文件是唯一真相源：
-/// [HibikiDatabase.reorderCollectionItems] 用它守住落盘不变量，页面用它维护内存
+/// [FushiDatabase.reorderCollectionItems] 用它守住落盘不变量，页面用它维护内存
 /// 展示序，两侧同一份实现不会漂开。
 library;
 

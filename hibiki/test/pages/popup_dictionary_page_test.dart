@@ -206,7 +206,7 @@ void main() {
       find.byKey(const ValueKey<String>('popup_dictionary_search_button')),
       findsOneWidget,
     );
-    expect(find.byType(HibikiOverlayScaffold), findsOneWidget);
+    expect(find.byType(FushiOverlayScaffold), findsOneWidget);
   });
 
   testWidgets('popup search bar submits trimmed query from button', (

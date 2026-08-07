@@ -5,7 +5,7 @@ import 'package:fushi/src/focus/hibiki_focus_scroll.dart';
 import 'package:fushi/src/focus/hibiki_focus_target.dart';
 
 void main() {
-  testWidgets('HibikiFocusScroll reveals a normal off-screen context',
+  testWidgets('FushiFocusScroll reveals a normal off-screen context',
       (WidgetTester tester) async {
     final ScrollController controller = ScrollController();
     addTearDown(controller.dispose);
@@ -24,7 +24,7 @@ void main() {
       ),
     ));
 
-    HibikiFocusScroll.ensureVisible(tester.element(find.text('Row 8')));
+    FushiFocusScroll.ensureVisible(tester.element(find.text('Row 8')));
     await tester.pumpAndSettle();
 
     expect(controller.offset, greaterThan(0));
@@ -36,7 +36,7 @@ void main() {
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(MaterialApp(
-      home: HibikiFocusRoot(
+      home: FushiFocusRoot(
         child: SizedBox(
           height: 120,
           child: ListView.builder(
@@ -44,8 +44,8 @@ void main() {
             itemExtent: 48,
             itemCount: 20,
             itemBuilder: (BuildContext context, int index) {
-              return HibikiFocusTarget(
-                id: HibikiFocusId('row-$index'),
+              return FushiFocusTarget(
+                id: FushiFocusId('row-$index'),
                 child: TextButton(
                   onPressed: () {},
                   child: Text('Row $index'),
@@ -57,19 +57,19 @@ void main() {
       ),
     ));
 
-    final HibikiFocusController focus = HibikiFocusRoot.controllerOf(
+    final FushiFocusController focus = FushiFocusRoot.controllerOf(
       tester.element(find.byType(ListView)),
     );
-    focus.requestById(const HibikiFocusId('row-0'));
+    focus.requestById(const FushiFocusId('row-0'));
     await tester.pump();
 
     for (int i = 0; i < 8; i += 1) {
-      focus.move(HibikiFocusDirection.down);
+      focus.move(FushiFocusDirection.down);
       await tester.pump();
     }
     await tester.pumpAndSettle();
 
-    expect(focus.activeId, const HibikiFocusId('row-8'));
+    expect(focus.activeId, const FushiFocusId('row-8'));
     expect(find.text('Row 8'), findsOneWidget);
     final Rect viewport = tester.getRect(find.byType(ListView));
     final Rect row = tester.getRect(find.text('Row 8'));

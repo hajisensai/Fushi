@@ -23,8 +23,8 @@ bool get _mouseFocusNavigationEnabledForPlatform {
   }
 }
 
-class HibikiFocusTarget extends StatefulWidget {
-  const HibikiFocusTarget({
+class FushiFocusTarget extends StatefulWidget {
+  const FushiFocusTarget({
     super.key,
     required this.id,
     required this.child,
@@ -34,24 +34,24 @@ class HibikiFocusTarget extends StatefulWidget {
     this.autoHome = true,
   });
 
-  final HibikiFocusId id;
+  final FushiFocusId id;
   final Widget child;
   final FocusNode? focusNode;
   final bool enabled;
   final bool autofocus;
 
-  /// Forwarded to [HibikiFocusTargetEntry.autoHome]: set false on interactive
+  /// Forwarded to [FushiFocusTargetEntry.autoHome]: set false on interactive
   /// chrome (e.g. a collapsible settings section header) so passive focus
   /// auto-home skips it in favour of the first content row. Explicit
   /// directional navigation still reaches it.
   final bool autoHome;
 
   @override
-  State<HibikiFocusTarget> createState() => _HibikiFocusTargetState();
+  State<FushiFocusTarget> createState() => _FushiFocusTargetState();
 }
 
-class HibikiFocusRegistration extends StatefulWidget {
-  const HibikiFocusRegistration({
+class FushiFocusRegistration extends StatefulWidget {
+  const FushiFocusRegistration({
     required this.id,
     required this.focusNode,
     required this.child,
@@ -59,30 +59,30 @@ class HibikiFocusRegistration extends StatefulWidget {
     this.enabled = true,
   });
 
-  final HibikiFocusId id;
+  final FushiFocusId id;
   final FocusNode focusNode;
   final Widget child;
   final bool enabled;
 
   @override
-  State<HibikiFocusRegistration> createState() =>
-      _HibikiFocusRegistrationState();
+  State<FushiFocusRegistration> createState() =>
+      _FushiFocusRegistrationState();
 }
 
-class _HibikiFocusRegistrationState extends State<HibikiFocusRegistration> {
+class _FushiFocusRegistrationState extends State<FushiFocusRegistration> {
   late final Object _owner = Object();
-  HibikiFocusController? _controller;
+  FushiFocusController? _controller;
   BuildContext? _targetContext;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _controller = HibikiFocusRoot.maybeControllerOf(context);
+    _controller = FushiFocusRoot.maybeControllerOf(context);
     _register();
   }
 
   @override
-  void didUpdateWidget(HibikiFocusRegistration oldWidget) {
+  void didUpdateWidget(FushiFocusRegistration oldWidget) {
     super.didUpdateWidget(oldWidget);
     final bool identityChanged = oldWidget.id != widget.id ||
         !identical(oldWidget.focusNode, widget.focusNode);
@@ -100,7 +100,7 @@ class _HibikiFocusRegistrationState extends State<HibikiFocusRegistration> {
 
   @override
   Widget build(BuildContext context) {
-    return _HibikiFocusTargetAnchor(
+    return _FushiFocusTargetAnchor(
       onReady: (BuildContext targetContext) {
         _targetContext = targetContext;
         _register(repairBeforeNextFrame: true);
@@ -110,12 +110,12 @@ class _HibikiFocusRegistrationState extends State<HibikiFocusRegistration> {
   }
 
   void _register({bool repairBeforeNextFrame = false}) {
-    final HibikiFocusController? controller = _controller;
+    final FushiFocusController? controller = _controller;
     if (controller == null) return;
     final BuildContext? targetContext = _targetContext;
     if (targetContext == null) return;
     controller.register(
-      HibikiFocusTargetEntry(
+      FushiFocusTargetEntry(
         id: widget.id,
         focusNode: widget.focusNode,
         context: targetContext,
@@ -126,15 +126,15 @@ class _HibikiFocusRegistrationState extends State<HibikiFocusRegistration> {
     );
   }
 
-  void _unregister(HibikiFocusId id, FocusNode node) {
+  void _unregister(FushiFocusId id, FocusNode node) {
     _controller?.unregister(id, node, _owner);
   }
 }
 
-class _HibikiFocusTargetState extends State<HibikiFocusTarget> {
+class _FushiFocusTargetState extends State<FushiFocusTarget> {
   late FocusNode _ownedNode;
   late final Object _owner = Object();
-  HibikiFocusController? _controller;
+  FushiFocusController? _controller;
   FocusNode? _registeredNode;
   BuildContext? _targetContext;
 
@@ -149,12 +149,12 @@ class _HibikiFocusTargetState extends State<HibikiFocusTarget> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _controller = HibikiFocusRoot.maybeControllerOf(context);
+    _controller = FushiFocusRoot.maybeControllerOf(context);
     _register();
   }
 
   @override
-  void didUpdateWidget(HibikiFocusTarget oldWidget) {
+  void didUpdateWidget(FushiFocusTarget oldWidget) {
     super.didUpdateWidget(oldWidget);
     final bool identityChanged = oldWidget.id != widget.id ||
         !identical(oldWidget.focusNode, widget.focusNode);
@@ -178,7 +178,7 @@ class _HibikiFocusTargetState extends State<HibikiFocusTarget> {
       autofocus: widget.autofocus,
       canRequestFocus: widget.enabled,
       skipTraversal: !widget.enabled,
-      child: _HibikiFocusTargetAnchor(
+      child: _FushiFocusTargetAnchor(
         onReady: (BuildContext targetContext) {
           _targetContext = targetContext;
           _register(repairBeforeNextFrame: true);
@@ -211,13 +211,13 @@ class _HibikiFocusTargetState extends State<HibikiFocusTarget> {
   }
 
   void _register({bool repairBeforeNextFrame = false}) {
-    final HibikiFocusController? controller = _controller;
+    final FushiFocusController? controller = _controller;
     if (controller == null) return;
     final BuildContext? targetContext = _targetContext;
     if (targetContext == null) return;
     _registeredNode = _focusNode;
     controller.register(
-      HibikiFocusTargetEntry(
+      FushiFocusTargetEntry(
         id: widget.id,
         focusNode: _focusNode,
         context: targetContext,
@@ -229,44 +229,44 @@ class _HibikiFocusTargetState extends State<HibikiFocusTarget> {
     );
   }
 
-  void _unregister(HibikiFocusId id, FocusNode node) {
+  void _unregister(FushiFocusId id, FocusNode node) {
     _controller?.unregister(id, node, _owner);
   }
 }
 
 /// Declaratively registers one or more directional anchors on the ambient
-/// [HibikiFocusController] for the lifetime of [child]. An anchor makes pressing
+/// [FushiFocusController] for the lifetime of [child]. An anchor makes pressing
 /// a direction while [source] is focused jump to an explicit target focusId,
-/// short-circuiting geometry (see [HibikiFocusController.registerDirectionalAnchor]).
-/// Outside a [HibikiFocusRoot] it is an inert pass-through.
-class HibikiFocusDirectionalAnchor extends StatefulWidget {
-  const HibikiFocusDirectionalAnchor({
+/// short-circuiting geometry (see [FushiFocusController.registerDirectionalAnchor]).
+/// Outside a [FushiFocusRoot] it is an inert pass-through.
+class FushiFocusDirectionalAnchor extends StatefulWidget {
+  const FushiFocusDirectionalAnchor({
     required this.source,
     required this.anchors,
     required this.child,
     super.key,
   });
 
-  final HibikiFocusId source;
+  final FushiFocusId source;
 
   /// direction -> target focusId for [source].
-  final Map<HibikiFocusDirection, HibikiFocusId> anchors;
+  final Map<FushiFocusDirection, FushiFocusId> anchors;
   final Widget child;
 
   @override
-  State<HibikiFocusDirectionalAnchor> createState() =>
-      _HibikiFocusDirectionalAnchorState();
+  State<FushiFocusDirectionalAnchor> createState() =>
+      _FushiFocusDirectionalAnchorState();
 }
 
-class _HibikiFocusDirectionalAnchorState
-    extends State<HibikiFocusDirectionalAnchor> {
-  HibikiFocusController? _controller;
+class _FushiFocusDirectionalAnchorState
+    extends State<FushiFocusDirectionalAnchor> {
+  FushiFocusController? _controller;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final HibikiFocusController? next =
-        HibikiFocusRoot.maybeControllerOf(context);
+    final FushiFocusController? next =
+        FushiFocusRoot.maybeControllerOf(context);
     if (!identical(next, _controller)) {
       _clear();
       _controller = next;
@@ -275,7 +275,7 @@ class _HibikiFocusDirectionalAnchorState
   }
 
   @override
-  void didUpdateWidget(HibikiFocusDirectionalAnchor oldWidget) {
+  void didUpdateWidget(FushiFocusDirectionalAnchor oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.source != widget.source ||
         !_sameAnchors(oldWidget.anchors, widget.anchors)) {
@@ -291,21 +291,21 @@ class _HibikiFocusDirectionalAnchorState
   }
 
   bool _sameAnchors(
-    Map<HibikiFocusDirection, HibikiFocusId> a,
-    Map<HibikiFocusDirection, HibikiFocusId> b,
+    Map<FushiFocusDirection, FushiFocusId> a,
+    Map<FushiFocusDirection, FushiFocusId> b,
   ) {
     if (a.length != b.length) return false;
-    for (final MapEntry<HibikiFocusDirection, HibikiFocusId> e in a.entries) {
+    for (final MapEntry<FushiFocusDirection, FushiFocusId> e in a.entries) {
       if (b[e.key] != e.value) return false;
     }
     return true;
   }
 
   void _apply() {
-    final HibikiFocusController? controller = _controller;
+    final FushiFocusController? controller = _controller;
     if (controller == null) return;
     widget.anchors
-        .forEach((HibikiFocusDirection direction, HibikiFocusId target) {
+        .forEach((FushiFocusDirection direction, FushiFocusId target) {
       controller.registerDirectionalAnchor(widget.source, direction, target);
     });
   }
@@ -313,12 +313,12 @@ class _HibikiFocusDirectionalAnchorState
   void _clear() => _clearFor(widget.source, widget.anchors);
 
   void _clearFor(
-    HibikiFocusId source,
-    Map<HibikiFocusDirection, HibikiFocusId> anchors,
+    FushiFocusId source,
+    Map<FushiFocusDirection, FushiFocusId> anchors,
   ) {
-    final HibikiFocusController? controller = _controller;
+    final FushiFocusController? controller = _controller;
     if (controller == null) return;
-    anchors.forEach((HibikiFocusDirection direction, HibikiFocusId target) {
+    anchors.forEach((FushiFocusDirection direction, FushiFocusId target) {
       controller.unregisterDirectionalAnchor(source, direction, target);
     });
   }
@@ -327,8 +327,8 @@ class _HibikiFocusDirectionalAnchorState
   Widget build(BuildContext context) => widget.child;
 }
 
-class _HibikiFocusTargetAnchor extends StatefulWidget {
-  const _HibikiFocusTargetAnchor({
+class _FushiFocusTargetAnchor extends StatefulWidget {
+  const _FushiFocusTargetAnchor({
     required this.onReady,
     required this.child,
   });
@@ -337,11 +337,11 @@ class _HibikiFocusTargetAnchor extends StatefulWidget {
   final Widget child;
 
   @override
-  State<_HibikiFocusTargetAnchor> createState() =>
-      _HibikiFocusTargetAnchorState();
+  State<_FushiFocusTargetAnchor> createState() =>
+      _FushiFocusTargetAnchorState();
 }
 
-class _HibikiFocusTargetAnchorState extends State<_HibikiFocusTargetAnchor> {
+class _FushiFocusTargetAnchorState extends State<_FushiFocusTargetAnchor> {
   final GlobalKey _anchorKey = GlobalKey();
   bool _scheduled = false;
 
@@ -352,7 +352,7 @@ class _HibikiFocusTargetAnchorState extends State<_HibikiFocusTargetAnchor> {
   }
 
   @override
-  void didUpdateWidget(_HibikiFocusTargetAnchor oldWidget) {
+  void didUpdateWidget(_FushiFocusTargetAnchor oldWidget) {
     super.didUpdateWidget(oldWidget);
     _scheduleReady();
   }
@@ -360,7 +360,7 @@ class _HibikiFocusTargetAnchorState extends State<_HibikiFocusTargetAnchor> {
   @override
   Widget build(BuildContext context) {
     _scheduleReady();
-    return _HibikiFocusRenderAnchor(
+    return _FushiFocusRenderAnchor(
       key: _anchorKey,
       child: widget.child,
     );
@@ -380,8 +380,8 @@ class _HibikiFocusTargetAnchorState extends State<_HibikiFocusTargetAnchor> {
   }
 }
 
-class _HibikiFocusRenderAnchor extends SingleChildRenderObjectWidget {
-  const _HibikiFocusRenderAnchor({super.key, required super.child});
+class _FushiFocusRenderAnchor extends SingleChildRenderObjectWidget {
+  const _FushiFocusRenderAnchor({super.key, required super.child});
 
   @override
   RenderObject createRenderObject(BuildContext context) {

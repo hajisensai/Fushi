@@ -21,7 +21,7 @@ import 'package:fushi/src/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-1165: cloud per-book folder tags.json sidecar round-trip + rebuild.
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 Uint8List _buildMinimalEpub(String title) {
   final Archive archive = Archive();
@@ -235,7 +235,7 @@ class _FakeBookFolderBackend implements SyncBackend {
 }
 
 Future<String> _importOnce(
-  HibikiDatabase db,
+  FushiDatabase db,
   _FakeBookFolderBackend backend,
   Directory tempDir,
 ) async {
@@ -289,7 +289,7 @@ void main() {
 
   test('sidecar tags round-trip rebuilt by name on the downloading device',
       () async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final _FakeBookFolderBackend backend = _FakeBookFolderBackend(
       bookTitle: 'CloudTaggedBook',
@@ -311,7 +311,7 @@ void main() {
 
   test('missing tags.json (legacy) imports fine with no tags and no throw',
       () async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final _FakeBookFolderBackend backend = _FakeBookFolderBackend(
       bookTitle: 'LegacyNoSidecar',
@@ -327,7 +327,7 @@ void main() {
 
   test('existing same-name tag on downloader is reused by name (no duplicate)',
       () async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final int existingId = await db.createTag('听力', 0xFF010203);
 
@@ -362,7 +362,7 @@ void main() {
     ];
     for (int i = 0; i < malformedCases.length; i++) {
       final Object? malformed = malformedCases[i];
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final _FakeBookFolderBackend backend = _FakeBookFolderBackend(
         bookTitle: 'Malformed$i',
@@ -378,7 +378,7 @@ void main() {
 
   // ── 云后端有声书 pull（修复「只上传拿不回」缺口）──────────────────────────────
   test('提供 audioDatabaseRoot 时下载远端书文件夹会补拉 audiobook.hibikiaudio', () async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final _FakeBookFolderBackend backend = _FakeBookFolderBackend(
       bookTitle: 'BookWithAudio',
@@ -405,7 +405,7 @@ void main() {
   });
 
   test('未提供 audioDatabaseRoot 时不拉 audiobook.hibikiaudio（保持旧行为）', () async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final _FakeBookFolderBackend backend = _FakeBookFolderBackend(
       bookTitle: 'BookAudioSkipped',

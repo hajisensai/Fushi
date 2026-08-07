@@ -417,7 +417,7 @@ SettingsDestination buildInterconnectDestination() {
             id: 'sync.hibiki_server_config',
             icon: Icons.devices_outlined,
             builder: (SettingsContext ctx) =>
-                _HibikiServerConfigWidget(settingsContext: ctx),
+                _FushiServerConfigWidget(settingsContext: ctx),
           ),
           SettingsCustomItem(
             id: 'sync.lan_devices',

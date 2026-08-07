@@ -11,30 +11,30 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 ///
 /// BUG：`_labelExpanded` 原本只按**整窗**宽（[MediaQuery.sizeOf]）判定，与页头
 /// 实际可用宽脱钩。桌面带导航栏 / 分栏时整窗 ≥840 但页头本地宽更窄，窗宽判定仍把
-/// 4 个动作展开成药丸，[HibikiPageHeader] 里 [Expanded] 的标题被挤到贴着按钮甚至
+/// 4 个动作展开成药丸，[FushiPageHeader] 里 [Expanded] 的标题被挤到贴着按钮甚至
 /// 折成两行（用户反馈「已经重叠了还没降级成无字」）。
 ///
-/// 修法：由 [HibikiPageHeader] 的行布局用 [LayoutBuilder] 拿到的**本地可用宽**
+/// 修法：由 [FushiPageHeader] 的行布局用 [LayoutBuilder] 拿到的**本地可用宽**
 /// （经 UI 缩放还原真实宽）判定，仅 [WindowSizeClass.expanded]（真实 ≥840）才展开，
-/// 结果经本作用域下发给后代 [HibikiIconButton]。域外（无此祖先，独立使用的带 label
+/// 结果经本作用域下发给后代 [FushiIconButton]。域外（无此祖先，独立使用的带 label
 /// 按钮）回退整窗判定，行为零变化。
-class HibikiHeaderLabelScope extends InheritedWidget {
-  const HibikiHeaderLabelScope({
+class FushiHeaderLabelScope extends InheritedWidget {
+  const FushiHeaderLabelScope({
     required this.expandLabels,
     required super.child,
     super.key,
   });
 
-  /// 本作用域内的带 [HibikiIconButton.label] 按钮是否展开成图标+文字药丸。
+  /// 本作用域内的带 [FushiIconButton.label] 按钮是否展开成图标+文字药丸。
   final bool expandLabels;
 
   /// 就近作用域的展开开关；无祖先返回 null（由调用方回退整窗判定）。
   static bool? maybeOf(BuildContext context) => context
-      .dependOnInheritedWidgetOfExactType<HibikiHeaderLabelScope>()
+      .dependOnInheritedWidgetOfExactType<FushiHeaderLabelScope>()
       ?.expandLabels;
 
   @override
-  bool updateShouldNotify(HibikiHeaderLabelScope oldWidget) =>
+  bool updateShouldNotify(FushiHeaderLabelScope oldWidget) =>
       expandLabels != oldWidget.expandLabels;
 }
 
@@ -58,9 +58,9 @@ const Duration kIconButtonTooltipHoverDelay = Duration(milliseconds: 500);
 /// [onTap] action is on-going and processing, which can be used to
 /// indicate when a button cannot be pressed once its click action has been
 /// executed and is busy.
-class HibikiIconButton extends StatefulWidget {
+class FushiIconButton extends StatefulWidget {
   /// Creates a busy icon button. Default values rely on [IconTheme].
-  const HibikiIconButton({
+  const FushiIconButton({
     required this.icon,
     required this.tooltip,
     this.onTap,
@@ -85,7 +85,7 @@ class HibikiIconButton extends StatefulWidget {
 
   /// 可展开文字标签：非空时渲染成「图标 + 文字」的描边药丸按钮（页头动作在宽窗展开
   /// 可读，对齐 Jellyfin 式工具栏），窄窗自动回落为纯图标圆钮，行为与 null 完全一致。
-  /// 是否展开由 [_labelExpanded] 决定——[HibikiPageHeader] 内经 [HibikiHeaderLabelScope]
+  /// 是否展开由 [_labelExpanded] 决定——[FushiPageHeader] 内经 [FushiHeaderLabelScope]
   /// 按**页头本地可用宽**判定（真实 ≥840 才展开，避免挤压标题）；域外独立使用回退整窗
   /// 宽（非 compact 即展开）。busy / enabled / 焦点注册在两种形态间共享同一路径。
   final String? label;
@@ -133,21 +133,21 @@ class HibikiIconButton extends StatefulWidget {
 
   /// If this button needs to act like an [IconButton] with a wide area.
   final bool isWideTapArea;
-  final HibikiFocusId? focusId;
+  final FushiFocusId? focusId;
 
   @override
-  State<StatefulWidget> createState() => _HibikiIconButtonState();
+  State<StatefulWidget> createState() => _FushiIconButtonState();
 }
 
-class _HibikiIconButtonState extends State<HibikiIconButton> {
+class _FushiIconButtonState extends State<FushiIconButton> {
   late bool enabled;
 
   /// Stable fallback id so an icon button is a gamepad/keyboard focus target by
   /// default (no explicit [focusId] needed). Derived from this State's identity
-  /// so it survives rebuilds and stays unique per instance — mirrors HibikiCard
-  /// / HibikiListItem.
-  late final HibikiFocusId _fallbackFocusId =
-      HibikiFocusId('hibiki-icon-button-${identityHashCode(this)}');
+  /// so it survives rebuilds and stays unique per instance — mirrors FushiCard
+  /// / FushiListItem.
+  late final FushiFocusId _fallbackFocusId =
+      FushiFocusId('hibiki-icon-button-${identityHashCode(this)}');
 
   /// HBK-AUDIT-151: true while a busy [onTap] action is awaiting completion.
   /// Used so [didUpdateWidget] does not re-enable the button mid-action when
@@ -155,7 +155,7 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
   bool _busyInFlight = false;
 
   @override
-  void didUpdateWidget(HibikiIconButton oldWidget) {
+  void didUpdateWidget(FushiIconButton oldWidget) {
     super.didUpdateWidget(oldWidget);
     // HBK-AUDIT-151: only sync enabled from widget.enabled when not currently
     // mid-busy; otherwise a parent rebuild during the await would clobber the
@@ -202,22 +202,22 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
   Color get disabledColor =>
       widget.disabledColor ?? Theme.of(context).colorScheme.onSurfaceVariant;
 
-  /// 是否展开文字标签。优先取 [HibikiHeaderLabelScope]（页头按**本地可用宽**下发的
+  /// 是否展开文字标签。优先取 [FushiHeaderLabelScope]（页头按**本地可用宽**下发的
   /// 权威判定）；域外独立使用时回退整窗宽判定（BUG-401，乘回 UI 缩放还原真实宽），
   /// 非 compact 即展开——保持独立按钮行为不变。
   bool _labelExpanded(BuildContext context) {
-    final bool? scoped = HibikiHeaderLabelScope.maybeOf(context);
+    final bool? scoped = FushiHeaderLabelScope.maybeOf(context);
     if (scoped != null) return scoped;
     return windowSizeClassReal(
           MediaQuery.sizeOf(context).width,
-          HibikiAppUiScale.of(context),
+          FushiAppUiScale.of(context),
         ) !=
         WindowSizeClass.compact;
   }
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String? label = widget.label;
     if (label != null && _labelExpanded(context)) {
       final Color contentColor = enabled ? enabledColor : disabledColor;
@@ -323,11 +323,11 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
 
   Widget _focusable(BuildContext context, Widget button) {
     // A decorative icon (no onTap) must not pollute the focus traversal order —
-    // same rule as HibikiCard / HibikiListItem with a null onTap.
+    // same rule as FushiCard / FushiListItem with a null onTap.
     if (widget.onTap == null) return button;
-    // Outside a HibikiFocusRoot (e.g. plain widget tests) stay a bare button —
+    // Outside a FushiFocusRoot (e.g. plain widget tests) stay a bare button —
     // zero overhead and no registration where there is no controller.
-    if (HibikiFocusRoot.maybeControllerOf(context) == null) return button;
+    if (FushiFocusRoot.maybeControllerOf(context) == null) return button;
     return Actions(
       actions: <Type, Action<Intent>>{
         ActivateIntent: CallbackAction<ActivateIntent>(
@@ -337,7 +337,7 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
           },
         ),
       },
-      child: HibikiFocusTarget(
+      child: FushiFocusTarget(
         // Default to the stable derived id so every actionable icon button is
         // reachable by gamepad/keyboard; an explicit focusId overrides it.
         id: widget.focusId ?? _fallbackFocusId,

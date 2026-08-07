@@ -75,7 +75,7 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     this.onSubtitleCategoryShown,
   });
 
-  /// 实际 app UI scale。视频路由把 [HibikiAppUiScale] 中和为 1.0，面板内继承的
+  /// 实际 app UI scale。视频路由把 [FushiAppUiScale] 中和为 1.0，面板内继承的
   /// scale 不代表全局设置值，故显式带入（字幕字重/阴影按它 resolve）。
   final double uiScale;
 

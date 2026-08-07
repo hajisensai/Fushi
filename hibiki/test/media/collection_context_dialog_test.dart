@@ -23,11 +23,11 @@ void main() {
 
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
-  Future<(HibikiDatabase, MediaCollectionRow)> buildCollection({
+  Future<(FushiDatabase, MediaCollectionRow)> buildCollection({
     bool withMembers = true,
   }) async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final int id = await db.createMediaCollection('collection-a');
     if (withMembers) {
@@ -42,14 +42,14 @@ void main() {
   /// 挂一个真页面 context 打开被测弹窗，返回收集到的回调证据。
   Future<_Probe> pumpAndOpen(
     WidgetTester tester, {
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required MediaCollectionRow collection,
     required bool injectDeleteMembers,
     List<DialogListAction> extraListActions = const <DialogListAction>[],
   }) async {
     final _Probe probe = _Probe();
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    HibikiToast.navigatorKey = navKey;
+    FushiToast.navigatorKey = navKey;
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
@@ -102,7 +102,7 @@ void main() {
   }
 
   testWidgets('删合集不勾选：只解散容器，成员本体回调一次都不调', (WidgetTester tester) async {
-    final (HibikiDatabase db, MediaCollectionRow collection) =
+    final (FushiDatabase db, MediaCollectionRow collection) =
         await buildCollection();
     final _Probe probe = await pumpAndOpen(
       tester,
@@ -128,7 +128,7 @@ void main() {
   });
 
   testWidgets('删合集勾选「连同成员一起删」：先删成员本体再解散容器', (WidgetTester tester) async {
-    final (HibikiDatabase db, MediaCollectionRow collection) =
+    final (FushiDatabase db, MediaCollectionRow collection) =
         await buildCollection();
     final _Probe probe = await pumpAndOpen(
       tester,
@@ -150,7 +150,7 @@ void main() {
   });
 
   testWidgets('取消确认框：合集与成员都不动，页面也不刷新', (WidgetTester tester) async {
-    final (HibikiDatabase db, MediaCollectionRow collection) =
+    final (FushiDatabase db, MediaCollectionRow collection) =
         await buildCollection();
     final _Probe probe = await pumpAndOpen(
       tester,
@@ -170,7 +170,7 @@ void main() {
   });
 
   testWidgets('调用方未注入删成员回调：确认框不给勾选（不许暗示能删本体）', (WidgetTester tester) async {
-    final (HibikiDatabase db, MediaCollectionRow collection) =
+    final (FushiDatabase db, MediaCollectionRow collection) =
         await buildCollection();
     await pumpAndOpen(
       tester,
@@ -185,7 +185,7 @@ void main() {
   });
 
   testWidgets('空合集：即使注入了删成员回调也不给勾选（无成员可删）', (WidgetTester tester) async {
-    final (HibikiDatabase db, MediaCollectionRow collection) =
+    final (FushiDatabase db, MediaCollectionRow collection) =
         await buildCollection(withMembers: false);
     await pumpAndOpen(
       tester,
@@ -199,7 +199,7 @@ void main() {
   });
 
   testWidgets('顶部主按钮 = 打开详情（不写库、不触发 onChanged）', (WidgetTester tester) async {
-    final (HibikiDatabase db, MediaCollectionRow collection) =
+    final (FushiDatabase db, MediaCollectionRow collection) =
         await buildCollection();
     final _Probe probe = await pumpAndOpen(
       tester,
@@ -219,8 +219,8 @@ void main() {
   testWidgets('一键整理「按名称」：重排落盘 sortIndex 并通知页面刷新', (WidgetTester tester) async {
     // 成员按 book-2 → book-1 的乱序加入；两本书无 epub 行 → 排序元数据按
     // (entryKey, 0) 兜底，标题即 entryKey，「按名称」应重排为 book-1 → book-2。
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final int id = await db.createMediaCollection('collection-sort');
     await db.addToCollection(id, MediaKind.epub, 'book-2');
@@ -250,7 +250,7 @@ void main() {
 
   testWidgets('extraListActions：媒体特有项渲染、先关弹窗再执行、不触发 onChanged',
       (WidgetTester tester) async {
-    final (HibikiDatabase db, MediaCollectionRow collection) =
+    final (FushiDatabase db, MediaCollectionRow collection) =
         await buildCollection();
     bool ran = false;
     final _Probe probe = await pumpAndOpen(

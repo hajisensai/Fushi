@@ -7,7 +7,7 @@ import 'package:fushi/src/utils/components/hibiki_tag.dart';
 import 'widget_test_helpers.dart';
 
 void main() {
-  group('HibikiTag', () {
+  group('FushiTag', () {
     test('uses design token chip radius for every rounded tag surface', () {
       final String source =
           File('lib/src/utils/components/hibiki_tag.dart').readAsStringSync();
@@ -19,7 +19,7 @@ void main() {
 
     testWidgets('renders text label', (tester) async {
       await tester.pumpWidget(buildTestApp(
-        const HibikiTag(
+        const FushiTag(
           text: 'noun',
           backgroundColor: Colors.blue,
         ),
@@ -30,7 +30,7 @@ void main() {
 
     testWidgets('renders icon when provided', (tester) async {
       await tester.pumpWidget(buildTestApp(
-        const HibikiTag(
+        const FushiTag(
           text: 'verb',
           backgroundColor: Colors.green,
           icon: Icons.label,
@@ -42,7 +42,7 @@ void main() {
 
     testWidgets('does not render icon when null', (tester) async {
       await tester.pumpWidget(buildTestApp(
-        const HibikiTag(
+        const FushiTag(
           text: 'adj',
           backgroundColor: Colors.orange,
         ),
@@ -53,7 +53,7 @@ void main() {
 
     testWidgets('renders trailingText in separate container', (tester) async {
       await tester.pumpWidget(buildTestApp(
-        const HibikiTag(
+        const FushiTag(
           text: 'freq',
           backgroundColor: Colors.purple,
           trailingText: '★3',
@@ -66,7 +66,7 @@ void main() {
 
     testWidgets('InkWell is tappable when message is set', (tester) async {
       await tester.pumpWidget(buildTestApp(
-        const HibikiTag(
+        const FushiTag(
           text: 'click me',
           backgroundColor: Colors.red,
           message: 'Toast message',
@@ -79,7 +79,7 @@ void main() {
 
     testWidgets('InkWell has no onTap when message is null', (tester) async {
       await tester.pumpWidget(buildTestApp(
-        const HibikiTag(
+        const FushiTag(
           text: 'no action',
           backgroundColor: Colors.grey,
         ),

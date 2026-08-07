@@ -23,7 +23,7 @@ import '../helpers/test_platform_services.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late VideoBookRepository repo;
   late Directory tempDir;
   late AppModel appModel;
@@ -31,7 +31,7 @@ void main() {
 
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.zhCn);
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     repo = VideoBookRepository(db);
     tempDir =
         await Directory.systemTemp.createTemp('jimaku_batch_dialog_state_');

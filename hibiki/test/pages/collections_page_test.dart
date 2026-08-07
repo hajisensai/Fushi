@@ -106,11 +106,11 @@ void main() {
   // 而非仅看源码。
 
   group('TODO-633 W1 clear mined history button', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late AppModel appModel;
 
     setUp(() async {
-      db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
       final PreferencesRepository prefs = PreferencesRepository(db);
       await prefs.loadFromDb();
       appModel = AppModel(testPlatformServices())..wireDatabaseForTesting(db);
@@ -142,7 +142,7 @@ void main() {
         );
 
     Finder clearButton() => find.widgetWithIcon(
-          HibikiIconButton,
+          FushiIconButton,
           Icons.delete_sweep_outlined,
         );
 

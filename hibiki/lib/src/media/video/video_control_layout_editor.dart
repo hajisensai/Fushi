@@ -51,7 +51,7 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme cs = Theme.of(context).colorScheme;
     return Padding(
       padding: EdgeInsets.all(tokens.spacing.card),
@@ -81,7 +81,7 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
   Widget _buildControlStagePreview() {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool compact = constraints.maxWidth < 480;
@@ -240,7 +240,7 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
   Widget _buildCompactSlotGrid(List<VideoControlSlot> slots) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+        final FushiDesignTokens tokens = FushiDesignTokens.of(context);
         final double gap = tokens.spacing.gap;
         final double itemWidth = constraints.maxWidth < 260
             ? constraints.maxWidth
@@ -316,7 +316,7 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
   }) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<({VideoControlItem item, int sourceIndex})> entries =
         _slotChipEntries(slot);
     final bool removalSlot = slot == VideoControlSlot.hidden;
@@ -532,7 +532,7 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
     required bool highlighted,
   }) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String label = videoControlItemLabel(item, context);
     final Color background =
         highlighted ? cs.primaryContainer : cs.secondaryContainer;

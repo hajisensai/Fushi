@@ -1,7 +1,7 @@
 // BUG-530：浏览器扩展（Netflix 等）查词/制卡端点必须在 YomitanApiServer 上可用——扩展被
 // 安装助手自动配置指向该 server（port 19633 + yomitanApiKey），用 `Basic base64('hibiki:'+key)`
 // 鉴权，POST `/api/lookup/dictionary` + `/api/mine`。历史 bug：这两个端点当时只在
-// HibikiSyncServer 实现 → Netflix 查词/制卡全断。本测在真实 HTTP 层复现扩展请求验证修复。
+// FushiSyncServer 实现 → Netflix 查词/制卡全断。本测在真实 HTTP 层复现扩展请求验证修复。
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -15,7 +15,7 @@ import 'package:fushi/src/sync/immersion_mine_payload.dart';
 import 'package:fushi/src/sync/yomitan_api_server.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
-class _FakeLookup implements HibikiRemoteLookupService {
+class _FakeLookup implements FushiRemoteLookupService {
   String? lastTerm;
   RemoteAudioLookup? audioResult;
   String? lastAudioExpression;
@@ -43,7 +43,7 @@ class _FakeLookup implements HibikiRemoteLookupService {
   }
 }
 
-class _FakeMining implements HibikiRemoteMiningService {
+class _FakeMining implements FushiRemoteMiningService {
   Map<String, String>? plainFields;
   ImmersionMinePayload? immersionPayload;
   @override

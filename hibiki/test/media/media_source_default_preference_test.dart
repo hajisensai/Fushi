@@ -49,8 +49,8 @@ class _TestPageState extends BasePageState {
 void main() {
   test('reading a missing default preference does not write through to DB',
       () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     MediaSource.setDatabase(db);
     final _TestMediaSource source = _TestMediaSource();
@@ -71,8 +71,8 @@ void main() {
   });
 
   test('setPreference still writes explicit user changes to DB', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     MediaSource.setDatabase(db);
     final _TestMediaSource source = _TestMediaSource();

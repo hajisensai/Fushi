@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'video_hibiki_page_source_corpus.dart';
 
 /// 守卫：视频播放设置面板已从 bespoke 深色单列 `showModalBottomSheet` 迁移到与阅读器
-/// 同款 master-detail（`VideoQuickSettingsSheet` + 桌面 `HibikiDialogFrame(900)` /
+/// 同款 master-detail（`VideoQuickSettingsSheet` + 桌面 `FushiDialogFrame(900)` /
 /// 移动 `adaptiveModalSheet`）。防回归退回旧的黑底单列 StatefulBuilder/ChoiceChip。
 String _between(String source, String start, String end) {
   final int s = source.indexOf(start);
@@ -111,11 +111,11 @@ void main() {
 
     expect(source, contains('class VideoQuickSettingsSheet'));
     // 与阅读器同源的「不套外层滚动 + 宽窗撑满有界高度」范式（BUG-096）：外壳骨架
-    // （PopScope + HibikiModalSheetFrame + scrollable:false + 几何判据）已抽到共享
-    // HibikiMasterDetailSettingsSheet（TODO-583），由 master_detail_settings_sheet_test
+    // （PopScope + FushiModalSheetFrame + scrollable:false + 几何判据）已抽到共享
+    // FushiMasterDetailSettingsSheet（TODO-583），由 master_detail_settings_sheet_test
     // 守它。这里只锁视频走共享外壳，且宽窗撑满有界高度的 height:constraints.maxHeight
     // 仍在视频自己的 wideBuilder 回调里。
-    expect(source, contains('HibikiMasterDetailSettingsSheet('));
+    expect(source, contains('FushiMasterDetailSettingsSheet('));
     expect(source, contains('height: constraints.maxHeight'));
 
     // TODO-427-③：宽窗从左右 master-detail（窄左栏 + 右详情）改成顶部横向分类 chip 行 +
@@ -137,11 +137,11 @@ void main() {
         reason: 'left supporting-pane width helper must stay removed');
     expect(source, isNot(contains('232,')),
         reason: 'video settings must not regress to the fixed 232px pane');
-    expect(source, isNot(contains('HibikiListItem(')),
+    expect(source, isNot(contains('FushiListItem(')),
         reason: 'wide categories must not render as a left list anymore');
     expect(source, contains('_buildTopCategoryBar('),
         reason: 'wide categories must render in a top horizontal chip bar');
-    expect(source, contains('HibikiSelectableChip('),
+    expect(source, contains('FushiSelectableChip('),
         reason: 'each top-bar category is a selectable chip');
     // TODO-1351（用户复诉）：顶栏 chip 恢复「图标 + 完整文字」，标签按固有宽度完整
     // 渲染（allowLabelOverflow，无 ellipsis）；TODO-640 的纯图标 + tooltip 方案废弃。
@@ -274,7 +274,7 @@ void main() {
     final String shaderSource =
         File('lib/src/pages/implementations/video_shader_dialog.dart')
             .readAsStringSync();
-    // 锚点不带行尾 `{`：State 类挂 HibikiPagePlaceholders mixin 后声明折行。
+    // 锚点不带行尾 `{`：State 类挂 FushiPagePlaceholders mixin 后声明折行。
     final String managerWidget = _between(
       shaderSource,
       'class VideoShaderManagerView extends StatefulWidget {',
@@ -314,7 +314,7 @@ void main() {
     // TODO-590 batch10：整个 side-panel 域（_buildVideoSidePanelOverlay /
     // _buildVideoSidePanelContent）已抽到 video_hibiki/side_panel.part.dart。该 part 在合并
     // 语料末尾，_buildVideoSidePanelContent 是它的末方法（下方断言要的
-    // `kind != settings` / `HibikiAppUiScale` / `scale: _videoUiScale` 都落在 content 体里），
+    // `kind != settings` / `FushiAppUiScale` / `scale: _videoUiScale` 都落在 content 体里），
     // 其紧邻后继是 part 顶格 extension 闭合 `\n}`；overlay→content 之间无顶格 `}`，故用
     // `\n}` 作终点恰好涵盖 overlay+content 两个方法（旧的 _handlePlaybackDrop 终点已失效——
     // 它在主壳前段，排在搬出后的 overlay 之前）。
@@ -364,7 +364,7 @@ void main() {
       contains('kind != _VideoSidePanelKind.settings'),
       reason: '只有设置侧栏需要重新吃 app UI scale，避免字幕列表等已经手动缩放的面板二次放大',
     );
-    expect(panelMethod, contains('HibikiAppUiScale('));
+    expect(panelMethod, contains('FushiAppUiScale('));
     expect(panelMethod, contains('scale: _videoUiScale'));
     expect(
         panelMethod, isNot(contains('valueListenable: _videoControlsVisible')),

@@ -20,7 +20,7 @@ abstract class BasePage extends ConsumerStatefulWidget {
 /// of shared functions and variables. In large part, this was implemented to
 /// define shortcuts for common lengthy methods across UI code.
 abstract class BasePageState<T extends BasePage> extends ConsumerState<T>
-    with HibikiPagePlaceholders<T> {
+    with FushiPagePlaceholders<T> {
   late final AppModel _cachedAppModel;
   late final CreatorModel _cachedCreatorModel;
 
@@ -64,7 +64,7 @@ abstract class BasePageState<T extends BasePage> extends ConsumerState<T>
   // from State). Subclasses must provide it; a missing override is now a
   // compile error instead of a runtime UnimplementedError (HBK-AUDIT-036).
 
-  // buildError / buildLoading 已提为 [HibikiPagePlaceholders] mixin（审计
+  // buildError / buildLoading 已提为 [FushiPagePlaceholders] mixin（审计
   // §1-K「页面骨架两套」）：自立骨架页不必挂 BasePage 也能复用同一份占位。
   // BasePage 家族历史的 25×25 主色加载圈由各调用点以
   // `buildLoading(size: 25, color: theme.colorScheme.primary)` 保留。

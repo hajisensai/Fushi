@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// TODO-744: 查词音频「要等一会才出来」= 真实串行 IO 叠加。这一组源码守卫钉住
 /// 三处复用优化，防止回归到「每次都重新建」的慢路径：
-///   ③ HibikiRemoteLookupClient 共用单个缓存的 http.Client（复用 TLS 连接）。
+///   ③ FushiRemoteLookupClient 共用单个缓存的 http.Client（复用 TLS 连接）。
 ///   ① Android TtsChannelHandler 复用单个 MediaPlayer（reset 而非每次 new）。
 ///   ④（行为测试见 local_audio_db_blob_skip_test）本地 blob 已存在即跳过重写。
 String _read(String path) => File(path).readAsStringSync();
@@ -25,7 +25,7 @@ void main() {
       // Every consumer that opens a keep-alive connection to a paired host must
       // receive the cached client so it does not fall back to its own
       // per-instance http.Client(). PR#343 added a third consumer — the
-      // 「制卡到服务端」forwarder (HibikiRemoteMiningClient) — which correctly
+      // 「制卡到服务端」forwarder (FushiRemoteMiningClient) — which correctly
       // reuses the same cached client, so the count is 3, not 2. Bumping this
       // keeps the invariant exact (one shared client, everyone reuses it): the
       // mining client threads _remoteLookupClient in exactly like the dictionary

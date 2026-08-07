@@ -284,7 +284,7 @@ ScanPlan planScanFromFileList(List<SourceFileEntry> files) {
 class SourceLibraryScanner {
   SourceLibraryScanner(this._db) : _videoRepo = VideoBookRepository(_db);
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
   final VideoBookRepository _videoRepo;
 
   /// 从来源行解析文件系统：local → LocalSourceFileSystem；网络 → 解出连接参数
@@ -341,7 +341,7 @@ class SourceLibraryScanner {
   /// - 'manga': each `.mokuro` -> [MangaImporter.importFromMokuroPath] (with
   ///   sourceId)，仅 local transport（见 [_importManga] 首版边界）。
   ///
-  /// After insert, calls [HibikiDatabase.updateMediaSourceScanResult] to write the
+  /// After insert, calls [FushiDatabase.updateMediaSourceScanResult] to write the
   /// media count / timestamp; any throw records its text in lastScanError
   /// (mediaCount reflects the count successfully inserted before the failure).
   Future<void> scan(

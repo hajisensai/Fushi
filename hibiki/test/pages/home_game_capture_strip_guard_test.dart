@@ -98,7 +98,7 @@ void main() {
       expect(libraryStart, greaterThanOrEqualTo(0));
       final String header = _extractInvocation(
         src,
-        'HibikiPageHeader.customTitle',
+        'FushiPageHeader.customTitle',
         startAt: libraryStart,
       );
       expect(header, isNotEmpty, reason: '必须提取完整库页 header 调用，不能在 title 前截断');
@@ -113,7 +113,7 @@ void main() {
       final int libraryStart = src.indexOf('Widget _buildLibrary(');
       final String header = _extractInvocation(
         src,
-        'HibikiPageHeader.customTitle',
+        'FushiPageHeader.customTitle',
         startAt: libraryStart,
       );
       expect(header, isNotEmpty);

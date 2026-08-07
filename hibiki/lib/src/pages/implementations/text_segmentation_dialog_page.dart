@@ -23,10 +23,10 @@ class TextSegmentationDialogPage extends BasePage {
   final List<String> segmentedText;
 
   /// The callback to be called for a selection to extract from the text.
-  final Function(HibikiTextSelection)? onSelect;
+  final Function(FushiTextSelection)? onSelect;
 
   /// The callback to be called for a selection to perform a search on.
-  final Function(HibikiTextSelection)? onSearch;
+  final Function(FushiTextSelection)? onSearch;
 
   @override
   BasePageState createState() => _TextSegmentationDialogPage();
@@ -58,13 +58,13 @@ class _TextSegmentationDialogPage
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 560,
       maxHeightFactor: 0.82,
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.text_segmentation,
         leadingIcon: Icons.text_fields_outlined,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -112,7 +112,7 @@ class _TextSegmentationDialogPage
       Widget widget = ValueListenableBuilder<bool>(
         valueListenable: _valuesSelected[index]!,
         builder: (context, value, child) {
-          return HibikiSelectableChip(
+          return FushiSelectableChip(
             label: segment.trim(),
             selected: value,
             onSelected: (_) => _toggleSegment(index),
@@ -187,7 +187,7 @@ class _TextSegmentationDialogPage
     );
   }
 
-  HibikiTextSelection get selection {
+  FushiTextSelection get selection {
     StringBuffer buffer = StringBuffer();
     int? start;
     int? end;
@@ -205,7 +205,7 @@ class _TextSegmentationDialogPage
       range = TextRange(start: start, end: end);
     }
 
-    return HibikiTextSelection(
+    return FushiTextSelection(
       text: widget.sourceText,
       range: range,
     );

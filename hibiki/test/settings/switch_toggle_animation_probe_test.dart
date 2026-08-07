@@ -1,10 +1,10 @@
 // 用户报「键盘/手柄焦点导航开关没有动画，其他的有」（2026-07-22）。
-// 根因：旧 _wrapFocusNavigation 按开关插/拔 HibikiFocusRoot/Ring 两层——树结构
+// 根因：旧 _wrapFocusNavigation 按开关插/拔 FushiFocusRoot/Ring 两层——树结构
 // 变化导致整棵 app 子树重挂载，被切的 Switch 以新状态直接 mount，滑块动画消失。
 // 修复：焦点层恒定挂载（enabled 门控行为）+ 设置行结构恒定（ExcludeFocus.excluding
-// / HibikiFocusTarget.enabled 门控而非换树）。本文件两个测试分别锁：
+// / FushiFocusTarget.enabled 门控而非换树）。本文件两个测试分别锁：
 // 1) schema 式开关行本身动画健在（判别基线）；
-// 2) 翻转 HibikiFocusRoot.enabled 同帧切换开关值时，Switch State 存活且动画运行
+// 2) 翻转 FushiFocusRoot.enabled 同帧切换开关值时，Switch State 存活且动画运行
 //    ——正是用户点「键盘/手柄焦点导航」开关的场景。
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -46,7 +46,7 @@ void main() {
     expect(value, isTrue);
   });
 
-  testWidgets('翻转 HibikiFocusRoot.enabled 时开关行 Element 存活、滑块动画运行',
+  testWidgets('翻转 FushiFocusRoot.enabled 时开关行 Element 存活、滑块动画运行',
       (WidgetTester tester) async {
     bool focusNav = false;
     Widget app() => MaterialApp(
@@ -55,7 +55,7 @@ void main() {
               builder: (BuildContext context, StateSetter setState) {
                 // 复刻真实壳结构：恒定挂载的焦点根，enabled 随开关值走——
                 // 用户点「键盘/手柄焦点导航」= 同帧翻 enabled + 翻 Switch 值。
-                return HibikiFocusRoot(
+                return FushiFocusRoot(
                   enabled: focusNav,
                   child: AdaptiveSettingsSwitchRow(
                     title: '键盘/手柄焦点导航',

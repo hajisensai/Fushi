@@ -7,7 +7,7 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// 拖边框时 didChangeMetrics / MediaQuery.size 更新滞后，JS 分页几何缓存（--page-width/
 /// height / this.pageWidth / _contW / paginationMetrics）无人失效 → 错位。
 ///
-/// 修复——在阅读器树内（HibikiAppUiScaleNeutralizer 之下、WebView 子树外层）包一个
+/// 修复——在阅读器树内（FushiAppUiScaleNeutralizer 之下、WebView 子树外层）包一个
 /// **透明** LayoutBuilder：builder 零几何变换，只读 constraints 交给尾沿防抖
 /// （Timer 50ms）触发 _syncPageSize，timer 在 dispose 取消。constraints 与
 /// _syncPageSize 读的 MediaQuery.size 同坐标空间，靠 _lastSyncedWidth/Height 基线去重。

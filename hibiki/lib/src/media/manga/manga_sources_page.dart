@@ -99,7 +99,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
       await _manager!.clearSourceData(source);
     } on Object catch (error) {
       if (mounted) {
-        HibikiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
     }
   }
@@ -148,7 +148,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
   /// 重复占一行。仅在没有导航条（独立 push 进来）时才回退到文字标题。
   Widget _buildHeader() {
     final List<Widget> actions = <Widget>[
-      HibikiIconButton(
+      FushiIconButton(
         tooltip: t.media_source_add,
         label: t.media_source_add,
         icon: Icons.create_new_folder_outlined,
@@ -157,12 +157,12 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     ];
     final Widget? navigation = widget.navigation;
     if (navigation != null) {
-      return HibikiPageHeader.customTitle(
+      return FushiPageHeader.customTitle(
         title: navigation,
         actions: actions,
       );
     }
-    return HibikiPageHeader(
+    return FushiPageHeader(
       title: t.media_source_manage_title,
       actions: actions,
     );
@@ -251,9 +251,9 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     MangaOnlineSourceRow source,
     int index,
   ) {
-    return HibikiCard(
+    return FushiCard(
       padding: EdgeInsets.zero,
-      child: HibikiListItem(
+      child: FushiListItem(
         leading: Switch.adaptive(
           value: source.enabled,
           onChanged: (bool value) => unawaited(
@@ -477,7 +477,7 @@ class _MihonPreferencesDialogState extends State<_MihonPreferencesDialog> {
               ),
           ],
         ),
-      MihonPreferenceKind.unsupported => HibikiListItem(
+      MihonPreferenceKind.unsupported => FushiListItem(
           leading: const Icon(Icons.warning_amber_outlined),
           title: Text(preference.title),
           subtitle: Text(t.mihon_extension_incompatible),
@@ -489,7 +489,7 @@ class _MihonPreferencesDialogState extends State<_MihonPreferencesDialog> {
 /// 多选偏好的一行。
 ///
 /// 框架的 `CheckboxListTile` 是被 MD3 守卫禁用的本地 chrome；共享的
-/// [HibikiListItem] 没有内建复选语义，所以这里把「点整行 = 切换」的行为显式接上，
+/// [FushiListItem] 没有内建复选语义，所以这里把「点整行 = 切换」的行为显式接上，
 /// 与 `CheckboxListTile` 的交互等价（整行可点，禁用态整行不可点）。
 class _MihonMultiSelectRow extends StatelessWidget {
   const _MihonMultiSelectRow({
@@ -505,7 +505,7 @@ class _MihonMultiSelectRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ValueChanged<bool?>? changed = onChanged;
-    return HibikiListItem(
+    return FushiListItem(
       title: Text(label),
       leading: Checkbox(value: selected, onChanged: changed),
       onTap: changed == null ? null : () => changed(!selected),

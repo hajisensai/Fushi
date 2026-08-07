@@ -101,7 +101,7 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart'
     show GamepadButton, InputBinding, ModifierKey, activeModifierKeys;
 import 'package:fushi/src/shortcuts/shortcut_registry.dart'
-    show HibikiShortcutRegistry;
+    show FushiShortcutRegistry;
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent, GamepadLongPressIntent, focusedEditableText;
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -661,7 +661,7 @@ $keyBridgeScript
 /// `resolveReaderSpaceOverride` 解析，有声书激活时是播放/暂停而不是翻页）。两座桥
 /// 都是本 document 上的独立 `keydown` 监听，同一次按下各命中一次就会翻两页。
 List<String> spreadKeyBridgeTokens(
-  HibikiShortcutRegistry registry, {
+  FushiShortcutRegistry registry, {
   List<ShortcutAction> actions = kSpreadBridgedActions,
 }) {
   if (!registry.isLoaded) return const <String>[];
@@ -718,14 +718,14 @@ List<ShortcutScope> spreadKeyBridgeScopes({
 }
 
 /// 把 `onSpreadKey` 回传的 [binding] 解析成动作：按 [spreadKeyBridgeScopes] 的顺序
-/// 逐个 scope 试 [HibikiShortcutRegistry.resolveKeyboard]，首个命中即用。
+/// 逐个 scope 试 [FushiShortcutRegistry.resolveKeyboard]，首个命中即用。
 ///
 /// 顺序即 [actions] 里各 scope 首次出现的顺序，所以页面专属 scope（reader）排在
 /// 兜底 scope 之前 → 同一个键被两边都绑时页面专属胜出，与 Flutter 焦点路径的
 /// 「reader → audiobook 逐级回退」同构。解析走的仍是与焦点路径**同一个**
 /// `resolveKeyboard`，改键对两条路一起生效。
 ShortcutAction? resolveSpreadKeyBridgeAction(
-  HibikiShortcutRegistry registry,
+  FushiShortcutRegistry registry,
   InputBinding binding, {
   List<ShortcutAction> actions = kSpreadBridgedActions,
 }) {
@@ -1419,12 +1419,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   static const double _readerPopupHeaderBaseHeight = 48;
 
   /// 阅读器底栏的隐形界面缩放系数：取自全局 appUiScale（阅读器子树被中和器改写成
-  /// 1.0，故不能用 HibikiAppUiScale.of）。在 build 里读 appModel 会随缩放变化重建。
+  /// 1.0，故不能用 FushiAppUiScale.of）。在 build 里读 appModel 会随缩放变化重建。
   double get _readerChromeScale => appModel.appUiScale;
 
   // BUG-1438：曾有 `_readerImageMenuScale = normalize(_readerChromeScale)`，把 chrome
   // 的缩放口径套到右键菜单 / 选区操作条上。那是错的——菜单由 PopupMenuRoute / 根
-  // OverlayEntry 承载，**在中和器之外**，落在全局 HibikiAppUiScale 的缩放画布里，
+  // OverlayEntry 承载，**在中和器之外**，落在全局 FushiAppUiScale 的缩放画布里，
   // 画布→屏幕这一跳已经按 scale 放大过一次；再乘一次得到 scale²（实测 scale=2 时
   // chrome 文字 40px 而菜单 80px）。菜单尺寸一律写常量，见 chrome.part.dart 的
   // _showReaderImageContextMenuAtGlobalPosition 注释。
@@ -1930,7 +1930,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       debugPrint('[ReaderFushi] _initBook failed: $e\n$stack');
       ErrorLogService.instance.log('ReaderHibiki._initBook', e, stack);
       if (!mounted) return;
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.reader_open_failed, severity: ToastSeverity.error);
       // BUG-782 同款并发退出合流：init 失败自动退与用户手动退（PopScope 的
       // onPopInvokedWithResult）可能同窗竞发，两条各自 pop 会连退两级把书架也
@@ -1945,7 +1945,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   /// BUG-898：打开书时从 Drift 灌入本书已揭开的图片 key（跨 app 重启持久 + 图片库双向
   /// 同步的真相源）。必须在首次注入分页脚本 revealedKeysJson 之前完成，历史揭开项才不会
   /// 被重新遮罩。DB 失败不阻塞开书（退化为全部遮罩，与旧版一致）。
-  Future<void> _loadRevealedImageKeys(HibikiDatabase db) async {
+  Future<void> _loadRevealedImageKeys(FushiDatabase db) async {
     try {
       final Set<String> keys = await db.getRevealedImageKeys(widget.bookKey);
       _revealedImageKeys.addAll(keys);
@@ -1955,7 +1955,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   }
 
   Future<void> _initBookInner() async {
-    final HibikiDatabase db = appModelNoUpdate.database;
+    final FushiDatabase db = appModelNoUpdate.database;
 
     // TODO-131: profile→settings 链与 book 定位→解析链互不依赖（前者动
     // ReaderHibikiSource.readerSettings / active profile，后者动 _book / _extractDir），
@@ -1980,7 +1980,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (!mounted) return;
     if (!located.exists) {
       debugPrint('[ReaderFushi] book ${widget.bookKey} not found on disk');
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.book_file_not_found, severity: ToastSeverity.error);
       // 与 _initBook catch 同款 _popInProgress 合流（防与用户手动退出竞发连退两级）。
       if (_popInProgress) return;
@@ -2014,7 +2014,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
             bookRow.chaptersJson, _book!.chapters.length);
       }
       if (!mounted) return;
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.epub_parse_fallback, severity: ToastSeverity.warning);
     }
 
@@ -2140,7 +2140,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   /// TODO-131: 按 bookKey 查 EpubBooks 行 + 校验磁盘目录存在。与 profile/settings
   /// 链并行起跑；`chaptersJson` 随行带回，供 [charCountsFromChaptersJson] 复用计数。
-  Future<_BookLocateResult> _locateBookOnDisk(HibikiDatabase db) async {
+  Future<_BookLocateResult> _locateBookOnDisk(FushiDatabase db) async {
     // Locate the book on disk by its stored extract_dir column (the on-disk
     // folder name may still be a legacy int id; the column is the truth).
     final EpubBookRow? bookRow = await db.getEpubBook(widget.bookKey);
@@ -2205,7 +2205,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   }
 
   Future<EpubBook?> _buildBookFromDb(
-    HibikiDatabase db,
+    FushiDatabase db,
     String bookKey,
     String extractDir,
   ) async {
@@ -2699,7 +2699,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     );
 
     // TODO-690 / BUG-399：透明 LayoutBuilder 作为桌面窗口 resize → 重排的通道。
-    // 位于 HibikiAppUiScaleNeutralizer 之下（路由层 ReaderHibikiSource.buildLaunchPage
+    // 位于 FushiAppUiScaleNeutralizer 之下（路由层 ReaderHibikiSource.buildLaunchPage
     // 已用 Neutralizer 包裹本页），在 WebView 子树外层。builder **零几何变换**：只读
     // constraints 交给 _onReaderConstraintsChanged（尾沿防抖起 _syncPageSize），原样返回
     // reader 子树。constraints.biggest 与 _syncPageSize 读的 MediaQuery.size 同处反缩放
@@ -2783,7 +2783,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                         ),
                       ),
                     // On-screen focus indicator for the "reading content" layer,
-                    // matching the app's standard focus ring (HibikiFocusRing:
+                    // matching the app's standard focus ring (FushiFocusRing:
                     // colorScheme.primary, 2.5px, 8px radius). Shown while the reader
                     // content holds primary focus and no char cursor is active (the
                     // cursor draws its own ring). Inset by the chrome insets so the
@@ -2797,7 +2797,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                             animation: _focusNode,
                             builder: (context, _) {
                               // Only in keyboard/gamepad highlight mode — matches the
-                              // app-wide HibikiFocusRing convention (no focus ring in
+                              // app-wide FushiFocusRing convention (no focus ring in
                               // touch mode). Rebuilt on highlight change via
                               // _onHighlightModeChanged.
                               final bool show = _focusNavEnabled &&
@@ -3605,7 +3605,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     final bool hasAudio = ctrl != null && ctrl.chapterCueCount > 0;
 
     Widget buildRow(ThemeData theme) {
-      final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+      final FushiDesignTokens tokens = FushiDesignTokens.of(context);
       final AudioCue? cue = _lookupCue;
       final bool hasCue = cue != null;
       return ReaderChromeScaler(
@@ -3628,7 +3628,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  HibikiIconButton(
+                  FushiIconButton(
                     icon: _currentSentenceIsFavorited
                         ? Icons.star
                         : Icons.star_border,
@@ -3642,7 +3642,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                   ),
                   if (hasAudio) ...[
                     SizedBox(width: tokens.spacing.gap),
-                    HibikiIconButton(
+                    FushiIconButton(
                       icon: Icons.replay_outlined,
                       size: 20,
                       onTap: hasCue
@@ -3656,7 +3656,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                       padding: EdgeInsets.all(tokens.spacing.gap / 2),
                     ),
                     SizedBox(width: tokens.spacing.gap),
-                    HibikiIconButton(
+                    FushiIconButton(
                       icon: ctrl.isPlaying
                           ? Icons.pause_outlined
                           : Icons.play_arrow_outlined,
@@ -3666,7 +3666,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                       padding: EdgeInsets.all(tokens.spacing.gap / 2),
                     ),
                     SizedBox(width: tokens.spacing.gap),
-                    HibikiIconButton(
+                    FushiIconButton(
                       icon: Icons.play_circle_outline,
                       size: 20,
                       onTap: hasCue
@@ -3728,12 +3728,12 @@ class ReaderLyricsModeHintDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.74,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.lyrics_mode_hint_title,
         leadingIcon: Icons.lyrics_outlined,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -3778,12 +3778,12 @@ class ReaderSrtAudioPickerDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 460,
       maxHeightFactor: 0.76,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.srt_book_replace_audio,
         leadingIcon: Icons.audio_file_outlined,
         bodyPadding: EdgeInsets.fromLTRB(

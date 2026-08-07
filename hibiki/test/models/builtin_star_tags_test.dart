@@ -3,8 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/builtin_tags.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-Future<HibikiDatabase> _openDb() async {
-  final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
@@ -22,7 +22,7 @@ void main() {
 
     test('fresh pool: seeds exactly 1..5 stars in ascending sortOrder',
         () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
 
       final int added = await seedStarRatingTags(db);
       expect(added, 5);
@@ -38,7 +38,7 @@ void main() {
     });
 
     test('idempotent: second call adds nothing, no duplicate rows', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
 
       expect(await seedStarRatingTags(db), 5);
       expect(await seedStarRatingTags(db), 0);
@@ -51,7 +51,7 @@ void main() {
 
     test('only-add: preserves user tags + edited star color, never deletes',
         () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
 
       // A user-created tag and one pre-existing star with a custom color.
       final int userId = await db.createTag('MyShelf', 0xFF123456);

@@ -20,7 +20,7 @@ import '../helpers/test_platform_services.dart';
 
 /// BUG-1009（预防性）：合集详情页成员卡的手柄/键盘焦点 id 不得与书架同名。
 ///
-/// 详情页 push 在书架路由之上、两条路由的 HibikiFocusTarget 同时存活；焦点注册表
+/// 详情页 push 在书架路由之上、两条路由的 FushiFocusTarget 同时存活；焦点注册表
 /// 按 id 覆盖（hibiki_focus_controller.dart `_targets[id] = entry`），同名即撞号
 /// ——后注册者赢、owner unregister 时另一方失联。修复 = 详情页渲染路径
 /// （[_buildCollectionMemberCard]）给成员卡 focusId 加 'collection-detail-' 路由
@@ -50,7 +50,7 @@ void main() {
     }
   });
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late PreferencesRepository prefs;
   late AppModel appModel;
   late Directory storeDir;
@@ -59,7 +59,7 @@ void main() {
 
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.zhCn);
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     storeDir = Directory.systemTemp.createTempSync('hibiki_collection_focus');
@@ -117,7 +117,7 @@ void main() {
             // 焦点根置于 Navigator 之上：书架与 push 出的详情页共用同一注册表，
             // 复刻生产的「两条路由同时注册」环境。
             builder: (BuildContext context, Widget? child) =>
-                HibikiFocusRoot(child: child ?? const SizedBox.shrink()),
+                FushiFocusRoot(child: child ?? const SizedBox.shrink()),
             home: Scaffold(
               body: ReaderHibikiHistoryPage(
                 remoteBookClientLoader: () async => null,
@@ -143,8 +143,8 @@ void main() {
 
     // 书架合集行内的成员卡：无前缀 id（既有语义不变）。
     List<String> onstageIds() => tester
-        .widgetList<HibikiFocusTarget>(find.byType(HibikiFocusTarget))
-        .map((HibikiFocusTarget w) => w.id.value)
+        .widgetList<FushiFocusTarget>(find.byType(FushiFocusTarget))
+        .map((FushiFocusTarget w) => w.id.value)
         .toList();
     expect(onstageIds(), contains('reader-shelf-book-$mediaId'),
         reason: '书架成员卡保持既有无前缀 focusId');
@@ -164,9 +164,9 @@ void main() {
     // 书架路由仍在其下存活（offstage），其无前缀 id 未被改动——两条路由并存时
     // 注册表里是两个不同 id，不再互相覆盖。
     final List<String> allIds = tester
-        .widgetList<HibikiFocusTarget>(
-            find.byType(HibikiFocusTarget, skipOffstage: false))
-        .map((HibikiFocusTarget w) => w.id.value)
+        .widgetList<FushiFocusTarget>(
+            find.byType(FushiFocusTarget, skipOffstage: false))
+        .map((FushiFocusTarget w) => w.id.value)
         .toList();
     expect(allIds, contains('reader-shelf-book-$mediaId'));
     expect(allIds, contains('collection-detail-reader-shelf-book-$mediaId'));

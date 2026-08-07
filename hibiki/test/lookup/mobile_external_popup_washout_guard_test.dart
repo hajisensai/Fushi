@@ -12,7 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// mobile external popup (popup_main -> PopupDictionaryPage -> DictionaryPopupLayer
 /// -> DictionaryPopupWebView) got NO such class, so its `<html>` filled the whole
 /// WebView viewport opaque near-white ON TOP of the transparent floating window +
-/// Flutter `HibikiPopupSurface` card = full-viewport wash in light themes.
+/// Flutter `FushiPopupSurface` card = full-viewport wash in light themes.
 ///
 /// The fix mirrors the proven global-lookup scoping with a NEW `mobile-external`
 /// document class (transparent `<html>` only, NO body chrome -- the Flutter card

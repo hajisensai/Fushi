@@ -74,7 +74,7 @@ void main() {
         (WidgetTester tester) async {
       await tester.pumpWidget(
         wrap(
-          HibikiDestructiveConfirmDialog(
+          FushiDestructiveConfirmDialog(
             title: t.delete_collection,
             message: t.delete_collection_confirm,
             checkboxLabel: t.delete_collection_also_books,

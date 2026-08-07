@@ -7,13 +7,13 @@ import 'package:fushi_core/fushi_core.dart';
 
 /// 收藏夹「可选范围清空」的底层原语守卫：书签 / 收藏句 / 制卡句 / 收藏词四类各自
 /// 有独立的批量清空入口，且**只删自己那类**——按类型勾选清空时互不牵连。
-Future<HibikiDatabase> _openDb() async {
-  final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
 
-Future<void> _seedAll(HibikiDatabase db) async {
+Future<void> _seedAll(FushiDatabase db) async {
   // 书签。
   await BookmarkRepository(db).addBookmark(
     'book/边城',
@@ -54,7 +54,7 @@ Future<void> _seedAll(HibikiDatabase db) async {
 }
 
 Future<({int bookmarks, int sentences, int mined, int words})> _counts(
-    HibikiDatabase db) async {
+    FushiDatabase db) async {
   return (
     bookmarks: (await BookmarkRepository(db).getAllBookmarks()).length,
     sentences: (await FavoriteSentenceRepository(db).getAll()).length,
@@ -65,7 +65,7 @@ Future<({int bookmarks, int sentences, int mined, int words})> _counts(
 
 void main() {
   test('每类清空原语只删自己那类，不牵连其它三类', () async {
-    final HibikiDatabase db = await _openDb();
+    final FushiDatabase db = await _openDb();
 
     // 清书签：只书签归零。
     await _seedAll(db);
@@ -104,7 +104,7 @@ void main() {
     expect(src, contains('_openClearSheet'));
     expect(src, contains('class _ClearSheet'));
     // 面板走 MD3 外壳。
-    expect(src, contains('HibikiModalSheetFrame('));
+    expect(src, contains('FushiModalSheetFrame('));
     // 三类型都能被清空（executor 覆盖三种 _CollectionType；书签功能已移除 PR#188）。
     expect(src, contains('_clearScopes('));
     expect(src, contains('FavoriteSentenceRepository(db).clear()'));

@@ -73,7 +73,7 @@ void main() {
 
     test('registry resolves Ctrl+F to readerOpenNavigation in the reader scope',
         () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry();
+      final FushiShortcutRegistry registry = FushiShortcutRegistry();
       registry.loadDefaults(TargetPlatform.windows);
       expect(
         registry.resolveKeyboard(
@@ -88,7 +88,7 @@ void main() {
     test(
         'Ctrl+F stays home-scope search too: the two live in DISJOINT co-active '
         'groups so there is no real conflict', () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry();
+      final FushiShortcutRegistry registry = FushiShortcutRegistry();
       registry.loadDefaults(TargetPlatform.windows);
       // Same physical chord, different co-active group → resolves to the
       // scope-appropriate action on each page (the reader page never resolves

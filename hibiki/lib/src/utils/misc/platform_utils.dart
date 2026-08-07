@@ -168,7 +168,7 @@ enum SupportingPaneSide { start, end }
 /// Single source of truth for the Material compact/medium/expanded
 /// breakpoints. [width] must be the **real physical viewport width** in
 /// logical pixels — see [windowSizeClassReal] for why the raw logical width
-/// handed down inside [HibikiAppUiScale] is not it.
+/// handed down inside [FushiAppUiScale] is not it.
 WindowSizeClass windowSizeClassForWidth(double width) {
   if (width >= 840) return WindowSizeClass.expanded;
   if (width >= 600) return WindowSizeClass.medium;
@@ -177,14 +177,14 @@ WindowSizeClass windowSizeClassForWidth(double width) {
 
 /// Classify by the **real** viewport width.
 ///
-/// BUG-401: inside [HibikiAppUiScale] the subtree is laid out against a
+/// BUG-401: inside [FushiAppUiScale] the subtree is laid out against a
 /// virtual canvas of `realViewport / scale` (so visual scaling can fill the
 /// screen). A breakpoint that reads that inflated logical width never falls
 /// into [WindowSizeClass.compact] on desktop — the window's real width could
 /// shrink, but the logical width stayed high, so the phone (bottom-bar)
 /// layout was unreachable. The real width is `logicalWidth * scale`.
 ///
-/// [appUiScale] is the net [HibikiAppUiScale.of] factor at the call site
+/// [appUiScale] is the net [FushiAppUiScale.of] factor at the call site
 /// (1.0 below the neutraliser, on undecorated routes, or when no scale
 /// ancestor exists). A non-finite / non-positive scale degrades to identity
 /// (treat the logical width as already-real).
@@ -280,7 +280,7 @@ const double kHibikiSettingsWideThreshold = 560.0;
 /// 外观详情、左父菜单只留分类导航 + 动作，使两个 sheet 的左栏都能在此高度内放下。
 const double kHibikiSettingsWideMinHeight = 440.0;
 
-/// 桌面宽窗下书籍 / 视频 / 阅读器快捷设置弹窗（[HibikiDialogFrame]）的最大内容宽度。
+/// 桌面宽窗下书籍 / 视频 / 阅读器快捷设置弹窗（[FushiDialogFrame]）的最大内容宽度。
 /// 全屏 push 的设置类页面（如 `BookCssEditorPage`）也用它约束正文宽度，与限宽弹窗
 /// 里的兄弟设置页保持同宽，消除各处重复出现的 `900` 魔法数。
 const double kHibikiSettingsDialogMaxWidth = 900.0;
@@ -304,7 +304,7 @@ class DesktopContentLayout extends StatelessWidget {
         // the compact (full-bleed) layout instead of staying expanded.
         final WindowSizeClass sizeClass = windowSizeClassReal(
           constraints.maxWidth,
-          HibikiAppUiScale.of(context),
+          FushiAppUiScale.of(context),
         );
         final double? maxWidth = desktopContentMaxWidth(sizeClass, kind);
         final Widget padded = Padding(

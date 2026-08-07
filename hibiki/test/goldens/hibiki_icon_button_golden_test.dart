@@ -8,10 +8,10 @@ import 'package:fushi/src/utils/components/hibiki_icon_button.dart';
 import 'golden_test_helpers.dart';
 
 void main() {
-  group('HibikiIconButton golden', () {
+  group('FushiIconButton golden', () {
     testWidgets('enabled state', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.search,
           tooltip: 'Search',
           onTap: () {},
@@ -28,7 +28,7 @@ void main() {
 
     testWidgets('disabled state', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiIconButton(
+        const FushiIconButton(
           icon: Icons.search,
           tooltip: 'Search',
           enabled: false,
@@ -45,7 +45,7 @@ void main() {
 
     testWidgets('wide tap area', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.play_arrow,
           tooltip: 'Play',
           isWideTapArea: true,
@@ -63,7 +63,7 @@ void main() {
 
     testWidgets('custom colors', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.bookmark,
           tooltip: 'Bookmark',
           enabledColor: Colors.red,
@@ -82,7 +82,7 @@ void main() {
 
     testWidgets('dark theme', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.settings,
           tooltip: 'Settings',
           onTap: () {},

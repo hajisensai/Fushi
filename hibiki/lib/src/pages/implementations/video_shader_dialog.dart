@@ -71,7 +71,7 @@ class VideoShaderManagerView extends StatefulWidget {
 }
 
 class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
-    with HibikiPagePlaceholders<VideoShaderManagerView> {
+    with FushiPagePlaceholders<VideoShaderManagerView> {
   late final Set<String> _enabled = widget.initialEnabled.toSet();
   late String _mpvDir = widget.initialMpvDir;
   List<String> _files = const <String>[];
@@ -602,9 +602,9 @@ class Anime4kPresetPickerDialog extends StatelessWidget {
                       // BUG-1425：预设选择行走共享 MD3 组件，不再裸 ListTile。
                       // 本文件的 reviewed 豁免只写了「导入的 shader 文件以勾选行
                       // 列出」（即那两处 CheckboxListTile），从不覆盖这个预设列表。
-                      return HibikiListItem(
+                      return FushiListItem(
                         padding: EdgeInsets.symmetric(
-                          vertical: HibikiDesignTokens.of(context)
+                          vertical: FushiDesignTokens.of(context)
                               .spacing
                               .rowVertical,
                         ),

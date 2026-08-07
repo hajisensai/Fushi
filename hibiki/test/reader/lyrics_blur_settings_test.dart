@@ -20,8 +20,8 @@ AudioCue _cue(int i) {
     ..audioFileIndex = 0;
 }
 
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
@@ -70,7 +70,7 @@ void main() {
   });
 
   group('lyrics blur setting (TODO-908)', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
 
     setUp(() {
       db = _testDb();

@@ -6,8 +6,8 @@ import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 
 /// 批量打标签对话框的共享外壳（视频 tab 与书架共用）。
 ///
-/// 只封装两侧近逐字重复的对话框 chrome：[HibikiDialogFrame]（520 宽 / 0.86 高上限）套
-/// [HibikiModalSheetFrame]（标题 + 标签图标 + 统一内边距 + 取消/应用底栏）。三态标签行与
+/// 只封装两侧近逐字重复的对话框 chrome：[FushiDialogFrame]（520 宽 / 0.86 高上限）套
+/// [FushiModalSheetFrame]（标题 + 标签图标 + 统一内边距 + 取消/应用底栏）。三态标签行与
 /// apply 落库逻辑在两侧各自分叉（视频是单一 bookUid 集合、书架含 epub+srt 双类分支，且
 /// 书架意图行走 TODO-308 文字+语义图标改版），故不在此共享——本组件只吃 [body] /
 /// [canApply] / [onApply] 三个注入点，保持两侧原有 UI 行为不变。
@@ -31,13 +31,13 @@ class BatchTagPickerDialogFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = Translations.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 520,
       maxHeightFactor: 0.86,
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.batch_tag_title,
         leadingIcon: Icons.sell_outlined,
         scrollable: true,

@@ -50,7 +50,7 @@ typedef SplitPlaylistImportResult = ({
 class VideoBookRepository {
   const VideoBookRepository(this._db);
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
 
   /// 写入/更新一本视频书。
   ///
@@ -208,7 +208,7 @@ class VideoBookRepository {
         mediaType: kActivityMediaVideo,
         title: title,
         mediaKey: bookUid,
-        dateKey: HibikiTimeFormat.dayKey(
+        dateKey: FushiTimeFormat.dayKey(
           DateTime.fromMillisecondsSinceEpoch(nowMs),
         ),
         timestampMs: nowMs,
@@ -223,8 +223,8 @@ class VideoBookRepository {
   }
 
   /// 按标签名重建视频书标签映射（TODO-1165 跨设备下载后恢复标签）。标签是每设备
-  /// 本地数据，只能按名传递：逐名 [HibikiDatabase.getOrCreateTagByName] 归一到本机
-  /// tag id，再 [HibikiDatabase.addTagToVideoBook]（insertOrIgnore 幂等）。只增不删。
+  /// 本地数据，只能按名传递：逐名 [FushiDatabase.getOrCreateTagByName] 归一到本机
+  /// tag id，再 [FushiDatabase.addTagToVideoBook]（insertOrIgnore 幂等）。只增不删。
   Future<void> applyTagNamesToVideoBook(
     String bookUid,
     List<String> tagNames,
@@ -237,7 +237,7 @@ class VideoBookRepository {
   }
 
   /// tags 稳健档 LWW：把远端标签快照（名→加入戳 + 移除墓碑）合并进视频 [bookUid]。
-  /// 删除/改名跨端传播、防复活（见 [HibikiDatabase.mergeRemoteVideoTags]）。
+  /// 删除/改名跨端传播、防复活（见 [FushiDatabase.mergeRemoteVideoTags]）。
   Future<void> mergeRemoteVideoTags(
     String bookUid, {
     required Map<String, int> remoteAddedAt,
@@ -341,7 +341,7 @@ class VideoBookRepository {
   ///   （保留其观看进度；条目脱离合集后作为独立视频存在，非破坏性）。
   ///
   /// 先加后删：整批替换时先加新集让合集非空，再删旧集，绝不让合集瞬时空掉被
-  /// [HibikiDatabase.removeFromCollection] 的「移空自删」误删。已在清单里的集不重建
+  /// [FushiDatabase.removeFromCollection] 的「移空自删」误删。已在清单里的集不重建
   /// （不重跑 [importSplitPlaylist]，避免 [coreUniqueVideoBookUid] 撞已存在 uid 加后缀
   /// 造重复行——这正是重扫从前整体跳过的原因）。返回 (新增, 移除) 计数。
   Future<({int added, int removed})> reconcileSplitPlaylist({
@@ -620,7 +620,7 @@ class VideoBookRepository {
   Future<void> updateTitle(String bookUid, String title) =>
       _db.updateVideoBookTitle(bookUid, title);
 
-  /// 删除视频书：DB 行 + 本视频的字幕 cue 行一并删（[HibikiDatabase.deleteVideoBook]
+  /// 删除视频书：DB 行 + 本视频的字幕 cue 行一并删（[FushiDatabase.deleteVideoBook]
   /// 在一个事务里删 videoBooks + audio_cues；标签映射经 FK cascade）。on-disk 的
   /// 封面/字幕副本回收交给调用方的 [VideoStorage.deleteBookAssets]（按被删 book 精确
   /// 删，不全库 sweep，BUG-276）。

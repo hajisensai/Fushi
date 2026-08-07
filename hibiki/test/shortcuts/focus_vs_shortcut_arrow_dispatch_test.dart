@@ -26,27 +26,27 @@ import 'package:fushi/src/utils/components/hibiki_focus_ring.dart';
 /// wrapper 在按下边沿 `ignored`（修复前），方向键继续上冒、哨兵收到——并最终
 /// 落到框架 [DirectionalFocusAction]。哨兵计数因此直接证明「按下边沿归谁」。
 void main() {
-  /// 渲染：哨兵 Focus（记录上冒到此处的方向键 KeyDown）→ HibikiFocusRoot/Ring →
+  /// 渲染：哨兵 Focus（记录上冒到此处的方向键 KeyDown）→ FushiFocusRoot/Ring →
   /// wrapWithGlobalNavigation → 一列受管目标（无页级方向键处理器）。
   Future<
       ({
-        HibikiFocusController controller,
+        FushiFocusController controller,
         List<LogicalKeyboardKey> sentinel
       })> pump(
     WidgetTester tester,
     GlobalKey<NavigatorState> navKey, {
-    required List<HibikiFocusId> ids,
+    required List<FushiFocusId> ids,
     bool focusNavigationEnabled = true,
   }) async {
-    late HibikiFocusController controller;
+    late FushiFocusController controller;
     final List<LogicalKeyboardKey> sentinel = <LogicalKeyboardKey>[];
     final FocusNode sentinelNode =
         FocusNode(debugLabel: 'sentinel', skipTraversal: true);
     addTearDown(sentinelNode.dispose);
 
     final List<Widget> targets = <Widget>[
-      for (final HibikiFocusId id in ids)
-        HibikiFocusTarget(
+      for (final FushiFocusId id in ids)
+        FushiFocusTarget(
           id: id,
           child: const SizedBox(width: 120, height: 40),
         ),
@@ -69,14 +69,14 @@ void main() {
             }
             return KeyEventResult.ignored;
           },
-          child: HibikiFocusRoot(
-            child: HibikiFocusRing(
+          child: FushiFocusRoot(
+            child: FushiFocusRing(
               child: wrapWithGlobalNavigation(
                 navigatorKey: navKey,
                 focusNavigationEnabled: focusNavigationEnabled,
                 child: Builder(
                   builder: (BuildContext context) {
-                    controller = HibikiFocusRoot.controllerOf(context);
+                    controller = FushiFocusRoot.controllerOf(context);
                     // 无 Focus(onKeyEvent: ...) 页级处理器——按下边沿必须由
                     // wrapWithGlobalNavigation 接管才算修复（否则落框架）。
                     return Scaffold(body: Column(children: targets));
@@ -92,14 +92,14 @@ void main() {
     return (controller: controller, sentinel: sentinel);
   }
 
-  const HibikiFocusId a = HibikiFocusId('a');
-  const HibikiFocusId b = HibikiFocusId('b');
-  const HibikiFocusId c = HibikiFocusId('c');
+  const FushiFocusId a = FushiFocusId('a');
+  const FushiFocusId b = FushiFocusId('b');
+  const FushiFocusId c = FushiFocusId('c');
 
   testWidgets('BUG-263: 受管目标上方向键「按下」被 wrapper 消费，不再上冒到框架引擎',
       (WidgetTester tester) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    final result = await pump(tester, navKey, ids: <HibikiFocusId>[a, b, c]);
+    final result = await pump(tester, navKey, ids: <FushiFocusId>[a, b, c]);
     result.controller.requestById(a);
     await tester.pump();
     expect(result.controller.activeId, a);
@@ -120,7 +120,7 @@ void main() {
 
   testWidgets('BUG-263: 按下与重复走同一引擎，连续步进且都不上冒框架', (WidgetTester tester) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    final result = await pump(tester, navKey, ids: <HibikiFocusId>[a, b, c]);
+    final result = await pump(tester, navKey, ids: <FushiFocusId>[a, b, c]);
     result.controller.requestById(a);
     await tester.pump();
 
@@ -143,7 +143,7 @@ void main() {
     final result = await pump(
       tester,
       navKey,
-      ids: <HibikiFocusId>[a, b],
+      ids: <FushiFocusId>[a, b],
       focusNavigationEnabled: false,
     );
     result.controller.requestById(a);

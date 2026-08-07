@@ -5,11 +5,11 @@ import 'package:fushi/src/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late MediaTrackingRepository repository;
 
   setUp(() {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     repository = MediaTrackingRepository(db);
   });
 

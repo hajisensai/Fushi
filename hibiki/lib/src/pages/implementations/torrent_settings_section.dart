@@ -339,8 +339,8 @@ class _TorrentSettingsSectionState
       children: <Widget>[
         _sectionLabel(theme, t.download_network_proxy_section),
         // BUG-1184：窄屏下裸 SegmentedButton 会把每段钳到「可用宽/段数」并静默裁字，
-        // 统一改走 [HibikiSegmentedStrip]（装不下就横向滚动，标签永远完整）。
-        HibikiSegmentedStrip<DownloadNetworkProxyMode>(
+        // 统一改走 [FushiSegmentedStrip]（装不下就横向滚动，标签永远完整）。
+        FushiSegmentedStrip<DownloadNetworkProxyMode>(
           segments: <ButtonSegment<DownloadNetworkProxyMode>>[
             ButtonSegment<DownloadNetworkProxyMode>(
               value: DownloadNetworkProxyMode.auto,
@@ -390,7 +390,7 @@ class _TorrentSettingsSectionState
         // 选中后 resolveBackend 会把它规约回 qb，段选状态原地弹回，比没有选项更糟。
         // 故非桌面不渲染选择器，改为一行说明交代本平台只有外接 qb。
         if (_isDesktop) ...<Widget>[
-          HibikiSegmentedStrip<String>(
+          FushiSegmentedStrip<String>(
             segments: <ButtonSegment<String>>[
               ButtonSegment<String>(
                 value: QbConnectionConfig.backendQbittorrent,
@@ -589,7 +589,7 @@ class _TorrentSettingsSectionState
           ),
           Padding(
             padding: const EdgeInsets.only(top: 4, bottom: 8),
-            child: HibikiSegmentedStrip<int>(
+            child: FushiSegmentedStrip<int>(
               segments: <ButtonSegment<int>>[
                 ButtonSegment<int>(
                   value: QbConnectionConfig.encryptionPrefer,
@@ -674,7 +674,7 @@ class _TorrentSettingsSectionState
       // 设置详情 pane 语境：不居中限宽，改用与普通设置行同一条 16px 左右基线。
       return Padding(
         padding: EdgeInsets.symmetric(
-          horizontal: HibikiDesignTokens.of(context).spacing.rowHorizontal,
+          horizontal: FushiDesignTokens.of(context).spacing.rowHorizontal,
         ),
         child: SizedBox(
           key: const ValueKey<String>('torrent-settings-content'),

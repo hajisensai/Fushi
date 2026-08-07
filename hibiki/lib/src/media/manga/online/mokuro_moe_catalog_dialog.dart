@@ -26,7 +26,7 @@ class MokuroMoeCatalogDialog extends StatefulWidget {
   });
 
   /// 目标数据库（查已在库书目用；下载落库由队列持有的 db 完成）。
-  final HibikiDatabase db;
+  final FushiDatabase db;
 
   /// 测试用 client（null = 按偏好 base URL 构造真实 client）。
   final MokuroMoeClient? clientOverride;

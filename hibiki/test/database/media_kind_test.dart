@@ -7,7 +7,7 @@ import 'package:fushi_core/fushi_core.dart';
 ///
 /// - dbValue 集合钉死 {'epub','srt','video','game'}——任何人改枚举/加种类都会
 ///   在这里被拦下审视持久化影响；
-/// - tryParse 对 null / ''（合集墓碑哨兵 [HibikiDatabase.collectionTombstoneSentinel]）
+/// - tryParse 对 null / ''（合集墓碑哨兵 [FushiDatabase.collectionTombstoneSentinel]）
 ///   / 未知种类（对端未来值、旧值域 'book'/'srtbook'）一律返 null 不抛；
 /// - compositeKey 与历史手写 `'<kind>|<entryKey>'` 插值逐字节一致
 ///   （`MediaCollections.coverSource` 有落库点依赖此格式）；
@@ -32,7 +32,7 @@ void main() {
     expect(MediaKind.tryParse('game'), MediaKind.game);
     expect(MediaKind.tryParse(null), isNull);
     expect(
-        MediaKind.tryParse(HibikiDatabase.collectionTombstoneSentinel), isNull,
+        MediaKind.tryParse(FushiDatabase.collectionTombstoneSentinel), isNull,
         reason: "'' 哨兵（合集级墓碑占位）不是种类");
     // 其它值域的字符串绝不误命中语义（'book' 是活动事件域、'srtbook' 是
     // Profile 绑定域），也涵盖对端未来新增的未知种类。
@@ -53,8 +53,8 @@ void main() {
 
   test('typed DAO 落库串不变：addToCollection(MediaKind.game) → DB 读回 game 串',
       () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final int c = await db.createMediaCollection('C');
     await db.addToCollection(c, MediaKind.game, 'g1');

@@ -123,7 +123,7 @@ extension _VideoFullscreen on _VideoHibikiPageState {
         // 拥有与窗口完全一致的手柄语义（A=播放/暂停、dpad=快进快退/音量、
         // B=globalBack「返回上一级」逐级退出……），不在 gamepad_service 里加全屏特判。
         pageBuilder: (_, __, ___) => _wrapVideoGamepadControls(Material(
-          child: HibikiAppUiScaleNeutralizer(
+          child: FushiAppUiScaleNeutralizer(
             child: MaterialVideoControlsTheme(
               normal:
                   mobileTheme?.normal ?? kDefaultMaterialVideoControlsThemeData,

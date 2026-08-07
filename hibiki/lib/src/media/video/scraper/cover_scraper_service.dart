@@ -631,7 +631,7 @@ class CoverScraperService {
   /// `.tmp`+rename 落盘与双键解码缓存驱逐（BUG-1118），换封面失败绝不留半张图。
   ///
   /// DB 写入由调用方负责（`updateMediaCollectionCoverPath`）：本层不持有
-  /// [HibikiDatabase]，也不该为一列写入把整个数据库拖进刮削服务的依赖面。
+  /// [FushiDatabase]，也不该为一列写入把整个数据库拖进刮削服务的依赖面。
   Future<String> downloadCollectionCover({
     required int collectionId,
     required ScrapeCandidate candidate,
@@ -709,7 +709,7 @@ class CoverScraperService {
   /// 合集刮削：一次拿齐封面 + 横版背景 + 条目资料（BUG-1310）。
   ///
   /// 取代原先只下海报的 [downloadCollectionCover]。三样产物一并返回给调用方落库，
-  /// 本层仍不碰 [HibikiDatabase]（见类顶注）。
+  /// 本层仍不碰 [FushiDatabase]（见类顶注）。
   ///
   /// **只写合集自己**：刻意不调 [applyCandidateToBooks]——那条路会逐成员写
   /// cover_path / cover_meta / video_scrape_meta，正是用户否决的「改合集封面却刷了

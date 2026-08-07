@@ -59,7 +59,7 @@ void main() {
     );
     await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .handlePlatformMessage(
-      HibikiChannels.floatingLyric.name,
+      FushiChannels.floatingLyric.name,
       data,
       (ByteData? _) {},
     );

@@ -15,14 +15,14 @@ import 'package:fushi_core/fushi_core.dart';
 /// 修复后的语义：会话该不该重来只取决于**配置是否真变**（地址集合 / 钉扎指纹 /
 /// 令牌）。地址失联后的换路由径走 `clearCache()`，与本处正交。
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late SyncRepository repo;
 
   setUp(() async {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     repo = SyncRepository(db);
-    await repo.setHibikiClientUrls(<HibikiClientUrl>[
-      const HibikiClientUrl(url: 'http://192.168.1.10:8384'),
+    await repo.setHibikiClientUrls(<FushiClientUrl>[
+      const FushiClientUrl(url: 'http://192.168.1.10:8384'),
     ]);
     await repo.setHibikiClientToken('token-a');
   });
@@ -81,8 +81,8 @@ void main() {
     await backend.authenticate(repo: repo);
     expect(probes, 1);
 
-    await repo.setHibikiClientUrls(<HibikiClientUrl>[
-      const HibikiClientUrl(url: 'http://192.168.1.99:8384'),
+    await repo.setHibikiClientUrls(<FushiClientUrl>[
+      const FushiClientUrl(url: 'http://192.168.1.99:8384'),
     ]);
     await backend.restoreAuth(repo);
     await backend.authenticate(repo: repo);
@@ -101,8 +101,8 @@ void main() {
     expect(probes, 1);
 
     // 给同一个地址挂上钉扎指纹 = 换了身份。
-    await repo.setHibikiClientUrls(<HibikiClientUrl>[
-      const HibikiClientUrl(
+    await repo.setHibikiClientUrls(<FushiClientUrl>[
+      const FushiClientUrl(
         url: 'http://192.168.1.10:8384',
         fingerprintSha256: 'aa:bb:cc',
       ),
@@ -130,8 +130,8 @@ void main() {
     await backend.authenticate(repo: repo);
     expect(probes, 1);
 
-    await repo.setHibikiClientUrls(<HibikiClientUrl>[
-      const HibikiClientUrl(
+    await repo.setHibikiClientUrls(<FushiClientUrl>[
+      const FushiClientUrl(
         url: 'http://192.168.1.10:8384',
         deviceName: '书房台式机',
       ),
@@ -157,8 +157,8 @@ void main() {
     await backend.restoreAuth(repo);
     final int before = backend.sessionIdentityRevision.value;
 
-    await repo.setHibikiClientUrls(<HibikiClientUrl>[
-      const HibikiClientUrl(url: 'http://192.168.1.99:8384'),
+    await repo.setHibikiClientUrls(<FushiClientUrl>[
+      const FushiClientUrl(url: 'http://192.168.1.99:8384'),
     ]);
     await backend.restoreAuth(repo);
 
@@ -208,8 +208,8 @@ void main() {
     expect(probes, 1);
 
     await backend.signOut(repo: repo);
-    await repo.setHibikiClientUrls(<HibikiClientUrl>[
-      const HibikiClientUrl(url: 'http://192.168.1.10:8384'),
+    await repo.setHibikiClientUrls(<FushiClientUrl>[
+      const FushiClientUrl(url: 'http://192.168.1.10:8384'),
     ]);
     await repo.setHibikiClientToken('token-a');
     await backend.restoreAuth(repo);

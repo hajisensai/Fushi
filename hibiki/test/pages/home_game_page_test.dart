@@ -33,7 +33,7 @@ Widget _testMonitorWithSections(
   BuildContext _,
   VoidCallback onShowLibrary,
 ) {
-  return HibikiPageHeader.customTitle(
+  return FushiPageHeader.customTitle(
     title: GameSectionTabs(
       selected: GameSection.monitor,
       focusIdPrefix: 'game-capture-tab',
@@ -126,7 +126,7 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       MaterialApp(
-        home: HibikiFocusRoot(
+        home: FushiFocusRoot(
           child: HomeGamePage(
             monitorBuilder: _testMonitorWithSections,
             libraryBuilder: _testLibrary,
@@ -138,11 +138,11 @@ void main() {
     );
     await _settleOnLibrary(tester);
 
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(HomeGamePage)),
     );
     final Finder gameSections =
-        find.byType(HibikiAdjustableSegmented<GameSection>);
+        find.byType(FushiAdjustableSegmented<GameSection>);
     expect(gameSections, findsOneWidget);
     expect(find.text(t.game_dashboard), findsOneWidget);
     expect(find.text(t.game_library), findsOneWidget);
@@ -151,7 +151,7 @@ void main() {
         reason: '800px 页头必须完整呈现首页、游戏库、捕获工作台、设置四个分段');
     expect(
       controller.requestById(
-        const HibikiFocusId('game-library-tab-sections'),
+        const FushiFocusId('game-library-tab-sections'),
       ),
       isTrue,
     );
@@ -168,7 +168,7 @@ void main() {
 
     expect(
       controller.requestById(
-        const HibikiFocusId('game-capture-tab-sections'),
+        const FushiFocusId('game-capture-tab-sections'),
       ),
       isTrue,
       reason: '切到捕获页后，新的稳定分段 ID 必须可聚焦',
@@ -194,7 +194,7 @@ void main() {
       (WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
-        home: HibikiFocusRoot(
+        home: FushiFocusRoot(
           child: HomeGamePage(
             libraryBuilder: _testLibrary,
             dashboardBuilder: _stubDashboard,
@@ -206,12 +206,12 @@ void main() {
     );
     await tester.pump();
 
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(HomeGamePage)),
     );
     expect(
       controller.requestById(
-        const HibikiFocusId('game-library-tab-sections'),
+        const FushiFocusId('game-library-tab-sections'),
       ),
       isTrue,
     );

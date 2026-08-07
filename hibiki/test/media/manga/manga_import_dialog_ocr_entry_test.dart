@@ -63,10 +63,10 @@ const MangaOcrRemoteTarget _capableTarget = MangaOcrRemoteTarget(
 );
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() async {

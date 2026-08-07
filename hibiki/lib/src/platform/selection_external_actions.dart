@@ -15,7 +15,7 @@ class SelectionExternalActions {
   SelectionExternalActions({
     MethodChannel? channel,
     ShareSelectedText? shareSelectedText,
-  })  : _channel = channel ?? HibikiChannels.selectionActions,
+  })  : _channel = channel ?? FushiChannels.selectionActions,
         _shareSelectedText = shareSelectedText ??
             ((String text) async {
               await Share.share(text);

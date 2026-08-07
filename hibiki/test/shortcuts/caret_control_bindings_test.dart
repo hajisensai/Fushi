@@ -13,8 +13,8 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 /// reader lookup, audiobook play/pause stays on L3, and bookmark stays on X.
 void main() {
   group('caret control bindings', () {
-    HibikiShortcutRegistry registryFor(TargetPlatform platform) =>
-        HibikiShortcutRegistry()..loadDefaults(platform);
+    FushiShortcutRegistry registryFor(TargetPlatform platform) =>
+        FushiShortcutRegistry()..loadDefaults(platform);
 
     for (final platform in <TargetPlatform>[
       TargetPlatform.windows,

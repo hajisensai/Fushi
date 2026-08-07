@@ -64,8 +64,8 @@ int _tickCount({required int totalMs, required int tickIntervalMs}) =>
 ///    合并成一次 `applyFocusChangesIfNeeded` 微任务。没有 rebuild、没有平台通道、
 ///    没有逐 tick 的焦点抖动。
 /// 2. 它**不会**重演历史上「触屏滚动被焦点修复拉回」：那条回归的根因是
-///    `HibikiFocusController.ensureFocus()` → `_scheduleReveal` →
-///    `HibikiFocusScroll.ensureVisible(alignment: 0.5)` 的**滚动进视口**动作
+///    `FushiFocusController.ensureFocus()` → `_scheduleReveal` →
+///    `FushiFocusScroll.ensureVisible(alignment: 0.5)` 的**滚动进视口**动作
 ///    （已按 `highlightMode == traditional` 门控，`test/focus/focus_repair_touch_no_scroll_test.dart`）。
 ///    `PageFocusOwnership.reclaim` 里没有任何 reveal/滚动，是另一套子系统；
 ///    不变量由 `test/focus/page_focus_ownership_test.dart` 的「高频 reclaim 不滚动视口」钉住。

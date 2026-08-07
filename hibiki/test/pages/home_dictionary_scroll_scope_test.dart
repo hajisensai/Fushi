@@ -16,7 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 本守卫沿真实接线链逐环钉住（任一环断开即红，非恒真）：
 ///   home_dictionary_page 结果区 → DictionaryPopupWebView（共享查词 WebView）
 ///   → assets/popup/popup.html → <script src="popup.js"> → 460 的 wheel 平滑常量。
-/// 同时钉住结果区仍在 `HibikiAppUiScaleNeutralizer`（净缩放=1）下渲染——这是
+/// 同时钉住结果区仍在 `FushiAppUiScaleNeutralizer`（净缩放=1）下渲染——这是
 /// popup.js wheel 步长按 `documentElement.style.zoom` 折算「zoom-independent」的前提，
 /// 若结果区被全局界面大小缩放，460 的 zoom 折算口径就不再成立。
 void main() {
@@ -67,12 +67,12 @@ void main() {
       final int resultBodyAt =
           source.indexOf('Widget _buildSearchResultBody()');
       final int neutralizerAt =
-          source.indexOf('HibikiAppUiScaleNeutralizer(', resultBodyAt);
+          source.indexOf('FushiAppUiScaleNeutralizer(', resultBodyAt);
       final int webViewAt =
           source.indexOf('DictionaryPopupWebView(', resultBodyAt);
       expect(neutralizerAt, greaterThan(resultBodyAt),
           reason: 'The result body must wrap the result WebView in '
-              'HibikiAppUiScaleNeutralizer.');
+              'FushiAppUiScaleNeutralizer.');
       expect(webViewAt, greaterThan(neutralizerAt),
           reason: 'popup.js refines each wheel notch and divides by '
               'documentElement.style.zoom; this only stays zoom-independent if '

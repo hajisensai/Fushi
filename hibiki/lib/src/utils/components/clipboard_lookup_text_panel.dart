@@ -112,11 +112,11 @@ class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
     );
   }
 
-  /// 字体族 / 字重 / 颜色仍取 MD3 的 [HibikiTypeRoles.pageTitle] 标题角色；
+  /// 字体族 / 字重 / 颜色仍取 MD3 的 [FushiTypeRoles.pageTitle] 标题角色；
   /// 只有**字号**按 [kPopupHeadwordFontSize] 与弹窗 headword 对齐，再乘用户的
   /// 词典字号比例。
   TextStyle _dictionaryHeadwordTextStyle(BuildContext context) {
-    final TextStyle base = HibikiDesignTokens.of(context).type.pageTitle;
+    final TextStyle base = FushiDesignTokens.of(context).type.pageTitle;
     final double requestedScale = widget.dictionaryHeadwordScale;
     final double safeScale =
         requestedScale.isFinite && requestedScale > 0 ? requestedScale : 1.0;

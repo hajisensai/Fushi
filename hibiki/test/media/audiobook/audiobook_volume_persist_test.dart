@@ -7,13 +7,13 @@ import 'package:fushi_core/fushi_core.dart';
 /// 音量按书持久化（BUG-031）：speed/delay/imagePause 都有 repo 读写键，唯独
 /// volume 之前完全没有。这条覆盖新加的 `readVolume`/`updateVolume` 往复，确保
 /// 退出重开书时音量能从 DB 恢复（运行期接线由源码守卫测试兜底）。
-Future<HibikiDatabase> _openDb() async {
+Future<FushiDatabase> _openDb() async {
   final Directory dir =
       await Directory.systemTemp.createTemp('hibiki_volume_test_');
   addTearDown(() async {
     await dir.delete(recursive: true);
   });
-  final HibikiDatabase db = HibikiDatabase(dir.path);
+  final FushiDatabase db = FushiDatabase(dir.path);
   addTearDown(db.close);
   return db;
 }
@@ -21,7 +21,7 @@ Future<HibikiDatabase> _openDb() async {
 void main() {
   test('AudiobookRepository persists per-book volume and round-trips',
       () async {
-    final HibikiDatabase db = await _openDb();
+    final FushiDatabase db = await _openDb();
     final AudiobookRepository repo = AudiobookRepository(db);
 
     // 未写过时回退默认 1.0。
@@ -44,7 +44,7 @@ void main() {
     // 音量滑条细化到 1% 一档（AudiobookVolumeRow.sliderDivisions = 200）后，
     // 0.87 这类非 10% 网格值也要原样写穿/读回；存储本就是裸 double 字符串，
     // 旧的 10% 网格存量值（如 0.4）同样继续有效 —— 双向兼容。
-    final HibikiDatabase db = await _openDb();
+    final FushiDatabase db = await _openDb();
     final AudiobookRepository repo = AudiobookRepository(db);
 
     await repo.updateVolume(bookKey: 'book-fine', volume: 0.87);

@@ -12,8 +12,8 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
   });
 
-  HibikiShortcutRegistry buildRegistry() =>
-      HibikiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
+  FushiShortcutRegistry buildRegistry() =>
+      FushiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
 
   // Pump the standalone visual sub-widget (no AppModel) per the test mandate
   // (must-fix 2). onKeyTap mirrors the page: edit the tapped key's first bound
@@ -22,7 +22,7 @@ void main() {
   // silently cleared (must-fix 1).
   Future<void> pumpView(
     WidgetTester tester,
-    HibikiShortcutRegistry registry,
+    FushiShortcutRegistry registry,
     ShortcutScope scope, {
     required InputBinding addKey,
     Size? surfaceSize,
@@ -69,7 +69,7 @@ void main() {
 
   testWidgets('bound keys render highlighted, unbound keys are not tappable',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     await pumpView(tester, registry, ShortcutScope.reader,
         addKey: const InputBinding(key: LogicalKeyboardKey.f9));
 
@@ -91,7 +91,7 @@ void main() {
   testWidgets(
       'tapping a bound keycap writes through to the registry and persistence',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     // readerOpenMenu default is T -> the T keycap is bound.
     final LogicalKeyboardKey boundKey = registry
         .bindingsFor(ShortcutAction.readerOpenMenu)
@@ -119,7 +119,7 @@ void main() {
   testWidgets(
       'editing keyboard from the figure never clears existing mouseBindings '
       '(must-fix 1 guard)', (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     // audiobookSeekToClickedSentence ships a MouseBinding(1) (middle-click seek)
     // and NO keyboard default. Give it a keyboard binding so its keycap shows up
     // as bound and is tappable; the mouse binding must survive the edit.
@@ -153,7 +153,7 @@ void main() {
   testWidgets(
       'modifier caps are drawn but read-only (TODO-942 partition, not tappable)',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     await pumpView(tester, registry, ShortcutScope.reader,
         addKey: const InputBinding(key: LogicalKeyboardKey.f9));
 
@@ -175,7 +175,7 @@ void main() {
   testWidgets(
       'narrow screen falls back to a horizontal scroll, no overflow '
       '(TODO-942)', (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     // 320 logical px is a phone-width surface; the 13-key function row cannot
     // fit at a readable size, so the view must wrap in a horizontal scroll
     // instead of squashing the caps into unreadable slivers / overflowing.

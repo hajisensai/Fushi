@@ -5,7 +5,7 @@
 /// → start → 轮询（间隔递增有上限）→ 取回 manga.json 写到本地
 /// `<所选文件夹>/manga_ocr_out/manga.json`（图片本就在本地，不回传）。
 ///
-/// 传输契约与 [HibikiRemoteMiningClient] 同构：候选地址来自
+/// 传输契约与 [FushiRemoteMiningClient] 同构：候选地址来自
 /// [SyncRepository.getHibikiClientUrls]、`Basic base64(hibiki:token)` 鉴权、
 /// https 带指纹走钉扎 client。老 host 的 capabilities 无 `mangaOcr` 字段 →
 /// [probe] 返回 null → UI 隐藏远程选项（版本 skew 零破坏）。
@@ -193,8 +193,8 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
 
   @override
   Future<MangaOcrRemoteTarget?> probe() async {
-    final List<HibikiClientUrl> candidates = (await _repo.getHibikiClientUrls())
-        .where((HibikiClientUrl u) => u.enabled)
+    final List<FushiClientUrl> candidates = (await _repo.getHibikiClientUrls())
+        .where((FushiClientUrl u) => u.enabled)
         .toList(growable: false);
     final String? token = await _repo.getHibikiClientToken();
     if (candidates.isEmpty || token == null || token.isEmpty) return null;
@@ -202,7 +202,7 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
     // 「支持但模型明确未下载」的第一台：所有候选都不可用时才拿它回填，让 UI 有
     // 具体原因可讲。一台可用的都不能被它挡住，所以只记不返。
     MangaOcrRemoteTarget? modelsMissingFallback;
-    for (final HibikiClientUrl candidate in candidates) {
+    for (final FushiClientUrl candidate in candidates) {
       final Uri? uri = _uri(candidate.url, '/api/capabilities');
       if (uri == null) continue;
       final (http.Client client, bool closeAfter) =

@@ -150,14 +150,14 @@ void main() {
 
   group('独立分段条', () {
     /// 段标签故意用不可断行的长词：窄屏下 Material 会把每段钳到「可用宽 / 段数」
-    /// 并静默裁字，[HibikiSegmentedStrip] 必须改走横向滚动。
+    /// 并静默裁字，[FushiSegmentedStrip] 必须改走横向滚动。
     Widget buildStrip(double width) {
       return buildTestApp(
         MediaQuery(
           data: MediaQueryData(size: Size(width, 720)),
           child: SizedBox(
             width: width,
-            child: HibikiSegmentedStrip<int>(
+            child: FushiSegmentedStrip<int>(
               segments: const <ButtonSegment<int>>[
                 ButtonSegment<int>(value: 0, label: Text('qBittorrent')),
                 ButtonSegment<int>(
@@ -201,7 +201,7 @@ void main() {
         buildTestApp(
           const MediaQuery(
             data: MediaQueryData(size: Size(320, 640)),
-            child: HibikiDialogFrame(child: Text('内容')),
+            child: FushiDialogFrame(child: Text('内容')),
           ),
         ),
       );
@@ -221,7 +221,7 @@ void main() {
         buildTestApp(
           const MediaQuery(
             data: MediaQueryData(size: Size(1200, 900)),
-            child: HibikiDialogFrame(child: Text('内容')),
+            child: FushiDialogFrame(child: Text('内容')),
           ),
         ),
       );
@@ -236,7 +236,7 @@ void main() {
         buildTestApp(
           const MediaQuery(
             data: MediaQueryData(size: Size(320, 640)),
-            child: HibikiDialogFrame(
+            child: FushiDialogFrame(
               insetPadding: EdgeInsets.all(4),
               child: Text('内容'),
             ),
@@ -251,18 +251,18 @@ void main() {
   });
 
   group('AppBar 动作折叠', () {
-    List<HibikiAppBarAction> actions() => <HibikiAppBarAction>[
-          HibikiAppBarAction(
+    List<FushiAppBarAction> actions() => <FushiAppBarAction>[
+          FushiAppBarAction(
             icon: Icons.drive_file_rename_outline,
             label: '重命名',
             onPressed: _noop2,
           ),
-          HibikiAppBarAction(
+          FushiAppBarAction(
             icon: Icons.sell_outlined,
             label: '标签',
             onPressed: _noop2,
           ),
-          HibikiAppBarAction(
+          FushiAppBarAction(
             icon: Icons.delete_outline,
             label: '删除',
             onPressed: _noop2,

@@ -17,7 +17,7 @@ import 'package:sqlite3/sqlite3.dart' as sqlite3;
 ///   - never delete the main `hibiki.db` (red line);
 ///   - take a `.corrupt-bak` snapshot before deleting any sidecar;
 /// and when the MAIN db itself is corrupt, open must throw the dedicated
-/// [HibikiDatabaseUnrecoverableException] (so the app stops the Retry loop
+/// [FushiDatabaseUnrecoverableException] (so the app stops the Retry loop
 /// instead of looping forever — the very TODO-905 bug).
 void main() {
   late Directory tempDir;
@@ -42,9 +42,9 @@ void main() {
   /// sidecars are checkpointed away cleanly. The migration ladder runs on first
   /// open below; here we only need a valid file with at least one user row, so
   /// we write a row into a table the schema owns (epub_books via raw SQL is
-  /// brittle across migrations — instead drive it through HibikiDatabase once).
+  /// brittle across migrations — instead drive it through FushiDatabase once).
   Future<void> seedHealthyDb() async {
-    final HibikiDatabase db = HibikiDatabase(tempDir.path);
+    final FushiDatabase db = FushiDatabase(tempDir.path);
     await db.setPref('todo905_marker', 'survived');
     await db.close();
   }
@@ -78,7 +78,7 @@ void main() {
         reason: 'the poisoned sidecar must break the naive WAL open');
 
     // The robust open must recover and return all seeded data intact.
-    final HibikiDatabase db = HibikiDatabase(tempDir.path);
+    final FushiDatabase db = FushiDatabase(tempDir.path);
     addTearDown(() async {
       try {
         await db.close();
@@ -96,7 +96,7 @@ void main() {
     final int mainSizeBefore = File(dbPath).lengthSync();
     poisonWalSidecar();
 
-    final HibikiDatabase db = HibikiDatabase(tempDir.path);
+    final FushiDatabase db = FushiDatabase(tempDir.path);
     addTearDown(() async {
       try {
         await db.close();
@@ -122,13 +122,13 @@ void main() {
             'sidecar (data-safety fallback)');
   });
 
-  test('a corrupt MAIN db throws HibikiDatabaseUnrecoverableException',
+  test('a corrupt MAIN db throws FushiDatabaseUnrecoverableException',
       () async {
     // Write garbage as the main db file (not a valid SQLite header).
     File(dbPath).writeAsBytesSync(
         List<int>.generate(4096, (int i) => (i * 31 + 7) & 0xFF));
 
-    final HibikiDatabase db = HibikiDatabase(tempDir.path);
+    final FushiDatabase db = FushiDatabase(tempDir.path);
     addTearDown(() async {
       try {
         await db.close();
@@ -137,7 +137,7 @@ void main() {
 
     await expectLater(
       db.getPref('anything'),
-      throwsA(isA<HibikiDatabaseUnrecoverableException>()),
+      throwsA(isA<FushiDatabaseUnrecoverableException>()),
       reason: 'a corrupt main db must surface a dedicated terminal type so the '
           'app stops the Retry loop instead of looping forever',
     );
@@ -153,8 +153,8 @@ void main() {
     // terminal exception so the main process owns recovery. (A directory -wal
     // cannot be checkpointed away by Layer 1, so Layer 2 is reached, where the
     // non-main process refuses.)
-    final HibikiDatabase popupDb =
-        HibikiDatabase(tempDir.path, isMainProcess: false);
+    final FushiDatabase popupDb =
+        FushiDatabase(tempDir.path, isMainProcess: false);
     addTearDown(() async {
       try {
         await popupDb.close();
@@ -163,7 +163,7 @@ void main() {
 
     await expectLater(
       popupDb.getPref('anything'),
-      throwsA(isA<HibikiDatabaseUnrecoverableException>()),
+      throwsA(isA<FushiDatabaseUnrecoverableException>()),
       reason: 'non-main process must back off on a sidecar error, not delete',
     );
     // It must NOT have deleted the poisoned -wal (the main process owns that).

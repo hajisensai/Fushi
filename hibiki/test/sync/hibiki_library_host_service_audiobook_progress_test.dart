@@ -10,7 +10,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// host-apply 测试（BUG-471）：互联有声书进度 live 端点必须真读写 host 自己的
 /// `audiobook_pos_<bookKey>` + `audiobook_pos_at_<bookKey>` prefs（修复根因：互联
 /// 角色非对称，host 从不回灌自己的有声书位置 pref）。与视频 position host-apply 对称。
-AppModelLibraryHostService _svc(HibikiDatabase db) =>
+AppModelLibraryHostService _svc(FushiDatabase db) =>
     AppModelLibraryHostService(
       db: db,
       dictionaryResourceRoot: Directory.systemTemp,
@@ -21,7 +21,7 @@ AppModelLibraryHostService _svc(HibikiDatabase db) =>
 
 /// host 库需先有该 bookKey 的 Audiobooks 行，putAudiobookPosition 的存在性闸门才
 /// 放行（真实互联场景：syncContent / 有声书包同步先把它推成 host 有声书）。
-Future<void> _seedHostAudiobook(HibikiDatabase db, String bookKey) =>
+Future<void> _seedHostAudiobook(FushiDatabase db, String bookKey) =>
     db.upsertAudiobook(AudiobooksCompanion.insert(
       bookKey: bookKey,
       alignmentFormat: 'srt',
@@ -29,10 +29,10 @@ Future<void> _seedHostAudiobook(HibikiDatabase db, String bookKey) =>
     ));
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() async {

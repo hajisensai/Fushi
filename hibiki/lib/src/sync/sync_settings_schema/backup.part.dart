@@ -192,7 +192,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       if (!mounted) return;
 
       if (Platform.isAndroid || Platform.isIOS) {
-        await HibikiShare.shareFiles(
+        await FushiShare.shareFiles(
           [XFile(tmpPath, mimeType: 'application/zip')],
           subject: filename,
         );
@@ -270,15 +270,15 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       context: context,
       builder: (BuildContext ctx) => StatefulBuilder(
         builder: (BuildContext ctx, StateSetter setLocal) {
-          final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
-          return HibikiDialogFrame(
+          final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+          return FushiDialogFrame(
             maxWidth: 420,
             insetPadding: EdgeInsets.symmetric(
               horizontal: tokens.spacing.card,
               vertical: tokens.spacing.card,
             ),
             scrollable: false,
-            child: HibikiModalSheetFrame(
+            child: FushiModalSheetFrame(
               title: t.backup_export_categories_title,
               scrollable: true,
               bodyPadding: EdgeInsets.fromLTRB(
@@ -415,15 +415,15 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       context: context,
       builder: (BuildContext ctx) => StatefulBuilder(
         builder: (BuildContext ctx, StateSetter setLocal) {
-          final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
-          return HibikiDialogFrame(
+          final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+          return FushiDialogFrame(
             maxWidth: 460,
             insetPadding: EdgeInsets.symmetric(
               horizontal: tokens.spacing.card,
               vertical: tokens.spacing.card,
             ),
             scrollable: false,
-            child: HibikiModalSheetFrame(
+            child: FushiModalSheetFrame(
               title: t.backup_export_choose_books,
               scrollable: true,
               bodyPadding: EdgeInsets.fromLTRB(
@@ -542,15 +542,15 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       context: context,
       builder: (BuildContext ctx) => StatefulBuilder(
         builder: (BuildContext ctx, StateSetter setLocal) {
-          final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
-          return HibikiDialogFrame(
+          final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+          return FushiDialogFrame(
             maxWidth: 460,
             insetPadding: EdgeInsets.symmetric(
               horizontal: tokens.spacing.card,
               vertical: tokens.spacing.card,
             ),
             scrollable: false,
-            child: HibikiModalSheetFrame(
+            child: FushiModalSheetFrame(
               title: t.backup_export_choose_videos,
               scrollable: true,
               bodyPadding: EdgeInsets.fromLTRB(
@@ -928,7 +928,7 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
     BackupMergePreview? preview,
     BackupContentSummary summary,
   ) async {
-    final String dateStr = HibikiTimeFormat.dayKey(meta.createdAt);
+    final String dateStr = FushiTimeFormat.dayKey(meta.createdAt);
     // Default: OVERWRITE (Never break userspace — the existing behavior), and
     // within overwrite, keep this device's settings (importSettings=false).
     _BackupImportMode mode = _BackupImportMode.overwrite;
@@ -956,15 +956,15 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
       context: dialogContext,
       builder: (BuildContext ctx) => StatefulBuilder(
         builder: (BuildContext ctx, StateSetter setLocal) {
-          final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
-          return HibikiDialogFrame(
+          final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+          return FushiDialogFrame(
             maxWidth: 420,
             insetPadding: EdgeInsets.symmetric(
               horizontal: tokens.spacing.card,
               vertical: tokens.spacing.card,
             ),
             scrollable: false,
-            child: HibikiModalSheetFrame(
+            child: FushiModalSheetFrame(
               title: t.backup_import_confirm_title,
               scrollable: true,
               bodyPadding: EdgeInsets.fromLTRB(

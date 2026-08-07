@@ -43,7 +43,7 @@ class SentenceContextDialog extends StatefulWidget {
 }
 
 class _SentenceContextDialogState extends State<SentenceContextDialog>
-    with HibikiPagePlaceholders<SentenceContextDialog> {
+    with FushiPagePlaceholders<SentenceContextDialog> {
   List<String> _prev = const <String>[];
   List<String> _next = const <String>[];
   String _current = '';
@@ -185,13 +185,13 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
     bool current = false,
   }) {
     final ColorScheme scheme = theme.colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    // 走共享 MD3 卡片外壳（HibikiCard）而非裸 Container+BoxDecoration：
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 走共享 MD3 卡片外壳（FushiCard）而非裸 Container+BoxDecoration：
     // 当前句用更高一档的容器令牌 surfaces.search + primary 描边区分，上/下句用
     // surfaces.card。非当前句保留 transparent 1px 描边，令内容起点严格对齐
     // （等价旧的透明 Border.all，避免仅当前句多 1px 内缩）。对齐 Niratan 原设计：
     // 当前句留白更足（12）、上下文句收一档（10）。
-    final Widget card = HibikiCard(
+    final Widget card = FushiCard(
       padding:
           EdgeInsets.symmetric(horizontal: 12, vertical: current ? 12 : 10),
       color: current ? tokens.surfaces.search : tokens.surfaces.card,

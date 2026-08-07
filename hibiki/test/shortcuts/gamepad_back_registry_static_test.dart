@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 /// TODO-700 T1 source-scan guard: 全局「返回」必须经快捷键注册表 (globalBack) 解析，
-/// 不得再有任何把手柄 B 硬编码成 maybePop / HibikiPopIntent 的旁路。删硬绑后 B 才能
+/// 不得再有任何把手柄 B 硬编码成 maybePop / FushiPopIntent 的旁路。删硬绑后 B 才能
 /// 随 globalBack 改键（约束3/5），且阅读器内 B=上一句不被全局返回夺舍（约束2/4）。
 void main() {
   String read(String rel) {
@@ -12,7 +12,7 @@ void main() {
     return f.readAsStringSync();
   }
 
-  test('global_navigation.dart 不再把 gameButtonB 硬绑成 HibikiPopIntent', () {
+  test('global_navigation.dart 不再把 gameButtonB 硬绑成 FushiPopIntent', () {
     final String src = read('lib/src/shortcuts/global_navigation.dart');
     expect(
       src.contains('LogicalKeyboardKey.gameButtonB):'),

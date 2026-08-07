@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// 源码扫描守卫（BUG-818）：独立查词浮窗（`lib/popup_main.dart` 宿主 `PopupDictionaryPage`）
 /// 跑在**完全透明的浮动窗**里（圆角+阴影靠内部卡片画），窗内唯一背景是 `_buildCard` 的
-/// `HibikiPopupSurface`。其色 `appModel.overrideDictionaryColor ?? tokens.surfaces.page`
+/// `FushiPopupSurface`。其色 `appModel.overrideDictionaryColor ?? tokens.surfaces.page`
 /// 会灌入阅读器主题背景色（`_syncDictionaryTheme`），某些预设/自定义主题背景**带 alpha**；
 /// 在透明浮窗上半透明卡片直接透出**桌面壁纸**，浅色壁纸下文字/边界看不清。
 ///
@@ -26,7 +26,7 @@ void main() {
   });
 
   group('BUG-818 查词浮窗卡片背景恒不透明', () {
-    test('_buildCard 的 HibikiPopupSurface color 对主题色补满 alpha=1.0', () {
+    test('_buildCard 的 FushiPopupSurface color 对主题色补满 alpha=1.0', () {
       expect(
         flat.contains(
           'color:(appModel.overrideDictionaryColor??tokens.surfaces.page)'

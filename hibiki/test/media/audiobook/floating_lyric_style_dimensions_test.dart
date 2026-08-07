@@ -15,8 +15,8 @@ import '../../pages/reader_hibiki_page_source_corpus.dart';
 //      + 改值即时 applyFloatingLyricStyle（与透明度那条一致）。
 // 原生 applyStyle(GradientDrawable 圆角) / createLayoutParams(窗宽) / Windows Render
 // 无法 bg 单测，靠这里守住值语义正确端到端传递（原生实机观感另需真机点验）。
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
@@ -57,7 +57,7 @@ void main() {
   });
 
   group('PreferencesRepository 圆角半径', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late PreferencesRepository repo;
 
     setUp(() async {
@@ -99,7 +99,7 @@ void main() {
   });
 
   group('PreferencesRepository 宽度（0=自动哨兵）', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late PreferencesRepository repo;
 
     setUp(() async {

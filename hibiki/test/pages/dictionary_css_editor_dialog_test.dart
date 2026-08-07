@@ -80,7 +80,7 @@ class _FakeCssAppModel extends AppModel {
 }
 
 class _GatedProfileRepository extends ProfileRepository {
-  _GatedProfileRepository(HibikiDatabase db) : super(db, FakeAnkiRepository());
+  _GatedProfileRepository(FushiDatabase db) : super(db, FakeAnkiRepository());
 
   int? pausedApplyProfileId;
   final Completer<void> pausedApplyStarted = Completer<void>();
@@ -123,7 +123,7 @@ class _GatedProfileRepository extends ProfileRepository {
 }
 
 Future<({int profileA, int profileB})> _seedTwoProfiles(
-  HibikiDatabase db,
+  FushiDatabase db,
   _GatedProfileRepository repo,
 ) async {
   await repo.ensureDefaultProfile();
@@ -266,8 +266,8 @@ void main() {
   });
 
   test('every active Profile mutation path rotates the draft scope', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     final ProfileRepository repo = ProfileRepository(
       db,
       FakeAnkiRepository(),
@@ -320,8 +320,8 @@ void main() {
   test(
       'switch then delete target serializes before rejecting an intermediate stale Save',
       () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     final _GatedProfileRepository repo = _GatedProfileRepository(db);
     final ({int profileA, int profileB}) profiles =
         await _seedTwoProfiles(db, repo);
@@ -396,8 +396,8 @@ void main() {
   test(
       'Save lock serializes switch then target overwrite import without crossing scope',
       () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     final _GatedProfileRepository repo = _GatedProfileRepository(db);
     final ({int profileA, int profileB}) profiles =
         await _seedTwoProfiles(db, repo);
@@ -637,8 +637,8 @@ void main() {
     WidgetTester tester,
   ) async {
     final _FakeCssAppModel appModel = _FakeCssAppModel();
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     appModel.wireDatabaseForTesting(db);
 

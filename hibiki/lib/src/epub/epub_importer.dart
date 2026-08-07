@@ -23,7 +23,7 @@ class EpubImporter {
   /// Returns the bookKey (the primary key = sanitized title) on success, or
   /// throws on failure (with cleanup).
   static Future<String> import({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required Uint8List bytes,
     required String fileName,
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
@@ -49,7 +49,7 @@ class EpubImporter {
   /// Preferred over [import] — the file is read inside the isolate,
   /// avoiding a large byte-array copy across the isolate boundary.
   static Future<String> importFromFile({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required String filePath,
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
   }) async {
@@ -64,7 +64,7 @@ class EpubImporter {
   /// Import an EPUB by file path — reads inside the isolate to reduce
   /// peak memory on the main isolate.
   static Future<String> importFromPath({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required String filePath,
     required String fileName,
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
@@ -97,7 +97,7 @@ class EpubImporter {
   /// title is resolved we move it to `bookDirectory(bookKey)` so the on-disk
   /// folder name matches the primary key for freshly-imported books.
   static Future<String> _persistParsed({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required _ParseResult result,
     required String fileName,
     required String tempDir,
@@ -202,7 +202,7 @@ class EpubImporter {
           mediaType: kActivityMediaBook,
           title: storedTitle,
           mediaKey: bookKey,
-          dateKey: HibikiTimeFormat.dayKey(
+          dateKey: FushiTimeFormat.dayKey(
               DateTime.fromMillisecondsSinceEpoch(importedAtMs)),
           timestampMs: importedAtMs,
         );

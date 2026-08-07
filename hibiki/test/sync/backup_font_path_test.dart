@@ -133,7 +133,7 @@ void main() {
       await File(bodyFontPath).writeAsString('FAKE-BODY-FONT');
       await File(uiFontPath).writeAsString('FAKE-UI-FONT');
 
-      final HibikiDatabase srcDb = HibikiDatabase(srcDir.path);
+      final FushiDatabase srcDb = FushiDatabase(srcDir.path);
       await srcDb.setPref(
         'src:reader_ttu:custom_fonts',
         jsonEncode(<Map<String, dynamic>>[
@@ -234,7 +234,7 @@ void main() {
         'FAKE-BODY-FONT',
       );
 
-      final HibikiDatabase dstDb = HibikiDatabase(dstDir.path);
+      final FushiDatabase dstDb = FushiDatabase(dstDir.path);
       addTearDown(dstDb.close);
       final Map<String, String> prefs = await dstDb.getAllPrefs();
 
@@ -298,7 +298,7 @@ void main() {
       addTearDown(() async {
         if (srcDir.existsSync()) await cleanupTempDir(srcDir);
       });
-      final HibikiDatabase onDisk = HibikiDatabase(srcDir.path);
+      final FushiDatabase onDisk = FushiDatabase(srcDir.path);
       final BackupService realLegacy = BackupService(
         db: onDisk,
         dbDirectory: srcDir.path,

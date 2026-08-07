@@ -14,29 +14,29 @@ import 'package:fushi_core/fushi_core.dart';
 /// ② UI 更新排在整段落盘之后（纯白等——缓存在第一个 await 前就已是新值）；③ 一次全局
 /// [AppModel] 广播，重建每个 watch `appProvider` 的 widget，含路由栈下方仍挂载的整棵
 /// 首页/书架树。本测试把修复后的三条不变式钉死，防回潮。
-HibikiDatabase _memDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _memDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 void main() {
   group('BUG-1430 ① 一个逻辑设置 = 一次事务、一次版本 bump', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
 
     setUp(() => db = _memDb());
     tearDown(() async => db.close());
 
     test('setPrefs 多键只 bump 一次版本（逐个 setPref 是每键一次）', () async {
       final int before =
-          await db.getPref(HibikiDatabase.prefsVersionKey) == null
+          await db.getPref(FushiDatabase.prefsVersionKey) == null
               ? 0
               : int.parse(
-                  (await db.getPref(HibikiDatabase.prefsVersionKey))!
+                  (await db.getPref(FushiDatabase.prefsVersionKey))!
                       .replaceFirst('i:', ''),
                 );
 
       await db.setPrefs(<String, String>{'k_a': 'b:true', 'k_b': 'b:false'});
 
       final int afterBatch = int.parse(
-        (await db.getPref(HibikiDatabase.prefsVersionKey))!
+        (await db.getPref(FushiDatabase.prefsVersionKey))!
             .replaceFirst('i:', ''),
       );
       expect(afterBatch, before + 1, reason: '两个 key 属同一个逻辑设置，版本是变更信号、不是每键计数');
@@ -45,7 +45,7 @@ void main() {
       await db.setPref('k_a', 'b:false');
       await db.setPref('k_b', 'b:true');
       final int afterSingles = int.parse(
-        (await db.getPref(HibikiDatabase.prefsVersionKey))!
+        (await db.getPref(FushiDatabase.prefsVersionKey))!
             .replaceFirst('i:', ''),
       );
       expect(afterSingles, afterBatch + 2);
@@ -59,14 +59,14 @@ void main() {
 
     test('空 map 是 no-op，不 bump 版本', () async {
       await db.setPrefs(<String, String>{'seed': 'i:1'});
-      final String? v1 = await db.getPref(HibikiDatabase.prefsVersionKey);
+      final String? v1 = await db.getPref(FushiDatabase.prefsVersionKey);
       await db.setPrefs(<String, String>{});
-      expect(await db.getPref(HibikiDatabase.prefsVersionKey), v1);
+      expect(await db.getPref(FushiDatabase.prefsVersionKey), v1);
     });
   });
 
   group('BUG-1430 ② UI 不等落盘：同步段就写穿内存缓存', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late PreferencesRepository repo;
 
     setUp(() async {
@@ -110,7 +110,7 @@ void main() {
   });
 
   group('BUG-1430 ③ 高频快捷键不触发全局广播', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late PreferencesRepository repo;
     late int notifications;
 

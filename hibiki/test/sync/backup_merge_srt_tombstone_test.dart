@@ -24,7 +24,7 @@ void main() {
     File(p.join(books, 'B1', 'text', 'ch0.html'))
       ..createSync(recursive: true)
       ..writeAsStringSync('<html>hi</html>');
-    final HibikiDatabase src = HibikiDatabase(dbDir);
+    final FushiDatabase src = FushiDatabase(dbDir);
     await src.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: 'B1',
       title: 'B1',
@@ -65,7 +65,7 @@ void main() {
     addTearDown(() => cleanupTempDir(curRoot));
     final String curDbDir = p.join(curRoot.path, 'support');
     Directory(curDbDir).createSync(recursive: true);
-    final HibikiDatabase seed = HibikiDatabase(curDbDir);
+    final FushiDatabase seed = FushiDatabase(curDbDir);
     await seed.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: 'B1',
       title: 'B1',
@@ -90,7 +90,7 @@ void main() {
       zipPath: zip,
     );
 
-    final HibikiDatabase cur = HibikiDatabase(curDbDir);
+    final FushiDatabase cur = FushiDatabase(curDbDir);
     addTearDown(cur.close);
     final int epub = (await cur
             .customSelect(
@@ -116,7 +116,7 @@ void main() {
     addTearDown(() => cleanupTempDir(srcRoot));
     final String srcDbDir = p.join(srcRoot.path, 'support');
     Directory(srcDbDir).createSync(recursive: true);
-    final HibikiDatabase src = HibikiDatabase(srcDbDir);
+    final FushiDatabase src = FushiDatabase(srcDbDir);
     await src.into(src.srtBooks).insert(SrtBooksCompanion.insert(
           uid: 'standalone_srt',
           title: 'Standalone',
@@ -134,7 +134,7 @@ void main() {
     addTearDown(() => cleanupTempDir(curRoot));
     final String curDbDir = p.join(curRoot.path, 'support');
     Directory(curDbDir).createSync(recursive: true);
-    final HibikiDatabase seed = HibikiDatabase(curDbDir);
+    final FushiDatabase seed = FushiDatabase(curDbDir);
     await seed.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: 'Other',
       title: 'Other',
@@ -152,7 +152,7 @@ void main() {
       zipPath: zip,
     );
 
-    final HibikiDatabase cur = HibikiDatabase(curDbDir);
+    final FushiDatabase cur = FushiDatabase(curDbDir);
     addTearDown(cur.close);
     final int srt = (await cur
             .customSelect(

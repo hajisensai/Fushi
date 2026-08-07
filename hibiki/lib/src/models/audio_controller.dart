@@ -42,8 +42,8 @@ class AudioController {
   final StreamController<void> _playPauseHeadsetController =
       StreamController.broadcast();
 
-  HibikiAudioHandler? get audioHandler => _audioHandler;
-  HibikiAudioHandler? _audioHandler;
+  FushiAudioHandler? get audioHandler => _audioHandler;
+  FushiAudioHandler? _audioHandler;
 
   void emitMediaPause() => _mediaPauseController.add(null);
 
@@ -61,8 +61,8 @@ class AudioController {
     if (_audioHandler != null) return;
 
     try {
-      _audioHandler = await ag.AudioService.init<HibikiAudioHandler>(
-        builder: () => HibikiAudioHandler(
+      _audioHandler = await ag.AudioService.init<FushiAudioHandler>(
+        builder: () => FushiAudioHandler(
           onPlayPause: () => _playController.add(null),
           onSeek: (pos) => _seekController.add(pos),
           onRewind: () => _rewindController.add(null),
@@ -82,7 +82,7 @@ class AudioController {
       );
     } catch (e) {
       debugPrint('[Fushi] AudioService.init failed (non-fatal): $e');
-      _audioHandler = HibikiAudioHandler(
+      _audioHandler = FushiAudioHandler(
         onPlayPause: () => _playController.add(null),
         onSeek: (pos) => _seekController.add(pos),
         onRewind: () => _rewindController.add(null),

@@ -42,8 +42,8 @@ void main() {
   });
 
   group('button gate + lyrics boundary (real registry defaults)', () {
-    HibikiShortcutRegistry registry() =>
-        HibikiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
+    FushiShortcutRegistry registry() =>
+        FushiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
 
     test('default middle button (1) is the seek button; others are not', () {
       final reg = registry();

@@ -18,8 +18,8 @@ import 'package:fushi/utils.dart';
 /// 顶部常驻**隐私提示**：`.dmp` 含进程内存快照，可能带用户阅读/查词文本，提醒
 /// 只分享给信任的开发者。
 ///
-/// 视觉 chrome 全部走共享 MD3 组件（[HibikiPageScaffold] / [HibikiCard] /
-/// [HibikiListTile] / [HibikiIconButton] + [HibikiDesignTokens] 字体 token），不
+/// 视觉 chrome 全部走共享 MD3 组件（[FushiPageScaffold] / [FushiCard] /
+/// [FushiListTile] / [FushiIconButton] + [FushiDesignTokens] 字体 token），不
 /// 重新打开本地 MD3 决策（受 md3_design_system_static_test 守卫）。
 class CrashDumpPage extends StatefulWidget {
   const CrashDumpPage({super.key});
@@ -62,7 +62,7 @@ class _CrashDumpPageState extends State<CrashDumpPage> {
   /// 分享单个 `.dmp`（系统分享面板）。
   Future<void> _shareDump(File dump) async {
     try {
-      await HibikiShare.shareFiles(
+      await FushiShare.shareFiles(
         <XFile>[XFile(dump.path, mimeType: 'application/octet-stream')],
         subject: t.crash_dump_share_subject,
       );
@@ -71,21 +71,21 @@ class _CrashDumpPageState extends State<CrashDumpPage> {
     }
   }
 
-  String _formatSize(int bytes) => HibikiByteFormat.bytes(bytes);
+  String _formatSize(int bytes) => FushiByteFormat.bytes(bytes);
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme cs = Theme.of(context).colorScheme;
-    return HibikiPageScaffold(
+    return FushiPageScaffold(
       title: t.crash_dump_label(n: _dumps.length),
       actions: <Widget>[
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.folder_open_outlined,
           tooltip: t.crash_dump_open_folder,
           onTap: _openFolder,
         ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.refresh,
           tooltip: t.refresh,
           onTap: _refresh,
@@ -97,7 +97,7 @@ class _CrashDumpPageState extends State<CrashDumpPage> {
           // 隐私提示（常驻）：.dmp 含进程内存快照。
           Padding(
             padding: const EdgeInsets.all(12),
-            child: HibikiCard(
+            child: FushiCard(
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
@@ -138,12 +138,12 @@ class _CrashDumpPageState extends State<CrashDumpPage> {
                       final String subtitle = stat == null
                           ? ''
                           : '${_formatSize(stat.size)}  ·  ${stat.modified}';
-                      return HibikiListTile(
+                      return FushiListTile(
                         selected: true,
                         icon: Icons.bug_report_outlined,
                         title: name,
                         subtitle: subtitle,
-                        trailing: HibikiIconButton(
+                        trailing: FushiIconButton(
                           icon: Icons.share_outlined,
                           tooltip: t.crash_dump_share,
                           onTap: () => _shareDump(dump),

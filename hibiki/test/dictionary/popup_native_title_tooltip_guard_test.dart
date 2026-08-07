@@ -2,7 +2,7 @@
 //
 // 根因：Windows 桌面 WebView2 走离屏合成（CompositionController → DirectComposition
 // visual → Windows Graphics Capture → Flutter texture，父 HWND 是原点(0,0) 不可见子窗口），
-// 可见像素再经 HibikiAppUiScale 的 FittedBox 拉伸。原生 `title` 工具提示是 WebView2 生成的
+// 可见像素再经 FushiAppUiScale 的 FittedBox 拉伸。原生 `title` 工具提示是 WebView2 生成的
 // 独立 top-level OS 窗口，按「父 HWND 原点 + WebView 内部未拉伸逻辑坐标」定位，与纹理真正
 // 合成的位置乖离 → 提示「飞」到窗口角落（截图：视频上查词弹窗 tune 按钮提示跑到画面右上角）。
 // 修复：改用 DOM 内自绘 `.hoshi-btn-tip`（随纹理正确合成），并移除原生 title。

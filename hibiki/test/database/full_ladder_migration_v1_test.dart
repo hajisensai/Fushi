@@ -31,8 +31,8 @@ const String _kTitleB = 'NekoBook';
 /// Seeds a faithful `user_version = 1` baseline and the rows the ladder must
 /// carry through to the current schema. [startVersion] lets the same seed serve
 /// the v2/v3 entry-point cases (the ladder is a superset from any lower start).
-Future<HibikiDatabase> _openV1Baseline({int startVersion = 1}) async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV1Baseline({int startVersion = 1}) async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -212,7 +212,7 @@ void main() {
       // Same seed but the DB already declares v2 — from<2 (dictionary type) must
       // NOT re-fire and error. We add the type column up front to mirror a real
       // v2 DB.
-      final db = HibikiDatabase.forTesting(
+      final db = FushiDatabase.forTesting(
         NativeDatabase.memory(
           setup: (rawDb) {
             rawDb.execute('PRAGMA foreign_keys = OFF');

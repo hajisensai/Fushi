@@ -128,7 +128,7 @@ void main() {
 
   group('resolveGamepad in the video scope', () {
     test('resolves every expected button to its video action', () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadDefaults(TargetPlatform.windows);
       expected.forEach((GamepadButton button, ShortcutAction action) {
         expect(
@@ -140,7 +140,7 @@ void main() {
     });
 
     test('an unbound button resolves to null (falls back to focus nav)', () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadDefaults(TargetPlatform.windows);
       // L3 / R3 / Select / Mode are intentionally left free for user rebind.
       expect(
@@ -183,7 +183,7 @@ void main() {
     }
 
     test('untouched video actions get their new gamepad defaults restored', () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry();
+      final FushiShortcutRegistry registry = FushiShortcutRegistry();
       registry.loadFromJsonString(
         jsonEncode(v4Snapshot()),
         TargetPlatform.windows,
@@ -202,7 +202,7 @@ void main() {
         '(never clobber a user edit)', () {
       // User removed Space from play/pause → the migration must leave their
       // snapshot alone, so A stays unbound for that action.
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry();
+      final FushiShortcutRegistry registry = FushiShortcutRegistry();
       registry.loadFromJsonString(
         jsonEncode(
           v4Snapshot(

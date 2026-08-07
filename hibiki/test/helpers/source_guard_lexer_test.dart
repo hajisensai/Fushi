@@ -67,11 +67,11 @@ final b = \'\'\'{ js }\'\'\';
   });
 
   group('compactCode', () {
-    const String needle = 'HibikiToast.show(msg: t.failed,';
+    const String needle = 'FushiToast.show(msg: t.failed,';
 
     test('跨 dart format 换行仍命中真实调用', () {
       const String src = '''
-HibikiToast.show(
+FushiToast.show(
   msg: t.failed,
   severity: ToastSeverity.error,
 );
@@ -81,8 +81,8 @@ HibikiToast.show(
 
     test('整行、行尾与块注释里的调用均不命中', () {
       for (final String src in <String>[
-        '// HibikiToast.show(msg: t.failed, severity: ToastSeverity.error);',
-        'final ok = true; // HibikiToast.show(msg: t.failed,',
+        '// FushiToast.show(msg: t.failed, severity: ToastSeverity.error);',
+        'final ok = true; // FushiToast.show(msg: t.failed,',
         '/*\nHibikiToast.show(msg: t.failed, severity: x);\n*/',
       ]) {
         expect(compactCode(src), isNot(contains(compactCode(needle))),
@@ -92,7 +92,7 @@ HibikiToast.show(
 
     test('needle 的右边界标点防止 i18n key 前缀假绿', () {
       const String renamed =
-          'HibikiToast.show(msg: t.failed_v2, severity: ToastSeverity.error);';
+          'FushiToast.show(msg: t.failed_v2, severity: ToastSeverity.error);';
       expect(compactCode(renamed), isNot(contains(compactCode(needle))));
     });
   });

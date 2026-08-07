@@ -5,15 +5,15 @@ import 'package:fushi/src/focus/hibiki_focus_target.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 
 /// TODO-712 守卫：阅读器有声书播放控制条的所有可点按钮必须注册为应用焦点目标
-/// （[HibikiFocusTarget]），否则在 `experimentalFocusNavigation` 下方向键 / 手柄
-/// 方向只在已注册的 [HibikiFocusTarget] 之间移动，永远跳不到播放条这几个按钮
+/// （[FushiFocusTarget]），否则在 `experimentalFocusNavigation` 下方向键 / 手柄
+/// 方向只在已注册的 [FushiFocusTarget] 之间移动，永远跳不到播放条这几个按钮
 /// （用户报「这三个按钮好像没焦点」）。
 ///
-/// 同时验证 A / Enter 能真正按动按钮：[HibikiFocusTarget] 持有焦点节点，
+/// 同时验证 A / Enter 能真正按动按钮：[FushiFocusTarget] 持有焦点节点，
 /// [ActivateIntent] 须从该焦点节点**向上**走 Actions 链命中按钮回调，所以每个
-/// 按钮在 [HibikiFocusTarget] 之上挂了 `Actions{ActivateIntent → onPressed}`。
+/// 按钮在 [FushiFocusTarget] 之上挂了 `Actions{ActivateIntent → onPressed}`。
 void main() {
-  testWidgets('play bar buttons are all registered HibikiFocusTargets',
+  testWidgets('play bar buttons are all registered FushiFocusTargets',
       (tester) async {
     final controller = AudiobookPlayerController();
     addTearDown(controller.dispose);
@@ -30,23 +30,23 @@ void main() {
       ),
     );
 
-    // 每个 IconButton 必须有一个 HibikiFocusTarget 祖先。
+    // 每个 IconButton 必须有一个 FushiFocusTarget 祖先。
     final Iterable<IconButton> buttons =
         tester.widgetList<IconButton>(find.byType(IconButton));
     expect(buttons.length, 5, reason: '播放条应有 5 个图标按钮：上一句/播放/下一句/follow/设置');
     for (final Element el in find.byType(IconButton).evaluate()) {
       final Finder target = find.ancestor(
         of: find.byWidget(el.widget),
-        matching: find.byType(HibikiFocusTarget),
+        matching: find.byType(FushiFocusTarget),
       );
       expect(target, findsOneWidget,
-          reason: '每个播放条按钮都必须被 HibikiFocusTarget 包裹（TODO-712）');
+          reason: '每个播放条按钮都必须被 FushiFocusTarget 包裹（TODO-712）');
     }
 
     // 五个稳定的焦点 id 都在场。
     final Set<String> ids = tester
-        .widgetList<HibikiFocusTarget>(find.byType(HibikiFocusTarget))
-        .map((HibikiFocusTarget w) => w.id.value)
+        .widgetList<FushiFocusTarget>(find.byType(FushiFocusTarget))
+        .map((FushiFocusTarget w) => w.id.value)
         .toSet();
     expect(
       ids,
@@ -84,13 +84,13 @@ void main() {
     // element context 上发 ActivateIntent，复刻真实派发路径。
     final Finder settingsTarget = find.byWidgetPredicate(
       (Widget w) =>
-          w is HibikiFocusTarget && w.id.value == 'audiobook_settings',
+          w is FushiFocusTarget && w.id.value == 'audiobook_settings',
     );
     expect(settingsTarget, findsOneWidget);
 
-    // 起点取 HibikiFocusTarget 自身的 element（真实焦点落在它内部的 Focus
+    // 起点取 FushiFocusTarget 自身的 element（真实焦点落在它内部的 Focus
     // 节点上）。ActivateIntent 从这里向上走 Actions 链，会命中我们在
-    // HibikiFocusTarget **之上**显式挂的 `Actions{ActivateIntent → onPressed}`
+    // FushiFocusTarget **之上**显式挂的 `Actions{ActivateIntent → onPressed}`
     // ——而不会经过 IconButton 内部（在子树下方）。CallbackAction.onInvoke 返回
     // null 属正常（intent 已被处理），故断言改看副作用是否发生，而非返回值。
     final BuildContext targetContext = tester.element(settingsTarget);

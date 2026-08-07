@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// TODO-913 收藏夹导出修复的源码守卫：
 /// ① 收藏词 ☆ 按钮已复活并接 favoriteEntry 桥（FavoriteWords 写入入口不得再丢）。
 /// ② 制卡句进导出管线（getAllMinedSentences → buildMinedExport）。
-/// ③ 导出抽屉走 MD3 范式（HibikiModalSheetFrame + HibikiDesignTokens），范围含 allMined。
+/// ③ 导出抽屉走 MD3 范式（FushiModalSheetFrame + FushiDesignTokens），范围含 allMined。
 /// ④ 不回归 BUG-123：竖排选区 rt/rp 遮罩仍在 reader_content_styles.dart。
 void main() {
   test('① popup.js 复活收藏按钮且调 favoriteEntry（FavoriteWords 写入入口）', () {
@@ -38,8 +38,8 @@ void main() {
     expect(src, contains('t.collection_export_all_mined'));
     // 抽屉外壳走 MD3 范式，不再裸 showModalBottomSheet + 手写 Padding(16)。
     expect(src, contains('class _ExportSheet'));
-    expect(src, contains('HibikiModalSheetFrame('));
-    expect(src, contains('HibikiDesignTokens.of(context)'));
+    expect(src, contains('FushiModalSheetFrame('));
+    expect(src, contains('FushiDesignTokens.of(context)'));
     // 门控放开为「收藏句或制卡句」任一存在。
     expect(src, contains('_hasExportableItems'));
   });
@@ -75,7 +75,7 @@ void main() {
         File('lib/src/pages/implementations/collections_page.dart')
             .readAsStringSync();
     // 范围从单选 RadioListTile 升级为可勾选复选行 + 去重开关行；TODO-936 把这两类
-    // 控件从 CheckboxListTile/SwitchListTile 迁到共享 MD3 行（HibikiListItem +
+    // 控件从 CheckboxListTile/SwitchListTile 迁到共享 MD3 行（FushiListItem +
     // 裸 Checkbox/Switch，见 md3_design_system_static_test 守卫），故守卫改断言迁移后
     // 的共享行 helper + 裸控件存在（行为等价：多选勾选 + 去重开关仍在）。
     expect(src, contains('Widget _exportCheckRow('));

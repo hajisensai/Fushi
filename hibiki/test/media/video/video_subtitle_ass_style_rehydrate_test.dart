@@ -65,7 +65,7 @@ void main() {
     expect(firstStyle.outlineColorArgb, 0xFF773D1A); // BGR &H001A3D77
 
     // 2) DB 往返：saveCues -> loadCues 丢掉 markup（缺陷所在，故不可只信 DB 缓存）。
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
     await repo.saveVideoBook(VideoBooksCompanion(

@@ -47,11 +47,11 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
   });
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late AppModel appModel;
 
   setUp(() async {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     appModel = AppModel(testPlatformServices())..wireDatabaseForTesting(db);

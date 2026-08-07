@@ -10,7 +10,7 @@ import 'package:fushi/utils.dart';
 ///
 /// 与下载页的 [MokuroMoeCatalogDialog] 共用同一个内容体 [MokuroMoeCatalogView]，
 /// 差别只在 chrome：对话框有标题栏与关闭按钮，页面走库页统一的
-/// [HibikiPageHeader] + 导航条，且没有「关闭」这个动作（视图不是弹层）。
+/// [FushiPageHeader] + 导航条，且没有「关闭」这个动作（视图不是弹层）。
 ///
 /// 下载不在本页阻塞：选卷后入队 app 级共享队列，切走视图或切走 tab 都继续跑，
 /// 落库完成后书架视图自动刷新（书架监听队列的 importedCount 增量）。
@@ -24,7 +24,7 @@ class MokuroMoeCatalogPage extends ConsumerStatefulWidget {
   /// 目标数据库（查已在库书目用；下载落库由队列持有的 db 完成）。
   /// null = 取 [AppModel.database]——本页自己取而不是让库页壳传，是为了让漫画库页
   /// 保持无 provider 依赖（接线守卫测试能纯构造它，不必搭一整套 ProviderScope）。
-  final HibikiDatabase? db;
+  final FushiDatabase? db;
 
   /// 库页视图导航条（由 `MediaLibraryShell` 传入，作为页头主内容与动作同一行）。
   final Widget? navigation;
@@ -48,7 +48,7 @@ class _MokuroMoeCatalogPageState extends ConsumerState<MokuroMoeCatalogPage> {
   @override
   Widget build(BuildContext context) {
     final AppModel appModel = ref.watch(appProvider);
-    // 与书架 / 视频 / 来源同构：DesktopContentLayout + HibikiPageHeader，
+    // 与书架 / 视频 / 来源同构：DesktopContentLayout + FushiPageHeader，
     // 外层 Scaffold 由 HomePage 提供。
     return DesktopContentLayout(
       kind: DesktopContentKind.readerShelf,
@@ -65,7 +65,7 @@ class _MokuroMoeCatalogPageState extends ConsumerState<MokuroMoeCatalogPage> {
                 final Widget? navigation = widget.navigation;
                 if (navigation != null) {
                   final String? seriesName = snapshot.seriesName;
-                  return HibikiPageHeader.customTitle(
+                  return FushiPageHeader.customTitle(
                     title: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -85,7 +85,7 @@ class _MokuroMoeCatalogPageState extends ConsumerState<MokuroMoeCatalogPage> {
                     ),
                   );
                 }
-                return HibikiPageHeader(
+                return FushiPageHeader(
                   title: t.manga_online_catalog_title,
                   subtitle: snapshot.seriesName,
                 );
@@ -95,11 +95,11 @@ class _MokuroMoeCatalogPageState extends ConsumerState<MokuroMoeCatalogPage> {
             // 正文自带内边距：readerShelf 的 desktopContentPadding 已恒为零
             // （PR#675 撤强制侧向留白），而 [MokuroMoeCatalogView] 自身零内边距，
             // 桌面上搜索框与封面网格会直接贴窗口边。留白取 spacing.page，与上方
-            // [HibikiPageHeader] 的横向内边距同源（对话框语境走
+            // [FushiPageHeader] 的横向内边距同源（对话框语境走
             // [MokuroMoeCatalogDialog]，由 ImportDialogFrame 供内边距，不受影响）。
             child: Padding(
               padding: EdgeInsets.symmetric(
-                horizontal: HibikiDesignTokens.of(context).spacing.page,
+                horizontal: FushiDesignTokens.of(context).spacing.page,
               ),
               child: MokuroMoeCatalogView(
                 db: widget.db ?? appModel.database,

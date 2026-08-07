@@ -13,15 +13,15 @@ import 'package:fushi_core/fushi_core.dart';
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
 
-  Future<HibikiDatabase> openDb() async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+  Future<FushiDatabase> openDb() async {
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     return db;
   }
 
-  Future<({HibikiDatabase db, MediaCollectionRow col})> seed() async {
-    final HibikiDatabase db = await openDb();
+  Future<({FushiDatabase db, MediaCollectionRow col})> seed() async {
+    final FushiDatabase db = await openDb();
     final int cid = await db.createMediaCollection('C');
     await db.addToCollection(cid, MediaKind.epub, 'k1');
     await db.addToCollection(cid, MediaKind.epub, 'k2');
@@ -44,7 +44,7 @@ void main() {
 
   Widget wrapPage(
     MediaCollectionRow col,
-    HibikiDatabase db, {
+    FushiDatabase db, {
     void Function(String mediaType, String entryKey)? onOpenMember,
   }) =>
       TranslationProvider(
@@ -61,7 +61,7 @@ void main() {
 
   testWidgets('长按整卡拖到新坑位 → sortIndex 真写穿 getCollectionItems',
       (WidgetTester tester) async {
-    final ({HibikiDatabase db, MediaCollectionRow col}) s = await seed();
+    final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
     await tester.pumpWidget(wrapPage(s.col, s.db));
     await tester.pumpAndSettle();
 
@@ -96,7 +96,7 @@ void main() {
 
   testWidgets('长按原地松手弹菜单（移出 + 打开）；移出真调 removeFromCollection',
       (WidgetTester tester) async {
-    final ({HibikiDatabase db, MediaCollectionRow col}) s = await seed();
+    final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
     await tester.pumpWidget(wrapPage(s.col, s.db, onOpenMember: (_, __) {}));
     await tester.pumpAndSettle();
 
@@ -122,7 +122,7 @@ void main() {
   });
 
   testWidgets('菜单「打开」真回调 onOpenMember', (WidgetTester tester) async {
-    final ({HibikiDatabase db, MediaCollectionRow col}) s = await seed();
+    final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
     final List<String> opened = <String>[];
     await tester.pumpWidget(wrapPage(
       s.col,
@@ -147,7 +147,7 @@ void main() {
   });
 
   testWidgets('筛选态拖拽保序合并：隐藏成员留在原下标（不被挤到表尾）', (WidgetTester tester) async {
-    final HibikiDatabase db = await openDb();
+    final FushiDatabase db = await openDb();
     final int cid = await db.createMediaCollection('C');
     for (final String k in <String>['k1', 'k2', 'k3', 'k4', 'k5']) {
       await db.addToCollection(cid, MediaKind.epub, k);
@@ -205,7 +205,7 @@ void main() {
 
   testWidgets('详情页给成员卡 builder 注入可用的「移出合集」回调（键盘/手柄移出入口）',
       (WidgetTester tester) async {
-    final ({HibikiDatabase db, MediaCollectionRow col}) s = await seed();
+    final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
     final Map<String, VoidCallback> injected = <String, VoidCallback>{};
     Widget? capturingBuilder(String mediaType, String entryKey,
         {VoidCallback? onRemoveFromCollection}) {
@@ -245,7 +245,7 @@ void main() {
   // ── 「删除合集」连同成员本体一起删（复选框，默认不删=只解链老行为）───────────
   Widget wrapPageWithDelete(
     MediaCollectionRow col,
-    HibikiDatabase db, {
+    FushiDatabase db, {
     Future<void> Function(List<MediaCollectionItemRow> members)?
         onDeleteMembersMedia,
   }) =>
@@ -263,7 +263,7 @@ void main() {
 
   testWidgets('删除合集：未注入删本体回调 → 弹窗无复选框，仅解散容器（老行为零变化）',
       (WidgetTester tester) async {
-    final ({HibikiDatabase db, MediaCollectionRow col}) s = await seed();
+    final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
     await tester.pumpWidget(wrapPage(s.col, s.db)); // 不传 onDeleteMembersMedia
     await tester.pumpAndSettle();
 
@@ -279,7 +279,7 @@ void main() {
   });
 
   testWidgets('删除合集：复选框默认不勾 → 回调不触发，只解散容器', (WidgetTester tester) async {
-    final ({HibikiDatabase db, MediaCollectionRow col}) s = await seed();
+    final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
     final List<MediaCollectionItemRow> passed = <MediaCollectionItemRow>[];
     await tester.pumpWidget(wrapPageWithDelete(
       s.col,
@@ -301,7 +301,7 @@ void main() {
   });
 
   testWidgets('删除合集：勾选「同时删除其中的书」→ 回调收到全部成员再解散容器', (WidgetTester tester) async {
-    final ({HibikiDatabase db, MediaCollectionRow col}) s = await seed();
+    final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
     final List<String> passed = <String>[];
     await tester.pumpWidget(wrapPageWithDelete(
       s.col,

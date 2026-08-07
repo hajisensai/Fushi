@@ -5,24 +5,24 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-Future<HibikiDatabase> _openDb() async {
-  final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
 
 /// FK cascade（foreign_keys=ON）只在真实库 PRAGMA 下生效，与 tags_test 一致。
-Future<HibikiDatabase> _openRealDb() async {
+Future<FushiDatabase> _openRealDb() async {
   final dir = await Directory.systemTemp.createTemp('hibiki_video_tags_test_');
   addTearDown(() async {
     await dir.delete(recursive: true);
   });
-  final db = HibikiDatabase(dir.path);
+  final db = FushiDatabase(dir.path);
   addTearDown(db.close);
   return db;
 }
 
-Future<String> _insertVideoBook(HibikiDatabase db, String uid) async {
+Future<String> _insertVideoBook(FushiDatabase db, String uid) async {
   await db.upsertVideoBook(VideoBooksCompanion(
     bookUid: Value(uid),
     title: Value(uid),

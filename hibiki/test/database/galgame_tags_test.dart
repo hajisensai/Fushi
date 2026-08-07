@@ -8,24 +8,24 @@ import 'package:fushi_core/fushi_core.dart';
 ///
 /// 这套测试钉的是**上层筛选栏 / 标签管理页早已共用、唯独游戏接不进来**的那个缺口：
 /// 游戏必须与书 / 字幕书 / 视频走同一个标签池、同一套 AND 语义筛选、同一份计数。
-Future<HibikiDatabase> _openDb() async {
-  final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
 
-/// 真实文件库：`HibikiDatabase(dir)` 才会走 `PRAGMA foreign_keys = ON`，
+/// 真实文件库：`FushiDatabase(dir)` 才会走 `PRAGMA foreign_keys = ON`，
 /// cascade 断言必须用这个（内存 forTesting 不开外键）。
-Future<HibikiDatabase> _openRealDb() async {
+Future<FushiDatabase> _openRealDb() async {
   final Directory dir =
       await Directory.systemTemp.createTemp('hibiki_galgame_tags_test_');
   addTearDown(() async => dir.delete(recursive: true));
-  final HibikiDatabase db = HibikiDatabase(dir.path);
+  final FushiDatabase db = FushiDatabase(dir.path);
   addTearDown(db.close);
   return db;
 }
 
-Future<String> _insertGame(HibikiDatabase db, String id) async {
+Future<String> _insertGame(FushiDatabase db, String id) async {
   await db.upsertGalgame(GalgamesCompanion.insert(
     id: id,
     name: id,
@@ -39,7 +39,7 @@ Future<String> _insertGame(HibikiDatabase db, String id) async {
 void main() {
   group('游戏标签 CRUD', () {
     test('加标签后可读回，且与书/视频共用同一个标签池', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       final String game = await _insertGame(db, 'g1');
       final int tagId = await db.createTag('神作', 0xFFEF5350);
 
@@ -53,7 +53,7 @@ void main() {
     });
 
     test('重复 addTagToGame 幂等（撞 {gameId, tagId} UNIQUE 不抛、不重复行）', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       final String game = await _insertGame(db, 'g1');
       final int tagId = await db.createTag('神作', 0xFF000000);
 
@@ -65,7 +65,7 @@ void main() {
     });
 
     test('removeTagFromGame 只摘这一条，同标签的其它游戏不受影响', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       final String a = await _insertGame(db, 'g1');
       final String b = await _insertGame(db, 'g2');
       final int tagId = await db.createTag('神作', 0xFF000000);
@@ -79,7 +79,7 @@ void main() {
     });
 
     test('setTagsForGame 按差集增删（不整表重建，不动其它游戏）', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       final String game = await _insertGame(db, 'g1');
       final String other = await _insertGame(db, 'g2');
       final int keep = await db.createTag('保留', 0xFF000000);
@@ -100,7 +100,7 @@ void main() {
     });
 
     test('setTagsForGame 传空集 = 清空该游戏全部标签', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       final String game = await _insertGame(db, 'g1');
       await db.addTagToGame(game, await db.createTag('a', 0xFF000000));
       await db.addTagToGame(game, await db.createTag('b', 0xFF000001));
@@ -113,7 +113,7 @@ void main() {
 
   group('AND 语义筛选（getGameIdsForAllTags）', () {
     test('只返回同时含全部选中标签的游戏', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       final String both = await _insertGame(db, 'both');
       final String onlyA = await _insertGame(db, 'onlyA');
       await _insertGame(db, 'none');
@@ -129,7 +129,7 @@ void main() {
     });
 
     test('空标签集返回空集（调用方据此判定「不过滤」）', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       final String game = await _insertGame(db, 'g1');
       await db.addTagToGame(game, await db.createTag('A', 0xFF000000));
 
@@ -139,7 +139,7 @@ void main() {
 
   group('外键 cascade（真实库，foreign_keys=ON）', () {
     test('删游戏自动清掉它的标签映射，不留孤儿', () async {
-      final HibikiDatabase db = await _openRealDb();
+      final FushiDatabase db = await _openRealDb();
       final String game = await _insertGame(db, 'g1');
       final int tagId = await db.createTag('神作', 0xFF000000);
       await db.addTagToGame(game, tagId);
@@ -152,7 +152,7 @@ void main() {
     });
 
     test('删标签自动清掉全部游戏上的该标签映射', () async {
-      final HibikiDatabase db = await _openRealDb();
+      final FushiDatabase db = await _openRealDb();
       final String a = await _insertGame(db, 'g1');
       final String b = await _insertGame(db, 'g2');
       final int tagId = await db.createTag('神作', 0xFF000000);
@@ -169,7 +169,7 @@ void main() {
 
   group('标签管理页统计（countBooksForTag）', () {
     test('游戏计入总数，与 EPUB / 视频相加不重不漏', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       final int tagId = await db.createTag('神作', 0xFF000000);
 
       expect(await db.countBooksForTag(tagId), 0);

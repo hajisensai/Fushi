@@ -21,8 +21,8 @@ import 'package:share_plus/share_plus.dart';
 /// （`Share.shareFiles`，`isWithResult=false`，从根上绕开 `ShareSuccessManager`
 /// 整套回调状态机——它是错误的唯一来源），并叠加进程内**防重入**串行化，
 /// 避免在面板呈现的瞬间被重复触发而堆叠两个分享面板。
-class HibikiShare {
-  HibikiShare._();
+class FushiShare {
+  FushiShare._();
 
   /// 防重入：全 App 同一时刻只允许一个系统分享面板在途。
   static bool _sharing = false;

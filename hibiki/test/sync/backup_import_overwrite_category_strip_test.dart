@@ -34,7 +34,7 @@ void main() {
     File(p.join(books, 'B1', 'text', 'ch0.html'))
       ..createSync(recursive: true)
       ..writeAsStringSync('<html>hi</html>');
-    final HibikiDatabase src = HibikiDatabase(dbDir);
+    final FushiDatabase src = FushiDatabase(dbDir);
     await src.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: 'B1',
       title: 'B1',
@@ -64,11 +64,11 @@ void main() {
     return zip;
   }
 
-  Future<int> countRows(HibikiDatabase db, String table) async =>
+  Future<int> countRows(FushiDatabase db, String table) async =>
       (await db.customSelect('SELECT COUNT(*) c FROM $table').getSingle())
           .data['c'] as int;
 
-  Future<HibikiDatabase> importInto(String zip, Set<BackupCategory> cats,
+  Future<FushiDatabase> importInto(String zip, Set<BackupCategory> cats,
       {required Directory curRoot}) async {
     final String curDbDir = p.join(curRoot.path, 'support');
     Directory(curDbDir).createSync(recursive: true);
@@ -79,7 +79,7 @@ void main() {
       categories: cats,
       booksRootDirectory: p.join(curRoot.path, 'documents', 'hoshi_books'),
     );
-    return HibikiDatabase(curDbDir);
+    return FushiDatabase(curDbDir);
   }
 
   test('untick books → no book rows or content on overwrite', () async {
@@ -87,7 +87,7 @@ void main() {
     final Directory curRoot =
         await Directory.systemTemp.createTemp('ovcat_c1_');
     addTearDown(() => cleanupTempDir(curRoot));
-    final HibikiDatabase cur = await importInto(
+    final FushiDatabase cur = await importInto(
         zip, BackupCategory.values.toSet()..remove(BackupCategory.books),
         curRoot: curRoot);
     addTearDown(cur.close);
@@ -108,7 +108,7 @@ void main() {
     final Directory curRoot =
         await Directory.systemTemp.createTemp('ovcat_c2_');
     addTearDown(() => cleanupTempDir(curRoot));
-    final HibikiDatabase cur = await importInto(
+    final FushiDatabase cur = await importInto(
         zip, BackupCategory.values.toSet()..remove(BackupCategory.statistics),
         curRoot: curRoot);
     addTearDown(cur.close);
@@ -122,7 +122,7 @@ void main() {
     final Directory curRoot =
         await Directory.systemTemp.createTemp('ovcat_c3_');
     addTearDown(() => cleanupTempDir(curRoot));
-    final HibikiDatabase cur = await importInto(
+    final FushiDatabase cur = await importInto(
         zip, BackupCategory.values.toSet()..remove(BackupCategory.progress),
         curRoot: curRoot);
     addTearDown(cur.close);
@@ -135,7 +135,7 @@ void main() {
     final Directory curRoot =
         await Directory.systemTemp.createTemp('ovcat_c4_');
     addTearDown(() => cleanupTempDir(curRoot));
-    final HibikiDatabase cur =
+    final FushiDatabase cur =
         await importInto(zip, BackupCategory.values.toSet(), curRoot: curRoot);
     addTearDown(cur.close);
     expect(await countRows(cur, 'epub_books'), 1);

@@ -29,7 +29,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory docsDir;
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() async {
     docsDir = await Directory.systemTemp.createTemp('hibiki_heal_dirty_');
@@ -43,7 +43,7 @@ void main() {
         return null;
       },
     );
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() async {

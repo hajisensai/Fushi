@@ -22,10 +22,10 @@ import '../helpers/test_platform_services.dart';
 class _MangaTestAppModel extends AppModel {
   _MangaTestAppModel(this._db) : super(testPlatformServices());
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
 
   @override
-  HibikiDatabase get database => _db;
+  FushiDatabase get database => _db;
 
   @override
   bool get lowMemoryMode => false;
@@ -116,7 +116,7 @@ String _mangaJson() {
 
 Future<void> _pumpBook(
   WidgetTester tester,
-  HibikiDatabase db,
+  FushiDatabase db,
   _MangaTestAppModel appModel,
   String bookKey,
   Directory bookDir, {
@@ -177,8 +177,8 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final _MangaTestAppModel appModel = _MangaTestAppModel(db);
     final Directory bookDir = _bookDir();
@@ -203,8 +203,8 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final _MangaTestAppModel appModel = _MangaTestAppModel(db);
     final Directory bookDir = _bookDir();

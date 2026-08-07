@@ -233,7 +233,7 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
 /// effect immediately. The subtitle-blur toggle stays press-edge-only
 /// (includeRepeats:false) to preserve its previous non-repeating behaviour.
 Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcutsFromRegistry(
-  HibikiShortcutRegistry registry,
+  FushiShortcutRegistry registry,
   VideoPlayerShortcutActions actions, {
   Set<ShortcutAction> exclude = const <ShortcutAction>{},
 }) {
@@ -515,10 +515,10 @@ HoldSpeedKeyTransition resolveHoldSpeedKeyTransition({
 /// keydown 是否命中注册表里 [ShortcutAction.videoHoldSpeed] 的键盘绑定。
 ///
 /// 修饰键取 [HardwareKeyboard] 实时状态（与 SingleActivator 同口径）；physicalKey
-/// 透传给 [HibikiShortcutRegistry.resolveKeyboard] 供 IME 改写回退（TODO-847）。
+/// 透传给 [FushiShortcutRegistry.resolveKeyboard] 供 IME 改写回退（TODO-847）。
 /// [hasEditableFocus] 为 true（文本框持焦）时恒不命中，避免输入时误触加速。
 bool keyDownMatchesHoldSpeed(
-  HibikiShortcutRegistry registry,
+  FushiShortcutRegistry registry,
   KeyDownEvent event, {
   required bool hasEditableFocus,
 }) {

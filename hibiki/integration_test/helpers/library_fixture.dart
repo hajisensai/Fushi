@@ -66,7 +66,7 @@ Future<void> showBooksTab(WidgetTester tester) async {
 ///
 /// 不依赖书架视口/排序/焦点树：已入库 fixture 可能被书架排序排到当前视口外
 /// （abe553a5c 对 reader_pagination_test 的同一解耦理由），书卡的 Enter→activate
-/// 绑定也未挂在 HibikiFocusRoot 下（TODO-783）。openMedia 的 Future 要等 reader
+/// 绑定也未挂在 FushiFocusRoot 下（TODO-783）。openMedia 的 Future 要等 reader
 /// 路由 pop 才 resolve，故不 await，pump 若干帧让路由推入与 _initBook 启动。
 Future<void> openBookViaProductionPath(
   WidgetTester tester,
@@ -174,7 +174,7 @@ Future<bool> seedDictionary(WidgetTester tester) async {
 
 Future<File> writeGeneratedDictionary(File file) async {
   final Map<String, dynamic> index = <String, dynamic>{
-    'title': 'HibikiGeneratedTestDict',
+    'title': 'FushiGeneratedTestDict',
     'format': 3,
     'revision': 'generated-test-1',
     'sequenced': false,
@@ -239,8 +239,8 @@ Future<File?> _findExternalDictionaryFixture() async {
 
 bool _hasGeneratedDictionary(AppModel appModel) {
   return appModel.dictionaries.any((dictionary) {
-    return dictionary.name == 'HibikiGeneratedTestDict' ||
-        dictionary.name == 'HibikiComprehensiveTestDictionary';
+    return dictionary.name == 'FushiGeneratedTestDict' ||
+        dictionary.name == 'FushiComprehensiveTestDictionary';
   });
 }
 

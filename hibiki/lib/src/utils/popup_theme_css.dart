@@ -55,7 +55,7 @@ Map<String, String> buildPopupThemeCssVars({
     '--md-outline-variant': cssRgb(scheme.outlineVariant),
     '--md-primary': cssRgb(scheme.primary),
     '--md-on-primary': cssRgb(scheme.onPrimary),
-    '--hibiki-radius-card': '${HibikiRadii.cardValue.toInt()}px',
+    '--hibiki-radius-card': '${FushiRadii.cardValue.toInt()}px',
     '--dict-columns': '$dictionaryColumns',
   };
 }

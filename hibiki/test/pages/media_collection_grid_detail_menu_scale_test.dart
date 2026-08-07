@@ -10,7 +10,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// BUG-781（与 BUG-129/261/381 同族）回归守卫：合集详情页
 /// （[MediaCollectionGridDetailPage]）成员卡右键上下文菜单在界面大小≠100% 时的定位。
 ///
-/// 生产拓扑：全局 [HibikiAppUiScale]（FittedBox 整体缩放）挂在 MaterialApp.builder，
+/// 生产拓扑：全局 [FushiAppUiScale]（FittedBox 整体缩放）挂在 MaterialApp.builder，
 /// 根 Navigator 的 Overlay 落在其缩放画布坐标系内；而网格右键回调报的是真实视口坐标。
 /// 修复前 `_showMemberMenu` 把真实视口坐标直接当 Overlay 本地坐标喂给 showMenu 的
 /// RelativeRect → 菜单渲染位置约落在「点击坐标 ×scale」（scale=0.5 时约点击坐标的一半，
@@ -25,9 +25,9 @@ void main() {
 
   /// 播种 [count] 个 epub 成员（keys k1..k{count}），返回 db + 合集行。多成员填满
   /// 网格多行，便于挑一张靠近屏幕中心的卡片放大缩放偏移。
-  Future<({HibikiDatabase db, MediaCollectionRow col})> seed(int count) async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+  Future<({FushiDatabase db, MediaCollectionRow col})> seed(int count) async {
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final int cid = await db.createMediaCollection('C');
     for (int i = 1; i <= count; i++) {
@@ -47,15 +47,15 @@ void main() {
         child: Text(entryKey),
       );
 
-  /// 复刻生产拓扑：MaterialApp.builder 注入 [HibikiAppUiScale]（整体缩放），页面
+  /// 复刻生产拓扑：MaterialApp.builder 注入 [FushiAppUiScale]（整体缩放），页面
   /// 与根 Navigator/Overlay 都落在缩放画布坐标系内。onOpenMember 不注入 → 菜单只含
   /// 「移出合集」一项，第一项即该项（定位确定）。
-  Widget wrapPage(MediaCollectionRow col, HibikiDatabase db,
+  Widget wrapPage(MediaCollectionRow col, FushiDatabase db,
           {required double scale}) =>
       TranslationProvider(
         child: MaterialApp(
           builder: (BuildContext context, Widget? child) =>
-              HibikiAppUiScale(scale: scale, child: child!),
+              FushiAppUiScale(scale: scale, child: child!),
           home: MediaCollectionGridDetailPage(
             database: db,
             collection: col,
@@ -72,7 +72,7 @@ void main() {
     addTearDown(tester.view.reset);
 
     const int count = 40;
-    final ({HibikiDatabase db, MediaCollectionRow col}) s = await seed(count);
+    final ({FushiDatabase db, MediaCollectionRow col}) s = await seed(count);
     await tester.pumpWidget(wrapPage(s.col, s.db, scale: 0.5));
     await tester.pumpAndSettle();
 

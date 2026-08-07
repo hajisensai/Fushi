@@ -11,8 +11,8 @@ typedef FileDropCallback = void Function(
 
 /// Enables desktop_drop only on desktop platforms; all other platforms pass the
 /// child through with zero runtime cost.
-class HibikiFileDropTarget extends StatelessWidget {
-  const HibikiFileDropTarget({
+class FushiFileDropTarget extends StatelessWidget {
+  const FushiFileDropTarget({
     required this.onDrop,
     required this.child,
     this.enabled = true,

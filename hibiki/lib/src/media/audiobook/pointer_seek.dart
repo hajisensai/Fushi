@@ -8,7 +8,7 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 /// 鼠标键是位置型动作，不进位置无关的 `_executeShortcutAction`，故单列此判定供
 /// 阅读器与歌词两处复用、并可纯测。
 bool isSeekToClickedSentenceButton(
-  HibikiShortcutRegistry registry,
+  FushiShortcutRegistry registry,
   int button,
 ) {
   if (button < 0) return false;
@@ -19,7 +19,7 @@ bool isSeekToClickedSentenceButton(
 /// 歌词模式中键决策：按钮命中绑定且 [idx] 在 [lyricsCues] 范围内时返回目标 cue，
 /// 否则返回 null（不播）。把按钮闸门 + 越界检查抽成纯函数以便真测行为。
 AudioCue? cueForLyricsPointer(
-  HibikiShortcutRegistry registry,
+  FushiShortcutRegistry registry,
   int button,
   int idx,
   List<AudioCue> lyricsCues,

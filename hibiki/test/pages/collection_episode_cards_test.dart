@@ -15,12 +15,12 @@ import 'package:fushi_core/fushi_core.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late int collectionId;
 
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.zhCn);
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     for (final (String uid, String title) in const <(String, String)>[
       ('video/e1', 'Show 01'),
       ('video/e2', 'Show 02'),
@@ -104,7 +104,7 @@ void main() {
     expect(find.textContaining('主角与伙伴初次相遇'), findsOneWidget, reason: '集简介上卡');
     expect(
       find.descendant(
-        of: find.byType(HibikiReorderableGrid),
+        of: find.byType(FushiReorderableGrid),
         matching: find.textContaining('Show 02'),
       ),
       findsOneWidget,
@@ -200,7 +200,7 @@ void main() {
         reason: '右键集卡必须弹出上下文菜单');
     await tester.tap(find.text(t.collection_remove_member));
     await tester.pumpAndSettle();
-    // 确认框（HibikiDestructiveConfirmDialog）→ 确认移出。
+    // 确认框（FushiDestructiveConfirmDialog）→ 确认移出。
     await tester.tap(find.text(t.collection_remove_member).last);
     await tester.pumpAndSettle();
 

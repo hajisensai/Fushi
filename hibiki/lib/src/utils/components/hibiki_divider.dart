@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 
 /// A standard theme divider for use across the applicaton.
-class HibikiDivider extends StatelessWidget {
+class FushiDivider extends StatelessWidget {
   /// Build a standard themed divider.
-  const HibikiDivider({super.key});
+  const FushiDivider({super.key});
 
   @override
   Widget build(BuildContext context) {

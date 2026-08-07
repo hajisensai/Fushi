@@ -33,7 +33,7 @@ bool _isPolledGamepadPlatform(BuildContext context) {
 /// platform (Windows, Linux, iOS, macOS) it is built on [MenuAnchor] so the
 /// selected entry can [MenuItemButton.autofocus] when the menu opens — the
 /// cursor lands INSIDE the menu and D-pad traverses it (the list auto-scrolls
-/// to the focused entry via HibikiFocusRing). A selects, B closes the menu
+/// to the focused entry via FushiFocusRing). A selects, B closes the menu
 /// (returning focus to the trigger) instead of bubbling to the GamepadService's
 /// route-pop. Only on Android does it fall back to a stock [DropdownMenu] (the
 /// engine delivers real key events there). Looks like an expand-in-place
@@ -63,7 +63,7 @@ class GamepadMenuDropdown<T> extends StatefulWidget {
   /// Floating label (Material [DropdownMenu] path only).
   final String? label;
   final String? hintText;
-  final HibikiFocusId? focusId;
+  final FushiFocusId? focusId;
 
   /// Optional per-entry subtitle (a second, muted line under the label inside
   /// the open menu — e.g. a latest-line preview for text threads). Returning
@@ -79,7 +79,7 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
   final MenuController _menu = MenuController();
   final FocusNode _triggerFocus =
       FocusNode(debugLabel: 'gamepadDropdownTrigger');
-  late final HibikiFocusId _fallbackFocusId = HibikiFocusId(
+  late final FushiFocusId _fallbackFocusId = FushiFocusId(
     'gamepad-dropdown-${identityHashCode(this)}',
   );
 
@@ -201,7 +201,7 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
   }
 
   Widget _focusableAnchor(BuildContext context, Widget anchor) {
-    if (HibikiFocusRoot.maybeControllerOf(context) == null) return anchor;
+    if (FushiFocusRoot.maybeControllerOf(context) == null) return anchor;
     return Actions(
       actions: <Type, Action<Intent>>{
         ActivateIntent: CallbackAction<ActivateIntent>(
@@ -213,7 +213,7 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
           },
         ),
       },
-      child: HibikiFocusRegistration(
+      child: FushiFocusRegistration(
         id: widget.focusId ?? _fallbackFocusId,
         focusNode: _triggerFocus,
         enabled: widget.enabled,
@@ -223,11 +223,11 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
   }
 
   Widget _menuAnchor(BuildContext context, double? menuWidth) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final int sel = _selectedIndex;
     // Cap the menu height so a long list (e.g. many decks) scrolls instead of
     // covering the whole screen, matching the stock DropdownMenu. The
-    // gamepad-focused entry is scrolled into view by HibikiFocusRing.
+    // gamepad-focused entry is scrolled into view by FushiFocusRing.
     final double maxHeight =
         MediaQuery.sizeOf(context).height * _kMenuMaxHeightFactor;
     return MenuAnchor(
@@ -299,7 +299,7 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
   /// as active before the gamepad focus ring lands on it.
   Widget _menuItem(
     BuildContext context,
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     int i,
     int sel,
     double? menuWidth,
@@ -393,10 +393,10 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
 /// A helper for creating a dropdown styled for the application. Delegates to
 /// [GamepadMenuDropdown]: a gamepad-enterable [MenuAnchor] on every polled
 /// platform (Windows/Linux/iOS/macOS) and a stock [DropdownMenu] on Android.
-class HibikiDropdown<T> extends StatefulWidget {
+class FushiDropdown<T> extends StatefulWidget {
   /// Define a dropdown with options and an action to do when the selected
   /// option is changed.
-  const HibikiDropdown({
+  const FushiDropdown({
     required this.options,
     required this.initialOption,
     required this.generateLabel,
@@ -421,13 +421,13 @@ class HibikiDropdown<T> extends StatefulWidget {
 
   /// Whether the button allows changing the option or not.
   final bool enabled;
-  final HibikiFocusId? focusId;
+  final FushiFocusId? focusId;
 
   @override
-  State<HibikiDropdown<T>> createState() => _HibikiDropdownState<T>();
+  State<FushiDropdown<T>> createState() => _FushiDropdownState<T>();
 }
 
-class _HibikiDropdownState<T> extends State<HibikiDropdown<T>> {
+class _FushiDropdownState<T> extends State<FushiDropdown<T>> {
   late T? selectedOption;
 
   @override

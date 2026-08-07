@@ -127,7 +127,7 @@ List<int> imageOnlyChaptersToPauseBetween({
 /// reachable via the shared private class scope.
 extension _ReaderAudiobook on _ReaderHibikiPageState {
   Future<void> _resolveAndApplyProfile(
-    HibikiDatabase db, {
+    FushiDatabase db, {
     ProfileMediaKind? mediaTypeOverride,
   }) async {
     try {
@@ -169,7 +169,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
 
   /// TODO-131: profile 解析+应用 → 阅读器设置刷新。两步有依赖（profile 切换可能
   /// 改哪份 profile-scoped 设置生效），故内部串行；整条与书本定位/解析链并行。
-  Future<void> _resolveProfileAndSettings(HibikiDatabase db) async {
+  Future<void> _resolveProfileAndSettings(FushiDatabase db) async {
     await _resolveAndApplyProfile(db);
     if (!mounted) return;
     if (ReaderHibikiSource.readerSettings == null) {
@@ -260,7 +260,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       await session.stop();
     }
 
-    final HibikiDatabase db = appModel.database;
+    final FushiDatabase db = appModel.database;
     final String bookKey = widget.bookKey;
 
     final AudiobookSessionLauncher launcher = AudiobookSessionLauncher(db);
@@ -325,7 +325,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       ErrorLogService.instance.log('ReaderHibiki.startSession', e, stack);
       debugPrint('[ReaderFushi] audiobook session start failed: $e');
       if (mounted) {
-        HibikiToast.show(
+        FushiToast.show(
             msg: t.audiobook_load_error, severity: ToastSeverity.error);
       }
       return;
@@ -959,7 +959,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     final String cueText = _lookupCue?.text ?? '';
     if (cueText.isNotEmpty) {
       appModel.currentMediaSource?.setCurrentCueSentence(
-        selection: HibikiTextSelection(text: cueText),
+        selection: FushiTextSelection(text: cueText),
       );
     } else {
       appModel.currentMediaSource?.clearCurrentCueSentence();
@@ -1090,7 +1090,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
               'audioFileCount=$audioFileCount',
           StackTrace.current,
         );
-        HibikiToast.show(
+        FushiToast.show(
             msg: t.audiobook_export_clip_no_text,
             severity: ToastSeverity.error);
         return;
@@ -1106,7 +1106,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
               'selectedText="${selectedText.trim()}"',
           StackTrace.current,
         );
-        HibikiToast.show(
+        FushiToast.show(
             msg: t.audiobook_export_clip_no_selection,
             severity: ToastSeverity.error);
         return;
@@ -1123,7 +1123,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           'selection has no single-file cue range (cross-chapter/cross-file)',
           StackTrace.current,
         );
-        HibikiToast.show(
+        FushiToast.show(
             msg: t.audiobook_export_clip_unsupported_range,
             severity: ToastSeverity.error);
         return;
@@ -1143,7 +1143,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
               'text="${selectedText.trim()}")',
           StackTrace.current,
         );
-        HibikiToast.show(
+        FushiToast.show(
             msg: t.audiobook_export_clip_too_long,
             severity: ToastSeverity.error);
         return;
@@ -1167,7 +1167,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
                 'text="${selectedText.trim()}")',
             StackTrace.current,
           );
-          HibikiToast.show(
+          FushiToast.show(
               msg: t.audiobook_export_clip_unsupported_range,
               severity: ToastSeverity.error);
           return;
@@ -1359,7 +1359,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     _AudiobookClipDynamicPlan? dynamicPlan,
   }) async {
     _audiobookClipExporting = true;
-    HibikiToast.show(
+    FushiToast.show(
         msg: t.audiobook_export_clip_in_progress, severity: ToastSeverity.info);
 
     // 渲图前先抓阅读主题色 + 写排方向 + 字号（在 await 前读，避免跨 await 用 context）。
@@ -1418,7 +1418,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           StackTrace.current,
         );
         if (mounted) {
-          HibikiToast.show(
+          FushiToast.show(
               msg: t.audiobook_export_clip_failed,
               severity: ToastSeverity.error);
         }
@@ -1436,7 +1436,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           StackTrace.current,
         );
         if (mounted) {
-          HibikiToast.show(
+          FushiToast.show(
               msg: t.audiobook_export_clip_failed,
               severity: ToastSeverity.error);
         }
@@ -1510,7 +1510,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
             StackTrace.current,
           );
           if (mounted) {
-            HibikiToast.show(
+            FushiToast.show(
                 msg: t.audiobook_export_clip_failed,
                 severity: ToastSeverity.error);
           }
@@ -1531,7 +1531,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
             StackTrace.current,
           );
           if (mounted) {
-            HibikiToast.show(
+            FushiToast.show(
                 msg: t.audiobook_export_clip_failed,
                 severity: ToastSeverity.error);
           }
@@ -1564,7 +1564,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
             StackTrace.current,
           );
           if (mounted) {
-            HibikiToast.show(
+            FushiToast.show(
                 msg: t.audiobook_export_clip_failed,
                 severity: ToastSeverity.error);
           }
@@ -1585,7 +1585,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         if (savePath != null) {
           await File(outPath).copy(savePath);
           if (mounted) {
-            HibikiToast.show(
+            FushiToast.show(
                 msg: t.audiobook_export_clip_saved,
                 severity: ToastSeverity.success);
           }
@@ -1604,9 +1604,9 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         // BUG-1243：ffmpeg 合成参数已显式 `-map 0:v:0 -map 1:a:0`，AAC 在 MOV 内。
         // 旧兼容兜底又把临时 .aac 当第二个附件分享，系统分享面板把它显示成一个多余
         // “字幕/音频文件”。产物契约收敛为单个带声视频，不再泄漏中间文件。
-        await HibikiShare.shareFiles(sharedFiles, subject: text);
+        await FushiShare.shareFiles(sharedFiles, subject: text);
         if (mounted) {
-          HibikiToast.show(
+          FushiToast.show(
               msg: t.audiobook_export_clip_saved,
               severity: ToastSeverity.success);
         }
@@ -1616,7 +1616,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           .log('ReaderHibiki.exportClip.pipeline', e, stack);
       debugPrint('[ReaderFushi] export-clip pipeline error: $e');
       if (mounted) {
-        HibikiToast.show(
+        FushiToast.show(
             msg: t.audiobook_export_clip_failed, severity: ToastSeverity.error);
       }
     } finally {
@@ -1858,7 +1858,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
 
     if (newPaths == null || newPaths.isEmpty || !mounted) return;
 
-    HibikiToast.show(msg: t.dialog_importing, severity: ToastSeverity.info);
+    FushiToast.show(msg: t.dialog_importing, severity: ToastSeverity.info);
 
     try {
       // TODO-1032：复制导入 + 改写 SrtBook.audioPaths（清 audioRoot）的核心写入逻辑
@@ -1870,14 +1870,14 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       await _resolveAudioSlot(forceReload: true);
       if (mounted) {
         _rebuild(() {});
-        HibikiToast.show(
+        FushiToast.show(
             msg: t.audiobook_import_success, severity: ToastSeverity.success);
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHibiki.srtBookAudioPicker', e, stack);
       debugPrint('[ReaderFushi] srtBookAudioPicker failed: $e');
       if (mounted) {
-        HibikiToast.show(
+        FushiToast.show(
             msg: t.audiobook_import_error, severity: ToastSeverity.error);
       }
     }

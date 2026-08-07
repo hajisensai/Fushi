@@ -14,17 +14,17 @@ import 'ffi/hibiki_torrent_bindings.dart';
 class EmbeddedTorrentEngine {
   EmbeddedTorrentEngine._(this.bindings);
 
-  /// 直接用一组已有的 [HibikiTorrentBindings] 构造引擎，跳过动态库加载。
+  /// 直接用一组已有的 [FushiTorrentBindings] 构造引擎，跳过动态库加载。
   ///
   /// 存在的理由：随包的 native 库是 Windows 预编译产物，CI 的绝大多数测试环境
   /// 里根本没有它（要 `HIBIKI_TORRENT_LIB`），于是"限速开关有没有真的传到
   /// native"这类不变量就没有任何**必跑**的用例守着。配合
-  /// [HibikiTorrentBindings.fromLookup] + `Pointer.fromFunction`，可以在纯 Dart
+  /// [FushiTorrentBindings.fromLookup] + `Pointer.fromFunction`，可以在纯 Dart
   /// 里把整条 Dart 侧链路（session → bindings → C 入参）跑通并断言，不依赖 DLL。
   EmbeddedTorrentEngine.fromBindings(this.bindings);
 
   /// 底层 FFI 绑定（高级封装之外的逃生口）。
-  final HibikiTorrentBindings bindings;
+  final FushiTorrentBindings bindings;
 
   /// 加载本地原生库并构造引擎。[libraryPath] 显式指定 DLL/so/dylib 绝对路径
   /// （standalone 构建产物或 harness 传入）；缺省按平台默认名从系统搜索路径找。
@@ -40,7 +40,7 @@ class EmbeddedTorrentEngine {
     final DynamicLibrary lib = libraryPath != null
         ? DynamicLibrary.open(libraryPath)
         : _openByPlatformDefault();
-    return EmbeddedTorrentEngine._(HibikiTorrentBindings(lib));
+    return EmbeddedTorrentEngine._(FushiTorrentBindings(lib));
   }
 
   static void _preloadSiblingLibraries(String libraryPath) {
@@ -616,7 +616,7 @@ class EmbeddedTorrentSession {
   final EmbeddedTorrentEngine _engine;
   Pointer<Void> _session;
 
-  HibikiTorrentBindings get _b => _engine.bindings;
+  FushiTorrentBindings get _b => _engine.bindings;
 
   /// 引擎（版本查询等）。
   EmbeddedTorrentEngine get engine => _engine;

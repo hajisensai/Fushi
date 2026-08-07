@@ -133,14 +133,14 @@ SyncApplyOutcome classifySyncApply(SyncBookResult result) {
 
 class SyncManager {
   SyncManager({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required SyncBackend backend,
     this.onContentProgress,
   })  : _db = db,
         _repo = SyncRepository(db),
         _backend = backend;
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
   final SyncRepository _repo;
   final SyncBackend _backend;
 

@@ -41,7 +41,7 @@ void main() {
           reason: 'seeded book card must appear on the books shelf');
 
       const Key webViewKey = ValueKey<String>('hoshi_webview');
-      // 书卡的 Enter→activate 未挂在 HibikiFocusRoot 下（TODO-783），且已入库
+      // 书卡的 Enter→activate 未挂在 FushiFocusRoot 下（TODO-783），且已入库
       // fixture 可能被书架排序排到视口外——走生产同一调用 openMedia 打开
       // （openBookViaProductionPath，同 abe553a5c 的解耦理由）。
       await openBookViaProductionPath(tester, bookKey);

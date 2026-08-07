@@ -48,7 +48,7 @@ void main() {
     }
   });
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late PlatformServices platformServices;
   late FakeAnkiRepository ankiRepository;
   late AppModel appModel;
@@ -56,7 +56,7 @@ void main() {
   late File remoteVideoCover;
 
   setUp(() async {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     final Directory storeDir =

@@ -512,7 +512,7 @@ Future<void> applyMpvConfigToPlayer(
 
 /// 判断 [uri] 是否为 http(s) 网络流（远端直传）。本地 `file://` / 裸路径返回 false。
 ///
-/// 远端视频经 host 直传，URI 是 [HibikiSyncServer] 签发的 `http://…/stream?token=…`；
+/// 远端视频经 host 直传，URI 是 [FushiSyncServer] 签发的 `http://…/stream?token=…`；
 /// 本地播放是 `File(path).uri`（`file://…`）。仅网络流才需要网络缓存调优，本地文件
 /// 注入这些属性既无收益又可能浪费内存（见 [buildNetworkCacheProperties]）。纯函数。
 bool isNetworkStreamUri(String uri) {

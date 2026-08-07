@@ -3,23 +3,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// Regression guard for the DOWNGRADE-PROTECTION branch in
-/// HibikiDatabase.migration (database.dart `if (from > to)`).
+/// FushiDatabase.migration (database.dart `if (from > to)`).
 ///
 /// History: an earlier build DROPPED every table and recreated the current
 /// schema whenever a DB stored at a HIGHER schema version was opened. That
 /// "destructive downgrade" wiped users' libraries twice (BUG-075 family), so the
 /// behaviour was deliberately replaced: opening a future-versioned DB now THROWS
-/// [HibikiDatabaseDowngradeException] from the earliest migration hook, BEFORE
+/// [FushiDatabaseDowngradeException] from the earliest migration hook, BEFORE
 /// any DROP / migration / rebuild runs, leaving the DB byte-for-byte intact. The
 /// app layer catches it and shows an "update your app" notice.
 ///
 /// These tests therefore assert the OPPOSITE of the old ones: the open must be
 /// REFUSED (throw), never silently rebuilt. Seeds user_version = 99 (well above
 /// the current schema) to force the `from > to` path regardless of how high the
-/// real [HibikiDatabase.schemaVersion] climbs, so the guard never goes stale on a
+/// real [FushiDatabase.schemaVersion] climbs, so the guard never goes stale on a
 /// schema bump.
-Future<HibikiDatabase> _openDowngradedFromFuture() async {
-  return HibikiDatabase.forTesting(
+Future<FushiDatabase> _openDowngradedFromFuture() async {
+  return FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         // Seed a DB that claims to be a FUTURE version (99 > current) with a
@@ -55,8 +55,8 @@ CREATE TABLE epub_books (
 /// referential chain (mirrors production `_openDb`). The old destructive path
 /// crashed mid-drop under FK enforcement (BUG-075); the protection path must
 /// refuse cleanly regardless of FK state and never touch the data.
-Future<HibikiDatabase> _openDowngradedWithForeignKeys() async {
-  return HibikiDatabase.forTesting(
+Future<FushiDatabase> _openDowngradedWithForeignKeys() async {
+  return FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         rawDb.execute('PRAGMA foreign_keys = ON');
@@ -102,17 +102,17 @@ CREATE TABLE book_tag_mappings (
 void main() {
   test('opening a future-version DB is refused, not destructively rebuilt',
       () async {
-    final HibikiDatabase db = await _openDowngradedFromFuture();
+    final FushiDatabase db = await _openDowngradedFromFuture();
     addTearDown(db.close);
 
     // Reading forces the lazy DB to open, which triggers onUpgrade(99 -> current)
     // and must throw the protection exception instead of dropping/rebuilding.
     await expectLater(
       db.customSelect('PRAGMA user_version').getSingle(),
-      throwsA(isA<HibikiDatabaseDowngradeException>()
-          .having((HibikiDatabaseDowngradeException e) => e.dbVersion,
+      throwsA(isA<FushiDatabaseDowngradeException>()
+          .having((FushiDatabaseDowngradeException e) => e.dbVersion,
               'dbVersion', 99)
-          .having((HibikiDatabaseDowngradeException e) => e.appSchemaVersion,
+          .having((FushiDatabaseDowngradeException e) => e.appSchemaVersion,
               'appSchemaVersion', db.schemaVersion)),
       reason: 'a newer-schema DB must be refused to protect user data, '
           'never silently dropped and recreated',
@@ -121,7 +121,7 @@ void main() {
 
   test('BUG-075: future-version refusal is clean under foreign_keys=ON',
       () async {
-    final HibikiDatabase db = await _openDowngradedWithForeignKeys();
+    final FushiDatabase db = await _openDowngradedWithForeignKeys();
     addTearDown(db.close);
 
     // Pre-fix this FK-ordered teardown crashed mid-drop; the protection path
@@ -129,7 +129,7 @@ void main() {
     // ever touched.
     await expectLater(
       db.customSelect('PRAGMA user_version').getSingle(),
-      throwsA(isA<HibikiDatabaseDowngradeException>()),
+      throwsA(isA<FushiDatabaseDowngradeException>()),
       reason: 'FK-on downgrade must be refused cleanly, not crash mid-drop',
     );
   });

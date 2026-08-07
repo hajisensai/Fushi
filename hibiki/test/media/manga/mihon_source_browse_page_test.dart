@@ -52,13 +52,13 @@ void main() {
   });
 
   late Directory root;
-  late HibikiDatabase database;
+  late FushiDatabase database;
   late _BrowseRuntime runtime;
   late MihonManager manager;
 
   setUp(() async {
     root = await Directory.systemTemp.createTemp('hibiki-mihon-browse-');
-    database = HibikiDatabase.forTesting(NativeDatabase.memory());
+    database = FushiDatabase.forTesting(NativeDatabase.memory());
     runtime = _BrowseRuntime();
 
     await database.upsertMangaExtension(

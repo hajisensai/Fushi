@@ -8,20 +8,20 @@ import 'package:fushi/src/shortcuts/global_navigation.dart';
 import 'package:fushi/src/utils/components/hibiki_focus_ring.dart';
 
 void main() {
-  Future<HibikiFocusController> pumpManagedColumn(
+  Future<FushiFocusController> pumpManagedColumn(
     WidgetTester tester,
     GlobalKey<NavigatorState> navKey, {
-    required List<HibikiFocusId> ids,
+    required List<FushiFocusId> ids,
     Axis axis = Axis.vertical,
   }) async {
-    late HibikiFocusController controller;
+    late FushiFocusController controller;
     final FocusNode sink =
         FocusNode(debugLabel: 'page-sink', skipTraversal: true);
     addTearDown(sink.dispose);
 
     final List<Widget> targets = <Widget>[
-      for (final HibikiFocusId id in ids)
-        HibikiFocusTarget(
+      for (final FushiFocusId id in ids)
+        FushiFocusTarget(
           id: id,
           child: const SizedBox(width: 120, height: 40),
         ),
@@ -30,13 +30,13 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         navigatorKey: navKey,
-        home: HibikiFocusRoot(
-          child: HibikiFocusRing(
+        home: FushiFocusRoot(
+          child: FushiFocusRing(
             child: wrapWithGlobalNavigation(
               navigatorKey: navKey,
               child: Builder(
                 builder: (BuildContext context) {
-                  controller = HibikiFocusRoot.controllerOf(context);
+                  controller = FushiFocusRoot.controllerOf(context);
                   return Focus(
                     focusNode: sink,
                     autofocus: true,
@@ -70,19 +70,19 @@ void main() {
     return controller;
   }
 
-  const HibikiFocusId a = HibikiFocusId('a');
-  const HibikiFocusId b = HibikiFocusId('b');
-  const HibikiFocusId c = HibikiFocusId('c');
-  const HibikiFocusId d = HibikiFocusId('d');
+  const FushiFocusId a = FushiFocusId('a');
+  const FushiFocusId b = FushiFocusId('b');
+  const FushiFocusId c = FushiFocusId('c');
+  const FushiFocusId d = FushiFocusId('d');
 
   testWidgets(
       'held arrow keeps moving focus: KeyDown plus each KeyRepeat steps',
       (WidgetTester tester) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    final HibikiFocusController controller = await pumpManagedColumn(
+    final FushiFocusController controller = await pumpManagedColumn(
       tester,
       navKey,
-      ids: <HibikiFocusId>[a, b, c, d],
+      ids: <FushiFocusId>[a, b, c, d],
     );
     controller.requestById(a);
     await tester.pump();
@@ -107,13 +107,13 @@ void main() {
       (WidgetTester tester) async {
     // Continuous movement must not run away or wrap past the last control: once
     // focus reaches the edge a further repeat is a no-op, exactly as a discrete
-    // press at the edge already is (HibikiFocusController geometry clamps; the
+    // press at the edge already is (FushiFocusController geometry clamps; the
     // repeat shares that same path).
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    final HibikiFocusController controller = await pumpManagedColumn(
+    final FushiFocusController controller = await pumpManagedColumn(
       tester,
       navKey,
-      ids: <HibikiFocusId>[a, b],
+      ids: <FushiFocusId>[a, b],
     );
     controller.requestById(a);
     await tester.pump();
@@ -138,10 +138,10 @@ void main() {
   testWidgets('a held NON-arrow key does not move focus on repeat',
       (WidgetTester tester) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    final HibikiFocusController controller = await pumpManagedColumn(
+    final FushiFocusController controller = await pumpManagedColumn(
       tester,
       navKey,
-      ids: <HibikiFocusId>[a, b, c],
+      ids: <FushiFocusId>[a, b, c],
     );
     controller.requestById(a);
     await tester.pump();
@@ -161,10 +161,10 @@ void main() {
   testWidgets('releasing the arrow (KeyUp) does not move focus',
       (WidgetTester tester) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    final HibikiFocusController controller = await pumpManagedColumn(
+    final FushiFocusController controller = await pumpManagedColumn(
       tester,
       navKey,
-      ids: <HibikiFocusId>[a, b, c],
+      ids: <FushiFocusId>[a, b, c],
     );
     controller.requestById(a);
     await tester.pump();

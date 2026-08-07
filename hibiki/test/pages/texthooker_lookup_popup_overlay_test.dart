@@ -17,7 +17,7 @@ void main() {
     );
     expect(overlayBuilder, greaterThanOrEqualTo(0));
     final int neutralizer = source.indexOf(
-      'HibikiAppUiScaleNeutralizer(',
+      'FushiAppUiScaleNeutralizer(',
       overlayBuilder,
     );
     final int popupStack = source.indexOf(

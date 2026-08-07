@@ -64,7 +64,7 @@ void main() {
       ..createSync(recursive: true)
       ..writeAsBytesSync(<int>[10, 11, 12]);
 
-    final HibikiDatabase db = HibikiDatabase(oldSupportPath);
+    final FushiDatabase db = FushiDatabase(oldSupportPath);
     try {
       await db.insertEpubBook(EpubBooksCompanion.insert(
         bookKey: 'Bk',
@@ -178,7 +178,7 @@ void main() {
       expect(wroteDataRoot, equals(newDataRoot));
 
       // DB 内绝对路径已 rebase 到新根。
-      final HibikiDatabase db = HibikiDatabase(newSupport.path);
+      final FushiDatabase db = FushiDatabase(newSupport.path);
       try {
         final EpubBookRow b = (await db.getAllEpubBooks()).single;
         expect(b.epubPath, startsWith(newDocs.path));
@@ -296,7 +296,7 @@ void main() {
           isTrue);
       expect(File(p.join(oldSupportPath, 'hibiki.db')).existsSync(), isTrue);
 
-      final HibikiDatabase db = HibikiDatabase(oldSupportPath);
+      final FushiDatabase db = FushiDatabase(oldSupportPath);
       try {
         final EpubBookRow b = (await db.getAllEpubBooks()).single;
         expect(b.epubPath, startsWith(oldDocsPath));
@@ -446,7 +446,7 @@ void main() {
           ]));
 
       // DB 内绝对路径仍正确 rebase 到新根（选择性搬移不破坏 rebase）。
-      final HibikiDatabase db = HibikiDatabase(newSupport.path);
+      final FushiDatabase db = FushiDatabase(newSupport.path);
       try {
         final EpubBookRow b = (await db.getAllEpubBooks()).single;
         expect(b.epubPath, startsWith(newDocs.path));
@@ -595,7 +595,7 @@ void main() {
       expect(Link(p.join(newDocs.path, 'My Music')).existsSync(), isFalse);
       // pref 已写、DB 绝对路径已 rebase 到新根。
       expect(wrote, equals(newDataRoot));
-      final HibikiDatabase db = HibikiDatabase(newSupport.path);
+      final FushiDatabase db = FushiDatabase(newSupport.path);
       try {
         final EpubBookRow b = (await db.getAllEpubBooks()).single;
         expect(b.epubPath, startsWith(newDocs.path));
@@ -650,7 +650,7 @@ void main() {
       expect(userDoc.readAsStringSync(), equals('user data, do not touch'));
       // pref 已写，DB 路径 rebase 到新根。
       expect(wrote, equals(newDataRoot));
-      final HibikiDatabase db = HibikiDatabase(newSupport.path);
+      final FushiDatabase db = FushiDatabase(newSupport.path);
       try {
         final EpubBookRow b = (await db.getAllEpubBooks()).single;
         expect(b.epubPath, startsWith(newDocs.path));
@@ -997,7 +997,7 @@ void main() {
       expect(Directory(p.join(newDataRoot, 'documents')).existsSync(), isFalse);
       expect(Directory(p.join(newDataRoot, 'support')).existsSync(), isFalse);
       // 旧根 DB 从未被改写（原始 DB 仍指向旧路径）——数据可直接继续使用。
-      final HibikiDatabase db = HibikiDatabase(oldSupportPath);
+      final FushiDatabase db = FushiDatabase(oldSupportPath);
       try {
         final EpubBookRow b = (await db.getAllEpubBooks()).single;
         expect(b.epubPath, startsWith(oldDocsPath));
@@ -1036,7 +1036,7 @@ void main() {
         expect(oldSupport.existsSync(), isFalse);
         expect(wrote, equals(newDataRoot));
         // DB 内绝对路径已 rebase 到新根。
-        final HibikiDatabase db = HibikiDatabase(newSupport.path);
+        final FushiDatabase db = FushiDatabase(newSupport.path);
         try {
           final EpubBookRow b = (await db.getAllEpubBooks()).single;
           expect(b.epubPath, startsWith(newDocs.path));

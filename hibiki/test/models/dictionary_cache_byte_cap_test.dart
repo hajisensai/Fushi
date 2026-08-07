@@ -17,8 +17,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
@@ -114,7 +114,7 @@ void main() {
   });
 
   group('DictionaryRepository byte-capped caches', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
 
     setUp(() {
       db = _testDb();

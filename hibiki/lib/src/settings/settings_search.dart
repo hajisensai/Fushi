@@ -159,7 +159,7 @@ class SettingsSearchReveal {
   static String? pendingItemId;
 }
 
-/// 搜索跳转的落点包装：首帧后把自己滚进视口（滚动统一委托 HibikiFocusScroll——
+/// 搜索跳转的落点包装：首帧后把自己滚进视口（滚动统一委托 FushiFocusScroll——
 /// 焦点架构守卫禁止 lib/src 各处自持 ensureVisible 实现；非懒详情容器里恒可用，
 /// 见 material renderer 的 SingleChildScrollView 契约），并用主题色短暂闪烁一次
 /// 帮助用户锁定视线。
@@ -179,7 +179,7 @@ class _SettingsRevealTargetState extends State<SettingsRevealTarget> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       // eink 下滚动动画归零（连续重绘=残影），直接跳到目标位置。
-      HibikiFocusScroll.ensureVisible(
+      FushiFocusScroll.ensureVisible(
         context,
         duration: einkSafeDuration(context, const Duration(milliseconds: 250)),
       );
@@ -191,7 +191,7 @@ class _SettingsRevealTargetState extends State<SettingsRevealTarget> {
     final Color highlight = Theme.of(context).colorScheme.primary;
     // MD3 守卫：圆角一律走 design tokens，不自持字面量。
     final BorderRadius radius =
-        HibikiDesignTokens.of(context).radii.controlRadius;
+        FushiDesignTokens.of(context).radii.controlRadius;
     // eink 下闪烁衰减动画归零：TweenAnimationBuilder duration zero 直接落在
     // end（透明），不闪不残影；定位仍由上面的滚动完成。
     return TweenAnimationBuilder<double>(

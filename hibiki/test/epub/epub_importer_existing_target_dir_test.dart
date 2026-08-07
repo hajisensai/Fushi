@@ -26,7 +26,7 @@ import 'package:fushi/src/epub/epub_storage.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 Uint8List _encodeArchive(List<ArchiveFile> files) {
   final Archive archive = Archive();
@@ -307,7 +307,7 @@ void main() {
 
     testWidgets('orphan leftover dir at the key no longer fails the import',
         (WidgetTester tester) async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       const String title = 'OrphanNovel';
@@ -340,7 +340,7 @@ void main() {
 
     testWidgets('key dir owned by another live row is preserved',
         (WidgetTester tester) async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       const String title = 'SharedDirNovel';

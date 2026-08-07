@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///   3. 视频页头下方不再有实验性提示横幅，且 i18n key video_experimental_banner 已删除。
 ///
 /// 用源码扫描而非整页 widget pump：底栏自绘导航 + 视频页都依赖完整 AppModel + DB +
-/// HibikiFocusRoot，整页启动成本高且脆弱；这些不变式正是本次需求的精确正面，源码
+/// FushiFocusRoot，整页启动成本高且脆弱；这些不变式正是本次需求的精确正面，源码
 /// 扫描足以守住（与 video_tags_menu_source_guard_test 同范式）。
 String _read(String relative) {
   final File f = File(relative);
@@ -93,16 +93,16 @@ void main() {
     final String videoSrc =
         _read('lib/src/pages/implementations/home_video_page.dart');
 
-    test('改用 HibikiPageHeader 大标题，不再用 adaptiveAppBar 小标题', () {
-      expect(videoSrc.contains('HibikiPageHeader('), isTrue,
-          reason: '标题字号要与书架/词典统一，须用 HibikiPageHeader');
+    test('改用 FushiPageHeader 大标题，不再用 adaptiveAppBar 小标题', () {
+      expect(videoSrc.contains('FushiPageHeader('), isTrue,
+          reason: '标题字号要与书架/词典统一，须用 FushiPageHeader');
       expect(videoSrc.contains('appBar: adaptiveAppBar('), isFalse,
           reason: '不应再用独立 Scaffold + adaptiveAppBar（小标题）');
     });
 
-    test('动作按钮用 HibikiIconButton（与书架按钮位置/样式统一）', () {
-      expect(videoSrc.contains('HibikiIconButton('), isTrue);
-      // 旧实现用 Material IconButton(onPressed: ...)；统一后走 HibikiIconButton(onTap:)。
+    test('动作按钮用 FushiIconButton（与书架按钮位置/样式统一）', () {
+      expect(videoSrc.contains('FushiIconButton('), isTrue);
+      // 旧实现用 Material IconButton(onPressed: ...)；统一后走 FushiIconButton(onTap:)。
       expect(videoSrc.contains('onTap: _openStatistics'), isTrue);
       expect(videoSrc.contains('onTap: _openImport'), isTrue);
       expect(videoSrc.contains('onPressed: _openStatistics'), isFalse,

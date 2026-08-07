@@ -23,12 +23,12 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
   });
 
-  HibikiShortcutRegistry buildRegistry() =>
-      HibikiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
+  FushiShortcutRegistry buildRegistry() =>
+      FushiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
 
   Future<void> pumpDialog(
     WidgetTester tester,
-    HibikiShortcutRegistry registry, {
+    FushiShortcutRegistry registry, {
     ShortcutAction action = ShortcutAction.readerToggleFurigana,
   }) async {
     await tester.pumpWidget(
@@ -56,7 +56,7 @@ void main() {
 
   testWidgets('desktop poller path: GamepadButtonIntent records the button',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     await pumpDialog(tester, registry);
     await startGamepadCapture(tester);
 
@@ -71,7 +71,7 @@ void main() {
 
     expect(handled, isTrue, reason: '捕获区必须消费 intent（阻断 A→Activate 等服务端回退）');
     expect(
-      find.widgetWithText(HibikiTagChip, GamepadButton.select.label),
+      find.widgetWithText(FushiTagChip, GamepadButton.select.label),
       findsOneWidget,
       reason: '捕获到的按钮应立即出现在手柄草稿 chips 中',
     );
@@ -81,7 +81,7 @@ void main() {
 
   testWidgets('Android native path: gameButton* key event records the button',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     await pumpDialog(tester, registry);
     await startGamepadCapture(tester);
 
@@ -89,7 +89,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.widgetWithText(HibikiTagChip, GamepadButton.select.label),
+      find.widgetWithText(FushiTagChip, GamepadButton.select.label),
       findsOneWidget,
     );
     expect(find.text(t.shortcut_press_gamepad), findsNothing);
@@ -97,7 +97,7 @@ void main() {
 
   testWidgets('keyboard keys during gamepad capture are swallowed, not bound',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     await pumpDialog(tester, registry);
     await startGamepadCapture(tester);
 
@@ -107,13 +107,13 @@ void main() {
     // 仍在捕获态，且没有把键盘 A 记成任何绑定。
     expect(find.text(t.shortcut_press_gamepad), findsOneWidget,
         reason: '键盘按键不结束手柄捕获（仅显式停止或录到手柄按钮）');
-    expect(find.widgetWithText(HibikiTagChip, 'A'), findsNothing,
+    expect(find.widgetWithText(FushiTagChip, 'A'), findsNothing,
         reason: '键盘按键不得被记录为绑定');
   });
 
   testWidgets('stop button cancels capture; pick-list fallback stays available',
       (WidgetTester tester) async {
-    final HibikiShortcutRegistry registry = buildRegistry();
+    final FushiShortcutRegistry registry = buildRegistry();
     await pumpDialog(tester, registry);
     await startGamepadCapture(tester);
 
@@ -131,7 +131,7 @@ void main() {
     await tester.tap(find.text(GamepadButton.select.label).last);
     await tester.pumpAndSettle();
     expect(
-      find.widgetWithText(HibikiTagChip, GamepadButton.select.label),
+      find.widgetWithText(FushiTagChip, GamepadButton.select.label),
       findsOneWidget,
     );
   });

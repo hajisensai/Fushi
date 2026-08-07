@@ -19,8 +19,8 @@ void main() {
 
   testWidgets('renders with import disabled until a video is picked',
       (WidgetTester tester) async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final VideoBookRepository repo = VideoBookRepository(db);
 

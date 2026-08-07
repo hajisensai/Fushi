@@ -122,8 +122,8 @@ void main() {
   });
 
   group('keyDownMatchesHoldSpeed 绑定命中（Windows 默认表）', () {
-    HibikiShortcutRegistry registry() =>
-        HibikiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
+    FushiShortcutRegistry registry() =>
+        FushiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
 
     test('默认裸 E 命中', () {
       expect(
@@ -208,7 +208,7 @@ void main() {
     }
 
     test('videoHoldSpeed 的键盘绑定不进 activator 表（keyup 语义前提）', () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadDefaults(TargetPlatform.windows);
       final Map<ShortcutActivator, VoidCallback> activators =
           buildVideoPlayerShortcutsFromRegistry(registry, actions(<String>[]));

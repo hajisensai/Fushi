@@ -96,7 +96,7 @@ Map<String, String> _tableSql(sqlite3.Database db) => <String, String>{
         row['name'] as String: row['sql'] as String,
     };
 
-Future<Map<String, String>> _tableSqlFromDrift(HibikiDatabase db) async {
+Future<Map<String, String>> _tableSqlFromDrift(FushiDatabase db) async {
   final List<QueryRow> rows = await db
       .customSelect(
         "SELECT name, sql FROM sqlite_master WHERE type = 'table' "
@@ -114,7 +114,7 @@ void main() {
       'v63 deletes only the legacy live/pref Profile rows and leaves schema, '
       'per-game modes, and unrelated data untouched', () async {
     late Map<String, String> schemaBefore;
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (sqlite3.Database rawDb) {
           _seedV62(rawDb);
@@ -214,7 +214,7 @@ void main() {
   });
 
   test('v63 is idempotent when the obsolete rows are already absent', () async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (sqlite3.Database rawDb) {
           _seedV62(rawDb, includeObsoleteRows: false);
@@ -250,8 +250,8 @@ void main() {
       raw.dispose();
     }
 
-    HibikiDatabase migrated =
-        HibikiDatabase.atFile(dbPath, isMainProcess: false);
+    FushiDatabase migrated =
+        FushiDatabase.atFile(dbPath, isMainProcess: false);
     expect(await migrated.getPref(_obsoleteKey), isNull);
     expect(await migrated.getPref('theme'), 's:dark');
     await migrated.close();
@@ -280,7 +280,7 @@ void main() {
       probe.dispose();
     }
 
-    migrated = HibikiDatabase.atFile(dbPath, isMainProcess: false);
+    migrated = FushiDatabase.atFile(dbPath, isMainProcess: false);
     expect(await migrated.getPref(_obsoleteKey), isNull,
         reason: '第二次打开 user_version=65，不得产生复活或重复迁移副作用');
     await migrated.close();
@@ -304,8 +304,8 @@ void main() {
       raw.dispose();
     }
 
-    final HibikiDatabase broken =
-        HibikiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase broken =
+        FushiDatabase.atFile(dbPath, isMainProcess: false);
     await expectLater(
       broken.getPref('theme'),
       throwsA(anything),

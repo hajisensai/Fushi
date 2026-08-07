@@ -27,7 +27,7 @@ import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 SourceFileEntry _file(String path, {int size = 1}) => SourceFileEntry(
       name: p.basename(path),
@@ -265,7 +265,7 @@ void main() {
 
   group('sourceId backfill is opt-in (backward compatible)', () {
     test('saveVideoBook without sourceId leaves the column NULL', () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final VideoBookRepository repo = VideoBookRepository(db);
 
@@ -282,7 +282,7 @@ void main() {
     });
 
     test('saveVideoBook with sourceId backfills the column', () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final VideoBookRepository repo = VideoBookRepository(db);
 
@@ -322,7 +322,7 @@ void main() {
 
     test('video source: inserts videos with sourceId + cues + scan result',
         () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final VideoBookRepository repo = VideoBookRepository(db);
 
@@ -376,7 +376,7 @@ void main() {
         } catch (_) {}
       });
 
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       _writeEpub(p.join(tmp.path, 'novel.epub'), 'ScannerNovel');
@@ -443,7 +443,7 @@ void main() {
 
     testWidgets('re-scanning an already-imported title imports no duplicate',
         (WidgetTester tester) async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       _writeEpub(p.join(tmp.path, 'dup.epub'), 'DupNovel');
@@ -485,7 +485,7 @@ void main() {
 
     testWidgets('a new title still imports while the duplicate is skipped',
         (WidgetTester tester) async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       // Pre-import "DupNovel" manually.
@@ -523,7 +523,7 @@ void main() {
 
     testWidgets('two same-title EPUBs in one scan import only one',
         (WidgetTester tester) async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       // Two different filenames but the SAME embedded title -> same identity key.
@@ -571,7 +571,7 @@ void main() {
     test(
         'm3u8 manifest imports as N per-episode rows + a playlist collection '
         '(统一合集 Phase 2)', () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final VideoBookRepository repo = VideoBookRepository(db);
 
@@ -640,7 +640,7 @@ ep2.mp4
 
     test('empty / comment-only m3u8 imports nothing (skipped, no error)',
         () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final VideoBookRepository repo = VideoBookRepository(db);
 
@@ -671,7 +671,7 @@ ep2.mp4
     // mirroring _importBooks' skip policy (BUG-443).
     test('re-scan skips already-imported single videos (no X (2) dup)',
         () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final VideoBookRepository repo = VideoBookRepository(db);
 
@@ -712,7 +712,7 @@ ep2.mp4
     // not duplicate the playlist VideoBook either.
     test('re-scan skips already-imported m3u8 playlist (no duplicate)',
         () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final VideoBookRepository repo = VideoBookRepository(db);
 
@@ -759,7 +759,7 @@ ep2.mp4
     test(
         're-scan after manifest episode paths change: identity dedup, no X (2)',
         () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final VideoBookRepository repo = VideoBookRepository(db);
 
@@ -896,7 +896,7 @@ sub_b/ep2.mp4
     });
 
     test('Shift-JIS subtitle decodes to Japanese cue text', () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       // SRT with a Japanese cue encoded as Shift-JIS bytes (invalid UTF-8).
@@ -971,7 +971,7 @@ sub_b/ep2.mp4
 
     testWidgets('book.epub + book.srt + book.mp3 -> audiobook (cues + SrtBook)',
         (WidgetTester tester) async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       _writeEpub(p.join(tmp.path, 'book.epub'), 'AudiobookNovel');
@@ -1021,7 +1021,7 @@ sub_b/ep2.mp4
 
     testWidgets('book.epub with NO sibling audio stays a plain EPUB',
         (WidgetTester tester) async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       // EPUB + same-stem srt but NO audio -> must stay a plain text EPUB.
@@ -1086,7 +1086,7 @@ sub_b/ep2.mp4
     testWidgets(
         'srt+mp3 added after first import -> re-scan promotes to audiobook',
         (WidgetTester tester) async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       // First scan: only the EPUB is present -> imports as a plain text EPUB.
@@ -1148,7 +1148,7 @@ sub_b/ep2.mp4
 
     testWidgets('a third re-scan is idempotent (already-attached audiobook)',
         (WidgetTester tester) async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       // Book + sidecar srt + mp3 all present up front -> first scan already an
@@ -1208,7 +1208,7 @@ sub_b/ep2.mp4
 
     test('manga source: imports .mokuro volume with sourceId + scan result',
         () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       _writeMokuro(tmp.path, title: 'ScanVolume');
@@ -1242,7 +1242,7 @@ sub_b/ep2.mp4
 
     test('re-scan skips the already-imported volume (silent dedup, 0 new)',
         () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       _writeMokuro(tmp.path, title: 'RescanVolume');
@@ -1274,7 +1274,7 @@ sub_b/ep2.mp4
     });
 
     test('empty folder: 0 media, no error', () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
@@ -1294,7 +1294,7 @@ sub_b/ep2.mp4
     });
 
     test('non-local transport is rejected (first-version limit)', () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(

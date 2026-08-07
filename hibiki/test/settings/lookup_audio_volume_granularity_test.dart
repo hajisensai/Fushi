@@ -31,14 +31,14 @@ import '../helpers/test_platform_services.dart';
 /// → TtsChannel）不变，由 lookup_audio_volume_settings_test +
 /// lookup_audio_volume_wiring_static_test 兜底；这里验证 UI 行为层的粒度契约。
 void main() {
-  HibikiDatabase testDb() {
-    return HibikiDatabase.forTesting(
+  FushiDatabase testDb() {
+    return FushiDatabase.forTesting(
       DatabaseConnection(NativeDatabase.memory()),
     );
   }
 
   /// 从真实 schema 里取出 lookup.audio_volume 这一条（保证测的是生产配置，
-  /// 不是测试自拟副本），包成单行 destination：HibikiFocusRoot 内只有这一个
+  /// 不是测试自拟副本），包成单行 destination：FushiFocusRoot 内只有这一个
   /// 焦点停靠点，ensureFocus 必然落在音量滑条上。
   SettingsDestination volumeOnlyDestination(SettingsContext settingsContext) {
     final SettingsSliderItem item = buildSettingsSchema(settingsContext)
@@ -68,7 +68,7 @@ void main() {
         builder: (BuildContext context, Widget? child) =>
             wrapWithGlobalNavigation(navigatorKey: navKey, child: child!),
         home: Scaffold(
-          body: HibikiFocusRoot(
+          body: FushiFocusRoot(
             child: Consumer(
               builder: (BuildContext context, WidgetRef ref, _) {
                 return StatefulBuilder(
@@ -95,7 +95,7 @@ void main() {
     );
   }
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() async {
     db = testDb();
@@ -147,7 +147,7 @@ void main() {
       expect(find.text('${t.lookup_audio_volume} (100%)'), findsOneWidget,
           reason: '标题带实时百分比读数（与有声书音量行同款）');
 
-      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.byType(Slider)),
       );
       controller.ensureFocus();
@@ -188,7 +188,7 @@ void main() {
       await tester.pumpWidget(buildHarness(AppModel(testPlatformServices())));
       await tester.pump();
 
-      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.byType(Slider)),
       );
       controller.ensureFocus();

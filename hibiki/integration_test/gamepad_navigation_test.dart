@@ -15,7 +15,7 @@ import 'test_helpers.dart';
 /// Proves, on the real Android Flutter engine, that:
 ///   1. directional keys (D-pad maps to arrow logical keys) move focus among
 ///      the real home widgets — i.e. the UI is traversable without taps;
-///   2. gameButtonB pops a pushed route via the global HibikiPopIntent.
+///   2. gameButtonB pops a pushed route via the global FushiPopIntent.
 ///
 /// gameButtonA activation is covered device-independently by
 /// test/shortcuts/gamepad_navigation_flow_test.dart and
@@ -84,7 +84,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(seconds: 1));
     expect(find.byType(ShortcutSettingsPage), findsNothing,
-        reason: 'gameButtonB must pop the route via HibikiPopIntent');
+        reason: 'gameButtonB must pop the route via FushiPopIntent');
     expect(find.byType(HomePage), findsOneWidget);
   });
 }

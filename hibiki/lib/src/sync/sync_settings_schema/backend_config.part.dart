@@ -155,7 +155,7 @@ class _CredentialConfigWidgetState extends State<_CredentialConfigWidget> {
         children: <Widget>[
           for (int i = 0; i < widget.fields.length; i++) ...<Widget>[
             if (i > 0) const SizedBox(height: 12),
-            HibikiTextField(
+            FushiTextField(
               controller: _controllers[i],
               labelText: widget.fields[i].label,
               hintText: widget.fields[i].hint,

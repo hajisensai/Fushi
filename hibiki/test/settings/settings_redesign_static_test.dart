@@ -122,7 +122,7 @@ void main() {
     'lib/src/settings/material_settings_renderer.dart': <String>[
       'class MaterialSettingsRenderer',
       'SettingsSchemaSection',
-      'HibikiPageScaffold',
+      'FushiPageScaffold',
     ],
     'lib/src/settings/cupertino_settings_renderer.dart': <String>[
       'class CupertinoSettingsRenderer',
@@ -188,10 +188,10 @@ void main() {
     final String source = readNormalizedSource(
         'lib/src/pages/implementations/hibiki_settings_page.dart');
 
-    expect(containsIdentifierCall(source, 'HibikiDialogFrame'), isTrue);
-    expect(containsIdentifierCall(source, 'HibikiModalSheetFrame'), isTrue);
-    // 旧锚点把局部变量名 `context` 写进了契约（`HibikiDesignTokens.of(context)`）。
-    expect(containsIdentifierCall(source, 'HibikiDesignTokens'), isTrue);
+    expect(containsIdentifierCall(source, 'FushiDialogFrame'), isTrue);
+    expect(containsIdentifierCall(source, 'FushiModalSheetFrame'), isTrue);
+    // 旧锚点把局部变量名 `context` 写进了契约（`FushiDesignTokens.of(context)`）。
+    expect(containsIdentifierCall(source, 'FushiDesignTokens'), isTrue);
     expect(containsIdentifierCall(source, 'adaptiveAlertDialog'), isFalse);
   });
 
@@ -203,9 +203,9 @@ void main() {
     final String syncSource = maskComments(readSyncSettingsSchemaSource());
     final String combined = '$actionsSource\n$schemaSource\n$syncSource';
 
-    expect(containsIdentifierCall(actionsSource, 'HibikiDialogFrame'), isTrue);
+    expect(containsIdentifierCall(actionsSource, 'FushiDialogFrame'), isTrue);
     expect(
-      containsIdentifierCall(actionsSource, 'HibikiModalSheetFrame'),
+      containsIdentifierCall(actionsSource, 'FushiModalSheetFrame'),
       isTrue,
     );
 
@@ -229,9 +229,9 @@ void main() {
         'lib/src/settings/cupertino_settings_renderer.dart');
 
     expect(
-        containsIdentifierCall(materialSource, 'HibikiDesignTokens'), isTrue);
+        containsIdentifierCall(materialSource, 'FushiDesignTokens'), isTrue);
     expect(
-      containsIdentifierCall(cupertinoSource, 'HibikiDesignTokens'),
+      containsIdentifierCall(cupertinoSource, 'FushiDesignTokens'),
       isTrue,
     );
 
@@ -499,7 +499,7 @@ void main() {
   test('material destination list uses pill selection + gated chevron', () {
     final String source = readNormalizedSource(
         'lib/src/settings/material_settings_renderer.dart');
-    expect(source, contains('HibikiListItemSelectedShape'));
+    expect(source, contains('FushiListItemSelectedShape'));
     // 旧锚点 `'pushRoutes ? const Icon(Icons.chevron_right)'` 同样钉死三元排版。
     // 契约是「trailing 的雪佛龙由 pushRoutes 门控」。
     final List<String> trailing = namedArgumentValues(source, 'trailing');
@@ -603,7 +603,7 @@ void main() {
       () {
     // The shared shell delegates to the active platform renderer's
     // buildDetailPage, so every page built on it gets the SAME chrome
-    // (HibikiPageScaffold + 24px + AdaptiveSettingsSection on Material).
+    // (FushiPageScaffold + 24px + AdaptiveSettingsSection on Material).
     final String shell =
         readNormalizedSource('lib/src/settings/settings_detail_page.dart');
     expect(shell, contains('Widget buildSettingsDetailShell('));
@@ -623,11 +623,11 @@ void main() {
           reason:
               '$path must render through the unified settings detail shell');
       // No parallel page-shell vocabulary: the converged pages do not stand up
-      // their own AdaptiveSettingsScaffold or hand-rolled HibikiPageScaffold.
+      // their own AdaptiveSettingsScaffold or hand-rolled FushiPageScaffold.
       expect(
           containsIdentifierCall(source, 'AdaptiveSettingsScaffold'), isFalse,
           reason: '$path must not reintroduce its own settings scaffold');
-      expect(containsIdentifierCall(source, 'HibikiPageScaffold'), isFalse,
+      expect(containsIdentifierCall(source, 'FushiPageScaffold'), isFalse,
           reason: '$path must not hand-roll a page scaffold + bare list');
       // Body content is grouped into the shared section cards.
       expect(containsIdentifierCall(source, 'AdaptiveSettingsSection'), isTrue,

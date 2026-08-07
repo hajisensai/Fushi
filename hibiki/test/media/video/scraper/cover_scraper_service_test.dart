@@ -61,14 +61,14 @@ void main() {
   // 刮削落盘点走 evictLocalCoverCache（需要 PaintingBinding）。
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late VideoBookRepository repo;
   late Directory tmp;
   late CoverMetaStore coverMeta;
   late AliasCache aliasCache;
 
   setUp(() async {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     repo = VideoBookRepository(db);
     tmp = await Directory.systemTemp.createTemp('poster_scraper_svc_');
     coverMeta = CoverMetaStore(tmp);

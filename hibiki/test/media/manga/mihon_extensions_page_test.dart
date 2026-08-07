@@ -20,13 +20,13 @@ const String _kRepoIndexUrl =
 
 void main() {
   late Directory root;
-  late HibikiDatabase database;
+  late FushiDatabase database;
   late MihonManager manager;
 
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.en);
     root = await Directory.systemTemp.createTemp('hibiki-mihon-extensions-');
-    database = HibikiDatabase.forTesting(NativeDatabase.memory());
+    database = FushiDatabase.forTesting(NativeDatabase.memory());
     await database.upsertMangaExtensionStore(
       MangaExtensionStoresCompanion.insert(
         indexUrl: 'https://repo.example/index.json',
@@ -292,7 +292,7 @@ void main() {
     expect(find.text(t.mihon_extension_import), findsWidgets);
     expect(find.text(t.mihon_store_add), findsWidgets);
     // 反向锚：独立页形态才有 chrome，内嵌形态一层都不能有。
-    expect(find.byType(HibikiPageHeader), findsNothing);
+    expect(find.byType(FushiPageHeader), findsNothing);
     expect(find.byType(DesktopContentLayout), findsNothing);
     expect(tester.takeException(), null);
   });

@@ -15,7 +15,7 @@ import 'package:fushi/utils.dart';
 /// 左右横移可见相邻集；[initialIndex] 把「继续看」成员滚进初始视野。
 ///
 /// 焦点：行内成员卡各自注册焦点 id，方向键/手柄左右移动由全局几何焦点系统处理
-/// （被遮挡的卡在获焦时经 `HibikiFocusScroll.ensureVisible` 自动横滚入视野——
+/// （被遮挡的卡在获焦时经 `FushiFocusScroll.ensureVisible` 自动横滚入视野——
 /// 与纵向网格同级别的既有支持，无自造 traversal）。
 class CollectionShelfRow extends StatefulWidget {
   const CollectionShelfRow({
@@ -62,7 +62,7 @@ class CollectionShelfRow extends StatefulWidget {
 
   /// 行头的手柄/键盘焦点 id（书架侧沿用 `reader-shelf-collection-<id>` 保持
   /// 既有方向锚点语义）。null 或无焦点根时行头保持纯点击。
-  final HibikiFocusId? headerFocusId;
+  final FushiFocusId? headerFocusId;
 
   /// 初始横滚定位到的成员下标（视频行 = 继续看成员；书架行 v1 恒 0）。
   final int initialIndex;
@@ -137,7 +137,7 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -173,8 +173,8 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
   }
 
   /// 合集已打标签的 chip 列（行头下方）。与合集详情页 `_buildTagChips` 视觉一致
-  /// （[HibikiTagChip] + Wrap）；[CollectionShelfRow.tags] 空则不占位。
-  Widget _buildTagChips(BuildContext context, HibikiDesignTokens tokens) {
+  /// （[FushiTagChip] + Wrap）；[CollectionShelfRow.tags] 空则不占位。
+  Widget _buildTagChips(BuildContext context, FushiDesignTokens tokens) {
     final List<BookTagRow>? tags = widget.tags;
     if (tags == null || tags.isEmpty) return const SizedBox.shrink();
     return Padding(
@@ -189,17 +189,17 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
         runSpacing: 6,
         children: <Widget>[
           for (final BookTagRow tag in tags)
-            HibikiTagChip(
+            FushiTagChip(
               label: tag.name,
               color: Color(tag.colorValue),
-              tone: HibikiTagChipTone.surface,
+              tone: FushiTagChipTone.surface,
             ),
         ],
       ),
     );
   }
 
-  Widget _buildHeader(BuildContext context, HibikiDesignTokens tokens) {
+  Widget _buildHeader(BuildContext context, FushiDesignTokens tokens) {
     // 多选态：行头点击整选合集（onToggleSelected），替代进详情（onOpenDetail）。
     final Widget? selectionCheckbox = widget.selectionCheckbox;
     final bool selectionMode = selectionCheckbox != null;
@@ -285,9 +285,9 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
         ),
       ),
     );
-    final HibikiFocusId? focusId = widget.headerFocusId;
+    final FushiFocusId? focusId = widget.headerFocusId;
     Widget result = header;
-    if (focusId != null && HibikiFocusRoot.maybeControllerOf(context) != null) {
+    if (focusId != null && FushiFocusRoot.maybeControllerOf(context) != null) {
       result = Actions(
         actions: <Type, Action<Intent>>{
           ActivateIntent: CallbackAction<ActivateIntent>(
@@ -297,7 +297,7 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
             },
           ),
         },
-        child: HibikiFocusTarget(id: focusId, child: header),
+        child: FushiFocusTarget(id: focusId, child: header),
       );
     }
     // 把标签拖到行头 = 给整个合集打标签。DragTarget 包在最外层（含焦点包裹），
@@ -325,7 +325,7 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
   /// 但适配行头形状（末端小图标而非居中大图标）。
   Widget _wrapTagDropTarget(
     BuildContext context,
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     Widget child,
     void Function(BookTagRow tag) onTagDropped,
   ) {

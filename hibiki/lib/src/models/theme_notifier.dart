@@ -58,7 +58,7 @@ ColorScheme buildSystemThemeColorScheme({
 /// （系统 + 预设 7 + 自定义 N），拖字号 slider 时每个 tick 全表 setState 就是
 /// 每 tick 一场 HCT 风暴（BUG-969）。入参→结果是纯映射，按参数键缓存即可整体
 /// 消除。有界防自定义主题编辑时无限膨胀（编辑逐色微调会产生大量一次性键）。
-typedef _HibikiSchemeKey = (
+typedef _FushiSchemeKey = (
   int seed,
   Brightness brightness,
   DynamicSchemeVariant variant,
@@ -67,8 +67,8 @@ typedef _HibikiSchemeKey = (
   int? tertiary,
   int? primaryContainer,
 );
-final Map<_HibikiSchemeKey, ColorScheme> _hibikiSchemeCache =
-    <_HibikiSchemeKey, ColorScheme>{};
+final Map<_FushiSchemeKey, ColorScheme> _hibikiSchemeCache =
+    <_FushiSchemeKey, ColorScheme>{};
 const int _hibikiSchemeCacheLimit = 64;
 
 ColorScheme buildHibikiColorScheme({
@@ -80,7 +80,7 @@ ColorScheme buildHibikiColorScheme({
   Color? tertiary,
   Color? primaryContainer,
 }) {
-  final _HibikiSchemeKey key = (
+  final _FushiSchemeKey key = (
     seedColor.toARGB32(),
     brightness,
     variant,
@@ -419,13 +419,13 @@ class ThemeNotifier extends ChangeNotifier {
   static const String appUiScaleModeAuto = 'auto';
   static const String appUiScaleModeCustom = 'custom';
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
   final TextTheme Function() _textThemeBuilder;
   final Map<String, String> _prefs = {};
   // Invalidates an async migration reload whenever a newer local write or
   // full preference snapshot has taken ownership of the in-memory value.
   int _designSystemPreferenceRevision = 0;
-  double _autoAppUiScale = HibikiAppUiScale.defaultScale;
+  double _autoAppUiScale = FushiAppUiScale.defaultScale;
 
   CorePalette? _systemPalette;
   // OS accent color, the only system-color signal Windows / macOS / Linux
@@ -773,16 +773,16 @@ class ThemeNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
-  HibikiDesignSystem get designSystemTheme {
+  FushiDesignSystem get designSystemTheme {
     switch (designSystem) {
       case 'material':
-        return HibikiDesignSystem.material;
+        return FushiDesignSystem.material;
       case 'cupertino':
-        return HibikiDesignSystem.cupertino;
+        return FushiDesignSystem.cupertino;
       case 'macos':
-        return HibikiDesignSystem.macos;
+        return FushiDesignSystem.macos;
       default:
-        return HibikiDesignSystem.auto;
+        return FushiDesignSystem.auto;
     }
   }
 
@@ -820,10 +820,10 @@ class ThemeNotifier extends ChangeNotifier {
   double get customAppUiScale {
     final Object value = _get(
       'app_ui_scale',
-      defaultValue: HibikiAppUiScale.defaultScale,
+      defaultValue: FushiAppUiScale.defaultScale,
     );
-    if (value is num) return HibikiAppUiScale.normalize(value.toDouble());
-    return HibikiAppUiScale.defaultScale;
+    if (value is num) return FushiAppUiScale.normalize(value.toDouble());
+    return FushiAppUiScale.defaultScale;
   }
 
   /// 最近一次按视口算出的「合适」自动值，仅用作首启种子与种子前的临时显示，不再是
@@ -844,7 +844,7 @@ class ThemeNotifier extends ChangeNotifier {
     required Size viewport,
     required TargetPlatform platform,
   }) {
-    _autoAppUiScale = HibikiAppUiScale.automaticScaleForViewport(
+    _autoAppUiScale = FushiAppUiScale.automaticScaleForViewport(
       viewport: viewport,
       platform: platform,
     );
@@ -858,7 +858,7 @@ class ThemeNotifier extends ChangeNotifier {
   }
 
   Future<void> _seedAppUiScale(double value) async {
-    final double normalized = HibikiAppUiScale.normalize(value);
+    final double normalized = FushiAppUiScale.normalize(value);
     // 立刻更新内存值，使同帧 _isAppUiScaleSeeded / appUiScale 反映已种子（_db 写是
     // async，先同步置内存避免本帧/下一帧重复种子）。
     _prefs['app_ui_scale'] = PrefCodec.encode(normalized);
@@ -870,7 +870,7 @@ class ThemeNotifier extends ChangeNotifier {
   }
 
   Future<void> setAppUiScale(double value) async {
-    await _set('app_ui_scale', HibikiAppUiScale.normalize(value));
+    await _set('app_ui_scale', FushiAppUiScale.normalize(value));
     // 用户显式拖动即落具体值；清掉任何残留旧模式键，确保此后判为已种子。
     _prefs.remove('app_ui_scale_mode');
     await _db.deletePref('app_ui_scale_mode');
@@ -985,8 +985,8 @@ class ThemeNotifier extends ChangeNotifier {
           : null,
       splashFactory: eink ? NoSplash.splashFactory : null,
       extensions: <ThemeExtension<dynamic>>[
-        HibikiDesignSystemTheme(designSystemTheme),
-        HibikiEinkTheme(eink),
+        FushiDesignSystemTheme(designSystemTheme),
+        FushiEinkTheme(eink),
       ],
       appBarTheme: const AppBarTheme(
         elevation: 0,
@@ -1021,32 +1021,32 @@ class ThemeNotifier extends ChangeNotifier {
       navigationBarTheme: NavigationBarThemeData(
         elevation: 0,
         indicatorShape: RoundedRectangleBorder(
-          borderRadius: HibikiBorderRadius.control,
+          borderRadius: FushiBorderRadius.control,
         ),
         labelTextStyle: WidgetStateProperty.all(tt.labelSmall),
       ),
       popupMenuTheme: PopupMenuThemeData(
         shape: RoundedRectangleBorder(
-          borderRadius: HibikiBorderRadius.menu,
+          borderRadius: FushiBorderRadius.menu,
         ),
       ),
       dialogTheme: DialogThemeData(
         shape: RoundedRectangleBorder(
-          borderRadius: HibikiBorderRadius.dialog,
+          borderRadius: FushiBorderRadius.dialog,
         ),
       ),
       listTileTheme: const ListTileThemeData(),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
-          borderRadius: HibikiBorderRadius.control,
+          borderRadius: FushiBorderRadius.control,
           borderSide: BorderSide(color: cs.outline),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: HibikiBorderRadius.control,
+          borderRadius: FushiBorderRadius.control,
           borderSide: BorderSide(color: cs.outline),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: HibikiBorderRadius.control,
+          borderRadius: FushiBorderRadius.control,
           borderSide: BorderSide(color: cs.primary, width: 2),
         ),
       ),
@@ -1063,14 +1063,14 @@ class ThemeNotifier extends ChangeNotifier {
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
-          borderRadius: HibikiBorderRadius.card,
+          borderRadius: FushiBorderRadius.card,
         ),
       ),
       cardTheme: CardThemeData(
         elevation: 0,
         color: cs.surfaceContainerLow,
         shape: RoundedRectangleBorder(
-          borderRadius: HibikiBorderRadius.card,
+          borderRadius: FushiBorderRadius.card,
           // E-ink: surfaceContainerLow == the page background, so cards need a
           // solid outline to keep their boundary readable in pure black/white.
           side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
@@ -1079,7 +1079,7 @@ class ThemeNotifier extends ChangeNotifier {
       bottomSheetTheme: const BottomSheetThemeData(
         showDragHandle: true,
         shape: RoundedRectangleBorder(
-          borderRadius: HibikiBorderRadius.sheet,
+          borderRadius: FushiBorderRadius.sheet,
         ),
         surfaceTintColor: Colors.transparent,
       ),
@@ -1089,12 +1089,12 @@ class ThemeNotifier extends ChangeNotifier {
         backgroundColor: cs.primaryContainer,
         foregroundColor: cs.onPrimaryContainer,
         shape: RoundedRectangleBorder(
-          borderRadius: HibikiBorderRadius.control,
+          borderRadius: FushiBorderRadius.control,
         ),
       ),
       chipTheme: ChipThemeData(
         shape: RoundedRectangleBorder(
-          borderRadius: HibikiBorderRadius.chip,
+          borderRadius: FushiBorderRadius.chip,
         ),
         side: BorderSide(color: cs.outlineVariant),
         selectedColor: cs.secondaryContainer,
@@ -1443,7 +1443,7 @@ class ThemeNotifier extends ChangeNotifier {
 
   // ── Splash ────────────────────────────────────────────────────────
 
-  static const _splashChannel = HibikiChannels.splash;
+  static const _splashChannel = FushiChannels.splash;
 
   void _persistSplashColor() {
     if (!Platform.isAndroid && !Platform.isIOS) return;

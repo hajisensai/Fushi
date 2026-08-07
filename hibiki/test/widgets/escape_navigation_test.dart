@@ -25,7 +25,7 @@ Widget _app(GlobalKey<NavigatorState> navKey, Widget home) {
 Widget _focusApp(GlobalKey<NavigatorState> navKey, Widget home) {
   return MaterialApp(
     navigatorKey: navKey,
-    builder: (context, child) => HibikiFocusRoot(
+    builder: (context, child) => FushiFocusRoot(
       child: wrapWithGlobalNavigation(
         navigatorKey: navKey,
         child: child!,
@@ -124,8 +124,8 @@ void main() {
                           context: pageContext,
                           barrierDismissible: false,
                           builder: (BuildContext dialogContext) => Dialog(
-                            child: HibikiFocusTarget(
-                              id: const HibikiFocusId('dialog-target'),
+                            child: FushiFocusTarget(
+                              id: const FushiFocusId('dialog-target'),
                               focusNode: dialogFocus,
                               child: const SizedBox(
                                 width: 160,

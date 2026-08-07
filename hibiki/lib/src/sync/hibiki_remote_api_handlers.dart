@@ -7,10 +7,10 @@ import 'package:fushi/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:fushi/src/sync/immersion_mine_payload.dart';
 
 /// TODO-1000（BUG-530）：浏览器扩展 / 外部工具的两个远端 API（查词 `/api/lookup/dictionary`
-/// + 制卡 `/api/mine`）的**共享 handler 逻辑**。HibikiSyncServer（互联/同步 host）与
+/// + 制卡 `/api/mine`）的**共享 handler 逻辑**。FushiSyncServer（互联/同步 host）与
 /// YomitanApiServer（外部工具 API surface）都复用这里，保证扩展契约是**单一真相源**——
 /// 历史 bug 正是两个 server 契约分裂：扩展被自动配置指向 YomitanApiServer（19633），但
-/// 这两个端点当时只在 HibikiSyncServer 实现，导致 Netflix 查词/制卡全断。
+/// 这两个端点当时只在 FushiSyncServer 实现，导致 Netflix 查词/制卡全断。
 ///
 /// 纯逻辑（已解析的 body Map → 调注入的窄接口 service → 返回响应 Map），不碰 shelf/HTTP，
 /// 便于单测、便于两个 server 各自套自己的路由/鉴权外壳。
@@ -24,8 +24,8 @@ import 'package:fushi/src/sync/immersion_mine_payload.dart';
 /// （改主题下次查词即变），无需重装扩展。null（未注入）时不带 `theme` 字段（向后兼容）。
 Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   Map<String, dynamic> body, {
-  required HibikiRemoteLookupService lookup,
-  HibikiRemoteHistoryService? history,
+  required FushiRemoteLookupService lookup,
+  FushiRemoteHistoryService? history,
   Map<String, String> Function()? themeColorsProvider,
   List<String> Function()? audioSourcesProvider,
   String? Function()? extensionBuildProvider,
@@ -79,13 +79,13 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
 }
 
 /// `POST /api/mine` 的响应体。[body] 是已解析的 JSON Map，必须含 `fields`（Map）。
-/// 带截图/时间戳/clip 的沉浸挖词走 [HibikiRemoteMiningService.mineImmersion]（引擎在实现方，
-/// 这里只转发解析好的 payload）；纯 `{fields,sentence}` 走 [HibikiRemoteMiningService.mineEntry]
+/// 带截图/时间戳/clip 的沉浸挖词走 [FushiRemoteMiningService.mineImmersion]（引擎在实现方，
+/// 这里只转发解析好的 payload）；纯 `{fields,sentence}` 走 [FushiRemoteMiningService.mineEntry]
 /// 回落（向后兼容浏览器扩展纯文本挖词 + 移动端）。
 /// fields 缺失/类型错时 [ImmersionMinePayload.fromJson] 抛 [FormatException]，由调用方转 400。
 Future<Map<String, dynamic>> buildRemoteMineResponse(
   Map<String, dynamic> body, {
-  required HibikiRemoteMiningService mining,
+  required FushiRemoteMiningService mining,
 }) async {
   final ImmersionMinePayload payload = ImmersionMinePayload.fromJson(body);
   // TODO-1303：结果不再是裸字符串——摊开诊断（失败原因 / 音频落空警告）到响应体，
@@ -108,7 +108,7 @@ Future<Map<String, dynamic>> buildRemoteMineResponse(
 /// 400。响应形状与 `/api/mine` 一致（`{result, message?, detail?}`）。
 Future<Map<String, dynamic>> buildForwardedMineResponse(
   Map<String, dynamic> body, {
-  required HibikiRemoteMiningService mining,
+  required FushiRemoteMiningService mining,
 }) async {
   final ForwardedMinePayload payload = ForwardedMinePayload.fromJson(body);
   final RemoteMineResult r = await mining.mineForwarded(payload);
@@ -125,7 +125,7 @@ Future<Map<String, dynamic>> buildForwardedMineResponse(
 /// 经注入的 [mining].isDuplicate 复用 app 内同一 Anki 查重后端，单一真相源。
 Future<Map<String, dynamic>> buildRemoteDuplicateResponse(
   Map<String, dynamic> body, {
-  required HibikiRemoteMiningService mining,
+  required FushiRemoteMiningService mining,
 }) async {
   final String expression = body['expression']?.toString() ?? '';
   final String reading = body['reading']?.toString() ?? '';

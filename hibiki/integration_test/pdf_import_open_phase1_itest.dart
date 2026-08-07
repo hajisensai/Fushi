@@ -53,8 +53,8 @@ void main() {
     addTearDown(() => EpubStorage.debugBaseDirectoryOverride = null);
 
     // ignore: invalid_use_of_visible_for_testing_member
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     // ── 导入 ────────────────────────────────────────────────────────────

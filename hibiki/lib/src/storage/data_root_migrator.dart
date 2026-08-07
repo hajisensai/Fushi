@@ -934,7 +934,7 @@ class DataRootMigrator {
       newRoot: newDocumentsRoot,
       scopeTopLevelNames: documentsScopeEntries,
     );
-    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    final FushiDatabase db = FushiDatabase(dbDirectory);
     try {
       await db.transaction(() async {
         await _rebaseEpubBooks(db, docs);
@@ -963,7 +963,7 @@ class DataRootMigrator {
   /// epub_books：epubPath / extractDir / coverPath。前者与 coverPath 按声明其实不是
   /// 数据根内路径（裸文件名 / 相对 href），改写是防御性 no-op，保留调用与历史行为一致。
   static Future<void> _rebaseEpubBooks(
-    HibikiDatabase db,
+    FushiDatabase db,
     DocumentsPathRebaser docs,
   ) async {
     for (final EpubBookRow b in await db.getAllEpubBooks()) {
@@ -978,7 +978,7 @@ class DataRootMigrator {
 
   /// audiobooks：audioRoot / audioPathsJson（列表）/ alignmentPath。
   static Future<void> _rebaseAudiobooks(
-    HibikiDatabase db,
+    FushiDatabase db,
     DocumentsPathRebaser docs,
   ) async {
     for (final AudiobookRow a in await db.getAllAudiobooks()) {
@@ -993,7 +993,7 @@ class DataRootMigrator {
 
   /// srt_books（独立 SRT/有声书，无 epub 背书）：四列都在 documents 根下。
   static Future<void> _rebaseSrtBooks(
-    HibikiDatabase db,
+    FushiDatabase db,
     DocumentsPathRebaser docs,
   ) async {
     for (final SrtBookRow s in await db.getAllSrtBooks()) {
@@ -1019,7 +1019,7 @@ class DataRootMigrator {
   ///   里只有「外挂绝对路径」态该改写，`embedded:<n>` / `off:` 两个哨兵显式判掉。
   ///   `video_subtitles/` 在搬移白名单里，不改写 = 所有外挂字幕失联。
   static Future<void> _rebaseVideoBooks(
-    HibikiDatabase db,
+    FushiDatabase db,
     DocumentsPathRebaser docs,
   ) async {
     for (final VideoBookRow v in await db.allVideoBooks()) {
@@ -1056,7 +1056,7 @@ class DataRootMigrator {
   /// TODO-1255 的 video_books.cover_path 完全同型 —— 不改写 = 整个游戏库封面退化成默认
   /// 手柄图标。exe_path / workdir / launch_args 是用户外部安装位置，**绝不**改写。
   static Future<void> _rebaseGalgames(
-    HibikiDatabase db,
+    FushiDatabase db,
     DocumentsPathRebaser docs,
   ) async {
     for (final GalgameRow g in await db.getAllGalgames()) {
@@ -1074,7 +1074,7 @@ class DataRootMigrator {
   /// 不改写 = 换过封面的合集在换数据根后全部退回「借成员封面」，用户看到封面自己变了。
   /// cover_source 是成员引用不是路径，绝不改写。
   static Future<void> _rebaseMediaCollections(
-    HibikiDatabase db,
+    FushiDatabase db,
     DocumentsPathRebaser docs,
   ) async {
     for (final MediaCollectionRow c in await db.getAllMediaCollections()) {
@@ -1093,7 +1093,7 @@ class DataRootMigrator {
   /// 详情页 hero 背景变死链，静默退回海报模糊垫底，用户看到背景「自己没了」。
   /// source / tags_json / infobox_json / detail_url 不是本机路径，绝不改写。
   static Future<void> _rebaseCollectionScrapeMeta(
-    HibikiDatabase db,
+    FushiDatabase db,
     DocumentsPathRebaser docs,
   ) async {
     for (final MediaCollectionRow c in await db.getAllMediaCollections()) {
@@ -1115,7 +1115,7 @@ class DataRootMigrator {
   /// 不改写 = 换数据根后 hero 背景/logo、续播横卡全部变死链，静默退回海报模糊
   /// 垫底。kind / source_url 不是本机路径，绝不改写。
   static Future<void> _rebaseMediaImages(
-    HibikiDatabase db,
+    FushiDatabase db,
     DocumentsPathRebaser docs,
   ) async {
     for (final MediaImageRow row in await db.getAllMediaImages()) {
@@ -1134,7 +1134,7 @@ class DataRootMigrator {
   /// 前置兜底 —— 列一旦开始落值，不改写 = 换数据根后相关作品卡封面死链。
   /// source / cover_url 不是本机路径，绝不改写。
   static Future<void> _rebaseCollectionRelations(
-    HibikiDatabase db,
+    FushiDatabase db,
     DocumentsPathRebaser docs,
   ) async {
     for (final MediaCollectionRow c in await db.getAllMediaCollections()) {
@@ -1154,7 +1154,7 @@ class DataRootMigrator {
   /// 不改写 = 书架/首页「最近」卡片封面全空白，直到该书被重新打开刷新。远端源的
   /// http(s) URL scheme 非 file，[DocumentsPathRebaser.rebaseFileUri] 原样返回。
   static Future<void> _rebaseMediaItems(
-    HibikiDatabase db,
+    FushiDatabase db,
     DocumentsPathRebaser docs,
   ) async {
     for (final MediaItemRow m in await db.getAllMediaItems()) {
@@ -1172,7 +1172,7 @@ class DataRootMigrator {
   /// preferences：按 [kPathRebasePrefs] 声明逐 key 改写（字体目录 / 本地发音库 /
   /// 游戏库 legacy JSON / 远端字幕 map / 下载根与历史）。
   static Future<void> _rebasePreferences(
-    HibikiDatabase db,
+    FushiDatabase db,
     DocumentsPathRebaser docs,
     String newSupportRoot,
   ) async {
@@ -1199,7 +1199,7 @@ class DataRootMigrator {
   /// 迁移无关的功能契约——爆炸半径大得多，且会破坏已按 Profile 分别配字体的用户。
   /// 迁移时一起改是纯增量、零语义变更。
   static Future<void> _rebaseProfileSettings(
-    HibikiDatabase db,
+    FushiDatabase db,
     DocumentsPathRebaser docs,
     String newSupportRoot,
   ) async {

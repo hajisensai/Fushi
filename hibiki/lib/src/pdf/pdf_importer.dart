@@ -23,7 +23,7 @@ import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
 /// - `chapterCount` = PDF 总页数；`chaptersJson='[]'`（PDF 无章字数，页码进度是
 ///   Phase 3 的事）。
 ///
-/// 删除零改动复用 [HibikiDatabase.deleteEpubBook]（按 bookKey 级联）+
+/// 删除零改动复用 [FushiDatabase.deleteEpubBook]（按 bookKey 级联）+
 /// [ReaderHibikiSource.deleteBook] 的磁盘清理（`EpubStorage.deleteBookDir`）。
 class PdfImporter {
   PdfImporter._();
@@ -42,7 +42,7 @@ class PdfImporter {
   /// [title] 由导入对话框传入（用户可编辑的标题输入框值）——PDF 元数据里的标题不可靠，
   /// 以用户输入为准，与文本转 EPUB 的口径一致。
   static Future<String> importFromPath({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required String filePath,
     required String fileName,
     required String title,
@@ -111,7 +111,7 @@ class PdfImporter {
           mediaType: kActivityMediaBook,
           title: storedTitle,
           mediaKey: bookKey,
-          dateKey: HibikiTimeFormat.dayKey(
+          dateKey: FushiTimeFormat.dayKey(
               DateTime.fromMillisecondsSinceEpoch(importedAtMs)),
           timestampMs: importedAtMs,
         );

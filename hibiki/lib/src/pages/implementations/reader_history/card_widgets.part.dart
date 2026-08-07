@@ -25,7 +25,7 @@ int adaptiveTagSlots({
 ///
 /// 历史：早期徽章夹在封面下方的 footer 文字行里、紧贴小号书名，读作一个克制的小角标。
 /// TODO-355 把徽章移到封面图上后，旧布局用 `SizedBox.square(gap*5=40) + BoxFit.scaleDown`
-/// 包住内在 22px（HibikiBadge：icon 14 + padding gap 8）的徽章，徽章按 22px 满尺寸渲染。
+/// 包住内在 22px（FushiBadge：icon 14 + padding gap 8）的徽章，徽章按 22px 满尺寸渲染。
 /// TODO-361 误把方框收到 `gap*2=16` + `BoxFit.contain`，把 22px 徽章硬缩到 16px，
 /// 反而「太小看不清」（TODO-552 用户报回归）。这里恢复书架徽章的正常大小：方框等于徽章
 /// 内在尺寸 22px，配合 `BoxFit.contain` 既不放大也不缩小，徽章按 22px 满尺寸渲染。
@@ -66,10 +66,10 @@ const double kShelfBookCardAspectRatio = 160 / 260;
 /// card domain methods extracted via part-of (TODO-587); shared private scope.
 extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
   Widget _tagChip(BookTagRow tag) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: _cardTagChipPadding(tokens),
-      child: HibikiTagChip(
+      child: FushiTagChip(
         label: tag.name,
         color: Color(tag.colorValue),
       ),
@@ -77,16 +77,16 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
   }
 
   Widget _overflowChip(int count) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: _cardTagChipPadding(tokens),
-      child: HibikiTagChip(
+      child: FushiTagChip(
         label: '+$count',
       ),
     );
   }
 
-  EdgeInsetsDirectional _cardTagChipPadding(HibikiDesignTokens tokens) {
+  EdgeInsetsDirectional _cardTagChipPadding(FushiDesignTokens tokens) {
     return EdgeInsetsDirectional.only(
       end: tokens.spacing.gap / 2,
       bottom: tokens.spacing.gap / 4,
@@ -123,7 +123,7 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
   /// BUG-220(子2): 卡片左上角竖排标签原来用 `crossAxisAlignment.start`，每个 chip
   /// 宽度等于自身文字宽度，导致一行长一行短的参差。用 `IntrinsicWidth` 把整列宽度
   /// 收敛到最宽 chip，再用 `stretch` 让每个 chip 拉到该统一宽度（chip 内部文字仍左
-  /// 对齐），竖排整齐。不改 [HibikiTagChip]，不影响别处用法。
+  /// 对齐），竖排整齐。不改 [FushiTagChip]，不影响别处用法。
   Widget _uniformWidthTagColumn(List<Widget> chips) {
     return IntrinsicWidth(
       child: Column(
@@ -175,10 +175,10 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
   }
 
   Widget _coverPlaceholderIcon(IconData icon) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 巡检 B11：深色主题下无封面占位（卡面色 ≈ 页面背景）与背景零对比，占位卡
     // 读作一块空洞。给占位区补 1px outlineVariant 描边（全主题恒有；eink 的卡级
-    // 描边另由 HibikiCard 兜，两者叠加无害）。
+    // 描边另由 FushiCard 兜，两者叠加无害）。
     return DecoratedBox(
       decoration: BoxDecoration(
         border: Border.all(color: theme.colorScheme.outlineVariant),
@@ -203,7 +203,7 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
     // 参数化而非在壳里硬编码媒体类型分支。
     required double slotAspectRatio,
     Key? cardKey,
-    HibikiFocusId? focusId,
+    FushiFocusId? focusId,
     String? selectionKey,
     Object? dragBookId,
     void Function(BookTagRow tag)? onTagDropped,
@@ -212,7 +212,7 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
   }) {
     final bool selected =
         selectionKey != null && _selectedKeys.contains(selectionKey);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double selectionInset = tokens.spacing.gap / 2;
     final SelectionSlot? slot =
         selectionKey == null ? null : SelectionSlot.loose(selectionKey);
@@ -268,7 +268,7 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
         ),
       ),
     );
-    if (focusId != null && HibikiFocusRoot.maybeControllerOf(context) != null) {
+    if (focusId != null && FushiFocusRoot.maybeControllerOf(context) != null) {
       interactiveCard = Actions(
         actions: <Type, Action<Intent>>{
           ActivateIntent: CallbackAction<ActivateIntent>(
@@ -278,7 +278,7 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
             },
           ),
         },
-        child: HibikiFocusTarget(id: focusId, child: interactiveCard),
+        child: FushiFocusTarget(id: focusId, child: interactiveCard),
       );
     }
     // Gamepad long-press (hold A) on the focused card invokes the same
@@ -329,7 +329,7 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
     Widget? metadata,
     Widget? loadingOverlay,
   }) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double overlayInset = tokens.spacing.gap * 0.75;
     // 封面和标题 footer 分区稳定：封面内只叠加标签、类型徽章、进度条；
     // 书名移到封面下方，避免遮住封面图，也避免长标题撑坏网格。
@@ -354,7 +354,7 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
                     end: overlayInset,
                     top: overlayInset,
                     // 封面右上角类型徽章（TODO-284 / TODO-355 / TODO-361 / TODO-552）。
-                    // 徽章内在尺寸是 22px（HibikiBadge: icon 14 + padding gap）。方框等于
+                    // 徽章内在尺寸是 22px（FushiBadge: icon 14 + padding gap）。方框等于
                     // 徽章内在尺寸 kShelfCoverBadgeDimension=22，配合 `BoxFit.contain` 既不
                     // 放大也不缩小，徽章按 22px 满尺寸渲染——TODO-361 曾把方框收到 16px 把徽章
                     // 缩得太小看不清，TODO-552 恢复正常大小。
@@ -407,7 +407,7 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
   }
 
   Widget _bookCardCoverFrame(Widget child) {
-    return HibikiCard(
+    return FushiCard(
       padding: EdgeInsets.zero,
       margin: EdgeInsets.zero,
       child: child,
@@ -415,7 +415,7 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
   }
 
   Widget _bookCardTagArea(Widget tagLabels) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return ConstrainedBox(
       constraints: BoxConstraints(
         maxWidth: tokens.spacing.gap * 9,
@@ -431,7 +431,7 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
     required Color foreground,
     String? tooltip,
   }) {
-    final Widget badge = HibikiBadge(
+    final Widget badge = FushiBadge(
       icon: icon,
       background: background,
       foreground: foreground,

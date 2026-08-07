@@ -65,7 +65,7 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
     Navigator.of(context).push(
       adaptivePageRoute<void>(
         context: context,
-        builder: (BuildContext context) => HibikiPageScaffold(
+        builder: (BuildContext context) => FushiPageScaffold(
           title: t.mihon_source_browse_mokuro,
           body: MokuroMoeCatalogView(
             db: appModel.database,
@@ -110,9 +110,9 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
   Widget _buildHeader() {
     final Widget? navigation = widget.navigation;
     if (navigation != null) {
-      return HibikiPageHeader.customTitle(title: navigation);
+      return FushiPageHeader.customTitle(title: navigation);
     }
-    return HibikiPageHeader(title: t.library_view_browse);
+    return FushiPageHeader(title: t.library_view_browse);
   }
 
   @override
@@ -131,9 +131,9 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
               padding: const EdgeInsets.all(16),
               children: <Widget>[
                 if (mokuroEnabled)
-                  HibikiCard(
+                  FushiCard(
                     padding: EdgeInsets.zero,
-                    child: HibikiListItem(
+                    child: FushiListItem(
                       leading: const Icon(Icons.auto_stories_outlined),
                       title: Text(t.mihon_source_browse_mokuro),
                       subtitle: const Text('mokuro.moe'),
@@ -142,9 +142,9 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
                     ),
                   ),
                 for (final MangaOnlineSourceRow source in sources)
-                  HibikiCard(
+                  FushiCard(
                     padding: EdgeInsets.zero,
-                    child: HibikiListItem(
+                    child: FushiListItem(
                       leading: CircleAvatar(
                         child: Text(
                           source.language.isEmpty

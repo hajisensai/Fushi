@@ -74,7 +74,7 @@ class ClipboardPanelController {
   static bool get isSupported => Platform.isWindows;
 
   static const OverlayWindowChannel _channel =
-      OverlayWindowChannel(HibikiChannels.clipboardPanel);
+      OverlayWindowChannel(FushiChannels.clipboardPanel);
 
   /// BUG-1210 — 查词后自动朗读。此前**只有瞬态覆盖窗接了线**，本面板整条路径没有
   /// 任何朗读调用：同一个全局开关 `autoReadOnLookup` 在那个表面生效、在这里完全

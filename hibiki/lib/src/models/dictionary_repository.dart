@@ -27,7 +27,7 @@ class DictionaryRepository {
         ExitFlushRegistry.instance.register(flushDictionaryHistoryNow);
   }
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
   final VoidCallback? _onCacheRebuild;
 
   /// 低内存模式信号（读 pref，惰性求值：主进程构造发生在 prefs 加载之前，

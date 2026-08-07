@@ -18,7 +18,7 @@ Future<Directory> _tempDir(String prefix) =>
     Directory.systemTemp.createTemp(prefix);
 
 Future<void> _exportZip(
-  HibikiDatabase srcDb,
+  FushiDatabase srcDb,
   String srcDir,
   String zipPath,
 ) async {
@@ -31,7 +31,7 @@ void main() {
       () async {
     final Directory curDir = await _tempDir('fs_cur_');
     addTearDown(() => cleanupTempDir(curDir));
-    final HibikiDatabase cur = HibikiDatabase(curDir.path);
+    final FushiDatabase cur = FushiDatabase(curDir.path);
     final FavoriteSentenceRepository curRepo = FavoriteSentenceRepository(cur);
     // Device has one local-only sentence and one it SHARES (by content) with
     // the backup but under a different (earlier) createdAt / id.
@@ -57,7 +57,7 @@ void main() {
 
     final Directory srcDir = await _tempDir('fs_src_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final HibikiDatabase src = HibikiDatabase(srcDir.path);
+    final FushiDatabase src = FushiDatabase(srcDir.path);
     final FavoriteSentenceRepository srcRepo = FavoriteSentenceRepository(src);
     // Backup has the SAME shared sentence (later createdAt, different id ->
     // must dedupe to the device's earlier one) plus a backup-only sentence.
@@ -91,7 +91,7 @@ void main() {
     await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
-    final HibikiDatabase after = HibikiDatabase(curDir.path);
+    final FushiDatabase after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final List<FavoriteSentence> all =
         await FavoriteSentenceRepository(after).getAll();
@@ -119,7 +119,7 @@ void main() {
       () async {
     final Directory curDir = await _tempDir('fs_cur2_');
     addTearDown(() => cleanupTempDir(curDir));
-    final HibikiDatabase cur = HibikiDatabase(curDir.path);
+    final FushiDatabase cur = FushiDatabase(curDir.path);
     await FavoriteSentenceRepository(cur).add(FavoriteSentence(
       id: 'hl_keep',
       text: '残す',
@@ -133,7 +133,7 @@ void main() {
 
     final Directory srcDir = await _tempDir('fs_src2_');
     addTearDown(() => cleanupTempDir(srcDir));
-    final HibikiDatabase src = HibikiDatabase(srcDir.path); // no fav sentences
+    final FushiDatabase src = FushiDatabase(srcDir.path); // no fav sentences
     final Directory zipDir = await _tempDir('fs_zip2_');
     addTearDown(() => cleanupTempDir(zipDir));
     final String zip = p.join(zipDir.path, 'b.zip');
@@ -143,7 +143,7 @@ void main() {
     await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
-    final HibikiDatabase after = HibikiDatabase(curDir.path);
+    final FushiDatabase after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final List<FavoriteSentence> all =
         await FavoriteSentenceRepository(after).getAll();

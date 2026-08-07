@@ -55,7 +55,7 @@ class _FakeInAppWebViewController implements InAppWebViewController {
 }
 
 AppModel _testAppModel() {
-  final HibikiDatabase db = HibikiDatabase.forTesting(
+  final FushiDatabase db = FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
@@ -155,7 +155,7 @@ void main() {
       // GATE 2: theme selector visible + operable.
       expect(find.text(t.reader_theme), findsOneWidget,
           reason: 'GATE2: theme selector merged into layout sub-page');
-      expect(find.byType(HibikiSchemeSwatch), findsWidgets,
+      expect(find.byType(FushiSchemeSwatch), findsWidgets,
           reason: 'GATE2: theme swatches must render');
 
       // GATE 3: edit-book-CSS entry present when extractDir != null.
@@ -203,7 +203,7 @@ void main() {
       // GATE 4: lyrics-mode layout sub-page exposes theme + edit-book-CSS.
       expect(find.text(t.reader_theme), findsOneWidget,
           reason: 'GATE4: lyrics mode must reach the theme selector');
-      expect(find.byType(HibikiSchemeSwatch), findsWidgets);
+      expect(find.byType(FushiSchemeSwatch), findsWidgets);
       expect(find.text(t.book_css_editor_edit_css), findsOneWidget,
           reason: 'GATE4: lyrics mode must reach edit-book-CSS');
 
@@ -230,7 +230,7 @@ void main() {
           reason: 'GATE1: wide left pane must not contain appearance');
       expect(find.text(t.section_layout), findsOneWidget);
 
-      // Select layout via focus (wide left pane uses HibikiListItem).
+      // Select layout via focus (wide left pane uses FushiListItem).
       final FocusDriver driver = FocusDriver(tester);
       final Finder layoutItem = find.text(t.section_layout);
       final bool focused = await driver.focusWidget(layoutItem, maxSteps: 40);

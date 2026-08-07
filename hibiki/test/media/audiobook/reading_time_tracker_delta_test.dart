@@ -12,13 +12,13 @@ import 'package:fushi_core/fushi_core.dart';
 //
 // 修复把两条账目并到**同一个** tick 上：tracker 每确认一段连续窗口，既写小时桶，也把
 // 同一份增量经 onDelta 回吐给会话累计器。本测试锁定这个不变量。
-Future<HibikiDatabase> _openDb() async {
-  final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
 
-Future<int> _hourlyTotalMs(HibikiDatabase db) async {
+Future<int> _hourlyTotalMs(FushiDatabase db) async {
   final List<ReadingHourlyLogRow> rows = await db.getAllReadingHourlyLogs();
   return rows.fold<int>(
       0, (int a, ReadingHourlyLogRow r) => a + r.readingTimeMs);
@@ -30,7 +30,7 @@ Future<int> _hourlyTotalMs(HibikiDatabase db) async {
 /// `This database has already been closed`。addTearDown 是 LIFO：本函数在
 /// [_openDb] 之后登记，因此排空先于 close 执行。
 ReadingTimeTracker _makeTracker(
-  HibikiDatabase db, {
+  FushiDatabase db, {
   ReadingTimeDelta? onDelta,
 }) {
   final ReadingTimeTracker tracker =
@@ -45,7 +45,7 @@ ReadingTimeTracker _makeTracker(
 void main() {
   group('ReadingTimeTracker.onDelta（每书时长与小时桶同源）', () {
     test('sampleNow 结算的增量同时进小时桶和 onDelta，两者相等', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       int sessionMs = 0;
       final ReadingTimeTracker tracker =
           _makeTracker(db, onDelta: (int ms) => sessionMs += ms);
@@ -63,7 +63,7 @@ void main() {
     });
 
     test('sampleNow 不停表：可以连续多次结算，增量累计不重复也不丢', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       int sessionMs = 0;
       final ReadingTimeTracker tracker =
           _makeTracker(db, onDelta: (int ms) => sessionMs += ms);
@@ -83,7 +83,7 @@ void main() {
     });
 
     test('stop 的收尾结算也回吐 onDelta（失焦那一刻的部分窗口不丢）', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       int sessionMs = 0;
       final ReadingTimeTracker tracker =
           _makeTracker(db, onDelta: (int ms) => sessionMs += ms);
@@ -99,7 +99,7 @@ void main() {
     });
 
     test('停表期间不产生任何增量（后台时长永不入账，BUG-892 不回归）', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       int sessionMs = 0;
       final ReadingTimeTracker tracker =
           _makeTracker(db, onDelta: (int ms) => sessionMs += ms);
@@ -120,7 +120,7 @@ void main() {
     });
 
     test('不传 onDelta 时行为不变（小时桶照常写，向后兼容）', () async {
-      final HibikiDatabase db = await _openDb();
+      final FushiDatabase db = await _openDb();
       final ReadingTimeTracker tracker = _makeTracker(db);
 
       tracker.start();

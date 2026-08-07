@@ -19,7 +19,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 /// CSS 生成器输出扫描钉死契约：① 触屏门控存在且禁用 user-select；② 禁用不是无门控的
 /// 全局 user-select:none（那会连桌面鼠标复制/导出一起杀掉）。
 void main() {
-  Future<ReaderSettings> defaultSettings(HibikiDatabase db) async {
+  Future<ReaderSettings> defaultSettings(FushiDatabase db) async {
     final ReaderSettings settings = ReaderSettings(db);
     await settings.refreshFromDb();
     return settings;
@@ -45,8 +45,8 @@ void main() {
   }
 
   test('触屏（pointer: coarse）禁用原生 user-select，消除长按拖选的原生蓝选区', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = await defaultSettings(db);
 
@@ -64,8 +64,8 @@ void main() {
   });
 
   test('禁用被触屏门控包住，不是无条件全局 user-select:none（保桌面复制/导出）', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = await defaultSettings(db);
 

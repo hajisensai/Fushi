@@ -170,11 +170,11 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final selectedIds = ref.watch(selectedTagIdsProvider);
     final bool hasScrollableTags = _tags != null && _tags!.isNotEmpty;
 
-    return HibikiModalSheetFrame(
+    return FushiModalSheetFrame(
       title: t.tag_filter_title,
       leadingIcon: Icons.sell_outlined,
       scrollable: hasScrollableTags,
@@ -211,7 +211,7 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
   }
 
   Widget _buildBody(BuildContext context, Set<int> selectedIds) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
     final List<BookTagRow>? tags = _tags;
     if (tags == null) {
@@ -237,7 +237,7 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
       runSpacing: tokens.spacing.gap / 2,
       children: tags.map((tag) {
         final isSelected = selectedIds.contains(tag.id);
-        return HibikiSelectableChip(
+        return FushiSelectableChip(
           selected: isSelected,
           avatar: CircleAvatar(
             backgroundColor: Color(tag.colorValue),

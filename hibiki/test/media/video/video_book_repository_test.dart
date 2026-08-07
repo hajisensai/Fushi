@@ -8,7 +8,7 @@ import 'package:fushi_core/fushi_core.dart';
 void main() {
   test('saveVideoBook + saveCues + getByBookUid + loadCues round-trips',
       () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
 
@@ -41,7 +41,7 @@ void main() {
 
   test('saveCues with an empty list clears persisted cues (BUG-081 off path)',
       () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
     await repo.saveVideoBook(const VideoBooksCompanion(
@@ -68,7 +68,7 @@ void main() {
 
   test('updateLocalMediaPaths rewrites stale video/subtitle paths only',
       () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
     await repo.saveVideoBook(const VideoBooksCompanion(
@@ -97,7 +97,7 @@ void main() {
   test(
       'updateLocalMediaPaths relinks videoPath only, leaving subtitle/'
       'progress/audio untouched (TODO-1133)', () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
     await repo.saveVideoBook(const VideoBooksCompanion(
@@ -128,7 +128,7 @@ void main() {
 
   test('saveSubtitleSelection writes cues + source atomically (BUG-081/W1)',
       () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
     await repo.saveVideoBook(const VideoBooksCompanion(
@@ -168,7 +168,7 @@ void main() {
   test(
       'updateSecondarySubtitleSource round-trips independently of '
       'primary subtitle (TODO-857)', () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
     await repo.saveVideoBook(const VideoBooksCompanion(
@@ -196,7 +196,7 @@ void main() {
   });
 
   test('listAll returns all video books', () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
     await repo.saveVideoBook(const VideoBooksCompanion(
@@ -213,7 +213,7 @@ void main() {
   });
 
   test('updatePlaylistJson round-trips per-episode positions', () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
     await repo.saveVideoBook(const VideoBooksCompanion(
@@ -236,7 +236,7 @@ void main() {
     // Mirrors the exit-flush path: VideoHibikiPage._persistPosition encodes the
     // updated _episodes back to playlistJson; on re-open _init reads
     // entry.positionMs and seeks there. This locks the persistence half.
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
     await repo.saveVideoBook(const VideoBooksCompanion(
@@ -257,7 +257,7 @@ void main() {
   });
 
   test('updateDelayMs round-trips the A/V delay', () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
     await repo.saveVideoBook(const VideoBooksCompanion(
@@ -280,7 +280,7 @@ void main() {
   test(
       'collection-level audio track + subtitle delay round-trip '
       '(schema v52, 同系列记忆)', () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
 
@@ -312,7 +312,7 @@ void main() {
 
   test('deleteVideoBook removes the row AND its subtitle cue rows (BUG-276)',
       () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
     await repo.saveVideoBook(const VideoBooksCompanion(
@@ -362,7 +362,7 @@ void main() {
   test(
       'collectReferencedAssetPaths gathers covers + subtitles (BUG-276 GC set)',
       () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
     await repo.saveVideoBook(const VideoBooksCompanion(
@@ -396,7 +396,7 @@ void main() {
   test(
       'collectReferencedAssetPaths(excludeBookUid) drops the deleted book\'s own '
       'refs (BUG-276 delete guard set)', () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
     await repo.saveVideoBook(const VideoBooksCompanion(
@@ -425,7 +425,7 @@ void main() {
   });
 
   test('database VACUUM after delete runs without error (BUG-276)', () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
     await repo.saveVideoBook(const VideoBooksCompanion(
@@ -442,7 +442,7 @@ void main() {
   });
 
   test('updateTitle round-trips the playlist/video title (C 重命名)', () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
     await repo.saveVideoBook(const VideoBooksCompanion(
@@ -460,7 +460,7 @@ void main() {
   test(
       'findByVideoPath returns the row referencing a physical file; '
       'isDuplicateVideoPath delegates to it (TODO-903 dedup source)', () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
 
@@ -495,7 +495,7 @@ void main() {
   test(
       'findByVideoPath normalizes both sides so Windows path variants of the '
       'same physical file dedup to one row (TODO-903 Windows dedup)', () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
 

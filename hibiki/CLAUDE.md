@@ -92,7 +92,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 - `AdaptiveNavigation` -- 自适应导航。
 - `AdaptiveTheme` -- 自适应主题。
 - `AdaptiveWidgets` -- 自适应组件。
-- `HibikiAdaptive` -- 统一入口。
+- `FushiAdaptive` -- 统一入口。
 
 ### 8. 页面 (`lib/src/pages/implementations/`)
 
@@ -128,7 +128,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 - `interconnect_*.dart` -- 局域网互联（设备配对、远程书库/视频、远程查词）。
 - `aggregate_sync_service.dart` / `backup_merge_engine.dart` -- 聚合同步与备份合并引擎。
 - `cloud_remote_book_client.dart` -- 云端远程书籍客户端；另有 Google Drive / WebDAV / Dropbox / FTP 等 backend。
-- DB 侧配对设备表 `HibikiPairedPeers`（定义在 `hibiki_core`）。
+- DB 侧配对设备表 `FushiPairedPeers`（定义在 `hibiki_core`）。
 
 ### 11. torrent 下载 (`lib/src/media/torrent/`)
 
@@ -159,7 +159,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 
 ## 数据模型
 
-数据模型全部定义在 `hibiki_core`（53 张 Drift 表，schema v59），本模块仅消费。互联配对设备表 `HibikiPairedPeers` 也在其中。
+数据模型全部定义在 `hibiki_core`（53 张 Drift 表，schema v59），本模块仅消费。互联配对设备表 `FushiPairedPeers` 也在其中。
 
 ## 测试与质量
 
@@ -190,7 +190,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 - `DictAccessibilityService.java` -- 无障碍服务。
 - `AnkiChannelHandler.java` / `AnkiDroidHelper.java` -- AnkiDroid 集成。
 - `TtsChannelHandler.java` -- TTS 通道。
-- `HibikiFileProvider.java` -- 文件提供者。
+- `FushiFileProvider.java` -- 文件提供者。
 
 ## 资产文件 (`assets/`)
 

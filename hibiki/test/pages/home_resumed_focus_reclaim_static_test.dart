@@ -42,7 +42,7 @@ void main() {
     expect(body, contains('isCurrent'),
         reason: 'helper 必须含路由 isCurrent 门控（否则夺对话框焦点）');
     // [M2]：开态走控制器 ensureFocus，关态走既有 _keyboardFocusNode（不新造节点）。
-    expect(body, contains('HibikiFocusRoot.maybeControllerOf'),
+    expect(body, contains('FushiFocusRoot.maybeControllerOf'),
         reason: '开态须经控制器解析');
     expect(body, contains('.ensureFocus()'), reason: '实验焦点导航开态须 ensureFocus');
     expect(body, contains('_keyboardFocusNode.requestFocus()'),

@@ -34,7 +34,7 @@ extension _ReaderCaret on _ReaderHibikiPageState {
     // The popup header toolbar (sibling of the popup content). Down returns to
     // the content caret; B/Escape dismiss the popup (ascend out of it). Left/
     // Right/Enter fall through to the framework so the buttons traverse and
-    // activate natively (the global HibikiFocusRing rings the focused one).
+    // activate natively (the global FushiFocusRing rings the focused one).
     if (_popupHeaderScope.hasFocus) {
       if (event is! KeyDownEvent) return KeyEventResult.ignored;
       if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
@@ -626,7 +626,7 @@ extension _ReaderCaret on _ReaderHibikiPageState {
   /// highlight yellow on dark backgrounds where primary lacks contrast).
   String _caretRingColorCss() {
     final Color accent = _isReaderThemeDark
-        ? HibikiColor.defaultHighlightYellow
+        ? FushiColor.defaultHighlightYellow
         : Theme.of(context).colorScheme.primary;
     return readerColorToCssRgba(accent, alphaOverride: 0.98);
   }
@@ -794,7 +794,7 @@ extension _ReaderCaret on _ReaderHibikiPageState {
   /// Move focus from the popup content caret UP to the Flutter header toolbar
   /// (sibling layer). Called when the caret is at the top of the popup content
   /// and Up is pressed. Hides the popup caret ring so the header's standard
-  /// HibikiFocusRing is the single indicator. No-op (focus stays on content) if
+  /// FushiFocusRing is the single indicator. No-op (focus stays on content) if
   /// the header has no focusable button.
   void _focusPopupHeader() {
     if (!mounted || _caretSurface != CaretSurface.popup) return;

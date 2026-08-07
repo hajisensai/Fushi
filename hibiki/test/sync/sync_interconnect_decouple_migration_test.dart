@@ -5,8 +5,8 @@ import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _testDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 void main() {
   // 互联从「互斥的 backendType==hibikiServer 单选」解耦成独立开关
@@ -14,7 +14,7 @@ void main() {
   // 使互联与云备份可并存（用户诉求「互联和同步后端不冲突」）。
   group('migrateInterconnectBackendToToggle', () {
     test('migrates a hibikiServer backend to the independent toggle', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -36,7 +36,7 @@ void main() {
     });
 
     test('is a no-op for a cloud backend (interconnect stays off)', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -49,7 +49,7 @@ void main() {
     });
 
     test('is idempotent (running twice does not flip anything back)', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -67,7 +67,7 @@ void main() {
       // 互联页的「用互联做备份后端」按钮把 backendType 写成 hibikiServer。迁移若还只看
       // 「backendType 是不是 hibikiServer」，下次启动就会把这个用户选择当成旧数据改回
       // googleDrive——按钮变成重启即失效的假开关。一次性标记正是为此。
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -90,7 +90,7 @@ void main() {
     test('旧互联用户即使升级后才首次启动，仍能被迁移一次', () async {
       // 标记只在迁移真跑过一次后才存在：存量 hibikiServer 用户的第一次启动必须仍然
       // 被搬到独立开关（Never break userspace）。
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -102,7 +102,7 @@ void main() {
     });
 
     test('does not force interconnect on for a fresh install', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 

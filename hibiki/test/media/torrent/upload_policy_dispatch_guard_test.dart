@@ -6,7 +6,7 @@
 // tick 内下载速率归零，用户报「内置引擎速度几乎为 0」。
 //
 // 本守卫用 `Pointer.fromFunction` 伪造 C ABI（与 apply_limits_local_peers_test
-// 同范式），经 `HibikiTorrentBindings.fromLookup` + `EmbeddedTorrentHost.forTesting`
+// 同范式），经 `FushiTorrentBindings.fromLookup` + `EmbeddedTorrentHost.forTesting`
 // 断言整条 sweepUploadPolicy → session → C 入参：
 // ① 关上传绝不下发 upload_mode=0（那是停止下载）；
 // ② 关上传走会话级 unchoke 槽位清零；
@@ -67,7 +67,7 @@ int _fakePauseTorrent(
 
 /// [withUploadControl] = false 精确复刻「Dart 更新了、随包预编译 DLL 还是旧的」
 /// 部署形态（查不到 ht_set_unchoke_slots / ht_pause_torrent）。
-HibikiTorrentBindings _fakeBindings({required bool withUploadControl}) {
+FushiTorrentBindings _fakeBindings({required bool withUploadControl}) {
   Pointer<T> lookup<T extends NativeType>(String symbol) {
     switch (symbol) {
       case 'ht_session_create':
@@ -109,7 +109,7 @@ HibikiTorrentBindings _fakeBindings({required bool withUploadControl}) {
     throw ArgumentError("Failed to lookup symbol '$symbol'");
   }
 
-  return HibikiTorrentBindings.fromLookup(lookup);
+  return FushiTorrentBindings.fromLookup(lookup);
 }
 
 EmbeddedTorrentHost _host({required bool withUploadControl}) {

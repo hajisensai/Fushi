@@ -408,7 +408,7 @@ window.__hoshiAnnotate = function(chapterHref) {
   /// 向 WebView 注入 CSS 样式和 JS 函数。
   static Future<void> inject(
     InAppWebViewController controller, {
-    Color primaryColor = HibikiColor.defaultHighlightYellow,
+    Color primaryColor = FushiColor.defaultHighlightYellow,
   }) async {
     final String css = _buildCss(primaryColor);
     final String cssJsonStr = jsonEncode(css);

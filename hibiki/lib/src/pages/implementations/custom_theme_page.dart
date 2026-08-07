@@ -110,7 +110,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     _sentenceAudioHighlightColor = appModelNoUpdate.audioHighlightColor;
     _useSentenceAudioHighlightColor = _sentenceAudioHighlightColor != null;
     _sentenceAudioHighlightColor ??=
-        HibikiColor.defaultSentenceAudioHighlightColor;
+        FushiColor.defaultSentenceAudioHighlightColor;
     _linkColor = roleColor(
         entry?.linkColor, () => appModelNoUpdate.customThemeLinkColor);
     _useLinkColor = _linkColor != null;
@@ -331,7 +331,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   void _shareTheme() {
     final code = _encodeTheme();
     Clipboard.setData(ClipboardData(text: code));
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.theme_code_copied,
       severity: ToastSeverity.success,
     );
@@ -383,7 +383,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       _containerColor = result.containerColor ?? generated.primaryContainer;
       _useContainerColor = result.containerColor != null;
       _sentenceAudioHighlightColor = result.sentenceAudioHighlightColor ??
-          HibikiColor.defaultSentenceAudioHighlightColor;
+          FushiColor.defaultSentenceAudioHighlightColor;
       _useSentenceAudioHighlightColor =
           result.sentenceAudioHighlightColor != null;
       _linkColor = result.linkColor ?? generated.primary;
@@ -399,12 +399,12 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       await showAppDialog(
         context: context,
         builder: (ctx) {
-          final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
-          return HibikiDialogFrame(
+          final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+          return FushiDialogFrame(
             maxWidth: 480,
             maxHeightFactor: 0.78,
             scrollable: false,
-            child: HibikiModalSheetFrame(
+            child: FushiModalSheetFrame(
               title: t.import_theme,
               leadingIcon: Icons.content_paste_outlined,
               bodyPadding: EdgeInsets.fromLTRB(
@@ -419,7 +419,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                 tokens.spacing.card,
                 tokens.spacing.card,
               ),
-              body: HibikiTextField(
+              body: FushiTextField(
                 controller: controller,
                 hintText: t.import_theme_hint,
                 autofocus: true,
@@ -440,7 +440,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                     onPressed: () {
                       final result = _decodeTheme(controller.text);
                       if (result == null) {
-                        HibikiToast.show(
+                        FushiToast.show(
                           msg: t.import_theme_invalid,
                           severity: ToastSeverity.error,
                         );
@@ -448,7 +448,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                       }
                       Navigator.pop(ctx);
                       _applyImportedTheme(result);
-                      HibikiToast.show(
+                      FushiToast.show(
                         msg: t.import_theme_success,
                         severity: ToastSeverity.success,
                       );
@@ -469,7 +469,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = _preview;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     return AdaptiveSettingsScaffold(
       title: Text(t.custom_theme),
@@ -483,12 +483,12 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
             MediaQuery.of(context).viewInsets.bottom,
       ),
       actions: [
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.content_paste_outlined,
           tooltip: t.import_theme,
           onTap: _importTheme,
         ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.share_outlined,
           tooltip: t.share_theme,
           onTap: _shareTheme,
@@ -717,12 +717,12 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     final bool confirmed = await showAppDialog<bool>(
           context: context,
           builder: (BuildContext ctx) {
-            final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
-            return HibikiDialogFrame(
+            final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+            return FushiDialogFrame(
               maxWidth: 420,
               maxHeightFactor: 0.6,
               scrollable: false,
-              child: HibikiModalSheetFrame(
+              child: FushiModalSheetFrame(
                 title: t.delete_custom_theme,
                 leadingIcon: Icons.delete_outline,
                 bodyPadding: EdgeInsets.fromLTRB(
@@ -788,13 +788,13 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   /// TODO-930 M2: the optional name field. Empty name is allowed (decision 3);
   /// the hint shows the localized default `Custom N`.
   Widget _buildNameField() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.card,
         vertical: tokens.spacing.gap,
       ),
-      child: HibikiTextField(
+      child: FushiTextField(
         controller: _nameController,
         labelText: t.custom_theme_name,
         hintText: t.custom_theme_default_name(n: _defaultNameIndex),
@@ -806,7 +806,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   // ── 预览卡片 ──
 
   Widget _buildPreviewCard(ColorScheme cs) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color textColor = _useFontColor ? _fontColor! : cs.onSurface;
     final Color bgColor = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
     final TextStyle titleStyle = tokens.type.listTitle.copyWith(
@@ -823,7 +823,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       color: cs.onSecondaryContainer,
     );
 
-    return HibikiCard(
+    return FushiCard(
       color: cs.surface,
       padding: EdgeInsets.all(tokens.spacing.card),
       child: Column(
@@ -879,7 +879,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                   decoration: BoxDecoration(
                     color: _useSentenceAudioHighlightColor
                         ? _sentenceAudioHighlightColor
-                        : HibikiColor.defaultSentenceAudioHighlightColor,
+                        : FushiColor.defaultSentenceAudioHighlightColor,
                     borderRadius: tokens.radii.chipRadius,
                   ),
                   child: Text(
@@ -898,7 +898,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                         style: TextStyle(
                           backgroundColor: _useSentenceAudioHighlightColor
                               ? _sentenceAudioHighlightColor
-                              : HibikiColor.defaultSentenceAudioHighlightColor,
+                              : FushiColor.defaultSentenceAudioHighlightColor,
                         ),
                       ),
                       const TextSpan(text: 'テスト　'),
@@ -920,7 +920,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
           SizedBox(height: tokens.spacing.gap),
           Row(
             children: [
-              HibikiPreviewSwitch(
+              FushiPreviewSwitch(
                 trackColor: cs.primaryContainer,
                 thumbColor: cs.primary,
               ),
@@ -957,7 +957,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   // ── 每种颜色的使用场景迷你预览 ──
 
   Widget _buildFontColorPreview(ColorScheme cs) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     final Color bg = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
     return Container(
@@ -977,7 +977,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   }
 
   Widget _buildBgColorPreview(ColorScheme cs) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     final Color bg = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
     return Container(
@@ -1000,7 +1000,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   }
 
   Widget _buildSelectionPreview(ColorScheme cs) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     final Color sel = _useSelectionColor ? _selectionColor! : Colors.grey;
     return RichText(
@@ -1019,7 +1019,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   }
 
   Widget _buildPrimaryPreview(ColorScheme cs) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color primary = _primaryColor!;
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     final Color track = (_useContainerColor
@@ -1043,7 +1043,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
           ),
         ),
         SizedBox(width: tokens.spacing.gap),
-        HibikiPreviewSwitch(
+        FushiPreviewSwitch(
           trackColor: track,
           thumbColor: primary,
         ),
@@ -1052,7 +1052,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   }
 
   Widget _buildSecondaryPreview(ColorScheme cs) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.gap,
@@ -1072,7 +1072,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   }
 
   Widget _buildTertiaryPreview(ColorScheme cs) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Row(
       children: [
         Container(
@@ -1097,19 +1097,19 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   }
 
   Widget _buildContainerPreview(ColorScheme cs) {
-    return HibikiPreviewSwitch(
+    return FushiPreviewSwitch(
       trackColor: _containerColor ?? cs.primaryContainer,
       thumbColor: _primaryColor ?? cs.primary,
     );
   }
 
   Widget _buildSentenceAudioPreview(ColorScheme cs) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     final Color bg = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
     final Color sas = _useSentenceAudioHighlightColor
         ? _sentenceAudioHighlightColor!
-        : HibikiColor.defaultSentenceAudioHighlightColor;
+        : FushiColor.defaultSentenceAudioHighlightColor;
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.gap,
@@ -1136,7 +1136,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   }
 
   Widget _buildLinkPreview(ColorScheme cs) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color lc = _useLinkColor ? _linkColor! : cs.primary;
     return Text(
       'リンク',
@@ -1154,7 +1154,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   /// ColorPicker，避免它常驻滚动主路径被手指扫到改色（诉求3）。种子色无启用语义，
   /// 故不是 switch 而是 ExpansionTile 式的纯展开/收起。
   Widget _buildSeedColorPicker() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme cs = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1186,10 +1186,10 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                   ),
                 ),
                 SizedBox(width: tokens.spacing.gap),
-                HibikiColorSwatch(
+                FushiColorSwatch(
                   color: _seed,
                   size: 20,
-                  shape: HibikiColorSwatchShape.dot,
+                  shape: FushiColorSwatchShape.dot,
                   borderColor: Theme.of(context).dividerColor,
                 ),
                 SizedBox(width: tokens.spacing.gap),
@@ -1264,7 +1264,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     String? description,
     Widget? preview,
   }) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return AdaptiveSettingsSwitchActionRow(
       title: label,
       subtitle: description,
@@ -1272,10 +1272,10 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       onChanged: onEnabledChanged,
       body: Row(
         children: [
-          HibikiColorSwatch(
+          FushiColorSwatch(
             color: color,
             size: 20,
-            shape: HibikiColorSwatchShape.dot,
+            shape: FushiColorSwatchShape.dot,
             borderColor: Theme.of(context).dividerColor,
           ),
           if (preview != null) ...[
@@ -1296,7 +1296,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
 
   Widget _swatch(Color color, String label, Color textColor) {
     return Expanded(
-      child: HibikiColorSwatch(
+      child: FushiColorSwatch(
         color: color,
         width: double.infinity,
         height: 36,
@@ -1313,7 +1313,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   /// tell the user the swatches below preview the seed's *generated* colour and
   /// how to pin a colour as the primary accent.
   Widget _buildHintRow(String text) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme cs = Theme.of(context).colorScheme;
     return Padding(
       padding: EdgeInsets.symmetric(
@@ -1346,7 +1346,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   /// sections. TODO-072 uses it to point out that subtitle colours live in the
   /// video player, not on this page.
   Widget _buildNoteRow(String text) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme cs = Theme.of(context).colorScheme;
     return Padding(
       padding: EdgeInsets.symmetric(

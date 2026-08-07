@@ -9,8 +9,8 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _testDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 /// 用户诉求：「hibiki 互联里面加一个按钮，把备份后端设置为 hibiki 互联」。
 ///
@@ -21,7 +21,7 @@ HibikiDatabase _testDb() =>
 void main() {
   group('applyBackupBackendChange', () {
     test('把备份后端设成互联：写穿 backendType，并清掉离开 FTP 时的专属 TLS 标记', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -40,7 +40,7 @@ void main() {
     });
 
     test('非 FTP 起点不误动 FTP TLS 标记', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -59,7 +59,7 @@ void main() {
 
   group('enabledSyncChannelBackends', () {
     test('备份后端选成互联时只跑一条通道，且按互联通道计（读互联专属上传开关）', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -76,7 +76,7 @@ void main() {
     });
 
     test('云后端 + 互联启用仍是两条通道，各自归属不变', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -92,7 +92,7 @@ void main() {
     });
 
     test('互联未启用时只有云通道', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -110,7 +110,7 @@ void main() {
     // 设置覆盖 harness（默认互联关）不再遍历到它，那条写穿/持久化验证随之丢失。这里把它
     // 补回来：显式 setter（取代原来只能盲翻的 toggle）的往返 + 跨 reload 持久化。
     test('默认关；set 往返并跨 reload 持久化', () async {
-      final HibikiDatabase db = _testDb();
+      final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final PreferencesRepository repo = PreferencesRepository(db);
       await repo.loadFromDb();

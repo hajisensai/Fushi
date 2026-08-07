@@ -39,8 +39,8 @@ void main() {
   group('import errors are caught, logged, and _busy is reset', () {
     testWidgets('stream url import failure does not escape the zone',
         (WidgetTester tester) async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final VideoBookRepository repo = _ThrowingRepo(db);
       final int entriesBefore = ErrorLogService.instance.entries.length;
@@ -77,8 +77,8 @@ void main() {
     testWidgets(
         'fire-and-forget auto import (initialStreamUrl) failure is caught',
         (WidgetTester tester) async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final VideoBookRepository repo = _ThrowingRepo(db);
       final int entriesBefore = ErrorLogService.instance.entries.length;

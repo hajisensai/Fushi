@@ -51,7 +51,7 @@ void main() {
         File('lib/src/pages/implementations/dictionary_dialog_page.dart')
             .readAsStringSync();
 
-    expect(source, contains('HibikiDesignTokens.of(context)'));
+    expect(source, contains('FushiDesignTokens.of(context)'));
     expect(
         source, isNot(contains('padding: const EdgeInsets.only(bottom: 12)')));
     expect(
@@ -168,18 +168,18 @@ void main() {
     expect(folderImportSource, contains('pickedDirectory.cleanupDir'));
   });
 
-  // BUG-044：界面缩放（HibikiAppUiScale != 1.0）下，SDK ReorderableListView 的
+  // BUG-044：界面缩放（FushiAppUiScale != 1.0）下，SDK ReorderableListView 的
   // Overlay 拖拽代理不认祖先 Transform.scale，长按拖拽反馈会按 (1−s)×距离 向右下漂移、
-  // 飞离原位（用户截图症状）。修复=改用自实现的 HibikiReorderableColumn（局部坐标长按
+  // 飞离原位（用户截图症状）。修复=改用自实现的 FushiReorderableColumn（局部坐标长按
   // 拖拽，globalToLocal 消掉祖先缩放），缩放下精确跟手、零偏移、视觉一致。
   test(
-      'dictionary list uses HibikiReorderableColumn (UI-scale safe), not SDK '
+      'dictionary list uses FushiReorderableColumn (UI-scale safe), not SDK '
       'ReorderableListView (BUG-044)', () {
     final String source =
         File('lib/src/pages/implementations/dictionary_dialog_page.dart')
             .readAsStringSync();
 
-    expect(source, contains('HibikiReorderableColumn('));
+    expect(source, contains('FushiReorderableColumn('));
     // 禁的是 SDK 拖拽控件的**构造调用**（说明性注释可提及其名字）。
     expect(source, isNot(contains('ReorderableListView.builder(')));
     expect(source, isNot(contains('ReorderableListView(')));
@@ -206,9 +206,9 @@ void main() {
     // The empty-category state (e.g. the Kanji tab with no kanji dictionary)
     // must use the same centred icon + message placeholder as buildEmptyMessage,
     // not a cramped left-aligned grey card.
-    expect(rowSource, contains('HibikiPlaceholderMessage'));
+    expect(rowSource, contains('FushiPlaceholderMessage'));
     expect(rowSource, contains('DictionaryMediaType.instance.outlinedIcon'));
-    expect(rowSource, isNot(contains('HibikiCard')));
+    expect(rowSource, isNot(contains('FushiCard')));
     expect(rowSource, isNot(contains('child: Text(')));
   });
 
@@ -234,10 +234,10 @@ void main() {
     expect(source, contains('FilledButton.tonalIcon'));
 
     // Buttons stay reachable by gamepad/keyboard (single focus stop each).
-    expect(source, contains('HibikiActivatableFocusTarget'));
+    expect(source, contains('FushiActivatableFocusTarget'));
   });
 
-  // TODO-059：词典管理页支持桌面拖放导入。整页包一层 HibikiFileDropTarget，拖入的
+  // TODO-059：词典管理页支持桌面拖放导入。整页包一层 FushiFileDropTarget，拖入的
   // 词典包经与「导入词典」按钮同源的 _importDictionaryPaths 导入。守卫这套接线，
   // 防止后续重构悄悄把拖放摘掉或让它走偏离手动导入的旁路。
   test('dictionary manager wires desktop drag-drop import (TODO-059)', () {
@@ -245,8 +245,8 @@ void main() {
         File('lib/src/pages/implementations/dictionary_dialog_page.dart')
             .readAsStringSync();
 
-    // 整页被 HibikiFileDropTarget 包裹，drop 回调指向 _handleDictionaryDrop。
-    expect(source, contains('HibikiFileDropTarget('));
+    // 整页被 FushiFileDropTarget 包裹，drop 回调指向 _handleDictionaryDrop。
+    expect(source, contains('FushiFileDropTarget('));
     expect(source, contains('onDrop: _handleDictionaryDrop'));
 
     // drop 处理走纯分类函数挑词典包，再交给与手动导入同一条 _importDictionaryPaths。
@@ -277,7 +277,7 @@ void main() {
     expect(dialog, contains('t.drag_drop_unsupported_on_dictionary'),
         reason: 'bad dictionary drops must be visible to the user');
 
-    expect(home, contains('HibikiFileDropTarget('));
+    expect(home, contains('FushiFileDropTarget('));
     expect(home, contains('onDrop: _handleDictionaryHomeDrop'));
     expect(home, contains('classifyDroppedFilesForDictionary(paths)'));
     expect(
@@ -291,7 +291,7 @@ void main() {
   // TODO-091/TODO-381：每本词典的「折叠/展开」状态必须在列表行内可一览 + 一键
   // 切换，且按用户诉求放到行**最左**（leading），从拥挤的右侧控件串里拿出来。
   // 守卫：
-  //  ① 折叠/展开按钮放在 HibikiListItem 的 leading（最左），不在 trailing；
+  //  ① 折叠/展开按钮放在 FushiListItem 的 leading（最左），不在 trailing；
   //  ② 该按钮单击即 toggleDictionaryCollapsed（一键，非先开菜单）；
   //  ③ 图标随 isCollapsed 状态切换（unfold_more/unfold_less = 状态一览）；
   //  ④ trailing 串里不再有三点菜单（TODO-422 已移除），自然也没有折叠项入口。
@@ -311,7 +311,7 @@ void main() {
       reason: 'collapse toggle must be the row leading (leftmost)',
     );
     // TODO-749/751：窄屏（手机）下行改成两行布局，行尾控件串提取为
-    // _buildDictionaryTileControls（桌面进 HibikiListItem 的 trailing，窄屏挪到标题
+    // _buildDictionaryTileControls（桌面进 FushiListItem 的 trailing，窄屏挪到标题
     // 下方），两处共用。下面把「行尾控件串」锚到这个 helper 的 body 上断言。
     final int tileStart = source.indexOf('Widget _buildDictionaryTile({');
     final int controlsStart =
@@ -340,7 +340,7 @@ void main() {
     // ② 单击直接切换折叠状态（不经二级菜单）。
     final int btnStart =
         source.indexOf('Widget _buildDictionaryCollapseButton(');
-    final int btnEnd = source.indexOf('// 用自实现的 HibikiReorderableColumn');
+    final int btnEnd = source.indexOf('// 用自实现的 FushiReorderableColumn');
     expect(btnStart, isNonNegative);
     expect(btnEnd, greaterThan(btnStart));
     final String btnSource = source.substring(btnStart, btnEnd);
@@ -366,7 +366,7 @@ void main() {
 
   // TODO-422：词典行尾的三点菜单（旧 buildDictionaryTileTrailing / getMenuItems）
   // 已被一个独立删除按钮取代。守卫：① 整个文件不再有三点菜单方法；② trailing Row
-  // 末尾是一个删除 HibikiIconButton（图标 delete_outline、tooltip 用现有 options_delete
+  // 末尾是一个删除 FushiIconButton（图标 delete_outline、tooltip 用现有 options_delete
   // key），onTap 仍调原删除确认对话框 showDictionaryDeleteDialog（删单本词典流程不变）。
   test(
       'row trailing replaces the three-dot menu with an inline delete button '
@@ -379,7 +379,7 @@ void main() {
     expect(source, isNot(contains('Widget buildDictionaryTileTrailing(')));
     expect(
       source,
-      isNot(contains('List<HibikiPopupMenuItem<VoidCallback>> getMenuItems(')),
+      isNot(contains('List<FushiPopupMenuItem<VoidCallback>> getMenuItems(')),
     );
 
     // ② 定位行尾控件串 helper（_buildDictionaryTileControls，桌面进 trailing、窄屏
@@ -395,7 +395,7 @@ void main() {
     // 控件串里没有三点菜单，改成独立删除按钮（仍走删除确认对话框）。
     expect(trailingSource, isNot(contains('Icons.more_vert')));
     expect(trailingSource, isNot(contains('buildDictionaryTileTrailing(')));
-    expect(trailingSource, contains('HibikiIconButton('));
+    expect(trailingSource, contains('FushiIconButton('));
     expect(trailingSource, contains('Icons.delete_outline'));
     expect(trailingSource, contains('tooltip: t.options_delete'));
     expect(

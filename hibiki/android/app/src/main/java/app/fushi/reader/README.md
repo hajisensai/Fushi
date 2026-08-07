@@ -19,7 +19,7 @@ Shared constants are centralized here:
 
 - `ChannelNames.java` — MethodChannel name constants. Has a Dart counterpart
   that MUST stay in sync: `lib/src/utils/misc/channel_constants.dart`
-  (`HibikiChannels`).
+  (`FushiChannels`).
 - `PreferenceKeys.java` — SharedPreferences key strings. These name the same
   keys the Flutter side persists, so renames must be coordinated.
 - `FloatingColors.java` — ARGB color values for the floating overlay services
@@ -43,7 +43,7 @@ Shared constants are centralized here:
 - `HoshiBridge.kt` — JNI bridge to the hoshidicts C++ library.
 - `TtsChannelHandler.java` — TTS + audio extraction channel.
 - `AnkiChannelHandler.java` + `AnkiDroidHelper.java` — AnkiDroid API bridge.
-- `HibikiFileProvider.java` — FileProvider for sharing exported files.
+- `FushiFileProvider.java` — FileProvider for sharing exported files.
 - `IconSwitchHelper.java` — Runtime launcher-icon alias switching.
 
 ## Cross-Language Sync Points
@@ -52,6 +52,6 @@ When changing any of the following, update both sides in the same change:
 
 | Native (this dir)        | Dart / Drift counterpart                         |
 |--------------------------|--------------------------------------------------|
-| `ChannelNames.java`      | `channel_constants.dart` (`HibikiChannels`)      |
+| `ChannelNames.java`      | `channel_constants.dart` (`FushiChannels`)      |
 | `PopupDbReader.kt` queries | Drift tables in `packages/fushi_core/.../tables.dart` |
-| `PopupDbReader.EXPECTED_SCHEMA_VERSION` | `HibikiDatabase.schemaVersion` in `database.dart` |
+| `PopupDbReader.EXPECTED_SCHEMA_VERSION` | `FushiDatabase.schemaVersion` in `database.dart` |

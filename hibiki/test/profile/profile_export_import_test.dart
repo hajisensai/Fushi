@@ -42,13 +42,13 @@ class _FakeAnkiRepository extends BaseAnkiRepository {
   Future<bool> createDeck(String name) => throw UnimplementedError();
 }
 
-Future<HibikiDatabase> _openDb() async {
-  final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+Future<FushiDatabase> _openDb() async {
+  final db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
 
-ProfileRepository _repo(HibikiDatabase db) =>
+ProfileRepository _repo(FushiDatabase db) =>
     ProfileRepository(db, _FakeAnkiRepository());
 
 /// The full set of sync credential pref keys that MUST never leave the device
@@ -229,7 +229,7 @@ void main() {
         );
 
     Future<String> exportFixture(
-      HibikiDatabase db,
+      FushiDatabase db,
       ProfileRepository repo,
       String name,
       Map<String, String> prefs,

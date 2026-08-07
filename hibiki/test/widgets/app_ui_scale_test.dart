@@ -5,7 +5,7 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 void main() {
   group('automatic UI scale calculation', () {
     test('defaults to phone-sized scale on a regular mobile viewport', () {
-      final double scale = HibikiAppUiScale.automaticScaleForViewport(
+      final double scale = FushiAppUiScale.automaticScaleForViewport(
         viewport: const Size(390, 844),
         platform: TargetPlatform.android,
       );
@@ -14,11 +14,11 @@ void main() {
     });
 
     test('shrinks cramped mobile viewports but grows tablet viewports', () {
-      final double smallPhone = HibikiAppUiScale.automaticScaleForViewport(
+      final double smallPhone = FushiAppUiScale.automaticScaleForViewport(
         viewport: const Size(320, 568),
         platform: TargetPlatform.android,
       );
-      final double tablet = HibikiAppUiScale.automaticScaleForViewport(
+      final double tablet = FushiAppUiScale.automaticScaleForViewport(
         viewport: const Size(768, 1024),
         platform: TargetPlatform.android,
       );
@@ -30,15 +30,15 @@ void main() {
     });
 
     test('uses desktop window size as a continuous input', () {
-      final double compactWindow = HibikiAppUiScale.automaticScaleForViewport(
+      final double compactWindow = FushiAppUiScale.automaticScaleForViewport(
         viewport: const Size(800, 600),
         platform: TargetPlatform.windows,
       );
-      final double fullHdWindow = HibikiAppUiScale.automaticScaleForViewport(
+      final double fullHdWindow = FushiAppUiScale.automaticScaleForViewport(
         viewport: const Size(1920, 1080),
         platform: TargetPlatform.windows,
       );
-      final double largeWindow = HibikiAppUiScale.automaticScaleForViewport(
+      final double largeWindow = FushiAppUiScale.automaticScaleForViewport(
         viewport: const Size(3840, 2160),
         platform: TargetPlatform.windows,
       );
@@ -51,18 +51,18 @@ void main() {
 
     test('falls back to defaultScale for invalid viewport sizes', () {
       expect(
-        HibikiAppUiScale.automaticScaleForViewport(
+        FushiAppUiScale.automaticScaleForViewport(
           viewport: Size.zero,
           platform: TargetPlatform.android,
         ),
-        HibikiAppUiScale.defaultScale,
+        FushiAppUiScale.defaultScale,
       );
       expect(
-        HibikiAppUiScale.automaticScaleForViewport(
+        FushiAppUiScale.automaticScaleForViewport(
           viewport: const Size(double.nan, 800),
           platform: TargetPlatform.windows,
         ),
-        HibikiAppUiScale.defaultScale,
+        FushiAppUiScale.defaultScale,
       );
     });
   });
@@ -73,7 +73,7 @@ void main() {
     const Key boxKey = Key('scaled-box');
     await tester.pumpWidget(
       MaterialApp(
-        builder: (BuildContext context, Widget? child) => HibikiAppUiScale(
+        builder: (BuildContext context, Widget? child) => FushiAppUiScale(
             scale: 2.0, child: child ?? const SizedBox.shrink()),
         home: const Align(
           alignment: Alignment.topLeft,
@@ -103,7 +103,7 @@ void main() {
         builder: (BuildContext context, Widget? child) => MediaQuery(
           data: MediaQuery.of(context)
               .copyWith(textScaler: const TextScaler.linear(1.2)),
-          child: HibikiAppUiScale(
+          child: FushiAppUiScale(
               scale: 2.0, child: child ?? const SizedBox.shrink()),
         ),
         home: Builder(
@@ -124,7 +124,7 @@ void main() {
     bool topTapped = false;
     await tester.pumpWidget(
       MaterialApp(
-        builder: (BuildContext context, Widget? child) => HibikiAppUiScale(
+        builder: (BuildContext context, Widget? child) => FushiAppUiScale(
             scale: 0.5, child: child ?? const SizedBox.shrink()),
         home: Scaffold(
           body: Stack(
@@ -171,7 +171,7 @@ void main() {
     const Key boxKey = Key('unscaled-box');
     await tester.pumpWidget(
       MaterialApp(
-        builder: (BuildContext context, Widget? child) => HibikiAppUiScale(
+        builder: (BuildContext context, Widget? child) => FushiAppUiScale(
             scale: 1.0, child: child ?? const SizedBox.shrink()),
         home: const Align(
           alignment: Alignment.topLeft,

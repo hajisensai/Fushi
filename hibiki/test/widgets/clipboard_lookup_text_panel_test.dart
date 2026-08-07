@@ -136,7 +136,7 @@ void main() {
     );
 
     expect(find.byType(SourceLookupTextPanel), findsOneWidget);
-    expect(find.byType(HibikiCard), findsNothing);
+    expect(find.byType(FushiCard), findsNothing);
   });
 
   testWidgets('generic source lookup panel has no clipboard-only identity',

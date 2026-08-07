@@ -6,7 +6,7 @@ import 'package:fushi/src/utils/components/fading_chrome_gate.dart';
 
 /// BUG-1301：视频页淡出型 chrome（剧集横轨 / 侧边沉浸锁 / on-rail 沉浸退出钮）
 /// 隐藏态留树只挡指针不挡焦点，手柄浏览后焦点滞留在 opacity=0 的控件上，
-/// `HibikiFocusRing` 据 primaryFocus 画出一个空焦点框。
+/// `FushiFocusRing` 据 primaryFocus 画出一个空焦点框。
 ///
 /// 根因修复：[FadingChromeGate] 把「不可见 ⇒ 不可点 + 不可聚焦」做成结构不变量。
 /// 本文件测 1) 门控 widget 自身的焦点/指针行为；2) 三处视频页调用点不回退成

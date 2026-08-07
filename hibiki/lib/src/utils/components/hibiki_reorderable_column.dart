@@ -2,17 +2,17 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 /// 行内容构造器：返回**不含任何拖拽监听**的纯行内容（开关/按钮照常可点）。
-typedef HibikiReorderItemBuilder = Widget Function(
+typedef FushiReorderItemBuilder = Widget Function(
     BuildContext context, int index);
 
 /// 为某个 index 返回稳定 Key（行身份，用于测高与浮层复制）。
-typedef HibikiReorderKeyBuilder = Key Function(int index);
+typedef FushiReorderKeyBuilder = Key Function(int index);
 
 /// 「item[from] 移到最终下标 to」——调用方实现为 `removeAt(from); insert(to, item)`。
-typedef HibikiReorderCallback = void Function(int from, int to);
+typedef FushiReorderCallback = void Function(int from, int to);
 
 /// 自实现的竖向「拖拽重排」列表，专为运行在祖先 [Transform.scale]
-/// （`HibikiAppUiScale` 的浏览器式整体缩放）之下而设计。
+/// （`FushiAppUiScale` 的浏览器式整体缩放）之下而设计。
 ///
 /// **起拖时机按输入设备区分**（修「Win 端鼠标必须长按等待才能拖动排序」）：
 /// - 鼠标 / 触控板 / 触控笔等精确指针 → [ImmediateMultiDragGestureRecognizer]，
@@ -36,8 +36,8 @@ typedef HibikiReorderCallback = void Function(int from, int to);
 ///   都精确跟手、零偏移（无 SDK 的全局↔本地空间错配）。
 ///
 /// 上下箭头按钮等其它重排路径不受影响（它们直接改父列表 + setState）。
-class HibikiReorderableColumn extends StatefulWidget {
-  const HibikiReorderableColumn({
+class FushiReorderableColumn extends StatefulWidget {
+  const FushiReorderableColumn({
     required this.itemCount,
     required this.itemBuilder,
     required this.keyForIndex,
@@ -48,12 +48,12 @@ class HibikiReorderableColumn extends StatefulWidget {
   });
 
   final int itemCount;
-  final HibikiReorderItemBuilder itemBuilder;
-  final HibikiReorderKeyBuilder keyForIndex;
+  final FushiReorderItemBuilder itemBuilder;
+  final FushiReorderKeyBuilder keyForIndex;
 
   /// 「item[from] 移到最终下标 to」。起拖时机按输入设备区分（见类注释）：
   /// 鼠标等精确指针按下即拖，触摸屏长按（`kLongPressTimeout`）再拖。
-  final HibikiReorderCallback onReorder;
+  final FushiReorderCallback onReorder;
 
   /// 相邻行之间的间距，由**列表**插入（而非塞进每个 item 自带 padding）。
   /// 这样拖拽中的浮层复制只包住行内容本身、不会把行间空隙也涂成背景色
@@ -62,16 +62,16 @@ class HibikiReorderableColumn extends StatefulWidget {
   final double spacing;
 
   /// 拖拽浮层复制的圆角（裁切到此半径）。给本身是圆角卡片的行（如词典行的
-  /// `HibikiCard`）传卡片半径，使浮层 [Material] 的矩形背景不在圆角处露出底色；
+  /// `FushiCard`）传卡片半径，使浮层 [Material] 的矩形背景不在圆角处露出底色；
   /// null 时浮层为直角（与历史一致，适合无自带背景的设置行）。
   final BorderRadius? feedbackBorderRadius;
 
   @override
-  State<HibikiReorderableColumn> createState() =>
-      _HibikiReorderableColumnState();
+  State<FushiReorderableColumn> createState() =>
+      _FushiReorderableColumnState();
 }
 
-class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
+class _FushiReorderableColumnState extends State<FushiReorderableColumn> {
   /// 显示顺序：display 位置 → 原始 index（拖拽中实时变化；提交后重置为恒等）。
   late List<int> _display;
 
@@ -93,7 +93,7 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
   //    视口上/下边缘带就按帧步进 [ScrollPosition.jumpTo]，滚动后用最近一次指针全局
   //    坐标重跑 [_updateDrag]（`globalToLocal` 已消滚动位移，浮层/目标槽随内容自洽）。
   //    无祖先 Scrollable（如离屏测试）时 [_scrollable] 为 null，整段降级为不滚动。
-  //    与 2D 姊妹件 [HibikiReorderableGrid] 同款实现。──
+  //    与 2D 姊妹件 [FushiReorderableGrid] 同款实现。──
   ScrollableState? _scrollable;
   Offset _lastPointerGlobal = Offset.zero;
   double _autoScrollStepSigned = 0; // 当前每帧步进（含方向）；0 = 不滚
@@ -112,7 +112,7 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
   }
 
   @override
-  void didUpdateWidget(covariant HibikiReorderableColumn oldWidget) {
+  void didUpdateWidget(covariant FushiReorderableColumn oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.itemCount != widget.itemCount) {
       _resetDisplay();
@@ -251,7 +251,7 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
       return;
     }
     final ScrollPosition pos = sc.position;
-    // 完整变换取**屏幕**矩形：本组件运行在 HibikiAppUiScale 的祖先缩放之下
+    // 完整变换取**屏幕**矩形：本组件运行在 FushiAppUiScale 的祖先缩放之下
     //（BUG-778），`localToGlobal(zero) & size` 把缩放后的原点和未缩放的布局
     // 尺寸混拼——scale<1 时底边高估、边缘带够不到（自动滚动失效），scale>1
     // 时边缘带侵入视口中部（误触发）。transformRect 连尺寸一起过变换。
@@ -419,7 +419,7 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
   }
 }
 
-/// 把 [MultiDragGestureRecognizer] 的拖拽回调桥接到 [_HibikiReorderableColumnState]
+/// 把 [MultiDragGestureRecognizer] 的拖拽回调桥接到 [_FushiReorderableColumnState]
 /// 的全局坐标拖拽逻辑（`_startDrag`/`_updateDrag`/`_endDrag` 都吃全局坐标，
 /// 内部再用 `globalToLocal` 消祖先缩放）。
 class _ReorderDrag extends Drag {

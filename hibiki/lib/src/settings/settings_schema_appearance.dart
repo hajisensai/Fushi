@@ -51,7 +51,7 @@ SettingsDestination buildAppearanceDestination() {
               settingsContext.refresh();
             },
           ),
-          // 「界面大小」滑条：commitOnRelease——本滑条位于受 HibikiAppUiScale 的
+          // 「界面大小」滑条：commitOnRelease——本滑条位于受 FushiAppUiScale 的
           // Transform.scale 缩放的子树内，拖动逐帧提交会让整树立刻按新比例重排、
           // 滑块在手指下位移、手势断裂（TODO-374 旧 _AppUiScaleSliderRow 注释）。
           // 渲染层 _CommitOnReleaseSlider 拖动只更新本地预览值（跟手 + 标题读数
@@ -63,8 +63,8 @@ SettingsDestination buildAppearanceDestination() {
             title: t.app_ui_scale,
             subtitle: t.app_ui_scale_hint,
             icon: Icons.format_size_outlined,
-            min: HibikiAppUiScale.minScale,
-            max: HibikiAppUiScale.maxScale,
+            min: FushiAppUiScale.minScale,
+            max: FushiAppUiScale.maxScale,
             divisions: 27,
             label: (double value) => '${(value * 100).round()}%',
             titleReadout: true,

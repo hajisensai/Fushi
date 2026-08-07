@@ -178,13 +178,13 @@ class GameSectionTabs extends StatelessWidget {
       }
     }
 
-    return HibikiAdjustableSegmented<GameSection>(
+    return FushiAdjustableSegmented<GameSection>(
       values: values,
       selected: selected,
       onChanged: select,
       focusIdPrefix: focusIdPrefix,
-      focusId: HibikiFocusId('$focusIdPrefix-sections'),
-      child: HibikiSegmentedStrip<GameSection>(
+      focusId: FushiFocusId('$focusIdPrefix-sections'),
+      child: FushiSegmentedStrip<GameSection>(
         segments: <ButtonSegment<GameSection>>[
           ButtonSegment<GameSection>(
             value: GameSection.dashboard,

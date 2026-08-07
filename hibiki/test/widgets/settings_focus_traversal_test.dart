@@ -170,9 +170,9 @@ void main() {
       _app(
         Center(
           child: ConstrainedBox(
-            // HibikiDialogFrame(scrollable: false) outer constraint
+            // FushiDialogFrame(scrollable: false) outer constraint
             constraints: const BoxConstraints(maxHeight: 240, maxWidth: 420),
-            child: HibikiModalSheetFrame(
+            child: FushiModalSheetFrame(
               maxHeightFactor: 0.8,
               scrollable: true,
               body: AnimatedSize(
@@ -336,7 +336,7 @@ void main() {
     int taps = 0;
     await tester.pumpWidget(
       _app(
-        HibikiFocusRoot(
+        FushiFocusRoot(
           child: Column(
             children: <Widget>[
               AdaptiveSettingsNavigationRow(
@@ -355,10 +355,10 @@ void main() {
     await tester.pump();
 
     final BuildContext context = tester.element(find.text('Outer'));
-    final HibikiFocusController controller =
-        HibikiFocusRoot.controllerOf(context);
+    final FushiFocusController controller =
+        FushiFocusRoot.controllerOf(context);
 
-    expect(controller.move(HibikiFocusDirection.down), isTrue);
+    expect(controller.move(FushiFocusDirection.down), isTrue);
     await tester.pump();
     expect(controller.activeContext, isNotNull);
 
@@ -370,7 +370,7 @@ void main() {
   });
 
   testWidgets(
-      'HibikiFocusRing scrolls a programmatically-focused off-screen '
+      'FushiFocusRing scrolls a programmatically-focused off-screen '
       'control into view (把视角转过去)', (tester) async {
     // Programmatic focus (node.requestFocus) does NOT go through the traversal
     // policy, so Flutter does not ensureVisible — only the focus ring does.
@@ -390,7 +390,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
-        home: HibikiFocusRing(
+        home: FushiFocusRing(
           child: Scaffold(
             body: Center(
               child: ConstrainedBox(
@@ -431,7 +431,7 @@ void main() {
           focusRect.bottom <= viewport.bottom + 1,
       isTrue,
       reason: 'Off-screen focused control $focusRect should be scrolled into '
-          'view $viewport by HibikiFocusRing',
+          'view $viewport by FushiFocusRing',
     );
   });
 }

@@ -4,7 +4,7 @@ import 'package:fushi/src/focus/hibiki_focus_controller.dart';
 import 'package:fushi/src/focus/hibiki_focus_target.dart';
 
 void main() {
-  testWidgets('HibikiFocusRoot restores focus when the primary node is removed',
+  testWidgets('FushiFocusRoot restores focus when the primary node is removed',
       (WidgetTester tester) async {
     final FocusNode first = FocusNode(debugLabel: 'first');
     final FocusNode second = FocusNode(debugLabel: 'second');
@@ -14,20 +14,20 @@ void main() {
     bool showFirst = true;
     StateSetter setOuter = (_) {};
     await tester.pumpWidget(MaterialApp(
-      home: HibikiFocusRoot(
+      home: FushiFocusRoot(
         child: StatefulBuilder(
           builder: (BuildContext context, StateSetter setState) {
             setOuter = setState;
             return Column(
               children: <Widget>[
                 if (showFirst)
-                  HibikiFocusTarget(
-                    id: const HibikiFocusId('first'),
+                  FushiFocusTarget(
+                    id: const FushiFocusId('first'),
                     focusNode: first,
                     child: const SizedBox(width: 40, height: 40),
                   ),
-                HibikiFocusTarget(
-                  id: const HibikiFocusId('second'),
+                FushiFocusTarget(
+                  id: const FushiFocusId('second'),
                   focusNode: second,
                   child: const SizedBox(width: 40, height: 40),
                 ),
@@ -54,16 +54,16 @@ void main() {
     );
   });
 
-  testWidgets('HibikiFocusRoot keeps a fallback focus for passive routes',
+  testWidgets('FushiFocusRoot keeps a fallback focus for passive routes',
       (WidgetTester tester) async {
     await tester.pumpWidget(const MaterialApp(
-      home: HibikiFocusRoot(
+      home: FushiFocusRoot(
         child: Center(child: Text('passive')),
       ),
     ));
     await tester.pump();
 
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.text('passive')),
     );
     expect(FocusManager.instance.primaryFocus, isNotNull);
@@ -81,20 +81,20 @@ void main() {
     bool firstEnabled = true;
     StateSetter setOuter = (_) {};
     await tester.pumpWidget(MaterialApp(
-      home: HibikiFocusRoot(
+      home: FushiFocusRoot(
         child: StatefulBuilder(
           builder: (BuildContext context, StateSetter setState) {
             setOuter = setState;
             return Column(
               children: <Widget>[
-                HibikiFocusTarget(
-                  id: const HibikiFocusId('first'),
+                FushiFocusTarget(
+                  id: const FushiFocusId('first'),
                   focusNode: first,
                   enabled: firstEnabled,
                   child: const SizedBox(width: 40, height: 40),
                 ),
-                HibikiFocusTarget(
-                  id: const HibikiFocusId('second'),
+                FushiFocusTarget(
+                  id: const FushiFocusId('second'),
                   focusNode: second,
                   child: const SizedBox(width: 40, height: 40),
                 ),
@@ -124,27 +124,27 @@ void main() {
     addTearDown(outer.dispose);
     addTearDown(inner.dispose);
 
-    late HibikiFocusController controller;
+    late FushiFocusController controller;
     await tester.pumpWidget(
       MaterialApp(
-        builder: (BuildContext context, Widget? child) => HibikiFocusRoot(
+        builder: (BuildContext context, Widget? child) => FushiFocusRoot(
           child: child!,
         ),
         home: Scaffold(
           body: Builder(
             builder: (BuildContext context) {
-              controller = HibikiFocusRoot.controllerOf(context);
+              controller = FushiFocusRoot.controllerOf(context);
               return Column(
                 children: <Widget>[
-                  HibikiFocusTarget(
-                    id: const HibikiFocusId('outer'),
+                  FushiFocusTarget(
+                    id: const FushiFocusId('outer'),
                     focusNode: outer,
                     child: TextButton(
                       onPressed: () => Navigator.of(context).push<void>(
                         MaterialPageRoute<void>(
                           builder: (BuildContext context) => Scaffold(
-                            body: HibikiFocusTarget(
-                              id: const HibikiFocusId('inner'),
+                            body: FushiFocusTarget(
+                              id: const FushiFocusId('inner'),
                               focusNode: inner,
                               child: const SizedBox(
                                 width: 120,
@@ -169,13 +169,13 @@ void main() {
 
     outer.requestFocus();
     await tester.pump();
-    expect(controller.activeId, const HibikiFocusId('outer'));
+    expect(controller.activeId, const FushiFocusId('outer'));
 
     await tester.tap(find.text('outer target'));
     await tester.pumpAndSettle();
     await tester.pump();
 
-    expect(controller.activeId, const HibikiFocusId('inner'));
+    expect(controller.activeId, const FushiFocusId('inner'));
     expect(inner.hasPrimaryFocus, isTrue);
     expect(outer.hasPrimaryFocus, isFalse);
   });
@@ -187,25 +187,25 @@ void main() {
     addTearDown(outer.dispose);
     addTearDown(dialog.dispose);
 
-    late HibikiFocusController controller;
+    late FushiFocusController controller;
     await tester.pumpWidget(
       MaterialApp(
-        builder: (BuildContext context, Widget? child) => HibikiFocusRoot(
+        builder: (BuildContext context, Widget? child) => FushiFocusRoot(
           child: child!,
         ),
         home: Scaffold(
           body: Builder(
             builder: (BuildContext context) {
-              controller = HibikiFocusRoot.controllerOf(context);
-              return HibikiFocusTarget(
-                id: const HibikiFocusId('outer'),
+              controller = FushiFocusRoot.controllerOf(context);
+              return FushiFocusTarget(
+                id: const FushiFocusId('outer'),
                 focusNode: outer,
                 child: TextButton(
                   onPressed: () => showDialog<void>(
                     context: context,
                     builder: (BuildContext context) => Dialog(
-                      child: HibikiFocusTarget(
-                        id: const HibikiFocusId('dialog'),
+                      child: FushiFocusTarget(
+                        id: const FushiFocusId('dialog'),
                         focusNode: dialog,
                         child: const SizedBox(
                           width: 120,
@@ -227,13 +227,13 @@ void main() {
 
     outer.requestFocus();
     await tester.pump();
-    expect(controller.activeId, const HibikiFocusId('outer'));
+    expect(controller.activeId, const FushiFocusId('outer'));
 
     await tester.tap(find.text('outer target'));
     await tester.pumpAndSettle();
     await tester.pump();
 
-    expect(controller.activeId, const HibikiFocusId('dialog'));
+    expect(controller.activeId, const FushiFocusId('dialog'));
     expect(dialog.hasPrimaryFocus, isTrue);
     expect(outer.hasPrimaryFocus, isFalse);
   });

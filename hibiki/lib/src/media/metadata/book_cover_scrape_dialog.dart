@@ -166,7 +166,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     if (!mounted) return;
     if (file == null) {
       setState(() => _applyingCandidate = null);
-      HibikiToast.show(
+      FushiToast.show(
         msg: failure == null
             ? t.book_scrape_failed
             : '${t.book_scrape_failed}\n${_failureReason(failure)}',
@@ -180,7 +180,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return AlertDialog(
       title: Text(t.book_scrape_title),
       content: SizedBox(
@@ -228,7 +228,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     );
   }
 
-  Widget _buildResults(ThemeData theme, HibikiDesignTokens tokens) {
+  Widget _buildResults(ThemeData theme, FushiDesignTokens tokens) {
     if (_searching) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -255,7 +255,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
 
   Widget _buildTile(
     ThemeData theme,
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
     BookScrapeCandidate candidate,
   ) {
     final List<String> metaParts = <String>[

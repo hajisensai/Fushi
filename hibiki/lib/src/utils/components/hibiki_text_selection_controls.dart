@@ -7,8 +7,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/utils.dart';
 
-class HibikiTextSelectionControls extends MaterialTextSelectionControls {
-  HibikiTextSelectionControls({
+class FushiTextSelectionControls extends MaterialTextSelectionControls {
+  FushiTextSelectionControls({
     this.stashAction,
     required this.shareAction,
     required this.allowCopy,
@@ -102,7 +102,7 @@ class HibikiTextSelectionControls extends MaterialTextSelectionControls {
     String selectedText() => delegate.textEditingValue.selection
         .textInside(delegate.textEditingValue.text);
 
-    return _HibikiSelectionToolbar(
+    return _FushiSelectionToolbar(
       anchorAbove: anchorAbove,
       anchorBelow: anchorBelow,
       clipboardStatus: clipboardStatus,
@@ -135,8 +135,8 @@ class HibikiTextSelectionControls extends MaterialTextSelectionControls {
   }
 }
 
-class _HibikiSelectionToolbar extends StatefulWidget {
-  const _HibikiSelectionToolbar({
+class _FushiSelectionToolbar extends StatefulWidget {
+  const _FushiSelectionToolbar({
     required this.anchorAbove,
     required this.anchorBelow,
     required this.clipboardStatus,
@@ -161,11 +161,11 @@ class _HibikiSelectionToolbar extends StatefulWidget {
   final VoidCallback? handleSelectAll;
 
   @override
-  State<_HibikiSelectionToolbar> createState() =>
-      _HibikiSelectionToolbarState();
+  State<_FushiSelectionToolbar> createState() =>
+      _FushiSelectionToolbarState();
 }
 
-class _HibikiSelectionToolbarState extends State<_HibikiSelectionToolbar> {
+class _FushiSelectionToolbarState extends State<_FushiSelectionToolbar> {
   void _onChangedClipboardStatus() {
     setState(() {});
   }
@@ -177,7 +177,7 @@ class _HibikiSelectionToolbarState extends State<_HibikiSelectionToolbar> {
   }
 
   @override
-  void didUpdateWidget(_HibikiSelectionToolbar oldWidget) {
+  void didUpdateWidget(_FushiSelectionToolbar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.clipboardStatus != oldWidget.clipboardStatus) {
       widget.clipboardStatus?.addListener(_onChangedClipboardStatus);
@@ -223,7 +223,7 @@ class _HibikiSelectionToolbarState extends State<_HibikiSelectionToolbar> {
     return TextSelectionToolbar(
       anchorAbove: widget.anchorAbove,
       anchorBelow: widget.anchorBelow,
-      toolbarBuilder: (context, child) => HibikiCard(
+      toolbarBuilder: (context, child) => FushiCard(
         padding: EdgeInsets.zero,
         child: child,
       ),
@@ -237,12 +237,12 @@ class _HibikiSelectionToolbarState extends State<_HibikiSelectionToolbar> {
           );
         }),
         if (overflowItems.isNotEmpty)
-          HibikiOverflowMenu<int>(
+          FushiOverflowMenu<int>(
             iconSize: 20,
             onSelected: (i) => overflowItems[i].onPressed?.call(),
             items: [
               for (int i = 0; i < overflowItems.length; i++)
-                HibikiPopupMenuItem<int>(
+                FushiPopupMenuItem<int>(
                   label: overflowItems[i].label,
                   value: i,
                 ),

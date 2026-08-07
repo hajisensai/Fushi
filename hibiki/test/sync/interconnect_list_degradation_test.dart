@@ -54,12 +54,12 @@ void main() {
   tearDown(() async => server.close(force: true));
 
   Future<InterconnectSyncBackend> buildBackend() async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+    final FushiDatabase db =
+        FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
     addTearDown(() async => db.close());
     final SyncRepository repo = SyncRepository(db);
-    await repo.setHibikiClientUrls(<HibikiClientUrl>[
-      HibikiClientUrl(url: base, enabled: true),
+    await repo.setHibikiClientUrls(<FushiClientUrl>[
+      FushiClientUrl(url: base, enabled: true),
     ]);
     await repo.setHibikiClientToken(token);
     final InterconnectSyncBackend backend =

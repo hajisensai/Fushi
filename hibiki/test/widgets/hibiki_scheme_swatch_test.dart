@@ -86,14 +86,14 @@ void main() {
     }
   });
 
-  testWidgets('HibikiSchemeSwatch fires onTap and paints the diagonal preview',
+  testWidgets('FushiSchemeSwatch fires onTap and paints the diagonal preview',
       (WidgetTester tester) async {
     int taps = 0;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: Center(
-            child: HibikiSchemeSwatch(
+            child: FushiSchemeSwatch(
               colors: const <Color>[
                 Color(0xFF112233),
                 Color(0xFF445566),
@@ -107,7 +107,7 @@ void main() {
       ),
     );
     expect(find.byType(CustomPaint), findsWidgets);
-    await tester.tap(find.byType(HibikiSchemeSwatch));
+    await tester.tap(find.byType(FushiSchemeSwatch));
     await tester.pumpAndSettle();
     expect(taps, 1);
   });
@@ -120,7 +120,7 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: Center(
-            child: HibikiSchemeSwatch(
+            child: FushiSchemeSwatch(
               colors: const <Color>[
                 Color(0xFF112233),
                 Color(0xFF445566),
@@ -135,12 +135,12 @@ void main() {
       ),
     );
     // 单击只触发切换，不触发编辑。
-    await tester.tap(find.byType(HibikiSchemeSwatch));
+    await tester.tap(find.byType(FushiSchemeSwatch));
     await tester.pumpAndSettle();
     expect(taps, 1);
     expect(longPresses, 0);
     // 长按只触发编辑，不触发切换。
-    await tester.longPress(find.byType(HibikiSchemeSwatch));
+    await tester.longPress(find.byType(FushiSchemeSwatch));
     await tester.pumpAndSettle();
     expect(longPresses, 1);
     expect(taps, 1);
@@ -152,7 +152,7 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: Center(
-            child: HibikiSchemeSwatch(
+            child: FushiSchemeSwatch(
               colors: const <Color>[
                 Color(0xFF112233),
                 Color(0xFF445566),
@@ -164,7 +164,7 @@ void main() {
         ),
       ),
     );
-    await tester.longPress(find.byType(HibikiSchemeSwatch));
+    await tester.longPress(find.byType(FushiSchemeSwatch));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
@@ -180,7 +180,7 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: Center(
-            child: HibikiSchemeSwatch(
+            child: FushiSchemeSwatch(
               colors: const <Color>[
                 Color(0xFF112233),
                 background,
@@ -195,7 +195,7 @@ void main() {
     );
     final AnimatedContainer container = tester.widget<AnimatedContainer>(
       find.descendant(
-        of: find.byType(HibikiSchemeSwatch),
+        of: find.byType(FushiSchemeSwatch),
         matching: find.byType(AnimatedContainer),
       ),
     );
@@ -212,7 +212,7 @@ void main() {
     SchemeDiagonalPainter painterOf(WidgetTester tester) {
       final CustomPaint cp = tester.widget<CustomPaint>(
         find.descendant(
-          of: find.byType(HibikiSchemeSwatch),
+          of: find.byType(FushiSchemeSwatch),
           matching: find.byWidgetPredicate(
             (Widget w) =>
                 w is CustomPaint && w.painter is SchemeDiagonalPainter,
@@ -234,7 +234,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: Center(child: HibikiSchemeSwatch(colors: colors)),
+            body: Center(child: FushiSchemeSwatch(colors: colors)),
           ),
         ),
       );
@@ -249,7 +249,7 @@ void main() {
         MaterialApp(
           home: Scaffold(
             body: Center(
-              child: HibikiSchemeSwatch(
+              child: FushiSchemeSwatch(
                 colors: colors,
                 overlay: Icon(Icons.palette_outlined),
               ),
@@ -267,7 +267,7 @@ void main() {
         MaterialApp(
           home: Scaffold(
             body: Center(
-              child: HibikiSchemeSwatch(
+              child: FushiSchemeSwatch(
                 colors: colors,
                 selected: true,
                 overlay: Icon(Icons.auto_awesome_outlined),
@@ -285,7 +285,7 @@ void main() {
         MaterialApp(
           home: Scaffold(
             body: Center(
-              child: HibikiSchemeSwatch(
+              child: FushiSchemeSwatch(
                 colors: colors,
                 overlay: Icon(Icons.palette_outlined),
               ),
@@ -296,7 +296,7 @@ void main() {
       // 徽章经 Align(bottomLeft) 定位在角落（让出中央完整预览），
       // 而不是旧的 Center 居中盖住。
       final Finder badgeAlign = find.descendant(
-        of: find.byType(HibikiSchemeSwatch),
+        of: find.byType(FushiSchemeSwatch),
         matching: find.byWidgetPredicate(
           (Widget w) => w is Align && w.alignment == Alignment.bottomLeft,
         ),
@@ -305,7 +305,7 @@ void main() {
       // overlay 图标仍然渲染（徽章没被丢弃，只是移到角落）。
       expect(
         find.descendant(
-          of: find.byType(HibikiSchemeSwatch),
+          of: find.byType(FushiSchemeSwatch),
           matching: find.byIcon(Icons.palette_outlined),
         ),
         findsOneWidget,
@@ -348,7 +348,7 @@ void main() {
           theme: ThemeData.from(colorScheme: darkAppScheme),
           home: Scaffold(
             body: Center(
-              child: HibikiSchemeSwatch(
+              child: FushiSchemeSwatch(
                 colors: lightSchemeColors,
                 overlay: const Icon(Icons.palette_outlined),
               ),
@@ -385,7 +385,7 @@ void main() {
           theme: ThemeData.from(colorScheme: lightAppScheme),
           home: Scaffold(
             body: Center(
-              child: HibikiSchemeSwatch(
+              child: FushiSchemeSwatch(
                 colors: lightSchemeColors,
                 overlay: const Icon(Icons.palette_outlined),
               ),
@@ -408,7 +408,7 @@ void main() {
         MaterialApp(
           home: Scaffold(
             body: Center(
-              child: HibikiSchemeSwatch(
+              child: FushiSchemeSwatch(
                 colors: darkSchemeColors,
                 overlay: const Icon(Icons.palette_outlined),
               ),
@@ -425,7 +425,7 @@ void main() {
     // 用户诉求：①删掉自定义主题底下的名字文字 ②所有主题卡片都完整显示配色，
     // 而不是选中以后才完整。这里在 widget 行为层锁死：无论选中与否，swatch 都画
     // 完整对角预览（含「文」glyph），且 swatch 自身结构里不含任何 Text caption
-    // （HibikiSchemeSwatch 已删除 label/textColor，无法再挂底部文字）。
+    // （FushiSchemeSwatch 已删除 label/textColor，无法再挂底部文字）。
     const List<Color> colors = <Color>[
       Color(0xFF112233),
       Color(0xFF445566),
@@ -436,7 +436,7 @@ void main() {
     SchemeDiagonalPainter painterOf(WidgetTester tester) {
       final CustomPaint cp = tester.widget<CustomPaint>(
         find.descendant(
-          of: find.byType(HibikiSchemeSwatch),
+          of: find.byType(FushiSchemeSwatch),
           matching: find.byWidgetPredicate(
             (Widget w) =>
                 w is CustomPaint && w.painter is SchemeDiagonalPainter,
@@ -451,7 +451,7 @@ void main() {
     // 都画不出来，卡片就是空白圆角块。这里量真实渲染尺寸，锁死画布非空。
     Size paintSizeOf(WidgetTester tester) => tester.getSize(
           find.descendant(
-            of: find.byType(HibikiSchemeSwatch),
+            of: find.byType(FushiSchemeSwatch),
             matching: find.byWidgetPredicate(
               (Widget w) =>
                   w is CustomPaint && w.painter is SchemeDiagonalPainter,
@@ -468,7 +468,7 @@ void main() {
         MaterialApp(
           home: Scaffold(
             body: Center(
-              child: HibikiSchemeSwatch(
+              child: FushiSchemeSwatch(
                 colors: colors,
                 selected: selected,
                 overlay: overlay,
@@ -492,7 +492,7 @@ void main() {
       // 内出现 Text 只可能来自曾经的 caption。删除 label 后必须一个都没有。
       expect(
         find.descendant(
-          of: find.byType(HibikiSchemeSwatch),
+          of: find.byType(FushiSchemeSwatch),
           matching: find.byType(Text),
         ),
         findsNothing,
@@ -505,7 +505,7 @@ void main() {
       expect(painterOf(tester).showGlyph, isTrue);
       expect(
         find.descendant(
-          of: find.byType(HibikiSchemeSwatch),
+          of: find.byType(FushiSchemeSwatch),
           matching: find.byType(Text),
         ),
         findsNothing,

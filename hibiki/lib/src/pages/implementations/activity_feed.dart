@@ -227,8 +227,8 @@ DashboardTimeStats sumTimeWindowsByDateKey(
 }
 
 /// `yyyy-MM-dd`（与统计行 dateKey 同格式，可字典序比较）。委托
-/// [HibikiTimeFormat.dayKey]（G5 收敛；不引 UI 层的 statDateKey，保持纯数据层）。
-String _dayKey(DateTime d) => HibikiTimeFormat.dayKey(d);
+/// [FushiTimeFormat.dayKey]（G5 收敛；不引 UI 层的 statDateKey，保持纯数据层）。
+String _dayKey(DateTime d) => FushiTimeFormat.dayKey(d);
 
 /// 把已按升序排好的时间戳按 [gap] 归并成 session 数：相邻间隔 > gap 记一个新 session。
 int _countSessions(List<int> sortedAscTimestamps, Duration gap) {

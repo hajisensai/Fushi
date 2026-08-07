@@ -15,14 +15,14 @@ import 'temp_dir_cleanup.dart';
 /// 落点，本测试直接验它。
 void main() {
   late Directory tmp;
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late SyncRepository repo;
 
   setUp(() async {
     tmp = await Directory.systemTemp.createTemp('ic_upload_toggles_');
     final String dbDir = p.join(tmp.path, 'db');
     Directory(dbDir).createSync(recursive: true);
-    db = HibikiDatabase(dbDir);
+    db = FushiDatabase(dbDir);
     repo = SyncRepository(db);
   });
 

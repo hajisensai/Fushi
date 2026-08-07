@@ -13,7 +13,7 @@ import 'package:path/path.dart' as p;
 /// （BUG-937 封面 O(N²) 根修的服务层）：结果必须与 listVideos()/listBooks()
 /// 清单里对应条目的 coverPath 一致，但只做单行 DB 查询 + stat。
 AppModelLibraryHostService _makeService({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required Directory tmp,
 }) {
   final Directory dictRoot = Directory(p.join(tmp.path, 'dicts'))
@@ -30,11 +30,11 @@ AppModelLibraryHostService _makeService({
 
 void main() {
   late Directory tmp;
-  late HibikiDatabase db;
+  late FushiDatabase db;
 
   setUp(() {
     tmp = Directory.systemTemp.createTempSync('hbk_cover_path_test');
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() async {

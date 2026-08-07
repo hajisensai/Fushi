@@ -63,7 +63,7 @@ void main() {
       reason: '_toggleUrl 未用 copyWith（裸构造会静默清掉已钉扎的 fingerprintSha256）',
     );
     expect(
-      toggle.contains('HibikiClientUrl(url:'),
+      toggle.contains('FushiClientUrl(url:'),
       isFalse,
       reason: '_toggleUrl 出现裸构造重建条目，会丢 fingerprintSha256/deviceName',
     );
@@ -71,7 +71,7 @@ void main() {
 
   test('发现列表配对走 v2：探测 scheme → 共享 _runPairingV2，老 host 回落 v1', () {
     final int start = source
-        .indexOf('Future<void> _connectToDevice(HibikiDevice device) async {');
+        .indexOf('Future<void> _connectToDevice(FushiDevice device) async {');
     expect(start, greaterThanOrEqualTo(0), reason: '_connectToDevice 丢失');
     final int end = source.indexOf('String _pairDeniedMessage(String body) {');
     expect(end, greaterThan(start));

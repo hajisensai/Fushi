@@ -68,7 +68,7 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
           debugMessage != null ? debugMessage(e) : '$logTag failed: $e',
         );
         if (mounted) {
-          HibikiToast.show(
+          FushiToast.show(
             msg: '${t.srt_import_error}: $e',
             severity: ToastSeverity.error,
           );
@@ -88,7 +88,7 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
     BuildContext context, {
     required VoidCallback onImport,
   }) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return adaptiveDialogAction(
       context: context,
       isDefaultAction: true,
@@ -121,7 +121,7 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
   /// 替换原内联块时，渲染树与抽取前逐字等价——不引入任何额外的布局层。
   List<Widget> buildProgressSection(
     BuildContext context,
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
   ) {
     return <Widget>[
       SizedBox(height: tokens.spacing.card),

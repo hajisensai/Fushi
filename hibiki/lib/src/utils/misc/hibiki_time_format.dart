@@ -1,5 +1,5 @@
 /// Used for formatting time-related strings.
-class HibikiTimeFormat {
+class FushiTimeFormat {
   /// Used for generating a timestamp for use with FFMPEG.
   static String getFfmpegTimestamp(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');

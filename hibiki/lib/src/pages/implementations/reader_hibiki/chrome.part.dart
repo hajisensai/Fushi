@@ -198,8 +198,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         Overlay.of(effectiveContext).context.findRenderObject()! as RenderBox;
     // BUG-381: [globalPosition] 是真实屏幕坐标（右键路径来自阅读器 State 的 RenderBox
     // localToGlobal，放大图路径来自 details.globalPosition；两者都在「净缩放=1 的真实
-    // 视口空间」——阅读器被 HibikiAppUiScaleNeutralizer 中和回 1.0）。但 showMenu 的
-    // RelativeRect 落在它路由 Overlay 的坐标系，而该 Overlay 在全局 HibikiAppUiScale 的
+    // 视口空间」——阅读器被 FushiAppUiScaleNeutralizer 中和回 1.0）。但 showMenu 的
+    // RelativeRect 落在它路由 Overlay 的坐标系，而该 Overlay 在全局 FushiAppUiScale 的
     // FittedBox 之内（缩放后的画布空间）。直接把真实屏幕坐标当画布坐标喂给 showMenu，
     // 界面大小≠100% 时菜单会偏离图片 factor≈scale（BUG-261 同型，视频右键已修）。
     //
@@ -210,9 +210,9 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     // （向后兼容）。
     //
     // BUG-1438：菜单内容**不能**再乘界面缩放。菜单渲染在根 Overlay，也就是全局
-    // HibikiAppUiScale 的缩放画布内，画布→屏幕这一跳已经把它按 scale 放大了一次；
+    // FushiAppUiScale 的缩放画布内，画布→屏幕这一跳已经把它按 scale 放大了一次；
     // 阅读器 chrome 之所以要手动 ×_readerChromeScale，是因为 chrome 在
-    // HibikiAppUiScaleNeutralizer **之内**（净缩放=1，不跟随），而菜单在**之外**。
+    // FushiAppUiScaleNeutralizer **之内**（净缩放=1，不跟随），而菜单在**之外**。
     // 旧代码把 chrome 的规则错套到菜单上 → 视觉尺寸是 scale²：实测同样写
     // `fontSize: 14 * menuScale`，chrome 渲染成 40 而菜单 80（scale=2）。所以这里
     // 写常量，让菜单与 app 其它右键菜单（视频 / 合集 / 标签管理）口径一致。
@@ -383,7 +383,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           if (!mounted) return;
           if (sel == null) {
             appModel.currentMediaSource?.setCurrentSentence(
-              selection: HibikiTextSelection(text: selectedText),
+              selection: FushiTextSelection(text: selectedText),
             );
           }
           // BUG-1344：状态/夹图提取完成后、打开弹窗前清原生选区。否则 WKWebView
@@ -396,7 +396,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           return;
         case 'copy':
           await Clipboard.setData(ClipboardData(text: selectedText));
-          HibikiToast.show(
+          FushiToast.show(
               msg: t.copied_to_clipboard, severity: ToastSeverity.success);
           // 复制是终结动作：清掉刻意保留的原生选区，和移动端拖选菜单的 'copy'
           // （_clearReaderAppSelection）对齐。否则残留的原生蓝色选区会一直卡住后续
@@ -412,7 +412,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           if (!mounted) return;
           if (favSel == null) {
             appModel.currentMediaSource?.setCurrentSentence(
-              selection: HibikiTextSelection(text: selectedText),
+              selection: FushiTextSelection(text: selectedText),
             );
           }
           await _toggleFavoriteSentence();
@@ -479,7 +479,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     }
     final Size overlaySize = overlayBox.size;
     // BUG-1438：本操作条是插进**根 Overlay** 的 OverlayEntry，落在全局
-    // HibikiAppUiScale 的缩放画布内，已天然跟随界面大小；不得再乘
+    // FushiAppUiScale 的缩放画布内，已天然跟随界面大小；不得再乘
     // _readerImageMenuScale（那是给中和层内 chrome 用的），否则视觉尺寸是 scale²。
     const double barHeight = kMinInteractiveDimension;
     const double gap = 8;
@@ -595,7 +595,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         return;
       case 'copy':
         await Clipboard.setData(ClipboardData(text: data.text));
-        HibikiToast.show(
+        FushiToast.show(
             msg: t.copied_to_clipboard, severity: ToastSeverity.success);
         await _clearReaderAppSelection();
         return;
@@ -603,7 +603,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         final bool shared =
             await SelectionExternalActions.instance.shareText(data.text);
         if (mounted && !shared) {
-          HibikiToast.show(
+          FushiToast.show(
               msg: t.selection_share_failed, severity: ToastSeverity.error);
         }
         await _clearReaderAppSelection();
@@ -612,7 +612,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         final bool opened =
             await SelectionExternalActions.instance.searchWeb(data.text);
         if (mounted && !opened) {
-          HibikiToast.show(
+          FushiToast.show(
               msg: t.selection_web_search_unavailable,
               severity: ToastSeverity.error);
         }
@@ -723,7 +723,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   }) async {
     // currentSentence 非空契约（与 lookup.part.dart tap 写点一致）：句子优先、退回选中词。
     appModel.currentMediaSource?.setCurrentSentence(
-      selection: HibikiTextSelection(
+      selection: FushiTextSelection(
         text: ReaderSelectionScripts.resolveCurrentSentenceText(
           data.sentence,
           data.text,
@@ -767,7 +767,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   Future<void> _exportAudiobookClipFromSelectionData(
       ReaderSelectionData data) async {
     if (data.text.isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.audiobook_export_clip_no_text, severity: ToastSeverity.error);
       return;
     }
@@ -860,7 +860,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     if (!mounted) return;
     if (data == null) {
       // 无选区 / 解析失败：走与 _exportAudiobookClip 空选区分支一致的兜底文案。
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.audiobook_export_clip_no_text, severity: ToastSeverity.error);
       return;
     }
@@ -870,17 +870,17 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   Future<void> _shareReaderImage(String imgUrl) async {
     final File? file = _readerImageFileForUrl(imgUrl);
     if (file == null) {
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.reader_image_file_unavailable, severity: ToastSeverity.error);
       return;
     }
     try {
-      await HibikiShare.shareFiles(
+      await FushiShare.shareFiles(
         <XFile>[XFile(file.path, mimeType: fallbackMimeType(file.path))],
         subject: p.basename(file.path),
       );
     } catch (e) {
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.reader_image_share_failed(error: e),
           severity: ToastSeverity.error);
     }
@@ -889,19 +889,19 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   Future<void> _copyReaderImageToClipboard(String imgUrl) async {
     final File? file = _readerImageFileForUrl(imgUrl);
     if (file == null) {
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.reader_image_file_unavailable, severity: ToastSeverity.error);
       return;
     }
     try {
-      await HibikiChannels.clipboardImage.invokeMethod<void>(
+      await FushiChannels.clipboardImage.invokeMethod<void>(
         'copyImageFile',
         <String, String>{'path': file.path},
       );
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.copied_to_clipboard, severity: ToastSeverity.success);
     } catch (e) {
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.reader_image_copy_failed(error: e),
           severity: ToastSeverity.error);
     }
@@ -1196,7 +1196,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   /// 弹回章节开头。
   ///
   /// 根因：连续模式阅读位置是裸 `window.scrollY`，没有分页模式的
-  /// `registerSnapScroll`/`lockRootViewport` 保护。HibikiAppUiScale 用新 scale 重建两层
+  /// `registerSnapScroll`/`lockRootViewport` 保护。FushiAppUiScale 用新 scale 重建两层
   /// FittedBox/SizedBox → reader 子树（含 WebView 平台视图）box.size 过渡帧抖动 → 击穿
   /// SetSizeDedup → native put_Bounds → WebView2 reflow 把 document scrollY 瞬时归 0；
   /// 归零后连续模式无任何机制拉回，于是被章内 scroll 回传通道（onReaderScroll）当作真实
@@ -1472,7 +1472,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   }
 
   Widget _buildSettingsBar() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool reversed = appModel.reverseReaderBottomBar;
     final List<Widget> barItems = <Widget>[
       IconButton(
@@ -1703,7 +1703,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       if (isDesktopPlatform) {
         await showAppDialog(
           context: context,
-          builder: (_) => HibikiDialogFrame(
+          builder: (_) => FushiDialogFrame(
             // master-detail（左父菜单 + 右详情）需要更宽画布；窄于 640 的窗口
             // 由面板内部 LayoutBuilder 自动降级回单列 push。
             maxWidth: kHibikiSettingsDialogMaxWidth,
@@ -2003,7 +2003,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       fg: appModel.customThemeFontColor ??
           (dark ? const Color(0xDEFFFFFF) : const Color(0xDE000000)),
       sentenceAudioHighlight: appModel.customThemeSentenceAudioHighlightColor ??
-          HibikiColor.defaultSentenceAudioHighlightColor,
+          FushiColor.defaultSentenceAudioHighlightColor,
       // 回退值与 ReaderContentStyles `_ThemeColors` 默认一致（灰选区 / 蓝链接）。
       selection: appModel.customThemeSelectionColor ?? const Color(0x66A0A0A0),
       link: appModel.customThemeLinkColor ?? const Color(0xFF426CF5),
@@ -2122,7 +2122,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     final String sentence =
         appModel.currentMediaSource?.currentSentence.text ?? '';
     if (sentence.isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.no_sentence_selected, severity: ToastSeverity.error);
       return;
     }
@@ -2162,7 +2162,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       if (sentenceRange != null || _lyricsMode) {
         await _refreshSectionHighlights(section);
       }
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.favorite_removed, severity: ToastSeverity.success);
       return;
     }
@@ -2188,7 +2188,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     if (sentenceRange != null || _lyricsMode) {
       await _refreshSectionHighlights(section);
     }
-    HibikiToast.show(msg: t.favorite_added, severity: ToastSeverity.success);
+    FushiToast.show(msg: t.favorite_added, severity: ToastSeverity.success);
   }
 
   /// TODO-1308 问题②（BUG-696 根因①）：书内收藏面板跳转的唯一真实路径——quick

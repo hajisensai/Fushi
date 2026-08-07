@@ -12,7 +12,7 @@ import '../helpers/source_guard.dart';
 // TODO-1380 / BUG-694：日志面板选中文本弹出右键菜单后崩溃
 // `Null check operator used on a null value`（用户日志 2026-07-10 01:21，两条同栈
 // 连发：#0 SelectableRegionState.startGlyphHeight → #1 contextMenuAnchors →
-// #2 _HibikiLogPanelState._buildContextMenu）。
+// #2 _FushiLogPanelState._buildContextMenu）。
 //
 // 崩溃链（Flutter 3.44 selectable_region.dart）：
 //  * `contextMenuAnchors` 只在首次求值用「右键位置」`_lastSecondaryTapDownPosition`
@@ -103,7 +103,7 @@ void main() {
         List<String>.generate(200, (int i) => 'log-line-$i');
     final String log = lines.join('\n');
     await tester.pumpWidget(
-      buildSubject(HibikiLogPanel(log: log, shareAction: (_) {})),
+      buildSubject(FushiLogPanel(log: log, shareAction: (_) {})),
     );
     await tester.pump();
 
@@ -163,7 +163,7 @@ void main() {
     final String log =
         List<String>.generate(200, (int i) => 'log-line-$i').join('\n');
     await tester.pumpWidget(
-      buildSubject(HibikiLogPanel(log: log, shareAction: (_) {})),
+      buildSubject(FushiLogPanel(log: log, shareAction: (_) {})),
     );
     await tester.pump();
 
@@ -195,7 +195,7 @@ void main() {
         List<String>.generate(50, (int i) => 'log-line-$i');
     await tester.pumpWidget(
       buildSubject(
-        HibikiLogPanel(log: lines.join('\n'), shareAction: (_) {}),
+        FushiLogPanel(log: lines.join('\n'), shareAction: (_) {}),
       ),
     );
     await tester.pump();
@@ -215,7 +215,7 @@ void main() {
       lines.add('appended-line-$round');
       await tester.pumpWidget(
         buildSubject(
-          HibikiLogPanel(log: lines.join('\n'), shareAction: (_) {}),
+          FushiLogPanel(log: lines.join('\n'), shareAction: (_) {}),
         ),
       );
       await tester.pump();
@@ -246,7 +246,7 @@ void main() {
     // 按下标切片与直接切原文完全等价。
     final String code = maskComments(source);
     final String panel = code.substring(
-      code.indexOf('class _HibikiLogPanelState'),
+      code.indexOf('class _FushiLogPanelState'),
       code.indexOf('class _LogSelectionScrollController'),
     );
 

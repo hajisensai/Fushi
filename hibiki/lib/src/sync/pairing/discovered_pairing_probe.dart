@@ -17,7 +17,7 @@ class DiscoveredPairingProbeResult {
   final String? fingerprint;
 
   /// host 的 /api/ping 应答（isHibiki 恒为 true，否则整体返回 null）。
-  final HibikiPingResult ping;
+  final FushiPingResult ping;
 }
 
 /// 发现配对的候选 base URL 顺序（纯函数，供单测）。
@@ -25,7 +25,7 @@ class DiscoveredPairingProbeResult {
 /// - TXT 广播了 `tls=1` → https 优先（host 只讲 https，http 必失败）。
 /// - 未广播 / 旧版 host → http 优先；https 兜底覆盖「host 已开 TLS 但平台把
 ///   TXT 属性丢了」的情况（resolve 丢 TXT 在部分平台真实存在，见
-///   `HibikiDevice.fromResolvedService` 的 id 兜底注释）。
+///   `FushiDevice.fromResolvedService` 的 id 兜底注释）。
 List<String> discoveredPairingCandidateUrls({
   required String host,
   required int port,
@@ -48,14 +48,14 @@ Future<DiscoveredPairingProbeResult?> probeDiscoveredPairingEndpoint({
   required int port,
   required bool tlsAdvertised,
   Future<String?> Function(String host, int port)? captureFingerprint,
-  Future<HibikiPingResult?> Function(String baseUrl,
+  Future<FushiPingResult?> Function(String baseUrl,
           {String? pinnedFingerprint})?
       ping,
 }) async {
   final Future<String?> Function(String host, int port) capture =
       captureFingerprint ??
-          (String h, int p) => HibikiTofuProbe.captureFingerprint(h, p);
-  final Future<HibikiPingResult?> Function(String baseUrl,
+          (String h, int p) => FushiTofuProbe.captureFingerprint(h, p);
+  final Future<FushiPingResult?> Function(String baseUrl,
           {String? pinnedFingerprint}) doPing =
       ping ??
           (String baseUrl, {String? pinnedFingerprint}) =>
@@ -69,7 +69,7 @@ Future<DiscoveredPairingProbeResult?> probeDiscoveredPairingEndpoint({
     if (baseUrl.startsWith('https://')) {
       final String? captured = await capture(host, port);
       if (captured == null || captured.isEmpty) continue;
-      final HibikiPingResult? result =
+      final FushiPingResult? result =
           await doPing(baseUrl, pinnedFingerprint: captured);
       if (result == null) continue;
       // 钉扎指纹以 ping 回传为准（与捕获一致，钉扎 client 已保证）；回传缺失时
@@ -83,7 +83,7 @@ Future<DiscoveredPairingProbeResult?> probeDiscoveredPairingEndpoint({
         ping: result,
       );
     } else {
-      final HibikiPingResult? result = await doPing(baseUrl);
+      final FushiPingResult? result = await doPing(baseUrl);
       if (result == null) continue;
       return DiscoveredPairingProbeResult(
         baseUrl: baseUrl,

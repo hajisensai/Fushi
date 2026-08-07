@@ -112,7 +112,7 @@ class _PendingRelation {
 /// [CollectionRelationsScrapeReport.sourceErrors]（如用户未配 TMDB key）。
 /// 网络/解析失败同样记入 sourceErrors，**不抛出也不吞**；出错时不改动库。
 Future<CollectionRelationsScrapeReport> scrapeCollectionRelations({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required int collectionId,
   BangumiClient? bangumi,
   TmdbClient? tmdb,

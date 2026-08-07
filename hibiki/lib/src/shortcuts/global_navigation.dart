@@ -23,7 +23,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
 /// tell a full page apart from a popup. The focus root's active target and the
 /// raw primary focus are BOTH candidates: the controller's [activeContext] is
 /// only authoritative while a managed target is live — on a page with zero
-/// managed targets it falls back to the HibikiFocusRoot's own fallback node,
+/// managed targets it falls back to the FushiFocusRoot's own fallback node,
 /// which sits ABOVE the [Navigator] and therefore resolves NO route at all
 /// (BUG-1349: Escape went dead on the collection detail page whenever focus
 /// navigation was enabled). Take the first candidate that resolves to a real
@@ -36,9 +36,9 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
 /// full page.
 bool _topRouteIsPopup(GlobalKey<NavigatorState> navigatorKey) {
   final BuildContext? navigationContext = navigatorKey.currentContext;
-  final HibikiFocusController? controller = navigationContext == null
+  final FushiFocusController? controller = navigationContext == null
       ? null
-      : HibikiFocusRoot.maybeControllerOf(navigationContext, listen: false);
+      : FushiFocusRoot.maybeControllerOf(navigationContext, listen: false);
   ModalRoute<dynamic>? route;
   for (final BuildContext? candidate in <BuildContext?>[
     controller?.activeContext,
@@ -113,15 +113,15 @@ KeyEventResult _handleGlobalArrowFocus(
     // a KeyDown or KeyRepeat (never a KeyUp), so both edges flow through the
     // single shared move below — press and repeat can never diverge.
     //
-    // Resolve the controller from the FOCUSED context (the HibikiFocusRoot sits
+    // Resolve the controller from the FOCUSED context (the FushiFocusRoot sits
     // below the Navigator, so navigatorKey.currentContext is ABOVE the scope and
     // cannot see it; the primary focus is inside the root). No focus / no root →
     // leave the arrow to the framework (unchanged behaviour).
     final BuildContext? focusContext =
         FocusManager.instance.primaryFocus?.context;
-    final HibikiFocusController? controller = focusContext == null
+    final FushiFocusController? controller = focusContext == null
         ? null
-        : HibikiFocusRoot.maybeControllerOf(focusContext, listen: false);
+        : FushiFocusRoot.maybeControllerOf(focusContext, listen: false);
     if (controller == null || !controller.primaryFocusIsManagedTarget) {
       return KeyEventResult.ignored;
     }
@@ -192,7 +192,7 @@ bool _caretKeepsArrow(EditableText editable, TraversalDirection dir) {
 /// [Navigator.maybePop] 保证页面自己的 [PopScope] 闸门仍然先跑。
 KeyEventResult _handleGlobalBack(
   GlobalKey<NavigatorState> navigatorKey,
-  HibikiShortcutRegistry registry,
+  FushiShortcutRegistry registry,
   KeyEvent event,
 ) {
   if (event is! KeyDownEvent) return KeyEventResult.ignored;
@@ -232,7 +232,7 @@ KeyEventResult _handleGlobalBack(
 
 /// 注册表缺席时的键盘退出降级：裸 Escape 退一层整页路由，弹层仍让给框架。
 ///
-/// 只在 [wrapWithGlobalNavigation] 拿不到 [HibikiShortcutRegistry] 时使用（widget
+/// 只在 [wrapWithGlobalNavigation] 拿不到 [FushiShortcutRegistry] 时使用（widget
 /// 测试直接调 wrapper）。生产路径一律走可改键的 [_handleGlobalBack]，故这不是
 /// 「第二条硬编码 Escape」——它与注册表路径互斥，永远不会两条同时活着。
 KeyEventResult _handleEscapeWithoutRegistry(
@@ -289,7 +289,7 @@ bool gamepadBackMustBeSwallowed(KeyEvent event) =>
 /// immediately; the actual (async) [WindowManager] round-trip is fired
 /// unawaited only after the key is confirmed bound to globalToggleFullscreen.
 KeyEventResult _handleGlobalToggleFullscreen(
-  HibikiShortcutRegistry registry,
+  FushiShortcutRegistry registry,
   KeyEvent event,
 ) {
   if (event is! KeyDownEvent) return KeyEventResult.ignored;
@@ -409,7 +409,7 @@ Widget wrapWithGlobalNavigation({
   required GlobalKey<NavigatorState> navigatorKey,
   required Widget child,
   bool focusNavigationEnabled = true,
-  HibikiShortcutRegistry? registry,
+  FushiShortcutRegistry? registry,
 }) {
   final Map<ShortcutActivator, Intent> shortcuts = <ShortcutActivator, Intent>{
     // 焦点导航总开关关闭时，把 Tab / Shift+Tab 中和成 DoNothingIntent，使 Flutter
@@ -426,7 +426,7 @@ Widget wrapWithGlobalNavigation({
     // TODO-700 T1：手柄 B 不再硬绑全局 Pop。B 现经 GamepadService /
     // dispatchNativeGamepadButtonIntent 进各页 Actions，按注册表 globalBack 解析，
     // 故「返回」可改键（约束3/5），且阅读器内 B 先被 audiobookPrevSentence 消费、
-    // 不再被全局返回夺舍退书（约束2/4）。HibikiPopIntent/HibikiPopAction 仍保留，
+    // 不再被全局返回夺舍退书（约束2/4）。FushiPopIntent/FushiPopAction 仍保留，
     // 由 globalBack 的执行体复用（见下 Actions 注册）。
   };
 

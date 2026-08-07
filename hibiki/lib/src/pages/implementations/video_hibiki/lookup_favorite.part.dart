@@ -23,8 +23,8 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
   /// 点字幕第 [graphemeIndex] 个字符：暂停 → 从该位置起取词 → 推入与阅读器/词典页
   /// 同款的 [DictionaryPopupLayer] 浮层（定位到被点字符的屏幕 [charRect] 附近）。
   ///
-  /// [charRect] 来自字符 box 的 `localToGlobal`，是 [HibikiAppUiScale] 缩放后的**真实
-  /// 屏幕坐标**。浮层子树经 [_buildPopupOverlay] 的 [HibikiAppUiScaleNeutralizer] 中和回
+  /// [charRect] 来自字符 box 的 `localToGlobal`，是 [FushiAppUiScale] 缩放后的**真实
+  /// 屏幕坐标**。浮层子树经 [_buildPopupOverlay] 的 [FushiAppUiScaleNeutralizer] 中和回
   /// 真实视口空间（净变换=1），其坐标系即真实屏幕空间，故这里**直接**用 [charRect] 定位、
   /// 不再换算到缩放画布——界面任意缩放下定位都不偏（BUG-051）。
   ///

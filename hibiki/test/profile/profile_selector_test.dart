@@ -24,7 +24,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// normal width and at a narrow (320px) window where a fixed-width trailing
 /// would overflow.
 Future<void> _pumpProfileSelectorRow(WidgetTester tester) async {
-  final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   // Guarantee a non-empty profile list so ProfileSelector builds the real
   // dropdown row instead of short-circuiting to SizedBox.shrink().

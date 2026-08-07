@@ -172,7 +172,7 @@ void main() {
       expect(layerSrc.contains('Icons.text_decrease'), isTrue);
       expect(layerSrc.contains('Icons.text_increase'), isTrue);
       // 可见提示（桌面平台附带 dictionary_font_size_zoom_hint）。BUG-1033 后气泡本体由
-      // HibikiIconButton 统一提供，这里只负责把带 hint 的 message 交给它。
+      // FushiIconButton 统一提供，这里只负责把带 hint 的 message 交给它。
       expect(layerSrc.contains('dictionary_font_size_zoom_hint'), isTrue);
       expect(layerSrc.contains('tooltip: message'), isTrue);
     });
@@ -185,7 +185,7 @@ void main() {
   /// 最左端，所以嵌套弹窗一出现，A− 必然落在用户刚点的那个词正下方——也就是指针的停留处。
   /// Material [Tooltip] 默认 waitDuration 是 [Duration.zero]，而 Flutter 的 MouseTracker
   /// 每帧后会用最后已知光标位置重新 hit-test，于是「光标不动、按钮出现在它下面」就立刻弹出
-  /// 「缩小查词字号」盖住父层正文。根因修在 [HibikiIconButton] 这唯一出口
+  /// 「缩小查词字号」盖住父层正文。根因修在 [FushiIconButton] 这唯一出口
   /// （[kIconButtonTooltipHoverDelay]），同时把这里原本重复嵌套的两层 Tooltip 收成一层。
   group('BUG-1033：子弹窗落到光标下时 A−/A+ 不得立刻冒气泡', () {
     final String layerSrc = File(
@@ -273,12 +273,12 @@ void main() {
       );
     });
 
-    test('源码守卫：气泡悬停延迟收口在 HibikiIconButton 唯一出口', () {
+    test('源码守卫：气泡悬停延迟收口在 FushiIconButton 唯一出口', () {
       // popup layer 不得再自建 Tooltip（重复嵌套会把 hint 挡掉）。
       expect(
         layerSrc.contains('Tooltip('),
         isFalse,
-        reason: 'A−/A+ 的气泡由 HibikiIconButton 统一提供，不得再套一层（BUG-1033）',
+        reason: 'A−/A+ 的气泡由 FushiIconButton 统一提供，不得再套一层（BUG-1033）',
       );
       // 根因修在组件唯一出口：不得沿用 Material 的 Duration.zero 默认值。
       final String buttonSrc = File(

@@ -130,7 +130,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
           '(lookupCue=null, sentenceRange=${_cachedSentenceRange != null}, '
           'draftSentences=${_miningDraft.length}).',
         );
-        HibikiToast.show(
+        FushiToast.show(
             msg: t.card_mined_without_sentence_audio,
             severity: ToastSeverity.warning);
       }
@@ -145,7 +145,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
             : 'sentence audio export failed: $sentenceAudioFailure',
         StackTrace.current,
       );
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.card_export_failed_detail(
           reason: sentenceAudioFailure == null
               ? 'sentence audio export failed'
@@ -200,14 +200,14 @@ extension _ReaderMining on _ReaderHibikiPageState {
   }
 
   /// 反查当前书/有声书所属合集名（供制卡「合集名标签」用）。折叠归属跟随
-  /// [HibikiDatabase.getPrimaryCollectionIdByEntry] 的「最小 collectionId」语义，与书架
+  /// [FushiDatabase.getPrimaryCollectionIdByEntry] 的「最小 collectionId」语义，与书架
   /// 折叠归行一致。键构造（见 collection_grouping / shelf_ordering）：
   /// - EPUB / 普通 EPUB-有声书 → `'epub|<bookKey>'`（[bookKey] 恒同步可用）。
   /// - 纯 SRT 有声书（[_srtBookUid] 非空）→ `'srt|<uid>'`；srt-backed 有声书两身份都试
   ///   （BUG-812：可能存成 `srt|uid`，先 epub 键 miss 再回退，与 host service 同策略）。
   /// 不属任何合集 / 合集已删（孤儿）→ `null`，[buildNoteTags] 不追加。
   Future<String?> _resolveCollectionName() async {
-    final HibikiDatabase db = appModel.database;
+    final FushiDatabase db = appModel.database;
     final Map<String, int> primaryByEntry =
         await db.getPrimaryCollectionIdByEntry();
     if (primaryByEntry.isEmpty) return null;
@@ -259,7 +259,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
     if (described.record) {
       unawaited(_recordMinedSentence(fields, miningContext, outcome.noteId));
     }
-    HibikiToast.show(
+    FushiToast.show(
         msg: described.message, severity: mineToastSeverity(described.status));
     if (described.success) {
       // TODO-270 F/G：合并卡已落地 → 清空多句草稿（popup.js 同事件把角标清零，
@@ -303,7 +303,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
         : '';
     final described =
         describeMineOutcome(outcome, deckName: deckName, overwrite: true);
-    HibikiToast.show(
+    FushiToast.show(
         msg: described.message, severity: mineToastSeverity(described.status));
     if (described.success) {
       return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
@@ -333,7 +333,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
     if (context.sentence.trim().isEmpty) {
       debugPrint('[mine-diag] empty sentence: no sentence captured for this '
           'selection (JS sentence extraction returned empty or no selection).');
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.card_mined_no_sentence_captured,
           severity: ToastSeverity.warning);
       return;
@@ -355,7 +355,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
     if (!AnkiHandlebarOptions.anyFieldConsumesSentence(fieldMappings)) {
       debugPrint('[mine-diag] sentence non-empty but no field maps {sentence}/'
           '{cue-sentence}; card will have an empty sentence field.');
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.card_mined_unmapped_sentence_field,
           severity: ToastSeverity.warning);
       return;
@@ -366,7 +366,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
         !AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(fieldMappings)) {
       debugPrint('[mine-diag] sentence audio attached but no field maps '
           '{sentence-audio}; the audio will not land on the card.');
-      HibikiToast.show(
+      FushiToast.show(
           msg: t.card_mined_unmapped_sentence_audio_field,
           severity: ToastSeverity.warning);
     }
@@ -374,7 +374,7 @@ extension _ReaderMining on _ReaderHibikiPageState {
 
   /// 把一次成功制卡计入书籍统计。reader 走 [BaseSourcePageState.onMineFromPopup]，
   /// 不 mixin [DictionaryPageMixin]，故自带本记账（来源固定 [kStatSourceBook]，与
-  /// mixin 的 `recordMined` 同契约：[HibikiDatabase.addMiningCount]）。失败吞掉并记日志。
+  /// mixin 的 `recordMined` 同契约：[FushiDatabase.addMiningCount]）。失败吞掉并记日志。
   Future<void> _recordMined() async {
     final String dateKey = statTodayKey();
     try {

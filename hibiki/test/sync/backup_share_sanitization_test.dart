@@ -41,26 +41,26 @@ void main() {
   }
 
   int seq = 0;
-  Future<HibikiDatabase> openBackupDb(String zipPath) async {
+  Future<FushiDatabase> openBackupDb(String zipPath) async {
     final Archive archive = await readZip(zipPath);
     final ArchiveFile dbFile = archive.findFile('hibiki.db')!;
     final Directory dir = Directory(p.join(work.path, 'exdb${seq++}'))
       ..createSync(recursive: true);
     File(p.join(dir.path, 'hibiki.db'))
         .writeAsBytesSync(dbFile.content as List<int>);
-    return HibikiDatabase(dir.path);
+    return FushiDatabase(dir.path);
   }
 
-  Future<int> tableCount(HibikiDatabase db, String table) async =>
+  Future<int> tableCount(FushiDatabase db, String table) async =>
       (await db.customSelect('SELECT COUNT(*) c FROM $table').getSingle())
           .data['c'] as int;
 
-  Future<int> prefCount(HibikiDatabase db, String key) async =>
+  Future<int> prefCount(FushiDatabase db, String key) async =>
       (await db.customSelect('SELECT COUNT(*) c FROM preferences WHERE key = ?',
               variables: <Variable<Object>>[Variable<String>(key)]).getSingle())
           .data['c'] as int;
 
-  Future<String?> prefRaw(HibikiDatabase db, String key) async {
+  Future<String?> prefRaw(FushiDatabase db, String key) async {
     final rows = await db.customSelect(
         'SELECT value v FROM preferences WHERE key = ?',
         variables: <Variable<Object>>[Variable<String>(key)]).get();
@@ -70,12 +70,12 @@ void main() {
 
   /// Seeds an in-memory source device carrying every personal item, plus a
   /// throwaway db dir the export copy is VACUUMed into.
-  Future<({BackupService service, HibikiDatabase db})> buildSensitiveSource(
+  Future<({BackupService service, FushiDatabase db})> buildSensitiveSource(
       {String favMarker = 'srcfav'}) async {
     final String dbDir = p.join(src.path, 'db');
     Directory(dbDir).createSync(recursive: true);
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     await db.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: 'Bk',
       title: 'Bk',
@@ -86,7 +86,7 @@ void main() {
       importedAt: 0,
     ));
     // Device-local: LAN pairing (with plaintext token) + sync baseline.
-    await db.upsertPairedPeer(HibikiPairedPeersCompanion.insert(
+    await db.upsertPairedPeer(FushiPairedPeersCompanion.insert(
         peerId: 'peer-1', token: 'SECRET_PAIR_TOKEN', pairedAtMs: 1));
     await db.into(db.syncBaselines).insert(SyncBaselinesCompanion.insert(
         assetKey: 'Bk', dimension: 'progress', baseVersion: 7));
@@ -193,7 +193,7 @@ void main() {
       await built.service.createBackup(zip); // null = every category
       await built.db.close();
 
-      final HibikiDatabase ex = await openBackupDb(zip);
+      final FushiDatabase ex = await openBackupDb(zip);
       addTearDown(ex.close);
       expect(await tableCount(ex, 'hibiki_paired_peers'), 0,
           reason: 'LAN pairing token must never leave the device');
@@ -222,7 +222,7 @@ void main() {
           .createBackup(zip, categories: allExcept(BackupCategory.books));
       await built.db.close();
 
-      final HibikiDatabase ex = await openBackupDb(zip);
+      final FushiDatabase ex = await openBackupDb(zip);
       addTearDown(ex.close);
       expect(await prefCount(ex, 'favorite_sentences'), 0);
     });
@@ -234,7 +234,7 @@ void main() {
           categories: <BackupCategory>{BackupCategory.books});
       await built.db.close();
 
-      final HibikiDatabase ex = await openBackupDb(zip);
+      final FushiDatabase ex = await openBackupDb(zip);
       addTearDown(ex.close);
       expect(await prefCount(ex, 'favorite_sentences'), 1);
     });
@@ -247,7 +247,7 @@ void main() {
           .createBackup(zip, categories: allExcept(BackupCategory.fonts));
       await built.db.close();
 
-      final HibikiDatabase ex = await openBackupDb(zip);
+      final FushiDatabase ex = await openBackupDb(zip);
       addTearDown(ex.close);
       expect(await prefCount(ex, 'src:reader_ttu:font_catalog'), 0);
       expect(await prefCount(ex, 'src:reader_ttu:custom_fonts'), 0);
@@ -262,7 +262,7 @@ void main() {
           .createBackup(zip, categories: allExcept(BackupCategory.localAudio));
       await built.db.close();
 
-      final HibikiDatabase ex = await openBackupDb(zip);
+      final FushiDatabase ex = await openBackupDb(zip);
       addTearDown(ex.close);
       expect(await prefCount(ex, 'local_audio_dbs'), 0);
       final String? raw = await prefRaw(ex, 'audio_source_configs');
@@ -282,7 +282,7 @@ void main() {
           .createBackup(zip, categories: allExcept(BackupCategory.settings));
       await built.db.close();
 
-      final HibikiDatabase ex = await openBackupDb(zip);
+      final FushiDatabase ex = await openBackupDb(zip);
       addTearDown(ex.close);
       expect(await prefCount(ex, 'sync_content_enabled'), 0);
       expect(await prefCount(ex, 'sync_auto_enabled'), 0);
@@ -295,7 +295,7 @@ void main() {
           categories: <BackupCategory>{BackupCategory.settings});
       await built.db.close();
 
-      final HibikiDatabase ex = await openBackupDb(zip);
+      final FushiDatabase ex = await openBackupDb(zip);
       addTearDown(ex.close);
       expect(await prefCount(ex, 'sync_content_enabled'), 1);
     });
@@ -314,12 +314,12 @@ void main() {
 
     /// Seeds an on-disk current device DB carrying its OWN pairing + favorites,
     /// then overwrite-imports [zip]. Returns the re-opened current DB.
-    Future<HibikiDatabase> seedAndImport(String zip,
+    Future<FushiDatabase> seedAndImport(String zip,
         {required Set<BackupCategory> importCats}) async {
       final String curDbDir = p.join(work.path, 'cur${seq++}', 'support');
       Directory(curDbDir).createSync(recursive: true);
-      final HibikiDatabase cur0 = HibikiDatabase(curDbDir);
-      await cur0.upsertPairedPeer(HibikiPairedPeersCompanion.insert(
+      final FushiDatabase cur0 = FushiDatabase(curDbDir);
+      await cur0.upsertPairedPeer(FushiPairedPeersCompanion.insert(
           peerId: 'mydev', token: 'MY_DEVICE_TOKEN', pairedAtMs: 9));
       await cur0.setPref(
           'favorite_sentences',
@@ -334,14 +334,14 @@ void main() {
         importSettings: true,
         categories: importCats,
       );
-      return HibikiDatabase(curDbDir);
+      return FushiDatabase(curDbDir);
     }
 
     test(
         'device pairing (token) survives an overwrite import of a normal '
         'backup', () async {
       final String zip = await buildBackup(null);
-      final HibikiDatabase cur =
+      final FushiDatabase cur =
           await seedAndImport(zip, importCats: BackupCategory.values.toSet());
       addTearDown(cur.close);
       final rows = await cur
@@ -355,7 +355,7 @@ void main() {
 
     test('books-excluded backup does not wipe this device favorites', () async {
       final String zip = await buildBackup(allExcept(BackupCategory.books));
-      final HibikiDatabase cur =
+      final FushiDatabase cur =
           await seedAndImport(zip, importCats: BackupCategory.values.toSet());
       addTearDown(cur.close);
       final String? raw = await prefRaw(cur, 'favorite_sentences');
@@ -370,7 +370,7 @@ void main() {
         'full backup (books ticked) overwrites favorites with the backup '
         'copy (normal migration unchanged)', () async {
       final String zip = await buildBackup(null);
-      final HibikiDatabase cur =
+      final FushiDatabase cur =
           await seedAndImport(zip, importCats: BackupCategory.values.toSet());
       addTearDown(cur.close);
       final String? raw = await prefRaw(cur, 'favorite_sentences');

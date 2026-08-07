@@ -6,8 +6,8 @@ import 'package:bonsoir/bonsoir.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// A peer Hibiki instance discovered on the LAN.
-class HibikiDevice {
-  HibikiDevice({
+class FushiDevice {
+  FushiDevice({
     required this.name,
     required this.host,
     required this.port,
@@ -34,7 +34,7 @@ class HibikiDevice {
         'tlsEnabled': tlsEnabled,
       };
 
-  factory HibikiDevice.fromJson(Map<String, dynamic> json) => HibikiDevice(
+  factory FushiDevice.fromJson(Map<String, dynamic> json) => FushiDevice(
         name: json['name'] as String,
         host: json['host'] as String,
         port: json['port'] as int,
@@ -43,16 +43,16 @@ class HibikiDevice {
       );
 
   /// Builds a device from a *resolved* Bonsoir service. Returns null when the
-  /// platform resolved no usable address. Prefers IPv4 (HibikiSyncServer binds
+  /// platform resolved no usable address. Prefers IPv4 (FushiSyncServer binds
   /// IPv4); an IPv6 literal is detected by the presence of a colon.
-  static HibikiDevice? fromResolvedService(BonsoirService service) {
+  static FushiDevice? fromResolvedService(BonsoirService service) {
     final List<String> addrs = service.hostAddresses;
     if (addrs.isEmpty) return null;
     final String host = addrs.firstWhere(
       (String a) => !a.contains(':'),
       orElse: () => addrs.first,
     );
-    return HibikiDevice(
+    return FushiDevice(
       name: service.name,
       host: host,
       port: service.port,
@@ -81,9 +81,9 @@ class LanDiscoveryService {
   /// that drop the TXT `id` attribute on resolve (then [deviceId] can't match).
   final Set<String> _localAddresses = <String>{};
 
-  final Map<String, HibikiDevice> _discoveredDevices = <String, HibikiDevice>{};
-  final StreamController<List<HibikiDevice>> _deviceStream =
-      StreamController<List<HibikiDevice>>.broadcast();
+  final Map<String, FushiDevice> _discoveredDevices = <String, FushiDevice>{};
+  final StreamController<List<FushiDevice>> _deviceStream =
+      StreamController<List<FushiDevice>>.broadcast();
   BonsoirDiscovery? _discovery;
   StreamSubscription<BonsoirDiscoveryEvent>? _sub;
   bool _disposed = false;
@@ -92,8 +92,8 @@ class LanDiscoveryService {
   /// Bonsoir browser was actually stopped before the engine was torn down.
   bool get isDisposed => _disposed;
 
-  Stream<List<HibikiDevice>> get devices => _deviceStream.stream;
-  List<HibikiDevice> get currentDevices => _discoveredDevices.values.toList();
+  Stream<List<FushiDevice>> get devices => _deviceStream.stream;
+  List<FushiDevice> get currentDevices => _discoveredDevices.values.toList();
 
   Future<void> startDiscovery() async {
     await _refreshLocalAddresses();
@@ -136,8 +136,8 @@ class LanDiscoveryService {
       // A service finished resolving: map it and add it (unless it is us — by
       // advertised id, or by host address when the id attribute didn't survive).
       case BonsoirDiscoveryServiceResolvedEvent():
-        final HibikiDevice? device =
-            HibikiDevice.fromResolvedService(event.service);
+        final FushiDevice? device =
+            FushiDevice.fromResolvedService(event.service);
         if (device == null ||
             device.deviceId == deviceId ||
             _localAddresses.contains(device.host)) {
@@ -178,7 +178,7 @@ class LanDiscoveryService {
     await _discovery?.stop();
     _discovery = null;
     _discoveredDevices.clear();
-    _deviceStream.add(<HibikiDevice>[]);
+    _deviceStream.add(<FushiDevice>[]);
   }
 
   Future<void> dispose() async {
@@ -205,7 +205,7 @@ class LanDiscoveryService {
 }
 
 /// Advertises this device so peers can discover it. Bound to the running
-/// HibikiSyncServer lifecycle by the settings UI (a later task).
+/// FushiSyncServer lifecycle by the settings UI (a later task).
 class LanBroadcastService {
   LanBroadcastService({
     required this.deviceName,

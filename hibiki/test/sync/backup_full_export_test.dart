@@ -48,7 +48,7 @@ void main() {
     await writeFile(p.join(srcAudio, 'h', 'a.mp3'), 'MP3');
     await writeFile(p.join(srcAudio, 'h', 'align.srt'), 'SRT');
 
-    final srcDb = HibikiDatabase(srcDbDir);
+    final srcDb = FushiDatabase(srcDbDir);
     await srcDb.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: 'Bk',
       title: 'Bk',
@@ -112,7 +112,7 @@ void main() {
     expect(File(p.join(dstAudio, 'h', 'align.srt')).existsSync(), isTrue);
 
     // DB paths were rebased to the destination roots AND resolve on disk.
-    final dstDb = HibikiDatabase(dstDbDir);
+    final dstDb = FushiDatabase(dstDbDir);
     try {
       final book = await dstDb.getEpubBook('Bk');
       expect(book!.epubPath, p.join(dstBooks, 'Bk', 'original.epub'));
@@ -138,7 +138,7 @@ void main() {
     // A db-only backup (no roots) must NOT wipe the destination's books tree.
     final String srcDbDir = p.join(src.path, 'db');
     Directory(srcDbDir).createSync(recursive: true);
-    final srcDb = HibikiDatabase(srcDbDir);
+    final srcDb = FushiDatabase(srcDbDir);
     final zipPath = p.join(src.path, 'dbonly.zip');
     await BackupService(
       db: srcDb,
@@ -170,7 +170,7 @@ void main() {
     final String srcBooks = p.join(src.path, 'hoshi_books');
     Directory(srcDbDir).createSync(recursive: true);
     await writeFile(p.join(srcBooks, 'Bk', 'original.epub'), 'EPUB');
-    final srcDb = HibikiDatabase(srcDbDir);
+    final srcDb = FushiDatabase(srcDbDir);
     await srcDb.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: 'Bk',
       title: 'Bk',

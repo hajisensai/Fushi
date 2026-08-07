@@ -20,7 +20,7 @@ class PopupDbReader {
         private const val TAG = "PopupDbReader"
 
         /**
-         * MUST match `HibikiDatabase.schemaVersion` in
+         * MUST match `FushiDatabase.schemaVersion` in
          * `packages/fushi_core/lib/src/database/database.dart`.
          * Bump this in lockstep with any Drift migration.
          */

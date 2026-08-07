@@ -34,8 +34,8 @@ ${withUpscalingMode ? "  upscaling_mode TEXT NOT NULL DEFAULT '',\n" : ''}  cove
 )
 ''';
 
-  Future<HibikiDatabase> openV59Db({bool withUpscalingMode = false}) async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+  Future<FushiDatabase> openV59Db({bool withUpscalingMode = false}) async {
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (rawDb) {
           rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -98,7 +98,7 @@ CREATE TABLE galgame_tag_mappings (
   }
 
   test('v62：既有游戏行零破坏，upscaling_mode 回填空串（= 超分关闭）', () async {
-    final HibikiDatabase db = await openV59Db();
+    final FushiDatabase db = await openV59Db();
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
@@ -129,7 +129,7 @@ CREATE TABLE galgame_tag_mappings (
   });
 
   test('v62：档位字符串原样往返，DAO 单列写入不碰其它列', () async {
-    final HibikiDatabase db = await openV59Db();
+    final FushiDatabase db = await openV59Db();
 
     await db.setGalgameUpscalingMode('legacy_game', 'installed_only');
     GalgameRow row = (await db.getGalgame('legacy_game'))!;
@@ -169,7 +169,7 @@ CREATE TABLE galgame_tag_mappings (
     // 半升级过的库（列已在，user_version 还停在 59）：`if (from < 60)` 仍会进，
     // 但 `_columnExists` 守卫必须让 addColumn 变 no-op，否则 SQLite 会抛
     // "duplicate column name: upscaling_mode" 把整个库开不开。
-    final HibikiDatabase db = await openV59Db(withUpscalingMode: true);
+    final FushiDatabase db = await openV59Db(withUpscalingMode: true);
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
@@ -190,8 +190,8 @@ CREATE TABLE galgame_tag_mappings (
   });
 
   test('v62：fresh 库由 onCreate 建出 upscaling_mode，默认空串', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     await db.upsertGalgame(GalgamesCompanion.insert(

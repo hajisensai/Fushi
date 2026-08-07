@@ -4,7 +4,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
-import 'package:fushi_core/fushi_core.dart' show HibikiDatabase;
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/utils/misc/hibiki_share.dart';
@@ -53,7 +53,7 @@ class IllustrationsViewerPage extends StatefulWidget {
   final String bookKey;
 
   /// 图片 reveal 状态真相源（与阅读器 WebView 共享，实现书内↔图片库双向同步）。
-  final HibikiDatabase database;
+  final FushiDatabase database;
 
   @override
   State<IllustrationsViewerPage> createState() =>
@@ -175,15 +175,15 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiPageScaffold(
+    return FushiPageScaffold(
       title: widget.bookTitle,
       body: _buildBody(theme, tokens),
     );
   }
 
-  Widget _buildBody(ThemeData theme, HibikiDesignTokens tokens) {
+  Widget _buildBody(ThemeData theme, FushiDesignTokens tokens) {
     if (_loading && _images.isEmpty) {
       return Center(
         child: Column(
@@ -212,7 +212,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
 
     if (_images.isEmpty) {
       return Center(
-        child: HibikiPlaceholderMessage(
+        child: FushiPlaceholderMessage(
           icon: Icons.image_not_supported_outlined,
           message: t.no_illustrations_found,
         ),
@@ -234,7 +234,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
             itemBuilder: (context, index) {
               final _Illustration im = _images[index];
               final bool blurred = _isBlurred(im);
-              return HibikiCard(
+              return FushiCard(
                 padding: EdgeInsets.zero,
                 // 未揭开：点击先揭开（防剧透）；已揭开：点击进全屏。
                 onTap: blurred
@@ -406,19 +406,19 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
   Future<void> _shareCurrentImage() async {
     final File file = _currentFile();
     if (!file.existsSync()) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.reader_image_file_unavailable,
         severity: ToastSeverity.error,
       );
       return;
     }
     try {
-      await HibikiShare.shareFiles(
+      await FushiShare.shareFiles(
         <XFile>[XFile(file.path, mimeType: fallbackMimeType(file.path))],
         subject: p.basename(file.path),
       );
     } catch (e) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.reader_image_share_failed(error: e),
         severity: ToastSeverity.error,
       );
@@ -429,23 +429,23 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
   Future<void> _copyCurrentImageToClipboard() async {
     final File file = _currentFile();
     if (!file.existsSync()) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.reader_image_file_unavailable,
         severity: ToastSeverity.error,
       );
       return;
     }
     try {
-      await HibikiChannels.clipboardImage.invokeMethod<void>(
+      await FushiChannels.clipboardImage.invokeMethod<void>(
         'copyImageFile',
         <String, String>{'path': file.path},
       );
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.copied_to_clipboard,
         severity: ToastSeverity.success,
       );
     } catch (e) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.reader_image_copy_failed(error: e),
         severity: ToastSeverity.error,
       );
@@ -459,7 +459,7 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
         Overlay.of(context).context.findRenderObject()! as RenderBox;
     // BUG-781（与 BUG-129/261/381 同族）：[globalPosition] 是 onSecondaryTapDown
     // 报的真实视口坐标，而 showMenu 的 RelativeRect 落在根 Navigator 的 Overlay
-    // 坐标系，该 Overlay 位于全局 [HibikiAppUiScale] 的缩放画布内。直接把真实视口
+    // 坐标系，该 Overlay 位于全局 [FushiAppUiScale] 的缩放画布内。直接把真实视口
     // 坐标当 Overlay 本地坐标喂进去，界面大小≠100% 时菜单会偏离点击点 factor≈scale。
     // 用 Overlay.globalToLocal 沿真实渲染变换链换算——FittedBox 缩放被自动吸收，
     // 对任意 scale 自洽；scale=1 时为单位阵，逐像素等价（零行为变化）。
@@ -513,7 +513,7 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
         },
         child: Focus(
           autofocus: true,
-          child: HibikiToolScaffold(
+          child: FushiToolScaffold(
             title: t.image_page_counter(
               current: _currentIndex + 1,
               total: widget.images.length,

@@ -157,7 +157,7 @@ void main() {
         await tester.pump(const Duration(seconds: 1));
 
         // TODO-1389：TODO-1377 未覆盖的弹窗表面——「管理来源库」对话框 body
-        // （HibikiReorderableColumn）在最小窗高下若不套滚动视口会 RenderFlex 底部溢出。
+        // （FushiReorderableColumn）在最小窗高下若不套滚动视口会 RenderFlex 底部溢出。
         // 播种 24 条来源（远超受限 body 高度）后打开对话框，扫掠断言无溢出（修后应整体
         // 滚动而非出框）。种到隔离库（FUSHI_TEST_ROOT），不碰真实数据。
         for (int i = 0; i < 24; i++) {

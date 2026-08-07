@@ -14,7 +14,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 // ── fake 库服务（books 完整 round-trip）────────────────────────────────────
 
-class _FakeLibraryService implements HibikiLibraryHostService {
+class _FakeLibraryService implements FushiLibraryHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
   Future<File?> clipVideoAudio(String id,
@@ -224,19 +224,19 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 
 // ── helper: 建 SyncRepository + 配置 backend ─────────────────────────────
 
-HibikiDatabase _testDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 /// 把 url + token 写库，restoreAuth + authenticate，返回配好的 backend。
 Future<InterconnectSyncBackend> _buildBackend({
   required String base,
   required String token,
 }) async {
-  final HibikiDatabase db = _testDb();
+  final FushiDatabase db = _testDb();
   final SyncRepository repo = SyncRepository(db);
 
-  await repo.setHibikiClientUrls(<HibikiClientUrl>[
-    HibikiClientUrl(url: base, enabled: true),
+  await repo.setHibikiClientUrls(<FushiClientUrl>[
+    FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
 
@@ -249,14 +249,14 @@ Future<InterconnectSyncBackend> _buildBackend({
 }
 
 void main() {
-  late HibikiSyncServer server;
+  late FushiSyncServer server;
   late _FakeLibraryService lib;
   late String base;
   const String token = 'live-book-token';
 
   setUp(() async {
     lib = _FakeLibraryService();
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir:
           Directory.systemTemp.createTempSync('hbk_live_book_srv').path,
       port: 0,
@@ -358,10 +358,10 @@ void main() {
   // ── auth guard ────────────────────────────────────────────────────────────
 
   test('listRemoteBooks with wrong token throws SyncAuthError', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     final SyncRepository repo = SyncRepository(db);
-    await repo.setHibikiClientUrls(<HibikiClientUrl>[
-      HibikiClientUrl(url: base, enabled: true),
+    await repo.setHibikiClientUrls(<FushiClientUrl>[
+      FushiClientUrl(url: base, enabled: true),
     ]);
     // 故意用错误 token。
     await repo.setHibikiClientToken('wrong-token');
@@ -477,7 +477,7 @@ void main() {
   // remoteBookProgress 必须吃下 404、返回 RemoteBookProgress.empty、不抛、不中断，
   // 让旧 host / 离线场景退回本地 reader_positions。
   test('旧 host 无 progress 路由 → 真 404 优雅退化为 empty（不抛）', () async {
-    final HibikiSyncServer legacyServer = HibikiSyncServer(
+    final FushiSyncServer legacyServer = FushiSyncServer(
       syncDataDir:
           Directory.systemTemp.createTempSync('hbk_legacy_no_lib_srv').path,
       port: 0,

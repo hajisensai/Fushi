@@ -346,14 +346,14 @@ Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
     final bool newer = updateTagIsNewerThanCurrent(
         cached.latestTag, currentVersion, channel,
         localSeq: currentReleaseSeq);
-    HibikiToast.show(
+    FushiToast.show(
       msg: newer
           ? t.update_cached_newer(version: cached.latestTag)
           : t.update_cached_up_to_date(version: cached.latestTag),
       severity: ToastSeverity.info,
     );
   } else {
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.update_checking_now,
       severity: ToastSeverity.info,
     );
@@ -370,11 +370,11 @@ Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
       customProxy: settingsContext.appModel.updateCustomProxy,
       // 网络刷新跑完写回缓存，下次手动检查直接乐观显示（恒快）。
       cacheWriter: settingsContext.appModel.setUpdateCheckCache,
-      onUpToDate: () => HibikiToast.show(
+      onUpToDate: () => FushiToast.show(
         msg: t.update_already_latest,
         severity: ToastSeverity.info,
       ),
-      onError: (Object _) => HibikiToast.show(
+      onError: (Object _) => FushiToast.show(
         msg: t.update_check_failed,
         severity: ToastSeverity.error,
       ),
@@ -415,11 +415,11 @@ const String kTmdbLogoAsset = 'assets/attribution/tmdb/logo_tmdb.png';
 /// 依据（数字均可按下列位置复核）：
 ///
 /// - 同一行左侧的图标徽标是 30dp：`_SettingsIcon` 在 Material 下走
-///   `HibikiBadge(size: 18, padding: EdgeInsets.all(6))`，18+6*2 = 30
+///   `FushiBadge(size: 18, padding: EdgeInsets.all(6))`，18+6*2 = 30
 ///   （`utils/components/settings_shared.dart`）。24dp 与之同量级。
 /// - 应用自身图标在 Flutter widget 树里**只有一个真渲染点**：设置 › 外观 ›
 ///   应用图标 的预设瓦片（`miscellaneous_settings_page.dart` 的 `_AppIconTile`）。
-///   `SizedBox.square(72)` 扣掉 `HibikiCard` 描边的 1dp 内缩与 `gap/2 = 4` 的
+///   `SizedBox.square(72)` 扣掉 `FushiCard` 描边的 1dp 内缩与 `gap/2 = 4` 的
 ///   双侧 padding，图片实得 62×62dp。TMDB 标识 24dp 高 = 其 38.7%；面积
 ///   24×56.0 ≈ 1344dp²，是其 3844dp² 的 35%——两个维度都更小，满足条款的
 ///   "less prominent"。

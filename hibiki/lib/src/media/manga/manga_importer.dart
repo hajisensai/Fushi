@@ -72,7 +72,7 @@ class MangaImporter {
   /// readable manga. OCR blocks start empty and can be filled by any whole
   /// volume engine later; an OCR failure therefore never removes the book.
   static Future<String> importFromImageFolder({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required String imageDirPath,
     String? title,
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
@@ -199,7 +199,7 @@ class MangaImporter {
   /// [onProgress] 在每复制完一页图片后回报 `(done, total)`。校验失败（非法文件夹 / 路径穿越
   /// / 缺图）抛 [MangaImportException]；用户取消同名弹窗抛 [DuplicateImportCancelledException]。
   static Future<String> importFromMokuroPath({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required String mokuroPath,
     String? title,
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
@@ -256,7 +256,7 @@ class MangaImporter {
   /// 校验失败（缺文件 / 无页 / 缺图 / 路径穿越）抛 [MangaImportException]；同名卷冲突与
   /// 用户取消语义与 [importFromMokuroPath] 完全一致。
   static Future<String> importFromMangaJson({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required String mangaJsonPath,
     String? imageRootPath,
     String? title,
@@ -300,7 +300,7 @@ class MangaImporter {
   /// [srcDir] 是页图来源目录（.mokuro 或 manga.json 的同级目录），[payload] 的每页
   /// `url` 相对它解析。[proposedTitle] 已由各入口按各自规则派生。
   static Future<String> _copyAndInsert({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required Directory srcDir,
     required MokuroPayload payload,
     required String proposedTitle,
@@ -361,7 +361,7 @@ class MangaImporter {
           mediaType: kActivityMediaBook,
           title: storedTitle,
           mediaKey: bookKey,
-          dateKey: HibikiTimeFormat.dayKey(
+          dateKey: FushiTimeFormat.dayKey(
             DateTime.fromMillisecondsSinceEpoch(importedAtMs),
           ),
           timestampMs: importedAtMs,

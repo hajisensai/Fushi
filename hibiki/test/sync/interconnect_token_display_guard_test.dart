@@ -23,7 +23,7 @@ import 'sync_settings_schema_source_corpus.dart';
 ///      连带砍掉双接受，Never break userspace）。
 void main() {
   String clientWidgetSlice(String corpus) {
-    final int start = corpus.indexOf('class _HibikiServerConfigWidgetState');
+    final int start = corpus.indexOf('class _FushiServerConfigWidgetState');
     expect(start, greaterThanOrEqualTo(0), reason: '客户端配置 widget 丢失');
     final int end = corpus.indexOf('class _ServerModeWidget', start);
     expect(end, greaterThan(start));

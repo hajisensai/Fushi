@@ -40,13 +40,13 @@ void main() {
   }
 
   testWidgets(
-      'HibikiLogPanel lazy-renders log lines in a ListView.builder wrapped in a '
+      'FushiLogPanel lazy-renders log lines in a ListView.builder wrapped in a '
       'SelectionArea (no TextField/SelectableText/SingleChildScrollView pull-back)',
       (WidgetTester tester) async {
     const String log = 'line-1\nline-2\nline-3';
     await tester.pumpWidget(
       buildSubject(
-        HibikiLogPanel(log: log, shareAction: (_) {}),
+        FushiLogPanel(log: log, shareAction: (_) {}),
       ),
     );
     await tester.pump();
@@ -54,7 +54,7 @@ void main() {
     // 选区/复制：SelectionArea 包裹懒加载列表。
     expect(
       find.descendant(
-        of: find.byType(HibikiLogPanel),
+        of: find.byType(FushiLogPanel),
         matching: find.byType(SelectionArea),
       ),
       findsOneWidget,
@@ -63,7 +63,7 @@ void main() {
     // 懒加载渲染：ListView.builder。控制器必须是带 BUG-119 拽回拦截的自定义类型——
     // 它对 ScrollPosition 的 jumpTo/animateTo 做闸门，是「拖拽选区不被拽回」的核心。
     final Finder listFinder = find.descendant(
-      of: find.byType(HibikiLogPanel),
+      of: find.byType(FushiLogPanel),
       matching: find.byType(ListView),
     );
     expect(listFinder, findsOneWidget);
@@ -81,7 +81,7 @@ void main() {
     ]) {
       expect(
         find.descendant(
-          of: find.byType(HibikiLogPanel),
+          of: find.byType(FushiLogPanel),
           matching:
               find.byWidgetPredicate((Widget w) => w.runtimeType == banned),
         ),
@@ -92,7 +92,7 @@ void main() {
   });
 
   testWidgets(
-      'HibikiLogPanel does not eagerly build off-screen lines (lazy virtualization)',
+      'FushiLogPanel does not eagerly build off-screen lines (lazy virtualization)',
       (WidgetTester tester) async {
     // 大日志（远超 400px 视口容纳的行数）只应构造视口内的少量 Text，证明虚拟化生效。
     // 旧的单 TextField/整段 SelectableText 会把全部 ~512KB 一次性 layout，正是卡顿根因。
@@ -100,7 +100,7 @@ void main() {
         List<String>.generate(5000, (int i) => 'log-line-$i').join('\n');
     await tester.pumpWidget(
       buildSubject(
-        HibikiLogPanel(log: log, shareAction: (_) {}),
+        FushiLogPanel(log: log, shareAction: (_) {}),
       ),
     );
     await tester.pump();
@@ -121,13 +121,13 @@ void main() {
   });
 
   test(
-      'HibikiLogPanel source uses ListView.builder + SelectionArea on the '
+      'FushiLogPanel source uses ListView.builder + SelectionArea on the '
       'BUG-119-gating scroll controller (no eager full-text render)', () {
     final String source = File(
       'lib/src/utils/components/hibiki_material_components.dart',
     ).readAsStringSync();
     final String panel = source.substring(
-      source.indexOf('class _HibikiLogPanelState'),
+      source.indexOf('class _FushiLogPanelState'),
       source.indexOf('class _LogSelectionScrollController'),
     );
 
@@ -186,7 +186,7 @@ void main() {
     });
 
     await tester.pumpWidget(
-      buildSubject(HibikiLogPanel(log: log, shareAction: (_) {})),
+      buildSubject(FushiLogPanel(log: log, shareAction: (_) {})),
     );
     await tester.pump();
 
@@ -215,7 +215,7 @@ void main() {
       'lib/src/utils/components/hibiki_material_components.dart',
     ).readAsStringSync();
     final String panel = source.substring(
-      source.indexOf('class _HibikiLogPanelState'),
+      source.indexOf('class _FushiLogPanelState'),
       source.indexOf('class _LogSelectionScrollController'),
     );
 
@@ -393,7 +393,7 @@ void main() {
     final String longLine = 'X' * 20000;
     final String log = 'head\n$longLine\ntail';
     await tester.pumpWidget(
-      buildSubject(HibikiLogPanel(log: log, shareAction: (_) {})),
+      buildSubject(FushiLogPanel(log: log, shareAction: (_) {})),
     );
     await tester.pump();
 
@@ -434,7 +434,7 @@ void main() {
       'lib/src/utils/components/hibiki_material_components.dart',
     ).readAsStringSync();
     final String panel = source.substring(
-      source.indexOf('class _HibikiLogPanelState'),
+      source.indexOf('class _FushiLogPanelState'),
       source.indexOf('class _LogSelectionScrollController'),
     );
     // 行 Text 必须被宽度约束 + 裁切包裹（消除无界单行宽度）。
@@ -476,7 +476,7 @@ void main() {
         List<String>.generate(5000, (int i) => 'log-line-$i');
     final String log = lines.join('\n');
     await tester.pumpWidget(
-      buildSubject(HibikiLogPanel(log: log, shareAction: (_) {})),
+      buildSubject(FushiLogPanel(log: log, shareAction: (_) {})),
     );
     await tester.pump();
 

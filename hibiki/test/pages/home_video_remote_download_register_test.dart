@@ -49,7 +49,7 @@ void main() {
     }
   });
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late AppModel appModel;
   late VideoBookRepository repo;
 
@@ -67,7 +67,7 @@ void main() {
     // 同目录 20+ 个 `home_video_*` / `galgame_*` widget 测试早已是这个约定，本文件漏了。
     SharedPreferences.setMockInitialValues(<String, Object>{});
     LocaleSettings.setLocale(AppLocale.en);
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     final Directory storeDir =

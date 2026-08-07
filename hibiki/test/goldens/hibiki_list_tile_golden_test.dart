@@ -8,10 +8,10 @@ import 'package:fushi/src/utils/components/hibiki_list_tile.dart';
 import 'golden_test_helpers.dart';
 
 void main() {
-  group('HibikiListTile golden', () {
+  group('FushiListTile golden', () {
     testWidgets('unselected', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiListTile(
+        const FushiListTile(
           title: 'Dictionary A',
           subtitle: 'JA-JA monolingual',
           icon: Icons.menu_book,
@@ -29,7 +29,7 @@ void main() {
 
     testWidgets('selected', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiListTile(
+        const FushiListTile(
           title: 'Dictionary B',
           subtitle: 'JA-EN bilingual',
           icon: Icons.translate,
@@ -47,7 +47,7 @@ void main() {
 
     testWidgets('selected with trailing', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiListTile(
+        const FushiListTile(
           title: 'Active dict',
           subtitle: 'With reorder handle',
           icon: Icons.drag_handle,
@@ -66,7 +66,7 @@ void main() {
 
     testWidgets('custom foreground', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiListTile(
+        const FushiListTile(
           title: 'Disabled',
           subtitle: 'Greyed out',
           icon: Icons.block,
@@ -85,7 +85,7 @@ void main() {
 
     testWidgets('dark theme', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiListTile(
+        const FushiListTile(
           title: 'Dark dict',
           subtitle: 'Dark theme variant',
           icon: Icons.menu_book,

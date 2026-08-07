@@ -40,7 +40,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  // 在 MaterialApp.builder 里注入 HibikiAppUiScale（与 main.dart 生产结构一致：
+  // 在 MaterialApp.builder 里注入 FushiAppUiScale（与 main.dart 生产结构一致：
   // 缩放包住 Navigator/Overlay，对话框在缩放内），用于验证 BUG-027 的拖拽门控。
   Future<void> openDialogScaled(
     WidgetTester tester,
@@ -51,7 +51,7 @@ void main() {
       TranslationProvider(
         child: MaterialApp(
           builder: (BuildContext context, Widget? child) =>
-              HibikiAppUiScale(scale: scale, child: child!),
+              FushiAppUiScale(scale: scale, child: child!),
           home: Scaffold(
             body: Builder(
               builder: (BuildContext context) => ElevatedButton(
@@ -293,10 +293,10 @@ void main() {
     expect(tuneX, lessThan(localSwitchX));
   });
 
-  // BUG-027 ②：界面缩放（HibikiAppUiScale != 1.0）下，SDK ReorderableListView 的
+  // BUG-027 ②：界面缩放（FushiAppUiScale != 1.0）下，SDK ReorderableListView 的
   // Overlay 拖拽代理不认祖先 Transform.scale，长按拖拽会飞出屏幕。修复=改用自实现的
-  // HibikiReorderableColumn（局部坐标拖拽），缩放下精确跟手、零偏移、视觉一致。
-  testWidgets('uses HibikiReorderableColumn (not SDK ReorderableListView)',
+  // FushiReorderableColumn（局部坐标拖拽），缩放下精确跟手、零偏移、视觉一致。
+  testWidgets('uses FushiReorderableColumn (not SDK ReorderableListView)',
       (WidgetTester tester) async {
     await openDialog(
       tester,
@@ -308,7 +308,7 @@ void main() {
         onSave: (_) {},
       ),
     );
-    expect(find.byType(HibikiReorderableColumn), findsOneWidget);
+    expect(find.byType(FushiReorderableColumn), findsOneWidget);
     expect(find.byType(ReorderableListView), findsNothing);
   });
 

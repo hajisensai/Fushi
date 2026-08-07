@@ -11,7 +11,7 @@ import 'package:fushi/src/sync/sync_compare_dialog.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 /// 一个只记录「远端列举是否发生」的最小 backend：远端为空，所以 [_load] 很快走完。
 /// 只实现 compare 的 `_load` 真正会触达的读方法，其余成员经 [noSuchMethod] 兜底——
@@ -65,7 +65,7 @@ void main() {
   testWidgets(
       'compare load waits for an in-flight sync to release the shared mutex '
       '(BUG-083)', (WidgetTester tester) async {
-    final HibikiDatabase db = _memDb();
+    final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final _RecordingBackend backend = _RecordingBackend();
 

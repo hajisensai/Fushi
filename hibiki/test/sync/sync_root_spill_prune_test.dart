@@ -20,7 +20,7 @@ import 'sync_orchestrator_test.dart' show FakeSyncBackend;
 // folders, reserved namespaces, nested (legitimate) per-book files, and
 // unrelated root files are left untouched.
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 /// A stray root-level file name of each ttu per-book type, plus one cover.
 const String _spilledProgress = 'progress_1_6_1700000000000_0.5.json';
@@ -93,7 +93,7 @@ void main() {
     test('deletes only the spilled root files, keeps folders + nested + others',
         () async {
       final FakeAssetStore store = FakeAssetStore();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       // Spilled per-book files sitting directly in the root.
@@ -156,7 +156,7 @@ void main() {
     test('sweeps title-PREFIXED spill while keeping the book folder (BUG-845)',
         () async {
       final FakeAssetStore store = FakeAssetStore();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       // The book folder is intact; the slash-less folderId fusion left several
@@ -204,7 +204,7 @@ void main() {
 
     test('clean root is a no-op (idempotent)', () async {
       final FakeAssetStore store = FakeAssetStore();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       await store.ensureFolder('root', 'Normal Book');
 
@@ -241,7 +241,7 @@ void main() {
         'never deletes a folder colliding with the spill name, and leaves local '
         'DB reading/video progress intact (TODO-1346)', () async {
       final FakeAssetStore store = FakeAssetStore();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       // 本地真值进度：一条阅读位置（章内精确 charOffset）+ 一个多集视频（进度都在

@@ -21,7 +21,7 @@ import 'package:fushi/src/media/torrent/anime_download_service.dart'
 import 'package:fushi/src/media/video/video_cover_extractor.dart'
     show videoCoverFileName;
 import 'package:fushi/src/utils/misc/hibiki_time_format.dart'
-    show HibikiTimeFormat;
+    show FushiTimeFormat;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -47,11 +47,11 @@ AnimeDownloadPlan _plan({String? coverUrl}) => AnimeDownloadPlan(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late Directory tmp;
 
   setUp(() async {
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     tmp = await Directory.systemTemp.createTemp('anime_dl_importer_');
   });
 
@@ -197,7 +197,7 @@ void main() {
     expect(row.charsDelta, isNull, reason: 'added 无字符增量');
     expect(
       row.dateKey,
-      HibikiTimeFormat.dayKey(
+      FushiTimeFormat.dayKey(
         DateTime.fromMillisecondsSinceEpoch(row.timestampMs),
       ),
       reason: 'dateKey 必须与 timestampMs 同一时刻派生',

@@ -17,10 +17,10 @@ import 'package:path/path.dart' as p;
 import 'fake_asset_store.dart';
 import 'sync_orchestrator_test.dart' show FakeSyncBackend;
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 SyncOrchestrator _orchestrator(
-  HibikiDatabase db,
+  FushiDatabase db,
   SyncBackend backend,
   Directory tmp, {
   required bool syncVideoFiles,
@@ -42,7 +42,7 @@ SyncOrchestrator _orchestrator(
 
 /// Seeds one local-file video book with a real file on disk. Returns its uid.
 Future<String> _seedLocalVideo(
-  HibikiDatabase db,
+  FushiDatabase db,
   Directory dir, {
   required String uid,
   required String title,
@@ -78,7 +78,7 @@ void main() {
 
   group('SyncRepository sync_video_files switch', () {
     test('defaults OFF and writes through', () async {
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -112,7 +112,7 @@ void main() {
       final FakeAssetStore store = FakeAssetStore();
       final FakeSyncBackend backend = FakeSyncBackend(store);
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       await _seedLocalVideo(db, tmp, uid: 'video/Off', title: 'Off');
 
@@ -128,7 +128,7 @@ void main() {
       final FakeAssetStore store = FakeAssetStore();
       final FakeSyncBackend backend = FakeSyncBackend(store);
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final String uid = await _seedLocalVideo(db, tmp,
           uid: 'video/Up', title: 'Up', contents: 'the-real-bytes');
@@ -164,7 +164,7 @@ void main() {
       final FakeAssetStore store = FakeAssetStore();
       final FakeSyncBackend backend = FakeSyncBackend(store);
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       await _seedLocalVideo(db, tmp, uid: 'video/Idem', title: 'Idem');
 
@@ -193,7 +193,7 @@ void main() {
       final FakeAssetStore store = FakeAssetStore();
       final FakeSyncBackend backend = FakeSyncBackend(store);
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final String uid = await _seedLocalVideo(db, tmp,
           uid: 'video/Cov', title: 'Cov', coverName: 'cov.jpg');
@@ -220,7 +220,7 @@ void main() {
       final FakeAssetStore store = FakeAssetStore();
       final FakeSyncBackend backend = FakeSyncBackend(store);
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       // http stream (no local bytes)
@@ -254,7 +254,7 @@ void main() {
       final FakeAssetStore store = FakeAssetStore();
       final FakeSyncBackend backend = FakeSyncBackend(store);
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       // Device B already published a video into the shared manifest.
@@ -299,7 +299,7 @@ void main() {
       final SyncBackend backend =
           ObfuscatingSyncBackend(FakeSyncBackend(store));
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       await _seedLocalVideo(db, tmp,
           uid: 'video/Obf', title: 'Obf', contents: 'the-real-bytes');
@@ -325,7 +325,7 @@ void main() {
       final FakeAssetStore store = FakeAssetStore(reportNullSizes: true);
       final FakeSyncBackend backend = FakeSyncBackend(store);
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       await _seedLocalVideo(db, tmp, uid: 'video/NullSz', title: 'NullSz');
 
@@ -349,7 +349,7 @@ void main() {
       final FakeAssetStore store = FakeAssetStore();
       final FakeSyncBackend backend = FakeSyncBackend(store);
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
       await _seedLocalVideo(db, tmp,
           uid: 'video/Cov', title: 'Cov', coverName: 'cov.jpg');
@@ -388,7 +388,7 @@ void main() {
       final FakeAssetStore store = FakeAssetStore();
       final FakeSyncBackend backend = FakeSyncBackend(store);
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       // Manifest asset present but decodes to null (download-failure / corruption).

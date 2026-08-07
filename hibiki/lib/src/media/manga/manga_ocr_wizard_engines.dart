@@ -40,7 +40,7 @@ class MangaOcrWizardEngines {
   /// 后者覆盖「是否桌面平台」（外部 mokuro CLI 只在桌面存在）。
   factory MangaOcrWizardEngines.resolve({
     required BuildContext context,
-    required HibikiDatabase db,
+    required FushiDatabase db,
     MangaOcrRemoteRunner? remoteRunnerOverride,
     bool? desktopOverride,
   }) {

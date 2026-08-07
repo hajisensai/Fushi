@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/focus/focus_geometry.dart';
 
-class HibikiFocusScroll {
-  const HibikiFocusScroll._();
+class FushiFocusScroll {
+  const FushiFocusScroll._();
 
   static void ensureVisible(
     BuildContext context, {

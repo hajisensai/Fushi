@@ -193,7 +193,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
     required bool connected,
     required int port,
   }) {
-    return HibikiCard(
+    return FushiCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -252,7 +252,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
       resultText = t.browser_extension_verify_not_detected;
       resultIcon = Icons.error_outline;
     }
-    return HibikiCard(
+    return FushiCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -308,7 +308,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
       builder: (BuildContext context, String? reported, Widget? _) {
         final bool mismatch =
             build != null && reported != null && build != reported;
-        return HibikiCard(
+        return FushiCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -337,7 +337,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.errorContainer,
-                    borderRadius: HibikiBorderRadius.group,
+                    borderRadius: FushiBorderRadius.group,
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -447,7 +447,7 @@ class BrowserExtensionInstallSteps extends StatelessWidget {
 
   /// 可复制字段：等宽显示 [value]，尾随复制按钮，复制后 SnackBar 反馈。
   Widget _copyableField(BuildContext context, String value) {
-    return HibikiCard(
+    return FushiCard(
       padding: const EdgeInsets.fromLTRB(10, 2, 2, 2),
       child: Row(
         children: <Widget>[
@@ -457,7 +457,7 @@ class BrowserExtensionInstallSteps extends StatelessWidget {
               style: const TextStyle(fontFamily: 'monospace'),
             ),
           ),
-          HibikiIconButton(
+          FushiIconButton(
             icon: Icons.copy,
             size: 18,
             tooltip: t.copy,
@@ -485,7 +485,7 @@ class BrowserExtensionInstallSteps extends StatelessWidget {
         // 自动配置状态横幅：仅在未就绪时提醒（端口冲突 / 先开 server）。
         // 就绪时不再显示——「完成」由步骤 5 承担，横幅重复它反而是句废话。
         if (!autoReady) ...<Widget>[
-          HibikiCard(
+          FushiCard(
             color: theme.colorScheme.tertiaryContainer,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,

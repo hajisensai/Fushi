@@ -7,7 +7,7 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 ///
 /// The home shell decides between the phone bottom-bar layout (compact) and the
 /// desktop nav-rail layout (medium/expanded) from a [LayoutBuilder] that lives
-/// **inside** [HibikiAppUiScale]. The scaler lays its subtree out against a
+/// **inside** [FushiAppUiScale]. The scaler lays its subtree out against a
 /// virtual canvas of `realViewport / scale`, so the [BoxConstraints] handed to
 /// that builder are an INFLATED logical width. Reading it directly kept the
 /// desktop locked to the nav-rail layout: at a real 560px-wide desktop window
@@ -19,24 +19,24 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 /// asserts it now classifies on the real physical width via
 /// [windowSizeClassReal].
 void main() {
-  /// Mirror of the home shell's layout decision: a real [HibikiAppUiScale] with
+  /// Mirror of the home shell's layout decision: a real [FushiAppUiScale] with
   /// automatic desktop scale wrapping a [LayoutBuilder] that classifies via
   /// [windowSizeClassReal]. Renders a distinct marker per layout class so the
   /// test can assert which branch the real geometry takes.
   Widget buildHarness({required Size physicalSize}) {
     return Builder(
       builder: (BuildContext context) {
-        final double scale = HibikiAppUiScale.automaticScaleForViewport(
+        final double scale = FushiAppUiScale.automaticScaleForViewport(
           viewport: physicalSize,
           platform: TargetPlatform.windows,
         );
-        return HibikiAppUiScale(
+        return FushiAppUiScale(
           scale: scale,
           child: LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
               final WindowSizeClass sizeClass = windowSizeClassReal(
                 constraints.maxWidth,
-                HibikiAppUiScale.of(context),
+                FushiAppUiScale.of(context),
               );
               return sizeClass == WindowSizeClass.compact
                   ? const Text(

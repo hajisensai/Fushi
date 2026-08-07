@@ -124,7 +124,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
   }
 
   Widget _buildSearchField() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.page,
@@ -173,7 +173,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       flattenVisibleSettings(destinations, settingsContext),
       _searchQuery,
     );
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     if (results.isEmpty) {
       return Padding(
         padding: EdgeInsets.all(tokens.spacing.page),
@@ -192,7 +192,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         AdaptiveSettingsSection(
           children: <Widget>[
             for (final SettingsSearchEntry entry in results)
-              HibikiListItem(
+              FushiListItem(
                 leading: Icon(entry.item.icon ?? entry.destination.icon),
                 // custom 项经 searchTitle 入索引时 item.title 为空，展示用
                 // entry.title（同打分口径）。
@@ -248,7 +248,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        HibikiPageHeader(
+        FushiPageHeader(
           title: t.settings,
           leading: widget.onBack != null
               ? IconButton(
@@ -274,7 +274,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
           destination.id == selectedDestinationId,
     );
     final bool cupertino = isCupertinoPlatform(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color dividerColor = cupertino
         ? CupertinoColors.separator.resolveFrom(context)
         : tokens.surfaces.outline;

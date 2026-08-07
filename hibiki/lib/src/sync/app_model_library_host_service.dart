@@ -48,12 +48,12 @@ import 'package:path/path.dart' as p;
 /// T2/T3 后续接线任务会在 AppModel 初始化时传入真实值。
 class AppModelLibraryHostService
     implements
-        HibikiLibraryHostService,
+        FushiLibraryHostService,
         DeletionTombstoneHost,
         VideoDeletionHost,
         InterconnectServiceConfigHost {
   AppModelLibraryHostService({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required Directory dictionaryResourceRoot,
     required SyncAssetPackageService packages,
     required Future<void> Function() refreshDictionaryCache,
@@ -88,7 +88,7 @@ class AppModelLibraryHostService
         _uploadedVideoRoot = uploadedVideoRoot,
         _extractVideoCover = extractVideoCover;
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
   final Directory _dictionaryResourceRoot;
   final SyncAssetPackageService _packages;
   final Future<void> Function() _refreshDictionaryCache;
@@ -257,7 +257,7 @@ class AppModelLibraryHostService
   }
 
   /// `'<mediaType>|<entryKey>'` → 该条目的**主合集归属**（多端库联合视图 §2.3
-  /// 任务5.1）的一趟映射。归属跟随 [HibikiDatabase.getPrimaryCollectionIdByEntry] 的
+  /// 任务5.1）的一趟映射。归属跟随 [FushiDatabase.getPrimaryCollectionIdByEntry] 的
   /// 「最小 collectionId」折叠语义：一条目属多合集时只带它折进的那一张，与库网格
   /// 折叠 / UI 占位卡归行一致。孤儿引用（合集已删）跳过 = 无归属（散卡）。每个被引用
   /// 合集只 [getCollectionItems] 一次，避免逐条目 N+1。

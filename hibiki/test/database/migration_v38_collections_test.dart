@@ -14,8 +14,8 @@ import 'package:fushi_core/fushi_core.dart';
 
 /// 打开一个 user_version=37 的库，seed 迁移相关表，触发真实的 `if (from < 38)`
 /// onUpgrade 分支。DDL 镜像 v37 生成 shape（仅迁移读写的列）。
-Future<HibikiDatabase> _openV37Db() async {
-  final db = HibikiDatabase.forTesting(
+Future<FushiDatabase> _openV37Db() async {
+  final db = FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
         rawDb.execute('PRAGMA foreign_keys = OFF');
@@ -204,7 +204,7 @@ const String _e1 = 'video/MyShow E01';
 const String _e2 = 'video/MyShow E02';
 const String _e3 = 'video/MyShow E03';
 
-Future<Map<String, dynamic>> _videoRow(HibikiDatabase db, String uid) async {
+Future<Map<String, dynamic>> _videoRow(FushiDatabase db, String uid) async {
   final row = await db.customSelect(
     'SELECT * FROM video_books WHERE book_uid = ?',
     variables: [Variable.withString(uid)],
@@ -214,7 +214,7 @@ Future<Map<String, dynamic>> _videoRow(HibikiDatabase db, String uid) async {
 
 void main() {
   test('v38: Series 转成 collection，成员/序/名/排序权重照搬，seriesId 清空', () async {
-    final HibikiDatabase db = await _openV37Db();
+    final FushiDatabase db = await _openV37Db();
     // 触发 onUpgrade。
     final List<MediaCollectionRow> collections =
         await db.getAllMediaCollections();
@@ -256,7 +256,7 @@ void main() {
   });
 
   test('v38: 多集 playlist 拆成 N 条独立集行，每集进度迁入 last_position_ms', () async {
-    final HibikiDatabase db = await _openV37Db();
+    final FushiDatabase db = await _openV37Db();
     await db.getAllMediaCollections(); // 触发迁移
 
     final uids =
@@ -301,7 +301,7 @@ void main() {
   });
 
   test('v38: playlist 合集建立，成员有序，排序权重取父 shelf sortOrder', () async {
-    final HibikiDatabase db = await _openV37Db();
+    final FushiDatabase db = await _openV37Db();
     final collections = await db.getAllMediaCollections();
 
     final playlist =
@@ -318,7 +318,7 @@ void main() {
   });
 
   test('v38: mined_sentences 集坐标改写（section i / NULL / 真越界 / 负数）', () async {
-    final HibikiDatabase db = await _openV37Db();
+    final FushiDatabase db = await _openV37Db();
     await db.getAllMediaCollections();
 
     final rows = await db
@@ -350,7 +350,7 @@ void main() {
   });
 
   test('v38: 父标签复制到每集，收藏句集坐标改写', () async {
-    final HibikiDatabase db = await _openV37Db();
+    final FushiDatabase db = await _openV37Db();
     await db.getAllMediaCollections();
 
     // 标签：3 集各有 tag 1，父映射已随父行 cascade 删。
@@ -388,7 +388,7 @@ void main() {
   });
 
   test('v38: 迁移幂等——再次调用两个迁移助手无副作用', () async {
-    final HibikiDatabase db = await _openV37Db();
+    final FushiDatabase db = await _openV37Db();
     final before = await db.getAllMediaCollections();
     final int beforeCount = before.length;
     final int beforeVideoCount = (await db
@@ -414,7 +414,7 @@ void main() {
       () async {
     // 2 集 legacy playlist：各 entry 无 positionMs（回退 0），当前集续播点只存在于
     // 父行 last_position_ms=777；current_episode=0 → 第 0 集应承接 777，其余为 0。
-    final db = HibikiDatabase.forTesting(
+    final db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (rawDb) {
           rawDb.execute('PRAGMA foreign_keys = OFF');

@@ -208,7 +208,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
   /// 有序视频成员，点集经 playlistCollectionId 进播放器）。日历页背后没有库页
   /// 要刷新，onChanged 仅重载本页映射。
   void _openCollectionDetail(MediaCollectionRow collection) {
-    final HibikiDatabase db = _appModel.database;
+    final FushiDatabase db = _appModel.database;
     final VideoBookRepository repo = VideoBookRepository(db);
     Navigator.push<void>(
       context,
@@ -255,7 +255,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
   }
 
   String _weekdayName(DateTime day) {
-    if (!_dateSymbolsReady) return HibikiTimeFormat.dayKey(day);
+    if (!_dateSymbolsReady) return FushiTimeFormat.dayKey(day);
     final String locale = LocaleSettings.currentLocale.languageTag;
     DateFormat format;
     try {
@@ -305,8 +305,8 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
             onPressed: _loading ? null : () => _shiftWeek(-7),
           ),
           Text(
-            '${HibikiTimeFormat.dayKey(_weekStart)} ~ '
-            '${HibikiTimeFormat.dayKey(weekEnd)}',
+            '${FushiTimeFormat.dayKey(_weekStart)} ~ '
+            '${FushiTimeFormat.dayKey(weekEnd)}',
             style: theme.textTheme.titleSmall,
           ),
           IconButton(
@@ -490,7 +490,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
       _weekStart.day + weekdayIndex,
     );
     final bool isToday = daysBetweenLocalDates(day, DateTime.now()) == 0;
-    final String date = HibikiTimeFormat.dayKey(day).substring(5);
+    final String date = FushiTimeFormat.dayKey(day).substring(5);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Text(
@@ -516,8 +516,8 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
             : null;
     final String episodeLabel =
         t.download_airing_calendar_episode_label(episode: episode.episode);
-    return HibikiListItem(
-      density: HibikiListDensity.compact,
+    return FushiListItem(
+      density: FushiListDensity.compact,
       onTap: onTap,
       // 条目落在 ListView 里（高度自由），可以安全放宽到两行——番名普遍很长，
       // 单行 ellipsis 在七列窄栏里只看得到开头几个字。
@@ -531,7 +531,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
         spacing: 8,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: <Widget>[
-          Text('${HibikiTimeFormat.hourMinute(local)} $episodeLabel'),
+          Text('${FushiTimeFormat.hourMinute(local)} $episodeLabel'),
           if (collection != null)
             _buildBadge(
               theme,
@@ -554,7 +554,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
       decoration: BoxDecoration(
         border: Border.all(color: color),
-        borderRadius: HibikiBorderRadius.chip,
+        borderRadius: FushiBorderRadius.chip,
       ),
       child: Text(
         label,

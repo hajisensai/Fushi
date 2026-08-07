@@ -3,7 +3,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 /// [mergeCollectionOrder] 纯规则测试（BUG-1194 根因修复的地基）。
 ///
-/// 这条规则同时被 `HibikiDatabase.reorderCollectionItems`（守落盘不变量）和
+/// 这条规则同时被 `FushiDatabase.reorderCollectionItems`（守落盘不变量）和
 /// `MediaCollectionGridDetailPage._onReorder`（维护内存展示序）使用，一处写错两处
 /// 一起漂，所以单独直测。
 CollectionMemberKey _k(String mediaType, String entryKey) =>

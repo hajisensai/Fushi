@@ -3,8 +3,8 @@ import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
 import 'package:fushi/src/utils/misc/hibiki_toast.dart';
 
 /// A clickable MD3-style tag used in dictionary entries.
-class HibikiTag extends StatelessWidget {
-  const HibikiTag({
+class FushiTag extends StatelessWidget {
+  const FushiTag({
     required this.text,
     required this.backgroundColor,
     this.message,
@@ -28,7 +28,7 @@ class HibikiTag extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color effectiveForeground =
         foregroundColor ?? scheme.onSecondaryContainer;
     final TextStyle effectiveStyle = style ??
@@ -47,7 +47,7 @@ class HibikiTag extends StatelessWidget {
           onTap: message == null
               ? null
               : () {
-                  HibikiToast.show(
+                  FushiToast.show(
                     backgroundColor: backgroundColor,
                     textColor: effectiveForeground,
                     msg: message!,

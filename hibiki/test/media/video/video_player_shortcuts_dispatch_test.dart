@@ -56,7 +56,7 @@ Future<void> _pumpShortcutHarness(
   WidgetTester tester,
   List<String> log,
 ) async {
-  final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+  final FushiShortcutRegistry registry = FushiShortcutRegistry()
     ..loadDefaults(TargetPlatform.windows);
   await tester.pumpWidget(MaterialApp(
     home: CallbackShortcuts(
@@ -179,7 +179,7 @@ void main() {
     });
 
     test('注册表 activator 整表里不含任何裸 Enter 绑定', () {
-      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadDefaults(TargetPlatform.windows);
       final Map<ShortcutActivator, VoidCallback> map =
           buildVideoPlayerShortcutsFromRegistry(
@@ -209,7 +209,7 @@ Future<void> _pumpEnterCaretHarness(
   required FocusNode buttonNode,
   required List<String> log,
 }) async {
-  final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+  final FushiShortcutRegistry registry = FushiShortcutRegistry()
     ..loadDefaults(TargetPlatform.windows);
   final List<ShortcutActivator> enterActivators = registry
       .bindingsFor(ShortcutAction.videoEnterCaret)

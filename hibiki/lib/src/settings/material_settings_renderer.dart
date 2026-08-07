@@ -16,7 +16,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
   /// 呼吸量（page + gap），右侧 page。[buildDetailContent] 与任何要与 schema
   /// section 等宽对齐的兄弟卡片（如阅读器快捷设置里并入 layout 子页顶部的主题选
   /// 择器卡）都必须从这里取横向缩进，避免各自硬编码导致左右对不齐。
-  static EdgeInsets detailHorizontalInsets(HibikiDesignTokens tokens) {
+  static EdgeInsets detailHorizontalInsets(FushiDesignTokens tokens) {
     return EdgeInsets.only(
       left: tokens.spacing.page + tokens.spacing.gap,
       right: tokens.spacing.page,
@@ -38,7 +38,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
       onDestinationSelected: onDestinationSelected,
     );
     if (embedded) return list;
-    return HibikiPageScaffold(
+    return FushiPageScaffold(
       title: settingsContext.context.t.settings,
       body: list,
     );
@@ -53,21 +53,21 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     bool pushRoutes = true,
   }) {
     final BuildContext context = settingsContext.context;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
     final List<Widget> rows = <Widget>[
       for (final SettingsDestination destination in destinations)
-        HibikiListItem(
+        FushiListItem(
           selected: destination.id == selectedDestinationId,
           // Master-detail (pushRoutes:false) keeps selection in-pane, so use the
           // MD3 rounded pill highlight; the narrow push list keeps full-bleed fill.
           selectedShape: pushRoutes
-              ? HibikiListItemSelectedShape.fill
-              : HibikiListItemSelectedShape.pill,
+              ? FushiListItemSelectedShape.fill
+              : FushiListItemSelectedShape.pill,
           leading: Icon(destination.icon),
           title: Text(destination.title),
           // TODO-1143：左父菜单在窄布局（clamp 280..360，最窄 280px）下曾把长分类
-          // 标签（如「同步与备份（实验性）」）用 HibikiListItem 默认 titleMaxLines:1
+          // 标签（如「同步与备份（实验性）」）用 FushiListItem 默认 titleMaxLines:1
           // 截成「同步与…」。放行第二行；全宽布局本就不换行，无害。
           titleMaxLines: 2,
           subtitle:
@@ -108,7 +108,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     required SettingsContext settingsContext,
     required SettingsDestination destination,
   }) {
-    return HibikiPageScaffold(
+    return FushiPageScaffold(
       title: destination.title,
       subtitle: destination.summary,
       body: buildDetailContent(
@@ -127,7 +127,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     bool insetHorizontally = true,
   }) {
     final BuildContext context = settingsContext.context;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<SettingsSection> sections =
         destination.visibleSections(settingsContext);
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
@@ -161,7 +161,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
           },
           footerStyle: (BuildContext context) =>
               Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: HibikiDesignTokens.of(context).surfaces.onVariant,
+                    color: FushiDesignTokens.of(context).surfaces.onVariant,
                   ),
         );
 

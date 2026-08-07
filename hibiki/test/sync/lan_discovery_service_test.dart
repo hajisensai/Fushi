@@ -20,16 +20,16 @@ BonsoirService _resolved({
     );
 
 void main() {
-  group('HibikiDevice', () {
+  group('FushiDevice', () {
     test('serializes to and from JSON', () {
-      final device = HibikiDevice(
+      final device = FushiDevice(
         name: 'My Phone',
         host: '192.168.1.100',
         port: 8765,
         deviceId: 'abc123',
       );
       final json = device.toJson();
-      final restored = HibikiDevice.fromJson(json);
+      final restored = FushiDevice.fromJson(json);
       expect(restored.name, 'My Phone');
       expect(restored.host, '192.168.1.100');
       expect(restored.port, 8765);
@@ -37,7 +37,7 @@ void main() {
     });
 
     test('webDavUrl builds correct URL', () {
-      final device = HibikiDevice(
+      final device = FushiDevice(
         name: 'Test',
         host: '192.168.1.50',
         port: 9999,
@@ -47,9 +47,9 @@ void main() {
     });
   });
 
-  group('HibikiDevice.fromResolvedService', () {
+  group('FushiDevice.fromResolvedService', () {
     test('maps a resolved service to a device', () {
-      final device = HibikiDevice.fromResolvedService(_resolved());
+      final device = FushiDevice.fromResolvedService(_resolved());
       expect(device, isNotNull);
       expect(device!.name, 'My Phone');
       expect(device.host, '192.168.1.100');
@@ -59,7 +59,7 @@ void main() {
     });
 
     test('prefers IPv4 over IPv6 when both are present', () {
-      final device = HibikiDevice.fromResolvedService(
+      final device = FushiDevice.fromResolvedService(
         _resolved(
           hostAddresses: const <String>['fe80::1', '192.168.1.42'],
         ),
@@ -70,14 +70,14 @@ void main() {
     });
 
     test('returns null when there are no host addresses', () {
-      final device = HibikiDevice.fromResolvedService(
+      final device = FushiDevice.fromResolvedService(
         _resolved(hostAddresses: const <String>[]),
       );
       expect(device, isNull);
     });
 
     test('falls back to service name as deviceId when no id attribute', () {
-      final device = HibikiDevice.fromResolvedService(
+      final device = FushiDevice.fromResolvedService(
         _resolved(
           name: 'Laptop',
           attributes: const <String, String>{},
@@ -89,7 +89,7 @@ void main() {
 
     // TODO-961: TXT tls=1 → tlsEnabled；旧版 host 不带该属性 → false（零破坏）。
     test('parses the tls TXT attribute; absent means plaintext host', () {
-      final tlsDevice = HibikiDevice.fromResolvedService(
+      final tlsDevice = FushiDevice.fromResolvedService(
         _resolved(
           attributes: const <String, String>{'id': 'abc123', 'tls': '1'},
         ),
@@ -97,23 +97,23 @@ void main() {
       expect(tlsDevice, isNotNull);
       expect(tlsDevice!.tlsEnabled, isTrue);
 
-      final plainDevice = HibikiDevice.fromResolvedService(_resolved());
+      final plainDevice = FushiDevice.fromResolvedService(_resolved());
       expect(plainDevice, isNotNull);
       expect(plainDevice!.tlsEnabled, isFalse);
     });
 
     test('tlsEnabled round-trips through JSON and defaults to false', () {
-      final device = HibikiDevice(
+      final device = FushiDevice(
         name: 'Test',
         host: '192.168.1.50',
         port: 9999,
         deviceId: 'x',
         tlsEnabled: true,
       );
-      expect(HibikiDevice.fromJson(device.toJson()).tlsEnabled, isTrue);
+      expect(FushiDevice.fromJson(device.toJson()).tlsEnabled, isTrue);
 
       // 旧序列化数据（无 tlsEnabled 字段）读回 false。
-      final legacy = HibikiDevice.fromJson(<String, dynamic>{
+      final legacy = FushiDevice.fromJson(<String, dynamic>{
         'name': 'Old',
         'host': '10.0.0.2',
         'port': 38765,

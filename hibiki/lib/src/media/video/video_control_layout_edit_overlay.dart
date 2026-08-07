@@ -225,7 +225,7 @@ class _VideoControlLayoutEditOverlayState
   }) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget chipList = Wrap(
       spacing: 6,
       runSpacing: 6,
@@ -312,7 +312,7 @@ class _VideoControlLayoutEditOverlayState
   Widget _buildPalette({double maxWidth = 420, double? maxHeight}) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool tightHeight = maxHeight != null && maxHeight < 220;
     final Widget chipList = Wrap(
       spacing: 6,
@@ -414,7 +414,7 @@ class _VideoControlLayoutEditOverlayState
   Widget _buildSlotRegion(VideoControlSlot slot, {bool tray = false}) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<VideoControlItem> items = <VideoControlItem>[
       for (final VideoControlItem item in _layout.itemsIn(slot))
         if (_isOnVideoDraggableItem(item)) item,
@@ -542,7 +542,7 @@ class _VideoControlLayoutEditOverlayState
   }) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return DragTarget<VideoControlDragData>(
       onWillAcceptWithDetails:
           (DragTargetDetails<VideoControlDragData> details) =>
@@ -624,7 +624,7 @@ class _VideoControlLayoutEditOverlayState
   }) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget body = DecoratedBox(
       decoration: BoxDecoration(
         color: cs.secondaryContainer,

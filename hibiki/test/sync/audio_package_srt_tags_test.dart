@@ -11,11 +11,11 @@ import 'package:path/path.dart' as p;
 /// TODO-1165：有声书包 manifest 按 tag name 携带 SRT 书标签，导入端按名重建映射。
 /// 覆盖 SRT 书系（标准/独立有声书）标签跨设备 round-trip 与幂等再导入。
 void main() {
-  HibikiDatabase testDb() =>
-      HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+  FushiDatabase testDb() =>
+      FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
   Future<File> seedAndExport({
-    required HibikiDatabase sourceDb,
+    required FushiDatabase sourceDb,
     required Directory temp,
     required List<String> tagNames,
   }) async {
@@ -59,8 +59,8 @@ void main() {
     final Directory temp =
         await Directory.systemTemp.createTemp('hibiki-audio-tags-');
     addTearDown(() => temp.delete(recursive: true));
-    final HibikiDatabase sourceDb = testDb();
-    final HibikiDatabase targetDb = testDb();
+    final FushiDatabase sourceDb = testDb();
+    final FushiDatabase targetDb = testDb();
     addTearDown(sourceDb.close);
     addTearDown(targetDb.close);
 
@@ -90,8 +90,8 @@ void main() {
     final Directory temp =
         await Directory.systemTemp.createTemp('hibiki-audio-tags2-');
     addTearDown(() => temp.delete(recursive: true));
-    final HibikiDatabase sourceDb = testDb();
-    final HibikiDatabase targetDb = testDb();
+    final FushiDatabase sourceDb = testDb();
+    final FushiDatabase targetDb = testDb();
     addTearDown(sourceDb.close);
     addTearDown(targetDb.close);
 

@@ -63,7 +63,7 @@ final srtBooksProvider = FutureProvider<List<SrtBook>>((ref) {
 /// 与书架「最近阅读」排序的唯一 recency 真相源；关书时与 [hibikiBooksProvider]
 /// 同点失效（[ReaderHibikiSource.onSourceExit]），不会陈旧。
 final bookLastReadAtProvider = FutureProvider<Map<String, int>>((ref) async {
-  final HibikiDatabase db = ref.watch(appProvider).database;
+  final FushiDatabase db = ref.watch(appProvider).database;
   final List<ReaderPositionRow> rows = await db.getAllReaderPositions();
   return <String, int>{
     for (final ReaderPositionRow r in rows) r.bookKey: r.updatedAt,
@@ -344,7 +344,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
     required MediaItem item,
     required String? author,
   }) async {
-    final HibikiDatabase? db = sharedDatabase;
+    final FushiDatabase? db = sharedDatabase;
     if (db == null) return;
     final String? bookKey = parseBookKey(item.mediaIdentifier);
     if (bookKey != null) {
@@ -396,7 +396,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
     Bookmark? initialBookmarkJump,
   }) {
     final String bookKey = _extractBookKey(item?.mediaIdentifier ?? '');
-    return HibikiAppUiScaleNeutralizer(
+    return FushiAppUiScaleNeutralizer(
       child: ReaderHibikiPage(
         item: item,
         bookKey: bookKey,
@@ -438,14 +438,14 @@ class ReaderHibikiSource extends ReaderMediaSource {
     required BuildContext context,
     required WidgetRef ref,
     required AppModel appModel,
-    HibikiFocusId? focusId,
+    FushiFocusId? focusId,
     String? label,
   }) {
     // 不覆盖 size：书架页头同排的其它按钮（管理来源 / 合集 / 统计，走
-    // _headerAction → HibikiIconButton）与视频 tab 的导入按钮都用默认 24。
+    // _headerAction → FushiIconButton）与视频 tab 的导入按钮都用默认 24。
     // 此前这里显式塞 titleLarge.fontSize(~22) 让「添加」按钮比兄弟小一圈、
     // 外框也短一截，看起来大小和位置都对不齐（BUG-735）。回落默认即对齐。
-    return HibikiIconButton(
+    return FushiIconButton(
       tooltip: t.srt_import,
       // 宽窗展开为「图标+文字」（书架页头传入）；null 时保持纯图标（其它调用点）。
       label: label,
@@ -478,7 +478,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   Future<List<MediaItem>> getBooksFromDb({
     required AppModel appModel,
   }) async {
-    final HibikiDatabase db = appModel.database;
+    final FushiDatabase db = appModel.database;
     final List<EpubBookRow> books = await db.getAllEpubBooks();
     final ReaderPositionRepository posRepo = ReaderPositionRepository(db);
 
@@ -497,7 +497,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// 按 bookKey 解析出 [MediaItem]（TODO-291：首页「正在听书」迷你条「回到书」用，
   /// 此处没有现成的 MediaItem，需按 key 重建）。书不存在返回 null。
   Future<MediaItem?> mediaItemForBookKey(String bookKey) async {
-    final HibikiDatabase? db = sharedDatabase;
+    final FushiDatabase? db = sharedDatabase;
     if (db == null) return null;
     final EpubBookRow? book = await db.getEpubBook(bookKey);
     if (book == null) return null;
@@ -823,10 +823,10 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// [scope] 控制删除传播：[DeleteScope.syncEverywhere] 记一条 sync 删除墓碑，供同步
   /// 时发布到远端标记、其他设备逐条确认后也删；[DeleteScope.keepLocalOnly]（默认）只删
   /// 本机不传播（消费远端删除标记时也走此值——删本地、绝不再回写墓碑造成循环）。备份防
-  /// 复活墓碑（[HibikiDatabase.deleteEpubBook] 的 tombstone:true）与 scope 无关，永远记
+  /// 复活墓碑（[FushiDatabase.deleteEpubBook] 的 tombstone:true）与 scope 无关，永远记
   /// （用户在本机删的东西，导入自己的旧备份不该复活）。
   Future<DeleteBookResult> deleteBook({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required String bookKey,
     AppModel? appModel,
     DeleteScope scope = DeleteScope.keepLocalOnly,

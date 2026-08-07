@@ -85,7 +85,7 @@ void main() {
         ..createSync(recursive: true)
         ..writeAsStringSync('x');
     }
-    final HibikiDatabase db = HibikiDatabase(dbDir);
+    final FushiDatabase db = FushiDatabase(dbDir);
     try {
       await db.upsertGalgame(GalgamesCompanion.insert(
         id: 'g1',
@@ -185,7 +185,7 @@ void main() {
 
   /// 读回一份「路径快照」：所有被改写的字段的当前值，用来做等值断言与幂等断言。
   Future<Map<String, String?>> snapshot(String dbDir) async {
-    final HibikiDatabase db = HibikiDatabase(dbDir);
+    final FushiDatabase db = FushiDatabase(dbDir);
     try {
       final Map<String, String?> out = <String, String?>{};
       final GalgameRow g = (await db.getAllGalgames()).single;
@@ -306,7 +306,7 @@ void main() {
   test('② 迁移后「切 Profile」不会把路径退回旧值', () async {
     await seed(oldSupport.path);
     // 先造一个 Profile 并快照当前（旧根）prefs —— 这正是用户迁移前的真实状态。
-    final HibikiDatabase pre = HibikiDatabase(oldSupport.path);
+    final FushiDatabase pre = FushiDatabase(oldSupport.path);
     late int profileId;
     try {
       final ProfileRepository repo =
@@ -350,7 +350,7 @@ void main() {
     ));
 
     // 真正走一次 applyProfile（= 用户切 Profile），再看 live prefs 有没有被写回旧根。
-    final HibikiDatabase post = HibikiDatabase(newSupport.path);
+    final FushiDatabase post = FushiDatabase(newSupport.path);
     try {
       final ProfileRepository repo =
           ProfileRepository(post, _FakeAnkiRepository());
@@ -434,8 +434,8 @@ void main() {
     expect(rebaser.rebase('/home/u/Documents/videos_backup/x.mkv'),
         equals('/home/u/Documents/videos_backup/x.mkv'));
     // 大小写不敏感：hibikiExport 在 Windows 上会被搬走，路径必须一起改。
-    expect(rebaser.rebase('/home/u/Documents/HibikiExport/card.jpg'),
-        equals('/home/u/Documents/Hibiki/data/HibikiExport/card.jpg'));
+    expect(rebaser.rebase('/home/u/Documents/FushiExport/card.jpg'),
+        equals('/home/u/Documents/Hibiki/data/FushiExport/card.jpg'));
     // 根本体本身。
     expect(rebaser.rebase('/home/u/Documents'),
         equals('/home/u/Documents/Hibiki/data'));

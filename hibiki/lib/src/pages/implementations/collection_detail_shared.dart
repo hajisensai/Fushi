@@ -15,7 +15,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 删除后的实际落库仍留在各页；这里只收「同形 UI + 同语义对话框」。
 mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
   /// 宿主页提供：数据库 / 合集行 / 当前显示名 / 改动回调。
-  HibikiDatabase get detailDatabase;
+  FushiDatabase get detailDatabase;
   MediaCollectionRow get detailCollection;
   String get detailName;
   set detailName(String value);
@@ -53,7 +53,7 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
 
   /// 详情页头部标签 chip 行：随 [detailTagsRefresh] 强制重取本合集标签；空则不占位。
   Widget buildDetailTagChips() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return FutureBuilder<List<BookTagRow>>(
       key: ValueKey<int>(detailTagsRefresh),
       future: detailDatabase.getTagsForCollection(detailCollection.id),
@@ -70,10 +70,10 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
             runSpacing: tokens.spacing.gap * 0.75,
             children: <Widget>[
               for (final BookTagRow tag in tags)
-                HibikiTagChip(
+                FushiTagChip(
                   label: tag.name,
                   color: Color(tag.colorValue),
-                  tone: HibikiTagChipTone.surface,
+                  tone: FushiTagChipTone.surface,
                 ),
             ],
           ),
@@ -110,16 +110,16 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
     );
   }
 
-  /// 「删除合集」确认：统一走 PR-0 的 [HibikiDestructiveConfirmDialog]。
+  /// 「删除合集」确认：统一走 PR-0 的 [FushiDestructiveConfirmDialog]。
   /// [checkboxLabel] 非空 = 提供「连同成员本体一起删」勾选行；null = 纯解链删除。
   /// 返回 null = 取消。
-  Future<HibikiDestructiveConfirmResult?> confirmDetailCollectionDelete({
+  Future<FushiDestructiveConfirmResult?> confirmDetailCollectionDelete({
     String? checkboxLabel,
     DeletionDisclosure? checkedDisclosure,
   }) {
-    return showAppDialog<HibikiDestructiveConfirmResult>(
+    return showAppDialog<FushiDestructiveConfirmResult>(
       context: context,
-      builder: (_) => HibikiDestructiveConfirmDialog(
+      builder: (_) => FushiDestructiveConfirmDialog(
         title: t.delete_collection,
         message: t.delete_collection_confirm,
         confirmLabel: t.delete_collection,
@@ -129,12 +129,12 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
     );
   }
 
-  /// 「移出合集」确认（逐成员）：同走 [HibikiDestructiveConfirmDialog]。true = 确认。
+  /// 「移出合集」确认（逐成员）：同走 [FushiDestructiveConfirmDialog]。true = 确认。
   Future<bool> confirmDetailRemoveMember() async {
-    final HibikiDestructiveConfirmResult? result =
-        await showAppDialog<HibikiDestructiveConfirmResult>(
+    final FushiDestructiveConfirmResult? result =
+        await showAppDialog<FushiDestructiveConfirmResult>(
       context: context,
-      builder: (_) => HibikiDestructiveConfirmDialog(
+      builder: (_) => FushiDestructiveConfirmDialog(
         title: t.collection_remove_member,
         message: t.collection_remove_member_confirm,
         confirmLabel: t.collection_remove_member,

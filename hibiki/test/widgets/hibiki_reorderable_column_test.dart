@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/hibiki_reorderable_column.dart';
 
-/// 把列表交给 [HibikiReorderableColumn]，并在 onReorder 时真正改顺序后重建——
+/// 把列表交给 [FushiReorderableColumn]，并在 onReorder 时真正改顺序后重建——
 /// 模拟真实调用方（对话框）的用法。
 class _Harness extends StatefulWidget {
   const _Harness({
@@ -25,7 +25,7 @@ class _HarnessState extends State<_Harness> {
 
   @override
   Widget build(BuildContext context) {
-    return HibikiReorderableColumn(
+    return FushiReorderableColumn(
       itemCount: _items.length,
       spacing: widget.spacing,
       keyForIndex: (int i) => ValueKey<String>(_items[i]),
@@ -152,7 +152,7 @@ void main() {
     );
 
     // 静止：行间距进入布局 → 列表总高 = N*行高 + (N-1)*间距。
-    expect(tester.getSize(find.byType(HibikiReorderableColumn)).height,
+    expect(tester.getSize(find.byType(FushiReorderableColumn)).height,
         rowH * 3 + gap * 2);
 
     // 拖拽中：浮层只包住行内容，高度恰为单行高（不含行间距）。若有人把间距折回
@@ -259,7 +259,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: HibikiAppUiScale(
+          body: FushiAppUiScale(
             scale: 0.5,
             child: Center(
               child: SizedBox(
@@ -390,7 +390,7 @@ void main() {
           body: Center(
             child: SizedBox(
               width: 300,
-              child: HibikiReorderableColumn(
+              child: FushiReorderableColumn(
                 itemCount: order.length,
                 keyForIndex: (int i) => ValueKey<String>(order[i]),
                 onReorder: (int from, int to) => reorders.add(from),
@@ -423,7 +423,7 @@ void main() {
   testWidgets(
       '按住在视口底边缘带会自动滚动外层 SingleChildScrollView'
       '（长列表里第 1 项才够得到第 N 项）', (WidgetTester tester) async {
-    // 此前本组件缺边缘自动滚动（2D 姊妹件 HibikiReorderableGrid 早就有）：列表长
+    // 此前本组件缺边缘自动滚动（2D 姊妹件 FushiReorderableGrid 早就有）：列表长
     // 于视口时，把某行拖到视口边缘列表不会跟着滚，用户只能在**当前可见范围**内
     // 重排——第 1 项永远拖不到第 30 项。
     final ScrollController controller = ScrollController();

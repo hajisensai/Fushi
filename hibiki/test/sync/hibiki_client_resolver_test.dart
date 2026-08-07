@@ -7,10 +7,10 @@ void main() {
   group('resolveReachableHibikiCandidate', () {
     test('returns the first reachable url', () async {
       final List<String> probed = <String>[];
-      final HibikiClientUrl result = await resolveReachableHibikiCandidate(
-        const <HibikiClientUrl>[
-          HibikiClientUrl(url: 'http://lan:8765'),
-          HibikiClientUrl(url: 'http://wan:8765'),
+      final FushiClientUrl result = await resolveReachableHibikiCandidate(
+        const <FushiClientUrl>[
+          FushiClientUrl(url: 'http://lan:8765'),
+          FushiClientUrl(url: 'http://wan:8765'),
         ],
         'tok',
         (String url, String token) async {
@@ -26,10 +26,10 @@ void main() {
     test('falls through to the next url when the first is unreachable',
         () async {
       final List<String> probed = <String>[];
-      final HibikiClientUrl result = await resolveReachableHibikiCandidate(
-        const <HibikiClientUrl>[
-          HibikiClientUrl(url: 'http://lan:8765'),
-          HibikiClientUrl(url: 'http://wan:8765'),
+      final FushiClientUrl result = await resolveReachableHibikiCandidate(
+        const <FushiClientUrl>[
+          FushiClientUrl(url: 'http://lan:8765'),
+          FushiClientUrl(url: 'http://wan:8765'),
         ],
         'tok',
         (String url, String token) async {
@@ -44,10 +44,10 @@ void main() {
 
     test('skips disabled candidates', () async {
       final List<String> probed = <String>[];
-      final HibikiClientUrl result = await resolveReachableHibikiCandidate(
-        const <HibikiClientUrl>[
-          HibikiClientUrl(url: 'http://lan:8765', enabled: false),
-          HibikiClientUrl(url: 'http://wan:8765'),
+      final FushiClientUrl result = await resolveReachableHibikiCandidate(
+        const <FushiClientUrl>[
+          FushiClientUrl(url: 'http://lan:8765', enabled: false),
+          FushiClientUrl(url: 'http://wan:8765'),
         ],
         'tok',
         (String url, String token) async {
@@ -65,9 +65,9 @@ void main() {
       final List<String> probed = <String>[];
       await expectLater(
         resolveReachableHibikiCandidate(
-          const <HibikiClientUrl>[
-            HibikiClientUrl(url: 'http://lan:8765'),
-            HibikiClientUrl(url: 'http://wan:8765'),
+          const <FushiClientUrl>[
+            FushiClientUrl(url: 'http://lan:8765'),
+            FushiClientUrl(url: 'http://wan:8765'),
           ],
           'tok',
           (String url, String token) async {
@@ -84,9 +84,9 @@ void main() {
         () async {
       await expectLater(
         resolveReachableHibikiCandidate(
-          const <HibikiClientUrl>[
-            HibikiClientUrl(url: 'http://lan:8765'),
-            HibikiClientUrl(url: 'http://wan:8765'),
+          const <FushiClientUrl>[
+            FushiClientUrl(url: 'http://lan:8765'),
+            FushiClientUrl(url: 'http://wan:8765'),
           ],
           'tok',
           (String url, String token) async => false,

@@ -222,12 +222,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
           _close();
         }
       },
-      child: HibikiOverlayScaffold(
-        // 根因修复（BUG-054）：弹窗词典窗口经 popup_main 同样套了 HibikiAppUiScale，
+      child: FushiOverlayScaffold(
+        // 根因修复（BUG-054）：弹窗词典窗口经 popup_main 同样套了 FushiAppUiScale，
         // 其 DictionaryPopupLayer→DictionaryPopupWebView 会被 FittedBox 拉糊。整页在
         // 中和器下渲染（净缩放=1），WebView 走原生密度、其上的关闭遮罩/嵌套层共用
         // 同一真实坐标系。
-        body: HibikiAppUiScaleNeutralizer(
+        body: FushiAppUiScaleNeutralizer(
           child: _buildOuterContainer(),
         ),
       ),
@@ -235,7 +235,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   }
 
   Widget _buildOuterContainer() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double gap = tokens.spacing.gap;
     return Stack(
       children: <Widget>[
@@ -265,7 +265,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   /// TODO-872：anchorRect 为 null → 原 [Alignment.topCenter] 贴顶（**零变化**）；
   /// 非空 → 用 [computeFloatingLyricPopupRect] 算出贴被查字旁的矩形，[Positioned] 定位。
-  Widget _buildPositionedCard(HibikiDesignTokens tokens, double gap) {
+  Widget _buildPositionedCard(FushiDesignTokens tokens, double gap) {
     final Rect? anchor = widget.anchorRect;
     if (anchor == null) {
       return Align(
@@ -319,8 +319,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     );
   }
 
-  Widget _buildCard(HibikiDesignTokens tokens) {
-    final Widget card = HibikiPopupSurface(
+  Widget _buildCard(FushiDesignTokens tokens) {
+    final Widget card = FushiPopupSurface(
       color: (appModel.overrideDictionaryColor ?? tokens.surfaces.page)
           .withValues(alpha: 1.0),
       child: Column(
@@ -435,7 +435,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     int index, {
     required Size cardSize,
   }) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final DictionaryPopupEntry entry = _popup.entries[index];
     final bool isBase = index == 0;
     final bool isDark =
@@ -443,7 +443,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
             Brightness.dark;
     final Widget layer = DictionaryPopupLayer(
       // TODO-1065：独立查词窗（popup_main 宿主 / 悬浮字幕外部弹窗）跑在透明浮动窗里，
-      // 圆角卡由 Flutter HibikiPopupSurface 画；令弹窗 WebView `<html>` 透明，消除
+      // 圆角卡由 Flutter FushiPopupSurface 画；令弹窗 WebView `<html>` 透明，消除
       // documentElement 不透明填充铺满整窗的泛白（in-app 与桌面 global-lookup 不受影响）。
       transparentDocumentBackground: true,
       result: entry.result,
@@ -547,7 +547,7 @@ class PopupDictionarySearchBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return HibikiCompactSearchRow(
+    return FushiCompactSearchRow(
       controller: controller,
       focusNode: focusNode,
       hintText: t.search,
@@ -565,7 +565,7 @@ class PopupDictionarySearchBar extends StatelessWidget {
 /// + 20 图标）。键沿用 `popup_dictionary_close_button`（桌面焦点驱动测试
 /// + 既有 widget 测试都按此键定位）。
 ///
-/// TODO-1144：高度对齐 [HibikiCompactSearchRow] 的 44（其内是 `SizedBox(height: 44)`）。
+/// TODO-1144：高度对齐 [FushiCompactSearchRow] 的 44（其内是 `SizedBox(height: 44)`）。
 /// 头部 Row 里关闭按钮与搜索栏并排，之前裸盒 36 高、搜索卡 44 高，居中对齐后产生 8px
 /// 高差且背景不一致；命中区改为 36 宽 × 44 高与搜索卡等高（图标仍 20），消除高差。
 class _CompactPopupCloseButton extends StatelessWidget {
@@ -576,16 +576,16 @@ class _CompactPopupCloseButton extends StatelessWidget {
 
   final VoidCallback onClose;
 
-  /// 与 [HibikiCompactSearchRow] 内 `SizedBox(height: 44)` 同高，头部 Row 两侧等高对齐。
+  /// 与 [FushiCompactSearchRow] 内 `SizedBox(height: 44)` 同高，头部 Row 两侧等高对齐。
   static const double height = 44;
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return SizedBox(
       width: 36,
       height: height,
-      child: HibikiIconButton(
+      child: FushiIconButton(
         icon: Icons.close,
         enabledColor: tokens.surfaces.onVariant,
         size: 20,

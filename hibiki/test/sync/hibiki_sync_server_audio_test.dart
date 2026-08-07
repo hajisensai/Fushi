@@ -7,7 +7,7 @@ import 'package:fushi/src/sync/hibiki_library_host_service.dart';
 import 'package:fushi/src/sync/hibiki_sync_server.dart';
 
 /// Fake 库服务：本地音频 + 有声书方法真实记录调用；dict/books 方法存根。
-class _FakeLibraryService implements HibikiLibraryHostService {
+class _FakeLibraryService implements FushiLibraryHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
   Future<File?> clipVideoAudio(String id,
@@ -250,7 +250,7 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 }
 
 void main() {
-  late HibikiSyncServer server;
+  late FushiSyncServer server;
   late _FakeLibraryService lib;
   const String token = 'test-token-audio';
   late String base;
@@ -258,7 +258,7 @@ void main() {
 
   setUp(() async {
     lib = _FakeLibraryService();
-    server = HibikiSyncServer(
+    server = FushiSyncServer(
       syncDataDir: Directory.systemTemp.createTempSync('hbk_audio_srv').path,
       port: 0,
       token: token,
@@ -435,7 +435,7 @@ void main() {
     // ── no service injected → 404 ─────────────────────────────────────────────
 
     test('localaudio endpoints return 404 when no service injected', () async {
-      final HibikiSyncServer bare = HibikiSyncServer(
+      final FushiSyncServer bare = FushiSyncServer(
         syncDataDir: Directory.systemTemp.createTempSync('hbk_la_bare').path,
         port: 0,
         token: token,
@@ -669,7 +669,7 @@ void main() {
     // ── no service injected → 404 ─────────────────────────────────────────────
 
     test('audiobooks endpoints return 404 when no service injected', () async {
-      final HibikiSyncServer bare = HibikiSyncServer(
+      final FushiSyncServer bare = FushiSyncServer(
         syncDataDir: Directory.systemTemp.createTempSync('hbk_ab_bare').path,
         port: 0,
         token: token,

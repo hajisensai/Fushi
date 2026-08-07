@@ -11,14 +11,14 @@ import 'package:fushi/utils.dart';
 
 // ─── Dialog version (used inside the reader) ─────────────────────────────────
 
-class HibikiSettingsDialogPage extends BasePage {
-  const HibikiSettingsDialogPage({super.key});
+class FushiSettingsDialogPage extends BasePage {
+  const FushiSettingsDialogPage({super.key});
 
   @override
-  BasePageState createState() => _HibikiSettingsDialogPageState();
+  BasePageState createState() => _FushiSettingsDialogPageState();
 }
 
-class _HibikiSettingsDialogPageState extends BasePageState
+class _FushiSettingsDialogPageState extends BasePageState
     with SettingsContextHost {
   final ScrollController _contentScrollController = ScrollController();
 
@@ -30,9 +30,9 @@ class _HibikiSettingsDialogPageState extends BasePageState
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 560,
       maxHeightFactor: 0.86,
       insetPadding: EdgeInsets.symmetric(
@@ -40,7 +40,7 @@ class _HibikiSettingsDialogPageState extends BasePageState
         vertical: tokens.spacing.card,
       ),
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.reader_settings_section,
         scrollable: true,
         bodyPadding: EdgeInsets.zero,
@@ -106,8 +106,8 @@ class _HibikiSettingsDialogPageState extends BasePageState
 
 // ─── Full-page version (home "调整" tab) ──────────────────────────────────────
 
-class HibikiSettingsContent extends StatelessWidget {
-  const HibikiSettingsContent({super.key, this.onBack});
+class FushiSettingsContent extends StatelessWidget {
+  const FushiSettingsContent({super.key, this.onBack});
 
   /// 非空时在设置页头左侧显示返回箭头（宽屏隐藏图标侧栏的全屏设置场景）。
   final VoidCallback? onBack;

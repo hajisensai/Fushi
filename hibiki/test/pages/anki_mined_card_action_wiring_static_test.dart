@@ -172,7 +172,7 @@ void main() {
     );
     // catch 块固定形态：复位 _busy（避免卡死）+ 弹失败反馈。三处都必须出现这条收口。
     final String catchReset = compactCode('setState(() => _busy = false); '
-        'HibikiToast.show(msg: t.anki_card_action_failed,');
+        'FushiToast.show(msg: t.anki_card_action_failed,');
     expect(
       catchReset.allMatches(compactCode(src)).length,
       3,

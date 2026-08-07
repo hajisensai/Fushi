@@ -56,7 +56,7 @@ Future<void> saveLogToFile({
         notify(t.log_export_saved);
       }
     } else {
-      await HibikiShare.shareFiles(
+      await FushiShare.shareFiles(
         <XFile>[XFile(tmpPath, mimeType: 'text/plain')],
         subject: subject,
       );

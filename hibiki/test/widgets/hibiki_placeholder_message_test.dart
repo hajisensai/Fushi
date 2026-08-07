@@ -5,10 +5,10 @@ import 'package:fushi/src/utils/components/hibiki_placeholder_message.dart';
 import 'widget_test_helpers.dart';
 
 void main() {
-  group('HibikiPlaceholderMessage', () {
+  group('FushiPlaceholderMessage', () {
     testWidgets('renders icon and message text', (tester) async {
       await tester.pumpWidget(buildTestApp(
-        const HibikiPlaceholderMessage(
+        const FushiPlaceholderMessage(
           icon: Icons.error,
           message: 'Something went wrong',
         ),
@@ -20,7 +20,7 @@ void main() {
 
     testWidgets('applies custom color to icon and text', (tester) async {
       await tester.pumpWidget(buildTestApp(
-        const HibikiPlaceholderMessage(
+        const FushiPlaceholderMessage(
           icon: Icons.info,
           message: 'Info message',
           color: Colors.blue,
@@ -34,7 +34,7 @@ void main() {
     testWidgets('uses custom messageStyle when provided', (tester) async {
       const style = TextStyle(fontSize: 24, color: Colors.green);
       await tester.pumpWidget(buildTestApp(
-        const HibikiPlaceholderMessage(
+        const FushiPlaceholderMessage(
           icon: Icons.check,
           message: 'Success',
           messageStyle: style,
@@ -48,7 +48,7 @@ void main() {
 
     testWidgets('uses custom iconSize when provided', (tester) async {
       await tester.pumpWidget(buildTestApp(
-        const HibikiPlaceholderMessage(
+        const FushiPlaceholderMessage(
           icon: Icons.search,
           message: 'Search',
           iconSize: 18,
@@ -62,7 +62,7 @@ void main() {
     testWidgets('renders detail below the message, ellipsised to 3 lines',
         (tester) async {
       await tester.pumpWidget(buildTestApp(
-        const HibikiPlaceholderMessage(
+        const FushiPlaceholderMessage(
           icon: Icons.error_outline,
           message: 'Something went wrong',
           detail: 'SqliteException(14): unable to open database file',
@@ -79,7 +79,7 @@ void main() {
     testWidgets('renders action widget and keeps it tappable', (tester) async {
       int taps = 0;
       await tester.pumpWidget(buildTestApp(
-        HibikiPlaceholderMessage(
+        FushiPlaceholderMessage(
           icon: Icons.error_outline,
           message: 'Something went wrong',
           action: FilledButton(

@@ -2,7 +2,7 @@
 ///
 /// 用例 A：互联（InterconnectSyncBackend）走 live 路径——调用 host 的
 ///   /api/library/dictionaries 端点，绝不创建 __dictionaries__ 文件夹。
-/// 用例 B：非 HibikiClient 后端（FakeSyncBackend）仍走 staged 路径——
+/// 用例 B：非 FushiClient 后端（FakeSyncBackend）仍走 staged 路径——
 ///   仍会调用 ensureNamespace(__dictionaries__)。
 ///
 /// 词典名使用真实 CJK 名（「明镜」），覆盖 server URI 解码路径。
@@ -32,12 +32,12 @@ import 'fake_asset_store.dart';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-HibikiDatabase _memDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _memDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 /// 在 [db] + [dictRoot] 里建一个名为 [name] 的合法词典（元数据 + 资源文件）。
 Future<void> _seedDictionary(
-  HibikiDatabase db,
+  FushiDatabase db,
   Directory dictRoot,
   String name,
 ) async {
@@ -60,10 +60,10 @@ Future<InterconnectSyncBackend> _buildClientBackend({
   required String base,
   required String token,
 }) async {
-  final HibikiDatabase db = _memDb();
+  final FushiDatabase db = _memDb();
   final SyncRepository repo = SyncRepository(db);
-  await repo.setHibikiClientUrls(<HibikiClientUrl>[
-    HibikiClientUrl(url: base, enabled: true),
+  await repo.setHibikiClientUrls(<FushiClientUrl>[
+    FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
   final InterconnectSyncBackend backend =
@@ -75,7 +75,7 @@ Future<InterconnectSyncBackend> _buildClientBackend({
 
 /// 用 [backend] 构造只开 syncDictionary 的 orchestrator。
 SyncOrchestrator _orchestrator(
-  HibikiDatabase db,
+  FushiDatabase db,
   SyncBackend backend,
   Directory dictRoot,
   Directory tmp,
@@ -238,8 +238,8 @@ void main() {
   // ── 用例 A：互联 live（InterconnectSyncBackend）──────────────────────────
 
   group('用例A: 互联 live 路径', () {
-    late HibikiSyncServer server;
-    late HibikiDatabase hostDb;
+    late FushiSyncServer server;
+    late FushiDatabase hostDb;
     late Directory hostDictRoot;
     late String serverBase;
     const String token = 'orch-live-token';
@@ -259,7 +259,7 @@ void main() {
         runExclusive: (Future<void> Function() body) => body(),
       );
 
-      server = HibikiSyncServer(
+      server = FushiSyncServer(
         syncDataDir: p.join(work.path, 'server_data'),
         port: 0,
         token: token,
@@ -274,7 +274,7 @@ void main() {
 
     test('pull：本地无「明镜」，运行后本地 DB 含「明镜」', () async {
       // 本地：有 JMdict，无「明镜」
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       final Directory localDictRoot =
           Directory(p.join(work.path, 'local_dicts_pull'))..createSync();
@@ -302,7 +302,7 @@ void main() {
 
     test('push：host 无 JMdict，运行后 host DB 含 JMdict', () async {
       // 本地：有 JMdict，无「明镜」
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       final Directory localDictRoot =
           Directory(p.join(work.path, 'local_dicts_push'))..createSync();
@@ -329,7 +329,7 @@ void main() {
     });
 
     test('live 路径不创建 __dictionaries__ 文件夹', () async {
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       final Directory localDictRoot =
           Directory(p.join(work.path, 'local_dicts_ns'))..createSync();
@@ -352,7 +352,7 @@ void main() {
 
     test('pull+push 双向 union round-trip', () async {
       // 本地：JMdict；host：「明镜」。运行后本地含「明镜」，host 含 JMdict。
-      final HibikiDatabase localDb = _memDb();
+      final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       final Directory localDictRoot =
           Directory(p.join(work.path, 'local_dicts_rt'))..createSync();
@@ -394,14 +394,14 @@ void main() {
     });
   });
 
-  // ── 用例 B：非 HibikiClient 后端仍走 staged 路径 ──────────────────────────
+  // ── 用例 B：非 FushiClient 后端仍走 staged 路径 ──────────────────────────
 
   group('用例B: 非互联后端走 staged 路径', () {
     test('FakeSyncBackend 调用 ensureNamespace(__dictionaries__)', () async {
       final FakeAssetStore store = FakeAssetStore();
       final _FakeSyncBackend backend = _FakeSyncBackend(store);
       final Directory tmp = Directory(p.join(work.path, 'tmp'))..createSync();
-      final HibikiDatabase db = _memDb();
+      final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       await _seedDictionary(

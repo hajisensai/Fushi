@@ -59,7 +59,7 @@ class BookImportDialog extends StatefulWidget {
 
   final SrtBookRepository repo;
   final AudiobookRepository audiobookRepo;
-  final HibikiDatabase db;
+  final FushiDatabase db;
   final String? initialEpubPath;
   final String? initialSubtitlePath;
 
@@ -190,7 +190,7 @@ class _BookImportDialogState extends State<BookImportDialog>
 
   @override
   Widget build(BuildContext context) {
-    return HibikiFileDropTarget(
+    return FushiFileDropTarget(
       enabled: !importing,
       debugLabel: 'book-import-dialog',
       onDrop: _handleDialogDrop,
@@ -305,7 +305,7 @@ class _BookImportDialogState extends State<BookImportDialog>
   }
 
   Widget _buildForm() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -340,16 +340,16 @@ class _BookImportDialogState extends State<BookImportDialog>
           ),
         ],
         SizedBox(height: tokens.spacing.rowVertical),
-        HibikiTextField(
+        FushiTextField(
           controller: _titleCtrl,
           labelText: t.srt_import_title_hint,
           // 用户一旦在标题框手打即锁定来源为 user，此后重选文件不再覆盖（TODO-1362）。
           // Flutter 不会为程序化的 controller.text= 触发 onChanged，故仅真实用户输入
-          // （含屏幕键盘/粘贴，经 HibikiTextField 转发）才置 user。
+          // （含屏幕键盘/粘贴，经 FushiTextField 转发）才置 user。
           onChanged: (String _) => _titleSource = ImportTitleSource.user,
         ),
         SizedBox(height: tokens.spacing.gap),
-        HibikiTextField(
+        FushiTextField(
           controller: _authorCtrl,
           labelText: t.srt_import_author_hint,
         ),
@@ -386,13 +386,13 @@ class _BookImportDialogState extends State<BookImportDialog>
   }
 
   Widget _epubRow() {
-    return HibikiFilePickerRow(
+    return FushiFilePickerRow(
       title: t.srt_import_pick_epub,
       subtitle: _epubPath == null ? null : _epubName ?? p.basename(_epubPath!),
       icon: Icons.menu_book_outlined,
       onTap: () => _pickEpub(),
       actions: [
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.menu_book_outlined,
           tooltip: t.srt_import_pick_epub,
           isWideTapArea: true,
@@ -403,7 +403,7 @@ class _BookImportDialogState extends State<BookImportDialog>
   }
 
   Widget _subtitleRow() {
-    return HibikiFilePickerRow(
+    return FushiFilePickerRow(
       title: t.srt_import_pick_subtitle_files,
       subtitle: _subtitlePath == null
           ? null
@@ -412,7 +412,7 @@ class _BookImportDialogState extends State<BookImportDialog>
       onTap: _pickSubtitle,
       actions: [
         if (_subtitlePath != null)
-          HibikiIconButton(
+          FushiIconButton(
             icon: Icons.close,
             tooltip: t.dialog_clear,
             isWideTapArea: true,
@@ -421,7 +421,7 @@ class _BookImportDialogState extends State<BookImportDialog>
               _subtitleName = null;
             }),
           ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.subtitles_outlined,
           tooltip: t.srt_import_pick_subtitle_files,
           isWideTapArea: true,
@@ -432,7 +432,7 @@ class _BookImportDialogState extends State<BookImportDialog>
   }
 
   Widget _audioRow() {
-    return HibikiFilePickerRow(
+    return FushiFilePickerRow(
       title: t.srt_import_pick_audio_files,
       subtitle: _audioPaths.isEmpty
           ? null
@@ -443,7 +443,7 @@ class _BookImportDialogState extends State<BookImportDialog>
       onTap: _pickAudio,
       actions: [
         if (_audioPaths.isNotEmpty)
-          HibikiIconButton(
+          FushiIconButton(
             icon: Icons.close,
             tooltip: t.dialog_clear,
             isWideTapArea: true,
@@ -452,7 +452,7 @@ class _BookImportDialogState extends State<BookImportDialog>
               _audioCoverPath = null;
             }),
           ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.audio_file_outlined,
           tooltip: t.srt_import_pick_audio_files,
           isWideTapArea: true,
@@ -544,7 +544,7 @@ class _BookImportDialogState extends State<BookImportDialog>
       if (attachedAudio) t.import_sidecar_audio(count: _audioPaths.length),
     ];
     if (parts.isNotEmpty && mounted) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: parts.join(' · '),
         severity: ToastSeverity.info,
       );
@@ -572,7 +572,7 @@ class _BookImportDialogState extends State<BookImportDialog>
       if (path == null || !mounted) return;
       final String ext = p.extension(path).toLowerCase().replaceFirst('.', '');
       if (!_subtitleExtensions.contains(ext)) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.import_unsupported_file_format(ext: '.$ext'),
           severity: ToastSeverity.error,
         );
@@ -699,14 +699,14 @@ class _BookImportDialogState extends State<BookImportDialog>
 
   Widget _coverRow() {
     final String? effectiveCover = _coverPath ?? _audioCoverPath;
-    return HibikiFilePickerRow(
+    return FushiFilePickerRow(
       title: t.srt_import_pick_cover,
       subtitle: effectiveCover == null ? null : p.basename(effectiveCover),
       icon: Icons.image_outlined,
       onTap: _pickCover,
       actions: [
         if (effectiveCover != null)
-          HibikiIconButton(
+          FushiIconButton(
             icon: Icons.close,
             tooltip: t.dialog_clear,
             isWideTapArea: true,
@@ -715,7 +715,7 @@ class _BookImportDialogState extends State<BookImportDialog>
               _audioCoverPath = null;
             }),
           ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.image_outlined,
           tooltip: t.srt_import_pick_cover,
           isWideTapArea: true,
@@ -802,7 +802,7 @@ class _BookImportDialogState extends State<BookImportDialog>
 
   Future<void> _doImport() async {
     if (_epubPath == null && !_hasSubtitles) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.srt_import_missing_input,
         severity: ToastSeverity.error,
       );
@@ -815,7 +815,7 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (epubPath != null && await _handoffIfManga(epubPath)) return;
     if (!mounted) return;
     if (_epubPath != null && !_hasSubtitles && _audioPaths.isNotEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.srt_import_audio_needs_subtitle,
         severity: ToastSeverity.error,
       );
@@ -823,7 +823,7 @@ class _BookImportDialogState extends State<BookImportDialog>
     }
     final String title = _titleCtrl.text.trim();
     if (title.isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.srt_import_missing_title,
         severity: ToastSeverity.error,
       );
@@ -838,7 +838,7 @@ class _BookImportDialogState extends State<BookImportDialog>
       isCancelled: (Object e) => e is DuplicateImportCancelledException,
       onCancelled: () {
         if (mounted) {
-          HibikiToast.show(
+          FushiToast.show(
             msg: t.book_import_duplicate_cancelled,
             severity: ToastSeverity.info,
           );
@@ -868,7 +868,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           final String msg = tail == null
               ? t.srt_import_success
               : '${t.srt_import_success} · $tail';
-          HibikiToast.show(msg: msg, severity: ToastSeverity.success);
+          FushiToast.show(msg: msg, severity: ToastSeverity.success);
           Navigator.pop(context, true);
         }
       },
@@ -1132,7 +1132,7 @@ class BookImportDialogFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     return ImportDialogFrame(
       leadingIcon: Icons.library_add_outlined,

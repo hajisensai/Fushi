@@ -33,7 +33,7 @@ void main() {
     File(p.join(books, 'B1', 'text', 'ch0.html'))
       ..createSync(recursive: true)
       ..writeAsStringSync('<html>hi</html>');
-    final HibikiDatabase src = HibikiDatabase(dbDir);
+    final FushiDatabase src = FushiDatabase(dbDir);
     await src.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: 'B1',
       title: 'B1',
@@ -61,7 +61,7 @@ void main() {
     return zip;
   }
 
-  Future<int> countRows(HibikiDatabase db, String table) async =>
+  Future<int> countRows(FushiDatabase db, String table) async =>
       (await db.customSelect('SELECT COUNT(*) c FROM $table').getSingle())
           .data['c'] as int;
 
@@ -84,7 +84,7 @@ void main() {
       booksRootDirectory: p.join(curRoot.path, 'documents', 'hoshi_books'),
     );
 
-    final HibikiDatabase cur = HibikiDatabase(curDbDir);
+    final FushiDatabase cur = FushiDatabase(curDbDir);
     addTearDown(cur.close);
     expect(await countRows(cur, 'epub_books'), 1, reason: 'books still merge');
     expect(await countRows(cur, 'reading_statistics'), 0,
@@ -108,7 +108,7 @@ void main() {
       booksRootDirectory: p.join(curRoot.path, 'documents', 'hoshi_books'),
     );
 
-    final HibikiDatabase cur = HibikiDatabase(curDbDir);
+    final FushiDatabase cur = FushiDatabase(curDbDir);
     addTearDown(cur.close);
     expect(await countRows(cur, 'epub_books'), 0,
         reason: 'books unticked → not merged');
@@ -138,7 +138,7 @@ void main() {
       booksRootDirectory: p.join(curRoot.path, 'documents', 'hoshi_books'),
     );
 
-    final HibikiDatabase cur = HibikiDatabase(curDbDir);
+    final FushiDatabase cur = FushiDatabase(curDbDir);
     addTearDown(cur.close);
     expect(await countRows(cur, 'epub_books'), 1);
     expect(await countRows(cur, 'reading_statistics'), 1);

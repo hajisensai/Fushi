@@ -6,7 +6,7 @@ CupertinoThemeData hibikiCupertinoTheme(ColorScheme scheme,
     {String? fontFamily}) {
   final brightness = scheme.brightness;
   // Cupertino (iOS) chrome text follows the app's editorial type scale
-  // ([HibikiTypeScale]) instead of hardcoded iOS point sizes (was 17/17/34,
+  // ([FushiTypeScale]) instead of hardcoded iOS point sizes (was 17/17/34,
   // weights w400/w600/w700), so iOS matches the Material surfaces. Sizes/weights
   // come from the scale; letterSpacing comes from it too (0 for CJK safety),
   // dropping the old iOS Latin tracking (-0.41/0.41) that spaced CJK glyphs out.
@@ -21,9 +21,9 @@ CupertinoThemeData hibikiCupertinoTheme(ColorScheme scheme,
     scaffoldBackgroundColor: scheme.surface,
     textTheme: CupertinoTextThemeData(
       primaryColor: scheme.primary,
-      textStyle: HibikiTypeScale.bodyLarge.applyTo(base),
-      navTitleTextStyle: HibikiTypeScale.titleLarge.applyTo(base),
-      navLargeTitleTextStyle: HibikiTypeScale.displaySmall
+      textStyle: FushiTypeScale.bodyLarge.applyTo(base),
+      navTitleTextStyle: FushiTypeScale.titleLarge.applyTo(base),
+      navLargeTitleTextStyle: FushiTypeScale.displaySmall
           .applyTo(base)
           .copyWith(fontWeight: FontWeight.w600),
     ),

@@ -22,7 +22,7 @@ import 'package:fushi/utils.dart';
 import '../helpers/test_platform_services.dart';
 
 /// 巡检 PR-1 焦点接线守卫：
-/// 1. 游戏卡走 HibikiCard 注册 `game-card-<id>` 焦点站点，可被 requestById 聚焦、
+/// 1. 游戏卡走 FushiCard 注册 `game-card-<id>` 焦点站点，可被 requestById 聚焦、
 ///    Enter（ActivateIntent）触发启动路径（G1 根因修复回归守卫）；
 /// 2. texthooker 线程选择器换共享手柄可进下拉后，`game-text-thread-selector`
 ///    focusId 在焦点系统注册（G3）；四页共用 GameSectionTabs 后分段条的单一
@@ -37,7 +37,7 @@ void main() {
 
   testWidgets('game card registers focus target and Enter activates launch',
       (WidgetTester tester) async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(),
     );
     addTearDown(db.close);
@@ -66,7 +66,7 @@ void main() {
     ]);
 
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    HibikiToast.navigatorKey = navKey;
+    FushiToast.navigatorKey = navKey;
     await tester.pumpWidget(
       ProviderScope(
         overrides: <Override>[
@@ -75,7 +75,7 @@ void main() {
         child: TranslationProvider(
           child: MaterialApp(
             navigatorKey: navKey,
-            home: const HibikiFocusRoot(child: GamesLibraryPage()),
+            home: const FushiFocusRoot(child: GamesLibraryPage()),
           ),
         ),
       ),
@@ -84,11 +84,11 @@ void main() {
 
     expect(find.text('テスト永遠'), findsOneWidget);
 
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(GamesLibraryPage)),
     );
     expect(
-      controller.requestById(const HibikiFocusId('game-card-g1')),
+      controller.requestById(const FushiFocusId('game-card-g1')),
       isTrue,
       reason: '游戏卡必须注册 game-card-<id> 焦点站点（手柄/键盘可选中）',
     );
@@ -115,7 +115,7 @@ void main() {
       (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(1200, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(),
     );
     addTearDown(db.close);
@@ -149,12 +149,12 @@ void main() {
         startMs: now.millisecondsSinceEpoch - 600000,
         endMs: now.millisecondsSinceEpoch,
         durationSeconds: 600,
-        dateKey: HibikiTimeFormat.dayKey(now),
+        dateKey: FushiTimeFormat.dayKey(now),
       ),
     );
 
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    HibikiToast.navigatorKey = navKey;
+    FushiToast.navigatorKey = navKey;
     await tester.pumpWidget(
       ProviderScope(
         overrides: <Override>[
@@ -164,7 +164,7 @@ void main() {
           child: MaterialApp(
             navigatorKey: navKey,
             home: Scaffold(
-              body: HibikiFocusRoot(
+              body: FushiFocusRoot(
                 child: GalgameHomePage(
                   onShowLibrary: () {},
                   onShowMonitor: () {},
@@ -178,11 +178,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(GalgameHomePage)),
     );
     expect(
-      controller.requestById(const HibikiFocusId('game-recent-g1')),
+      controller.requestById(const FushiFocusId('game-recent-g1')),
       isTrue,
       reason: '最近玩过缩略图必须注册 game-recent-<id> 焦点站点（TODO-1946 焦点缺口）',
     );
@@ -220,10 +220,10 @@ void main() {
         child: TranslationProvider(
           child: MaterialApp(
             // 线程选择器的焦点注册走 polled 平台（桌面）分支——Android 用引擎
-            // 原生键事件的 stock DropdownMenu，不经 HibikiFocusRegistration。
+            // 原生键事件的 stock DropdownMenu，不经 FushiFocusRegistration。
             theme: ThemeData(platform: TargetPlatform.windows),
             home: Scaffold(
-              body: HibikiFocusRoot(
+              body: FushiFocusRoot(
                 child: TexthookerPage(
                   embedded: true,
                   onShowLibrary: () {},
@@ -237,17 +237,17 @@ void main() {
     );
     await tester.pump();
 
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(TexthookerPage)),
     );
     expect(
-      controller.requestById(const HibikiFocusId('game-text-thread-selector')),
+      controller.requestById(const FushiFocusId('game-text-thread-selector')),
       isTrue,
       reason: '线程选择器换 GamepadMenuDropdown 后必须注册 focusId',
     );
     const String id = 'game-capture-tab-sections';
     expect(
-      controller.requestById(const HibikiFocusId(id)),
+      controller.requestById(const FushiFocusId(id)),
       isTrue,
       reason: 'GameSectionTabs 收敛后 $id 必须保持注册',
     );

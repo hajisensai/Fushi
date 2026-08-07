@@ -12,7 +12,7 @@ class MediaHistoryRepository extends ChangeNotifier {
     this.stashKey = 'stash',
   });
 
-  final HibikiDatabase _db;
+  final FushiDatabase _db;
   final int maximumSearchHistoryItems;
   final int maximumMediaHistoryItems;
   final String stashKey;

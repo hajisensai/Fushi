@@ -26,21 +26,21 @@ part 'database.g.dart';
 /// 降级保护：当用户用旧版应用打开由新版创建的库时，绝不 DROP/迁移/重建，而是抛出此
 /// 异常让打开失败、事务回滚、库文件原样保留，并由 UI 提示用户更新应用。这是修复
 /// 「旧 app 启动把用户数据库降级破坏」整类事故的根因拦截。
-class HibikiDatabaseDowngradeException implements Exception {
+class FushiDatabaseDowngradeException implements Exception {
   /// The schema version stored in the on-disk DB file (created by a newer app).
   final int dbVersion;
 
   /// The schema version this (older) build of the code knows about.
   final int appSchemaVersion;
 
-  const HibikiDatabaseDowngradeException({
+  const FushiDatabaseDowngradeException({
     required this.dbVersion,
     required this.appSchemaVersion,
   });
 
   @override
   String toString() =>
-      'HibikiDatabaseDowngradeException: database was created by a newer '
+      'FushiDatabaseDowngradeException: database was created by a newer '
       'version of Hibiki (schema v$dbVersion); this app only understands '
       'schema v$appSchemaVersion. Opening was refused to protect your data.';
 }
@@ -48,27 +48,27 @@ class HibikiDatabaseDowngradeException implements Exception {
 /// Thrown when the database could NOT be opened even after the full WAL/IOERR
 /// recovery ladder (checkpoint → DELETE journal → physical sidecar rebuild)
 /// ran — i.e. the main `hibiki.db` file itself is corrupt, not just a stale
-/// `-wal` / `-shm` sidecar. Mirrors [HibikiDatabaseDowngradeException]: it is a
+/// `-wal` / `-shm` sidecar. Mirrors [FushiDatabaseDowngradeException]: it is a
 /// dedicated, app-recognisable terminal type so the app layer can show an
 /// actionable "import a backup / clear data" notice INSTEAD of looping the
 /// generic init-error Retry button forever (TODO-905 root cause: a stale
 /// sidecar made `PRAGMA journal_mode=WAL` raise SqliteException(1546), and Retry
 /// re-ran open against the same untouched bad sidecar = infinite "can't open").
-class HibikiDatabaseUnrecoverableException implements Exception {
+class FushiDatabaseUnrecoverableException implements Exception {
   /// Absolute path of the database file that could not be recovered.
   final String dbPath;
 
   /// The underlying error from the final open attempt (kept for diagnostics).
   final Object cause;
 
-  const HibikiDatabaseUnrecoverableException({
+  const FushiDatabaseUnrecoverableException({
     required this.dbPath,
     required this.cause,
   });
 
   @override
   String toString() =>
-      'HibikiDatabaseUnrecoverableException: the database file at "$dbPath" '
+      'FushiDatabaseUnrecoverableException: the database file at "$dbPath" '
       'could not be opened even after WAL/sidecar recovery. It is likely '
       'corrupt and must be restored from a backup or cleared. Cause: $cause';
 }
@@ -140,7 +140,7 @@ bool _mainDbHeaderIsValid(String path) {
 /// separate `:popup` process passes false and backs off (throws) so two
 /// processes never race to delete the same sidecar (TODO-905 D3).
 ///
-/// Throws [HibikiDatabaseUnrecoverableException] when the main DB file itself is
+/// Throws [FushiDatabaseUnrecoverableException] when the main DB file itself is
 /// corrupt (recovery exhausted) so the app layer can stop the Retry loop.
 Future<QueryExecutor> _openWithRecovery(
   File dbFile, {
@@ -176,7 +176,7 @@ Future<QueryExecutor> _openWithRecovery(
     // file. Otherwise it is a corrupt/missing main db → terminal, do NOT delete
     // any sidecar.
     if (!_mainDbHeaderIsValid(path)) {
-      throw HibikiDatabaseUnrecoverableException(dbPath: path, cause: e);
+      throw FushiDatabaseUnrecoverableException(dbPath: path, cause: e);
     }
     debugPrint('[hibiki-db] sidecar open error on "$path" '
         '(main db healthy → recovering): $e\n$stack');
@@ -209,7 +209,7 @@ Future<QueryExecutor> _openWithRecovery(
   //    connection (sidecar too poisoned). Only the MAIN process is allowed to
   //    delete; the :popup process backs off so the two never race.
   if (!allowSidecarDelete) {
-    throw HibikiDatabaseUnrecoverableException(
+    throw FushiDatabaseUnrecoverableException(
       dbPath: path,
       cause: 'sidecar open error in a non-main (:popup) process; backing off '
           'so the main process performs sidecar recovery first',
@@ -225,7 +225,7 @@ Future<QueryExecutor> _openWithRecovery(
     //    stop the Retry loop and offer restore/clear instead of looping.
     debugPrint(
         '[hibiki-db] Layer 2 rebuild failed, DB unrecoverable: $e\n$stack');
-    throw HibikiDatabaseUnrecoverableException(dbPath: path, cause: e);
+    throw FushiDatabaseUnrecoverableException(dbPath: path, cause: e);
   }
 }
 
@@ -380,7 +380,7 @@ _MergedTagState _mergeTagClocks(
   MediaCollections,
   MediaCollectionItems,
   CollectionMemberTombstones,
-  HibikiPairedPeers,
+  FushiPairedPeers,
   BookTombstones,
   LookupMiningCounters,
   StatisticsTombstones,
@@ -407,21 +407,21 @@ _MergedTagState _mergeTagClocks(
   CollectionRelations,
   MediaImages,
 ])
-class HibikiDatabase extends _$HibikiDatabase {
+class FushiDatabase extends _$FushiDatabase {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
   /// the default `true` (it may physically delete a poisoned `-wal`/`-shm`),
   /// while the separate `:popup` process passes `false` so it backs off on an
   /// IOERR instead of racing the main process to delete the same sidecar.
-  HibikiDatabase(String dbDirectory, {bool isMainProcess = true})
+  FushiDatabase(String dbDirectory, {bool isMainProcess = true})
       : super(_openDb(dbDirectory, isMainProcess: isMainProcess));
 
   /// Opens a specific `.db` FILE (not a directory). Backup MERGE import
   /// (TODO-888) uses this to migrate an extracted backup DB to the current
   /// schema before merging it into the live DB.
-  HibikiDatabase.atFile(String dbFilePath, {bool isMainProcess = true})
+  FushiDatabase.atFile(String dbFilePath, {bool isMainProcess = true})
       : super(_openDbFile(dbFilePath, isMainProcess: isMainProcess));
 
-  HibikiDatabase.forTesting(super.e);
+  FushiDatabase.forTesting(super.e);
 
   @override
   int get schemaVersion => 68;
@@ -441,7 +441,7 @@ class HibikiDatabase extends _$HibikiDatabase {
             // drop / migrate / rebuild in this branch — a previous build did
             // exactly that and wiped users' libraries twice. The app layer
             // catches this exception and shows an "update your app" notice.
-            throw HibikiDatabaseDowngradeException(
+            throw FushiDatabaseDowngradeException(
               dbVersion: from,
               appSchemaVersion: to,
             );
@@ -1437,7 +1437,7 @@ class HibikiDatabase extends _$HibikiDatabase {
           // untouched.
           final int? before = details.versionBefore;
           if (before != null && before > schemaVersion) {
-            throw HibikiDatabaseDowngradeException(
+            throw FushiDatabaseDowngradeException(
               dbVersion: before,
               appSchemaVersion: schemaVersion,
             );
@@ -3263,7 +3263,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   // 绝不写日志、绝不进 sync/backup 明文导出。本阶段仅提供表 + 方法，不接线 auth。
 
   /// 全部已配对对端，按 pairedAtMs 升序（配对先后稳定排序）、id 升序兜底同戳。
-  Future<List<HibikiPairedPeerRow>> getPairedPeers() =>
+  Future<List<FushiPairedPeerRow>> getPairedPeers() =>
       (select(hibikiPairedPeers)
             ..orderBy([
               (t) => OrderingTerm(expression: t.pairedAtMs),
@@ -3275,7 +3275,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   /// [peerId]（非主键 id）：不指定时 drift 默认按主键 id 冲突，而 upsert 契约是
   /// 按 peerId 认定同一设备（id 自增每次不同），会误撞 peerId UNIQUE 抛错。
   /// 重复配对同一设备只更新其 token / deviceName / lastSeenIp，不新增行。
-  Future<void> upsertPairedPeer(HibikiPairedPeersCompanion peer) =>
+  Future<void> upsertPairedPeer(FushiPairedPeersCompanion peer) =>
       into(hibikiPairedPeers).insert(peer,
           onConflict:
               DoUpdate((_) => peer, target: [hibikiPairedPeers.peerId]));

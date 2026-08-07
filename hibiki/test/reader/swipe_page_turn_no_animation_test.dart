@@ -14,7 +14,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 /// 回弹。根因修复 = 分页模式 body `touch-action: none`，触摸不再被翻译成原生滚动，
 /// 翻页只由 onSwipe 检测后瞬时跳页。连续模式本质就是滚动阅读，保留原生滚动。
 void main() {
-  Future<ReaderSettings> defaultSettings(HibikiDatabase db) async {
+  Future<ReaderSettings> defaultSettings(FushiDatabase db) async {
     final ReaderSettings settings = ReaderSettings(db);
     await settings.refreshFromDb();
     return settings;
@@ -22,8 +22,8 @@ void main() {
 
   test('paginated layout disables native touch panning (touch-action: none)',
       () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = await defaultSettings(db);
 
@@ -33,8 +33,8 @@ void main() {
   });
 
   test('paginated page-turn CSS has no scroll/transition animation', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = await defaultSettings(db);
 
@@ -47,8 +47,8 @@ void main() {
 
   test('continuous mode keeps native scrolling (no touch-action: none)',
       () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = await defaultSettings(db);
     await settings.setViewMode('continuous');

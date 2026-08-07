@@ -100,22 +100,22 @@ void main() {
   // device name (TODO-1356). Exercises the real /api/pair/v2 handler.
   group('host does not store a "localhost" peer name', () {
     late Directory tempDir;
-    late HibikiSyncServer server;
-    late List<HibikiPairedPeerRegistration> registrations;
+    late FushiSyncServer server;
+    late List<FushiPairedPeerRegistration> registrations;
 
     Future<void> startServer() async {
       tempDir =
           Directory.systemTemp.createTempSync('hibiki_peer_name_guard_test');
-      registrations = <HibikiPairedPeerRegistration>[];
-      server = HibikiSyncServer(
+      registrations = <FushiPairedPeerRegistration>[];
+      server = FushiSyncServer(
         syncDataDir: tempDir.path,
         port: 0,
         token: 'shared-token',
         allowLan: true,
       )
-        ..onPairRequest = ((HibikiPairRequest _) async => true)
+        ..onPairRequest = ((FushiPairRequest _) async => true)
         ..lanRequiresPinProvider = (() async => false)
-        ..onPeerPaired = ((HibikiPairedPeerRegistration reg) async {
+        ..onPeerPaired = ((FushiPairedPeerRegistration reg) async {
           registrations.add(reg);
         })
         ..pairedPeerTokensProvider = (() async => const <String>{});

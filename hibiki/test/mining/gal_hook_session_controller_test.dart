@@ -1232,8 +1232,8 @@ void main() {
   });
 
   test('游戏活动落库：hook 台词只把字符数写入 activity_events（game 类别，不写时长）', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
@@ -1317,8 +1317,8 @@ void main() {
   });
 
   test('游戏库启动活动统一写 galgames.id 与当前显示名，不再把 exePath 当 mediaKey', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
@@ -1391,8 +1391,8 @@ void main() {
   });
 
   test('BUG-1085：重复台词/标点不计入字数，引擎计数后外部通道行不再双计', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
@@ -1480,8 +1480,8 @@ void main() {
   });
 
   test('BUG-1085：引擎无文本时外部通道是唯一计数源，照常计数', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();

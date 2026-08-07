@@ -12,8 +12,8 @@ import 'package:sqlite3/sqlite3.dart';
 
 import '../helpers/test_platform_services.dart';
 
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
@@ -71,7 +71,7 @@ void main() {
     }
   });
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late PreferencesRepository prefs;
   late Directory storeDir;
   late AppModel appModel;

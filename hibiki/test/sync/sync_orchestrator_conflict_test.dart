@@ -13,8 +13,8 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _testDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 /// Minimal in-memory backend driving the per-book three-way decision in the
 /// orchestrator's [SyncManager] sweep. Only the remote progress file (its name
@@ -194,7 +194,7 @@ SyncFileRef _progressFile(int timestampMs, double fraction) => SyncFileRef(
       name: progressFileName(timestampMs, fraction),
     );
 
-Future<EpubBookRow> _seedBook(HibikiDatabase db, String title) async {
+Future<EpubBookRow> _seedBook(FushiDatabase db, String title) async {
   await db.insertEpubBook(EpubBooksCompanion.insert(
     bookKey: title,
     title: title,
@@ -208,7 +208,7 @@ Future<EpubBookRow> _seedBook(HibikiDatabase db, String title) async {
 }
 
 Future<void> _seedPosition(
-  HibikiDatabase db,
+  FushiDatabase db,
   String bookKey, {
   required int updatedAt,
   required double fraction,
@@ -226,7 +226,7 @@ Future<void> _seedPosition(
 /// gated off, so [SyncOrchestrator.run] only touches `findOrCreateRootFolder`
 /// + `syncAllBooks` (the conflict source).
 SyncOrchestrator _orchestrator(
-  HibikiDatabase db,
+  FushiDatabase db,
   SyncBackend backend,
   Directory work,
 ) =>
@@ -258,7 +258,7 @@ void main() {
 
   test('both sides diverged → conflict collected into report, no import',
       () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
 
     final EpubBookRow book = await _seedBook(db, title);
@@ -302,7 +302,7 @@ void main() {
 
   test('non-conflict book (only remote diverged) → no conflict collected',
       () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
 
     final EpubBookRow book = await _seedBook(db, title);

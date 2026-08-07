@@ -145,7 +145,7 @@ class _CollectionItem {
   final int? minedId;
 
   /// 收藏词的振假名读音（[_CollectionType.word] 专用）。删除按 (expression, reading,
-  /// sourceType) 复合唯一键匹配 [HibikiDatabase.removeFavoriteWord]，故读音/来源都要留存。
+  /// sourceType) 复合唯一键匹配 [FushiDatabase.removeFavoriteWord]，故读音/来源都要留存。
   /// 这里 [text] 复用为 expression（词形），[chapterLabel] 复用为 glossary（释义）。
   final String? wordReading;
 
@@ -597,7 +597,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   Future<void> _playItemAudio(_CollectionItem item) async {
     final String? bookKey = item.bookKey;
     if (bookKey == null || bookKey.isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.srt_audio_unresolved,
         severity: ToastSeverity.error,
       );
@@ -619,7 +619,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
     final List<File>? audioFiles = _audioFileMap[bookKey];
     if (audioFiles == null || audioFiles.isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.srt_audio_unresolved,
         severity: ToastSeverity.error,
       );
@@ -628,7 +628,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
     final List<AudioCue>? cues = _cueMap[bookKey];
     if (cues == null || cues.isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.srt_audio_unresolved,
         severity: ToastSeverity.error,
       );
@@ -643,14 +643,14 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       text: item.text,
     );
     if (range == null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.srt_audio_unresolved,
         severity: ToastSeverity.error,
       );
       return;
     }
     if (range.audioFileIndex < 0 || range.audioFileIndex >= audioFiles.length) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.srt_audio_unresolved,
         severity: ToastSeverity.error,
       );
@@ -674,7 +674,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   ) async {
     final VideoBookRow? row = _videoRowMap[bookUid];
     if (row == null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.srt_audio_unresolved,
         severity: ToastSeverity.error,
       );
@@ -688,7 +688,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       favoriteDurationMs: item.normCharLength,
     );
     if (clip == null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.srt_audio_unresolved,
         severity: ToastSeverity.error,
       );
@@ -730,7 +730,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       if (result != null) {
         await TtsChannel.instance.playFile(result);
       } else {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.audio_clip_failed,
           severity: ToastSeverity.error,
         );
@@ -753,7 +753,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       await db.removeMinedSentence(minedId);
     } else if (item.type == _CollectionType.word) {
       // BUG-462：收藏词按 (expression, reading, sourceType) 复合唯一键删除（与
-      // [HibikiDatabase.addFavoriteWord] 的 uniqueKeys 对齐）。
+      // [FushiDatabase.addFavoriteWord] 的 uniqueKeys 对齐）。
       final String? expression = item.text;
       if (expression == null || expression.isEmpty) return;
       await db.removeFavoriteWord(
@@ -1183,12 +1183,12 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return HibikiPageScaffold(
+    return FushiPageScaffold(
       title: t.collections,
       actions: <Widget>[
         // TODO-829: 仅当存在收藏句条目时显示「导出/分享」。
         if (!_loading && _hasExportableItems)
-          HibikiIconButton(
+          FushiIconButton(
             tooltip: t.dialog_export,
             // 全平台统一 Material 分享图标（ios_share 是 iOS 专属视觉，巡检 PR-3）。
             icon: Icons.share_outlined,
@@ -1197,7 +1197,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         // 只要列表非空就显示「清空」；点开可选范围面板（书签/收藏句/制卡句/收藏词），
         // 按勾选批量清空。取代旧的「仅制卡句才显示、只清制卡」特例。
         if (!_loading && _items.isNotEmpty)
-          HibikiIconButton(
+          FushiIconButton(
             tooltip: t.dialog_clear,
             icon: Icons.delete_sweep_outlined,
             onTap: _openClearSheet,
@@ -1211,7 +1211,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
                   adaptiveIndicator(context: context),
-                  SizedBox(height: HibikiDesignTokens.of(context).spacing.gap),
+                  SizedBox(height: FushiDesignTokens.of(context).spacing.gap),
                   Text(
                     t.collection_loading_hint,
                     style: textTheme.bodyMedium?.copyWith(
@@ -1223,7 +1223,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             )
           : _items.isEmpty
               ? Center(
-                  child: HibikiPlaceholderMessage(
+                  child: FushiPlaceholderMessage(
                     icon: Icons.collections_bookmark_outlined,
                     message: t.no_collections,
                   ),
@@ -1241,7 +1241,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   /// 挤跑了」。根因=旧实现把元数据与日期拼成一个单行 [Text] 共用同一截断预算，日期排
   /// 末尾被省略号吃掉。这里拆成 [Row]：[metadata] 走 [Flexible]+[TextOverflow.ellipsis]
   /// 优先收缩让位，日期是定宽尾随段（不进 Flexible，故永不被裁），两段间隔仍用 ' · '。
-  /// 无 [metadata] 时只渲染日期。整行 [TextStyle] 由 [HibikiListItem] 的
+  /// 无 [metadata] 时只渲染日期。整行 [TextStyle] 由 [FushiListItem] 的
   /// [DefaultTextStyle]（listSubtitle）注入，故此处不重复指定样式。
   Widget _buildSubtitle({
     required String? metadata,
@@ -1252,7 +1252,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     if (!hasMetadata) {
       return Text(date, maxLines: 1, overflow: TextOverflow.ellipsis);
     }
-    // mainAxisSize 用默认 max：撑满 [HibikiListItem] 给副标题的整行宽度，[Flexible]
+    // mainAxisSize 用默认 max：撑满 [FushiListItem] 给副标题的整行宽度，[Flexible]
     // 才会收缩让位（min 时 Row 取子项固有宽 → 溢出，日期反而被挤出）。日期不进
     // [Flexible]，作为定宽尾随段永远显示。
     return Row(
@@ -1272,7 +1272,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   }
 
   Widget _buildItem(_CollectionItem item) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool isMined = item.type == _CollectionType.mined;
     final bool isWord = item.type == _CollectionType.word;
     final IconData icon = isMined
@@ -1361,7 +1361,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           // touch long-press does. The menu is a centered modal dialog, so the
           // click position is irrelevant -- no positioning needed.
           onSecondaryTap: () => _showItemDialog(item),
-          child: HibikiListItem(
+          child: FushiListItem(
             leading: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
@@ -1401,7 +1401,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           ),
                         )
-                      : HibikiIconButton(
+                      : FushiIconButton(
                           tooltip: t.dialog_play,
                           icon: Icons.volume_up_outlined,
                           size: 18,
@@ -1409,7 +1409,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                           onTap: () => _playItemAudio(item),
                         ),
                 if (item.text != null)
-                  HibikiIconButton(
+                  FushiIconButton(
                     tooltip: t.copy,
                     icon: Icons.copy_outlined,
                     size: 18,
@@ -1463,12 +1463,12 @@ class CollectionItemDialogFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 440,
       maxHeightFactor: 0.78,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           tokens.spacing.card,
@@ -1526,13 +1526,13 @@ class CollectionDeleteDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.72,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           tokens.spacing.card,
@@ -1613,8 +1613,8 @@ class _ExportChoice {
 
 /// 导出面板（TODO-829 + 913 MD3 + 914 可勾选去重）：勾选制卡句/收藏句（默认全勾）
 /// + 去重开关（默认开）+ 可选收藏词 + 选格式（默认 Markdown）→ 确认返回 [_ExportChoice]。
-/// 外壳走 [HibikiModalSheetFrame] + [HibikiDesignTokens]。焦点驱动可达：勾选项与去重
-/// 均为共享 [HibikiListItem]（leading [Checkbox] / trailing [Switch]，整行 Tab → Enter
+/// 外壳走 [FushiModalSheetFrame] + [FushiDesignTokens]。焦点驱动可达：勾选项与去重
+/// 均为共享 [FushiListItem]（leading [Checkbox] / trailing [Switch]，整行 Tab → Enter
 /// 翻转），格式是 [ChoiceChip]，确认是 [FilledButton]（勾选集空且未勾收藏词时
 /// `onPressed: null` 灰掉）。
 class _ExportSheet extends StatefulWidget {
@@ -1669,7 +1669,7 @@ class _ExportSheetState extends State<_ExportSheet> {
     Navigator.pop(context, choice);
   }
 
-  /// 导出范围复选行（MD3）：共享 [HibikiListItem] + 裸 [Checkbox] 为 leading，
+  /// 导出范围复选行（MD3）：共享 [FushiListItem] + 裸 [Checkbox] 为 leading，
   /// 整行 `onTap` 翻转勾选——等价旧 [CheckboxListTile] 的勾选/回调/标题，外观
   /// 走设计令牌而非框架默认行。焦点驱动可达（Tab → Enter）。
   Widget _exportCheckRow({
@@ -1677,7 +1677,7 @@ class _ExportSheetState extends State<_ExportSheet> {
     required bool checked,
     required ValueChanged<bool> onChanged,
   }) {
-    return HibikiListItem(
+    return FushiListItem(
       selected: checked,
       onTap: () => onChanged(!checked),
       leading: Checkbox(
@@ -1688,14 +1688,14 @@ class _ExportSheetState extends State<_ExportSheet> {
     );
   }
 
-  /// 去重开关行（MD3）：共享 [HibikiListItem] + 裸 [Switch] 为 trailing，整行
+  /// 去重开关行（MD3）：共享 [FushiListItem] + 裸 [Switch] 为 trailing，整行
   /// `onTap` 翻转——等价旧 [SwitchListTile] 的开关/回调/标题。
   Widget _exportSwitchRow({
     required String label,
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
-    return HibikiListItem(
+    return FushiListItem(
       selected: value,
       onTap: () => onChanged(!value),
       title: Text(label),
@@ -1708,12 +1708,12 @@ class _ExportSheetState extends State<_ExportSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final EdgeInsets sectionPad = EdgeInsets.symmetric(
       horizontal: tokens.spacing.card,
     );
 
-    return HibikiModalSheetFrame(
+    return FushiModalSheetFrame(
       title: t.dialog_export,
       maxHeightFactor: 0.82,
       scrollable: true,
@@ -1851,7 +1851,7 @@ class _ExportSheetState extends State<_ExportSheet> {
 /// 当前收藏夹里真实存在的类型（书签/收藏句/制卡句/收藏词），默认**全不勾**（销毁操作
 /// 需用户显式勾选，杜绝一进面板就误清全部），底部「清空」按钮红色破坏性样式、未勾时
 /// `onPressed: null` 灰掉。确认返回勾选的 [_CollectionType] 集合（取消返回 null）。
-/// 焦点驱动可达：勾选项是共享 [HibikiListItem]（leading [Checkbox]，整行 Tab → Enter
+/// 焦点驱动可达：勾选项是共享 [FushiListItem]（leading [Checkbox]，整行 Tab → Enter
 /// 翻转），确认是 [FilledButton]。
 class _ClearSheet extends StatefulWidget {
   const _ClearSheet({required this.availableTypes});
@@ -1890,10 +1890,10 @@ class _ClearSheetState extends State<_ClearSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
 
-    return HibikiModalSheetFrame(
+    return FushiModalSheetFrame(
       title: t.dialog_clear,
       maxHeightFactor: 0.72,
       scrollable: true,
@@ -1923,7 +1923,7 @@ class _ClearSheetState extends State<_ClearSheet> {
             ),
           ),
           for (final _CollectionType type in widget.availableTypes)
-            HibikiListItem(
+            FushiListItem(
               selected: _selected.contains(type),
               onTap: () => _toggle(type, !_selected.contains(type)),
               leading: Checkbox(

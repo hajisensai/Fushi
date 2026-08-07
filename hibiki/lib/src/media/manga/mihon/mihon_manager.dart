@@ -35,7 +35,7 @@ class MihonManager extends ChangeNotifier {
     }
   }
 
-  final HibikiDatabase database;
+  final FushiDatabase database;
   final Directory rootDirectory;
   final MihonRuntime runtime;
   final MihonExtensionStoreClient _storeClient;

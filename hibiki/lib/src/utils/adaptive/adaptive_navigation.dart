@@ -75,7 +75,7 @@ Widget adaptiveBottomBar({
   // Material: each destination is its OWN gamepad/keyboard focus target, so the
   // app focus ring hugs the single selected item instead of wrapping the whole
   // bar. Directional D-pad steps between adjacent tiles through the normal
-  // HibikiFocus geometry; A/Enter (or a tap) selects.
+  // FushiFocus geometry; A/Enter (or a tap) selects.
   return _MaterialNavCluster(
     axis: Axis.horizontal,
     currentIndex: currentIndex,
@@ -121,7 +121,7 @@ class _MaterialNavCluster extends StatelessWidget {
     final List<Widget> tiles = <Widget>[
       for (int i = 0; i < items.length; i++)
         _NavFocusCell(
-          id: HibikiFocusId('$idPrefix-$i'),
+          id: FushiFocusId('$idPrefix-$i'),
           item: items[i],
           selected: i == currentIndex,
           horizontal: horizontal,
@@ -195,10 +195,10 @@ class _MaterialNavCluster extends StatelessWidget {
 }
 
 /// One Material navigation destination wrapped as an independent gamepad/keyboard
-/// focus target. The [HibikiFocusTarget] hugs the icon+label content so the app
+/// focus target. The [FushiFocusTarget] hugs the icon+label content so the app
 /// focus ring frames just this item. A/Enter resolve to [ActivateIntent] (mapped
 /// here to [onSelect]); a mouse/touch tap calls it directly. The [InkWell] does
-/// not request focus — the focus node belongs to the [HibikiFocusTarget].
+/// not request focus — the focus node belongs to the [FushiFocusTarget].
 class _NavFocusCell extends StatelessWidget {
   const _NavFocusCell({
     required this.id,
@@ -208,7 +208,7 @@ class _NavFocusCell extends StatelessWidget {
     required this.onSelect,
   });
 
-  final HibikiFocusId id;
+  final FushiFocusId id;
   final AdaptiveNavItem item;
   final bool selected;
   final bool horizontal;
@@ -216,7 +216,7 @@ class _NavFocusCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Widget tile = _HibikiNavTile(item: item, selected: selected);
+    final Widget tile = _FushiNavTile(item: item, selected: selected);
     // ActivateIntent must sit ABOVE the focus node: the gamepad/keyboard path
     // dispatches it at the primary-focus context and walks UP the Actions chain.
     return Actions(
@@ -231,14 +231,14 @@ class _NavFocusCell extends StatelessWidget {
       child: InkWell(
         onTap: onSelect,
         canRequestFocus: false,
-        borderRadius: HibikiDesignTokens.of(context).radii.controlRadius,
+        borderRadius: FushiDesignTokens.of(context).radii.controlRadius,
         child: Padding(
           padding: EdgeInsets.symmetric(
             vertical: horizontal ? 0 : 4,
             horizontal: horizontal ? 4 : 0,
           ),
           child: Center(
-            child: HibikiFocusTarget(id: id, child: tile),
+            child: FushiFocusTarget(id: id, child: tile),
           ),
         ),
       ),
@@ -248,8 +248,8 @@ class _NavFocusCell extends StatelessWidget {
 
 /// Pure MD3 destination visual: an indicator pill behind the icon (filled when
 /// selected) over a label. Shared by the bottom bar and the side rail.
-class _HibikiNavTile extends StatelessWidget {
-  const _HibikiNavTile({required this.item, required this.selected});
+class _FushiNavTile extends StatelessWidget {
+  const _FushiNavTile({required this.item, required this.selected});
 
   final AdaptiveNavItem item;
   final bool selected;
@@ -267,7 +267,7 @@ class _HibikiNavTile extends StatelessWidget {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: selected ? colors.secondaryContainer : Colors.transparent,
-            borderRadius: HibikiDesignTokens.of(context).radii.controlRadius,
+            borderRadius: FushiDesignTokens.of(context).radii.controlRadius,
           ),
           child: _maybeBadge(
             item: item,
@@ -323,7 +323,7 @@ Widget adaptiveNavRail({
 /// instead of focus leaking onto the bar's unregistered destinations and
 /// dropping the ring. Mouse/touch still tap the underlying destinations
 /// (ExcludeFocus only removes them from focus traversal). Passes [child]
-/// straight through when there is no HibikiFocusRoot (plain widget tests).
+/// straight through when there is no FushiFocusRoot (plain widget tests).
 class GamepadNavCluster extends StatefulWidget {
   const GamepadNavCluster({
     required this.axis,
@@ -351,8 +351,8 @@ class GamepadNavCluster extends StatefulWidget {
 }
 
 class _GamepadNavClusterState extends State<GamepadNavCluster> {
-  late final HibikiFocusId _focusId =
-      HibikiFocusId('nav-cluster-${identityHashCode(this)}');
+  late final FushiFocusId _focusId =
+      FushiFocusId('nav-cluster-${identityHashCode(this)}');
 
   void _step(int delta) {
     if (widget.count <= 0) return;
@@ -362,7 +362,7 @@ class _GamepadNavClusterState extends State<GamepadNavCluster> {
 
   @override
   Widget build(BuildContext context) {
-    if (HibikiFocusRoot.maybeControllerOf(context) == null) {
+    if (FushiFocusRoot.maybeControllerOf(context) == null) {
       return widget.child;
     }
     final bool horizontal = widget.axis == Axis.horizontal;
@@ -397,7 +397,7 @@ class _GamepadNavClusterState extends State<GamepadNavCluster> {
               },
             ),
           },
-          child: HibikiFocusTarget(
+          child: FushiFocusTarget(
             id: _focusId,
             child: ExcludeFocus(child: widget.child),
           ),

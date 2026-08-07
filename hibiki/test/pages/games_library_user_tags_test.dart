@@ -19,7 +19,7 @@ import 'package:fushi/utils.dart';
 import '../helpers/test_platform_services.dart';
 
 /// BUG-1113「游戏没有标签」的 UI 侧守卫：游戏库页必须接上书架 / 视频页那套**共享**
-/// 用户标签体系——同一个 [HibikiTagFilterBar]、同一个标签池、同一套 AND 筛选、
+/// 用户标签体系——同一个 [FushiTagFilterBar]、同一个标签池、同一套 AND 筛选、
 /// 同一个 [TagPickerPage] 打标签入口。
 ///
 /// 全部经真 [GamesLibraryPage] + 真 Drift 表（内存库）走，不 mock：接没接上、筛没筛
@@ -32,9 +32,9 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
   });
 
-  Future<(AppModel, HibikiDatabase)> buildModel() async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+  Future<(AppModel, FushiDatabase)> buildModel() async {
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
@@ -76,14 +76,14 @@ void main() {
 
   Future<void> pumpPage(WidgetTester tester, AppModel appModel) async {
     navKey = GlobalKey<NavigatorState>();
-    HibikiToast.navigatorKey = navKey;
+    FushiToast.navigatorKey = navKey;
     await tester.pumpWidget(
       ProviderScope(
         overrides: <Override>[appProvider.overrideWith((_) => appModel)],
         child: TranslationProvider(
           child: MaterialApp(
             navigatorKey: navKey,
-            home: const HibikiFocusRoot(child: GamesLibraryPage()),
+            home: const FushiFocusRoot(child: GamesLibraryPage()),
           ),
         ),
       ),
@@ -92,15 +92,15 @@ void main() {
   }
 
   testWidgets('游戏库顶部渲染共享标签筛选栏，标签 chip 出自共享标签池', (WidgetTester tester) async {
-    final (AppModel appModel, HibikiDatabase db) = await buildModel();
+    final (AppModel appModel, FushiDatabase db) = await buildModel();
     await db.createTag('神作', 0xFFEF5350);
     await pumpPage(tester, appModel);
 
-    expect(find.byType(HibikiTagFilterBar), findsOneWidget,
+    expect(find.byType(FushiTagFilterBar), findsOneWidget,
         reason: '必须复用书架/视频页同一组件，而不是游戏页自己手搓一条');
     expect(
       find.descendant(
-        of: find.byType(HibikiTagFilterBar),
+        of: find.byType(FushiTagFilterBar),
         matching: find.text('神作'),
       ),
       findsOneWidget,
@@ -108,7 +108,7 @@ void main() {
   });
 
   testWidgets('点标签 chip 只留挂了该标签的游戏，再点取消恢复全部', (WidgetTester tester) async {
-    final (AppModel appModel, HibikiDatabase db) = await buildModel();
+    final (AppModel appModel, FushiDatabase db) = await buildModel();
     final int tagId = await db.createTag('神作', 0xFFEF5350);
     await db.addTagToGame('g1', tagId);
     await pumpPage(tester, appModel);
@@ -117,7 +117,7 @@ void main() {
     expect(cardTitle('beta'), findsOneWidget);
 
     await tester.tap(find.descendant(
-      of: find.byType(HibikiTagFilterBar),
+      of: find.byType(FushiTagFilterBar),
       matching: find.text('神作'),
     ));
     await tester.pumpAndSettle();
@@ -126,7 +126,7 @@ void main() {
     expect(cardTitle('beta'), findsNothing, reason: 'g2 没挂，必须被筛掉');
 
     await tester.tap(find.descendant(
-      of: find.byType(HibikiTagFilterBar),
+      of: find.byType(FushiTagFilterBar),
       matching: find.text('神作'),
     ));
     await tester.pumpAndSettle();
@@ -136,12 +136,12 @@ void main() {
   });
 
   testWidgets('全部游戏都不挂选中标签时给「没有符合筛选」空态，而不是空库文案', (WidgetTester tester) async {
-    final (AppModel appModel, HibikiDatabase db) = await buildModel();
+    final (AppModel appModel, FushiDatabase db) = await buildModel();
     await db.createTag('神作', 0xFFEF5350);
     await pumpPage(tester, appModel);
 
     await tester.tap(find.descendant(
-      of: find.byType(HibikiTagFilterBar),
+      of: find.byType(FushiTagFilterBar),
       matching: find.text('神作'),
     ));
     await tester.pumpAndSettle();
@@ -154,7 +154,7 @@ void main() {
 
   testWidgets('卡片菜单有「标签」项，点开进共享 TagPickerPage 并真写穿 DB',
       (WidgetTester tester) async {
-    final (AppModel appModel, HibikiDatabase db) = await buildModel();
+    final (AppModel appModel, FushiDatabase db) = await buildModel();
     final int tagId = await db.createTag('神作', 0xFFEF5350);
     await pumpPage(tester, appModel);
 

@@ -27,20 +27,20 @@ class _ActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // Keyboard + gamepad render as plain text chips; TODO-1050b: mouse bindings
     // render as icon chips (middle/right/back/forward small glyph) so the mouse
     // channel is no longer invisible in the list view (was data-only pass-through).
     final List<Widget> chips = <Widget>[
       for (final InputBinding b in bindings.keyboardBindings)
-        HibikiTagChip(
+        FushiTagChip(
           label: b.displayLabel,
-          tone: HibikiTagChipTone.surface,
+          tone: FushiTagChipTone.surface,
         ),
       for (final GamepadBinding b in bindings.gamepadBindings)
-        HibikiTagChip(
+        FushiTagChip(
           label: GamepadGlyphs.glyphFor(b.button, brand).symbol,
-          tone: HibikiTagChipTone.surface,
+          tone: FushiTagChipTone.surface,
         ),
       for (final MouseBinding b in bindings.mouseBindings)
         _MouseChip(binding: b),
@@ -52,9 +52,9 @@ class _ActionTile extends StatelessWidget {
     // TODO-944: the whole row taps into the SAME assign/edit flow, so unmapped
     // rows (no chips, only the dim "tap to assign" hint) are reachable instead
     // of relying on the tiny trailing edit icon. Routing `onTap` through
-    // [HibikiListItem] also registers a focus target, making every row — mapped
+    // [FushiListItem] also registers a focus target, making every row — mapped
     // or not — keyboard/gamepad navigable.
-    return HibikiListItem(
+    return FushiListItem(
       onTap: onEdit,
       title: Text(action.label),
       subtitle: chips.isEmpty
@@ -66,7 +66,7 @@ class _ActionTile extends StatelessWidget {
               runSpacing: tokens.spacing.gap / 2,
               children: chips,
             ),
-      trailing: HibikiIconButton(
+      trailing: FushiIconButton(
         icon: Icons.edit_outlined,
         tooltip: t.options_edit,
         onTap: onEdit,
@@ -94,7 +94,7 @@ class _MouseChip extends StatelessWidget {
       );
 }
 
-/// 「图标 + 名称」的小 chip（HibikiTagChip 无 leading icon 位，这里用同款 surface
+/// 「图标 + 名称」的小 chip（FushiTagChip 无 leading icon 位，这里用同款 surface
 /// 观感自绘，与文字 chip 并排展示，不改公共组件）。鼠标按钮与滚轮两条通道共用。
 class _InputIconChip extends StatelessWidget {
   const _InputIconChip({
@@ -112,7 +112,7 @@ class _InputIconChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color fg = theme.colorScheme.onSurface;
     return Container(
       padding: EdgeInsets.symmetric(

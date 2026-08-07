@@ -21,12 +21,12 @@ import 'package:fushi/src/media/import/epub_backed_srt_book.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _memDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _memDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 void main() {
   group('TODO-894 writeEpubBackedSrtBook', () {
-    late HibikiDatabase db;
+    late FushiDatabase db;
     late SrtBookRepository repo;
 
     setUp(() {

@@ -47,7 +47,7 @@ void main() {
         reason: 'first directional press with nothing focused lands on n0');
   });
 
-  testWidgets('uses HibikiFocusController when a focus root is available',
+  testWidgets('uses FushiFocusController when a focus root is available',
       (WidgetTester tester) async {
     final FocusNode raw = FocusNode(debugLabel: 'raw-unregistered');
     final FocusNode target = FocusNode(debugLabel: 'registered-target');
@@ -55,15 +55,15 @@ void main() {
     addTearDown(target.dispose);
 
     await tester.pumpWidget(MaterialApp(
-      home: HibikiFocusRoot(
+      home: FushiFocusRoot(
         child: Column(
           children: <Widget>[
             Focus(
               focusNode: raw,
               child: const SizedBox(width: 80, height: 60),
             ),
-            HibikiFocusTarget(
-              id: const HibikiFocusId('registered-target'),
+            FushiFocusTarget(
+              id: const FushiFocusId('registered-target'),
               focusNode: target,
               child: const SizedBox(width: 80, height: 60),
             ),
@@ -84,8 +84,8 @@ void main() {
     expect(raw.hasPrimaryFocus, isFalse);
     expect(target.hasPrimaryFocus, isTrue);
     expect(
-      HibikiFocusRoot.controllerOf(context).activeId,
-      const HibikiFocusId('registered-target'),
+      FushiFocusRoot.controllerOf(context).activeId,
+      const FushiFocusId('registered-target'),
     );
   });
 
@@ -197,7 +197,7 @@ void main() {
       (WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
-        home: HibikiFocusRoot(
+        home: FushiFocusRoot(
           child: GridView.count(
             crossAxisCount: 2,
             childAspectRatio: 1,
@@ -208,8 +208,8 @@ void main() {
                 'bottom-left',
                 'bottom-right',
               ])
-                HibikiFocusTarget(
-                  id: HibikiFocusId(id),
+                FushiFocusTarget(
+                  id: FushiFocusId(id),
                   child: TextButton(
                     onPressed: () {},
                     child: Text(id),
@@ -223,33 +223,33 @@ void main() {
     await tester.pump();
 
     final BuildContext context = tester.element(find.byType(GridView));
-    final HibikiFocusController controller =
-        HibikiFocusRoot.controllerOf(context);
+    final FushiFocusController controller =
+        FushiFocusRoot.controllerOf(context);
 
-    expect(controller.requestById(const HibikiFocusId('top-left')), isTrue);
+    expect(controller.requestById(const FushiFocusId('top-left')), isTrue);
     await tester.pump();
 
-    expect(controller.move(HibikiFocusDirection.down), isTrue);
+    expect(controller.move(FushiFocusDirection.down), isTrue);
     await tester.pump();
 
     expect(
       controller.activeId,
-      const HibikiFocusId('bottom-left'),
+      const FushiFocusId('bottom-left'),
       reason: 'D-pad down in a shelf grid must move to the row below, not the '
           'next item in reading order',
     );
 
-    expect(controller.move(HibikiFocusDirection.right), isTrue);
+    expect(controller.move(FushiFocusDirection.right), isTrue);
     await tester.pump();
 
-    expect(controller.activeId, const HibikiFocusId('bottom-right'));
+    expect(controller.activeId, const FushiFocusId('bottom-right'));
 
-    expect(controller.move(HibikiFocusDirection.down), isFalse);
+    expect(controller.move(FushiFocusDirection.down), isFalse);
     await tester.pump();
 
     expect(
       controller.activeId,
-      const HibikiFocusId('bottom-right'),
+      const FushiFocusId('bottom-right'),
       reason: 'D-pad down at the grid edge must stop instead of sliding '
           'sideways through reading order',
     );
@@ -267,7 +267,7 @@ void main() {
     // one happens to overlap horizontally with the source.
     await tester.pumpWidget(
       MaterialApp(
-        home: HibikiFocusRoot(
+        home: FushiFocusRoot(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
@@ -279,8 +279,8 @@ void main() {
               ])
                 Align(
                   alignment: row.align,
-                  child: HibikiFocusTarget(
-                    id: HibikiFocusId(row.id),
+                  child: FushiFocusTarget(
+                    id: FushiFocusId(row.id),
                     child: TextButton(
                       onPressed: () {},
                       child: Text(row.id),
@@ -295,30 +295,30 @@ void main() {
     await tester.pump();
 
     final BuildContext context = tester.element(find.byType(Column));
-    final HibikiFocusController controller =
-        HibikiFocusRoot.controllerOf(context);
+    final FushiFocusController controller =
+        FushiFocusRoot.controllerOf(context);
 
-    expect(controller.requestById(const HibikiFocusId('top-right')), isTrue);
+    expect(controller.requestById(const FushiFocusId('top-right')), isTrue);
     await tester.pump();
 
-    expect(controller.move(HibikiFocusDirection.down), isTrue);
+    expect(controller.move(FushiFocusDirection.down), isTrue);
     await tester.pump();
 
     expect(
       controller.activeId,
-      const HibikiFocusId('mid-left'),
+      const FushiFocusId('mid-left'),
       reason: 'down must land on the immediately-next row, not skip the '
           'left-aligned swatch row to the next right-aligned control',
     );
 
-    expect(controller.move(HibikiFocusDirection.down), isTrue);
+    expect(controller.move(FushiFocusDirection.down), isTrue);
     await tester.pump();
-    expect(controller.activeId, const HibikiFocusId('bottom-right'),
+    expect(controller.activeId, const FushiFocusId('bottom-right'),
         reason: 'a further down continues to the last row');
 
-    expect(controller.move(HibikiFocusDirection.up), isTrue);
+    expect(controller.move(FushiFocusDirection.up), isTrue);
     await tester.pump();
-    expect(controller.activeId, const HibikiFocusId('mid-left'),
+    expect(controller.activeId, const FushiFocusId('mid-left'),
         reason: 'up is symmetric: it must not skip the swatch row either');
   });
 
@@ -337,7 +337,7 @@ void main() {
                 child: const SizedBox(width: 96, height: 320),
               ),
               Expanded(
-                child: HibikiFocusRoot(
+                child: FushiFocusRoot(
                   child: GridView.count(
                     crossAxisCount: 2,
                     childAspectRatio: 1,
@@ -348,8 +348,8 @@ void main() {
                         'bottom-left',
                         'bottom-right',
                       ])
-                        HibikiFocusTarget(
-                          id: HibikiFocusId(id),
+                        FushiFocusTarget(
+                          id: FushiFocusId(id),
                           child: TextButton(
                             onPressed: () {},
                             child: Text(id),
@@ -367,10 +367,10 @@ void main() {
     await tester.pump();
 
     final BuildContext context = tester.element(find.byType(GridView));
-    final HibikiFocusController controller =
-        HibikiFocusRoot.controllerOf(context);
+    final FushiFocusController controller =
+        FushiFocusRoot.controllerOf(context);
 
-    expect(controller.requestById(const HibikiFocusId('top-left')), isTrue);
+    expect(controller.requestById(const FushiFocusId('top-left')), isTrue);
     await tester.pump();
 
     final bool moved = gamepadMoveFocusInDirection(
@@ -400,7 +400,7 @@ void main() {
                 child: const SizedBox(width: 320, height: 72),
               ),
               Expanded(
-                child: HibikiFocusRoot(
+                child: FushiFocusRoot(
                   child: GridView.count(
                     crossAxisCount: 2,
                     childAspectRatio: 1,
@@ -411,8 +411,8 @@ void main() {
                         'bottom-left',
                         'bottom-right',
                       ])
-                        HibikiFocusTarget(
-                          id: HibikiFocusId(id),
+                        FushiFocusTarget(
+                          id: FushiFocusId(id),
                           child: TextButton(
                             onPressed: () {},
                             child: Text(id),
@@ -430,10 +430,10 @@ void main() {
     await tester.pump();
 
     final BuildContext context = tester.element(find.byType(GridView));
-    final HibikiFocusController controller =
-        HibikiFocusRoot.controllerOf(context);
+    final FushiFocusController controller =
+        FushiFocusRoot.controllerOf(context);
 
-    expect(controller.requestById(const HibikiFocusId('top-left')), isTrue);
+    expect(controller.requestById(const FushiFocusId('top-left')), isTrue);
     await tester.pump();
 
     final bool moved = gamepadMoveFocusInDirection(
@@ -452,7 +452,7 @@ void main() {
       (WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
-        home: HibikiFocusRoot(
+        home: FushiFocusRoot(
           child: GridView.count(
             crossAxisCount: 2,
             childAspectRatio: 1,
@@ -463,8 +463,8 @@ void main() {
                 'bottom-left',
                 'bottom-right',
               ])
-                HibikiFocusTarget(
-                  id: HibikiFocusId(id),
+                FushiFocusTarget(
+                  id: FushiFocusId(id),
                   child: TextButton(
                     onPressed: () {},
                     child: Text(id),
@@ -478,10 +478,10 @@ void main() {
     await tester.pump();
 
     final BuildContext context = tester.element(find.byType(GridView));
-    final HibikiFocusController controller =
-        HibikiFocusRoot.controllerOf(context);
+    final FushiFocusController controller =
+        FushiFocusRoot.controllerOf(context);
 
-    expect(controller.requestById(const HibikiFocusId('bottom-right')), isTrue);
+    expect(controller.requestById(const FushiFocusId('bottom-right')), isTrue);
     // Settle the reveal: focusing bottom-right centres it, scrolling the grid
     // to its max extent. Once settled there, a down press can neither scroll
     // further (already at the extent) nor slide sideways through reading order.
@@ -494,7 +494,7 @@ void main() {
     await tester.pump();
 
     expect(moved, isFalse);
-    expect(controller.activeId, const HibikiFocusId('bottom-right'),
+    expect(controller.activeId, const FushiFocusId('bottom-right'),
         reason: 'down at the bottom edge must not turn into a sideways '
             'reading-order move inside the shelf');
   });
@@ -509,13 +509,13 @@ void main() {
     addTearDown(scrollCtrl.dispose);
     await tester.pumpWidget(
       MaterialApp(
-        home: HibikiFocusRoot(
+        home: FushiFocusRoot(
           child: SingleChildScrollView(
             controller: scrollCtrl,
             child: Column(
               children: <Widget>[
-                HibikiFocusTarget(
-                  id: const HibikiFocusId('only-target'),
+                FushiFocusTarget(
+                  id: const FushiFocusId('only-target'),
                   child: const SizedBox(
                       width: 200, height: 80, child: Text('only')),
                 ),
@@ -531,9 +531,9 @@ void main() {
 
     final BuildContext context =
         tester.element(find.byType(SingleChildScrollView));
-    final HibikiFocusController controller =
-        HibikiFocusRoot.controllerOf(context);
-    expect(controller.requestById(const HibikiFocusId('only-target')), isTrue);
+    final FushiFocusController controller =
+        FushiFocusRoot.controllerOf(context);
+    expect(controller.requestById(const FushiFocusId('only-target')), isTrue);
     await tester.pumpAndSettle();
 
     final double before = scrollCtrl.offset;
@@ -553,13 +553,13 @@ void main() {
     addTearDown(scrollCtrl.dispose);
     await tester.pumpWidget(
       MaterialApp(
-        home: HibikiFocusRoot(
+        home: FushiFocusRoot(
           child: SingleChildScrollView(
             controller: scrollCtrl,
             child: Column(
               children: <Widget>[
-                HibikiFocusTarget(
-                  id: const HibikiFocusId('only-target'),
+                FushiFocusTarget(
+                  id: const FushiFocusId('only-target'),
                   child: const SizedBox(
                       width: 200, height: 80, child: Text('only')),
                 ),
@@ -575,9 +575,9 @@ void main() {
 
     final BuildContext context =
         tester.element(find.byType(SingleChildScrollView));
-    final HibikiFocusController controller =
-        HibikiFocusRoot.controllerOf(context);
-    expect(controller.requestById(const HibikiFocusId('only-target')), isTrue);
+    final FushiFocusController controller =
+        FushiFocusRoot.controllerOf(context);
+    expect(controller.requestById(const FushiFocusId('only-target')), isTrue);
     await tester.pumpAndSettle();
 
     scrollCtrl.jumpTo(scrollCtrl.position.maxScrollExtent);
@@ -598,14 +598,14 @@ void main() {
     final ValueNotifier<bool> hasContent = ValueNotifier<bool>(false);
     addTearDown(hasContent.dispose);
     await tester.pumpWidget(MaterialApp(
-      home: HibikiFocusRoot(
+      home: FushiFocusRoot(
         child: ValueListenableBuilder<bool>(
           valueListenable: hasContent,
           builder: (BuildContext c, bool ready, _) => Column(
             children: <Widget>[
               if (ready)
-                HibikiFocusTarget(
-                  id: const HibikiFocusId('loaded'),
+                FushiFocusTarget(
+                  id: const FushiFocusId('loaded'),
                   child: const SizedBox(width: 80, height: 60),
                 )
               else
@@ -617,8 +617,8 @@ void main() {
     ));
     await tester.pump();
     final BuildContext context = tester.element(find.byType(Column));
-    final HibikiFocusController controller =
-        HibikiFocusRoot.controllerOf(context);
+    final FushiFocusController controller =
+        FushiFocusRoot.controllerOf(context);
 
     // Empty tab: ensureFocus settles on the ring-less fallback (nothing real).
     controller.ensureFocus();
@@ -632,7 +632,7 @@ void main() {
     await tester.pump(); // build + register
     await tester.pump(); // post-frame scheduleRepair → ensureFocus
     expect(controller.fallbackNode.hasPrimaryFocus, isFalse);
-    expect(controller.activeId, const HibikiFocusId('loaded'),
+    expect(controller.activeId, const FushiFocusId('loaded'),
         reason: 'focus re-homed onto the newly loaded target');
   });
 }

@@ -4,7 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:http/io_client.dart';
 
 /// 把 [InternetAddress]/证书 DER 的 SHA-256 算成小写 hex、冒号分隔（aa:bb:..）。
-/// 与 [HibikiTlsIdentityStore.fingerprintOf] 同算法，供钉扎比对。
+/// 与 [FushiTlsIdentityStore.fingerprintOf] 同算法，供钉扎比对。
 String fingerprintOfDer(List<int> der) {
   final Digest digest = sha256.convert(der);
   final buf = StringBuffer();

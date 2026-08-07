@@ -7,13 +7,13 @@ import 'package:fushi/src/focus/hibiki_focus_target.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 
 /// TODO-1113 P3: keyboard/gamepad focus navigation should also support the
-/// mouse. On desktop, clicking a [HibikiFocusTarget] carries directional-
+/// mouse. On desktop, clicking a [FushiFocusTarget] carries directional-
 /// navigation focus there (so subsequent arrow/gamepad traversal continues from
 /// what the user clicked) WITHOUT double-activating the child, and the focus
 /// ring stays lit on that press so the placed focus is visible. Hover/move do
 /// not light the ring (conservative option b). Mobile/touch keep plain-tap.
 void main() {
-  group('HibikiFocusTarget mouse click-to-focus (desktop-gated)', () {
+  group('FushiFocusTarget mouse click-to-focus (desktop-gated)', () {
     testWidgets(
         'a mouse click on a desktop target carries focus without double-firing',
         (WidgetTester tester) async {
@@ -25,22 +25,22 @@ void main() {
       addTearDown(second.dispose);
 
       int secondTaps = 0;
-      late HibikiFocusController controller;
+      late FushiFocusController controller;
       await tester.pumpWidget(
         MaterialApp(
-          home: HibikiFocusRoot(
+          home: FushiFocusRoot(
             child: Builder(
               builder: (BuildContext context) {
-                controller = HibikiFocusRoot.controllerOf(context);
+                controller = FushiFocusRoot.controllerOf(context);
                 return Column(
                   children: <Widget>[
-                    HibikiFocusTarget(
-                      id: const HibikiFocusId('first'),
+                    FushiFocusTarget(
+                      id: const FushiFocusId('first'),
                       focusNode: first,
                       child: const SizedBox(width: 40, height: 40),
                     ),
-                    HibikiFocusTarget(
-                      id: const HibikiFocusId('second'),
+                    FushiFocusTarget(
+                      id: const FushiFocusId('second'),
                       focusNode: second,
                       child: GestureDetector(
                         onTap: () => secondTaps++,
@@ -59,7 +59,7 @@ void main() {
 
       first.requestFocus();
       await tester.pump();
-      expect(controller.activeId, const HibikiFocusId('first'));
+      expect(controller.activeId, const FushiFocusId('first'));
 
       await tester.tap(
         find.byType(GestureDetector),
@@ -67,7 +67,7 @@ void main() {
       );
       await tester.pump();
 
-      expect(controller.activeId, const HibikiFocusId('second'));
+      expect(controller.activeId, const FushiFocusId('second'));
       expect(second.hasPrimaryFocus, isTrue);
       expect(first.hasPrimaryFocus, isFalse);
       expect(secondTaps, 1);
@@ -86,22 +86,22 @@ void main() {
       addTearDown(second.dispose);
 
       int secondTaps = 0;
-      late HibikiFocusController controller;
+      late FushiFocusController controller;
       await tester.pumpWidget(
         MaterialApp(
-          home: HibikiFocusRoot(
+          home: FushiFocusRoot(
             child: Builder(
               builder: (BuildContext context) {
-                controller = HibikiFocusRoot.controllerOf(context);
+                controller = FushiFocusRoot.controllerOf(context);
                 return Column(
                   children: <Widget>[
-                    HibikiFocusTarget(
-                      id: const HibikiFocusId('first'),
+                    FushiFocusTarget(
+                      id: const FushiFocusId('first'),
                       focusNode: first,
                       child: const SizedBox(width: 40, height: 40),
                     ),
-                    HibikiFocusTarget(
-                      id: const HibikiFocusId('second'),
+                    FushiFocusTarget(
+                      id: const FushiFocusId('second'),
                       focusNode: second,
                       child: GestureDetector(
                         onTap: () => secondTaps++,
@@ -120,7 +120,7 @@ void main() {
 
       first.requestFocus();
       await tester.pump();
-      expect(controller.activeId, const HibikiFocusId('first'));
+      expect(controller.activeId, const FushiFocusId('first'));
 
       await tester.tap(
         find.byType(GestureDetector),
@@ -129,7 +129,7 @@ void main() {
       await tester.pump();
 
       expect(secondTaps, 1);
-      expect(controller.activeId, const HibikiFocusId('first'));
+      expect(controller.activeId, const FushiFocusId('first'));
       expect(second.hasPrimaryFocus, isFalse);
 
       debugDefaultTargetPlatformOverride = null;

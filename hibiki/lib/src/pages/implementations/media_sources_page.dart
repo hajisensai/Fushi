@@ -30,9 +30,9 @@ class _MediaSourcesPageState extends State<MediaSourcesPage> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    // 与书架 / 视频 / 词典三个库页同构：DesktopContentLayout + HibikiPageHeader
-    // 大标题 + HibikiIconButton 动作，外层 Scaffold 由 HomePage 提供。
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 与书架 / 视频 / 词典三个库页同构：DesktopContentLayout + FushiPageHeader
+    // 大标题 + FushiIconButton 动作，外层 Scaffold 由 HomePage 提供。
     return DesktopContentLayout(
       kind: DesktopContentKind.readerShelf,
       child: Column(
@@ -42,7 +42,7 @@ class _MediaSourcesPageState extends State<MediaSourcesPage> {
             // 正文自带内边距：readerShelf 的 desktopContentPadding 已恒为零
             // （PR#675 撤强制侧向留白），而 [MediaSourcesView] 自身只有行间的纵向
             // 间距，桌面上文字与开关会直接贴窗口边。留白取 spacing.page，与上方
-            // [HibikiPageHeader] 的横向内边距同源，标题与正文左边缘对齐；滚动条仍
+            // [FushiPageHeader] 的横向内边距同源，标题与正文左边缘对齐；滚动条仍
             // 贴真实边缘（padding 在 SingleChildScrollView 里，不在它外面）。
             child: SingleChildScrollView(
               padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
@@ -59,7 +59,7 @@ class _MediaSourcesPageState extends State<MediaSourcesPage> {
 
   Widget _buildHeader() {
     final List<Widget> actions = <Widget>[
-      HibikiIconButton(
+      FushiIconButton(
         tooltip: t.media_source_add,
         label: t.media_source_add,
         icon: Icons.create_new_folder_outlined,
@@ -68,12 +68,12 @@ class _MediaSourcesPageState extends State<MediaSourcesPage> {
     ];
     final Widget? navigation = widget.navigation;
     if (navigation != null) {
-      return HibikiPageHeader.customTitle(
+      return FushiPageHeader.customTitle(
         title: navigation,
         actions: actions,
       );
     }
-    return HibikiPageHeader(
+    return FushiPageHeader(
       title: t.media_source_manage_title,
       actions: actions,
     );

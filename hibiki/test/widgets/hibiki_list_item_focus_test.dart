@@ -5,20 +5,20 @@ import 'package:fushi/src/focus/hibiki_focus_controller.dart';
 import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 
 void main() {
-  testWidgets('clickable HibikiListItem registers with the focus root',
+  testWidgets('clickable FushiListItem registers with the focus root',
       (WidgetTester tester) async {
     int taps = 0;
     await tester.pumpWidget(MaterialApp(
-      home: HibikiFocusRoot(
+      home: FushiFocusRoot(
         child: Column(
           children: <Widget>[
-            HibikiListItem(
-              focusId: const HibikiFocusId('first-row'),
+            FushiListItem(
+              focusId: const FushiFocusId('first-row'),
               title: const Text('First'),
               onTap: () => taps += 1,
             ),
-            HibikiListItem(
-              focusId: const HibikiFocusId('second-row'),
+            FushiListItem(
+              focusId: const FushiFocusId('second-row'),
               title: const Text('Second'),
               onTap: () => taps += 1,
             ),
@@ -28,13 +28,13 @@ void main() {
     ));
     await tester.pump();
 
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.text('First')),
     );
 
-    expect(controller.requestById(const HibikiFocusId('first-row')), isTrue);
+    expect(controller.requestById(const FushiFocusId('first-row')), isTrue);
     await tester.pump();
-    expect(controller.activeId, const HibikiFocusId('first-row'));
+    expect(controller.activeId, const FushiFocusId('first-row'));
 
     Actions.maybeInvoke<ActivateIntent>(
       controller.activeContext!,
@@ -46,19 +46,19 @@ void main() {
   // BUG-1425：把 texthooker 窗口选择器的裸 ListTile 收口到本组件时，唯一没有对应物的
   // 就是 `autofocus`。它不是装饰——BUG-1049 的「打开对话框即落在正确的那一行，回车直接
   // 确认」全靠它。这条锁住：带 autofocus 的行开屏就持有键盘焦点，且 Enter 直接触发
-  // onTap（对话框里没有 HibikiFocusRoot，走的是 InkWell 自己的焦点节点）。
-  testWidgets('autofocus HibikiListItem takes keyboard focus on open',
+  // onTap（对话框里没有 FushiFocusRoot，走的是 InkWell 自己的焦点节点）。
+  testWidgets('autofocus FushiListItem takes keyboard focus on open',
       (WidgetTester tester) async {
     int taps = 0;
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: Column(
           children: <Widget>[
-            HibikiListItem(
+            FushiListItem(
               title: const Text('Other window'),
               onTap: () => taps += 1,
             ),
-            HibikiListItem(
+            FushiListItem(
               autofocus: true,
               title: const Text('The game window'),
               onTap: () => taps += 1,
@@ -74,7 +74,7 @@ void main() {
           .descendant(
             of: find.ancestor(
               of: find.text('The game window'),
-              matching: find.byType(HibikiListItem),
+              matching: find.byType(FushiListItem),
             ),
             matching: find.byType(InkWell),
           )
@@ -88,24 +88,24 @@ void main() {
     expect(taps, 1);
   });
 
-  testWidgets('passive HibikiListItem is not a focus target',
+  testWidgets('passive FushiListItem is not a focus target',
       (WidgetTester tester) async {
     await tester.pumpWidget(const MaterialApp(
-      home: HibikiFocusRoot(
+      home: FushiFocusRoot(
         child: Column(
           children: <Widget>[
-            HibikiListItem(title: Text('Passive')),
+            FushiListItem(title: Text('Passive')),
           ],
         ),
       ),
     ));
     await tester.pump();
 
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.text('Passive')),
     );
 
-    controller.move(HibikiFocusDirection.down);
+    controller.move(FushiFocusDirection.down);
     await tester.pump();
     expect(controller.activeId, isNull);
     expect(controller.fallbackNode.hasPrimaryFocus, isTrue);

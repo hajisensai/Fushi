@@ -79,7 +79,7 @@ class InterconnectServiceConfigSnapshot {
   ///
   /// Unknown/missing fields are ignored; a real host snapshot contains every
   /// allowlisted key (including encoded defaults for cleared values).
-  Future<int> applyTo(HibikiDatabase db) async {
+  Future<int> applyTo(FushiDatabase db) async {
     int changed = 0;
     for (final MapEntry<String, String> entry in preferences.entries) {
       if (!sharedPreferenceKeys.contains(entry.key)) continue;
@@ -91,7 +91,7 @@ class InterconnectServiceConfigSnapshot {
   }
 }
 
-/// Optional host capability kept separate from [HibikiLibraryHostService]'s
+/// Optional host capability kept separate from [FushiLibraryHostService]'s
 /// large media interface so older/test host implementations remain compatible.
 abstract interface class InterconnectServiceConfigHost {
   Future<InterconnectServiceConfigSnapshot> getInterconnectServiceConfig();

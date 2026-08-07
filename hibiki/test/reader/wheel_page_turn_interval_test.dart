@@ -9,15 +9,15 @@ import 'package:fushi/src/reader/reader_settings.dart';
 /// `reader_hibiki_page._buildReaderSetupScript` 把 `s.wheelPageTurnInterval`
 /// 注入到 `setTimeout(..., N)`，真正的翻页节流效果走 WebView，归设备集成验证。
 void main() {
-  Future<ReaderSettings> defaultSettings(HibikiDatabase db) async {
+  Future<ReaderSettings> defaultSettings(FushiDatabase db) async {
     final ReaderSettings settings = ReaderSettings(db);
     await settings.refreshFromDb();
     return settings;
   }
 
   test('wheelPageTurnInterval defaults to 450ms', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = await defaultSettings(db);
 
@@ -25,8 +25,8 @@ void main() {
   });
 
   test('reading default does not persist a synthetic preference row', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = await defaultSettings(db);
 
@@ -42,8 +42,8 @@ void main() {
   });
 
   test('setWheelPageTurnInterval round-trips through DB', () async {
-    final HibikiDatabase db =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = await defaultSettings(db);
 

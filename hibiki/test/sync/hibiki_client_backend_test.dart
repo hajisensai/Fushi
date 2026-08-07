@@ -10,15 +10,15 @@ import 'package:fushi/src/sync/sync_utils.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _testDb() {
-  return HibikiDatabase.forTesting(
+FushiDatabase _testDb() {
+  return FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
 }
 
 Future<void> _seed(
   SyncRepository repo, {
-  required List<HibikiClientUrl> urls,
+  required List<FushiClientUrl> urls,
   String token = 'tok',
 }) async {
   await repo.setHibikiClientUrls(urls);
@@ -27,7 +27,7 @@ Future<void> _seed(
 
 void main() {
   test('restoreAuth returns false when no urls are configured', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
     final InterconnectSyncBackend backend =
@@ -39,11 +39,11 @@ void main() {
 
   test('restoreAuth is authenticated when urls + token are configured',
       () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
     await _seed(repo,
-        urls: const <HibikiClientUrl>[HibikiClientUrl(url: 'http://lan:8765')]);
+        urls: const <FushiClientUrl>[FushiClientUrl(url: 'http://lan:8765')]);
     final InterconnectSyncBackend backend =
         InterconnectSyncBackend.withProbe((String u, String t) async => true);
 
@@ -53,12 +53,12 @@ void main() {
 
   test('ensureResolved selects the reachable url and clears cache on switch',
       () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
-    await _seed(repo, urls: const <HibikiClientUrl>[
-      HibikiClientUrl(url: 'http://lan:8765'),
-      HibikiClientUrl(url: 'http://wan:8765'),
+    await _seed(repo, urls: const <FushiClientUrl>[
+      FushiClientUrl(url: 'http://lan:8765'),
+      FushiClientUrl(url: 'http://wan:8765'),
     ]);
     // LAN unreachable, WAN reachable.
     final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
@@ -73,12 +73,12 @@ void main() {
   });
 
   test('ensureResolved keeps cache when the first url is reachable', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
-    await _seed(repo, urls: const <HibikiClientUrl>[
-      HibikiClientUrl(url: 'http://lan:8765'),
-      HibikiClientUrl(url: 'http://wan:8765'),
+    await _seed(repo, urls: const <FushiClientUrl>[
+      FushiClientUrl(url: 'http://lan:8765'),
+      FushiClientUrl(url: 'http://wan:8765'),
     ]);
     final InterconnectSyncBackend backend =
         InterconnectSyncBackend.withProbe((String u, String t) async => true);
@@ -94,12 +94,12 @@ void main() {
   test(
       'clearCache forces re-probe so failover works on a retry (HBK-AUDIT-157)',
       () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
-    await _seed(repo, urls: const <HibikiClientUrl>[
-      HibikiClientUrl(url: 'http://lan:8765'),
-      HibikiClientUrl(url: 'http://wan:8765'),
+    await _seed(repo, urls: const <FushiClientUrl>[
+      FushiClientUrl(url: 'http://lan:8765'),
+      FushiClientUrl(url: 'http://wan:8765'),
     ]);
     bool lanUp = true;
     final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
@@ -131,10 +131,10 @@ void main() {
     });
     final String base = 'http://127.0.0.1:${server.port}';
 
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
-    await _seed(repo, urls: <HibikiClientUrl>[HibikiClientUrl(url: base)]);
+    await _seed(repo, urls: <FushiClientUrl>[FushiClientUrl(url: base)]);
     final InterconnectSyncBackend backend =
         InterconnectSyncBackend.withProbe((String u, String t) async => true);
     await backend.restoreAuth(repo);

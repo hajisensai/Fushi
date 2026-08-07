@@ -37,13 +37,13 @@ void main() {
     }
   });
 
-  Future<int> countRows(HibikiDatabase db, String table) async {
+  Future<int> countRows(FushiDatabase db, String table) async {
     final row =
         await db.customSelect('SELECT COUNT(*) AS c FROM $table').getSingle();
     return row.data['c'] as int;
   }
 
-  Future<void> seedTwoAudiobooks(HibikiDatabase db) async {
+  Future<void> seedTwoAudiobooks(FushiDatabase db) async {
     for (final String k in <String>['bookA', 'bookB']) {
       await db.upsertAudiobook(AudiobooksCompanion.insert(
         bookKey: k,
@@ -58,8 +58,8 @@ void main() {
         () async {
       final String dbDir = p.join(src.path, 'db');
       Directory(dbDir).createSync(recursive: true);
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       await seedTwoAudiobooks(db);
       final BackupService service =
           BackupService(db: db, dbDirectory: dbDir, appVersion: '1.0.0');
@@ -124,7 +124,7 @@ void main() {
       () async {
     final String oldDbDir = p.join(src.path, 'olddb');
     Directory(oldDbDir).createSync(recursive: true);
-    final HibikiDatabase db = HibikiDatabase(oldDbDir);
+    final FushiDatabase db = FushiDatabase(oldDbDir);
     await seedTwoAudiobooks(db);
     await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     await db.close();
@@ -145,8 +145,8 @@ void main() {
     final String zip = p.join(src.path, 'old_backup.zip');
     File(zip).writeAsBytesSync(ZipEncoder().encode(archive)!);
 
-    final HibikiDatabase dummy =
-        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase dummy =
+        FushiDatabase.forTesting(NativeDatabase.memory());
     final BackupService service =
         BackupService(db: dummy, dbDirectory: src.path, appVersion: '1.0.0');
     final BackupContentSummary summary = await service.summarizeBackupFile(zip);
@@ -161,8 +161,8 @@ void main() {
     Future<String> exportWithTwoAudiobooks() async {
       final String dbDir = p.join(src.path, 'db');
       Directory(dbDir).createSync(recursive: true);
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
       await seedTwoAudiobooks(db);
       final BackupService service =
           BackupService(db: db, dbDirectory: dbDir, appVersion: '1.0.0');
@@ -185,7 +185,7 @@ void main() {
           ..remove(BackupCategory.audiobooks),
       );
 
-      final HibikiDatabase after = HibikiDatabase(dstDbDir);
+      final FushiDatabase after = FushiDatabase(dstDbDir);
       addTearDown(after.close);
       expect(await countRows(after, 'audiobooks'), 0);
     });
@@ -200,7 +200,7 @@ void main() {
         zipPath: zip, // null categories = restore everything (incl. audiobooks)
       );
 
-      final HibikiDatabase after = HibikiDatabase(dstDbDir);
+      final FushiDatabase after = FushiDatabase(dstDbDir);
       addTearDown(after.close);
       expect(await countRows(after, 'audiobooks'), 2);
     });

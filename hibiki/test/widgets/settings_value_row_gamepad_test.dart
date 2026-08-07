@@ -16,7 +16,7 @@ void main() {
         (WidgetTester tester) async {
       double value = 10;
       await tester.pumpWidget(buildTestApp(
-        HibikiFocusRoot(
+        FushiFocusRoot(
           child: StatefulBuilder(
             builder: (BuildContext c, StateSetter setState) =>
                 AdaptiveSettingsStepperRow(
@@ -33,14 +33,14 @@ void main() {
       ));
       await tester.pump();
 
-      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.text('Font')),
       );
       controller.ensureFocus();
       await tester.pump();
       expect(controller.activeId, isNotNull,
           reason: 'the stepper row registers as a focus target');
-      final HibikiFocusId? activeBefore = controller.activeId;
+      final FushiFocusId? activeBefore = controller.activeId;
       final BuildContext ctx = controller.activeContext!;
 
       expect(
@@ -73,7 +73,7 @@ void main() {
         navigatorKey: navKey,
         theme: ThemeData.light(useMaterial3: true),
         home: Scaffold(
-          body: HibikiFocusRoot(
+          body: FushiFocusRoot(
             child: StatefulBuilder(
               builder: (BuildContext c, StateSetter setState) =>
                   AdaptiveSettingsStepperRow(
@@ -93,7 +93,7 @@ void main() {
       ));
       await tester.pump();
 
-      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.text('Font')),
       );
       controller.ensureFocus();
@@ -116,7 +116,7 @@ void main() {
         navigatorKey: navKey,
         theme: ThemeData.light(useMaterial3: true),
         home: Scaffold(
-          body: HibikiFocusRoot(
+          body: FushiFocusRoot(
             child: StatefulBuilder(
               builder: (BuildContext c, StateSetter setState) =>
                   AdaptiveSettingsStepperRow(
@@ -136,7 +136,7 @@ void main() {
       ));
       await tester.pump();
 
-      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.text('Font')),
       );
       controller.ensureFocus();
@@ -157,7 +157,7 @@ void main() {
         (WidgetTester tester) async {
       double value = 10;
       await tester.pumpWidget(buildTestApp(
-        HibikiFocusRoot(
+        FushiFocusRoot(
           child: AdaptiveSettingsStepperRow(
             title: 'Font',
             value: value,
@@ -170,7 +170,7 @@ void main() {
         ),
       ));
       await tester.pump();
-      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.text('Font')),
       );
       controller.ensureFocus();
@@ -191,7 +191,7 @@ void main() {
         (WidgetTester tester) async {
       double value = 64;
       await tester.pumpWidget(buildTestApp(
-        HibikiFocusRoot(
+        FushiFocusRoot(
           child: StatefulBuilder(
             builder: (BuildContext c, StateSetter setState) =>
                 AdaptiveSettingsStepperRow(
@@ -207,7 +207,7 @@ void main() {
         ),
       ));
       await tester.pump();
-      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.text('Font')),
       );
       controller.ensureFocus();
@@ -231,7 +231,7 @@ void main() {
         (WidgetTester tester) async {
       double value = 0.5;
       await tester.pumpWidget(buildTestApp(
-        HibikiFocusRoot(
+        FushiFocusRoot(
           child: StatefulBuilder(
             builder: (BuildContext c, StateSetter setState) =>
                 AdaptiveSettingsSliderRow(
@@ -244,7 +244,7 @@ void main() {
         ),
       ));
       await tester.pump();
-      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.text('Volume')),
       );
       controller.ensureFocus();
@@ -282,7 +282,7 @@ void main() {
         navigatorKey: navKey,
         theme: ThemeData.light(useMaterial3: true),
         home: Scaffold(
-          body: HibikiFocusRoot(
+          body: FushiFocusRoot(
             child: StatefulBuilder(
               builder: (BuildContext c, StateSetter setState) =>
                   AdaptiveSettingsSliderRow(
@@ -298,7 +298,7 @@ void main() {
             wrapWithGlobalNavigation(navigatorKey: navKey, child: child!),
       ));
       await tester.pump();
-      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.text('Volume')),
       );
       controller.ensureFocus();
@@ -321,7 +321,7 @@ void main() {
         (WidgetTester tester) async {
       double value = 30000; // 30s into a 2-min clip
       await tester.pumpWidget(buildTestApp(
-        HibikiFocusRoot(
+        FushiFocusRoot(
           child: StatefulBuilder(
             builder: (BuildContext c, StateSetter setState) =>
                 gamepadSeekableSlider(
@@ -335,7 +335,7 @@ void main() {
       ));
       await tester.pump();
 
-      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.byType(Slider)),
       );
       controller.ensureFocus();
@@ -366,7 +366,7 @@ void main() {
         '(they bubble to the page so tab-switch / focus-search still work)',
         (WidgetTester tester) async {
       await tester.pumpWidget(buildTestApp(
-        HibikiFocusRoot(
+        FushiFocusRoot(
           child: AdaptiveSettingsStepperRow(
             title: 'Font',
             value: 10,
@@ -379,7 +379,7 @@ void main() {
         ),
       ));
       await tester.pump();
-      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.text('Font')),
       );
       controller.ensureFocus();

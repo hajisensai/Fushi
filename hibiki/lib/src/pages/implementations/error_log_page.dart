@@ -47,10 +47,10 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
   Widget build(BuildContext context) {
     final int count = ErrorLogService.instance.entries.length;
 
-    return HibikiPageScaffold(
+    return FushiPageScaffold(
       title: t.error_log_label(n: count),
       actions: <Widget>[
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.copy_outlined,
           tooltip: t.copy,
           onTap: () async {
@@ -62,7 +62,7 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
             }
           },
         ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.share_outlined,
           tooltip: t.share,
           onTap: () {
@@ -72,11 +72,11 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
               name: 'hibiki_error_log.txt',
               mimeType: 'text/plain',
             );
-            HibikiShare.shareFiles([xFile], subject: t.error_log_share_subject);
+            FushiShare.shareFiles([xFile], subject: t.error_log_share_subject);
           },
         ),
         if (showUploadLogAction)
-          HibikiIconButton(
+          FushiIconButton(
             icon: Icons.cloud_upload_outlined,
             tooltip: t.log_upload_action,
             onTap: () => uploadLogToServer(
@@ -86,7 +86,7 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
             ),
           ),
         if (showSaveLogAction)
-          HibikiIconButton(
+          FushiIconButton(
             icon: Icons.save_alt_outlined,
             tooltip: t.log_export_file,
             onTap: () => saveLogToFile(
@@ -96,7 +96,7 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
               subject: t.error_log_share_subject,
             ),
           ),
-        HibikiIconButton(
+        FushiIconButton(
           icon: Icons.delete_outline,
           tooltip: t.clear,
           onTap: () {
@@ -105,7 +105,7 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
           },
         ),
       ],
-      body: HibikiLogPanel(
+      body: FushiLogPanel(
         log: _log,
         shareAction: (text) => Share.share(text),
       ),

@@ -100,7 +100,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
         ? (await repo.loadSettings()).selectedDeckName ?? ''
         : '';
     final described = describeMineOutcome(outcome, deckName: deckName);
-    HibikiToast.show(
+    FushiToast.show(
       msg: described.message,
       // 制卡结果的语义已由 describeMineOutcome 算出（added/duplicate/failed），
       // 这里只把它翻译成 toast 配色，不再另判一次。
@@ -110,11 +110,11 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiOverlayScaffold(
+    return FushiOverlayScaffold(
       safeArea: false,
-      body: HibikiPopupSurface(
+      body: FushiPopupSurface(
         color: tokens.surfaces.search.withValues(alpha: 0.94),
         padding: EdgeInsets.all(tokens.spacing.gap),
         child: Column(
@@ -130,7 +130,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
   }
 
   Widget _buildTitleBar() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return GestureDetector(
       onPanUpdate: (details) {
         _invoke('drag', {
@@ -175,13 +175,13 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
   }
 
   Widget _buildSearchBar() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.gap,
         vertical: tokens.spacing.gap / 4,
       ),
-      child: HibikiCompactSearchRow(
+      child: FushiCompactSearchRow(
         controller: _searchController,
         focusNode: _searchFocusNode,
         hintText: t.search_ellipsis,
@@ -201,7 +201,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
       );
     }
     if (_result == null || _result!.entries.isEmpty) {
-      final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+      final FushiDesignTokens tokens = FushiDesignTokens.of(context);
       return Center(
         child: Text(
           _lastSearch.isEmpty ? '' : t.no_results_found,

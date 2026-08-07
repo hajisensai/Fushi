@@ -15,8 +15,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// BUG-1349：合集详情页按 Esc 必须退出层级。
 ///
 /// 核心故障态（修复前必现）：焦点导航开启且当前页**零受管焦点目标**时，焦点被
-/// 回收链路 park 到 [HibikiFocusRoot] 的 fallbackNode——它挂在 Navigator **之上**，
-/// `HibikiFocusController.activeContext` 与 `primaryFocus.context` 都解析不出
+/// 回收链路 park 到 [FushiFocusRoot] 的 fallbackNode——它挂在 Navigator **之上**，
+/// `FushiFocusController.activeContext` 与 `primaryFocus.context` 都解析不出
 /// ModalRoute，旧 `_handleGlobalEscape` 把「解析不出」当弹窗吞掉，Esc 静默失效。
 ///
 /// 本文件的防假护栏：核心用例先**断言故障态确实成立**（primaryFocus 落在
@@ -25,12 +25,12 @@ import 'package:fushi_core/fushi_core.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late HibikiDatabase db;
+  late FushiDatabase db;
   late int collectionId;
 
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.zhCn);
-    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
     for (final (String uid, String title) in const <(String, String)>[
       ('video/e1', 'Show 01'),
       ('video/e2', 'Show 02'),
@@ -92,7 +92,7 @@ void main() {
   }
 
   /// 与 main.dart 同构接线：MaterialApp.builder 内 [wrapWithGlobalNavigation]
-  /// 包 [HibikiFocusRoot]。**顺序是 BUG-1349 第二处根因的一部分**：fallbackNode
+  /// 包 [FushiFocusRoot]。**顺序是 BUG-1349 第二处根因的一部分**：fallbackNode
   /// 必须位于全局导航层之内，其键事件才冒泡得到全局处理器（修复前顺序相反，
   /// 焦点 park 到兜底节点后所有全局键静默失效）。
   Future<GlobalKey<NavigatorState>> pumpApp(
@@ -100,7 +100,7 @@ void main() {
     required bool focusNavigationEnabled,
   }) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+    final FushiShortcutRegistry registry = FushiShortcutRegistry()
       ..loadDefaults(TargetPlatform.windows);
     await tester.pumpWidget(TranslationProvider(
       child: MaterialApp(
@@ -110,7 +110,7 @@ void main() {
           navigatorKey: navKey,
           focusNavigationEnabled: focusNavigationEnabled,
           registry: registry,
-          child: HibikiFocusRoot(
+          child: FushiFocusRoot(
             enabled: focusNavigationEnabled,
             child: child!,
           ),
@@ -122,8 +122,8 @@ void main() {
     return navKey;
   }
 
-  HibikiFocusController controllerOf(GlobalKey<NavigatorState> navKey) {
-    final HibikiFocusController? controller = HibikiFocusRoot.maybeControllerOf(
+  FushiFocusController controllerOf(GlobalKey<NavigatorState> navKey) {
+    final FushiFocusController? controller = FushiFocusRoot.maybeControllerOf(
       navKey.currentContext!,
       listen: false,
     );
@@ -137,7 +137,7 @@ void main() {
   /// 而 primaryFocus 明明落在路由内——旧代码 `activeContext ?? primaryFocus` 让
   /// 无效候选遮蔽有效候选，Esc 被吞。这是用户实际场景：开着焦点导航、用鼠标
   /// 进详情页（从未键盘聚焦任何卡）、按 Esc。
-  void assertShadowFaultState(HibikiFocusController controller) {
+  void assertShadowFaultState(FushiFocusController controller) {
     final BuildContext? activeContext = controller.activeContext;
     expect(activeContext, isNotNull,
         reason: '前置：activeContext 回落到兜底 context（非 null 才会遮蔽 primaryFocus）');
@@ -158,12 +158,12 @@ void main() {
   }
 
   /// 故障形态 (b)「双失效态」：零受管目标的页面上走真实回收链路
-  /// （[HibikiFocusController.ensureFocus] 的「无目标 → fallbackNode
+  /// （[FushiFocusController.ensureFocus] 的「无目标 → fallbackNode
   /// .requestFocus()」分支，TODO-900 回收范式），primaryFocus 也被 park 到
   /// Navigator 之上——两个候选都解析不出路由。
   Future<void> parkFocusOnFallback(
     WidgetTester tester,
-    HibikiFocusController controller,
+    FushiFocusController controller,
   ) async {
     controller.ensureFocus();
     await tester.pump();
@@ -298,7 +298,7 @@ void main() {
     // 形态消失）。
     final String mainSrc = File('lib/main.dart').readAsStringSync();
     // 判别性锚：从 wrapWithGlobalNavigation 调用起、到其后 macOS 分支之前的这段
-    // 实参文本里必须出现 _wrapFocusNavigation ——旧接线里它在 HibikiAppUiScale
+    // 实参文本里必须出现 _wrapFocusNavigation ——旧接线里它在 FushiAppUiScale
     // 的 child（macOS 分支**之后**），裸 contains 会两种接线都绿（假防护）。
     final int wrapperStart =
         mainSrc.indexOf('Widget navigation = wrapWithGlobalNavigation(');
@@ -311,7 +311,7 @@ void main() {
           .substring(wrapperStart, macosBranch)
           .contains('_wrapFocusNavigation('),
       isTrue,
-      reason: 'BUG-1349 第二处根因：HibikiFocusRoot（fallbackNode）必须作为 '
+      reason: 'BUG-1349 第二处根因：FushiFocusRoot（fallbackNode）必须作为 '
           'wrapWithGlobalNavigation 的 child 挂载（即出现在其实参段内），否则'
           '兜底节点的键事件冒泡不到全局处理器，零受管目标页的 Esc/全局快捷键'
           '整体失效',

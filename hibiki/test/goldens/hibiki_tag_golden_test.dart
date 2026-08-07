@@ -8,10 +8,10 @@ import 'package:fushi/src/utils/components/hibiki_tag.dart';
 import 'golden_test_helpers.dart';
 
 void main() {
-  group('HibikiTag golden', () {
+  group('FushiTag golden', () {
     testWidgets('basic tag', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiTag(text: 'noun', backgroundColor: Colors.blue),
+        const FushiTag(text: 'noun', backgroundColor: Colors.blue),
         size: const Size(200, 60),
       ));
       await tester.pumpAndSettle();
@@ -24,7 +24,7 @@ void main() {
 
     testWidgets('tag with icon', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiTag(
+        const FushiTag(
           text: 'verb',
           backgroundColor: Colors.green,
           icon: Icons.label,
@@ -41,7 +41,7 @@ void main() {
 
     testWidgets('tag with trailing text', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiTag(
+        const FushiTag(
           text: 'freq',
           backgroundColor: Colors.purple,
           trailingText: '★3',
@@ -58,7 +58,7 @@ void main() {
 
     testWidgets('tag dark theme', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiTag(
+        const FushiTag(
           text: 'dark',
           backgroundColor: Colors.teal,
           icon: Icons.dark_mode,
@@ -76,7 +76,7 @@ void main() {
 
     testWidgets('tag custom foreground', (tester) async {
       await tester.pumpWidget(buildGoldenApp(
-        const HibikiTag(
+        const FushiTag(
           text: 'custom',
           backgroundColor: Color(0xFF263238),
           foregroundColor: Colors.amber,

@@ -52,8 +52,8 @@ class _HostLog {
 
 /// 真注册表 + 用户改键：关词典 = `Escape`（默认）+ 侧键后退 `Mouse3`（用户加的，
 /// BUG-1347 报告里正是这条绑定在弹窗表面永远无效）。
-HibikiShortcutRegistry _registryWithSideButtonDismiss() {
-  final HibikiShortcutRegistry registry = HibikiShortcutRegistry();
+FushiShortcutRegistry _registryWithSideButtonDismiss() {
+  final FushiShortcutRegistry registry = FushiShortcutRegistry();
   registry.loadDefaults(TargetPlatform.windows);
   final Map<String, dynamic> json = registry.toJson();
   json[ShortcutAction.readerDismissDict.key] = <String, dynamic>{
@@ -75,7 +75,7 @@ class _HostShell extends StatefulWidget {
     required this.log,
   });
 
-  final HibikiShortcutRegistry registry;
+  final FushiShortcutRegistry registry;
   final DictionaryPopupInputSpec spec;
   final _HostLog log;
 
@@ -185,7 +185,7 @@ class _HostShellState extends State<_HostShell> {
 
 Future<_HostLog> _pumpHost(
   WidgetTester tester,
-  HibikiShortcutRegistry registry,
+  FushiShortcutRegistry registry,
   DictionaryPopupInputSpec spec,
 ) async {
   final _HostLog log = _HostLog();
@@ -205,7 +205,7 @@ Future<_HostLog> _pumpHost(
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  late HibikiShortcutRegistry registry;
+  late FushiShortcutRegistry registry;
   late DictionaryPopupInputSpec spec;
 
   setUp(() {

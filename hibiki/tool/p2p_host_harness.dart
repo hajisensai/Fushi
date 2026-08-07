@@ -1,4 +1,4 @@
-// Dev/test harness: runs a real HibikiSyncServer on the host so an Android
+// Dev/test harness: runs a real FushiSyncServer on the host so an Android
 // emulator (or a real device) can verify P2P sync interop by connecting to
 // http://10.0.2.2:<port> (emulator) or http://<host-lan-ip>:<port> (device).
 //
@@ -27,7 +27,7 @@ Future<void> main(List<String> args) async {
       .writeAsStringSync('{"dataId":0,"exploredCharCount":500,"progress":0.5,'
           '"lastBookmarkModified":1234}');
 
-  final HibikiSyncServer server = HibikiSyncServer(
+  final FushiSyncServer server = FushiSyncServer(
     syncDataDir: dir.path,
     port: port,
     token: token,

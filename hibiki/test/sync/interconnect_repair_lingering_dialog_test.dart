@@ -15,8 +15,8 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
   });
 
-  HibikiSyncServerController buildController(GlobalKey<NavigatorState> navKey) {
-    return HibikiSyncServerController(
+  FushiSyncServerController buildController(GlobalKey<NavigatorState> navKey) {
+    return FushiSyncServerController(
       navigatorKey: navKey,
       database: () => throw UnimplementedError('db not used in this test'),
       syncDataDir: () => '.',
@@ -27,7 +27,7 @@ void main() {
 
   testWidgets('重新配对不被上一个常驻 PIN 弹窗挡成拒绝（BUG-708）', (WidgetTester tester) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    final HibikiSyncServerController controller = buildController(navKey);
+    final FushiSyncServerController controller = buildController(navKey);
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(TranslationProvider(
@@ -37,7 +37,7 @@ void main() {
       ),
     ));
 
-    const HibikiPairRequest wanReq = HibikiPairRequest(
+    const FushiPairRequest wanReq = FushiPairRequest(
       deviceName: 'Phone A',
       remoteAddress: '203.0.113.7',
       pinRequired: true,

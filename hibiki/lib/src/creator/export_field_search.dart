@@ -53,7 +53,7 @@ mixin ExportFieldSearch on Field {
         String fallbackTerm =
             creatorModel.getFieldController(fallbackField).text.trim();
         if (fallbackTerm.isNotEmpty) {
-          HibikiToast.show(
+          FushiToast.show(
             msg: t.field_fallback_used(
               field: getLocalisedLabel(appModel),
               secondField: fallbackField.getLocalisedLabel(appModel),
@@ -68,7 +68,7 @@ mixin ExportFieldSearch on Field {
       }
     }
 
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.no_text_to_search,
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.BOTTOM,

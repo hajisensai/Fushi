@@ -90,12 +90,12 @@ CREATE TABLE media_images (
 
   /// 打开一个 `user_version = 67` 的种子库。[withParentTables] 控制两张外键父表
   /// 在不在场，[foreignKeys] 控制连接进入迁移时的外键强制状态。
-  Future<HibikiDatabase> openV67Db({
+  Future<FushiDatabase> openV67Db({
     required bool withParentTables,
     required bool foreignKeys,
     bool withMediaImages = false,
   }) async {
-    final HibikiDatabase db = HibikiDatabase.forTesting(
+    final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (CommonDatabase rawDb) {
           // 建表/塞种子期间先关外键：这一步模拟的是「库已经长成这样」，不是测约束。
@@ -144,11 +144,11 @@ CREATE TABLE media_images (
     return db;
   }
 
-  Future<int> userVersionOf(HibikiDatabase db) async =>
+  Future<int> userVersionOf(FushiDatabase db) async =>
       (await db.customSelect('PRAGMA user_version').getSingle())
           .read<int>('user_version');
 
-  Future<bool> foreignKeysOf(HibikiDatabase db) async =>
+  Future<bool> foreignKeysOf(FushiDatabase db) async =>
       (await db.customSelect('PRAGMA foreign_keys').getSingle())
           .read<int>('foreign_keys') ==
       1;
@@ -156,7 +156,7 @@ CREATE TABLE media_images (
   test('外键开着 + 两张父表都缺席：v67 升 v68 不抛，背景图照搬', () async {
     // 修复前这里抛 SqliteException(1): no such table: main.media_collections，
     // 整条 onUpgrade 中断——用户侧就是 app 打不开。
-    final HibikiDatabase db =
+    final FushiDatabase db =
         await openV67Db(withParentTables: false, foreignKeys: true);
 
     expect(await userVersionOf(db), 68, reason: '迁移必须跑完并落 user_version');
@@ -173,7 +173,7 @@ CREATE TABLE media_images (
   });
 
   test('外键开着 + 父表齐全（真实旧库形态）：搬运正确且外键仍是真强制', () async {
-    final HibikiDatabase db =
+    final FushiDatabase db =
         await openV67Db(withParentTables: true, foreignKeys: true);
 
     expect(await userVersionOf(db), 68);
@@ -192,7 +192,7 @@ CREATE TABLE media_images (
   });
 
   test('进来时外键是关的：v68 按原值恢复，不无条件置 ON', () async {
-    final HibikiDatabase db =
+    final FushiDatabase db =
         await openV67Db(withParentTables: true, foreignKeys: false);
 
     expect(await userVersionOf(db), 68);
@@ -201,7 +201,7 @@ CREATE TABLE media_images (
   });
 
   test('media_images 已在场：重复升级不重插', () async {
-    final HibikiDatabase db = await openV67Db(
+    final FushiDatabase db = await openV67Db(
       withParentTables: true,
       foreignKeys: true,
       withMediaImages: true,

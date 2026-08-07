@@ -164,7 +164,7 @@ void main() {
       final String mixin =
           File('lib/src/pages/implementations/dictionary_page_mixin.dart')
               .readAsStringSync();
-      expect(mixin, contains('HibikiToast.showMine'),
+      expect(mixin, contains('FushiToast.showMine'),
           reason: '制卡结果仍弹 MD3 着色 toast（added/duplicate/failed/pending）作辅助反馈');
     });
   });

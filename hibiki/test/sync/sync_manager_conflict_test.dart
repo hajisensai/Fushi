@@ -13,8 +13,8 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _testDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 /// Minimal in-memory backend driving the three-way decision in SyncManager.
 ///
@@ -201,7 +201,7 @@ SyncFileRef _progressFile(int timestampMs, double fraction) => SyncFileRef(
       name: progressFileName(timestampMs, fraction),
     );
 
-Future<EpubBookRow> _seedBook(HibikiDatabase db, String title) async {
+Future<EpubBookRow> _seedBook(FushiDatabase db, String title) async {
   await db.insertEpubBook(EpubBooksCompanion.insert(
     bookKey: title,
     title: title,
@@ -217,7 +217,7 @@ Future<EpubBookRow> _seedBook(HibikiDatabase db, String title) async {
 /// Seed a local reader position whose explored-char offset matches [fraction]
 /// (single 1000-char chapter), stamped with [updatedAt].
 Future<void> _seedPosition(
-  HibikiDatabase db,
+  FushiDatabase db,
   String bookKey, {
   required int updatedAt,
   required double fraction,
@@ -236,7 +236,7 @@ void main() {
   final String assetKey = sanitizeTtuFilename(title);
 
   test('both sides diverged from base → conflict, nothing written', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
 
     final EpubBookRow book = await _seedBook(db, title);
@@ -277,7 +277,7 @@ void main() {
   });
 
   test('only local diverged → export, base advances to exported ts', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
 
     final EpubBookRow book = await _seedBook(db, title);
@@ -310,7 +310,7 @@ void main() {
   });
 
   test('only remote diverged → import, base advances to imported ts', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
 
     final EpubBookRow book = await _seedBook(db, title);
@@ -351,7 +351,7 @@ void main() {
   test(
       'BUG-201: progress baseline lands with the progress upload, even when a '
       'trailing transfer crashes → no false conflict on re-open', () async {
-    final HibikiDatabase db = _testDb();
+    final FushiDatabase db = _testDb();
     addTearDown(db.close);
 
     final EpubBookRow book = await _seedBook(db, title);

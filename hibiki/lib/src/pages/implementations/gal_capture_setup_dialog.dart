@@ -87,7 +87,7 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
         await widget.session.exportTrackPreview(track.sourcePtr);
     if (!mounted || generation != _previewGeneration) return;
     if (preview == null) {
-      HibikiToast.show(msg: t.game_track_preview_failed);
+      FushiToast.show(msg: t.game_track_preview_failed);
       return;
     }
     final bool started = await DesktopAudioPlayback.playFile(preview.filePath);
@@ -97,7 +97,7 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
       return;
     }
     if (!started) {
-      HibikiToast.show(msg: t.game_track_preview_failed);
+      FushiToast.show(msg: t.game_track_preview_failed);
       return;
     }
     _previewResetTimer?.cancel();
@@ -190,7 +190,7 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
   Widget _buildThreadPane(BuildContext context) {
     final List<TexthookerTextThread> threads = widget.session.textThreads;
     final Map<String, String> labels = assignThreadDisplayLabels(threads);
-    return HibikiCard(
+    return FushiCard(
       padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -212,7 +212,7 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
                     itemBuilder: (BuildContext context, int index) {
                       final TexthookerTextThread thread = threads[index];
                       final bool selecting = _selectingThreadKey == thread.key;
-                      return HibikiListItem(
+                      return FushiListItem(
                         leading: const Icon(Icons.forum_outlined),
                         title: Text(
                           '${labels[thread.key] ?? thread.label} · '
@@ -258,7 +258,7 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
         : '${state.audioFormat!.sampleRate} Hz · '
             '${state.audioFormat!.channels} ch · '
             '${state.audioFormat!.bitsPerSample} bit';
-    return HibikiCard(
+    return FushiCard(
       padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

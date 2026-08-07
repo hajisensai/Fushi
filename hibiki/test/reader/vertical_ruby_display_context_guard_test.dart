@@ -33,7 +33,7 @@ Future<String> _readerCss({
   required String viewMode,
   required String furiganaMode,
 }) async {
-  final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   final ReaderSettings settings = ReaderSettings(db);
   await settings.refreshFromDb();

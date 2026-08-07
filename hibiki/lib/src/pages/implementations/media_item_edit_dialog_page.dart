@@ -81,10 +81,10 @@ class _MediaItemEditDialogPageState
         mainAxisSize: MainAxisSize.min,
         children: [
           const SizedBox(width: double.maxFinite, height: 1),
-          HibikiTextField(
+          FushiTextField(
             controller: _nameOverrideController,
             maxLines: null,
-            suffixIcon: HibikiIconButton(
+            suffixIcon: FushiIconButton(
               tooltip: t.undo,
               isWideTapArea: true,
               icon: Icons.undo_outlined,
@@ -96,12 +96,12 @@ class _MediaItemEditDialogPageState
           ),
           if (_supportsAuthorEdit) ...<Widget>[
             const SizedBox(height: 8),
-            HibikiTextField(
+            FushiTextField(
               controller: _authorController,
               labelText: t.book_edit_author,
               hintText: t.book_edit_author,
               maxLines: 1,
-              suffixIcon: HibikiIconButton(
+              suffixIcon: FushiIconButton(
                 tooltip: t.undo,
                 isWideTapArea: true,
                 icon: Icons.undo_outlined,
@@ -244,9 +244,9 @@ class MediaItemEditDialogFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return HibikiDialogFrame(
+    return FushiDialogFrame(
       maxWidth: 440,
       maxHeightFactor: 0.72,
       scrollable: false,
@@ -254,7 +254,7 @@ class MediaItemEditDialogFrame extends StatelessWidget {
         horizontal: tokens.spacing.card,
         vertical: tokens.spacing.gap,
       ),
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
@@ -299,8 +299,8 @@ class MediaItemCoverOverrideField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiCard(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiCard(
       padding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.rowHorizontal,
         vertical: tokens.spacing.gap,
@@ -330,7 +330,7 @@ class MediaItemCoverOverrideField extends StatelessWidget {
             ),
             SizedBox(width: tokens.spacing.gap),
             if (onScrape != null) ...<Widget>[
-              HibikiIconButton(
+              FushiIconButton(
                 tooltip: t.book_scrape_cover,
                 isWideTapArea: true,
                 icon: Icons.image_search_outlined,
@@ -338,14 +338,14 @@ class MediaItemCoverOverrideField extends StatelessWidget {
               ),
               SizedBox(width: tokens.spacing.gap / 2),
             ],
-            HibikiIconButton(
+            FushiIconButton(
               tooltip: t.pick_image,
               isWideTapArea: true,
               icon: Icons.file_upload_outlined,
               onTap: onPickImage,
             ),
             SizedBox(width: tokens.spacing.gap / 2),
-            HibikiIconButton(
+            FushiIconButton(
               tooltip: t.undo,
               isWideTapArea: true,
               icon: Icons.undo_outlined,

@@ -39,7 +39,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     // 唯一 key：同一 tester 内连续多次 pumpDialog（如「随高度增长」用例）时强制整棵
     // 树重建、丢弃上一次残留的 dialog route，避免旧 modal barrier 挡住下一次「open」点击
-    // 导致新对话框打不开（HibikiDialogFrame 依赖 MediaQuery，复用树时第二次更易残留）。
+    // 导致新对话框打不开（FushiDialogFrame 依赖 MediaQuery，复用树时第二次更易残留）。
     await tester.pumpWidget(
       MaterialApp(
         key: UniqueKey(),
@@ -251,18 +251,18 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  /// 实际可视对话框宽度：取 HibikiDialogFrame 内层 [ConstrainedBox]（受 maxWidth 约束、
-  /// 被 [Dialog] 居中、宽度贴合内容）。HibikiDialogFrame 本身的 RenderBox 是充满屏幕的
+  /// 实际可视对话框宽度：取 FushiDialogFrame 内层 [ConstrainedBox]（受 maxWidth 约束、
+  /// 被 [Dialog] 居中、宽度贴合内容）。FushiDialogFrame 本身的 RenderBox 是充满屏幕的
   /// Dialog 根盒，量不到真实对话框宽，故下钻到受约束的内容盒。
   double measuredDialogWidth(WidgetTester tester) {
     final Finder box = find.descendant(
-      of: find.byType(HibikiDialogFrame),
+      of: find.byType(FushiDialogFrame),
       matching: find.byType(ConstrainedBox),
     );
     return tester.getSize(box.first).width;
   }
 
-  // TODO-835：旧外壳写死 maxWidth:380，大屏永远窄。改用 HibikiDialogFrame(maxWidth:720)
+  // TODO-835：旧外壳写死 maxWidth:380，大屏永远窄。改用 FushiDialogFrame(maxWidth:720)
   // 后大屏对话框实际宽应 >380，同时仍由 720 封顶。
   testWidgets('TODO-835: wide screen dialog is wider than old 380 cap',
       (WidgetTester tester) async {
@@ -271,7 +271,7 @@ void main() {
     final double listWidth =
         tester.getSize(find.byType(JimakuCandidateList)).width;
     expect(listWidth, greaterThan(380.0 - 48.0),
-        reason: '大屏候选列表内容宽应比旧 380 上限内容宽更宽（HibikiDialogFrame maxWidth:720）');
+        reason: '大屏候选列表内容宽应比旧 380 上限内容宽更宽（FushiDialogFrame maxWidth:720）');
     final double dialogWidth = measuredDialogWidth(tester);
     expect(dialogWidth, greaterThan(380.0), reason: '大屏对话框实际宽应 >380（旧写死上限）');
     expect(dialogWidth, lessThanOrEqualTo(720.0),

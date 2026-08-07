@@ -119,7 +119,7 @@ void main() {
 
   /// 用户口径：「删掉漫画里面的标题，管理来源、浏览这两个」。
   ///
-  /// 这两个页面此前用的是 `HibikiPageHeader(title: ..., bottom: navigation)`
+  /// 这两个页面此前用的是 `FushiPageHeader(title: ..., bottom: navigation)`
   /// ——页头先渲染一行页面大标题，再把库页视图导航条挂在它下面。可导航条本身就
   /// 标明了当前在哪个视图，那行标题纯属重复占一行高度。通用媒体来源页
   /// (`MediaSourcesPage._buildHeader`) 早已迁到 `customTitle` 范式（导航条直接占
@@ -136,7 +136,7 @@ void main() {
         final String source = _read(<String>[file]);
         expect(
           source,
-          contains('HibikiPageHeader.customTitle('),
+          contains('FushiPageHeader.customTitle('),
           reason: '导航条必须直接占页头主位，而不是挂在一行大标题下面',
         );
       });

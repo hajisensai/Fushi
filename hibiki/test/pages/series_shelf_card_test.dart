@@ -76,31 +76,31 @@ void main() {
     expect(taps, 0);
   });
 
-  testWidgets('registers a HibikiFocusTarget under a focus root with focusId',
+  testWidgets('registers a FushiFocusTarget under a focus root with focusId',
       (tester) async {
     int taps = 0;
-    await tester.pumpWidget(wrap(HibikiFocusRoot(
+    await tester.pumpWidget(wrap(FushiFocusRoot(
       child: SeriesShelfCard(
         name: 'S',
         itemCount: 2,
         covers: <Widget>[coverBox('a', Colors.green)],
         slotAspectRatio: 160 / 260,
-        focusId: const HibikiFocusId('reader-shelf-series-42'),
+        focusId: const FushiFocusId('reader-shelf-series-42'),
         onTap: () => taps++,
       ),
     )));
     await tester.pump();
 
-    expect(find.byType(HibikiFocusTarget), findsOneWidget);
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    expect(find.byType(FushiFocusTarget), findsOneWidget);
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(SeriesShelfCard)),
     );
     expect(
-      controller.requestById(const HibikiFocusId('reader-shelf-series-42')),
+      controller.requestById(const FushiFocusId('reader-shelf-series-42')),
       isTrue,
     );
     await tester.pump();
-    expect(controller.activeId, const HibikiFocusId('reader-shelf-series-42'));
+    expect(controller.activeId, const FushiFocusId('reader-shelf-series-42'));
 
     // Enter / gamepad A activates the same onTap as a mouse.
     Actions.maybeInvoke<ActivateIntent>(
@@ -113,7 +113,7 @@ void main() {
 
   testWidgets('stays a bare InkWell without a focusId (never-break)',
       (tester) async {
-    await tester.pumpWidget(wrap(HibikiFocusRoot(
+    await tester.pumpWidget(wrap(FushiFocusRoot(
       child: SeriesShelfCard(
         name: 'S',
         itemCount: 2,
@@ -123,7 +123,7 @@ void main() {
       ),
     )));
     await tester.pump();
-    expect(find.byType(HibikiFocusTarget), findsNothing);
+    expect(find.byType(FushiFocusTarget), findsNothing);
   });
 
   // ---- TODO-947 phone-folder mosaic ----

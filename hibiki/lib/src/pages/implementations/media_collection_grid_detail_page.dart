@@ -17,7 +17,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 的剧集列表 [MediaCollectionDetailPage] 同一顺序真相源）。渲染成员卡网格
 /// （[memberCardBuilder] 由调用方按 mediaType/entryKey 提供），支持重命名 / 删除合集
 /// （删只解链、绝不删条目）+ AppBar 一键排序（按名称/导入时间写穿 sortIndex）+
-/// **网格拖拽精修**（[HibikiReorderableGrid]，消缩放 2D 拖排，落盘 sortIndex 与库页
+/// **网格拖拽精修**（[FushiReorderableGrid]，消缩放 2D 拖排，落盘 sortIndex 与库页
 /// 合集行同源）。「移出合集」/「打开」走卡片**长按 / 右键**上下文菜单（不再是每卡右上角
 /// 浮动按钮），移空后合集自删。
 class MediaCollectionGridDetailPage extends StatefulWidget {
@@ -31,7 +31,7 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
     super.key,
   });
 
-  final HibikiDatabase database;
+  final FushiDatabase database;
   final MediaCollectionRow collection;
 
   /// 按成员 (mediaType, entryKey) 渲染卡片；返回 null = 该成员当前不可见（孤儿/被过滤），
@@ -75,7 +75,7 @@ class _MediaCollectionGridDetailPageState
   List<MediaCollectionItemRow> _rows = const <MediaCollectionItemRow>[];
 
   @override
-  HibikiDatabase get detailDatabase => widget.database;
+  FushiDatabase get detailDatabase => widget.database;
   @override
   MediaCollectionRow get detailCollection => widget.collection;
   @override
@@ -142,10 +142,10 @@ class _MediaCollectionGridDetailPageState
   Future<void> _delete() async {
     // 仅当调用方注入了删本体回调、且合集当前有成员时，才给用户「连同书一起删」
     // 勾选行；否则退回纯解链删除（老行为，零变化）。确认框统一走 PR-0 的
-    // [HibikiDestructiveConfirmDialog]（经 [confirmDetailCollectionDelete]）。
+    // [FushiDestructiveConfirmDialog]（经 [confirmDetailCollectionDelete]）。
     final bool canDeleteMembers =
         widget.onDeleteMembersMedia != null && _rows.isNotEmpty;
-    final HibikiDestructiveConfirmResult? result =
+    final FushiDestructiveConfirmResult? result =
         await confirmDetailCollectionDelete(
       checkboxLabel: canDeleteMembers ? t.delete_collection_also_books : null,
       checkedDisclosure: canDeleteMembers
@@ -231,7 +231,7 @@ class _MediaCollectionGridDetailPageState
     if (overlay is! RenderBox) return;
     // BUG-781（与 BUG-129/261/381 同族）：[globalPosition] 是网格右键 / 触摸长按
     // 回调报的真实视口坐标；而 showMenu 的 RelativeRect 落在根 Navigator 的
-    // Overlay 坐标系，该 Overlay 位于全局 [HibikiAppUiScale]（FittedBox 整体缩放）
+    // Overlay 坐标系，该 Overlay 位于全局 [FushiAppUiScale]（FittedBox 整体缩放）
     // 的缩放画布内。直接把真实视口坐标当 Overlay 本地坐标喂进去，界面大小≠100%
     // 时菜单会偏离点击点 factor≈scale（scale=0.5 时约偏半个点击坐标、数百像素）。
     // 用 Overlay 的 RenderBox.globalToLocal 沿真实渲染变换链换算——中间的 FittedBox
@@ -285,18 +285,18 @@ class _MediaCollectionGridDetailPageState
         actions: narrowAwareAppBarActions(
           availableWidth: availableWidth,
           alwaysVisible: <Widget>[_buildSortMenu()],
-          collapsible: <HibikiAppBarAction>[
-            HibikiAppBarAction(
+          collapsible: <FushiAppBarAction>[
+            FushiAppBarAction(
               icon: Icons.drive_file_rename_outline,
               label: t.rename_collection,
               onPressed: renameDetailCollection,
             ),
-            HibikiAppBarAction(
+            FushiAppBarAction(
               icon: Icons.sell_outlined,
               label: t.tag_label,
               onPressed: editDetailCollectionTags,
             ),
-            HibikiAppBarAction(
+            FushiAppBarAction(
               icon: Icons.delete_outline,
               label: t.delete_collection,
               onPressed: _delete,
@@ -335,7 +335,7 @@ class _MediaCollectionGridDetailPageState
         child: _loading
             ? Center(child: adaptiveIndicator(context: context))
             : members.isEmpty
-                ? HibikiPlaceholderMessage(
+                ? FushiPlaceholderMessage(
                     icon: Icons.collections_bookmark_outlined,
                     message: t.collection_empty,
                   )
@@ -350,7 +350,7 @@ class _MediaCollectionGridDetailPageState
     );
   }
 
-  /// 成员网格：消缩放 2D 拖排（[HibikiReorderableGrid]）。卡尺寸对齐书架散卡口径
+  /// 成员网格：消缩放 2D 拖排（[FushiReorderableGrid]）。卡尺寸对齐书架散卡口径
   /// （[readerShelfGridExtentForLayout] 断点 → [unifiedShelfCardLayout] 列数、
   /// [kShelfBookCardAspectRatio] 槽比）——旧实现自带 180+ceil+硬编码 160/260，
   /// 同一本书在书架与详情页两个网格里尺寸口径不一致（巡检 PR-3）。卡片包在
@@ -376,13 +376,13 @@ class _MediaCollectionGridDetailPageState
         );
         return SingleChildScrollView(
           padding: const EdgeInsets.all(12),
-          child: HibikiReorderableGrid(
+          child: FushiReorderableGrid(
             itemCount: members.length,
             crossAxisCount: layout.columns,
             childAspectRatio: kShelfBookCardAspectRatio,
             crossAxisSpacing: spacing,
             mainAxisSpacing: spacing,
-            feedbackBorderRadius: HibikiBorderRadius.card,
+            feedbackBorderRadius: FushiBorderRadius.card,
             keyForIndex: (int i) => ValueKey<String>(
                 '${members[i].row.mediaType}|${members[i].row.entryKey}'),
             onReorder: _onReorder,
@@ -418,7 +418,7 @@ class _HoverableMemberCardState extends State<_HoverableMemberCard> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool eink = isEinkTheme(context);
     return MouseRegion(
       cursor: SystemMouseCursors.click,

@@ -87,7 +87,7 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
               icon: Icons.sync,
               controlBelow: true,
               // The action lives on the trailing button; giving the ROW an onTap
-              // is what registers it as a HibikiFocusTarget so gamepad/keyboard
+              // is what registers it as a FushiFocusTarget so gamepad/keyboard
               // directional nav can reach it and Activate runs the sync
               // (BUG-016). Without it the row was unreachable and Down from the
               // neighbouring "Compare Data" row jumped cross-pane to the rail.

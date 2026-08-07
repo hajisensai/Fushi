@@ -9,16 +9,16 @@ import 'package:fushi/utils.dart';
 
 /// TODO-942 残留缺口守卫：快捷键设置页顶部「列表 / 键盘皮肤」模式切换开关必须
 /// 可被手柄 / 键盘焦点操作。修复前它是一个裸 `SegmentedButton<bool>` —— 由多个
-/// 原生子按钮组成的簇，方向式 [HibikiFocusController]（只遍历已注册的
-/// [HibikiFocusTarget]）会整个跳过它，纯手柄用户根本到不了键盘皮肤视图。
+/// 原生子按钮组成的簇，方向式 [FushiFocusController]（只遍历已注册的
+/// [FushiFocusTarget]）会整个跳过它，纯手柄用户根本到不了键盘皮肤视图。
 ///
-/// 修复后它被 [HibikiAdjustableSegmented]<bool> 包成**单一焦点停靠点**：
+/// 修复后它被 [FushiAdjustableSegmented]<bool> 包成**单一焦点停靠点**：
 /// - 方向键 / D-pad 左右在 list(false) ↔ keyboard(true) 之间翻转；
 /// - 内部 [SegmentedButton] 仍保留 `Key('shortcut_view_toggle')`，鼠标 / 触摸
 ///   可点、测试可寻址。
 ///
-/// 这里复现源码里那一段 `HibikiAdjustableSegmented<bool>` + `SegmentedButton`
-/// 组合，通过真实的 [HibikiFocusRoot] 焦点驱动（禁 tester.tap / 坐标点击），
+/// 这里复现源码里那一段 `FushiAdjustableSegmented<bool>` + `SegmentedButton`
+/// 组合，通过真实的 [FushiFocusRoot] 焦点驱动（禁 tester.tap / 坐标点击），
 /// 断言焦点可达且方向键 / 手柄能真正翻转选择。
 void main() {
   setUp(() {
@@ -37,12 +37,12 @@ void main() {
       builder: (BuildContext context, Widget? child) =>
           wrapWithGlobalNavigation(navigatorKey: navKey, child: child!),
       home: Scaffold(
-        body: HibikiFocusRoot(
+        body: FushiFocusRoot(
           child: StatefulBuilder(
             builder: (BuildContext context, StateSetter setState) {
               return Align(
                 alignment: Alignment.centerLeft,
-                child: HibikiAdjustableSegmented<bool>(
+                child: FushiAdjustableSegmented<bool>(
                   focusIdPrefix: 'shortcut-view-toggle',
                   values: const <bool>[false, true],
                   selected: visualMode,
@@ -91,7 +91,7 @@ void main() {
 
     // 焦点根里只有这一个停靠点，ensureFocus 必然落在开关上（修复前它整个被
     // 方向式焦点控制器跳过，activeId 会是 null）。
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byKey(const Key('shortcut_view_toggle'))),
     );
     controller.ensureFocus();
@@ -117,7 +117,7 @@ void main() {
         .pumpWidget(buildHarness(onModeChanged: (bool m) => lastMode = m));
     await tester.pump();
 
-    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byKey(const Key('shortcut_view_toggle'))),
     );
     controller.ensureFocus();

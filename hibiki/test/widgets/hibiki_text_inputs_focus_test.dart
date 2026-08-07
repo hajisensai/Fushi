@@ -6,7 +6,7 @@ import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 import 'widget_test_helpers.dart';
 
 void main() {
-  testWidgets('HibikiSearchField registers its text focus node with the root',
+  testWidgets('FushiSearchField registers its text focus node with the root',
       (WidgetTester tester) async {
     final TextEditingController controller = TextEditingController();
     final FocusNode focusNode = FocusNode(debugLabel: 'search-field');
@@ -14,9 +14,9 @@ void main() {
     addTearDown(focusNode.dispose);
 
     await tester.pumpWidget(buildTestApp(
-      HibikiFocusRoot(
-        child: HibikiSearchField(
-          focusId: const HibikiFocusId('search'),
+      FushiFocusRoot(
+        child: FushiSearchField(
+          focusId: const FushiFocusId('search'),
           controller: controller,
           focusNode: focusNode,
           hintText: 'Search',
@@ -27,35 +27,35 @@ void main() {
     ));
     await tester.pump();
 
-    final HibikiFocusController root = HibikiFocusRoot.controllerOf(
+    final FushiFocusController root = FushiFocusRoot.controllerOf(
       tester.element(find.byType(SearchBar)),
     );
-    expect(root.requestById(const HibikiFocusId('search')), isTrue);
+    expect(root.requestById(const FushiFocusId('search')), isTrue);
     await tester.pump();
 
-    expect(root.activeId, const HibikiFocusId('search'));
+    expect(root.activeId, const FushiFocusId('search'));
     expect(focusNode.hasPrimaryFocus, isTrue);
   });
 
-  testWidgets('HibikiTextField registers with an owned focus node',
+  testWidgets('FushiTextField registers with an owned focus node',
       (WidgetTester tester) async {
     await tester.pumpWidget(buildTestApp(
-      const HibikiFocusRoot(
-        child: HibikiTextField(
-          focusId: HibikiFocusId('text-field'),
+      const FushiFocusRoot(
+        child: FushiTextField(
+          focusId: FushiFocusId('text-field'),
           hintText: 'Name',
         ),
       ),
     ));
     await tester.pump();
 
-    final HibikiFocusController root = HibikiFocusRoot.controllerOf(
+    final FushiFocusController root = FushiFocusRoot.controllerOf(
       tester.element(find.byType(TextFormField)),
     );
-    expect(root.requestById(const HibikiFocusId('text-field')), isTrue);
+    expect(root.requestById(const FushiFocusId('text-field')), isTrue);
     await tester.pump();
 
-    expect(root.activeId, const HibikiFocusId('text-field'));
+    expect(root.activeId, const FushiFocusId('text-field'));
     expect(FocusManager.instance.primaryFocus?.debugLabel, contains('Name'));
   });
 }

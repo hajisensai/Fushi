@@ -4,14 +4,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/hibiki_focusable.dart';
 
 void main() {
-  testWidgets('HibikiFocusable activates onTap via gameButtonA/Enter',
+  testWidgets('FushiFocusable activates onTap via gameButtonA/Enter',
       (WidgetTester tester) async {
     int taps = 0;
     final FocusNode node = FocusNode();
     addTearDown(node.dispose);
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
-        body: HibikiFocusable(
+        body: FushiFocusable(
           focusNode: node,
           autofocus: true,
           onTap: () => taps++,
@@ -31,12 +31,12 @@ void main() {
     expect(taps, 2);
   });
 
-  testWidgets('HibikiFocusable still works on pointer tap',
+  testWidgets('FushiFocusable still works on pointer tap',
       (WidgetTester tester) async {
     int taps = 0;
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
-        body: HibikiFocusable(onTap: () => taps++, child: const Text('btn')),
+        body: FushiFocusable(onTap: () => taps++, child: const Text('btn')),
       ),
     ));
     await tester.tap(find.text('btn'));

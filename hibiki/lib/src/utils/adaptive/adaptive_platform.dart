@@ -2,7 +2,7 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 
-enum HibikiDesignSystem { auto, material, cupertino, macos }
+enum FushiDesignSystem { auto, material, cupertino, macos }
 
 /// macOS 标准标题栏高度（逻辑像素）。`main.dart` 无条件启用透明标题栏 +
 /// full-size content view（macos_ui ToolBar 的硬性前提），Flutter 内容会整块
@@ -14,19 +14,19 @@ enum HibikiDesignSystem { auto, material, cupertino, macos }
 const double kMacTitleBarHeight = 28.0;
 
 @immutable
-class HibikiDesignSystemTheme extends ThemeExtension<HibikiDesignSystemTheme> {
-  const HibikiDesignSystemTheme(this.designSystem);
+class FushiDesignSystemTheme extends ThemeExtension<FushiDesignSystemTheme> {
+  const FushiDesignSystemTheme(this.designSystem);
 
-  final HibikiDesignSystem designSystem;
+  final FushiDesignSystem designSystem;
 
   @override
-  HibikiDesignSystemTheme copyWith({HibikiDesignSystem? designSystem}) {
-    return HibikiDesignSystemTheme(designSystem ?? this.designSystem);
+  FushiDesignSystemTheme copyWith({FushiDesignSystem? designSystem}) {
+    return FushiDesignSystemTheme(designSystem ?? this.designSystem);
   }
 
   @override
-  HibikiDesignSystemTheme lerp(
-    covariant ThemeExtension<HibikiDesignSystemTheme>? other,
+  FushiDesignSystemTheme lerp(
+    covariant ThemeExtension<FushiDesignSystemTheme>? other,
     double t,
   ) {
     return this;
@@ -37,19 +37,19 @@ class HibikiDesignSystemTheme extends ThemeExtension<HibikiDesignSystemTheme> {
 /// extensions 里，使任意 widget 可经 `Theme.of(context)` 感知 eink（用于把入场
 /// 淡入/滑出等 Flutter 侧动画时长归零），零新增数据流、随主题重建自动更新。
 @immutable
-class HibikiEinkTheme extends ThemeExtension<HibikiEinkTheme> {
-  const HibikiEinkTheme(this.einkMode);
+class FushiEinkTheme extends ThemeExtension<FushiEinkTheme> {
+  const FushiEinkTheme(this.einkMode);
 
   final bool einkMode;
 
   @override
-  HibikiEinkTheme copyWith({bool? einkMode}) {
-    return HibikiEinkTheme(einkMode ?? this.einkMode);
+  FushiEinkTheme copyWith({bool? einkMode}) {
+    return FushiEinkTheme(einkMode ?? this.einkMode);
   }
 
   @override
-  HibikiEinkTheme lerp(
-    covariant ThemeExtension<HibikiEinkTheme>? other,
+  FushiEinkTheme lerp(
+    covariant ThemeExtension<FushiEinkTheme>? other,
     double t,
   ) {
     return this;
@@ -58,7 +58,7 @@ class HibikiEinkTheme extends ThemeExtension<HibikiEinkTheme> {
 
 /// True 当墨水屏模式开启（读不到扩展时为 false，测试裸 ThemeData 零破坏）。
 bool isEinkTheme(BuildContext context) {
-  return Theme.of(context).extension<HibikiEinkTheme>()?.einkMode ?? false;
+  return Theme.of(context).extension<FushiEinkTheme>()?.einkMode ?? false;
 }
 
 /// eink 下把动画时长归零（墨水屏连续重绘=残影），否则原样返回。
@@ -68,20 +68,20 @@ Duration einkSafeDuration(BuildContext context, Duration duration) {
 }
 
 bool isCupertinoPlatform(BuildContext context) {
-  final HibikiDesignSystem designSystem =
-      Theme.of(context).extension<HibikiDesignSystemTheme>()?.designSystem ??
-          HibikiDesignSystem.auto;
+  final FushiDesignSystem designSystem =
+      Theme.of(context).extension<FushiDesignSystemTheme>()?.designSystem ??
+          FushiDesignSystem.auto;
   switch (designSystem) {
-    case HibikiDesignSystem.material:
+    case FushiDesignSystem.material:
       return false;
-    case HibikiDesignSystem.cupertino:
+    case FushiDesignSystem.cupertino:
       return true;
-    case HibikiDesignSystem.macos:
+    case FushiDesignSystem.macos:
       // Explicit macOS-native design system is NOT Cupertino. The macos_ui shell
       // and converted pages route via [isMacosPlatform]; this keeps the two
       // skins from both claiming the same surface.
       return false;
-    case HibikiDesignSystem.auto:
+    case FushiDesignSystem.auto:
       return false;
   }
 }
@@ -90,20 +90,20 @@ bool isCupertinoPlatform(BuildContext context) {
 /// subtree. Converted shells/pages branch on this BEFORE
 /// [isCupertinoPlatform].
 bool isMacosPlatform(BuildContext context) {
-  final HibikiDesignSystem designSystem =
-      Theme.of(context).extension<HibikiDesignSystemTheme>()?.designSystem ??
-          HibikiDesignSystem.auto;
+  final FushiDesignSystem designSystem =
+      Theme.of(context).extension<FushiDesignSystemTheme>()?.designSystem ??
+          FushiDesignSystem.auto;
   switch (designSystem) {
-    case HibikiDesignSystem.material:
-    case HibikiDesignSystem.cupertino:
+    case FushiDesignSystem.material:
+    case FushiDesignSystem.cupertino:
       return false;
-    case HibikiDesignSystem.macos:
+    case FushiDesignSystem.macos:
       // Explicitly selecting the macOS-native design system only routes into the
       // macos_ui / MacosWindow shell when actually running on macOS; on other
       // hosts WindowManipulator is unavailable, so fall back to the platform
       // default rather than crash. (Quality point ②)
       return Platform.isMacOS;
-    case HibikiDesignSystem.auto:
+    case FushiDesignSystem.auto:
       return false;
   }
 }

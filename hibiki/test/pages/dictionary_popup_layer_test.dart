@@ -252,7 +252,7 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.byType(HibikiPopupSurface), findsOneWidget);
+    expect(find.byType(FushiPopupSurface), findsOneWidget);
   });
 
   testWidgets('borderless popup layer still uses shared popup surface', (
@@ -281,7 +281,7 @@ void main() {
 
     expect(find.byType(DictionaryPopupLayer), findsOneWidget);
     expect(find.byType(SwipeDismissWrapper), findsNothing);
-    expect(find.byType(HibikiPopupSurface), findsOneWidget);
+    expect(find.byType(FushiPopupSurface), findsOneWidget);
   });
 
   group('calcPopupPosition vertical writing avoids the current column', () {

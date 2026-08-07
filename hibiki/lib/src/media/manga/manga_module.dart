@@ -20,7 +20,7 @@ abstract final class MangaModule {
       mangaImportCanImport(<String>[path]);
 
   static Future<String> importMokuro({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required String path,
     String? title,
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
@@ -40,7 +40,7 @@ abstract final class MangaModule {
   /// 整目录页图导入（拖入一个漫画文件夹的落地路径）。OCR blocks 留空，之后可由
   /// 任一整卷引擎补齐——故 OCR 失败绝不会导致这本书消失。
   static Future<String> importImageFolder({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required String path,
     String? title,
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
@@ -55,7 +55,7 @@ abstract final class MangaModule {
       );
 
   static Future<String> importArchive({
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required String path,
     String? title,
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
@@ -75,7 +75,7 @@ abstract final class MangaModule {
   /// 引擎依赖集由 [MangaOcrWizardEngines.resolve] 统一装配，本入口不再手抄。
   static Future<String?> openOcrImportWizard({
     required BuildContext context,
-    required HibikiDatabase db,
+    required FushiDatabase db,
     MangaOcrRemoteRunner? remoteRunnerOverride,
     bool? desktopOverride,
   }) {
@@ -99,7 +99,7 @@ abstract final class MangaModule {
   /// （BUG-1418）。
   static Future<MangaOcrBackgroundJob?> openBookOcr({
     required BuildContext context,
-    required HibikiDatabase db,
+    required FushiDatabase db,
     required EpubBookRow book,
     required int startPage,
     MangaOcrRemoteRunner? remoteRunnerOverride,
@@ -126,7 +126,7 @@ abstract final class MangaModule {
 
   static Future<void> openOnlineCatalog({
     required BuildContext context,
-    required HibikiDatabase db,
+    required FushiDatabase db,
   }) =>
       showAppDialog<void>(
         context: context,

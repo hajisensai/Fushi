@@ -124,7 +124,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 预取合集分组三件套（照书架 `_loadShelfMaps` 的口径：一次 getAllCollectionItems
   /// 内存分组，不逐合集 N+1；memberSortIndex 只记主折叠合集的行）。
   Future<void> _loadCollectionMaps() async {
-    final HibikiDatabase db = _appModel.database;
+    final FushiDatabase db = _appModel.database;
     final List<MediaCollectionRow> collections =
         await db.getAllMediaCollections();
     final Map<String, int> primaryMap =
@@ -173,7 +173,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       return; // 用户取消
     }
     if (filterOutDuplicateGameExes(_games, <String>[exe]).isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_already_added,
         severity: ToastSeverity.warning,
       );
@@ -190,7 +190,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   Future<void> _handleDrop(List<String> paths, Offset _) async {
     final List<String> exes = filterOutDuplicateGameExes(_games, paths);
     if (exes.isEmpty) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_drop_no_exe,
         severity: ToastSeverity.warning,
       );
@@ -205,7 +205,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     ];
     await _repo.addAll(added);
     _refresh();
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.game_drop_imported(count: added.length),
       severity: ToastSeverity.success,
     );
@@ -220,7 +220,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 为 false，两种结局都给 toast，否则「点了没反应」无从判断。
   Future<void> _autoCover(GalgameEntry game, {bool silent = false}) async {
     if (!silent) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_cover_searching,
         severity: ToastSeverity.info,
       );
@@ -233,7 +233,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     );
     if (resolved == null) {
       if (!silent) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.game_cover_not_found,
           severity: ToastSeverity.error,
         );
@@ -242,7 +242,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     }
     await _applyCover(game, resolved.path);
     if (!silent) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_cover_updated,
         severity: ToastSeverity.success,
       );
@@ -265,14 +265,14 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       sourcePath: picked.path,
     );
     if (saved == null) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.game_cover_not_found,
         severity: ToastSeverity.error,
       );
       return;
     }
     await _applyCover(game, saved);
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.game_cover_updated,
       severity: ToastSeverity.success,
     );
@@ -292,14 +292,14 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
 
   /// 移除一个游戏（按 id 定位；元数据源与游玩会话经 FK cascade 连带清理）。
   ///
-  /// 先弹统一确认框（与书架/合集同款 [HibikiDestructiveConfirmDialog]）：语义
+  /// 先弹统一确认框（与书架/合集同款 [FushiDestructiveConfirmDialog]）：语义
   /// 只是**从库移除**，绝不删磁盘上的游戏文件——确认文案明说这点，免得用户
   /// 不敢点或误以为会连本体一起没。
   Future<void> _removeGame(GalgameEntry game) async {
-    final HibikiDestructiveConfirmResult? result =
-        await showAppDialog<HibikiDestructiveConfirmResult>(
+    final FushiDestructiveConfirmResult? result =
+        await showAppDialog<FushiDestructiveConfirmResult>(
       context: context,
-      builder: (_) => HibikiDestructiveConfirmDialog(
+      builder: (_) => FushiDestructiveConfirmDialog(
         title: t.game_remove,
         message: t.game_remove_confirm,
         confirmLabel: t.game_remove,
@@ -331,17 +331,17 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   }
 
   /// 弹状态选择对话框（菜单顺序：想玩 → 在玩 → 玩过 → 搁置 → 弃坑 + 未设置）。
-  /// 走设计系统骨架（HibikiDialogFrame + HibikiModalSheetFrame + HibikiListItem，
+  /// 走设计系统骨架（FushiDialogFrame + FushiModalSheetFrame + FushiListItem，
   /// 替代旧裸 SimpleDialog）；radio 行为不变：点任意行即 pop 该状态。
   Future<void> _promptPlayStatus(GalgameEntry game) async {
     final GalgamePlayStatus? picked = await showAppDialog<GalgamePlayStatus>(
       context: context,
       builder: (BuildContext ctx) {
-        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
-        return HibikiDialogFrame(
+        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+        return FushiDialogFrame(
           maxWidth: 420,
           scrollable: false,
-          child: HibikiModalSheetFrame(
+          child: FushiModalSheetFrame(
             title: t.game_play_status,
             leadingIcon: Icons.flag_outlined,
             scrollable: true,
@@ -358,8 +358,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                   ...kGalgamePlayStatusMenuOrder,
                   GalgamePlayStatus.unset,
                 ])
-                  HibikiListItem(
-                    density: HibikiListDensity.compact,
+                  FushiListItem(
+                    density: FushiListDensity.compact,
                     leading: Icon(
                       game.playStatus == status
                           ? Icons.radio_button_checked
@@ -503,7 +503,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     if (outcome != CollectionAddOutcome.added || !mounted) return;
     await _loadCollectionMaps();
     _refresh();
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.batch_add_to_collection_success(n: 1),
       severity: ToastSeverity.success,
     );
@@ -581,14 +581,14 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     _launching = true;
     try {
       if (!Platform.isWindows) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.game_launch_unsupported,
           severity: ToastSeverity.error,
         );
         return;
       }
       if (!File(game.exePath).existsSync()) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.game_exe_missing,
           severity: ToastSeverity.error,
         );
@@ -638,7 +638,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       // BUG-1089 的着色面：outcome 已经把「跑起来了 / 只剩整机混音兜底 / 根本没起来」
       // 分好了，toast 的颜色跟着同一份判定走，别再让三种结局长成同一条无色提示。
       if (message != null) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: message,
           severity: switch (outcome) {
             GalHookLaunchOutcome.running => ToastSeverity.success,
@@ -670,7 +670,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         : (visible.isEmpty
             ? _buildNoMatch(context)
             : _buildGrid(context, visible));
-    final Widget body = HibikiFileDropTarget(
+    final Widget body = FushiFileDropTarget(
       debugLabel: 'games-library',
       onDrop: (List<String> paths, Offset position) =>
           unawaited(_handleDrop(paths, position)),
@@ -740,7 +740,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             ),
           ),
           const SizedBox(width: 8),
-          HibikiIconButton(
+          FushiIconButton(
             tooltip: t.scrape_all,
             label: t.scrape_all,
             icon: Icons.manage_search_outlined,
@@ -792,7 +792,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   }
 
   Widget _buildTagFilterBar(List<BookTagRow> tags) {
-    return HibikiTagFilterBar(
+    return FushiTagFilterBar(
       tags: tags,
       onToggleFilter: _toggleTagFilter,
       onReorder: _reorderTags,
@@ -851,14 +851,14 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   }
 
   /// 筛选面板：状态 / 本地·在线 / 标签多选 / NSFW 隐藏。改动即时生效并持久化。
-  /// 走 [adaptiveModalSheet] + [HibikiModalSheetFrame]（与标签筛选面板同一 MD3
-  /// sheet 骨架），间距/文字全走 [HibikiDesignTokens]。
+  /// 走 [adaptiveModalSheet] + [FushiModalSheetFrame]（与标签筛选面板同一 MD3
+  /// sheet 骨架），间距/文字全走 [FushiDesignTokens]。
   Future<void> _showFilterSheet() async {
     final List<String> allTags = collectGalgameTags(_games);
     await adaptiveModalSheet<void>(
       context: context,
       builder: (BuildContext ctx) {
-        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
         return StatefulBuilder(
           builder: (BuildContext ctx, StateSetter setSheetState) {
             void apply(GalgameLibraryView next) {
@@ -874,7 +874,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                   child: Text(text, style: tokens.type.sectionLabel),
                 );
 
-            return HibikiModalSheetFrame(
+            return FushiModalSheetFrame(
               title: t.game_filter,
               leadingIcon: Icons.filter_alt_outlined,
               scrollable: true,
@@ -889,7 +889,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                     spacing: tokens.spacing.gap,
                     runSpacing: tokens.spacing.gap,
                     children: <Widget>[
-                      HibikiSelectableChip(
+                      FushiSelectableChip(
                         label: t.game_filter_all,
                         selected: _view.status == null,
                         onSelected: (_) =>
@@ -900,7 +900,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                         ...kGalgamePlayStatusMenuOrder,
                         GalgamePlayStatus.unset,
                       ])
-                        HibikiSelectableChip(
+                        FushiSelectableChip(
                           label: galgamePlayStatusLabel(status),
                           selected: _view.status == status,
                           onSelected: (bool selected) => apply(
@@ -918,7 +918,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                     children: <Widget>[
                       for (final GalgameLocalFilter filter
                           in GalgameLocalFilter.values)
-                        HibikiSelectableChip(
+                        FushiSelectableChip(
                           label: galgameLocalFilterLabel(filter),
                           selected: _view.localFilter == filter,
                           onSelected: (_) =>
@@ -933,7 +933,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                       runSpacing: tokens.spacing.gap,
                       children: <Widget>[
                         for (final String tag in allTags)
-                          HibikiSelectableChip(
+                          FushiSelectableChip(
                             label: tag,
                             selected: _view.tags.contains(tag),
                             onSelected: (bool selected) {
@@ -1134,7 +1134,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     MediaCollectionRow collection,
     double cardWidth,
   ) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // BUG-1184：与散卡网格共用同一个 extent 公式，行内卡与网格卡逐像素同形
     // （此前两处各写一遍 0.62，改几何时极易漏掉一处）。
     final double rowHeight = _gameCardExtent(context, cardWidth);
@@ -1148,7 +1148,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         itemWidth: cardWidth,
         rowHeight: rowHeight,
         itemGap: 16,
-        headerFocusId: HibikiFocusId('games-collection-${collection.id}'),
+        headerFocusId: FushiFocusId('games-collection-${collection.id}'),
         onOpenDetail: () => _openCollectionDetail(collection),
         // 合集行右键/长按：三库页统一的合集上下文菜单（打开详情/重命名/标签/
         // 排序/删除合集）。**刻意不注入** onDeleteMembersMedia：游戏合集删除
@@ -1281,8 +1281,8 @@ String? galgameSortValueLabel(GalgameEntry game, GalgameSortField field) {
 }
 
 /// `YYYY-MM-DD` 本地日期（与 `galgame_sessions.dateKey` 同格式）。委托
-/// [HibikiTimeFormat.dayKey]（G5 收敛）。
-String formatGalgameDate(DateTime value) => HibikiTimeFormat.dayKey(value);
+/// [FushiTimeFormat.dayKey]（G5 收敛）。
+String formatGalgameDate(DateTime value) => FushiTimeFormat.dayKey(value);
 
 /// 重命名输入对话框：内容自身持有 [TextEditingController] 并在 State.dispose
 /// 释放（路由完全退出后由框架回收，修过早 dispose）。确认返回 trimmed 名称。
@@ -1307,11 +1307,11 @@ class _RenameGameDialogState extends State<_RenameGameDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiDialogFrame(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiDialogFrame(
       maxWidth: 420,
       scrollable: false,
-      child: HibikiModalSheetFrame(
+      child: FushiModalSheetFrame(
         title: t.game_rename,
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -1326,7 +1326,7 @@ class _RenameGameDialogState extends State<_RenameGameDialog> {
           tokens.spacing.card,
           tokens.spacing.card,
         ),
-        body: HibikiTextField(
+        body: FushiTextField(
           controller: _controller,
           labelText: t.game_rename_label,
           autofocus: true,
@@ -1359,7 +1359,7 @@ class _RenameGameDialogState extends State<_RenameGameDialog> {
 /// 单个游戏卡：封面（有 coverPath 用图，否则默认手柄图标）+ 固定 footer 名称 +
 /// 溢出菜单。点击卡片启动游戏进入制卡，长按/右键出同款菜单（含「查看详情」）。
 ///
-/// 走 [HibikiCard]（巡检 G1 根因修复）：注册 `game-card-<id>` 焦点站点，手柄/
+/// 走 [FushiCard]（巡检 G1 根因修复）：注册 `game-card-<id>` 焦点站点，手柄/
 /// 方向键可选中、A/Enter 启动；长按（手柄 hold A 之外的触摸长按）与鼠标右键弹
 /// 出与封面溢出菜单相同的菜单，封面上的 [PopupMenuButton] 保留供鼠标点按。
 class _GameCard extends StatelessWidget {
@@ -1562,7 +1562,7 @@ class _GameCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String? sort = sortLabel;
     // 竖版海报卡（对齐 ReinaManager 库页观感）：封面 3:4 + 标题居中 + 底部排序
     // 浮层 + hover 放大 + 主色选中环，全部由共享组件 [GalgamePosterCard] 负责。
@@ -1571,7 +1571,7 @@ class _GameCard extends StatelessWidget {
       cover: GameCoverThumb(game: game),
       title: game.displayName,
       overlayText: sort,
-      focusId: HibikiFocusId('game-card-${game.id}'),
+      focusId: FushiFocusId('game-card-${game.id}'),
       onTap: onTap,
       onLongPress: () => unawaited(_showContextMenu(context)),
       onSecondaryTap: () => unawaited(_showContextMenu(context)),
@@ -1584,7 +1584,7 @@ class _GameCard extends StatelessWidget {
   Widget _menuButton(
     BuildContext context,
     ColorScheme colors,
-    HibikiDesignTokens tokens,
+    FushiDesignTokens tokens,
   ) {
     return PopupMenuButton<String>(
       icon: Container(

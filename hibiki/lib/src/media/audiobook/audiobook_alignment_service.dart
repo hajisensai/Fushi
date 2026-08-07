@@ -116,7 +116,7 @@ Future<List<AudioCue>> parseCuesForFormat(
 /// 一致。[onProgress] 替代 reportProgress，[messages] 注入步骤文案；二者皆可
 /// 省略（扫描器不需要 UI 进度）。返回 [AudiobookAlignmentResult]。
 Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
-  required HibikiDatabase db,
+  required FushiDatabase db,
   required SrtBookRepository repo,
   required AudiobookRepository audiobookRepo,
   required String bookKey,

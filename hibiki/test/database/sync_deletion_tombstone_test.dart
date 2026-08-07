@@ -8,10 +8,10 @@ import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 void main() {
-  late HibikiDatabase db;
+  late FushiDatabase db;
   setUp(() => db = _memDb());
   tearDown(() => db.close());
 
@@ -84,7 +84,7 @@ void main() {
     final favs = await db.getSyncDeletionTombstonesOfType('favoriteword');
     expect(favs, hasLength(1));
     expect(favs.single.itemKey,
-        HibikiDatabase.favoriteWordItemKey('猫', 'ねこ', 'reader'));
+        FushiDatabase.favoriteWordItemKey('猫', 'ねこ', 'reader'));
     // 重新收藏 → 清碑。
     await db.addFavoriteWord(
       expression: '猫',

@@ -57,7 +57,7 @@ class MangaOcrWizardDialog extends ConsumerStatefulWidget {
   final MangaOcrWizardEngines engines;
 
   /// 目标数据库（漫画行写入此处；导入器读取须为同一实例）。
-  final HibikiDatabase db;
+  final FushiDatabase db;
 
   final GoogleLensDisclosureGate? lensDisclosureGate;
 
@@ -771,7 +771,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
         await _applyOcrToManagedBook(path, external: external);
         if (!mounted) return;
         // 书已在库，这条路径只把 OCR 结果贴回去，没有导入动作 —— 用 OCR 文案。
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.manga_ocr_done,
           severity: ToastSeverity.success,
         );
@@ -783,7 +783,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       final String bookKey =
           await runner(path: path, external: external, title: _title);
       if (!mounted) return;
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.manga_ocr_wizard_done,
         severity: ToastSeverity.success,
       );
@@ -945,7 +945,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
 
   Widget _folderRow(bool busy) {
     if (widget.existingBook != null) {
-      return HibikiListItem(
+      return FushiListItem(
         padding: EdgeInsets.zero,
         leading: const Icon(Icons.menu_book_outlined),
         title: Text(widget.existingBook!.title),

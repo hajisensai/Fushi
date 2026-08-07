@@ -28,7 +28,7 @@ import 'package:fushi/utils.dart';
 /// （见 `docs/design/galgame-library-reina-visual-parity.md` §3）。
 ///
 /// 三块内容：
-/// - **KPI 条**：总游戏数 / 总时长 / 今日 / 本周（[HibikiDatabase.getGalgameSecondsForDay]
+/// - **KPI 条**：总游戏数 / 总时长 / 今日 / 本周（[FushiDatabase.getGalgameSecondsForDay]
 ///   跨全部游戏按天聚合；总时长直接取仓储里每个游戏的现算聚合，无额外查询）。
 /// - **左列**：最近游玩「Focus 卡」（封面出血背景 + 左→右深色渐变蒙版）+ 随机游戏卡。
 /// - **右列**：动态时间线，复用 `activity_events`（game 类）经共享
@@ -84,7 +84,7 @@ class _GameKpis {
 class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   late final AppModel _appModel = ref.read(appProvider);
   late final GalgameRepository _repo = _appModel.galgameRepo;
-  late final HibikiDatabase _db = _appModel.database;
+  late final FushiDatabase _db = _appModel.database;
 
   /// 当前整库列表（首屏各区块的公共数据源）。
   List<GalgameEntry> _games = const <GalgameEntry>[];
@@ -144,7 +144,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   }
 
   /// KPI 聚合：总数/总时长取仓储现算聚合（零额外查询）；今日/本周跨全部游戏按天
-  /// 现查（近 7 天各一条 [HibikiDatabase.getGalgameSecondsForDay]，并发发起）。
+  /// 现查（近 7 天各一条 [FushiDatabase.getGalgameSecondsForDay]，并发发起）。
   Future<_GameKpis> _computeKpis(List<GalgameEntry> games) async {
     int totalSeconds = 0;
     for (final GalgameEntry g in games) {
@@ -156,7 +156,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     final List<Future<void>> futures = <Future<void>>[];
     for (int i = 0; i < 7; i++) {
       final String key =
-          HibikiTimeFormat.dayKey(now.subtract(Duration(days: i)));
+          FushiTimeFormat.dayKey(now.subtract(Duration(days: i)));
       // 单线程 Dart 里各 .then 回调不会在 += 语句中途交错，累加安全。
       futures.add(_db.getGalgameSecondsForDay(key).then((int seconds) {
         week += seconds;
@@ -194,7 +194,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
           mediaType: kActivityMediaGame,
           title: g.displayName,
           mediaKey: g.id,
-          dateKey: HibikiTimeFormat.dayKey(g.addedAt),
+          dateKey: FushiTimeFormat.dayKey(g.addedAt),
           timestampMs: g.addedAt.millisecondsSinceEpoch,
         ),
     ];
@@ -254,14 +254,14 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     _launching = true;
     try {
       if (!Platform.isWindows) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.game_launch_unsupported,
           severity: ToastSeverity.error,
         );
         return;
       }
       if (!File(game.exePath).existsSync()) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: t.game_exe_missing,
           severity: ToastSeverity.error,
         );
@@ -307,7 +307,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       // BUG-1089 的着色面：outcome 已经把「跑起来了 / 只剩整机混音兜底 / 根本没起来」
       // 分好了，toast 的颜色跟着同一份判定走，别再让三种结局长成同一条无色提示。
       if (message != null) {
-        HibikiToast.show(
+        FushiToast.show(
           msg: message,
           severity: switch (outcome) {
             GalHookLaunchOutcome.running => ToastSeverity.success,
@@ -358,7 +358,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          HibikiPageHeader.customTitle(
+          FushiPageHeader.customTitle(
             title: GameSectionTabs(
               selected: GameSection.dashboard,
               focusIdPrefix: 'game-dashboard-tab',
@@ -366,7 +366,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
               onSelectMonitor: widget.onShowMonitor,
             ),
             actions: <Widget>[
-              HibikiIconButton(
+              FushiIconButton(
                 icon: Icons.bar_chart_outlined,
                 tooltip: t.game_statistics,
                 label: t.game_statistics,
@@ -411,7 +411,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
 
   /// 有游戏态：KPI 条 + （宽屏）左右两列 /（窄屏）纵向堆叠。
   Widget _buildBody(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool wide = constraints.maxWidth >= 1000;
@@ -457,7 +457,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   // ── 区域 A：KPI 条 ────────────────────────────────────────────────────────
 
   Widget _buildKpiStrip(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<Widget> cells = <Widget>[
       _KpiCell(
         icon: Icons.sports_esports_outlined,
@@ -520,7 +520,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   // ── 左列：Focus 卡 + 随机游戏卡 ──────────────────────────────────────────
 
   Widget _buildLeftColumn(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final GalgameEntry? recent = _recentGame ?? _random;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -548,7 +548,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     final List<GalgameEntry> recent = _recentlyPlayed;
 
     return ClipRRect(
-      borderRadius: HibikiBorderRadius.poster,
+      borderRadius: FushiBorderRadius.poster,
       child: Stack(
         children: <Widget>[
           // 封面出血背景。
@@ -645,7 +645,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                           cover: _coverImage(context, g),
                           onTap: () => unawaited(_launchGame(g)),
                           semanticLabel: g.displayName,
-                          focusId: HibikiFocusId('game-recent-${g.id}'),
+                          focusId: FushiFocusId('game-recent-${g.id}'),
                         ),
                         const SizedBox(width: 8),
                       ],
@@ -679,7 +679,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                 ),
               ),
             ),
-            HibikiActionChip(
+            FushiActionChip(
               label: t.game_random_reroll,
               icon: Icons.casino_outlined,
               onPressed: _reroll,
@@ -687,9 +687,9 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
           ],
         ),
         const SizedBox(height: 8),
-        HibikiCard(
+        FushiCard(
           padding: const EdgeInsets.all(12),
-          focusId: HibikiFocusId('game-dashboard-random-${game.id}'),
+          focusId: FushiFocusId('game-dashboard-random-${game.id}'),
           onTap: () => unawaited(_launchGame(game)),
           onSecondaryTap: () => unawaited(_openDetail(game)),
           child: SizedBox(
@@ -700,7 +700,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                 AspectRatio(
                   aspectRatio: 3 / 4,
                   child: ClipRRect(
-                    borderRadius: HibikiBorderRadius.control,
+                    borderRadius: FushiBorderRadius.control,
                     child: _coverImage(context, game),
                   ),
                 ),
@@ -747,7 +747,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                           runSpacing: 6,
                           children: <Widget>[
                             for (final String tag in tags)
-                              HibikiTagChip(label: tag),
+                              FushiTagChip(label: tag),
                           ],
                         ),
                     ],
@@ -765,7 +765,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
 
   Widget _buildTimeline(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<ActivityEventRow> filtered = _timelineFilter == null
         ? _timelineRows
         : _timelineRows
@@ -773,9 +773,9 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
             .toList();
     final List<ActivityDateGroup> groups = aggregateActivityEvents(filtered);
     final DateTime now = DateTime.now();
-    final String todayKey = HibikiTimeFormat.dayKey(now);
+    final String todayKey = FushiTimeFormat.dayKey(now);
     final String yesterdayKey =
-        HibikiTimeFormat.dayKey(now.subtract(const Duration(days: 1)));
+        FushiTimeFormat.dayKey(now.subtract(const Duration(days: 1)));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -811,7 +811,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   }
 
   Widget _timelineChip(String? value, String label) {
-    return HibikiSelectableChip(
+    return FushiSelectableChip(
       label: label,
       selected: _timelineFilter == value,
       onSelected: (_) => setState(() => _timelineFilter = value),
@@ -825,7 +825,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     String yesterdayKey,
     DateTime now,
   ) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String label;
     if (group.dateKey == todayKey) {
       label = t.home_today;
@@ -986,7 +986,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   }
 
   String _formatDay(int epochMs) =>
-      HibikiTimeFormat.dayKey(DateTime.fromMillisecondsSinceEpoch(epochMs));
+      FushiTimeFormat.dayKey(DateTime.fromMillisecondsSinceEpoch(epochMs));
 
   /// 封面 widget：来源解析与首页 Activity / 游戏库共用；文件缺失或解码失败由渲染层
   /// 回退默认手柄图标，不在 build 里做同步文件探测。
@@ -1005,7 +1005,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   }
 
   Widget _coverFallback(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return ColoredBox(
       color: tokens.surfaces.overlay,
       child: Center(
@@ -1035,7 +1035,7 @@ class _KpiCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme colors = theme.colorScheme;
-    return HibikiCard(
+    return FushiCard(
       padding: const EdgeInsets.all(14),
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 60),
@@ -1046,7 +1046,7 @@ class _KpiCell extends StatelessWidget {
               height: 42,
               decoration: BoxDecoration(
                 color: colors.primary.withValues(alpha: 0.12),
-                borderRadius: HibikiBorderRadius.control,
+                borderRadius: FushiBorderRadius.control,
               ),
               child: Icon(icon, color: colors.primary, size: 22),
             ),
@@ -1097,7 +1097,7 @@ class _StatusPill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: theme.colorScheme.primary,
-        borderRadius: HibikiBorderRadius.chip,
+        borderRadius: FushiBorderRadius.chip,
       ),
       child: Text(
         label,
@@ -1124,7 +1124,7 @@ class _RecentThumb extends StatelessWidget {
   final String semanticLabel;
 
   /// 焦点站点 id（`game-recent-<gameId>`）：手柄/键盘可聚焦，Enter/A 启动。
-  final HibikiFocusId focusId;
+  final FushiFocusId focusId;
 
   @override
   Widget build(BuildContext context) {
@@ -1137,17 +1137,17 @@ class _RecentThumb extends StatelessWidget {
           width: 44,
           height: 58,
           child: ClipRRect(
-            borderRadius: HibikiBorderRadius.chip,
+            borderRadius: FushiBorderRadius.chip,
             child: cover,
           ),
         ),
       ),
     );
     // 焦点接线：与 GalgamePosterCard 同款——存在焦点根时注册焦点站点（焦点描边由
-    // 全局 HibikiFocusRing 绘制），并把 ActivateIntent（Enter / 手柄 A）接到 onTap；
-    // Actions 必须在 HibikiFocusTarget 之上（手柄 A 从焦点节点向上找 handler）。
+    // 全局 FushiFocusRing 绘制），并把 ActivateIntent（Enter / 手柄 A）接到 onTap；
+    // Actions 必须在 FushiFocusTarget 之上（手柄 A 从焦点节点向上找 handler）。
     // 无焦点根（纯 widget-test）直接返回原样。
-    if (HibikiFocusRoot.maybeControllerOf(context) == null) {
+    if (FushiFocusRoot.maybeControllerOf(context) == null) {
       return thumb;
     }
     return Actions(
@@ -1159,7 +1159,7 @@ class _RecentThumb extends StatelessWidget {
           },
         ),
       },
-      child: HibikiFocusTarget(
+      child: FushiFocusTarget(
         id: focusId,
         child: thumb,
       ),
@@ -1175,7 +1175,7 @@ class _TimelineAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget child = cover ??
         ColoredBox(
           color: tokens.surfaces.overlay,
@@ -1189,7 +1189,7 @@ class _TimelineAvatar extends StatelessWidget {
       width: 36,
       height: 36,
       child: ClipRRect(
-        borderRadius: HibikiBorderRadius.chip,
+        borderRadius: FushiBorderRadius.chip,
         child: child,
       ),
     );

@@ -437,7 +437,7 @@ class AppModel with ChangeNotifier {
   /// schema builders (e.g. the sync/backup destination) that read [database]
   /// without running the full [initialise] path.
   @visibleForTesting
-  void wireDatabaseForTesting(HibikiDatabase db) {
+  void wireDatabaseForTesting(FushiDatabase db) {
     _database = db;
     _databaseOpened = true;
   }
@@ -454,8 +454,8 @@ class AppModel with ChangeNotifier {
   /// 不再绑在设置页 widget 上——否则切出「同步与备份」页就把服务端关了（BUG-085）。
   /// 启动时若用户启用了 host 则自动开，仅在用户关闭开关或退出 app 时停。配对批准
   /// 弹窗经全局 [navigatorKey]，故在任意界面都能弹。
-  late final HibikiSyncServerController syncServerController =
-      HibikiSyncServerController(
+  late final FushiSyncServerController syncServerController =
+      FushiSyncServerController(
     navigatorKey: navigatorKey,
     database: () => database,
     syncDataDir: () => databaseDirectory.path,
@@ -741,7 +741,7 @@ class AppModel with ChangeNotifier {
   final RouteObserver<PageRoute> _routeObserver = RouteObserver<PageRoute>();
 
   /// Persistent database (Drift/SQLite).
-  late HibikiDatabase _database;
+  late FushiDatabase _database;
 
   /// True once [_database] has been opened in an init path. Used by
   /// [retryInitialise] to close a stale connection before re-running init
@@ -840,7 +840,7 @@ class AppModel with ChangeNotifier {
   late LocalAudioManager _localAudioManager;
 
   /// Keyboard / gamepad shortcut bindings, persisted in preferences.
-  final HibikiShortcutRegistry shortcutRegistry = HibikiShortcutRegistry();
+  final FushiShortcutRegistry shortcutRegistry = FushiShortcutRegistry();
 
   /// TODO-1375：媒体（阅读器 / 视频）是否打开的**可靠**通知源，专供 macOS 原生壳的
   /// 根 sidebar 显隐门控（main.dart 的 MacosWindow）。根因：sidebar 过去直接读
@@ -918,8 +918,8 @@ class AppModel with ChangeNotifier {
   /// NEWER build of Hibiki than this one (downgrade protection). The UI shows a
   /// dedicated "update your app" notice with NO retry button — retry would fail
   /// identically and this is not a transient error. The DB file is left intact.
-  HibikiDatabaseDowngradeException? get downgradeError => _downgradeError;
-  HibikiDatabaseDowngradeException? _downgradeError;
+  FushiDatabaseDowngradeException? get downgradeError => _downgradeError;
+  FushiDatabaseDowngradeException? _downgradeError;
 
   /// Non-null when init failed because the database could NOT be opened even
   /// after the full WAL/sidecar recovery ladder (TODO-905) — i.e. the main
@@ -927,9 +927,9 @@ class AppModel with ChangeNotifier {
   /// an actionable "restore a backup / clear data" notice; a plain Retry would
   /// loop forever (the very bug TODO-905 fixes), so recovery already ran inside
   /// the open path and a fresh open of the same corrupt file would fail again.
-  HibikiDatabaseUnrecoverableException? get unrecoverableDbError =>
+  FushiDatabaseUnrecoverableException? get unrecoverableDbError =>
       _unrecoverableDbError;
-  HibikiDatabaseUnrecoverableException? _unrecoverableDbError;
+  FushiDatabaseUnrecoverableException? _unrecoverableDbError;
 
   /// BUG-815：非 null 表示桌面**配置了自定义数据根、但本次启动它不可达**（休眠 / 掉线 /
   /// 拔出的盘）。UI 据此显「数据位置未响应」逃生屏（重试 / 显式用默认位置启动），而**不**
@@ -1613,11 +1613,11 @@ class AppModel with ChangeNotifier {
   }
 
   /// The app-wide [TextTheme]. [textStyle] carries the locale-aware font
-  /// (fontFamily/fontFeatures/baseline); [HibikiTypeScale] layers the editorial
+  /// (fontFamily/fontFeatures/baseline); [FushiTypeScale] layers the editorial
   /// size/weight/line-height scale on top. Explicit sizes here survive the
   /// geometry merge `MaterialApp` performs, so this scale — not M3 defaults —
   /// is what renders.
-  TextTheme get textTheme => HibikiTypeScale.buildTextTheme(textStyle);
+  TextTheme get textTheme => FushiTypeScale.buildTextTheme(textStyle);
 
   ThemeMode get themeMode => themeNotifier.themeMode;
   ThemeData get theme => themeNotifier.theme;
@@ -1627,13 +1627,13 @@ class AppModel with ChangeNotifier {
       themeNotifier.buildColorScheme(brightness);
 
   /// Get the sentence to be used by the [SentenceField] upon card creation.
-  HibikiTextSelection getCurrentSentence() {
+  FushiTextSelection getCurrentSentence() {
     if (isMediaOpen) {
       return _currentMediaSource!.currentSentence;
     } else {
       MediaType mediaType = mediaTypes.values.toList()[currentHomeTabIndex];
       if (mediaType is DictionaryMediaType) {
-        return HibikiTextSelection(
+        return FushiTextSelection(
           text: '',
         );
       } else {
@@ -1644,13 +1644,13 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  HibikiTextSelection getCurrentCueSentence() {
+  FushiTextSelection getCurrentCueSentence() {
     if (isMediaOpen) {
       return _currentMediaSource!.currentCueSentence;
     } else {
       MediaType mediaType = mediaTypes.values.toList()[currentHomeTabIndex];
       if (mediaType is DictionaryMediaType) {
-        return HibikiTextSelection(text: '');
+        return FushiTextSelection(text: '');
       } else {
         return (_currentMediaSource ??
                 (getCurrentSourceForMediaType(mediaType: mediaType)))
@@ -2127,7 +2127,7 @@ class AppModel with ChangeNotifier {
       debugPrint('[Fushi] init: Drift database');
       ErrorLogService.instance
           .markInitStep('open-database（Drift 打开 hibiki.db）');
-      _database = HibikiDatabase(_databaseDirectory.path);
+      _database = FushiDatabase(_databaseDirectory.path);
       _databaseOpened = true;
 
       // Sync-pref maintenance, before any repository loads them or sync runs:
@@ -2361,15 +2361,15 @@ class AppModel with ChangeNotifier {
       // screen (BUG-085). Fire-and-forget: a bind failure self-disables + is
       // logged and must never break app init.
       unawaited(syncServerController.startIfEnabled().then((
-        HibikiServerStartOutcome outcome,
+        FushiServerStartOutcome outcome,
       ) {
-        if (outcome is HibikiServerPortInUse) {
+        if (outcome is FushiServerPortInUse) {
           ErrorLogService.instance.log(
             'AppModel.startSyncServer',
             'port ${outcome.port} in use',
             StackTrace.current,
           );
-        } else if (outcome is HibikiServerStartError) {
+        } else if (outcome is FushiServerStartError) {
           ErrorLogService.instance.log(
             'AppModel.startSyncServer',
             outcome.message,
@@ -2431,7 +2431,7 @@ class AppModel with ChangeNotifier {
           .log('AppModel.initialise.dataRootUnavailable', e, stack);
       _dataRootUnavailable = e;
       notifyListeners();
-    } on HibikiDatabaseDowngradeException catch (e, stack) {
+    } on FushiDatabaseDowngradeException catch (e, stack) {
       // The DB is newer than this build. drift refused to open it WITHOUT
       // touching the file (no DROP / migration ran). Surface a dedicated,
       // non-retryable notice instead of the generic init-error screen, and
@@ -2441,7 +2441,7 @@ class AppModel with ChangeNotifier {
       _downgradeError = e;
       _initError = '$e';
       notifyListeners();
-    } on HibikiDatabaseUnrecoverableException catch (e, stack) {
+    } on FushiDatabaseUnrecoverableException catch (e, stack) {
       // TODO-905: the WAL/sidecar recovery ladder already ran inside the open
       // path and exhausted — the main hibiki.db is corrupt. Surface a dedicated,
       // actionable notice (restore backup / clear data) instead of looping the
@@ -2483,7 +2483,7 @@ class AppModel with ChangeNotifier {
       debugPrint('[Fushi-popup] init: Drift database');
       // TODO-905 D3: the :popup process must NOT delete a poisoned -wal/-shm
       // sidecar (the main process owns recovery); it backs off on IOERR.
-      _database = HibikiDatabase(_databaseDirectory.path, isMainProcess: false);
+      _database = FushiDatabase(_databaseDirectory.path, isMainProcess: false);
       _databaseOpened = true;
 
       _prefsRepo = PreferencesRepository(_database);
@@ -2742,7 +2742,7 @@ class AppModel with ChangeNotifier {
       // BUG-736：主色上的文字/图标色（popup.css `color: var(--md-on-primary,#fff)`）。
       '--md-on-primary': vars['--md-on-primary']!,
       // BUG-736：卡片圆角。漏发时 popup.css 回落到硬编码 10px，与 app 内用户设定的圆角
-      // （HibikiRadii.cardValue，经 buildPopupThemeCssVars）不一致。与两个 in-app 注入器同源。
+      // （FushiRadii.cardValue，经 buildPopupThemeCssVars）不一致。与两个 in-app 注入器同源。
       '--hibiki-radius-card': vars['--hibiki-radius-card']!,
       // 弹窗尺寸精细化：扩展弹窗默认跟随 app 内 popupMaxWidth/Height，用户显式
       // 解锁「浏览器扩展独立尺寸」后改用扩展自己的键（extensionPopupEffectiveSize）。
@@ -3885,7 +3885,7 @@ class AppModel with ChangeNotifier {
       _rebuildDictPathsCache();
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionaries', e, stack);
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.dictionaries_delete_failed,
         severity: ToastSeverity.error,
       );
@@ -3916,7 +3916,7 @@ class AppModel with ChangeNotifier {
       unawaited(_propagateDictionaryDeleteToRemote(dictionary.name));
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionary', e, stack);
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.dictionary_delete_failed,
         severity: ToastSeverity.error,
       );
@@ -4169,7 +4169,7 @@ class AppModel with ChangeNotifier {
       // await 必须收进 try：原实现直接 return 未 await 的 Future，catch 只能抓
       // 同步 throw，异步错误全部漏出成 uncaught（音频路径 lookupRemoteAudio 已
       // 修过同一处写法，词典路径此前遗留）。
-      final DictionarySearchResult? result = await HibikiRemoteLookupClient(
+      final DictionarySearchResult? result = await FushiRemoteLookupClient(
         repo: SyncRepository(_database),
         httpClient: _remoteLookupClient,
       ).searchDictionary(
@@ -4213,7 +4213,7 @@ class AppModel with ChangeNotifier {
       return;
     }
     if (isFirstTimeSetup) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.storage_permissions,
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
@@ -4226,7 +4226,7 @@ class AppModel with ChangeNotifier {
 
   // ── Anki integration (delegated to AnkiIntegration) ─────────────────
 
-  static const MethodChannel methodChannel = HibikiChannels.anki;
+  static const MethodChannel methodChannel = FushiChannels.anki;
 
   Future<void> showAnkidroidApiMessage() =>
       ankiIntegration.showApiMessage(_ctx);
@@ -4284,7 +4284,7 @@ class AppModel with ChangeNotifier {
     // 统计/制卡的所有写点都在媒体页内，媒体不开则写路径整体不可达（好过在
     // 每个写点各加一个特例分支）。老版此时只保留「重新导出」通道。
     if (isMigrationReadonly) {
-      HibikiToast.show(msg: t.migration_readonly_note);
+      FushiToast.show(msg: t.migration_readonly_note);
       return;
     }
     if (killOnPop) {
@@ -4422,7 +4422,7 @@ class AppModel with ChangeNotifier {
       if (ctx == null || !ctx.mounted) return;
       await showAppDialog(
         context: ctx,
-        builder: (dialogContext) => HibikiDialogFrame(
+        builder: (dialogContext) => FushiDialogFrame(
           maxWidth: 520,
           maxHeightFactor: 0.80,
           insetPadding: const EdgeInsets.all(24),
@@ -4450,8 +4450,8 @@ class AppModel with ChangeNotifier {
   Future<void> openTextSegmentationDialog({
     required String sourceText,
     List<String>? segmentedText,
-    Function(HibikiTextSelection)? onSelect,
-    Function(HibikiTextSelection)? onSearch,
+    Function(FushiTextSelection)? onSelect,
+    Function(FushiTextSelection)? onSearch,
   }) async {
     if (sourceText.trim().isEmpty) {
       return;
@@ -4525,14 +4525,14 @@ class AppModel with ChangeNotifier {
     mediaHistoryRepo.addToStashData(terms: terms);
 
     if (terms.length == 1) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.stash_added_single(term: terms.first),
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
         severity: ToastSeverity.success,
       );
     } else {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.stash_added_multiple,
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
@@ -4543,7 +4543,7 @@ class AppModel with ChangeNotifier {
 
   Future<void> removeFromStash({required String term}) async {
     await mediaHistoryRepo.removeFromStashData(term: term);
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.stash_clear_single(term: term),
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.BOTTOM,
@@ -4559,7 +4559,7 @@ class AppModel with ChangeNotifier {
   /// Shown when a query fails to be made to an online service. For example,
   /// when there is no internet connection.
   void showFailedToCommunicateMessage() {
-    HibikiToast.show(
+    FushiToast.show(
       msg: t.failed_online_service,
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.BOTTOM,
@@ -4602,7 +4602,7 @@ class AppModel with ChangeNotifier {
 
     /// Redundant to do this with the share notification on Android 33+
     if (platformServices.clipboard.shouldShowCopyToast) {
-      HibikiToast.show(
+      FushiToast.show(
         msg: t.copied_to_clipboard,
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
@@ -4708,7 +4708,7 @@ class AppModel with ChangeNotifier {
   Stream<void> get toggleFloatingLyricStream =>
       audioCtrl.toggleFloatingLyricStream;
 
-  HibikiAudioHandler? get audioHandler => audioCtrl.audioHandler;
+  FushiAudioHandler? get audioHandler => audioCtrl.audioHandler;
 
   Future<void> initialiseAudioHandler() => audioCtrl.initialiseHandler();
 
@@ -4957,7 +4957,7 @@ class AppModel with ChangeNotifier {
   bool get isDatabaseOpen => _isInitialised;
 
   /// Direct access to the Drift database instance.
-  HibikiDatabase get database => _database;
+  FushiDatabase get database => _database;
 
   /// Close the database and notify listeners, without exiting the app.
   Future<void> closeDatabase() async {
@@ -5183,7 +5183,7 @@ class AppModel with ChangeNotifier {
       prefsRepo.setYomitanApiKey(value);
 
   /// 实验性：整套键盘/手柄焦点导航是否启用（默认 false）。关闭时 main.dart 不安装
-  /// HibikiFocusRoot/Ring，App 回退到 Flutter 原生焦点遍历。
+  /// FushiFocusRoot/Ring，App 回退到 Flutter 原生焦点遍历。
   bool get experimentalFocusNavigationEnabled =>
       prefsRepo.experimentalFocusNavigationEnabled;
   Future<void> setExperimentalFocusNavigationEnabled(bool value) =>
@@ -5493,7 +5493,7 @@ class AppModel with ChangeNotifier {
     // await 必须收进 try：原实现直接 return 未 await 的 Future，catch 只能抓同步
     // throw，异步错误全部漏出成 uncaught。
     try {
-      return await HibikiRemoteLookupClient(
+      return await FushiRemoteLookupClient(
         repo: SyncRepository(_database),
         httpClient: _remoteLookupClient,
       ).lookupAudioUrl(expression: expression, reading: reading);
@@ -5509,23 +5509,23 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  HibikiRemoteLookupService createRemoteLookupService() {
+  FushiRemoteLookupService createRemoteLookupService() {
     return _AppModelRemoteLookupService(this);
   }
 
-  HibikiRemoteMiningService createRemoteMiningService() {
+  FushiRemoteMiningService createRemoteMiningService() {
     return _AppModelRemoteLookupService(this);
   }
 
-  HibikiRemoteHistoryService createRemoteHistoryService() {
+  FushiRemoteHistoryService createRemoteHistoryService() {
     return _AppModelRemoteLookupService(this);
   }
 
   /// 构造互联「制卡到服务端」的客户端发送器（供 [ankiRepositoryProvider] 在开关开启时包装
   /// [RemoteMiningAnkiRepository]）。复用与远程查词同一 keep-alive http client + 同一配对目标
-  /// （enabled 的 HibikiClientUrls），明文 http 候选走复用连接、https 带指纹候选走钉扎 client。
-  HibikiRemoteMiningClient createRemoteMiningClient() {
-    return HibikiRemoteMiningClient(
+  /// （enabled 的 FushiClientUrls），明文 http 候选走复用连接、https 带指纹候选走钉扎 client。
+  FushiRemoteMiningClient createRemoteMiningClient() {
+    return FushiRemoteMiningClient(
       repo: SyncRepository(_database),
       httpClient: _remoteLookupClient,
     );
@@ -5648,7 +5648,7 @@ class AppModel with ChangeNotifier {
   Future<bool> ensureYomitanApiServerForBrowserExtension() async {
     // token 就绪：空才播种，非空保留（不覆盖）。用与 sync server 同款的密码学安全随机源。
     if (yomitanApiKey.isEmpty) {
-      await setYomitanApiKey(HibikiSyncServer.generateToken());
+      await setYomitanApiKey(FushiSyncServer.generateToken());
     }
     // 已启用：按「跳过不重启」要求直接返回；token 已就绪且与注入值一致。
     if (yomitanApiServerEnabled) {
@@ -5852,13 +5852,13 @@ class AppModel with ChangeNotifier {
             bool record,
             MineToastStatus status
           }) described = describeMineOutcome(outcome, deckName: deckName);
-          HibikiToast.show(
+          FushiToast.show(
             msg: described.message,
             severity: mineToastSeverity(described.status),
           );
         } catch (e, stack) {
           ErrorLogService.instance.log('FloatingDict.ankiExport', e, stack);
-          HibikiToast.show(
+          FushiToast.show(
             msg: t.card_export_failed,
             severity: ToastSeverity.error,
           );
@@ -6014,9 +6014,9 @@ RemoteMineResult remoteMineError(
 
 class _AppModelRemoteLookupService
     implements
-        HibikiRemoteLookupService,
-        HibikiRemoteMiningService,
-        HibikiRemoteHistoryService {
+        FushiRemoteLookupService,
+        FushiRemoteMiningService,
+        FushiRemoteHistoryService {
   const _AppModelRemoteLookupService(this._appModel);
 
   final AppModel _appModel;
