@@ -1706,7 +1706,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           builder: (_) => FushiDialogFrame(
             // master-detail（左父菜单 + 右详情）需要更宽画布；窄于 640 的窗口
             // 由面板内部 LayoutBuilder 自动降级回单列 push。
-            maxWidth: kHibikiSettingsDialogMaxWidth,
+            maxWidth: kFushiSettingsDialogMaxWidth,
             maxHeightFactor: 0.80,
             scrollable: false,
             child: sheetContent,

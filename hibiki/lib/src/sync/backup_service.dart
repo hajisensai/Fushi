@@ -11,7 +11,7 @@ import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/sync/backup_merge_engine.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
+import 'package:fushi/src/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;

@@ -9,7 +9,7 @@ import 'package:fushi/src/media/manga/online/mokuro_moe_catalog_dialog.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
-import 'package:fushi/src/utils/misc/hibiki_toast.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// fake client：内存数据，零网络（封面留空走占位图标路径）。

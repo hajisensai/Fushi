@@ -9,8 +9,8 @@ import 'package:flutter/widgets.dart';
 // `GamepadButton` enum that would clash with Hibiki's.
 import 'package:gamepads/gamepads.dart' as gp;
 
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
-import 'package:fushi/src/focus/hibiki_focus_scroll.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/focus/page_scroll_registry.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';

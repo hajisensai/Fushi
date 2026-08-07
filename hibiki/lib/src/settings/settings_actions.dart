@@ -319,7 +319,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
       children: <Widget>[
         FushiSchemeSwatch(
           colors: hibikiSchemeSwatchColors(
-            buildHibikiColorScheme(
+            buildFushiColorScheme(
               seedColor: systemColor,
               brightness: Theme.of(settingsContext.context).brightness,
             ),
@@ -346,7 +346,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
               entry) {
             return FushiSchemeSwatch(
               colors: hibikiSchemeSwatchColors(
-                buildHibikiColorScheme(
+                buildFushiColorScheme(
                   seedColor: entry.value.seed,
                   brightness: entry.value.brightness,
                   variant: entry.value.variant,
@@ -372,7 +372,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
           final String key = 'custom-theme:${e.id}';
           return FushiSchemeSwatch(
             colors: hibikiSchemeSwatchColors(
-              buildHibikiColorScheme(
+              buildFushiColorScheme(
                 seedColor: Color(e.seed),
                 brightness:
                     appModel.isDarkMode ? Brightness.dark : Brightness.light,
@@ -409,7 +409,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
         // （Enter / A）即可新建，无需长按。
         FushiSchemeSwatch(
           colors: hibikiSchemeSwatchColors(
-            buildHibikiColorScheme(
+            buildFushiColorScheme(
               seedColor: const Color(kCustomThemeDefaultSeed),
               brightness:
                   appModel.isDarkMode ? Brightness.dark : Brightness.light,

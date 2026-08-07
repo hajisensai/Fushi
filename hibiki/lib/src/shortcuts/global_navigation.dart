@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:macos_ui/macos_ui.dart' show WindowManipulator;
 import 'package:window_manager/window_manager.dart';
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
 
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';

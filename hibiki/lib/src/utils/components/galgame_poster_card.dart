@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
-import 'package:fushi/src/focus/hibiki_focus_target.dart';
-import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_target.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 /// galgame 竖版海报卡（对齐 ReinaManager 库页/首页的卡片观感，见
@@ -15,7 +15,7 @@ import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 /// 这样卡片本身是纯 widget、可 widget-test，也不与封面来源耦合。
 ///
 /// 圆角走 token、字号走 textTheme、颜色走 colorScheme 语义角色，是设计系统组件而非页面
-/// chrome，故在 MD3 静态守卫的 allowlist 内（同 `hibiki_material_components.dart`）。
+/// chrome，故在 MD3 静态守卫的 allowlist 内（同 `fushi_material_components.dart`）。
 class GalgamePosterCard extends StatefulWidget {
   const GalgamePosterCard({
     super.key,

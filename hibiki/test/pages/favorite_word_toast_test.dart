@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/misc/hibiki_toast.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 import '../helpers/source_guard.dart';
 

@@ -23,7 +23,7 @@ import 'package:fushi/src/media/video/video_path_migration.dart';
 import 'package:fushi/src/media/video/video_storage.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
+import 'package:fushi/src/utils/misc/fushi_time_format.dart';
 
 /// [VideoBookRepository.importSplitPlaylist] 的落库结果。
 ///

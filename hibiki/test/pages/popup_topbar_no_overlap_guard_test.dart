@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:fushi/src/utils/components/hibiki_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 
 import '../widgets/widget_test_helpers.dart';
 

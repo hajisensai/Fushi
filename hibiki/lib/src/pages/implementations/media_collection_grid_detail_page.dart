@@ -9,7 +9,7 @@ import 'package:fushi/src/media/collections/collection_shelf_row.dart'
 import 'package:fushi/src/pages/implementations/collection_detail_shared.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart'
     show kShelfBookCardAspectRatio;
-import 'package:fushi/src/utils/components/hibiki_reorderable_grid.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 

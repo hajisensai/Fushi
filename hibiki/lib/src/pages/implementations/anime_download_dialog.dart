@@ -23,7 +23,7 @@ import 'package:fushi/src/pages/implementations/jimaku_entry_picker.dart';
 import 'package:fushi/src/pages/implementations/download_actions.dart';
 import 'package:fushi/src/pages/implementations/downloads_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
-import 'package:fushi/src/pages/hibiki_page_placeholders.dart';
+import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 

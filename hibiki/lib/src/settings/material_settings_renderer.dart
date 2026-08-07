@@ -5,8 +5,8 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
-import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
-import 'package:fushi/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 
 class MaterialSettingsRenderer implements SettingsRenderer {
@@ -186,7 +186,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
         // 布局 sub-page couldn't be scrolled by touch (BUG-042). Disabling the
         // inner physics lets every drag reach the parent. Mirrors the cupertino
         // renderer, which is already NeverScrollable here. The one caller that
-        // drives this list itself (hibiki_settings_page master-detail) passes a
+        // drives this list itself (fushi_settings_page master-detail) passes a
         // controller and keeps real physics so it can still scroll.
         physics: scrollController == null
             ? const NeverScrollableScrollPhysics()

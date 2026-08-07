@@ -23,7 +23,7 @@ export 'src/pages/implementations/reader_fushi_history_page.dart';
 export 'src/pages/implementations/reader_pdf_page.dart';
 export 'src/media/manga/reader/manga_fushi_page.dart';
 export 'src/media/manga/manga_library_page.dart';
-export 'src/pages/implementations/hibiki_settings_page.dart';
+export 'src/pages/implementations/fushi_settings_page.dart';
 export 'src/pages/implementations/custom_theme_page.dart';
 export 'src/pages/implementations/custom_fonts_page.dart';
 export 'src/pages/implementations/dictionary_settings_dialog_page.dart';
@@ -48,7 +48,7 @@ export 'src/pages/implementations/shortcut_settings_page.dart';
 
 export 'src/pages/base_page.dart';
 export 'src/pages/base_module_tab_page.dart';
-export 'src/pages/hibiki_page_placeholders.dart';
+export 'src/pages/fushi_page_placeholders.dart';
 export 'src/pages/base_history_page.dart';
 export 'src/pages/base_tab_page.dart';
 export 'src/pages/base_source_page.dart';

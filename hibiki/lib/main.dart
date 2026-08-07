@@ -28,13 +28,13 @@ import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/onedrive_sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/present_watchdog.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
-import 'package:fushi/src/utils/adaptive/hibiki_macos_theme.dart';
+import 'package:fushi/src/utils/adaptive/fushi_macos_theme.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/shortcuts/global_navigation.dart';
 import 'package:fushi/src/lookup/clipboard_panel_controller.dart';
@@ -1649,7 +1649,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                             return MacosWindow(
                               sidebar: mediaOpen
                                   ? null
-                                  : buildHibikiMacosSidebar(
+                                  : buildFushiMacosSidebar(
                                       activeTabs: homeActiveTabs(
                                         // 「视频」tab 已毕业为常驻（原
                                         // experimentalVideoEnabled 恒 true）。games

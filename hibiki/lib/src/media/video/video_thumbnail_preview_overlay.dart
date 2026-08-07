@@ -2,7 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_controller.dart';
-import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
+import 'package:fushi/src/utils/misc/fushi_time_format.dart';
 
 /// 把 hover 比例 [fraction]（`[0,1]`）映射成浮层左边缘 x（相对 seek bar 轨道左缘）。
 ///

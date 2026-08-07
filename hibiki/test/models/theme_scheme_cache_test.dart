@@ -3,17 +3,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 
 /// BUG-969：阅读设置抽屉的主题选择器每次 rebuild 对每张色卡各调一次
-/// [buildHibikiColorScheme]（系统 + 预设 7 + 自定义 N），拖字号 slider 时每个
+/// [buildFushiColorScheme]（系统 + 预设 7 + 自定义 N），拖字号 slider 时每个
 /// tick 全表 setState = 每 tick 一场 `ColorScheme.fromSeed` HCT 风暴。修复是
 /// 按参数键 memo；本测试钉死「同参返回同一实例（缓存命中）、异参各自独立」。
 void main() {
-  group('buildHibikiColorScheme memo (BUG-969)', () {
+  group('buildFushiColorScheme memo (BUG-969)', () {
     test('同参两次调用返回同一实例（identical，缓存命中）', () {
-      final ColorScheme a = buildHibikiColorScheme(
+      final ColorScheme a = buildFushiColorScheme(
         seedColor: const Color(0xFF1F4959),
         brightness: Brightness.light,
       );
-      final ColorScheme b = buildHibikiColorScheme(
+      final ColorScheme b = buildFushiColorScheme(
         seedColor: const Color(0xFF1F4959),
         brightness: Brightness.light,
       );
@@ -23,11 +23,11 @@ void main() {
     });
 
     test('明暗 / 种子 / 角色覆写不同 → 各自独立结果', () {
-      final ColorScheme light = buildHibikiColorScheme(
+      final ColorScheme light = buildFushiColorScheme(
         seedColor: const Color(0xFF1F4959),
         brightness: Brightness.light,
       );
-      final ColorScheme dark = buildHibikiColorScheme(
+      final ColorScheme dark = buildFushiColorScheme(
         seedColor: const Color(0xFF1F4959),
         brightness: Brightness.dark,
       );
@@ -35,7 +35,7 @@ void main() {
       expect(light.brightness, Brightness.light);
       expect(dark.brightness, Brightness.dark);
 
-      final ColorScheme overridden = buildHibikiColorScheme(
+      final ColorScheme overridden = buildFushiColorScheme(
         seedColor: const Color(0xFF1F4959),
         brightness: Brightness.light,
         primary: const Color(0xFFAA3366),
@@ -43,7 +43,7 @@ void main() {
       expect(identical(light, overridden), isFalse);
       expect(overridden.primary, const Color(0xFFAA3366));
       // 覆写参数组合同样被缓存。
-      final ColorScheme overriddenAgain = buildHibikiColorScheme(
+      final ColorScheme overriddenAgain = buildFushiColorScheme(
         seedColor: const Color(0xFF1F4959),
         brightness: Brightness.light,
         primary: const Color(0xFFAA3366),

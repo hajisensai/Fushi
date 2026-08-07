@@ -20,9 +20,9 @@ import 'package:fushi/src/pages/implementations/home_page.dart'
     show homeShellTabNotifier, HomeTab;
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
-import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
-import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
+import 'package:fushi/src/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

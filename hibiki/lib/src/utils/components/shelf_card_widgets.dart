@@ -3,7 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
-import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:transparent_image/transparent_image.dart';
 
@@ -220,7 +220,7 @@ class ShelfFileCover extends StatelessWidget {
 /// 卡片标题溢出提示（TODO-2490）：三库页卡片标题统一「最多两行 + 省略号」
 /// （BUG-1184），但两行仍放不下的长名此前没有任何看全名的途径。本组件用与
 /// 内部 [Text] 相同的 [style] / [maxLines] 先测量
-/// （[TextPainter.didExceedMaxLines]，与 `hibiki_marquee.dart` 的溢出探测同
+/// （[TextPainter.didExceedMaxLines]，与 `fushi_marquee.dart` 的溢出探测同
 /// 范式），**仅溢出时**才包 [Tooltip]：
 ///
 /// - 桌面：鼠标悬停气泡显示完整标题；

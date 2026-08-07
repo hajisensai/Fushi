@@ -82,7 +82,7 @@ Future<CollectionAddOutcome> addMediaRefToCollection({
 
 /// 媒体卡的拖拽源：拖起卡片，落到合集上即加入该合集。
 ///
-/// **仅桌面端建拖拽源**（镜像 `hibiki_reorder_drag_listener.dart` 的按平台范式）：
+/// **仅桌面端建拖拽源**（镜像 `fushi_reorder_drag_listener.dart` 的按平台范式）：
 /// - 桌面（Windows / Linux / macOS，鼠标为主）→ [Draggable]（按下即拖）。与卡片
 ///   既有交互零冲突：`ImmediateMultiDragGestureRecognizer` 要指针移动超过
 ///   `kTouchSlop` 才在手势竞技场胜出，所以点击（按下即抬）仍归 `InkWell.onTap`

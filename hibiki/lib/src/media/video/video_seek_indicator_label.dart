@@ -1,4 +1,4 @@
-import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
+import 'package:fushi/src/utils/misc/fushi_time_format.dart';
 
 /// TODO-916 症状①：视频横滑 seek 居中 HUD 的纯文本格式化。
 ///

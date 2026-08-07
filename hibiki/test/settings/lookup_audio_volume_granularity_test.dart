@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';

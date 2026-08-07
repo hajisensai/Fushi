@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_context.dart';
-import 'package:fushi/src/utils/misc/hibiki_audio_handler.dart';
+import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// 进程级常驻有声书会话（TODO-291 阶段2）。

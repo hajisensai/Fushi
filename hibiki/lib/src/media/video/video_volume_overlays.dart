@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
 const Key videoVolumePopoverFrameKey =
     ValueKey<String>('video-volume-popover-frame');

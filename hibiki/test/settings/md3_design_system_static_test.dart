@@ -10,7 +10,7 @@ import '../helpers/scan_scale.dart';
 void main() {
   const Map<String, List<String>> requiredComponentTokens =
       <String, List<String>>{
-    'lib/src/utils/components/hibiki_design_tokens.dart': <String>[
+    'lib/src/utils/components/fushi_design_tokens.dart': <String>[
       'class FushiDesignTokens',
       'class FushiRadii',
       'class FushiSurfaceColors',
@@ -19,7 +19,7 @@ void main() {
       'final FushiDensityTokens density',
       'static FushiDesignTokens of',
     ],
-    'lib/src/utils/components/hibiki_material_components.dart': <String>[
+    'lib/src/utils/components/fushi_material_components.dart': <String>[
       'class FushiCard',
       'class FushiListItem',
       'enum FushiListDensity',
@@ -72,10 +72,10 @@ void main() {
     'lib/src/settings/settings_home_page.dart': <String>[
       'FushiPageHeader',
     ],
-    'lib/src/utils/components/hibiki_list_tile.dart': <String>[
+    'lib/src/utils/components/fushi_list_tile.dart': <String>[
       'FushiListItem',
     ],
-    'lib/src/utils/components/hibiki_text_selection_controls.dart': <String>[
+    'lib/src/utils/components/fushi_text_selection_controls.dart': <String>[
       'FushiCard',
       'FushiOverflowMenu',
     ],
@@ -250,7 +250,7 @@ void main() {
       'FushiTagChip',
       'FushiDesignTokens',
     ],
-    'lib/src/utils/misc/hibiki_toast.dart': <String>[
+    'lib/src/utils/misc/fushi_toast.dart': <String>[
       'FushiDesignTokens',
     ],
     // Merged from app_model_popup_dictionary_md3_static_test.dart: the desktop
@@ -347,12 +347,12 @@ void main() {
         'Card(',
         'surfaceContainerLowest',
       ],
-      'lib/src/utils/components/hibiki_list_tile.dart': <String>[
+      'lib/src/utils/components/fushi_list_tile.dart': <String>[
         'ListTile(',
         'dense: true',
         'fontSize:',
       ],
-      'lib/src/utils/components/hibiki_text_selection_controls.dart': <String>[
+      'lib/src/utils/components/fushi_text_selection_controls.dart': <String>[
         'toolbarBuilder: (context, child) => Card(',
         'PopupMenuButton',
       ],
@@ -583,7 +583,7 @@ void main() {
         '=> Dialog(',
         'SafeArea(',
       ],
-      'lib/src/utils/misc/hibiki_toast.dart': <String>[
+      'lib/src/utils/misc/fushi_toast.dart': <String>[
         'BorderRadius.circular(24)',
         'fontSize: 14',
       ],
@@ -675,9 +675,9 @@ void main() {
       'PopupMenuButton(',
     ];
     const Map<String, String> allowedFiles = <String, String>{
-      'lib/src/utils/components/hibiki_design_tokens.dart':
+      'lib/src/utils/components/fushi_design_tokens.dart':
           'Token source owns app radii and semantic surface roles.',
-      'lib/src/utils/components/hibiki_material_components.dart':
+      'lib/src/utils/components/fushi_material_components.dart':
           'Shared MD3 component implementation may map tokens to framework widgets.',
       'lib/src/utils/components/settings_shared.dart':
           'Shared adaptive settings primitives own compact settings controls.',
@@ -1383,14 +1383,14 @@ void main() {
       'lib/src/utils/components/cover_badge.dart': <String>{
         'BorderRadius.circular('
       },
-      'lib/src/utils/components/hibiki_design_tokens.dart': <String>{
+      'lib/src/utils/components/fushi_design_tokens.dart': <String>{
         'BorderRadius.circular(',
         'surfaceContainerLow',
         'surfaceContainerHigh',
         'surfaceContainerHighest',
         'fontSize:'
       },
-      'lib/src/utils/components/hibiki_material_components.dart': <String>{
+      'lib/src/utils/components/fushi_material_components.dart': <String>{
         'BorderRadius.circular(',
         'VisualDensity.compact',
         'surfaceContainerHigh',
@@ -1679,7 +1679,7 @@ void main() {
 
   test('shared icon button uses MD3 design tokens', () {
     final String source = File(
-      'lib/src/utils/components/hibiki_icon_button.dart',
+      'lib/src/utils/components/fushi_icon_button.dart',
     ).readAsStringSync();
     final String buildSource = _sectionSource(
       source,
@@ -2348,11 +2348,11 @@ void main() {
       'lib/src/pages/implementations/shortcut_settings/'
           'binding_edit_dialog.part.dart',
       'lib/src/sync/sync_compare_dialog.dart',
-      'lib/src/utils/components/hibiki_text_selection_controls.dart',
+      'lib/src/utils/components/fushi_text_selection_controls.dart',
     ];
 
     final String sharedMenu = File(
-      'lib/src/utils/components/hibiki_material_components.dart',
+      'lib/src/utils/components/fushi_material_components.dart',
     ).readAsStringSync();
     expect(sharedMenu, contains('class FushiPopupMenuItem<T>'));
     expect(sharedMenu, contains('minHeight: 48'));
@@ -2360,7 +2360,7 @@ void main() {
     expect(sharedMenu, contains('PopupMenuPosition.under'));
 
     final String dropdown =
-        File('lib/src/utils/components/hibiki_dropdown.dart')
+        File('lib/src/utils/components/fushi_dropdown.dart')
             .readAsStringSync();
     expect(dropdown, contains('MenuAnchor('));
     expect(dropdown, contains('tokens.radii.menuRadius'));
@@ -2394,7 +2394,7 @@ void main() {
 
   test('transient routes use shared MD3 motion tokens', () {
     final File motionFile =
-        File('lib/src/utils/components/hibiki_motion_tokens.dart');
+        File('lib/src/utils/components/fushi_motion_tokens.dart');
     expect(motionFile.existsSync(), isTrue);
 
     final String motion = motionFile.readAsStringSync();
@@ -2410,7 +2410,7 @@ void main() {
     final String sheet =
         File('lib/src/utils/adaptive/adaptive_widgets.dart').readAsStringSync();
     final String menu = File(
-      'lib/src/utils/components/hibiki_material_components.dart',
+      'lib/src/utils/components/fushi_material_components.dart',
     ).readAsStringSync();
     final String home =
         File('lib/src/pages/implementations/home_page.dart').readAsStringSync();
@@ -2429,7 +2429,7 @@ void main() {
 
   test('shared MD3 primitives animate state changes', () {
     final String motion =
-        File('lib/src/utils/components/hibiki_motion_tokens.dart')
+        File('lib/src/utils/components/fushi_motion_tokens.dart')
             .readAsStringSync();
     expect(motion, contains('hibikiMd3StateDuration'));
     expect(motion, contains('hibikiMd3StateCurve'));
@@ -2437,7 +2437,7 @@ void main() {
     expect(motion, contains('Easing.standard'));
 
     final String components = File(
-      'lib/src/utils/components/hibiki_material_components.dart',
+      'lib/src/utils/components/fushi_material_components.dart',
     ).readAsStringSync();
     for (final (String start, String end) in <(String, String)>[
       ('class FushiCard', 'enum FushiListDensity'),
@@ -2464,7 +2464,7 @@ void main() {
 
   test('selected list items use primary foreground and a subtle outline', () {
     final String components = File(
-      'lib/src/utils/components/hibiki_material_components.dart',
+      'lib/src/utils/components/fushi_material_components.dart',
     ).readAsStringSync();
     final String listItem = _sectionSource(
       components,

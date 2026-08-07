@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_item_presentation.dart';
-import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 class VideoControlLayoutEditOverlay extends StatefulWidget {

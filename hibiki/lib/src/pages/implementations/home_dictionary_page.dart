@@ -7,7 +7,7 @@ import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
-import 'package:fushi/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';

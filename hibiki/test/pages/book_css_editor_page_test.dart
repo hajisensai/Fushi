@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
-    show kHibikiSettingsDialogMaxWidth;
+    show kFushiSettingsDialogMaxWidth;
 
 // Minimal Slang stub — the real strings.g.dart pulls in too many
 // dependencies for a focused widget test.  We wrap the page in a
@@ -231,7 +231,7 @@ void main() {
     (WidgetTester tester) async {
       // BookCssEditorPage 是逃出 900px 限宽设置弹窗的全屏 push 路由；桌面下若不约束
       // 正文宽度会铺满整屏，与限宽弹窗里的兄弟设置页不一致。修复把 body 与底部动作栏
-      // 包进 Center + ConstrainedBox(maxWidth: kHibikiSettingsDialogMaxWidth)。
+      // 包进 Center + ConstrainedBox(maxWidth: kFushiSettingsDialogMaxWidth)。
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(1920, 1080);
       addTearDown(tester.view.reset);
@@ -245,9 +245,9 @@ void main() {
       final Iterable<ConstrainedBox> capped = tester
           .widgetList<ConstrainedBox>(find.byType(ConstrainedBox))
           .where((ConstrainedBox b) =>
-              b.constraints.maxWidth == kHibikiSettingsDialogMaxWidth);
+              b.constraints.maxWidth == kFushiSettingsDialogMaxWidth);
       expect(capped.length, greaterThanOrEqualTo(2),
-          reason: '正文与底部动作栏都应被约束到 kHibikiSettingsDialogMaxWidth');
+          reason: '正文与底部动作栏都应被约束到 kFushiSettingsDialogMaxWidth');
 
       // 编辑器正文仍正常渲染（TextField expands:true 需要有界高度，包裹层用
       // SizedBox(height: infinity) 保留满高，不应抛布局异常）。

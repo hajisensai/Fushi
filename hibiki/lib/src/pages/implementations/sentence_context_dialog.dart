@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:fushi/src/pages/hibiki_page_placeholders.dart';
+import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/utils.dart';
 
 /// BUG-763/766「制卡·选择句子上下文」**app 原生顶层对话框**。

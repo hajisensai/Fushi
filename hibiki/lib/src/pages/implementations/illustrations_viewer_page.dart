@@ -7,7 +7,7 @@ import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
-import 'package:fushi/src/utils/misc/hibiki_share.dart';
+import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/epub/epub_book.dart' show fallbackMimeType;
 import 'package:fushi/src/media/media_extensions.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'

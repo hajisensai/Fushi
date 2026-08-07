@@ -30,7 +30,7 @@ import 'package:fushi/src/sync/ftp_sync_backend.dart';
 import 'package:fushi/src/sync/sftp_sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_sync_backend.dart';
-import 'package:fushi/src/pages/hibiki_page_placeholders.dart';
+import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';

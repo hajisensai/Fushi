@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
-import 'package:fushi/src/utils/components/hibiki_focus_ring.dart';
-import 'package:fushi/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/utils/components/fushi_focus_ring.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 
 // Reproduction harness for the desktop keyboard-focus bugs:

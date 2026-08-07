@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/floating_dict_page.dart';
-import 'package:fushi/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 import '../helpers/test_platform_services.dart';
 

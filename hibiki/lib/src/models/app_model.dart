@@ -207,7 +207,7 @@ final pipSearchPositionProvider = StateProvider<int>((ref) => 0);
 
 // Theme helper functions moved to theme_notifier.dart.
 // Re-export for backward compatibility.
-ColorScheme buildHibikiColorScheme({
+ColorScheme buildFushiColorScheme({
   required Color seedColor,
   required Brightness brightness,
   DynamicSchemeVariant variant = DynamicSchemeVariant.tonalSpot,
@@ -216,7 +216,7 @@ ColorScheme buildHibikiColorScheme({
   Color? tertiary,
   Color? primaryContainer,
 }) =>
-    theme_notifier.buildHibikiColorScheme(
+    theme_notifier.buildFushiColorScheme(
       seedColor: seedColor,
       brightness: brightness,
       variant: variant,

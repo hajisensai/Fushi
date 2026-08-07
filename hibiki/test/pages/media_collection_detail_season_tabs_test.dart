@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
-import 'package:fushi/src/utils/components/hibiki_reorderable_grid.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 合集内分季（用户拍板「多季直接在合集里面分开」；分组是**文件名的纯函数、

@@ -7,7 +7,7 @@ import 'package:html/dom.dart' as html_dom;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/epub/epub_book.dart';
-import 'package:fushi/src/utils/misc/hibiki_color.dart';
+import 'package:fushi/src/utils/misc/fushi_color.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 

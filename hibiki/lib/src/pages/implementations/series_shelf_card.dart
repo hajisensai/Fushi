@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
-import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/utils.dart';
 
 /// TODO-616 A2 series folded card: one card stands for a whole series (cover =

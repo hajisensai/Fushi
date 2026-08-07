@@ -8,7 +8,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:fushi/src/epub/epub_book.dart';
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -310,8 +310,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         return SizedBox(
           height: constraints.maxHeight,
           child: MaterialSupportingPaneLayout(
-            minSplitWidth: kHibikiSettingsWideThreshold,
-            supportingWidth: kHibikiSettingsSupportingPaneWidth,
+            minSplitWidth: kFushiSettingsWideThreshold,
+            supportingWidth: kFushiSettingsSupportingPaneWidth,
             supportingSide: SupportingPaneSide.start,
             dividerColor: dividerColor,
             // 左父菜单项不多时垂直居中（progress/分类/动作整体居中），

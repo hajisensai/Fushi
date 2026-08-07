@@ -12,7 +12,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/epub/epub_storage.dart';
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';

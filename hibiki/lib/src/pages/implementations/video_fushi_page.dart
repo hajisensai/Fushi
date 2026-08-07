@@ -17,7 +17,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
-import 'package:fushi/src/utils/misc/hibiki_share.dart';
+import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
@@ -31,7 +31,7 @@ import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 // （BUG-931 有守卫），故刻意不 import 整套 toast API。
 import 'package:fushi/src/utils/misc/toast_severity.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
-import 'package:fushi/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
@@ -147,8 +147,8 @@ import 'package:fushi/src/platform/windows_ime_space_dispatch.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/components/fading_chrome_gate.dart';
-import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
-import 'package:fushi/src/utils/components/hibiki_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 
 part 'video_fushi/danmaku.part.dart';
 part 'video_fushi/clip_export.part.dart';

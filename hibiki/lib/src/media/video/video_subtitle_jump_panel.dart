@@ -4,7 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:fushi/src/focus/hibiki_focus_scroll.dart';
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';

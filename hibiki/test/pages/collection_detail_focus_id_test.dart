@@ -8,8 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
-import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
@@ -21,7 +21,7 @@ import '../helpers/test_platform_services.dart';
 /// BUG-1009（预防性）：合集详情页成员卡的手柄/键盘焦点 id 不得与书架同名。
 ///
 /// 详情页 push 在书架路由之上、两条路由的 FushiFocusTarget 同时存活；焦点注册表
-/// 按 id 覆盖（hibiki_focus_controller.dart `_targets[id] = entry`），同名即撞号
+/// 按 id 覆盖（fushi_focus_controller.dart `_targets[id] = entry`），同名即撞号
 /// ——后注册者赢、owner unregister 时另一方失联。修复 = 详情页渲染路径
 /// （[_buildCollectionMemberCard]）给成员卡 focusId 加 'collection-detail-' 路由
 /// 前缀，书架前缀不动（快捷键/方向锚点语义零变化）。

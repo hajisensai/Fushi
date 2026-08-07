@@ -262,7 +262,7 @@ void main() {
 
     test('日志面板选区工具条：锚点经 Overlay 换算', () {
       final String source =
-          read('lib/src/utils/components/hibiki_material_components.dart');
+          read('lib/src/utils/components/fushi_material_components.dart');
       final String fn = slice(
         source,
         'Widget _buildContextMenu(',

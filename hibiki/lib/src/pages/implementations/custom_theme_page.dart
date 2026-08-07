@@ -155,14 +155,14 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   }
 
   // TODO-928: 预览跟随当前真实全局明暗（自定义主题不再有自己的明暗开关）。
-  // 同一组自定义色在 light/dark 下由 buildHibikiColorScheme 各自从 seed 派生。
+  // 同一组自定义色在 light/dark 下由 buildFushiColorScheme 各自从 seed 派生。
   Brightness get _previewBrightness =>
       appModelNoUpdate.isDarkMode ? Brightness.dark : Brightness.light;
 
   ColorScheme get _generatedScheme =>
       ColorScheme.fromSeed(seedColor: _seed, brightness: _previewBrightness);
 
-  ColorScheme get _preview => buildHibikiColorScheme(
+  ColorScheme get _preview => buildFushiColorScheme(
         seedColor: _seed,
         brightness: _previewBrightness,
         primary: _usePrimaryColor ? _primaryColor : null,
@@ -370,7 +370,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
           brightness =
               WidgetsBinding.instance.platformDispatcher.platformBrightness;
       }
-      final ColorScheme generated = buildHibikiColorScheme(
+      final ColorScheme generated = buildFushiColorScheme(
         seedColor: result.seed,
         brightness: brightness,
       );

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 // TODO-1143 行为守卫：宽窗阅读器快捷设置左父菜单固定 208px，长分类标签「布局与显示」
 // (选中加粗) 曾被 FushiListItem 默认 titleMaxLines:1 + ellipsis 截断成「布局与…」。
@@ -22,7 +22,7 @@ void main() {
         body: Align(
           alignment: Alignment.topLeft,
           child: SizedBox(
-            width: 208, // 左父菜单 kHibikiSettingsSupportingPaneWidth。
+            width: 208, // 左父菜单 kFushiSettingsSupportingPaneWidth。
             child: FushiListItem(
               selected: true,
               selectedShape: FushiListItemSelectedShape.pill,

@@ -661,7 +661,7 @@ void main() {
   testWidgets(
       'wide video settings keeps the top category bar fixed while the detail '
       'scrolls (TODO-556)', (tester) async {
-    // 高度取 500（>= kHibikiSettingsWideMinHeight=440 → 进宽窗），下方详情行多仍可滚。
+    // 高度取 500（>= kFushiSettingsWideMinHeight=440 → 进宽窗），下方详情行多仍可滚。
     await tester.binding.setSurfaceSize(const Size(1000, 500));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pumpSheet(tester);
@@ -686,8 +686,8 @@ void main() {
   testWidgets(
       'wide-but-short video settings falls back to push below the min height',
       (tester) async {
-    // 宽度够分栏（>= kHibikiSettingsWideThreshold=560），但可用高度低于
-    // kHibikiSettingsWideMinHeight=440：确定性几何判据应回退窄窗 push（与书籍
+    // 宽度够分栏（>= kFushiSettingsWideThreshold=560），但可用高度低于
+    // kFushiSettingsWideMinHeight=440：确定性几何判据应回退窄窗 push（与书籍
     // 设置同条件，不出滚动条）。
     await tester.binding.setSurfaceSize(const Size(1000, 150));
     addTearDown(() => tester.binding.setSurfaceSize(null));

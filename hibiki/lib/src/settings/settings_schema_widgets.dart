@@ -3,7 +3,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_fields.dart';
 import 'package:fushi/src/settings/settings_search.dart';
-import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 
 /// 把一个父级 [WidgetBuilder] 包成平台对应的页面路由（Material/Cupertino）。

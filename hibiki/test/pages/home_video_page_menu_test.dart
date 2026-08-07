@@ -22,8 +22,8 @@ import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
-import 'package:fushi/src/utils/components/hibiki_material_components.dart';
-import 'package:fushi/src/utils/misc/hibiki_toast.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 

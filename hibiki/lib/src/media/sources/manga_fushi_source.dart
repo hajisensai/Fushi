@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/media.dart';
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';

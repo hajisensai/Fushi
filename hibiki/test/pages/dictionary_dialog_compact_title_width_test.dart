@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 // TODO-749/751：手机词典管理「词典名显示不全」回归守卫。
 //

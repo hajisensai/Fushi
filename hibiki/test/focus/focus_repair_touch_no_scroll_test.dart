@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
-import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_target.dart';
 
 // User report: on a pure-touch phone, fast-scrolling a long settings list rolls
 // back to a centred control. Mechanism: as rows recycle, the active focus

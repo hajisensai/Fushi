@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/models.dart';
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/media/collections/collection_grouping.dart';
@@ -15,7 +15,7 @@ import 'package:fushi/src/media/collections/collection_shelf_row.dart'
     show CollectionShelfRow;
 import 'package:fushi/src/media/collections/collection_drag.dart'
     show CollectionAddOutcome, MediaCardDraggable, addMediaRefToCollection;
-import 'package:fushi/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/metadata/scrape_batch.dart';
 import 'package:fushi/src/media/metadata/scrape_title_matcher.dart';

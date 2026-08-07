@@ -9,7 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
-import 'package:fushi/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/drag_drop/import_dialog_drop.dart';
 import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart';
 import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';

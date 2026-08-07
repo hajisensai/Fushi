@@ -143,7 +143,7 @@ void main() {
     // globalToLocal 消祖先 Transform.scale，非 SDK/pub 的 Overlay 平移代理，BUG-778）。
     // 断言按新现实：文件必须存在、含 globalToLocal（消缩放核心），且详情页真在用。
     final File reorderGrid =
-        File('lib/src/utils/components/hibiki_reorderable_grid.dart');
+        File('lib/src/utils/components/fushi_reorderable_grid.dart');
     expect(reorderGrid.existsSync(), isTrue,
         reason: '书籍合集详情页网格拖排依赖消缩放 2D 组件 FushiReorderableGrid');
     expect(reorderGrid.readAsStringSync().contains('globalToLocal'), isTrue,

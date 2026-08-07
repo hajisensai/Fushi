@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:fushi/src/focus/hibiki_focus_scroll.dart';
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
-import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 

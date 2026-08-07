@@ -19,7 +19,7 @@ import 'test_helpers.dart';
 ///
 /// gameButtonA activation is covered device-independently by
 /// test/shortcuts/gamepad_navigation_flow_test.dart and
-/// test/widgets/hibiki_focusable_test.dart.
+/// test/widgets/fushi_focusable_test.dart.
 ///
 /// STATUS (2026-05-29): mechanism verified by the two widget tests above (real
 /// Flutter key pipeline). This `flutter drive` run is the device path and uses

@@ -4,7 +4,7 @@ import 'package:macos_ui/macos_ui.dart'
     show MacosSwitch, MacosSlider, PushButton, ControlSize;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
-import 'package:fushi/src/utils/components/hibiki_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 Widget adaptiveDialogAction({
   required BuildContext context,

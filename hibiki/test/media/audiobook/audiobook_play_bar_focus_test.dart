@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
-import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 
 /// TODO-712 守卫：阅读器有声书播放控制条的所有可点按钮必须注册为应用焦点目标

@@ -2,18 +2,18 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/focus/hibiki_focus_controller.dart';
-import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
-import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
-import 'package:fushi/src/utils/components/hibiki_dropdown.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_dropdown.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
-import 'package:fushi/src/utils/components/hibiki_focusable.dart';
-import 'package:fushi/src/utils/components/hibiki_material_components.dart';
-import 'package:fushi/src/utils/components/hibiki_option_selection_page.dart';
+import 'package:fushi/src/utils/components/fushi_focusable.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_option_selection_page.dart';
 
 class SettingsSectionHeader extends StatelessWidget {
   const SettingsSectionHeader(this.text, {super.key, this.padding});
