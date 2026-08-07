@@ -10,6 +10,20 @@ test('Hibiki status endpoint wins when it is ready', () => {
   );
 });
 
+test("renamed app reporting 'fushi' is accepted as connected (dual-value transition)", () => {
+  assert.equal(
+    diagnostics.classify({ status: 200, body: { app: 'fushi', ready: true } }),
+    diagnostics.states.connected,
+  );
+});
+
+test('an unknown app value on the port is still wrong-service', () => {
+  assert.equal(
+    diagnostics.classify({ status: 200, body: { app: 'other' } }),
+    diagnostics.states.wrongService,
+  );
+});
+
 test('old Hibiki lookup endpoint is recognised as a legacy connection', () => {
   assert.equal(
     diagnostics.classify(
