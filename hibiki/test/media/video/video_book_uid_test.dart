@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_import_dialog.dart';
+import 'package:fushi/src/media/video/video_import_dialog.dart';
 
 void main() {
   group('playlistBookUid（纯文件名派生，去掉完整路径哈希）', () {

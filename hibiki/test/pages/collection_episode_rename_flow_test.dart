@@ -2,9 +2,9 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/pages/implementations/media_collection_detail_page.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-2491：「按刮削重命名各集」确认流程。
 /// ① dryRun 对照表上弹窗（旧名/新名逐行可勾选）；② 确认后只对勾选子集写穿

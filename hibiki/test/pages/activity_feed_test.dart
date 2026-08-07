@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/pages/implementations/activity_feed.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/pages/implementations/activity_feed.dart';
 
 /// 首页 Activity 时间轴纯数据层的守卫：聚合分组 / session 归并 / 相对时间 / 时长窗口。
 /// 全纯函数，无 sqlite3 依赖。

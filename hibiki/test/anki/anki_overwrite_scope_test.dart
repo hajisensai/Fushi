@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// TODO-614：`findOverwriteTargetNoteId` 行为守卫。

@@ -1,4 +1,4 @@
-import 'package:hibiki/src/epub/epub_book.dart';
+import 'package:fushi/src/epub/epub_book.dart';
 
 /// A single entry in the spread map: either one chapter or a paired spread.
 class SpreadEntry {

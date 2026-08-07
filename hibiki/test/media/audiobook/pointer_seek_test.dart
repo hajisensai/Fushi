@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki/src/media/audiobook/pointer_seek.dart';
-import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/media/audiobook/pointer_seek.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
 AudioCue _cue({required int sid, required String frag}) => AudioCue()
   ..bookKey = 'b'

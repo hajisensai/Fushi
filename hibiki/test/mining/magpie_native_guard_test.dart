@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/magpie_scaling_channel.dart';
-import 'package:hibiki/src/mining/magpie_upscaling.dart';
+import 'package:fushi/src/mining/magpie_scaling_channel.dart';
+import 'package:fushi/src/mining/magpie_upscaling.dart';
 
 /// Magpie 缩放状态监听的源码守卫。
 ///

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/image_reveal_key.dart';
+import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:path/path.dart' as p;
 
 /// BUG-898：阅读器 reveal key 与图片库磁盘 File 归一到同一稳定 key 的守护测试。

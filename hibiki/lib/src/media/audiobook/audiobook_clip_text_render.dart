@@ -5,7 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// TODO-945 M3：把有声书片段分享所选文本离屏栅格化成 PNG。
 ///

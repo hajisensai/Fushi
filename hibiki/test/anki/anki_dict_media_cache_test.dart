@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 /// A-字形 守卫：制卡词典媒体（gaiji 外字）缓存命名必须 writer（主 app 的
 /// writeDictionaryMediaCache）与 reader（AnkiMobile / AnkiDroid / AnkiConnect）

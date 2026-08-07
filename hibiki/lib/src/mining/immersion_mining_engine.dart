@@ -3,12 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
-import 'package:hibiki/src/utils/misc/card_screenshot_downsampler.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
-import 'package:hibiki/src/mining/immersion_mining_request.dart';
-import 'package:hibiki/src/mining/serial_job_queue.dart';
+import 'package:fushi/src/utils/misc/card_screenshot_downsampler.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi/src/mining/immersion_mining_request.dart';
+import 'package:fushi/src/mining/serial_job_queue.dart';
 
 /// 注入式抽取器（默认指向 desktop_audio_clipper.dart 真身，测试注入假件）。逐参对齐真身。
 typedef GifExtractor = Future<String?> Function({

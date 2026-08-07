@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/book_exit_sync_scope.dart';
+import 'package:fushi/src/sync/book_exit_sync_scope.dart';
 
 /// TODO-132 诉求B 契约测试：退出书触发的同步动作挂 app-scope，与页面生命周期解耦。
 /// 锁住 [BookExitSyncScope] 的行为契约——它让游离的关书同步 Future 在「页面销毁后

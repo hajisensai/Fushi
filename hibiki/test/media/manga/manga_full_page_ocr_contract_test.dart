@@ -11,9 +11,9 @@ import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/manga/manga_overlay_html.dart';
-import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
-import 'package:hibiki/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/manga/manga_overlay_html.dart';
+import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/media/manga/mokuro_payload.dart';
 
 void main() {
   test('阅读器文档暴露逐页热替换 OCR 层的入口，且按 data-page 定位', () {

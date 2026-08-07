@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 
 MangaOcrEngineCapability capability(
   MangaOcrEngineId id, {

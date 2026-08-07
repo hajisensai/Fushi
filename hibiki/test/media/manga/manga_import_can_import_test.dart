@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/manga_importer.dart';
+import 'package:fushi/src/media/manga/manga_importer.dart';
 import 'package:path/path.dart' as p;
 
 void main() {

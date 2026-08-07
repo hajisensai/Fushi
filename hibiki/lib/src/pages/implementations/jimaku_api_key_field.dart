@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 /// Jimaku API key 输入框——三个 Jimaku 界面（视频字幕对话框 / 番剧下载对话框 /
 /// 合集批量对话框）共用的**唯一实现**。

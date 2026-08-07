@@ -3,8 +3,8 @@
 // 所在时区，三端 CI 均可跑。
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/video/airing_week.dart';
-import 'package:hibiki/src/media/video/anilist_client.dart';
+import 'package:fushi/src/media/video/airing_week.dart';
+import 'package:fushi/src/media/video/anilist_client.dart';
 
 AniListAiringEpisode _episode(int mediaId, DateTime local, {int episode = 1}) =>
     AniListAiringEpisode(

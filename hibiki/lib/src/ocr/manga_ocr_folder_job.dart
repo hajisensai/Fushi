@@ -14,10 +14,10 @@ import 'dart:ui' show Rect, Size;
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/manga/mokuro_payload.dart';
-import 'package:hibiki/src/media/media_extensions.dart';
-import 'package:hibiki/src/ocr/manga_ocr_pipeline.dart';
-import 'package:hibiki/src/ocr/ocr_types.dart';
+import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/media_extensions.dart';
+import 'package:fushi/src/ocr/manga_ocr_pipeline.dart';
+import 'package:fushi/src/ocr/ocr_types.dart';
 
 /// OCR 产物目录名（在被扫描目录内，枚举时必须排除自己）。
 const String kMangaOcrOutDirName = 'manga_ocr_out';

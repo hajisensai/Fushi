@@ -1,6 +1,6 @@
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/torrent/torrent_backend.dart';
 
 /// TODO-1961-c+d：把「引擎侧改名/移动」与「库路径迁移」绑成**一个**用户操作。
 ///

@@ -9,8 +9,8 @@ library;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/utils.dart';
 
 /// 弹出条目信息面板。[metadata] 为 null = 还没刮到（展示空态说明）。
 /// [onRescrape] 非空时显示「重新刮削」。

@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
-import 'package:hibiki/src/sync/remote_library_source.dart';
+import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/remote_library_source.dart';
 
 /// 远端书来源类型：决定书架「远端书」分区的标题/副标题文案（BUG-699 / TODO-1384）。
 ///

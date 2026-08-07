@@ -3,9 +3,9 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/common.dart' show CommonDatabase;
-import 'package:hibiki/src/media/video/scraper/collection_scrape_apply.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/video/scraper/collection_scrape_apply.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// BUG-1310 守卫：合集级刮削资料（schema v64）。
 ///

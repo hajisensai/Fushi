@@ -2,8 +2,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_clip_export.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_clip_text_render.dart';
+import 'package:fushi/src/media/audiobook/audiobook_clip_export.dart';
+import 'package:fushi/src/media/audiobook/audiobook_clip_text_render.dart';
 import 'package:image/image.dart' as img;
 
 void main() {

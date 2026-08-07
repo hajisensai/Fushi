@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
-import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
+import 'package:fushi/src/media/collections/collection_shelf_row.dart';
 
 /// BUG-899：把标签拖到合集**行头** = 给整个合集打标签（与书/视频卡的书级拖放一致）。
 /// 根因是合集行既非 `DragTarget` 也未被调用点包进 `BookDragTarget`，标签落上去静默无

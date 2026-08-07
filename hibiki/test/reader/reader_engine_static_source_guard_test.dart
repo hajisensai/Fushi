@@ -2,12 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/reader/reader_caret_scripts.dart';
-import 'package:hibiki/src/reader/reader_engine_config.dart';
-import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
-import 'package:hibiki/src/reader/reader_selection_scripts.dart';
-import 'package:hibiki/src/reader/reader_visual_novel_scripts.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/src/reader/reader_caret_scripts.dart';
+import 'package:fushi/src/reader/reader_engine_config.dart';
+import 'package:fushi/src/reader/reader_pagination_scripts.dart';
+import 'package:fushi/src/reader/reader_selection_scripts.dart';
+import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 
 /// 守卫：阅读器引擎 JS 的 per-nav 参数走 [ReaderEngineConfig] 运行时读取，引擎源码本身
 /// 只依赖 view-mode 与编译期常量。

@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/dictionary_import_manager.dart';
+import 'package:fushi/src/models/dictionary_import_manager.dart';
 import 'package:path/path.dart' as path;
 
 /// TODO-839：peekDictionaryTitle 纯函数单测。

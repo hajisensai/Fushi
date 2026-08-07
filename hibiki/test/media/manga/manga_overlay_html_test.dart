@@ -1,11 +1,11 @@
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/manga_overlay_html.dart';
-import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
-import 'package:hibiki/src/media/manga/manga_view_prefs.dart';
-import 'package:hibiki/src/media/manga/mokuro_payload.dart';
-import 'package:hibiki/src/reader/reader_selection_scripts.dart';
+import 'package:fushi/src/media/manga/manga_overlay_html.dart';
+import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/media/manga/manga_view_prefs.dart';
+import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/reader/reader_selection_scripts.dart';
 
 MokuroImage _pageWithTwoBlocks() {
   return const MokuroImage(

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/local_audio_source_pref.dart';
-import 'package:hibiki/src/pages/implementations/local_audio_sources_dialog.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/models/local_audio_source_pref.dart';
+import 'package:fushi/src/pages/implementations/local_audio_sources_dialog.dart';
+import 'package:fushi/utils.dart';
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));

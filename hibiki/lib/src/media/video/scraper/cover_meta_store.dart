@@ -13,7 +13,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 import 'package:path/path.dart' as p;
 
 /// `cover_meta.json` 的读写器：惰性加载 + 内存缓存 + 原子写入 + 写入串行化。

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG 守卫：ASS `\blur` 的 libass 语义 —— **有描边（\bord>0）时只糊描边层，字面
 /// fill 保持锐利**；无描边（\bord==0）才糊整个字形。

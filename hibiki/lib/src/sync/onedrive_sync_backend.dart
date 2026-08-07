@@ -3,19 +3,19 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
-import 'package:hibiki/src/sync/desktop_oauth.dart';
-import 'package:hibiki/src/sync/pkce_oauth.dart';
-import 'package:hibiki/src/sync/sync_http.dart';
-import 'package:hibiki/src/sync/sync_asset_store.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/src/sync/sync_root_migration.dart';
-import 'package:hibiki/src/sync/sync_utils.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki/src/sync/ttu_filename.dart';
-import 'package:hibiki/src/sync/sync_file_ref.dart';
-import 'package:hibiki/src/sync/ttu_models.dart';
+import 'package:fushi/src/sync/desktop_oauth.dart';
+import 'package:fushi/src/sync/pkce_oauth.dart';
+import 'package:fushi/src/sync/sync_http.dart';
+import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_backend_file_trio_mixin.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/sync_root_migration.dart';
+import 'package:fushi/src/sync/sync_utils.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi/src/sync/sync_file_ref.dart';
+import 'package:fushi/src/sync/ttu_models.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// OneDrive sync backend via Microsoft Graph API.

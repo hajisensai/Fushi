@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/sync/manual_sync_ui.dart';
-import 'package:hibiki/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/sync/manual_sync_ui.dart';
+import 'package:fushi/src/sync/sync_auto_trigger.dart';
 
 import '../helpers/test_platform_services.dart';
 

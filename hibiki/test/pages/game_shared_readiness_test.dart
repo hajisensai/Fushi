@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/pages/implementations/game_shared.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/pages/implementations/game_shared.dart';
 
 import '../helpers/source_guard.dart';
 

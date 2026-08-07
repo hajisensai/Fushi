@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/ttu_filename.dart';
-import 'package:hibiki/src/sync/sync_file_ref.dart';
-import 'package:hibiki/src/sync/webdav_sync_backend.dart';
+import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi/src/sync/sync_file_ref.dart';
+import 'package:fushi/src/sync/webdav_sync_backend.dart';
 
 // BUG-845: a path-style backend addresses a child file as `folderId + fileName`
 // with NO separator (see WebDavOps.uploadJson). A per-book folderId therefore

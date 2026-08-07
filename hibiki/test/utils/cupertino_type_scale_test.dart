@@ -1,8 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_theme.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_theme.dart';
+import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
 
 /// 守卫：iOS 的 Cupertino chrome 文字派生自 editorial [HibikiTypeScale]，
 /// 而不是回到硬编码的 iOS 点数（17/17/34）。若有人把 adaptive_theme 改回写死字号，

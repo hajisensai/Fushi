@@ -1,9 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG-929 guard: the reported ASS requests a font that is not installed on
 /// Windows. mpv/libass (DirectWrite) resolves its Japanese glyphs through

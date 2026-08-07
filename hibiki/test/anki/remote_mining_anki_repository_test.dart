@@ -2,12 +2,12 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
-import 'package:hibiki/src/anki/remote_mining_anki_repository.dart';
-import 'package:hibiki/src/sync/forwarded_mine_payload.dart';
-import 'package:hibiki/src/sync/hibiki_remote_mining_client.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
+import 'package:fushi/src/sync/forwarded_mine_payload.dart';
+import 'package:fushi/src/sync/hibiki_remote_mining_client.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
 
 /// 假发送器：捕获转发出去的 payload，返回预设响应，或抛鉴权错。
 class _FakeSender implements RemoteMineSender {

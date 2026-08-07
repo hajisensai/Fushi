@@ -6,12 +6,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:hibiki/main.dart' as app;
-import 'package:hibiki/src/anki/anki_mined_card_action_sheet.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/utils.dart' show t;
+import 'package:fushi/main.dart' as app;
+import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/utils.dart' show t;
 
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 import 'helpers/focus_driver.dart';
 import 'test_helpers.dart';

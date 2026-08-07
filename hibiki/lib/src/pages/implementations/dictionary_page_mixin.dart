@@ -2,28 +2,28 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki_core/hibiki_core.dart'
+import 'package:fushi_core/fushi_core.dart'
     show kStatSourceBook, kStatSourceVideo;
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki/src/anki/anki_view_model.dart';
-import 'package:hibiki/src/anki/anki_mined_card_action_sheet.dart';
-import 'package:hibiki/src/lookup/effective_lookup_size.dart';
-import 'package:hibiki/src/pages/base_source_page.dart'
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
+import 'package:fushi/src/lookup/effective_lookup_size.dart';
+import 'package:fushi/src/pages/base_source_page.dart'
     show lookupHighlightCharCount;
-import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_input_bridge.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
+import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult, DictionaryPopupWebViewState;
-import 'package:hibiki/src/pages/implementations/sentence_context_dialog.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/pages/implementations/stat_activity.dart';
-import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
-import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/pages/implementations/sentence_context_dialog.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
+import 'package:fushi/src/utils/misc/lookup_auto_read_coordinator.dart';
+import 'package:fushi/utils.dart';
 
 // 弹窗条目统一为共享的 [DictionaryPopupEntry]（见 dictionary_popup_controller.dart）；
 // 旧的 NestedPopupEntry / _PopupStackItem 两份重复类型已收口为它一个。

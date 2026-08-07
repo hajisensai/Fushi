@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/sync_manager.dart';
-import 'package:hibiki/src/sync/sync_file_ref.dart';
-import 'package:hibiki/src/sync/ttu_models.dart';
+import 'package:fushi/src/sync/sync_manager.dart';
+import 'package:fushi/src/sync/sync_file_ref.dart';
+import 'package:fushi/src/sync/ttu_models.dart';
 
 TtuStatistics _stat({
   String dateKey = '2026-01-15',

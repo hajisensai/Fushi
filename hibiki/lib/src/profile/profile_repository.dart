@@ -1,15 +1,15 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/media_source.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/profile/profile_keys.dart';
-import 'package:hibiki/src/sync/backup_service.dart'
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/profile/profile_keys.dart';
+import 'package:fushi/src/sync/backup_service.dart'
     show rebaseFontCatalogJson, rebaseFontListJson;
-import 'package:hibiki/src/sync/pref_redaction_policy.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/sync/pref_redaction_policy.dart';
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
 
 /// 配置方案导入失败：文件损坏 / 类型魔数不符 / 版本不兼容 / 结构非法。
 ///

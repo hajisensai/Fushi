@@ -1,4 +1,4 @@
-import 'package:hibiki_platform/hibiki_platform.dart';
+import 'package:fushi_platform/fushi_platform.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class IosPermissionService implements PlatformPermissionService {

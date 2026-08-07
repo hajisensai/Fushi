@@ -5,14 +5,14 @@ import 'package:flutter/foundation.dart'
     show ValueNotifier, immutable, mapEquals;
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/torrent/anime_download_config.dart';
-import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
-import 'package:hibiki/src/media/torrent/anime_download_subtitle_resolver.dart';
-import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
-import 'package:hibiki/src/media/torrent/qbittorrent_client.dart';
-import 'package:hibiki/src/media/torrent/torrent_backend.dart';
-import 'package:hibiki/src/media/video/video_filename_parser.dart';
-import 'package:hibiki/src/media/video/video_sidecar.dart'
+import 'package:fushi/src/media/torrent/anime_download_config.dart';
+import 'package:fushi/src/media/torrent/anime_download_plan.dart';
+import 'package:fushi/src/media/torrent/anime_download_subtitle_resolver.dart';
+import 'package:fushi/src/media/torrent/qb_torrent_backend.dart';
+import 'package:fushi/src/media/torrent/qbittorrent_client.dart';
+import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi/src/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
 
 /// 入库回调的结果：入库成功后新合集的 id（回填进计划）。

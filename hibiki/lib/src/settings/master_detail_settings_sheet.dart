@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 /// 设置子页（push 进去的二级页）顶部的返回页头：左侧返回按钮 + 标题。
 ///

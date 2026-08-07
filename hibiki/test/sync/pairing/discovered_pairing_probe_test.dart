@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/pairing/discovered_pairing_probe.dart';
-import 'package:hibiki/src/sync/pairing/hibiki_ping_client.dart';
+import 'package:fushi/src/sync/pairing/discovered_pairing_probe.dart';
+import 'package:fushi/src/sync/pairing/hibiki_ping_client.dart';
 
 /// TODO-961：发现配对的 scheme 选择 + 探测编排单测。
 ///

@@ -2,13 +2,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/src/media/torrent/anime_download_config.dart';
-import 'package:hibiki/src/media/torrent/anti_leech.dart';
-import 'package:hibiki/src/media/torrent/download_save_root.dart';
-import 'package:hibiki/src/media/torrent/embedded_torrent_backend.dart';
-import 'package:hibiki/src/media/torrent/torrent_memory.dart';
-import 'package:hibiki/src/media/torrent/torrent_upload_policy.dart';
-import 'package:hibiki_torrent/hibiki_torrent.dart';
+import 'package:fushi/src/media/torrent/anime_download_config.dart';
+import 'package:fushi/src/media/torrent/anti_leech.dart';
+import 'package:fushi/src/media/torrent/download_save_root.dart';
+import 'package:fushi/src/media/torrent/embedded_torrent_backend.dart';
+import 'package:fushi/src/media/torrent/torrent_memory.dart';
+import 'package:fushi/src/media/torrent/torrent_upload_policy.dart';
+import 'package:fushi_torrent/fushi_torrent.dart';
 import 'package:path/path.dart' as p;
 
 /// 内置 libtorrent 引擎的 app 侧宿主：拥有**常驻**引擎 + 单个 session

@@ -1,11 +1,11 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:hibiki/src/reader/reader_settings.dart';
-import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
-import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/utils/components/hibiki_icon_button.dart';
+import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 
 import '../widgets/widget_test_helpers.dart';
 

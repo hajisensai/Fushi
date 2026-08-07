@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_playback_source.dart';
-import 'package:hibiki/src/media/video/video_watch_tracker.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_playback_source.dart';
+import 'package:fushi/src/media/video/video_watch_tracker.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 class _FakeSource extends ChangeNotifier implements VideoPlaybackSource {
   @override

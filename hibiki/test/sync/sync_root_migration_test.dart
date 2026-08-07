@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/sync_root_migration.dart';
-import 'package:hibiki/src/sync/sync_utils.dart';
+import 'package:fushi/src/sync/sync_root_migration.dart';
+import 'package:fushi/src/sync/sync_utils.dart';
 
 /// Fushi 改名迁移（hibiki-data → fushi-data）：五 backend 共用的三段骨架
 /// [migrateLegacySyncRoot]、host 侧本地目录迁移 [migrateLegacySyncRootDirectory]、

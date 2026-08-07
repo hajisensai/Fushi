@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-616 B(排序) + A(系列) shelf_entries / series DAO 守卫：
 ///  - upsertShelfOrder / setSeriesForEntry 的部分更新（不互相清空）。

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/manga_spread_model.dart';
+import 'package:fushi/src/media/manga/manga_spread_model.dart';
 
 void main() {
   group('resolveMangaPageLayout', () {

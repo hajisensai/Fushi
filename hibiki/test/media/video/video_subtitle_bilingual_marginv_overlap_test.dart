@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG 守卫：底部双语对白（同 `\an2`、MarginV 各异但都 <= 用户 bottomPadding）不得塌陷重叠。
 ///

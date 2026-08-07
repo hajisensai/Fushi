@@ -3,9 +3,9 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_session.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi_core/fushi_core.dart';
 import '../../pages/reader_hibiki_page_source_corpus.dart';
 
 // TODO-708 P2: 悬浮字幕「圆角半径」+「宽度」自定义，镜像现成透明度偏好链路。守卫：

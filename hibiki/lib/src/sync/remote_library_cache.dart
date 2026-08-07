@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
-import 'package:hibiki/src/sync/remote_library_source.dart';
+import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/remote_library_source.dart';
 
 /// 远端库列表（互联对端 / 云盘）的统一读取入口：TTL 缓存 + in-flight 去重 + 显式失效。
 ///

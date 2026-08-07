@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/creator.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi/creator.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// An enhancement that is useful for copying the headword term.
 class CopyToClipboardAction extends QuickAction {

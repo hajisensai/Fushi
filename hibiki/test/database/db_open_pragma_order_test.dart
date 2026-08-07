@@ -13,7 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('applyPragmas 把 busy_timeout 置于 journal_mode=WAL 之前', () {
     final String src = File(
-      '../packages/hibiki_core/lib/src/database/database.dart',
+      '../packages/fushi_core/lib/src/database/database.dart',
     ).readAsStringSync();
     final RegExpMatch? body = RegExp(
       r'void applyPragmas\(CommonDatabase db\) \{(.*?)\n  \}',

@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/media/video/audio_energy_probe.dart';
-import 'package:hibiki/src/media/video/subtitle_delay_input_debounce.dart';
-import 'package:hibiki/src/media/video/subtitle_waveform_painter.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/audio_energy_probe.dart';
+import 'package:fushi/src/media/video/subtitle_delay_input_debounce.dart';
+import 'package:fushi/src/media/video/subtitle_waveform_painter.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// 字幕对轴的「音频波形」入口面板（TODO-1051 阶段B；TODO-1207 改为按钮触发的放大可交互视图）。
 ///

@@ -1,24 +1,24 @@
 import 'dart:io' show Platform;
 
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki_platform/hibiki_platform.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_platform/fushi_platform.dart';
 
-import 'package:hibiki/src/anki/ankimobile_repository.dart';
-import 'package:hibiki/src/platform/android/android_directory_service.dart';
-import 'package:hibiki/src/platform/android/android_lifecycle_service.dart';
-import 'package:hibiki/src/platform/android/android_clipboard_service.dart';
-import 'package:hibiki/src/platform/android/android_permission_service.dart';
-import 'package:hibiki/src/platform/android/android_device_info_service.dart';
-import 'package:hibiki/src/platform/desktop/desktop_directory_service.dart';
-import 'package:hibiki/src/platform/desktop/desktop_lifecycle_service.dart';
-import 'package:hibiki/src/platform/desktop/desktop_clipboard_service.dart';
-import 'package:hibiki/src/platform/desktop/desktop_permission_service.dart';
-import 'package:hibiki/src/platform/desktop/desktop_device_info_service.dart';
-import 'package:hibiki/src/platform/ios/ios_directory_service.dart';
-import 'package:hibiki/src/platform/ios/ios_lifecycle_service.dart';
-import 'package:hibiki/src/platform/ios/ios_clipboard_service.dart';
-import 'package:hibiki/src/platform/ios/ios_permission_service.dart';
-import 'package:hibiki/src/platform/ios/ios_device_info_service.dart';
+import 'package:fushi/src/anki/ankimobile_repository.dart';
+import 'package:fushi/src/platform/android/android_directory_service.dart';
+import 'package:fushi/src/platform/android/android_lifecycle_service.dart';
+import 'package:fushi/src/platform/android/android_clipboard_service.dart';
+import 'package:fushi/src/platform/android/android_permission_service.dart';
+import 'package:fushi/src/platform/android/android_device_info_service.dart';
+import 'package:fushi/src/platform/desktop/desktop_directory_service.dart';
+import 'package:fushi/src/platform/desktop/desktop_lifecycle_service.dart';
+import 'package:fushi/src/platform/desktop/desktop_clipboard_service.dart';
+import 'package:fushi/src/platform/desktop/desktop_permission_service.dart';
+import 'package:fushi/src/platform/desktop/desktop_device_info_service.dart';
+import 'package:fushi/src/platform/ios/ios_directory_service.dart';
+import 'package:fushi/src/platform/ios/ios_lifecycle_service.dart';
+import 'package:fushi/src/platform/ios/ios_clipboard_service.dart';
+import 'package:fushi/src/platform/ios/ios_permission_service.dart';
+import 'package:fushi/src/platform/ios/ios_device_info_service.dart';
 
 /// Holds all platform-specific service implementations.
 ///

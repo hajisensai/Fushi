@@ -4,12 +4,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:html/dom.dart' as html_dom;
-import 'package:hibiki/i18n/strings.g.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:hibiki/src/epub/epub_book.dart';
-import 'package:hibiki/src/utils/misc/hibiki_color.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/epub/epub_book.dart';
+import 'package:fushi/src/utils/misc/hibiki_color.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// WebView ↔ Flutter 双向通道，用于有声书句子高亮和点击跳转。
 ///

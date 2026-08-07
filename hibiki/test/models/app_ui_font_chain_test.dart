@@ -2,7 +2,7 @@ import 'dart:ui' show Locale;
 
 import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/app_ui_font_chain.dart';
+import 'package:fushi/src/models/app_ui_font_chain.dart';
 
 /// 界面字体回退链的行为契约。
 ///

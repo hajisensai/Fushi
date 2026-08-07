@@ -2,10 +2,10 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_clip_export.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_clip_text_render.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_clip_webview_render.dart';
-import 'package:hibiki/src/reader/reader_selection_scripts.dart';
+import 'package:fushi/src/media/audiobook/audiobook_clip_export.dart';
+import 'package:fushi/src/media/audiobook/audiobook_clip_text_render.dart';
+import 'package:fushi/src/media/audiobook/audiobook_clip_webview_render.dart';
+import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:image/image.dart' as img;
 
 /// TODO-1127：有声书片段导出把「选区中间夹带的 EPUB 插图」渲进卡片。守卫抽取纯函数解析、

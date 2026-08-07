@@ -3,10 +3,10 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 守卫 TODO-790-B：每个导入对话框（book/manga/audiobook/video）的 build 必须把根
 /// frame 包进 [HibikiFileDropTarget]，否则拖文件进打开的模态对话框会被页级

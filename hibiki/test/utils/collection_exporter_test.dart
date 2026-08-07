@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/utils/misc/collection_exporter.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/collection_exporter.dart';
 
 /// TODO-829 收藏句/词导出器纯函数单测。
 void main() {

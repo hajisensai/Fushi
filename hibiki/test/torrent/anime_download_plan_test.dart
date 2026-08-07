@@ -4,8 +4,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/torrent/anime_download_config.dart';
-import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
+import 'package:fushi/src/media/torrent/anime_download_config.dart';
+import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 
 AnimeDownloadPlan _fullPlan() {
   return const AnimeDownloadPlan(

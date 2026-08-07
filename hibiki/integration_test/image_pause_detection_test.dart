@@ -5,7 +5,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
+import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 
 /// BUG-007 设备验证（真 InAppWebView）：cue 推进高亮从图片**前**一句推进到图片**后**
 /// 一句时（中间隔着 svg），`__hoshiHighlight` 的锚点间 DOM 检测必须真的触发

@@ -4,21 +4,21 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
 
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
-import 'package:hibiki/src/media/video/video_control_customization.dart';
-import 'package:hibiki/src/media/video/video_danmaku_model.dart';
-import 'package:hibiki/src/media/video/video_immersive_mode.dart';
-import 'package:hibiki/src/media/video/video_mpv_config.dart';
-import 'package:hibiki/src/media/video/video_quick_settings_host.dart';
-import 'package:hibiki/src/media/video/video_quick_settings_sheet.dart';
-import 'package:hibiki/src/media/video/video_shader_tier.dart';
-import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
-import 'package:hibiki/src/media/video/video_subtitle_style.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/media/video/video_asbplayer_config.dart';
+import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/media/video/video_danmaku_model.dart';
+import 'package:fushi/src/media/video/video_immersive_mode.dart';
+import 'package:fushi/src/media/video/video_mpv_config.dart';
+import 'package:fushi/src/media/video/video_quick_settings_host.dart';
+import 'package:fushi/src/media/video/video_quick_settings_sheet.dart';
+import 'package:fushi/src/media/video/video_shader_tier.dart';
+import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:fushi/src/media/video/video_subtitle_style.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 
 import 'test_platform_services.dart';
 

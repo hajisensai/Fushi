@@ -4,13 +4,13 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/mining/galgame_audio_encode.dart';
-import 'package:hibiki/src/mining/galgame_audio_source.dart';
-import 'package:hibiki/src/mining/window_capture_channel.dart';
-import 'package:hibiki/src/sync/texthooker_service.dart';
-import 'package:hibiki/src/sync/texthooker_ws_client.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/galgame_audio_encode.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/window_capture_channel.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/sync/texthooker_ws_client.dart';
 
 void main() {
   // BUG-1027 音轨快照自动刷新会在会话激活后触发（未 mock 的）voice_hook channel 的

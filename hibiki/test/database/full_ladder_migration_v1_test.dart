@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// Single end-to-end guard that a **v1 baseline DB walks the WHOLE onUpgrade
 /// ladder (v1 -> current) in one open** and lands on the current shape with all

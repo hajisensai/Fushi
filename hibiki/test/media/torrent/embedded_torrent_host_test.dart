@@ -6,11 +6,11 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/torrent/embedded_torrent_backend.dart';
-import 'package:hibiki/src/media/torrent/embedded_torrent_host.dart';
-import 'package:hibiki/src/media/torrent/torrent_backend.dart';
-import 'package:hibiki_torrent/hibiki_torrent.dart';
-import 'package:hibiki_torrent/testing.dart';
+import 'package:fushi/src/media/torrent/embedded_torrent_backend.dart';
+import 'package:fushi/src/media/torrent/embedded_torrent_host.dart';
+import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi_torrent/fushi_torrent.dart';
+import 'package:fushi_torrent/testing.dart';
 import 'package:path/path.dart' as p;
 
 String? _resolveLibPath() {

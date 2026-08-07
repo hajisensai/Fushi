@@ -2,10 +2,10 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/obfuscating_sync_backend.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_obfuscator.dart';
-import 'package:hibiki/src/sync/ttu_models.dart';
+import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_obfuscator.dart';
+import 'package:fushi/src/sync/ttu_models.dart';
 
 /// 记录型 fake inner backend：捕获上传到「云端」的字节（content/cover），
 /// 下载时把预置的「云端字节」写到目标文件。其余方法 noSuchMethod 兜底。

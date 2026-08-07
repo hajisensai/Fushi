@@ -17,9 +17,9 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/lookup/desktop_lookup_router.dart';
-import 'package:hibiki/src/sync/desktop_foreground_guard.dart';
-import 'package:hibiki/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/lookup/desktop_lookup_router.dart';
+import 'package:fushi/src/sync/desktop_foreground_guard.dart';
+import 'package:fushi/src/sync/desktop_lookup_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

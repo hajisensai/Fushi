@@ -10,7 +10,7 @@ void main() {
     expect(
         src,
         contains(
-            "import 'package:hibiki/src/anki/ankimobile_repository.dart';"));
+            "import 'package:fushi/src/anki/ankimobile_repository.dart';"));
     expect(src, contains('if (Platform.isIOS)'));
     expect(src, contains('createAnkiRepository: AnkiMobileRepository.new'));
   });
@@ -21,7 +21,7 @@ void main() {
     expect(
         src,
         contains(
-            "import 'package:hibiki/src/platform/platform_providers.dart';"));
+            "import 'package:fushi/src/platform/platform_providers.dart';"));
     expect(src, contains('ref.watch(platformServicesProvider)'));
     expect(src,
         isNot(contains('if (isAndroidPlatform) return AnkiRepository();')));

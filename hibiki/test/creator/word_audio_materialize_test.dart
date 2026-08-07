@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:hibiki/src/creator/enhancements/local_audio_enhancement.dart';
+import 'package:fushi/src/creator/enhancements/local_audio_enhancement.dart';
 
 /// BUG-1005：制卡器单词音频物化 helper 守卫。制卡自动填充在本地库落空后走全源
 /// [resolveLookupAudioUrl]（含远程发音源），再由 [materializeWordAudioRef] 把解析出的

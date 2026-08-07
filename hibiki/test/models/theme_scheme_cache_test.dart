@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/theme_notifier.dart';
+import 'package:fushi/src/models/theme_notifier.dart';
 
 /// BUG-969：阅读设置抽屉的主题选择器每次 rebuild 对每张色卡各调一次
 /// [buildHibikiColorScheme]（系统 + 预设 7 + 自定义 N），拖字号 slider 时每个

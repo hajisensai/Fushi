@@ -6,7 +6,7 @@
 // UI 媒体源 `abstract class MediaSource`（media/media_source.dart）在源码可读性
 // 上区分开。守卫见 test/media/source_library/source_file_system_test.dart。
 
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 「来源库」（扫描根）单行：[MediaSourceRow] 的语义别名。
 typedef SourceLibraryRow = MediaSourceRow;

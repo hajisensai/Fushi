@@ -2,12 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
-import 'package:hibiki/src/sync/forwarded_mine_payload.dart';
-import 'package:hibiki/src/sync/hibiki_remote_mining_client.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/forwarded_mine_payload.dart';
+import 'package:fushi/src/sync/hibiki_remote_mining_client.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
 
 /// 加载一条词典媒体（外字/内嵌图）的字节。默认走 `HoshiDicts.getMediaFile`。
 typedef DictMediaByteLoader = Uint8List? Function(

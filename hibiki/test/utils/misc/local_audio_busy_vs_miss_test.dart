@@ -3,11 +3,11 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/audio_source_config.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki/src/utils/misc/local_audio_db.dart';
-import 'package:hibiki/src/utils/misc/tts_channel.dart';
-import 'package:hibiki/src/utils/misc/word_audio_resolver.dart';
+import 'package:fushi/src/models/audio_source_config.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/local_audio_db.dart';
+import 'package:fushi/src/utils/misc/tts_channel.dart';
+import 'package:fushi/src/utils/misc/word_audio_resolver.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 /// BUG-1413（BUG-1365 同族的残留边界）：本地音频库「这次没答上」曾与「库里真没

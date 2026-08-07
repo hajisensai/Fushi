@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_input_bridge.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 
 /// BUG-717 ②：内联 popup HTML（Windows/iOS 路径，约 300KB 含 69KB css）此前在
 /// 每次 build()（拖拽调整弹窗大小时每个指针事件一次）重拼并对 css 做整串

@@ -27,17 +27,17 @@ import 'package:flutter/services.dart'
     show BackgroundIsolateBinaryMessenger, RootIsolateToken;
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/ocr/manga_ocr_folder_job.dart';
-import 'package:hibiki/src/ocr/manga_ocr_model_downloader.dart';
-import 'package:hibiki/src/ocr/manga_ocr_model_fingerprint.dart' as model_fp;
-import 'package:hibiki/src/ocr/manga_ocr_model_manifest.dart';
-import 'package:hibiki/src/ocr/manga_ocr_pipeline.dart';
-import 'package:hibiki/src/ocr/manga_ocr_recognizer.dart';
-import 'package:hibiki/src/ocr/manga_ocr_service.dart';
-import 'package:hibiki/src/ocr/manga_ocr_tokenizer.dart';
-import 'package:hibiki/src/ocr/ocr_inference.dart';
-import 'package:hibiki/src/ocr/ocr_inference_ort.dart';
-import 'package:hibiki/src/ocr/text_detector.dart';
+import 'package:fushi/src/ocr/manga_ocr_folder_job.dart';
+import 'package:fushi/src/ocr/manga_ocr_model_downloader.dart';
+import 'package:fushi/src/ocr/manga_ocr_model_fingerprint.dart' as model_fp;
+import 'package:fushi/src/ocr/manga_ocr_model_manifest.dart';
+import 'package:fushi/src/ocr/manga_ocr_pipeline.dart';
+import 'package:fushi/src/ocr/manga_ocr_recognizer.dart';
+import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi/src/ocr/manga_ocr_tokenizer.dart';
+import 'package:fushi/src/ocr/ocr_inference.dart';
+import 'package:fushi/src/ocr/ocr_inference_ort.dart';
+import 'package:fushi/src/ocr/text_detector.dart';
 
 /// 纯函数：`Platform.operatingSystem` 字符串 → [OcrPlatform]。
 /// 未知平台（fuchsia 等）落 linux 档（纯 CPU），不会选到不存在的 EP。

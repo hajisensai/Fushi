@@ -1,10 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:hibiki_platform/hibiki_platform.dart';
+import 'package:fushi_platform/fushi_platform.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/platform/desktop/windows_native_pre_exit.dart';
+import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
 
 class DesktopLifecycleService implements PlatformLifecycleService {
   const DesktopLifecycleService();

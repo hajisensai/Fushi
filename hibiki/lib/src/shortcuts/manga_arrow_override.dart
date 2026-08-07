@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
 
 /// 漫画左右方向键的跨页方向校正。
 ///

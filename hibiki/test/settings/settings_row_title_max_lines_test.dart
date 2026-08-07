@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 import '../widgets/widget_test_helpers.dart';
 

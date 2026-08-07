@@ -6,27 +6,27 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/import/import_dialog_frame.dart';
-import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
-import 'package:hibiki/src/media/manga/external_mokuro_runner.dart';
-import 'package:hibiki/src/media/manga/manga_importer.dart';
-import 'package:hibiki/src/media/manga/manga_json_writeback.dart';
-import 'package:hibiki/src/media/manga/manga_ocr_background_job.dart';
-import 'package:hibiki/src/media/manga/manga_ocr_wizard_engines.dart';
-import 'package:hibiki/src/media/manga/manga_storage.dart';
-import 'package:hibiki/src/media/manga/mokuro_payload.dart';
-import 'package:hibiki/src/media/manga/ocr/google_lens_disclosure.dart';
-import 'package:hibiki/src/media/manga/ocr/google_lens_ocr_service.dart';
-import 'package:hibiki/src/media/manga/ocr/google_lens_protocol.dart';
-import 'package:hibiki/src/media/manga/ocr/manga_ocr_engine.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/ocr/manga_ocr_folder_job.dart';
-import 'package:hibiki/src/ocr/manga_ocr_model_fingerprint.dart';
-import 'package:hibiki/src/ocr/manga_ocr_service.dart';
-import 'package:hibiki/src/ocr/ocr_types.dart';
-import 'package:hibiki/src/sync/interconnect_manga_ocr_client.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/import/import_dialog_frame.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/media/manga/external_mokuro_runner.dart';
+import 'package:fushi/src/media/manga/manga_importer.dart';
+import 'package:fushi/src/media/manga/manga_json_writeback.dart';
+import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
+import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
+import 'package:fushi/src/media/manga/manga_storage.dart';
+import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/ocr/manga_ocr_folder_job.dart';
+import 'package:fushi/src/ocr/manga_ocr_model_fingerprint.dart';
+import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi/src/ocr/ocr_types.dart';
+import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
+import 'package:fushi/utils.dart';
 
 /// OCR 导入漫画向导：选**裸图片文件夹**（无 `.mokuro`）→ 校验 → 选引擎（内置 ONNX /
 /// 外部 mokuro CLI）→ 跑整卷 OCR（逐页进度 + 取消）→ 产物无缝落库 → 成功返回

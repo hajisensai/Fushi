@@ -1,5 +1,5 @@
-import 'package:hibiki/src/reader/reader_content_styles.dart';
-import 'package:hibiki/src/reader/reader_settings.dart';
+import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
 
 /// 生效探针级别（精确度递减；详见设计 §5）。
 enum EffectTier { t1RenderInput, t2WidgetTree, t3WebViewDom, t4Behavior }

@@ -2,12 +2,12 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/manga/mokuro_payload.dart';
-import 'package:hibiki/src/media/manga/ocr/google_lens_ocr_service.dart';
-import 'package:hibiki/src/media/manga/ocr/google_lens_protocol.dart';
-import 'package:hibiki/src/ocr/manga_ocr_folder_job.dart';
-import 'package:hibiki/src/ocr/manga_ocr_model_fingerprint.dart';
-import 'package:hibiki/src/ocr/ocr_types.dart';
+import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
+import 'package:fushi/src/ocr/manga_ocr_folder_job.dart';
+import 'package:fushi/src/ocr/manga_ocr_model_fingerprint.dart';
+import 'package:fushi/src/ocr/ocr_types.dart';
 
 /// A non-network reconstruction of the pages already completed by incremental
 /// OCR engines.

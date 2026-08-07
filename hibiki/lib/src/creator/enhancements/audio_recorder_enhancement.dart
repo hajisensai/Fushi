@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:hibiki/creator.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/creator.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/utils.dart';
 
 /// An enhancement that can be used to record audio.
 class AudioRecorderEnhancement extends AudioEnhancement {

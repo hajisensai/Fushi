@@ -5,8 +5,8 @@ import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/backup_service.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/sync/backup_service.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 import 'sync_settings_schema_source_corpus.dart';

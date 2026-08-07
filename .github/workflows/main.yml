@@ -188,7 +188,7 @@ jobs:
 
     - name: Run package tests
       run: |
-        for pkg in packages/hibiki_core packages/hibiki_dictionary packages/hibiki_anki packages/hibiki_audio packages/hibiki_platform; do
+        for pkg in packages/fushi_core packages/fushi_dictionary packages/fushi_anki packages/fushi_audio packages/fushi_platform; do
           if [ -d "$pkg/test" ]; then
             echo "::group::Testing $pkg"
             (cd "$pkg" && dart ../../hibiki/tool/flutter_test_failures.dart --output-dir=../../.codex-test/flutter-test/$(basename "$pkg"))

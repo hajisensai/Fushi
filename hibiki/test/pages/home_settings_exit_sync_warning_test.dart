@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
 
 /// TODO-698 (BUG-397) 守卫：设置 tab + app-open 同步同时进行时按系统返回键，**不得**
 /// 弹「同步进行中」告警。

@@ -2,9 +2,9 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/media_extensions.dart';
-import 'package:hibiki/src/media/video/scraper/filename_parser.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/media_extensions.dart';
+import 'package:fushi/src/media/video/scraper/filename_parser.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 
 void main() {
   group('中文字幕组命名（半角/全角括号）', () {

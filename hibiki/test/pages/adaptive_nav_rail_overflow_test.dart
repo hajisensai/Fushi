@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_navigation.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 
 /// 复现「左侧导航栏在矮窗口下底部 overflow」：rail 的 tile 列固定高度、不可滚动，
 /// 当窗口高度 < 所有 tile 总高时 Column 溢出（BOTTOM OVERFLOWED BY N PIXELS）。

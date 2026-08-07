@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/focus/hibiki_focus_target.dart';
-import 'package:hibiki/src/media/collections/collection_drag.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/media/collections/collection_drag.dart';
+import 'package:fushi/utils.dart';
 
 /// 统一合集 UI v2 Phase C：合集独占一行（Jellyfin/Netflix 行式布局）。
 ///

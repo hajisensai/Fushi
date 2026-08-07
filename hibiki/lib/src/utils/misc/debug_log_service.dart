@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/src/utils/misc/frame_safe_notifier.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/utils/misc/frame_safe_notifier.dart';
+import 'package:fushi/utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class DebugLogService extends ChangeNotifier with FrameSafeNotifier {

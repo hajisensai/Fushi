@@ -7,10 +7,10 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/settings/settings_schema_listening.dart';
-import 'package:hibiki/src/settings/settings_schema_manga.dart';
-import 'package:hibiki/src/settings/settings_schema_reading.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_listening.dart';
+import 'package:fushi/src/settings/settings_schema_manga.dart';
+import 'package:fushi/src/settings/settings_schema_reading.dart';
 
 void main() {
   SettingsItem itemById(SettingsDestination dest, String id) {

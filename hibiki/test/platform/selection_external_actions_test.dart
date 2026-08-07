@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/platform/selection_external_actions.dart';
+import 'package:fushi/src/platform/selection_external_actions.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

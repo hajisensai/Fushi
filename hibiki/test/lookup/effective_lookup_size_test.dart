@@ -2,7 +2,7 @@
 //
 // 纯 Dart，不依赖词典 FFI / sqlite native-assets，可 `flutter test` 单独跑过。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/lookup/effective_lookup_size.dart';
+import 'package:fushi/src/lookup/effective_lookup_size.dart';
 
 void main() {
   group('LookupSize', () {

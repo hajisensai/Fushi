@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:hibiki/src/mining/galgame_audio_encode.dart';
-import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/galgame_audio_encode.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
 
 /// galgame 引擎-hook **launch 模式**真机集成测试（docs/specs/galgame-mining）。
 ///

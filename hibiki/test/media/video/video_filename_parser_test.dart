@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/scraper/filename_parser.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
-import 'package:hibiki/src/media/video/video_filename_parser.dart';
+import 'package:fushi/src/media/video/scraper/filename_parser.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:path/path.dart' as p;
 
 void main() {

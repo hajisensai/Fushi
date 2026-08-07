@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
 
 /// BUG-236 守卫：安卓大屏（以及任意尺寸）在设置 tab 按系统返回键时，必须被设置 tab
 /// 自己的 [PopScope] 拦截并切回来源 tab，而不是冒泡到 home 顶层 PopScope 退出 app。

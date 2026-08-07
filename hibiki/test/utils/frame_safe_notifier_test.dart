@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/frame_safe_notifier.dart';
+import 'package:fushi/src/utils/misc/frame_safe_notifier.dart';
 
 class _TestNotifier extends ChangeNotifier with FrameSafeNotifier {}
 

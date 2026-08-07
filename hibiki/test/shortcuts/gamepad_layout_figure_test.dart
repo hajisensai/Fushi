@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
-import 'package:hibiki/src/shortcuts/visual/gamepad_button_widget.dart';
-import 'package:hibiki/src/shortcuts/visual/gamepad_button_assets.dart';
-import 'package:hibiki/src/shortcuts/visual/gamepad_glyphs.dart';
-import 'package:hibiki/src/shortcuts/visual/gamepad_layout_view.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/shortcuts/visual/gamepad_button_widget.dart';
+import 'package:fushi/src/shortcuts/visual/gamepad_button_assets.dart';
+import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';
+import 'package:fushi/src/shortcuts/visual/gamepad_layout_view.dart';
 
 /// TODO-942 P1：整张真实布局手柄图。
 ///

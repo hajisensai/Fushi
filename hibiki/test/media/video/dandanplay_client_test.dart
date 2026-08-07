@@ -3,9 +3,9 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/dandanplay_client.dart';
-import 'package:hibiki/src/media/video/video_danmaku_model.dart';
-import 'package:hibiki/src/media/video/video_danmaku_source.dart';
+import 'package:fushi/src/media/video/dandanplay_client.dart';
+import 'package:fushi/src/media/video/video_danmaku_model.dart';
+import 'package:fushi/src/media/video/video_danmaku_source.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;

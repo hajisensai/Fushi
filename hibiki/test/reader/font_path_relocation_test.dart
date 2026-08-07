@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
-import 'package:hibiki/src/reader/font_catalog.dart';
+import 'package:fushi/src/reader/font_catalog.dart';
 
 /// TODO-1393 / BUG-705 unit: pure font-path self-heal (relocate) helpers.
 ///

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/platform/android/android_directory_service.dart';
-import 'package:hibiki_platform/hibiki_platform.dart';
+import 'package:fushi/src/platform/android/android_directory_service.dart';
+import 'package:fushi_platform/fushi_platform.dart';
 
 void main() {
   test('AndroidDirectoryService implements PlatformDirectoryService', () {

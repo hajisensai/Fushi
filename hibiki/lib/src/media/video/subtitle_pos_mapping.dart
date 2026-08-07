@@ -1,5 +1,5 @@
 import 'package:flutter/widgets.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// `BoxFit.contain` 后视频内容矩形的尺寸（居中，余下为黑边）。这是 mpv/libass 字幕
 /// 几何的统一基准：`\pos` 定位（[mapPosFractionToContainer]）与字号/描边/边距缩放

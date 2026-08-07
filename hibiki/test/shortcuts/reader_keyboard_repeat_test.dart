@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/shortcuts/reader_space_override.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/reader_space_override.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
 
 import '../pages/reader_hibiki_page_source_corpus.dart';
 

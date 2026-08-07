@@ -1,5 +1,5 @@
 import 'package:flutter/widgets.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
 
 /// 手柄品牌（TODO-612 阶段 0，用户决策「手柄图按品牌分」）。
 ///

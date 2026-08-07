@@ -17,7 +17,7 @@ void main() {
     final String text = src.readAsStringSync();
     expect(
       text.contains(
-          "import 'package:hibiki/src/pages/implementations/video_statistics_page.dart';"),
+          "import 'package:fushi/src/pages/implementations/video_statistics_page.dart';"),
       isTrue,
       reason: '视频页应导入 VideoStatisticsPage',
     );

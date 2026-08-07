@@ -1,14 +1,14 @@
 // 守卫：`native/hibiki_torrent` 的 C ABI 头文件与手写镜像的 Dart FFI 绑定必须
 // 逐符号、逐参数对齐。
 //
-// 为什么需要它：`packages/hibiki_torrent/lib/src/ffi/hibiki_torrent_bindings.dart`
+// 为什么需要它：`packages/fushi_torrent/lib/src/ffi/hibiki_torrent_bindings.dart`
 // 是**手写镜像**（`ffigen.yaml` 明确允许：本机没有 LLVM/libclang 时不跑 ffigen）。
 // 手写就会漂，而 FFI 的漂移**不会**给你一个干净的报错：
 // - 少写一个符号 → 用户运行时 `lookup` 抛（只有装了新 DLL 的用户才撞上）；
 // - 参数个数写错 → `asFunction` 拿错误签名去调，是**未定义行为**（栈错位/内存损坏），
 //   不是异常。
 //
-// 而这两件事在 CI 里原本**无人可挡**：`packages/hibiki_torrent` 的测试要
+// 而这两件事在 CI 里原本**无人可挡**：`packages/fushi_torrent` 的测试要
 // `FUSHI_TORRENT_LIB` 指向已构建的 DLL，Linux CI 没有 DLL → 整组 skip；
 // 而 main.yml / release.yml 的包测试清单本就没收录这个包。
 //
@@ -92,7 +92,7 @@ void main() {
   final File headerFile =
       File('../native/hibiki_torrent/hibiki_torrent_include/hibiki_torrent.h');
   final File bindingsFile = File(
-      '../packages/hibiki_torrent/lib/src/ffi/hibiki_torrent_bindings.dart');
+      '../packages/fushi_torrent/lib/src/ffi/hibiki_torrent_bindings.dart');
 
   test('C ABI 头文件与手写 FFI 绑定：符号集合必须完全一致', () {
     expect(headerFile.existsSync(), isTrue,

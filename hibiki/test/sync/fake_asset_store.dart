@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hibiki/src/sync/sync_asset_store.dart';
+import 'package:fushi/src/sync/sync_asset_store.dart';
 
 /// 内存资产库：命名空间用 `/` 分隔的路径作为 id；文件夹是已知路径集合，
 /// 资产是 path->bytes 映射。仅供测试（契约测试 + Plan B 编排器测试）。

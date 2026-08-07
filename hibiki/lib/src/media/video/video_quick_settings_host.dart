@@ -1,16 +1,16 @@
 import 'package:flutter/widgets.dart';
 
-import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
-import 'package:hibiki/src/media/video/video_control_customization.dart';
-import 'package:hibiki/src/media/video/video_danmaku_model.dart';
-import 'package:hibiki/src/media/video/video_mpv_config.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/media/video/video_immersive_mode.dart';
-import 'package:hibiki/src/media/video/video_shader_tier.dart';
-import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
-import 'package:hibiki/src/media/video/video_subtitle_style.dart';
-import 'package:hibiki/src/settings/video_settings_host.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_asbplayer_config.dart';
+import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/media/video/video_danmaku_model.dart';
+import 'package:fushi/src/media/video/video_mpv_config.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/media/video/video_immersive_mode.dart';
+import 'package:fushi/src/media/video/video_shader_tier.dart';
+import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:fushi/src/media/video/video_subtitle_style.dart';
+import 'package:fushi/src/settings/video_settings_host.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// 视频播放页挂到 [SettingsContext.video] 的类型化能力槽（阶段 B）。
 ///

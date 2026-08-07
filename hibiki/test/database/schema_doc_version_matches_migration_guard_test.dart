@@ -49,7 +49,7 @@ import '../helpers/source_guard.dart';
 /// 刻意**不**收 `columnTransformer:` —— 那是**改名**（v57 removed_at→deleted_at），
 /// 不是列的诞生地；收了会把一堆老列错标成 v57。
 ///
-/// ## 为什么守在 `hibiki/test/` 而不是 `packages/hibiki_core/test/`
+/// ## 为什么守在 `hibiki/test/` 而不是 `packages/fushi_core/test/`
 ///
 /// 两个原因，都不是随手放的：
 ///   1. 共享词法掩码 `test/helpers/source_guard.dart` 属于 `hibiki` 包的 test 根，
@@ -68,9 +68,9 @@ import '../helpers/source_guard.dart';
 /// flutter test 的 cwd 是 `hibiki` 包根。
 void main() {
   const String tablesPath =
-      '../packages/hibiki_core/lib/src/database/tables.dart';
+      '../packages/fushi_core/lib/src/database/tables.dart';
   const String databasePath =
-      '../packages/hibiki_core/lib/src/database/database.dart';
+      '../packages/fushi_core/lib/src/database/database.dart';
 
   late final _TableModel model;
   late final _MigrationIndex index;

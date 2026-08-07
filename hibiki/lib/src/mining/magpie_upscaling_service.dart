@@ -24,9 +24,9 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/src/mining/magpie_installer.dart';
-import 'package:hibiki/src/mining/magpie_scaling_channel.dart';
-import 'package:hibiki/src/mining/magpie_upscaling.dart';
+import 'package:fushi/src/mining/magpie_installer.dart';
+import 'package:fushi/src/mining/magpie_scaling_channel.dart';
+import 'package:fushi/src/mining/magpie_upscaling.dart';
 
 /// 发出 QUIT 之后等 Magpie 自己退出的上限。超时就直接 kill 我们自己起的那个进程。
 ///

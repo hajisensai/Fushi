@@ -5,7 +5,7 @@
 // assertion turns red if the matching implementation is removed.
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/lookup/global_lookup_stack.dart';
+import 'package:fushi/src/lookup/global_lookup_stack.dart';
 
 const String rt = 'root';
 const String ch = 'child';

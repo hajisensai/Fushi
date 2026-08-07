@@ -1,0 +1,19 @@
+name: fushi_anki
+description: Anki integration for Hibiki - abstract service, AnkiDroid and AnkiConnect implementations
+publish_to: none
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+  flutter: ">=3.41.6"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  collection: any
+  crypto: ^3.0.0
+  shared_preferences: ^2.2.2
+  http: ^1.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter

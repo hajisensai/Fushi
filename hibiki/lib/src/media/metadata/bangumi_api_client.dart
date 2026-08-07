@@ -22,7 +22,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:hibiki/src/media/metadata/transport_retry.dart';
+import 'package:fushi/src/media/metadata/transport_retry.dart';
 import 'package:http/http.dart' as http;
 
 /// 纯函数：把用户粘贴的 Bangumi 条目 **URL** 解析为 subject id（数字串）。

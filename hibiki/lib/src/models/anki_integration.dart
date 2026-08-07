@@ -4,8 +4,8 @@ import 'package:external_app_launcher/external_app_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 class AnkiIntegration {
   static const MethodChannel methodChannel = HibikiChannels.anki;

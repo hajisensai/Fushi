@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/startup/loading_watchdog_view.dart';
-import 'package:hibiki/utils.dart' show t;
+import 'package:fushi/src/startup/loading_watchdog_view.dart';
+import 'package:fushi/utils.dart' show t;
 
 /// TODO-1260：启动加载逃生口渲染契约。裸 loading 分支此前只有无超时的转圈；看门狗超时
 /// 后必须给出可点的「重试」出口，消除「无 escape」结构缺陷（Layer 3）。

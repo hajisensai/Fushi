@@ -11,7 +11,7 @@ import 'dart:typed_data';
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 import 'package:flutter/services.dart';
 
-import 'package:hibiki/src/ocr/ocr_inference.dart';
+import 'package:fushi/src/ocr/ocr_inference.dart';
 
 /// 本子系统统一的 `dart:developer` 日志通道名。
 ///

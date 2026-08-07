@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/immersion_mining_request.dart';
+import 'package:fushi/src/mining/immersion_mining_request.dart';
 
 /// BUG-460 source-scan guard: the audiobook clip-export pipeline must only emit
 /// containers the bundled "ffmpeg-min" desktop build can actually mux.

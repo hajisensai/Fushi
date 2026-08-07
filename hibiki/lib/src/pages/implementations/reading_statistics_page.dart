@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/pages/implementations/stat_activity.dart';
-import 'package:hibiki/src/pages/implementations/stat_charts.dart';
-import 'package:hibiki/src/pages/implementations/stat_hourly_breakdown.dart';
-import 'package:hibiki/src/pages/implementations/stat_delete_confirm_dialog.dart';
-import 'package:hibiki/src/pages/implementations/stat_kpi_strip.dart';
-import 'package:hibiki/src/pages/implementations/stat_ring.dart';
-import 'package:hibiki/src/pages/implementations/stat_shared.dart';
-import 'package:hibiki/src/pages/implementations/stat_source_totals.dart';
-import 'package:hibiki/src/pages/implementations/stat_summary.dart';
-import 'package:hibiki/src/pages/implementations/stat_trends.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/pages/implementations/stat_charts.dart';
+import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
+import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
+import 'package:fushi/src/pages/implementations/stat_kpi_strip.dart';
+import 'package:fushi/src/pages/implementations/stat_ring.dart';
+import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/pages/implementations/stat_source_totals.dart';
+import 'package:fushi/src/pages/implementations/stat_summary.dart';
+import 'package:fushi/src/pages/implementations/stat_trends.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 「按书」列表的排序键：字数 / 时长 / 阅读速度（cph）。
 enum _BookSort { chars, time, speed }

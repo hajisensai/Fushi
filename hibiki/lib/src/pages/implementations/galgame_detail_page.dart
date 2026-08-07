@@ -3,28 +3,28 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/media/collections/add_to_collection_dialog.dart';
-import 'package:hibiki/src/mining/galgame_library.dart';
-import 'package:hibiki/src/mining/galgame_repository.dart';
-import 'package:hibiki/src/mining/galgame_scrape_controller.dart';
-import 'package:hibiki/src/mining/galgame_scrape_dialog.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_draft.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_merge.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
-import 'package:hibiki/src/pages/implementations/games_library_page.dart'
+import 'package:fushi/models.dart';
+import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
+import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/mining/galgame_repository.dart';
+import 'package:fushi/src/mining/galgame_scrape_controller.dart';
+import 'package:fushi/src/mining/galgame_scrape_dialog.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi/src/pages/implementations/games_library_page.dart'
     show formatGalgameDate, galgamePlayStatusLabel;
-import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart'
+import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'
     show allTagsProvider, filteredGameIdsProvider, gameTagMapProvider;
-import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
-import 'package:hibiki/src/pages/implementations/stat_charts.dart';
-import 'package:hibiki/src/pages/implementations/stat_shared.dart'
+import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
+import 'package:fushi/src/pages/implementations/stat_charts.dart';
+import 'package:fushi/src/pages/implementations/stat_shared.dart'
     show formatStatTime;
-import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/pages/hibiki_page_placeholders.dart';
+import 'package:fushi/utils.dart';
 
 /// galgame 详情页（契约 §4.2）：头部常驻 + 统计 / 简介 / 编辑三个 tab。
 ///

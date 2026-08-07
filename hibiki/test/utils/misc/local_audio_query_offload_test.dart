@@ -4,8 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
 
-import 'package:hibiki/src/utils/misc/local_audio_db.dart';
-import 'package:hibiki/src/utils/misc/tts_channel.dart';
+import 'package:fushi/src/utils/misc/local_audio_db.dart';
+import 'package:fushi/src/utils/misc/tts_channel.dart';
 
 /// 查词发音性能/并发根因修复的守卫（BUG：慢库无上限阻塞 UI isolate +
 /// readWrite 抢锁 fail-open 成「暂无发音」）：

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:external_path/external_path.dart';
-import 'package:hibiki_platform/hibiki_platform.dart';
+import 'package:fushi_platform/fushi_platform.dart';
 import 'package:path/path.dart' as p;
 
 class AndroidDirectoryService implements PlatformDirectoryService {

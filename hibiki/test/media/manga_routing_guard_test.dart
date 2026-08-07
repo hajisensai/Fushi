@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 漫画 OCR P1 的接线守卫（源码扫描 + 键不变量），与 PDF 的
 /// `reader_pdf_routing_guard_test.dart` 同纪律。

@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/manga_ocr_settings_section.dart';
-import 'package:hibiki/src/ocr/manga_ocr_service.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
+import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi/utils.dart';
 
 /// Fake 服务，模型状态与下载流可编程。
 class _FakeOcrService implements MangaOcrService {

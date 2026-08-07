@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/hibiki_share.dart';
+import 'package:fushi/src/utils/misc/hibiki_share.dart';
 import 'package:share_plus/share_plus.dart';
 
 /// TODO-1318 / BUG-608：验证 `HibikiShare.shareFiles` 只走 share_plus 的

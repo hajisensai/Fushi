@@ -9,7 +9,7 @@
 
 import 'dart:convert';
 
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 单个网络来源解析出的凭据（运行时值对象，不持久化整体）。
 class SourceLibrarySecret {

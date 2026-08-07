@@ -6,8 +6,8 @@ import 'package:crop_image/crop_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/utils.dart';
 
 /// The content of the dialog when using the crop image enhancement.
 class CropImageDialogPage extends BasePage {

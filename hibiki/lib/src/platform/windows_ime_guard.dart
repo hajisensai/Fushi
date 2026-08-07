@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
-import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show focusedEditableText;
 
 /// BUG-1450：Windows 上中文输入法激活时全表面快捷键失效的根治开关。

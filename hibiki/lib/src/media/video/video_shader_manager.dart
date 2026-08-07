@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hibiki/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path/path.dart' as p;
 

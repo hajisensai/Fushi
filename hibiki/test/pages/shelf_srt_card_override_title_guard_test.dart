@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
 
 /// TODO-1094 guard: 书架 SRT/字幕卡的书名必须与长按对话框同源（经
 /// [MediaSource.getDisplayTitleFromMediaItem] 应用编辑弹窗写入的 override_title），

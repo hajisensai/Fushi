@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/tts_channel.dart';
+import 'package:fushi/src/utils/misc/tts_channel.dart';
 
 /// Guards BUG-046: a resolved local-audio path on Windows is an absolute
 /// drive-letter path (`C:\…\local_audio.mp3`). The old play-dispatch code only

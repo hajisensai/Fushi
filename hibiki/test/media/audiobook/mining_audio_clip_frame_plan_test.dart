@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/mining_audio_clip.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/audiobook/mining_audio_clip.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// TODO-1115 动态高亮片段视频：逐帧渲染计划 [clipFramePlan] 的纯函数守卫。
 ///

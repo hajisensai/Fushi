@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
-import 'package:hibiki/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/startup/exit_flush_registry.dart';
 
 /// A single in-memory clipboard-copy history entry (deduped text + copy time).
 @immutable

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/pages/implementations/stat_activity.dart';
 
 /// 每屏**最少**列数（周数）。见 [StatContributionHeatmap.weeks]。
 const int kStatHeatmapMinWeeks = 17;

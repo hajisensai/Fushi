@@ -5,7 +5,7 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 class HibikiTextSelectionControls extends MaterialTextSelectionControls {
   HibikiTextSelectionControls({

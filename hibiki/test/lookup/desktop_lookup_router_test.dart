@@ -2,9 +2,9 @@
 // overlayAvailable = 18 例）。互斥分区契约：任一输入组合恰好落一个消费面。
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/lookup/desktop_lookup_router.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/lookup/desktop_lookup_router.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/sync/desktop_lookup_service.dart';
 
 void main() {
   DesktopLookupConsumer resolve(

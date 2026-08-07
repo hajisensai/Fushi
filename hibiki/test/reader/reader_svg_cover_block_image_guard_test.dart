@@ -7,10 +7,10 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import '../pages/reader_hibiki_page_source_corpus.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/reader/reader_content_styles.dart';
-import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
-import 'package:hibiki/src/reader/reader_settings.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_pagination_scripts.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
 
 // BUG-025 · 固定布局 EPUB 封面（<svg><image>，非 <img>）在阅读器里被当作内联内容：
 // 竖排 reflow 下漂到页面右缘（不居中）、且不像本文 <img> 插图那样能点击放大。

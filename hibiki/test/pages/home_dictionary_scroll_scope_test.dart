@@ -41,7 +41,7 @@ void main() {
       expect(
         source,
         contains(
-            "import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';"),
+            "import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';"),
         reason: 'The result area must depend on the shared dictionary popup '
             'WebView so it inherits the TODO-460 smooth-wheel channel.',
       );

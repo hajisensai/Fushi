@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:googleapis_auth/googleapis_auth.dart' as auth;
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/sync/google_drive_handler.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_error_messages.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/sync/google_drive_handler.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_error_messages.dart';
 
 /// TODO-045: Google Drive "登录后 401" surfaced as the raw English
 /// `invalid_client` text (or a misleading "sign-in expired" message). The

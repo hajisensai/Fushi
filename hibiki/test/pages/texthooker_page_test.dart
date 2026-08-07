@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/pages/implementations/texthooker_page.dart';
-import 'package:hibiki/src/platform/platform_providers.dart';
-import 'package:hibiki/src/sync/texthooker_service.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/pages/implementations/texthooker_page.dart';
+import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/test_platform_services.dart';

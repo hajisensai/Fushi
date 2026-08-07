@@ -2,16 +2,16 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 
-import 'package:hibiki/src/mining/immersion_mining_engine.dart'
+import 'package:fushi/src/mining/immersion_mining_engine.dart'
     show
         AnimatedClipExtraction,
         AudioExtractor,
         GifExtractor,
         extractAnimatedClipWithFallback;
-import 'package:hibiki/src/mining/immersion_mining_request.dart';
-import 'package:hibiki/src/sync/immersion_mine_payload.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
-import 'package:hibiki_anki/hibiki_anki.dart' show AnkiMiningSource;
+import 'package:fushi/src/mining/immersion_mining_request.dart';
+import 'package:fushi/src/sync/immersion_mine_payload.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi_anki/fushi_anki.dart' show AnkiMiningSource;
 
 /// 第二层B（TODO-1000）：驱动后台专用软解 WebView2 实例抓 Netflix 片段音画。仅 Windows。
 /// native 缺失（未构建 / 非 Windows）时 [capture] 返回 error，seam 降级为 2A 截图卡。

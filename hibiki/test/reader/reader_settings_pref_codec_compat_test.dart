@@ -1,9 +1,9 @@
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki/src/reader/reader_settings.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// BUG-1116 守卫：ReaderSettings 读侧必须兼容 PrefCodec 类型标签值。
 ///

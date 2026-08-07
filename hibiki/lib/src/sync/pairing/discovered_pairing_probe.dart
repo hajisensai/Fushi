@@ -1,5 +1,5 @@
-import 'package:hibiki/src/sync/pairing/hibiki_ping_client.dart';
-import 'package:hibiki/src/sync/tls/hibiki_tofu_probe.dart';
+import 'package:fushi/src/sync/pairing/hibiki_ping_client.dart';
+import 'package:fushi/src/sync/tls/hibiki_tofu_probe.dart';
 
 /// TODO-961: LAN 发现设备的「配对前探测」结果——探明的 base URL（含 scheme）、
 /// https 钉扎指纹（明文 http 为 null）与 /api/ping 应答。

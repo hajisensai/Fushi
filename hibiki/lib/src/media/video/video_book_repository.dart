@@ -5,25 +5,25 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/video/external_video.dart'
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/video/external_video.dart'
     show normalizeVideoPath;
-import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
-import 'package:hibiki/src/media/video/scraper/collection_member_policy.dart'
+import 'package:fushi/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
+import 'package:fushi/src/media/video/scraper/collection_member_policy.dart'
     show multiMemberCollectionIdByVideoUid;
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart'
+import 'package:fushi/src/media/video/scraper/scraper_types.dart'
     show
         ScrapeInfoboxEntry,
         ScrapeMetadata,
         ScrapeSource,
         ScrapeTag,
         ScrapedMediaImage;
-import 'package:hibiki/src/media/video/video_path_migration.dart';
-import 'package:hibiki/src/media/video/video_storage.dart';
-import 'package:hibiki/src/sync/deletion_propagation.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
+import 'package:fushi/src/media/video/video_path_migration.dart';
+import 'package:fushi/src/media/video/video_storage.dart';
+import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
 
 /// [VideoBookRepository.importSplitPlaylist] 的落库结果。
 ///

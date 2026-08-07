@@ -3,10 +3,10 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:hibiki/src/dictionary/dictionary_media_types.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi/src/dictionary/dictionary_media_types.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 const List<String> dictionaryMediaCustomSchemes = <String>[
   'image',

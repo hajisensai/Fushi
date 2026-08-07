@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_subtitle_source.dart';
+import 'package:fushi/src/media/video/video_subtitle_source.dart';
 
 void main() {
   group('pickSameNameSubs（外挂字幕只列当前集同名前缀）', () {

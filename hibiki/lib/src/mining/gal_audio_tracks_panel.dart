@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/mining/galgame_audio_encode.dart';
-import 'package:hibiki/src/mining/galgame_audio_source.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/galgame_audio_encode.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/utils.dart';
 
 /// 会话音轨面板（共享内容组件）：轨列表 + 逐轨试听 + 设为语音轨 + 排除 BGM/恢复。
 ///

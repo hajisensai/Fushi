@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
 
 /// 进度条（seek bar）上的章节刻度（TODO-432）。
 ///

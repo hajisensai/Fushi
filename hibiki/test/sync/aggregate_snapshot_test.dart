@@ -1,10 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/aggregate_snapshot.dart';
-import 'package:hibiki/src/sync/aggregate_sync_service.dart';
-import 'package:hibiki_audio/hibiki_audio.dart' show FavoriteSentence;
-import 'package:hibiki_core/hibiki_core.dart' show BookFormat;
+import 'package:fushi/src/sync/aggregate_snapshot.dart';
+import 'package:fushi/src/sync/aggregate_sync_service.dart';
+import 'package:fushi_audio/fushi_audio.dart' show FavoriteSentence;
+import 'package:fushi_core/fushi_core.dart' show BookFormat;
 
 AggregateSnapshot _sample() => AggregateSnapshot(
       readingStats: const <ReadingStatRecord>[

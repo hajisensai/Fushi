@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// ASS 高级特效守卫：`\t` 通用动画（颜色/透明度插值）、卡拉 OK `\k`/`\kf` 逐字变色、
 /// `\fsp` 字间距、`\frx` 3D 旋转、样式表 Angle/ScaleX/Y/Spacing/SecondaryColour。

@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:hibiki/src/shortcuts/dictionary_caret_controller.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/shortcuts/dictionary_caret_controller.dart';
 
 /// Recording fake host: lets us assert which host seams the controller drives
 /// without a real WebView / popup. The popup-touching transitions early-return

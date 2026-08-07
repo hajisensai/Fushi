@@ -1,8 +1,8 @@
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/torrent/nyaa_client.dart';
-import 'package:hibiki/src/media/video/jimaku_client.dart';
-import 'package:hibiki/src/media/video/video_filename_parser.dart';
+import 'package:fushi/src/media/torrent/nyaa_client.dart';
+import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/media/video/video_filename_parser.dart';
 
 /// 番剧下载的纯决策逻辑：Jimaku 字幕按集索引 + 种子↔字幕匹配。
 ///

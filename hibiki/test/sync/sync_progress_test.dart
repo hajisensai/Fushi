@@ -1,10 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/sync_auto_trigger.dart';
-import 'package:hibiki/src/sync/sync_orchestrator.dart';
-import 'package:hibiki/src/sync/sync_progress.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/sync/sync_orchestrator.dart';
+import 'package:fushi/src/sync/sync_progress.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 import 'sync_settings_schema_source_corpus.dart';
 

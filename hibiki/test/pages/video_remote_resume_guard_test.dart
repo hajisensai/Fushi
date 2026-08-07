@@ -3,8 +3,8 @@ import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 
 /// TODO-559 守卫：远端（在线）视频断点恢复。
 ///

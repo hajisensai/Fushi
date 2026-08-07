@@ -4,7 +4,7 @@
 // 变化的、可见的桌面/移动统一制卡反馈通道。
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
+import 'package:fushi/src/utils/misc/hibiki_toast.dart';
 
 Future<void> _pumpToastHost(WidgetTester tester) async {
   final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();

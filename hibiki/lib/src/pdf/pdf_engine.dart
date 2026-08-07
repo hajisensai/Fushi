@@ -4,7 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:pdfrx/pdfrx.dart';
 
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// PDF 阅读器（Phase 1）的 pdfrx/PDFium 引擎初始化单一入口。
 ///

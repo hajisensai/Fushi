@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/sync/deletion_disclosure.dart';
-import 'package:hibiki/src/media/collections/collection_asset_reclaim.dart';
-import 'package:hibiki/src/media/collections/collection_one_key_sort.dart';
-import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart'
+import 'package:fushi/src/sync/deletion_disclosure.dart';
+import 'package:fushi/src/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi/src/media/collections/collection_one_key_sort.dart';
+import 'package:fushi/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
-import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
-import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 统一三库页合集入口的右键 / 长按菜单（书架横排行、视频合集封面卡、游戏库
 /// 横排行共用）：打开详情 / 重命名 / 标签 / [extraListActions] 媒体特有项 /

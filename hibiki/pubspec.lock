@@ -840,6 +840,48 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  fushi_anki:
+    dependency: "direct main"
+    description:
+      path: "../packages/fushi_anki"
+      relative: true
+    source: path
+    version: "0.0.0"
+  fushi_audio:
+    dependency: "direct main"
+    description:
+      path: "../packages/fushi_audio"
+      relative: true
+    source: path
+    version: "0.0.0"
+  fushi_core:
+    dependency: "direct main"
+    description:
+      path: "../packages/fushi_core"
+      relative: true
+    source: path
+    version: "0.0.0"
+  fushi_dictionary:
+    dependency: "direct main"
+    description:
+      path: "../packages/fushi_dictionary"
+      relative: true
+    source: path
+    version: "0.0.0"
+  fushi_platform:
+    dependency: "direct main"
+    description:
+      path: "../packages/fushi_platform"
+      relative: true
+    source: path
+    version: "0.0.0"
+  fushi_torrent:
+    dependency: "direct main"
+    description:
+      path: "../packages/fushi_torrent"
+      relative: true
+    source: path
+    version: "0.0.0"
   gamepads:
     dependency: "direct main"
     description:
@@ -998,48 +1040,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.0"
-  hibiki_anki:
-    dependency: "direct main"
-    description:
-      path: "../packages/hibiki_anki"
-      relative: true
-    source: path
-    version: "0.0.0"
-  hibiki_audio:
-    dependency: "direct main"
-    description:
-      path: "../packages/hibiki_audio"
-      relative: true
-    source: path
-    version: "0.0.0"
-  hibiki_core:
-    dependency: "direct main"
-    description:
-      path: "../packages/hibiki_core"
-      relative: true
-    source: path
-    version: "0.0.0"
-  hibiki_dictionary:
-    dependency: "direct main"
-    description:
-      path: "../packages/hibiki_dictionary"
-      relative: true
-    source: path
-    version: "0.0.0"
-  hibiki_platform:
-    dependency: "direct main"
-    description:
-      path: "../packages/hibiki_platform"
-      relative: true
-    source: path
-    version: "0.0.0"
-  hibiki_torrent:
-    dependency: "direct main"
-    description:
-      path: "../packages/hibiki_torrent"
-      relative: true
-    source: path
-    version: "0.0.0"
   hooks:
     dependency: transitive
     description:

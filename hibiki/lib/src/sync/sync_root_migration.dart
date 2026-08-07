@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:hibiki/src/sync/sync_utils.dart';
+import 'package:fushi/src/sync/sync_utils.dart';
 
 /// Fushi 改名迁移（`hibiki-data` → `fushi-data`）的共享三段骨架，五个远端
 /// backend（Dropbox / OneDrive / WebDAV / FTP / SFTP）共用；Google Drive 侧的

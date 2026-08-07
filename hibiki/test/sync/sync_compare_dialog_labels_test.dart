@@ -4,15 +4,15 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/sync/sync_asset_store.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_compare_dialog.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/src/sync/ttu_filename.dart';
-import 'package:hibiki/src/sync/sync_file_ref.dart';
-import 'package:hibiki/src/sync/ttu_models.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_compare_dialog.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi/src/sync/sync_file_ref.dart';
+import 'package:fushi/src/sync/ttu_models.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 // TODO-703: the compare dialog footer was reworded for clarity --
 //   * the plain dismiss button now reads t.sync_compare_close (a dedicated

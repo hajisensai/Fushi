@@ -14,7 +14,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/source_library/source_file_system.dart';
+import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:path/path.dart' as p;
 
 /// 进程内假 WebDAV 服务器：按请求路径回 PROPFIND(207) / GET(200)。

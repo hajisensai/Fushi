@@ -15,7 +15,7 @@ import '../helpers/scan_scale.dart';
 ///     门根本不跑，于是同一次批量替换够不着。
 ///
 /// 结果就是 v65 → v66（PR#663，collection_relations + video_scrape_meta
-/// .episode_number）时 `packages/hibiki_core/test/mihon_database_test.dart`
+/// .episode_number）时 `packages/fushi_core/test/mihon_database_test.dart`
 /// 的 `expect(database.schemaVersion, 65)` 漏改，本地 `hibiki/` 全量 16771 条
 /// 全绿、CI 的 `Run package tests` 跑到第 40 条就红，develop 上 `Build Release
 /// APK`（本仓真正的单测合并门）连红 5 个 commit。

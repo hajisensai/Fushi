@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/creator.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/models.dart';
+import 'package:fushi/creator.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/models.dart';
 
 /// An enhancement used effectively as a shortcut for clearing the contents
 /// of a [CreatorModel] pertaining to a certain field.

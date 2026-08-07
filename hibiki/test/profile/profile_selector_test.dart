@@ -2,13 +2,13 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/profile/profile_repository.dart';
-import 'package:hibiki/src/profile/profile_selector.dart';
-import 'package:hibiki/src/profile/profile_view_model.dart';
-import 'package:hibiki/src/utils/components/settings_shared.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/profile/profile_repository.dart';
+import 'package:fushi/src/profile/profile_selector.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// Regression for the desktop "empty Anki settings page + dead left mouse" bug.
 ///

@@ -8,8 +8,8 @@ library;
 
 import 'package:image/image.dart' as img;
 
-import 'package:hibiki/src/ocr/ocr_types.dart';
-import 'package:hibiki/src/ocr/reading_order.dart';
+import 'package:fushi/src/ocr/ocr_types.dart';
+import 'package:fushi/src/ocr/reading_order.dart';
 
 /// 逐页断点缓存接口。key = (bookId, pageIndex)。
 abstract interface class OcrPageCache {

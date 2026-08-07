@@ -3,13 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
-import 'package:hibiki/src/platform/platform_services.dart';
-import 'package:hibiki/src/platform/platform_providers.dart';
-import 'package:hibiki/src/utils/misc/popup_channel.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
+import 'package:fushi/src/platform/platform_services.dart';
+import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/utils/misc/popup_channel.dart';
 
 String _extractWord(AppModel appModel, String text, int charIndex) {
   if (charIndex < 0 || !appModel.isInitialised) return text;

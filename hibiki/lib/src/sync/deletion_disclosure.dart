@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 /// 删除目标的种类。删除确认框据此逐项披露「会删什么 / 会保留什么」，不再由各调用点
 /// 手写一句笼统正文。

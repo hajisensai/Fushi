@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// Regression test for the HBK-AUDIT-041 follow-up: deleteEpubBook must purge
 /// audio_cues owned by an SRT book linked to the deleted epub. Those cues are

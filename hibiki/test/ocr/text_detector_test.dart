@@ -1,9 +1,9 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/ocr/ocr_inference.dart';
-import 'package:hibiki/src/ocr/ocr_types.dart';
-import 'package:hibiki/src/ocr/text_detector.dart';
+import 'package:fushi/src/ocr/ocr_inference.dart';
+import 'package:fushi/src/ocr/ocr_types.dart';
+import 'package:fushi/src/ocr/text_detector.dart';
 import 'package:image/image.dart' as img;
 
 /// 回放固定输出的 fake 会话，并记录收到的输入。

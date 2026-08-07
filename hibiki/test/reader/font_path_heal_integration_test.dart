@@ -2,10 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/reader/reader_settings.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
 
 /// TODO-1393 / BUG-705 integration: [ReaderSettings.healMissingFontFilePaths]
 /// repairs a real Drift-persisted font catalog whose paths went stale after the

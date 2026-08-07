@@ -4,11 +4,11 @@ library;
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/metadata/adapters/vndb_adapter.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_adapter.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_draft.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_rate_limit.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi/src/mining/metadata/adapters/vndb_adapter.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_adapter.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_rate_limit.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 

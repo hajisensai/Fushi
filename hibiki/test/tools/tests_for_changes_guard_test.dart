@@ -319,7 +319,7 @@ void main() {
       expect(
           isDefaultBatchCoveredChange('hibiki/test/tools/x_test.dart'), isTrue);
       expect(
-          isDefaultBatchCoveredChange('packages/hibiki_core/lib/src/db.dart'),
+          isDefaultBatchCoveredChange('packages/fushi_core/lib/src/db.dart'),
           isTrue);
       expect(
           isDefaultBatchCoveredChange('hibiki/windows/runner/x.cpp'), isFalse,

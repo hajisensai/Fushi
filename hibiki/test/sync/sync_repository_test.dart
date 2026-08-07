@@ -1,8 +1,8 @@
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 HibikiDatabase _testDb() {
   return HibikiDatabase.forTesting(

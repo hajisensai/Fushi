@@ -4,17 +4,17 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart'
+import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
     show
         buildSpreadPageHtml,
         kSpreadBridgedActions,
         resolveSpreadKeyBridgeAction,
         spreadKeyBridgeScopes,
         spreadKeyBridgeTokens;
-import 'package:hibiki/src/reader/reader_settings.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
 import '../helpers/source_guard.dart';
 import '../pages/reader_hibiki_page_source_corpus.dart';

@@ -1,16 +1,16 @@
 import 'dart:io';
 
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
-import 'package:hibiki/src/media/torrent/anime_download_service.dart';
-import 'package:hibiki/src/media/video/m3u8_playlist.dart';
-import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki/src/media/video/video_filename_parser.dart';
-import 'package:hibiki/src/media/video/video_storage.dart';
-import 'package:hibiki/src/media/video/video_cover_extractor.dart'
+import 'package:fushi/src/media/torrent/anime_download_plan.dart';
+import 'package:fushi/src/media/torrent/anime_download_service.dart';
+import 'package:fushi/src/media/video/m3u8_playlist.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi/src/media/video/video_storage.dart';
+import 'package:fushi/src/media/video/video_cover_extractor.dart'
     show downloadVideoCoverToPath, extractVideoCover, videoCoverFileName;
 
 /// 把下载完成的视频路径按解析集号升序排（集号缺失排末尾，同集按文件名）。纯函数，

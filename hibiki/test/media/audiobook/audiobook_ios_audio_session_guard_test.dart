@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('audiobook playback configures iOS audio session as playback', () {
     final String source = File(
-      '../packages/hibiki_audio/lib/src/audiobook/audiobook_controller.dart',
+      '../packages/fushi_audio/lib/src/audiobook/audiobook_controller.dart',
     ).readAsStringSync();
 
     expect(

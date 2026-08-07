@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/pages/implementations/shortcut_settings_page.dart';
-import 'package:hibiki/src/shortcuts/global_navigation.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
-import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
-import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart';
+import 'package:fushi/src/shortcuts/global_navigation.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 void main() {
   setUp(() {

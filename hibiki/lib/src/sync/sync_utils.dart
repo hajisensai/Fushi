@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:hibiki/src/sync/sync_file_ref.dart' show SyncFileRef;
-import 'package:hibiki_core/hibiki_core.dart' show mimeTypeForFilePath;
+import 'package:fushi/src/sync/sync_file_ref.dart' show SyncFileRef;
+import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
 
 /// The single sync root folder name used by every backend (cloud + LAN).
 ///

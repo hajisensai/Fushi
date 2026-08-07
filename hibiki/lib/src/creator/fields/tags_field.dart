@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/creator.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/models.dart';
+import 'package:fushi/creator.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/models.dart';
 
 /// Organise notes in a deck with space-delimited labels.
 class TagsField extends Field {

@@ -3,8 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
-import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
-import 'package:hibiki/src/utils/misc/platform_utils.dart'
+import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart'
     show kHibikiSettingsDialogMaxWidth;
 
 // Minimal Slang stub — the real strings.g.dart pulls in too many
@@ -13,7 +13,7 @@ import 'package:hibiki/src/utils/misc/platform_utils.dart'
 // if that causes import issues the tests can be run with
 // `flutter test --dart-define=SLANG_MOCK=true` and a conditional
 // import.  For now we import the real generated file:
-import 'package:hibiki/i18n/strings.g.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 void main() {
   late Directory tmpDir;

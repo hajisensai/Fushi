@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_chrome_scaler.dart';
-import 'package:hibiki/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/reader/reader_chrome_scaler.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
 
 void main() {
   group('ReaderChromeScaler.scaledHeight', () {

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 /// 各导入对话框逐字相同的外框脚手架（HibikiDialogFrame 560/0.86 +
 /// HibikiModalSheetFrame 同 padding + Wrap footer，空 actions 时无 footer）。

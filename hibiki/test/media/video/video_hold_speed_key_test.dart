@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
-import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/media/video/video_player_shortcuts.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
 /// 按住临时倍速快捷键（用户请求：与手机长按画面同语义——按下加速、松开恢复）。
 ///

@@ -16,22 +16,22 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/epub/epub_storage.dart' show EpubStorage;
-import 'package:hibiki/src/models/local_audio_manager.dart'
+import 'package:fushi/src/epub/epub_storage.dart' show EpubStorage;
+import 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
-import 'package:hibiki/src/models/local_audio_source_pref.dart'
+import 'package:fushi/src/models/local_audio_source_pref.dart'
     show LocalAudioSourcePref;
-import 'package:hibiki/src/sync/app_model_library_host_service.dart';
-import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
-import 'package:hibiki/src/sync/hibiki_sync_server.dart';
-import 'package:hibiki/src/sync/sync_asset_package_service.dart';
-import 'package:hibiki/src/sync/sync_asset_store.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_orchestrator.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/src/sync/sync_file_ref.dart';
-import 'package:hibiki/src/sync/ttu_models.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/sync_asset_package_service.dart';
+import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_orchestrator.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/sync_file_ref.dart';
+import 'package:fushi/src/sync/ttu_models.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 import 'fake_asset_store.dart';

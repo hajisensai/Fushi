@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/m3u8_playlist.dart';
+import 'package:fushi/src/media/video/m3u8_playlist.dart';
 import 'package:path/path.dart' as p;
 
 /// 龙女仆「观看顺序.m3u8」样例片段：标准扩展 M3U，`#EXTINF:-1,<中文标题>` +

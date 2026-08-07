@@ -2,8 +2,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/ocr/ocr_inference.dart';
-import 'package:hibiki/src/ocr/ocr_inference_ort.dart';
+import 'package:fushi/src/ocr/ocr_inference.dart';
+import 'package:fushi/src/ocr/ocr_inference_ort.dart';
 
 void main() {
   test('unsupported DirectML provider retries once with CPU', () async {

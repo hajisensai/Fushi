@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:hibiki_anki/hibiki_anki.dart' show AnkiMiningSource;
+import 'package:fushi_anki/fushi_anki.dart' show AnkiMiningSource;
 
 /// 沉浸制卡片段音频的容器扩展名，按平台分（TODO-1217 / BUG-460）：
 /// - iOS：`m4a`——AnkiMobile 只自动下载它识别为媒体的 localhost URL，`.aac` 裸流会被当成

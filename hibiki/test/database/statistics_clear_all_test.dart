@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-1322: 统计页顶栏「清空全部统计」——只清纯统计数字（阅读 / 观看时长、字数、
 /// 时段日志、查词 / 制卡计数），保留收藏词 / 制卡历史 / 书籍等用户内容，且阅读域与

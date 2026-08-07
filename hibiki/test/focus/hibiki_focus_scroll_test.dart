@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
+import 'package:fushi/src/focus/hibiki_focus_scroll.dart';
 
 void main() {
   group('HibikiFocusScroll.signedFractionFor', () {

@@ -10,7 +10,7 @@
 /// 中点、长音符）不再挡住命中。
 library;
 
-import 'package:hibiki_core/hibiki_core.dart'
+import 'package:fushi_core/fushi_core.dart'
     show fullwidthAsciiToHalfwidth, katakanaToHiragana;
 
 /// 搜索归一化：全角 ASCII → 半角、大写 → 小写、片假名 → 平假名、丢掉空白与常见

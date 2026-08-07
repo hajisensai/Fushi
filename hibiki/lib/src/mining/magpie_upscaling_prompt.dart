@@ -10,8 +10,8 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/mining/magpie_upscaling.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/mining/magpie_upscaling.dart';
+import 'package:fushi/utils.dart';
 
 /// 让用户为某个游戏挑一档。返回 null = 用户取消（**不写任何东西**，保持原档）。
 ///

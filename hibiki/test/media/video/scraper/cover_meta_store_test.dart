@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 import 'package:path/path.dart' as p;
 
 void main() {

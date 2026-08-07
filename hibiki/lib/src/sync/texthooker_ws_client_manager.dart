@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/io.dart';
 
-import 'package:hibiki/src/sync/texthooker_service.dart';
-import 'package:hibiki/src/sync/texthooker_ws_client.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/sync/texthooker_ws_client.dart';
 
 /// app 级单例，持有并托管 texthooker WS **客户端**（[TexthookerWsClient]，连出去连
 /// Textractor/LunaTranslator/mpv 等外部 WS 服务端），按设置开关启停/重启。

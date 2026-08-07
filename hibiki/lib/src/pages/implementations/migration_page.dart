@@ -2,12 +2,12 @@ import 'dart:io';
 
 import 'package:external_path/external_path.dart';
 import 'package:flutter/material.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/migration/migration_exporter.dart';
-import 'package:hibiki/src/migration/migration_readonly.dart';
-import 'package:hibiki/src/migration/migration_target_channel.dart';
-import 'package:hibiki/src/sync/backup_service.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/migration/migration_exporter.dart';
+import 'package:fushi/src/migration/migration_readonly.dart';
+import 'package:fushi/src/migration/migration_target_channel.dart';
+import 'package:fushi/src/sync/backup_service.dart';
+import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 

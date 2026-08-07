@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/position_converter.dart';
+import 'package:fushi/src/sync/position_converter.dart';
 
 void main() {
   group('parseChaptersJson', () {

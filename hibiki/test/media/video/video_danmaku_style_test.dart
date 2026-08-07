@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_danmaku_model.dart';
+import 'package:fushi/src/media/video/video_danmaku_model.dart';
 
 VideoDanmakuItem _item(String text) => VideoDanmakuItem(
       startMs: 0,

@@ -5,13 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:hibiki/main.dart' as app;
-import 'package:hibiki/src/epub/epub_importer.dart';
-import 'package:hibiki/src/media/media_item.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart';
-import 'package:hibiki/src/reader/reader_chapter_perf_trace.dart';
+import 'package:fushi/main.dart' as app;
+import 'package:fushi/src/epub/epub_importer.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart';
+import 'package:fushi/src/reader/reader_chapter_perf_trace.dart';
 
 import 'helpers/generate_test_epub.dart' show EpubGenerator;
 import 'test_helpers.dart';

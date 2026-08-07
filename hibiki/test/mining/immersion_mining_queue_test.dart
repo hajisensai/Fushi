@@ -3,10 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/immersion_mining_engine.dart';
-import 'package:hibiki/src/mining/immersion_mining_request.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi/src/mining/immersion_mining_engine.dart';
+import 'package:fushi/src/mining/immersion_mining_request.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 class _RecordingRepo implements BaseAnkiRepository {
   final List<Map<String, dynamic>> payloads = <Map<String, dynamic>>[];

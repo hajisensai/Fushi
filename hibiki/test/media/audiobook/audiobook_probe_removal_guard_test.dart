@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// - 桥接文件在本包内（`lib/src/media/audiobook/audiobook_bridge.dart`），
 ///   曾在播放期逐 cue 打 `[sasayaki-hl]`（highlight raw / applySasayakiCues
 ///   EMPTY payload）。
-/// - 控制器在 `hibiki_audio` 包（`../packages/hibiki_audio/lib/src/audiobook/
+/// - 控制器在 `hibiki_audio` 包（`../packages/fushi_audio/lib/src/audiobook/
 ///   audiobook_controller.dart`），曾在 `_maybeEmitCrossChapter` 按句同步热
 ///   路径打 `[hibiki-crossChapter]`（blocked / cueSec）。
 void main() {
@@ -29,7 +29,7 @@ void main() {
 
   test('audiobook controller no longer emits [hibiki-crossChapter] probes', () {
     final String source = readSource(
-        '../packages/hibiki_audio/lib/src/audiobook/audiobook_controller.dart');
+        '../packages/fushi_audio/lib/src/audiobook/audiobook_controller.dart');
     expect(source, isNot(contains('[hibiki-crossChapter]')),
         reason: 'BUG-914: _maybeEmitCrossChapter 按句同步热路径的 '
             '[hibiki-crossChapter] print 必须移除');

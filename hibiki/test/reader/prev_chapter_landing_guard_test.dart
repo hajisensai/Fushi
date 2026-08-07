@@ -7,7 +7,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
+import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 
 /// TODO-1349 回归守卫（源码扫描 + 生成产物扫描，CI 可跑）：往前翻到上一章必须落到
 /// 该章的**最后部分**（章尾），而非章首（封面/第一张图）。

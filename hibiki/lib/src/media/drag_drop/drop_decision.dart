@@ -1,4 +1,4 @@
-import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
+import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 
 /// 拖拽落点所在的 tab 表面。
 ///

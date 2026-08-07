@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki/src/pages/base_source_page.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/pages/base_source_page.dart';
 
 /// BUG-206 (TODO-139) — 手机查词被查词高亮多选/少选字（错位）。
 ///

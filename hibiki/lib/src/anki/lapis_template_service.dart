@@ -2,11 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/anki/lapis_backup_retention.dart';
-import 'package:hibiki/src/storage/app_paths.dart';
+import 'package:fushi/src/anki/lapis_backup_retention.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 
 /// 显式「应用样式到 Anki」的结果（设置页据此提示/弹确认）。
 enum LapisApplyResult {
@@ -45,7 +45,7 @@ enum LapisRestoreFactoryResult {
 /// 中止推送）——备份是门，不是装饰。备份落在
 /// `<supportRoot>/backups/lapis/lapis-<UTC时间戳>.json`。
 ///
-/// 纯逻辑（CSS 组合 / 漂移判定）在 `package:hibiki_anki` 的 `lapis_styling.dart`；
+/// 纯逻辑（CSS 组合 / 漂移判定）在 `package:fushi_anki` 的 `lapis_styling.dart`；
 /// 本类只做编排与落盘。
 class LapisTemplateService {
   LapisTemplateService(this._repository);

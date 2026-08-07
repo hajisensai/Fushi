@@ -1,6 +1,6 @@
 import 'package:bonsoir/bonsoir.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/lan_discovery_service.dart';
+import 'package:fushi/src/sync/lan_discovery_service.dart';
 
 /// Builds a *resolved* [BonsoirService] for the mapper tests. Uses
 /// [BonsoirService.ignoreNorms] so the supplied name/attributes are preserved

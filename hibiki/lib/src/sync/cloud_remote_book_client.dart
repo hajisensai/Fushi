@@ -1,14 +1,14 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
-import 'package:hibiki/src/sync/remote_book_client.dart';
-import 'package:hibiki/src/sync/remote_library_source.dart';
-import 'package:hibiki/src/sync/sync_asset_store.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_orchestrator.dart'
+import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/remote_book_client.dart';
+import 'package:fushi/src/sync/remote_library_source.dart';
+import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_orchestrator.dart'
     show isReservedSyncFolderName;
-import 'package:hibiki/src/sync/sync_file_ref.dart' show SyncFileRef;
+import 'package:fushi/src/sync/sync_file_ref.dart' show SyncFileRef;
 
 /// 把任意云盘备份后端（Google Drive / WebDAV / OneDrive / Dropbox / FTP / SFTP）
 /// 的远端书库适配成书架页的 [RemoteBookClient] 契约（TODO-665 阶段1）。

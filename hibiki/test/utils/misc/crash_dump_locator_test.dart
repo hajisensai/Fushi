@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/crash_dump_locator.dart';
+import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
 
 /// TODO-607 P0-3/④：CrashDumpLocator 纯函数单测（host 可跑——不碰 native，只验
 /// 「定位 %LOCALAPPDATA%\Fushi\crashdumps + 列 .dmp 按 mtime 降序」）。

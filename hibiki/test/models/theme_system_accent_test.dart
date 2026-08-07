@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/theme_notifier.dart';
+import 'package:fushi/src/models/theme_notifier.dart';
 
 /// BUG-090: on Windows (and macOS/Linux) `getCorePalette()` is null, so
 /// `system-theme` must seed its ColorScheme from the OS accent color rather

@@ -3,8 +3,8 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 
-import 'package:hibiki/src/media/video/video_danmaku_model.dart';
-import 'package:hibiki/src/media/video/video_danmaku_text_metrics.dart';
+import 'package:fushi/src/media/video/video_danmaku_model.dart';
+import 'package:fushi/src/media/video/video_danmaku_text_metrics.dart';
 
 @immutable
 class VideoDanmakuLayoutEntry {

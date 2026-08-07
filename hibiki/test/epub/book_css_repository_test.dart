@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
-import 'package:hibiki/src/epub/book_css_repository.dart';
+import 'package:fushi/src/epub/book_css_repository.dart';
 
 void main() {
   late Directory tmpDir;

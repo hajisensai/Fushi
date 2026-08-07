@@ -29,7 +29,7 @@
 // ignore_for_file: lines_longer_than_80_chars
 library;
 
-import 'package:hibiki/src/reader/reader_content_styles.dart'
+import 'package:fushi/src/reader/reader_content_styles.dart'
     show ReaderLayoutDefaults;
 
 /// Builds the VN-mode reader shell `<script>` for the reader WebView. Mirrors

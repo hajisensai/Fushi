@@ -2,18 +2,18 @@ import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_input_bridge.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
+import 'package:fushi/utils.dart';
 
 // 占位单例的 canonical 声明已收口到 dictionary_popup_controller.dart（controller
 // 内部 seed/复位也用它，必须同一对象）；此处 re-export 维持既有宿主 import 不变。
-export 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart'
+export 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart'
     show kPopupSearchingPlaceholderResult;
 
 Rect calcPopupPosition({

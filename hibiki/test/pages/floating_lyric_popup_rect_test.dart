@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 
 /// TODO-872：app 外悬浮字幕条查词弹窗按被查字屏幕矩形定位的纯函数
 /// [computeFloatingLyricPopupRect]。它复用 [calcPopupPosition] 的横排上/下避让 + clamp

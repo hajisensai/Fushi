@@ -2,11 +2,11 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/galgame_audio_encode.dart';
-import 'package:hibiki/src/mining/galgame_audio_source.dart';
-import 'package:hibiki/src/mining/galgame_waveform_select.dart';
-import 'package:hibiki/src/mining/galgame_waveform_select_dialog.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/mining/galgame_audio_encode.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/galgame_waveform_select.dart';
+import 'package:fushi/src/mining/galgame_waveform_select_dialog.dart';
+import 'package:fushi/utils.dart';
 
 /// galgame 波形选区对话框 MD3 收口的 widget 行为守卫：
 /// 走共享对话框骨架（HibikiDialogFrame + HibikiModalSheetFrame）、肯定动作

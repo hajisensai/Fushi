@@ -133,7 +133,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 ### 11. torrent 下载 (`lib/src/media/torrent/`)
 
 - `embedded_torrent_backend.dart` -- 内置引擎的 `TorrentBackend` 实现；同目录含番剧下载/nyaa/qBittorrent 客户端。
-- 引擎在 `packages/hibiki_torrent`（Dart FFI）+ `native/hibiki_torrent`（libtorrent C ABI）；DLL 缺失时回退外接 qBittorrent（`qb_torrent_backend.dart`）。
+- 引擎在 `packages/fushi_torrent`（Dart FFI）+ `native/hibiki_torrent`（libtorrent C ABI）；DLL 缺失时回退外接 qBittorrent（`qb_torrent_backend.dart`）。
 
 ### 12. galgame 制卡 (`lib/src/lookup/` + `lib/src/mining/`)
 

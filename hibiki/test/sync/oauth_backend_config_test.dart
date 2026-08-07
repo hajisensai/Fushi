@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/dropbox_sync_backend.dart';
-import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
+import 'package:fushi/src/sync/dropbox_sync_backend.dart';
+import 'package:fushi/src/sync/onedrive_sync_backend.dart';
 
 /// The sync settings picker hides OAuth backends whose client ID is still a
 /// placeholder (see `_isBackendSelectable` in sync_settings_schema.dart).

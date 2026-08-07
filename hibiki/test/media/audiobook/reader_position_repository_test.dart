@@ -1,7 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 void main() {
   late HibikiDatabase db;

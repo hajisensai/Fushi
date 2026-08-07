@@ -13,10 +13,10 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:hibiki/src/media/metadata/credential_redaction.dart';
-import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
+import 'package:fushi/src/media/metadata/credential_redaction.dart';
+import 'package:fushi/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 import 'package:http/http.dart' as http;
 
 /// TMDB 搜索客户端。构造注入 `apiKey` 与可选 [http.Client]（默认自建）。

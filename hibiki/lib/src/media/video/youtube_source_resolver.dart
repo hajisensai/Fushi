@@ -5,7 +5,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:html_unescape/html_unescape.dart';
 import 'package:http/http.dart' as http;
-import 'package:hibiki_audio/hibiki_audio.dart' show AudioCue;
+import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 // TODO-1000 根因：YouTube 已对 web 端 timedtext（字幕）URL 加 proof-of-origin
 // 门槛，公开 API（closedCaptions.getManifest → web 观看页派生的 URL）实测**所有格式

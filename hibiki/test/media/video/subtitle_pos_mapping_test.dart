@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki/src/media/video/subtitle_pos_mapping.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/media/video/subtitle_pos_mapping.dart';
 
 void main() {
   group('mapPosFractionToContainer', () {

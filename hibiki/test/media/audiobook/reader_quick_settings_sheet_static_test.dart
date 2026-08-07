@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/components/settings_shared.dart'
+import 'package:fushi/src/utils/components/settings_shared.dart'
     show kSettingsRowTitleMaxLines;
 
 import '../../pages/reader_hibiki_page_source_corpus.dart';

@@ -11,8 +11,8 @@ import 'dart:io';
 
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart' show ModifierKey;
-import 'package:hibiki/src/shortcuts/reader_space_override.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart' show ModifierKey;
+import 'package:fushi/src/shortcuts/reader_space_override.dart';
 
 import '../helpers/source_guard.dart';
 
@@ -100,7 +100,7 @@ void main() {
       );
       expect(
         code.contains(
-            "import 'package:hibiki/src/shortcuts/reader_space_override.dart'"),
+            "import 'package:fushi/src/shortcuts/reader_space_override.dart'"),
         isTrue,
       );
     });

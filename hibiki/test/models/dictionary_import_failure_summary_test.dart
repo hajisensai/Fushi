@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/dictionary_import_manager.dart';
+import 'package:fushi/src/models/dictionary_import_manager.dart';
 
 void main() {
   group('DictionaryImportManager.formatImportFailureSummary (BUG-082)', () {

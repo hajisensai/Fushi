@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/video_stat_aggregates.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/pages/implementations/video_stat_aggregates.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 VideoWatchStatisticRow _row(String title, String dateKey, int chars, int ms) =>
     VideoWatchStatisticRow(

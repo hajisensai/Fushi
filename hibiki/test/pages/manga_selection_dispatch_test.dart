@@ -2,9 +2,9 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/mokuro_payload.dart';
-import 'package:hibiki/src/pages/implementations/manga_hibiki_page.dart';
-import 'package:hibiki/src/reader/reader_selection_data.dart';
+import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/pages/implementations/manga_hibiki_page.dart';
+import 'package:fushi/src/reader/reader_selection_data.dart';
 
 void main() {
   group('dispatchMangaSelection', () {

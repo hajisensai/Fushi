@@ -3,16 +3,16 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
-import 'package:hibiki/src/sync/aggregate_snapshot.dart';
-import 'package:hibiki/src/sync/collection_manifest.dart';
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
-import 'package:hibiki/src/sync/hibiki_sync_server.dart';
-import 'package:hibiki/src/sync/sync_asset_store.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_orchestrator.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/aggregate_snapshot.dart';
+import 'package:fushi/src/sync/collection_manifest.dart';
+import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_orchestrator.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// Records the namespace/name queried and the id deleted; [present] is what
 /// findAsset returns. Everything else throws (must not be touched).

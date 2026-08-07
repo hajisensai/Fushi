@@ -18,13 +18,13 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/dictionary/dictionary_media_types.dart'
+import 'package:fushi/src/dictionary/dictionary_media_types.dart'
     show dictionaryMediaMimeType;
-import 'package:hibiki/src/epub/epub_book.dart' show fallbackMimeType;
-import 'package:hibiki/src/sync/sync_utils.dart' show guessSyncContentType;
-import 'package:hibiki_anki/hibiki_anki.dart'
+import 'package:fushi/src/epub/epub_book.dart' show fallbackMimeType;
+import 'package:fushi/src/sync/sync_utils.dart' show guessSyncContentType;
+import 'package:fushi_anki/fushi_anki.dart'
     show kAnkiMimeTypeByExtension, mimeTypeForPath;
-import 'package:hibiki_core/hibiki_core.dart'
+import 'package:fushi_core/fushi_core.dart'
     show kFallbackMimeType, kMimeTypeByExtension, mimeTypeForFilePath;
 
 import '../helpers/scan_scale.dart';
@@ -139,8 +139,8 @@ void main() {
         kMimeTypeByExtension,
         reason: 'hibiki_anki 是无 hibiki_core 依赖的独立模块，mimeTypeForPath '
             '持共享表的镜像副本；改动任一侧必须同步另一侧'
-            '（真相源 packages/hibiki_core/lib/src/utils/mime_types.dart，'
-            '镜像 packages/hibiki_anki/lib/src/anki_models.dart）。',
+            '（真相源 packages/fushi_core/lib/src/utils/mime_types.dart，'
+            '镜像 packages/fushi_anki/lib/src/anki_models.dart）。',
       );
     });
 
@@ -170,11 +170,11 @@ void main() {
       int scanned = 0;
       for (final String libDir in <String>[
         'hibiki/lib',
-        'packages/hibiki_anki/lib',
-        'packages/hibiki_core/lib',
-        'packages/hibiki_audio/lib',
-        'packages/hibiki_dictionary/lib',
-        'packages/hibiki_platform/lib',
+        'packages/fushi_anki/lib',
+        'packages/fushi_core/lib',
+        'packages/fushi_audio/lib',
+        'packages/fushi_dictionary/lib',
+        'packages/fushi_platform/lib',
       ]) {
         final Directory dir = Directory('${root.path}/$libDir');
         if (!dir.existsSync()) continue;
@@ -194,7 +194,7 @@ void main() {
         offenders,
         isEmpty,
         reason: '发现新的扩展名→MIME switch 副本。请改查 hibiki_core 的单一映射表 '
-            'mimeTypeForFilePath（packages/hibiki_core/lib/src/utils/'
+            'mimeTypeForFilePath（packages/fushi_core/lib/src/utils/'
             'mime_types.dart）；hibiki_anki 内请查 kAnkiMimeTypeByExtension 镜像。',
       );
     });

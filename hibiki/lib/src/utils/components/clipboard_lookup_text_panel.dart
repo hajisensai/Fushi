@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderStack;
 import 'package:flutter/services.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
-import 'package:hibiki/src/utils/misc/lookup_input_limits.dart';
+import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 
 /// 查词弹窗 headword 的字号，单位逻辑像素。
 ///

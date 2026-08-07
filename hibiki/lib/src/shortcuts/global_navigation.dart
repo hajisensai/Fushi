@@ -5,12 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:macos_ui/macos_ui.dart' show WindowManipulator;
 import 'package:window_manager/window_manager.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
 
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
-import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show
         arrowFocusMoveDirection,
         dispatchNativeGamepadButtonIntent,

@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:bonsoir/bonsoir.dart';
 
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// A peer Hibiki instance discovered on the LAN.
 class HibikiDevice {

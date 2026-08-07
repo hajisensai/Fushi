@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_immersive_mode.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/settings/settings_schema_video.dart';
+import 'package:fushi/src/media/video/video_immersive_mode.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_video.dart';
 
 import 'video_hibiki_page_source_corpus.dart';
 

@@ -2,13 +2,13 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/media/metadata/bangumi_api_client.dart'
+import 'package:fushi/src/media/metadata/bangumi_api_client.dart'
     show parseBangumiSubjectUrl;
-import 'package:hibiki/src/media/metadata/book_metadata_scraper.dart';
-import 'package:hibiki/src/media/metadata/image_download.dart';
-import 'package:hibiki/src/media/metadata/scrape_cover_preview.dart';
-import 'package:hibiki/src/media/metadata/scrape_failure_view.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
+import 'package:fushi/src/media/metadata/image_download.dart';
+import 'package:fushi/src/media/metadata/scrape_cover_preview.dart';
+import 'package:fushi/src/media/metadata/scrape_failure_view.dart';
+import 'package:fushi/utils.dart';
 
 /// 书籍 / 漫画「在线匹配封面」弹窗（统一刮削 P1b）。
 ///

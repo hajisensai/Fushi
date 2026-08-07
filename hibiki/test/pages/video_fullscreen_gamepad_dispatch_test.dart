@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
-import 'package:hibiki/src/shortcuts/gamepad_service.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/media/video/video_player_shortcuts.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
 /// BUG-697（TODO-1378）：视频**全屏路由**内手柄只有 B（返回）可用，A / D-pad 静默
 /// no-op；窗口模式一切正常。

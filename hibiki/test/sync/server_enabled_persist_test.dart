@@ -3,11 +3,11 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
-import 'package:hibiki/src/sync/hibiki_server_controller.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi/src/sync/hibiki_remote_lookup_service.dart';
+import 'package:fushi/src/sync/hibiki_server_controller.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
 

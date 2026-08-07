@@ -27,7 +27,7 @@ void main() {
     test('文件 import 了 DebugLogService', () {
       expect(
         src.contains(
-            "import 'package:hibiki/src/utils/misc/debug_log_service.dart'"),
+            "import 'package:fushi/src/utils/misc/debug_log_service.dart'"),
         isTrue,
         reason: '三点诊断都经 DebugLogService.instance.enabled 门控，须 import',
       );

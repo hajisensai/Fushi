@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
-import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
+import 'package:fushi/src/media/drag_drop/drop_classification.dart';
+import 'package:fushi/src/media/drag_drop/drop_decision.dart';
 
 /// 漫画库的拖入曾是个功能空洞：`MangaLibraryPage` 只是
 /// `ReaderHibikiHistoryPage(mangaOnly: true)` 的壳，白拿了书架的 drop target，但

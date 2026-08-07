@@ -1,7 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-1108 持久化守卫：`pause_on_lookup`（查词时暂停）默认值改为 **开**。
 ///

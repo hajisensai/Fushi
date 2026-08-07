@@ -2,25 +2,25 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
-import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:hibiki/src/lookup/desktop_lookup_router.dart';
-import 'package:hibiki/src/lookup/global_lookup_controller.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/sync/desktop_lookup_service.dart';
-import 'package:hibiki/src/sync/manual_sync_ui.dart';
-import 'package:hibiki/src/sync/sync_progress_banner.dart';
-import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
-import 'package:hibiki/src/utils/components/clipboard_lookup_text_panel.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/drag_drop/drop_classification.dart';
+import 'package:fushi/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/lookup/desktop_lookup_router.dart';
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/sync/manual_sync_ui.dart';
+import 'package:fushi/src/sync/sync_progress_banner.dart';
+import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
+import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
+import 'package:fushi/utils.dart';
 
 /// 测试可见的查词状态探针：让 widget 行为测试直接断言「查词后 _isSearching 已复位」
 /// 与「_loadMore 不再被永久阻塞」，从而钉住 [TODO-555] 的回归不变量

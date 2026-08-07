@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 
 /// A standard theme divider for use across the applicaton.
 class HibikiDivider extends StatelessWidget {

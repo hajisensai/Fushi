@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/metadata/scrape_title_matcher.dart';
+import 'package:fushi/src/media/metadata/scrape_title_matcher.dart';
 
 void main() {
   test('唯一精确标题在全半角、大小写和装饰符归一化后自动命中', () {

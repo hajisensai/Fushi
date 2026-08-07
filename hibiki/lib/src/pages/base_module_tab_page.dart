@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/src/pages/base_page.dart';
-import 'package:hibiki/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
 
 /// 首页模块 tab 的共通基类：**不要求 MediaType / MediaSource**
 /// （审计 Phase 3.6「页面骨架两套」）。

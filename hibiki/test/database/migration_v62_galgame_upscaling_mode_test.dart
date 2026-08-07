@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart' show QueryRow, Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// v62 迁移（每游戏窗口超分档位）：`galgames` 加 `upscaling_mode` 列，存该游戏的
 /// Magpie 超分档位（`auto` / `installed_only` / `off`）。与 v56 的 `launch_args`

@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// v39 迁移：VideoWatchStatistics 加 book_uid（根治同名视频统计互串，用户拍板）。
 ///

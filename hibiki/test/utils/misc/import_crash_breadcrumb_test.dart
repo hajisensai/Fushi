@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 词典批量导入崩溃面包屑：native 词典解析在进程级硬崩（访问违例 / 栈溢出）时
 /// 会绕过 Dart try/catch 直接带崩整个 app，异步错误日志来不及落盘。

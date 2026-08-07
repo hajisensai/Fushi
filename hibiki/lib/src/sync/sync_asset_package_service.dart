@@ -4,9 +4,9 @@ import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart';
-import 'package:hibiki/src/models/local_audio_source_pref.dart';
-import 'package:hibiki/src/utils/misc/safe_file_name.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/models/local_audio_source_pref.dart';
+import 'package:fushi/src/utils/misc/safe_file_name.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 /// [SyncAssetPackageService.importLocalAudioPackage] 的解析结果：已解压到本机

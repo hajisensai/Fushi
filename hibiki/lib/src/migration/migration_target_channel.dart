@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 /// 迁移目标包名（Phase 0 身份对照表定值）。
 const String kFushiPackageName = 'app.fushi.reader';

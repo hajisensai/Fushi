@@ -2,10 +2,10 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_danmaku_layout.dart';
-import 'package:hibiki/src/media/video/video_danmaku_model.dart';
-import 'package:hibiki/src/media/video/video_danmaku_source.dart';
-import 'package:hibiki/src/media/video/video_danmaku_text_metrics.dart';
+import 'package:fushi/src/media/video/video_danmaku_layout.dart';
+import 'package:fushi/src/media/video/video_danmaku_model.dart';
+import 'package:fushi/src/media/video/video_danmaku_source.dart';
+import 'package:fushi/src/media/video/video_danmaku_text_metrics.dart';
 
 VideoDanmakuItem _item(int startMs, String text) => VideoDanmakuItem(
       startMs: startMs,

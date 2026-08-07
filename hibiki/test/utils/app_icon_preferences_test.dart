@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/app_icon_preferences.dart';
+import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
 
 void main() {
   group('windowIconAssetForPreset', () {

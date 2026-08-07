@@ -2,10 +2,10 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:hibiki/src/media/media_cover_service.dart';
-import 'package:hibiki/src/media/media_extensions.dart';
-import 'package:hibiki/src/mining/galgame_exe_icon.dart';
-import 'package:hibiki/src/storage/app_paths.dart';
+import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/media_extensions.dart';
+import 'package:fushi/src/mining/galgame_exe_icon.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 

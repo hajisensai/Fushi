@@ -5,9 +5,9 @@ import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 // BUG-835：extractFfmpegFailureReason 的正准实现在 ffmpeg_backend.dart（与
 // FfmpegBackend 同层），直接从这里取，不再经 video_clip_exporter 转口。
-import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/ffmpeg_backend.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// TODO-945 M1：把「有声书查词选区 → 整句 cue 区间」的边界判定抽成纯函数，方便单测
 /// 覆盖所有兜底分支（空选区 / 纯外字 / 跨章 / 跨音频文件），并让弹窗入口只负责收集

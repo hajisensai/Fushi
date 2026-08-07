@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/focus/hibiki_focus_target.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
 
 /// An on-screen keyboard driven entirely by a game controller / keyboard: the
 /// D-pad moves focus between keys (geometric, via [HibikiFocusController]) and A

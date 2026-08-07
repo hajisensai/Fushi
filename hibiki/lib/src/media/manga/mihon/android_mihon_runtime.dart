@@ -1,8 +1,8 @@
 import 'package:flutter/services.dart';
 
-import 'package:hibiki/src/media/manga/mihon/mihon_bridge_runtime.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_bridge_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 
 class AndroidMihonRuntime extends MihonBridgeRuntime
     implements CancellableMihonRuntime {

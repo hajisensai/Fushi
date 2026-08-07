@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/media/media_cover_source.dart';
-import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
-import 'package:hibiki/src/media/video/scraper/collection_relations_scrape.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/media_cover_source.dart';
+import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:fushi/src/media/video/scraper/collection_relations_scrape.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 合集详情页「相关作品」横滚区（TODO-2484 UI）。
 ///

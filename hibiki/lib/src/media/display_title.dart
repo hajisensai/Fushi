@@ -1,7 +1,7 @@
-import 'package:hibiki/src/media/media_item.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/mining/galgame_library.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 媒体统一路线 P4：display-title 统一解析门面。
 ///

@@ -5,11 +5,11 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/media/manga/manga_ocr_wizard_dialog.dart';
-import 'package:hibiki/src/media/manga/manga_ocr_wizard_engines.dart';
-import 'package:hibiki/src/ocr/manga_ocr_service.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/manga/manga_ocr_wizard_dialog.dart';
+import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
+import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 /// Fake 内置 OCR 服务：ocrFolder 返回可由测试手动喂事件的 controller。

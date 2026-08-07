@@ -5,7 +5,7 @@
 // 那里删掉模板中的 $caretJs / $selectionJs / $longPressDragJs 会立刻转红，本文件不会。
 // 改这里前先分清你要锁的是语义还是注入，别在本文件里重造装配断言。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
+import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 
 /// 根因守卫：样式变更实时下发（`_applyStylesLive` → `beginStyleReanchorInvocation`）
 /// 依赖 `window.fushiReader.beginStyleReanchor` / `commitStyleReanchor` 存在。

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
-import 'package:hibiki/src/media/video/url_stream_video.dart';
+import 'package:fushi/src/media/drag_drop/drop_classification.dart';
+import 'package:fushi/src/media/video/url_stream_video.dart';
 
 /// TODO-1306 单一真相源守卫：拖入分类用的 [isImportableDropUrl] 必须与流媒体导入的
 /// 权威判据 [isPlayableStreamUrl]（url_stream_video.dart）对同一批样本判定一致——否则

@@ -23,14 +23,14 @@ library;
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
-import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
-import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
-import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
-import 'package:hibiki/src/media/video/video_filename_parser.dart';
-import 'package:hibiki/src/media/video/video_storage.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/video/scraper/bangumi_client.dart';
+import 'package:fushi/src/media/video/scraper/cover_downloader.dart';
+import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/scraper/tmdb_client.dart';
+import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi/src/media/video/video_storage.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 /// 一次集级刮削的结果摘要。

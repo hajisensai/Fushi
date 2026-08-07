@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/media/video/scraper/episode_rename.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/video/scraper/episode_rename.dart';
+import 'package:fushi/utils.dart';
 
 /// 「按刮削重命名各集」确认弹窗（TODO-2491 UI）：逐行旧名 → 新名对照 + 勾选，
 /// 支持全选/取消。与合集改名确认（collection_rename_confirm_dialog.dart，

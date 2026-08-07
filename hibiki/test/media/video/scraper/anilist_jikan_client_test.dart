@@ -1,12 +1,12 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/scraper/anilist_client.dart';
-import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
+import 'package:fushi/src/media/video/scraper/anilist_client.dart';
+import 'package:fushi/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
-import 'package:hibiki/src/media/video/scraper/jikan_client.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
-import 'package:hibiki/src/media/video/scraper/tmdb_default_key.dart';
+import 'package:fushi/src/media/video/scraper/jikan_client.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 
 /// AniList / Jikan 解析层 + TMDB key 取值链的纯函数测试。
 ///

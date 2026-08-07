@@ -1,9 +1,9 @@
 import 'dart:typed_data';
 
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
-import 'package:hibiki/src/sync/forwarded_mine_payload.dart';
-import 'package:hibiki/src/sync/immersion_mine_payload.dart';
+import 'package:fushi/src/sync/forwarded_mine_payload.dart';
+import 'package:fushi/src/sync/immersion_mine_payload.dart';
 
 abstract class HibikiRemoteLookupService {
   Future<DictionarySearchResult?> searchDictionary({

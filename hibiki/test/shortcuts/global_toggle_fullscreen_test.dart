@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 
 // TODO-1093 guards for the window-level ("app 级") fullscreen toggle shortcut.
 // Distinct from videoToggleFullscreen (which only toggles the video surface):

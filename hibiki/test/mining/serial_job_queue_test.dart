@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/serial_job_queue.dart';
+import 'package:fushi/src/mining/serial_job_queue.dart';
 
 /// BUG-956 守卫：串行队列在任意任务/错误处理路径抛异常后都不得毒化，后续任务照常完成。
 void main() {

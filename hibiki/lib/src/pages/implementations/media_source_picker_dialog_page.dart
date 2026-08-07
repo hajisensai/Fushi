@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/utils.dart';
 
 /// The content of the dialog used for picking a source for a media type.
 class MediaSourcePickerDialogPage extends BasePage {

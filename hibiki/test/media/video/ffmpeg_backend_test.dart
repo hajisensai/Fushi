@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
+import 'package:fushi/src/media/video/ffmpeg_backend.dart';
 
 /// ffmpeg 是否在本机可用（CI 可能没有）；用于守卫真跑 ffmpeg 的集成用例。
 Future<bool> _ffmpegAvailable() async {

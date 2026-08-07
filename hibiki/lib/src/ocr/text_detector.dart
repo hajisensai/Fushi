@@ -28,8 +28,8 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
-import 'package:hibiki/src/ocr/ocr_inference.dart';
-import 'package:hibiki/src/ocr/ocr_types.dart';
+import 'package:fushi/src/ocr/ocr_inference.dart';
+import 'package:fushi/src/ocr/ocr_types.dart';
 
 /// RT-DETR 类别 id。
 const int kDetClassBubble = 0;

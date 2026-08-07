@@ -91,7 +91,7 @@ void main() {
       expect(
         src,
         contains(
-          "import 'package:hibiki/src/pages/implementations/collections_page.dart';",
+          "import 'package:fushi/src/pages/implementations/collections_page.dart';",
         ),
       );
       expect(src, contains('void _openCollections()'));

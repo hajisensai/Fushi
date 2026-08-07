@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// TODO-047 子项 A 守卫：FavoriteSentence 新增 source / dateKey 字段的契约 ——
 /// 序列化往返、向后兼容（旧条目无 source → 默认 book、无 dateKey → null），

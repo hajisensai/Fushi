@@ -1,15 +1,15 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/epub/epub_book.dart';
-import 'package:hibiki/src/epub/epub_parser.dart';
-import 'package:hibiki/src/media/audiobook/subtitle_rematch.dart';
-import 'package:hibiki/src/media/import/epub_backed_srt_book.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/epub/epub_book.dart';
+import 'package:fushi/src/epub/epub_parser.dart';
+import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
+import 'package:fushi/src/media/import/epub_backed_srt_book.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 非 UI 进度回调（替代对话框的 reportProgress）。[fraction] 0..1，[message]
 /// 是给用户看的步骤文案（service 不持有 i18n，文案由调用方喂）。

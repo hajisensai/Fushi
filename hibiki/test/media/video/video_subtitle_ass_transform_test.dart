@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// TODO-1374：ASS 招牌类变换标签 `\frz` 旋转 / `\fscx`\`\fscy`(+`\t`) 缩放 / `\move` 运动。
 /// 取自真实「双语.ass」的 `Scr` 招牌行。全部只影响画面装饰字（非对话查词）。

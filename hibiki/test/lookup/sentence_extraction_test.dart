@@ -16,7 +16,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/lookup/sentence_extraction.dart';
+import 'package:fushi/src/lookup/sentence_extraction.dart';
 
 void main() {
   group('extractSentenceAt — boundary walk', () {

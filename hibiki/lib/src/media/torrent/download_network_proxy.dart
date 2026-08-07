@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
-import 'package:hibiki/src/utils/net/app_proxy.dart';
+import 'package:fushi/src/utils/net/app_proxy.dart';
 
 /// 下载网络链路（AniList / Nyaa / Jimaku）单次请求的**整体**超时上限。
 ///

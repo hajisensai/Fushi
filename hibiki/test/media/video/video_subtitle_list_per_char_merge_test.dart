@@ -15,8 +15,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_subtitle_jump_panel.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 AudioCue _cue(String raw, {required int startMs, required int endMs}) {
   final SubtitleMarkup m =

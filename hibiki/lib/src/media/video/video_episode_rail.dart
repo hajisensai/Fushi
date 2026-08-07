@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
-import 'package:hibiki/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 横向剧集轨道的一条展示数据。
 ///

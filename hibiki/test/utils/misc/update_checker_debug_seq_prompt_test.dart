@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/platform_updater.dart';
-import 'package:hibiki/src/utils/misc/update_checker.dart';
+import 'package:fushi/src/utils/misc/platform_updater.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
 
 /// TODO-772 症状1 链路自验：用户报「装着 0.11.1-debug.5613 但没收到更新提示」。
 /// 本测试把 latest-debug.json 形态的 manifest 喂进既有选择链

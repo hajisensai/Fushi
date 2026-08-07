@@ -1,16 +1,16 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/settings/settings_actions.dart';
-import 'package:hibiki/src/settings/settings_context.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/sync/sync_settings_schema.dart'
+import 'package:fushi/pages.dart';
+import 'package:fushi/src/settings/settings_actions.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/sync/sync_settings_schema.dart'
     show buildDataStorageLocationSection;
-import 'package:hibiki/src/sync/sync_http.dart';
-import 'package:hibiki/src/utils/misc/crash_dump_locator.dart';
-import 'package:hibiki/src/utils/misc/platform_updater.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/sync/sync_http.dart';
+import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
+import 'package:fushi/src/utils/misc/platform_updater.dart';
+import 'package:fushi/utils.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 

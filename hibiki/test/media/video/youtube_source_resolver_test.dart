@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/url_stream_video.dart';
+import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
-import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
-import 'package:hibiki_audio/hibiki_audio.dart' show AudioCue;
+import 'package:fushi/src/media/video/youtube_source_resolver.dart';
+import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 
 void main() {
   group('isYoutubeUrl', () {

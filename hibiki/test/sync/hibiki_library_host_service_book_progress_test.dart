@@ -3,10 +3,10 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/app_model_library_host_service.dart';
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
-import 'package:hibiki/src/sync/sync_asset_package_service.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/sync_asset_package_service.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// host-apply 测试（TODO-767 / BUG-417）：互联书籍进度 live 端点必须真读写 host
 /// 自己的 `reader_positions` DB（修复根因：旧路径只把进度写进 host 永不回灌 DB 的

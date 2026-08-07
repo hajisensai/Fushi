@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-import 'package:hibiki/src/media/video/anilist_client.dart';
+import 'package:fushi/src/media/video/anilist_client.dart';
 
 String _pageBody({
   List<Map<String, dynamic>> schedules = const <Map<String, dynamic>>[],

@@ -1,8 +1,8 @@
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
-import 'package:hibiki/src/media/media_item.dart';
+import 'package:fushi/src/media/media_item.dart';
 
 class MediaHistoryRepository extends ChangeNotifier {
   MediaHistoryRepository(

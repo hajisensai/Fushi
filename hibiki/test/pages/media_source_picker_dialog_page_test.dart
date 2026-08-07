@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/pages/implementations/media_source_picker_dialog_page.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/pages/implementations/media_source_picker_dialog_page.dart';
 
 import '../helpers/test_platform_services.dart';
 

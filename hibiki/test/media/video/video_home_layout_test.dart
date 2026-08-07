@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/cover_ui/cover_aspect_probe.dart';
-import 'package:hibiki/src/media/video/video_home_layout.dart';
+import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
+import 'package:fushi/src/media/video/video_home_layout.dart';
 
 /// TODO-2486 视频首页布局/筛选纯函数单测（与页面实现同源消费）。
 void main() {

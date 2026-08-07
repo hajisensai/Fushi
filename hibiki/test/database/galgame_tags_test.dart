@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// BUG-1113「游戏没有标签」：游戏 ↔ 共享 `book_tags` 标签池的映射表（v57）。
 ///

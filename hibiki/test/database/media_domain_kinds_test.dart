@@ -1,8 +1,8 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_audio/hibiki_audio.dart'
+import 'package:fushi_audio/fushi_audio.dart'
     show kFavoriteSentenceTombstoneType;
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 命名统一 Phase 3.4 守卫：四个平行字符串值域的枚举化（活动事件 / 统计来源 /
 /// Profile 绑定 / sync 删除墓碑）——落库串永不改变（Never break userspace）、

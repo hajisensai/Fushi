@@ -1,7 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/reader/reader_settings.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
 
 /// 鼠标滚轮翻页节流间隔（毫秒）的持久化守卫。
 ///

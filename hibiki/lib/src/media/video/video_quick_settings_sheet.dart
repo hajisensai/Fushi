@@ -2,16 +2,16 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki/src/media/video/video_quick_settings_host.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/settings/cupertino_settings_renderer.dart';
-import 'package:hibiki/src/settings/master_detail_settings_sheet.dart';
-import 'package:hibiki/src/settings/material_settings_renderer.dart';
-import 'package:hibiki/src/settings/settings_context.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/settings/settings_renderer.dart';
-import 'package:hibiki/src/settings/settings_schema.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/video/video_quick_settings_host.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
+import 'package:fushi/src/settings/master_detail_settings_sheet.dart';
+import 'package:fushi/src/settings/material_settings_renderer.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_renderer.dart';
+import 'package:fushi/src/settings/settings_schema.dart';
+import 'package:fushi/utils.dart';
 
 /// 视频播放设置面板（阶段 B：schema 投影版）：所有配置行都来自
 /// settings_schema_video.dart 的单一声明，按 [VideoPlacement] group/order/section

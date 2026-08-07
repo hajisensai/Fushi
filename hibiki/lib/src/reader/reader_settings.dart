@@ -2,13 +2,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/media_source.dart' show dbSourcePrefKey;
-import 'package:hibiki/src/reader/font_catalog.dart';
-import 'package:hibiki/src/reader/reader_chrome_floating.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/media_source.dart' show dbSourcePrefKey;
+import 'package:fushi/src/reader/font_catalog.dart';
+import 'package:fushi/src/reader/reader_chrome_floating.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
 
 /// The independent font targets a user can configure (TODO-049 / TODO-864):
 /// 软件系统字体 ([appUi]) / 小说正文字体 ([body]) / 词典字体 ([dictionary]) /

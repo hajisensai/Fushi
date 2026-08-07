@@ -6,13 +6,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:network_to_file_image/network_to_file_image.dart';
 import 'package:transparent_image/transparent_image.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/utils/cover_image.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/src/utils/cover_image.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 import 'package:path/path.dart' as path;
 
 /// 一个 [MediaSource] 偏好在 Drift `preferences` 表里的命名空间化 key：

@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 
 // BUG-119 守卫（TODO-762 起从 TextField 迁到 ListView.builder 后更新）：
 // 日志页（错误日志 / 调试日志）按住鼠标拖拽选区想往上滑复制时，视口曾被「拽回」。

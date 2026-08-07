@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/sync/forwarded_mine_payload.dart';
-import 'package:hibiki/src/sync/hibiki_remote_api_handlers.dart';
-import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
-import 'package:hibiki/src/sync/immersion_mine_payload.dart';
+import 'package:fushi/src/sync/forwarded_mine_payload.dart';
+import 'package:fushi/src/sync/hibiki_remote_api_handlers.dart';
+import 'package:fushi/src/sync/hibiki_remote_lookup_service.dart';
+import 'package:fushi/src/sync/immersion_mine_payload.dart';
 
 /// 假挖词 service：捕获转发来的 payload，回预设结果。
 class _FakeMining implements HibikiRemoteMiningService {

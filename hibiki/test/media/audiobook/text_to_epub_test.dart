@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/text_to_epub.dart';
+import 'package:fushi/src/media/audiobook/text_to_epub.dart';
 
 import '../../helpers/epub_zip_reader.dart';
 

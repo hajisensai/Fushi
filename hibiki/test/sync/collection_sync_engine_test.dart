@@ -1,8 +1,8 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/collection_manifest.dart';
-import 'package:hibiki/src/sync/collection_sync_engine.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/sync/collection_manifest.dart';
+import 'package:fushi/src/sync/collection_sync_engine.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 合集同步引擎收敛性测试（多端库联合视图 §2.3 任务4，spec 任务表「引擎级单测
 /// （双库互推收敛）」）。

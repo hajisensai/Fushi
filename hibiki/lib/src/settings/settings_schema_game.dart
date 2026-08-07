@@ -2,11 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/pages/implementations/game_shared.dart';
-import 'package:hibiki/src/pages/implementations/home_page.dart';
-import 'package:hibiki/src/settings/settings_context.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/pages/implementations/game_shared.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/utils.dart';
 
 /// 「游戏」一级设置分类（审计 K / Phase 3.12：游戏域此前没有任何 destination，
 /// 游戏库 / 捕获工作台 / 兼容性诊断从设置主页既不可达也不可搜）。

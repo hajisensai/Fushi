@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/torrent/qbittorrent_client.dart';
+import 'package:fushi/src/media/torrent/qbittorrent_client.dart';
 
 void main() {
   test('qB WebUI contract works through the real local HTTP stack', () async {

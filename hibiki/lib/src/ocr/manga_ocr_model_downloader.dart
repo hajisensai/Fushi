@@ -15,8 +15,8 @@ import 'dart:math' as math;
 
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/ocr/manga_ocr_model_manifest.dart';
-import 'package:hibiki/src/ocr/manga_ocr_service.dart';
+import 'package:fushi/src/ocr/manga_ocr_model_manifest.dart';
+import 'package:fushi/src/ocr/manga_ocr_service.dart';
 
 /// 默认进度事件的字节间隔（避免大文件每 chunk 一事件淹没 UI）。
 const int kMangaOcrDownloadProgressInterval = 512 * 1024;

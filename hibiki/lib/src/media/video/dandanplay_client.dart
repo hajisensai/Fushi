@@ -8,9 +8,9 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/video/dandanplay_secret.dart';
-import 'package:hibiki/src/media/video/video_danmaku_model.dart';
-import 'package:hibiki/src/media/video/video_danmaku_source.dart';
+import 'package:fushi/src/media/video/dandanplay_secret.dart';
+import 'package:fushi/src/media/video/video_danmaku_model.dart';
+import 'package:fushi/src/media/video/video_danmaku_source.dart';
 
 const int kDandanplayHashPrefixBytes = 16 * 1024 * 1024;
 

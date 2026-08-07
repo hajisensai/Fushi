@@ -5,7 +5,7 @@
 // 那里删掉模板中的 $caretJs / $selectionJs / $longPressDragJs 会立刻转红，本文件不会。
 // 改这里前先分清你要锁的是语义还是注入，别在本文件里重造装配断言。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
+import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 
 /// BUG-369：滚动（连续）模式下，向上滚动「还没到章节开头就提前切到上一章」。
 /// 根因 = 滚轮边界判定用单次瞬时 `scrollTop<=2` 读数，惯性/竖排 rAF 缓动把 scrollTop

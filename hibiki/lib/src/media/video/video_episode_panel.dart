@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/media/video/video_chrome_colors.dart';
-import 'package:hibiki/src/media/video/video_episode_rail.dart';
+import 'package:fushi/src/media/video/video_chrome_colors.dart';
+import 'package:fushi/src/media/video/video_episode_rail.dart';
 
-export 'package:hibiki/src/media/video/video_episode_rail.dart'
+export 'package:fushi/src/media/video/video_episode_rail.dart'
     show VideoEpisodeEntry, VideoEpisodeRail;
 
 /// 视频播放列表的底部剧集轨道。

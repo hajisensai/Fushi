@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_content_styles.dart';
 
 /// BUG-169 源码守卫：JS `paginate()` 的翻页步长必须从「当前页边界」整页步进
 /// （forward = floor(currentScroll/pitch)+1，backward = ceil(currentScroll/pitch)-1），

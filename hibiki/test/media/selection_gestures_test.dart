@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/selection/media_selection_controller.dart';
-import 'package:hibiki/src/media/selection/selection_gestures.dart';
+import 'package:fushi/src/media/selection/media_selection_controller.dart';
+import 'package:fushi/src/media/selection/selection_gestures.dart';
 
 /// 多选手势层：长按扫选的命中反查、启用门控，以及修饰键判定。
 ///

@@ -11,7 +11,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 
-import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
+import 'package:fushi/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;

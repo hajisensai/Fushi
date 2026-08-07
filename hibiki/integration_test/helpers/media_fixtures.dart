@@ -7,15 +7,15 @@
 //   ffmpeg 后端（[resolveFfmpegBackend]）；CI 无 ffmpeg，仅保证编译，真实产出
 //   由真机 e2e 验证。
 //
-// 字幕格式严格对齐各 parser（见 packages/hibiki_audio/lib/src/parsers/）：
+// 字幕格式严格对齐各 parser（见 packages/fushi_audio/lib/src/parsers/）：
 // 时间码一律输出 3 位毫秒，落进各 parser `\d{1,3}` + `padRight(3,'0')` 的
 // 接受区间，保证 ms 级精确 roundtrip（ASS/LRC 的 2 位厘秒精度也接受 3 位）。
 
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/ffmpeg_backend.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// 与各 parser 共用的默认章节标识（`srt://default`）。
 const String kFixtureChapterHref = SrtParser.defaultChapter;

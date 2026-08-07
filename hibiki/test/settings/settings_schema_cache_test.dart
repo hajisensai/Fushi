@@ -5,16 +5,16 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/settings/settings_context.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/settings/settings_schema.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema.dart';
 
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/source_guard.dart';
 import '../helpers/test_platform_services.dart';

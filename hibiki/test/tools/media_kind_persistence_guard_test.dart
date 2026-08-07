@@ -1,7 +1,7 @@
 // 守卫（P5 MediaKind 地基）：合集/书架媒体种类的**持久化形态**只允许经
 // `MediaKind` 派生，不得手写。
 //
-// 两条纪律，都在 `packages/hibiki_core/lib/src/database/media_kind.dart`
+// 两条纪律，都在 `packages/fushi_core/lib/src/database/media_kind.dart`
 // 文件头写死，本守卫把它们从「注释里的君子协定」升级为可执行断言：
 //
 // 1. **复合键只走 `MediaKind.compositeKey`**。折叠归属 map 的键是
@@ -39,11 +39,11 @@ Directory _repoRoot() {
 /// 扫描范围：本仓自有生产代码根（不含 third_party / vendored）。
 const List<String> _libRoots = <String>[
   'hibiki/lib',
-  'packages/hibiki_core/lib',
-  'packages/hibiki_dictionary/lib',
-  'packages/hibiki_anki/lib',
-  'packages/hibiki_audio/lib',
-  'packages/hibiki_platform/lib',
+  'packages/fushi_core/lib',
+  'packages/fushi_dictionary/lib',
+  'packages/fushi_anki/lib',
+  'packages/fushi_audio/lib',
+  'packages/fushi_platform/lib',
 ];
 
 /// 手写复合键字面量：以**字面种类串紧跟 `|`** 开头的字符串。

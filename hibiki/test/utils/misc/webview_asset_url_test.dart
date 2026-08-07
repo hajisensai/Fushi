@@ -7,7 +7,7 @@
 // 文件级 @TestOn('!windows') 门控（CI 跑在 ubuntu-latest，仍完整覆盖），而非改动
 // 生产函数（生产端只在 Apple 上执行，行为正确）。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/webview_asset_url.dart';
+import 'package:fushi/src/utils/misc/webview_asset_url.dart';
 
 void main() {
   group('appleBundleWebViewAssetUrl', () {

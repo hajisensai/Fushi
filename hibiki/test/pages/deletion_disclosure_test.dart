@@ -3,10 +3,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/epub/epub_storage.dart';
-import 'package:hibiki/src/sync/deletion_disclosure.dart';
-import 'package:hibiki/src/utils/components/hibiki_destructive_confirm_dialog.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/epub/epub_storage.dart';
+import 'package:fushi/src/sync/deletion_disclosure.dart';
+import 'package:fushi/src/utils/components/hibiki_destructive_confirm_dialog.dart';
 import 'package:path/path.dart' as p;
 
 /// BUG-1305：删除确认文案与真实删除范围对不上。

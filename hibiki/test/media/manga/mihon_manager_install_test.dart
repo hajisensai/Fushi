@@ -6,11 +6,11 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_extension_store_client.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_manager.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_runtime.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 void main() {
   late Directory root;

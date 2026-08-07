@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/galgame_audio_source.dart';
-import 'package:hibiki/src/mining/galgame_hook_code_profile.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/galgame_hook_code_profile.dart';
 
 void main() {
   String repeated(String value) => List<String>.filled(64, value).join();

@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/main.dart' as app;
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/focus/hibiki_focus_target.dart';
-import 'package:hibiki/src/pages/implementations/game_diagnostics_page.dart';
-import 'package:hibiki/src/pages/implementations/home_game_page.dart';
-import 'package:hibiki/src/pages/implementations/home_page.dart';
-import 'package:hibiki/src/pages/implementations/texthooker_page.dart';
-import 'package:hibiki/src/sync/texthooker_service.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/main.dart' as app;
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/pages/implementations/game_diagnostics_page.dart';
+import 'package:fushi/src/pages/implementations/home_game_page.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/pages/implementations/texthooker_page.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/utils.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:window_manager/window_manager.dart';
 

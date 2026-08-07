@@ -1,11 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 
-import 'package:hibiki/src/focus/webview_key_bridge.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
-import 'package:hibiki/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/focus/webview_key_bridge.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 查词弹窗（纯原生 WebView）要交回宿主页面的输入集合。
 ///

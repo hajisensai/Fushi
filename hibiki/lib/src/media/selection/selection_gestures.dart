@@ -22,7 +22,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderMetaData;
 import 'package:flutter/services.dart';
 
-import 'package:hibiki/src/media/selection/media_selection_controller.dart';
+import 'package:fushi/src/media/selection/media_selection_controller.dart';
 
 /// 多选态内的一次点击该按哪种语义：按住 Shift = 区间扩选，否则普通切换。
 ///

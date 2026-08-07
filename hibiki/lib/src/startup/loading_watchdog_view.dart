@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/utils.dart' show t;
+import 'package:fushi/utils.dart' show t;
 
 /// TODO-1260：启动「加载中」界面（含超时逃生态）。
 ///

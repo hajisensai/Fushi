@@ -3,12 +3,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_session.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/utils/cover_image.dart';
-import 'package:hibiki/src/utils/misc/floating_lyric_hint.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/cover_image.dart';
+import 'package:fushi/src/utils/misc/floating_lyric_hint.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// 首页「正在听书」迷你条（TODO-291 阶段2）。
 ///

@@ -1,12 +1,12 @@
 import 'package:flutter/widgets.dart';
 
-import 'package:hibiki/media.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/pages/implementations/media_library_shell.dart';
-import 'package:hibiki/src/pages/implementations/media_sources_page.dart';
-import 'package:hibiki/src/pages/implementations/module_settings_view.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/src/pages/implementations/media_library_shell.dart';
+import 'package:fushi/src/pages/implementations/media_sources_page.dart';
+import 'package:fushi/src/pages/implementations/module_settings_view.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/utils.dart';
 
 /// The body content for the Reader tab in the main menu.
 class HomeReaderPage extends BaseTabPage {

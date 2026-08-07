@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG-966：字幕跳转列表点词查词制卡，卡片音频截错句（截到播放位置那句，而非被点条目）。
 ///

@@ -2,10 +2,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
-import 'package:hibiki/src/media/video/video_subtitle_style.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
+import 'package:fushi/src/media/video/video_subtitle_style.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// TODO-1326（用户报「字幕没办法改颜色·加一下」）：给视频字幕**文字颜色**加自定义
 /// 设置。模型层（[VideoSubtitleStyle.textColor] 字段 + encode/decode/copyWith）早已就位，

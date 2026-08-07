@@ -1,7 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 // BUG-1052：「每书/每日阅读时长」（reading_statistics.reading_time_ms）与「小时桶」
 // （reading_hourly_logs）此前是**两个独立时钟**——前者拿 `now - _sessionStartTime` 的

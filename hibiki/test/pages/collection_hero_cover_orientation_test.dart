@@ -5,7 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/cover_ui/landscape_cover_image.dart';
+import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 
 /// BUG-1298 守卫：合集详情页 hero 是宽幅槽（整屏宽 × 400~600 高，约 2.7:1），
 /// 而它的图源 `MediaCollections.coverPath` 一个列同时承载两种朝向——导入抽帧的

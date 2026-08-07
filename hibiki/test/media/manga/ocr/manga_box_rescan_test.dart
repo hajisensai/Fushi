@@ -8,13 +8,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/manga/ocr/manga_box_rescan.dart';
-import 'package:hibiki/src/ocr/manga_ocr_model_manifest.dart';
-import 'package:hibiki/src/ocr/manga_ocr_pipeline.dart'
+import 'package:fushi/src/media/manga/ocr/manga_box_rescan.dart';
+import 'package:fushi/src/ocr/manga_ocr_model_manifest.dart';
+import 'package:fushi/src/ocr/manga_ocr_pipeline.dart'
     show kVerticalAspectThreshold;
-import 'package:hibiki/src/ocr/ocr_inference_ort.dart'
+import 'package:fushi/src/ocr/ocr_inference_ort.dart'
     show isLocalOnnxRuntimeAvailable;
-import 'package:hibiki/src/ocr/ocr_types.dart';
+import 'package:fushi/src/ocr/ocr_types.dart';
 
 /// 已知像素图：pixel(x, y) 的 r 通道 = x*10 + y（8x8 内不溢出）。
 img.Image _gridImage({int width = 8, int height = 8}) {

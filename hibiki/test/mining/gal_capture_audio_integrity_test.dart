@@ -1,11 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/mining/galgame_audio_encode.dart';
-import 'package:hibiki/src/mining/galgame_audio_source.dart';
-import 'package:hibiki/src/sync/texthooker_service.dart';
-import 'package:hibiki/src/sync/texthooker_ws_client.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/galgame_audio_encode.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/sync/texthooker_ws_client.dart';
 
 /// BUG-1118 防混入 BGM 的完整性链：
 /// - `grabClipNear` 兜底与 `grabUtterance` 同一份选轨/排除契约（不再绕过排除集）；

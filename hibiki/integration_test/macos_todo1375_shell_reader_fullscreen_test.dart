@@ -10,7 +10,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:macos_ui/macos_ui.dart'
     show MacosWindow, MacosBackButton, MacosIcon;
 
-import 'package:hibiki/main.dart' as app;
+import 'package:fushi/main.dart' as app;
 
 /// TODO-1375 macOS native shell acceptance (offscreen FUSHI_TEST_HIDDEN).
 ///

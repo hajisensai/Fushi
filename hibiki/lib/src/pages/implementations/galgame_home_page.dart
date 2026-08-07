@@ -4,25 +4,25 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/focus/hibiki_focus_target.dart';
-import 'package:hibiki/src/media/display_title.dart';
-import 'package:hibiki/src/media/media_cover_source.dart';
-import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
-import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/mining/galgame_audio_source.dart';
-import 'package:hibiki/src/mining/galgame_helper_installer.dart';
-import 'package:hibiki/src/mining/galgame_library.dart';
-import 'package:hibiki/src/mining/galgame_repository.dart';
-import 'package:hibiki/src/pages/implementations/activity_feed.dart';
-import 'package:hibiki/src/pages/implementations/galgame_detail_page.dart';
-import 'package:hibiki/src/pages/implementations/game_shared.dart';
-import 'package:hibiki/src/pages/implementations/game_statistics_page.dart';
-import 'package:hibiki/src/pages/implementations/stat_shared.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/media/display_title.dart';
+import 'package:fushi/src/media/media_cover_source.dart';
+import 'package:fushi/src/mining/gal_hook_failure_text.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/galgame_helper_installer.dart';
+import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/mining/galgame_repository.dart';
+import 'package:fushi/src/pages/implementations/activity_feed.dart';
+import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
+import 'package:fushi/src/pages/implementations/game_shared.dart';
+import 'package:fushi/src/pages/implementations/game_statistics_page.dart';
+import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/utils.dart';
 
 /// 游戏模块的默认首屏（游戏首页 / 仪表盘），布局对齐 ReinaManager `HomePage`
 /// （见 `docs/design/galgame-library-reina-visual-parity.md` §3）。

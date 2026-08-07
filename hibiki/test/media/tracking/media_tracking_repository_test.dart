@@ -1,8 +1,8 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/tracking/media_tracking_repository.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/tracking/media_tracking_repository.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 void main() {
   late HibikiDatabase db;

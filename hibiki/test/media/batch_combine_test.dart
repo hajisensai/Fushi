@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/collections/batch_combine.dart';
+import 'package:fushi/src/media/collections/batch_combine.dart';
 
 /// 块3 组合三档判定 + 合并目标选择的纯函数单测（widget/DB-free）。
 void main() {

@@ -4,10 +4,10 @@
 //
 // 这条测试走真实页面：装载既有 CSS → 改一个可视参数 → 点保存 → 断言弹回的
 // 字符串里用户那段 CSS 仍然排在托管区段之后。纯函数层的对应守卫在
-// packages/hibiki_anki/test/lapis_styling_test.dart。
+// packages/fushi_anki/test/lapis_styling_test.dart。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/anki/lapis_style_editor_page.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi/src/anki/lapis_style_editor_page.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 import 'lapis_style_editor_harness.dart';
 

@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:hibiki/src/storage/app_paths.dart';
-import 'package:hibiki/src/media/video/url_stream_video.dart';
+import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:path/path.dart' as p;
 
 /// 纯函数（TODO-897）：判断 [videoPath] 是否需要做「本地文件存在性校验」。

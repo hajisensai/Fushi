@@ -2,8 +2,8 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
-import 'package:hibiki/src/media/video/video_clip_exporter.dart';
+import 'package:fushi/src/media/video/ffmpeg_backend.dart';
+import 'package:fushi/src/media/video/video_clip_exporter.dart';
 
 /// 视频/有声书的「逐帧音频能量包络」抽取（TODO-701 阶段1，自动对轴用）。
 ///

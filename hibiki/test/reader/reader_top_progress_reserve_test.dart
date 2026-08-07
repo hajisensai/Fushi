@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_chrome_floating.dart';
+import 'package:fushi/src/reader/reader_chrome_floating.dart';
 
 /// BUG-843：翻页挤压模式下，顶部阅读进度的毛玻璃 pill 压住正文首行（全端复现、
 /// 未开悬浮进度）。

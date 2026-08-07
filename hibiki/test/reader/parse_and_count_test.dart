@@ -4,9 +4,9 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/epub/epub_book.dart';
-import 'package:hibiki/src/epub/epub_parser.dart';
-import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart'
+import 'package:fushi/src/epub/epub_book.dart';
+import 'package:fushi/src/epub/epub_parser.dart';
+import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
     show parseAndCountChapters, ParsedBookData;
 
 void main() {

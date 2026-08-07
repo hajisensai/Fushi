@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_content_styles.dart';
 
 /// TODO-734 纯 Dart 代数守卫（仓库无 headless 浏览器，几何正确性靠代数影子覆盖）。
 ///

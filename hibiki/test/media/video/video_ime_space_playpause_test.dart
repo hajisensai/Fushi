@@ -1,9 +1,9 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
-import 'package:hibiki/src/platform/windows_ime_space_channel.dart';
-import 'package:hibiki/src/platform/windows_ime_space_dispatch.dart';
+import 'package:fushi/src/media/video/video_player_shortcuts.dart';
+import 'package:fushi/src/platform/windows_ime_space_channel.dart';
+import 'package:fushi/src/platform/windows_ime_space_dispatch.dart';
 
 import '../../pages/video_hibiki_page_source_corpus.dart';
 

@@ -1,4 +1,4 @@
-import 'package:hibiki/src/platform/platform_services.dart';
+import 'package:fushi/src/platform/platform_services.dart';
 import 'fake_platform_services.dart';
 
 /// Returns a [PlatformServices] suitable for unit tests.

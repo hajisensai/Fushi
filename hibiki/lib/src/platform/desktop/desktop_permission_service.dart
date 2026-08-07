@@ -1,4 +1,4 @@
-import 'package:hibiki_platform/hibiki_platform.dart';
+import 'package:fushi_platform/fushi_platform.dart';
 
 class DesktopPermissionService implements PlatformPermissionService {
   @override

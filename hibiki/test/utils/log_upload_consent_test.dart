@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:hibiki/src/utils/misc/log_uploader.dart';
-import 'package:hibiki/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/log_uploader.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 void main() {
   // 用一个按钮触发 ensureLogUploadConsent，记录返回值，便于断言三条路径。

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 /// TODO-977 / BUG-464 —— 调色行点背景不应误关开关。
 ///

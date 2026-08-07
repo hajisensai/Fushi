@@ -2,9 +2,9 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_draft.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_merge.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
 
 /// 两个源都填满、且逐字段取值互不相同的 fixture，便于断言「到底选了谁」。
 const GalgameMetadataDraft _bgm = GalgameMetadataDraft(

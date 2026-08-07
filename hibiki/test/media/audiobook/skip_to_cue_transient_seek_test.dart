@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG-061：「从本句播放」三段跳。`preload:false` 跨文件 seek 的加载期
 /// positionStream 会先吐瞬态位置（0 / 旧文件章首），逐 tick 触发跨章/reveal。
@@ -70,7 +70,7 @@ void main() {
   group('explicit-seek suppression wiring guard (BUG-061)', () {
     test('skipToCue / playCueOnce 起 seek 前都立旗，_updateCurrentCue 顶部按谓词放行', () {
       final String src = File(
-        '../packages/hibiki_audio/lib/src/audiobook/audiobook_controller.dart',
+        '../packages/fushi_audio/lib/src/audiobook/audiobook_controller.dart',
       ).readAsStringSync();
 
       // 两条显式 seek 路径都要立旗（至少 2 次）。

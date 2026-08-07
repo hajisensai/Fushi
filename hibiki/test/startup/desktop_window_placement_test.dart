@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/startup/desktop_window_placement.dart';
+import 'package:fushi/src/startup/desktop_window_placement.dart';
 
 void main() {
   group('DesktopWindowPlacement', () {
@@ -123,7 +123,7 @@ void main() {
       expect(
         source,
         contains(
-          "import 'package:hibiki/src/startup/desktop_window_placement.dart';",
+          "import 'package:fushi/src/startup/desktop_window_placement.dart';",
         ),
       );
       expect(

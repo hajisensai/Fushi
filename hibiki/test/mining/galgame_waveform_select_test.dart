@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/galgame_waveform_select.dart';
+import 'package:fushi/src/mining/galgame_waveform_select.dart';
 
 /// galgame 波形选区纯函数单测（docs/specs/galgame-mining A5）：
 /// 像素 ↔ 毫秒往返映射 + VAD 默认框。纯逻辑，无 widget pump。

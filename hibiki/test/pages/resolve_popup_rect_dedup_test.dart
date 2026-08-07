@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 
 /// resolvePopupRect 是查词弹窗位置分流（底部固定 dock vs 跟随选区）的单一收口，
 /// 收口自 base_source_page._calculatePopupPosition 与

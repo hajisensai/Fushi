@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/tag_management_page.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
-import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
-import 'package:hibiki/i18n/strings.g.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/tag_management_page.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 final selectedTagIdsProvider = StateProvider<Set<int>>((_) => {});
 

@@ -10,7 +10,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/gallery_image_picker.dart';
+import 'package:fushi/src/utils/misc/gallery_image_picker.dart';
 
 /// 记录调用并返回可配置结果的假 file_picker 实现（extends 以拿到 token 校验）。
 class _FakeFilePicker extends FilePicker {

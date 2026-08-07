@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/update_checker.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
 
 /// TODO-1310：`fetchAllGitHubReleases` 的纯解析核心 [parseGitHubReleasesResponse]
 /// 守卫——「查看更新日志」页依赖它把 GitHub `releases` 列表 API 响应体转成

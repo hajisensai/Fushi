@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 
 void main() {
   setUp(() {

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
-import 'package:hibiki/src/models/dictionary_import_manager.dart';
+import 'package:fushi/src/models/dictionary_import_manager.dart';
 
 /// TODO-1075：修「词典自动更新永不启用」的初装 gate 空档。
 ///

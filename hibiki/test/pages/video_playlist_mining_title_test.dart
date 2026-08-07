@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
 
 import '../helpers/source_guard.dart';
 import 'video_hibiki_page_source_corpus.dart';

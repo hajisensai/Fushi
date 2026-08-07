@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_clip_export.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/audiobook/audiobook_clip_export.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// TODO-1005 / BUG-472 守卫：有声书片段导出「失败但无任何错误日志」。
 ///

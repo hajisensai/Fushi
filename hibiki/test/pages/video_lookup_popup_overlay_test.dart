@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/focus/focus_geometry.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
-import 'package:hibiki/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/focus/focus_geometry.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
 
 /// 视频查词浮层「调整界面大小后字糊」修复（BUG-051）的守卫，不依赖 media_kit/libmpv。
 ///

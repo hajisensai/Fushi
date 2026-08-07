@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
 
 /// ⚠️ 部分假绿（2026-08-02 定性）：本文件里两个 group 的**前提已被引擎源码证伪**——
 /// `[假绿·前提已证伪] InputBinding.physicalKey (TODO-847 IME fallback)` 与

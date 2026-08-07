@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/selection/media_selection_controller.dart';
+import 'package:fushi/src/media/selection/media_selection_controller.dart';
 
 /// 库页多选状态机：区间选、扫选、锚点失效、分区隔离。
 ///

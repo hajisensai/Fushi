@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/focus/hibiki_focus_target.dart';
-import 'package:hibiki/src/shortcuts/gamepad_service.dart';
-import 'package:hibiki/src/shortcuts/global_navigation.dart';
-import 'package:hibiki/src/utils/components/hibiki_focus_ring.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart';
+import 'package:fushi/src/shortcuts/global_navigation.dart';
+import 'package:fushi/src/utils/components/hibiki_focus_ring.dart';
 
 void main() {
   Future<HibikiFocusController> pumpManagedColumn(

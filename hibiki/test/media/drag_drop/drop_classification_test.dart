@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
-import 'package:hibiki/src/media/video/video_filename_parser.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/drag_drop/drop_classification.dart';
+import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 void main() {
   group('classifyDroppedFiles', () {

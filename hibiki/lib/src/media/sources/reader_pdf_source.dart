@@ -1,12 +1,12 @@
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/utils.dart';
 
 /// PDF 书的媒体源（PDF 阅读器 Phase 1）。
 ///

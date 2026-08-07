@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_context.dart';
 
 enum SettingsDestinationId {
   appearance,

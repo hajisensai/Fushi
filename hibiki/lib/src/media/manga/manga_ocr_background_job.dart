@@ -1,6 +1,6 @@
-import 'package:hibiki/src/media/manga/mokuro_payload.dart';
-import 'package:hibiki/src/media/manga/ocr/manga_ocr_engine.dart';
-import 'package:hibiki/src/ocr/manga_ocr_service.dart';
+import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/ocr/manga_ocr_service.dart';
 
 /// 阅读器持有的非模态整卷 OCR 任务。订阅 [events] 才真正启动底层识别；
 /// 取消订阅会沿用各执行器既有的取消语义，在页边界停止并保留逐页缓存。

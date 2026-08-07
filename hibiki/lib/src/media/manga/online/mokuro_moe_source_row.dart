@@ -15,8 +15,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/utils.dart';
 
 /// 偏好未就绪时的兜底站点（与 `PreferencesRepository` 的默认值一致）。
 const String kMokuroMoeDefaultBaseUrl = 'https://mokuro.moe';

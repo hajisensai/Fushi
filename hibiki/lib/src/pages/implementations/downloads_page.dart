@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki/src/media/manga/manga_module.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_tasks_section.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/airing_calendar_page.dart';
-import 'package:hibiki/src/pages/implementations/anime_download_dialog.dart';
-import 'package:hibiki/src/pages/implementations/download_subscriptions_panel.dart';
-import 'package:hibiki/src/pages/implementations/torrent_settings_section.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/manga/manga_module.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_tasks_section.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/airing_calendar_page.dart';
+import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
+import 'package:fushi/src/pages/implementations/download_subscriptions_panel.dart';
+import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
+import 'package:fushi/utils.dart';
 
 /// 独立「下载」页（顶层底栏 tab）＝统一下载中心：番剧下载流程 **直接内联**
 /// 铺在页面上（搜番 → 选种 → 配字幕 → 推送 + 通用磁力 + 下载任务），任务 tab

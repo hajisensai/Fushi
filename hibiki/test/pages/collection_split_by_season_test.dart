@@ -2,9 +2,9 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/pages/implementations/media_collection_detail_page.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-2489：「按季拆分合集」。
 /// ① 多季合集出菜单 → 预览弹窗每季一节（名字可编辑）→ 确认后逐季建新合集、

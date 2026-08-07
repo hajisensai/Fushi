@@ -34,7 +34,7 @@ import 'dart:ui';
 
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/manga/mokuro_payload.dart';
 
 /// 进程内 per-path 写锁（规范化路径 → 链尾 Future）。
 final Map<String, Future<void>> _mangaJsonWriteChains =

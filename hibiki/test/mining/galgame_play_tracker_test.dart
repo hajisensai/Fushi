@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/galgame_play_tracker.dart';
+import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:path/path.dart' as p;
 
 /// [GalgamePlaySessionMachine] 状态机守卫：假时钟 + 假 probe 驱动，覆盖前台/后台

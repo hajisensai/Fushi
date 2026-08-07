@@ -11,9 +11,9 @@
 // false 或控制器未 start 时本路由返回 false，由调用方回落各自原路由——点词永不
 // 静默丢失。
 
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki/src/lookup/global_lookup_controller.dart';
-import 'package:hibiki/src/models/app_model.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/models/app_model.dart';
 
 /// 桌面悬浮字幕条点词时，从整句文本与点击字符索引解析出真正要查的词
 /// （TODO-376）。优先用语言分词器 Language.wordFromIndex 切出的 [word]；切不出

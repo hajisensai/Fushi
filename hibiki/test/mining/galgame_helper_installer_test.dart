@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/galgame_helper_installer.dart';
+import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:path/path.dart' as p;
 
 /// 绕过当前 zone 的 [IOOverrides]，用于测试里给某一个路径套读取观察器，其余路径仍走真实 IO。

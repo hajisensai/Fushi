@@ -13,8 +13,8 @@ library;
 
 import 'package:flutter/foundation.dart';
 
-import 'package:hibiki/src/media/media_source.dart' show dbSourcePrefKey;
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/media/media_source.dart' show dbSourcePrefKey;
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
 
 /// 一个持久化字段在数据根迁移里的处置。
 enum PathRebaseKind {
@@ -36,7 +36,7 @@ enum PathRebaseKind {
 
 /// 一列 Drift 列的迁移处置声明。
 ///
-/// [table] / [column] 用 packages/hibiki_core/lib/src/database/tables.dart 里的
+/// [table] / [column] 用 packages/fushi_core/lib/src/database/tables.dart 里的
 /// **Dart 名**（表类名 + 列 getter 名），因为守卫测试扫的就是那份源码；SQL 名由 drift
 /// 从它派生（全仓无 named() 显式改名），两者一一对应。
 @immutable

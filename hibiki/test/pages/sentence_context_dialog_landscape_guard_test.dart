@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/sentence_context_dialog.dart';
+import 'package:fushi/src/pages/implementations/sentence_context_dialog.dart';
 
 /// BUG-922：「制卡·选择句子上下文」原生对话框在**横屏矮窗**下句子预览塌陷、只剩选项。
 ///

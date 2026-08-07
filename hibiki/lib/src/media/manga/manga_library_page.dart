@@ -1,12 +1,12 @@
 import 'package:flutter/widgets.dart';
 
-import 'package:hibiki/src/media/manga/manga_browse_page.dart';
-import 'package:hibiki/src/media/manga/manga_sources_page.dart';
-import 'package:hibiki/src/pages/implementations/media_library_shell.dart';
-import 'package:hibiki/src/pages/implementations/module_settings_view.dart';
-import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/manga/manga_browse_page.dart';
+import 'package:fushi/src/media/manga/manga_sources_page.dart';
+import 'package:fushi/src/pages/implementations/media_library_shell.dart';
+import 'package:fushi/src/pages/implementations/module_settings_view.dart';
+import 'package:fushi/src/pages/implementations/reader_hibiki_history_page.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/utils.dart';
 
 /// 顶层漫画库页：**恒为三视图**，五个平台完全同构。
 ///

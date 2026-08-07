@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/startup/observe_blank_detector.dart';
+import 'package:fushi/src/startup/observe_blank_detector.dart';
 
 Uint8List _solid(int w, int h, int r, int g, int b) {
   final Uint8List buf = Uint8List(w * h * 4);

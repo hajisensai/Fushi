@@ -7,7 +7,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
+import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 
 /// TODO-881：有声书自动读逐句 reveal 翻页抖动（中点锚 → 起始边锚）。
 ///

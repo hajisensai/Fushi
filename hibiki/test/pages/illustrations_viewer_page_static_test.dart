@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
-import 'package:hibiki_core/hibiki_core.dart' show HibikiDatabase;
+import 'package:fushi/src/pages/implementations/illustrations_viewer_page.dart';
+import 'package:fushi_core/fushi_core.dart' show HibikiDatabase;
 
 void main() {
   test('illustrations viewer page library compiles', () async {

@@ -12,7 +12,7 @@
 /// 行）；未刮或作品级旧行不产生提案——先刮再改名。
 library;
 
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 纯函数：集号 + 集名 → 展示名。
 ///

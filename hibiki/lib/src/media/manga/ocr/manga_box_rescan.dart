@@ -40,15 +40,15 @@ import 'package:flutter/services.dart'
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/ocr/manga_ocr_model_manifest.dart';
-import 'package:hibiki/src/ocr/manga_ocr_pipeline.dart' show isVerticalBlock;
-import 'package:hibiki/src/ocr/manga_ocr_recognizer.dart';
-import 'package:hibiki/src/ocr/manga_ocr_service_impl.dart'
+import 'package:fushi/src/ocr/manga_ocr_model_manifest.dart';
+import 'package:fushi/src/ocr/manga_ocr_pipeline.dart' show isVerticalBlock;
+import 'package:fushi/src/ocr/manga_ocr_recognizer.dart';
+import 'package:fushi/src/ocr/manga_ocr_service_impl.dart'
     show MangaOcrServiceImpl, resolveOcrPlatform;
-import 'package:hibiki/src/ocr/manga_ocr_tokenizer.dart';
-import 'package:hibiki/src/ocr/ocr_inference.dart';
-import 'package:hibiki/src/ocr/ocr_inference_ort.dart';
-import 'package:hibiki/src/ocr/ocr_types.dart';
+import 'package:fushi/src/ocr/manga_ocr_tokenizer.dart';
+import 'package:fushi/src/ocr/ocr_inference.dart';
+import 'package:fushi/src/ocr/ocr_inference_ort.dart';
+import 'package:fushi/src/ocr/ocr_types.dart';
 
 /// 纯函数：从整页图裁出 [box] 区域（clamp 页内、不缩放、最小 1px）。
 img.Image cropMangaBoxRegion(img.Image page, OcrRect box) {

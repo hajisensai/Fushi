@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/ocr/manga_ocr_pipeline.dart';
-import 'package:hibiki/src/ocr/ocr_types.dart';
+import 'package:fushi/src/ocr/manga_ocr_pipeline.dart';
+import 'package:fushi/src/ocr/ocr_types.dart';
 import 'package:image/image.dart' as img;
 
 /// 用页面图像高度编码页号（height = 1000 + pageIndex），fake 组件借此计数。

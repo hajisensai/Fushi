@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
 
 /// 锁定首页顶层 tab 顺序与「实验视频」开关的条件插入（用户需求：视频 tab 放在
 /// 书架与词典管理之间，且仅在开启实验功能时显示）。用 games（galgame 库）作为紧跟视频

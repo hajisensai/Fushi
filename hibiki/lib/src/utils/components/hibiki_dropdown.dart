@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/focus/hibiki_focus_target.dart';
-import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
-import 'package:hibiki/src/shortcuts/input_binding.dart' show GamepadButton;
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
+import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
 
 /// A single (value, label) choice for [GamepadMenuDropdown].
 typedef GamepadDropdownEntry<T> = ({T value, String label});

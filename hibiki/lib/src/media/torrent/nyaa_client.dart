@@ -4,7 +4,7 @@ import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
 
-import 'package:hibiki/src/media/video/video_filename_parser.dart';
+import 'package:fushi/src/media/video/video_filename_parser.dart';
 
 const String _nyaaNamespace = 'https://nyaa.si/xmlns/nyaa';
 

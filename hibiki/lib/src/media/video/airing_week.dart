@@ -1,4 +1,4 @@
-import 'package:hibiki/src/media/video/anilist_client.dart';
+import 'package:fushi/src/media/video/anilist_client.dart';
 
 /// 放送日历的周窗口/时区纯函数（TODO-2487）。全部无 IO、无状态，单测在
 /// `test/media/video/airing_week_test.dart`。

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/platform_updater.dart';
-import 'package:hibiki/src/utils/misc/update_check_cache.dart';
+import 'package:fushi/src/utils/misc/platform_updater.dart';
+import 'package:fushi/src/utils/misc/update_check_cache.dart';
 
 /// TODO-1024 / BUG-479：更新检查结果缓存的纯单测（不触网络/DB/path_provider）。
 ///

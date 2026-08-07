@@ -4,10 +4,10 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/utils/misc/local_audio_db.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/utils/misc/local_audio_db.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import '../helpers/test_platform_services.dart';

@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/ocr/manga_ocr_model_manifest.dart';
-import 'package:hibiki/src/ocr/manga_ocr_pipeline.dart';
-import 'package:hibiki/src/ocr/manga_ocr_service.dart';
-import 'package:hibiki/src/ocr/manga_ocr_service_impl.dart';
-import 'package:hibiki/src/ocr/ocr_inference.dart';
+import 'package:fushi/src/ocr/manga_ocr_model_manifest.dart';
+import 'package:fushi/src/ocr/manga_ocr_pipeline.dart';
+import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi/src/ocr/manga_ocr_service_impl.dart';
+import 'package:fushi/src/ocr/ocr_inference.dart';
 import 'package:path/path.dart' as p;
 
 /// 与真实清单同名同形（detector + encoder/decoder/vocab），尺寸缩成几字节，

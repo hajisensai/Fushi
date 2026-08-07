@@ -1,5 +1,5 @@
 import 'package:flutter/services.dart';
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 /// Native bridge for hardware volume-key page turning.
 ///

@@ -3,9 +3,9 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/manga_ocr_wizard_dialog.dart';
-import 'package:hibiki/src/media/manga/manga_storage.dart';
-import 'package:hibiki/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/manga/manga_ocr_wizard_dialog.dart';
+import 'package:fushi/src/media/manga/manga_storage.dart';
+import 'package:fushi/src/media/manga/mokuro_payload.dart';
 import 'package:path/path.dart' as p;
 
 /// [checkOcrFolder] 的判定口径：**已入库书目录**（含 manga.json）看页表，

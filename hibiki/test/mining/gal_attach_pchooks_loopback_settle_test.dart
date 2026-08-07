@@ -2,12 +2,12 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/mining/galgame_audio_encode.dart';
-import 'package:hibiki/src/mining/galgame_audio_source.dart';
-import 'package:hibiki/src/mining/window_capture_channel.dart';
-import 'package:hibiki/src/sync/texthooker_service.dart';
-import 'package:hibiki/src/sync/texthooker_ws_client.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/galgame_audio_encode.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/window_capture_channel.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/sync/texthooker_ws_client.dart';
 
 /// BUG-1267 attach 路径不装 LunaHook PC hooks / BUG-1287 提前收束的 loopback 不补全。
 ///

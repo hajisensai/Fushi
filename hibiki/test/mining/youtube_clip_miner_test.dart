@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_audio/hibiki_audio.dart' show AudioCue;
-import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
-import 'package:hibiki/src/mining/youtube_clip_miner.dart';
+import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
+import 'package:fushi/src/media/video/youtube_source_resolver.dart';
+import 'package:fushi/src/mining/youtube_clip_miner.dart';
 
 YoutubeResolvedSource _fakeSource({required bool muxed}) =>
     YoutubeResolvedSource(

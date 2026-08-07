@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/startup/media_handle_registry.dart';
+import 'package:fushi/src/startup/media_handle_registry.dart';
 
 /// TODO-1212：[MediaHandleRegistry] 是数据根迁移前触达页面级媒体播放器（视频主播放器
 /// / 离屏缩略图取帧 Player）释放其 libmpv 文件句柄的唯一通道。这些播放器没有进程级

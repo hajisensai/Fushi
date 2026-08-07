@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/ocr/google_lens_protocol.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 
 /// BUG-1163：`google_lens_fixture.dart` 曾是「测试自己写的 protobuf 编码器 +
 /// 自己抄一遍字段号」的闭环——字段号整体猜错，那批测试照样全绿而线上全错。

@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/widgets.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 
 /// Shared empty result used to mount the popup WebView during the search phase
 /// (BUG-080), so popup.html + JS + CSS cold-load in parallel with the FFI

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/components/galgame_poster_card.dart';
+import 'package:fushi/src/utils/components/galgame_poster_card.dart';
 
 Widget _host(Widget child) => MaterialApp(
       home: Scaffold(

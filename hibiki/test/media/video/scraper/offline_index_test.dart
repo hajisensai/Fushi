@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/scraper/offline_index.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/scraper/offline_index.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 
 void main() {
   late String fixtureText;

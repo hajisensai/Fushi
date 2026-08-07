@@ -1,7 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:sqlite3/sqlite3.dart' show Database;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-809 self-healing backfill migration (v25 -> v26) guard.
 ///

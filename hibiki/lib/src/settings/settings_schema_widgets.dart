@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/settings/settings_context.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/settings/settings_schema_fields.dart';
-import 'package:hibiki/src/settings/settings_search.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
-import 'package:hibiki/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_fields.dart';
+import 'package:fushi/src/settings/settings_search.dart';
+import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 /// 把一个父级 [WidgetBuilder] 包成平台对应的页面路由（Material/Cupertino）。
 /// 两个渲染器各自提供工厂，是它们之间唯一的导航差异。

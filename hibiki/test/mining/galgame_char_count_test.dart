@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/galgame_char_count.dart';
+import 'package:fushi/src/mining/galgame_char_count.dart';
 
 void main() {
   group('countGalgameChars（纯口径：标点不计 · CJK 每字 · 西文每串）', () {

@@ -3,9 +3,9 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:hibiki/src/utils/misc/hibiki_share.dart';
+import 'package:fushi/src/utils/misc/hibiki_share.dart';
 
-import 'package:hibiki/i18n/strings.g.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:path_provider/path_provider.dart';
 
 bool get _isDesktop =>

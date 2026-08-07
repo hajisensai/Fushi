@@ -3,13 +3,13 @@ import 'dart:convert';
 import 'package:drift/native.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/shortcuts/shortcut_preferences.dart';
-import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_preferences.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// BUG-207 regression: [loadShortcutRegistry] must run only AFTER the media
 /// source's in-memory preference cache has been loaded from the database

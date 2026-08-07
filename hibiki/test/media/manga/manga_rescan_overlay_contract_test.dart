@@ -10,9 +10,9 @@ import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/manga/manga_overlay_html.dart';
-import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
-import 'package:hibiki/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/manga/manga_overlay_html.dart';
+import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/media/manga/mokuro_payload.dart';
 
 const List<MokuroImage> _pages = <MokuroImage>[
   MokuroImage(

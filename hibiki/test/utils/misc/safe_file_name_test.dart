@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/safe_file_name.dart';
+import 'package:fushi/src/utils/misc/safe_file_name.dart';
 
 void main() {
   group('safeWindowsFileName', () {

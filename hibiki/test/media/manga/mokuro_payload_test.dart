@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/manga/mokuro_payload.dart';
 
 void main() {
   group('parseMokuro', () {

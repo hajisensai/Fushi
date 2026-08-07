@@ -6,14 +6,14 @@ import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/epub/epub_storage.dart';
-import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
-import 'package:hibiki/src/media/import/import_carrier.dart';
-import 'package:hibiki/src/media/manga/manga_import_dialog.dart';
-import 'package:hibiki/src/media/manga/manga_module.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/epub/epub_storage.dart';
+import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
+import 'package:fushi/src/media/import/import_carrier.dart';
+import 'package:fushi/src/media/manga/manga_import_dialog.dart';
+import 'package:fushi/src/media/manga/manga_module.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 Uint8List _realEpubBytes(String title, {bool pureImage = false}) {

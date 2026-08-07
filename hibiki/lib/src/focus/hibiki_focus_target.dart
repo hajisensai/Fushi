@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
 
 /// TODO-1113 P3: whether mouse click-to-focus should be wired on a focus target.
 ///

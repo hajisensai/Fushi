@@ -1,17 +1,17 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart'
+import 'package:fushi/src/sync/hibiki_library_host_service.dart'
     show RemoteVideoInfo;
-import 'package:hibiki/src/sync/remote_video_client.dart'
+import 'package:fushi/src/sync/remote_video_client.dart'
     show RemoteVideoSource;
-import 'package:hibiki/src/sync/sync_asset_store.dart';
-import 'package:hibiki/src/sync/remote_library_source.dart';
-import 'package:hibiki/src/sync/sync_backend.dart'
+import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi/src/sync/remote_library_source.dart';
+import 'package:fushi/src/sync/sync_backend.dart'
     show SyncBackendError, SyncBackendType;
-import 'package:hibiki/src/sync/sync_orchestrator.dart'
+import 'package:fushi/src/sync/sync_orchestrator.dart'
     show kSyncVideosNamespace, kSyncVideosManifestName;
-import 'package:hibiki/src/sync/video_manifest.dart';
+import 'package:fushi/src/sync/video_manifest.dart';
 
 /// 把云盘备份后端（Google Drive / WebDAV / OneDrive / Dropbox / FTP / SFTP）里由
 /// 「上传视频文件」开关（多端库联合视图 §2.6 / 任务12）推上去的 `__videos__/` 资产，

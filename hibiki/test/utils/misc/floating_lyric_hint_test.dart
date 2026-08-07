@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/utils/misc/floating_lyric_hint.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/floating_lyric_hint.dart';
 
 /// TODO-1227：悬浮窗权限被 ColorOS 风控拒授时，OPPO 系（oppo/realme/oneplus）
 /// 机型换上带解法的引导提示；其余平台/厂商保持原提示。钉死 manufacturer 分支

@@ -1,26 +1,26 @@
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_alignment_service.dart'
+import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart'
     show epubSectionsFromExtractDir, parseCuesForFormat;
-import 'package:hibiki/src/media/import/audiobook_health_summary.dart';
-import 'package:hibiki/src/media/import/epub_backed_srt_book.dart';
-import 'package:hibiki/src/media/import/import_dialog_frame.dart';
-import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
-import 'package:hibiki/src/models/app_model.dart';
+import 'package:fushi/src/media/import/audiobook_health_summary.dart';
+import 'package:fushi/src/media/import/epub_backed_srt_book.dart';
+import 'package:fushi/src/media/import/import_dialog_frame.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
-import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
-import 'package:hibiki/src/media/drag_drop/import_dialog_drop.dart';
-import 'package:hibiki/src/media/import/import_flow_mixin.dart';
-import 'package:hibiki/src/media/audiobook/subtitle_rematch.dart';
-import 'package:hibiki/src/sync/deletion_disclosure.dart';
-import 'package:hibiki/src/sync/deletion_prompt.dart';
-import 'package:hibiki/src/sync/deletion_propagation.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/drag_drop/drop_classification.dart';
+import 'package:fushi/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:fushi/src/media/drag_drop/import_dialog_drop.dart';
+import 'package:fushi/src/media/import/import_flow_mixin.dart';
+import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
+import 'package:fushi/src/sync/deletion_disclosure.dart';
+import 'package:fushi/src/sync/deletion_prompt.dart';
+import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi/utils.dart';
 
 /// 有声书导入/移除对话框。
 ///

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/settings/settings_schema_listening.dart';
-import 'package:hibiki/src/settings/settings_schema_reading.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_listening.dart';
+import 'package:fushi/src/settings/settings_schema_reading.dart';
 
 /// TODO-725 守卫：阅读器设置面板重新归类/排序。
 ///

@@ -2,10 +2,10 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 
 /// TODO-1236：验证「有声书 / 字幕 / 封面」持久写路径的目录解析随桌面自定义数据根走。
 ///

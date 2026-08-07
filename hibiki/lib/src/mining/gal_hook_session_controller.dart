@@ -1,23 +1,23 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
-import 'package:hibiki/src/mining/gal_hook_activity_accumulator.dart';
-import 'package:hibiki/src/mining/galgame_audio_encode.dart';
-import 'package:hibiki/src/mining/galgame_char_count.dart';
-import 'package:hibiki/src/mining/galgame_audio_source.dart';
-import 'package:hibiki/src/mining/galgame_hook_code_profile.dart';
-import 'package:hibiki/src/mining/galgame_play_tracker.dart';
-import 'package:hibiki/src/mining/serial_job_queue.dart';
-import 'package:hibiki/src/mining/galgame_system_ui_filter.dart';
-import 'package:hibiki/src/mining/magpie_upscaling_service.dart';
-import 'package:hibiki/src/mining/window_capture_channel.dart';
-import 'package:hibiki/src/startup/exit_flush_registry.dart';
-import 'package:hibiki/src/sync/texthooker_service.dart';
-import 'package:hibiki/src/sync/texthooker_ws_client.dart';
-import 'package:hibiki/src/sync/texthooker_ws_client_manager.dart';
-import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
+import 'package:fushi/src/mining/gal_hook_activity_accumulator.dart';
+import 'package:fushi/src/mining/galgame_audio_encode.dart';
+import 'package:fushi/src/mining/galgame_char_count.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/galgame_hook_code_profile.dart';
+import 'package:fushi/src/mining/galgame_play_tracker.dart';
+import 'package:fushi/src/mining/serial_job_queue.dart';
+import 'package:fushi/src/mining/galgame_system_ui_filter.dart';
+import 'package:fushi/src/mining/magpie_upscaling_service.dart';
+import 'package:fushi/src/mining/window_capture_channel.dart';
+import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/sync/texthooker_ws_client.dart';
+import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
+import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
 
 /// 落 `activity_events` 的一条游戏活动写入契约。默认实现走 [HibikiDatabase.
 /// addActivityEvent]（[kActivityGame] / [kActivityMediaGame]）；单测可注入假写入方

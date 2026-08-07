@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/shortcuts/global_navigation.dart';
+import 'package:fushi/src/shortcuts/global_navigation.dart';
 
 /// TODO-112 / BUG-196：键盘焦点导航开关关闭时，Tab/Shift+Tab 不应在控件间移动焦点。
 ///

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_chrome_floating.dart';
+import 'package:fushi/src/reader/reader_chrome_floating.dart';
 
 import '../helpers/source_guard.dart';
 

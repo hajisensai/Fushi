@@ -12,19 +12,19 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
-import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
-import 'package:hibiki/src/utils/popup_theme_css.dart';
-import 'package:hibiki/src/reader/dictionary_font_css.dart';
-import 'package:hibiki/src/reader/reader_settings.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/popup_theme_css.dart';
+import 'package:fushi/src/reader/dictionary_font_css.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:path/path.dart' as p;
 
 /// Call-site-specific knobs for [buildPopupSettingsJs]. Everything that must be

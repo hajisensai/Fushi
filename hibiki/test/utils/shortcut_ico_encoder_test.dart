@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/shortcut_icon_sync.dart';
+import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
 import 'package:image/image.dart' as img;
 
 /// 把一帧纯色图编码成 PNG 字节，喂给 [buildMultiSizeIco]。

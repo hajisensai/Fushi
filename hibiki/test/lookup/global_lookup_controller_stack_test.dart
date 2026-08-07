@@ -12,7 +12,7 @@
 // children, no-result-not-pushed, frame id/linkage payload) regresses.
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/lookup/global_lookup_stack.dart';
+import 'package:fushi/src/lookup/global_lookup_stack.dart';
 
 // Mirrors GlobalLookupController._nextFrameId(): a monotonic 'frame-N' minter.
 // The pure stack model never generates ids (so it stays testable); the

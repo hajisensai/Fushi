@@ -1,6 +1,6 @@
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/reader/reader_settings.dart'
+import 'package:fushi/src/reader/reader_settings.dart'
     show ReaderCustomFontCss;
 
 /// EPUB 图片防剧透遮罩「已揭开」状态的稳定归一化 key（BUG-898）。

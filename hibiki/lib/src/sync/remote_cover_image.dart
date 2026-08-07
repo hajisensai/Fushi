@@ -2,10 +2,10 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
-import 'package:hibiki/src/sync/remote_cover_cache.dart';
-import 'package:hibiki/src/sync/remote_cover_fetcher.dart';
+import 'package:fushi/src/sync/remote_cover_cache.dart';
+import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 
-export 'package:hibiki/src/sync/remote_cover_fetcher.dart';
+export 'package:fushi/src/sync/remote_cover_fetcher.dart';
 
 /// 对「互联」远端封面 URL 复用钉扎客户端拉取的 [ImageProvider]（TODO-1235）。
 ///

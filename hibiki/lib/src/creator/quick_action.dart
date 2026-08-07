@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki/models.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/models.dart';
 
 /// An entity that executes an action when selected on the upper-right of a
 /// dictionary entry widget. An action is initialised at runtime in the

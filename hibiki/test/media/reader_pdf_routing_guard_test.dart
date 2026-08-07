@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// PDF 阅读器 Phase 1 的接线守卫（源码扫描 + 键不变量）。
 ///

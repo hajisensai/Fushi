@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/galgame_library.dart';
+import 'package:fushi/src/mining/galgame_library.dart';
 
 /// galgame 游戏库（首页「游戏」tab）纯函数守卫：名称推导 / 新条目默认 / JSON 编解码
 /// 往返 + 容错。持久化走偏好表单一 JSON key，故这些纯函数是列表持久化的根契约。

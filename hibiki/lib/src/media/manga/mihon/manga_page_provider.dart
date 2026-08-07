@@ -8,9 +8,9 @@ import 'package:crypto/crypto.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/manga/mihon/mihon_manager.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 
 const int kMihonPageMemoryCacheBytes = 96 * 1024 * 1024;
 const int kMihonPageDiskCacheBytes = 1024 * 1024 * 1024;

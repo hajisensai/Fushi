@@ -5,7 +5,7 @@
 // 那里删掉模板中的 $caretJs / $selectionJs / $longPressDragJs 会立刻转红，本文件不会。
 // 改这里前先分清你要锁的是语义还是注入，别在本文件里重造装配断言。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_selection_scripts.dart';
+import 'package:fushi/src/reader/reader_selection_scripts.dart';
 
 /// BUG-764 守卫：制卡「上 N 句 / 下 N 句」的相邻句种子游走（charAt / charBefore）必须能
 /// 跨 `<p>`/块级边界——即用 document.body 级 walker，而**不**困在 `findParagraph` 的当前块内。

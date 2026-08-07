@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:hibiki/src/reader/reader_settings.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
 
 class ReaderLayoutDefaults {
   ReaderLayoutDefaults._();

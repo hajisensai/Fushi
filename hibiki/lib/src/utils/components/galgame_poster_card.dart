@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/focus/hibiki_focus_target.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
-import 'package:hibiki/src/utils/components/shelf_card_widgets.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 /// galgame 竖版海报卡（对齐 ReinaManager 库页/首页的卡片观感，见
 /// `docs/design/galgame-library-reina-visual-parity.md` §1）。

@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
 
 /// TODO-916 症状③：点英文字幕必须点首字母才能查词。
 ///

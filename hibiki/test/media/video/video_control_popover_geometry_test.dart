@@ -2,9 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_control_customization.dart';
-import 'package:hibiki/src/media/video/video_control_popover_placement.dart';
-import 'package:hibiki/src/media/video/video_volume_overlays.dart';
+import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/media/video/video_control_popover_placement.dart';
+import 'package:fushi/src/media/video/video_volume_overlays.dart';
 import '../../pages/video_hibiki_page_source_corpus.dart';
 
 void main() {

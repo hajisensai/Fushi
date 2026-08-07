@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/video/video_shader_downloader.dart';
-import 'package:hibiki/src/media/video/video_shader_tier.dart';
+import 'package:fushi/src/media/video/video_shader_downloader.dart';
+import 'package:fushi/src/media/video/video_shader_tier.dart';
 
 /// TODO-041 方案甲'（飞书 O54）五档画质映射守卫：钉死「无/低/中/高/极高」各自落到
 /// 哪套底层状态（mpv 内置缩放开关 + GLSL 启用集），并验证档位↔状态双向投影一致。

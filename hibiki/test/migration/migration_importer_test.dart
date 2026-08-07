@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:archive/archive_io.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/migration/migration_exporter.dart';
-import 'package:hibiki/src/migration/migration_importer.dart';
-import 'package:hibiki/src/migration/migration_manifest.dart';
+import 'package:fushi/src/migration/migration_exporter.dart';
+import 'package:fushi/src/migration/migration_importer.dart';
+import 'package:fushi/src/migration/migration_manifest.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 

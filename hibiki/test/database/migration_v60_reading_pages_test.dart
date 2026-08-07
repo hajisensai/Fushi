@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// v60 迁移：`reading_statistics` 增加 `pages_read`（漫画/PDF 的页数维度）。
 ///

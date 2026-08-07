@@ -10,9 +10,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/anki/anki_media_dedup_runner.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 /// 带模态进度对话框跑一轮去重（BUG-1263）。
 ///

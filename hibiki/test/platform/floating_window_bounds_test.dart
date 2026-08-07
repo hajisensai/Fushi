@@ -1,7 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/platform/floating_window_bounds.dart';
+import 'package:fushi/src/platform/floating_window_bounds.dart';
 
 /// Truth table for TODO-832 floating-window off-screen clamp. The native Win32
 /// (ClampOriginToWorkArea) and Android (clampToScreen) paths re-implement this

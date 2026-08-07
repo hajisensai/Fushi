@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_playback.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 
 /// BUG-1015 守卫：桌面首次查词自动发音无声 = just_audio_media_kit 首次平台激活吞掉
 /// 第一段播放输出。修复在启动时用一段全零 PCM 静音走一遍完整播放周期预热掉冷启动。

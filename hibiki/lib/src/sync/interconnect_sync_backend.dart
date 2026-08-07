@@ -2,25 +2,25 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/src/sync/collection_manifest.dart';
-import 'package:hibiki/src/sync/deletion_propagation.dart';
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
-import 'package:hibiki/src/sync/interconnect_service_config.dart';
-import 'package:hibiki/src/sync/remote_book_client.dart';
-import 'package:hibiki/src/sync/remote_cover_fetcher.dart';
-import 'package:hibiki/src/sync/remote_library_source.dart';
-import 'package:hibiki/src/sync/remote_video_client.dart';
-import 'package:hibiki/src/utils/misc/resumable_downloader.dart';
-import 'package:hibiki/src/sync/sync_asset_store.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/src/sync/tls/hibiki_pinning_http.dart';
-import 'package:hibiki/src/sync/sync_utils.dart';
-import 'package:hibiki/src/sync/ttu_filename.dart';
-import 'package:hibiki/src/sync/sync_file_ref.dart';
-import 'package:hibiki/src/sync/ttu_models.dart';
-import 'package:hibiki/src/sync/webdav_ops.dart';
+import 'package:fushi/src/sync/collection_manifest.dart';
+import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/interconnect_service_config.dart';
+import 'package:fushi/src/sync/remote_book_client.dart';
+import 'package:fushi/src/sync/remote_cover_fetcher.dart';
+import 'package:fushi/src/sync/remote_library_source.dart';
+import 'package:fushi/src/sync/remote_video_client.dart';
+import 'package:fushi/src/utils/misc/resumable_downloader.dart';
+import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_backend_file_trio_mixin.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/tls/hibiki_pinning_http.dart';
+import 'package:fushi/src/sync/sync_utils.dart';
+import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi/src/sync/sync_file_ref.dart';
+import 'package:fushi/src/sync/ttu_models.dart';
+import 'package:fushi/src/sync/webdav_ops.dart';
 
 /// Probes whether a single Hibiki server URL is reachable with [token].
 /// Returns true if reachable, false on connectivity failure/timeout, and

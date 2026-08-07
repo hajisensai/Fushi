@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 const int kGoogleLensDisclosureVersion = 1;
 const String kGoogleLensDisclosurePreferenceKey =

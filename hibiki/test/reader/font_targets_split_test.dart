@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_settings.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-225 / TODO-221A: custom fonts are stored as one shared catalog plus
 /// per-target membership/order/enabled rows. The old public list API remains

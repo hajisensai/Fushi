@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki_core/hibiki_core.dart' show mimeTypeForFilePath;
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
 import 'package:html/parser.dart' as html_parser;
 import 'package:html/dom.dart' as html_dom;
 import 'package:path/path.dart' as p;

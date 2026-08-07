@@ -27,12 +27,12 @@ library;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:hibiki_core/hibiki_core.dart' show MediaKind;
+import 'package:fushi_core/fushi_core.dart' show MediaKind;
 
-import 'package:hibiki/src/media/media_item.dart' show MediaItem;
-import 'package:hibiki/src/models/app_model.dart' show AppModel;
-import 'package:hibiki/src/sync/remote_cover_image.dart';
-import 'package:hibiki/src/utils/cover_image.dart'
+import 'package:fushi/src/media/media_item.dart' show MediaItem;
+import 'package:fushi/src/models/app_model.dart' show AppModel;
+import 'package:fushi/src/sync/remote_cover_image.dart';
+import 'package:fushi/src/utils/cover_image.dart'
     show kLocalCoverDecodePixelWidth, resizedFileImage;
 
 /// 解析一条媒体的封面图源；返回 null = 无封面可显示，调用方画占位

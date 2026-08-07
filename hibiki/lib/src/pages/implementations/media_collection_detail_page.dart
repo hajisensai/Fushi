@@ -5,43 +5,43 @@ import 'package:flutter/material.dart';
 
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/focus/hibiki_focus_target.dart';
-import 'package:hibiki/src/media/collections/collection_asset_reclaim.dart';
-import 'package:hibiki/src/media/collections/collection_continue.dart';
-import 'package:hibiki/src/media/collections/collection_one_key_sort.dart'
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi/src/media/collections/collection_continue.dart';
+import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show CollectionSortMeta, compareCollectionMembers;
-import 'package:hibiki/src/media/collections/collection_season_groups.dart';
-import 'package:hibiki/src/media/media_cover_source.dart';
-import 'package:hibiki/src/media/video/anilist_client.dart' show AniListMedia;
-import 'package:hibiki/src/media/video/cover_ui/episode_rename_confirm_dialog.dart';
-import 'package:hibiki/src/media/video/cover_ui/landscape_cover_image.dart';
-import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
-import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
-import 'package:hibiki/src/media/video/scraper/collection_relations_scrape.dart'
+import 'package:fushi/src/media/collections/collection_season_groups.dart';
+import 'package:fushi/src/media/media_cover_source.dart';
+import 'package:fushi/src/media/video/anilist_client.dart' show AniListMedia;
+import 'package:fushi/src/media/video/cover_ui/episode_rename_confirm_dialog.dart';
+import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
+import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:fushi/src/media/video/scraper/bangumi_client.dart';
+import 'package:fushi/src/media/video/scraper/collection_relations_scrape.dart'
     show CollectionRelationType;
-import 'package:hibiki/src/media/video/scraper/collection_scrape_apply.dart';
-import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
-import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
-import 'package:hibiki/src/media/video/scraper/episode_rename.dart';
-import 'package:hibiki/src/media/video/scraper/episode_scrape_service.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
-import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
-import 'package:hibiki/src/media/video/scraper/tmdb_default_key.dart';
-import 'package:hibiki/src/media/video/video_storage.dart';
-import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki/src/media/video/video_filename_parser.dart';
-import 'package:hibiki/src/media/video/video_library_overview.dart'
+import 'package:fushi/src/media/video/scraper/collection_scrape_apply.dart';
+import 'package:fushi/src/media/video/scraper/cover_downloader.dart';
+import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
+import 'package:fushi/src/media/video/scraper/episode_rename.dart';
+import 'package:fushi/src/media/video/scraper/episode_scrape_service.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/scraper/tmdb_client.dart';
+import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
+import 'package:fushi/src/media/video/video_storage.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi/src/media/video/video_library_overview.dart'
     show formatVideoPosition;
-import 'package:hibiki/src/pages/implementations/anime_download_dialog.dart';
-import 'package:hibiki/src/pages/implementations/collection_detail_shared.dart';
-import 'package:hibiki/src/pages/implementations/collection_relations_section.dart';
-import 'package:hibiki/src/pages/implementations/collection_split_dialog.dart';
-import 'package:hibiki/src/pages/implementations/jimaku_batch_dialog.dart';
-import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
-import 'package:hibiki/src/utils/components/hibiki_reorderable_grid.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
+import 'package:fushi/src/pages/implementations/collection_detail_shared.dart';
+import 'package:fushi/src/pages/implementations/collection_relations_section.dart';
+import 'package:fushi/src/pages/implementations/collection_split_dialog.dart';
+import 'package:fushi/src/pages/implementations/jimaku_batch_dialog.dart';
+import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/src/utils/components/hibiki_reorderable_grid.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// 统一合集 Phase 4：合集详情页（Jellyfin 式）。playlist 合集 = 有序剧集列表：点某集从

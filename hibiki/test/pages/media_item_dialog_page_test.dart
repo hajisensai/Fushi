@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
 
 /// The long-press "book settings" dialog shows the cover complete at the top and
 /// a column of full-width action buttons below it: a primary "read" launch

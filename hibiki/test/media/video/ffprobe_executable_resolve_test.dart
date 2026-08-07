@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
+import 'package:fushi/src/media/video/ffmpeg_backend.dart';
 
 /// TODO-1045：ffprobe 可执行解析优先级镜像 ffmpeg——FUSHI_FFPROBE 覆盖 >
 /// 程序旁捆绑 ffprobe > 系统 PATH；以及 bundled 跑不起来回退 PATH 的 CLI 逻辑。

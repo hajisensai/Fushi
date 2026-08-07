@@ -6,17 +6,17 @@ import 'package:http/http.dart' as http;
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 
-import 'package:hibiki/src/media/torrent/anime_download_subscription.dart';
-import 'package:hibiki/src/media/torrent/download_network_proxy.dart';
-import 'package:hibiki/src/media/video/airing_calendar_cache.dart';
-import 'package:hibiki/src/media/video/airing_week.dart';
-import 'package:hibiki/src/media/video/anilist_client.dart';
-import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/media_collection_detail_page.dart';
-import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
+import 'package:fushi/src/media/torrent/download_network_proxy.dart';
+import 'package:fushi/src/media/video/airing_calendar_cache.dart';
+import 'package:fushi/src/media/video/airing_week.dart';
+import 'package:fushi/src/media/video/anilist_client.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
+import 'package:fushi/src/pages/implementations/video_hibiki_page.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 放送日历页（TODO-2487，hayase Schedule 式周历）：周一到周日七列（窄屏切
 /// 按天分组列表），默认只显示与本地相关的番剧——合集绑定的 anilistId + 下载

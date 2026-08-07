@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_black_flicker_detector.dart';
+import 'package:fushi/src/media/video/video_black_flicker_detector.dart';
 
 /// 便捷构造：给定「本窗新增迟帧数」返回一个 1 秒播放采样，内部把累计值自增维护。
 class _Feeder {

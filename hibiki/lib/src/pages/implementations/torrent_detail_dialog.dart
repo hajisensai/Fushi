@@ -3,13 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki/src/media/torrent/anime_download_config.dart';
-import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
-import 'package:hibiki/src/media/torrent/torrent_backend.dart';
-import 'package:hibiki/src/media/torrent/torrent_task_display.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/download_actions.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/torrent/anime_download_config.dart';
+import 'package:fushi/src/media/torrent/anime_download_plan.dart';
+import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/torrent/torrent_task_display.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/download_actions.dart';
+import 'package:fushi/utils.dart';
 
 /// TODO-2482：下载任务详情对话框（qb/hayase 式四 tab：总览 / 文件 /
 /// 节点 / Tracker）。入口 = 下载任务行点击。

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
-import 'package:hibiki/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 /// One selectable (value, label) entry for [HibikiOptionSelectionPage].
 class HibikiOptionSelectionOption<T> {

@@ -10,13 +10,13 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/main.dart' as app;
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/pages/implementations/home_page.dart'
+import 'package:fushi/main.dart' as app;
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart'
     show HomePage, HomeTab;
-import 'package:hibiki/src/pages/implementations/home_video_page.dart'
+import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show HomeVideoPage;
-import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart'
+import 'package:fushi/src/pages/implementations/reader_hibiki_history_page.dart'
     show ReaderHibikiHistoryPage;
 import 'package:integration_test/integration_test.dart';
 

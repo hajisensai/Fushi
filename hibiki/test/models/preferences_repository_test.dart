@@ -1,9 +1,9 @@
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/models/audio_source_config.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/models/audio_source_config.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 
 HibikiDatabase _testDb() {
   return HibikiDatabase.forTesting(

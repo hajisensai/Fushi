@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/collections/collection_continue.dart';
+import 'package:fushi/src/media/collections/collection_continue.dart';
 
 CollectionMemberProgress _m({int? pos, bool done = false}) =>
     CollectionMemberProgress(positionMs: pos, completed: done);

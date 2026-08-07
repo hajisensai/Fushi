@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/collections/collection_one_key_sort.dart';
+import 'package:fushi/src/media/collections/collection_one_key_sort.dart';
 
 /// BUG-1436：批量「组合成合集」此前直接按选择集（`Set<String>`，迭代序 = 点选/
 /// 框选顺序）逐条 `addToCollection`，sortIndex 就此定型——用户框选一整季建出来的

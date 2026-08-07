@@ -1,8 +1,8 @@
 import 'dart:io';
 
-import 'package:hibiki/src/sync/aggregate_snapshot.dart';
-import 'package:hibiki/src/sync/collection_manifest.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/sync/aggregate_snapshot.dart';
+import 'package:fushi/src/sync/collection_manifest.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 // ── 术语约定（命名统一轮审计词表）────────────────────────────────────────────

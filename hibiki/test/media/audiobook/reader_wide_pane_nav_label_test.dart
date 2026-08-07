@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 
 // TODO-1143 行为守卫：宽窗阅读器快捷设置左父菜单固定 208px，长分类标签「布局与显示」
 // (选中加粗) 曾被 HibikiListItem 默认 titleMaxLines:1 + ellipsis 截断成「布局与…」。

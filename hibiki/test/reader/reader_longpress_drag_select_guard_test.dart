@@ -6,11 +6,11 @@
 // 改这里前先分清你要锁的是语义还是注入，别在本文件里重造装配断言。
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/reader/reader_content_styles.dart';
-import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
-import 'package:hibiki/src/reader/reader_selection_scripts.dart';
-import 'package:hibiki/src/reader/reader_settings.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_pagination_scripts.dart';
+import 'package:fushi/src/reader/reader_selection_scripts.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
 
 /// TODO-1317: 手机「长按没办法选中文本（书籍）」根因守卫。
 ///

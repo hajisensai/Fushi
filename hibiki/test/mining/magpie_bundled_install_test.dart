@@ -12,7 +12,7 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/magpie_installer.dart';
+import 'package:fushi/src/mining/magpie_installer.dart';
 import 'package:path/path.dart' as p;
 
 import '../helpers/source_guard.dart';

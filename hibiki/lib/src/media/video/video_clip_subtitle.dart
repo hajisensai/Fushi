@@ -1,4 +1,4 @@
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 import 'package:path/path.dart' as p;
 
 /// 片段导出的字幕封装：把**播放器内存里的 cue 列表**裁成片段区间的 SRT 文本。

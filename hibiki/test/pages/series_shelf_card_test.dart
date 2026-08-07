@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/focus/hibiki_focus_target.dart';
-import 'package:hibiki/src/pages/implementations/series_shelf_card.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/pages/implementations/series_shelf_card.dart';
 
 /// TODO-616 A2 / TODO-947 SeriesShelfCard guard:
 ///  - renders series name + member-count badge (series_item_count).

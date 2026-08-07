@@ -5,8 +5,8 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/media/manga/reader/manga_rescan_result_sheet.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/manga/reader/manga_rescan_result_sheet.dart';
 
 Widget _wrap(Widget child) {
   return TranslationProvider(

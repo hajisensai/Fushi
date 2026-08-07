@@ -3,9 +3,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/media/video/video_control_customization.dart';
-import 'package:hibiki/src/media/video/video_control_item_presentation.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/media/video/video_control_item_presentation.dart';
+import 'package:fushi/utils.dart';
 
 /// 控制条 9 槽位拖拽编辑器（TODO-274/312 phase 2）。从旧
 /// `VideoQuickSettingsSheet._buildControlDragEditor` 系列方法原样抽出为独立控件

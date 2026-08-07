@@ -1,5 +1,5 @@
 import 'package:flutter/services.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
 
 /// One discrete action against the char-level reading cursor while it is active.
 ///

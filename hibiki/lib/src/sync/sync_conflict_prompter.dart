@@ -1,9 +1,9 @@
 import 'package:flutter/widgets.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_compare_dialog.dart';
-import 'package:hibiki/src/sync/sync_orchestrator.dart';
-import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_compare_dialog.dart';
+import 'package:fushi/src/sync/sync_orchestrator.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 冲突来源：决定弹窗的时机约束。
 enum ConflictSource { manual, auto, background }

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 
 /// TODO-840 Part B：字幕遮蔽模式三态的 preferences 层 lazy 投影守卫。
 ///

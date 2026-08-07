@@ -5,11 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki/src/media/video/video_subtitle_jump_panel.dart';
-import 'package:hibiki/src/media/video/video_subtitle_selection.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
+import 'package:fushi/src/media/video/video_subtitle_selection.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 AudioCue _cue(int i, int s, int e, String text) => AudioCue()
   ..bookKey = 'video/1'

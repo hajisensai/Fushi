@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/video/anilist_client.dart';
-import 'package:hibiki/src/media/video/jimaku_client.dart';
-import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart';
+import 'package:fushi/src/media/video/anilist_client.dart';
+import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
 
 /// Jimaku 对话框两栏布局重构的回归测试。
 ///

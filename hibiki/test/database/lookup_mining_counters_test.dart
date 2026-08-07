@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-1204: lookup / mining per-book counters (lookup_mining_counters).
 Future<HibikiDatabase> _openDb() async {

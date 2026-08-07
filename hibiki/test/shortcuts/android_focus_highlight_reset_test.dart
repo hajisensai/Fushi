@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/shortcuts/gamepad_service.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart';
 
 /// TODO-939 / BUG-452: on Android the Material focus ring lit by a gamepad /
 /// D-pad key event would NOT clear on a touch swipe (and never on a controller

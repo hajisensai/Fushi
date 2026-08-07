@@ -2,31 +2,31 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:hibiki/src/epub/book_css_repository.dart';
-import 'package:hibiki/src/epub/epub_importer.dart';
-import 'package:hibiki/src/media/video/video_sidecar.dart'
+import 'package:fushi/src/epub/book_css_repository.dart';
+import 'package:fushi/src/epub/epub_importer.dart';
+import 'package:fushi/src/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
-import 'package:hibiki/src/models/local_audio_manager.dart';
-import 'package:hibiki/src/sync/collection_manifest.dart';
-import 'package:hibiki/src/sync/collection_sync_engine.dart';
-import 'package:hibiki/src/sync/deletion_propagation.dart';
-import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
-import 'package:hibiki/src/sync/interconnect_service_config.dart';
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
-import 'package:hibiki/src/sync/aggregate_sync_service.dart';
-import 'package:hibiki/src/sync/sync_asset_package_service.dart';
-import 'package:hibiki/src/sync/sync_asset_store.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_remote_listing.dart';
-import 'package:hibiki/src/sync/sync_manager.dart';
-import 'package:hibiki/src/sync/sync_progress.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/src/sync/ttu_filename.dart';
-import 'package:hibiki/src/sync/sync_file_ref.dart';
-import 'package:hibiki/src/sync/video_manifest.dart';
-import 'package:hibiki_audio/hibiki_audio.dart'
+import 'package:fushi/src/models/local_audio_manager.dart';
+import 'package:fushi/src/sync/collection_manifest.dart';
+import 'package:fushi/src/sync/collection_sync_engine.dart';
+import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/interconnect_service_config.dart';
+import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/aggregate_sync_service.dart';
+import 'package:fushi/src/sync/sync_asset_package_service.dart';
+import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_remote_listing.dart';
+import 'package:fushi/src/sync/sync_manager.dart';
+import 'package:fushi/src/sync/sync_progress.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi/src/sync/sync_file_ref.dart';
+import 'package:fushi/src/sync/video_manifest.dart';
+import 'package:fushi_audio/fushi_audio.dart'
     show FavoriteSentence, FavoriteSentenceRepository;
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 /// Reserved top-level folder (under the backend root) that holds dictionary

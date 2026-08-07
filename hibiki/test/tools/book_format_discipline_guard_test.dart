@@ -25,18 +25,18 @@ library;
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/source_guard.dart';
 import '../helpers/scan_scale.dart';
 
 /// DAO 所在文件（相对 `hibiki/`，故要跳出去一层）。
 const String kDaoFile =
-    '../packages/hibiki_core/lib/src/database/database.dart';
+    '../packages/fushi_core/lib/src/database/database.dart';
 
 /// 枚举定义文件。
 const String kEnumFile =
-    '../packages/hibiki_core/lib/src/database/book_format.dart';
+    '../packages/fushi_core/lib/src/database/book_format.dart';
 
 /// 本守卫自身：正文里写满了被禁的字面量当反例，不能扫自己。
 const String kSelfPath = 'test/tools/book_format_discipline_guard_test.dart';
@@ -106,7 +106,7 @@ void main() {
   const List<String> roots = <String>[
     'lib',
     'test',
-    '../packages/hibiki_core/lib',
+    '../packages/fushi_core/lib',
   ];
 
   test('扫描规模哨兵：三个扫描根确实都被枚举到了', () {

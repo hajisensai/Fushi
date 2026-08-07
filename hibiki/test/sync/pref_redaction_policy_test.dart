@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/pref_redaction_policy.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/pref_redaction_policy.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 
 /// [PrefRedactionPolicy] 是「一条 pref 能不能离开本设备」的唯一真相源。
 ///

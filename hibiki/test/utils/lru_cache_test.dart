@@ -5,7 +5,7 @@
 //    条数兜底、clear 归零；
 // 3. 运行期调整 maxBytes（低内存模式切换）立即淘汰。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/lru_cache.dart';
+import 'package:fushi/src/utils/misc/lru_cache.dart';
 
 void main() {
   group('LruCache count-only mode (legacy behavior unchanged)', () {

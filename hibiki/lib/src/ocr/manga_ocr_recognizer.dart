@@ -21,10 +21,10 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
-import 'package:hibiki/src/ocr/beam_search.dart';
-import 'package:hibiki/src/ocr/manga_ocr_tokenizer.dart';
-import 'package:hibiki/src/ocr/ocr_inference.dart';
-import 'package:hibiki/src/ocr/ocr_types.dart';
+import 'package:fushi/src/ocr/beam_search.dart';
+import 'package:fushi/src/ocr/manga_ocr_tokenizer.dart';
+import 'package:fushi/src/ocr/ocr_inference.dart';
+import 'package:fushi/src/ocr/ocr_types.dart';
 
 /// encoder 输入边长。
 const int kRecInputSize = 224;

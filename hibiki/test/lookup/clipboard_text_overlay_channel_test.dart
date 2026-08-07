@@ -3,8 +3,8 @@
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/lookup/clipboard_text_overlay_controller.dart';
-import 'package:hibiki/src/platform/clipboard_text_overlay_channel.dart';
+import 'package:fushi/src/lookup/clipboard_text_overlay_controller.dart';
+import 'package:fushi/src/platform/clipboard_text_overlay_channel.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

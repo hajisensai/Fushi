@@ -26,11 +26,11 @@ import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 
-import 'package:hibiki/src/ocr/manga_ocr_folder_job.dart'
+import 'package:fushi/src/ocr/manga_ocr_folder_job.dart'
     show kMangaOcrOutDirName;
-import 'package:hibiki/src/ocr/manga_ocr_service.dart';
-import 'package:hibiki/src/utils/misc/safe_file_name.dart';
-import 'package:hibiki_core/hibiki_core.dart' show fnv1a64Hex;
+import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi/src/utils/misc/safe_file_name.dart';
+import 'package:fushi_core/fushi_core.dart' show fnv1a64Hex;
 
 /// 任务状态机（wire 值即枚举名）。pending → uploading → running →
 /// done | error | cancelled；running 覆盖「排队等前一任务」与「真在跑」两态

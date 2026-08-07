@@ -5,10 +5,10 @@ import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/app_model_library_host_service.dart';
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
-import 'package:hibiki/src/sync/sync_asset_package_service.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/sync_asset_package_service.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 // ── 辅助 ──────────────────────────────────────────────────────────────────

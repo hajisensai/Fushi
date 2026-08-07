@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-import 'package:hibiki/src/mining/metadata/galgame_metadata_draft.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_merge.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
 
 /// 游玩状态（契约 §1.5）。数值**故意对齐 Bangumi 收藏 type**，省掉一层映射；
 /// [value] 直接落 `galgames.playStatus` 列，**不可随意改**。

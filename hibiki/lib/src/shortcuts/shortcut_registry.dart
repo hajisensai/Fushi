@@ -2,9 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 
 /// 持久化快照的 schema 版本。每当给某个**已存在**的 [ShortcutAction] 在默认表里
 /// 新增（而非改写）一个键位时 +1，并在 [HibikiShortcutRegistry._migratePersistedDefaults]

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:hibiki/src/sync/tls/hibiki_pinning_http.dart';
+import 'package:fushi/src/sync/tls/hibiki_pinning_http.dart';
 
 /// TODO-963 M2: TOFU 首连「捕获 host 证书指纹」探测。
 ///

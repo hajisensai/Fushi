@@ -6,19 +6,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:macos_ui/macos_ui.dart'
     show MacosTextField, MacosIcon, OverlayVisibilityMode;
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/focus/hibiki_focus_target.dart';
-import 'package:hibiki/src/focus/page_scroll_registry.dart';
-import 'package:hibiki/src/shortcuts/gamepad_service.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/utils/app_ui_scale.dart';
-import 'package:hibiki/src/utils/components/hibiki_gamepad_keyboard.dart';
-import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
-import 'package:hibiki/src/utils/components/hibiki_motion_tokens.dart';
-import 'package:hibiki/src/utils/misc/platform_utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/focus/page_scroll_registry.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/hibiki_gamepad_keyboard.dart';
+import 'package:fushi/src/utils/components/hibiki_icon_button.dart';
+import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/components/hibiki_motion_tokens.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 class HibikiCard extends StatefulWidget {
   const HibikiCard({

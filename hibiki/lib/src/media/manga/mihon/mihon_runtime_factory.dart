@@ -1,9 +1,9 @@
 import 'dart:io';
 
-import 'package:hibiki/src/media/manga/mihon/android_mihon_runtime.dart';
-import 'package:hibiki/src/media/manga/mihon/desktop_mihon_runtime.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/android_mihon_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/desktop_mihon_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 
 abstract final class MihonRuntimeFactory {
   static bool get isSupported =>

@@ -2,8 +2,8 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/scraper/collection_member_policy.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/video/scraper/collection_member_policy.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 MediaCollectionItemRow _item(int collectionId, String mediaType, String key) =>
     MediaCollectionItemRow(

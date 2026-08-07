@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/media_source.dart';
+import 'package:fushi/src/media/media_source.dart';
 
 /// [dbSourcePrefKey] 是 MediaSource 偏好命名空间 key（`src:<source>:<key>`）的单一
 /// 真相编码器。此前 media_source 与 profile_repository 各自硬编码该格式（后者还钉死

@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
-import 'package:hibiki/src/sync/remote_library_source.dart';
+import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/remote_library_source.dart';
 
 /// **任何**远端视频来源都具备的能力：列清单 + 按 id 把整片下载到本地。
 ///

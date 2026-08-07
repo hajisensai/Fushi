@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 const double kScrapeCoverPreviewWidth = 80;
 const double kScrapeCoverPreviewHeight = 112;

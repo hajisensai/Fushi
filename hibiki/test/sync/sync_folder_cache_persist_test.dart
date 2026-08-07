@@ -1,10 +1,10 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_file_ref.dart';
-import 'package:hibiki/src/sync/sync_manager.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_file_ref.dart';
+import 'package:fushi/src/sync/sync_manager.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-2657 ②：`_persistDriveCache` 每本书都被调一次，旧实现每次都
 /// `jsonEncode` 整张书名→folderId 映射表 + upsert，外加一次 `setRootFolderId`。

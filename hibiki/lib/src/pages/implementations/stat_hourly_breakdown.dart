@@ -1,4 +1,4 @@
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 时段图一天的桶数（0-23 时）。
 const int kStatHourlyBuckets = 24;

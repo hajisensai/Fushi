@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/ocr/google_lens_protocol.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:image/image.dart' as img;
 
 import 'google_lens_fixture.dart';

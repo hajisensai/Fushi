@@ -1,10 +1,10 @@
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/dandanplay_client.dart';
-import 'package:hibiki/src/media/video/video_danmaku_model.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/video/dandanplay_client.dart';
+import 'package:fushi/src/media/video/video_danmaku_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 HibikiDatabase _testDb() {
   return HibikiDatabase.forTesting(

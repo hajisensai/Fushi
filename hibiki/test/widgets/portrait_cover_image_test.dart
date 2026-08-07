@@ -3,7 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 
 /// BUG-1299：[PortraitCoverImage] 槽向自适应行为（此前该组件零测试覆盖）。
 ///

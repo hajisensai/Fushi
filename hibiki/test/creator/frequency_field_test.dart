@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/creator.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi/creator.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 DictionaryEntry _entry({
   String extra = '',

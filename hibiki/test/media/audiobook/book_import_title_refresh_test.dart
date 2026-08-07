@@ -10,7 +10,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
+import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 
 void main() {
   group('resolveImportTitle — 同来源重选刷新（BUG-668 核心）', () {

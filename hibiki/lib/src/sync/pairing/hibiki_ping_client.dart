@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:hibiki/src/sync/tls/hibiki_pinning_http.dart';
+import 'package:fushi/src/sync/tls/hibiki_pinning_http.dart';
 import 'package:http/http.dart' as http;
 
 /// TODO-963 M2: `/api/ping` 的 client 侧响应模型。无鉴权探测，配对前用。

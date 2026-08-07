@@ -1,8 +1,8 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/scraper/episode_rename.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/video/scraper/episode_rename.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/common.dart' show CommonDatabase;
 
 /// TODO-2491：集显示名提案与批量改名守卫。

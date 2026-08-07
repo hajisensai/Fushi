@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 import 'package:path/path.dart' as p;
 
 /// 导入时在主文件同目录扫描到的同名 sidecar：字幕 + 音频（绝对路径）。

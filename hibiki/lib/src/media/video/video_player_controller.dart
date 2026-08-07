@@ -2,14 +2,14 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/src/media/video/video_black_flicker_detector.dart';
-import 'package:hibiki/src/media/video/video_episode_start_policy.dart';
-import 'package:hibiki/src/startup/media_handle_registry.dart';
-import 'package:hibiki/src/media/video/video_mpv_config.dart';
-import 'package:hibiki/src/media/video/video_playback_source.dart';
-import 'package:hibiki/src/media/video/video_shader_manager.dart';
-import 'package:hibiki/src/media/video/video_subtitle_source.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_black_flicker_detector.dart';
+import 'package:fushi/src/media/video/video_episode_start_policy.dart';
+import 'package:fushi/src/startup/media_handle_registry.dart';
+import 'package:fushi/src/media/video/video_mpv_config.dart';
+import 'package:fushi/src/media/video/video_playback_source.dart';
+import 'package:fushi/src/media/video/video_shader_manager.dart';
+import 'package:fushi/src/media/video/video_subtitle_source.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 

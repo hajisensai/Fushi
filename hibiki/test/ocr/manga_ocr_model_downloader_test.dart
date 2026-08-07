@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/ocr/manga_ocr_model_downloader.dart';
-import 'package:hibiki/src/ocr/manga_ocr_model_manifest.dart';
-import 'package:hibiki/src/ocr/manga_ocr_service.dart';
+import 'package:fushi/src/ocr/manga_ocr_model_downloader.dart';
+import 'package:fushi/src/ocr/manga_ocr_model_manifest.dart';
+import 'package:fushi/src/ocr/manga_ocr_service.dart';
 import 'package:path/path.dart' as p;
 
 /// 本地 HTTP 服务器 fake：按路径提供字节流，可开关 Range 支持，记录请求。

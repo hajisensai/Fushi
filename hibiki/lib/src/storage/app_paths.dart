@@ -1,14 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:hibiki_core/hibiki_core.dart' show hibikiDatabaseFileName;
+import 'package:fushi_core/fushi_core.dart' show hibikiDatabaseFileName;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:hibiki/src/startup/test_environment.dart';
-import 'package:hibiki/src/storage/macos_data_root_access.dart';
-import 'package:hibiki/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/startup/test_environment.dart';
+import 'package:fushi/src/storage/macos_data_root_access.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// TODO-935 E0：应用数据根目录的**唯一入口**。
 ///

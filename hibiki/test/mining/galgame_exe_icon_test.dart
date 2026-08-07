@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/galgame_exe_icon.dart';
+import 'package:fushi/src/mining/galgame_exe_icon.dart';
 import 'package:image/image.dart' as img;
 
 /// PE 图标提取（游戏库「自动获取封面」的兜底源）的纯字节测试。

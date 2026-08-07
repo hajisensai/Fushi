@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG-833 守卫：多层卡拉 OK（同句歌词按 ASS Layer 拆成光晕/主文字/点缀三条 Dialogue）
 /// 必须**同位叠画成一行**，而不是竖排堆叠成「三个字幕」；`\clip`/`\iclip` 走真矢量裁剪

@@ -49,7 +49,7 @@ void main() {
 
   test('Dart bindings look up the kanji C symbols by their exact names', () {
     final String bindings = read(
-        '../packages/hibiki_dictionary/lib/src/ffi/fushidicts_ffi_bindings.dart');
+        '../packages/fushi_dictionary/lib/src/ffi/fushidicts_ffi_bindings.dart');
     // The lookupFunction string MUST match the C export name byte-for-byte.
     for (final String sym in <String>[
       'fushidicts_add_kanji_dict',
@@ -65,7 +65,7 @@ void main() {
 
   test('engine exposes addKanjiDict / queryKanji and converts every field', () {
     final String engine =
-        read('../packages/hibiki_dictionary/lib/src/engine/fushidicts.dart');
+        read('../packages/fushi_dictionary/lib/src/engine/fushidicts.dart');
     expect(engine.contains('void addKanjiDict(String path)'), isTrue);
     expect(engine.contains('List<FushiKanjiResult> queryKanji('), isTrue);
     expect(engine.contains('class FushiKanjiResult'), isTrue);

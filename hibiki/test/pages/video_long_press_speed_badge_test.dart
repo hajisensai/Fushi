@@ -10,7 +10,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_long_press_speed_badge.dart';
+import 'package:fushi/src/media/video/video_long_press_speed_badge.dart';
 
 void main() {
   group('VideoLongPressSpeedBadge（徽章跟随指针）', () {

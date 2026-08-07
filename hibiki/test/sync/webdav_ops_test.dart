@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/webdav_ops.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/webdav_ops.dart';
 
 WebDavOps _ops(String baseUrl) =>
     WebDavOps(baseUrl: baseUrl, username: 'u', password: 'p');

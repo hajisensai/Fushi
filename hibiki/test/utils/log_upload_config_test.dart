@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/log_upload_config.dart';
+import 'package:fushi/src/utils/misc/log_upload_config.dart';
 
 void main() {
   group('isLogUploadConfigured', () {

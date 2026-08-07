@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 import 'reader_hibiki_page_source_corpus.dart';
 import 'video_hibiki_page_source_corpus.dart';
@@ -9,7 +9,7 @@ import 'video_hibiki_page_source_corpus.dart';
 /// 源码守卫（TODO-115）：制卡默认标签接线。
 ///
 /// 行为本体（`hibiki` + `book`/`video` 分类标签的拼装、两后端对称、去重保序）由
-/// `packages/hibiki_anki/test/mining_tag_and_parallel_test.dart` 的真制卡行为测试咬住。
+/// `packages/fushi_anki/test/mining_tag_and_parallel_test.dart` 的真制卡行为测试咬住。
 /// 本守卫补两块行为测试照不到的接线：
 ///   1. AnkiDroid 原生 `addNote` 不再硬编码注入旧 fork 的 `"Yuuna"` 默认 tag
 ///      （那是 Android 原生 Java，Dart 行为测试到不了的层）。
@@ -31,7 +31,7 @@ void main() {
 
   test('buildNoteTags 把来源映射成 book/video 分类标签（追加不覆盖）', () {
     final String src = File(
-      '../packages/hibiki_anki/lib/src/base_anki_repository.dart',
+      '../packages/fushi_anki/lib/src/base_anki_repository.dart',
     ).readAsStringSync();
     expect(
         src,
@@ -50,8 +50,8 @@ void main() {
 
   test('两后端 mineEntry 都把 context.source 传给 buildNoteTags', () {
     for (final String path in <String>[
-      '../packages/hibiki_anki/lib/src/ankidroid/anki_repository.dart',
-      '../packages/hibiki_anki/lib/src/ankiconnect/ankiconnect_repository.dart',
+      '../packages/fushi_anki/lib/src/ankidroid/anki_repository.dart',
+      '../packages/fushi_anki/lib/src/ankiconnect/ankiconnect_repository.dart',
     ]) {
       final String src = File(path).readAsStringSync();
       expect(src,

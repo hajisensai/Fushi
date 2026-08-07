@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/sync/port_process_terminator.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/sync/port_process_terminator.dart';
+import 'package:fushi/utils.dart';
 
 /// 「一键结束占用端口的进程」杀前决策结果。
 enum PortKillDecisionKind {

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
 
 void main() {
   group('MouseBinding', () {

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_clip_subtitle.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_clip_subtitle.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// 只填 [buildClipSrtContent] 真正读到的三个字段；AudioCue 其余 late 字段（bookKey /
 /// chapterHref / …）在本路径上不被访问，刻意不初始化，读到就说明实现越权了。

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/collections/shelf_sort.dart';
+import 'package:fushi/src/media/collections/shelf_sort.dart';
 
 /// 排序交互重设计层次 A：排序模式纯函数（naturalCompare + compareShelfSortKeys）。
 ShelfSortKey _key({

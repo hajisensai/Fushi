@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/pages/implementations/downloads_page.dart';
-import 'package:hibiki/src/pages/implementations/torrent_settings_section.dart';
-import 'package:hibiki/src/settings/settings_actions.dart';
-import 'package:hibiki/src/settings/settings_context.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/pages/implementations/downloads_page.dart';
+import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
+import 'package:fushi/src/settings/settings_actions.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/utils.dart';
 
 /// 「下载」一级设置分类（阶段 G，演示新增大类路径）。
 ///

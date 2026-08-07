@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/media/video/video_control_customization.dart';
 
 void main() {
   // TODO-274 phase 0: data model foundation for full 9-slot drag customization.

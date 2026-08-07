@@ -4,13 +4,13 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_library.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_manager.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_online_reader_page.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_runtime.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_library.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_online_reader_page.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/utils.dart';
 
 enum _MihonBrowseMode { popular, latest, search }
 

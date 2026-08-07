@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/focus/focus_geometry.dart';
-import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
-import 'package:hibiki/src/utils/app_ui_scale.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/focus/focus_geometry.dart';
+import 'package:fushi/src/focus/hibiki_focus_scroll.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
 
 /// App-level overlay that paints a high-contrast ring around the widget that
 /// currently holds primary focus — but ONLY in keyboard/gamepad highlight mode

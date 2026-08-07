@@ -2,8 +2,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
-import 'package:hibiki/src/sync/remote_audio_lookup_bytes.dart';
+import 'package:fushi/src/sync/hibiki_remote_lookup_service.dart';
+import 'package:fushi/src/sync/remote_audio_lookup_bytes.dart';
 
 /// TODO-1335 ②：扩展/远端查词弹窗单词音频。守两点：
 ///  1. `remoteAudioLookupFromResolvedUrl` 把 `resolveLookupAudioUrl` 的解析结果（本地路径 /

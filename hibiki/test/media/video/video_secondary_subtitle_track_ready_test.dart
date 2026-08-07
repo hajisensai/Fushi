@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
 
 /// TODO-1295 / BUG：副字幕（TODO-857 双字幕 Path A，libmpv `secondary-sid`）有时不
 /// 显示。根因＝按 ffmpeg `0:s:N` 序号选第 N 条内嵌字幕轨时，容器多条轨在 `player.open`

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/wgc_capture_log.dart';
+import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 
 /// BUG-209 / TODO-398：WgcCaptureLog 的纯文件逻辑行为测试（host 可跑——不碰 native
 /// WGC，只验「定位 %LOCALAPPDATA%\Hibiki\wgc_capture.log + 读后清滚动语义」）。

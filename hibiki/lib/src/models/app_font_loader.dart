@@ -2,12 +2,12 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show FontLoader;
-import 'package:hibiki/src/media/video/ass_font_metrics.dart';
-import 'package:hibiki/src/models/font_decoder.dart';
-import 'package:hibiki/src/models/woff2_decoder.dart';
-import 'package:hibiki/src/reader/reader_settings.dart'
+import 'package:fushi/src/media/video/ass_font_metrics.dart';
+import 'package:fushi/src/models/font_decoder.dart';
+import 'package:fushi/src/models/woff2_decoder.dart';
+import 'package:fushi/src/reader/reader_settings.dart'
     show ReaderCustomFontCss;
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
 
 /// Registers a user-imported custom font with the Flutter engine so it can be

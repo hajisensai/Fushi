@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// Serializes the asynchronous operations that toggle a shared just_audio
 /// player's platform activation, so two playback cycles can never interleave on

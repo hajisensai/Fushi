@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_lyrics_caret_scripts.dart';
+import 'package:fushi/src/reader/reader_lyrics_caret_scripts.dart';
 
 void main() {
   group('ReaderLyricsCaretScripts.source()', () {

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/hibiki_library_host_service.dart';
 
 /// 守卫：`RemoteVideoInfo.fromJson` 必须解析 `collection` 归属字段。此前 toJson 写了
 /// `collection` 但 fromJson 从不读 → LAN 远端视频 `video.collection` 恒 null → 首页收不到

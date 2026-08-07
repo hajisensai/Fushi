@@ -3,7 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_clip_text_render.dart';
+import 'package:fushi/src/media/audiobook/audiobook_clip_text_render.dart';
 
 /// TODO-1013 守卫：收藏句/选区「导出片段」的文本卡片必须复刻有声书「逐句高亮跟随」
 /// 样式——把 `AudiobookClipTextLayout.highlight`（= `ReaderThemeColors.sasayaki`，与

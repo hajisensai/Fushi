@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/creator.dart';
-import 'package:hibiki/models.dart';
+import 'package:fushi/creator.dart';
+import 'package:fushi/models.dart';
 
 /// List of causes that may be of interest when executing an enhancement and
 /// may change the context of how the enhancement should be executed.

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
+import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 
 /// TODO-059: 词典管理页拖放导入。验证拖入文件 -> 词典包筛选的纯逻辑
 /// （[classifyDroppedFilesForDictionary]）：词典包识别、css 样式附件随带、

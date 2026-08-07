@@ -7,8 +7,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/src/pages/implementations/media_sources_view.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/pages/implementations/media_sources_view.dart';
+import 'package:fushi/utils.dart';
 
 /// 管理网络/本地来源库的对话框：按 mediaKind（'video' | 'book' | 'manga'）过滤。
 class MediaSourcesDialog extends ConsumerStatefulWidget {

@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/sync_obfuscator.dart';
+import 'package:fushi/src/sync/sync_obfuscator.dart';
 
 /// 把分块的字节流收集回单个 [Uint8List]，便于断言。
 Future<Uint8List> _collect(Stream<List<int>> stream) async {

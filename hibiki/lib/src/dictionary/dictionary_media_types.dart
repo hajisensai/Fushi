@@ -8,7 +8,7 @@
 ///    rewrites <img src> to that http endpoint).
 library;
 
-import 'package:hibiki_core/hibiki_core.dart' show mimeTypeForFilePath;
+import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
 
 /// Normalizes a dictionary media relative path: backslashes -> slashes, and
 /// strips leading ./ and /. Matches what HoshiDicts.getMediaFile expects.

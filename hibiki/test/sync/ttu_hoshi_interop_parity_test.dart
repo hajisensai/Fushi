@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/ttu_filename.dart';
+import 'package:fushi/src/sync/ttu_filename.dart';
 
 /// Hoshi/ッツ 互通逐字节守卫。
 ///

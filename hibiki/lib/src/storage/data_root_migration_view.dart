@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/i18n/strings.g.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// TODO-959：桌面「数据存储位置」整目录迁移期间的全屏遮罩内容。
 ///

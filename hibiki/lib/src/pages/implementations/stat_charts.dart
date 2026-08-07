@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/pages/implementations/stat_hourly_breakdown.dart';
+import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
 
 /// 统计图表的每日数据点（阅读统计 / 视频统计共用）。
 class StatDayData {

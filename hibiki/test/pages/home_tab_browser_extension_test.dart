@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
 
 /// 守卫「浏览器扩展」tab 在首页顶层导航中的可见性与位置。用户要求「单独弄一个底栏、电脑
 /// 才有」，生产里由 [homeActiveTabs] 的 browserExtensionEnabled = DesktopLookupService.isDesktop

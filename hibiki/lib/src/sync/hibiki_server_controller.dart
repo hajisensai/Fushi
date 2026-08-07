@@ -4,23 +4,23 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/ocr/manga_ocr_service.dart';
-import 'package:hibiki/src/platform/desktop/desktop_device_info_service.dart';
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
-import 'package:hibiki/src/sync/hibiki_manga_ocr_host.dart';
-import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
-import 'package:hibiki/src/sync/hibiki_sync_server.dart';
-import 'package:hibiki/src/sync/interconnect_device_name.dart';
-import 'package:hibiki/src/sync/lan_discovery_service.dart';
-import 'package:hibiki/src/sync/pairing/hibiki_pairing_protocol.dart';
-import 'package:hibiki/src/sync/sync_error_messages.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/src/sync/sync_root_migration.dart';
-import 'package:hibiki/src/sync/tls/hibiki_tls_identity.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki_platform/hibiki_platform.dart';
+import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi/src/platform/desktop/desktop_device_info_service.dart';
+import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/hibiki_manga_ocr_host.dart';
+import 'package:fushi/src/sync/hibiki_remote_lookup_service.dart';
+import 'package:fushi/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/sync/interconnect_device_name.dart';
+import 'package:fushi/src/sync/lan_discovery_service.dart';
+import 'package:fushi/src/sync/pairing/hibiki_pairing_protocol.dart';
+import 'package:fushi/src/sync/sync_error_messages.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/sync_root_migration.dart';
+import 'package:fushi/src/sync/tls/hibiki_tls_identity.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi_platform/fushi_platform.dart';
 
 /// Result of a [HibikiSyncServerController.start] attempt, so the caller (the
 /// settings toggle) can surface the right message while a headless app-init

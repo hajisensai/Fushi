@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/manga_spread_model.dart';
+import 'package:fushi/src/media/manga/manga_spread_model.dart';
 
 /// Flatten entries into a [pageIndices...] list-of-lists for easy comparison.
 List<List<int>> _flatten(List<MangaSpreadEntry> entries) =>

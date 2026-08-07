@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/sync/deletion_disclosure.dart';
-import 'package:hibiki/src/sync/deletion_propagation.dart';
-import 'package:hibiki/src/sync/deletion_propagation_availability.dart';
-import 'package:hibiki/src/sync/sync_conflict_prompter.dart'
+import 'package:fushi/src/sync/deletion_disclosure.dart';
+import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi/src/sync/deletion_propagation_availability.dart';
+import 'package:fushi/src/sync/sync_conflict_prompter.dart'
     show ConflictSource;
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 通用「删除范围」确认弹窗：正文 + 「从所有设备删除」勾选框（默认不勾）。确认返回用户
 /// 选的 [DeleteScope]（勾选=syncEverywhere 传播 / 不勾=keepLocalOnly 仅本机）；取消返回

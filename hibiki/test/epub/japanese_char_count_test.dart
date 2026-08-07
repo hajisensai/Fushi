@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/epub/epub_book.dart';
+import 'package:fushi/src/epub/epub_book.dart';
 
 /// TODO-1192：锁定「实义字符计数」口径（逐区间对齐 hoshi/ttu getCharacterCount
 /// 使用的 `isNotJapaneseRegex`）。

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
 
 /// TODO-1297 守卫：**「进度条已缓冲但还在加载」**根因不变量。
 ///

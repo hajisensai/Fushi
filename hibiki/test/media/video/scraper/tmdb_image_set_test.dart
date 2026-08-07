@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
+import 'package:fushi/src/media/video/scraper/tmdb_client.dart';
 
 /// v68 守卫：TMDB `/images` 响应的 Jellyfin 式分类（parseTmdbImageSet 纯函数）。
 ///

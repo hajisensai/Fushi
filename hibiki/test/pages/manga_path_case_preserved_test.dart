@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/reader/manga_hibiki_page.dart';
+import 'package:fushi/src/media/manga/reader/manga_hibiki_page.dart';
 import 'package:path/path.dart' as p;
 
 /// BUG-1221：漫画页图解析出的路径必须保留磁盘上的**真实大小写**。

@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// 把 Hibiki 查词结果包装成 Yomitan `termEntries` 顶层响应形状（宽松兼容）。
 ///

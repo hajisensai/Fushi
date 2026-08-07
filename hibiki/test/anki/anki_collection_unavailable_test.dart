@@ -2,9 +2,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/anki/anki_view_model.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 // BUG-241 (TODO-292): fetching decks/models/fields from AnkiDroid used to
 // surface AnkiDroid's raw English "collection is not available" exception text

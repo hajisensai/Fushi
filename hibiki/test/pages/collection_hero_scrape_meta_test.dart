@@ -2,12 +2,12 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/media/video/cover_ui/landscape_cover_image.dart';
-import 'package:hibiki/src/media/video/scraper/collection_scrape_apply.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
-import 'package:hibiki/src/pages/implementations/media_collection_detail_page.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
+import 'package:fushi/src/media/video/scraper/collection_scrape_apply.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// BUG-1310 守卫：合集详情页 hero 展示刮削回来的作品资料。
 ///

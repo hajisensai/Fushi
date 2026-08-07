@@ -4,8 +4,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/stat_activity.dart';
-import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
+import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
 
 Future<({ui.Image image, ByteData bytes})> _captureGridImage(
   WidgetTester tester,

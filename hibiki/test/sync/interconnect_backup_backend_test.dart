@@ -1,13 +1,13 @@
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
-import 'package:hibiki/src/sync/sync_auto_trigger.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/src/sync/sync_settings_schema.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/sync_settings_schema.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 HibikiDatabase _testDb() =>
     HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));

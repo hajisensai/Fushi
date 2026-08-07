@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/platform_updater.dart';
-import 'package:hibiki/src/utils/misc/update_checker.dart';
+import 'package:fushi/src/utils/misc/platform_updater.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
 
 List<Map<String, dynamic>> _assets(List<String> names) => names
     .map((String name) => <String, dynamic>{

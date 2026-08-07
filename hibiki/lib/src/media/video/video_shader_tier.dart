@@ -1,4 +1,4 @@
-import 'package:hibiki/src/media/video/video_shader_downloader.dart';
+import 'package:fushi/src/media/video/video_shader_downloader.dart';
 
 /// 视频画质增强「档位」：把用户面前的「无/低/中/高/极高」五档，投影到底层两套**正交**
 /// 机制的组合——① mpv 内置缩放（[VideoMpvConfig.highQuality]，开=ewa_lanczossharp）

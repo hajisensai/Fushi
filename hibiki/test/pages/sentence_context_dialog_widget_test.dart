@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/pages/implementations/sentence_context_dialog.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/sentence_context_dialog.dart';
 
 /// BUG-763/766：「制卡·选择句子上下文」原生顶层对话框（[SentenceContextDialog]）行为测试。
 /// 旧模态画在查词弹窗 WebView 内、无头测试照不到；改原生对话框后可用 widget 测试钉死行为。

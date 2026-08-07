@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:path/path.dart' as p;
 
 import '../helpers/source_guard.dart';

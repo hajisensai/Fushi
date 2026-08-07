@@ -1,4 +1,4 @@
-import 'package:hibiki_audio/hibiki_audio.dart'
+import 'package:fushi_audio/fushi_audio.dart'
     show FavoriteSentence, FavoriteSentenceRepository;
 
 /// Pure, side-effect-free merge semantics for the aggregate families that

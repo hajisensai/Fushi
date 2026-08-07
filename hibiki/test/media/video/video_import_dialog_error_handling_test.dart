@@ -3,11 +3,11 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki/src/media/video/video_import_dialog.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_import_dialog.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// BUG-1117 守卫：VideoImportDialog 四个导入方法（_doImport / _importStreamUrl /
 /// _importPlaylistFromPath / _pickFolder）此前是 `try{}finally{}` 无 catch，

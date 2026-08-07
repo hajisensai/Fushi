@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart' show Value, QueryRow;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// v51 迁移（PDF 阅读器 Phase 1）：epub_books 加 `format` 判别列（'epub'/'pdf'），把 PDF
 /// 当「第二种书」复用整套 EpubBooks/书架/进度/删除管线，而非另建平行表。

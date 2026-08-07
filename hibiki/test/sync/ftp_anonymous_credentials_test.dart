@@ -3,7 +3,7 @@
 // 消除旧的「testConnection 放行空账密、_connect 硬拒空账密」不一致。
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/ftp_sync_backend.dart';
+import 'package:fushi/src/sync/ftp_sync_backend.dart';
 
 void main() {
   group('FtpSyncBackend.ftpLoginCredentials', () {

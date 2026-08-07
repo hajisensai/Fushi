@@ -3,8 +3,8 @@ import 'dart:collection';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/focus/focus_geometry.dart';
-import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
+import 'package:fushi/src/focus/focus_geometry.dart';
+import 'package:fushi/src/focus/hibiki_focus_scroll.dart';
 
 @immutable
 class HibikiFocusId {

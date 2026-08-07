@@ -4,11 +4,11 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_manager.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_runtime.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_source_browse_page.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 void main() {
   test('source image queue starts only four cover fetches at a time', () async {

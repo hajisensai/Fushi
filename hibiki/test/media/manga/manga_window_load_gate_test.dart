@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/reader/manga_window_load_gate.dart';
+import 'package:fushi/src/media/manga/reader/manga_window_load_gate.dart';
 
 void main() {
   group('MangaWindowLoadGate', () {

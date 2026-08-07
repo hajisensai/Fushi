@@ -14,19 +14,19 @@ library;
 import 'dart:async';
 import 'dart:io';
 
-import 'package:hibiki/src/media/media_cover_service.dart';
-import 'package:hibiki/src/media/metadata/credential_redaction.dart';
-import 'package:hibiki/src/media/metadata/image_download.dart'
+import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/metadata/credential_redaction.dart';
+import 'package:fushi/src/media/metadata/image_download.dart'
     show
         CoverDownloadDeadline,
         fetchCoverImageResponse,
         kCoverImageDownloadTimeout;
-import 'package:hibiki/src/media/metadata/transport_retry.dart';
-import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
+import 'package:fushi/src/media/metadata/transport_retry.dart';
+import 'package:fushi/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
-import 'package:hibiki/src/media/video/video_import_dialog.dart'
+import 'package:fushi/src/media/video/video_import_dialog.dart'
     show videoCoverFileName;
-import 'package:hibiki/src/media/video/video_storage.dart';
+import 'package:fushi/src/media/video/video_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 

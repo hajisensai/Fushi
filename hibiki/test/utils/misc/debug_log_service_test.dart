@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/debug_log_service.dart';
+import 'package:fushi/src/utils/misc/debug_log_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Verifies system/"Enable debug log" really takes effect: the toggle drives a

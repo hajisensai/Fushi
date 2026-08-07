@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_content_styles.dart';
 
 /// G14：阅读器背景「深/浅」判定单一真相。
 ///

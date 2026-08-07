@@ -13,7 +13,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/source_library/source_file_system.dart';
+import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:path/path.dart' as p;
 
 void main() {

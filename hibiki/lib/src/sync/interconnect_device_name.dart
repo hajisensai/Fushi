@@ -1,4 +1,4 @@
-import 'package:hibiki_platform/hibiki_platform.dart';
+import 'package:fushi_platform/fushi_platform.dart';
 
 /// Generic, brand-only device label used when no meaningful hardware name is
 /// available. Better than advertising "localhost".

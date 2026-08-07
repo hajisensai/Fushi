@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_import_dialog.dart'
+import 'package:fushi/src/media/video/video_import_dialog.dart'
     show videoImportCanImport;
 
 void main() {

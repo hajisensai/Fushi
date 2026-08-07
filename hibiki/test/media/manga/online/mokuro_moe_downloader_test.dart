@@ -5,11 +5,11 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/epub/epub_storage.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_client.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_volume_downloader.dart';
-import 'package:hibiki/src/sync/ttu_filename.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/epub/epub_storage.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
+import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 /// loopback fake：按**解码后**路径供字节，支持 Range，可在 CBZ 传输中途挂起

@@ -1,4 +1,4 @@
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-1166：内置默认书籍标签是 5 档星级评分（`1⭐`..`5⭐`）。
 ///

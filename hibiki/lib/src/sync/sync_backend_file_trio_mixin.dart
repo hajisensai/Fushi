@@ -1,4 +1,4 @@
-import 'package:hibiki/src/sync/ttu_models.dart';
+import 'package:fushi/src/sync/ttu_models.dart';
 
 /// 共享 [SyncBackend] 家族 7 个后端（ftp/sftp/webdav/dropbox/onedrive/
 /// hibiki_client + GoogleDriveHandler）的 progress/statistics/audioBook **读取**

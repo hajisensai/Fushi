@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/local_audio_manager.dart';
+import 'package:fushi/src/models/local_audio_manager.dart';
 
 /// TODO-1171: internal local-audio copies must resolve by FILENAME onto the
 /// local database directory so a config imported from another machine (whose

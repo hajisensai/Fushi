@@ -3,9 +3,9 @@ import 'package:drift/native.dart';
 import 'package:flutter/gestures.dart' show kLongPressTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/pages/implementations/media_collection_detail_page.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 排序交互重设计层次 B1（spec 2026-07-12）：视频合集详情页就地排序。
 ///

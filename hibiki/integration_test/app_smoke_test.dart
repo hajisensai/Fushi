@@ -4,10 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:hibiki/main.dart' as app;
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/pages/implementations/home_page.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/main.dart' as app;
+import 'package:fushi/models.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/utils.dart';
 
 import 'helpers/focus_driver.dart';
 import 'test_helpers.dart';

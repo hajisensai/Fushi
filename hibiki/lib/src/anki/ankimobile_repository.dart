@@ -5,7 +5,7 @@ import 'dart:io';
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 typedef AnkiMobileUrlOpener = Future<bool> Function(Uri uri);

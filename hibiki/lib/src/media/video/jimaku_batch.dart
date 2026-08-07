@@ -3,8 +3,8 @@ import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/video/jimaku_client.dart';
-import 'package:hibiki/src/media/video/video_filename_parser.dart';
+import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/media/video/video_filename_parser.dart';
 
 /// 合集批量字幕下载里的一集输入：稳定身份 + 定位信息 + 合集内序位。
 ///

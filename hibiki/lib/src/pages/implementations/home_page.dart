@@ -1,4 +1,4 @@
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -14,27 +14,27 @@ import 'package:macos_ui/macos_ui.dart'
         MacosBackButton,
         MacosIcon;
 import 'package:flutter/services.dart' hide ModifierKey;
-import 'package:hibiki_anki/hibiki_anki.dart' show AnkiMediaDedupReport;
-import 'package:hibiki/src/anki/anki_media_dedup_dialogs.dart';
-import 'package:hibiki/src/anki/anki_media_dedup_runner.dart';
-import 'package:hibiki/src/anki/anki_view_model.dart'
+import 'package:fushi_anki/fushi_anki.dart' show AnkiMediaDedupReport;
+import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
+import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
+import 'package:fushi/src/anki/anki_view_model.dart'
     show ankiRepositoryProvider;
-import 'package:hibiki/src/anki/lapis_template_service.dart';
-import 'package:hibiki/src/sync/sync_auto_trigger.dart';
-import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki/src/pages/implementations/media_library_shell.dart';
-import 'package:hibiki/src/pages/implementations/media_sources_page.dart';
-import 'package:hibiki/src/pages/implementations/module_settings_view.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/media/audiobook/now_listening_mini_bar.dart';
-import 'package:hibiki/src/sync/desktop_lookup_service.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart'
+import 'package:fushi/src/anki/lapis_template_service.dart';
+import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/pages/implementations/media_library_shell.dart';
+import 'package:fushi/src/pages/implementations/media_sources_page.dart';
+import 'package:fushi/src/pages/implementations/module_settings_view.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/media/audiobook/now_listening_mini_bar.dart';
+import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart'
     show HibikiFocusController, HibikiFocusRoot;
-import 'package:hibiki/src/shortcuts/input_binding.dart'
+import 'package:fushi/src/shortcuts/input_binding.dart'
     show GamepadButton, ModifierKey;
-import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show
         GamepadButtonIntent,
         arrowFocusMoveDirection,
@@ -42,7 +42,7 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
         dispatchNativeGamepadButtonIntent,
         focusedEditableText,
         gamepadMoveFocusInDirection;
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
 
 /// 顶层 tab 的逻辑身份（取代写死的整数索引 0/1/2）。条件 tab（video/downloads 常驻、
 /// games 仅 Windows）用枚举身份而非位置来切换/路由——插入条件 tab 不会再打乱「设置/词典」

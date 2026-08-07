@@ -22,7 +22,7 @@ void main() {
       expect(source, contains('tokens.spacing'), reason: path);
       expect(source, isNot(contains('adaptiveAlertDialog(')), reason: path);
       expect(source, isNot(contains('Spacing.of(context)')), reason: path);
-      expect(source, isNot(contains('package:hibiki/src/utils/spacing.dart')),
+      expect(source, isNot(contains('package:fushi/src/utils/spacing.dart')),
           reason: path);
       expect(source, isNot(contains('Space.')), reason: path);
       expect(source, isNot(contains('padding: const EdgeInsets.all(4)')),

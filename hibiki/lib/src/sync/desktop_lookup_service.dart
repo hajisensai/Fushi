@@ -8,12 +8,12 @@ import 'package:flutter/services.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/sync/clipboard_dedupe.dart';
-import 'package:hibiki/src/utils/misc/lookup_input_limits.dart';
-import 'package:hibiki/src/utils/misc/ruby_markup.dart';
-import 'package:hibiki/src/utils/window_caption_channel.dart';
-import 'package:hibiki/src/sync/desktop_foreground_guard.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/sync/clipboard_dedupe.dart';
+import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
+import 'package:fushi/src/utils/misc/ruby_markup.dart';
+import 'package:fushi/src/utils/window_caption_channel.dart';
+import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 
 /// 给定窗口聚焦态，剪贴板自动监听是否应触发查词。
 ///

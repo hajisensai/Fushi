@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_settings_dialog_page.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/pages/implementations/dictionary_settings_dialog_page.dart';
 
 Widget _host(Widget child) => MaterialApp(
       theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),

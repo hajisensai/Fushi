@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/common.dart' show CommonDatabase;
 
 /// v68 迁移专项守卫：`media_images` 建表 + 搬 `collection_scrape_meta

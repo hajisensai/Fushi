@@ -4,42 +4,42 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/media/collections/add_to_collection_dialog.dart';
-import 'package:hibiki/src/media/collections/collection_context_dialog.dart';
-import 'package:hibiki/src/media/collections/collection_grouping.dart';
-import 'package:hibiki/src/media/collections/collection_shelf_row.dart'
+import 'package:fushi/models.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
+import 'package:fushi/src/media/collections/collection_context_dialog.dart';
+import 'package:fushi/src/media/collections/collection_grouping.dart';
+import 'package:fushi/src/media/collections/collection_shelf_row.dart'
     show CollectionShelfRow;
-import 'package:hibiki/src/media/collections/collection_drag.dart'
+import 'package:fushi/src/media/collections/collection_drag.dart'
     show CollectionAddOutcome, MediaCardDraggable, addMediaRefToCollection;
-import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
-import 'package:hibiki/src/media/media_cover_service.dart';
-import 'package:hibiki/src/media/metadata/scrape_batch.dart';
-import 'package:hibiki/src/media/metadata/scrape_title_matcher.dart';
-import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
-import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/mining/galgame_audio_source.dart';
-import 'package:hibiki/src/mining/galgame_cover_resolver.dart';
-import 'package:hibiki/src/mining/galgame_helper_installer.dart';
-import 'package:hibiki/src/mining/galgame_library.dart';
-import 'package:hibiki/src/mining/galgame_library_query.dart';
-import 'package:hibiki/src/mining/galgame_repository.dart';
-import 'package:hibiki/src/mining/galgame_scrape_dialog.dart';
-import 'package:hibiki/src/mining/galgame_scrape_controller.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_draft.dart';
-import 'package:hibiki/src/mining/magpie_upscaling.dart';
-import 'package:hibiki/src/mining/magpie_upscaling_prompt.dart';
-import 'package:hibiki/src/pages/implementations/galgame_detail_page.dart';
-import 'package:hibiki/src/pages/implementations/media_collection_grid_detail_page.dart';
-import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart'
+import 'package:fushi/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/metadata/scrape_batch.dart';
+import 'package:fushi/src/media/metadata/scrape_title_matcher.dart';
+import 'package:fushi/src/mining/gal_hook_failure_text.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/galgame_cover_resolver.dart';
+import 'package:fushi/src/mining/galgame_helper_installer.dart';
+import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/mining/galgame_library_query.dart';
+import 'package:fushi/src/mining/galgame_repository.dart';
+import 'package:fushi/src/mining/galgame_scrape_dialog.dart';
+import 'package:fushi/src/mining/galgame_scrape_controller.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
+import 'package:fushi/src/mining/magpie_upscaling.dart';
+import 'package:fushi/src/mining/magpie_upscaling_prompt.dart';
+import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
+import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
+import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
     show DialogDangerAction, DialogQuickAction, MediaItemDialogFrame;
-import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
-import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart';
-import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
+import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
+import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
+import 'package:fushi/utils.dart';
 
 // 游戏进合集（统一媒体库）：mediaType 用 [MediaKind.game]（P5 枚举地基，取代旧
 // 常量 kGameCollectionMediaType）。entryKey = `galgames.id`（添加时刻微秒时间戳

@@ -2,9 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
 /// TODO-700 T2 必做回归闸门：删硬绑手柄 B 返回后，老用户持久化 JSON 里若 globalBack /
 /// 句子导航没有手柄槽，加载时必须经 v1→v2 前向迁移补回新默认（B/X），否则纯手柄用户

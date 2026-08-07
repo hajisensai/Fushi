@@ -2,29 +2,29 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:hibiki/src/models/local_audio_manager.dart'
+import 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
-import 'package:hibiki/src/media/video/video_import_dialog.dart'
+import 'package:fushi/src/media/video/video_import_dialog.dart'
     show parseSubtitleCues;
-import 'package:hibiki/src/media/video/video_sidecar.dart'
+import 'package:fushi/src/media/video/video_sidecar.dart'
     show findSidecarSubtitle, isSidecarSubtitleSuffix, pickSidecar;
-import 'package:hibiki_audio/hibiki_audio.dart'
+import 'package:fushi_audio/fushi_audio.dart'
     show AudioCue, readTextWithEncoding;
-import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
-import 'package:hibiki/src/sync/aggregate_snapshot.dart';
-import 'package:hibiki/src/sync/aggregate_sync_service.dart';
-import 'package:hibiki/src/sync/collection_manifest.dart';
-import 'package:hibiki/src/sync/collection_sync_engine.dart';
-import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
-import 'package:hibiki/src/sync/interconnect_service_config.dart';
-import 'package:hibiki/src/sync/sync_asset_package_service.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/src/sync/sync_manager.dart'
+import 'package:fushi/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
+import 'package:fushi/src/sync/aggregate_snapshot.dart';
+import 'package:fushi/src/sync/aggregate_sync_service.dart';
+import 'package:fushi/src/sync/collection_manifest.dart';
+import 'package:fushi/src/sync/collection_sync_engine.dart';
+import 'package:fushi/src/sync/hibiki_library_host_service.dart';
+import 'package:fushi/src/sync/interconnect_service_config.dart';
+import 'package:fushi/src/sync/sync_asset_package_service.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/sync_manager.dart'
     show repackageExtractedEpub, resolveExtractedEpubRoot;
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
     show extractAudioSegmentViaFfmpeg;
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki_audio/hibiki_audio.dart' show AudiobookStorage;
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_audio/fushi_audio.dart' show AudiobookStorage;
 import 'package:path/path.dart' as p;
 
 /// 用真实 Hibiki 库（Drift DB + [SyncAssetPackageService]）实现 host 库服务。

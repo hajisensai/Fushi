@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// TODO-607 P0-2/②：查词崩溃面包屑——**独立**文件 lookup_crash_breadcrumb.txt，
 /// 独立恢复分支，下次启动折成 `Lookup.crashRecovered`。

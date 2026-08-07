@@ -2,23 +2,23 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/media/video/anilist_client.dart';
-import 'package:hibiki/src/media/video/jimaku_batch.dart';
-import 'package:hibiki/src/media/video/jimaku_client.dart';
-import 'package:hibiki/src/media/video/stream_video_launch.dart';
-import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki/src/media/video/video_filename_parser.dart';
-import 'package:hibiki/src/media/video/video_subtitle_source.dart';
-import 'package:hibiki/src/pages/implementations/jimaku_api_key_field.dart';
-import 'package:hibiki/src/pages/implementations/jimaku_entry_picker.dart';
-import 'package:hibiki/src/storage/app_paths.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/media/video/anilist_client.dart';
+import 'package:fushi/src/media/video/jimaku_batch.dart';
+import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/media/video/stream_video_launch.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi/src/media/video/video_subtitle_source.dart';
+import 'package:fushi/src/pages/implementations/jimaku_api_key_field.dart';
+import 'package:fushi/src/pages/implementations/jimaku_entry_picker.dart';
+import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 typedef JimakuBatchHttpClientFactory = Future<http.Client> Function();
 

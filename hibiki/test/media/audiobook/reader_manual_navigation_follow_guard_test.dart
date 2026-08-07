@@ -7,7 +7,7 @@ import '../../pages/reader_hibiki_page_source_corpus.dart';
 void main() {
   test('manual reader chapter navigation suppresses same-cue auto-follow', () {
     final String controllerSource = File(
-            '../packages/hibiki_audio/lib/src/audiobook/audiobook_controller.dart')
+            '../packages/fushi_audio/lib/src/audiobook/audiobook_controller.dart')
         .readAsStringSync();
     final String readerSource = readReaderPageSource();
 

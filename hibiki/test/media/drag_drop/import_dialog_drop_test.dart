@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
-import 'package:hibiki/src/media/drag_drop/import_dialog_drop.dart';
+import 'package:fushi/src/media/drag_drop/drop_classification.dart';
+import 'package:fushi/src/media/drag_drop/import_dialog_drop.dart';
 
 /// 三个导入对话框 `_handleDialogDrop` 抽出的纯函数行为守卫：给定一批拖入路径，
 /// 断言「音频→音频字段、字幕→字幕字段、视频→视频字段、播放列表→播放列表字段」。

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/startup/webview_prewarm.dart';
+import 'package:fushi/src/startup/webview_prewarm.dart';
 
 void main() {
   group('shouldPrewarmWebView', () {

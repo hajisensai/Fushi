@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/dictionary_import_manager.dart';
+import 'package:fushi/src/models/dictionary_import_manager.dart';
 import 'package:path/path.dart' as path;
 
 /// TODO-379 / BUG 守卫：「导入文件夹词典」选了一个**没有任何词典、只混了无关

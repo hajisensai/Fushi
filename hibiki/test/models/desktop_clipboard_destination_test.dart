@@ -2,7 +2,7 @@
 // 与「未知/空值回退 main」契约（存量用户升级后行为零变化的地基）。
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 
 void main() {
   group('DesktopClipboardDestination.fromStorage', () {

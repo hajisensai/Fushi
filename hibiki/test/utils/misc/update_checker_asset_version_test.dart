@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/platform_updater.dart';
-import 'package:hibiki/src/utils/misc/update_checker.dart';
+import 'package:fushi/src/utils/misc/platform_updater.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
 
 // TODO-1205 / BUG-1205: the update checker must judge presence of an update and
 // display the version from the SELECTED PLATFORM ASSET own stamped version, not

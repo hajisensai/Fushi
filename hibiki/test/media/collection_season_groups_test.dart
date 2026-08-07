@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/collections/collection_season_groups.dart';
+import 'package:fushi/src/media/collections/collection_season_groups.dart';
 
 /// 合集内分季：分组键派生 / 多组判定 / 分节 / tab 展示序 / 按季重排 纯函数契约。
 /// 分组是**文件名的纯函数、不落库**（曾试过 schema 列的方案已撤销）。

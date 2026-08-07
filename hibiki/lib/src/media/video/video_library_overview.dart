@@ -14,8 +14,8 @@
 /// 也算」对有本地行的视频天然成立（纯流播/无本地行的远端占位视频不在候选，属独立特性）。
 library;
 
-import 'package:hibiki/src/media/collections/collection_continue.dart';
-import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
+import 'package:fushi/src/media/collections/collection_continue.dart';
+import 'package:fushi/src/utils/misc/hibiki_time_format.dart';
 
 /// 一条视频行参与概览推导的最小投影（页面从 `VideoBookRow` 映射；测试直接构造）。
 class VideoOverviewEntry {

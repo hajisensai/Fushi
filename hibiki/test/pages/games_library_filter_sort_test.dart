@@ -4,19 +4,19 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/mining/galgame_library.dart';
-import 'package:hibiki/src/mining/galgame_library_query.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_draft.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_merge.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/pages/implementations/games_library_page.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/mining/galgame_library_query.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/games_library_page.dart';
+import 'package:fushi/utils.dart';
 
 import '../helpers/test_platform_services.dart';
 

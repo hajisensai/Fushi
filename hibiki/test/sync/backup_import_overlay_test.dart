@@ -12,9 +12,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/models/app_model.dart' show BackupImportPhase;
-import 'package:hibiki/src/sync/backup_import_overlay_view.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/models/app_model.dart' show BackupImportPhase;
+import 'package:fushi/src/sync/backup_import_overlay_view.dart';
 
 void main() {
   group('BackupImportOverlayView（修①/修②：两阶段遮罩）', () {

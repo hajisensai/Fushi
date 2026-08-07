@@ -2,9 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
-import 'package:hibiki/src/reader/reader_content_styles.dart';
-import 'package:hibiki/src/reader/reader_visual_novel_scripts.dart';
-import 'package:hibiki_core/hibiki_core.dart'
+import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
+import 'package:fushi_core/fushi_core.dart'
     show
         fullwidthAsciiToHalfwidth,
         halfwidthKatakanaToFullwidth,

@@ -1,19 +1,19 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:hibiki/src/sync/dropbox_sync_backend.dart';
-import 'package:hibiki/src/sync/ftp_sync_backend.dart';
-import 'package:hibiki/src/sync/google_drive_sync_backend.dart';
-import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
-import 'package:hibiki/src/sync/obfuscating_sync_backend.dart';
-import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
-import 'package:hibiki/src/sync/sftp_sync_backend.dart';
-import 'package:hibiki/src/sync/sync_asset_store.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/src/sync/ttu_filename.dart';
-import 'package:hibiki/src/sync/sync_file_ref.dart';
-import 'package:hibiki/src/sync/ttu_models.dart';
-import 'package:hibiki/src/sync/webdav_sync_backend.dart';
+import 'package:fushi/src/sync/dropbox_sync_backend.dart';
+import 'package:fushi/src/sync/ftp_sync_backend.dart';
+import 'package:fushi/src/sync/google_drive_sync_backend.dart';
+import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
+import 'package:fushi/src/sync/onedrive_sync_backend.dart';
+import 'package:fushi/src/sync/sftp_sync_backend.dart';
+import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi/src/sync/sync_file_ref.dart';
+import 'package:fushi/src/sync/ttu_models.dart';
+import 'package:fushi/src/sync/webdav_sync_backend.dart';
 
 enum SyncBackendType {
   googleDrive,

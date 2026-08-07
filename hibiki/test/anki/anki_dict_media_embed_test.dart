@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 /// 制卡词典媒体（gaiji 外字）嵌入守卫：导出的义项 HTML 已经是
 /// `<img class="gloss-image" src="hoshi_dict_N.ext">`，制卡时必须把占位符
@@ -132,7 +132,7 @@ void main() {
     test('routes through ankiInlineMediaReference, never returns a raw tag',
         () {
       final String src = File(
-        '../packages/hibiki_anki/lib/src/ankiconnect/ankiconnect_repository.dart',
+        '../packages/fushi_anki/lib/src/ankiconnect/ankiconnect_repository.dart',
       ).readAsStringSync().replaceAll('\r\n', '\n');
       // 锚定方法定义（而非调用点 `_storeDictionaryMedia(service, media)`）。
       // BUG-1265：返回类型是 `Future<String?>`——null = 这条词典媒体嵌不进去，

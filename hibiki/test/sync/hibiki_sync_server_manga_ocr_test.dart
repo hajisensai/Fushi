@@ -16,15 +16,15 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/ocr/manga_ocr_folder_job.dart'
+import 'package:fushi/src/ocr/manga_ocr_folder_job.dart'
     show
         MangaOcrPageFile,
         enumerateMangaPages,
         kMangaOcrOutDirName,
         kMangaOcrOutputFileName;
-import 'package:hibiki/src/ocr/manga_ocr_service.dart';
-import 'package:hibiki/src/sync/hibiki_manga_ocr_host.dart';
-import 'package:hibiki/src/sync/hibiki_sync_server.dart';
+import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi/src/sync/hibiki_manga_ocr_host.dart';
+import 'package:fushi/src/sync/hibiki_sync_server.dart';
 
 /// Fake host OCR 服务：按上传目录枚举页图，写 `manga_ocr_out/manga.json`。
 /// [gate] 非 null 时在 finished 前等待（测串行队列/取消）。

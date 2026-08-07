@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/series_playback_prefs.dart';
+import 'package:fushi/src/media/video/series_playback_prefs.dart';
 
 // 同系列（合集）播放偏好解析（schema v52）单测：锁住「系列级优先、回退 per-book」的
 // 优先级语义，尤其是 delayMs 用 nullable 区分「系列没设过（null）」与「显式调成 0」。

@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/epub/epub_parser.dart';
+import 'package:fushi/src/epub/epub_parser.dart';
 
 /// HBK-AUDIT-101: read a (possibly non-UTF-8) CSS file as text without throwing
 /// a FormatException. Malformed bytes are replaced rather than crashing the

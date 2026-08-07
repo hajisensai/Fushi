@@ -3,11 +3,11 @@ import 'dart:io';
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki/src/reader/reader_settings.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/settings/settings_schema_reading.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_reading.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-727 守卫：书籍阅读器顶部「阅读进度」百分比指示的显隐开关。
 ///

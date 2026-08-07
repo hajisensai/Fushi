@@ -3,8 +3,8 @@
 // now 由调用方注入，测试不依赖真实时钟。
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/video/airing_calendar_cache.dart';
-import 'package:hibiki/src/media/video/anilist_client.dart';
+import 'package:fushi/src/media/video/airing_calendar_cache.dart';
+import 'package:fushi/src/media/video/anilist_client.dart';
 
 AiringScheduleCache _cache({
   int fetchedAtMs = 1000,

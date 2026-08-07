@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/media.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+import 'package:fushi/media.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 /// A template for a single media type's history body content in the main menu
 /// given a selected media source.

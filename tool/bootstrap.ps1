@@ -197,11 +197,11 @@ if (-not $env:HIBIKI_BOOTSTRAP_SKIP_NETCHECK) {
 }
 
 $packages = @(
-    "$root\packages\hibiki_core",
-    "$root\packages\hibiki_dictionary",
-    "$root\packages\hibiki_anki",
-    "$root\packages\hibiki_audio",
-    "$root\packages\hibiki_platform",
+    "$root\packages\fushi_core",
+    "$root\packages\fushi_dictionary",
+    "$root\packages\fushi_anki",
+    "$root\packages\fushi_audio",
+    "$root\packages\fushi_platform",
     "$root\hibiki"
 )
 

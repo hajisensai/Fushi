@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/yomitan_tokenize_adapter.dart';
+import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
 void main() {
   group('buildYomitanTokenizeResponse', () {

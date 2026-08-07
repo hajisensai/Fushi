@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart'
+import 'package:fushi/src/pages/implementations/reader_hibiki_page.dart'
     show buildSpreadPageHtml;
 
 import '../pages/reader_hibiki_page_source_corpus.dart';

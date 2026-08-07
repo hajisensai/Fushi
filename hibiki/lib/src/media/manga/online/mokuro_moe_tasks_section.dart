@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki/src/media/manga/online/mokuro_moe_download_queue.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_progress_labels.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_progress_labels.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/utils.dart';
 
 /// 「下载」页任务 tab 的漫画目录下载区：渲染 [MokuroMoeDownloadQueue] 的任务
 /// 列表（与 torrent 任务并列，统一下载中心）。队列为空时不占位。

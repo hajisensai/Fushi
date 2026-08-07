@@ -3,8 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import 'package:hibiki/src/sync/texthooker_service.dart';
-import 'package:hibiki/src/sync/texthooker_ws_client.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/sync/texthooker_ws_client.dart';
 
 /// 模拟 IOWebSocketChannel.connect 的连接失败：`ready` 与 `stream` 都抛错。
 /// 只实现 _connect 实际用到的 `ready` / `stream`，其余经 noSuchMethod 兜底。

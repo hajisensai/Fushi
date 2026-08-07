@@ -36,7 +36,7 @@ void main() {
     test('uses the shared LookupAutoReadCoordinator', () {
       expect(
         shared.contains(
-            "import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';"),
+            "import 'package:fushi/src/utils/misc/lookup_auto_read_coordinator.dart';"),
         isTrue,
         reason: 'must import the shared dedupe coordinator',
       );
@@ -133,7 +133,7 @@ void main() {
           read('lib/src/pages/implementations/dictionary_popup_webview.dart');
       expect(
           src.contains(
-              "import 'package:hibiki/src/reader/popup_swipe_close_script.dart';"),
+              "import 'package:fushi/src/reader/popup_swipe_close_script.dart';"),
           isTrue);
       expect(
           src.contains('_topPullReleaseJs = kPopupTopPullReleaseJs'), isTrue);

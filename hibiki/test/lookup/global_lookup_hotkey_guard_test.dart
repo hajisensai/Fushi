@@ -83,7 +83,7 @@ void main() {
     test('controller imports ErrorLogService', () {
       expect(
           controller.contains(
-              "import 'package:hibiki/src/utils/misc/error_log_service.dart';"),
+              "import 'package:fushi/src/utils/misc/error_log_service.dart';"),
           isTrue,
           reason: 'the visibility fix depends on the ErrorLogService import');
     });

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/stat_activity.dart';
-import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
+import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
 
 /// 贡献热力图纯模型 [buildStatHeatmap] 的单测：窗口/周对齐、等级分桶、未来日占位，
 /// 以及翻页偏移 [maxHeatmapPageOffset]、格子命中 [hitStatHeatmapCell]。

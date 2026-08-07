@@ -11,7 +11,7 @@ import java.io.File
  * which has no Flutter engine and therefore no Drift instance.
  *
  * This is a parallel read path that MUST stay in sync with the Drift schema in
- * `packages/hibiki_core/lib/src/database/`. The column names below mirror the
+ * `packages/fushi_core/lib/src/database/`. The column names below mirror the
  * Drift table definitions; [EXPECTED_SCHEMA_VERSION] guards against silent
  * divergence when a migration bumps the schema.
  */
@@ -21,7 +21,7 @@ class PopupDbReader {
 
         /**
          * MUST match `HibikiDatabase.schemaVersion` in
-         * `packages/hibiki_core/lib/src/database/database.dart`.
+         * `packages/fushi_core/lib/src/database/database.dart`.
          * Bump this in lockstep with any Drift migration.
          */
         const val EXPECTED_SCHEMA_VERSION = 13

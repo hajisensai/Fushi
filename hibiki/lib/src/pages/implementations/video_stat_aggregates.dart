@@ -1,6 +1,6 @@
-import 'package:hibiki/src/pages/implementations/stat_activity.dart';
-import 'package:hibiki/src/pages/implementations/stat_charts.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/pages/implementations/stat_charts.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 单个视频在「按视频排行」里的聚合数据。
 class VideoStatBookData {

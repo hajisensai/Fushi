@@ -3,9 +3,9 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
-import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/gal_hook_failure_text.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
 import '../helpers/source_guard.dart';
 
 /// BUG-1216：共享内存打不开的真实原因不得在返回值处被丢弃。

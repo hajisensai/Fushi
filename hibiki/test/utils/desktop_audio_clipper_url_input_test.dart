@@ -5,7 +5,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
 
 void main() {
   group('debugIsRemoteFfmpegInput (BUG-529 URL input guard)', () {

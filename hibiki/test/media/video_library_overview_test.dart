@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_library_overview.dart';
+import 'package:fushi/src/media/video/video_library_overview.dart';
 
 /// 统一合集 UI v2 Phase B：视频库概览纯推导单测。
 void main() {

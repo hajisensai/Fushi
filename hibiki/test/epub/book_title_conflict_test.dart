@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/epub/book_title_conflict.dart';
+import 'package:fushi/src/epub/book_title_conflict.dart';
 
 void main() {
   group('resolveDuplicateTitle', () {

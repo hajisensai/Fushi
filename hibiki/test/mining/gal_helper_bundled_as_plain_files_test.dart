@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/galgame_helper_installer.dart';
+import 'package:fushi/src/mining/galgame_helper_installer.dart';
 
 /// BUG-1449：helper 改为**构建期**解压成普通文件随包，消灭「需要与本体保持同步的第二份副本」。
 ///

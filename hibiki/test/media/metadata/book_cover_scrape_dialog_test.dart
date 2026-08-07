@@ -3,11 +3,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/media/metadata/book_cover_scrape_dialog.dart';
-import 'package:hibiki/src/media/metadata/book_metadata_scraper.dart';
-import 'package:hibiki/src/media/metadata/transport_retry.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/metadata/book_cover_scrape_dialog.dart';
+import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
+import 'package:fushi/src/media/metadata/transport_retry.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 

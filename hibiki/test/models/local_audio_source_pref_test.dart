@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/local_audio_source_pref.dart';
+import 'package:fushi/src/models/local_audio_source_pref.dart';
 
 void main() {
   test('round trips through json', () {

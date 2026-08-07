@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/focus/hibiki_focus_target.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/focus/hibiki_focus_target.dart';
 
 /// A focusable, gamepad/keyboard-activatable tap target for cases where a bare
 /// [GestureDetector] would otherwise be unreachable by directional focus

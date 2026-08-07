@@ -81,7 +81,7 @@ void main() {
 
     test('控制器 skipToCue 漏斗在物理 seek 前回调 onExplicitCueJump', () {
       final String controller = File(
-        '../packages/hibiki_audio/lib/src/audiobook/audiobook_controller.dart',
+        '../packages/fushi_audio/lib/src/audiobook/audiobook_controller.dart',
       ).readAsStringSync().replaceAll('\r\n', '\n');
       final String skipToCue = _functionSource(
         controller,

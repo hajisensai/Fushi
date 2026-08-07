@@ -8,7 +8,7 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/import/import_carrier.dart';
+import 'package:fushi/src/media/import/import_carrier.dart';
 
 /// 默认判据：什么都不是目录、什么都不是图片压缩包。
 ImportCarrier classify(

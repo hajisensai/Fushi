@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
 
 /// TODO-1045：M4B/M4A 容器 tag 自动填充导入对话框的纯函数层测试。
 /// 覆盖 ffprobe 参数构造 + JSON 解析（含 ©nam→title 归一、缺 tag、空 tag、

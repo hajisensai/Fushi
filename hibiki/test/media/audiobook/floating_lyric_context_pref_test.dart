@@ -3,8 +3,8 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 // TODO-708 P4: 悬浮字幕「上下文行数」偏好 + 端到端接线守卫。
 //   1) 默认哨兵 0（= 只当前行 = 今天单行观感，never-break userspace）；

@@ -14,8 +14,8 @@ library;
 
 import 'dart:convert';
 
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
-import 'package:hibiki/src/media/video/scraper/title_normalizer.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/scraper/title_normalizer.dart';
 
 /// slim 记录版本号（slim 缓存格式变更时递增，旧缓存解码失败即重建）。
 const int _kSlimFormatVersion = 1;

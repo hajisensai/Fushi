@@ -2,8 +2,8 @@
 /// 内联面板与「下载」页任务区同源渲染，避免两处各写一份漂移）。
 library;
 
-import 'package:hibiki/src/media/manga/online/mokuro_moe_volume_downloader.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
+import 'package:fushi/utils.dart';
 
 /// 当前卷的确定性进度（0..1）；未知总量阶段回 null（转圈条）。
 double? mokuroMoeProgressValue(MokuroMoeVolumeDownloadEvent? event) {

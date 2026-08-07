@@ -1,12 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/stream_video_launch.dart';
-import 'package:hibiki/src/media/video/url_stream_video.dart';
-import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
-import 'package:hibiki/src/media/video/youtube_stream_cache.dart';
-import 'package:hibiki_audio/hibiki_audio.dart' show AudioCue;
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/video/stream_video_launch.dart';
+import 'package:fushi/src/media/video/url_stream_video.dart';
+import 'package:fushi/src/media/video/youtube_source_resolver.dart';
+import 'package:fushi/src/media/video/youtube_stream_cache.dart';
+import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
+import 'package:fushi_core/fushi_core.dart';
 
 VideoBookRow _row({required String videoPath, String? streamSpecJson}) =>
     VideoBookRow(

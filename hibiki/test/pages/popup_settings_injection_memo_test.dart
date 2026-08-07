@@ -4,16 +4,16 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:hibiki/src/pages/implementations/popup_settings_injection.dart';
-import 'package:hibiki/src/reader/reader_settings.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/pages/implementations/popup_settings_injection.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/test_platform_services.dart';
 
@@ -383,7 +383,7 @@ void main() {
 
     test('_stylesCache 只允许整体重赋值，禁止就地 mutate', () {
       final String src = File(
-        '../packages/hibiki_dictionary/lib/src/engine/fushidicts.dart',
+        '../packages/fushi_dictionary/lib/src/engine/fushidicts.dart',
       ).readAsStringSync();
 
       // 所有就地修改形态（下标写 / add* / remove* / clear / update* / putIfAbsent）一律禁止。

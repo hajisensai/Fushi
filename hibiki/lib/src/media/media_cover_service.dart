@@ -1,17 +1,17 @@
 import 'dart:io';
 
-import 'package:hibiki/src/media/media_item.dart';
-import 'package:hibiki/src/media/media_source.dart';
-import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
-import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki/src/media/video/video_import_dialog.dart'
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_import_dialog.dart'
     show setVideoCoverFromPickedFile;
-import 'package:hibiki/src/media/video/video_storage.dart';
-import 'package:hibiki/src/mining/galgame_cover_resolver.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/utils/cover_image.dart';
-import 'package:hibiki/src/utils/misc/gallery_image_picker.dart';
+import 'package:fushi/src/media/video/video_storage.dart';
+import 'package:fushi/src/mining/galgame_cover_resolver.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/cover_image.dart';
+import 'package:fushi/src/utils/misc/gallery_image_picker.dart';
 
 /// 媒体统一路线 P3：三个媒体岛（书 / 视频 / 游戏）封面「选图 → 落盘 → 缓存驱逐」
 /// 的统一服务入口。

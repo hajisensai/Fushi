@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/dictionary_font_css.dart';
+import 'package:fushi/src/reader/dictionary_font_css.dart';
 
 /// TODO-049: the dictionary popup is an isolated WebView with no font-file
 /// serving and (on Windows) an about:blank origin. These tests pin the two

@@ -2,8 +2,8 @@
 // 背景色，无边卡片与页面融为一体（巡检 C1，docs/reviews/2026-07-22-ui-ux-survey.md）。
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
-import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 
 Widget _app({required bool eink, required Widget child}) {
   return MaterialApp(

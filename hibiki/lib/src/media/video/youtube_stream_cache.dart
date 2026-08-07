@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 
 /// TODO-1314（yt-dlp 借鉴项之三）：YouTube **流解析结果的持久缓存**——Hibiki 特有概念。
 ///

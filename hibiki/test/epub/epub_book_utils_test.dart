@@ -2,8 +2,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/epub/epub_book.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/epub/epub_book.dart';
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
 
 import '../pages/reader_hibiki_page_source_corpus.dart';
 

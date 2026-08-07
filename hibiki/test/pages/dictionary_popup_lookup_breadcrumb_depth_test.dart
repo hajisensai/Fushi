@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 
 /// TODO-607 P0-2/②（关口语义验证）：查词面包屑落在 DictionaryPopupController 的
 /// **栈层进出**（同步代码），经注入回调 onLookupStackDepthChanged 上报当前**可见**

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/anki_view_model.dart';
 
 /// BUG-971 守卫：AnkiConnect 主机字段规范化。
 ///

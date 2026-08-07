@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
-import 'package:hibiki/src/media/video/video_clip_exporter.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/media/video/ffmpeg_backend.dart';
+import 'package:fushi/src/media/video/video_clip_exporter.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 void main() {
   group('buildFfmpegVideoClipExportArgs', () {

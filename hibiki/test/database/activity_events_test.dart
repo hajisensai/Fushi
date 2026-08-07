@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// activity_events 表（schema v49）的 CRUD 守卫：写入 / 倒序读取 / limit / 类别过滤 /
 /// 按标题删除 / 清空。fresh DB 走 onCreate.createAll 建表，验证迁移与查询契约。

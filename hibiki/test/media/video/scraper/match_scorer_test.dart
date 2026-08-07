@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/scraper/match_scorer.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/scraper/match_scorer.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 
 /// 快速构造候选（测试辅助）。
 ScrapeCandidate candidateOf({

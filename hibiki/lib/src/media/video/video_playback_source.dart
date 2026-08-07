@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// 视频播放只读视图，供 [VideoWatchTracker] 采集统计用。抽成接口让 tracker
 /// 不直接依赖 media_kit 的 `VideoPlayerController`（其状态读 libmpv player，

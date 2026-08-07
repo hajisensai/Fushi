@@ -1,4 +1,4 @@
-import 'package:hibiki/src/media/video/scraper/title_normalizer.dart';
+import 'package:fushi/src/media/video/scraper/title_normalizer.dart';
 
 /// 批量刮削只自动采用“唯一精确标题”。
 ///

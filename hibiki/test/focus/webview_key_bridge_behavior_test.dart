@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/focus/webview_key_bridge.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_input_bridge.dart';
+import 'package:fushi/src/focus/webview_key_bridge.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 
 /// BUG-1071 复诉（关闭词典的快捷键与鼠标键在弹窗上仍然没反应）的**行为级**守卫。
 ///

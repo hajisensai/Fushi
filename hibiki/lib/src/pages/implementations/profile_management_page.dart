@@ -4,13 +4,13 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki_core/hibiki_core.dart' show ProfileMediaKind;
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/profile/profile_repository.dart';
-import 'package:hibiki/src/profile/profile_view_model.dart';
-import 'package:hibiki/src/utils/misc/collection_exporter.dart';
+import 'package:fushi_core/fushi_core.dart' show ProfileMediaKind;
+import 'package:fushi/pages.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/profile/profile_repository.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/utils/misc/collection_exporter.dart';
 import 'package:path/path.dart' as p;
 
 /// Full-screen page for managing profiles, media-type bindings,

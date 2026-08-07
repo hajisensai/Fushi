@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/pages.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/utils.dart';
 
 class CustomThemePage extends BasePage {
   // TODO-930: edit an existing custom theme by id, or (null) create a new one.

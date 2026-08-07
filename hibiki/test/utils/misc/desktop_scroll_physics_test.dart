@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 void main() {
   test('Windows/Linux clamp (no bounce); macOS & mobile keep bounce', () {

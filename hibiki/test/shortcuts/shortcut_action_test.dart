@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
 
 void main() {
   group('ShortcutAction', () {

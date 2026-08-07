@@ -6,9 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:multi_value_listenable_builder/multi_value_listenable_builder.dart';
-import 'package:hibiki/creator.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/creator.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/utils.dart';
 
 /// Base class for audio creator fields (term audio and sentence audio).
 /// Contains all shared audio-player logic so concrete subclasses only need

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 /// 「按季拆分合集」预览弹窗（TODO-2489）：每季一节（新合集名可编辑 + 成员清单）
 /// + 「保留原合集」勾选。返回 null = 取消。

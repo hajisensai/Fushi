@@ -5,10 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:network_to_file_image/network_to_file_image.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:hibiki/creator.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/utils/misc/gallery_image_picker.dart';
+import 'package:fushi/creator.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/utils/misc/gallery_image_picker.dart';
 
 /// An enhancement that can be used to select a picture with the
 class PickImageEnhancement extends ImageEnhancement {

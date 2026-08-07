@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// BUG-209 / TODO-398：把 native 端 WGC（Windows.Graphics.Capture）帧捕获生命周期
 /// 日志折进 [ErrorLogService] 的上传链路。

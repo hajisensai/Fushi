@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/models/anki_integration.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/models/anki_integration.dart';
 
 void main() {
   setUp(() {

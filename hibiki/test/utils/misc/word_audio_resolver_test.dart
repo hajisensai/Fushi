@@ -3,10 +3,10 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/models/audio_source_config.dart';
-import 'package:hibiki/src/sync/hibiki_remote_lookup_client.dart'
+import 'package:fushi/src/models/audio_source_config.dart';
+import 'package:fushi/src/sync/hibiki_remote_lookup_client.dart'
     show RemoteLookupUnreachableError;
-import 'package:hibiki/src/utils/misc/word_audio_resolver.dart';
+import 'package:fushi/src/utils/misc/word_audio_resolver.dart';
 
 void main() {
   group('WordAudioResolver', () {

@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart' show Value, QueryRow;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// v54 迁移（视频条目刮削「抄 Bangumi」）：新建 `video_scrape_meta` 表存条目级资料
 /// （简介/评分/放送/话数/标签/infobox），封面仍走 `video_covers/` 文件 +

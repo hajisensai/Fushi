@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/media/video/video_chrome_colors.dart';
+import 'package:fushi/src/media/video/video_chrome_colors.dart';
 
 class VideoTranslucentSidePanel extends StatelessWidget {
   const VideoTranslucentSidePanel({

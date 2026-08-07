@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:hibiki/creator.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/creator.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// An enhancement that can be used to select an audio file.
 class PickAudioEnhancement extends AudioEnhancement {

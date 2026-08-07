@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/ftp_sync_backend.dart';
-import 'package:hibiki/src/sync/sftp_sync_backend.dart';
-import 'package:hibiki/src/sync/sync_utils.dart';
+import 'package:fushi/src/sync/ftp_sync_backend.dart';
+import 'package:fushi/src/sync/sftp_sync_backend.dart';
+import 'package:fushi/src/sync/sync_utils.dart';
 
 /// FTP/SFTP must store sync data under the user's login directory, never at the
 /// server filesystem root. An absolute '/hibiki-data' fails on a normal

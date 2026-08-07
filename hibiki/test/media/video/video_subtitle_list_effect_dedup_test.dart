@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki/src/media/video/video_subtitle_jump_panel.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG-841 守卫：特效叠加 / 多层 ASS 用多条 Dialogue 事件渲染**同一句可见文本**（不同
 /// layer / style / 位置做描边、辉光、逐字变色特效），字幕列表必须按 `(startMs, 文本)` 折叠

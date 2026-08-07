@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/creator.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/creator.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/utils.dart';
 
 /// A special kind of field that has a special widget at the top of the creator.
 /// For example, the audio field has a media player that can be controlled

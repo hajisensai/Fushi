@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
 
 void main() {
   test('HTTP video source is passed to media_kit as HTTP URL', () {

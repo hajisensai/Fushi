@@ -4,10 +4,10 @@ import 'dart:ui' as ui;
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/settings/settings_schema_system.dart';
-import 'package:hibiki/src/settings/settings_search.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_system.dart';
+import 'package:fushi/src/settings/settings_search.dart';
+import 'package:fushi/utils.dart';
 
 /// TODO-2525：TMDB 署名 = **合约义务**（Terms of Use 第 3 节），署名文字 + 官方标识
 /// 缺一不可，且标识不得改色 / 改比例 / 翻转 / 旋转 / 裁剪。

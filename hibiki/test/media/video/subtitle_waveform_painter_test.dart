@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/video/audio_energy_probe.dart';
-import 'package:hibiki/src/media/video/subtitle_waveform_painter.dart';
+import 'package:fushi/src/media/video/audio_energy_probe.dart';
+import 'package:fushi/src/media/video/subtitle_waveform_painter.dart';
 
 /// TODO-1051 阶段B：波形 painter 的纯几何函数 + 渲染守卫单测。
 void main() {

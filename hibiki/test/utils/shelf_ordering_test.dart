@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/shelf_ordering.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/utils/misc/shelf_ordering.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// shelf_ordering 纯函数守卫（widget-free）。
 /// UI v2 Phase E：旧 groupAndSortShelfEntries 已删（分组唯一真相源 =

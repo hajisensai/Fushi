@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
 
 /// TODO-1276 守卫：**首开视频只转一次圈**的根因不变量。
 ///

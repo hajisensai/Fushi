@@ -2,11 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:hibiki/src/utils/misc/hibiki_share.dart';
+import 'package:fushi/src/utils/misc/hibiki_share.dart';
 
 import 'package:gap/gap.dart';
-import 'package:hibiki/src/utils/misc/crash_dump_locator.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
+import 'package:fushi/utils.dart';
 
 /// TODO-607 P0-3：「诊断区 → 崩溃转储」页（Windows-only）。
 ///

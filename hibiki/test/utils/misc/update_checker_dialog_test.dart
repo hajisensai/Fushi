@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
-import 'package:hibiki/src/utils/misc/update_handoff.dart';
-import 'package:hibiki/src/utils/misc/update_checker.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/misc/update_handoff.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
 
 void main() {
   setUp(() {

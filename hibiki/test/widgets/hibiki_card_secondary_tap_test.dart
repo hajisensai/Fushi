@@ -2,8 +2,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import '../pages/reader_history_source_corpus.dart';
-import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
-import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/focus/hibiki_focus_controller.dart';
+import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 
 /// BUG-038：桌面端书架卡片只能长按才弹上下文菜单，PC 用户惯例是鼠标右键。
 /// 根因 = `HibikiCard`/`_bookCardShell` 从不配线 secondary tap（右键），

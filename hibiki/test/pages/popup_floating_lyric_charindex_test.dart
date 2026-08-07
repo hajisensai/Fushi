@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// Behaviour test for the Dart half of the BUG-214 fix: the popup must segment
 /// the *tapped* word from the supplied charIndex, instead of always searching

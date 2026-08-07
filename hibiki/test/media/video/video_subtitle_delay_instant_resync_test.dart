@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG-373 行为守卫：调字幕音画延迟（`setDelayMs`）后，当前显示的**文本字幕**必须
 /// **立即**按新偏移重算并通知，而不是等下一个 125ms tick。

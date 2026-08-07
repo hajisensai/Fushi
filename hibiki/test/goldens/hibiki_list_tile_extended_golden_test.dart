@@ -3,7 +3,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/components/hibiki_list_tile.dart';
+import 'package:fushi/src/utils/components/hibiki_list_tile.dart';
 
 import 'golden_test_helpers.dart';
 

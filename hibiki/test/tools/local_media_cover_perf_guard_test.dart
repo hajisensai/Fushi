@@ -27,7 +27,7 @@ void main() {
   final String coverImageSrc =
       File('lib/src/utils/cover_image.dart').readAsStringSync();
   final String dbSrc =
-      File('../packages/hibiki_core/lib/src/database/database.dart')
+      File('../packages/fushi_core/lib/src/database/database.dart')
           .readAsStringSync();
   final String videoPageSrc =
       File('lib/src/pages/implementations/home_video_page.dart')

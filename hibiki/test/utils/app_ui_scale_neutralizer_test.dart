@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/focus/focus_geometry.dart';
-import 'package:hibiki/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/focus/focus_geometry.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
 
 void main() {
   const Size physicalView = Size(1000, 800);

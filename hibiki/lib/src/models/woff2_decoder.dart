@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:brotli/brotli.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:hibiki/src/models/font_decoder.dart';
+import 'package:fushi/src/models/font_decoder.dart';
 
 /// Decodes a WOFF2 container into raw sfnt (TrueType) bytes that Flutter's
 /// `FontLoader` can register.

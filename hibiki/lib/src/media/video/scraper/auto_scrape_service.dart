@@ -18,11 +18,11 @@ library;
 
 import 'dart:async';
 
-import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
-import 'package:hibiki/src/media/video/scraper/member_cover_cleanup.dart'
+import 'package:fushi/src/media/video/scraper/cover_scraper_service.dart';
+import 'package:fushi/src/media/video/scraper/member_cover_cleanup.dart'
     show runMemberCoverCleanup;
-import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki_core/hibiki_core.dart' show VideoBookRow;
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_core/fushi_core.dart' show VideoBookRow;
 
 /// 自动刮削调度器。生命周期跟随视频页（initState 建 / dispose 销），无全局单例：
 /// 页面不在就没人需要刮削结果，跑着也是白跑。

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 /// 导入对话框共享的「导入流程」mixin：逐步进度基础设施 + [runImport] 执行模板。
 ///

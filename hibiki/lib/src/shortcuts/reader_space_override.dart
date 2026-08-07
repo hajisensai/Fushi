@@ -1,8 +1,8 @@
 import 'package:flutter/services.dart'
     show LogicalKeyboardKey, PhysicalKeyboardKey;
 
-import 'package:hibiki/src/shortcuts/input_binding.dart';
-import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
 
 /// 有声书激活时，无修饰 Space 改作播放/暂停（媒体播放器惯例）。
 ///

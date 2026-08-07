@@ -10,10 +10,10 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:hibiki/src/mining/metadata/galgame_metadata_adapter.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_draft.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_rate_limit.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_adapter.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_rate_limit.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
 import 'package:http/http.dart' as http;
 
 /// 详情请求要的字段集（契约 §2.3 逐字给定）。

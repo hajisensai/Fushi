@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG-060：sasayaki payload 必须带 cue 原文，运行时 JS 才能在实时 DOM
 /// 就近重定位高亮（消除 package:html↔DOM 累积偏移）。

@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/sync/deletion_disclosure.dart';
-import 'package:hibiki/src/media/collections/collection_asset_reclaim.dart';
-import 'package:hibiki/src/media/collections/collection_one_key_sort.dart'
+import 'package:fushi/src/sync/deletion_disclosure.dart';
+import 'package:fushi/src/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show sortedCollectionRows;
-import 'package:hibiki/src/media/collections/collection_shelf_row.dart'
+import 'package:fushi/src/media/collections/collection_shelf_row.dart'
     show unifiedShelfCardLayout;
-import 'package:hibiki/src/pages/implementations/collection_detail_shared.dart';
-import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart'
+import 'package:fushi/src/pages/implementations/collection_detail_shared.dart';
+import 'package:fushi/src/pages/implementations/reader_hibiki_history_page.dart'
     show kShelfBookCardAspectRatio;
-import 'package:hibiki/src/utils/components/hibiki_reorderable_grid.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/utils/components/hibiki_reorderable_grid.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 统一合集 Phase 4：网格式合集详情页（书架用；成员按 sortIndex 有序渲染，与 playlist
 /// 的剧集列表 [MediaCollectionDetailPage] 同一顺序真相源）。渲染成员卡网格

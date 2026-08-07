@@ -1,6 +1,6 @@
 import 'dart:math';
 
-import 'package:hibiki/src/sync/ttu_models.dart';
+import 'package:fushi/src/sync/ttu_models.dart';
 
 /// ッツ Ebook Reader 兼容的文件名生成/解析/sanitize。
 ///

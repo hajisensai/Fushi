@@ -28,7 +28,7 @@ void main() {
       'lib/src/utils/misc/lookup_audio_playback.dart';
   // 词典 FFI 引擎在同工作区的兄弟包。
   const String fushidictsPath =
-      '../packages/hibiki_dictionary/lib/src/engine/fushidicts.dart';
+      '../packages/fushi_dictionary/lib/src/engine/fushidicts.dart';
 
   // (文件, 该文件不应再出现的探针标记)。
   const Map<String, List<String>> probeMarkers = <String, List<String>>{

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/models.dart';
-import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
+import 'package:fushi/models.dart';
+import 'package:fushi/src/pages/hibiki_page_placeholders.dart';
 
 /// A page template which assumes use of [BasePageState] by which all pages
 /// in the app will conveniently share base functionality.

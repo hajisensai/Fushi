@@ -2,13 +2,13 @@
 //
 // 都走真实页面：装载 → 交互 → 点保存 → 断言弹回的 [LapisVisualEditorResult]。
 // 纯函数层（位置 CSS 生成 / 字段来源真相源）的守卫在
-// packages/hibiki_anki/test/lapis_styling_test.dart。
+// packages/fushi_anki/test/lapis_styling_test.dart。
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/anki/lapis_style_editor_page.dart';
-import 'package:hibiki/utils.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi/src/anki/lapis_style_editor_page.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 import 'lapis_style_editor_harness.dart';
 

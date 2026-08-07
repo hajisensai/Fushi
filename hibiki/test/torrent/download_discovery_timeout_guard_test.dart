@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/src/media/torrent/download_network_proxy.dart';
+import 'package:fushi/src/media/torrent/download_network_proxy.dart';
 
 /// BUG-1141：用户报：挂着代理搜 Nyaa，「发现」页只出
 /// `TimeoutException after 0:00:20.000000: Future not completed` + 「请点重试」。

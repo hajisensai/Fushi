@@ -7,7 +7,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
+import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 
 /// BUG-875：竖排有声书读到「句首是行尾单字」的 cue 时凭空前翻一页、下一句又翻回。
 ///

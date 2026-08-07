@@ -4,7 +4,7 @@
 
 ### Scope
 - User checklist from current task: reader layout live refresh, lookup pause behavior, lyrics mode placement/state, local audio ordering, Dolby audio container handling, import cover editing, subtitle-book long-press actions, recommended dictionary download, dictionary collapse controls, lookup popup density, per-book CSS editing, reading statistics chart axes, and collections sentence playback.
-- Code paths reviewed: `ReaderHoshiPage`, `ReaderHoshiSource`, `AudiobookPlayBar`/settings sheet, dictionary dialog/popup WebView assets, book/audiobook import dialogs, SRT history dialog, collections page, reading statistics page, and `packages/hibiki_audio` audiobook models/matching.
+- Code paths reviewed: `ReaderHoshiPage`, `ReaderHoshiSource`, `AudiobookPlayBar`/settings sheet, dictionary dialog/popup WebView assets, book/audiobook import dialogs, SRT history dialog, collections page, reading statistics page, and `packages/fushi_audio` audiobook models/matching.
 
 ### Findings
 
@@ -29,11 +29,11 @@
 #### HBK-AUDIT-003
 - severity: medium
 - status: fixed
-- files: `packages/hibiki_audio/lib/src/audiobook/audio_file_sort.dart`, `packages/hibiki_audio/lib/hibiki_audio.dart`, `hibiki/lib/src/media/audiobook/book_import_dialog.dart`, `hibiki/lib/src/media/audiobook/audiobook_import_dialog.dart`, `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart`, `hibiki/lib/src/pages/implementations/collections_page.dart`, `packages/hibiki_audio/test/audiobook/audio_file_sort_test.dart`, `packages/hibiki_audio/test/audiobook/audiobook_model_test.dart`
+- files: `packages/fushi_audio/lib/src/audiobook/audio_file_sort.dart`, `packages/fushi_audio/lib/hibiki_audio.dart`, `hibiki/lib/src/media/audiobook/book_import_dialog.dart`, `hibiki/lib/src/media/audiobook/audiobook_import_dialog.dart`, `hibiki/lib/src/pages/implementations/reader_hoshi_page.dart`, `hibiki/lib/src/pages/implementations/collections_page.dart`, `packages/fushi_audio/test/audiobook/audio_file_sort_test.dart`, `packages/fushi_audio/test/audiobook/audiobook_model_test.dart`
 - root cause: directory scans and manually picked audio files used lexicographic or picker order, which can put `track10` before `track2`. A naive playback-time sort would break existing cue `audioFileIndex` mappings.
 - impact: multi-file local audio could play the wrong file for a cue or appear unsorted.
 - fix: introduced shared natural path sorting; apply it at import/picker time and directory-scan time, while preserving persisted `audioPaths` in cue order for old data compatibility.
-- verification: `flutter test test/audiobook/audio_file_sort_test.dart test/audiobook/audiobook_model_test.dart` passed in `packages/hibiki_audio`.
+- verification: `flutter test test/audiobook/audio_file_sort_test.dart test/audiobook/audiobook_model_test.dart` passed in `packages/fushi_audio`.
 
 #### HBK-AUDIT-004
 - severity: medium

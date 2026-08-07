@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/sync/deletion_disclosure.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
-import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/sync/deletion_disclosure.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/hibiki_design_tokens.dart';
+import 'package:fushi/src/utils/components/hibiki_material_components.dart';
 
 /// [HibikiDestructiveConfirmDialog] 的返回值。
 ///

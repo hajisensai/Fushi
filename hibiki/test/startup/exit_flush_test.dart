@@ -4,7 +4,7 @@ import 'dart:io';
 import '../pages/reader_hibiki_page_source_corpus.dart';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/startup/exit_flush_registry.dart';
 
 bool hasExitFlushRegistration(String source) {
   return RegExp(

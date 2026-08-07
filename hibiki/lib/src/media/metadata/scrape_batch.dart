@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 
 enum ScrapeBatchItemResult {
   applied,

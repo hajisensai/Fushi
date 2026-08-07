@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
+import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import '../helpers/source_guard.dart';
 
 /// TODO-909 源码守卫（源码扫描，沿用仓库既有 `File(...).readAsStringSync()` +

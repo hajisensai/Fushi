@@ -2,7 +2,7 @@
 // 「纯基准文本 + 旁路下标区间」，正文一个字符不加不减。
 //
 // 为什么是这个形状：仓库里字幕侧已有同款范式（`parseSubtitleMarkup` 产出
-// `plainText` + `SubtitleSpan` 区间，见 packages/hibiki_audio/.../subtitle_markup.dart），
+// `plainText` + `SubtitleSpan` 区间，见 packages/fushi_audio/.../subtitle_markup.dart），
 // 下游查词 / 制卡 sentence / 字数统计全靠「正文即唯一坐标系」才不漂移。注音走同一
 // 形状，就不会重演「显示串 ≠ 查询串」那类偏移 bug。
 //

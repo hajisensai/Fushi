@@ -9,9 +9,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
-import 'package:hibiki/src/media/video/video_storage.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/video_storage.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 把一次合集刮削的产物写进库。
 ///

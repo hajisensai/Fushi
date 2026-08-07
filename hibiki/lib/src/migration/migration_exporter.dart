@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hibiki/src/migration/migration_manifest.dart';
-import 'package:hibiki/src/sync/backup_service.dart';
+import 'package:fushi/src/migration/migration_manifest.dart';
+import 'package:fushi/src/sync/backup_service.dart';
 import 'package:path/path.dart' as p;
 
 /// 迁移批次（改名迁移计划 P1-1）。顺序即导出顺序：DB/设置最小批先行，

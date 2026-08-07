@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 
 /// 划词弹窗内容 CSS `zoom` 系数的纯函数守卫。
 ///

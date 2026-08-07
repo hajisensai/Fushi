@@ -10,11 +10,11 @@ import 'dart:ui';
 
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/manga/mokuro_payload.dart';
-import 'package:hibiki/src/media/manga/ocr/google_lens_protocol.dart';
-import 'package:hibiki/src/ocr/manga_ocr_folder_job.dart';
-import 'package:hibiki/src/ocr/manga_ocr_pipeline.dart';
-import 'package:hibiki/src/ocr/manga_ocr_service.dart';
+import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
+import 'package:fushi/src/ocr/manga_ocr_folder_job.dart';
+import 'package:fushi/src/ocr/manga_ocr_pipeline.dart';
+import 'package:fushi/src/ocr/manga_ocr_service.dart';
 
 final Uri kGoogleLensEndpoint =
     Uri.parse('https://lensfrontend-pa.googleapis.com/v1/crupload');

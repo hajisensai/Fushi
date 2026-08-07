@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:hibiki/src/media/manga/ocr/google_lens_protocol.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 
 /// 合成一份 Lens `LensOverlayServerResponse` 的 protobuf 字节。
 ///

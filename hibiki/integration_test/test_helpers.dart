@@ -2,9 +2,9 @@ import 'package:flutter/cupertino.dart' show CupertinoTabBar;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/home_page.dart'
+import 'package:fushi/src/pages/implementations/home_page.dart'
     show HomeTab, homeNavItemFor;
-import 'package:hibiki/src/utils/adaptive/adaptive_navigation.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:integration_test/integration_test.dart';
 
 bool get screenshotsAreRequired =>

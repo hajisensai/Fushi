@@ -1,9 +1,9 @@
 import 'dart:io';
 
-import 'package:hibiki/src/media/torrent/download_save_root.dart';
-import 'package:hibiki/src/media/torrent/torrent_backend.dart';
-import 'package:hibiki/src/media/torrent/torrent_task_display.dart';
-import 'package:hibiki_torrent/hibiki_torrent.dart';
+import 'package:fushi/src/media/torrent/download_save_root.dart';
+import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/torrent/torrent_task_display.dart';
+import 'package:fushi_torrent/fushi_torrent.dart';
 
 /// [TorrentBackend] 的内置 libtorrent 实现（阶段1b：Windows 先行）。
 ///

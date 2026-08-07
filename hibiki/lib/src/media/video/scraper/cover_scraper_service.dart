@@ -16,29 +16,29 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show compute;
-import 'package:hibiki/src/media/video/scraper/alias_cache.dart';
-import 'package:hibiki/src/media/video/scraper/anilist_client.dart';
-import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
-import 'package:hibiki/src/media/video/scraper/jikan_client.dart';
-import 'package:hibiki/src/media/video/scraper/collection_member_policy.dart'
+import 'package:fushi/src/media/video/scraper/alias_cache.dart';
+import 'package:fushi/src/media/video/scraper/anilist_client.dart';
+import 'package:fushi/src/media/video/scraper/bangumi_client.dart';
+import 'package:fushi/src/media/video/scraper/jikan_client.dart';
+import 'package:fushi/src/media/video/scraper/collection_member_policy.dart'
     show multiMemberCollectionIdByVideoUid;
-import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
-import 'package:hibiki/src/media/video/scraper/filename_parser.dart';
-import 'package:hibiki/src/media/video/scraper/match_scorer.dart';
-import 'package:hibiki/src/media/video/scraper/offline_db_downloader.dart';
-import 'package:hibiki/src/media/video/scraper/offline_index.dart';
-import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
-import 'package:hibiki/src/media/video/scraper/sidecar_scanner.dart';
-import 'package:hibiki/src/media/video/scraper/title_normalizer.dart';
-import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
-import 'package:hibiki/src/media/media_cover_service.dart';
-import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki/src/media/video/video_storage.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki/src/media/video/video_cover_extractor.dart'
+import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
+import 'package:fushi/src/media/video/scraper/filename_parser.dart';
+import 'package:fushi/src/media/video/scraper/match_scorer.dart';
+import 'package:fushi/src/media/video/scraper/offline_db_downloader.dart';
+import 'package:fushi/src/media/video/scraper/offline_index.dart';
+import 'package:fushi/src/media/video/scraper/cover_downloader.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/scraper/sidecar_scanner.dart';
+import 'package:fushi/src/media/video/scraper/title_normalizer.dart';
+import 'package:fushi/src/media/video/scraper/tmdb_client.dart';
+import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_storage.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/media/video/video_cover_extractor.dart'
     show videoCoverFileName;
-import 'package:hibiki_core/hibiki_core.dart'
+import 'package:fushi_core/fushi_core.dart'
     show MediaCollectionRow, MediaImageKind, VideoBookRow;
 import 'package:path/path.dart' as p;
 

@@ -2,19 +2,19 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
-import 'package:hibiki/src/mining/external_window_mining.dart';
-import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/mining/galgame_window_gif.dart';
-import 'package:hibiki/src/mining/immersion_mining_engine.dart';
-import 'package:hibiki/src/mining/immersion_mining_request.dart';
-import 'package:hibiki/src/mining/serial_job_queue.dart';
-import 'package:hibiki/src/mining/window_capture_channel.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
-import 'package:hibiki/src/sync/texthooker_service.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/mining/external_window_mining.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/galgame_window_gif.dart';
+import 'package:fushi/src/mining/immersion_mining_engine.dart';
+import 'package:fushi/src/mining/immersion_mining_request.dart';
+import 'package:fushi/src/mining/serial_job_queue.dart';
+import 'package:fushi/src/mining/window_capture_channel.dart';
+import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 typedef GalHookGifCapture = Future<GalWindowAnimatedCapture?> Function({
   required int hwnd,

@@ -5,7 +5,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-import 'package:hibiki/src/mining/galgame_audio_encode.dart'
+import 'package:fushi/src/mining/galgame_audio_encode.dart'
     show PcmFormat, transcodeVoiceOggToMiningAudio;
 
 /// galgame 一键制卡（docs/specs/galgame-mining）的音频来源抽象。

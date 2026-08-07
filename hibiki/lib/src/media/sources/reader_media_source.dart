@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 
-import 'package:hibiki/media.dart';
-import 'package:hibiki/pages.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/pages.dart';
 
 /// A source for the [ReaderMediaType], which handles primarily text-based
 /// media.

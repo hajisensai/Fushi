@@ -14,27 +14,27 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/lookup/global_lookup_controller.dart'
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/lookup/global_lookup_controller.dart'
     show
         GlobalLookupController,
         GlobalLookupMediaRequest,
         resolveGlobalLookupMedia;
-import 'package:hibiki/src/lookup/overlay_auto_read.dart';
-import 'package:hibiki/src/lookup/clipboard_history_payload.dart';
-import 'package:hibiki/src/lookup/desktop_lookup_router.dart';
-import 'package:hibiki/src/lookup/global_lookup_log.dart';
-import 'package:hibiki/src/lookup/global_lookup_render.dart';
-import 'package:hibiki/src/lookup/global_lookup_stack.dart';
-import 'package:hibiki/src/lookup/overlay_bridge_handlers.dart';
-import 'package:hibiki/src/lookup/overlay_window_channel.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/pages/implementations/stat_activity.dart';
-import 'package:hibiki/src/sync/desktop_lookup_service.dart';
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
-import 'package:hibiki_core/hibiki_core.dart' show kStatSourceBook;
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:fushi/src/lookup/overlay_auto_read.dart';
+import 'package:fushi/src/lookup/clipboard_history_payload.dart';
+import 'package:fushi/src/lookup/desktop_lookup_router.dart';
+import 'package:fushi/src/lookup/global_lookup_log.dart';
+import 'package:fushi/src/lookup/global_lookup_render.dart';
+import 'package:fushi/src/lookup/global_lookup_stack.dart';
+import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
+import 'package:fushi/src/lookup/overlay_window_channel.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi_core/fushi_core.dart' show kStatSourceBook;
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:path/path.dart' as p;
 
 /// 面板窗默认矩形（逻辑像素）。首次启用（无记忆位）时用；native

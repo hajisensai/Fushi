@@ -24,13 +24,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:hibiki/main.dart' as app;
-import 'package:hibiki/src/media/video/video_book_repository.dart'
+import 'package:fushi/main.dart' as app;
+import 'package:fushi/src/media/video/video_book_repository.dart'
     show VideoBookRepository;
-import 'package:hibiki/src/media/video/video_volume_overlays.dart'
+import 'package:fushi/src/media/video/video_volume_overlays.dart'
     show videoVolumeHudProgressKey;
-import 'package:hibiki/src/models/app_model.dart' show AppModel;
-import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart'
+import 'package:fushi/src/models/app_model.dart' show AppModel;
+import 'package:fushi/src/pages/implementations/video_hibiki_page.dart'
     show VideoHibikiPage, VideoHibikiTestHooks;
 
 import 'helpers/library_fixture.dart';

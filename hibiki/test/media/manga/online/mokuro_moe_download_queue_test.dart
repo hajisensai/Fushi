@@ -3,10 +3,10 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_client.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_download_queue.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_volume_downloader.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// [MokuroMoeDownloadQueue] 纯逻辑单测：注入 runner 绕网络/DB，验证顺序执行、
 /// 状态迁移、importedCount 口径、失败继续、取消与去重（统一下载中心的队列

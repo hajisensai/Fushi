@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:hibiki/src/utils/misc/volume_key_channel.dart';
+import 'package:fushi/src/utils/misc/volume_key_channel.dart';
 
 /// Owns the process-wide Android volume-key bridge while a manga page is active.
 ///

@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// v57 迁移（命名统一 Phase 4）：三项低风险持久化统一，数据必须逐字节保真。
 ///

@@ -1,6 +1,6 @@
-import 'package:hibiki/src/platform/platform_services.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki_platform/hibiki_platform.dart';
+import 'package:fushi/src/platform/platform_services.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_platform/fushi_platform.dart';
 
 // ── Recording fakes ────────────────────────────────────────────────────────
 // Each fake records calls so tests can assert on platform interactions.

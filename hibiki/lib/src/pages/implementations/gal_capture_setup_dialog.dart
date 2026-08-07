@@ -2,13 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/mining/gal_audio_tracks_panel.dart';
-import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/mining/galgame_audio_source.dart';
-import 'package:hibiki/src/pages/implementations/game_shared.dart';
-import 'package:hibiki/src/sync/texthooker_service.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_playback.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/mining/gal_audio_tracks_panel.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/pages/implementations/game_shared.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
+import 'package:fushi/utils.dart';
 
 typedef GalTextThreadSelector = Future<bool> Function(
   TexthookerTextThread thread,

@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/focus/page_focus_ownership.dart';
+import 'package:fushi/src/focus/page_focus_ownership.dart';
 
 void main() {
   /// 建一个真挂在焦点树上的 [PageFocusOwnership]，这样 `requestFocus` 有可观测

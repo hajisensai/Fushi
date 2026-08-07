@@ -17,11 +17,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show Navigator, NavigatorState;
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/main.dart' as app;
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/home_page.dart'
+import 'package:fushi/main.dart' as app;
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart'
     show HomePage, HomeTab;
-import 'package:hibiki/src/startup/observe_blank_detector.dart';
+import 'package:fushi/src/startup/observe_blank_detector.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'helpers/library_fixture.dart';

@@ -3,22 +3,22 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
-import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
-import 'package:hibiki/src/media/video/video_control_customization.dart';
-import 'package:hibiki/src/media/video/video_control_layout_editor.dart';
-import 'package:hibiki/src/media/video/video_danmaku_model.dart';
-import 'package:hibiki/src/media/video/video_immersive_mode.dart';
-import 'package:hibiki/src/media/video/video_mpv_config.dart';
-import 'package:hibiki/src/media/video/video_quick_settings_host.dart';
-import 'package:hibiki/src/media/video/video_shader_manager.dart';
-import 'package:hibiki/src/media/video/video_shader_tier.dart';
-import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
-import 'package:hibiki/src/media/video/video_subtitle_style.dart';
-import 'package:hibiki/src/media/video/video_subtitle_sync_row.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
-import 'package:hibiki/src/settings/settings_context.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/video/video_asbplayer_config.dart';
+import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/media/video/video_control_layout_editor.dart';
+import 'package:fushi/src/media/video/video_danmaku_model.dart';
+import 'package:fushi/src/media/video/video_immersive_mode.dart';
+import 'package:fushi/src/media/video/video_mpv_config.dart';
+import 'package:fushi/src/media/video/video_quick_settings_host.dart';
+import 'package:fushi/src/media/video/video_shader_manager.dart';
+import 'package:fushi/src/media/video/video_shader_tier.dart';
+import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:fushi/src/media/video/video_subtitle_style.dart';
+import 'package:fushi/src/media/video/video_subtitle_sync_row.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/video_shader_dialog.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/utils.dart';
 
 /// 视频 schema 项的双路写穿层（阶段 B）：同一条 item 声明服务两个宿主——
 /// 全局设置页（`SettingsContext.video == null`，直接读写 appModel 纯 pref、下次

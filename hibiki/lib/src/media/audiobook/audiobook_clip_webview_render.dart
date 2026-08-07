@@ -5,9 +5,9 @@ import 'dart:ui' show Size;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart' show Color;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_clip_text_render.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki/src/webview/webview_death_guard.dart';
+import 'package:fushi/src/media/audiobook/audiobook_clip_text_render.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/webview/webview_death_guard.dart';
 
 /// TODO-1167：单帧 takeScreenshot 的超时上限，对齐 load 的 8s 语义（截图原来无超时，
 /// 卡死会永久挂住整条导出管线 → 表现为卡死/ANR）。

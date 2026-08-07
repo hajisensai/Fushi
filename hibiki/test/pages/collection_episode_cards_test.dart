@@ -3,10 +3,10 @@ import 'package:drift/native.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/pages/implementations/media_collection_detail_page.dart';
-import 'package:hibiki/src/utils/components/hibiki_reorderable_grid.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
+import 'package:fushi/src/utils/components/hibiki_reorderable_grid.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-2491 hayase 式集列表宽卡：
 /// ① 集级刮削集名/简介上卡（无刮削回落文件名标题）；

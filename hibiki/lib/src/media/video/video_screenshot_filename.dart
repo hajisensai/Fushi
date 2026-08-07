@@ -1,6 +1,6 @@
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/utils/misc/safe_file_name.dart';
+import 'package:fushi/src/utils/misc/safe_file_name.dart';
 
 const int _maxScreenshotSourceRunes = 80;
 

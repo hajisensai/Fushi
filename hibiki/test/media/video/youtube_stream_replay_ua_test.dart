@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 
-import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi/src/media/video/youtube_source_resolver.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
 
 /// TODO-1365（BUG-678）守卫：YouTube 分离流的**回放 User-Agent 必须与 youtube_explode 铸造
 /// 该流所用的 UA 一致**，且不得回退到残缺的裸 `Mozilla/5.0`。

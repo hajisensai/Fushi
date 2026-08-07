@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_session.dart';
-import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 /// BUG-708 — 桌面悬浮字幕点词在后台听书时被静默丢弃。
 ///

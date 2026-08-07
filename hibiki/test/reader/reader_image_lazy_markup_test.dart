@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/reader/reader_resource_sanitizer.dart';
+import 'package:fushi/src/reader/reader_resource_sanitizer.dart';
 
 /// TODO-perf（跨章·图片）：`loading="lazy"` 必须在**生成 HTML 时**写进标签才对本次加载
 /// 生效（JS 侧那次跑在 `load` 之后，来不及）。这条规则跑在每次跨章的热路径上，标错一张

@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// v56 迁移（可配置游戏启动参数）：`galgames` 加 `launch_args` 列，存用户为该游戏配置
 /// 的整行命令行参数；启动时按 Windows 规则拆成 argv，逐个经 injector 的 `--arg` 透传。

@@ -3,11 +3,11 @@ import 'dart:io';
 
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/utils.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:multi_value_listenable_builder/multi_value_listenable_builder.dart';
 import 'package:record/record.dart';
-import 'package:hibiki/pages.dart';
+import 'package:fushi/pages.dart';
 
 /// The content of the dialog used for selecting segmented units of a source
 /// text.

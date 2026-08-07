@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/video_manifest.dart';
+import 'package:fushi/src/sync/video_manifest.dart';
 
 void main() {
   group('RemoteVideoManifest roundtrip', () {

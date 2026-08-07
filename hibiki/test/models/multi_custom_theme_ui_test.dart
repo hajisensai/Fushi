@@ -2,11 +2,11 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/models/theme_notifier.dart';
-import 'package:hibiki/src/profile/profile_keys.dart';
-import 'package:hibiki/src/profile/profile_repository.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/profile/profile_keys.dart';
+import 'package:fushi/src/profile/profile_repository.dart';
 
 // TODO-930 M1-M3: behaviour guards for the multi-custom-theme UI integration
 // layer. M0 (data model + legacy migration) is covered by

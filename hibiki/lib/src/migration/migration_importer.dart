@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:hibiki/src/migration/migration_exporter.dart';
-import 'package:hibiki/src/migration/migration_manifest.dart';
+import 'package:fushi/src/migration/migration_exporter.dart';
+import 'package:fushi/src/migration/migration_manifest.dart';
 import 'package:path/path.dart' as p;
 
 /// 中转目录里一个待导入批次的解析结果。

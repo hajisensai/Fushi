@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
+import 'package:fushi/src/media/video/youtube_source_resolver.dart';
 
 /// TODO-1314（C7）：多分辨率缩略图候选回退的守卫。
 ///

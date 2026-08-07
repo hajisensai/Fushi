@@ -17,9 +17,9 @@ import 'dart:convert';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/import/epub_backed_srt_book.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi/src/media/import/epub_backed_srt_book.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 HibikiDatabase _memDb() =>
     HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));

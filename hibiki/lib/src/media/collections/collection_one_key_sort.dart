@@ -1,8 +1,8 @@
-import 'package:hibiki/src/media/collections/shelf_sort.dart'
+import 'package:fushi/src/media/collections/shelf_sort.dart'
     show naturalCompare;
-import 'package:hibiki/src/mining/metadata/galgame_metadata_merge.dart'
+import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart'
     show GalgameCustomData;
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 排序一个合集成员所需的最小事实：显示标题、导入时刻、身份键。
 ///

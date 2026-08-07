@@ -7,14 +7,14 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/media/torrent/anime_download_config.dart';
-import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
-import 'package:hibiki/src/media/torrent/download_network_proxy.dart'
+import 'package:fushi/src/media/torrent/anime_download_config.dart';
+import 'package:fushi/src/media/torrent/anime_download_plan.dart';
+import 'package:fushi/src/media/torrent/download_network_proxy.dart'
     show kDownloadDiscoveryTimeout;
-import 'package:hibiki/src/media/torrent/nyaa_client.dart';
-import 'package:hibiki/src/media/torrent/torrent_backend.dart';
-import 'package:hibiki/src/media/video/jimaku_batch.dart';
-import 'package:hibiki/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/media/torrent/nyaa_client.dart';
+import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/video/jimaku_batch.dart';
+import 'package:fushi/src/media/video/jimaku_client.dart';
 
 const Object _notSet = Object();
 

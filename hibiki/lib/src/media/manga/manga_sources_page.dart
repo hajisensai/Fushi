@@ -3,15 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_extensions_page.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_manager.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
-import 'package:hibiki/src/media/manga/mihon/mihon_runtime_factory.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_source_row.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/media_sources_view.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_source_row.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/media_sources_view.dart';
+import 'package:fushi/utils.dart';
 
 /// 漫画库「来源」视图：本域**所有**来源的唯一管理处。
 ///

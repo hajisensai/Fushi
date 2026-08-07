@@ -22,9 +22,9 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_client.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_volume_downloader.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
 
 /// 自动重试的退避梯度；**长度即最大自动重试次数**。
 ///

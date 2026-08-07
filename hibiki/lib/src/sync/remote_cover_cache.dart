@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 
 /// 远端封面读盘缓存（BUG-847）。
 ///

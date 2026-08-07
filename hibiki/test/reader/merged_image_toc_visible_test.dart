@@ -1,10 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/epub/epub_book.dart';
-import 'package:hibiki/src/epub/epub_spread_map.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
-import 'package:hibiki/src/reader/ttu_toc_flatten.dart';
+import 'package:fushi/src/epub/epub_book.dart';
+import 'package:fushi/src/epub/epub_spread_map.dart';
+import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
+import 'package:fushi/src/reader/ttu_toc_flatten.dart';
 
 /// TODO-1333 回归：图片合并了以后章节列表没了。
 ///

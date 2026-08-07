@@ -1,7 +1,7 @@
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_clip_text_render.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_clip_webview_render.dart';
+import 'package:fushi/src/media/audiobook/audiobook_clip_text_render.dart';
+import 'package:fushi/src/media/audiobook/audiobook_clip_webview_render.dart';
 
 /// TODO-1282 守卫：书籍（EPUB）片段导出的文本必须像书页那样大字，而不是 SRT 字幕小条，
 /// 且竖排走的是复用阅读器 EPUB 排版（vertical-rl + 明朝体 + 主题色）的渲染路径，不是

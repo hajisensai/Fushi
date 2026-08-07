@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/collections/collection_grouping.dart';
-import 'package:hibiki/src/utils/misc/shelf_ordering.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/collections/collection_grouping.dart';
+import 'package:fushi/src/utils/misc/shelf_ordering.dart';
 
 /// 命名统一 Phase 3.3 守卫：统一媒体身份值对象 [MediaRef] 的值语义 / 序列化
 /// 形态冻结，以及三个既有身份类型对它的委托不改变对外行为。

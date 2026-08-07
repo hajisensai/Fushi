@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:hibiki/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 
 /// BUG-1115 单测：**默认**（未配置自定义数据根）documents 根的布局判定。
 ///

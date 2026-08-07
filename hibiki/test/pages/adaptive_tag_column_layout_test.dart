@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'reader_history_source_corpus.dart';
 
-import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart';
+import 'package:fushi/src/pages/implementations/reader_hibiki_history_page.dart';
 
 /// 书本打标签后封面卡片渲染异常的回归测试。
 ///

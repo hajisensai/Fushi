@@ -9,15 +9,15 @@ library;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart';
-import 'package:hibiki/src/sync/deletion_disclosure.dart';
-import 'package:hibiki/src/sync/deletion_prompt.dart';
-import 'package:hibiki/src/sync/deletion_propagation.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/reader_hibiki_history_page.dart';
+import 'package:fushi/src/sync/deletion_disclosure.dart';
+import 'package:fushi/src/sync/deletion_prompt.dart';
+import 'package:fushi/src/sync/deletion_propagation.dart';
 
 import '../helpers/source_guard.dart';
 import '../pages/reader_history_source_corpus.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));

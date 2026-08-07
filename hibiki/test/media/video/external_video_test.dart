@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/media_extensions.dart';
-import 'package:hibiki/src/media/video/external_video.dart';
+import 'package:fushi/src/media/media_extensions.dart';
+import 'package:fushi/src/media/video/external_video.dart';
 
 void main() {
   group('isSupportedVideoFile', () {

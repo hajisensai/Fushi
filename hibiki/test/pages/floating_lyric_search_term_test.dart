@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_routing.dart'
+import 'package:fushi/src/media/audiobook/floating_lyric_lookup_routing.dart'
     show floatingLyricSearchTerm;
 
 /// TODO-376：桌面悬浮字幕条点词时，[floatingLyricSearchTerm] 从整句 + 点击字符

@@ -1,13 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/lookup/overlay_bridge_handlers.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/platform/desktop/desktop_clipboard_service.dart';
-import 'package:hibiki/src/platform/desktop/desktop_device_info_service.dart';
-import 'package:hibiki/src/platform/desktop/desktop_directory_service.dart';
-import 'package:hibiki/src/platform/desktop/desktop_lifecycle_service.dart';
-import 'package:hibiki/src/platform/desktop/desktop_permission_service.dart';
-import 'package:hibiki/src/platform/platform_services.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/platform/desktop/desktop_clipboard_service.dart';
+import 'package:fushi/src/platform/desktop/desktop_device_info_service.dart';
+import 'package:fushi/src/platform/desktop/desktop_directory_service.dart';
+import 'package:fushi/src/platform/desktop/desktop_lifecycle_service.dart';
+import 'package:fushi/src/platform/desktop/desktop_permission_service.dart';
+import 'package:fushi/src/platform/platform_services.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 /// BUG-730 — BEHAVIOURAL test (not source-scan): drives the REAL app-external
 /// mine bridge (`maybeHandleOverlayDeferredBridge` → `_handleMineBridge` →

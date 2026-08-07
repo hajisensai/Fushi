@@ -4,8 +4,8 @@
 /// 展示 / 设置 UI 全自动支持。
 library;
 
-import 'package:hibiki/src/mining/metadata/galgame_metadata_draft.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
+import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
 
 /// 元数据抓取失败的统一异常。**绝不吞异常**：网络失败、非 2xx、JSON 畸形全部抛这个，
 /// 由 service 决定降级（mixed 下单源失败降级为空）还是上抛给 UI（§2.5）。

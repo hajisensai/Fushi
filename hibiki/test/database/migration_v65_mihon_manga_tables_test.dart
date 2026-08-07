@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart' show QueryRow, Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
 /// v63（删除废弃的 galgame 全局超分偏好）与 v65（Mihon 漫画扩展生态五张新表）

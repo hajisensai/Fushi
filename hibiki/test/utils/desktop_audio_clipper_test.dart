@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/ffmpeg_backend.dart' as ffmpeg;
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi/src/media/video/ffmpeg_backend.dart' as ffmpeg;
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
 
 void main() {
   Future<bool> ffmpegAvailable() async {

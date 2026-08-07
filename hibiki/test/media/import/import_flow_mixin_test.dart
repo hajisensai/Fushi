@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/import/import_flow_mixin.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/import/import_flow_mixin.dart';
+import 'package:fushi/utils.dart';
 
 import '../../helpers/source_guard.dart';
 

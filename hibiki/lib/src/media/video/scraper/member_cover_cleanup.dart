@@ -23,16 +23,16 @@ library;
 
 import 'dart:io';
 
-import 'package:hibiki/src/media/media_cover_service.dart';
-import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart'
+import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart'
     show CoverMeta, CoverOrigin;
-import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki/src/media/video/video_cover_extractor.dart'
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_cover_extractor.dart'
     show videoCoverFileName;
-import 'package:hibiki/src/media/video/video_storage.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki_core/hibiki_core.dart'
+import 'package:fushi/src/media/video/video_storage.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_core/fushi_core.dart'
     show MediaCollectionRow, VideoBookRow;
 import 'package:path/path.dart' as p;
 

@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// 字幕自动对轴（TODO-701 阶段1）的纯算法层。
 ///

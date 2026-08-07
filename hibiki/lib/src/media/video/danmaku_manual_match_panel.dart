@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import 'package:hibiki/src/media/video/dandanplay_client.dart';
-import 'package:hibiki/utils.dart';
+import 'package:fushi/src/media/video/dandanplay_client.dart';
+import 'package:fushi/utils.dart';
 
 /// 手动搜索 / 选集匹配面板（TODO-1376）。
 ///

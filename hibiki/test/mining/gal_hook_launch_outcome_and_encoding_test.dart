@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
-import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
-import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/gal_hook_failure_text.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
 
 /// injector 的 `CMakeLists.txt` 无条件加了 MSVC `/utf-8`（同时设 execution-charset），
 /// 所以它 stderr 里的中文诊断在二进制里就是 UTF-8 字节。这里从**字节**造输入，而不是

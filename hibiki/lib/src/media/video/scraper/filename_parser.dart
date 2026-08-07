@@ -12,8 +12,8 @@
 /// `第N巻`）已并入本类，勿再另起副本。
 library;
 
-import 'package:hibiki/src/media/media_extensions.dart';
-import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/media_extensions.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 
 /// 一个被摘出的括号块：内容 + 它前面的括号外文本（用于判断「标题之后」）。
 class _Block {

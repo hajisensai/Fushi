@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/reading_statistics_page.dart';
+import 'package:fushi/src/pages/implementations/reading_statistics_page.dart';
 
 /// 回归守卫：手机窄屏统计页「好多显示不全的字」。
 ///

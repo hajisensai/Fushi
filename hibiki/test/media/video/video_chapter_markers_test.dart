@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../pages/video_hibiki_page_source_corpus.dart';
-import 'package:hibiki/src/media/video/video_chapter_markers.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki/src/media/video/video_subtitle_style.dart';
+import 'package:fushi/src/media/video/video_chapter_markers.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_subtitle_style.dart';
 
 void main() {
   group('chapterMarkerFractions (TODO-432)', () {

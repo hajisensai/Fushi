@@ -6,7 +6,7 @@
 // 2. 认不出就别动——歧义形式必须被普通文本挡回去，绝不吃掉正文。
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/ruby_markup.dart';
+import 'package:fushi/src/utils/misc/ruby_markup.dart';
 
 /// 断言注音区间确实落在纯文本的期望基准上。
 void expectSpan(

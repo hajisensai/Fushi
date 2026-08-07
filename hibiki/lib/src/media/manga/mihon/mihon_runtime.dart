@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 
 abstract interface class MihonRuntime {
   Future<MihonCapabilities> getCapabilities();

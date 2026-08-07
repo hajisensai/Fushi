@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/startup/test_environment.dart';
-import 'package:hibiki/src/utils/misc/frame_safe_notifier.dart';
-import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
-import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/startup/test_environment.dart';
+import 'package:fushi/src/utils/misc/frame_safe_notifier.dart';
+import 'package:fushi/src/utils/misc/hibiki_toast.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 import 'package:path_provider/path_provider.dart';
 
 class ErrorLogEntry {

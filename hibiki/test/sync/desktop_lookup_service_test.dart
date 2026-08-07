@@ -3,12 +3,12 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/models/clipboard_history_repository.dart';
-import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/sync/desktop_foreground_guard.dart';
-import 'package:hibiki/src/sync/desktop_lookup_service.dart';
-import 'package:hibiki/src/utils/misc/lookup_input_limits.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/models/clipboard_history_repository.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/sync/desktop_foreground_guard.dart';
+import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 import 'package:characters/characters.dart';
 
 void main() {

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/update_checker.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
 
 void main() {
   group('updateCheckUrls (候选 URL 列表，纯函数)', () {

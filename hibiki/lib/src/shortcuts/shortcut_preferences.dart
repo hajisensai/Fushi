@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/media/sources/reader_hibiki_source.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
 const String _prefKey = 'shortcut_bindings_json';
 

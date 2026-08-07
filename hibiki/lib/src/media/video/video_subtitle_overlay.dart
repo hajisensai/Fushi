@@ -10,11 +10,11 @@ import 'package:flutter/rendering.dart'
 import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/services.dart' show HardwareKeyboard;
 
-import 'package:hibiki/src/media/video/ass_font_metrics.dart';
-import 'package:hibiki/src/media/video/subtitle_pos_mapping.dart';
-import 'package:hibiki/src/media/video/video_player_controller.dart';
-import 'package:hibiki/src/media/video/video_subtitle_style.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:fushi/src/media/video/ass_font_metrics.dart';
+import 'package:fushi/src/media/video/subtitle_pos_mapping.dart';
+import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_subtitle_style.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// 命中字幕某字符的结果：整条字幕、被点 grapheme 下标、该字符的全局屏幕矩形。
 /// 与 [VideoSubtitleOverlay.onCharTap] 的回调三元组同构。

@@ -1,7 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
+import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 
 void main() {
   // TODO-916 症状④-B：字幕字符命中容差（纯函数 resolveSubtitleCharHit）。

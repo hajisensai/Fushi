@@ -1,9 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
-import 'package:hibiki/src/media/torrent/qbittorrent_client.dart';
-import 'package:hibiki/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/torrent/qb_torrent_backend.dart';
+import 'package:fushi/src/media/torrent/qbittorrent_client.dart';
+import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 

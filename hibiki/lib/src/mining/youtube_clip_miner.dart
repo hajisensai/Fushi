@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
+import 'package:fushi/src/media/video/youtube_source_resolver.dart';
 
 /// 解析好的「一句 YouTube 片段制卡请求」的裸值：喂给引擎的 ffmpeg 输入 + 视频时间窗 + 文本。
 /// 与 [ImmersionMiningRequest] 解耦（此文件不依赖 anki 层），由 app_model 再套引擎。
