@@ -14,7 +14,7 @@ FushiDatabase _testDb() =>
 
 /// 用户诉求：「hibiki 互联里面加一个按钮，把备份后端设置为 hibiki 互联」。
 ///
-/// 互联解耦（PR#223）后 hibikiServer 从后端选择器里被摘掉，「备份写到已配对设备而不是
+/// 互联解耦（PR#223）后 fushiServer 从后端选择器里被摘掉，「备份写到已配对设备而不是
 /// 云盘」这条能力还在（[resolveSyncBackend] 仍解析成 [InterconnectSyncBackend]）但没有
 /// 入口。互联页新增的按钮走 [applyBackupBackendChange] 把它放回来，本测试守住这条路径的
 /// 两个真实落点：切换副作用、以及切换后同步通道的归属。
@@ -31,10 +31,10 @@ void main() {
       await applyBackupBackendChange(
         repo,
         previous: SyncBackendType.ftp,
-        next: SyncBackendType.hibikiServer,
+        next: SyncBackendType.fushiServer,
       );
 
-      expect(await repo.getBackendType(), SyncBackendType.hibikiServer);
+      expect(await repo.getBackendType(), SyncBackendType.fushiServer);
       expect(await repo.isFtpTlsEnabled(), isFalse,
           reason: 'FTP 专属的 TLS 标记不该在切走后残留');
     });
@@ -49,10 +49,10 @@ void main() {
       await applyBackupBackendChange(
         repo,
         previous: SyncBackendType.googleDrive,
-        next: SyncBackendType.hibikiServer,
+        next: SyncBackendType.fushiServer,
       );
 
-      expect(await repo.getBackendType(), SyncBackendType.hibikiServer);
+      expect(await repo.getBackendType(), SyncBackendType.fushiServer);
       expect(await repo.isFtpTlsEnabled(), isTrue);
     });
   });
@@ -64,7 +64,7 @@ void main() {
       final SyncRepository repo = SyncRepository(db);
 
       await repo.setInterconnectEnabled(true);
-      await repo.setBackendType(SyncBackendType.hibikiServer);
+      await repo.setBackendType(SyncBackendType.fushiServer);
 
       final List<SyncChannel> channels = await enabledSyncChannelBackends(repo);
 

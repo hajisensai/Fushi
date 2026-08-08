@@ -252,7 +252,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     );
     if (!mounted) return;
     if (ping == null || !ping.isFushi || !ping.supportsPairV2) {
-      _showSnackBar(context, t.sync_pair_not_hibiki);
+      _showSnackBar(context, t.sync_pair_not_fushi);
       return;
     }
     // https host 的钉扎指纹以 ping 回传为准（与捕获一致），明文 http 无指纹。
@@ -1441,10 +1441,10 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
 
 // ── 用互联做备份后端 ────────────────────────────────────────────────
 //
-// 互联从「互斥的 backendType==hibikiServer 单选」解耦成独立开关（PR#223）之后，
-// 后端选择器不再列出互联（[_isBackendSelectable] 对 hibikiServer 返回 false），
+// 互联从「互斥的 backendType==fushiServer 单选」解耦成独立开关（PR#223）之后，
+// 后端选择器不再列出互联（[_isBackendSelectable] 对 fushiServer 返回 false），
 // 于是「备份/同步写到已配对设备而不是云盘」这条路径整个从 UI 上消失了——能力还在
-// （[resolveSyncBackend] 仍把 hibikiServer 解析成 [InterconnectSyncBackend]），只是
+// （[resolveSyncBackend] 仍把 fushiServer 解析成 [InterconnectSyncBackend]），只是
 // 没有入口。这一行把入口放回互联自己的分类里：一个动作，把云备份通道指向对端主机。
 //
 // 退路：[_selectableBackends] 恒把当前值插回选项列表，所以设成互联之后，「同步与
@@ -1485,15 +1485,15 @@ class _InterconnectBackupBackendWidgetState
   Future<void> _useInterconnectAsBackend() async {
     final _SyncSettingsState state = _state;
     final SyncBackendType previous = state.backendType;
-    if (previous == SyncBackendType.hibikiServer) return;
+    if (previous == SyncBackendType.fushiServer) return;
     setState(() => _busy = true);
     try {
       await applyBackupBackendChange(
         SyncRepository(widget.settingsContext.appModel.database),
         previous: previous,
-        next: SyncBackendType.hibikiServer,
+        next: SyncBackendType.fushiServer,
       );
-      state.backendType = SyncBackendType.hibikiServer;
+      state.backendType = SyncBackendType.fushiServer;
       if (!mounted) return;
       _showSnackBar(context, t.interconnect_backup_backend_active);
       // 同步分类的后端选择器/凭据区都按 backendType 门控，刷新让它们立刻跟上。
@@ -1506,7 +1506,7 @@ class _InterconnectBackupBackendWidgetState
   @override
   Widget build(BuildContext context) {
     final _SyncSettingsState state = _state;
-    final bool active = state.backendType == SyncBackendType.hibikiServer;
+    final bool active = state.backendType == SyncBackendType.fushiServer;
     final bool paired = state.hasClientConnection;
     final ThemeData theme = Theme.of(context);
     return Padding(

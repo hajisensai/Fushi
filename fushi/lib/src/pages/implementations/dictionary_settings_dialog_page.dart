@@ -41,7 +41,7 @@ class AudioSourcesDialog extends StatefulWidget {
 }
 
 class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
-  /// 统一来源列表（hibikiRemote + remoteAudio + localAudio 混排，顺序即优先级）。
+  /// 统一来源列表（fushiRemote + remoteAudio + localAudio 混排，顺序即优先级）。
   late List<AudioSourceConfig> _sources;
   bool _importing = false;
 
@@ -210,13 +210,13 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
 
   Widget _buildSourceRow(FushiDesignTokens tokens, int index) {
     final AudioSourceConfig source = _sources[index];
-    final bool isHibiki = source.kind == AudioSourceKind.hibikiRemote;
+    final bool isHibiki = source.kind == AudioSourceKind.fushiRemote;
     final bool isLocal = source.kind == AudioSourceKind.localAudio;
     final bool isRemoteUrl = source.kind == AudioSourceKind.remoteAudio;
     final bool isEditingThis =
         _editingSource != null && _editingSource == source;
     final String title =
-        isHibiki ? t.audio_source_hibiki_interconnect : source.displayLabel;
+        isHibiki ? t.audio_source_fushi_interconnect : source.displayLabel;
     final bool loopbackWarn = source.pointsAtLoopbackHost;
     final String baseSubtitle = isHibiki
         ? t.remote_audio_source
@@ -249,7 +249,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
             ),
           // 「编辑 URL」只在自定义远端行出现，占的是与本地行 tune 完全相同的槽位
           // （开关左侧）→ 两类行各多一个同尺寸按钮，开关/↑/↓/删除四列仍跨行右贴边
-          // 对齐（BUG-027）。hibikiRemote 无 URL 可改、本地库路径由选择器决定，都不给。
+          // 对齐（BUG-027）。fushiRemote 无 URL 可改、本地库路径由选择器决定，都不给。
           if (isRemoteUrl)
             FushiIconButton(
               icon: isEditingThis ? Icons.edit : Icons.edit_outlined,
@@ -333,14 +333,14 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
               // 那一行无关，混在一起只会让 ✓ 的语义变模糊。
               if (!editing &&
                   !_sources.any((AudioSourceConfig s) =>
-                      s.kind == AudioSourceKind.hibikiRemote))
+                      s.kind == AudioSourceKind.fushiRemote))
                 FushiIconButton(
                   icon: Icons.hub_outlined,
-                  tooltip: t.audio_source_hibiki_interconnect,
+                  tooltip: t.audio_source_fushi_interconnect,
                   padding: EdgeInsets.all(tokens.spacing.gap / 2),
                   onTap: () => setState(() => _sources.insert(
                         0,
-                        AudioSourceConfig.hibikiRemote(),
+                        AudioSourceConfig.fushiRemote(),
                       )),
                 ),
               if (editing)
@@ -472,12 +472,12 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
       // 整表重建 → 编辑目标不再属于新列表，编辑态必须一起清掉。
       _cancelEdit();
       final bool hadHibiki = _sources
-          .any((AudioSourceConfig s) => s.kind == AudioSourceKind.hibikiRemote);
+          .any((AudioSourceConfig s) => s.kind == AudioSourceKind.fushiRemote);
       final List<AudioSourceConfig> locals = _sources
           .where((AudioSourceConfig s) => s.kind == AudioSourceKind.localAudio)
           .toList();
       _sources = <AudioSourceConfig>[
-        if (hadHibiki) AudioSourceConfig.hibikiRemote(),
+        if (hadHibiki) AudioSourceConfig.fushiRemote(),
         ...AudioSourceConfig.fromLegacyUrls(AppModel.defaultAudioSources),
         // Anki 本地音频服务器内置预设：重置默认后也在列（默认关闭，与新装一致）。
         AudioSourceConfig.remoteAudio(

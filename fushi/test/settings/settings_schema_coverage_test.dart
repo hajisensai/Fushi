@@ -95,7 +95,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 互联解耦（用户诉求「互联和同步后端不冲突」）：互联总开关，独立于 backendType
   // 云备份后端。写 SyncRepository（changed=true），生效点在同步触发的双通道门控 +
   // 互联各 section 可见性 + 远端内容来源选择（非 reader CSS / 主题树），无适用探针；
-  // 由迁移守卫（hibikiServer→独立开关）+ 可见性守卫（开关常显、配置区门控）咬住。
+  // 由迁移守卫（fushiServer→独立开关）+ 可见性守卫（开关常显、配置区门控）咬住。
   'interconnect/Enable interconnect':
       'test/sync/sync_interconnect_decouple_migration_test.dart + test/sync/sync_settings_visibility_test.dart',
   // 漫画「在线目录」站点根 URL（O1 mokuro.moe 目录源）：网络端点，写穿偏好后

@@ -153,7 +153,7 @@ void main() {
         expression: '食べる',
         reading: 'たべる',
         sources: <AudioSourceConfig>[
-          AudioSourceConfig.hibikiRemote(enabled: true),
+          AudioSourceConfig.fushiRemote(enabled: true),
           AudioSourceConfig.localAudio(
             label: 'first',
             path: '/db/first.db',
@@ -434,12 +434,12 @@ void main() {
       });
     });
 
-    // hibikiRemote（互联配对）源接入与 remoteAudio 同一套失败冷却：配对设备
+    // fushiRemote（互联配对）源接入与 remoteAudio 同一套失败冷却：配对设备
     // 全部候选传输层不可达（RemoteLookupUnreachableError）才计冷却；「可达但
     // 无音频」（null）绝不冷却。
-    group('hibikiRemote transport-failure cooldown', () {
+    group('fushiRemote transport-failure cooldown', () {
       List<AudioSourceConfig> hibikiOnly() => <AudioSourceConfig>[
-            AudioSourceConfig.hibikiRemote(enabled: true),
+            AudioSourceConfig.fushiRemote(enabled: true),
           ];
 
       test(
@@ -509,7 +509,7 @@ void main() {
           expression: 'a',
           reading: 'a',
           sources: <AudioSourceConfig>[
-            AudioSourceConfig.hibikiRemote(enabled: true),
+            AudioSourceConfig.fushiRemote(enabled: true),
             AudioSourceConfig.remoteAudio(
               url: 'https://alive.test/audio?term={term}',
             ),

@@ -28,7 +28,7 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
 
   /// TODO-872：app 外悬浮字幕条点字传来的「被查字屏幕矩形」（逻辑像素，与本全屏查词
   /// 窗同坐标系）。非空 → 卡片贴被查字旁定位（[computeFloatingLyricPopupRect]）；为 null
-  /// 即非悬浮字幕入口（系统 PROCESS_TEXT / hibiki://lookup）→ 保持原 [Alignment.topCenter]
+  /// 即非悬浮字幕入口（系统 PROCESS_TEXT / fushi://lookup）→ 保持原 [Alignment.topCenter]
   /// 贴顶。anchorRect 变化也纳入 [didUpdateWidget] 复用判定，让同一常驻热页连续点不同字
   /// 位置也跟着更新。
   final Rect? anchorRect;
@@ -36,7 +36,7 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
   /// TODO-708 P1 ⑥：app 外悬浮字幕条「整条字幕窗屏幕矩形」（逻辑像素，与 [anchorRect]
   /// 同坐标系，已含状态栏平移）。非空时作为弹窗避让锚（超集，同时覆盖被查字与未点的
   /// 其它字），弹窗不遮整条字幕窗；为 null 时回退按 [anchorRect]（被查字单字）避让。
-  /// 仅悬浮字幕入口带此值；其它入口（系统 PROCESS_TEXT / hibiki://lookup）恒 null。
+  /// 仅悬浮字幕入口带此值；其它入口（系统 PROCESS_TEXT / fushi://lookup）恒 null。
   final Rect? subtitleWindowRect;
 
   /// TODO-951 症状C：app 外查词窗常驻不重建，宿主（popup_main）每次新 ProcessText
@@ -48,7 +48,7 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
   final bool autoSearchOnOpen;
 
   /// TODO-708 P3 ③：是否在卡片顶部显示搜索输入框（含搜索/关闭行）。默认 true——
-  /// 系统 PROCESS_TEXT / 独立查词窗（hibiki://lookup）需要它重查任意词。悬浮字幕
+  /// 系统 PROCESS_TEXT / 独立查词窗（fushi://lookup）需要它重查任意词。悬浮字幕
   /// 「点字查词」入口（[popup_main] 构造 [anchorRect] != null 处）传 false，回到旧
   /// 「4.1」轻形态：点字直接出词卡、无搜索输入框；关闭按钮仍恒可用（独立渲染，不随
   /// 搜索栏隐藏）。源文本面板（[SourceLookupTextPanel]）不受此参数影响，保留点选重查。
@@ -249,7 +249,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         ),
         // 浮动卡片，外观对齐书内查词弹窗（圆角 + 边框 + 横滑关闭）。
         // TODO-872：带 anchorRect（悬浮字幕条点字）时贴被查字旁定位；否则保持原
-        // Alignment.topCenter 贴顶（系统 PROCESS_TEXT / hibiki://lookup 等其它入口）。
+        // Alignment.topCenter 贴顶（系统 PROCESS_TEXT / fushi://lookup 等其它入口）。
         _buildPositionedCard(tokens, gap),
       ],
     );

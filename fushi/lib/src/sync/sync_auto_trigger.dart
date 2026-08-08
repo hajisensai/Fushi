@@ -168,10 +168,10 @@ Future<List<SyncChannel>> enabledSyncChannelBackends(
   ];
   if (await repo.isInterconnectEnabled()) {
     final SyncBackend interconnect =
-        resolveSyncBackend(SyncBackendType.hibikiServer);
+        resolveSyncBackend(SyncBackendType.fushiServer);
     if (!identical(interconnect, cloud)) {
       channels.add(SyncChannel(interconnect,
-          type: SyncBackendType.hibikiServer, isInterconnect: true));
+          type: SyncBackendType.fushiServer, isInterconnect: true));
     }
   }
   return channels;

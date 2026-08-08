@@ -14,7 +14,7 @@ import 'package:fushi/src/utils/misc/lookup_audio_playback.dart'
 import 'package:fushi/utils.dart';
 
 /// BUG-1005：把 [resolveLookupAudioUrl] 解析出的单词音频 ref 物化成本地 [File] 供 Anki 落
-/// 媒体。ref 可能是远端 `http(s)://` URL（forvo/jpod101/hibikiRemote 等远程发音源）或本地
+/// 媒体。ref 可能是远端 `http(s)://` URL（forvo/jpod101/fushiRemote 等远程发音源）或本地
 /// 文件路径（本地音频库命中）：前者下载到 [dir] 临时文件（扩展名按 URL/Content-Type 推断，
 /// 默认 mp3——单词音频主流格式），后者存在即直接包 [File]。失败 / 非 2xx / 空体返回 null。
 /// [client] 仅供测试注入（默认自建、用完关闭）。纯逻辑无全局依赖，可单测。
@@ -175,7 +175,7 @@ class LocalAudioEnhancement extends AudioEnhancement {
       _logLocalAudioSkipped(term, e, stack);
     }
 
-    // 2. BUG-1005：配置的音频源（含**远程发音源** forvo/jpod101/hibikiRemote）——与查词
+    // 2. BUG-1005：配置的音频源（含**远程发音源** forvo/jpod101/fushiRemote）——与查词
     //    **播放**路径统一走 resolveLookupAudioUrl（尊重用户源顺序/开关，单一真相）。这是
     //    BUG-631「播放侧已修、制卡器侧仍 local-only」的孪生修复：制卡自动填充此前只查本地
     //    库(step 1)+TTS(step 3)、**完全忽略远程发音源**，只配了远程源的用户（多数日语学习者）

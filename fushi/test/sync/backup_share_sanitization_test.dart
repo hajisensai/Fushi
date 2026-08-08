@@ -165,7 +165,7 @@ void main() {
           'enabled': true,
         },
         <String, Object?>{
-          'kind': 'hibikiRemote',
+          'kind': 'fushiRemote',
           'url': 'http://server.example/',
           'enabled': true,
         },
@@ -270,7 +270,7 @@ void main() {
       expect(decoded, isA<List<dynamic>>());
       final List<dynamic> entries = decoded as List<dynamic>;
       expect(entries.length, 1, reason: 'only the remote entry survives');
-      expect((entries.single as Map)['kind'], 'hibikiRemote');
+      expect((entries.single as Map)['kind'], 'fushiRemote');
     });
 
     test('sync toggles follow settings: unticking settings strips them',

@@ -9,16 +9,16 @@ FushiDatabase _testDb() =>
     FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 void main() {
-  // 互联从「互斥的 backendType==hibikiServer 单选」解耦成独立开关
+  // 互联从「互斥的 backendType==fushiServer 单选」解耦成独立开关
   // （interconnectEnabled）：迁移把旧互联用户搬到独立开关 + 云默认 backendType，
   // 使互联与云备份可并存（用户诉求「互联和同步后端不冲突」）。
   group('migrateInterconnectBackendToToggle', () {
-    test('migrates a hibikiServer backend to the independent toggle', () async {
+    test('migrates a fushiServer backend to the independent toggle', () async {
       final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      await db.setPref('sync_backend_type', 'hibikiServer');
+      await db.setPref('sync_backend_type', 'fushiServer');
       // 互联自身的独立字段本就不依赖 backendType，迁移不该动它们。
       await repo.setServerEnabled(true);
       await repo.addFushiClientUrl('https://peer.local:38765/');
@@ -53,7 +53,7 @@ void main() {
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      await db.setPref('sync_backend_type', 'hibikiServer');
+      await db.setPref('sync_backend_type', 'fushiServer');
 
       await repo.migrateInterconnectBackendToToggle();
       // 第二次：迁移已标记跑过 → 直接 no-op，不会误关互联开关。
@@ -64,8 +64,8 @@ void main() {
     });
 
     test('后续用户主动选回互联做备份后端，不会被下次启动的迁移抹掉', () async {
-      // 互联页的「用互联做备份后端」按钮把 backendType 写成 hibikiServer。迁移若还只看
-      // 「backendType 是不是 hibikiServer」，下次启动就会把这个用户选择当成旧数据改回
+      // 互联页的「用互联做备份后端」按钮把 backendType 写成 fushiServer。迁移若还只看
+      // 「backendType 是不是 fushiServer」，下次启动就会把这个用户选择当成旧数据改回
       // googleDrive——按钮变成重启即失效的假开关。一次性标记正是为此。
       final FushiDatabase db = _testDb();
       addTearDown(db.close);
@@ -77,24 +77,24 @@ void main() {
 
       // 用户按下按钮。
       await repo.setInterconnectEnabled(true);
-      await repo.setBackendType(SyncBackendType.hibikiServer);
+      await repo.setBackendType(SyncBackendType.fushiServer);
 
       // 下次启动再跑迁移。
       await repo.migrateInterconnectBackendToToggle();
 
-      expect(await repo.getBackendType(), SyncBackendType.hibikiServer,
+      expect(await repo.getBackendType(), SyncBackendType.fushiServer,
           reason: '用户主动选的备份后端必须活过重启');
       expect(await repo.isInterconnectEnabled(), isTrue);
     });
 
     test('旧互联用户即使升级后才首次启动，仍能被迁移一次', () async {
-      // 标记只在迁移真跑过一次后才存在：存量 hibikiServer 用户的第一次启动必须仍然
+      // 标记只在迁移真跑过一次后才存在：存量 fushiServer 用户的第一次启动必须仍然
       // 被搬到独立开关（Never break userspace）。
       final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      await db.setPref('sync_backend_type', 'hibikiServer');
+      await db.setPref('sync_backend_type', 'fushiServer');
       await repo.migrateInterconnectBackendToToggle();
 
       expect(await repo.isInterconnectEnabled(), isTrue);

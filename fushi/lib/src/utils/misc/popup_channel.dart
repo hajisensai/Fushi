@@ -100,7 +100,7 @@ class PopupChannel {
   }
 
   /// TODO-872：浮动字幕条点字传来的「被查字屏幕矩形」（物理像素 [left, top, right,
-  /// bottom]）。系统 PROCESS_TEXT / hibiki://lookup 不带该字段 → 解析为 null →
+  /// bottom]）。系统 PROCESS_TEXT / fushi://lookup 不带该字段 → 解析为 null →
   /// 弹窗保持默认 topCenter 贴顶。任何非法/不足 4 元素的载荷也回退 null（不抛）。
   static Rect? _parseAnchor(Object? value) {
     if (value is! List || value.length != 4) return null;

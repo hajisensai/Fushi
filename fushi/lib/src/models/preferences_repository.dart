@@ -1501,7 +1501,7 @@ class PreferencesRepository extends ChangeNotifier {
 
   /// Anki 本地音频服务器（local-audio-yomichan，默认端口 5050）的内置预设 URL。
   /// 用户装了该服务器后，在「管理音频来源」里打开开关即用；默认关闭——本地第三方
-  /// 服务不经用户同意不参与查词发音（与 hibikiRemote / worker 默认源同策）。
+  /// 服务不经用户同意不参与查词发音（与 fushiRemote / worker 默认源同策）。
   /// 由 [_withDefaultAudioSources] 对所有用户「缺则补」为一条 disabled 源。
   static const String ankiLocalAudioUrl =
       'http://localhost:5050/?term={term}&reading={reading}';
@@ -1553,17 +1553,17 @@ class PreferencesRepository extends ChangeNotifier {
   ) {
     final List<AudioSourceConfig> result = <AudioSourceConfig>[...sources];
 
-    // hibikiRemote 恒在列首（缺则补），历史行为不变。
+    // fushiRemote 恒在列首（缺则补），历史行为不变。
     final bool hasFushiRemote = result.any(
-      (AudioSourceConfig source) => source.kind == AudioSourceKind.hibikiRemote,
+      (AudioSourceConfig source) => source.kind == AudioSourceKind.fushiRemote,
     );
     if (!hasFushiRemote) {
-      result.insert(0, AudioSourceConfig.hibikiRemote());
+      result.insert(0, AudioSourceConfig.fushiRemote());
     }
 
     // Anki 本地音频服务器（5050）内置预设：对所有用户「缺则补」为一条 disabled 源，
     // 追加在列尾。用户装了服务器打开开关即用；删掉后下次读取会 disabled 重生，与
-    // hibikiRemote 恒补策略一致（TODO-083 范式）。
+    // fushiRemote 恒补策略一致（TODO-083 范式）。
     final bool hasAnki = result.any((AudioSourceConfig source) =>
         source.kind == AudioSourceKind.remoteAudio &&
         source.url == ankiLocalAudioUrl);

@@ -2128,7 +2128,7 @@ class AppModel with ChangeNotifier {
       // 1) recover device-local sync config if a previous backup import crashed
       //    after overwriting the DB but before re-applying the preserved keys;
       // 2) fold the deprecated "SMB"(WebDAV-gateway) config into WebDAV;
-      // 3) migrate the mutually-exclusive `backendType==hibikiServer` interconnect
+      // 3) migrate the mutually-exclusive `backendType==fushiServer` interconnect
       //    selection to the independent interconnect toggle (interconnect and a
       //    cloud backup backend can now coexist).
       await BackupService.recoverPendingImport(_databaseDirectory.path);
@@ -5387,7 +5387,7 @@ class AppModel with ChangeNotifier {
       return configs
           .map((AudioSourceConfig source) {
             switch (source.kind) {
-              case AudioSourceKind.hibikiRemote:
+              case AudioSourceKind.fushiRemote:
                 return WordAudioResolver.fushiRemoteAudioUrl;
               case AudioSourceKind.localAudio:
                 return WordAudioResolver.localAudioUrl;
@@ -5497,7 +5497,7 @@ class AppModel with ChangeNotifier {
     String expression,
     String reading,
   ) async {
-    // 远端音频是否查询由「管理音频来源」对话框里的 hibikiRemote 源 enabled 决定
+    // 远端音频是否查询由「管理音频来源」对话框里的 fushiRemote 源 enabled 决定
     // （resolveConfigured 只在该源 enabled 时才调用这里）；与词典远端开关 remoteLookupEnabled 无关。
     // await 必须收进 try：原实现直接 return 未 await 的 Future，catch 只能抓同步
     // throw，异步错误全部漏出成 uncaught。
@@ -6364,7 +6364,7 @@ class _AppModelRemoteLookupService
     required String reading,
   }) async {
     // TODO-1335 ②：与 app 内查词弹窗同一条 resolveLookupAudioUrl 全源解析（本地库 +
-    // hibikiRemote + 远程 URL 模板），而非只查本地库——否则仅配了远程发音源（jpod/forvo）
+    // fushiRemote + 远程 URL 模板），而非只查本地库——否则仅配了远程发音源（jpod/forvo）
     // 的用户在扩展/远端查词弹窗里恒无单词音频。解析结果可能是本地文件路径或远程 http(s)
     // URL，remoteAudioLookupFromResolvedUrl 统一归一成字节（远程下载、本地读文件），仍经
     // 本地短命 token 播放。
@@ -6384,7 +6384,7 @@ class _AppModelRemoteLookupService
     );
   }
 
-  /// TODO-1335 ②：服务端下载远程发音源字节（Forvo/jpod/hibikiRemote 解析出的 http(s)
+  /// TODO-1335 ②：服务端下载远程发音源字节（Forvo/jpod/fushiRemote 解析出的 http(s)
   /// URL）。复用 AppModel 的 keep-alive http client；失败写错误日志并回 null（弹窗降级为
   /// 无音频，绝不抛断查词）。
   Future<RemoteAudioLookup?> _downloadRemoteAudioBytes(Uri uri) async {

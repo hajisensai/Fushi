@@ -49,7 +49,7 @@ Future<ScrollController> _pumpSyncDetail(
   await prefs.loadFromDb();
   final Directory storeDir = Directory.systemTemp.createTempSync('hibiki_sync');
   final SyncRepository repo = SyncRepository(db);
-  await repo.setBackendType(SyncBackendType.hibikiServer);
+  await repo.setBackendType(SyncBackendType.fushiServer);
   // Several URLs → a tall, variable-height URL list, exaggerating the unequal
   // section heights that destabilise a lazy list's extent estimate.
   await repo.setFushiClientUrls(<FushiClientUrl>[

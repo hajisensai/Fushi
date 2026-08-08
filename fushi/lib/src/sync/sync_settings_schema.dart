@@ -129,9 +129,9 @@ SettingsDestination buildSyncBackupDestination() {
             id: 'sync.interconnect_config_note',
             icon: Icons.devices_outlined,
             visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType == SyncBackendType.hibikiServer,
+                _syncSettings(ctx).backendType == SyncBackendType.fushiServer,
             builder: (SettingsContext ctx) => AdaptiveSettingsRow(
-              title: t.sync_backend_hibiki_server,
+              title: t.sync_backend_fushi_server,
               subtitle: t.interconnect_moved_note,
               icon: Icons.devices_outlined,
             ),
@@ -209,7 +209,7 @@ SettingsDestination buildSyncBackupDestination() {
             subtitle: t.sync_content_warning,
             icon: Icons.book_outlined,
             visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType != SyncBackendType.hibikiServer,
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
             value: (SettingsContext ctx) => _syncSettings(ctx).syncContent,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).syncContent = value;
@@ -223,7 +223,7 @@ SettingsDestination buildSyncBackupDestination() {
             subtitle: t.sync_audiobook_files_warning,
             icon: Icons.audio_file_outlined,
             visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType != SyncBackendType.hibikiServer,
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
             value: (SettingsContext ctx) =>
                 _syncSettings(ctx).syncAudioBookFiles,
             onChanged: (SettingsContext ctx, bool value) async {
@@ -233,7 +233,7 @@ SettingsDestination buildSyncBackupDestination() {
             },
           ),
           // 上传视频文件（多端库联合视图 §2.6）：默认关。云后端走 syncVideoAssets 的
-          // `__videos__` 伪装资产（run() 非互联分支）；互联（hibikiServer）走
+          // `__videos__` 伪装资产（run() 非互联分支）；互联（fushiServer）走
           // _syncVideosLive 的 host 上传端点（client→host）。两条通道同为 upload-only
           // （host→client 仍按需流式/下载，且与本开关正交——客户端手动浏览/下载远端视频
           // 只看 show_remote_entries，从不受此开关门控）。可见性同上两个上传开关。
@@ -243,7 +243,7 @@ SettingsDestination buildSyncBackupDestination() {
             subtitle: t.sync_video_files_warning,
             icon: Icons.video_file_outlined,
             visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType != SyncBackendType.hibikiServer,
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
             value: (SettingsContext ctx) => _syncSettings(ctx).syncVideoFiles,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).syncVideoFiles = value;
@@ -535,7 +535,7 @@ SettingsDestination buildInterconnectDestination() {
         ],
       ),
       // 互联相关配置镜像：这些项散落在查词/同步分类，但逻辑上都作用于互联对端
-      // （远端词典查询直连对端词典、音频来源含互联音频源 hibikiRemote、远端占位卡
+      // （远端词典查询直连对端词典、音频来源含互联音频源 fushiRemote、远端占位卡
       // 渲染对端条目）。在互联分类也提供同一入口，用户配互联时一站式可改（原分类
       // 保留，共享同一 builder 单一真相源，非复制）。与其它互联 section 一致，仅在
       // 互联被选为同步方式时可见。
@@ -597,7 +597,7 @@ bool _isHostingInterconnect(SettingsContext ctx) =>
 /// 设备照样往云盘备份。旧门控只看 host 身份，把云通道的上传开关、自动同步、立即
 /// 同步整排藏掉，是互联还与云备份互斥时代遗留的错误特例。
 bool _cloudOutboundUnavailable(SettingsContext ctx) =>
-    _syncSettings(ctx).backendType == SyncBackendType.hibikiServer &&
+    _syncSettings(ctx).backendType == SyncBackendType.fushiServer &&
     _isHostingInterconnect(ctx);
 
 _SyncSettingsState _syncSettings(SettingsContext ctx) {
@@ -624,7 +624,7 @@ class _SyncSettingsState {
   /// 「与 Hoshi/ッツ 共享 Google Drive」开关（仅 Google Drive 后端有效）。
 
   /// 互联总开关（独立于 [backendType] 云备份后端选择）。为 true 时互联作为一条独立
-  /// 通道运行，与云备份并存（不再是互斥的 backendType==hibikiServer 单选）。
+  /// 通道运行，与云备份并存（不再是互斥的 backendType==fushiServer 单选）。
   bool interconnectEnabled = false;
   bool autoSync = false;
   bool syncStats = true;

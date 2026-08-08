@@ -34,8 +34,8 @@ class ExternalMokuroRunner {
   Future<String?> resolveExecutable() async {
     final String? cfg = _configuredPath?.trim();
     if (cfg != null && cfg.isNotEmpty) return cfg;
-    // 新名优先，旧名回退：HIBIKI_MOKURO 是改名前对用户公开的环境变量，不设即断。
-    final String? env = (_environment['FUSHI_MOKURO'] ?? _environment['HIBIKI_MOKURO'])?.trim();
+    // 新名优先，旧名回退：FUSHI_MOKURO 是改名前对用户公开的环境变量，不设即断。
+    final String? env = (_environment['FUSHI_MOKURO'] ?? _environment['FUSHI_MOKURO'])?.trim();
     if (env != null && env.isNotEmpty) return env;
     return _whichMokuro();
   }

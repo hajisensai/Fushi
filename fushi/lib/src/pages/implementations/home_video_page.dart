@@ -618,7 +618,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 多端库联合视图 §2.2/§2.6 云后端分支：把 `resolveSyncBackend` 的产物（含解混淆
   /// 装饰层）包进 [CloudRemoteVideoClient]，读 `__videos__/videos.json` 目录清单渲染
   /// 云视频占位卡 + 按 uid 下载入库。与书侧 `_resolveRemoteBookClient` 云分支同范式；
-  /// 互联后端（hibikiServer）走 [_resolveRemoteVideoClient]，此处只对云盘后端出 client，
+  /// 互联后端（fushiServer）走 [_resolveRemoteVideoClient]，此处只对云盘后端出 client，
   /// 鉴权失败/无后端返 null（不显示云视频占位）。
   Future<CloudRemoteVideoClient?> _resolveCloudRemoteVideoClient() async {
     final Future<CloudRemoteVideoClient?> Function()? injected =
@@ -629,7 +629,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final SyncRepository syncRepo = SyncRepository(appModel.database);
     final SyncBackendType type = await syncRepo.getBackendType();
     // 互联后端不在此处理（已由 _resolveRemoteVideoClient 覆盖）。
-    if (type == SyncBackendType.hibikiServer) return null;
+    if (type == SyncBackendType.fushiServer) return null;
     final SyncBackend backend = resolveSyncBackend(type);
     if (!await backend.restoreAuth(syncRepo)) return null;
     return CloudRemoteVideoClient(backend: backend, backendType: type);

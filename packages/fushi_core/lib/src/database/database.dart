@@ -458,7 +458,7 @@ class FushiDatabase extends _$FushiDatabase {
   FushiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 73;
+  int get schemaVersion => 74;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1679,6 +1679,24 @@ class FushiDatabase extends _$FushiDatabase {
                   "WHERE key LIKE '%override\\_title://%' ESCAPE '\\' "
                   "AND (key LIKE '%hoshi://book/%' "
                   "OR key LIKE '%hoshi://srtbook/%')");
+            }
+          }
+          if (from < 74) {
+            // v74（W9-6）：SyncBackendType 枚举值 hibikiServer → fushiServer 的
+            // 存量改写。落库位只有 sync_backend_type 一个键，值形态是 drift 偏好
+            // 的字符串前缀编码 `s:<enum name>`（见 SyncRepository._keyBackendType）。
+            // 不改的话：用户「同步方式＝互联」的选择在新版读不出来，
+            // resolveSyncBackend 落回默认后端 = 静默把互联关掉。
+            // profile_settings 一并扫：偏好在两处都可能有每 Profile 快照。
+            for (final String table in <String>[
+              'preferences',
+              'profile_settings',
+            ]) {
+              if (!await _tableExists(table)) continue;
+              await customStatement('UPDATE $table '
+                  "SET value = 's:fushiServer' "
+                  "WHERE key = 'sync_backend_type' "
+                  "AND value = 's:hibikiServer'");
             }
           }
         },

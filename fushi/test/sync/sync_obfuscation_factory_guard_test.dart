@@ -6,7 +6,7 @@ import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 
 /// resolveSyncBackend 的包裹策略守卫（TODO-623 A1）：
-/// 云后端必须被 ObfuscatingSyncBackend 包裹（防扫盘），局域网 hibikiServer 不包裹。
+/// 云后端必须被 ObfuscatingSyncBackend 包裹（防扫盘），局域网 fushiServer 不包裹。
 void main() {
   group('resolveSyncBackend obfuscation wrapping policy', () {
     const cloudTypes = <SyncBackendType>[
@@ -26,8 +26,8 @@ void main() {
       }
     });
 
-    test('hibikiServer (LAN) is NOT wrapped', () {
-      final backend = resolveSyncBackend(SyncBackendType.hibikiServer);
+    test('fushiServer (LAN) is NOT wrapped', () {
+      final backend = resolveSyncBackend(SyncBackendType.fushiServer);
       expect(backend, isNot(isA<ObfuscatingSyncBackend>()));
       expect(backend, isA<InterconnectSyncBackend>());
     });

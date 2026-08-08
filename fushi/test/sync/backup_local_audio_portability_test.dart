@@ -41,7 +41,7 @@ void main() {
     test('normalizeAudioSourceConfigsJson only re-homes localAudio entries',
         () {
       final String body = jsonEncode(<Map<String, Object?>>[
-        <String, Object?>{'kind': 'hibikiRemote', 'enabled': true},
+        <String, Object?>{'kind': 'fushiRemote', 'enabled': true},
         <String, Object?>{
           'kind': 'remoteAudio',
           'enabled': true,
@@ -57,7 +57,7 @@ void main() {
       final List<dynamic> out =
           jsonDecode(normalizeAudioSourceConfigsJson(body, '/home/b/support'))
               as List<dynamic>;
-      expect((out[0] as Map)['kind'], 'hibikiRemote');
+      expect((out[0] as Map)['kind'], 'fushiRemote');
       expect((out[1] as Map)['url'], 'http://localhost:8765/get?term={term}');
       expect((out[2] as Map)['path'],
           p.join('/home/b/support', 'local_audio_222.db'));
@@ -117,7 +117,7 @@ void main() {
       await db.setPref(
         'audio_source_configs',
         PrefCodec.encode(<Map<String, Object?>>[
-          <String, Object?>{'kind': 'hibikiRemote', 'enabled': false},
+          <String, Object?>{'kind': 'fushiRemote', 'enabled': false},
           <String, Object?>{
             'kind': 'localAudio',
             'enabled': true,

@@ -53,7 +53,7 @@ class WordAudioResolver {
   /// 带过来的老配置仍是这个值——读取路径两个都认，写入只写新值。
   static const String legacyRemoteAudioUrl = 'hibiki://remote-audio';
 
-  /// hibikiRemote（互联配对）源在失败冷却表里的固定 key：配对候选是一组设备
+  /// fushiRemote（互联配对）源在失败冷却表里的固定 key：配对候选是一组设备
   /// 地址、整体成败一体，不按单个候选 host 拆分冷却。
   static const String fushiRemoteCooldownKey = 'fushi-remote';
 
@@ -113,7 +113,7 @@ class WordAudioResolver {
       }
 
       switch (source.kind) {
-        case AudioSourceKind.hibikiRemote:
+        case AudioSourceKind.fushiRemote:
           final RemoteAudioQuery? query = queryRemoteAudio;
           if (query == null) continue;
           // 与 remoteAudio 源同一套失败冷却（TODO-1057/BUG-488）：配对设备上次

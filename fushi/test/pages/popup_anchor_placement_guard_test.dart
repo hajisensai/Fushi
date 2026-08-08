@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// TODO-872 源码守卫：app 外查词窗的卡片定位分流。
 ///
 /// 红线（用户需求②）——只有悬浮字幕条入口（带 anchorRect）才贴被查字旁定位，其它入口
-/// （系统 PROCESS_TEXT / hibiki://lookup → anchorRect == null）必须保持原 [Alignment]
+/// （系统 PROCESS_TEXT / fushi://lookup → anchorRect == null）必须保持原 [Alignment]
 /// .topCenter 贴顶，零变化。Native Kotlin/Java + 全屏弹窗坐标系无法在 Dart host 跑真
 /// 渲染，故在源码层钉死这条分流契约：
 ///   * 仍存在 anchorRect == null → Alignment.topCenter 分支；

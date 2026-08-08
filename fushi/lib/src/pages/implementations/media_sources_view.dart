@@ -155,7 +155,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       _buildVirtualSourceRow(
         tokens,
         icon: Icons.devices_outlined,
-        title: t.audio_source_hibiki_interconnect,
+        title: t.audio_source_fushi_interconnect,
         subtitle: t.interconnect_enable_hint,
         value: interconnectEnabled,
         onChanged: _setInterconnectEnabled,

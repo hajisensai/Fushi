@@ -17,7 +17,7 @@ import 'package:fushi/src/sync/webdav_sync_backend.dart';
 
 enum SyncBackendType {
   googleDrive,
-  hibikiServer,
+  fushiServer,
   webDav,
   oneDrive,
   dropbox,
@@ -302,10 +302,10 @@ SyncBackend resolveSyncBackend(SyncBackendType type) {
       raw = GoogleDriveSyncBackend.instance;
     case SyncBackendType.webDav:
       raw = WebDavSyncBackend.instance;
-    case SyncBackendType.hibikiServer:
+    case SyncBackendType.fushiServer:
       // 局域网双端（hibiki 自有 server）不是「防扫盘」场景：两端都是用户自己的
       // 设备/服务，混淆只会徒增开销并破坏 hibiki client/server 的字节协议契约，
-      // 所以 hibikiServer 直接返回裸后端，不包 ObfuscatingSyncBackend（TODO-623 A1）。
+      // 所以 fushiServer 直接返回裸后端，不包 ObfuscatingSyncBackend（TODO-623 A1）。
       return InterconnectSyncBackend.instance;
     case SyncBackendType.oneDrive:
       raw = OneDriveSyncBackend.instance;

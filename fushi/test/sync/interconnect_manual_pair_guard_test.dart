@@ -50,7 +50,7 @@ void main() {
     );
     // 探测失败 / 非 hibiki 必须有 UI 反馈（向后兼容：仍保留地址供手粘 token）。
     expect(
-      source.contains('t.sync_pair_not_hibiki'),
+      source.contains('t.sync_pair_not_fushi'),
       isTrue,
       reason: '探测不可达 / 非 hibiki 时缺少 UI 反馈',
     );

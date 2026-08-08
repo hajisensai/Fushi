@@ -336,7 +336,7 @@ class SyncRepository {
         return present(await getDropboxToken());
       case SyncBackendType.oneDrive:
         return present(await getOneDriveToken());
-      case SyncBackendType.hibikiServer:
+      case SyncBackendType.fushiServer:
         // 互联双向：本机连别人（已填对端地址）或别人连本机（开着服务且有已配对
         // 对端——对端会经 `/api/tombstones` 读走本机墓碑）都算通道存在。
         if ((await getFushiClientUrls()).isNotEmpty) return true;
@@ -386,10 +386,10 @@ class SyncRepository {
     }
   }
 
-  /// 一次性幂等迁移：把「互联=互斥的 backendType==hibikiServer 单选」旧模型迁到
+  /// 一次性幂等迁移：把「互联=互斥的 backendType==fushiServer 单选」旧模型迁到
   /// 独立的 [isInterconnectEnabled] 开关（互联与云备份不再冲突，可并存）。
   ///
-  /// 旧模型里选互联意味着 `sync_backend_type == 'hibikiServer'`（配对设备时也会被
+  /// 旧模型里选互联意味着 `sync_backend_type == 'fushiServer'`（配对设备时也会被
   /// 强写成这个值，见 interconnect UI）。迁移：这类用户置互联开关为 true，并把
   /// backendType 迁到云默认 googleDrive（未认证时云通道自动 no-op），使升级后互联
   /// 照常跑、且不再占着「云后端选择」这个位置。互联自身的持久化字段（serverEnabled
@@ -398,7 +398,7 @@ class SyncRepository {
   /// 一次性：迁移过一次后（[_keyInterconnectBackendMigrated] 落盘）永远 no-op。
   /// 这点是硬要求而非优化——解耦后用户仍可主动把云备份后端选成互联（互联页的
   /// 「用互联做备份后端」按钮，把备份写到已配对对端而不是云盘）。若迁移继续只看
-  /// 「backendType 是不是 hibikiServer」，这个用户选择会在下次启动被当成旧数据
+  /// 「backendType 是不是 fushiServer」，这个用户选择会在下次启动被当成旧数据
   /// 抹回 googleDrive，按钮变成重启即失效的假开关。
   ///
   /// 必须在任何 [getBackendType]（未知值静默回落 googleDrive）之前、init 期跑一次。
@@ -408,7 +408,7 @@ class SyncRepository {
       return;
     }
     final String? backend = await _getStringOrNull(_keyBackendType);
-    if (backend == SyncBackendType.hibikiServer.name) {
+    if (backend == SyncBackendType.fushiServer.name) {
       await setInterconnectEnabled(true);
       await _setString(_keyBackendType, SyncBackendType.googleDrive.name);
     }
@@ -627,7 +627,7 @@ class SyncRepository {
 
   /// 「旧互联后端 → 独立开关」迁移的一次性完成标记。见
   /// [migrateInterconnectBackendToToggle]：迁移过去靠「backendType 不再是
-  /// hibikiServer」当哨兵，于是用户之后主动把备份后端设回互联（互联页的
+  /// fushiServer」当哨兵，于是用户之后主动把备份后端设回互联（互联页的
   /// 「用互联做备份后端」按钮）会在下次启动被迁移当成旧数据再改回 googleDrive。
   /// 用独立标记记「本机已迁移过」，让迁移真正只跑一次。
   static const _keyInterconnectBackendMigrated =
@@ -650,7 +650,7 @@ class SyncRepository {
   /// 一条独立的同步/端到端通道运行——连接对端、远端查词/音频/占位卡 live 数据源、
   /// 以及与云备份并行的元数据同步通道——与用户选的云后端并存、互不排斥。
   ///
-  /// 历史上互联是 `SyncBackendType.hibikiServer` 这个互斥单选项；已由
+  /// 历史上互联是 `SyncBackendType.fushiServer` 这个互斥单选项；已由
   /// [migrateInterconnectBackendToToggle] 迁移到本独立布尔开关。默认 false。
   Future<bool> isInterconnectEnabled() =>
       _db.getPrefTyped<bool>(_keyInterconnectEnabled, false);

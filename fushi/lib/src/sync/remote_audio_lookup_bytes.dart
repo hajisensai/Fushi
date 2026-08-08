@@ -8,7 +8,7 @@ import 'package:fushi/src/utils/misc/audio_mime.dart';
 /// 短命 token 播放。
 ///
 /// 此前 server 端音频解析（`_AppModelRemoteLookupService.lookupAudio`）只查本地音频库，忽略
-/// 用户在「管理音频来源」里配置的远程发音源（jpod/forvo/hibikiRemote）——仅配远程源的用户
+/// 用户在「管理音频来源」里配置的远程发音源（jpod/forvo/fushiRemote）——仅配远程源的用户
 /// 在扩展/远端查词弹窗里恒无单词音频。改为复用 app 内查词同一条 `resolveLookupAudioUrl` 全源
 /// 解析链后，解析结果可能是本地文件路径，也可能是远程 http(s) URL；本 helper 负责把两者都归
 /// 一成字节（远程源下字节、本地源读文件），仍经本地 127.0.0.1 短命 token 播放（扩展宿主在

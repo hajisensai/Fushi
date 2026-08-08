@@ -21,7 +21,7 @@ import 'package:url_launcher/url_launcher.dart';
 /// OneDrive sync backend via Microsoft Graph API.
 ///
 /// Auth: OAuth 2.0 PKCE flow.
-/// Redirect URI: `hibiki://auth/onedrive`
+/// Redirect URI: `fushi://auth/onedrive`
 class OneDriveSyncBackend extends SyncBackend
     with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults {
   OneDriveSyncBackend._();

@@ -517,14 +517,14 @@ void main() {
     expect(saved, isEmpty);
   });
 
-  // hibikiRemote 无 URL 可改、本地库路径由文件选择器决定 → 都不给 ✎（只有自定义远端行有）。
+  // fushiRemote 无 URL 可改、本地库路径由文件选择器决定 → 都不给 ✎（只有自定义远端行有）。
   testWidgets('only remoteAudio rows expose the edit button',
       (WidgetTester tester) async {
     await openDialog(
       tester,
       AudioSourcesDialog(
         sources: <AudioSourceConfig>[
-          AudioSourceConfig.hibikiRemote(),
+          AudioSourceConfig.fushiRemote(),
           AudioSourceConfig.localAudio(
               label: 'a.db', path: '/a.db', enabled: true),
           AudioSourceConfig.remoteAudio(url: 'https://a.example.com/{term}'),

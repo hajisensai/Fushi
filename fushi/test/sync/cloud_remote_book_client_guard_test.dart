@@ -41,15 +41,15 @@ void main() {
           reason: 'getRemoteBook 只下载不导入，导入由书架页负责');
     });
 
-    test('book shelf wires CloudRemoteBookClient for non-hibikiServer backends',
+    test('book shelf wires CloudRemoteBookClient for non-fushiServer backends',
         () {
       final File part =
           File('lib/src/pages/implementations/reader_history/remote.part.dart');
       final String code = part.readAsStringSync();
-      // 非 hibikiServer 分支经 resolveSyncBackend 并返回 CloudRemoteBookClient。
+      // 非 fushiServer 分支经 resolveSyncBackend 并返回 CloudRemoteBookClient。
       expect(code.contains('resolveSyncBackend('), isTrue);
       expect(code.contains('CloudRemoteBookClient('), isTrue);
-      // hibikiServer 分支仍返回裸 InterconnectSyncBackend（保留 live 库 API）。
+      // fushiServer 分支仍返回裸 InterconnectSyncBackend（保留 live 库 API）。
       expect(code.contains('InterconnectSyncBackend.instance'), isTrue);
     });
   });

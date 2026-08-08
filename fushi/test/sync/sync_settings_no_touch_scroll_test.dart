@@ -24,7 +24,7 @@ import '../helpers/test_platform_services.dart';
 // Regression (sync/backup page jumps down on open with the Hibiki interconnect
 // backend): the page first renders the googleDrive default while
 // `_syncSettings.load()` reads the persisted backend asynchronously, then
-// reflows TALLER to the real hibikiServer layout (server config + LAN + host
+// reflows TALLER to the real fushiServer layout (server config + LAN + host
 // sections). FushiFocusController re-homes the focus cursor during that reflow
 // and its reveal scroll-centered a now-lower row — yanking the viewport down.
 // In TOUCH mode there is no focus cursor, so passive focus repair must not move
@@ -44,7 +44,7 @@ Future<double> _settledOffset(
   await prefs.loadFromDb();
   final Directory storeDir = Directory.systemTemp.createTempSync('hibiki_sync');
   final SyncRepository repo = SyncRepository(db);
-  await repo.setBackendType(SyncBackendType.hibikiServer);
+  await repo.setBackendType(SyncBackendType.fushiServer);
   await repo.setFushiClientUrls(<FushiClientUrl>[
     const FushiClientUrl(url: 'http://192.168.1.10:38765'),
     const FushiClientUrl(url: 'http://192.168.1.11:38765'),

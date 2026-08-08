@@ -233,7 +233,7 @@ abstract class FfmpegBackend {
 String resolveFfmpegExecutable() => resolveFfmpegExecutableFrom(
       // 新名优先，旧名回退（改名前公开的用户环境变量）。
       override: Platform.environment['FUSHI_FFMPEG'] ??
-          Platform.environment['HIBIKI_FFMPEG'],
+          Platform.environment['FUSHI_FFMPEG'],
       bundledPath: _bundledFfmpegPath(),
     );
 
@@ -261,7 +261,7 @@ String? _bundledFfmpegPath() => _bundledExecutablePath('ffmpeg');
 /// 并排塞进各桌面产物）> 系统 PATH 上的 `ffprobe`。
 String resolveFfprobeExecutable() => resolveFfprobeExecutableFrom(
       override: Platform.environment['FUSHI_FFPROBE'] ??
-          Platform.environment['HIBIKI_FFPROBE'],
+          Platform.environment['FUSHI_FFPROBE'],
       bundledPath: _bundledFfprobePath(),
     );
 
@@ -592,7 +592,7 @@ class CliFfmpegBackend implements FfmpegBackend {
       _runCliFfmpeg(
         // 新名优先，旧名回退（改名前公开的用户环境变量）。
         override: Platform.environment['FUSHI_FFMPEG'] ??
-            Platform.environment['HIBIKI_FFMPEG'],
+            Platform.environment['FUSHI_FFMPEG'],
         bundledPath: _bundledFfmpegPath(),
         isWindows: Platform.isWindows,
         args: args,
@@ -604,7 +604,7 @@ class CliFfmpegBackend implements FfmpegBackend {
   Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
       _runCliFfprobe(
         override: Platform.environment['FUSHI_FFPROBE'] ??
-            Platform.environment['HIBIKI_FFPROBE'],
+            Platform.environment['FUSHI_FFPROBE'],
         bundledPath: _bundledFfprobePath(),
         args: args,
         timeout: timeout,

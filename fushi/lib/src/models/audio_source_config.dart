@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 enum AudioSourceKind {
-  hibikiRemote('hibikiRemote'),
+  fushiRemote('fushiRemote'),
   localAudio('localAudio'),
   remoteAudio('remoteAudio');
 
@@ -9,8 +9,14 @@ enum AudioSourceKind {
 
   final String wireName;
 
+  /// Hibiki 时代写下的 wireName（W9-6 改名前）。音频源配置以 JSON 落偏好，存量
+  /// 用户经迁移带过来的配置里仍是旧值；不认它会让 fromWireName 落到 orElse 的
+  /// remoteAudio，把「Fushi 互联发音源」悄悄降级成一个空的自定义远程源。
+  static const String _legacyFushiRemoteWireName = 'hibikiRemote';
+
   static AudioSourceKind fromWireName(Object? value) {
     final String name = value?.toString() ?? '';
+    if (name == _legacyFushiRemoteWireName) return AudioSourceKind.fushiRemote;
     return AudioSourceKind.values.firstWhere(
       (AudioSourceKind kind) => kind.wireName == name,
       orElse: () => AudioSourceKind.remoteAudio,
@@ -28,11 +34,11 @@ class AudioSourceConfig {
     this.path,
   });
 
-  factory AudioSourceConfig.hibikiRemote({bool enabled = false}) {
-    // label 留空：显示名由 UI 用 i18n（audio_source_hibiki_interconnect）解析，
+  factory AudioSourceConfig.fushiRemote({bool enabled = false}) {
+    // label 留空：显示名由 UI 用 i18n（audio_source_fushi_interconnect）解析，
     // 不把英文写死进持久化 JSON。
     return AudioSourceConfig._(
-      kind: AudioSourceKind.hibikiRemote,
+      kind: AudioSourceKind.fushiRemote,
       enabled: enabled,
     );
   }
@@ -69,8 +75,8 @@ class AudioSourceConfig {
         json['enabled'] is bool ? json['enabled'] as bool : true;
     final String? label = _nullableString(json['label']);
     switch (kind) {
-      case AudioSourceKind.hibikiRemote:
-        return AudioSourceConfig.hibikiRemote(enabled: enabled);
+      case AudioSourceKind.fushiRemote:
+        return AudioSourceConfig.fushiRemote(enabled: enabled);
       case AudioSourceKind.localAudio:
         return AudioSourceConfig.localAudio(
           label: label ?? _nullableString(json['path']) ?? '',
@@ -94,7 +100,7 @@ class AudioSourceConfig {
 
   String get displayLabel {
     switch (kind) {
-      case AudioSourceKind.hibikiRemote:
+      case AudioSourceKind.fushiRemote:
         return label ?? '';
       case AudioSourceKind.localAudio:
         return (label?.isNotEmpty ?? false) ? label! : (path ?? '');

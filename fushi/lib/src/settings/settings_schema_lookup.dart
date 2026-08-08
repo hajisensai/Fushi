@@ -155,7 +155,7 @@ SettingsDestination buildLookupDestination() {
             },
           ),
           // 「管理音频来源」抽成共享 builder：查词分类与 Hibiki 互联分类都引用同一份
-          // 定义（互联音频源 hibikiRemote 就在该对话框里管，故互联分类也提供入口）。
+          // 定义（互联音频源 fushiRemote 就在该对话框里管，故互联分类也提供入口）。
           buildManageAudioSourcesItem(),
           // 浏览器扩展「安装助手」已独立成桌面专属顶层页（BrowserExtensionPage，仅桌面
           // 出现），复杂正文（安装引导 + 连接检测 + 版本信息）不再埋在查词设置里；这里
@@ -1059,7 +1059,7 @@ SettingsDestination buildLookupDestination() {
 }
 
 /// 「管理音频来源」配置项。查词分类与 Hibiki 互联分类共享同一份定义（单一真相源）：
-/// 音频来源对话框统管远端(含互联 hibikiRemote)/本地音频源，逻辑上与互联相关，故两处
+/// 音频来源对话框统管远端(含互联 fushiRemote)/本地音频源，逻辑上与互联相关，故两处
 /// 都用同一入口。id 沿用 `lookup.` 前缀（历史命名，非持久化 key，两处同 id 无冲突——
 /// 覆盖遍历按 `<destId>/<title>` 去重，action 型行不产生持久化断言）。
 SettingsItem buildManageAudioSourcesItem() {

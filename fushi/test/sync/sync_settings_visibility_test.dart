@@ -19,7 +19,7 @@ void main() {
       expect(isOAuthSyncBackend(SyncBackendType.webDav), isFalse);
       expect(isOAuthSyncBackend(SyncBackendType.ftp), isFalse);
       expect(isOAuthSyncBackend(SyncBackendType.sftp), isFalse);
-      expect(isOAuthSyncBackend(SyncBackendType.hibikiServer), isFalse);
+      expect(isOAuthSyncBackend(SyncBackendType.fushiServer), isFalse);
     });
 
     test('covers every backend type (no orphan after enum changes)', () {
@@ -140,7 +140,7 @@ void main() {
         final int at = src.indexOf("id: '$id'");
         expect(at, greaterThanOrEqualTo(0));
         final String block = src.substring(at, at + 500);
-        expect(block, contains('!= SyncBackendType.hibikiServer'),
+        expect(block, contains('!= SyncBackendType.fushiServer'),
             reason: '$id governs the cloud channel; dead when method=互联');
         expect(block, isNot(contains('_isHostingInterconnect')),
             reason: '$id must not hide on host identity (BUG-1088)');
@@ -195,13 +195,13 @@ void main() {
             src.substring(at, at + 200), contains('_cloudOutboundUnavailable'),
             reason: 'manual-sync gate must use cloud-outbound availability');
       }
-      // 谓词链自身必须同时咬住三个条件：backendType==hibikiServer（同步方式是互联）
+      // 谓词链自身必须同时咬住三个条件：backendType==fushiServer（同步方式是互联）
       // + serverEnabled + interconnectEnabled（_isHostingInterconnect 的两条件，
       // BUG-084 的 stale serverEnabled 防线保持不变）。
       final int helperAt = src.indexOf('bool _cloudOutboundUnavailable(');
       expect(helperAt, greaterThanOrEqualTo(0));
       final String helper = src.substring(helperAt, helperAt + 300);
-      expect(helper, contains('== SyncBackendType.hibikiServer'),
+      expect(helper, contains('== SyncBackendType.fushiServer'),
           reason: 'outbound only vanishes when the method itself is 互联');
       expect(helper, contains('_isHostingInterconnect'),
           reason: 'and only while actually hosting');
@@ -236,7 +236,7 @@ void main() {
     });
 
     test('the backend picker lists the interconnect again (BUG-1088)', () {
-      // Source guard: _isBackendSelectable 对 hibikiServer 必须 return true。
+      // Source guard: _isBackendSelectable 对 fushiServer 必须 return true。
       // 解耦时它被从选择器摘掉，唯一补偿入口（互联页「设为备份后端」按钮）又被
       // host 门控藏住，host 设备上「备份写到已配对设备」入口彻底消失。
       final String src =
@@ -245,17 +245,17 @@ void main() {
       final int fnAt = src.indexOf('bool _isBackendSelectable(');
       expect(fnAt, greaterThanOrEqualTo(0));
       final String fn = src.substring(fnAt, src.indexOf('\n}', fnAt));
-      final int caseAt = fn.indexOf('case SyncBackendType.hibikiServer:');
+      final int caseAt = fn.indexOf('case SyncBackendType.fushiServer:');
       expect(caseAt, greaterThanOrEqualTo(0));
       final String afterCase = fn.substring(caseAt, caseAt + 80);
       expect(afterCase, contains('return true'),
-          reason: 'hibikiServer must be selectable as a sync method');
+          reason: 'fushiServer must be selectable as a sync method');
     });
 
     test(
         'selecting the interconnect as sync method enables interconnect '
         '(BUG-1088)', () {
-      // Source guard: _selectBackend 选中 hibikiServer 时必须顺手
+      // Source guard: _selectBackend 选中 fushiServer 时必须顺手
       // setInterconnectEnabled(true)——不开互联总开关，连接配置区不显示、通道认证
       // 也过不去，选完就是个死后端。
       final String src =
@@ -310,7 +310,7 @@ void main() {
         () {
       // 互联总开关（独立于 backendType 云备份后端）常显、无门控；连接设备 / 上传到
       // 互联对端 / 本机服务器 三个配置区仅在互联启用（interconnectEnabled）时可见——
-      // 取代解耦前的 backendType == hibikiServer 门控。
+      // 取代解耦前的 backendType == fushiServer 门控。
       expect(idsOf(dest.sections[0]), <String>['interconnect.enabled']);
       expect(dest.sections[0].visible, isNull,
           reason: 'the enable toggle must always be visible');

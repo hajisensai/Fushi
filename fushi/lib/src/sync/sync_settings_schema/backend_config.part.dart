@@ -291,7 +291,7 @@ bool _isBackendSelectable(SyncBackendType type) {
     // 并存）保留，但把备份后端指向互联必须能从这里直接选——曾经唯一的入口是互联页
     // 的「设为备份后端」按钮，而它又被 host 门控藏掉，host 设备上入口彻底消失。
     // 选中后连接配置仍在「Hibiki 互联」分类（选择器下方有指引行）。
-    case SyncBackendType.hibikiServer:
+    case SyncBackendType.fushiServer:
       return true;
     case SyncBackendType.googleDrive:
     case SyncBackendType.webDav:
@@ -314,8 +314,8 @@ String _backendLabel(SyncBackendType type) {
   switch (type) {
     case SyncBackendType.googleDrive:
       return t.sync_backend_google_drive;
-    case SyncBackendType.hibikiServer:
-      return t.sync_backend_hibiki_server;
+    case SyncBackendType.fushiServer:
+      return t.sync_backend_fushi_server;
     case SyncBackendType.webDav:
       return t.sync_backend_webdav;
     case SyncBackendType.oneDrive:
@@ -382,7 +382,7 @@ class _BackendSelectorWidgetState extends State<_BackendSelectorWidget> {
     );
     // BUG-1088：选互联做同步方式时顺手打开互联总开关——不开互联，连接配置区不显示、
     // 通道认证也过不去，选完就是个死后端。反向（选回云盘）不动互联开关，二者可并存。
-    if (value == SyncBackendType.hibikiServer && !state.interconnectEnabled) {
+    if (value == SyncBackendType.fushiServer && !state.interconnectEnabled) {
       await state.setInterconnectEnabled(true);
     }
     widget.settingsContext.refresh();
