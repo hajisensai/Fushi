@@ -440,8 +440,8 @@ inline void RecordVoiceClip(uint32_t ring_offset, uint32_t byte_len,
 
 // 通知 injector IPC 契约已经可用。必须在任何 MinHook/引擎探测之前调用：
 // 这些重型安装可能被目标进程里已有的 hook 拖慢，不能因此让 injector 超时并释放共享内存。
-bool SignalReady(DWORD pid) {
-  const std::wstring evt = ReadyEventName(pid);
+bool SignalReady(DWORD pid, bool legacy_hibiki_ipc) {
+  const std::wstring evt = ReadyEventName(pid, legacy_hibiki_ipc);
   HANDLE ready = OpenEventW(EVENT_MODIFY_STATE, FALSE, evt.c_str());
   if (ready == nullptr) return false;
   const bool signaled = SetEvent(ready) != FALSE;
@@ -462,12 +462,19 @@ bool SignalReady(DWORD pid) {
 #include "adapter_registry.inc"
 
 // 工作线程：打开共享内存 -> 校验契约 -> 标记 hooked -> 由 registry 安装 adapter -> 通知 injector。
-DWORD WINAPI HookWorker(LPVOID) {
+DWORD WINAPI HookWorker(LPVOID module_context) {
   const DWORD pid = GetCurrentProcessId();
   AdapterRegistry registry;
   WriteMarkerFile(pid);
 
-  const std::wstring shm = SharedMemoryName(pid);
+  wchar_t module_path[MAX_PATH] = {0};
+  const DWORD module_path_length = GetModuleFileNameW(
+      reinterpret_cast<HMODULE>(module_context), module_path, MAX_PATH);
+  const bool legacy_hibiki_ipc =
+      module_path_length > 0 && module_path_length < MAX_PATH &&
+      fushi_voice_hook::ComponentUsesLegacyHibikiIpc(
+          std::wstring(module_path, module_path_length));
+  const std::wstring shm = SharedMemoryName(pid, legacy_hibiki_ipc);
   g_mapping = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, shm.c_str());
   if (g_mapping != nullptr) {
     g_header = static_cast<SharedHeader*>(
@@ -481,7 +488,7 @@ DWORD WINAPI HookWorker(LPVOID) {
 
       // 此时 DLL、共享内存与契约均已就绪，先让 injector 进入 hold 保住映射。
       // 后面的 MinHook/Siglus/KiriKiri 探测允许异步继续，不能阻塞 proof-of-life。
-      if (!SignalReady(pid)) return 1;
+      if (!SignalReady(pid, legacy_hibiki_ipc)) return 1;
 
       // ── C.2/C.3：缓存各区基址后安装捕获 hook ────────────────────────────
       g_ring_base =
@@ -544,7 +551,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
     case DLL_PROCESS_ATTACH:
       DisableThreadLibraryCalls(module);
       // 活儿丢给工作线程（loader lock 之外）。CreateThread 在 DllMain 中是允许的。
-      CreateThread(nullptr, 0, HookWorker, nullptr, 0, nullptr);
+      CreateThread(nullptr, 0, HookWorker, module, 0, nullptr);
       break;
     case DLL_PROCESS_DETACH:
       // 先关捕获总开关，堵住 SubmitSourceBuffer 回调用悬垂 g_ring_base 的窗口，再解映射。
