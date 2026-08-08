@@ -3285,5 +3285,11 @@
   "video_external_categories_invalid": "分类必须是用逗号分隔的数字 ID。",
   "video_download_path_mapping_invalid": "请输入配置 ID、远程根目录和本机绝对根目录。",
   "video_opensubtitles_endpoint": "API 端点",
-  "video_download_target_source_empty": "没有可访问的本地视频来源。请先在来源页添加。"
+  "video_download_target_source_empty": "没有可访问的本地视频来源。请先在来源页添加。",
+  "video_scrape_diagnostic_export": "导出刮削诊断包",
+  "video_scrape_diagnostic_confirm_title": "导出刮削诊断包？",
+  "video_scrape_diagnostic_saved": "诊断包已保存",
+  "video_scrape_diagnostic_failed": "无法导出诊断包：$reason",
+  "video_scrape_diagnostic_share_subject": "Fushi 视频刮削诊断",
+  "video_scrape_diagnostic_confirm_body": "诊断包包含相对文件/目录名、刮削摘要和原始 NFO 内容；不会加入视频、字幕、图片、绝对路径、应用配置或应用凭据。原始 NFO 会原样保留，仍可能含有个人信息或密钥，请在公开分享前检查。"
 }

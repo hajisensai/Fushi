@@ -18,9 +18,10 @@
 // 端口/路径都在里面），无需单独存 host/port（见 NetworkSourceFileSystem）。
 
 import 'dart:async' show unawaited;
-import 'dart:io' show Platform, Process;
+import 'dart:io' show Directory, File, Platform, Process;
 
 import 'package:drift/drift.dart' show Value;
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
@@ -28,14 +29,19 @@ import 'package:fushi/src/media/source_library/source_library_credential_store.d
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi/src/media/video/scraper/video_scrape_diagnostic_exporter.dart';
 import 'package:fushi/src/sync/ftp_sync_backend.dart';
 import 'package:fushi/src/sync/sftp_sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_sync_backend.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
+import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 /// 来源库列表内容体：按 [mediaKind] 过滤，提供添加 / 重新扫描 / 打开 / 移除 / 重排。
 ///
@@ -108,6 +114,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   final Set<int> _scraping = <int>{};
 
   VideoSourceScrapePhase _lastObservedScrapePhase = VideoSourceScrapePhase.idle;
+
+  /// 正在生成诊断包的来源 id 集合（与扫描互斥，避免目录快照中途大幅变化）。
+  final Set<int> _exportingDiagnostics = <int>{};
 
   /// 数据库引用在 initState（ProviderScope 必然存活）时捕获一次，之后所有 async
   /// 操作都用它，绝不在 async gap 恢复后再 `ref.read`。否则用户点「重新扫描」后关闭
@@ -358,7 +367,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final bool isVideo = widget.mediaKind == 'video';
     final bool scanning = _scanning.contains(row.id);
     final bool scraping = _isScrapingSource(row.id);
-    final bool busy = scanning || scraping || isBusy;
+    final bool exporting = _exportingDiagnostics.contains(row.id);
+    final bool busy = scanning || scraping || exporting || isBusy;
 
     return Padding(
       padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
@@ -422,6 +432,19 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                   enabled: !busy,
                   padding: EdgeInsets.all(tokens.spacing.gap / 2),
                   onTap: () => _openVideoScrapeSettings(row),
+                ),
+              if (widget.mediaKind == 'video' && isLocal)
+                FushiIconButton(
+                  key: ValueKey<String>(
+                    'video_scrape_diagnostic_export_${row.id}',
+                  ),
+                  icon: Icons.archive_outlined,
+                  size: 18,
+                  tooltip: t.video_scrape_diagnostic_export,
+                  busy: exporting,
+                  enabled: !busy,
+                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                  onTap: () => _exportVideoScrapeDiagnostics(row),
                 ),
               FushiIconButton(
                 icon: Icons.folder_open,
@@ -848,6 +871,105 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       await Process.run('explorer', <String>[windowsPath]);
     } catch (_) {
       // 打开失败不致命（路径可能已不存在）；静默即可。
+    }
+  }
+
+  /// 导出当前本地视频来源的 AI 可读刮削诊断包。
+  ///
+  /// 包内只有相对目录树、原始 NFO 和结构化刮削摘要；绝不复制媒体、配置、数据库或
+  /// 绝对路径。原始 NFO 与文件名仍可能含个人信息，因此分享前必须二次确认。
+  Future<void> _exportVideoScrapeDiagnostics(SourceLibraryRow row) async {
+    if (row.transport != 'local' || row.mediaKind != 'video') return;
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog.adaptive(
+        title: Text(t.video_scrape_diagnostic_confirm_title),
+        content: Text(t.video_scrape_diagnostic_confirm_body),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: ctx,
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t.dialog_cancel),
+          ),
+          adaptiveDialogAction(
+            context: ctx,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t.dialog_export),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+
+    setState(() => _exportingDiagnostics.add(row.id));
+    final bool isDesktop =
+        Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+    File? temporaryPackage;
+    try {
+      final List<VideoBookRow> allBooks = await _db.allVideoBooks();
+      final List<VideoScrapeMetaRow> allMetadata =
+          await _db.getAllVideoScrapeMeta();
+      final Directory temporaryDirectory = await getTemporaryDirectory();
+      final DateTime now = DateTime.now();
+      final String timestamp = '${now.year.toString().padLeft(4, '0')}'
+          '${now.month.toString().padLeft(2, '0')}'
+          '${now.day.toString().padLeft(2, '0')}-'
+          '${now.hour.toString().padLeft(2, '0')}'
+          '${now.minute.toString().padLeft(2, '0')}'
+          '${now.second.toString().padLeft(2, '0')}';
+      final String fileName = 'fushi-video-scrape-diagnostics-$timestamp.zip';
+      temporaryPackage = File(p.join(temporaryDirectory.path, fileName));
+      final String version =
+          '${_appModel.packageInfo.version}+${_appModel.packageInfo.buildNumber}';
+      await const VideoScrapeDiagnosticExporter().export(
+        source: row,
+        books: allBooks
+            .where((VideoBookRow book) => book.sourceId == row.id)
+            .toList(growable: false),
+        scrapeMetadata: allMetadata,
+        outputFile: temporaryPackage,
+        applicationVersion: version,
+        platform: Platform.operatingSystem,
+        exportedAt: now,
+      );
+
+      if (isDesktop) {
+        final String? savePath = await FilePicker.platform.saveFile(
+          dialogTitle: t.video_scrape_diagnostic_export,
+          fileName: fileName,
+          type: FileType.custom,
+          allowedExtensions: <String>['zip'],
+        );
+        if (savePath != null) {
+          await temporaryPackage.copy(savePath);
+          FushiToast.show(
+            msg: t.video_scrape_diagnostic_saved,
+            severity: ToastSeverity.success,
+          );
+        }
+      } else {
+        await FushiShare.shareFiles(
+          <XFile>[
+            XFile(temporaryPackage.path, mimeType: 'application/zip'),
+          ],
+          subject: t.video_scrape_diagnostic_share_subject,
+        );
+      }
+    } catch (error) {
+      FushiToast.show(
+        msg: t.video_scrape_diagnostic_failed(reason: error.toString()),
+        severity: ToastSeverity.error,
+      );
+    } finally {
+      // 移动端系统分享面板会异步读取文件，不能在 shareFiles 返回后立即删除。
+      if (isDesktop && temporaryPackage != null) {
+        try {
+          await temporaryPackage.delete();
+        } catch (_) {}
+      }
+      if (mounted) {
+        setState(() => _exportingDiagnostics.remove(row.id));
+      }
     }
   }
 
