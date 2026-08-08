@@ -45,6 +45,7 @@ import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
+import 'package:hibiki/src/media/video/video_folder_group_coordinator.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
 
 /// EPUB extensions (lowercase, no leading dot).
@@ -386,7 +387,22 @@ class SourceLibraryScanner {
         case SourceLibraryKind.video:
           // Video source imports both single videos and m3u8/m3u playlists
           // (TODO-1237).
-          mediaCount = await _importVideos(plan, source.id, files);
+          final List<String> createdVideoPaths =
+              await _importVideos(plan, source.id, files);
+          mediaCount = createdVideoPaths.length;
+          // 来源扫描与旧「导入视频文件夹」共用同一套作品/季/集解析规则：散片
+          // 保持独立，多集整理为 playlist 合集。先完成逐文件入库，字幕 cue / 封面
+          // 的既有增强不变；再只做归组，重扫复用已有成员且不删除缺失文件。
+          await VideoFolderGroupCoordinator(
+            database: _db,
+            repository: _videoRepo,
+          ).groupPaths(
+            videoPaths: <String>[
+              for (final ScanVideoItem item in plan.videos) item.videoPath,
+            ],
+            createdVideoPaths: createdVideoPaths,
+            sourceId: source.id,
+          );
           mediaCount += await _importPlaylists(plan, source.id, files);
         case SourceLibraryKind.manga:
           mediaCount = await _importManga(plan, source.id);
@@ -548,7 +564,8 @@ class SourceLibraryScanner {
     return count;
   }
 
-  /// Imports every video in the plan (with sidecar subtitle cues); returns count.
+  /// Imports every video in the plan (with sidecar subtitle cues); returns the
+  /// physical paths that were newly inserted in this scan.
   ///
   /// [fs] is the source file system the scan listed from. Subtitles are read via
   /// [SourceFileSystem.copyToLocal] (local = original path unchanged; network =
@@ -557,12 +574,12 @@ class SourceLibraryScanner {
   /// preserved (TODO-817 M1b TODO②). Covers are extracted via [extractVideoCover]
   /// (TODO-817 M1b TODO①); ffmpeg failure / mobile simply yields a null cover and
   /// the video still imports (shelf shows a placeholder).
-  Future<int> _importVideos(
+  Future<List<String>> _importVideos(
     ScanPlan plan,
     int sourceId,
     SourceFileSystem fs,
   ) async {
-    if (plan.videos.isEmpty) return 0;
+    if (plan.videos.isEmpty) return const <String>[];
     final List<VideoBookRow> existingRows = await _videoRepo.listAll();
     // Existing book_uid set for silent same-name dedup (matches import dialog).
     final Set<String> existingKeys =
@@ -580,7 +597,7 @@ class SourceLibraryScanner {
     Directory? subtitleTmp;
 
     try {
-      int count = 0;
+      final List<String> createdPaths = <String>[];
       for (final ScanVideoItem item in plan.videos) {
         // Skip already-imported physical files (library or same-batch dup).
         if (!existingPaths.add(normalizeVideoPath(item.videoPath))) {
@@ -648,9 +665,9 @@ class SourceLibraryScanner {
         if (cues.isNotEmpty) {
           await _videoRepo.saveCues(bookUid: bookUid, cues: cues);
         }
-        count++;
+        createdPaths.add(item.videoPath);
       }
-      return count;
+      return createdPaths;
     } finally {
       if (subtitleTmp != null) {
         try {
@@ -745,6 +762,7 @@ class SourceLibraryScanner {
           collectionName: collectionName,
           entries: entries,
           sourceId: sourceId,
+          reuseExistingPaths: true,
         );
         // 记入 map：同一次扫描里遇到第二个同名清单时走 reconcile，不再重导致重复。
         existingPlaylistIds[collectionName] = result.collectionId;

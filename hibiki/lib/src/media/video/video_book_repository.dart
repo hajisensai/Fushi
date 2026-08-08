@@ -63,6 +63,10 @@ class VideoBookRepository {
     return _db.upsertVideoBook(withSource);
   }
 
+  /// 复用同路径视频时只回填空的来源归属，不覆盖任何媒体或用户字段。
+  Future<bool> assignSourceIfNull(String bookUid, int sourceId) async =>
+      await _db.assignVideoBookSourceIfNull(bookUid, sourceId) > 0;
+
   // ── 条目刮削资料（video_scrape_meta，v54）─────────────────────────
 
   /// 落一本视频的条目资料（重刮即覆盖）。标签/infobox 在这里序列化成 JSON 列，
@@ -284,6 +288,9 @@ class VideoBookRepository {
           }
           if (existing != null) {
             epUids.add(existing.bookUid);
+            if (sourceId != null && existing.sourceId == null) {
+              await assignSourceIfNull(existing.bookUid, sourceId);
+            }
             continue;
           }
         }
@@ -359,6 +366,9 @@ class VideoBookRepository {
       final VideoBookRow? row = await _db.getVideoBookByBookUid(item.entryKey);
       if (row != null) {
         memberBaseByUid[item.entryKey] = coreSingleVideoBookUid(row.videoPath);
+        if (sourceId != null && row.sourceId == null) {
+          await assignSourceIfNull(row.bookUid, sourceId);
+        }
       }
     }
     final Set<String> memberBases = memberBaseByUid.values.toSet();
@@ -368,13 +378,33 @@ class VideoBookRepository {
 
     int added = 0;
     int removed = 0;
+    final List<VideoBookRow> existingBooks = await listAll();
     final Set<String> taken =
-        (await listAll()).map((VideoBookRow r) => r.bookUid).toSet();
+        existingBooks.map((VideoBookRow r) => r.bookUid).toSet();
+    final Map<String, VideoBookRow> existingByPath = <String, VideoBookRow>{
+      for (final VideoBookRow row in existingBooks)
+        normalizeVideoPath(row.videoPath): row,
+    };
     await _db.transaction(() async {
       // 先加：清单有、成员没有的基身份。
       for (final PlaylistEntry e in entries) {
         final String base = coreSingleVideoBookUid(e.path);
         if (memberBases.contains(base)) continue;
+        final VideoBookRow? existing =
+            existingByPath[normalizeVideoPath(e.path)];
+        if (existing != null) {
+          if (sourceId != null && existing.sourceId == null) {
+            await assignSourceIfNull(existing.bookUid, sourceId);
+          }
+          await _db.addToCollection(
+            collectionId,
+            MediaKind.video,
+            existing.bookUid,
+          );
+          memberBases.add(base);
+          added++;
+          continue;
+        }
         final String uid = coreUniqueVideoBookUid(base, taken);
         taken.add(uid);
         await saveVideoBook(
@@ -391,6 +421,7 @@ class VideoBookRepository {
           sourceId: sourceId,
         );
         await _db.addToCollection(collectionId, MediaKind.video, uid);
+        memberBases.add(base);
         added++;
       }
       // 后删：成员有、清单已删的基身份（只解绑，保留 VideoBook 本体）。

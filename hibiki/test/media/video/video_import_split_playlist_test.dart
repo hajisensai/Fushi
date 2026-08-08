@@ -1,4 +1,5 @@
 import 'package:drift/native.dart';
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
@@ -212,6 +213,46 @@ void main() {
         '/v/a.mkv',
         '/v/b.mkv',
       });
+    });
+
+    test('清单新增库内同路径视频 → 复用原行并只回填空来源', () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoBookRepository repo = VideoBookRepository(db);
+
+      final SplitPlaylistImportResult result = await repo.importSplitPlaylist(
+        collectionName: 'Show',
+        entries: const <PlaylistEntry>[
+          PlaylistEntry(title: 'E1', path: '/v/Show E01.mkv'),
+        ],
+      );
+      await repo.saveVideoBook(const VideoBooksCompanion(
+        bookUid: Value<String>('manual-e2'),
+        title: Value<String>('Manual E2'),
+        videoPath: Value<String>('/v/Show E02.mkv'),
+        lastPositionMs: Value<int>(1234),
+      ));
+
+      final ({int added, int removed}) recon =
+          await repo.reconcileSplitPlaylist(
+        collectionId: result.collectionId,
+        entries: const <PlaylistEntry>[
+          PlaylistEntry(title: 'E1', path: '/v/Show E01.mkv'),
+          PlaylistEntry(title: 'E2', path: '/v/Show E02.mkv'),
+        ],
+        sourceId: 7,
+      );
+
+      expect(recon, (added: 1, removed: 0));
+      expect((await repo.listAll()).length, 2, reason: '清单对账必须复用库内同路径行');
+      final VideoBookRow reused = (await repo.listAll())
+          .singleWhere((VideoBookRow row) => row.bookUid == 'manual-e2');
+      expect(reused.sourceId, 7);
+      expect(reused.lastPositionMs, 1234, reason: '回填来源不得覆盖观看进度');
+      expect(
+        await memberPaths(db, repo, result.collectionId),
+        <String>{'/v/Show E01.mkv', '/v/Show E02.mkv'},
+      );
     });
 
     test('整批替换清单 → 先加后删，合集不被移空自删', () async {

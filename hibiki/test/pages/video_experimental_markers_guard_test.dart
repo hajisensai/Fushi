@@ -104,7 +104,8 @@ void main() {
       expect(videoSrc.contains('HibikiIconButton('), isTrue);
       // 旧实现用 Material IconButton(onPressed: ...)；统一后走 HibikiIconButton(onTap:)。
       expect(videoSrc.contains('onTap: _openStatistics'), isTrue);
-      expect(videoSrc.contains('onTap: _openImport'), isTrue);
+      expect(videoSrc.contains('onTap: _openImport'), isFalse,
+          reason: '常规单视频导入按钮已从视频媒体库删除');
       expect(videoSrc.contains('onPressed: _openStatistics'), isFalse,
           reason: '不应再用裸 Material IconButton(onPressed:) 作页头动作');
       expect(videoSrc.contains('onPressed: _openImport'), isFalse);

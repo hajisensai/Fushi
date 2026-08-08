@@ -21,18 +21,13 @@ import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:hibiki/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:hibiki/src/media/video/cover_ui/video_scrape_actions.dart';
 import 'package:hibiki/src/media/video/video_home_layout.dart';
 import 'package:hibiki/src/media/video/cover_ui/cover_match_dialog.dart';
 import 'package:hibiki/src/media/video/cover_ui/scrape_info_dialog.dart';
-import 'package:hibiki/src/media/metadata/scrape_batch.dart';
-import 'package:hibiki/src/media/video/scraper/alias_cache.dart';
-import 'package:hibiki/src/media/video/scraper/anilist_client.dart';
 import 'package:hibiki/src/media/video/scraper/auto_scrape_service.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
-import 'package:hibiki/src/media/video/scraper/jikan_client.dart';
-import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
 import 'package:hibiki/src/media/video/scraper/offline_index.dart';
-import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
 import 'package:hibiki/src/media/video/scraper/collection_relations_scrape.dart';
 import 'package:hibiki/src/media/video/scraper/collection_scrape_apply.dart';
 import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
@@ -49,7 +44,6 @@ import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_shader_downloader.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
-import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
@@ -126,8 +120,8 @@ Future<void> openLocalVideoBook({
 ///
 /// 仅在实验性视频开关开启时由 [HomePage] 装配进底栏（见 home_page.dart 的
 /// [HomeTab.video]）。列出 [VideoBookRepository.listAll] 的视频卡片，点开进
-/// [VideoHibikiPage] 播放/查词/制卡；顶栏导入按钮（同样受实验开关门控）打开
-/// [VideoImportDialog] 新建导入，与书架的视频导入入口共用同一对话框与仓库。
+/// [VideoHibikiPage] 播放/查词/制卡。常规入库统一从「来源」添加文件夹并扫描；
+/// [VideoImportDialog] 仍服务拖放、外部打开、URL、m3u8 与缺失文件重链兼容路径。
 ///
 /// 标签：视频书与书架（EPUB/SRT）**共用同一套标签系统**（共享 `BookTags` 标签池
 /// + `video_book_tag_mappings` 映射）。顶部有标签筛选栏（共享 [selectedTagIdsProvider]，
@@ -136,6 +130,7 @@ class HomeVideoPage extends BaseModuleTabPage {
   const HomeVideoPage({
     required this.repo,
     this.navigation,
+    this.libraryRefreshSignal,
     this.remoteVideoClientLoader,
     this.cloudRemoteVideoClientLoader,
     this.remoteVideoDownloadDestination,
@@ -147,6 +142,12 @@ class HomeVideoPage extends BaseModuleTabPage {
   /// 库页视图导航条（由 [MediaLibraryShell] 传入，作为页头主内容与动作同一行）。
   /// 本页被独立使用时为 null，页头与此前逐像素一致。
   final Widget? navigation;
+
+  /// 来源扫描或来源页批量刮削完成后的刷新信号。
+  ///
+  /// UID stream 只能发现插入/删除；合集成员、排序与封面列变化需要本信号让保活的
+  /// 视频库重读。
+  final Listenable? libraryRefreshSignal;
   final Future<RemoteVideoClient?> Function()? remoteVideoClientLoader;
 
   /// 测试钩子（多端库联合视图 §2.2/§2.6）：注入云视频目录 client（[CloudRemoteVideoClient]），
@@ -327,6 +328,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // BUG-793：订阅 videoBooks 表，任意导入路径落库后自动刷新库页。
     _videoUidsSub =
         widget.repo.watchVideoBookUids().listen(_onVideoUidsChanged);
+    widget.libraryRefreshSignal?.addListener(_onLibraryRefreshRequested);
     // BUG-1182：「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经
     // AppModel 通知，本页不会因它重建 → 门控翻转后既不重取也不重渲染。显式订阅。
     // 用 appModelNoUpdate：initState 里读 appModel 会走 ref.watch，触发
@@ -354,12 +356,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   @override
+  void didUpdateWidget(covariant HomeVideoPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.libraryRefreshSignal == widget.libraryRefreshSignal) return;
+    oldWidget.libraryRefreshSignal?.removeListener(_onLibraryRefreshRequested);
+    widget.libraryRefreshSignal?.addListener(_onLibraryRefreshRequested);
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
     _heroPageController.dispose();
     _continueRowController.dispose();
     _recentRowController.dispose();
     _videoUidsSub?.cancel();
+    widget.libraryRefreshSignal?.removeListener(_onLibraryRefreshRequested);
     _autoScrape?.dispose();
     appModelNoUpdate.prefsRepo.removeListener(_onPrefsChangedForRemoteGate);
     assert(() {
@@ -385,6 +396,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 不是 _refresh 里，因为 _refresh 还被改标签/删除/播放返回等触发，那些不带来
     // 需要刮削的新书。
     unawaited(_maybeAutoScrape());
+  }
+
+  void _onLibraryRefreshRequested() {
+    if (mounted) _refresh();
   }
 
   /// 刷新库页。默认只刷**本地**（书架列表 + 分组映射 + 封面自愈）；远端互联清单
@@ -960,14 +975,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
     if (!mounted) return;
     _refreshAfterTagChange();
-  }
-
-  Future<void> _openImport() async {
-    final String? bookUid = await showAppDialog<String>(
-      context: context,
-      builder: (_) => VideoImportDialog(repo: widget.repo),
-    );
-    if (bookUid != null) _refresh();
   }
 
   /// 打开「管理来源」对话框（视频来源库）。关闭后刷新列表（扫描可能新增视频）。
@@ -1894,44 +1901,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (mounted) _refresh();
   }
 
-  /// 组装海报刮削依赖：封面目录 + 独立 `video_scraper` 目录（离线库/别名缓存）+
-  /// TMDB key（偏好）+ 离线索引（有则装载）。返回初始 service、离线重建工厂、目录。
-  Future<
-      ({
-        CoverScraperService service,
-        CoverScraperService Function(OfflineIndex offline) rebuild,
-        Directory scraperDir,
-      })> _scraperBundle() async {
-    final Directory covers = await VideoStorage.coversDir();
-    final Directory scraperDir =
-        Directory(p.join(covers.parent.path, 'video_scraper'));
-    await scraperDir.create(recursive: true);
-    // 用户自填 key 优先，其次内置 key（[resolveTmdbApiKey]）。两者皆空才没有 TMDB
-    // 源——fresh clone / fork 构建没内置 key 时的正常降级，不是错误。
+  /// 单项匹配、自动刮削与来源页整库刮削共用同一套依赖组装。
+  Future<VideoScraperBundle> _scraperBundle() async {
     final String userTmdbKey = ref
         .read(appProvider)
         .prefsRepo
         .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String;
-    final String tmdbKey = resolveTmdbApiKey(userTmdbKey);
-    CoverScraperService make(OfflineIndex? offline) => CoverScraperService(
-          repository: widget.repo,
-          coverMetaStore: CoverMetaStore(covers),
-          aliasCache: AliasCache(scraperDir),
-          bangumiClient: BangumiClient(),
-          coverDownloader: CoverDownloader(),
-          tmdbClient: tmdbKey.isEmpty ? null : TmdbClient(apiKey: tmdbKey),
-          // AniList / Jikan 零 key 门槛，恒可用——没有「配了才有」这回事。
-          aniListClient: AniListClient(),
-          jikanClient: JikanClient(),
-          offlineIndex: offline,
-          coversDirectory: covers,
-        );
-    final OfflineIndex? offline =
-        await CoverScraperService.loadOfflineIndex(scraperDir);
-    return (
-      service: make(offline),
-      rebuild: (OfflineIndex o) => make(o),
-      scraperDir: scraperDir,
+    return createVideoScraperBundle(
+      repository: widget.repo,
+      configuredTmdbKey: userTmdbKey,
     );
   }
 
@@ -1966,56 +1944,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       book: book,
       collectionMemberUids: members,
       onApplied: _refresh,
-    );
-  }
-
-  /// 页头「全部刮削」：显式重跑整库在线刮削。
-  ///
-  /// `rescrapeScraped: true` 只解锁「覆盖**自动**刮来的旧封面」这一件事——覆盖
-  /// 决策本身全在 [CoverScraperService.scrapeLibrary] 那一层按封面来源做
-  /// （BUG-1325）：用户手选的本地图（`manual`）、用户在匹配弹窗里亲手选定的条目
-  /// （`userScraped`）、用户自己放的 sidecar 一律**永不覆盖**；来源未知的存量
-  /// `scraped` 记录还要再过「唯一归一化精确标题」才允许覆盖。本页不再重复表达
-  /// 判据，避免两处各说一套。
-  Future<void> _scrapeAllVideos() async {
-    final List<VideoBookRow> books = await widget.repo.listAll();
-    if (!mounted) return;
-    final ({
-      CoverScraperService service,
-      CoverScraperService Function(OfflineIndex offline) rebuild,
-      Directory scraperDir,
-    }) bundle = await _scraperBundle();
-    if (!mounted) return;
-    await showScrapeBatchDialog(
-      context: context,
-      mediaLabel: t.nav_video,
-      itemCount: books.length,
-      runner: (ScrapeBatchProgressCallback onProgress) async {
-        ScrapeBatchSummary summary = const ScrapeBatchSummary();
-        await for (final BatchScrapeProgress progress
-            in bundle.service.scrapeLibrary(
-          books,
-          rescrapeScraped: true,
-        )) {
-          final ScrapeBatchItemResult result = switch (progress.outcome) {
-            ScrapeApplied() => ScrapeBatchItemResult.applied,
-            ScrapeNeedsConfirm() => ScrapeBatchItemResult.needsReview,
-            ScrapeFailed() => ScrapeBatchItemResult.failed,
-            _ => ScrapeBatchItemResult.skipped,
-          };
-          summary = summary.add(result);
-          onProgress(
-            ScrapeBatchProgress(
-              current: progress.index + 1,
-              total: progress.total,
-              title: progress.book.title,
-              summary: summary,
-            ),
-          );
-        }
-        if (mounted) _refresh();
-        return summary;
-      },
     );
   }
 
@@ -2135,7 +2063,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 合集行嵌套 builder 里，无合集时不执行），AppModel 转发 prefsRepo 的
     // notifyListeners，靠这里的订阅让「显示远端条目」开关切换时占位卡即时增删。
     ref.watch(appProvider);
-    const bool canImport = true;
     final List<BookTagRow> allTags =
         ref.watch(allTagsProvider).valueOrNull ?? const <BookTagRow>[];
     // 页头/布局与书架 [reader_hibiki_history_page]、词典 [home_dictionary_page]
@@ -2161,7 +2088,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             kind: DesktopContentKind.readerShelf,
             child: Column(
               children: <Widget>[
-                if (!isCupertinoPlatform(context)) _buildPageHeader(canImport),
+                if (!isCupertinoPlatform(context)) _buildPageHeader(),
                 _buildVideoSearchBar(),
                 _buildTagFilterBar(allTags),
                 // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
@@ -3950,36 +3877,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 页头：与书架/词典统一，用 [HibikiPageHeader] 大标题 + [HibikiIconButton] 动作
-  /// （统计 + 导入），保证标题字号与按钮位置三 tab 一致。与书架一致仅在非 Cupertino
-  /// 渲染（Cupertino 走平台导航，由 HomePage 外壳承担）。
-  Widget _buildPageHeader(bool canImport) {
+  /// 页头：视频入库与整库刮削已统一迁到「来源」视图；媒体库只保留库内管理动作。
+  Widget _buildPageHeader() {
     final List<Widget> actions = <Widget>[
-      // 图标顺序与书架完全一致：导入 → 收藏夹 → 统计。书架
-      // [reader_hibiki_history_page._buildPageHeader] 把导入按钮放在第一位
-      // （buildBookImportButton），收藏夹、统计紧随其后；视频 tab 照此对齐
-      // （TODO-162：此前视频把导入放在末尾，与书架不一致）。视频导入仍受
-      // [canImport] 门控（仅视频 tab 才有导入入口），这里只调整位置不改门控。
-      // 宽窗（非 compact）时四个动作展开成「图标+文字」药丸（用户 mockup：把
-      // 「导入视频、媒体库」等按钮可展开时展开）；窄窗自动回落纯图标。
-      if (canImport)
-        HibikiIconButton(
-          tooltip: t.video_import_action,
-          label: t.video_import_action,
-          icon: Icons.add,
-          onTap: _openImport,
-        ),
-      HibikiIconButton(
-        tooltip: t.scrape_all,
-        label: t.scrape_all,
-        icon: Icons.manage_search_outlined,
-        onTap: _scrapeAllVideos,
-      ),
       // 「番剧下载」不再占页头：它是下载子系统的入口，在「下载」页
       // （downloads_page）里有完整入口，视频库页头只留库管理动作。
       // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
       // 按钮就是同一件事的两个入口。只有本页被独立使用（无导航条）时才保留按钮。
-      if (canImport && widget.navigation == null)
+      if (widget.navigation == null)
         HibikiIconButton(
           tooltip: t.media_source_manage_title,
           label: t.media_source_manage_title,
@@ -3998,9 +3903,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         icon: Icons.bar_chart_outlined,
         onTap: _openStatistics,
       ),
-      // 自动刮削仍会在进页面 / 新视频入库时后台跑（[_maybeAutoScrape]）；上面的
-      // 「全部刮削」是用户明确要求的手动重跑入口，单本纠错仍在长按菜单的
-      // 「在线匹配封面」。
+      // 自动刮削仍会在进页面 / 新视频入库时后台跑（[_maybeAutoScrape]）；单本纠错
+      // 仍在长按菜单的「在线匹配封面」。
       // 「刷新」按钮已删：下拉刷新（[_pullToRefresh]）仍是手动同步入口，页头不再
       // 为它单占一格。
     ];
@@ -4362,18 +4266,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ref.invalidate(allTagsProvider);
   }
 
-  /// 空库占位（UI 巡检 PR-4）：收敛到共享 [HibikiPlaceholderMessage] 骨架并补
-  /// 「导入视频」CTA——此前只有图标 + 一句话，新用户没有下一步动作入口。
+  /// 空库只提示从「来源」添加文件夹；常规单视频 CTA 已移除。
   Widget _buildEmpty() {
     return HibikiPlaceholderMessage(
       icon: Icons.movie_outlined,
-      message: t.video_library_empty,
-      action: FilledButton.tonalIcon(
-        key: const ValueKey<String>('home_video_empty_import'),
-        onPressed: () => unawaited(_openImport()),
-        icon: const Icon(Icons.add),
-        label: Text(t.video_import_action),
-      ),
+      message: t.video_library_empty_source_hint,
     );
   }
 

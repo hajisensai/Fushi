@@ -358,6 +358,69 @@ void main() {
       expect(after.lastScanError, isNull);
     });
 
+    test('nested episodic videos form one additive, stable playlist', () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoBookRepository repo = VideoBookRepository(db);
+      final Directory season = Directory(p.join(tmp.path, 'nested', 'season1'))
+        ..createSync(recursive: true);
+      final File episode1 = File(p.join(season.path, 'Show S01E01.mkv'))
+        ..writeAsBytesSync(<int>[0]);
+      File(p.join(season.path, 'Show S01E02.mkv')).writeAsBytesSync(<int>[0]);
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Shows',
+        mediaKind: 'video',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+
+      await SourceLibraryScanner(db).scan(source);
+      expect(await repo.listAll(), hasLength(2));
+      final List<MediaCollectionRow> firstCollections =
+          await db.getAllMediaCollections();
+      expect(firstCollections, hasLength(1));
+      final int collectionId = firstCollections.single.id;
+      expect(firstCollections.single.name, 'Show');
+      final List<String> firstTitles = <String>[];
+      for (final MediaCollectionItemRow member
+          in await db.getCollectionItems(collectionId)) {
+        firstTitles.add((await repo.getByBookUid(member.entryKey))!.title);
+      }
+      expect(firstTitles, <String>['Show S01E01', 'Show S01E02']);
+
+      // 加 E03 只扩展既有合集；随后磁盘暂缺 E01 也不删除旧行或解绑旧成员。
+      File(p.join(season.path, 'Show S01E03.mkv')).writeAsBytesSync(<int>[0]);
+      source = (await db.getMediaSourceById(sid))!;
+      await SourceLibraryScanner(db).scan(source);
+      expect(await repo.listAll(), hasLength(3));
+      expect(await db.getAllMediaCollections(), hasLength(1));
+      expect(await db.getCollectionItems(collectionId), hasLength(3));
+      expect((await db.getMediaSourceById(sid))!.mediaCount, 1);
+
+      episode1.deleteSync();
+      source = (await db.getMediaSourceById(sid))!;
+      await SourceLibraryScanner(db).scan(source);
+      expect(await repo.listAll(), hasLength(3), reason: '暂缺磁盘文件不得破坏观看进度与用户资料');
+      final List<MediaCollectionItemRow> members =
+          await db.getCollectionItems(collectionId);
+      expect(members, hasLength(3), reason: '暂缺旧分集仍保留合集成员关系');
+      final List<String> titles = <String>[];
+      for (final MediaCollectionItemRow member in members) {
+        titles.add((await repo.getByBookUid(member.entryKey))!.title);
+      }
+      expect(titles, <String>[
+        'Show S01E01',
+        'Show S01E02',
+        'Show S01E03',
+      ]);
+      expect((await db.getMediaSourceById(sid))!.mediaCount, 0);
+      for (final VideoBookRow row in await repo.listAll()) {
+        expect(row.sourceId, sid);
+      }
+    });
+
     testWidgets('book source: imports EPUB with sourceId + scan result',
         (WidgetTester tester) async {
       final Directory pp =
@@ -636,6 +699,39 @@ ep2.mp4
       expect(events.single.mediaType, 'video');
       expect(events.single.title, 'series');
       expect(events.single.mediaKey, 'video/ep1');
+    });
+
+    test('实体分集同时被同名 m3u8 引用时复用路径，不建重复视频或合集', () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoBookRepository repo = VideoBookRepository(db);
+      File(p.join(tmp.path, 'Show S01E01.mkv')).writeAsBytesSync(<int>[0]);
+      File(p.join(tmp.path, 'Show S01E02.mkv')).writeAsBytesSync(<int>[0]);
+      File(p.join(tmp.path, 'Show.m3u8')).writeAsStringSync('''
+#EXTM3U
+#EXTINF:-1,Episode 1
+Show S01E01.mkv
+#EXTINF:-1,Episode 2
+Show S01E02.mkv
+''');
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Shows',
+        mediaKind: 'video',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+
+      await SourceLibraryScanner(db).scan(source);
+
+      expect(await repo.listAll(), hasLength(2),
+          reason: '清单必须复用文件夹扫描已入库的同物理路径');
+      final List<MediaCollectionRow> collections =
+          await db.getAllMediaCollections();
+      expect(collections, hasLength(1));
+      expect(collections.single.name, 'Show');
+      expect(await db.getCollectionItems(collections.single.id), hasLength(2));
     });
 
     test('empty / comment-only m3u8 imports nothing (skipped, no error)',

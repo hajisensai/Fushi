@@ -12,6 +12,8 @@ class MediaSourcesPage extends StatefulWidget {
     required this.mediaKind,
     super.key,
     this.navigation,
+    this.onScrapeAll,
+    this.onLibraryChanged,
   });
 
   /// 'video' | 'book' | 'manga'。
@@ -19,6 +21,12 @@ class MediaSourcesPage extends StatefulWidget {
 
   /// 库页视图导航条（由 [MediaLibraryShell] 传入，作为页头主内容与动作同一行）。
   final Widget? navigation;
+
+  /// 视频来源页专用的整库刮削动作；其它媒体种类即使误传也不会显示。
+  final Future<void> Function()? onScrapeAll;
+
+  /// 来源扫描完成后通知保活的媒体库重读合集、排序和封面。
+  final VoidCallback? onLibraryChanged;
 
   @override
   State<MediaSourcesPage> createState() => _MediaSourcesPageState();
@@ -49,6 +57,7 @@ class _MediaSourcesPageState extends State<MediaSourcesPage> {
               child: MediaSourcesView(
                 key: _viewKey,
                 mediaKind: widget.mediaKind,
+                onLibraryChanged: widget.onLibraryChanged,
               ),
             ),
           ),
@@ -65,6 +74,13 @@ class _MediaSourcesPageState extends State<MediaSourcesPage> {
         icon: Icons.create_new_folder_outlined,
         onTap: () => _viewKey.currentState?.addSource(),
       ),
+      if (widget.mediaKind == 'video' && widget.onScrapeAll != null)
+        HibikiIconButton(
+          tooltip: t.scrape_all,
+          label: t.scrape_all,
+          icon: Icons.manage_search_outlined,
+          onTap: () => widget.onScrapeAll!(),
+        ),
     ];
     final Widget? navigation = widget.navigation;
     if (navigation != null) {

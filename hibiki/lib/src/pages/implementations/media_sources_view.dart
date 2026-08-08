@@ -45,6 +45,7 @@ class MediaSourcesView extends ConsumerStatefulWidget {
     required this.mediaKind,
     super.key,
     this.scrollable = false,
+    this.onLibraryChanged,
   });
 
   /// 'video' | 'book' | 'manga' —— 决定统计文案与 mediaKind 过滤。
@@ -54,6 +55,9 @@ class MediaSourcesView extends ConsumerStatefulWidget {
   /// false = 返回裸内容（对话框语境，由外层 ConstrainedBox + SingleChildScrollView
   /// 限高并滚动，保持 BUG-445 / TODO-1389 的既有修法不变）。
   final bool scrollable;
+
+  /// 一次来源扫描收尾后的媒体库变化通知（无论扫描成功、部分成功或记录错误）。
+  final VoidCallback? onLibraryChanged;
 
   @override
   ConsumerState<MediaSourcesView> createState() => MediaSourcesViewState();
@@ -397,6 +401,12 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   ///
   /// 公开给外层的唯一动作入口（对话框页脚 / 页面页头按钮都调它）。
   Future<void> addSource() async {
+    // 视频来源只有本地文件夹这一种合法入口，直接选择并立即登记/扫描，避免再弹一层
+    // 只有一个选项的对话框。书籍仍保留本地/网络选择，漫画 UX 保持不变。
+    if (widget.mediaKind == 'video') {
+      await _addLocalFolder();
+      return;
+    }
     final _AddSourceChoice? choice = await showAppDialog<_AddSourceChoice>(
       context: context,
       builder: (BuildContext ctx) => SimpleDialog(
@@ -549,23 +559,28 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 重读该行刷新统计/时间/错误。
   Future<void> _rescan(SourceLibraryRow row) async {
     if (_scanning.contains(row.id)) return;
+    final VoidCallback? onLibraryChanged = widget.onLibraryChanged;
     setState(() => _scanning.add(row.id));
     try {
       await SourceLibraryScanner(_db).scan(row);
     } finally {
-      final SourceLibraryRow? updated = await _db.getMediaSourceById(row.id);
-      if (mounted) {
-        setState(() {
-          _scanning.remove(row.id);
-          final List<SourceLibraryRow>? rows = _rows;
-          if (rows != null && updated != null) {
-            final int idx =
-                rows.indexWhere((SourceLibraryRow r) => r.id == row.id);
-            if (idx >= 0) rows[idx] = updated;
-          }
-        });
-        // 扫描可能新增条目，刷新累计计数（TODO-1036）。
-        await _refreshCount(row.id);
+      try {
+        final SourceLibraryRow? updated = await _db.getMediaSourceById(row.id);
+        if (mounted) {
+          setState(() {
+            _scanning.remove(row.id);
+            final List<SourceLibraryRow>? rows = _rows;
+            if (rows != null && updated != null) {
+              final int idx =
+                  rows.indexWhere((SourceLibraryRow r) => r.id == row.id);
+              if (idx >= 0) rows[idx] = updated;
+            }
+          });
+          // 扫描可能新增条目，刷新累计计数（TODO-1036）。
+          await _refreshCount(row.id);
+        }
+      } finally {
+        onLibraryChanged?.call();
       }
     }
   }

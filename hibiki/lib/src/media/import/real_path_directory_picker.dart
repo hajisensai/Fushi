@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'
     show MissingPluginException, PlatformException;
@@ -7,6 +8,10 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
 import 'package:path/path.dart' as p;
+
+/// 真应用集成测试的目录选择结果注入；release 构建恒忽略。
+@visibleForTesting
+String? debugRealDirectoryPathOverride;
 
 /// 「选一个文件夹并返回它的**真实文件系统绝对路径**」的统一入口。
 ///
@@ -34,6 +39,9 @@ Future<String?> pickRealDirectoryPath({
   String? dialogTitle,
   String? initialDirectory,
 }) async {
+  if (kDebugMode && debugRealDirectoryPathOverride != null) {
+    return debugRealDirectoryPathOverride;
+  }
   // 桌面（Windows/macOS/Linux）与 iOS：`getDirectoryPath()` 已返回真实路径。
   if (defaultTargetPlatform != TargetPlatform.android) {
     return FilePicker.platform.getDirectoryPath(

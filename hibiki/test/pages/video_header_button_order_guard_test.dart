@@ -6,16 +6,8 @@ import 'package:hibiki/src/media/video/video_control_customization.dart';
 import '../helpers/source_guard.dart';
 import 'video_hibiki_page_source_corpus.dart';
 
-/// 守卫（TODO-162）：视频页（HomeVideoPage）顶栏三个动作按钮的排列顺序，必须与
-/// 书架（ReaderHibikiHistoryPage）顶栏三个动作按钮的相对顺序完全一致——以书架为基准。
-///
-/// 书架顺序：导入（buildBookImportButton / srt_import） → 收藏夹（collections） →
-/// 统计（reading_statistics）。
-/// 视频顺序应对齐为：导入（video_import_action） → 收藏夹（collections） →
-/// 统计（video_statistics）。
-///
-/// 历史回归：视频页一度把导入按钮放在末尾（收藏夹 → 统计 → 导入），与书架不一致。
-/// 本守卫断言视频顶栏「导入在收藏夹之前、收藏夹在统计之前」，防止顺序再次漂移。
+/// 守卫：书架保留自己的导入顺序；视频常规入库与整库刮削统一迁到「来源」后，
+/// HomeVideoPage 页头不得重新长出这两个入口，收藏夹仍须排在统计之前。
 void main() {
   final File videoSrc =
       File('lib/src/pages/implementations/home_video_page.dart');
@@ -90,18 +82,28 @@ void main() {
     expect(collectionsIdx, lessThan(statsIdx), reason: '书架基准：收藏夹应在统计之前');
   });
 
-  test('视频顶栏顺序对齐书架：导入 → 收藏夹 → 统计', () {
+  test('视频顶栏移除导入/全部刮削，仍为收藏夹 → 统计', () {
     final String block = headerActionsBlock(videoSrc);
     final int importIdx = orderOf(block, 't.video_import_action');
+    final int scrapeIdx = orderOf(block, 't.scrape_all');
     final int collectionsIdx = orderOf(block, 't.collections');
     final int statsIdx = orderOf(block, 't.video_statistics');
-    expect(importIdx, greaterThanOrEqualTo(0), reason: '视频应有导入按钮');
+    expect(importIdx, -1, reason: '视频常规入库应统一从来源添加文件夹');
+    expect(scrapeIdx, -1, reason: '视频全部刮削入口应位于来源页');
     expect(collectionsIdx, greaterThanOrEqualTo(0), reason: '视频应有收藏夹按钮');
     expect(statsIdx, greaterThanOrEqualTo(0), reason: '视频应有统计按钮');
-    expect(importIdx, lessThan(collectionsIdx),
-        reason: 'TODO-162：视频导入按钮应在收藏夹之前（与书架一致）');
-    expect(collectionsIdx, lessThan(statsIdx),
-        reason: 'TODO-162：视频收藏夹按钮应在统计之前（与书架一致）');
+    expect(collectionsIdx, lessThan(statsIdx), reason: '视频收藏夹按钮应在统计之前');
+  });
+
+  test('视频空库不再提供单视频 CTA，只提示从来源添加文件夹', () {
+    final String body = methodBody(
+      videoSrc.readAsStringSync(),
+      'Widget _buildEmpty()',
+    );
+    expect(body, contains('t.video_library_empty_source_hint'));
+    expect(body, isNot(contains('home_video_empty_import')));
+    expect(body, isNot(contains('t.video_import_action')));
+    expect(body, isNot(contains('FilledButton')));
   });
 
   test('播放器顶栏片段导出按钮紧挨截图按钮', () {

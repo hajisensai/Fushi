@@ -2688,6 +2688,16 @@ class HibikiDatabase extends _$HibikiDatabase {
 
   Future<List<VideoBookRow>> allVideoBooks() => select(videoBooks).get();
 
+  /// 仅在视频尚未归属来源时回填 [sourceId]。
+  ///
+  /// 来源重扫复用手动导入的同路径视频时使用。只写 `source_id`，避免以整行 upsert
+  /// 意外覆盖观看进度、字幕、封面或用户资料；已属于其它来源的行保持原归属。
+  Future<int> assignVideoBookSourceIfNull(String bookUid, int sourceId) =>
+      (update(videoBooks)
+            ..where(($VideoBooksTable t) =>
+                t.bookUid.equals(bookUid) & t.sourceId.isNull()))
+          .write(VideoBooksCompanion(sourceId: Value<int?>(sourceId)));
+
   // ── video_scrape_meta（条目刮削资料，v54）─────────────────────────
 
   /// 写入/覆盖一本视频的刮削资料（bookUid 主键，重刮即覆盖）。
@@ -3770,6 +3780,30 @@ class HibikiDatabase extends _$HibikiDatabase {
   /// 合并规则（含并发移出/重复键的容错）见 [mergeCollectionOrder]。
   Future<void> reorderCollectionItems(
           int collectionId, List<CollectionMemberKey> ordered) =>
+      _reorderCollectionItems(
+        collectionId,
+        ordered,
+        bumpOrderUpdatedAt: true,
+      );
+
+  /// 自动整理合集成员顺序，不把机器扫描伪装成用户手动排序。
+  ///
+  /// 与 [reorderCollectionItems] 拥有相同的子集合并与致密 sortIndex 不变量，唯一
+  /// 差别是不更新 `orderUpdatedAt`。来源扫描、迁移等确定性整理应走这里；交互式拖拽
+  /// 仍必须走 [reorderCollectionItems]，让跨端 LWW 能识别真正的用户意图。
+  Future<void> reorderCollectionItemsAutomatically(
+          int collectionId, List<CollectionMemberKey> ordered) =>
+      _reorderCollectionItems(
+        collectionId,
+        ordered,
+        bumpOrderUpdatedAt: false,
+      );
+
+  Future<void> _reorderCollectionItems(
+    int collectionId,
+    List<CollectionMemberKey> ordered, {
+    required bool bumpOrderUpdatedAt,
+  }) =>
       transaction(() async {
         // 事务内取当前全表顺序作槽位基准（[getCollectionItems] 的
         // sortIndex→entryKey→mediaType 全序 = 用户此刻看到的顺序；那三段键就是成员
@@ -3792,11 +3826,13 @@ class HibikiDatabase extends _$HibikiDatabase {
                     t.entryKey.equals(merged[i].entryKey)))
               .write(MediaCollectionItemsCompanion(sortIndex: Value(i)));
         }
-        await (update(mediaCollections)
-              ..where((t) => t.id.equals(collectionId)))
-            .write(MediaCollectionsCompanion(
-          orderUpdatedAt: Value(DateTime.now().millisecondsSinceEpoch),
-        ));
+        if (bumpOrderUpdatedAt) {
+          await (update(mediaCollections)
+                ..where((t) => t.id.equals(collectionId)))
+              .write(MediaCollectionsCompanion(
+            orderUpdatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+          ));
+        }
       });
 
   /// 删条目时清其全部合集引用（逻辑外键无 DB cascade，删书路径主动调用）；被清空的

@@ -21,6 +21,9 @@ import 'package:hibiki/src/anki/anki_view_model.dart'
     show ankiRepositoryProvider;
 import 'package:hibiki/src/anki/lapis_template_service.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
+import 'package:hibiki/src/media/metadata/scrape_batch.dart';
+import 'package:hibiki/src/media/video/cover_ui/video_scrape_actions.dart';
+import 'package:hibiki/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/pages/implementations/media_library_shell.dart';
 import 'package:hibiki/src/pages/implementations/media_sources_page.dart';
@@ -255,6 +258,7 @@ class _HomePageState extends BasePageState<HomePage>
   HomeTab _previousTab = HomeTab.home;
   final FocusNode _keyboardFocusNode = FocusNode();
   final ValueNotifier<int> _dictFocusSignal = ValueNotifier<int>(0);
+  final ValueNotifier<int> _videoLibraryRefreshSignal = ValueNotifier<int>(0);
 
   /// 定时后台同步：app 存活期每隔 [_periodicSyncInterval] 重跑一次 app-open 语义的全量
   /// sweep，让「手机一直开着、电脑那边改了数据」这种没有任何事件触发的场景也能自动拉到
@@ -447,6 +451,7 @@ class _HomePageState extends BasePageState<HomePage>
     }());
     _periodicSyncTimer?.cancel();
     _dictFocusSignal.dispose();
+    _videoLibraryRefreshSignal.dispose();
     _keyboardFocusNode.dispose();
     WidgetsBinding.instance.removeObserver(this);
     appModelNoUpdate.databaseCloseNotifier.removeListener(refresh);
@@ -1031,6 +1036,21 @@ class _HomePageState extends BasePageState<HomePage>
   VideoBookRepository get _videoRepository =>
       _videoRepo ??= VideoBookRepository(appModel.database);
 
+  void _notifyVideoLibraryChanged() {
+    _videoLibraryRefreshSignal.value++;
+  }
+
+  Future<void> _scrapeAllVideosFromSources() async {
+    final String configuredTmdbKey = appModelNoUpdate.prefsRepo
+        .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String;
+    final ScrapeBatchSummary? summary = await showVideoScrapeAllDialog(
+      context: context,
+      repository: _videoRepository,
+      configuredTmdbKey: configuredTmdbKey,
+    );
+    if (summary != null && mounted) _notifyVideoLibraryChanged();
+  }
+
   Widget buildBody() {
     final HomeTab visible = _visibleTab;
     if (_keepAliveTabs.contains(visible)) {
@@ -1078,13 +1098,19 @@ class _HomePageState extends BasePageState<HomePage>
                   HomeVideoPage(
                 repo: _videoRepository,
                 navigation: navigation,
+                libraryRefreshSignal: _videoLibraryRefreshSignal,
               ),
             ),
             MediaLibraryViewSpec(
               kind: MediaLibraryViewKind.sources,
               label: t.library_view_sources,
               builder: (BuildContext context, Widget navigation) =>
-                  MediaSourcesPage(mediaKind: 'video', navigation: navigation),
+                  MediaSourcesPage(
+                mediaKind: 'video',
+                navigation: navigation,
+                onScrapeAll: _scrapeAllVideosFromSources,
+                onLibraryChanged: _notifyVideoLibraryChanged,
+              ),
             ),
           ],
         );
