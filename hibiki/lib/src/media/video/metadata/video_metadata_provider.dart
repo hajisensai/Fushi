@@ -58,6 +58,19 @@ abstract interface class VideoMetadataProvider {
   void close();
 }
 
+/// 可提供 TMDB alternate episode order/group 的来源能力。
+///
+/// TMDB 有些长篇作品把所有集压在一个 season 下（例如 Re:Zero），真正的季度
+/// 划分只存在 episode group。识别器用本地季号和集数选择 group，随后将 group id
+/// 固定到作品绑定，避免每次重扫重新猜测。
+abstract interface class VideoMetadataEpisodeGroupProvider {
+  Future<VideoMetadataLookup?> resolveEpisodeGroup(
+    VideoMetadataLookup lookup, {
+    required int seasonNumber,
+    int? episodeCount,
+  });
+}
+
 /// Optional provider capability for work-level online trailers and extras.
 abstract interface class VideoMetadataExtrasProvider {
   Future<List<VideoMetadataExtra>> fetchExtras(VideoMetadataLookup lookup);

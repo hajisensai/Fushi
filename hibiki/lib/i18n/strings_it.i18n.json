@@ -3171,5 +3171,9 @@
   "video_work_countries": "Countries",
   "video_work_content_rating": "Content rating",
   "video_all_videos_list_view": "List view",
-  "video_all_videos_grid_view": "Grid view"
+  "video_all_videos_grid_view": "Grid view",
+  "video_home_continue_episode_number": "Playing episode $n",
+  "video_home_next_episode_number": "Next · Episode $n",
+  "video_home_recent_episode_number": "Recently added · Episode $n",
+  "video_home_remaining_minutes": "$minutes min remaining"
 }

@@ -308,6 +308,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       const <int, VideoMetadataWorkRow>{};
   Map<String, VideoMetadataWorkRow> _metadataWorkByBook =
       const <String, VideoMetadataWorkRow>{};
+  Map<int, List<VideoMetadataImageRow>> _metadataImagesByWork =
+      const <int, List<VideoMetadataImageRow>>{};
+  Map<String, int> _runtimeMinutesByBookUid = const <String, int>{};
   Set<String> _localExtraBookUids = const <String>{};
 
   /// v68 附加图组（media_images）按归属分桶：合集（hero 背景/logo、续播行横卡）
@@ -549,6 +552,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       for (final VideoMetadataWorkRow work in metadataWorks)
         if (work.bookUid != null) work.bookUid!: work,
     };
+    final Map<int, List<VideoMetadataImageRow>> metadataImagesByWork =
+        <int, List<VideoMetadataImageRow>>{};
+    for (final VideoMetadataImageRow image
+        in await db.getAllVideoMetadataImages()) {
+      if (image.workId case final int workId) {
+        (metadataImagesByWork[workId] ??= <VideoMetadataImageRow>[]).add(image);
+      }
+    }
+    final Map<String, int> runtimeMinutesByBookUid = <String, int>{};
+    for (final VideoMetadataEpisodeRow episode
+        in await db.getAllVideoMetadataEpisodes()) {
+      if (episode.bookUid case final String uid) {
+        if (episode.runtimeMinutes case final int minutes) {
+          runtimeMinutesByBookUid[uid] = minutes;
+        }
+      }
+    }
     final Set<String> localExtraBookUids = <String>{
       for (final VideoMetadataExtraRow extra
           in await db.getAllVideoMetadataExtras())
@@ -582,6 +602,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         _collectionScrapeMetaById = collectionMetaById;
         _metadataWorkByCollection = metadataWorkByCollection;
         _metadataWorkByBook = metadataWorkByBook;
+        _metadataImagesByWork = metadataImagesByWork;
+        _runtimeMinutesByBookUid = runtimeMinutesByBookUid;
         _localExtraBookUids = localExtraBookUids;
         _mediaImagesByCollection = imagesByCollection;
         _mediaImagesByBookUid = imagesByBookUid;
@@ -605,6 +627,34 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
     return null;
   }
+
+  ImageProvider? _canonicalWorkPosterProvider(VideoMetadataWorkRow? work) {
+    if (work == null) return null;
+    final List<VideoMetadataImageRow>? rows = _metadataImagesByWork[work.id];
+    if (rows == null) return null;
+    final List<VideoMetadataImageRow> ordered = rows.toList()
+      ..sort((VideoMetadataImageRow a, VideoMetadataImageRow b) =>
+          a.position.compareTo(b.position));
+    for (final String kind in const <String>['cover', 'poster']) {
+      for (final VideoMetadataImageRow row in ordered) {
+        if (row.kind != kind) continue;
+        final String? localPath = row.localPath;
+        if (localPath != null &&
+            localPath.isNotEmpty &&
+            File(localPath).existsSync()) {
+          return resizedFileImage(File(localPath));
+        }
+        if (row.remoteUrl.isNotEmpty) return NetworkImage(row.remoteUrl);
+      }
+    }
+    return null;
+  }
+
+  ImageProvider? _canonicalCollectionPosterProvider(int collectionId) =>
+      _canonicalWorkPosterProvider(_metadataWorkByCollection[collectionId]);
+
+  ImageProvider? _canonicalBookPosterProvider(String bookUid) =>
+      _canonicalWorkPosterProvider(_metadataWorkByBook[bookUid]);
 
   /// 用户切换排序方式：立即重排 + 偏好持久化（跨启动记住）。
   void _setSortMode(ShelfSortMode mode) {
@@ -2939,7 +2989,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           coverHeight: coverHeight,
           onTap: () => unawaited(_open(target, playlistCollectionId: cid)),
           onLongPress: () => _showCollectionContextMenu(collection),
-          episodeCount: targetIndex + 1,
+          episodeNumber: targetIndex + 1,
+          secondaryText: t.video_home_next_episode_number(n: targetIndex + 1),
         ),
       ));
     });
@@ -2962,10 +3013,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     double coverHeight,
   ) {
     final DateTime now = DateTime.now();
+    final Map<int, List<VideoBookRow>> allMembersByCollection =
+        <int, List<VideoBookRow>>{};
     final Map<int, List<VideoBookRow>> grouped = <int, List<VideoBookRow>>{};
     final List<VideoBookRow> loose = <VideoBookRow>[];
     for (final VideoBookRow book in filtered) {
       if (_localExtraBookUids.contains(book.bookUid)) continue;
+      final int? allCid =
+          _primaryCollectionByEntry[MediaKind.video.compositeKey(book.bookUid)];
+      if (allCid != null && _collectionsById.containsKey(allCid)) {
+        allMembersByCollection
+            .putIfAbsent(allCid, () => <VideoBookRow>[])
+            .add(book);
+      }
       if (!isVideoRecentlyAdded(importedAt: book.importedAt, now: now)) {
         continue;
       }
@@ -2982,9 +3042,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       members.sort((VideoBookRow a, VideoBookRow b) =>
           (b.importedAt ?? 0).compareTo(a.importedAt ?? 0));
       final MediaCollectionRow collection = _collectionsById[cid]!;
-      final int? playedIndex = latestPlayedSeriesIndex(
-        _seriesPlaybackStates(members),
+      final VideoBookRow latest = members.first;
+      final List<VideoBookRow> allMembers =
+          allMembersByCollection[cid] ?? members;
+      allMembers.sort((VideoBookRow a, VideoBookRow b) =>
+          (_memberSortIndex[MediaKind.video.compositeKey(a.bookUid)] ?? 1 << 30)
+              .compareTo(
+                  _memberSortIndex[MediaKind.video.compositeKey(b.bookUid)] ??
+                      1 << 30));
+      final int latestIndex = allMembers.indexWhere(
+        (VideoBookRow value) => value.bookUid == latest.bookUid,
       );
+      final int? episodeNumber = latestIndex < 0 ? null : latestIndex + 1;
       recent.add(_VideoRowItem(
         recentMs: members.first.importedAt ?? 0,
         build: () => _buildRowMediaCard(
@@ -2995,7 +3064,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           coverHeight: coverHeight,
           onTap: () => _openCollectionDetail(collection),
           onLongPress: () => _showCollectionContextMenu(collection),
-          episodeCount: playedIndex == null ? null : playedIndex + 1,
+          episodeNumber: episodeNumber,
+          secondaryText: episodeNumber == null
+              ? t.video_playlist_episodes(count: allMembers.length)
+              : t.video_home_recent_episode_number(n: episodeNumber),
           newBadge: true,
         ),
       ));
@@ -3038,7 +3110,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             child: Text(title, style: tokens.type.sectionLabel),
           ),
           SizedBox(
-            height: coverHeight + _videoCardTextBlock(context),
+            height: coverHeight + _videoRowCardTextBlock(context),
             child: WheelToHorizontalScroll(
               controller: controller,
               child: HorizontalDragScrollable(
@@ -3073,7 +3145,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     required VoidCallback onTap,
     VoidCallback? onLongPress,
     double? progressFraction,
-    int? episodeCount,
+    int? episodeNumber,
+    String? secondaryText,
     bool newBadge = false,
     bool cloudBadge = false,
   }) {
@@ -3122,19 +3195,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                               Theme.of(context).colorScheme.surfaceContainer,
                         ),
                       ),
-                    if (episodeCount != null && episodeCount >= 2)
+                    if (newBadge || episodeNumber != null)
                       Positioned(
                         top: 6,
                         right: 6,
-                        child: _buildPlaylistBadge(episodeCount),
-                      ),
-                    if (newBadge)
-                      Positioned(
-                        top: 6,
-                        left: 6,
-                        child: CoverBadge(
-                          icon: Icons.fiber_new_outlined,
-                          label: t.video_recently_added_badge,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            if (newBadge)
+                              CoverBadge(
+                                icon: Icons.fiber_new_outlined,
+                                label: t.video_recently_added_badge,
+                              ),
+                            if (newBadge && episodeNumber != null)
+                              const SizedBox(width: 4),
+                            if (episodeNumber != null)
+                              _buildPlaylistBadge(episodeNumber),
+                          ],
                         ),
                       ),
                     if (cloudBadge)
@@ -3164,20 +3241,32 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    child: ShelfTitleOverflowTooltip(
-                      title: title,
-                      style: titleStyle,
-                      maxLines: 2,
-                      child: Text(
-                        title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      ShelfTitleOverflowTooltip(
+                        title: title,
                         style: titleStyle,
+                        maxLines: 1,
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: titleStyle,
+                        ),
                       ),
-                    ),
+                      if (secondaryText != null && secondaryText.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            secondaryText,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: HibikiDesignTokens.of(context).type.metadata,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -3217,7 +3306,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         currentEpisode: book.currentEpisode,
         episodeCount: episodeCount,
       ),
-      episodeCount: episodeCount,
+      episodeNumber: episodeCount > 1 ? book.currentEpisode + 1 : null,
+      secondaryText: _continueSecondaryText(
+        book,
+        episodeNumber: episodeCount > 1 ? book.currentEpisode + 1 : null,
+      ),
     );
   }
 
@@ -3256,7 +3349,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       onLongPress: () => _showCollectionContextMenu(collection),
       progressFraction:
           members.isEmpty ? null : completedCount / members.length,
-      episodeCount: currentIndex + 1,
+      episodeNumber: currentIndex + 1,
+      secondaryText: _continueSecondaryText(
+        members[currentIndex],
+        episodeNumber: currentIndex + 1,
+      ),
     );
   }
 
@@ -3272,7 +3369,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       coverHeight: coverHeight,
       onTap: () => _openRemote(video),
       onLongPress: () => _showRemoteVideoDialog(video),
-      episodeCount: video.isPlaylist ? video.episodes.length : null,
+      secondaryText: video.isPlaylist
+          ? t.video_playlist_episodes(count: video.episodes.length)
+          : t.remote_video_info,
       cloudBadge: true,
     );
   }
@@ -3289,9 +3388,39 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       coverHeight: coverHeight,
       onTap: () => _open(book, playlistCollectionId: cid),
       onLongPress: () => _showVideoMenu(book),
-      episodeCount: playlistEpisodeCount(book.playlistJson),
+      episodeNumber: playlistEpisodeCount(book.playlistJson) > 1
+          ? book.currentEpisode + 1
+          : null,
+      secondaryText: playlistEpisodeCount(book.playlistJson) > 1
+          ? t.video_home_recent_episode_number(n: book.currentEpisode + 1)
+          : t.video_recently_added_badge,
       newBadge: true,
     );
+  }
+
+  String _continueSecondaryText(
+    VideoBookRow book, {
+    int? episodeNumber,
+  }) {
+    final List<String> parts = <String>[
+      if (episodeNumber != null)
+        t.video_home_continue_episode_number(n: episodeNumber),
+    ];
+    final int? runtimeMinutes = _runtimeMinutesByBookUid[book.bookUid];
+    if (runtimeMinutes != null && runtimeMinutes > 0) {
+      final int remainingMs = runtimeMinutes * 60000 - book.lastPositionMs;
+      if (remainingMs > 60000) {
+        parts.add(t.video_home_remaining_minutes(
+          minutes: (remainingMs / 60000).ceil(),
+        ));
+      }
+    }
+    if (parts.isEmpty && book.lastPositionMs > 0) {
+      parts.add(
+        t.video_watched_up_to(time: formatVideoPosition(book.lastPositionMs)),
+      );
+    }
+    return parts.join(' · ');
   }
 
   /// 合集行卡封面 provider：自有封面优先 → 成员借用链（与墙卡同序）。
@@ -3389,7 +3518,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         loose.add(_VideoLooseCard(
           sortKey: _groupSortKey(group),
           entry: _VideoWallEntry(
-            cover: _videoSlotCoverProvider(slot),
+            cover: _videoSlotCoverProvider(slot, preferWorkPoster: true),
+            forcedOrientation: VideoCardOrientation.portrait,
             build: (VideoCardOrientation orientation) =>
                 _buildVideoSlotCard(slot, orientation: orientation),
           ),
@@ -3416,6 +3546,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       for (final CollectionGroup<_VideoSlot> group in collectionGroups)
         _VideoWallEntry(
           cover: _collectionCoverProvider(group),
+          forcedOrientation: VideoCardOrientation.portrait,
           build: (VideoCardOrientation orientation) =>
               _buildCollectionCoverCard(group, orientation: orientation),
         ),
@@ -3676,6 +3807,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       return _buildCard(
         local,
         orientation: orientation,
+        coverOverride: widget.section == VideoLibrarySection.series
+            ? _canonicalBookPosterProvider(local.bookUid)
+            : null,
         onTapOverride: widget.section == VideoLibrarySection.series
             ? () => _openBookWorkDetail(local)
             : null,
@@ -3685,9 +3819,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   /// 墙格朝向探测封面 provider（与卡内封面同键共享解码）。
-  ImageProvider? _videoSlotCoverProvider(_VideoSlot slot) {
+  ImageProvider? _videoSlotCoverProvider(
+    _VideoSlot slot, {
+    bool preferWorkPoster = false,
+  }) {
     final VideoBookRow? local = slot.local;
-    if (local != null) return _localCoverProvider(local);
+    if (local != null) {
+      return (preferWorkPoster
+              ? _canonicalBookPosterProvider(local.bookUid)
+              : null) ??
+          _localCoverProvider(local);
+    }
     return _remoteCoverProvider(slot.remote!);
   }
 
@@ -3721,6 +3863,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final String? own = group.collection?.coverPath;
     if (own != null && own.isNotEmpty && File(own).existsSync()) {
       return resizedFileImage(File(own));
+    }
+    final int? collectionId = group.collection?.id;
+    if (collectionId != null) {
+      final ImageProvider? canonical =
+          _canonicalCollectionPosterProvider(collectionId);
+      if (canonical != null) return canonical;
     }
     for (final CollectionOrderingItem<_VideoSlot> it in group.items) {
       final VideoBookRow? local = it.payload.local;
@@ -4024,6 +4172,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ),
       );
     }
+    final int? collectionId = group.collection?.id;
+    if (collectionId != null) {
+      final ImageProvider? canonical =
+          _canonicalCollectionPosterProvider(collectionId);
+      if (canonical != null) {
+        return PortraitCoverImage(
+          image: canonical,
+          landscapeSlot: landscapeSlot,
+          errorBuilder: (BuildContext _) => ShelfCoverPlaceholder(
+            icon: Icons.movie_outlined,
+            backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+          ),
+        );
+      }
+    }
     for (final CollectionOrderingItem<_VideoSlot> it in group.items) {
       final VideoBookRow? local = it.payload.local;
       if (local == null) continue;
@@ -4085,10 +4248,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         completed: isCompleted,
       ));
     }
-    final int? playedIndex = latestPlayedSeriesIndex(playback);
-    if (playedIndex != null && completed < total) {
+    final int? latestIndex = latestPlayedSeriesIndex(playback);
+    final int? continueIndex = latestIndex != null &&
+            !playback[latestIndex].completed &&
+            playback[latestIndex].positionMs > 0
+        ? latestIndex
+        : nextEpisodeAfterLatestPlayed(playback);
+    if (continueIndex != null && completed < total) {
       return t.collection_continue_progress(
-        n: playedIndex + 1,
+        n: continueIndex + 1,
       );
     }
     return t.collection_watched_progress(done: completed, total: total);
@@ -4790,6 +4958,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     return titleLine * 2 + 8 + metaLine + 6 + kTextBlockSlack;
   }
 
+  /// 主页横卡只需要一行作品名 + 一行季集/进度，不复用墙卡为两行长标题预留的高度。
+  static double _videoRowCardTextBlock(BuildContext context) {
+    final double titleLine = textLineHeight(
+      context,
+      Theme.of(context).textTheme.bodyMedium ?? const TextStyle(fontSize: 14),
+    );
+    final double metaLine =
+        textLineHeight(context, HibikiDesignTokens.of(context).type.metadata);
+    return titleLine + metaLine + 12 + kTextBlockSlack;
+  }
+
   /// 媒体库墙 sliver（TODO-2486，随主 [CustomScrollView] 滚动）：**行高固定**
   /// （封面高 + 文字块）、竖横混排流式换行（Wrap）。卡宽随封面朝向（竖 2:3 /
   /// 横 16:9，[CoverOrientationBuilder] 探测），封面底边天然对齐；合集卡在前、
@@ -4811,19 +4990,29 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           runSpacing: 12,
           children: <Widget>[
             for (final _VideoWallEntry cell in cells)
-              CoverOrientationBuilder(
-                image: cell.cover,
-                builder:
-                    (BuildContext context, VideoCardOrientation orientation) =>
-                        SizedBox(
+              if (cell.forcedOrientation case final VideoCardOrientation forced)
+                SizedBox(
                   width: videoCardWidthForOrientation(
-                    orientation: orientation,
+                    orientation: forced,
                     coverHeight: coverHeight,
                   ),
                   height: cellHeight,
-                  child: cell.build(orientation),
+                  child: cell.build(forced),
+                )
+              else
+                CoverOrientationBuilder(
+                  image: cell.cover,
+                  builder: (BuildContext context,
+                          VideoCardOrientation orientation) =>
+                      SizedBox(
+                    width: videoCardWidthForOrientation(
+                      orientation: orientation,
+                      coverHeight: coverHeight,
+                    ),
+                    height: cellHeight,
+                    child: cell.build(orientation),
+                  ),
                 ),
-              ),
           ],
         ),
       ),
@@ -5077,6 +5266,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     bool selectable = true,
     VideoCardOrientation orientation = VideoCardOrientation.portrait,
     VoidCallback? onTapOverride,
+    ImageProvider? coverOverride,
   }) {
     final String displayTitle = widget.section == VideoLibrarySection.series
         ? (_metadataWorkByBook[book.bookUid]?.title ?? book.title)
@@ -5145,11 +5335,25 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             child: Stack(
               fit: StackFit.expand,
               children: <Widget>[
-                _buildCover(
-                  book,
-                  poster: true,
-                  landscapeSlot: orientation == VideoCardOrientation.landscape,
-                ),
+                if (coverOverride != null)
+                  PortraitCoverImage(
+                    image: coverOverride,
+                    landscapeSlot:
+                        orientation == VideoCardOrientation.landscape,
+                    errorBuilder: (BuildContext _) => _buildCover(
+                      book,
+                      poster: true,
+                      landscapeSlot:
+                          orientation == VideoCardOrientation.landscape,
+                    ),
+                  )
+                else
+                  _buildCover(
+                    book,
+                    poster: true,
+                    landscapeSlot:
+                        orientation == VideoCardOrientation.landscape,
+                  ),
                 // UI 巡检 PR-4：多选态勾选框占左上角（同为 top:6,left:6），标签层
                 // 让位隐藏——此前两层同角重叠，勾选框压在标签 chip 上两者都花。
                 if (tags.isNotEmpty && !showSelection)
@@ -5654,9 +5858,14 @@ class _VideoLooseCard {
 /// 媒体库墙一格（TODO-2486）：封面 provider（朝向探测用，与卡内封面同键共享
 /// 解码）+ 按朝向构造卡片。
 class _VideoWallEntry {
-  const _VideoWallEntry({required this.cover, required this.build});
+  const _VideoWallEntry({
+    required this.cover,
+    required this.build,
+    this.forcedOrientation,
+  });
 
   final ImageProvider? cover;
+  final VideoCardOrientation? forcedOrientation;
   final Widget Function(VideoCardOrientation orientation) build;
 }
 

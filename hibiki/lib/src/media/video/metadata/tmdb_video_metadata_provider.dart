@@ -8,7 +8,10 @@ import 'package:hibiki/src/media/video/scraper/title_normalizer.dart';
 import 'package:http/http.dart' as http;
 
 class TmdbVideoMetadataProvider
-    implements VideoMetadataProvider, VideoMetadataExtrasProvider {
+    implements
+        VideoMetadataProvider,
+        VideoMetadataExtrasProvider,
+        VideoMetadataEpisodeGroupProvider {
   TmdbVideoMetadataProvider({
     String apiKey = '',
     String accessToken = '',
@@ -162,6 +165,11 @@ class TmdbVideoMetadataProvider
     if (lookup.mediaKind != VideoMetadataMediaKind.tv) {
       return const <VideoMetadataSeason>[];
     }
+    if (lookup.episodeGroupId case final String groupId) {
+      return _mapEpisodeGroupSeasons(
+        await _episodeGroupDetails(groupId),
+      );
+    }
     final VideoMetadataWork? work = await fetchWork(lookup);
     if (work == null) return const <VideoMetadataSeason>[];
 
@@ -194,6 +202,15 @@ class TmdbVideoMetadataProvider
     if (lookup.mediaKind != VideoMetadataMediaKind.tv) {
       return const <VideoMetadataEpisode>[];
     }
+    if (lookup.episodeGroupId case final String groupId) {
+      final List<VideoMetadataSeason> seasons = _mapEpisodeGroupSeasons(
+        await _episodeGroupDetails(groupId),
+      );
+      for (final VideoMetadataSeason season in seasons) {
+        if (season.seasonNumber == seasonNumber) return season.episodes;
+      }
+      return const <VideoMetadataEpisode>[];
+    }
     final Map<String, Object?>? payload = await _getObjectOrNull(
       '/tv/${lookup.externalId}/season/$seasonNumber',
       operation: 'TMDB season episodes',
@@ -205,6 +222,110 @@ class TmdbVideoMetadataProvider
     );
     if (payload == null) return const <VideoMetadataEpisode>[];
     return _mapEpisodes(payload, seasonNumber);
+  }
+
+  @override
+  Future<VideoMetadataLookup?> resolveEpisodeGroup(
+    VideoMetadataLookup lookup, {
+    required int seasonNumber,
+    int? episodeCount,
+  }) async {
+    _validateLookup(lookup);
+    if (lookup.mediaKind != VideoMetadataMediaKind.tv) return null;
+    if (lookup.episodeGroupId != null) {
+      final List<VideoMetadataSeason> seasons = _mapEpisodeGroupSeasons(
+        await _episodeGroupDetails(lookup.episodeGroupId!),
+      );
+      return seasons.any(
+              (VideoMetadataSeason value) => value.seasonNumber == seasonNumber)
+          ? lookup
+          : null;
+    }
+    final Map<String, Object?>? payload = await _getObjectOrNull(
+      '/tv/${lookup.externalId}/episode_groups',
+      operation: 'TMDB episode groups',
+      cacheKey: 'tmdb:episode-groups:${lookup.externalId}',
+    );
+    VideoMetadataLookup? fallback;
+    for (final Object? node in metadataList(payload?['results'])) {
+      final Map<String, Object?>? summary = metadataObject(node);
+      final String? groupId = metadataString(summary?['id']);
+      if (summary == null || groupId == null) continue;
+      // type=6 是 TMDB 的“季”顺序。其它自定义顺序可能也能碰巧出现同号，
+      // 但不能替代本地 Sxx 的季语义。
+      if (metadataInt(summary['type']) != 6) continue;
+      final List<VideoMetadataSeason> seasons = _mapEpisodeGroupSeasons(
+        await _episodeGroupDetails(groupId),
+      );
+      VideoMetadataSeason? matching;
+      for (final VideoMetadataSeason season in seasons) {
+        if (season.seasonNumber == seasonNumber) {
+          matching = season;
+          break;
+        }
+      }
+      if (matching == null) continue;
+      final VideoMetadataLookup candidate = VideoMetadataLookup(
+        provider: lookup.provider,
+        externalId: lookup.externalId,
+        mediaKind: lookup.mediaKind,
+        episodeGroupId: groupId,
+      );
+      fallback ??= candidate;
+      if (episodeCount != null &&
+          episodeCount > 0 &&
+          matching.episodeCount == episodeCount) {
+        return candidate;
+      }
+    }
+    return fallback;
+  }
+
+  Future<Map<String, Object?>?> _episodeGroupDetails(String groupId) =>
+      _getObjectOrNull(
+        '/tv/episode_group/$groupId',
+        operation: 'TMDB episode group details',
+        cacheKey: 'tmdb:episode-group:$groupId',
+      );
+
+  List<VideoMetadataSeason> _mapEpisodeGroupSeasons(
+    Map<String, Object?>? payload,
+  ) {
+    final List<VideoMetadataSeason> seasons = <VideoMetadataSeason>[];
+    for (final Object? node in metadataList(payload?['groups'])) {
+      final Map<String, Object?>? group = metadataObject(node);
+      final int? seasonNumber = metadataInt(group?['order']);
+      if (group == null || seasonNumber == null) continue;
+      final List<VideoMetadataEpisode> episodes = <VideoMetadataEpisode>[];
+      for (final Object? episodeNode in metadataList(group['episodes'])) {
+        final Map<String, Object?>? episode = metadataObject(episodeNode);
+        if (episode == null) continue;
+        final int episodeNumber =
+            (metadataInt(episode['order']) ?? episodes.length) + 1;
+        episodes.add(_mapEpisode(
+          <String, Object?>{
+            ...episode,
+            'season_number': seasonNumber,
+            'episode_number': episodeNumber,
+          },
+          seasonNumber,
+          episodeNumber,
+        ));
+      }
+      seasons.add(VideoMetadataSeason(
+        seasonNumber: seasonNumber,
+        title: metadataString(group['name']) ?? 'Season $seasonNumber',
+        episodeCount: episodes.length,
+        ids: <VideoMetadataId>[
+          if (metadataString(group['id']) case final String id)
+            VideoMetadataId(type: 'tmdb_episode_group', value: id),
+        ],
+        episodes: episodes,
+      ));
+    }
+    seasons.sort((VideoMetadataSeason a, VideoMetadataSeason b) =>
+        a.seasonNumber.compareTo(b.seasonNumber));
+    return seasons;
   }
 
   @override
@@ -270,6 +391,16 @@ class TmdbVideoMetadataProvider
   }) async {
     _validateLookup(lookup);
     if (lookup.mediaKind != VideoMetadataMediaKind.tv) return null;
+    if (lookup.episodeGroupId != null) {
+      final List<VideoMetadataEpisode> episodes = await fetchEpisodes(
+        lookup,
+        seasonNumber: seasonNumber,
+      );
+      for (final VideoMetadataEpisode episode in episodes) {
+        if (episode.episodeNumber == episodeNumber) return episode;
+      }
+      return null;
+    }
     final Map<String, Object?>? payload = await _getObjectOrNull(
       '/tv/${lookup.externalId}/season/$seasonNumber/episode/$episodeNumber',
       operation: 'TMDB episode details',

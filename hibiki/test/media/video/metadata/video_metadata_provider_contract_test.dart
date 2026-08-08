@@ -14,6 +14,73 @@ import 'package:http/testing.dart';
 
 void main() {
   group('TmdbVideoMetadataProvider contract', () {
+    test('BUG-1466 resolves a season-like episode group for Re:Zero S03',
+        () async {
+      final MockClient client = MockClient((http.Request request) async {
+        if (request.url.path.endsWith('/tv/65942/episode_groups')) {
+          return _json(<String, Object?>{
+            'results': <Object?>[
+              <String, Object?>{
+                'id': 'absolute',
+                'type': 2,
+                'name': 'Absolute',
+              },
+              <String, Object?>{
+                'id': 'seasons',
+                'type': 6,
+                'name': 'Seasons',
+              },
+            ],
+          });
+        }
+        if (request.url.path.endsWith('/tv/episode_group/seasons')) {
+          return _json(<String, Object?>{
+            'id': 'seasons',
+            'groups': <Object?>[
+              <String, Object?>{
+                'id': 'season-3',
+                'name': 'Season 3',
+                'order': 3,
+                'episodes': <Object?>[
+                  for (int i = 0; i < 16; i++)
+                    <String, Object?>{
+                      'id': 5100 + i,
+                      'order': i,
+                      'season_number': 1,
+                      'episode_number': 51 + i,
+                      'name': 'Episode ${i + 1}',
+                    },
+                ],
+              },
+            ],
+          });
+        }
+        return _json(<String, Object?>{'groups': <Object?>[]});
+      });
+      final TmdbVideoMetadataProvider provider =
+          TmdbVideoMetadataProvider(apiKey: 'KEY', client: client);
+      const VideoMetadataLookup lookup = VideoMetadataLookup(
+        provider: VideoMetadataProviderKind.tmdb,
+        externalId: '65942',
+        mediaKind: VideoMetadataMediaKind.tv,
+      );
+
+      final VideoMetadataLookup grouped = (await provider.resolveEpisodeGroup(
+        lookup,
+        seasonNumber: 3,
+        episodeCount: 16,
+      ))!;
+      expect(grouped.episodeGroupId, 'seasons');
+      final List<VideoMetadataEpisode> episodes = await provider.fetchEpisodes(
+        grouped,
+        seasonNumber: 3,
+      );
+      expect(episodes, hasLength(16));
+      expect(episodes.first.seasonNumber, 3);
+      expect(episodes.first.episodeNumber, 1);
+      expect(episodes.last.episodeNumber, 16);
+    });
+
     test('maps details, external ids, credits, seasons, episodes and images',
         () async {
       final MockClient client = MockClient((http.Request request) async {

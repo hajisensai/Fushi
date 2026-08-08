@@ -3180,6 +3180,16 @@ class HibikiDatabase extends _$HibikiDatabase {
             ]))
           .get();
 
+  Future<List<VideoMetadataSeasonRow>> getAllVideoMetadataSeasons() =>
+      (select(videoMetadataSeasons)
+            ..orderBy(<OrderingTerm Function($VideoMetadataSeasonsTable)>[
+              ($VideoMetadataSeasonsTable t) =>
+                  OrderingTerm(expression: t.workId),
+              ($VideoMetadataSeasonsTable t) =>
+                  OrderingTerm(expression: t.seasonNumber),
+            ]))
+          .get();
+
   Future<int> upsertVideoMetadataEpisode(
     VideoMetadataEpisodesCompanion episode,
   ) async {
@@ -3248,6 +3258,16 @@ class HibikiDatabase extends _$HibikiDatabase {
             ..where(
                 ($VideoMetadataEpisodesTable t) => t.seasonId.equals(seasonId))
             ..orderBy(<OrderingTerm Function($VideoMetadataEpisodesTable)>[
+              ($VideoMetadataEpisodesTable t) =>
+                  OrderingTerm(expression: t.episodeNumber),
+            ]))
+          .get();
+
+  Future<List<VideoMetadataEpisodeRow>> getAllVideoMetadataEpisodes() =>
+      (select(videoMetadataEpisodes)
+            ..orderBy(<OrderingTerm Function($VideoMetadataEpisodesTable)>[
+              ($VideoMetadataEpisodesTable t) =>
+                  OrderingTerm(expression: t.seasonId),
               ($VideoMetadataEpisodesTable t) =>
                   OrderingTerm(expression: t.episodeNumber),
             ]))
@@ -3641,6 +3661,13 @@ class HibikiDatabase extends _$HibikiDatabase {
                   OrderingTerm(expression: t.sortOrder),
               ($VideoMetadataExtrasTable t) =>
                   OrderingTerm(expression: t.title),
+            ]))
+          .get();
+
+  Future<List<VideoMetadataImageRow>> getAllVideoMetadataImages() =>
+      (select(videoMetadataImages)
+            ..orderBy(<OrderingTerm Function($VideoMetadataImagesTable)>[
+              ($VideoMetadataImagesTable t) => OrderingTerm(expression: t.id),
             ]))
           .get();
 

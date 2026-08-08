@@ -387,6 +387,7 @@ class VideoSourceScrapeCoordinator
       titleCandidates: candidates,
       year: nfo?.year ?? _parsedYear(localWork),
       seasonNumber: seasonNumber,
+      episodeCount: localWork.isEpisodic ? localWork.members.length : null,
       confirmedLookup: storedLookup ?? _lookupForNfo(nfo),
       identityHints: <String>[
         for (final VideoBookRow member in localWork.members) member.videoPath,

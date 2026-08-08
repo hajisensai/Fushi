@@ -29,10 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1360 条。点号进各自文件。
+> 共 1364 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1468](bugs/BUG-1468-video-home-card-footer-spacing.md) | ✅ | ✅ | 视频主页卡片底部信息留白过多 |
+| [BUG-1467](bugs/BUG-1467-video-home-badge-semantics.md) | ✅ | ✅ | 视频主页角标语义不一致 |
+| [BUG-1466](bugs/BUG-1466-re-zero-metadata-match.md) | ✅ | ✅ | Re Zero 罗马字标题无法通过 TMDB 严格识别 |
+| [BUG-1465](bugs/BUG-1465-video-series-poster.md) | ✅ | ✅ | 系列页未使用规范作品竖版海报 |
 | [BUG-1464](bugs/BUG-1464-video-re0-scrape-planning.md) | ✅ | ✅ | re0 特典误作作品且主剧季标题识别失败 |
 | [BUG-1463](bugs/BUG-1463-video-series-detail-layout.md) | ✅ | ✅ | 系列详情重复、底部窄栏与首页播放目标错误 |
 | [BUG-1462](bugs/BUG-1462-mushoku-metadata-backfill.md) | ✅ | ✅ | 无职转生严格匹配无法人工确认且详情与剧集标题未回填 |

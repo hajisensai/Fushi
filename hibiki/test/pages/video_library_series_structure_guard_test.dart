@@ -46,6 +46,16 @@ void main() {
     expect(page, contains('_AllVideosLayout.list'));
     expect(page, contains('_buildAllVideoListRow('));
     expect(page, contains('video-all-videos-layout-toggle'));
+    expect(page, contains('_canonicalCollectionPosterProvider'));
+    expect(page, contains('_canonicalBookPosterProvider'));
+    expect(
+      page,
+      contains('forcedOrientation: VideoCardOrientation.portrait'),
+      reason: '系列墙必须使用竖版刮削海报，不能再被分集截图探测成横卡',
+    );
+    expect(page, contains('video_home_continue_episode_number'));
+    expect(page, contains('video_home_remaining_minutes'));
+    expect(page, contains('_videoRowCardTextBlock'));
   });
 
   test('作品详情同时覆盖合集和独立电影，并包含资料、人物及附件区域', () {

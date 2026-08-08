@@ -3171,5 +3171,9 @@
   "video_work_countries": "国家",
   "video_work_content_rating": "分级",
   "video_all_videos_list_view": "列表视图",
-  "video_all_videos_grid_view": "网格视图"
+  "video_all_videos_grid_view": "网格视图",
+  "video_home_continue_episode_number": "看到第 $n 集",
+  "video_home_next_episode_number": "下一集 · 第 $n 集",
+  "video_home_recent_episode_number": "最近添加 · 第 $n 集",
+  "video_home_remaining_minutes": "剩余 $minutes 分钟"
 }

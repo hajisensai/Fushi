@@ -22,6 +22,7 @@ class VideoMetadataResolveRequest {
     required List<String> titleCandidates,
     this.year,
     this.seasonNumber,
+    this.episodeCount,
     this.confirmedLookup,
     List<String> identityHints = const <String>[],
   })  : titleCandidates = List<String>.unmodifiable(titleCandidates),
@@ -34,6 +35,7 @@ class VideoMetadataResolveRequest {
   final List<String> titleCandidates;
   final int? year;
   final int? seasonNumber;
+  final int? episodeCount;
   final VideoMetadataLookup? confirmedLookup;
   final List<String> identityHints;
 }
@@ -156,24 +158,27 @@ class VideoMetadataResolver {
             _lookupForWork(candidate, provider.providerKind);
         if (lookup == null) continue;
         final String lookupKey = '${lookup.provider.name}:${lookup.externalId}';
-        final VideoMetadataWork? details = fetchedDetails.containsKey(lookupKey)
+        VideoMetadataWork? details = fetchedDetails.containsKey(lookupKey)
             ? fetchedDetails[lookupKey]
             : await provider.fetchWork(lookup);
+        if (details != null) {
+          details = await _validatedDetails(provider, lookup, details, request);
+        }
         fetchedDetails[lookupKey] = details;
-        if (details == null ||
-            !await _passesDetailGate(provider, lookup, details, request)) {
+        if (details == null) {
           continue;
         }
+        final VideoMetadataWork validated = details;
         // 搜索摘要常常只带当前语言标题。真正详情会带原名/别名；MoviePilot
         // 同样用 title/original/alias/translation 做严格清洗后比较，因此必须在
         // detail gate 之后再做一次标题判定，不能在摘要阶段把罗马字别名丢掉。
         if (_matchesNormalizedTitle(candidate, normalizedTitles) ||
-            _matchesNormalizedTitle(details, normalizedTitles)) {
-          exact[lookupKey] = details;
+            _matchesNormalizedTitle(validated, normalizedTitles)) {
+          exact[lookupKey] = validated;
         } else {
           // 类型、年份、季号都已验证，只剩标题无法唯一确认。后台自动任务仍不
           // 静默应用；手工任务把 provider 排序后的候选交给用户确认并持久绑定。
-          reviewCandidates.putIfAbsent(lookupKey, () => details);
+          reviewCandidates.putIfAbsent(lookupKey, () => validated);
         }
       }
       if (exact.length == 1) {
@@ -222,7 +227,7 @@ class VideoMetadataResolver {
         reason: '${lookup.provider.name} is not configured',
       );
     }
-    final VideoMetadataWork? work = await provider.fetchWork(lookup);
+    VideoMetadataWork? work = await provider.fetchWork(lookup);
     if (work == null) {
       return VideoMetadataResolution(
         status: VideoMetadataResolutionStatus.notFound,
@@ -231,7 +236,8 @@ class VideoMetadataResolver {
         reason: 'Explicit identity does not exist',
       );
     }
-    if (!await _passesDetailGate(provider, lookup, work, request)) {
+    work = await _validatedDetails(provider, lookup, work, request);
+    if (work == null) {
       return VideoMetadataResolution(
         status: VideoMetadataResolutionStatus.notFound,
         method: method,
@@ -243,7 +249,7 @@ class VideoMetadataResolver {
       status: VideoMetadataResolutionStatus.matched,
       method: method,
       work: work,
-      lookup: lookup,
+      lookup: _lookupForWork(work, provider.providerKind) ?? lookup,
     );
   }
 
@@ -256,32 +262,48 @@ class VideoMetadataResolver {
     return true;
   }
 
-  Future<bool> _passesDetailGate(
+  Future<VideoMetadataWork?> _validatedDetails(
     VideoMetadataProvider provider,
     VideoMetadataLookup lookup,
     VideoMetadataWork work,
     VideoMetadataResolveRequest request,
   ) async {
-    if (work.kind != request.mediaKind) return false;
+    if (work.kind != request.mediaKind) return null;
     final int? seasonNumber = request.seasonNumber;
     if (seasonNumber == null || work.kind == VideoMetadataMediaKind.movie) {
-      return true;
+      return work;
     }
     if (provider.providerKind == VideoMetadataProviderKind.bangumi ||
         provider.providerKind == VideoMetadataProviderKind.anilist) {
       final int? inferred = _inferredSeasonNumber(work);
-      return inferred == null ? seasonNumber == 1 : inferred == seasonNumber;
+      return (inferred == null ? seasonNumber == 1 : inferred == seasonNumber)
+          ? work
+          : null;
     }
     if (work.seasons.any(
       (VideoMetadataSeason season) => season.seasonNumber == seasonNumber,
     )) {
-      return true;
+      return work;
     }
     final List<VideoMetadataSeason> seasons =
         await provider.fetchSeasons(lookup);
-    return seasons.any(
+    if (seasons.any(
       (VideoMetadataSeason season) => season.seasonNumber == seasonNumber,
-    );
+    )) {
+      return work;
+    }
+    if (provider case final VideoMetadataEpisodeGroupProvider groupProvider) {
+      final VideoMetadataLookup? grouped =
+          await groupProvider.resolveEpisodeGroup(
+        lookup,
+        seasonNumber: seasonNumber,
+        episodeCount: request.episodeCount,
+      );
+      if (grouped != null) {
+        return work.copyWith(episodeGroupId: grouped.episodeGroupId);
+      }
+    }
+    return null;
   }
 }
 

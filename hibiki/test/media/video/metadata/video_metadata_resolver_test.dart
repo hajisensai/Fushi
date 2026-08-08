@@ -218,6 +218,45 @@ void main() {
       expect(result.lookup?.externalId, '22');
     });
 
+    test('BUG-1466 TMDB episode group can satisfy a missing local season',
+        () async {
+      final VideoMetadataWork reZero = _work(
+        id: '65942',
+        title: 'Re:Zero kara Hajimeru Isekai Seikatsu',
+        seasons: <VideoMetadataSeason>[
+          VideoMetadataSeason(
+            seasonNumber: 1,
+            title: 'Season 1',
+            episodeCount: 85,
+          ),
+        ],
+      );
+      final _FakeEpisodeGroupProvider provider = _FakeEpisodeGroupProvider(
+        searchResults: <VideoMetadataWork>[reZero],
+        works: <String, VideoMetadataWork>{'65942': reZero},
+      );
+
+      final VideoMetadataResolution result = await VideoMetadataResolver(
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+          provider,
+        ]),
+      ).resolve(VideoMetadataResolveRequest(
+        selectedProvider: VideoMetadataProviderKind.tmdb,
+        mediaKind: VideoMetadataMediaKind.tv,
+        titleCandidates: const <String>[
+          'Re Zero kara Hajimeru Isekai Seikatsu',
+        ],
+        seasonNumber: 3,
+        episodeCount: 16,
+      ));
+
+      expect(result.status, VideoMetadataResolutionStatus.matched);
+      expect(result.lookup?.externalId, '65942');
+      expect(result.lookup?.episodeGroupId, 'seasons');
+      expect(provider.requestedSeason, 3);
+      expect(provider.requestedEpisodeCount, 16);
+    });
+
     test('unconfigured selected provider fails before network', () async {
       final VideoMetadataResolution result = await VideoMetadataResolver(
         registry:
@@ -331,4 +370,31 @@ class _FakeProvider implements VideoMetadataProvider {
 
   @override
   void close() {}
+}
+
+class _FakeEpisodeGroupProvider extends _FakeProvider
+    implements VideoMetadataEpisodeGroupProvider {
+  _FakeEpisodeGroupProvider({
+    required super.searchResults,
+    required super.works,
+  }) : super(kind: VideoMetadataProviderKind.tmdb);
+
+  int? requestedSeason;
+  int? requestedEpisodeCount;
+
+  @override
+  Future<VideoMetadataLookup?> resolveEpisodeGroup(
+    VideoMetadataLookup lookup, {
+    required int seasonNumber,
+    int? episodeCount,
+  }) async {
+    requestedSeason = seasonNumber;
+    requestedEpisodeCount = episodeCount;
+    return VideoMetadataLookup(
+      provider: lookup.provider,
+      externalId: lookup.externalId,
+      mediaKind: lookup.mediaKind,
+      episodeGroupId: 'seasons',
+    );
+  }
 }
