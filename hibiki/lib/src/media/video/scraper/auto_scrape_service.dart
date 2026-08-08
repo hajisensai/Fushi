@@ -5,8 +5,11 @@
 /// （导入弹窗单文件 / 文件夹 / 播放列表 / 流媒体、库扫描、互联下载、云下载、外部
 /// 打开），逐个挂钩子既漏又重复。本服务只认**一条判据**——「库里有哪些本地视频还
 /// 没有条目资料」——由调用方在两个时机喂进来：
-/// * 视频页 initState（全库补刮）
-/// * 视频库 uid 集合变化（`watchVideoBookUids` 的既有消费点，新导入天然覆盖）
+/// * 视频页 initState（只补刮 `sourceId == null` 的兼容导入）
+/// * 视频库 uid 集合变化（`watchVideoBookUids` 的既有消费点）
+///
+/// 已登记来源的条目由 `VideoSourceScrapeCoordinator` 按来源设置处理，不能在扫描刷新后
+/// 又被这条旧 fallback 偷偷出网；这保证「来源扫描离线、扫描后自动刮削默认关闭」。
 ///
 /// 节流与边界（免得把 Bangumi 当自家 CDN 刷）：
 /// * 串行，一次只跑一本；本本之间 [_perBookDelay] 间隔。
@@ -144,11 +147,15 @@ class VideoScrapeAutoService {
     return completer.future;
   }
 
-  /// 过滤出真正需要刮的书：本地路径 + 无资料行 + 本进程未尝试过。
+  /// 过滤出真正需要刮的书：兼容导入（无 sourceId）+ 本地路径 + 无资料行 +
+  /// 本进程未尝试过。已登记来源必须走来源级单主源/NFO 流程。
   Future<List<VideoBookRow>> _pending(List<VideoBookRow> books) async {
     final List<VideoBookRow> local = <VideoBookRow>[
       for (final VideoBookRow b in books)
-        if (_isLocal(b) && !_attempted.contains(b.bookUid)) b,
+        if (b.sourceId == null &&
+            _isLocal(b) &&
+            !_attempted.contains(b.bookUid))
+          b,
     ];
     if (local.isEmpty) return const <VideoBookRow>[];
     // 一次性取已刮 uid 集合，避免逐本查询（N+1）。

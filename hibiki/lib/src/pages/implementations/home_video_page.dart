@@ -1910,6 +1910,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     return createVideoScraperBundle(
       repository: widget.repo,
       configuredTmdbKey: userTmdbKey,
+      artifactDatabase: ref.read(appProvider).database,
     );
   }
 
@@ -1959,7 +1960,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       onRescrape: () async {
         await widget.repo.deleteScrapeMetadata(book.bookUid);
         _autoScrape?.forget(book.bookUid);
-        await _maybeAutoScrape();
+        if (book.sourceId == null) {
+          await _maybeAutoScrape();
+        } else if (mounted) {
+          await _openCoverMatch(book);
+        }
       },
       // 添加/修改 Bangumi 映射：跳到在线匹配弹窗（可搜索或贴条目 ID/URL 改绑）。
       onEditMapping: () => _openCoverMatch(book),

@@ -17,6 +17,7 @@ import 'package:hibiki/src/media/video/anilist_client.dart' show AniListMedia;
 import 'package:hibiki/src/media/video/cover_ui/episode_rename_confirm_dialog.dart';
 import 'package:hibiki/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:hibiki/src/media/video/metadata/video_metadata_credit_repository.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
 import 'package:hibiki/src/media/video/scraper/collection_relations_scrape.dart'
     show CollectionRelationType;
@@ -142,6 +143,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Map<String, VideoScrapeMetaRow> _episodeMetaByUid =
       const <String, VideoScrapeMetaRow>{};
 
+  /// v69 作品级人物关系；无规范资料时为 null，hero 保持既有 v68 投影形态。
+  VideoMetadataWorkCredits? _workCredits;
+
   @override
   HibikiDatabase get detailDatabase => widget.database;
   @override
@@ -178,6 +182,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 附加图组（v68）：横版背景（轮换序）与标题 logo。
     final List<MediaImageRow> imageRows =
         await widget.database.getMediaImagesForCollection(widget.collection.id);
+    final VideoMetadataWorkCredits? workCredits =
+        await VideoMetadataCreditRepository(widget.database)
+            .forCollection(widget.collection.id);
     // 集级刮削资料（一集一行、episodeNumber 非空才算集级；见 [_episodeMetaByUid]）。
     final Map<String, VideoScrapeMetaRow> episodeMeta =
         <String, VideoScrapeMetaRow>{};
@@ -199,6 +206,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       };
       _rebuildSections();
       _episodeMetaByUid = episodeMeta;
+      _workCredits = workCredits;
       _scrapeMeta = decoded;
       _backdropPaths = <String>[
         for (final MediaImageRow row in imageRows)
@@ -1166,6 +1174,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final String? summary = meta?.summary?.trim();
     final String? airDate = meta?.airDate?.trim();
     final List<ScrapeTag> scrapeTags = _heroScrapeTags(meta);
+    final List<VideoMetadataCreditSummary> credits = _heroCredits();
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1226,6 +1235,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         if (scrapeTags.isNotEmpty) ...<Widget>[
           SizedBox(height: tokens.spacing.gap),
           _buildHeroTagChips(scrapeTags),
+        ],
+        if (credits.isNotEmpty) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap),
+          _buildHeroCreditChips(credits),
         ],
         if (summary != null && summary.isNotEmpty) ...<Widget>[
           SizedBox(height: tokens.spacing.card),
@@ -1379,6 +1392,88 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       ],
     );
   }
+
+  /// 人物关系在固定高 hero 内只占一条横向轨道；各类最多两项，既能让导演、演员、
+  /// 声优都露出，又不会因完整 cast 列表挤掉简介和播放按钮。
+  List<VideoMetadataCreditSummary> _heroCredits() {
+    final List<VideoMetadataCreditSummary> credits =
+        _workCredits?.credits ?? const <VideoMetadataCreditSummary>[];
+    return <VideoMetadataCreditSummary>[
+      for (final String kind in const <String>[
+        'director',
+        'actor',
+        'voice_actor',
+      ])
+        ...credits
+            .where((VideoMetadataCreditSummary credit) =>
+                credit.creditKind == kind)
+            .take(2),
+    ];
+  }
+
+  Widget _buildHeroCreditChips(List<VideoMetadataCreditSummary> credits) {
+    return SizedBox(
+      key: const ValueKey<String>('collection-hero-credits'),
+      height: 28,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: <Widget>[
+            for (int index = 0; index < credits.length; index++) ...<Widget>[
+              if (index > 0) const SizedBox(width: 6),
+              DecoratedBox(
+                key: ValueKey<String>(
+                  'collection-hero-credit-${credits[index].creditKind}-$index',
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.32),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.24),
+                  ),
+                ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Icon(
+                        _heroCreditIcon(credits[index].creditKind),
+                        size: 13,
+                        color: Colors.white.withValues(alpha: 0.76),
+                      ),
+                      const SizedBox(width: 5),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 220),
+                        child: Text(
+                          credits[index].displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.2,
+                            color: Colors.white.withValues(alpha: 0.9),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  IconData _heroCreditIcon(String creditKind) => switch (creditKind) {
+        'director' => Icons.movie_creation_outlined,
+        'voice_actor' => Icons.record_voice_over_outlined,
+        _ => Icons.person_outline,
+      };
 
   Widget _buildEpisodeSection(
     BuildContext context,

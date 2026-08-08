@@ -186,6 +186,37 @@ class ScanPlan {
   final List<ScanMangaItem> mangas;
 }
 
+/// 一次来源扫描的可核对摘要。
+///
+/// 扫描器仍负责把成功/失败状态写回 `MediaSources`；调用方通过本值决定是否启动
+/// 可选的来源刮削，而不必重新枚举磁盘或猜测本轮创建了哪些作品容器。
+@immutable
+class SourceScanSummary {
+  const SourceScanSummary({
+    required this.sourceId,
+    required this.mediaKind,
+    required this.discoveredPaths,
+    required this.importedMediaCount,
+    this.createdVideoUids = const <String>[],
+    this.reusedVideoUids = const <String>[],
+    this.createdCollectionIds = const <int>[],
+    this.updatedCollectionIds = const <int>[],
+    this.error,
+  });
+
+  final int sourceId;
+  final String mediaKind;
+  final List<String> discoveredPaths;
+  final int importedMediaCount;
+  final List<String> createdVideoUids;
+  final List<String> reusedVideoUids;
+  final List<int> createdCollectionIds;
+  final List<int> updatedCollectionIds;
+  final String? error;
+
+  bool get succeeded => error == null;
+}
+
 /// Extension of an entry name (lowercase, no leading dot).
 String _extOf(String name) =>
     p.extension(name).toLowerCase().replaceFirst('.', '');
@@ -345,13 +376,20 @@ class SourceLibraryScanner {
   /// After insert, calls [HibikiDatabase.updateMediaSourceScanResult] to write the
   /// media count / timestamp; any throw records its text in lastScanError
   /// (mediaCount reflects the count successfully inserted before the failure).
-  Future<void> scan(
+  Future<SourceScanSummary> scan(
     SourceLibraryRow source, {
     SourceFileSystem? fs,
   }) async {
     final SourceFileSystem files = fs ?? await _resolveFileSystem(source);
     int mediaCount = 0;
     String? scanError;
+    List<String> discoveredPaths = const <String>[];
+    VideoFolderGroupSummary grouping = (
+      createdVideoUids: const <String>[],
+      reusedVideoUids: const <String>[],
+      createdCollectionIds: const <int>[],
+      updatedCollectionIds: const <int>[],
+    );
     try {
       // 值域显式化（命名统一 Phase 3.4）：落库串经 SourceLibraryKind 严格解析，
       // 未知串在这里立刻失败（与旧 else 分支同语义），下方分派改穷尽 switch。
@@ -380,6 +418,12 @@ class SourceLibraryScanner {
         recursive: source.recursive,
       );
       final ScanPlan plan = planScanFromFileList(entries);
+      discoveredPaths = <String>[
+        for (final ScanBookItem item in plan.books) item.epubPath,
+        for (final ScanVideoItem item in plan.videos) item.videoPath,
+        for (final ScanPlaylistItem item in plan.playlists) item.playlistPath,
+        for (final ScanMangaItem item in plan.mangas) item.mokuroPath,
+      ];
 
       switch (kind) {
         case SourceLibraryKind.book:
@@ -393,7 +437,7 @@ class SourceLibraryScanner {
           // 来源扫描与旧「导入视频文件夹」共用同一套作品/季/集解析规则：散片
           // 保持独立，多集整理为 playlist 合集。先完成逐文件入库，字幕 cue / 封面
           // 的既有增强不变；再只做归组，重扫复用已有成员且不删除缺失文件。
-          await VideoFolderGroupCoordinator(
+          grouping = await VideoFolderGroupCoordinator(
             database: _db,
             repository: _videoRepo,
           ).groupPaths(
@@ -423,6 +467,17 @@ class SourceLibraryScanner {
       mediaCount: mediaCount,
       lastScannedAt: DateTime.now(),
       lastScanError: scanError,
+    );
+    return SourceScanSummary(
+      sourceId: source.id,
+      mediaKind: source.mediaKind,
+      discoveredPaths: List<String>.unmodifiable(discoveredPaths),
+      importedMediaCount: mediaCount,
+      createdVideoUids: grouping.createdVideoUids,
+      reusedVideoUids: grouping.reusedVideoUids,
+      createdCollectionIds: grouping.createdCollectionIds,
+      updatedCollectionIds: grouping.updatedCollectionIds,
+      error: scanError,
     );
   }
 

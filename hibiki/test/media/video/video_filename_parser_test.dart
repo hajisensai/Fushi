@@ -68,6 +68,15 @@ void main() {
       expect(info.series, 'Cowboy Bebop');
       expect(info.episode, 5);
     });
+
+    test('MoviePilot 显式身份块不污染标题并覆盖季集号', () {
+      final VideoNameInfo info = parseVideoFilename(
+        'Show {[tmdbid=777;type=tv;g=group-1;s=2;e=3]}.mkv',
+      );
+      expect(info.series, 'Show');
+      expect(info.season, 2);
+      expect(info.episode, 3);
+    });
   });
 
   group('G10 第二步：parseVideoFilename 是 FilenameParser.parse 的窄化适配', () {

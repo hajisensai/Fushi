@@ -22,6 +22,22 @@ void main() {
     await db.setPref('jimaku_api_key', PrefCodec.encode('jimaku-secret'));
     await db.setPref('video_scraper_tmdb_api_key', PrefCodec.encode('tmdb'));
     await db.setPref(
+      'video_metadata_fanart_api_key',
+      PrefCodec.encode('fanart-secret'),
+    );
+    await db.setPref(
+      'video_metadata_bangumi_token',
+      PrefCodec.encode('bangumi-secret'),
+    );
+    await db.setPref(
+      'video_metadata_douban_authorized_endpoint',
+      PrefCodec.encode('https://private.example/douban'),
+    );
+    await db.setPref(
+      'video_metadata_douban_authorized_token',
+      PrefCodec.encode('douban-secret'),
+    );
+    await db.setPref(
       'qb_connection_config',
       PrefCodec.encode('{"password":"qb-secret"}'),
     );
@@ -44,6 +60,23 @@ void main() {
         InterconnectServiceConfigSnapshot.sharedPreferenceKeys);
     expect(snapshot.preferences['jimaku_api_key'],
         PrefCodec.encode('jimaku-secret'));
+    expect(snapshot.preferences, isNot(contains('video_scraper_tmdb_api_key')));
+    expect(
+      snapshot.preferences,
+      isNot(contains('video_metadata_fanart_api_key')),
+    );
+    expect(
+      snapshot.preferences,
+      isNot(contains('video_metadata_bangumi_token')),
+    );
+    expect(
+      snapshot.preferences,
+      isNot(contains('video_metadata_douban_authorized_endpoint')),
+    );
+    expect(
+      snapshot.preferences,
+      isNot(contains('video_metadata_douban_authorized_token')),
+    );
     expect(snapshot.preferences, isNot(contains('yomitan_api_key')));
     expect(snapshot.preferences, isNot(contains('sync_hibiki_client_token')));
     expect(snapshot.preferences, isNot(contains('sync_device_id')));

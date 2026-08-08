@@ -361,6 +361,40 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
           '合集封面同型）。当前尚无写入方（下载归 UI 接力线程），但列语义即'
           '文档根内路径 —— 不改写 = 换数据根后相关作品卡封面变死链。'),
 
+  // ── video_metadata_* / video_sidecar_artifacts（schema v69）────────
+  PathRebaseColumn('VideoMetadataPeople', 'profileUrl', PathRebaseKind.notAPath,
+      '人物头像的远端 provider URL，不是本机路径。'),
+  PathRebaseColumn(
+      'VideoMetadataPeople',
+      'profilePath',
+      PathRebaseKind.externalUserPath,
+      '预留给媒体来源旁的人物头像 sidecar；位于用户选择的来源根，不随 Hibiki 数据根迁移。'),
+  PathRebaseColumn('VideoMetadataCharacters', 'imageUrl',
+      PathRebaseKind.notAPath, '角色图片的远端 provider URL，不是本机路径。'),
+  PathRebaseColumn(
+      'VideoMetadataCharacters',
+      'imagePath',
+      PathRebaseKind.externalUserPath,
+      '预留给媒体来源旁的角色图片 sidecar；位于用户选择的来源根，不随 Hibiki 数据根迁移。'),
+  PathRebaseColumn('VideoMetadataProviderIdentities', 'externalUrl',
+      PathRebaseKind.notAPath, 'provider 条目详情页的远端 URL，不是本机路径。'),
+  PathRebaseColumn('VideoMetadataRawSnapshots', 'rawJson',
+      PathRebaseKind.notAPath, 'provider 原始响应的结构化 JSON，不承载本机数据根路径。'),
+  PathRebaseColumn('VideoMetadataImages', 'remoteUrl', PathRebaseKind.notAPath,
+      '待下载或重下的 provider/Fanart 远端图片 URL。'),
+  PathRebaseColumn(
+      'VideoMetadataImages',
+      'localPath',
+      PathRebaseKind.externalUserPath,
+      'v69 来源刮削写在用户媒体目录旁的图片 sidecar 绝对路径；来源根是外部用户路径。'),
+  PathRebaseColumn('VideoSourceScrapeRuns', 'summaryJson',
+      PathRebaseKind.notAPath, '来源刮削运行摘要与错误计数 JSON，无本机路径。'),
+  PathRebaseColumn(
+      'VideoSidecarArtifacts',
+      'path',
+      PathRebaseKind.externalUserPath,
+      'Hibiki 生成的 NFO/图片在用户媒体来源目录中的规范绝对路径；不得随应用数据根改写。'),
+
   // ── galgames ──────────────────────────────────────────────────────
   PathRebaseColumn('Galgames', 'exePath', PathRebaseKind.externalUserPath,
       '用户外部游戏安装位置（hook 注入目标），不在数据根内。'),

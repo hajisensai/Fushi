@@ -27,6 +27,34 @@ void main() {
     expect(source, contains('onLibraryChanged?.call();'));
   });
 
+  test('视频来源行独占刮削、共享互斥锁并开放受确认保护的策略设置', () {
+    final String page = File(
+      'lib/src/pages/implementations/media_sources_page.dart',
+    ).readAsStringSync();
+    final String view = File(
+      'lib/src/pages/implementations/media_sources_view.dart',
+    ).readAsStringSync();
+    for (final String api in <String>[
+      'onScrapeSource',
+      'onVideoScanCompleted',
+      'scrapeTaskController',
+    ]) {
+      expect(page, contains(api));
+      expect(view, contains(api));
+    }
+    expect(view, contains('tooltip: t.video_source_scrape_action'));
+    expect(view, contains('tooltip: t.video_source_scrape_settings'));
+    expect(view, contains("widget.mediaKind == 'video'"));
+    expect(view, contains('controller.runSourceScan(row.id, scan)'));
+    expect(
+        view, contains('await onVideoScanCompleted(updated ?? row, summary)'));
+    expect(view, contains('nfoPolicy: Value<String>(draft.nfoPolicy)'));
+    expect(view, contains('imagePolicy: Value<String>(draft.imagePolicy)'));
+    expect(view, contains('allowExternalOverwrite:'));
+    expect(view, contains('Value<bool>(draft.allowExternalOverwrite)'));
+    expect(view, contains('video_source_scrape_external_overwrite_hint'));
+  });
+
   test('HomePage 用同一刷新信号连接来源页与保活视频库', () {
     final String home = File(
       'lib/src/pages/implementations/home_page.dart',
