@@ -14,11 +14,13 @@ import 'package:hibiki/src/media/collections/collection_one_key_sort.dart'
     show CollectionSortMeta, compareCollectionMembers;
 import 'package:hibiki/src/media/collections/collection_season_groups.dart';
 import 'package:hibiki/src/media/media_cover_source.dart';
+import 'package:hibiki/src/media/source_library/source_library_row.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart' show AniListMedia;
 import 'package:hibiki/src/media/video/cover_ui/episode_rename_confirm_dialog.dart';
 import 'package:hibiki/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:hibiki/src/media/video/metadata/video_metadata_credit_repository.dart';
+import 'package:hibiki/src/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:hibiki/src/media/video/stream_video_launch.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
 import 'package:hibiki/src/media/video/scraper/collection_relations_scrape.dart'
@@ -187,11 +189,26 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 附加图组（v68）：横版背景（轮换序）与标题 logo。
     final List<MediaImageRow> imageRows =
         await widget.database.getMediaImagesForCollection(widget.collection.id);
+    VideoMetadataWorkRow? canonicalWork = await widget.database
+        .getVideoMetadataWorkByCollection(widget.collection.id);
+    if (canonicalWork == null) {
+      final Set<int> sourceIds = <int>{
+        for (final VideoBookRow member in members)
+          if (member.sourceId != null) member.sourceId!,
+      };
+      final VideoSourceMetadataIndexer indexer =
+          VideoSourceMetadataIndexer(widget.database);
+      for (final int sourceId in sourceIds) {
+        final SourceLibraryRow? source =
+            await widget.database.getMediaSourceById(sourceId);
+        if (source != null) await indexer.index(source);
+      }
+      canonicalWork = await widget.database
+          .getVideoMetadataWorkByCollection(widget.collection.id);
+    }
     final VideoMetadataWorkCredits? workCredits =
         await VideoMetadataCreditRepository(widget.database)
             .forCollection(widget.collection.id);
-    final VideoMetadataWorkRow? canonicalWork = await widget.database
-        .getVideoMetadataWorkByCollection(widget.collection.id);
     final List<VideoMetadataTermRow> workTerms = canonicalWork == null
         ? const <VideoMetadataTermRow>[]
         : await widget.database.getVideoMetadataTermsForWork(canonicalWork.id);
@@ -1032,7 +1049,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     HibikiDesignTokens tokens,
   ) {
     final Size screen = MediaQuery.sizeOf(context);
-    final double height = (screen.height * 0.62).clamp(400.0, 600.0);
+    final double height = (screen.height * 0.52).clamp(380.0, 520.0);
     final ImageProvider? cover = _heroCover;
     final VideoBookRow episode = _members[_continueIndex];
     final bool rtl = Directionality.of(context) == TextDirection.rtl;
@@ -1069,99 +1086,108 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       ),
     ];
     final ImageProvider? backdrop = _heroBackdrop;
-    return SizedBox(
-      height: height,
-      child: Stack(
-        fit: StackFit.expand,
-        children: <Widget>[
-          ColoredBox(color: cs.surfaceContainerHighest),
-          // 背景分两条路，取决于**这次刮削的源有没有横版图**：
-          // ① 有 backdrop（TMDB）→ 槽向天然吻合，直接 cover 铺满，海报另以独立
-          //    2:3 卡片出现在左侧（Jellyfin 式，各就各位）；
-          // ② 无 backdrop（Bangumi / 离线库 / 未刮削）→ 只有 2:3 海报或 16:9 抽帧
-          //    可用，朝向判定交给 [LandscapeCoverImage]：横图 cover 铺满，竖版海报
-          //    模糊垫底 + 靠右完整显示（BUG-1298）。此时不再另放海报卡，否则同一张
-          //    图在同一屏出现两次。
-          if (backdrop != null) ...<Widget>[
-            // v68：多张背景 10 秒轮换（Jellyfin 详情页同款）。外层 key 恒定供
-            // 测试定位；内层 key 随轮换下标变化驱动 AnimatedSwitcher 交叉淡入。
-            // gaplessPlayback：新图解码完成前保留旧帧，避免轮换瞬间闪底色。
-            KeyedSubtree(
-              key: const ValueKey<String>('collection-hero-backdrop'),
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 700),
-                child: Image(
-                  key: ValueKey<int>(_heroBackdropIndex),
-                  image: backdrop,
-                  fit: BoxFit.cover,
-                  alignment: Alignment.center,
-                  gaplessPlayback: true,
-                  errorBuilder: (_, __, ___) =>
+    return Padding(
+      key: const ValueKey<String>('video-work-hero-card'),
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.gap,
+        tokens.spacing.page,
+        0,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: SizedBox(
+          height: height,
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              ColoredBox(color: cs.surfaceContainerHighest),
+              // 背景分两条路，取决于**这次刮削的源有没有横版图**：
+              // ① 有 backdrop（TMDB）→ 槽向天然吻合，直接 cover 铺满，海报另以独立
+              //    2:3 卡片出现在左侧（Jellyfin 式，各就各位）；
+              // ② 无 backdrop（Bangumi / 离线库 / 未刮削）→ 只有 2:3 海报或 16:9 抽帧
+              //    可用，朝向判定交给 [LandscapeCoverImage]：横图 cover 铺满，竖版海报
+              //    模糊垫底 + 靠右完整显示（BUG-1298）。此时不再另放海报卡，否则同一张
+              //    图在同一屏出现两次。
+              if (backdrop != null) ...<Widget>[
+                // v68：多张背景 10 秒轮换（Jellyfin 详情页同款）。外层 key 恒定供
+                // 测试定位；内层 key 随轮换下标变化驱动 AnimatedSwitcher 交叉淡入。
+                // gaplessPlayback：新图解码完成前保留旧帧，避免轮换瞬间闪底色。
+                KeyedSubtree(
+                  key: const ValueKey<String>('collection-hero-backdrop'),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 700),
+                    child: Image(
+                      key: ValueKey<int>(_heroBackdropIndex),
+                      image: backdrop,
+                      fit: BoxFit.cover,
+                      alignment: Alignment.center,
+                      gaplessPlayback: true,
+                      errorBuilder: (_, __, ___) =>
+                          ColoredBox(color: cs.surfaceContainerHighest),
+                    ),
+                  ),
+                ),
+                ...overlays,
+              ] else if (cover != null)
+                LandscapeCoverImage(
+                  key: const ValueKey<String>('collection-hero-cover'),
+                  image: cover,
+                  overlays: overlays,
+                  // 竖版海报避让顶部 AppBar 与底部内容区，靠右不压左下标题/播放按钮。
+                  foregroundPadding: EdgeInsetsDirectional.only(
+                    top: tokens.spacing.gap,
+                    bottom: tokens.spacing.section,
+                    end: tokens.spacing.page,
+                  ),
+                  errorBuilder: (BuildContext _) =>
                       ColoredBox(color: cs.surfaceContainerHighest),
+                )
+              else
+                ...overlays,
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  tokens.spacing.page,
+                  tokens.spacing.section,
+                  tokens.spacing.page,
+                  tokens.spacing.section,
+                ),
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final Widget info = ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 680),
+                      child: _buildHeroInfo(context, tokens, episode),
+                    );
+                    // 海报卡只在「有横版背景 + 宽度够」时出现：窄屏放不下 2:3 卡还要
+                    // 留 680 给文字，挤压的结果是标题被压成一列竖排字。
+                    final bool showPoster = backdrop != null &&
+                        cover != null &&
+                        constraints.maxWidth >= 720;
+                    if (!showPoster) {
+                      return Align(
+                        alignment: AlignmentDirectional.bottomStart,
+                        child: info,
+                      );
+                    }
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: <Widget>[
+                        _buildHeroPosterCard(cover, height),
+                        SizedBox(width: tokens.spacing.section),
+                        Expanded(
+                          child: Align(
+                            alignment: AlignmentDirectional.bottomStart,
+                            child: info,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
-            ),
-            ...overlays,
-          ] else if (cover != null)
-            LandscapeCoverImage(
-              key: const ValueKey<String>('collection-hero-cover'),
-              image: cover,
-              overlays: overlays,
-              // 竖版海报避让顶部 AppBar 与底部内容区，靠右不压左下标题/播放按钮。
-              foregroundPadding: EdgeInsetsDirectional.only(
-                top: kToolbarHeight,
-                bottom: tokens.spacing.section,
-                end: tokens.spacing.page,
-              ),
-              errorBuilder: (BuildContext _) =>
-                  ColoredBox(color: cs.surfaceContainerHighest),
-            )
-          else
-            ...overlays,
-          SafeArea(
-            bottom: false,
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.page,
-                kToolbarHeight + tokens.spacing.gap,
-                tokens.spacing.page,
-                tokens.spacing.section,
-              ),
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) {
-                  final Widget info = ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 680),
-                    child: _buildHeroInfo(context, tokens, episode),
-                  );
-                  // 海报卡只在「有横版背景 + 宽度够」时出现：窄屏放不下 2:3 卡还要
-                  // 留 680 给文字，挤压的结果是标题被压成一列竖排字。
-                  final bool showPoster = backdrop != null &&
-                      cover != null &&
-                      constraints.maxWidth >= 720;
-                  if (!showPoster) {
-                    return Align(
-                      alignment: AlignmentDirectional.bottomStart,
-                      child: info,
-                    );
-                  }
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: <Widget>[
-                      _buildHeroPosterCard(cover, height),
-                      SizedBox(width: tokens.spacing.section),
-                      Expanded(
-                        child: Align(
-                          alignment: AlignmentDirectional.bottomStart,
-                          child: info,
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1509,7 +1535,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   Widget _buildWorkDetailsSection(HibikiDesignTokens tokens) {
     final VideoMetadataWorkRow? work = _canonicalWork;
-    if (work == null) return const SizedBox.shrink();
     final Map<String, List<String>> terms = <String, List<String>>{};
     for (final VideoMetadataTermRow term in _workTerms) {
       terms.putIfAbsent(term.kind, () => <String>[]).add(term.name);
@@ -1518,15 +1543,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         _workCredits?.identities ?? const <VideoMetadataIdentitySummary>[];
     final List<(String, String)> facts = <(String, String)>[
       if (terms['genre']?.isNotEmpty == true)
-        ('Genre', terms['genre']!.join(' · ')),
+        (t.video_work_genres, terms['genre']!.join(' · ')),
       if (terms['keyword']?.isNotEmpty == true)
-        ('Keyword', terms['keyword']!.join(' · ')),
+        (t.video_work_keywords, terms['keyword']!.join(' · ')),
       if (terms['studio']?.isNotEmpty == true)
-        ('Studio', terms['studio']!.join(' · ')),
+        (t.video_work_studios, terms['studio']!.join(' · ')),
       if (terms['country']?.isNotEmpty == true)
-        ('Country', terms['country']!.join(' · ')),
-      if (work.contentRating?.trim().isNotEmpty == true)
-        ('Rating', work.contentRating!),
+        (t.video_work_countries, terms['country']!.join(' · ')),
+      if (work?.contentRating?.trim().isNotEmpty == true)
+        (t.video_work_content_rating, work!.contentRating!),
       if (identities.isNotEmpty)
         (
           t.video_work_external_ids,
@@ -1536,9 +1561,39 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               .join(' · '),
         ),
     ];
-    final String? overview = work.overview?.trim();
+    final String? overview = work?.overview?.trim();
     if ((overview == null || overview.isEmpty) && facts.isEmpty) {
-      return const SizedBox.shrink();
+      return Padding(
+        key: const ValueKey<String>('video-work-details-pending'),
+        padding: EdgeInsets.fromLTRB(
+          tokens.spacing.page,
+          tokens.spacing.section,
+          tokens.spacing.page,
+          0,
+        ),
+        child: Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: EdgeInsets.all(tokens.spacing.section),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  t.video_work_details,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                SizedBox(height: tokens.spacing.card),
+                Text(
+                  t.video_work_metadata_pending,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
     }
     return Padding(
       key: const ValueKey<String>('video-work-details'),
@@ -2138,75 +2193,138 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     }
   }
 
-  /// [availableWidth] 是这条 AppBar 实际拿到的约束宽（由 [LayoutBuilder] 下发）。
-  AppBar _buildAppBar(double availableWidth) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final bool cinematic = !_loading && _members.isNotEmpty;
+  Future<void> _handleManageAction(_CollectionManageAction action) async {
+    switch (action) {
+      case _CollectionManageAction.sortBySeason:
+        await _sortBySeason();
+        return;
+      case _CollectionManageAction.subtitles:
+        await _fetchCollectionSubtitles();
+        return;
+      case _CollectionManageAction.scrapeEpisodes:
+        await _scrapeEpisodes();
+        return;
+      case _CollectionManageAction.renameEpisodes:
+        await _renameEpisodesFromScrape();
+        return;
+      case _CollectionManageAction.fillMissing:
+        _fillMissingEpisodes();
+        return;
+      case _CollectionManageAction.splitBySeason:
+        await _splitBySeason();
+        return;
+      case _CollectionManageAction.rename:
+        await renameDetailCollection();
+        return;
+      case _CollectionManageAction.tags:
+        await editDetailCollectionTags();
+        return;
+      case _CollectionManageAction.delete:
+        await _delete();
+        return;
+    }
+  }
+
+  PopupMenuItem<_CollectionManageAction> _manageMenuItem(
+    _CollectionManageAction action,
+    IconData icon,
+    String label, {
+    bool enabled = true,
+  }) {
+    return PopupMenuItem<_CollectionManageAction>(
+      value: action,
+      enabled: enabled,
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 20),
+          const SizedBox(width: 12),
+          Text(label),
+        ],
+      ),
+    );
+  }
+
+  AppBar _buildAppBar() {
     return AppBar(
-      title: cinematic
-          ? null
-          : Text(_name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      backgroundColor: cinematic ? const Color(0x42000000) : cs.surface,
-      foregroundColor: cinematic ? Colors.white : cs.onSurface,
+      title: Text(
+        t.video_work_details,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
       surfaceTintColor: Colors.transparent,
       elevation: 0,
-      // BUG-1184：5 个动作 + 返回键在 320dp 上吃掉约 296px，合集名只剩二十几像素、
-      // 等于完全看不见。窄屏把后 4 个收进溢出菜单，排序保持一眼可点。
-      actions: narrowAwareAppBarActions(
-        availableWidth: availableWidth,
-        alwaysVisible: <Widget>[_buildSortMenu()],
-        collapsible: <HibikiAppBarAction>[
-          // 季 tab 的排序补充：tab 展示是派生的、进页面即生效，本动作只把
-          // **落盘全序**整理成季→集连续（单季合集执行后无可见变化，幂等）。
-          HibikiAppBarAction(
-            icon: Icons.segment,
-            label: t.collection_sort_by_season,
-            onPressed: _members.isEmpty ? null : _sortBySeason,
-          ),
-          HibikiAppBarAction(
-            icon: Icons.subtitles_outlined,
-            label: t.video_jimaku_batch_title,
-            onPressed: _members.isEmpty ? null : _fetchCollectionSubtitles,
-          ),
-          // 集级刮削两连：先刮分集资料，再（可选）按刮削结果批量改集名。
-          HibikiAppBarAction(
-            icon: Icons.movie_filter_outlined,
-            label: t.collection_episode_scrape,
-            onPressed: _members.isEmpty ? null : _scrapeEpisodes,
-          ),
-          HibikiAppBarAction(
-            icon: Icons.format_list_numbered,
-            label: t.collection_episode_rename,
-            onPressed: _members.isEmpty ? null : _renameEpisodesFromScrape,
-          ),
-          // 「补齐缺集」（TODO-2485）：按文件名集号找缺口，预填第一个缺集开下载。
-          HibikiAppBarAction(
-            icon: Icons.playlist_add,
-            label: t.collection_episode_fill_missing,
-            onPressed: _members.isEmpty ? null : _fillMissingEpisodes,
-          ),
-          // 「按季拆分合集」（TODO-2489）：仅多季合集可用（单季拆分无意义）。
-          HibikiAppBarAction(
-            icon: Icons.call_split,
-            label: t.collection_split_by_season,
-            onPressed: _hasSeasonTabs ? _splitBySeason : null,
-          ),
-          HibikiAppBarAction(
-            icon: Icons.drive_file_rename_outline,
-            label: t.rename_collection,
-            onPressed: renameDetailCollection,
-          ),
-          HibikiAppBarAction(
-            icon: Icons.sell_outlined,
-            label: t.tag_label,
-            onPressed: editDetailCollectionTags,
-          ),
-          HibikiAppBarAction(
-            icon: Icons.delete_outline,
-            label: t.delete_collection,
-            onPressed: _delete,
-          ),
-        ],
+      actions: <Widget>[
+        _buildSortMenu(),
+        PopupMenuButton<_CollectionManageAction>(
+          icon: const Icon(Icons.more_horiz),
+          onSelected: (_CollectionManageAction action) =>
+              unawaited(_handleManageAction(action)),
+          itemBuilder: (BuildContext context) =>
+              <PopupMenuEntry<_CollectionManageAction>>[
+            _manageMenuItem(
+              _CollectionManageAction.sortBySeason,
+              Icons.segment,
+              t.collection_sort_by_season,
+              enabled: _members.isNotEmpty,
+            ),
+            _manageMenuItem(
+              _CollectionManageAction.subtitles,
+              Icons.subtitles_outlined,
+              t.video_jimaku_batch_title,
+              enabled: _members.isNotEmpty,
+            ),
+            _manageMenuItem(
+              _CollectionManageAction.scrapeEpisodes,
+              Icons.movie_filter_outlined,
+              t.collection_episode_scrape,
+              enabled: _members.isNotEmpty,
+            ),
+            _manageMenuItem(
+              _CollectionManageAction.renameEpisodes,
+              Icons.format_list_numbered,
+              t.collection_episode_rename,
+              enabled: _members.isNotEmpty,
+            ),
+            _manageMenuItem(
+              _CollectionManageAction.fillMissing,
+              Icons.playlist_add,
+              t.collection_episode_fill_missing,
+              enabled: _members.isNotEmpty,
+            ),
+            _manageMenuItem(
+              _CollectionManageAction.splitBySeason,
+              Icons.call_split,
+              t.collection_split_by_season,
+              enabled: _hasSeasonTabs,
+            ),
+            const PopupMenuDivider(),
+            _manageMenuItem(
+              _CollectionManageAction.rename,
+              Icons.drive_file_rename_outline,
+              t.rename_collection,
+            ),
+            _manageMenuItem(
+              _CollectionManageAction.tags,
+              Icons.sell_outlined,
+              t.tag_label,
+            ),
+            _manageMenuItem(
+              _CollectionManageAction.delete,
+              Icons.delete_outline,
+              t.delete_collection,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _centeredContent(Widget child) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1680),
+        child: SizedBox(width: double.infinity, child: child),
       ),
     );
   }
@@ -2215,20 +2333,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final bool cinematic = !_loading && _members.isNotEmpty;
     return Scaffold(
-      extendBodyBehindAppBar: cinematic,
-      // BUG-1186：动作要不要折叠，得看这条 AppBar 自己拿到多宽，而不是整窗多宽。
-      // 包一层 [LayoutBuilder] 把局部约束喂给 [narrowAwareAppBarActions]；高度就是
-      // [AppBar] 无 bottom 时的默认 preferredSize（kToolbarHeight），Scaffold 仍会
-      // 自己叠上状态栏 padding，行为与直接挂 AppBar 完全一致。
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(kToolbarHeight),
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) =>
-              _buildAppBar(constraints.maxWidth),
-        ),
-      ),
+      appBar: _buildAppBar(),
       body: _loading
           ? SafeArea(
               child: Center(child: adaptiveIndicator(context: context)),
@@ -2243,31 +2349,41 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               : CustomScrollView(
                   slivers: <Widget>[
                     SliverToBoxAdapter(
-                      child: _buildHero(context, cs, tokens),
-                    ),
-                    SliverToBoxAdapter(child: buildDetailTagChips()),
-                    SliverToBoxAdapter(
-                      child: _buildWorkDetailsSection(tokens),
+                      child: _centeredContent(
+                        _buildHero(context, cs, tokens),
+                      ),
                     ),
                     SliverToBoxAdapter(
-                      child: _buildCreditsSection(tokens),
+                      child: _centeredContent(buildDetailTagChips()),
                     ),
                     SliverToBoxAdapter(
-                      child: _buildExtrasSection(tokens),
+                      child: _centeredContent(
+                        _buildWorkDetailsSection(tokens),
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: _centeredContent(_buildCreditsSection(tokens)),
+                    ),
+                    SliverToBoxAdapter(
+                      child: _centeredContent(_buildExtrasSection(tokens)),
                     ),
                     // 相关作品横滚（TODO-2484）：hero 之下、剧集区之上；无关系边
                     // 整块不渲染（区块内部判空）。
                     SliverToBoxAdapter(
-                      child: CollectionRelationsSection(
-                        database: widget.database,
-                        collectionId: widget.collection.id,
-                        onOpenCollection: (int id) =>
-                            _openRelatedCollection(id),
-                        onDownload: _downloadRelation,
+                      child: _centeredContent(
+                        CollectionRelationsSection(
+                          database: widget.database,
+                          collectionId: widget.collection.id,
+                          onOpenCollection: (int id) =>
+                              _openRelatedCollection(id),
+                          onDownload: _downloadRelation,
+                        ),
                       ),
                     ),
                     SliverToBoxAdapter(
-                      child: _buildEpisodeSection(context, cs, tokens),
+                      child: _centeredContent(
+                        _buildEpisodeSection(context, cs, tokens),
+                      ),
                     ),
                     SliverSafeArea(
                       top: false,
@@ -2283,3 +2399,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
 /// 集卡上下文菜单动作。
 enum _EpisodeMenuAction { download, openBangumi, removeFromCollection }
+
+enum _CollectionManageAction {
+  sortBySeason,
+  subtitles,
+  scrapeEpisodes,
+  renameEpisodes,
+  fillMissing,
+  splitBySeason,
+  rename,
+  tags,
+  delete,
+}

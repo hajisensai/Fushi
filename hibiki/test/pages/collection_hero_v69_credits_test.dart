@@ -139,18 +139,43 @@ void main() {
 
     await pumpWide(tester);
 
+    final Finder heroCredits =
+        find.byKey(const ValueKey<String>('collection-hero-credits'));
+    expect(heroCredits, findsOneWidget);
     expect(
-      find.byKey(const ValueKey<String>('collection-hero-credits')),
+      find.descendant(of: heroCredits, matching: find.text('Director Name')),
       findsOneWidget,
     );
-    expect(find.text('Director Name'), findsOneWidget);
-    expect(find.text('Actor Name · Hero'), findsOneWidget);
-    expect(find.text('Voice Name · Hero'), findsOneWidget);
-    expect(find.text('Writer Name'), findsNothing,
+    expect(
+      find.descendant(
+          of: heroCredits, matching: find.text('Actor Name · Hero')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+          of: heroCredits, matching: find.text('Voice Name · Hero')),
+      findsOneWidget,
+    );
+    expect(find.descendant(of: heroCredits, matching: find.text('Writer Name')),
+        findsNothing,
         reason: 'hero 只展示计划要求的导演、演员和声优');
-    expect(find.byIcon(Icons.movie_creation_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.person_outline), findsOneWidget);
-    expect(find.byIcon(Icons.record_voice_over_outlined), findsOneWidget);
+    expect(
+      find.descendant(
+          of: heroCredits,
+          matching: find.byIcon(Icons.movie_creation_outlined)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+          of: heroCredits, matching: find.byIcon(Icons.person_outline)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+          of: heroCredits,
+          matching: find.byIcon(Icons.record_voice_over_outlined)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('无 v69 作品人物时保留旧详情页回退', (WidgetTester tester) async {

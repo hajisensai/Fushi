@@ -27,6 +27,7 @@ import 'package:hibiki/src/media/video/metadata/video_source_scrape_config.dart'
 import 'package:hibiki/src/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:hibiki/src/media/video/metadata/video_source_scrape_dialog.dart';
 import 'package:hibiki/src/media/video/metadata/video_source_scrape_task.dart';
+import 'package:hibiki/src/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:hibiki/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/pages/implementations/video_library_shell.dart';
@@ -347,6 +348,10 @@ class _HomePageState extends BasePageState<HomePage>
         );
         return 0;
       }));
+      // v70 之前已经存在于库中的来源不会自动重触发扫描。启动时做一次纯本地、
+      // 幂等的作品索引，把旧合集/独立电影补成规范 VideoMetadataWork；否则系列页
+      // 能看到临时卡片，点进详情却永远只能落到无资料的旧合集视图。
+      unawaited(_backfillVideoMetadataWorks());
       // 首帧同步之后挂定时轮询，让静止不动的设备也能周期性拉到远端改动（见
       // [_periodicSyncInterval] 注释）。dispose 时 cancel。
       _periodicSyncTimer =
@@ -444,6 +449,27 @@ class _HomePageState extends BasePageState<HomePage>
 
   void refresh() {
     setState(() {});
+  }
+
+  Future<void> _backfillVideoMetadataWorks() async {
+    final List<SourceLibraryRow> sources =
+        await appModel.database.getMediaSourcesByKind('video');
+    final VideoSourceMetadataIndexer indexer =
+        VideoSourceMetadataIndexer(appModel.database);
+    bool changed = false;
+    for (final SourceLibraryRow source in sources) {
+      try {
+        await indexer.index(source);
+        changed = true;
+      } on Object catch (error, stackTrace) {
+        ErrorLogService.instance.log(
+          'HomePage.backfillVideoMetadataWorks.${source.id}',
+          error,
+          stackTrace,
+        );
+      }
+    }
+    if (changed && mounted) _notifyVideoLibraryChanged();
   }
 
   /// TODO-376：响应显式「打开查词 tab」请求（[AppModel.homeDictionaryTabRequest]）。

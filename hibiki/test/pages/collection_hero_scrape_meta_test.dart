@@ -18,7 +18,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 ///
 /// 本文件锁三件事：
 ///  1. 有资料 → hero 渲染年份/话数/评分/评分人数/标签/简介/原名；
-///  2. 无资料 → 回落到「标题 + 进度 + 播放」的旧形态，且**不出现**任何空占位；
+///  2. 无资料 → 保留标题 + 进度 + 播放，并明确提示从来源重试刮削；
 ///  3. 背景槽向：有横版 backdrop 用它（正确槽向），无则回落 [LandscapeCoverImage]，
 ///     且两种情况下海报卡的出现与否互斥（同一张图不得在同屏出现两次）。
 void main() {
@@ -170,13 +170,23 @@ void main() {
     );
   });
 
-  testWidgets('未刮削 → 回落旧形态：只有标题 + 进度 + 播放，无空占位', (WidgetTester tester) async {
+  testWidgets('未刮削 → 保留播放能力并明确显示资料待刮削状态', (WidgetTester tester) async {
     await pumpWide(tester);
 
+    expect(
+      find.byKey(const ValueKey<String>('video-work-hero-card')),
+      findsOneWidget,
+      reason: '合集详情必须使用内嵌圆角作品 hero，而不是旧的整屏背景布局',
+    );
     expect(find.text('Tensei Oujo v2 播放列表'), findsOneWidget);
     expect(find.textContaining('已看完'), findsWidgets);
+    expect(find.textContaining('暂无详细资料'), findsOneWidget);
     expect(find.textContaining('★'), findsNothing, reason: '没有评分就不该出现评分符号');
-    expect(find.textContaining('全 '), findsNothing, reason: '没有话数就不该出现「全 N 话」');
+    expect(
+      find.text('全 1 话'),
+      findsOneWidget,
+      reason: '本地作品索引会用确定的合集成员数补出话数，但不会伪造在线评分',
+    );
     expect(
       find.byKey(const ValueKey<String>('collection-hero-poster')),
       findsNothing,

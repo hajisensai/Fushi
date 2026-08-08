@@ -26,6 +26,7 @@ import 'package:hibiki/src/media/video/metadata/video_sidecar_writer.dart';
 import 'package:hibiki/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:hibiki/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:hibiki/src/media/video/metadata/video_source_work_planner.dart';
+import 'package:hibiki/src/media/video/scraper/filename_parser.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
@@ -1123,10 +1124,14 @@ class VideoSourceScrapeCoordinator
         p.basename(p.dirname(p.dirname(row.videoPath))),
       ],
     ];
-    final RegExpMatch? match = RegExp(
-      r'(?:^|\D)((?:19|20)\d{2})(?:\D|$)',
-    ).firstMatch(candidates.join(' '));
-    return match == null ? null : int.tryParse(match.group(1)!);
+    // 年份必须经过仓内唯一的 anitomy 式解析器。直接在整段路径上找 4 位数字会
+    // 把 `[1920x1080]` 的 1920 当成年份，随后严格匹配会把真正的 2015 候选拒掉。
+    // 逐候选解析还保留了文件名 > 父目录 > 祖父目录的确定优先级。
+    for (final String candidate in candidates) {
+      final int? year = FilenameParser.parse(candidate).year;
+      if (year != null) return year;
+    }
+    return null;
   }
 
   static VideoMetadataLookup? _lookupForCandidate(

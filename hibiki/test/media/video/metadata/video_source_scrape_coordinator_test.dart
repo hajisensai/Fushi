@@ -333,6 +333,76 @@ void main() {
     expect(provider.searchYears, everyElement(isNull));
   });
 
+  test('Himouto 发布名的 1920x1080 不会被当成年份拒绝正确候选', () async {
+    final Directory showDir = Directory(p.join(root.path, 'Himouto'));
+    await showDir.create(recursive: true);
+    final List<String> names = <String>[
+      '[Kamigami] Himouto! Umaru-chan - 08 '
+          '[1920x1080 x264 AAC Sub(Chs,Cht,Jap)].mkv',
+      '[Kamigami] Himouto! Umaru-chan - 09 '
+          '[1920x1080 x264 AAC Sub(Chs,Cht,Jap)].mkv',
+    ];
+    final int sourceId = await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'Himouto source',
+        mediaKind: 'video',
+        rootPath: root.path,
+        createdAt: 1,
+      ),
+    );
+    for (int index = 0; index < names.length; index++) {
+      final File video = File(p.join(showDir.path, names[index]));
+      await video.writeAsBytes(const <int>[0]);
+      await db.upsertVideoBook(VideoBooksCompanion(
+        bookUid: Value<String>('himouto-${index + 8}'),
+        title: Value<String>(p.basenameWithoutExtension(names[index])),
+        videoPath: Value<String>(video.path),
+        sourceId: Value<int?>(sourceId),
+      ));
+    }
+    final int collectionId = await db.createMediaCollection(
+      'Himouto! Umaru-chan',
+      collectionType: 'playlist',
+    );
+    await db.addToCollection(collectionId, MediaKind.video, 'himouto-8');
+    await db.addToCollection(collectionId, MediaKind.video, 'himouto-9');
+    await db.upsertVideoSourceScrapeSettings(
+      VideoSourceScrapeSettingsCompanion.insert(
+        sourceId: Value<int>(sourceId),
+        providerOverride: const Value<String?>('tmdb'),
+        writeNfo: const Value<bool>(false),
+        writeImages: const Value<bool>(false),
+        fanartEnabled: const Value<bool>(false),
+        updatedAt: 1,
+      ),
+    );
+    final _HimoutoTmdbProvider provider = _HimoutoTmdbProvider();
+    final VideoSourceScrapeCoordinator coordinator =
+        VideoSourceScrapeCoordinator(
+      database: db,
+      config: const VideoSourceScrapeGlobalConfig(
+        primaryProvider: VideoMetadataProviderKind.tmdb,
+      ),
+      registry:
+          VideoMetadataProviderRegistry(<VideoMetadataProvider>[provider]),
+      fanartProvider: const _NoImages(),
+    );
+
+    final SourceScrapeReport report = await coordinator.scrapeSource(
+      (await db.getMediaSourceById(sourceId))!,
+      cancellationToken: VideoSourceScrapeCancellationToken(),
+      onProgress: (_) {},
+    );
+
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    expect(provider.searchYears, isNotEmpty);
+    expect(provider.searchYears, everyElement(isNull));
+    expect(
+      (await db.getVideoMetadataWorkByCollection(collectionId))?.year,
+      2015,
+    );
+  });
+
   test('缺少真实分集资料时生成的 episode NFO 不伪造文件名标题', () async {
     final Directory seasonDir =
         Directory(p.join(root.path, 'Unknown Show', 'Season 01'));
@@ -780,6 +850,65 @@ class _YearCapturingTmdbProvider implements VideoMetadataProvider {
     required int seasonNumber,
   }) async =>
       const <VideoMetadataEpisode>[];
+
+  @override
+  void close() {}
+}
+
+class _HimoutoTmdbProvider implements VideoMetadataProvider {
+  final List<int?> searchYears = <int?>[];
+
+  @override
+  VideoMetadataProviderKind get providerKind => VideoMetadataProviderKind.tmdb;
+
+  @override
+  bool get isAvailable => true;
+
+  VideoMetadataWork get work => VideoMetadataWork(
+        provider: providerKind,
+        kind: VideoMetadataMediaKind.tv,
+        title: 'Himouto! Umaru-chan',
+        originalTitle: '干物妹！うまるちゃん',
+        year: 2015,
+        ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'tmdb', value: '67126'),
+        ],
+        seasons: <VideoMetadataSeason>[
+          VideoMetadataSeason(seasonNumber: 1, title: 'Season 1'),
+        ],
+      );
+
+  @override
+  Future<List<VideoMetadataWork>> search(
+    VideoMetadataSearchRequest request,
+  ) async {
+    searchYears.add(request.year);
+    return <VideoMetadataWork>[work];
+  }
+
+  @override
+  Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async =>
+      work;
+
+  @override
+  Future<List<VideoMetadataSeason>> fetchSeasons(
+    VideoMetadataLookup lookup,
+  ) async =>
+      work.seasons;
+
+  @override
+  Future<List<VideoMetadataEpisode>> fetchEpisodes(
+    VideoMetadataLookup lookup, {
+    required int seasonNumber,
+  }) async =>
+      <VideoMetadataEpisode>[
+        for (final int number in <int>[8, 9])
+          VideoMetadataEpisode(
+            seasonNumber: 1,
+            episodeNumber: number,
+            title: 'Episode $number',
+          ),
+      ];
 
   @override
   void close() {}

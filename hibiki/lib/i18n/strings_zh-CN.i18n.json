@@ -3163,5 +3163,11 @@
   "video_work_trailers": "预告片",
   "video_work_extras": "花絮",
   "video_work_details": "作品资料",
-  "video_work_external_ids": "外部 ID"
+  "video_work_external_ids": "外部 ID",
+  "video_work_metadata_pending": "暂无详细资料。请在",
+  "video_work_genres": "类型",
+  "video_work_keywords": "标签",
+  "video_work_studios": "工作室",
+  "video_work_countries": "国家",
+  "video_work_content_rating": "分级"
 }

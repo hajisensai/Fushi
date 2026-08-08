@@ -99,9 +99,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('某番剧'), findsOneWidget);
-    // hayase 式改版（TODO-2491）：集列表（宽卡网格）默认全量可见，旧横滚轨已移除。
-    expect(find.byKey(const ValueKey<String>('episode-list')), findsOneWidget);
-
     final Finder a10Card = find.byKey(
       const ValueKey<String>('collection-episode-row-video/a10'),
     );
@@ -116,6 +113,8 @@ void main() {
           .first,
     );
     await tester.pumpAndSettle();
+    // 作品级 hero + 资料区在前，集列表仍默认展开，但 Sliver 会等滚入视口才构建。
+    expect(find.byKey(const ValueKey<String>('episode-list')), findsOneWidget);
     await tester.tap(a10Card);
     await tester.pumpAndSettle();
     expect(opened?.bookUid, 'video/a10');

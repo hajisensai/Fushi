@@ -3163,5 +3163,11 @@
   "video_work_trailers": "Trailers",
   "video_work_extras": "Extras",
   "video_work_details": "Details",
-  "video_work_external_ids": "External IDs"
+  "video_work_external_ids": "External IDs",
+  "video_work_metadata_pending": "Detailed metadata has not been scraped yet. Retry this source from Sources, then reopen the work.",
+  "video_work_genres": "Genres",
+  "video_work_keywords": "Keywords",
+  "video_work_studios": "Studios",
+  "video_work_countries": "Countries",
+  "video_work_content_rating": "Content rating"
 }
