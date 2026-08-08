@@ -41,6 +41,7 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:hibiki/src/utils/misc/dashboard_remote_merge.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/migration/migration_prompt.dart';
 import 'package:hibiki/src/migration/migration_target_channel.dart';
 import 'package:hibiki/src/pages/implementations/migration_page.dart';
 
@@ -504,6 +505,25 @@ class _HomeDashboardPageState
   void initState() {
     super.initState();
     unawaited(_loadDashboardData());
+    // Fushi 迁移 P1-3：老包换了包名，系统层面不可能原地升级，必须**主动**告知。
+    // 每次启动弹一次，只有「稍后」一个退出口；已迁移（只读态）后由常驻横幅接手。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final AppModel appModel = ref.read(appProvider);
+      unawaited(showMigrationPromptIfNeeded(
+        context,
+        migrated: appModel.isMigrationReadonly,
+        title: t.migration_prompt_title,
+        body: t.migration_prompt_body,
+        migrateLabel: t.migration_prompt_action,
+        laterLabel: t.migration_prompt_later,
+        onMigrate: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => MigrationPage(appModel: appModel),
+          ),
+        ),
+      ));
+    });
     // 阅读/观看/导入写库 → 表级变更 → 防抖后重查聚合，首页自动刷新（竞态无关：
     // 信号在写入 commit 后才发，重查读到的是已落库数据）。
     _dataChangeSub = ref

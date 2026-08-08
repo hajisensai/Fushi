@@ -160,20 +160,81 @@ void main() {
     });
   });
 
-  group('MigrationContentRoots.rootForBatch', () {
-    test('core 无文件树，其余各批各归其根', () {
-      final MigrationContentRoots roots = MigrationContentRoots(
-        databaseFile: File('/db'),
-        dictionaryResourceDirectory: Directory('/dict'),
-        booksRootDirectory: Directory('/books'),
-        audiobooksRootDirectory: Directory('/audiobooks'),
-        fontsRootDirectory: Directory('/fonts'),
-        localAudioRootDirectory: Directory('/localAudio'),
+  group('MigrationContentRoots', () {
+    MigrationContentRoots rootsAt(String dbDir) => MigrationContentRoots(
+          databaseFilePath: p.join(dbDir, 'hibiki.db'),
+          databaseDirectoryPath: dbDir,
+          dictionaryResourceDirectoryPath: '/dict',
+          booksRootDirectoryPath: '/books',
+          audiobooksRootDirectoryPath: '/audiobooks',
+          fontsRootDirectoryPath: '/fonts',
+        );
+
+    test('core 与 localAudio 无「整棵树」根，其余各批各归其根', () {
+      final MigrationContentRoots roots = rootsAt('/db');
+      expect(roots.rootPathForBatch(MigrationBatch.core), isNull);
+      expect(roots.rootPathForBatch(MigrationBatch.books), '/books');
+      // localAudio 不是一棵树：它是 DB 目录一层里按文件名匹配的若干 .db。
+      expect(roots.rootPathForBatch(MigrationBatch.localAudio), isNull);
+    });
+
+    test('core 的测量函数恒 0（只带 DB 行，无文件树）', () {
+      expect(rootsAt('/db').measurerForBatch(MigrationBatch.core)(), 0);
+    });
+  });
+
+  group('measureLocalAudioBytes', () {
+    late Directory tmp;
+
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('migration_local_audio_test');
+    });
+
+    tearDown(() {
+      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+    });
+
+    void write(String name, int bytes) => File(p.join(tmp.path, name))
+        .writeAsBytesSync(List<int>.filled(bytes, 0));
+
+    test('只算 local_audio_*.db 及其 -wal/-shm 兄弟，主库与其它支持文件不计', () {
+      write('local_audio_jp.db', 100);
+      write('local_audio_jp.db-wal', 20);
+      write('local_audio_jp.db-shm', 5);
+      // 以下都**不能**计入：主库、日志、其它 sidecar。
+      write('hibiki.db', 9999);
+      write('hibiki.db-wal', 8888);
+      write('something_local_audio_x.db', 7777);
+      expect(measureLocalAudioBytes(tmp), 125);
+    });
+
+    test('非递归：子目录里的同名文件不计（与打包规则一致）', () {
+      write('local_audio_a.db', 10);
+      final Directory sub = Directory(p.join(tmp.path, 'sub'))..createSync();
+      File(p.join(sub.path, 'local_audio_b.db'))
+          .writeAsBytesSync(List<int>.filled(500, 0));
+      expect(measureLocalAudioBytes(tmp), 10);
+    });
+
+    test('目录不存在返回 0（不抛）', () {
+      expect(measureLocalAudioBytes(Directory(p.join(tmp.path, 'nope'))), 0);
+    });
+
+    test('接进 measureBatchBytes 后按批落位', () {
+      write('local_audio_a.db', 42);
+      final MigrationSpaceEstimate e = measureBatchBytes(
+        MigrationContentRoots(
+          databaseFilePath: p.join(tmp.path, 'hibiki.db'),
+          databaseDirectoryPath: tmp.path,
+          dictionaryResourceDirectoryPath: p.join(tmp.path, 'nope_d'),
+          booksRootDirectoryPath: p.join(tmp.path, 'nope_b'),
+          audiobooksRootDirectoryPath: p.join(tmp.path, 'nope_ab'),
+          fontsRootDirectoryPath: p.join(tmp.path, 'nope_f'),
+        ),
+        <MigrationBatch>[MigrationBatch.core, MigrationBatch.localAudio],
       );
-      expect(roots.rootForBatch(MigrationBatch.core), isNull);
-      expect(roots.rootForBatch(MigrationBatch.books)?.path, '/books');
-      expect(
-          roots.rootForBatch(MigrationBatch.localAudio)?.path, '/localAudio');
+      expect(e.perBatchBytes[MigrationBatch.localAudio], 42);
+      expect(e.perBatchBytes[MigrationBatch.core], 0);
     });
   });
 }

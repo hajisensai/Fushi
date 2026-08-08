@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 53482 (3146 per locale)
+/// Strings: 53754 (3162 per locale)
 ///
-/// Built on 2026-08-06 at 19:29 UTC
+/// Built on 2026-08-08 at 13:57 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4237,6 +4237,31 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Your data has been exported to Fushi. This app is now read-only: use Fushi for reading and mining. You can re-export at any time if Fushi reports missing data.';
   String get migration_reexport => 'Re-export';
   String get migration_batch_core_label => 'Settings, progress & statistics';
+  String get migration_prompt_title => 'Hibiki is now Fushi';
+  String get migration_prompt_body =>
+      'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+  String get migration_prompt_action => 'Download Fushi and migrate';
+  String get migration_prompt_later => 'Later';
+  String get migration_prompt_details => 'See details';
+  String get migration_space_measuring =>
+      'Calculating how much space this needs...';
+  String migration_space_summary(
+          {required Object required, required Object free}) =>
+      'Needs about ${required}, ${free} available';
+  String migration_space_blocked({required Object shortfall}) =>
+      'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+  String get migration_space_unknown =>
+      'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+  String migration_space_tip_local_audio({required Object size}) =>
+      'Turning off local pronunciation audio would save ${size}.';
+  String get migration_space_recheck => 'Re-check space';
+  String get migration_target_resolve_failed =>
+      'Could not find the Fushi installer. Check your network and try again.';
+  String get migration_install_incomplete =>
+      'Fushi is still not installed. Finish the system install prompt, then tap again.';
+  String get migration_step_install => 'Install Fushi';
+  String get migration_step_export => 'Export data';
+  String get migration_step_import => 'Import in Fushi';
 }
 
 // Path: <root>
@@ -11469,6 +11494,47 @@ class _StringsAr extends _StringsEn {
   String get migration_reexport => 'Re-export';
   @override
   String get migration_batch_core_label => 'Settings, progress & statistics';
+  @override
+  String get migration_prompt_title => 'Hibiki is now Fushi';
+  @override
+  String get migration_prompt_body =>
+      'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+  @override
+  String get migration_prompt_action => 'Download Fushi and migrate';
+  @override
+  String get migration_prompt_later => 'Later';
+  @override
+  String get migration_prompt_details => 'See details';
+  @override
+  String get migration_space_measuring =>
+      'Calculating how much space this needs...';
+  @override
+  String migration_space_summary(
+          {required Object required, required Object free}) =>
+      'Needs about ${required}, ${free} available';
+  @override
+  String migration_space_blocked({required Object shortfall}) =>
+      'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+  @override
+  String get migration_space_unknown =>
+      'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+  @override
+  String migration_space_tip_local_audio({required Object size}) =>
+      'Turning off local pronunciation audio would save ${size}.';
+  @override
+  String get migration_space_recheck => 'Re-check space';
+  @override
+  String get migration_target_resolve_failed =>
+      'Could not find the Fushi installer. Check your network and try again.';
+  @override
+  String get migration_install_incomplete =>
+      'Fushi is still not installed. Finish the system install prompt, then tap again.';
+  @override
+  String get migration_step_install => 'Install Fushi';
+  @override
+  String get migration_step_export => 'Export data';
+  @override
+  String get migration_step_import => 'Import in Fushi';
 }
 
 // Path: <root>
@@ -18768,6 +18834,47 @@ class _StringsDe extends _StringsEn {
   String get migration_reexport => 'Re-export';
   @override
   String get migration_batch_core_label => 'Settings, progress & statistics';
+  @override
+  String get migration_prompt_title => 'Hibiki is now Fushi';
+  @override
+  String get migration_prompt_body =>
+      'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+  @override
+  String get migration_prompt_action => 'Download Fushi and migrate';
+  @override
+  String get migration_prompt_later => 'Later';
+  @override
+  String get migration_prompt_details => 'See details';
+  @override
+  String get migration_space_measuring =>
+      'Calculating how much space this needs...';
+  @override
+  String migration_space_summary(
+          {required Object required, required Object free}) =>
+      'Needs about ${required}, ${free} available';
+  @override
+  String migration_space_blocked({required Object shortfall}) =>
+      'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+  @override
+  String get migration_space_unknown =>
+      'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+  @override
+  String migration_space_tip_local_audio({required Object size}) =>
+      'Turning off local pronunciation audio would save ${size}.';
+  @override
+  String get migration_space_recheck => 'Re-check space';
+  @override
+  String get migration_target_resolve_failed =>
+      'Could not find the Fushi installer. Check your network and try again.';
+  @override
+  String get migration_install_incomplete =>
+      'Fushi is still not installed. Finish the system install prompt, then tap again.';
+  @override
+  String get migration_step_install => 'Install Fushi';
+  @override
+  String get migration_step_export => 'Export data';
+  @override
+  String get migration_step_import => 'Import in Fushi';
 }
 
 // Path: <root>
@@ -26082,6 +26189,47 @@ class _StringsEs extends _StringsEn {
   String get migration_reexport => 'Re-export';
   @override
   String get migration_batch_core_label => 'Settings, progress & statistics';
+  @override
+  String get migration_prompt_title => 'Hibiki is now Fushi';
+  @override
+  String get migration_prompt_body =>
+      'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+  @override
+  String get migration_prompt_action => 'Download Fushi and migrate';
+  @override
+  String get migration_prompt_later => 'Later';
+  @override
+  String get migration_prompt_details => 'See details';
+  @override
+  String get migration_space_measuring =>
+      'Calculating how much space this needs...';
+  @override
+  String migration_space_summary(
+          {required Object required, required Object free}) =>
+      'Needs about ${required}, ${free} available';
+  @override
+  String migration_space_blocked({required Object shortfall}) =>
+      'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+  @override
+  String get migration_space_unknown =>
+      'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+  @override
+  String migration_space_tip_local_audio({required Object size}) =>
+      'Turning off local pronunciation audio would save ${size}.';
+  @override
+  String get migration_space_recheck => 'Re-check space';
+  @override
+  String get migration_target_resolve_failed =>
+      'Could not find the Fushi installer. Check your network and try again.';
+  @override
+  String get migration_install_incomplete =>
+      'Fushi is still not installed. Finish the system install prompt, then tap again.';
+  @override
+  String get migration_step_install => 'Install Fushi';
+  @override
+  String get migration_step_export => 'Export data';
+  @override
+  String get migration_step_import => 'Import in Fushi';
 }
 
 // Path: <root>
@@ -33408,6 +33556,47 @@ class _StringsFr extends _StringsEn {
   String get migration_reexport => 'Re-export';
   @override
   String get migration_batch_core_label => 'Settings, progress & statistics';
+  @override
+  String get migration_prompt_title => 'Hibiki is now Fushi';
+  @override
+  String get migration_prompt_body =>
+      'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+  @override
+  String get migration_prompt_action => 'Download Fushi and migrate';
+  @override
+  String get migration_prompt_later => 'Later';
+  @override
+  String get migration_prompt_details => 'See details';
+  @override
+  String get migration_space_measuring =>
+      'Calculating how much space this needs...';
+  @override
+  String migration_space_summary(
+          {required Object required, required Object free}) =>
+      'Needs about ${required}, ${free} available';
+  @override
+  String migration_space_blocked({required Object shortfall}) =>
+      'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+  @override
+  String get migration_space_unknown =>
+      'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+  @override
+  String migration_space_tip_local_audio({required Object size}) =>
+      'Turning off local pronunciation audio would save ${size}.';
+  @override
+  String get migration_space_recheck => 'Re-check space';
+  @override
+  String get migration_target_resolve_failed =>
+      'Could not find the Fushi installer. Check your network and try again.';
+  @override
+  String get migration_install_incomplete =>
+      'Fushi is still not installed. Finish the system install prompt, then tap again.';
+  @override
+  String get migration_step_install => 'Install Fushi';
+  @override
+  String get migration_step_export => 'Export data';
+  @override
+  String get migration_step_import => 'Import in Fushi';
 }
 
 // Path: <root>
@@ -40663,6 +40852,47 @@ class _StringsId extends _StringsEn {
   String get migration_reexport => 'Re-export';
   @override
   String get migration_batch_core_label => 'Settings, progress & statistics';
+  @override
+  String get migration_prompt_title => 'Hibiki is now Fushi';
+  @override
+  String get migration_prompt_body =>
+      'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+  @override
+  String get migration_prompt_action => 'Download Fushi and migrate';
+  @override
+  String get migration_prompt_later => 'Later';
+  @override
+  String get migration_prompt_details => 'See details';
+  @override
+  String get migration_space_measuring =>
+      'Calculating how much space this needs...';
+  @override
+  String migration_space_summary(
+          {required Object required, required Object free}) =>
+      'Needs about ${required}, ${free} available';
+  @override
+  String migration_space_blocked({required Object shortfall}) =>
+      'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+  @override
+  String get migration_space_unknown =>
+      'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+  @override
+  String migration_space_tip_local_audio({required Object size}) =>
+      'Turning off local pronunciation audio would save ${size}.';
+  @override
+  String get migration_space_recheck => 'Re-check space';
+  @override
+  String get migration_target_resolve_failed =>
+      'Could not find the Fushi installer. Check your network and try again.';
+  @override
+  String get migration_install_incomplete =>
+      'Fushi is still not installed. Finish the system install prompt, then tap again.';
+  @override
+  String get migration_step_install => 'Install Fushi';
+  @override
+  String get migration_step_export => 'Export data';
+  @override
+  String get migration_step_import => 'Import in Fushi';
 }
 
 // Path: <root>
@@ -47964,6 +48194,47 @@ class _StringsIt extends _StringsEn {
   String get migration_reexport => 'Re-export';
   @override
   String get migration_batch_core_label => 'Settings, progress & statistics';
+  @override
+  String get migration_prompt_title => 'Hibiki is now Fushi';
+  @override
+  String get migration_prompt_body =>
+      'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+  @override
+  String get migration_prompt_action => 'Download Fushi and migrate';
+  @override
+  String get migration_prompt_later => 'Later';
+  @override
+  String get migration_prompt_details => 'See details';
+  @override
+  String get migration_space_measuring =>
+      'Calculating how much space this needs...';
+  @override
+  String migration_space_summary(
+          {required Object required, required Object free}) =>
+      'Needs about ${required}, ${free} available';
+  @override
+  String migration_space_blocked({required Object shortfall}) =>
+      'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+  @override
+  String get migration_space_unknown =>
+      'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+  @override
+  String migration_space_tip_local_audio({required Object size}) =>
+      'Turning off local pronunciation audio would save ${size}.';
+  @override
+  String get migration_space_recheck => 'Re-check space';
+  @override
+  String get migration_target_resolve_failed =>
+      'Could not find the Fushi installer. Check your network and try again.';
+  @override
+  String get migration_install_incomplete =>
+      'Fushi is still not installed. Finish the system install prompt, then tap again.';
+  @override
+  String get migration_step_install => 'Install Fushi';
+  @override
+  String get migration_step_export => 'Export data';
+  @override
+  String get migration_step_import => 'Import in Fushi';
 }
 
 // Path: <root>
@@ -55082,6 +55353,47 @@ class _StringsJa extends _StringsEn {
   String get migration_reexport => 'Re-export';
   @override
   String get migration_batch_core_label => 'Settings, progress & statistics';
+  @override
+  String get migration_prompt_title => 'Hibiki is now Fushi';
+  @override
+  String get migration_prompt_body =>
+      'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+  @override
+  String get migration_prompt_action => 'Download Fushi and migrate';
+  @override
+  String get migration_prompt_later => 'Later';
+  @override
+  String get migration_prompt_details => 'See details';
+  @override
+  String get migration_space_measuring =>
+      'Calculating how much space this needs...';
+  @override
+  String migration_space_summary(
+          {required Object required, required Object free}) =>
+      'Needs about ${required}, ${free} available';
+  @override
+  String migration_space_blocked({required Object shortfall}) =>
+      'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+  @override
+  String get migration_space_unknown =>
+      'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+  @override
+  String migration_space_tip_local_audio({required Object size}) =>
+      'Turning off local pronunciation audio would save ${size}.';
+  @override
+  String get migration_space_recheck => 'Re-check space';
+  @override
+  String get migration_target_resolve_failed =>
+      'Could not find the Fushi installer. Check your network and try again.';
+  @override
+  String get migration_install_incomplete =>
+      'Fushi is still not installed. Finish the system install prompt, then tap again.';
+  @override
+  String get migration_step_install => 'Install Fushi';
+  @override
+  String get migration_step_export => 'Export data';
+  @override
+  String get migration_step_import => 'Import in Fushi';
 }
 
 // Path: <root>
@@ -62204,6 +62516,47 @@ class _StringsKo extends _StringsEn {
   String get migration_reexport => 'Re-export';
   @override
   String get migration_batch_core_label => 'Settings, progress & statistics';
+  @override
+  String get migration_prompt_title => 'Hibiki is now Fushi';
+  @override
+  String get migration_prompt_body =>
+      'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+  @override
+  String get migration_prompt_action => 'Download Fushi and migrate';
+  @override
+  String get migration_prompt_later => 'Later';
+  @override
+  String get migration_prompt_details => 'See details';
+  @override
+  String get migration_space_measuring =>
+      'Calculating how much space this needs...';
+  @override
+  String migration_space_summary(
+          {required Object required, required Object free}) =>
+      'Needs about ${required}, ${free} available';
+  @override
+  String migration_space_blocked({required Object shortfall}) =>
+      'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+  @override
+  String get migration_space_unknown =>
+      'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+  @override
+  String migration_space_tip_local_audio({required Object size}) =>
+      'Turning off local pronunciation audio would save ${size}.';
+  @override
+  String get migration_space_recheck => 'Re-check space';
+  @override
+  String get migration_target_resolve_failed =>
+      'Could not find the Fushi installer. Check your network and try again.';
+  @override
+  String get migration_install_incomplete =>
+      'Fushi is still not installed. Finish the system install prompt, then tap again.';
+  @override
+  String get migration_step_install => 'Install Fushi';
+  @override
+  String get migration_step_export => 'Export data';
+  @override
+  String get migration_step_import => 'Import in Fushi';
 }
 
 // Path: <root>
@@ -69485,6 +69838,47 @@ class _StringsNl extends _StringsEn {
   String get migration_reexport => 'Re-export';
   @override
   String get migration_batch_core_label => 'Settings, progress & statistics';
+  @override
+  String get migration_prompt_title => 'Hibiki is now Fushi';
+  @override
+  String get migration_prompt_body =>
+      'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+  @override
+  String get migration_prompt_action => 'Download Fushi and migrate';
+  @override
+  String get migration_prompt_later => 'Later';
+  @override
+  String get migration_prompt_details => 'See details';
+  @override
+  String get migration_space_measuring =>
+      'Calculating how much space this needs...';
+  @override
+  String migration_space_summary(
+          {required Object required, required Object free}) =>
+      'Needs about ${required}, ${free} available';
+  @override
+  String migration_space_blocked({required Object shortfall}) =>
+      'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+  @override
+  String get migration_space_unknown =>
+      'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+  @override
+  String migration_space_tip_local_audio({required Object size}) =>
+      'Turning off local pronunciation audio would save ${size}.';
+  @override
+  String get migration_space_recheck => 'Re-check space';
+  @override
+  String get migration_target_resolve_failed =>
+      'Could not find the Fushi installer. Check your network and try again.';
+  @override
+  String get migration_install_incomplete =>
+      'Fushi is still not installed. Finish the system install prompt, then tap again.';
+  @override
+  String get migration_step_install => 'Install Fushi';
+  @override
+  String get migration_step_export => 'Export data';
+  @override
+  String get migration_step_import => 'Import in Fushi';
 }
 
 // Path: <root>
@@ -76779,6 +77173,47 @@ class _StringsPtBr extends _StringsEn {
   String get migration_reexport => 'Re-export';
   @override
   String get migration_batch_core_label => 'Settings, progress & statistics';
+  @override
+  String get migration_prompt_title => 'Hibiki is now Fushi';
+  @override
+  String get migration_prompt_body =>
+      'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+  @override
+  String get migration_prompt_action => 'Download Fushi and migrate';
+  @override
+  String get migration_prompt_later => 'Later';
+  @override
+  String get migration_prompt_details => 'See details';
+  @override
+  String get migration_space_measuring =>
+      'Calculating how much space this needs...';
+  @override
+  String migration_space_summary(
+          {required Object required, required Object free}) =>
+      'Needs about ${required}, ${free} available';
+  @override
+  String migration_space_blocked({required Object shortfall}) =>
+      'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+  @override
+  String get migration_space_unknown =>
+      'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+  @override
+  String migration_space_tip_local_audio({required Object size}) =>
+      'Turning off local pronunciation audio would save ${size}.';
+  @override
+  String get migration_space_recheck => 'Re-check space';
+  @override
+  String get migration_target_resolve_failed =>
+      'Could not find the Fushi installer. Check your network and try again.';
+  @override
+  String get migration_install_incomplete =>
+      'Fushi is still not installed. Finish the system install prompt, then tap again.';
+  @override
+  String get migration_step_install => 'Install Fushi';
+  @override
+  String get migration_step_export => 'Export data';
+  @override
+  String get migration_step_import => 'Import in Fushi';
 }
 
 // Path: <root>
@@ -84057,6 +84492,47 @@ class _StringsRu extends _StringsEn {
   String get migration_reexport => 'Re-export';
   @override
   String get migration_batch_core_label => 'Settings, progress & statistics';
+  @override
+  String get migration_prompt_title => 'Hibiki is now Fushi';
+  @override
+  String get migration_prompt_body =>
+      'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+  @override
+  String get migration_prompt_action => 'Download Fushi and migrate';
+  @override
+  String get migration_prompt_later => 'Later';
+  @override
+  String get migration_prompt_details => 'See details';
+  @override
+  String get migration_space_measuring =>
+      'Calculating how much space this needs...';
+  @override
+  String migration_space_summary(
+          {required Object required, required Object free}) =>
+      'Needs about ${required}, ${free} available';
+  @override
+  String migration_space_blocked({required Object shortfall}) =>
+      'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+  @override
+  String get migration_space_unknown =>
+      'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+  @override
+  String migration_space_tip_local_audio({required Object size}) =>
+      'Turning off local pronunciation audio would save ${size}.';
+  @override
+  String get migration_space_recheck => 'Re-check space';
+  @override
+  String get migration_target_resolve_failed =>
+      'Could not find the Fushi installer. Check your network and try again.';
+  @override
+  String get migration_install_incomplete =>
+      'Fushi is still not installed. Finish the system install prompt, then tap again.';
+  @override
+  String get migration_step_install => 'Install Fushi';
+  @override
+  String get migration_step_export => 'Export data';
+  @override
+  String get migration_step_import => 'Import in Fushi';
 }
 
 // Path: <root>
@@ -91283,6 +91759,47 @@ class _StringsTh extends _StringsEn {
   String get migration_reexport => 'Re-export';
   @override
   String get migration_batch_core_label => 'Settings, progress & statistics';
+  @override
+  String get migration_prompt_title => 'Hibiki is now Fushi';
+  @override
+  String get migration_prompt_body =>
+      'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+  @override
+  String get migration_prompt_action => 'Download Fushi and migrate';
+  @override
+  String get migration_prompt_later => 'Later';
+  @override
+  String get migration_prompt_details => 'See details';
+  @override
+  String get migration_space_measuring =>
+      'Calculating how much space this needs...';
+  @override
+  String migration_space_summary(
+          {required Object required, required Object free}) =>
+      'Needs about ${required}, ${free} available';
+  @override
+  String migration_space_blocked({required Object shortfall}) =>
+      'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+  @override
+  String get migration_space_unknown =>
+      'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+  @override
+  String migration_space_tip_local_audio({required Object size}) =>
+      'Turning off local pronunciation audio would save ${size}.';
+  @override
+  String get migration_space_recheck => 'Re-check space';
+  @override
+  String get migration_target_resolve_failed =>
+      'Could not find the Fushi installer. Check your network and try again.';
+  @override
+  String get migration_install_incomplete =>
+      'Fushi is still not installed. Finish the system install prompt, then tap again.';
+  @override
+  String get migration_step_install => 'Install Fushi';
+  @override
+  String get migration_step_export => 'Export data';
+  @override
+  String get migration_step_import => 'Import in Fushi';
 }
 
 // Path: <root>
@@ -98541,6 +99058,47 @@ class _StringsTr extends _StringsEn {
   String get migration_reexport => 'Re-export';
   @override
   String get migration_batch_core_label => 'Settings, progress & statistics';
+  @override
+  String get migration_prompt_title => 'Hibiki is now Fushi';
+  @override
+  String get migration_prompt_body =>
+      'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+  @override
+  String get migration_prompt_action => 'Download Fushi and migrate';
+  @override
+  String get migration_prompt_later => 'Later';
+  @override
+  String get migration_prompt_details => 'See details';
+  @override
+  String get migration_space_measuring =>
+      'Calculating how much space this needs...';
+  @override
+  String migration_space_summary(
+          {required Object required, required Object free}) =>
+      'Needs about ${required}, ${free} available';
+  @override
+  String migration_space_blocked({required Object shortfall}) =>
+      'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+  @override
+  String get migration_space_unknown =>
+      'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+  @override
+  String migration_space_tip_local_audio({required Object size}) =>
+      'Turning off local pronunciation audio would save ${size}.';
+  @override
+  String get migration_space_recheck => 'Re-check space';
+  @override
+  String get migration_target_resolve_failed =>
+      'Could not find the Fushi installer. Check your network and try again.';
+  @override
+  String get migration_install_incomplete =>
+      'Fushi is still not installed. Finish the system install prompt, then tap again.';
+  @override
+  String get migration_step_install => 'Install Fushi';
+  @override
+  String get migration_step_export => 'Export data';
+  @override
+  String get migration_step_import => 'Import in Fushi';
 }
 
 // Path: <root>
@@ -105784,6 +106342,47 @@ class _StringsVi extends _StringsEn {
   String get migration_reexport => 'Re-export';
   @override
   String get migration_batch_core_label => 'Settings, progress & statistics';
+  @override
+  String get migration_prompt_title => 'Hibiki is now Fushi';
+  @override
+  String get migration_prompt_body =>
+      'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+  @override
+  String get migration_prompt_action => 'Download Fushi and migrate';
+  @override
+  String get migration_prompt_later => 'Later';
+  @override
+  String get migration_prompt_details => 'See details';
+  @override
+  String get migration_space_measuring =>
+      'Calculating how much space this needs...';
+  @override
+  String migration_space_summary(
+          {required Object required, required Object free}) =>
+      'Needs about ${required}, ${free} available';
+  @override
+  String migration_space_blocked({required Object shortfall}) =>
+      'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+  @override
+  String get migration_space_unknown =>
+      'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+  @override
+  String migration_space_tip_local_audio({required Object size}) =>
+      'Turning off local pronunciation audio would save ${size}.';
+  @override
+  String get migration_space_recheck => 'Re-check space';
+  @override
+  String get migration_target_resolve_failed =>
+      'Could not find the Fushi installer. Check your network and try again.';
+  @override
+  String get migration_install_incomplete =>
+      'Fushi is still not installed. Finish the system install prompt, then tap again.';
+  @override
+  String get migration_step_install => 'Install Fushi';
+  @override
+  String get migration_step_export => 'Export data';
+  @override
+  String get migration_step_import => 'Import in Fushi';
 }
 
 // Path: <root>
@@ -112517,6 +113116,43 @@ class _StringsZhCn extends _StringsEn {
   String get migration_reexport => '重新导出';
   @override
   String get migration_batch_core_label => '设置、进度与统计';
+  @override
+  String get migration_prompt_title => 'Hibiki 已更名为 Fushi';
+  @override
+  String get migration_prompt_body =>
+      '本应用已更名为 Fushi 并换用新的包名，无法原地升级。点下方按钮即可自动下载 Fushi 并把书籍、词典、进度和统计全部搬过去。';
+  @override
+  String get migration_prompt_action => '下载 Fushi 并迁移';
+  @override
+  String get migration_prompt_later => '稍后';
+  @override
+  String get migration_prompt_details => '查看详情';
+  @override
+  String get migration_space_measuring => '正在计算迁移需要的空间…';
+  @override
+  String migration_space_summary(
+          {required Object required, required Object free}) =>
+      '预计需要 ${required}，当前可用 ${free}';
+  @override
+  String migration_space_blocked({required Object shortfall}) =>
+      '存储空间不足，还差 ${shortfall}。迁移要把数据复制一份到中转目录，所以需要双倍空间。请清理后重试。';
+  @override
+  String get migration_space_unknown => '读不到本机可用存储空间。为避免迁移导到一半失败，已阻止开始。';
+  @override
+  String migration_space_tip_local_audio({required Object size}) =>
+      '关闭「一并导出本地发音库」可少占 ${size}。';
+  @override
+  String get migration_space_recheck => '重新检测空间';
+  @override
+  String get migration_target_resolve_failed => '没找到 Fushi 安装包。请检查网络后重试。';
+  @override
+  String get migration_install_incomplete => 'Fushi 仍未安装完成。请先完成系统安装提示，然后再点一次。';
+  @override
+  String get migration_step_install => '安装 Fushi';
+  @override
+  String get migration_step_export => '导出数据';
+  @override
+  String get migration_step_import => '在 Fushi 中导入';
 }
 
 // Path: <root>
@@ -119557,6 +120193,47 @@ class _StringsZhHk extends _StringsEn {
   String get migration_reexport => 'Re-export';
   @override
   String get migration_batch_core_label => 'Settings, progress & statistics';
+  @override
+  String get migration_prompt_title => 'Hibiki is now Fushi';
+  @override
+  String get migration_prompt_body =>
+      'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+  @override
+  String get migration_prompt_action => 'Download Fushi and migrate';
+  @override
+  String get migration_prompt_later => 'Later';
+  @override
+  String get migration_prompt_details => 'See details';
+  @override
+  String get migration_space_measuring =>
+      'Calculating how much space this needs...';
+  @override
+  String migration_space_summary(
+          {required Object required, required Object free}) =>
+      'Needs about ${required}, ${free} available';
+  @override
+  String migration_space_blocked({required Object shortfall}) =>
+      'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+  @override
+  String get migration_space_unknown =>
+      'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+  @override
+  String migration_space_tip_local_audio({required Object size}) =>
+      'Turning off local pronunciation audio would save ${size}.';
+  @override
+  String get migration_space_recheck => 'Re-check space';
+  @override
+  String get migration_target_resolve_failed =>
+      'Could not find the Fushi installer. Check your network and try again.';
+  @override
+  String get migration_install_incomplete =>
+      'Fushi is still not installed. Finish the system install prompt, then tap again.';
+  @override
+  String get migration_step_install => 'Install Fushi';
+  @override
+  String get migration_step_export => 'Export data';
+  @override
+  String get migration_step_import => 'Import in Fushi';
 }
 
 /// Flat map(s) containing all translations.
@@ -126010,6 +126687,41 @@ extension on _StringsEn {
         return 'Re-export';
       case 'migration_batch_core_label':
         return 'Settings, progress & statistics';
+      case 'migration_prompt_title':
+        return 'Hibiki is now Fushi';
+      case 'migration_prompt_body':
+        return 'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+      case 'migration_prompt_action':
+        return 'Download Fushi and migrate';
+      case 'migration_prompt_later':
+        return 'Later';
+      case 'migration_prompt_details':
+        return 'See details';
+      case 'migration_space_measuring':
+        return 'Calculating how much space this needs...';
+      case 'migration_space_summary':
+        return ({required Object required, required Object free}) =>
+            'Needs about ${required}, ${free} available';
+      case 'migration_space_blocked':
+        return ({required Object shortfall}) =>
+            'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+      case 'migration_space_unknown':
+        return 'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+      case 'migration_space_tip_local_audio':
+        return ({required Object size}) =>
+            'Turning off local pronunciation audio would save ${size}.';
+      case 'migration_space_recheck':
+        return 'Re-check space';
+      case 'migration_target_resolve_failed':
+        return 'Could not find the Fushi installer. Check your network and try again.';
+      case 'migration_install_incomplete':
+        return 'Fushi is still not installed. Finish the system install prompt, then tap again.';
+      case 'migration_step_install':
+        return 'Install Fushi';
+      case 'migration_step_export':
+        return 'Export data';
+      case 'migration_step_import':
+        return 'Import in Fushi';
       default:
         return null;
     }
@@ -132461,6 +133173,41 @@ extension on _StringsAr {
         return 'Re-export';
       case 'migration_batch_core_label':
         return 'Settings, progress & statistics';
+      case 'migration_prompt_title':
+        return 'Hibiki is now Fushi';
+      case 'migration_prompt_body':
+        return 'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+      case 'migration_prompt_action':
+        return 'Download Fushi and migrate';
+      case 'migration_prompt_later':
+        return 'Later';
+      case 'migration_prompt_details':
+        return 'See details';
+      case 'migration_space_measuring':
+        return 'Calculating how much space this needs...';
+      case 'migration_space_summary':
+        return ({required Object required, required Object free}) =>
+            'Needs about ${required}, ${free} available';
+      case 'migration_space_blocked':
+        return ({required Object shortfall}) =>
+            'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+      case 'migration_space_unknown':
+        return 'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+      case 'migration_space_tip_local_audio':
+        return ({required Object size}) =>
+            'Turning off local pronunciation audio would save ${size}.';
+      case 'migration_space_recheck':
+        return 'Re-check space';
+      case 'migration_target_resolve_failed':
+        return 'Could not find the Fushi installer. Check your network and try again.';
+      case 'migration_install_incomplete':
+        return 'Fushi is still not installed. Finish the system install prompt, then tap again.';
+      case 'migration_step_install':
+        return 'Install Fushi';
+      case 'migration_step_export':
+        return 'Export data';
+      case 'migration_step_import':
+        return 'Import in Fushi';
       default:
         return null;
     }
@@ -138934,6 +139681,41 @@ extension on _StringsDe {
         return 'Re-export';
       case 'migration_batch_core_label':
         return 'Settings, progress & statistics';
+      case 'migration_prompt_title':
+        return 'Hibiki is now Fushi';
+      case 'migration_prompt_body':
+        return 'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+      case 'migration_prompt_action':
+        return 'Download Fushi and migrate';
+      case 'migration_prompt_later':
+        return 'Later';
+      case 'migration_prompt_details':
+        return 'See details';
+      case 'migration_space_measuring':
+        return 'Calculating how much space this needs...';
+      case 'migration_space_summary':
+        return ({required Object required, required Object free}) =>
+            'Needs about ${required}, ${free} available';
+      case 'migration_space_blocked':
+        return ({required Object shortfall}) =>
+            'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+      case 'migration_space_unknown':
+        return 'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+      case 'migration_space_tip_local_audio':
+        return ({required Object size}) =>
+            'Turning off local pronunciation audio would save ${size}.';
+      case 'migration_space_recheck':
+        return 'Re-check space';
+      case 'migration_target_resolve_failed':
+        return 'Could not find the Fushi installer. Check your network and try again.';
+      case 'migration_install_incomplete':
+        return 'Fushi is still not installed. Finish the system install prompt, then tap again.';
+      case 'migration_step_install':
+        return 'Install Fushi';
+      case 'migration_step_export':
+        return 'Export data';
+      case 'migration_step_import':
+        return 'Import in Fushi';
       default:
         return null;
     }
@@ -145406,6 +146188,41 @@ extension on _StringsEs {
         return 'Re-export';
       case 'migration_batch_core_label':
         return 'Settings, progress & statistics';
+      case 'migration_prompt_title':
+        return 'Hibiki is now Fushi';
+      case 'migration_prompt_body':
+        return 'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+      case 'migration_prompt_action':
+        return 'Download Fushi and migrate';
+      case 'migration_prompt_later':
+        return 'Later';
+      case 'migration_prompt_details':
+        return 'See details';
+      case 'migration_space_measuring':
+        return 'Calculating how much space this needs...';
+      case 'migration_space_summary':
+        return ({required Object required, required Object free}) =>
+            'Needs about ${required}, ${free} available';
+      case 'migration_space_blocked':
+        return ({required Object shortfall}) =>
+            'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+      case 'migration_space_unknown':
+        return 'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+      case 'migration_space_tip_local_audio':
+        return ({required Object size}) =>
+            'Turning off local pronunciation audio would save ${size}.';
+      case 'migration_space_recheck':
+        return 'Re-check space';
+      case 'migration_target_resolve_failed':
+        return 'Could not find the Fushi installer. Check your network and try again.';
+      case 'migration_install_incomplete':
+        return 'Fushi is still not installed. Finish the system install prompt, then tap again.';
+      case 'migration_step_install':
+        return 'Install Fushi';
+      case 'migration_step_export':
+        return 'Export data';
+      case 'migration_step_import':
+        return 'Import in Fushi';
       default:
         return null;
     }
@@ -151884,6 +152701,41 @@ extension on _StringsFr {
         return 'Re-export';
       case 'migration_batch_core_label':
         return 'Settings, progress & statistics';
+      case 'migration_prompt_title':
+        return 'Hibiki is now Fushi';
+      case 'migration_prompt_body':
+        return 'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+      case 'migration_prompt_action':
+        return 'Download Fushi and migrate';
+      case 'migration_prompt_later':
+        return 'Later';
+      case 'migration_prompt_details':
+        return 'See details';
+      case 'migration_space_measuring':
+        return 'Calculating how much space this needs...';
+      case 'migration_space_summary':
+        return ({required Object required, required Object free}) =>
+            'Needs about ${required}, ${free} available';
+      case 'migration_space_blocked':
+        return ({required Object shortfall}) =>
+            'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+      case 'migration_space_unknown':
+        return 'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+      case 'migration_space_tip_local_audio':
+        return ({required Object size}) =>
+            'Turning off local pronunciation audio would save ${size}.';
+      case 'migration_space_recheck':
+        return 'Re-check space';
+      case 'migration_target_resolve_failed':
+        return 'Could not find the Fushi installer. Check your network and try again.';
+      case 'migration_install_incomplete':
+        return 'Fushi is still not installed. Finish the system install prompt, then tap again.';
+      case 'migration_step_install':
+        return 'Install Fushi';
+      case 'migration_step_export':
+        return 'Export data';
+      case 'migration_step_import':
+        return 'Import in Fushi';
       default:
         return null;
     }
@@ -158344,6 +159196,41 @@ extension on _StringsId {
         return 'Re-export';
       case 'migration_batch_core_label':
         return 'Settings, progress & statistics';
+      case 'migration_prompt_title':
+        return 'Hibiki is now Fushi';
+      case 'migration_prompt_body':
+        return 'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+      case 'migration_prompt_action':
+        return 'Download Fushi and migrate';
+      case 'migration_prompt_later':
+        return 'Later';
+      case 'migration_prompt_details':
+        return 'See details';
+      case 'migration_space_measuring':
+        return 'Calculating how much space this needs...';
+      case 'migration_space_summary':
+        return ({required Object required, required Object free}) =>
+            'Needs about ${required}, ${free} available';
+      case 'migration_space_blocked':
+        return ({required Object shortfall}) =>
+            'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+      case 'migration_space_unknown':
+        return 'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+      case 'migration_space_tip_local_audio':
+        return ({required Object size}) =>
+            'Turning off local pronunciation audio would save ${size}.';
+      case 'migration_space_recheck':
+        return 'Re-check space';
+      case 'migration_target_resolve_failed':
+        return 'Could not find the Fushi installer. Check your network and try again.';
+      case 'migration_install_incomplete':
+        return 'Fushi is still not installed. Finish the system install prompt, then tap again.';
+      case 'migration_step_install':
+        return 'Install Fushi';
+      case 'migration_step_export':
+        return 'Export data';
+      case 'migration_step_import':
+        return 'Import in Fushi';
       default:
         return null;
     }
@@ -164818,6 +165705,41 @@ extension on _StringsIt {
         return 'Re-export';
       case 'migration_batch_core_label':
         return 'Settings, progress & statistics';
+      case 'migration_prompt_title':
+        return 'Hibiki is now Fushi';
+      case 'migration_prompt_body':
+        return 'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+      case 'migration_prompt_action':
+        return 'Download Fushi and migrate';
+      case 'migration_prompt_later':
+        return 'Later';
+      case 'migration_prompt_details':
+        return 'See details';
+      case 'migration_space_measuring':
+        return 'Calculating how much space this needs...';
+      case 'migration_space_summary':
+        return ({required Object required, required Object free}) =>
+            'Needs about ${required}, ${free} available';
+      case 'migration_space_blocked':
+        return ({required Object shortfall}) =>
+            'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+      case 'migration_space_unknown':
+        return 'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+      case 'migration_space_tip_local_audio':
+        return ({required Object size}) =>
+            'Turning off local pronunciation audio would save ${size}.';
+      case 'migration_space_recheck':
+        return 'Re-check space';
+      case 'migration_target_resolve_failed':
+        return 'Could not find the Fushi installer. Check your network and try again.';
+      case 'migration_install_incomplete':
+        return 'Fushi is still not installed. Finish the system install prompt, then tap again.';
+      case 'migration_step_install':
+        return 'Install Fushi';
+      case 'migration_step_export':
+        return 'Export data';
+      case 'migration_step_import':
+        return 'Import in Fushi';
       default:
         return null;
     }
@@ -171254,6 +172176,41 @@ extension on _StringsJa {
         return 'Re-export';
       case 'migration_batch_core_label':
         return 'Settings, progress & statistics';
+      case 'migration_prompt_title':
+        return 'Hibiki is now Fushi';
+      case 'migration_prompt_body':
+        return 'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+      case 'migration_prompt_action':
+        return 'Download Fushi and migrate';
+      case 'migration_prompt_later':
+        return 'Later';
+      case 'migration_prompt_details':
+        return 'See details';
+      case 'migration_space_measuring':
+        return 'Calculating how much space this needs...';
+      case 'migration_space_summary':
+        return ({required Object required, required Object free}) =>
+            'Needs about ${required}, ${free} available';
+      case 'migration_space_blocked':
+        return ({required Object shortfall}) =>
+            'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+      case 'migration_space_unknown':
+        return 'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+      case 'migration_space_tip_local_audio':
+        return ({required Object size}) =>
+            'Turning off local pronunciation audio would save ${size}.';
+      case 'migration_space_recheck':
+        return 'Re-check space';
+      case 'migration_target_resolve_failed':
+        return 'Could not find the Fushi installer. Check your network and try again.';
+      case 'migration_install_incomplete':
+        return 'Fushi is still not installed. Finish the system install prompt, then tap again.';
+      case 'migration_step_install':
+        return 'Install Fushi';
+      case 'migration_step_export':
+        return 'Export data';
+      case 'migration_step_import':
+        return 'Import in Fushi';
       default:
         return null;
     }
@@ -177694,6 +178651,41 @@ extension on _StringsKo {
         return 'Re-export';
       case 'migration_batch_core_label':
         return 'Settings, progress & statistics';
+      case 'migration_prompt_title':
+        return 'Hibiki is now Fushi';
+      case 'migration_prompt_body':
+        return 'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+      case 'migration_prompt_action':
+        return 'Download Fushi and migrate';
+      case 'migration_prompt_later':
+        return 'Later';
+      case 'migration_prompt_details':
+        return 'See details';
+      case 'migration_space_measuring':
+        return 'Calculating how much space this needs...';
+      case 'migration_space_summary':
+        return ({required Object required, required Object free}) =>
+            'Needs about ${required}, ${free} available';
+      case 'migration_space_blocked':
+        return ({required Object shortfall}) =>
+            'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+      case 'migration_space_unknown':
+        return 'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+      case 'migration_space_tip_local_audio':
+        return ({required Object size}) =>
+            'Turning off local pronunciation audio would save ${size}.';
+      case 'migration_space_recheck':
+        return 'Re-check space';
+      case 'migration_target_resolve_failed':
+        return 'Could not find the Fushi installer. Check your network and try again.';
+      case 'migration_install_incomplete':
+        return 'Fushi is still not installed. Finish the system install prompt, then tap again.';
+      case 'migration_step_install':
+        return 'Install Fushi';
+      case 'migration_step_export':
+        return 'Export data';
+      case 'migration_step_import':
+        return 'Import in Fushi';
       default:
         return null;
     }
@@ -184162,6 +185154,41 @@ extension on _StringsNl {
         return 'Re-export';
       case 'migration_batch_core_label':
         return 'Settings, progress & statistics';
+      case 'migration_prompt_title':
+        return 'Hibiki is now Fushi';
+      case 'migration_prompt_body':
+        return 'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+      case 'migration_prompt_action':
+        return 'Download Fushi and migrate';
+      case 'migration_prompt_later':
+        return 'Later';
+      case 'migration_prompt_details':
+        return 'See details';
+      case 'migration_space_measuring':
+        return 'Calculating how much space this needs...';
+      case 'migration_space_summary':
+        return ({required Object required, required Object free}) =>
+            'Needs about ${required}, ${free} available';
+      case 'migration_space_blocked':
+        return ({required Object shortfall}) =>
+            'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+      case 'migration_space_unknown':
+        return 'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+      case 'migration_space_tip_local_audio':
+        return ({required Object size}) =>
+            'Turning off local pronunciation audio would save ${size}.';
+      case 'migration_space_recheck':
+        return 'Re-check space';
+      case 'migration_target_resolve_failed':
+        return 'Could not find the Fushi installer. Check your network and try again.';
+      case 'migration_install_incomplete':
+        return 'Fushi is still not installed. Finish the system install prompt, then tap again.';
+      case 'migration_step_install':
+        return 'Install Fushi';
+      case 'migration_step_export':
+        return 'Export data';
+      case 'migration_step_import':
+        return 'Import in Fushi';
       default:
         return null;
     }
@@ -190627,6 +191654,41 @@ extension on _StringsPtBr {
         return 'Re-export';
       case 'migration_batch_core_label':
         return 'Settings, progress & statistics';
+      case 'migration_prompt_title':
+        return 'Hibiki is now Fushi';
+      case 'migration_prompt_body':
+        return 'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+      case 'migration_prompt_action':
+        return 'Download Fushi and migrate';
+      case 'migration_prompt_later':
+        return 'Later';
+      case 'migration_prompt_details':
+        return 'See details';
+      case 'migration_space_measuring':
+        return 'Calculating how much space this needs...';
+      case 'migration_space_summary':
+        return ({required Object required, required Object free}) =>
+            'Needs about ${required}, ${free} available';
+      case 'migration_space_blocked':
+        return ({required Object shortfall}) =>
+            'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+      case 'migration_space_unknown':
+        return 'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+      case 'migration_space_tip_local_audio':
+        return ({required Object size}) =>
+            'Turning off local pronunciation audio would save ${size}.';
+      case 'migration_space_recheck':
+        return 'Re-check space';
+      case 'migration_target_resolve_failed':
+        return 'Could not find the Fushi installer. Check your network and try again.';
+      case 'migration_install_incomplete':
+        return 'Fushi is still not installed. Finish the system install prompt, then tap again.';
+      case 'migration_step_install':
+        return 'Install Fushi';
+      case 'migration_step_export':
+        return 'Export data';
+      case 'migration_step_import':
+        return 'Import in Fushi';
       default:
         return null;
     }
@@ -197097,6 +198159,41 @@ extension on _StringsRu {
         return 'Re-export';
       case 'migration_batch_core_label':
         return 'Settings, progress & statistics';
+      case 'migration_prompt_title':
+        return 'Hibiki is now Fushi';
+      case 'migration_prompt_body':
+        return 'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+      case 'migration_prompt_action':
+        return 'Download Fushi and migrate';
+      case 'migration_prompt_later':
+        return 'Later';
+      case 'migration_prompt_details':
+        return 'See details';
+      case 'migration_space_measuring':
+        return 'Calculating how much space this needs...';
+      case 'migration_space_summary':
+        return ({required Object required, required Object free}) =>
+            'Needs about ${required}, ${free} available';
+      case 'migration_space_blocked':
+        return ({required Object shortfall}) =>
+            'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+      case 'migration_space_unknown':
+        return 'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+      case 'migration_space_tip_local_audio':
+        return ({required Object size}) =>
+            'Turning off local pronunciation audio would save ${size}.';
+      case 'migration_space_recheck':
+        return 'Re-check space';
+      case 'migration_target_resolve_failed':
+        return 'Could not find the Fushi installer. Check your network and try again.';
+      case 'migration_install_incomplete':
+        return 'Fushi is still not installed. Finish the system install prompt, then tap again.';
+      case 'migration_step_install':
+        return 'Install Fushi';
+      case 'migration_step_export':
+        return 'Export data';
+      case 'migration_step_import':
+        return 'Import in Fushi';
       default:
         return null;
     }
@@ -203550,6 +204647,41 @@ extension on _StringsTh {
         return 'Re-export';
       case 'migration_batch_core_label':
         return 'Settings, progress & statistics';
+      case 'migration_prompt_title':
+        return 'Hibiki is now Fushi';
+      case 'migration_prompt_body':
+        return 'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+      case 'migration_prompt_action':
+        return 'Download Fushi and migrate';
+      case 'migration_prompt_later':
+        return 'Later';
+      case 'migration_prompt_details':
+        return 'See details';
+      case 'migration_space_measuring':
+        return 'Calculating how much space this needs...';
+      case 'migration_space_summary':
+        return ({required Object required, required Object free}) =>
+            'Needs about ${required}, ${free} available';
+      case 'migration_space_blocked':
+        return ({required Object shortfall}) =>
+            'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+      case 'migration_space_unknown':
+        return 'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+      case 'migration_space_tip_local_audio':
+        return ({required Object size}) =>
+            'Turning off local pronunciation audio would save ${size}.';
+      case 'migration_space_recheck':
+        return 'Re-check space';
+      case 'migration_target_resolve_failed':
+        return 'Could not find the Fushi installer. Check your network and try again.';
+      case 'migration_install_incomplete':
+        return 'Fushi is still not installed. Finish the system install prompt, then tap again.';
+      case 'migration_step_install':
+        return 'Install Fushi';
+      case 'migration_step_export':
+        return 'Export data';
+      case 'migration_step_import':
+        return 'Import in Fushi';
       default:
         return null;
     }
@@ -210012,6 +211144,41 @@ extension on _StringsTr {
         return 'Re-export';
       case 'migration_batch_core_label':
         return 'Settings, progress & statistics';
+      case 'migration_prompt_title':
+        return 'Hibiki is now Fushi';
+      case 'migration_prompt_body':
+        return 'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+      case 'migration_prompt_action':
+        return 'Download Fushi and migrate';
+      case 'migration_prompt_later':
+        return 'Later';
+      case 'migration_prompt_details':
+        return 'See details';
+      case 'migration_space_measuring':
+        return 'Calculating how much space this needs...';
+      case 'migration_space_summary':
+        return ({required Object required, required Object free}) =>
+            'Needs about ${required}, ${free} available';
+      case 'migration_space_blocked':
+        return ({required Object shortfall}) =>
+            'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+      case 'migration_space_unknown':
+        return 'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+      case 'migration_space_tip_local_audio':
+        return ({required Object size}) =>
+            'Turning off local pronunciation audio would save ${size}.';
+      case 'migration_space_recheck':
+        return 'Re-check space';
+      case 'migration_target_resolve_failed':
+        return 'Could not find the Fushi installer. Check your network and try again.';
+      case 'migration_install_incomplete':
+        return 'Fushi is still not installed. Finish the system install prompt, then tap again.';
+      case 'migration_step_install':
+        return 'Install Fushi';
+      case 'migration_step_export':
+        return 'Export data';
+      case 'migration_step_import':
+        return 'Import in Fushi';
       default:
         return null;
     }
@@ -216470,6 +217637,41 @@ extension on _StringsVi {
         return 'Re-export';
       case 'migration_batch_core_label':
         return 'Settings, progress & statistics';
+      case 'migration_prompt_title':
+        return 'Hibiki is now Fushi';
+      case 'migration_prompt_body':
+        return 'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+      case 'migration_prompt_action':
+        return 'Download Fushi and migrate';
+      case 'migration_prompt_later':
+        return 'Later';
+      case 'migration_prompt_details':
+        return 'See details';
+      case 'migration_space_measuring':
+        return 'Calculating how much space this needs...';
+      case 'migration_space_summary':
+        return ({required Object required, required Object free}) =>
+            'Needs about ${required}, ${free} available';
+      case 'migration_space_blocked':
+        return ({required Object shortfall}) =>
+            'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+      case 'migration_space_unknown':
+        return 'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+      case 'migration_space_tip_local_audio':
+        return ({required Object size}) =>
+            'Turning off local pronunciation audio would save ${size}.';
+      case 'migration_space_recheck':
+        return 'Re-check space';
+      case 'migration_target_resolve_failed':
+        return 'Could not find the Fushi installer. Check your network and try again.';
+      case 'migration_install_incomplete':
+        return 'Fushi is still not installed. Finish the system install prompt, then tap again.';
+      case 'migration_step_install':
+        return 'Install Fushi';
+      case 'migration_step_export':
+        return 'Export data';
+      case 'migration_step_import':
+        return 'Import in Fushi';
       default:
         return null;
     }
@@ -222873,6 +224075,40 @@ extension on _StringsZhCn {
         return '重新导出';
       case 'migration_batch_core_label':
         return '设置、进度与统计';
+      case 'migration_prompt_title':
+        return 'Hibiki 已更名为 Fushi';
+      case 'migration_prompt_body':
+        return '本应用已更名为 Fushi 并换用新的包名，无法原地升级。点下方按钮即可自动下载 Fushi 并把书籍、词典、进度和统计全部搬过去。';
+      case 'migration_prompt_action':
+        return '下载 Fushi 并迁移';
+      case 'migration_prompt_later':
+        return '稍后';
+      case 'migration_prompt_details':
+        return '查看详情';
+      case 'migration_space_measuring':
+        return '正在计算迁移需要的空间…';
+      case 'migration_space_summary':
+        return ({required Object required, required Object free}) =>
+            '预计需要 ${required}，当前可用 ${free}';
+      case 'migration_space_blocked':
+        return ({required Object shortfall}) =>
+            '存储空间不足，还差 ${shortfall}。迁移要把数据复制一份到中转目录，所以需要双倍空间。请清理后重试。';
+      case 'migration_space_unknown':
+        return '读不到本机可用存储空间。为避免迁移导到一半失败，已阻止开始。';
+      case 'migration_space_tip_local_audio':
+        return ({required Object size}) => '关闭「一并导出本地发音库」可少占 ${size}。';
+      case 'migration_space_recheck':
+        return '重新检测空间';
+      case 'migration_target_resolve_failed':
+        return '没找到 Fushi 安装包。请检查网络后重试。';
+      case 'migration_install_incomplete':
+        return 'Fushi 仍未安装完成。请先完成系统安装提示，然后再点一次。';
+      case 'migration_step_install':
+        return '安装 Fushi';
+      case 'migration_step_export':
+        return '导出数据';
+      case 'migration_step_import':
+        return '在 Fushi 中导入';
       default:
         return null;
     }
@@ -229304,6 +230540,41 @@ extension on _StringsZhHk {
         return 'Re-export';
       case 'migration_batch_core_label':
         return 'Settings, progress & statistics';
+      case 'migration_prompt_title':
+        return 'Hibiki is now Fushi';
+      case 'migration_prompt_body':
+        return 'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+      case 'migration_prompt_action':
+        return 'Download Fushi and migrate';
+      case 'migration_prompt_later':
+        return 'Later';
+      case 'migration_prompt_details':
+        return 'See details';
+      case 'migration_space_measuring':
+        return 'Calculating how much space this needs...';
+      case 'migration_space_summary':
+        return ({required Object required, required Object free}) =>
+            'Needs about ${required}, ${free} available';
+      case 'migration_space_blocked':
+        return ({required Object shortfall}) =>
+            'Not enough storage: ${shortfall} short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.';
+      case 'migration_space_unknown':
+        return 'Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.';
+      case 'migration_space_tip_local_audio':
+        return ({required Object size}) =>
+            'Turning off local pronunciation audio would save ${size}.';
+      case 'migration_space_recheck':
+        return 'Re-check space';
+      case 'migration_target_resolve_failed':
+        return 'Could not find the Fushi installer. Check your network and try again.';
+      case 'migration_install_incomplete':
+        return 'Fushi is still not installed. Finish the system install prompt, then tap again.';
+      case 'migration_step_install':
+        return 'Install Fushi';
+      case 'migration_step_export':
+        return 'Export data';
+      case 'migration_step_import':
+        return 'Import in Fushi';
       default:
         return null;
     }

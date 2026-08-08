@@ -10,8 +10,10 @@
 library;
 
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:hibiki/src/migration/migration_exporter.dart';
+import 'package:path/path.dart' as p;
 
 /// 压缩留量系数。
 ///
@@ -128,51 +130,93 @@ int measureDirectoryBytes(Directory dir) {
   return total;
 }
 
-/// 各批内容树的根目录（[MigrationBatch.core] 无文件树）。
+/// 本地发音库文件名规则。
 ///
-/// 与 `MigrationPage` 构造 `BackupService` 时用的根**必须同源**，否则估的和导的
-/// 不是同一批字节。
-class MigrationContentRoots {
-  const MigrationContentRoots({
-    required this.databaseFile,
-    required this.dictionaryResourceDirectory,
-    required this.booksRootDirectory,
-    required this.audiobooksRootDirectory,
-    required this.fontsRootDirectory,
-    required this.localAudioRootDirectory,
-  });
+/// 与 `BackupService._collectLocalAudioFiles` **同规则**：`local_audio_*.db` 及其
+/// `-wal`/`-shm` 兄弟文件，只扫 DB 目录**一层**（非递归）。主库 `hibiki.db` 和其它
+/// 支持文件不在此列——估算必须与导出打包的是同一批字节，否则闸门是假的。
+final RegExp kLocalAudioFileNamePattern =
+    RegExp(r'^local_audio_.*\.db(-wal|-shm)?$');
 
-  final File databaseFile;
-  final Directory dictionaryResourceDirectory;
-  final Directory booksRootDirectory;
-  final Directory audiobooksRootDirectory;
-  final Directory fontsRootDirectory;
-  final Directory localAudioRootDirectory;
-
-  Directory? rootForBatch(MigrationBatch batch) => switch (batch) {
-        MigrationBatch.core => null,
-        MigrationBatch.dictionaries => dictionaryResourceDirectory,
-        MigrationBatch.books => booksRootDirectory,
-        MigrationBatch.audiobooks => audiobooksRootDirectory,
-        MigrationBatch.fonts => fontsRootDirectory,
-        MigrationBatch.localAudio => localAudioRootDirectory,
-      };
+/// 本地发音库占用：DB 目录一层里匹配 [kLocalAudioFileNamePattern] 的文件之和。
+int measureLocalAudioBytes(Directory dbDirectory) {
+  if (!dbDirectory.existsSync()) return 0;
+  int total = 0;
+  for (final FileSystemEntity entity
+      in dbDirectory.listSync(followLinks: false)) {
+    if (entity is! File) continue;
+    if (!kLocalAudioFileNamePattern.hasMatch(p.basename(entity.path))) continue;
+    try {
+      total += entity.statSync().size;
+    } on FileSystemException {
+      continue;
+    }
+  }
+  return total;
 }
 
-/// 实测各批体积（真 IO，可能耗时数秒，调用方自行放到 loading 态里）。
+/// 各批内容的**测量方式**。
+///
+/// 刻意不是「每批一个根目录」：localAudio 不是一棵树，而是 DB 目录一层里按文件名
+/// 匹配的若干 `.db`。用「批 → 测量函数」表达，把这个差异收进构造期，调用方那边没有
+/// 特殊分支。各根必须与 `MigrationPage` 构造 `BackupService` 时用的**同源**，否则估
+/// 的和导的不是同一批字节。
+class MigrationContentRoots {
+  const MigrationContentRoots({
+    required this.databaseFilePath,
+    required this.databaseDirectoryPath,
+    required this.dictionaryResourceDirectoryPath,
+    required this.booksRootDirectoryPath,
+    required this.audiobooksRootDirectoryPath,
+    required this.fontsRootDirectoryPath,
+  });
+
+  final String databaseFilePath;
+
+  /// 主库所在目录，同时也是本地发音库 `.db` 的落地目录
+  /// （`BackupService` 里 `localAudioRoot` 就取 `_dbDirectory`）。
+  final String databaseDirectoryPath;
+  final String dictionaryResourceDirectoryPath;
+  final String booksRootDirectoryPath;
+  final String audiobooksRootDirectoryPath;
+  final String fontsRootDirectoryPath;
+
+  /// 该批内容树的根；[MigrationBatch.core] 无文件树，[MigrationBatch.localAudio]
+  /// 不是整棵树（见 [measurerForBatch]），两者都返回 null。
+  String? rootPathForBatch(MigrationBatch batch) => switch (batch) {
+        MigrationBatch.core => null,
+        MigrationBatch.dictionaries => dictionaryResourceDirectoryPath,
+        MigrationBatch.books => booksRootDirectoryPath,
+        MigrationBatch.audiobooks => audiobooksRootDirectoryPath,
+        MigrationBatch.fonts => fontsRootDirectoryPath,
+        MigrationBatch.localAudio => null,
+      };
+
+  /// 该批的测量函数（core 恒 0：只带 DB 行，无文件树）。
+  int Function() measurerForBatch(MigrationBatch batch) {
+    if (batch == MigrationBatch.localAudio) {
+      return () => measureLocalAudioBytes(Directory(databaseDirectoryPath));
+    }
+    final String? root = rootPathForBatch(batch);
+    if (root == null) return () => 0;
+    return () => measureDirectoryBytes(Directory(root));
+  }
+}
+
+/// 实测各批体积（真 IO）。
 MigrationSpaceEstimate measureBatchBytes(
   MigrationContentRoots roots,
   List<MigrationBatch> batches,
 ) {
   final Map<MigrationBatch, int> perBatch = <MigrationBatch, int>{};
   for (final MigrationBatch batch in batches) {
-    final Directory? root = roots.rootForBatch(batch);
-    perBatch[batch] = root == null ? 0 : measureDirectoryBytes(root);
+    perBatch[batch] = roots.measurerForBatch(batch)();
   }
   int dbBytes = 0;
-  if (roots.databaseFile.existsSync()) {
+  final File dbFile = File(roots.databaseFilePath);
+  if (dbFile.existsSync()) {
     try {
-      dbBytes = roots.databaseFile.statSync().size;
+      dbBytes = dbFile.statSync().size;
     } on FileSystemException {
       dbBytes = 0;
     }
@@ -182,6 +226,17 @@ MigrationSpaceEstimate measureBatchBytes(
     databaseBytes: dbBytes,
   );
 }
+
+/// 后台 isolate 实测。
+///
+/// 大书库/词典树递归 `stat` 实测可达数秒，跑在主 isolate 上会**卡死 UI**——而这
+/// 段恰好发生在用户刚点下「迁移」之后，正是最不能掉帧的时刻。[MigrationContentRoots]
+/// 刻意只持有 String 路径（不是 `Directory`/`File`）就是为了能安全跨 isolate 传递。
+Future<MigrationSpaceEstimate> measureBatchBytesInBackground(
+  MigrationContentRoots roots,
+  List<MigrationBatch> batches,
+) =>
+    Isolate.run(() => measureBatchBytes(roots, batches));
 
 /// 人类可读体积（闸门文案用；1024 进制，与 Android 设置里的「存储」口径一致）。
 String formatMigrationBytes(int bytes) {

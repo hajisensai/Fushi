@@ -3144,5 +3144,21 @@
   "migration_export_failed": "Export failed: $error",
   "migration_readonly_note": "Your data has been exported to Fushi. This app is now read-only: use Fushi for reading and mining. You can re-export at any time if Fushi reports missing data.",
   "migration_reexport": "Re-export",
-  "migration_batch_core_label": "Settings, progress & statistics"
+  "migration_batch_core_label": "Settings, progress & statistics",
+  "migration_prompt_title": "Hibiki is now Fushi",
+  "migration_prompt_body": "This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.",
+  "migration_prompt_action": "Download Fushi and migrate",
+  "migration_prompt_later": "Later",
+  "migration_prompt_details": "See details",
+  "migration_space_measuring": "Calculating how much space this needs...",
+  "migration_space_summary": "Needs about $required, $free available",
+  "migration_space_blocked": "Not enough storage: $shortfall short. Migration copies your data to a transfer folder, so it needs the space twice over. Free some up and try again.",
+  "migration_space_unknown": "Cannot read the available storage on this device, so migration is blocked rather than risk failing halfway through.",
+  "migration_space_tip_local_audio": "Turning off local pronunciation audio would save $size.",
+  "migration_space_recheck": "Re-check space",
+  "migration_target_resolve_failed": "Could not find the Fushi installer. Check your network and try again.",
+  "migration_install_incomplete": "Fushi is still not installed. Finish the system install prompt, then tap again.",
+  "migration_step_install": "Install Fushi",
+  "migration_step_export": "Export data",
+  "migration_step_import": "Import in Fushi"
 }
