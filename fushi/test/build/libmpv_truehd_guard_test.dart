@@ -165,7 +165,7 @@ void main() {
     expect(url.contains('media-kit/libmpv-win32-video-build'), isFalse,
         reason: 'win32 upstream froze at 2023-09-24 with no TrueHD decoder.');
     // The libmpv .7z is mirrored into our own permanent GitHub release
-    // (hajisensai/hibiki `vendor-libmpv`) because zhongfly/mpv-winbuild prunes
+    // (hajisensai/fushi `vendor-libmpv`) because zhongfly/mpv-winbuild prunes
     // releases on a ~30-day window and the pinned asset 404s (TODO-1137). The
     // mirrored file is the exact zhongfly full-FFmpeg build, so guard the real
     // BUG-073 intent (full flavor, not the broken flavors) instead of the host.

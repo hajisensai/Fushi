@@ -25,7 +25,7 @@ Map<String, dynamic> _stampedAsset({
   final Map<String, dynamic> asset = <String, dynamic>{
     'name': name,
     'browser_download_url':
-        'https://github.com/hajisensai/hibiki/releases/download/$downloadTag/$name',
+        'https://github.com/hajisensai/fushi/releases/download/$downloadTag/$name',
   };
   if (version != null) asset['version'] = version;
   if (tag != null) asset['tag'] = tag;
@@ -144,7 +144,7 @@ void main() {
       expect(selected!.version, '1.0.1-debug.6640');
       expect(
         selected.downloadUrl,
-        'https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.0.1-debug.6640-bbbbbbb-debug.apk',
+        'https://github.com/hajisensai/fushi/releases/download/debug-rolling/hibiki-1.0.1-debug.6640-bbbbbbb-debug.apk',
       );
     });
 

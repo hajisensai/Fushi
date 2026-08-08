@@ -1,7 +1,21 @@
 part of 'update_checker.dart';
 
-const String kGitHubRepo = 'hajisensai/hibiki';
-const String kLegacyGitHubRepo = 'hdjsadgfwtg/hibiki';
+/// 发布仓。改名 Fushi 后主名走新仓；GitHub 对仓库名大小写不敏感（实测
+/// `raw.githubusercontent.com/JestJS/Jest/...` 与 `jestjs/jest` 同为 200），故沿用
+/// 小写字面量，与仓库显示名 `Fushi` 无冲突。
+const String kGitHubRepo = 'hajisensai/fushi';
+
+/// 改名前的仓名，作回退位。**两个作用**：① 仓库还没实际改名的窗口期里，新构建靠它
+/// 仍能查到更新（[kGitHubRepoFallbacks] 会逐个试）；② 真改名后它由 GitHub 永久
+/// 重定向兜底。
+///
+/// 取代了更早的 `hdjsadgfwtg/hibiki`——那个不是独立仓库，是本仓的**旧账号名**
+/// （`gh repo view hdjsadgfwtg/hibiki` 解析出的 nameWithOwner 就是
+/// `hajisensai/hibiki`），一直靠同一套重定向工作；留着它只是多一跳同目标的链路，
+/// 而 `hajisensai/hibiki` 是单跳、更近的名字。顺带说明这套重定向早已在生产验证过：
+/// 旧账号名连 `raw.githubusercontent.com/.../update-manifest/latest-stable.json`
+/// 都能 200，正是 GFW 下唯一可成功的那条检查路径。
+const String kLegacyGitHubRepo = 'hajisensai/hibiki';
 
 @visibleForTesting
 const List<String> kGitHubRepoFallbacks = <String>[

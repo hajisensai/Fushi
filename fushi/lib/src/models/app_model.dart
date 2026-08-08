@@ -788,7 +788,7 @@ class AppModel with ChangeNotifier {
   String _mediaTrackingAppVersion = 'unknown';
   String get _mediaTrackingUserAgent =>
       'hajisensai/Fushi/$_mediaTrackingAppVersion '
-      '(https://github.com/hajisensai/hibiki)';
+      '(https://github.com/hajisensai/fushi)';
 
   /// Dictionary metadata, history, and search caches.
   late DictionaryRepository dictRepo;

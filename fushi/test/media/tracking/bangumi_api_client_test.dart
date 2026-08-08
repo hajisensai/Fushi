@@ -12,7 +12,7 @@ void main() {
     final BangumiApiClient client = BangumiApiClient(
       accessToken: 'secret-token',
       userAgent:
-          'hajisensai/Fushi/1.2.0 (https://github.com/hajisensai/hibiki)',
+          'hajisensai/Fushi/1.2.0 (https://github.com/hajisensai/fushi)',
       client: MockClient((http.Request request) async {
         captured = request;
         return http.Response(

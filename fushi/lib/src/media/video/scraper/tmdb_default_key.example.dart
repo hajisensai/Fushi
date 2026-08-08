@@ -4,7 +4,7 @@
 //
 // 真值来源：https://www.themoviedb.org/settings/api → Developer Plan（免费，非商业）
 //   - 应用名称：Hibiki
-//   - 应用网址：https://github.com/hajisensai/hibiki
+//   - 应用网址：https://github.com/hajisensai/fushi
 //   - 使用类型：按实际分发面选 Desktop / Mobile Application（**不要选 Personal**，
 //     本项目是公开分发的应用，不是个人自用）
 //   - 拿「API 密钥」那一串 32 位十六进制（v3 auth），不是 v4 读访问令牌

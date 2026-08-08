@@ -325,7 +325,7 @@ void main() {
     // The case-level default at the top of the channel resolver is
     // BUILD_DEBUG_APK=true. Each release-grade channel must explicitly turn the
     // unsigned debug APK off, otherwise it inherits the default and the
-    // ~314MB debug APK gets matched by the hibiki-*.apk FILES glob and uploaded
+    // ~314MB debug APK gets matched by the fushi-*.apk FILES glob and uploaded
     // (formal even as Latest). push) and debug) already set it false; beta) and
     // formal) must too.
     expect(betaCase, contains('BUILD_DEBUG_APK=false'),

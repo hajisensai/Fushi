@@ -158,7 +158,7 @@ List<String> synthesizeStableAssetNames(String version) {
     // 就地更新，迁移链即通道），其 APK 行保持旧名直到老包停止发布。
     'fushi-$version-windows-setup.exe',
     'fushi-$version-macos.zip',
-    for (final String abi in kAndroidReleaseAbis) 'hibiki-$version-$abi.apk',
+    for (final String abi in kAndroidReleaseAbis) 'fushi-$version-$abi.apk',
   ];
   return List<String>.unmodifiable(names);
 }
@@ -1163,7 +1163,7 @@ int? _objectToInt(Object? value) {
 
 Future<void> ensureWindowsInstallTargetWritable(Directory installDir) async {
   final File probe = File(
-    '${installDir.path}${Platform.pathSeparator}.hibiki-update-write-test',
+    '${installDir.path}${Platform.pathSeparator}.fushi-update-write-test',
   );
   try {
     await installDir.create(recursive: true);

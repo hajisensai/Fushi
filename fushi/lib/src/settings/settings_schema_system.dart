@@ -97,7 +97,7 @@ SettingsDestination buildSystemDestination() {
             icon: Icons.public_outlined,
             onTap: (_) async {
               await launchUrl(
-                Uri.parse('https://github.com/hajisensai/hibiki'),
+                Uri.parse('https://github.com/hajisensai/fushi'),
                 mode: LaunchMode.externalApplication,
               );
             },

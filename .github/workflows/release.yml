@@ -162,7 +162,7 @@ jobs:
                 TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
                 NAME="${NAME:-Hibiki ${VERSION} beta ${RELEASE_SEQUENCE}}"
                 BODY="Manual beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
-                FILES="fushi/build/release-artifacts/hibiki-*.apk"
+                FILES="fushi/build/release-artifacts/fushi-*.apk"
                 BUILD_DEBUG_APK=false
                 BUILD_SPLIT_RELEASE_APK=true
                 NEEDS_RELEASE_KEYSTORE=true
@@ -173,7 +173,7 @@ jobs:
                 BODY="Manual formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
                 PRERELEASE=false
                 MAKE_LATEST=true
-                FILES="fushi/build/release-artifacts/hibiki-*.apk"
+                FILES="fushi/build/release-artifacts/fushi-*.apk"
                 BUILD_DEBUG_APK=false
                 BUILD_SPLIT_RELEASE_APK=true
                 NEEDS_RELEASE_KEYSTORE=true
@@ -188,7 +188,7 @@ jobs:
           release)
             CHANNEL=github-release
             TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
-            FILES="fushi/build/release-artifacts/hibiki-*.apk"
+            FILES="fushi/build/release-artifacts/fushi-*.apk"
             BUILD_SPLIT_RELEASE_APK=true
             NEEDS_RELEASE_KEYSTORE=true
             # BUG-869: a manually-published, NON-prerelease GitHub Release IS the
@@ -281,7 +281,7 @@ jobs:
     - name: Decode keystore
       if: steps.channel.outputs.needs_release_keystore == 'true'
       run: |
-        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > fushi/android/hibiki-release.jks
+        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > fushi/android/fushi-release.jks
 
     - name: Create key.properties
       if: steps.channel.outputs.needs_release_keystore == 'true'
@@ -291,7 +291,7 @@ jobs:
         storePassword=${{ secrets.KEYSTORE_PASSWORD }}
         keyPassword=${{ secrets.KEY_PASSWORD }}
         keyAlias=${{ secrets.KEY_ALIAS }}
-        storeFile=hibiki-release.jks
+        storeFile=fushi-release.jks
         EOF
 
     - name: Remove local proxy from gradle.properties
@@ -462,8 +462,8 @@ jobs:
           exit 1
         fi
         mkdir -p "$OUT_DIR"
-        rm -f "$OUT_DIR"/hibiki-*.apk
-        cp "$DEBUG_APK" "$OUT_DIR/hibiki-${BUILD_VERSION_NAME}-${SHORT_SHA}-debug.apk"
+        rm -f "$OUT_DIR"/fushi-*.apk
+        cp "$DEBUG_APK" "$OUT_DIR/fushi-${BUILD_VERSION_NAME}-${SHORT_SHA}-debug.apk"
 
     - name: Build release-signed debug-channel APK
       if: steps.channel.outputs.build_debug_channel_apk == 'true'
@@ -492,8 +492,8 @@ jobs:
           exit 1
         fi
         mkdir -p "$OUT_DIR"
-        rm -f "$OUT_DIR"/hibiki-*.apk
-        cp "$DEBUG_CHANNEL_APK" "$OUT_DIR/hibiki-${BUILD_VERSION_NAME}-${SHORT_SHA}-debug.apk"
+        rm -f "$OUT_DIR"/fushi-*.apk
+        cp "$DEBUG_CHANNEL_APK" "$OUT_DIR/fushi-${BUILD_VERSION_NAME}-${SHORT_SHA}-debug.apk"
 
     - name: Build release APK (split per ABI)
       if: steps.channel.outputs.build_split_release_apk == 'true'
@@ -530,7 +530,7 @@ jobs:
         mkdir -p "$OUT_DIR"
         for f in "$APK_DIR"/app-*-release.apk; do
           ABI=$(basename "$f" | sed 's/^app-//;s/-release\.apk$//')
-          cp "$f" "$OUT_DIR/hibiki-${BUILD_VERSION_NAME}-${ABI}.apk"
+          cp "$f" "$OUT_DIR/fushi-${BUILD_VERSION_NAME}-${ABI}.apk"
         done
 
     # TODO-866: the prepared APKs in build/release-artifacts/ are otherwise only
@@ -547,7 +547,7 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v7
       with:
-        name: hibiki-${{ steps.channel.outputs.channel }}-apk-${{ github.sha }}
+        name: fushi-${{ steps.channel.outputs.channel }}-apk-${{ github.sha }}
         path: fushi/build/release-artifacts/*.apk
         if-no-files-found: ignore
         retention-days: 14
@@ -558,7 +558,7 @@ jobs:
       with:
         tag_name: ${{ steps.channel.outputs.tag }}
         files: |
-          fushi/build/release-artifacts/hibiki-*.apk
+          fushi/build/release-artifacts/fushi-*.apk
 
     # TODO-1049 / TODO-1123: the debug channel reuses ONE rolling GitHub Release
     # (tag `debug-rolling`). softprops upserts same-named assets but never
@@ -626,7 +626,7 @@ jobs:
         fi
         ASSET_NAMES=("${PLATFORM_ASSETS[@]}")
         # Asset names embed the versionName token `-<base>-debug.<seq>-` (e.g.
-        # hibiki-0.11.1-debug.5633-3cf5905-debug.apk). Parse the current build's
+        # fushi-0.11.1-debug.5633-3cf5905-debug.apk). Parse the current build's
         # seq from BUILD_VERSION_NAME (0.11.1-debug.5633), extract every asset's
         # seq the same way, keep the top KEEP_SEQS distinct seqs (numeric desc),
         # and delete only assets whose seq is NOT in that set. Assets with no
@@ -764,7 +764,7 @@ jobs:
         VERSION: ${{ steps.channel.outputs.build_version_name }}
         RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
         ARTIFACTS_DIR: fushi/build/release-artifacts
-        ASSET_GLOB: hibiki-*.apk
+        ASSET_GLOB: fushi-*.apk
         PLATFORM_LABEL: android
       run: bash tool/publish_update_manifest.sh
 

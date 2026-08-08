@@ -6,7 +6,7 @@ import '../helpers/source_guard.dart';
 
 /// TODO-2721 守卫：GitHub Actions 缓存必须留在 10 GB 配额里。
 ///
-/// 2026-08-02 实测 `gh api repos/hajisensai/hibiki/actions/cache/usage` =
+/// 2026-08-02 实测 `gh api repos/hajisensai/fushi/actions/cache/usage` =
 /// 10.65 GB / 14 条，超配额，GitHub 一直在 LRU 驱逐。驱逐不是「洁癖问题」：
 /// 桌面发布 run 30729229450 变红的最后一环就是 vcpkg 缓存被驱逐后冷编 + 拉网失败。
 ///

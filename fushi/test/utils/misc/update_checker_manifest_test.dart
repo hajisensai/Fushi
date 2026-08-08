@@ -30,12 +30,12 @@ String _manifestJson({
           <String, dynamic>{
             'name': 'hibiki-0.10.1-arm64-v8a.apk',
             'browser_download_url':
-                'https://github.com/hajisensai/hibiki/releases/download/$tag/hibiki-0.10.1-arm64-v8a.apk',
+                'https://github.com/hajisensai/fushi/releases/download/$tag/hibiki-0.10.1-arm64-v8a.apk',
           },
           <String, dynamic>{
             'name': 'hibiki-0.10.1-windows-setup.exe',
             'browser_download_url':
-                'https://github.com/hajisensai/hibiki/releases/download/$tag/hibiki-0.10.1-windows-setup.exe',
+                'https://github.com/hajisensai/fushi/releases/download/$tag/hibiki-0.10.1-windows-setup.exe',
           },
         ],
   });
@@ -44,38 +44,38 @@ String _manifestJson({
 void main() {
   group('manifestUrlForChannel (pure)', () {
     test('beta/debug return their raw.githubusercontent manifest URLs', () {
-      expect(kGitHubRepo, 'hajisensai/hibiki');
-      expect(kLegacyGitHubRepo, 'hdjsadgfwtg/hibiki');
+      expect(kGitHubRepo, 'hajisensai/fushi');
+      expect(kLegacyGitHubRepo, 'hajisensai/hibiki');
       expect(kGitHubRepoFallbacks, <String>[
+        'hajisensai/fushi',
         'hajisensai/hibiki',
-        'hdjsadgfwtg/hibiki',
       ]);
       expect(manifestUrlForChannel(UpdateChannel.beta), kBetaManifestUrl);
       expect(manifestUrlForChannel(UpdateChannel.debug), kDebugManifestUrl);
       expect(
         kBetaManifestUrl,
-        'https://raw.githubusercontent.com/hajisensai/hibiki/update-manifest/latest-beta.json',
+        'https://raw.githubusercontent.com/hajisensai/fushi/update-manifest/latest-beta.json',
       );
       expect(
         kDebugManifestUrl,
-        'https://raw.githubusercontent.com/hajisensai/hibiki/update-manifest/latest-debug.json',
+        'https://raw.githubusercontent.com/hajisensai/fushi/update-manifest/latest-debug.json',
       );
       expect(
         manifestUrlsForChannel(UpdateChannel.beta),
         const <String, String>{
+          'hajisensai/fushi':
+              'https://raw.githubusercontent.com/hajisensai/fushi/update-manifest/latest-beta.json',
           'hajisensai/hibiki':
               'https://raw.githubusercontent.com/hajisensai/hibiki/update-manifest/latest-beta.json',
-          'hdjsadgfwtg/hibiki':
-              'https://raw.githubusercontent.com/hdjsadgfwtg/hibiki/update-manifest/latest-beta.json',
         },
       );
       expect(
         manifestUrlsForChannel(UpdateChannel.debug),
         const <String, String>{
+          'hajisensai/fushi':
+              'https://raw.githubusercontent.com/hajisensai/fushi/update-manifest/latest-debug.json',
           'hajisensai/hibiki':
               'https://raw.githubusercontent.com/hajisensai/hibiki/update-manifest/latest-debug.json',
-          'hdjsadgfwtg/hibiki':
-              'https://raw.githubusercontent.com/hdjsadgfwtg/hibiki/update-manifest/latest-debug.json',
         },
       );
     });
@@ -86,15 +86,15 @@ void main() {
       expect(manifestUrlForChannel(UpdateChannel.stable), kStableManifestUrl);
       expect(
         kStableManifestUrl,
-        'https://raw.githubusercontent.com/hajisensai/hibiki/update-manifest/latest-stable.json',
+        'https://raw.githubusercontent.com/hajisensai/fushi/update-manifest/latest-stable.json',
       );
       expect(
         manifestUrlsForChannel(UpdateChannel.stable),
         const <String, String>{
+          'hajisensai/fushi':
+              'https://raw.githubusercontent.com/hajisensai/fushi/update-manifest/latest-stable.json',
           'hajisensai/hibiki':
               'https://raw.githubusercontent.com/hajisensai/hibiki/update-manifest/latest-stable.json',
-          'hdjsadgfwtg/hibiki':
-              'https://raw.githubusercontent.com/hdjsadgfwtg/hibiki/update-manifest/latest-stable.json',
         },
       );
     });
@@ -122,7 +122,7 @@ void main() {
       // (and, TODO-1205, the per-asset `version` stamp when present).
       expect(
         apk['browser_download_url'],
-        'https://github.com/hajisensai/hibiki/releases/download/v0.10.1-beta.162/hibiki-0.10.1-arm64-v8a.apk',
+        'https://github.com/hajisensai/fushi/releases/download/v0.10.1-beta.162/hibiki-0.10.1-arm64-v8a.apk',
       );
     });
 
@@ -145,7 +145,7 @@ void main() {
             <String, dynamic>{
               'name': 'hibiki-1.2.0-arm64-v8a.apk',
               'browser_download_url':
-                  'https://github.com/hajisensai/hibiki/releases/download/v1.2.0/hibiki-1.2.0-arm64-v8a.apk',
+                  'https://github.com/hajisensai/fushi/releases/download/v1.2.0/hibiki-1.2.0-arm64-v8a.apk',
             },
           ],
         ),
@@ -168,7 +168,9 @@ void main() {
       )!;
       expect(
         release['html_url'],
-        'https://github.com/hdjsadgfwtg/hibiki/releases/tag/v0.10.1-beta.162',
+        // 传 legacy 源就该拿 legacy 仓的发布页——这条用例断的正是「不把回退源
+        // 的链接硬拗成主仓」，故期望值随 kLegacyGitHubRepo 走旧名。
+        'https://github.com/hajisensai/hibiki/releases/tag/v0.10.1-beta.162',
       );
     });
 
@@ -182,7 +184,7 @@ void main() {
       ).selectAsset(assets, channel: UpdateChannel.beta);
       expect(
         asset?.url,
-        'https://github.com/hajisensai/hibiki/releases/download/v0.10.1-beta.162/hibiki-0.10.1-arm64-v8a.apk',
+        'https://github.com/hajisensai/fushi/releases/download/v0.10.1-beta.162/hibiki-0.10.1-arm64-v8a.apk',
       );
     });
 
@@ -197,7 +199,7 @@ void main() {
             <String, dynamic>{
               'name': 'hibiki-0.10.1-abc1234-debug.apk',
               'browser_download_url':
-                  'https://github.com/hajisensai/hibiki/releases/download/v0.10.1-debug.162+abc1234/hibiki-0.10.1-abc1234-debug.apk',
+                  'https://github.com/hajisensai/fushi/releases/download/v0.10.1-debug.162+abc1234/hibiki-0.10.1-abc1234-debug.apk',
             },
           ],
         ),

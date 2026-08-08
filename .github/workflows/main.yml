@@ -237,7 +237,7 @@ jobs:
       if: github.event_name == 'pull_request' && env.HAS_KEYSTORE != 'true'
       working-directory: fushi/android
       run: |
-        keytool -genkeypair -v -keystore hibiki-release.jks \
+        keytool -genkeypair -v -keystore fushi-release.jks \
           -storepass ci_throwaway -keypass ci_throwaway -alias ci \
           -keyalg RSA -keysize 2048 -validity 1 \
           -dname "CN=Hibiki CI, O=CI, C=US"
@@ -245,7 +245,7 @@ jobs:
         storePassword=ci_throwaway
         keyPassword=ci_throwaway
         keyAlias=ci
-        storeFile=hibiki-release.jks
+        storeFile=fushi-release.jks
         EOF
       env:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
@@ -262,7 +262,7 @@ jobs:
     - name: Decode keystore
       if: github.event_name == 'pull_request' && env.HAS_KEYSTORE == 'true'
       run: |
-        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > fushi/android/hibiki-release.jks
+        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > fushi/android/fushi-release.jks
       env:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
 
@@ -274,7 +274,7 @@ jobs:
         storePassword=${{ secrets.KEYSTORE_PASSWORD }}
         keyPassword=${{ secrets.KEY_PASSWORD }}
         keyAlias=${{ secrets.KEY_ALIAS }}
-        storeFile=hibiki-release.jks
+        storeFile=fushi-release.jks
         EOF
       env:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}

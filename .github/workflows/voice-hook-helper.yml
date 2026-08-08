@@ -9,7 +9,7 @@
 # x86 包另带 Locale Emulator 2.5.0.1 的 LoaderDll.dll / LocaleEmulator.dll 与 LGPL 文本，供
 # Hibiki 自动以日语 CP932 挂起启动旧式非 Unicode galgame；不运行安装器、不改系统区域设置。
 # 打成 voice_hook_<arch>.zip（文件平铺在 zip 根）+ .sha256 侧车供 app 校验完整性。app 下载 URL：
-#   https://github.com/hajisensai/hibiki/releases/download/voice-hook-helper/voice_hook_<arch>.zip
+#   https://github.com/hajisensai/fushi/releases/download/voice-hook-helper/voice_hook_<arch>.zip
 name: voice-hook-helper
 
 on:

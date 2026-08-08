@@ -30,7 +30,7 @@ class MigrationPage extends StatefulWidget {
 
 /// Fushi 发布页（下载引导用；与更新检查同仓）。
 const String kFushiReleasesUrl =
-    'https://github.com/hajisensai/hibiki/releases';
+    'https://github.com/hajisensai/fushi/releases';
 
 enum _TargetState { checking, missing, installed }
 

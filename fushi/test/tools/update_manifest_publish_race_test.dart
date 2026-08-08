@@ -36,7 +36,7 @@ void main() {
     final ProcessResult android = await fx.publish(
       label: 'android',
       artifactsSubdir: 'art_android',
-      assetGlob: 'hibiki-*.apk',
+      assetGlob: 'fushi-*.apk',
     );
     expect(android.exitCode, 0, reason: _io(android));
 
@@ -67,7 +67,7 @@ void main() {
     final ProcessResult android = await fx.publish(
       label: 'android',
       artifactsSubdir: 'art_android',
-      assetGlob: 'hibiki-*.apk',
+      assetGlob: 'fushi-*.apk',
     );
     expect(android.exitCode, 0, reason: _io(android));
 
@@ -87,7 +87,7 @@ void main() {
       fx.publish(
         label: 'android',
         artifactsSubdir: 'art_android',
-        assetGlob: 'hibiki-*.apk',
+        assetGlob: 'fushi-*.apk',
       ),
       fx.publish(
         label: 'desktop',
@@ -117,7 +117,7 @@ void main() {
     final ProcessResult oldAndroid = await fx.publish(
       label: 'android',
       artifactsSubdir: 'art_android_old',
-      assetGlob: 'hibiki-*.apk',
+      assetGlob: 'fushi-*.apk',
       tag: 'v0.11.1-debug.5630+08dc73c',
       version: '0.11.1-debug.5630',
       releaseSequence: 5630,
@@ -135,7 +135,7 @@ void main() {
     expect(
       assets,
       containsAll(<String>[
-        'hibiki-0.11.1-debug.5630-08dc73c-debug.apk',
+        'fushi-0.11.1-debug.5630-08dc73c-debug.apk',
         fx.exeName,
       ]),
       reason: 'cross-platform union dropped the lagging platform: $assets',
@@ -163,7 +163,7 @@ void main() {
     final ProcessResult oldAndroid = await fx.publish(
       label: 'android',
       artifactsSubdir: 'art_android_old',
-      assetGlob: 'hibiki-*.apk',
+      assetGlob: 'fushi-*.apk',
       tag: 'v0.11.1-debug.5630+08dc73c',
       version: '0.11.1-debug.5630',
       releaseSequence: 5630,
@@ -176,7 +176,7 @@ void main() {
     expect(
       assets,
       containsAll(<String>[
-        'hibiki-0.11.1-debug.5630-08dc73c-debug.apk',
+        'fushi-0.11.1-debug.5630-08dc73c-debug.apk',
         fx.exeName,
       ]),
       reason: 'late older publish lost an asset: $assets',
@@ -223,7 +223,7 @@ class _Fixture {
   static const String defaultVersion = '0.11.1-debug.5633';
   static const int defaultSeq = 5633;
 
-  final String apkName = 'hibiki-0.11.1-debug.5633-3cf5905-debug.apk';
+  final String apkName = 'fushi-0.11.1-debug.5633-3cf5905-debug.apk';
   final String exeName = 'fushi-0.11.1-debug.5633-windows-setup.exe';
 
   static Future<_Fixture> create() async {
@@ -237,9 +237,9 @@ class _Fixture {
     await _git(root, <String>['init', '-q', '--bare', origin.path]);
 
     _writeAsset(
-        root, 'art_android', 'hibiki-0.11.1-debug.5633-3cf5905-debug.apk');
+        root, 'art_android', 'fushi-0.11.1-debug.5633-3cf5905-debug.apk');
     _writeAsset(
-        root, 'art_android_old', 'hibiki-0.11.1-debug.5630-08dc73c-debug.apk');
+        root, 'art_android_old', 'fushi-0.11.1-debug.5630-08dc73c-debug.apk');
     _writeAsset(
         root, 'art_desktop', 'fushi-0.11.1-debug.5633-windows-setup.exe');
 
