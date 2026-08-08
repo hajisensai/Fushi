@@ -176,6 +176,14 @@ add_executable(fushi_siglus_launch_test
 target_include_directories(fushi_siglus_launch_test PRIVATE "include")
 add_test(NAME fushi_siglus_launch_test COMMAND fushi_siglus_launch_test)
 
+# KiriKiri 二进制级延迟附着 profile（根因回归：恋爱成双早注入触发 Access Violation）。
+add_executable(fushi_kirikiri_launch_profile_test
+  "tests/kirikiri_launch_profile_test.cpp"
+)
+target_include_directories(fushi_kirikiri_launch_profile_test PRIVATE "include")
+add_test(NAME fushi_kirikiri_launch_profile_test
+  COMMAND fushi_kirikiri_launch_profile_test)
+
 add_executable(fushi_luna_hook_config_test tests/luna_hook_config_test.cpp)
 target_include_directories(fushi_luna_hook_config_test PRIVATE include)
 add_test(NAME fushi_luna_hook_config_test COMMAND fushi_luna_hook_config_test)

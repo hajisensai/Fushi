@@ -25,6 +25,7 @@
 #include "launch_command_line.h"
 #include "launch_failure_policy.h"
 #include "locale_emulator_launch.h"
+#include "kirikiri_launch_profile.h"
 #include "siglus_launch.h"
 #include "steam_launch.h"
 #include "luna_bridge.h"
@@ -2020,17 +2021,38 @@ BOOL CALLBACK FindReadyGameWindow(HWND window, LPARAM param) {
   return FALSE;
 }
 
-// Enigma 完成自校验并进入游戏消息循环后再注入。只看本次子进程的可见非保护器窗口，
-// 不靠固定 Sleep 猜机器速度；进程提前退出或超时都明确失败。
-bool WaitForSiglusGameWindow(HANDLE process, DWORD pid, DWORD timeout_ms) {
+// 延迟附着必须等目标进入游戏消息循环；需要时还要等 profile 指定的运行库已加载，确保
+// 注入不会再次进入已证实会崩溃的插件启动边界。只看本次子进程，不靠固定长 Sleep 猜机器速度。
+bool ProcessHasModule(DWORD pid, const wchar_t* expected_module) {
+  if (expected_module == nullptr || expected_module[0] == L'\0') return true;
+  HANDLE snapshot = CreateToolhelp32Snapshot(
+      TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
+  if (snapshot == INVALID_HANDLE_VALUE) return false;
+  bool found = false;
+  MODULEENTRY32W module = {0};
+  module.dwSize = sizeof(module);
+  if (Module32FirstW(snapshot, &module)) {
+    do {
+      if (_wcsicmp(module.szModule, expected_module) == 0) {
+        found = true;
+        break;
+      }
+    } while (Module32NextW(snapshot, &module));
+  }
+  CloseHandle(snapshot);
+  return found;
+}
+
+bool WaitForReadyGameWindow(HANDLE process, DWORD pid, DWORD timeout_ms,
+                            const wchar_t* readiness_module = nullptr) {
   const uint64_t deadline = GetTickCount64() + timeout_ms;
   while (GetTickCount64() < deadline) {
     if (WaitForSingleObject(process, 0) == WAIT_OBJECT_0) return false;
     ReadyWindowSearch search;
     search.pid = pid;
     EnumWindows(&FindReadyGameWindow, reinterpret_cast<LPARAM>(&search));
-    if (search.found) {
-      Sleep(200);  // 让窗口创建尾部退出保护器调用栈，再装 inline hooks。
+    if (search.found && ProcessHasModule(pid, readiness_module)) {
+      Sleep(200);  // 让窗口/模块初始化尾部退出启动调用栈，再装 inline hooks。
       return true;
     }
     Sleep(50);
@@ -2206,7 +2228,7 @@ int RunSteamLaunch(const std::wstring& exe, const std::wstring& app_id,
   return rc;
 }
 
-// launch 模式：一般 CREATE_SUSPENDED 早注入；Siglus 因 Enigma 保护壳改为正常启动后附着。
+// launch 模式：一般 CREATE_SUSPENDED 早注入；已验证不兼容早注入的 profile 改为正常启动后附着。
 // 命令行含 exe 本身（CreateProcessW 约定）；workdir 缺省=exe 所在目录。
 int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
               const std::vector<std::wstring>& extra_args,
@@ -2252,6 +2274,13 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   si.cb = sizeof(si);
   PROCESS_INFORMATION pi = {0};
   const bool delayed_siglus = IsSiglusGame(exe);
+  const auto* delayed_kirikiri =
+      hibiki_voice_hook::FindKirikiriDelayedAttachProfile(Sha256File(exe));
+  const bool delayed_attach = delayed_siglus || delayed_kirikiri != nullptr;
+  if (delayed_kirikiri != nullptr) {
+    fprintf(stderr, "[launch] delayed-attach profile=%s\n",
+            delayed_kirikiri->id);
+  }
   const bool follow_children =
       follow_child_processes || LooksLikeRenpyRuntime(exe);
   // SteamAPI_RestartAppIfNecessary 要求游戏由 Steam 客户端启动。直接 CreateProcess
@@ -2276,7 +2305,7 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
                           effective_luna);
   }
   const DWORD creation_flags =
-      (delayed_siglus || follow_children) ? 0 : CREATE_SUSPENDED;
+      (delayed_attach || follow_children) ? 0 : CREATE_SUSPENDED;
   wchar_t previous_steam_app_id[64] = {0};
   wchar_t previous_steam_game_id[64] = {0};
   const DWORD previous_app_id_chars = GetEnvironmentVariableW(
@@ -2347,7 +2376,7 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
 
   const auto locale_resume_policy =
       hibiki_voice_hook::SelectLocaleThreadResumePolicy(
-          locale_launched, delayed_siglus, follow_children);
+          locale_launched, delayed_attach, follow_children);
   if (locale_resume_policy ==
       hibiki_voice_hook::LocaleThreadResumePolicy::kBeforeProcessDiscovery) {
     if (!ResumeLaunchedGame(pi.hProcess, pi.hThread, "pre-discovery")) {
@@ -2363,9 +2392,12 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
     resumed_before_discovery = true;
   }
 
-  if (delayed_siglus &&
-      !WaitForSiglusGameWindow(pi.hProcess, pi.dwProcessId, 20000)) {
-    fprintf(stderr, "Siglus 保护壳初始化/游戏窗口等待超时\n");
+  const wchar_t* readiness_module =
+      delayed_kirikiri == nullptr ? nullptr : delayed_kirikiri->readiness_module;
+  if (delayed_attach &&
+      !WaitForReadyGameWindow(pi.hProcess, pi.dwProcessId, 20000,
+                              readiness_module)) {
+    fprintf(stderr, "延迟附着等待游戏窗口/运行库就绪超时\n");
     TerminateProcess(pi.hProcess, 1);
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
