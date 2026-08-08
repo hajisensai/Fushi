@@ -9,6 +9,45 @@ import 'package:path/path.dart' as p;
 ///
 /// 重点覆盖「测不出 = 硬拦」这条：把 null 当「够用」正是要防的那次导到一半炸。
 void main() {
+  group('MigrationSpaceVerdict.decide 峰值倍数（导出份 + 导入份）', () {
+    test('默认按两份算：中转归档 + Fushi 解压副本同时在盘上', () {
+      final MigrationSpaceVerdict v = MigrationSpaceVerdict.decide(
+        estimatedBytes: 1000,
+        freeBytes: 0,
+        includeApkReserve: false,
+        headroom: 1.0,
+      );
+      expect(v.requiredBytes, 2000, reason: '只算中转那一份＝放行后必在 Fushi 侧解压时磁盘满');
+    });
+
+    test('刚好够放导出、放不下导入 → 必须拦下（真实翻车形态）', () {
+      // 用户实测：中转目录 11GB 导出全部成功，手机只剩 14GB，
+      // Fushi 导入要再解压 11GB → 装不下。旧闸门（只算一份）会放行。
+      const int gb = 1024 * 1024 * 1024;
+      final MigrationSpaceVerdict v = MigrationSpaceVerdict.decide(
+        estimatedBytes: 11 * gb,
+        freeBytes: 14 * gb,
+        includeApkReserve: false,
+        headroom: 1.0,
+      );
+      expect(v.sufficient, isFalse,
+          reason: '11GB 导出 + 11GB 导入 = 22GB > 14GB 可用，必须在开始前就拦');
+      expect(v.shortfallBytes, 22 * gb - 14 * gb);
+    });
+
+    test('关掉大批次后需求同步减半，用户有可操作的出路', () {
+      // 关掉本地发音库（7.5GB）后只剩 3.5GB 要搬 → 峰值 7GB，14GB 装得下。
+      const int gb = 1024 * 1024 * 1024;
+      final MigrationSpaceVerdict v = MigrationSpaceVerdict.decide(
+        estimatedBytes: 3 * gb + gb ~/ 2,
+        freeBytes: 14 * gb,
+        includeApkReserve: false,
+        headroom: 1.0,
+      );
+      expect(v.sufficient, isTrue);
+    });
+  });
+
   group('MigrationSpaceVerdict.decide', () {
     test('可用空间充足时放行，shortfall 为 0', () {
       final MigrationSpaceVerdict v = MigrationSpaceVerdict.decide(
@@ -36,6 +75,7 @@ void main() {
         freeBytes: 0,
         headroom: 2.0,
         apkReserveBytes: 500,
+        peakCopies: 1.0,
       );
       expect(v.requiredBytes, 2000 + 500);
       expect(v.sufficient, isFalse);
@@ -48,6 +88,8 @@ void main() {
         freeBytes: 1100,
         includeApkReserve: false,
         headroom: 1.0,
+        // 本组只测 headroom / APK / 边界的算术，峰值倍数固定为 1 隔离开。
+        peakCopies: 1.0,
       );
       expect(v.requiredBytes, 1000);
       expect(v.sufficient, isTrue);
@@ -59,6 +101,8 @@ void main() {
         freeBytes: 100,
         includeApkReserve: false,
         headroom: 1.0,
+        // 本组只测 headroom / APK / 边界的算术，峰值倍数固定为 1 隔离开。
+        peakCopies: 1.0,
       );
       expect(v.sufficient, isTrue);
       expect(v.shortfallBytes, 0);
@@ -70,6 +114,8 @@ void main() {
         freeBytes: 99,
         includeApkReserve: false,
         headroom: 1.0,
+        // 本组只测 headroom / APK / 边界的算术，峰值倍数固定为 1 隔离开。
+        peakCopies: 1.0,
       );
       expect(v.sufficient, isFalse);
       expect(v.shortfallBytes, 1);
@@ -81,6 +127,7 @@ void main() {
         freeBytes: 0,
         includeApkReserve: false,
         headroom: 1.10,
+        peakCopies: 1.0,
       );
       // 3 * 1.10 = 3.3 -> 4，绝不能是 3
       expect(v.requiredBytes, 4);

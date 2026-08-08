@@ -84,7 +84,18 @@ class _MigrationPageState extends State<MigrationPage>
     if (widget.appModel.prefsRepo.getPref(kMigrationReadonlyPrefKey) == true) {
       _step = _Step.done;
     }
-    _refreshTarget();
+    unawaited(_bootstrap());
+  }
+
+  /// 进页面就把「要搬多少」量出来。
+  ///
+  /// 用户诉求：体积必须在他**决定勾不勾**之前就看得见。本地发音库动辄数 GB
+  /// （实测单个 nhk16 库 5.8GB），等按下「开始迁移」才在空间闸门里告诉他，
+  /// 那时选择已经做完了。
+  Future<void> _bootstrap() async {
+    await _refreshTarget();
+    if (!mounted) return;
+    await _measureForDisplay();
   }
 
   @override
@@ -218,6 +229,36 @@ class _MigrationPageState extends State<MigrationPage>
     await _export(transferDir: transferDir, fresh: fresh);
   }
 
+  /// 只实测体积、**不做空间裁决**，供页面在用户动手之前就显示各批大小。
+  ///
+  /// 与 [_passesSpaceGate] 刻意分开：进页面这一刻用户还没决定导哪些批次，此时
+  /// 弹「空间不足」既没依据也没出路（他可能正要去关掉发音库）。裁决只发生在他
+  /// 真按下迁移时。
+  ///
+  /// 测的是「每个批次多大」，与勾选无关——勾选只决定求和范围，所以这里一次量
+  /// 全部批次，之后切换开关不必重测。
+  Future<void> _measureForDisplay() async {
+    if (_step == _Step.done || _busy) return;
+    setState(() => _step = _Step.measuring);
+    try {
+      final MigrationSpaceEstimate estimate =
+          await measureBatchBytesInBackground(
+        _contentRoots(),
+        MigrationBatch.values,
+      );
+      if (!mounted) return;
+      setState(() {
+        _estimate = estimate;
+        _step = _Step.idle;
+      });
+    } catch (e) {
+      // 量不出体积不该挡住迁移本身：真正的门是 [_passesSpaceGate]，它会再量一次
+      // 并在那里报错。这里失败只意味着「少显示一个参考数字」。
+      if (!mounted) return;
+      setState(() => _step = _Step.idle);
+    }
+  }
+
   /// 实测 + 裁决。返回 false 表示已拦下（[_step] 置 [_Step.blocked]）。
   Future<bool> _passesSpaceGate(Directory transferDir) async {
     setState(() => _step = _Step.measuring);
@@ -229,10 +270,10 @@ class _MigrationPageState extends State<MigrationPage>
       final MigrationSpaceEstimate estimate =
           await measureBatchBytesInBackground(
         _contentRoots(),
-        // 本地发音库即使本轮不导，也要测出体积，好在拦下时告诉用户
-        // 「关掉它能省多少」。
-        <MigrationBatch>{..._plannedBatches, MigrationBatch.localAudio}
-            .toList(growable: false),
+        // 一律量全部批次：本地发音库即使本轮不导也要有数，才能在拦下时告诉用户
+        // 「关掉它能省多少」。（`_plannedBatches ∪ {localAudio}` 恒等于全集，
+        // 写成并集只是把同一件事说复杂。）
+        MigrationBatch.values,
       );
       final int? freeBytes = await _channel.getFreeSpace(transferDir.path);
       final MigrationSpaceVerdict verdict = MigrationSpaceVerdict.decide(
@@ -247,6 +288,8 @@ class _MigrationPageState extends State<MigrationPage>
         _verdict = verdict;
         _step = verdict.sufficient ? _Step.idle : _Step.blocked;
       });
+      // 拦下必须打断用户，卡片留在页面上供他反复看。
+      if (!verdict.sufficient) await _showBlockedDialog(verdict);
       return verdict.sufficient;
     } catch (e) {
       if (!mounted) return false;
@@ -345,37 +388,85 @@ class _MigrationPageState extends State<MigrationPage>
         _ => _fushiInstalled ? t.migration_start : t.migration_prompt_action,
       };
 
+  /// 单个批次的体积文案；还没量出来时为 null（由调用方决定不渲染这一行）。
+  String? _batchSizeLabel(MigrationBatch batch) {
+    final int? bytes = _estimate?.perBatchBytes[batch];
+    return bytes == null ? null : formatMigrationBytes(bytes);
+  }
+
+  /// 本轮**实际要搬**的合计体积（按当前勾选求和）；还没量出来时为 null。
+  String? get _totalLabel {
+    final MigrationSpaceEstimate? estimate = _estimate;
+    if (estimate == null) return null;
+    return formatMigrationBytes(estimate.totalBytesFor(_plannedBatches));
+  }
+
+  /// 空间不足的三段说明：还差多少 / 需求 vs 可用 / 关掉发音库能省多少。
+  ///
+  /// 卡片与弹窗共用同一份，避免两处文案各改各的漂开。
+  List<Widget> _spaceDetailLines(
+      MigrationSpaceVerdict verdict, ColorScheme scheme) {
+    final int localAudioBytes =
+        _estimate?.perBatchBytes[MigrationBatch.localAudio] ?? 0;
+    return <Widget>[
+      Text(
+        verdict.measurable
+            ? t.migration_space_blocked(
+                shortfall: formatMigrationBytes(verdict.shortfallBytes))
+            : t.migration_space_unknown,
+        style: TextStyle(color: scheme.error),
+      ),
+      if (verdict.measurable) ...<Widget>[
+        const SizedBox(height: 8),
+        Text(t.migration_space_summary(
+          required: formatMigrationBytes(verdict.requiredBytes),
+          free: formatMigrationBytes(verdict.freeBytes),
+        )),
+      ],
+      if (_includeLocalAudio && localAudioBytes > 0) ...<Widget>[
+        const SizedBox(height: 8),
+        Text(t.migration_space_tip_local_audio(
+          size: formatMigrationBytes(localAudioBytes),
+        )),
+      ],
+    ];
+  }
+
+  /// 空间闸门拦下时**弹窗**告知。
+  ///
+  /// 只在页面里留一张卡片不够：用户按下「开始迁移」之后是在等进度，视线不在
+  /// 页面中段，一张静默出现的卡片会被当成没反应。拦截是终止性结果，必须打断。
+  Future<void> _showBlockedDialog(MigrationSpaceVerdict verdict) async {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(t.migration_space_blocked_title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: _spaceDetailLines(verdict, scheme),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(t.dialog_close),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _spaceCard(BuildContext context) {
     final MigrationSpaceVerdict verdict = _verdict!;
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final int localAudioBytes =
-        _estimate?.perBatchBytes[MigrationBatch.localAudio] ?? 0;
     return HibikiCard(
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(
-              verdict.measurable
-                  ? t.migration_space_blocked(
-                      shortfall: formatMigrationBytes(verdict.shortfallBytes))
-                  : t.migration_space_unknown,
-              style: TextStyle(color: scheme.error),
-            ),
-            if (verdict.measurable) ...<Widget>[
-              const SizedBox(height: 8),
-              Text(t.migration_space_summary(
-                required: formatMigrationBytes(verdict.requiredBytes),
-                free: formatMigrationBytes(verdict.freeBytes),
-              )),
-            ],
-            if (_includeLocalAudio && localAudioBytes > 0) ...<Widget>[
-              const SizedBox(height: 8),
-              Text(t.migration_space_tip_local_audio(
-                size: formatMigrationBytes(localAudioBytes),
-              )),
-            ],
+            ..._spaceDetailLines(verdict, scheme),
             const SizedBox(height: 8),
             TextButton(
               onPressed: _busy ? null : () => _migrateNow(),
@@ -409,6 +500,9 @@ class _MigrationPageState extends State<MigrationPage>
           else ...<Widget>[
             AdaptiveSettingsSwitchRow(
               title: t.migration_include_local_audio,
+              // 关着也要显示体积——这是「勾不勾」这个决定的全部依据。发音库
+              // 常常比其余批次加起来还大，藏到勾上之后再显示等于没显示。
+              subtitle: _batchSizeLabel(MigrationBatch.localAudio),
               value: _includeLocalAudio,
               onChanged: _busy
                   ? null
@@ -433,10 +527,20 @@ class _MigrationPageState extends State<MigrationPage>
                           )
                         : const Icon(Icons.radio_button_unchecked)),
                 title: Text(_batchLabel(batch)),
-                subtitle: _estimate?.perBatchBytes[batch] == null
-                    ? null
-                    : Text(
-                        formatMigrationBytes(_estimate!.perBatchBytes[batch]!)),
+                subtitle: switch (_batchSizeLabel(batch)) {
+                  final String size => Text(size),
+                  null => null,
+                },
+              ),
+            // 合计：用户要的「迁移之前就知道总共要搬多少」。只在量出来之后显示，
+            // 量不出时宁可不显示，也不给一个会被误当成真值的 0。
+            if (_totalLabel != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4, left: 16),
+                child: Text(
+                  t.migration_size_total(size: _totalLabel!),
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
               ),
             const SizedBox(height: 8),
             if (_error != null)

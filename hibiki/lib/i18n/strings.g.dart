@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 53754 (3162 per locale)
+/// Strings: 53788 (3164 per locale)
 ///
-/// Built on 2026-08-08 at 13:57 UTC
+/// Built on 2026-08-08 at 18:15 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4262,6 +4262,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get migration_step_install => 'Install Fushi';
   String get migration_step_export => 'Export data';
   String get migration_step_import => 'Import in Fushi';
+  String get migration_space_blocked_title => 'Not enough storage';
+  String migration_size_total({required Object size}) => 'Total ${size}';
 }
 
 // Path: <root>
@@ -11535,6 +11537,10 @@ class _StringsAr extends _StringsEn {
   String get migration_step_export => 'Export data';
   @override
   String get migration_step_import => 'Import in Fushi';
+  @override
+  String get migration_space_blocked_title => 'Not enough storage';
+  @override
+  String migration_size_total({required Object size}) => 'Total ${size}';
 }
 
 // Path: <root>
@@ -18875,6 +18881,10 @@ class _StringsDe extends _StringsEn {
   String get migration_step_export => 'Export data';
   @override
   String get migration_step_import => 'Import in Fushi';
+  @override
+  String get migration_space_blocked_title => 'Not enough storage';
+  @override
+  String migration_size_total({required Object size}) => 'Total ${size}';
 }
 
 // Path: <root>
@@ -26230,6 +26240,10 @@ class _StringsEs extends _StringsEn {
   String get migration_step_export => 'Export data';
   @override
   String get migration_step_import => 'Import in Fushi';
+  @override
+  String get migration_space_blocked_title => 'Not enough storage';
+  @override
+  String migration_size_total({required Object size}) => 'Total ${size}';
 }
 
 // Path: <root>
@@ -33597,6 +33611,10 @@ class _StringsFr extends _StringsEn {
   String get migration_step_export => 'Export data';
   @override
   String get migration_step_import => 'Import in Fushi';
+  @override
+  String get migration_space_blocked_title => 'Not enough storage';
+  @override
+  String migration_size_total({required Object size}) => 'Total ${size}';
 }
 
 // Path: <root>
@@ -40893,6 +40911,10 @@ class _StringsId extends _StringsEn {
   String get migration_step_export => 'Export data';
   @override
   String get migration_step_import => 'Import in Fushi';
+  @override
+  String get migration_space_blocked_title => 'Not enough storage';
+  @override
+  String migration_size_total({required Object size}) => 'Total ${size}';
 }
 
 // Path: <root>
@@ -48235,6 +48257,10 @@ class _StringsIt extends _StringsEn {
   String get migration_step_export => 'Export data';
   @override
   String get migration_step_import => 'Import in Fushi';
+  @override
+  String get migration_space_blocked_title => 'Not enough storage';
+  @override
+  String migration_size_total({required Object size}) => 'Total ${size}';
 }
 
 // Path: <root>
@@ -55394,6 +55420,10 @@ class _StringsJa extends _StringsEn {
   String get migration_step_export => 'Export data';
   @override
   String get migration_step_import => 'Import in Fushi';
+  @override
+  String get migration_space_blocked_title => 'Not enough storage';
+  @override
+  String migration_size_total({required Object size}) => 'Total ${size}';
 }
 
 // Path: <root>
@@ -62557,6 +62587,10 @@ class _StringsKo extends _StringsEn {
   String get migration_step_export => 'Export data';
   @override
   String get migration_step_import => 'Import in Fushi';
+  @override
+  String get migration_space_blocked_title => 'Not enough storage';
+  @override
+  String migration_size_total({required Object size}) => 'Total ${size}';
 }
 
 // Path: <root>
@@ -69879,6 +69913,10 @@ class _StringsNl extends _StringsEn {
   String get migration_step_export => 'Export data';
   @override
   String get migration_step_import => 'Import in Fushi';
+  @override
+  String get migration_space_blocked_title => 'Not enough storage';
+  @override
+  String migration_size_total({required Object size}) => 'Total ${size}';
 }
 
 // Path: <root>
@@ -77214,6 +77252,10 @@ class _StringsPtBr extends _StringsEn {
   String get migration_step_export => 'Export data';
   @override
   String get migration_step_import => 'Import in Fushi';
+  @override
+  String get migration_space_blocked_title => 'Not enough storage';
+  @override
+  String migration_size_total({required Object size}) => 'Total ${size}';
 }
 
 // Path: <root>
@@ -84533,6 +84575,10 @@ class _StringsRu extends _StringsEn {
   String get migration_step_export => 'Export data';
   @override
   String get migration_step_import => 'Import in Fushi';
+  @override
+  String get migration_space_blocked_title => 'Not enough storage';
+  @override
+  String migration_size_total({required Object size}) => 'Total ${size}';
 }
 
 // Path: <root>
@@ -91800,6 +91846,10 @@ class _StringsTh extends _StringsEn {
   String get migration_step_export => 'Export data';
   @override
   String get migration_step_import => 'Import in Fushi';
+  @override
+  String get migration_space_blocked_title => 'Not enough storage';
+  @override
+  String migration_size_total({required Object size}) => 'Total ${size}';
 }
 
 // Path: <root>
@@ -99099,6 +99149,10 @@ class _StringsTr extends _StringsEn {
   String get migration_step_export => 'Export data';
   @override
   String get migration_step_import => 'Import in Fushi';
+  @override
+  String get migration_space_blocked_title => 'Not enough storage';
+  @override
+  String migration_size_total({required Object size}) => 'Total ${size}';
 }
 
 // Path: <root>
@@ -106383,6 +106437,10 @@ class _StringsVi extends _StringsEn {
   String get migration_step_export => 'Export data';
   @override
   String get migration_step_import => 'Import in Fushi';
+  @override
+  String get migration_space_blocked_title => 'Not enough storage';
+  @override
+  String migration_size_total({required Object size}) => 'Total ${size}';
 }
 
 // Path: <root>
@@ -113153,6 +113211,10 @@ class _StringsZhCn extends _StringsEn {
   String get migration_step_export => '导出数据';
   @override
   String get migration_step_import => '在 Fushi 中导入';
+  @override
+  String get migration_space_blocked_title => '存储空间不足';
+  @override
+  String migration_size_total({required Object size}) => '合计 ${size}';
 }
 
 // Path: <root>
@@ -120234,6 +120296,10 @@ class _StringsZhHk extends _StringsEn {
   String get migration_step_export => 'Export data';
   @override
   String get migration_step_import => 'Import in Fushi';
+  @override
+  String get migration_space_blocked_title => 'Not enough storage';
+  @override
+  String migration_size_total({required Object size}) => 'Total ${size}';
 }
 
 /// Flat map(s) containing all translations.
@@ -126722,6 +126788,10 @@ extension on _StringsEn {
         return 'Export data';
       case 'migration_step_import':
         return 'Import in Fushi';
+      case 'migration_space_blocked_title':
+        return 'Not enough storage';
+      case 'migration_size_total':
+        return ({required Object size}) => 'Total ${size}';
       default:
         return null;
     }
@@ -133208,6 +133278,10 @@ extension on _StringsAr {
         return 'Export data';
       case 'migration_step_import':
         return 'Import in Fushi';
+      case 'migration_space_blocked_title':
+        return 'Not enough storage';
+      case 'migration_size_total':
+        return ({required Object size}) => 'Total ${size}';
       default:
         return null;
     }
@@ -139716,6 +139790,10 @@ extension on _StringsDe {
         return 'Export data';
       case 'migration_step_import':
         return 'Import in Fushi';
+      case 'migration_space_blocked_title':
+        return 'Not enough storage';
+      case 'migration_size_total':
+        return ({required Object size}) => 'Total ${size}';
       default:
         return null;
     }
@@ -146223,6 +146301,10 @@ extension on _StringsEs {
         return 'Export data';
       case 'migration_step_import':
         return 'Import in Fushi';
+      case 'migration_space_blocked_title':
+        return 'Not enough storage';
+      case 'migration_size_total':
+        return ({required Object size}) => 'Total ${size}';
       default:
         return null;
     }
@@ -152736,6 +152818,10 @@ extension on _StringsFr {
         return 'Export data';
       case 'migration_step_import':
         return 'Import in Fushi';
+      case 'migration_space_blocked_title':
+        return 'Not enough storage';
+      case 'migration_size_total':
+        return ({required Object size}) => 'Total ${size}';
       default:
         return null;
     }
@@ -159231,6 +159317,10 @@ extension on _StringsId {
         return 'Export data';
       case 'migration_step_import':
         return 'Import in Fushi';
+      case 'migration_space_blocked_title':
+        return 'Not enough storage';
+      case 'migration_size_total':
+        return ({required Object size}) => 'Total ${size}';
       default:
         return null;
     }
@@ -165740,6 +165830,10 @@ extension on _StringsIt {
         return 'Export data';
       case 'migration_step_import':
         return 'Import in Fushi';
+      case 'migration_space_blocked_title':
+        return 'Not enough storage';
+      case 'migration_size_total':
+        return ({required Object size}) => 'Total ${size}';
       default:
         return null;
     }
@@ -172211,6 +172305,10 @@ extension on _StringsJa {
         return 'Export data';
       case 'migration_step_import':
         return 'Import in Fushi';
+      case 'migration_space_blocked_title':
+        return 'Not enough storage';
+      case 'migration_size_total':
+        return ({required Object size}) => 'Total ${size}';
       default:
         return null;
     }
@@ -178686,6 +178784,10 @@ extension on _StringsKo {
         return 'Export data';
       case 'migration_step_import':
         return 'Import in Fushi';
+      case 'migration_space_blocked_title':
+        return 'Not enough storage';
+      case 'migration_size_total':
+        return ({required Object size}) => 'Total ${size}';
       default:
         return null;
     }
@@ -185189,6 +185291,10 @@ extension on _StringsNl {
         return 'Export data';
       case 'migration_step_import':
         return 'Import in Fushi';
+      case 'migration_space_blocked_title':
+        return 'Not enough storage';
+      case 'migration_size_total':
+        return ({required Object size}) => 'Total ${size}';
       default:
         return null;
     }
@@ -191689,6 +191795,10 @@ extension on _StringsPtBr {
         return 'Export data';
       case 'migration_step_import':
         return 'Import in Fushi';
+      case 'migration_space_blocked_title':
+        return 'Not enough storage';
+      case 'migration_size_total':
+        return ({required Object size}) => 'Total ${size}';
       default:
         return null;
     }
@@ -198194,6 +198304,10 @@ extension on _StringsRu {
         return 'Export data';
       case 'migration_step_import':
         return 'Import in Fushi';
+      case 'migration_space_blocked_title':
+        return 'Not enough storage';
+      case 'migration_size_total':
+        return ({required Object size}) => 'Total ${size}';
       default:
         return null;
     }
@@ -204682,6 +204796,10 @@ extension on _StringsTh {
         return 'Export data';
       case 'migration_step_import':
         return 'Import in Fushi';
+      case 'migration_space_blocked_title':
+        return 'Not enough storage';
+      case 'migration_size_total':
+        return ({required Object size}) => 'Total ${size}';
       default:
         return null;
     }
@@ -211179,6 +211297,10 @@ extension on _StringsTr {
         return 'Export data';
       case 'migration_step_import':
         return 'Import in Fushi';
+      case 'migration_space_blocked_title':
+        return 'Not enough storage';
+      case 'migration_size_total':
+        return ({required Object size}) => 'Total ${size}';
       default:
         return null;
     }
@@ -217672,6 +217794,10 @@ extension on _StringsVi {
         return 'Export data';
       case 'migration_step_import':
         return 'Import in Fushi';
+      case 'migration_space_blocked_title':
+        return 'Not enough storage';
+      case 'migration_size_total':
+        return ({required Object size}) => 'Total ${size}';
       default:
         return null;
     }
@@ -224109,6 +224235,10 @@ extension on _StringsZhCn {
         return '导出数据';
       case 'migration_step_import':
         return '在 Fushi 中导入';
+      case 'migration_space_blocked_title':
+        return '存储空间不足';
+      case 'migration_size_total':
+        return ({required Object size}) => '合计 ${size}';
       default:
         return null;
     }
@@ -230575,6 +230705,10 @@ extension on _StringsZhHk {
         return 'Export data';
       case 'migration_step_import':
         return 'Import in Fushi';
+      case 'migration_space_blocked_title':
+        return 'Not enough storage';
+      case 'migration_size_total':
+        return ({required Object size}) => 'Total ${size}';
       default:
         return null;
     }
