@@ -119,7 +119,7 @@ void main() {
         LapisVisualField.primaryDefinition: <String>['id="primary"'],
         LapisVisualField.glossaries: <String>['id="glossaries"'],
         LapisVisualField.dictionaryEntry: <String>['<li data-dictionary='],
-        LapisVisualField.dictionaryName: <String>['<i data-hibiki-lapis-'],
+        LapisVisualField.dictionaryName: <String>['<i data-fushi-lapis-'],
         LapisVisualField.definitionExample: <String>[
           'data-sc-content="example-sentence"',
         ],

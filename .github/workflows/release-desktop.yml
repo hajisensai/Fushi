@@ -1453,7 +1453,7 @@ jobs:
           rm -f "$out_dir"/fushi-*-ios.ipa
           (
             cd "$payload_dir"
-            zip -qry "$GITHUB_WORKSPACE/hibiki/$out_dir/fushi-${BUILD_VERSION_NAME}-ios.ipa" Payload
+            zip -qry "$GITHUB_WORKSPACE/fushi/$out_dir/fushi-${BUILD_VERSION_NAME}-ios.ipa" Payload
           )
       # The single non-blocking `publish` job downloads this artifact and does
       # all Release publishing, so iOS builds in parallel with Windows/macOS and
