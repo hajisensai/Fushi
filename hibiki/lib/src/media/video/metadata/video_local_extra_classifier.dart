@@ -33,6 +33,14 @@ VideoLocalExtraMatch? classifyLocalVideoExtra(String path) {
       'scenes' || 'scene' => VideoMetadataExtraKind.scene,
       'samples' || 'sample' => VideoMetadataExtraKind.sample,
       'extras' || 'extra' => VideoMetadataExtraKind.extra,
+      'menu' || 'menus' => VideoMetadataExtraKind.extra,
+      'pv' ||
+      'pvs' ||
+      'ncop&nced' ||
+      'ncop nced' =>
+        VideoMetadataExtraKind.clip,
+      '迷你动画' || '迷你動畫' => VideoMetadataExtraKind.short,
+      '特典' || '特典映像' || '映像特典' => VideoMetadataExtraKind.extra,
       _ => kind,
     };
     if (kind != null) break;
@@ -42,8 +50,8 @@ VideoLocalExtraMatch? classifyLocalVideoExtra(String path) {
   }
   if (kind == null &&
       RegExp(
-        r'(^|[ ._\-])(ncop|nced|creditless[ ._\-]?(op|ed)|pv)\d*'
-        r'([ ._\-]|$)',
+        r'(^|[^a-z0-9])(ncop|nced|creditless[ ._\-]?(op|ed)|pv)\d*'
+        r'([^a-z0-9]|$)',
         caseSensitive: false,
       ).hasMatch(stem)) {
     kind = VideoMetadataExtraKind.clip;

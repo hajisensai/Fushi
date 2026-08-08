@@ -3589,13 +3589,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 _addTagToVideoBook(book.bookUid, tag),
             child: row,
           );
-    return CardDropZone<VideoBookRow>(
-      meta: book,
-      child: MediaCardDraggable(
-        mediaRef: MediaRef(kind: MediaKind.video, entryKey: book.bookUid),
-        label: book.title,
-        enabled: !_selectionMode,
-        child: SelectionSlotTarget(slot: slot, child: tagged),
+    // BookDragTarget 内部使用 StackFit.expand；SliverList 的主轴约束是无界的，
+    // 必须在完整交互外壳外给出行高，不能只约束最里面的卡片内容。
+    return SizedBox(
+      height: 96,
+      child: CardDropZone<VideoBookRow>(
+        meta: book,
+        child: MediaCardDraggable(
+          mediaRef: MediaRef(kind: MediaKind.video, entryKey: book.bookUid),
+          label: book.title,
+          enabled: !_selectionMode,
+          child: SelectionSlotTarget(slot: slot, child: tagged),
+        ),
       ),
     );
   }

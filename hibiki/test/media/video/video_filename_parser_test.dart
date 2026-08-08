@@ -87,6 +87,23 @@ void main() {
       expect(info.season, 2);
       expect(info.episode, 3);
     });
+
+    test('re0 发布名保留第三季与正片集号', () {
+      final VideoNameInfo info = parseVideoFilename(
+        '[DBD-Raws][Re Zero kara Hajimeru Isekai Seikatsu S3]'
+        '[01][1080P][BDRip][HEVC-10bit][FLACx2].mkv',
+      );
+      expect(info.series, 'Re Zero kara Hajimeru Isekai Seikatsu');
+      expect(info.season, 3);
+      expect(info.episode, 1);
+
+      final ParsedMediaName parent = FilenameParser.parse(
+        '[DBD-Raws][Re：从零开始的异世界生活 第三季]'
+        '[01-16TV全集+SP][1080P][BDRip][HEVC-10bit][简繁外挂][FLAC][MKV]',
+      );
+      expect(parent.title, 'Re：从零开始的异世界生活');
+      expect(parent.season, 3);
+    });
   });
 
   group('G10 第二步：parseVideoFilename 是 FilenameParser.parse 的窄化适配', () {

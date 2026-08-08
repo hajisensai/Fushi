@@ -415,6 +415,100 @@ void main() {
     );
   });
 
+  test('re0 使用清洗后的父目录标题和第三季约束识别主剧', () async {
+    final Directory showDir = Directory(p.join(
+      root.path,
+      '[DBD-Raws][Re：从零开始的异世界生活 第三季]'
+      '[01-16TV全集+SP][1080P][BDRip]',
+    ));
+    await showDir.create(recursive: true);
+    final int sourceId = await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 're0',
+        mediaKind: 'video',
+        rootPath: root.path,
+        createdAt: 1,
+      ),
+    );
+    for (final int episode in <int>[1, 2]) {
+      final String uid = 're0-main-$episode';
+      final File video = File(p.join(
+        showDir.path,
+        '[DBD-Raws][Re Zero kara Hajimeru Isekai Seikatsu S3]'
+        '[${episode.toString().padLeft(2, '0')}][1080P][BDRip].mkv',
+      ));
+      await video.writeAsBytes(const <int>[0]);
+      await db.upsertVideoBook(VideoBooksCompanion(
+        bookUid: Value<String>(uid),
+        title: Value<String>(p.basenameWithoutExtension(video.path)),
+        videoPath: Value<String>(video.path),
+        sourceId: Value<int?>(sourceId),
+      ));
+    }
+    final Directory pvDir = Directory(p.join(showDir.path, 'PV'));
+    await pvDir.create(recursive: true);
+    final File pv = File(p.join(
+      pvDir.path,
+      '[DBD-Raws][Re Zero kara Hajimeru Isekai Seikatsu S3]'
+      '[PV][01][1080P][BDRip].mkv',
+    ));
+    await pv.writeAsBytes(const <int>[0]);
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value<String>('re0-pv-1'),
+      title: Value<String>(p.basenameWithoutExtension(pv.path)),
+      videoPath: Value<String>(pv.path),
+      sourceId: Value<int?>(sourceId),
+    ));
+    final int collectionId = await db.createMediaCollection(
+      'Re Zero kara Hajimeru Isekai Seikatsu',
+      collectionType: 'playlist',
+    );
+    for (final String uid in <String>[
+      're0-main-1',
+      're0-main-2',
+      're0-pv-1',
+    ]) {
+      await db.addToCollection(collectionId, MediaKind.video, uid);
+    }
+    await db.upsertVideoSourceScrapeSettings(
+      VideoSourceScrapeSettingsCompanion.insert(
+        sourceId: Value<int>(sourceId),
+        providerOverride: const Value<String?>('tmdb'),
+        writeNfo: const Value<bool>(false),
+        writeImages: const Value<bool>(false),
+        fanartEnabled: const Value<bool>(false),
+        updatedAt: 1,
+      ),
+    );
+    final _ReZeroTmdbProvider provider = _ReZeroTmdbProvider();
+    final VideoSourceScrapeCoordinator coordinator =
+        VideoSourceScrapeCoordinator(
+      database: db,
+      config: const VideoSourceScrapeGlobalConfig(
+        primaryProvider: VideoMetadataProviderKind.tmdb,
+      ),
+      registry:
+          VideoMetadataProviderRegistry(<VideoMetadataProvider>[provider]),
+      fanartProvider: const _NoImages(),
+    );
+
+    final SourceScrapeReport report = await coordinator.scrapeSource(
+      (await db.getMediaSourceById(sourceId))!,
+      cancellationToken: VideoSourceScrapeCancellationToken(),
+      onProgress: (_) {},
+    );
+
+    expect(report.totalWorks, 1,
+        reason: '${report.warnings}\n${report.errors}');
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    expect(provider.searchTitles, contains('Re：从零开始的异世界生活'));
+    expect(provider.searchSeasons, everyElement(3));
+    expect(
+      (await db.getVideoMetadataWorkByCollection(collectionId))?.title,
+      'Re：从零开始的异世界生活',
+    );
+  });
+
   test('缺少真实分集资料时生成的 episode NFO 不伪造文件名标题', () async {
     final Directory seasonDir =
         Directory(p.join(root.path, 'Unknown Show', 'Season 01'));
@@ -917,6 +1011,69 @@ class _HimoutoTmdbProvider implements VideoMetadataProvider {
         for (final int number in <int>[8, 9])
           VideoMetadataEpisode(
             seasonNumber: 1,
+            episodeNumber: number,
+            title: 'Episode $number',
+          ),
+      ];
+
+  @override
+  void close() {}
+}
+
+class _ReZeroTmdbProvider implements VideoMetadataProvider {
+  final List<String> searchTitles = <String>[];
+  final List<int?> searchSeasons = <int?>[];
+
+  @override
+  VideoMetadataProviderKind get providerKind => VideoMetadataProviderKind.tmdb;
+
+  @override
+  bool get isAvailable => true;
+
+  VideoMetadataWork get work => VideoMetadataWork(
+        provider: providerKind,
+        kind: VideoMetadataMediaKind.tv,
+        title: 'Re：从零开始的异世界生活',
+        originalTitle: 'Re:ゼロから始める異世界生活',
+        year: 2016,
+        ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'tmdb', value: '65942'),
+        ],
+        seasons: <VideoMetadataSeason>[
+          VideoMetadataSeason(seasonNumber: 3, title: 'Season 3'),
+        ],
+      );
+
+  @override
+  Future<List<VideoMetadataWork>> search(
+    VideoMetadataSearchRequest request,
+  ) async {
+    searchTitles.add(request.title);
+    searchSeasons.add(request.seasonNumber);
+    return request.title == 'Re：从零开始的异世界生活'
+        ? <VideoMetadataWork>[work]
+        : const <VideoMetadataWork>[];
+  }
+
+  @override
+  Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async =>
+      work;
+
+  @override
+  Future<List<VideoMetadataSeason>> fetchSeasons(
+    VideoMetadataLookup lookup,
+  ) async =>
+      work.seasons;
+
+  @override
+  Future<List<VideoMetadataEpisode>> fetchEpisodes(
+    VideoMetadataLookup lookup, {
+    required int seasonNumber,
+  }) async =>
+      <VideoMetadataEpisode>[
+        for (final int number in <int>[1, 2])
+          VideoMetadataEpisode(
+            seasonNumber: 3,
             episodeNumber: number,
             title: 'Episode $number',
           ),

@@ -94,4 +94,63 @@ void main() {
     expect(
         works.every((VideoSourceScrapeWork work) => !work.isEpisodic), isTrue);
   });
+
+  test('re0 方括号 PV、菜单与迷你动画不产生独立刮削作品', () async {
+    final int sourceId = await addSource('D:/smb/re0');
+    const String root = 'D:/smb/re0/[DBD-Raws][Re：从零开始的异世界生活 第三季]'
+        '[01-16TV全集+SP][1080P][BDRip]';
+    await addVideo(
+      'main-01',
+      '$root/[DBD-Raws][Re Zero kara Hajimeru Isekai Seikatsu S3]'
+          '[01][1080P][BDRip].mkv',
+      sourceId,
+    );
+    await addVideo(
+      'main-02',
+      '$root/[DBD-Raws][Re Zero kara Hajimeru Isekai Seikatsu S3]'
+          '[02][1080P][BDRip].mkv',
+      sourceId,
+    );
+    await addVideo(
+      'pv-01',
+      '$root/PV/[DBD-Raws][Re Zero kara Hajimeru Isekai Seikatsu S3]'
+          '[PV][01][1080P][BDRip].mkv',
+      sourceId,
+    );
+    await addVideo(
+      'menu-01',
+      '$root/menu/[DBD-Raws][Re Zero kara Hajimeru Isekai Seikatsu S3]'
+          '[menu][01][1080P][BDRip].mkv',
+      sourceId,
+    );
+    await addVideo(
+      'short-01',
+      '$root/迷你动画/[DBD-Raws][Re Zero Break Time][01].mkv',
+      sourceId,
+    );
+    final int collectionId = await db.createMediaCollection(
+      'Re Zero kara Hajimeru Isekai Seikatsu',
+      collectionType: 'playlist',
+    );
+    for (final String uid in <String>[
+      'main-01',
+      'main-02',
+      'pv-01',
+      'menu-01',
+      'short-01',
+    ]) {
+      await db.addToCollection(collectionId, MediaKind.video, uid);
+    }
+
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final List<VideoSourceScrapeWork> works =
+        await VideoSourceWorkPlanner(db).plan(source);
+
+    expect(works, hasLength(1));
+    expect(works.single.collection?.id, collectionId);
+    expect(
+      works.single.members.map((VideoBookRow row) => row.bookUid),
+      <String>['main-01', 'main-02'],
+    );
+  });
 }

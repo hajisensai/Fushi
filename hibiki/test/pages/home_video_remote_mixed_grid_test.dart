@@ -10,6 +10,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/media/video/video_library_section.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/home_video_page.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
@@ -81,7 +82,11 @@ void main() {
     }
   });
 
-  Widget buildApp(RemoteVideoClient client) => ProviderScope(
+  Widget buildApp(
+    RemoteVideoClient client, {
+    VideoLibrarySection section = VideoLibrarySection.home,
+  }) =>
+      ProviderScope(
         overrides: <Override>[
           platformServicesProvider.overrideWithValue(platformServices),
           ankiRepositoryProvider.overrideWithValue(ankiRepository),
@@ -92,6 +97,7 @@ void main() {
             home: Scaffold(
               body: HomeVideoPage(
                 repo: VideoBookRepository(db),
+                section: section,
                 remoteVideoClientLoader: () async => client,
                 remoteVideoDownloadDestination: (RemoteVideoInfo v) async =>
                     File('${pathProviderDir.path}/${v.id.hashCode}.mp4'),
@@ -100,6 +106,35 @@ void main() {
           ),
         ),
       );
+
+  testWidgets('全部视频切换列表后本地行保持可见', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/list-1'),
+      title: Value('List One'),
+      videoPath: Value('/abs/list-1.mp4'),
+    ));
+
+    await tester.pumpWidget(buildApp(
+      _ListFakeRemoteVideoClient(const <RemoteVideoInfo>[]),
+      section: VideoLibrarySection.allVideos,
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-all-videos-layout-toggle')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('home_video_list_video/list-1')),
+      findsOneWidget,
+    );
+    expect(find.text('List One'), findsOneWidget);
+    expect(tester.getSize(find.text('List One')).height, greaterThan(0));
+  });
 
   testWidgets('远端互联视频混排进主网格且带云角标', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 800);

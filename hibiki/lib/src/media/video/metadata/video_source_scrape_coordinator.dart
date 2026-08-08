@@ -358,6 +358,7 @@ class VideoSourceScrapeCoordinator
 
     final VideoNameInfo parsed =
         parseVideoFilename(p.basename(localWork.members.first.videoPath));
+    final int? seasonNumber = _parsedSeason(localWork, parsed);
     final VideoMetadataMediaKind kind =
         localWork.isEpisodic || parsed.episode != null
             ? VideoMetadataMediaKind.tv
@@ -385,7 +386,7 @@ class VideoSourceScrapeCoordinator
       mediaKind: kind,
       titleCandidates: candidates,
       year: nfo?.year ?? _parsedYear(localWork),
-      seasonNumber: parsed.season,
+      seasonNumber: seasonNumber,
       confirmedLookup: storedLookup ?? _lookupForNfo(nfo),
       identityHints: <String>[
         for (final VideoBookRow member in localWork.members) member.videoPath,
@@ -449,12 +450,12 @@ class VideoSourceScrapeCoordinator
     if (metadata.provider != VideoMetadataProviderKind.tmdb) {
       metadata = remapStandaloneVideoMetadataSeason(
         metadata,
-        parsed.season,
+        seasonNumber,
       );
       final _TmdbSupplementResult tmdb = await _tmdbSupplement(
         metadata,
         candidates,
-        parsed.season,
+        seasonNumber,
         warnings,
         localWork.title,
       );
@@ -1101,11 +1102,20 @@ class VideoSourceScrapeCoordinator
     VideoNameInfo parsed,
   ) {
     final String path = work.members.first.videoPath;
-    final List<String> values = <String>[
+    final List<String> rawValues = <String>[
       work.title,
       parsed.series,
       p.basename(p.dirname(path)),
       p.basename(p.dirname(p.dirname(path))),
+    ];
+    // MoviePilot MetaInfoPath 会分别解析文件名、父目录和祖父目录后再合并。
+    // 原始目录名通常还带字幕组、全集范围、编码等块，直接拿它请求 provider 会
+    // 得到零结果；清洗后的标题必须先进入候选，原值仅保留显式 ID 等兼容信息。
+    final List<String> values = <String>[
+      for (final String value in rawValues) ...<String>[
+        FilenameParser.parse(value).title,
+        value,
+      ],
     ];
     final Set<String> seen = <String>{};
     return <String>[
@@ -1113,6 +1123,22 @@ class VideoSourceScrapeCoordinator
         if (value.trim().isNotEmpty && seen.add(value.trim().toLowerCase()))
           value.trim(),
     ];
+  }
+
+  static int? _parsedSeason(
+    VideoSourceScrapeWork work,
+    VideoNameInfo filename,
+  ) {
+    if (filename.season != null) return filename.season;
+    final String path = work.members.first.videoPath;
+    for (final String directory in <String>[
+      p.basename(p.dirname(path)),
+      p.basename(p.dirname(p.dirname(path))),
+    ]) {
+      final int? season = FilenameParser.parse(directory).season;
+      if (season != null) return season;
+    }
+    return null;
   }
 
   static int? _parsedYear(VideoSourceScrapeWork work) {

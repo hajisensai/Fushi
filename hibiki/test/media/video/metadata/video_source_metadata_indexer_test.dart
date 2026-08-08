@@ -32,6 +32,26 @@ void main() {
       classifyLocalVideoExtra(r'D:\Shows\Title\Title NCED.mkv')?.kind,
       VideoMetadataExtraKind.clip,
     );
+    expect(
+      classifyLocalVideoExtra(r'D:\Shows\Title\PV\[Group][Title][PV][01].mkv')
+          ?.kind,
+      VideoMetadataExtraKind.clip,
+    );
+    expect(
+      classifyLocalVideoExtra(
+        r'D:\Shows\Title\NCOP&NCED\[Group][Title][NCOP].mkv',
+      )?.kind,
+      VideoMetadataExtraKind.clip,
+    );
+    expect(
+      classifyLocalVideoExtra(r'D:\Shows\Title\menu\[Group][Title][01].mkv')
+          ?.kind,
+      VideoMetadataExtraKind.extra,
+    );
+    expect(
+      classifyLocalVideoExtra(r'D:\Shows\Title\迷你动画\short-01.mkv')?.kind,
+      VideoMetadataExtraKind.short,
+    );
     expect(classifyLocalVideoExtra(r'D:\Shows\Title\Title.S01E01.mkv'), isNull);
   });
 
