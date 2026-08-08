@@ -1,7 +1,7 @@
-# Runs a Hibiki Windows integration test in an isolated background runner.
+# Runs a Fushi Windows integration test in an isolated background runner.
 #
-# The script never touches user-owned Hibiki instances (e.g.
-# D:\APP\Hibiki\fushi.exe) or IDE dart/flutter processes: those are only recorded
+# The script never touches user-owned Fushi instances (e.g.
+# D:\APP\Fushi\fushi.exe) or IDE dart/flutter processes: those are only recorded
 # as evidence. It DOES reap stale TEST-RUNNER processes from a previous crashed run
 # of this same runner, scoped strictly to this worktree's build\windows\x64\runner
 # path (a stuck prior runner locks the build/debug port -> "Unable to start the
@@ -360,7 +360,7 @@ $runnerInfoPath = Join-Path $EvidenceDir "runner-info.json"
   "[itest] runId=$RunId",
   "[itest] target=$Target",
   "[itest] evidenceDir=$EvidenceDir",
-  "[itest] user Hibiki instances before=$($before.Count)",
+  "[itest] user Fushi instances before=$($before.Count)",
   "[itest] command=$commandLine",
   "[itest] pubCache=$RealPubCache",
   "[itest] proxy=$(if ([string]::IsNullOrWhiteSpace($EffectiveProxy)) { '(none)' } else { $EffectiveProxy })",
@@ -371,7 +371,7 @@ $runnerInfoPath = Join-Path $EvidenceDir "runner-info.json"
 # Reap stale TEST-RUNNER processes left by a PREVIOUS crashed run of THIS runner.
 # Scope is strictly this worktree's build\windows\x64\runner path (isTestRunner is
 # set by exact path-prefix match in Get-FushiProcessSnapshot), so this NEVER kills
-# the user's installed Hibiki (e.g. D:\APP\Hibiki\fushi.exe) or IDE dart/flutter
+# the user's installed Fushi (e.g. D:\APP\Fushi\fushi.exe) or IDE dart/flutter
 # processes. A stuck prior test-runner locks the build output / debug port and is a
 # known cause of "Unable to start the app on the device". Never hand-kill by name.
 if (-not $DryRun) {

@@ -11,7 +11,7 @@
 #                                      #   判真红/修复等判断类工作留给值班会话）
 # --file 的 DB **锚定脚本所在仓库根**（$0/../.vibe-coxswain/board.db 的绝对路径，
 # VIBE_COXSWAIN_DB 显式设置时才让位），并要求 DB 已存在——绝不静默新建空库落板。
-# 环境变量：CI_SWEEP_REPO（默认 hajisensai/hibiki）/ CI_SWEEP_SELF（默认 hajisensai）
+# 环境变量：CI_SWEEP_REPO（默认 hajisensai/Fushi）/ CI_SWEEP_SELF（默认 hajisensai）
 #           CI_SWEEP_DAYS（默认 3，只看窗口内的失败）/ CI_SWEEP_LIMIT（默认 50）
 # 去重键 = 「workflow@branch」（标题前缀 token）：同一 workflow 在同一分支反复红，
 # 活跃 todo 在板上就不重复落；修好关单后再红 = 新落一条（回归，应有新单）。
@@ -25,7 +25,7 @@ for arg in "$@"; do
   esac
 done
 
-REPO="${CI_SWEEP_REPO:-hajisensai/hibiki}"
+REPO="${CI_SWEEP_REPO:-hajisensai/Fushi}"
 SELF="${CI_SWEEP_SELF:-hajisensai}"
 DAYS="${CI_SWEEP_DAYS:-3}"
 LIMIT="${CI_SWEEP_LIMIT:-50}"

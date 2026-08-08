@@ -2,20 +2,20 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Hibiki (debug)",
+      "name": "Fushi (debug)",
       "type": "dart",
       "request": "launch",
       "program": "fushi/lib/main.dart"
     },
     {
-      "name": "Hibiki (profile)",
+      "name": "Fushi (profile)",
       "type": "dart",
       "request": "launch",
       "program": "fushi/lib/main.dart",
       "flutterMode": "profile"
     },
     {
-      "name": "Hibiki (release)",
+      "name": "Fushi (release)",
       "type": "dart",
       "request": "launch",
       "program": "fushi/lib/main.dart",

@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-  Hibiki Flutter UI tool - cross-platform UI element location and interaction
+  Fushi Flutter UI tool - cross-platform UI element location and interaction
   via Flutter VM Service. Equivalent of adb-ui.ps1 for Windows/macOS/Linux/iOS.
 
 .DESCRIPTION

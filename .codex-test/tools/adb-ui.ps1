@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-  Hibiki ADB UI tool - tap, swipe, dump, find without manual adb calls
+  Fushi ADB UI tool - tap, swipe, dump, find without manual adb calls
 .EXAMPLE
   .\adb-ui.ps1 dump              # full UI tree
   .\adb-ui.ps1 dump -Compact     # only interactive/labeled elements
@@ -30,7 +30,7 @@ param(
 
     [string]$Device = "",
     [switch]$Compact,
-    [string]$Package = "app.hibiki.reader"
+    [string]$Package = "app.fushi.reader"
 )
 
 # ─── Device auto-detection ───────────────────────────────────────────────────

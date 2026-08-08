@@ -110,7 +110,7 @@ function Test-PubDevReachable {
         $request.Method = 'HEAD'
         $request.Timeout = $TimeoutSec * 1000
         $request.ReadWriteTimeout = $TimeoutSec * 1000
-        $request.UserAgent = 'hibiki-bootstrap'
+        $request.UserAgent = 'fushi-bootstrap'
         if ($ProxyUrl) {
             $request.Proxy = New-Object Net.WebProxy($ProxyUrl, $true)
         }

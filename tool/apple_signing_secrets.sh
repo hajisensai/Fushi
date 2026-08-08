@@ -21,7 +21,7 @@
 
 set -euo pipefail
 
-REPO="hajisensai/hibiki"
+REPO="hajisensai/Fushi"
 VERIFY_ONLY=false
 TEAM_ID=""
 ASC_KEY_ID=""
@@ -163,7 +163,7 @@ fi
 if [ -n "$IOS_PROFILE" ]; then
   echo "ios provisioning profile ($IOS_PROFILE):"
   [ -f "$IOS_PROFILE" ] || die "profile not found: $IOS_PROFILE"
-  PROFILE_PLIST="$(mktemp -t hibiki-profile)"
+  PROFILE_PLIST="$(mktemp -t fushi-profile)"
   trap 'rm -f "$PROFILE_PLIST"' EXIT
   if ! security cms -D -i "$IOS_PROFILE" > "$PROFILE_PLIST" 2>/dev/null; then
     fail "不是 CMS 签名的 .mobileprovision"
@@ -195,7 +195,7 @@ if [ -n "$IOS_PROFILE" ]; then
     # 描述文件里嵌着它授权的证书列表；CI 用的 p12 必须在其中，否则 codesign 过了
     # 而 App Store 校验会拒。
     if [ -n "$IOS_CERT" ]; then
-      CERT_DER="$(mktemp -t hibiki-cert)"
+      CERT_DER="$(mktemp -t fushi-cert)"
       openssl pkcs12 -in "$IOS_CERT" -passin "pass:$IOS_CERT_PASSWORD" -nokeys -clcerts 2>/dev/null \
         | openssl x509 -outform DER -out "$CERT_DER" 2>/dev/null || true
       CERT_FP="$(openssl x509 -inform DER -in "$CERT_DER" -noout -fingerprint -sha1 2>/dev/null \
@@ -203,7 +203,7 @@ if [ -n "$IOS_PROFILE" ]; then
       MATCHED=false
       INDEX=0
       while /usr/libexec/PlistBuddy -c "Print :DeveloperCertificates:$INDEX" "$PROFILE_PLIST" >/dev/null 2>&1; do
-        EMBEDDED="$(mktemp -t hibiki-embedded)"
+        EMBEDDED="$(mktemp -t fushi-embedded)"
         /usr/libexec/PlistBuddy -c "Print :DeveloperCertificates:$INDEX" "$PROFILE_PLIST" > /dev/null
         plutil -extract "DeveloperCertificates.$INDEX" raw -o - "$PROFILE_PLIST" 2>/dev/null \
           | base64 --decode > "$EMBEDDED" 2>/dev/null || true

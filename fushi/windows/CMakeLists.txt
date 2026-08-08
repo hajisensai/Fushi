@@ -104,7 +104,7 @@ install(TARGETS fushidicts_ffi RUNTIME DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
 # === 内置 libtorrent 引擎（可选，vendored 预编译）===
-# hibiki_torrent 依赖 libtorrent+boost+openssl（vcpkg 首次源码编译约 40min），
+# fushi_torrent 依赖 libtorrent+boost+openssl（vcpkg 首次源码编译约 40min），
 # 不能强制每台构建机装 vcpkg。故采用 vendored 预编译：由
 # native/fushi_torrent/build_windows_dll.ps1 事先产出 4 个 DLL 到
 # prebuilt/windows-x64/，这里「有则拷、无则跳」——目录不存在时 flutter build
@@ -125,7 +125,7 @@ foreach(_dll ${FUSHI_TORRENT_DLLS})
 endforeach()
 
 # === galgame hook helper 随包归档（可选，本地/CI 事先构建）===
-# helper（injector exe + hook DLL）**绝不链接进 Hibiki.exe**，它以隔离子进程/DLL
+# helper（injector exe + hook DLL）**绝不链接进 fushi.exe**，它以隔离子进程/DLL
 # 运行，随主包分发的是两架构 zip + sha256 侧车，app 校验后解压到 voice_hook/<arch>/。
 # 运行期定位是「exe 同级的 galgame_helper/」（galgame_helper_installer.dart 的
 # _bundledDirectory）。

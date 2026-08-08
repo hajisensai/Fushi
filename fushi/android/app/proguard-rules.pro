@@ -44,7 +44,7 @@
 -keep class mihon.core.common.extensions.** { *; }
 -keep class uy.kohesive.injekt.** { *; }
 # Third-party extension bytecode calls these host libraries dynamically, so
-# R8 cannot infer the reachable API surface from Hibiki itself.
+# R8 cannot infer the reachable API surface from Fushi itself.
 -keep class okhttp3.** { *; }
 -keep class okio.** { *; }
 -keep class org.jsoup.** { *; }

@@ -10,7 +10,7 @@ runtime and used only for API Authorization headers.
 
 Usage:
     GITHUB_TOKEN=... python tool/gen_star_history_svg.py \
-        --repo hajisensai/hibiki --out docs/assets/star-history.svg
+        --repo hajisensai/Fushi --out docs/assets/star-history.svg
 """
 
 from __future__ import annotations
@@ -257,8 +257,8 @@ def main(argv: List[str]) -> int:
     parser = argparse.ArgumentParser(description="Generate a star-history SVG.")
     parser.add_argument(
         "--repo",
-        default=os.environ.get("STAR_HISTORY_REPO", "hajisensai/hibiki"),
-        help="owner/name of the repository (default: hajisensai/hibiki)",
+        default=os.environ.get("STAR_HISTORY_REPO", "hajisensai/Fushi"),
+        help="owner/name of the repository (default: hajisensai/Fushi)",
     )
     parser.add_argument(
         "--out",

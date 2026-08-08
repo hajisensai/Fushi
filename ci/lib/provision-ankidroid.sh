@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Shared AnkiDroid provisioning for Hibiki integration tests.
+# Shared AnkiDroid provisioning for Fushi integration tests.
 #
 # Sourced by ci/anki-integration-test.sh and ci/integration-test.sh so the
-# "install AnkiDroid + create a collection + grant Hibiki the API permission"
+# "install AnkiDroid + create a collection + grant Fushi the API permission"
 # recipe lives in exactly one place (DRY).
 #
 # WHY THIS IS A FIXTURE STEP, NOT A PRODUCT WORKAROUND
 # The AnkiDroid API is gated by the *dangerous* permission
 #   com.ichi2.anki.permission.READ_WRITE_DATABASE
 # which Android grants only after the user taps "Allow" on AnkiDroid's runtime
-# dialog. Hibiki requests it correctly at runtime (AnkiChannelHandler.java
+# dialog. Fushi requests it correctly at runtime (AnkiChannelHandler.java
 # ankiDroid.requestPermission(...)), but an automated `flutter drive` run
 # installs the app fresh and cannot tap that system dialog. We reproduce the
 # *granted* state deterministically: pre-install the APK with `adb install -g`
@@ -18,7 +18,7 @@
 #
 # Required env (set by the caller before sourcing):
 #   ADBD       full "adb -s <serial>" command
-#   PKG        Hibiki application id (app.hibiki.reader)
+#   PKG        Fushi application id (app.fushi.reader)
 # Optional:
 #   ANKI_APK_URL  override the AnkiDroid APK mirror
 
@@ -113,8 +113,8 @@ provision_ankidroid() {
   return 0
 }
 
-# Grant Hibiki the AnkiDroid API permission and verify it stuck. Assumes the
-# Hibiki APK is already installed (with -g). Returns 0 if granted=true.
+# Grant Fushi the AnkiDroid API permission and verify it stuck. Assumes the
+# Fushi APK is already installed (with -g). Returns 0 if granted=true.
 grant_fushi_ankidroid_permission() {
   MSYS_NO_PATHCONV=1 $ADBD shell pm grant "$PKG" "$ANKI_PERM" >/dev/null 2>&1 || true
   local granted
