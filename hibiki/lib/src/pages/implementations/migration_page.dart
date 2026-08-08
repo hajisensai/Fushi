@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:external_path/external_path.dart';
@@ -68,6 +69,14 @@ class _MigrationPageState extends State<MigrationPage>
   final Set<String> _doneBatches = <String>{};
   String? _currentBatch;
 
+  /// 「Fushi 装完后要接着导出」。
+  ///
+  /// Android 的 `installApk` 只是**发出系统安装 intent 就返回**，装没装完调用方
+  /// 无从知晓。所以下载安装之后不能就地判成败，只能记下这个意图，等用户从系统
+  /// 安装器回到本页时（[_onResumed]）再接力。
+  bool _pendingExportAfterInstall = false;
+  bool _pendingFresh = false;
+
   @override
   void initState() {
     super.initState();
@@ -86,11 +95,34 @@ class _MigrationPageState extends State<MigrationPage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // 系统安装器是独立 Activity：用户装完 Fushi 回到本页时，必须**重新探测包**再
-    // 判断是否已装，不能因为「我们发起过安装」就乐观标记成功（用户可能点了取消，
-    // 或安装被系统拒绝）。计划 P2-3 的同一条纪律。
     if (state == AppLifecycleState.resumed && _step != _Step.done) {
-      _refreshTarget();
+      unawaited(_onResumed());
+    }
+  }
+
+  /// 从系统安装器回到本页时的接力点。
+  ///
+  /// 必须**重新探测包**再判断是否已装，不能因为「我们发起过安装」就乐观标记成功
+  /// （用户可能点了取消，或安装被系统拒绝）。计划 P2-3 的同一条纪律。
+  Future<void> _onResumed() async {
+    await _refreshTarget();
+    if (!mounted || !_pendingExportAfterInstall) return;
+    if (_fushiInstalled) {
+      // 装上了 → 自动接着导出。用户按的是「迁移」，不是「装个 Fushi」；
+      // 停在这里等他再点一次，就是他报的「只说了安装 Fushi，后续没了」。
+      _pendingExportAfterInstall = false;
+      final Directory transferDir = await _transferDir();
+      if (!mounted) return;
+      await _export(transferDir: transferDir, fresh: _pendingFresh);
+      return;
+    }
+    if (_step == _Step.installing) {
+      // 回到本页但仍未装上 = 用户取消了系统安装，或被系统拒绝。
+      _pendingExportAfterInstall = false;
+      setState(() {
+        _step = _Step.idle;
+        _error = t.migration_install_incomplete;
+      });
     }
   }
 
@@ -172,19 +204,14 @@ class _MigrationPageState extends State<MigrationPage>
     final Directory transferDir = await _transferDir();
     if (!await _passesSpaceGate(transferDir)) return;
 
-    // 2) 没装 Fushi 就替用户下载安装。装完系统会把用户送回本页，
-    //    didChangeAppLifecycleState 重新探测包状态；这里再确认一次。
+    // 2) 没装 Fushi 就替用户下载安装。**不在这里判成败**——见
+    //    [_pendingExportAfterInstall]：install 只是发出 intent 就返回。
+    //    导出由 [_onResumed] 在用户装完回到本页时接力。
     if (!_fushiInstalled) {
-      if (!await _downloadAndInstallFushi()) return;
-      await _refreshTarget();
-      if (!mounted) return;
-      if (!_fushiInstalled) {
-        setState(() {
-          _step = _Step.idle;
-          _error = t.migration_install_incomplete;
-        });
-        return;
-      }
+      _pendingExportAfterInstall = true;
+      _pendingFresh = fresh;
+      await _downloadAndInstallFushi();
+      return;
     }
 
     // 3) 导出。
@@ -238,6 +265,9 @@ class _MigrationPageState extends State<MigrationPage>
         await resolveMigrationTargetAsset(channel: _channelForFushi);
     if (!mounted) return false;
     if (target == null) {
+      // 连包都没解析到，谈不上「装完接力」——把意图撤掉，否则下次任何一次
+      // resume 都会误判成「装完了该导出」。
+      _pendingExportAfterInstall = false;
       setState(() {
         _step = _Step.idle;
         _error = t.migration_target_resolve_failed;
