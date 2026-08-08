@@ -65,7 +65,7 @@ class SyncCompareEntry {
       (remoteFolderId != null || remoteLiveTitle != null) &&
       remoteHasContent;
 
-  /// 远端有声书资产（audiobook.hibikiaudio）的原生定位符；无远端有声书为 null。
+  /// 远端有声书资产（audiobook.fushiaudio）的原生定位符；无远端有声书为 null。
   final String? remoteAudioBookId;
 
   final double? localProgress;
@@ -115,7 +115,7 @@ class SyncDictEntry {
   final String name;
   final bool hasLocal;
 
-  /// 远端词典资产（`<name>.hibikidict`）定位符；远端没有则 null。
+  /// 远端词典资产（`<name>.fushidict`）定位符；远端没有则 null。
   final String? remoteAssetId;
 
   bool get hasRemote => remoteAssetId != null;
@@ -308,12 +308,21 @@ Future<List<SyncDictEntry>> _fetchDictEntries(
 }) async {
   final String ns = await backend.ensureNamespace(kSyncDictionaryNamespace);
   final List<AssetEntry> remote = await backend.listChildren(ns);
-  const String suffix = '.hibikidict';
+  // 写侧只产新后缀；读侧必须同时认 Hibiki 时代的旧后缀 —— 云根迁移只改根文件夹
+  // 名、内容原样保留，只认新后缀会让远端已有词典在对比里整片消失（表现为「远端
+  // 没有、需要全量上传」）。与 sync_orchestrator 的 _isDictionaryAsset 同源口径。
+  const String suffix = '.fushidict';
+  const String legacySuffix = '.hibikidict';
 
   final Map<String, String> remoteByName = <String, String>{};
   for (final AssetEntry e in remote) {
-    if (e.isFolder || !e.name.endsWith(suffix)) continue;
-    remoteByName[e.name.substring(0, e.name.length - suffix.length)] = e.id;
+    if (e.isFolder) continue;
+    if (e.name.endsWith(suffix)) {
+      remoteByName[e.name.substring(0, e.name.length - suffix.length)] = e.id;
+    } else if (e.name.endsWith(legacySuffix)) {
+      remoteByName[e.name.substring(0, e.name.length - legacySuffix.length)] =
+          e.id;
+    }
   }
   final Set<String> localNames = <String>{
     for (final DictionaryMetaRow d in await db.getAllDictionaryMetadata())
@@ -351,7 +360,7 @@ class _RemoteBookData {
   final int? statsCount;
   final double? audioPosSec;
 
-  /// 远端有声书资产（audiobook.hibikiaudio）的原生定位符；无则 null。
+  /// 远端有声书资产（audiobook.fushiaudio）的原生定位符；无则 null。
   final String? audioBookId;
 }
 
@@ -742,7 +751,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   /// 远端有声书键 = host 清单里该书的真实 [RemoteAudiobookInfo.bookKey]（按
   /// `title == entry.title` 匹配），不再按书名重算 ttu 文件名：书名重名/迁移时算出
   /// 的 key 在 host `Audiobooks` 表不存在会 404（BUG-414）。先查
-  /// host 有声书清单确认存在（避免对没声书的书发无意义请求），再下载 `.hibikiaudio` 经
+  /// host 有声书清单确认存在（避免对没声书的书发无意义请求），再下载 `.fushiaudio` 经
   /// [SyncAssetPackageService.importAudioDatabasePackage] 用本地 [localBookKey] 作
   /// `bookKeyOverride` 解包落盘。[audioDatabaseRoot] 为 null（调用方未注入根目录）
   /// 时跳过有声书补下，只保留 EPUB（旧行为）。
@@ -775,7 +784,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       p.join(
         dir.path,
         'hibiki-compare-audio-'
-        '${DateTime.now().microsecondsSinceEpoch}.hibikiaudio',
+        '${DateTime.now().microsecondsSinceEpoch}.fushiaudio',
       ),
     );
     try {

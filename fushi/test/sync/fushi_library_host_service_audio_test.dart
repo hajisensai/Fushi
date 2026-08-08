@@ -450,7 +450,7 @@ void main() {
       expect(await svc.listLocalAudio(), isEmpty);
     });
 
-    test('exportLocalAudio 产出非空 .hibikiaudiolib 文件', () async {
+    test('exportLocalAudio 产出非空 .fushiaudiolib 文件', () async {
       // 造一个真实的 .db stub（sqlite 文件头 16 字节足够让 sqlite 识别，但
       // exportLocalAudioPackage 只关心文件存在与否，不解析内容）。
       final File dbFile = File(p.join(tmp.path, 'nhk.db'))
@@ -476,7 +476,7 @@ void main() {
 
       expect(pkg.existsSync(), isTrue);
       expect(pkg.lengthSync(), greaterThan(0));
-      expect(pkg.path, endsWith('.hibikiaudiolib'));
+      expect(pkg.path, endsWith('.fushiaudiolib'));
     });
 
     test('exportLocalAudio 对不存在的 displayName 抛 StateError', () async {
@@ -640,7 +640,7 @@ void main() {
       expect(await svc.listAudiobooks(), isEmpty);
     });
 
-    test('exportAudiobook 产出非空 .hibikiaudio 文件', () async {
+    test('exportAudiobook 产出非空 .fushiaudio 文件', () async {
       final Directory audioDir = Directory(p.join(tmp.path, 'ab2'));
       await _insertAudiobook(
         db: db,
@@ -656,7 +656,7 @@ void main() {
 
       expect(pkg.existsSync(), isTrue);
       expect(pkg.lengthSync(), greaterThan(0));
-      expect(pkg.path, endsWith('.hibikiaudio'));
+      expect(pkg.path, endsWith('.fushiaudio'));
     });
 
     test('exportAudiobook 对不存在的 bookKey 抛 StateError', () async {
@@ -670,8 +670,8 @@ void main() {
     // ── importAudiobook 回调注入 ─────────────────────────────────────────────
 
     test('importAudiobook 无 audioDatabaseRoot 时抛 UnsupportedError', () async {
-      // 造一个假的 .hibikiaudio 文件（不需要真实内容，因为会在 audioDatabaseRoot 检查前抛）
-      final File fakeAudio = File(p.join(tmp.path, 'fake.hibikiaudio'))
+      // 造一个假的 .fushiaudio 文件（不需要真实内容，因为会在 audioDatabaseRoot 检查前抛）
+      final File fakeAudio = File(p.join(tmp.path, 'fake.fushiaudio'))
         ..writeAsBytesSync(<int>[0]);
 
       final AppModelLibraryHostService svc =

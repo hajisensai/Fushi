@@ -804,7 +804,7 @@ class InterconnectSyncBackend extends SyncBackend
     );
   }
 
-  /// 把本地 [file]（.hibikidict 包）推送到对端 host，导入名为 [name] 的词典。
+  /// 把本地 [file]（.fushidict 包）推送到对端 host，导入名为 [name] 的词典。
   Future<void> putRemoteDictionary(
     String name,
     File file, {

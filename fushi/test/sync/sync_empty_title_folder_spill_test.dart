@@ -16,7 +16,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 // BUG-619 / TODO-1329: an EPUB row with an empty title made every backend's
 // `ensureBookFolder('')` resolve `<root>/<''>/` == the sync root, scattering the
-// book's progress_/statistics_/audioBook_ JSON (plus cover/epub/.hibikiaudio)
+// book's progress_/statistics_/audioBook_ JSON (plus cover/epub/.fushiaudio)
 // straight into `hibiki-data/` next to real book folders. These tests pin the
 // path contract: an empty sanitized title is never turned into a folder, and the
 // per-book sync loop skips such a row entirely (no write ever targets the root).

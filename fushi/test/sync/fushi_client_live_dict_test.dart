@@ -76,7 +76,7 @@ class _FakeLibraryService implements FushiLibraryHostService {
   @override
   Future<File> exportDictionary(String name) async {
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_fake_lib');
-    final File f = File('${tmp.path}/$name.hibikidict');
+    final File f = File('${tmp.path}/$name.fushidict');
     f.writeAsStringSync('PKG:$name');
     return f;
   }
@@ -276,7 +276,7 @@ void main() {
     final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_live_dl');
-    final File dest = File('${tmp.path}/JMdict.hibikidict');
+    final File dest = File('${tmp.path}/JMdict.fushidict');
     addTearDown(() => tmp.deleteSync(recursive: true));
 
     await backend.getRemoteDictionary('JMdict', dest);
@@ -291,7 +291,7 @@ void main() {
     final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_live_ul');
-    final File src = File('${tmp.path}/NHK.hibikidict');
+    final File src = File('${tmp.path}/NHK.fushidict');
     src.writeAsStringSync('PKG:NHK');
     addTearDown(() => tmp.deleteSync(recursive: true));
 
@@ -341,7 +341,7 @@ void main() {
     final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_live_prog');
-    final File dest = File('${tmp.path}/JMdict.hibikidict');
+    final File dest = File('${tmp.path}/JMdict.fushidict');
     addTearDown(() => tmp.deleteSync(recursive: true));
 
     final List<double> progressValues = <double>[];

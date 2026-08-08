@@ -37,9 +37,35 @@ const String kSyncDictionaryNamespace = '__dictionaries__';
 /// Asset file name (inside a book's folder) holding the audiobook package
 /// (audio + subtitles + cues + alignment), produced by
 /// [SyncAssetPackageService.exportAudioDatabasePackage].
-const String kSyncAudiobookAssetName = 'audiobook.hibikiaudio';
+const String kSyncAudiobookAssetName = 'audiobook.fushiaudio';
 
-const String _dictionaryAssetSuffix = '.hibikidict';
+/// Hibiki 时代写下的同一资产名（W9-4 改名前）。**只读不写**——见
+/// [_legacyDictionaryAssetSuffix] 的完整理由。
+const String kLegacySyncAudiobookAssetName = 'audiobook.hibikiaudio';
+
+const String _dictionaryAssetSuffix = '.fushidict';
+
+/// Hibiki 时代写下的同一后缀（W9-4 改名前）。**只读不写**：云根迁移只把根文件夹
+/// 改名、内容原样保留，用户云上仍有大量旧后缀资产；listing 只认新后缀会把它们
+/// 当陌生文件跳过 = 用户的远端词典/有声书凭空消失。写侧一律新后缀，旧资产读得到、
+/// 不再被写入，随用户下一次推送自然退场。
+const String _legacyDictionaryAssetSuffix = '.hibikidict';
+
+/// 该资产名是否是（新或旧）词典包。
+bool _isDictionaryAsset(String name) =>
+    name.endsWith(_dictionaryAssetSuffix) ||
+    name.endsWith(_legacyDictionaryAssetSuffix);
+
+/// 剥掉（新或旧）词典包后缀，得到词典显示名；两种后缀都不匹配时原样返回。
+String _stripDictionaryAssetSuffix(String name) {
+  if (name.endsWith(_dictionaryAssetSuffix)) {
+    return name.substring(0, name.length - _dictionaryAssetSuffix.length);
+  }
+  if (name.endsWith(_legacyDictionaryAssetSuffix)) {
+    return name.substring(0, name.length - _legacyDictionaryAssetSuffix.length);
+  }
+  return name;
+}
 
 /// Reserved top-level folder holding local-audio source packages (pronunciation
 /// DB + config manifest), alongside the dictionary namespace and per-book
@@ -47,7 +73,27 @@ const String _dictionaryAssetSuffix = '.hibikidict';
 /// books ([isReservedSyncFolderName]).
 const String kSyncLocalAudioNamespace = '__local_audio__';
 
-const String _localAudioAssetSuffix = '.hibikiaudiolib';
+const String _localAudioAssetSuffix = '.fushiaudiolib';
+
+/// Hibiki 时代写下的同一后缀（W9-4 改名前）。**只读不写**——理由同
+/// [_legacyDictionaryAssetSuffix]。
+const String _legacyLocalAudioAssetSuffix = '.hibikiaudiolib';
+
+/// 该资产名是否是（新或旧）本地音源包。
+bool _isLocalAudioAsset(String name) =>
+    name.endsWith(_localAudioAssetSuffix) ||
+    name.endsWith(_legacyLocalAudioAssetSuffix);
+
+/// 剥掉（新或旧）本地音源包后缀；两种后缀都不匹配时原样返回。
+String _stripLocalAudioAssetSuffix(String name) {
+  if (name.endsWith(_localAudioAssetSuffix)) {
+    return name.substring(0, name.length - _localAudioAssetSuffix.length);
+  }
+  if (name.endsWith(_legacyLocalAudioAssetSuffix)) {
+    return name.substring(0, name.length - _legacyLocalAudioAssetSuffix.length);
+  }
+  return name;
+}
 
 /// Reserved top-level folder holding the shared collection manifest
 /// (`collections.json`) for the collections union sync (多端库联合视图 §2.3).
@@ -1924,8 +1970,8 @@ class SyncOrchestrator {
 
     final Set<String> remoteNames = <String>{
       for (final AssetEntry e in remote)
-        if (!e.isFolder && e.name.endsWith(_dictionaryAssetSuffix))
-          e.name.substring(0, e.name.length - _dictionaryAssetSuffix.length),
+        if (!e.isFolder && _isDictionaryAsset(e.name))
+          _stripDictionaryAssetSuffix(e.name),
     };
     final Set<String> localNames = <String>{
       for (final DictionaryMetaRow d in localDicts) d.name,
@@ -1939,9 +1985,8 @@ class SyncOrchestrator {
     final List<AssetEntry> toPull = <AssetEntry>[
       for (final AssetEntry e in remote)
         if (!e.isFolder &&
-            e.name.endsWith(_dictionaryAssetSuffix) &&
-            !localNames.contains(e.name
-                .substring(0, e.name.length - _dictionaryAssetSuffix.length)))
+            _isDictionaryAsset(e.name) &&
+            !localNames.contains(_stripDictionaryAssetSuffix(e.name)))
           e,
     ];
     final int total = toPush.length + toPull.length;
@@ -1977,11 +2022,10 @@ class SyncOrchestrator {
     // Pull remote-only dictionaries.
     for (final AssetEntry e in toPull) {
       // Show the clean dictionary name in progress, matching the push side —
-      // the asset name still carries the `.hibikidict` suffix, which otherwise
-      // surfaces as a "weird" entry in the progress list.
-      final String displayName = e.name.endsWith(_dictionaryAssetSuffix)
-          ? e.name.substring(0, e.name.length - _dictionaryAssetSuffix.length)
-          : e.name;
+      // the asset name still carries the `.fushidict`（或 Hibiki 时代的
+      // `.fushidict`）suffix, which otherwise surfaces as a "weird" entry in
+      // the progress list.
+      final String displayName = _stripDictionaryAssetSuffix(e.name);
       _emit(SyncPhase.dictionaries,
           itemIndex: index, itemTotal: total, title: displayName);
       File? tmp;
@@ -2188,7 +2232,7 @@ class SyncOrchestrator {
           index++;
           continue;
         }
-        tmp = _tmpFile('.hibikiaudio');
+        tmp = _tmpFile('.fushiaudio');
         await _packages.exportAudioDatabasePackage(
           bookKey: key,
           srtBookUid: srt.uid,
@@ -2215,7 +2259,7 @@ class SyncOrchestrator {
           itemIndex: index, itemTotal: total, title: key);
       File? tmp;
       try {
-        tmp = _tmpFile('.hibikiaudio');
+        tmp = _tmpFile('.fushiaudio');
         await backend.getRemoteAudiobook(
           key,
           tmp,
@@ -2408,8 +2452,8 @@ class SyncOrchestrator {
 
     final Set<String> remoteNames = <String>{
       for (final AssetEntry e in remote)
-        if (!e.isFolder && e.name.endsWith(_localAudioAssetSuffix))
-          e.name.substring(0, e.name.length - _localAudioAssetSuffix.length),
+        if (!e.isFolder && _isLocalAudioAsset(e.name))
+          _stripLocalAudioAssetSuffix(e.name),
     };
     final Set<String> localNames = <String>{
       for (final LocalAudioDbEntry d in localAudioEntries) d.displayName,
@@ -2425,9 +2469,8 @@ class SyncOrchestrator {
     final List<AssetEntry> toPull = <AssetEntry>[
       for (final AssetEntry e in remote)
         if (!e.isFolder &&
-            e.name.endsWith(_localAudioAssetSuffix) &&
-            !localNames.contains(e.name
-                .substring(0, e.name.length - _localAudioAssetSuffix.length)))
+            _isLocalAudioAsset(e.name) &&
+            !localNames.contains(_stripLocalAudioAssetSuffix(e.name)))
           e,
     ];
     final int total = toPush.length + toPull.length;
@@ -2502,7 +2545,7 @@ class SyncOrchestrator {
     }
   }
 
-  /// Uploads the audiobook package (`audiobook.hibikiaudio`) inside each
+  /// Uploads the audiobook package (`audiobook.fushiaudio`) inside each
   /// book's folder. A book with a local audiobook absent remotely is pushed;
   /// a remote package for a local book without audiobook is left untouched for
   /// explicit manual download flows.
@@ -2519,7 +2562,7 @@ class SyncOrchestrator {
           itemIndex: i, itemTotal: total, title: book.title);
       // BUG-619 / TODO-1329: skip empty-key books. bookKey == the sanitized
       // title, so an empty key means ensureBookFolder would collapse onto the
-      // sync root and scatter the .hibikiaudio package into hibiki-data/ instead
+      // sync root and scatter the .fushiaudio package into hibiki-data/ instead
       // of the per-book folder. (requireBookFolderName is the precise backstop.)
       if (book.bookKey.isEmpty) continue;
       File? tmp;
@@ -2533,11 +2576,15 @@ class SyncOrchestrator {
           bookTitle: book.title,
           rootFolderId: root,
         );
+        // 先认新名，再回落 Hibiki 时代的旧名：漏认旧名会把「云上已有有声书」
+        // 判成没有，于是重新上传一份新名资产，同一本书在云上留下两份包。
         final AssetEntry? existing =
-            await _backend.findAsset(folderId, kSyncAudiobookAssetName);
+            await _backend.findAsset(folderId, kSyncAudiobookAssetName) ??
+                await _backend.findAsset(
+                    folderId, kLegacySyncAudiobookAssetName);
 
         if (hasLocal && existing == null) {
-          tmp = _tmpFile('.hibikiaudio');
+          tmp = _tmpFile('.fushiaudio');
           await _packages.exportAudioDatabasePackage(
             bookKey: bookKey,
             srtBookUid: srt.uid,
@@ -2641,7 +2688,7 @@ Future<bool> importRemoteBookFolder({
     // TODO-1165：按标签名重建云盘书标签映射（sidecar 由 push 侧写在同文件夹，只增
     // 不删）。复用已列出的 children，不再多发一次 listChildren。
     await _applyRemoteBookFolderTags(db, backend, children, importedBookKey);
-    // 云后端有声书 pull：下载远端书文件夹时若带 `audiobook.hibikiaudio`（push 侧
+    // 云后端有声书 pull：下载远端书文件夹时若带 `audiobook.fushiaudio`（push 侧
     // syncAudiobookPackages 写在同文件夹），且调用方注入了 [audioDatabaseRoot]，一并
     // 补下音频包。修复历史缺口——此前 syncAudiobookPackages 是 upload-only、
     // importRemoteBookFolder 只找 `.epub`，导致云有声书「只上传拿不回」。best-effort：
@@ -2668,7 +2715,8 @@ Future<bool> importRemoteBookFolder({
   }
 }
 
-/// 若远端书文件夹 [children] 里存在 `audiobook.hibikiaudio`（[kSyncAudiobookAssetName]），
+/// 若远端书文件夹 [children] 里存在 `audiobook.fushiaudio`（[kSyncAudiobookAssetName]）
+/// 或 Hibiki 时代的 `audiobook.hibikiaudio`（[kLegacySyncAudiobookAssetName]），
 /// 下载并用本地刚导入 EPUB 的 [bookKey] 作 `bookKeyOverride` 解包落盘（修复云后端有声书
 /// 「只上传拿不回」缺口）。无音频资产是常态（普通书）——静默返回。best-effort：下载/
 /// 解包失败仅吞掉（EPUB 已成功导入，不因音频回退整本失败）。
@@ -2682,7 +2730,9 @@ Future<void> _pullRemoteFolderAudiobook({
 }) async {
   AssetEntry? audioAsset;
   for (final AssetEntry e in children) {
-    if (!e.isFolder && e.name == kSyncAudiobookAssetName) {
+    if (!e.isFolder &&
+        (e.name == kSyncAudiobookAssetName ||
+            e.name == kLegacySyncAudiobookAssetName)) {
       audioAsset = e;
       break;
     }
@@ -2691,7 +2741,7 @@ Future<void> _pullRemoteFolderAudiobook({
 
   final File tmp = File(p.join(
     tempDir.path,
-    'hibiki_remote_audio_${DateTime.now().microsecondsSinceEpoch}.hibikiaudio',
+    'fushi_remote_audio_${DateTime.now().microsecondsSinceEpoch}.fushiaudio',
   ));
   try {
     await backend.getAsset(audioAsset.id, tmp);

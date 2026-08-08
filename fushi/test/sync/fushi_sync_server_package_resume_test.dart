@@ -29,7 +29,7 @@ class _PkgService implements FushiLibraryHostService {
     if (name != 'JMdict') throw StateError('dictionary not found');
     exportCalls++;
     final Directory tmp = Directory.systemTemp.createTempSync('pkg_exp');
-    final File f = File(p.join(tmp.path, '$name.hibikidict'));
+    final File f = File(p.join(tmp.path, '$name.fushidict'));
     // 模拟 zip 重打包字节不稳定：首字节 = 导出代数，长度也随代数变化。
     f.writeAsBytesSync(<int>[
       exportCalls,

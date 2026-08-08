@@ -355,7 +355,9 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
     await saveOrShareExport(
       context: context,
       content: content,
-      fileName: '${_sanitizeFileName(profileName)}.hibikiprofile.json',
+      // 导入侧按 allowedExtensions: ['json'] 过滤，不认中间这段，所以改名不会
+      // 让用户已导出的 .hibikiprofile.json 变得无法导入。
+      fileName: '${_sanitizeFileName(profileName)}.fushiprofile.json',
       mimeType: 'application/json',
       subject: profileName,
     );

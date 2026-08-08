@@ -377,7 +377,7 @@ void main() {
   });
 
   // ── 云后端有声书 pull（修复「只上传拿不回」缺口）──────────────────────────────
-  test('提供 audioDatabaseRoot 时下载远端书文件夹会补拉 audiobook.hibikiaudio', () async {
+  test('提供 audioDatabaseRoot 时下载远端书文件夹会补拉 audiobook.fushiaudio', () async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final _FakeBookFolderBackend backend = _FakeBookFolderBackend(
@@ -404,7 +404,7 @@ void main() {
         contains(_FakeBookFolderBackend.audiobookAssetId));
   });
 
-  test('未提供 audioDatabaseRoot 时不拉 audiobook.hibikiaudio（保持旧行为）', () async {
+  test('未提供 audioDatabaseRoot 时不拉 audiobook.fushiaudio（保持旧行为）', () async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final _FakeBookFolderBackend backend = _FakeBookFolderBackend(

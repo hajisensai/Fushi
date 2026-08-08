@@ -153,7 +153,7 @@ class AppModelLibraryHostService
   final Future<String?> Function(
       {required String videoPath, required String bookUid})? _extractVideoCover;
 
-  static const String _dictionaryAssetSuffix = '.hibikidict';
+  static const String _dictionaryAssetSuffix = '.fushidict';
 
   /// 校验词典名称不含路径穿越字符。
   ///
@@ -193,7 +193,7 @@ class AppModelLibraryHostService
     ];
   }
 
-  /// 即时把名为 [name] 的实时词典打包成临时 .hibikidict 文件，返回该文件。
+  /// 即时把名为 [name] 的实时词典打包成临时 .fushidict 文件，返回该文件。
   /// 调用方负责删除返回的临时文件（及其父临时目录）。词典不存在抛 [StateError]。
   /// 名称含路径穿越字符时抛 [ArgumentError]。
   @override
@@ -214,7 +214,7 @@ class AppModelLibraryHostService
     return out;
   }
 
-  /// 把 [packageFile]（.hibikidict）导入 host 实时库（幂等：同名覆盖资源 + upsert 元数据）。
+  /// 把 [packageFile]（.fushidict）导入 host 实时库（幂等：同名覆盖资源 + upsert 元数据）。
   @override
   Future<void> importDictionary(File packageFile) async {
     await _runExclusive(() async {
@@ -596,7 +596,7 @@ class AppModelLibraryHostService
 
     final Directory tmpDir =
         Directory.systemTemp.createTempSync('hibiki_local_audio_export');
-    final File out = File(p.join(tmpDir.path, '$displayName.hibikiaudiolib'));
+    final File out = File(p.join(tmpDir.path, '$displayName.fushiaudiolib'));
     await _packages.exportLocalAudioPackage(
       displayName: entry.displayName,
       enabled: entry.enabled,
@@ -734,7 +734,7 @@ class AppModelLibraryHostService
     throw StateError('audiobook not found for identity: $identity');
   }
 
-  /// 打包成 `<identity>.hibikiaudio` 临时文件（srt-backed 传 [bookKey]；纯 SRT 传
+  /// 打包成 `<identity>.fushiaudio` 临时文件（srt-backed 传 [bookKey]；纯 SRT 传
   /// null，包管线据此省略 audiobook 段、cue 走 uid 命名空间）。
   Future<File> _packAudiobook({
     required String identity,
@@ -743,7 +743,7 @@ class AppModelLibraryHostService
   }) async {
     final Directory tmpDir =
         Directory.systemTemp.createTempSync('hibiki_audiobook_export');
-    final File out = File(p.join(tmpDir.path, '$identity.hibikiaudio'));
+    final File out = File(p.join(tmpDir.path, '$identity.fushiaudio'));
     await _packages.exportAudioDatabasePackage(
       srtBookUid: srtBookUid,
       outputFile: out,

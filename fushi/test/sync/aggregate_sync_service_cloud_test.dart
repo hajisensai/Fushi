@@ -131,7 +131,7 @@ void main() {
     final String ns = await store.ensureNamespace(kSyncAggregateNamespace);
     final List<AssetEntry> children = await store.listChildren(ns);
     expect(children.length, 1);
-    expect(children.single.name, 'dev-A.hibikiaggregate');
+    expect(children.single.name, 'dev-A.fushiaggregate');
     final Object? json = await store.getJsonAsset(children.single.id);
     final AggregateSnapshot uploaded = AggregateSnapshot.fromJson(json);
     expect(uploaded.miningStats.single.count, 2);
@@ -430,5 +430,33 @@ void main() {
         title: 'Ghost', dateKey: '2026-06-02', charsRead: 5, timeMs: 60);
     expect(await dbB.getStatisticsTombstoneKeys(),
         isNot(contains(('Ghost', 'book'))));
+  });
+
+  // W9-4 兼容读：资产后缀 .hibikiaggregate → .fushiaggregate 改名后，云上仍有
+  // Hibiki 时代写下的旧后缀快照（云根迁移只改根文件夹名、内容原样保留）。
+  // 只认新后缀 = 把它们当陌生文件跳过 = 用户迁移过来的聚合状态静默丢失。
+  test('legacy .hibikiaggregate peer snapshot is still folded in', () async {
+    final FakeAssetStore store = FakeAssetStore();
+
+    final FushiDatabase dbA = await _freshDb('agg_legacyA_');
+    addTearDown(dbA.close);
+    await dbA.setMiningCount(
+        sourceType: 'book', dateKey: '2026-06-01', count: 7);
+    await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
+
+    // 把 A 刚写下的新名快照原样搬到旧名下，制造「迁移前写的资产」。
+    final String ns = await store.ensureNamespace(kSyncAggregateNamespace);
+    final AssetEntry? fresh = await store.findAsset(ns, 'dev-A.fushiaggregate');
+    expect(fresh, isNotNull, reason: '写侧必须产出新后缀');
+    final Object? payload = await store.getJsonAsset(fresh!.id);
+    await store.putJsonAsset(ns, 'dev-A.hibikiaggregate', payload);
+    await store.deleteAsset(fresh.id);
+
+    final FushiDatabase dbB = await _freshDb('agg_legacyB_');
+    addTearDown(dbB.close);
+    await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
+
+    expect((await dbB.getMiningStatisticsBySource('book')).single.count, 7,
+        reason: '旧后缀快照被跳过就会读不到 A 的状态');
   });
 }

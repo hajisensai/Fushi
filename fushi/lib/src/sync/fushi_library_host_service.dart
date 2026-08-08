@@ -1194,11 +1194,11 @@ abstract class FushiLibraryHostService {
   /// host 当前实时词典清单（从 DictionaryMeta 表读，不是从任何暂存目录）。
   Future<List<RemoteDictionaryInfo>> listDictionaries();
 
-  /// 即时把名为 [name] 的实时词典打包成 .hibikidict 临时文件，返回该文件。
+  /// 即时把名为 [name] 的实时词典打包成 .fushidict 临时文件，返回该文件。
   /// 调用方负责删除返回的临时文件（及其父临时目录）。词典不存在抛 [StateError]。
   Future<File> exportDictionary(String name);
 
-  /// 把 [packageFile]（.hibikidict）导入 host 实时库（幂等：同名覆盖资源 + upsert 元数据）。
+  /// 把 [packageFile]（.fushidict）导入 host 实时库（幂等：同名覆盖资源 + upsert 元数据）。
   Future<void> importDictionary(File packageFile);
 
   /// 从 host 实时库删除名为 [name] 的词典（DB 元数据 + 资源目录）。
@@ -1264,7 +1264,7 @@ abstract class FushiLibraryHostService {
 
   /// 廉价判断 host 库是否存在 bookKey 为 [bookKey] 的有声书（仅一次 DB 查询，
   /// 不打包导出）。position 路由的存在性闸门用它替代重量级 [exportAudiobook]
-  /// （BUG-471a：旧实现每次 GET/PUT position 都把整本有声书打包成 .hibikiaudio
+  /// （BUG-471a：旧实现每次 GET/PUT position 都把整本有声书打包成 .fushiaudio
   /// 临时文件再删，对每本共享有声书的 live sweep 造成大量无谓 zip I/O）。与视频
   /// position 路由用 [resolveVideoFile] 廉价等价。
   /// [bookKey] 含路径穿越字符时抛 [ArgumentError]。

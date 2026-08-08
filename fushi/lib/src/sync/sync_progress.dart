@@ -25,7 +25,8 @@ enum SyncPhase {
   /// Local-audio source DBs in the `__local_audio__` namespace.
   localAudio,
 
-  /// Audiobook packages (`audiobook.hibikiaudio`) inside each book folder.
+  /// Audiobook packages (`audiobook.fushiaudio`；Hibiki 时代的
+  /// `audiobook.hibikiaudio` 仍可读) inside each book folder.
   audiobooks,
 
   /// Video files in the `__videos__` namespace (多端库联合视图 §2.6).

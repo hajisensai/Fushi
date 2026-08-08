@@ -20,7 +20,18 @@ const String kSyncAggregateNamespace = '__aggregate__';
 /// Suffix of a device's aggregate snapshot asset inside the namespace. The
 /// asset name is `<deviceId><suffix>`, one file per device so two devices never
 /// clobber each other's snapshot (the whole point of the per-device layout).
-const String _aggregateAssetSuffix = '.hibikiaggregate';
+const String _aggregateAssetSuffix = '.fushiaggregate';
+
+/// Hibiki 时代写下的同一资产的后缀（W9-4 改名前）。**只读不写**：云根迁移只把
+/// 根文件夹改名、内容原样保留，所以用户云上仍有大量旧后缀快照；listing 只认新
+/// 后缀会把它们当成陌生文件跳过 = 静默丢掉迁移过来的聚合状态。写侧一律新后缀，
+/// 旧快照被折进来后自然随下一轮 per-device 快照过期。
+const String _legacyAggregateAssetSuffix = '.hibikiaggregate';
+
+/// 该资产名是否是（新或旧）聚合快照。
+bool _isAggregateAsset(String name) =>
+    name.endsWith(_aggregateAssetSuffix) ||
+    name.endsWith(_legacyAggregateAssetSuffix);
 
 /// Preference key holding the favorite-sentence JSON list. Mirrors
 /// `FavoriteSentenceRepository._key` and BackupMergeEngine's constant; kept in
@@ -36,7 +47,8 @@ const String _favoriteSentencesPrefKey = 'favorite_sentences';
 /// service reuses verbatim (it invents no new merge algorithm).
 ///
 /// Layout: under the reserved `__aggregate__` namespace each device owns ONE
-/// JSON snapshot asset `<deviceId>.hibikiaggregate`. On a sync the device:
+/// JSON snapshot asset `<deviceId>.fushiaggregate`（Hibiki 时代写的旧后缀
+/// `.hibikiaggregate` 仍被读入，见 [_legacyAggregateAssetSuffix]）。On a sync the device:
 ///   1. materialises its own current aggregate state into a snapshot;
 ///   2. downloads every OTHER device's snapshot and folds them all - plus its
 ///      own materialised state - through [AggregateMergeService];
@@ -77,6 +89,9 @@ class AggregateSyncService {
     final List<AssetEntry> children = await store.listChildren(ns);
 
     final String ownAssetName = '$deviceId$_aggregateAssetSuffix';
+    // 本机在 Hibiki 时代写下的同一份快照：同样是「自己状态的回声」，本地库已经
+    // 带着迁移过来的状态，折回来只会复活本地已删的条目，故与新名一并跳过。
+    final String ownLegacyAssetName = '$deviceId$_legacyAggregateAssetSuffix';
 
     // 3) Fold every OTHER device's snapshot into the local one. Own asset is
     //    skipped (it is a stale echo of our own state; re-folding it is a no-op
@@ -84,8 +99,9 @@ class AggregateSyncService {
     AggregateSnapshot merged = localSnapshot;
     for (final AssetEntry entry in children) {
       if (entry.isFolder) continue;
-      if (!entry.name.endsWith(_aggregateAssetSuffix)) continue;
+      if (!_isAggregateAsset(entry.name)) continue;
       if (entry.name == ownAssetName) continue;
+      if (entry.name == ownLegacyAssetName) continue;
       Object? peerJson;
       try {
         peerJson = await store.getJsonAsset(entry.id);

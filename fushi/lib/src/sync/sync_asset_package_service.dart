@@ -104,7 +104,7 @@ class SyncAssetPackageService {
     );
   }
 
-  /// 打包一本有声书为 `.hibikiaudio`。支持两类：
+  /// 打包一本有声书为 `.fushiaudio`。支持两类：
   /// - **srt-backed**（EPUB 配对）：[bookKey] 非空、host 有 Audiobooks 行 → manifest
   ///   带 `audiobook` 段、cue 走 bookKey 命名空间（原行为，逐字节不变）。
   /// - **纯 SRT（standalone）有声书**：无 Audiobooks 行（[bookKey] 省略或空）→

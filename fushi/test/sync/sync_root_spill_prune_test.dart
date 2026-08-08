@@ -47,8 +47,8 @@ void main() {
       // Reserved namespaces + package assets live in the root but are not
       // per-book ttu files.
       expect(isTtuPerBookFileName('__dictionaries__'), isFalse);
-      expect(isTtuPerBookFileName('audiobook.hibikiaudio'), isFalse);
-      expect(isTtuPerBookFileName('mydict.hibikidict'), isFalse);
+      expect(isTtuPerBookFileName('audiobook.fushiaudio'), isFalse);
+      expect(isTtuPerBookFileName('mydict.fushidict'), isFalse);
       // Wrong schema marker / a title that merely starts with a type word.
       expect(isTtuPerBookFileName('progress_2_0_x.json'), isFalse);
       expect(isTtuPerBookFileName('progression.json'), isFalse);

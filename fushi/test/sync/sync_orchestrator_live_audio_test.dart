@@ -4,7 +4,7 @@
 ///   → 本地音频经 live 端点双向（pull/push），不经 `__local_audio__` 暂存路径。
 /// 用例 B：互联 + syncAudioBookFiles=true
 ///   → 有声书包经 live 端点上传本端独有包，不自动拉取远端独有包，
-///     也不经 `audiobook.hibikiaudio` 书文件夹暂存。
+///     也不经 `audiobook.fushiaudio` 书文件夹暂存。
 /// 用例 C：互联 + 开关关（syncLocalAudio=false / syncAudioBookFiles=false）
 ///   → 对应 live 方法不被调用（计数器=0）。
 /// 用例 D：云后端（非 InterconnectSyncBackend）

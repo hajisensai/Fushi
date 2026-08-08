@@ -13,7 +13,7 @@ class AssetEntry {
   /// Dropbox/FTP/SFTP 的路径字符串。对调用方不透明。
   final String id;
 
-  /// 业务可见名（如 `content.epub` / `<bookKey>` / `<name>.hibikidict`）。
+  /// 业务可见名（如 `content.epub` / `<bookKey>` / `<name>.fushidict`）。
   final String name;
 
   /// 该条目是子命名空间（文件夹）而非资产文件。

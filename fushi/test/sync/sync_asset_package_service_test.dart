@@ -282,7 +282,7 @@ void main() {
       final File package = await SyncAssetPackageService(db: sourceDb)
           .exportAudioDatabasePackage(
         srtBookUid: 'srt-standalone-1',
-        outputFile: File(p.join(temp.path, 'standalone.hibikiaudio')),
+        outputFile: File(p.join(temp.path, 'standalone.fushiaudio')),
       );
 
       // manifest 的 audiobook 段必须为 null（无 Audiobooks 行）。
@@ -449,7 +449,7 @@ void main() {
           LocalAudioSourcePref(name: 'forvo', enabled: false),
         ],
         dbFile: dbFile,
-        outputFile: File(p.join(temp.path, 'nhk.hibikiaudiolib')),
+        outputFile: File(p.join(temp.path, 'nhk.fushiaudiolib')),
       );
 
       // STORE 验证：包内资源条目压缩方式必须是 STORE（compressionType==0）。

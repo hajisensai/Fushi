@@ -259,18 +259,18 @@ Future<InterconnectSyncBackend> _buildBackend({
 
 void main() {
   group('deleteRemoteDictionaryAsset (BUG-086)', () {
-    test('deletes the matching <name>.hibikidict package and reports true',
+    test('deletes the matching <name>.fushidict package and reports true',
         () async {
       final _RecordingBackend backend = _RecordingBackend(
-        present: const AssetEntry(id: 'asset-1', name: 'Genius.hibikidict'),
+        present: const AssetEntry(id: 'asset-1', name: 'Genius.fushidict'),
       );
 
       final bool deleted = await deleteRemoteDictionaryAsset(backend, 'Genius');
 
       expect(deleted, isTrue);
       expect(backend.ensuredNamespace, kSyncDictionaryNamespace);
-      expect(backend.queriedName, 'Genius.hibikidict',
-          reason: 'must look up the package by name + .hibikidict suffix');
+      expect(backend.queriedName, 'Genius.fushidict',
+          reason: 'must look up the package by name + .fushidict suffix');
       expect(backend.deletedId, 'asset-1',
           reason: 'must delete the exact remote package found');
     });

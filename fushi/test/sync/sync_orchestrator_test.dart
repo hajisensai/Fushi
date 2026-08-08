@@ -489,7 +489,7 @@ void main() {
       final String ns = await backend.ensureNamespace(kSyncLocalAudioNamespace);
       final List<AssetEntry> children = await backend.listChildren(ns);
       expect(children.where((AssetEntry e) => !e.isFolder).length, 1);
-      expect(children.first.name, 'NHK Audio.hibikiaudiolib');
+      expect(children.first.name, 'NHK Audio.fushiaudiolib');
     });
 
     test('remote-only package is pulled and registered via callback', () async {

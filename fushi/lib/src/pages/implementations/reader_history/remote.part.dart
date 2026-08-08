@@ -833,7 +833,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     });
   }
 
-  /// 下载纯 SRT 远端有声书：`getRemoteAudiobook(identity=uid)` 拉 `.hibikiaudio` 包 →
+  /// 下载纯 SRT 远端有声书：`getRemoteAudiobook(identity=uid)` 拉 `.fushiaudio` 包 →
   /// `importAudioDatabasePackage` 纯 SRT 分支落 SrtBooks 行（bookKey 恒空、cue 走 uid）。
   /// 只互联后端可达（云盘无 live 有声书 API）。完成后刷新书架（占位卡按 uid dedup 隐藏）。
   Future<void> _downloadRemoteSrtAudiobook(RemoteAudiobookInfo book) async {
@@ -898,24 +898,24 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     );
   }
 
-  /// 纯 SRT 有声书包下载临时目标文件（`.hibikiaudio`）。
+  /// 纯 SRT 有声书包下载临时目标文件（`.fushiaudio`）。
   Future<File> _remoteSrtDestination(RemoteAudiobookInfo book) async {
     final Directory temp = await getTemporaryDirectory();
     final Directory dir =
         Directory(p.join(temp.path, 'hibiki_remote_audiobooks'));
     await dir.create(recursive: true);
     final String safeKey = _safeRemoteBookKey(book.title ?? book.identity);
-    return File(p.join(dir.path, 'srt_$safeKey.hibikiaudio'));
+    return File(p.join(dir.path, 'srt_$safeKey.fushiaudio'));
   }
 
-  /// 有声书包下载临时目标文件（`.hibikiaudio`）。
+  /// 有声书包下载临时目标文件（`.fushiaudio`）。
   Future<File> _remoteAudiobookDestination(RemoteBookInfo book) async {
     final Directory temp = await getTemporaryDirectory();
     final Directory dir =
         Directory(p.join(temp.path, 'hibiki_remote_audiobooks'));
     await dir.create(recursive: true);
     return File(
-        p.join(dir.path, '${_safeRemoteBookKey(book.title)}.hibikiaudio'));
+        p.join(dir.path, '${_safeRemoteBookKey(book.title)}.fushiaudio'));
   }
 
   /// 本地有声书解包落盘根目录（与 [AppModelLibraryHostService] 同源

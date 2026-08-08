@@ -128,7 +128,7 @@ void main() {
                     await audiobookDownloadGate!.future;
                   }
                   final File pkg = File(
-                    '${pathProviderDir.path}/$remoteBookKey.hibikiaudio',
+                    '${pathProviderDir.path}/$remoteBookKey.fushiaudio',
                   );
                   await pkg.writeAsBytes(<int>[9, 9, 9]);
                   return pkg;

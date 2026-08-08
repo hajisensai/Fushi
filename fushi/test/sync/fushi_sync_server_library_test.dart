@@ -68,7 +68,7 @@ class _FakeLibraryService implements FushiLibraryHostService {
   @override
   Future<File> exportDictionary(String name) async {
     final File f =
-        File('${Directory.systemTemp.createTempSync().path}/$name.hibikidict');
+        File('${Directory.systemTemp.createTempSync().path}/$name.fushidict');
     f.writeAsStringSync('PKG:$name');
     return f;
   }

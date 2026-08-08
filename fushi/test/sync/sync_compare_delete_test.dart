@@ -73,7 +73,7 @@ class _FakeSyncBackend implements SyncBackend {
       // getAudioBookFile but never getProgressFile/getStatsFile.
       ? const SyncFileTrio(
           audioBook:
-              SyncFileRef(id: audioAssetId, name: 'audiobook.hibikiaudio'),
+              SyncFileRef(id: audioAssetId, name: 'audiobook.fushiaudio'),
         )
       : const SyncFileTrio();
   @override
@@ -260,11 +260,11 @@ void main() {
   testWidgets(
       'dictionary row delete calls deleteAsset on remote asset id (not folder)',
       (WidgetTester tester) async {
-    const String assetId = '__dictionaries__/JMdict.hibikidict';
+    const String assetId = '__dictionaries__/JMdict.fushidict';
     final _FakeSyncBackend fake = _FakeSyncBackend(
       books: const <SyncFileRef>[],
       dictAssets: const <AssetEntry>[
-        AssetEntry(id: assetId, name: 'JMdict.hibikidict'),
+        AssetEntry(id: assetId, name: 'JMdict.fushidict'),
       ],
     );
     await pumpDialog(tester, fake);
