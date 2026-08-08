@@ -8,18 +8,18 @@
   "notes": "Manual release-signed debug-channel build from develop @ 289d6c6. Debug releases are prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-1.3.2-debug.10182-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/fushi-1.3.2-debug.10182-ios.ipa",
-      "releaseSequence": 10182,
-      "tag": "v1.3.2-debug.10182+d863f0c",
-      "version": "1.3.2-debug.10182"
+      "name": "fushi-1.4.0-debug.10304-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/debug-rolling/fushi-1.4.0-debug.10304-ios.ipa",
+      "releaseSequence": 10304,
+      "tag": "v1.4.0-debug.10304+3ad91e2",
+      "version": "1.4.0-debug.10304"
     },
     {
-      "name": "fushi-1.4.0-debug.10302-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/debug-rolling/fushi-1.4.0-debug.10302-macos.zip",
-      "releaseSequence": 10302,
-      "tag": "v1.4.0-debug.10302+8f73fb7",
-      "version": "1.4.0-debug.10302"
+      "name": "fushi-1.4.0-debug.10304-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/debug-rolling/fushi-1.4.0-debug.10304-macos.zip",
+      "releaseSequence": 10304,
+      "tag": "v1.4.0-debug.10304+3ad91e2",
+      "version": "1.4.0-debug.10304"
     },
     {
       "name": "fushi-1.4.0-debug.10304-windows-setup.exe",
