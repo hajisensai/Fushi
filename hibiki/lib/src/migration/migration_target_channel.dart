@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 
 /// 迁移目标包名（Phase 0 身份对照表定值）。
@@ -47,6 +48,26 @@ class MigrationTargetChannel {
         .invokeMethod<void>('requestUninstall', <String, Object?>{
       'package': packageName,
     });
+  }
+
+  /// [path] 所在卷的可用字节；**测不出一律返回 null**。
+  ///
+  /// 调用方必须把 null 当「不知道」并硬拦，不得退化成「够用」——导出会把书 /
+  /// 词典 / 有声书整份复制到中转目录（数据翻倍），赌一把的代价是导到一半炸、
+  /// 中转目录留半截。非 Android 也返回 null（跨包名迁移只存在于 Android）。
+  Future<int?> getFreeSpace(String path) async {
+    if (!_supported) return null;
+    try {
+      return await HibikiChannels.migration.invokeMethod<int>(
+        'getFreeSpace',
+        <String, Object?>{'path': path},
+      );
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      // 老宿主（未带 getFreeSpace 的 Java 侧）：同样按「测不出」处理。
+      return null;
+    }
   }
 
   /// 启/停 PROCESS_TEXT 系统取词入口（组件级，系统菜单里真的少一项）。

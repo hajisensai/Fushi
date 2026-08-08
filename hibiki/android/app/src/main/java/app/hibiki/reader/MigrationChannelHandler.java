@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.StatFs;
 
 import androidx.annotation.NonNull;
 
@@ -80,6 +81,27 @@ public final class MigrationChannelHandler {
                             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                             context.startActivity(intent);
                             result.success(null);
+                            return;
+                        }
+                        case "getFreeSpace": {
+                            // 迁移导出把书/词典/有声书整份复制到中转目录（数据翻倍），
+                            // 空间不够会导到一半炸并留下半截中转目录。开导前必须先问
+                            // 真实可用字节——按**中转目录所在卷**取，不能拿内部存储
+                            // 代答：中转目录在公共 Documents 下，与 /data 可能不同卷。
+                            String path = call.argument("path");
+                            if (path == null) {
+                                result.error("bad_args", "path is required", null);
+                                return;
+                            }
+                            try {
+                                StatFs stat = new StatFs(path);
+                                result.success(
+                                        stat.getAvailableBlocksLong() * stat.getBlockSizeLong());
+                            } catch (IllegalArgumentException e) {
+                                // 路径不存在/不可读：交给 Dart 侧判为「测不出」并硬拦，
+                                // 绝不返回 0 或 Long.MAX_VALUE 冒充答案。
+                                result.error("stat_failed", e.getMessage(), null);
+                            }
                             return;
                         }
                         case "setProcessTextEnabled": {
