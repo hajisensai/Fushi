@@ -37,8 +37,8 @@ void main() {
           isFalse);
     });
 
-    test('any 不加任何过滤（自更新既有语义必须字节级不变）', () {
-      // 桥的 stable 路径**有意**把自更新指向 fushi-*（Phase 5），
+    test('any 不加任何过滤（桌面自更新语义必须字节级不变）', () {
+      // 桥的 stable 路径**有意**把桌面自更新指向 fushi-*（Phase 5），
       // 且历史手动发布的资产不保证带任何产品前缀 —— 两者都不能被过滤掉。
       for (final String name in <String>[
         'hibiki-1.3.2-arm64-v8a.apk',
@@ -49,16 +49,74 @@ void main() {
             reason: '$name 不该被 any 过滤掉');
       }
     });
+
+    test('own 只排除 fushi 族，不做 hibiki- 白名单', () {
+      // 判据必须是「不是 fushi」而不是「以 hibiki- 开头」：历史手动发布的资产
+      // 不带任何产品前缀，白名单会把它们全过滤掉＝掐断既有更新链路。
+      expect(
+          assetBelongsToProduct(
+              'fushi-1.4.0-arm64-v8a.apk', ReleaseProduct.own),
+          isFalse);
+      expect(
+          assetBelongsToProduct(
+              'hibiki-1.3.2-arm64-v8a.apk', ReleaseProduct.own),
+          isTrue);
+      expect(
+          assetBelongsToProduct(
+              'app-arm64-v8a-release.apk', ReleaseProduct.own),
+          isTrue,
+          reason: '无产品前缀的历史资产不能被 own 误杀');
+    });
   });
 
   group('AndroidUpdater.selectAsset 产品族隔离', () {
-    test('自更新不加产品族过滤（既有语义），按清单顺序 + ABI 命中', () async {
+    test('自更新按 ABI 命中桥包自己', () async {
       final UpdateAsset? picked = await androidOn('arm64-v8a').selectAsset(
         mixedDebugAssets,
         channel: UpdateChannel.debug,
       );
       expect(picked, isNotNull);
       expect(picked!.name, 'hibiki-1.3.2-debug.10182-arm64-v8a.apk');
+    });
+
+    test('自更新绝不选中 fushi-*.apk —— 哪怕它在清单里排第一', () async {
+      // 平台硬约束：跨包名+跨签名装不上（INSTALL_FAILED_UPDATE_INCOMPATIBLE）。
+      // 桌面的 any 语义（Phase 5 有意指向 Fushi）在安卓上必须被收窄成 own，
+      // 且是在 AndroidUpdater 内部收窄——调用方不传 product 也不能装错包。
+      final UpdateAsset? picked = await androidOn('arm64-v8a').selectAsset(
+        <Map<String, dynamic>>[
+          asset('fushi-1.4.0-debug.10302-arm64-v8a.apk'),
+          asset('hibiki-1.3.2-debug.10182-arm64-v8a.apk'),
+        ],
+        channel: UpdateChannel.debug,
+      );
+      expect(picked, isNotNull);
+      expect(picked!.name, 'hibiki-1.3.2-debug.10182-arm64-v8a.apk');
+    });
+
+    test('自更新的 ABI fallback 也不许跨族兜底', () async {
+      // fallback 是「ABI 全落空时退而求其次」，最容易漏掉产品族约束——
+      // 漏了就是「设备 ABI 不在清单里 → 兜底装了 Fushi → 装失败」。
+      final UpdateAsset? picked = await androidOn('riscv64').selectAsset(
+        <Map<String, dynamic>>[
+          asset('fushi-1.4.0-debug.10302-arm64-v8a.apk'),
+          asset('hibiki-1.3.2-debug.10182-armeabi-v7a.apk'),
+        ],
+        channel: UpdateChannel.debug,
+      );
+      expect(picked, isNotNull);
+      expect(picked!.name, startsWith('hibiki-'));
+    });
+
+    test('只有 Fushi 包时自更新返回 null（回退发布页），而不是给个装不上的包', () async {
+      final UpdateAsset? picked = await androidOn('arm64-v8a').selectAsset(
+        <Map<String, dynamic>>[
+          asset('fushi-1.4.0-debug.10302-arm64-v8a.apk'),
+          asset('fushi-1.4.0-debug.10302-armeabi-v7a.apk'),
+        ],
+        channel: UpdateChannel.debug,
+      );
+      expect(picked, isNull);
     });
 
     test('迁移下载绝不选中 hibiki-*.apk（否则桥包把自己当 Fushi 装）', () async {
