@@ -14,7 +14,7 @@
 // BUG-1078 extends this: even a cheap non-passive document wheel listener makes
 // the browser abandon the compositor fast-scroll path on EVERY page the content
 // script touches. So in the extension context popup.js must NOT attach to
-// document at all — it exposes the handler as window.__hibikiPopupWheelListener
+// document at all — it exposes the handler as window.__fushiPopupWheelListener
 // and content.js lazily mounts it on the popup shadow host for the popup's
 // lifetime. The in-app popup (no chrome.runtime) keeps the resident document
 // listener ({passive:false}) — there the document IS the popup.
@@ -65,8 +65,8 @@ function loadWheelHandler(opts) {
     getSelection() { return { toString() { return ''; } }; },
     getComputedStyle() { return {}; },
   };
-  // __hibikiRoot.host is the shadow host; only present when a popup is open.
-  windowObj.__hibikiRoot = opts.popupOpen ? { host: hostEl } : undefined;
+  // __fushiRoot.host is the shadow host; only present when a popup is open.
+  windowObj.__fushiRoot = opts.popupOpen ? { host: hostEl } : undefined;
   if (opts.flutter) {
     windowObj.flutter_inappwebview = { callHandler() { return Promise.resolve(false); } };
   }
@@ -98,9 +98,9 @@ function loadWheelHandler(opts) {
     // host for the popup's lifetime.
     assert.strictEqual(documentWheelRegs.length, 0,
       'extension context must NOT attach any document wheel listener (BUG-1078)');
-    wheelHandler = windowObj.__hibikiPopupWheelListener;
+    wheelHandler = windowObj.__fushiPopupWheelListener;
     assert.ok(typeof wheelHandler === 'function',
-      'extension context must expose window.__hibikiPopupWheelListener for ' +
+      'extension context must expose window.__fushiPopupWheelListener for ' +
       'content.js to lazily mount on the popup shadow host');
   } else {
     // In-app popup WebView: the document IS the popup — the resident document
@@ -163,7 +163,7 @@ function makeWheelEvent(target, ancestors, calls) {
 (function extensionWheelOverPopupScrollsHost() {
   const { wheelHandler, calls, hostEl } = loadWheelHandler({ extension: true, popupOpen: true });
   const inner = { nodeType: 1, parentElement: null };
-  // composedPath crosses the shadow host -> __hibikiWheelScroller returns it.
+  // composedPath crosses the shadow host -> __fushiWheelScroller returns it.
   wheelHandler(makeWheelEvent(inner, [hostEl], calls));
 
   assert.strictEqual(calls.prevented, true,

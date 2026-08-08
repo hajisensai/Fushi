@@ -113,7 +113,7 @@ void main() {
     // BUG-688: the target is resolved through composedPath so the walk also
     // works from inside the extension shadow root; in-app it equals e.target.
     final absorbCheck = js.indexOf(
-        'popupAncestorAbsorbsVerticalWheel(__hibikiEventTarget(e), deltaPx)');
+        'popupAncestorAbsorbsVerticalWheel(__fushiEventTarget(e), deltaPx)');
     final preventDefault = js.indexOf('e.preventDefault()', absorbCheck);
     expect(absorbCheck, greaterThanOrEqualTo(0));
     expect(preventDefault, greaterThan(absorbCheck));

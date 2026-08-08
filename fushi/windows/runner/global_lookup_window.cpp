@@ -1586,7 +1586,7 @@ void GlobalLookupWindow::ConfigureWebView() {
               // outside the app was visibly DEAD (the user could neither overwrite an
               // older card nor add a duplicate). popup.js now renders the action panel
               // INSIDE its own WebView whenever the host has no native dialog
-              // (window.__hibikiMinedCardActionNative false), and that panel needs two
+              // (window.__fushiMinedCardActionNative false), and that panel needs two
               // DEFERRED data bridges: findMinedMatches (repo.findMatchingNotes -> the
               // existing cards) and openMinedNote (repo.openNoteInAnki). Its overwrite
               // / add-duplicate actions reuse the already-deferred updateEntry /
@@ -1617,8 +1617,8 @@ void GlobalLookupWindow::ConfigureWebView() {
                 }
                 if (end > pos && webview_) {
                   std::string id = body.substr(pos, end - pos);
-                  std::wstring script = L"window.__hibikiBridgeResolve && "
-                                        L"window.__hibikiBridgeResolve(" +
+                  std::wstring script = L"window.__fushiBridgeResolve && "
+                                        L"window.__fushiBridgeResolve(" +
                                         Utf8ToWide(id) + L", null);";
                   webview_->ExecuteScript(script.c_str(), nullptr);
                 }
@@ -1770,8 +1770,8 @@ void GlobalLookupWindow::ResolveBridge(int64_t id,
   }
   // json_value is a ready JS string literal (Dart double-encodes it) — the
   // overlay adapter does JSON.parse on it. Splice it in verbatim.
-  std::wstring script = L"window.__hibikiBridgeResolve && "
-                        L"window.__hibikiBridgeResolve(" +
+  std::wstring script = L"window.__fushiBridgeResolve && "
+                        L"window.__fushiBridgeResolve(" +
                         std::to_wstring(id) + L", " + Utf8ToWide(json_value) +
                         L");";
   webview_->ExecuteScript(script.c_str(), nullptr);

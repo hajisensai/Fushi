@@ -12,8 +12,8 @@ class HighlightBridge {
   // language=javascript
   static const String _js = '''
 (function() {
-  if (window.__hibikiHighlightsInstalled) return;
-  window.__hibikiHighlightsInstalled = true;
+  if (window.__fushiHighlightsInstalled) return;
+  window.__fushiHighlightsInstalled = true;
   window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
 
   var BASE_COLORS = {
@@ -41,14 +41,14 @@ class HighlightBridge {
   // Rec.601/0.5）算好经 applyHighlights 注入；JS 不再自带亮度公式（此前的
   // Rec.709/0.4 与滚动条判定对同一背景色会得出不同深浅）。默认 false = 浅色，
   // 与旧默认背景 #ffffff 的判定一致。
-  window.__hibikiHighlightBgDark = false;
-  window.__hibikiCustomHighlightColor = null;
-  window.__hibikiHighlightRangeMap = {};
-  window.__hibikiHighlightRubyElements = [];
-  window.__hibikiFallbackHighlightRubyMap = {};
+  window.__fushiHighlightBgDark = false;
+  window.__fushiCustomHighlightColor = null;
+  window.__fushiHighlightRangeMap = {};
+  window.__fushiHighlightRubyElements = [];
+  window.__fushiFallbackHighlightRubyMap = {};
 
   function _pickAlpha(colorName) {
-    var dark = window.__hibikiHighlightBgDark === true;
+    var dark = window.__fushiHighlightBgDark === true;
     var alphas = {
       yellow: dark ? 0.45 : 0.35,
       green:  dark ? 0.40 : 0.30,
@@ -60,14 +60,14 @@ class HighlightBridge {
   }
 
   function _hlColor(name) {
-    if (window.__hibikiCustomHighlightColor) return window.__hibikiCustomHighlightColor;
+    if (window.__fushiCustomHighlightColor) return window.__fushiCustomHighlightColor;
     var rgb = BASE_COLORS[name] || BASE_COLORS.yellow;
     var a = _pickAlpha(name);
     return 'rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+a+')';
   }
 
   function _hlMarkColor(name) {
-    if (window.__hibikiCustomHighlightColor) return window.__hibikiCustomHighlightColor;
+    if (window.__fushiCustomHighlightColor) return window.__fushiCustomHighlightColor;
     var rgb = MARK_COLORS[name] || MARK_COLORS.yellow;
     return 'rgb('+rgb[0]+','+rgb[1]+','+rgb[2]+')';
   }
@@ -105,15 +105,15 @@ class HighlightBridge {
   }
 
   function _clearCssRubyHighlights() {
-    var elements = window.__hibikiHighlightRubyElements || [];
+    var elements = window.__fushiHighlightRubyElements || [];
     for (var i = 0; i < elements.length; i++) {
       _removeFavoriteRubyClasses(elements[i]);
     }
-    window.__hibikiHighlightRubyElements = [];
+    window.__fushiHighlightRubyElements = [];
   }
 
   function _clearFallbackRubyHighlights() {
-    var map = window.__hibikiFallbackHighlightRubyMap || {};
+    var map = window.__fushiFallbackHighlightRubyMap || {};
     for (var id in map) {
       if (!Object.prototype.hasOwnProperty.call(map, id)) continue;
       var elements = map[id].elements || [];
@@ -121,11 +121,11 @@ class HighlightBridge {
         _removeFavoriteRubyClasses(elements[i]);
       }
     }
-    window.__hibikiFallbackHighlightRubyMap = {};
+    window.__fushiFallbackHighlightRubyMap = {};
   }
 
   function _reapplyFallbackRubyHighlights() {
-    var map = window.__hibikiFallbackHighlightRubyMap || {};
+    var map = window.__fushiFallbackHighlightRubyMap || {};
     var touched = [];
     for (var id in map) {
       if (!Object.prototype.hasOwnProperty.call(map, id)) continue;
@@ -224,7 +224,7 @@ class HighlightBridge {
     _clearCssRubyHighlights();
     var colorGroups = {};
     var activeRubyElements = [];
-    var rangeMap = window.__hibikiHighlightRangeMap;
+    var rangeMap = window.__fushiHighlightRangeMap;
     for (var id in rangeMap) {
       var entry = rangeMap[id];
       var color = entry.color || 'yellow';
@@ -249,7 +249,7 @@ class HighlightBridge {
         CSS.highlights.delete(hlName);
       }
     }
-    window.__hibikiHighlightRubyElements = activeRubyElements;
+    window.__fushiHighlightRubyElements = activeRubyElements;
     _syncHighlightVars();
   }
 
@@ -260,7 +260,7 @@ class HighlightBridge {
   }
 
   // ── 从 selection 计算 normCharOffset + length ──
-  window.__hibikiGetSelectionNormRange = function() {
+  window.__fushiGetSelectionNormRange = function() {
     var sel = window.getSelection();
     if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null;
     var range = sel.getRangeAt(0);
@@ -303,10 +303,10 @@ class HighlightBridge {
   };
 
   // ── 应用高亮 ──
-  window.__hibikiApplyHighlights = function(highlightsJson) {
+  window.__fushiApplyHighlights = function(highlightsJson) {
     _syncHighlightVars();
     if (window.__fushiCssHighlightsSupported) {
-      window.__hibikiHighlightRangeMap = {};
+      window.__fushiHighlightRangeMap = {};
       _clearCssRubyHighlights();
       if (!highlightsJson || highlightsJson.length === 0) {
         for (var i = 0; i < ALL_COLORS.length; i++) {
@@ -335,7 +335,7 @@ class HighlightBridge {
           } catch (e) { console.warn('[fushi-hl] range error:', e); }
         }
         if (ranges.length || rubyElements.length) {
-          window.__hibikiHighlightRangeMap[hl.id] = {
+          window.__fushiHighlightRangeMap[hl.id] = {
             color: color,
             ranges: ranges,
             rubyElements: rubyElements
@@ -388,7 +388,7 @@ class HighlightBridge {
           } catch (e) { console.warn('[fushi-hl] wrap error:', e); }
         }
         if (rubyElements.length) {
-          window.__hibikiFallbackHighlightRubyMap[hl.id] = {
+          window.__fushiFallbackHighlightRubyMap[hl.id] = {
             color: color,
             elements: rubyElements
           };
@@ -399,7 +399,7 @@ class HighlightBridge {
   };
 
   // ── 文本搜索回退：为没有偏移量的收藏查找位置 ──
-  window.__hibikiFindTextNormRange = function(text) {
+  window.__fushiFindTextNormRange = function(text) {
     if (!text) return null;
     var root = _root();
     var walker = _walker(root);
@@ -434,18 +434,18 @@ class HighlightBridge {
   };
 
   // ── 移除单条高亮 ──
-  window.__hibikiRemoveHighlight = function(id) {
+  window.__fushiRemoveHighlight = function(id) {
     if (window.__fushiCssHighlightsSupported) {
-      delete window.__hibikiHighlightRangeMap[id];
+      delete window.__fushiHighlightRangeMap[id];
       _rebuildCssHighlights();
     } else {
-      var rubyEntry = window.__hibikiFallbackHighlightRubyMap[id];
+      var rubyEntry = window.__fushiFallbackHighlightRubyMap[id];
       if (rubyEntry) {
         var rubyElements = rubyEntry.elements || [];
         for (var i = 0; i < rubyElements.length; i++) {
           _removeFavoriteRubyClasses(rubyElements[i]);
         }
-        delete window.__hibikiFallbackHighlightRubyMap[id];
+        delete window.__fushiFallbackHighlightRubyMap[id];
         _reapplyFallbackRubyHighlights();
       }
       var els = document.querySelectorAll('[data-highlight-id="' + id + '"]');
@@ -468,7 +468,7 @@ class HighlightBridge {
     InAppWebViewController controller,
   ) async {
     final Object? raw = await controller.evaluateJavascript(
-      source: '(function(){try{var r=window.__hibikiGetSelectionNormRange();'
+      source: '(function(){try{var r=window.__fushiGetSelectionNormRange();'
           'return r?JSON.stringify(r):"null";}catch(e){return "null";}})();',
     );
     if (raw is! String || raw.isEmpty || raw == 'null') return null;
@@ -502,7 +502,7 @@ class HighlightBridge {
       final String escapedText = jsonEncode(h.text);
       final Object? raw = await controller.evaluateJavascript(
         source:
-            '(function(){try{var r=window.__hibikiFindTextNormRange($escapedText);'
+            '(function(){try{var r=window.__fushiFindTextNormRange($escapedText);'
             'return r?JSON.stringify(r):"null";}catch(e){return "null";}})();',
       );
       if (raw is String && raw != 'null' && raw.isNotEmpty) {
@@ -539,9 +539,9 @@ class HighlightBridge {
     final String escapedCustom =
         customHighlightCss != null ? jsonEncode(customHighlightCss) : 'null';
     await controller.evaluateJavascript(
-      source: 'window.__hibikiHighlightBgDark=$backgroundIsDark;'
-          'window.__hibikiCustomHighlightColor=$escapedCustom;'
-          'window.__hibikiApplyHighlights && window.__hibikiApplyHighlights($json);',
+      source: 'window.__fushiHighlightBgDark=$backgroundIsDark;'
+          'window.__fushiCustomHighlightColor=$escapedCustom;'
+          'window.__fushiApplyHighlights && window.__fushiApplyHighlights($json);',
     );
   }
 
@@ -552,7 +552,7 @@ class HighlightBridge {
     final String escaped = jsonEncode(highlightId);
     await controller.evaluateJavascript(
       source:
-          'window.__hibikiRemoveHighlight && window.__hibikiRemoveHighlight($escaped);',
+          'window.__fushiRemoveHighlight && window.__fushiRemoveHighlight($escaped);',
     );
   }
 }

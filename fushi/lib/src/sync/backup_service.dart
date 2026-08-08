@@ -3860,7 +3860,7 @@ class BackupService {
   // `toUint8List()`), so we stream the raw file-backed window directly instead.
 
   /// Sent by the extract worker once every planned entry has been written.
-  static const String _extractDoneToken = '__hibiki_backup_extract_done__';
+  static const String _extractDoneToken = '__fushi_backup_extract_done__';
 
   /// Streams the entries in [entries] (archive entry name → absolute dest path)
   /// out of the zip at [zipPath] on a background isolate. [onBytes] is invoked on

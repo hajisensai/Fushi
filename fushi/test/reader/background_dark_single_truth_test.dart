@@ -12,7 +12,7 @@ import 'package:fushi/src/reader/reader_content_styles.dart';
 ///
 /// 修法（路线 A）：Dart 侧 [ReaderContentStyles.isDarkBackground] 是唯一公式，
 /// `HighlightBridge.applyHighlights` 用它算好 bool 经既有 evaluateJavascript
-/// 注入 `window.__hibikiHighlightBgDark`；JS 侧公式删除。本文件：
+/// 注入 `window.__fushiHighlightBgDark`；JS 侧公式删除。本文件：
 /// ① 冻结 Dart 公式行为（含一个两套旧公式判定相反的深蓝灰用例）；
 /// ② 源码守卫：JS 不得再出现亮度公式，Dart 侧必须经单一真相接线。
 void main() {
@@ -61,8 +61,8 @@ void main() {
     });
 
     test('深浅 bool 经既有 bridge 注入且来自单一真相', () {
-      expect(bridgeSrc.contains('__hibikiHighlightBgDark'), isTrue,
-          reason: 'JS 读 Dart 注入的 __hibikiHighlightBgDark');
+      expect(bridgeSrc.contains('__fushiHighlightBgDark'), isTrue,
+          reason: 'JS 读 Dart 注入的 __fushiHighlightBgDark');
       expect(
           bridgeSrc
               .contains('ReaderContentStyles.isDarkBackground(backgroundHex)'),

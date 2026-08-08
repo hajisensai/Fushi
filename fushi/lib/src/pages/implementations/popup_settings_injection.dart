@@ -285,7 +285,7 @@ const String _globalLookupZoomWheelJs = '''
 // 因 `pointer:coarse` 不命中而幸免，故只在触屏暴露。
 //
 // BUG-762 担心的「长按释义→系统 ActionMode 接管→弹窗关不掉」其实已被 popup.js 的
-// document click 处理器优雅化解：`__hibikiSel().toString().length>0` 时先 `removeAllRanges()`
+// document click 处理器优雅化解：`__fushiSel().toString().length>0` 时先 `removeAllRanges()`
 // 清原生选区再 return（点一下取消选择、再点才关窗），加上弹窗 chrome 的关闭按钮/横拖关
 // 都在 WebView 之外、不受 ActionMode 阻挡——始终有退路。用整块 CSS 禁选去修一个已被 JS
 // 处理的标准选中态，是修在了错误的层，代价是牺牲词典核心能力「复制释义」。
@@ -624,7 +624,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // popupRendered is the host reveal gate. Let popup.js wait for the injected
     // custom font on cold/nested lookups, while keeping the no-custom-font path
     // synchronous.
-    window.__hibikiDictionaryFontsConfigured = ${fontStyleJs.isNotEmpty};
+    window.__fushiDictionaryFontsConfigured = ${fontStyleJs.isNotEmpty};
     $iconFontJs
     $zoomWheelJs
     document.documentElement.style.zoom = '${zoom.toStringAsFixed(4)}';
@@ -664,7 +664,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // 取 !globalLookup 而不是新开参数：globalLookup 恰好就是「这一帧属于 app 外
     // 裸窗口」的既有真相。浏览器扩展不经本注入 → undefined → 同样走页内面板
     // （它的 bridge-shim 对 minedCardAction 也只回 null）。
-    window.__hibikiMinedCardActionNative = ${!options.globalLookup};
+    window.__fushiMinedCardActionNative = ${!options.globalLookup};
     window.i18nMinedCardTitle = ${jsonEncode(t.anki_mined_card_title)};
     window.i18nMinedCardSubtitle = ${jsonEncode(t.anki_mined_card_subtitle)};
     window.i18nMinedMultipleMatches = ${jsonEncode(t.anki_mined_multiple_matches(count: '{count}'))};

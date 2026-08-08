@@ -13,10 +13,10 @@ import 'package:flutter_test/flutter_test.dart';
 /// runs inside a CHILD iframe (global_lookup_host.js hosts N popup.html iframes),
 /// so its callHandler Promise lives in THAT iframe's popup_bridge_adapter realm.
 /// Native (global_lookup_window.cpp) only ExecuteScripts the TOP-LEVEL document,
-/// whose window.__hibikiBridgeResolve is a different realm — the reply never
+/// whose window.__fushiBridgeResolve is a different realm — the reply never
 /// reached the iframe and every awaited callHandler (audio + favorite) hung. Fix:
 /// the host rewrites each outbound frame-local __bridgeId to a host-global id +
-/// records a route, and the top-level __hibikiBridgeResolve forwards the reply to
+/// records a route, and the top-level __fushiBridgeResolve forwards the reply to
 /// the SOURCE iframe's adapter (installBridgeRouter).
 ///
 /// Root cause 2 — favorite had NO Dart branch and was immediately null-resolved by
@@ -82,11 +82,11 @@ void main() {
     expect(host.contains('bridgeRoutes'), isTrue,
         reason: '必须维护 globalId -> {frameId, localId} 路由表');
     expect(host.contains('installBridgeRouter'), isTrue,
-        reason: '必须安装顶层 __hibikiBridgeResolve 路由器');
-    // 顶层收到 native 回复后转发到源 iframe 的 contentWindow.__hibikiBridgeResolve。
-    expect(host.contains('window.__hibikiBridgeResolve = function'), isTrue,
-        reason: '路由器必须覆写顶层 __hibikiBridgeResolve');
-    expect(host.contains('win.__hibikiBridgeResolve(route.localId'), isTrue,
+        reason: '必须安装顶层 __fushiBridgeResolve 路由器');
+    // 顶层收到 native 回复后转发到源 iframe 的 contentWindow.__fushiBridgeResolve。
+    expect(host.contains('window.__fushiBridgeResolve = function'), isTrue,
+        reason: '路由器必须覆写顶层 __fushiBridgeResolve');
+    expect(host.contains('win.__fushiBridgeResolve(route.localId'), isTrue,
         reason: '必须用源帧原始 localId 转发回 iframe adapter');
   });
 }

@@ -32,10 +32,10 @@ void main() {
 
         test('滚轮滚动目标按表面解析：扩展=shadow host，in-app/宿主页=window', () {
           // 表面解析器存在：只有事件 composedPath 穿过 shadow host 才返回 host。
-          expect(src, contains('function __hibikiWheelScroller('),
-              reason: 'popup.js 必须有 __hibikiWheelScroller 表面解析器');
+          expect(src, contains('function __fushiWheelScroller('),
+              reason: 'popup.js 必须有 __fushiWheelScroller 表面解析器');
           expect(src, contains('p.indexOf(host) !== -1'),
-              reason: '__hibikiWheelScroller 必须用 composedPath 判定事件是否来自弹窗内');
+              reason: '__fushiWheelScroller 必须用 composedPath 判定事件是否来自弹窗内');
           // 滚动分支：host 存在滚 host，否则回落 window（in-app 与宿主页路径）。
           expect(src,
               contains("scroller.scrollBy({ top: step, behavior: 'auto' })"),

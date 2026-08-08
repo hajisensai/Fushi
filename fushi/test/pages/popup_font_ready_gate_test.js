@@ -31,7 +31,7 @@ function makeSandbox(fontReady, configured) {
   const windowObj = {
     _renderGeneration: 1,
     _renderInProgress: true,
-    __hibikiDictionaryFontsConfigured: configured,
+    __fushiDictionaryFontsConfigured: configured,
     flutter_inappwebview: {
       callHandler(name) {
         if (name === 'popupRendered') calls.rendered += 1;
@@ -44,7 +44,7 @@ function makeSandbox(fontReady, configured) {
     Promise,
     document: { body, documentElement: { scrollHeight: 100 }, fonts: { ready: fontReady } },
     window: windowObj,
-    __hibikiScrollHeight() { return 100; },
+    __fushiScrollHeight() { return 100; },
   };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);

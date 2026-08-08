@@ -4,7 +4,7 @@
 // Verifies the adapter maps window.flutter_inappwebview.callHandler onto
 // chrome.webview.postMessage with a {handler, args, id} envelope, and that the
 // returned Promise resolves with the parsed value when native calls
-// window.__hibikiBridgeResolve(id, jsonValue).
+// window.__fushiBridgeResolve(id, jsonValue).
 
 import assert from 'node:assert';
 import { readFileSync } from 'node:fs';
@@ -42,17 +42,17 @@ assert.deepStrictEqual(env.args, [{ term: 'favour' }]);
 assert.strictEqual(typeof env.__bridgeId, 'number');
 
 // 2. native reply resolves the Promise with the parsed value.
-sandbox.window.__hibikiBridgeResolve(env.__bridgeId, JSON.stringify({ url: 'a.mp3' }));
+sandbox.window.__fushiBridgeResolve(env.__bridgeId, JSON.stringify({ url: 'a.mp3' }));
 const result = await p;
 assert.deepStrictEqual(result, { url: 'a.mp3' });
 
 // 3. void / null reply resolves to null (read-only handlers — prevents freeze).
 const p2 = sandbox.window.flutter_inappwebview.callHandler('mineEntry', {});
 const env2 = posted[1];
-sandbox.window.__hibikiBridgeResolve(env2.__bridgeId, null);
+sandbox.window.__fushiBridgeResolve(env2.__bridgeId, null);
 assert.strictEqual(await p2, null);
 
 // 4. unknown id is ignored (no throw).
-sandbox.window.__hibikiBridgeResolve(99999, '"x"');
+sandbox.window.__fushiBridgeResolve(99999, '"x"');
 
 console.log('popup_bridge_adapter_test: PASS');

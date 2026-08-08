@@ -4,9 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
-/// TODO-1392 观测性根治守卫：查词弹窗 JS 渲染路径（`renderPopup` / `__hibikiContainer`）
+/// TODO-1392 观测性根治守卫：查词弹窗 JS 渲染路径（`renderPopup` / `__fushiContainer`）
 /// 抛异常此前只 `console.error` → `onConsoleMessage` → `debugPrint`（永不进错误日志），
-/// uncaught 更彻底静默（popup.js 无 `window.onerror`）。BUG-706 那类 `__hibikiRoot` 命名
+/// uncaught 更彻底静默（popup.js 无 `window.onerror`）。BUG-706 那类 `__fushiRoot` 命名
 /// 冲突致 renderPopup TypeError 中止渲染时，用户看到「弹窗空白 + 错误日志为空」无从排查。
 ///
 /// 根治：popup.js 顶层装全局 `window.onerror` / `unhandledrejection` + 渲染 catch，经
@@ -39,8 +39,8 @@ void main() {
       logPopupJsError(svc, <dynamic>[
         <String, dynamic>{
           'source': 'window.onerror',
-          'message': 'TypeError: window.__hibikiRoot is not a function',
-          'stack': 'at __hibikiContainer (popup.js:6:44)\n'
+          'message': 'TypeError: window.__fushiRoot is not a function',
+          'stack': 'at __fushiContainer (popup.js:6:44)\n'
               'at renderPopup (popup.js:2750:23)',
         },
       ]);
@@ -49,7 +49,7 @@ void main() {
       final ErrorLogEntry e = svc.entries.single;
       expect(e.source, 'PopupJs.window.onerror');
       expect(e.error, contains('TypeError'));
-      expect(e.error, contains('__hibikiRoot'));
+      expect(e.error, contains('__fushiRoot'));
       expect(e.stackTrace, isNotNull);
       expect(e.stackTrace, contains('renderPopup'));
     });
@@ -107,8 +107,8 @@ void main() {
     for (final String rel in mirrors) {
       test('[$rel] 装全局 error/unhandledrejection 监听 + reportJsError 桥', () {
         final String js = File(rel).readAsStringSync();
-        expect(js.contains('window.__hibikiReportJsError'), isTrue,
-            reason: '$rel 丢了全局上报入口 __hibikiReportJsError（观测性回归）');
+        expect(js.contains('window.__fushiReportJsError'), isTrue,
+            reason: '$rel 丢了全局上报入口 __fushiReportJsError（观测性回归）');
         expect(js.contains("window.addEventListener('error'"), isTrue,
             reason: '$rel 丢了 window.onerror 监听（uncaught JS 错误又会静默）');
         expect(

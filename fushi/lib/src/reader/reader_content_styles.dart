@@ -1268,7 +1268,7 @@ rtc > rt {
   ///
   /// G14：这是阅读器背景「深/浅」判定的**单一真相**（Rec.601 luma，阈值 0.5）。
   /// 收藏高亮 JS（`HighlightBridge`）不再自带 Rec.709/0.4 公式，而是由 Dart 用
-  /// 本函数算好 bool 经 bridge 注入（`window.__hibikiHighlightBgDark`），保证
+  /// 本函数算好 bool 经 bridge 注入（`window.__fushiHighlightBgDark`），保证
   /// 滚动条配色与高亮透明度对同一背景色的深浅判定永远一致。
   static bool isDarkBackground(String? background) {
     if (background == null) return false;

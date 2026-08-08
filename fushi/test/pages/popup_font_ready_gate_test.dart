@@ -38,7 +38,7 @@ void main() {
     ).readAsStringSync();
     expect(
       injection,
-      contains('window.__hibikiDictionaryFontsConfigured ='),
+      contains('window.__fushiDictionaryFontsConfigured ='),
     );
   });
 }

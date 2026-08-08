@@ -93,11 +93,11 @@
   // popup_bridge_adapter realm (each iframe adapter mints its own _seq from 1, so
   // the frame-LOCAL bridge ids collide across frames). Native
   // (global_lookup_window.cpp) only ever ExecuteScripts the TOP-LEVEL document,
-  // whose window.__hibikiBridgeResolve is a DIFFERENT adapter realm — so a native
+  // whose window.__fushiBridgeResolve is a DIFFERENT adapter realm — so a native
   // reply used to never reach the source iframe and every AWAITED callHandler
   // (audio ♪ / favorite ☆) hung forever. Fix: the host rewrites each outbound
   // frame-local __bridgeId to a HOST-GLOBAL id (transformFrameMessage) and records
-  // the route here; the top-level __hibikiBridgeResolve (installBridgeRouter) then
+  // the route here; the top-level __fushiBridgeResolve (installBridgeRouter) then
   // forwards the native reply back to EXACTLY the source frame's adapter with its
   // own local id — no cross-frame id collision, no broadcast to the wrong card.
   var bridgeSeq = 0;
@@ -748,7 +748,7 @@
       // the theme CSS painted). The MutationObserver / safety timer stay as
       // belt-and-braces (a render that never signals still reveals via safety).
       // BUG-1139 ③ 陷阱提示：只吃 handler 名，**故意丢掉 args[0]**。那个数字是
-      // popup.js 的 __hibikiScrollHeight()，在 CSS `zoom` 下是未乘 z 的 layout px，
+      // popup.js 的 __fushiScrollHeight()，在 CSS `zoom` 下是未乘 z 的 layout px，
       // 与 shell 几何（host CSS px）不同单位。谁将来拿它去定尺寸，必须先过
       // frameContentZoom 换算 —— 尺寸的唯一真值是 measureAndReport 的 overlaySize。
       try {
@@ -2048,7 +2048,7 @@
   // 在 popup.js，用户可改键位；缩放档距在 Dart）：
   //   ctrlKey → _globalLookupZoomWheelJs 的 window wheel 监听 → callHandler
   //             ('popupZoomFontStep') → jsMessage → Dart maybeHandleOverlayZoomFontStep
-  //   altKey  → popup.js __hibikiPopupWheelListener 的 popupEntryWheelAction → 换词条
+  //   altKey  → popup.js __fushiPopupWheelListener 的 popupEntryWheelAction → 换词条
   //
   // (x, y) 与 handleGlobalClick 同一坐标系（窗口内 CSS px）；deltaY 已由 C++ 转成
   // **DOM 约定**（向上滚为负），所以 JS 侧收到的与真滚轮完全同构。
@@ -2126,7 +2126,7 @@
   // 停在旧偏移而非从头看。Dart 面板控制器在「剪贴板内容更新」路径（update /
   // _showTextOnly，均 seed 新 root）渲染后调本函数，让新句总是从顶部开始。点句中字
   // 重查（_lookupFromBanner）/ 关子卡（_rerender）不调，保留其滚动位置。
-  // 面板 iframe 直接加载 popup.html（无 content.js shadow，__hibikiRoot 为 null），
+  // 面板 iframe 直接加载 popup.html（无 content.js shadow，__fushiRoot 为 null），
   // 滚动落在 document 上；#entries-container 兜底（万一改用容器滚动）。no-op 当无
   // root 帧 / 跨源守卫 / node harness。
   function scrollRootToTop() {
@@ -2191,7 +2191,7 @@
   // TODO-1188 — install the top-level bridge-reply router. Native
   // (global_lookup_window.cpp: ResolveBridge for the deferred audio/favorite
   // handlers, and the immediate null-resolve for the read-only ones) calls
-  // window.__hibikiBridgeResolve(globalId, jsonValue) on THIS top-level document.
+  // window.__fushiBridgeResolve(globalId, jsonValue) on THIS top-level document.
   // The global id was minted in transformFrameMessage and maps back to the source
   // iframe + its frame-local id; forward the reply to exactly that iframe's
   // adapter so the awaited callHandler Promise there resolves. No route -> defer
@@ -2199,17 +2199,17 @@
   // normally a no-op); a spurious/duplicate reply with no route is dropped rather
   // than broadcast, so two frames sharing a local id can never mis-resolve.
   function installBridgeRouter() {
-    var priorResolve = (typeof window.__hibikiBridgeResolve === 'function')
-        ? window.__hibikiBridgeResolve
+    var priorResolve = (typeof window.__fushiBridgeResolve === 'function')
+        ? window.__fushiBridgeResolve
         : null;
-    window.__hibikiBridgeResolve = function (globalId, jsonValue) {
+    window.__fushiBridgeResolve = function (globalId, jsonValue) {
       var route = bridgeRoutes.get(globalId);
       if (route) {
         bridgeRoutes.delete(globalId);
         var win = frameWindowOf(frames.get(route.frameId));
-        if (win && typeof win.__hibikiBridgeResolve === 'function') {
+        if (win && typeof win.__fushiBridgeResolve === 'function') {
           try {
-            win.__hibikiBridgeResolve(route.localId, jsonValue);
+            win.__fushiBridgeResolve(route.localId, jsonValue);
           } catch (e) {
             // Never let one frame's resolve throw break the router.
           }
@@ -2324,13 +2324,13 @@
     }
     try {
       // BUG-1204：回报第三个参数 = 失败原因（popup.js 的 playWordAudio 存在
-      // window.__hibikiWordAudioLastError 上）。Dart 端按位置读且早已 `length >= 2`
+      // window.__fushiWordAudioLastError 上）。Dart 端按位置读且早已 `length >= 2`
       // 守卫，多带一个参数对旧端完全无害。`play` 缺失是另一类失败（realm 里没装
       // popup.js），给它自己的原因串，不与 play() 的 DOMException 混为一谈。
       win.eval(
           '(function () {' +
           'var reason = function () {' +
-          'try { return String(window.__hibikiWordAudioLastError || ""); }' +
+          'try { return String(window.__fushiWordAudioLastError || ""); }' +
           ' catch (_) { return ""; }' +
           '};' +
           'var report = function (ok, why) {' +
@@ -2340,7 +2340,7 @@
           '); } catch (_) { /* bridge gone: Dart times out and falls back */ }' +
           '};' +
           'try {' +
-          'var play = window.__hibikiPlayWordAudioUrl;' +
+          'var play = window.__fushiPlayWordAudioUrl;' +
           'if (!play) { report(false, "PlayFunctionMissing"); return; }' +
           'Promise.resolve(play(' + JSON.stringify(url) + '))' +
           '.then(function (r) { report(r === true); },' +

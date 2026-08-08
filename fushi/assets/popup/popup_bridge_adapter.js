@@ -5,7 +5,7 @@
 // injection, so this adapter (injected at document start by
 // global_lookup_window.cpp's AddScriptToExecuteOnDocumentCreated) maps that API
 // onto WebView2's window.chrome.webview.postMessage, and resolves the returned
-// Promise when native replies via window.__hibikiBridgeResolve(id, jsonValue).
+// Promise when native replies via window.__fushiBridgeResolve(id, jsonValue).
 //
 // IMPORTANT: every callHandler MUST be resolved or popup.js await-points (mine /
 // duplicateCheck / playWordAudio) hang and freeze the card. Native resolves each
@@ -35,7 +35,7 @@
   // Called by native with the handler's return value (JSON string, or null/
   // undefined for void / read-only handlers). Resolves the matching callHandler
   // Promise.
-  window.__hibikiBridgeResolve = function (id, jsonValue) {
+  window.__fushiBridgeResolve = function (id, jsonValue) {
     var resolve = _pending[id];
     if (!resolve) {
       return;

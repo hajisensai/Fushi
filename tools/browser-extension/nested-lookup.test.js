@@ -337,7 +337,7 @@ function openPopup(world, term, node) {
   installSelection(windowObj, node, 0, node.textContent.length);
   shiftHover(world, term, node, 320, 410);
   flushRaf();
-  const host = windowObj.__hibikiRoot && windowObj.__hibikiRoot.host;
+  const host = windowObj.__fushiRoot && windowObj.__fushiRoot.host;
   assert.ok(host, '首查词必须建出弹窗 shadow host');
   return {
     host,
@@ -363,7 +363,7 @@ test('嵌套查词不得关掉弹窗：__fushiOnLinkClick 后 host 仍在文档�
 
   assert.strictEqual(before.host.removed, undefined,
       '嵌套查词绝不能移除弹窗 host（用户报「把旧弹窗关掉」）');
-  assert.strictEqual(world.windowObj.__hibikiRoot, before.host.shadowRoot,
+  assert.strictEqual(world.windowObj.__fushiRoot, before.host.shadowRoot,
       '嵌套查词必须复用同一个 shadow root（原地重渲染，不重建弹窗）');
   // 「旧弹窗被关掉」的直接视觉来源：重新走一遍入场淡入（opacity 压 0 再翻 1）。内容原地
   // 替换绝不该让弹窗先消失一次。
@@ -372,7 +372,7 @@ test('嵌套查词不得关掉弹窗：__fushiOnLinkClick 后 host 仍在文档�
       '嵌套查词不得把弹窗压成透明重新淡入（用户看到的就是「旧弹窗被关掉了」），实际写入：'
       + JSON.stringify(opacity));
   // 内容重渲染期间把容器藏起来量尺寸，也是同一个「消失一次」的来源。
-  const vis = world.writesOn(world.windowObj.__hibikiRoot.children.find(
+  const vis = world.writesOn(world.windowObj.__fushiRoot.children.find(
       (c) => c.id === 'entries-container'), ['visibility']).map((w) => w.v);
   assert.ok(!vis.includes('hidden'),
       '嵌套查词不得把弹窗内容藏起来重新量尺寸，实际写入：' + JSON.stringify(vis));
@@ -452,7 +452,7 @@ test('请求在途时用户关掉了弹窗：嵌套结果丢弃，不得凭空�
   deliver();                                // 迟到的嵌套响应
   world.flushRaf();
 
-  assert.strictEqual(world.windowObj.__hibikiRoot, null,
+  assert.strictEqual(world.windowObj.__fushiRoot, null,
       '弹窗已关闭时，迟到的嵌套查词结果不得重建弹窗');
   assert.strictEqual(before.host.style.left, before.left,
       '不得出现没有落点的弹窗（重建后不 place 会钉在屏幕左上角）');

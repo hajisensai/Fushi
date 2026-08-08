@@ -1,44 +1,44 @@
 /* BUG-688: Shadow-DOM isolation. content.js renders this popup inside a shadow
-   root (window.__hibikiRoot) so host-page CSS can't pierce it. Route every DOM
+   root (window.__fushiRoot) so host-page CSS can't pierce it. Route every DOM
    lookup / overlay append / selection / height read through these helpers so they
    resolve inside the shadow (fall back to document before the shadow exists). */
-function __hibikiRootNode(){ return window.__hibikiRoot || document; }
-function __hibikiContainer(){ var r = window.__hibikiRoot; return r ? r.querySelector('#entries-container') : document.getElementById('entries-container'); }
-function __hibikiOverlayParent(){ return window.__hibikiRoot || document.body; }
-function __hibikiScrollHeight(){ var c = __hibikiContainer(); return c ? c.scrollHeight : document.body.scrollHeight; }
-function __hibikiSel(){ var r = window.__hibikiRoot; try { return (r && r.getSelection) ? r.getSelection() : window.getSelection(); } catch(_){ return window.getSelection(); } }
+function __fushiRootNode(){ return window.__fushiRoot || document; }
+function __fushiContainer(){ var r = window.__fushiRoot; return r ? r.querySelector('#entries-container') : document.getElementById('entries-container'); }
+function __fushiOverlayParent(){ return window.__fushiRoot || document.body; }
+function __fushiScrollHeight(){ var c = __fushiContainer(); return c ? c.scrollHeight : document.body.scrollHeight; }
+function __fushiSel(){ var r = window.__fushiRoot; try { return (r && r.getSelection) ? r.getSelection() : window.getSelection(); } catch(_){ return window.getSelection(); } }
 /* BUG-1078: composedPath() allocates a fresh array on every call and the wheel
-   handler used to call it at least twice per event (__hibikiEventTarget +
-   __hibikiWheelScroller). Cache the path on the event object for the duration of
+   handler used to call it at least twice per event (__fushiEventTarget +
+   __fushiWheelScroller). Cache the path on the event object for the duration of
    its dispatch so every helper shares ONE composedPath() result. */
-function __hibikiComposedPath(e){ if (e.__hibikiPathCache !== undefined) return e.__hibikiPathCache; var p = null; try { p = (e.composedPath && e.composedPath()) || null; } catch(_){ p = null; } try { e.__hibikiPathCache = p; } catch(_){} return p; }
-function __hibikiEventTarget(e){ var p = __hibikiComposedPath(e); if (p && p.length) return p[0]; return e.target; }
+function __fushiComposedPath(e){ if (e.__fushiPathCache !== undefined) return e.__fushiPathCache; var p = null; try { p = (e.composedPath && e.composedPath()) || null; } catch(_){ p = null; } try { e.__fushiPathCache = p; } catch(_){} return p; }
+function __fushiEventTarget(e){ var p = __fushiComposedPath(e); if (p && p.length) return p[0]; return e.target; }
 /* BUG-688: the extension floating popup scrolls on the SHADOW HOST
    (#hibiki-popup-host has overflow-y:auto + max-height; #entries-container is
    neutralized to overflow:visible inside the shadow), while the in-app popup
    scrolls the document itself. These two resolve the wheel-scroll surface:
-   - __hibikiShadowHost(): the shadow host element, or null in-app / pre-shadow.
-   - __hibikiWheelScroller(e): the host ONLY when the wheel event originated
+   - __fushiShadowHost(): the shadow host element, or null in-app / pre-shadow.
+   - __fushiWheelScroller(e): the host ONLY when the wheel event originated
      inside the popup shadow (composedPath crosses it); null means "scroll the
      window" (in-app popup document, or the host page outside the popup). */
-function __hibikiShadowHost(){ var r = window.__hibikiRoot; return (r && r.host) ? r.host : null; }
-function __hibikiWheelScroller(e){
-    var host = __hibikiShadowHost();
+function __fushiShadowHost(){ var r = window.__fushiRoot; return (r && r.host) ? r.host : null; }
+function __fushiWheelScroller(e){
+    var host = __fushiShadowHost();
     if (!host) return null;
-    try { var p = __hibikiComposedPath(e); if (p && p.indexOf(host) !== -1) return host; } catch(_){}
+    try { var p = __fushiComposedPath(e); if (p && p.indexOf(host) !== -1) return host; } catch(_){}
     return null;
 }
 
-/* TODO-1392 观测性根治：查词弹窗 JS 渲染路径（renderPopup / __hibikiContainer 等）抛异常，
+/* TODO-1392 观测性根治：查词弹窗 JS 渲染路径（renderPopup / __fushiContainer 等）抛异常，
    此前 caught 的只 console.error → onConsoleMessage → debugPrint（不进错误日志），uncaught
-   更彻底静默（本文件此前无 window.onerror）。BUG-706 那类 __hibikiRoot 命名冲突致 renderPopup
+   更彻底静默（本文件此前无 window.onerror）。BUG-706 那类 __fushiRoot 命名冲突致 renderPopup
    TypeError 中止时，用户看到「弹窗空白 + 错误日志为空」无从排查。这里在最顶层装全局错误上报：
    uncaught error / 未处理 Promise rejection 经已有 flutter_inappwebview 桥把 {source,message,
    stack} 回传到 Dart 的 reportJsError handler，落 ErrorLogService（错误日志页可见）。
-   window.__hibikiReportJsError 也暴露给渲染路径的 deliberate catch 显式上报（见 renderPopup）。
+   window.__fushiReportJsError 也暴露给渲染路径的 deliberate catch 显式上报（见 renderPopup）。
    浏览器扩展镜像里 window.flutter_inappwebview 不存在，callHandler 缺失时静默 no-op（三镜像
    逐字节一致，扩展侧安全）；上报本身失败绝不再抛，杜绝二次错误递归。 */
-window.__hibikiReportJsError = function(source, message, stack) {
+window.__fushiReportJsError = function(source, message, stack) {
     try {
         var bridge = window.flutter_inappwebview;
         if (bridge && typeof bridge.callHandler === 'function') {
@@ -52,7 +52,7 @@ window.__hibikiReportJsError = function(source, message, stack) {
 };
 // 只在真浏览器 / WebView（window.addEventListener 存在）注册全局监听。Node 行为测试
 // harness（vm.runInContext + stub window，无 addEventListener）与任何非浏览器宿主下跳过——
-// __hibikiReportJsError 仍已定义（渲染 catch 直接调），只是这里不挂 window 事件，故 popup.js
+// __fushiReportJsError 仍已定义（渲染 catch 直接调），只是这里不挂 window 事件，故 popup.js
 // 在 node 单测里照常加载执行，不因顶层 addEventListener 抛错而整体加载失败。
 (function installPopupGlobalErrorListeners() {
     if (typeof window === 'undefined'
@@ -67,13 +67,13 @@ window.__hibikiReportJsError = function(source, message, stack) {
         var message = (e && e.message) ? e.message : (err ? String(err) : 'unknown error');
         var stack = (err && err.stack) ? err.stack
             : ((e && e.filename ? e.filename : '') + ':' + ((e && e.lineno) || 0) + ':' + ((e && e.colno) || 0));
-        window.__hibikiReportJsError('window.onerror', message, stack);
+        window.__fushiReportJsError('window.onerror', message, stack);
     });
     window.addEventListener('unhandledrejection', function(e) {
         var reason = e && e.reason;
         var message = (reason && reason.message) ? reason.message : String(reason);
         var stack = (reason && reason.stack) ? reason.stack : '';
-        window.__hibikiReportJsError('unhandledrejection', message, stack);
+        window.__fushiReportJsError('unhandledrejection', message, stack);
     });
 })();
 
@@ -201,9 +201,9 @@ let sentenceDraftCount = 0;
 function refreshAllSentenceContextPickers() {
     sentenceDraftCount = sentenceCtxPrev + sentenceCtxNext;
     if (typeof document.querySelectorAll !== 'function') return;
-    __hibikiRootNode().querySelectorAll('.sentence-context-picker')
+    __fushiRootNode().querySelectorAll('.sentence-context-picker')
         .forEach(refreshSentenceContextPicker);
-    __hibikiRootNode().querySelectorAll('.clear-draft-button')
+    __fushiRootNode().querySelectorAll('.clear-draft-button')
         .forEach(refreshClearDraftButton);
 }
 
@@ -462,13 +462,13 @@ function showDescription(element) {
     if (!description) {
         return;
     }
-    const overlay = __hibikiRootNode().querySelector('.overlay');
-    __hibikiRootNode().querySelector('.overlay-content').textContent = description;
+    const overlay = __fushiRootNode().querySelector('.overlay');
+    __fushiRootNode().querySelector('.overlay-content').textContent = description;
     overlay.style.display = 'block';
 }
 
 function closeOverlay() {
-    __hibikiRootNode().querySelector('.overlay').style.display = 'none';
+    __fushiRootNode().querySelector('.overlay').style.display = 'none';
 }
 
 // https://github.com/yomidevs/yomitan/blob/c24d4c9b39ceec1b5fd133df774c41972e9ebbdc/ext/js/language/ja/japanese.js#L171
@@ -688,7 +688,7 @@ function hasMismatchedNaturalAspectRatio(img, invAspectRatio) {
 }
 
 function closeImageLightbox() {
-    __hibikiRootNode().querySelector('.dict-image-lightbox')?.remove();
+    __fushiRootNode().querySelector('.dict-image-lightbox')?.remove();
 }
 
 function openImageLightbox(imageUrl, alt) {
@@ -710,7 +710,7 @@ function openImageLightbox(imageUrl, alt) {
     // 灯箱统一 tap-to-close。
     overlay.addEventListener('click', () => closeImageLightbox());
 
-    __hibikiOverlayParent().appendChild(overlay);
+    __fushiOverlayParent().appendChild(overlay);
 }
 
 // TODO-859 症状B：图片预览的 click 监听挂在外层 .gloss-image-link 容器上，但
@@ -1223,7 +1223,7 @@ function createDefinitionImageCanvas(imageUrl, alt, onLoad) {
 }
 
 function renderDefinitionImageToCanvas(canvas, image, usedWidth, invAspectRatio, appearance) {
-    const emSize = Number.parseFloat(getComputedStyle(__hibikiContainer() || document.documentElement).fontSize);
+    const emSize = Number.parseFloat(getComputedStyle(__fushiContainer() || document.documentElement).fontSize);
     const scaleFactor = Math.ceil(window.devicePixelRatio * 2);
     const pixelWidth = Math.round(usedWidth * emSize * scaleFactor);
     const pixelHeight = Math.round(usedWidth * emSize * invAspectRatio * scaleFactor);
@@ -1249,7 +1249,7 @@ function renderDefinitionImageToCanvas(canvas, image, usedWidth, invAspectRatio,
     
     if (appearance === 'monochrome') {
         context.globalCompositeOperation = 'source-in';
-        context.fillStyle = (__hibikiContainer() || document.documentElement).getAttribute('data-theme') === 'dark' ? '#ffffff' : '#000000';
+        context.fillStyle = (__fushiContainer() || document.documentElement).getAttribute('data-theme') === 'dark' ? '#ffffff' : '#000000';
         context.fillRect(0, 0, canvas.width, canvas.height);
         context.globalCompositeOperation = 'source-over';
     }
@@ -1400,7 +1400,7 @@ async function minedCardAction(expression, reading, frequencies, pitches, rules,
 // BUG-1064 —— app 外表面的「卡片已在 Anki 中」操作面板（IN-PAGE 版）。
 //
 // 宿主分两类：
-//   * 有原生对话框（window.__hibikiMinedCardActionNative）：app 内的三个
+//   * 有原生对话框（window.__fushiMinedCardActionNative）：app 内的三个
 //     dictionary_popup_webview 表面。点 ✓ 照旧交给 `minedCardAction` 宿主 handler，
 //     由 Flutter 弹居中对话框（BUG-1040），本段代码完全不参与。
 //   * 没有原生对话框：Windows app 外的裸 WebView2 表面（剪贴板面板 / 瞬态查词窗）与
@@ -1418,7 +1418,7 @@ const MINED_ACTION_OPEN_CLASS = 'mined-action-open';
 // 宿主是否自带原生（Flutter）动作对话框。未注入 = 没有（扩展、以及任何还没接线的
 // 表面）→ 走页内面板，绝不静默。
 function hasNativeMinedCardAction() {
-    return window.__hibikiMinedCardActionNative === true;
+    return window.__fushiMinedCardActionNative === true;
 }
 
 // 反查 Anki 里这个词的全部命中卡。永不抛：拿不到就当没有命中，调用方按「卡已不在」
@@ -1461,9 +1461,9 @@ function showMinedCardActionPanel(matches, options) {
     const openOnly = !!(options && options.openOnly);
     return new Promise((resolve) => {
         // 弹窗是否拥有整个文档：app 内/app 外都是独立的 popup.html 文档（true）；
-        // 浏览器扩展把同一份 popup.js 注入到宿主页面的 shadow root 里（__hibikiRoot），
+        // 浏览器扩展把同一份 popup.js 注入到宿主页面的 shadow root 里（__fushiRoot），
         // 那里的 <html> 是别人的页面，既不该被我们挂 class，也没有窗口高度问题。
-        const ownsDocument = !window.__hibikiRoot;
+        const ownsDocument = !window.__fushiRoot;
         const rootEl = document.documentElement;
         const panel = el('div', { className: 'mined-action-panel' });
         const backdrop = el('div', { className: 'mined-action-backdrop' }, [panel]);
@@ -1595,7 +1595,7 @@ function showMinedCardActionPanel(matches, options) {
         // 下面板会被窗口下沿裁掉。开面板时给 <html> 挂 class，popup.css 借它撑出最小
         // 高度，host 的下一次测量就把窗口放大到够放面板（面板关掉即恢复）。
         if (ownsDocument) rootEl.classList.add(MINED_ACTION_OPEN_CLASS);
-        __hibikiOverlayParent().appendChild(backdrop);
+        __fushiOverlayParent().appendChild(backdrop);
         document.addEventListener('keydown', onKey, true);
         (openOnly ? cancelBtn : duplicateBtn).focus();
     });
@@ -1606,10 +1606,10 @@ function showMinedCardActionPanel(matches, options) {
 // 定位/样式复用 showNoAudioHint 那套（.inline-hint 与 .audio-hint 同一条 CSS 规则），
 // 锚到按钮的屏幕坐标，故窗口被裁到卡片 bbox 的 app 外覆盖窗里同样可见。
 function showInlineHint(button, message) {
-    const stale = __hibikiRootNode().querySelector('.inline-hint');
+    const stale = __fushiRootNode().querySelector('.inline-hint');
     if (stale) stale.remove();
     const hint = el('div', { className: 'inline-hint', textContent: message });
-    __hibikiOverlayParent().appendChild(hint);
+    __fushiOverlayParent().appendChild(hint);
     const btnRect = button.getBoundingClientRect();
     const hintRect = hint.getBoundingClientRect();
     let left = btnRect.left + btnRect.width / 2 - hintRect.width / 2;
@@ -2270,7 +2270,7 @@ async function fetchAudioUrl(expression, reading) {
 // stop→loadfile→play，比手机的原生同步 prepare 慢。三端（app 内 InAppWebView / app 外
 // overlay WebView2 / 浏览器扩展真实浏览器）现在同一路径：resolveWordAudio 已返回可直接
 // 播放的 URL（远端 http、本地 base64 data:）。新播放固定先掐上一段（interrupt 行为；
-// 宿主从未注入过别的模式），留 window.__hibikiWordAudio 句柄。音量取
+// 宿主从未注入过别的模式），留 window.__fushiWordAudio 句柄。音量取
 // window.lookupAudioVolume（0..1，宿主注入；扩展缺省 1）。
 // BUG-1204：播放失败的**原因**必须留下痕迹。原实现是 `.catch(() => false)`，把
 // `audio.play()` 抛出的 DOMException 整个丢掉，宿主只拿到一个光秃秃的 false —— 于是
@@ -2279,29 +2279,29 @@ async function fetchAudioUrl(expression, reading) {
 // 掐掉（AbortError），只能靠猜。三种原因的修法完全不同，这正是 BUG-1015 吃过的亏。
 //
 // 返回值仍是 boolean（`if (!await playWordAudio(url))` 与宿主的 `r === true` 契约一字
-// 未动），原因另存到 realm 上的 [__hibikiWordAudioLastError]，由注入的 report 包装读走
+// 未动），原因另存到 realm 上的 [__fushiWordAudioLastError]，由注入的 report 包装读走
 // 并随 `wordAudioPlayed` 回传。成功时清空，避免下一次失败读到上一次的陈旧原因。
 function playWordAudio(audioUrl) {
     const noteError = (e) => {
-        window.__hibikiWordAudioLastError =
+        window.__fushiWordAudioLastError =
             (e && (e.name || e.message)) || 'UnknownError';
     };
     try {
         if (!audioUrl) {
-            window.__hibikiWordAudioLastError = 'EmptyUrl';
+            window.__fushiWordAudioLastError = 'EmptyUrl';
             return Promise.resolve(false);
         }
-        if (window.__hibikiWordAudio) {
-            try { window.__hibikiWordAudio.pause(); } catch (_) { /* no-op */ }
+        if (window.__fushiWordAudio) {
+            try { window.__fushiWordAudio.pause(); } catch (_) { /* no-op */ }
         }
         const audio = new Audio(audioUrl);
         const v = window.lookupAudioVolume;
         if (typeof v === 'number' && isFinite(v)) {
             audio.volume = Math.max(0, Math.min(1, v));
         }
-        window.__hibikiWordAudio = audio;
+        window.__fushiWordAudio = audio;
         return audio.play().then(() => {
-            window.__hibikiWordAudioLastError = '';
+            window.__fushiWordAudioLastError = '';
             return true;
         }).catch((err) => {
             noteError(err);
@@ -2315,7 +2315,7 @@ function playWordAudio(audioUrl) {
 
 // Dart 自动发音（打开词条自动读）驱动入口：宿主解析好 URL 后经 evaluateJavascript
 // 调此函数，让弹窗用同一 <audio> 路径播，桌面自动发音同样变快、且与手动 ♪ 一致。
-window.__hibikiPlayWordAudioUrl = playWordAudio;
+window.__fushiPlayWordAudioUrl = playWordAudio;
 
 function showAudioError(button) {
     setButtonIcon(button, 'audioOff');
@@ -2342,7 +2342,7 @@ function __fushiShowButtonTip(button) {
     }
     if (!__fushiBtnTipEl || !__fushiBtnTipEl.isConnected) {
         __fushiBtnTipEl = el('div', { className: 'fushi-btn-tip' });
-        __hibikiOverlayParent().appendChild(__fushiBtnTipEl);
+        __fushiOverlayParent().appendChild(__fushiBtnTipEl);
     }
     __fushiBtnTipEl.textContent = text;
     __fushiBtnTipEl.classList.remove('visible'); // 先复位再量尺寸定位
@@ -2410,10 +2410,10 @@ function showNoAudioHint(button) {
     // 提示，故只保留 aria-label（可访问性），不设 title。
     button.setAttribute('aria-label', message);
     // 移除可能残留的旧提示，避免叠加。
-    const stale = __hibikiRootNode().querySelector('.audio-hint');
+    const stale = __fushiRootNode().querySelector('.audio-hint');
     if (stale) stale.remove();
     const hint = el('div', { className: 'audio-hint', textContent: message });
-    __hibikiOverlayParent().appendChild(hint);
+    __fushiOverlayParent().appendChild(hint);
     // 先量尺寸再定位：置于按钮上方居中，空间不足翻到下方，并夹在视口内。
     const btnRect = button.getBoundingClientRect();
     const hintRect = hint.getBoundingClientRect();
@@ -2617,7 +2617,7 @@ function createEntryHeader(entry, idx) {
         className: 'mine-button',
         textContent: '+',
         ontouchstart: () => {
-            lastSelection = __hibikiSel()?.toString() || '';
+            lastSelection = __fushiSel()?.toString() || '';
         },
         onclick: async () => {
             // Single-flight guard against double-firing one click. Always cleared
@@ -2881,7 +2881,7 @@ function createEntryHeader(entry, idx) {
 }
 
 window.fushiPopupMineFirstEntry = async function() {
-    const mineButton = __hibikiRootNode().querySelector('.mine-button');
+    const mineButton = __fushiRootNode().querySelector('.mine-button');
     if (!mineButton || mineButton.disabled) {
         return false;
     }
@@ -2974,7 +2974,7 @@ try {
 // BUG-763/766：确认「制卡前调整」原生对话框时，Dart 回点第 idx 个词条（:scope > .entry
 // DOM 序，与打开对话框时的 entryIndex 同源）的制卡按钮，复用其全部制卡/查重/覆写逻辑。
 window.fushiPopupMineEntryByIndex = function(idx) {
-    const root = __hibikiRootNode();
+    const root = __fushiRootNode();
     const first = root && root.querySelector('.entry');
     const container = first && first.parentNode;
     if (!container) return false;
@@ -3000,7 +3000,7 @@ window.fushiPopupMineEntryByIndex = function(idx) {
 
     // DOM 顺序的全部词条 <div.entry>（container 的直接子节点）。
     function listEntries() {
-        const container = __hibikiContainer();
+        const container = __fushiContainer();
         if (!container) return [];
         return Array.prototype.slice.call(
             container.querySelectorAll(':scope > .entry'));
@@ -3421,12 +3421,12 @@ function postProcessRuby(container) {
 }
 
 function applyCustomCSS() {
-    __hibikiOverlayParent().querySelectorAll('style.fushi-custom-css').forEach(el => el.remove());
+    __fushiOverlayParent().querySelectorAll('style.fushi-custom-css').forEach(el => el.remove());
     if (window.globalDictCSS) {
         const style = document.createElement('style');
         style.className = 'fushi-custom-css';
         style.textContent = window.globalDictCSS;
-        __hibikiOverlayParent().appendChild(style);
+        __fushiOverlayParent().appendChild(style);
     }
     if (window.customDictCSS && typeof window.customDictCSS === 'object') {
         for (const [dictName, css] of Object.entries(window.customDictCSS)) {
@@ -3434,7 +3434,7 @@ function applyCustomCSS() {
             const style = document.createElement('style');
             style.className = 'fushi-custom-css';
             style.textContent = constructDictCss(css, dictName);
-            __hibikiOverlayParent().appendChild(style);
+            __fushiOverlayParent().appendChild(style);
         }
     }
 }
@@ -3557,8 +3557,8 @@ function _reportPopupHeight() {
     // relayout，避免 _firePopupRendered→relayout→report→relayout 的死循环。
     try {
         window.flutter_inappwebview.callHandler('popupRendered',
-            __hibikiScrollHeight(),
-            window.__hibikiRenderToken || 0);
+            __fushiScrollHeight(),
+            window.__fushiRenderToken || 0);
     } catch (e) {
         console.error('[popup] popupRendered callHandler failed', e);
     }
@@ -3591,7 +3591,7 @@ function _firePopupRendered(stillRendering) {
     // frame in every cold/nested popup. Force style/layout discovery, then keep
     // the already-hidden layer parked until the configured font is ready. Warm
     // slots hit an already-resolved promise and only pay one microtask.
-    if (window.__hibikiDictionaryFontsConfigured &&
+    if (window.__fushiDictionaryFontsConfigured &&
         document.fonts && document.fonts.ready) {
         try { void document.body.offsetWidth; } catch (_) { /* no-op */ }
         Promise.resolve(document.fonts.ready).then(finish, finish);
@@ -3640,7 +3640,7 @@ function masonryGap() {
 }
 
 function masonryBodies() {
-    const root = __hibikiContainer();
+    const root = __fushiContainer();
     if (!root || typeof root.querySelectorAll !== 'function') return [];
     // 只抓词典义项容器；frequency-section / pitch-section 也用 .category-body，不能误抓。
     return [...root.querySelectorAll('.glossary-section > .category-body')];
@@ -3882,8 +3882,8 @@ function updateEffectiveDictColumns() {
         '--dict-columns-effective', String(effectiveDictColumns()));
 }
 if (typeof window.addEventListener === 'function'
-    && !window.__hibikiDictColsResizeHooked) {
-    window.__hibikiDictColsResizeHooked = true;
+    && !window.__fushiDictColsResizeHooked) {
+    window.__fushiDictColsResizeHooked = true;
     window.addEventListener('resize', updateEffectiveDictColumns);
 }
 
@@ -3905,7 +3905,7 @@ window.renderPopup = function() {
     // 真机第 5 轮 — settingsJs 可能刚更新了 --dict-columns；渲染前按当前视口
     // 重算有效列数（resize 监听兜住渲染后的窗口拖拽）。
     updateEffectiveDictColumns();
-    const container = __hibikiContainer();
+    const container = __fushiContainer();
     if (!container) { _firePopupRendered(); return; }
 
     const entries = window.lookupEntries;
@@ -3918,7 +3918,7 @@ window.renderPopup = function() {
         kanjiSection = buildKanjiCards();
     } catch (e) {
         console.error('[popup] renderPopup kanji card render failed', e);
-        window.__hibikiReportJsError('renderPopup.kanjiCard', (e && e.message) || String(e), e && e.stack);
+        window.__fushiReportJsError('renderPopup.kanjiCard', (e && e.message) || String(e), e && e.stack);
         kanjiSection = null;
     }
 
@@ -3977,7 +3977,7 @@ window.renderPopup = function() {
     } catch (e) {
         // 渲染抛错也发信号让 Dart 翻可见（哪怕内容不全），杜绝永久挂起。
         console.error('[popup] renderPopup first-entry render failed', e);
-        window.__hibikiReportJsError('renderPopup.firstEntry', (e && e.message) || String(e), e && e.stack);
+        window.__fushiReportJsError('renderPopup.firstEntry', (e && e.message) || String(e), e && e.stack);
         window._renderedGlossaryCounts = [];
         window._entryDomIndex = [];
         _firePopupRendered();
@@ -4027,7 +4027,7 @@ window.renderPopup = function() {
             console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=' + entries.length);
         } catch (e) {
             console.error('[popup] renderPopup rest-entries render failed', e);
-            window.__hibikiReportJsError('renderPopup.restEntries', (e && e.message) || String(e), e && e.stack);
+            window.__fushiReportJsError('renderPopup.restEntries', (e && e.message) || String(e), e && e.stack);
         }
         // 第二次发信号（同 token）：无论尾批成败都收尾（首条早已渲染好）。
         // Dart 宿主对重复 popupRendered 全幂等；Windows global-lookup host 靠
@@ -4037,7 +4037,7 @@ window.renderPopup = function() {
 };
 
 window.updatePopupIncremental = function() {
-    const container = __hibikiContainer();
+    const container = __fushiContainer();
     if (!container || !window.lookupEntries?.length) return;
 
     // 首发 popupRendered 后、尾批完成前的窗口：counts/domIndex 是仅含首词条的
@@ -4162,8 +4162,8 @@ window.updatePopupIncremental = function() {
     window.fushiRelayoutDictionaries();
 
     window.flutter_inappwebview.callHandler('popupRendered',
-        __hibikiScrollHeight(),
-        window.__hibikiRenderToken || 0);
+        __fushiScrollHeight(),
+        window.__fushiRenderToken || 0);
 };
 
 
@@ -4222,7 +4222,7 @@ function popupCurrentZoom(scroller) {
     // BUG-688: read the zoom of the surface we are about to scroll. The in-app
     // popup zooms document.documentElement (popup_settings_injection.dart sets
     // documentElement.style.zoom); the extension floating popup zooms the shadow
-    // host instead (content.js hibikiRender sets host.style.zoom).
+    // host instead (content.js fushiRender sets host.style.zoom).
     const z = parseFloat(scroller
         ? (scroller.style && scroller.style.zoom)
         : document.documentElement.style.zoom);
@@ -4311,17 +4311,17 @@ function popupEntryWheelAction(e) {
      the resident document listener exactly as before (BUG-1026 wheel speed,
      BUG-1065 DPR parity and the Alt+wheel entry navigation all live here);
    - extension content script: never attach to document. The handler is exposed
-     as window.__hibikiPopupWheelListener and content.js mounts it on the popup
+     as window.__fushiPopupWheelListener and content.js mounts it on the popup
      shadow host ({passive:false}) when the popup is created, unmounting it in
-     hibikiRemoveContainer — host pages carry ZERO non-passive wheel listeners
+     fushiRemoveContainer — host pages carry ZERO non-passive wheel listeners
      while no popup is open. */
-const __hibikiPopupWheelListener = (e) => {
+const __fushiPopupWheelListener = (e) => {
     // BUG-1078 前置早退：先用最廉价的判定（一次 composedPath + indexOf）解析滚轮
     // 表面。扩展 content script 里滚轮不在弹窗 shadow 内 ⇒ 与弹窗无关，立即放行
     // 原生滚动——昂贵的祖先 getComputedStyle/scrollHeight 遍历和词条导航判定都不再
     // 为宿主页滚轮买单。（BUG-732 的放行守卫从 preventDefault 前挪到最前；挂载本身
     // 已随 BUG-1078 懒装到 shadow host，此守卫是纵深防御 + in-app/扩展共用判据。）
-    const scroller = __hibikiWheelScroller(e);
+    const scroller = __fushiWheelScroller(e);
     const inExtensionContentScript =
         typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id);
     if (!scroller && inExtensionContentScript) return;
@@ -4351,9 +4351,9 @@ const __hibikiPopupWheelListener = (e) => {
     if (absX > absY + POPUP_WHEEL_HORIZONTAL_MARGIN) return;
     const deltaPx = popupWheelDeltaToPixels(e.deltaY, e.deltaMode, window.innerHeight);
     if (deltaPx === 0) return;
-    if (popupAncestorAbsorbsVerticalWheel(__hibikiEventTarget(e), deltaPx)) return;
+    if (popupAncestorAbsorbsVerticalWheel(__fushiEventTarget(e), deltaPx)) return;
     // BUG-732: 这段缩放平滑滚动只服务查词弹窗。扩展里弹窗是宿主页上的 shadow 覆盖层，
-    // __hibikiWheelScroller 仅当滚轮 composedPath 穿过弹窗 shadow 才返回 host（scroller
+    // __fushiWheelScroller 仅当滚轮 composedPath 穿过弹窗 shadow 才返回 host（scroller
     // 已在本监听最顶部解析并早退）；返回 null 时唯一合法「滚 window」的表面是 in-app
     // 弹窗文档（整份文档即弹窗，且无 chrome.runtime）。普通网页上扩展 content script 有
     // chrome.runtime.id，滚轮不在弹窗内已在顶部放行原生滚动：否则整页会被
@@ -4420,10 +4420,10 @@ if (typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id)) {
     // 创建时把这个监听挂上去（{passive:false} 只作用于弹窗内滚轮）、销毁时卸载；弹窗
     // 不在场时宿主页 document 上没有任何非 passive wheel 监听，浏览器保留合成器快速
     // 滚动路径。
-    window.__hibikiPopupWheelListener = __hibikiPopupWheelListener;
+    window.__fushiPopupWheelListener = __fushiPopupWheelListener;
 } else {
     // in-app 弹窗 WebView：整份文档就是弹窗，常驻 document 监听是正确行为（不变）。
-    document.addEventListener('wheel', __hibikiPopupWheelListener, { passive: false });
+    document.addEventListener('wheel', __fushiPopupWheelListener, { passive: false });
 }
 
 
@@ -4488,13 +4488,13 @@ document.addEventListener('click', (e) => {
         }
     }
 
-    const sel = __hibikiSel();
+    const sel = __fushiSel();
     if (sel && sel.toString().length > 0) {
         sel.removeAllRanges();
         return;
     }
 
-    const _t0 = __hibikiEventTarget(e); const target = _t0?.nodeType === Node.TEXT_NODE ? _t0.parentElement : _t0;
+    const _t0 = __fushiEventTarget(e); const target = _t0?.nodeType === Node.TEXT_NODE ? _t0.parentElement : _t0;
     // 弹窗尺寸拖拽把手（浏览器扩展 Phase D）是宿主页 body 顶层兄弟 #hibiki-popup-resize-grip，
     // 不在任何弹窗内部选择器内，点/拖它会落到本函数末尾的 tapOutside 关窗（用户报「拖动关窗」）。
     // 这里显式豁免：点/拖把手绝不关窗。app 内弹窗文档里无此元素，closest 永不命中 → no-op。

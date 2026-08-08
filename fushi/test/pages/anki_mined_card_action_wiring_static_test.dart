@@ -99,7 +99,7 @@ void main() {
           read('lib/src/pages/implementations/popup_settings_injection.dart');
       expect(
           src.contains(
-              'window.__hibikiMinedCardActionNative = \${!options.globalLookup};'),
+              'window.__fushiMinedCardActionNative = \${!options.globalLookup};'),
           isTrue,
           reason: 'app 外（globalLookup）恒 false → 页内面板；'
               'app 内恒 true → Flutter 对话框');

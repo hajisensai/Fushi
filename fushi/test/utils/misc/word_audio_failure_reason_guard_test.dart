@@ -28,7 +28,7 @@ void main() {
   ///
   /// 用 **JS 词法**（[maskJsComments]）而不是「丢掉整行以 `//` 起的行」：
   /// - 块注释 `/* .catch(() => false) */` 旧写法一概放行 ⇒ 禁止型断言被注释骗成红、
-  ///   要求型断言被注释骗成绿（把实现删光只留 `/* __hibikiWordAudioLastError */`
+  ///   要求型断言被注释骗成绿（把实现删光只留 `/* __fushiWordAudioLastError */`
   ///   照样通过）；
   /// - 行尾注释同样漏；
   /// - 掩码**等长**，下面 `indexOf('audio.play()')` + 括号配平截回调体的下标才与原文
@@ -40,13 +40,13 @@ void main() {
       final File f = File(path);
       expect(f.existsSync(), true, reason: '镜像缺失：$path');
       // 全部断言一律扫**剥掉注释后**的源码：解释「BUG-1204 根因长什么样」的注释里
-      // 必然写着 __hibikiWordAudioLastError 和旧写法，连注释一起扫等于让文档给自己
+      // 必然写着 __fushiWordAudioLastError 和旧写法，连注释一起扫等于让文档给自己
       // 背书——把实现整段删光、只留注释也照样绿（变异实测证实过这条假绿）。
       final String code = stripLineComments(f.readAsStringSync());
 
-      expect(code.contains('__hibikiWordAudioLastError'), true,
+      expect(code.contains('__fushiWordAudioLastError'), true,
           reason: '$path 必须把 audio.play() 的失败原因存到 '
-              '__hibikiWordAudioLastError 供宿主回传（BUG-1204）');
+              '__fushiWordAudioLastError 供宿主回传（BUG-1204）');
       // 正是这个模式吞掉了根因，绝不允许回潮。
       expect(code.contains('.catch(() => false)'), false,
           reason: '$path 不得再用 `.catch(() => false)` 丢弃 DOMException'
@@ -81,7 +81,7 @@ void main() {
       final String rejection = code.substring(catchIdx, end);
       expect(
           rejection.contains('noteError') ||
-              rejection.contains('__hibikiWordAudioLastError'),
+              rejection.contains('__fushiWordAudioLastError'),
           true,
           reason: '$path 的 audio.play() rejection 分支必须把 DOMException 记进失败'
               '原因——删掉这一句就是 BUG-1204 的根因原样回潮');
@@ -100,7 +100,7 @@ void main() {
     // 同样剥注释：讲根因的注释里就写着这个属性名，连注释一起扫会自我背书。
     final String src = stripLineComments(
         File('assets/popup/global_lookup_host.js').readAsStringSync());
-    expect(src.contains('__hibikiWordAudioLastError'), true,
+    expect(src.contains('__fushiWordAudioLastError'), true,
         reason: 'host 注入的 report 必须读取 realm 上的失败原因（BUG-1204）');
     // 帧未加载 / eval 失败也各有自己的原因串，不与 play() 的 DOMException 混淆。
     expect(src.contains('FrameNotLoaded'), true,
@@ -113,7 +113,7 @@ void main() {
     final String src = stripLineComments(
         File('lib/src/pages/implementations/dictionary_popup_webview.dart')
             .readAsStringSync());
-    expect(src.contains('__hibikiWordAudioLastError'), true,
+    expect(src.contains('__fushiWordAudioLastError'), true,
         reason: 'app 内 wordAudioPlayed 注入脚本必须一并回传原因，'
             '否则 app 内首播失败仍无法定位（BUG-1204）');
   });

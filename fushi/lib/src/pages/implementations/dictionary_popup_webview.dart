@@ -746,12 +746,12 @@ JSON.stringify((function(){
     _pendingWordAudioPlays[token] = completer;
     try {
       // BUG-1204：与 app 外 host 同一契约——回报第三个参数 = 失败原因（popup.js 存在
-      // window.__hibikiWordAudioLastError 上），让 app 内首播失败也能定位到 DOMException
+      // window.__fushiWordAudioLastError 上），让 app 内首播失败也能定位到 DOMException
       // 名字，而不是只看到一个 false。
       await controller.evaluateJavascript(source: '''
 (function () {
   var reason = function () {
-    try { return String(window.__hibikiWordAudioLastError || ''); }
+    try { return String(window.__fushiWordAudioLastError || ''); }
     catch (_) { return ''; }
   };
   var report = function (ok, why) {
@@ -761,7 +761,7 @@ JSON.stringify((function(){
     } catch (_) { /* bridge gone: Dart side times out and falls back */ }
   };
   try {
-    var play = window.__hibikiPlayWordAudioUrl;
+    var play = window.__fushiPlayWordAudioUrl;
     if (!play) { report(false, 'PlayFunctionMissing'); return; }
     Promise.resolve(play(${jsonEncode(url)}))
         .then(function (r) { report(r === true); },
@@ -978,7 +978,7 @@ JSON.stringify((function(){
       $inAppExtrasJs
       $entriesJs
       ${ReaderCaretScripts.instantScrollInvocation(popupInstantScroll)};
-      window.__hibikiRenderToken = $renderToken;
+      window.__fushiRenderToken = $renderToken;
       $beforeRenderJs
       ${needsScrollCheck ? _scrollCheckJs : ""}
     ''');
@@ -1419,9 +1419,9 @@ JSON.stringify((function(){
       onWebViewCreated: (controller) {
         _controller = controller;
 
-        // TODO-1392：查词弹窗 JS 渲染路径（renderPopup / __hibikiContainer 等）抛异常，此前
+        // TODO-1392：查词弹窗 JS 渲染路径（renderPopup / __fushiContainer 等）抛异常，此前
         // 只 console.error → onConsoleMessage → debugPrint（永不进错误日志），uncaught 更彻底
-        // 静默（popup.js 此前无 window.onerror）。BUG-706 那类 __hibikiRoot 命名冲突致 renderPopup
+        // 静默（popup.js 此前无 window.onerror）。BUG-706 那类 __fushiRoot 命名冲突致 renderPopup
         // TypeError 中止渲染时，用户看到「弹窗空白 + 错误日志为空」无从排查。popup.js 顶层现装
         // 全局 window.onerror / unhandledrejection + 渲染 catch，经此桥把 {source,message,stack}
         // 回传，落 ErrorLogService（错误日志页可见）。四查词表面（书内 / 视频 / 首页 / app 外悬浮）

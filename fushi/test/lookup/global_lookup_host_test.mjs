@@ -104,11 +104,11 @@ function makeElement(tag) {
         },
       },
       // TODO-1188 — each iframe's popup_bridge_adapter defines its own
-      // window.__hibikiBridgeResolve (frame-local _pending realm). The host's
+      // window.__fushiBridgeResolve (frame-local _pending realm). The host's
       // top-level router forwards a native reply to the SOURCE frame's resolver;
       // this spy records (id, value) so a test can assert the reply reached
       // EXACTLY that frame with its original frame-local id.
-      __hibikiBridgeResolve(id, value) {
+      __fushiBridgeResolve(id, value) {
         (el.contentWindow._bridgeResolved =
           el.contentWindow._bridgeResolved || []).push({ id, value });
       },
@@ -974,7 +974,7 @@ function flushTimers() {
 }
 
 // 29. TODO-1188 bridge round-trip: a native reply (top-level
-//     window.__hibikiBridgeResolve, the ONLY document native ExecuteScript can
+//     window.__fushiBridgeResolve, the ONLY document native ExecuteScript can
 //     reach) is FORWARDED to the SOURCE iframe's adapter with its ORIGINAL
 //     frame-local id — not to the top-level realm (where the callHandler Promise
 //     does NOT live) and not broadcast to siblings. This is the audio ♪ / favorite
@@ -1004,7 +1004,7 @@ function flushTimers() {
   const globalId = out.__bridgeId;
   assert.strictEqual(typeof globalId, 'number', 'outbound id is a global integer');
   // Native replies on the TOP-LEVEL document with the GLOBAL id.
-  window.__hibikiBridgeResolve(globalId, true);
+  window.__fushiBridgeResolve(globalId, true);
   assert.deepStrictEqual(if1.contentWindow._bridgeResolved, [{ id: 1, value: true }],
     'reply forwarded to the SOURCE frame with its ORIGINAL local id 1');
   assert.ok(!if0.contentWindow._bridgeResolved,
@@ -1045,13 +1045,13 @@ function flushTimers() {
   assert.notStrictEqual(gid0, gid1,
     'the two same-local-id calls got DISTINCT global ids (no collision)');
   // Resolve frame-1's global id: ONLY frame-1 sees it.
-  window.__hibikiBridgeResolve(gid1, true);
+  window.__fushiBridgeResolve(gid1, true);
   assert.deepStrictEqual(if1.contentWindow._bridgeResolved, [{ id: 1, value: true }],
     'frame-1 resolved with its own reply');
   assert.ok(!if0.contentWindow._bridgeResolved,
     'frame-0 (same local id 1) is NOT mis-resolved by frame-1 reply');
   // Now resolve frame-0's global id: frame-0 gets ITS reply.
-  window.__hibikiBridgeResolve(gid0, false);
+  window.__fushiBridgeResolve(gid0, false);
   assert.deepStrictEqual(if0.contentWindow._bridgeResolved, [{ id: 1, value: false }],
     'frame-0 resolved independently with its own reply');
 }

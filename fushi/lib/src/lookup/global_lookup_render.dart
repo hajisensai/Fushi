@@ -104,8 +104,8 @@ String buildFrameSettingsJs({
   // sentenceOnly 时注入，故自动查词路径 settingsJs 逐字节不变（host 以此判重渲）。
   // 走 app 侧渲染脚本而非改 popup.js，避开浏览器扩展三镜像 + content.css 重生成。
   final String sentenceOnlyLine = sentenceOnly
-      ? 'var __hibikiNoRes = document.querySelector(".no-results"); '
-          'if (__hibikiNoRes) __hibikiNoRes.remove();\n'
+      ? 'var __fushiNoRes = document.querySelector(".no-results"); '
+          'if (__fushiNoRes) __fushiNoRes.remove();\n'
       : '';
   return '''
     $settingsJs

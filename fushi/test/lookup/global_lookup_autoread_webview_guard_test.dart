@@ -70,11 +70,11 @@ void main() {
           reason: 'an unloaded frame must report its own distinct reason');
     });
 
-    test('iframe realm plays via __hibikiPlayWordAudioUrl and reports back',
+    test('iframe realm plays via __fushiPlayWordAudioUrl and reports back',
         () {
       // The eval body drives popup.js's own <audio> entry and posts the REAL
       // audio.play() outcome through the wrapped per-frame bridge.
-      expect(js.contains('window.__hibikiPlayWordAudioUrl'), isTrue);
+      expect(js.contains('window.__fushiPlayWordAudioUrl'), isTrue);
       expect(js.contains('handler: "wordAudioPlayed"'), isTrue);
       expect(
         js.contains('JSON.stringify(url)'),
@@ -85,10 +85,10 @@ void main() {
   });
 
   group('BUG-1127 popup.js auto-read entry', () {
-    test('window.__hibikiPlayWordAudioUrl stays exported', () {
+    test('window.__fushiPlayWordAudioUrl stays exported', () {
       final String js = read('assets/popup/popup.js');
       expect(
-        js.contains('window.__hibikiPlayWordAudioUrl = playWordAudio'),
+        js.contains('window.__fushiPlayWordAudioUrl = playWordAudio'),
         isTrue,
         reason: 'the host-driven auto-read entry (shared with the in-app '
             'popup) must not be renamed/removed',

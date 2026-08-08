@@ -23,7 +23,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// Pushes a deferred-bridge reply back to the owning overlay window's JS realm
-/// (window.__hibikiBridgeResolve via the channel's resolveBridge).
+/// (window.__fushiBridgeResolve via the channel's resolveBridge).
 typedef OverlayBridgeResolver = Future<void> Function(int id, Object? value);
 
 /// 可选的场景制卡委托。瞬态查词窗仍负责解析 popup.js payload 和统计；委托只替换

@@ -336,12 +336,12 @@ class RecordingWebViewHarness {
       <String, JavaScriptHandlerCallback>{};
 
   static final RegExp _tokenPattern =
-      RegExp(r'window\.__hibikiRenderToken = (\d+);');
+      RegExp(r'window\.__fushiRenderToken = (\d+);');
 
   /// 结果推送次数：只有 _pushResults 的注入会 stamp render token，其它注入
   /// （主题变量 / instant-scroll / hasChildPopup）都不带，天然可数。
   int get pushCount => scripts
-      .where((String s) => s.contains('window.__hibikiRenderToken ='))
+      .where((String s) => s.contains('window.__fushiRenderToken ='))
       .length;
 
   /// 全量 renderPopup() 注入次数（load-more 走 updatePopupIncremental 不计入）。

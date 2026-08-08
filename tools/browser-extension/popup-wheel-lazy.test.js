@@ -10,7 +10,7 @@ const vm = require('node:vm');
 // 同步等主线程跑完监听（含祖先 getComputedStyle/scrollHeight 布局读取）——用户感知为
 // 装了扩展后网页滚动变卡。根因修复：
 //   - popup.js 在扩展上下文（chrome.runtime.id 存在）不再挂 document，改为把监听暴露成
-//     window.__hibikiPopupWheelListener；
+//     window.__fushiPopupWheelListener；
 //   - content.js 在弹窗 shadow host 创建时（fushiEnsureContainer）把它挂到 host 上
 //     （非 passive 只影响弹窗内滚轮），fushiRemoveContainer 销毁时卸载；
 //   - 弹窗不在场 ⇒ 宿主页上没有任何 wheel 监听，原生滚动零开销。
@@ -142,18 +142,18 @@ test('扩展上下文加载后 document 上没有任何 wheel 监听，监听以
   const { docWheelRegs, windowObj } = loadWorld();
   assert.strictEqual(docWheelRegs.length, 0,
       '扩展 content script 不得在 document 上常驻 wheel 监听（BUG-1078 根因）');
-  assert.strictEqual(typeof windowObj.__hibikiPopupWheelListener, 'function',
-      'popup.js 必须暴露 window.__hibikiPopupWheelListener 供 content.js 懒装');
+  assert.strictEqual(typeof windowObj.__fushiPopupWheelListener, 'function',
+      'popup.js 必须暴露 window.__fushiPopupWheelListener 供 content.js 懒装');
 });
 
 test('fushiEnsureContainer 把非 passive wheel 监听挂到 shadow host，且复用不重复挂', () => {
   const { sandbox, windowObj } = loadWorld();
   sandbox.fushiEnsureContainer();
-  const host = windowObj.__hibikiRoot && windowObj.__hibikiRoot.host;
+  const host = windowObj.__fushiRoot && windowObj.__fushiRoot.host;
   assert.ok(host, 'fushiEnsureContainer 必须建出 shadow host');
   const regs = wheelListenersOf(host);
   assert.strictEqual(regs.length, 1, 'host 上必须恰好挂一个 wheel 监听');
-  assert.strictEqual(regs[0].fn, windowObj.__hibikiPopupWheelListener,
+  assert.strictEqual(regs[0].fn, windowObj.__fushiPopupWheelListener,
       '挂的必须是 popup.js 暴露的同一个监听');
   assert.ok(regs[0].options && regs[0].options.passive === false,
       '弹窗滚轮监听必须 {passive:false}（它要 preventDefault 接管弹窗滚动）');
@@ -166,7 +166,7 @@ test('fushiEnsureContainer 把非 passive wheel 监听挂到 shadow host，且�
 test('弹窗内滚轮行为不变：preventDefault + 滚 shadow host，不碰 window', () => {
   const { sandbox, windowObj, windowScrollBy } = loadWorld();
   sandbox.fushiEnsureContainer();
-  const host = windowObj.__hibikiRoot.host;
+  const host = windowObj.__fushiRoot.host;
   const inner = { nodeType: 1, parentElement: null };
   let prevented = false;
   const evt = {
@@ -190,11 +190,11 @@ test('弹窗内滚轮行为不变：preventDefault + 滚 shadow host，不碰 wi
 test('fushiRemoveContainer 随弹窗卸载 wheel 监听', () => {
   const { sandbox, windowObj } = loadWorld();
   sandbox.fushiEnsureContainer();
-  const host = windowObj.__hibikiRoot.host;
+  const host = windowObj.__fushiRoot.host;
   assert.strictEqual(wheelListenersOf(host).length, 1);
   sandbox.fushiRemoveContainer();
   assert.strictEqual(wheelListenersOf(host).length, 0,
       '关弹窗必须卸载 host 上的 wheel 监听（弹窗不在场 ⇒ 页面零 wheel 监听）');
-  assert.strictEqual(windowObj.__hibikiRoot, null,
-      '关弹窗必须清 __hibikiRoot');
+  assert.strictEqual(windowObj.__fushiRoot, null,
+      '关弹窗必须清 __fushiRoot');
 });

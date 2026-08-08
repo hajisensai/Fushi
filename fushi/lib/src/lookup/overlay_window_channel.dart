@@ -137,7 +137,7 @@ class OverlayWindowChannel {
 
   /// Resolves a deferred JS bridge promise. The overlay adapter does
   /// `JSON.parse(arg)` on the second argument of
-  /// window.__hibikiBridgeResolve(id, arg) — i.e. it expects a JS *string*
+  /// window.__fushiBridgeResolve(id, arg) — i.e. it expects a JS *string*
   /// containing the reply's JSON. So we double-encode: the inner jsonEncode
   /// produces the reply JSON text, the outer jsonEncode turns that into a JS
   /// string literal native can splice in verbatim.

@@ -93,7 +93,7 @@ void main() {
       final int instantScrollAt = source.indexOf(
         r'${ReaderCaretScripts.instantScrollInvocation(popupInstantScroll)};',
       );
-      final int renderTokenAt = source.indexOf('window.__hibikiRenderToken =');
+      final int renderTokenAt = source.indexOf('window.__fushiRenderToken =');
       final int resetAt =
           source.indexOf('window.__fushiResetPopupScroll = function() {');
       expect(instantScrollAt, greaterThanOrEqualTo(0));

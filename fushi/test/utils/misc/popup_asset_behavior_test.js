@@ -1387,7 +1387,7 @@ async function testMineButtonReMinesAfterCardDeletedWithoutReopening() {
   // 居中对话框，所以 popup.js 把点击原样交出去。不声明这个标志的宿主（app 外裸
   // WebView2 窗口 / 浏览器扩展）只会把 minedCardAction 解析成 null，popup.js 改为在
   // 自己的 WebView 里画页内面板（见 testAppExternal* 用例）。
-  context.window.__hibikiMinedCardActionNative = true;
+  context.window.__fushiMinedCardActionNative = true;
   context.window.allowDupes = false;
   const mined = [];
   let cardExists = true; // card already in Anki at lookup time
@@ -1442,7 +1442,7 @@ async function testMineButtonReMinesAfterCardDeletedWithoutReopening() {
 async function testMineButtonDoesNotDuplicateWhenCardStillExists() {
   const context = loadPopup();
   // BUG-1064：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
-  context.window.__hibikiMinedCardActionNative = true;
+  context.window.__fushiMinedCardActionNative = true;
   context.window.allowDupes = false;
   const mined = [];
   let cardExists = true; // card really is still in Anki
@@ -1609,7 +1609,7 @@ async function testLatestMinedCardCanBeOverwrittenInPlace() {
 async function testMiningNextCardDowngradesPreviousFromEditable() {
   const context = loadPopup();
   // BUG-1064：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
-  context.window.__hibikiMinedCardActionNative = true;
+  context.window.__fushiMinedCardActionNative = true;
   context.window.allowDupes = true;
   const mined = [];
   const updated = [];
@@ -1663,7 +1663,7 @@ async function testMiningNextCardDowngradesPreviousFromEditable() {
 async function testNoNoteIdNeverBecomesEditableLatest() {
   const context = loadPopup();
   // BUG-1064：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
-  context.window.__hibikiMinedCardActionNative = true;
+  context.window.__fushiMinedCardActionNative = true;
   context.window.allowDupes = true;
   const updated = [];
   const actions = [];
@@ -2025,7 +2025,7 @@ testOverwriteScopeLatestKeepsEarlierCardOrdinary().catch((error) => {
 async function testClickingMinedCheckInvokesHostActionSheet() {
   const context = loadPopup();
   // BUG-1064：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
-  context.window.__hibikiMinedCardActionNative = true;
+  context.window.__fushiMinedCardActionNative = true;
   context.window.allowDupes = false;
   const actionCalls = [];
   let duplicateChecks = 0;
@@ -2077,7 +2077,7 @@ testClickingMinedCheckInvokesHostActionSheet().catch((error) => {
 // 自己的 WebView 里画同一套选择，数据走 findMinedMatches，动作复用 updateEntry /
 // mineEntry。以下四条钉死这条车道。
 //
-// 这些用例故意不设置 window.__hibikiMinedCardActionNative（= app 外宿主）。
+// 这些用例故意不设置 window.__fushiMinedCardActionNative（= app 外宿主）。
 
 // 面板里按可见文字找按钮（i18n 未注入时 popup.js 用中文兜底文案）。
 function findPanelButton(context, label) {
@@ -2368,7 +2368,7 @@ async function testAppExternalOpenInAnkiNoMatchHintsInsteadOfSilence() {
 // app 内宿主（自带原生对话框 / toast）必须仍然把 ↗ 原样交给 openInAnki。
 async function testInAppOpenInAnkiStillGoesToHost() {
   const context = loadPopup();
-  context.window.__hibikiMinedCardActionNative = true;
+  context.window.__fushiMinedCardActionNative = true;
   const calls = newCalls();
   stubAppExternalHost(context, {
     matches: [{ noteId: 7004, preview: '刀' }],

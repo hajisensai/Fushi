@@ -23,7 +23,7 @@ const FUSHI_MAX_LEN = 12;
 let fushiContainer = null;
 // BUG-688：弹窗渲染进 Shadow DOM，宿主网页 CSS 无法穿透 shadow 边界（ruby/行距/定位等
 // 与 in-app WebView 弹窗一致）。fushiHost 是挂在宿主页的 shadow 宿主元素（负责 fixed 定位），
-// #entries-container 及全部弹窗内容在其 shadow root 内；window.__hibikiRoot 暴露给 popup.js。
+// #entries-container 及全部弹窗内容在其 shadow root 内；window.__fushiRoot 暴露给 popup.js。
 let fushiHost = null;
 // BUG-530 性能：划词监听器原来对每次 mousemove 都发查词请求 → 一直按 Shift 移动会把服务器
 // 刷爆、UI 卡顿。用「位移阈值 + 同词去重 + 在途请求闸」三重节流：只在移到**不同词**上才查。
@@ -1359,13 +1359,13 @@ function fushiEnsureContainer() {
     c.setAttribute('data-theme', fushiResolveTheme());
     shadow.appendChild(c);
     fushiContainer = c;
-    window.__hibikiRoot = shadow; // popup.js 的 DOM 查询/浮层/选区都相对它解析
+    window.__fushiRoot = shadow; // popup.js 的 DOM 查询/浮层/选区都相对它解析
     // BUG-1078：弹窗滚轮监听懒装——popup.js 在扩展上下文里不再常驻 document（常驻的
     // 非 passive wheel 监听会让浏览器在所有网页放弃合成器快速滚动路径），而是把监听
-    // 暴露为 window.__hibikiPopupWheelListener，由这里在弹窗 host 创建时挂到 shadow
+    // 暴露为 window.__fushiPopupWheelListener，由这里在弹窗 host 创建时挂到 shadow
     // host 上（非 passive 只影响弹窗内滚轮），fushiRemoveContainer 销毁时卸载。
-    if (typeof window.__hibikiPopupWheelListener === 'function') {
-      fushiHost.addEventListener('wheel', window.__hibikiPopupWheelListener,
+    if (typeof window.__fushiPopupWheelListener === 'function') {
+      fushiHost.addEventListener('wheel', window.__fushiPopupWheelListener,
           { passive: false });
     }
   }
@@ -1469,13 +1469,13 @@ function fushiDrawHighlightOverlay(rects) {
 }
 
 function fushiRemoveContainer() {
-  // BUG-688：移除 shadow 宿主即连带整个 shadow root（弹窗内容）；清 __hibikiRoot 让 popup.js
+  // BUG-688：移除 shadow 宿主即连带整个 shadow root（弹窗内容）；清 __fushiRoot 让 popup.js
   // 的 helper 回落到 document（下次开窗 fushiEnsureContainer 会重建）。host 引用即刻置空，
   // 让并发 re-lookup 重建新 host；旧节点先淡出、末尾才从 DOM 移除（高亮/选区仍即时清）。
   const dying = fushiHost;
   fushiHost = null;
   fushiContainer = null;
-  window.__hibikiRoot = null;
+  window.__fushiRoot = null;
   // TODO-1272：关窗即撤覆盖层高亮（被查词高亮跟随弹窗生命周期，弹窗在则在、弹窗关则撤）。
   fushiClearHighlightOverlay();
   // TODO-1150（yomitan 式）：关窗即撤 selection 状态与任何 DOM 包裹高亮（嵌套查词用）。fushiSelection 未加载/无选区时是 no-op。
@@ -1491,8 +1491,8 @@ function fushiRemoveContainer() {
     // BUG-1078：随弹窗卸载滚轮监听（挂载见 fushiEnsureContainer）。节点淡出期间
     // pointer-events:none 已让事件不再命中它，这里显式卸载把契约钉死：弹窗不在场 ⇒
     // 页面上不存在任何非 passive wheel 监听。
-    if (typeof window.__hibikiPopupWheelListener === 'function') {
-      dying.removeEventListener('wheel', window.__hibikiPopupWheelListener);
+    if (typeof window.__fushiPopupWheelListener === 'function') {
+      dying.removeEventListener('wheel', window.__fushiPopupWheelListener);
     }
     dying.style.pointerEvents = 'none';
     dying.style.opacity = '0';

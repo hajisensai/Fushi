@@ -120,7 +120,7 @@ class GlobalLookupWindow {
 
   // Resolves a deferred JS bridge promise. |json_value| is a JSON literal
   // (e.g. "\"file:///a.mp3\"", "true", "null") passed straight to
-  // window.__hibikiBridgeResolve(id, json_value). Used by the audio handlers,
+  // window.__fushiBridgeResolve(id, json_value). Used by the audio handlers,
   // whose real reply comes from the main Dart engine.
   void ResolveBridge(int64_t id, const std::string& json_value);
 
