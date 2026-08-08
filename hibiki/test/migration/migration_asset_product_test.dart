@@ -94,6 +94,25 @@ void main() {
       expect(picked, isNull);
     });
 
+    test('真实 debug-rolling 资产名（通用包，名字里没有 ABI 标签）也能解析出来', () async {
+      // 2026-08-08 debug-rolling 上的真实形态：Fushi debug 走单个通用 APK，
+      // 不是 split-per-abi，所以名字里**没有** arm64-v8a 之类的标签。按 ABI 命中
+      // 会落空，必须靠 fallback 兜住 —— 这条锁死「用户真按下去时确实能选到包」。
+      final List<Map<String, dynamic>> realAssets = <Map<String, dynamic>>[
+        asset('fushi-1.3.2-debug.10182-ios.ipa'),
+        asset('fushi-1.4.0-debug.10301-b7a83ba-debug.apk'),
+        asset('fushi-1.4.0-debug.10302-windows-setup.exe'),
+        asset('hibiki-1.3.2-debug.10182-d863f0c-debug.apk'),
+      ];
+      final UpdateAsset? picked = await androidOn('arm64-v8a').selectAsset(
+        realAssets,
+        channel: UpdateChannel.debug,
+        product: ReleaseProduct.fushi,
+      );
+      expect(picked, isNotNull, reason: '真实资产清单必须能解析出 Fushi 安装包');
+      expect(picked!.name, 'fushi-1.4.0-debug.10301-b7a83ba-debug.apk');
+    });
+
     test('产品族过滤不放过通道过滤（debug 族不会被 stable 选中）', () async {
       final UpdateAsset? picked = await androidOn('arm64-v8a').selectAsset(
         mixedDebugAssets,
