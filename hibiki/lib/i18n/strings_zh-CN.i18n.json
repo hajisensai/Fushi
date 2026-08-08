@@ -3144,5 +3144,21 @@
   "migration_export_failed": "导出失败：$error",
   "migration_readonly_note": "数据已导出到 Fushi。本应用已进入只读模式：请改用 Fushi 阅读和制卡。若 Fushi 校验发现缺失，可随时在此重新导出。",
   "migration_reexport": "重新导出",
-  "migration_batch_core_label": "设置、进度与统计"
+  "migration_batch_core_label": "设置、进度与统计",
+  "migration_prompt_title": "Hibiki 已更名为 Fushi",
+  "migration_prompt_body": "本应用已更名为 Fushi 并换用新的包名，无法原地升级。点下方按钮即可自动下载 Fushi 并把书籍、词典、进度和统计全部搬过去。",
+  "migration_prompt_action": "下载 Fushi 并迁移",
+  "migration_prompt_later": "稍后",
+  "migration_prompt_details": "查看详情",
+  "migration_space_measuring": "正在计算迁移需要的空间…",
+  "migration_space_summary": "预计需要 $required，当前可用 $free",
+  "migration_space_blocked": "存储空间不足，还差 $shortfall。迁移要把数据复制一份到中转目录，所以需要双倍空间。请清理后重试。",
+  "migration_space_unknown": "读不到本机可用存储空间。为避免迁移导到一半失败，已阻止开始。",
+  "migration_space_tip_local_audio": "关闭「一并导出本地发音库」可少占 $size。",
+  "migration_space_recheck": "重新检测空间",
+  "migration_target_resolve_failed": "没找到 Fushi 安装包。请检查网络后重试。",
+  "migration_install_incomplete": "Fushi 仍未安装完成。请先完成系统安装提示，然后再点一次。",
+  "migration_step_install": "安装 Fushi",
+  "migration_step_export": "导出数据",
+  "migration_step_import": "在 Fushi 中导入"
 }

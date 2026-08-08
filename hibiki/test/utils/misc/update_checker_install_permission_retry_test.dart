@@ -35,6 +35,7 @@ class _FakeUpdater extends PlatformUpdater {
   Future<UpdateAsset?> selectAsset(
     List<Map<String, dynamic>> assets, {
     UpdateChannel channel = UpdateChannel.stable,
+    ReleaseProduct product = ReleaseProduct.any,
   }) async =>
       null;
 

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// TODO-584 结构守卫：update_checker.dart 已拆成 barrel library + 5 个 part 文件
+/// TODO-584 结构守卫：update_checker.dart 已拆成 barrel library + 6 个 part 文件
 /// （`part of 'update_checker.dart';`）。这套守卫固化拆分后的不变式，防止后续改动
 /// 把巨石文件重新塞回单文件、或把符号错放 part（破坏「按职责分文件 + 零行为变化」）。
 ///
@@ -16,13 +16,21 @@ void main() {
   const String download = '$dir/update_checker_download.dart';
   const String race = '$dir/update_checker_race.dart';
   const String release = '$dir/update_checker_release.dart';
+  const String migration = '$dir/update_checker_migration.dart';
   const String ui = '$dir/update_checker_ui.dart';
-  const List<String> parts = <String>[net, download, race, release, ui];
+  const List<String> parts = <String>[
+    net,
+    download,
+    race,
+    release,
+    migration,
+    ui
+  ];
 
   String read(String path) => File(path).readAsStringSync();
   int lineCount(String path) => File(path).readAsLinesSync().length;
 
-  test('barrel + 5 part files all exist', () {
+  test('barrel + 6 part files all exist', () {
     for (final String path in <String>[barrel, ...parts]) {
       expect(File(path).existsSync(), isTrue, reason: '$path must exist');
     }
@@ -119,7 +127,7 @@ void main() {
   test('update_checker.dart is a pure barrel (library + imports + part only)',
       () {
     final String source = read(barrel);
-    // 纯 barrel：只声明 library + import + 4 个 part，不含任何类/顶层函数定义。
+    // 纯 barrel：只声明 library + import + 全部 part，不含任何类/顶层函数定义。
     expect(source, contains('library;'));
     for (final String part in parts) {
       final String name = part.split('/').last;

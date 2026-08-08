@@ -98,6 +98,36 @@ String? _assetVersionStamp(Object? raw) {
   return trimmed.isEmpty ? null : trimmed;
 }
 
+/// 选包时的**产品族约束**。
+///
+/// 改名过渡期，桥包（`app.hibiki.reader`，资产名 `hibiki-*`）与 Fushi
+/// （`app.fushi.reader`，资产名 `fushi-*`）**挂在同一个 rolling release tag 上**，
+/// 只判后缀（`.apk` / `-windows-setup.exe` / `-macos.zip`）区分不出二者。
+///
+/// 但两侧的正确答案**不对称**，所以这里只有一个方向的约束：
+/// - 自更新（[any]）：不加产品族过滤。桥的 stable 路径**有意**把「更新」指向
+///   Fushi 产物（改名迁移计划 Phase 5，见 [synthesizeStableAssetNames]），加了
+///   过滤等于掐掉这条既有链路；历史手动发布的资产也不保证带任何产品前缀。
+/// - 迁移下载（[fushi]）：必须命中 `fushi-` 前缀。这一族由我们定义、是闭集，
+///   选错的后果是「用户点了迁移，结果装了桥包自己」——必须硬约束。
+enum ReleaseProduct {
+  /// 不按产品族过滤（自更新的既有语义，字节级不变）。
+  any,
+
+  /// 只认 Fushi 产物。
+  fushi,
+}
+
+/// Fushi 资产名前缀（CI `release.yml` / `release-desktop.yml` 固定生成）。
+const String kFushiAssetPrefix = 'fushi-';
+
+/// [name] 是否满足产品族约束 [product]。
+bool assetBelongsToProduct(String name, ReleaseProduct product) =>
+    switch (product) {
+      ReleaseProduct.any => true,
+      ReleaseProduct.fushi => name.startsWith(kFushiAssetPrefix),
+    };
+
 /// 每平台的更新策略：选包（[selectAsset]）+ 安装（[apply]）。
 /// 共享的 GitHub 拉取/版本比较/下载浮层仍在 UpdateChecker。
 abstract class PlatformUpdater {
@@ -109,9 +139,13 @@ abstract class PlatformUpdater {
 
   /// 从 release 的 [assets]（每项含 name / browser_download_url）挑本平台可安装包的
   /// 下载 URL；null = 无适配包（上层回退打开发布页）。
+  ///
+  /// [product] 默认不加产品族过滤（自更新既有语义）；迁移流程传
+  /// [ReleaseProduct.fushi]，复用同一套按 ABI / 按平台挑包的逻辑去选 Fushi 的产物。
   Future<UpdateAsset?> selectAsset(
     List<Map<String, dynamic>> assets, {
     UpdateChannel channel = UpdateChannel.stable,
+    ReleaseProduct product = ReleaseProduct.any,
   });
 
   /// 应用已下载到 [file] 的更新。仅在 [supportsInAppInstall] 为 true 时被调用。
@@ -185,8 +219,13 @@ Iterable<UpdateAsset> _downloadable(List<Map<String, dynamic>> assets) sync* {
 bool _isDebugApkAsset(String name) =>
     name.endsWith('-debug.apk') || name.contains('-debug.');
 
-bool _androidAssetMatchesChannel(String name, UpdateChannel channel) {
+bool _androidAssetMatchesChannel(
+  String name,
+  UpdateChannel channel,
+  ReleaseProduct product,
+) {
   if (!name.endsWith('.apk')) return false;
+  if (!assetBelongsToProduct(name, product)) return false;
   return switch (channel) {
     UpdateChannel.debug => _isDebugApkAsset(name),
     UpdateChannel.stable || UpdateChannel.beta => !_isDebugApkAsset(name),
@@ -196,8 +235,13 @@ bool _androidAssetMatchesChannel(String name, UpdateChannel channel) {
 bool _isDebugWindowsSetupAsset(String name) =>
     name.endsWith('-windows-setup.exe') && name.contains('-debug.');
 
-bool _windowsAssetMatchesChannel(String name, UpdateChannel channel) {
+bool _windowsAssetMatchesChannel(
+  String name,
+  UpdateChannel channel,
+  ReleaseProduct product,
+) {
   if (!name.endsWith('-windows-setup.exe')) return false;
+  if (!assetBelongsToProduct(name, product)) return false;
   return switch (channel) {
     UpdateChannel.debug => _isDebugWindowsSetupAsset(name),
     UpdateChannel.stable ||
@@ -212,8 +256,13 @@ bool _windowsAssetMatchesChannel(String name, UpdateChannel channel) {
 bool _isDebugMacosAsset(String name) =>
     name.endsWith('-macos.zip') && name.contains('-debug.');
 
-bool _macosAssetMatchesChannel(String name, UpdateChannel channel) {
+bool _macosAssetMatchesChannel(
+  String name,
+  UpdateChannel channel,
+  ReleaseProduct product,
+) {
   if (!name.endsWith('-macos.zip')) return false;
+  if (!assetBelongsToProduct(name, product)) return false;
   return switch (channel) {
     UpdateChannel.debug => _isDebugMacosAsset(name),
     UpdateChannel.stable || UpdateChannel.beta => !_isDebugMacosAsset(name),
@@ -246,6 +295,7 @@ class AndroidUpdater extends PlatformUpdater {
   Future<UpdateAsset?> selectAsset(
     List<Map<String, dynamic>> assets, {
     UpdateChannel channel = UpdateChannel.stable,
+    ReleaseProduct product = ReleaseProduct.any,
   }) async {
     final List<String> abis = await _abiProvider();
     final List<String> abiTags =
@@ -253,7 +303,7 @@ class AndroidUpdater extends PlatformUpdater {
     UpdateAsset? fallback;
     for (final UpdateAsset asset in _downloadable(assets)) {
       final String name = asset.name;
-      if (!_androidAssetMatchesChannel(name, channel)) continue;
+      if (!_androidAssetMatchesChannel(name, channel, product)) continue;
       if (abiTags.any(name.contains)) return asset;
       fallback ??= asset;
     }
@@ -277,9 +327,12 @@ class WindowsUpdater extends PlatformUpdater {
   Future<UpdateAsset?> selectAsset(
     List<Map<String, dynamic>> assets, {
     UpdateChannel channel = UpdateChannel.stable,
+    ReleaseProduct product = ReleaseProduct.any,
   }) async {
     for (final UpdateAsset asset in _downloadable(assets)) {
-      if (_windowsAssetMatchesChannel(asset.name, channel)) return asset;
+      if (_windowsAssetMatchesChannel(asset.name, channel, product)) {
+        return asset;
+      }
     }
     return null;
   }
@@ -309,9 +362,10 @@ class MacUpdater extends PlatformUpdater {
   Future<UpdateAsset?> selectAsset(
     List<Map<String, dynamic>> assets, {
     UpdateChannel channel = UpdateChannel.stable,
+    ReleaseProduct product = ReleaseProduct.any,
   }) async {
     for (final UpdateAsset asset in _downloadable(assets)) {
-      if (_macosAssetMatchesChannel(asset.name, channel)) return asset;
+      if (_macosAssetMatchesChannel(asset.name, channel, product)) return asset;
     }
     return null;
   }
@@ -336,6 +390,7 @@ class IosUpdater extends PlatformUpdater {
   Future<UpdateAsset?> selectAsset(
     List<Map<String, dynamic>> assets, {
     UpdateChannel channel = UpdateChannel.stable,
+    ReleaseProduct product = ReleaseProduct.any,
   }) async =>
       null;
 
@@ -357,6 +412,7 @@ class UnsupportedUpdater extends PlatformUpdater {
   Future<UpdateAsset?> selectAsset(
     List<Map<String, dynamic>> assets, {
     UpdateChannel channel = UpdateChannel.stable,
+    ReleaseProduct product = ReleaseProduct.any,
   }) async =>
       null;
 
