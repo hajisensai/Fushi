@@ -2,12 +2,12 @@
 #include <cstring>
 #include <string>
 #include <vector>
-#include "hoshidicts/platform.hpp"
-#include "hoshidicts/deinflector.hpp"
-#include "hoshidicts/importer.hpp"
-#include "hoshidicts/lookup.hpp"
-#include "hoshidicts/query.hpp"
-#include "hoshidicts/popup_json.hpp"
+#include "fushidicts/platform.hpp"
+#include "fushidicts/deinflector.hpp"
+#include "fushidicts/importer.hpp"
+#include "fushidicts/lookup.hpp"
+#include "fushidicts/query.hpp"
+#include "fushidicts/popup_json.hpp"
 
 // ── helpers ──────────────────────────────────────────────────────────
 static char* dup(const std::string& s) {
@@ -246,7 +246,7 @@ static void* import_thread_fn(void* arg) {
 #endif
 }
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 FfiImportResult fushidicts_import(const char* zip_path, const char* output_dir, const char* breadcrumb_dir) {
   ImportThreadArgs args;
   args.zip_path = zip_path;
@@ -269,7 +269,7 @@ FfiImportResult fushidicts_import(const char* zip_path, const char* output_dir, 
   return args.result;
 }
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 void fushidicts_free_import_result(FfiImportResult* r) {
   if (!r) return;
   free(r->title);
@@ -277,7 +277,7 @@ void fushidicts_free_import_result(FfiImportResult* r) {
   free(r->error);
 }
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 int32_t fushidicts_probe_dict_content(const char* dir) {
   if (!dir) return 0;
   return static_cast<int32_t>(probe_dict_content(std::string(dir)));
@@ -290,44 +290,44 @@ struct FushidictsHandle {
   Deinflector deinflector;
 };
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 void* fushidicts_create() {
   return new FushidictsHandle();
 }
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 void fushidicts_destroy(void* handle) {
   delete static_cast<FushidictsHandle*>(handle);
 }
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 void fushidicts_add_term_dict(void* handle, const char* path) {
   static_cast<FushidictsHandle*>(handle)->query.add_term_dict(path);
 }
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 void fushidicts_add_freq_dict(void* handle, const char* path) {
   static_cast<FushidictsHandle*>(handle)->query.add_freq_dict(path);
 }
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 void fushidicts_add_pitch_dict(void* handle, const char* path) {
   static_cast<FushidictsHandle*>(handle)->query.add_pitch_dict(path);
 }
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 void fushidicts_add_kanji_dict(void* handle, const char* path) {
   static_cast<FushidictsHandle*>(handle)->query.add_kanji_dict(path);
 }
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 void fushidicts_load_transforms(void* handle, const char* json) {
   static_cast<FushidictsHandle*>(handle)->deinflector.load_transforms_json(json);
 }
 
 // ── query ───────────────────────────────────────────────────────────
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 FfiQueryResult fushidicts_query(void* handle, const char* expression) {
   FfiQueryResult r{};
   auto& q = static_cast<FushidictsHandle*>(handle)->query;
@@ -340,7 +340,7 @@ FfiQueryResult fushidicts_query(void* handle, const char* expression) {
   return r;
 }
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 void fushidicts_free_query_result(FfiQueryResult* r) {
   if (!r) return;
   for (int i = 0; i < r->count; i++) {
@@ -351,7 +351,7 @@ void fushidicts_free_query_result(FfiQueryResult* r) {
 
 // ── kanji query ─────────────────────────────────────────────────────
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 FfiKanjiResults fushidicts_query_kanji(void* handle, const char* character) {
   FfiKanjiResults r{};
   auto& q = static_cast<FushidictsHandle*>(handle)->query;
@@ -376,7 +376,7 @@ FfiKanjiResults fushidicts_query_kanji(void* handle, const char* character) {
   return r;
 }
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 void fushidicts_free_kanji_results(FfiKanjiResults* r) {
   if (!r) return;
   for (int i = 0; i < r->count; i++) {
@@ -396,7 +396,7 @@ void fushidicts_free_kanji_results(FfiKanjiResults* r) {
 
 // ── lookup ──────────────────────────────────────────────────────────
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 FfiLookupResults fushidicts_lookup(void* handle, const char* text, int32_t max_results, int32_t scan_length) {
   FfiLookupResults r{};
   auto* h = static_cast<FushidictsHandle*>(handle);
@@ -421,7 +421,7 @@ FfiLookupResults fushidicts_lookup(void* handle, const char* text, int32_t max_r
   return r;
 }
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 void fushidicts_free_lookup_results(FfiLookupResults* r) {
   if (!r) return;
   for (int i = 0; i < r->count; i++) {
@@ -439,7 +439,7 @@ void fushidicts_free_lookup_results(FfiLookupResults* r) {
 
 // ── styles ──────────────────────────────────────────────────────────
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 FfiDictStyles fushidicts_get_styles(void* handle) {
   FfiDictStyles r{};
   auto& q = static_cast<FushidictsHandle*>(handle)->query;
@@ -453,7 +453,7 @@ FfiDictStyles fushidicts_get_styles(void* handle) {
   return r;
 }
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 void fushidicts_free_styles(FfiDictStyles* r) {
   if (!r) return;
   for (int i = 0; i < r->count; i++) {
@@ -470,7 +470,7 @@ struct FfiMediaFile {
   int32_t size;
 };
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 FfiMediaFile fushidicts_get_media(void* handle, const char* dict_name, const char* media_path) {
   FfiMediaFile r{};
   auto& q = static_cast<FushidictsHandle*>(handle)->query;
@@ -481,7 +481,7 @@ FfiMediaFile fushidicts_get_media(void* handle, const char* dict_name, const cha
   return r;
 }
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 void fushidicts_free_media(FfiMediaFile* r) {
   if (!r) return;
   free(r->data);
@@ -489,7 +489,7 @@ void fushidicts_free_media(FfiMediaFile* r) {
 
 // ── popup JSON (single source of truth for both FFI and JNI) ───────
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 char* fushidicts_lookup_popup_json(void* handle, const char* text,
                                    int32_t max_results, int32_t scan_length,
                                    int32_t max_terms) {
@@ -501,7 +501,7 @@ char* fushidicts_lookup_popup_json(void* handle, const char* text,
   return dup(json);
 }
 
-HOSHI_EXPORT
+FUSHI_EXPORT
 void fushidicts_free_string(char* s) {
   free(s);
 }

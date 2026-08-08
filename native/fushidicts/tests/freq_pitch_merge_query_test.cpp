@@ -36,8 +36,8 @@
 #include <string>
 #include <vector>
 
-#include "hoshidicts/importer.hpp"
-#include "hoshidicts/query.hpp"
+#include "fushidicts/importer.hpp"
+#include "fushidicts/query.hpp"
 #include "zip_fixture.hpp"
 
 namespace {
@@ -93,9 +93,9 @@ bool contains_pos(const std::vector<int>& positions, int want) {
 
 // Import one fixture dir; returns its on-disk dict dir (out_root/<title>) or "".
 std::string import_dict(const std::string& out_root, const char* title,
-                        const std::vector<hoshi_test::ZipFile>& files,
+                        const std::vector<fushi_test::ZipFile>& files,
                         const char* label) {
-  std::string zip_path = hoshi_test::write_zip(label, files);
+  std::string zip_path = fushi_test::write_zip(label, files);
   if (zip_path.empty()) {
     fail("could not write fixture zip");
     return {};
@@ -118,7 +118,7 @@ std::string import_dict(const std::string& out_root, const char* title,
 // ---------------------------------------------------------------------------
 void case_multi_records_same_dict() {
   const std::string out_dir =
-      hoshi_test::temp_dir() + "/hoshi_merge_multi_out";
+      fushi_test::temp_dir() + "/hoshi_merge_multi_out";
   const char* kTitle = "MultiRecDict";
 
   // Two bare-integer freq records + two single-position pitch records, all on 猫.
@@ -130,7 +130,7 @@ void case_multi_records_same_dict() {
       "[\"" + kNeko + "\",\"pitch\",{\"reading\":\"" + kNekoReading +
       "\",\"pitches\":[{\"position\":2}]}]]";
 
-  std::vector<hoshi_test::ZipFile> files = {
+  std::vector<fushi_test::ZipFile> files = {
       {"index.json", index_json(kTitle)},
       {"term_bank_1.json", term_bank_neko()},
       {"term_meta_bank_1.json", meta},
@@ -188,8 +188,8 @@ void case_multi_records_same_dict() {
 // This is the core "merge across dictionaries" semantic.
 // ---------------------------------------------------------------------------
 void case_merge_across_dicts() {
-  const std::string out_a = hoshi_test::temp_dir() + "/hoshi_merge_dictA_out";
-  const std::string out_b = hoshi_test::temp_dir() + "/hoshi_merge_dictB_out";
+  const std::string out_a = fushi_test::temp_dir() + "/hoshi_merge_dictA_out";
+  const std::string out_b = fushi_test::temp_dir() + "/hoshi_merge_dictB_out";
   const char* kTitleA = "FreqPitchA";
   const char* kTitleB = "FreqPitchB";
 
@@ -202,12 +202,12 @@ void case_merge_across_dicts() {
       "[\"" + kNeko + "\",\"pitch\",{\"reading\":\"" + kNekoReading +
       "\",\"pitches\":[{\"position\":3}]}]]";
 
-  std::vector<hoshi_test::ZipFile> filesA = {
+  std::vector<fushi_test::ZipFile> filesA = {
       {"index.json", index_json(kTitleA)},
       {"term_bank_1.json", term_bank_neko()},
       {"term_meta_bank_1.json", metaA},
   };
-  std::vector<hoshi_test::ZipFile> filesB = {
+  std::vector<fushi_test::ZipFile> filesB = {
       {"index.json", index_json(kTitleB)},
       {"term_bank_1.json", term_bank_neko()},
       {"term_meta_bank_1.json", metaB},
@@ -286,7 +286,7 @@ void case_merge_across_dicts() {
 // ---------------------------------------------------------------------------
 void case_path_isolation_and_reading_filter() {
   const std::string out_dir =
-      hoshi_test::temp_dir() + "/hoshi_merge_iso_out";
+      fushi_test::temp_dir() + "/hoshi_merge_iso_out";
   const char* kTitle = "IsoDict";
 
   // 猫: one kept bare freq (5000), one freq with MISMATCHED reading いぬ (must
@@ -301,7 +301,7 @@ void case_path_isolation_and_reading_filter() {
       "[\"" + kNeko + "\",\"pitch\",{\"reading\":\"" + kInuReading +
       "\",\"pitches\":[{\"position\":5}]}]]";
 
-  std::vector<hoshi_test::ZipFile> files = {
+  std::vector<fushi_test::ZipFile> files = {
       {"index.json", index_json(kTitle)},
       {"term_bank_1.json", term_bank_neko()},
       {"term_meta_bank_1.json", meta},

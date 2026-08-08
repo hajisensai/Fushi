@@ -1,9 +1,9 @@
-#include "hoshidicts/deinflector.hpp"
+#include "fushidicts/deinflector.hpp"
 
 #include <glaze/glaze.hpp>
 #include <utf8.h>
 
-#include "hoshidicts/platform.hpp"
+#include "fushidicts/platform.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -11,10 +11,10 @@
 #include <string>
 #include <vector>
 
-#define LOGE HOSHI_LOGE
-#define LOGW HOSHI_LOGW
+#define LOGE FUSHI_LOGE
+#define LOGW FUSHI_LOGW
 
-namespace hoshidicts_json {
+namespace fushidicts_json {
 
 struct Rule {
   std::string type;
@@ -46,11 +46,11 @@ struct Descriptor {
   std::map<std::string, Transform> transforms;
 };
 
-}  // namespace hoshidicts_json
+}  // namespace fushidicts_json
 
 template <>
-struct glz::meta<hoshidicts_json::Rule> {
-  using T = hoshidicts_json::Rule;
+struct glz::meta<fushidicts_json::Rule> {
+  using T = fushidicts_json::Rule;
   static constexpr auto value = object(
     "type", &T::type,
     "fromSuffix", &T::fromSuffix,
@@ -65,8 +65,8 @@ struct glz::meta<hoshidicts_json::Rule> {
 };
 
 template <>
-struct glz::meta<hoshidicts_json::Transform> {
-  using T = hoshidicts_json::Transform;
+struct glz::meta<fushidicts_json::Transform> {
+  using T = fushidicts_json::Transform;
   static constexpr auto value = object(
     "name", &T::name,
     "description", &T::description,
@@ -75,8 +75,8 @@ struct glz::meta<hoshidicts_json::Transform> {
 };
 
 template <>
-struct glz::meta<hoshidicts_json::Condition> {
-  using T = hoshidicts_json::Condition;
+struct glz::meta<fushidicts_json::Condition> {
+  using T = fushidicts_json::Condition;
   static constexpr auto value = object(
     "name", &T::name,
     "isDictionaryForm", &T::isDictionaryForm,
@@ -85,8 +85,8 @@ struct glz::meta<hoshidicts_json::Condition> {
 };
 
 template <>
-struct glz::meta<hoshidicts_json::Descriptor> {
-  using T = hoshidicts_json::Descriptor;
+struct glz::meta<fushidicts_json::Descriptor> {
+  using T = fushidicts_json::Descriptor;
   static constexpr auto value = object(
     "language", &T::language,
     "conditions", &T::conditions,
@@ -115,7 +115,7 @@ int Deinflector::add_group(const TransformGroup& group) {
 }
 
 void Deinflector::load_transforms_json(const std::string& json) {
-  hoshidicts_json::Descriptor descriptor;
+  fushidicts_json::Descriptor descriptor;
   auto ec = glz::read<glz::opts{.error_on_unknown_keys = false}>(descriptor, json);
   if (ec) {
     LOGE("failed to parse transforms JSON: %s", glz::format_error(ec, json).c_str());

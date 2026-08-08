@@ -22,7 +22,7 @@ on:
     branches: ['main', 'develop']
     paths:
       - 'native/fushidicts/**'
-      - '.github/workflows/native-hoshidicts-gate.yml'
+      - '.github/workflows/native-fushidicts-gate.yml'
 
 # 全程只读：不产出制品、不碰任何 release/tag/发布通道。
 permissions:

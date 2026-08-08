@@ -249,8 +249,10 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     // kHibikiPackageName（旧包身份迁移常量，见 app.hibiki.reader 白名单理由）、
     // legacyHibikiDatabaseFileName（旧库文件名迁移常量，见 hibiki.db 白名单）、
     // runningHibikiProcesses（update-handoff 旧 wire 键读侧回退，见同名禁模式）。
-    // 词尾内嵌小写形态（tagIncludeHibiki JSON 键族、AudioSourceKind.hibikiRemote
-    // 邻接局部量 isHibiki/hadHibiki）是冻结 wire/持久化邻接命名，刻意不匹配。
+    // 词尾内嵌小写形态（tagIncludeHibiki JSON 键族、邻接局部量
+    // isHibiki/hadHibiki）是冻结 wire/持久化邻接命名，刻意不匹配。
+    // （原先并列的 AudioSourceKind.hibikiRemote 已由 W9-6 改名 fushiRemote，
+    // 其旧 wireName 只活在 fromWireName 的兼容别名里。）
     name: '词中 Hibiki 内嵌类名',
     regex: RegExp(
         r'[A-Za-z0-9_]Hibiki(?!PackageName\b|DatabaseFileName\b|Processes\b)'
@@ -316,13 +318,14 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
 // （路径引用大多活在注释里，注释里的旧路径同样把人带去不存在的目录）。
 //
 // 刻意不禁（不是路径形态，是冻结契约/上游对照面）：
-//   * 内部静态库 target `hoshidicts`、`hoshi::` 命名空间/`HOSHI_EXPORT` 宏；
-//   * 公共头子目录 `fushidicts_include/hoshidicts/`（源码 #include "hoshidicts/*"）；
 //   * `.hoshidicts_1` 磁盘分片名（词典持久化契约）；
 //   * hibiki_torrent 内层 native 文件名（hibiki_torrent.h / hibiki_torrent_ffi.cpp）
 //     与旧 DLL 加载回退名 hibiki_torrent_ffi.dll（Dart 侧 bindings 文件已在 W4
-//     改名 fushi_torrent_bindings.dart）；
-//   * `native-hoshidicts-gate.yml` 文件名（连字符形态，galgame_hook 注释引用）。
+//     改名 fushi_torrent_bindings.dart）。
+// （W9-7 已清掉本清单原有的三条：静态库 target hoshidicts→fushidicts、公共头
+//  子目录 fushidicts_include/hoshidicts/→fushidicts/ 与公共头 hoshidicts.h、
+//  workflow 文件名 native-hoshidicts-gate.yml→native-fushidicts-gate.yml；
+//  C++ 命名空间 hoshi::→fushi::、HOSHI_*→FUSHI_* 宏同批。）
 // 豁免（不进扫描面）：docs/bugs|specs|reviews|plans 历史文档、
 // native/fushidicts/UPSTREAM.md（上游出处 + 新旧对照表，见下方自证测试）、
 // fushidicts_external/ vendored pristine 树、构建产物目录、git 历史。

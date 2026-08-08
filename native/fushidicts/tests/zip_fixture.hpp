@@ -1,4 +1,4 @@
-// Shared in-memory STORED-zip fixture builder for the hoshidicts native e2e
+// Shared in-memory STORED-zip fixture builder for the fushidicts native e2e
 // tests (TODO-578). Hand-rolls a minimal multi-entry ZIP (method 0, no
 // compression, no zip64) so a fixture dictionary can be built and imported with
 // zero external素材 / zip tools. The byte layout matches the one already proven
@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-namespace hoshi_test {
+namespace fushi_test {
 
 struct ZipFile {
   std::string name;
@@ -194,4 +194,4 @@ inline std::string write_zip_deflate(const char* label,
   return path;
 }
 
-}  // namespace hoshi_test
+}  // namespace fushi_test

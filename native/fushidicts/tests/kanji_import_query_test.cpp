@@ -17,8 +17,8 @@
 #include <string>
 #include <vector>
 
-#include "hoshidicts/importer.hpp"
-#include "hoshidicts/query.hpp"
+#include "fushidicts/importer.hpp"
+#include "fushidicts/query.hpp"
 
 namespace {
 

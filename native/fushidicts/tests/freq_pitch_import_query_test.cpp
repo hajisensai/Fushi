@@ -21,8 +21,8 @@
 #include <string>
 #include <vector>
 
-#include "hoshidicts/importer.hpp"
-#include "hoshidicts/query.hpp"
+#include "fushidicts/importer.hpp"
+#include "fushidicts/query.hpp"
 #include "zip_fixture.hpp"
 
 namespace {
@@ -69,16 +69,16 @@ std::string term_meta_bank_neko() {
 }  // namespace
 
 int main() {
-  const std::string out_dir = hoshi_test::temp_dir() + "/hoshi_freqpitch_out";
+  const std::string out_dir = fushi_test::temp_dir() + "/hoshi_freqpitch_out";
   const char* kTitle = "FreqPitchDict";
 
-  std::vector<hoshi_test::ZipFile> files = {
+  std::vector<fushi_test::ZipFile> files = {
       {"index.json", index_json(kTitle)},
       {"term_bank_1.json", term_bank_neko()},
       {"term_meta_bank_1.json", term_meta_bank_neko()},
   };
 
-  std::string zip_path = hoshi_test::write_zip("freqpitch", files);
+  std::string zip_path = fushi_test::write_zip("freqpitch", files);
   if (zip_path.empty()) {
     fail("could not write fixture zip");
   } else {

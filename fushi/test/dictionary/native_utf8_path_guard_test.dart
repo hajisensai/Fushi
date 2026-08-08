@@ -6,7 +6,7 @@ import 'package:path/path.dart' as p;
 // BUG-045: native fushidicts must never reintroduce ANSI/narrow-codepage
 // filesystem access on Windows. memory.cpp must use CreateFileW (not
 // CreateFileA), and all other UTF-8 path access (importer/query/stardict)
-// must route through hoshi::fs_path / hoshi::fs_to_utf8 instead of building a
+// must route through fushi::fs_path / fushi::fs_to_utf8 instead of building a
 // std::filesystem::path from a std::string (decoded as ANSI on Windows) or
 // letting glaze open files via a narrow path.
 void main() {

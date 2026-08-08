@@ -90,7 +90,7 @@ void main() {
   });
 
   test('macOS 签名带强化运行时和安全时间戳', () {
-    // 公证的硬性前提。特别是 macos/Runner.xcodeproj 里 hoshidicts 的构建脚本用的是
+    // 公证的硬性前提。特别是 macos/Runner.xcodeproj 里 fushidicts 的构建脚本用的是
     // `codesign --timestamp=none`，重签这一步就是用来覆盖它的。
     expect(
       content.contains('--force --timestamp --options runtime'),

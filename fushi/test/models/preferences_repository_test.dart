@@ -93,12 +93,12 @@ void main() {
         'audioSourceConfigs on a fresh install ships the default remote '
         'audio source DISABLED (TODO-083)', () {
       // 纯新装（两个 audio pref 都没写过）：内置远端音频源（manhhaoo worker）
-      // 必须默认关闭，hibikiRemote 也默认关闭。任何源都不应自动启用。
+      // 必须默认关闭，fushiRemote 也默认关闭。任何源都不应自动启用。
       final List<AudioSourceConfig> configs = repo.audioSourceConfigs;
       expect(
         configs,
         <AudioSourceConfig>[
-          AudioSourceConfig.hibikiRemote(),
+          AudioSourceConfig.fushiRemote(),
           ...AudioSourceConfig.fromLegacyUrls(
             PreferencesRepository.defaultAudioSources,
           ).map((AudioSourceConfig s) => s.copyWith(enabled: false)),
@@ -151,7 +151,7 @@ void main() {
       // 已有 typed 配置但不含 Anki 源的用户：读取时必须回填一条 disabled 的 Anki
       // 预设（标签 Anki），让所有用户都能在「管理音频来源」里打开这个开关即用。
       await repo.setAudioSourceConfigs(<AudioSourceConfig>[
-        AudioSourceConfig.hibikiRemote(enabled: true),
+        AudioSourceConfig.fushiRemote(enabled: true),
       ]);
 
       final PreferencesRepository repo2 = PreferencesRepository(db);
@@ -302,7 +302,7 @@ void main() {
 
     test('setAudioSourceConfigs persists typed audio sources', () async {
       await repo.setAudioSourceConfigs(<AudioSourceConfig>[
-        AudioSourceConfig.hibikiRemote(enabled: true),
+        AudioSourceConfig.fushiRemote(enabled: true),
         AudioSourceConfig.localAudio(
           label: 'nhk16',
           path: '/tmp/nhk16.db',
@@ -319,7 +319,7 @@ void main() {
       final repo2 = PreferencesRepository(db);
       await repo2.loadFromDb();
       expect(repo2.audioSourceConfigs, <AudioSourceConfig>[
-        AudioSourceConfig.hibikiRemote(enabled: true),
+        AudioSourceConfig.fushiRemote(enabled: true),
         AudioSourceConfig.localAudio(
           label: 'nhk16',
           path: '/tmp/nhk16.db',

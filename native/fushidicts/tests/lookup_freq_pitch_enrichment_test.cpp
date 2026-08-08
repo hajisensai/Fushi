@@ -30,9 +30,9 @@
 #include <string>
 #include <vector>
 
-#include "hoshidicts/importer.hpp"
-#include "hoshidicts/lookup.hpp"
-#include "hoshidicts/query.hpp"
+#include "fushidicts/importer.hpp"
+#include "fushidicts/lookup.hpp"
+#include "fushidicts/query.hpp"
 #include "zip_fixture.hpp"
 
 namespace {
@@ -172,16 +172,16 @@ void expect_pitch_position(const char* what, const LookupResult& r, int want) {
 // ranks on empty frequency lists and both the order and the surviving set of a
 // truncated lookup are wrong.
 void case_frequency_is_sole_sort_key() {
-  const std::string out_dir = hoshi_test::temp_dir() + "/hoshi_lookup_rank_out";
+  const std::string out_dir = fushi_test::temp_dir() + "/hoshi_lookup_rank_out";
   const char* kTitle = "LookupRankDict";
 
-  std::vector<hoshi_test::ZipFile> files = {
+  std::vector<fushi_test::ZipFile> files = {
       {"index.json", index_json(kTitle)},
       {"term_bank_1.json", term_bank_rank()},
       {"term_meta_bank_1.json", term_meta_bank_rank()},
   };
 
-  std::string zip_path = hoshi_test::write_zip("lookup_rank", files);
+  std::string zip_path = fushi_test::write_zip("lookup_rank", files);
   if (zip_path.empty()) {
     fail("rank: could not write fixture zip");
     return;
@@ -284,16 +284,16 @@ void check_enriched(const char* label, const LookupResult* r) {
 }  // namespace
 
 int main() {
-  const std::string out_dir = hoshi_test::temp_dir() + "/hoshi_lookup_enrich_out";
+  const std::string out_dir = fushi_test::temp_dir() + "/hoshi_lookup_enrich_out";
   const char* kTitle = "LookupEnrichDict";
 
-  std::vector<hoshi_test::ZipFile> files = {
+  std::vector<fushi_test::ZipFile> files = {
       {"index.json", index_json(kTitle)},
       {"term_bank_1.json", term_bank_neko()},
       {"term_meta_bank_1.json", term_meta_bank_neko()},
   };
 
-  std::string zip_path = hoshi_test::write_zip("lookup_enrich", files);
+  std::string zip_path = fushi_test::write_zip("lookup_enrich", files);
   if (zip_path.empty()) {
     fail("could not write fixture zip");
   } else {

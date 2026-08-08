@@ -280,7 +280,7 @@ jobs:
           cmake --build "$RUNNER_TEMP/fushi-tests" --config Release
           # --no-tests=error：ctest 在「一个测试都没注册」时默认返回 0，于是一次
           # CMake 回归让 tests/CMakeLists.txt 的 add_test 列表变空就会读成通过。
-          # 与 BUG-1157 同族的「零测试执行伪装成绿」。对齐 native-hoshidicts-gate.yml。
+          # 与 BUG-1157 同族的「零测试执行伪装成绿」。对齐 native-fushidicts-gate.yml。
           ctest --test-dir "$RUNNER_TEMP/fushi-tests" --output-on-failure -C Release --no-tests=error
       - uses: subosito/flutter-action@v2
         with:
@@ -387,27 +387,27 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf build/linux
-          mkdir -p "$RUNNER_TEMP/hibiki-linux-toolchain"
-          cat > "$RUNNER_TEMP/hibiki-linux-toolchain/clang" <<'SH'
+          mkdir -p "$RUNNER_TEMP/fushi-linux-toolchain"
+          cat > "$RUNNER_TEMP/fushi-linux-toolchain/clang" <<'SH'
           #!/usr/bin/env bash
           exec gcc-14 "$@"
           SH
-          cat > "$RUNNER_TEMP/hibiki-linux-toolchain/clang++" <<'SH'
+          cat > "$RUNNER_TEMP/fushi-linux-toolchain/clang++" <<'SH'
           #!/usr/bin/env bash
           exec g++-14 "$@"
           SH
-          chmod +x "$RUNNER_TEMP/hibiki-linux-toolchain/clang" \
-            "$RUNNER_TEMP/hibiki-linux-toolchain/clang++"
+          chmod +x "$RUNNER_TEMP/fushi-linux-toolchain/clang" \
+            "$RUNNER_TEMP/fushi-linux-toolchain/clang++"
 
           # Flutter 3.44 invokes Linux CMake with CC=clang/CXX=clang++,
           # ignoring the job-level CC/CXX. Put the wrappers first in PATH so
           # Flutter's CMake configure and the real build use the same
           # std::expected-capable GNU 14 toolchain verified above.
-          PATH="$RUNNER_TEMP/hibiki-linux-toolchain:$PATH" \
+          PATH="$RUNNER_TEMP/fushi-linux-toolchain:$PATH" \
             flutter build linux --debug --config-only
 
           cache="build/linux/x64/debug/CMakeCache.txt"
-          grep -F "CMAKE_CXX_COMPILER:FILEPATH=$RUNNER_TEMP/hibiki-linux-toolchain/clang++" "$cache"
+          grep -F "CMAKE_CXX_COMPILER:FILEPATH=$RUNNER_TEMP/fushi-linux-toolchain/clang++" "$cache"
           compiler_file="$(find build/linux/x64/debug/CMakeFiles -name CMakeCXXCompiler.cmake -print -quit)"
           test -n "$compiler_file"
           grep -F 'set(CMAKE_CXX_COMPILER_ID "GNU")' "$compiler_file"
@@ -423,7 +423,7 @@ jobs:
             return ok.value() == 23 && fail.error() == 1 ? 0 : 1;
           }
           CPP
-          "$RUNNER_TEMP/hibiki-linux-toolchain/clang++" -std=c++23 \
+          "$RUNNER_TEMP/fushi-linux-toolchain/clang++" -std=c++23 \
             /tmp/fushidicts_flutter_cmake_expected.cpp \
             -o /tmp/fushidicts_flutter_cmake_expected
       - name: Build Linux (debug)
@@ -431,7 +431,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if PATH="$RUNNER_TEMP/hibiki-linux-toolchain:$PATH" \
+          if PATH="$RUNNER_TEMP/fushi-linux-toolchain:$PATH" \
               flutter build linux --debug --verbose; then
             exit 0
           fi
@@ -450,7 +450,7 @@ jobs:
               "$compiler_file" || true
           fi
           if [ -d build/linux/x64/debug ]; then
-            PATH="$RUNNER_TEMP/hibiki-linux-toolchain:$PATH" \
+            PATH="$RUNNER_TEMP/fushi-linux-toolchain:$PATH" \
               ninja -C build/linux/x64/debug -v install || true
           fi
           echo "::endgroup::"

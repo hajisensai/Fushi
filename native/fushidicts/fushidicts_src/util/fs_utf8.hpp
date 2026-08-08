@@ -12,7 +12,7 @@
 #include <filesystem>
 #include <string>
 
-namespace hoshi {
+namespace fushi {
 
 // Build a std::filesystem::path from a UTF-8 std::string, correctly on all
 // platforms. C++23: char8_t exists and std::filesystem::u8path is deprecated,
@@ -39,4 +39,4 @@ inline std::string fs_to_utf8(const std::filesystem::path& p) {
 #endif
 }
 
-}  // namespace hoshi
+}  // namespace fushi

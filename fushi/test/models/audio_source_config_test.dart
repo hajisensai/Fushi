@@ -17,8 +17,8 @@ void main() {
       expect(sources[1].url, 'https://b.test/?reading={reading}');
     });
 
-    test('hibikiRemote does not hardcode an English display label', () {
-      final AudioSourceConfig source = AudioSourceConfig.hibikiRemote();
+    test('fushiRemote does not hardcode an English display label', () {
+      final AudioSourceConfig source = AudioSourceConfig.fushiRemote();
 
       expect(source.label, isNull);
       expect(source.displayLabel, isEmpty);
@@ -38,7 +38,7 @@ void main() {
     test('round trips multiple local and remote sources plus Hibiki remote',
         () {
       final List<AudioSourceConfig> sources = <AudioSourceConfig>[
-        AudioSourceConfig.hibikiRemote(enabled: true),
+        AudioSourceConfig.fushiRemote(enabled: true),
         AudioSourceConfig.localAudio(
           label: 'nhk16',
           path: '/db/nhk16.db',

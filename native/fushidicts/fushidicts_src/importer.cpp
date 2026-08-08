@@ -1,5 +1,5 @@
-#include "hoshidicts/importer.hpp"
-#include "hoshidicts/media_path.hpp"
+#include "fushidicts/importer.hpp"
+#include "fushidicts/media_path.hpp"
 
 #include <ankerl/unordered_dense.h>
 #include <xxh3.h>
@@ -32,7 +32,7 @@
 #include "util/import_breadcrumb.hpp"
 #include "zip/zip.hpp"
 
-#include "hoshidicts/platform.hpp"
+#include "fushidicts/platform.hpp"
 #include <utf8.h>
 
 namespace {
@@ -239,17 +239,17 @@ ProcessedFile process_term_bank(const std::string& content) {
 
   for (auto& term : out) {
     if (processed.data.size() > kMaxDataBufferBytes) {
-      HOSHI_LOGW("term bank data buffer exceeded %zu bytes, stopping", kMaxDataBufferBytes);
+      FUSHI_LOGW("term bank data buffer exceeded %zu bytes, stopping", kMaxDataBufferBytes);
       break;
     }
     if (processed.count >= kMaxEntriesPerBank) {
-      HOSHI_LOGW("term bank entry count exceeded %zu, stopping", kMaxEntriesPerBank);
+      FUSHI_LOGW("term bank entry count exceeded %zu, stopping", kMaxEntriesPerBank);
       break;
     }
 
     const std::string_view glossary = term.glossary.str;
     if (glossary.size() > kMaxGlossarySizeBytes) {
-      HOSHI_LOGW("glossary too large (%zu bytes), skipping entry", glossary.size());
+      FUSHI_LOGW("glossary too large (%zu bytes), skipping entry", glossary.size());
       continue;
     }
 
@@ -275,17 +275,17 @@ ProcessedFile process_term_bank(const std::string& content) {
     std::string_view definition_tags = term.definition_tags.value_or("");
 
     if (expr.size() > std::numeric_limits<uint16_t>::max()) {
-      HOSHI_LOGW("expression too long (%zu bytes), skipping entry", expr.size());
+      FUSHI_LOGW("expression too long (%zu bytes), skipping entry", expr.size());
       continue;
     }
     if (reading.size() > std::numeric_limits<uint16_t>::max()) {
-      HOSHI_LOGW("reading too long (%zu bytes), skipping entry", reading.size());
+      FUSHI_LOGW("reading too long (%zu bytes), skipping entry", reading.size());
       continue;
     }
     if (definition_tags.size() > std::numeric_limits<uint8_t>::max() ||
         term.rules.size() > std::numeric_limits<uint8_t>::max() ||
         term.term_tags.size() > std::numeric_limits<uint8_t>::max()) {
-      HOSHI_LOGW("tags/rules too long, skipping entry");
+      FUSHI_LOGW("tags/rules too long, skipping entry");
       continue;
     }
 
@@ -331,11 +331,11 @@ ProcessedFile process_meta_bank(const std::string& content) {
 
   for (auto& meta : out) {
     if (processed.data.size() > kMaxDataBufferBytes) {
-      HOSHI_LOGW("meta bank data buffer exceeded %zu bytes, stopping", kMaxDataBufferBytes);
+      FUSHI_LOGW("meta bank data buffer exceeded %zu bytes, stopping", kMaxDataBufferBytes);
       break;
     }
     if (processed.count >= kMaxEntriesPerBank) {
-      HOSHI_LOGW("meta bank entry count exceeded %zu, stopping", kMaxEntriesPerBank);
+      FUSHI_LOGW("meta bank entry count exceeded %zu, stopping", kMaxEntriesPerBank);
       break;
     }
 
@@ -471,11 +471,11 @@ ProcessedFile process_kanji_bank(const std::string& content) {
 
   for (auto& kanji : out) {
     if (processed.data.size() > kMaxDataBufferBytes) {
-      HOSHI_LOGW("kanji bank data buffer exceeded %zu bytes, stopping", kMaxDataBufferBytes);
+      FUSHI_LOGW("kanji bank data buffer exceeded %zu bytes, stopping", kMaxDataBufferBytes);
       break;
     }
     if (processed.count >= kMaxEntriesPerBank) {
-      HOSHI_LOGW("kanji bank entry count exceeded %zu, stopping", kMaxEntriesPerBank);
+      FUSHI_LOGW("kanji bank entry count exceeded %zu, stopping", kMaxEntriesPerBank);
       break;
     }
 
@@ -487,7 +487,7 @@ ProcessedFile process_kanji_bank(const std::string& content) {
         kanji.onyomi.size() > std::numeric_limits<uint16_t>::max() ||
         kanji.kunyomi.size() > std::numeric_limits<uint16_t>::max() ||
         kanji.tags.size() > std::numeric_limits<uint8_t>::max()) {
-      HOSHI_LOGW("kanji field too long, skipping entry");
+      FUSHI_LOGW("kanji field too long, skipping entry");
       continue;
     }
 
@@ -499,7 +499,7 @@ ProcessedFile process_kanji_bank(const std::string& content) {
       meanings_joined.append(kanji.meanings[i]);
     }
     if (meanings_joined.size() > kMaxGlossarySizeBytes) {
-      HOSHI_LOGW("kanji meanings too large (%zu bytes), skipping entry", meanings_joined.size());
+      FUSHI_LOGW("kanji meanings too large (%zu bytes), skipping entry", meanings_joined.size());
       continue;
     }
 
@@ -572,7 +572,7 @@ void write_kanji(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>
       return;
     }
     if (result.kanji_count + processed.count > kMaxTotalEntries) {
-      HOSHI_LOGW("total kanji entries would exceed %zu, stopping import of further banks", kMaxTotalEntries);
+      FUSHI_LOGW("total kanji entries would exceed %zu, stopping import of further banks", kMaxTotalEntries);
       limit_reached = true;
       return;
     }
@@ -609,7 +609,7 @@ void write_kanji(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>
     // Main (serial) import thread: record the bank we are about to submit before
     // fanning out decompression to a worker. If a worker hard-crashes (SEH), the
     // last breadcrumb pins the crash to this bank +/- the concurrency window.
-    hoshi::import_breadcrumb::set(breadcrumb_dir,
+    fushi::import_breadcrumb::set(breadcrumb_dir,
                                   "yomitan: kanji_bank #" + std::to_string(bank_seq++) + " / " +
                                       zip.entries[file_index].name);
     threads.push_back(
@@ -645,7 +645,7 @@ void write_terms(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>
       return;
     }
     if (result.term_count + processed.count > kMaxTotalEntries) {
-      HOSHI_LOGW("total term entries would exceed %zu, stopping import of further banks", kMaxTotalEntries);
+      FUSHI_LOGW("total term entries would exceed %zu, stopping import of further banks", kMaxTotalEntries);
       limit_reached = true;
       return;
     }
@@ -679,7 +679,7 @@ void write_terms(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>
 
   int bank_seq = 0;
   for (int file_index : files) {
-    hoshi::import_breadcrumb::set(breadcrumb_dir,
+    fushi::import_breadcrumb::set(breadcrumb_dir,
                                   "yomitan: term_bank #" + std::to_string(bank_seq++) + " / " +
                                       zip.entries[file_index].name);
     threads.push_back(
@@ -713,7 +713,7 @@ void write_meta(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>&
       return;
     }
     if (result.meta_count + processed.count > kMaxTotalEntries) {
-      HOSHI_LOGW("total meta entries would exceed %zu, stopping import of further banks", kMaxTotalEntries);
+      FUSHI_LOGW("total meta entries would exceed %zu, stopping import of further banks", kMaxTotalEntries);
       limit_reached = true;
       return;
     }
@@ -732,7 +732,7 @@ void write_meta(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>&
 
   int bank_seq = 0;
   for (int file_index : files) {
-    hoshi::import_breadcrumb::set(breadcrumb_dir,
+    fushi::import_breadcrumb::set(breadcrumb_dir,
                                   "yomitan: meta_bank #" + std::to_string(bank_seq++) + " / " +
                                       zip.entries[file_index].name);
     threads.push_back(
@@ -785,9 +785,9 @@ std::vector<char> build_offset_index(std::vector<std::pair<uint64_t, uint64_t>>&
 bool append_media_record(std::ofstream& media, uint64_t& write_pos,
                          std::vector<std::pair<std::string, uint64_t>>& index_entries,
                          std::string path, const void* blob, size_t blob_size) {
-  path = hoshidicts::normalize_media_path(std::move(path));
+  path = fushidicts::normalize_media_path(std::move(path));
   if (path.size() > std::numeric_limits<uint16_t>::max()) {
-    HOSHI_LOGW("media path too long (%zu bytes), skipping", path.size());
+    FUSHI_LOGW("media path too long (%zu bytes), skipping", path.size());
     return false;
   }
   uint64_t record_start = write_pos;
@@ -820,8 +820,8 @@ size_t write_media(const std::string& path, const Zip& zip, const std::vector<in
     return 0;
   }
 
-  std::ofstream media(hoshi::fs_path(path + "/media.bin"), std::ios::binary);
-  std::ofstream media_idx(hoshi::fs_path(path + "/media.idx"), std::ios::binary);
+  std::ofstream media(fushi::fs_path(path + "/media.bin"), std::ios::binary);
+  std::ofstream media_idx(fushi::fs_path(path + "/media.idx"), std::ios::binary);
   setup_stream_exceptions(media);
   setup_stream_exceptions(media_idx);
 
@@ -833,7 +833,7 @@ size_t write_media(const std::string& path, const Zip& zip, const std::vector<in
     // write_media runs on its own std::async thread (in parallel with the term/
     // meta/kanji loop), so this breadcrumb interleaves with theirs -- the stage
     // prefix still tells whether the last touched step was media decompression.
-    hoshi::import_breadcrumb::set(breadcrumb_dir,
+    fushi::import_breadcrumb::set(breadcrumb_dir,
                                   "yomitan: media #" + std::to_string(media_seq++) + " / " +
                                       zip.entries[file_index].name);
     auto media_file = zip.read_media(file_index);
@@ -867,7 +867,7 @@ size_t import_mdd_into(const std::vector<std::string>& mdd_paths, const std::str
   std::vector<std::pair<std::string, uint64_t>> index_entries;
 
   for (const auto& mdd_path : mdd_paths) {
-    std::ifstream f(hoshi::fs_path(mdd_path), std::ios::binary | std::ios::ate);
+    std::ifstream f(fushi::fs_path(mdd_path), std::ios::binary | std::ios::ate);
     if (!f) continue;
     auto n = f.tellg();
     if (n <= 0) continue;
@@ -879,7 +879,7 @@ size_t import_mdd_into(const std::vector<std::string>& mdd_paths, const std::str
     try {
       media = mdx_reader::parse_mdd(data.data(), data.size());
     } catch (const std::exception& e) {
-      HOSHI_LOGW("mdd parse failed (%s), continuing without this part", e.what());
+      FUSHI_LOGW("mdd parse failed (%s), continuing without this part", e.what());
       continue;
     }
     if (media.empty()) continue;
@@ -887,8 +887,8 @@ size_t import_mdd_into(const std::vector<std::string>& mdd_paths, const std::str
     // Lazily create the store on the first non-empty part: zero usable parts
     // must leave no (empty) media.bin/media.idx behind, same as before.
     if (!opened) {
-      mbin.open(hoshi::fs_path(dict_dir + "/media.bin"), std::ios::binary);
-      midx.open(hoshi::fs_path(dict_dir + "/media.idx"), std::ios::binary);
+      mbin.open(fushi::fs_path(dict_dir + "/media.bin"), std::ios::binary);
+      midx.open(fushi::fs_path(dict_dir + "/media.idx"), std::ios::binary);
       setup_stream_exceptions(mbin);
       setup_stream_exceptions(midx);
       opened = true;
@@ -914,16 +914,16 @@ size_t import_mdd_into(const std::vector<std::string>& mdd_paths, const std::str
 // unreachable.
 std::vector<std::string> collect_sibling_mdd_paths(const std::string& mdx_path) {
   std::vector<std::string> mdd_paths;
-  auto mdd_path = hoshi::fs_path(mdx_path);
+  auto mdd_path = fushi::fs_path(mdx_path);
   mdd_path.replace_extension(".mdd");
   if (std::filesystem::exists(mdd_path)) {
-    mdd_paths.push_back(hoshi::fs_to_utf8(mdd_path));
+    mdd_paths.push_back(fushi::fs_to_utf8(mdd_path));
   }
   for (int part = 1;; ++part) {
-    auto part_path = hoshi::fs_path(mdx_path);
+    auto part_path = fushi::fs_path(mdx_path);
     part_path.replace_extension("." + std::to_string(part) + ".mdd");
     if (!std::filesystem::exists(part_path)) break;
-    mdd_paths.push_back(hoshi::fs_to_utf8(part_path));
+    mdd_paths.push_back(fushi::fs_to_utf8(part_path));
   }
   return mdd_paths;
 }
@@ -942,17 +942,17 @@ ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
 
   for (const auto& entry : entries) {
     if (processed.data.size() > kMaxDataBufferBytes) {
-      HOSHI_LOGW("simple entries data buffer exceeded %zu bytes, stopping", kMaxDataBufferBytes);
+      FUSHI_LOGW("simple entries data buffer exceeded %zu bytes, stopping", kMaxDataBufferBytes);
       break;
     }
     if (processed.count >= kMaxEntriesPerBank) {
-      HOSHI_LOGW("simple entries count exceeded %zu, stopping", kMaxEntriesPerBank);
+      FUSHI_LOGW("simple entries count exceeded %zu, stopping", kMaxEntriesPerBank);
       break;
     }
 
     const std::string_view glossary = entry.definition;
     if (glossary.size() > kMaxGlossarySizeBytes) {
-      HOSHI_LOGW("glossary too large (%zu bytes), skipping entry", glossary.size());
+      FUSHI_LOGW("glossary too large (%zu bytes), skipping entry", glossary.size());
       continue;
     }
 
@@ -976,7 +976,7 @@ ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
     std::string_view expr = entry.headword;
 
     if (expr.size() > std::numeric_limits<uint16_t>::max()) {
-      HOSHI_LOGW("expression too long (%zu bytes), skipping entry", expr.size());
+      FUSHI_LOGW("expression too long (%zu bytes), skipping entry", expr.size());
       continue;
     }
 
@@ -1010,7 +1010,7 @@ ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
 // Read a stylesheet sitting next to a dictionary file, named by swapping the
 // extension to .css (Foo.mdx -> Foo.css). Returns "" if absent/empty/unreadable.
 std::string read_sibling_css(const std::string& primary_path) {
-  auto css_path = hoshi::fs_path(primary_path);
+  auto css_path = fushi::fs_path(primary_path);
   css_path.replace_extension(".css");
   std::ifstream css_in(css_path, std::ios::binary | std::ios::ate);
   if (!css_in) return "";
@@ -1023,7 +1023,7 @@ std::string read_sibling_css(const std::string& primary_path) {
 }
 
 ImportResult import_mdx(const std::string& mdx_path, const std::string& output_dir) {
-  std::ifstream file(hoshi::fs_path(mdx_path), std::ios::binary | std::ios::ate);
+  std::ifstream file(fushi::fs_path(mdx_path), std::ios::binary | std::ios::ate);
   if (!file.is_open()) {
     return {.success = false, .errors = {"failed to open MDX file"}};
   }
@@ -1042,7 +1042,7 @@ ImportResult import_mdx(const std::string& mdx_path, const std::string& output_d
 
   std::string title = mdx.title;
   if (title.empty()) {
-    title = hoshi::fs_to_utf8(hoshi::fs_path(mdx_path).stem());
+    title = fushi::fs_to_utf8(fushi::fs_path(mdx_path).stem());
   }
 
   std::vector<SimpleEntry> entries;
@@ -1090,15 +1090,15 @@ ImportResult import_mdx_from_zip(Zip& zip, const std::string& output_dir) {
   }
 
   std::string temp_dir = output_dir + "/_mdx_temp";
-  std::filesystem::create_directories(hoshi::fs_path(temp_dir));
+  std::filesystem::create_directories(fushi::fs_path(temp_dir));
 
-  std::string mdx_filename = hoshi::fs_to_utf8(hoshi::fs_path(zip.entries[mdx_index].name).filename());
-  std::string stem = hoshi::fs_to_utf8(hoshi::fs_path(mdx_filename).stem());
+  std::string mdx_filename = fushi::fs_to_utf8(fushi::fs_path(zip.entries[mdx_index].name).filename());
+  std::string stem = fushi::fs_to_utf8(fushi::fs_path(mdx_filename).stem());
   std::string temp_path = temp_dir + "/" + mdx_filename;
 
   auto extract = [&](int idx, const std::string& out_name) {
     std::string content = zip.read(idx);
-    std::ofstream out(hoshi::fs_path(temp_dir + "/" + out_name), std::ios::binary);
+    std::ofstream out(fushi::fs_path(temp_dir + "/" + out_name), std::ios::binary);
     setup_stream_exceptions(out);
     out.write(content.data(), static_cast<std::streamsize>(content.size()));
   };
@@ -1120,9 +1120,9 @@ ImportResult import_mdx_from_zip(Zip& zip, const std::string& output_dir) {
     if (static_cast<int>(i) == mdx_index) continue;
     const auto& name = zip.entries[i].name;
     if (name.empty() || name.back() == '/') continue;
-    std::string fn = hoshi::fs_to_utf8(hoshi::fs_path(name).filename());
-    std::string ext = hoshi::fs_to_utf8(hoshi::fs_path(fn).extension());
-    std::string fstem = hoshi::fs_to_utf8(hoshi::fs_path(fn).stem());
+    std::string fn = fushi::fs_to_utf8(fushi::fs_path(name).filename());
+    std::string ext = fushi::fs_to_utf8(fushi::fs_path(fn).extension());
+    std::string fstem = fushi::fs_to_utf8(fushi::fs_path(fn).stem());
     if ((ext == ".mdd" && (fstem == stem || is_numbered_part_stem(fstem))) ||
         (ext == ".css" && fstem == stem)) {
       extract(static_cast<int>(i), fstem + ext);
@@ -1130,7 +1130,7 @@ ImportResult import_mdx_from_zip(Zip& zip, const std::string& output_dir) {
   }
 
   auto result = import_mdx(temp_path, output_dir);
-  std::filesystem::remove_all(hoshi::fs_path(temp_dir));
+  std::filesystem::remove_all(fushi::fs_path(temp_dir));
   return result;
 }
 
@@ -1153,30 +1153,30 @@ ImportResult import_stardict(const std::string& ifo_path, const std::string& out
 
 ImportResult import_stardict_from_zip(Zip& zip, const std::string& output_dir) {
   std::string temp_dir = output_dir + "/_stardict_temp";
-  std::filesystem::create_directories(hoshi::fs_path(temp_dir));
+  std::filesystem::create_directories(fushi::fs_path(temp_dir));
   std::string ifo_path;
 
   for (size_t i = 0; i < zip.entries.size(); i++) {
     const auto& name = zip.entries[i].name;
     if (name.empty() || name.back() == '/') continue;
-    std::string filename = hoshi::fs_to_utf8(hoshi::fs_path(name).filename());
-    std::string ext = hoshi::fs_to_utf8(hoshi::fs_path(filename).extension());
+    std::string filename = fushi::fs_to_utf8(fushi::fs_path(name).filename());
+    std::string ext = fushi::fs_to_utf8(fushi::fs_path(filename).extension());
     if (ext == ".ifo" || ext == ".idx" || ext == ".dict" || ext == ".syn" || filename.ends_with(".dict.dz")) {
       std::string out_path = temp_dir + "/" + filename;
       std::string content = zip.read(static_cast<int>(i));
-      std::ofstream out(hoshi::fs_path(out_path), std::ios::binary);
+      std::ofstream out(fushi::fs_path(out_path), std::ios::binary);
       out.write(content.data(), static_cast<std::streamsize>(content.size()));
       if (ext == ".ifo") ifo_path = out_path;
     }
   }
 
   if (ifo_path.empty()) {
-    std::filesystem::remove_all(hoshi::fs_path(temp_dir));
+    std::filesystem::remove_all(fushi::fs_path(temp_dir));
     return {.success = false, .errors = {"no .ifo file found in zip"}};
   }
 
   auto result = import_stardict(ifo_path, output_dir);
-  std::filesystem::remove_all(hoshi::fs_path(temp_dir));
+  std::filesystem::remove_all(fushi::fs_path(temp_dir));
   return result;
 }
 
@@ -1206,7 +1206,7 @@ std::string sanitize_title(const std::string& raw) {
 }
 
 std::string read_dsl_file_as_utf8(const std::string& dsl_path) {
-  std::ifstream file(hoshi::fs_path(dsl_path), std::ios::binary | std::ios::ate);
+  std::ifstream file(fushi::fs_path(dsl_path), std::ios::binary | std::ios::ate);
   if (!file.is_open()) return {};
   auto size = file.tellg();
   if (size < 2) return {};
@@ -1293,7 +1293,7 @@ ImportResult import_dsl(const std::string& dsl_path, const std::string& output_d
   flush_entry();
 
   if (title.empty()) {
-    title = hoshi::fs_to_utf8(hoshi::fs_path(dsl_path).stem());
+    title = fushi::fs_to_utf8(fushi::fs_path(dsl_path).stem());
   }
 
   // Strip DSL markup: remove [tag] markers, handle \[ \] escapes, convert [m] to indent
@@ -1327,7 +1327,7 @@ ImportResult import_dsl(const std::string& dsl_path, const std::string& output_d
 ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ram,
                             const std::string& breadcrumb_dir) {
   ImportResult result;
-  hoshi::import_breadcrumb::set(breadcrumb_dir, "yomitan: opened zip, reading index.json");
+  fushi::import_breadcrumb::set(breadcrumb_dir, "yomitan: opened zip, reading index.json");
   try {
     int index_idx = zip.find("index.json");
     if (index_idx < 0) {
@@ -1345,16 +1345,16 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
 
     result.title = sanitize_title(std::string(index.title));
 
-    std::filesystem::path dict_path = hoshi::fs_path(output_dir) / hoshi::fs_path(result.title);
+    std::filesystem::path dict_path = fushi::fs_path(output_dir) / fushi::fs_path(result.title);
     {
-      auto canonical_parent = std::filesystem::weakly_canonical(hoshi::fs_path(output_dir));
+      auto canonical_parent = std::filesystem::weakly_canonical(fushi::fs_path(output_dir));
       auto canonical_child = std::filesystem::weakly_canonical(dict_path);
       auto rel = std::filesystem::relative(canonical_child, canonical_parent);
       if (rel.empty() || *rel.begin() == "..") {
         throw std::runtime_error("path traversal detected in dictionary title");
       }
     }
-    std::string path = hoshi::fs_to_utf8(dict_path);
+    std::string path = fushi::fs_to_utf8(dict_path);
     std::filesystem::create_directories(dict_path);
 
     {
@@ -1362,7 +1362,7 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
       if (glz::write_json(index, index_buf)) {
         throw std::runtime_error("failed to write index.json");
       }
-      std::ofstream index_out(hoshi::fs_path(path + "/index.json"), std::ios::binary);
+      std::ofstream index_out(fushi::fs_path(path + "/index.json"), std::ios::binary);
       index_out.write(index_buf.data(), static_cast<std::streamsize>(index_buf.size()));
       if (!index_out.good()) {
         throw std::runtime_error("failed to write index.json");
@@ -1373,7 +1373,7 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
     if (styles_idx >= 0) {
       std::string styles = zip.read(styles_idx);
       if (!styles.empty()) {
-        std::ofstream styles_file(hoshi::fs_path(path + "/styles.css"), std::ios::binary);
+        std::ofstream styles_file(fushi::fs_path(path + "/styles.css"), std::ios::binary);
         setup_stream_exceptions(styles_file);
         styles_file.write(styles.data(), static_cast<std::streamsize>(styles.size()));
       }
@@ -1386,7 +1386,7 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
           return write_media(path, zip, files.media_files, breadcrumb_dir);
         });
 
-    std::ofstream blobs(hoshi::fs_path(path + "/blobs.bin"), std::ios::binary);
+    std::ofstream blobs(fushi::fs_path(path + "/blobs.bin"), std::ios::binary);
     setup_stream_exceptions(blobs);
     std::vector<std::pair<uint64_t, uint64_t>> offsets;
     uint64_t write_offset = 0;
@@ -1417,7 +1417,7 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
 
     result.media_count = media_thread.get();
 
-    std::ofstream sui(hoshi::fs_path(path + "/.hoshidicts_1"), std::ios::binary);
+    std::ofstream sui(fushi::fs_path(path + "/.fushidicts_1"), std::ios::binary);
     result.success = true;
   } catch (const std::exception& e) {
     result.success = false;
@@ -1425,12 +1425,12 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
   }
 
   if (!result.success && !result.title.empty()) {
-    std::filesystem::remove_all(hoshi::fs_path(output_dir) / hoshi::fs_path(result.title));
+    std::filesystem::remove_all(fushi::fs_path(output_dir) / fushi::fs_path(result.title));
   }
 
   // Clean return (success or caught failure): drop the breadcrumb so the next
   // launch does not misreport this completed import as a crash.
-  hoshi::import_breadcrumb::clear(breadcrumb_dir);
+  fushi::import_breadcrumb::clear(breadcrumb_dir);
   return result;
 }
 
@@ -1443,16 +1443,16 @@ ImportResult dictionary_importer::write_simple_dict(const std::string& title, co
     result.title = sanitize_title(title);
     result.detected_type = "term";
 
-    std::filesystem::path dict_path = hoshi::fs_path(output_dir) / hoshi::fs_path(result.title);
+    std::filesystem::path dict_path = fushi::fs_path(output_dir) / fushi::fs_path(result.title);
     {
-      auto canonical_parent = std::filesystem::weakly_canonical(hoshi::fs_path(output_dir));
+      auto canonical_parent = std::filesystem::weakly_canonical(fushi::fs_path(output_dir));
       auto canonical_child = std::filesystem::weakly_canonical(dict_path);
       auto rel = std::filesystem::relative(canonical_child, canonical_parent);
       if (rel.empty() || *rel.begin() == "..") {
         throw std::runtime_error("path traversal detected in dictionary title");
       }
     }
-    std::string path = hoshi::fs_to_utf8(dict_path);
+    std::string path = fushi::fs_to_utf8(dict_path);
     std::filesystem::create_directories(dict_path);
 
     Index index;
@@ -1463,7 +1463,7 @@ ImportResult dictionary_importer::write_simple_dict(const std::string& title, co
       if (glz::write_json(index, index_buf)) {
         throw std::runtime_error("failed to write index.json");
       }
-      std::ofstream index_out(hoshi::fs_path(path + "/index.json"), std::ios::binary);
+      std::ofstream index_out(fushi::fs_path(path + "/index.json"), std::ios::binary);
       index_out.write(index_buf.data(), static_cast<std::streamsize>(index_buf.size()));
       if (!index_out.good()) {
         throw std::runtime_error("failed to write index.json");
@@ -1471,7 +1471,7 @@ ImportResult dictionary_importer::write_simple_dict(const std::string& title, co
     }
 
     if (!styles_css.empty()) {
-      std::ofstream styles_file(hoshi::fs_path(path + "/styles.css"), std::ios::binary);
+      std::ofstream styles_file(fushi::fs_path(path + "/styles.css"), std::ios::binary);
       setup_stream_exceptions(styles_file);
       styles_file.write(styles_css.data(), static_cast<std::streamsize>(styles_css.size()));
     }
@@ -1482,7 +1482,7 @@ ImportResult dictionary_importer::write_simple_dict(const std::string& title, co
     }
 
     ankerl::unordered_dense::map<uint64_t, uint64_t> glossaries;
-    std::ofstream blobs(hoshi::fs_path(path + "/blobs.bin"), std::ios::binary);
+    std::ofstream blobs(fushi::fs_path(path + "/blobs.bin"), std::ios::binary);
     setup_stream_exceptions(blobs);
     uint64_t write_offset = 0;
 
@@ -1533,7 +1533,7 @@ ImportResult dictionary_importer::write_simple_dict(const std::string& title, co
     blobs.write(offset_buf.data(), static_cast<std::streamsize>(offset_buf.size()));
     hash_thread.get();
 
-    std::ofstream sui(hoshi::fs_path(path + "/.hoshidicts_1"), std::ios::binary);
+    std::ofstream sui(fushi::fs_path(path + "/.fushidicts_1"), std::ios::binary);
     result.success = true;
   } catch (const std::exception& e) {
     result.success = false;
@@ -1541,7 +1541,7 @@ ImportResult dictionary_importer::write_simple_dict(const std::string& title, co
   }
 
   if (!result.success && !result.title.empty()) {
-    std::filesystem::remove_all(hoshi::fs_path(output_dir) / hoshi::fs_path(result.title));
+    std::filesystem::remove_all(fushi::fs_path(output_dir) / fushi::fs_path(result.title));
   }
 
   return result;

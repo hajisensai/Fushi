@@ -23,7 +23,7 @@
 
 #include <libdeflate.h>
 
-#include "hoshidicts/importer.hpp"
+#include "fushidicts/importer.hpp"
 #include "zip/zip.hpp"
 #include "zip_fixture.hpp"
 
@@ -53,7 +53,7 @@ std::string deflate_compress(const std::string& input) {
 bool expect_empty_read(const char* label, const std::vector<uint8_t>& bytes,
                        const std::string& entry_name) {
   const std::string path =
-      hoshi_test::temp_dir() + "/hoshi_mal_" + label + ".zip";
+      fushi_test::temp_dir() + "/hoshi_mal_" + label + ".zip";
   FILE* fp = std::fopen(path.c_str(), "wb");
   if (!fp) {
     std::fprintf(stderr, "FAIL[%s]: cannot write fixture\n", label);
@@ -96,7 +96,7 @@ int main() {
   //    size, so has_entry_payload() passes; libdeflate must report BAD_DATA.
   {
     std::string truncated = deflated.substr(0, deflated.size() / 2);
-    auto bytes = hoshi_test::build_zip_deflate(
+    auto bytes = fushi_test::build_zip_deflate(
         {{name, truncated, static_cast<uint32_t>(payload.size())}});
     ok &= expect_empty_read("truncated", bytes, name);
   }
@@ -107,7 +107,7 @@ int main() {
     for (size_t i = 0; i < corrupt.size(); ++i) {
       corrupt[i] = static_cast<char>((corrupt[i] ^ 0xA5) + 0x13);
     }
-    auto bytes = hoshi_test::build_zip_deflate(
+    auto bytes = fushi_test::build_zip_deflate(
         {{name, corrupt, static_cast<uint32_t>(payload.size())}});
     ok &= expect_empty_read("corrupt", bytes, name);
   }
@@ -116,7 +116,7 @@ int main() {
   //    forged ~3.5 GB uncompressed size. The resize upper-bound guard must
   //    reject it BEFORE result.resize() attempts the allocation.
   {
-    auto bytes = hoshi_test::build_zip_deflate(
+    auto bytes = fushi_test::build_zip_deflate(
         {{name, deflated, 0xE0000000u}});
     ok &= expect_empty_read("oversized", bytes, name);
   }
@@ -137,7 +137,7 @@ int main() {
     // hand-merged build below.
     // Simplest robust check: a yomitan zip whose ONLY term bank is corrupt
     // deflate yields no parseable entries -> "empty dictionary".
-    std::vector<hoshi_test::DeflateZipFile> dfiles = {
+    std::vector<fushi_test::DeflateZipFile> dfiles = {
         {"term_bank_1.json", corrupt, static_cast<uint32_t>(payload.size())}};
     // Compose: STORED index.json + DEFLATE corrupt term bank in one archive.
     // build_zip_deflate only emits method-8 entries, so deflate-compress the
@@ -147,9 +147,9 @@ int main() {
                   {"index.json", index_deflated,
                    static_cast<uint32_t>(index.size())});
     const std::string zip_path =
-        hoshi_test::temp_dir() + "/hoshi_mal_import.zip";
+        fushi_test::temp_dir() + "/hoshi_mal_import.zip";
     {
-      auto bytes = hoshi_test::build_zip_deflate(dfiles);
+      auto bytes = fushi_test::build_zip_deflate(dfiles);
       FILE* fp = std::fopen(zip_path.c_str(), "wb");
       if (!fp) {
         std::fprintf(stderr, "FAIL[import]: cannot write fixture\n");
@@ -158,7 +158,7 @@ int main() {
       std::fwrite(bytes.data(), 1, bytes.size(), fp);
       std::fclose(fp);
     }
-    const std::string out_dir = hoshi_test::temp_dir() + "/hoshi_mal_out";
+    const std::string out_dir = fushi_test::temp_dir() + "/hoshi_mal_out";
     ImportResult r = dictionary_importer::import(zip_path, out_dir);  // no crash
     if (r.success) {
       std::fprintf(stderr,

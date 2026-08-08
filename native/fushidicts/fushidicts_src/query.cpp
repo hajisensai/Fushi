@@ -1,10 +1,10 @@
-#include "hoshidicts/query.hpp"
-#include "hoshidicts/media_path.hpp"
+#include "fushidicts/query.hpp"
+#include "fushidicts/media_path.hpp"
 
 #include <ankerl/unordered_dense.h>
 #include <zstd.h>
 
-#include "hoshidicts/platform.hpp"
+#include "fushidicts/platform.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -89,13 +89,13 @@ DictionaryQuery::Dictionary::Dictionary(Dictionary&&) noexcept = default;
 DictionaryQuery::Dictionary& DictionaryQuery::Dictionary::operator=(Dictionary&&) noexcept = default;
 
 void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
-  if (!std::filesystem::is_regular_file(hoshi::fs_path(path + "/.hoshidicts_1"))) {
+  if (!std::filesystem::is_regular_file(fushi::fs_path(path + "/.fushidicts_1"))) {
     return;
   }
 
   Dictionary dict;
   {
-    std::ifstream index_in(hoshi::fs_path(path + "/index.json"), std::ios::binary);
+    std::ifstream index_in(fushi::fs_path(path + "/index.json"), std::ios::binary);
     if (!index_in) {
       return;
     }
@@ -112,11 +112,11 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
     // "<garbage prefix> + <tail of title>" — rendered as U+FFFD (garbled
     // dictionary labels in the popup). Keep the copy inside the buffer's scope.
     dict.name = index.title.empty()
-                    ? hoshi::fs_to_utf8(hoshi::fs_path(path).stem())
+                    ? fushi::fs_to_utf8(fushi::fs_path(path).stem())
                     : std::string(index.title);
   }
-  if (std::filesystem::exists(hoshi::fs_path(path + "/styles.css"))) {
-    std::ifstream f(hoshi::fs_path(path + "/styles.css"));
+  if (std::filesystem::exists(fushi::fs_path(path + "/styles.css"))) {
+    std::ifstream f(fushi::fs_path(path + "/styles.css"));
     dict.styles = std::string(std::istreambuf_iterator<char>(f), {});
   }
 
@@ -503,7 +503,7 @@ std::string DictionaryQuery::decompress_glossary(const void* data, size_t size) 
 
   static constexpr size_t kMaxGlossarySize = 64 * 1024 * 1024;  // 64 MB
   if (decompressed_size > kMaxGlossarySize) {
-    HOSHI_LOGW("glossary decompressed size %llu exceeds limit",
+    FUSHI_LOGW("glossary decompressed size %llu exceeds limit",
                static_cast<unsigned long long>(decompressed_size));
     return "";
   }
@@ -535,7 +535,7 @@ std::vector<char> DictionaryQuery::get_media_file(const std::string& dict_name, 
 }
 
 MediaFileView DictionaryQuery::get_media_file_view(const std::string& dict_name, const std::string& media_path) const {
-  const std::string normalized_media_path = hoshidicts::normalize_media_path(media_path);
+  const std::string normalized_media_path = fushidicts::normalize_media_path(media_path);
   for (const auto& [name, styles, data] : term_dicts_) {
     if (name != dict_name) {
       continue;

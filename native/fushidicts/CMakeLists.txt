@@ -3,15 +3,15 @@ cmake_policy(SET CMP0077 NEW)
 
 project(fushidicts_ffi LANGUAGES C CXX)
 
-# Linux links the hoshidicts static archive and its bundled static deps into
+# Linux links the fushidicts static archive and its bundled static deps into
 # libfushidicts_ffi.so. Build those objects as PIC so GNU ld can embed them.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
 # iOS: the Dart FFI bindings load symbols via DynamicLibrary.process(), so the
-# hoshidicts symbols must live in the Runner executable image itself. We build a
-# STATIC hoshidicts_ffi archive and a merged self-contained archive of it plus
+# fushidicts symbols must live in the Runner executable image itself. We build a
+# STATIC fushidicts_ffi archive and a merged self-contained archive of it plus
 # its static deps, then force_load that into Runner from the Xcode build phase.
 # Everything must be PIC so it can be linked into the app executable.
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
@@ -36,7 +36,7 @@ int main() {
 " FUSHIDICTS_HAS_STD_EXPECTED)
 if(NOT FUSHIDICTS_HAS_STD_EXPECTED)
   message(FATAL_ERROR
-      "hoshidicts/glaze requires C++23 std::expected/std::unexpected. "
+      "fushidicts/glaze requires C++23 std::expected/std::unexpected. "
       "Select a compiler and standard library that provide <expected>.")
 endif()
 
@@ -46,7 +46,7 @@ if(MSVC)
   add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
-# Windows: export all symbols from the shared library (or use HOSHI_EXPORT selectively)
+# Windows: export all symbols from the shared library (or use FUSHI_EXPORT selectively)
 if(WIN32)
   set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS OFF)
 endif()
@@ -71,7 +71,7 @@ add_subdirectory(fushidicts_external/unordered_dense EXCLUDE_FROM_ALL)
 add_subdirectory(fushidicts_external/libdeflate EXCLUDE_FROM_ALL)
 add_subdirectory(fushidicts_external/utf8proc EXCLUDE_FROM_ALL)
 
-add_library(hoshidicts STATIC
+add_library(fushidicts STATIC
     fushidicts_src/hash/hash.cpp
     fushidicts_src/hash/bloom.cpp
     fushidicts_src/importer.cpp
@@ -89,11 +89,11 @@ add_library(hoshidicts STATIC
     fushidicts_src/popup_json.cpp
 )
 
-target_compile_features(hoshidicts PUBLIC
+target_compile_features(fushidicts PUBLIC
     cxx_std_23
 )
 
-target_include_directories(hoshidicts PUBLIC
+target_include_directories(fushidicts PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/fushidicts_include
     ${CMAKE_CURRENT_SOURCE_DIR}/fushidicts_external/utfcpp/source
     ${CMAKE_CURRENT_SOURCE_DIR}/fushidicts_external/xxHash
@@ -105,7 +105,7 @@ if(ANDROID)
   list(APPEND FUSHIDICTS_PLATFORM_LIBS log)
 endif()
 
-target_link_libraries(hoshidicts PRIVATE
+target_link_libraries(fushidicts PRIVATE
     glaze::glaze
     libzstd_static
     libdeflate_static
@@ -115,7 +115,7 @@ target_link_libraries(hoshidicts PRIVATE
 )
 
 if(FUSHIDICTS_IOS)
-  # iOS: STATIC so the FFI + hoshidicts symbols end up in the Runner image, which
+  # iOS: STATIC so the FFI + fushidicts symbols end up in the Runner image, which
   # is where DynamicLibrary.process() resolves them from.
   add_library(fushidicts_ffi STATIC
       fushidicts_ffi.cpp
@@ -135,7 +135,7 @@ target_include_directories(fushidicts_ffi PRIVATE
 )
 
 target_link_libraries(fushidicts_ffi PRIVATE
-    hoshidicts
+    fushidicts
     ${FUSHIDICTS_PLATFORM_LIBS}
 )
 
@@ -164,7 +164,7 @@ if(FUSHIDICTS_IOS)
           ${CMAKE_CURRENT_SOURCE_DIR}/merge_ios_archives.sh
           ${CMAKE_BINARY_DIR}
           ${FUSHIDICTS_MERGED_ARCHIVE}
-      COMMENT "Merging hoshidicts static archives into libfushidicts_ffi_merged.a"
+      COMMENT "Merging fushidicts static archives into libfushidicts_ffi_merged.a"
       VERBATIM)
 endif()
 
@@ -191,7 +191,7 @@ if(ANDROID)
   )
 
   target_link_libraries(fushidicts_jni PRIVATE
-      hoshidicts
+      fushidicts
       log
   )
 endif()

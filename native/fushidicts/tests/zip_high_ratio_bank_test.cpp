@@ -120,9 +120,9 @@ int main() {
     const std::string payload =
         "[[\"a\",\"\",\"\",\"\",0,[],0,\"\"],[\"b\",\"\",\"\",\"\",0,[],0,\"\"]]";
     const std::string deflated = deflate_compress(payload);
-    auto bytes = hoshi_test::build_zip_deflate(
+    auto bytes = fushi_test::build_zip_deflate(
         {{name, deflated, (uint32_t)payload.size()}});
-    const std::string path = hoshi_test::temp_dir() + "/hoshi_927_roundtrip.zip";
+    const std::string path = fushi_test::temp_dir() + "/hoshi_927_roundtrip.zip";
     FILE* fp = std::fopen(path.c_str(), "wb");
     std::fwrite(bytes.data(), 1, bytes.size(), fp);
     std::fclose(fp);

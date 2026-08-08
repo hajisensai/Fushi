@@ -28,12 +28,12 @@ int main() {
       (fs::temp_directory_path() / "hoshi_breadcrumb_test").string();
   fs::create_directories(dir);
   const std::string path =
-      hoshi::import_breadcrumb::step_path(dir);
+      fushi::import_breadcrumb::step_path(dir);
 
   bool ok = true;
 
   // 1) set() writes the step synchronously and it is readable immediately.
-  hoshi::import_breadcrumb::set(dir, "yomitan: term_bank #3 / term_bank_3.json");
+  fushi::import_breadcrumb::set(dir, "yomitan: term_bank #3 / term_bank_3.json");
   if (!fs::exists(path)) {
     std::fprintf(stderr, "FAIL: breadcrumb file not created\n");
     ok = false;
@@ -45,7 +45,7 @@ int main() {
   }
 
   // 2) set() overwrites (not appends).
-  hoshi::import_breadcrumb::set(dir, "yomitan: media #1 / a.png");
+  fushi::import_breadcrumb::set(dir, "yomitan: media #1 / a.png");
   if (slurp(path) != "yomitan: media #1 / a.png") {
     std::fprintf(stderr, "FAIL: overwrite did not replace: '%s'\n",
                  slurp(path).c_str());
@@ -55,7 +55,7 @@ int main() {
   }
 
   // 3) clear() removes the file.
-  hoshi::import_breadcrumb::clear(dir);
+  fushi::import_breadcrumb::clear(dir);
   if (fs::exists(path)) {
     std::fprintf(stderr, "FAIL: clear() left the breadcrumb file\n");
     ok = false;
@@ -64,8 +64,8 @@ int main() {
   }
 
   // 4) empty dir disables the breadcrumb (no throw, no file).
-  hoshi::import_breadcrumb::set("", "ignored");
-  hoshi::import_breadcrumb::clear("");
+  fushi::import_breadcrumb::set("", "ignored");
+  fushi::import_breadcrumb::clear("");
   std::printf("ok[disabled] (empty dir is a no-op)\n");
 
   if (!ok) return 1;

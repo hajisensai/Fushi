@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-#include "hoshidicts/importer.hpp"
+#include "fushidicts/importer.hpp"
 #include "mdx_fixture.hpp"
 #include "zip_fixture.hpp"
 
@@ -27,7 +27,7 @@ void fail(const char* msg) {
 }  // namespace
 
 int main() {
-  const std::string base = hoshi_test::temp_dir() + "/hoshi_mdx_css";
+  const std::string base = fushi_test::temp_dir() + "/hoshi_mdx_css";
   std::filesystem::create_directories(std::filesystem::u8path(base));
   const std::string mdx_path = base + "/CssDict.mdx";
   const std::string css_path = base + "/CssDict.css";

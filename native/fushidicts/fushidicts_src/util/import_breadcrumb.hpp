@@ -23,7 +23,7 @@
 
 #include "fs_utf8.hpp"
 
-namespace hoshi::import_breadcrumb {
+namespace fushi::import_breadcrumb {
 
 // File name (under the caller-supplied directory) holding the last step.
 inline constexpr const char* kStepFileName = "import_step_breadcrumb.txt";
@@ -46,7 +46,7 @@ inline void set(const std::string& dir, std::string_view step) {
   // behaviour is obtained via the wide string the path holds.
   FILE* fp = nullptr;
 #ifdef _WIN32
-  fp = _wfopen(hoshi::fs_path(path).c_str(), L"wb");
+  fp = _wfopen(fushi::fs_path(path).c_str(), L"wb");
 #else
   fp = std::fopen(path.c_str(), "wb");
 #endif
@@ -64,10 +64,10 @@ inline void clear(const std::string& dir) {
   const std::string path = step_path(dir);
   if (path.empty()) return;
 #ifdef _WIN32
-  _wremove(hoshi::fs_path(path).c_str());
+  _wremove(fushi::fs_path(path).c_str());
 #else
   std::remove(path.c_str());
 #endif
 }
 
-}  // namespace hoshi::import_breadcrumb
+}  // namespace fushi::import_breadcrumb

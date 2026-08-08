@@ -1,9 +1,9 @@
 #!/bin/bash
-# Merge the hoshidicts iOS static archives into one self-contained archive that
+# Merge the fushidicts iOS static archives into one self-contained archive that
 # the iOS Runner Xcode target force_loads, so the FFI symbols land in the Runner
 # executable image (where Dart's DynamicLibrary.process() resolves them).
 #
-# Invoked as a POST_BUILD step on the CMake hoshidicts_ffi target. The iOS build
+# Invoked as a POST_BUILD step on the CMake fushidicts_ffi target. The iOS build
 # uses CMake's default single-config generator (matching macOS), so every
 # archive lands at a flat, deterministic path under the build dir. Args:
 #   $1 = CMAKE_BINARY_DIR
@@ -15,7 +15,7 @@ out="$2"
 
 deps=(
   "$binary_dir/libfushidicts_ffi.a"
-  "$binary_dir/libhoshidicts.a"
+  "$binary_dir/libfushidicts.a"
   "$binary_dir/fushidicts_external/zstd/build/cmake/lib/libzstd.a"
   "$binary_dir/fushidicts_external/libdeflate/libdeflate.a"
   "$binary_dir/fushidicts_external/utf8proc/libutf8proc.a"
@@ -29,4 +29,4 @@ for a in "${deps[@]}"; do
 done
 
 libtool -static -o "$out" "${deps[@]}"
-echo "merged hoshidicts iOS archive -> $out"
+echo "merged fushidicts iOS archive -> $out"

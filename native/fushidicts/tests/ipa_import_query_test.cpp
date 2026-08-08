@@ -31,8 +31,8 @@
 #include <string>
 #include <vector>
 
-#include "hoshidicts/importer.hpp"
-#include "hoshidicts/query.hpp"
+#include "fushidicts/importer.hpp"
+#include "fushidicts/query.hpp"
 #include "zip_fixture.hpp"
 
 namespace {
@@ -82,16 +82,16 @@ std::string term_meta_bank_ipa() {
 }  // namespace
 
 int main() {
-  const std::string out_dir = hoshi_test::temp_dir() + "/hoshi_ipa_out";
+  const std::string out_dir = fushi_test::temp_dir() + "/hoshi_ipa_out";
   const char* kTitle = "IpaDict";
 
-  std::vector<hoshi_test::ZipFile> files = {
+  std::vector<fushi_test::ZipFile> files = {
       {"index.json", index_json(kTitle)},
       {"term_bank_1.json", term_bank_neko()},
       {"term_meta_bank_1.json", term_meta_bank_ipa()},
   };
 
-  std::string zip_path = hoshi_test::write_zip("ipa", files);
+  std::string zip_path = fushi_test::write_zip("ipa", files);
   if (zip_path.empty()) {
     fail("could not write fixture zip");
   } else {

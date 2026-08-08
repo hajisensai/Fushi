@@ -29,7 +29,7 @@ Computer Use 流程验证的是「用户真的看见并操作到的 app 状态�
   media_kit（音频 / 视频）初始化需要 DWM 合成的实窗，纯离屏 parked 窗口下
   `initialiseAudioHandler()` 会**永久挂起**（曾实测挂 1 小时）。
 
-**测试与用户的 Hibiki 并存**：测试 exe 在 `HIBIKI_TEST_HIDDEN` 下跳过全局单实例互斥量
+**测试与用户的 Hibiki 并存**：测试 exe 在 `FUSHI_TEST_HIDDEN` 下跳过全局单实例互斥量
 （用隔离 WebView2 profile，无锁冲突），故你开着 Hibiki 也能跑、互不干扰
 （见 `windows/runner/main.cpp`）。
 

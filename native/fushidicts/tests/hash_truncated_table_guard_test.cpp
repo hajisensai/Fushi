@@ -34,8 +34,8 @@
 #include <string>
 #include <vector>
 
-#include "hoshidicts/importer.hpp"
-#include "hoshidicts/query.hpp"
+#include "fushidicts/importer.hpp"
+#include "fushidicts/query.hpp"
 #include "zip_fixture.hpp"
 
 namespace {
@@ -61,16 +61,16 @@ std::string term_bank_neko() {
 
 // Import the fixture into its own directory and return the dictionary path.
 std::string import_fixture(const std::string& tag) {
-  const std::string out_dir = hoshi_test::temp_dir() + "/hoshi_hashguard_" + tag;
+  const std::string out_dir = fushi_test::temp_dir() + "/hoshi_hashguard_" + tag;
   std::error_code ec;
   std::filesystem::remove_all(out_dir, ec);
 
-  std::vector<hoshi_test::ZipFile> files = {
+  std::vector<fushi_test::ZipFile> files = {
       {"index.json", index_json("HashGuardDict")},
       {"term_bank_1.json", term_bank_neko()},
   };
   const std::string zip_name = "hashguard_" + tag;
-  const std::string zip_path = hoshi_test::write_zip(zip_name.c_str(), files);
+  const std::string zip_path = fushi_test::write_zip(zip_name.c_str(), files);
   if (zip_path.empty()) {
     fail("could not write fixture zip");
     return {};

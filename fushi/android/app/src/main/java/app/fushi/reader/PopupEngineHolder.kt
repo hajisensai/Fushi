@@ -13,7 +13,7 @@ import io.flutter.plugin.common.MethodChannel
 /**
  * Builds and caches one warm FlutterEngine running the `popupMain` Dart
  * entrypoint inside the :popup process. External dictionary lookups
- * (PROCESS_TEXT / SEND / TRANSLATE / hibiki://lookup) reuse this engine so
+ * (PROCESS_TEXT / SEND / TRANSLATE / fushi://lookup) reuse this engine so
  * the nested-capable Flutter popup (PopupDictionaryPage) replaces the old
  * native WebView popup.
  *
@@ -43,7 +43,7 @@ object PopupEngineHolder {
      * On-screen rectangle (physical px: left, top, right, bottom) of the tapped
      * glyph, or null when the caller supplied no anchor (TODO-872). Only the
      * floating lyric/subtitle strip ships an anchor; system PROCESS_TEXT /
-     * hibiki://lookup leave it null so the Dart popup keeps its default
+     * fushi://lookup leave it null so the Dart popup keeps its default
      * top-center placement.
      */
     @Volatile

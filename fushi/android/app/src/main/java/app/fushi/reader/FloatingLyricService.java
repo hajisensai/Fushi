@@ -377,7 +377,7 @@ public class FloatingLyricService extends BaseFloatingService {
         // instead of always pinning it to the screen top. Only this floating
         // lyric/subtitle entry carries the anchor; the absence of the anchor
         // extras is what routes every other entry (system PROCESS_TEXT /
-        // hibiki://lookup) back to the default top-center placement.
+        // fushi://lookup) back to the default top-center placement.
         Rect glyph = glyphScreenRect(index);
         if (glyph != null && !glyph.isEmpty()) {
             intent.putExtra(PopupDictFlutterActivity.EXTRA_ANCHOR_LEFT, glyph.left);

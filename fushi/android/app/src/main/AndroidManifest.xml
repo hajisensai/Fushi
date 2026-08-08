@@ -37,7 +37,7 @@
                 android:resource="@style/NormalTheme"
                 />
             <!-- OAuth redirect callback for cloud sync backends
-                 (hibiki://auth/onedrive, hibiki://auth/dropbox). -->
+                 (fushi://auth/onedrive, fushi://auth/dropbox). -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

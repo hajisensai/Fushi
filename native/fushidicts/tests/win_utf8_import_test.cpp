@@ -8,8 +8,8 @@
 #include <cstdio>
 #include <string>
 
-#include "hoshidicts/importer.hpp"
-#include "hoshidicts/query.hpp"
+#include "fushidicts/importer.hpp"
+#include "fushidicts/query.hpp"
 
 int main(int argc, char** argv) {
   if (argc < 3) {

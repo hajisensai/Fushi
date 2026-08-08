@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <string>
 
-namespace hoshidicts {
+namespace fushidicts {
 
 inline std::string normalize_media_path(std::string path) {
   std::ranges::replace(path, '\\', '/');

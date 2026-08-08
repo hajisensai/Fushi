@@ -13,7 +13,7 @@ void main() {
   String readFushidictsCmake() {
     final File file = File('../native/fushidicts/CMakeLists.txt');
     expect(file.existsSync(), isTrue,
-        reason: 'expected hoshidicts CMake at ${file.absolute.path}');
+        reason: 'expected fushidicts CMake at ${file.absolute.path}');
     return file.readAsStringSync();
   }
 
@@ -31,7 +31,7 @@ void main() {
     return file.readAsStringSync();
   }
 
-  test('Linux CI pins a C++23 std::expected-capable hoshidicts toolchain', () {
+  test('Linux CI pins a C++23 std::expected-capable fushidicts toolchain', () {
     final String workflow = readWorkflow();
     final int linuxJobStart = workflow.indexOf('  linux:');
     final int macosJobStart = workflow.indexOf('  macos:');
@@ -53,14 +53,14 @@ void main() {
     expect(linuxJob, contains(r'exec g++-14 "$@"'));
     expect(
       linuxJob,
-      contains(r'PATH="$RUNNER_TEMP/hibiki-linux-toolchain:$PATH"'),
+      contains(r'PATH="$RUNNER_TEMP/fushi-linux-toolchain:$PATH"'),
     );
     expect(linuxJob, contains('flutter build linux --debug --config-only'));
     expect(linuxJob, contains('CMAKE_CXX_COMPILER:FILEPATH='));
     expect(linuxJob, contains('CMakeCXXCompiler.cmake'));
     expect(linuxJob, contains(r'set(CMAKE_CXX_COMPILER_ID "GNU")'));
     expect(linuxJob,
-        contains(r'"$RUNNER_TEMP/hibiki-linux-toolchain/clang++" -std=c++23'));
+        contains(r'"$RUNNER_TEMP/fushi-linux-toolchain/clang++" -std=c++23'));
     expect(linuxJob, isNot(contains('CMAKE_CXX_COMPILER_ID:INTERNAL=GNU')));
     expect(
       linuxJob.indexOf('Verify Linux C++23 compiler'),
@@ -80,7 +80,7 @@ void main() {
     expect(linuxJob, contains('exit 1'));
   });
 
-  test('Linux hoshidicts static archives are PIC before shared FFI link', () {
+  test('Linux fushidicts static archives are PIC before shared FFI link', () {
     final String cmake = readFushidictsCmake();
     final int linuxGuardStart =
         cmake.indexOf('if(CMAKE_SYSTEM_NAME STREQUAL "Linux")');
@@ -89,7 +89,7 @@ void main() {
     final int bundledDepsStart =
         cmake.indexOf('add_subdirectory(fushidicts_external/glaze');
     final int staticTargetStart =
-        cmake.indexOf('add_library(hoshidicts STATIC');
+        cmake.indexOf('add_library(fushidicts STATIC');
     final int sharedTargetStart =
         cmake.indexOf('add_library(fushidicts_ffi SHARED');
 
@@ -103,7 +103,7 @@ void main() {
     expect(
       picSetting,
       lessThan(bundledDepsStart),
-      reason: 'Linux links hoshidicts.a plus bundled static dependencies into '
+      reason: 'Linux links fushidicts.a plus bundled static dependencies into '
           'libfushidicts_ffi.so; PIC must be enabled before those static '
           'targets are created or ld fails during the Flutter Linux link step.',
     );

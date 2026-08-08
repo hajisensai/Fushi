@@ -1,4 +1,4 @@
-#include "hoshidicts/lookup.hpp"
+#include "fushidicts/lookup.hpp"
 
 #include <utf8.h>
 

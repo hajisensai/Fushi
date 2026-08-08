@@ -62,7 +62,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
   int _pendingCharIndex = -1;
 
   /// TODO-872：浮动字幕条点字传来的「被查字屏幕矩形」（**物理像素**，原点=物理屏幕顶
-  /// 含状态栏）。为 null 即非浮动字幕入口（系统 PROCESS_TEXT / hibiki://lookup）→ 弹窗走
+  /// 含状态栏）。为 null 即非浮动字幕入口（系统 PROCESS_TEXT / fushi://lookup）→ 弹窗走
   /// 默认 topCenter。物理→逻辑换算 + 状态栏平移在 [build] 内完成（那里 MediaQuery 才有
   /// 有效 viewPadding），随 [_searchGeneration] 一并喂给 [PopupDictionaryPage]。
   Rect? _anchorPhysical;
@@ -224,7 +224,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
           // TODO-708 P1 ⑥：整条字幕窗矩形（同一平移换算）作弹窗避让锚，弹窗不遮任一字。
           subtitleWindowRect: _toLogicalRect(_subtitlePhysical),
           // TODO-708 P3 ③：悬浮字幕「点字查词」入口（_anchorPhysical != null）回旧「4.1」轻形态：
-          // 无搜索输入框、点字直接出词卡。其它入口（系统 PROCESS_TEXT / hibiki://lookup）
+          // 无搜索输入框、点字直接出词卡。其它入口（系统 PROCESS_TEXT / fushi://lookup）
           // _anchorPhysical == null → showSearchBar 保持 true，仍带搜索栏重查。
           showSearchBar: _anchorPhysical == null,
         ),

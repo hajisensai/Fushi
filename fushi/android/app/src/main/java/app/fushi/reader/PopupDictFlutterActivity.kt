@@ -11,7 +11,7 @@ import io.flutter.embedding.android.FlutterActivityLaunchConfigs.BackgroundMode
  * Transparent FlutterActivity (in the :popup process) that hosts the warm
  * popup engine and renders the nested-capable Flutter PopupDictionaryPage for
  * external dictionary lookups. Replaces the old native PopupDictActivity for
- * the PROCESS_TEXT / SEND / TRANSLATE / hibiki://lookup entry points.
+ * the PROCESS_TEXT / SEND / TRANSLATE / fushi://lookup entry points.
  */
 class PopupDictFlutterActivity : FlutterActivity() {
     companion object {
@@ -29,7 +29,7 @@ class PopupDictFlutterActivity : FlutterActivity() {
          * this activity cannot drift on a magic string. Their absence means "no
          * anchor" → the Dart popup keeps its default top-center placement, which
          * is exactly what every non-floating entry (system PROCESS_TEXT /
-         * hibiki://lookup) wants.
+         * fushi://lookup) wants.
          */
         const val EXTRA_ANCHOR_LEFT: String = "anchorLeft"
         const val EXTRA_ANCHOR_TOP: String = "anchorTop"
@@ -149,7 +149,7 @@ class PopupDictFlutterActivity : FlutterActivity() {
     /**
      * Tapped-glyph anchor rectangle (physical px: left, top, right, bottom) from
      * the floating lyric/subtitle strip (TODO-872), or {@code null} when the
-     * intent carries no anchor (system PROCESS_TEXT / hibiki://lookup) — letting
+     * intent carries no anchor (system PROCESS_TEXT / fushi://lookup) — letting
      * the Dart popup keep its default top-center placement. All four extras must
      * be present; a partial set is treated as no anchor.
      */
@@ -173,7 +173,7 @@ class PopupDictFlutterActivity : FlutterActivity() {
     /**
      * Whole subtitle-window rectangle (physical px: left, top, right, bottom) from
      * the floating lyric/subtitle strip (TODO-708 P1), or {@code null} when the
-     * intent carries no subtitle rect (system PROCESS_TEXT / hibiki://lookup, or an
+     * intent carries no subtitle rect (system PROCESS_TEXT / fushi://lookup, or an
      * overlay not yet laid out). The Dart popup avoids this superset so the card
      * never covers any glyph in the strip. All four extras must be present; a
      * partial set is treated as absent.

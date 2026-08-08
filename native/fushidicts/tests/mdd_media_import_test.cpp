@@ -17,8 +17,8 @@
 #include <string>
 #include <vector>
 
-#include "hoshidicts/importer.hpp"
-#include "hoshidicts/query.hpp"
+#include "fushidicts/importer.hpp"
+#include "fushidicts/query.hpp"
 #include "mdx_fixture.hpp"
 #include "mdx_reader.hpp"
 #include "zip_fixture.hpp"
@@ -68,7 +68,7 @@ int main() {
   // merge into ONE media.bin/media.idx: every key from every part retrievable.
   // Red/green: revert collect_sibling_mdd_paths -> uk/us mp3 missing; revert
   // the merged single-index write (per-part truncation) -> img/a.png missing.
-  const std::string base = hoshi_test::temp_dir() + "/hoshi_mdd";
+  const std::string base = fushi_test::temp_dir() + "/hoshi_mdd";
   std::filesystem::create_directories(std::filesystem::u8path(base));
   const std::string mdx_path = base + "/M.mdx";
   const std::string out_dir = base + "/out";

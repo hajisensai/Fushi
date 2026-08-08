@@ -66,9 +66,9 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
-# === hoshidicts native dictionary engine ===
+# === fushidicts native dictionary engine ===
 set(FUSHIDICTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushidicts")
-add_subdirectory("${FUSHIDICTS_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/hoshidicts")
+add_subdirectory("${FUSHIDICTS_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/fushidicts")
 
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can
@@ -99,7 +99,7 @@ if(PLUGIN_BUNDLED_LIBRARIES)
     COMPONENT Runtime)
 endif()
 
-# Install hoshidicts DLL next to the executable
+# Install fushidicts DLL next to the executable
 install(TARGETS fushidicts_ffi RUNTIME DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
@@ -109,15 +109,15 @@ install(TARGETS fushidicts_ffi RUNTIME DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
 # native/fushi_torrent/build_windows_dll.ps1 事先产出 4 个 DLL 到
 # prebuilt/windows-x64/，这里「有则拷、无则跳」——目录不存在时 flutter build
 # windows 照常成功，app 运行期 DLL 缺失自动回退外接 qb（见 EmbeddedTorrentHost）。
-set(HIBIKI_TORRENT_PREBUILT_DIR
+set(FUSHI_TORRENT_PREBUILT_DIR
   "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_torrent/prebuilt/windows-x64")
-set(HIBIKI_TORRENT_DLLS
+set(FUSHI_TORRENT_DLLS
   "fushi_torrent_ffi.dll"
   "torrent-rasterbar.dll"
   "libssl-3-x64.dll"
   "libcrypto-3-x64.dll")
-foreach(_dll ${HIBIKI_TORRENT_DLLS})
-  set(_dll_path "${HIBIKI_TORRENT_PREBUILT_DIR}/${_dll}")
+foreach(_dll ${FUSHI_TORRENT_DLLS})
+  set(_dll_path "${FUSHI_TORRENT_PREBUILT_DIR}/${_dll}")
   if(EXISTS "${_dll_path}")
     install(FILES "${_dll_path}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
       COMPONENT Runtime)
@@ -142,15 +142,15 @@ endforeach()
 # 机器（绝大多数改 UI 的人）照常 `flutter build windows` 成功，只是 app 内点「启动
 # 游戏」时提示 helper 未随包 —— 与今天的行为一致。
 # 要在本地拿到它：native/galgame_hook 下跑 tools/build_distribution.ps1。
-set(HIBIKI_GALGAME_HELPER_DIST_DIR
+set(FUSHI_GALGAME_HELPER_DIST_DIR
   "${CMAKE_CURRENT_SOURCE_DIR}/../../native/galgame_hook/dist")
-set(HIBIKI_GALGAME_HELPER_FILES
+set(FUSHI_GALGAME_HELPER_FILES
   "voice_hook_x64.zip"
   "voice_hook_x64.zip.sha256"
   "voice_hook_x86.zip"
   "voice_hook_x86.zip.sha256")
-foreach(_helper_file ${HIBIKI_GALGAME_HELPER_FILES})
-  install(FILES "${HIBIKI_GALGAME_HELPER_DIST_DIR}/${_helper_file}"
+foreach(_helper_file ${FUSHI_GALGAME_HELPER_FILES})
+  install(FILES "${FUSHI_GALGAME_HELPER_DIST_DIR}/${_helper_file}"
     DESTINATION "${INSTALL_BUNDLE_LIB_DIR}/galgame_helper"
     COMPONENT Runtime OPTIONAL)
 endforeach()
@@ -167,12 +167,12 @@ endforeach()
 # OPTIONAL 同样必需：判定发生在 install 时而非 configure 时，没跑过组包脚本的机器照常
 # `flutter build windows` 成功，只是超分报「安装包不完整」——与今天的行为一致。
 # 要在本地拿到它：仓库根跑 `pwsh -File tools/build_magpie_slim.ps1`。
-set(HIBIKI_MAGPIE_BUNDLE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../dist")
-set(HIBIKI_MAGPIE_BUNDLE_FILES
+set(FUSHI_MAGPIE_BUNDLE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../dist")
+set(FUSHI_MAGPIE_BUNDLE_FILES
   "Magpie-hibiki-slim-x64.zip"
   "Magpie-hibiki-slim-x64.zip.sha256")
-foreach(_magpie_file ${HIBIKI_MAGPIE_BUNDLE_FILES})
-  install(FILES "${HIBIKI_MAGPIE_BUNDLE_DIR}/${_magpie_file}"
+foreach(_magpie_file ${FUSHI_MAGPIE_BUNDLE_FILES})
+  install(FILES "${FUSHI_MAGPIE_BUNDLE_DIR}/${_magpie_file}"
     DESTINATION "${INSTALL_BUNDLE_LIB_DIR}/magpie_bundle"
     COMPONENT Runtime OPTIONAL)
 endforeach()

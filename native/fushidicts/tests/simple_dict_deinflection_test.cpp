@@ -20,9 +20,9 @@
 #include <string>
 #include <vector>
 
-#include "hoshidicts/deinflector.hpp"
-#include "hoshidicts/importer.hpp"
-#include "hoshidicts/query.hpp"
+#include "fushidicts/deinflector.hpp"
+#include "fushidicts/importer.hpp"
+#include "fushidicts/query.hpp"
 #include "zip_fixture.hpp"
 
 namespace {
@@ -73,7 +73,7 @@ int main() {
   }
 
   // --- Part 2: write_simple_dict stores rules == "*" ----------------------
-  const std::string out_dir = hoshi_test::temp_dir() + "/hoshi_simple_deinf_out";
+  const std::string out_dir = fushi_test::temp_dir() + "/hoshi_simple_deinf_out";
   std::vector<SimpleEntry> entries = {{kTaberu, "to eat"}};
   ImportResult r = dictionary_importer::write_simple_dict("SimpleDeinfDict", entries, out_dir);
   if (!r.success) {

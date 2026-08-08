@@ -7,25 +7,25 @@
 #
 # 解析顺序（与 tool/bootstrap.ps1 建立的先例一致）：
 #   1) 调用方已设的 HTTPS_PROXY / HTTP_PROXY / ALL_PROXY —— 最高优先级，绝不覆盖
-#   2) HIBIKI_BOOTSTRAP_PROXY —— 专用变量，只影响本仓工具链
-#   3) <主 checkout>/tool/bootstrap.local.env 里的 HIBIKI_BOOTSTRAP_PROXY / HTTPS_PROXY
+#   2) FUSHI_BOOTSTRAP_PROXY —— 专用变量，只影响本仓工具链
+#   3) <主 checkout>/tool/bootstrap.local.env 里的 FUSHI_BOOTSTRAP_PROXY / HTTPS_PROXY
 #      （KEY=VALUE，已 gitignore，本机私有，一次配置长期生效）
 #   4) 都没有 —— **照常跑**，不设代理、不报错。CI 与直连环境走这条。
 #
 # 用法：在脚本开头 `source "$(dirname "${BASH_SOURCE[0]}")/proxy_env.sh"`，
-# 它只导出 HTTPS_PROXY / HTTP_PROXY，不产生任何输出（除非 HIBIKI_PROXY_VERBOSE=1）。
+# 它只导出 HTTPS_PROXY / HTTP_PROXY，不产生任何输出（除非 FUSHI_PROXY_VERBOSE=1）。
 
 hibiki_resolve_proxy() {
   # 1) 调用方已设
   if [ -n "${HTTPS_PROXY:-}" ] || [ -n "${HTTP_PROXY:-}" ] || [ -n "${ALL_PROXY:-}" ]; then
-    _hibiki_proxy="${HTTPS_PROXY:-${HTTP_PROXY:-$ALL_PROXY}}"
-    _hibiki_proxy_source="调用方环境变量"
+    _fushi_proxy="${HTTPS_PROXY:-${HTTP_PROXY:-$ALL_PROXY}}"
+    _fushi_proxy_source="调用方环境变量"
     return 0
   fi
   # 2) 专用变量
-  if [ -n "${HIBIKI_BOOTSTRAP_PROXY:-}" ]; then
-    _hibiki_proxy="$HIBIKI_BOOTSTRAP_PROXY"
-    _hibiki_proxy_source="HIBIKI_BOOTSTRAP_PROXY"
+  if [ -n "${FUSHI_BOOTSTRAP_PROXY:-}" ]; then
+    _fushi_proxy="$FUSHI_BOOTSTRAP_PROXY"
+    _fushi_proxy_source="FUSHI_BOOTSTRAP_PROXY"
     return 0
   fi
   # 3) 本机配置文件（放主 checkout，所有 worktree 共用）
@@ -48,10 +48,10 @@ hibiki_resolve_proxy() {
       key="$(printf '%s' "$key" | tr -d '[:space:]')"
       val="$(printf '%s' "$val" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//')"
       case "$key" in
-        HIBIKI_BOOTSTRAP_PROXY|HTTPS_PROXY)
+        FUSHI_BOOTSTRAP_PROXY|HTTPS_PROXY)
           if [ -n "$val" ]; then
-            _hibiki_proxy="$val"
-            _hibiki_proxy_source="$cfg"
+            _fushi_proxy="$val"
+            _fushi_proxy_source="$cfg"
             return 0
           fi
           ;;
@@ -59,15 +59,15 @@ hibiki_resolve_proxy() {
     done < "$cfg"
   fi
   # 4) 没有就没有——照常跑
-  _hibiki_proxy=""
-  _hibiki_proxy_source=""
+  _fushi_proxy=""
+  _fushi_proxy_source=""
   return 0
 }
 
 hibiki_resolve_proxy
-if [ -n "${_hibiki_proxy:-}" ]; then
-  export HTTPS_PROXY="$_hibiki_proxy"
-  export HTTP_PROXY="${HTTP_PROXY:-$_hibiki_proxy}"
-  [ "${HIBIKI_PROXY_VERBOSE:-}" = "1" ] && echo "代理: $_hibiki_proxy (来源: $_hibiki_proxy_source)" >&2
+if [ -n "${_fushi_proxy:-}" ]; then
+  export HTTPS_PROXY="$_fushi_proxy"
+  export HTTP_PROXY="${HTTP_PROXY:-$_fushi_proxy}"
+  [ "${FUSHI_PROXY_VERBOSE:-}" = "1" ] && echo "代理: $_fushi_proxy (来源: $_fushi_proxy_source)" >&2
 fi
-unset _hibiki_proxy _hibiki_proxy_source
+unset _fushi_proxy _fushi_proxy_source

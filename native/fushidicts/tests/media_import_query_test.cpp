@@ -19,8 +19,8 @@
 #include <string>
 #include <vector>
 
-#include "hoshidicts/importer.hpp"
-#include "hoshidicts/query.hpp"
+#include "fushidicts/importer.hpp"
+#include "fushidicts/query.hpp"
 #include "zip_fixture.hpp"
 
 namespace {
@@ -52,7 +52,7 @@ std::string index_json(const char* title) {
 }  // namespace
 
 int main() {
-  const std::string out_dir = hoshi_test::temp_dir() + "/hoshi_media_out";
+  const std::string out_dir = fushi_test::temp_dir() + "/hoshi_media_out";
   const char* kTitle = "MediaDict";
 
   // Two media blobs with distinct, non-trivial byte content (incl. a NUL and
@@ -64,14 +64,14 @@ int main() {
       std::string("OggS", 4) + std::string("\x00AUDIO-FRAME", 12) +
       std::string("\xfe\x01", 2);
 
-  std::vector<hoshi_test::ZipFile> files = {
+  std::vector<fushi_test::ZipFile> files = {
       {"index.json", index_json(kTitle)},
       {"term_bank_1.json", term_bank_with_img()},
       {"img/sun.png", sun_png},
       {"audio/hi.ogg", audio_ogg},
   };
 
-  std::string zip_path = hoshi_test::write_zip("media", files);
+  std::string zip_path = fushi_test::write_zip("media", files);
   if (zip_path.empty()) {
     fail("could not write fixture zip");
   } else {

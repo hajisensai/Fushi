@@ -1,6 +1,6 @@
 # Windows-orchestrated cross-host integration test on the remote Mac.
 # Pushes committed history to the Mac, fast-forwards its checkout, then runs a
-# Hibiki integration test against the REAL macOS app under HIBIKI_TEST_HIDDEN
+# Hibiki integration test against the REAL macOS app under FUSHI_TEST_HIDDEN
 # (the runner parks itself off-screen + .accessory + non-key, so it never
 # appears or steals foreground — see fushi/macos/Runner/MainFlutterWindow.swift).
 # Phase 3 of the test-flow refactor (Windows is the conductor; the Mac runs).
@@ -30,7 +30,7 @@ $lines = @(
   'export LANG=en_US.UTF-8',
   'export PATH=$HOME/flutter/bin:$HOME/.gem/ruby/2.6.0/bin:$PATH',
   'cd ~/dev/hibiki && git fetch origin && git merge --ff-only origin/develop && cd fushi',
-  "HIBIKI_TEST_HIDDEN=1 flutter test $Target -d macos --no-pub"
+  "FUSHI_TEST_HIDDEN=1 flutter test $Target -d macos --no-pub"
 )
 $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($lines -join "`n")))
 

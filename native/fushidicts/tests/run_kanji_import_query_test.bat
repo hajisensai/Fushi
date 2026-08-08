@@ -1,6 +1,6 @@
 @echo off
 REM Build + run the TODO-094 kanji import/query guard test on Windows via CMake.
-REM Reuses the real hoshidicts static lib (glaze/zstd/libdeflate) so the test
+REM Reuses the real fushidicts static lib (glaze/zstd/libdeflate) so the test
 REM exercises the production import + query paths. No external zip tool needed:
 REM the test hand-rolls STORED zips in memory.
 REM

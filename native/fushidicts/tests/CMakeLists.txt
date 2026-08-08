@@ -1,9 +1,9 @@
-# Unified native e2e/guard harness for the hoshidicts C++ engine (TODO-578).
+# Unified native e2e/guard harness for the fushidicts C++ engine (TODO-578).
 #
 # Until now the tests under native/fushidicts/tests/ were each built by hand via
 # a per-test run_*.bat; the root CMakeLists never aggregated them, so CI never
 # ran a single native test. This file registers every test as a ctest case that
-# links the *real* hoshidicts static library (add_subdirectory of the engine,
+# links the *real* fushidicts static library (add_subdirectory of the engine,
 # exactly like the production build pulls in glaze / zstd / libdeflate /
 # unordered_dense). One `ctest` run gates them all on Linux/macOS/Windows.
 #
@@ -19,7 +19,7 @@ project(fushidicts_tests LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Reuse the real hoshidicts static library (and its bundled static deps) exactly
+# Reuse the real fushidicts static library (and its bundled static deps) exactly
 # as the production FFI/JNI shared libraries link it. `${FUSHI_ROOT}` is the
 # engine root one level up from tests/.
 get_filename_component(FUSHI_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
@@ -30,17 +30,17 @@ enable_testing()
 # Test sources self-include some headers by bare name from fushidicts_src/
 # subdirs (word_scan.hpp / text_processor.hpp) or as "zip/zip.hpp" rooted at
 # fushidicts_src/. The engine's static lib does not export those internal dirs
-# publicly, so add them per-test below. All symbols still come from `hoshidicts`.
+# publicly, so add them per-test below. All symbols still come from `fushidicts`.
 set(FUSHI_SRC "${FUSHI_ROOT}/fushidicts_src")
 
 # add_fushi_test(<name> <source.cpp> [extra include dirs...])
-#   - links the real hoshidicts static lib
+#   - links the real fushidicts static lib
 #   - applies MSVC /utf-8 so the UTF-8 fixture/comment bytes survive code page
 #     936 (GBK) decoding on Windows runners
 #   - registers a ctest case named <name>
 function(add_fushi_test name source)
   add_executable(${name} "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
-  target_link_libraries(${name} PRIVATE hoshidicts)
+  target_link_libraries(${name} PRIVATE fushidicts)
   target_include_directories(${name} PRIVATE ${ARGN})
   if(MSVC)
     target_compile_options(${name} PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
@@ -60,8 +60,8 @@ add_fushi_test(text_processor_test text_processor_test.cpp
 add_fushi_test(zip64_central_dir_test zip64_central_dir_test.cpp
     "${FUSHI_SRC}")
 
-# --- import + query e2e (include "hoshidicts/<x>.hpp" from the public include) ---
-# The public include dir is already PUBLIC on the hoshidicts target, so these
+# --- import + query e2e (include "fushidicts/<x>.hpp" from the public include) ---
+# The public include dir is already PUBLIC on the fushidicts target, so these
 # need no extra include dirs.
 add_fushi_test(kanji_import_query_test kanji_import_query_test.cpp)
 add_fushi_test(dict_name_uaf_e2e_test dict_name_uaf_e2e_test.cpp)
@@ -83,7 +83,7 @@ add_fushi_test(simple_dict_deinflection_test simple_dict_deinflection_test.cpp)
 
 # --- TODO-892: malformed-DEFLATE / null-decompressor / breadcrumb guards ---
 # zip_malformed_deflate_test includes <libdeflate.h> (to forge a real deflate
-# stream) + "zip/zip.hpp" + the public importer header. hoshidicts links
+# stream) + "zip/zip.hpp" + the public importer header. fushidicts links
 # libdeflate_static PRIVATE, so its include dir is not propagated transitively;
 # add FUSHI_SRC (for zip/zip.hpp) and the libdeflate dir explicitly.
 add_fushi_test(zip_malformed_deflate_test zip_malformed_deflate_test.cpp

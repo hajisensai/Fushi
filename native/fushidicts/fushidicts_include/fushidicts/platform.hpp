@@ -2,20 +2,20 @@
 
 // ── Symbol export ───────────────────────────────────────────────────
 #ifdef _WIN32
-  #define HOSHI_EXPORT __declspec(dllexport)
+  #define FUSHI_EXPORT __declspec(dllexport)
 #else
-  #define HOSHI_EXPORT __attribute__((visibility("default")))
+  #define FUSHI_EXPORT __attribute__((visibility("default")))
 #endif
 
 // ── Logging ─────────────────────────────────────────────────────────
 #ifdef __ANDROID__
   #include <android/log.h>
-  #define HOSHI_LOGW(...) __android_log_print(ANDROID_LOG_WARN, "hoshidicts", __VA_ARGS__)
-  #define HOSHI_LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "hoshidicts", __VA_ARGS__)
+  #define FUSHI_LOGW(...) __android_log_print(ANDROID_LOG_WARN, "fushidicts", __VA_ARGS__)
+  #define FUSHI_LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "fushidicts", __VA_ARGS__)
 #else
   #include <cstdio>
-  #define HOSHI_LOGW(...) do { fprintf(stderr, "[hoshidicts WARN] " __VA_ARGS__); fprintf(stderr, "\n"); } while(0)
-  #define HOSHI_LOGE(...) do { fprintf(stderr, "[hoshidicts ERROR] " __VA_ARGS__); fprintf(stderr, "\n"); } while(0)
+  #define FUSHI_LOGW(...) do { fprintf(stderr, "[fushidicts WARN] " __VA_ARGS__); fprintf(stderr, "\n"); } while(0)
+  #define FUSHI_LOGE(...) do { fprintf(stderr, "[fushidicts ERROR] " __VA_ARGS__); fprintf(stderr, "\n"); } while(0)
 #endif
 
 // ── Threading (large-stack import thread) ───────────────────────────

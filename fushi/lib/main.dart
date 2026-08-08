@@ -907,7 +907,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   }
 
   /// Completes a cloud-sync OAuth flow when the browser redirects back via
-  /// `hibiki://auth/<provider>?code=...`. The pending PKCE verifier/repo were
+  /// `fushi://auth/<provider>?code=...`. The pending PKCE verifier/repo were
   /// stored by the backend's `authenticate()` call before the browser opened.
   Future<void> _handleOAuthRedirect(String data) async {
     final Uri? uri = Uri.tryParse(data);

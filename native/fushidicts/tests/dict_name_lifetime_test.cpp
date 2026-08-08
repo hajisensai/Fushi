@@ -10,8 +10,8 @@
 // scope (query.cpp).
 //
 // Usage: dict_name_lifetime_test <dict_dir> <query_term_utf8> <expected_title_utf8>
-//   <dict_dir>  an already-imported hoshidicts dictionary directory
-//               (contains index.json + .hoshidicts_1 + hash.table + blobs.bin)
+//   <dict_dir>  an already-imported fushidicts dictionary directory
+//               (contains index.json + .fushidicts_1 + hash.table + blobs.bin)
 //   <query_term_utf8>      a term that exists in that dictionary
 //   <expected_title_utf8>  the dictionary's index.json "title"
 // Exit 0 + "PASS" on success; non-zero with a diagnostic otherwise.
@@ -24,7 +24,7 @@
 #include <string>
 #include <vector>
 
-#include "hoshidicts/query.hpp"
+#include "fushidicts/query.hpp"
 
 #ifdef _WIN32
 #include <windows.h>

@@ -3,11 +3,11 @@
 #include <cstring>
 #include <string>
 #include <vector>
-#include "hoshidicts/platform.hpp"
-#include "hoshidicts/deinflector.hpp"
-#include "hoshidicts/lookup.hpp"
-#include "hoshidicts/query.hpp"
-#include "hoshidicts/popup_json.hpp"
+#include "fushidicts/platform.hpp"
+#include "fushidicts/deinflector.hpp"
+#include "fushidicts/lookup.hpp"
+#include "fushidicts/query.hpp"
+#include "fushidicts/popup_json.hpp"
 
 struct FushidictsHandle {
   DictionaryQuery query;

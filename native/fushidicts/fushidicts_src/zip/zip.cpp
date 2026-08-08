@@ -7,7 +7,7 @@
 #include <limits>
 
 #include "../memory/memory.hpp"
-#include "hoshidicts/platform.hpp"  // HOSHI_LOGW
+#include "fushidicts/platform.hpp"  // FUSHI_LOGW
 
 namespace {
 template <typename T>
@@ -61,7 +61,7 @@ bool zip_uncompressed_size_in_range(const ZipEntry& e) {
   // certainly a forged ZIP64 size, not a real dictionary) so a future "import
   // produced fewer entries than expected" is diagnosable from the native log
   // rather than silently dropping the bank.
-  HOSHI_LOGW(
+  FUSHI_LOGW(
       "zip entry '%s' rejected: uncompressed=%llu compressed=%llu exceeds %llu",
       e.name.c_str(), static_cast<unsigned long long>(e.uncompressed_size),
       static_cast<unsigned long long>(e.compressed_size),

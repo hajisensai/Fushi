@@ -74,13 +74,13 @@ set_target_properties(${BINARY_NAME}
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
-# === hoshidicts native dictionary engine ===
+# === fushidicts native dictionary engine ===
 # Mirror windows/CMakeLists.txt: the Linux runner did not build/bundle the FFI
 # dictionary engine, so libfushidicts_ffi.so was absent and dictionary lookups
 # crashed at runtime (DynamicLibrary.open failure). Build it from the shared
 # native/ tree and install it next to the other bundled libs (rpath $ORIGIN/lib).
 set(FUSHIDICTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushidicts")
-add_subdirectory("${FUSHIDICTS_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/hoshidicts")
+add_subdirectory("${FUSHIDICTS_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/fushidicts")
 
 
 # === Installation ===
@@ -114,7 +114,7 @@ foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})
     COMPONENT Runtime)
 endforeach(bundled_library)
 
-# Install the hoshidicts shared library into the bundle lib dir.
+# Install the fushidicts shared library into the bundle lib dir.
 install(TARGETS fushidicts_ffi LIBRARY DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 

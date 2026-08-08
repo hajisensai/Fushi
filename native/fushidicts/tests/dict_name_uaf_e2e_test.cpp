@@ -22,8 +22,8 @@
 #include <string>
 #include <vector>
 
-#include "hoshidicts/importer.hpp"
-#include "hoshidicts/query.hpp"
+#include "fushidicts/importer.hpp"
+#include "fushidicts/query.hpp"
 #include "zip_fixture.hpp"
 
 namespace {
@@ -59,11 +59,11 @@ struct Imported {
 Imported import_dict(const std::string& label, const std::string& index_title,
                      const std::string& expr, const std::string& gloss,
                      const std::string& out_dir) {
-  std::vector<hoshi_test::ZipFile> files = {
+  std::vector<fushi_test::ZipFile> files = {
       {"index.json", index_json(index_title)},
       {"term_bank_1.json", term_bank(expr, gloss)},
   };
-  std::string zip_path = hoshi_test::write_zip(label.c_str(), files);
+  std::string zip_path = fushi_test::write_zip(label.c_str(), files);
   Imported out;
   out.index_title = index_title;
   if (zip_path.empty()) {
@@ -93,7 +93,7 @@ Imported import_dict(const std::string& label, const std::string& index_title,
 }  // namespace
 
 int main() {
-  const std::string out_dir = hoshi_test::temp_dir() + "/hoshi_uaf_out";
+  const std::string out_dir = fushi_test::temp_dir() + "/hoshi_uaf_out";
 
   // Long, non-ASCII titles. The leading bytes are exactly what a UAF would
   // corrupt, so any garble shows up in the byte-for-byte comparison below.

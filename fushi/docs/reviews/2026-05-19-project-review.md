@@ -244,7 +244,7 @@
 - severity: high
 - status: fixed
 - files: `hibiki/lib/src/models/app_model.dart`, `hibiki/lib/src/pages/implementations/popup_dictionary_page.dart`, `hibiki/test/pages/popup_dictionary_page_test.dart`
-- root cause: the current lookup refactor routed all recursive dictionary searches through `openPopupDictionaryLookup()`, but that method unconditionally launched `hibiki://lookup?word=...`. The `hibiki://lookup` intent is only registered in Android manifest for `PopupDictActivity`; Windows has no equivalent protocol registration, so desktop lookup actions could leave the app or fail at the OS URL layer instead of opening Hibiki's dictionary UI.
+- root cause: the current lookup refactor routed all recursive dictionary searches through `openPopupDictionaryLookup()`, but that method unconditionally launched `fushi://lookup?word=...`. The `fushi://lookup` intent is only registered in Android manifest for `PopupDictActivity`; Windows has no equivalent protocol registration, so desktop lookup actions could leave the app or fail at the OS URL layer instead of opening Hibiki's dictionary UI.
 - impact: Windows CJK lookup from selection menus, creator enhancements, stash/text segmentation search, and other shared lookup actions could stop being an in-app UI flow. Passing screenshots or a green app launch would not prove this path because the failure is in the action routing contract.
 - fix: kept Android on the existing native popup intent path, and added a desktop/non-Android branch that opens `PopupDictionaryPage` inside a normal Flutter `Dialog`. `PopupDictionaryPage` now supports an optional in-app close callback and exposes a keyed close button for deterministic widget evidence; it still uses the native `PopupChannel.finishPopup()` when launched as the Android popup entrypoint.
 - verification: TDD red check first failed because `PopupDictionaryPage` had no in-app close contract. After the fix, `flutter test test/pages/popup_dictionary_page_test.dart` passed with 2 tests, including a desktop lookup assertion that no `url_launcher` call is made. `dart format .` completed; full `flutter test` passed with 745 tests. The stale Round 10 note about `disableDialogScrim` / `shouldDisablePopupScrim` compile blockers is superseded by current evidence: the present worktree compiles and tests cleanly.
@@ -504,7 +504,7 @@
 - severity: low
 - status: verified-pass
 - files: `hibiki/android/app/src/main/java/app/hibiki/reader/PopupDictActivity.java`
-- root cause: the dirty native popup activity changes were reviewed for Windows-facing popup parity. They ignore blank `hibiki://lookup?word=` inputs and clear window dimming for the transparent popup activity.
+- root cause: the dirty native popup activity changes were reviewed for Windows-facing popup parity. They ignore blank `fushi://lookup?word=` inputs and clear window dimming for the transparent popup activity.
 - impact: blank lookup intents no longer open an empty popup, and the Android popup behaves more like the desktop in-app popup by avoiding an extra dimmed background behind the small dictionary surface.
 - fix: no additional production edit in this round beyond preserving the existing dirty native change for later Android-specific validation.
 - verification: static code review only. No Android activity instrumentation was run in this Windows-focused pass.

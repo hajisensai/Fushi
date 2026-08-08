@@ -42,7 +42,7 @@
 
 **激活键的平台差异**：app 主激活是手柄 `gameButtonA`——模拟器（Android）能合成它；**桌面（Windows/Mac）合不出**（无物理键映射，`sendKeyEvent(gameButtonA)` 抛 "not found in windows physical key map"）→ 桌面用 `Enter`（不走 `Space`，见上表）。`Tab` 与方向键到处都行，优先用它们。
 
-**为何能离屏后台跑**：合成按键走 Flutter 框架（不走 OS），与窗口是否在前台无关。桌面 runner 认环境变量 `HIBIKI_TEST_HIDDEN` 把窗口停到屏外 + 不抢前台（`windows/runner/win32_window.cpp` / `macos/Runner/MainFlutterWindow.swift`），不挡你用电脑。
+**为何能离屏后台跑**：合成按键走 Flutter 框架（不走 OS），与窗口是否在前台无关。桌面 runner 认环境变量 `FUSHI_TEST_HIDDEN` 把窗口停到屏外 + 不抢前台（`windows/runner/win32_window.cpp` / `macos/Runner/MainFlutterWindow.swift`），不挡你用电脑。
 
 > 离屏抓**真实像素**（观察功能是否渲染出来）走 Dart 抓图，不是 OS PrintWindow（后者对
 > Flutter/WebView 离屏全白）。见 [computer-use-testing.md](computer-use-testing.md) 的
@@ -68,7 +68,7 @@ flutter test integration_test/<t>_test.dart -d emulator-<port>     # 或 ci/inte
 bash ci/integration-test.sh                      # 起/选模拟器，构建，provision，跑全部目标
 bash ci/integration-test.sh --skip-build         # 复用已构建的 app-debug.apk
 bash ci/integration-test.sh --only=app_smoke,reader_pagination
-bash ci/integration-test.sh --avd=hibiki_gpu_test
+bash ci/integration-test.sh --avd=fushi_gpu_test
 ```
 
 每个目标的日志落在 `.codex-test/itest-logs/<target>.log`。
@@ -79,7 +79,7 @@ bash ci/integration-test.sh --avd=hibiki_gpu_test
 
 ### 默认 AVD 与两个已固化陷阱（安卓）
 
-- **默认 AVD 不再硬编不存在的名字**：`ci/integration-test.sh` 只在没有模拟器在线时才需要 AVD；此时若未传 `--avd=` / `AVD=`，脚本优先启 GPU 验证过的 `hibiki_gpu_test`（android-34，能真渲染 Flutter 像素），否则退回 `emulator -list-avds` 的第一台；都没有则明确报错要求先建 AVD 或传 `--avd=<name>`。旧文档里的 `hoshi_test_api35` 从不存在，已废弃。
+- **默认 AVD 不再硬编不存在的名字**：`ci/integration-test.sh` 只在没有模拟器在线时才需要 AVD；此时若未传 `--avd=` / `AVD=`，脚本优先启 GPU 验证过的 `fushi_gpu_test`（android-34，能真渲染 Flutter 像素），否则退回 `emulator -list-avds` 的第一台；都没有则明确报错要求先建 AVD 或传 `--avd=<name>`。旧文档里的 `hoshi_test_api35` 从不存在，已废弃。
 - **代理二相性（build 带代理 / drive 不带代理）**：构建 APK 阶段（`flutter build apk`，下载 libmpv android jar、sqlite3 dll 等原生依赖）以及 AnkiDroid APK 下载可能依赖 `HTTPS_PROXY` / `HTTP_PROXY`；但 `flutter drive` 连的是本机 Dart VM service（`127.0.0.1:<port>`），把这个 localhost 连接走 HTTP 代理会被中途关闭（`HttpException: Connection closed`），导致**每个目标都失败**。脚本已在所有下载完成后、进入 `flutter drive` 目标循环前自动 `unset HTTPS_PROXY HTTP_PROXY`，无需手动处理。若你手动分阶段跑：**build 阶段带代理，`--skip-build` 跑 drive 阶段一律不带代理**。
 - **AnkiDroid provisioning（仅 `anki_integration` 目标需要）**：AnkiDroid 22.4.3 在 API 34 全新安装后停在 `IntroductionActivity`，必须点一次「Get started」才会创建 `collection.anki2`——`monkey` 启动只会重复弹出该页而不会推进。`ci/lib/provision-ankidroid.sh` 会先 `am start` 该页并尝试焦点遍历 + Enter 无坐标推进，再校验 collection 是否落盘；若仍缺失会**大声报错并给出唯一手动步骤**（在模拟器里手点一次「Get started」后重跑），不会静默假装 provision 成功。
 

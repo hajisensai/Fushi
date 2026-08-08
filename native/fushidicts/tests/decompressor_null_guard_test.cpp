@@ -1,5 +1,5 @@
 // TODO-892 source-scan guard: every libdeflate_alloc_decompressor() call in the
-// hoshidicts *production* sources must be followed, within a small window, by a
+// fushidicts *production* sources must be followed, within a small window, by a
 // null check on the returned pointer. The historical yomitan import hard-crash
 // (0xC0000005) was a null decompressor being deref'd by
 // libdeflate_deflate_decompress() because zip.cpp skipped the check; this guard

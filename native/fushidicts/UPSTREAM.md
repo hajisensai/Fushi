@@ -28,7 +28,7 @@
 | `4975788` | consider all freq values when sorting within dict | `fushidicts_src/lookup.cpp`（`get_freq_value_for_dict`→`get_freq_values_for_dict` 返 `vector<int>` + 调用点） | 纯查询期排序，不碰 importer/写盘 |
 | `1a34a59` | fix swift compilation on c++23 | `fushidicts_include/hoshidicts/query.hpp` + `fushidicts_src/query.cpp`（`Dictionary` pimpl 5 个特殊成员声明+定义） | 仅编译期，5 平台受益 |
 
-> 上述三处 apply 前已逐字节确认 Hibiki 仍是上游旧版（OLD），diff 与上游对应 commit 一致（除 Hibiki 本地上下文如 `hoshi::fs_path`）。
+> 上述三处 apply 前已逐字节确认 Hibiki 仍是上游旧版（OLD），diff 与上游对应 commit 一致（除 Hibiki 本地上下文如 `fushi::fs_path`）。
 
 ## 未同步 / 待评估（follow-up，按 TODO-621 计划 a9ae4ae38e9351fb4）
 
@@ -74,7 +74,7 @@
 
 ## 2026-08 Hibiki→Fushi 改名映射（P6-2）
 
-产品改名 Fushi 后，本引擎**对外符号面**同步改为 `fushidicts`。终局清算 W6（2026-08-07）又把**目录名**一并改掉：`native/hoshidicts/` → `native/fushidicts/`，内层 `hoshidicts_src/`→`fushidicts_src/`、`hoshidicts_include/`→`fushidicts_include/`、`hoshidicts_external/`→`fushidicts_external/`（vendored 第三方只改目录名，pristine 文件内容不动）。**仍保持不变**的是与上游 diff 对照面直接相关的部分：内部静态库 target `hoshidicts`、公共头子目录 `fushidicts_include/hoshidicts/`（源码 `#include "hoshidicts/*.hpp"` 原样）、内部命名空间/宏（`HOSHI_EXPORT`、`hoshi::`、`HoshiThread`）、磁盘分片名 `.hoshidicts_1`（持久化契约）。对照表：
+产品改名 Fushi 后，本引擎**对外符号面**同步改为 `fushidicts`。终局清算 W6（2026-08-07）又把**目录名**一并改掉：`native/hoshidicts/` → `native/fushidicts/`，内层 `hoshidicts_src/`→`fushidicts_src/`、`fushidicts_include/`→`fushidicts_include/`、`hoshidicts_external/`→`fushidicts_external/`（vendored 第三方只改目录名，pristine 文件内容不动）。**仍保持不变**的是与上游 diff 对照面直接相关的部分：内部静态库 target `hoshidicts`、公共头子目录 `fushidicts_include/hoshidicts/`（源码 `#include "fushidicts/*.hpp"` 原样）、内部命名空间/宏（`FUSHI_EXPORT`、`fushi::`、`HoshiThread`）、磁盘分片名 `.hoshidicts_1`（持久化契约）。对照表：
 
 | 旧名 | 新名 | 说明 |
 |---|---|---|
