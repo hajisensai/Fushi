@@ -19,7 +19,7 @@ String cssRgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
     '${(c.b * 255.0).round().clamp(0, 255)})';
 
 /// spec 2026-07-10 §6 — [c] 的裸 `r, g, b` 三元组，供 popup.css 的
-/// `rgba(var(--hibiki-card-bg-rgb), var(--hibiki-card-bg-alpha))` 组装半透明卡
+/// `rgba(var(--fushi-card-bg-rgb), var(--fushi-card-bg-alpha))` 组装半透明卡
 /// 背景（`--background-color` 是不透明 `rgb()`，纯 CSS 无法给它加 alpha）。
 String cssRgbTriplet(Color c) => '${(c.r * 255.0).round().clamp(0, 255)}, '
     '${(c.g * 255.0).round().clamp(0, 255)}, '
@@ -47,7 +47,7 @@ Map<String, String> buildPopupThemeCssVars({
     '--fushi-primary-highlight': cssRgba035(scheme.primary),
     '--text-color': cssRgb(scheme.onSurface),
     '--background-color': cssRgb(backgroundColor),
-    '--hibiki-card-bg-rgb': cssRgbTriplet(backgroundColor),
+    '--fushi-card-bg-rgb': cssRgbTriplet(backgroundColor),
     '--md-surface-container': cssRgb(scheme.surfaceContainer),
     '--md-surface-container-high': cssRgb(surfaceContainerHigh),
     '--md-on-surface': cssRgb(scheme.onSurface),
@@ -55,7 +55,7 @@ Map<String, String> buildPopupThemeCssVars({
     '--md-outline-variant': cssRgb(scheme.outlineVariant),
     '--md-primary': cssRgb(scheme.primary),
     '--md-on-primary': cssRgb(scheme.onPrimary),
-    '--hibiki-radius-card': '${FushiRadii.cardValue.toInt()}px',
+    '--fushi-radius-card': '${FushiRadii.cardValue.toInt()}px',
     '--dict-columns': '$dictionaryColumns',
   };
 }

@@ -107,14 +107,14 @@ String _themeVariablesJs({
       document.documentElement.style.setProperty('--fushi-primary-highlight', '${vars['--fushi-primary-highlight']}');
       document.documentElement.style.setProperty('--text-color', '${vars['--text-color']}');
       document.documentElement.style.setProperty('--background-color', '${vars['--background-color']}');
-      document.documentElement.style.setProperty('--hibiki-card-bg-rgb', '${vars['--hibiki-card-bg-rgb']}');
+      document.documentElement.style.setProperty('--fushi-card-bg-rgb', '${vars['--fushi-card-bg-rgb']}');
       document.documentElement.style.setProperty('--md-surface-container', '${vars['--md-surface-container']}');
       document.documentElement.style.setProperty('--md-surface-container-high', '${vars['--md-surface-container-high']}');
       document.documentElement.style.setProperty('--md-outline-variant', '${vars['--md-outline-variant']}');
       document.documentElement.style.setProperty('--md-on-surface-variant', '${vars['--md-on-surface-variant']}');
       document.documentElement.style.setProperty('--md-primary', '${vars['--md-primary']}');
       document.documentElement.style.setProperty('--md-on-primary', '${vars['--md-on-primary']}');
-      document.documentElement.style.setProperty('--hibiki-radius-card', '${vars['--hibiki-radius-card']}');
+      document.documentElement.style.setProperty('--fushi-radius-card', '${vars['--fushi-radius-card']}');
       document.documentElement.style.setProperty('--dict-columns', '${vars['--dict-columns']}');
 ''';
 }

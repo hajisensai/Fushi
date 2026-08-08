@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// （[AppModel.browserExtensionThemeColors]）下发，content.js 只把该 map 里**有的** key
 /// `setProperty` 到 `#entries-container`。app 内两个注入器（popup_settings_injection /
 /// dictionary_popup_webview）设了 `--fushi-primary-highlight` / `--md-on-primary` /
-/// `--hibiki-radius-card` / `--hibiki-card-bg-rgb`，但服务器 map 漏发 → 扩展退化成灰高亮 /
+/// `--fushi-radius-card` / `--fushi-card-bg-rgb`，但服务器 map 漏发 → 扩展退化成灰高亮 /
 /// 白字 / 直角 / 纯白底，肉眼「和 app 不一样」。
 ///
 /// 本守卫钉死：popup_settings_injection.dart 每一个 `setProperty('--x', …)` 的变量，都必须
@@ -69,8 +69,8 @@ void main() {
     for (final String v in const <String>[
       '--fushi-primary-highlight',
       '--md-on-primary',
-      '--hibiki-radius-card',
-      '--hibiki-card-bg-rgb',
+      '--fushi-radius-card',
+      '--fushi-card-bg-rgb',
     ]) {
       expect(server.contains(v), isTrue,
           reason: 'BUG-736 修复不得回退：server theme map 必须含 $v');

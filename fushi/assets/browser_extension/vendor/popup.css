@@ -1332,7 +1332,7 @@ html[data-theme="dark"] {
     margin-top: 4px;
     padding: 8px 10px;
     border: 1px solid var(--outline-variant);
-    border-radius: var(--hibiki-radius-card, 10px);
+    border-radius: var(--fushi-radius-card, 10px);
     background: var(--surface-container);
 }
 
@@ -1432,11 +1432,11 @@ html.global-lookup body {
        same rgb triplet the theme injects into --background-color, so this line
        is byte-equivalent to the old opaque fill for the in-app popup and the
        transient overlay (zero regression). The clipboard panel sets
-       --hibiki-card-bg-alpha < 1 (opacity slider) so the Win11 acrylic backdrop
+       --fushi-card-bg-alpha < 1 (opacity slider) so the Win11 acrylic backdrop
        (ApplySystemBackdrop) shows through; when the backdrop is unavailable
        Dart always passes 1. */
-    background: rgba(var(--hibiki-card-bg-rgb, 255, 255, 255),
-        var(--hibiki-card-bg-alpha, 1));
+    background: rgba(var(--fushi-card-bg-rgb, 255, 255, 255),
+        var(--fushi-card-bg-alpha, 1));
 }
 
 html.global-lookup[data-theme="dark"] body {
@@ -1484,7 +1484,7 @@ html.global-lookup[data-theme="dark"] body {
 .global-lookup-sentence {
     margin: 0 0 8px 0;
     padding: 8px 10px;
-    border-radius: var(--hibiki-radius-card, 10px);
+    border-radius: var(--fushi-radius-card, 10px);
     background: var(--surface-variant, rgba(128, 128, 128, 0.12));
     /* 真机反馈（2026-07-10）：左侧 3px 强调色竖条（引用块样式）在面板里像
        「搜索栏左边一块莫名深色」——去掉竖条，改四边细边框的普通搜索框外观。 */
@@ -1571,7 +1571,7 @@ html.global-lookup[data-theme="dark"] body {
     flex-direction: column;
     gap: 8px;
     padding: 16px;
-    border-radius: var(--hibiki-radius-card, 12px);
+    border-radius: var(--fushi-radius-card, 12px);
     background: var(--md-surface-container-high, var(--background-color));
     color: var(--text-color);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
@@ -1690,9 +1690,9 @@ html.eink *::after {
 }
 
 html.eink {
-    --hibiki-radius-card: 0;
+    --fushi-radius-card: 0;
     /* 杀掉亚克力/半透明卡片底（Win11 backdrop 在 e-ink 上只是脏灰）。 */
-    --hibiki-card-bg-alpha: 1;
+    --fushi-card-bg-alpha: 1;
     /* 查词命中不再用半透明色块（消费端见下方 underline 覆盖）。 */
     --fushi-primary-highlight: transparent;
     /* tags：色块 → 透明底 + 描边（描边规则见下）。 */
@@ -1716,7 +1716,7 @@ html.eink[data-theme="light"] {
     --primary-color: #000;
     --on-surface-variant: #000;
     --freq-tag-color: #000;
-    --hibiki-card-bg-rgb: 255, 255, 255;
+    --fushi-card-bg-rgb: 255, 255, 255;
 }
 
 html.eink[data-theme="dark"] {
@@ -1734,7 +1734,7 @@ html.eink[data-theme="dark"] {
     --primary-color: #fff;
     --on-surface-variant: #fff;
     --freq-tag-color: #fff;
-    --hibiki-card-bg-rgb: 0, 0, 0;
+    --fushi-card-bg-rgb: 0, 0, 0;
 }
 
 /* tags / 词频：色块改「透明底 + 1px 实线描边」；词频来源药丸反色（黑底白字 /

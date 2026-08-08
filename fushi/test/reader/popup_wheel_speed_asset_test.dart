@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 用户觉得慢也无法调节。修复引入一个 app 偏好 `popup_wheel_speed`（倍率，默认 1.0），
 /// 一处存储驱动全部弹窗表面：
 ///   - in-app 三种弹窗：popup_settings_injection 注入 window.__fushiPopupWheelSpeed；
-///   - 浏览器扩展弹窗：查词响应 theme 通道下发 --hibiki-wheel-speed，由 content.js
+///   - 浏览器扩展弹窗：查词响应 theme 通道下发 --fushi-wheel-speed，由 content.js
 ///     读成同名全局（content.js 与 popup.js 同隔离世界共享 window）。
 /// popup.js 三份镜像把 factor 乘以该倍率。任一环断掉滑杆就变成哑设置，故逐环锁死。
 ///
@@ -59,10 +59,10 @@ void main() {
           reason: '注入值必须来自偏好真值，而不是写死常量');
     });
 
-    test('扩展 theme 通道下发 --hibiki-wheel-speed', () {
+    test('扩展 theme 通道下发 --fushi-wheel-speed', () {
       final String dart =
           File('lib/src/models/app_model.dart').readAsStringSync();
-      expect(dart, contains("'--hibiki-wheel-speed'"),
+      expect(dart, contains("'--fushi-wheel-speed'"),
           reason: '扩展弹窗只能经查词响应 theme 拿到 app 设置');
       expect(dart, contains('popupWheelSpeed'), reason: 'theme 下发值必须来自同一个偏好真值');
     });
@@ -70,7 +70,7 @@ void main() {
     for (final String path in contentCopies) {
       test('[$path] content.js 把 theme 值落成同名全局', () {
         final String src = File(path).readAsStringSync();
-        expect(src, contains("theme['--hibiki-wheel-speed']"),
+        expect(src, contains("theme['--fushi-wheel-speed']"),
             reason: 'content.js 必须读 theme 下发的滚轮速度');
         expect(src, contains('window.__fushiPopupWheelSpeed'),
             reason: '必须落到 popup.js 读取的同名全局，否则扩展弹窗调速无效');

@@ -1965,7 +1965,7 @@ function fushiApplyTheme(c, theme, applyBox) {
   // BUG-1026：查词弹窗滚轮速度倍率随 theme 下发（app popupWheelSpeed）→ 设同名全局供
   // popup.js 的 wheel 监听器读（content/popup 同隔离世界共享 window）。非法/缺失 → 1.0。
   {
-    const ws = parseFloat(theme['--hibiki-wheel-speed']);
+    const ws = parseFloat(theme['--fushi-wheel-speed']);
     window.__fushiPopupWheelSpeed = (isFinite(ws) && ws > 0) ? ws : 1;
   }
   // BUG-688：尺寸盒 + zoom 落到 host（视口坐标，确定宽度 → header 满宽、按钮右推、不再全屏铺开）。

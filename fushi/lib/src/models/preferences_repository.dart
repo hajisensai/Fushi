@@ -748,7 +748,7 @@ class PreferencesRepository extends ChangeNotifier {
   // 部分用户觉得太慢；此倍率乘进 popup.js 的 factor（同乘粗鼠标 0.24 与触控板 1.0），
   // 作为统一「滚轮速度」旋钮。默认 1.0 与改前逐帧一致。clamp 0.5–5.0 防越界值把滚动放飞。
   // 一处存储驱动全部弹窗：in-app 三种弹窗经 popup_settings_injection 注入
-  // window.__fushiPopupWheelSpeed；浏览器扩展弹窗经查词响应 theme 的 --hibiki-wheel-speed 下发。
+  // window.__fushiPopupWheelSpeed；浏览器扩展弹窗经查词响应 theme 的 --fushi-wheel-speed 下发。
   double get popupWheelSpeed {
     final double v =
         (getPref('popup_wheel_speed', defaultValue: 1.0) as num).toDouble();

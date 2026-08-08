@@ -193,8 +193,8 @@ void main() {
       expect(body, contains('-webkit-user-select: none;'));
     });
 
-    test('卡片圆角仍走 --hibiki-radius-card token（未被本次改动破坏）', () {
-      expect(css, contains('var(--hibiki-radius-card'),
+    test('卡片圆角仍走 --fushi-radius-card token（未被本次改动破坏）', () {
+      expect(css, contains('var(--fushi-radius-card'),
           reason: '弹窗卡片表面仍引用注入的圆角 token');
     });
   });

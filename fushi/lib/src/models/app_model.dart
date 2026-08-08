@@ -2736,9 +2736,9 @@ class AppModel with ChangeNotifier {
       // BUG-736：查到词的高亮色。漏发时 popup.css 回落到灰 rgba(160,160,160,0.4)，与 app
       // 内的主题主色高亮不一致（这是「扩展弹窗和 app 不一样」最扎眼的一处）。
       '--fushi-primary-highlight': vars['--fushi-primary-highlight']!,
-      // BUG-736：卡片底色 alpha 合成用的 RGB 三元组（配 popup.css 的 --hibiki-card-bg-alpha）。
+      // BUG-736：卡片底色 alpha 合成用的 RGB 三元组（配 popup.css 的 --fushi-card-bg-alpha）。
       // 漏发时回落到纯白 255,255,255。
-      '--hibiki-card-bg-rgb': vars['--hibiki-card-bg-rgb']!,
+      '--fushi-card-bg-rgb': vars['--fushi-card-bg-rgb']!,
       // BUG-688：app 当前明暗，content.js 据此把 #entries-container 的 data-theme 对齐 app
       // （而非宿主网页 prefers-color-scheme），根除「data-theme 跟宿主页 / --md-* 跟 app」的分裂。
       '--fushi-color-scheme': themeNotifier.isDarkMode ? 'dark' : 'light',
@@ -2752,7 +2752,7 @@ class AppModel with ChangeNotifier {
       '--md-on-primary': vars['--md-on-primary']!,
       // BUG-736：卡片圆角。漏发时 popup.css 回落到硬编码 10px，与 app 内用户设定的圆角
       // （FushiRadii.cardValue，经 buildPopupThemeCssVars）不一致。与两个 in-app 注入器同源。
-      '--hibiki-radius-card': vars['--hibiki-radius-card']!,
+      '--fushi-radius-card': vars['--fushi-radius-card']!,
       // 弹窗尺寸精细化：扩展弹窗默认跟随 app 内 popupMaxWidth/Height，用户显式
       // 解锁「浏览器扩展独立尺寸」后改用扩展自己的键（extensionPopupEffectiveSize）。
       '--fushi-popup-max-width':
@@ -2769,7 +2769,7 @@ class AppModel with ChangeNotifier {
       // BUG-1026：查词弹窗滚轮速度倍率下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。
       // content.js fushiRender 读它设 window.__fushiPopupWheelSpeed（与 in-app 注入同名
       // 全局），popup.js 的 wheel factor 乘它。走 theme 通道与 --fushi-swipe-close 同法。
-      '--hibiki-wheel-speed': popupWheelSpeed.toStringAsFixed(3),
+      '--fushi-wheel-speed': popupWheelSpeed.toStringAsFixed(3),
     };
   }
 

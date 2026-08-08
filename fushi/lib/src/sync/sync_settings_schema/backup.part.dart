@@ -91,7 +91,7 @@ const Set<BackupCategory> importMergeSelectableCategories =
 /// [_BackupImportWidgetState._import] 延时自动调用（用户诉求「导入完自动重启，不再手动重开」）。
 ///
 /// **优先真重启**：委托 `lifecycle.restartApp()`——与数据根迁移成功路径同一条经过验证的重启
-/// 实现（桌面 detached 拉新进程 + 带 `--hibiki-restarted` 前台标志避免黑窗、macOS 经
+/// 实现（桌面 detached 拉新进程 + 带 `--fushi-restarted` 前台标志避免黑窗、macOS 经
 /// `open -n <bundle>` 规避直接起可执行文件在 Dart 启动前崩、移动端 `restart_app` 插件；三端
 /// `supportsRestart==true`）。消除了旧实现在本文件里 ad-hoc `Process.start(resolvedExecutable)`
 /// 的劣质重复（缺前台标志、macOS 会崩）。

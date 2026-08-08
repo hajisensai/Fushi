@@ -881,7 +881,7 @@ JSON.stringify((function(){
       document.documentElement.style.setProperty('--md-on-surface-variant', '${vars['--md-on-surface-variant']}');
       document.documentElement.style.setProperty('--md-primary', '${vars['--md-primary']}');
       document.documentElement.style.setProperty('--md-on-primary', '${vars['--md-on-primary']}');
-      document.documentElement.style.setProperty('--hibiki-radius-card', '${vars['--hibiki-radius-card']}');
+      document.documentElement.style.setProperty('--fushi-radius-card', '${vars['--fushi-radius-card']}');
       document.documentElement.style.setProperty('--dict-columns', '${vars['--dict-columns']}');
 ''';
   }

@@ -66,7 +66,7 @@ String buildFrameSettingsJs({
   // 后 documentElement 上的旧 0.85 残留、面板停在半透明）。同一 alpha 下
   // settingsJs 跨渲染字节稳定（host 以 settingsJs 变更为重渲判据）。
   final String cardBgAlphaLine =
-      "document.documentElement.style.setProperty('--hibiki-card-bg-alpha', "
+      "document.documentElement.style.setProperty('--fushi-card-bg-alpha', "
       "'${cardBgAlpha.toStringAsFixed(2)}');\n";
   // TODO-1231 P1 — `window.__hasChildPopup` is DELIBERATELY NOT part of this body
   // anymore. The flag flips whenever a child card opens/closes on top of THIS

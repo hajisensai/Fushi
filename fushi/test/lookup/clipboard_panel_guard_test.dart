@@ -118,24 +118,24 @@ void main() {
     });
   });
 
-  group('半透明卡背景（--hibiki-card-bg-* 三端契约）', () {
+  group('半透明卡背景（--fushi-card-bg-* 三端契约）', () {
     test('注入端产出 rgb 三元组变量', () {
-      expect(injectionDart.contains('--hibiki-card-bg-rgb'), isTrue);
+      expect(injectionDart.contains('--fushi-card-bg-rgb'), isTrue);
       // 三元组值经共享真源 popup_theme_css.dart（cssRgbTriplet →
       // buildPopupThemeCssVars）派生，注入端不再本地手抄格式化。
       expect(injectionDart.contains('buildPopupThemeCssVars('), isTrue);
     });
 
     test('render 端恒注入 alpha 变量（1.0 也写——防调回 100% 后旧值残留）', () {
-      expect(renderDart.contains('--hibiki-card-bg-alpha'), isTrue);
+      expect(renderDart.contains('--fushi-card-bg-alpha'), isTrue);
       expect(renderDart.contains('cardBgAlpha.toStringAsFixed(2)'), isTrue);
       expect(renderDart.contains('cardBgAlpha < 1.0'), isFalse,
           reason: '条件注入会让常驻面板从 0.85 调回 1.0 后停在半透明（审查 #4）');
     });
 
     test('popup.css 卡背景消费两变量且默认 alpha=1（零回归）', () {
-      expect(popupCss.contains('var(--hibiki-card-bg-rgb'), isTrue);
-      expect(popupCss.contains('var(--hibiki-card-bg-alpha, 1)'), isTrue);
+      expect(popupCss.contains('var(--fushi-card-bg-rgb'), isTrue);
+      expect(popupCss.contains('var(--fushi-card-bg-alpha, 1)'), isTrue);
     });
   });
 

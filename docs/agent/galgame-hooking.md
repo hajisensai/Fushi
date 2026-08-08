@@ -79,7 +79,7 @@ powershell -ExecutionPolicy Bypass -File tool/galhook.ps1 probe 'D:\Games\Title\
 引擎 id 使用小写字母、数字和下划线：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tool/galhook.ps1 new example_engine --hibiki-root 'C:\src\hibiki'
+powershell -ExecutionPolicy Bypass -File tool/galhook.ps1 new example_engine --fushi-root 'C:\src\hibiki'
 ```
 
 命令会拒绝覆盖已有文件，并生成或注册：
@@ -89,7 +89,7 @@ powershell -ExecutionPolicy Bypass -File tool/galhook.ps1 new example_engine --h
 - `hook/adapters/example_engine_adapter.inc`
 - native CTest 与合成 replay fixture
 - registry 的受管 include/startup/shutdown/module/fields 片段
-- 指定 `--hibiki-root` 时的 Dart fixture 与测试骨架
+- 指定 `--fushi-root` 时的 Dart fixture 与测试骨架
 
 生成后结构守卫自动执行，没有跳过验证的命令行开关；适配器也自动进入 CMake/CTest。骨架只是待实现状态，先在 profile 与 `engine-support.yaml` 标记 `implemented_unverified`，再完成 `probe/install/capabilities/onModuleLoaded/shutdown/diagnostics` 所需实现。不要在回调里做文件 IO、解析、编码、IPC 等阻塞操作：回调只能向有界事件复制固定大小或有上限的数据并立即返回，队列满时丢弃；重组、读取、配对和转码放到 worker。
 
