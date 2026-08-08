@@ -20,6 +20,15 @@ AppPublisher=Fushi
 DefaultDirName={localappdata}\Fushi
 DefaultGroupName=Fushi
 DisableProgramGroupPage=yes
+; Fushi 改名：Inno 默认 UsePreviousGroup=yes，升级时从卸载键里读回上一次的
+; 「Inno Setup: Icon Group」（旧安装写的是 Hibiki），于是 {group} 解析成
+; ...\Programs\Hibiki，新建的 Fushi 快捷方式会落进一个叫 Hibiki 的文件夹里
+; （实测用户机器上 Programs\Hibiki 现在是空目录，正是这条路径的产物）。
+; 关掉它，强制用 DefaultGroupName=Fushi；遗留的 Programs\Hibiki 在
+; CurStepChanged/ssPostInstall 里清理（先删旧 lnk，目录空了才 RemoveDir）。
+; DisableProgramGroupPage=yes 意味着用户从来无法自定义组名，所以这里不存在
+; 「覆盖用户选择」的风险。
+UsePreviousGroup=no
 PrivilegesRequired=lowest
 OutputDir={#OutputDir}
 OutputBaseFilename=fushi-{#AppVersion}-windows-setup
@@ -51,20 +60,17 @@ Name: "videoassoc"; Description: "将 Fushi 加入视频文件的「打开方式
 ; GalgameHelperInstaller 就会拿这份**旧** zip 回填，把安装器刚放好的新组件覆盖成旧的，
 ; 直接复发 BUG-1448 的「组件比本体旧」。删的是上一版留下的归档，不碰用户数据。
 Type: filesandordirs; Name: "{app}\galgame_helper"
-; Fushi 改名：升级时清掉旧名二进制（Inno 不删除未被覆盖的旧文件，不清则
-; hibiki.exe 与 fushi.exe 并存，旧快捷方式还能把旧版拉起来）。
-Type: files; Name: "{app}\hibiki.exe"
-Type: files; Name: "{app}\hibiki_update_launcher.exe"
-; 同理清掉旧名 native 产物（改名前 windows/CMakeLists.txt 装的是 hoshidicts_ffi.dll
-; 与 hibiki_torrent_ffi.dll）。Inno 只覆盖同名文件，改了名的旧 DLL 会永久留在 {app}：
-; 一是纯垃圾，二是 torrent 引擎按名加载「exe 同目录」，留着就等于给「新 DLL 缺失时
-; 静默加载上一版旧 ABI」留了口子。清掉之后 defaultLibraryNames 的旧名回退也随之作废。
-Type: files; Name: "{app}\hibiki_torrent_ffi.dll"
-Type: files; Name: "{app}\hoshidicts_ffi.dll"
-; 旧名快捷方式指向已被删除的 hibiki.exe，一并清掉（桌面图标位置一次性丢失，
-; 换来不留死链接；新名快捷方式按 BUG-1014 规则只建一次）。
-Type: files; Name: "{userdesktop}\Hibiki.lnk"
-Type: files; Name: "{group}\Hibiki.lnk"
+; 归属判据：本段只放「必须在复制前删、且删了不影响可运行性」的条目。
+; 上面 {app}\galgame_helper 两点都满足——新包同样往 {app} 下写 helper 组件，
+; 不先删就会被旧归档回填；而它本身不是可执行入口，删早了不会让 app 打不开。
+;
+; 旧名二进制（hibiki.exe / hibiki_update_launcher.exe / hibiki_torrent_ffi.dll /
+; hoshidicts_ffi.dll）和旧名快捷方式**不在这里**：[InstallDelete] 在复制任何新文件
+; 之前执行，且 Inno 明确不会在安装失败/取消时回滚这些删除。它们又都不与新文件同名，
+; 所以「复制前删」没有任何必要性，却把一次中途失败的升级从「还剩个能跑的旧版」
+; 变成「一个可执行文件都没有」（实测现场：{app} 下 hibiki.exe 与 fushi.exe 双双消失，
+; 只剩 unins000.exe，快捷方式全成死链接）。这些条目已下沉到 [Code] 的
+; CurStepChanged / ssPostInstall，即新文件全部落地之后才执行。
 
 [Files]
 ; 包含 fushi_update_launcher.exe：应用内更新用它等待当前 fushi.exe 退出后再启动 Inno。
@@ -239,6 +245,48 @@ end;
 function ShouldCreateDesktopIcon(): Boolean;
 begin
   Result := not FileExists(ExpandConstant('{userdesktop}\Fushi.lnk'));
+end;
+
+// Fushi 改名的旧名残留清理，全部放在 ssPostInstall（新文件已全部落地之后），
+// 不放 [InstallDelete]：后者在复制前执行，且 Inno 不会在安装失败/取消时回滚删除，
+// 于是任何一次中途失败的升级都会把「还剩个能跑的旧版」变成「一个可执行文件都没有」。
+// ssPostInstall 只有在文件复制成功后才会到达，删旧名二进制不再有这个窗口。
+//
+// 平台限制（如实记录）：Windows 不提供程序化「固定到任务栏」的公开接口，
+// 所以任务栏固定项这里只能删掉指向已消失的 hibiki.exe 的死链接，
+// 无法自动改指 fushi.exe、也无法重新固定；用户需要的话得手动再固定一次。
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep <> ssPostInstall then
+    Exit;
+
+  // 旧名可执行文件：Inno 只覆盖同名文件，改了名的旧 exe 不清就会与 fushi.exe
+  // 并存，旧快捷方式还能把上一版拉起来。
+  DeleteFile(ExpandConstant('{app}\hibiki.exe'));
+  DeleteFile(ExpandConstant('{app}\hibiki_update_launcher.exe'));
+
+  // 旧名 native 产物（改名前 windows/CMakeLists.txt 装的是 hoshidicts_ffi.dll
+  // 与 hibiki_torrent_ffi.dll）。留着一是纯垃圾，二是 torrent 引擎按名加载
+  // 「exe 同目录」，等于给「新 DLL 缺失时静默加载上一版旧 ABI」留口子。
+  DeleteFile(ExpandConstant('{app}\hibiki_torrent_ffi.dll'));
+  DeleteFile(ExpandConstant('{app}\hoshidicts_ffi.dll'));
+
+  // 三处旧名快捷方式全部指向已删除的 hibiki.exe，都是死链接。
+  // 1) 桌面
+  DeleteFile(ExpandConstant('{userdesktop}\Hibiki.lnk'));
+  // 2) 开始菜单程序组（UsePreviousGroup=no 之后 {group} 已是 Fushi 组；
+  //    这条覆盖「旧 lnk 与新组同目录」的情形，遗留的 Hibiki 组另行处理）。
+  DeleteFile(ExpandConstant('{group}\Hibiki.lnk'));
+  // 3) 任务栏固定项——[InstallDelete] 从来没清过它，正是用户实测那个
+  //    「任务栏图标点了没反应」的死链接来源。
+  DeleteFile(ExpandConstant('{userappdata}\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\Hibiki.lnk'));
+
+  // 遗留的 Programs\Hibiki 程序组：旧安装留下的 Hibiki.lnk，以及
+  // UsePreviousGroup=yes 时期误建在该组里的 Fushi.lnk。两个都删掉后目录空了才移除
+  // （RemoveDir 只删空目录，用户自己往里放的东西不会被波及）。
+  DeleteFile(ExpandConstant('{userprograms}\Hibiki\Hibiki.lnk'));
+  DeleteFile(ExpandConstant('{userprograms}\Hibiki\Fushi.lnk'));
+  RemoveDir(ExpandConstant('{userprograms}\Hibiki'));
 end;
 
 function InitializeSetup(): Boolean;
