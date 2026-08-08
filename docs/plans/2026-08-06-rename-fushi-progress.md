@@ -95,6 +95,37 @@
 - [x] W7 Anki 新卡默认 tag `fushi`（主代理直做）：fushiTag 常量+Lapis 预览+i18n key `anki_tag_include_fushi` 17 语言（i18n_sync --rename）+登记表/静态守卫/ankimobile 钉值随改；`tagIncludeHibiki` 持久化 JSON 键族冻结；fushi_anki 391 绿
 - [x] W8 `hibiki/`→`fushi/` 应用目录改名（fable 子代理 13 提交，tip 11a2dfd17）：mv + workspace/CI/tool/ci/文档/守卫扫描根全套路径；合并时 skip-worktree 密钥文件需先还原占位再 merge；收尾修 2 真红（node 采集脚本旧路径、镜像清单三方对齐排除 README）
 - [x] 终局门 PASSED：**17646 tests ran, all tests passed**（fushi-mega 收官态；上一轮 17646-1 的唯一红为 W7 牵动钉值已修）
+
+## W9 旧代号残留终清（2026-08-08 用户审查后追加，分支 `w9-oldname-residue`）
+
+**起因**：P7 收官后按用户要求做独立审查，发现「终局门 17646 PASSED」**不能**证明旧名清零——守卫 `fushi_rename_guard_test.dart` 只扫 `fushi/lib` + 6 个包的 `lib`、只吃 `.dart`，且 34 条禁模式全是具名形态、`Hibiki*-类名族` 要求大写 H。四整族活代码从来没有任何模式盖到。
+
+- [x] W9-1 `hibiki`+驼峰符号族 31 个 / 84 文件（`521ef03f2`）；连带修 `setup_worktree.ps1` 死在第一个密钥文件、连 bootstrap 都不跑的真 bug（`e7d6f5e06`）
+- [x] W9-2 `__hibiki*` JS 全局 33 个 / 474 处 / 三镜像（`904888389`）；守卫测试文件名随符号改名 git mv
+- [x] W9-3 `--hibiki-*` CSS 变量 5 个 / 95 处（`ee8a3e82e`）；混在同前缀里的 `--hibiki-restarted` 实为桌面自重启命令行标志，两侧同改
+- [x] W9-4 `.hibiki*` 云资产扩展名（`f076a1ffd`）：**不是改名是兼容层**。四个后缀都是云端资产名，云根迁移只改根文件夹、内容原样保留 → 机械改名 = 远端词典/有声书/聚合状态静默消失 + 有声书重复上传。写新读旧 + 兼容层回归测试（变异实测）
+- [x] W9-5 3 个 i18n 键名（值早已是 Fushi，键值不同步）+ W9-6 枚举 `hibikiServer`/`hibikiRemote` 与其持久化值（**Drift v74** 迁移 + 载入期 wireName 别名）（`33b26e870`）
+- [x] W9-7 native 自有 C++ 内层 + W9-9 工具链环境变量与陈旧注释（`84bab8704`）：**W6 台账口径有误**——它记「含 external/include/src 内层」，实际只改了外层目录名，C++ 命名空间/宏/公共头/内层 include 目录全未动
+- [x] W9-10 守卫补 4 类禁模式（`\bhibiki[A-Z]` / `__hibiki` / `--hibiki-` / `\.hibiki[a-z]+`），变异 4/4 实测；Mihon 桥接键两侧同改（`e924aa2d3`）
+- [x] W9-8 galgame hook C++ 命名空间 826 处 + 13 个头文件保护宏（`cd5bd8ac6`）：**双架构真构建**——x86 ctest 26/26、x64 25/26（唯一未跑项硬依赖 .NET 8 SDK，本机 6.0.428 → NETSDK1045，环境阻塞已按 SOP 记录）。顺修 `galhook.py` 写死 `/ "hibiki"` 的 W8 遗留 bug，以及 `docs/engine-support.md` 被手工编辑导致的真相源漂移（SOP 门 `--check` 本来就是红的）
+- [x] W9 收尾（`727323590`）：16 个数据库测试的 schema 钉值 73→74、补 v74 迁移测试（变异实测）、最终复扫再清三族（扩展 DOM id `#hibiki-popup-resize-grip`、native `HoshiThread`/`hoshi_thread_*`、Anki 媒体前缀 `hibiki_audio_`）
+- [x] **W9 终局门 PASSED：17647 tests ran, all tests passed**；`flutter analyze` exit 0；扩展 `node --test` 198/198；`fushidicts` cmake 构建 exit 0（0 编译错误）
+
+**过程中两次自伤，均已修正并记录**（批量词根替换的固有风险）：
+1. 脚本把守卫自己的禁模式改反（`HIBIKI_TORRENT_LIB` → `FUSHI_TORRENT_LIB`，变成禁新名放行旧名）。**守卫文件在任何词根批量替换里都必须当反向语义资产对待。**
+2. `SKIP_DIRS` 里的 `build` 把 `fushi/test/build/` 这个真源码目录整树跳过。**收尾判据只认「残留计数归零」，不认脚本自报的替换数。**
+
+**仍刻意保留（本轮定性过的真契约，不是漏网）**：
+- `.hoshidicts_1` 磁盘分片名（词典持久化）
+- `%TEMP%\hibiki_gal_voice` 目录 + `hibiki_textseq` 文件名前缀（helper↔app 磁盘契约；helper 独立更新，需写新读旧 + 重发 helper 才能安全改）
+- `hibiki-block`/`data-hibiki-block`/`data-hibiki-field`（写进用户 Anki 模板，同 W7 先例）
+- `'hibiki-theme'` 分享码前缀（用户之间的 wire，老码在别人手里）
+- `hibiki.db`/`hibiki-data`/`hoshi_books`/`hibikiExport`/`app.hibiki.reader`/`kHibikiPackageName` 等迁移读旧数据常量（守卫白名单，带过期豁免检测）
+- `ttu_models.dart`/`ttu_filename.dart`/`sanitizeTtuFilename`/`ttuCharOffset`/`TtuProgress`（ッツ第三方 wire 契约）
+- `Hoshi-Reader-Android` 互通、`hajisensai/hibiki` 与 `hibiki-hook` 仓库名（用户未拍板）、`hibiki_torrent` 内层 native 文件名与 DLL 加载回退名
+- `native/fushi_torrent/hibiki_torrent_include/` 等内层文件名：可改，但 DLL 回退名 `hibiki_torrent_ffi.dll` 是随包磁盘产物的加载契约，需先确认预编译 DLL 分发方式
+
+**未做**：`.claude/worktrees/rename-fushi-plan-v2` 里的 34066 个 `.dart_tool` 残渣与两个 `*_fail.txt`（属另一个 worktree，本会话隔离不越界处理）。
 - 用户侧新增拍板：GitHub 仓库改名（hajisensai/hibiki→fushi + hibiki-hook→fushi-hook）用户未表态；TMDB/ASC 网页操作用户自办
 
 ## Phase 5 更新桥发布（2026-08-07/08 实施）
