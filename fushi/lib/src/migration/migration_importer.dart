@@ -71,10 +71,13 @@ class MigrationImporter {
           .whereType<File>()
           .any((File f) => f.path.endsWith('.zip'));
     } on FileSystemException {
-      // 列不出来 ≠ 没有（缺「所有文件访问权限」时就会这样）。这里返回 false
-      // 会把入口藏起来，用户再也走不到能授权的那个页面去。保守显示。
+      // 列不出来 ≠ 没有。保守显示。
       return true;
     }
+    // 注意这里**兜不住权限**：缺「所有文件访问权限」时 `existsSync` 直接返回
+    // false 而不抛异常，所以上面那个 catch 够不着，本方法会诚实地答「没有」。
+    // 入口不能只靠这个答案——调用方须同时看「老包是否还装着」，否则就是
+    // 权限没了 → 入口消失 → 无法授权 的死锁（见 _FushiMigrationBanner.build）。
   }
 
   /// 扫描中转目录：对每个 `<batch>.zip` + `<batch>.manifest.json` 齐全的批次

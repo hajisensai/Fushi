@@ -147,6 +147,20 @@ void main() {
           reason: '入口该显示，让用户进去看到「校验不过」，而不是入口直接消失');
     });
 
+    test('源码守卫：banner 入口不得只依赖「读得到中转数据」', () {
+      // 死锁形态：覆盖安装会把 MANAGE_EXTERNAL_STORAGE 重置（实测 adb install -r
+      // 后 appop 从 allow 变回 default）。此时 existsSync 返回 false，若入口只看
+      // hasTransferData 就会消失，用户再也走不到能授权的页面。
+      final String src =
+          File('lib/src/pages/implementations/home_dashboard_page.dart')
+              .readAsStringSync();
+      final int idx = src.indexOf('if (!_importDone && ');
+      expect(idx, greaterThan(-1), reason: 'banner 显示条件的形状变了，更新这条守卫');
+      final String cond = src.substring(idx, src.indexOf(') {', idx));
+      expect(cond, contains('_legacyInstalled'),
+          reason: '老包还装着就必须给入口，否则权限一没就是死锁');
+    });
+
     test('源码守卫：首页 banner 不得调用 scan()', () {
       // 真实代价：banner 的 _refresh 在 initState + 每次回前台都跑，用 scan
       // 就是把 11GB 全量 SHA-256 算一遍，实测手机 CPU 满载近 7 分钟。

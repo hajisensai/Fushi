@@ -2977,7 +2977,11 @@ class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     Widget? inner;
-    if (!_importDone && _hasTransferData) {
+    // 老包还装着也要显示入口，不能只看「读得到中转数据」：缺「所有文件访问
+    // 权限」时 existsSync 直接返回 false（它不抛异常，兜不住），入口一藏，用户
+    // 就再也走不到那个能授权的页面——权限没了 → 看不到入口 → 无法授权 → 死锁。
+    // 宁可多显示一次入口（进去会如实说「没有找到迁移数据」），也不留死路。
+    if (!_importDone && (_hasTransferData || _legacyInstalled)) {
       inner = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
