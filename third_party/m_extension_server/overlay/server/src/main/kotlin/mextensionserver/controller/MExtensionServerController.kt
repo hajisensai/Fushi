@@ -81,7 +81,7 @@ class MExtensionServerController {
                 "/capabilities" -> newFixedLengthResponse(
                     Response.Status.OK,
                     "application/json",
-                    """{"hibikiMihonBridge":1,"sourceFactory":true,"preferenceCallbacks":true,"imageProxy":true,"sourceUrls":true}""",
+                    """{"fushiMihonBridge":1,"sourceFactory":true,"preferenceCallbacks":true,"imageProxy":true,"sourceUrls":true}""",
                 )
                 "/stop" -> newFixedLengthResponse("Server stopping").also {
                     Thread {

@@ -162,6 +162,56 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     },
   ),
   _ForbiddenPattern(
+    // W9-1：hibiki **词首小写** camel 符号族（hibikiBooksProvider /
+    // hibikiDatabaseProvider / hibikiMd3* / hibikiAnki* / hibikiLapis* /
+    // hibikiTest* 等 31 个）→ fushi*。上面的 'Hibiki*-类名族' 要求大写 H，
+    // 这一族整整一年没有任何禁模式盖到 —— 文件名和类名都改成 Fushi* 了，
+    // 文件里的 hibikiXxx 标识符却原样留着，终局门全绿也照样漏。
+    name: 'hibiki*-camel 运行时符号族',
+    regex: RegExp(r'\bhibiki[A-Z]'),
+    allowed: <String, String>{
+      'lib/src/storage/export_directory.dart':
+          'kLegacyExportDirectoryName：启动就地改名迁移的旧目录名输入。',
+      'lib/src/storage/app_paths.dart':
+          "数据根搬迁白名单的 'hibikiExport' 双名条目（同 hibikiExport 禁模式理由）。",
+      'lib/src/models/audio_source_config.dart':
+          "AudioSourceKind.fromWireName 的旧 wireName 兼容别名 'hibikiRemote'："
+              '音频源配置以 JSON 落偏好、无版本阶梯，载入期认旧值即迁移通道。',
+      'packages/fushi_core/lib/src/database/database.dart':
+          "v74 迁移步的旧值输入 's:hibikiServer'（SyncBackendType 枚举名的 drift "
+              '字符串前缀编码）：读旧库做一次性改写的迁移代码。',
+    },
+  ),
+  _ForbiddenPattern(
+    // W9-2：注入/扩展侧 JS 全局族已是 __fushi*（33 个符号）。纯运行时符号，
+    // 每次注入现拼，无持久化形态，故无白名单。
+    name: '__hibiki* JS 全局族',
+    regex: RegExp('__hibiki'),
+  ),
+  _ForbiddenPattern(
+    // W9-3：注入 CSS 自定义属性已是 --fushi-*（radius-card / card-bg-rgb /
+    // card-bg-alpha / wheel-speed）。同为现拼的运行时名，无白名单。
+    name: '--hibiki- CSS 变量族',
+    regex: RegExp('--hibiki-'),
+  ),
+  _ForbiddenPattern(
+    // W9-4：云端资产扩展名写侧已是 .fushi*。**读侧仍须认旧名** —— 云根迁移只
+    // 改根文件夹名、内容原样保留，用户云上全是 Hibiki 时代写下的旧后缀资产，
+    // 只认新后缀 = 远端词典/有声书/聚合状态在用户眼里凭空消失。故白名单精确
+    // 圈定三个持有兼容读入口的文件，其余任何地方冒出旧后缀都算残留。
+    name: '.hibiki* 资产扩展名',
+    regex: RegExp(r'\.hibiki[a-z]+'),
+    allowed: <String, String>{
+      'lib/src/sync/sync_orchestrator.dart':
+          'kLegacySyncAudiobookAssetName / _legacyDictionaryAssetSuffix / '
+              '_legacyLocalAudioAssetSuffix：写新读旧的兼容读入口。',
+      'lib/src/sync/aggregate_sync_service.dart':
+          '_legacyAggregateAssetSuffix：每设备聚合快照的兼容读入口。',
+      'lib/src/sync/sync_compare_dialog.dart':
+          'legacySuffix：远端词典对比的兼容读分支（与 orchestrator 同源口径）。',
+    },
+  ),
+  _ForbiddenPattern(
     // Phase 3：Windows 单实例互斥体已是 FushiSingleInstanceMutex。
     name: 'HibikiSingleInstanceMutex',
     regex: RegExp('HibikiSingleInstanceMutex'),

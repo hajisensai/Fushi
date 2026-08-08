@@ -83,7 +83,7 @@ import json
 import sys
 value = json.loads(sys.argv[1])
 required = {
-    "hibikiMihonBridge": 1,
+    "fushiMihonBridge": 1,
     "sourceFactory": True,
     "preferenceCallbacks": True,
     "imageProxy": True,

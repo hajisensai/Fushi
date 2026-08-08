@@ -122,7 +122,7 @@ class MihonChannelHandler(private val app: Application) {
 
     private fun handle(call: MethodCall): Any? = when (call.method) {
         "capabilities" -> mapOf(
-            "hibikiMihonBridge" to 1,
+            "fushiMihonBridge" to 1,
             "sourceFactory" to true,
             "preferenceCallbacks" to true,
             "imageProxy" to true,

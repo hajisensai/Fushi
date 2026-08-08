@@ -405,7 +405,7 @@ void main() {
 
     // 生命周期与上游身份。
     expect(controller, contains('"/stop"'));
-    expect(controller, contains('hibikiMihonBridge'));
+    expect(controller, contains('fushiMihonBridge'));
   });
 
   // ==========================================================================

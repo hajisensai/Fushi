@@ -106,7 +106,7 @@ try {
             Start-Sleep -Milliseconds 200
         }
     } while ([DateTime]::UtcNow -lt $deadline)
-    if ($null -eq $capabilities -or $capabilities.hibikiMihonBridge -ne 1) {
+    if ($null -eq $capabilities -or $capabilities.fushiMihonBridge -ne 1) {
         throw "M-Extension-Server did not expose the required capability."
     }
 
