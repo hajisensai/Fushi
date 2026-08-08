@@ -490,7 +490,7 @@ const int kGalVoicePairingWindowMs = 1500;
 
 /// galgame 纯人声配对（真机验证，docs/specs/galgame-mining）：具有运行时契约的引擎把
 /// `TextSlot.seq` 写进资源名并优先按该稳定 ID 配对；显式 ID 不匹配时禁止回退时间猜测。
-/// 旧资源仍是 `%TEMP%\hibiki_gal_voice\<tickMs>_<basename>.ogg`
+/// 旧资源仍是 `%TEMP%\fushi_gal_voice\<tickMs>_<basename>.ogg`
 ///（tickMs=GetTickCount64，与文本环 `TextSlot.timestamp_ms` 同源）。新版 Siglus
 /// 资源导出会直接沿用当前文本 tick，
 /// 因此先取 [exactToleranceMs] 内的同 tick 文件；旧引擎仍可能让语音先开流、文本约 220ms
@@ -670,7 +670,7 @@ Future<void> awaitStableVoiceDumpFile(
 }
 
 /// 旧资源名为 `<tick>_<basename>`；具有运行时顺序证据的引擎可写
-/// `<tick>_hibiki_textseq<textSeq>_<basename>`，把资源绑定到稳定的
+/// `<tick>_fushi_textseq<textSeq>_<basename>`，把资源绑定到稳定的
 /// TextSlot::seq。
 class _ParsedVoiceOgg {
   const _ParsedVoiceOgg({
@@ -683,7 +683,7 @@ class _ParsedVoiceOgg {
   final int? textEventId;
 }
 
-/// 解析 `<tick>_[hibiki_textseq<textSeq>_]<basename>`。显式标记损坏时整条
+/// 解析 `<tick>_[fushi_textseq<textSeq>_]<basename>`。显式标记损坏时整条
 /// 拒绝，不得把它当普通 basename 再走时间窗。
 _ParsedVoiceOgg? _parseVoiceOggName(String fileName) {
   final int underscore = fileName.indexOf('_');
@@ -699,9 +699,9 @@ _ParsedVoiceOgg? _parseVoiceOggName(String fileName) {
     return null;
   }
   int? textEventId;
-  if (basename.startsWith('hibiki_textseq')) {
+  if (basename.startsWith('fushi_textseq')) {
     final RegExpMatch? match =
-        RegExp(r'^hibiki_textseq(\d+)_(.+)$').firstMatch(basename);
+        RegExp(r'^fushi_textseq(\d+)_(.+)$').firstMatch(basename);
     if (match == null) {
       return null;
     }
@@ -1593,7 +1593,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
 
   /// galgame **纯人声**取语音（真机验证路径，Windows 桌面专属）：按文本行时间戳 [textTsMs]
   /// （GetTickCount64，来自 [pollText] 的行 ts）在 injector hook DLL dump 的语音 OGG 目录
-  /// （`%TEMP%\hibiki_gal_voice`）里配对出**这句台词对应的原始语音**（配对规则见
+  /// （`%TEMP%\fushi_gal_voice`）里配对出**这句台词对应的原始语音**（配对规则见
   /// [pickPairedVoiceOgg]），转码成制卡管线容器 [outputExtension]（桌面 `aac`）字节，直接作
   /// `providedAudioBytes`。这是引擎级最干净的语音（混音前、无 BGM/SE），优先于共享内存里的
   /// [grabUtterance]/[grabClipNear]。非 Windows / 目录不存在 / 无匹配 / 转码失败返回 null
@@ -1821,10 +1821,10 @@ class EngineHookGalAudioSource implements GalAudioSource {
     }
   }
 
-  /// hook DLL dump 语音 OGG 的目录：`<GetTempPath>hibiki_gal_voice`（hook DLL 用 `GetTempPathW`
+  /// hook DLL dump 语音 OGG 的目录：`<GetTempPath>fushi_gal_voice`（hook DLL 用 `GetTempPathW`
   /// 落盘，Dart [Directory.systemTemp] 同走 GetTempPath，路径一致）。仅在 Windows 调用。
   Directory _galVoiceDumpDir() => Directory(
-        '${Directory.systemTemp.path}${Platform.pathSeparator}hibiki_gal_voice',
+        '${Directory.systemTemp.path}${Platform.pathSeparator}fushi_gal_voice',
       );
 
   /// 取路径 [path] 的文件名（最后一段，兼容 `\` 与 `/` 分隔）。

@@ -18,7 +18,7 @@ int main() {
 
   // A profile may opt in only after a separate causal pairing decision.
   assert(BuildVoiceResourceFileName(1234, L"voice.ogg", 57) ==
-         L"1234_hibiki_textseq57_voice.ogg");
+         L"1234_fushi_textseq57_voice.ogg");
 
   const VoiceTextCandidate observed[] = {
       // Discovery/UI/wrong-thread rows cannot bind a resource.

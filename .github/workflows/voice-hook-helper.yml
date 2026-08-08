@@ -93,7 +93,7 @@ jobs:
             本 release 为 prerelease、非 Latest。
 
             杀软说明：Windows Defender（签名 1.455.357.0）实扫全部文件与 zip 均无检出，
-            见 hibiki-hook#8 的 av-selfscan 实测。国产杀软（360/火绒等）未验证，若被拦为误报。
+            见 native/galgame_hook/docs/av-selfscan-evidence.md（原 hibiki-hook#8） 的 av-selfscan 实测。国产杀软（360/火绒等）未验证，若被拦为误报。
           prerelease: true
           make_latest: false
           files: |

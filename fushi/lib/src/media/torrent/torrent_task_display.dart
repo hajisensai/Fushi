@@ -134,7 +134,7 @@ String? formatShareRatio({
 }
 
 /// TODO-2482：内置引擎 peer flags 稳定位掩码的位定义（与
-/// `native/fushi_torrent/hibiki_torrent_include/hibiki_torrent.h` 的
+/// `native/fushi_torrent/fushi_torrent_include/fushi_torrent.h` 的
 /// ht_torrent_peers 契约逐位对齐，改一处必须改两处）。
 class TorrentPeerFlagBits {
   TorrentPeerFlagBits._();

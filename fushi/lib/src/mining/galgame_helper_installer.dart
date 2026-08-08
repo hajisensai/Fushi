@@ -17,7 +17,7 @@ void _log(String message) => debugPrint('[gal-helper] $message');
 ///
 /// 🔴 **BUG-1449 起，正常安装包里已经没有这个目录了。** helper 现在由
 /// `native/galgame_hook/tools/install_into_bundle.ps1` 在**构建期**解压成普通文件，
-/// 直接放进 `hibiki.exe` 同级的 `voice_hook/<arch>/`，两个架构都装；`hibiki.iss` 的
+/// 直接放进 `fushi.exe` 同级的 `voice_hook/<arch>/`，两个架构都装；`fushi.iss` 的
 /// `[InstallDelete]` 会清掉上一版残留的本目录。于是 helper 与本体同一次构建产出、
 /// 同一个安装包落地，**版本漂移在结构上不再可能**——不需要运行期对账，也就没有
 /// 「已装组件比本体旧」（BUG-1448）这条路。

@@ -2,7 +2,7 @@
 // ══ Ren'Py / FFmpeg 通用资源事件 + major 54 PCM 兼容层 ═══════════════════════════════
 // Ren'Py（测试 Sakura Swim Club）音频经独立 DLL 解码：avformat-54.dll 打开输入流、
 // avcodec-54.dll 解码。语音文件 url 常带 "voice" 或音频后缀（.ogg/.opus/.wav/.mp3…）。抓法与
-// KiriKiriZ OGG 那条同出口（%TEMP%\hibiki_gal_voice 落盘），只是这里抓的是**解码后 PCM**（Ren'Py
+// KiriKiriZ OGG 那条同出口（%TEMP%\fushi_gal_voice 落盘），只是这里抓的是**解码后 PCM**（Ren'Py
 // 不像 KiriKiri 有可 hook 的 wuvorbis/TVPCreateStream，只能落在 FFmpeg 解码链上）：
 //   avformat_open_input(ps,url,…)        -> url 命中语音则把 *ps（AVFormatContext*）登记为语音 ctx
 //   avformat_find_stream_info(ic,…)      -> 遍历 ic->streams[i]->codec（AVCodecContext*），读该音频
@@ -293,7 +293,7 @@ void CopyRenpyResource(const char* url) {
     CloseHandle(source);
     return;
   }
-  std::wstring directory = std::wstring(temp) + L"hibiki_gal_voice";
+  std::wstring directory = std::wstring(temp) + L"fushi_gal_voice";
   CreateDirectoryW(directory.c_str(), nullptr);
   wchar_t base[128] = {0};
   MakeRenpyBaseName(url, nullptr, base, 128);
@@ -341,7 +341,7 @@ void WriteRenpyWav(const uint8_t* pcm, uint32_t len, uint32_t rate, uint32_t cha
   wchar_t temp[MAX_PATH] = {0};
   const DWORD n = GetTempPathW(MAX_PATH, temp);
   if (n == 0 || n > MAX_PATH) return;
-  std::wstring dir = std::wstring(temp) + L"hibiki_gal_voice";
+  std::wstring dir = std::wstring(temp) + L"fushi_gal_voice";
   CreateDirectoryW(dir.c_str(), nullptr);  // 已存在则失败无害（与 KiriKiri OGG 同目录）
   std::wstring base =
       (basename != nullptr && basename[0] != 0) ? std::wstring(basename) : L"renpy";

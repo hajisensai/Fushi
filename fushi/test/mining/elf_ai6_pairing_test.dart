@@ -38,7 +38,7 @@ void main() {
     final int textEventId = text['text_event_id'] as int;
     expect(resource['paired_text_event_id'], textEventId);
     final String marked =
-        '${resourceTs}_hibiki_textseq${textEventId}_elf_ai6_3175862.ogg';
+        '${resourceTs}_fushi_textseq${textEventId}_elf_ai6_3175862.ogg';
     expect(
       pickPairedGameResource(
         oggFileNames: <String>[marked],

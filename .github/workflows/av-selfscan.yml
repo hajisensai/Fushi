@@ -3,7 +3,7 @@
 #
 # 为什么需要这个：「injector + hook DLL 含 CreateRemoteThread/WriteProcessMemory，必被杀软报毒」
 # 这条部署红线长期是预防性判断，从未被任何一次真实扫描验证过。helper 是否随 Windows 主包分发
-# （离线首装）取决于这个事实，不能靠推测拍板。首次实测（hibiki-hook#8，签名 1.455.357.0）对
+# （离线首装）取决于这个事实，不能靠推测拍板。首次实测（native/galgame_hook/docs/av-selfscan-evidence.md（原 hibiki-hook#8），签名 1.455.357.0）对
 # 全部 11 个文件 + 2 个 zip 零检出，推翻了该假设；本 workflow 把那次一次性实验固化成可复跑的门。
 #
 # 迁移说明：helper 源码与发布已于 PR#442 合回本仓（native/galgame_hook/ +
@@ -17,7 +17,7 @@
 #      作废（该步直接 fail）。避免把「没扫」误读成「没毒」。
 #   3. 逐 zip + 解压后逐文件都扫 —— 归档扫描与落地文件扫描走的是不同引擎路径，只扫一层会漏。
 #
-# 与首版（hibiki-hook#8）的行为差异：**检出即 fail**。首版每个扫描步骤都以 `exit 0` 结尾，
+# 与首版（native/galgame_hook/docs/av-selfscan-evidence.md（原 hibiki-hook#8））的行为差异：**检出即 fail**。首版每个扫描步骤都以 `exit 0` 结尾，
 # 检出只发 `::warning::`，于是 job 绿灯并不代表没报毒，必须有人去读日志正文才知道结论 —— 正是
 # 本仓反复踩的「假绿」形态。现在任何一处检出、下载失败、sha256 不匹配或扫到 0 个文件都会让
 # job 变红，绿灯才真正等于「Defender 对全部已发布 helper 资产零检出」。

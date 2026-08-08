@@ -129,7 +129,7 @@ Hibiki 的 launch 与已运行窗口 attach 路径都会为这类目标自动打
 正式版 `SiglusEngine.exe` 使用 x86 injector。`--launch` 会识别该文件名，先让 Enigma 保护壳正常初始化，等游戏窗口出现后再自动附着（对其它引擎仍是 CREATE_SUSPENDED 早注入）；也可对用户已打开的游戏使用 `--pid`。hook 跟踪引擎之后读取的 `koe/*.ovk`，按归档头中的 16-byte 索引精确取出当前条目的完整 Ogg，并写到：
 
 ```text
-%TEMP%\hibiki_gal_voice\<tick>_<archive>.ovk_<voice-id>.ogg
+%TEMP%\fushi_gal_voice\<tick>_<archive>.ovk_<voice-id>.ogg
 ```
 
 导出前会同时检查索引边界、条目上限、Ogg 页序列号和 EOS；文件 IO 与 Ogg 校验在工作线程执行，`ReadFile` detour 只复制固定大小任务。晚附着可能没有 DirectSound PCM 格式，Hibiki 会用 `rawVoiceReady` 保持引擎源，并优先把本会话的新 Ogg 转为 Anki 音频；无文本时间戳时只选本会话最新条目，绝不拿上一局残留。受保护的 Siglus 进程若令 Toolhelp 线程快照失败，vendored MinHook 会通过 `NtGetNextThread` 安全枚举并冻结其它线程后再启用 hook。

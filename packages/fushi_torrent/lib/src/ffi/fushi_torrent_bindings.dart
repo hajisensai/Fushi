@@ -1,6 +1,6 @@
 // GENERATED / hand-mirrored — do not edit by hand except to re-run ffigen.
 //
-// 本文件是 `ffigen.yaml` 对 native/fushi_torrent/.../hibiki_torrent.h 的产物。
+// 本文件是 `ffigen.yaml` 对 native/fushi_torrent/.../fushi_torrent.h 的产物。
 // 本机装有 LLVM/libclang 时可 `dart run ffigen --config ffigen.yaml` 覆盖重生；
 // 内容与 ffigen 对该 C ABI 的输出等价（单一 DynamicLibrary 构造 +
 // lookup 惰性字段），与仓库既有 fushidicts FFI 手写范式一致。

@@ -14,9 +14,9 @@
 ```
 native/fushi_torrent/
   CMakeLists.txt                       # find_package(LibtorrentRasterbar) + SHARED lib
-  hibiki_torrent_ffi.cpp               # C ABI 实现（无自有状态；JSON 出参）
-  hibiki_torrent_include/
-    hibiki_torrent.h                   # C ABI 头（ffigen 入口；各函数契约见注释）
+  fushi_torrent_ffi.cpp               # C ABI 实现（无自有状态；JSON 出参）
+  fushi_torrent_include/
+    fushi_torrent.h                   # C ABI 头（ffigen 入口；各函数契约见注释）
 packages/fushi_torrent/               # Dart 侧
   ffigen.yaml                          # 从上面头文件生成绑定
   lib/src/ffi/fushi_torrent_bindings.dart   # 绑定
@@ -49,7 +49,7 @@ duration，`ht_torrent_peers` 补 flags/source 稳定位掩码（与 libtorrent 
 位值解耦，契约钉在头文件注释里）。用户暂停的跨会话持久**不在 native**：
 宿主把用户暂停集落盘 `<resumeDir>/user_paused.json`（`ht_load_resume_dir`
 「加回来即开始跑」契约不动，引擎旗标也分不清用户暂停与策略暂停）。
-出参 JSON 一律 `ht_free_string` 释放；详细契约见 `hibiki_torrent.h` 注释。
+出参 JSON 一律 `ht_free_string` 释放；详细契约见 `fushi_torrent.h` 注释。
 
 ### 关键语义（踩过的坑，别再踩）
 
@@ -130,7 +130,7 @@ resume_prune_guard_test.dart`，无 DLL 也跑）。
 
 ## ffigen 重生成绑定
 
-`lib/src/ffi/fushi_torrent_bindings.dart` 由 `ffigen.yaml` 对 `hibiki_torrent.h`
+`lib/src/ffi/fushi_torrent_bindings.dart` 由 `ffigen.yaml` 对 `fushi_torrent.h`
 生成。本机需装 LLVM/libclang：
 
 ```bash

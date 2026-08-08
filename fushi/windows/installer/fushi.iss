@@ -55,6 +55,12 @@ Type: filesandordirs; Name: "{app}\galgame_helper"
 ; hibiki.exe 与 fushi.exe 并存，旧快捷方式还能把旧版拉起来）。
 Type: files; Name: "{app}\hibiki.exe"
 Type: files; Name: "{app}\hibiki_update_launcher.exe"
+; 同理清掉旧名 native 产物（改名前 windows/CMakeLists.txt 装的是 hoshidicts_ffi.dll
+; 与 hibiki_torrent_ffi.dll）。Inno 只覆盖同名文件，改了名的旧 DLL 会永久留在 {app}：
+; 一是纯垃圾，二是 torrent 引擎按名加载「exe 同目录」，留着就等于给「新 DLL 缺失时
+; 静默加载上一版旧 ABI」留了口子。清掉之后 defaultLibraryNames 的旧名回退也随之作废。
+Type: files; Name: "{app}\hibiki_torrent_ffi.dll"
+Type: files; Name: "{app}\hoshidicts_ffi.dll"
 ; 旧名快捷方式指向已被删除的 hibiki.exe，一并清掉（桌面图标位置一次性丢失，
 ; 换来不留死链接；新名快捷方式按 BUG-1014 规则只建一次）。
 Type: files; Name: "{userdesktop}\Hibiki.lnk"

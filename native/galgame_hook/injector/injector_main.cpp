@@ -541,7 +541,7 @@ bool ExtractUnityVoice(const UnityExtractorRuntime& runtime,
   wchar_t temp[MAX_PATH] = {0};
   const DWORD temp_len = GetTempPathW(MAX_PATH, temp);
   if (temp_len == 0 || temp_len >= MAX_PATH) return false;
-  const std::wstring dir = std::wstring(temp) + L"hibiki_gal_voice";
+  const std::wstring dir = std::wstring(temp) + L"fushi_gal_voice";
   CreateDirectoryW(dir.c_str(), nullptr);
   const std::wstring output =
       dir + L"\\" + std::to_wstring(event.timestamp_ms) + L"_" +

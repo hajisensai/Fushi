@@ -369,9 +369,9 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
 //
 // 刻意不禁（不是路径形态，是冻结契约/上游对照面）：
 //   * `.hoshidicts_1` 磁盘分片名（词典持久化契约）；
-//   * hibiki_torrent 内层 native 文件名（hibiki_torrent.h / hibiki_torrent_ffi.cpp）
-//     与旧 DLL 加载回退名 hibiki_torrent_ffi.dll（Dart 侧 bindings 文件已在 W4
-//     改名 fushi_torrent_bindings.dart）。
+//   * fushi.iss 的 [InstallDelete] 里的旧名产物（hibiki.exe /
+//     hibiki_torrent_ffi.dll / hoshidicts_ffi.dll 等）——那正是"删掉旧名"这件事
+//     本身，旧字面量是必要输入。
 // （W9-7 已清掉本清单原有的三条：静态库 target hoshidicts→fushidicts、公共头
 //  子目录 fushidicts_include/hoshidicts/→fushidicts/ 与公共头 hoshidicts.h、
 //  workflow 文件名 native-hoshidicts-gate.yml→native-fushidicts-gate.yml；

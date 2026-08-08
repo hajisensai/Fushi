@@ -22,11 +22,11 @@ endif()
 find_package(LibtorrentRasterbar CONFIG REQUIRED)
 
 add_library(fushi_torrent_ffi SHARED
-    hibiki_torrent_ffi.cpp
+    fushi_torrent_ffi.cpp
 )
 
 target_include_directories(fushi_torrent_ffi PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/hibiki_torrent_include
+    ${CMAKE_CURRENT_SOURCE_DIR}/fushi_torrent_include
 )
 
 target_link_libraries(fushi_torrent_ffi PRIVATE

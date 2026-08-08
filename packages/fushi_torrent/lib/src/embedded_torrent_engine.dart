@@ -71,27 +71,24 @@ class EmbeddedTorrentEngine {
     }
   }
 
-  /// 平台默认库名候选，**新名在前、旧名兜底**。
+  /// 平台默认库名候选。
   ///
-  /// 旧名不是防御性编程，是真实的存量部署形态：改名前发布的包里躺着的是
-  /// `hibiki_torrent_ffi`，而按名加载走的是「exe 同目录」——只认新名会让这些
-  /// 用户的内置引擎从"能用"变成静默回退外接 qb。两个名字是同一份 C ABI 的
-  /// 同一个产物，先试哪个都对。iOS 静态链进主二进制，不参与按名查找。
+  /// 曾经带 `hibiki_torrent_ffi` 旧名兜底，理由是「改名前发布的包里躺着的是旧名，
+  /// 按名加载走 exe 同目录，只认新名会让存量用户静默回退外接 qb」。W9 起该理由
+  /// 不成立：Windows 安装器 [InstallDelete] 已显式删除升级路径上的旧名 DLL
+  /// （见 fushi.iss），macOS/Android 的包是整体替换，任何平台的 exe 同目录都不会
+  /// 再有旧名产物。留着回退反而危险——新 DLL 万一缺失时会静默加载上一版的旧 ABI，
+  /// 拿新 bindings 去调旧符号，失败方式比「引擎不可用」难查得多。
+  /// iOS 静态链进主二进制，不参与按名查找。
   static List<String> defaultLibraryNames() {
     if (Platform.isWindows) {
-      return const <String>['fushi_torrent_ffi.dll', 'hibiki_torrent_ffi.dll'];
+      return const <String>['fushi_torrent_ffi.dll'];
     }
     if (Platform.isMacOS) {
-      return const <String>[
-        'libfushi_torrent_ffi.dylib',
-        'libhibiki_torrent_ffi.dylib'
-      ];
+      return const <String>['libfushi_torrent_ffi.dylib'];
     }
     if (Platform.isLinux || Platform.isAndroid) {
-      return const <String>[
-        'libfushi_torrent_ffi.so',
-        'libhibiki_torrent_ffi.so'
-      ];
+      return const <String>['libfushi_torrent_ffi.so'];
     }
     return const <String>[];
   }
@@ -390,7 +387,7 @@ class FtPeerInfo {
   final bool remoteInterested;
 
   /// TODO-2482：桥自定义的稳定 peer flags 位掩码（bit 含义见
-  /// `hibiki_torrent.h` 的 ht_torrent_peers 契约；老 DLL 缺键 = 0）。
+  /// `fushi_torrent.h` 的 ht_torrent_peers 契约；老 DLL 缺键 = 0）。
   final int flagsBits;
 
   /// peer 来源位掩码（bit0 tracker/bit1 dht/bit2 pex/bit3 lsd/

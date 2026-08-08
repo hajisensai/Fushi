@@ -9,7 +9,7 @@
 //   不引 GPL/非 BSD 传染）；入参路径一律 UTF-8（libtorrent 原生约定）。
 // - 所有入口 try/catch 到边界：C ABI 绝不向 Dart 泄异常。
 
-#include "hibiki_torrent.h"
+#include "fushi_torrent.h"
 
 #include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/address.hpp>

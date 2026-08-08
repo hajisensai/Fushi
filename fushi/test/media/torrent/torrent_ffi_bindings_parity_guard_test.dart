@@ -90,7 +90,7 @@ Set<String> _parseLookedUpSymbols(String source) {
 void main() {
   // 测试的工作目录是 `fushi/`，native 与 packages 在它的上一级。
   final File headerFile =
-      File('../native/fushi_torrent/hibiki_torrent_include/hibiki_torrent.h');
+      File('../native/fushi_torrent/fushi_torrent_include/fushi_torrent.h');
   final File bindingsFile =
       File('../packages/fushi_torrent/lib/src/ffi/fushi_torrent_bindings.dart');
 

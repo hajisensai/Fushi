@@ -9,7 +9,7 @@ void main() {
     test('KiriKiri 显式 TextSlot seq 优先于附近旧式时间候选', () {
       final List<String> files = <String>[
         '32146998_legacy_guess.ogg',
-        '32147187_hibiki_textseq16_hir_015_0015.ogg',
+        '32147187_fushi_textseq16_hir_015_0015.ogg',
       ];
       expect(
         pickPairedVoiceOgg(
@@ -17,7 +17,7 @@ void main() {
           textTsMs: 32147218,
           textEventId: 16,
         ),
-        '32147187_hibiki_textseq16_hir_015_0015.ogg',
+        '32147187_fushi_textseq16_hir_015_0015.ogg',
       );
     });
 
@@ -25,7 +25,7 @@ void main() {
       expect(
         pickPairedVoiceOgg(
           oggFileNames: const <String>[
-            '32147187_hibiki_textseq15_hir_015_0015.ogg',
+            '32147187_fushi_textseq15_hir_015_0015.ogg',
           ],
           textTsMs: 32147218,
           textEventId: 16,
@@ -38,7 +38,7 @@ void main() {
       expect(
         pickPairedVoiceOgg(
           oggFileNames: const <String>[
-            '32147187_hibiki_textseq16_hir_015_0015.ogg',
+            '32147187_fushi_textseq16_hir_015_0015.ogg',
           ],
           textTsMs: 32147218,
         ),
@@ -50,7 +50,7 @@ void main() {
       expect(
         pickPairedVoiceOgg(
           oggFileNames: const <String>[
-            '32147187_hibiki_textseqoops_hir_015_0015.ogg',
+            '32147187_fushi_textseqoops_hir_015_0015.ogg',
           ],
           textTsMs: 32147218,
           textEventId: 16,
@@ -159,13 +159,13 @@ void main() {
       expect(
         pickPairedGameResource(
           oggFileNames: const <String>[
-            '32147187_hibiki_textseq16_hir_015_0015.ogg',
+            '32147187_fushi_textseq16_hir_015_0015.ogg',
           ],
           wavFileNames: const <String>[],
           textTsMs: 32147218,
           textEventId: 16,
         ),
-        '32147187_hibiki_textseq16_hir_015_0015.ogg',
+        '32147187_fushi_textseq16_hir_015_0015.ogg',
       );
     });
 

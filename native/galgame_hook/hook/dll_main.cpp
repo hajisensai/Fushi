@@ -164,7 +164,7 @@ bool WriteVoiceOggAt(const uint8_t* data, uint32_t len,
   wchar_t temp[MAX_PATH] = {0};
   const DWORD n = GetTempPathW(MAX_PATH, temp);
   if (n == 0 || n >= MAX_PATH) return false;
-  std::wstring dir = std::wstring(temp) + L"hibiki_gal_voice";
+  std::wstring dir = std::wstring(temp) + L"fushi_gal_voice";
   if (!CreateDirectoryW(dir.c_str(), nullptr) &&
       GetLastError() != ERROR_ALREADY_EXISTS) {
     return false;

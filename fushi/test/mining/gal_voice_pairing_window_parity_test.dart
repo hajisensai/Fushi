@@ -65,11 +65,11 @@ void main() {
       const int tick = textTsMs - kGalVoicePairingWindowMs;
       expect(
         pickPairedVoiceOgg(
-          oggFileNames: <String>['${tick}_hibiki_textseq83_yuz_001_0012.ogg'],
+          oggFileNames: <String>['${tick}_fushi_textseq83_yuz_001_0012.ogg'],
           textTsMs: textTsMs,
           textEventId: 83,
         ),
-        '${tick}_hibiki_textseq83_yuz_001_0012.ogg',
+        '${tick}_fushi_textseq83_yuz_001_0012.ogg',
       );
     });
 
@@ -79,7 +79,7 @@ void main() {
       const int tick = textTsMs - 220;
       expect(
         pickPairedVoiceOgg(
-          oggFileNames: <String>['${tick}_hibiki_textseq99_yuz_001_0012.ogg'],
+          oggFileNames: <String>['${tick}_fushi_textseq99_yuz_001_0012.ogg'],
           textTsMs: textTsMs,
           textEventId: 83,
         ),
@@ -93,11 +93,11 @@ void main() {
       const int tick = textTsMs + 300;
       expect(
         pickPairedVoiceOgg(
-          oggFileNames: <String>['${tick}_hibiki_textseq83_yuz_001_0012.ogg'],
+          oggFileNames: <String>['${tick}_fushi_textseq83_yuz_001_0012.ogg'],
           textTsMs: textTsMs,
           textEventId: 83,
         ),
-        '${tick}_hibiki_textseq83_yuz_001_0012.ogg',
+        '${tick}_fushi_textseq83_yuz_001_0012.ogg',
       );
     });
   });
