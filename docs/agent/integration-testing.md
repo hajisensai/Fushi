@@ -12,13 +12,13 @@
 |------|------|------|----------|
 | **编排（推荐）** | `ci/integration-test.sh` | 选/启模拟器 + 构建 + provision + 跑全部目标 + 汇总 | 一键全自动跑集成测试 |
 | **文件操作** | `ci/emulator-test.sh` | 推送素材、授权限、触发 MediaScanner | 仅需准备素材时 |
-| **状态验证** | `run-as app.hibiki.reader sqlite3 files/hibiki.db` | 直查 `hibiki.db` | 导入结果、配置持久化、cue 数量、Profile |
+| **状态验证** | `run-as app.fushi.reader sqlite3 files/fushi.db` | 直查 `fushi.db` | 导入结果、配置持久化、cue 数量、Profile |
 | **UI 交互** | `flutter drive` 集成测试 | CJK 搜索、阅读器翻页、划词查词 | 单独跑某个目标 |
 
 ### 关键约束
 
 - ADB 脚本（`ci/*.sh`）**不得**向 Flutter 文本框输入 CJK——`input text` 在 Android 上不支持 Unicode，`settext.jar` 找不到 Flutter 的 EditText。CJK 文字输入只能通过 `tester.enterText()` 在 Flutter 集成测试里完成。
-- 导入验证优先用 DB 查询（`run-as app.hibiki.reader sqlite3 files/hibiki.db`），不依赖 UI dump 匹配文字。
+- 导入验证优先用 DB 查询（`run-as app.fushi.reader sqlite3 files/fushi.db`），不依赖 UI dump 匹配文字。
 - **UI 交互一律焦点驱动，禁止坐标点击。** Flutter 集成测试操作真 app **只发框架级合成按键**（`tester.sendKeyEvent`，经 `FocusDriver`），绝不用 `tester.tap` / 坐标点击，也不用 ADB 截图猜坐标 `input tap`——点击依赖精确屏幕位置，布局/滚动/缩放/平台一变就错位易错；焦点+键位置无关且三端一致。详见下方「焦点驱动操作」。
 - adb 用 Android SDK 自带的 `platform-tools/adb`（`$ANDROID_HOME` 下；确保版本够新），不要依赖 PATH 里可能过时的 adb。
 - 需要新增测试流程时，先判断属于哪一层，不要在错误的层做事。
@@ -94,7 +94,7 @@ bash ci/anki-integration-test.sh --skip-build # 复用已构建的 app-debug.apk
 
 脚本覆盖（对应 `integration_test/anki_integration_test.dart`）：`fetchConfiguration()` 返回真实 decks/note types、`isDuplicate()`、`mineEntry()` add-or-duplicate。
 
-**为什么需要独立脚本（关键约束）：** AnkiDroid API 受 *dangerous* 权限 `com.ichi2.anki.permission.READ_WRITE_DATABASE` 管控，Android 只在用户点了 AnkiDroid 运行时弹窗「Allow」后才授予。Hibiki 在运行时正确发起请求（`AnkiChannelHandler.java` 的 `ankiDroid.requestPermission(...)`），但自动化 `flutter drive` 每次全新安装且无法点系统弹窗，于是 fresh-install 一律返回 `AnkiFetchError`。脚本用 `adb install -g`（授予全部运行时权限 = 等价用户点 Allow）预装 APK，`flutter drive` 的 `-r` 重装会**保留**该授权，从而确定性复现已授权状态。这是测试夹具步骤，**不是**产品代码里的绕过。
+**为什么需要独立脚本（关键约束）：** AnkiDroid API 受 *dangerous* 权限 `com.ichi2.anki.permission.READ_WRITE_DATABASE` 管控，Android 只在用户点了 AnkiDroid 运行时弹窗「Allow」后才授予。Fushi 在运行时正确发起请求（`AnkiChannelHandler.java` 的 `ankiDroid.requestPermission(...)`），但自动化 `flutter drive` 每次全新安装且无法点系统弹窗，于是 fresh-install 一律返回 `AnkiFetchError`。脚本用 `adb install -g`（授予全部运行时权限 = 等价用户点 Allow）预装 APK，`flutter drive` 的 `-r` 重装会**保留**该授权，从而确定性复现已授权状态。这是测试夹具步骤，**不是**产品代码里的绕过。
 
 `adb install -g` 不可省略：`flutter drive` 收尾会卸载 app，下一次运行是全新安装、无授权——所以每轮都要先 `-g` 预装。脚本已做幂等处理。`ci/anki-integration-test.sh` 的 provision 逻辑被 `ci/integration-test.sh` 经 `ci/lib/provision-ankidroid.sh` 复用。
 

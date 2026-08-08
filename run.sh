@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Launch the Hibiki Flutter app in debug mode (bash / git-bash).
+# Launch the Fushi Flutter app in debug mode (bash / git-bash).
 #
 # Usage (from the repo root):
 #   ./run.sh                   # run on Windows desktop (default)
@@ -10,7 +10,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP_DIR="$ROOT/hibiki"
+APP_DIR="$ROOT/fushi"
 
 FLUTTER="${FLUTTER_BIN:-}"
 if [[ -z "$FLUTTER" ]]; then

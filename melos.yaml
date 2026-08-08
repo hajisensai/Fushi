@@ -1,5 +1,5 @@
 name: fushi_workspace
-repository: https://github.com/hajisensai/hibiki
+repository: https://github.com/hajisensai/Fushi
 
 packages:
   - packages/*
@@ -28,7 +28,7 @@ scripts:
   dev:
     run: |
       cd fushi && flutter run
-    description: Run Hibiki in debug mode
+    description: Run Fushi in debug mode
 
   build:android:
     run: |

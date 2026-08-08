@@ -1,4 +1,4 @@
-# Hibiki 快捷键清单（TODO-048a 统计）
+# Fushi 快捷键清单（TODO-048a 统计）
 
 > ⚠️ **2026-08-02 增补：「返回上一级」已统一，本文与之冲突的行以本段为准。**
 >
@@ -21,7 +21,7 @@
 > 绑定行为**；发现的冲突/重复/缺失列在末尾「待优化」，改绑定属行为变更，须用户确认。
 >
 > 快捷键分两类来源：
-> 1. **可配置注册表**（`ShortcutAction` + `ShortcutDefaults` + `HibikiShortcutRegistry`，
+> 1. **可配置注册表**（`ShortcutAction` + `ShortcutDefaults` + `FushiShortcutRegistry`，
 >    用户可在「快捷键设置」页改键）—— reader / home / global / audiobook 四个 scope。
 > 2. **硬编码**（视频播放器、全局 Esc/方向键焦点、有声书 Space 覆写、阅读方向翻页覆写）
 >    —— 不进注册表，用户改不了。
@@ -85,7 +85,7 @@
 ### 2a. 视频播放器（`video_player_shortcuts.dart` `buildVideoPlayerShortcuts`）
 
 > **这一节属 TODO-048b（视频组）的优化对象，本任务只统计不改。** 当前是 asbplayer 风格
-> 硬编码键，CallbackShortcuts 安装在 video 页（`video_hibiki_page.dart:1697`）。
+> 硬编码键，CallbackShortcuts 安装在 video 页（`video_fushi_page.dart:1697`）。
 
 | 键 | 功能 |
 |---|---|
@@ -106,7 +106,7 @@
 | S | 截图 |
 | F | 切换全屏 |
 | Esc | 退出（逐级：控件编辑→字幕列表→剧集列表→侧栏→沉浸锁→全屏→浮层→退页）。**现由 universal 的 globalBack 驱动**，不再是 video 组的 videoEscape |
-| B | 切换字幕模糊（`video_hibiki_page.dart:3305`，内层 CallbackShortcuts，asbplayer 同款） |
+| B | 切换字幕模糊（`video_fushi_page.dart:3305`，内层 CallbackShortcuts，asbplayer 同款） |
 
 ### 2b. 全局焦点/导航（`global_navigation.dart`，仅实验性焦点导航开启时）
 
@@ -149,8 +149,8 @@ readerDismissDict 关栈顶弹窗 / 全局 Navigator pop / 手柄 B）。
 
 > 后加的第四条绑定通道（键盘 / 手柄 / 鼠标按钮 / **滚轮**）。滚轮绑定不经
 > `resolveKeyboard` 或页面派发：弹窗内容是 WebView，滚轮事件先到它的 JS，故
-> `popup_settings_injection` 把绑定序列化成 `window.__hoshiEntryWheelBindings` 注入给
-> `popup.js`，命中即调 `hoshiFocusDictionaryEntryMove`（TODO-1325 #5 part1 的词条焦点）。
+> `popup_settings_injection` 把绑定序列化成 `window.__fushiEntryWheelBindings` 注入给
+> `popup.js`，命中即调 `fushiFocusDictionaryEntryMove`（TODO-1325 #5 part1 的词条焦点）。
 > 浏览器扩展没有注入通道，吃 popup.js 里的同款默认值。
 
 | 动作 | 默认绑定 | 说明 |

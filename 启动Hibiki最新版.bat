@@ -1,9 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
-title Hibiki Launcher
+title Fushi Launcher
 
 rem ============================================================
-rem  Hibiki smart launcher
+rem  Fushi smart launcher
 rem  Compare git HEAD with last-built commit:
 rem    - updated / never built -> pub get + release build, then run
 rem    - already latest         -> just run the existing exe
@@ -11,9 +11,9 @@ rem  Force clean rebuild: pass argument "clean"
 rem ============================================================
 
 set "REPO=D:\APP\vs_claude_code\hibiki"
-set "APP=%REPO%\hibiki"
+set "APP=%REPO%\fushi"
 set "FLUTTER=D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat"
-set "EXE=%APP%\build\windows\x64\runner\Release\hibiki.exe"
+set "EXE=%APP%\build\windows\x64\runner\Release\fushi.exe"
 set "STAMP=%APP%\build\.last_built_commit"
 
 cd /d "%APP%"

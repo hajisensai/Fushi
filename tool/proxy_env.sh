@@ -15,7 +15,7 @@
 # 用法：在脚本开头 `source "$(dirname "${BASH_SOURCE[0]}")/proxy_env.sh"`，
 # 它只导出 HTTPS_PROXY / HTTP_PROXY，不产生任何输出（除非 FUSHI_PROXY_VERBOSE=1）。
 
-hibiki_resolve_proxy() {
+fushi_resolve_proxy() {
   # 1) 调用方已设
   if [ -n "${HTTPS_PROXY:-}" ] || [ -n "${HTTP_PROXY:-}" ] || [ -n "${ALL_PROXY:-}" ]; then
     _fushi_proxy="${HTTPS_PROXY:-${HTTP_PROXY:-$ALL_PROXY}}"
@@ -64,7 +64,7 @@ hibiki_resolve_proxy() {
   return 0
 }
 
-hibiki_resolve_proxy
+fushi_resolve_proxy
 if [ -n "${_fushi_proxy:-}" ]; then
   export HTTPS_PROXY="$_fushi_proxy"
   export HTTP_PROXY="${HTTP_PROXY:-$_fushi_proxy}"
