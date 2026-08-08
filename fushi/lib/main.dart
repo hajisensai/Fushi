@@ -72,7 +72,7 @@ import 'package:fushi_core/fushi_core.dart'
     show VideoBooksCompanion, VideoBookRow;
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
-import 'package:fushi/src/storage/windows_appdata_migration.dart';
+import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
 
 Color? _savedSplashColor;
 
@@ -138,11 +138,17 @@ void main([List<String> args = const <String>[]]) {
     /// Necessary to initialise Flutter when running native code before
     /// starting the application.
     final binding = WidgetsFlutterBinding.ensureInitialized();
-    // Fushi 改名（Phase 3）：%APPDATA%\Hibiki\Hibiki → %APPDATA%\Fushi\Fushi
-    // 一次性搬迁。必须先于进程内**第一次** SharedPreferences 读取（下面的
+    // Fushi 改名：app-support 根一次性搬迁（Windows
+    // %APPDATA%\Hibiki\Hibiki -> %APPDATA%\Fushi\Fushi；macOS
+    // ~/Library/Application Support/com.example.hibiki -> app.fushi.reader）。
+    // 必须先于进程内**第一次** SharedPreferences 读取（下面的
     // applyInitialPlacement 就会读）——插件会在新路径缓存空 prefs，数据根配置
     // 与 documents 布局锚点全在里面，晚了就等于丢配置。
-    await migrateWindowsLegacySupportDir();
+    await migrateLegacySupportDir();
+    // macOS 的 prefs 走 NSUserDefaults（域名 = bundle id），不在上面搬走的
+    // app-support 根里。bundle id 从 com.example.hibiki 改成 app.fushi.reader
+    // 后旧域整份不可见，其中就有用户自选的数据根路径——只捞回那几个锚点键。
+    await recoverLegacyMacosPrefsFromSharedPreferences();
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       await windowManager.ensureInitialized();
       await DesktopWindowPlacement.applyInitialPlacement();
@@ -1583,8 +1589,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             return AnnotatedRegion<SystemUiOverlayStyle>(
               value: fushiSystemOverlayStyle(cs.brightness),
               child: CupertinoTheme(
-                data: fushiCupertinoTheme(cs,
-                    fontFamily: appModel.appFontFamily),
+                data:
+                    fushiCupertinoTheme(cs, fontFamily: appModel.appFontFamily),
                 child: LayoutBuilder(
                   builder: (BuildContext context, BoxConstraints constraints) {
                     final Size viewport = constraints.hasBoundedWidth &&
@@ -1640,8 +1646,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       // sidebar。navigation（=整个 navigator）作为不变 child 透传，
                       // 只有 sidebar 参数随 mediaOpen 变，绝不重建 navigator 路由栈。
                       navigation = MacosTheme(
-                        data:
-                            fushiMacosThemeFromColorScheme(cs, cs.brightness),
+                        data: fushiMacosThemeFromColorScheme(cs, cs.brightness),
                         child: ValueListenableBuilder<bool>(
                           valueListenable: appModel.mediaOpenNotifier,
                           builder: (BuildContext context, bool mediaOpen,
