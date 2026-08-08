@@ -23,10 +23,10 @@ namespace fushi {
 
 namespace {
 
-using hibiki_voice_hook::kSharedMagic;
-using hibiki_voice_hook::kSharedVersion;
-using hibiki_voice_hook::SharedHeader;
-using hibiki_voice_hook::SharedMemoryName;
+using fushi_voice_hook::kSharedMagic;
+using fushi_voice_hook::kSharedVersion;
+using fushi_voice_hook::SharedHeader;
+using fushi_voice_hook::SharedMemoryName;
 
 struct ReaderState {
   std::mutex mutex;
@@ -43,10 +43,10 @@ ReaderState& State() {
 bool ProtocolMatches(const SharedHeader* h) {
   return h != nullptr && h->magic == kSharedMagic &&
          h->version == kSharedVersion &&
-         h->ipc_protocol_version == hibiki_voice_hook::kStableIpcVersion &&
+         h->ipc_protocol_version == fushi_voice_hook::kStableIpcVersion &&
          h->luna_bridge_abi_version ==
-             hibiki_voice_hook::kLunaBridgeAbiVersion &&
-         h->luna_vendored_version == hibiki_voice_hook::kLunaVendoredVersion;
+             fushi_voice_hook::kLunaBridgeAbiVersion &&
+         h->luna_vendored_version == fushi_voice_hook::kLunaVendoredVersion;
 }
 
 // 无符号整数 → 十六进制字面（magic / vendored 版本按 hex 读才认得出来）。
@@ -82,18 +82,18 @@ std::string ProtocolMismatchDetail(const SharedHeader* h) {
   if (h->version != kSharedVersion) {
     add("shm", std::to_string(h->version), std::to_string(kSharedVersion));
   }
-  if (h->ipc_protocol_version != hibiki_voice_hook::kStableIpcVersion) {
+  if (h->ipc_protocol_version != fushi_voice_hook::kStableIpcVersion) {
     add("ipc", std::to_string(h->ipc_protocol_version),
-        std::to_string(hibiki_voice_hook::kStableIpcVersion));
+        std::to_string(fushi_voice_hook::kStableIpcVersion));
   }
   if (h->luna_bridge_abi_version !=
-      hibiki_voice_hook::kLunaBridgeAbiVersion) {
+      fushi_voice_hook::kLunaBridgeAbiVersion) {
     add("luna_abi", std::to_string(h->luna_bridge_abi_version),
-        std::to_string(hibiki_voice_hook::kLunaBridgeAbiVersion));
+        std::to_string(fushi_voice_hook::kLunaBridgeAbiVersion));
   }
-  if (h->luna_vendored_version != hibiki_voice_hook::kLunaVendoredVersion) {
+  if (h->luna_vendored_version != fushi_voice_hook::kLunaVendoredVersion) {
     add("vendored", ToHex(h->luna_vendored_version),
-        ToHex(hibiki_voice_hook::kLunaVendoredVersion));
+        ToHex(fushi_voice_hook::kLunaVendoredVersion));
   }
   return out;
 }
@@ -127,10 +127,10 @@ VoiceHookStatus StatusFromHeaderLocked(const SharedHeader* h) {
   s.is_float = h->is_float != 0;
   s.audio_hooks_ready =
       (h->hook_diagnostics &
-       hibiki_voice_hook::kDiagStartupAudioHooksReady) != 0;
+       fushi_voice_hook::kDiagStartupAudioHooksReady) != 0;
   // 原始资源语音不要求共享环已有 PCM：KiriKiriZ/Siglus 直接导出逐句 Ogg；Unity
   // 由 injector 落逐句 WAV。统一契约确保资源优先，系统回环只作某句配对失败时的 fallback。
-  s.raw_voice_ready = hibiki_voice_hook::HasReadyGameResourceAudio(
+  s.raw_voice_ready = fushi_voice_hook::HasReadyGameResourceAudio(
       h->reserved_luna, h->hook_diagnostics,
       h->reserved_hook_diagnostics);
   s.text_lane_recycles = static_cast<int64_t>(h->text_lane_recycle_count);
@@ -156,7 +156,7 @@ void CloseLocked(ReaderState& st) {
 // 把一条 clip 的 PCM 从环形读出**追加**到 [out]（多段拼接用）；clip 已被环形覆盖返回 false。
 // 调用方持锁。移植自 ring_probe.cpp 的 ReadClipPcm。
 bool ReadClipPcmLocked(const SharedHeader* h, const uint8_t* ring,
-                       const hibiki_voice_hook::VoiceClip* c,
+                       const fushi_voice_hook::VoiceClip* c,
                        std::vector<uint8_t>& out) {
   const uint32_t cap = h->ring_capacity;
   const uint32_t len = c->byte_len;
@@ -181,7 +181,7 @@ bool ReadClipPcmLocked(const SharedHeader* h, const uint8_t* ring,
 // 一条 clip 的 16-bit PCM 平均绝对幅值（能量代理）。非 16-bit 返回 -1（调用方退化）。已被环形
 // 覆盖返回 0。调用方持锁。移植自 ring_probe.cpp 的 ClipEnergy16。
 double ClipEnergy16Locked(const SharedHeader* h, const uint8_t* ring,
-                          const hibiki_voice_hook::VoiceClip* c) {
+                          const fushi_voice_hook::VoiceClip* c) {
   if (c->bits_per_sample != 16 || c->is_float) {
     return -1.0;
   }
@@ -199,23 +199,23 @@ double ClipEnergy16Locked(const SharedHeader* h, const uint8_t* ring,
 }
 
 // 收集环形里有效（seq 匹配、byte_len 合法）的语音 clip 指针（seq 升序）。调用方持锁。
-std::vector<const hibiki_voice_hook::VoiceClip*> CollectValidClipsLocked(
+std::vector<const fushi_voice_hook::VoiceClip*> CollectValidClipsLocked(
     const SharedHeader* h) {
-  std::vector<const hibiki_voice_hook::VoiceClip*> valid;
+  std::vector<const fushi_voice_hook::VoiceClip*> valid;
   const uint32_t cap = h->ring_capacity;
   const uint64_t clips = h->clip_write_count;
   if (cap == 0 || clips == 0) {
     return valid;
   }
-  const uint32_t clip_slots = hibiki_voice_hook::kClipCount;
+  const uint32_t clip_slots = fushi_voice_hook::kClipCount;
   const uint8_t* clip_base =
       reinterpret_cast<const uint8_t*>(h) + h->clip_region_offset;
   const uint64_t scan_from = (clips > clip_slots) ? clips - clip_slots : 0;
   for (uint64_t seq = scan_from + 1; seq <= clips; seq++) {
     const uint32_t idx = static_cast<uint32_t>((seq - 1) % clip_slots);
-    const auto* c = reinterpret_cast<const hibiki_voice_hook::VoiceClip*>(
+    const auto* c = reinterpret_cast<const fushi_voice_hook::VoiceClip*>(
         clip_base + static_cast<size_t>(idx) *
-                        sizeof(hibiki_voice_hook::VoiceClip));
+                        sizeof(fushi_voice_hook::VoiceClip));
     if (c->seq == seq && c->byte_len != 0 && c->byte_len <= cap) {
       valid.push_back(c);
     }
@@ -401,27 +401,27 @@ void VoiceHookReader::PollText(uint64_t from_seq,
   //
   // 一条道只覆盖自己的旧行，所以「某条逐字重绘线程刷得飞快」只会吃掉它自己的历史，
   // 别的线程（尤其是配对候选那条）一行都不少——这正是分道要买的东西。
-  const uint32_t slot_bytes = hibiki_voice_hook::kTextSlotBytes;
+  const uint32_t slot_bytes = fushi_voice_hook::kTextSlotBytes;
   // 归并实现只有契约头里那一份（诊断探针 ring_probe 用的是同一个函数）。
-  static const hibiki_voice_hook::TextSlot*
-      slots[hibiki_voice_hook::kTextSlotCount];
-  const uint32_t found = hibiki_voice_hook::CollectTextSlotsBySeq(
-      h, slots, hibiki_voice_hook::kTextSlotCount, from_seq);
+  static const fushi_voice_hook::TextSlot*
+      slots[fushi_voice_hook::kTextSlotCount];
+  const uint32_t found = fushi_voice_hook::CollectTextSlotsBySeq(
+      h, slots, fushi_voice_hook::kTextSlotCount, from_seq);
   for (uint32_t idx = 0; idx < found; idx++) {
     {
-      const hibiki_voice_hook::TextSlot* slot = slots[idx];
+      const fushi_voice_hook::TextSlot* slot = slots[idx];
       const uint64_t seq = slot->seq;
       if (seq > count) {
         continue;  // 半写槽读到越界序号
       }
       uint32_t blen = slot->byte_len;
     const uint32_t maxb =
-        slot_bytes - static_cast<uint32_t>(sizeof(hibiki_voice_hook::TextSlot));
+        slot_bytes - static_cast<uint32_t>(sizeof(fushi_voice_hook::TextSlot));
     if (blen > maxb) {
       blen = maxb;
     }
     const uint8_t* txt =
-        reinterpret_cast<const uint8_t*>(slot) + sizeof(hibiki_voice_hook::TextSlot);
+        reinterpret_cast<const uint8_t*>(slot) + sizeof(fushi_voice_hook::TextSlot);
     VoiceHookText line;
     line.seq = seq;
     line.timestamp_ms = slot->timestamp_ms;
@@ -435,10 +435,10 @@ void VoiceHookReader::PollText(uint64_t from_seq,
     line.event_kind = slot->event_kind;
     line.event_flags = slot->event_flags;
     const uint32_t hook_name_len = (std::min)(
-        slot->hook_name_len, hibiki_voice_hook::kTextHookNameChars);
+        slot->hook_name_len, fushi_voice_hook::kTextHookNameChars);
     line.hook_name.assign(slot->hook_name, hook_name_len);
     const uint32_t hook_code_len = (std::min)(
-        slot->hook_code_len, hibiki_voice_hook::kTextHookCodeChars);
+        slot->hook_code_len, fushi_voice_hook::kTextHookCodeChars);
     line.hook_code = WideToUtf8(slot->hook_code,
                                 static_cast<int>(hook_code_len));
     if (slot->is_utf8) {
@@ -462,15 +462,15 @@ uint64_t VoiceHookReader::PollThreadPreviews(
     return 0;
   }
   const uint32_t slots = (std::min)(h->thread_preview_slot_count,
-                                    hibiki_voice_hook::kThreadPreviewCount);
-  const auto* base = reinterpret_cast<const hibiki_voice_hook::ThreadPreviewSlot*>(
+                                    fushi_voice_hook::kThreadPreviewCount);
+  const auto* base = reinterpret_cast<const fushi_voice_hook::ThreadPreviewSlot*>(
       reinterpret_cast<const uint8_t*>(h) + h->thread_preview_offset);
   for (uint32_t i = 0; i < slots; i++) {
     const auto& slot = base[i];
-    hibiki_voice_hook::ThreadPreviewSnapshot snapshot;
+    fushi_voice_hook::ThreadPreviewSnapshot snapshot;
     // writer 用 odd/even seqlock 发布；这里最多重试四次，只接受前后 seq 相同的偶数快照。
     // 所有 64 位 seq 读都走 Interlocked，x86 不会因裸 uint64_t 访问而撕裂。
-    if (!hibiki_voice_hook::TryReadThreadPreviewSnapshot(slot, &snapshot) ||
+    if (!fushi_voice_hook::TryReadThreadPreviewSnapshot(slot, &snapshot) ||
         snapshot.thread_id == 0) {
       continue;
     }
@@ -483,7 +483,7 @@ uint64_t VoiceHookReader::PollThreadPreviews(
     preview.event_flags = snapshot.event_flags;
     uint32_t blen = snapshot.byte_len;
     const uint32_t maxb =
-        hibiki_voice_hook::kThreadPreviewTextChars * sizeof(wchar_t);
+        fushi_voice_hook::kThreadPreviewTextChars * sizeof(wchar_t);
     if (blen > maxb) {
       blen = maxb;
     }
@@ -491,7 +491,7 @@ uint64_t VoiceHookReader::PollThreadPreviews(
         WideToUtf8(snapshot.text, static_cast<int>(blen / 2));
     out.push_back(std::move(preview));
   }
-  return hibiki_voice_hook::AtomicLoadPreview64(
+  return fushi_voice_hook::AtomicLoadPreview64(
       &h->thread_preview_write_count);
 }
 
@@ -524,17 +524,17 @@ VoiceHookStatus VoiceHookReader::GrabClipNear(
   if (cap == 0 || clips == 0) {
     return VoiceHookStatus{};
   }
-  const uint32_t clip_slots = hibiki_voice_hook::kClipCount;
+  const uint32_t clip_slots = fushi_voice_hook::kClipCount;
   const uint8_t* clip_base =
       reinterpret_cast<const uint8_t*>(h) + h->clip_region_offset;
   const uint64_t total = h->total_written;
   const uint64_t scan_from = (clips > clip_slots) ? clips - clip_slots : 0;
-  const hibiki_voice_hook::VoiceClip* best = nullptr;
+  const fushi_voice_hook::VoiceClip* best = nullptr;
   uint64_t best_diff = tolerance_ms + 1;
   for (uint64_t seq = scan_from + 1; seq <= clips; seq++) {
     const uint32_t idx = static_cast<uint32_t>((seq - 1) % clip_slots);
-    const auto* c = reinterpret_cast<const hibiki_voice_hook::VoiceClip*>(
-        clip_base + static_cast<size_t>(idx) * sizeof(hibiki_voice_hook::VoiceClip));
+    const auto* c = reinterpret_cast<const fushi_voice_hook::VoiceClip*>(
+        clip_base + static_cast<size_t>(idx) * sizeof(fushi_voice_hook::VoiceClip));
     if (c->seq != seq || c->byte_len == 0 || c->byte_len > cap) {
       continue;
     }
@@ -594,7 +594,7 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
   if (!status.ok) {
     return VoiceHookStatus{};
   }
-  const std::vector<const hibiki_voice_hook::VoiceClip*> valid =
+  const std::vector<const fushi_voice_hook::VoiceClip*> valid =
       CollectValidClipsLocked(h);
   if (valid.empty()) {
     return VoiceHookStatus{};
@@ -668,7 +668,7 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
 
   // 拼接选定源在 [ts-200, ts+6000] 的段；静音判据用该源峰值能量的 8%。
   std::vector<uint8_t> pcm;
-  const hibiki_voice_hook::VoiceClip* fmt = nullptr;
+  const fushi_voice_hook::VoiceClip* fmt = nullptr;
   double peak = 1.0;
   for (const auto* c : valid) {
     if (filter_by_src && c->source_ptr != sel_src) {
@@ -731,7 +731,7 @@ void VoiceHookReader::ListAudioTracks(uint64_t ts_ms,
   if (!status.ok) {
     return;
   }
-  const std::vector<const hibiki_voice_hook::VoiceClip*> valid =
+  const std::vector<const fushi_voice_hook::VoiceClip*> valid =
       CollectValidClipsLocked(h);
   if (valid.empty()) {
     return;
