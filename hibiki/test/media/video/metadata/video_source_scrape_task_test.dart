@@ -42,6 +42,22 @@ void main() {
     expect(controller.isRunning, isFalse);
   });
 
+  test('后台任务首次通知时已进入 busy，任务入口可立即显示', () async {
+    final _BlockingRunner runner = _BlockingRunner();
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(runner);
+    final List<bool> busySnapshots = <bool>[];
+    controller.addListener(() => busySnapshots.add(controller.isBusy));
+
+    final Future<SourceScrapeReport> future =
+        controller.scrapeSource(source(1));
+    expect(busySnapshots, isNotEmpty);
+    expect(busySnapshots.first, isTrue);
+
+    runner.release();
+    await future;
+  });
+
   test('取消在作品边界生效并返回 cancelled 摘要', () async {
     final _BlockingRunner runner = _BlockingRunner();
     final VideoSourceScrapeTaskController controller =

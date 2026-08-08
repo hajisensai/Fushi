@@ -3149,5 +3149,12 @@
   "video_source_scrape_external_overwrite": "Allow protected sidecar overwrite",
   "video_source_scrape_external_overwrite_hint": "Third-party or user-modified files remain protected until you confirm each manual scrape batch again.",
   "video_source_scrape_external_overwrite_confirm_title": "Overwrite protected sidecars?",
-  "video_source_scrape_external_overwrite_confirm_body": "This batch may replace third-party NFO/images or Hibiki files you edited. Media files are not changed. Continue?"
+  "video_source_scrape_external_overwrite_confirm_body": "This batch may replace third-party NFO/images or Hibiki files you edited. Media files are not changed. Continue?",
+  "video_source_scrape_tasks_open": "Background tasks",
+  "video_source_scrape_background_started": "Scraping is running in the background",
+  "video_source_scrape_tasks_current": "Current task",
+  "video_source_scrape_tasks_history": "Recent tasks",
+  "video_source_scrape_tasks_empty": "No scrape tasks yet",
+  "video_source_scrape_waiting_confirmation": "Waiting for your confirmation",
+  "video_source_scrape_phase_scanning": "Scanning source"
 }

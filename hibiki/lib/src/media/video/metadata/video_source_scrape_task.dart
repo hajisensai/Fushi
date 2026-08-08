@@ -291,13 +291,15 @@ class VideoSourceScrapeTaskController extends ChangeNotifier {
     _progress = const VideoSourceScrapeProgress(
       phase: VideoSourceScrapePhase.planning,
     );
-    notifyListeners();
     final Future<SourceScrapeReport> future = _run(
       sources,
       token,
       interactive: interactive,
     );
     _active = future;
+    // 后台入口依赖 listener 立即展示全局任务按钮；必须在 _active 就绪后通知，
+    // 否则监听者会在 planning 阶段读到 isBusy=false，直到下一条网络进度才出现。
+    notifyListeners();
     void clear() {
       if (identical(_active, future)) {
         _active = null;

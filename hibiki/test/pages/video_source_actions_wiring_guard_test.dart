@@ -15,6 +15,21 @@ void main() {
     expect(source, contains('widget.onScrapeAll != null'));
   });
 
+  test('视频来源页与 HomePage 提供可重复进入的后台任务面板', () {
+    final String page = File(
+      'lib/src/pages/implementations/media_sources_page.dart',
+    ).readAsStringSync();
+    final String home = File(
+      'lib/src/pages/implementations/home_page.dart',
+    ).readAsStringSync();
+    expect(page, contains('widget.onOpenScrapeTasks != null'));
+    expect(page, contains('t.video_source_scrape_tasks_open'));
+    expect(home, contains('showVideoSourceScrapeTaskPanel'));
+    expect(home, contains('video-source-background-task-panel'));
+    expect(home, contains('video_source_scrape_background_started'));
+    expect(home, isNot(contains('showVideoSourceScrapeDialog')));
+  });
+
   test('视频添加来源直选文件夹，扫描收尾通知媒体库变化', () {
     final String source = File(
       'lib/src/pages/implementations/media_sources_view.dart',

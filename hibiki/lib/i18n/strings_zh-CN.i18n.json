@@ -3149,5 +3149,12 @@
   "video_source_scrape_external_overwrite": "允许覆盖受保护的 sidecar",
   "video_source_scrape_external_overwrite_hint": "第三方或用户修改过的文件仍受保护；每次手动刮削批次都必须再次确认。",
   "video_source_scrape_external_overwrite_confirm_title": "覆盖受保护的 sidecar？",
-  "video_source_scrape_external_overwrite_confirm_body": "本批次可能替换第三方 NFO/图片，或你修改过的 Hibiki 生成物；视频文件本身不会改动。是否继续？"
+  "video_source_scrape_external_overwrite_confirm_body": "本批次可能替换第三方 NFO/图片，或你修改过的 Hibiki 生成物；视频文件本身不会改动。是否继续？",
+  "video_source_scrape_tasks_open": "后台任务",
+  "video_source_scrape_background_started": "刮削已在后台开始",
+  "video_source_scrape_tasks_current": "当前任务",
+  "video_source_scrape_tasks_history": "最近任务",
+  "video_source_scrape_tasks_empty": "暂无刮削任务",
+  "video_source_scrape_waiting_confirmation": "等待你的确认",
+  "video_source_scrape_phase_scanning": "扫描来源"
 }

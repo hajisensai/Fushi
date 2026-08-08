@@ -4,6 +4,7 @@ import 'package:hibiki/src/media/video/metadata/video_metadata_json.dart';
 import 'package:hibiki/src/media/video/metadata/video_metadata_models.dart';
 import 'package:hibiki/src/media/video/metadata/video_metadata_provider.dart';
 import 'package:hibiki/src/media/video/metadata/video_metadata_transport.dart';
+import 'package:hibiki/src/media/video/scraper/title_normalizer.dart';
 import 'package:http/http.dart' as http;
 
 class TmdbVideoMetadataProvider implements VideoMetadataProvider {
@@ -40,26 +41,92 @@ class TmdbVideoMetadataProvider implements VideoMetadataProvider {
     VideoMetadataSearchRequest request,
   ) async {
     _requireAvailable();
-    final Map<String, Object?> payload = await _getObject(
-      '/search/multi',
-      operation: 'TMDB search',
-      query: <String, String>{
-        'query': request.title,
-        if (request.year != null) 'year': '${request.year}',
-        'page': '1',
-      },
-      cacheKey:
-          'tmdb:search:${request.mediaKind.name}:${request.title}:${request.year}',
-    );
-    final List<VideoMetadataWork> results = <VideoMetadataWork>[];
-    for (final Object? node in metadataList(payload['results'])) {
-      final Map<String, Object?>? item = metadataObject(node);
-      if (item == null) continue;
-      final VideoMetadataWork? work = _mapSearchWork(item);
-      if (work != null && work.kind == request.mediaKind) results.add(work);
-      if (results.length >= request.limit) break;
+    // TMDB 的搜索会命中原名、译名和别名，但响应 title/name 只投影成请求的
+    // language。严格匹配若只看 zh-CN 响应，会把通过英文别名命中的
+    // `Himouto! Umaru-chan` 错误拒绝，因为返回行只剩中文名和日文原名。
+    // 在同一 TMDB 主源内合并常用动画元数据语言的展示名，仍由上层 exact gate
+    // 决定是否自动应用；这不是跨 provider fallback，也不放宽成模糊匹配。
+    final List<String> languages = <String>[
+      language,
+      'en-US',
+      'ja-JP',
+      'zh-CN',
+    ].fold<List<String>>(<String>[], (List<String> values, String value) {
+      if (value.trim().isNotEmpty && !values.contains(value)) values.add(value);
+      return values;
+    });
+    final Map<String, VideoMetadataWork> merged = <String, VideoMetadataWork>{};
+    for (int languageIndex = 0;
+        languageIndex < languages.length;
+        languageIndex++) {
+      final String responseLanguage = languages[languageIndex];
+      final Map<String, Object?> payload;
+      try {
+        payload = await _getObject(
+          '/search/multi',
+          operation: 'TMDB search ($responseLanguage)',
+          query: <String, String>{
+            'query': request.title,
+            if (request.year != null) 'year': '${request.year}',
+            'page': '1',
+            'language': responseLanguage,
+          },
+          cacheKey: 'tmdb:search:${request.mediaKind.name}:'
+              '${request.title}:${request.year}:$responseLanguage',
+        );
+      } on Object {
+        // 配置语言是主请求；它失败时维持原有失败语义。补充语言只负责别名，
+        // 单个补充请求失败不得抹掉已经取得的主响应。
+        if (languageIndex == 0) rethrow;
+        continue;
+      }
+      for (final Object? node in metadataList(payload['results'])) {
+        final Map<String, Object?>? item = metadataObject(node);
+        if (item == null) continue;
+        final VideoMetadataWork? work = _mapSearchWork(item);
+        if (work == null || work.kind != request.mediaKind) continue;
+        final String? id = work.ids
+            .where((VideoMetadataId value) => value.type == 'tmdb')
+            .map((VideoMetadataId value) => value.value)
+            .firstOrNull;
+        if (id == null) continue;
+        final String key = '${work.kind.name}:$id';
+        merged.update(
+          key,
+          (VideoMetadataWork existing) =>
+              _mergeLocalizedSearchWork(existing, work),
+          ifAbsent: () => work,
+        );
+      }
     }
-    return results;
+    final String normalizedQuery = TitleNormalizer.normalize(request.title);
+    final List<VideoMetadataWork> exact = <VideoMetadataWork>[];
+    final List<VideoMetadataWork> remaining = <VideoMetadataWork>[];
+    for (final VideoMetadataWork work in merged.values) {
+      final bool matches = <String?>[
+        work.title,
+        work.originalTitle,
+        ...work.aliases,
+      ].any((String? value) =>
+          value != null && TitleNormalizer.normalize(value) == normalizedQuery);
+      (matches ? exact : remaining).add(work);
+    }
+    return <VideoMetadataWork>[...exact, ...remaining]
+        .take(request.limit)
+        .toList(growable: false);
+  }
+
+  VideoMetadataWork _mergeLocalizedSearchWork(
+    VideoMetadataWork primary,
+    VideoMetadataWork localized,
+  ) {
+    final List<String> aliases = metadataUniqueStrings(<String?>[
+      ...primary.aliases,
+      localized.title,
+      localized.originalTitle,
+      ...localized.aliases,
+    ]).where((String value) => value != primary.title).toList();
+    return primary.copyWith(aliases: aliases);
   }
 
   @override

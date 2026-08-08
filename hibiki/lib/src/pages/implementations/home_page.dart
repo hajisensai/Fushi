@@ -267,6 +267,7 @@ class _HomePageState extends BasePageState<HomePage>
   VideoSourceScrapeCoordinator? _videoSourceScrapeCoordinator;
   VideoSourceScrapeTaskController? _videoSourceScrapeTaskController;
   String? _videoSourceScrapeConfigFingerprint;
+  bool _videoSourceScrapePanelOpen = false;
 
   /// 定时后台同步：app 存活期每隔 [_periodicSyncInterval] 重跑一次 app-open 语义的全量
   /// sweep，让「手机一直开着、电脑那边改了数据」这种没有任何事件触发的场景也能自动拉到
@@ -1075,6 +1076,7 @@ class _HomePageState extends BasePageState<HomePage>
             _videoSourceScrapeConfigFingerprint == fingerprint)) {
       return existing;
     }
+    existing?.removeListener(_onVideoSourceScrapeTaskChanged);
     existing?.dispose();
     _videoSourceScrapeCoordinator?.close();
     final VideoSourceScrapeCoordinator coordinator =
@@ -1084,8 +1086,28 @@ class _HomePageState extends BasePageState<HomePage>
     );
     _videoSourceScrapeCoordinator = coordinator;
     _videoSourceScrapeConfigFingerprint = fingerprint;
-    return _videoSourceScrapeTaskController =
-        VideoSourceScrapeTaskController(coordinator);
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(coordinator)
+          ..addListener(_onVideoSourceScrapeTaskChanged);
+    return _videoSourceScrapeTaskController = controller;
+  }
+
+  void _onVideoSourceScrapeTaskChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _openVideoSourceScrapeTasks() async {
+    if (!mounted || _videoSourceScrapePanelOpen) return;
+    _videoSourceScrapePanelOpen = true;
+    try {
+      await showVideoSourceScrapeTaskPanel(
+        context: context,
+        controller: _videoSourceScrapeController,
+        loadRuns: () => appModel.database.getVideoSourceScrapeRuns(limit: 20),
+      );
+    } finally {
+      _videoSourceScrapePanelOpen = false;
+    }
   }
 
   Future<SourceScrapeReport> _observeVideoSourceScrape(
@@ -1107,17 +1129,18 @@ class _HomePageState extends BasePageState<HomePage>
     final ({bool proceed, bool grant}) overwrite =
         await _confirmProtectedSidecarOverwrite(<SourceLibraryRow>[source]);
     if (!mounted || !overwrite.proceed) return;
-    await showVideoSourceScrapeDialog(
-      context: context,
-      controller: _videoSourceScrapeController,
-      start: () => _observeVideoSourceScrape(
-        _videoSourceScrapeController.scrapeSource(
-          source,
-          interactive: true,
-          allowProtectedOverwrite: overwrite.grant,
-        ),
+    final VideoSourceScrapeTaskController controller =
+        _videoSourceScrapeController;
+    _observeVideoSourceScrape(
+      controller.scrapeSource(
+        source,
+        interactive: true,
+        allowProtectedOverwrite: overwrite.grant,
       ),
     );
+    if (!mounted) return;
+    HibikiToast.show(msg: t.video_source_scrape_background_started);
+    unawaited(_openVideoSourceScrapeTasks());
   }
 
   Future<void> _scrapeAllVideosFromSources() async {
@@ -1136,17 +1159,18 @@ class _HomePageState extends BasePageState<HomePage>
     final ({bool proceed, bool grant}) overwrite =
         await _confirmProtectedSidecarOverwrite(localSources);
     if (!mounted || !overwrite.proceed) return;
-    await showVideoSourceScrapeDialog(
-      context: context,
-      controller: _videoSourceScrapeController,
-      start: () => _observeVideoSourceScrape(
-        _videoSourceScrapeController.scrapeAllSources(
-          localSources,
-          interactive: true,
-          allowProtectedOverwrite: overwrite.grant,
-        ),
+    final VideoSourceScrapeTaskController controller =
+        _videoSourceScrapeController;
+    _observeVideoSourceScrape(
+      controller.scrapeAllSources(
+        localSources,
+        interactive: true,
+        allowProtectedOverwrite: overwrite.grant,
       ),
     );
+    if (!mounted) return;
+    HibikiToast.show(msg: t.video_source_scrape_background_started);
+    unawaited(_openVideoSourceScrapeTasks());
   }
 
   Future<({bool proceed, bool grant})> _confirmProtectedSidecarOverwrite(
@@ -1206,6 +1230,7 @@ class _HomePageState extends BasePageState<HomePage>
       coordinator?.close();
       return;
     }
+    controller.removeListener(_onVideoSourceScrapeTaskChanged);
     controller.markInterrupted();
     final Future<SourceScrapeReport>? active = controller.activeTask;
     if (active == null) {
@@ -1269,6 +1294,26 @@ class _HomePageState extends BasePageState<HomePage>
             key: ValueKey<HomeTab>(visible),
             child: _buildTabContent(visible),
           ),
+        if (_videoSourceScrapeTaskController case final controller?)
+          if (controller.isBusy)
+            Positioned(
+              right: 20,
+              bottom: 20,
+              child: SafeArea(
+                child: FloatingActionButton.small(
+                  key: const ValueKey<String>(
+                    'video-source-background-task-panel',
+                  ),
+                  tooltip: t.video_source_scrape_tasks_open,
+                  onPressed: () => unawaited(_openVideoSourceScrapeTasks()),
+                  child: Icon(
+                    controller.pendingConfirmation == null
+                        ? Icons.sync
+                        : Icons.rule_folder_outlined,
+                  ),
+                ),
+              ),
+            ),
       ],
     );
   }
@@ -1304,6 +1349,8 @@ class _HomePageState extends BasePageState<HomePage>
                 onScrapeSource: _scrapeVideoSource,
                 onVideoScanCompleted: _onVideoSourceScanCompleted,
                 scrapeTaskController: _videoSourceScrapeController,
+                onOpenScrapeTasks: () =>
+                    unawaited(_openVideoSourceScrapeTasks()),
                 onLibraryChanged: _notifyVideoLibraryChanged,
               ),
             ),

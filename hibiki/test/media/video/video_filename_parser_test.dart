@@ -16,6 +16,16 @@ void main() {
       expect(info.season, isNull);
     });
 
+    test('BUG-1461 Himouto 字幕组命名保留英文识别标题', () {
+      final VideoNameInfo info = parseVideoFilename(
+        '[Kamigami] Himouto! Umaru-chan - 10 '
+        '[1920x1080 x264 AAC Sub(Chs,Cht,Jap)].mkv',
+      );
+      expect(info.series, 'Himouto! Umaru-chan');
+      expect(info.episode, 10);
+      expect(info.season, isNull);
+    });
+
     test('SxxEyy 季+集（点分隔）', () {
       final VideoNameInfo info =
           parseVideoFilename('Title.S02E05.1080p.WEB-DL.mkv');

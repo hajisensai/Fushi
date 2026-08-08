@@ -19,6 +19,7 @@ class MediaSourcesPage extends StatefulWidget {
     this.onScrapeSource,
     this.onVideoScanCompleted,
     this.scrapeTaskController,
+    this.onOpenScrapeTasks,
     this.onLibraryChanged,
   });
 
@@ -42,6 +43,9 @@ class MediaSourcesPage extends StatefulWidget {
 
   /// 应用生命周期级刮削任务，来源行用它显示进度并防止重入。
   final VideoSourceScrapeTaskController? scrapeTaskController;
+
+  /// 视频后台刮削任务面板；即使当前有任务运行也必须可进入查看或取消。
+  final VoidCallback? onOpenScrapeTasks;
 
   /// 来源扫描完成后通知保活的媒体库重读合集、排序和封面。
   final VoidCallback? onLibraryChanged;
@@ -133,6 +137,15 @@ class _MediaSourcesPageState extends State<MediaSourcesPage> {
           onTap: () {
             if (!busy) widget.onScrapeAll!();
           },
+        ),
+      if (widget.mediaKind == 'video' && widget.onOpenScrapeTasks != null)
+        HibikiIconButton(
+          tooltip: t.video_source_scrape_tasks_open,
+          label: t.video_source_scrape_tasks_open,
+          icon: widget.scrapeTaskController?.isBusy == true
+              ? Icons.sync
+              : Icons.pending_actions_outlined,
+          onTap: widget.onOpenScrapeTasks,
         ),
     ];
     final Widget? navigation = widget.navigation;

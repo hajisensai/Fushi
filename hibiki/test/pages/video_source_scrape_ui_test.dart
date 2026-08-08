@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/source_library/source_library_row.dart';
 import 'package:hibiki/src/media/source_library/source_library_scanner.dart';
+import 'package:hibiki/src/media/video/metadata/video_source_scrape_dialog.dart';
 import 'package:hibiki/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:hibiki/src/pages/implementations/media_sources_view.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -143,6 +144,85 @@ void main() {
 
     runner.release.complete();
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('background task panel can close and reopen without cancelling',
+      (WidgetTester tester) async {
+    final HibikiDatabase db = _memDb();
+    addTearDown(db.close);
+    final int sourceId = await _seedSource(db, mediaKind: 'video');
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    await db.insertVideoSourceScrapeRun(
+      VideoSourceScrapeRunsCompanion.insert(
+        sourceId: Value<int?>(sourceId),
+        scope: 'source',
+        status: 'completed',
+        provider: const Value<String?>('tmdb'),
+        succeededWorks: const Value<int>(2),
+        startedAt: 1,
+        updatedAt: 2,
+        finishedAt: const Value<int?>(2),
+      ),
+    );
+    final _HoldingScrapeRunner runner = _HoldingScrapeRunner();
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(runner);
+    addTearDown(controller.dispose);
+
+    Future<void> openPanel(BuildContext context) =>
+        showVideoSourceScrapeTaskPanel(
+          context: context,
+          controller: controller,
+          loadRuns: () => db.getVideoSourceScrapeRuns(limit: 20),
+        );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) => Scaffold(
+            body: Column(
+              children: <Widget>[
+                TextButton(
+                  onPressed: () {
+                    unawaited(controller.scrapeSource(source));
+                    unawaited(openPanel(context));
+                  },
+                  child: const Text('Start in background'),
+                ),
+                TextButton(
+                  onPressed: () => unawaited(openPanel(context)),
+                  child: const Text('Open tasks'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Start in background'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Background tasks'), findsOneWidget);
+    expect(find.textContaining('Example Show'), findsOneWidget);
+    expect(find.text('Recent tasks'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('video-source-scrape-run-1')),
+        findsOneWidget);
+
+    await tester.tap(find.widgetWithText(TextButton, 'CLOSE'));
+    await tester.pumpAndSettle();
+    expect(find.text('Background tasks'), findsNothing);
+    expect(controller.isRunning, isTrue);
+
+    await tester.tap(find.text('Open tasks'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.textContaining('Example Show'), findsOneWidget);
+    expect(controller.isRunning, isTrue);
+
+    runner.release.complete();
+    await tester.pumpAndSettle();
+    expect(controller.isRunning, isFalse);
   });
 
   testWidgets('book and manga rows never expose video scrape controls',

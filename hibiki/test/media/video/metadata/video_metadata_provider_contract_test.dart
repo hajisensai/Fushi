@@ -8,6 +8,7 @@ import 'package:hibiki/src/media/video/metadata/fanart_video_image_provider.dart
 import 'package:hibiki/src/media/video/metadata/tmdb_video_metadata_provider.dart';
 import 'package:hibiki/src/media/video/metadata/video_metadata_models.dart';
 import 'package:hibiki/src/media/video/metadata/video_metadata_provider.dart';
+import 'package:hibiki/src/media/video/metadata/video_metadata_resolver.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -188,6 +189,71 @@ void main() {
         VideoMetadataCreditKind.director,
       );
       expect(detailed.images.single.url, endsWith('/detail-still.jpg'));
+    });
+
+    test('BUG-1461 localized search keeps the English title used to match',
+        () async {
+      final List<String> requestedLanguages = <String>[];
+      final MockClient client = MockClient((http.Request request) async {
+        final String language = request.url.queryParameters['language'] ?? '';
+        requestedLanguages.add(language);
+        if (request.url.path.endsWith('/search/multi')) {
+          final String name = switch (language) {
+            'en-US' => 'Himouto! Umaru-chan',
+            'ja-JP' => '干物妹!うまるちゃん',
+            _ => '干物妹！小埋',
+          };
+          return _json(<String, Object?>{
+            'results': <Object?>[
+              <String, Object?>{
+                'id': 67126,
+                'media_type': 'tv',
+                'name': name,
+                'original_name': '干物妹!うまるちゃん',
+                'first_air_date': '2015-07-09',
+              },
+            ],
+          });
+        }
+        if (request.url.path.endsWith('/tv/67126')) {
+          return _json(<String, Object?>{
+            'id': 67126,
+            'name': '干物妹！小埋',
+            'original_name': '干物妹!うまるちゃん',
+            'first_air_date': '2015-07-09',
+            'seasons': <Object?>[
+              <String, Object?>{
+                'id': 70001,
+                'season_number': 1,
+                'name': 'Season 1',
+                'episode_count': 12,
+              },
+            ],
+          });
+        }
+        return _json(<String, Object?>{});
+      });
+      final TmdbVideoMetadataProvider provider = TmdbVideoMetadataProvider(
+        apiKey: 'KEY',
+        client: client,
+        language: 'zh-CN',
+      );
+
+      final VideoMetadataResolution result = await VideoMetadataResolver(
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+          provider,
+        ]),
+      ).resolve(VideoMetadataResolveRequest(
+        selectedProvider: VideoMetadataProviderKind.tmdb,
+        mediaKind: VideoMetadataMediaKind.tv,
+        titleCandidates: <String>['Himouto! Umaru-chan'],
+        year: 2015,
+        seasonNumber: 1,
+      ));
+
+      expect(result.status, VideoMetadataResolutionStatus.matched);
+      expect(result.lookup?.externalId, '67126');
+      expect(requestedLanguages, containsAll(<String>['zh-CN', 'en-US']));
     });
   });
 
