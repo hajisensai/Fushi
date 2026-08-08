@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "1.4.0-debug.10309",
-  "tag": "v1.4.0-debug.10309+5418c60",
+  "version": "1.4.0-debug.10310",
+  "tag": "v1.4.0-debug.10310+ca807c6",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 10309,
-  "notes": "Manual release-signed debug-channel build from fix/migration-import-storage-permission @ 5418c60. Debug releases are prerelease and never Latest.",
+  "releaseSequence": 10310,
+  "notes": "Manual release-signed debug-channel build from fix/migration-import-storage-permission @ ca807c6. Debug releases are prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-1.4.0-debug.10306-ios.ipa",
@@ -29,11 +29,11 @@
       "version": "1.4.0-debug.10306"
     },
     {
-      "name": "fushi-1.4.0-debug.10309-5418c60-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/debug-rolling/fushi-1.4.0-debug.10309-5418c60-debug.apk",
-      "releaseSequence": 10309,
-      "tag": "v1.4.0-debug.10309+5418c60",
-      "version": "1.4.0-debug.10309"
+      "name": "fushi-1.4.0-debug.10310-ca807c6-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/debug-rolling/fushi-1.4.0-debug.10310-ca807c6-debug.apk",
+      "releaseSequence": 10310,
+      "tag": "v1.4.0-debug.10310+ca807c6",
+      "version": "1.4.0-debug.10310"
     }
   ]
 }
