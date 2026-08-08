@@ -132,7 +132,20 @@ public class MainActivity extends AudioServiceActivity {
         context = MainActivity.this;
         ankiChannelHandler = new AnkiChannelHandler(context);
         ttsChannelHandler = new TtsChannelHandler(context);
-        mihonChannelHandler = new MihonChannelHandler(getApplication());
+        // Manga extensions are an optional subsystem. Its constructor wires up
+        // Injekt, whose reified type resolution is only as sound as the R8 keep
+        // rules (a stale keep rule once made this throw on every launch and
+        // bricked the whole app). Nothing else in Fushi depends on it, so a
+        // failure here degrades to "manga extensions unavailable" instead of
+        // taking down startup: the Dart side already maps an unregistered
+        // channel to MihonRuntimeException('UNAVAILABLE').
+        try {
+            mihonChannelHandler = new MihonChannelHandler(getApplication());
+        } catch (Throwable e) {
+            mihonChannelHandler = null;
+            android.util.Log.e("fushi-mihon",
+                "Mihon runtime init failed; manga extensions disabled this session", e);
+        }
 
         super.onCreate(savedInstanceState);
 
@@ -525,7 +538,9 @@ public class MainActivity extends AudioServiceActivity {
 
         ankiChannelHandler.register(flutterEngine);
         ttsChannelHandler.register(flutterEngine);
-        mihonChannelHandler.register(flutterEngine);
+        if (mihonChannelHandler != null) {
+            mihonChannelHandler.register(flutterEngine);
+        }
 
         new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), SAF_CHANNEL)
             .setMethodCallHandler((call, result) -> {
