@@ -53,12 +53,25 @@ void main() {
   });
 
   group('synthesizeStableAssetNames (资产命名重建，纯函数)', () {
-    test('合成 Windows setup + 全 Android ABI 的 apk 名', () {
+    test('桌面合成 fushi-*（Phase 5：桥装上后更新指向 Fushi 产物）', () {
       final List<String> names = synthesizeStableAssetNames('0.4.1');
       expect(names, contains('fushi-0.4.1-windows-setup.exe'));
+      expect(names, contains('fushi-0.4.1-macos.zip'));
+    });
+
+    test('Android 合成 hibiki-*，绝不合成 fushi-*.apk', () {
+      // 与桌面**刻意相反**：Android 的包名+签名是安装身份，跨包名 APK 装不上
+      // （INSTALL_FAILED_UPDATE_INCOMPATIBLE）。合成 fushi-*.apk 等于造出一批
+      // 下下来必然装失败的候选名——安卓换到 Fushi 只能走迁移流程，不能靠自更新。
+      final List<String> names = synthesizeStableAssetNames('0.4.1');
       for (final String abi in kAndroidReleaseAbis) {
-        expect(names, contains('fushi-0.4.1-$abi.apk'));
+        expect(names, contains('hibiki-0.4.1-$abi.apk'));
       }
+      expect(
+        names.where((String n) => n.endsWith('.apk')),
+        everyElement(isNot(startsWith('fushi-'))),
+        reason: '安卓 apk 候选名里出现 fushi- 前缀＝用户点更新必定装失败',
+      );
     });
 
     test('返回不可变列表（防误改单一真相源）', () {
@@ -138,7 +151,9 @@ void main() {
       );
     });
 
-    test('Android updater 按设备 ABI 从合成 release 选出对应 apk', () async {
+    test('Android updater 按设备 ABI 从合成 release 选出桥包自己的 apk', () async {
+      // 端到端锁死安卓侧：302 合成 → 挑包，全链路都不能把用户引向 fushi-*.apk
+      // （跨包名跨签名装不上）。桌面同链路指向 fushi-* 是**有意**的，见上一条。
       final Map<String, dynamic> release = buildStableReleaseFromTag('v0.4.1');
       final List<Map<String, dynamic>> assets =
           (release['assets'] as List<dynamic>).cast<Map<String, dynamic>>();
@@ -147,7 +162,7 @@ void main() {
       ).selectAsset(assets);
       expect(
         asset?.url,
-        'https://github.com/hajisensai/hibiki/releases/download/v0.4.1/fushi-0.4.1-arm64-v8a.apk',
+        'https://github.com/hajisensai/hibiki/releases/download/v0.4.1/hibiki-0.4.1-arm64-v8a.apk',
       );
     });
   });

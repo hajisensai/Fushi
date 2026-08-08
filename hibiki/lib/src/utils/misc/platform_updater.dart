@@ -104,15 +104,22 @@ String? _assetVersionStamp(Object? raw) {
 /// （`app.fushi.reader`，资产名 `fushi-*`）**挂在同一个 rolling release tag 上**，
 /// 只判后缀（`.apk` / `-windows-setup.exe` / `-macos.zip`）区分不出二者。
 ///
-/// 但两侧的正确答案**不对称**，所以这里只有一个方向的约束：
-/// - 自更新（[any]）：不加产品族过滤。桥的 stable 路径**有意**把「更新」指向
-///   Fushi 产物（改名迁移计划 Phase 5，见 [synthesizeStableAssetNames]），加了
-///   过滤等于掐掉这条既有链路；历史手动发布的资产也不保证带任何产品前缀。
-/// - 迁移下载（[fushi]）：必须命中 `fushi-` 前缀。这一族由我们定义、是闭集，
+/// 三个值分别对应三种**不同来源**的约束，不要合并：
+/// - [any]：调用方（自更新）不表态。桌面就用它——桥的 stable 路径**有意**把「更新」
+///   指向 Fushi 产物（改名迁移计划 Phase 5，见 [synthesizeStableAssetNames]），
+///   Windows/macOS 换包名靠安装器覆盖安装，没有系统级阻碍。
+/// - [own]：**平台**表态「装不了别族」。Android 专用，由 [AndroidUpdater.selectAsset]
+///   把 [any] 就地提升而来，不需要调用方记得传（见那里的注释）。判据是「不是 fushi」
+///   而非「以 hibiki- 开头」——历史手动发布的资产不保证带任何产品前缀，用白名单会把
+///   它们全过滤掉，等于破坏既有更新链路。这里只排除确定装不上的那一族。
+/// - [fushi]：调用方（迁移下载）表态「就要 Fushi」。这一族由我们定义、是闭集，
 ///   选错的后果是「用户点了迁移，结果装了桥包自己」——必须硬约束。
 enum ReleaseProduct {
-  /// 不按产品族过滤（自更新的既有语义，字节级不变）。
+  /// 不按产品族过滤。
   any,
+
+  /// 只认自家产物（排除 Fushi 族）。
+  own,
 
   /// 只认 Fushi 产物。
   fushi,
@@ -125,6 +132,7 @@ const String kFushiAssetPrefix = 'fushi-';
 bool assetBelongsToProduct(String name, ReleaseProduct product) =>
     switch (product) {
       ReleaseProduct.any => true,
+      ReleaseProduct.own => !name.startsWith(kFushiAssetPrefix),
       ReleaseProduct.fushi => name.startsWith(kFushiAssetPrefix),
     };
 
@@ -187,11 +195,14 @@ const List<String> kAndroidReleaseAbis = <String>[
 List<String> synthesizeStableAssetNames(String version) {
   final List<String> names = <String>[
     // 本分支就是「更新桥」版本（改名迁移计划 Phase 5）：以 hibiki-* 资产名发布
-    // （老包沿旧名升上来），但本函数合成 fushi-*——桥装上后，后续 stable 更新
-    // 直接指向 Fushi 的产物名。debug 通道走 manifest 自带 assets 清单，不经此函数。
+    // （老包沿旧名升上来）。**桌面**这里合成 fushi-*——桥装上后，后续 stable 更新
+    // 直接指向 Fushi 的产物名，靠安装器覆盖安装完成改名。
     'fushi-$version-windows-setup.exe',
     'fushi-$version-macos.zip',
-    for (final String abi in kAndroidReleaseAbis) 'fushi-$version-$abi.apk',
+    // **Android 反过来**：跨包名跨签名的 APK 装不上（见 [AndroidUpdater.selectAsset]
+    // 里的平台硬约束），指向 fushi-* 等于合成一批下下来必然装失败的候选名。安卓的
+    // 自更新只能升级桥包自己（hibiki-*），换到 Fushi 走迁移流程。
+    for (final String abi in kAndroidReleaseAbis) 'hibiki-$version-$abi.apk',
   ];
   return List<String>.unmodifiable(names);
 }
@@ -297,13 +308,23 @@ class AndroidUpdater extends PlatformUpdater {
     UpdateChannel channel = UpdateChannel.stable,
     ReleaseProduct product = ReleaseProduct.any,
   }) async {
+    // **平台硬约束**：Android 的包名 + 签名是安装身份的一部分，跨包名的 APK 装不上
+    // （系统直接拒：`INSTALL_FAILED_UPDATE_INCOMPATIBLE`），装得上也只会变成并存的
+    // 第二个空 app。所以桥包在 Android 上**永远**不可能靠「自更新」变成 Fushi ——
+    // 换过去的唯一出路是迁移流程（`MigrationPage`：导出→装 Fushi→导入）。
+    //
+    // 这个约束属于平台而非调用方，故在这里把 [ReleaseProduct.any] 就地提升成
+    // [ReleaseProduct.own]，而不是要求每个自更新调用点记得传参（漏传就是静默装错包）。
+    // 桌面不做这层提升：Windows/macOS 换包名靠安装器覆盖安装，Phase 5 有意如此。
+    final ReleaseProduct effective =
+        product == ReleaseProduct.any ? ReleaseProduct.own : product;
     final List<String> abis = await _abiProvider();
     final List<String> abiTags =
         abis.map((String a) => a.replaceAll('_', '-')).toList();
     UpdateAsset? fallback;
     for (final UpdateAsset asset in _downloadable(assets)) {
       final String name = asset.name;
-      if (!_androidAssetMatchesChannel(name, channel, product)) continue;
+      if (!_androidAssetMatchesChannel(name, channel, effective)) continue;
       if (abiTags.any(name.contains)) return asset;
       fallback ??= asset;
     }
