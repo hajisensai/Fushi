@@ -16,7 +16,7 @@
 // 这里把“进入托管调用前确保当前线程已注册、退出后还原”的策略收敛为一个 RAII 作用域，并按
 // 函数指针注入 IL2CPP 的三个线程 API，使决策矩阵可离线单测（无需真实 GameAssembly.dll）。
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 // 来自 GameAssembly.dll 的 IL2CPP 线程 API（GetProcAddress 动态取址）：
 //   thread_current(): 当前线程已注册返回非空、未注册返回 nullptr；可安全跨任意线程调用。
@@ -74,4 +74,4 @@ class Il2CppManagedThreadScope {
   bool safe_ = false;
 };
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook

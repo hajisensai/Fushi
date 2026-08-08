@@ -3,8 +3,8 @@
 #include <cassert>
 #include <vector>
 
-using hibiki_voice_hook::ChildProcessCandidate;
-using hibiki_voice_hook::SelectGameChildProcess;
+using fushi_voice_hook::ChildProcessCandidate;
+using fushi_voice_hook::SelectGameChildProcess;
 
 int main() {
   const std::vector<ChildProcessCandidate> renpy = {

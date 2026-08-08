@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace hibiki_voice_hook::elf_ai6 {
+namespace fushi_voice_hook::elf_ai6 {
 
 constexpr size_t kHeaderBytes = 4;
 constexpr size_t kEntryBytes = 272;
@@ -102,4 +102,4 @@ inline bool FindEntryForRead(const uint8_t* index, size_t index_bytes,
   return found;
 }
 
-}  // namespace hibiki_voice_hook::elf_ai6
+}  // namespace fushi_voice_hook::elf_ai6

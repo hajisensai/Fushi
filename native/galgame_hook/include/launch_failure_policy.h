@@ -1,7 +1,7 @@
-#ifndef HIBIKI_LAUNCH_FAILURE_POLICY_H_
-#define HIBIKI_LAUNCH_FAILURE_POLICY_H_
+#ifndef FUSHI_LAUNCH_FAILURE_POLICY_H_
+#define FUSHI_LAUNCH_FAILURE_POLICY_H_
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 // 启动/注入失败的结构化原因。
 //
@@ -130,6 +130,6 @@ inline LaunchedProcessDisposition DecideLaunchedProcessDisposition(
   return LaunchedProcessDisposition::kLeaveRunning;
 }
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook
 
-#endif  // HIBIKI_LAUNCH_FAILURE_POLICY_H_
+#endif  // FUSHI_LAUNCH_FAILURE_POLICY_H_

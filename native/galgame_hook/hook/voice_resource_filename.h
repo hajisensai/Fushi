@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 // Resource dumps without a proven engine-level text association keep the
 // legacy "<tick>_<basename>" shape.  A profile may opt into a stable text
@@ -20,4 +20,4 @@ inline std::wstring BuildVoiceResourceFileName(uint64_t tick_ms,
   return name;
 }
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook

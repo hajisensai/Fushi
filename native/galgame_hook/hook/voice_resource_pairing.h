@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 constexpr uint64_t kKirikiriFollowingTextWindowMs = 1500;
 constexpr uint64_t kAi6PrecedingTextWindowMs = 1500;
@@ -98,4 +98,4 @@ inline VoiceResourcePairDecision ResolvePrecedingSelectedText(
                                   newest_seq};
 }
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook

@@ -24,10 +24,10 @@
 //   间隔ms   每轮间隔毫秒（缺省 500）
 namespace {
 
-using hibiki_voice_hook::kSharedMagic;
-using hibiki_voice_hook::kSharedVersion;
-using hibiki_voice_hook::SharedHeader;
-using hibiki_voice_hook::SharedMemoryName;
+using fushi_voice_hook::kSharedMagic;
+using fushi_voice_hook::kSharedVersion;
+using fushi_voice_hook::SharedHeader;
+using fushi_voice_hook::SharedMemoryName;
 
 // int16 判定阈值：峰值 > 300（约 -40 dBFS）算 SOUND，否则 silent。float32 折算到 int16
 // 量纲（*32767）后同阈值比较。
@@ -83,16 +83,16 @@ double PeakAmplitude(const std::vector<uint8_t>& buf, uint32_t bits,
 // 导出文本环里所有台词行到 stdout：每行 `seq|ts_ms|utf8文本`。供外层做卡的句子来源。
 void DumpText(const SharedHeader* h) {
   // v13：文本按线程分道，寻址与归并只有契约头里那一份实现（host 读侧用的是同一个函数）。
-  static const hibiki_voice_hook::TextSlot*
-      slots[hibiki_voice_hook::kTextSlotCount];
-  const uint32_t found = hibiki_voice_hook::CollectTextSlotsBySeq(
-      h, slots, hibiki_voice_hook::kTextSlotCount, 0);
+  static const fushi_voice_hook::TextSlot*
+      slots[fushi_voice_hook::kTextSlotCount];
+  const uint32_t found = fushi_voice_hook::CollectTextSlotsBySeq(
+      h, slots, fushi_voice_hook::kTextSlotCount, 0);
   for (uint32_t i = 0; i < found; ++i) {
     const auto* slot = slots[i];
     if (slot->byte_len == 0) continue;
     char u8[1400] = {0};
     const uint8_t* txt = reinterpret_cast<const uint8_t*>(slot) +
-                         sizeof(hibiki_voice_hook::TextSlot);
+                         sizeof(fushi_voice_hook::TextSlot);
     if (slot->is_utf8) {
       uint32_t n = slot->byte_len;
       if (n > 1399) n = 1399;
@@ -110,17 +110,17 @@ void DumpText(const SharedHeader* h) {
 
 void DumpTextMeta(const SharedHeader* h) {
   // v13：按线程分道枚举（实现见契约头 CollectTextSlotsBySeq，host 读侧共用）。
-  static const hibiki_voice_hook::TextSlot*
-      meta_slots[hibiki_voice_hook::kTextSlotCount];
-  const uint32_t meta_found = hibiki_voice_hook::CollectTextSlotsBySeq(
-      h, meta_slots, hibiki_voice_hook::kTextSlotCount, 0);
+  static const fushi_voice_hook::TextSlot*
+      meta_slots[fushi_voice_hook::kTextSlotCount];
+  const uint32_t meta_found = fushi_voice_hook::CollectTextSlotsBySeq(
+      h, meta_slots, fushi_voice_hook::kTextSlotCount, 0);
   for (uint32_t mi = 0; mi < meta_found; ++mi) {
     const auto* slot = meta_slots[mi];
     const uint64_t seq = slot->seq;
     if (slot->byte_len == 0) continue;
     char text[1400] = {0};
     const uint8_t* raw = reinterpret_cast<const uint8_t*>(slot) +
-                         sizeof(hibiki_voice_hook::TextSlot);
+                         sizeof(fushi_voice_hook::TextSlot);
     if (slot->is_utf8 != 0) {
       memcpy(text, raw, (std::min)(slot->byte_len, 1399u));
     } else {
@@ -145,17 +145,17 @@ void DumpTextMeta(const SharedHeader* h) {
 
 void DumpTextEvents(const SharedHeader* h) {
   // v13：同上，按线程分道枚举。
-  static const hibiki_voice_hook::TextSlot*
-      evt_slots[hibiki_voice_hook::kTextSlotCount];
-  const uint32_t evt_found = hibiki_voice_hook::CollectTextSlotsBySeq(
-      h, evt_slots, hibiki_voice_hook::kTextSlotCount, 0);
+  static const fushi_voice_hook::TextSlot*
+      evt_slots[fushi_voice_hook::kTextSlotCount];
+  const uint32_t evt_found = fushi_voice_hook::CollectTextSlotsBySeq(
+      h, evt_slots, fushi_voice_hook::kTextSlotCount, 0);
   for (uint32_t ei = 0; ei < evt_found; ++ei) {
     const auto* slot = evt_slots[ei];
     const uint64_t seq = slot->seq;
     char text[1400] = {0};
     if (slot->byte_len != 0) {
       const uint8_t* raw = reinterpret_cast<const uint8_t*>(slot) +
-                           sizeof(hibiki_voice_hook::TextSlot);
+                           sizeof(fushi_voice_hook::TextSlot);
       if (slot->is_utf8 != 0) {
         memcpy(text, raw, (std::min)(slot->byte_len, 1399u));
       } else {
@@ -182,12 +182,12 @@ void DumpTextEvents(const SharedHeader* h) {
 
 void DumpUnityEvents(const SharedHeader* h) {
   const uint64_t count = h->unity_voice_write_count;
-  const uint64_t start = count > hibiki_voice_hook::kUnityVoiceEventCount
-                             ? count - hibiki_voice_hook::kUnityVoiceEventCount
+  const uint64_t start = count > fushi_voice_hook::kUnityVoiceEventCount
+                             ? count - fushi_voice_hook::kUnityVoiceEventCount
                              : 0;
   for (uint64_t seq = start + 1; seq <= count; ++seq) {
     const auto* event = &h->unity_voice_events[
-        (seq - 1) % hibiki_voice_hook::kUnityVoiceEventCount];
+        (seq - 1) % fushi_voice_hook::kUnityVoiceEventCount];
     if (event->seq != seq) continue;
     char clip[512] = {0};
     char bundle[1600] = {0};
@@ -209,17 +209,17 @@ bool DumpWav(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
   const uint32_t cap = h->ring_capacity;
   const uint64_t clips = h->clip_write_count;
   if (cap == 0 || clips == 0) return false;
-  const uint32_t cslots = hibiki_voice_hook::kClipCount;
+  const uint32_t cslots = fushi_voice_hook::kClipCount;
   const uint8_t* cbase =
       reinterpret_cast<const uint8_t*>(h) + h->clip_region_offset;
   const uint64_t total = h->total_written;
   const uint64_t scan = (clips > cslots) ? clips - cslots : 0;
-  const hibiki_voice_hook::VoiceClip* best = nullptr;
+  const fushi_voice_hook::VoiceClip* best = nullptr;
   uint64_t bestDiff = ~0ull;
   for (uint64_t seq = scan + 1; seq <= clips; seq++) {
-    const auto* c = reinterpret_cast<const hibiki_voice_hook::VoiceClip*>(
+    const auto* c = reinterpret_cast<const fushi_voice_hook::VoiceClip*>(
         cbase + static_cast<size_t>((seq - 1) % cslots) *
-                    sizeof(hibiki_voice_hook::VoiceClip));
+                    sizeof(fushi_voice_hook::VoiceClip));
     if (c->seq != seq || c->byte_len == 0 || c->byte_len > cap) continue;
     if (total > c->total_at_write &&
         total - c->total_at_write > cap - c->byte_len)
@@ -258,7 +258,7 @@ bool DumpWav(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
 
 // 把一条 clip 的 PCM 从环形读出追加到 out；已被环形覆盖返回 false。
 bool ReadClipPcm(const SharedHeader* h, const uint8_t* ring,
-                 const hibiki_voice_hook::VoiceClip* c,
+                 const fushi_voice_hook::VoiceClip* c,
                  std::vector<uint8_t>& out) {
   const uint32_t cap = h->ring_capacity;
   const uint32_t len = c->byte_len;
@@ -282,7 +282,7 @@ bool ReadClipPcm(const SharedHeader* h, const uint8_t* ring,
 
 // 16-bit PCM 平均绝对幅值（能量代理）。非 16-bit 返回 -1（调用方退化为固定窗口）。
 double ClipEnergy16(const SharedHeader* h, const uint8_t* ring,
-                    const hibiki_voice_hook::VoiceClip* c) {
+                    const fushi_voice_hook::VoiceClip* c) {
   if (c->bits_per_sample != 16 || c->is_float) {
     return -1.0;
   }
@@ -309,16 +309,16 @@ bool DumpUtterance(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
   if (cap == 0 || clips == 0) {
     return false;
   }
-  const uint32_t cslots = hibiki_voice_hook::kClipCount;
+  const uint32_t cslots = fushi_voice_hook::kClipCount;
   const uint8_t* cbase =
       reinterpret_cast<const uint8_t*>(h) + h->clip_region_offset;
   const uint64_t scan = (clips > cslots) ? clips - cslots : 0;
   // 收集有效 clip 指针。
-  std::vector<const hibiki_voice_hook::VoiceClip*> valid;
+  std::vector<const fushi_voice_hook::VoiceClip*> valid;
   for (uint64_t seq = scan + 1; seq <= clips; seq++) {
-    const auto* c = reinterpret_cast<const hibiki_voice_hook::VoiceClip*>(
+    const auto* c = reinterpret_cast<const fushi_voice_hook::VoiceClip*>(
         cbase + static_cast<size_t>((seq - 1) % cslots) *
-                    sizeof(hibiki_voice_hook::VoiceClip));
+                    sizeof(fushi_voice_hook::VoiceClip));
     if (c->seq == seq && c->byte_len != 0 && c->byte_len <= cap) {
       valid.push_back(c);
     }
@@ -367,7 +367,7 @@ bool DumpUtterance(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
   }
   // 拼接语音源在 [ts-200, ts+6000] 的段；静音判据用该源峰值能量的 8%。
   std::vector<uint8_t> pcm;
-  const hibiki_voice_hook::VoiceClip* fmt = nullptr;
+  const fushi_voice_hook::VoiceClip* fmt = nullptr;
   double peak = 1.0;
   for (const auto* c : valid) {
     if (any_energy && c->source_ptr != voice_src) {
@@ -442,16 +442,16 @@ void DumpSources(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
     printf("no clips\n");
     return;
   }
-  const uint32_t cslots = hibiki_voice_hook::kClipCount;
+  const uint32_t cslots = fushi_voice_hook::kClipCount;
   const uint8_t* cbase =
       reinterpret_cast<const uint8_t*>(h) + h->clip_region_offset;
   const uint64_t scan = (clips > cslots) ? clips - cslots : 0;
   // 收集 [ts-300, ts+6000] 窗口内各源的 clip 指针。
-  std::map<uint64_t, std::vector<const hibiki_voice_hook::VoiceClip*>> by_src;
+  std::map<uint64_t, std::vector<const fushi_voice_hook::VoiceClip*>> by_src;
   for (uint64_t seq = scan + 1; seq <= clips; seq++) {
-    const auto* c = reinterpret_cast<const hibiki_voice_hook::VoiceClip*>(
+    const auto* c = reinterpret_cast<const fushi_voice_hook::VoiceClip*>(
         cbase + static_cast<size_t>((seq - 1) % cslots) *
-                    sizeof(hibiki_voice_hook::VoiceClip));
+                    sizeof(fushi_voice_hook::VoiceClip));
     if (c->seq != seq || c->byte_len == 0 || c->byte_len > cap) {
       continue;
     }
@@ -464,7 +464,7 @@ void DumpSources(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
   int idx = 0;
   for (const auto& kv : by_src) {
     std::vector<uint8_t> pcm;
-    const hibiki_voice_hook::VoiceClip* fmt = nullptr;
+    const fushi_voice_hook::VoiceClip* fmt = nullptr;
     double eacc = 0;
     size_t esamp = 0;
     for (const auto* c : kv.second) {
@@ -515,19 +515,19 @@ void DumpSources(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
 // ══ C.2f loopback 兜底混音取证 ═══════════════════════════════════════════════════
 // 收集 loopback 标记表里有效标记（seq 校验），按序号（=时间/位置单调）排。
 void CollectLoopbackMarkers(const SharedHeader* h,
-                            std::vector<hibiki_voice_hook::LoopbackMarker>* out) {
+                            std::vector<fushi_voice_hook::LoopbackMarker>* out) {
   out->clear();
   const uint64_t count = h->loopback_marker_count;
   const uint32_t slots = h->loopback_marker_slot_count
                              ? h->loopback_marker_slot_count
-                             : hibiki_voice_hook::kLoopbackMarkerCount;
+                             : fushi_voice_hook::kLoopbackMarkerCount;
   const uint8_t* base =
       reinterpret_cast<const uint8_t*>(h) + h->loopback_marker_offset;
   const uint64_t scan = (count > slots) ? count - slots : 0;
   for (uint64_t seq = scan + 1; seq <= count; seq++) {
-    const auto* m = reinterpret_cast<const hibiki_voice_hook::LoopbackMarker*>(
+    const auto* m = reinterpret_cast<const fushi_voice_hook::LoopbackMarker*>(
         base + static_cast<size_t>((seq - 1) % slots) *
-                   sizeof(hibiki_voice_hook::LoopbackMarker));
+                   sizeof(fushi_voice_hook::LoopbackMarker));
     if (m->seq == seq) {
       out->push_back(*m);
     }
@@ -537,7 +537,7 @@ void CollectLoopbackMarkers(const SharedHeader* h,
 // 用标记表把墙钟 tick 映射到 loopback 环线性字节位置 total。标记单调（tick/total 同增）：tick 落
 // 两标记间线性插值（自动处理静音间隙的 total 平段）；早于首标记按 byte_rate 反推夹到 [0,首total]；
 // 晚于末标记按 byte_rate 外推夹到 cur_total。无标记退化为 cur_total。
-uint64_t TickToTotal(const std::vector<hibiki_voice_hook::LoopbackMarker>& mk,
+uint64_t TickToTotal(const std::vector<fushi_voice_hook::LoopbackMarker>& mk,
                      uint64_t tick, uint64_t byte_rate, uint64_t cur_total) {
   if (mk.empty()) {
     return cur_total;
@@ -584,7 +584,7 @@ bool DumpLoopback(const SharedHeader* h, uint64_t ts_start, uint64_t ts_end,
       reinterpret_cast<const uint8_t*>(h) + h->loopback_ring_offset;
   const uint64_t byte_rate = static_cast<uint64_t>(sr) * ch * 2u;  // 16-bit 存储
   const uint64_t cur_total = h->loopback_total_written;
-  std::vector<hibiki_voice_hook::LoopbackMarker> mk;
+  std::vector<fushi_voice_hook::LoopbackMarker> mk;
   CollectLoopbackMarkers(h, &mk);
   uint64_t start_total = TickToTotal(mk, ts_start, byte_rate, cur_total);
   uint64_t end_total = TickToTotal(mk, ts_end, byte_rate, cur_total);
@@ -673,15 +673,15 @@ bool DumpLoopback(const SharedHeader* h, uint64_t ts_start, uint64_t ts_end,
 // 用来看播放模式（语音是不是连续多段同源、BGM 是不是另一持续源），设计整句合成分组用。
 void ListClips(const SharedHeader* h) {
   const uint64_t clips = h->clip_write_count;
-  const uint32_t cslots = hibiki_voice_hook::kClipCount;
+  const uint32_t cslots = fushi_voice_hook::kClipCount;
   const uint8_t* cbase =
       reinterpret_cast<const uint8_t*>(h) + h->clip_region_offset;
   const uint64_t scan = (clips > cslots) ? clips - cslots : 0;
   uint64_t prev_ts = 0;
   for (uint64_t seq = scan + 1; seq <= clips; seq++) {
-    const auto* c = reinterpret_cast<const hibiki_voice_hook::VoiceClip*>(
+    const auto* c = reinterpret_cast<const fushi_voice_hook::VoiceClip*>(
         cbase + static_cast<size_t>((seq - 1) % cslots) *
-                    sizeof(hibiki_voice_hook::VoiceClip));
+                    sizeof(fushi_voice_hook::VoiceClip));
     if (c->seq != seq) {
       continue;
     }
@@ -888,15 +888,15 @@ int main(int argc, char** argv) {
            static_cast<unsigned long long>(uwc));
     if (twc > 0) {
       const uint32_t idx =
-          static_cast<uint32_t>((twc - 1) % hibiki_voice_hook::kTextSlotCount);
+          static_cast<uint32_t>((twc - 1) % fushi_voice_hook::kTextSlotCount);
       const uint8_t* tbase =
           reinterpret_cast<const uint8_t*>(header) + header->text_region_offset;
-      const auto* slot = reinterpret_cast<const hibiki_voice_hook::TextSlot*>(
-          tbase + static_cast<size_t>(idx) * hibiki_voice_hook::kTextSlotBytes);
+      const auto* slot = reinterpret_cast<const fushi_voice_hook::TextSlot*>(
+          tbase + static_cast<size_t>(idx) * fushi_voice_hook::kTextSlotBytes);
       if (slot->seq == twc && slot->byte_len > 0 && slot->is_utf8 == 0) {
         const wchar_t* w = reinterpret_cast<const wchar_t*>(
             reinterpret_cast<const uint8_t*>(slot) +
-            sizeof(hibiki_voice_hook::TextSlot));
+            sizeof(fushi_voice_hook::TextSlot));
         const int wlen = static_cast<int>(slot->byte_len / 2);
         char u8[700] = {0};
         WideCharToMultiByte(CP_UTF8, 0, w, wlen, u8, sizeof(u8) - 1, nullptr,
@@ -906,7 +906,7 @@ int main(int argc, char** argv) {
     }
     if (uwc > 0) {
       const auto* event = &header->unity_voice_events[
-          (uwc - 1) % hibiki_voice_hook::kUnityVoiceEventCount];
+          (uwc - 1) % fushi_voice_hook::kUnityVoiceEventCount];
       if (event->seq == uwc) {
         char clip_u8[512] = {0};
         char bundle_u8[1400] = {0};

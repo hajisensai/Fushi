@@ -7,7 +7,7 @@
 
 #include "../elf_ai6_arc.h"
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 struct ElfAi6FileIdentity {
   DWORD volume_serial = 0;
   DWORD file_index_high = 0;
@@ -78,4 +78,4 @@ inline bool ProbeElfAi6Profile(ElfAi6FileIdentity* identity_out) {
 inline bool MatchesElfAi6Profile(const wchar_t*) {
   return ProbeElfAi6Profile(nullptr);
 }
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook

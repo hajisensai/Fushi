@@ -132,7 +132,7 @@ char g_renpy_last_resource[520] = {0};
 uint64_t g_renpy_last_resource_tick = 0;
 volatile LONG g_renpy_resource_counter = 0;
 
-HMODULE FindLoadedFfmpegModule(hibiki_voice_hook::FfmpegModuleKind kind,
+HMODULE FindLoadedFfmpegModule(fushi_voice_hook::FfmpegModuleKind kind,
                                uint32_t* major);
 
 bool SampleFormatLayout(int format, uint32_t* bytes_per_sample,
@@ -281,8 +281,8 @@ void CopyRenpyResource(const char* url) {
     return;
   }
   const auto format =
-      hibiki_voice_hook::DetectAudioResourceFormat(header, header_read);
-  if (format == hibiki_voice_hook::AudioResourceFormat::kUnknown) {
+      fushi_voice_hook::DetectAudioResourceFormat(header, header_read);
+  if (format == fushi_voice_hook::AudioResourceFormat::kUnknown) {
     CloseHandle(source);
     return;
   }
@@ -302,7 +302,7 @@ void CopyRenpyResource(const char* url) {
   const std::wstring destination =
       directory + L"\\" + std::to_wstring(GetTickCount64()) + L"_" +
       std::to_wstring(InterlockedIncrement(&g_renpy_resource_counter)) + L"_" + base +
-      hibiki_voice_hook::AudioResourceExtension(format);
+      fushi_voice_hook::AudioResourceExtension(format);
   HANDLE output = CreateFileW(destination.c_str(), GENERIC_WRITE, 0, nullptr,
                               CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (output == INVALID_HANDLE_VALUE) {
@@ -330,7 +330,7 @@ void CopyRenpyResource(const char* url) {
               static_cast<int>(sizeof(g_renpy_last_resource)));
     g_renpy_last_resource_tick = now;
     g_header->hook_diagnostics |=
-        hibiki_voice_hook::kDiagFfmpegResourceCaptured;
+        fushi_voice_hook::kDiagFfmpegResourceCaptured;
   }
 }
 
@@ -753,7 +753,7 @@ int __cdecl Detour_avformat_open_input(void** ps, const char* url, void* fmt,
   if (ret == 0 && g_capture_enabled && EnqueueRenpyResource(url) &&
       g_header != nullptr) {
     g_header->hook_diagnostics |=
-        hibiki_voice_hook::kDiagFfmpegVoiceResourceObserved;
+        fushi_voice_hook::kDiagFfmpegVoiceResourceObserved;
   }
   if (ret == 0 && ps != nullptr && *ps != nullptr && g_capture_enabled &&
       g_renpy_cs_ready && g_renpy_avformat_major == 54 && IsVoiceUrl(url)) {
@@ -838,7 +838,7 @@ bool TryHookRenpyAudio() {
   if (!avformat_done) {
     uint32_t major = 0;
     HMODULE m = FindLoadedFfmpegModule(
-        hibiki_voice_hook::FfmpegModuleKind::kAvformat, &major);
+        fushi_voice_hook::FfmpegModuleKind::kAvformat, &major);
     if (m != nullptr) {
       if (!StartRenpyWorker()) return false;
       if (HookFn(reinterpret_cast<void*>(GetProcAddress(m, "avformat_open_input")),
@@ -849,7 +849,7 @@ bool TryHookRenpyAudio() {
         if (g_header != nullptr) {
           g_header->reserved_luna |= 0x08000000;  // diag: avformat hook 装上
           g_header->hook_diagnostics |=
-              hibiki_voice_hook::kDiagFfmpegResourceHooksReady;
+              fushi_voice_hook::kDiagFfmpegResourceHooksReady;
         }
       }
       if (major == 54) {
@@ -868,7 +868,7 @@ bool TryHookRenpyAudio() {
   if (g_renpy_avformat_major == 54 && !legacy_avcodec_done) {
     uint32_t major = 0;
     HMODULE m = FindLoadedFfmpegModule(
-        hibiki_voice_hook::FfmpegModuleKind::kAvcodec, &major);
+        fushi_voice_hook::FfmpegModuleKind::kAvcodec, &major);
     if (m != nullptr && major == 54) {
       if (HookFn(reinterpret_cast<void*>(GetProcAddress(m, "avcodec_decode_audio4")),
                  reinterpret_cast<void*>(&Detour_avcodec_decode_audio4),
@@ -883,7 +883,7 @@ bool TryHookRenpyAudio() {
   return avformat_done;
 }
 
-HMODULE FindLoadedFfmpegModule(hibiki_voice_hook::FfmpegModuleKind kind,
+HMODULE FindLoadedFfmpegModule(fushi_voice_hook::FfmpegModuleKind kind,
                                uint32_t* major) {
   HMODULE result = nullptr;
   HMODULE monolithic_fallback = nullptr;
@@ -895,15 +895,15 @@ HMODULE FindLoadedFfmpegModule(hibiki_voice_hook::FfmpegModuleKind kind,
   me.dwSize = sizeof(me);
   if (Module32FirstW(snap, &me)) {
     do {
-      const auto parsed = hibiki_voice_hook::ParseFfmpegModuleName(me.szModule);
+      const auto parsed = fushi_voice_hook::ParseFfmpegModuleName(me.szModule);
       if (parsed.kind == kind && parsed.major > result_major) {
         result = me.hModule;
         result_major = parsed.major;
       }
       if (monolithic_fallback == nullptr &&
-          hibiki_voice_hook::IsMonolithicFfmpegModuleName(me.szModule)) {
+          fushi_voice_hook::IsMonolithicFfmpegModuleName(me.szModule)) {
         const char* required_export =
-            kind == hibiki_voice_hook::FfmpegModuleKind::kAvformat
+            kind == fushi_voice_hook::FfmpegModuleKind::kAvformat
                 ? "avformat_open_input"
                 : "avcodec_send_packet";
         if (GetProcAddress(me.hModule, required_export) != nullptr) {

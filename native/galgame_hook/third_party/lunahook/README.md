@@ -27,7 +27,7 @@ DLL 位数必须匹配目标进程：32 位游戏用 `*32.dll`，64 位用 `*64.
 - **升级纪律**：版本与四个 DLL 哈希的机器可读真相源是 `VERSION.json`。先用
   `tools/sync_lunahook.ps1 -SourceDir <release-dir>` 比对官方发布包，再读配套 `texthook.py`
   和上游导出实现；确认 ABI 变化后升级 `include/luna_bridge.h` 的 bridge ABI。禁止只覆盖 DLL。
-- 校验：`hibiki_luna_symcheck.exe`（`tools/luna_symcheck.cpp`）纯 `LoadLibrary`+`GetProcAddress`，
+- 校验：`fushi_luna_symcheck.exe`（`tools/luna_symcheck.cpp`）纯 `LoadLibrary`+`GetProcAddress`，
   离线确认 4 个必需导出齐全；`tools/sync_lunahook.ps1` 校验版本清单与所有二进制哈希。
 
 ## Hook Code 配置

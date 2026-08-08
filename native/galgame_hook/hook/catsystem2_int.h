@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace hibiki_voice_hook::catsystem2 {
+namespace fushi_voice_hook::catsystem2 {
 
 constexpr size_t kHeaderBytes = 8;
 constexpr size_t kEntryBytes = 72;
@@ -104,4 +104,4 @@ inline bool IsVoiceOgg(const EntryView& entry) {
          EndsWithInsensitive(entry.name, entry.name_length, ".ogg");
 }
 
-}  // namespace hibiki_voice_hook::catsystem2
+}  // namespace fushi_voice_hook::catsystem2

@@ -23,7 +23,7 @@ struct TyranoAsarTask {
 
 TyranoAsarHandle g_tyrano_asar_handles[kTyranoAsarHandleSlots];
 TyranoAsarTask g_tyrano_asar_tasks[kTyranoAsarTaskSlots];
-std::vector<hibiki_voice_hook::AsarVoiceEntry> g_tyrano_voice_entries;
+std::vector<fushi_voice_hook::AsarVoiceEntry> g_tyrano_voice_entries;
 wchar_t g_tyrano_asar_path[32768] = {0};
 volatile LONG g_tyrano_asar_ready = 0;
 uint32_t g_tyrano_last_processed_entry = UINT32_MAX;
@@ -76,9 +76,9 @@ bool LoadTyranoAsarVoiceIndex() {
   g_orig_CloseHandle(file);
   if (!valid) return false;
 
-  std::vector<hibiki_voice_hook::AsarVoiceEntry> entries;
+  std::vector<fushi_voice_hook::AsarVoiceEntry> entries;
   const uint64_t data_base = 8u + static_cast<uint64_t>(header_size);
-  if (!hibiki_voice_hook::ParseAsarVoiceEntries(
+  if (!fushi_voice_hook::ParseAsarVoiceEntries(
           json.data(), json.size(), data_base, &entries) ||
       entries.empty()) {
     return false;
@@ -231,11 +231,11 @@ void ProcessTyranoAsarTask(TyranoAsarTask* task) {
     valid = ogg != nullptr &&
             ReadExact(file, ogg, static_cast<uint32_t>(entry.byte_len));
     if (valid) {
-      const auto format = hibiki_voice_hook::DetectAudioResourceFormat(
+      const auto format = fushi_voice_hook::DetectAudioResourceFormat(
           ogg, static_cast<size_t>(entry.byte_len));
-      valid = format == hibiki_voice_hook::AudioResourceFormat::kM4a ||
-              (format == hibiki_voice_hook::AudioResourceFormat::kOgg &&
-               hibiki_voice_hook::siglus::CompleteOggBytes(
+      valid = format == fushi_voice_hook::AudioResourceFormat::kM4a ||
+              (format == fushi_voice_hook::AudioResourceFormat::kOgg &&
+               fushi_voice_hook::siglus::CompleteOggBytes(
                    ogg, static_cast<uint32_t>(entry.byte_len)) ==
                    entry.byte_len);
     }
@@ -257,7 +257,7 @@ void ProcessTyranoAsarTask(TyranoAsarTask* task) {
       g_tyrano_last_processed_tick = task->tick_ms;
       if (g_header != nullptr) {
         g_header->hook_diagnostics |=
-            hibiki_voice_hook::kDiagTyranoAsarVoiceCaptured;
+            fushi_voice_hook::kDiagTyranoAsarVoiceCaptured;
       }
     }
   }
@@ -280,7 +280,7 @@ bool TryHookTyranoAsarAudio() {
   const bool index_ready = file_hooks_ready && LoadTyranoAsarVoiceIndex();
   if (index_ready && g_header != nullptr) {
     g_header->hook_diagnostics |=
-        hibiki_voice_hook::kDiagTyranoAsarHooksReady;
+        fushi_voice_hook::kDiagTyranoAsarHooksReady;
   }
   return index_ready;
 }

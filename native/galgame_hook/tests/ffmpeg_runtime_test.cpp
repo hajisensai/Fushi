@@ -4,10 +4,10 @@
 #include <cstdint>
 #include <cstring>
 
-using hibiki_voice_hook::AudioResourceFormat;
-using hibiki_voice_hook::DetectAudioResourceFormat;
-using hibiki_voice_hook::FfmpegModuleKind;
-using hibiki_voice_hook::ParseFfmpegModuleName;
+using fushi_voice_hook::AudioResourceFormat;
+using fushi_voice_hook::DetectAudioResourceFormat;
+using fushi_voice_hook::FfmpegModuleKind;
+using fushi_voice_hook::ParseFfmpegModuleName;
 
 int main() {
   const auto legacy = ParseFfmpegModuleName(L"avcodec-54.dll");

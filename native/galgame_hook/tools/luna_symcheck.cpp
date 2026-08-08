@@ -49,12 +49,12 @@ int main() {
   }
   printf("LunaHost%ls.dll 已加载。\n", kArch);
   printf("bridge ABI=%u, vendored Luna=10.16.1.2 (0x%08x)\n",
-         hibiki_voice_hook::kLunaBridgeAbiVersion,
-         hibiki_voice_hook::kLunaVendoredVersion);
+         fushi_voice_hook::kLunaBridgeAbiVersion,
+         fushi_voice_hook::kLunaVendoredVersion);
 
   int missing_required = 0;
   printf("== 必需导出 ==\n");
-  for (const char* name : hibiki_voice_hook::kLunaRequiredExports) {
+  for (const char* name : fushi_voice_hook::kLunaRequiredExports) {
     void* p = reinterpret_cast<void*>(GetProcAddress(h, name));
     printf("  [%s] %s (%p)\n", p ? "OK" : "MISSING", name, p);
     if (p == nullptr) {
@@ -62,7 +62,7 @@ int main() {
     }
   }
   printf("== 可选导出 ==\n");
-  for (const char* name : hibiki_voice_hook::kLunaOptionalExports) {
+  for (const char* name : fushi_voice_hook::kLunaOptionalExports) {
     void* p = reinterpret_cast<void*>(GetProcAddress(h, name));
     printf("  [%s] %s (%p)\n", p ? "OK" : "absent", name, p);
   }

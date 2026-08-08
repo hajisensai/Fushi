@@ -47,16 +47,16 @@ int main() {
   PutLe32(archive, 28, 120);
   PutLe32(archive, 32, 9002);
 
-  hibiki_voice_hook::siglus::OvkEntry entry;
-  ok &= Expect(hibiki_voice_hook::siglus::FindEntryAtOffset(
+  fushi_voice_hook::siglus::OvkEntry entry;
+  ok &= Expect(fushi_voice_hook::siglus::FindEntryAtOffset(
                    archive.data(), archive.size(), 6000, 36, &entry),
                "valid OVK entry should be found");
   ok &= Expect(entry.byte_len == 1234 && entry.id == 9001,
                "OVK fields should decode as little endian");
-  ok &= Expect(!hibiki_voice_hook::siglus::FindEntryAtOffset(
+  ok &= Expect(!fushi_voice_hook::siglus::FindEntryAtOffset(
                    archive.data(), archive.size(), 6000, 37, &entry),
                "non-entry offset must be rejected");
-  ok &= Expect(!hibiki_voice_hook::siglus::FindEntryAtOffset(
+  ok &= Expect(!fushi_voice_hook::siglus::FindEntryAtOffset(
                    archive.data(), archive.size(), 1000, 1270, &entry),
                "entry extending beyond file must be rejected");
 
@@ -64,14 +64,14 @@ int main() {
   const std::vector<uint8_t> last = OggPage(0x04, 77, {4, 5});
   std::vector<uint8_t> ogg = first;
   ogg.insert(ogg.end(), last.begin(), last.end());
-  ok &= Expect(hibiki_voice_hook::siglus::CompleteOggBytes(
+  ok &= Expect(fushi_voice_hook::siglus::CompleteOggBytes(
                    ogg.data(), static_cast<uint32_t>(ogg.size())) == ogg.size(),
                "complete two-page Ogg should end at EOS page");
-  ok &= Expect(hibiki_voice_hook::siglus::CompleteOggBytes(
+  ok &= Expect(fushi_voice_hook::siglus::CompleteOggBytes(
                    ogg.data(), static_cast<uint32_t>(first.size())) == 0,
                "Ogg without EOS must be rejected");
   ogg[14] ^= 1;
-  ok &= Expect(hibiki_voice_hook::siglus::CompleteOggBytes(
+  ok &= Expect(fushi_voice_hook::siglus::CompleteOggBytes(
                    ogg.data(), static_cast<uint32_t>(ogg.size())) == 0,
                "mixed logical stream serials must be rejected");
 

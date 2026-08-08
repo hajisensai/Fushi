@@ -5,7 +5,7 @@
 
 #include "../hook/adapters/elf_ai6_profile.h"
 
-namespace ai6 = hibiki_voice_hook::elf_ai6;
+namespace ai6 = fushi_voice_hook::elf_ai6;
 
 void WriteLe32(uint8_t* out, uint32_t value) {
   out[0] = static_cast<uint8_t>(value);
@@ -32,11 +32,11 @@ void WriteEntry(std::vector<uint8_t>* index, uint32_t number,
 }
 
 int main() {
-  const hibiki_voice_hook::ElfAi6FileIdentity archive_identity = {1, 2, 3};
-  assert(hibiki_voice_hook::SameElfAi6FileIdentity(
-      archive_identity, hibiki_voice_hook::ElfAi6FileIdentity{1, 2, 3}));
-  assert(!hibiki_voice_hook::SameElfAi6FileIdentity(
-      archive_identity, hibiki_voice_hook::ElfAi6FileIdentity{1, 2, 4}));
+  const fushi_voice_hook::ElfAi6FileIdentity archive_identity = {1, 2, 3};
+  assert(fushi_voice_hook::SameElfAi6FileIdentity(
+      archive_identity, fushi_voice_hook::ElfAi6FileIdentity{1, 2, 3}));
+  assert(!fushi_voice_hook::SameElfAi6FileIdentity(
+      archive_identity, fushi_voice_hook::ElfAi6FileIdentity{1, 2, 4}));
 
   constexpr uint32_t count = 2;
   const uint32_t index_bytes = static_cast<uint32_t>(

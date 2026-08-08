@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace hibiki_voice_hook::artemis {
+namespace fushi_voice_hook::artemis {
 
 constexpr size_t kMagicBytes = 3;
 constexpr size_t kMinimumHeaderBytes = 11;
@@ -164,4 +164,4 @@ inline bool IsVoiceOgg(const EntryView& entry) {
          entry.size <= kMaxVoiceBytes;
 }
 
-}  // namespace hibiki_voice_hook::artemis
+}  // namespace fushi_voice_hook::artemis

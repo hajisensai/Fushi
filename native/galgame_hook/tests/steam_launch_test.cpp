@@ -4,12 +4,12 @@
 #include "steam_launch.h"
 
 int main() {
-  using hibiki_voice_hook::ParseAcfQuotedValue;
-  using hibiki_voice_hook::ParseSteamLibraryPath;
-  using hibiki_voice_hook::BuildSteamRunUri;
-  using hibiki_voice_hook::ChooseSteamLaunchStrategy;
-  using hibiki_voice_hook::SteamLibraryPath;
-  using hibiki_voice_hook::SteamLaunchStrategy;
+  using fushi_voice_hook::ParseAcfQuotedValue;
+  using fushi_voice_hook::ParseSteamLibraryPath;
+  using fushi_voice_hook::BuildSteamRunUri;
+  using fushi_voice_hook::ChooseSteamLaunchStrategy;
+  using fushi_voice_hook::SteamLibraryPath;
+  using fushi_voice_hook::SteamLaunchStrategy;
 
   SteamLibraryPath path;
   assert(ParseSteamLibraryPath(

@@ -5,11 +5,11 @@
 #include "voice_resource_pairing.h"
 
 int main() {
-  using hibiki_voice_hook::BuildVoiceResourceFileName;
-  using hibiki_voice_hook::ResolveFollowingSelectedText;
-  using hibiki_voice_hook::ResolvePrecedingSelectedText;
-  using hibiki_voice_hook::VoiceResourcePairState;
-  using hibiki_voice_hook::VoiceTextCandidate;
+  using fushi_voice_hook::BuildVoiceResourceFileName;
+  using fushi_voice_hook::ResolveFollowingSelectedText;
+  using fushi_voice_hook::ResolvePrecedingSelectedText;
+  using fushi_voice_hook::VoiceResourcePairState;
+  using fushi_voice_hook::VoiceTextCandidate;
 
   // Cross-engine guard: profiles without a proved text/resource contract keep
   // the legacy filename and cannot accidentally claim stable pairing.

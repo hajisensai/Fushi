@@ -12,7 +12,7 @@ void PutLe32(std::vector<uint8_t>* bytes, size_t at, uint32_t value) {
 }
 
 int main() {
-  if (hibiki_voice_hook::MatchesRealliveProfile(nullptr)) return 1;
+  if (fushi_voice_hook::MatchesRealliveProfile(nullptr)) return 1;
 
   std::vector<uint8_t> archive(20, 0);
   PutLe32(&archive, 0, 1);
@@ -20,8 +20,8 @@ int main() {
   PutLe32(&archive, 8, 20);
   PutLe32(&archive, 12, 250);
   PutLe32(&archive, 16, 7);
-  hibiki_voice_hook::visual_arts::OvkEntry entry;
-  if (!hibiki_voice_hook::visual_arts::FindEntryAtOffset(
+  fushi_voice_hook::visual_arts::OvkEntry entry;
+  if (!fushi_voice_hook::visual_arts::FindEntryAtOffset(
           archive.data(), archive.size(), 51, 20, &entry)) {
     return 2;
   }

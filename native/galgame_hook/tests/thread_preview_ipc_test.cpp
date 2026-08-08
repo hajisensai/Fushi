@@ -10,25 +10,25 @@
 
 namespace {
 
-using hibiki_voice_hook::ThreadPreviewSlot;
-using hibiki_voice_hook::ThreadPreviewSnapshot;
+using fushi_voice_hook::ThreadPreviewSlot;
+using fushi_voice_hook::ThreadPreviewSnapshot;
 
 struct PreviewTable {
   volatile uint64_t write_count = 0;
   volatile uint64_t generation = 0;
-  std::array<ThreadPreviewSlot, hibiki_voice_hook::kThreadPreviewCount> slots{};
+  std::array<ThreadPreviewSlot, fushi_voice_hook::kThreadPreviewCount> slots{};
   std::mutex writer_mutex;
 };
 
 void WritePattern(PreviewTable* table, uint64_t thread_id) {
   std::lock_guard<std::mutex> lock(table->writer_mutex);
-  ThreadPreviewSlot* slot = hibiki_voice_hook::FindThreadPreviewSlot(
+  ThreadPreviewSlot* slot = fushi_voice_hook::FindThreadPreviewSlot(
       table->slots.data(), static_cast<uint32_t>(table->slots.size()),
       thread_id);
   if (slot == nullptr) return;
   const uint64_t generation =
-      hibiki_voice_hook::NextThreadPreviewGeneration(&table->generation);
-  hibiki_voice_hook::BeginThreadPreviewWrite(slot, generation);
+      fushi_voice_hook::NextThreadPreviewGeneration(&table->generation);
+  fushi_voice_hook::BeginThreadPreviewWrite(slot, generation);
   slot->thread_id = thread_id;
   slot->timestamp_ms = generation * 3;
   slot->line_count = generation;
@@ -37,8 +37,8 @@ void WritePattern(PreviewTable* table, uint64_t thread_id) {
   slot->event_flags = static_cast<uint32_t>(generation & 1u);
   const wchar_t pattern = static_cast<wchar_t>(L'A' + (generation % 23));
   for (uint32_t i = 0; i < 128; ++i) slot->text[i] = pattern;
-  hibiki_voice_hook::PublishThreadPreviewWrite(slot, generation);
-  hibiki_voice_hook::PublishThreadPreviewChange(&table->write_count);
+  fushi_voice_hook::PublishThreadPreviewWrite(slot, generation);
+  fushi_voice_hook::PublishThreadPreviewChange(&table->write_count);
 }
 
 void RemovePreview(PreviewTable* table, uint64_t thread_id) {
@@ -46,11 +46,11 @@ void RemovePreview(PreviewTable* table, uint64_t thread_id) {
   for (ThreadPreviewSlot& slot : table->slots) {
     if (slot.thread_id != thread_id) continue;
     const uint64_t generation =
-        hibiki_voice_hook::NextThreadPreviewGeneration(&table->generation);
-    hibiki_voice_hook::BeginThreadPreviewWrite(&slot, generation);
-    hibiki_voice_hook::ClearThreadPreviewPayload(&slot);
-    hibiki_voice_hook::PublishThreadPreviewWrite(&slot, generation);
-    hibiki_voice_hook::PublishThreadPreviewChange(&table->write_count);
+        fushi_voice_hook::NextThreadPreviewGeneration(&table->generation);
+    fushi_voice_hook::BeginThreadPreviewWrite(&slot, generation);
+    fushi_voice_hook::ClearThreadPreviewPayload(&slot);
+    fushi_voice_hook::PublishThreadPreviewWrite(&slot, generation);
+    fushi_voice_hook::PublishThreadPreviewChange(&table->write_count);
     return;
   }
 }
@@ -76,56 +76,56 @@ bool SnapshotMatchesOneGeneration(const ThreadPreviewSnapshot& snapshot) {
 }  // namespace
 
 int main() {
-  if (hibiki_voice_hook::kLunaThreadPreviewCount +
-          hibiki_voice_hook::kNativeThreadPreviewCount !=
-      hibiki_voice_hook::kThreadPreviewCount) {
+  if (fushi_voice_hook::kLunaThreadPreviewCount +
+          fushi_voice_hook::kNativeThreadPreviewCount !=
+      fushi_voice_hook::kThreadPreviewCount) {
     return 10;
   }
   PreviewTable partitioned;
-  ThreadPreviewSlot* luna_slot = hibiki_voice_hook::FindThreadPreviewSlot(
-      partitioned.slots.data(), hibiki_voice_hook::kLunaThreadPreviewCount, 1);
-  ThreadPreviewSlot* native_slot = hibiki_voice_hook::FindThreadPreviewSlot(
-      partitioned.slots.data() + hibiki_voice_hook::kNativeThreadPreviewStart,
-      hibiki_voice_hook::kNativeThreadPreviewCount, 2);
+  ThreadPreviewSlot* luna_slot = fushi_voice_hook::FindThreadPreviewSlot(
+      partitioned.slots.data(), fushi_voice_hook::kLunaThreadPreviewCount, 1);
+  ThreadPreviewSlot* native_slot = fushi_voice_hook::FindThreadPreviewSlot(
+      partitioned.slots.data() + fushi_voice_hook::kNativeThreadPreviewStart,
+      fushi_voice_hook::kNativeThreadPreviewCount, 2);
   if (luna_slot != &partitioned.slots.front() ||
       native_slot !=
-          &partitioned.slots[hibiki_voice_hook::kNativeThreadPreviewStart]) {
+          &partitioned.slots[fushi_voice_hook::kNativeThreadPreviewStart]) {
     return 11;
   }
 
   PreviewTable table;
 
   // 回收后允许空洞：已有 id 必须优先命中，新的第 65 条线程必须复用被释放的槽。
-  for (uint64_t id = 1; id <= hibiki_voice_hook::kThreadPreviewCount; ++id) {
+  for (uint64_t id = 1; id <= fushi_voice_hook::kThreadPreviewCount; ++id) {
     WritePattern(&table, id);
   }
-  if (hibiki_voice_hook::FindThreadPreviewSlot(
+  if (fushi_voice_hook::FindThreadPreviewSlot(
           table.slots.data(), static_cast<uint32_t>(table.slots.size()),
           1000) != nullptr) {
     return 1;
   }
   ThreadPreviewSlot* released = &table.slots[16];
   RemovePreview(&table, 17);
-  if (hibiki_voice_hook::FindThreadPreviewSlot(
+  if (fushi_voice_hook::FindThreadPreviewSlot(
           table.slots.data(), static_cast<uint32_t>(table.slots.size()),
           1000) != released) {
     return 2;
   }
   WritePattern(&table, 1000);
   ThreadPreviewSnapshot reused;
-  if (!hibiki_voice_hook::TryReadThreadPreviewSnapshot(*released, &reused) ||
+  if (!fushi_voice_hook::TryReadThreadPreviewSnapshot(*released, &reused) ||
       reused.thread_id != 1000 || !SnapshotMatchesOneGeneration(reused)) {
     return 3;
   }
 
   // reader 若拿着旧 begin，期间发生覆盖，末读必须拒绝旧 seq，不能把新 payload 当旧快照。
   const uint64_t old_sequence =
-      hibiki_voice_hook::AtomicLoadPreview64(&released->seq);
+      fushi_voice_hook::AtomicLoadPreview64(&released->seq);
   WritePattern(&table, 1000);
   ThreadPreviewSnapshot mixed_candidate;
-  hibiki_voice_hook::CopyThreadPreviewSnapshot(
+  fushi_voice_hook::CopyThreadPreviewSnapshot(
       *released, old_sequence, &mixed_candidate);
-  if (hibiki_voice_hook::ThreadPreviewSequenceIsStable(*released,
+  if (fushi_voice_hook::ThreadPreviewSequenceIsStable(*released,
                                                        old_sequence)) {
     return 4;
   }
@@ -152,7 +152,7 @@ int main() {
     do {
       for (const ThreadPreviewSlot& slot : stress.slots) {
         ThreadPreviewSnapshot snapshot;
-        if (hibiki_voice_hook::TryReadThreadPreviewSnapshot(slot, &snapshot) &&
+        if (fushi_voice_hook::TryReadThreadPreviewSnapshot(slot, &snapshot) &&
             !SnapshotMatchesOneGeneration(snapshot)) {
           failed.store(true, std::memory_order_release);
           return;

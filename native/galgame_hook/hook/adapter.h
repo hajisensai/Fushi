@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 enum class AdapterCapability : uint32_t {
   kNone = 0,
@@ -40,4 +40,4 @@ class EngineAdapter {
   virtual AdapterDiagnostics diagnostics() const = 0;
 };
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook

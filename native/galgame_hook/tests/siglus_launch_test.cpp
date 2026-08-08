@@ -11,9 +11,9 @@
 
 #include "siglus_launch.h"
 
-using hibiki_voice_hook::DirectoryLooksLikeSiglus;
-using hibiki_voice_hook::kSiglusSignatureConfig;
-using hibiki_voice_hook::kSiglusSignatureScene;
+using fushi_voice_hook::DirectoryLooksLikeSiglus;
+using fushi_voice_hook::kSiglusSignatureConfig;
+using fushi_voice_hook::kSiglusSignatureScene;
 
 namespace {
 

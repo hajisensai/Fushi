@@ -3,14 +3,14 @@
 
 #include "voice_hook_ipc.h"
 
-using hibiki_voice_hook::HasReadyGameResourceAudio;
-using hibiki_voice_hook::kDiagKirikiriVoiceStreamHookReady;
-using hibiki_voice_hook::kDiagFfmpegResourceHooksReady;
-using hibiki_voice_hook::kDiagVisualArtsOvkHooksReady;
-using hibiki_voice_hook::kDiagSiglusOvkHooksReady;
-using hibiki_voice_hook::kDiagUnityIl2CppHooksReady;
-using hibiki_voice_hook::kDiagUnityResourceExtractorReady;
-using hibiki_voice_hook::kDiagElfAi6ArcHooksReady;
+using fushi_voice_hook::HasReadyGameResourceAudio;
+using fushi_voice_hook::kDiagKirikiriVoiceStreamHookReady;
+using fushi_voice_hook::kDiagFfmpegResourceHooksReady;
+using fushi_voice_hook::kDiagVisualArtsOvkHooksReady;
+using fushi_voice_hook::kDiagSiglusOvkHooksReady;
+using fushi_voice_hook::kDiagUnityIl2CppHooksReady;
+using fushi_voice_hook::kDiagUnityResourceExtractorReady;
+using fushi_voice_hook::kDiagElfAi6ArcHooksReady;
 
 int main() {
   assert(!HasReadyGameResourceAudio(0, 0));

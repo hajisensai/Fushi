@@ -1,11 +1,11 @@
-#ifndef HIBIKI_VOICE_HOOK_SESSION_H_
-#define HIBIKI_VOICE_HOOK_SESSION_H_
+#ifndef FUSHI_VOICE_HOOK_SESSION_H_
+#define FUSHI_VOICE_HOOK_SESSION_H_
 
 #include <cstdint>
 
 #include "voice_hook_ipc.h"
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 // 同一游戏进程内，hook DLL 会持有共享内存直到游戏退出。host/injector 被 Hibiki 停掉后
 // 再连接时，CreateFileMapping 会返回既有映射；此时绝不能 memset，否则 DLL 的工作线程
@@ -45,6 +45,6 @@ inline MappingSessionAction InspectMappingSession(
   return MappingSessionAction::kReuseReady;
 }
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook
 
-#endif  // HIBIKI_VOICE_HOOK_SESSION_H_
+#endif  // FUSHI_VOICE_HOOK_SESSION_H_

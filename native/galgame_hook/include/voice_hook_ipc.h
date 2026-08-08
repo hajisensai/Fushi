@@ -1,5 +1,5 @@
-#ifndef HIBIKI_VOICE_HOOK_IPC_H_
-#define HIBIKI_VOICE_HOOK_IPC_H_
+#ifndef FUSHI_VOICE_HOOK_IPC_H_
+#define FUSHI_VOICE_HOOK_IPC_H_
 
 #include <windows.h>
 
@@ -21,7 +21,7 @@
 //     → 只在音频回调里 memcpy + 更新 write_pos（零阻塞：写盘/编码/IPC 全部移出回调，爆音红线）
 //   共享内存：header + 紧随其后的 PCM 环形缓冲
 //   Hibiki host（经 injector）：读环形缓冲最近 N 毫秒 → 波形选区 → 制卡出口（复用 A 阶段流水线）
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 // 共享内存魔数 'HVH1'（小端）与当前契约版本。跨进程读到不匹配即拒绝，防旧/坏映射。
 constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
@@ -650,6 +650,6 @@ inline std::wstring ReadyEventName(DWORD target_pid) {
   return L"Local\\FushiVoiceHookReady_" + std::to_wstring(target_pid);
 }
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook
 
-#endif  // HIBIKI_VOICE_HOOK_IPC_H_
+#endif  // FUSHI_VOICE_HOOK_IPC_H_

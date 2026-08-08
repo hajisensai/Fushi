@@ -1,7 +1,7 @@
 # Galgame 引擎支持矩阵
 
 > 此文件由 `engine-support.yaml` 通过 `tools/generate_engine_support.py` 自动生成，禁止手工编辑。
-> 状态基线：2026-07-23；来源：`hajisensai/fushi/docs/specs/galgame-mining/engine-adapter-plan.md`（1. 当前真相）。
+> 状态基线：2026-07-23；来源：`hajisensai/hibiki/docs/specs/galgame-mining/engine-adapter-plan.md`（1. 当前真相）。
 > “已验证”只代表下方明确列出的真实样本、版本和能力，不外推到同家族的其它游戏。
 
 ## 总览

@@ -128,7 +128,7 @@ void TryHookXAudio2Create() {
 HRESULT STDMETHODCALLTYPE Detour_DsbUnlock(IDirectSoundBuffer* self, LPVOID pv1,
                                            DWORD cb1, LPVOID pv2, DWORD cb2) {
   if (g_capture_enabled && g_header != nullptr) {
-    hibiki_voice_hook::DirectSoundPcmFormat format;
+    fushi_voice_hook::DirectSoundPcmFormat format;
     if (!g_dsound_formats.Lookup(reinterpret_cast<uintptr_t>(self), &format)) {
       return g_orig_DsbUnlock(self, pv1, cb1, pv2, cb2);
     }
@@ -203,7 +203,7 @@ HRESULT STDMETHODCALLTYPE Detour_CreateSoundBuffer(IDirectSound8* self,
           is_float = 1;
         }
       }
-      const hibiki_voice_hook::DirectSoundPcmFormat format{
+      const fushi_voice_hook::DirectSoundPcmFormat format{
           fmt->nSamplesPerSec, fmt->nChannels, fmt->wBitsPerSample, is_float};
       if (g_dsound_formats.Register(
               reinterpret_cast<uintptr_t>(*ppBuf), format)) {

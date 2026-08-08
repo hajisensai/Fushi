@@ -50,13 +50,13 @@ void WriteTextRingEntryLocked(const wchar_t* text, int char_len,
   // LunaHook（引擎精确、干净）一旦活跃，GDI 文本 hook 让位，不再写文本环——否则游戏为粗体/描边
   // 每字重画会让 GetGlyphOutlineW 累加出「ここのの」式伪影，与 LunaHook 干净行混在一起污染卡片。
   // GDI 仅在 LunaHook 覆盖不到的引擎（luna_active==0）时作兜底文本源。音频 hook 不看此标志。
-  if (source_kind == hibiki_voice_hook::kTextSourceGdi &&
+  if (source_kind == fushi_voice_hook::kTextSourceGdi &&
       g_header->luna_active != 0) {
     return;
   }
   // v13：写进本线程自己那条道（游戏内 writer 用高段下标，与 injector 里的 LunaHook 互斥）。
   // 调用方已持 g_text_cs，认领与道内占号因此在本进程内串行；跨进程隔离靠区段划分。
-  hibiki_voice_hook::TextLaneWrite write;
+  fushi_voice_hook::TextLaneWrite write;
   write.thread_id = thread_id;
   write.thread_address = thread_address;
   write.thread_context = thread_context;
@@ -68,14 +68,14 @@ void WriteTextRingEntryLocked(const wchar_t* text, int char_len,
                    static_cast<uint32_t>(sizeof(wchar_t));
   write.hook_name = hook_name;
   write.hook_code = hook_code;
-  hibiki_voice_hook::WriteTextLaneEvent(
-      g_header, hibiki_voice_hook::kNativeThreadPreviewStart,
-      hibiki_voice_hook::kTextLaneCount, write);
+  fushi_voice_hook::WriteTextLaneEvent(
+      g_header, fushi_voice_hook::kNativeThreadPreviewStart,
+      fushi_voice_hook::kTextLaneCount, write);
 }
 
 void WriteTextRingLocked(const wchar_t* text, int char_len) {
   WriteTextRingEntryLocked(text, char_len, 1, 0, 0,
-                           hibiki_voice_hook::kTextSourceGdi,
+                           fushi_voice_hook::kTextSourceGdi,
                            "GDI fallback", nullptr);
 }
 
@@ -209,7 +209,7 @@ uintptr_t __fastcall Detour_SiglusExactText(SiglusTextUnionW* self, void*) {
     WriteTextRingEntryLocked(
         text, static_cast<int>(length), thread_id,
         g_siglus_text_function_rva, callsite_rva,
-        hibiki_voice_hook::kTextSourceSiglus, "SiglusEngine exact", hook_code);
+        fushi_voice_hook::kTextSourceSiglus, "SiglusEngine exact", hook_code);
     LeaveCriticalSection(&g_text_cs);
     if (g_header != nullptr) {
       g_header->luna_active = 1;  // 精确引擎文本已实锤，GDI 兜底从此让位。
@@ -237,9 +237,9 @@ bool TryHookSiglusExactText() {
     const auto* section_base = reinterpret_cast<const uint8_t*>(module) +
                                section[i].VirtualAddress;
     if (!IsReadableSpan(section_base, section_bytes)) continue;
-    const size_t offset = hibiki_voice_hook::siglus::FindExactTextFunctionOffset(
+    const size_t offset = fushi_voice_hook::siglus::FindExactTextFunctionOffset(
         section_base, section_bytes);
-    if (offset == hibiki_voice_hook::siglus::kInvalidTextFunctionOffset) {
+    if (offset == fushi_voice_hook::siglus::kInvalidTextFunctionOffset) {
       continue;
     }
     void* target = const_cast<uint8_t*>(section_base + offset);

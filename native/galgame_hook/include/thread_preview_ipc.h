@@ -1,5 +1,5 @@
-#ifndef HIBIKI_THREAD_PREVIEW_IPC_H_
-#define HIBIKI_THREAD_PREVIEW_IPC_H_
+#ifndef FUSHI_THREAD_PREVIEW_IPC_H_
+#define FUSHI_THREAD_PREVIEW_IPC_H_
 
 #include <windows.h>
 
@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 constexpr uint32_t kThreadPreviewCount = 64;
 constexpr uint32_t kThreadPreviewTextChars = 192;
@@ -166,6 +166,6 @@ inline bool TryReadThreadPreviewSnapshot(const ThreadPreviewSlot& slot,
   return false;
 }
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook
 
-#endif  // HIBIKI_THREAD_PREVIEW_IPC_H_
+#endif  // FUSHI_THREAD_PREVIEW_IPC_H_

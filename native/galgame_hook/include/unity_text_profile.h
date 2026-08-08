@@ -1,9 +1,9 @@
-#ifndef HIBIKI_UNITY_TEXT_PROFILE_H_
-#define HIBIKI_UNITY_TEXT_PROFILE_H_
+#ifndef FUSHI_UNITY_TEXT_PROFILE_H_
+#define FUSHI_UNITY_TEXT_PROFILE_H_
 
 #include <cwchar>
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 inline const wchar_t* WindowsBaseName(const wchar_t* path) {
   if (path == nullptr) return L"";
@@ -21,6 +21,6 @@ inline bool UsesSasasaLegacyTextMeshTerminator(const wchar_t* executable_path) {
   return _wcsicmp(WindowsBaseName(executable_path), L"Sasasa.exe") == 0;
 }
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook
 
-#endif  // HIBIKI_UNITY_TEXT_PROFILE_H_
+#endif  // FUSHI_UNITY_TEXT_PROFILE_H_

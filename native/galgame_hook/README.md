@@ -1,4 +1,4 @@
-# hibiki_voice_hook —— galgame 引擎级 voice hook（C 阶段，隔离 helper）
+# fushi_voice_hook —— galgame 引擎级 voice hook（C 阶段，隔离 helper）
 
 本目录是主 app [`hajisensai/hibiki`](https://github.com/hajisensai/hibiki) 的 native 采集组件。galgame 一键制卡（[docs/specs/galgame-mining](https://github.com/hajisensai/hibiki/blob/develop/docs/specs/galgame-mining/design.md)）C 阶段：从游戏引擎在**混音之前**截取角色语音的干净音轨，回传 Hibiki 做一键制卡。
 
@@ -42,7 +42,7 @@ python tests/engine_support_manifest_test.py
 ./tool/galhook.ps1 explain-diag --hookdiag 0x0 --hookio 0x0 --lunadiag 0x0
 ./tool/galhook.ps1 check --dry-run --native
 ./tool/galhook.ps1 probe C:\game\game.exe --output probe.zip
-./tool/galhook.ps1 new engine_id --hibiki-root C:\src\hibiki
+./tool/galhook.ps1 new engine_id --fushi-root C:\src\hibiki
 ./tool/galhook.ps1 replay tests/fixtures/workflow_replay.json
 ```
 

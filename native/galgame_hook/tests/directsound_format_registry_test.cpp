@@ -4,8 +4,8 @@
 #include "directsound_format_registry.h"
 
 int main() {
-  using hibiki_voice_hook::DirectSoundFormatRegistry;
-  using hibiki_voice_hook::DirectSoundPcmFormat;
+  using fushi_voice_hook::DirectSoundFormatRegistry;
+  using fushi_voice_hook::DirectSoundPcmFormat;
 
   DirectSoundFormatRegistry<32> registry;
   const uintptr_t bgm = 0x1000;

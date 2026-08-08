@@ -1,12 +1,12 @@
-#ifndef HIBIKI_TEXT_THREAD_IDENTITY_H_
-#define HIBIKI_TEXT_THREAD_IDENTITY_H_
+#ifndef FUSHI_TEXT_THREAD_IDENTITY_H_
+#define FUSHI_TEXT_THREAD_IDENTITY_H_
 
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <cwchar>
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 // Native engine adapters and Luna share one selected_text_thread_id field.
 // Reserve bit 62 for native sources while keeping bit 63 clear so ids survive
@@ -47,6 +47,6 @@ inline uint64_t NativeTextThreadIdFrom(uint64_t component_identity,
          kNativeTextThreadNamespaceBit;
 }
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook
 
-#endif  // HIBIKI_TEXT_THREAD_IDENTITY_H_
+#endif  // FUSHI_TEXT_THREAD_IDENTITY_H_

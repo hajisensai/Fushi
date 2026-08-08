@@ -37,7 +37,7 @@ class GalhookWorkflowTest(unittest.TestCase):
     def test_new_scaffolds_and_registers_native_and_dart_guards(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw) / "hook"
-            hibiki = Path(raw) / "app"
+            fushi_root = Path(raw) / "app"
             (root / "hook" / "generated").mkdir(parents=True)
             (root / "tests").mkdir()
             (root / "CMakeLists.txt").write_text("enable_testing()\n", encoding="utf-8")
@@ -58,8 +58,8 @@ class GalhookWorkflowTest(unittest.TestCase):
                     "sample_engine",
                     "--root",
                     str(root),
-                    "--hibiki-root",
-                    str(hibiki),
+                    "--fushi-root",
+                    str(fushi_root),
                 ],
                 check=True,
                 capture_output=True,
@@ -73,7 +73,7 @@ class GalhookWorkflowTest(unittest.TestCase):
                 (root / "hook" / "generated" / "profile_includes.inc").read_text(),
             )
             self.assertIn("sample_engine_.install", (root / "hook" / "generated" / "adapter_startup.inc").read_text())
-            self.assertTrue((hibiki / "hibiki" / "test" / "mining" / "sample_engine_pairing_test.dart").is_file())
+            self.assertTrue((fushi_root / "fushi" / "test" / "mining" / "sample_engine_pairing_test.dart").is_file())
 
     def test_replay_covers_filter_dedup_pairing_fallback_and_cleanup(self) -> None:
         completed = subprocess.run(

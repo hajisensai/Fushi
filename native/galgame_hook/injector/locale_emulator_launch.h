@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <iterator>
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 // Locale Emulator 2.5.0.1 passes this fixed prefix to LoaderDll!LeCreateProcess,
 // followed by a uint64 registry-redirection count. Keep the layout explicit: a
@@ -91,4 +91,4 @@ inline LocaleThreadResumePolicy SelectLocaleThreadResumePolicy(
   return LocaleThreadResumePolicy::kAfterEarlyInjection;
 }
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook

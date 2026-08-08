@@ -74,36 +74,36 @@
 // CreateThread 把活儿丢给工作线程（在 loader lock 之外跑），这是 hook DLL 的正确形态。
 namespace {
 
-using hibiki_voice_hook::kClipCount;
-using hibiki_voice_hook::kDiagStartupAudioHooksReady;
-using hibiki_voice_hook::kDiagSiglusExactTextHookReady;
-using hibiki_voice_hook::kDiagSiglusExactTextObserved;
-using hibiki_voice_hook::kDiagSiglusOvkHooksReady;
-using hibiki_voice_hook::kDiagKirikiriVoiceStreamDumped;
-using hibiki_voice_hook::kDiagKirikiriVoiceStreamHookReady;
-using hibiki_voice_hook::kDiagUnityIl2CppClipCaptured;
-using hibiki_voice_hook::kDiagUnityIl2CppGetDataRejected;
-using hibiki_voice_hook::kDiagUnityIl2CppHooksReady;
-using hibiki_voice_hook::kDiagUnityIl2CppPlaybackObserved;
-using hibiki_voice_hook::kDiagUnityNaninovelTextHookReady;
-using hibiki_voice_hook::kDiagUnityTmpTextHooksReady;
-using hibiki_voice_hook::kUnityBundlePathChars;
-using hibiki_voice_hook::kUnityClipNameChars;
-using hibiki_voice_hook::kUnityVoiceEventCount;
-using hibiki_voice_hook::kLoopbackMarkerCount;
-using hibiki_voice_hook::kSharedMagic;
-using hibiki_voice_hook::kSharedVersion;
-using hibiki_voice_hook::kTextSlotBytes;
-using hibiki_voice_hook::kTextSlotCount;
-using hibiki_voice_hook::kTextHookCodeChars;
-using hibiki_voice_hook::kTextHookNameChars;
-using hibiki_voice_hook::LoopbackMarker;
-using hibiki_voice_hook::ReadyEventName;
-using hibiki_voice_hook::SharedHeader;
-using hibiki_voice_hook::SharedMemoryName;
-using hibiki_voice_hook::TextSlot;
-using hibiki_voice_hook::VoiceClip;
-using hibiki_voice_hook::UnityVoiceEvent;
+using fushi_voice_hook::kClipCount;
+using fushi_voice_hook::kDiagStartupAudioHooksReady;
+using fushi_voice_hook::kDiagSiglusExactTextHookReady;
+using fushi_voice_hook::kDiagSiglusExactTextObserved;
+using fushi_voice_hook::kDiagSiglusOvkHooksReady;
+using fushi_voice_hook::kDiagKirikiriVoiceStreamDumped;
+using fushi_voice_hook::kDiagKirikiriVoiceStreamHookReady;
+using fushi_voice_hook::kDiagUnityIl2CppClipCaptured;
+using fushi_voice_hook::kDiagUnityIl2CppGetDataRejected;
+using fushi_voice_hook::kDiagUnityIl2CppHooksReady;
+using fushi_voice_hook::kDiagUnityIl2CppPlaybackObserved;
+using fushi_voice_hook::kDiagUnityNaninovelTextHookReady;
+using fushi_voice_hook::kDiagUnityTmpTextHooksReady;
+using fushi_voice_hook::kUnityBundlePathChars;
+using fushi_voice_hook::kUnityClipNameChars;
+using fushi_voice_hook::kUnityVoiceEventCount;
+using fushi_voice_hook::kLoopbackMarkerCount;
+using fushi_voice_hook::kSharedMagic;
+using fushi_voice_hook::kSharedVersion;
+using fushi_voice_hook::kTextSlotBytes;
+using fushi_voice_hook::kTextSlotCount;
+using fushi_voice_hook::kTextHookCodeChars;
+using fushi_voice_hook::kTextHookNameChars;
+using fushi_voice_hook::LoopbackMarker;
+using fushi_voice_hook::ReadyEventName;
+using fushi_voice_hook::SharedHeader;
+using fushi_voice_hook::SharedMemoryName;
+using fushi_voice_hook::TextSlot;
+using fushi_voice_hook::VoiceClip;
+using fushi_voice_hook::UnityVoiceEvent;
 
 HANDLE g_mapping = nullptr;
 SharedHeader* g_header = nullptr;
@@ -170,7 +170,7 @@ bool WriteVoiceOggAt(const uint8_t* data, uint32_t len,
     return false;
   }
   std::wstring file =
-      dir + L"\\" + hibiki_voice_hook::BuildVoiceResourceFileName(
+      dir + L"\\" + fushi_voice_hook::BuildVoiceResourceFileName(
                           tick_ms, VoiceBaseName(storagename), text_event_id);
   HANDLE f = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr,
                          CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -245,7 +245,7 @@ DirectSoundCreate_t g_orig_DirectSoundCreate = nullptr;
 CreateSoundBuffer_t g_orig_CreateSoundBuffer = nullptr;
 DsbSetFrequency_t g_orig_DsbSetFrequency = nullptr;
 DsbUnlock_t g_orig_DsbUnlock = nullptr;
-hibiki_voice_hook::DirectSoundFormatRegistry<256> g_dsound_formats;
+fushi_voice_hook::DirectSoundFormatRegistry<256> g_dsound_formats;
 
 typedef HRESULT(WINAPI* CoCreateInstance_t)(REFCLSID rclsid,
                                              LPUNKNOWN pUnkOuter,
@@ -253,7 +253,7 @@ typedef HRESULT(WINAPI* CoCreateInstance_t)(REFCLSID rclsid,
                                              REFIID riid, LPVOID* ppv);
 CoCreateInstance_t g_orig_CoCreateInstance = nullptr;
 
-// 独立测试用 proof-of-life 标记文件：%TEMP%\hibiki_voice_hook_<pid>.marker。injector 之外也
+// 独立测试用 proof-of-life 标记文件：%TEMP%\fushi_voice_hook_<pid>.marker。injector 之外也
 // 能据此确认 DLL 真的被加载执行（不依赖事件）。
 void WriteMarkerFile(DWORD pid) {
   wchar_t temp[MAX_PATH] = {0};

@@ -21,7 +21,7 @@ internal static class Program
             Options options = Parse(args);
             string rawPath = Path.Combine(
                 Path.GetTempPath(),
-                $"hibiki_unity_{Environment.ProcessId}_{Guid.NewGuid():N}.fsb");
+                $"fushi_unity_{Environment.ProcessId}_{Guid.NewGuid():N}.fsb");
             try
             {
                 ExtractRawClip(options, rawPath);
