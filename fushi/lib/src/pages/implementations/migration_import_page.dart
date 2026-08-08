@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:external_path/external_path.dart';
@@ -6,6 +7,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/migration/migration_exporter.dart';
 import 'package:fushi/src/migration/migration_importer.dart';
 import 'package:fushi/src/migration/migration_readonly.dart';
+import 'package:fushi/src/migration/migration_target_channel.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show backupImportRestart;
@@ -42,25 +44,107 @@ Future<Directory> migrationTransferDir() async {
   return Directory(p.join(documents, 'Hibiki', 'migration'));
 }
 
-class _MigrationImportPageState extends State<MigrationImportPage> {
+class _MigrationImportPageState extends State<MigrationImportPage>
+    with WidgetsBindingObserver {
   static const MigrationImporter _importer = MigrationImporter();
+  static const MigrationTargetChannel _channel = MigrationTargetChannel();
 
   MigrationScanResult? _scan;
   bool _running = false;
   String? _status;
   String? _error;
 
+  /// 扫描进度（校验哪一批 / 已完成几批）。11GB 库的全量 SHA-256 要好几分钟，
+  /// 这段时间必须让用户看得见在动，否则和卡死没有区别。
+  String? _scanningLabel;
+
   @override
   void initState() {
     super.initState();
-    _rescan();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_rescan());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 从系统授权页回来时自动重扫：这个权限只能跳设置页手动开，没有回调，
+    // 不在 resume 复查的话用户开完权限回来还是那句「没权限」。
+    if (state == AppLifecycleState.resumed &&
+        !_running &&
+        _scan?.storagePermissionGranted == false) {
+      unawaited(_rescan());
+    }
   }
 
   Future<void> _rescan() async {
     final Directory dir = await migrationTransferDir();
-    final MigrationScanResult r = await _importer.scan(dir);
+    final bool granted = await _channel.hasAllFilesAccess();
     if (!mounted) return;
-    setState(() => _scan = r);
+    setState(() {
+      _scan = null;
+      _scanningLabel = granted ? '' : null;
+    });
+    final MigrationScanResult r = await _importer.scan(
+      dir,
+      permissionGranted: granted,
+      onProgress: (MigrationBatch batch, int done, int total) {
+        if (!mounted) return;
+        setState(() => _scanningLabel = t.migration_import_verifying(
+              batch: _batchLabel(batch),
+              done: done + 1,
+              total: total,
+            ));
+      },
+    );
+    if (!mounted) return;
+    setState(() {
+      _scan = r;
+      _scanningLabel = null;
+    });
+    // 校验不过是终止性结果，必须打断——只在列表里堆几行，用户等了几分钟
+    // 校验之后看到的是一屏静默的红字，很容易以为还在跑。
+    if (r.problems.isNotEmpty) await _showProblemsDialog(r);
+  }
+
+  /// 逐批问题的弹窗。列表仍留在页面上供反复查看。
+  Future<void> _showProblemsDialog(MigrationScanResult scan) async {
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(t.migration_import_entry),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              for (final MapEntry<String, List<String>> e
+                  in scan.problems.entries) ...<Widget>[
+                Text(t.migration_import_verify_failed(
+                    batch: e.key, detail: e.value.join('; '))),
+                const SizedBox(height: 8),
+              ],
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(t.dialog_close),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 跳系统授权页。回来后由 [didChangeAppLifecycleState] 复查并重扫。
+  Future<void> _requestPermission() async {
+    await _channel.requestAllFilesAccess();
   }
 
   String _batchLabel(MigrationBatch batch) => switch (batch) {
@@ -164,7 +248,46 @@ class _MigrationImportPageState extends State<MigrationImportPage> {
           Text(t.migration_import_entry_subtitle),
           const SizedBox(height: 16),
           if (scan == null)
-            const Center(child: CircularProgressIndicator())
+            Column(
+              children: <Widget>[
+                const Center(child: CircularProgressIndicator()),
+                const SizedBox(height: 12),
+                // 只给转圈＝用户无法把「正在校验」和「卡死」区分开。
+                Text(_scanningLabel ?? t.migration_import_verifying_hint,
+                    textAlign: TextAlign.center),
+                if (_scanningLabel != null) ...<Widget>[
+                  const SizedBox(height: 4),
+                  Text(
+                    t.migration_import_verifying_hint,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ],
+            )
+          else if (!scan.storagePermissionGranted)
+            // 根因面：没权限时该请求权限，不是报「清单损坏」再让用户自己去翻设置。
+            FushiCard(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      t.migration_import_permission_title,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(t.migration_import_permission_body),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: _requestPermission,
+                      child: Text(t.migration_import_permission_grant),
+                    ),
+                  ],
+                ),
+              ),
+            )
           else if (!scan.hasAnything)
             Text(t.migration_import_nothing)
           else ...<Widget>[

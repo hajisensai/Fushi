@@ -52,6 +52,30 @@ class MigrationTargetChannel {
     });
   }
 
+  /// 是否持有「所有文件访问权限」（`MANAGE_EXTERNAL_STORAGE`）。
+  ///
+  /// 迁移中转目录在公共 `Documents/Hibiki/migration`，是**老包**创建的。分区存储
+  /// 下本包读不了别的应用创建的非媒体文件，没有这个权限时连清单都会抛
+  /// `PathAccessException`——那不是「清单损坏」，是没权限。
+  ///
+  /// 非 Android 恒 true：跨包名迁移只存在于 Android，其余平台没有这道门。
+  Future<bool> hasAllFilesAccess() async {
+    if (!_supported) return true;
+    final bool? granted =
+        await FushiChannels.migration.invokeMethod<bool>('hasAllFilesAccess');
+    return granted ?? false;
+  }
+
+  /// 跳到系统的「所有文件访问权限」授权页。
+  ///
+  /// 这个权限**没有**运行时弹框授予的路径（Android 11+ 只允许跳设置页由用户手
+  /// 动开）。所以调用方不能 await 到一个「授权结果」——必须在页面 resume 时用
+  /// [hasAllFilesAccess] 复查，不得因为跳过设置页就当已授权。
+  Future<void> requestAllFilesAccess() async {
+    if (!_supported) return;
+    await FushiChannels.migration.invokeMethod<void>('requestAllFilesAccess');
+  }
+
   /// 启/停 PROCESS_TEXT 系统取词入口（组件级，系统菜单里真的少一项）。
   Future<void> setProcessTextEnabled(bool enabled) async {
     if (!_supported) return;

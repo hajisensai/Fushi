@@ -59,6 +59,76 @@ void main() {
         .writeAsStringSync(m.encode(), flush: true);
   }
 
+  group('缺「所有文件访问权限」时的扫描行为（用户实测翻车形态）', () {
+    test('短路返回，绝不产出「清单损坏」这种假话', () async {
+      // 真实翻车：中转目录由老包创建，分区存储下 Fushi 没有 MANAGE_EXTERNAL_
+      // STORAGE 就连 683 字节的清单都读不到，6 批全报「清单损坏」。文件其实
+      // 逐个 sha256 都对得上——报「损坏」会把用户推去重新导出 11GB，而重导
+      // 多少次都一样。
+      await writeBatch(MigrationBatch.core, positions: 2);
+      await writeBatch(MigrationBatch.books, books: 3);
+
+      final MigrationScanResult r =
+          await importer.scan(tmp, permissionGranted: false);
+
+      expect(r.storagePermissionGranted, isFalse);
+      expect(r.problems, isEmpty, reason: '没权限不是「数据有问题」，一条批次级错误都不该产生');
+      expect(r.ready, isEmpty);
+      expect(r.hasAnything, isFalse);
+    });
+
+    test('有权限时照常逐批扫（不因新增的门把正常路径掐掉）', () async {
+      await writeBatch(MigrationBatch.core, positions: 2);
+      final MigrationScanResult r =
+          await importer.scan(tmp, permissionGranted: true);
+      expect(r.storagePermissionGranted, isTrue);
+      expect(r.ready.map((MigrationImportBatch b) => b.batch),
+          <MigrationBatch>[MigrationBatch.core]);
+    });
+  });
+
+  test('scan 逐批回调进度（11GB 全量 sha256 要几分钟，不报进度＝和卡死没区别）', () async {
+    await writeBatch(MigrationBatch.core, positions: 1);
+    final List<String> seen = <String>[];
+    int? seenTotal;
+    await importer.scan(
+      tmp,
+      onProgress: (MigrationBatch batch, int done, int total) {
+        seen.add('${batch.name}@$done');
+        seenTotal = total;
+      },
+    );
+    expect(seenTotal, MigrationBatch.values.length);
+    // 每一批都要报，含目录里不存在的批——否则进度会在缺批处停住不动。
+    expect(seen.length, MigrationBatch.values.length);
+    expect(seen.first, 'core@0', reason: 'done 从 0 起算，调用方 +1 显示');
+  });
+
+  // 权限拒绝（PathAccessException）无法在 Windows 单测里可靠制造——chmod 000
+  // 没有 Dart API，用目录顶替文件又会先被 existsSync 挡成「清单缺失」。故这条
+  // 不变式落在源码层：读失败必须与「内容损坏」分开归类。
+  test('源码守卫：清单/归档读失败与「清单损坏」分开归类，且 catch-all 在后', () {
+    final String src =
+        File('lib/src/migration/migration_importer.dart').readAsStringSync();
+
+    final int manifestFsIdx = src.indexOf('on FileSystemException catch');
+    expect(manifestFsIdx, greaterThan(-1),
+        reason: '没有 FileSystemException 专门分支＝权限错误又会被吞成「清单损坏」');
+
+    final int corruptIdx = src.indexOf(r"'清单损坏: $e'");
+    expect(corruptIdx, greaterThan(manifestFsIdx),
+        reason: 'catch-all 必须排在专门分支之后，否则专门分支永远够不着');
+
+    expect(src.substring(manifestFsIdx, corruptIdx), contains('无法读取'),
+        reason: '读失败的文案必须说「无法读取」，不能说「损坏」——'
+            '后者会把用户推去重新导出 11GB，而重导多少次都一样');
+
+    // 归档校验同样要兜住：不兜的话异常炸穿整个 scan，连「哪批出问题」都丢了。
+    expect(src.indexOf('on FileSystemException catch', corruptIdx),
+        greaterThan(corruptIdx),
+        reason: 'verifyArchive 也必须有 FileSystemException 兜底');
+  });
+
   test('scan：齐全批次通过、损坏批次进 problems 且不阻塞其他批', () async {
     await writeBatch(MigrationBatch.core, positions: 2);
     await writeBatch(MigrationBatch.books, books: 3, positions: 2);
