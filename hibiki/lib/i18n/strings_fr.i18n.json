@@ -3160,5 +3160,7 @@
   "migration_install_incomplete": "Fushi is still not installed. Finish the system install prompt, then tap again.",
   "migration_step_install": "Install Fushi",
   "migration_step_export": "Export data",
-  "migration_step_import": "Import in Fushi"
+  "migration_step_import": "Import in Fushi",
+  "migration_space_blocked_title": "Not enough storage",
+  "migration_size_total": "Total $size"
 }

@@ -22,6 +22,17 @@ import 'package:path/path.dart' as p;
 /// **有意不按「zip 会变小」乐观打折** —— 估少了就是炸，估多了只是多提醒一次。
 const double kMigrationSizeHeadroom = 1.10;
 
+/// 迁移**峰值**占用相对「单份导出量」的倍数。
+///
+/// 迁移不是「导出完就结束」：Fushi 导入时要把归档解压进自己的数据目录，而中转
+/// 文件在导入成功前**绝不删除**（导入侧红线：任一批校验不符就保留原件供重传）。
+/// 所以迁移期间磁盘上新增的是**两份**——中转归档 + Fushi 侧副本——而不是一份。
+///
+/// 只算中转那一份，后果不是「提示不准」而是**用户白跑一次十几 GB 的导出**：
+/// 闸门放行 → 导出全部成功 → 到 Fushi 那边解压时磁盘满 → 导入失败，用户回到
+/// 原点还多占了一份中转空间。宁可在开始前就拦下并告诉他关掉发音库能省多少。
+const double kMigrationPeakCopies = 2.0;
+
 /// Fushi 安装包留量（字节）。
 ///
 /// 一键迁移会先下载 Fushi APK 再导出，APK 也落在同一块存储上。实测 debug 包
@@ -87,8 +98,10 @@ class MigrationSpaceVerdict {
     bool includeApkReserve = true,
     double headroom = kMigrationSizeHeadroom,
     int apkReserveBytes = kFushiApkReserveBytes,
+    double peakCopies = kMigrationPeakCopies,
   }) {
-    final int required = (estimatedBytes * headroom).ceil() +
+    // 峰值是「中转归档 + Fushi 侧解压副本」两份同时在盘上，不是一份。
+    final int required = (estimatedBytes * peakCopies * headroom).ceil() +
         (includeApkReserve ? apkReserveBytes : 0);
     if (freeBytes == null) {
       return MigrationSpaceVerdict(

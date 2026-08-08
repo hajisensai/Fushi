@@ -3160,5 +3160,7 @@
   "migration_install_incomplete": "Fushi 仍未安装完成。请先完成系统安装提示，然后再点一次。",
   "migration_step_install": "安装 Fushi",
   "migration_step_export": "导出数据",
-  "migration_step_import": "在 Fushi 中导入"
+  "migration_step_import": "在 Fushi 中导入",
+  "migration_space_blocked_title": "存储空间不足",
+  "migration_size_total": "合计 $size"
 }
