@@ -57,6 +57,26 @@ class MigrationScanResult {
 class MigrationImporter {
   const MigrationImporter();
 
+  /// 中转目录里**是否存在**待导入数据。廉价：只看文件在不在。
+  ///
+  /// 与 [scan] 的分工是硬性的：这个回答「要不要显示导入入口」这种布尔问题，
+  /// [scan] 回答「这些归档能不能信」。用 [scan] 去答布尔问题的代价是把中转目录
+  /// 全量算一遍 SHA-256——实测 11GB 库让手机 CPU 满载跑近 7 分钟，而首页 banner
+  /// 在 `initState` 和**每次回前台**都会问一次。用户什么都没干，手机一直在发烫。
+  bool hasTransferData(Directory transferDir) {
+    if (!transferDir.existsSync()) return false;
+    try {
+      return transferDir
+          .listSync()
+          .whereType<File>()
+          .any((File f) => f.path.endsWith('.zip'));
+    } on FileSystemException {
+      // 列不出来 ≠ 没有（缺「所有文件访问权限」时就会这样）。这里返回 false
+      // 会把入口藏起来，用户再也走不到能授权的那个页面去。保守显示。
+      return true;
+    }
+  }
+
   /// 扫描中转目录：对每个 `<batch>.zip` + `<batch>.manifest.json` 齐全的批次
   /// 做归档完整性校验。缺清单/缺归档/校验不符 → 记入 problems。
   ///

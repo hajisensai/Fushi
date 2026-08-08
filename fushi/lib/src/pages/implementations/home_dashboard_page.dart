@@ -762,10 +762,9 @@ class _HomeDashboardPageState
       final List<RemoteActivityEvent> remoteActivity =
           results[2] as List<RemoteActivityEvent>;
       if (!mounted) return;
-      final List<MediaItem> books = ref
-              .read(fushiBooksProvider(JapaneseLanguage.instance))
-              .valueOrNull ??
-          const <MediaItem>[];
+      final List<MediaItem> books =
+          ref.read(fushiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
+              const <MediaItem>[];
       final Set<String> localBookKeys = <String>{
         for (final MediaItem item in books)
           ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
@@ -2309,8 +2308,8 @@ class _HomeDashboardPageState
               height: 56,
               child: FadeInImage(
                 placeholder: MemoryImage(kTransparentImage),
-                image: ReaderFushiSource.instance
-                    .getDisplayThumbnailFromMediaItem(
+                image:
+                    ReaderFushiSource.instance.getDisplayThumbnailFromMediaItem(
                   appModel: appModel,
                   item: book,
                 ),
@@ -2960,12 +2959,16 @@ class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
 
   Future<void> _refresh() async {
     final Directory dir = await migrationTransferDir();
-    final MigrationScanResult scan = await _importer.scan(dir);
+    // **只做存在性检查**，绝不在这里调 scan()：banner 只需要知道「要不要显示
+    // 入口」，而 scan 会把中转目录全量算一遍 SHA-256（11GB 库＝CPU 满载数分钟）。
+    // 这个方法在 initState 和每次回前台都跑，用 scan 等于让手机一直在发烫。
+    // 归档到底能不能信，由导入页在用户真的要导时去校验。
+    final bool hasData = _importer.hasTransferData(dir);
     final bool installed =
         await _channel.isPackageInstalled(kHibikiPackageName);
     if (!mounted) return;
     setState(() {
-      _hasTransferData = scan.hasAnything;
+      _hasTransferData = hasData;
       _legacyInstalled = installed;
     });
   }

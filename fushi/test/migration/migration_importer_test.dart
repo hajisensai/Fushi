@@ -129,6 +129,40 @@ void main() {
         reason: 'verifyArchive 也必须有 FileSystemException 兜底');
   });
 
+  group('hasTransferData：布尔问题不许走全量校验和', () {
+    test('只看 zip 在不在，空目录/不存在为 false', () async {
+      expect(importer.hasTransferData(Directory(p.join(tmp.path, 'nope'))),
+          isFalse);
+      expect(importer.hasTransferData(tmp), isFalse);
+      await writeBatch(MigrationBatch.core, positions: 1);
+      expect(importer.hasTransferData(tmp), isTrue);
+    });
+
+    test('归档内容坏掉也仍然算「有数据」（这是入口判据，不是完整性判据）', () async {
+      await writeBatch(MigrationBatch.core, positions: 1);
+      final File zip = File(p.join(
+          tmp.path, MigrationExporter.archiveNameFor(MigrationBatch.core)));
+      zip.writeAsBytesSync(<int>[0, 1, 2], flush: true);
+      expect(importer.hasTransferData(tmp), isTrue,
+          reason: '入口该显示，让用户进去看到「校验不过」，而不是入口直接消失');
+    });
+
+    test('源码守卫：首页 banner 不得调用 scan()', () {
+      // 真实代价：banner 的 _refresh 在 initState + 每次回前台都跑，用 scan
+      // 就是把 11GB 全量 SHA-256 算一遍，实测手机 CPU 满载近 7 分钟。
+      final String src =
+          File('lib/src/pages/implementations/home_dashboard_page.dart')
+              .readAsStringSync();
+      final int bannerIdx = src.indexOf('_FushiMigrationBannerState');
+      expect(bannerIdx, greaterThan(-1));
+      final String bannerSrc = src.substring(bannerIdx);
+      expect(bannerSrc.contains('_importer.scan('), isFalse,
+          reason: 'banner 只需要布尔答案，用 scan 会让 app 每次回前台都满载算校验和');
+      expect(bannerSrc.contains('_importer.hasTransferData('), isTrue,
+          reason: '存在性检查必须走廉价路径');
+    });
+  });
+
   test('scan：齐全批次通过、损坏批次进 problems 且不阻塞其他批', () async {
     await writeBatch(MigrationBatch.core, positions: 2);
     await writeBatch(MigrationBatch.books, books: 3, positions: 2);
