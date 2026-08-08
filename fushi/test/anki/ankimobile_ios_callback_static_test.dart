@@ -27,7 +27,7 @@ void main() {
     final vm = File('lib/src/anki/anki_view_model.dart').readAsStringSync();
 
     expect(main, contains('IosUrlEventChannel'));
-    expect(main, contains('hibikiAnkiFetchCallback'));
+    expect(main, contains('fushiAnkiFetchCallback'));
     expect(main, contains('consumeInfoForAddingPasteboard'));
     expect(main, contains('ankiViewModelProvider.notifier'));
     expect(vm, contains('Future<void> reloadSettings()'));

@@ -11,9 +11,9 @@ import 'lapis_styling.dart';
 const String _previewBackMain = '''    <main>
       <div class="def-header">
         <div class="dh-vocab">
-          <div class="vocab" data-hibiki-lapis-targets="expression"><ruby>食<rt>た</rt></ruby>べる</div>
+          <div class="vocab" data-fushi-lapis-targets="expression"><ruby>食<rt>た</rt></ruby>べる</div>
           <div class="info">
-            <div class="pitch" data-hibiki-lapis-targets="reading">たべる【2】</div>
+            <div class="pitch" data-fushi-lapis-targets="reading">たべる【2】</div>
             <div class="audio-buttons"><span class="hibiki-preview-audio">▶ AUDIO</span></div>
           </div>
         </div>
@@ -22,32 +22,32 @@ const String _previewBackMain = '''    <main>
         </div>
       </div>
       <br>
-      <div class="sentence" data-hibiki-lapis-targets="sentence">
+      <div class="sentence" data-fushi-lapis-targets="sentence">
         <div class="image-alt"><div class="hibiki-preview-picture">IMAGE</div></div>
         私は毎朝パンを<b>食べる</b>。
         <div class="audio-buttons-alt"><span class="hibiki-preview-audio">▶ AUDIO</span></div>
       </div>
-      <div class="def-info" data-hibiki-lapis-targets="definition-info">
+      <div class="def-info" data-fushi-lapis-targets="definition-info">
         First Definition 1/3
       </div>
-      <div class="main-def" data-hibiki-lapis-targets="definition-box">
+      <div class="main-def" data-fushi-lapis-targets="definition-box">
         <div class="definition">
           <div id="selection"
-               data-hibiki-lapis-targets="selected-definition definition-content">
+               data-fushi-lapis-targets="selected-definition definition-content">
             <span class="hibiki-preview-definition-label">Text Selection</span>
             生命を維持するために食物を取る。
           </div>
           <div id="primary"
-               data-hibiki-lapis-targets="primary-definition definition-content">
+               data-fushi-lapis-targets="primary-definition definition-content">
             <div class="yomitan-glossary" style="text-align: left;">
               <ol>
                 <li data-dictionary="明鏡国語辞典 第三版"
-                    data-hibiki-lapis-targets="dictionary-entry">
-                  <i data-hibiki-lapis-targets="dictionary-name">(他動詞, 明鏡国語辞典 第三版)</i>
+                    data-fushi-lapis-targets="dictionary-entry">
+                  <i data-fushi-lapis-targets="dictionary-name">(他動詞, 明鏡国語辞典 第三版)</i>
                   <span>
                     物を口に入れ、かんで飲み込む。
                     <span data-sc-content="example-sentence"
-                          data-hibiki-lapis-targets="definition-example">
+                          data-fushi-lapis-targets="definition-example">
                       例：朝食を食べる。
                     </span>
                   </span>
@@ -56,19 +56,19 @@ const String _previewBackMain = '''    <main>
             </div>
           </div>
           <div id="glossaries"
-               data-hibiki-lapis-targets="glossaries definition-content">
+               data-fushi-lapis-targets="glossaries definition-content">
             <div class="yomitan-glossary" style="text-align: left;">
               <ol>
                 <li data-dictionary="JMdict"
-                    data-hibiki-lapis-targets="dictionary-entry">
-                  <i data-hibiki-lapis-targets="dictionary-name">(v1, vt, JMdict)</i>
+                    data-fushi-lapis-targets="dictionary-entry">
+                  <i data-fushi-lapis-targets="dictionary-name">(v1, vt, JMdict)</i>
                   <span>
                     <ul><li>to eat; to consume</li><li>to live on</li></ul>
                   </span>
                 </li>
                 <li data-dictionary="新和英大辞典"
-                    data-hibiki-lapis-targets="dictionary-entry">
-                  <i data-hibiki-lapis-targets="dictionary-name">(新和英大辞典)</i>
+                    data-fushi-lapis-targets="dictionary-entry">
+                  <i data-fushi-lapis-targets="dictionary-name">(新和英大辞典)</i>
                   <span>パンを食べる — to eat bread</span>
                 </li>
               </ol>
@@ -76,7 +76,7 @@ const String _previewBackMain = '''    <main>
           </div>
         </div>
       </div>
-      <div class="sentence-alt" data-hibiki-lapis-targets="sentence">
+      <div class="sentence-alt" data-fushi-lapis-targets="sentence">
         <div class="image-alt"><div class="hibiki-preview-picture">IMAGE</div></div>
         私は毎朝パンを<b>食べる</b>。
         <div class="audio-buttons-alt"><span class="hibiki-preview-audio">▶ AUDIO</span></div>
@@ -121,7 +121,7 @@ String _previewBlockHtml(LapisCustomBlock block) {
       ? '<span class="hibiki-preview-block-empty">EMPTY BLOCK</span>'
       : parts.join();
   return '<div class="hibiki-block" data-hibiki-block="${block.id}" '
-      'data-hibiki-lapis-targets="$target">$body</div>';
+      'data-fushi-lapis-targets="$target">$body</div>';
 }
 
 /// 用真实 Lapis selector 构造一张无外部资源的示例卡。正式预览把 vendored CSS
@@ -156,11 +156,11 @@ String buildLapisStylePreviewHtml({
   html, body { min-height: 100%; margin: 0; }
   body { box-sizing: border-box; padding: 24px; overflow: auto; }
   .hibiki-preview-side[hidden] { display: none !important; }
-  [data-hibiki-lapis-targets] {
+  [data-fushi-lapis-targets] {
     cursor: pointer;
     transition: outline-color 120ms ease;
   }
-  [data-hibiki-lapis-targets].hibiki-selected-field {
+  [data-fushi-lapis-targets].hibiki-selected-field {
     outline: 3px solid #4f8f80 !important;
     outline-offset: 4px;
   }
@@ -207,8 +207,8 @@ String buildLapisStylePreviewHtml({
   <div id="lapis">
     <header style="visibility:hidden"></header>
     <main lang="ja">
-      <div class="front-vocab" data-hibiki-lapis-targets="expression">食べる</div>
-      <div id="hint" data-hibiki-lapis-targets="sentence">私は毎朝パンを食べる。</div>
+      <div class="front-vocab" data-fushi-lapis-targets="expression">食べる</div>
+      <div id="hint" data-fushi-lapis-targets="sentence">私は毎朝パンを食べる。</div>
     </main>
   </div>
 </section>
@@ -220,7 +220,7 @@ ${backMain}
 </section>
 <script>
 document.getElementById('lapis-style').textContent = ${_jsonForScript(css)};
-window.hibikiLapisEditor = {
+window.fushiLapisEditor = {
   selectedField: null,
   // 与 LapisNoteType.back 的 userSettings() 同一套判据：读 :root 上的 user
   // settings 变量，去引号小写后写成 #lapis 的 data-* 属性——布局全靠这些属性
@@ -254,8 +254,8 @@ window.hibikiLapisEditor = {
   },
   selectField: function(field) {
     this.selectedField = field;
-    document.querySelectorAll('[data-hibiki-lapis-targets]').forEach(function(element) {
-      var targets = (element.dataset.hibikiLapisTargets || '').split(/\\s+/);
+    document.querySelectorAll('[data-fushi-lapis-targets]').forEach(function(element) {
+      var targets = (element.dataset.fushiLapisTargets || '').split(/\\s+/);
       element.classList.toggle(
         'hibiki-selected-field',
         targets.indexOf(field) >= 0
@@ -264,31 +264,31 @@ window.hibikiLapisEditor = {
   }
 };
 document.addEventListener('click', function(event) {
-  var target = event.target.closest('[data-hibiki-lapis-targets]');
+  var target = event.target.closest('[data-fushi-lapis-targets]');
   if (!target) return;
   var candidates = [];
   var current = target;
   while (current) {
-    var targets = (current.dataset.hibikiLapisTargets || '').split(/\\s+/);
+    var targets = (current.dataset.fushiLapisTargets || '').split(/\\s+/);
     targets.forEach(function(field) {
       if (field && candidates.indexOf(field) < 0) candidates.push(field);
     });
     current = current.parentElement
-      ? current.parentElement.closest('[data-hibiki-lapis-targets]')
+      ? current.parentElement.closest('[data-fushi-lapis-targets]')
       : null;
   }
-  var selectedIndex = candidates.indexOf(window.hibikiLapisEditor.selectedField);
+  var selectedIndex = candidates.indexOf(window.fushiLapisEditor.selectedField);
   var field = selectedIndex >= 0 && selectedIndex + 1 < candidates.length
     ? candidates[selectedIndex + 1]
     : candidates[0];
-  window.hibikiLapisEditor.selectField(field);
+  window.fushiLapisEditor.selectField(field);
   if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
     window.flutter_inappwebview.callHandler('selectLapisVisualField', field);
   }
 });
-window.hibikiLapisEditor.applyLayout();
-window.hibikiLapisEditor.showSide(${_jsonForScript(showBack ? 'back' : 'front')});
-window.hibikiLapisEditor.selectField(${_jsonForScript(selectedTarget)});
+window.fushiLapisEditor.applyLayout();
+window.fushiLapisEditor.showSide(${_jsonForScript(showBack ? 'back' : 'front')});
+window.fushiLapisEditor.selectField(${_jsonForScript(selectedTarget)});
 </script>
 </body>
 </html>''';
@@ -309,9 +309,9 @@ String buildLapisStylePreviewRefreshScript({
 }) =>
     '''
 document.getElementById('lapis-style').textContent = ${_jsonForScript(css)};
-window.hibikiLapisEditor.applyLayout();
-window.hibikiLapisEditor.showSide(${_jsonForScript(showBack ? 'back' : 'front')});
-window.hibikiLapisEditor.selectField(${_jsonForScript(selectedBlockId != null ? lapisPreviewBlockTarget(selectedBlockId) : selectedField.wireName)});
+window.fushiLapisEditor.applyLayout();
+window.fushiLapisEditor.showSide(${_jsonForScript(showBack ? 'back' : 'front')});
+window.fushiLapisEditor.selectField(${_jsonForScript(selectedBlockId != null ? lapisPreviewBlockTarget(selectedBlockId) : selectedField.wireName)});
 ''';
 
 String _jsonForScript(String value) =>

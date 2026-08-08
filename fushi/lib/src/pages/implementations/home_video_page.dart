@@ -4759,7 +4759,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       _open(book, playlistCollectionId: playlistCollectionId);
     }
 
-    final FushiCard hibikiCard = FushiCard(
+    final FushiCard fushiCard = FushiCard(
       key: ValueKey<String>('home_video_${book.bookUid}'),
       focusId: FushiFocusId('home-video-${book.bookUid}'),
       padding: EdgeInsets.zero,
@@ -4888,12 +4888,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
     // 选择态下禁用标签拖放命中（避免选卡时误触拖标签）。
     final Widget card = _selectionMode
-        ? hibikiCard
+        ? fushiCard
         : BookDragTarget(
             bookId: book.bookUid,
             onTagDropped: (BookTagRow tag) =>
                 _addTagToVideoBook(book.bookUid, tag),
-            child: hibikiCard,
+            child: fushiCard,
           );
     return CardDropZone<VideoBookRow>(
       meta: book,

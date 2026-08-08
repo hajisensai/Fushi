@@ -25,7 +25,7 @@ void main() {
       for (final LapisVisualField field in LapisVisualField.values) {
         expect(
           RegExp(
-            'data-hibiki-lapis-targets="[^"]*'
+            'data-fushi-lapis-targets="[^"]*'
             '${RegExp.escape(field.wireName)}[^"]*"',
           ).hasMatch(html),
           isTrue,
@@ -38,19 +38,19 @@ void main() {
       expect(
         html,
         contains(
-          'data-hibiki-lapis-targets='
+          'data-fushi-lapis-targets='
           '"primary-definition definition-content"',
         ),
       );
       expect(
         html,
         contains(
-          'window.hibikiLapisEditor.selectField("primary-definition")',
+          'window.fushiLapisEditor.selectField("primary-definition")',
         ),
       );
       expect(
         html,
-        contains('window.hibikiLapisEditor.showSide("back")'),
+        contains('window.fushiLapisEditor.showSide("back")'),
       );
       expect(html, contains('<body class="card card1">'));
     });
@@ -163,7 +163,7 @@ void main() {
       // 例句挪到备用位置后仍要能被选中改样式。
       expect(
         markup,
-        contains('class="sentence-alt" data-hibiki-lapis-targets="sentence"'),
+        contains('class="sentence-alt" data-fushi-lapis-targets="sentence"'),
       );
     });
 
@@ -175,7 +175,7 @@ void main() {
         darkMode: false,
       );
       // 注入 CSS 后必须重跑一次，否则改了位置预览纹丝不动。
-      expect(html, contains('window.hibikiLapisEditor.applyLayout();'));
+      expect(html, contains('window.fushiLapisEditor.applyLayout();'));
       expect(html, contains("setAttribute('data-' + opt.slice(2), value)"));
 
       // 预览读的变量必须是真卡 userSettings() 也读的那些；漂开就等于预览

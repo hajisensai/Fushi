@@ -37,13 +37,13 @@ Widget _maybeBadge({required AdaptiveNavItem item, required Widget child}) {
 /// so integration tests can locate the top-level destinations without depending
 /// on the private widget type or the stock NavigationBar/NavigationRail (which
 /// this no longer uses on Material).
-const Key hibikiMaterialNavKey = ValueKey<String>('hibiki-material-nav');
+const Key fushiMaterialNavKey = ValueKey<String>('hibiki-material-nav');
 
 /// Marks the macOS-native (macos_ui) shell's content subtree so integration
 /// tests can locate the top-level destinations without depending on the
-/// MacosWindow/Sidebar internals. Mirrors [hibikiMaterialNavKey] for the macOS
+/// MacosWindow/Sidebar internals. Mirrors [fushiMaterialNavKey] for the macOS
 /// design system.
-const Key hibikiMacosNavKey = ValueKey<String>('hibiki-macos-nav');
+const Key fushiMacosNavKey = ValueKey<String>('hibiki-macos-nav');
 
 Widget adaptiveBottomBar({
   required BuildContext context,
@@ -131,7 +131,7 @@ class _MaterialNavCluster extends StatelessWidget {
 
     if (horizontal) {
       return Material(
-        key: hibikiMaterialNavKey,
+        key: fushiMaterialNavKey,
         color: colors.surfaceContainer,
         child: SafeArea(
           top: false,
@@ -148,7 +148,7 @@ class _MaterialNavCluster extends StatelessWidget {
     }
 
     return Material(
-      key: hibikiMaterialNavKey,
+      key: fushiMaterialNavKey,
       color: colors.surface,
       child: SizedBox(
         width: 80,

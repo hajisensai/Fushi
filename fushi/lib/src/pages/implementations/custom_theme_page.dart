@@ -1195,7 +1195,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                 SizedBox(width: tokens.spacing.gap),
                 AnimatedRotation(
                   turns: _seedExpanded ? 0.5 : 0.0,
-                  duration: hibikiMd3StateDuration,
+                  duration: fushiMd3StateDuration,
                   child: Icon(
                     Icons.expand_more,
                     color: cs.onSurfaceVariant,

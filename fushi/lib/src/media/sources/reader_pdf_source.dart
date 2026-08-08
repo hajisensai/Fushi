@@ -50,7 +50,7 @@ class ReaderPdfSource extends ReaderMediaSource {
     required WidgetRef ref,
   }) async {
     // 与 EPUB 源同点失效：关书回书架时刷新书列表与「最近阅读」recency（bookKey 同源）。
-    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     ref.invalidate(bookLastReadAtProvider);
   }
 

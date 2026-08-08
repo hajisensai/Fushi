@@ -132,7 +132,7 @@ void main() {
     });
 
     test('app startup honors the isolated test root for app data and logs', () {
-      // TODO-935 E0：三个数据根的 hibikiTestDirectory 隔离判定收敛到唯一入口
+      // TODO-935 E0：三个数据根的 fushiTestDirectory 隔离判定收敛到唯一入口
       // AppPaths（lib/src/storage/app_paths.dart）；app_model 不再各自直连，改在启动期
       // 经 AppPaths.resolve() 委托解析。守卫据此校验「隔离契约仍在、且走单一入口」。
       final String appPaths =
@@ -143,13 +143,13 @@ void main() {
           File('lib/src/utils/misc/error_log_service.dart').readAsStringSync();
 
       // 三根的测试隔离判定落在 AppPaths 单一入口。
-      expect(appPaths, contains("hibikiTestDirectory('temp'"));
-      expect(appPaths, contains("hibikiTestDirectory('app-documents'"));
-      expect(appPaths, contains("hibikiTestDirectory('app-support'"));
+      expect(appPaths, contains("fushiTestDirectory('temp'"));
+      expect(appPaths, contains("fushiTestDirectory('app-documents'"));
+      expect(appPaths, contains("fushiTestDirectory('app-support'"));
       // 启动期 app_model 经 AppPaths.resolve() 接上隔离根（不绕过单一入口）。
       expect(appModel, contains('AppPaths.resolve('));
       // 日志服务仍独立 honor 隔离的 documents 根。
-      expect(errorLog, contains("hibikiTestDirectory('app-documents'"));
+      expect(errorLog, contains("fushiTestDirectory('app-documents'"));
     });
 
     test('native logs and WebView2 profile use test-only isolation env vars',

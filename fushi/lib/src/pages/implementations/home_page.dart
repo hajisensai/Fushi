@@ -846,7 +846,7 @@ class _HomePageState extends BasePageState<HomePage>
     // showBackButton:true 对齐——即便 sidebar 缺席也永不困死。
     final bool showSettingsBack = _visibleTab == HomeTab.settings;
     return KeyedSubtree(
-      key: hibikiMacosNavKey,
+      key: fushiMacosNavKey,
       child: MacosScaffold(
         toolBar: ToolBar(
           leading: showSettingsBack

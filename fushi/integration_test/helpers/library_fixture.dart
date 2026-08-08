@@ -113,7 +113,7 @@ Future<String> seedReaderBook(
   );
   debugPrint('[fixture] Seeded reader book key=$bookKey ($fileName)');
 
-  container.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+  container.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
 
   final Finder bookEntries = find.byWidgetPredicate((Widget w) {
     final Key? key = w.key;
@@ -270,7 +270,7 @@ Future<Directory> _fixturesDir() async {
 /// provider → 轮询书卡出现（与 [seedReaderBook] 一致：轮询失败不抛、打 warning）。
 ///
 /// 有声书是「EPUB + 挂载的 cue/音频」，故书架以普通 `book_entry_` 形态呈现
-/// （与 [seedReaderBook] 同一 [hibikiBooksProvider] 列表）。
+/// （与 [seedReaderBook] 同一 [fushiBooksProvider] 列表）。
 Future<String> seedAudiobook(
   WidgetTester tester, {
   String title = 'Hibiki Test Audiobook',
@@ -311,7 +311,7 @@ Future<String> seedAudiobook(
   await repo.saveCues(bookKey: bookKey, cues: cues);
   debugPrint('[fixture] Saved audiobook meta + ${cues.length} cues');
 
-  container.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+  container.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
 
   final Finder bookEntries = find.byWidgetPredicate((Widget w) {
     final Key? key = w.key;

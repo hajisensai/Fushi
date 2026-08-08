@@ -4,7 +4,7 @@ import 'package:macos_ui/macos_ui.dart';
 /// Derives a [MacosThemeData] from Hibiki's existing [ColorScheme] single source
 /// of truth so the macos_ui shell tracks the same seed/brightness as the rest of
 /// the app instead of carrying a second, divergent palette.
-MacosThemeData hibikiMacosThemeFromColorScheme(
+MacosThemeData fushiMacosThemeFromColorScheme(
   ColorScheme cs,
   Brightness brightness,
 ) {

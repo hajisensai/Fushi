@@ -47,7 +47,7 @@ class WordAudioResolver {
 
   static const String localAudioUrl =
       'http://localhost:8765/localaudio/get/?term={term}&reading={reading}';
-  static const String hibikiRemoteAudioUrl = 'fushi://remote-audio';
+  static const String fushiRemoteAudioUrl = 'fushi://remote-audio';
 
   /// 旧 sentinel（Fushi 改名前写入用户音频源配置的持久化值）。经迁移导入器原样
   /// 带过来的老配置仍是这个值——读取路径两个都认，写入只写新值。
@@ -55,7 +55,7 @@ class WordAudioResolver {
 
   /// hibikiRemote（互联配对）源在失败冷却表里的固定 key：配对候选是一组设备
   /// 地址、整体成败一体，不按单个候选 host 拆分冷却。
-  static const String hibikiRemoteCooldownKey = 'hibiki-remote';
+  static const String fushiRemoteCooldownKey = 'fushi-remote';
 
   final LocalAudioQuery queryLocalAudio;
   final IndexedLocalAudioQuery queryLocalAudioByDbIndex;
@@ -76,7 +76,7 @@ class WordAudioResolver {
         if (remote != null && remote.isNotEmpty) return remote;
         continue;
       }
-      if (template == hibikiRemoteAudioUrl ||
+      if (template == fushiRemoteAudioUrl ||
           template == legacyRemoteAudioUrl) {
         final String? remote = await _queryRemoteLegacy(expression, reading);
         if (remote != null && remote.isNotEmpty) return remote;
@@ -119,7 +119,7 @@ class WordAudioResolver {
           // 与 remoteAudio 源同一套失败冷却（TODO-1057/BUG-488）：配对设备上次
           // 全部不可达且仍在冷却窗内则直接短路——不发请求、不再记日志，也不让
           // 死配对每次查词硬等 N 个候选 × 超时。
-          if (isRemoteSourceInCooldown(hibikiRemoteCooldownKey)) {
+          if (isRemoteSourceInCooldown(fushiRemoteCooldownKey)) {
             continue;
           }
           final String? remote;
@@ -128,11 +128,11 @@ class WordAudioResolver {
           } on RemoteLookupUnreachableError {
             // 传输层确认全部候选不可达（AppModel 已记过一次日志）：计入冷却并
             // 跳到下一源；「可达但无音频」返回 null，不走这里。
-            _markRemoteSourceFailed(hibikiRemoteCooldownKey);
+            _markRemoteSourceFailed(fushiRemoteCooldownKey);
             continue;
           }
           // 成功抵达（含合法「无音频」null）：清除冷却，恢复其优先级。
-          _markRemoteSourceOk(hibikiRemoteCooldownKey);
+          _markRemoteSourceOk(fushiRemoteCooldownKey);
           if (remote != null && remote.isNotEmpty) return remote;
         case AudioSourceKind.localAudio:
           final int dbIndex = localDbIndex;

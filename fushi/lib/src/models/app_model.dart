@@ -2059,7 +2059,7 @@ class AppModel with ChangeNotifier {
   /// [runApp] is executed.
   Future<void> _prepareRuntimeDirectories() async {
     // TODO-935 E0：三个数据根经唯一入口 [AppPaths] 解析（内部已honor测试分支
-    // [hibikiTestDirectory]，故行为与旧的 test/production 双分支逐字节等价）。
+    // [fushiTestDirectory]，故行为与旧的 test/production 双分支逐字节等价）。
     _appPaths = await AppPaths.resolve();
     // TODO-1236：把上游 `hibiki_audio` 的有声书持久根解析接到 `AppPaths`（它无法 import
     // AppPaths）。这样桌面自定义数据根生效后，有声书新导入落数据根下的 `audiobooks/`
@@ -5388,7 +5388,7 @@ class AppModel with ChangeNotifier {
           .map((AudioSourceConfig source) {
             switch (source.kind) {
               case AudioSourceKind.hibikiRemote:
-                return WordAudioResolver.hibikiRemoteAudioUrl;
+                return WordAudioResolver.fushiRemoteAudioUrl;
               case AudioSourceKind.localAudio:
                 return WordAudioResolver.localAudioUrl;
               case AudioSourceKind.remoteAudio:

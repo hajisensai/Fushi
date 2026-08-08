@@ -198,7 +198,7 @@ Future<T?> adaptiveModalSheet<T>({
     context: context,
     isScrollControlled: isScrollControlled,
     showDragHandle: showDragHandle,
-    sheetAnimationStyle: hibikiMd3SheetAnimationStyle,
+    sheetAnimationStyle: fushiMd3SheetAnimationStyle,
     builder: builder,
   );
 }

@@ -467,7 +467,7 @@ void main() {
         expect(remoteCalls, 1);
         expect(
           WordAudioResolver.isRemoteSourceInCooldown(
-            WordAudioResolver.hibikiRemoteCooldownKey,
+            WordAudioResolver.fushiRemoteCooldownKey,
           ),
           isTrue,
         );
@@ -540,7 +540,7 @@ void main() {
         );
         expect(
           WordAudioResolver.isRemoteSourceInCooldown(
-            WordAudioResolver.hibikiRemoteCooldownKey,
+            WordAudioResolver.fushiRemoteCooldownKey,
           ),
           isFalse,
           reason: '可达但无音频不得冷却，否则设备有音频的下一个词也被短路成静音',
@@ -615,13 +615,13 @@ void main() {
         final String? result = await resolver.resolve(
           expression: 'a',
           reading: 'a',
-          sources: const <String>[WordAudioResolver.hibikiRemoteAudioUrl],
+          sources: const <String>[WordAudioResolver.fushiRemoteAudioUrl],
         );
 
         expect(result, isNull);
         expect(
           WordAudioResolver.isRemoteSourceInCooldown(
-            WordAudioResolver.hibikiRemoteCooldownKey,
+            WordAudioResolver.fushiRemoteCooldownKey,
           ),
           isFalse,
           reason: '冷却只由 resolveConfigured 管理，传统 resolve 不记冷却',

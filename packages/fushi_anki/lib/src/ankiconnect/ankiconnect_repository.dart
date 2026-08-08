@@ -85,7 +85,7 @@ const List<int> _sha256K = <int>[
   0xc67178f2,
 ];
 
-String hibikiAnkiMediaFilenameForBytes({
+String fushiAnkiMediaFilenameForBytes({
   required String prefix,
   required List<int> bytes,
   required String sourceName,
@@ -110,14 +110,14 @@ const int _isolateMediaThresholdBytes = 64 * 1024;
 /// AnkiConnect 上传路径：计算 sha256 文件名 + base64 数据。大媒体在后台 isolate 完成，
 /// 小媒体同步完成。返回记录 `(filename, base64Data)` 供 `storeMediaFile`。
 Future<({String filename, String base64Data})>
-hibikiAnkiMediaEncodeForUploadAsync({
+fushiAnkiMediaEncodeForUploadAsync({
   required String prefix,
   required List<int> bytes,
   required String sourceName,
   String fallbackExtension = 'bin',
 }) {
   ({String filename, String base64Data}) encode() => (
-    filename: hibikiAnkiMediaFilenameForBytes(
+    filename: fushiAnkiMediaFilenameForBytes(
       prefix: prefix,
       bytes: bytes,
       sourceName: sourceName,
@@ -133,13 +133,13 @@ hibikiAnkiMediaEncodeForUploadAsync({
 
 /// AnkiDroid 路径：媒体由 platform channel 按文件路径落库（不走 base64），只需 sha256
 /// 文件名。大媒体在后台 isolate 完成，小媒体同步完成。
-Future<String> hibikiAnkiMediaFilenameForBytesAsync({
+Future<String> fushiAnkiMediaFilenameForBytesAsync({
   required String prefix,
   required List<int> bytes,
   required String sourceName,
   String fallbackExtension = 'bin',
 }) {
-  String compute() => hibikiAnkiMediaFilenameForBytes(
+  String compute() => fushiAnkiMediaFilenameForBytes(
     prefix: prefix,
     bytes: bytes,
     sourceName: sourceName,
@@ -153,7 +153,7 @@ Future<String> hibikiAnkiMediaFilenameForBytesAsync({
 
 /// [base64Encode] 的按需后台变体（BUG-933）：大媒体卸到 isolate，小媒体同步。用于
 /// 文件名已定、只剩 base64 的路径（远端下载音频 / 词典外字上传）。
-Future<String> hibikiAnkiBase64EncodeAsync(List<int> bytes) {
+Future<String> fushiAnkiBase64EncodeAsync(List<int> bytes) {
   if (bytes.length < _isolateMediaThresholdBytes) {
     return Future<String>.value(base64Encode(bytes));
   }
@@ -1672,7 +1672,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         }
         await service.storeMediaFile(
           filename: filename,
-          data: await hibikiAnkiBase64EncodeAsync(
+          data: await fushiAnkiBase64EncodeAsync(
             bytes ?? await file.readAsBytes(),
           ),
         );
@@ -1692,7 +1692,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     }
     final bytes = await file.readAsBytes();
     // BUG-1227：只算内容哈希定名；本机 Anki 走 path 上传，不再生成巨大 base64。
-    final filename = await hibikiAnkiMediaFilenameForBytesAsync(
+    final filename = await fushiAnkiMediaFilenameForBytesAsync(
       prefix: prefix,
       bytes: bytes,
       sourceName: filePath,
@@ -1730,7 +1730,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           if (data == null) return const AudioFetchOutcome.none();
           final cacheDir = Directory('${Directory.systemTemp.path}/anki-media');
           if (!cacheDir.existsSync()) cacheDir.createSync(recursive: true);
-          final filename = await hibikiAnkiMediaFilenameForBytesAsync(
+          final filename = await fushiAnkiMediaFilenameForBytesAsync(
             prefix: 'hibiki_audio_',
             bytes: data.bytes,
             sourceName: 'word_audio.${data.extension}',
@@ -1743,7 +1743,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           final file = File(AnkiAudioRef.localPath(url));
           if (!file.existsSync()) return const AudioFetchOutcome.none();
           final bytes = await file.readAsBytes();
-          final filename = await hibikiAnkiMediaFilenameForBytesAsync(
+          final filename = await fushiAnkiMediaFilenameForBytesAsync(
             prefix: 'hibiki_audio_',
             bytes: bytes,
             sourceName: file.path,
@@ -1787,7 +1787,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
             // audio is not mislabeled as .mp3 in Anki.
             final ext = _audioExtension(response.headers.contentType, url);
             // BUG-933：远端音频 sha256 卸到后台 isolate。
-            final filename = await hibikiAnkiMediaFilenameForBytesAsync(
+            final filename = await fushiAnkiMediaFilenameForBytesAsync(
               prefix: 'hibiki_audio_',
               bytes: bytes,
               sourceName: url,

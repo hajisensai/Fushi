@@ -21,6 +21,6 @@ Future<T?> showAppDialog<T>({
     builder: builder,
     barrierDismissible: barrierDismissible,
     barrierColor: barrierColor,
-    animationStyle: hibikiMd3DialogAnimationStyle,
+    animationStyle: fushiMd3DialogAnimationStyle,
   );
 }

@@ -89,7 +89,7 @@ String? _pendingExternalVideoPath;
 /// before init) and at runtime via an [AnnotatedRegion] keyed off the live
 /// theme brightness, so the system navigation bar follows in-app theme
 /// switches instead of being frozen at the launch-time platform brightness.
-SystemUiOverlayStyle hibikiSystemOverlayStyle(Brightness brightness) {
+SystemUiOverlayStyle fushiSystemOverlayStyle(Brightness brightness) {
   // A dark app surface needs light (bright) bar icons; a light surface needs
   // dark icons. We set the icon brightnesses *explicitly* rather than reuse
   // SystemUiOverlayStyle.light/.dark, because both of those presets hardcode
@@ -268,7 +268,7 @@ void main([List<String> args = const <String>[]]) {
     final platformBrightness =
         WidgetsBinding.instance.platformDispatcher.platformBrightness;
     SystemChrome.setSystemUIOverlayStyle(
-      hibikiSystemOverlayStyle(platformBrightness),
+      fushiSystemOverlayStyle(platformBrightness),
     );
 
     if (Platform.isAndroid || Platform.isIOS) {
@@ -877,11 +877,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       await _handleOAuthRedirect(data);
       return true;
     }
-    if (normalized.startsWith(hibikiAnkiFetchCallback.toLowerCase())) {
+    if (normalized.startsWith(fushiAnkiFetchCallback.toLowerCase())) {
       await _handleAnkiMobileInfoCallback();
       return true;
     }
-    if (normalized.startsWith(hibikiAnkiSuccessCallback.toLowerCase())) {
+    if (normalized.startsWith(fushiAnkiSuccessCallback.toLowerCase())) {
       return true;
     }
     return false;
@@ -1581,9 +1581,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             // reruns on every theme change, so the AnnotatedRegion re-emits the
             // matching overlay style.
             return AnnotatedRegion<SystemUiOverlayStyle>(
-              value: hibikiSystemOverlayStyle(cs.brightness),
+              value: fushiSystemOverlayStyle(cs.brightness),
               child: CupertinoTheme(
-                data: hibikiCupertinoTheme(cs,
+                data: fushiCupertinoTheme(cs,
                     fontFamily: appModel.appFontFamily),
                 child: LayoutBuilder(
                   builder: (BuildContext context, BoxConstraints constraints) {
@@ -1641,7 +1641,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       // 只有 sidebar 参数随 mediaOpen 变，绝不重建 navigator 路由栈。
                       navigation = MacosTheme(
                         data:
-                            hibikiMacosThemeFromColorScheme(cs, cs.brightness),
+                            fushiMacosThemeFromColorScheme(cs, cs.brightness),
                         child: ValueListenableBuilder<bool>(
                           valueListenable: appModel.mediaOpenNotifier,
                           builder: (BuildContext context, bool mediaOpen,

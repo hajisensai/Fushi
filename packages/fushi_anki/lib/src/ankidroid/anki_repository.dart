@@ -619,7 +619,7 @@ class AnkiRepository extends BaseAnkiRepository {
     if (!file.existsSync()) return null;
     final bytes = await file.readAsBytes();
     // BUG-933：sha256 卸到后台 isolate（大媒体），避免阻塞 UI。
-    return hibikiAnkiMediaFilenameForBytesAsync(
+    return fushiAnkiMediaFilenameForBytesAsync(
       prefix: prefix,
       bytes: bytes,
       sourceName: file.path,
@@ -643,7 +643,7 @@ class AnkiRepository extends BaseAnkiRepository {
           final data = AnkiAudioRef.decodeDataUri(url);
           if (data == null) return const AudioFetchOutcome.none();
           final cacheDir = await _mediaCacheDir();
-          final preferredName = await hibikiAnkiMediaFilenameForBytesAsync(
+          final preferredName = await fushiAnkiMediaFilenameForBytesAsync(
             prefix: 'hibiki_audio_',
             bytes: data.bytes,
             sourceName: 'word_audio.${data.extension}',
@@ -692,7 +692,7 @@ class AnkiRepository extends BaseAnkiRepository {
             final cacheDir = await _mediaCacheDir();
             final ext = _audioExtension(response.headers.contentType, url);
             // BUG-933：远端音频 sha256 卸到后台 isolate。
-            final preferredName = await hibikiAnkiMediaFilenameForBytesAsync(
+            final preferredName = await fushiAnkiMediaFilenameForBytesAsync(
               prefix: 'hibiki_audio_',
               bytes: bytes,
               sourceName: url,

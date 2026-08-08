@@ -134,7 +134,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       announceBusy: false,
     );
     if (!mounted) return;
-    ref.invalidate(hibikiBooksProvider);
+    ref.invalidate(fushiBooksProvider);
     ref.invalidate(srtBooksProvider);
     _batchAudiobookInfoFuture = null;
     _batchAudiobookInfoResult = const <String, _AudiobookInfo>{};
@@ -461,7 +461,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           'ReaderFushiHistoryPage.downloadRemoteAudiobook', e.cause, stack);
       _rebuild(() => _downloadingBooks.remove(book.title));
       if (!mounted) return;
-      ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+      ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
       _refreshSrtBooks();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(t.remote_book_audiobook_download_failed)),
@@ -492,7 +492,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       }
     }
     if (!mounted) return;
-    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     _refreshSrtBooks();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(t.remote_book_downloaded)),

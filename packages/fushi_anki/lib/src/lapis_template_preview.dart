@@ -80,7 +80,7 @@ String renderLapisPreviewSide({
 
 /// 浏览器侧脚本：按 [lapisVisualSelector] 给渲染结果打上可点选标记。
 ///
-/// 每个可视字段的 selector 命中的元素都会拿到 `data-hibiki-lapis-targets`，
+/// 每个可视字段的 selector 命中的元素都会拿到 `data-fushi-lapis-targets`，
 /// 与手写 mock 时代的属性语义完全一致，但**来源变成了 selector 真相源**，所以
 /// 「预览可选中的东西」与「样式实际作用的东西」按定义永远一致。
 String buildLapisPreviewTargetScript() {
@@ -89,26 +89,26 @@ String buildLapisPreviewTargetScript() {
       field.wireName: lapisVisualSelector(field),
   };
   return '''
-window.hibikiLapisTargets = ${jsonEncode(selectors)};
-window.hibikiLapisMarkTargets = function() {
-  var map = window.hibikiLapisTargets;
+window.fushiLapisTargets = ${jsonEncode(selectors)};
+window.fushiLapisMarkTargets = function() {
+  var map = window.fushiLapisTargets;
   // 先清空再重打：布局/区域变化后元素集合会变，残留标记会让已经不存在的
   // 位置继续「可点」。
-  document.querySelectorAll('[data-hibiki-lapis-targets]').forEach(
-    function(el) { el.removeAttribute('data-hibiki-lapis-targets'); });
+  document.querySelectorAll('[data-fushi-lapis-targets]').forEach(
+    function(el) { el.removeAttribute('data-fushi-lapis-targets'); });
   Object.keys(map).forEach(function(name) {
     var nodes;
     try { nodes = document.querySelectorAll(map[name]); } catch (e) { return; }
     nodes.forEach(function(el) {
-      var prev = el.getAttribute('data-hibiki-lapis-targets');
+      var prev = el.getAttribute('data-fushi-lapis-targets');
       el.setAttribute(
-        'data-hibiki-lapis-targets', prev ? prev + ' ' + name : name);
+        'data-fushi-lapis-targets', prev ? prev + ' ' + name : name);
     });
   });
   // 自定义区域自带 data-hibiki-block，点选目标直接由它派生。
   document.querySelectorAll('[data-hibiki-block]').forEach(function(el) {
     el.setAttribute(
-      'data-hibiki-lapis-targets',
+      'data-fushi-lapis-targets',
       'block-' + el.getAttribute('data-hibiki-block'));
   });
 };

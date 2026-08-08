@@ -344,7 +344,7 @@ Future<String> _seedTestBook(WidgetTester tester, AppModel appModel) async {
   final ProviderContainer container = ProviderScope.containerOf(
     tester.element(find.byType(MaterialApp).first),
   );
-  container.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+  container.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
   await tester.pumpAndSettle();
   return bookKey;
 }

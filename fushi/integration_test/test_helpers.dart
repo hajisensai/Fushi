@@ -118,15 +118,15 @@ Finder findNavTargetForTab(HomeTab tab) {
   if (root == null) {
     // 导航根还没挂载：返回一个此刻必空的 finder（调用方按「不可达」处理）。
     return find.descendant(
-        of: find.byKey(hibikiMaterialNavKey), matching: icon);
+        of: find.byKey(fushiMaterialNavKey), matching: icon);
   }
   return find.descendant(of: root, matching: icon);
 }
 
 Finder? _primaryNavigationRoot() {
   // Material now self-draws the bottom bar / side rail (per-item gamepad focus),
-  // tagged with [hibikiMaterialNavKey] instead of the stock NavigationBar/Rail.
-  final Finder materialNav = find.byKey(hibikiMaterialNavKey);
+  // tagged with [fushiMaterialNavKey] instead of the stock NavigationBar/Rail.
+  final Finder materialNav = find.byKey(fushiMaterialNavKey);
   if (materialNav.evaluate().isNotEmpty) return materialNav;
 
   final Finder rail = find.byType(NavigationRail);

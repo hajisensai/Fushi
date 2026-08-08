@@ -1051,7 +1051,7 @@ class ComputerUseEvidence {
   }
 
   factory ComputerUseEvidence.forTask(String taskName) {
-    final String? rootPath = hibikiTestRootPath();
+    final String? rootPath = fushiTestRootPath();
     if (rootPath == null) {
       return ComputerUseEvidence._(null);
     }
@@ -1149,7 +1149,7 @@ class ComputerUseEvidence {
 
     final Map<String, Object?> summary = <String, Object?>{
       'generatedAt': DateTime.now().toIso8601String(),
-      'runId': hibikiTestRunId(),
+      'runId': fushiTestRunId(),
       'checks': checks,
       'pageSnapshots': pageSnapshots,
       'popupRounds': popupRounds,

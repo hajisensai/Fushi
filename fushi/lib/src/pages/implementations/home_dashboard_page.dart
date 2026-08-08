@@ -763,7 +763,7 @@ class _HomeDashboardPageState
           results[2] as List<RemoteActivityEvent>;
       if (!mounted) return;
       final List<MediaItem> books = ref
-              .read(hibikiBooksProvider(JapaneseLanguage.instance))
+              .read(fushiBooksProvider(JapaneseLanguage.instance))
               .valueOrNull ??
           const <MediaItem>[];
       final Set<String> localBookKeys = <String>{
@@ -815,7 +815,7 @@ class _HomeDashboardPageState
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final AppModel appModel = ref.watch(appProvider);
     final List<MediaItem> books =
-        ref.watch(hibikiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
+        ref.watch(fushiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
             const <MediaItem>[];
     final Map<String, int> lastReadByKey =
         ref.watch(bookLastReadAtProvider).valueOrNull ?? const <String, int>{};

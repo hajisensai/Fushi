@@ -101,7 +101,7 @@ void main() {
           // 覆盖书列表 provider：真实实现依赖 _epubBookKeysProvider 的 drift .watch()
           // 流，会让 widget 测试进程永不终止（drift watch teardown 挂起 gotcha）。本
           // 测试聚焦布局不崩 + 视频继续/热力图/活动渲染，书列表用空值即可。
-          hibikiBooksProvider
+          fushiBooksProvider
               .overrideWith((ref, language) async => <MediaItem>[]),
           bookLastReadAtProvider.overrideWith((ref) async => <String, int>{}),
         ],
@@ -276,7 +276,7 @@ void main() {
         platformServicesProvider.overrideWithValue(platformServices),
         ankiRepositoryProvider.overrideWithValue(ankiRepository),
         appProvider.overrideWith((ref) => appModel),
-        hibikiBooksProvider
+        fushiBooksProvider
             .overrideWith((ref, language) async => <MediaItem>[book]),
         bookLastReadAtProvider
             .overrideWith((ref) async => <String, int>{'测试书key': 1}),
@@ -318,7 +318,7 @@ void main() {
         platformServicesProvider.overrideWithValue(platformServices),
         ankiRepositoryProvider.overrideWithValue(ankiRepository),
         appProvider.overrideWith((ref) => appModel),
-        hibikiBooksProvider
+        fushiBooksProvider
             .overrideWith((ref, language) async => <MediaItem>[book]),
         bookLastReadAtProvider
             .overrideWith((ref) async => <String, int>{'横滑书key': 1}),

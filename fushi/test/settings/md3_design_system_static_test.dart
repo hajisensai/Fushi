@@ -2399,9 +2399,9 @@ void main() {
 
     final String motion = motionFile.readAsStringSync();
     expect(motion, contains('const AnimationStyle'));
-    expect(motion, contains('hibikiMd3DialogAnimationStyle'));
-    expect(motion, contains('hibikiMd3SheetAnimationStyle'));
-    expect(motion, contains('hibikiMd3MenuAnimationStyle'));
+    expect(motion, contains('fushiMd3DialogAnimationStyle'));
+    expect(motion, contains('fushiMd3SheetAnimationStyle'));
+    expect(motion, contains('fushiMd3MenuAnimationStyle'));
     expect(motion, contains('Easing.emphasizedDecelerate'));
     expect(motion, contains('Easing.emphasizedAccelerate'));
 
@@ -2417,10 +2417,10 @@ void main() {
     final String sync =
         File('lib/src/sync/sync_compare_dialog.dart').readAsStringSync();
 
-    expect(dialog, contains('animationStyle: hibikiMd3DialogAnimationStyle'));
+    expect(dialog, contains('animationStyle: fushiMd3DialogAnimationStyle'));
     expect(
-        sheet, contains('sheetAnimationStyle: hibikiMd3SheetAnimationStyle'));
-    expect(menu, contains('popUpAnimationStyle: hibikiMd3MenuAnimationStyle'));
+        sheet, contains('sheetAnimationStyle: fushiMd3SheetAnimationStyle'));
+    expect(menu, contains('popUpAnimationStyle: fushiMd3MenuAnimationStyle'));
     expect(home, contains('showAppDialog<bool>('));
     expect(sync, contains('showAppDialog<int>('));
     expect(home, isNot(contains('showDialog<bool>(')));
@@ -2431,8 +2431,8 @@ void main() {
     final String motion =
         File('lib/src/utils/components/fushi_motion_tokens.dart')
             .readAsStringSync();
-    expect(motion, contains('hibikiMd3StateDuration'));
-    expect(motion, contains('hibikiMd3StateCurve'));
+    expect(motion, contains('fushiMd3StateDuration'));
+    expect(motion, contains('fushiMd3StateCurve'));
     expect(motion, contains('Durations.short4'));
     expect(motion, contains('Easing.standard'));
 
@@ -2447,18 +2447,18 @@ void main() {
     ]) {
       final String section = _sectionSource(components, start, end);
       expect(section, contains('AnimatedContainer('));
-      // MD3 状态动画时长必须来自 hibikiMd3StateDuration；FushiCard 经
+      // MD3 状态动画时长必须来自 fushiMd3StateDuration；FushiCard 经
       // einkSafeDuration 包装（eink 下归零，非 eink 恒等于 MD3 token）也算
       // 合规——守卫的意图是「用 MD3 token」，不是「禁止 eink 例外」。
       expect(
-        section.contains('duration: hibikiMd3StateDuration') ||
+        section.contains('duration: fushiMd3StateDuration') ||
             section.contains(
-                'duration: einkSafeDuration(context, hibikiMd3StateDuration)'),
+                'duration: einkSafeDuration(context, fushiMd3StateDuration)'),
         isTrue,
-        reason: '$start section must animate with hibikiMd3StateDuration '
+        reason: '$start section must animate with fushiMd3StateDuration '
             '(optionally eink-gated via einkSafeDuration)',
       );
-      expect(section, contains('curve: hibikiMd3StateCurve'));
+      expect(section, contains('curve: fushiMd3StateCurve'));
     }
   });
 
@@ -2651,9 +2651,9 @@ void main() {
 
     // Theme circles preview the generated scheme (primary/secondary/tertiary/
     // surface) via the four-quadrant FushiSchemeSwatch, not a single seed
-    // colour — see hibikiSchemeSwatchColors.
+    // colour — see fushiSchemeSwatchColors.
     expect(themeSelector, contains('FushiSchemeSwatch('));
-    expect(themeSelector, contains('hibikiSchemeSwatchColors('));
+    expect(themeSelector, contains('fushiSchemeSwatchColors('));
     expect(source, isNot(contains('class _ColorSwatch')));
     expect(themeSelector, isNot(contains('_ColorSwatch(')));
     expect(themeSelector, isNot(contains('Container(')));

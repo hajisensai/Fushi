@@ -4,11 +4,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/startup/test_environment.dart';
 
 void main() {
-  test('hibikiTestDirectory resolves children under an explicit test root', () {
+  test('fushiTestDirectory resolves children under an explicit test root', () {
     final Directory temp = Directory.systemTemp.createTempSync('hibiki-root-');
     addTearDown(() => temp.deleteSync(recursive: true));
 
-    final Directory? docs = hibikiTestDirectory(
+    final Directory? docs = fushiTestDirectory(
       'app-documents',
       environment: <String, String>{'FUSHI_TEST_ROOT': temp.path},
       dartDefineRoot: '',
@@ -28,7 +28,7 @@ void main() {
     addTearDown(() => envRoot.deleteSync(recursive: true));
     addTearDown(() => defineRoot.deleteSync(recursive: true));
 
-    final Directory? support = hibikiTestDirectory(
+    final Directory? support = fushiTestDirectory(
       'app-support',
       environment: <String, String>{'FUSHI_TEST_ROOT': envRoot.path},
       dartDefineRoot: defineRoot.path,

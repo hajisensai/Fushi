@@ -41,7 +41,7 @@ const String _kPdfPath = String.fromEnvironment(
 /// 取证目录 `<evidenceDir>/screenshots/`，与 observe_capture 同约定：
 /// run_windows_itest.ps1 传 FUSHI_TEST_ROOT=<evidenceDir>/isolated-root。
 Directory _screenshotDir() {
-  final String? root = hibikiTestRootPath();
+  final String? root = fushiTestRootPath();
   Directory base;
   if (root != null && root.isNotEmpty) {
     base = Directory(root);
@@ -50,7 +50,7 @@ Directory _screenshotDir() {
       base = base.parent;
     }
   } else {
-    final String? runId = hibikiTestRunId();
+    final String? runId = fushiTestRunId();
     final String runLeaf =
         (runId != null && runId.isNotEmpty) ? runId : 'local';
     base = Directory('.codex-test/observe/$runLeaf');

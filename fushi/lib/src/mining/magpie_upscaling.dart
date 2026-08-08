@@ -264,15 +264,15 @@ class MagpieWindowIdentity {
 /// （`ScalingService.cpp:42-45`、`:250-273`）。给 Hibiki 建了，查词浮窗/主窗口一到前台就
 /// 会把 galgame 的缩放踢掉，两个窗口来回打架。
 ///
-/// [hibikiExecutablePath] 传 `Platform.resolvedExecutable`。比较**忽略大小写**（Windows
+/// [fushiExecutablePath] 传 `Platform.resolvedExecutable`。比较**忽略大小写**（Windows
 /// 路径语义），比 Magpie 自己的匹配更严 —— 这里宁可多拒也不能漏放。
 bool magpieProfileTargetAllowed({
   required String targetExecutablePath,
-  required String hibikiExecutablePath,
+  required String fushiExecutablePath,
 }) {
   final String target = targetExecutablePath.trim().toLowerCase();
   if (target.isEmpty) return false;
-  final String self = hibikiExecutablePath.trim().toLowerCase();
+  final String self = fushiExecutablePath.trim().toLowerCase();
   if (self.isEmpty) return true;
   return target != self;
 }
@@ -299,7 +299,7 @@ MagpieProfileWriteResult magpieConfigWithAutoScaleProfile({
   required Map<String, dynamic> config,
   required MagpieWindowIdentity identity,
   required String profileName,
-  required String hibikiExecutablePath,
+  required String fushiExecutablePath,
 }) {
   if (!identity.isComplete || profileName.trim().isEmpty) {
     return const MagpieProfileWriteResult.skipped(
@@ -308,7 +308,7 @@ MagpieProfileWriteResult magpieConfigWithAutoScaleProfile({
   }
   if (!magpieProfileTargetAllowed(
     targetExecutablePath: identity.executablePath,
-    hibikiExecutablePath: hibikiExecutablePath,
+    fushiExecutablePath: fushiExecutablePath,
   )) {
     return const MagpieProfileWriteResult.skipped(
       MagpieProfileSkipReason.forbiddenTarget,

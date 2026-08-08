@@ -26,7 +26,7 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 ///     Windows = `%APPDATA%\<pkg>`）。`fushi.db` 与 per-source local-audio DB 落这里。
 ///   - [tempRoot] —— 可丢弃的临时目录（`getTemporaryDirectory`）。
 ///
-/// **E0 是纯收敛、行为等价**：解析逻辑（先 [hibikiTestDirectory] 测试分支，否则
+/// **E0 是纯收敛、行为等价**：解析逻辑（先 [fushiTestDirectory] 测试分支，否则
 /// `path_provider` 默认）与各模块原先逐字节一致，所有派生子目录名不变，旧数据零迁移。
 /// E1/E2/E3 只需在 [_resolveDocumentsRoot] / [_resolveSupportRoot] 内插入「读
 /// SharedPreferences 里的 dataRoot（仅桌面）」一处，全仓库自动跟随。
@@ -240,7 +240,7 @@ class AppPaths {
   /// 宽容仅服务于 [forceDefaultRootForSession] 用户显式回退，以及无 AppModel 实例的运行时
   /// 静态便捷层（`documentsRootDirectory` 等，此时根已在 init 期确认可用）。
   ///
-  /// **顺序铁律**：[hibikiTestDirectory] 测试分支在三个 `_resolve*` 里**优先于**本覆盖
+  /// **顺序铁律**：[fushiTestDirectory] 测试分支在三个 `_resolve*` 里**优先于**本覆盖
   /// （测试根始终赢），保证现有测试与 E0 行为等价的断言不被 dataRoot 改动破坏。
   static Future<Directory?> _resolveDataRoot() async {
     if (!isDesktopPlatform) return null;
@@ -254,7 +254,7 @@ class AppPaths {
   }
 
   static Future<Directory> _resolveDocumentsRoot() async {
-    final Directory? test = hibikiTestDirectory('app-documents');
+    final Directory? test = fushiTestDirectory('app-documents');
     if (test != null) return test;
     final Directory? dataRoot = await _resolveDataRoot();
     if (dataRoot != null) {
@@ -288,9 +288,9 @@ class AppPaths {
   /// 在哪**，两者在老安装上并不相等。迁移目标解析（`resolveDataRootMigrationTarget`）必须
   /// 用本函数，否则老安装永远解析不出「默认位置」这个目标。
   ///
-  /// [hibikiTestDirectory] 测试分支仍优先（与三个 `_resolve*` 的顺序铁律一致）。
+  /// [fushiTestDirectory] 测试分支仍优先（与三个 `_resolve*` 的顺序铁律一致）。
   static Future<Directory> defaultLocationDocumentsRoot() async {
-    final Directory? test = hibikiTestDirectory('app-documents');
+    final Directory? test = fushiTestDirectory('app-documents');
     if (test != null) return test;
     final Directory platformDocuments =
         await getApplicationDocumentsDirectory();
@@ -415,7 +415,7 @@ class AppPaths {
   }
 
   static Future<Directory> _resolveSupportRoot() async {
-    final Directory? test = hibikiTestDirectory('app-support');
+    final Directory? test = fushiTestDirectory('app-support');
     if (test != null) return test;
     final Directory? dataRoot = await _resolveDataRoot();
     if (dataRoot != null) {
@@ -426,7 +426,7 @@ class AppPaths {
 
   // tempRoot 永远走系统临时目录（可丢弃、与数据根解耦）：迁移不搬 temp，dataRoot 也不接管它。
   static Future<Directory> _resolveTempRoot() async =>
-      hibikiTestDirectory('temp') ?? await getTemporaryDirectory();
+      fushiTestDirectory('temp') ?? await getTemporaryDirectory();
 
   /// 给迁移引擎（E1）/ 设置 UI（E2）复用的纯派生：把一个 dataRoot 绝对路径映射成它
   /// 派生的 (documentsRoot, supportRoot) 对，子目录名与 [_resolveDocumentsRoot] /

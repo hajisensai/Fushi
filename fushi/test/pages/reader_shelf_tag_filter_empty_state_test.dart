@@ -25,7 +25,7 @@ import '../helpers/test_platform_services.dart';
 /// 组装；只有整体为空（无任何可渲染卡）时才显示空态。
 ///
 /// 渲染层说明（与 reader_shelf_batch_collection_ops_test 同源）：书架
-/// [hibikiBooksProvider] 的真实实现会 `await` 封面 `File.exists()` 真 I/O，假时钟
+/// [fushiBooksProvider] 的真实实现会 `await` 封面 `File.exists()` 真 I/O，假时钟
 /// 下永不完成，故「读」provider 覆写成受控列表；标签筛选走**真 DB**（createTag /
 /// addTagToSrtBook + filteredSrtBookIdsProvider 真实推导），只覆写选中标签集。
 void main() {
@@ -121,7 +121,7 @@ void main() {
   Widget buildApp({required Set<int> selectedTagIds}) => ProviderScope(
         overrides: <Override>[
           appProvider.overrideWith((ref) => appModel),
-          hibikiBooksProvider.overrideWith(
+          fushiBooksProvider.overrideWith(
             (ref, language) => Future<List<MediaItem>>.value(epubItems),
           ),
           srtBooksProvider.overrideWith(

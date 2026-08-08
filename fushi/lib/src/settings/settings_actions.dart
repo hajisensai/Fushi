@@ -318,7 +318,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
       runSpacing: tokens.spacing.gap,
       children: <Widget>[
         FushiSchemeSwatch(
-          colors: hibikiSchemeSwatchColors(
+          colors: fushiSchemeSwatchColors(
             buildFushiColorScheme(
               seedColor: systemColor,
               brightness: Theme.of(settingsContext.context).brightness,
@@ -345,7 +345,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
                   })>
               entry) {
             return FushiSchemeSwatch(
-              colors: hibikiSchemeSwatchColors(
+              colors: fushiSchemeSwatchColors(
                 buildFushiColorScheme(
                   seedColor: entry.value.seed,
                   brightness: entry.value.brightness,
@@ -371,7 +371,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
         ...appModel.customThemes.map((CustomThemeEntry e) {
           final String key = 'custom-theme:${e.id}';
           return FushiSchemeSwatch(
-            colors: hibikiSchemeSwatchColors(
+            colors: fushiSchemeSwatchColors(
               buildFushiColorScheme(
                 seedColor: Color(e.seed),
                 brightness:
@@ -408,7 +408,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
         // 的品牌默认色，沿用 928），upsert 后进编辑页编辑它。焦点/手柄用户单击
         // （Enter / A）即可新建，无需长按。
         FushiSchemeSwatch(
-          colors: hibikiSchemeSwatchColors(
+          colors: fushiSchemeSwatchColors(
             buildFushiColorScheme(
               seedColor: const Color(kCustomThemeDefaultSeed),
               brightness:

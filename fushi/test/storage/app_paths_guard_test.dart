@@ -10,7 +10,7 @@ import 'package:fushi/src/storage/app_paths.dart';
 ///
 /// 两类断言：
 ///  1. **行为等价**（运行时）：在 `FUSHI_TEST_ROOT` 注入下，[AppPaths] 解析出的三个根
-///     与旧的 `hibikiTestDirectory('app-documents'|'app-support'|'temp')` 逐字节一致，
+///     与旧的 `fushiTestDirectory('app-documents'|'app-support'|'temp')` 逐字节一致，
 ///     且各子目录 getter 在其下逐字节派生——证明重构没有改变任何模块拿到的绝对路径。
 ///  2. **单一入口**（源码扫描）：被收敛的核心数据存储模块不再直连
 ///     `getApplicationDocumentsDirectory` / `getApplicationSupportDirectory`，必须经
@@ -29,17 +29,17 @@ void main() {
       if (root.existsSync()) root.deleteSync(recursive: true);
     });
 
-    test('三个根与 hibikiTestDirectory 逐字节一致', () async {
+    test('三个根与 fushiTestDirectory 逐字节一致', () async {
       final Map<String, String> env = <String, String>{
         'FUSHI_TEST_ROOT': root.path,
       };
       // 旧解析（各模块原先各自调用的等价物）。
       final Directory expectedDocs =
-          hibikiTestDirectory('app-documents', environment: env)!;
+          fushiTestDirectory('app-documents', environment: env)!;
       final Directory expectedSupport =
-          hibikiTestDirectory('app-support', environment: env)!;
+          fushiTestDirectory('app-support', environment: env)!;
       final Directory expectedTemp =
-          hibikiTestDirectory('temp', environment: env)!;
+          fushiTestDirectory('temp', environment: env)!;
 
       // 三个根逐字节落在注入的临时根下，子目录名与旧解析一致（app-documents /
       // app-support / temp）——这正是 AppPaths._resolve* 内部沿用的同一 helper。

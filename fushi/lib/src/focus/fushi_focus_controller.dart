@@ -25,7 +25,7 @@ class FushiFocusId {
 
 enum FushiFocusDirection { up, down, left, right }
 
-FushiFocusDirection hibikiFocusDirectionFromTraversal(
+FushiFocusDirection fushiFocusDirectionFromTraversal(
   TraversalDirection direction,
 ) {
   switch (direction) {

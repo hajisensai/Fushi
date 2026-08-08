@@ -145,7 +145,7 @@ void main() {
 
     test('content-derived media names use SHA-256 and preserve extension', () {
       expect(
-        hibikiAnkiMediaFilenameForBytes(
+        fushiAnkiMediaFilenameForBytes(
           prefix: 'hibiki_audio_',
           bytes: utf8.encode('abc'),
           sourceName: 'word.mp3',

@@ -52,7 +52,7 @@ void main() {
       expect(LapisNoteType.template.back, LapisNoteType.back);
       // template.css is the verbatim upstream css followed by the Hibiki delta.
       expect(LapisNoteType.template.css,
-          '${LapisNoteType.css}\n${LapisNoteType.hibikiCssOverride}');
+          '${LapisNoteType.css}\n${LapisNoteType.fushiCssOverride}');
     });
 
     test('Hibiki css override separates the def-info label from the sentence',
@@ -63,11 +63,11 @@ void main() {
       // appended after the vendored css so it wins by source order.
       expect(LapisNoteType.css, isNot(contains('Hibiki delta')),
           reason: 'vendored css must stay byte-identical to upstream');
-      expect(LapisNoteType.hibikiCssOverride, contains('.def-info'));
-      expect(LapisNoteType.hibikiCssOverride, contains('Hibiki delta'));
-      expect(LapisNoteType.hibikiCssOverride, contains('margin-top'));
+      expect(LapisNoteType.fushiCssOverride, contains('.def-info'));
+      expect(LapisNoteType.fushiCssOverride, contains('Hibiki delta'));
+      expect(LapisNoteType.fushiCssOverride, contains('margin-top'));
       expect(
-        LapisNoteType.template.css.indexOf(LapisNoteType.hibikiCssOverride),
+        LapisNoteType.template.css.indexOf(LapisNoteType.fushiCssOverride),
         greaterThan(LapisNoteType.template.css.indexOf('.def-info {')),
         reason: 'override must come after the upstream .def-info rule',
       );

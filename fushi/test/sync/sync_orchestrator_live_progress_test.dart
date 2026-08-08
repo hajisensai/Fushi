@@ -241,7 +241,7 @@ void main() {
   group('book progress pull flags shelf refresh (BUG-686)', () {
     // Root cause: a host-newer book-progress pull upserts reader_positions but
     // sets no report counter, so [SyncRunReport.needsLocalLibraryRefresh] stays
-    // false → refreshAfterSyncRun early-returns → the cached hibikiBooksProvider
+    // false → refreshAfterSyncRun early-returns → the cached fushiBooksProvider
     // keeps the pre-sync progress bar → the user sees "book progress not synced"
     // even though it landed in the DB. The audiobook resume path re-reads its
     // pref at play time, so it looked like it synced — hence the asymmetry.

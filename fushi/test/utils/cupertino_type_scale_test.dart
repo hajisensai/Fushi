@@ -8,7 +8,7 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 /// 而不是回到硬编码的 iOS 点数（17/17/34）。若有人把 adaptive_theme 改回写死字号，
 /// 或 editorial 阶梯变了而 Cupertino 没跟随，这条会红。
 void main() {
-  final CupertinoThemeData theme = hibikiCupertinoTheme(
+  final CupertinoThemeData theme = fushiCupertinoTheme(
     ColorScheme.fromSeed(seedColor: const Color(0xFF1F4959)),
   );
   final CupertinoTextThemeData tt = theme.textTheme;

@@ -589,7 +589,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     }
     if (!mounted) return;
     _refreshSrtBooks();
-    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     ref.invalidate(bookTagMapProvider);
     ref.invalidate(srtBookTagMapProvider);
     // 解散后合集映射失效，重取（合集行随之消失）。
@@ -628,7 +628,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     final FushiDatabase db = appModel.database;
     // 存在性真值必须取自**书架选择键的来源表**，不是名字相近的 `media_items`：
     // 书架 EPUB 卡的选择键是 `ReaderFushiSource.mediaIdentifierFor(bookKey)`，
-    // bookKey 的真值在 `epub_books`（`hibikiBooksProvider` 也是从这里取的）；
+    // bookKey 的真值在 `epub_books`（`fushiBooksProvider` 也是从这里取的）；
     // `getAllMediaItems()` 是另一张表、另一套 mediaIdentifier 语义，拿它做判据
     // 会把全部选中项误判成幽灵键而整批剔光。
     final List<EpubBookRow> epubBooks = await db.getAllEpubBooks();
@@ -885,7 +885,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         propagateDeletion: scope == DeleteScope.syncEverywhere);
     if (mounted) {
       _refreshSrtBooks();
-      ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+      ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
       _rebuild(() {});
     }
   }
@@ -959,7 +959,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       return;
     }
     _refreshSrtBooks();
-    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     _rebuild(() {});
   }
 
@@ -1149,7 +1149,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     );
     if (imported == true && mounted) {
       _refreshSrtBooks();
-      ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+      ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     }
   }
 
@@ -1166,7 +1166,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     );
     if (imported == true && mounted) {
       _refreshSrtBooks();
-      ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+      ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     }
   }
 

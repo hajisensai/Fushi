@@ -86,8 +86,8 @@ class _FushiCardState extends State<FushiCard> {
     final Widget card = Padding(
       padding: widget.margin ?? EdgeInsets.zero,
       child: AnimatedContainer(
-        duration: einkSafeDuration(context, hibikiMd3StateDuration),
-        curve: hibikiMd3StateCurve,
+        duration: einkSafeDuration(context, fushiMd3StateDuration),
+        curve: fushiMd3StateCurve,
         decoration: ShapeDecoration(
           color: effectiveColor,
           shape: RoundedRectangleBorder(
@@ -292,8 +292,8 @@ class _FushiListItemState extends State<FushiListItem> {
           )
         : null;
     final Widget material = AnimatedContainer(
-      duration: hibikiMd3StateDuration,
-      curve: hibikiMd3StateCurve,
+      duration: fushiMd3StateDuration,
+      curve: fushiMd3StateCurve,
       margin: pill
           ? EdgeInsets.symmetric(horizontal: tokens.spacing.gap)
           : EdgeInsets.zero,
@@ -866,8 +866,8 @@ class _FushiTagChipState extends State<FushiTagChip> {
       children: contentChildren,
     );
     final Widget chip = AnimatedContainer(
-      duration: hibikiMd3StateDuration,
-      curve: hibikiMd3StateCurve,
+      duration: fushiMd3StateDuration,
+      curve: fushiMd3StateCurve,
       padding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.gap,
         vertical: 3,
@@ -1294,8 +1294,8 @@ class FushiColorSwatch extends StatelessWidget {
       width: resolvedWidth,
       height: resolvedHeight,
       child: AnimatedContainer(
-        duration: hibikiMd3StateDuration,
-        curve: hibikiMd3StateCurve,
+        duration: fushiMd3StateDuration,
+        curve: fushiMd3StateCurve,
         decoration: BoxDecoration(
           color: color,
           shape: isDot ? BoxShape.circle : BoxShape.rectangle,
@@ -1467,7 +1467,7 @@ Color _swatchForegroundFor(Color background) {
 /// surfaceContainerHigh also keeps light/dark presets that share one seed
 /// distinct (their backgrounds differ), and makes the three dark presets
 /// readable apart at a glance instead of three near-identical dark circles.
-List<Color> hibikiSchemeSwatchColors(ColorScheme scheme) => <Color>[
+List<Color> fushiSchemeSwatchColors(ColorScheme scheme) => <Color>[
       scheme.onSurface,
       scheme.surface,
       scheme.primary,
@@ -1496,7 +1496,7 @@ class FushiSchemeSwatch extends StatelessWidget {
     this.borderColor,
   }) : assert(colors.length == 4, 'scheme swatch needs exactly 4 colours');
 
-  /// `[text, background, button, menu]` — see [hibikiSchemeSwatchColors].
+  /// `[text, background, button, menu]` — see [fushiSchemeSwatchColors].
   final List<Color> colors;
   final double size;
   final bool selected;
@@ -1566,8 +1566,8 @@ class FushiSchemeSwatch extends StatelessWidget {
     // (the painter clips to a rounded rect inside the border, so it never paints
     // over the ring).
     final Widget visual = AnimatedContainer(
-      duration: hibikiMd3StateDuration,
-      curve: hibikiMd3StateCurve,
+      duration: fushiMd3StateDuration,
+      curve: fushiMd3StateCurve,
       width: size,
       height: size,
       alignment: Alignment.center,
@@ -2384,7 +2384,7 @@ class _FushiOverflowMenuState<T> extends State<FushiOverflowMenu<T>> {
       padding: widget.padding,
       splashRadius: widget.splashRadius,
       position: PopupMenuPosition.under,
-      popUpAnimationStyle: hibikiMd3MenuAnimationStyle,
+      popUpAnimationStyle: fushiMd3MenuAnimationStyle,
       onSelected: widget.onSelected,
       itemBuilder: (BuildContext context) => widget.items,
       child: widget.child,

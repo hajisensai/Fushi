@@ -8,7 +8,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 /// BUG-513: EPUB 封面 imageUrl 非持久列，_resolveCoverUrl 每次书架重建都用异步
-/// File.exists() 即时探测。hibikiBooksProvider 被大量 invalidate 重跑，deleteBook
+/// File.exists() 即时探测。fushiBooksProvider 被大量 invalidate 重跑，deleteBook
 /// 的 VACUUM/checkpoint 后紧随的重探在 IO 竞争下 File.exists() 偶发 false 时当次
 /// imageUrl 塌成 null 被书架 AsyncValue 缓存，封面运行期消失，须冷启动才恢复。
 ///

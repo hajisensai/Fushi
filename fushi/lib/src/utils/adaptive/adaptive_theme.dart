@@ -2,7 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
-CupertinoThemeData hibikiCupertinoTheme(ColorScheme scheme,
+CupertinoThemeData fushiCupertinoTheme(ColorScheme scheme,
     {String? fontFamily}) {
   final brightness = scheme.brightness;
   // Cupertino (iOS) chrome text follows the app's editorial type scale

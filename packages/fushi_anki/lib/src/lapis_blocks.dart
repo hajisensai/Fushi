@@ -65,7 +65,7 @@ enum LapisBlockAnchor {
   /// 出现一次。
   ///
   /// 刻意**不带收尾 `>`**：真模板写的是 `<div class="sentence">`，预览 mock 上
-  /// 同一个元素还挂着 `data-hibiki-lapis-targets` 等属性，带 `>` 的锚串在预览里
+  /// 同一个元素还挂着 `data-fushi-lapis-targets` 等属性，带 `>` 的锚串在预览里
   /// 一个都匹配不上。收尾留一个引号即可保证唯一——`<div class="sentence"` 不会
   /// 命中 `<div class="sentence-alt"`（`sentence` 后面是 `-` 不是引号）。
   final String anchorText;

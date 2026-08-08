@@ -11,7 +11,7 @@ import 'package:macos_ui/macos_ui.dart' show MacosWindow;
 
 import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
-    show hibikiMaterialNavKey;
+    show fushiMaterialNavKey;
 
 import 'helpers/focus_driver.dart';
 
@@ -37,7 +37,7 @@ void main() {
     bool homeReady = false;
     for (int i = 0; i < 180; i++) {
       await tester.pump(const Duration(milliseconds: 500));
-      if (find.byKey(hibikiMaterialNavKey).evaluate().isNotEmpty) {
+      if (find.byKey(fushiMaterialNavKey).evaluate().isNotEmpty) {
         homeReady = true;
         break;
       }
@@ -65,7 +65,7 @@ void main() {
 
     // Navigate through the MD3 rail/bottom bar using the shared focus driver,
     // then capture the Material settings shell.
-    final Finder materialNav = find.byKey(hibikiMaterialNavKey);
+    final Finder materialNav = find.byKey(fushiMaterialNavKey);
     final Finder settingsItem = find.descendant(
       of: materialNav,
       matching: find.byIcon(Icons.tune_outlined),

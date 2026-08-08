@@ -742,7 +742,7 @@ bool gamepadMoveFocusInDirection(
   final FushiFocusController? controller =
       FushiFocusRoot.maybeControllerOf(context);
   if (controller != null) {
-    if (controller.move(hibikiFocusDirectionFromTraversal(direction))) {
+    if (controller.move(fushiFocusDirectionFromTraversal(direction))) {
       return true;
     }
     // No registered target in this direction: take over and scroll the focused

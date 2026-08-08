@@ -588,7 +588,7 @@ void main() {
         ),
       ]);
       expect(preview, contains('data-hibiki-block="b1"'));
-      expect(preview, contains('data-hibiki-lapis-targets="block-b1"'));
+      expect(preview, contains('data-fushi-lapis-targets="block-b1"'));
       // 示例内容而不是 handlebar：预览里不该出现 mustache。
       expect(preview, contains('1320'));
       expect(preview, isNot(contains('{{')));

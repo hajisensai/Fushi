@@ -292,7 +292,7 @@ Future<String> _seedTestBook(WidgetTester tester) async {
   );
   debugPrint('[TOPINSET] Imported test EPUB as book key=$bookKey');
 
-  container.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+  container.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
   await tester.pumpAndSettle();
   return bookKey;
 }

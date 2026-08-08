@@ -11,7 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///   而 `BaseSourcePageState.onWillPop` 依次做：
 ///     ① `onSourcePagePop()`——最终阅读位置 flush 落库（BUG-203 依赖它，否则
 ///        「退出再进」回不到上次位置）；
-///     ② `appModel.closeMedia()`——内部 invalidate `hibikiBooksProvider` /
+///     ② `appModel.closeMedia()`——内部 invalidate `fushiBooksProvider` /
 ///        `bookLastReadAtProvider`（BUG-777 依赖它刷新书架「继续阅读」hero 与进度），
 ///        并还原沉浸模式 / wakelock / mediaOpenNotifier；
 ///     ③ `triggerAutoSyncAfterClose()`——关书触发远端自动同步。

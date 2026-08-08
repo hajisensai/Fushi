@@ -23,7 +23,7 @@ import '../helpers/test_platform_services.dart';
 ///  - 档2：恰 1 合集 + 散卡 → 并入该合集（不弹命名）；
 ///  - 块4：选中合集 → 解散（deleteMediaCollection 只解组，绝不删 EPUB 本体行）。
 ///
-/// 渲染层说明：书架 [hibikiBooksProvider] 的真实实现 `getBooksFromDb` 会 `await` 封面
+/// 渲染层说明：书架 [fushiBooksProvider] 的真实实现 `getBooksFromDb` 会 `await` 封面
 /// `File.exists()` 真 I/O，这类真异步在 widget 测试的假时钟下永不完成、把书架卡住在
 /// loading 态（连带 pumpAndSettle 永不收敛）。故照既有书架 widget 测试（如
 /// reader_remote_collection_membership_test）的做法，把两个「读」provider 覆写成受控
@@ -57,7 +57,7 @@ void main() {
   late PreferencesRepository prefs;
   late AppModel appModel;
   late Directory storeDir;
-  // 覆写给 hibikiBooksProvider / srtBooksProvider 的受控渲染列表（与真 DB seed 同源）。
+  // 覆写给 fushiBooksProvider / srtBooksProvider 的受控渲染列表（与真 DB seed 同源）。
   late List<MediaItem> epubItems;
   late List<SrtBook> srtItems;
 
@@ -128,7 +128,7 @@ void main() {
           appProvider.overrideWith((ref) => appModel),
           // 覆写「读」provider 为受控列表：避免 getBooksFromDb 的封面 File.exists 真 I/O
           // 在假时钟下卡死书架加载态。「写」路径（组合 / 解散）仍打真 DB。
-          hibikiBooksProvider.overrideWith(
+          fushiBooksProvider.overrideWith(
             (ref, language) => Future<List<MediaItem>>.value(epubItems),
           ),
           srtBooksProvider.overrideWith(

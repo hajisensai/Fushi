@@ -31,7 +31,7 @@ class ObserveShot {
 /// 故 evidenceDir = isolated-root 的父目录（与 reader_computer_use_flow_test 同约定）。
 /// 无 FUSHI_TEST_ROOT（裸 flutter test）时落 .codex-test/observe/<runId|local>/screenshots。
 Directory observeScreenshotDir() {
-  final String? root = hibikiTestRootPath();
+  final String? root = fushiTestRootPath();
   Directory base;
   if (root != null && root.isNotEmpty) {
     base = Directory(root);
@@ -40,7 +40,7 @@ Directory observeScreenshotDir() {
       base = base.parent;
     }
   } else {
-    final String? runId = hibikiTestRunId();
+    final String? runId = fushiTestRunId();
     final String runLeaf =
         (runId != null && runId.isNotEmpty) ? runId : 'local';
     base = Directory('.codex-test/observe/$runLeaf');

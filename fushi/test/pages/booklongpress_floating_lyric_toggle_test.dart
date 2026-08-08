@@ -190,7 +190,7 @@ void main() {
   });
 
   test('_epubBackedBookKeys 由 books（EpubBooks 行）真值填充（TODO-1191）', () {
-    // 门控真值来源：books 列表（hibikiBooksProvider 的全部 EpubBooks 行）解析出的
+    // 门控真值来源：books 列表（fushiBooksProvider 的全部 EpubBooks 行）解析出的
     // bookKey 全集；确保门控不是空集导致入口永不显示。
     expect(
       src.contains('epubBackedBookKeys.add(key)'),

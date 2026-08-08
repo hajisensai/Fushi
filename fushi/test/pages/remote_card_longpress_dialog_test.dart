@@ -78,7 +78,7 @@ void main() {
   Widget buildBookShelf(_FakeRemoteBookClient client) => ProviderScope(
         overrides: <Override>[
           appProvider.overrideWith((ref) => appModel),
-          hibikiBooksProvider.overrideWith(
+          fushiBooksProvider.overrideWith(
             (ref, language) =>
                 Future<List<MediaItem>>.value(const <MediaItem>[]),
           ),

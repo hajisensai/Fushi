@@ -18,8 +18,8 @@ typedef _AnkiMobileLocalMediaRefBuilder = Future<String?> Function(
 
 const String ankiMobileInfoCallback = 'anki://x-callback-url/infoForAdding';
 const String ankiMobileAddNoteCallback = 'anki://x-callback-url/addnote';
-const String hibikiAnkiFetchCallback = 'fushi://ankiFetch';
-const String hibikiAnkiSuccessCallback = 'fushi://ankiSuccess';
+const String fushiAnkiFetchCallback = 'fushi://ankiFetch';
+const String fushiAnkiSuccessCallback = 'fushi://ankiSuccess';
 
 const MethodChannel _ankiMobileChannel =
     MethodChannel('app.fushi.reader/ankimobile');
@@ -110,7 +110,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
   Future<AnkiFetchResult> fetchConfiguration() async {
     final uri = Uri.parse(ankiMobileInfoCallback).replace(
       queryParameters: const <String, String>{
-        'x-success': hibikiAnkiFetchCallback,
+        'x-success': fushiAnkiFetchCallback,
       },
     );
     final opened = await _openUrl(uri);
@@ -304,7 +304,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         titleTag: context.bookTitleTag,
         collectionTag: context.collectionTag,
       );
-      final success = Uri.parse(hibikiAnkiSuccessCallback).replace(
+      final success = Uri.parse(fushiAnkiSuccessCallback).replace(
         queryParameters: <String, String>{
           if (payload.expression.isNotEmpty) 'expression': payload.expression,
         },

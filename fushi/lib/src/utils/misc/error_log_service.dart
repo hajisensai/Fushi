@@ -191,10 +191,10 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
   }
 
   /// [directoryOverride] 仅供测试注入临时目录（端到端验面包屑恢复，不碰
-  /// path_provider）；生产不传，走 [hibikiTestDirectory] / 应用文档目录。
+  /// path_provider）；生产不传，走 [fushiTestDirectory] / 应用文档目录。
   Future<void> init({Directory? directoryOverride}) async {
     final dir = directoryOverride ??
-        hibikiTestDirectory('app-documents') ??
+        fushiTestDirectory('app-documents') ??
         await getApplicationDocumentsDirectory();
     _appDir = dir;
     _logFile = File('${dir.path}/error_log.txt');

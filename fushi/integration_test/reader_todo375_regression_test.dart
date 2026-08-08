@@ -76,7 +76,7 @@ void main() {
         fileName: 'todo375_regression.epub',
       );
       debugPrint('[t375] imported bookKey=$bookKey');
-      container.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+      container.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
       await tester.pumpAndSettle();
 
       // Start from a clean baseline so charOffset assertions are unambiguous.

@@ -220,7 +220,7 @@ class _MediaItemEditDialogPageState
       // 覆盖全部书族源（EPUB / 漫画 / PDF 都 extends ReaderMediaSource）：漫画作者编辑
       // （MangaFushiSource，非 ReaderFushiSource）此前落在此条件外，改完书架不刷新。
       if (mediaSource is ReaderMediaSource) {
-        ref.invalidate(hibikiBooksProvider);
+        ref.invalidate(fushiBooksProvider);
         ref.invalidate(srtBooksProvider);
       }
 

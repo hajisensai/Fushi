@@ -77,7 +77,7 @@ void main() {
         reason: 'content sits in a MacosScaffold for the native ToolBar.');
     expect(body, contains('ToolBar('),
         reason: 'native ToolBar titled with the current destination.');
-    expect(body, contains('hibikiMacosNavKey'),
+    expect(body, contains('fushiMacosNavKey'),
         reason: 'content subtree must carry the test hook key.');
     expect(body, contains('MaterialType.transparency'),
         reason: 'macOS content needs a transparent Material ancestor so the '

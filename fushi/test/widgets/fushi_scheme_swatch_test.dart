@@ -12,7 +12,7 @@ void main() {
       seedColor: const Color(0xFF1F4959),
       brightness: Brightness.light,
     );
-    final List<Color> colors = hibikiSchemeSwatchColors(scheme);
+    final List<Color> colors = fushiSchemeSwatchColors(scheme);
     expect(colors, <Color>[
       scheme.onSurface,
       scheme.surface,
@@ -27,7 +27,7 @@ void main() {
       seedColor: seed,
       brightness: Brightness.light,
     );
-    final List<Color> colors = hibikiSchemeSwatchColors(scheme);
+    final List<Color> colors = fushiSchemeSwatchColors(scheme);
     // The button role (primary) is the tone-mapped result, not the raw seed —
     // otherwise we would be back to the old "怪" single-seed circle.
     expect(colors[2], isNot(equals(seed)));
@@ -43,8 +43,8 @@ void main() {
       seedColor: const Color(0xFF1F4959),
       brightness: Brightness.dark,
     );
-    final List<Color> lightColors = hibikiSchemeSwatchColors(light);
-    final List<Color> darkColors = hibikiSchemeSwatchColors(dark);
+    final List<Color> lightColors = fushiSchemeSwatchColors(light);
+    final List<Color> darkColors = fushiSchemeSwatchColors(dark);
     expect(lightColors, isNot(equals(darkColors)));
     // 背景色（colors[1]=surface）必然不同，正是区分明暗预设的关键。
     expect(lightColors[1], isNot(equals(darkColors[1])));
@@ -66,7 +66,7 @@ void main() {
         Brightness brightness,
         DynamicSchemeVariant variant
       }) preset = AppModel.themePresets[key]!;
-      return hibikiSchemeSwatchColors(
+      return fushiSchemeSwatchColors(
         buildFushiColorScheme(
           seedColor: preset.seed,
           brightness: preset.brightness,

@@ -234,7 +234,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   List<SrtBook> _visibleSrtBooks = const [];
   Map<String, String> _epubCoverUrisByBookKey = const {};
   // TODO-1191：书架 SRT 卡长按菜单「查看插画」的 EPUB-backing 门控真值。
-  // 收录当前 `books`（hibikiBooksProvider 的全部 EpubBooks 行）解析出的 bookKey；
+  // 收录当前 `books`（fushiBooksProvider 的全部 EpubBooks 行）解析出的 bookKey；
   // SRT 卡的 bookKey 命中此集合 = 有对应 EpubBooks 行（extractDir 存在），才对称
   // 展示「查看插画」。EPUB 未生成完（`srt_epub_not_ready`）的 SRT 书不在此集合，
   // 避免展示打不开的死项。生成型 EPUB（TextToEpub，无真实插图）仍展示，交由
@@ -243,7 +243,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   // BUG-728：EPUB-backed 有声书在书架**只渲染成 SRT 卡**（其 EpubBooks 行被
   // `srtBookKeys` 过滤出 EPUB 卡列表），而 SRT 卡以前不画进度条。这里收录当前
-  // `books`（hibikiBooksProvider）里每本 EpubBooks 行**已算好的** position/duration
+  // `books`（fushiBooksProvider）里每本 EpubBooks 行**已算好的** position/duration
   // （经 [ReaderFushiSource.computeBookProgress]，含听书 normCharOffset 回退），
   // 供 SRT 卡按 bookKey 复用同一进度，无需重复读 DB / 重算。
   Map<String, ({int position, int duration})> _epubProgressByBookKey = const {};
@@ -444,7 +444,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     final int imported = _mokuroQueue?.importedCount ?? 0;
     if (imported == _mokuroImportedSeen) return;
     _mokuroImportedSeen = imported;
-    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     ref.invalidate(srtBooksProvider);
   }
 
@@ -465,11 +465,11 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   @override
   Widget build(BuildContext context) {
     final AsyncValue<List<MediaItem>> books =
-        ref.watch(hibikiBooksProvider(JapaneseLanguage.instance));
+        ref.watch(fushiBooksProvider(JapaneseLanguage.instance));
     assert(() {
       ReaderFushiHistoryPage.debugOpenBook = (String mediaId) async {
         final List<MediaItem> items = ref
-                .read(hibikiBooksProvider(JapaneseLanguage.instance))
+                .read(fushiBooksProvider(JapaneseLanguage.instance))
                 .valueOrNull ??
             const <MediaItem>[];
         MediaItem? target;
@@ -611,7 +611,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                         refresh: () {
                           _refreshSrtBooks();
                           ref.invalidate(
-                            hibikiBooksProvider(JapaneseLanguage.instance),
+                            fushiBooksProvider(JapaneseLanguage.instance),
                           );
                         },
                       ),
@@ -741,7 +741,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           MediaSourcesDialog(mediaKind: _mangaOnly ? 'manga' : 'book'),
     );
     if (!mounted) return;
-    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     ref.invalidate(srtBooksProvider);
   }
 
@@ -1077,7 +1077,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 而非「最近阅读」的书。
   ///
   /// BUG-804：[progressBooks] 必须是**未按 srt 过滤的全量 EPUB-backed 列表**
-  /// （`hibikiBooksProvider` 全部行，含有声书——EPUB 正文 + SRT 字幕同 bookKey）。
+  /// （`fushiBooksProvider` 全部行，含有声书——EPUB 正文 + SRT 字幕同 bookKey）。
   /// 旧实现只喂 srt 过滤后的 `epubBooks`，有声书虽有进度与 lastReadAt 却被整类
   /// 排除，读了有声书回书架「继续阅读」永不更新。过滤到纯 EPUB 只为主网格卡
   /// 去重（有声书渲染成 SRT 卡），与 hero 无关。
@@ -1199,16 +1199,16 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 参与网格展示的列表；合集内只打了标签的有声书（SRT）成员会向其关联 EPUB 借封面 /
     // 进度 / 「查看插画」门控，若以筛选子集构建，关联 EPUB 未命中同一标签即被筛掉 → 借不到
     // → 合集成员丢封面（BUG-937 让被筛合集能带命中成员显示后暴露此缺陷）。此处已 watch
-    // 于上层 build（filteredBookIdsProvider 之上的 hibikiBooksProvider），read 全量安全。
+    // 于上层 build（filteredBookIdsProvider 之上的 fushiBooksProvider），read 全量安全。
     // BUG-1164：PR#474 曾在这里插一个 `_mangaOnly ? books :` 三元，把借用源换成
     // 筛选后的列表。它零收益（mangaOnly 下 buildBody 把 srtBooks 写死成空，三张
     // 借用映射的消费方全是 SRT 卡，漫画书架上一个消费者都没有）却在 mangaOnly
     // 分支上破了上面这条不变量，等 mangaOnly 将来接 SRT 就复发丢封面。已删除。
     final List<MediaItem> allEpubBooksForBorrow =
-        ref.read(hibikiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
+        ref.read(fushiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
             books;
     final Map<String, String> epubCoverUrisByBookKey = {};
-    // TODO-1191：`allEpubBooksForBorrow` 是 hibikiBooksProvider 的全部 EpubBooks 行；
+    // TODO-1191：`allEpubBooksForBorrow` 是 fushiBooksProvider 的全部 EpubBooks 行；
     // 解析出的 bookKey 全集即「有 EpubBooks 行」的真值，供 SRT 卡「查看插画」门控用。
     final Set<String> epubBackedBookKeys = {};
     // BUG-728：过滤前先收 EPUB 卡已算好的进度，供只以 SRT 卡出现的有声书复用。
@@ -1725,7 +1725,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         // 改名/删除影响折叠映射；标签影响行头 chip；删本体影响书架条目。
         ref.invalidate(collectionTagMapProvider);
         ref.invalidate(filteredCollectionIdsProvider);
-        ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+        ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
         ref.invalidate(srtBooksProvider);
         _shelfMapsFuture = _loadShelfMaps();
         if (mounted) setState(() {});
@@ -1936,7 +1936,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                       ),
               );
               if (imported == true) {
-                ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+                ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
                 ref.invalidate(srtBooksProvider);
               }
             },
@@ -2181,7 +2181,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       clearOverrideImage: false,
     );
     if (!mounted) return;
-    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     ref.invalidate(srtBooksProvider);
     _rebuild(() {});
   }
@@ -2190,7 +2190,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 用户选择并保留；近似/同名多结果留作单卡菜单里的人工确认，绝不取搜索第一条。
   Future<void> _scrapeAllBooks() async {
     final List<MediaItem> all =
-        ref.read(hibikiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
+        ref.read(fushiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
             const <MediaItem>[];
     final List<MediaItem> books = filterShelfEntriesByMangaSplit(
       all,
@@ -2270,7 +2270,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           scraper.close();
         }
         if (mounted) {
-          ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+          ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
           ref.invalidate(srtBooksProvider);
           _rebuild(() {});
         }
@@ -2388,9 +2388,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       return;
     }
     if (!mounted) return;
-    // 转化只改列、不改 bookKey 集合，而 `hibikiBooksProvider` 的响应源按 bookKey
+    // 转化只改列、不改 bookKey 集合，而 `fushiBooksProvider` 的响应源按 bookKey
     // 集合去重 —— 不显式 invalidate，书架会一直画着旧格式的卡。
-    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     _rebuild(() {});
     FushiToast.show(msg: t.book_convert_done, severity: ToastSeverity.success);
   }

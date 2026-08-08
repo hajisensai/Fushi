@@ -287,13 +287,13 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
       });
 }
 
-final hibikiDatabaseProvider = Provider<FushiDatabase>((ref) {
+final fushiDatabaseProvider = Provider<FushiDatabase>((ref) {
   final appModel = ref.watch(appProvider);
   return appModel.database;
 });
 
 final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
-  final db = ref.watch(hibikiDatabaseProvider);
+  final db = ref.watch(fushiDatabaseProvider);
   final ankiRepo = ref.watch(ankiRepositoryProvider);
   return ProfileRepository(db, ankiRepo);
 });

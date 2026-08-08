@@ -16,16 +16,16 @@ void main() {
     );
     final Uint8List small = Uint8List.fromList(<int>[1, 2, 3, 4, 5]);
 
-    test('hibikiAnkiMediaEncodeForUploadAsync：文件名+base64 与同步计算一致（大媒体走隔离）',
+    test('fushiAnkiMediaEncodeForUploadAsync：文件名+base64 与同步计算一致（大媒体走隔离）',
         () async {
-      final encoded = await hibikiAnkiMediaEncodeForUploadAsync(
+      final encoded = await fushiAnkiMediaEncodeForUploadAsync(
         prefix: 'hibiki_audio_',
         bytes: big,
         sourceName: 'clip.mp3',
       );
       expect(
         encoded.filename,
-        hibikiAnkiMediaFilenameForBytes(
+        fushiAnkiMediaFilenameForBytes(
           prefix: 'hibiki_audio_',
           bytes: big,
           sourceName: 'clip.mp3',
@@ -34,15 +34,15 @@ void main() {
       expect(encoded.base64Data, base64Encode(big));
     });
 
-    test('hibikiAnkiMediaEncodeForUploadAsync：小媒体走同步分支也一致', () async {
-      final encoded = await hibikiAnkiMediaEncodeForUploadAsync(
+    test('fushiAnkiMediaEncodeForUploadAsync：小媒体走同步分支也一致', () async {
+      final encoded = await fushiAnkiMediaEncodeForUploadAsync(
         prefix: 'hibiki_cover_',
         bytes: small,
         sourceName: 'x.jpg',
       );
       expect(
         encoded.filename,
-        hibikiAnkiMediaFilenameForBytes(
+        fushiAnkiMediaFilenameForBytes(
           prefix: 'hibiki_cover_',
           bytes: small,
           sourceName: 'x.jpg',
@@ -51,26 +51,26 @@ void main() {
       expect(encoded.base64Data, base64Encode(small));
     });
 
-    test('hibikiAnkiMediaFilenameForBytesAsync 与同步版逐字节一致（大/小两路）', () async {
+    test('fushiAnkiMediaFilenameForBytesAsync 与同步版逐字节一致（大/小两路）', () async {
       expect(
-        await hibikiAnkiMediaFilenameForBytesAsync(
+        await fushiAnkiMediaFilenameForBytesAsync(
           prefix: 'hibiki_audio_',
           bytes: big,
           sourceName: 'clip.mp3',
         ),
-        hibikiAnkiMediaFilenameForBytes(
+        fushiAnkiMediaFilenameForBytes(
           prefix: 'hibiki_audio_',
           bytes: big,
           sourceName: 'clip.mp3',
         ),
       );
       expect(
-        await hibikiAnkiMediaFilenameForBytesAsync(
+        await fushiAnkiMediaFilenameForBytesAsync(
           prefix: 'hibiki_audio_',
           bytes: small,
           sourceName: 'clip.mp3',
         ),
-        hibikiAnkiMediaFilenameForBytes(
+        fushiAnkiMediaFilenameForBytes(
           prefix: 'hibiki_audio_',
           bytes: small,
           sourceName: 'clip.mp3',
@@ -78,9 +78,9 @@ void main() {
       );
     });
 
-    test('hibikiAnkiBase64EncodeAsync 与 base64Encode 一致（大/小两路）', () async {
-      expect(await hibikiAnkiBase64EncodeAsync(big), base64Encode(big));
-      expect(await hibikiAnkiBase64EncodeAsync(small), base64Encode(small));
+    test('fushiAnkiBase64EncodeAsync 与 base64Encode 一致（大/小两路）', () async {
+      expect(await fushiAnkiBase64EncodeAsync(big), base64Encode(big));
+      expect(await fushiAnkiBase64EncodeAsync(small), base64Encode(small));
     });
   });
 
@@ -99,9 +99,9 @@ void main() {
       // 同步文件名/编码会在 UI isolate 对整段媒体跑纯 Dart 循环 → 卡顿。必须走
       // ...Async 变体（Async 后缀不匹配 `(` 前的裸调用）。
       expect(
-        RegExp(r'hibikiAnkiMediaFilenameForBytes\(').hasMatch(src),
+        RegExp(r'fushiAnkiMediaFilenameForBytes\(').hasMatch(src),
         isFalse,
-        reason: 'AnkiDroid 应改用 hibikiAnkiMediaFilenameForBytesAsync',
+        reason: 'AnkiDroid 应改用 fushiAnkiMediaFilenameForBytesAsync',
       );
       expect(
         RegExp(r'\bbase64Encode\(').hasMatch(src),
@@ -115,7 +115,7 @@ void main() {
           _pkgFile('lib/src/ankiconnect/ankiconnect_repository.dart')
               .readAsStringSync();
       expect(
-        RegExp(r'hibikiAnkiMediaEncodeForUploadAsync\(').allMatches(src).length,
+        RegExp(r'fushiAnkiMediaEncodeForUploadAsync\(').allMatches(src).length,
         1,
         reason: '合并编码 helper 只保留 API 定义；本机媒体不得再构造整份 base64',
       );
@@ -130,12 +130,12 @@ void main() {
         reason: '本机 Anki 应直接读取临时媒体路径，避免巨大 JSON',
       );
       expect(
-        RegExp(r'hibikiAnkiBase64EncodeAsync\(').allMatches(src).length,
+        RegExp(r'fushiAnkiBase64EncodeAsync\(').allMatches(src).length,
         greaterThanOrEqualTo(2),
         reason: '远端 AnkiConnect 仍须保留后台 base64 回退',
       );
       expect(
-        RegExp(r'hibikiAnkiMediaFilenameForBytesAsync\(').hasMatch(src),
+        RegExp(r'fushiAnkiMediaFilenameForBytesAsync\(').hasMatch(src),
         isTrue,
         reason: '远端音频文件名应走后台 sha256',
       );

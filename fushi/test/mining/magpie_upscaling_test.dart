@@ -193,7 +193,7 @@ void main() {
       expect(
         magpieProfileTargetAllowed(
           targetExecutablePath: kHibikiExe.toUpperCase(),
-          hibikiExecutablePath: kHibikiExe,
+          fushiExecutablePath: kHibikiExe,
         ),
         isFalse,
       );
@@ -203,7 +203,7 @@ void main() {
       expect(
         magpieProfileTargetAllowed(
           targetExecutablePath: '   ',
-          hibikiExecutablePath: kHibikiExe,
+          fushiExecutablePath: kHibikiExe,
         ),
         isFalse,
       );
@@ -213,7 +213,7 @@ void main() {
       expect(
         magpieProfileTargetAllowed(
           targetExecutablePath: kGame.executablePath,
-          hibikiExecutablePath: kHibikiExe,
+          fushiExecutablePath: kHibikiExe,
         ),
         isTrue,
       );
@@ -227,7 +227,7 @@ void main() {
           windowClassName: 'FLUTTER_RUNNER_WIN32_WINDOW',
         ),
         profileName: 'Hibiki',
-        hibikiExecutablePath: kHibikiExe,
+        fushiExecutablePath: kHibikiExe,
       );
       expect(result.applied, isFalse);
       expect(result.skipReason, MagpieProfileSkipReason.forbiddenTarget);
@@ -240,7 +240,7 @@ void main() {
         config: baseConfig(defaultScalingMode: 3),
         identity: kGame,
         profileName: 'Fushi: sakura.exe',
-        hibikiExecutablePath: kHibikiExe,
+        fushiExecutablePath: kHibikiExe,
       );
       expect(result.applied, isTrue);
       final List<Object?> profiles =
@@ -269,7 +269,7 @@ void main() {
           config: baseConfig(defaultScalingMode: bad),
           identity: kGame,
           profileName: 'x',
-          hibikiExecutablePath: kHibikiExe,
+          fushiExecutablePath: kHibikiExe,
         );
         final List<Object?> profiles =
             result.config!['profiles']! as List<Object?>;
@@ -293,7 +293,7 @@ void main() {
         ]),
         identity: kGame,
         profileName: 'Fushi: sakura.exe',
-        hibikiExecutablePath: kHibikiExe,
+        fushiExecutablePath: kHibikiExe,
       );
       expect(result.applied, isTrue);
       final Map<Object?, Object?> entry = (result.config!['profiles']!
@@ -313,7 +313,7 @@ void main() {
         config: baseConfig(),
         identity: kGame,
         profileName: 'x',
-        hibikiExecutablePath: kHibikiExe,
+        fushiExecutablePath: kHibikiExe,
       );
       expect(result.config!['theme'], 2);
       expect((result.config!['scalingModes']! as List<Object?>).length, 7);
@@ -328,7 +328,7 @@ void main() {
         config: config,
         identity: kGame,
         profileName: 'x',
-        hibikiExecutablePath: kHibikiExe,
+        fushiExecutablePath: kHibikiExe,
       );
       expect(result.applied, isFalse);
       expect(result.skipReason, MagpieProfileSkipReason.noScalingModes);
@@ -341,7 +341,7 @@ void main() {
           config: config,
           identity: kGame,
           profileName: 'x',
-          hibikiExecutablePath: kHibikiExe,
+          fushiExecutablePath: kHibikiExe,
         ).skipReason,
         MagpieProfileSkipReason.noScalingModes,
       );
@@ -364,7 +364,7 @@ void main() {
             config: config,
             identity: kGame,
             profileName: 'x',
-            hibikiExecutablePath: kHibikiExe,
+            fushiExecutablePath: kHibikiExe,
           ).skipReason,
           MagpieProfileSkipReason.schemaMismatch,
           reason: 'profiles=$bad',
@@ -386,7 +386,7 @@ void main() {
             config: baseConfig(),
             identity: id,
             profileName: 'x',
-            hibikiExecutablePath: kHibikiExe,
+            fushiExecutablePath: kHibikiExe,
           ).skipReason,
           MagpieProfileSkipReason.missingWindowIdentity,
           reason: '$id',
@@ -400,7 +400,7 @@ void main() {
           config: baseConfig(),
           identity: kGame,
           profileName: '   ',
-          hibikiExecutablePath: kHibikiExe,
+          fushiExecutablePath: kHibikiExe,
         ).skipReason,
         MagpieProfileSkipReason.missingWindowIdentity,
       );
@@ -419,7 +419,7 @@ void main() {
         ]),
         identity: kGame,
         profileName: 'x',
-        hibikiExecutablePath: kHibikiExe,
+        fushiExecutablePath: kHibikiExe,
       );
       expect(result.applied, isFalse);
       expect(result.skipReason, MagpieProfileSkipReason.alreadySatisfied);
@@ -440,7 +440,7 @@ void main() {
         ]),
         identity: kGame,
         profileName: 'x',
-        hibikiExecutablePath: kHibikiExe,
+        fushiExecutablePath: kHibikiExe,
       );
       // 类名不同 → 不算同一条 → 应该新追加而不是复用。
       expect(result.applied, isTrue);
@@ -460,7 +460,7 @@ void main() {
         ]),
         identity: kGame,
         profileName: 'x',
-        hibikiExecutablePath: kHibikiExe,
+        fushiExecutablePath: kHibikiExe,
       );
       expect(result.applied, isTrue);
       expect((result.config!['profiles']! as List<Object?>).length, 3);
@@ -479,7 +479,7 @@ void main() {
         ]),
         identity: kGame,
         profileName: 'x',
-        hibikiExecutablePath: kHibikiExe,
+        fushiExecutablePath: kHibikiExe,
       );
       expect(result.applied, isTrue);
       expect((result.config!['profiles']! as List<Object?>).length, 3);
@@ -499,7 +499,7 @@ void main() {
         config: config,
         identity: kGame,
         profileName: 'x',
-        hibikiExecutablePath: kHibikiExe,
+        fushiExecutablePath: kHibikiExe,
       );
       // 必须追加新条目，而不是去动默认 profile。
       expect(result.applied, isTrue);
@@ -513,7 +513,7 @@ void main() {
         config: baseConfig(),
         identity: kGame,
         profileName: 'x',
-        hibikiExecutablePath: kHibikiExe,
+        fushiExecutablePath: kHibikiExe,
       ).config!;
       final MagpieProfileWriteResult off = magpieConfigWithAutoScaleDisabled(
         config: withProfile,
@@ -581,7 +581,7 @@ void main() {
           modeReader: () => mode,
           bridge: bridge ?? FakeBridge(),
           configPathOverride: configPath,
-          hibikiExecutablePath: kHibikiExe,
+          fushiExecutablePath: kHibikiExe,
           isWindowsOverride: isWindows,
           bootstrapTimeout: bootstrapTimeout,
           processLauncher: (String exe, List<String> args) async {
@@ -650,7 +650,7 @@ void main() {
         modeReader: () => MagpieUpscalingMode.auto,
         bridge: FakeBridge(),
         configPathOverride: configPath,
-        hibikiExecutablePath: kHibikiExe,
+        fushiExecutablePath: kHibikiExe,
         isWindowsOverride: true,
         processLauncher: (String exe, List<String> args) async =>
             throw StateError('不该走到这'),
@@ -716,7 +716,7 @@ void main() {
         modeReader: () => MagpieUpscalingMode.installedOnly,
         bridge: FakeBridge(running: true), // 直接走「别人开着」早退，验证不预热
         configPathOverride: configPath,
-        hibikiExecutablePath: kHibikiExe,
+        fushiExecutablePath: kHibikiExe,
         isWindowsOverride: true,
         processLauncher: (String exe, List<String> args) async {
           launched.add(exe);
@@ -737,7 +737,7 @@ void main() {
         config: <String, dynamic>{},
         identity: kGame,
         profileName: 'x',
-        hibikiExecutablePath: kHibikiExe,
+        fushiExecutablePath: kHibikiExe,
       );
       expect(result.applied, isFalse);
       expect(result.skipReason, MagpieProfileSkipReason.noScalingModes);
@@ -1098,7 +1098,7 @@ void main() {
             modeReader: () => MagpieUpscalingMode.off,
             bridge: bridge,
             configPathOverride: configPath,
-            hibikiExecutablePath: kHibikiExe,
+            fushiExecutablePath: kHibikiExe,
             isWindowsOverride: isWindows,
             bundledMagpieRunningProbe: () => bundledRunning,
             processLauncher: (String exe, List<String> args) async =>

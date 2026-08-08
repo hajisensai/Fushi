@@ -186,7 +186,7 @@ class MagpieUpscalingService extends ChangeNotifier {
       String executable,
       List<String> arguments,
     )? processLauncher,
-    String? hibikiExecutablePath,
+    String? fushiExecutablePath,
     String? configPathOverride,
     bool? isWindowsOverride,
     Duration? bootstrapTimeout,
@@ -196,8 +196,8 @@ class MagpieUpscalingService extends ChangeNotifier {
         _installerFactory = installerFactory ??
             (() => MagpieInstaller(isWindowsOverride: isWindowsOverride)),
         _processLauncher = processLauncher ?? _defaultLauncher,
-        _hibikiExecutablePath =
-            hibikiExecutablePath ?? _safeResolvedExecutable(),
+        _fushiExecutablePath =
+            fushiExecutablePath ?? _safeResolvedExecutable(),
         _configPathOverride = configPathOverride,
         _isWindows = isWindowsOverride ?? Platform.isWindows,
         _bootstrapTimeout = bootstrapTimeout ?? kMagpieBootstrapTimeout,
@@ -214,7 +214,7 @@ class MagpieUpscalingService extends ChangeNotifier {
   final MagpieInstaller Function() _installerFactory;
   final Future<MagpieProcessHandle> Function(String, List<String>)
       _processLauncher;
-  final String _hibikiExecutablePath;
+  final String _fushiExecutablePath;
   final String? _configPathOverride;
   final bool _isWindows;
 
@@ -614,7 +614,7 @@ class MagpieUpscalingService extends ChangeNotifier {
         config: config,
         identity: identity,
         profileName: _profileNameFor(identity),
-        hibikiExecutablePath: _hibikiExecutablePath,
+        fushiExecutablePath: _fushiExecutablePath,
       );
       if (!result.applied) {
         // alreadySatisfied 说明配置里已经有一条启用了的等价 profile —— 那是成功不是降级，

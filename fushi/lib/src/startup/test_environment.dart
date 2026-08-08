@@ -6,7 +6,7 @@ const String _dartDefineTestRoot = String.fromEnvironment('FUSHI_TEST_ROOT');
 const String _dartDefineTestRunId =
     String.fromEnvironment('FUSHI_TEST_RUN_ID');
 
-String? hibikiTestRootPath({
+String? fushiTestRootPath({
   Map<String, String>? environment,
   String dartDefineRoot = _dartDefineTestRoot,
 }) {
@@ -19,7 +19,7 @@ String? hibikiTestRootPath({
   return Directory(raw).absolute.path;
 }
 
-String? hibikiTestRunId({
+String? fushiTestRunId({
   Map<String, String>? environment,
   String dartDefineRunId = _dartDefineTestRunId,
 }) {
@@ -29,12 +29,12 @@ String? hibikiTestRunId({
   return raw.trim().isEmpty ? null : raw.trim();
 }
 
-Directory? hibikiTestDirectory(
+Directory? fushiTestDirectory(
   String child, {
   Map<String, String>? environment,
   String dartDefineRoot = _dartDefineTestRoot,
 }) {
-  final String? root = hibikiTestRootPath(
+  final String? root = fushiTestRootPath(
     environment: environment,
     dartDefineRoot: dartDefineRoot,
   );

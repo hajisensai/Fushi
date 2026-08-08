@@ -54,7 +54,7 @@ class MangaFushiSource extends ReaderMediaSource {
     required WidgetRef ref,
   }) async {
     // 与 EPUB/PDF 源同点失效：关书回书架时刷新书列表与「最近阅读」recency。
-    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     ref.invalidate(bookLastReadAtProvider);
   }
 
@@ -116,7 +116,7 @@ class MangaFushiSource extends ReaderMediaSource {
           builder: (_) => MangaImportDialog(db: appModel.database),
         );
         if (imported == true) {
-          ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+          ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
           ref.invalidate(srtBooksProvider);
         }
       },

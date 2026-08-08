@@ -1941,8 +1941,8 @@ html.mobile .sentence, html:not(.mobile) .sentence-alt,
   /// editing the vendored rules; wins over upstream by source order (same
   /// specificity, later rule). Harmless on mobile (label is not under the
   /// sentence there) and on single-definition cards (label is hidden).
-  static const String hibikiCssOverride = '''
-/* Hibiki delta — see LapisNoteType.hibikiCssOverride doc. */
+  static const String fushiCssOverride = '''
+/* Hibiki delta — see LapisNoteType.fushiCssOverride doc. */
 .def-info {
   margin-top: 0.6em;
 }
@@ -1954,6 +1954,6 @@ html.mobile .sentence, html:not(.mobile) .sentence-alt,
     cardName: cardName,
     front: front,
     back: back,
-    css: '$css\n$hibikiCssOverride',
+    css: '$css\n$fushiCssOverride',
   );
 }

@@ -164,7 +164,7 @@ class SyncRunReport {
   /// Book reading positions pulled from the interconnect host into this device's
   /// local `reader_positions` this run (host→local, newer-wins). A progress-only
   /// pull writes no *content*, so it never bumps [booksImported]; yet the shelf's
-  /// cached `hibikiBooksProvider` still holds the pre-sync progress and must be
+  /// cached `fushiBooksProvider` still holds the pre-sync progress and must be
   /// invalidated. Otherwise synced book progress lands in the DB but stays
   /// invisible on the shelf until app restart (BUG-686: user saw "book progress
   /// didn't sync" while audiobook resume worked — resume re-reads its pref at
@@ -1573,7 +1573,7 @@ class SyncOrchestrator {
           ));
           // BUG-686: a host-newer progress pull lands in reader_positions but
           // writes no book content, so it must still flag the shelf for a
-          // refresh — the cached hibikiBooksProvider otherwise keeps showing the
+          // refresh — the cached fushiBooksProvider otherwise keeps showing the
           // pre-sync progress bar and the sync looks like it did nothing.
           report.localBookProgressPulled++;
         }

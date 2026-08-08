@@ -497,7 +497,7 @@ Future<String> _seedTestBook(WidgetTester tester) async {
   );
   debugPrint('[CHROME975] Imported test EPUB as book key=$bookKey');
 
-  container.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+  container.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
   await tester.pumpAndSettle();
   return bookKey;
 }

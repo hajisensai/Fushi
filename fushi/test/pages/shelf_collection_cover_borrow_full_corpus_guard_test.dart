@@ -11,7 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// `filteredBookIdsProvider` 筛掉 → 映射里查不到 → SRT 成员卡（BUG-937 让被筛
 /// 合集能带命中成员显示）借不到关联 EPUB 封面 → 回退占位图 = 丢封面。
 ///
-/// 修复：借用映射改以**未筛选全量** `ref.read(hibikiBooksProvider(...))`
+/// 修复：借用映射改以**未筛选全量** `ref.read(fushiBooksProvider(...))`
 /// （变量 `allEpubBooksForBorrow`）为源，与「参与网格展示的筛选后列表」解耦。
 /// 借用是纯展示数据，不该被标签筛选裁剪。此守卫锁死数据来源不回归。
 void main() {
@@ -32,15 +32,15 @@ void main() {
     return source.substring(startIdx, endIdx);
   }
 
-  test('借用映射源 = 未筛选全量 hibikiBooksProvider，而非筛选后的 books 参数', () {
+  test('借用映射源 = 未筛选全量 fushiBooksProvider，而非筛选后的 books 参数', () {
     final String body = buildBody();
-    // 全量来源变量必须存在，且取自 hibikiBooksProvider（未过滤真值），
+    // 全量来源变量必须存在，且取自 fushiBooksProvider（未过滤真值），
     // 空态兜底回退到 books 参数。
     expect(
       body.contains(RegExp(
-          r'final List<MediaItem> allEpubBooksForBorrow\s*=\s*\n?\s*ref\.read\(hibikiBooksProvider\(JapaneseLanguage\.instance\)\)\.valueOrNull\s*\?\?')),
+          r'final List<MediaItem> allEpubBooksForBorrow\s*=\s*\n?\s*ref\.read\(fushiBooksProvider\(JapaneseLanguage\.instance\)\)\.valueOrNull\s*\?\?')),
       isTrue,
-      reason: '借用映射源须为 ref.read(hibikiBooksProvider(...)) 全量列表，'
+      reason: '借用映射源须为 ref.read(fushiBooksProvider(...)) 全量列表，'
           'valueOrNull 为空时回退 books',
     );
     // 三张借用映射的唯一装配循环必须遍历全量 allEpubBooksForBorrow。

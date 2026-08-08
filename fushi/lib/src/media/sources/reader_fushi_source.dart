@@ -23,7 +23,7 @@ import 'package:fushi/utils.dart';
 
 /// BUG-793：EPUB 书 bookKey 集合的响应式来源。`.distinct(listEquals)` 按集合去重
 /// ——插入/删除触发，改作者/封面等纯列更新（集合不变）不触发，避免书架无谓重算。
-/// [hibikiBooksProvider] 订阅它后，任意导入路径落库都自动刷新，无需每个导入点各自
+/// [fushiBooksProvider] 订阅它后，任意导入路径落库都自动刷新，无需每个导入点各自
 /// `ref.invalidate`（现存 invalidate 保留为即时刷新兜底，二者不冲突）。
 final _epubBookKeysProvider = StreamProvider<List<String>>((ref) {
   return ref
@@ -42,7 +42,7 @@ final _srtBookUidsProvider = StreamProvider<List<String>>((ref) {
       .distinct(listEquals);
 });
 
-final hibikiBooksProvider =
+final fushiBooksProvider =
     FutureProvider.family<List<MediaItem>, Language>((ref, language) {
   // BUG-793：订阅 EPUB 书集合变化，任意导入路径落库后自动重算书架。
   ref.watch(_epubBookKeysProvider);
@@ -60,7 +60,7 @@ final srtBooksProvider = FutureProvider<List<SrtBook>>((ref) {
 
 /// 每本书的「最后阅读时间」（`reader_positions.updatedAt` 毫秒，key=bookKey，
 /// EPUB/SRT 同源——SRT 书经阅读器落位置也用 bookKey）。BUG-777：继续阅读 hero
-/// 与书架「最近阅读」排序的唯一 recency 真相源；关书时与 [hibikiBooksProvider]
+/// 与书架「最近阅读」排序的唯一 recency 真相源；关书时与 [fushiBooksProvider]
 /// 同点失效（[ReaderFushiSource.onSourceExit]），不会陈旧。
 final bookLastReadAtProvider = FutureProvider<Map<String, int>>((ref) async {
   final FushiDatabase db = ref.watch(appProvider).database;
@@ -378,7 +378,7 @@ class ReaderFushiSource extends ReaderMediaSource {
     required AppModel appModel,
     required WidgetRef ref,
   }) async {
-    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     // BUG-777：阅读中位置持续落库刷新 updatedAt，关书回书架时 recency 映射与
     // 书列表同点失效，继续阅读 hero /「最近阅读」排序立即反映本次阅读。
     ref.invalidate(bookLastReadAtProvider);
@@ -462,7 +462,7 @@ class ReaderFushiSource extends ReaderMediaSource {
           ),
         );
         if (imported == true) {
-          ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+          ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
           ref.invalidate(srtBooksProvider);
         }
       },
@@ -589,7 +589,7 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// BUG-513: process-level cache mapping a book's stable [EpubBookRow.bookKey]
   /// to the last cover URL that was successfully resolved from disk. The cover
   /// path is not a persisted column, so [_resolveCoverUrl] re-probes the disk
-  /// with `File.exists()` on every `hibikiBooksProvider` rebuild (and the shelf
+  /// with `File.exists()` on every `fushiBooksProvider` rebuild (and the shelf
   /// invalidates that provider on a great many actions). Under IO contention —
   /// notably the VACUUM + wal_checkpoint(TRUNCATE) that `deleteBook` runs right
   /// before the shelf re-probes every surviving book — `File.exists()` can
