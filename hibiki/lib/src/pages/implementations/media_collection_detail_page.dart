@@ -131,12 +131,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 回落到「只有标题 + 进度」的旧形态，与本功能引入前一致（BUG-1310）。
   ScrapeMetadata? _scrapeMeta;
 
-  /// 横版背景本地路径组（v68，media_images 轮换序）；仅 TMDB / AniList 源有，
-  /// Bangumi / 离线库恒为空。多张时 hero 每 10 秒交叉淡入轮换（Jellyfin 式）。
-  List<String> _backdropPaths = const <String>[];
+  /// 横版背景图源组（本地路径优先，安全目录无法落盘时回落规范表远程 URL）。
+  /// 多张时 hero 每 10 秒交叉淡入轮换（Jellyfin 式）。
+  List<String> _backdropSources = const <String>[];
 
   /// 标题 logo 本地路径（透明底 PNG）；有则 hero 用 logo 图替代纯文字标题。
   String? _logoPath;
+  String? _logoRemoteUrl;
 
   /// 背景轮换下标与定时器（单张 / 禁用动效时不启）。
   int _heroBackdropIndex = 0;
@@ -154,6 +155,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Map<String, VideoMetadataEpisodeRow> _canonicalEpisodeByUid =
       const <String, VideoMetadataEpisodeRow>{};
   String? _canonicalCoverPath;
+  String? _canonicalCoverRemoteUrl;
   List<VideoMetadataTermRow> _workTerms = const <VideoMetadataTermRow>[];
   List<VideoMetadataExtraRow> _workExtras = const <VideoMetadataExtraRow>[];
 
@@ -278,19 +280,35 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               row.localPath?.isNotEmpty == true)
           .map((VideoMetadataImageRow row) => row.localPath!)
           .firstOrNull;
-      _backdropPaths = <String>{
+      _canonicalCoverRemoteUrl = canonicalImages
+          .where((VideoMetadataImageRow row) =>
+              row.kind == VideoMetadataImageKind.cover.name &&
+              row.remoteUrl.isNotEmpty)
+          .map((VideoMetadataImageRow row) => row.remoteUrl)
+          .firstOrNull;
+      _backdropSources = <String>{
         for (final VideoMetadataImageRow row in canonicalImages)
           if (row.kind == VideoMetadataImageKind.backdrop.name &&
               row.localPath?.isNotEmpty == true)
             row.localPath!,
         for (final MediaImageRow row in imageRows)
           if (row.kind == MediaImageKind.backdrop.dbValue) row.path,
+        for (final VideoMetadataImageRow row in canonicalImages)
+          if (row.kind == VideoMetadataImageKind.backdrop.name &&
+              row.remoteUrl.isNotEmpty)
+            row.remoteUrl,
       }.toList(growable: false);
       _logoPath = canonicalImages
           .where((VideoMetadataImageRow row) =>
               row.kind == VideoMetadataImageKind.logo.name &&
               row.localPath?.isNotEmpty == true)
           .map((VideoMetadataImageRow row) => row.localPath!)
+          .firstOrNull;
+      _logoRemoteUrl = canonicalImages
+          .where((VideoMetadataImageRow row) =>
+              row.kind == VideoMetadataImageKind.logo.name &&
+              row.remoteUrl.isNotEmpty)
+          .map((VideoMetadataImageRow row) => row.remoteUrl)
           .firstOrNull;
       for (final MediaImageRow row in imageRows) {
         if (_logoPath == null &&
@@ -316,13 +334,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   void _syncBackdropRotation() {
     _backdropRotationTimer?.cancel();
     _backdropRotationTimer = null;
-    if (!mounted || _backdropPaths.length < 2) return;
+    if (!mounted || _backdropSources.length < 2) return;
     if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) return;
     _backdropRotationTimer =
         Timer.periodic(const Duration(seconds: 10), (Timer _) {
-      if (!mounted || _backdropPaths.length < 2) return;
+      if (!mounted || _backdropSources.length < 2) return;
       setState(() {
-        _heroBackdropIndex = (_heroBackdropIndex + 1) % _backdropPaths.length;
+        _heroBackdropIndex = (_heroBackdropIndex + 1) % _backdropSources.length;
       });
     });
   }
@@ -452,23 +470,37 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 背景回落到海报 + [LandscapeCoverImage] 的模糊垫底。那不是权宜之计，是这些源
   /// 的常态路径。
   ImageProvider? get _heroBackdrop {
-    if (_backdropPaths.isEmpty) return null;
-    final String path =
-        _backdropPaths[_heroBackdropIndex % _backdropPaths.length];
-    return resolveMediaCoverImage(
-      kind: MediaKind.video,
-      localPath: path,
-      // 背景横跨整屏，4K 桌面下物理宽可达 3840；比海报的 1600 给得更宽。
-      decodeWidth: 2560,
-    );
+    if (_backdropSources.isEmpty) return null;
+    final String source =
+        _backdropSources[_heroBackdropIndex % _backdropSources.length];
+    return _resolveCanonicalImage(source, decodeWidth: 2560);
   }
 
   /// 标题 logo 图源（v68）；null = 无 logo，hero 标题走纯文字。
-  ImageProvider? get _heroLogo => resolveMediaCoverImage(
-        kind: MediaKind.video,
-        localPath: _logoPath,
+  ImageProvider? get _heroLogo => _resolveCanonicalImage(
+        _logoPath ?? _logoRemoteUrl,
         decodeWidth: 800,
       );
+
+  ImageProvider? _resolveCanonicalImage(
+    String? source, {
+    required int decodeWidth,
+  }) {
+    if (source == null || source.isEmpty) return null;
+    final Uri? uri = Uri.tryParse(source);
+    if (uri != null && (uri.scheme == 'https' || uri.scheme == 'http')) {
+      return ResizeImage.resizeIfNeeded(
+        decodeWidth,
+        null,
+        NetworkImage(source),
+      );
+    }
+    return resolveMediaCoverImage(
+      kind: MediaKind.video,
+      localPath: source,
+      decodeWidth: decodeWidth,
+    );
+  }
 
   ImageProvider? get _heroCover {
     // 读 DB 快照而非进页副本：刮削刚写进去的新封面必须立刻生效（见 [_collectionRow]）。
@@ -488,6 +520,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         localPath: canonicalCover,
         decodeWidth: 1600,
       );
+    }
+    if (_canonicalCoverRemoteUrl case final String remoteCover
+        when remoteCover.isNotEmpty) {
+      return _resolveCanonicalImage(remoteCover, decodeWidth: 1600);
     }
     if (_members.isEmpty) return null;
     final String? continueCover = _members[_continueIndex].coverPath;
@@ -1267,11 +1303,18 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final ScrapeMetadata? meta = _scrapeMeta;
     final String? originalTitle =
         _canonicalWork?.originalTitle ?? meta?.originalTitle;
-    final String? summary = (_canonicalWork?.overview ?? meta?.summary)?.trim();
+    // 规范作品的简介/题材/人物在 hero 下方有完整、可选择的全宽区块；hero 再放
+    // 一份只会形成用户截图中的重复内容。旧 v68 资料没有规范详情宿主时才保留
+    // hero 回退，避免老库凭空丢信息。
+    final bool useLegacyHeroDetails = _canonicalWork == null;
+    final String? summary = useLegacyHeroDetails ? meta?.summary?.trim() : null;
     final String? airDate =
         (_canonicalWork?.premiereDate ?? meta?.airDate)?.trim();
-    final List<ScrapeTag> scrapeTags = _heroScrapeTags(meta);
-    final List<VideoMetadataCreditSummary> credits = _heroCredits();
+    final List<ScrapeTag> scrapeTags =
+        useLegacyHeroDetails ? _heroScrapeTags(meta) : const <ScrapeTag>[];
+    final List<VideoMetadataCreditSummary> credits = useLegacyHeroDetails
+        ? _heroCredits()
+        : const <VideoMetadataCreditSummary>[];
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -2365,13 +2408,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   }
 
   Widget _centeredContent(Widget child) {
-    return Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1680),
-        child: SizedBox(width: double.infinity, child: child),
-      ),
-    );
+    return SizedBox(width: double.infinity, child: child);
   }
 
   @override

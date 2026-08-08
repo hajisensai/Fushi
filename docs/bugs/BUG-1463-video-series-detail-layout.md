@@ -1,0 +1,6 @@
+## BUG-1463 · 系列详情重复、底部窄栏与首页播放目标错误
+- **报告**：2026-08-09（用户：系列详情简介/标签/人物上下重复，hero 下内容被 1680 宽居中约束；全部视频只有大图墙；主页继续观看跳到序列目标而不是最后实际播放分集）
+- **真实性**：✅ 真 bug。`media_collection_detail_page.dart` 同时在 `_buildHeroInfo` 与 `_buildWorkDetailsSection/_buildCreditsSection` 渲染规范作品内容，且 `_centeredContent` 给 hero 下全部区域附加 `maxWidth: 1680`；`home_video_page.dart` 的全部视频固定走 `_buildVideoWallSliver`，无列表分支；系列继续观看与进度文案依赖 `continueMemberIndex` 的序列推进语义，没有按 `watchAt` 选择最后实际播放成员。
+- **[x] ① 已修复** — 规范作品 hero 只留标题、状态和播放入口，完整资料/人物在下方唯一展示；hero 下资料、演职员、附件、关系与选集改为内容区全宽。全部视频新增网格/列表切换，列表保留播放、多选、标签拖放、右键和远端视频入口。系列播放目标以最后观看时间为真相源，继续观看续播该集，下一集严格取其后一集，首页与系列卡显示播到第几集。安全目录无法落作品根图时，详情页直接回落规范表远程 backdrop/海报，不再显示分集截图。
+- **[x] ② 已加自动化测试** — `video_home_layout_test.dart` 覆盖最后实际播放集和下一集；`collection_hero_scrape_meta_test.dart` 覆盖远程规范背景/大海报；`collection_hero_v69_credits_test.dart` 覆盖 hero 人物不重复；`video_library_series_structure_guard_test.dart` 覆盖全宽详情与全部视频双布局入口。
+- **备注**：物理媒体文件仍不移动、不重命名；分集“重命名”只更新库内展示标题和 NFO，符合视频来源方案的非破坏性边界。

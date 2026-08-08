@@ -3169,5 +3169,7 @@
   "video_work_keywords": "Keywords",
   "video_work_studios": "Studios",
   "video_work_countries": "Countries",
-  "video_work_content_rating": "Content rating"
+  "video_work_content_rating": "Content rating",
+  "video_all_videos_list_view": "List view",
+  "video_all_videos_grid_view": "Grid view"
 }

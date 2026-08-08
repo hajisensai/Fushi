@@ -42,6 +42,10 @@ void main() {
     expect(page, contains('VideoLibrarySection.series'));
     expect(page, contains('VideoLibrarySection.allVideos'));
     expect(page, contains('video_source_scrape_tasks_open'));
+    expect(page, contains('_AllVideosLayout.grid'));
+    expect(page, contains('_AllVideosLayout.list'));
+    expect(page, contains('_buildAllVideoListRow('));
+    expect(page, contains('video-all-videos-layout-toggle'));
   });
 
   test('作品详情同时覆盖合集和独立电影，并包含资料、人物及附件区域', () {
@@ -67,5 +71,15 @@ void main() {
     }
     expect(collection, contains('buildOnlineVideoExtraLaunch'));
     expect(collection, contains('VideoHibikiPage.neutralized('));
+    expect(
+      collection,
+      contains('useLegacyHeroDetails'),
+      reason: '规范作品简介/标签/人物只在 hero 下方完整展示，不能上下重复',
+    );
+    expect(
+      collection,
+      isNot(contains('BoxConstraints(maxWidth: 1680)')),
+      reason: 'hero 下方的作品资料、人物、附件与选集同样使用全宽内容区',
+    );
   });
 }

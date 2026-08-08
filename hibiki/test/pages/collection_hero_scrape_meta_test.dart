@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/video/cover_ui/landscape_cover_image.dart';
+import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:hibiki/src/media/video/scraper/collection_scrape_apply.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_detail_page.dart';
@@ -228,6 +229,55 @@ void main() {
       find.byType(LandscapeCoverImage),
       findsNothing,
       reason: '有真横图时不需要模糊垫底那套补救',
+    );
+  });
+
+  testWidgets('作品目录无法安全落盘时仍用规范远程背景与大海报', (WidgetTester tester) async {
+    final int workId = await db.upsertVideoMetadataWork(
+      VideoMetadataWorksCompanion.insert(
+        collectionId: Value<int?>(collectionId),
+        mediaType: 'tv',
+        title: 'Remote artwork series',
+        updatedAt: 1,
+      ),
+    );
+    await db.replaceVideoMetadataImages(
+      workId: workId,
+      images: <VideoMetadataImagesCompanion>[
+        VideoMetadataImagesCompanion.insert(
+          provider: 'tmdb',
+          kind: 'cover',
+          remoteUrl: 'https://image.example/poster.jpg',
+          updatedAt: 1,
+        ),
+        VideoMetadataImagesCompanion.insert(
+          provider: 'tmdb',
+          kind: 'backdrop',
+          remoteUrl: 'https://image.example/backdrop.jpg',
+          updatedAt: 1,
+        ),
+      ],
+    );
+
+    await pumpWide(tester);
+
+    expect(
+      find.byKey(const ValueKey<String>('collection-hero-backdrop')),
+      findsOneWidget,
+    );
+    final PortraitCoverImage poster = tester.widget<PortraitCoverImage>(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey<String>('collection-hero-poster'),
+        ),
+        matching: find.byType(PortraitCoverImage),
+      ),
+    );
+    expect(poster.image, isA<ResizeImage>());
+    expect(
+      (poster.image as ResizeImage).imageProvider,
+      isA<NetworkImage>(),
+      reason: '安全目录判定阻止作品根图落盘时，详情页不能退回分集截图',
     );
   });
 
