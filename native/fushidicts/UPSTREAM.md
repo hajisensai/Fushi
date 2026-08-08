@@ -74,7 +74,16 @@
 
 ## 2026-08 Hibiki→Fushi 改名映射（P6-2）
 
-产品改名 Fushi 后，本引擎**对外符号面**同步改为 `fushidicts`。终局清算 W6（2026-08-07）又把**目录名**一并改掉：`native/hoshidicts/` → `native/fushidicts/`，内层 `hoshidicts_src/`→`fushidicts_src/`、`fushidicts_include/`→`fushidicts_include/`、`hoshidicts_external/`→`fushidicts_external/`（vendored 第三方只改目录名，pristine 文件内容不动）。**仍保持不变**的是与上游 diff 对照面直接相关的部分：内部静态库 target `hoshidicts`、公共头子目录 `fushidicts_include/hoshidicts/`（源码 `#include "fushidicts/*.hpp"` 原样）、内部命名空间/宏（`FUSHI_EXPORT`、`fushi::`、`HoshiThread`）、磁盘分片名 `.hoshidicts_1`（持久化契约）。对照表：
+产品改名 Fushi 后，本引擎**对外符号面**同步改为 `fushidicts`。终局清算 W6（2026-08-07）又把**目录名**一并改掉：`native/hoshidicts/` → `native/fushidicts/`，内层 `hoshidicts_src/`→`fushidicts_src/`、`hoshidicts_include/`→`fushidicts_include/`、`hoshidicts_external/`→`fushidicts_external/`（vendored 第三方只改目录名，pristine 文件内容不动）。
+
+W9-7（2026-08-08）补完 W6 只改了外层目录、没动内部命名的部分——内部符号与上游 diff 对照面无关，留着只会让「旧代号已清零」这句话不成立：
+- 公共头 `fushidicts_include/hoshidicts.h`→`fushidicts.h`，公共头子目录 `fushidicts_include/hoshidicts/`→`fushidicts/`（源码 `#include "fushidicts/*.hpp"`）；
+- 内部命名空间 `hoshi::`/`hoshi_test::`/`hoshidicts::`/`hoshidicts_json::` → `fushi` 系，线程封装类型 `HoshiThread`/`HoshiThreadFn`/`hoshi_thread_*` → `Fushi*`/`fushi_thread_*`；
+- 宏 `HOSHI_EXPORT`→`FUSHI_EXPORT`、`HOSHI_LOG*`→`FUSHI_LOG*`；
+- CMake 静态库 target `hoshidicts`→`fushidicts`，测试 harness 变量 `HOSHI_TEST_BUILD_DIR`→`FUSHI_TEST_BUILD_DIR`；
+- CI workflow 文件名 `native-hoshidicts-gate.yml`→`native-fushidicts-gate.yml`。
+
+**仍保持不变**：磁盘分片名 `.hoshidicts_1`（词典持久化契约，改名会让存量分片读不到）。对照表：
 
 | 旧名 | 新名 | 说明 |
 |---|---|---|

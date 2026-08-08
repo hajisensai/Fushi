@@ -237,7 +237,7 @@ void main() {
           contains(
             service.storedMedia
                 .singleWhere(
-                  (entry) => entry.filename.startsWith('hibiki_audio_'),
+                  (entry) => entry.filename.startsWith('fushi_audio_'),
                 )
                 .filename,
           ),
@@ -385,7 +385,7 @@ class _CoordinatedFailingMediaAnkiConnectService
     String? data,
     String? path,
   }) async {
-    if (filename.startsWith('hibiki_audio_')) {
+    if (filename.startsWith('fushi_audio_')) {
       await _coverStored.future;
       await super.storeMediaFile(filename: filename, data: data, path: path);
       throw TimeoutException('simulated lost audio upload response');

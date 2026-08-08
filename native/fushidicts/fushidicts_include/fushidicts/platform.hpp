@@ -23,20 +23,20 @@
   #include <windows.h>
   #include <process.h>
 
-  struct HoshiThread {
+  struct FushiThread {
     HANDLE handle = nullptr;
   };
 
-  using HoshiThreadFn = unsigned(__stdcall*)(void*);
+  using FushiThreadFn = unsigned(__stdcall*)(void*);
 
-  inline bool hoshi_thread_create(HoshiThread& t, HoshiThreadFn fn, void* arg, size_t stack_size) {
+  inline bool fushi_thread_create(FushiThread& t, FushiThreadFn fn, void* arg, size_t stack_size) {
     t.handle = reinterpret_cast<HANDLE>(
       _beginthreadex(nullptr, static_cast<unsigned>(stack_size), fn, arg, 0, nullptr)
     );
     return t.handle != nullptr;
   }
 
-  inline void hoshi_thread_join(HoshiThread& t) {
+  inline void fushi_thread_join(FushiThread& t) {
     if (t.handle) {
       WaitForSingleObject(t.handle, INFINITE);
       CloseHandle(t.handle);
@@ -46,13 +46,13 @@
 #else
   #include <pthread.h>
 
-  struct HoshiThread {
+  struct FushiThread {
     pthread_t handle{};
   };
 
-  using HoshiThreadFn = void*(*)(void*);
+  using FushiThreadFn = void*(*)(void*);
 
-  inline bool hoshi_thread_create(HoshiThread& t, HoshiThreadFn fn, void* arg, size_t stack_size) {
+  inline bool fushi_thread_create(FushiThread& t, FushiThreadFn fn, void* arg, size_t stack_size) {
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setstacksize(&attr, stack_size);
@@ -61,7 +61,7 @@
     return rc == 0;
   }
 
-  inline void hoshi_thread_join(HoshiThread& t) {
+  inline void fushi_thread_join(FushiThread& t) {
     pthread_join(t.handle, nullptr);
   }
 #endif

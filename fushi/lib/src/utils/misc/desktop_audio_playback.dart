@@ -119,7 +119,7 @@ class DesktopAudioPlayback {
     _warmed = true;
     try {
       final Directory dir = await getTemporaryDirectory();
-      final File silent = File('${dir.path}/hibiki_audio_warmup.wav');
+      final File silent = File('${dir.path}/fushi_audio_warmup.wav');
       if (!silent.existsSync()) {
         silent.parent.createSync(recursive: true);
         silent.writeAsBytesSync(_silentWavBytes());

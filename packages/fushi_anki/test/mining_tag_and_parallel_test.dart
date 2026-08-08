@@ -732,7 +732,7 @@ void main() {
     late Directory dir;
 
     setUp(() {
-      dir = Directory.systemTemp.createTempSync('hibiki_anki_parallel');
+      dir = Directory.systemTemp.createTempSync('fushi_anki_parallel');
     });
     tearDown(() {
       if (dir.existsSync()) dir.deleteSync(recursive: true);

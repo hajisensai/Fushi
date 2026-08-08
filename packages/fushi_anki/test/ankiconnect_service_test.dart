@@ -366,14 +366,14 @@ void main() {
     test('sends filename + base64 data', () async {
       final issued = <http.Request>[];
       await withMock(
-        (s) => s.storeMediaFile(filename: 'hibiki_audio_abc.mp3', data: 'QUJD'),
+        (s) => s.storeMediaFile(filename: 'fushi_audio_abc.mp3', data: 'QUJD'),
         sink: issued,
-        result: 'hibiki_audio_abc.mp3',
+        result: 'fushi_audio_abc.mp3',
       );
       final body = bodyOf(issued.single);
       expect(body['action'], 'storeMediaFile');
       final params = body['params'] as Map;
-      expect(params['filename'], 'hibiki_audio_abc.mp3');
+      expect(params['filename'], 'fushi_audio_abc.mp3');
       expect(params['data'], 'QUJD');
     });
 
@@ -839,12 +839,12 @@ void main() {
       final f = flakyClient(
         failTimes: 1,
         exception: http.ClientException('Broken pipe'),
-        okResult: 'hibiki_audio_abc.mp3',
+        okResult: 'fushi_audio_abc.mp3',
       );
       await run(
           f.client,
           (s) =>
-              s.storeMediaFile(filename: 'hibiki_audio_abc.mp3', data: 'QUJD'));
+              s.storeMediaFile(filename: 'fushi_audio_abc.mp3', data: 'QUJD'));
       expect(f.attempts.length, 2);
     });
   });

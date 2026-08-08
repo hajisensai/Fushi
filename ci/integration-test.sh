@@ -197,7 +197,7 @@ done
 #    targets that need them, reported in the summary). ──
 ANKI_OK=false
 if [ "$NEEDS_ANKI" = true ]; then
-  if provision_ankidroid && grant_hibiki_ankidroid_permission; then
+  if provision_ankidroid && grant_fushi_ankidroid_permission; then
     ANKI_OK=true
   else
     echo ">>> WARN: AnkiDroid not fully provisioned — anki_integration may fail." >&2

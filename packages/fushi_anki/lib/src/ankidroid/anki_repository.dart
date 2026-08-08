@@ -603,7 +603,7 @@ class AnkiRepository extends BaseAnkiRepository {
   Future<String?> _addSentenceAudio(String path) async {
     final preferredName = await _preferredMediaNameForFile(
       path,
-      'hibiki_audio_',
+      'fushi_audio_',
     );
     if (preferredName == null) return null;
     final raw = await _addMediaFile(path, preferredName, mimeTypeForPath(path));
@@ -644,7 +644,7 @@ class AnkiRepository extends BaseAnkiRepository {
           if (data == null) return const AudioFetchOutcome.none();
           final cacheDir = await _mediaCacheDir();
           final preferredName = await fushiAnkiMediaFilenameForBytesAsync(
-            prefix: 'hibiki_audio_',
+            prefix: 'fushi_audio_',
             bytes: data.bytes,
             sourceName: 'word_audio.${data.extension}',
             fallbackExtension: data.extension,
@@ -656,7 +656,7 @@ class AnkiRepository extends BaseAnkiRepository {
           final file = File(AnkiAudioRef.localPath(url));
           final preferredName = await _preferredMediaNameForFile(
             file.path,
-            'hibiki_audio_',
+            'fushi_audio_',
             fallbackExtension: 'mp3',
           );
           if (preferredName == null) return const AudioFetchOutcome.none();
@@ -693,7 +693,7 @@ class AnkiRepository extends BaseAnkiRepository {
             final ext = _audioExtension(response.headers.contentType, url);
             // BUG-933：远端音频 sha256 卸到后台 isolate。
             final preferredName = await fushiAnkiMediaFilenameForBytesAsync(
-              prefix: 'hibiki_audio_',
+              prefix: 'fushi_audio_',
               bytes: bytes,
               sourceName: url,
               fallbackExtension: ext,

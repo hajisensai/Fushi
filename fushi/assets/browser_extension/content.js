@@ -1905,7 +1905,7 @@ function fushiEnsureResizeGrip() {
   if (!parent) return;
   if (!fushiResizeGrip) {
     const g = document.createElement('div');
-    g.id = 'hibiki-popup-resize-grip';
+    g.id = 'fushi-popup-resize-grip';
     // 顶层 fixed；z-index 与 host 齐平（同值时 DOM 靠后者胜出 → 把手可点）；斜纹视觉暗示可拖。
     g.style.cssText =
       'position:fixed;left:0;top:0;width:' + FUSHI_RESIZE_GRIP_SIZE + 'px;height:' +

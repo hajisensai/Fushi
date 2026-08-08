@@ -128,16 +128,16 @@ void main() {
 
         final String firstWordAudio = service.addedNotes[0]['Audio']!;
         final String secondWordAudio = service.addedNotes[1]['Audio']!;
-        expect(firstWordAudio, startsWith('[sound:hibiki_audio_'));
-        expect(secondWordAudio, startsWith('[sound:hibiki_audio_'));
+        expect(firstWordAudio, startsWith('[sound:fushi_audio_'));
+        expect(secondWordAudio, startsWith('[sound:fushi_audio_'));
         expect(firstWordAudio, isNot(secondWordAudio));
 
         final String firstSentenceAudio =
             service.addedNotes[0]['SentenceAudio']!;
         final String secondSentenceAudio =
             service.addedNotes[1]['SentenceAudio']!;
-        expect(firstSentenceAudio, startsWith('[sound:hibiki_audio_'));
-        expect(secondSentenceAudio, startsWith('[sound:hibiki_audio_'));
+        expect(firstSentenceAudio, startsWith('[sound:fushi_audio_'));
+        expect(secondSentenceAudio, startsWith('[sound:fushi_audio_'));
         expect(firstSentenceAudio, isNot(secondSentenceAudio));
         expect(service.storedFilenames.toSet(), hasLength(2));
       },
@@ -146,11 +146,11 @@ void main() {
     test('content-derived media names use SHA-256 and preserve extension', () {
       expect(
         fushiAnkiMediaFilenameForBytes(
-          prefix: 'hibiki_audio_',
+          prefix: 'fushi_audio_',
           bytes: utf8.encode('abc'),
           sourceName: 'word.mp3',
         ),
-        'hibiki_audio_'
+        'fushi_audio_'
         'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
         '.mp3',
       );
@@ -248,14 +248,14 @@ void main() {
 
         final String firstWordAudio = addedNotes[0][1];
         final String secondWordAudio = addedNotes[1][1];
-        expect(firstWordAudio, startsWith('[sound:hibiki_audio_'));
-        expect(secondWordAudio, startsWith('[sound:hibiki_audio_'));
+        expect(firstWordAudio, startsWith('[sound:fushi_audio_'));
+        expect(secondWordAudio, startsWith('[sound:fushi_audio_'));
         expect(firstWordAudio, isNot(secondWordAudio));
 
         final String firstSentenceAudio = addedNotes[0][2];
         final String secondSentenceAudio = addedNotes[1][2];
-        expect(firstSentenceAudio, startsWith('[sound:hibiki_audio_'));
-        expect(secondSentenceAudio, startsWith('[sound:hibiki_audio_'));
+        expect(firstSentenceAudio, startsWith('[sound:fushi_audio_'));
+        expect(secondSentenceAudio, startsWith('[sound:fushi_audio_'));
         expect(firstSentenceAudio, isNot(secondSentenceAudio));
         expect(preferredNames.toSet(), hasLength(2));
       },

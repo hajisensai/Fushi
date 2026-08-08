@@ -4495,10 +4495,10 @@ document.addEventListener('click', (e) => {
     }
 
     const _t0 = __fushiEventTarget(e); const target = _t0?.nodeType === Node.TEXT_NODE ? _t0.parentElement : _t0;
-    // 弹窗尺寸拖拽把手（浏览器扩展 Phase D）是宿主页 body 顶层兄弟 #hibiki-popup-resize-grip，
+    // 弹窗尺寸拖拽把手（浏览器扩展 Phase D）是宿主页 body 顶层兄弟 #fushi-popup-resize-grip，
     // 不在任何弹窗内部选择器内，点/拖它会落到本函数末尾的 tapOutside 关窗（用户报「拖动关窗」）。
     // 这里显式豁免：点/拖把手绝不关窗。app 内弹窗文档里无此元素，closest 永不命中 → no-op。
-    if (target?.closest?.('#hibiki-popup-resize-grip')) return;
+    if (target?.closest?.('#fushi-popup-resize-grip')) return;
     // TODO-1189 — audio/mine/favorite are per-entry action buttons; a click on any
     // of them must NEVER reach the document dismiss path. .favorite-button was
     // missing here, so tapping ☆ on a PARENT card fell through to the .entry

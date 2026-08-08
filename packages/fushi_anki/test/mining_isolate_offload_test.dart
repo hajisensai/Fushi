@@ -19,14 +19,14 @@ void main() {
     test('fushiAnkiMediaEncodeForUploadAsync：文件名+base64 与同步计算一致（大媒体走隔离）',
         () async {
       final encoded = await fushiAnkiMediaEncodeForUploadAsync(
-        prefix: 'hibiki_audio_',
+        prefix: 'fushi_audio_',
         bytes: big,
         sourceName: 'clip.mp3',
       );
       expect(
         encoded.filename,
         fushiAnkiMediaFilenameForBytes(
-          prefix: 'hibiki_audio_',
+          prefix: 'fushi_audio_',
           bytes: big,
           sourceName: 'clip.mp3',
         ),
@@ -54,24 +54,24 @@ void main() {
     test('fushiAnkiMediaFilenameForBytesAsync 与同步版逐字节一致（大/小两路）', () async {
       expect(
         await fushiAnkiMediaFilenameForBytesAsync(
-          prefix: 'hibiki_audio_',
+          prefix: 'fushi_audio_',
           bytes: big,
           sourceName: 'clip.mp3',
         ),
         fushiAnkiMediaFilenameForBytes(
-          prefix: 'hibiki_audio_',
+          prefix: 'fushi_audio_',
           bytes: big,
           sourceName: 'clip.mp3',
         ),
       );
       expect(
         await fushiAnkiMediaFilenameForBytesAsync(
-          prefix: 'hibiki_audio_',
+          prefix: 'fushi_audio_',
           bytes: small,
           sourceName: 'clip.mp3',
         ),
         fushiAnkiMediaFilenameForBytes(
-          prefix: 'hibiki_audio_',
+          prefix: 'fushi_audio_',
           bytes: small,
           sourceName: 'clip.mp3',
         ),

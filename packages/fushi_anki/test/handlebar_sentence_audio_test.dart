@@ -24,7 +24,7 @@ void main() {
     });
 
     test('退役别名 {sasayaki-audio} 不再被渲染器认领（未知 token → 空串）', () {
-      final AnkiMiningContext ctx = contextWithAudio('hibiki_audio_x.mp3');
+      final AnkiMiningContext ctx = contextWithAudio('fushi_audio_x.mp3');
       expect(
         AnkiHandlebarRenderer.render('{sasayaki-audio}', payload, ctx),
         '',
@@ -33,7 +33,7 @@ void main() {
       // 新键仍正常读 sentenceAudioPath。
       expect(
         AnkiHandlebarRenderer.render('{sentence-audio}', payload, ctx),
-        'hibiki_audio_x.mp3',
+        'fushi_audio_x.mp3',
       );
     });
 
@@ -47,7 +47,7 @@ void main() {
 
     test('渲染媒体引用串（模拟 backend 落盘后回填）', () {
       // backend 把音频落盘后用 `[sound:ref]` 覆盖 sentenceAudioPath 再渲染。
-      const String mediaRef = '[sound:hibiki_audio_abc.mp3]';
+      const String mediaRef = '[sound:fushi_audio_abc.mp3]';
       final AnkiMiningContext ctx = contextWithAudio(mediaRef);
       expect(
         AnkiHandlebarRenderer.render('{sentence-audio}', payload, ctx),

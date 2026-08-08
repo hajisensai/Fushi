@@ -115,7 +115,7 @@ provision_ankidroid() {
 
 # Grant Hibiki the AnkiDroid API permission and verify it stuck. Assumes the
 # Hibiki APK is already installed (with -g). Returns 0 if granted=true.
-grant_hibiki_ankidroid_permission() {
+grant_fushi_ankidroid_permission() {
   MSYS_NO_PATHCONV=1 $ADBD shell pm grant "$PKG" "$ANKI_PERM" >/dev/null 2>&1 || true
   local granted
   granted=$(MSYS_NO_PATHCONV=1 $ADBD shell dumpsys package "$PKG" 2>/dev/null | grep "$ANKI_PERM: granted=true" || true)

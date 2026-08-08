@@ -61,7 +61,7 @@ fi
 # --- 5. Pre-install with all runtime perms granted, then verify the grant ---
 echo ">>> Installing app with runtime permissions granted..."
 MSYS_NO_PATHCONV=1 $ADBD install -r -g build/app/outputs/flutter-apk/app-debug.apk
-if ! grant_hibiki_ankidroid_permission; then
+if ! grant_fushi_ankidroid_permission; then
   echo ">>> FAIL: could not grant the AnkiDroid API permission to $PKG." >&2
   exit 1
 fi

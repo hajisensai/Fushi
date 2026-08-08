@@ -394,8 +394,8 @@ void main() {
     });
 
     test('stored carries ref and no failure reason', () {
-      const o = AudioFetchOutcome.stored('hibiki_audio_abc.mp3');
-      expect(o.ref, 'hibiki_audio_abc.mp3');
+      const o = AudioFetchOutcome.stored('fushi_audio_abc.mp3');
+      expect(o.ref, 'fushi_audio_abc.mp3');
       expect(o.failureReason, isNull);
     });
 

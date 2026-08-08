@@ -255,8 +255,8 @@ FfiImportResult fushidicts_import(const char* zip_path, const char* output_dir, 
   args.breadcrumb_dir = breadcrumb_dir ? breadcrumb_dir : "";
   args.result = {};
 
-  HoshiThread thread;
-  bool ok = hoshi_thread_create(thread, import_thread_fn, &args, 32 * 1024 * 1024);
+  FushiThread thread;
+  bool ok = fushi_thread_create(thread, import_thread_fn, &args, 32 * 1024 * 1024);
 
   if (!ok) {
     args.result.success = 0;
@@ -265,7 +265,7 @@ FfiImportResult fushidicts_import(const char* zip_path, const char* output_dir, 
     return args.result;
   }
 
-  hoshi_thread_join(thread);
+  fushi_thread_join(thread);
   return args.result;
 }
 
