@@ -20,6 +20,7 @@ import 'package:hibiki/src/media/video/cover_ui/episode_rename_confirm_dialog.da
 import 'package:hibiki/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:hibiki/src/media/video/metadata/video_metadata_credit_repository.dart';
+import 'package:hibiki/src/media/video/metadata/video_metadata_models.dart';
 import 'package:hibiki/src/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:hibiki/src/media/video/stream_video_launch.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
@@ -150,6 +151,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// v69 作品级人物关系；无规范资料时为 null，hero 保持既有 v68 投影形态。
   VideoMetadataWorkCredits? _workCredits;
   VideoMetadataWorkRow? _canonicalWork;
+  Map<String, VideoMetadataEpisodeRow> _canonicalEpisodeByUid =
+      const <String, VideoMetadataEpisodeRow>{};
+  String? _canonicalCoverPath;
   List<VideoMetadataTermRow> _workTerms = const <VideoMetadataTermRow>[];
   List<VideoMetadataExtraRow> _workExtras = const <VideoMetadataExtraRow>[];
 
@@ -212,6 +216,24 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final List<VideoMetadataTermRow> workTerms = canonicalWork == null
         ? const <VideoMetadataTermRow>[]
         : await widget.database.getVideoMetadataTermsForWork(canonicalWork.id);
+    final Map<String, VideoMetadataEpisodeRow> canonicalEpisodes =
+        <String, VideoMetadataEpisodeRow>{};
+    final List<VideoMetadataImageRow> canonicalImages = canonicalWork == null
+        ? const <VideoMetadataImageRow>[]
+        : await widget.database.getVideoMetadataImages(
+            workId: canonicalWork.id,
+          );
+    if (canonicalWork != null) {
+      for (final VideoMetadataSeasonRow season
+          in await widget.database.getVideoMetadataSeasons(canonicalWork.id)) {
+        for (final VideoMetadataEpisodeRow episode
+            in await widget.database.getVideoMetadataEpisodes(season.id)) {
+          if (episode.bookUid case final String uid) {
+            canonicalEpisodes[uid] = episode;
+          }
+        }
+      }
+    }
     final List<VideoMetadataExtraRow> workExtras = canonicalWork == null
         ? const <VideoMetadataExtraRow>[]
         : await widget.database.getVideoMetadataExtras(canonicalWork.id);
@@ -244,18 +266,36 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       };
       _rebuildSections();
       _episodeMetaByUid = episodeMeta;
+      _canonicalEpisodeByUid = canonicalEpisodes;
       _workCredits = workCredits;
       _canonicalWork = canonicalWork;
       _workTerms = workTerms;
       _workExtras = workExtras;
       _scrapeMeta = decoded;
-      _backdropPaths = <String>[
+      _canonicalCoverPath = canonicalImages
+          .where((VideoMetadataImageRow row) =>
+              row.kind == VideoMetadataImageKind.cover.name &&
+              row.localPath?.isNotEmpty == true)
+          .map((VideoMetadataImageRow row) => row.localPath!)
+          .firstOrNull;
+      _backdropPaths = <String>{
+        for (final VideoMetadataImageRow row in canonicalImages)
+          if (row.kind == VideoMetadataImageKind.backdrop.name &&
+              row.localPath?.isNotEmpty == true)
+            row.localPath!,
         for (final MediaImageRow row in imageRows)
           if (row.kind == MediaImageKind.backdrop.dbValue) row.path,
-      ];
-      _logoPath = null;
+      }.toList(growable: false);
+      _logoPath = canonicalImages
+          .where((VideoMetadataImageRow row) =>
+              row.kind == VideoMetadataImageKind.logo.name &&
+              row.localPath?.isNotEmpty == true)
+          .map((VideoMetadataImageRow row) => row.localPath!)
+          .firstOrNull;
       for (final MediaImageRow row in imageRows) {
-        if (row.kind == MediaImageKind.logo.dbValue && row.path.isNotEmpty) {
+        if (_logoPath == null &&
+            row.kind == MediaImageKind.logo.dbValue &&
+            row.path.isNotEmpty) {
           _logoPath = row.path;
           break;
         }
@@ -379,6 +419,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 回填进 title（那不是集名，与 episode_rename.dart 同判据），此时不当集名用。
   /// 无集级资料 → null，调用方回落 [VideoBookRow.title]（文件名现状，零变化）。
   String? _scrapedEpisodeTitle(VideoBookRow row) {
+    final String? canonical =
+        _canonicalEpisodeByUid[row.bookUid]?.title?.trim();
+    if (canonical != null && canonical.isNotEmpty) return canonical;
     final VideoScrapeMetaRow? meta = _episodeMetaByUid[row.bookUid];
     if (meta == null) return null;
     final String title = meta.title.trim();
@@ -393,7 +436,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// 集简介（集级刮削 summary；无 → null 不占位）。
   String? _episodeSummary(VideoBookRow row) {
-    final String? summary = _episodeMetaByUid[row.bookUid]?.summary?.trim();
+    final String? summary = (_canonicalEpisodeByUid[row.bookUid]?.overview ??
+            _episodeMetaByUid[row.bookUid]?.summary)
+        ?.trim();
     return (summary == null || summary.isEmpty) ? null : summary;
   }
 
@@ -433,6 +478,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       return resolveMediaCoverImage(
         kind: MediaKind.video,
         localPath: collectionCover,
+        decodeWidth: 1600,
+      );
+    }
+    if (_canonicalCoverPath case final String canonicalCover
+        when canonicalCover.isNotEmpty) {
+      return resolveMediaCoverImage(
+        kind: MediaKind.video,
+        localPath: canonicalCover,
         decodeWidth: 1600,
       );
     }
@@ -1049,7 +1102,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     HibikiDesignTokens tokens,
   ) {
     final Size screen = MediaQuery.sizeOf(context);
-    final double height = (screen.height * 0.52).clamp(380.0, 520.0);
+    final double height = (screen.height * 0.60).clamp(460.0, 680.0);
     final ImageProvider? cover = _heroCover;
     final VideoBookRow episode = _members[_continueIndex];
     final bool rtl = Directionality.of(context) == TextDirection.rtl;
@@ -1086,107 +1139,99 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       ),
     ];
     final ImageProvider? backdrop = _heroBackdrop;
-    return Padding(
+    return SizedBox(
       key: const ValueKey<String>('video-work-hero-card'),
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        tokens.spacing.gap,
-        tokens.spacing.page,
-        0,
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: SizedBox(
-          height: height,
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              ColoredBox(color: cs.surfaceContainerHighest),
-              // 背景分两条路，取决于**这次刮削的源有没有横版图**：
-              // ① 有 backdrop（TMDB）→ 槽向天然吻合，直接 cover 铺满，海报另以独立
-              //    2:3 卡片出现在左侧（Jellyfin 式，各就各位）；
-              // ② 无 backdrop（Bangumi / 离线库 / 未刮削）→ 只有 2:3 海报或 16:9 抽帧
-              //    可用，朝向判定交给 [LandscapeCoverImage]：横图 cover 铺满，竖版海报
-              //    模糊垫底 + 靠右完整显示（BUG-1298）。此时不再另放海报卡，否则同一张
-              //    图在同一屏出现两次。
-              if (backdrop != null) ...<Widget>[
-                // v68：多张背景 10 秒轮换（Jellyfin 详情页同款）。外层 key 恒定供
-                // 测试定位；内层 key 随轮换下标变化驱动 AnimatedSwitcher 交叉淡入。
-                // gaplessPlayback：新图解码完成前保留旧帧，避免轮换瞬间闪底色。
-                KeyedSubtree(
-                  key: const ValueKey<String>('collection-hero-backdrop'),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 700),
-                    child: Image(
-                      key: ValueKey<int>(_heroBackdropIndex),
-                      image: backdrop,
-                      fit: BoxFit.cover,
-                      alignment: Alignment.center,
-                      gaplessPlayback: true,
-                      errorBuilder: (_, __, ___) =>
-                          ColoredBox(color: cs.surfaceContainerHighest),
-                    ),
+      width: double.infinity,
+      height: height,
+      child: ClipRect(
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            ColoredBox(color: cs.surfaceContainerHighest),
+            // 背景分两条路，取决于**这次刮削的源有没有横版图**：
+            // ① 有 backdrop（TMDB）→ 槽向天然吻合，直接 cover 铺满，海报另以独立
+            //    2:3 卡片出现在左侧（Jellyfin 式，各就各位）；
+            // ② 无 backdrop（Bangumi / 离线库 / 未刮削）→ 只有 2:3 海报或 16:9 抽帧
+            //    可用，朝向判定交给 [LandscapeCoverImage]：横图 cover 铺满，竖版海报
+            //    模糊垫底 + 靠右完整显示（BUG-1298）。此时不再另放海报卡，否则同一张
+            //    图在同一屏出现两次。
+            if (backdrop != null) ...<Widget>[
+              // v68：多张背景 10 秒轮换（Jellyfin 详情页同款）。外层 key 恒定供
+              // 测试定位；内层 key 随轮换下标变化驱动 AnimatedSwitcher 交叉淡入。
+              // gaplessPlayback：新图解码完成前保留旧帧，避免轮换瞬间闪底色。
+              KeyedSubtree(
+                key: const ValueKey<String>('collection-hero-backdrop'),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 700),
+                  child: Image(
+                    key: ValueKey<int>(_heroBackdropIndex),
+                    image: backdrop,
+                    fit: BoxFit.cover,
+                    alignment: Alignment.center,
+                    gaplessPlayback: true,
+                    errorBuilder: (_, __, ___) =>
+                        ColoredBox(color: cs.surfaceContainerHighest),
                   ),
-                ),
-                ...overlays,
-              ] else if (cover != null)
-                LandscapeCoverImage(
-                  key: const ValueKey<String>('collection-hero-cover'),
-                  image: cover,
-                  overlays: overlays,
-                  // 竖版海报避让顶部 AppBar 与底部内容区，靠右不压左下标题/播放按钮。
-                  foregroundPadding: EdgeInsetsDirectional.only(
-                    top: tokens.spacing.gap,
-                    bottom: tokens.spacing.section,
-                    end: tokens.spacing.page,
-                  ),
-                  errorBuilder: (BuildContext _) =>
-                      ColoredBox(color: cs.surfaceContainerHighest),
-                )
-              else
-                ...overlays,
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  tokens.spacing.page,
-                  tokens.spacing.section,
-                  tokens.spacing.page,
-                  tokens.spacing.section,
-                ),
-                child: LayoutBuilder(
-                  builder: (BuildContext context, BoxConstraints constraints) {
-                    final Widget info = ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 680),
-                      child: _buildHeroInfo(context, tokens, episode),
-                    );
-                    // 海报卡只在「有横版背景 + 宽度够」时出现：窄屏放不下 2:3 卡还要
-                    // 留 680 给文字，挤压的结果是标题被压成一列竖排字。
-                    final bool showPoster = backdrop != null &&
-                        cover != null &&
-                        constraints.maxWidth >= 720;
-                    if (!showPoster) {
-                      return Align(
-                        alignment: AlignmentDirectional.bottomStart,
-                        child: info,
-                      );
-                    }
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: <Widget>[
-                        _buildHeroPosterCard(cover, height),
-                        SizedBox(width: tokens.spacing.section),
-                        Expanded(
-                          child: Align(
-                            alignment: AlignmentDirectional.bottomStart,
-                            child: info,
-                          ),
-                        ),
-                      ],
-                    );
-                  },
                 ),
               ),
-            ],
-          ),
+              ...overlays,
+            ] else if (cover != null)
+              LandscapeCoverImage(
+                key: const ValueKey<String>('collection-hero-cover'),
+                image: cover,
+                overlays: overlays,
+                // 竖版海报避让顶部 AppBar 与底部内容区，靠右不压左下标题/播放按钮。
+                foregroundPadding: EdgeInsetsDirectional.only(
+                  top: tokens.spacing.gap,
+                  bottom: tokens.spacing.section,
+                  end: tokens.spacing.page,
+                ),
+                errorBuilder: (BuildContext _) =>
+                    ColoredBox(color: cs.surfaceContainerHighest),
+              )
+            else
+              ...overlays,
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                tokens.spacing.section,
+                tokens.spacing.page,
+                tokens.spacing.section,
+              ),
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final Widget info = ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 680),
+                    child: _buildHeroInfo(context, tokens, episode),
+                  );
+                  // 海报卡只在「有横版背景 + 宽度够」时出现：窄屏放不下 2:3 卡还要
+                  // 留 680 给文字，挤压的结果是标题被压成一列竖排字。
+                  final bool showPoster = backdrop != null &&
+                      cover != null &&
+                      constraints.maxWidth >= 900;
+                  if (!showPoster) {
+                    return Align(
+                      alignment: AlignmentDirectional.bottomStart,
+                      child: info,
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: <Widget>[
+                      _buildHeroPosterCard(cover, height),
+                      SizedBox(width: tokens.spacing.section),
+                      Expanded(
+                        child: Align(
+                          alignment: AlignmentDirectional.bottomStart,
+                          child: info,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1197,7 +1242,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 2:3 是海报的**正确槽向**——这才是 BUG-1298 的正解：不是把海报硬塞进宽幅槽再想
   /// 办法补救，而是让宽幅槽拿横图、让海报回到它自己的比例里。
   Widget _buildHeroPosterCard(ImageProvider cover, double heroHeight) {
-    final double posterHeight = (heroHeight * 0.62).clamp(180.0, 340.0);
+    final double posterHeight = (heroHeight * 0.78).clamp(280.0, 500.0);
     return ClipRRect(
       borderRadius: HibikiBorderRadius.card,
       child: SizedBox(
@@ -2349,9 +2394,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               : CustomScrollView(
                   slivers: <Widget>[
                     SliverToBoxAdapter(
-                      child: _centeredContent(
-                        _buildHero(context, cs, tokens),
-                      ),
+                      child: _buildHero(context, cs, tokens),
                     ),
                     SliverToBoxAdapter(
                       child: _centeredContent(buildDetailTagChips()),

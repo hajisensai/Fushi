@@ -24,6 +24,14 @@ void main() {
       classifyLocalVideoExtra(r'D:\Movies\Film-trailer.mp4')?.kind,
       VideoMetadataExtraKind.trailer,
     );
+    expect(
+      classifyLocalVideoExtra(r'D:\Shows\Title\NCOP2.mkv')?.kind,
+      VideoMetadataExtraKind.clip,
+    );
+    expect(
+      classifyLocalVideoExtra(r'D:\Shows\Title\Title NCED.mkv')?.kind,
+      VideoMetadataExtraKind.clip,
+    );
     expect(classifyLocalVideoExtra(r'D:\Shows\Title\Title.S01E01.mkv'), isNull);
   });
 
@@ -61,6 +69,22 @@ void main() {
         sourceId: Value<int?>(sourceId),
       ));
     }
+    final File ncop = File(p.join(show.path, 'Himouto NCOP.mkv'));
+    await ncop.writeAsBytes(const <int>[0]);
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value<String>('himouto-ncop'),
+      title: const Value<String>('Himouto NCOP'),
+      videoPath: Value<String>(ncop.path),
+      sourceId: Value<int?>(sourceId),
+    ));
+    await db.upsertVideoMetadataWork(
+      VideoMetadataWorksCompanion.insert(
+        bookUid: const Value<String?>('himouto-ncop'),
+        mediaType: 'movie',
+        title: 'Himouto NCOP',
+        updatedAt: 1,
+      ),
+    );
     final int collectionId = await db.createMediaCollection(
       'Himouto! Umaru-chan',
       collectionType: 'playlist',
@@ -76,6 +100,13 @@ void main() {
     expect(first.title, 'Himouto! Umaru-chan');
     expect(first.mediaType, 'tv');
     expect(await db.getVideoMetadataSeasons(first.id), hasLength(1));
+    expect(await db.getVideoMetadataWorkByBook('himouto-ncop'), isNull,
+        reason: '历史误建的 NCOP 独立作品应清理，但 VideoBook 仍保留');
+    expect(await db.getVideoBookByBookUid('himouto-ncop'), isNotNull);
+    final List<VideoMetadataExtraRow> extras =
+        await db.getVideoMetadataExtras(first.id);
+    expect(extras.single.bookUid, 'himouto-ncop');
+    expect(extras.single.kind, 'clip');
 
     await indexer.index(source);
     final VideoMetadataWorkRow second =

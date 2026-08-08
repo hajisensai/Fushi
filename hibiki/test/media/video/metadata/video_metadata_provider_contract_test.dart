@@ -221,6 +221,11 @@ void main() {
             'name': '干物妹！小埋',
             'original_name': '干物妹!うまるちゃん',
             'first_air_date': '2015-07-09',
+            'alternative_titles': <String, Object?>{
+              'results': <Object?>[
+                <String, Object?>{'title': 'Himouto Umaru Chan'},
+              ],
+            },
             'seasons': <Object?>[
               <String, Object?>{
                 'id': 70001,
@@ -254,6 +259,9 @@ void main() {
       expect(result.status, VideoMetadataResolutionStatus.matched);
       expect(result.lookup?.externalId, '67126');
       expect(requestedLanguages, containsAll(<String>['zh-CN', 'en-US']));
+      final VideoMetadataWork details =
+          (await provider.fetchWork(result.lookup!))!;
+      expect(details.aliases, contains('Himouto Umaru Chan'));
     });
   });
 

@@ -35,8 +35,10 @@ void main() {
     await seasonDir.create(recursive: true);
     final File episode1 = File(p.join(seasonDir.path, 'Show S01E01.mkv'));
     final File episode2 = File(p.join(seasonDir.path, 'Show S01E02.mkv'));
+    final File ncop = File(p.join(root.path, 'Show NCOP.mkv'));
     await episode1.writeAsBytes(const <int>[0]);
     await episode2.writeAsBytes(const <int>[0]);
+    await ncop.writeAsBytes(const <int>[0]);
 
     final int sourceId = await db.insertMediaSource(
       MediaSourcesCompanion.insert(
@@ -48,13 +50,19 @@ void main() {
     );
     await db.upsertVideoBook(VideoBooksCompanion(
       bookUid: const Value<String>('e1'),
-      title: const Value<String>('Show E01'),
+      title: const Value<String>('Show S01E01'),
       videoPath: Value<String>(episode1.path),
       sourceId: Value<int?>(sourceId),
     ));
     await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value<String>('ncop'),
+      title: const Value<String>('Show NCOP'),
+      videoPath: Value<String>(ncop.path),
+      sourceId: Value<int?>(sourceId),
+    ));
+    await db.upsertVideoBook(VideoBooksCompanion(
       bookUid: const Value<String>('e2'),
-      title: const Value<String>('Show E02'),
+      title: const Value<String>('Show S01E02'),
       videoPath: Value<String>(episode2.path),
       sourceId: Value<int?>(sourceId),
     ));
@@ -97,6 +105,7 @@ void main() {
           .join('\n'),
     );
     expect(report.failedWorks, 0);
+    expect(report.totalWorks, 1, reason: 'NCOP/NCED 是作品附件，不应作为独立作品制造刮削失败');
     expect(provider.searchCount, 1);
     expect(report.nfoWritten, 4);
     expect(File(p.join(root.path, 'Show', 'tvshow.nfo')).existsSync(), isTrue);
@@ -118,6 +127,9 @@ void main() {
         <String?>['e1', 'e2']);
     expect(await db.getCollectionScrapeMeta(collectionId), isNotNull);
     expect((await db.getVideoScrapeMeta('e1'))?.title, 'Episode One');
+    expect((await db.getVideoBookByBookUid('e1'))?.title, 'Episode One',
+        reason: '只改应用内展示标题，不重命名磁盘视频文件');
+    expect(episode1.path, endsWith('Show S01E01.mkv'));
     expect(await db.getVideoSidecarArtifacts(sourceId: sourceId), hasLength(4));
     final List<VideoMetadataCreditRow> episodeCredits =
         await db.getVideoMetadataCredits(episodeId: episodes.first.id);

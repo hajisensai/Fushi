@@ -124,6 +124,67 @@ void main() {
       expect(result.candidates, hasLength(2));
     });
 
+    test('detail aliases recover romanized titles omitted by search summary',
+        () async {
+      final VideoMetadataWork summary =
+          _work(id: '77', title: '无职转生', year: 2021);
+      final VideoMetadataWork details = _work(
+        id: '77',
+        title: '无职转生 ～到了异世界就拿出真本事～',
+        aliases: const <String>[
+          'Mushoku Tensei: Isekai Ittara Honki Dasu',
+        ],
+        year: 2021,
+      );
+      final _FakeProvider provider = _FakeProvider(
+        kind: VideoMetadataProviderKind.tmdb,
+        searchResults: <VideoMetadataWork>[summary],
+        works: <String, VideoMetadataWork>{'77': details},
+      );
+
+      final VideoMetadataResolution result = await VideoMetadataResolver(
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+          provider,
+        ]),
+      ).resolve(VideoMetadataResolveRequest(
+        selectedProvider: VideoMetadataProviderKind.tmdb,
+        mediaKind: VideoMetadataMediaKind.tv,
+        titleCandidates: const <String>[
+          'Mushoku Tensei Isekai Ittara Honki Dasu',
+        ],
+        year: 2021,
+      ));
+
+      expect(result.status, VideoMetadataResolutionStatus.matched);
+      expect(result.work?.title, contains('无职转生'));
+    });
+
+    test('valid provider candidates are kept for confirmation on title miss',
+        () async {
+      final VideoMetadataWork candidate =
+          _work(id: '88', title: '本地化标题', year: 2021);
+      final _FakeProvider provider = _FakeProvider(
+        kind: VideoMetadataProviderKind.tmdb,
+        searchResults: <VideoMetadataWork>[candidate],
+        works: <String, VideoMetadataWork>{'88': candidate},
+      );
+
+      final VideoMetadataResolution result = await VideoMetadataResolver(
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+          provider,
+        ]),
+      ).resolve(VideoMetadataResolveRequest(
+        selectedProvider: VideoMetadataProviderKind.tmdb,
+        mediaKind: VideoMetadataMediaKind.tv,
+        titleCandidates: const <String>['Unmatched romanized title'],
+        year: 2021,
+      ));
+
+      expect(result.status, VideoMetadataResolutionStatus.ambiguous);
+      expect(result.candidates.single.title, '本地化标题');
+      expect(result.reason, contains('manual'));
+    });
+
     test('Bangumi sequel title uses parsed base title plus season gate',
         () async {
       final VideoMetadataWork sequel = VideoMetadataWork(

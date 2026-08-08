@@ -1,4 +1,5 @@
 import 'package:hibiki/src/media/source_library/source_library_row.dart';
+import 'package:hibiki/src/media/video/metadata/video_local_extra_classifier.dart';
 import 'package:hibiki/src/media/video/scraper/collection_member_policy.dart'
     show multiMemberCollectionIdByVideoUid;
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
@@ -57,6 +58,9 @@ class VideoSourceWorkPlanner {
     final List<VideoSourceScrapeWork> result = <VideoSourceScrapeWork>[];
 
     for (final VideoBookRow book in sourceBooks) {
+      // NCOP/NCED/预告/花絮仍是 VideoBook，继续出现在“全部视频”；但它们不是
+      // 可独立识别的作品，不能让一次来源刮削多出四个必失败任务。
+      if (classifyLocalVideoExtra(book.videoPath) != null) continue;
       final int? collectionId = primaryCollections[book.bookUid];
       final VideoNameInfo parsed =
           parseVideoFilename(p.basename(book.videoPath));

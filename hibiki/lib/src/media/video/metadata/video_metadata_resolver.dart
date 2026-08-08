@@ -131,6 +131,10 @@ class VideoMetadataResolver {
       );
     }
 
+    final Map<String, VideoMetadataWork> reviewCandidates =
+        <String, VideoMetadataWork>{};
+    final Map<String, VideoMetadataWork?> fetchedDetails =
+        <String, VideoMetadataWork?>{};
     for (final String rawTitle in request.titleCandidates) {
       final String title = rawTitle.trim();
       if (title.isEmpty) continue;
@@ -147,16 +151,30 @@ class VideoMetadataResolver {
       final Map<String, VideoMetadataWork> exact =
           <String, VideoMetadataWork>{};
       for (final VideoMetadataWork candidate in searched) {
-        if (!_passesSummaryGate(candidate, request, normalizedTitles)) continue;
+        if (!_passesTypeYearGate(candidate, request)) continue;
         final VideoMetadataLookup? lookup =
             _lookupForWork(candidate, provider.providerKind);
         if (lookup == null) continue;
-        final VideoMetadataWork? details = await provider.fetchWork(lookup);
+        final String lookupKey = '${lookup.provider.name}:${lookup.externalId}';
+        final VideoMetadataWork? details = fetchedDetails.containsKey(lookupKey)
+            ? fetchedDetails[lookupKey]
+            : await provider.fetchWork(lookup);
+        fetchedDetails[lookupKey] = details;
         if (details == null ||
             !await _passesDetailGate(provider, lookup, details, request)) {
           continue;
         }
-        exact['${lookup.provider.name}:${lookup.externalId}'] = details;
+        // 搜索摘要常常只带当前语言标题。真正详情会带原名/别名；MoviePilot
+        // 同样用 title/original/alias/translation 做严格清洗后比较，因此必须在
+        // detail gate 之后再做一次标题判定，不能在摘要阶段把罗马字别名丢掉。
+        if (_matchesNormalizedTitle(candidate, normalizedTitles) ||
+            _matchesNormalizedTitle(details, normalizedTitles)) {
+          exact[lookupKey] = details;
+        } else {
+          // 类型、年份、季号都已验证，只剩标题无法唯一确认。后台自动任务仍不
+          // 静默应用；手工任务把 provider 排序后的候选交给用户确认并持久绑定。
+          reviewCandidates.putIfAbsent(lookupKey, () => details);
+        }
       }
       if (exact.length == 1) {
         final VideoMetadataWork work = exact.values.single;
@@ -175,6 +193,14 @@ class VideoMetadataResolver {
           reason: 'More than one candidate passed the strict match gate',
         );
       }
+    }
+    if (reviewCandidates.isNotEmpty) {
+      return VideoMetadataResolution(
+        status: VideoMetadataResolutionStatus.ambiguous,
+        method: VideoMetadataResolutionMethod.exactSearch,
+        candidates: reviewCandidates.values.toList(growable: false),
+        reason: 'Provider candidates require manual title confirmation',
+      );
     }
     return VideoMetadataResolution(
       status: VideoMetadataResolutionStatus.notFound,
@@ -221,21 +247,13 @@ class VideoMetadataResolver {
     );
   }
 
-  bool _passesSummaryGate(
+  bool _passesTypeYearGate(
     VideoMetadataWork candidate,
     VideoMetadataResolveRequest request,
-    Set<String> normalizedTitles,
   ) {
     if (candidate.kind != request.mediaKind) return false;
     if (request.year != null && candidate.year != request.year) return false;
-    final Iterable<String?> titles = <String?>[
-      candidate.title,
-      candidate.originalTitle,
-      ...candidate.aliases,
-    ];
-    return titles.any((String? value) =>
-        value != null &&
-        _normalizedTitles(value).any(normalizedTitles.contains));
+    return true;
   }
 
   Future<bool> _passesDetailGate(
@@ -275,6 +293,21 @@ Set<String> _normalizedTitles(String value) {
       TitleNormalizer.normalize(FilenameParser.parse(value).title);
   if (parsed.isNotEmpty) result.add(parsed);
   return result;
+}
+
+bool _matchesNormalizedTitle(
+  VideoMetadataWork work,
+  Set<String> normalizedTitles,
+) {
+  return <String?>[
+    work.title,
+    work.originalTitle,
+    ...work.aliases,
+  ].any(
+    (String? value) =>
+        value != null &&
+        _normalizedTitles(value).any(normalizedTitles.contains),
+  );
 }
 
 int? _inferredSeasonNumber(VideoMetadataWork work) {

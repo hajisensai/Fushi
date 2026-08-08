@@ -188,4 +188,44 @@ void main() {
     expect(find.text('Show'), findsWidgets);
     expect(find.textContaining('已看完'), findsWidgets);
   });
+
+  testWidgets('v69 作品简介与规范分集标题直接回填详情页', (WidgetTester tester) async {
+    final int workId = await database.upsertVideoMetadataWork(
+      VideoMetadataWorksCompanion.insert(
+        collectionId: Value<int?>(collectionId),
+        mediaType: 'tv',
+        title: '无职转生 ～到了异世界就拿出真本事～',
+        originalTitle: const Value<String?>('無職転生'),
+        overview: const Value<String?>('一名家里蹲转生到剑与魔法世界后的故事。'),
+        year: const Value<int?>(2021),
+        rating: const Value<double?>(8.4),
+        updatedAt: 1,
+      ),
+    );
+    final int seasonId = await database.upsertVideoMetadataSeason(
+      VideoMetadataSeasonsCompanion.insert(
+        workId: workId,
+        seasonNumber: 1,
+        title: const Value<String?>('第 1 季'),
+        updatedAt: 1,
+      ),
+    );
+    await database.upsertVideoMetadataEpisode(
+      VideoMetadataEpisodesCompanion.insert(
+        seasonId: seasonId,
+        bookUid: const Value<String?>('show-e1'),
+        episodeNumber: 1,
+        title: const Value<String?>('无职者的转生'),
+        overview: const Value<String?>('鲁迪乌斯开始了新的人生。'),
+        updatedAt: 1,
+      ),
+    );
+
+    await pumpWide(tester);
+
+    expect(find.text('无职转生 ～到了异世界就拿出真本事～'), findsOneWidget);
+    expect(find.textContaining('一名家里蹲转生到剑与魔法世界'), findsWidgets);
+    expect(find.text('1. 无职者的转生'), findsOneWidget);
+    expect(find.text('1. Show S01E01'), findsNothing);
+  });
 }

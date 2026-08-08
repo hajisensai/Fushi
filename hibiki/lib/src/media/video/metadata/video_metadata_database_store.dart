@@ -741,6 +741,8 @@ class VideoMetadataDatabaseStore {
       for (final VideoBookRow book in localWork.members) {
         final VideoMetadataEpisode? episode = episodeByBook[book.bookUid];
         if (episode == null) continue;
+        final VideoScrapeMetaRow? previous =
+            await database.getVideoScrapeMeta(book.bookUid);
         await database.upsertVideoScrapeMeta(
           VideoScrapeMetaCompanion.insert(
             bookUid: book.bookUid,
@@ -759,6 +761,17 @@ class VideoMetadataDatabaseStore {
             scrapedAt: scrapedAt,
           ),
         );
+        final String episodeTitle = episode.title.trim();
+        if (episodeTitle.isNotEmpty &&
+            episodeTitle != metadata.title &&
+            (_isImportedFilenameTitle(book) ||
+                (previous?.episodeNumber != null &&
+                    previous!.title.trim() == book.title.trim()))) {
+          // MoviePilot 会整理磁盘文件名；Hibiki 明确不移动用户媒体，所以只把
+          // provider 的真实分集名投影到 VideoBook 展示标题。用户手动改过的标题
+          // 不满足“原始文件 stem/上一版刮削标题”判据，永远保留。
+          await database.updateVideoBookTitle(book.bookUid, episodeTitle);
+        }
       }
     } else {
       await database.upsertVideoScrapeMeta(
@@ -794,6 +807,12 @@ class VideoMetadataDatabaseStore {
       result.putIfAbsent((parsed.season ?? 1, episode), () => book);
     }
     return result;
+  }
+
+  static bool _isImportedFilenameTitle(VideoBookRow book) {
+    final String stem = p.basenameWithoutExtension(book.videoPath).trim();
+    return stem.isNotEmpty &&
+        stem.toLowerCase() == book.title.trim().toLowerCase();
   }
 
   static List<VideoMetadataId> _uniqueIds(Iterable<VideoMetadataId> ids) {

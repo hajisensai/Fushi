@@ -141,7 +141,8 @@ class TmdbVideoMetadataProvider
       operation: 'TMDB ${lookup.mediaKind.name} details',
       query: const <String, String>{
         'append_to_response':
-            'external_ids,credits,images,content_ratings,release_dates,keywords',
+            'external_ids,credits,images,content_ratings,release_dates,keywords,'
+                'alternative_titles,translations',
         'include_image_language': 'zh,en,null',
       },
       cacheKey: 'tmdb:work:${lookup.mediaKind.name}:${lookup.externalId}',
@@ -309,9 +310,10 @@ class TmdbVideoMetadataProvider
       title: title,
       originalTitle: originalTitle == title ? null : originalTitle,
       tagline: metadataString(item['tagline']),
-      aliases: metadataUniqueStrings(<String?>[originalTitle])
-          .where((String alias) => alias != title)
-          .toList(),
+      aliases: metadataUniqueStrings(<String?>[
+        originalTitle,
+        ..._alternativeTitles(item, kind),
+      ]).where((String alias) => alias != title).toList(),
       year: metadataYear(premiered),
       premiered: premiered,
       endDate: kind == VideoMetadataMediaKind.tv
@@ -390,9 +392,10 @@ class TmdbVideoMetadataProvider
       kind: kind,
       title: title,
       originalTitle: originalTitle == title ? null : originalTitle,
-      aliases: metadataUniqueStrings(<String?>[originalTitle])
-          .where((String alias) => alias != title)
-          .toList(),
+      aliases: metadataUniqueStrings(<String?>[
+        originalTitle,
+        ..._alternativeTitles(item, kind),
+      ]).where((String alias) => alias != title).toList(),
       year: metadataYear(premiered),
       premiered: premiered,
       plot: metadataString(item['overview']),
@@ -431,6 +434,30 @@ class TmdbVideoMetadataProvider
       seasons: seasons,
       rawPayload: item,
     );
+  }
+
+  List<String> _alternativeTitles(
+    Map<String, Object?> item,
+    VideoMetadataMediaKind kind,
+  ) {
+    final Map<String, Object?> alternative =
+        metadataObject(item['alternative_titles']) ?? const <String, Object?>{};
+    final List<Object?> alternativeNodes = metadataList(
+      kind == VideoMetadataMediaKind.tv
+          ? alternative['results']
+          : alternative['titles'],
+    );
+    final Map<String, Object?> translations =
+        metadataObject(item['translations']) ?? const <String, Object?>{};
+    return metadataUniqueStrings(<String?>[
+      for (final Object? node in alternativeNodes)
+        metadataString(metadataObject(node)?['title']),
+      for (final Object? node in metadataList(translations['translations']))
+        if (metadataObject(node)?['data'] case final Map<String, Object?> data)
+          kind == VideoMetadataMediaKind.tv
+              ? metadataString(data['name'])
+              : metadataString(data['title']),
+    ]);
   }
 
   VideoMetadataSeason _mapSeason(

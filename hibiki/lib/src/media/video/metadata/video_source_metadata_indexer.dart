@@ -1,8 +1,11 @@
 library;
 
+export 'video_local_extra_classifier.dart';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:hibiki/src/media/source_library/source_library_row.dart';
 import 'package:hibiki/src/media/video/metadata/video_metadata_database_store.dart';
+import 'package:hibiki/src/media/video/metadata/video_local_extra_classifier.dart';
 import 'package:hibiki/src/media/video/metadata/video_metadata_models.dart';
 import 'package:hibiki/src/media/video/metadata/video_nfo_reader.dart';
 import 'package:hibiki/src/media/video/metadata/video_sidecar_artifact_store.dart';
@@ -10,44 +13,6 @@ import 'package:hibiki/src/media/video/metadata/video_source_work_planner.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
-
-class VideoLocalExtraMatch {
-  const VideoLocalExtraMatch(this.kind);
-
-  final VideoMetadataExtraKind kind;
-}
-
-/// Kodi 风格本地附件识别。仅分类，不决定作品归属。
-VideoLocalExtraMatch? classifyLocalVideoExtra(String path) {
-  final List<String> segments = p
-      .split(p.normalize(path))
-      .map((String value) =>
-          value.toLowerCase().replaceAll(RegExp(r'[_-]+'), ' '))
-      .toList(growable: false);
-  final String stem = p.basenameWithoutExtension(path).toLowerCase();
-  VideoMetadataExtraKind? kind;
-  for (final String segment in segments.reversed) {
-    kind = switch (segment.trim()) {
-      'trailers' || 'trailer' => VideoMetadataExtraKind.trailer,
-      'featurettes' || 'featurette' => VideoMetadataExtraKind.featurette,
-      'behind the scenes' => VideoMetadataExtraKind.behindTheScenes,
-      'deleted scenes' ||
-      'deleted scene' =>
-        VideoMetadataExtraKind.deletedScene,
-      'interviews' || 'interview' => VideoMetadataExtraKind.interview,
-      'shorts' || 'short' => VideoMetadataExtraKind.short,
-      'scenes' || 'scene' => VideoMetadataExtraKind.scene,
-      'samples' || 'sample' => VideoMetadataExtraKind.sample,
-      'extras' || 'extra' => VideoMetadataExtraKind.extra,
-      _ => kind,
-    };
-    if (kind != null) break;
-  }
-  if (kind == null && RegExp(r'(^|[ ._\-])trailer([ ._\-]|$)').hasMatch(stem)) {
-    kind = VideoMetadataExtraKind.trailer;
-  }
-  return kind == null ? null : VideoLocalExtraMatch(kind);
-}
 
 /// 扫描完成后的本地作品索引：即使尚未联网刮削，也建立可展示的规范作品；同时绑定
 /// 唯一可判定归属的本地预告/花絮。
@@ -125,6 +90,11 @@ class VideoSourceMetadataIndexer {
               candidates[0].root.length == candidates[1].root.length)) {
         continue;
       }
+      // 旧版本把 NCOP/NCED 当独立电影建立过 book-owned work。现在已能唯一绑定
+      // 父作品时原地清掉这份错误规范实体；VideoBook 本身不删，仍留在“全部视频”。
+      await (database.delete(database.videoMetadataWorks)
+            ..where((table) => table.bookUid.equals(book.bookUid)))
+          .go();
       final int now = DateTime.now().millisecondsSinceEpoch;
       await database.upsertVideoMetadataExtra(
         VideoMetadataExtrasCompanion.insert(

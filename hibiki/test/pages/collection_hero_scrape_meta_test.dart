@@ -176,7 +176,7 @@ void main() {
     expect(
       find.byKey(const ValueKey<String>('video-work-hero-card')),
       findsOneWidget,
-      reason: '合集详情必须使用内嵌圆角作品 hero，而不是旧的整屏背景布局',
+      reason: '合集详情必须使用作品级 hero',
     );
     expect(find.text('Tensei Oujo v2 播放列表'), findsOneWidget);
     expect(find.textContaining('已看完'), findsWidgets);
@@ -208,6 +208,21 @@ void main() {
       find.byKey(const ValueKey<String>('collection-hero-poster')),
       findsOneWidget,
       reason: '海报回到它自己的 2:3 卡槽',
+    );
+    final Rect hero = tester.getRect(
+      find.byKey(const ValueKey<String>('video-work-hero-card')),
+    );
+    expect(hero.left, 0, reason: '大背景必须从内容区左边缘开始，不能居中留白');
+    expect(hero.right, 1600, reason: '大背景必须平铺到内容区右边缘');
+    expect(hero.height, greaterThanOrEqualTo(460));
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey<String>('collection-hero-poster')),
+          )
+          .height,
+      greaterThanOrEqualTo(400),
+      reason: '桌面宽屏使用大竖版海报，不再缩成 hero 角落的小卡',
     );
     expect(
       find.byType(LandscapeCoverImage),
