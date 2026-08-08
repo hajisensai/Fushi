@@ -125,6 +125,13 @@ target_include_directories(fushi_voice_session_reuse_test PRIVATE "include")
 target_compile_definitions(fushi_voice_session_reuse_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_voice_session_reuse_test COMMAND fushi_voice_session_reuse_test)
 
+add_executable(fushi_voice_hook_ipc_name_test
+  "tests/voice_hook_ipc_name_test.cpp"
+)
+target_include_directories(fushi_voice_hook_ipc_name_test PRIVATE "include")
+target_compile_definitions(fushi_voice_hook_ipc_name_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_voice_hook_ipc_name_test COMMAND fushi_voice_hook_ipc_name_test)
+
 add_executable(fushi_unity_event_cursor_test
   "tests/unity_event_cursor_test.cpp"
 )
