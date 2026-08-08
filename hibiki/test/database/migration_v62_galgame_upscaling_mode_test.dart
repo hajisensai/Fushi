@@ -102,7 +102,7 @@ CREATE TABLE galgame_tag_mappings (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 69,
+    expect(db.schemaVersion, 70,
         reason: 'v62 给 galgames 加 upscaling_mode（每游戏窗口超分档位）');
 
     // 列真的建出来了（不只是 Dart 侧读到默认值）。

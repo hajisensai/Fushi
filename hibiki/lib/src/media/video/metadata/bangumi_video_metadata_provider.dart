@@ -6,14 +6,14 @@ import 'package:hibiki/src/media/video/metadata/video_metadata_provider.dart';
 import 'package:hibiki/src/media/video/metadata/video_metadata_transport.dart';
 import 'package:http/http.dart' as http;
 
-class BangumiVideoMetadataProvider implements VideoMetadataProvider {
+class BangumiVideoMetadataProvider
+    implements VideoMetadataProvider, VideoMetadataExtrasProvider {
   BangumiVideoMetadataProvider({
     http.Client? client,
     VideoMetadataHttpClient? transport,
     this.baseUrl = 'https://api.bgm.tv/v0',
     this.accessToken = '',
-    this.userAgent =
-        'hajisensai/hibiki/1.4.0 '
+    this.userAgent = 'hajisensai/hibiki/1.4.0 '
         '(https://github.com/hajisensai/hibiki)',
   })  : assert(client == null || transport == null),
         _transport = transport ?? VideoMetadataHttpClient(client: client),
@@ -175,6 +175,12 @@ class BangumiVideoMetadataProvider implements VideoMetadataProvider {
         a.episodeNumber.compareTo(b.episodeNumber));
     return episodes;
   }
+
+  @override
+  Future<List<VideoMetadataExtra>> fetchExtras(
+    VideoMetadataLookup lookup,
+  ) async =>
+      const <VideoMetadataExtra>[];
 
   VideoMetadataWork? _mapWork(
     Map<String, Object?> item, {

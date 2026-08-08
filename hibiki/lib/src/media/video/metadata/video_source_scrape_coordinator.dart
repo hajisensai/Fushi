@@ -19,6 +19,7 @@ import 'package:hibiki/src/media/video/metadata/video_metadata_models.dart';
 import 'package:hibiki/src/media/video/metadata/video_metadata_provider.dart';
 import 'package:hibiki/src/media/video/metadata/video_metadata_resolver.dart';
 import 'package:hibiki/src/media/video/metadata/video_nfo_builder.dart';
+import 'package:hibiki/src/media/video/metadata/video_nfo_reader.dart';
 import 'package:hibiki/src/media/video/metadata/video_sidecar_artifact_store.dart';
 import 'package:hibiki/src/media/video/metadata/video_sidecar_target_resolver.dart';
 import 'package:hibiki/src/media/video/metadata/video_sidecar_writer.dart';
@@ -360,16 +361,31 @@ class VideoSourceScrapeCoordinator
         localWork.isEpisodic || parsed.episode != null
             ? VideoMetadataMediaKind.tv
             : VideoMetadataMediaKind.movie;
-    final List<String> candidates = _titleCandidates(localWork, parsed);
+    final VideoMetadataWork? nfo = await VideoNfoReader(
+      generatedArtifactChecker:
+          DatabaseSidecarGeneratedArtifactChecker(database),
+    ).readForPaths(
+      sourceRoot: source.rootPath,
+      fallbackTitle: localWork.title,
+      videoPaths: <String>[
+        for (final VideoBookRow member in localWork.members) member.videoPath,
+      ],
+    );
+    final List<String> candidates = <String>[
+      if (nfo != null) nfo.title,
+      ..._titleCandidates(localWork, parsed),
+    ];
+    final VideoMetadataLookup? storedLookup =
+        await _store.confirmedLookup(localWork);
     final VideoMetadataResolution resolution = await VideoMetadataResolver(
       registry: registry,
     ).resolve(VideoMetadataResolveRequest(
       selectedProvider: selectedProvider,
       mediaKind: kind,
       titleCandidates: candidates,
-      year: _parsedYear(localWork),
+      year: nfo?.year ?? _parsedYear(localWork),
       seasonNumber: parsed.season,
-      confirmedLookup: await _store.confirmedLookup(localWork),
+      confirmedLookup: storedLookup ?? _lookupForNfo(nfo),
       identityHints: <String>[
         for (final VideoBookRow member in localWork.members) member.videoPath,
       ],
@@ -402,6 +418,14 @@ class VideoSourceScrapeCoordinator
       }
       resolvedWork = selected.work;
       resolvedLookup = selected.lookup;
+    }
+    if ((resolvedWork == null || resolvedLookup == null) && nfo != null) {
+      resolvedWorkCache[cacheKey] = nfo;
+      authoritativeSeasonEpisodesCache[cacheKey] = nfo.seasons.isNotEmpty;
+      return _ResolvedWork(
+        metadata: nfo,
+        seasonEpisodesAuthoritative: nfo.seasons.isNotEmpty,
+      );
     }
     if (resolvedWork == null || resolvedLookup == null) {
       return _ResolvedWork(reason: resolution.reason);
@@ -442,6 +466,7 @@ class VideoSourceScrapeCoordinator
       localWork.title,
       fanartEnabled: fanartEnabled,
     );
+    if (nfo != null) metadata = mergeNfoAuthority(nfo, metadata);
     resolvedWorkCache[cacheKey] = metadata;
     authoritativeSeasonEpisodesCache[cacheKey] = seasonEpisodesAuthoritative;
     return _ResolvedWork(
@@ -450,20 +475,54 @@ class VideoSourceScrapeCoordinator
     );
   }
 
+  static VideoMetadataLookup? _lookupForNfo(VideoMetadataWork? nfo) {
+    if (nfo == null) return null;
+    for (final VideoMetadataId id in nfo.ids) {
+      final VideoMetadataProviderKind? provider =
+          VideoMetadataProviderKind.values.asNameMap()[id.type];
+      if (provider == null || provider == VideoMetadataProviderKind.fanart) {
+        continue;
+      }
+      return VideoMetadataLookup(
+        provider: provider,
+        externalId: id.value,
+        mediaKind: nfo.kind,
+        episodeGroupId: nfo.episodeGroupId,
+      );
+    }
+    return null;
+  }
+
   Future<_HydratedWork> _hydrateWork(
     VideoMetadataWork work,
     VideoMetadataLookup lookup,
     List<SourceScrapeIssue> warnings,
     String localTitle,
   ) async {
-    if (work.kind == VideoMetadataMediaKind.movie) {
-      return _HydratedWork(metadata: work, complete: true);
-    }
     final VideoMetadataProvider? provider = registry.provider(lookup.provider);
     if (provider == null) {
       return _HydratedWork(metadata: work, complete: false);
     }
     bool complete = true;
+    List<VideoMetadataExtra> extras = work.extras;
+    try {
+      final List<VideoMetadataExtra> fetched = provider
+              is VideoMetadataExtrasProvider
+          ? await (provider as VideoMetadataExtrasProvider).fetchExtras(lookup)
+          : const <VideoMetadataExtra>[];
+      if (fetched.isNotEmpty) extras = fetched;
+    } catch (error) {
+      warnings.add(SourceScrapeIssue(
+        workTitle: localTitle,
+        message: '预告片与花絮抓取失败，作品资料仍已保留：$error',
+      ));
+    }
+    if (work.kind == VideoMetadataMediaKind.movie) {
+      return _HydratedWork(
+        metadata: work.copyWith(extras: extras),
+        complete: true,
+      );
+    }
     List<VideoMetadataSeason> seasons = work.seasons;
     try {
       final List<VideoMetadataSeason> fetched =
@@ -498,7 +557,7 @@ class VideoSourceScrapeCoordinator
       ));
     }
     return _HydratedWork(
-      metadata: work.copyWith(seasons: hydrated),
+      metadata: work.copyWith(seasons: hydrated, extras: extras),
       complete: complete,
     );
   }

@@ -34,6 +34,21 @@ enum VideoMetadataImageKind {
   landscape,
 }
 
+/// 作品级视频附件种类。在线附件不进入 VideoBook；本地附件仍由 bookUid 指向原文件。
+enum VideoMetadataExtraKind {
+  trailer,
+  teaser,
+  clip,
+  featurette,
+  interview,
+  behindTheScenes,
+  deletedScene,
+  short,
+  scene,
+  sample,
+  extra,
+}
+
 /// 一个站点身份，例如 `tmdb=31911` 或 `imdb=tt1234567`。
 class VideoMetadataId {
   const VideoMetadataId({
@@ -357,6 +372,69 @@ class VideoMetadataImage {
       );
 }
 
+class VideoMetadataExtra {
+  const VideoMetadataExtra({
+    required this.kind,
+    required this.title,
+    this.provider,
+    this.providerVideoId,
+    this.site,
+    this.remoteUrl,
+    this.thumbnailUrl,
+    this.durationMs,
+    this.official = false,
+    this.language,
+    this.publishedAt,
+    this.order = 0,
+  });
+
+  final VideoMetadataExtraKind kind;
+  final String title;
+  final VideoMetadataProviderKind? provider;
+  final String? providerVideoId;
+  final String? site;
+  final String? remoteUrl;
+  final String? thumbnailUrl;
+  final int? durationMs;
+  final bool official;
+  final String? language;
+  final String? publishedAt;
+  final int order;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is VideoMetadataExtra &&
+          kind == other.kind &&
+          title == other.title &&
+          provider == other.provider &&
+          providerVideoId == other.providerVideoId &&
+          site == other.site &&
+          remoteUrl == other.remoteUrl &&
+          thumbnailUrl == other.thumbnailUrl &&
+          durationMs == other.durationMs &&
+          official == other.official &&
+          language == other.language &&
+          publishedAt == other.publishedAt &&
+          order == other.order;
+
+  @override
+  int get hashCode => Object.hash(
+        kind,
+        title,
+        provider,
+        providerVideoId,
+        site,
+        remoteUrl,
+        thumbnailUrl,
+        durationMs,
+        official,
+        language,
+        publishedAt,
+        order,
+      );
+}
+
 /// 一集的结构化资料。
 class VideoMetadataEpisode {
   VideoMetadataEpisode({
@@ -575,6 +653,7 @@ class VideoMetadataWork {
     List<VideoMetadataCredit> credits = const <VideoMetadataCredit>[],
     List<VideoMetadataImage> images = const <VideoMetadataImage>[],
     List<VideoMetadataSeason> seasons = const <VideoMetadataSeason>[],
+    List<VideoMetadataExtra> extras = const <VideoMetadataExtra>[],
     Map<String, Object?>? rawPayload,
   })  : aliases = List<String>.unmodifiable(aliases),
         genres = List<String>.unmodifiable(genres),
@@ -585,6 +664,7 @@ class VideoMetadataWork {
         credits = List<VideoMetadataCredit>.unmodifiable(credits),
         images = List<VideoMetadataImage>.unmodifiable(images),
         seasons = List<VideoMetadataSeason>.unmodifiable(seasons),
+        extras = List<VideoMetadataExtra>.unmodifiable(extras),
         rawPayload = _freezeMap(rawPayload);
 
   final VideoMetadataProviderKind provider;
@@ -615,6 +695,7 @@ class VideoMetadataWork {
   final List<VideoMetadataCredit> credits;
   final List<VideoMetadataImage> images;
   final List<VideoMetadataSeason> seasons;
+  final List<VideoMetadataExtra> extras;
   final Map<String, Object?>? rawPayload;
 
   VideoMetadataWork copyWith({
@@ -646,6 +727,7 @@ class VideoMetadataWork {
     List<VideoMetadataCredit>? credits,
     List<VideoMetadataImage>? images,
     List<VideoMetadataSeason>? seasons,
+    List<VideoMetadataExtra>? extras,
     Map<String, Object?>? rawPayload,
   }) =>
       VideoMetadataWork(
@@ -677,6 +759,7 @@ class VideoMetadataWork {
         credits: credits ?? this.credits,
         images: images ?? this.images,
         seasons: seasons ?? this.seasons,
+        extras: extras ?? this.extras,
         rawPayload: rawPayload ?? this.rawPayload,
       );
 
@@ -715,6 +798,8 @@ class VideoMetadataWork {
               .equals(images, other.images) &&
           const ListEquality<VideoMetadataSeason>()
               .equals(seasons, other.seasons) &&
+          const ListEquality<VideoMetadataExtra>()
+              .equals(extras, other.extras) &&
           const DeepCollectionEquality().equals(rawPayload, other.rawPayload);
 
   @override
@@ -747,6 +832,7 @@ class VideoMetadataWork {
         const ListEquality<VideoMetadataCredit>().hash(credits),
         const ListEquality<VideoMetadataImage>().hash(images),
         const ListEquality<VideoMetadataSeason>().hash(seasons),
+        const ListEquality<VideoMetadataExtra>().hash(extras),
         const DeepCollectionEquality().hash(rawPayload),
       ]);
 }

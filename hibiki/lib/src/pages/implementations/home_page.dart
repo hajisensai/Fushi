@@ -29,8 +29,7 @@ import 'package:hibiki/src/media/video/metadata/video_source_scrape_dialog.dart'
 import 'package:hibiki/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:hibiki/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki/src/pages/implementations/media_library_shell.dart';
-import 'package:hibiki/src/pages/implementations/media_sources_page.dart';
+import 'package:hibiki/src/pages/implementations/video_library_shell.dart';
 import 'package:hibiki/src/media/audiobook/now_listening_mini_bar.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/pages.dart';
@@ -48,7 +47,8 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
         focusedEditableText,
         gamepadMoveFocusInDirection;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki_core/hibiki_core.dart' show VideoSourceScrapeSettingRow;
+import 'package:hibiki_core/hibiki_core.dart'
+    show VideoSourceScrapeRunRow, VideoSourceScrapeSettingRow;
 
 /// 顶层 tab 的逻辑身份（取代写死的整数索引 0/1/2）。条件 tab（video/downloads 常驻、
 /// games 仅 Windows）用枚举身份而非位置来切换/路由——插入条件 tab 不会再打乱「设置/词典」
@@ -337,6 +337,16 @@ class _HomePageState extends BasePageState<HomePage>
       }
 
       _triggerFullAutoSync();
+      unawaited(appModel.database
+          .interruptStaleVideoSourceScrapeRuns()
+          .catchError((Object error, StackTrace stackTrace) {
+        ErrorLogService.instance.log(
+          'HomePage.interruptStaleVideoScrapeRuns',
+          error,
+          stackTrace,
+        );
+        return 0;
+      }));
       // 首帧同步之后挂定时轮询，让静止不动的设备也能周期性拉到远端改动（见
       // [_periodicSyncInterval] 注释）。dispose 时 cancel。
       _periodicSyncTimer =
@@ -1104,6 +1114,14 @@ class _HomePageState extends BasePageState<HomePage>
         context: context,
         controller: _videoSourceScrapeController,
         loadRuns: () => appModel.database.getVideoSourceScrapeRuns(limit: 20),
+        onRetry: (VideoSourceScrapeRunRow run) async {
+          final int? sourceId = run.sourceId;
+          if (sourceId == null) return;
+          final SourceLibraryRow? source =
+              await appModel.database.getMediaSourceById(sourceId);
+          if (source == null) return;
+          await _scrapeVideoSource(source);
+        },
       );
     } finally {
       _videoSourceScrapePanelOpen = false;
@@ -1323,38 +1341,15 @@ class _HomePageState extends BasePageState<HomePage>
       case HomeTab.home:
         return HomeDashboardPage(videoRepo: _videoRepository);
       case HomeTab.video:
-        // 视频是「媒体库 + 来源」两视图（与书 / 漫画同一套导航结构）。视频没有在线
-        // 浏览源——番剧下载走 torrent 栈、入口在下载页——所以不放「浏览」空壳 tab。
-        return MediaLibraryShell(
-          focusIdPrefix: 'video-library-view',
-          views: <MediaLibraryViewSpec>[
-            MediaLibraryViewSpec(
-              kind: MediaLibraryViewKind.library,
-              label: t.library_view_media,
-              builder: (BuildContext context, Widget navigation) =>
-                  HomeVideoPage(
-                repo: _videoRepository,
-                navigation: navigation,
-                libraryRefreshSignal: _videoLibraryRefreshSignal,
-              ),
-            ),
-            MediaLibraryViewSpec(
-              kind: MediaLibraryViewKind.sources,
-              label: t.library_view_sources,
-              builder: (BuildContext context, Widget navigation) =>
-                  MediaSourcesPage(
-                mediaKind: 'video',
-                navigation: navigation,
-                onScrapeAll: _scrapeAllVideosFromSources,
-                onScrapeSource: _scrapeVideoSource,
-                onVideoScanCompleted: _onVideoSourceScanCompleted,
-                scrapeTaskController: _videoSourceScrapeController,
-                onOpenScrapeTasks: () =>
-                    unawaited(_openVideoSourceScrapeTasks()),
-                onLibraryChanged: _notifyVideoLibraryChanged,
-              ),
-            ),
-          ],
+        return VideoLibraryShell(
+          repository: _videoRepository,
+          libraryRefreshSignal: _videoLibraryRefreshSignal,
+          scrapeTaskController: _videoSourceScrapeController,
+          onScrapeAll: _scrapeAllVideosFromSources,
+          onScrapeSource: _scrapeVideoSource,
+          onVideoScanCompleted: _onVideoSourceScanCompleted,
+          onOpenScrapeTasks: () => unawaited(_openVideoSourceScrapeTasks()),
+          onLibraryChanged: _notifyVideoLibraryChanged,
         );
       case HomeTab.downloads:
         return const DownloadsPage();

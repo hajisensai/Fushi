@@ -3156,5 +3156,12 @@
   "video_source_scrape_tasks_history": "最近任务",
   "video_source_scrape_tasks_empty": "暂无刮削任务",
   "video_source_scrape_waiting_confirmation": "等待你的确认",
-  "video_source_scrape_phase_scanning": "扫描来源"
+  "video_source_scrape_phase_scanning": "扫描来源",
+  "video_library_all_videos": "全部视频",
+  "video_work_voice_roles": "声优与角色",
+  "video_work_cast_crew": "演职员",
+  "video_work_trailers": "预告片",
+  "video_work_extras": "花絮",
+  "video_work_details": "作品资料",
+  "video_work_external_ids": "外部 ID"
 }

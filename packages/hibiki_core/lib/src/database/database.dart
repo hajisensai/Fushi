@@ -436,6 +436,7 @@ void _requireOneVideoMetadataOwner({
   VideoMetadataWorkTerms,
   VideoMetadataCredits,
   VideoMetadataImages,
+  VideoMetadataExtras,
   VideoSourceScrapeSettings,
   VideoSourceScrapeRuns,
   VideoSidecarArtifacts,
@@ -461,7 +462,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 69;
+  int get schemaVersion => 70;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1508,6 +1509,11 @@ class HibikiDatabase extends _$HibikiDatabase {
               await m.createTable(videoSidecarArtifacts);
             }
             await _ensureIndexes();
+          }
+          if (from < 70) {
+            if (!await _tableExists('video_metadata_extras')) {
+              await m.createTable(videoMetadataExtras);
+            }
           }
         },
         onCreate: (m) async {
@@ -3604,6 +3610,57 @@ class HibikiDatabase extends _$HibikiDatabase {
     return query.get();
   }
 
+  /// 整体替换一部作品的在线附件，同时保留扫描器绑定的本地附件。
+  Future<void> replaceOnlineVideoMetadataExtras(
+    int workId,
+    List<VideoMetadataExtrasCompanion> extras,
+  ) =>
+      transaction(() async {
+        await (delete(videoMetadataExtras)
+              ..where(($VideoMetadataExtrasTable t) =>
+                  t.workId.equals(workId) & t.sourceKind.equals('online')))
+            .go();
+        for (final VideoMetadataExtrasCompanion extra in extras) {
+          await into(videoMetadataExtras).insertOnConflictUpdate(
+            extra.copyWith(workId: Value<int>(workId)),
+          );
+        }
+      });
+
+  /// 新增或更新本地附件；同一个 VideoBook 只能绑定一部作品。
+  Future<void> upsertVideoMetadataExtra(
+    VideoMetadataExtrasCompanion extra,
+  ) =>
+      into(videoMetadataExtras).insertOnConflictUpdate(extra);
+
+  Future<List<VideoMetadataExtraRow>> getVideoMetadataExtras(int workId) =>
+      (select(videoMetadataExtras)
+            ..where(($VideoMetadataExtrasTable t) => t.workId.equals(workId))
+            ..orderBy(<OrderingTerm Function($VideoMetadataExtrasTable)>[
+              ($VideoMetadataExtrasTable t) =>
+                  OrderingTerm(expression: t.sortOrder),
+              ($VideoMetadataExtrasTable t) =>
+                  OrderingTerm(expression: t.title),
+            ]))
+          .get();
+
+  Future<List<VideoMetadataExtraRow>> getAllVideoMetadataExtras() =>
+      (select(videoMetadataExtras)
+            ..orderBy(<OrderingTerm Function($VideoMetadataExtrasTable)>[
+              ($VideoMetadataExtrasTable t) =>
+                  OrderingTerm(expression: t.workId),
+              ($VideoMetadataExtrasTable t) =>
+                  OrderingTerm(expression: t.sortOrder),
+            ]))
+          .get();
+
+  Future<VideoMetadataExtraRow?> getVideoMetadataExtraByBook(
+    String bookUid,
+  ) =>
+      (select(videoMetadataExtras)
+            ..where(($VideoMetadataExtrasTable t) => t.bookUid.equals(bookUid)))
+          .getSingleOrNull();
+
   // ── video source scrape settings / runs / sidecar artifacts ───────
 
   Future<VideoSourceScrapeSettingRow?> getVideoSourceScrapeSettings(
@@ -3654,6 +3711,22 @@ class HibikiDatabase extends _$HibikiDatabase {
       ])
       ..limit(limit);
     return query.get();
+  }
+
+  /// 进程异常退出不会经过 Flutter dispose；下次启动把遗留 running 任务诚实标成
+  /// interrupted，避免任务面板永久显示正在运行。
+  Future<int> interruptStaleVideoSourceScrapeRuns({int? finishedAt}) {
+    final int now = finishedAt ?? DateTime.now().millisecondsSinceEpoch;
+    return (update(videoSourceScrapeRuns)
+          ..where(
+              ($VideoSourceScrapeRunsTable t) => t.status.equals('running')))
+        .write(VideoSourceScrapeRunsCompanion(
+      status: const Value<String>('interrupted'),
+      phase: const Value<String>('interrupted'),
+      lastError: const Value<String>('应用在任务完成前退出'),
+      updatedAt: Value<int>(now),
+      finishedAt: Value<int?>(now),
+    ));
   }
 
   Future<VideoSidecarArtifactRow?> getVideoSidecarArtifactByPath(

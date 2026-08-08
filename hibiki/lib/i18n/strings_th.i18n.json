@@ -3156,5 +3156,12 @@
   "video_source_scrape_tasks_history": "Recent tasks",
   "video_source_scrape_tasks_empty": "No scrape tasks yet",
   "video_source_scrape_waiting_confirmation": "Waiting for your confirmation",
-  "video_source_scrape_phase_scanning": "Scanning source"
+  "video_source_scrape_phase_scanning": "Scanning source",
+  "video_library_all_videos": "All videos",
+  "video_work_voice_roles": "Voice cast and characters",
+  "video_work_cast_crew": "Cast and crew",
+  "video_work_trailers": "Trailers",
+  "video_work_extras": "Extras",
+  "video_work_details": "Details",
+  "video_work_external_ids": "External IDs"
 }

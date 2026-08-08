@@ -7,7 +7,8 @@ import 'package:hibiki/src/media/video/metadata/video_metadata_transport.dart';
 import 'package:hibiki/src/media/video/scraper/title_normalizer.dart';
 import 'package:http/http.dart' as http;
 
-class TmdbVideoMetadataProvider implements VideoMetadataProvider {
+class TmdbVideoMetadataProvider
+    implements VideoMetadataProvider, VideoMetadataExtrasProvider {
   TmdbVideoMetadataProvider({
     String apiKey = '',
     String accessToken = '',
@@ -203,6 +204,60 @@ class TmdbVideoMetadataProvider implements VideoMetadataProvider {
     );
     if (payload == null) return const <VideoMetadataEpisode>[];
     return _mapEpisodes(payload, seasonNumber);
+  }
+
+  @override
+  Future<List<VideoMetadataExtra>> fetchExtras(
+    VideoMetadataLookup lookup,
+  ) async {
+    _validateLookup(lookup);
+    final String media =
+        lookup.mediaKind == VideoMetadataMediaKind.tv ? 'tv' : 'movie';
+    final Map<String, Object?>? payload = await _getObjectOrNull(
+      '/$media/${lookup.externalId}/videos',
+      operation: 'TMDB videos',
+      cacheKey: 'tmdb:videos:$media:${lookup.externalId}',
+    );
+    final List<VideoMetadataExtra> result = <VideoMetadataExtra>[];
+    for (final Object? node in metadataList(payload?['results'])) {
+      final Map<String, Object?>? item = metadataObject(node);
+      final String? key = metadataString(item?['key']);
+      final String? title = metadataString(item?['name']);
+      final String? site = metadataString(item?['site']);
+      if (key == null || title == null || site == null) continue;
+      final String normalizedSite = site.toLowerCase();
+      final String? url = switch (normalizedSite) {
+        'youtube' => 'https://www.youtube.com/watch?v=$key',
+        'vimeo' => 'https://vimeo.com/$key',
+        _ => null,
+      };
+      if (url == null) continue;
+      final String type = metadataString(item?['type'])?.toLowerCase() ?? '';
+      final VideoMetadataExtraKind kind = switch (type) {
+        'trailer' => VideoMetadataExtraKind.trailer,
+        'teaser' => VideoMetadataExtraKind.teaser,
+        'clip' => VideoMetadataExtraKind.clip,
+        'featurette' => VideoMetadataExtraKind.featurette,
+        'behind the scenes' => VideoMetadataExtraKind.behindTheScenes,
+        _ => VideoMetadataExtraKind.extra,
+      };
+      result.add(VideoMetadataExtra(
+        kind: kind,
+        title: title,
+        provider: providerKind,
+        providerVideoId: key,
+        site: site,
+        remoteUrl: url,
+        thumbnailUrl: normalizedSite == 'youtube'
+            ? 'https://i.ytimg.com/vi/$key/hqdefault.jpg'
+            : null,
+        official: item?['official'] == true,
+        language: metadataString(item?['iso_639_1']),
+        publishedAt: metadataString(item?['published_at']),
+        order: result.length,
+      ));
+    }
+    return result;
   }
 
   /// 拉取单集完整详情。来源协调器可只对本地实际存在的集调用，避免整季逐集放大

@@ -47,6 +47,7 @@ import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/media/video/video_folder_group_coordinator.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
+import 'package:hibiki/src/media/video/metadata/video_source_metadata_indexer.dart';
 
 /// EPUB extensions (lowercase, no leading dot).
 const Set<String> kScanEpubExtensions = <String>{'epub'};
@@ -442,12 +443,15 @@ class SourceLibraryScanner {
             repository: _videoRepo,
           ).groupPaths(
             videoPaths: <String>[
-              for (final ScanVideoItem item in plan.videos) item.videoPath,
+              for (final ScanVideoItem item in plan.videos)
+                if (classifyLocalVideoExtra(item.videoPath) == null)
+                  item.videoPath,
             ],
             createdVideoPaths: createdVideoPaths,
             sourceId: source.id,
           );
           mediaCount += await _importPlaylists(plan, source.id, files);
+          await VideoSourceMetadataIndexer(_db).index(source);
         case SourceLibraryKind.manga:
           mediaCount = await _importManga(plan, source.id);
       }

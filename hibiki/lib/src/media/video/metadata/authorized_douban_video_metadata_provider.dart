@@ -11,7 +11,8 @@ import 'package:hibiki/src/media/video/metadata/video_metadata_provider.dart';
 import 'package:hibiki/src/media/video/metadata/video_metadata_transport.dart';
 import 'package:http/http.dart' as http;
 
-class AuthorizedDoubanVideoMetadataProvider implements VideoMetadataProvider {
+class AuthorizedDoubanVideoMetadataProvider
+    implements VideoMetadataProvider, VideoMetadataExtrasProvider {
   AuthorizedDoubanVideoMetadataProvider({
     required String endpoint,
     required String token,
@@ -164,6 +165,12 @@ class AuthorizedDoubanVideoMetadataProvider implements VideoMetadataProvider {
         a.episodeNumber.compareTo(b.episodeNumber));
     return episodes;
   }
+
+  @override
+  Future<List<VideoMetadataExtra>> fetchExtras(
+    VideoMetadataLookup lookup,
+  ) async =>
+      const <VideoMetadataExtra>[];
 
   VideoMetadataWork? _mapWork(Map<String, Object?> item) {
     final String? id =

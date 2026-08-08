@@ -127,7 +127,7 @@ void main() {
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), 69);
-    expect(db.schemaVersion, 69);
+    expect(db.schemaVersion, 70);
 
     final List<QueryRow> preferences = await db
         .customSelect(

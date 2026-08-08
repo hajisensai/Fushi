@@ -534,4 +534,64 @@ CREATE TABLE video_books (
     expect(rows.single['name'], 'Existing collection');
     expect(await db.customSelect('PRAGMA foreign_key_check').get(), isEmpty);
   });
+
+  test('v70 keeps local extras while online extras are reconciled', () async {
+    final HibikiDatabase db = _freshDatabase();
+    addTearDown(db.close);
+    await _insertVideo(db, 'movie');
+    await _insertVideo(db, 'local-trailer');
+    final int workId = await db.upsertVideoMetadataWork(
+      VideoMetadataWorksCompanion.insert(
+        bookUid: const Value<String?>('movie'),
+        mediaType: 'movie',
+        title: 'Movie',
+        updatedAt: 70,
+      ),
+    );
+    await db.upsertVideoMetadataExtra(
+      VideoMetadataExtrasCompanion.insert(
+        extraKey: 'local:local-trailer',
+        workId: workId,
+        bookUid: const Value<String?>('local-trailer'),
+        kind: 'trailer',
+        sourceKind: 'local',
+        title: 'Local trailer',
+        updatedAt: 70,
+      ),
+    );
+    await db.replaceOnlineVideoMetadataExtras(
+        workId, <VideoMetadataExtrasCompanion>[
+      VideoMetadataExtrasCompanion.insert(
+        extraKey: 'tmdb:abc',
+        workId: workId,
+        kind: 'trailer',
+        sourceKind: 'online',
+        title: 'Official trailer',
+        provider: const Value<String?>('tmdb'),
+        providerVideoId: const Value<String?>('abc'),
+        remoteUrl: const Value<String?>('https://youtu.be/abc'),
+        updatedAt: 70,
+      ),
+    ]);
+    await db.replaceOnlineVideoMetadataExtras(
+        workId, <VideoMetadataExtrasCompanion>[
+      VideoMetadataExtrasCompanion.insert(
+        extraKey: 'tmdb:def',
+        workId: workId,
+        kind: 'featurette',
+        sourceKind: 'online',
+        title: 'Featurette',
+        remoteUrl: const Value<String?>('https://youtu.be/def'),
+        updatedAt: 71,
+      ),
+    ]);
+
+    final List<VideoMetadataExtraRow> extras =
+        await db.getVideoMetadataExtras(workId);
+    expect(extras.map((VideoMetadataExtraRow row) => row.extraKey),
+        containsAll(<String>['local:local-trailer', 'tmdb:def']));
+    expect(extras.map((VideoMetadataExtraRow row) => row.extraKey),
+        isNot(contains('tmdb:abc')));
+    expect(db.schemaVersion, 70);
+  });
 }

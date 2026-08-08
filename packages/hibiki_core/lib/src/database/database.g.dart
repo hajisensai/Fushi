@@ -31436,6 +31436,875 @@ class VideoMetadataImagesCompanion
   }
 }
 
+class $VideoMetadataExtrasTable extends VideoMetadataExtras
+    with TableInfo<$VideoMetadataExtrasTable, VideoMetadataExtraRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $VideoMetadataExtrasTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _extraKeyMeta =
+      const VerificationMeta('extraKey');
+  @override
+  late final GeneratedColumn<String> extraKey = GeneratedColumn<String>(
+      'extra_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _workIdMeta = const VerificationMeta('workId');
+  @override
+  late final GeneratedColumn<int> workId = GeneratedColumn<int>(
+      'work_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES video_metadata_works (id) ON DELETE CASCADE'));
+  static const VerificationMeta _bookUidMeta =
+      const VerificationMeta('bookUid');
+  @override
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+      'book_uid', aliasedName, true,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'UNIQUE REFERENCES video_books (book_uid) ON DELETE SET NULL'));
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+      'kind', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _sourceKindMeta =
+      const VerificationMeta('sourceKind');
+  @override
+  late final GeneratedColumn<String> sourceKind = GeneratedColumn<String>(
+      'source_kind', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+      'title', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _providerMeta =
+      const VerificationMeta('provider');
+  @override
+  late final GeneratedColumn<String> provider = GeneratedColumn<String>(
+      'provider', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _providerVideoIdMeta =
+      const VerificationMeta('providerVideoId');
+  @override
+  late final GeneratedColumn<String> providerVideoId = GeneratedColumn<String>(
+      'provider_video_id', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _siteMeta = const VerificationMeta('site');
+  @override
+  late final GeneratedColumn<String> site = GeneratedColumn<String>(
+      'site', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _remoteUrlMeta =
+      const VerificationMeta('remoteUrl');
+  @override
+  late final GeneratedColumn<String> remoteUrl = GeneratedColumn<String>(
+      'remote_url', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _thumbnailUrlMeta =
+      const VerificationMeta('thumbnailUrl');
+  @override
+  late final GeneratedColumn<String> thumbnailUrl = GeneratedColumn<String>(
+      'thumbnail_url', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _thumbnailPathMeta =
+      const VerificationMeta('thumbnailPath');
+  @override
+  late final GeneratedColumn<String> thumbnailPath = GeneratedColumn<String>(
+      'thumbnail_path', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _durationMsMeta =
+      const VerificationMeta('durationMs');
+  @override
+  late final GeneratedColumn<int> durationMs = GeneratedColumn<int>(
+      'duration_ms', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _officialMeta =
+      const VerificationMeta('official');
+  @override
+  late final GeneratedColumn<bool> official = GeneratedColumn<bool>(
+      'official', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("official" IN (0, 1))'),
+      defaultValue: const Constant(false));
+  static const VerificationMeta _languageMeta =
+      const VerificationMeta('language');
+  @override
+  late final GeneratedColumn<String> language = GeneratedColumn<String>(
+      'language', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _publishedAtMeta =
+      const VerificationMeta('publishedAt');
+  @override
+  late final GeneratedColumn<String> publishedAt = GeneratedColumn<String>(
+      'published_at', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _sortOrderMeta =
+      const VerificationMeta('sortOrder');
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+      'sort_order', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+      'updated_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [
+        extraKey,
+        workId,
+        bookUid,
+        kind,
+        sourceKind,
+        title,
+        provider,
+        providerVideoId,
+        site,
+        remoteUrl,
+        thumbnailUrl,
+        thumbnailPath,
+        durationMs,
+        official,
+        language,
+        publishedAt,
+        sortOrder,
+        updatedAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'video_metadata_extras';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<VideoMetadataExtraRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('extra_key')) {
+      context.handle(_extraKeyMeta,
+          extraKey.isAcceptableOrUnknown(data['extra_key']!, _extraKeyMeta));
+    } else if (isInserting) {
+      context.missing(_extraKeyMeta);
+    }
+    if (data.containsKey('work_id')) {
+      context.handle(_workIdMeta,
+          workId.isAcceptableOrUnknown(data['work_id']!, _workIdMeta));
+    } else if (isInserting) {
+      context.missing(_workIdMeta);
+    }
+    if (data.containsKey('book_uid')) {
+      context.handle(_bookUidMeta,
+          bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta));
+    }
+    if (data.containsKey('kind')) {
+      context.handle(
+          _kindMeta, kind.isAcceptableOrUnknown(data['kind']!, _kindMeta));
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('source_kind')) {
+      context.handle(
+          _sourceKindMeta,
+          sourceKind.isAcceptableOrUnknown(
+              data['source_kind']!, _sourceKindMeta));
+    } else if (isInserting) {
+      context.missing(_sourceKindMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('provider')) {
+      context.handle(_providerMeta,
+          provider.isAcceptableOrUnknown(data['provider']!, _providerMeta));
+    }
+    if (data.containsKey('provider_video_id')) {
+      context.handle(
+          _providerVideoIdMeta,
+          providerVideoId.isAcceptableOrUnknown(
+              data['provider_video_id']!, _providerVideoIdMeta));
+    }
+    if (data.containsKey('site')) {
+      context.handle(
+          _siteMeta, site.isAcceptableOrUnknown(data['site']!, _siteMeta));
+    }
+    if (data.containsKey('remote_url')) {
+      context.handle(_remoteUrlMeta,
+          remoteUrl.isAcceptableOrUnknown(data['remote_url']!, _remoteUrlMeta));
+    }
+    if (data.containsKey('thumbnail_url')) {
+      context.handle(
+          _thumbnailUrlMeta,
+          thumbnailUrl.isAcceptableOrUnknown(
+              data['thumbnail_url']!, _thumbnailUrlMeta));
+    }
+    if (data.containsKey('thumbnail_path')) {
+      context.handle(
+          _thumbnailPathMeta,
+          thumbnailPath.isAcceptableOrUnknown(
+              data['thumbnail_path']!, _thumbnailPathMeta));
+    }
+    if (data.containsKey('duration_ms')) {
+      context.handle(
+          _durationMsMeta,
+          durationMs.isAcceptableOrUnknown(
+              data['duration_ms']!, _durationMsMeta));
+    }
+    if (data.containsKey('official')) {
+      context.handle(_officialMeta,
+          official.isAcceptableOrUnknown(data['official']!, _officialMeta));
+    }
+    if (data.containsKey('language')) {
+      context.handle(_languageMeta,
+          language.isAcceptableOrUnknown(data['language']!, _languageMeta));
+    }
+    if (data.containsKey('published_at')) {
+      context.handle(
+          _publishedAtMeta,
+          publishedAt.isAcceptableOrUnknown(
+              data['published_at']!, _publishedAtMeta));
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(_sortOrderMeta,
+          sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta));
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(_updatedAtMeta,
+          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {extraKey};
+  @override
+  VideoMetadataExtraRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return VideoMetadataExtraRow(
+      extraKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}extra_key'])!,
+      workId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}work_id'])!,
+      bookUid: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_uid']),
+      kind: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}kind'])!,
+      sourceKind: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source_kind'])!,
+      title: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
+      provider: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}provider']),
+      providerVideoId: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}provider_video_id']),
+      site: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}site']),
+      remoteUrl: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}remote_url']),
+      thumbnailUrl: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}thumbnail_url']),
+      thumbnailPath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}thumbnail_path']),
+      durationMs: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}duration_ms']),
+      official: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}official'])!,
+      language: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}language']),
+      publishedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}published_at']),
+      sortOrder: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}sort_order'])!,
+      updatedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}updated_at'])!,
+    );
+  }
+
+  @override
+  $VideoMetadataExtrasTable createAlias(String alias) {
+    return $VideoMetadataExtrasTable(attachedDatabase, alias);
+  }
+}
+
+class VideoMetadataExtraRow extends DataClass
+    implements Insertable<VideoMetadataExtraRow> {
+  final String extraKey;
+  final int workId;
+  final String? bookUid;
+
+  /// trailer / teaser / clip / featurette / interview / behind_the_scenes /
+  /// deleted_scene / short / scene / sample / extra。
+  final String kind;
+  final String sourceKind;
+  final String title;
+  final String? provider;
+  final String? providerVideoId;
+  final String? site;
+  final String? remoteUrl;
+  final String? thumbnailUrl;
+  final String? thumbnailPath;
+  final int? durationMs;
+  final bool official;
+  final String? language;
+  final String? publishedAt;
+  final int sortOrder;
+  final int updatedAt;
+  const VideoMetadataExtraRow(
+      {required this.extraKey,
+      required this.workId,
+      this.bookUid,
+      required this.kind,
+      required this.sourceKind,
+      required this.title,
+      this.provider,
+      this.providerVideoId,
+      this.site,
+      this.remoteUrl,
+      this.thumbnailUrl,
+      this.thumbnailPath,
+      this.durationMs,
+      required this.official,
+      this.language,
+      this.publishedAt,
+      required this.sortOrder,
+      required this.updatedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['extra_key'] = Variable<String>(extraKey);
+    map['work_id'] = Variable<int>(workId);
+    if (!nullToAbsent || bookUid != null) {
+      map['book_uid'] = Variable<String>(bookUid);
+    }
+    map['kind'] = Variable<String>(kind);
+    map['source_kind'] = Variable<String>(sourceKind);
+    map['title'] = Variable<String>(title);
+    if (!nullToAbsent || provider != null) {
+      map['provider'] = Variable<String>(provider);
+    }
+    if (!nullToAbsent || providerVideoId != null) {
+      map['provider_video_id'] = Variable<String>(providerVideoId);
+    }
+    if (!nullToAbsent || site != null) {
+      map['site'] = Variable<String>(site);
+    }
+    if (!nullToAbsent || remoteUrl != null) {
+      map['remote_url'] = Variable<String>(remoteUrl);
+    }
+    if (!nullToAbsent || thumbnailUrl != null) {
+      map['thumbnail_url'] = Variable<String>(thumbnailUrl);
+    }
+    if (!nullToAbsent || thumbnailPath != null) {
+      map['thumbnail_path'] = Variable<String>(thumbnailPath);
+    }
+    if (!nullToAbsent || durationMs != null) {
+      map['duration_ms'] = Variable<int>(durationMs);
+    }
+    map['official'] = Variable<bool>(official);
+    if (!nullToAbsent || language != null) {
+      map['language'] = Variable<String>(language);
+    }
+    if (!nullToAbsent || publishedAt != null) {
+      map['published_at'] = Variable<String>(publishedAt);
+    }
+    map['sort_order'] = Variable<int>(sortOrder);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  VideoMetadataExtrasCompanion toCompanion(bool nullToAbsent) {
+    return VideoMetadataExtrasCompanion(
+      extraKey: Value(extraKey),
+      workId: Value(workId),
+      bookUid: bookUid == null && nullToAbsent
+          ? const Value.absent()
+          : Value(bookUid),
+      kind: Value(kind),
+      sourceKind: Value(sourceKind),
+      title: Value(title),
+      provider: provider == null && nullToAbsent
+          ? const Value.absent()
+          : Value(provider),
+      providerVideoId: providerVideoId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(providerVideoId),
+      site: site == null && nullToAbsent ? const Value.absent() : Value(site),
+      remoteUrl: remoteUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(remoteUrl),
+      thumbnailUrl: thumbnailUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(thumbnailUrl),
+      thumbnailPath: thumbnailPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(thumbnailPath),
+      durationMs: durationMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(durationMs),
+      official: Value(official),
+      language: language == null && nullToAbsent
+          ? const Value.absent()
+          : Value(language),
+      publishedAt: publishedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(publishedAt),
+      sortOrder: Value(sortOrder),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory VideoMetadataExtraRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return VideoMetadataExtraRow(
+      extraKey: serializer.fromJson<String>(json['extraKey']),
+      workId: serializer.fromJson<int>(json['workId']),
+      bookUid: serializer.fromJson<String?>(json['bookUid']),
+      kind: serializer.fromJson<String>(json['kind']),
+      sourceKind: serializer.fromJson<String>(json['sourceKind']),
+      title: serializer.fromJson<String>(json['title']),
+      provider: serializer.fromJson<String?>(json['provider']),
+      providerVideoId: serializer.fromJson<String?>(json['providerVideoId']),
+      site: serializer.fromJson<String?>(json['site']),
+      remoteUrl: serializer.fromJson<String?>(json['remoteUrl']),
+      thumbnailUrl: serializer.fromJson<String?>(json['thumbnailUrl']),
+      thumbnailPath: serializer.fromJson<String?>(json['thumbnailPath']),
+      durationMs: serializer.fromJson<int?>(json['durationMs']),
+      official: serializer.fromJson<bool>(json['official']),
+      language: serializer.fromJson<String?>(json['language']),
+      publishedAt: serializer.fromJson<String?>(json['publishedAt']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'extraKey': serializer.toJson<String>(extraKey),
+      'workId': serializer.toJson<int>(workId),
+      'bookUid': serializer.toJson<String?>(bookUid),
+      'kind': serializer.toJson<String>(kind),
+      'sourceKind': serializer.toJson<String>(sourceKind),
+      'title': serializer.toJson<String>(title),
+      'provider': serializer.toJson<String?>(provider),
+      'providerVideoId': serializer.toJson<String?>(providerVideoId),
+      'site': serializer.toJson<String?>(site),
+      'remoteUrl': serializer.toJson<String?>(remoteUrl),
+      'thumbnailUrl': serializer.toJson<String?>(thumbnailUrl),
+      'thumbnailPath': serializer.toJson<String?>(thumbnailPath),
+      'durationMs': serializer.toJson<int?>(durationMs),
+      'official': serializer.toJson<bool>(official),
+      'language': serializer.toJson<String?>(language),
+      'publishedAt': serializer.toJson<String?>(publishedAt),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  VideoMetadataExtraRow copyWith(
+          {String? extraKey,
+          int? workId,
+          Value<String?> bookUid = const Value.absent(),
+          String? kind,
+          String? sourceKind,
+          String? title,
+          Value<String?> provider = const Value.absent(),
+          Value<String?> providerVideoId = const Value.absent(),
+          Value<String?> site = const Value.absent(),
+          Value<String?> remoteUrl = const Value.absent(),
+          Value<String?> thumbnailUrl = const Value.absent(),
+          Value<String?> thumbnailPath = const Value.absent(),
+          Value<int?> durationMs = const Value.absent(),
+          bool? official,
+          Value<String?> language = const Value.absent(),
+          Value<String?> publishedAt = const Value.absent(),
+          int? sortOrder,
+          int? updatedAt}) =>
+      VideoMetadataExtraRow(
+        extraKey: extraKey ?? this.extraKey,
+        workId: workId ?? this.workId,
+        bookUid: bookUid.present ? bookUid.value : this.bookUid,
+        kind: kind ?? this.kind,
+        sourceKind: sourceKind ?? this.sourceKind,
+        title: title ?? this.title,
+        provider: provider.present ? provider.value : this.provider,
+        providerVideoId: providerVideoId.present
+            ? providerVideoId.value
+            : this.providerVideoId,
+        site: site.present ? site.value : this.site,
+        remoteUrl: remoteUrl.present ? remoteUrl.value : this.remoteUrl,
+        thumbnailUrl:
+            thumbnailUrl.present ? thumbnailUrl.value : this.thumbnailUrl,
+        thumbnailPath:
+            thumbnailPath.present ? thumbnailPath.value : this.thumbnailPath,
+        durationMs: durationMs.present ? durationMs.value : this.durationMs,
+        official: official ?? this.official,
+        language: language.present ? language.value : this.language,
+        publishedAt: publishedAt.present ? publishedAt.value : this.publishedAt,
+        sortOrder: sortOrder ?? this.sortOrder,
+        updatedAt: updatedAt ?? this.updatedAt,
+      );
+  VideoMetadataExtraRow copyWithCompanion(VideoMetadataExtrasCompanion data) {
+    return VideoMetadataExtraRow(
+      extraKey: data.extraKey.present ? data.extraKey.value : this.extraKey,
+      workId: data.workId.present ? data.workId.value : this.workId,
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      sourceKind:
+          data.sourceKind.present ? data.sourceKind.value : this.sourceKind,
+      title: data.title.present ? data.title.value : this.title,
+      provider: data.provider.present ? data.provider.value : this.provider,
+      providerVideoId: data.providerVideoId.present
+          ? data.providerVideoId.value
+          : this.providerVideoId,
+      site: data.site.present ? data.site.value : this.site,
+      remoteUrl: data.remoteUrl.present ? data.remoteUrl.value : this.remoteUrl,
+      thumbnailUrl: data.thumbnailUrl.present
+          ? data.thumbnailUrl.value
+          : this.thumbnailUrl,
+      thumbnailPath: data.thumbnailPath.present
+          ? data.thumbnailPath.value
+          : this.thumbnailPath,
+      durationMs:
+          data.durationMs.present ? data.durationMs.value : this.durationMs,
+      official: data.official.present ? data.official.value : this.official,
+      language: data.language.present ? data.language.value : this.language,
+      publishedAt:
+          data.publishedAt.present ? data.publishedAt.value : this.publishedAt,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoMetadataExtraRow(')
+          ..write('extraKey: $extraKey, ')
+          ..write('workId: $workId, ')
+          ..write('bookUid: $bookUid, ')
+          ..write('kind: $kind, ')
+          ..write('sourceKind: $sourceKind, ')
+          ..write('title: $title, ')
+          ..write('provider: $provider, ')
+          ..write('providerVideoId: $providerVideoId, ')
+          ..write('site: $site, ')
+          ..write('remoteUrl: $remoteUrl, ')
+          ..write('thumbnailUrl: $thumbnailUrl, ')
+          ..write('thumbnailPath: $thumbnailPath, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('official: $official, ')
+          ..write('language: $language, ')
+          ..write('publishedAt: $publishedAt, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      extraKey,
+      workId,
+      bookUid,
+      kind,
+      sourceKind,
+      title,
+      provider,
+      providerVideoId,
+      site,
+      remoteUrl,
+      thumbnailUrl,
+      thumbnailPath,
+      durationMs,
+      official,
+      language,
+      publishedAt,
+      sortOrder,
+      updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is VideoMetadataExtraRow &&
+          other.extraKey == this.extraKey &&
+          other.workId == this.workId &&
+          other.bookUid == this.bookUid &&
+          other.kind == this.kind &&
+          other.sourceKind == this.sourceKind &&
+          other.title == this.title &&
+          other.provider == this.provider &&
+          other.providerVideoId == this.providerVideoId &&
+          other.site == this.site &&
+          other.remoteUrl == this.remoteUrl &&
+          other.thumbnailUrl == this.thumbnailUrl &&
+          other.thumbnailPath == this.thumbnailPath &&
+          other.durationMs == this.durationMs &&
+          other.official == this.official &&
+          other.language == this.language &&
+          other.publishedAt == this.publishedAt &&
+          other.sortOrder == this.sortOrder &&
+          other.updatedAt == this.updatedAt);
+}
+
+class VideoMetadataExtrasCompanion
+    extends UpdateCompanion<VideoMetadataExtraRow> {
+  final Value<String> extraKey;
+  final Value<int> workId;
+  final Value<String?> bookUid;
+  final Value<String> kind;
+  final Value<String> sourceKind;
+  final Value<String> title;
+  final Value<String?> provider;
+  final Value<String?> providerVideoId;
+  final Value<String?> site;
+  final Value<String?> remoteUrl;
+  final Value<String?> thumbnailUrl;
+  final Value<String?> thumbnailPath;
+  final Value<int?> durationMs;
+  final Value<bool> official;
+  final Value<String?> language;
+  final Value<String?> publishedAt;
+  final Value<int> sortOrder;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const VideoMetadataExtrasCompanion({
+    this.extraKey = const Value.absent(),
+    this.workId = const Value.absent(),
+    this.bookUid = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.sourceKind = const Value.absent(),
+    this.title = const Value.absent(),
+    this.provider = const Value.absent(),
+    this.providerVideoId = const Value.absent(),
+    this.site = const Value.absent(),
+    this.remoteUrl = const Value.absent(),
+    this.thumbnailUrl = const Value.absent(),
+    this.thumbnailPath = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.official = const Value.absent(),
+    this.language = const Value.absent(),
+    this.publishedAt = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  VideoMetadataExtrasCompanion.insert({
+    required String extraKey,
+    required int workId,
+    this.bookUid = const Value.absent(),
+    required String kind,
+    required String sourceKind,
+    required String title,
+    this.provider = const Value.absent(),
+    this.providerVideoId = const Value.absent(),
+    this.site = const Value.absent(),
+    this.remoteUrl = const Value.absent(),
+    this.thumbnailUrl = const Value.absent(),
+    this.thumbnailPath = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.official = const Value.absent(),
+    this.language = const Value.absent(),
+    this.publishedAt = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  })  : extraKey = Value(extraKey),
+        workId = Value(workId),
+        kind = Value(kind),
+        sourceKind = Value(sourceKind),
+        title = Value(title),
+        updatedAt = Value(updatedAt);
+  static Insertable<VideoMetadataExtraRow> custom({
+    Expression<String>? extraKey,
+    Expression<int>? workId,
+    Expression<String>? bookUid,
+    Expression<String>? kind,
+    Expression<String>? sourceKind,
+    Expression<String>? title,
+    Expression<String>? provider,
+    Expression<String>? providerVideoId,
+    Expression<String>? site,
+    Expression<String>? remoteUrl,
+    Expression<String>? thumbnailUrl,
+    Expression<String>? thumbnailPath,
+    Expression<int>? durationMs,
+    Expression<bool>? official,
+    Expression<String>? language,
+    Expression<String>? publishedAt,
+    Expression<int>? sortOrder,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (extraKey != null) 'extra_key': extraKey,
+      if (workId != null) 'work_id': workId,
+      if (bookUid != null) 'book_uid': bookUid,
+      if (kind != null) 'kind': kind,
+      if (sourceKind != null) 'source_kind': sourceKind,
+      if (title != null) 'title': title,
+      if (provider != null) 'provider': provider,
+      if (providerVideoId != null) 'provider_video_id': providerVideoId,
+      if (site != null) 'site': site,
+      if (remoteUrl != null) 'remote_url': remoteUrl,
+      if (thumbnailUrl != null) 'thumbnail_url': thumbnailUrl,
+      if (thumbnailPath != null) 'thumbnail_path': thumbnailPath,
+      if (durationMs != null) 'duration_ms': durationMs,
+      if (official != null) 'official': official,
+      if (language != null) 'language': language,
+      if (publishedAt != null) 'published_at': publishedAt,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  VideoMetadataExtrasCompanion copyWith(
+      {Value<String>? extraKey,
+      Value<int>? workId,
+      Value<String?>? bookUid,
+      Value<String>? kind,
+      Value<String>? sourceKind,
+      Value<String>? title,
+      Value<String?>? provider,
+      Value<String?>? providerVideoId,
+      Value<String?>? site,
+      Value<String?>? remoteUrl,
+      Value<String?>? thumbnailUrl,
+      Value<String?>? thumbnailPath,
+      Value<int?>? durationMs,
+      Value<bool>? official,
+      Value<String?>? language,
+      Value<String?>? publishedAt,
+      Value<int>? sortOrder,
+      Value<int>? updatedAt,
+      Value<int>? rowid}) {
+    return VideoMetadataExtrasCompanion(
+      extraKey: extraKey ?? this.extraKey,
+      workId: workId ?? this.workId,
+      bookUid: bookUid ?? this.bookUid,
+      kind: kind ?? this.kind,
+      sourceKind: sourceKind ?? this.sourceKind,
+      title: title ?? this.title,
+      provider: provider ?? this.provider,
+      providerVideoId: providerVideoId ?? this.providerVideoId,
+      site: site ?? this.site,
+      remoteUrl: remoteUrl ?? this.remoteUrl,
+      thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+      thumbnailPath: thumbnailPath ?? this.thumbnailPath,
+      durationMs: durationMs ?? this.durationMs,
+      official: official ?? this.official,
+      language: language ?? this.language,
+      publishedAt: publishedAt ?? this.publishedAt,
+      sortOrder: sortOrder ?? this.sortOrder,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (extraKey.present) {
+      map['extra_key'] = Variable<String>(extraKey.value);
+    }
+    if (workId.present) {
+      map['work_id'] = Variable<int>(workId.value);
+    }
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (sourceKind.present) {
+      map['source_kind'] = Variable<String>(sourceKind.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (provider.present) {
+      map['provider'] = Variable<String>(provider.value);
+    }
+    if (providerVideoId.present) {
+      map['provider_video_id'] = Variable<String>(providerVideoId.value);
+    }
+    if (site.present) {
+      map['site'] = Variable<String>(site.value);
+    }
+    if (remoteUrl.present) {
+      map['remote_url'] = Variable<String>(remoteUrl.value);
+    }
+    if (thumbnailUrl.present) {
+      map['thumbnail_url'] = Variable<String>(thumbnailUrl.value);
+    }
+    if (thumbnailPath.present) {
+      map['thumbnail_path'] = Variable<String>(thumbnailPath.value);
+    }
+    if (durationMs.present) {
+      map['duration_ms'] = Variable<int>(durationMs.value);
+    }
+    if (official.present) {
+      map['official'] = Variable<bool>(official.value);
+    }
+    if (language.present) {
+      map['language'] = Variable<String>(language.value);
+    }
+    if (publishedAt.present) {
+      map['published_at'] = Variable<String>(publishedAt.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoMetadataExtrasCompanion(')
+          ..write('extraKey: $extraKey, ')
+          ..write('workId: $workId, ')
+          ..write('bookUid: $bookUid, ')
+          ..write('kind: $kind, ')
+          ..write('sourceKind: $sourceKind, ')
+          ..write('title: $title, ')
+          ..write('provider: $provider, ')
+          ..write('providerVideoId: $providerVideoId, ')
+          ..write('site: $site, ')
+          ..write('remoteUrl: $remoteUrl, ')
+          ..write('thumbnailUrl: $thumbnailUrl, ')
+          ..write('thumbnailPath: $thumbnailPath, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('official: $official, ')
+          ..write('language: $language, ')
+          ..write('publishedAt: $publishedAt, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $VideoSourceScrapeSettingsTable extends VideoSourceScrapeSettings
     with
         TableInfo<$VideoSourceScrapeSettingsTable,
@@ -33661,6 +34530,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
       $VideoMetadataCreditsTable(this);
   late final $VideoMetadataImagesTable videoMetadataImages =
       $VideoMetadataImagesTable(this);
+  late final $VideoMetadataExtrasTable videoMetadataExtras =
+      $VideoMetadataExtrasTable(this);
   late final $VideoSourceScrapeSettingsTable videoSourceScrapeSettings =
       $VideoSourceScrapeSettingsTable(this);
   late final $VideoSourceScrapeRunsTable videoSourceScrapeRuns =
@@ -33744,6 +34615,7 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         videoMetadataWorkTerms,
         videoMetadataCredits,
         videoMetadataImages,
+        videoMetadataExtras,
         videoSourceScrapeSettings,
         videoSourceScrapeRuns,
         videoSidecarArtifacts
@@ -34113,6 +34985,20 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
                 limitUpdateKind: UpdateKind.delete),
             result: [
               TableUpdate('video_metadata_images', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('video_metadata_works',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('video_metadata_extras', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('video_books',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('video_metadata_extras', kind: UpdateKind.update),
             ],
           ),
           WritePropagation(
@@ -41169,6 +42055,24 @@ final class $$VideoBooksTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$VideoMetadataExtrasTable,
+      List<VideoMetadataExtraRow>> _videoMetadataExtrasRefsTable(
+          _$HibikiDatabase db) =>
+      MultiTypedResultKey.fromTable(db.videoMetadataExtras,
+          aliasName: 'video_books__book_uid__video_metadata_extras__book_uid');
+
+  $$VideoMetadataExtrasTableProcessedTableManager get videoMetadataExtrasRefs {
+    final manager =
+        $$VideoMetadataExtrasTableTableManager($_db, $_db.videoMetadataExtras)
+            .filter((f) =>
+                f.bookUid.bookUid.sqlEquals($_itemColumn<String>('book_uid')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_videoMetadataExtrasRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$VideoBooksTableFilterComposer
@@ -41360,6 +42264,27 @@ class $$VideoBooksTableFilterComposer
                   $removeJoinBuilderFromRootComposer:
                       $removeJoinBuilderFromRootComposer,
                 ));
+    return f(composer);
+  }
+
+  Expression<bool> videoMetadataExtrasRefs(
+      Expression<bool> Function($$VideoMetadataExtrasTableFilterComposer f) f) {
+    final $$VideoMetadataExtrasTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookUid,
+        referencedTable: $db.videoMetadataExtras,
+        getReferencedColumn: (t) => t.bookUid,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoMetadataExtrasTableFilterComposer(
+              $db: $db,
+              $table: $db.videoMetadataExtras,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
     return f(composer);
   }
 }
@@ -41637,6 +42562,29 @@ class $$VideoBooksTableAnnotationComposer
                 ));
     return f(composer);
   }
+
+  Expression<T> videoMetadataExtrasRefs<T extends Object>(
+      Expression<T> Function($$VideoMetadataExtrasTableAnnotationComposer a)
+          f) {
+    final $$VideoMetadataExtrasTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.bookUid,
+            referencedTable: $db.videoMetadataExtras,
+            getReferencedColumn: (t) => t.bookUid,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$VideoMetadataExtrasTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.videoMetadataExtras,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
 }
 
 class $$VideoBooksTableTableManager extends RootTableManager<
@@ -41656,7 +42604,8 @@ class $$VideoBooksTableTableManager extends RootTableManager<
         bool videoScrapeMetaRefs,
         bool mediaImagesRefs,
         bool videoMetadataWorksRefs,
-        bool videoMetadataEpisodesRefs})> {
+        bool videoMetadataEpisodesRefs,
+        bool videoMetadataExtrasRefs})> {
   $$VideoBooksTableTableManager(_$HibikiDatabase db, $VideoBooksTable table)
       : super(TableManagerState(
           db: db,
@@ -41759,7 +42708,8 @@ class $$VideoBooksTableTableManager extends RootTableManager<
               videoScrapeMetaRefs = false,
               mediaImagesRefs = false,
               videoMetadataWorksRefs = false,
-              videoMetadataEpisodesRefs = false}) {
+              videoMetadataEpisodesRefs = false,
+              videoMetadataExtrasRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
@@ -41767,7 +42717,8 @@ class $$VideoBooksTableTableManager extends RootTableManager<
                 if (videoScrapeMetaRefs) db.videoScrapeMeta,
                 if (mediaImagesRefs) db.mediaImages,
                 if (videoMetadataWorksRefs) db.videoMetadataWorks,
-                if (videoMetadataEpisodesRefs) db.videoMetadataEpisodes
+                if (videoMetadataEpisodesRefs) db.videoMetadataEpisodes,
+                if (videoMetadataExtrasRefs) db.videoMetadataExtras
               ],
               addJoins: <
                   T extends TableManagerState<
@@ -41861,6 +42812,19 @@ class $$VideoBooksTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.bookUid == item.bookUid),
+                        typedResults: items),
+                  if (videoMetadataExtrasRefs)
+                    await $_getPrefetchedData<VideoBookRow, $VideoBooksTable,
+                            VideoMetadataExtraRow>(
+                        currentTable: table,
+                        referencedTable: $$VideoBooksTableReferences
+                            ._videoMetadataExtrasRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$VideoBooksTableReferences(db, table, p0)
+                                .videoMetadataExtrasRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.bookUid == item.bookUid),
                         typedResults: items)
                 ];
               },
@@ -41886,7 +42850,8 @@ typedef $$VideoBooksTableProcessedTableManager = ProcessedTableManager<
         bool videoScrapeMetaRefs,
         bool mediaImagesRefs,
         bool videoMetadataWorksRefs,
-        bool videoMetadataEpisodesRefs})>;
+        bool videoMetadataEpisodesRefs,
+        bool videoMetadataExtrasRefs})>;
 typedef $$VideoBookTagMappingsTableCreateCompanionBuilder
     = VideoBookTagMappingsCompanion Function({
   Value<int> id,
@@ -52198,6 +53163,24 @@ final class $$VideoMetadataWorksTableReferences extends BaseReferences<
         manager.$state.copyWith(prefetchedData: cache));
   }
 
+  static MultiTypedResultKey<$VideoMetadataExtrasTable,
+      List<VideoMetadataExtraRow>> _videoMetadataExtrasRefsTable(
+          _$HibikiDatabase db) =>
+      MultiTypedResultKey.fromTable(db.videoMetadataExtras,
+          aliasName:
+              'video_metadata_works__id__video_metadata_extras__work_id');
+
+  $$VideoMetadataExtrasTableProcessedTableManager get videoMetadataExtrasRefs {
+    final manager =
+        $$VideoMetadataExtrasTableTableManager($_db, $_db.videoMetadataExtras)
+            .filter((f) => f.workId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_videoMetadataExtrasRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+
   static MultiTypedResultKey<$VideoSidecarArtifactsTable,
       List<VideoSidecarArtifactRow>> _videoSidecarArtifactsRefsTable(
           _$HibikiDatabase db) =>
@@ -52428,6 +53411,27 @@ class $$VideoMetadataWorksTableFilterComposer
             $$VideoMetadataImagesTableFilterComposer(
               $db: $db,
               $table: $db.videoMetadataImages,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> videoMetadataExtrasRefs(
+      Expression<bool> Function($$VideoMetadataExtrasTableFilterComposer f) f) {
+    final $$VideoMetadataExtrasTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.videoMetadataExtras,
+        getReferencedColumn: (t) => t.workId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoMetadataExtrasTableFilterComposer(
+              $db: $db,
+              $table: $db.videoMetadataExtras,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -52789,6 +53793,29 @@ class $$VideoMetadataWorksTableAnnotationComposer
     return f(composer);
   }
 
+  Expression<T> videoMetadataExtrasRefs<T extends Object>(
+      Expression<T> Function($$VideoMetadataExtrasTableAnnotationComposer a)
+          f) {
+    final $$VideoMetadataExtrasTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.videoMetadataExtras,
+            getReferencedColumn: (t) => t.workId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$VideoMetadataExtrasTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.videoMetadataExtras,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
+
   Expression<T> videoSidecarArtifactsRefs<T extends Object>(
       Expression<T> Function($$VideoSidecarArtifactsTableAnnotationComposer a)
           f) {
@@ -52832,6 +53859,7 @@ class $$VideoMetadataWorksTableTableManager extends RootTableManager<
         bool videoMetadataWorkTermsRefs,
         bool videoMetadataCreditsRefs,
         bool videoMetadataImagesRefs,
+        bool videoMetadataExtrasRefs,
         bool videoSidecarArtifactsRefs})> {
   $$VideoMetadataWorksTableTableManager(
       _$HibikiDatabase db, $VideoMetadataWorksTable table)
@@ -52947,6 +53975,7 @@ class $$VideoMetadataWorksTableTableManager extends RootTableManager<
               videoMetadataWorkTermsRefs = false,
               videoMetadataCreditsRefs = false,
               videoMetadataImagesRefs = false,
+              videoMetadataExtrasRefs = false,
               videoSidecarArtifactsRefs = false}) {
             return PrefetchHooks(
               db: db,
@@ -52957,6 +53986,7 @@ class $$VideoMetadataWorksTableTableManager extends RootTableManager<
                 if (videoMetadataWorkTermsRefs) db.videoMetadataWorkTerms,
                 if (videoMetadataCreditsRefs) db.videoMetadataCredits,
                 if (videoMetadataImagesRefs) db.videoMetadataImages,
+                if (videoMetadataExtrasRefs) db.videoMetadataExtras,
                 if (videoSidecarArtifactsRefs) db.videoSidecarArtifacts
               ],
               addJoins: <
@@ -53066,6 +54096,19 @@ class $$VideoMetadataWorksTableTableManager extends RootTableManager<
                                 referencedItems) =>
                             referencedItems.where((e) => e.workId == item.id),
                         typedResults: items),
+                  if (videoMetadataExtrasRefs)
+                    await $_getPrefetchedData<VideoMetadataWorkRow,
+                            $VideoMetadataWorksTable, VideoMetadataExtraRow>(
+                        currentTable: table,
+                        referencedTable: $$VideoMetadataWorksTableReferences
+                            ._videoMetadataExtrasRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$VideoMetadataWorksTableReferences(db, table, p0)
+                                .videoMetadataExtrasRefs,
+                        referencedItemsForCurrentItem: (item,
+                                referencedItems) =>
+                            referencedItems.where((e) => e.workId == item.id),
+                        typedResults: items),
                   if (videoSidecarArtifactsRefs)
                     await $_getPrefetchedData<VideoMetadataWorkRow,
                             $VideoMetadataWorksTable, VideoSidecarArtifactRow>(
@@ -53105,6 +54148,7 @@ typedef $$VideoMetadataWorksTableProcessedTableManager = ProcessedTableManager<
         bool videoMetadataWorkTermsRefs,
         bool videoMetadataCreditsRefs,
         bool videoMetadataImagesRefs,
+        bool videoMetadataExtrasRefs,
         bool videoSidecarArtifactsRefs})>;
 typedef $$VideoMetadataSeasonsTableCreateCompanionBuilder
     = VideoMetadataSeasonsCompanion Function({
@@ -59014,6 +60058,563 @@ typedef $$VideoMetadataImagesTableProcessedTableManager = ProcessedTableManager<
         bool episodeId,
         bool personKey,
         bool characterKey})>;
+typedef $$VideoMetadataExtrasTableCreateCompanionBuilder
+    = VideoMetadataExtrasCompanion Function({
+  required String extraKey,
+  required int workId,
+  Value<String?> bookUid,
+  required String kind,
+  required String sourceKind,
+  required String title,
+  Value<String?> provider,
+  Value<String?> providerVideoId,
+  Value<String?> site,
+  Value<String?> remoteUrl,
+  Value<String?> thumbnailUrl,
+  Value<String?> thumbnailPath,
+  Value<int?> durationMs,
+  Value<bool> official,
+  Value<String?> language,
+  Value<String?> publishedAt,
+  Value<int> sortOrder,
+  required int updatedAt,
+  Value<int> rowid,
+});
+typedef $$VideoMetadataExtrasTableUpdateCompanionBuilder
+    = VideoMetadataExtrasCompanion Function({
+  Value<String> extraKey,
+  Value<int> workId,
+  Value<String?> bookUid,
+  Value<String> kind,
+  Value<String> sourceKind,
+  Value<String> title,
+  Value<String?> provider,
+  Value<String?> providerVideoId,
+  Value<String?> site,
+  Value<String?> remoteUrl,
+  Value<String?> thumbnailUrl,
+  Value<String?> thumbnailPath,
+  Value<int?> durationMs,
+  Value<bool> official,
+  Value<String?> language,
+  Value<String?> publishedAt,
+  Value<int> sortOrder,
+  Value<int> updatedAt,
+  Value<int> rowid,
+});
+
+final class $$VideoMetadataExtrasTableReferences extends BaseReferences<
+    _$HibikiDatabase, $VideoMetadataExtrasTable, VideoMetadataExtraRow> {
+  $$VideoMetadataExtrasTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static $VideoMetadataWorksTable _workIdTable(_$HibikiDatabase db) => db
+      .videoMetadataWorks
+      .createAlias('video_metadata_extras__work_id__video_metadata_works__id');
+
+  $$VideoMetadataWorksTableProcessedTableManager get workId {
+    final $_column = $_itemColumn<int>('work_id')!;
+
+    final manager =
+        $$VideoMetadataWorksTableTableManager($_db, $_db.videoMetadataWorks)
+            .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_workIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $VideoBooksTable _bookUidTable(_$HibikiDatabase db) => db.videoBooks
+      .createAlias('video_metadata_extras__book_uid__video_books__book_uid');
+
+  $$VideoBooksTableProcessedTableManager? get bookUid {
+    final $_column = $_itemColumn<String>('book_uid');
+    if ($_column == null) return null;
+    final manager = $$VideoBooksTableTableManager($_db, $_db.videoBooks)
+        .filter((f) => f.bookUid.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_bookUidTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$VideoMetadataExtrasTableFilterComposer
+    extends Composer<_$HibikiDatabase, $VideoMetadataExtrasTable> {
+  $$VideoMetadataExtrasTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get extraKey => $composableBuilder(
+      column: $table.extraKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get kind => $composableBuilder(
+      column: $table.kind, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get sourceKind => $composableBuilder(
+      column: $table.sourceKind, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get provider => $composableBuilder(
+      column: $table.provider, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get providerVideoId => $composableBuilder(
+      column: $table.providerVideoId,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get site => $composableBuilder(
+      column: $table.site, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get remoteUrl => $composableBuilder(
+      column: $table.remoteUrl, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get thumbnailUrl => $composableBuilder(
+      column: $table.thumbnailUrl, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get thumbnailPath => $composableBuilder(
+      column: $table.thumbnailPath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get durationMs => $composableBuilder(
+      column: $table.durationMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get official => $composableBuilder(
+      column: $table.official, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get language => $composableBuilder(
+      column: $table.language, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get publishedAt => $composableBuilder(
+      column: $table.publishedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+      column: $table.sortOrder, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+
+  $$VideoMetadataWorksTableFilterComposer get workId {
+    final $$VideoMetadataWorksTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.workId,
+        referencedTable: $db.videoMetadataWorks,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoMetadataWorksTableFilterComposer(
+              $db: $db,
+              $table: $db.videoMetadataWorks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$VideoBooksTableFilterComposer get bookUid {
+    final $$VideoBooksTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookUid,
+        referencedTable: $db.videoBooks,
+        getReferencedColumn: (t) => t.bookUid,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoBooksTableFilterComposer(
+              $db: $db,
+              $table: $db.videoBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$VideoMetadataExtrasTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $VideoMetadataExtrasTable> {
+  $$VideoMetadataExtrasTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get extraKey => $composableBuilder(
+      column: $table.extraKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+      column: $table.kind, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get sourceKind => $composableBuilder(
+      column: $table.sourceKind, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get provider => $composableBuilder(
+      column: $table.provider, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get providerVideoId => $composableBuilder(
+      column: $table.providerVideoId,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get site => $composableBuilder(
+      column: $table.site, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get remoteUrl => $composableBuilder(
+      column: $table.remoteUrl, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get thumbnailUrl => $composableBuilder(
+      column: $table.thumbnailUrl,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get thumbnailPath => $composableBuilder(
+      column: $table.thumbnailPath,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get durationMs => $composableBuilder(
+      column: $table.durationMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get official => $composableBuilder(
+      column: $table.official, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get language => $composableBuilder(
+      column: $table.language, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get publishedAt => $composableBuilder(
+      column: $table.publishedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+      column: $table.sortOrder, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+
+  $$VideoMetadataWorksTableOrderingComposer get workId {
+    final $$VideoMetadataWorksTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.workId,
+        referencedTable: $db.videoMetadataWorks,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoMetadataWorksTableOrderingComposer(
+              $db: $db,
+              $table: $db.videoMetadataWorks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$VideoBooksTableOrderingComposer get bookUid {
+    final $$VideoBooksTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookUid,
+        referencedTable: $db.videoBooks,
+        getReferencedColumn: (t) => t.bookUid,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoBooksTableOrderingComposer(
+              $db: $db,
+              $table: $db.videoBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$VideoMetadataExtrasTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $VideoMetadataExtrasTable> {
+  $$VideoMetadataExtrasTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get extraKey =>
+      $composableBuilder(column: $table.extraKey, builder: (column) => column);
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceKind => $composableBuilder(
+      column: $table.sourceKind, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get provider =>
+      $composableBuilder(column: $table.provider, builder: (column) => column);
+
+  GeneratedColumn<String> get providerVideoId => $composableBuilder(
+      column: $table.providerVideoId, builder: (column) => column);
+
+  GeneratedColumn<String> get site =>
+      $composableBuilder(column: $table.site, builder: (column) => column);
+
+  GeneratedColumn<String> get remoteUrl =>
+      $composableBuilder(column: $table.remoteUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get thumbnailUrl => $composableBuilder(
+      column: $table.thumbnailUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get thumbnailPath => $composableBuilder(
+      column: $table.thumbnailPath, builder: (column) => column);
+
+  GeneratedColumn<int> get durationMs => $composableBuilder(
+      column: $table.durationMs, builder: (column) => column);
+
+  GeneratedColumn<bool> get official =>
+      $composableBuilder(column: $table.official, builder: (column) => column);
+
+  GeneratedColumn<String> get language =>
+      $composableBuilder(column: $table.language, builder: (column) => column);
+
+  GeneratedColumn<String> get publishedAt => $composableBuilder(
+      column: $table.publishedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  $$VideoMetadataWorksTableAnnotationComposer get workId {
+    final $$VideoMetadataWorksTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.workId,
+            referencedTable: $db.videoMetadataWorks,
+            getReferencedColumn: (t) => t.id,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$VideoMetadataWorksTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.videoMetadataWorks,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return composer;
+  }
+
+  $$VideoBooksTableAnnotationComposer get bookUid {
+    final $$VideoBooksTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookUid,
+        referencedTable: $db.videoBooks,
+        getReferencedColumn: (t) => t.bookUid,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoBooksTableAnnotationComposer(
+              $db: $db,
+              $table: $db.videoBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$VideoMetadataExtrasTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $VideoMetadataExtrasTable,
+    VideoMetadataExtraRow,
+    $$VideoMetadataExtrasTableFilterComposer,
+    $$VideoMetadataExtrasTableOrderingComposer,
+    $$VideoMetadataExtrasTableAnnotationComposer,
+    $$VideoMetadataExtrasTableCreateCompanionBuilder,
+    $$VideoMetadataExtrasTableUpdateCompanionBuilder,
+    (VideoMetadataExtraRow, $$VideoMetadataExtrasTableReferences),
+    VideoMetadataExtraRow,
+    PrefetchHooks Function({bool workId, bool bookUid})> {
+  $$VideoMetadataExtrasTableTableManager(
+      _$HibikiDatabase db, $VideoMetadataExtrasTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$VideoMetadataExtrasTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$VideoMetadataExtrasTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$VideoMetadataExtrasTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> extraKey = const Value.absent(),
+            Value<int> workId = const Value.absent(),
+            Value<String?> bookUid = const Value.absent(),
+            Value<String> kind = const Value.absent(),
+            Value<String> sourceKind = const Value.absent(),
+            Value<String> title = const Value.absent(),
+            Value<String?> provider = const Value.absent(),
+            Value<String?> providerVideoId = const Value.absent(),
+            Value<String?> site = const Value.absent(),
+            Value<String?> remoteUrl = const Value.absent(),
+            Value<String?> thumbnailUrl = const Value.absent(),
+            Value<String?> thumbnailPath = const Value.absent(),
+            Value<int?> durationMs = const Value.absent(),
+            Value<bool> official = const Value.absent(),
+            Value<String?> language = const Value.absent(),
+            Value<String?> publishedAt = const Value.absent(),
+            Value<int> sortOrder = const Value.absent(),
+            Value<int> updatedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              VideoMetadataExtrasCompanion(
+            extraKey: extraKey,
+            workId: workId,
+            bookUid: bookUid,
+            kind: kind,
+            sourceKind: sourceKind,
+            title: title,
+            provider: provider,
+            providerVideoId: providerVideoId,
+            site: site,
+            remoteUrl: remoteUrl,
+            thumbnailUrl: thumbnailUrl,
+            thumbnailPath: thumbnailPath,
+            durationMs: durationMs,
+            official: official,
+            language: language,
+            publishedAt: publishedAt,
+            sortOrder: sortOrder,
+            updatedAt: updatedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String extraKey,
+            required int workId,
+            Value<String?> bookUid = const Value.absent(),
+            required String kind,
+            required String sourceKind,
+            required String title,
+            Value<String?> provider = const Value.absent(),
+            Value<String?> providerVideoId = const Value.absent(),
+            Value<String?> site = const Value.absent(),
+            Value<String?> remoteUrl = const Value.absent(),
+            Value<String?> thumbnailUrl = const Value.absent(),
+            Value<String?> thumbnailPath = const Value.absent(),
+            Value<int?> durationMs = const Value.absent(),
+            Value<bool> official = const Value.absent(),
+            Value<String?> language = const Value.absent(),
+            Value<String?> publishedAt = const Value.absent(),
+            Value<int> sortOrder = const Value.absent(),
+            required int updatedAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              VideoMetadataExtrasCompanion.insert(
+            extraKey: extraKey,
+            workId: workId,
+            bookUid: bookUid,
+            kind: kind,
+            sourceKind: sourceKind,
+            title: title,
+            provider: provider,
+            providerVideoId: providerVideoId,
+            site: site,
+            remoteUrl: remoteUrl,
+            thumbnailUrl: thumbnailUrl,
+            thumbnailPath: thumbnailPath,
+            durationMs: durationMs,
+            official: official,
+            language: language,
+            publishedAt: publishedAt,
+            sortOrder: sortOrder,
+            updatedAt: updatedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$VideoMetadataExtrasTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({workId = false, bookUid = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (workId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.workId,
+                    referencedTable:
+                        $$VideoMetadataExtrasTableReferences._workIdTable(db),
+                    referencedColumn: $$VideoMetadataExtrasTableReferences
+                        ._workIdTable(db)
+                        .id,
+                  ) as T;
+                }
+                if (bookUid) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.bookUid,
+                    referencedTable:
+                        $$VideoMetadataExtrasTableReferences._bookUidTable(db),
+                    referencedColumn: $$VideoMetadataExtrasTableReferences
+                        ._bookUidTable(db)
+                        .bookUid,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$VideoMetadataExtrasTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $VideoMetadataExtrasTable,
+    VideoMetadataExtraRow,
+    $$VideoMetadataExtrasTableFilterComposer,
+    $$VideoMetadataExtrasTableOrderingComposer,
+    $$VideoMetadataExtrasTableAnnotationComposer,
+    $$VideoMetadataExtrasTableCreateCompanionBuilder,
+    $$VideoMetadataExtrasTableUpdateCompanionBuilder,
+    (VideoMetadataExtraRow, $$VideoMetadataExtrasTableReferences),
+    VideoMetadataExtraRow,
+    PrefetchHooks Function({bool workId, bool bookUid})>;
 typedef $$VideoSourceScrapeSettingsTableCreateCompanionBuilder
     = VideoSourceScrapeSettingsCompanion Function({
   Value<int> sourceId,
@@ -60850,6 +62451,8 @@ class $HibikiDatabaseManager {
       $$VideoMetadataCreditsTableTableManager(_db, _db.videoMetadataCredits);
   $$VideoMetadataImagesTableTableManager get videoMetadataImages =>
       $$VideoMetadataImagesTableTableManager(_db, _db.videoMetadataImages);
+  $$VideoMetadataExtrasTableTableManager get videoMetadataExtras =>
+      $$VideoMetadataExtrasTableTableManager(_db, _db.videoMetadataExtras);
   $$VideoSourceScrapeSettingsTableTableManager get videoSourceScrapeSettings =>
       $$VideoSourceScrapeSettingsTableTableManager(
           _db, _db.videoSourceScrapeSettings);

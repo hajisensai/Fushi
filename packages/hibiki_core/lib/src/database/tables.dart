@@ -1720,6 +1720,48 @@ class VideoMetadataImages extends Table {
       ];
 }
 
+// ── video_metadata_extras（v70：作品预告片 / 花絮）────────────────────
+// 在线附件不创建 VideoBook；本地附件复用已经入库的 VideoBook 并以 bookUid 关联。
+// extraKey 由上层生成稳定身份：`local:<bookUid>` 或 `<provider>:<video-id>`。
+@DataClassName('VideoMetadataExtraRow')
+class VideoMetadataExtras extends Table {
+  TextColumn get extraKey => text()();
+  IntColumn get workId => integer()
+      .references(VideoMetadataWorks, #id, onDelete: KeyAction.cascade)();
+  TextColumn get bookUid => text()
+      .nullable()
+      .unique()
+      .references(VideoBooks, #bookUid, onDelete: KeyAction.setNull)();
+
+  /// trailer / teaser / clip / featurette / interview / behind_the_scenes /
+  /// deleted_scene / short / scene / sample / extra。
+  TextColumn get kind => text()();
+  TextColumn get sourceKind => text()(); // local / online
+  TextColumn get title => text()();
+  TextColumn get provider => text().nullable()();
+  TextColumn get providerVideoId => text().nullable()();
+  TextColumn get site => text().nullable()();
+  TextColumn get remoteUrl => text().nullable()();
+  TextColumn get thumbnailUrl => text().nullable()();
+  TextColumn get thumbnailPath => text().nullable()();
+  IntColumn get durationMs => integer().nullable()();
+  BoolColumn get official => boolean().withDefault(const Constant(false))();
+  TextColumn get language => text().nullable()();
+  TextColumn get publishedAt => text().nullable()();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{extraKey};
+
+  @override
+  List<String> get customConstraints => <String>[
+        "CHECK (source_kind IN ('local', 'online'))",
+        "CHECK ((source_kind = 'local' AND book_uid IS NOT NULL) OR "
+            "(source_kind = 'online' AND remote_url IS NOT NULL))",
+      ];
+}
+
 // ── video_source_scrape_settings / runs ─────────────────────────────
 @DataClassName('VideoSourceScrapeSettingRow')
 class VideoSourceScrapeSettings extends Table {

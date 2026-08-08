@@ -6,7 +6,8 @@ import 'package:hibiki/src/media/video/metadata/video_metadata_provider.dart';
 import 'package:hibiki/src/media/video/metadata/video_metadata_transport.dart';
 import 'package:http/http.dart' as http;
 
-class AniListVideoMetadataProvider implements VideoMetadataProvider {
+class AniListVideoMetadataProvider
+    implements VideoMetadataProvider, VideoMetadataExtrasProvider {
   AniListVideoMetadataProvider({
     http.Client? client,
     VideoMetadataHttpClient? transport,
@@ -168,6 +169,12 @@ query ($id: Int!) {
     // 作品资料冒充集资料，这里明确返回空，由 TMDB 补充层提供真实 episode 数据。
     return const <VideoMetadataEpisode>[];
   }
+
+  @override
+  Future<List<VideoMetadataExtra>> fetchExtras(
+    VideoMetadataLookup lookup,
+  ) async =>
+      const <VideoMetadataExtra>[];
 
   VideoMetadataWork? _mapWork(
     Map<String, Object?> item, {

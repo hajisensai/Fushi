@@ -58,6 +58,11 @@ abstract interface class VideoMetadataProvider {
   void close();
 }
 
+/// Optional provider capability for work-level online trailers and extras.
+abstract interface class VideoMetadataExtrasProvider {
+  Future<List<VideoMetadataExtra>> fetchExtras(VideoMetadataLookup lookup);
+}
+
 /// Fanart 一类只补图、不参与作品识别的来源。
 abstract interface class VideoMetadataImageProvider {
   bool get isAvailable;

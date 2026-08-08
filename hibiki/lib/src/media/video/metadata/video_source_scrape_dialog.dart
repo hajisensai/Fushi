@@ -11,12 +11,14 @@ Future<void> showVideoSourceScrapeTaskPanel({
   required BuildContext context,
   required VideoSourceScrapeTaskController controller,
   required Future<List<VideoSourceScrapeRunRow>> Function() loadRuns,
+  Future<void> Function(VideoSourceScrapeRunRow run)? onRetry,
 }) =>
     showAppDialog<void>(
       context: context,
       builder: (BuildContext context) => _VideoSourceScrapeTaskPanel(
         controller: controller,
         loadRuns: loadRuns,
+        onRetry: onRetry,
       ),
     );
 
@@ -24,10 +26,12 @@ class _VideoSourceScrapeTaskPanel extends StatefulWidget {
   const _VideoSourceScrapeTaskPanel({
     required this.controller,
     required this.loadRuns,
+    this.onRetry,
   });
 
   final VideoSourceScrapeTaskController controller;
   final Future<List<VideoSourceScrapeRunRow>> Function() loadRuns;
+  final Future<void> Function(VideoSourceScrapeRunRow run)? onRetry;
 
   @override
   State<_VideoSourceScrapeTaskPanel> createState() =>
@@ -40,6 +44,7 @@ class _VideoSourceScrapeTaskPanelState
   Object? _historyError;
   bool _loadingHistory = true;
   VideoSourceScrapePhase _lastPhase = VideoSourceScrapePhase.idle;
+  final Set<int> _retrying = <int>{};
 
   @override
   void initState() {
@@ -217,6 +222,23 @@ class _VideoSourceScrapeTaskPanelState
             ),
             subtitle: Text(_runSubtitle(run)),
             isThreeLine: true,
+            trailing: widget.onRetry != null &&
+                    run.sourceId != null &&
+                    <String>{'failed', 'interrupted', 'cancelled'}
+                        .contains(run.status)
+                ? IconButton(
+                    tooltip: t.video_load_failed_retry,
+                    onPressed: _retrying.contains(run.id)
+                        ? null
+                        : () => unawaited(_retry(run)),
+                    icon: _retrying.contains(run.id)
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.replay_outlined),
+                  )
+                : null,
           ),
       ],
     );
@@ -232,7 +254,23 @@ class _VideoSourceScrapeTaskPanelState
       pending: run.pendingConfirmations,
       failed: run.failedWorks,
     );
-    return '$started\n$summary';
+    final String? error = run.lastError?.trim();
+    return error == null || error.isEmpty
+        ? '$started\n$summary'
+        : '$started\n$summary\n$error';
+  }
+
+  Future<void> _retry(VideoSourceScrapeRunRow run) async {
+    final Future<void> Function(VideoSourceScrapeRunRow run)? retry =
+        widget.onRetry;
+    if (retry == null) return;
+    setState(() => _retrying.add(run.id));
+    try {
+      await retry(run);
+      await _reloadHistory();
+    } finally {
+      if (mounted) setState(() => _retrying.remove(run.id));
+    }
   }
 
   String _phaseLabel(VideoSourceScrapePhase phase) => switch (phase) {

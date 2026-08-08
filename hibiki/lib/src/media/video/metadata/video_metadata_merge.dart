@@ -38,7 +38,25 @@ VideoMetadataWork supplementVideoMetadataWithTmdb(
     credits: _mergeCredits(primary.credits, tmdb.credits),
     seasons: _mergeSeasons(primary.seasons, tmdb.seasons),
     images: _mergeImagesFillingMissing(primary.images, tmdb.images),
+    extras: _mergeExtras(primary.extras, tmdb.extras),
   );
+}
+
+List<VideoMetadataExtra> _mergeExtras(
+  Iterable<VideoMetadataExtra> primary,
+  Iterable<VideoMetadataExtra> supplement,
+) {
+  final Map<String, VideoMetadataExtra> result = <String, VideoMetadataExtra>{};
+  for (final VideoMetadataExtra extra in <VideoMetadataExtra>[
+    ...primary,
+    ...supplement,
+  ]) {
+    final String key = extra.providerVideoId == null
+        ? '${extra.remoteUrl}|${extra.title}'
+        : '${extra.provider?.name}|${extra.providerVideoId}';
+    result.putIfAbsent(key, () => extra);
+  }
+  return result.values.toList(growable: false);
 }
 
 /// Bangumi/AniList 的单季响应以 season=1 表示当前作品。若本地文件已明确是

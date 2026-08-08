@@ -118,6 +118,31 @@ class VideoMetadataDatabaseStore {
       await _replaceCredits(
           workId: workId, credits: metadata.credits, now: now);
       await _replaceImages(workId: workId, images: metadata.images, now: now);
+      await database.replaceOnlineVideoMetadataExtras(
+        workId,
+        <VideoMetadataExtrasCompanion>[
+          for (final VideoMetadataExtra extra in metadata.extras)
+            if (extra.remoteUrl != null)
+              VideoMetadataExtrasCompanion.insert(
+                extraKey: _extraKey(extra),
+                workId: workId,
+                kind: _extraKind(extra.kind),
+                sourceKind: 'online',
+                title: extra.title,
+                provider: Value<String?>(extra.provider?.name),
+                providerVideoId: Value<String?>(extra.providerVideoId),
+                site: Value<String?>(extra.site),
+                remoteUrl: Value<String?>(extra.remoteUrl),
+                thumbnailUrl: Value<String?>(extra.thumbnailUrl),
+                durationMs: Value<int?>(extra.durationMs),
+                official: Value<bool>(extra.official),
+                language: Value<String?>(extra.language),
+                publishedAt: Value<String?>(extra.publishedAt),
+                sortOrder: Value<int>(extra.order),
+                updatedAt: now,
+              ),
+        ],
+      );
 
       final Map<int, VideoMetadataSeasonRow> existingSeasons =
           <int, VideoMetadataSeasonRow>{
@@ -853,6 +878,19 @@ class VideoMetadataDatabaseStore {
     ];
     return values.isEmpty ? null : jsonEncode(values);
   }
+
+  static String _extraKey(VideoMetadataExtra extra) {
+    final String provider = extra.provider?.name ?? 'online';
+    final String value = extra.providerVideoId ??
+        sha1.convert(utf8.encode(extra.remoteUrl ?? extra.title)).toString();
+    return '$provider:$value';
+  }
+
+  static String _extraKind(VideoMetadataExtraKind kind) => switch (kind) {
+        VideoMetadataExtraKind.behindTheScenes => 'behind_the_scenes',
+        VideoMetadataExtraKind.deletedScene => 'deleted_scene',
+        _ => kind.name,
+      };
 
   static String _digest(String value) =>
       sha1.convert(utf8.encode(value)).toString();

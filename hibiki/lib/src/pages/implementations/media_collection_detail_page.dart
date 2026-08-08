@@ -1,4 +1,5 @@
-import 'dart:async' show Timer;
+import 'dart:async' show Timer, unawaited;
+import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
@@ -18,6 +19,7 @@ import 'package:hibiki/src/media/video/cover_ui/episode_rename_confirm_dialog.da
 import 'package:hibiki/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:hibiki/src/media/video/metadata/video_metadata_credit_repository.dart';
+import 'package:hibiki/src/media/video/stream_video_launch.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
 import 'package:hibiki/src/media/video/scraper/collection_relations_scrape.dart'
     show CollectionRelationType;
@@ -145,6 +147,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// v69 作品级人物关系；无规范资料时为 null，hero 保持既有 v68 投影形态。
   VideoMetadataWorkCredits? _workCredits;
+  VideoMetadataWorkRow? _canonicalWork;
+  List<VideoMetadataTermRow> _workTerms = const <VideoMetadataTermRow>[];
+  List<VideoMetadataExtraRow> _workExtras = const <VideoMetadataExtraRow>[];
 
   @override
   HibikiDatabase get detailDatabase => widget.database;
@@ -185,6 +190,22 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final VideoMetadataWorkCredits? workCredits =
         await VideoMetadataCreditRepository(widget.database)
             .forCollection(widget.collection.id);
+    final VideoMetadataWorkRow? canonicalWork = await widget.database
+        .getVideoMetadataWorkByCollection(widget.collection.id);
+    final List<VideoMetadataTermRow> workTerms = canonicalWork == null
+        ? const <VideoMetadataTermRow>[]
+        : await widget.database.getVideoMetadataTermsForWork(canonicalWork.id);
+    final List<VideoMetadataExtraRow> workExtras = canonicalWork == null
+        ? const <VideoMetadataExtraRow>[]
+        : await widget.database.getVideoMetadataExtras(canonicalWork.id);
+    final Set<String> localExtraUids = <String>{
+      for (final VideoMetadataExtraRow extra in workExtras)
+        if (extra.bookUid != null) extra.bookUid!,
+    };
+    final List<VideoBookRow> episodeMembers = members
+        .where(
+            (VideoBookRow member) => !localExtraUids.contains(member.bookUid))
+        .toList(growable: false);
     // 集级刮削资料（一集一行、episodeNumber 非空才算集级；见 [_episodeMetaByUid]）。
     final Map<String, VideoScrapeMetaRow> episodeMeta =
         <String, VideoScrapeMetaRow>{};
@@ -199,14 +220,17 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         await widget.database.getMediaCollectionById(widget.collection.id);
     if (!mounted) return;
     setState(() {
-      _members = members;
+      _members = episodeMembers;
       _groupKeyByUid = <String, String>{
-        for (final VideoBookRow r in members)
+        for (final VideoBookRow r in episodeMembers)
           r.bookUid: collectionGroupKeyForFilename(r.videoPath),
       };
       _rebuildSections();
       _episodeMetaByUid = episodeMeta;
       _workCredits = workCredits;
+      _canonicalWork = canonicalWork;
+      _workTerms = workTerms;
+      _workExtras = workExtras;
       _scrapeMeta = decoded;
       _backdropPaths = <String>[
         for (final MediaImageRow row in imageRows)
@@ -1170,9 +1194,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   ) {
     final TextTheme text = Theme.of(context).textTheme;
     final ScrapeMetadata? meta = _scrapeMeta;
-    final String? originalTitle = meta?.originalTitle;
-    final String? summary = meta?.summary?.trim();
-    final String? airDate = meta?.airDate?.trim();
+    final String? originalTitle =
+        _canonicalWork?.originalTitle ?? meta?.originalTitle;
+    final String? summary = (_canonicalWork?.overview ?? meta?.summary)?.trim();
+    final String? airDate =
+        (_canonicalWork?.premiereDate ?? meta?.airDate)?.trim();
     final List<ScrapeTag> scrapeTags = _heroScrapeTags(meta);
     final List<VideoMetadataCreditSummary> credits = _heroCredits();
 
@@ -1280,7 +1306,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// hero 纯文字大标题（无 logo 的常态路径 / logo 解码失败回落共用）。
   Widget _buildHeroTitleText(TextTheme text) {
     return Text(
-      _name,
+      _canonicalWork?.title ?? _name,
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
       style: text.displaySmall?.copyWith(
@@ -1298,18 +1324,24 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 放送日期已单独一行压在标题上方（[_buildHeroInfo]）。
   List<String> _heroBadgeParts(ScrapeMetadata? meta) {
     final List<String> parts = <String>[];
-    final int? episodeCount = meta?.episodeCount;
-    if (episodeCount != null && episodeCount > 0) {
+    final int? year = _canonicalWork?.year;
+    if (year != null) parts.add('$year');
+    final String? status = _canonicalWork?.status;
+    if (status != null && status.trim().isNotEmpty) parts.add(status);
+    final int episodeCount = meta?.episodeCount ?? _members.length;
+    if (episodeCount > 0) {
       parts.add(t.collection_hero_total_episodes(count: episodeCount));
     }
-    final double? rating = meta?.rating;
+    final double? rating = _canonicalWork?.rating ?? meta?.rating;
     if (rating != null && rating > 0) {
       parts.add('★ ${rating.toStringAsFixed(1)}');
-      final int? votes = meta?.ratingCount;
+      final int? votes = _canonicalWork?.ratingCount ?? meta?.ratingCount;
       if (votes != null && votes > 0) {
         parts.add(t.video_scrape_rating_votes(count: votes));
       }
     }
+    final int? runtime = _canonicalWork?.runtimeMinutes;
+    if (runtime != null && runtime > 0) parts.add('$runtime min');
     parts.add(
       t.collection_watched_progress(
         done: _watchedCount,
@@ -1474,6 +1506,331 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         'voice_actor' => Icons.record_voice_over_outlined,
         _ => Icons.person_outline,
       };
+
+  Widget _buildWorkDetailsSection(HibikiDesignTokens tokens) {
+    final VideoMetadataWorkRow? work = _canonicalWork;
+    if (work == null) return const SizedBox.shrink();
+    final Map<String, List<String>> terms = <String, List<String>>{};
+    for (final VideoMetadataTermRow term in _workTerms) {
+      terms.putIfAbsent(term.kind, () => <String>[]).add(term.name);
+    }
+    final List<VideoMetadataIdentitySummary> identities =
+        _workCredits?.identities ?? const <VideoMetadataIdentitySummary>[];
+    final List<(String, String)> facts = <(String, String)>[
+      if (terms['genre']?.isNotEmpty == true)
+        ('Genre', terms['genre']!.join(' · ')),
+      if (terms['keyword']?.isNotEmpty == true)
+        ('Keyword', terms['keyword']!.join(' · ')),
+      if (terms['studio']?.isNotEmpty == true)
+        ('Studio', terms['studio']!.join(' · ')),
+      if (terms['country']?.isNotEmpty == true)
+        ('Country', terms['country']!.join(' · ')),
+      if (work.contentRating?.trim().isNotEmpty == true)
+        ('Rating', work.contentRating!),
+      if (identities.isNotEmpty)
+        (
+          t.video_work_external_ids,
+          identities
+              .map((VideoMetadataIdentitySummary identity) =>
+                  '${identity.provider.toUpperCase()}: ${identity.externalId}')
+              .join(' · '),
+        ),
+    ];
+    final String? overview = work.overview?.trim();
+    if ((overview == null || overview.isEmpty) && facts.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      key: const ValueKey<String>('video-work-details'),
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.section,
+        tokens.spacing.page,
+        0,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Text(t.video_work_details,
+              style: Theme.of(context).textTheme.titleLarge),
+          if (overview != null && overview.isNotEmpty) ...<Widget>[
+            SizedBox(height: tokens.spacing.card),
+            SelectableText(
+              overview,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    height: 1.55,
+                  ),
+            ),
+          ],
+          for (final (String label, String value) in facts)
+            Padding(
+              padding: EdgeInsets.only(top: tokens.spacing.card),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  SizedBox(
+                    width: 116,
+                    child: Text(
+                      label,
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                  ),
+                  Expanded(child: SelectableText(value)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCreditsSection(HibikiDesignTokens tokens) {
+    final List<VideoMetadataCreditSummary> all =
+        _workCredits?.credits ?? const <VideoMetadataCreditSummary>[];
+    final List<VideoMetadataCreditSummary> voice = all
+        .where((VideoMetadataCreditSummary credit) =>
+            credit.creditKind == 'voice_actor')
+        .toList(growable: false);
+    final List<VideoMetadataCreditSummary> crew = all
+        .where((VideoMetadataCreditSummary credit) =>
+            credit.creditKind != 'voice_actor')
+        .toList(growable: false);
+    if (voice.isEmpty && crew.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: EdgeInsets.only(top: tokens.spacing.section),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (voice.isNotEmpty)
+            _buildCreditRail(t.video_work_voice_roles, voice, tokens),
+          if (voice.isNotEmpty && crew.isNotEmpty)
+            SizedBox(height: tokens.spacing.section),
+          if (crew.isNotEmpty)
+            _buildCreditRail(t.video_work_cast_crew, crew, tokens),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCreditRail(
+    String title,
+    List<VideoMetadataCreditSummary> credits,
+    HibikiDesignTokens tokens,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+          child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+        ),
+        SizedBox(height: tokens.spacing.card),
+        SizedBox(
+          height: 224,
+          child: ListView.separated(
+            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+            scrollDirection: Axis.horizontal,
+            itemCount: credits.length,
+            separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.card),
+            itemBuilder: (BuildContext context, int index) {
+              final VideoMetadataCreditSummary credit = credits[index];
+              final String? path = credit.person.profilePath;
+              final String? url = credit.person.profileUrl;
+              final ImageProvider? image =
+                  path != null && File(path).existsSync()
+                      ? FileImage(File(path))
+                      : (url == null ? null : NetworkImage(url));
+              return SizedBox(
+                key: ValueKey<String>(
+                    'video-work-credit-${credit.person.personKey}-$index'),
+                width: 132,
+                child: Card(
+                  clipBehavior: Clip.antiAlias,
+                  margin: EdgeInsets.zero,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Expanded(
+                        child: image == null
+                            ? const ColoredBox(
+                                color: Color(0x1FFFFFFF),
+                                child: Icon(Icons.person_outline, size: 42),
+                              )
+                            : Image(image: image, fit: BoxFit.cover),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(9, 8, 9, 2),
+                        child: Text(
+                          credit.person.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelLarge,
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(9, 0, 9, 9),
+                        child: Text(
+                          credit.character?.name ??
+                              (credit.roleName.isEmpty
+                                  ? credit.creditKind
+                                  : credit.roleName),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildExtrasSection(HibikiDesignTokens tokens) {
+    if (_workExtras.isEmpty) return const SizedBox.shrink();
+    final List<VideoMetadataExtraRow> trailers = _workExtras
+        .where((VideoMetadataExtraRow extra) =>
+            extra.kind == 'trailer' || extra.kind == 'teaser')
+        .toList(growable: false);
+    final List<VideoMetadataExtraRow> extras = _workExtras
+        .where((VideoMetadataExtraRow extra) =>
+            extra.kind != 'trailer' && extra.kind != 'teaser')
+        .toList(growable: false);
+    return Padding(
+      padding: EdgeInsets.only(top: tokens.spacing.section),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (trailers.isNotEmpty)
+            _buildExtraRail(t.video_work_trailers, trailers, tokens),
+          if (trailers.isNotEmpty && extras.isNotEmpty)
+            SizedBox(height: tokens.spacing.section),
+          if (extras.isNotEmpty)
+            _buildExtraRail(t.video_work_extras, extras, tokens),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExtraRail(
+    String title,
+    List<VideoMetadataExtraRow> extras,
+    HibikiDesignTokens tokens,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+          child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+        ),
+        SizedBox(height: tokens.spacing.card),
+        SizedBox(
+          height: 210,
+          child: ListView.separated(
+            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+            scrollDirection: Axis.horizontal,
+            itemCount: extras.length,
+            separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.card),
+            itemBuilder: (BuildContext context, int index) {
+              final VideoMetadataExtraRow extra = extras[index];
+              final String? thumb = extra.thumbnailPath ?? extra.thumbnailUrl;
+              return SizedBox(
+                width: 300,
+                child: Card(
+                  clipBehavior: Clip.antiAlias,
+                  margin: EdgeInsets.zero,
+                  child: InkWell(
+                    onTap: () => unawaited(_openWorkExtra(extra)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        Expanded(
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: <Widget>[
+                              if (thumb != null && File(thumb).existsSync())
+                                Image.file(File(thumb), fit: BoxFit.cover)
+                              else if (thumb != null)
+                                Image.network(thumb, fit: BoxFit.cover)
+                              else
+                                const ColoredBox(color: Color(0x1FFFFFFF)),
+                              const Center(
+                                child: CircleAvatar(
+                                  child: Icon(Icons.play_arrow_rounded),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Text(
+                            extra.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openWorkExtra(VideoMetadataExtraRow extra) async {
+    final String? bookUid = extra.bookUid;
+    if (bookUid != null) {
+      final VideoBookRepository repo = VideoBookRepository(widget.database);
+      final VideoBookRow? local = await repo.getByBookUid(bookUid);
+      if (local != null && mounted) {
+        await Navigator.push<void>(
+          context,
+          adaptivePageRoute<void>(
+            context: context,
+            builder: (_) => VideoHibikiPage.neutralized(
+              bookUid: local.bookUid,
+              repo: repo,
+            ),
+          ),
+        );
+        return;
+      }
+    }
+    final String? url = extra.remoteUrl;
+    if (url == null) return;
+    try {
+      final launch = await buildOnlineVideoExtraLaunch(
+        id: extra.extraKey,
+        title: extra.title,
+        url: url,
+      );
+      if (!mounted) return;
+      final VideoBookRepository repo = VideoBookRepository(widget.database);
+      await Navigator.push<void>(
+        context,
+        adaptivePageRoute<void>(
+          context: context,
+          builder: (_) => VideoHibikiPage.neutralizedRemote(
+            info: launch.info,
+            repo: repo,
+            client: launch.client,
+          ),
+        ),
+      );
+    } on Object {
+      if (mounted) HibikiToast.show(msg: t.video_load_failed_generic);
+    }
+  }
 
   Widget _buildEpisodeSection(
     BuildContext context,
@@ -1889,6 +2246,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                       child: _buildHero(context, cs, tokens),
                     ),
                     SliverToBoxAdapter(child: buildDetailTagChips()),
+                    SliverToBoxAdapter(
+                      child: _buildWorkDetailsSection(tokens),
+                    ),
+                    SliverToBoxAdapter(
+                      child: _buildCreditsSection(tokens),
+                    ),
+                    SliverToBoxAdapter(
+                      child: _buildExtrasSection(tokens),
+                    ),
                     // 相关作品横滚（TODO-2484）：hero 之下、剧集区之上；无关系边
                     // 整块不渲染（区块内部判空）。
                     SliverToBoxAdapter(
