@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/collections/collection_season_groups.dart';
 import 'package:fushi/src/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
@@ -330,6 +331,34 @@ class VideoBookRepository {
       collectionId: collectionId,
       episodeUids: epUids,
       createdEpisodeUids: createdUids,
+    );
+  }
+
+  /// Deterministically repairs the episode order of a collection populated by
+  /// independent automatic download jobs. Manual playlist imports deliberately
+  /// keep their authored order; only the download pipeline calls this method.
+  Future<void> reorderDownloadedCollectionEpisodes(int collectionId) async {
+    final List<MediaCollectionItemRow> items =
+        await _db.getCollectionItems(collectionId);
+    final List<VideoBookRow> members = <VideoBookRow>[];
+    for (final MediaCollectionItemRow item in items) {
+      if (item.mediaType != MediaKind.video.dbValue) continue;
+      final VideoBookRow? book = await _db.getVideoBookByBookUid(item.entryKey);
+      if (book != null) members.add(book);
+    }
+    if (members.length < 2) return;
+    final CollectionSeasonRegroup<VideoBookRow> regroup =
+        regroupMembersBySeason<VideoBookRow>(
+      members: members,
+      filenameOf: (VideoBookRow row) => row.videoPath,
+      titleOf: (VideoBookRow row) => row.title,
+    );
+    await _db.reorderCollectionItemsAutomatically(
+      collectionId,
+      <CollectionMemberKey>[
+        for (final VideoBookRow row in regroup.ordered)
+          (mediaType: MediaKind.video.dbValue, entryKey: row.bookUid),
+      ],
     );
   }
 

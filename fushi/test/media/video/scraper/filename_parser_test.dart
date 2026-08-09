@@ -147,6 +147,24 @@ void main() {
       expect(p.episode, 3);
     });
 
+    test('ASCII 罗马数字后的冒号副标题不吞掉季号', () {
+      final ParsedMediaName p = FilenameParser.parse(
+        '[Erai-raws] Mushoku Tensei III: '
+        'Isekai Ittara Honki Dasu - 02 [1080p].mkv',
+      );
+      expect(p.title, 'Mushoku Tensei');
+      expect(p.secondaryTitle, 'Isekai Ittara Honki Dasu');
+      expect(p.season, 3);
+      expect(p.episode, 2);
+    });
+
+    test('普通冒号标题不被当成罗马数字季度分隔符', () {
+      final ParsedMediaName p = FilenameParser.parse('Re: Zero - 01.mkv');
+      expect(p.title, 'Re: Zero');
+      expect(p.season, isNull);
+      expect(p.episode, 1);
+    });
+
     test('单字母 X 不被误认为罗马数字', () {
       final ParsedMediaName p =
           FilenameParser.parse('Hunter X Hunter - 01.mkv');

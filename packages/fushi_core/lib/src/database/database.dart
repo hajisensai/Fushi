@@ -3563,6 +3563,33 @@ class FushiDatabase extends _$FushiDatabase {
             ..where(($VideoMetadataWorksTable t) => t.id.equals(workId)))
           .getSingleOrNull();
 
+  /// Resolves a canonical work from the confirmed provider identity used by
+  /// discovery/download subscriptions. Only work-level identities qualify;
+  /// season/episode/person identities may reuse the same external id without
+  /// owning the collection that contains local episodes.
+  Future<VideoMetadataWorkRow?> getVideoMetadataWorkByProviderIdentity({
+    required String provider,
+    required String externalId,
+  }) async {
+    final List<VideoMetadataProviderIdentityRow> identities =
+        await (select(videoMetadataProviderIdentities)
+              ..where(($VideoMetadataProviderIdentitiesTable t) =>
+                  t.workId.isNotNull() &
+                  t.provider.equals(provider) &
+                  t.externalId.equals(externalId))
+              ..orderBy(<OrderingTerm Function(
+                $VideoMetadataProviderIdentitiesTable,
+              )>[
+                ($VideoMetadataProviderIdentitiesTable t) =>
+                    OrderingTerm.desc(t.isPrimary),
+                ($VideoMetadataProviderIdentitiesTable t) =>
+                    OrderingTerm(expression: t.identityKey),
+              ]))
+            .get();
+    final int? workId = identities.isEmpty ? null : identities.first.workId;
+    return workId == null ? null : getVideoMetadataWorkById(workId);
+  }
+
   Future<List<VideoMetadataWorkRow>> getAllVideoMetadataWorks() =>
       (select(videoMetadataWorks)
             ..orderBy(<OrderingTerm Function($VideoMetadataWorksTable)>[

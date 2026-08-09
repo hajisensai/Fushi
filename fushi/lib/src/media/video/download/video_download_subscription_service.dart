@@ -12,6 +12,7 @@ import 'package:fushi/src/media/video/download/video_download_backend_identity.d
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi/src/media/video/video_filename_parser.dart';
 
 typedef VideoDownloadSubscriptionEnqueue = Future<String> Function(
   VideoDownloadEnqueueRequest request,
@@ -243,6 +244,8 @@ class VideoDownloadSubscriptionService {
       for (final VideoDownloadSubscriptionItemRow item in existingItems)
         item.logicalItemKey: item,
     };
+    final Set<String> managedEpisodeKeys =
+        await _managedEpisodeKeys(subscription);
     final List<String> keys = releasesByItem.keys.toList()
       ..sort(_compareLogicalItemKeys);
     bool hasPersistentJob = false;
@@ -275,6 +278,10 @@ class VideoDownloadSubscriptionService {
       try {
         final VideoDownloadSubscriptionItemRow item =
             existing ?? await _persistDiscoveredItem(subscription, release);
+        if (managedEpisodeKeys.contains(release.logicalItem.key)) {
+          await _markItemSkipped(item.id);
+          continue;
+        }
         hasPersistentJob =
             await _enqueueItem(subscription, media, release.candidate, item) ||
                 hasPersistentJob;
@@ -289,6 +296,61 @@ class VideoDownloadSubscriptionService {
       matched: true,
       hasPersistentJob: hasPersistentJob,
     );
+  }
+
+  Future<Set<String>> _managedEpisodeKeys(
+    VideoDownloadSubscriptionRow subscription,
+  ) async {
+    if (_mediaKind(subscription.mediaKind) == VideoMetadataMediaKind.movie) {
+      return const <String>{};
+    }
+    final Set<String> result = <String>{};
+    final String provider =
+        subscription.metadataProvider?.trim().toLowerCase() ?? '';
+    final String externalId = subscription.externalId?.trim() ?? '';
+    if (provider.isEmpty || externalId.isEmpty) return result;
+    bool sameIdentity(VideoDownloadJobRow job) =>
+        job.metadataProvider?.trim().toLowerCase() == provider &&
+        job.externalId?.trim() == externalId;
+    for (final VideoDownloadJobRow job
+        in await database.getVideoDownloadJobs()) {
+      if (!sameIdentity(job) ||
+          job.lifecycle == VideoDownloadJobLifecycle.cancelled ||
+          job.lifecycle == VideoDownloadJobLifecycle.failed) {
+        continue;
+      }
+      for (final VideoDownloadJobFileRow file
+          in await database.getVideoDownloadJobFiles(job.jobId)) {
+        final int? season = file.season;
+        final int? episode = file.episode;
+        if (season == null || episode == null || episode <= 0) continue;
+        if (file.status == VideoDownloadJobFileStatus.failed ||
+            file.status == VideoDownloadJobFileStatus.skipped) {
+          continue;
+        }
+        result.add(_episodeKey(season, episode));
+      }
+    }
+
+    final VideoMetadataWorkRow? work =
+        await database.getVideoMetadataWorkByProviderIdentity(
+      provider: provider,
+      externalId: externalId,
+    );
+    final int? collectionId = work?.collectionId;
+    if (collectionId == null) return result;
+    for (final MediaCollectionItemRow item
+        in await database.getCollectionItems(collectionId)) {
+      if (item.mediaType != MediaKind.video.dbValue) continue;
+      final VideoBookRow? book =
+          await database.getVideoBookByBookUid(item.entryKey);
+      if (book == null) continue;
+      final VideoNameInfo parsed = parseVideoFilename(book.videoPath);
+      final int? episode = parsed.episode;
+      if (episode == null || episode <= 0) continue;
+      result.add(_episodeKey(parsed.season ?? 1, episode));
+    }
+    return result;
   }
 
   Future<List<VideoResourceCandidate>> _searchSubscriptionCandidates({
@@ -486,6 +548,21 @@ class VideoDownloadSubscriptionService {
         jobId: Value<String?>(jobId),
         status: const Value<String>(
           VideoDownloadSubscriptionItemStatus.queued,
+        ),
+        error: const Value<String?>(null),
+        updatedAt: Value<int>(_now().millisecondsSinceEpoch),
+      ),
+    );
+    _ensureLeaseHeld();
+  }
+
+  Future<void> _markItemSkipped(int itemId) async {
+    _ensureLeaseHeld();
+    await database.updateVideoDownloadSubscriptionItem(
+      itemId,
+      VideoDownloadSubscriptionItemsCompanion(
+        status: const Value<String>(
+          VideoDownloadSubscriptionItemStatus.skipped,
         ),
         error: const Value<String?>(null),
         updatedAt: Value<int>(_now().millisecondsSinceEpoch),
@@ -787,37 +864,10 @@ _SubscriptionLogicalItem? _logicalItem(
     return const _SubscriptionLogicalItem(key: 'movie');
   }
   if (_looksLikeBatch(title)) return null;
-  int? season;
-  int? episode;
-  final List<RegExpMatch> seasonEpisodeMatches = RegExp(
-    r'\bS(\d{1,3})[ ._-]*E(\d{1,4})(?:v\d+)?\b',
-    caseSensitive: false,
-  ).allMatches(title).toList();
-  if (seasonEpisodeMatches.length == 1) {
-    season = int.tryParse(seasonEpisodeMatches.single.group(1)!);
-    episode = int.tryParse(seasonEpisodeMatches.single.group(2)!);
-  } else {
-    final List<RegExpMatch> xMatches = RegExp(
-      r'\b(\d{1,3})x(\d{1,4})(?:v\d+)?\b',
-      caseSensitive: false,
-    ).allMatches(title).toList();
-    if (xMatches.length == 1) {
-      season = int.tryParse(xMatches.single.group(1)!);
-      episode = int.tryParse(xMatches.single.group(2)!);
-    }
-  }
-  if (episode == null &&
-      _discoveryCategory(subscription) == VideoDiscoveryCategory.anime) {
-    final List<RegExpMatch> animeMatches = RegExp(
-      r'(?:^|\s)-\s*(\d{1,4})(?:v\d+)?(?=\s*(?:\[|\(|$))',
-      caseSensitive: false,
-    ).allMatches(title).toList();
-    if (animeMatches.length == 1) {
-      season = subscription.season ?? 1;
-      episode = int.tryParse(animeMatches.single.group(1)!);
-    }
-  }
-  if (season == null || episode == null || season <= 0 || episode <= 0) {
+  final VideoNameInfo parsed = parseVideoFilename(title);
+  final int? episode = parsed.episode;
+  final int season = parsed.season ?? subscription.season ?? 1;
+  if (episode == null || season <= 0 || episode <= 0) {
     return null;
   }
   if (subscription.season != null && subscription.season != season) {
@@ -836,12 +886,15 @@ _SubscriptionLogicalItem? _logicalItem(
     if (beforeWindow) return null;
   }
   return _SubscriptionLogicalItem(
-    key: 'S${season.toString().padLeft(2, '0')}'
-        'E${episode.toString().padLeft(2, '0')}',
+    key: _episodeKey(season, episode),
     season: season,
     episode: episode,
   );
 }
+
+String _episodeKey(int season, int episode) =>
+    'S${season.toString().padLeft(2, '0')}'
+    'E${episode.toString().padLeft(2, '0')}';
 
 bool _looksLikeBatch(String title) {
   final String normalized = title.toLowerCase();

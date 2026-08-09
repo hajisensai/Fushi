@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1392 条。点号进各自文件。
+> 共 1393 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1486](bugs/BUG-1486-subscription-episode-selection-order.md) | ✅ | ✅ | 订阅选集季号错误、重复下载且顺序按完成时间乱序 |
 | [BUG-1485](bugs/BUG-1485-subscription-first-episode-skipped.md) | ✅ | ✅ | 发现订阅跳过所选首集 |
 | [BUG-1484](bugs/BUG-1484-download-task-empty-overlay-metrics.md) | ✅ | ✅ | 下载任务空态遮挡且缺少实时指标 |
 | [BUG-1483](bugs/BUG-1483-subscription-embedded-backend-missing.md) | ✅ | ✅ | 订阅创建后因内置下载引擎缺失而全部卡在需处理 |
@@ -66,8 +67,8 @@
 | [BUG-1455](bugs/BUG-1455-lookup-popup-reactivates-main-window.md) | ✅ | ✅ | 拖动或缩放查词弹窗会把主窗口抬到前台 |
 | [BUG-1454](bugs/BUG-1454-kana-compound-popup-selection.md) | ✅ | ✅ | 查词结果正文含假名词被 ruby 占位文本截断 |
 | [BUG-1453](bugs/BUG-1453-video-gamepad-synthetic-right-click.md) | ✅ | ✅ | 手柄按键同时触发视频动作与右键菜单 |
-| [BUG-1452](bugs/BUG-1452-ai6-clean-voice.md) | ✅ | ✅ | AI6 制卡误用混合 BGM |
 | [BUG-1452](bugs/BUG-1452-gal-unselected-thread-implies-audio.md) | ✅ | ✅ | 未选择台词线程时仍显示正在监听与句级音频 |
+| [BUG-1452](bugs/BUG-1452-ai6-clean-voice.md) | ✅ | ✅ | AI6 制卡误用混合 BGM |
 | [BUG-1451](bugs/BUG-1451-popup-copy-shortcut-and-context-menu.md) | ✅ | ✅ | 查词弹窗无法复制（Ctrl+C 与右键「复制」都无效） |
 | [BUG-1450](bugs/BUG-1450-windows-ime-swallows-shortcuts.md) | ✅ | ✅ | 中文输入法激活时全表面快捷键失效（IME 吞键） |
 | [BUG-1449](bugs/BUG-1449-gal-helper-bundled-as-plain-files.md) | ✅ | ✅ | helper 改为构建期解压随包，消灭需与本体同步的第二份副本 |
