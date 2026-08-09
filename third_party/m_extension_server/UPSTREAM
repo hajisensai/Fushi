@@ -64,6 +64,12 @@ and manifest point straight at the commit recorded above.
 Hibiki modifications
 --------------------
 server-build.gradle.patch:
+  build.gradle.kts                 org.jogamp resolution: SciJava mirror first,
+                                   then jogamp.org, both content-filtered to
+                                   org.jogamp — jogamp.org's recurring
+                                   whole-host outages (2026-08-09) must neither
+                                   fail gluegen/jogl resolution nor poison
+                                   unrelated coordinates it never hosted
   gradle/libs.versions.toml        kotlinx-serialization 1.9.0 -> 1.11.0
   server/build.gradle.kts          + implementation(libs.apksig) for the
                                    authenticated APK inspection route;
