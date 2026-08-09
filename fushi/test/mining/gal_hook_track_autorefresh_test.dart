@@ -85,6 +85,7 @@ class _TrackFakeEngine extends EngineHookGalAudioSource {
     int tsMs, {
     int? sourcePtr,
     List<int>? exclude,
+    int? endTsMs,
   }) async {
     utteranceSourcePtrs.add(sourcePtr ?? selectedAudioSourcePtr);
     utteranceExcludes.add(exclude ?? excludedAudioSourcePtrs.toList());

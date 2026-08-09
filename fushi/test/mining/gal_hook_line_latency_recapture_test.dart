@@ -341,6 +341,7 @@ class _LatencyEngine extends EngineHookGalAudioSource {
     int tsMs, {
     int? sourcePtr,
     List<int>? exclude,
+    int? endTsMs,
   }) {
     utteranceCalls++;
     return utterance;
@@ -352,6 +353,7 @@ class _LatencyEngine extends EngineHookGalAudioSource {
     int tolMs = 8000,
     int? sourcePtr,
     List<int>? exclude,
+    int? endTsMs,
   }) async =>
       null;
 

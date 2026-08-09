@@ -1562,10 +1562,15 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// 的 ~125ms 碎片）。[sourcePtr] 指定用哪条源（缺省用 [selectedAudioSourcePtr]，0=能量自动选）；
   /// [exclude] 自动选源时排除的源（缺省用 [excludedAudioSourcePtrs]，标记 BGM）。找不到返回 null
   /// （调用方回退 [grabClipNear]）。
+  ///
+  /// [endTsMs] 非 null 时把前向窗口右界收到那里（BUG-1475：收敛因「下一句到达」而
+  /// 收手时补最后一次 grab，用下一句的时间戳当上界，既拿回尾巴又不会把下一句的段
+  /// 拼进上一句）。缺省 null ⇒ 与旧行为逐字等价。
   Future<GalAudioSlice?> grabUtterance(
     int tsMs, {
     int? sourcePtr,
     List<int>? exclude,
+    int? endTsMs,
   }) async {
     final int src = sourcePtr ?? selectedAudioSourcePtr;
     final List<int> ex = exclude ?? excludedAudioSourcePtrs.toList();
@@ -1573,7 +1578,12 @@ class EngineHookGalAudioSource implements GalAudioSource {
       final Map<Object?, Object?>? r =
           await _channel.invokeMethod<Map<Object?, Object?>>(
         'grabUtterance',
-        <String, Object?>{'tsMs': tsMs, 'sourcePtr': src, 'exclude': ex},
+        <String, Object?>{
+          'tsMs': tsMs,
+          'sourcePtr': src,
+          'exclude': ex,
+          'endTsMs': endTsMs ?? 0,
+        },
       );
       if (r == null || r['error'] != null) {
         return null;

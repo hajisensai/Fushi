@@ -795,6 +795,7 @@ class _FakeEngine extends EngineHookGalAudioSource {
     int tsMs, {
     int? sourcePtr,
     List<int>? exclude,
+    int? endTsMs,
   }) async {
     utteranceTimestamps.add(tsMs);
     if (sourcePtr != null) utteranceSourcePtrs.add(sourcePtr);

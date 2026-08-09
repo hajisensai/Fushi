@@ -338,6 +338,7 @@ class _AttachEngine extends EngineHookGalAudioSource {
     int tsMs, {
     int? sourcePtr,
     List<int>? exclude,
+    int? endTsMs,
   }) async =>
       null;
 
@@ -347,6 +348,7 @@ class _AttachEngine extends EngineHookGalAudioSource {
     int tolMs = 8000,
     int? sourcePtr,
     List<int>? exclude,
+    int? endTsMs,
   }) async =>
       null;
 

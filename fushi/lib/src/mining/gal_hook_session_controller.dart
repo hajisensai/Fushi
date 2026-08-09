@@ -3804,12 +3804,24 @@ class GalHookSessionController extends ChangeNotifier {
     final Stopwatch elapsed = Stopwatch()..start();
     while (elapsed.elapsed < _utteranceSettleMax) {
       if (!_canSettleLine(engine: engine, entry: entry, line: line)) {
+        await _closingUtteranceGrab(
+          engine: engine,
+          entry: entry,
+          line: line,
+          bestBytes: bestBytes,
+        );
         return;
       }
       await Future<void>.delayed(_utteranceSettleInterval);
       // 判据必须在**每个** await 之后复查：只在 delay 之前查一次时，下一句在 delay
       // 期间到达仍会多抓一次，把下一句的段拼进上一句（BUG-1109 审查实测）。
       if (!_canSettleLine(engine: engine, entry: entry, line: line)) {
+        await _closingUtteranceGrab(
+          engine: engine,
+          entry: entry,
+          line: line,
+          bestBytes: bestBytes,
+        );
         return;
       }
       final GalAudioSlice? next = await _audioQueue.enqueue<GalAudioSlice?>(
@@ -3821,6 +3833,12 @@ class GalHookSessionController extends ChangeNotifier {
       }
       // grab 期间也可能夹一次 stop / 补录 / 选轨 / 资源升格。
       if (!_canSettleLine(engine: engine, entry: entry, line: line)) {
+        await _closingUtteranceGrab(
+          engine: engine,
+          entry: entry,
+          line: line,
+          bestBytes: bestBytes,
+        );
         return;
       }
       bestBytes = next.pcm.length;
@@ -3833,6 +3851,79 @@ class GalHookSessionController extends ChangeNotifier {
         durationMs: (next.pcm.length * 1000) ~/ next.format.byteRate,
       );
     }
+  }
+
+  /// 收敛因「下一句到达」而收手时的**封口 grab**（BUG-1475）。
+  ///
+  /// 从最后一次成功 grab 到下一句到达之间，最多有一个 [_utteranceSettleInterval]
+  /// （250ms）的 PCM 已经进了共享内存环、却从未被读出来。这段数据的时间戳**严格早于**
+  /// 下一句的 ts，根本不属于 [[BUG-1109]] 要防的东西（那条防的是把**下一句**的段拼进
+  /// 上一句），纯属误伤——用户报的「上一句音频没播完就切下一句会打断已捕获的音频」
+  /// 丢的就是它。
+  ///
+  /// 三条纪律：
+  /// * **只在「下一句到达」这一种终止原因下补**。会话/音源换走、用户裁决、补录窗口、
+  ///   资源升格这几种终止意味着这行的所有权已经不在收敛手上，此时再写缓存就是越权。
+  /// * 前向窗口用下一句的 ts 收口（`endTsMs`），BUG-1109 的不变量原样保住。
+  /// * 仍然只在**更长**时才写回：缓存单调变长的性质不变。
+  Future<void> _closingUtteranceGrab({
+    required EngineHookGalAudioSource engine,
+    required TexthookerLineEntry entry,
+    required GalHookedLine line,
+    required int bestBytes,
+  }) async {
+    // 除「下一句到达」之外的任何一条不成立 ⇒ 所有权已易主，不补。
+    final bool onlyNextLineArrived = engine == _engineSource &&
+        identical(_audioSource, engine) &&
+        isLineInCurrentSession(entry) &&
+        _recapturingLineId == null &&
+        !_isUserAdjudicated(entry.id) &&
+        _resourceIdForLine(entry.id) == null &&
+        !_pendingResourceMatches.containsKey(entry.id) &&
+        _lastTextSeq > line.seq;
+    if (!onlyNextLineArrived) return;
+    final int? nextTs = _nextLineTimestampAfter(line.seq);
+    if (nextTs == null || nextTs <= line.timestampMs) return;
+    final GalAudioSlice? closing = await _audioQueue.enqueue<GalAudioSlice?>(
+      () => engine.grabUtterance(line.timestampMs, endTsMs: nextTs),
+      buildFailure: (Object error, StackTrace stack) => null,
+    );
+    if (closing == null || closing.isEmpty) return;
+    if (closing.pcm.length <= bestBytes) return;
+    // 等待期间仍可能夹进一次易主，写回前再核一次。
+    if (_recapturingLineId != null ||
+        _isUserAdjudicated(entry.id) ||
+        _resourceIdForLine(entry.id) != null ||
+        _pendingResourceMatches.containsKey(entry.id) ||
+        !identical(_audioSource, engine)) {
+      return;
+    }
+    _lineVoiceCache[entry.id] = closing;
+    _trimCache(_lineVoiceCache);
+    _textService.updateLineAudio(
+      entry.id,
+      status: TexthookerLineAudioStatus.matched,
+      backend: 'engine_pcm',
+      durationMs: (closing.pcm.length * 1000) ~/ closing.format.byteRate,
+    );
+  }
+
+  /// 已消费行里 seq **紧接** [seq] 之后那一行的时间戳；没有则 null。
+  ///
+  /// 取「最小的 seq > 传入 seq」而不是「最新一行」：一次轮询可能一口气交付好几行，
+  /// 拿最新那行当上界会把中间那些行的语音一起圈进来。
+  int? _nextLineTimestampAfter(int seq) {
+    int? bestSeq;
+    int? bestTs;
+    for (final MapEntry<String, int> e in _lineTextEventIdCache.entries) {
+      if (e.value <= seq) continue;
+      if (bestSeq != null && e.value >= bestSeq) continue;
+      final int? ts = _lineTimestampCache[e.key];
+      if (ts == null) continue;
+      bestSeq = e.value;
+      bestTs = ts;
+    }
+    return bestTs;
   }
 
   /// 收敛循环每次 await 之后的存活判据（BUG-1109）。任一不成立就必须收手——收敛是
