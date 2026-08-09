@@ -897,6 +897,13 @@ class SyncRepository {
     // 漂过去只会给用户「我明明设过怎么变了」的困惑，故按设备本地处理不随备份携带。
     'download_save_root',
     'download_save_root_history',
+    // 发现/下载闭环：第三方 indexer / 字幕服务配置、下载后端路径映射和受管来源
+    // 都描述本机能力。跨设备恢复会携带明文凭据、无效绝对路径或错误 source id。
+    'video_resource_torznab_config',
+    'video_subtitle_opensubtitles_config',
+    'video_download_backend_path_mappings',
+    'video_download_target_source_id',
+    'video_download_embedded_installation_id',
   ];
 
   // ── Helpers ───────────────────────────────────────────────────────

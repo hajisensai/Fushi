@@ -1589,55 +1589,57 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     return SizedBox(
       key: const ValueKey<String>('collection-hero-credits'),
       height: 28,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: <Widget>[
-            for (int index = 0; index < credits.length; index++) ...<Widget>[
-              if (index > 0) const SizedBox(width: 6),
-              DecoratedBox(
-                key: ValueKey<String>(
-                  'collection-hero-credit-${credits[index].creditKind}-$index',
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.32),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.24),
+      child: HorizontalDragScrollable(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: <Widget>[
+              for (int index = 0; index < credits.length; index++) ...<Widget>[
+                if (index > 0) const SizedBox(width: 6),
+                DecoratedBox(
+                  key: ValueKey<String>(
+                    'collection-hero-credit-${credits[index].creditKind}-$index',
                   ),
-                ),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Icon(
-                        _heroCreditIcon(credits[index].creditKind),
-                        size: 13,
-                        color: Colors.white.withValues(alpha: 0.76),
-                      ),
-                      const SizedBox(width: 5),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 220),
-                        child: Text(
-                          credits[index].displayName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            height: 1.2,
-                            color: Colors.white.withValues(alpha: 0.9),
-                            fontWeight: FontWeight.w500,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.32),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.24),
+                    ),
+                  ),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(
+                          _heroCreditIcon(credits[index].creditKind),
+                          size: 13,
+                          color: Colors.white.withValues(alpha: 0.76),
+                        ),
+                        const SizedBox(width: 5),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 220),
+                          child: Text(
+                            credits[index].displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 1.2,
+                              color: Colors.white.withValues(alpha: 0.9),
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -1687,26 +1689,23 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           tokens.spacing.page,
           0,
         ),
-        child: Card(
-          margin: EdgeInsets.zero,
-          child: Padding(
-            padding: EdgeInsets.all(tokens.spacing.section),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  t.video_work_details,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                SizedBox(height: tokens.spacing.card),
-                Text(
-                  t.video_work_metadata_pending,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                ),
-              ],
-            ),
+        child: FushiCard(
+          padding: EdgeInsets.all(tokens.spacing.section),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                t.video_work_details,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              SizedBox(height: tokens.spacing.card),
+              Text(
+                t.video_work_metadata_pending,
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
           ),
         ),
       );
@@ -1798,63 +1797,64 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         SizedBox(height: tokens.spacing.card),
         SizedBox(
           height: 224,
-          child: ListView.separated(
-            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-            scrollDirection: Axis.horizontal,
-            itemCount: credits.length,
-            separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.card),
-            itemBuilder: (BuildContext context, int index) {
-              final VideoMetadataCreditSummary credit = credits[index];
-              final String? path = credit.person.profilePath;
-              final String? url = credit.person.profileUrl;
-              final ImageProvider? image =
-                  path != null && File(path).existsSync()
-                      ? FileImage(File(path))
-                      : (url == null ? null : NetworkImage(url));
-              return SizedBox(
-                key: ValueKey<String>(
-                    'video-work-credit-${credit.person.personKey}-$index'),
-                width: 132,
-                child: Card(
-                  clipBehavior: Clip.antiAlias,
-                  margin: EdgeInsets.zero,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      Expanded(
-                        child: image == null
-                            ? const ColoredBox(
-                                color: Color(0x1FFFFFFF),
-                                child: Icon(Icons.person_outline, size: 42),
-                              )
-                            : Image(image: image, fit: BoxFit.cover),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(9, 8, 9, 2),
-                        child: Text(
-                          credit.person.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelLarge,
+          child: HorizontalDragScrollable(
+            child: ListView.separated(
+              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+              scrollDirection: Axis.horizontal,
+              itemCount: credits.length,
+              separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.card),
+              itemBuilder: (BuildContext context, int index) {
+                final VideoMetadataCreditSummary credit = credits[index];
+                final String? path = credit.person.profilePath;
+                final String? url = credit.person.profileUrl;
+                final ImageProvider? image =
+                    path != null && File(path).existsSync()
+                        ? FileImage(File(path))
+                        : (url == null ? null : NetworkImage(url));
+                return SizedBox(
+                  key: ValueKey<String>(
+                      'video-work-credit-${credit.person.personKey}-$index'),
+                  width: 132,
+                  child: FushiCard(
+                    padding: EdgeInsets.zero,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        Expanded(
+                          child: image == null
+                              ? const ColoredBox(
+                                  color: Color(0x1FFFFFFF),
+                                  child: Icon(Icons.person_outline, size: 42),
+                                )
+                              : Image(image: image, fit: BoxFit.cover),
                         ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(9, 0, 9, 9),
-                        child: Text(
-                          credit.character?.name ??
-                              (credit.roleName.isEmpty
-                                  ? credit.creditKind
-                                  : credit.roleName),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall,
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(9, 8, 9, 2),
+                          child: Text(
+                            credit.person.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.labelLarge,
+                          ),
                         ),
-                      ),
-                    ],
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(9, 0, 9, 9),
+                          child: Text(
+                            credit.character?.name ??
+                                (credit.roleName.isEmpty
+                                    ? credit.creditKind
+                                    : credit.roleName),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ],
@@ -1902,20 +1902,19 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         SizedBox(height: tokens.spacing.card),
         SizedBox(
           height: 210,
-          child: ListView.separated(
-            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-            scrollDirection: Axis.horizontal,
-            itemCount: extras.length,
-            separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.card),
-            itemBuilder: (BuildContext context, int index) {
-              final VideoMetadataExtraRow extra = extras[index];
-              final String? thumb = extra.thumbnailPath ?? extra.thumbnailUrl;
-              return SizedBox(
-                width: 300,
-                child: Card(
-                  clipBehavior: Clip.antiAlias,
-                  margin: EdgeInsets.zero,
-                  child: InkWell(
+          child: HorizontalDragScrollable(
+            child: ListView.separated(
+              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+              scrollDirection: Axis.horizontal,
+              itemCount: extras.length,
+              separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.card),
+              itemBuilder: (BuildContext context, int index) {
+                final VideoMetadataExtraRow extra = extras[index];
+                final String? thumb = extra.thumbnailPath ?? extra.thumbnailUrl;
+                return SizedBox(
+                  width: 300,
+                  child: FushiCard(
+                    padding: EdgeInsets.zero,
                     onTap: () => unawaited(_openWorkExtra(extra)),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1949,9 +1948,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                       ],
                     ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ],

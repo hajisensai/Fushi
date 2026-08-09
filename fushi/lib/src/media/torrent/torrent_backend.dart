@@ -3,6 +3,53 @@
 /// 只依赖本文件，不关心后端实现。
 library;
 
+import 'dart:typed_data';
+
+/// A fully resolved input for [TorrentBackend]. Providers must resolve remote
+/// `.torrent` URLs before handing work to a backend so every backend sees the
+/// same validated bytes and no temporary provider credential is persisted.
+sealed class TorrentAddPayload {
+  const TorrentAddPayload({required this.torrentId});
+
+  /// The backend-visible 40-character torrent id when known.
+  final String? torrentId;
+}
+
+class TorrentMagnetPayload extends TorrentAddPayload {
+  const TorrentMagnetPayload({
+    required this.magnetUri,
+    required super.torrentId,
+  });
+
+  final String magnetUri;
+}
+
+class TorrentMetainfoPayload extends TorrentAddPayload {
+  TorrentMetainfoPayload({
+    required Uint8List bytes,
+    required this.fileName,
+    required super.torrentId,
+    this.v1InfoHash,
+    this.v2InfoHash,
+  }) : bytes = Uint8List.fromList(bytes);
+
+  final Uint8List bytes;
+  final String fileName;
+  final String? v1InfoHash;
+  final String? v2InfoHash;
+}
+
+/// Optional capability for backends which can ingest validated metainfo
+/// bytes. Existing fakes and read-only backends are not forced to implement it.
+abstract interface class TorrentMetainfoBackend implements TorrentBackend {
+  Future<bool> addTorrentMetainfo(
+    TorrentMetainfoPayload payload, {
+    required String category,
+    bool sequential = false,
+    bool firstLastPiecePrio = false,
+  });
+}
+
 /// 某一时刻单个种子任务的快照（后端无关）。
 class TorrentSnapshot {
   const TorrentSnapshot({

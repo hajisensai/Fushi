@@ -520,17 +520,44 @@ class BackupService {
   ///     extension preferences. APKs and runtime cookies deliberately do not
   ///     travel, so exporting these rows would both create broken ghost
   ///     extensions and risk leaking source credentials stored as preferences.
-  /// None is FK-targeted by a content table, so a wholesale DELETE / swap is
-  /// safe. The merge engine already skips both, so only the overwrite path needs
-  /// the restore.
+  ///   - `video_download_*`    — durable jobs/subscriptions are tied to this
+  ///     installation's backend fingerprint, local paths and source-library
+  ///     ids. Sending them to another device could enqueue work against the
+  ///     wrong backend. Their five-table FK graph is ordered explicitly below.
+  ///
+  /// [_deviceLocalTables] is CHILD-first and is the only order allowed for a
+  /// wipe. [_deviceLocalTablesParentFirst] is the inverse dependency order used
+  /// for restore. Keeping two named lists is intentional: reusing one loop for
+  /// both directions silently worked before the v78 graph existed, but now
+  /// fails with `foreign_keys=ON`.
   static const List<String> _deviceLocalTables = <String>[
-    'fushi_paired_peers',
+    'video_download_subscription_items',
+    'video_download_job_subtitles',
+    'video_download_job_files',
+    'video_download_subscriptions',
+    'video_download_jobs',
+    'manga_source_preferences',
+    'manga_online_sources',
+    'manga_extensions',
+    'manga_extension_stores',
+    'manga_trusted_signers',
     'sync_baselines',
+    'fushi_paired_peers',
+  ];
+
+  static const List<String> _deviceLocalTablesParentFirst = <String>[
+    'sync_baselines',
+    'fushi_paired_peers',
     'manga_extension_stores',
     'manga_extensions',
     'manga_online_sources',
     'manga_source_preferences',
     'manga_trusted_signers',
+    'video_download_jobs',
+    'video_download_subscriptions',
+    'video_download_job_files',
+    'video_download_job_subtitles',
+    'video_download_subscription_items',
   ];
 
   /// Content tables stripped from the exported DB copy when the `statistics`
@@ -1451,7 +1478,7 @@ class BackupService {
   /// baselines. Runs inline during import while both DBs are at the current
   /// schema (bak is a copy of the live DB), so `SELECT *` columns align. No-op
   /// (logged) if bak is gone.
-  static Future<void> _reapplyDeviceLocalTablesFromBak(
+  static Future<bool> _reapplyDeviceLocalTablesFromBak(
     String dbDirectory,
     String bakPath,
   ) async {
@@ -1459,7 +1486,24 @@ class BackupService {
       debugPrint('BackupService._reapplyDeviceLocalTablesFromBak: '
           'pre-restore.bak missing — local pairing/baselines could not be '
           'preserved on import.');
-      return;
+      return false;
+    }
+    late final bool hasSqliteHeader;
+    try {
+      hasSqliteHeader = await _hasSqliteHeader(bakPath);
+    } catch (e, st) {
+      debugPrint('BackupService._reapplyDeviceLocalTablesFromBak: '
+          'pre-restore.bak could not be inspected: $e\n$st');
+      return false;
+    }
+    if (!hasSqliteHeader) {
+      // A few low-level restore callers intentionally swap opaque fixture
+      // bytes rather than a Hibiki database. Such a snapshot cannot contain
+      // device-local rows, so there is nothing to retry or retain.
+      debugPrint('BackupService._reapplyDeviceLocalTablesFromBak: '
+          'pre-restore.bak is not a SQLite database; no local tables to '
+          'preserve.');
+      return true;
     }
     FushiDatabase? db;
     try {
@@ -1470,22 +1514,224 @@ class BackupService {
       await db.transaction(() async {
         for (final String t in _deviceLocalTables) {
           await db!.customStatement('DELETE FROM $t');
-          await db.customStatement('INSERT INTO $t SELECT * FROM devbak.$t');
+        }
+        for (final String t in _deviceLocalTablesParentFirst) {
+          await _insertDeviceLocalTableFromBak(db!, t);
         }
       });
       await db.customStatement('DETACH DATABASE devbak');
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+      return true;
     } catch (e, st) {
       // Best-effort preservation: a corrupt/unreadable imported DB must not
       // abort the whole restore (the primary overwrite already landed).
       debugPrint('BackupService._reapplyDeviceLocalTablesFromBak failed: '
           '$e\n$st');
+      return false;
     } finally {
       try {
         await db?.close();
       } catch (_) {/* db may have failed to open */}
     }
   }
+
+  static Future<bool> _hasSqliteHeader(String path) async {
+    const List<int> expected = <int>[
+      0x53,
+      0x51,
+      0x4c,
+      0x69,
+      0x74,
+      0x65,
+      0x20,
+      0x66,
+      0x6f,
+      0x72,
+      0x6d,
+      0x61,
+      0x74,
+      0x20,
+      0x33,
+      0x00,
+    ];
+    final RandomAccessFile file = await File(path).open();
+    try {
+      if (await file.length() < expected.length) return false;
+      final List<int> actual = await file.read(expected.length);
+      for (int index = 0; index < expected.length; index++) {
+        if (actual[index] != expected[index]) return false;
+      }
+      return true;
+    } finally {
+      await file.close();
+    }
+  }
+
+  static Future<void> _insertDeviceLocalTableFromBak(
+    FushiDatabase db,
+    String table,
+  ) async {
+    switch (table) {
+      case 'video_download_jobs':
+        await _insertVideoDownloadJobsFromBak(db);
+      case 'video_download_subscriptions':
+        await _insertVideoDownloadSubscriptionsFromBak(db);
+      default:
+        await db.customStatement(
+          'INSERT INTO $table SELECT * FROM devbak.$table',
+        );
+    }
+  }
+
+  /// Rebind a local job only when the imported DB still has the same semantic
+  /// source/collection. Numeric ids are device-local autoincrements and may
+  /// collide with an unrelated row from the backup device, so id existence by
+  /// itself is not sufficient. A missing target is nulled and the job becomes
+  /// actionable instead of aborting the whole FK-checked restore.
+  static Future<void> _insertVideoDownloadJobsFromBak(
+    FushiDatabase db,
+  ) async {
+    final List<String> columns = await _tableColumns(db, 'video_download_jobs');
+    const String sourceLookup =
+        'SELECT current_source.id FROM media_sources AS current_source '
+        'JOIN devbak.media_sources AS old_source '
+        'ON current_source.media_kind = old_source.media_kind '
+        'AND current_source.transport = old_source.transport '
+        'AND current_source.root_path = old_source.root_path '
+        'WHERE old_source.id = j.target_source_id '
+        'ORDER BY current_source.id LIMIT 1';
+    const String collectionLookup = 'SELECT current_collection.id '
+        'FROM media_collections AS current_collection '
+        'JOIN devbak.media_collections AS old_collection '
+        'ON current_collection.name = old_collection.name '
+        'AND current_collection.collection_type = '
+        'old_collection.collection_type '
+        'WHERE old_collection.id = j.collection_id '
+        'ORDER BY current_collection.id LIMIT 1';
+    const String sourceMissing =
+        'j.target_source_id IS NOT NULL AND NOT EXISTS ($sourceLookup)';
+    const String collectionMissing =
+        'j.collection_id IS NOT NULL AND NOT EXISTS ($collectionLookup)';
+    const String referenceMissing =
+        '(($sourceMissing) OR ($collectionMissing))';
+    const String attentionMessage =
+        'needsAttention: restored target source or collection is unavailable '
+        'on this device';
+    final List<String> selectExpressions = columns.map((String column) {
+      switch (column) {
+        case 'target_source_id':
+          return 'CASE WHEN j.target_source_id IS NULL THEN NULL '
+              'ELSE ($sourceLookup) END';
+        case 'collection_id':
+          return 'CASE WHEN j.collection_id IS NULL THEN NULL '
+              'ELSE ($collectionLookup) END';
+        case 'lifecycle':
+          return "CASE WHEN $referenceMissing THEN 'needsAttention' "
+              'ELSE j.lifecycle END';
+        case 'claimed_by':
+        case 'claim_expires_at':
+          return 'NULL';
+        case 'next_attempt_at':
+          return 'CASE WHEN $referenceMissing THEN NULL '
+              'ELSE j.next_attempt_at END';
+        case 'last_error':
+          return 'CASE WHEN $referenceMissing THEN CASE '
+              'WHEN j.last_error IS NULL OR j.last_error = \'\' '
+              "THEN '$attentionMessage' "
+              "ELSE j.last_error || '; $attentionMessage' END "
+              'ELSE j.last_error END';
+        default:
+          return 'j.${_quoteIdentifier(column)}';
+      }
+    }).toList(growable: false);
+    await db.customStatement(
+      'INSERT INTO video_download_jobs '
+      '(${columns.map(_quoteIdentifier).join(', ')}) '
+      'SELECT ${selectExpressions.join(', ')} '
+      'FROM devbak.video_download_jobs AS j',
+    );
+  }
+
+  /// Subscriptions have no lifecycle field. Missing local targets are surfaced
+  /// by disabling the schedule, clearing its lease, and persisting the same
+  /// `needsAttention:` marker consumed by the task UI.
+  static Future<void> _insertVideoDownloadSubscriptionsFromBak(
+    FushiDatabase db,
+  ) async {
+    final List<String> columns =
+        await _tableColumns(db, 'video_download_subscriptions');
+    const String sourceLookup =
+        'SELECT current_source.id FROM media_sources AS current_source '
+        'JOIN devbak.media_sources AS old_source '
+        'ON current_source.media_kind = old_source.media_kind '
+        'AND current_source.transport = old_source.transport '
+        'AND current_source.root_path = old_source.root_path '
+        'WHERE old_source.id = s.target_source_id '
+        'ORDER BY current_source.id LIMIT 1';
+    const String collectionLookup = 'SELECT current_collection.id '
+        'FROM media_collections AS current_collection '
+        'JOIN devbak.media_collections AS old_collection '
+        'ON current_collection.name = old_collection.name '
+        'AND current_collection.collection_type = '
+        'old_collection.collection_type '
+        'WHERE old_collection.id = s.collection_id '
+        'ORDER BY current_collection.id LIMIT 1';
+    const String sourceMissing =
+        's.target_source_id IS NOT NULL AND NOT EXISTS ($sourceLookup)';
+    const String collectionMissing =
+        's.collection_id IS NOT NULL AND NOT EXISTS ($collectionLookup)';
+    const String referenceMissing =
+        '(($sourceMissing) OR ($collectionMissing))';
+    const String attentionMessage =
+        'needsAttention: restored target source or collection is unavailable '
+        'on this device';
+    final List<String> selectExpressions = columns.map((String column) {
+      switch (column) {
+        case 'target_source_id':
+          return 'CASE WHEN s.target_source_id IS NULL THEN NULL '
+              'ELSE ($sourceLookup) END';
+        case 'collection_id':
+          return 'CASE WHEN s.collection_id IS NULL THEN NULL '
+              'ELSE ($collectionLookup) END';
+        case 'enabled':
+          return 'CASE WHEN $referenceMissing THEN 0 ELSE s.enabled END';
+        case 'next_check_at':
+          return 'CASE WHEN $referenceMissing THEN NULL '
+              'ELSE s.next_check_at END';
+        case 'claimed_by':
+        case 'claim_expires_at':
+          return 'NULL';
+        case 'last_error':
+          return 'CASE WHEN $referenceMissing THEN CASE '
+              'WHEN s.last_error IS NULL OR s.last_error = \'\' '
+              "THEN '$attentionMessage' "
+              "ELSE s.last_error || '; $attentionMessage' END "
+              'ELSE s.last_error END';
+        default:
+          return 's.${_quoteIdentifier(column)}';
+      }
+    }).toList(growable: false);
+    await db.customStatement(
+      'INSERT INTO video_download_subscriptions '
+      '(${columns.map(_quoteIdentifier).join(', ')}) '
+      'SELECT ${selectExpressions.join(', ')} '
+      'FROM devbak.video_download_subscriptions AS s',
+    );
+  }
+
+  static Future<List<String>> _tableColumns(
+    FushiDatabase db,
+    String table,
+  ) async {
+    final List<QueryRow> rows =
+        await db.customSelect('PRAGMA table_info($table)').get();
+    return rows
+        .map((QueryRow row) => row.read<String>('name'))
+        .toList(growable: false);
+  }
+
+  static String _quoteIdentifier(String value) =>
+      '"${value.replaceAll('"', '""')}"';
 
   /// Removes dictionary rows from the exported DB copy when dictionary sync is
   /// disabled. Keeping DB metadata without matching `dictionaryResources/`
@@ -2019,32 +2265,38 @@ class BackupService {
       final String bakPath = '$dbPath.pre-restore.bak';
       final currentDb = File(dbPath);
       final bool haveCurrent = currentDb.existsSync();
+      bool deviceLocalTablesReapplied = !haveCurrent;
 
       // 1) Snapshot the current DB (crash safety) + record what to preserve.
       //    Skipped on a fresh install (no current DB) → backup applied verbatim,
       //    so the toggle is moot there.
       Map<String, String> preservedSync = const <String, String>{};
       if (haveCurrent) {
+        late final Map<String, dynamic> sidecarPayload;
         if (importSettings) {
           preservedSync = await _readDeviceLocalPrefs(dbDirectory);
-          // Write the sidecar whenever there is anything to re-apply on crash
-          // recovery: device-local sync prefs AND/OR a settings/profiles layer
-          // that must be preserved from bak because the backup excluded it.
-          if (preservedSync.isNotEmpty ||
-              backupSettingsExcluded ||
-              backupProfilesExcluded) {
-            await sidecar.writeAsString(jsonEncode(<String, dynamic>{
-              'mode': 'prefs',
-              'prefs': preservedSync,
-              if (backupSettingsExcluded) 'preserveSettings': true,
-              if (backupProfilesExcluded) 'preserveProfiles': true,
-            }));
-          }
+          sidecarPayload = <String, dynamic>{
+            'mode': 'prefs',
+            'prefs': preservedSync,
+            'preserveDeviceLocalTables': true,
+            if (backupSettingsExcluded) 'preserveSettings': true,
+            if (backupProfilesExcluded) 'preserveProfiles': true,
+          };
         } else {
-          await sidecar
-              .writeAsString(jsonEncode(<String, dynamic>{'mode': 'settings'}));
+          sidecarPayload = <String, dynamic>{
+            'mode': 'settings',
+            'preserveDeviceLocalTables': true,
+          };
         }
+        // The v78 download graph is device-local even when there are no sync
+        // preferences to preserve, so every destructive overwrite needs both
+        // artifacts. Copy the database first: a sidecar must never advertise a
+        // recoverable restore before its corresponding snapshot exists.
         await currentDb.copy(bakPath);
+        await sidecar.writeAsString(
+          jsonEncode(sidecarPayload),
+          flush: true,
+        );
       }
 
       // Must delete -wal/-shm AFTER reading prefs (step 1 opened+closed a WAL
@@ -2188,7 +2440,8 @@ class BackupService {
       //     branches) — else the overwrite would wipe the device's pairings and
       //     baselines. No-op on a fresh install (no bak).
       if (haveCurrent) {
-        await _reapplyDeviceLocalTablesFromBak(dbDirectory, bakPath);
+        deviceLocalTablesReapplied =
+            await _reapplyDeviceLocalTablesFromBak(dbDirectory, bakPath);
         // BUG-816: preserve THIS device's content-registry prefs from bak when
         // the backup excluded their owning category (books/fonts/localAudio) —
         // runs in both importSettings branches, mirroring the export strip.
@@ -2261,8 +2514,17 @@ class BackupService {
       }
 
       // 4) Success: drop the sidecar and the pre-restore copy (no disk leak).
-      await _safeDelete(sidecar.path);
-      await _safeDelete(bakPath);
+      // A failed device-local replay is recoverable at the next startup, but
+      // only while BOTH artifacts survive. The replay transaction starts with
+      // a child-first wipe and is therefore safe to run again.
+      if (deviceLocalTablesReapplied) {
+        await _safeDelete(sidecar.path);
+        await _safeDelete(bakPath);
+      } else {
+        debugPrint('BackupService.restoreBackup: device-local tables were not '
+            'reapplied; retaining restore sidecar and pre-restore.bak for '
+            'startup recovery.');
+      }
     } finally {
       await input.close();
     }
@@ -2601,9 +2863,14 @@ class BackupService {
 
     final sidecar = File(p.join(dbDirectory, _preserveSidecar));
     if (!sidecar.existsSync()) return;
+    final String bakPath = p.join(dbDirectory, '$_dbName.pre-restore.bak');
+    bool sidecarStateApplied = false;
+    bool shouldReapplyDeviceLocalTables = false;
     try {
       final raw = await sidecar.readAsString();
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      shouldReapplyDeviceLocalTables =
+          decoded['preserveDeviceLocalTables'] == true;
       if (decoded['mode'] == 'settings') {
         await _reapplySettingsLayer(dbDirectory);
       } else {
@@ -2626,12 +2893,38 @@ class BackupService {
         final prefs = prefsRaw.map((k, v) => MapEntry(k, v as String));
         if (prefs.isNotEmpty) await _applyPreservedConfig(dbDirectory, prefs);
       }
+      sidecarStateApplied = true;
+    } on FormatException catch (e, st) {
+      // A malformed marker cannot describe settings/prefs, but the independent
+      // pre-restore DB snapshot can still rescue device-local tables. Preserve
+      // the historical behavior of dropping an irreparably corrupt marker once
+      // that table replay succeeds.
+      debugPrint('BackupService.recoverPendingRestore: corrupt sidecar: '
+          '$e\n$st');
+      sidecarStateApplied = true;
+    } on TypeError catch (e, st) {
+      debugPrint('BackupService.recoverPendingRestore: invalid sidecar shape: '
+          '$e\n$st');
+      sidecarStateApplied = true;
     } catch (e, st) {
-      // Corrupt sidecar: drop it rather than blocking startup forever.
+      // Database/filesystem failures are retryable. Keep both artifacts so the
+      // next startup can replay the same idempotent operations.
       debugPrint('BackupService.recoverPendingRestore failed: $e\n$st');
+      return;
+    }
+
+    if (!sidecarStateApplied) return;
+    if (shouldReapplyDeviceLocalTables) {
+      final bool deviceLocalTablesReapplied =
+          await _reapplyDeviceLocalTablesFromBak(dbDirectory, bakPath);
+      if (!deviceLocalTablesReapplied) {
+        debugPrint('BackupService.recoverPendingRestore: retaining sidecar and '
+            'pre-restore.bak because device-local table replay did not finish.');
+        return;
+      }
     }
     await _safeDelete(sidecar.path);
-    await _safeDelete(p.join(dbDirectory, '$_dbName.pre-restore.bak'));
+    await _safeDelete(bakPath);
   }
 
   /// Restores the settings layer (preferences + profiles + bindings) from

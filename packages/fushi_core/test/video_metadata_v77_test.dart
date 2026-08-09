@@ -410,8 +410,7 @@ void main() {
       'fushi-video-scrape-recovery-',
     );
     addTearDown(() => temp.delete(recursive: true));
-    final String databasePath =
-        '${temp.path}${Platform.pathSeparator}fushi.db';
+    final String databasePath = '${temp.path}${Platform.pathSeparator}fushi.db';
 
     final FushiDatabase first = FushiDatabase.atFile(databasePath);
     final int sourceId = await _insertVideoSource(first);
@@ -592,6 +591,10 @@ CREATE TABLE video_books (
         containsAll(<String>['local:local-trailer', 'tmdb:def']));
     expect(extras.map((VideoMetadataExtraRow row) => row.extraKey),
         isNot(contains('tmdb:abc')));
-    expect(db.schemaVersion, 70);
+    expect(
+      db.schemaVersion,
+      greaterThanOrEqualTo(77),
+      reason: 'v77 = video metadata extras used by this test',
+    );
   });
 }

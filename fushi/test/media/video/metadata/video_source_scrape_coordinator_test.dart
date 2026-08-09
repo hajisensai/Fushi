@@ -12,6 +12,7 @@ import 'package:fushi/src/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi/src/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -673,6 +674,51 @@ void main() {
       expected,
     );
   });
+
+  test('单作品精确刮削使用 confirmed lookup 且不进行标题搜索', () async {
+    final SourceLibraryRow source = await _createMovieSource(
+      db,
+      root,
+      provider: VideoMetadataProviderKind.tmdb,
+    );
+    final VideoBookRow local = (await db.getVideoBookByBookUid('movie-book'))!;
+    final VideoSourceScrapeWork work = VideoSourceScrapeWork(
+      source: source,
+      title: local.title,
+      members: <VideoBookRow>[local],
+    );
+    final _ExactMovieProvider provider = _ExactMovieProvider();
+    final VideoSourceScrapeCoordinator coordinator =
+        VideoSourceScrapeCoordinator(
+      database: db,
+      config: const VideoSourceScrapeGlobalConfig(
+        primaryProvider: VideoMetadataProviderKind.tmdb,
+      ),
+      registry:
+          VideoMetadataProviderRegistry(<VideoMetadataProvider>[provider]),
+      fanartProvider: const _NoImages(),
+    );
+
+    final SourceScrapeReport report = await coordinator.scrapeImportedWork(
+      work,
+      lookup: const VideoMetadataLookup(
+        provider: VideoMetadataProviderKind.tmdb,
+        externalId: '4242',
+        mediaKind: VideoMetadataMediaKind.movie,
+      ),
+    );
+
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    expect(provider.searchCount, 0);
+    expect(provider.fetchCount, 1);
+    expect(
+      (await db.getVideoMetadataWorkByBook('movie-book'))?.title,
+      'Exact Movie',
+    );
+    final List<VideoSourceScrapeRunRow> runs =
+        await db.getVideoSourceScrapeRuns(sourceId: source.id);
+    expect(runs.single.scope, 'work');
+  });
 }
 
 Future<SourceLibraryRow> _createMovieSource(
@@ -789,6 +835,55 @@ class _FakeTmdbProvider implements VideoMetadataProvider {
           ],
         ),
       ];
+
+  @override
+  void close() {}
+}
+
+class _ExactMovieProvider implements VideoMetadataProvider {
+  int searchCount = 0;
+  int fetchCount = 0;
+
+  @override
+  VideoMetadataProviderKind get providerKind => VideoMetadataProviderKind.tmdb;
+
+  @override
+  bool get isAvailable => true;
+
+  @override
+  Future<List<VideoMetadataWork>> search(
+    VideoMetadataSearchRequest request,
+  ) async {
+    searchCount++;
+    return const <VideoMetadataWork>[];
+  }
+
+  @override
+  Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async {
+    fetchCount++;
+    return VideoMetadataWork(
+      provider: providerKind,
+      kind: VideoMetadataMediaKind.movie,
+      title: 'Exact Movie',
+      year: 2024,
+      ids: const <VideoMetadataId>[
+        VideoMetadataId(type: 'tmdb', value: '4242', isDefault: true),
+      ],
+    );
+  }
+
+  @override
+  Future<List<VideoMetadataSeason>> fetchSeasons(
+    VideoMetadataLookup lookup,
+  ) async =>
+      const <VideoMetadataSeason>[];
+
+  @override
+  Future<List<VideoMetadataEpisode>> fetchEpisodes(
+    VideoMetadataLookup lookup, {
+    required int seasonNumber,
+  }) async =>
+      const <VideoMetadataEpisode>[];
 
   @override
   void close() {}

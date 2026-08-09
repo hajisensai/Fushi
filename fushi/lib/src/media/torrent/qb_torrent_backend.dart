@@ -7,7 +7,8 @@ class QbTorrentBackend
     implements
         TorrentRemovalBackend,
         TorrentPauseBackend,
-        TorrentDetailBackend {
+        TorrentDetailBackend,
+        TorrentMetainfoBackend {
   QbTorrentBackend(this._client);
 
   final QBittorrentClient _client;
@@ -48,6 +49,21 @@ class QbTorrentBackend
   }) =>
       _client.addTorrents(
         <String>[magnetOrUrl],
+        category: category,
+        sequentialDownload: sequential,
+        firstLastPiecePrio: firstLastPiecePrio,
+      );
+
+  @override
+  Future<bool> addTorrentMetainfo(
+    TorrentMetainfoPayload payload, {
+    required String category,
+    bool sequential = false,
+    bool firstLastPiecePrio = false,
+  }) =>
+      _client.addTorrentFile(
+        payload.bytes,
+        fileName: payload.fileName,
         category: category,
         sequentialDownload: sequential,
         firstLastPiecePrio: firstLastPiecePrio,

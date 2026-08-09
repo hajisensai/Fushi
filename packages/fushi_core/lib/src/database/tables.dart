@@ -1867,6 +1867,329 @@ class VideoSidecarArtifacts extends Table {
       ];
 }
 
+// ── durable video download pipeline（v78）────────────────────────────
+//
+// 下载任务是跨进程、跨重启的工作流真相源。`lifecycle` 只表达任务是否还能推进，
+// `stage` 只表达当前推进到哪一步；失败/需关注不能靠把 stage 改成 `failed` 来编码，
+// 否则恢复时无法知道该从下载、字幕还是整理阶段继续。
+abstract final class VideoDownloadJobLifecycle {
+  static const String active = 'active';
+  static const String needsAttention = 'needsAttention';
+  static const String completed = 'completed';
+  static const String failed = 'failed';
+  static const String cancelled = 'cancelled';
+}
+
+abstract final class VideoDownloadJobStage {
+  static const String enqueue = 'enqueue';
+  static const String download = 'download';
+  static const String organize = 'organize';
+  static const String subtitle = 'subtitle';
+  static const String import = 'import';
+  static const String scrape = 'scrape';
+}
+
+@DataClassName('VideoDownloadJobRow')
+class VideoDownloadJobs extends Table {
+  /// 调用方生成的稳定任务 id；不能用自增 id 充当跨崩溃幂等键。
+  TextColumn get jobId => text()();
+
+  /// 资源来源与用户选中的来源条目身份（例如 provider + torrent item id）。
+  TextColumn get resourceProvider => text()();
+  TextColumn get selectedResourceId => text()();
+
+  /// 允许持久化的下载 locator 只有 magnet。Torznab 临时 HTTP/metainfo URL 含短期
+  /// token，绝不能落库；需要时用 selectedResourceId 向 provider 重新 resolve。
+  TextColumn get magnetUri => text().nullable()();
+  TextColumn get resourceTitle => text().nullable()();
+
+  /// torrent 在后端确认 enqueue 后才一定可得，故保持 nullable。
+  TextColumn get torrentHash => text().nullable()();
+
+  /// 发现/元数据身份。两列必须同时为空或同时有值。
+  TextColumn get metadataProvider => text().nullable()();
+  TextColumn get externalId => text().nullable()();
+  TextColumn get mediaKind => text()();
+  TextColumn get discoveryCategory => text().nullable()();
+  TextColumn get title => text()();
+  IntColumn get year => integer().nullable()();
+  IntColumn get season => integer().nullable()();
+  TextColumn get coverUrl => text().nullable()();
+
+  /// 后端连接身份与去重身份。敏感凭据不进数据库；backendProfileId 是下载配置档
+  /// 的字符串身份，不是 Hibiki 用户 Profile，故没有 FK 到 Profiles。
+  TextColumn get backendKind => text()();
+  TextColumn get backendTaskId => text().nullable()();
+  TextColumn get backendProfileId => text().nullable()();
+  TextColumn get fingerprint => text()();
+  TextColumn get category => text().nullable()();
+
+  /// 目标来源库/合集被删时任务审计仍保留，只解除绑定。
+  IntColumn get targetSourceId => integer()
+      .nullable()
+      .references(MediaSources, #id, onDelete: KeyAction.setNull)();
+  IntColumn get collectionId => integer()
+      .nullable()
+      .references(MediaCollections, #id, onDelete: KeyAction.setNull)();
+  TextColumn get organizationPolicy =>
+      text().withDefault(const Constant('library'))();
+  TextColumn get subtitlePolicy =>
+      text().withDefault(const Constant('bestEffort'))();
+
+  /// 下载后端观察到的保存根与最终应落到 source library 下的相对根。
+  TextColumn get observedSavePath => text().nullable()();
+  TextColumn get targetRelativeRoot => text().nullable()();
+
+  TextColumn get lifecycle =>
+      text().withDefault(const Constant(VideoDownloadJobLifecycle.active))();
+  TextColumn get stage =>
+      text().withDefault(const Constant(VideoDownloadJobStage.enqueue))();
+  RealColumn get stageProgress => real().withDefault(const Constant(0.0))();
+  IntColumn get priority => integer().withDefault(const Constant(0))();
+
+  /// attemptCount 只在可重试错误时递增；正常轮询/lease claim 不消耗重试预算。
+  IntColumn get attemptCount => integer().withDefault(const Constant(0))();
+  IntColumn get maxAttempts => integer().withDefault(const Constant(3))();
+  IntColumn get nextAttemptAt => integer().nullable()();
+  TextColumn get claimedBy => text().nullable()();
+  IntColumn get claimExpiresAt => integer().nullable()();
+  TextColumn get lastError => text().nullable()();
+
+  IntColumn get createdAt => integer()();
+  IntColumn get updatedAt => integer()();
+  IntColumn get completedAt => integer().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{jobId};
+
+  @override
+  List<String> get customConstraints => <String>[
+        "CHECK (job_id != '' AND resource_provider != '' AND "
+            "selected_resource_id != '' AND media_kind != '' AND title != '' "
+            "AND backend_kind != '' AND fingerprint != '')",
+        'CHECK ((metadata_provider IS NULL) = (external_id IS NULL))',
+        "CHECK (lifecycle IN ('active', 'needsAttention', 'completed', "
+            "'failed', 'cancelled'))",
+        "CHECK (stage IN ('enqueue', 'download', 'organize', 'subtitle', "
+            "'import', 'scrape'))",
+        'CHECK (stage_progress >= 0.0 AND stage_progress <= 1.0)',
+        'CHECK (attempt_count >= 0 AND max_attempts > 0)',
+        'CHECK (year IS NULL OR year >= 0)',
+        'CHECK (season IS NULL OR season >= 0)',
+        "CHECK (magnet_uri IS NULL OR magnet_uri LIKE 'magnet:%')",
+        'CHECK ((claimed_by IS NULL) = (claim_expires_at IS NULL))',
+        "CHECK (claimed_by IS NULL OR lifecycle = 'active')",
+      ];
+}
+
+abstract final class VideoDownloadJobFileStatus {
+  static const String pending = 'pending';
+  static const String downloading = 'downloading';
+  static const String downloaded = 'downloaded';
+  static const String organized = 'organized';
+  static const String imported = 'imported';
+  static const String skipped = 'skipped';
+  static const String failed = 'failed';
+}
+
+@DataClassName('VideoDownloadJobFileRow')
+class VideoDownloadJobFiles extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get jobId => text()
+      .references(VideoDownloadJobs, #jobId, onDelete: KeyAction.cascade)();
+  IntColumn get backendFileIndex => integer().nullable()();
+  TextColumn get originalRelativePath => text()();
+  TextColumn get currentRelativePath => text()();
+  TextColumn get targetRelativePath => text().nullable()();
+  TextColumn get finalAbsolutePath => text().nullable()();
+  TextColumn get kind => text().withDefault(const Constant('other'))();
+  IntColumn get season => integer().nullable()();
+  IntColumn get episode => integer().nullable()();
+  IntColumn get sizeBytes => integer().nullable()();
+  BoolColumn get selected => boolean().withDefault(const Constant(true))();
+  TextColumn get status =>
+      text().withDefault(const Constant(VideoDownloadJobFileStatus.pending))();
+  TextColumn get error => text().nullable()();
+  IntColumn get createdAt => integer()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  List<Set<Column>> get uniqueKeys => <Set<Column>>[
+        <Column>{jobId, originalRelativePath},
+        <Column>{jobId, backendFileIndex},
+      ];
+
+  @override
+  List<String> get customConstraints => <String>[
+        "CHECK (original_relative_path != '' AND current_relative_path != '')",
+        "CHECK (kind IN ('video', 'subtitle', 'extra', 'other'))",
+        "CHECK (status IN ('pending', 'downloading', 'downloaded', "
+            "'organized', 'imported', 'skipped', 'failed'))",
+        'CHECK (backend_file_index IS NULL OR backend_file_index >= 0)',
+        'CHECK (season IS NULL OR season >= 0)',
+        'CHECK (episode IS NULL OR episode >= 0)',
+        'CHECK (size_bytes IS NULL OR size_bytes >= 0)',
+      ];
+}
+
+abstract final class VideoDownloadJobSubtitleStatus {
+  static const String pending = 'pending';
+  static const String resolving = 'resolving';
+  static const String staged = 'staged';
+  static const String placed = 'placed';
+  static const String unavailable = 'unavailable';
+  static const String skipped = 'skipped';
+  static const String failed = 'failed';
+}
+
+@DataClassName('VideoDownloadJobSubtitleRow')
+class VideoDownloadJobSubtitles extends Table {
+  TextColumn get subtitleId => text()();
+  TextColumn get jobId => text()
+      .references(VideoDownloadJobs, #jobId, onDelete: KeyAction.cascade)();
+  IntColumn get jobFileId => integer()
+      .nullable()
+      .references(VideoDownloadJobFiles, #id, onDelete: KeyAction.setNull)();
+  TextColumn get provider => text()();
+  TextColumn get selectedSubtitleId => text().nullable()();
+  TextColumn get language => text().nullable()();
+  IntColumn get season => integer().nullable()();
+  IntColumn get episode => integer().nullable()();
+  TextColumn get originalFileName => text().nullable()();
+  TextColumn get stagedPath => text().nullable()();
+  TextColumn get finalPath => text().nullable()();
+  TextColumn get status => text()
+      .withDefault(const Constant(VideoDownloadJobSubtitleStatus.pending))();
+  TextColumn get error => text().nullable()();
+  IntColumn get createdAt => integer()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{subtitleId};
+
+  @override
+  List<String> get customConstraints => <String>[
+        "CHECK (subtitle_id != '' AND provider != '')",
+        "CHECK (status IN ('pending', 'resolving', 'staged', 'placed', "
+            "'unavailable', 'skipped', 'failed'))",
+        'CHECK (season IS NULL OR season >= 0)',
+        'CHECK (episode IS NULL OR episode >= 0)',
+      ];
+}
+
+@DataClassName('VideoDownloadSubscriptionRow')
+class VideoDownloadSubscriptions extends Table {
+  TextColumn get subscriptionId => text()();
+  TextColumn get resourceProvider => text()();
+  TextColumn get metadataProvider => text().nullable()();
+  TextColumn get externalId => text().nullable()();
+  TextColumn get mediaKind => text()();
+  TextColumn get discoveryCategory => text().nullable()();
+  TextColumn get title => text()();
+  IntColumn get year => integer().nullable()();
+  IntColumn get season => integer().nullable()();
+  TextColumn get coverUrl => text().nullable()();
+
+  /// searchQuery + filterJson 是来源无关的订阅选择快照；filterJson 禁止放凭据。
+  TextColumn get searchQuery => text()();
+  TextColumn get filterJson => text().withDefault(const Constant('{}'))();
+  TextColumn get mode => text().withDefault(const Constant('ongoing'))();
+  IntColumn get startAfterEpisode => integer().nullable()();
+
+  TextColumn get backendKind => text()();
+  TextColumn get backendProfileId => text().nullable()();
+  TextColumn get fingerprint => text()();
+  TextColumn get category => text().nullable()();
+  IntColumn get targetSourceId => integer()
+      .nullable()
+      .references(MediaSources, #id, onDelete: KeyAction.setNull)();
+  IntColumn get collectionId => integer()
+      .nullable()
+      .references(MediaCollections, #id, onDelete: KeyAction.setNull)();
+  TextColumn get organizationPolicy =>
+      text().withDefault(const Constant('library'))();
+  TextColumn get subtitlePolicy =>
+      text().withDefault(const Constant('bestEffort'))();
+
+  BoolColumn get enabled => boolean().withDefault(const Constant(true))();
+  IntColumn get nextCheckAt => integer().nullable()();
+  TextColumn get claimedBy => text().nullable()();
+  IntColumn get claimExpiresAt => integer().nullable()();
+  IntColumn get retryCount => integer().withDefault(const Constant(0))();
+  IntColumn get lastCheckedAt => integer().nullable()();
+  IntColumn get lastMatchedAt => integer().nullable()();
+  IntColumn get fulfilledAt => integer().nullable()();
+  TextColumn get lastError => text().nullable()();
+  IntColumn get createdAt => integer()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{subscriptionId};
+
+  @override
+  List<String> get customConstraints => <String>[
+        "CHECK (subscription_id != '' AND resource_provider != '' AND "
+            "media_kind != '' AND title != '' AND search_query != '' AND "
+            "backend_kind != '' AND fingerprint != '')",
+        'CHECK ((metadata_provider IS NULL) = (external_id IS NULL))',
+        "CHECK (mode IN ('oneShot', 'ongoing'))",
+        'CHECK (year IS NULL OR year >= 0)',
+        'CHECK (season IS NULL OR season >= 0)',
+        'CHECK (start_after_episode IS NULL OR start_after_episode >= 0)',
+        'CHECK (retry_count >= 0)',
+        'CHECK ((claimed_by IS NULL) = (claim_expires_at IS NULL))',
+        "CHECK (fulfilled_at IS NULL OR (mode = 'oneShot' AND enabled = 0))",
+      ];
+}
+
+abstract final class VideoDownloadSubscriptionItemStatus {
+  static const String discovered = 'discovered';
+  static const String queued = 'queued';
+  static const String processed = 'processed';
+  static const String skipped = 'skipped';
+  static const String failed = 'failed';
+}
+
+@DataClassName('VideoDownloadSubscriptionItemRow')
+class VideoDownloadSubscriptionItems extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get subscriptionId =>
+      text().references(VideoDownloadSubscriptions, #subscriptionId,
+          onDelete: KeyAction.cascade)();
+  TextColumn get logicalItemKey => text()();
+  TextColumn get resourceProvider => text()();
+  TextColumn get selectedResourceId => text()();
+  TextColumn get torrentHash => text().nullable()();
+  TextColumn get title => text()();
+  IntColumn get season => integer().nullable()();
+  IntColumn get episode => integer().nullable()();
+  IntColumn get publishedAt => integer().nullable()();
+  TextColumn get jobId => text()
+      .nullable()
+      .references(VideoDownloadJobs, #jobId, onDelete: KeyAction.setNull)();
+  TextColumn get status => text().withDefault(
+      const Constant(VideoDownloadSubscriptionItemStatus.discovered))();
+  TextColumn get error => text().nullable()();
+  IntColumn get discoveredAt => integer()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  List<Set<Column>> get uniqueKeys => <Set<Column>>[
+        <Column>{subscriptionId, logicalItemKey},
+        <Column>{subscriptionId, resourceProvider, selectedResourceId},
+      ];
+
+  @override
+  List<String> get customConstraints => <String>[
+        "CHECK (logical_item_key != '' AND resource_provider != '' AND "
+            "selected_resource_id != '' AND title != '')",
+        "CHECK (status IN ('discovered', 'queued', 'processed', 'skipped', "
+            "'failed'))",
+        'CHECK (season IS NULL OR season >= 0)',
+        'CHECK (episode IS NULL OR episode >= 0)',
+      ];
+}
+
 // ── galgames ────────────────────────────────────────────────────────
 /// v55（游戏库对齐 ReinaManager，见 `docs/design/galgame-library-reina-parity.md`）：
 /// galgame 游戏库的持久真相源，取代旧的偏好表单一 JSON key `galgame_library`

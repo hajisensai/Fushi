@@ -60,6 +60,11 @@ import 'package:fushi/src/media/torrent/embedded_torrent_host.dart';
 import 'package:fushi/src/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi/src/media/torrent/qbittorrent_client.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/torrent/nyaa_client.dart';
+import 'package:fushi/src/media/torrent/nyaa_resource_provider.dart';
+import 'package:fushi/src/media/torrent/torznab_client.dart';
+import 'package:fushi/src/media/torrent/video_download_legacy_importer.dart';
+import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/torrent/anime_download_importer.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart';
@@ -67,6 +72,19 @@ import 'package:fushi/src/media/torrent/anime_download_subtitle_resolver.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
 import 'package:fushi/src/media/torrent/torrent_memory.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
+import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
+import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
+import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi/src/media/video/download/video_download_subscription_service.dart';
+import 'package:fushi/src/media/video/download/video_resource_registry.dart';
+import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/media/video/jimaku_subtitle_provider.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
+import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
+import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
+import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
@@ -3138,7 +3156,10 @@ class AppModel with ChangeNotifier {
   /// Jimaku API key（自动获取日语字幕）。
   String get jimakuApiKey => prefsRepo.jimakuApiKey;
 
-  Future<void> setJimakuApiKey(String key) => prefsRepo.setJimakuApiKey(key);
+  Future<void> setJimakuApiKey(String key) async {
+    await prefsRepo.setJimakuApiKey(key);
+    await reloadVideoDownloadPipelineRuntime();
+  }
 
   /// Jimaku 默认字幕语言（`''` = 不限）。见
   /// [PreferencesRepository.jimakuDefaultLanguage]。
@@ -3147,8 +3168,10 @@ class AppModel with ChangeNotifier {
   /// 时应回退「不限」，而不是崩在一个纯锦上添花的默认值上。
   String get jimakuDefaultLanguage => _prefsRepo?.jimakuDefaultLanguage ?? '';
 
-  Future<void> setJimakuDefaultLanguage(String langCode) =>
-      prefsRepo.setJimakuDefaultLanguage(langCode);
+  Future<void> setJimakuDefaultLanguage(String langCode) async {
+    await prefsRepo.setJimakuDefaultLanguage(langCode);
+    await reloadVideoDownloadPipelineRuntime();
+  }
 
   /// 默认字幕语言归一成语言选择器用的 `String?`（`''`/空白 → null = 不限）。
   /// 三个 Jimaku 界面（字幕对话框 / 番剧下载 / 批量匹配）共用同一兜底。
@@ -3181,11 +3204,15 @@ class AppModel with ChangeNotifier {
 
   Future<void> setDownloadNetworkProxyMode(
     DownloadNetworkProxyMode mode,
-  ) =>
-      prefsRepo.setDownloadNetworkProxyMode(mode.name);
+  ) async {
+    await prefsRepo.setDownloadNetworkProxyMode(mode.name);
+    await reloadVideoDownloadPipelineRuntime();
+  }
 
-  Future<void> setDownloadCustomProxy(String value) =>
-      prefsRepo.setDownloadCustomProxy(value);
+  Future<void> setDownloadCustomProxy(String value) async {
+    await prefsRepo.setDownloadCustomProxy(value);
+    await reloadVideoDownloadPipelineRuntime();
+  }
 
   /// Proxy-aware client shared by AniList, Nyaa and Jimaku call sites.
   Future<http.Client> createDownloadHttpClient() =>
@@ -3276,6 +3303,22 @@ class AppModel with ChangeNotifier {
   AnimeDownloadSubscriptionService? _animeDownloadSubscriptionService;
   AnimeDownloadSubscriptionService? get animeDownloadSubscriptionService =>
       _animeDownloadSubscriptionService;
+
+  /// schema v78 的通用视频下载闭环。旧 JSON service 仅继续兼容本次启动后由旧
+  /// 对话框新写入的计划；启动前已有 JSON 会先迁入这里并归档。
+  VideoDownloadPipelineService? _videoDownloadPipelineService;
+  VideoDownloadPipelineService? get videoDownloadPipelineService =>
+      _videoDownloadPipelineService;
+  VideoDownloadSubscriptionService? _videoDownloadSubscriptionService;
+  VideoDownloadSubscriptionService? get videoDownloadSubscriptionService =>
+      _videoDownloadSubscriptionService;
+  VideoResourceRegistry? _videoResourceRegistry;
+  VideoResourceRegistry? get videoResourceRegistry => _videoResourceRegistry;
+  VideoSubtitleRegistry? _videoSubtitleRegistry;
+  VideoSubtitleRegistry? get videoSubtitleRegistry => _videoSubtitleRegistry;
+  VideoSourceScrapeCoordinator? _videoDownloadScrapeCoordinator;
+  TorrentBackend? _videoDownloadBackend;
+  String? _videoDownloadBackendCacheKey;
 
   /// 内置 libtorrent 下载宿主。**懒建**：只在第一次真的要用下载后端时才创建
   /// （见 [_ensureEmbeddedTorrentHost]）；DLL 缺失/加载失败为 null，服务回退外接
@@ -3454,6 +3497,10 @@ class AppModel with ChangeNotifier {
     );
     _embeddedTorrentResumeDir = path.join(baseDir.path, 'resume');
 
+    // schema v78 cut-over 必须先于两个 JSON service 的首次 tick。每个 JSON 文件
+    // 事务提交后才归档；崩溃重放依靠稳定 legacy id 幂等，不移动字幕 staging。
+    await _importLegacyVideoDownloads(baseDir);
+
     // 🔴 顺序不可调换：下面两个 service 的 `..start()` 会**立刻** tick →
     // `_torrentBackendFor` → `_ensureEmbeddedTorrentHost()` → `open()` →
     // `restoreFromResume(restoreIds)` → 剪枝。计划 id 还没加载时那次剪枝的
@@ -3502,6 +3549,259 @@ class AppModel with ChangeNotifier {
     // 用户永远没有这种文件，于是永远不建 session、不绑端口、不起 DHT，与
     // BUG-1053 修复后的行为逐字节一致。
     await _restoreEmbeddedTorrentSession(store);
+    await _startVideoDownloadPipeline();
+  }
+
+  Future<void> _importLegacyVideoDownloads(Directory baseDir) async {
+    final QbConnectionConfig config =
+        effectiveTorrentConfig(prefsRepo.qbConnectionConfig);
+    VideoDownloadBackendIdentity? identity;
+    try {
+      identity = await _currentVideoDownloadBackendIdentity(config);
+    } on ArgumentError {
+      // 未配置可用后端时仍要完成 JSON→Drift 的幂等迁移；任务会保留为
+      // needsAttention，而不是让整个下载 runtime 因身份无法构造而启动失败。
+      identity = null;
+    }
+    final LegacyVideoDownloadImportReport report =
+        await VideoDownloadLegacyImporter(
+      database: database,
+      baseDirectory: baseDir,
+      torrentMatcher: (LegacyTorrentProbe probe) async {
+        final VideoDownloadBackendIdentity? confirmedIdentity = identity;
+        if (confirmedIdentity == null) return null;
+        if (probe.category != confirmedIdentity.category) return null;
+        final TorrentBackend? backend = _createExactTorrentBackend(config);
+        if (backend == null) return null;
+        try {
+          final List<TorrentSnapshot> snapshots =
+              await backend.listTorrents(category: probe.category);
+          for (final TorrentSnapshot snapshot in snapshots) {
+            if (snapshot.hash.toLowerCase() ==
+                    probe.torrentHash.toLowerCase() &&
+                snapshot.name.trim() == probe.title.trim()) {
+              return LegacyTorrentBinding(
+                torrentHash: snapshot.hash.toLowerCase(),
+                title: snapshot.name,
+                category: probe.category,
+                backendKind: confirmedIdentity.kind,
+                backendProfileId: confirmedIdentity.profileId,
+                fingerprint: confirmedIdentity.fingerprint,
+                backendTaskId: snapshot.hash.toLowerCase(),
+                observedSavePath: snapshot.savePath,
+              );
+            }
+          }
+          return null;
+        } finally {
+          backend.close();
+        }
+      },
+      // 旧订阅 JSON 没有可同时核对的 torrent hash/title/category，不能仅因
+      // “当前恰好配置了一个后端”就把它接管。Importer 会保留记录、禁用并标成
+      // needsAttention，等待用户明确重新确认实例与严格版本规则。
+      subscriptionBackendResolver: null,
+    ).importAll();
+    for (final LegacyImportIssue issue in report.issues) {
+      ErrorLogService.instance.log(
+        'AppModel.videoDownloadLegacyImport.${issue.kind.name}',
+        '${issue.fileName}: ${issue.message}',
+        StackTrace.current,
+      );
+    }
+  }
+
+  Future<VideoDownloadBackendIdentity> _currentVideoDownloadBackendIdentity(
+    QbConnectionConfig config,
+  ) async {
+    final String resolved =
+        config.resolveBackend(isDesktop: _supportsEmbeddedTorrent());
+    final String installationId =
+        await prefsRepo.ensureVideoDownloadEmbeddedInstallationId();
+    return buildVideoDownloadBackendIdentity(
+      config: config,
+      resolvedBackend: resolved,
+      embeddedInstallationId: installationId,
+    );
+  }
+
+  /// 当前新任务必须绑定的真实后端身份。UI 只保存此快照，流水线执行时还会再次
+  /// 对比 fingerprint/profile/category，配置切换后不会被另一实例隐式接管。
+  Future<VideoDownloadBackendIdentity> currentVideoDownloadBackendIdentity() =>
+      _currentVideoDownloadBackendIdentity(
+        effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
+      );
+
+  /// 只暴露当前设备可访问的本地受管视频来源，供发现页新任务/订阅选择。
+  Future<List<MediaSourceRow>> getManagedVideoDownloadSources() async {
+    final List<MediaSourceRow> sources =
+        await database.getMediaSourcesByKind('video');
+    return sources
+        .where(
+          (MediaSourceRow source) =>
+              source.transport == 'local' &&
+              path.isAbsolute(source.rootPath) &&
+              Directory(source.rootPath).existsSync(),
+        )
+        .toList(growable: false);
+  }
+
+  TorrentBackend? _createExactTorrentBackend(QbConnectionConfig config) {
+    final String resolved =
+        config.resolveBackend(isDesktop: _supportsEmbeddedTorrent());
+    if (resolved == QbConnectionConfig.backendEmbedded) {
+      final EmbeddedTorrentHost? host = _ensureEmbeddedTorrentHost();
+      return host?.backendView();
+    }
+    if (config.baseUrl.trim().isEmpty) return null;
+    return QbTorrentBackend(QBittorrentClient(
+      baseUrl: config.baseUrl,
+      username: config.username,
+      password: config.password,
+    ));
+  }
+
+  Future<void> _startVideoDownloadPipeline() async {
+    if (_videoDownloadPipelineService != null) return;
+    final http.Client nyaaHttpClient = await createDownloadHttpClient();
+    final http.Client torznabHttpClient = await createDownloadHttpClient();
+    final List<VideoResourceProvider> resourceProviders =
+        <VideoResourceProvider>[
+      NyaaVideoResourceProvider(
+        client: NyaaClient(client: nyaaHttpClient),
+        closesClient: true,
+      ),
+      TorznabClient(
+        indexers: prefsRepo.videoResourceTorznabConfigs,
+        client: torznabHttpClient,
+        closesClient: true,
+      ),
+    ];
+    final List<VideoSubtitleProvider> subtitleProviders =
+        <VideoSubtitleProvider>[];
+    if (prefsRepo.jimakuApiKey.trim().isNotEmpty) {
+      final http.Client jimakuHttpClient = await createDownloadHttpClient();
+      subtitleProviders.add(JimakuVideoSubtitleProvider(
+        client: JimakuClient(
+          apiKey: prefsRepo.jimakuApiKey,
+          client: jimakuHttpClient,
+        ),
+        closesClient: true,
+      ));
+    }
+    final OpenSubtitlesConfig? openSubtitles =
+        prefsRepo.videoSubtitleOpenSubtitlesConfig;
+    if (openSubtitles != null &&
+        openSubtitles.enabled &&
+        openSubtitles.apiKey.trim().isNotEmpty) {
+      final http.Client openSubtitlesHttpClient =
+          await createDownloadHttpClient();
+      subtitleProviders.add(OpenSubtitlesClient(
+        config: openSubtitles,
+        client: openSubtitlesHttpClient,
+        closesClient: true,
+      ));
+    }
+    final VideoResourceRegistry resources =
+        VideoResourceRegistry(resourceProviders);
+    final VideoSubtitleRegistry subtitles =
+        VideoSubtitleRegistry(subtitleProviders);
+    final String configuredTmdbKey = prefsRepo.getPref(
+      kVideoScraperTmdbApiKeyPref,
+      defaultValue: '',
+    ) as String;
+    final VideoSourceScrapeCoordinator scrape = VideoSourceScrapeCoordinator(
+      database: database,
+      config: VideoSourceScrapeGlobalConfig.fromPreferences(
+        prefsRepo,
+        resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
+      ),
+    );
+    _videoResourceRegistry = resources;
+    _videoSubtitleRegistry = subtitles;
+    _videoDownloadScrapeCoordinator = scrape;
+    final String preferredLanguage = prefsRepo.jimakuDefaultLanguage.trim();
+    final VideoDownloadPipelineService pipeline = VideoDownloadPipelineService(
+      database: database,
+      resourceRegistry: resources,
+      subtitleRegistry: subtitles,
+      preferredSubtitleLanguages: <String>[
+        if (preferredLanguage.isNotEmpty) preferredLanguage,
+      ],
+      backendResolver: _resolveVideoDownloadBackend,
+      scrapeCoordinator: scrape,
+    )..start();
+    _videoDownloadPipelineService = pipeline;
+    _videoDownloadSubscriptionService = VideoDownloadSubscriptionService(
+      database: database,
+      resourceRegistry: resources,
+      enqueue: pipeline.enqueue,
+    )..start();
+    // DownloadsPage may have rendered while this fire-and-forget runtime was
+    // still starting. Publish the new service identity so its cached resource
+    // dependencies are rebuilt instead of remaining permanently unavailable.
+    notifyListeners();
+  }
+
+  /// 外部来源、凭据、字幕语言或网络代理变化后重建 provider runtime。持久任务
+  /// 和订阅均留在 Drift；旧 worker 先释放 lease/连接，再由新配置立即对账恢复。
+  Future<void> reloadVideoDownloadPipelineRuntime() async {
+    if (_videoDownloadPipelineService == null) return;
+    await _disposeVideoDownloadPipelineRuntime();
+    notifyListeners();
+    await _startVideoDownloadPipeline();
+  }
+
+  Future<VideoDownloadBackendBinding?> _resolveVideoDownloadBackend(
+    VideoDownloadJobRow job,
+  ) async {
+    final QbConnectionConfig config =
+        effectiveTorrentConfig(prefsRepo.qbConnectionConfig);
+    final VideoDownloadBackendIdentity identity =
+        await _currentVideoDownloadBackendIdentity(config);
+    final String cacheKey = '${encodeQbConnectionConfig(config)}\u0000'
+        '${identity.fingerprint}';
+    if (_videoDownloadBackend == null ||
+        _videoDownloadBackendCacheKey != cacheKey) {
+      _videoDownloadBackend?.close();
+      _videoDownloadBackend = _createExactTorrentBackend(config);
+      _videoDownloadBackendCacheKey = cacheKey;
+    }
+    final TorrentBackend? backend = _videoDownloadBackend;
+    if (backend == null) return null;
+    final List<VideoDownloadPathMapping> mappings =
+        <VideoDownloadPathMapping>[];
+    for (final VideoDownloadBackendPathMappingConfig value
+        in prefsRepo.videoDownloadBackendPathMappings) {
+      if (value.backendProfileId == identity.profileId) {
+        mappings.add(value.toMapping());
+      }
+    }
+    return VideoDownloadBackendBinding(
+      backend: backend,
+      identity: identity,
+      pathMappings: mappings,
+    );
+  }
+
+  Future<void> _disposeVideoDownloadPipelineRuntime() async {
+    final VideoDownloadSubscriptionService? subscriptions =
+        _videoDownloadSubscriptionService;
+    _videoDownloadSubscriptionService = null;
+    if (subscriptions != null) await subscriptions.dispose();
+    final VideoDownloadPipelineService? pipeline =
+        _videoDownloadPipelineService;
+    _videoDownloadPipelineService = null;
+    if (pipeline != null) await pipeline.dispose();
+    _videoResourceRegistry?.close();
+    _videoResourceRegistry = null;
+    _videoSubtitleRegistry?.close();
+    _videoSubtitleRegistry = null;
+    _videoDownloadScrapeCoordinator?.close();
+    _videoDownloadScrapeCoordinator = null;
+    _videoDownloadBackend?.close();
+    _videoDownloadBackend = null;
+    _videoDownloadBackendCacheKey = null;
   }
 
   /// TODO-1961-c+d：下载内容改名 / 移动（引擎侧动，做种不断；库路径同步迁移）。
@@ -3528,6 +3828,9 @@ class AppModel with ChangeNotifier {
     final List<AnimeDownloadPlan> plans = await store.loadAll();
     final Set<String> ids = <String>{
       for (final AnimeDownloadPlan plan in plans) plan.id.toLowerCase(),
+      ...legacyEmbeddedTorrentResumeIds(
+        await database.getVideoDownloadJobs(),
+      ),
     };
     _animeDownloadPlanIds = ids;
     return ids;
@@ -5005,6 +5308,7 @@ class AppModel with ChangeNotifier {
     unawaited(stopYomitanApiServer());
     _animeDownloadService?.stop();
     _animeDownloadSubscriptionService?.stop();
+    unawaited(_disposeVideoDownloadPipelineRuntime());
     _mokuroMoeDownloadQueue?.dispose();
     _mokuroMoeDownloadQueue = null;
     _mihonManager?.dispose();

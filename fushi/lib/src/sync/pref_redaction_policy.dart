@@ -78,6 +78,10 @@ abstract final class PrefRedactionPolicy {
     // 授权端点可能是私有服务 URL，也可能携带 query credential；它的名字没有
     // token/api_key 形状，必须显式点名，避免备份/Profile 分享时旁路出境。
     'video_metadata_douban_authorized_endpoint',
+    // JSON 内含 API key / OpenSubtitles 登录密码；名字本身不含 credential 形状，
+    // 必须显式点名。两者也在 deviceLocalPrefKeys 中，双重声明便于安全审计。
+    'video_resource_torznab_config',
+    'video_subtitle_opensubtitles_config',
   };
 
   /// key 是否属于「设备本地 / 凭据」，即备份、Profile 快照与 Profile 分享 JSON

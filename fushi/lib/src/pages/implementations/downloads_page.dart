@@ -3,12 +3,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_tasks_section.dart';
+import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
+import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/airing_calendar_page.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
-import 'package:fushi/src/pages/implementations/download_subscriptions_panel.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
+import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
+import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart';
+import 'package:fushi/src/pages/implementations/video_download_subscriptions_panel.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart'
+    show MediaSourceRow, VideoDownloadJobRow;
 
 /// 独立「下载」页（顶层底栏 tab）＝统一下载中心：番剧下载流程 **直接内联**
 /// 铺在页面上（搜番 → 选种 → 配字幕 → 推送 + 通用磁力 + 下载任务），任务 tab
@@ -17,17 +24,107 @@ import 'package:fushi/utils.dart';
 /// 自动入库（视频→视频库、epub→阅读库，见 AnimeDownloadService；漫画卷→
 /// 书架，见 MokuroMoeDownloadQueue）。
 class DownloadsPage extends ConsumerStatefulWidget {
-  const DownloadsPage({super.key, this.initialShowSettings = false});
+  const DownloadsPage({
+    super.key,
+    this.initialShowSettings = false,
+    this.initialTabIndex = 0,
+  });
 
   /// 初始即显示设置面板（「后端未配置」横幅的「去设置」从对话框入口 push
   /// 本页直落配置用）。默认 false = 正常下载流程。
   final bool initialShowSettings;
+
+  /// 发现详情“管理订阅”等入口可直接落到对应子页。
+  final int initialTabIndex;
 
   @override
   ConsumerState<DownloadsPage> createState() => _DownloadsPageState();
 }
 
 class _DownloadsPageState extends ConsumerState<DownloadsPage> {
+  late Future<_DownloadsResourceDependencies?> _resourceDependencies;
+  VideoDownloadPipelineService? _resourcePipelineSnapshot;
+
+  @override
+  void initState() {
+    super.initState();
+    final AppModel appModel = ref.read(appProvider);
+    _resourcePipelineSnapshot = appModel.videoDownloadPipelineService;
+    _resourceDependencies = _loadResourceDependencies(appModel);
+  }
+
+  Future<_DownloadsResourceDependencies?> _loadResourceDependencies([
+    AppModel? current,
+  ]) async {
+    final AppModel appModel = current ?? ref.read(appProvider);
+    final VideoResourceRegistry? registry = appModel.videoResourceRegistry;
+    final VideoDownloadPipelineService? pipeline =
+        appModel.videoDownloadPipelineService;
+    if (registry == null || pipeline == null) return null;
+    final List<MediaSourceRow> sources =
+        await appModel.getManagedVideoDownloadSources();
+    if (sources.isEmpty) return null;
+    try {
+      return _DownloadsResourceDependencies(
+        registry: registry,
+        pipeline: pipeline,
+        identity: await appModel.currentVideoDownloadBackendIdentity(),
+        sources: sources,
+        defaultSourceId: appModel.prefsRepo.videoDownloadTargetSourceId,
+      );
+    } on Object {
+      return null;
+    }
+  }
+
+  Widget _buildResourceTab() {
+    return FutureBuilder<_DownloadsResourceDependencies?>(
+      future: _resourceDependencies,
+      builder: (
+        BuildContext context,
+        AsyncSnapshot<_DownloadsResourceDependencies?> snapshot,
+      ) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final _DownloadsResourceDependencies? dependencies = snapshot.data;
+        if (dependencies == null) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(t.download_backend_not_configured),
+                const SizedBox(height: 12),
+                FilledButton.tonalIcon(
+                  onPressed: () =>
+                      DefaultTabController.of(context).animateTo(3),
+                  icon: const Icon(Icons.settings_outlined),
+                  label: Text(t.download_open_settings),
+                ),
+              ],
+            ),
+          );
+        }
+        return VideoResourceSearchSurface(
+          key: const ValueKey<String>('downloads-resource-search'),
+          registry: dependencies.registry,
+          sources: dependencies.sources,
+          defaultSourceId: dependencies.defaultSourceId,
+          onSubmit: (VideoDiscoveryDownloadSelection selection) =>
+              dependencies.pipeline.enqueue(
+            VideoDownloadEnqueueRequest(
+              media: selection.media,
+              resource: selection.resource,
+              backendIdentity: dependencies.identity,
+              targetSourceId: selection.source.id,
+              subtitlePolicy: selection.subtitlePolicy,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   /// 漫画「在线目录」入口（统一下载中心：书/漫画获取入口与 torrent 并列）。
   ///
   /// 书架页与书籍导入框的旧入口已收敛到这里，故本页是
@@ -61,6 +158,14 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final AppModel appModel = ref.watch(appProvider);
+    if (!identical(
+      _resourcePipelineSnapshot,
+      appModel.videoDownloadPipelineService,
+    )) {
+      _resourcePipelineSnapshot = appModel.videoDownloadPipelineService;
+      _resourceDependencies = _loadResourceDependencies(appModel);
+    }
     return DefaultTabController(
         length: 4,
         initialIndex: widget.initialShowSettings ? 3 : 0,
@@ -81,7 +186,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                 isScrollable: true,
                 tabAlignment: TabAlignment.center,
                 tabs: <Widget>[
-                  Tab(text: t.download_discover_tab),
+                  Tab(text: t.download_resources_tab),
                   Tab(text: t.download_tasks_tab),
                   Tab(text: t.download_subscriptions_tab),
                   Tab(text: t.settings),
@@ -104,17 +209,29 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
             // 另一种模式，避免页签导航与正文状态互相覆盖。
             body: TabBarView(
               children: <Widget>[
-                AnimeDownloadDialog(
-                  embedded: true,
-                  showTasks: false,
-                  onOpenSettings: () =>
-                      DefaultTabController.of(tabContext).animateTo(3),
-                ),
+                _buildResourceTab(),
                 // 任务 tab：漫画目录卷下载队列（有任务才占位）+ torrent 任务，
                 // 统一下载中心的同屏任务视图。
                 Column(
                   children: <Widget>[
                     const MokuroMoeTasksSection(),
+                    Expanded(
+                      child: VideoDownloadJobsPanel.database(
+                        database: ref.read(appProvider).database,
+                        onRetry: (VideoDownloadJobRow job) async {
+                          await ref
+                              .read(appProvider)
+                              .videoDownloadPipelineService
+                              ?.retryJob(job.jobId);
+                        },
+                        onCancel: (VideoDownloadJobRow job) async {
+                          await ref
+                              .read(appProvider)
+                              .videoDownloadPipelineService
+                              ?.cancelJob(job.jobId);
+                        },
+                      ),
+                    ),
                     Expanded(
                       child: AnimeDownloadDialog(
                         embedded: true,
@@ -126,7 +243,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                     ),
                   ],
                 ),
-                const DownloadSubscriptionsPanel(),
+                const VideoDownloadSubscriptionsPanel(),
                 ListView(
                   padding: const EdgeInsets.all(16),
                   children: <Widget>[
@@ -146,4 +263,20 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
           ),
         ));
   }
+}
+
+class _DownloadsResourceDependencies {
+  const _DownloadsResourceDependencies({
+    required this.registry,
+    required this.pipeline,
+    required this.identity,
+    required this.sources,
+    required this.defaultSourceId,
+  });
+
+  final VideoResourceRegistry registry;
+  final VideoDownloadPipelineService pipeline;
+  final VideoDownloadBackendIdentity identity;
+  final List<MediaSourceRow> sources;
+  final int? defaultSourceId;
 }

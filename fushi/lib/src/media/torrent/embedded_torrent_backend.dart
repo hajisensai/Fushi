@@ -23,16 +23,19 @@ class EmbeddedTorrentBackend
     implements
         TorrentRemovalBackend,
         TorrentPauseBackend,
-        TorrentDetailBackend {
+        TorrentDetailBackend,
+        TorrentMetainfoBackend {
   EmbeddedTorrentBackend({
     required EmbeddedTorrentSession session,
     required TorrentSaveRoots saveRoots,
     bool closesSession = true,
     EmbeddedPauseControl? pauseControl,
+    Directory? metainfoTempDirectory,
   })  : _session = session,
         _saveRoots = saveRoots,
         _closesSession = closesSession,
-        _pauseControl = pauseControl;
+        _pauseControl = pauseControl,
+        _metainfoTempDirectory = metainfoTempDirectory;
 
   final EmbeddedTorrentSession _session;
 
@@ -51,6 +54,8 @@ class EmbeddedTorrentBackend
   /// 常驻 session → false（每 tick 建/关适配器不能连累会话）。
   final bool _closesSession;
 
+  final Directory? _metainfoTempDirectory;
+
   /// 已添加但 firstLastPiecePrio 尚未应用成功（等元数据）的种子。
   final Set<String> _pendingFirstLast = <String>{};
 
@@ -68,7 +73,7 @@ class EmbeddedTorrentBackend
     try {
       await Directory(_categoryPath(category)).create(recursive: true);
       return true;
-    } on FileSystemException {
+    } on Object {
       return false;
     }
   }
@@ -108,6 +113,41 @@ class EmbeddedTorrentBackend
       }
     }
     return true;
+  }
+
+  @override
+  Future<bool> addTorrentMetainfo(
+    TorrentMetainfoPayload payload, {
+    required String category,
+    bool sequential = false,
+    bool firstLastPiecePrio = false,
+  }) async {
+    Directory? temporaryDirectory;
+    try {
+      final Directory root = _metainfoTempDirectory ?? Directory.systemTemp;
+      await root.create(recursive: true);
+      temporaryDirectory = await root.createTemp('hibiki-metainfo-');
+      final String fileName = _safeMetainfoFileName(payload.fileName);
+      final File file =
+          File('${temporaryDirectory.path}${Platform.pathSeparator}$fileName');
+      await file.writeAsBytes(payload.bytes, flush: true);
+      return addTorrent(
+        file.path,
+        category: category,
+        sequential: sequential,
+        firstLastPiecePrio: firstLastPiecePrio,
+      );
+    } on FileSystemException {
+      return false;
+    } finally {
+      if (temporaryDirectory != null) {
+        try {
+          await temporaryDirectory.delete(recursive: true);
+        } on FileSystemException {
+          // Best-effort cleanup. The OS temp directory remains the boundary.
+        }
+      }
+    }
   }
 
   @override
@@ -392,4 +432,14 @@ class EmbeddedPauseControl {
 
   /// 该种子当前是否已知处于暂停态（用户或策略）。
   final bool Function(String infoHash) isPaused;
+}
+
+String _safeMetainfoFileName(String raw) {
+  final String leaf = raw
+      .replaceAll('\\', '/')
+      .split('/')
+      .last
+      .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+  if (leaf.isEmpty) return 'download.torrent';
+  return leaf.toLowerCase().endsWith('.torrent') ? leaf : '$leaf.torrent';
 }

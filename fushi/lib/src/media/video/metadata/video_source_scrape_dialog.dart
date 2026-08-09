@@ -118,18 +118,15 @@ class _VideoSourceScrapeTaskPanelState
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 8),
-                  Card(
-                    margin: EdgeInsets.zero,
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: widget.controller.isScanning
-                          ? Text(t.video_source_scrape_phase_scanning)
-                          : confirmation != null
-                              ? _buildConfirmation(confirmation)
-                              : report != null
-                                  ? _buildReport(report)
-                                  : _buildProgress(progress),
-                    ),
+                  FushiCard(
+                    padding: const EdgeInsets.all(12),
+                    child: widget.controller.isScanning
+                        ? Text(t.video_source_scrape_phase_scanning)
+                        : confirmation != null
+                            ? _buildConfirmation(confirmation)
+                            : report != null
+                                ? _buildReport(report)
+                                : _buildProgress(progress),
                   ),
                   const SizedBox(height: 18),
                 ],
@@ -211,17 +208,17 @@ class _VideoSourceScrapeTaskPanelState
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         for (final VideoSourceScrapeRunRow run in _runs)
-          ListTile(
+          FushiListItem(
             key: ValueKey<String>('video-source-scrape-run-${run.id}'),
-            dense: true,
-            contentPadding: EdgeInsets.zero,
+            density: FushiListDensity.compact,
+            padding: EdgeInsets.zero,
             leading: Icon(_runIcon(run.status)),
             title: Text(
               '${_runStatusLabel(run.status)} · '
               '${run.provider?.toUpperCase() ?? t.nav_video}',
             ),
             subtitle: Text(_runSubtitle(run)),
-            isThreeLine: true,
+            subtitleMaxLines: 3,
             trailing: widget.onRetry != null &&
                     run.sourceId != null &&
                     <String>{'failed', 'interrupted', 'cancelled'}
@@ -337,12 +334,12 @@ class _VideoSourceScrapeTaskPanelState
                 if (original != null && original != candidate.work.title)
                   original,
               ].join(' · ');
-              return ListTile(
+              return FushiListItem(
                 key: ValueKey<String>(
                   'video-source-candidate-${candidate.lookup.provider.name}-'
                   '${candidate.lookup.externalId}',
                 ),
-                contentPadding: EdgeInsets.zero,
+                padding: EdgeInsets.zero,
                 title: Text(candidate.work.title),
                 subtitle: Text(details),
                 trailing: const Icon(Icons.chevron_right),
@@ -379,9 +376,9 @@ class _VideoSourceScrapeTaskPanelState
               itemCount: issues.length,
               itemBuilder: (BuildContext context, int index) {
                 final (SourceScrapeIssue issue, bool isError) = issues[index];
-                return ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
+                return FushiListItem(
+                  density: FushiListDensity.compact,
+                  padding: EdgeInsets.zero,
                   leading: Icon(
                     isError ? Icons.error_outline : Icons.info_outline,
                     color: isError

@@ -9,6 +9,7 @@ import 'package:fushi/src/media/torrent/download_save_root.dart';
 import 'package:fushi/src/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 
@@ -668,6 +669,7 @@ class _TorrentSettingsSectionState
             ),
           ],
         ],
+        const VideoExternalProviderSettingsSection(),
       ],
     );
     if (!widget.constrainWidth) {

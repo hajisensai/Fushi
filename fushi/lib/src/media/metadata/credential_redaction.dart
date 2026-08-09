@@ -34,6 +34,10 @@ const Set<String> kCredentialQueryParams = <String>{
   'client_secret',
   'signature',
   'sig',
+  'jackett_apikey',
+  'passkey',
+  'authkey',
+  'rsskey',
 };
 
 /// 脱敏后的占位值（保留参数名，便于排查「是不是带了 key」，但不泄露值本身）。

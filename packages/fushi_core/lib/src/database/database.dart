@@ -474,6 +474,11 @@ void _requireOneVideoMetadataOwner({
   VideoSourceScrapeSettings,
   VideoSourceScrapeRuns,
   VideoSidecarArtifacts,
+  VideoDownloadJobs,
+  VideoDownloadJobFiles,
+  VideoDownloadJobSubtitles,
+  VideoDownloadSubscriptions,
+  VideoDownloadSubscriptionItems,
 ])
 class FushiDatabase extends _$FushiDatabase {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
@@ -496,7 +501,7 @@ class FushiDatabase extends _$FushiDatabase {
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 77;
+  int get schemaVersion => 78;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1855,6 +1860,28 @@ class FushiDatabase extends _$FushiDatabase {
             }
             await _ensureIndexes();
           }
+          if (from < 78) {
+            // v78：通用视频下载/订阅持久层（PR #794 增量，收拢为一步迁移；
+            // 上游 fork 编号 v71）。建表顺序严格遵循 FK：任务父表 →
+            // 文件 → 字幕、订阅父表 → 订阅条目。旧的 JSON 计划由 app 层一次性导入，
+            // 本迁移只建立空真相源，不猜磁盘文件语义，也不改变既有下载行为。
+            if (!await _tableExists('video_download_jobs')) {
+              await m.createTable(videoDownloadJobs);
+            }
+            if (!await _tableExists('video_download_job_files')) {
+              await m.createTable(videoDownloadJobFiles);
+            }
+            if (!await _tableExists('video_download_job_subtitles')) {
+              await m.createTable(videoDownloadJobSubtitles);
+            }
+            if (!await _tableExists('video_download_subscriptions')) {
+              await m.createTable(videoDownloadSubscriptions);
+            }
+            if (!await _tableExists('video_download_subscription_items')) {
+              await m.createTable(videoDownloadSubscriptionItems);
+            }
+            await _ensureIndexes();
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -2032,6 +2059,52 @@ class FushiDatabase extends _$FushiDatabase {
         'video_sidecar_artifacts',
         'CREATE INDEX IF NOT EXISTS idx_video_sidecar_artifacts_source_run '
             'ON video_sidecar_artifacts (source_id, run_id)'
+      ],
+      // v78：worker claim、任务列表与订阅轮询的热路径。
+      [
+        'video_download_jobs',
+        'CREATE INDEX IF NOT EXISTS idx_video_download_jobs_claim '
+            'ON video_download_jobs '
+            '(lifecycle, next_attempt_at, priority DESC, created_at)'
+      ],
+      [
+        'video_download_jobs',
+        'CREATE UNIQUE INDEX IF NOT EXISTS '
+            'idx_video_download_jobs_fingerprint_torrent '
+            'ON video_download_jobs (fingerprint, torrent_hash) '
+            'WHERE torrent_hash IS NOT NULL'
+      ],
+      [
+        'video_download_jobs',
+        'CREATE INDEX IF NOT EXISTS idx_video_download_jobs_backend_task '
+            'ON video_download_jobs (backend_kind, backend_task_id)'
+      ],
+      [
+        'video_download_job_files',
+        'CREATE INDEX IF NOT EXISTS idx_video_download_job_files_job_status '
+            'ON video_download_job_files (job_id, status)'
+      ],
+      [
+        'video_download_job_subtitles',
+        'CREATE INDEX IF NOT EXISTS idx_video_download_job_subtitles_job_status '
+            'ON video_download_job_subtitles (job_id, status)'
+      ],
+      [
+        'video_download_subscriptions',
+        'CREATE INDEX IF NOT EXISTS idx_video_download_subscriptions_claim '
+            'ON video_download_subscriptions '
+            '(enabled, next_check_at, claim_expires_at)'
+      ],
+      [
+        'video_download_subscription_items',
+        'CREATE INDEX IF NOT EXISTS idx_video_download_subscription_items_state '
+            'ON video_download_subscription_items '
+            '(subscription_id, status, season, episode)'
+      ],
+      [
+        'video_download_subscription_items',
+        'CREATE INDEX IF NOT EXISTS idx_video_download_subscription_items_job '
+            'ON video_download_subscription_items (job_id)'
       ],
     ];
     for (final List<String> entry in indexes) {
@@ -4168,6 +4241,767 @@ class FushiDatabase extends _$FushiDatabase {
     return query.get();
   }
 
+  // ── durable video download pipeline（schema v78）──────────────────
+
+  Future<void> upsertVideoDownloadJob(VideoDownloadJobsCompanion job) async {
+    if (!job.jobId.present) {
+      throw ArgumentError('video download job requires jobId');
+    }
+    await into(videoDownloadJobs).insert(
+      job,
+      onConflict: DoUpdate(
+        (_) => job,
+        target: <Column<Object>>[videoDownloadJobs.jobId],
+      ),
+    );
+  }
+
+  Future<VideoDownloadJobRow?> getVideoDownloadJob(String jobId) =>
+      (select(videoDownloadJobs)
+            ..where(($VideoDownloadJobsTable t) => t.jobId.equals(jobId)))
+          .getSingleOrNull();
+
+  Future<VideoDownloadJobRow?> findVideoDownloadJobByFingerprintAndTorrentHash(
+    String fingerprint,
+    String torrentHash,
+  ) =>
+      (select(videoDownloadJobs)
+            ..where(($VideoDownloadJobsTable t) =>
+                t.fingerprint.equals(fingerprint) &
+                t.torrentHash.equals(torrentHash)))
+          .getSingleOrNull();
+
+  Future<List<VideoDownloadJobRow>> getVideoDownloadJobs() =>
+      (select(videoDownloadJobs)
+            ..orderBy(<OrderingTerm Function($VideoDownloadJobsTable)>[
+              ($VideoDownloadJobsTable t) => OrderingTerm.desc(t.priority),
+              ($VideoDownloadJobsTable t) => OrderingTerm.desc(t.createdAt),
+              ($VideoDownloadJobsTable t) => OrderingTerm(expression: t.jobId),
+            ]))
+          .get();
+
+  Stream<List<VideoDownloadJobRow>> watchVideoDownloadJobs() =>
+      (select(videoDownloadJobs)
+            ..orderBy(<OrderingTerm Function($VideoDownloadJobsTable)>[
+              ($VideoDownloadJobsTable t) => OrderingTerm.desc(t.priority),
+              ($VideoDownloadJobsTable t) => OrderingTerm.desc(t.createdAt),
+              ($VideoDownloadJobsTable t) => OrderingTerm(expression: t.jobId),
+            ]))
+          .watch();
+
+  Future<int> updateVideoDownloadJob(
+    String jobId,
+    VideoDownloadJobsCompanion patch,
+  ) =>
+      (update(videoDownloadJobs)
+            ..where(($VideoDownloadJobsTable t) => t.jobId.equals(jobId)))
+          .write(patch);
+
+  Future<int> deleteVideoDownloadJob(String jobId) => (delete(videoDownloadJobs)
+        ..where(($VideoDownloadJobsTable t) => t.jobId.equals(jobId)))
+      .go();
+
+  /// 原子领取下一条到期任务。lifecycle 保持 active；worker 是否正在处理完全由 lease
+  /// 字段表达。lease 已过期即允许新进程接管，更新带完整 CAS 条件，两个 worker 不能
+  /// 同时拿到同一任务。
+  Future<VideoDownloadJobRow?> claimNextVideoDownloadJob({
+    required String workerId,
+    required int nowAt,
+    required int leaseDurationMs,
+  }) async {
+    if (workerId.isEmpty) throw ArgumentError.value(workerId, 'workerId');
+    if (leaseDurationMs <= 0) {
+      throw ArgumentError.value(leaseDurationMs, 'leaseDurationMs');
+    }
+    final int claimExpiresAt = nowAt + leaseDurationMs;
+    return transaction(() async {
+      for (int attempt = 0; attempt < 4; attempt++) {
+        final VideoDownloadJobRow? candidate = await (select(videoDownloadJobs)
+              ..where(($VideoDownloadJobsTable t) {
+                final Expression<bool> due =
+                    t.lifecycle.equals(VideoDownloadJobLifecycle.active) &
+                        (t.nextAttemptAt.isNull() |
+                            t.nextAttemptAt.isSmallerOrEqualValue(nowAt));
+                final Expression<bool> unclaimed = t.claimedBy.isNull();
+                final Expression<bool> abandoned =
+                    t.claimExpiresAt.isNotNull() &
+                        t.claimExpiresAt.isSmallerOrEqualValue(nowAt);
+                return due & (unclaimed | abandoned);
+              })
+              ..orderBy(<OrderingTerm Function($VideoDownloadJobsTable)>[
+                ($VideoDownloadJobsTable t) => OrderingTerm.desc(t.priority),
+                ($VideoDownloadJobsTable t) =>
+                    OrderingTerm(expression: t.createdAt),
+                ($VideoDownloadJobsTable t) =>
+                    OrderingTerm(expression: t.jobId),
+              ])
+              ..limit(1))
+            .getSingleOrNull();
+        if (candidate == null) return null;
+
+        final int changed = await (update(videoDownloadJobs)
+              ..where(($VideoDownloadJobsTable t) {
+                final Expression<bool> due =
+                    t.lifecycle.equals(VideoDownloadJobLifecycle.active) &
+                        (t.nextAttemptAt.isNull() |
+                            t.nextAttemptAt.isSmallerOrEqualValue(nowAt));
+                final Expression<bool> unclaimed = t.claimedBy.isNull();
+                final Expression<bool> abandoned =
+                    t.claimExpiresAt.isNotNull() &
+                        t.claimExpiresAt.isSmallerOrEqualValue(nowAt);
+                return t.jobId.equals(candidate.jobId) &
+                    due &
+                    (unclaimed | abandoned);
+              }))
+            .write(VideoDownloadJobsCompanion(
+          nextAttemptAt: const Value<int?>(null),
+          claimedBy: Value<String?>(workerId),
+          claimExpiresAt: Value<int?>(claimExpiresAt),
+          lastError: const Value<String?>(null),
+          updatedAt: Value<int>(nowAt),
+        ));
+        if (changed == 1) return getVideoDownloadJob(candidate.jobId);
+      }
+      return null;
+    });
+  }
+
+  Future<bool> renewVideoDownloadJobClaim({
+    required String jobId,
+    required String workerId,
+    required int nowAt,
+    required int leaseDurationMs,
+  }) async {
+    if (workerId.isEmpty) throw ArgumentError.value(workerId, 'workerId');
+    if (leaseDurationMs <= 0) {
+      throw ArgumentError.value(leaseDurationMs, 'leaseDurationMs');
+    }
+    final int changed = await (update(videoDownloadJobs)
+          ..where(($VideoDownloadJobsTable t) =>
+              t.jobId.equals(jobId) &
+              t.lifecycle.equals(VideoDownloadJobLifecycle.active) &
+              t.claimedBy.equals(workerId) &
+              t.claimExpiresAt.isBiggerThanValue(nowAt)))
+        .write(VideoDownloadJobsCompanion(
+      claimExpiresAt: Value<int?>(nowAt + leaseDurationMs),
+      updatedAt: Value<int>(nowAt),
+    ));
+    return changed == 1;
+  }
+
+  /// 当前 worker 失败后按 maxAttempts 决定继续 active 退避还是进入终态 failed。
+  Future<bool> retryVideoDownloadJob({
+    required String jobId,
+    required String workerId,
+    required String error,
+    required int nowAt,
+    required int nextAttemptAt,
+  }) =>
+      transaction(() async {
+        final VideoDownloadJobRow? row = await getVideoDownloadJob(jobId);
+        if (row == null ||
+            row.lifecycle != VideoDownloadJobLifecycle.active ||
+            row.claimedBy != workerId) {
+          return false;
+        }
+        final int nextAttemptCount = row.attemptCount + 1;
+        final bool exhausted = nextAttemptCount >= row.maxAttempts;
+        final int changed = await (update(videoDownloadJobs)
+              ..where(($VideoDownloadJobsTable t) =>
+                  t.jobId.equals(jobId) &
+                  t.lifecycle.equals(VideoDownloadJobLifecycle.active) &
+                  t.claimedBy.equals(workerId)))
+            .write(VideoDownloadJobsCompanion(
+          lifecycle: Value<String>(exhausted
+              ? VideoDownloadJobLifecycle.failed
+              : VideoDownloadJobLifecycle.active),
+          attemptCount: Value<int>(nextAttemptCount),
+          nextAttemptAt: Value<int?>(exhausted ? null : nextAttemptAt),
+          claimedBy: const Value<String?>(null),
+          claimExpiresAt: const Value<int?>(null),
+          lastError: Value<String?>(error),
+          updatedAt: Value<int>(nowAt),
+          completedAt: Value<int?>(exhausted ? nowAt : null),
+        ));
+        return changed == 1;
+      });
+
+  Future<bool> completeVideoDownloadJob({
+    required String jobId,
+    required String workerId,
+    required int completedAt,
+  }) async {
+    final int changed = await (update(videoDownloadJobs)
+          ..where(($VideoDownloadJobsTable t) =>
+              t.jobId.equals(jobId) &
+              t.lifecycle.equals(VideoDownloadJobLifecycle.active) &
+              t.claimedBy.equals(workerId)))
+        .write(VideoDownloadJobsCompanion(
+      lifecycle: const Value<String>(VideoDownloadJobLifecycle.completed),
+      stageProgress: const Value<double>(1.0),
+      nextAttemptAt: const Value<int?>(null),
+      claimedBy: const Value<String?>(null),
+      claimExpiresAt: const Value<int?>(null),
+      lastError: const Value<String?>(null),
+      updatedAt: Value<int>(completedAt),
+      completedAt: Value<int?>(completedAt),
+    ));
+    return changed == 1;
+  }
+
+  /// CAS 推进到下一业务阶段并释放 lease，让调度器立即领取下一阶段。lifecycle 不随
+  /// 阶段切换；只有 completed/failed/cancelled 等生命周期 API 才改它。
+  Future<bool> advanceVideoDownloadJobStage({
+    required String jobId,
+    required String workerId,
+    required String stage,
+    required int nowAt,
+    double? progress,
+    String? backendTaskId,
+    String? torrentHash,
+    String? observedSavePath,
+    String? targetRelativeRoot,
+  }) async {
+    final int changed = await (update(videoDownloadJobs)
+          ..where(($VideoDownloadJobsTable t) =>
+              t.jobId.equals(jobId) &
+              t.lifecycle.equals(VideoDownloadJobLifecycle.active) &
+              t.claimedBy.equals(workerId)))
+        .write(VideoDownloadJobsCompanion(
+      stage: Value<String>(stage),
+      stageProgress: progress == null
+          ? const Value<double>.absent()
+          : Value<double>(progress),
+      backendTaskId: backendTaskId == null
+          ? const Value<String?>.absent()
+          : Value<String?>(backendTaskId),
+      torrentHash: torrentHash == null
+          ? const Value<String?>.absent()
+          : Value<String?>(torrentHash),
+      observedSavePath: observedSavePath == null
+          ? const Value<String?>.absent()
+          : Value<String?>(observedSavePath),
+      targetRelativeRoot: targetRelativeRoot == null
+          ? const Value<String?>.absent()
+          : Value<String?>(targetRelativeRoot),
+      attemptCount: const Value<int>(0),
+      nextAttemptAt: Value<int?>(nowAt),
+      claimedBy: const Value<String?>(null),
+      claimExpiresAt: const Value<int?>(null),
+      lastError: const Value<String?>(null),
+      updatedAt: Value<int>(nowAt),
+    ));
+    return changed == 1;
+  }
+
+  /// 需要用户处理的可恢复状态。保持 stage 原样，释放 lease，避免后台继续抢占。
+  Future<bool> markVideoDownloadJobNeedsAttention({
+    required String jobId,
+    required String workerId,
+    required String error,
+    required int nowAt,
+  }) async {
+    final int changed = await (update(videoDownloadJobs)
+          ..where(($VideoDownloadJobsTable t) =>
+              t.jobId.equals(jobId) &
+              t.lifecycle.equals(VideoDownloadJobLifecycle.active) &
+              t.claimedBy.equals(workerId)))
+        .write(VideoDownloadJobsCompanion(
+      lifecycle: const Value<String>(VideoDownloadJobLifecycle.needsAttention),
+      nextAttemptAt: const Value<int?>(null),
+      claimedBy: const Value<String?>(null),
+      claimExpiresAt: const Value<int?>(null),
+      lastError: Value<String?>(error),
+      updatedAt: Value<int>(nowAt),
+    ));
+    return changed == 1;
+  }
+
+  /// Explicit user retry. Only recoverable terminal/actionable states may
+  /// become active; a running or completed job is never silently rewound.
+  Future<bool> retryVideoDownloadJobByUser({
+    required String jobId,
+    required int nowAt,
+  }) async {
+    final int changed = await (update(videoDownloadJobs)
+          ..where(($VideoDownloadJobsTable t) =>
+              t.jobId.equals(jobId) &
+              t.lifecycle.isIn(<String>[
+                VideoDownloadJobLifecycle.needsAttention,
+                VideoDownloadJobLifecycle.failed,
+              ])))
+        .write(VideoDownloadJobsCompanion(
+      lifecycle: const Value<String>(VideoDownloadJobLifecycle.active),
+      attemptCount: const Value<int>(0),
+      nextAttemptAt: Value<int?>(nowAt),
+      claimedBy: const Value<String?>(null),
+      claimExpiresAt: const Value<int?>(null),
+      lastError: const Value<String?>(null),
+      completedAt: const Value<int?>(null),
+      updatedAt: Value<int>(nowAt),
+    ));
+    return changed == 1;
+  }
+
+  /// Explicit user cancellation. Files and backend tasks are deliberately not
+  /// deleted here; the app layer pauses a matching backend task first when the
+  /// backend exposes that capability.
+  Future<bool> cancelVideoDownloadJobByUser({
+    required String jobId,
+    required int nowAt,
+  }) async {
+    final int changed = await (update(videoDownloadJobs)
+          ..where(($VideoDownloadJobsTable t) =>
+              t.jobId.equals(jobId) &
+              t.lifecycle.isIn(<String>[
+                VideoDownloadJobLifecycle.active,
+                VideoDownloadJobLifecycle.needsAttention,
+                VideoDownloadJobLifecycle.failed,
+              ])))
+        .write(VideoDownloadJobsCompanion(
+      lifecycle: const Value<String>(VideoDownloadJobLifecycle.cancelled),
+      nextAttemptAt: const Value<int?>(null),
+      claimedBy: const Value<String?>(null),
+      claimExpiresAt: const Value<int?>(null),
+      lastError: const Value<String?>(null),
+      completedAt: Value<int?>(nowAt),
+      updatedAt: Value<int>(nowAt),
+    ));
+    return changed == 1;
+  }
+
+  /// 不推进 stage 的主动让权；nextAttemptAt 为 null 表示立即可重领。
+  Future<bool> releaseVideoDownloadJobClaim({
+    required String jobId,
+    required String workerId,
+    required int nowAt,
+    int? nextAttemptAt,
+  }) async {
+    final int changed = await (update(videoDownloadJobs)
+          ..where(($VideoDownloadJobsTable t) =>
+              t.jobId.equals(jobId) &
+              t.lifecycle.equals(VideoDownloadJobLifecycle.active) &
+              t.claimedBy.equals(workerId)))
+        .write(VideoDownloadJobsCompanion(
+      nextAttemptAt: Value<int?>(nextAttemptAt),
+      claimedBy: const Value<String?>(null),
+      claimExpiresAt: const Value<int?>(null),
+      updatedAt: Value<int>(nowAt),
+    ));
+    return changed == 1;
+  }
+
+  Future<void> upsertVideoDownloadJobFile(
+    VideoDownloadJobFilesCompanion file,
+  ) async {
+    if (!file.jobId.present || !file.originalRelativePath.present) {
+      throw ArgumentError('download job file requires jobId and original path');
+    }
+    await into(videoDownloadJobFiles).insert(
+      file,
+      onConflict: DoUpdate(
+        (_) => file,
+        target: <Column<Object>>[
+          videoDownloadJobFiles.jobId,
+          videoDownloadJobFiles.originalRelativePath,
+        ],
+      ),
+    );
+  }
+
+  Future<List<VideoDownloadJobFileRow>> getVideoDownloadJobFiles(
+    String jobId,
+  ) =>
+      (select(videoDownloadJobFiles)
+            ..where(($VideoDownloadJobFilesTable t) => t.jobId.equals(jobId))
+            ..orderBy(<OrderingTerm Function($VideoDownloadJobFilesTable)>[
+              ($VideoDownloadJobFilesTable t) =>
+                  OrderingTerm(expression: t.backendFileIndex),
+              ($VideoDownloadJobFilesTable t) =>
+                  OrderingTerm(expression: t.originalRelativePath),
+            ]))
+          .get();
+
+  Stream<List<VideoDownloadJobFileRow>> watchVideoDownloadJobFiles(
+    String jobId,
+  ) =>
+      (select(videoDownloadJobFiles)
+            ..where(($VideoDownloadJobFilesTable t) => t.jobId.equals(jobId))
+            ..orderBy(<OrderingTerm Function($VideoDownloadJobFilesTable)>[
+              ($VideoDownloadJobFilesTable t) =>
+                  OrderingTerm(expression: t.backendFileIndex),
+              ($VideoDownloadJobFilesTable t) =>
+                  OrderingTerm(expression: t.originalRelativePath),
+            ]))
+          .watch();
+
+  Future<int> updateVideoDownloadJobFile(
+    int id,
+    VideoDownloadJobFilesCompanion patch,
+  ) =>
+      (update(videoDownloadJobFiles)
+            ..where(($VideoDownloadJobFilesTable t) => t.id.equals(id)))
+          .write(patch);
+
+  Future<int> deleteVideoDownloadJobFile(int id) =>
+      (delete(videoDownloadJobFiles)
+            ..where(($VideoDownloadJobFilesTable t) => t.id.equals(id)))
+          .go();
+
+  Future<void> replaceVideoDownloadJobFiles(
+    String jobId,
+    List<VideoDownloadJobFilesCompanion> files,
+  ) =>
+      transaction(() async {
+        await (delete(videoDownloadJobFiles)
+              ..where(($VideoDownloadJobFilesTable t) => t.jobId.equals(jobId)))
+            .go();
+        for (final VideoDownloadJobFilesCompanion file in files) {
+          await into(videoDownloadJobFiles).insert(
+            file.copyWith(jobId: Value<String>(jobId)),
+          );
+        }
+      });
+
+  Future<void> upsertVideoDownloadJobSubtitle(
+    VideoDownloadJobSubtitlesCompanion subtitle,
+  ) async {
+    if (!subtitle.subtitleId.present) {
+      throw ArgumentError('download job subtitle requires subtitleId');
+    }
+    await into(videoDownloadJobSubtitles).insert(
+      subtitle,
+      onConflict: DoUpdate(
+        (_) => subtitle,
+        target: <Column<Object>>[videoDownloadJobSubtitles.subtitleId],
+      ),
+    );
+  }
+
+  Future<List<VideoDownloadJobSubtitleRow>> getVideoDownloadJobSubtitles(
+    String jobId,
+  ) =>
+      (select(videoDownloadJobSubtitles)
+            ..where(
+                ($VideoDownloadJobSubtitlesTable t) => t.jobId.equals(jobId))
+            ..orderBy(<OrderingTerm Function($VideoDownloadJobSubtitlesTable)>[
+              ($VideoDownloadJobSubtitlesTable t) =>
+                  OrderingTerm(expression: t.season),
+              ($VideoDownloadJobSubtitlesTable t) =>
+                  OrderingTerm(expression: t.episode),
+              ($VideoDownloadJobSubtitlesTable t) =>
+                  OrderingTerm(expression: t.subtitleId),
+            ]))
+          .get();
+
+  Stream<List<VideoDownloadJobSubtitleRow>> watchVideoDownloadJobSubtitles(
+    String jobId,
+  ) =>
+      (select(videoDownloadJobSubtitles)
+            ..where(
+                ($VideoDownloadJobSubtitlesTable t) => t.jobId.equals(jobId))
+            ..orderBy(<OrderingTerm Function($VideoDownloadJobSubtitlesTable)>[
+              ($VideoDownloadJobSubtitlesTable t) =>
+                  OrderingTerm(expression: t.season),
+              ($VideoDownloadJobSubtitlesTable t) =>
+                  OrderingTerm(expression: t.episode),
+              ($VideoDownloadJobSubtitlesTable t) =>
+                  OrderingTerm(expression: t.subtitleId),
+            ]))
+          .watch();
+
+  Future<int> updateVideoDownloadJobSubtitle(
+    String subtitleId,
+    VideoDownloadJobSubtitlesCompanion patch,
+  ) =>
+      (update(videoDownloadJobSubtitles)
+            ..where(($VideoDownloadJobSubtitlesTable t) =>
+                t.subtitleId.equals(subtitleId)))
+          .write(patch);
+
+  Future<int> deleteVideoDownloadJobSubtitle(String subtitleId) =>
+      (delete(videoDownloadJobSubtitles)
+            ..where(($VideoDownloadJobSubtitlesTable t) =>
+                t.subtitleId.equals(subtitleId)))
+          .go();
+
+  Future<void> upsertVideoDownloadSubscription(
+    VideoDownloadSubscriptionsCompanion subscription,
+  ) async {
+    if (!subscription.subscriptionId.present) {
+      throw ArgumentError('video download subscription requires id');
+    }
+    await into(videoDownloadSubscriptions).insert(
+      subscription,
+      onConflict: DoUpdate(
+        (_) => subscription,
+        target: <Column<Object>>[
+          videoDownloadSubscriptions.subscriptionId,
+        ],
+      ),
+    );
+  }
+
+  Future<VideoDownloadSubscriptionRow?> getVideoDownloadSubscription(
+    String subscriptionId,
+  ) =>
+      (select(videoDownloadSubscriptions)
+            ..where(($VideoDownloadSubscriptionsTable t) =>
+                t.subscriptionId.equals(subscriptionId)))
+          .getSingleOrNull();
+
+  Future<List<VideoDownloadSubscriptionRow>> getVideoDownloadSubscriptions() =>
+      (select(videoDownloadSubscriptions)
+            ..orderBy(<OrderingTerm Function($VideoDownloadSubscriptionsTable)>[
+              ($VideoDownloadSubscriptionsTable t) =>
+                  OrderingTerm.desc(t.createdAt),
+              ($VideoDownloadSubscriptionsTable t) =>
+                  OrderingTerm(expression: t.subscriptionId),
+            ]))
+          .get();
+
+  Stream<List<VideoDownloadSubscriptionRow>>
+      watchVideoDownloadSubscriptions() => (select(videoDownloadSubscriptions)
+            ..orderBy(<OrderingTerm Function($VideoDownloadSubscriptionsTable)>[
+              ($VideoDownloadSubscriptionsTable t) =>
+                  OrderingTerm.desc(t.createdAt),
+              ($VideoDownloadSubscriptionsTable t) =>
+                  OrderingTerm(expression: t.subscriptionId),
+            ]))
+          .watch();
+
+  Future<int> updateVideoDownloadSubscription(
+    String subscriptionId,
+    VideoDownloadSubscriptionsCompanion patch,
+  ) =>
+      (update(videoDownloadSubscriptions)
+            ..where(($VideoDownloadSubscriptionsTable t) =>
+                t.subscriptionId.equals(subscriptionId)))
+          .write(patch);
+
+  Future<int> deleteVideoDownloadSubscription(String subscriptionId) =>
+      (delete(videoDownloadSubscriptions)
+            ..where(($VideoDownloadSubscriptionsTable t) =>
+                t.subscriptionId.equals(subscriptionId)))
+          .go();
+
+  /// 原子领取一个到期订阅检查。订阅没有 job lifecycle/stage；enabled、nextCheckAt
+  /// 与 lease 正交表达「是否调度 / 何时调度 / 谁正在调度」。
+  Future<VideoDownloadSubscriptionRow?> claimNextVideoDownloadSubscription({
+    required String workerId,
+    required int nowAt,
+    required int leaseDurationMs,
+  }) async {
+    if (workerId.isEmpty) throw ArgumentError.value(workerId, 'workerId');
+    if (leaseDurationMs <= 0) {
+      throw ArgumentError.value(leaseDurationMs, 'leaseDurationMs');
+    }
+    final int claimExpiresAt = nowAt + leaseDurationMs;
+    return transaction(() async {
+      for (int attempt = 0; attempt < 4; attempt++) {
+        final VideoDownloadSubscriptionRow? candidate =
+            await (select(videoDownloadSubscriptions)
+                  ..where(($VideoDownloadSubscriptionsTable t) {
+                    final Expression<bool> due = t.enabled.equals(true) &
+                        (t.nextCheckAt.isNull() |
+                            t.nextCheckAt.isSmallerOrEqualValue(nowAt));
+                    final Expression<bool> unclaimed = t.claimedBy.isNull();
+                    final Expression<bool> abandoned =
+                        t.claimExpiresAt.isNotNull() &
+                            t.claimExpiresAt.isSmallerOrEqualValue(nowAt);
+                    return due & (unclaimed | abandoned);
+                  })
+                  ..orderBy(<OrderingTerm Function(
+                      $VideoDownloadSubscriptionsTable)>[
+                    ($VideoDownloadSubscriptionsTable t) =>
+                        OrderingTerm(expression: t.nextCheckAt),
+                    ($VideoDownloadSubscriptionsTable t) =>
+                        OrderingTerm(expression: t.createdAt),
+                    ($VideoDownloadSubscriptionsTable t) =>
+                        OrderingTerm(expression: t.subscriptionId),
+                  ])
+                  ..limit(1))
+                .getSingleOrNull();
+        if (candidate == null) return null;
+
+        final int changed = await (update(videoDownloadSubscriptions)
+              ..where(($VideoDownloadSubscriptionsTable t) {
+                final Expression<bool> due = t.enabled.equals(true) &
+                    (t.nextCheckAt.isNull() |
+                        t.nextCheckAt.isSmallerOrEqualValue(nowAt));
+                final Expression<bool> unclaimed = t.claimedBy.isNull();
+                final Expression<bool> abandoned =
+                    t.claimExpiresAt.isNotNull() &
+                        t.claimExpiresAt.isSmallerOrEqualValue(nowAt);
+                return t.subscriptionId.equals(candidate.subscriptionId) &
+                    due &
+                    (unclaimed | abandoned);
+              }))
+            .write(VideoDownloadSubscriptionsCompanion(
+          claimedBy: Value<String?>(workerId),
+          claimExpiresAt: Value<int?>(claimExpiresAt),
+          updatedAt: Value<int>(nowAt),
+        ));
+        if (changed == 1) {
+          return getVideoDownloadSubscription(candidate.subscriptionId);
+        }
+      }
+      return null;
+    });
+  }
+
+  Future<bool> renewVideoDownloadSubscriptionClaim({
+    required String subscriptionId,
+    required String workerId,
+    required int nowAt,
+    required int leaseDurationMs,
+  }) async {
+    if (workerId.isEmpty) throw ArgumentError.value(workerId, 'workerId');
+    if (leaseDurationMs <= 0) {
+      throw ArgumentError.value(leaseDurationMs, 'leaseDurationMs');
+    }
+    final int changed = await (update(videoDownloadSubscriptions)
+          ..where(($VideoDownloadSubscriptionsTable t) =>
+              t.subscriptionId.equals(subscriptionId) &
+              t.enabled.equals(true) &
+              t.claimedBy.equals(workerId) &
+              t.claimExpiresAt.isBiggerThanValue(nowAt)))
+        .write(VideoDownloadSubscriptionsCompanion(
+      claimExpiresAt: Value<int?>(nowAt + leaseDurationMs),
+      updatedAt: Value<int>(nowAt),
+    ));
+    return changed == 1;
+  }
+
+  Future<bool> completeVideoDownloadSubscriptionCheck({
+    required String subscriptionId,
+    required String workerId,
+    required int checkedAt,
+    required int nextCheckAt,
+    int? matchedAt,
+    bool fulfillOneShot = false,
+  }) async {
+    final int changed = await (update(videoDownloadSubscriptions)
+          ..where(($VideoDownloadSubscriptionsTable t) =>
+              t.subscriptionId.equals(subscriptionId) &
+              t.claimedBy.equals(workerId)))
+        .write(VideoDownloadSubscriptionsCompanion(
+      enabled: fulfillOneShot
+          ? const Value<bool>(false)
+          : const Value<bool>.absent(),
+      nextCheckAt: Value<int?>(nextCheckAt),
+      claimedBy: const Value<String?>(null),
+      claimExpiresAt: const Value<int?>(null),
+      retryCount: const Value<int>(0),
+      lastCheckedAt: Value<int?>(checkedAt),
+      lastMatchedAt: matchedAt == null
+          ? const Value<int?>.absent()
+          : Value<int?>(matchedAt),
+      fulfilledAt:
+          fulfillOneShot ? Value<int?>(checkedAt) : const Value<int?>.absent(),
+      lastError: const Value<String?>(null),
+      updatedAt: Value<int>(checkedAt),
+    ));
+    return changed == 1;
+  }
+
+  Future<bool> retryVideoDownloadSubscriptionCheck({
+    required String subscriptionId,
+    required String workerId,
+    required String error,
+    required int failedAt,
+    required int nextCheckAt,
+  }) =>
+      transaction(() async {
+        final VideoDownloadSubscriptionRow? row =
+            await getVideoDownloadSubscription(subscriptionId);
+        if (row == null || row.claimedBy != workerId) {
+          return false;
+        }
+        final int changed = await (update(videoDownloadSubscriptions)
+              ..where(($VideoDownloadSubscriptionsTable t) =>
+                  t.subscriptionId.equals(subscriptionId) &
+                  t.claimedBy.equals(workerId)))
+            .write(VideoDownloadSubscriptionsCompanion(
+          nextCheckAt: Value<int?>(nextCheckAt),
+          claimedBy: const Value<String?>(null),
+          claimExpiresAt: const Value<int?>(null),
+          retryCount: Value<int>(row.retryCount + 1),
+          lastCheckedAt: Value<int?>(failedAt),
+          lastError: Value<String?>(error),
+          updatedAt: Value<int>(failedAt),
+        ));
+        return changed == 1;
+      });
+
+  Future<void> upsertVideoDownloadSubscriptionItem(
+    VideoDownloadSubscriptionItemsCompanion item,
+  ) async {
+    if (!item.subscriptionId.present ||
+        !item.logicalItemKey.present ||
+        !item.resourceProvider.present ||
+        !item.selectedResourceId.present) {
+      throw ArgumentError(
+          'subscription item requires subscription and resource identity');
+    }
+    await into(videoDownloadSubscriptionItems).insert(
+      item,
+      onConflict: DoUpdate(
+        (_) => item,
+        target: <Column<Object>>[
+          videoDownloadSubscriptionItems.subscriptionId,
+          videoDownloadSubscriptionItems.logicalItemKey,
+        ],
+      ),
+    );
+  }
+
+  Future<List<VideoDownloadSubscriptionItemRow>>
+      getVideoDownloadSubscriptionItems(String subscriptionId) =>
+          (select(videoDownloadSubscriptionItems)
+                ..where(($VideoDownloadSubscriptionItemsTable t) =>
+                    t.subscriptionId.equals(subscriptionId))
+                ..orderBy(<OrderingTerm Function(
+                    $VideoDownloadSubscriptionItemsTable)>[
+                  ($VideoDownloadSubscriptionItemsTable t) =>
+                      OrderingTerm(expression: t.season),
+                  ($VideoDownloadSubscriptionItemsTable t) =>
+                      OrderingTerm(expression: t.episode),
+                  ($VideoDownloadSubscriptionItemsTable t) =>
+                      OrderingTerm(expression: t.discoveredAt),
+                ]))
+              .get();
+
+  Stream<List<VideoDownloadSubscriptionItemRow>>
+      watchVideoDownloadSubscriptionItems(String subscriptionId) =>
+          (select(videoDownloadSubscriptionItems)
+                ..where(($VideoDownloadSubscriptionItemsTable t) =>
+                    t.subscriptionId.equals(subscriptionId))
+                ..orderBy(<OrderingTerm Function(
+                    $VideoDownloadSubscriptionItemsTable)>[
+                  ($VideoDownloadSubscriptionItemsTable t) =>
+                      OrderingTerm(expression: t.season),
+                  ($VideoDownloadSubscriptionItemsTable t) =>
+                      OrderingTerm(expression: t.episode),
+                  ($VideoDownloadSubscriptionItemsTable t) =>
+                      OrderingTerm(expression: t.discoveredAt),
+                ]))
+              .watch();
+
+  Future<int> updateVideoDownloadSubscriptionItem(
+    int id,
+    VideoDownloadSubscriptionItemsCompanion patch,
+  ) =>
+      (update(videoDownloadSubscriptionItems)
+            ..where(
+                ($VideoDownloadSubscriptionItemsTable t) => t.id.equals(id)))
+          .write(patch);
+
+  Future<int> deleteVideoDownloadSubscriptionItem(int id) => (delete(
+          videoDownloadSubscriptionItems)
+        ..where(($VideoDownloadSubscriptionItemsTable t) => t.id.equals(id)))
+      .go();
+
   /// 监听视频库 uid 集合。插入/删除行时发出更新后的 uid 列表；库页据此在任意
   /// 导入路径（页内 / 拖拽 / 外部「用 Fushi 打开」/ 远端下载）落库后自动重查，
   /// 无需每个调用点各自记得刷新（BUG-793）。注意 Drift 的表级失效会让纯列更新
@@ -4209,6 +5043,14 @@ class FushiDatabase extends _$FushiDatabase {
       },
     );
     return controller.stream;
+  }
+
+  /// 仅发出 video_books 表级更新通知，不改任何业务列。导入事务和 metadata apply
+  /// 在写入多个关联表后可显式调用，让当前视频页统一重查；消费方仍按 uid 集合去重。
+  void notifyVideoLibraryChanged() {
+    notifyUpdates(<TableUpdate>{
+      TableUpdate.onTable(videoBooks, kind: UpdateKind.update),
+    });
   }
 
   Future<void> updateVideoBookPosition(String bookUid, int positionMs) =>

@@ -234,7 +234,7 @@ void main() {
   });
 
   testWidgets(
-      'downloads page switches between discover, tasks and subscriptions',
+      'downloads page switches between resources, tasks and subscriptions',
       (WidgetTester tester) async {
     final _MemorySubscriptionStore store = _MemorySubscriptionStore();
     final _MemoryPlanStore planStore = _MemoryPlanStore();
@@ -259,7 +259,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(t.download_discover_tab), findsOneWidget);
+    expect(find.text(t.download_resources_tab), findsOneWidget);
     await tester.tap(find.text(t.download_tasks_tab));
     await tester.pumpAndSettle();
     expect(find.text(t.anime_download_no_tasks), findsOneWidget);

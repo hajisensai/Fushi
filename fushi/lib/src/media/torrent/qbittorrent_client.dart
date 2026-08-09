@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -428,6 +429,35 @@ class QBittorrentClient {
         res.body.trim().startsWith('Ok');
   }
 
+  /// Uploads validated `.torrent` metainfo using qBittorrent's multipart
+  /// `torrents` field. Provider download URLs are resolved before this call,
+  /// so temporary API keys never enter qBittorrent's persistent task state.
+  Future<bool> addTorrentFile(
+    Uint8List bytes, {
+    required String fileName,
+    String? category,
+    String? savePath,
+    bool sequentialDownload = false,
+    bool firstLastPiecePrio = false,
+  }) async {
+    if (bytes.isEmpty) return false;
+    final http.Response? res = await _request(
+      'POST',
+      '/api/v2/torrents/add',
+      form: <String, String>{
+        if (category != null) 'category': category,
+        if (savePath != null) 'savepath': savePath,
+        if (sequentialDownload) 'sequentialDownload': 'true',
+        if (firstLastPiecePrio) 'firstLastPiecePrio': 'true',
+      },
+      torrentBytes: bytes,
+      torrentFileName: fileName,
+    );
+    return res != null &&
+        res.statusCode == 200 &&
+        res.body.trim().startsWith('Ok');
+  }
+
   /// 确保分类存在：`POST /api/v2/torrents/createCategory`；
   /// 409（已存在）也算成功。
   Future<bool> ensureCategory(String category, {String? savePath}) async {
@@ -687,17 +717,33 @@ class QBittorrentClient {
     String path, {
     Map<String, String>? query,
     Map<String, String>? form,
+    Uint8List? torrentBytes,
+    String? torrentFileName,
   }) async {
     try {
       if (_sid == null && !_anonymousOk && !await _authenticate()) return null;
-      http.Response res = await _send(method, path, query: query, form: form);
+      http.Response res = await _send(
+        method,
+        path,
+        query: query,
+        form: form,
+        torrentBytes: torrentBytes,
+        torrentFileName: torrentFileName,
+      );
       if (res.statusCode == 403) {
         // 会话过期 / 免密开关被关掉：只重认证一次，仍失败就把 403 交给
         // 调用方按失败处理。
         _sid = null;
         _anonymousOk = false;
         if (!await _authenticate()) return null;
-        res = await _send(method, path, query: query, form: form);
+        res = await _send(
+          method,
+          path,
+          query: query,
+          form: form,
+          torrentBytes: torrentBytes,
+          torrentFileName: torrentFileName,
+        );
       }
       return res;
     } catch (e) {
@@ -720,7 +766,9 @@ class QBittorrentClient {
     String path, {
     Map<String, String>? query,
     Map<String, String>? form,
-  }) {
+    Uint8List? torrentBytes,
+    String? torrentFileName,
+  }) async {
     Uri uri = Uri.parse('$baseUrl$path');
     if (query != null && query.isNotEmpty) {
       uri = uri.replace(queryParameters: query);
@@ -730,6 +778,21 @@ class QBittorrentClient {
       if (_sid != null) 'Cookie': 'SID=$_sid',
     };
     if (method == 'POST') {
+      if (torrentBytes != null) {
+        final http.MultipartRequest request = http.MultipartRequest('POST', uri)
+          ..headers.addAll(headers)
+          ..fields.addAll(form ?? const <String, String>{})
+          ..files.add(
+            http.MultipartFile.fromBytes(
+              'torrents',
+              torrentBytes,
+              filename: _safeTorrentFileName(torrentFileName),
+            ),
+          );
+        final http.StreamedResponse streamed =
+            await _client.send(request).timeout(requestTimeout);
+        return http.Response.fromStream(streamed);
+      }
       return _client
           .post(uri, headers: headers, body: form ?? const {})
           .timeout(requestTimeout);
@@ -738,4 +801,14 @@ class QBittorrentClient {
   }
 
   void close() => _client.close();
+}
+
+String _safeTorrentFileName(String? raw) {
+  final String leaf = (raw ?? 'download.torrent')
+      .replaceAll('\\', '/')
+      .split('/')
+      .last
+      .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+  if (leaf.isEmpty) return 'download.torrent';
+  return leaf.toLowerCase().endsWith('.torrent') ? leaf : '$leaf.torrent';
 }

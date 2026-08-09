@@ -133,6 +133,20 @@ void main() {
       expect(refresh, lessThan(subscription), reason: '订阅服务同样会 tick → 懒建 host');
     });
 
+    test('JSON 归档后 keepIds 继续合并 v78 未完成 embedded 旧任务', () {
+      expect(
+        appModel.contains('...legacyEmbeddedTorrentResumeIds('),
+        isTrue,
+        reason: 'Importer 会归档 plans JSON；若只读空 store，首次 host 恢复会把仍由 '
+            'v78 接管的旧任务 resume 当成孤儿删除',
+      );
+      expect(
+        appModel.contains('await database.getVideoDownloadJobs()'),
+        isTrue,
+        reason: 'resume keepIds 必须从 Drift 真相源重建，不能依赖已归档 JSON',
+      );
+    });
+
     test('剪枝/恢复/保存的 keepIds 一律可空（哨兵能穿到底）', () {
       expect(host.contains('required Set<String>? keepIds,'), isTrue);
       expect(
