@@ -495,7 +495,34 @@ void main() {
     expect(records, hasLength(1), reason: 'wire 键去重，一条 record');
     expect(records.single.lookupCount, 7, reason: '3+4 求和，不 last-wins');
     expect(records.single.mineCount, 2);
-    expect(records.single.bookKey, isNotNull, reason: 'metadata 取首个非空身份');
+    expect(records.single.bookKey, isNull,
+        reason: '混桶总量不得归因单一身份——接收端会把 7 全记给 uid-1，'
+            '在对端重新制造互串（review-1）');
+  });
+
+  test('v76: single-identity fold keeps its bookKey metadata', () async {
+    final FushiDatabase db = await _freshDb('agg_fold1_');
+    addTearDown(db.close);
+    await db.addLookupCount(
+        bookKey: 'uid-1',
+        title: '独占',
+        sourceType: 'video',
+        dateKey: '2026-06-01',
+        delta: 3);
+    await db.addMineCountPerBook(
+        bookKey: 'uid-1',
+        title: '独占',
+        sourceType: 'video',
+        dateKey: '2026-06-01',
+        delta: 2);
+
+    final AggregateSnapshot snap =
+        await AggregateSyncService(db).materializeLocalSnapshot();
+    final LookupMiningRecord record = snap.lookupMiningCounters
+        .singleWhere((LookupMiningRecord r) => r.title == '独占');
+    expect(record.bookKey, 'uid-1', reason: '桶内单一身份无歧义，metadata 保留');
+    expect(record.lookupCount, 3);
+    expect(record.mineCount, 2);
   });
 
   test(

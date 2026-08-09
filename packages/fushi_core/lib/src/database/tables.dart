@@ -665,9 +665,12 @@ class LookupMiningCounters extends Table {
   IntColumn get lookupCount => integer().withDefault(const Constant(0))();
   IntColumn get mineCount => integer().withDefault(const Constant(0))();
 
+  /// 列序 {title, sourceType, dateKey, bookKey}（而非 bookKey 打头）：唯一索引
+  /// 要同时服务 add*（四列全等）与 set*/按 title 删除（三列前缀）——bookKey 打头
+  /// 会让全部 title 粒度查询退化成全表扫描（sync 应用逐 record 扫两遍）。
   @override
   List<Set<Column>> get uniqueKeys => [
-        {bookKey, title, sourceType, dateKey},
+        {title, sourceType, dateKey, bookKey},
       ];
 }
 

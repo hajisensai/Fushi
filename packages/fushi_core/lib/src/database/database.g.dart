@@ -14996,7 +14996,7 @@ class $LookupMiningCountersTable extends LookupMiningCounters
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
   List<Set<GeneratedColumn>> get uniqueKeys => [
-        {bookKey, title, sourceType, dateKey},
+        {title, sourceType, dateKey, bookKey},
       ];
   @override
   LookupMiningCounterRow map(Map<String, dynamic> data, {String? tablePrefix}) {

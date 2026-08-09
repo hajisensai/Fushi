@@ -171,7 +171,7 @@ CREATE TABLE statistics_tombstones (
         1);
   });
 
-  test('set*（sync 写回，title 粒度）：多行塌成单一无身份权威行，总量单调', () async {
+  test('set*（sync 写回，title 粒度）：wire 不超过本地和绝不塌缩；超过才塌单一权威行', () async {
     final FushiDatabase db = await openV75Db();
 
     // 造多行：遗留行（lookup=7）+ uid-1 行（lookup=1, mine=2）。
@@ -187,7 +187,8 @@ CREATE TABLE statistics_tombstones (
         dateKey: '2026-08-01',
         delta: 2);
 
-    // wire 合并值 6 < 本地和 8 → 取本地和（MAX-union 不缩水）。
+    // wire 合并值 6 ≤ 本地和 8 → 完全 no-op：不塌缩、不动任何行（review-5：
+    // sync 自回声每轮都塌一次会把 per-identity 修复周期性回退、tile 震荡）。
     await db.setLookupCount(
         title: '同名', sourceType: 'video', dateKey: '2026-08-01', count: 6);
 
@@ -195,20 +196,23 @@ CREATE TABLE statistics_tombstones (
         .where((LookupMiningCounterRow r) =>
             r.title == '同名' && r.dateKey == '2026-08-01')
         .toList();
-    expect(rows, hasLength(1), reason: '塌成单一权威行（v39 title 粒度决策）');
-    expect(rows.single.bookKey, '', reason: '混桶归因不可判，如实标无身份');
-    expect(rows.single.lookupCount, 8, reason: 'max(6, 7+1) = 8');
-    expect(rows.single.mineCount, 2, reason: '另一计数字段的本地和不被抹掉');
+    expect(rows, hasLength(2), reason: 'wire 无新知 → per-identity 行原样保留');
+    expect(
+        rows
+            .singleWhere((LookupMiningCounterRow r) => r.bookKey == 'uid-1')
+            .lookupCount,
+        1);
 
-    // 单行路径：更大的 wire 值行内 MAX。
+    // wire 值 10 > 本地和 8 → 才塌成单一 '' 权威行（v39 title 粒度决策）。
     await db.setLookupCount(
         title: '同名', sourceType: 'video', dateKey: '2026-08-01', count: 10);
     rows = (await db.getAllLookupMiningCounters())
         .where((LookupMiningCounterRow r) =>
             r.title == '同名' && r.dateKey == '2026-08-01')
         .toList();
+    expect(rows, hasLength(1), reason: 'wire 真的知道更多才塌缩');
+    expect(rows.single.bookKey, '', reason: '混桶归因不可判，如实标无身份');
     expect(rows.single.lookupCount, 10);
-    expect(rows.single.mineCount, 2);
   });
 
   test('fresh 库由 onCreate 直接建出 v76 键形（含身份唯一键）', () async {
