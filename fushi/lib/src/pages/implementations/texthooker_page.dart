@@ -1142,11 +1142,24 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     }
   }
 
-  void _onWordTap(
+  /// 从命中的那个字起做查词（BUG-1478）。
+  ///
+  /// 查询串是「该字到行尾」截断到 [_kLookupQueryMaxChars] 的一段，**不是**分词器
+  /// 切出来的那个词：引擎本来就按查询串做最长匹配并回报 `bestLength`（弹窗据此高亮
+  /// 整词跨度），所以点「永」照样命中「永遠」，而点「遠」能单独查到「遠」——
+  /// 老实现把整词当查询串，后者根本无从下手。
+  void _onCharTap(
     TexthookerLineEntry line,
-    String word,
+    int charIndex,
     Rect rect,
   ) {
+    final String text = line.text;
+    if (charIndex < 0 || charIndex >= text.length) return;
+    final int end = charIndex + _kLookupQueryMaxChars > text.length
+        ? text.length
+        : charIndex + _kLookupQueryMaxChars;
+    final String word = text.substring(charIndex, end);
+    if (word.trim().isEmpty) return;
     _selectLine(line);
     // BUG-1028：顶层查词复用常驻热槽（reuseWarmSlot:true）而非 replaceStack 冷建，
     // 复用已预热的弹窗 WebView，消除冷启动延迟（对齐 home_dictionary_page.dart:752）。
@@ -1832,7 +1845,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                             _session.isLineInCurrentSession(line),
                         recapturing: _session.recapturingLineId == line.id,
                         onSelectLine: _selectLine,
-                        onWordTap: _onWordTap,
+                        onCharTap: _onCharTap,
                         onToggleFavorite: _toggleLineFavorite,
                         onPreviewAudio: (TexthookerLineEntry l) =>
                             unawaited(_toggleLinePreview(l)),
@@ -2668,7 +2681,7 @@ class _TexthookerLine extends StatelessWidget {
     required this.canRecapture,
     required this.recapturing,
     required this.onSelectLine,
-    required this.onWordTap,
+    required this.onCharTap,
     required this.onToggleFavorite,
     required this.onPreviewAudio,
     required this.onPickTrack,
@@ -2705,11 +2718,13 @@ class _TexthookerLine extends StatelessWidget {
 
   /// 把整句复制到剪贴板（用户诉求：方便丢给 AI 分析）。
   final ValueChanged<TexthookerLineEntry> onCopy;
+
+  /// 命中正文里的某个字：回调带该字在整行文本里的 UTF-16 偏移（BUG-1478）。
   final void Function(
     TexthookerLineEntry line,
-    String word,
+    int charIndex,
     Rect rect,
-  ) onWordTap;
+  ) onCharTap;
 
   @override
   Widget build(BuildContext context) {
@@ -2822,11 +2837,13 @@ class _TexthookerLine extends StatelessWidget {
             const SizedBox(height: 6),
             Wrap(
               children: <Widget>[
-                for (final String word in words)
+                // 分词只决定视觉断行，命中粒度在 [_WordSpan] 内部细到字（BUG-1478）。
+                for (final (int start, String word) in _indexedWords(words))
                   _WordSpan(
                     word: word,
-                    onTap: (String word, Rect rect) =>
-                        onWordTap(line, word, rect),
+                    startIndex: start,
+                    onTapChar: (int charIndex, Rect rect) =>
+                        onCharTap(line, charIndex, rect),
                   ),
               ],
             ),
@@ -3003,30 +3020,101 @@ class _LineAudioChip extends StatelessWidget {
   }
 }
 
-/// 单个可点词 span：点击时上报全局选区矩形供浮层定位。
+/// 逐字查词时喂给引擎的查询串上限（UTF-16 code unit）。
+///
+/// 引擎按查询串做最长匹配，所以只要「足够长到装得下最长的复合词 + 屈折尾巴」即可；
+/// 给整行会让每次点击都多传几十上百个用不到的字符。日语最长实用复合词远短于 24。
+const int _kLookupQueryMaxChars = 24;
+
+/// 给分词结果补上每个词首字在整行里的 UTF-16 偏移。
+///
+/// 依赖一条既有不变式：[JapaneseLanguage.textToWords] 是**切分**不是改写，
+/// 各片段按序拼回即原文（引擎未就绪时的逐字回退同样满足）。所以偏移就是前缀长度和，
+/// 不需要在原文里搜索——搜索会在重复词上给出错误位置。
+Iterable<(int, String)> _indexedWords(List<String> words) sync* {
+  int offset = 0;
+  for (final String word in words) {
+    yield (offset, word);
+    offset += word.length;
+  }
+}
+
+/// 一个分词单元的渲染 + **逐字**命中（BUG-1478）。
+///
+/// 分词只决定**看起来**怎么断，不决定**点得到**什么粒度。以前整词是一个
+/// [InkWell]，于是「永遠」只能整体查——想查「遠」无从下手，用户报的正是这个。
+///
+/// 命中改成按**字素簇**（不是 UTF-16 code unit：绝不劈开代理对/浊点/组合字），
+/// 查询串则由调用方取「从该字到行尾」的一段，交给引擎做最长匹配并回报
+/// `bestLength`——这与浮窗/歌词/阅读器一致，也是引擎本来就为之设计的用法。
+/// 词与词之间不插任何间距，视觉上仍是原来那一串分好词的正文。
 class _WordSpan extends StatelessWidget {
-  const _WordSpan({required this.word, required this.onTap});
+  const _WordSpan({
+    required this.word,
+    required this.startIndex,
+    required this.onTapChar,
+  });
 
   final String word;
-  final void Function(String word, Rect rect) onTap;
+
+  /// 本词首字在整行文本里的 UTF-16 偏移。
+  final int startIndex;
+
+  /// 命中某个字：回调带该字在整行里的 UTF-16 偏移与它的全局矩形（浮层定位用）。
+  final void Function(int charIndex, Rect rect) onTapChar;
 
   @override
   Widget build(BuildContext context) {
-    // 巡检 G2（鼠标部分）：手型光标 + hover 底色让「可点查词」在桌面可发现。
-    // InkWell 不抢焦点（canRequestFocus:false）——行内逐词键盘导航不在本轮范围，
-    // 行级焦点站点仍由外层 FushiCard 提供。
+    final TextStyle? style =
+        Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6);
+    final Color hover =
+        Theme.of(context).colorScheme.primary.withValues(alpha: 0.1);
+    int offset = startIndex;
+    final List<Widget> glyphs = <Widget>[];
+    for (final String grapheme in word.characters) {
+      final int charIndex = offset;
+      offset += grapheme.length;
+      glyphs.add(
+        // 巡检 G2（鼠标部分）：手型光标 + hover 底色让「可点查词」在桌面可发现。
+        // InkWell 不抢焦点（canRequestFocus:false）——行内逐字键盘导航不在本轮
+        // 范围，行级焦点站点仍由外层 FushiCard 提供。
+        _CharSpan(
+          grapheme: grapheme,
+          style: style,
+          hoverColor: hover,
+          onTap: (Rect rect) => onTapChar(charIndex, rect),
+        ),
+      );
+    }
+    return Row(mainAxisSize: MainAxisSize.min, children: glyphs);
+  }
+}
+
+/// 单个字素簇的命中区。
+class _CharSpan extends StatelessWidget {
+  const _CharSpan({
+    required this.grapheme,
+    required this.style,
+    required this.hoverColor,
+    required this.onTap,
+  });
+
+  final String grapheme;
+  final TextStyle? style;
+  final Color hoverColor;
+  final void Function(Rect rect) onTap;
+
+  @override
+  Widget build(BuildContext context) {
     return InkWell(
       canRequestFocus: false,
-      hoverColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+      hoverColor: hoverColor,
       onTap: () {
         final RenderBox box = context.findRenderObject()! as RenderBox;
         final Offset topLeft = box.localToGlobal(Offset.zero);
-        onTap(word, topLeft & box.size);
+        onTap(topLeft & box.size);
       },
-      child: Text(
-        word,
-        style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
-      ),
+      child: Text(grapheme, style: style),
     );
   }
 }

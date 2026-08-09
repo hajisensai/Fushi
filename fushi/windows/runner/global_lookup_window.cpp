@@ -373,6 +373,8 @@ void GlobalLookupWindow::ForgetDeadWindow() {
   // here is what keeps arm/disarm balanced across the crash path — otherwise
   // the mouse hook's liveness timer re-arms a dead pass-through hook forever.
   ReleaseDismissHooks();
+  // HWND 已死，定时器随它一起没了；清掉 id 免得下次 Start 以为还开着（BUG-1479）。
+  topmost_guard_timer_ = 0;
   // The HWND was destroyed out from under us (WebView2 runtime crash/update,
   // owner teardown, or any external DestroyWindow) yet hwnd_ stayed non-null,
   // so every later ShowAt took the SetWindowPos(else) branch against a corpse
@@ -521,6 +523,9 @@ void GlobalLookupWindow::Reveal(int width, int height) {
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
   revealed_ = true;
   visible_ = true;
+  // BUG-1479：只设一次不够——同置顶带里「最后一次 SetWindowPos 的赢」，
+  // 而大量 galgame 会周期性重申自己的置顶。
+  StartTopmostGuard();
   // Arm the click-outside dismiss only now that the card is on-screen (skip our
   // own process so interacting with the card / main window does not close it).
   // spec 2026-07-10 — the clipboard panel instance is PERSISTENT (click-outside
@@ -574,6 +579,9 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
   revealed_ = true;
   visible_ = true;
+  // BUG-1479：只设一次不够——同置顶带里「最后一次 SetWindowPos 的赢」，
+  // 而大量 galgame 会周期性重申自己的置顶。
+  StartTopmostGuard();
   // TODO-1231 P2 — now that the window sits at the new bbox origin, tell the host
   // to apply the compensating layer shift (pin the ROOT card at the cursor while
   // the window covers the whole cascade). Done AFTER SetWindowPos so the window
@@ -744,10 +752,48 @@ void GlobalLookupWindow::SetWindowTitle(const std::wstring& title) {
   }
 }
 
+// BUG-1479 — 显示期间周期性重申置顶。
+//
+// 判据必须是「本实例本来就要置顶」而不是「无脑重申」：未 pin 的常驻剪贴板面板
+// 有意落在非置顶带（见 RaiseToFront），定时器把它拖回置顶带就是另一个 bug。
+namespace {
+constexpr UINT_PTR kTopmostGuardTimerId = 0xA11D;
+// 800ms：够快到用户看不出被压过（游戏重申置顶通常在切场景/取焦点时），
+// 又慢到一次 SetWindowPos 的开销可以忽略。
+constexpr UINT kTopmostGuardIntervalMs = 800;
+}  // namespace
+
+void GlobalLookupWindow::ReassertTopmost() {
+  if (hwnd_ == nullptr || !wants_topmost_ || !IsShowing()) {
+    return;
+  }
+  SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+}
+
+void GlobalLookupWindow::StartTopmostGuard() {
+  if (hwnd_ == nullptr || !wants_topmost_ || topmost_guard_timer_ != 0) {
+    return;
+  }
+  topmost_guard_timer_ =
+      SetTimer(hwnd_, kTopmostGuardTimerId, kTopmostGuardIntervalMs, nullptr);
+}
+
+void GlobalLookupWindow::StopTopmostGuard() {
+  if (hwnd_ == nullptr || topmost_guard_timer_ == 0) {
+    return;
+  }
+  KillTimer(hwnd_, kTopmostGuardTimerId);
+  topmost_guard_timer_ = 0;
+}
+
 void GlobalLookupWindow::SetTopmost(bool topmost) {
   if (hwnd_ == nullptr) {
     return;
   }
+  // 记住意图：重申定时器据此决定该不该把窗口拖回置顶带。
+  wants_topmost_ = topmost;
+  if (!topmost) StopTopmostGuard();
   // SWP_NOOWNERZORDER：不带它时改 Z 序会连带 owner 的 Z 序（真机症状=点图钉
   // 把主 app 拉到前台）。面板现已无 owner（见 RegisterClipboardPanelChannel），
   // 此标志兜底防回归；与 Reveal/RevealStack 的 SetWindowPos 口径一致。
@@ -831,6 +877,7 @@ void GlobalLookupWindow::Hide(bool notify) {
   // beginLookup), so a stale region can never clip the next card.
   shell_rects_css_.clear();
   ReleaseDismissHooks();
+  StopTopmostGuard();
   if (hwnd_ != nullptr) {
     ShowWindow(hwnd_, SW_HIDE);
   }
@@ -1948,6 +1995,15 @@ void GlobalLookupWindow::ForwardGlobalClickToHost(int screen_x, int screen_y) {
 LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
                                           LPARAM lparam) {
   switch (message) {
+    // BUG-1479 — 显示期间周期性重申置顶。见 ReassertTopmost 的注释：查词卡被
+    // galgame 盖住不是独占全屏那条 OS 硬限制（那样 Luna 也会中招），是同一置顶带内
+    // 「最后一次 SetWindowPos 的赢」而我们只在 Reveal 设过一次。
+    case WM_TIMER:
+      if (wparam == kTopmostGuardTimerId) {
+        ReassertTopmost();
+        return 0;
+      }
+      break;
     case fushi::kLowLevelMouseClickMessage:
       // BUG-1048 — 钩子线程投递的全局点击（wparam 打包屏幕物理坐标，lparam=是否
       // 落在本窗口 rect 内）。真正的决策（关闭 / 转发给 host）在这里做，钩子线程

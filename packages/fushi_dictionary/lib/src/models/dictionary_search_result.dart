@@ -12,6 +12,7 @@ class DictionarySearchResult {
       searchTerm: map['searchTerm'] as String,
       bestLength: map['bestLength'] as int? ?? 0,
       truncated: map['truncated'] as bool? ?? false,
+      headwordCount: map['headwordCount'] as int? ?? 0,
       scrollPosition: map['scrollPosition'] as int? ?? 0,
       entries: entriesJson.map(DictionaryEntry.fromJson).toList(),
       kanjiResults: kanjiJson
@@ -27,6 +28,7 @@ class DictionarySearchResult {
     this.scrollPosition = 0,
     this.kanjiResults = const [],
     this.truncated = false,
+    this.headwordCount = 0,
   });
 
   final String searchTerm;
@@ -41,6 +43,14 @@ class DictionarySearchResult {
   /// （一个词头能带 N 条 entries，两个数字不再可比）。截断是构造结果的人才知道的
   /// 事实，让它显式带出来，消费方不再猜。
   final bool truncated;
+
+  /// 本次结果里 distinct 词头（表记 + 有效读音）的个数。
+  ///
+  /// BUG-1478：「加载更多」要按**词头**递增上限（`headwordCount + maximumTerms`）。
+  /// 以前拿 `entries.length` 当基数，而那是 glossary 注释行数——同一个数字被两层
+  /// 当两种语义用的老毛病（[[BUG-1472]]）在分页这一处的残留：一个词头带十几条注释
+  /// 时上限会一次暴涨十几倍，等于每次下滚都把整本词典往回捞。
+  final int headwordCount;
 
   /// Per-character kanji dictionary results for a single-character lookup
   /// (onyomi / kunyomi / radical / strokes / meanings). Empty for multi-char
@@ -63,6 +73,7 @@ class DictionarySearchResult {
       scrollPosition: scrollPosition,
       kanjiResults: kanji,
       truncated: truncated,
+      headwordCount: headwordCount,
     );
     copy.popupJson = popupJson;
     return copy;
@@ -73,6 +84,7 @@ class DictionarySearchResult {
       'searchTerm': searchTerm,
       'bestLength': bestLength,
       'truncated': truncated,
+      'headwordCount': headwordCount,
       'scrollPosition': scrollPosition,
       'entries': entries.map((e) => e.toJson()).toList(),
       'kanjiResults': kanjiResults.map((k) => k.toMap()).toList(),

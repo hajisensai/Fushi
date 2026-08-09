@@ -759,7 +759,8 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   void _loadMore() {
     if (_isSearching || _allLoaded || _result == null) return;
-    final current = _result!.entries.length;
+    // BUG-1478：按词头递增（见 base_source_page 同处注释）。
+    final int current = _result!.headwordCount;
     _lastQuery = '';
     _search(
       _controller.text,

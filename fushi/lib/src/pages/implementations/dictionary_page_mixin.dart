@@ -995,7 +995,8 @@ mixin DictionaryPageMixin {
     required DictionaryPopupController controller,
   }) async {
     if (entry.allLoaded || entry.isSearching || entry.result == null) return;
-    final int current = entry.result!.entries.length;
+    // BUG-1478：按词头递增（见 base_source_page 同处注释）。
+    final int current = entry.result!.headwordCount;
     final int newMax = current + mixinAppModel.maximumTerms;
     setState(() => entry.isSearching = true);
     try {

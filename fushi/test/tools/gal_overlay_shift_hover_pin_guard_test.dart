@@ -132,16 +132,24 @@ void main() {
       );
     });
 
-    test('穿透态不查词：判据写在函数里，不靠「收不到鼠标消息」', () {
-      // 轮询读的是全局光标位置，会绕过 WS_EX_TRANSPARENT 这条天然边界。
+    // BUG-1480 契约变更：穿透不再整窗吃掉查词。改成逐像素命中后「光标正压在一个
+    // 字上」本身就是合法的查词信号（背景像素才归游戏）。但仍收窄成**必须按住
+    // Shift** —— 穿透的用途是把鼠标让给游戏，纯移动就弹卡片会不停打断游玩。
+    test('穿透态悬停查词必须按住 Shift：判据写在函数里，不靠「收不到鼠标消息」', () {
+      // 轮询读的是全局光标位置，绕过任何窗口级边界，所以判据必须显式写在这里。
       final int hoverAt =
           window.indexOf('void FloatingLyricWindow::MaybeHoverLookup(');
       expect(hoverAt, greaterThan(0));
-      final String hoverBody = window.substring(hoverAt, hoverAt + 1600);
+      final String hoverBody = window.substring(hoverAt, hoverAt + 2200);
       expect(
-        hoverBody.contains('if (pass_through_) {'),
+        hoverBody.contains('pass_through_requires_shift = pass_through_'),
         isTrue,
-        reason: '穿透态「鼠标整个属于游戏」，悬停不得查词',
+        reason: '穿透态必须把「悬停查词」收窄到显式意图（Shift）',
+      );
+      expect(
+        hoverBody.contains('if (pass_through_requires_shift && !shift)'),
+        isTrue,
+        reason: '收窄必须真的生效：穿透态没按 Shift 时不得查词',
       );
       expect(
         hoverBody.contains(

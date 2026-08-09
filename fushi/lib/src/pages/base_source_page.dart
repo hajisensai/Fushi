@@ -374,7 +374,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     final DictionarySearchResult? current = entry.result;
     if (entry.allLoaded || entry.isSearching || current == null) return;
 
-    final int newMax = current.entries.length + appModel.maximumTerms;
+    // BUG-1478：按**词头**递增，不是按 glossary 行数（entries.length）——
+    // 后者是另一个单位，一个词头带十几条注释时上限会一次暴涨十几倍。
+    final int newMax = current.headwordCount + appModel.maximumTerms;
     entry.isSearching = true;
     try {
       final DictionarySearchResult result = await appModel.searchDictionary(

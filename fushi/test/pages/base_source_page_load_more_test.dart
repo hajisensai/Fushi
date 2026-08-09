@@ -97,9 +97,15 @@ class LoadMoreTestAppModel extends AppModel {
     final int cap = overrideMaximumTerms ?? maximumTerms;
     lastOverrideMaximumTerms = cap;
     final int n = cap < totalAvailable ? cap : totalAvailable;
+    // BUG-1478：假件必须自己声明「截断了没有 / 有几个词头」。
+    // 以前消费方靠 `entries.length < cap` 反推，那个反推在预算单位=词头之后
+    // 彻底错位（一个词头能带 N 条 entries），所以真值改由构造方显式给出。
+    // 本假件里一条 entry 就是一个词头，故 headwordCount == n。
     return DictionarySearchResult(
       searchTerm: searchTerm,
       entries: _buildEntries(n),
+      headwordCount: n,
+      truncated: n < totalAvailable,
     );
   }
 }
@@ -222,12 +228,20 @@ void main() {
       () {
     final base = File('lib/src/pages/base_source_page.dart').readAsStringSync();
 
-    // allLoaded is computed from the real truncation, no longer hard-coded true.
-    expect(
-        base.contains(
-            'allLoaded: dictionaryResult.entries.length < overrideMaximumTerms'),
-        isTrue,
+    // allLoaded 仍必须反映真实截断（TODO-962 的原意），但判据从「按长度反推」
+    // 升级成「读构造方给出的显式事实」（BUG-1472/BUG-1478）：预算单位改成词头之后
+    // `entries.length < cap` 跨了单位、永久错位——一个词头能带 N 条 entries。
+    expect(base.contains('allLoaded: !dictionaryResult.truncated'), isTrue,
         reason: 'allLoaded must reflect real truncation, not be hard-coded');
+    expect(
+      base.contains('entries.length < overrideMaximumTerms'),
+      isFalse,
+      reason: '不得退回按 glossary 行数反推截断',
+    );
+    // load-more 的递增单位也必须是词头，不是 entries 条数。
+    expect(
+        base.contains('current.headwordCount + appModel.maximumTerms'), isTrue,
+        reason: '按 entries.length 递增会让上限一次暴涨十几倍');
     // The popup layer receives a non-null onScrolledToBottom when not allLoaded.
     expect(
         base.contains('item.allLoaded ? null : () => loadMoreForLayer(index)'),
@@ -237,9 +251,10 @@ void main() {
     // load-more re-queries with a grown cap and refills the same layer.
     expect(base.contains('Future<void> loadMoreForLayer(int index)'), isTrue,
         reason: 'a loadMoreForLayer entry point must exist');
-    expect(
-        base.contains('current.entries.length + appModel.maximumTerms'), isTrue,
-        reason:
-            'load-more must grow the cap by maximumTerms from current size');
+    // 递增基数已在上面按词头钉过（BUG-1478）；这里只再确认**不得**退回按
+    // entries 条数递增——那是 glossary 行数，与上限不是同一个单位。
+    expect(base.contains('current.entries.length + appModel.maximumTerms'),
+        isFalse,
+        reason: 'load-more 的递增基数必须是词头数，不是 glossary 行数');
   });
 }

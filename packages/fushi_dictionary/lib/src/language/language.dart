@@ -478,6 +478,7 @@ DictionarySearchResult buildResultFromLookup({
     entries: entries,
     bestLength: bestLength,
     truncated: truncated,
+    headwordCount: headwords.length,
   );
 }
 
