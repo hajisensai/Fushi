@@ -14,6 +14,7 @@ import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi/src/utils/misc/card_screenshot_downsampler.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 typedef GalHookGifCapture = Future<GalWindowAnimatedCapture?> Function({
@@ -116,6 +117,34 @@ class GalHookMiningCoordinator {
   static Future<Directory> _defaultCreateTempDirectory() =>
       Directory.systemTemp.createTemp('hibiki-gal-card-job-');
 
+  /// 单帧截图落卡前统一降采样。
+  ///
+  /// BUG-1473：这里以前把 `still.pngBytes` **原样**送进 Anki——1080p/4K 的无压缩
+  /// PNG 通常 1.5~4 MB，而 `compression` 参数明明已经从调用方传进来了却没被用上。
+  /// 视频侧同一动作走的就是 [downsampleCardScreenshotAsync]（BUG-933 把 decode/
+  /// resize/encode 卸到后台 isolate，避免纯 Dart CPU 重活阻塞 UI 线程）。
+  /// 语义与视频侧一致：小图/解不开时原样返回，绝不返回空。
+  /// 返回 (字节, 文件名)。**文件名按实际产出的字节定**，不按意图定：
+  /// [downsampleCardScreenshotAsync] 在「图本来就小 / 解不开」时**原样返回入参 PNG**，
+  /// 此时若硬拼 `.jpg`，Anki 按扩展名判 MIME 就会得到「.jpg 里装 PNG」→ 图不显示。
+  /// 这与本文件动图那处「文件名一律取实际产出格式」是同一条规矩。
+  static Future<({Uint8List? bytes, String name})> _downsampleStill(
+    Uint8List? pngBytes,
+    MiningMediaCompression compression,
+  ) async {
+    if (pngBytes == null || pngBytes.isEmpty) {
+      return (bytes: pngBytes, name: 'external_window.png');
+    }
+    final Uint8List out = await downsampleCardScreenshotAsync(
+      pngBytes,
+      maxLongEdge: compression.screenshotMaxLongEdge,
+      quality: compression.screenshotQuality,
+    );
+    final bool isJpeg =
+        out.length >= 3 && out[0] == 0xFF && out[1] == 0xD8 && out[2] == 0xFF;
+    return (bytes: out, name: 'external_window.${isJpeg ? 'jpg' : 'png'}');
+  }
+
   Future<GalHookMiningResult> mineLine({
     required String lineId,
     required Map<String, String> fields,
@@ -210,6 +239,29 @@ class GalHookMiningCoordinator {
       return still;
     }
 
+    // BUG-1473 — 语音抓取与下面的封面阶梯**无任何数据依赖**，故在此先启动、
+    // 拿到封面后才 await：总耗时从「封面 + 音频」变成「max(封面, 音频)」。
+    //
+    // 视频侧 BUG-1205 已经这么做了，但 gal 走的是 providedCoverBytes /
+    // providedAudioBytes 分支——进引擎时两者都已经在这个协调器里串行做完了，
+    // 引擎里的并行对 gal 完全是空转。真正该并行的位置在这里。
+    //
+    // catchError 把异常暂存、末尾重抛：不这样的话封面阶梯若先抛，这个在途 Future
+    // 就成了 unhandled async error（Flutter 下直接上报成崩溃）。暂存 + 重抛保持
+    // 与串行版逐字一致的抛出语义。
+    final String audioExtension = immersionMiningAudioExtension();
+    Object? audioError;
+    StackTrace? audioStack;
+    final Future<Uint8List?> audioFuture = _captureAudio(
+      lineId: entry.id,
+      sentence: entry.text,
+      outputExtension: audioExtension,
+    ).catchError((Object e, StackTrace st) {
+      audioError = e;
+      audioStack = st;
+      return null;
+    });
+
     Uint8List? coverBytes;
     String coverName = 'external_window.gif';
     bool degradedToStill = false;
@@ -223,8 +275,10 @@ class GalHookMiningCoordinator {
           failureReason: still.error ?? 'game window capture failed',
         );
       }
-      coverBytes = still.pngBytes;
-      coverName = 'external_window.png';
+      final ({Uint8List? bytes, String name}) shrunk =
+          await _downsampleStill(still.pngBytes, compression);
+      coverBytes = shrunk.bytes;
+      coverName = shrunk.name;
     } else {
       final GalWindowAnimatedCapture? animated = await _captureGif(
         hwnd: window.hwnd,
@@ -243,18 +297,18 @@ class GalHookMiningCoordinator {
             failureReason: still.error ?? 'game window capture failed',
           );
         }
-        coverBytes = still.pngBytes;
-        coverName = 'external_window.png';
+        final ({Uint8List? bytes, String name}) shrunk =
+            await _downsampleStill(still.pngBytes, compression);
+        coverBytes = shrunk.bytes;
+        coverName = shrunk.name;
         degradedToStill = true;
       }
     }
 
-    final String audioExtension = immersionMiningAudioExtension();
-    final Uint8List? audioBytes = await _captureAudio(
-      lineId: entry.id,
-      sentence: entry.text,
-      outputExtension: audioExtension,
-    );
+    final Uint8List? audioBytes = await audioFuture;
+    if (audioError != null) {
+      Error.throwWithStackTrace(audioError!, audioStack ?? StackTrace.current);
+    }
     final bool sentenceAudioMissing = audioBytes == null || audioBytes.isEmpty;
     // 只有最严格的 resourceOnly 才因为「没抓到音频」拒绝制卡。cleanOnly 的立场是
     // 「这句本来就没配音很正常」——旁白/心理描写句照样成卡，只是不带音频；把它也
