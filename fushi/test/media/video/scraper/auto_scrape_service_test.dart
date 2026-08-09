@@ -96,11 +96,13 @@ void main() {
   Future<VideoBookRow> seed({
     required String bookUid,
     required String videoPath,
+    int? sourceId,
   }) async {
     await db.upsertVideoBook(VideoBooksCompanion(
       bookUid: Value(bookUid),
       title: Value(bookUid),
       videoPath: Value(videoPath),
+      sourceId: Value<int?>(sourceId),
     ));
     return (await repo.getByBookUid(bookUid))!;
   }
@@ -197,6 +199,28 @@ void main() {
     expect(searchCalls, 0);
     expect(subjectCalls, 0);
     expect(await repo.scrapeMetadata('video/remote'), isNull);
+  });
+
+  test('已登记来源的条目不走旧自动链，来源扫描保持离线', () async {
+    final int sourceId = await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'Anime',
+        mediaKind: 'video',
+        rootPath: 'anime',
+        createdAt: 1,
+      ),
+    );
+    final VideoBookRow sourced = await seed(
+      bookUid: 'video/source-managed',
+      videoPath: pathFor(2),
+      sourceId: sourceId,
+    );
+
+    await buildAuto().sweep(<VideoBookRow>[sourced]);
+
+    expect(searchCalls, 0, reason: '来源级自动刮削默认关闭时，库页刷新不得偷偷出网');
+    expect(subjectCalls, 0);
+    expect(await repo.scrapeMetadata(sourced.bookUid), isNull);
   });
 
   test('已有资料的书不重刮（DB 里已有行 → 直接跳过，零请求）', () async {

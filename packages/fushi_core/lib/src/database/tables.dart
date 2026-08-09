@@ -1404,6 +1404,469 @@ class MediaImages extends Table {
       ];
 }
 
+// ── video_metadata_works（v77：视频规范作品资料）─────────────────────
+// MoviePilot 风格来源刮削的规范宿主。一行是一部作品，归属本地合集（电视剧）或
+// 独立视频（电影）二选一；旧 CollectionScrapeMeta / VideoScrapeMeta 继续作为兼容
+// 投影，避免详情页一次性迁移。整组表均是可重建、本机路径相关缓存，不进入 live-sync。
+@DataClassName('VideoMetadataWorkRow')
+class VideoMetadataWorks extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// 电视剧作品通常绑定合集；与 [bookUid] 恰好一个非空。
+  IntColumn get collectionId => integer()
+      .nullable()
+      .references(MediaCollections, #id, onDelete: KeyAction.cascade)();
+
+  /// 独立电影通常绑定视频；与 [collectionId] 恰好一个非空。
+  TextColumn get bookUid => text()
+      .nullable()
+      .references(VideoBooks, #bookUid, onDelete: KeyAction.cascade)();
+
+  /// `movie` | `tv`。值域由视频刮削域枚举维护，DB 保持前向兼容。
+  TextColumn get mediaType => text()();
+  TextColumn get title => text()();
+  TextColumn get originalTitle => text().nullable()();
+  TextColumn get overview => text().nullable()();
+  TextColumn get tagline => text().nullable()();
+  TextColumn get premiereDate => text().nullable()();
+  TextColumn get endDate => text().nullable()();
+  IntColumn get year => integer().nullable()();
+  RealColumn get rating => real().nullable()();
+  IntColumn get ratingCount => integer().nullable()();
+  IntColumn get runtimeMinutes => integer().nullable()();
+  TextColumn get contentRating => text().nullable()();
+  TextColumn get status => text().nullable()();
+  TextColumn get originalLanguage => text().nullable()();
+  TextColumn get homepage => text().nullable()();
+
+  /// TMDB 电视剧分组规则；NULL = 使用源默认季集编排。
+  TextColumn get episodeGroupId => text().nullable()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  List<String> get customConstraints => <String>[
+        'CHECK ((collection_id IS NULL) != (book_uid IS NULL))',
+      ];
+
+  @override
+  List<Set<Column>> get uniqueKeys => <Set<Column>>[
+        <Column>{collectionId},
+        <Column>{bookUid},
+      ];
+}
+
+// ── video_metadata_seasons ──────────────────────────────────────────
+@DataClassName('VideoMetadataSeasonRow')
+class VideoMetadataSeasons extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get workId => integer()
+      .references(VideoMetadataWorks, #id, onDelete: KeyAction.cascade)();
+  IntColumn get seasonNumber => integer()();
+  TextColumn get title => text().nullable()();
+  TextColumn get overview => text().nullable()();
+  TextColumn get premiereDate => text().nullable()();
+  TextColumn get endDate => text().nullable()();
+  IntColumn get year => integer().nullable()();
+  IntColumn get episodeCount => integer().nullable()();
+  RealColumn get rating => real().nullable()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  List<Set<Column>> get uniqueKeys => <Set<Column>>[
+        <Column>{workId, seasonNumber},
+      ];
+}
+
+// ── video_metadata_episodes ─────────────────────────────────────────
+@DataClassName('VideoMetadataEpisodeRow')
+class VideoMetadataEpisodes extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get seasonId => integer()
+      .references(VideoMetadataSeasons, #id, onDelete: KeyAction.cascade)();
+
+  /// 可选的本地分集绑定。删视频只解绑，源侧季集骨架继续保留供重链。
+  TextColumn get bookUid => text()
+      .nullable()
+      .unique()
+      .references(VideoBooks, #bookUid, onDelete: KeyAction.setNull)();
+  IntColumn get episodeNumber => integer()();
+  IntColumn get absoluteNumber => integer().nullable()();
+  TextColumn get title => text().nullable()();
+  TextColumn get overview => text().nullable()();
+  TextColumn get airDate => text().nullable()();
+  IntColumn get year => integer().nullable()();
+  RealColumn get rating => real().nullable()();
+  IntColumn get ratingCount => integer().nullable()();
+  IntColumn get runtimeMinutes => integer().nullable()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  List<Set<Column>> get uniqueKeys => <Set<Column>>[
+        <Column>{seasonId, episodeNumber},
+      ];
+}
+
+// ── video_metadata_people / characters ──────────────────────────────
+// TEXT 主键由抓取层生成（首个可用 provider + 外部 id；无 id 时使用规范化内容 hash），
+// 让一次事务可在插入 credit 前确定引用，并允许多个 provider identity 汇聚到同一人。
+@DataClassName('VideoMetadataPersonRow')
+class VideoMetadataPeople extends Table {
+  TextColumn get personKey => text()();
+  TextColumn get name => text()();
+  TextColumn get originalName => text().nullable()();
+  TextColumn get biography => text().nullable()();
+  TextColumn get birthday => text().nullable()();
+  TextColumn get deathday => text().nullable()();
+  IntColumn get gender => integer().nullable()();
+  TextColumn get placeOfBirth => text().nullable()();
+  TextColumn get profileUrl => text().nullable()();
+  TextColumn get profilePath => text().nullable()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{personKey};
+}
+
+@DataClassName('VideoMetadataCharacterRow')
+class VideoMetadataCharacters extends Table {
+  TextColumn get characterKey => text()();
+  TextColumn get name => text()();
+  TextColumn get description => text().nullable()();
+  TextColumn get imageUrl => text().nullable()();
+  TextColumn get imagePath => text().nullable()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{characterKey};
+}
+
+// ── video_metadata_provider_identities / raw_snapshots ───────────────
+@DataClassName('VideoMetadataProviderIdentityRow')
+class VideoMetadataProviderIdentities extends Table {
+  /// 抓取层稳定键：`<owner-kind>:<owner-key>:<provider>`。
+  TextColumn get identityKey => text()();
+  IntColumn get workId => integer()
+      .nullable()
+      .references(VideoMetadataWorks, #id, onDelete: KeyAction.cascade)();
+  IntColumn get seasonId => integer()
+      .nullable()
+      .references(VideoMetadataSeasons, #id, onDelete: KeyAction.cascade)();
+  IntColumn get episodeId => integer()
+      .nullable()
+      .references(VideoMetadataEpisodes, #id, onDelete: KeyAction.cascade)();
+  TextColumn get personKey =>
+      text().nullable().references(VideoMetadataPeople, #personKey,
+          onDelete: KeyAction.cascade)();
+  TextColumn get characterKey =>
+      text().nullable().references(VideoMetadataCharacters, #characterKey,
+          onDelete: KeyAction.cascade)();
+  TextColumn get provider => text()();
+  TextColumn get externalId => text()();
+  TextColumn get externalUrl => text().nullable()();
+  BoolColumn get isPrimary => boolean().withDefault(const Constant(false))();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{identityKey};
+
+  @override
+  List<String> get customConstraints => <String>[
+        'CHECK ((work_id IS NOT NULL) + (season_id IS NOT NULL) + '
+            '(episode_id IS NOT NULL) + (person_key IS NOT NULL) + '
+            '(character_key IS NOT NULL) = 1)',
+      ];
+
+  @override
+  List<Set<Column>> get uniqueKeys => <Set<Column>>[
+        <Column>{workId, provider},
+        <Column>{seasonId, provider},
+        <Column>{episodeId, provider},
+        <Column>{personKey, provider},
+        <Column>{characterKey, provider},
+      ];
+}
+
+@DataClassName('VideoMetadataRawSnapshotRow')
+class VideoMetadataRawSnapshots extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get identityKey =>
+      text().references(VideoMetadataProviderIdentities, #identityKey,
+          onDelete: KeyAction.cascade)();
+
+  /// `details` / `credits` / `images` / `season` / `episode` 等响应类别。
+  TextColumn get snapshotKind => text()();
+  TextColumn get locale => text().nullable()();
+  TextColumn get etag => text().nullable()();
+  TextColumn get rawJson => text()();
+  IntColumn get fetchedAt => integer()();
+  IntColumn get expiresAt => integer().nullable()();
+
+  @override
+  List<Set<Column>> get uniqueKeys => <Set<Column>>[
+        <Column>{identityKey, snapshotKind},
+      ];
+}
+
+// ── video_metadata_terms / work_terms ───────────────────────────────
+@DataClassName('VideoMetadataTermRow')
+class VideoMetadataTerms extends Table {
+  /// 抓取层稳定键：`<kind>:<normalized-name>`。
+  TextColumn get termKey => text()();
+  TextColumn get kind => text()(); // genre / studio / country / keyword
+  TextColumn get name => text()();
+  TextColumn get normalizedName => text()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{termKey};
+
+  @override
+  List<Set<Column>> get uniqueKeys => <Set<Column>>[
+        <Column>{kind, normalizedName},
+      ];
+}
+
+@DataClassName('VideoMetadataWorkTermRow')
+class VideoMetadataWorkTerms extends Table {
+  IntColumn get workId => integer()
+      .references(VideoMetadataWorks, #id, onDelete: KeyAction.cascade)();
+  TextColumn get termKey => text()
+      .references(VideoMetadataTerms, #termKey, onDelete: KeyAction.cascade)();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => <Column>{workId, termKey};
+}
+
+// ── video_metadata_credits ──────────────────────────────────────────
+@DataClassName('VideoMetadataCreditRow')
+class VideoMetadataCredits extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get workId => integer()
+      .nullable()
+      .references(VideoMetadataWorks, #id, onDelete: KeyAction.cascade)();
+  IntColumn get seasonId => integer()
+      .nullable()
+      .references(VideoMetadataSeasons, #id, onDelete: KeyAction.cascade)();
+  IntColumn get episodeId => integer()
+      .nullable()
+      .references(VideoMetadataEpisodes, #id, onDelete: KeyAction.cascade)();
+  TextColumn get personKey => text().references(VideoMetadataPeople, #personKey,
+      onDelete: KeyAction.cascade)();
+  TextColumn get characterKey =>
+      text().nullable().references(VideoMetadataCharacters, #characterKey,
+          onDelete: KeyAction.setNull)();
+
+  /// director / writer / actor / guest / voice_actor / producer 等。
+  TextColumn get creditKind => text()();
+  TextColumn get roleName => text().withDefault(const Constant(''))();
+  TextColumn get department => text().nullable()();
+  TextColumn get job => text().nullable()();
+  TextColumn get language => text().nullable()();
+  TextColumn get providerCreditId => text().nullable()();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+
+  @override
+  List<String> get customConstraints => <String>[
+        'CHECK ((work_id IS NOT NULL) + (season_id IS NOT NULL) + '
+            '(episode_id IS NOT NULL) = 1)',
+      ];
+
+  @override
+  List<Set<Column>> get uniqueKeys => <Set<Column>>[
+        <Column>{workId, personKey, creditKind, roleName},
+        <Column>{seasonId, personKey, creditKind, roleName},
+        <Column>{episodeId, personKey, creditKind, roleName},
+      ];
+}
+
+// ── video_metadata_images ───────────────────────────────────────────
+// 保存远端候选与已落地图片。现有 MediaImages / coverPath 仍是 UI 兼容投影。
+@DataClassName('VideoMetadataImageRow')
+class VideoMetadataImages extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get workId => integer()
+      .nullable()
+      .references(VideoMetadataWorks, #id, onDelete: KeyAction.cascade)();
+  IntColumn get seasonId => integer()
+      .nullable()
+      .references(VideoMetadataSeasons, #id, onDelete: KeyAction.cascade)();
+  IntColumn get episodeId => integer()
+      .nullable()
+      .references(VideoMetadataEpisodes, #id, onDelete: KeyAction.cascade)();
+  TextColumn get personKey =>
+      text().nullable().references(VideoMetadataPeople, #personKey,
+          onDelete: KeyAction.cascade)();
+  TextColumn get characterKey =>
+      text().nullable().references(VideoMetadataCharacters, #characterKey,
+          onDelete: KeyAction.cascade)();
+  TextColumn get provider => text()();
+
+  /// poster / backdrop / logo / disc / banner / thumb / landscape / clearart。
+  TextColumn get kind => text()();
+  IntColumn get position => integer().withDefault(const Constant(0))();
+  TextColumn get language => text().nullable()();
+  TextColumn get remoteUrl => text()();
+  TextColumn get localPath => text().nullable()();
+  IntColumn get width => integer().nullable()();
+  IntColumn get height => integer().nullable()();
+  RealColumn get rating => real().nullable()();
+  IntColumn get voteCount => integer().nullable()();
+  TextColumn get sha256 => text().nullable()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  List<String> get customConstraints => <String>[
+        'CHECK ((work_id IS NOT NULL) + (season_id IS NOT NULL) + '
+            '(episode_id IS NOT NULL) + (person_key IS NOT NULL) + '
+            '(character_key IS NOT NULL) = 1)',
+      ];
+
+  @override
+  List<Set<Column>> get uniqueKeys => <Set<Column>>[
+        <Column>{workId, kind, position},
+        <Column>{seasonId, kind, position},
+        <Column>{episodeId, kind, position},
+        <Column>{personKey, kind, position},
+        <Column>{characterKey, kind, position},
+      ];
+}
+
+// ── video_metadata_extras（v77：作品预告片 / 花絮）────────────────────
+// 在线附件不创建 VideoBook；本地附件复用已经入库的 VideoBook 并以 bookUid 关联。
+// extraKey 由上层生成稳定身份：`local:<bookUid>` 或 `<provider>:<video-id>`。
+@DataClassName('VideoMetadataExtraRow')
+class VideoMetadataExtras extends Table {
+  TextColumn get extraKey => text()();
+  IntColumn get workId => integer()
+      .references(VideoMetadataWorks, #id, onDelete: KeyAction.cascade)();
+  TextColumn get bookUid => text()
+      .nullable()
+      .unique()
+      .references(VideoBooks, #bookUid, onDelete: KeyAction.setNull)();
+
+  /// trailer / teaser / clip / featurette / interview / behind_the_scenes /
+  /// deleted_scene / short / scene / sample / extra。
+  TextColumn get kind => text()();
+  TextColumn get sourceKind => text()(); // local / online
+  TextColumn get title => text()();
+  TextColumn get provider => text().nullable()();
+  TextColumn get providerVideoId => text().nullable()();
+  TextColumn get site => text().nullable()();
+  TextColumn get remoteUrl => text().nullable()();
+  TextColumn get thumbnailUrl => text().nullable()();
+  TextColumn get thumbnailPath => text().nullable()();
+  IntColumn get durationMs => integer().nullable()();
+  BoolColumn get official => boolean().withDefault(const Constant(false))();
+  TextColumn get language => text().nullable()();
+  TextColumn get publishedAt => text().nullable()();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{extraKey};
+
+  @override
+  List<String> get customConstraints => <String>[
+        "CHECK (source_kind IN ('local', 'online'))",
+        "CHECK ((source_kind = 'local' AND book_uid IS NOT NULL) OR "
+            "(source_kind = 'online' AND remote_url IS NOT NULL))",
+      ];
+}
+
+// ── video_source_scrape_settings / runs ─────────────────────────────
+@DataClassName('VideoSourceScrapeSettingRow')
+class VideoSourceScrapeSettings extends Table {
+  IntColumn get sourceId =>
+      integer().references(MediaSources, #id, onDelete: KeyAction.cascade)();
+
+  BoolColumn get enabled => boolean().withDefault(const Constant(true))();
+
+  /// NULL = 继承全局默认；非空 = tmdb / douban / bangumi / anilist。
+  TextColumn get providerOverride => text().nullable()();
+  BoolColumn get autoAfterScan =>
+      boolean().withDefault(const Constant(false))();
+  BoolColumn get writeNfo => boolean().withDefault(const Constant(true))();
+  BoolColumn get writeImages => boolean().withDefault(const Constant(true))();
+  BoolColumn get fanartEnabled => boolean().withDefault(const Constant(true))();
+  TextColumn get nfoPolicy =>
+      text().withDefault(const Constant('missingOnly'))();
+  TextColumn get imagePolicy =>
+      text().withDefault(const Constant('missingOnly'))();
+  BoolColumn get allowExternalOverwrite =>
+      boolean().withDefault(const Constant(false))();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{sourceId};
+}
+
+@DataClassName('VideoSourceScrapeRunRow')
+class VideoSourceScrapeRuns extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// NULL 表示「全部来源」批次，或来源行删除后保留的审计摘要。
+  IntColumn get sourceId => integer()
+      .nullable()
+      .references(MediaSources, #id, onDelete: KeyAction.setNull)();
+  TextColumn get scope => text()(); // source / all
+  TextColumn get status => text()(); // queued / running / completed / ...
+  TextColumn get provider => text().nullable()();
+  TextColumn get phase => text().nullable()();
+  IntColumn get totalWorks => integer().withDefault(const Constant(0))();
+  IntColumn get processedWorks => integer().withDefault(const Constant(0))();
+  IntColumn get succeededWorks => integer().withDefault(const Constant(0))();
+  IntColumn get failedWorks => integer().withDefault(const Constant(0))();
+  IntColumn get pendingConfirmations =>
+      integer().withDefault(const Constant(0))();
+  TextColumn get currentWorkTitle => text().nullable()();
+  TextColumn get summaryJson => text().nullable()();
+  TextColumn get lastError => text().nullable()();
+  IntColumn get startedAt => integer()();
+  IntColumn get updatedAt => integer()();
+  IntColumn get finishedAt => integer().nullable()();
+}
+
+// ── video_sidecar_artifacts ─────────────────────────────────────────
+@DataClassName('VideoSidecarArtifactRow')
+class VideoSidecarArtifacts extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// 来源移除只解除关联；媒体旁已有文件及本行 hash/所有权记录全部保留。
+  IntColumn get sourceId => integer()
+      .nullable()
+      .references(MediaSources, #id, onDelete: KeyAction.setNull)();
+  IntColumn get runId => integer()
+      .nullable()
+      .references(VideoSourceScrapeRuns, #id, onDelete: KeyAction.setNull)();
+  IntColumn get workId => integer()
+      .nullable()
+      .references(VideoMetadataWorks, #id, onDelete: KeyAction.setNull)();
+  IntColumn get seasonId => integer()
+      .nullable()
+      .references(VideoMetadataSeasons, #id, onDelete: KeyAction.setNull)();
+  IntColumn get episodeId => integer()
+      .nullable()
+      .references(VideoMetadataEpisodes, #id, onDelete: KeyAction.setNull)();
+  TextColumn get artifactKind => text()(); // nfo / poster / backdrop / ...
+
+  /// 规范绝对路径；同一个物理 sidecar 只保留一条所有权记录。
+  TextColumn get path => text().unique()();
+  TextColumn get sha256 => text()();
+  IntColumn get fileSize => integer().nullable()();
+  TextColumn get generatorVersion => text()();
+  TextColumn get writePolicy => text()();
+  IntColumn get createdAt => integer()();
+  IntColumn get updatedAt => integer()();
+
+  /// owner 被删后三个 FK 可全部 setNull，artifact 审计行仍有效；但任一时刻不能同时
+  /// 冒充多个层级的资产。
+  @override
+  List<String> get customConstraints => <String>[
+        'CHECK ((work_id IS NOT NULL) + (season_id IS NOT NULL) + '
+            '(episode_id IS NOT NULL) <= 1)',
+      ];
+}
+
 // ── galgames ────────────────────────────────────────────────────────
 /// v55（游戏库对齐 ReinaManager，见 `docs/design/galgame-library-reina-parity.md`）：
 /// galgame 游戏库的持久真相源，取代旧的偏好表单一 JSON key `galgame_library`

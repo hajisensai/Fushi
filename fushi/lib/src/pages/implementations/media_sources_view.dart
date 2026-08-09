@@ -17,6 +17,7 @@
 // 导入要解包，远端流式扫描无意义）。WebDAV 的 rootPath 即完整集合 URL（scheme/host/
 // 端口/路径都在里面），无需单独存 host/port（见 NetworkSourceFileSystem）。
 
+import 'dart:async' show unawaited;
 import 'dart:io' show Directory, File, Platform, Process;
 
 import 'package:drift/drift.dart' show Value;
@@ -27,6 +28,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/scraper/video_scrape_diagnostic_exporter.dart';
 import 'package:fushi/src/sync/ftp_sync_backend.dart';
 import 'package:fushi/src/sync/sftp_sync_backend.dart';
@@ -51,6 +53,10 @@ class MediaSourcesView extends ConsumerStatefulWidget {
     required this.mediaKind,
     super.key,
     this.scrollable = false,
+    this.onScrapeSource,
+    this.onVideoScanCompleted,
+    this.scrapeTaskController,
+    this.onLibraryChanged,
   });
 
   /// 'video' | 'book' | 'manga' —— 决定统计文案与 mediaKind 过滤。
@@ -60,6 +66,21 @@ class MediaSourcesView extends ConsumerStatefulWidget {
   /// false = 返回裸内容（对话框语境，由外层 ConstrainedBox + SingleChildScrollView
   /// 限高并滚动，保持 BUG-445 / TODO-1389 的既有修法不变）。
   final bool scrollable;
+
+  /// 单个视频来源的刮削动作。书籍/漫画行永远不渲染该入口。
+  final Future<void> Function(SourceLibraryRow source)? onScrapeSource;
+
+  /// 视频扫描完成摘要。上层在此根据来源设置决定是否自动刮削。
+  final Future<void> Function(
+    SourceLibraryRow source,
+    SourceScanSummary summary,
+  )? onVideoScanCompleted;
+
+  /// 与页面生命周期解耦的刮削任务控制器，仅用于忙状态和进度。
+  final VideoSourceScrapeTaskController? scrapeTaskController;
+
+  /// 一次来源扫描收尾后的媒体库变化通知（无论扫描成功、部分成功或记录错误）。
+  final VoidCallback? onLibraryChanged;
 
   @override
   ConsumerState<MediaSourcesView> createState() => MediaSourcesViewState();
@@ -82,8 +103,17 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 与列表一起加载，避免逐行 FutureBuilder 抖动。来源不在 map 里时回退 0。
   final Map<int, int> _cumulativeCount = <int, int>{};
 
+  /// 每个视频来源最近一次持久化的刮削记录。
+  final Map<int, VideoSourceScrapeRunRow> _latestScrapeRuns =
+      <int, VideoSourceScrapeRunRow>{};
+
   /// 正在扫描中的来源 id 集合（行级 loading）。
   final Set<int> _scanning = <int>{};
+
+  /// 由行按钮启动、但任务控制器尚未发布首个进度的来源。
+  final Set<int> _scraping = <int>{};
+
+  VideoSourceScrapePhase _lastObservedScrapePhase = VideoSourceScrapePhase.idle;
 
   /// 正在生成诊断包的来源 id 集合（与扫描互斥，避免目录快照中途大幅变化）。
   final Set<int> _exportingDiagnostics = <int>{};
@@ -104,12 +134,34 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 网络来源仅对 'book' 开放（见文件头说明）。
   bool get _networkSupported => widget.mediaKind == 'book';
 
+  /// 页面页头与所有行级 mutation 共用的忙状态。
+  bool get isBusy =>
+      _scanning.isNotEmpty ||
+      _scraping.isNotEmpty ||
+      (widget.mediaKind == 'video' &&
+          widget.scrapeTaskController?.isBusy == true);
+
   @override
   void initState() {
     super.initState();
     _appModel = ref.read(appProvider);
     _db = _appModel.database;
+    widget.scrapeTaskController?.addListener(_onScrapeTaskChanged);
     _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant MediaSourcesView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scrapeTaskController == widget.scrapeTaskController) return;
+    oldWidget.scrapeTaskController?.removeListener(_onScrapeTaskChanged);
+    widget.scrapeTaskController?.addListener(_onScrapeTaskChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.scrapeTaskController?.removeListener(_onScrapeTaskChanged);
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -118,6 +170,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final bool interconnectEnabled =
         await SyncRepository(_db).isInterconnectEnabled();
     final Map<int, int> counts = await _loadCumulativeCounts(rows);
+    final Map<int, VideoSourceScrapeRunRow> latestRuns =
+        await _loadLatestScrapeRuns(rows);
     if (!mounted) return;
     setState(() {
       _rows = rows;
@@ -125,7 +179,55 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       _cumulativeCount
         ..clear()
         ..addAll(counts);
+      _latestScrapeRuns
+        ..clear()
+        ..addAll(latestRuns);
     });
+  }
+
+  Future<Map<int, VideoSourceScrapeRunRow>> _loadLatestScrapeRuns(
+    List<SourceLibraryRow> rows,
+  ) async {
+    if (widget.mediaKind != 'video') {
+      return const <int, VideoSourceScrapeRunRow>{};
+    }
+    final Map<int, VideoSourceScrapeRunRow> result =
+        <int, VideoSourceScrapeRunRow>{};
+    for (final SourceLibraryRow row in rows) {
+      final List<VideoSourceScrapeRunRow> runs =
+          await _db.getVideoSourceScrapeRuns(sourceId: row.id, limit: 1);
+      if (runs.isNotEmpty) result[row.id] = runs.first;
+    }
+    return result;
+  }
+
+  Future<void> _refreshLatestScrapeRun(int sourceId) async {
+    final List<VideoSourceScrapeRunRow> runs =
+        await _db.getVideoSourceScrapeRuns(sourceId: sourceId, limit: 1);
+    if (!mounted) return;
+    setState(() {
+      if (runs.isEmpty) {
+        _latestScrapeRuns.remove(sourceId);
+      } else {
+        _latestScrapeRuns[sourceId] = runs.first;
+      }
+    });
+  }
+
+  void _onScrapeTaskChanged() {
+    if (!mounted) return;
+    final VideoSourceScrapeProgress progress =
+        widget.scrapeTaskController?.progress ??
+            const VideoSourceScrapeProgress();
+    final VideoSourceScrapePhase previous = _lastObservedScrapePhase;
+    _lastObservedScrapePhase = progress.phase;
+    setState(() {});
+    if (previous == progress.phase || progress.isRunning) return;
+    final Iterable<int> sourceIds = progress.report?.sourceIds ??
+        (progress.sourceId == null ? const <int>[] : <int>[progress.sourceId!]);
+    for (final int sourceId in sourceIds) {
+      unawaited(_refreshLatestScrapeRun(sourceId));
+    }
   }
 
   /// 一次性查出每个来源累计拥有的媒体条目数（按 mediaKind 选表）。
@@ -262,9 +364,11 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final TextStyle? subStyle =
         theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant);
     final bool isLocal = row.transport == 'local';
+    final bool isVideo = widget.mediaKind == 'video';
     final bool scanning = _scanning.contains(row.id);
+    final bool scraping = _isScrapingSource(row.id);
     final bool exporting = _exportingDiagnostics.contains(row.id);
-    final bool busy = scanning || exporting;
+    final bool busy = scanning || scraping || exporting || isBusy;
 
     return Padding(
       padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
@@ -305,12 +409,22 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                 icon: Icons.refresh,
                 size: 18,
                 tooltip: t.media_source_rescan,
-                busy: busy,
+                busy: scanning,
                 enabled: !busy,
                 padding: EdgeInsets.all(tokens.spacing.gap / 2),
                 onTap: () => _rescan(row),
               ),
-              if (widget.mediaKind == 'video' && isLocal)
+              if (isVideo && widget.onScrapeSource != null)
+                FushiIconButton(
+                  icon: Icons.manage_search_outlined,
+                  size: 18,
+                  tooltip: t.video_source_scrape_action,
+                  busy: scraping,
+                  enabled: !busy,
+                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                  onTap: () => _scrapeSource(row),
+                ),
+              if (isVideo && isLocal)
                 FushiIconButton(
                   key: ValueKey<String>(
                     'video_scrape_diagnostic_export_${row.id}',
@@ -322,6 +436,15 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                   enabled: !busy,
                   padding: EdgeInsets.all(tokens.spacing.gap / 2),
                   onTap: () => _exportVideoScrapeDiagnostics(row),
+                ),
+              if (isVideo)
+                FushiIconButton(
+                  icon: Icons.tune,
+                  size: 18,
+                  tooltip: t.video_source_scrape_settings,
+                  enabled: !busy,
+                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                  onTap: () => _openVideoScrapeSettings(row),
                 ),
               FushiIconButton(
                 icon: Icons.folder_open,
@@ -367,10 +490,42 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     TextStyle? subStyle,
     SourceLibraryRow row,
   ) {
+    final VideoSourceScrapeProgress? active = _scrapeProgressFor(row.id);
+    if (active != null) {
+      final String phase = _scrapePhaseLabel(active.phase);
+      final String progress = t.video_source_scrape_progress(
+        phase: phase,
+        current: active.current,
+        total: active.total,
+      );
+      final String? title = active.currentWorkTitle;
+      return Text(
+        title == null || title.isEmpty ? progress : '$progress  ·  $title',
+        style: subStyle,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
     if (row.lastScanError != null) {
       return Text(
         t.media_source_scan_error,
         style: subStyle?.copyWith(color: cs.error),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+    final VideoSourceScrapeRunRow? latest = _latestScrapeRuns[row.id];
+    if (widget.mediaKind == 'video' && latest != null) {
+      return Text(
+        t.video_source_scrape_last_summary(
+          status: _scrapeRunStatusLabel(latest.status),
+          succeeded: latest.succeededWorks,
+          pending: latest.pendingConfirmations,
+          failed: latest.failedWorks,
+        ),
+        style: subStyle?.copyWith(
+          color: latest.failedWorks > 0 ? cs.error : null,
+        ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       );
@@ -398,6 +553,41 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 本地化无关的简洁时间格式（YYYY-MM-DD HH:MM）；不引 intl，跨 17 语言一致。
   String _formatTime(DateTime time) => FushiTimeFormat.dateHourMinute(time);
 
+  bool _isScrapingSource(int sourceId) {
+    if (_scraping.contains(sourceId)) return true;
+    final VideoSourceScrapeProgress? progress =
+        widget.scrapeTaskController?.progress;
+    return progress != null &&
+        progress.isRunning &&
+        progress.sourceId == sourceId;
+  }
+
+  VideoSourceScrapeProgress? _scrapeProgressFor(int sourceId) {
+    final VideoSourceScrapeProgress? progress =
+        widget.scrapeTaskController?.progress;
+    if (progress == null || !progress.isRunning) return null;
+    return progress.sourceId == sourceId ? progress : null;
+  }
+
+  String _scrapePhaseLabel(VideoSourceScrapePhase phase) => switch (phase) {
+        VideoSourceScrapePhase.planning => t.video_source_scrape_phase_planning,
+        VideoSourceScrapePhase.recognizing =>
+          t.video_source_scrape_phase_recognizing,
+        VideoSourceScrapePhase.fetching => t.video_source_scrape_phase_fetching,
+        VideoSourceScrapePhase.applying => t.video_source_scrape_phase_applying,
+        VideoSourceScrapePhase.writingSidecars =>
+          t.video_source_scrape_phase_writing_sidecars,
+        _ => t.video_source_scrape_action,
+      };
+
+  String _scrapeRunStatusLabel(String status) => switch (status) {
+        'completed' => t.download_task_status_completed,
+        'cancelled' => t.download_status_cancelled,
+        'interrupted' => t.video_source_scrape_status_interrupted,
+        'failed' => t.download_task_status_error,
+        _ => status,
+      };
+
   /// 拖拽重排后逐行回写 sortOrder（与 DAO orderBy(sortOrder, id) 对齐）。
   Future<void> _persistOrder() async {
     final List<SourceLibraryRow> rows = _rows ?? const <SourceLibraryRow>[];
@@ -421,6 +611,13 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   ///
   /// 公开给外层的唯一动作入口（对话框页脚 / 页面页头按钮都调它）。
   Future<void> addSource() async {
+    if (isBusy) return;
+    // 视频来源只有本地文件夹这一种合法入口，直接选择并立即登记/扫描，避免再弹一层
+    // 只有一个选项的对话框。书籍仍保留本地/网络选择，漫画 UX 保持不变。
+    if (widget.mediaKind == 'video') {
+      await _addLocalFolder();
+      return;
+    }
     final _AddSourceChoice? choice = await showAppDialog<_AddSourceChoice>(
       context: context,
       builder: (BuildContext ctx) => SimpleDialog(
@@ -572,26 +769,95 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 重新扫描一个来源：行级 loading → scanner.scan（内部吞异常写 lastScanError）→
   /// 重读该行刷新统计/时间/错误。
   Future<void> _rescan(SourceLibraryRow row) async {
-    if (_scanning.contains(row.id)) return;
+    if (isBusy) return;
+    final VoidCallback? onLibraryChanged = widget.onLibraryChanged;
+    final Future<void> Function(SourceLibraryRow, SourceScanSummary)?
+        onVideoScanCompleted = widget.onVideoScanCompleted;
+    SourceScanSummary? summary;
     setState(() => _scanning.add(row.id));
     try {
-      await SourceLibraryScanner(_db).scan(row);
+      Future<SourceScanSummary> scan() => SourceLibraryScanner(_db).scan(row);
+      final VideoSourceScrapeTaskController? controller =
+          widget.mediaKind == 'video' ? widget.scrapeTaskController : null;
+      summary = controller == null
+          ? await scan()
+          : await controller.runSourceScan(row.id, scan);
     } finally {
-      final SourceLibraryRow? updated = await _db.getMediaSourceById(row.id);
-      if (mounted) {
-        setState(() {
-          _scanning.remove(row.id);
-          final List<SourceLibraryRow>? rows = _rows;
-          if (rows != null && updated != null) {
-            final int idx =
-                rows.indexWhere((SourceLibraryRow r) => r.id == row.id);
-            if (idx >= 0) rows[idx] = updated;
-          }
-        });
-        // 扫描可能新增条目，刷新累计计数（TODO-1036）。
-        await _refreshCount(row.id);
+      try {
+        final SourceLibraryRow? updated = await _db.getMediaSourceById(row.id);
+        if (row.mediaKind == 'video' &&
+            summary != null &&
+            onVideoScanCompleted != null) {
+          // 回调属于 HomePage，页面在扫描期间被切走也要继续执行。
+          // 保持 _scanning 到回调结束，确保同来源扫描与自动刮削不会重入。
+          await onVideoScanCompleted(updated ?? row, summary);
+        }
+        if (mounted) {
+          setState(() {
+            _scanning.remove(row.id);
+            final List<SourceLibraryRow>? rows = _rows;
+            if (rows != null && updated != null) {
+              final int idx =
+                  rows.indexWhere((SourceLibraryRow r) => r.id == row.id);
+              if (idx >= 0) rows[idx] = updated;
+            }
+          });
+          // 扫描可能新增条目，刷新累计计数（TODO-1036）。
+          await _refreshCount(row.id);
+        }
+      } finally {
+        onLibraryChanged?.call();
       }
     }
+  }
+
+  Future<void> _scrapeSource(SourceLibraryRow row) async {
+    final Future<void> Function(SourceLibraryRow source)? scrape =
+        widget.onScrapeSource;
+    if (scrape == null || isBusy) {
+      return;
+    }
+    final VoidCallback? onLibraryChanged = widget.onLibraryChanged;
+    setState(() => _scraping.add(row.id));
+    try {
+      await scrape(row);
+    } finally {
+      await _refreshLatestScrapeRun(row.id);
+      if (mounted) setState(() => _scraping.remove(row.id));
+      onLibraryChanged?.call();
+    }
+  }
+
+  Future<void> _openVideoScrapeSettings(SourceLibraryRow row) async {
+    if (widget.mediaKind != 'video' || isBusy) {
+      return;
+    }
+    final VideoSourceScrapeSettingRow? existing =
+        await _db.getVideoSourceScrapeSettings(row.id);
+    if (!mounted) return;
+    final _VideoSourceScrapeSettingsDraft? draft =
+        await showAppDialog<_VideoSourceScrapeSettingsDraft>(
+      context: context,
+      builder: (BuildContext context) => _VideoSourceScrapeSettingsDialog(
+        initial: _VideoSourceScrapeSettingsDraft.fromRow(existing),
+      ),
+    );
+    if (draft == null) return;
+    await _db.upsertVideoSourceScrapeSettings(
+      VideoSourceScrapeSettingsCompanion.insert(
+        sourceId: Value<int>(row.id),
+        enabled: Value<bool>(existing?.enabled ?? true),
+        providerOverride: Value<String?>(draft.providerOverride),
+        autoAfterScan: Value<bool>(draft.autoAfterScan),
+        writeNfo: Value<bool>(draft.writeNfo),
+        writeImages: Value<bool>(draft.writeImages),
+        fanartEnabled: Value<bool>(draft.fanartEnabled),
+        nfoPolicy: Value<String>(draft.nfoPolicy),
+        imagePolicy: Value<String>(draft.imagePolicy),
+        allowExternalOverwrite: Value<bool>(draft.allowExternalOverwrite),
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
   }
 
   /// 打开来源根目录（仅 Windows 本地来源，复用仓库唯一现成的 explorer 调用）。
@@ -737,6 +1003,214 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     await SourceLibraryCredentialStore(_db).deleteSecret(row.id);
     await _load();
   }
+}
+
+class _VideoSourceScrapeSettingsDraft {
+  const _VideoSourceScrapeSettingsDraft({
+    required this.providerOverride,
+    required this.autoAfterScan,
+    required this.writeNfo,
+    required this.writeImages,
+    required this.fanartEnabled,
+    required this.nfoPolicy,
+    required this.imagePolicy,
+    required this.allowExternalOverwrite,
+  });
+
+  factory _VideoSourceScrapeSettingsDraft.fromRow(
+    VideoSourceScrapeSettingRow? row,
+  ) {
+    const Set<String> providers = <String>{
+      'tmdb',
+      'douban',
+      'bangumi',
+      'anilist',
+    };
+    final String? provider = row?.providerOverride;
+    return _VideoSourceScrapeSettingsDraft(
+      providerOverride: providers.contains(provider) ? provider : null,
+      autoAfterScan: row?.autoAfterScan ?? false,
+      writeNfo: row?.writeNfo ?? true,
+      writeImages: row?.writeImages ?? true,
+      fanartEnabled: row?.fanartEnabled ?? true,
+      nfoPolicy: _validPolicy(row?.nfoPolicy),
+      imagePolicy: _validPolicy(row?.imagePolicy),
+      allowExternalOverwrite: row?.allowExternalOverwrite ?? false,
+    );
+  }
+
+  final String? providerOverride;
+  final bool autoAfterScan;
+  final bool writeNfo;
+  final bool writeImages;
+  final bool fanartEnabled;
+  final String nfoPolicy;
+  final String imagePolicy;
+  final bool allowExternalOverwrite;
+
+  static String _validPolicy(String? value) =>
+      const <String>{'skip', 'missingOnly', 'overwrite'}.contains(value)
+          ? value!
+          : 'missingOnly';
+}
+
+class _VideoSourceScrapeSettingsDialog extends StatefulWidget {
+  const _VideoSourceScrapeSettingsDialog({required this.initial});
+
+  final _VideoSourceScrapeSettingsDraft initial;
+
+  @override
+  State<_VideoSourceScrapeSettingsDialog> createState() =>
+      _VideoSourceScrapeSettingsDialogState();
+}
+
+class _VideoSourceScrapeSettingsDialogState
+    extends State<_VideoSourceScrapeSettingsDialog> {
+  static const String _inheritProvider = '';
+
+  late String _provider = widget.initial.providerOverride ?? _inheritProvider;
+  late bool _autoAfterScan = widget.initial.autoAfterScan;
+  late bool _writeNfo = widget.initial.writeNfo;
+  late bool _writeImages = widget.initial.writeImages;
+  late bool _fanartEnabled = widget.initial.fanartEnabled;
+  late String _nfoPolicy = widget.initial.nfoPolicy;
+  late String _imagePolicy = widget.initial.imagePolicy;
+  late bool _allowExternalOverwrite = widget.initial.allowExternalOverwrite;
+
+  void _save() {
+    Navigator.pop(
+      context,
+      _VideoSourceScrapeSettingsDraft(
+        providerOverride: _provider.isEmpty ? null : _provider,
+        autoAfterScan: _autoAfterScan,
+        writeNfo: _writeNfo,
+        writeImages: _writeImages,
+        fanartEnabled: _fanartEnabled,
+        nfoPolicy: _nfoPolicy,
+        imagePolicy: _imagePolicy,
+        allowExternalOverwrite: _allowExternalOverwrite,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(t.video_source_scrape_settings),
+      content: SizedBox(
+        width: 480,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              AdaptiveSettingsPickerRow<String>(
+                title: t.video_source_scrape_provider,
+                selected: _provider,
+                options: <AdaptiveSettingsPickerOption<String>>[
+                  AdaptiveSettingsPickerOption<String>(
+                    value: _inheritProvider,
+                    label: t.video_source_scrape_provider_inherit,
+                  ),
+                  const AdaptiveSettingsPickerOption<String>(
+                    value: 'tmdb',
+                    label: 'TMDB',
+                  ),
+                  const AdaptiveSettingsPickerOption<String>(
+                    value: 'douban',
+                    label: 'Douban',
+                  ),
+                  const AdaptiveSettingsPickerOption<String>(
+                    value: 'bangumi',
+                    label: 'Bangumi',
+                  ),
+                  const AdaptiveSettingsPickerOption<String>(
+                    value: 'anilist',
+                    label: 'AniList',
+                  ),
+                ],
+                onChanged: (String value) => setState(() => _provider = value),
+                controlBelow: true,
+              ),
+              AdaptiveSettingsSwitchRow(
+                title: t.video_source_scrape_auto_after_scan,
+                subtitle: t.video_source_scrape_auto_after_scan_hint,
+                value: _autoAfterScan,
+                onChanged: (bool value) =>
+                    setState(() => _autoAfterScan = value),
+              ),
+              AdaptiveSettingsSwitchRow(
+                title: t.video_source_scrape_write_nfo,
+                value: _writeNfo,
+                onChanged: (bool value) => setState(() => _writeNfo = value),
+              ),
+              AdaptiveSettingsSwitchRow(
+                title: t.video_source_scrape_write_images,
+                value: _writeImages,
+                onChanged: (bool value) => setState(() => _writeImages = value),
+              ),
+              AdaptiveSettingsSwitchRow(
+                title: t.video_source_scrape_use_fanart,
+                value: _fanartEnabled,
+                onChanged: (bool value) =>
+                    setState(() => _fanartEnabled = value),
+              ),
+              AdaptiveSettingsPickerRow<String>(
+                title: t.video_source_scrape_nfo_policy,
+                selected: _nfoPolicy,
+                options: _policyOptions(),
+                onChanged: (String value) => setState(() => _nfoPolicy = value),
+                controlBelow: true,
+              ),
+              AdaptiveSettingsPickerRow<String>(
+                title: t.video_source_scrape_image_policy,
+                selected: _imagePolicy,
+                options: _policyOptions(),
+                onChanged: (String value) =>
+                    setState(() => _imagePolicy = value),
+                controlBelow: true,
+              ),
+              AdaptiveSettingsSwitchRow(
+                title: t.video_source_scrape_external_overwrite,
+                subtitle: t.video_source_scrape_external_overwrite_hint,
+                value: _allowExternalOverwrite,
+                onChanged: (bool value) =>
+                    setState(() => _allowExternalOverwrite = value),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: <Widget>[
+        adaptiveDialogAction(
+          context: context,
+          onPressed: () => Navigator.pop(context),
+          child: Text(t.dialog_cancel),
+        ),
+        adaptiveDialogAction(
+          context: context,
+          isDefaultAction: true,
+          onPressed: _save,
+          child: Text(t.dialog_save),
+        ),
+      ],
+    );
+  }
+
+  List<AdaptiveSettingsPickerOption<String>> _policyOptions() =>
+      <AdaptiveSettingsPickerOption<String>>[
+        AdaptiveSettingsPickerOption<String>(
+          value: 'skip',
+          label: t.video_source_scrape_policy_skip,
+        ),
+        AdaptiveSettingsPickerOption<String>(
+          value: 'missingOnly',
+          label: t.video_source_scrape_policy_missing_only,
+        ),
+        AdaptiveSettingsPickerOption<String>(
+          value: 'overwrite',
+          label: t.video_source_scrape_policy_overwrite,
+        ),
+      ];
 }
 
 /// 添加来源的两个 case：本地文件夹 / 网络来源。

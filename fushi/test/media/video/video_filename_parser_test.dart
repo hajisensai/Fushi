@@ -16,6 +16,16 @@ void main() {
       expect(info.season, isNull);
     });
 
+    test('BUG-1461 Himouto 字幕组命名保留英文识别标题', () {
+      final VideoNameInfo info = parseVideoFilename(
+        '[Kamigami] Himouto! Umaru-chan - 10 '
+        '[1920x1080 x264 AAC Sub(Chs,Cht,Jap)].mkv',
+      );
+      expect(info.series, 'Himouto! Umaru-chan');
+      expect(info.episode, 10);
+      expect(info.season, isNull);
+    });
+
     test('SxxEyy 季+集（点分隔）', () {
       final VideoNameInfo info =
           parseVideoFilename('Title.S02E05.1080p.WEB-DL.mkv');
@@ -67,6 +77,32 @@ void main() {
       final VideoNameInfo info = parseVideoFilename('Cowboy.Bebop.第05話.mkv');
       expect(info.series, 'Cowboy Bebop');
       expect(info.episode, 5);
+    });
+
+    test('MoviePilot 显式身份块不污染标题并覆盖季集号', () {
+      final VideoNameInfo info = parseVideoFilename(
+        'Show {[tmdbid=777;type=tv;g=group-1;s=2;e=3]}.mkv',
+      );
+      expect(info.series, 'Show');
+      expect(info.season, 2);
+      expect(info.episode, 3);
+    });
+
+    test('re0 发布名保留第三季与正片集号', () {
+      final VideoNameInfo info = parseVideoFilename(
+        '[DBD-Raws][Re Zero kara Hajimeru Isekai Seikatsu S3]'
+        '[01][1080P][BDRip][HEVC-10bit][FLACx2].mkv',
+      );
+      expect(info.series, 'Re Zero kara Hajimeru Isekai Seikatsu');
+      expect(info.season, 3);
+      expect(info.episode, 1);
+
+      final ParsedMediaName parent = FilenameParser.parse(
+        '[DBD-Raws][Re：从零开始的异世界生活 第三季]'
+        '[01-16TV全集+SP][1080P][BDRip][HEVC-10bit][简繁外挂][FLAC][MKV]',
+      );
+      expect(parent.title, 'Re：从零开始的异世界生活');
+      expect(parent.season, 3);
     });
   });
 

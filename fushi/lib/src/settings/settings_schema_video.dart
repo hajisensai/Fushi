@@ -7,6 +7,7 @@ import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -236,6 +237,40 @@ SettingsDestination buildVideoDestination() {
               await settingsContext.appModel.setVideoAutoScrape(value);
             },
           ),
+          // 来源刮削只有一个主源。来源行可以覆盖它；未覆盖时使用这里的全局默认。
+          // 存储值限定为四个公开 adapter，Fanart 只负责补图，不能成为主源。
+          SettingsSegmentedItem<String>(
+            id: 'video.library.metadata_primary_provider',
+            title: t.video_source_scrape_global_provider,
+            subtitle: t.video_source_scrape_global_provider_hint,
+            icon: Icons.travel_explore_outlined,
+            dropdown: true,
+            options: const <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(value: 'tmdb', label: 'TMDB'),
+              SettingsSegmentOption<String>(
+                value: 'bangumi',
+                label: 'Bangumi',
+              ),
+              SettingsSegmentOption<String>(
+                value: 'anilist',
+                label: 'AniList',
+              ),
+              SettingsSegmentOption<String>(value: 'douban', label: 'Douban'),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                parsePrimaryVideoMetadataProvider(
+              settingsContext.appModel.prefsRepo.getPref(
+                kVideoMetadataPrimaryProviderPref,
+                defaultValue: 'tmdb',
+              ) as String,
+            ).name,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await settingsContext.appModel.prefsRepo.setPref(
+                kVideoMetadataPrimaryProviderPref,
+                value,
+              );
+            },
+          ),
           // 自定义 TMDB API key —— **内置 key 的逃生口**，不是必填项。
           //
           // 刮削默认用随包内置的项目 key（见 tmdb_default_key.dart），绝大多数用户
@@ -258,6 +293,90 @@ SettingsDestination buildVideoDestination() {
               kVideoScraperTmdbApiKeyPref,
               value.trim(),
             ),
+          ),
+          SettingsTextItem(
+            id: 'video.library.metadata_fanart_api_key',
+            title: t.video_source_scrape_fanart_key,
+            subtitle: t.video_source_scrape_fanart_key_hint,
+            icon: Icons.image_search_outlined,
+            secret: true,
+            value: (SettingsContext settingsContext) => settingsContext
+                    .appModel.prefsRepo
+                    .getPref(kVideoMetadataFanartApiKeyPref, defaultValue: '')
+                as String,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await settingsContext.appModel.prefsRepo.setPref(
+                kVideoMetadataFanartApiKeyPref,
+                value.trim(),
+              );
+            },
+          ),
+          SettingsTextItem(
+            id: 'video.library.metadata_bangumi_token',
+            title: t.video_source_scrape_bangumi_token,
+            subtitle: t.video_source_scrape_bangumi_token_hint,
+            icon: Icons.vpn_key_outlined,
+            secret: true,
+            value: (SettingsContext settingsContext) => settingsContext
+                    .appModel.prefsRepo
+                    .getPref(kVideoMetadataBangumiTokenPref, defaultValue: '')
+                as String,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await settingsContext.appModel.prefsRepo.setPref(
+                kVideoMetadataBangumiTokenPref,
+                value.trim(),
+              );
+            },
+          ),
+          SettingsTextItem(
+            id: 'video.library.metadata_douban_endpoint',
+            title: t.video_source_scrape_douban_endpoint,
+            subtitle: t.video_source_scrape_douban_endpoint_hint,
+            icon: Icons.link_outlined,
+            value: (SettingsContext settingsContext) => settingsContext
+                    .appModel.prefsRepo
+                    .getPref(kVideoMetadataDoubanEndpointPref, defaultValue: '')
+                as String,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await settingsContext.appModel.prefsRepo.setPref(
+                kVideoMetadataDoubanEndpointPref,
+                value.trim(),
+              );
+            },
+          ),
+          SettingsTextItem(
+            id: 'video.library.metadata_douban_token',
+            title: t.video_source_scrape_douban_token,
+            subtitle: t.video_source_scrape_douban_token_hint,
+            icon: Icons.vpn_key_outlined,
+            secret: true,
+            value: (SettingsContext settingsContext) => settingsContext
+                    .appModel.prefsRepo
+                    .getPref(kVideoMetadataDoubanTokenPref, defaultValue: '')
+                as String,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await settingsContext.appModel.prefsRepo.setPref(
+                kVideoMetadataDoubanTokenPref,
+                value.trim(),
+              );
+            },
+          ),
+          SettingsTextItem(
+            id: 'video.library.metadata_locale',
+            title: t.video_source_scrape_locale,
+            subtitle: t.video_source_scrape_locale_hint,
+            icon: Icons.language_outlined,
+            placeholder: 'zh-CN',
+            value: (SettingsContext settingsContext) => settingsContext
+                    .appModel.prefsRepo
+                    .getPref(kVideoMetadataLocalePref, defaultValue: 'zh-CN')
+                as String,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await settingsContext.appModel.prefsRepo.setPref(
+                kVideoMetadataLocalePref,
+                value.trim(),
+              );
+            },
           ),
         ],
       ),

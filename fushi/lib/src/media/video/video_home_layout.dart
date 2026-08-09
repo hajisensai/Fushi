@@ -120,6 +120,51 @@ class VideoYearFilter {
 /// 看完状态筛选档位。
 enum VideoWatchStatusFilter { all, unwatched, watching, completed }
 
+/// A series member's playback facts in the collection's stable episode order.
+class VideoSeriesPlaybackState {
+  const VideoSeriesPlaybackState({
+    required this.lastWatchedAtMs,
+    required this.positionMs,
+    required this.completed,
+  });
+
+  final int lastWatchedAtMs;
+  final int positionMs;
+  final bool completed;
+
+  bool get hasTrace => lastWatchedAtMs > 0 || positionMs > 0 || completed;
+}
+
+/// Returns the episode the user actually played most recently.
+///
+/// This deliberately does not mean "the furthest episode". A user may go back
+/// to episode 3 after reaching episode 12; Continue Watching must resume 3.
+/// Legacy rows without a watch timestamp fall back to the last traced member in
+/// stable episode order.
+int? latestPlayedSeriesIndex(List<VideoSeriesPlaybackState> members) {
+  int? bestIndex;
+  int bestWatchedAt = 0;
+  for (int index = 0; index < members.length; index++) {
+    final VideoSeriesPlaybackState member = members[index];
+    if (!member.hasTrace) continue;
+    if (member.lastWatchedAtMs >= bestWatchedAt) {
+      bestWatchedAt = member.lastWatchedAtMs;
+      bestIndex = index;
+    }
+  }
+  return bestIndex;
+}
+
+/// The Next Episode target is always the member immediately after the episode
+/// returned by [latestPlayedSeriesIndex].
+int? nextEpisodeAfterLatestPlayed(
+  List<VideoSeriesPlaybackState> members,
+) {
+  final int? current = latestPlayedSeriesIndex(members);
+  if (current == null || current + 1 >= members.length) return null;
+  return current + 1;
+}
+
 /// 条目级看完状态判定（本地即筛）：
 /// * completed —— `completedAt` 非空；
 /// * watching —— 未完成但有播放痕迹（`lastPositionMs > 0`）；

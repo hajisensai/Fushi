@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('视频、书籍漫画、游戏库都保留单项入口并提供全部刮削入口', () {
+  test('视频单项入口留在库页，全部刮削迁到视频来源页', () {
     final String video = File(
       'lib/src/pages/implementations/home_video_page.dart',
     ).readAsStringSync();
@@ -13,10 +13,17 @@ void main() {
     final String games = File(
       'lib/src/pages/implementations/games_library_page.dart',
     ).readAsStringSync();
+    final String sources = File(
+      'lib/src/pages/implementations/media_sources_page.dart',
+    ).readAsStringSync();
 
     expect(video, contains('Future<void> _openCoverMatch('));
-    expect(video, contains('Future<void> _scrapeAllVideos('));
-    expect(video, contains('tooltip: t.scrape_all'));
+    expect(video, isNot(contains('Future<void> _scrapeAllVideos(')));
+    expect(video, isNot(contains('tooltip: t.scrape_all')));
+    expect(sources, contains("widget.mediaKind == 'video'"));
+    expect(sources, contains('tooltip: t.scrape_all'));
+    expect(sources.indexOf('tooltip: t.media_source_add'),
+        lessThan(sources.indexOf('tooltip: t.scrape_all')));
 
     expect(books, contains('Future<void> _scrapeEpubCover('));
     expect(books, contains('Future<void> _scrapeAllBooks('));
@@ -28,8 +35,8 @@ void main() {
   });
 
   test('BUG-1325 四域无人值守批处理都接了不覆盖用户选择的闸门', () {
-    final String video = File(
-      'lib/src/pages/implementations/home_video_page.dart',
+    final String videoActions = File(
+      'lib/src/media/video/cover_ui/video_scrape_actions.dart',
     ).readAsStringSync();
     final String books = File(
       'lib/src/pages/implementations/reader_fushi_history_page.dart',
@@ -45,9 +52,9 @@ void main() {
     // 层**：页面只表达「用户显式要求重刮」，能不能覆盖由 scrapeLibrary 按封面
     // 来源逐本决定。页面若自己再传一个 requireUniqueExactTitle，就是把判据摊成
     // 两处、迟早各说一套（BUG-1325）。
-    expect(video, contains('rescrapeScraped: true'));
+    expect(videoActions, contains('rescrapeScraped: true'));
     expect(
-      video.contains('requireUniqueExactTitle'),
+      videoActions.contains('requireUniqueExactTitle'),
       isFalse,
       reason: '覆盖判据必须留在 scrapeLibrary 一层，页面不得重复表达',
     );

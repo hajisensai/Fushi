@@ -266,4 +266,61 @@ void main() {
       );
     });
   });
+
+  group('series playback target', () {
+    test('继续观看取最后实际播放的一集，不取序号最大的未完成集', () {
+      const List<VideoSeriesPlaybackState> members = <VideoSeriesPlaybackState>[
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 300,
+          positionMs: 180000,
+          completed: false,
+        ),
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 100,
+          positionMs: 60000,
+          completed: false,
+        ),
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 200,
+          positionMs: 0,
+          completed: true,
+        ),
+      ];
+      expect(latestPlayedSeriesIndex(members), 0);
+      expect(nextEpisodeAfterLatestPlayed(members), 1);
+    });
+
+    test('旧数据没有观看时间时回退到顺序中最后一条有痕迹的分集', () {
+      const List<VideoSeriesPlaybackState> members = <VideoSeriesPlaybackState>[
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 0,
+          positionMs: 10,
+          completed: false,
+        ),
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 0,
+          positionMs: 0,
+          completed: true,
+        ),
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 0,
+          positionMs: 0,
+          completed: false,
+        ),
+      ];
+      expect(latestPlayedSeriesIndex(members), 1);
+      expect(nextEpisodeAfterLatestPlayed(members), 2);
+    });
+
+    test('最后一集之后没有下一集', () {
+      const List<VideoSeriesPlaybackState> members = <VideoSeriesPlaybackState>[
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 100,
+          positionMs: 1,
+          completed: false,
+        ),
+      ];
+      expect(nextEpisodeAfterLatestPlayed(members), isNull);
+    });
+  });
 }

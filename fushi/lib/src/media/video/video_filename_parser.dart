@@ -45,11 +45,31 @@ class VideoNameInfo {
 /// season / episode 原样映射；副标题装饰（`～xxx～` / ` - xxx`）与电影关键词
 /// （`Movie` / `剧场版`）由引擎剥离，不再留在系列名里。
 VideoNameInfo parseVideoFilename(String filename) {
-  final ParsedMediaName parsed = FilenameParser.parse(filename);
+  final RegExp explicitBlock = RegExp(r'\{\[([^\]]+)\]\}');
+  final RegExpMatch? explicit = explicitBlock.firstMatch(filename);
+  int? explicitNumber(String shortName, String longName) {
+    final String? body = explicit?.group(1);
+    if (body == null) return null;
+    return int.tryParse(
+      RegExp(
+            '(?:^|;)\\s*(?:$shortName|$longName)\\s*=\\s*(\\d+)',
+            caseSensitive: false,
+          ).firstMatch(body)?.group(1) ??
+          '',
+    );
+  }
+
+  // MoviePilot/Emby style identity blocks are matching directives, not part
+  // of the display title. Keep the original path for the metadata resolver,
+  // but strip the block before filename parsing and honor explicit S/E values.
+  final String parsedFilename = filename.replaceAll(explicitBlock, ' ');
+  final ParsedMediaName parsed = FilenameParser.parse(parsedFilename);
   return VideoNameInfo(
-    series: parsed.title.isNotEmpty ? parsed.title : _fallbackSeries(filename),
-    season: parsed.season,
-    episode: parsed.episode,
+    series: parsed.title.isNotEmpty
+        ? parsed.title
+        : _fallbackSeries(parsedFilename),
+    season: explicitNumber('s', 'season') ?? parsed.season,
+    episode: explicitNumber('e', 'episode') ?? parsed.episode,
   );
 }
 

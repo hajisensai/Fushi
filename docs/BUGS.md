@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1379 条。点号进各自文件。
+> 共 1387 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -46,6 +46,14 @@
 | [BUG-1471](bugs/BUG-1471-gal-overlay-gesture-state-stuck.md) | ✅ | ✅ | galgame 浮窗跑久了失去点击响应：手势事务只认 WM_LBUTTONUP 一个终止条件 |
 | [BUG-1470](bugs/BUG-1470-gal-selected-thread-publish-filter.md) | ✅ | ✅ | 选中台词线程后工作台正文为空：发布期过滤器丢掉同 hook 面兄弟行 |
 | [BUG-1469](bugs/BUG-1469-futamata-kirikiri-launch-av.md) | ✅ | ✅ | 恋爱成双由 Hibiki 早注入后 Access Violation |
+| [BUG-1468](bugs/BUG-1468-video-home-card-footer-spacing.md) | ✅ | ✅ | 视频主页卡片底部信息留白过多 |
+| [BUG-1467](bugs/BUG-1467-video-home-badge-semantics.md) | ✅ | ✅ | 视频主页角标语义不一致 |
+| [BUG-1466](bugs/BUG-1466-re-zero-metadata-match.md) | ✅ | ✅ | Re Zero 罗马字标题无法通过 TMDB 严格识别 |
+| [BUG-1465](bugs/BUG-1465-video-series-poster.md) | ✅ | ✅ | 系列页未使用规范作品竖版海报 |
+| [BUG-1464](bugs/BUG-1464-video-re0-scrape-planning.md) | ✅ | ✅ | re0 特典误作作品且主剧季标题识别失败 |
+| [BUG-1463](bugs/BUG-1463-video-series-detail-layout.md) | ✅ | ✅ | 系列详情重复、底部窄栏与首页播放目标错误 |
+| [BUG-1462](bugs/BUG-1462-mushoku-metadata-backfill.md) | ✅ | ✅ | 无职转生严格匹配无法人工确认且详情与剧集标题未回填 |
+| [BUG-1461](bugs/BUG-1461-himouto-tmdb-localized-title.md) | ✅ | ✅ | Himouto 罗马字标题被 TMDB 本地化结果严格门控拒绝 |
 | [BUG-1460](bugs/BUG-1460-win-installer-legacy-delete-rollback.md) | ✅ | ✅ | Windows 升级中途失败后 app 彻底消失：[InstallDelete] 先删旧名二进制且不可回滚 |
 | [BUG-1459](bugs/BUG-1459-installer-appdir-process-lock.md) | ✅ | ✅ | 安装器无法替换被残留子进程锁定的文件 |
 | [BUG-1458](bugs/BUG-1458-sync-collections-tombstone-day-red.md) | 🚧 | 🚧 | 集合同步墓碑用例在develop稳定红-疑日期敏感 |

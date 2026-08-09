@@ -378,6 +378,25 @@ _MergedTagState _mergeTagClocks(
   return _MergedTagState(present, tombstones);
 }
 
+void _requireOneVideoMetadataOwner({
+  int? workId,
+  int? seasonId,
+  int? episodeId,
+  String? personKey,
+  String? characterKey,
+}) {
+  final int count = <Object?>[
+    workId,
+    seasonId,
+    episodeId,
+    personKey,
+    characterKey,
+  ].where((Object? value) => value != null).length;
+  if (count != 1) {
+    throw ArgumentError('exactly one video metadata owner is required');
+  }
+}
+
 @DriftDatabase(tables: [
   MediaItems,
   AnkiMappings,
@@ -440,6 +459,21 @@ _MergedTagState _mergeTagClocks(
   MangaTrustedSigners,
   CollectionRelations,
   MediaImages,
+  VideoMetadataWorks,
+  VideoMetadataSeasons,
+  VideoMetadataEpisodes,
+  VideoMetadataPeople,
+  VideoMetadataCharacters,
+  VideoMetadataProviderIdentities,
+  VideoMetadataRawSnapshots,
+  VideoMetadataTerms,
+  VideoMetadataWorkTerms,
+  VideoMetadataCredits,
+  VideoMetadataImages,
+  VideoMetadataExtras,
+  VideoSourceScrapeSettings,
+  VideoSourceScrapeRuns,
+  VideoSidecarArtifacts,
 ])
 class FushiDatabase extends _$FushiDatabase {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
@@ -447,18 +481,22 @@ class FushiDatabase extends _$FushiDatabase {
   /// while the separate `:popup` process passes `false` so it backs off on an
   /// IOERR instead of racing the main process to delete the same sidecar.
   FushiDatabase(String dbDirectory, {bool isMainProcess = true})
-      : super(_openDb(dbDirectory, isMainProcess: isMainProcess));
+      : _isMainProcess = isMainProcess,
+        super(_openDb(dbDirectory, isMainProcess: isMainProcess));
 
   /// Opens a specific `.db` FILE (not a directory). Backup MERGE import
   /// (TODO-888) uses this to migrate an extracted backup DB to the current
   /// schema before merging it into the live DB.
   FushiDatabase.atFile(String dbFilePath, {bool isMainProcess = true})
-      : super(_openDbFile(dbFilePath, isMainProcess: isMainProcess));
+      : _isMainProcess = isMainProcess,
+        super(_openDbFile(dbFilePath, isMainProcess: isMainProcess));
 
-  FushiDatabase.forTesting(super.e);
+  FushiDatabase.forTesting(super.e) : _isMainProcess = true;
+
+  final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 76;
+  int get schemaVersion => 77;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1761,6 +1799,62 @@ class FushiDatabase extends _$FushiDatabase {
               }
             }
           }
+          if (from < 77) {
+            // v77：视频来源规范刮削与 NFO sidecar 的结构化宿主（PR #792，
+            // 开发期编号 v69/v70 两步在合入 develop 时收拢为一步）。全部是
+            // 可重建缓存/任务审计表，不改写既有视频、合集、进度或兼容刮削
+            // 资料：旧库升级后新表为空，既有行为逐像素不变；第一次来源刮削
+            // 再逐步回填。
+            //
+            // 建表顺序严格按 FK 父子关系排列。每张表独立存在性守卫既允许完整旧库
+            // 升级，也允许开发期中断后重试，不会重复建表或清掉已成功写入的数据。
+            if (!await _tableExists('video_metadata_works')) {
+              await m.createTable(videoMetadataWorks);
+            }
+            if (!await _tableExists('video_metadata_seasons')) {
+              await m.createTable(videoMetadataSeasons);
+            }
+            if (!await _tableExists('video_metadata_episodes')) {
+              await m.createTable(videoMetadataEpisodes);
+            }
+            if (!await _tableExists('video_metadata_people')) {
+              await m.createTable(videoMetadataPeople);
+            }
+            if (!await _tableExists('video_metadata_characters')) {
+              await m.createTable(videoMetadataCharacters);
+            }
+            if (!await _tableExists('video_metadata_provider_identities')) {
+              await m.createTable(videoMetadataProviderIdentities);
+            }
+            if (!await _tableExists('video_metadata_raw_snapshots')) {
+              await m.createTable(videoMetadataRawSnapshots);
+            }
+            if (!await _tableExists('video_metadata_terms')) {
+              await m.createTable(videoMetadataTerms);
+            }
+            if (!await _tableExists('video_metadata_work_terms')) {
+              await m.createTable(videoMetadataWorkTerms);
+            }
+            if (!await _tableExists('video_metadata_credits')) {
+              await m.createTable(videoMetadataCredits);
+            }
+            if (!await _tableExists('video_metadata_images')) {
+              await m.createTable(videoMetadataImages);
+            }
+            if (!await _tableExists('video_metadata_extras')) {
+              await m.createTable(videoMetadataExtras);
+            }
+            if (!await _tableExists('video_source_scrape_settings')) {
+              await m.createTable(videoSourceScrapeSettings);
+            }
+            if (!await _tableExists('video_source_scrape_runs')) {
+              await m.createTable(videoSourceScrapeRuns);
+            }
+            if (!await _tableExists('video_sidecar_artifacts')) {
+              await m.createTable(videoSidecarArtifacts);
+            }
+            await _ensureIndexes();
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -1782,11 +1876,33 @@ class FushiDatabase extends _$FushiDatabase {
               appSchemaVersion: schemaVersion,
             );
           }
+
+          // A hard process exit cannot run HomePage.dispose, so a scrape run
+          // left in `running` would otherwise remain active forever. Reconcile
+          // it before any app query can observe the database or start a new
+          // batch. An actually running task cannot survive the process boundary
+          // that opened this handle, while terminal rows remain untouched.
+          if (_isMainProcess &&
+              await _tableExists('video_source_scrape_runs')) {
+            final int interruptedAt = DateTime.now().millisecondsSinceEpoch;
+            await (update(videoSourceScrapeRuns)
+                  ..where(($VideoSourceScrapeRunsTable t) =>
+                      t.status.equals('running')))
+                .write(VideoSourceScrapeRunsCompanion(
+              status: const Value<String>('interrupted'),
+              phase: const Value<String?>('interrupted'),
+              lastError: const Value<String?>(
+                'Application ended before the scrape completed',
+              ),
+              updatedAt: Value<int>(interruptedAt),
+              finishedAt: Value<int?>(interruptedAt),
+            ));
+          }
         },
       );
 
   /// Creates all secondary indexes idempotently. Called from onCreate (fresh
-  /// install) and the one-time v14 onUpgrade step — NOT on every open. Each
+  /// install) and schema steps that add indexed tables — NOT on every open. Each
   /// index is guarded by a table-existence check because a partially-migrated
   /// legacy DB may lack some v1 baseline tables (those are created only in
   /// onCreate, never in the onUpgrade ladder).
@@ -1900,6 +2016,22 @@ class FushiDatabase extends _$FushiDatabase {
         'activity_events',
         'CREATE INDEX IF NOT EXISTS idx_activity_events_timestamp '
             'ON activity_events (timestamp_ms DESC)'
+      ],
+      // v69：provider 外部 id 反查、来源任务历史与 sidecar 批次查询是刮削热路径。
+      [
+        'video_metadata_provider_identities',
+        'CREATE INDEX IF NOT EXISTS idx_video_metadata_identity_external '
+            'ON video_metadata_provider_identities (provider, external_id)'
+      ],
+      [
+        'video_source_scrape_runs',
+        'CREATE INDEX IF NOT EXISTS idx_video_scrape_runs_source_started '
+            'ON video_source_scrape_runs (source_id, started_at DESC)'
+      ],
+      [
+        'video_sidecar_artifacts',
+        'CREATE INDEX IF NOT EXISTS idx_video_sidecar_artifacts_source_run '
+            'ON video_sidecar_artifacts (source_id, run_id)'
       ],
     ];
     for (final List<String> entry in indexes) {
@@ -3054,6 +3186,16 @@ class FushiDatabase extends _$FushiDatabase {
 
   Future<List<VideoBookRow>> allVideoBooks() => select(videoBooks).get();
 
+  /// 仅在视频尚未归属来源时回填 [sourceId]。
+  ///
+  /// 来源重扫复用手动导入的同路径视频时使用。只写 `source_id`，避免以整行 upsert
+  /// 意外覆盖观看进度、字幕、封面或用户资料；已属于其它来源的行保持原归属。
+  Future<int> assignVideoBookSourceIfNull(String bookUid, int sourceId) =>
+      (update(videoBooks)
+            ..where(($VideoBooksTable t) =>
+                t.bookUid.equals(bookUid) & t.sourceId.isNull()))
+          .write(VideoBooksCompanion(sourceId: Value<int?>(sourceId)));
+
   // ── video_scrape_meta（条目刮削资料，v54）─────────────────────────
 
   /// 写入/覆盖一本视频的刮削资料（bookUid 主键，重刮即覆盖）。
@@ -3263,6 +3405,768 @@ class FushiDatabase extends _$FushiDatabase {
           ($MediaImagesTable t) => OrderingTerm(expression: t.position),
         ]))
       .get();
+
+  // ── video metadata（schema v69 / 来源规范刮削）────────────────────
+
+  /// 新增或更新一部规范作品并返回稳定行 id。调用方必须提供 collectionId/bookUid
+  /// 之一；DB CHECK 再锁死「恰好一个」的最终不变量。
+  Future<int> upsertVideoMetadataWork(
+    VideoMetadataWorksCompanion work,
+  ) async {
+    final List<Column<Object>> conflictTarget;
+    if (work.collectionId.present && work.collectionId.value != null) {
+      conflictTarget = <Column<Object>>[videoMetadataWorks.collectionId];
+    } else if (work.bookUid.present && work.bookUid.value != null) {
+      conflictTarget = <Column<Object>>[videoMetadataWorks.bookUid];
+    } else if (work.id.present) {
+      conflictTarget = <Column<Object>>[videoMetadataWorks.id];
+    } else {
+      throw ArgumentError(
+        'VideoMetadataWorksCompanion must identify a collection or book',
+      );
+    }
+    await into(videoMetadataWorks).insert(
+      work,
+      onConflict: DoUpdate(
+        (_) => work,
+        target: conflictTarget,
+      ),
+    );
+    if (work.collectionId.present && work.collectionId.value != null) {
+      final VideoMetadataWorkRow? row =
+          await getVideoMetadataWorkByCollection(work.collectionId.value!);
+      if (row != null) return row.id;
+    }
+    if (work.bookUid.present && work.bookUid.value != null) {
+      final VideoMetadataWorkRow? row =
+          await getVideoMetadataWorkByBook(work.bookUid.value!);
+      if (row != null) return row.id;
+    }
+    if (work.id.present) {
+      final VideoMetadataWorkRow? row = await (select(videoMetadataWorks)
+            ..where(($VideoMetadataWorksTable t) => t.id.equals(work.id.value)))
+          .getSingleOrNull();
+      if (row != null) return row.id;
+    }
+    throw StateError('upserted video metadata work cannot be read back');
+  }
+
+  Future<VideoMetadataWorkRow?> getVideoMetadataWorkByCollection(
+    int collectionId,
+  ) =>
+      (select(videoMetadataWorks)
+            ..where(($VideoMetadataWorksTable t) =>
+                t.collectionId.equals(collectionId)))
+          .getSingleOrNull();
+
+  Future<VideoMetadataWorkRow?> getVideoMetadataWorkByBook(String bookUid) =>
+      (select(videoMetadataWorks)
+            ..where(($VideoMetadataWorksTable t) => t.bookUid.equals(bookUid)))
+          .getSingleOrNull();
+
+  Future<VideoMetadataWorkRow?> getVideoMetadataWorkById(int workId) =>
+      (select(videoMetadataWorks)
+            ..where(($VideoMetadataWorksTable t) => t.id.equals(workId)))
+          .getSingleOrNull();
+
+  Future<List<VideoMetadataWorkRow>> getAllVideoMetadataWorks() =>
+      (select(videoMetadataWorks)
+            ..orderBy(<OrderingTerm Function($VideoMetadataWorksTable)>[
+              ($VideoMetadataWorksTable t) => OrderingTerm(expression: t.id),
+            ]))
+          .get();
+
+  Future<int> upsertVideoMetadataSeason(
+    VideoMetadataSeasonsCompanion season,
+  ) async {
+    if (!season.workId.present || !season.seasonNumber.present) {
+      throw ArgumentError('season requires workId and seasonNumber');
+    }
+    await into(videoMetadataSeasons).insert(
+      season,
+      onConflict: DoUpdate(
+        (_) => season,
+        target: <Column<Object>>[
+          videoMetadataSeasons.workId,
+          videoMetadataSeasons.seasonNumber,
+        ],
+      ),
+    );
+    final VideoMetadataSeasonRow row = await (select(videoMetadataSeasons)
+          ..where(($VideoMetadataSeasonsTable t) =>
+              t.workId.equals(season.workId.value) &
+              t.seasonNumber.equals(season.seasonNumber.value)))
+        .getSingle();
+    return row.id;
+  }
+
+  /// 用一次完整源响应替换作品的季集合；同季号走 UPSERT 保留 id 与下游绑定，源已
+  /// 不再返回的季才删除。
+  Future<void> replaceVideoMetadataSeasons(
+    int workId,
+    List<VideoMetadataSeasonsCompanion> seasons,
+  ) =>
+      transaction(() async {
+        final Set<int> numbers = <int>{};
+        for (final VideoMetadataSeasonsCompanion season in seasons) {
+          if (!season.seasonNumber.present) {
+            throw ArgumentError('seasonNumber must be present');
+          }
+          numbers.add(season.seasonNumber.value);
+          final VideoMetadataSeasonsCompanion normalized =
+              season.copyWith(workId: Value<int>(workId));
+          await into(videoMetadataSeasons).insert(
+            normalized,
+            onConflict: DoUpdate(
+              (_) => normalized,
+              target: <Column<Object>>[
+                videoMetadataSeasons.workId,
+                videoMetadataSeasons.seasonNumber,
+              ],
+            ),
+          );
+        }
+        final DeleteStatement<$VideoMetadataSeasonsTable,
+            VideoMetadataSeasonRow> statement = delete(videoMetadataSeasons)
+          ..where(($VideoMetadataSeasonsTable t) {
+            final Expression<bool> owner = t.workId.equals(workId);
+            return numbers.isEmpty
+                ? owner
+                : owner & t.seasonNumber.isNotIn(numbers);
+          });
+        await statement.go();
+      });
+
+  Future<List<VideoMetadataSeasonRow>> getVideoMetadataSeasons(int workId) =>
+      (select(videoMetadataSeasons)
+            ..where(($VideoMetadataSeasonsTable t) => t.workId.equals(workId))
+            ..orderBy(<OrderingTerm Function($VideoMetadataSeasonsTable)>[
+              ($VideoMetadataSeasonsTable t) =>
+                  OrderingTerm(expression: t.seasonNumber),
+            ]))
+          .get();
+
+  Future<List<VideoMetadataSeasonRow>> getAllVideoMetadataSeasons() =>
+      (select(videoMetadataSeasons)
+            ..orderBy(<OrderingTerm Function($VideoMetadataSeasonsTable)>[
+              ($VideoMetadataSeasonsTable t) =>
+                  OrderingTerm(expression: t.workId),
+              ($VideoMetadataSeasonsTable t) =>
+                  OrderingTerm(expression: t.seasonNumber),
+            ]))
+          .get();
+
+  Future<int> upsertVideoMetadataEpisode(
+    VideoMetadataEpisodesCompanion episode,
+  ) async {
+    if (!episode.seasonId.present || !episode.episodeNumber.present) {
+      throw ArgumentError('episode requires seasonId and episodeNumber');
+    }
+    await into(videoMetadataEpisodes).insert(
+      episode,
+      onConflict: DoUpdate(
+        (_) => episode,
+        target: <Column<Object>>[
+          videoMetadataEpisodes.seasonId,
+          videoMetadataEpisodes.episodeNumber,
+        ],
+      ),
+    );
+    final VideoMetadataEpisodeRow row = await (select(videoMetadataEpisodes)
+          ..where(($VideoMetadataEpisodesTable t) =>
+              t.seasonId.equals(episode.seasonId.value) &
+              t.episodeNumber.equals(episode.episodeNumber.value)))
+        .getSingle();
+    return row.id;
+  }
+
+  /// 用一次完整源响应替换某季分集；同集号走 UPSERT，因此重复刮削不会令本地
+  /// bookUid 绑定或 sidecar owner 无谓漂移。
+  Future<void> replaceVideoMetadataEpisodes(
+    int seasonId,
+    List<VideoMetadataEpisodesCompanion> episodes,
+  ) =>
+      transaction(() async {
+        final Set<int> numbers = <int>{};
+        for (final VideoMetadataEpisodesCompanion episode in episodes) {
+          if (!episode.episodeNumber.present) {
+            throw ArgumentError('episodeNumber must be present');
+          }
+          numbers.add(episode.episodeNumber.value);
+          final VideoMetadataEpisodesCompanion normalized =
+              episode.copyWith(seasonId: Value<int>(seasonId));
+          await into(videoMetadataEpisodes).insert(
+            normalized,
+            onConflict: DoUpdate(
+              (_) => normalized,
+              target: <Column<Object>>[
+                videoMetadataEpisodes.seasonId,
+                videoMetadataEpisodes.episodeNumber,
+              ],
+            ),
+          );
+        }
+        final DeleteStatement<$VideoMetadataEpisodesTable,
+            VideoMetadataEpisodeRow> statement = delete(videoMetadataEpisodes)
+          ..where(($VideoMetadataEpisodesTable t) {
+            final Expression<bool> owner = t.seasonId.equals(seasonId);
+            return numbers.isEmpty
+                ? owner
+                : owner & t.episodeNumber.isNotIn(numbers);
+          });
+        await statement.go();
+      });
+
+  Future<List<VideoMetadataEpisodeRow>> getVideoMetadataEpisodes(
+    int seasonId,
+  ) =>
+      (select(videoMetadataEpisodes)
+            ..where(
+                ($VideoMetadataEpisodesTable t) => t.seasonId.equals(seasonId))
+            ..orderBy(<OrderingTerm Function($VideoMetadataEpisodesTable)>[
+              ($VideoMetadataEpisodesTable t) =>
+                  OrderingTerm(expression: t.episodeNumber),
+            ]))
+          .get();
+
+  Future<List<VideoMetadataEpisodeRow>> getAllVideoMetadataEpisodes() =>
+      (select(videoMetadataEpisodes)
+            ..orderBy(<OrderingTerm Function($VideoMetadataEpisodesTable)>[
+              ($VideoMetadataEpisodesTable t) =>
+                  OrderingTerm(expression: t.seasonId),
+              ($VideoMetadataEpisodesTable t) =>
+                  OrderingTerm(expression: t.episodeNumber),
+            ]))
+          .get();
+
+  Future<VideoMetadataEpisodeRow?> getVideoMetadataEpisodeByBook(
+    String bookUid,
+  ) =>
+      (select(videoMetadataEpisodes)
+            ..where(
+                ($VideoMetadataEpisodesTable t) => t.bookUid.equals(bookUid)))
+          .getSingleOrNull();
+
+  Future<void> upsertVideoMetadataPeople(
+    List<VideoMetadataPeopleCompanion> people,
+  ) =>
+      batch((Batch batch) {
+        batch.insertAllOnConflictUpdate(videoMetadataPeople, people);
+      });
+
+  Future<VideoMetadataPersonRow?> getVideoMetadataPerson(String personKey) =>
+      (select(videoMetadataPeople)
+            ..where(
+                ($VideoMetadataPeopleTable t) => t.personKey.equals(personKey)))
+          .getSingleOrNull();
+
+  Future<void> upsertVideoMetadataCharacters(
+    List<VideoMetadataCharactersCompanion> characters,
+  ) =>
+      batch((Batch batch) {
+        batch.insertAllOnConflictUpdate(videoMetadataCharacters, characters);
+      });
+
+  Future<VideoMetadataCharacterRow?> getVideoMetadataCharacter(
+    String characterKey,
+  ) =>
+      (select(videoMetadataCharacters)
+            ..where(($VideoMetadataCharactersTable t) =>
+                t.characterKey.equals(characterKey)))
+          .getSingleOrNull();
+
+  /// 整体替换单一 owner 的 provider identities。五种 owner 必须恰好提供一个。
+  Future<void> replaceVideoMetadataProviderIdentities({
+    int? workId,
+    int? seasonId,
+    int? episodeId,
+    String? personKey,
+    String? characterKey,
+    required List<VideoMetadataProviderIdentitiesCompanion> identities,
+  }) {
+    _requireOneVideoMetadataOwner(
+      workId: workId,
+      seasonId: seasonId,
+      episodeId: episodeId,
+      personKey: personKey,
+      characterKey: characterKey,
+    );
+    return transaction(() async {
+      final DeleteStatement<$VideoMetadataProviderIdentitiesTable,
+              VideoMetadataProviderIdentityRow> statement =
+          delete(videoMetadataProviderIdentities);
+      if (workId != null) {
+        statement.where(($VideoMetadataProviderIdentitiesTable t) =>
+            t.workId.equals(workId));
+      } else if (seasonId != null) {
+        statement.where(($VideoMetadataProviderIdentitiesTable t) =>
+            t.seasonId.equals(seasonId));
+      } else if (episodeId != null) {
+        statement.where(($VideoMetadataProviderIdentitiesTable t) =>
+            t.episodeId.equals(episodeId));
+      } else if (personKey != null) {
+        statement.where(($VideoMetadataProviderIdentitiesTable t) =>
+            t.personKey.equals(personKey));
+      } else {
+        statement.where(($VideoMetadataProviderIdentitiesTable t) =>
+            t.characterKey.equals(characterKey!));
+      }
+      await statement.go();
+      for (final VideoMetadataProviderIdentitiesCompanion identity
+          in identities) {
+        await into(videoMetadataProviderIdentities).insertOnConflictUpdate(
+          identity.copyWith(
+            workId: Value<int?>(workId),
+            seasonId: Value<int?>(seasonId),
+            episodeId: Value<int?>(episodeId),
+            personKey: Value<String?>(personKey),
+            characterKey: Value<String?>(characterKey),
+          ),
+        );
+      }
+    });
+  }
+
+  Future<List<VideoMetadataProviderIdentityRow>>
+      getVideoMetadataProviderIdentities({
+    int? workId,
+    int? seasonId,
+    int? episodeId,
+    String? personKey,
+    String? characterKey,
+  }) {
+    _requireOneVideoMetadataOwner(
+      workId: workId,
+      seasonId: seasonId,
+      episodeId: episodeId,
+      personKey: personKey,
+      characterKey: characterKey,
+    );
+    final SimpleSelectStatement<$VideoMetadataProviderIdentitiesTable,
+            VideoMetadataProviderIdentityRow> query =
+        select(videoMetadataProviderIdentities);
+    if (workId != null) {
+      query.where(
+          ($VideoMetadataProviderIdentitiesTable t) => t.workId.equals(workId));
+    } else if (seasonId != null) {
+      query.where(($VideoMetadataProviderIdentitiesTable t) =>
+          t.seasonId.equals(seasonId));
+    } else if (episodeId != null) {
+      query.where(($VideoMetadataProviderIdentitiesTable t) =>
+          t.episodeId.equals(episodeId));
+    } else if (personKey != null) {
+      query.where(($VideoMetadataProviderIdentitiesTable t) =>
+          t.personKey.equals(personKey));
+    } else {
+      query.where(($VideoMetadataProviderIdentitiesTable t) =>
+          t.characterKey.equals(characterKey!));
+    }
+    query.orderBy(<OrderingTerm Function(
+      $VideoMetadataProviderIdentitiesTable,
+    )>[
+      ($VideoMetadataProviderIdentitiesTable t) =>
+          OrderingTerm.desc(t.isPrimary),
+      ($VideoMetadataProviderIdentitiesTable t) =>
+          OrderingTerm(expression: t.provider),
+    ]);
+    return query.get();
+  }
+
+  Future<void> replaceVideoMetadataRawSnapshots(
+    String identityKey,
+    List<VideoMetadataRawSnapshotsCompanion> snapshots,
+  ) =>
+      transaction(() async {
+        await (delete(videoMetadataRawSnapshots)
+              ..where(($VideoMetadataRawSnapshotsTable t) =>
+                  t.identityKey.equals(identityKey)))
+            .go();
+        for (final VideoMetadataRawSnapshotsCompanion snapshot in snapshots) {
+          await into(videoMetadataRawSnapshots).insert(
+            snapshot.copyWith(identityKey: Value<String>(identityKey)),
+          );
+        }
+      });
+
+  Future<List<VideoMetadataRawSnapshotRow>> getVideoMetadataRawSnapshots(
+    String identityKey,
+  ) =>
+      (select(videoMetadataRawSnapshots)
+            ..where(($VideoMetadataRawSnapshotsTable t) =>
+                t.identityKey.equals(identityKey))
+            ..orderBy(<OrderingTerm Function($VideoMetadataRawSnapshotsTable)>[
+              ($VideoMetadataRawSnapshotsTable t) =>
+                  OrderingTerm(expression: t.snapshotKind),
+            ]))
+          .get();
+
+  /// Terms 是全局去重词典，replace 只替换本作品映射，不会删除其它作品仍引用的词。
+  Future<void> replaceVideoMetadataTermsForWork({
+    required int workId,
+    required List<VideoMetadataTermsCompanion> terms,
+    required List<VideoMetadataWorkTermsCompanion> mappings,
+  }) =>
+      transaction(() async {
+        for (final VideoMetadataTermsCompanion term in terms) {
+          await into(videoMetadataTerms).insertOnConflictUpdate(term);
+        }
+        await (delete(videoMetadataWorkTerms)
+              ..where(
+                  ($VideoMetadataWorkTermsTable t) => t.workId.equals(workId)))
+            .go();
+        for (final VideoMetadataWorkTermsCompanion mapping in mappings) {
+          await into(videoMetadataWorkTerms).insert(
+            mapping.copyWith(workId: Value<int>(workId)),
+          );
+        }
+      });
+
+  Future<List<VideoMetadataTermRow>> getVideoMetadataTermsForWork(
+    int workId,
+  ) async {
+    final JoinedSelectStatement<HasResultSet, dynamic> query =
+        select(videoMetadataTerms).join(<Join<HasResultSet, dynamic>>[
+      innerJoin(
+        videoMetadataWorkTerms,
+        videoMetadataWorkTerms.termKey.equalsExp(videoMetadataTerms.termKey),
+      ),
+    ])
+          ..where(videoMetadataWorkTerms.workId.equals(workId))
+          ..orderBy(<OrderingTerm>[
+            OrderingTerm(expression: videoMetadataWorkTerms.sortOrder),
+            OrderingTerm(expression: videoMetadataTerms.name),
+          ]);
+    final List<TypedResult> rows = await query.get();
+    return <VideoMetadataTermRow>[
+      for (final TypedResult row in rows) row.readTable(videoMetadataTerms),
+    ];
+  }
+
+  /// 整体替换 work / season / episode 之一的职员表。人物与角色实体需先 upsert。
+  Future<void> replaceVideoMetadataCredits({
+    int? workId,
+    int? seasonId,
+    int? episodeId,
+    required List<VideoMetadataCreditsCompanion> credits,
+  }) {
+    _requireOneVideoMetadataOwner(
+      workId: workId,
+      seasonId: seasonId,
+      episodeId: episodeId,
+    );
+    return transaction(() async {
+      final DeleteStatement<$VideoMetadataCreditsTable, VideoMetadataCreditRow>
+          statement = delete(videoMetadataCredits);
+      if (workId != null) {
+        statement
+            .where(($VideoMetadataCreditsTable t) => t.workId.equals(workId));
+      } else if (seasonId != null) {
+        statement.where(
+            ($VideoMetadataCreditsTable t) => t.seasonId.equals(seasonId));
+      } else {
+        statement.where(
+            ($VideoMetadataCreditsTable t) => t.episodeId.equals(episodeId!));
+      }
+      await statement.go();
+      for (final VideoMetadataCreditsCompanion credit in credits) {
+        await into(videoMetadataCredits).insert(
+          credit.copyWith(
+            workId: Value<int?>(workId),
+            seasonId: Value<int?>(seasonId),
+            episodeId: Value<int?>(episodeId),
+          ),
+        );
+      }
+    });
+  }
+
+  Future<List<VideoMetadataCreditRow>> getVideoMetadataCredits({
+    int? workId,
+    int? seasonId,
+    int? episodeId,
+  }) {
+    _requireOneVideoMetadataOwner(
+      workId: workId,
+      seasonId: seasonId,
+      episodeId: episodeId,
+    );
+    final SimpleSelectStatement<$VideoMetadataCreditsTable,
+        VideoMetadataCreditRow> query = select(videoMetadataCredits);
+    if (workId != null) {
+      query.where(($VideoMetadataCreditsTable t) => t.workId.equals(workId));
+    } else if (seasonId != null) {
+      query
+          .where(($VideoMetadataCreditsTable t) => t.seasonId.equals(seasonId));
+    } else {
+      query.where(
+          ($VideoMetadataCreditsTable t) => t.episodeId.equals(episodeId!));
+    }
+    query.orderBy(<OrderingTerm Function($VideoMetadataCreditsTable)>[
+      ($VideoMetadataCreditsTable t) => OrderingTerm(expression: t.sortOrder),
+      ($VideoMetadataCreditsTable t) => OrderingTerm(expression: t.id),
+    ]);
+    return query.get();
+  }
+
+  /// 整体替换 work / season / episode / person / character 之一的图片候选集。
+  Future<void> replaceVideoMetadataImages({
+    int? workId,
+    int? seasonId,
+    int? episodeId,
+    String? personKey,
+    String? characterKey,
+    required List<VideoMetadataImagesCompanion> images,
+  }) {
+    _requireOneVideoMetadataOwner(
+      workId: workId,
+      seasonId: seasonId,
+      episodeId: episodeId,
+      personKey: personKey,
+      characterKey: characterKey,
+    );
+    return transaction(() async {
+      final DeleteStatement<$VideoMetadataImagesTable, VideoMetadataImageRow>
+          statement = delete(videoMetadataImages);
+      if (workId != null) {
+        statement
+            .where(($VideoMetadataImagesTable t) => t.workId.equals(workId));
+      } else if (seasonId != null) {
+        statement.where(
+            ($VideoMetadataImagesTable t) => t.seasonId.equals(seasonId));
+      } else if (episodeId != null) {
+        statement.where(
+            ($VideoMetadataImagesTable t) => t.episodeId.equals(episodeId));
+      } else if (personKey != null) {
+        statement.where(
+            ($VideoMetadataImagesTable t) => t.personKey.equals(personKey));
+      } else {
+        statement.where(($VideoMetadataImagesTable t) =>
+            t.characterKey.equals(characterKey!));
+      }
+      await statement.go();
+      for (final VideoMetadataImagesCompanion image in images) {
+        await into(videoMetadataImages).insert(
+          image.copyWith(
+            workId: Value<int?>(workId),
+            seasonId: Value<int?>(seasonId),
+            episodeId: Value<int?>(episodeId),
+            personKey: Value<String?>(personKey),
+            characterKey: Value<String?>(characterKey),
+          ),
+        );
+      }
+    });
+  }
+
+  Future<List<VideoMetadataImageRow>> getVideoMetadataImages({
+    int? workId,
+    int? seasonId,
+    int? episodeId,
+    String? personKey,
+    String? characterKey,
+  }) {
+    _requireOneVideoMetadataOwner(
+      workId: workId,
+      seasonId: seasonId,
+      episodeId: episodeId,
+      personKey: personKey,
+      characterKey: characterKey,
+    );
+    final SimpleSelectStatement<$VideoMetadataImagesTable,
+        VideoMetadataImageRow> query = select(videoMetadataImages);
+    if (workId != null) {
+      query.where(($VideoMetadataImagesTable t) => t.workId.equals(workId));
+    } else if (seasonId != null) {
+      query.where(($VideoMetadataImagesTable t) => t.seasonId.equals(seasonId));
+    } else if (episodeId != null) {
+      query.where(
+          ($VideoMetadataImagesTable t) => t.episodeId.equals(episodeId));
+    } else if (personKey != null) {
+      query.where(
+          ($VideoMetadataImagesTable t) => t.personKey.equals(personKey));
+    } else {
+      query.where(($VideoMetadataImagesTable t) =>
+          t.characterKey.equals(characterKey!));
+    }
+    query.orderBy(<OrderingTerm Function($VideoMetadataImagesTable)>[
+      ($VideoMetadataImagesTable t) => OrderingTerm(expression: t.kind),
+      ($VideoMetadataImagesTable t) => OrderingTerm(expression: t.position),
+      ($VideoMetadataImagesTable t) => OrderingTerm(expression: t.id),
+    ]);
+    return query.get();
+  }
+
+  /// 整体替换一部作品的在线附件，同时保留扫描器绑定的本地附件。
+  Future<void> replaceOnlineVideoMetadataExtras(
+    int workId,
+    List<VideoMetadataExtrasCompanion> extras,
+  ) =>
+      transaction(() async {
+        await (delete(videoMetadataExtras)
+              ..where(($VideoMetadataExtrasTable t) =>
+                  t.workId.equals(workId) & t.sourceKind.equals('online')))
+            .go();
+        for (final VideoMetadataExtrasCompanion extra in extras) {
+          await into(videoMetadataExtras).insertOnConflictUpdate(
+            extra.copyWith(workId: Value<int>(workId)),
+          );
+        }
+      });
+
+  /// 新增或更新本地附件；同一个 VideoBook 只能绑定一部作品。
+  Future<void> upsertVideoMetadataExtra(
+    VideoMetadataExtrasCompanion extra,
+  ) =>
+      into(videoMetadataExtras).insertOnConflictUpdate(extra);
+
+  Future<List<VideoMetadataExtraRow>> getVideoMetadataExtras(int workId) =>
+      (select(videoMetadataExtras)
+            ..where(($VideoMetadataExtrasTable t) => t.workId.equals(workId))
+            ..orderBy(<OrderingTerm Function($VideoMetadataExtrasTable)>[
+              ($VideoMetadataExtrasTable t) =>
+                  OrderingTerm(expression: t.sortOrder),
+              ($VideoMetadataExtrasTable t) =>
+                  OrderingTerm(expression: t.title),
+            ]))
+          .get();
+
+  Future<List<VideoMetadataImageRow>> getAllVideoMetadataImages() =>
+      (select(videoMetadataImages)
+            ..orderBy(<OrderingTerm Function($VideoMetadataImagesTable)>[
+              ($VideoMetadataImagesTable t) => OrderingTerm(expression: t.id),
+            ]))
+          .get();
+
+  Future<List<VideoMetadataExtraRow>> getAllVideoMetadataExtras() =>
+      (select(videoMetadataExtras)
+            ..orderBy(<OrderingTerm Function($VideoMetadataExtrasTable)>[
+              ($VideoMetadataExtrasTable t) =>
+                  OrderingTerm(expression: t.workId),
+              ($VideoMetadataExtrasTable t) =>
+                  OrderingTerm(expression: t.sortOrder),
+            ]))
+          .get();
+
+  Future<VideoMetadataExtraRow?> getVideoMetadataExtraByBook(
+    String bookUid,
+  ) =>
+      (select(videoMetadataExtras)
+            ..where(($VideoMetadataExtrasTable t) => t.bookUid.equals(bookUid)))
+          .getSingleOrNull();
+
+  // ── video source scrape settings / runs / sidecar artifacts ───────
+
+  Future<VideoSourceScrapeSettingRow?> getVideoSourceScrapeSettings(
+    int sourceId,
+  ) =>
+      (select(videoSourceScrapeSettings)
+            ..where(($VideoSourceScrapeSettingsTable t) =>
+                t.sourceId.equals(sourceId)))
+          .getSingleOrNull();
+
+  Future<void> upsertVideoSourceScrapeSettings(
+    VideoSourceScrapeSettingsCompanion settings,
+  ) =>
+      into(videoSourceScrapeSettings).insertOnConflictUpdate(settings);
+
+  Future<int> insertVideoSourceScrapeRun(
+    VideoSourceScrapeRunsCompanion run,
+  ) =>
+      into(videoSourceScrapeRuns).insert(run);
+
+  Future<void> updateVideoSourceScrapeRun(
+    int runId,
+    VideoSourceScrapeRunsCompanion patch,
+  ) =>
+      (update(videoSourceScrapeRuns)
+            ..where(($VideoSourceScrapeRunsTable t) => t.id.equals(runId)))
+          .write(patch.copyWith(id: const Value<int>.absent()));
+
+  Future<VideoSourceScrapeRunRow?> getVideoSourceScrapeRun(int runId) =>
+      (select(videoSourceScrapeRuns)
+            ..where(($VideoSourceScrapeRunsTable t) => t.id.equals(runId)))
+          .getSingleOrNull();
+
+  Future<List<VideoSourceScrapeRunRow>> getVideoSourceScrapeRuns({
+    int? sourceId,
+    int limit = 50,
+  }) {
+    final SimpleSelectStatement<$VideoSourceScrapeRunsTable,
+        VideoSourceScrapeRunRow> query = select(videoSourceScrapeRuns);
+    if (sourceId != null) {
+      query.where(
+          ($VideoSourceScrapeRunsTable t) => t.sourceId.equals(sourceId));
+    }
+    query
+      ..orderBy(<OrderingTerm Function($VideoSourceScrapeRunsTable)>[
+        ($VideoSourceScrapeRunsTable t) => OrderingTerm.desc(t.startedAt),
+        ($VideoSourceScrapeRunsTable t) => OrderingTerm.desc(t.id),
+      ])
+      ..limit(limit);
+    return query.get();
+  }
+
+  /// 进程异常退出不会经过 Flutter dispose；下次启动把遗留 running 任务诚实标成
+  /// interrupted，避免任务面板永久显示正在运行。
+  Future<int> interruptStaleVideoSourceScrapeRuns({int? finishedAt}) {
+    final int now = finishedAt ?? DateTime.now().millisecondsSinceEpoch;
+    return (update(videoSourceScrapeRuns)
+          ..where(
+              ($VideoSourceScrapeRunsTable t) => t.status.equals('running')))
+        .write(VideoSourceScrapeRunsCompanion(
+      status: const Value<String>('interrupted'),
+      phase: const Value<String>('interrupted'),
+      lastError: const Value<String>('应用在任务完成前退出'),
+      updatedAt: Value<int>(now),
+      finishedAt: Value<int?>(now),
+    ));
+  }
+
+  Future<VideoSidecarArtifactRow?> getVideoSidecarArtifactByPath(
+    String path,
+  ) =>
+      (select(videoSidecarArtifacts)
+            ..where(($VideoSidecarArtifactsTable t) => t.path.equals(path)))
+          .getSingleOrNull();
+
+  Future<int> upsertVideoSidecarArtifact(
+    VideoSidecarArtifactsCompanion artifact,
+  ) async {
+    if (!artifact.path.present) {
+      throw ArgumentError('artifact path must be present');
+    }
+    await into(videoSidecarArtifacts).insert(
+      artifact,
+      onConflict: DoUpdate(
+        (_) => artifact,
+        target: <Column<Object>>[videoSidecarArtifacts.path],
+      ),
+    );
+    final VideoSidecarArtifactRow row = await (select(videoSidecarArtifacts)
+          ..where(($VideoSidecarArtifactsTable t) =>
+              t.path.equals(artifact.path.value)))
+        .getSingle();
+    return row.id;
+  }
+
+  Future<List<VideoSidecarArtifactRow>> getVideoSidecarArtifacts({
+    int? sourceId,
+    int? runId,
+  }) {
+    final SimpleSelectStatement<$VideoSidecarArtifactsTable,
+        VideoSidecarArtifactRow> query = select(videoSidecarArtifacts);
+    if (sourceId != null) {
+      query.where(
+          ($VideoSidecarArtifactsTable t) => t.sourceId.equals(sourceId));
+    }
+    if (runId != null) {
+      query.where(($VideoSidecarArtifactsTable t) => t.runId.equals(runId));
+    }
+    query.orderBy(<OrderingTerm Function($VideoSidecarArtifactsTable)>[
+      ($VideoSidecarArtifactsTable t) => OrderingTerm(expression: t.path),
+    ]);
+    return query.get();
+  }
 
   /// 监听视频库 uid 集合。插入/删除行时发出更新后的 uid 列表；库页据此在任意
   /// 导入路径（页内 / 拖拽 / 外部「用 Fushi 打开」/ 远端下载）落库后自动重查，
@@ -4134,6 +5038,30 @@ class FushiDatabase extends _$FushiDatabase {
   /// 合并规则（含并发移出/重复键的容错）见 [mergeCollectionOrder]。
   Future<void> reorderCollectionItems(
           int collectionId, List<CollectionMemberKey> ordered) =>
+      _reorderCollectionItems(
+        collectionId,
+        ordered,
+        bumpOrderUpdatedAt: true,
+      );
+
+  /// 自动整理合集成员顺序，不把机器扫描伪装成用户手动排序。
+  ///
+  /// 与 [reorderCollectionItems] 拥有相同的子集合并与致密 sortIndex 不变量，唯一
+  /// 差别是不更新 `orderUpdatedAt`。来源扫描、迁移等确定性整理应走这里；交互式拖拽
+  /// 仍必须走 [reorderCollectionItems]，让跨端 LWW 能识别真正的用户意图。
+  Future<void> reorderCollectionItemsAutomatically(
+          int collectionId, List<CollectionMemberKey> ordered) =>
+      _reorderCollectionItems(
+        collectionId,
+        ordered,
+        bumpOrderUpdatedAt: false,
+      );
+
+  Future<void> _reorderCollectionItems(
+    int collectionId,
+    List<CollectionMemberKey> ordered, {
+    required bool bumpOrderUpdatedAt,
+  }) =>
       transaction(() async {
         // 事务内取当前全表顺序作槽位基准（[getCollectionItems] 的
         // sortIndex→entryKey→mediaType 全序 = 用户此刻看到的顺序；那三段键就是成员
@@ -4156,11 +5084,13 @@ class FushiDatabase extends _$FushiDatabase {
                     t.entryKey.equals(merged[i].entryKey)))
               .write(MediaCollectionItemsCompanion(sortIndex: Value(i)));
         }
-        await (update(mediaCollections)
-              ..where((t) => t.id.equals(collectionId)))
-            .write(MediaCollectionsCompanion(
-          orderUpdatedAt: Value(DateTime.now().millisecondsSinceEpoch),
-        ));
+        if (bumpOrderUpdatedAt) {
+          await (update(mediaCollections)
+                ..where((t) => t.id.equals(collectionId)))
+              .write(MediaCollectionsCompanion(
+            orderUpdatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+          ));
+        }
       });
 
   /// 删条目时清其全部合集引用（逻辑外键无 DB cascade，删书路径主动调用）；被清空的

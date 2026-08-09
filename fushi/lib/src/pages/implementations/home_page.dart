@@ -21,11 +21,16 @@ import 'package:fushi/src/anki/anki_view_model.dart'
     show ankiRepositoryProvider;
 import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/media/source_library/source_library_row.dart';
+import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
+import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
-import 'package:fushi/src/pages/implementations/media_library_shell.dart';
-import 'package:fushi/src/pages/implementations/media_sources_page.dart';
-import 'package:fushi/src/pages/implementations/module_settings_view.dart';
-import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/pages/implementations/video_library_shell.dart';
 import 'package:fushi/src/media/audiobook/now_listening_mini_bar.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/pages.dart';
@@ -43,6 +48,8 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
         focusedEditableText,
         gamepadMoveFocusInDirection;
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi_core/fushi_core.dart'
+    show VideoSourceScrapeRunRow, VideoSourceScrapeSettingRow;
 
 /// 顶层 tab 的逻辑身份（取代写死的整数索引 0/1/2）。条件 tab（video/downloads 常驻、
 /// games 仅 Windows）用枚举身份而非位置来切换/路由——插入条件 tab 不会再打乱「设置/词典」
@@ -257,6 +264,11 @@ class _HomePageState extends BasePageState<HomePage>
   HomeTab _previousTab = HomeTab.home;
   final FocusNode _keyboardFocusNode = FocusNode();
   final ValueNotifier<int> _dictFocusSignal = ValueNotifier<int>(0);
+  final ValueNotifier<int> _videoLibraryRefreshSignal = ValueNotifier<int>(0);
+  VideoSourceScrapeCoordinator? _videoSourceScrapeCoordinator;
+  VideoSourceScrapeTaskController? _videoSourceScrapeTaskController;
+  String? _videoSourceScrapeConfigFingerprint;
+  bool _videoSourceScrapePanelOpen = false;
 
   /// 定时后台同步：app 存活期每隔 [_periodicSyncInterval] 重跑一次 app-open 语义的全量
   /// sweep，让「手机一直开着、电脑那边改了数据」这种没有任何事件触发的场景也能自动拉到
@@ -326,6 +338,20 @@ class _HomePageState extends BasePageState<HomePage>
       }
 
       _triggerFullAutoSync();
+      unawaited(appModel.database
+          .interruptStaleVideoSourceScrapeRuns()
+          .catchError((Object error, StackTrace stackTrace) {
+        ErrorLogService.instance.log(
+          'HomePage.interruptStaleVideoScrapeRuns',
+          error,
+          stackTrace,
+        );
+        return 0;
+      }));
+      // v77 之前已经存在于库中的来源不会自动重触发扫描。启动时做一次纯本地、
+      // 幂等的作品索引，把旧合集/独立电影补成规范 VideoMetadataWork；否则系列页
+      // 能看到临时卡片，点进详情却永远只能落到无资料的旧合集视图。
+      unawaited(_backfillVideoMetadataWorks());
       // 首帧同步之后挂定时轮询，让静止不动的设备也能周期性拉到远端改动（见
       // [_periodicSyncInterval] 注释）。dispose 时 cancel。
       _periodicSyncTimer =
@@ -425,6 +451,27 @@ class _HomePageState extends BasePageState<HomePage>
     setState(() {});
   }
 
+  Future<void> _backfillVideoMetadataWorks() async {
+    final List<SourceLibraryRow> sources =
+        await appModel.database.getMediaSourcesByKind('video');
+    final VideoSourceMetadataIndexer indexer =
+        VideoSourceMetadataIndexer(appModel.database);
+    bool changed = false;
+    for (final SourceLibraryRow source in sources) {
+      try {
+        await indexer.index(source);
+        changed = true;
+      } on Object catch (error, stackTrace) {
+        ErrorLogService.instance.log(
+          'HomePage.backfillVideoMetadataWorks.${source.id}',
+          error,
+          stackTrace,
+        );
+      }
+    }
+    if (changed && mounted) _notifyVideoLibraryChanged();
+  }
+
   /// TODO-376：响应显式「打开查词 tab」请求（[AppModel.homeDictionaryTabRequest]）。
   /// 桌面悬浮字幕条点词（reader 路由 `_lookupFromFloatingLyric`）这类**显式**手势会先
   /// 把待查词排进 [DesktopLookupService.pendingText]、唤主窗前台，再发本请求；这里只把
@@ -448,7 +495,9 @@ class _HomePageState extends BasePageState<HomePage>
       return true;
     }());
     _periodicSyncTimer?.cancel();
+    _shutdownVideoSourceScrape();
     _dictFocusSignal.dispose();
+    _videoLibraryRefreshSignal.dispose();
     _keyboardFocusNode.dispose();
     WidgetsBinding.instance.removeObserver(this);
     appModelNoUpdate.databaseCloseNotifier.removeListener(refresh);
@@ -472,6 +521,8 @@ class _HomePageState extends BasePageState<HomePage>
       // 首页键事件 Focus，导致切窗回来后页级 / 全局快捷键全死，只能重启 app 才靠
       // autofocus 抢回。对齐视频页 [_reclaimVideoFocusIfOwned] 的 resumed 回收范式。
       _reclaimHomeFocusIfOwned();
+    } else if (AppLifecycleState.detached == state) {
+      _videoSourceScrapeTaskController?.markInterrupted();
     } else if (AppLifecycleState.paused == state) {
       if (appModel.lowMemoryMode) {
         PaintingBinding.instance.imageCache.clear();
@@ -1033,6 +1084,234 @@ class _HomePageState extends BasePageState<HomePage>
   VideoBookRepository get _videoRepository =>
       _videoRepo ??= VideoBookRepository(appModel.database);
 
+  void _notifyVideoLibraryChanged() {
+    _videoLibraryRefreshSignal.value++;
+  }
+
+  VideoSourceScrapeTaskController get _videoSourceScrapeController {
+    final VideoSourceScrapeTaskController? existing =
+        _videoSourceScrapeTaskController;
+    final String configuredTmdbKey = appModelNoUpdate.prefsRepo
+        .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String;
+    final VideoSourceScrapeGlobalConfig config =
+        VideoSourceScrapeGlobalConfig.fromPreferences(
+      appModelNoUpdate.prefsRepo,
+      resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
+    );
+    final String fingerprint = <Object>[
+      config.primaryProvider.name,
+      config.tmdbApiKey,
+      config.fanartApiKey,
+      config.bangumiToken,
+      config.doubanEndpoint,
+      config.doubanToken,
+      config.locale,
+    ].join('\u0000');
+    if (existing != null &&
+        (existing.isBusy ||
+            _videoSourceScrapeConfigFingerprint == fingerprint)) {
+      return existing;
+    }
+    existing?.removeListener(_onVideoSourceScrapeTaskChanged);
+    existing?.dispose();
+    _videoSourceScrapeCoordinator?.close();
+    final VideoSourceScrapeCoordinator coordinator =
+        VideoSourceScrapeCoordinator(
+      database: appModel.database,
+      config: config,
+    );
+    _videoSourceScrapeCoordinator = coordinator;
+    _videoSourceScrapeConfigFingerprint = fingerprint;
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(coordinator)
+          ..addListener(_onVideoSourceScrapeTaskChanged);
+    return _videoSourceScrapeTaskController = controller;
+  }
+
+  void _onVideoSourceScrapeTaskChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _openVideoSourceScrapeTasks() async {
+    if (!mounted || _videoSourceScrapePanelOpen) return;
+    _videoSourceScrapePanelOpen = true;
+    try {
+      await showVideoSourceScrapeTaskPanel(
+        context: context,
+        controller: _videoSourceScrapeController,
+        loadRuns: () => appModel.database.getVideoSourceScrapeRuns(limit: 20),
+        onRetry: (VideoSourceScrapeRunRow run) async {
+          final int? sourceId = run.sourceId;
+          if (sourceId == null) return;
+          final SourceLibraryRow? source =
+              await appModel.database.getMediaSourceById(sourceId);
+          if (source == null) return;
+          await _scrapeVideoSource(source);
+        },
+      );
+    } finally {
+      _videoSourceScrapePanelOpen = false;
+    }
+  }
+
+  Future<SourceScrapeReport> _observeVideoSourceScrape(
+    Future<SourceScrapeReport> task,
+  ) {
+    unawaited(task.then<void>((SourceScrapeReport _) {
+      if (mounted) _notifyVideoLibraryChanged();
+    }, onError: (Object error, StackTrace stackTrace) {
+      ErrorLogService.instance.log(
+        'HomePage.videoSourceScrape',
+        error,
+        stackTrace,
+      );
+    }));
+    return task;
+  }
+
+  Future<void> _scrapeVideoSource(SourceLibraryRow source) async {
+    final ({bool proceed, bool grant}) overwrite =
+        await _confirmProtectedSidecarOverwrite(<SourceLibraryRow>[source]);
+    if (!mounted || !overwrite.proceed) return;
+    final VideoSourceScrapeTaskController controller =
+        _videoSourceScrapeController;
+    _observeVideoSourceScrape(
+      controller.scrapeSource(
+        source,
+        interactive: true,
+        allowProtectedOverwrite: overwrite.grant,
+      ),
+    );
+    if (!mounted) return;
+    FushiToast.show(msg: t.video_source_scrape_background_started);
+    unawaited(_openVideoSourceScrapeTasks());
+  }
+
+  Future<void> _scrapeAllVideosFromSources() async {
+    final List<SourceLibraryRow> sources =
+        await appModel.database.getMediaSourcesByKind('video');
+    final List<SourceLibraryRow> localSources = sources
+        .where((SourceLibraryRow source) => source.transport == 'local')
+        .toList(growable: false);
+    if (!mounted) return;
+    if (localSources.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.media_source_no_sources)),
+      );
+      return;
+    }
+    final ({bool proceed, bool grant}) overwrite =
+        await _confirmProtectedSidecarOverwrite(localSources);
+    if (!mounted || !overwrite.proceed) return;
+    final VideoSourceScrapeTaskController controller =
+        _videoSourceScrapeController;
+    _observeVideoSourceScrape(
+      controller.scrapeAllSources(
+        localSources,
+        interactive: true,
+        allowProtectedOverwrite: overwrite.grant,
+      ),
+    );
+    if (!mounted) return;
+    FushiToast.show(msg: t.video_source_scrape_background_started);
+    unawaited(_openVideoSourceScrapeTasks());
+  }
+
+  Future<({bool proceed, bool grant})> _confirmProtectedSidecarOverwrite(
+    Iterable<SourceLibraryRow> sources,
+  ) async {
+    bool requested = false;
+    for (final SourceLibraryRow source in sources) {
+      final VideoSourceScrapeSettingRow? settings =
+          await appModel.database.getVideoSourceScrapeSettings(source.id);
+      if (settings?.allowExternalOverwrite == true &&
+          (settings?.nfoPolicy == 'overwrite' ||
+              settings?.imagePolicy == 'overwrite')) {
+        requested = true;
+        break;
+      }
+    }
+    if (!requested) return (proceed: true, grant: false);
+    if (!mounted) return (proceed: false, grant: false);
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+        title: Text(
+          t.video_source_scrape_external_overwrite_confirm_title,
+        ),
+        content: Text(
+          t.video_source_scrape_external_overwrite_confirm_body,
+        ),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: dialogContext,
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(t.dialog_cancel),
+          ),
+          adaptiveDialogAction(
+            context: dialogContext,
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(t.dialog_replace),
+          ),
+        ],
+      ),
+    );
+    return (proceed: confirmed == true, grant: confirmed == true);
+  }
+
+  /// Widget dispose 不能 await；先标记中断并让在途 Future 到下一取消边界，再关闭
+  /// HTTP client/ChangeNotifier，避免已释放 notifier 或已关闭 client 被异步任务继续用。
+  void _shutdownVideoSourceScrape() {
+    final VideoSourceScrapeTaskController? controller =
+        _videoSourceScrapeTaskController;
+    final VideoSourceScrapeCoordinator? coordinator =
+        _videoSourceScrapeCoordinator;
+    _videoSourceScrapeTaskController = null;
+    _videoSourceScrapeCoordinator = null;
+    _videoSourceScrapeConfigFingerprint = null;
+    if (controller == null) {
+      coordinator?.close();
+      return;
+    }
+    controller.removeListener(_onVideoSourceScrapeTaskChanged);
+    controller.markInterrupted();
+    final Future<SourceScrapeReport>? active = controller.activeTask;
+    if (active == null) {
+      controller.dispose();
+      coordinator?.close();
+      return;
+    }
+    unawaited(active
+        .then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    )
+        .whenComplete(() {
+      controller.dispose();
+      coordinator?.close();
+    }));
+  }
+
+  Future<void> _onVideoSourceScanCompleted(
+    SourceLibraryRow source,
+    SourceScanSummary summary,
+  ) async {
+    _notifyVideoLibraryChanged();
+    if (!summary.succeeded) return;
+    final VideoSourceScrapeSettingRow? settings =
+        await appModel.database.getVideoSourceScrapeSettings(source.id);
+    if (!mounted ||
+        settings?.enabled == false ||
+        settings?.autoAfterScan != true ||
+        _videoSourceScrapeController.isRunning) {
+      return;
+    }
+    _observeVideoSourceScrape(
+      _videoSourceScrapeController.scrapeSource(source),
+    );
+  }
+
   Widget buildBody() {
     final HomeTab visible = _visibleTab;
     if (_keepAliveTabs.contains(visible)) {
@@ -1059,6 +1338,26 @@ class _HomePageState extends BasePageState<HomePage>
             key: ValueKey<HomeTab>(visible),
             child: _buildTabContent(visible),
           ),
+        if (_videoSourceScrapeTaskController case final controller?)
+          if (controller.isBusy)
+            Positioned(
+              right: 20,
+              bottom: 20,
+              child: SafeArea(
+                child: FloatingActionButton.small(
+                  key: const ValueKey<String>(
+                    'video-source-background-task-panel',
+                  ),
+                  tooltip: t.video_source_scrape_tasks_open,
+                  onPressed: () => unawaited(_openVideoSourceScrapeTasks()),
+                  child: Icon(
+                    controller.pendingConfirmation == null
+                        ? Icons.sync
+                        : Icons.rule_folder_outlined,
+                  ),
+                ),
+              ),
+            ),
       ],
     );
   }
@@ -1068,36 +1367,15 @@ class _HomePageState extends BasePageState<HomePage>
       case HomeTab.home:
         return HomeDashboardPage(videoRepo: _videoRepository);
       case HomeTab.video:
-        // 视频是「媒体库 + 来源」两视图（与书 / 漫画同一套导航结构）。视频没有在线
-        // 浏览源——番剧下载走 torrent 栈、入口在下载页——所以不放「浏览」空壳 tab。
-        return MediaLibraryShell(
-          focusIdPrefix: 'video-library-view',
-          views: <MediaLibraryViewSpec>[
-            MediaLibraryViewSpec(
-              kind: MediaLibraryViewKind.library,
-              label: t.library_view_media,
-              builder: (BuildContext context, Widget navigation) =>
-                  HomeVideoPage(
-                repo: _videoRepository,
-                navigation: navigation,
-              ),
-            ),
-            MediaLibraryViewSpec(
-              kind: MediaLibraryViewKind.sources,
-              label: t.library_view_sources,
-              builder: (BuildContext context, Widget navigation) =>
-                  MediaSourcesPage(mediaKind: 'video', navigation: navigation),
-            ),
-            MediaLibraryViewSpec(
-              kind: MediaLibraryViewKind.settings,
-              label: t.settings,
-              builder: (BuildContext context, Widget navigation) =>
-                  ModuleSettingsView(
-                destinationId: SettingsDestinationId.video,
-                navigation: navigation,
-              ),
-            ),
-          ],
+        return VideoLibraryShell(
+          repository: _videoRepository,
+          libraryRefreshSignal: _videoLibraryRefreshSignal,
+          scrapeTaskController: _videoSourceScrapeController,
+          onScrapeAll: _scrapeAllVideosFromSources,
+          onScrapeSource: _scrapeVideoSource,
+          onVideoScanCompleted: _onVideoSourceScanCompleted,
+          onOpenScrapeTasks: () => unawaited(_openVideoSourceScrapeTasks()),
+          onLibraryChanged: _notifyVideoLibraryChanged,
         );
       case HomeTab.downloads:
         return const DownloadsPage();

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/media/source_library/source_library_row.dart';
+import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi/utils.dart';
 
@@ -12,6 +15,12 @@ class MediaSourcesPage extends StatefulWidget {
     required this.mediaKind,
     super.key,
     this.navigation,
+    this.onScrapeAll,
+    this.onScrapeSource,
+    this.onVideoScanCompleted,
+    this.scrapeTaskController,
+    this.onOpenScrapeTasks,
+    this.onLibraryChanged,
   });
 
   /// 'video' | 'book' | 'manga'。
@@ -20,6 +29,27 @@ class MediaSourcesPage extends StatefulWidget {
   /// 库页视图导航条（由 [MediaLibraryShell] 传入，作为页头主内容与动作同一行）。
   final Widget? navigation;
 
+  /// 视频来源页专用的整库刮削动作；其它媒体种类即使误传也不会显示。
+  final Future<void> Function()? onScrapeAll;
+
+  /// 单个视频来源的刮削入口。
+  final Future<void> Function(SourceLibraryRow source)? onScrapeSource;
+
+  /// 视频来源扫描完成后上报摘要；是否继续自动刮削由上层决定。
+  final Future<void> Function(
+    SourceLibraryRow source,
+    SourceScanSummary summary,
+  )? onVideoScanCompleted;
+
+  /// 应用生命周期级刮削任务，来源行用它显示进度并防止重入。
+  final VideoSourceScrapeTaskController? scrapeTaskController;
+
+  /// 视频后台刮削任务面板；即使当前有任务运行也必须可进入查看或取消。
+  final VoidCallback? onOpenScrapeTasks;
+
+  /// 来源扫描完成后通知保活的媒体库重读合集、排序和封面。
+  final VoidCallback? onLibraryChanged;
+
   @override
   State<MediaSourcesPage> createState() => _MediaSourcesPageState();
 }
@@ -27,6 +57,30 @@ class MediaSourcesPage extends StatefulWidget {
 class _MediaSourcesPageState extends State<MediaSourcesPage> {
   final GlobalKey<MediaSourcesViewState> _viewKey =
       GlobalKey<MediaSourcesViewState>();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.scrapeTaskController?.addListener(_taskChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant MediaSourcesPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scrapeTaskController == widget.scrapeTaskController) return;
+    oldWidget.scrapeTaskController?.removeListener(_taskChanged);
+    widget.scrapeTaskController?.addListener(_taskChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.scrapeTaskController?.removeListener(_taskChanged);
+    super.dispose();
+  }
+
+  void _taskChanged() {
+    if (mounted) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,6 +103,10 @@ class _MediaSourcesPageState extends State<MediaSourcesPage> {
               child: MediaSourcesView(
                 key: _viewKey,
                 mediaKind: widget.mediaKind,
+                onScrapeSource: widget.onScrapeSource,
+                onVideoScanCompleted: widget.onVideoScanCompleted,
+                scrapeTaskController: widget.scrapeTaskController,
+                onLibraryChanged: widget.onLibraryChanged,
               ),
             ),
           ),
@@ -58,13 +116,37 @@ class _MediaSourcesPageState extends State<MediaSourcesPage> {
   }
 
   Widget _buildHeader() {
+    final bool busy = widget.scrapeTaskController?.isBusy == true ||
+        _viewKey.currentState?.isBusy == true;
     final List<Widget> actions = <Widget>[
       FushiIconButton(
         tooltip: t.media_source_add,
         label: t.media_source_add,
         icon: Icons.create_new_folder_outlined,
-        onTap: () => _viewKey.currentState?.addSource(),
+        enabled: !busy,
+        onTap: () {
+          if (!busy) _viewKey.currentState?.addSource();
+        },
       ),
+      if (widget.mediaKind == 'video' && widget.onScrapeAll != null)
+        FushiIconButton(
+          tooltip: t.scrape_all,
+          label: t.scrape_all,
+          icon: Icons.manage_search_outlined,
+          enabled: !busy,
+          onTap: () {
+            if (!busy) widget.onScrapeAll!();
+          },
+        ),
+      if (widget.mediaKind == 'video' && widget.onOpenScrapeTasks != null)
+        FushiIconButton(
+          tooltip: t.video_source_scrape_tasks_open,
+          label: t.video_source_scrape_tasks_open,
+          icon: widget.scrapeTaskController?.isBusy == true
+              ? Icons.sync
+              : Icons.pending_actions_outlined,
+          onTap: widget.onOpenScrapeTasks,
+        ),
     ];
     final Widget? navigation = widget.navigation;
     if (navigation != null) {

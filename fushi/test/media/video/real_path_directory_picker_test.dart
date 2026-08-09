@@ -22,24 +22,37 @@ const List<String> kRealPathFileEntries = <String>[
 
 void main() {
   group('source guards: import folder uses unified real-path picker', () {
-    test('video_import_dialog._pickFolder calls pickRealDirectoryPath', () {
-      final String src = File('lib/src/media/video/video_import_dialog.dart')
-          .readAsStringSync();
+    test('media_sources_view._addLocalFolder calls pickRealDirectoryPath', () {
+      final String src = File(
+        'lib/src/pages/implementations/media_sources_view.dart',
+      ).readAsStringSync();
       expect(
         src.contains('pickRealDirectoryPath('),
         isTrue,
         reason: '视频导入文件夹必须走统一真实路径入口，'
             '而非直接 FilePicker.getDirectoryPath()（安卓返回不可用 SAF 串）',
       );
-      // 直接的 getDirectoryPath 不该再出现在 _pickFolder 里。
-      final int idx = src.indexOf('Future<void> _pickFolder()');
+      // 直接的 getDirectoryPath 不该再出现在来源主入口里。
+      final int idx = src.indexOf('Future<void> _addLocalFolder()');
       final int end = src.indexOf('Future<', idx + 10);
       final String body = src.substring(idx, end);
       expect(
-        body.contains('getDirectoryPath'),
+        body.contains('FilePicker.platform.getDirectoryPath'),
         isFalse,
-        reason: '_pickFolder 不得再直接调 getDirectoryPath',
+        reason: '_addLocalFolder 不得再直接调 getDirectoryPath',
       );
+    });
+
+    test('video addSource directly opens local folder picker', () {
+      final String src = File(
+        'lib/src/pages/implementations/media_sources_view.dart',
+      ).readAsStringSync();
+      final String body = _methodBody(src, 'Future<void> addSource()');
+      final int direct = body.indexOf("widget.mediaKind == 'video'");
+      final int dialog = body.indexOf('showAppDialog<_AddSourceChoice>');
+      expect(direct, greaterThanOrEqualTo(0));
+      expect(body, contains('await _addLocalFolder()'));
+      expect(direct, lessThan(dialog), reason: '视频应在弹来源类型对话框之前直接进入文件夹选择');
     });
 
     test('android branch uses native SAF channel, no custom browser', () {

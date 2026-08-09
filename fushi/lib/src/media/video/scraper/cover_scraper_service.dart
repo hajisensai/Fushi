@@ -165,6 +165,7 @@ class CoverScraperService {
     JikanClient? jikanClient,
     OfflineIndex? offlineIndex,
     bool enableSidecar = true,
+    SidecarGeneratedArtifactChecker? generatedSidecarArtifactChecker,
     Directory? coversDirectory,
     Directory? collectionCoversDirectory,
     Directory? imagesDirectory,
@@ -180,6 +181,7 @@ class CoverScraperService {
         _jikan = jikanClient,
         _offline = offlineIndex,
         _enableSidecar = enableSidecar,
+        _generatedSidecarArtifactChecker = generatedSidecarArtifactChecker,
         _coversDirectory = coversDirectory;
 
   final VideoBookRepository _repo;
@@ -194,6 +196,7 @@ class CoverScraperService {
   final JikanClient? _jikan;
   final OfflineIndex? _offline;
   final bool _enableSidecar;
+  final SidecarGeneratedArtifactChecker? _generatedSidecarArtifactChecker;
   final Directory? _coversDirectory;
 
   /// 合集自有封面目录（测试注入临时目录；null = 取生产
@@ -239,9 +242,12 @@ class CoverScraperService {
 
     // ① sidecar 本地资产（poster.jpg / <base>-poster.jpg）：命中直取，零网络。
     if (_enableSidecar) {
-      final SidecarResult sidecar = await SidecarScanner.scan(path);
+      final SidecarResult sidecar = await SidecarScanner.scan(
+        path,
+        generatedArtifactChecker: _generatedSidecarArtifactChecker,
+      );
       final File? poster = sidecar.posterFile;
-      if (poster != null) {
+      if (poster != null && !sidecar.posterIsUnmodifiedGeneratedArtifact) {
         final String coverPath = await _copySidecarCover(poster, book.bookUid);
         await _repo.updateCover(book.bookUid, coverPath);
         await _coverMeta.set(

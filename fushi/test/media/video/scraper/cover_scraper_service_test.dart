@@ -11,6 +11,7 @@ import 'package:fushi/src/media/video/scraper/offline_index.dart';
 import 'package:fushi/src/media/video/scraper/cover_downloader.dart';
 import 'package:fushi/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/scraper/sidecar_scanner.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart'
     show videoCoverFileName;
@@ -21,6 +22,16 @@ import 'package:path/path.dart' as p;
 import 'package:transparent_image/transparent_image.dart';
 
 import '../../../helpers/cover_cache_test_helpers.dart';
+
+class _StubGeneratedArtifactChecker implements SidecarGeneratedArtifactChecker {
+  const _StubGeneratedArtifactChecker(this.result);
+
+  final bool result;
+
+  @override
+  Future<bool> isUnmodifiedGeneratedArtifact(String absolutePath) async =>
+      result;
+}
 
 /// 最小合法 PNG 魔数字节。
 final List<int> _fakePng = <int>[
@@ -100,6 +111,7 @@ void main() {
     OfflineIndex? offline,
     BangumiClient? bangumi,
     bool enableSidecar = false,
+    SidecarGeneratedArtifactChecker? generatedSidecarArtifactChecker,
   }) =>
       CoverScraperService(
         repository: repo,
@@ -120,6 +132,7 @@ void main() {
         coverDownloader: CoverDownloader(client: _pngClient()),
         offlineIndex: offline,
         enableSidecar: enableSidecar,
+        generatedSidecarArtifactChecker: generatedSidecarArtifactChecker,
         coversDirectory: tmp,
       );
 
@@ -222,9 +235,11 @@ void main() {
     addTearDown(() async {
       if (await lib.exists()) await lib.delete(recursive: true);
     });
-    final File video = File(p.join(lib.path, 'My Show - 01.mkv'));
+    final Directory showDirectory = Directory(p.join(lib.path, 'My Show'));
+    await showDirectory.create();
+    final File video = File(p.join(showDirectory.path, 'My Show - 01.mkv'));
     await video.writeAsBytes(<int>[0, 1, 2, 3]);
-    await File(p.join(lib.path, 'poster.jpg')).writeAsBytes(_fakePng);
+    await File(p.join(showDirectory.path, 'poster.jpg')).writeAsBytes(_fakePng);
 
     final VideoBookRow book = await seed(
       bookUid: 'video/sidecar',
@@ -240,6 +255,71 @@ void main() {
     expect(File(updated.coverPath!).readAsBytesSync(), _fakePng);
     final CoverMeta? meta = await coverMeta.get('video/sidecar');
     expect(meta!.origin, CoverOrigin.sidecar);
+  });
+
+  test('未改动的 Hibiki 生成海报不写成永久保护的 sidecar origin', () async {
+    final Directory lib =
+        await Directory.systemTemp.createTemp('generated_sidecar_lib_');
+    addTearDown(() async {
+      if (await lib.exists()) await lib.delete(recursive: true);
+    });
+    final File video = File(p.join(lib.path, 'My Show - 01.mkv'));
+    await video.writeAsBytes(<int>[0, 1, 2, 3]);
+    await File(p.join(lib.path, 'poster.jpg')).writeAsBytes(_fakePng);
+
+    final VideoBookRow book = await seed(
+      bookUid: 'video/generated-sidecar',
+      videoPath: video.path,
+    );
+    final String parsedTitle = build().parseForPath(video.path)!.title;
+    final CoverScraperService service = build(
+      enableSidecar: true,
+      generatedSidecarArtifactChecker:
+          const _StubGeneratedArtifactChecker(true),
+      offline: offlineWith(OfflineAnimeRecord(
+        title: parsedTitle,
+        type: ScrapeEntryType.tv,
+        picture: 'https://img/my-show.png',
+        sourceId: 'mal/123',
+      )),
+    );
+
+    final ScrapeOutcome outcome = await service.scrapeOne(book);
+
+    expect(outcome, isA<ScrapeApplied>());
+    expect((outcome as ScrapeApplied).origin, CoverOrigin.autoScraped);
+    expect(
+      (await coverMeta.get('video/generated-sidecar'))!.origin,
+      CoverOrigin.autoScraped,
+    );
+  });
+
+  test('artifact hash 不一致的生成海报仍作为用户 sidecar 保护', () async {
+    final Directory lib =
+        await Directory.systemTemp.createTemp('modified_sidecar_lib_');
+    addTearDown(() async {
+      if (await lib.exists()) await lib.delete(recursive: true);
+    });
+    final File video = File(p.join(lib.path, 'Modified Show - 01.mkv'));
+    await video.writeAsBytes(<int>[0, 1, 2, 3]);
+    await File(p.join(lib.path, 'poster.jpg')).writeAsBytes(_fakePng);
+
+    final VideoBookRow book = await seed(
+      bookUid: 'video/modified-sidecar',
+      videoPath: video.path,
+    );
+    final ScrapeOutcome outcome = await build(
+      enableSidecar: true,
+      generatedSidecarArtifactChecker:
+          const _StubGeneratedArtifactChecker(false),
+    ).scrapeOne(book);
+
+    expect(outcome, isA<ScrapeApplied>());
+    expect((outcome as ScrapeApplied).origin, CoverOrigin.sidecar);
+    expect(
+      (await coverMeta.get('video/modified-sidecar'))!.origin,
+      CoverOrigin.sidecar,
+    );
   });
 
   test('applyHighConfidence=false：high 也只返回 needsConfirm，不落盘', () async {

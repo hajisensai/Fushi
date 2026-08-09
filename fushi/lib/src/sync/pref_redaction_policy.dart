@@ -18,8 +18,8 @@ import 'package:fushi/src/sync/sync_repository.dart';
 /// - **不以 `sync_` 开头的凭据全员漏网**：`media_source_secret_<id>`（SFTP/FTP
 ///   密码 + 私钥 PEM，base64 明文）、`qb_connection_config`（qBittorrent WebUI
 ///   明文密码 JSON）、`yomitan_api_key` / `jimaku_api_key` /
-///   `manga_cloud_ocr_api_key` / `video_scraper_tmdb_api_key`。三处判定一个都
-///   拦不住。
+///   `manga_cloud_ocr_api_key` / 视频元数据 provider key 与 token。三处判定
+///   一个都拦不住。
 /// - **`profile_settings` 是一条无人看守的旁路**：`snapshotCurrentSettings` 把
 ///   *全部* Drift prefs 逐行复制进快照，而备份导出只 DELETE `preferences`。
 ///   默认导出类别包含 `profiles`（见 `defaultBackupExportCategories()`），所以
@@ -72,6 +72,12 @@ abstract final class PrefRedactionPolicy {
     'jimaku_api_key',
     'manga_cloud_ocr_api_key',
     'video_scraper_tmdb_api_key',
+    'video_metadata_fanart_api_key',
+    'video_metadata_bangumi_token',
+    'video_metadata_douban_authorized_token',
+    // 授权端点可能是私有服务 URL，也可能携带 query credential；它的名字没有
+    // token/api_key 形状，必须显式点名，避免备份/Profile 分享时旁路出境。
+    'video_metadata_douban_authorized_endpoint',
   };
 
   /// key 是否属于「设备本地 / 凭据」，即备份、Profile 快照与 Profile 分享 JSON

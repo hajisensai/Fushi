@@ -234,7 +234,9 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.segment));
+    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.collection_sort_by_season).last);
     await tester.pumpAndSettle();
 
     expect(

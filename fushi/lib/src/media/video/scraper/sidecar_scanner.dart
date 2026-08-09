@@ -15,12 +15,22 @@ import 'package:xml/xml.dart';
 
 import 'package:fushi/src/media/media_extensions.dart';
 
+/// 判断来源目录内的 sidecar 是否仍是 Hibiki 原样生成物。
+///
+/// 实现必须同时校验持久化的 artifact 身份和文件当前内容；只有已登记路径且当前
+/// SHA-256 与登记值一致时才返回 true。不存在登记、文件已被用户修改或无法校验时
+/// 都返回 false，让旧封面流水线继续把它当作用户 sidecar 保护。
+abstract interface class SidecarGeneratedArtifactChecker {
+  Future<bool> isUnmodifiedGeneratedArtifact(String absolutePath);
+}
+
 /// sidecar 扫描结果：命中的海报文件 + 从 NFO 解析出的元数据。
 ///
 /// 全部字段可空；无任何资产时返回全 null 实例（[SidecarResult.empty]）。
 class SidecarResult {
   const SidecarResult({
     this.posterFile,
+    this.posterIsUnmodifiedGeneratedArtifact = false,
     this.nfoTitle,
     this.nfoTmdbId,
     this.nfoYear,
@@ -29,12 +39,20 @@ class SidecarResult {
   /// 全 null 结果（目录不存在 / 无资产 / 不可读时返回）。
   const SidecarResult.empty()
       : posterFile = null,
+        posterIsUnmodifiedGeneratedArtifact = false,
         nfoTitle = null,
         nfoTmdbId = null,
         nfoYear = null;
 
   /// 命中的本地海报文件（按优先序取第一个存在的），无则 null。
   final File? posterFile;
+
+  /// 命中的海报是否为内容未变的 Hibiki 生成物。
+  ///
+  /// true 时旧封面刮削不能把它登记成 `CoverOrigin.sidecar`，否则后续会把自产
+  /// 图片误当用户资产永久保护。字段只表达归属，不隐藏 [posterFile]，便于调用方
+  /// 仍能诊断扫描命中。
+  final bool posterIsUnmodifiedGeneratedArtifact;
 
   /// NFO 里的 `<title>` 文本，无则 null。
   final String? nfoTitle;
@@ -70,7 +88,10 @@ class SidecarScanner {
   /// 扫描 [videoFilePath] 所在目录，识别海报图与 NFO 元数据。
   ///
   /// 目录不存在 / 不可读时返回 [SidecarResult.empty]，绝不抛出。
-  static Future<SidecarResult> scan(String videoFilePath) async {
+  static Future<SidecarResult> scan(
+    String videoFilePath, {
+    SidecarGeneratedArtifactChecker? generatedArtifactChecker,
+  }) async {
     final String dirPath = p.dirname(videoFilePath);
     final String baseName = p.basenameWithoutExtension(videoFilePath);
     final Directory dir = Directory(dirPath);
@@ -93,10 +114,23 @@ class SidecarScanner {
     }
 
     final File? poster = _findPoster(filesByLowerName, baseName);
+    bool posterIsUnmodifiedGeneratedArtifact = false;
+    if (poster != null && generatedArtifactChecker != null) {
+      try {
+        posterIsUnmodifiedGeneratedArtifact =
+            await generatedArtifactChecker.isUnmodifiedGeneratedArtifact(
+          p.normalize(p.absolute(poster.path)),
+        );
+      } on Object {
+        // 归属校验失败时保守视作第三方/已修改文件，保持旧的用户 sidecar 保护。
+        posterIsUnmodifiedGeneratedArtifact = false;
+      }
+    }
     final _NfoData nfo = await _findAndParseNfo(filesByLowerName, baseName);
 
     return SidecarResult(
       posterFile: poster,
+      posterIsUnmodifiedGeneratedArtifact: posterIsUnmodifiedGeneratedArtifact,
       nfoTitle: nfo.title,
       nfoTmdbId: nfo.tmdbId,
       nfoYear: nfo.year,
