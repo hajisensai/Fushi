@@ -434,9 +434,11 @@ class AggregateSyncService {
   /// MAX-union of lookup/mining counter buckets keyed by {title, sourceType,
   /// dateKey}. Both count columns (lookupCount, mineCount) are MAX-ed
   /// independently through [StatBucket]; a bucket on only one side is kept
-  /// verbatim. [bookKey] is not part of the key: on a collision the side with a
-  /// non-null bookKey is retained (a null never overwrites a known book
-  /// identity), so the metadata converges regardless of merge order.
+  /// verbatim. [bookKey] is not part of the key: on a collision the identity is
+  /// kept only when BOTH sides carry the same value; any disagreement (incl.
+  /// null-vs-known) folds to null（v76/review3-3：wire null 的语义是「刻意混桶/
+  /// 未归因」而非「不知道」，非空覆盖会把混桶总量重新归因单一视频）。判据对称，
+  /// 合并顺序无关。
   static List<LookupMiningRecord> _mergeLookupMining(
     List<LookupMiningRecord> local,
     List<LookupMiningRecord> remote,
@@ -495,18 +497,15 @@ class AggregateSyncService {
     ];
   }
 
-  /// v76：lookup_mining_counters 本地行 per-identity 可多行（bookKey 进唯一键），
-  /// wire 合并键仍冻结在 {title, sourceType, dateKey}——直接逐行上行会在合并 map
-  /// 构建时 last-wins **静默丢数**（同 title 多行只剩最后一行）。按 wire 键把多行
-  /// 求和成单条 record。
-  ///
-  /// bookKey metadata 只在**无歧义**时携带：wire 桶内全部行同一非空身份 → 带它；
-  /// 混桶（多身份 / 身份+'' 并存）→ null。求和总量盖上任意单一身份会让接收端把
-  /// 整个 title 日总量归因到一个视频——在对端重新制造 v76 要根治的互串，且与本地
-  /// 塌缩路径（setLookupCount 多行分支如实写 ''）自相矛盾（review-1）。
   /// v76（review3-1）：watch 行按 wire 键 {title,dateKey} 求和上行——per-uid
   /// 多行直接逐行上行会 last-wins 丢数（见 materializeLocalSnapshot 处注释）。
   /// wire 不带身份（VideoStatRecord 无 bookUid 字段，冻结），无 metadata 之忧。
+  ///
+  /// 已知精度限制（review4-3，与 backup_merge_engine 的「宁可保留全部数据也不
+  /// 瞎塌」同族取舍）：备份合并可能让「无身份总量行」与 per-uid 行并存（两侧
+  /// v76 回填不对称时），二者是否重叠不可判——求和假设不相交（独立设备各看各的
+  /// 就是不相交），重叠时汇总偏高并经 MAX 固化。取 max 则在不相交时把真实观看
+  /// 砍半。两个方向都有错法，沿用「不丢数」侧，与 counters fold 一致。
   static List<VideoStatRecord> _foldVideoStatRows(
       List<VideoWatchStatisticRow> rows) {
     final Map<String, VideoStatRecord> byWireKey = <String, VideoStatRecord>{};
@@ -536,6 +535,15 @@ class AggregateSyncService {
     return byWireKey.values.toList();
   }
 
+  /// v76：lookup_mining_counters 本地行 per-identity 可多行（bookKey 进唯一键），
+  /// wire 合并键仍冻结在 {title, sourceType, dateKey}——直接逐行上行会在合并 map
+  /// 构建时 last-wins **静默丢数**（同 title 多行只剩最后一行）。按 wire 键把多行
+  /// 求和成单条 record。
+  ///
+  /// bookKey metadata 只在**无歧义**时携带：wire 桶内全部行同一非空身份 → 带它；
+  /// 混桶（多身份 / 身份+'' 并存）→ null。求和总量盖上任意单一身份会让接收端把
+  /// 整个 title 日总量归因到一个视频——在对端重新制造 v76 要根治的互串，且与本地
+  /// 塌缩路径（setLookupCount 多行分支如实写 ''）自相矛盾（review-1）。
   static List<LookupMiningRecord> _foldLookupMiningRows(
       List<LookupMiningCounterRow> rows) {
     final Map<String, LookupMiningRecord> byWireKey =

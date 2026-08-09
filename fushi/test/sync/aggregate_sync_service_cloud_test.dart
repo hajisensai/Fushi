@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/aggregate_snapshot.dart';
 import 'package:fushi/src/sync/aggregate_sync_service.dart';
@@ -533,6 +534,32 @@ void main() {
     final List<VideoWatchStatisticRow> rows =
         await db.getAllVideoWatchStatistics();
     expect(rows, hasLength(2), reason: 'wire 无新知不塌缩（review3-5），身份行不被同步周期性抹掉');
+  });
+
+  test(
+      'review4-2: watch collapse takes per-column max — a column the wire is '
+      'behind on never shrinks below the local sum', () async {
+    final FushiDatabase db = await _freshDb('agg_colmax_');
+    addTearDown(db.close);
+    // 本地：chars=500 / ms=1500（wire 只见过 ms=1000 的旧状态）。
+    await db.addVideoWatchStatistic(
+        title: 'T',
+        bookUid: 'uid-1',
+        dateKey: '2026-06-01',
+        subtitleChars: 500,
+        watchTimeMs: 1500);
+    // wire：chars 600（更多）但 ms 1000（落后）→ 单列超出触发塌缩。
+    await db.setVideoWatchStatistic(VideoWatchStatisticsCompanion(
+      title: const Value('T'),
+      dateKey: const Value('2026-06-01'),
+      subtitleChars: const Value(600),
+      watchTimeMs: const Value(1000),
+      lastModified: const Value(99),
+    ));
+    final VideoWatchStatisticRow row =
+        (await db.getAllVideoWatchStatistics()).single;
+    expect(row.subtitleChars, 600, reason: 'wire 更多的列抬上去');
+    expect(row.watchTimeMs, 1500, reason: 'wire 落后的列保本地和——往返窗口里的本地新增不许被砍');
   });
 
   test('review3-3: merge only keeps bookKey metadata both sides agree on',
