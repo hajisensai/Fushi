@@ -401,8 +401,8 @@ class _StandaloneVideoWorkDetailState
               style: Theme.of(context).textTheme.titleLarge),
           SizedBox(height: tokens.spacing.card),
           for (final VideoMetadataExtraRow extra in _extras)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
+            HibikiListItem(
+              padding: EdgeInsets.zero,
               leading: const Icon(Icons.play_circle_outline),
               title: Text(extra.title),
               subtitle: Text(extra.kind),

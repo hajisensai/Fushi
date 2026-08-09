@@ -222,8 +222,8 @@ void main() {
       expect(File(walPath).existsSync(), isFalse);
       expect(File(shmPath).existsSync(), isFalse);
       // The pre-restore copy and the preserve sidecar are cleaned up on a
-      // successful import (no disk leak). A dummy non-DB current file yields no
-      // device-local prefs to preserve, so no sidecar is written.
+      // successful import (no disk leak). A dummy non-DB current file cannot
+      // contain device-local tables, so its crash marker is safely cleaned.
       expect(File('$dbPath.pre-restore.bak').existsSync(), isFalse);
       expect(File('${tmpDir.path}/hibiki.db.sync-preserve.json').existsSync(),
           isFalse);

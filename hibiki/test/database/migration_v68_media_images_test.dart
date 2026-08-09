@@ -159,7 +159,7 @@ CREATE TABLE media_images (
     final HibikiDatabase db =
         await openV67Db(withParentTables: false, foreignKeys: true);
 
-    expect(await userVersionOf(db), 69, reason: '迁移必须跑完并落 user_version');
+    expect(await userVersionOf(db), 71, reason: '迁移必须跑完并落 user_version');
 
     final List<MediaImageRow> rows = await db.getAllMediaImages();
     expect(rows, hasLength(1), reason: 'NULL backdrop_path 不得搬出垃圾行');
@@ -176,7 +176,7 @@ CREATE TABLE media_images (
     final HibikiDatabase db =
         await openV67Db(withParentTables: true, foreignKeys: true);
 
-    expect(await userVersionOf(db), 69);
+    expect(await userVersionOf(db), 71);
 
     final List<MediaImageRow> rows = await db.getAllMediaImages();
     expect(rows, hasLength(1));
@@ -195,7 +195,7 @@ CREATE TABLE media_images (
     final HibikiDatabase db =
         await openV67Db(withParentTables: true, foreignKeys: false);
 
-    expect(await userVersionOf(db), 69);
+    expect(await userVersionOf(db), 71);
     expect(await db.getAllMediaImages(), hasLength(1));
     expect(await foreignKeysOf(db), isFalse, reason: 'v68 不得把调用方显式关掉的外键悄悄打开');
   });
@@ -207,7 +207,7 @@ CREATE TABLE media_images (
       withMediaImages: true,
     );
 
-    expect(await userVersionOf(db), 69);
+    expect(await userVersionOf(db), 71);
     final List<MediaImageRow> rows = await db.getAllMediaImages();
     expect(rows, hasLength(1), reason: '_tableExists 短路，绝不重插');
     expect(rows.single.path, '/covers/collections/5_backdrop.jpg');

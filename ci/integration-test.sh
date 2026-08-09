@@ -166,6 +166,7 @@ ALL_TARGETS=(
   app_smoke settings_validation navigation_stability home_keyboard
   gamepad_navigation feature_flows
   comprehensive_imports comprehensive_reader_lookup comprehensive_settings
+  video_discovery_download_pipeline
   reader_pagination reader_caret reader_popup_caret reader_computer_use_flow
   image_pause_detection
   popup_dictionary anki_integration

@@ -76,6 +76,29 @@ class VideoSourceScrapeCoordinator
         ),
       ]);
 
+  /// 对刚完成下载导入的单个作品执行精确刮削。
+  ///
+  /// [lookup] 来自发现页已经确认的规范身份，因此这条路径不会重新进行标题模糊
+  /// 匹配；其余 provider hydration、规范数据库写入、NFO/图片 sidecar 与 run /
+  /// artifact 审计仍完整复用来源刮削管线。
+  Future<SourceScrapeReport> scrapeImportedWork(
+    VideoSourceScrapeWork work, {
+    required VideoMetadataLookup lookup,
+    VideoSourceScrapeCancellationToken? cancellationToken,
+    VideoSourceScrapeProgressCallback? onProgress,
+  }) =>
+      scrapeSource(
+        work.source,
+        cancellationToken:
+            cancellationToken ?? VideoSourceScrapeCancellationToken(),
+        onProgress: onProgress ?? (_) {},
+        plannedWorks: <VideoSourceScrapeWork>[work],
+        confirmedLookups: <String, VideoMetadataLookup>{
+          work.stableKey: lookup,
+        },
+        runScope: 'work',
+      );
+
   @override
   Future<SourceScrapeReport> scrapeSource(
     SourceLibraryRow source, {
@@ -83,6 +106,10 @@ class VideoSourceScrapeCoordinator
     required VideoSourceScrapeProgressCallback onProgress,
     VideoSourceScrapeConfirmationCallback? onConfirmation,
     VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    Map<String, VideoMetadataLookup> confirmedLookups =
+        const <String, VideoMetadataLookup>{},
+    String runScope = 'source',
   }) async {
     // 识别结果只在本次用户批次内复用。全部来源时混来源合集共享同一份作品资料，
     // 但每个来源仍独立执行安全 sidecar 落盘；下次用户重刮会创建新 context。
@@ -114,7 +141,7 @@ class VideoSourceScrapeCoordinator
     final int runId = await database.insertVideoSourceScrapeRun(
       VideoSourceScrapeRunsCompanion.insert(
         sourceId: Value<int?>(source.id),
-        scope: 'source',
+        scope: runScope,
         status: 'running',
         provider: Value<String?>(settings.provider.name),
         phase: const Value<String?>('planning'),
@@ -136,7 +163,8 @@ class VideoSourceScrapeCoordinator
     List<VideoSourceScrapeWork> works = const <VideoSourceScrapeWork>[];
     try {
       cancellationToken.throwIfCancelled();
-      works = await VideoSourceWorkPlanner(database).plan(source);
+      works =
+          plannedWorks ?? await VideoSourceWorkPlanner(database).plan(source);
       final List<String> knownSourcePaths = (await database.allVideoBooks())
           .where((VideoBookRow row) => row.sourceId == source.id)
           .map((VideoBookRow row) => row.videoPath)
@@ -178,6 +206,7 @@ class VideoSourceScrapeCoordinator
             localWork,
             settings.provider,
             warnings,
+            confirmedLookup: confirmedLookups[localWork.stableKey],
             resolvedWorkCache: effectiveBatch.resolvedWorks,
             authoritativeSeasonEpisodesCache:
                 effectiveBatch.authoritativeSeasonEpisodes,
@@ -340,6 +369,7 @@ class VideoSourceScrapeCoordinator
     VideoSourceScrapeWork localWork,
     VideoMetadataProviderKind selectedProvider,
     List<SourceScrapeIssue> warnings, {
+    VideoMetadataLookup? confirmedLookup,
     required Map<String, VideoMetadataWork> resolvedWorkCache,
     required Map<String, bool> authoritativeSeasonEpisodesCache,
     required bool fanartEnabled,
@@ -388,7 +418,7 @@ class VideoSourceScrapeCoordinator
       year: nfo?.year ?? _parsedYear(localWork),
       seasonNumber: seasonNumber,
       episodeCount: localWork.isEpisodic ? localWork.members.length : null,
-      confirmedLookup: storedLookup ?? _lookupForNfo(nfo),
+      confirmedLookup: confirmedLookup ?? storedLookup ?? _lookupForNfo(nfo),
       identityHints: <String>[
         for (final VideoBookRow member in localWork.members) member.videoPath,
       ],

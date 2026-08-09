@@ -38,7 +38,9 @@ import 'package:hibiki_core/hibiki_core.dart';
 ///
 /// Device-local rows are deliberately skipped: `media_sources` (device-local
 /// scan paths), `sync_baselines` (would corrupt later incremental sync fork
-/// detection), and device-local sync prefs ([SyncRepository.deviceLocalPrefKeys]).
+/// detection), the five durable video-download tables (backend fingerprints,
+/// local paths and schedule leases), and device-local sync prefs
+/// ([SyncRepository.deviceLocalPrefKeys]).
 class BackupMergeEngine {
   BackupMergeEngine(
     this._db, {
@@ -993,6 +995,27 @@ class BackupMergeEngine {
 /// positions, so device-local sync prefs are inherently never merged.
 List<String> mergeSkippedDeviceLocalPrefKeys() =>
     List<String>.unmodifiable(SyncRepository.deviceLocalPrefKeys);
+
+/// Tables that a merge import must never copy from its attached backup DB.
+///
+/// [BackupMergeEngine.merge] is an explicit allowlist of content operations;
+/// this catalog makes the negative contract reviewable and lets tests guard a
+/// future generic-table merge from accidentally admitting device-bound work.
+List<String> mergeSkippedDeviceLocalTableNames() =>
+    List<String>.unmodifiable(const <String>[
+      'hibiki_paired_peers',
+      'sync_baselines',
+      'manga_extension_stores',
+      'manga_extensions',
+      'manga_online_sources',
+      'manga_source_preferences',
+      'manga_trusted_signers',
+      'video_download_jobs',
+      'video_download_job_files',
+      'video_download_job_subtitles',
+      'video_download_subscriptions',
+      'video_download_subscription_items',
+    ]);
 
 /// Read-only summary of what a backup MERGE import would change on this device
 /// (TODO-1195 part B), shown in the import confirm dialog. Produced by

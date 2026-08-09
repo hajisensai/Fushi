@@ -4,7 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
+import 'package:hibiki/src/media/torrent/torznab_client.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
+import 'package:hibiki/src/media/video/download/video_download_path_mapping.dart';
+import 'package:hibiki/src/media/video/download/video_download_backend_identity.dart';
+import 'package:hibiki/src/media/video/subtitle/open_subtitles_client.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
@@ -1054,6 +1058,117 @@ class PreferencesRepository extends ChangeNotifier {
       config == null ? '' : encodeQbConnectionConfig(config),
     );
     notifyListeners();
+  }
+
+  /// 多个 Torznab indexer 的设备本地配置。API key 与 endpoint 分栏保存，读取旧
+  /// Jackett/Prowlarr `?apikey=` URL 时由 codec 拆开，避免含密钥 URL 流出本机。
+  List<TorznabIndexerConfig> get videoResourceTorznabConfigs {
+    final String raw = getPref(
+      'video_resource_torznab_config',
+      defaultValue: '',
+    ) as String;
+    if (raw.trim().isEmpty) return const <TorznabIndexerConfig>[];
+    try {
+      return decodeTorznabIndexerConfigs(jsonDecode(raw));
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.videoResourceTorznabConfigs.decode',
+        error,
+        stack,
+      );
+      return const <TorznabIndexerConfig>[];
+    }
+  }
+
+  Future<void> setVideoResourceTorznabConfigs(
+    Iterable<TorznabIndexerConfig> configs,
+  ) async {
+    await setPref(
+      'video_resource_torznab_config',
+      jsonEncode(encodeTorznabIndexerConfigs(configs)),
+    );
+    notifyListeners();
+  }
+
+  /// OpenSubtitles 的设备本地配置。登录 token 只存在 client 内存中，绝不写入本键。
+  OpenSubtitlesConfig? get videoSubtitleOpenSubtitlesConfig {
+    final String raw = getPref(
+      'video_subtitle_opensubtitles_config',
+      defaultValue: '',
+    ) as String;
+    if (raw.trim().isEmpty) return null;
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map<Object?, Object?>) return null;
+      return OpenSubtitlesConfig.fromJson(<String, Object?>{
+        for (final MapEntry<Object?, Object?> entry in decoded.entries)
+          entry.key.toString(): entry.value,
+      });
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.videoSubtitleOpenSubtitlesConfig.decode',
+        error,
+        stack,
+      );
+      return null;
+    }
+  }
+
+  Future<void> setVideoSubtitleOpenSubtitlesConfig(
+    OpenSubtitlesConfig? config,
+  ) async {
+    await setPref(
+      'video_subtitle_opensubtitles_config',
+      config == null ? '' : jsonEncode(config.toJson()),
+    );
+    notifyListeners();
+  }
+
+  /// qB remote path -> 本机可访问路径映射，按 backend profile id 隔离。
+  List<VideoDownloadBackendPathMappingConfig>
+      get videoDownloadBackendPathMappings =>
+          decodeVideoDownloadBackendPathMappings(
+            getPref(
+              'video_download_backend_path_mappings',
+              defaultValue: '',
+            ) as String,
+          );
+
+  Future<void> setVideoDownloadBackendPathMappings(
+    Iterable<VideoDownloadBackendPathMappingConfig> mappings,
+  ) async {
+    await setPref(
+      'video_download_backend_path_mappings',
+      encodeVideoDownloadBackendPathMappings(mappings),
+    );
+    notifyListeners();
+  }
+
+  /// 新任务默认使用的本机受管视频来源；0 表示尚未选择。
+  int? get videoDownloadTargetSourceId {
+    final int value = getPref(
+      'video_download_target_source_id',
+      defaultValue: 0,
+    ) as int;
+    return value > 0 ? value : null;
+  }
+
+  Future<void> setVideoDownloadTargetSourceId(int? sourceId) async {
+    await setPref('video_download_target_source_id', sourceId ?? 0);
+    notifyListeners();
+  }
+
+  /// 内置下载器的本机安装身份。第一次读取时生成并持久化，之后只读复用；旧任务据此
+  /// 判断是否仍由同一个内置实例管理，不能被另一台机器的引擎隐式接管。
+  Future<String> ensureVideoDownloadEmbeddedInstallationId() async {
+    final String existing = getPref(
+      'video_download_embedded_installation_id',
+      defaultValue: '',
+    ) as String;
+    if (existing.trim().isNotEmpty) return existing.trim();
+    final String created = generateVideoDownloadInstallationId();
+    await setPref('video_download_embedded_installation_id', created);
+    return created;
   }
 
   /// 是否已展示过「上传/做种」首用提示（默认 false = 未展示）。首次下载时弹

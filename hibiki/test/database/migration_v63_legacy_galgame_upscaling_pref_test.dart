@@ -126,8 +126,8 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 69);
-    expect(db.schemaVersion, 70);
+    expect(version.read<int>('user_version'), 71);
+    expect(db.schemaVersion, 71);
 
     final List<QueryRow> preferences = await db
         .customSelect(
@@ -187,11 +187,12 @@ void main() {
     );
     // 本用例 seed 的是 v62 库，因此这一次打开会连跑 v63、v64（collection_scrape_meta，
     // BUG-1310）、v65（Mihon 五表）、v66（collection_relations）、v68
-    // （media_images）**和** v69（视频来源规范刮削 14 表）。断言据此拆成两半，
+    // （media_images）、v69/v70（视频来源规范刮削）和 v71（下载流水线五表）。
+    // 断言据此拆成两半，
     // 原意图一分不弱化：
     //  ① 既有表逐张全文比对 —— v63 只能删行，不得 ALTER/DROP/rebuild 或留影子表；
     //  ② 新增表必须**恰好**是 v64 一张 + v65 五张 + v66 一张 + v68 一张 +
-    //     v69 十四张 —— v63 自己仍然一张表都不许建。
+    //     v69/v70 十五张 + v71 五张 —— v63 自己仍然一张表都不许建。
     final Map<String, String> schemaAfter = await _tableSqlFromDrift(db);
     for (final MapEntry<String, String> entry in schemaBefore.entries) {
       expect(schemaAfter[entry.key], entry.value,
@@ -219,12 +220,19 @@ void main() {
         'video_metadata_work_terms',
         'video_metadata_credits',
         'video_metadata_images',
+        'video_metadata_extras',
         'video_source_scrape_settings',
         'video_source_scrape_runs',
         'video_sidecar_artifacts',
+        'video_download_jobs',
+        'video_download_job_files',
+        'video_download_job_subtitles',
+        'video_download_subscriptions',
+        'video_download_subscription_items',
       },
       reason: '除 v64 的 collection_scrape_meta、v65 的 Mihon 五表、v66 的 '
-          'collection_relations、v68 的 media_images 与 v69 视频来源刮削表外，'
+          'collection_relations、v68 的 media_images、v69/v70 视频来源刮削表与 '
+          'v71 下载流水线表外，'
           '升级不得新增任何表',
     );
   });
@@ -243,7 +251,7 @@ void main() {
     expect(await db.getPref('theme'), 's:dark');
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 69);
+    expect(version.read<int>('user_version'), 71);
   });
 
   test(
@@ -275,7 +283,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 69);
+      expect(probe.select('PRAGMA user_version').first.values.first, 71);
       expect(
         probe.select(
           'SELECT 1 FROM profile_settings '

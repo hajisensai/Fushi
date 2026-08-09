@@ -29,7 +29,12 @@ void main() {
 
     test('copy is custom Dart clipboard action and selection is cleared', () {
       expect(menu, contains('title: t.copy'));
-      expect(menu, contains('Clipboard.setData(ClipboardData(text: text))'));
+      expect(menu, contains('await _copySelectionToClipboard(text)'));
+      expect(
+        source,
+        contains('Clipboard.setData(ClipboardData(text: text))'),
+        reason: '共享复制 helper 仍必须真正写入系统剪贴板',
+      );
       expect(menu, contains('_selectedTextAcrossFrames()'));
       expect(menu, contains('_clearSelectedTextAcrossFrames()'));
     });
@@ -53,7 +58,7 @@ void main() {
     );
     expect(source, contains('disableContextMenu: isWindowsPlatform'));
     expect(windows, contains('_selectedTextAcrossFrames()'));
-    expect(windows, contains('Clipboard.setData(ClipboardData(text: text))'));
+    expect(windows, contains('await _copySelectionToClipboard(text)'));
     expect(windows, isNot(contains('SelectionExternalActions')));
   });
 }

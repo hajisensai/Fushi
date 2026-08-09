@@ -1,1 +1,1 @@
-enum VideoLibrarySection { home, series, allVideos, sources }
+enum VideoLibrarySection { home, discover, series, allVideos, sources }

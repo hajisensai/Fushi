@@ -592,6 +592,10 @@ CREATE TABLE video_books (
         containsAll(<String>['local:local-trailer', 'tmdb:def']));
     expect(extras.map((VideoMetadataExtraRow row) => row.extraKey),
         isNot(contains('tmdb:abc')));
-    expect(db.schemaVersion, 70);
+    expect(
+      db.schemaVersion,
+      greaterThanOrEqualTo(69),
+      reason: 'v69 = video metadata extras used by this test',
+    );
   });
 }

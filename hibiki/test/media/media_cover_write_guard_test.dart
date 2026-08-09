@@ -100,6 +100,12 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
     CoverDeriverRole.writesViaService,
     '成员封面清理/重取，重取那半走 applyCover*。',
   ),
+  'lib/src/media/video/cover_ui/video_scrape_actions.dart': (
+    CoverDeriverRole.derivesPathOnly,
+    '运行时依赖组装层只派生 coversDir/video_scraper 目录，并把封面目录注入 '
+        'CoverMetaStore 与 CoverScraperService；实际图片字节由服务内的 '
+        'CoverDownloader 经 MediaCoverService.applyCoverBytes 落盘。',
+  ),
   'lib/src/media/video/video_book_repository.dart': (
     CoverDeriverRole.derivesPathOnly,
     '仓储层只解析封面路径供读取/展示，不落盘。',
@@ -120,10 +126,6 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
   'lib/src/mining/galgame_cover_resolver.dart': (
     CoverDeriverRole.writesViaService,
     'galgame 封面解析/落盘，字节走 applyCover*。',
-  ),
-  'lib/src/pages/implementations/home_video_page.dart': (
-    CoverDeriverRole.derivesPathOnly,
-    '页面只按路径读封面显示，不落盘。',
   ),
   'lib/src/pages/implementations/media_collection_detail_page.dart': (
     CoverDeriverRole.derivesPathOnly,

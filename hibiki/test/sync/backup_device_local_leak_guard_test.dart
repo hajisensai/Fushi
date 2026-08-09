@@ -7,8 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// which the `preferences`-key credential sweeps cannot reach. A future refactor
 /// that drops the table wipe from `_stripCredentials` would silently re-leak the
 /// plaintext pairing token into every shared backup. Lock the invariant in
-/// source: `_deviceLocalTables` must list both tables plus the Mihon runtime
-/// state tables, and `_stripCredentials` must delete every device-local table.
+/// source: `_deviceLocalTables` must list both tables plus the Mihon runtime and
+/// v71 durable-download state tables, and `_stripCredentials` must delete every
+/// device-local table in FK-safe child-first order.
 void main() {
   test('_stripCredentials wipes the device-local pairing/baseline tables', () {
     final File f = File('lib/src/sync/backup_service.dart');
@@ -16,7 +17,8 @@ void main() {
     final String s = f.readAsStringSync();
 
     // The device-local table registry names both tables.
-    final int listStart = s.indexOf('_deviceLocalTables');
+    final int listStart =
+        s.indexOf('static const List<String> _deviceLocalTables =');
     expect(listStart, greaterThan(-1),
         reason: '_deviceLocalTables constant must exist');
     final int listEnd = s.indexOf('];', listStart);
@@ -39,6 +41,41 @@ void main() {
         isTrue,
         reason: '$table must not leave the device in a shared backup',
       );
+    }
+    const List<String> videoTablesChildFirst = <String>[
+      'video_download_subscription_items',
+      'video_download_job_subtitles',
+      'video_download_job_files',
+      'video_download_subscriptions',
+      'video_download_jobs',
+    ];
+    int previousOffset = -1;
+    for (final String table in videoTablesChildFirst) {
+      final int offset = listBody.indexOf("'$table'");
+      expect(offset, greaterThan(previousOffset),
+          reason: '$table must be deleted after its FK children');
+      previousOffset = offset;
+    }
+
+    final int parentListStart = s.indexOf(
+      'static const List<String> _deviceLocalTablesParentFirst =',
+    );
+    expect(parentListStart, greaterThan(-1));
+    final int parentListEnd = s.indexOf('];', parentListStart);
+    final String parentListBody = s.substring(parentListStart, parentListEnd);
+    const List<String> videoTablesParentFirst = <String>[
+      'video_download_jobs',
+      'video_download_subscriptions',
+      'video_download_job_files',
+      'video_download_job_subtitles',
+      'video_download_subscription_items',
+    ];
+    previousOffset = -1;
+    for (final String table in videoTablesParentFirst) {
+      final int offset = parentListBody.indexOf("'$table'");
+      expect(offset, greaterThan(previousOffset),
+          reason: '$table must be restored after its FK parents');
+      previousOffset = offset;
     }
 
     // _stripCredentials must iterate the device-local tables and DELETE them,
