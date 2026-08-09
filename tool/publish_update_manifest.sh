@@ -67,12 +67,33 @@ backoff_sleep() {
   sleep "$(( total / 1000 )).$(printf '%03d' $(( total % 1000 )))"
 }
 
-# Map channel -> manifest filename. Only managed channels get a manifest;
-# github-release events publish through the Release UI directly and are skipped.
+# Map (product family, channel) -> manifest filename. Only managed channels get
+# a manifest; github-release events publish through the Release UI directly and
+# are skipped.
+#
+# BUG-1481: the filename MUST carry the product family, not just the channel.
+# Two products ship out of this ONE repo during the Hibiki->Fushi rename --
+# `app.hibiki.reader` (the migration bridge, built from the bridge branch) and
+# `app.fushi.reader` (here). One repo means one `update-manifest` branch, so
+# keying the file on channel alone made both families write the SAME file.
+# merge_update_manifest.py's monotonic seq guard (TODO-1173) then handed the
+# advertised top-level release to whichever family had the higher commit count,
+# permanently: the other family's clients read a version/tag/assets that are not
+# theirs and can never self-update. Splitting the filename is what makes the two
+# release streams independent -- it also degrades the guard and the rolling-tag
+# prune back to the single-product case they were designed for.
+#
+# The historical names (`latest-<channel>.json`) belong to the HIBIKI family and
+# are FROZEN: Hibiki clients already in the wild (v1.2.0 and older) have that
+# exact URL compiled in and cannot be patched. Fushi has never shipped a
+# stable/beta release, so it is Fushi that moves to the suffixed names.
+# `fushi/test/tools/update_manifest_product_split_test.dart` pins this suffix
+# against the client-side constants in update_checker_release.dart.
+MANIFEST_PRODUCT_SUFFIX="-fushi"
 case "$CHANNEL" in
-  debug)  MANIFEST_FILE="latest-debug.json" ;;
-  beta)   MANIFEST_FILE="latest-beta.json" ;;
-  formal) MANIFEST_FILE="latest-stable.json" ;;
+  debug)  MANIFEST_FILE="latest-debug${MANIFEST_PRODUCT_SUFFIX}.json" ;;
+  beta)   MANIFEST_FILE="latest-beta${MANIFEST_PRODUCT_SUFFIX}.json" ;;
+  formal) MANIFEST_FILE="latest-stable${MANIFEST_PRODUCT_SUFFIX}.json" ;;
   *)
     echo "::notice title=Manifest skipped::channel '$CHANNEL' is not a managed update channel; not writing a manifest."
     exit 0

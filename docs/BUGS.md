@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1481](bugs/BUG-1481-rolling-channel-shared-across-products.md) | 🚧 | 🚧 | fushi 与 hibiki 共用一条 debug rolling 通道，hibiki 自更新被结构性阻断 |
+| [BUG-1481](bugs/BUG-1481-rolling-channel-shared-across-products.md) | ✅ | ✅ | fushi 与 hibiki 共用同一套发布通道，hibiki 自更新被结构性阻断 |
 | [BUG-1480](bugs/BUG-1480-gal-passthrough-click-lookup.md) | ✅ | ✅ | 穿透态点不了文字查词：整窗 WS_EX_TRANSPARENT 让字和背景一视同仁 |
 | [BUG-1479](bugs/BUG-1479-gal-lookup-card-covered-by-game.md) | ✅ | ✅ | gal 查词卡被游戏盖住：置顶只设一次、永不重申 |
 | [BUG-1478](bugs/BUG-1478-gal-workbench-char-level-lookup.md) | ✅ | ✅ | 捕获工作台只能点整词、点不了单个字；加载更多按 glossary 行递增上限 |

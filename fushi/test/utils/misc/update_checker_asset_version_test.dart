@@ -59,7 +59,7 @@ void main() {
           topTag: 'v1.0.1-debug.6636+aaaaaaa',
           assets: <Map<String, dynamic>>[
             _stampedAsset(
-              name: 'hibiki-1.0.1-debug.6621-bbbbbbb-debug.apk',
+              name: 'fushi-1.0.1-debug.6621-bbbbbbb-debug.apk',
               downloadTag: 'debug-rolling',
               version: '1.0.1-debug.6621',
               tag: 'v1.0.1-debug.6621+bbbbbbb',
@@ -104,7 +104,7 @@ void main() {
         topTag: 'v1.0.1-debug.6636+aaaaaaa',
         assets: <Map<String, dynamic>>[
           _stampedAsset(
-            name: 'hibiki-1.0.1-debug.6621-bbbbbbb-debug.apk',
+            name: 'fushi-1.0.1-debug.6621-bbbbbbb-debug.apk',
             downloadTag: 'debug-rolling',
             version: '1.0.1-debug.6621',
             tag: 'v1.0.1-debug.6621+bbbbbbb',
@@ -129,7 +129,7 @@ void main() {
         topTag: 'v1.0.1-debug.6640+aaaaaaa',
         assets: <Map<String, dynamic>>[
           _stampedAsset(
-            name: 'hibiki-1.0.1-debug.6640-bbbbbbb-debug.apk',
+            name: 'fushi-1.0.1-debug.6640-bbbbbbb-debug.apk',
             downloadTag: 'debug-rolling',
             version: '1.0.1-debug.6640',
             tag: 'v1.0.1-debug.6640+bbbbbbb',
@@ -144,7 +144,7 @@ void main() {
       expect(selected!.version, '1.0.1-debug.6640');
       expect(
         selected.downloadUrl,
-        'https://github.com/hajisensai/fushi/releases/download/debug-rolling/hibiki-1.0.1-debug.6640-bbbbbbb-debug.apk',
+        'https://github.com/hajisensai/fushi/releases/download/debug-rolling/fushi-1.0.1-debug.6640-bbbbbbb-debug.apk',
       );
     });
 
@@ -156,7 +156,7 @@ void main() {
         topTag: 'v1.0.1-debug.6636+aaaaaaa',
         assets: <Map<String, dynamic>>[
           _stampedAsset(
-            name: 'hibiki-1.0.1-debug.6640-bbbbbbb-debug.apk',
+            name: 'fushi-1.0.1-debug.6640-bbbbbbb-debug.apk',
             downloadTag: 'debug-rolling',
             version: '1.0.1-debug.6640',
             releaseSequence: 6640,
@@ -177,7 +177,7 @@ void main() {
         assets: <Map<String, dynamic>>[
           // No version key: mimic a legacy manifest / GitHub API asset.
           _stampedAsset(
-            name: 'hibiki-1.0.1-debug.6636-bbbbbbb-debug.apk',
+            name: 'fushi-1.0.1-debug.6636-bbbbbbb-debug.apk',
             downloadTag: 'debug-rolling',
           ),
         ],
@@ -196,7 +196,7 @@ void main() {
         topTag: 'v1.0.1-debug.6636+aaaaaaa',
         assets: <Map<String, dynamic>>[
           _stampedAsset(
-            name: 'hibiki-1.0.1-debug.6621-windows-setup.exe',
+            name: 'fushi-1.0.1-debug.6621-windows-setup.exe',
             downloadTag: 'debug-rolling',
             version: '1.0.1-debug.6621',
             releaseSequence: 6621,

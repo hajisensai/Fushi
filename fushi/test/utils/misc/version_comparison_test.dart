@@ -600,9 +600,9 @@ void main() {
           await selectUpdateReleaseForCurrentPlatform(
         <Map<String, dynamic>>[
           _relWithApks('v1.2.0',
-              prerelease: false, apks: <String>['hibiki-1.2.0-arm64-v8a.apk']),
+              prerelease: false, apks: <String>['fushi-1.2.0-arm64-v8a.apk']),
           _relWithApks('v1.3.0-beta.1',
-              prerelease: true, apks: <String>['hibiki-1.3.0-arm64-v8a.apk']),
+              prerelease: true, apks: <String>['fushi-1.3.0-arm64-v8a.apk']),
         ],
         currentVersion: '1.2.0-beta.5',
         channel: UpdateChannel.beta,
@@ -617,9 +617,9 @@ void main() {
           await selectUpdateReleaseForCurrentPlatform(
         <Map<String, dynamic>>[
           _relWithApks('v1.2.1',
-              prerelease: false, apks: <String>['hibiki-1.2.1-arm64-v8a.apk']),
+              prerelease: false, apks: <String>['fushi-1.2.1-arm64-v8a.apk']),
           _relWithApks('v1.2.0-beta.5',
-              prerelease: true, apks: <String>['hibiki-1.2.0-arm64-v8a.apk']),
+              prerelease: true, apks: <String>['fushi-1.2.0-arm64-v8a.apk']),
         ],
         currentVersion: '1.2.0-beta.5',
         channel: UpdateChannel.beta,
@@ -636,14 +636,14 @@ void main() {
           await selectUpdateReleaseForCurrentPlatform(
         <Map<String, dynamic>>[
           _relWithApks('v1.3.0',
-              prerelease: false, apks: <String>['hibiki-1.3.0-arm64-v8a.apk']),
+              prerelease: false, apks: <String>['fushi-1.3.0-arm64-v8a.apk']),
         ],
         currentVersion: '1.2.0-debug.100',
         channel: UpdateChannel.debug,
         updater: arm64Updater(),
       );
       expect(sel?.version, '1.3.0');
-      expect(sel?.asset?.name, 'hibiki-1.3.0-arm64-v8a.apk');
+      expect(sel?.asset?.name, 'fushi-1.3.0-arm64-v8a.apk');
     });
 
     test('debug user stays on debug track over same-base stable', () async {
@@ -653,10 +653,10 @@ void main() {
           await selectUpdateReleaseForCurrentPlatform(
         <Map<String, dynamic>>[
           _relWithApks('v1.2.0',
-              prerelease: false, apks: <String>['hibiki-1.2.0-arm64-v8a.apk']),
+              prerelease: false, apks: <String>['fushi-1.2.0-arm64-v8a.apk']),
           _relWithApks('v1.2.0-debug.200+abc1234',
               prerelease: true,
-              apks: <String>['hibiki-1.2.0-abc1234-debug.apk']),
+              apks: <String>['fushi-1.2.0-abc1234-debug.apk']),
         ],
         currentVersion: '1.2.0-debug.100',
         channel: UpdateChannel.debug,
@@ -673,11 +673,11 @@ void main() {
         <Map<String, dynamic>>[
           _relWithApks('v1.2.0',
               prerelease: false,
-              apks: <String>['hibiki-1.2.0-arm64-v8a.apk'],
+              apks: <String>['fushi-1.2.0-arm64-v8a.apk'],
               releaseSequence: 150),
           _relWithApks('v1.2.0-debug.200+abc1234',
               prerelease: true,
-              apks: <String>['hibiki-1.2.0-abc1234-debug.apk'],
+              apks: <String>['fushi-1.2.0-abc1234-debug.apk'],
               releaseSequence: 200),
         ],
         currentVersion: '1.2.0',
@@ -696,11 +696,11 @@ void main() {
         <Map<String, dynamic>>[
           _relWithApks('v1.2.0',
               prerelease: false,
-              apks: <String>['hibiki-1.2.0-arm64-v8a.apk'],
+              apks: <String>['fushi-1.2.0-arm64-v8a.apk'],
               releaseSequence: 150),
           _relWithApks('v1.2.0-debug.200+abc1234',
               prerelease: true,
-              apks: <String>['hibiki-1.2.0-abc1234-debug.apk'],
+              apks: <String>['fushi-1.2.0-abc1234-debug.apk'],
               releaseSequence: 200),
         ],
         currentVersion: '1.2.0-debug.200',

@@ -174,11 +174,36 @@ PlatformUpdater updaterForCurrentPlatform() {
   return UnsupportedUpdater();
 }
 
+/// 本产品族（`app.fushi.reader`）的发布资产名前缀。CI 对全平台产物统一按
+/// `fushi-<version>-<平台后缀>` 命名，[synthesizeStableAssetNames] 合成的候选名同源。
+const String kFushiAssetPrefix = 'fushi-';
+
+/// **纯函数**：资产是否属于本产品族（BUG-1481）。
+///
+/// 改名过渡期两个产品从同一个 GitHub 仓库发版（桥包 `app.hibiki.reader` 的 `hibiki-*`
+/// 与本体的 `fushi-*`），历史 release 里还躺着更早的无前缀资产。而挑包判据只看平台后缀
+/// （`.apk` / `-windows-setup.exe` / `-macos.zip`），区分不出产品族——Android 上装到别族
+/// 就是跨包名跨签名，系统直接拒（`INSTALL_FAILED_UPDATE_INCOMPATIBLE`）或并存成第二个
+/// 空 app；桌面上则是把自己覆盖安装成已退场的老产品。
+///
+/// 判据用**白名单**而非「排除 hibiki-」：本族是新产品、资产名是闭集，全部由 CI 生成，
+/// 没有需要兼容的无前缀历史产物（那些全属 hibiki 族）。白名单 fail-closed——真出现命名
+/// 漂移是「不更新」，不是「装错产品」，方向上是安全的那侧；漂移由
+/// `platform_updater_product_test.dart` 里 [synthesizeStableAssetNames] 的一致性用例挡住。
+bool assetBelongsToThisProduct(String name) =>
+    name.startsWith(kFushiAssetPrefix);
+
 /// 从 asset map 安全取出可下载的 (name, url)。
+///
+/// 产品族过滤放在这里而不是各 `selectAsset`：这是所有平台把原始 asset map 变成候选的
+/// **唯一漏斗**（Android/Windows/macOS 三个实现都经它），在漏斗上过滤意味着新增平台
+/// 自动继承约束，也不存在「某个调用点忘了传 product 参数」这种静默装错包的空档。
+/// 本族没有任何「有意去装别族产物」的场景，所以不需要把它做成可选参数。
 Iterable<UpdateAsset> _downloadable(List<Map<String, dynamic>> assets) sync* {
   for (final Map<String, dynamic> a in assets) {
     final UpdateAsset asset = UpdateAsset.fromReleaseAsset(a);
     if (asset.name.isEmpty || asset.url.isEmpty) continue;
+    if (!assetBelongsToThisProduct(asset.name)) continue;
     yield asset;
   }
 }

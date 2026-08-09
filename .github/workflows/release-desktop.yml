@@ -198,7 +198,9 @@ jobs:
           # installer. beta/formal are unchanged: their release IS the version
           # tag. Mirrors release.yml so Android + desktop land on the same
           # rolling release for the same commit.
-          ROLLING_DEBUG_TAG=debug-rolling
+          # BUG-1481: per product family; the bridge (`app.hibiki.reader`) keeps
+          # the historical `debug-rolling`. Must match release.yml.
+          ROLLING_DEBUG_TAG=fushi-debug-rolling
           if [ "$CHANNEL" = debug ]; then
             PUBLISH_TAG="$ROLLING_DEBUG_TAG"
             ROLLING_DEBUG=true
@@ -813,7 +815,9 @@ jobs:
             BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
           fi
 
-          ROLLING_DEBUG_TAG=debug-rolling
+          # BUG-1481: per product family; the bridge (`app.hibiki.reader`) keeps
+          # the historical `debug-rolling`. Must match release.yml.
+          ROLLING_DEBUG_TAG=fushi-debug-rolling
           if [ "$CHANNEL" = debug ]; then
             PUBLISH_TAG="$ROLLING_DEBUG_TAG"
             ROLLING_DEBUG=true
@@ -1321,7 +1325,9 @@ jobs:
             BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
           fi
 
-          ROLLING_DEBUG_TAG=debug-rolling
+          # BUG-1481: per product family; the bridge (`app.hibiki.reader`) keeps
+          # the historical `debug-rolling`. Must match release.yml.
+          ROLLING_DEBUG_TAG=fushi-debug-rolling
           if [ "$CHANNEL" = debug ]; then
             PUBLISH_TAG="$ROLLING_DEBUG_TAG"
             ROLLING_DEBUG=true
@@ -1795,7 +1801,9 @@ jobs:
             BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
           fi
 
-          ROLLING_DEBUG_TAG=debug-rolling
+          # BUG-1481: per product family; the bridge (`app.hibiki.reader`) keeps
+          # the historical `debug-rolling`. Must match release.yml.
+          ROLLING_DEBUG_TAG=fushi-debug-rolling
           if [ "$CHANNEL" = debug ]; then
             PUBLISH_TAG="$ROLLING_DEBUG_TAG"
             ROLLING_DEBUG=true
