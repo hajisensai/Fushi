@@ -420,8 +420,9 @@ class VideoDiscoveryResourceSearchPage extends StatelessWidget {
       );
 }
 
-class VideoDiscoverySubscriptionDialog extends StatelessWidget {
-  const VideoDiscoverySubscriptionDialog({
+/// 发现详情的订阅创建使用独立路由，与资源搜索共享同一块全尺寸 surface。
+class VideoDiscoverySubscriptionPage extends StatelessWidget {
+  const VideoDiscoverySubscriptionPage({
     required this.item,
     required this.registry,
     required this.sources,
@@ -437,18 +438,18 @@ class VideoDiscoverySubscriptionDialog extends StatelessWidget {
   final VideoDiscoverySubscriptionSubmit onSubmit;
 
   @override
-  Widget build(BuildContext context) => FushiDialogFrame(
-        maxWidth: 760,
-        maxHeightFactor: 0.88,
-        scrollable: false,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        child: VideoResourceSearchSurface(
-          initialItem: item,
-          registry: registry,
-          sources: sources,
-          defaultSourceId: defaultSourceId,
-          onSubscriptionSubmit: onSubmit,
-          onClose: () => Navigator.pop(context),
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: Text(t.video_discovery_subscribe)),
+        body: SafeArea(
+          child: VideoResourceSearchSurface(
+            initialItem: item,
+            registry: registry,
+            sources: sources,
+            defaultSourceId: defaultSourceId,
+            onSubscriptionSubmit: onSubmit,
+            onClose: () => Navigator.of(context).pop(),
+            pageMode: true,
+          ),
         ),
       );
 }

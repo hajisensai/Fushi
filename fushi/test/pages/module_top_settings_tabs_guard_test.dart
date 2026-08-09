@@ -13,6 +13,10 @@ bool _hasSettingsTab(String source) => RegExp(
       r'\bTab\s*\(\s*text:\s*t\.settings\s*\)',
     ).hasMatch(_code(source));
 
+bool _hasFullWidthTorrentSettings(String source) => RegExp(
+      r'\bTorrentSettingsSection\s*\(\s*constrainWidth:\s*false\s*\)',
+    ).hasMatch(_code(source));
+
 void main() {
   String source(String path) => File(path).readAsStringSync();
 
@@ -21,7 +25,7 @@ void main() {
 // kind: MediaLibraryViewKind.settings
 /* value: GameSection.settings
 Tab(text: t.settings)
-child: const TorrentSettingsSection()
+TorrentSettingsSection(constrainWidth: false)
 */
 ''';
     expect(
@@ -36,10 +40,7 @@ child: const TorrentSettingsSection()
       isFalse,
     );
     expect(_hasSettingsTab(commentsOnly), isFalse);
-    expect(
-      _containsCode(commentsOnly, 'child: const TorrentSettingsSection()'),
-      isFalse,
-    );
+    expect(_hasFullWidthTorrentSettings(commentsOnly), isFalse);
   });
 
   test('设置页签判据忽略字符串注入', () {
@@ -48,7 +49,7 @@ const String decoy = '''
 kind: MediaLibraryViewKind.settings
 value: GameSection.settings
 Tab(text: t.settings)
-child: const TorrentSettingsSection()
+TorrentSettingsSection(constrainWidth: false)
 ''';
 """;
     expect(
@@ -60,10 +61,7 @@ child: const TorrentSettingsSection()
       isFalse,
     );
     expect(_hasSettingsTab(stringsOnly), isFalse);
-    expect(
-      _containsCode(stringsOnly, 'child: const TorrentSettingsSection()'),
-      isFalse,
-    );
+    expect(_hasFullWidthTorrentSettings(stringsOnly), isFalse);
   });
 
   test('书架、漫画、视频和游戏顶部导航都提供设置页', () {
@@ -92,10 +90,7 @@ child: const TorrentSettingsSection()
       'lib/src/pages/implementations/downloads_page.dart',
     );
     expect(_hasSettingsTab(downloads), isTrue);
-    expect(
-      _containsCode(downloads, 'child: const TorrentSettingsSection()'),
-      isTrue,
-    );
+    expect(_hasFullWidthTorrentSettings(downloads), isTrue);
     expect(containsIdentifier(downloads, '_showSettings'), isFalse);
 
     final String downloadsCode = _code(downloads);

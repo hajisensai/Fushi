@@ -243,16 +243,8 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                 ),
                 const VideoDownloadSubscriptionsPanel(),
                 ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: <Widget>[
-                    Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: kTorrentSettingsContentMaxWidth,
-                        ),
-                        child: const TorrentSettingsSection(),
-                      ),
-                    ),
+                  children: const <Widget>[
+                    TorrentSettingsSection(constrainWidth: false),
                   ],
                 ),
               ],

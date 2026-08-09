@@ -208,46 +208,41 @@ class _VideoDownloadSubscriptionsViewState
       children: <Widget>[
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 840),
-              child: FushiCard(
-                padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
-                child: Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 12,
-                  runSpacing: 8,
-                  children: <Widget>[
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 560),
-                      child: Text(
-                        t.download_subscription_running_hint,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
-                    FilledButton.tonalIcon(
-                      key: const ValueKey<String>(
-                        'video-subscription-check-all',
-                      ),
-                      onPressed: widget.checkingAll ||
-                              !widget.subscriptions.any(
-                                (VideoDownloadSubscriptionRow row) =>
-                                    row.enabled,
-                              )
-                          ? null
-                          : widget.onCheckAll,
-                      icon: widget.checkingAll
-                          ? const SizedBox.square(
-                              dimension: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.refresh, size: 18),
-                      label: Text(t.download_subscription_check_all),
-                    ),
-                  ],
+          child: FushiCard(
+            key: const ValueKey<String>('video-subscriptions-header'),
+            padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              runSpacing: 8,
+              children: <Widget>[
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  child: Text(
+                    t.download_subscription_running_hint,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ),
-              ),
+                FilledButton.tonalIcon(
+                  key: const ValueKey<String>(
+                    'video-subscription-check-all',
+                  ),
+                  onPressed: widget.checkingAll ||
+                          !widget.subscriptions.any(
+                            (VideoDownloadSubscriptionRow row) => row.enabled,
+                          )
+                      ? null
+                      : widget.onCheckAll,
+                  icon: widget.checkingAll
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh, size: 18),
+                  label: Text(t.download_subscription_check_all),
+                ),
+              ],
             ),
           ),
         ),
@@ -269,27 +264,25 @@ class _VideoDownloadSubscriptionsViewState
                           widget.subscriptions[index];
                       final bool busy =
                           _busy.contains(subscription.subscriptionId);
-                      return Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 840),
-                          child: _VideoDownloadSubscriptionCard(
-                            subscription: subscription,
-                            busy: busy,
-                            onToggle: (bool enabled) => _run(
-                              subscription,
-                              () => widget.onToggle(subscription, enabled),
-                            ),
-                            onCheck: subscription.enabled
-                                ? () => _run(
-                                      subscription,
-                                      () => widget.onCheck(subscription),
-                                    )
-                                : null,
-                            onDelete: () => _run(
-                              subscription,
-                              () => widget.onDelete(subscription),
-                            ),
-                          ),
+                      return _VideoDownloadSubscriptionCard(
+                        key: ValueKey<String>(
+                          'video-subscription-card-${subscription.subscriptionId}',
+                        ),
+                        subscription: subscription,
+                        busy: busy,
+                        onToggle: (bool enabled) => _run(
+                          subscription,
+                          () => widget.onToggle(subscription, enabled),
+                        ),
+                        onCheck: subscription.enabled
+                            ? () => _run(
+                                  subscription,
+                                  () => widget.onCheck(subscription),
+                                )
+                            : null,
+                        onDelete: () => _run(
+                          subscription,
+                          () => widget.onDelete(subscription),
                         ),
                       );
                     },
@@ -303,6 +296,7 @@ class _VideoDownloadSubscriptionsViewState
 
 class _VideoDownloadSubscriptionCard extends StatelessWidget {
   const _VideoDownloadSubscriptionCard({
+    super.key,
     required this.subscription,
     required this.busy,
     required this.onToggle,

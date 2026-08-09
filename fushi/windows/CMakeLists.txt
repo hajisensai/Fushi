@@ -103,12 +103,12 @@ endif()
 install(TARGETS fushidicts_ffi RUNTIME DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
-# === 内置 libtorrent 引擎（可选，vendored 预编译）===
-# hibiki_torrent 依赖 libtorrent+boost+openssl（vcpkg 首次源码编译约 40min），
-# 不能强制每台构建机装 vcpkg。故采用 vendored 预编译：由
+# === 内置 libtorrent 引擎（Debug 可选，Profile/Release 必需）===
+# fushi_torrent 依赖 libtorrent+boost+openssl（vcpkg 首次源码编译约 40min），
+# 不强制只做 UI 的开发机构建它。故采用本机预编译：由
 # native/fushi_torrent/build_windows_dll.ps1 事先产出 4 个 DLL 到
-# prebuilt/windows-x64/，这里「有则拷、无则跳」——目录不存在时 flutter build
-# windows 照常成功，app 运行期 DLL 缺失自动回退外接 qb（见 EmbeddedTorrentHost）。
+# prebuilt/windows-x64/。Debug 缺失时仍可构建（运行时明确报告后端不可用）；
+# Profile/Release 缺失时由下方 install 守卫失败，禁止生成残缺安装包。
 set(FUSHI_TORRENT_PREBUILT_DIR
   "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_torrent/prebuilt/windows-x64")
 set(FUSHI_TORRENT_DLLS
@@ -123,6 +123,27 @@ foreach(_dll ${FUSHI_TORRENT_DLLS})
       COMPONENT Runtime)
   endif()
 endforeach()
+
+# Debug builds may intentionally omit the expensive libtorrent prebuild so UI
+# work stays lightweight. A Profile/Release bundle, however, must never be
+# produced while advertising an embedded backend that cannot open at runtime.
+# Check at install time because Flutter's Visual Studio generator is
+# multi-config and CMAKE_BUILD_TYPE is empty during configure.
+install(CODE "
+  if(CMAKE_INSTALL_CONFIG_NAME MATCHES \"^(Profile|Release)$\")
+    foreach(_dll IN ITEMS
+        fushi_torrent_ffi.dll
+        torrent-rasterbar.dll
+        libssl-3-x64.dll
+        libcrypto-3-x64.dll)
+      if(NOT EXISTS \"${FUSHI_TORRENT_PREBUILT_DIR}/\${_dll}\")
+        message(FATAL_ERROR
+          \"Missing required Windows download runtime: \${_dll}. \"
+          \"Run native/fushi_torrent/build_windows_dll.ps1 before building a Profile/Release bundle.\")
+      endif()
+    endforeach()
+  endif()
+" COMPONENT Runtime)
 
 # === galgame hook helper 随包归档（可选，本地/CI 事先构建）===
 # helper（injector exe + hook DLL）**绝不链接进 Hibiki.exe**，它以隔离子进程/DLL
