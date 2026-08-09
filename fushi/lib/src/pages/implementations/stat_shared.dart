@@ -264,7 +264,8 @@ List<StatIdentityGroup<T>> groupStatRowsByIdentity<T>(
 /// tile，只进汇总面板。聚合键与字数/时长 tile 的 title 一致。
 ///
 /// **book 域专用**：书标题导入期强制去重、与 bookKey 双射，按 title 聚合即按身份
-/// 聚合。视频域标题可重复，必须走 [groupStatRowsByIdentity]（见 video_statistics_page）。
+/// 聚合。视频域标题可重复，必须走 [groupStatRowsByIdentity]，且观看/计数/收藏三个
+/// 行宇宙必须**同一次**分组（见 video_stat_aggregates 的 computeVideoStats）。
 Map<String, ({int lookups, int mines})> aggregateStatCountersByTitle(
     List<LookupMiningCounterRow> rows) {
   final Map<String, ({int lookups, int mines})> out =
