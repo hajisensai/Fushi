@@ -178,6 +178,12 @@ void main() {
     await _pumpDialog(tester, db, 'video');
 
     expect(find.text('Anime'), findsOneWidget);
+    expect(
+      find.byKey(
+        ValueKey<String>('video_scrape_diagnostic_export_$anime'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('/srv/anime'), findsOneWidget);
     expect(find.text('Movies'), findsOneWidget);
     // 统计文案用「N videos」（视频量词），N = 累计拥有数（2），不是 mediaCount(68)。

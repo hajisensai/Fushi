@@ -3164,5 +3164,11 @@
   "game_japanese_locale_on": "Always on",
   "game_japanese_locale_off": "Off",
   "game_japanese_locale": "Japanese locale",
-  "game_japanese_locale_hint": "Chinese/English patched builds must turn this off, or the game crashes on launch"
+  "game_japanese_locale_hint": "Chinese/English patched builds must turn this off, or the game crashes on launch",
+  "video_scrape_diagnostic_export": "Export scrape diagnostics",
+  "video_scrape_diagnostic_confirm_title": "Export scrape diagnostics?",
+  "video_scrape_diagnostic_saved": "Diagnostic package saved",
+  "video_scrape_diagnostic_failed": "Could not export diagnostic package: $reason",
+  "video_scrape_diagnostic_share_subject": "Fushi video scrape diagnostics",
+  "video_scrape_diagnostic_confirm_body": "The package includes relative file and folder names, scrape summaries, and original NFO contents. It does not add videos, subtitles, images, absolute paths, app configuration, or app credentials. Original NFO files are preserved unchanged and may contain personal information or secrets; review the package before sharing publicly."
 }
