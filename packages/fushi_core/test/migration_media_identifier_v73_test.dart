@@ -21,10 +21,19 @@ CREATE TABLE media_items (
   media_type_identifier TEXT NOT NULL,
   media_source_identifier TEXT NOT NULL,
   unique_key TEXT NOT NULL UNIQUE,
+  base64_image TEXT,
+  image_url TEXT,
+  audio_url TEXT,
+  author TEXT,
+  author_identifier TEXT,
+  extra_url TEXT,
+  extra TEXT,
+  source_metadata TEXT,
   position INTEGER NOT NULL,
   duration INTEGER NOT NULL,
   can_delete INTEGER NOT NULL,
-  can_edit INTEGER NOT NULL
+  can_edit INTEGER NOT NULL,
+  imported_at INTEGER NOT NULL DEFAULT 0
 )''');
         raw.execute(
           "INSERT INTO media_items "
@@ -100,24 +109,23 @@ void main() {
         await db.customSelect('PRAGMA user_version').getSingle();
     expect(ver.read<int>('user_version'), db.schemaVersion);
 
+    // v80 把 media_items 搬进 media_open_history（unique_key 的信息拆成
+    // (media_source, media_id) 两列）——阶梯终值在新表断言，v73 的改写语义
+    // （① URI 段改写 ③ 源键段保留 ⑥ 无关行不动）逐条不弱化。
     final mi = await db
-        .customSelect('SELECT media_identifier, unique_key FROM media_items '
-            'ORDER BY id')
+        .customSelect('SELECT media_source, media_id FROM media_open_history')
         .get();
-    expect(mi[0].read<String>('media_identifier'), 'fushi://book/我的书');
-    expect(mi[0].read<String>('unique_key'), 'reader_fushi/fushi://book/我的书',
-        reason: '① 复合 unique_key 只换 URI 段，源键段保留');
-    expect(mi[1].read<String>('media_identifier'), 'fushi://srtbook/uid-1');
-    expect(
-        mi[1].read<String>('unique_key'), 'reader_fushi/fushi://srtbook/uid-1');
-    expect(mi[2].read<String>('unique_key'), 'reader_pdf/fushi://book/P',
-        reason: '③ 别的源键段不许被碰');
-    expect(mi[3].read<String>('media_identifier'), 'fushi://book/裸');
-    expect(mi[3].read<String>('unique_key'), 'fushi://book/裸',
-        reason: '⑥ 裸形态 unique_key（v16 遗产）由前缀锚定改写补齐');
-    expect(mi[4].read<String>('media_identifier'), 'D:/v/e1.mkv',
-        reason: '无关行不动');
-    expect(mi[4].read<String>('unique_key'), 'player/D:/v/e1.mkv');
+    final Set<(String, String)> pairs = mi
+        .map(
+            (r) => (r.read<String>('media_source'), r.read<String>('media_id')))
+        .toSet();
+    expect(pairs, <(String, String)>{
+      ('reader_fushi', 'fushi://book/我的书'),
+      ('reader_fushi', 'fushi://srtbook/uid-1'),
+      ('reader_pdf', 'fushi://book/P'),
+      ('reader_fushi', 'fushi://book/裸'),
+      ('player', 'D:/v/e1.mkv'),
+    });
 
     final prefs = await db
         .customSelect('SELECT key, value FROM preferences')

@@ -383,20 +383,13 @@ void main() {
     expect(await db.getPrefTyped<bool>('audiobook_follow_Book A', false), true);
     expect(await db.getPref('audiobook_speed_Book A'), '1.5');
 
-    // ── media_items identifier rewritten ──────────────────────────────
-    final mi = await db
-        .customSelect(
-          "SELECT media_identifier, unique_key FROM media_items "
-          "ORDER BY id",
-        )
-        .get();
-    // v16 重键出 hoshi://book/<key>，v73 再把 media_identifier 前缀改写成
-    // fushi://book/<key> —— 断言的是阶梯终值。
-    expect(mi.map((r) => r.read<String>('media_identifier')).toSet(),
+    // ── media_items identifier rewritten（v80 后终值在 media_open_history）──
+    final mi =
+        await db.customSelect('SELECT media_id FROM media_open_history').get();
+    // v16 重键出 hoshi://book/<key>，v73 再把前缀改写成 fushi://book/<key>，
+    // v80 搬进新表 —— 断言的是阶梯终值。
+    expect(mi.map((r) => r.read<String>('media_id')).toSet(),
         <String>{'fushi://book/Book A', 'fushi://book/Book A (2)'});
-    // v16 写的是**裸** unique_key（无源键段）；v73 对复合形态用带 `/` 左锚的
-    // REPLACE、对裸形态用前缀锚定改写，两条互补——终值两列一致同为新前缀。
-    expect(mi.first.read<String>('unique_key'), 'fushi://book/Book A');
 
     // ── reading_statistics title aligned to sanitized key + merged ────
     // 'Solo*Book' → 'Solo~ttu-star~Book' (untouched). The two 2026-01-02 rows

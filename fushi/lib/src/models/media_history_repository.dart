@@ -37,52 +37,52 @@ class MediaHistoryRepository extends ChangeNotifier {
     }
   }
 
-  // ── row conversion（v80：身份/时刻/进度是列，其余走 snapshot JSON）─────
+  // ── row conversion（v80：身份/时刻/进度是列，其余走 snapshot JSON。
+  // 编解码复用 MediaItem 的 json_serializable 生成码——key 集只在生成码一处
+  // 定义，MediaItem 加字段自动跟上（review-reuse-1）。身份/进度/能力位不进
+  // snapshot：写侧剥掉，读侧从列注回。）─────────────────────────────────
+
+  /// snapshot 不承载的键（列化字段 + 运行时推导的能力位 + 废弃的自增 id）。
+  static const List<String> _columnedKeys = <String>[
+    'id',
+    'mediaIdentifier',
+    'mediaTypeIdentifier',
+    'mediaSourceIdentifier',
+    'position',
+    'duration',
+    'canDelete',
+    'canEdit',
+  ];
 
   static MediaItem _rowToMediaItem(MediaOpenHistoryRow r) {
     Map<String, dynamic> snapshot;
     try {
       snapshot = jsonDecode(r.snapshotJson) as Map<String, dynamic>;
     } catch (_) {
-      snapshot = const <String, dynamic>{};
+      snapshot = <String, dynamic>{};
     }
-    String? str(String key) =>
-        snapshot[key] is String ? snapshot[key] as String : null;
-    return MediaItem(
-      mediaIdentifier: r.mediaId,
-      title: str('title') ?? '',
-      mediaTypeIdentifier: r.mediaType,
-      mediaSourceIdentifier: r.mediaSource,
-      position: r.position,
-      duration: r.duration,
-      // v80：能力位不再持久化，运行时按 source 语义推导——历史条目一律可删、
-      // 不可编辑（与全部现存 source 的实际取值一致）。
-      canDelete: true,
-      canEdit: false,
-      base64Image: str('base64Image'),
-      imageUrl: str('imageUrl'),
-      audioUrl: str('audioUrl'),
-      author: str('author'),
-      authorIdentifier: str('authorIdentifier'),
-      extraUrl: str('extraUrl'),
-      extra: str('extra'),
-      sourceMetadata: str('sourceMetadata'),
-    );
+    final MediaItem item = MediaItem.fromJson(<String, dynamic>{
+      'title': '',
+      ...snapshot,
+      'mediaIdentifier': r.mediaId,
+      'mediaTypeIdentifier': r.mediaType,
+      'mediaSourceIdentifier': r.mediaSource,
+      'position': r.position,
+      'duration': r.duration,
+      // v80：能力位不再持久化，运行时按 source 语义推导。全部现存构造点取
+      // canDelete:false / canEdit:true（历史条目可改覆盖标题、删除走
+      // removeFromReadingList 语义），照实注入（review5-7：此前硬编码成了
+      // 反值，会砍掉自定义标题覆盖并凭空长出删除动作）。
+      'canDelete': false,
+      'canEdit': true,
+    });
+    return item;
   }
 
   static MediaOpenHistoryCompanion _mediaItemToCompanion(MediaItem item) {
-    final Map<String, Object?> snapshot = <String, Object?>{
-      'title': item.title,
-      if (item.base64Image != null) 'base64Image': item.base64Image,
-      if (item.imageUrl != null) 'imageUrl': item.imageUrl,
-      if (item.audioUrl != null) 'audioUrl': item.audioUrl,
-      if (item.author != null) 'author': item.author,
-      if (item.authorIdentifier != null)
-        'authorIdentifier': item.authorIdentifier,
-      if (item.extraUrl != null) 'extraUrl': item.extraUrl,
-      if (item.extra != null) 'extra': item.extra,
-      if (item.sourceMetadata != null) 'sourceMetadata': item.sourceMetadata,
-    };
+    final Map<String, dynamic> snapshot = item.toJson()
+      ..removeWhere((String key, Object? value) =>
+          value == null || _columnedKeys.contains(key));
     return MediaOpenHistoryCompanion(
       mediaType: Value(item.mediaTypeIdentifier),
       mediaSource: Value(item.mediaSourceIdentifier),

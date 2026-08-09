@@ -30,9 +30,12 @@ bool isEpubBackedAudiobookSrt(SrtBook book) {
 
 /// books domain methods extracted via part-of (TODO-587); shared private scope.
 extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
-  Widget? _buildSrtBookTagLabels(int srtBookId) => _tagLabelsFromMap(
+  // v79：srtBookTagMapProvider 键换 uid（String）。泛型 map 索引不受编译器
+  // 保护——int 键查 String 键 map 恒 miss 且 analyze 全绿（review5-3），
+  // 类型签名钉死在 String 上防复发。
+  Widget? _buildSrtBookTagLabels(String srtUid) => _tagLabelsFromMap(
         ref.watch(srtBookTagMapProvider).valueOrNull,
-        srtBookId,
+        srtUid,
       );
 
   /// [selectable]（默认 true）= 多选态可单独勾选。块2：合集行成员卡传 false
@@ -47,7 +50,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       VoidCallback? removeFromCollection,
       String focusIdPrefix = ''}) {
     final String selKey = 'srt_${book.uid}';
-    final tagWidget = book.id != null ? _buildSrtBookTagLabels(book.id!) : null;
+    final tagWidget = _buildSrtBookTagLabels(book.uid);
     final int? srtBookId = book.id;
     // TODO-919 / BUG-441：EPUB 有声书配对行（TODO-894 落的 srt_books）保留耳机角标，
     // 纯字幕书仍用字幕角标。

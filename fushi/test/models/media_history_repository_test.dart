@@ -373,10 +373,11 @@ void main() {
       expect(loaded.mediaSourceIdentifier, 'hoshi');
       expect(loaded.position, 42);
       expect(loaded.duration, 999);
-      // v78：能力位不再持久化，读取端按 source 语义推导（历史条目恒可删、
-      // 不可编辑）。
-      expect(loaded.canDelete, true);
-      expect(loaded.canEdit, false);
+      // v80：能力位不再持久化，读取端按 source 语义注入（全部现存构造点
+      // 取 canDelete:false / canEdit:true——canEdit 门着自定义标题覆盖，
+      // review5-7）。
+      expect(loaded.canDelete, false);
+      expect(loaded.canEdit, true);
       expect(loaded.base64Image, 'abc123');
       expect(loaded.imageUrl, 'https://img.example.com/cover.jpg');
       expect(loaded.audioUrl, 'https://audio.example.com/track.mp3');

@@ -43,11 +43,19 @@ CREATE TABLE media_items (
   media_type_identifier TEXT NOT NULL,
   media_source_identifier TEXT NOT NULL,
   unique_key TEXT NOT NULL UNIQUE,
+  base64_image TEXT,
   image_url TEXT,
+  audio_url TEXT,
+  author TEXT,
+  author_identifier TEXT,
+  extra_url TEXT,
+  extra TEXT,
+  source_metadata TEXT,
   position INTEGER NOT NULL,
   duration INTEGER NOT NULL,
   can_delete INTEGER NOT NULL,
-  can_edit INTEGER NOT NULL
+  can_edit INTEGER NOT NULL,
+  imported_at INTEGER NOT NULL DEFAULT 0
 )''');
         raw.execute(
           "INSERT INTO media_items "
@@ -100,13 +108,20 @@ void main() {
     expect(rows[2].read<String>('extract_dir'), '/data/other_dir/C',
         reason: '无关行不动');
 
+    // v80 后 image_url 活在 media_open_history.snapshot_json（无值不落键）。
     final mi = await db
-        .customSelect('SELECT image_url FROM media_items ORDER BY id')
+        .customSelect(
+            'SELECT snapshot_json FROM media_open_history ORDER BY media_id')
         .get();
-    expect(mi[0].read<String?>('image_url'),
-        'file:///D:/Docs/fushi_books/A/cover.jpg',
-        reason: '③ file:// URI 改写');
-    expect(mi[1].read<String?>('image_url'), isNull);
+    final List<String> snaps =
+        mi.map((r) => r.read<String>('snapshot_json')).toList();
+    expect(
+        snaps.where(
+            (j) => j.contains('file:///D:/Docs/fushi_books/A/cover.jpg')),
+        hasLength(1),
+        reason: '③ file:// URI 改写（阶梯终值随 v80 搬进 snapshot）');
+    expect(snaps.where((j) => j.contains('imageUrl')), hasLength(1),
+        reason: '无 image_url 的行不落 imageUrl 键');
 
     final prefs =
         await db.customSelect('SELECT key FROM preferences ORDER BY key').get();

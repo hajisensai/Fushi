@@ -22,14 +22,15 @@ final allTagsProvider = FutureProvider<List<BookTagRow>>((ref) async {
   return db.getAllTags();
 });
 
-/// v77 合表后的通用组装：某 kind 的「entryKey → 标签列表」。
+/// v79 合表后的通用组装：某 kind 的「entryKey → 标签列表」。kind 过滤在 SQL
+/// 面（PK 前缀白拿索引；review5-8：书架同屏 watch 三个 kind 的 provider，全表
+/// 扫描三遍再 Dart 滤是纯浪费）。
 Future<Map<String, List<BookTagRow>>> _tagMapForKind(
     FushiDatabase db, TagHostKind kind) async {
   final tags = await db.getAllTags();
   final tagById = {for (final t in tags) t.id: t};
   final Map<String, List<BookTagRow>> result = {};
-  for (final TagAssignmentRow m in await db.getAllTagAssignments()) {
-    if (m.mediaKind != kind.dbValue) continue;
+  for (final TagAssignmentRow m in await db.getTagAssignmentsForKind(kind)) {
     final tag = tagById[m.tagId];
     if (tag != null) {
       result.putIfAbsent(m.entryKey, () => []).add(tag);
@@ -58,7 +59,7 @@ final collectionTagMapProvider =
       ref.watch(appProvider).database, TagHostKind.collection);
   return <int, List<BookTagRow>>{
     for (final MapEntry<String, List<BookTagRow>> e in byKey.entries)
-      if (int.tryParse(e.key) case final int id) id: e.value,
+      if (collectionIdOfTagEntryKey(e.key) case final int id) id: e.value,
   };
 });
 

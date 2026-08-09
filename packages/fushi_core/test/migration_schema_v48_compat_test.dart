@@ -91,8 +91,7 @@ void main() {
   });
 
   test('fresh v48 database contains all v48 hot-path indexes', () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     await db.getPref('force-open');
@@ -105,9 +104,9 @@ void main() {
       await _indexNames(db),
       containsAll(<String>[
         'idx_audio_cues_book_chapter_sentence',
-        'idx_book_tag_mappings_tag_id',
-        'idx_srt_book_tag_mappings_tag_id',
-        'idx_video_book_tag_mappings_tag_id',
+        // v79 五张标签映射表合一：per-table tag_id 索引随旧表消亡，
+        // 统一表一条索引覆盖全部 kind。
+        'idx_tag_assignments_tag_id',
         'idx_favorite_words_source_type',
       ]),
     );

@@ -13,11 +13,11 @@ enum TagHostKind {
 
   /// 落库值（冻结；与 [MediaKind] 重叠的三个值同串同义）。
   final String dbValue;
-
-  static TagHostKind? tryParse(String raw) {
-    for (final TagHostKind kind in TagHostKind.values) {
-      if (kind.dbValue == raw) return kind;
-    }
-    return null;
-  }
 }
+
+/// 合集在 [TagAssignments].entryKey 里的编码（int id 字符串化）。编解码只许
+/// 走这两个函数——散写 toString/int.tryParse 会让任何一处格式漂移把映射变成
+/// 全体解码点静默丢弃的孤儿。
+String collectionTagEntryKey(int collectionId) => collectionId.toString();
+
+int? collectionIdOfTagEntryKey(String entryKey) => int.tryParse(entryKey);

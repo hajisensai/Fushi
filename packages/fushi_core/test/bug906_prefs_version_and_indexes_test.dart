@@ -27,8 +27,7 @@ void main() {
       addTearDown(db.close);
 
       // Touch the DB so the lazy open (onCreate) completes before racing.
-      final String? beforeRaw =
-          await db.getPref(FushiDatabase.prefsVersionKey);
+      final String? beforeRaw = await db.getPref(FushiDatabase.prefsVersionKey);
       final int baseline =
           beforeRaw == null ? 0 : PrefCodec.decode<int>(beforeRaw, 0);
 
@@ -61,8 +60,7 @@ void main() {
       addTearDown(db.close);
 
       await db.setPref('bug906_seed', 'x'); // version -> 1
-      final String? afterSeed =
-          await db.getPref(FushiDatabase.prefsVersionKey);
+      final String? afterSeed = await db.getPref(FushiDatabase.prefsVersionKey);
       final int seeded =
           afterSeed == null ? 0 : PrefCodec.decode<int>(afterSeed, 0);
 
@@ -106,9 +104,9 @@ void main() {
 
       const List<String> required = <String>[
         'idx_audio_cues_book_chapter_sentence',
-        'idx_book_tag_mappings_tag_id',
-        'idx_srt_book_tag_mappings_tag_id',
-        'idx_video_book_tag_mappings_tag_id',
+        // v79 五张标签映射表合一：per-table tag_id 索引随旧表消亡，
+        // 统一表一条索引覆盖全部 kind。
+        'idx_tag_assignments_tag_id',
         'idx_favorite_words_source_type',
       ];
       for (final String name in required) {

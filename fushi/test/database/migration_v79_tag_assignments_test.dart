@@ -97,8 +97,7 @@ CREATE TABLE galgame_tag_mappings (
           rawDb.execute(
               'INSERT INTO collection_tag_mappings (collection_id, tag_id) '
               'VALUES (42, 1)');
-          rawDb.execute(
-              'INSERT INTO galgame_tag_mappings (game_id, tag_id) '
+          rawDb.execute('INSERT INTO galgame_tag_mappings (game_id, tag_id) '
               "VALUES ('173000000', 1)");
           rawDb.execute('PRAGMA user_version = 78');
         },
@@ -136,11 +135,9 @@ CREATE TABLE galgame_tag_mappings (
       'collection_tag_mappings',
       'galgame_tag_mappings',
     ]) {
-      final rows = await db
-          .customSelect(
-              "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-              variables: [Variable<String>(old)])
-          .get();
+      final rows = await db.customSelect(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+          variables: [Variable<String>(old)]).get();
       expect(rows, isEmpty, reason: '旧表 $old 已 DROP');
     }
   });
@@ -173,5 +170,52 @@ CREATE TABLE galgame_tag_mappings (
             .every((TagAssignmentRow r) => r.addedAt > 0),
         isTrue,
         reason: 'v79 拍板：五 kind 统一记 addedAt');
+  });
+
+  test(
+      'review5-2 回归：FK ON 下悬空 tag_id 不炸升级——过滤丢弃而非 abort '
+      '（真实迁移跑在 PRAGMA foreign_keys=ON，OR IGNORE 压不住 FK 违规；'
+      'pre-v10 FK-off 时代的野库确有孤儿映射行）', () async {
+    final FushiDatabase db = FushiDatabase.forTesting(
+      NativeDatabase.memory(
+        setup: (rawDb) {
+          // 刻意 FK ON——与生产连接一致，别让 fixture 遮住 FK 崩（review5-2
+          // 点名旧 fixture 的 OFF 是结构性盲区）。
+          rawDb.execute('PRAGMA foreign_keys = ON');
+          rawDb.execute('''
+CREATE TABLE book_tags (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  color_value INTEGER NOT NULL DEFAULT 0xFF9E9E9E,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+)
+''');
+          rawDb.execute('''
+CREATE TABLE galgame_tag_mappings (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  game_id TEXT NOT NULL,
+  tag_id INTEGER NOT NULL,
+  UNIQUE (game_id, tag_id)
+)
+''');
+          rawDb.execute(
+              "INSERT INTO book_tags (id, name, created_at) VALUES (1, 'T', 1)");
+          rawDb.execute('INSERT INTO galgame_tag_mappings (game_id, tag_id) '
+              "VALUES ('g-live', 1)");
+          // 悬空行：tag_id=99 无 book_tags 行（旧表无 FK，插得进去）。
+          rawDb.execute('INSERT INTO galgame_tag_mappings (game_id, tag_id) '
+              "VALUES ('g-orphan', 99)");
+          rawDb.execute('PRAGMA user_version = 78');
+        },
+      ),
+    );
+    addTearDown(db.close);
+
+    // 打开即触发迁移；悬空行被 WHERE tag_id IN (SELECT id FROM book_tags)
+    // 过滤丢弃，有效行照常搬移，升级不 abort。
+    final List<TagAssignmentRow> rows = await db.getAllTagAssignments();
+    expect(rows, hasLength(1), reason: '悬空行丢弃、有效行保留');
+    expect(rows.single.entryKey, 'g-live');
   });
 }
