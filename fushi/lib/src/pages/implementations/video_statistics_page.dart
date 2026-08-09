@@ -35,10 +35,6 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   Map<String, int> _primaryCollectionByEntry = <String, int>{};
   Map<String, String> _bookUidByTitle = <String, String>{};
 
-  /// title → byVideo 里同名 tile 数（v76：无身份计数组归属判据——同名 tile 唯一
-  /// 时无身份计数并入该 tile，否则只挂在无身份遗留 tile 下，绝不双计）。
-  Map<String, int> _titleTileCount = <String, int>{};
-
   // 制卡 / 收藏计数（来源 'video'），按今日/本周/本月/全部分桶。
   StatActivityBuckets _mined = StatActivityBuckets();
   StatActivityBuckets _favorited = StatActivityBuckets();
@@ -46,17 +42,6 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
 
   // 查词计数（来源 'video'）分桶（TODO-1204）。
   StatActivityBuckets _lookup = StatActivityBuckets();
-
-  // per-video 查词/制卡计数（v76：身份分组，对齐观看时长 tile 的分组契约——
-  // [groupStatRowsByIdentity]）。uid 组按 bookUid 命中；无身份遗留组按 title 命中。
-  Map<String, ({int lookups, int mines})> _videoCountersByUid =
-      <String, ({int lookups, int mines})>{};
-  Map<String, ({int lookups, int mines})> _videoCounterOrphansByTitle =
-      <String, ({int lookups, int mines})>{};
-
-  // per-video 收藏计数（TODO-1252：按 title 聚合当前收藏活行，无书收藏 title='' 跳过，
-  // 只进汇总面板）。收藏取消即删行 → 聚合活行天然回落。
-  Map<String, int> _videoFavorites = <String, int>{};
 
   // 今日每小时观看时长（0-23，毫秒）。
   List<int> _hourlyMs = List.filled(24, 0);
@@ -96,19 +81,22 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       };
       _primaryCollectionByEntry = await db.getPrimaryCollectionIdByEntry();
       final DateTime now = DateTime.now();
-      _agg = computeVideoStats(
-        stats: stats,
-        completed: completed,
-        now: now,
-      );
-      _titleTileCount = <String, int>{};
-      for (final VideoStatBookData v in _agg.byVideo) {
-        _titleTileCount[v.title] = (_titleTileCount[v.title] ?? 0) + 1;
-      }
       final List<FavoriteWordRow> favs =
           await db.getFavoriteWordsBySource(kStatSourceVideo);
       final List<MiningStatisticRow> mined =
           await db.getMiningStatisticsBySource(kStatSourceVideo);
+      // TODO-1204：查词/制卡 per-video 计数（新表）。
+      final List<LookupMiningCounterRow> counters =
+          await db.getLookupMiningCountersBySource(kStatSourceVideo);
+      // v76：观看 / 计数 / 收藏三个行宇宙进同一次身份分组，tile 自带全部数字
+      // （吸收判据全局一致，绝不各分各的再拼——那是计数在同名 tile 间游走的根因）。
+      _agg = computeVideoStats(
+        stats: stats,
+        completed: completed,
+        now: now,
+        counters: counters,
+        favorites: favs,
+      );
       _favorited = bucketActivityByDateKey(
         favs.map((FavoriteWordRow f) => (f.dateKey, 1)),
         now,
@@ -117,39 +105,10 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
         mined.map((MiningStatisticRow m) => (m.dateKey, m.count)),
         now,
       );
-      // TODO-1204：查词/制卡 per-video 计数（新表）。
-      final List<LookupMiningCounterRow> counters =
-          await db.getLookupMiningCountersBySource(kStatSourceVideo);
       _lookup = bucketActivityByDateKey(
         counters.map((LookupMiningCounterRow c) => (c.dateKey, c.lookupCount)),
         now,
       );
-      // v76：计数行按身份分组（与观看时长 tile 同契约），uid 组与无身份遗留组
-      // 分别建索引，tile 按 bookUid → title 两级命中。
-      _videoCountersByUid = <String, ({int lookups, int mines})>{};
-      _videoCounterOrphansByTitle = <String, ({int lookups, int mines})>{};
-      for (final StatIdentityGroup<LookupMiningCounterRow> g
-          in groupStatRowsByIdentity(
-        counters
-            .where((LookupMiningCounterRow c) => c.title.isNotEmpty)
-            .toList(),
-        identityOf: (LookupMiningCounterRow c) => c.bookKey,
-        titleOf: (LookupMiningCounterRow c) => c.title,
-      )) {
-        int lookups = 0, mines = 0;
-        for (final LookupMiningCounterRow c in g.rows) {
-          lookups += c.lookupCount;
-          mines += c.mineCount;
-        }
-        final String? uid = g.identity;
-        if (uid != null) {
-          _videoCountersByUid[uid] = (lookups: lookups, mines: mines);
-        } else {
-          _videoCounterOrphansByTitle[g.title] =
-              (lookups: lookups, mines: mines);
-        }
-      }
-      _videoFavorites = aggregateStatFavoritesByTitle(favs);
       // 视频来源收藏语句（source==video），旧条目无 dateKey 不参与分桶。
       final List<FavoriteSentence> favSentences =
           await FavoriteSentenceRepository(db).getAll();
@@ -317,15 +276,16 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   /// 长按 / 右键某个视频那一行 → 确认 → 删除该视频的纯统计并写 video 墓碑防复活，
   /// 再从 DB 重新聚合刷新（TODO-1204 后续）。
   ///
-  /// v76：身份感知删除——只删本 tile 展示的行（该 uid 的行 + 本 tile 若是同名唯一
-  /// tile 则连带该 title 的无身份遗留行），同名另一视频的 per-uid 行不再连坐。
+  /// v76：身份感知删除——只删本 tile 展示的行：该 uid 的行 + 本 tile 吸收过的
+  /// 同 title 无身份遗留行（[VideoStatBookData.absorbedUnattributed]，与展示层
+  /// 是同一次身份分组给出的同一个判据）。同名另一视频的 per-uid 行不再连坐。
   Future<void> _confirmAndDeleteVideo(VideoStatBookData video) async {
     final bool confirmed = await confirmDeleteStatistics(context, video.title);
     if (!confirmed || !mounted) return;
     await appModelNoUpdate.database.deleteVideoStatisticsForIdentity(
       title: video.title,
       bookUid: video.bookUid,
-      includeUnattributed: _titleTileCount[video.title] == 1,
+      includeUnattributed: video.absorbedUnattributed,
     );
     if (!mounted) return;
     await _loadFromDatabase();
@@ -356,28 +316,10 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     );
   }
 
-  /// v76：本 tile 的查词/制卡计数——uid tile 取 uid 组，若本 tile 是同名唯一 tile
-  /// 再并入无身份计数组（与删除的连带判据一致，绝不双计——同名多 tile 时无身份组
-  /// 只挂无身份遗留 tile）；无身份遗留 tile 只取无身份组。
-  ({int lookups, int mines}) _counterForTile(VideoStatBookData video) {
-    const ({int lookups, int mines}) zero = (lookups: 0, mines: 0);
-    final String? uid = video.bookUid;
-    if (uid == null) {
-      return _videoCounterOrphansByTitle[video.title] ?? zero;
-    }
-    final ({int lookups, int mines}) own = _videoCountersByUid[uid] ?? zero;
-    if (_titleTileCount[video.title] != 1) return own;
-    final ({int lookups, int mines}) orphan =
-        _videoCounterOrphansByTitle[video.title] ?? zero;
-    return (
-      lookups: own.lookups + orphan.lookups,
-      mines: own.mines + orphan.mines,
-    );
-  }
-
   Widget _buildVideoTile(VideoStatBookData video) {
-    final ({int lookups, int mines}) counter = _counterForTile(video);
-    final int favorites = _videoFavorites[video.title] ?? 0;
+    // v76：查词/制卡/收藏数由 computeVideoStats 的同一次身份分组挂在 tile 上，
+    // 这里只读——不做任何第二次归并（两套判据 = 计数在同名 tile 间游走）。
+    final int favorites = video.favorites;
     final String? collectionName = _collectionNameForVideo(video);
     // 按观看时长排行（byVideo 已按 ms 降序），进度条与排行同维度。
     final maxMs =
@@ -435,7 +377,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
               ),
               SizedBox(height: tokens.spacing.gap / 2),
               Text(
-                '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines} · ${t.stat_favorited}: $favorites',
+                '${t.stat_lookup}: ${video.lookups} · ${t.stat_mined}: ${video.mines} · ${t.stat_favorited}: $favorites',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),

@@ -363,6 +363,72 @@ void main() {
     expect(rows, hasLength(3));
   });
 
+  test(
+      'v76 regression: same-title multi-identity counters merge per bucket — '
+      'src unattributed row neither drops identity rows nor inflates them',
+      () async {
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = FushiDatabase(curDir.path);
+    // 同名双视频各自的身份桶（v76 唯一键世界）。
+    await cur.addLookupCount(
+        bookKey: 'uid-1',
+        title: '同名',
+        sourceType: 'video',
+        dateKey: '2026-03-03',
+        delta: 3);
+    await cur.addLookupCount(
+        bookKey: 'uid-2',
+        title: '同名',
+        sourceType: 'video',
+        dateKey: '2026-03-03',
+        delta: 4);
+    await cur.close();
+
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = FushiDatabase(srcDir.path);
+    // 备份侧：同 title 的无身份桶（迁移歧义遗留 / 旧端产物）。用身份感知的
+    // add* 写入器构造（set* 是 sync 的 title 粒度落地器，单行时按 title 抬、
+    // 忽略身份，造不出「'' 桶 + 身份桶并存」的 fixture）。
+    await src.addLookupCount(
+        bookKey: '',
+        title: '同名',
+        sourceType: 'video',
+        dateKey: '2026-03-03',
+        delta: 7);
+    // 身份桶：与 cur 的 uid-1 同桶但 mine 更高 → 逐列 MAX 抬升。
+    await src.addMineCountPerBook(
+        bookKey: 'uid-1',
+        title: '同名',
+        sourceType: 'video',
+        dateKey: '2026-03-03',
+        delta: 5);
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    // 导两遍——幂等（MAX，绝不 SUM）。
+    await BackupService.mergeRestoreBackup(
+        dbDirectory: curDir.path, zipPath: zip);
+    await BackupService.mergeRestoreBackup(
+        dbDirectory: curDir.path, zipPath: zip);
+
+    final after = FushiDatabase(curDir.path);
+    addTearDown(after.close);
+    final rows = (await after.getLookupMiningCountersBySource('video'))
+        .where((LookupMiningCounterRow r) => r.title == '同名')
+        .toList();
+    final byKey = {for (final r in rows) r.bookKey: r};
+    expect(rows, hasLength(3), reason: '三个桶各自独立，src 身份行不被三列键静默丢弃');
+    expect(byKey['uid-1']!.lookupCount, 3, reason: '身份桶不被同 title 标量抬升');
+    expect(byKey['uid-1']!.mineCount, 5, reason: '同桶逐列 MAX 正常抬升');
+    expect(byKey['uid-2']!.lookupCount, 4, reason: '旁桶不动');
+    expect(byKey['']!.lookupCount, 7, reason: 'src 无身份桶按自己的桶并入');
+  });
+
   test('favorite words dedupe-union keeps earlier createdAt', () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
