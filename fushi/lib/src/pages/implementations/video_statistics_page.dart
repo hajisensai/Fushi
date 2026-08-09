@@ -90,12 +90,22 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
           await db.getLookupMiningCountersBySource(kStatSourceVideo);
       // v76：观看 / 计数 / 收藏三个行宇宙进同一次身份分组，tile 自带全部数字
       // （吸收判据全局一致，绝不各分各的再拼——那是计数在同名 tile 间游走的根因）。
+      // 库表级同名判定（≥2 个 uid 共享一个 title）喂给吸收否决：与迁移回填的
+      // 唯一匹配判据同源，行宇宙判据单独用会误吸混合遗留（review-2）。
+      final Map<String, int> uidCountByTitle = <String, int>{};
+      for (final VideoBookRow b in books) {
+        uidCountByTitle[b.title] = (uidCountByTitle[b.title] ?? 0) + 1;
+      }
       _agg = computeVideoStats(
         stats: stats,
         completed: completed,
         now: now,
         counters: counters,
         favorites: favs,
+        ambiguousTitles: <String>{
+          for (final MapEntry<String, int> e in uidCountByTitle.entries)
+            if (e.value >= 2) e.key,
+        },
       );
       _favorited = bucketActivityByDateKey(
         favs.map((FavoriteWordRow f) => (f.dateKey, 1)),

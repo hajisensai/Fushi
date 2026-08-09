@@ -238,5 +238,42 @@ void main() {
       expect(agg.byVideo.single.bookUid, 'uid-1',
           reason: 'uid-9 只有计数 → 不出 tile，数字只进汇总面板');
     });
+
+    test('review2-2 回归：库表判同名歧义时，行宇宙唯一身份也不许吸收混合遗留', () {
+      // 同名双视频都只有 v39 前的 NULL 遗留观看行（混着两者时长），用户只在
+      // 其中一个查过一次词——行宇宙里唯一的身份组不得把混合遗留整体吸走。
+      final agg = computeVideoStats(
+        stats: [
+          rowU('同名', null, '2026-06-01', 5, 500),
+          rowU('同名', null, '2026-06-02', 7, 700),
+        ],
+        counters: [counterU('同名', 'uid-a', 1, 0)],
+        completed: const [],
+        now: now,
+        ambiguousTitles: const <String>{'同名'},
+      );
+      expect(agg.byVideo, hasLength(1));
+      final orphan = agg.byVideo.single;
+      expect(orphan.bookUid, isNull,
+          reason: '库表说同名有两个视频 → 遗留行保持无身份 tile，不归 uid-a');
+      expect(orphan.ms, 1200);
+      expect(orphan.lookups, 0, reason: 'uid-a 的查词不混进遗留 tile');
+    });
+
+    test('review2-9 回归：改名视频（一 uid 跨多 title 快照）的新 title 遗留行仍归并', () {
+      final agg = computeVideoStats(
+        stats: [
+          rowU('旧名', 'uid-x', '2026-06-01', 10, 1000),
+          rowU('新名', 'uid-x', '2026-06-05', 20, 2000),
+          rowU('新名', null, '2026-06-02', 5, 500), // 新 title 的无身份遗留
+        ],
+        completed: const [],
+        now: now,
+      );
+      expect(agg.byVideo, hasLength(1),
+          reason: '组按全部 title 快照注册 owner，新 title 遗留不落孤儿 tile');
+      expect(agg.byVideo.single.bookUid, 'uid-x');
+      expect(agg.byVideo.single.ms, 3500);
+    });
   });
 }

@@ -5345,6 +5345,10 @@ class FushiDatabase extends _$FushiDatabase {
           sumLookup += r.lookupCount;
           sumMine += r.mineCount;
         }
+        // 多行且 wire 值不超过本地和：MAX-union 无可抬升，**不塌缩**——否则每轮
+        // sync 应用都会把 per-identity 行塌回 '' 行，v76 的分身份修复被周期性
+        // 回退、tile 数字震荡（review-5）。塌缩只发生在 wire 真的知道更多时。
+        if (count <= sumLookup) return;
         await (delete(lookupMiningCounters)
               ..where((t) =>
                   t.title.equals(title) &
@@ -5357,7 +5361,7 @@ class FushiDatabase extends _$FushiDatabase {
             title: Value(title),
             sourceType: sourceType,
             dateKey: dateKey,
-            lookupCount: Value(count > sumLookup ? count : sumLookup),
+            lookupCount: Value(count),
             mineCount: Value(sumMine),
           ),
         );
@@ -5406,6 +5410,8 @@ class FushiDatabase extends _$FushiDatabase {
           sumLookup += r.lookupCount;
           sumMine += r.mineCount;
         }
+        // 与 [setLookupCount] 对称：wire 值不超过本地和 → 不塌缩（review-5）。
+        if (count <= sumMine) return;
         await (delete(lookupMiningCounters)
               ..where((t) =>
                   t.title.equals(title) &
@@ -5419,7 +5425,7 @@ class FushiDatabase extends _$FushiDatabase {
             sourceType: sourceType,
             dateKey: dateKey,
             lookupCount: Value(sumLookup),
-            mineCount: Value(count > sumMine ? count : sumMine),
+            mineCount: Value(count),
           ),
         );
       });
@@ -5706,16 +5712,38 @@ class FushiDatabase extends _$FushiDatabase {
   ///    无身份遗留行（读取端把 unique-title 遗留行归并进该 uid 的 tile，删 tile
   ///    即删其展示的全部行——见 stat_shared 的身份分组契约）；
   ///  - [bookUid] 为 null = 只删该 title 的无身份遗留行（歧义遗留 tile）。
-  /// 墓碑维持 (title, sourceType)：wire 协议是 title 粒度，更细的墓碑对同步复活
-  /// 无判别力。同名另一视频的 per-uid 行不动，但其后续同步复活仍受 title 墓碑
-  /// 压制——已知限制，随 wire 升级 per-uid 一并解除。
+  ///    无身份判定 NULL 与 '' 都算（review-10：与展示层 `bookUid ?? ''` 的判据
+  ///    对齐，防止未来写入方存 '' 造出「显示得出、删不掉」的行）。
+  ///
+  /// 墓碑维持 (title, sourceType) 粒度、且覆盖被删 uid 行的**全部历史 title**
+  /// （review-6：改名视频的旧 title 行也被本删除清掉，墓碑不跟上会从旧备份复活）。
+  /// wire 协议是 title 粒度，更细的墓碑对同步复活无判别力——代价是**双向**已知
+  /// 限制：①被删视频的统计不被 peer 复活（目的）；②同名幸存视频来自 peer/备份
+  /// 的统计贡献同样被压制，直到其新的本地活动清碑（副作用；review-3 要求写明的
+  /// 另一半）。随 wire 升级 per-uid 一并解除。
   Future<void> deleteVideoStatisticsForIdentity({
     required String title,
     String? bookUid,
     bool includeUnattributed = false,
   }) =>
       transaction(() async {
+        final Set<String> tombstoneTitles = <String>{title};
         if (bookUid != null) {
+          final List<VideoWatchStatisticRow> uidWatchRows =
+              await (select(videoWatchStatistics)
+                    ..where((t) => t.bookUid.equals(bookUid)))
+                  .get();
+          final List<LookupMiningCounterRow> uidCounterRows =
+              await (select(lookupMiningCounters)
+                    ..where((t) =>
+                        t.bookKey.equals(bookUid) &
+                        t.sourceType.equals(statSourceVideo)))
+                  .get();
+          tombstoneTitles
+            ..addAll(uidWatchRows.map((VideoWatchStatisticRow r) => r.title))
+            ..addAll(uidCounterRows
+                .map((LookupMiningCounterRow r) => r.title)
+                .where((String t) => t.isNotEmpty));
           await (delete(videoWatchStatistics)
                 ..where((t) => t.bookUid.equals(bookUid)))
               .go();
@@ -5727,7 +5755,9 @@ class FushiDatabase extends _$FushiDatabase {
         }
         if (bookUid == null || includeUnattributed) {
           await (delete(videoWatchStatistics)
-                ..where((t) => t.title.equals(title) & t.bookUid.isNull()))
+                ..where((t) =>
+                    t.title.equals(title) &
+                    (t.bookUid.isNull() | t.bookUid.equals(''))))
               .go();
           await (delete(lookupMiningCounters)
                 ..where((t) =>
@@ -5736,7 +5766,9 @@ class FushiDatabase extends _$FushiDatabase {
                     t.sourceType.equals(statSourceVideo)))
               .go();
         }
-        await insertStatisticsTombstone(title, statSourceVideo);
+        for (final String tombstoneTitle in tombstoneTitles) {
+          await insertStatisticsTombstone(tombstoneTitle, statSourceVideo);
+        }
       });
 
   /// TODO-1322: 一键清空**全部阅读统计**（book 域纯统计数字）：阅读时长 / 字数

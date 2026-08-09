@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -152,6 +153,62 @@ void main() {
       final List<LookupMiningCounterRow> counters =
           await db.getLookupMiningCountersBySource('video');
       expect(counters.single.bookKey, 'uid-2');
+    });
+
+    test(
+        'review2-6 回归：改名视频按 uid 删除时，墓碑覆盖被删行的全部历史 title'
+        '（否则旧 title 行从旧备份复活）', () async {
+      final FushiDatabase db = await _openDb();
+      await db.addVideoWatchStatistic(
+          title: '旧名',
+          bookUid: 'uid-x',
+          dateKey: '2026-07-01',
+          subtitleChars: 1,
+          watchTimeMs: 1);
+      await db.addVideoWatchStatistic(
+          title: '新名',
+          bookUid: 'uid-x',
+          dateKey: '2026-07-05',
+          subtitleChars: 2,
+          watchTimeMs: 2);
+      await db.addLookupCount(
+          bookKey: 'uid-x',
+          title: '旧名',
+          sourceType: 'video',
+          dateKey: '2026-07-01');
+
+      await db.deleteVideoStatisticsForIdentity(
+          title: '新名', bookUid: 'uid-x', includeUnattributed: true);
+
+      expect(await db.getAllVideoWatchStatistics(), isEmpty);
+      final Set<(String, String)> tombstones =
+          await db.getStatisticsTombstoneKeys();
+      expect(
+          tombstones,
+          containsAll(<(String, String)>[
+            ('新名', 'video'),
+            ('旧名', 'video'),
+          ]));
+    });
+
+    test(
+        'review2-10 回归：bookUid 存成空串（而非 NULL）的行也算无身份，'
+        '删得掉不复活', () async {
+      final FushiDatabase db = await _openDb();
+      await db.setVideoWatchStatistic(VideoWatchStatisticsCompanion(
+        title: const Value('T'),
+        bookUid: const Value(''),
+        dateKey: const Value('2026-07-05'),
+        subtitleChars: const Value(3),
+        watchTimeMs: const Value(4),
+        lastModified: const Value(1),
+      ));
+
+      await db.deleteVideoStatisticsForIdentity(title: 'T');
+
+      expect(await db.getAllVideoWatchStatistics(), isEmpty,
+          reason: '删除谓词与展示层同判据（NULL 与 空串 都算无身份），'
+              '不留「显示得出、删不掉」的行');
     });
 
     test(

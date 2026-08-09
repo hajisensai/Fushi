@@ -63,6 +63,12 @@ VideoStatsAggregate computeVideoStats({
   required DateTime now,
   List<LookupMiningCounterRow> counters = const <LookupMiningCounterRow>[],
   List<FavoriteWordRow> favorites = const <FavoriteWordRow>[],
+
+  /// 库表（video_books）判为多身份的 title 集合：这些 title 的无身份行**禁止**
+  /// 吸收进任何身份组（review-2：行宇宙判据会被「同名双视频只有一方查过词」
+  /// 骗过，把混着两者历史的遗留行整体吸给先动的那个）。与迁移回填的库表唯一
+  /// 匹配判据同源。
+  Set<String> ambiguousTitles = const <String>{},
 }) {
   final agg = VideoStatsAggregate();
   final todayKey = statDateKey(now);
@@ -135,6 +141,7 @@ VideoStatsAggregate computeVideoStats({
     unified,
     identityOf: (_IdentityRow r) => r.identity,
     titleOf: (_IdentityRow r) => r.title,
+    ambiguousTitles: ambiguousTitles,
   )) {
     final VideoStatBookData book =
         VideoStatBookData(g.title, bookUid: g.identity)

@@ -488,8 +488,12 @@ class AggregateSyncService {
   /// v76：lookup_mining_counters 本地行 per-identity 可多行（bookKey 进唯一键），
   /// wire 合并键仍冻结在 {title, sourceType, dateKey}——直接逐行上行会在合并 map
   /// 构建时 last-wins **静默丢数**（同 title 多行只剩最后一行）。按 wire 键把多行
-  /// 求和成单条 record；bookKey metadata 取首个非空身份（存储 '' = 无身份 → wire
-  /// null，与 v76 前的 wire 字节逐位一致）。
+  /// 求和成单条 record。
+  ///
+  /// bookKey metadata 只在**无歧义**时携带：wire 桶内全部行同一非空身份 → 带它；
+  /// 混桶（多身份 / 身份+'' 并存）→ null。求和总量盖上任意单一身份会让接收端把
+  /// 整个 title 日总量归因到一个视频——在对端重新制造 v76 要根治的互串，且与本地
+  /// 塌缩路径（setLookupCount 多行分支如实写 ''）自相矛盾（review-1）。
   static List<LookupMiningRecord> _foldLookupMiningRows(
       List<LookupMiningCounterRow> rows) {
     final Map<String, LookupMiningRecord> byWireKey =
@@ -508,7 +512,7 @@ class AggregateSyncService {
         byWireKey[record.key] = record;
       } else {
         byWireKey[record.key] = LookupMiningRecord(
-          bookKey: existing.bookKey ?? record.bookKey,
+          bookKey: existing.bookKey == record.bookKey ? existing.bookKey : null,
           title: existing.title,
           sourceType: existing.sourceType,
           dateKey: existing.dateKey,

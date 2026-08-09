@@ -214,6 +214,7 @@ List<StatIdentityGroup<T>> groupStatRowsByIdentity<T>(
   List<T> rows, {
   required String Function(T) identityOf,
   required String Function(T) titleOf,
+  Set<String> ambiguousTitles = const <String>{},
 }) {
   final Map<String, StatIdentityGroup<T>> byIdentity =
       <String, StatIdentityGroup<T>>{};
@@ -230,18 +231,32 @@ List<StatIdentityGroup<T>> groupStatRowsByIdentity<T>(
         .rows
         .add(row);
   }
-  // title → 拥有它的身份组（unique-title 归并判据）。
+  // title → 拥有它的身份组（unique-title 归并判据）。按组内**全部** title 快照
+  // 注册（review-9：改名视频一个 uid 组横跨多个 title，只登记首见 title 会让新
+  // title 的无身份行错落成孤儿组）。
   final Map<String, List<StatIdentityGroup<T>>> ownersByTitle =
       <String, List<StatIdentityGroup<T>>>{};
   for (final StatIdentityGroup<T> g in byIdentity.values) {
-    ownersByTitle.putIfAbsent(g.title, () => <StatIdentityGroup<T>>[]).add(g);
+    final Set<String> groupTitles = <String>{
+      for (final T row in g.rows) titleOf(row),
+    };
+    for (final String title in groupTitles) {
+      ownersByTitle.putIfAbsent(title, () => <StatIdentityGroup<T>>[]).add(g);
+    }
   }
   final Map<String, StatIdentityGroup<T>> orphanGroups =
       <String, StatIdentityGroup<T>>{};
   for (final T row in unattributed) {
     final String title = titleOf(row);
     final List<StatIdentityGroup<T>>? owners = ownersByTitle[title];
-    if (owners != null && owners.length == 1) {
+    // 吸收需同时过两道判据（review-2）：行宇宙里恰好一个身份组占用该 title，
+    // **且**调用方的权威面（如 video_books 库表）没有把该 title 判为多身份
+    // （[ambiguousTitles]）。行宇宙判据单独用会误吸：同名双视频都只有无身份
+    // 遗留行时，任何一方偶然产生的第一条带身份行会把混合遗留整体吸走并随它
+    // 被删——这正是本套分组要消灭的连坐。
+    if (owners != null &&
+        owners.length == 1 &&
+        !ambiguousTitles.contains(title)) {
       owners.single
         ..absorbedUnattributed = true
         ..rows.add(row);
