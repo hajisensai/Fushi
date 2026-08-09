@@ -236,3 +236,26 @@ index 1635772..63987f5 100644
                  )
                  visitInsn(Opcodes.ARETURN)
                  visitMaxs(2, 0)
+diff --git a/build.gradle.kts b/build.gradle.kts
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -18,7 +18,18 @@ allprojects {
+         mavenCentral()
+         google()
+         maven("https://github.com/Suwayomi/Suwayomi-Server/raw/android-jar/")
+-        maven("https://jogamp.org/deployment/maven")
++        // jogamp.org is a recurring single point of failure (whole-host outage
++        // 2026-08-09 broke CI). SciJava's public group mirrors the full
++        // org.jogamp 2.5.0 set, so it goes first; both repositories are
++        // content-filtered to org.jogamp so an outage of either host can no
++        // longer poison resolution of unrelated coordinates (e.g. jitpack's
++        // injekt-core, which Gradle previously probed against jogamp.org).
++        maven("https://maven.scijava.org/content/groups/public") {
++            content { includeGroupByRegex("""org\.jogamp(\..+)?""") }
++        }
++        maven("https://jogamp.org/deployment/maven") {
++            content { includeGroupByRegex("""org\.jogamp(\..+)?""") }
++        }
+         maven("https://maven.google.com/")
+         maven("https://jitpack.io")
+         maven("https://dl.google.com/dl/android/maven2/")
