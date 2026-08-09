@@ -221,6 +221,49 @@ void main() {
     });
 
     test(
+        'review4-1 回归：歧义历史 title（另一身份也在用）不扫无身份行、不立碑'
+        '——那些行显示在别的 tile 里，删本 tile 不许连坐', () async {
+      final FushiDatabase db = await _openDb();
+      // uid-x 的两个 title；「同名」同时被 uid-y 使用（行宇宙歧义）。
+      await db.addVideoWatchStatistic(
+          title: '独享名',
+          bookUid: 'uid-x',
+          dateKey: '2026-07-01',
+          subtitleChars: 1,
+          watchTimeMs: 1);
+      await db.addVideoWatchStatistic(
+          title: '同名',
+          bookUid: 'uid-x',
+          dateKey: '2026-07-02',
+          subtitleChars: 2,
+          watchTimeMs: 2);
+      await db.addVideoWatchStatistic(
+          title: '同名',
+          bookUid: 'uid-y',
+          dateKey: '2026-07-03',
+          subtitleChars: 3,
+          watchTimeMs: 3);
+      // 「同名」的无身份遗留行：展示层因歧义否决吸收 → 独立 orphan tile。
+      await db.addVideoWatchStatistic(
+          title: '同名', dateKey: '2026-07-01', subtitleChars: 5, watchTimeMs: 5);
+
+      await db.deleteVideoStatisticsForIdentity(
+          title: '独享名', bookUid: 'uid-x', includeUnattributed: true);
+
+      final List<VideoWatchStatisticRow> rows =
+          await db.getAllVideoWatchStatistics();
+      expect(
+          rows.map((VideoWatchStatisticRow r) => (r.title, r.bookUid)).toSet(),
+          <(String, String?)>{('同名', 'uid-y'), ('同名', null)},
+          reason: 'uid-x 的行全删；「同名」的无身份行显示在 orphan tile 里，不许连坐');
+      final Set<(String, String)> tombstones =
+          await db.getStatisticsTombstoneKeys();
+      expect(tombstones, contains(('独享名', 'video')));
+      expect(tombstones, isNot(contains(('同名', 'video'))),
+          reason: '歧义 title 不立碑——立了会压制幸存视频 uid-y 的同步');
+    });
+
+    test(
         'review2-10 回归：bookUid 存成空串（而非 NULL）的行也算无身份，'
         '删得掉不复活', () async {
       final FushiDatabase db = await _openDb();

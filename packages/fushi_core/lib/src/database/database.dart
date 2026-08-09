@@ -4987,12 +4987,31 @@ class FushiDatabase extends _$FushiDatabase {
         if (rows.isNotEmpty && wireChars <= sumChars && wireMs <= sumMs) {
           return;
         }
+        // 塌缩时逐列取 max(wire, 本地和)（review4-2）：守卫是两列 AND，单列超出
+        // 就整体塌缩——若照抄 wire 值，另一列在「物化→往返→应用」窗口里的本地
+        // 新增（还没上过行）会被砍掉，违反 MAX-union 单调。lastModified 同取 max。
+        int maxLastModified =
+            stat.lastModified.present ? stat.lastModified.value : 0;
+        for (final VideoWatchStatisticRow r in rows) {
+          if (r.lastModified > maxLastModified) {
+            maxLastModified = r.lastModified;
+          }
+        }
         await (delete(videoWatchStatistics)
               ..where((t) =>
                   t.title.equals(stat.title.value) &
                   t.dateKey.equals(stat.dateKey.value)))
             .go();
-        await into(videoWatchStatistics).insert(stat);
+        await into(videoWatchStatistics).insert(
+          VideoWatchStatisticsCompanion.insert(
+            title: stat.title.value,
+            bookUid: stat.bookUid,
+            dateKey: stat.dateKey.value,
+            subtitleChars: wireChars > sumChars ? wireChars : sumChars,
+            watchTimeMs: wireMs > sumMs ? wireMs : sumMs,
+            lastModified: maxLastModified,
+          ),
+        );
       });
 
   // ── video hourly logs ───────────────────────────────────────────
@@ -5331,15 +5350,15 @@ class FushiDatabase extends _$FushiDatabase {
   }) =>
       transaction(() async {
         // v76：wire 协议冻结在 title 粒度（LookupMiningRecord 的合并键不含
-        // bookKey），本地行 v76 起 per-identity 可多行。三分支镜像
-        // [setVideoWatchStatistic] 的 v39 决策：
+        // bookKey），本地行 v76 起 per-identity 可多行。分支（review-5 /
+        // review3-4 后的现行为，注意与 v76 前**不**逐字节一致）：
         //  - 无行：落单行（带 wire metadata 身份，peer-only 桶保住身份）；
-        //  - 单行：行内 MAX（最常见路径，行为与 v76 前逐字节一致）；
-        //  - 多行：MAX 对象是「该 title 全部行之和」（物化端按 title 求和上
-        //    行，见 aggregate_sync 的 materializeLocalSnapshot），塌成单一
-        //    '' 权威行——身份混桶后逐 uid 归因不可判，'' 如实标未归因；总量
-        //    取 max(count, 本地和) 保 MAX-union 单调。启用同步的库该日行退
-        //    化回 title 粒度，与视频统计同为已知限制。
+        //  - wire 值 ≤ 本地和：完全 no-op（不塌缩，防 sync 自回声周期性抹掉
+        //    per-identity 行）；
+        //  - 单行且身份与 wire 一致：行内抬升，身份保留；
+        //  - 其余（身份错配 / 多行）：塌成单一 '' 权威行——归因不可判，''
+        //    如实标未归因。启用同步的库该日行退化回 title 粒度，与视频统计
+        //    同为已知限制。
         final rows = await (select(lookupMiningCounters)
               ..where((t) =>
                   t.title.equals(title) &
@@ -5741,19 +5760,25 @@ class FushiDatabase extends _$FushiDatabase {
   ///    无身份判定 NULL 与 '' 都算（review-10：与展示层 `bookUid ?? ''` 的判据
   ///    对齐，防止未来写入方存 '' 造出「显示得出、删不掉」的行）。
   ///
-  /// 墓碑维持 (title, sourceType) 粒度、且覆盖被删 uid 行的**全部历史 title**
-  /// （review-6：改名视频的旧 title 行也被本删除清掉，墓碑不跟上会从旧备份复活）。
+  /// 墓碑维持 (title, sourceType) 粒度、且覆盖被删 uid 行的**无歧义**历史 title
+  /// （review-6：改名视频的旧 title 行也被本删除清掉，墓碑不跟上会从旧备份复活；
+  /// review4-1：历史 title 逐个过与展示层同源的歧义复核——库表同名 ≥2 或存在其它
+  /// 身份的统计行 → 该 title 的无身份行显示在别的 tile 里，不扫不立碑）。
   /// wire 协议是 title 粒度，更细的墓碑对同步复活无判别力——代价是**双向**已知
-  /// 限制：①被删视频的统计不被 peer 复活（目的）；②同名幸存视频来自 peer/备份
-  /// 的统计贡献同样被压制，直到其新的本地活动清碑（副作用；review-3 要求写明的
-  /// 另一半）。随 wire 升级 per-uid 一并解除。
+  /// 限制：①被删视频的统计不被 peer 复活（目的）；②本 tile 自身 title 的同名幸存
+  /// 视频来自 peer/备份的统计贡献同样被压制，直到其新的本地活动清碑（副作用；
+  /// review-3 要求写明的另一半）。随 wire 升级 per-uid 一并解除。
   Future<void> deleteVideoStatisticsForIdentity({
     required String title,
     String? bookUid,
     bool includeUnattributed = false,
   }) =>
       transaction(() async {
+        // 本 tile 自身的 title 恒立碑（被删行的防复活；同名幸存者被连带压制是
+        // wire title 粒度的已知限制，见方法 doc）。
         final Set<String> tombstoneTitles = <String>{title};
+        // 被删 uid 涉足的其它历史 title（改名视频）候选。
+        final Set<String> candidateTitles = <String>{};
         if (bookUid != null) {
           final List<VideoWatchStatisticRow> uidWatchRows =
               await (select(videoWatchStatistics)
@@ -5765,9 +5790,10 @@ class FushiDatabase extends _$FushiDatabase {
                         t.bookKey.equals(bookUid) &
                         t.sourceType.equals(statSourceVideo)))
                   .get();
-          tombstoneTitles
+          candidateTitles
             ..addAll(uidWatchRows.map((VideoWatchStatisticRow r) => r.title))
-            ..addAll(uidCounterRows.map((LookupMiningCounterRow r) => r.title));
+            ..addAll(uidCounterRows.map((LookupMiningCounterRow r) => r.title))
+            ..add(title);
           await (delete(videoWatchStatistics)
                 ..where((t) => t.bookUid.equals(bookUid)))
               .go();
@@ -5780,22 +5806,62 @@ class FushiDatabase extends _$FushiDatabase {
         // '' 不是合法的墓碑/扫面 title：no-book 计数行的 title 就是 ''，给它立碑
         // 会永久压制全部无书查词计数的同步，且没有任何写入方能清（清碑都守
         // isNotEmpty；review3-7）。
-        tombstoneTitles.remove('');
-        if (bookUid == null || includeUnattributed) {
-          // 扫面覆盖被删 uid 的**全部历史 title**（review3-2）：展示层把这些
-          // title 的无身份遗留行都归并进了本 tile（owners 按组内全部 title 快照
-          // 注册），删 tile 即删其展示的全部行——只扫传入 title 会把改名前/后另一
-          // 半留成「刚删完就复活的孤儿 tile」。
-          final List<String> sweepTitles = tombstoneTitles.toList();
+        candidateTitles.remove('');
+        // 逐 title 歧义复核（review4-1，与展示层吸收判据同源）：库表同名 ≥2
+        // （= 页面 ambiguousTitles 判据）或该 title 上还有**其它**非空身份的统计
+        // 行（= owners ≥2 判据）→ 该 title 的无身份行被展示层否决吸收、显示在
+        // 别的 orphan/幸存者 tile 里，不属于本 tile 展示面——不扫（扫了是越权
+        // 连坐）也不立碑（立碑压制幸存同名视频的同步）。被删 uid 在歧义 title
+        // 下的行已被上面的 uid 精确删除清掉；其经 peer title 粒度记录的复活只
+        // 会以无身份形式回来，属 wire 粒度已知限制。
+        final Set<String> sweepTitles = <String>{};
+        for (final String candidate in candidateTitles) {
+          final List<VideoBookRow> libraryRows = await (select(videoBooks)
+                ..where((t) => t.title.equals(candidate)))
+              .get();
+          if (libraryRows.length >= 2) continue;
+          final VideoWatchStatisticRow? otherIdentityWatch =
+              await (select(videoWatchStatistics)
+                    ..where((t) =>
+                        t.title.equals(candidate) &
+                        t.bookUid.isNotNull() &
+                        t.bookUid.equals('').not() &
+                        t.bookUid.equals(bookUid ?? '').not())
+                    ..limit(1))
+                  .getSingleOrNull();
+          if (otherIdentityWatch != null) continue;
+          final LookupMiningCounterRow? otherIdentityCounter =
+              await (select(lookupMiningCounters)
+                    ..where((t) =>
+                        t.title.equals(candidate) &
+                        t.sourceType.equals(statSourceVideo) &
+                        t.bookKey.equals('').not() &
+                        t.bookKey.equals(bookUid ?? '').not())
+                    ..limit(1))
+                  .getSingleOrNull();
+          if (otherIdentityCounter != null) continue;
+          sweepTitles.add(candidate);
+          tombstoneTitles.add(candidate);
+        }
+        if (bookUid == null) {
+          // 歧义遗留 tile：tile 展示面就是该 title 的无身份行本身，按用户意图删。
+          sweepTitles
+            ..clear()
+            ..add(title);
+        } else if (!includeUnattributed) {
+          sweepTitles.clear();
+        }
+        if (sweepTitles.isNotEmpty) {
+          final List<String> sweepList = sweepTitles.toList();
           await (delete(videoWatchStatistics)
                 ..where((t) =>
-                    t.title.isIn(sweepTitles) &
+                    t.title.isIn(sweepList) &
                     (t.bookUid.isNull() | t.bookUid.equals(''))))
               .go();
           await (delete(lookupMiningCounters)
                 ..where((t) =>
                     t.bookKey.equals('') &
-                    t.title.isIn(sweepTitles) &
+                    t.title.isIn(sweepList) &
                     t.sourceType.equals(statSourceVideo)))
               .go();
         }

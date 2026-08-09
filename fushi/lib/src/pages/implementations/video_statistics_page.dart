@@ -63,6 +63,9 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
 
   Future<void> _loadFromDatabase() async {
     try {
+      // 成功路径清错误态（review4-5）：删除/清空直接调本方法（不经 _syncAndLoad
+      // 的重置），上一轮失败的 _error 不清会让本轮成功的数据被错误画面挡住。
+      _error = null;
       final db = appModelNoUpdate.database;
       final List<VideoWatchStatisticRow> stats =
           await db.getAllVideoWatchStatistics();
@@ -135,10 +138,13 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
         videoFavSentences.map((FavoriteSentence s) => (s.dateKey!, 1)),
         now,
       );
+      // counters 也算有数据（review4-6）：只在视频域查过词（无观看/收藏/制卡）
+      // 时，查词分桶明明有数却显示空状态。
       _hasData = stats.isNotEmpty ||
           completed.isNotEmpty ||
           favs.isNotEmpty ||
           mined.isNotEmpty ||
+          counters.isNotEmpty ||
           videoFavSentences.isNotEmpty;
       await _loadHourlyData();
     } catch (e, stack) {
@@ -319,16 +325,13 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     await _loadFromDatabase();
   }
 
-  /// 按视频 tile 的所属合集名（书架同款「主合集」折叠归属，无则 null）。tile 自带
-  /// bookUid（v76 身份分组）优先；无身份遗留 tile 只在库表 title→uid **唯一**时
-  /// 回退反查（review3-10：同名多 uid 的歧义 tile 不许 last-wins 乱标一个视频的
-  /// 合集名——它存在的意义就是「归属不可判」）。
+  /// 按视频 tile 的所属合集名（书架同款「主合集」折叠归属，无则 null）。只认
+  /// tile 自带的 bookUid（v76 身份分组）：无身份 tile 存在的意义就是「归属不可
+  /// 判」——身份解析拒绝归属的东西，合集名不许再按库表回退猜一个（review4-4：
+  /// 行宇宙歧义被否决的 orphan tile，库表恰好只剩一个 uid 时会被贴上那个视频的
+  /// 合集名）。
   String? _collectionNameForVideo(VideoStatBookData video) {
-    final Set<String>? libraryUids = _libraryUidsByTitle[video.title];
-    final String? bookUid = video.bookUid ??
-        (libraryUids != null && libraryUids.length == 1
-            ? libraryUids.single
-            : null);
+    final String? bookUid = video.bookUid;
     if (bookUid == null) return null;
     return statCollectionName(
       MediaKind.video.compositeKey(bookUid),
