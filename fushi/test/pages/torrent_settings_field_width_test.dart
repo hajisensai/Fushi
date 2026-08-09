@@ -42,7 +42,10 @@ class _TestAppModel extends AppModel {
       const DownloadNetworkProxyConfig();
 }
 
-Widget _harness({required double paneWidth}) {
+Widget _harness({
+  required double paneWidth,
+  bool constrainWidth = true,
+}) {
   final FushiDatabase db = FushiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
   );
@@ -78,7 +81,7 @@ Widget _harness({required double paneWidth}) {
           child: SizedBox(
             width: paneWidth,
             child: SingleChildScrollView(
-              child: TorrentSettingsSection(),
+              child: TorrentSettingsSection(constrainWidth: constrainWidth),
             ),
           ),
         ),
@@ -176,5 +179,27 @@ void main() {
       expect(size.width, moreOrLessEquals(paneWidth, epsilon: 1.0),
           reason: 'below the cap a field keeps filling the pane');
     }
+  });
+
+  testWidgets('downloads page mode fills a wide pane',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(2600, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    const double paneWidth = 2400;
+    await tester.pumpWidget(
+      _harness(paneWidth: paneWidth, constrainWidth: false),
+    );
+    await tester.pumpAndSettle();
+
+    final Finder content = find.byKey(
+      const ValueKey<String>('torrent-settings-content'),
+    );
+    expect(
+      tester.getSize(content).width,
+      moreOrLessEquals(paneWidth - 32, epsilon: 1.0),
+    );
+    expect(tester.takeException(), isNull);
   });
 }

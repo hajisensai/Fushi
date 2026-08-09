@@ -237,4 +237,25 @@ void main() {
     expect(find.text(VideoDownloadJobStage.organize), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('wide download task cards fill the available page width',
+      (WidgetTester tester) async {
+    final _MemoryJobsStore store = _MemoryJobsStore();
+    addTearDown(store.close);
+    await _pumpPanel(
+      tester,
+      size: const Size(1400, 800),
+      panel: VideoDownloadJobsPanel(store: store),
+    );
+    store.emit(<VideoDownloadJobRow>[
+      _job(id: 'wide', title: 'Full width task'),
+    ]);
+    await tester.pumpAndSettle();
+
+    final Finder card = find.byKey(
+      const ValueKey<String>('video-download-job-wide'),
+    );
+    expect(tester.getSize(card).width, greaterThan(1300));
+    expect(tester.takeException(), isNull);
+  });
 }

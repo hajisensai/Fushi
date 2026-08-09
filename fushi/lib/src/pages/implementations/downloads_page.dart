@@ -14,13 +14,12 @@ import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dial
 import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart';
 import 'package:fushi/src/pages/implementations/video_download_subscriptions_panel.dart';
 import 'package:fushi/utils.dart';
-import 'package:fushi_core/fushi_core.dart'
-    show MediaSourceRow, VideoDownloadJobRow;
+import 'package:fushi_core/fushi_core.dart' show MediaSourceRow;
 
 /// 独立「下载」页（顶层底栏 tab）＝统一下载中心：番剧下载流程 **直接内联**
 /// 铺在页面上（搜番 → 选种 → 配字幕 → 推送 + 通用磁力 + 下载任务），任务 tab
 /// 同时列出漫画「在线目录」（mokuro.moe）的卷下载队列；页头另有在线目录入口。
-/// 第四个顶部页签是「下载设置」（后端/限速/上传/做种/内存）。完成后按内容类型
+/// 右上角齿轮切到「下载设置」（后端/限速/上传/做种/内存）。完成后按内容类型
 /// 自动入库（视频→视频库、epub→阅读库，见 AnimeDownloadService；漫画卷→
 /// 书架，见 MokuroMoeDownloadQueue）。
 class DownloadsPage extends ConsumerStatefulWidget {
@@ -44,7 +43,6 @@ class DownloadsPage extends ConsumerStatefulWidget {
 class _DownloadsPageState extends ConsumerState<DownloadsPage> {
   late Future<_DownloadsResourceDependencies?> _resourceDependencies;
   VideoDownloadPipelineService? _resourcePipelineSnapshot;
-  Stream<List<VideoDownloadJobRow>>? _videoJobsStream;
 
   @override
   void initState() {
@@ -78,7 +76,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
     }
   }
 
-  Widget _buildResourceTab() {
+  Widget _buildResourceTab(BuildContext tabContext) {
     return FutureBuilder<_DownloadsResourceDependencies?>(
       future: _resourceDependencies,
       builder: (
@@ -98,7 +96,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                 const SizedBox(height: 12),
                 FilledButton.tonalIcon(
                   onPressed: () =>
-                      DefaultTabController.of(context).animateTo(3),
+                      DefaultTabController.of(tabContext).animateTo(3),
                   icon: const Icon(Icons.settings_outlined),
                   label: Text(t.download_open_settings),
                 ),
@@ -168,8 +166,9 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
       _resourceDependencies = _loadResourceDependencies(appModel);
     }
     return DefaultTabController(
+        initialIndex:
+            widget.initialShowSettings ? 3 : widget.initialTabIndex.clamp(0, 2),
         length: 4,
-        initialIndex: widget.initialShowSettings ? 3 : 0,
         child: Builder(
           builder: (BuildContext tabContext) => Scaffold(
             // BUG-1003：内联下载流程把 apikey/搜番等输入框全放在页面上半部，下载任务折叠区
@@ -206,48 +205,30 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                 ),
               ],
             ),
-            // 设置与发现/任务/订阅同属顶部平级页签；不再用右上角齿轮把整页切成
-            // 另一种模式，避免页签导航与正文状态互相覆盖。
             body: TabBarView(
               children: <Widget>[
-                _buildResourceTab(),
+                _buildResourceTab(tabContext),
                 // 任务 tab：漫画目录卷下载队列（有任务才占位）+ torrent 任务，
                 // 统一下载中心的同屏任务视图。
                 Column(
                   children: <Widget>[
                     const MokuroMoeTasksSection(),
-                    // 视频下载队列与漫画卷队列同规：有任务才占位。空态只留
-                    // torrent 任务视图一份，避免同屏叠两条相同的「暂无任务」。
-                    StreamBuilder<List<VideoDownloadJobRow>>(
-                      stream: _videoJobsStream ??= ref
-                          .read(appProvider)
-                          .database
-                          .watchVideoDownloadJobs(),
-                      builder: (
-                        BuildContext context,
-                        AsyncSnapshot<List<VideoDownloadJobRow>> snapshot,
-                      ) {
-                        if (snapshot.data?.isEmpty ?? true) {
-                          return const SizedBox.shrink();
-                        }
-                        return Expanded(
-                          child: VideoDownloadJobsPanel.database(
-                            database: ref.read(appProvider).database,
-                            onRetry: (VideoDownloadJobRow job) async {
-                              await ref
-                                  .read(appProvider)
-                                  .videoDownloadPipelineService
-                                  ?.retryJob(job.jobId);
-                            },
-                            onCancel: (VideoDownloadJobRow job) async {
-                              await ref
-                                  .read(appProvider)
-                                  .videoDownloadPipelineService
-                                  ?.cancelJob(job.jobId);
-                            },
-                          ),
-                        );
-                      },
+                    Expanded(
+                      child: VideoDownloadJobsPanel.database(
+                        database: ref.read(appProvider).database,
+                        onRetry: (job) async {
+                          await ref
+                              .read(appProvider)
+                              .videoDownloadPipelineService
+                              ?.retryJob(job.jobId);
+                        },
+                        onCancel: (job) async {
+                          await ref
+                              .read(appProvider)
+                              .videoDownloadPipelineService
+                              ?.cancelJob(job.jobId);
+                        },
+                      ),
                     ),
                     Expanded(
                       child: AnimeDownloadDialog(
@@ -262,17 +243,8 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                 ),
                 const VideoDownloadSubscriptionsPanel(),
                 ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: <Widget>[
-                    // 桌面宽屏限宽 560 居中（对齐全 app 设置面板口径），不再全宽铺开。
-                    Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: kTorrentSettingsContentMaxWidth,
-                        ),
-                        child: const TorrentSettingsSection(),
-                      ),
-                    ),
+                  children: const <Widget>[
+                    TorrentSettingsSection(constrainWidth: false),
                   ],
                 ),
               ],

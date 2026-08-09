@@ -135,25 +135,21 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
             itemCount: jobs.length,
             separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (BuildContext context, int index) => Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 840),
-                child: _VideoDownloadJobCard(
-                  key: ValueKey<String>(
-                    'video-download-job-${jobs[index].jobId}',
-                  ),
-                  job: jobs[index],
-                  busy: _busyJobIds.contains(jobs[index].jobId),
-                  onRetry: widget.onRetry == null
-                      ? null
-                      : () => _runAction(jobs[index], widget.onRetry!),
-                  onCancel: widget.onCancel == null
-                      ? null
-                      : () => _runAction(jobs[index], widget.onCancel!),
-                  lifecycleLabel: widget.lifecycleLabel,
-                  stageLabel: widget.stageLabel,
-                ),
+            itemBuilder: (BuildContext context, int index) =>
+                _VideoDownloadJobCard(
+              key: ValueKey<String>(
+                'video-download-job-${jobs[index].jobId}',
               ),
+              job: jobs[index],
+              busy: _busyJobIds.contains(jobs[index].jobId),
+              onRetry: widget.onRetry == null
+                  ? null
+                  : () => _runAction(jobs[index], widget.onRetry!),
+              onCancel: widget.onCancel == null
+                  ? null
+                  : () => _runAction(jobs[index], widget.onCancel!),
+              lifecycleLabel: widget.lifecycleLabel,
+              stageLabel: widget.stageLabel,
             ),
           );
         },
