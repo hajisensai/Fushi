@@ -129,10 +129,14 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
   Widget build(BuildContext context) {
     final Size screen = MediaQuery.sizeOf(context);
     final double dialogHeight = (screen.height * 0.72).clamp(420.0, 680.0);
+    // BUG-1474：宽度原先是硬编码 900。AlertDialog 默认 insetPadding 左右各 40，
+    // 窗口宽 < 980 时那个 900 会被父约束挤压，两栏跟着变窄、线程标题被吃掉。
+    // 按可用宽度收口：想要 900，但绝不超过实际能给的宽度。
+    final double dialogWidth = (screen.width - 80).clamp(320.0, 900.0);
     return AlertDialog(
       title: Text(t.game_capture_setup_title),
       content: SizedBox(
-        width: 900,
+        width: dialogWidth,
         height: dialogHeight,
         child: ListenableBuilder(
           listenable: widget.session,
@@ -214,6 +218,10 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
                       final bool selecting = _selectingThreadKey == thread.key;
                       return FushiListItem(
                         leading: const Icon(Icons.forum_outlined),
+                        // BUG-1474：线程 label 形如 `TextRender · 0x459f50 · #1a2b`，
+                        // 默认单行必被切。这里父容器（ListView 行）高度自由，
+                        // 按 BUG-1184 的规矩逐调用点放宽是安全的。
+                        titleMaxLines: 2,
                         title: Text(
                           '${labels[thread.key] ?? thread.label} · '
                           '${thread.observedLineCount}',
@@ -222,6 +230,9 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
                           texthookerThreadSubtitle(
                                 audioLineCount: thread.audioLineCount,
                                 latestText: thread.displayPreviewText,
+                                // BUG-1474：一句话（常是「……」或人名）分辨不出
+                                // 这条是不是正文流；给最近 3 句。
+                                recentTexts: thread.recentPreviewTexts,
                                 audioLabel: t.game_text_thread_audio_count(
                                   count: thread.audioLineCount,
                                 ),

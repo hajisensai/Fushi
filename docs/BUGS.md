@@ -29,11 +29,22 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1367 条。点号进各自文件。
+> 共 1378 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1480](bugs/BUG-1480-gal-passthrough-click-lookup.md) | ✅ | ✅ | 穿透态点不了文字查词：整窗 WS_EX_TRANSPARENT 让字和背景一视同仁 |
+| [BUG-1479](bugs/BUG-1479-gal-lookup-card-covered-by-game.md) | ✅ | ✅ | gal 查词卡被游戏盖住：置顶只设一次、永不重申 |
+| [BUG-1478](bugs/BUG-1478-gal-workbench-char-level-lookup.md) | ✅ | ✅ | 捕获工作台只能点整词、点不了单个字；加载更多按 glossary 行递增上限 |
+| [BUG-1477](bugs/BUG-1477-gal-japanese-locale-no-switch.md) | ✅ | ✅ | 汉化版被强制转区后启动即闪退：转区没有开关，判据把「32 位」当成「日文原版」 |
 | [BUG-1476](bugs/BUG-1476-migration-settings-never-merged.md) | ✅ | ✅ | 跨包名迁移不搬任何设置：merge 引擎从不消费 settings 类别 |
+| [BUG-1475](bugs/BUG-1475-gal-utterance-settle-drops-closing-tail.md) | ✅ | ✅ | 切句时收敛裸 return，最后 250ms 已进环的 PCM 从未被读走 |
+| [BUG-1474](bugs/BUG-1474-gal-picker-dialog-cramped-and-single-line-preview.md) | ✅ | ✅ | hook 选择弹窗过小/标题截断/预览只有一句 |
+| [BUG-1473](bugs/BUG-1473-gal-mining-serial-capture-and-raw-png.md) | ✅ | ✅ | gal 制卡慢：画面与语音串行 + 静态截图全分辨率 PNG 直送 Anki |
+| [BUG-1472](bugs/BUG-1472-lookup-term-budget-counts-glossaries.md) | ✅ | ✅ | 查词只出一个读音：maximumTerms 按 glossary 行计预算吃掉其它读音 |
+| [BUG-1471](bugs/BUG-1471-gal-overlay-gesture-state-stuck.md) | ✅ | ✅ | galgame 浮窗跑久了失去点击响应：手势事务只认 WM_LBUTTONUP 一个终止条件 |
+| [BUG-1470](bugs/BUG-1470-gal-selected-thread-publish-filter.md) | ✅ | ✅ | 选中台词线程后工作台正文为空：发布期过滤器丢掉同 hook 面兄弟行 |
+| [BUG-1469](bugs/BUG-1469-futamata-kirikiri-launch-av.md) | ✅ | ✅ | 恋爱成双由 Hibiki 早注入后 Access Violation |
 | [BUG-1460](bugs/BUG-1460-win-installer-legacy-delete-rollback.md) | ✅ | ✅ | Windows 升级中途失败后 app 彻底消失：[InstallDelete] 先删旧名二进制且不可回滚 |
 | [BUG-1459](bugs/BUG-1459-installer-appdir-process-lock.md) | ✅ | ✅ | 安装器无法替换被残留子进程锁定的文件 |
 | [BUG-1458](bugs/BUG-1458-sync-collections-tombstone-day-red.md) | 🚧 | 🚧 | 集合同步墓碑用例在develop稳定红-疑日期敏感 |

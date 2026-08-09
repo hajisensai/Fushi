@@ -132,8 +132,8 @@ class _RubySpanWidget extends StatelessWidget {
             final charStr = String.fromCharCodes(character.runes);
             return TextSpan(
               text: charStr,
-              style: effectiveTextStyle!
-                  .merge(indexStyle?.call(index, charStr)),
+              style:
+                  effectiveTextStyle!.merge(indexStyle?.call(index, charStr)),
               recognizer: TapGestureRecognizer()
                 ..onTapDown = (details) {
                   indexAction?.call(index, charStr);

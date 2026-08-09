@@ -187,16 +187,37 @@ void main() {
   });
 
   group('BUG-951 · the user can always get back out', () {
-    test('the escape hatch is shown BEFORE the body stops taking clicks', () {
+    // BUG-1480 起，正文**不再整体**停止接收点击：穿透改成逐像素命中
+    // （背景强制 alpha 0 → OS 把那些像素的点击直接给游戏；字形像素仍归我们，
+    // 所以「穿透态下点字查词」才成立）。于是原来那条「Show() 必须排在
+    // SetBodyExTransparent(true) 之前」的顺序断言失去了被守对象。
+    //
+    // 但逃生工具条本身仍然是必需的，理由换了：穿透态下正文内工具条不再绘制
+    // （Render 里的 draw_body_toolbar），关掉穿透的唯一入口就只剩那个独立小窗。
+    // 所以不变量重述为「建不出工具条就必须取消穿透」，顺序由 early-return 保证。
+    test('建不出逃生工具条就必须取消穿透（正文内工具条此时已不绘制）', () {
       final String applier = functionBody(
           body, 'void FloatingLyricWindow::ApplyPassThroughExStyle()');
-      final int show = applier.indexOf('pass_through_toolbar_.Show(');
-      final int enable = applier.indexOf('SetBodyExTransparent(true)');
-      expect(show, isNot(-1));
-      expect(enable, isNot(-1));
-      expect(show < enable, isTrue,
-          reason: 'Ordering is the invariant: the body may only go '
-              'click-through once the toolbar window exists.');
+      final int show = applier.indexOf('if (!pass_through_toolbar_.Show(');
+      expect(show, isNot(-1), reason: 'Show() 的结果必须被检查，不能忽略');
+      final String afterShow = applier.substring(show);
+      expect(afterShow.contains('pass_through_ = false;'), isTrue,
+          reason: '建不出工具条就必须把穿透翻回 false，否则用户被困在'
+              '「正文内工具条不画、独立工具条又没建出来」的无出口态');
+      expect(
+        body.contains(
+            'draw_body_toolbar = !(hook_text_mode_ && pass_through_)'),
+        isTrue,
+        reason: '正文内工具条在穿透态不绘制，正是逃生窗不可省的原因',
+      );
+    });
+
+    test('穿透态必须把背景强制成 alpha 0（BUG-1480 的命中机制前提）', () {
+      // 逐像素命中只在**真 alpha 0** 时把点击透给下面的窗口。用户若设了可见底色，
+      // 整块 rect 就会变成不透明 → OS 把每一次点击都给我们、游戏什么都收不到。
+      // 这是老「逐像素」实现唯一的真缺陷，必须由代码强制而不是靠用户碰巧设对。
+      expect(body.contains('body_bg &= 0x00FFFFFF'), isTrue,
+          reason: '穿透态背景必须无条件清零 alpha');
     });
 
     test('a toolbar that cannot be created cancels pass-through', () {

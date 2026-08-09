@@ -585,7 +585,8 @@ VoiceHookStatus VoiceHookReader::GrabClipNear(
 
 VoiceHookStatus VoiceHookReader::GrabUtterance(
     uint64_t ts_ms, uint64_t target_source,
-    const std::vector<uint64_t>& exclude_sources, std::vector<uint8_t>& out) {
+    const std::vector<uint64_t>& exclude_sources, std::vector<uint8_t>& out,
+    uint64_t end_ts_ms) {
   out.clear();
   ReaderState& st = State();
   std::lock_guard<std::mutex> lock(st.mutex);
@@ -666,7 +667,19 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
     // any_energy=false（非 16-bit）：无法能量选源，退化为拼所有源（filter_by_src 保持 false）。
   }
 
-  // 拼接选定源在 [ts-200, ts+6000] 的段；静音判据用该源峰值能量的 8%。
+  // 拼接选定源在 [ts-200, ts+forward_ms] 的段；静音判据用该源峰值能量的 8%。
+  //
+  // BUG-1475：forward_ms 缺省仍是 6000（旧行为逐字等价）。调用方给出 end_ts_ms
+  // （下一句的时间戳）时收窄到那里——封口 grab 要拿回已进环、时间戳**严格早于**
+  // 下一句的那点尾巴，同时保住 BUG-1109「不把下一句的段拼进上一句」的不变量。
+  int64_t forward_ms = 6000;
+  if (end_ts_ms != 0 && end_ts_ms > ts_ms) {
+    forward_ms = std::min<int64_t>(
+        forward_ms, static_cast<int64_t>(end_ts_ms - ts_ms));
+  } else if (end_ts_ms != 0) {
+    // 下一句时间戳不晚于本句：拿不到任何合法的前向窗口，退化为只取本句时刻附近。
+    forward_ms = 0;
+  }
   std::vector<uint8_t> pcm;
   const fushi_voice_hook::VoiceClip* fmt = nullptr;
   double peak = 1.0;
@@ -676,7 +689,7 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
     }
     const int64_t d = static_cast<int64_t>(c->timestamp_ms) -
                       static_cast<int64_t>(ts_ms);
-    if (d < -200 || d > 6000) {
+    if (d < -200 || d > forward_ms) {
       continue;
     }
     const double e = ClipEnergy16Locked(h, ring, c);

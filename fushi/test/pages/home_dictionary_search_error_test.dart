@@ -38,6 +38,10 @@ class _ErrorSearchAppModel extends AppModel {
           10,
           (int i) => DictionaryEntry(word: '$term$i'),
         ),
+        // BUG-1478：本用例要验「查词失败后 _loadMore 不被永久阻塞」，前提是结果
+        // **确实还有下一页**。截断从「靠长度反推」改成显式事实后，假件必须自己说。
+        headwordCount: 10,
+        truncated: true,
       );
 
   @override

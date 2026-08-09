@@ -183,9 +183,15 @@ class VoiceHookReader {
   //     [exclude_sources] 里的源（用户标记的 BGM）。自动选源在真机上可能误选 BGM，故提供手动。
   // 找不到语音源 / 段全被环形覆盖 / 无数据则 [out] 空、返回 ok=false（调用方回退 GrabClipNear）。
   // 算法真相源：独立仓库 hibiki-hook 的 `tools/ring_probe.cpp` 的 DumpUtterance（已真机验证）。
+  //
+  // [end_ts_ms] 非 0 时把窗口右界收到 `min(ts_ms + 6000, end_ts_ms)`（BUG-1475）：
+  // 收敛因「下一句到达」而收手时要补最后一次 grab，把已进环但还没被读走的那
+  // ≤250ms 拿回来；但**绝不能**因此把下一句的段拼进上一句——那正是 BUG-1109
+  // 当初刻意用「下一句到达即封口」防住的东西。上界由调用方传下一句的时间戳。
   VoiceHookStatus GrabUtterance(uint64_t ts_ms, uint64_t target_source,
                                 const std::vector<uint64_t>& exclude_sources,
-                                std::vector<uint8_t>& out);
+                                std::vector<uint8_t>& out,
+                                uint64_t end_ts_ms = 0);
 
   // 枚举 [ts_ms] 附近环形窗口内的**活跃语音源**及其元数据（格式/平均缓冲/近窗平均能量/创建顺序），
   // 供 app UI 显示「音轨列表」让用户手动选/排除语音源（[GrabUtterance] 的 target/exclude）。

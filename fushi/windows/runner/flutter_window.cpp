@@ -2066,6 +2066,8 @@ void FlutterWindow::RegisterVoiceHookChannel() {
           const uint64_t ts = static_cast<uint64_t>(read_long("tsMs"));
           const uint64_t target =
               static_cast<uint64_t>(read_long("sourcePtr"));
+          // BUG-1475：可选的前向窗口上界（下一句的时间戳）。缺省 0 = 旧行为。
+          const uint64_t end_ts = static_cast<uint64_t>(read_long("endTsMs"));
           std::vector<uint64_t> exclude;
           const auto* uargs =
               std::get_if<flutter::EncodableMap>(call.arguments());
@@ -2085,8 +2087,8 @@ void FlutterWindow::RegisterVoiceHookChannel() {
           }
           std::vector<uint8_t> pcm;
           const fushi::VoiceHookStatus s =
-              fushi::VoiceHookReader::Instance().GrabUtterance(ts, target,
-                                                                exclude, pcm);
+              fushi::VoiceHookReader::Instance().GrabUtterance(
+                  ts, target, exclude, pcm, end_ts);
           if (!s.ok || pcm.empty()) {
             result->Success(flutter::EncodableValue(flutter::EncodableMap{
                 {flutter::EncodableValue("error"),

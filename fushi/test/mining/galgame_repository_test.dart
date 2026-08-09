@@ -20,6 +20,7 @@ void main() {
     String? primarySource,
     String launchArgs = '',
     String upscalingMode = '',
+    String japaneseLocaleMode = '',
   }) {
     return GalgameRow(
       id: id,
@@ -28,6 +29,7 @@ void main() {
       workdir: r'Z:\g',
       launchArgs: launchArgs,
       upscalingMode: upscalingMode,
+      japaneseLocaleMode: japaneseLocaleMode,
       addedAt: DateTime(2026).millisecondsSinceEpoch,
       playStatus: playStatus,
       primarySource: primarySource,

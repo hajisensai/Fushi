@@ -53,6 +53,7 @@ GalgameEntry galgameEntryFromRow(
     workdir: row.workdir,
     launchArgs: row.launchArgs,
     upscalingMode: row.upscalingMode,
+    japaneseLocaleMode: row.japaneseLocaleMode,
     coverPath: (row.coverPath?.isEmpty ?? true) ? null : row.coverPath,
     addedAt: DateTime.fromMillisecondsSinceEpoch(row.addedAt),
     playStatus: GalgamePlayStatus.fromValue(row.playStatus),
@@ -83,6 +84,7 @@ GalgamesCompanion galgamesCompanionFromEntry(GalgameEntry entry) {
     workdir: entry.workdir,
     launchArgs: Value<String>(entry.launchArgs),
     upscalingMode: Value<String>(entry.upscalingMode),
+    japaneseLocaleMode: Value<String>(entry.japaneseLocaleMode),
     coverPath: Value<String?>(entry.coverPath),
     addedAt: entry.addedAt.millisecondsSinceEpoch,
     playStatus: Value<int>(entry.playStatus.value),
@@ -239,6 +241,13 @@ class GalgameRepository extends ChangeNotifier {
   /// 解析层回落到关闭）。列非空，清空写空串而不是 null。
   Future<void> setUpscalingMode(String id, String modeKey) async {
     await _db.setGalgameUpscalingMode(id, modeKey);
+    await load();
+  }
+
+  /// 只改该游戏的日语区域（转区）档位（`auto` / `on` / `off`；空串 = 未设置，
+  /// 解析层回落 auto）。列非空，清空写空串而不是 null。
+  Future<void> setJapaneseLocaleMode(String id, String modeKey) async {
+    await _db.setGalgameJapaneseLocaleMode(id, modeKey);
     await load();
   }
 

@@ -88,6 +88,10 @@ void main() {
         t.add_to_collection,
         t.tag_label,
         if (Platform.isWindows) '${t.game_upscaling} · ${t.game_upscaling_off}',
+        // BUG-1477：每游戏「日语区域（转区）」档，与超分同为「启动期配置」，
+        // 故紧邻它排在删除之前。未设过的游戏显示默认档 auto。
+        if (Platform.isWindows)
+          '${t.game_japanese_locale} · ${t.game_japanese_locale_auto}',
         t.game_remove,
       ];
 

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart'
     show PcmFormat, transcodeVoiceOggToMiningAudio;
 
@@ -876,7 +877,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
     this.launchArguments = const <String>[],
     this.launchWorkdir = '',
     required this.injectorPath,
-    this.automaticJapaneseLocale = true,
+    this.japaneseLocaleMode = kGalDefaultJapaneseLocaleMode,
+    this.systemAnsiCodePageProbe = readSystemAnsiCodePage,
     this.lunaPcHooks = false,
     this.lunaCodepage,
     this.lunaHookProfilePath,
@@ -913,10 +915,19 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// （降级回 loopback，绝不假装注入成功）。**位数必须匹配目标游戏**（KiriKiriZ 多 32 位 -> x86）。
   final String? injectorPath;
 
-  /// 32 位 launch 目标默认以 helper 随包提供的 Locale Emulator 建立日语 CP932
-  /// 环境。它只影响 injector 创建的游戏进程，不修改 Windows 全局区域设置；64 位与
-  /// attach 模式不启用。运行库缺失时 native helper 会记录诊断并安全回退普通启动。
-  final bool automaticJapaneseLocale;
+  /// 该游戏的日语区域（转区）档位。转区只影响 injector 创建的游戏进程，不修改
+  /// Windows 全局区域设置；attach 模式必然短路。运行库缺失时 native helper 会记录
+  /// 诊断并安全回退普通启动。
+  ///
+  /// BUG-1477：这里以前是一个恒为 true 且**没有任何实例化点会传**的 bool，判据是
+  /// 「launch && 该 bool && exe 是 32 位」——「32 位」被当成了「日文原版」的代理。
+  /// 汉化版恰好落在最坏格（32 位老引擎 + 已转成 GBK/UTF-8 的字符串），套 CP932
+  /// 让游戏 `MultiByteToWideChar(CP_ACP, ...)` 解出非法序列，字体/字表索引越界闪退，
+  /// 而用户没有任何开关可以关掉它。
+  final GalJapaneseLocaleMode japaneseLocaleMode;
+
+  /// 读宿主机 ANSI 代码页（可注入，便于单测）。
+  final int? Function() systemAnsiCodePageProbe;
 
   /// 是否让 LunaHook 连接后额外插入通用 PC hooks。Unity/Mono/IL2CPP 这类自绘文本路径需要它，
   /// 经典 GDI/KiriKiri/Siglus 默认关闭以减少重复线程。
@@ -1102,8 +1113,12 @@ class EngineHookGalAudioSource implements GalAudioSource {
       return null; // 既无 launchExe 又无有效 targetPid -> 无目标
     }
     _sessionStartedAt = DateTime.now();
-    final bool japaneseLocale =
-        launchMode && automaticJapaneseLocale && await exeIs32Bit(exe) == true;
+    final bool japaneseLocale = resolveJapaneseLocale(
+      mode: japaneseLocaleMode,
+      launchMode: launchMode,
+      is32Bit: launchMode && await exeIs32Bit(exe) == true,
+      systemAnsiCodePage: systemAnsiCodePageProbe(),
+    );
     // 1. 拉起 injector 子进程（注入报毒代码只在这个隔离子进程里执行）。
     //    launch 模式：`--launch <exe>` CREATE_SUSPENDED 早注入，从 stdout 解析子进程 PID；
     //    attach 模式：`--pid <PID>` 附着已运行进程。
@@ -1562,10 +1577,15 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// 的 ~125ms 碎片）。[sourcePtr] 指定用哪条源（缺省用 [selectedAudioSourcePtr]，0=能量自动选）；
   /// [exclude] 自动选源时排除的源（缺省用 [excludedAudioSourcePtrs]，标记 BGM）。找不到返回 null
   /// （调用方回退 [grabClipNear]）。
+  ///
+  /// [endTsMs] 非 null 时把前向窗口右界收到那里（BUG-1475：收敛因「下一句到达」而
+  /// 收手时补最后一次 grab，用下一句的时间戳当上界，既拿回尾巴又不会把下一句的段
+  /// 拼进上一句）。缺省 null ⇒ 与旧行为逐字等价。
   Future<GalAudioSlice?> grabUtterance(
     int tsMs, {
     int? sourcePtr,
     List<int>? exclude,
+    int? endTsMs,
   }) async {
     final int src = sourcePtr ?? selectedAudioSourcePtr;
     final List<int> ex = exclude ?? excludedAudioSourcePtrs.toList();
@@ -1573,7 +1593,12 @@ class EngineHookGalAudioSource implements GalAudioSource {
       final Map<Object?, Object?>? r =
           await _channel.invokeMethod<Map<Object?, Object?>>(
         'grabUtterance',
-        <String, Object?>{'tsMs': tsMs, 'sourcePtr': src, 'exclude': ex},
+        <String, Object?>{
+          'tsMs': tsMs,
+          'sourcePtr': src,
+          'exclude': ex,
+          'endTsMs': endTsMs ?? 0,
+        },
       );
       if (r == null || r['error'] != null) {
         return null;

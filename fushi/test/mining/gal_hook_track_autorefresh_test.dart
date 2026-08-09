@@ -12,6 +12,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
@@ -85,6 +86,7 @@ class _TrackFakeEngine extends EngineHookGalAudioSource {
     int tsMs, {
     int? sourcePtr,
     List<int>? exclude,
+    int? endTsMs,
   }) async {
     utteranceSourcePtrs.add(sourcePtr ?? selectedAudioSourcePtr);
     utteranceExcludes.add(exclude ?? excludedAudioSourcePtrs.toList());
@@ -149,6 +151,7 @@ GalHookSessionController _controller({
       int? lunaCodepage,
       List<String> launchArguments = const <String>[],
       String launchWorkdir = '',
+      GalJapaneseLocaleMode japaneseLocaleMode = kGalDefaultJapaneseLocaleMode,
     }) =>
         engine,
     loopbackSourceFactory: _SilentLoopback.new,

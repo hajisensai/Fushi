@@ -24,6 +24,8 @@ import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_cover_resolver.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
+import 'package:fushi/src/mining/galgame_japanese_locale.dart';
+import 'package:fushi/src/mining/galgame_japanese_locale_prompt.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_library_query.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
@@ -616,6 +618,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         workdir: game.workdir,
         gameId: game.id,
         gameTitle: game.displayName,
+        japaneseLocaleMode:
+            galJapaneseLocaleModeFromKey(game.japaneseLocaleMode),
       );
       if (!mounted) return;
       // 每种结果都播报（BUG-1089）。旧实现只在 `!launched` 时说话，可注入降级和
@@ -839,6 +843,22 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 配置的，Magpie 只在启动时读一次配置（全仓没有任何文件监视）。
   ///
   /// 取消（[pickMagpieUpscalingMode] 返回 null）不写任何东西。
+  /// BUG-1477：每游戏的转区档。入口与超分同处——用户在哪儿管这个游戏，
+  /// 就在哪儿改它的启动期配置。
+  Future<void> _editJapaneseLocaleMode(GalgameEntry game) async {
+    final GalJapaneseLocaleMode? picked = await pickGalJapaneseLocaleMode(
+      context,
+      current: galJapaneseLocaleModeFromKey(game.japaneseLocaleMode),
+      gameName: game.displayName,
+    );
+    if (picked == null) return;
+    await _repo.setJapaneseLocaleMode(
+      game.id,
+      galJapaneseLocaleModeToKey(picked),
+    );
+    _refresh();
+  }
+
   Future<void> _editUpscalingMode(GalgameEntry game) async {
     final MagpieUpscalingMode? picked = await pickMagpieUpscalingMode(
       context,
@@ -1205,6 +1225,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       onAddToCollection: () => unawaited(_addGameToCollection(game)),
       onEditTags: () => unawaited(_openTagPicker(game)),
       onEditUpscaling: () => unawaited(_editUpscalingMode(game)),
+      onEditJapaneseLocale: () => unawaited(_editJapaneseLocaleMode(game)),
     );
   }
 }
@@ -1376,6 +1397,7 @@ class _GameCard extends StatelessWidget {
     required this.onAddToCollection,
     required this.onEditTags,
     required this.onEditUpscaling,
+    required this.onEditJapaneseLocale,
     this.sortLabel,
   });
 
@@ -1397,6 +1419,9 @@ class _GameCard extends StatelessWidget {
 
   /// 改这个游戏的窗口超分档位（Windows-only，见 [_menuItems]）。
   final VoidCallback onEditUpscaling;
+
+  /// 打开该游戏的「日语区域（转区）」档位对话框（BUG-1477）。
+  final VoidCallback onEditJapaneseLocale;
 
   /// 长按 / 右键的上下文菜单：与书卡/视频卡同款 [MediaItemDialogFrame]（封面块 +
   /// 快捷动作 chips + 底部危险区），替代旧手搓 SimpleDialog。菜单项与封面溢出菜单
@@ -1526,6 +1551,17 @@ class _GameCard extends StatelessWidget {
             icon: Icons.aspect_ratio_outlined,
             danger: false,
           ),
+        // 日语区域（转区）：同样**每游戏一档**（BUG-1477）。日文原版不转区满屏乱码，
+        // 汉化版转区启动即闪退——全局开关两边都不对。档位写在菜单项上，
+        // 不必点开就知道现在是哪档。Windows-only（Locale Emulator 只有 Windows）。
+        if (Platform.isWindows)
+          (
+            action: 'japanese_locale',
+            label: '${t.game_japanese_locale} · '
+                '${GalJapaneseLocaleModeDialog.modeLabel(galJapaneseLocaleModeFromKey(game.japaneseLocaleMode))}',
+            icon: Icons.translate_outlined,
+            danger: false,
+          ),
         (
           action: 'remove',
           label: t.game_remove,
@@ -1554,6 +1590,8 @@ class _GameCard extends StatelessWidget {
         onEditTags();
       case 'upscaling':
         onEditUpscaling();
+      case 'japanese_locale':
+        onEditJapaneseLocale();
       case 'remove':
         onRemove();
     }

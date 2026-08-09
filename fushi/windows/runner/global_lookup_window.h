@@ -257,6 +257,31 @@ class GlobalLookupWindow {
   // WebView2 proxies so the next ShowAt/PrewarmWebView rebuilds from scratch.
   bool OwnsLiveWindow() const;
   void ForgetDeadWindow();
+
+  // Tear down the dismissal hooks (foreground WinEvent + low-level mouse) and
+  // give up hook ownership if it is ours.
+  //
+  // BUG-1471: arming happens in Reveal()/RevealStack(), but disarming used to
+  // live only in Hide() and the destructor. ForgetDeadWindow() — the path taken
+  // when the HWND is destroyed under us — dropped every other resource and left
+  // these armed, pointing at a dead HWND. The low-level mouse hook has a 1s
+  // liveness re-arm timer, so that leak does not decay: it keeps a pure
+  // pass-through hook alive on the chain forever. One funnel, two callers.
+  void ReleaseDismissHooks();
+
+  /// 显示期间周期性重申置顶（BUG-1479）。
+  ///
+  /// 症状：gal 会话里查词卡被游戏盖住。**不是**独占全屏那条 OS 硬限制——那样
+  /// LunaTranslator 也会中招，而用户实测 Luna 没有这个问题。真因是同一个置顶带内
+  /// 「最后一次 SetWindowPos(HWND_TOPMOST) 的赢」：大量 galgame 自带「窗口置顶」
+  /// 选项且会周期性重申，而我们**只在 Reveal/Resize 设一次、此后永不重申**。
+  ///
+  /// 工具条窗早就有这层兜底（hook_toolbar_window.cpp 的 Sync：「Still re-assert Z」），
+  /// 查词卡漏了。这里补上同一条，并且**只在本实例本来就要置顶时**才重申——
+  /// 未 pin 的常驻面板有意落在非置顶带，不能被这个定时器拖回去。
+  void ReassertTopmost();
+  void StartTopmostGuard();
+  void StopTopmostGuard();
   // 防截屏 — 把 block_capture_ 应用到当前 hwnd_（SetWindowDisplayAffinity）。
   // 每次 CreateWindowExW 之后调用一次，故窗口重建（ForgetDeadWindow / 崩溃恢复）
   // 后依然按最后一次 SetBlockCapture 的值生效。No-op before the window exists.
@@ -321,6 +346,12 @@ class GlobalLookupWindow {
   // lookup-overlay behaviour, so the first instance is byte-for-byte unchanged).
   bool arm_dismiss_hooks_ = true;
   bool activatable_ = false;
+
+  /// 本实例显示时是否应处于置顶带。瞬态查词卡恒真；常驻面板跟随图钉。
+  bool wants_topmost_ = true;
+
+  /// 置顶重申定时器 id（0 = 未起）。见 [ReassertTopmost]。
+  UINT_PTR topmost_guard_timer_ = 0;
   bool taskbar_presence_ = false;
   // 防截屏当前请求值（真相源是 Dart pref；窗口重建后 ApplyBlockCapture 用它重加）。
   // 默认 false：只有面板实例的控制器会按 pref 置 true，瞬态覆盖窗恒不受影响。

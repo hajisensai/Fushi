@@ -28,8 +28,7 @@ void main() {
   });
 
   Future<(GalgameRepository, GalgameEntry)> buildRepo() async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final GalgameRepository repo = GalgameRepository(db);
     final GalgameEntry entry = GalgameEntry(

@@ -443,13 +443,27 @@ DictionarySearchResult buildResultFromLookup({
 }) {
   int bestLength = 0;
   final entries = <DictionaryEntry>[];
+  // BUG-1472：预算的单位是**词头**（表记 + 读音），不是 glossary 注释行。
+  //
+  // 引擎侧把 `maximumTerms` 当词头数上限用（lookup.cpp 的 max_results），这里以前却拿
+  // 同一个数字去数注释行：query.cpp 会把不同词典的同一个 (expr, reading) 合并成一个
+  // TermResult + N 条 glossary，于是「永遠/えいえん」这种高频词头一个人就带 7~26 行，
+  // 装了几本词典就够吃满整个上限——排在它后面的 とわ / とこしえ 连循环体都进不去。
+  // 用户症状：查「永遠」永远只出 えいえん。同一个数字被两层当成两种语义用，是根因。
+  final Set<String> headwords = <String>{};
+  bool truncated = false;
   outer:
   for (final r in results) {
     if (r.matched.length > bestLength) {
       bestLength = r.matched.length;
     }
+    final String headword = lookupHeadwordKey(r);
+    if (!headwords.contains(headword) && headwords.length >= maximumTerms) {
+      truncated = true;
+      break outer;
+    }
+    headwords.add(headword);
     for (final g in r.term.glossaries) {
-      if (entries.length >= maximumTerms) break outer;
       entries.add(DictionaryEntry(
         dictionaryName: g.dictName,
         word: r.term.expression,
@@ -463,7 +477,20 @@ DictionarySearchResult buildResultFromLookup({
     searchTerm: searchTerm,
     entries: entries,
     bestLength: bestLength,
+    truncated: truncated,
+    headwordCount: headwords.length,
   );
+}
+
+/// 词头分组 key：表记 + **有效**读音。
+///
+/// BUG-791：空读音按 Yomitan 约定等价于「读音同表记」，分组前必须归一，否则同一个
+/// 假名词（reading 有的显式给、有的留空）会被拆成两个词头。只归一分组 key，不改
+/// 存储的 display reading（空读音仍无注音）。
+String lookupHeadwordKey(FushiLookupResult r) {
+  final String effectiveReading =
+      r.term.reading.isEmpty ? r.term.expression : r.term.reading;
+  return '${r.term.expression}\n$effectiveReading';
 }
 
 String buildPopupJsonFromLookup({
@@ -490,19 +517,15 @@ String buildPopupJsonFromLookup({
             String termTags,
           })>>{};
 
-  int entryCount = 0;
+  // BUG-1472：与 [buildResultFromLookup] 同一处根因——预算按词头算，不按 glossary
+  // 注释行算。这里本来就是按 key 分组的，所以「已有几个词头」= groupKeys.length。
   outer:
   for (final r in results) {
+    final key = lookupHeadwordKey(r);
+    if (!groupExpression.containsKey(key) && groupKeys.length >= maximumTerms) {
+      break outer;
+    }
     for (final g in r.term.glossaries) {
-      if (entryCount >= maximumTerms) break outer;
-      entryCount++;
-
-      // BUG-791：空读音按 Yomitan 约定等价于「读音同表记」。分组前归一，
-      // 免得同一个假名词（reading 有的显式给、有的留空）被拆成两张卡。
-      // 只归一分组 key，不改存储的 display reading（空读音仍无注音）。
-      final String effectiveReading =
-          r.term.reading.isEmpty ? r.term.expression : r.term.reading;
-      final key = '${r.term.expression}\n$effectiveReading';
       if (!groupExpression.containsKey(key)) {
         groupKeys.add(key);
         groupExpression[key] = r.term.expression;

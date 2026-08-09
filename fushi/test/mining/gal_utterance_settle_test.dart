@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
@@ -47,6 +48,8 @@ void main() {
           int? lunaCodepage,
           List<String> launchArguments = const <String>[],
           String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
         }) =>
             engine,
         textPollInterval: const Duration(milliseconds: 5),
@@ -158,7 +161,17 @@ void main() {
     // 给足收敛时间，再断言旧句没有被继续重取。
     await Future<void>.delayed(const Duration(milliseconds: 120));
 
-    expect(engine.callsFor(111111), 1, reason: '下一句已到，旧句只保留首取，绝不继续往前向窗口里拼');
+    // BUG-1475 契约变更：收手时**允许且只允许**再抓一次「封口 grab」，而且那一次
+    // 必须带上下一句的时间戳作前向上界。BUG-1109 要防的是「下一句的段被拼进上一句」，
+    // 由上界保住；而「从最后一次成功 grab 到下一句到达之间已进环的那 ≤250ms」本来
+    // 时间戳就严格早于下一句，把它一起丢掉是误伤（用户报的「切句打断已捕获的音频」）。
+    expect(engine.callsFor(111111), lessThanOrEqualTo(2),
+        reason: '旧句最多再抓一次封口 grab，不得继续无界重取');
+    final List<int?> bounds = engine.endBoundsFor(111111);
+    if (bounds.length > 1) {
+      expect(bounds.last, 222222,
+          reason: '封口 grab 必须以下一句的 ts 为前向上界，否则就是 BUG-1109 复发');
+    }
     expect(engine.callsFor(222222), greaterThan(1), reason: '最新一句仍然正常收敛');
 
     await controller.close();
@@ -173,10 +186,13 @@ void main() {
     // 下一句的段，等于把下一句的语音拼进上一句（审查探针实测）。
     final _GrowingEngine engine = _GrowingEngine(
       stepsByTs: <int, List<int>>{
-        // 旧句一旦被多抓一次就会长到 1000ms —— 那是混进了下一句的证据。
+        // 旧句一旦被**无界**多抓一次就会长到 1000ms —— 那是混进了下一句的证据。
         111111: <int>[4410, kHalfSecondBytes * 2],
         222222: <int>[4410, kHalfSecondBytes],
       },
+      // BUG-1475：带上界的封口 grab 只能拿回本句自己的尾巴（500ms），
+      // 拿不到下一句那半段。这正是「补回尾巴」与「串味」的分界。
+      boundedBytesByTs: <int, int>{111111: kHalfSecondBytes},
       lines: const <GalHookedLine>[
         GalHookedLine(
           seq: 7,
@@ -219,10 +235,21 @@ void main() {
     // 越过旧句的第一个 delay 边界，让被漏查的那一轮有机会发生。
     await Future<void>.delayed(const Duration(milliseconds: 500));
 
-    expect(engine.callsFor(111111), 1,
-        reason: 'delay 期间下一句已到，旧句不得再抓——那一次会把下一句拼进来');
-    expect(service.entries.first.audioDurationMs, 50,
-        reason: '旧句只保留首取；变长即说明混进了下一句的段');
+    // BUG-1475：同上，收手时允许一次**带界**的封口 grab。真正要守的不变量是
+    // 「不得无界重取」——无界那一次的 `[ts-200, ts+6000]` 里已经有下一句的段。
+    expect(engine.callsFor(111111), lessThanOrEqualTo(2),
+        reason: 'delay 期间下一句已到，旧句最多再抓一次带界的封口 grab');
+    final List<int?> bounds = engine.endBoundsFor(111111);
+    for (int i = 1; i < bounds.length; i++) {
+      expect(bounds[i], isNotNull, reason: '收手之后的每一次 grab 都必须带前向上界');
+      expect(bounds[i], lessThanOrEqualTo(222222),
+          reason: '上界不得越过下一句的时间戳，否则就是 BUG-1109 复发');
+    }
+    // 正面断言封口 grab **确实发生了**并把尾巴补了回来（用户报的「切句打断已捕获的
+    // 音频」丢的就是这段），同时**没有**长到 1000ms —— 那个数才是混进下一句的证据。
+    expect(engine.callsFor(111111), 2, reason: '收手时必须补一次封口 grab');
+    expect(service.entries.first.audioDurationMs, 500,
+        reason: '带界的封口 grab 补回本句尾巴；长到 1000 即为串味，停在 50 即为误伤');
 
     await controller.close();
     endpoints.dispose();
@@ -425,9 +452,17 @@ class _GrowingEngine extends EngineHookGalAudioSource {
     required this.lines,
     this.laterLines = const <GalHookedLine>[],
     this.laterAfter = Duration.zero,
+    this.boundedBytesByTs = const <int, int>{},
   }) : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
 
   final Map<int, List<int>> stepsByTs;
+
+  /// 带前向上界（`endTsMs` 非空非 0）时该 ts 应当返回的字节数（BUG-1475）。
+  ///
+  /// 模拟 native 的真实行为：上界把 `[ts-200, ts+forward]` 的右界收窄，于是拿到的
+  /// 一定**不多于**无界那次。桩不模拟这一点的话，「上界真的起作用」就测不出来——
+  /// 只按调用序号返回会让带界的封口 grab 拿到和无界一样多的数据，等于假绿。
+  final Map<int, int> boundedBytesByTs;
   final List<GalHookedLine> lines;
 
   /// 首批之后才到达的台词（[laterAfter] 之后的第一次 pollText 交出）：用来把「下一句
@@ -436,6 +471,7 @@ class _GrowingEngine extends EngineHookGalAudioSource {
   final Duration laterAfter;
 
   final Map<int, int> _calls = <int, int>{};
+  final Map<int, List<int?>> _endBounds = <int, List<int?>>{};
   final Stopwatch _since = Stopwatch();
   bool _laterDelivered = false;
   int _pollCalls = 0;
@@ -448,6 +484,10 @@ class _GrowingEngine extends EngineHookGalAudioSource {
   );
 
   int callsFor(int tsMs) => _calls[tsMs] ?? 0;
+
+  /// 该 ts 上每次 grab 传入的前向上界（BUG-1475）。收敛期的常规 grab 恒为 null/0，
+  /// 只有封口 grab 会带下一句的时间戳。
+  List<int?> endBoundsFor(int tsMs) => _endBounds[tsMs] ?? const <int?>[];
 
   @override
   int? get gamePid => 4242;
@@ -476,9 +516,20 @@ class _GrowingEngine extends EngineHookGalAudioSource {
     int tsMs, {
     int? sourcePtr,
     List<int>? exclude,
+    int? endTsMs,
   }) async {
     final int index = _calls[tsMs] ?? 0;
     _calls[tsMs] = index + 1;
+    // BUG-1475：记下每次 grab 的前向上界，供「封口 grab 必须带界」的断言核对。
+    (_endBounds[tsMs] ??= <int?>[]).add(endTsMs);
+    if (endTsMs != null && endTsMs != 0) {
+      final int? bounded = boundedBytesByTs[tsMs];
+      if (bounded != null) {
+        return bounded <= 0
+            ? null
+            : GalAudioSlice(pcm: Uint8List(bounded), format: _format);
+      }
+    }
     final List<int>? steps = stepsByTs[tsMs];
     if (steps == null || steps.isEmpty) return null;
     final int bytes = steps[index < steps.length ? index : steps.length - 1];

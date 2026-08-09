@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/gal_hook_failure_text.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
@@ -53,6 +54,8 @@ void main() {
           // 但签名必须跟上 typedef，否则赋值类型不兼容。
           List<String> launchArguments = const <String>[],
           String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
         }) =>
             engine,
         loopbackSourceFactory: () => loopback,
@@ -795,6 +798,7 @@ class _FakeEngine extends EngineHookGalAudioSource {
     int tsMs, {
     int? sourcePtr,
     List<int>? exclude,
+    int? endTsMs,
   }) async {
     utteranceTimestamps.add(tsMs);
     if (sourcePtr != null) utteranceSourcePtrs.add(sourcePtr);

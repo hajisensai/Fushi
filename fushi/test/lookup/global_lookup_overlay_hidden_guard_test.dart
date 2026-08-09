@@ -25,8 +25,7 @@ import 'package:fushi/src/lookup/global_lookup_channel.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const MethodChannel channel =
-      MethodChannel('app.fushi.reader/global_lookup');
+  const MethodChannel channel = MethodChannel('app.fushi.reader/global_lookup');
   const StandardMethodCodec codec = StandardMethodCodec();
   final TestDefaultBinaryMessenger messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;

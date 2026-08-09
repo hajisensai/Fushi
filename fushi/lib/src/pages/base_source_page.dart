@@ -311,7 +311,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       _popup.fillResult(
         item,
         result: dictionaryResult,
-        allLoaded: dictionaryResult.entries.length < overrideMaximumTerms,
+        allLoaded: !dictionaryResult.truncated,
       );
 
       // TODO-058 / BUG-480：嵌套冷层继续挂起到 popupRendered；复用热槽也不能裸奔
@@ -374,7 +374,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     final DictionarySearchResult? current = entry.result;
     if (entry.allLoaded || entry.isSearching || current == null) return;
 
-    final int newMax = current.entries.length + appModel.maximumTerms;
+    // BUG-1478：按**词头**递增，不是按 glossary 行数（entries.length）——
+    // 后者是另一个单位，一个词头带十几条注释时上限会一次暴涨十几倍。
+    final int newMax = current.headwordCount + appModel.maximumTerms;
     entry.isSearching = true;
     try {
       final DictionarySearchResult result = await appModel.searchDictionary(
@@ -387,7 +389,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       _popup.fillResult(
         entry,
         result: result,
-        allLoaded: result.entries.length < newMax,
+        allLoaded: !result.truncated,
       );
     } finally {
       // fillResult 成功路径已把 isSearching 清 false；失败/提前 return 在此兜底复位。

@@ -7,6 +7,7 @@ import 'package:fushi/src/mining/gal_hook_activity_accumulator.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_char_count.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_hook_code_profile.dart';
 import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
@@ -527,6 +528,10 @@ typedef GalEngineSourceFactory = EngineHookGalAudioSource Function({
   // launch 专用且可选：attach 路径（引擎重试、窗口绑定）不传，行为不变。
   List<String> launchArguments,
   String launchWorkdir,
+  // BUG-1477：该游戏的日语区域（转区）档位。以前整条 UI→source 的通路上**根本没有
+  // 这个形参**，所以不是「忘了传」而是没有这个自由度——汉化版被强制转区后闪退，
+  // 用户无法自救。attach 路径不传，转区在 source 侧必然短路（launchMode 为首个合取项）。
+  GalJapaneseLocaleMode japaneseLocaleMode,
 });
 typedef GalLoopbackSourceFactory = LoopbackGalAudioSource Function();
 typedef GalTargetWow64Probe = Future<bool?> Function(int pid);
@@ -690,13 +695,18 @@ class GalHookSessionController extends ChangeNotifier {
   /// 会在两个来源之间跳，且无身份行没有 `textEventId`/`hookTimestampMs`
   /// （只有引擎行会写 `_lineTextEventIdCache`），逐句配对只能退回时间戳兜底窗
   /// —— 正是 BUG-1159 的失败链。这一支保持与 v12 之前逐字节同一行为。
+  ///
+  /// 有身份行的判据是「这条 key 被本次选择认领过」（见 [_selectedThreadClaimedKeys]），
+  /// 而不是与选定 key 逐字节相等——后者会在剧情分支换调用点时把整段台词丢在发布期。
   static bool _publishesUnderSelection(
     TexthookerLineEntry entry,
     String? selectedKey,
+    Set<String> claimedKeys,
   ) {
     final String? key = entry.textThreadKey;
     if (key == null || key.isEmpty) return selectedKey == null;
-    return key == selectedKey;
+    if (selectedKey == null) return false;
+    return key == selectedKey || claimedKeys.contains(key);
   }
 
   /// 捕获工作台当前应展示的正式行。过滤判据见 [_publishesUnderSelection]；
@@ -705,8 +715,8 @@ class GalHookSessionController extends ChangeNotifier {
     final String? selectedKey = selectedTextThreadKey;
     final DateTime? startedAt = _state.sessionStartedAt;
     Iterable<TexthookerLineEntry> scoped = _textService.entries.where(
-      (TexthookerLineEntry entry) =>
-          _publishesUnderSelection(entry, selectedKey),
+      (TexthookerLineEntry entry) => _publishesUnderSelection(
+          entry, selectedKey, _selectedThreadClaimedKeys),
     );
     if (startedAt != null) {
       scoped = scoped.where(
@@ -744,7 +754,11 @@ class GalHookSessionController extends ChangeNotifier {
     return List<TexthookerLineEntry>.unmodifiable(
       _textService.entries.where(
         (TexthookerLineEntry entry) =>
-            _publishesUnderSelection(entry, selectedKey) &&
+            _publishesUnderSelection(
+              entry,
+              selectedKey,
+              _selectedThreadClaimedKeys,
+            ) &&
             !entry.receivedAt.isBefore(startedAt),
       ),
     );
@@ -800,6 +814,20 @@ class GalHookSessionController extends ChangeNotifier {
   /// thread_id 随之变，只按 threadId 精确匹配会把整段台词丢掉（BUG-1159 的原始症状）。
   /// face 从选定线程自己的行里学到，未见过为 0（此时退化为精确匹配，与旧实现同语义）。
   int _selectedTextThreadFaceId = 0;
+
+  /// 本次选择已认领的线程 key 集合——发布期过滤器的唯一判据来源。
+  ///
+  /// 为什么不能让发布期自己再写一份判据（BUG-1470）：采集期 [_acceptsLineFromSelectedThread]
+  /// 的判据是 `(threadId, faceId)`，带 BUG-1159 的同 hook 面兜底；发布期
+  /// [_publishesUnderSelection] 拿到的却是字符串 `textThreadKey`，它由 threadId 派生
+  /// （见 [GalHookedLine.textThreadKey]）。剧情一分支 ctx 变 → threadId 变 → key 变，
+  /// 于是同一句台词**过了采集、被发布全丢**：工作台正文与游戏窗浮窗同时空白，
+  /// 而线程预览区不受选择门控、照常有字——正是「预览有字、选进去没文字」的现场。
+  ///
+  /// 修法是让发布期成为采集期的**投影**而不是平行实现：采集放行一行就认领它的 key，
+  /// 发布只查集合。选择时用选定 key 自身播种，使直接往 [TexthookerService] 塞行、
+  /// 绕过采集期的调用方（既有测试与 WebSocket/剪贴板等无 helper 来源）保持原行为。
+  final Set<String> _selectedThreadClaimedKeys = <String>{};
   final SerialJobQueue _audioQueue = SerialJobQueue();
   final Set<String> _loopbackCacheInFlight = <String>{};
 
@@ -891,6 +919,7 @@ class GalHookSessionController extends ChangeNotifier {
     int? lunaCodepage,
     List<String> launchArguments = const <String>[],
     String launchWorkdir = '',
+    GalJapaneseLocaleMode japaneseLocaleMode = kGalDefaultJapaneseLocaleMode,
   }) {
     return EngineHookGalAudioSource(
       targetPid: targetPid,
@@ -900,6 +929,7 @@ class GalHookSessionController extends ChangeNotifier {
       injectorPath: injectorPath,
       lunaPcHooks: lunaPcHooks,
       lunaCodepage: lunaCodepage,
+      japaneseLocaleMode: japaneseLocaleMode,
     );
   }
 
@@ -1009,6 +1039,7 @@ class GalHookSessionController extends ChangeNotifier {
     _selectedTextThreadKey = null;
     _selectedNativeTextThreadId = null;
     _selectedTextThreadFaceId = 0;
+    _selectedThreadClaimedKeys.clear();
     _setState(
       _state.copyWith(
         phase: GalHookSessionPhase.resolving,
@@ -1129,6 +1160,9 @@ class GalHookSessionController extends ChangeNotifier {
     String workdir = '',
     String? gameId,
     String? gameTitle,
+
+    /// 该游戏的日语区域（转区）档位（BUG-1477）。缺省 auto = 与旧行为等价。
+    GalJapaneseLocaleMode japaneseLocaleMode = kGalDefaultJapaneseLocaleMode,
   }) async {
     final int generation = ++_operationGeneration;
     await _stopSources();
@@ -1147,6 +1181,7 @@ class GalHookSessionController extends ChangeNotifier {
     _selectedTextThreadKey = null;
     _selectedNativeTextThreadId = null;
     _selectedTextThreadFaceId = 0;
+    _selectedThreadClaimedKeys.clear();
     _setState(
       _state.copyWith(
         phase: GalHookSessionPhase.resolving,
@@ -1209,6 +1244,7 @@ class GalHookSessionController extends ChangeNotifier {
       launchWorkdir: workdir,
       injectorPath: injector,
       lunaPcHooks: lunaPcHooks,
+      japaneseLocaleMode: japaneseLocaleMode,
     );
     await _attachPersistedHookProfiles(engine);
     _setState(_state.copyWith(phase: GalHookSessionPhase.injecting));
@@ -1921,10 +1957,21 @@ class GalHookSessionController extends ChangeNotifier {
     if (selected == null || selected == 0) return false;
     if (line.threadId == selected) {
       if (line.faceId != 0) _selectedTextThreadFaceId = line.faceId;
+      _claimThreadKey(line);
       return true;
     }
-    return _selectedTextThreadFaceId != 0 &&
-        line.faceId == _selectedTextThreadFaceId;
+    if (_selectedTextThreadFaceId != 0 &&
+        line.faceId == _selectedTextThreadFaceId) {
+      _claimThreadKey(line);
+      return true;
+    }
+    return false;
+  }
+
+  /// 采集期放行一行 ⇒ 认领它的线程 key，供发布期 [_publishesUnderSelection] 查表。
+  void _claimThreadKey(GalHookedLine line) {
+    final String? key = line.textThreadKey;
+    if (key != null && key.isNotEmpty) _selectedThreadClaimedKeys.add(key);
   }
 
   /// v13 文本分道的容量压力上报（每次计数增长各播一次，不刷屏）。
@@ -1978,6 +2025,16 @@ class GalHookSessionController extends ChangeNotifier {
     final GalTextPoll? poll = await engine.pollText(0);
     if (poll == null || engine != _engineSource) return;
     final Set<int> appended = _lineTextEventIdCache.values.toSet();
+    // 两趟：先把整批的 hook 面学完，再筛。
+    // 单趟不行——[_acceptsLineFromSelectedThread] 是带副作用的判据（精确命中时才学 face），
+    // 而 native 按 seq 升序返回，排在第一条精确命中**之前**的同 hook 面兄弟行会被判 false
+    // 且不再复评，静默漏捞。回捞本身就是"补回选中之前的行"，这个顺序依赖必然踩中。
+    for (final GalHookedLine line in poll.lines) {
+      if (line.eventKind != GalTextEventKind.line) continue;
+      if (line.threadId == selected && line.faceId != 0) {
+        _selectedTextThreadFaceId = line.faceId;
+      }
+    }
     final List<GalHookedLine> history = poll.lines
         .where((GalHookedLine line) =>
             line.eventKind == GalTextEventKind.line &&
@@ -2041,6 +2098,28 @@ class GalHookSessionController extends ChangeNotifier {
           threadId == null || threadId == 0 ? null : threadId;
       // 换线程就必须丢掉上一条线程的 hook 面，否则旧 face 会继续放行旧线程的行。
       _selectedTextThreadFaceId = 0;
+      // 认领集合用选定 key 自身播种：绕过采集期直接塞行的来源（无 helper 的
+      // WebSocket/剪贴板线程）据此保持原行为，引擎行则由采集期继续追加同 hook 面的
+      // 兄弟 key。换线程必须整体重置，否则上一条线程的 key 会继续放行它的行。
+      _selectedThreadClaimedKeys
+        ..clear()
+        ..addAll(<String>{
+          if (_selectedTextThreadKey != null) _selectedTextThreadKey!,
+        });
+      // 有 helper 却拿不到 native thread id：采集期判据 (_selectedNativeTextThreadId)
+      // 会对**所有**行返回 false，而 selectedTextThreadKey 非空又让就绪态判成
+      // 「正在监听」——弹窗关掉、状态条正常、一行文本都不来的静默死态。显式报出来。
+      if (engine != null &&
+          _selectedTextThreadKey != null &&
+          _selectedNativeTextThreadId == null) {
+        _record(
+          GalHookEventSeverity.warning,
+          'text',
+          'text.thread_selection_without_native_id',
+          'Selected text thread has no native thread id; no lines will arrive',
+          details: <String, Object?>{'threadKey': _selectedTextThreadKey},
+        );
+      }
       // 新线程在被选中之前写进自己那条道的行，现在补回来（v13 分道的直接收益）。
       await _recoverSelectedThreadHistory();
       if (remember) {
@@ -3736,12 +3815,24 @@ class GalHookSessionController extends ChangeNotifier {
     final Stopwatch elapsed = Stopwatch()..start();
     while (elapsed.elapsed < _utteranceSettleMax) {
       if (!_canSettleLine(engine: engine, entry: entry, line: line)) {
+        await _closingUtteranceGrab(
+          engine: engine,
+          entry: entry,
+          line: line,
+          bestBytes: bestBytes,
+        );
         return;
       }
       await Future<void>.delayed(_utteranceSettleInterval);
       // 判据必须在**每个** await 之后复查：只在 delay 之前查一次时，下一句在 delay
       // 期间到达仍会多抓一次，把下一句的段拼进上一句（BUG-1109 审查实测）。
       if (!_canSettleLine(engine: engine, entry: entry, line: line)) {
+        await _closingUtteranceGrab(
+          engine: engine,
+          entry: entry,
+          line: line,
+          bestBytes: bestBytes,
+        );
         return;
       }
       final GalAudioSlice? next = await _audioQueue.enqueue<GalAudioSlice?>(
@@ -3753,6 +3844,12 @@ class GalHookSessionController extends ChangeNotifier {
       }
       // grab 期间也可能夹一次 stop / 补录 / 选轨 / 资源升格。
       if (!_canSettleLine(engine: engine, entry: entry, line: line)) {
+        await _closingUtteranceGrab(
+          engine: engine,
+          entry: entry,
+          line: line,
+          bestBytes: bestBytes,
+        );
         return;
       }
       bestBytes = next.pcm.length;
@@ -3765,6 +3862,79 @@ class GalHookSessionController extends ChangeNotifier {
         durationMs: (next.pcm.length * 1000) ~/ next.format.byteRate,
       );
     }
+  }
+
+  /// 收敛因「下一句到达」而收手时的**封口 grab**（BUG-1475）。
+  ///
+  /// 从最后一次成功 grab 到下一句到达之间，最多有一个 [_utteranceSettleInterval]
+  /// （250ms）的 PCM 已经进了共享内存环、却从未被读出来。这段数据的时间戳**严格早于**
+  /// 下一句的 ts，根本不属于 [[BUG-1109]] 要防的东西（那条防的是把**下一句**的段拼进
+  /// 上一句），纯属误伤——用户报的「上一句音频没播完就切下一句会打断已捕获的音频」
+  /// 丢的就是它。
+  ///
+  /// 三条纪律：
+  /// * **只在「下一句到达」这一种终止原因下补**。会话/音源换走、用户裁决、补录窗口、
+  ///   资源升格这几种终止意味着这行的所有权已经不在收敛手上，此时再写缓存就是越权。
+  /// * 前向窗口用下一句的 ts 收口（`endTsMs`），BUG-1109 的不变量原样保住。
+  /// * 仍然只在**更长**时才写回：缓存单调变长的性质不变。
+  Future<void> _closingUtteranceGrab({
+    required EngineHookGalAudioSource engine,
+    required TexthookerLineEntry entry,
+    required GalHookedLine line,
+    required int bestBytes,
+  }) async {
+    // 除「下一句到达」之外的任何一条不成立 ⇒ 所有权已易主，不补。
+    final bool onlyNextLineArrived = engine == _engineSource &&
+        identical(_audioSource, engine) &&
+        isLineInCurrentSession(entry) &&
+        _recapturingLineId == null &&
+        !_isUserAdjudicated(entry.id) &&
+        _resourceIdForLine(entry.id) == null &&
+        !_pendingResourceMatches.containsKey(entry.id) &&
+        _lastTextSeq > line.seq;
+    if (!onlyNextLineArrived) return;
+    final int? nextTs = _nextLineTimestampAfter(line.seq);
+    if (nextTs == null || nextTs <= line.timestampMs) return;
+    final GalAudioSlice? closing = await _audioQueue.enqueue<GalAudioSlice?>(
+      () => engine.grabUtterance(line.timestampMs, endTsMs: nextTs),
+      buildFailure: (Object error, StackTrace stack) => null,
+    );
+    if (closing == null || closing.isEmpty) return;
+    if (closing.pcm.length <= bestBytes) return;
+    // 等待期间仍可能夹进一次易主，写回前再核一次。
+    if (_recapturingLineId != null ||
+        _isUserAdjudicated(entry.id) ||
+        _resourceIdForLine(entry.id) != null ||
+        _pendingResourceMatches.containsKey(entry.id) ||
+        !identical(_audioSource, engine)) {
+      return;
+    }
+    _lineVoiceCache[entry.id] = closing;
+    _trimCache(_lineVoiceCache);
+    _textService.updateLineAudio(
+      entry.id,
+      status: TexthookerLineAudioStatus.matched,
+      backend: 'engine_pcm',
+      durationMs: (closing.pcm.length * 1000) ~/ closing.format.byteRate,
+    );
+  }
+
+  /// 已消费行里 seq **紧接** [seq] 之后那一行的时间戳；没有则 null。
+  ///
+  /// 取「最小的 seq > 传入 seq」而不是「最新一行」：一次轮询可能一口气交付好几行，
+  /// 拿最新那行当上界会把中间那些行的语音一起圈进来。
+  int? _nextLineTimestampAfter(int seq) {
+    int? bestSeq;
+    int? bestTs;
+    for (final MapEntry<String, int> e in _lineTextEventIdCache.entries) {
+      if (e.value <= seq) continue;
+      if (bestSeq != null && e.value >= bestSeq) continue;
+      final int? ts = _lineTimestampCache[e.key];
+      if (ts == null) continue;
+      bestSeq = e.value;
+      bestTs = ts;
+    }
+    return bestTs;
   }
 
   /// 收敛循环每次 await 之后的存活判据（BUG-1109）。任一不成立就必须收手——收敛是

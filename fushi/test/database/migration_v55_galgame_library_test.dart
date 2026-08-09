@@ -122,7 +122,7 @@ CREATE TABLE preferences (
     final String? pref = await db.getPref('galgame_library');
     expect(pref, isNotNull);
 
-    expect(await userVersionOf(db), 74);
+    expect(await userVersionOf(db), 75);
   });
 
   test('脏数据被逐条跳过，不让整个迁移失败', () async {
@@ -158,7 +158,7 @@ CREATE TABLE preferences (
 
     final List<GalgameRow> rows = await db.getAllGalgames();
     expect(rows.map((GalgameRow r) => r.id), <String>['ok-1', 'ok-2']);
-    expect(await userVersionOf(db), 74);
+    expect(await userVersionOf(db), 75);
   });
 
   test('整串 JSON 损坏 / 非数组 / 空串时迁移仍然成功，只是回填为空', () async {
@@ -169,7 +169,7 @@ CREATE TABLE preferences (
     ]) {
       final FushiDatabase db = await openV53Db(raw);
       expect(await db.getAllGalgames(), isEmpty, reason: 'raw=$raw');
-      expect(await userVersionOf(db), 74, reason: 'raw=$raw');
+      expect(await userVersionOf(db), 75, reason: 'raw=$raw');
       await db.close();
     }
   });
@@ -177,7 +177,7 @@ CREATE TABLE preferences (
   test('偏好里根本没有 galgame_library 时迁移正常，表为空', () async {
     final FushiDatabase db = await openV53Db(null);
     expect(await db.getAllGalgames(), isEmpty);
-    expect(await userVersionOf(db), 74);
+    expect(await userVersionOf(db), 75);
   });
 
   test('回填幂等：表里已有行就不再重复回填', () async {
@@ -226,7 +226,7 @@ CREATE TABLE preferences (
       ),
     );
     expect(await db.getAllGalgames(), hasLength(1));
-    expect(await userVersionOf(db), 74);
+    expect(await userVersionOf(db), 75);
   });
 
   test('删游戏经 FK cascade 连带清掉 sources 与 sessions', () async {

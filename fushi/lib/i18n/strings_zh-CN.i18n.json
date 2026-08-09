@@ -3158,5 +3158,11 @@
   "migration_import_permission_body": "中转目录是旧版应用创建的。没有「所有文件访问权限」，Fushi 读不了它——数据是完好的，只是打不开。",
   "migration_import_permission_grant": "去授权",
   "migration_import_verifying": "正在校验 $batch（$done/$total）",
-  "migration_import_verifying_hint": "正在核对归档校验和。库很大时需要几分钟。"
+  "migration_import_verifying_hint": "正在核对归档校验和。库很大时需要几分钟。",
+  "game_line_copy_tooltip": "复制句子",
+  "game_japanese_locale_auto": "自动",
+  "game_japanese_locale_on": "始终开启",
+  "game_japanese_locale_off": "关闭",
+  "game_japanese_locale": "日语区域（转区）",
+  "game_japanese_locale_hint": "汉化版/英化版请选「关闭」，否则启动即闪退"
 }

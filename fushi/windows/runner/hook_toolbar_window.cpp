@@ -209,16 +209,20 @@ bool HookToolbarWindow::Show(const hook_toolbar::Layout& layout,
   return true;
 }
 
+void HookToolbarWindow::CancelPointerGesture() {
+  pressed_ = false;
+  dragging_ = false;
+  if (hwnd_ != nullptr && GetCapture() == hwnd_) {
+    ReleaseCapture();
+  }
+}
+
 void HookToolbarWindow::Hide() {
   visible_ = false;
   hovered_ = false;
   tracking_mouse_leave_ = false;
-  pressed_ = false;
-  dragging_ = false;
+  CancelPointerGesture();
   if (hwnd_ != nullptr) {
-    if (GetCapture() == hwnd_) {
-      ReleaseCapture();
-    }
     ShowWindow(hwnd_, SW_HIDE);
   }
 }
@@ -372,13 +376,16 @@ LRESULT HookToolbarWindow::HandleMessage(UINT message, WPARAM wparam,
       SetCapture(hwnd_);
       return 0;
     }
+    // BUG-1471: capture revoked out from under us (foreground window changed).
+    // The button-up will never arrive; end the gesture here or `pressed_` stays
+    // true and every later move is treated as an owner-drag.
+    case WM_CAPTURECHANGED: {
+      CancelPointerGesture();
+      return 0;
+    }
     case WM_LBUTTONUP: {
       const bool was_dragging = dragging_;
-      pressed_ = false;
-      dragging_ = false;
-      if (GetCapture() == hwnd_) {
-        ReleaseCapture();
-      }
+      CancelPointerGesture();
       if (was_dragging && on_drag_end_) {
         on_drag_end_();
       }

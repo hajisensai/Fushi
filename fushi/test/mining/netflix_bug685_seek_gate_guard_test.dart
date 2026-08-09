@@ -40,8 +40,7 @@ void main() {
       expect(content.contains('function fushiWaitForSeekSettled'), isTrue,
           reason: '$root content.js missing fushiWaitForSeekSettled helper');
       expect(
-          content
-              .contains('await fushiWaitForSeekSettled(v, targetSec, 4000)'),
+          content.contains('await fushiWaitForSeekSettled(v, targetSec, 4000)'),
           isTrue,
           reason: '$root content.js must await seek-settle before recording');
       // Settle judged by "not seeking AND currentTime near target".

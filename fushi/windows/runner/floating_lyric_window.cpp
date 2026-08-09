@@ -352,11 +352,24 @@ bool FloatingLyricWindow::Show(HWND owner) {
   return true;
 }
 
+void FloatingLyricWindow::CancelPointerGesture() {
+  pressed_ = false;
+  dragging_ = false;
+  press_was_text_ = false;
+  if (hwnd_ != nullptr && GetCapture() == hwnd_) {
+    ReleaseCapture();
+  }
+}
+
 void FloatingLyricWindow::Hide() {
   visible_ = false;
   hovered_ = false;
   tracking_mouse_leave_ = false;
-  dragging_ = false;
+  // BUG-1471: a hidden window never receives the WM_LBUTTONUP that would end an
+  // in-flight press. Clearing only `dragging_` here left `pressed_` stuck true
+  // across the hide, and MaybeHoverLookup bails on `pressed_` -- hover lookup
+  // then stayed dead for the rest of the session while the text kept updating.
+  CancelPointerGesture();
   // 隐藏后收不到 WM_MOUSELEAVE：定时器留着就是后台空转。
   StopHoverLookupPolling();
   ResetHoverLookupAnchor();
@@ -537,11 +550,7 @@ void FloatingLyricWindow::SetLocked(bool locked) {
   // a half-dragging state; drop any in-flight gesture so the next click is
   // interpreted fresh.
   if (locked_ && (pressed_ || dragging_)) {
-    pressed_ = false;
-    dragging_ = false;
-    if (GetCapture() == hwnd_) {
-      ReleaseCapture();
-    }
+    CancelPointerGesture();
   }
   RequestRender();
 }
@@ -551,11 +560,7 @@ void FloatingLyricWindow::SetPassThrough(bool enabled) {
     return;
   }
   pass_through_ = enabled;
-  pressed_ = false;
-  dragging_ = false;
-  if (GetCapture() == hwnd_) {
-    ReleaseCapture();
-  }
+  CancelPointerGesture();
   // A click-through body receives no mouse messages at all, so it will never
   // see the WM_MOUSELEAVE that would normally clear the hover state. Clear it
   // here or the body would render its hovered appearance forever.
@@ -609,7 +614,20 @@ void FloatingLyricWindow::ApplyPassThroughExStyle() {
     }
     return;
   }
-  SetBodyExTransparent(true);
+  // BUG-1480: deliberately do NOT set WS_EX_TRANSPARENT here any more.
+  //
+  // 用户要的是「穿透态下仍能点文字查词」。WS_EX_TRANSPARENT 是全窗口级的，OS 连
+  // WM_LBUTTONDOWN 都不投，字和背景一视同仁 —— 想留一个能点的字就得再造一套机制。
+  // 而这个窗口是 UpdateLayeredWindow 的逐像素 alpha 窗：**alpha-0 像素本来就会把
+  // 点击透给下面的窗口，跨进程有效，且与 WM_NCHITTEST 无关**（这正是 BUG-1046 那条
+  // 注释记录的事实）。所以把背景强制成 alpha 0（见 Render）之后，OS 自己就给出了
+  // 我们要的两分：背景像素 → 游戏，字形像素 → 我们。
+  //
+  // 与 BUG-951 的区别必须说清，别被"又回到老路"误伤：BUG-951 修掉的是
+  // HTTRANSPARENT，那玩意只在**同线程**窗口间走，永远到不了另一个进程的游戏，所以
+  // 点击是被**吞掉**的；PR#460 修掉的是**定时器翻转可交互性**的竞态。逐像素 alpha
+  // 既不是前者也不是后者：它是 OS 在合成阶段就判定"这个窗口在这个像素上不存在"。
+  SetBodyExTransparent(false);
 }
 
 void FloatingLyricWindow::SetBodyExTransparent(bool enabled) {
@@ -904,17 +922,21 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       SetCapture(hwnd_);
       return 0;
     }
+    // BUG-1471: the system took our capture away (foreground window changed —
+    // the game grabbing focus back is a per-session event for a WS_EX_NOACTIVATE
+    // background-thread window). The button-up for this press will never arrive,
+    // so end the gesture here or `pressed_` stays true forever and hover lookup
+    // goes silent for the rest of the session while the text keeps updating.
+    case WM_CAPTURECHANGED: {
+      CancelPointerGesture();
+      return 0;
+    }
     case WM_LBUTTONUP: {
       const bool was_dragging = dragging_;
       const bool was_pressed = pressed_;
       const bool was_text = press_was_text_;
       const POINT lookup_pt = press_client_;
-      dragging_ = false;
-      pressed_ = false;
-      press_was_text_ = false;
-      if (GetCapture() == hwnd_) {
-        ReleaseCapture();
-      }
+      CancelPointerGesture();
       POINT cursor;
       if (GetCursorPos(&cursor)) {
         RECT rc;
@@ -1085,6 +1107,16 @@ void FloatingLyricWindow::Render() {
   if (hook_text_mode_ && !pass_through_ &&
       (body_bg >> 24) < kHookTextMinCatchAlpha) {
     body_bg = (kHookTextMinCatchAlpha << 24) | (body_bg & 0x00FFFFFF);
+  }
+  // BUG-1480: pass-through now relies on PER-PIXEL hit testing (see
+  // ApplyPassThroughExStyle) instead of WS_EX_TRANSPARENT, so the background
+  // MUST be truly alpha 0 — otherwise a user-chosen visible background makes
+  // the whole rect opaque, the OS routes every click to us, and the game gets
+  // nothing. This is the exact failure the old per-pixel behaviour had; forcing
+  // the fill removes the "only works if you happened to set opacity 0" caveat
+  // rather than documenting it.
+  if (hook_text_mode_ && pass_through_) {
+    body_bg &= 0x00FFFFFF;
   }
   Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush;
   render_target_->CreateSolidColorBrush(ColorFromArgb(body_bg),
@@ -1609,8 +1641,9 @@ void FloatingLyricWindow::DispatchControlAction(const std::string& action) {
     // state to Dart; it is never a no-op (unlike the old desktop strip).
     locked_ = !locked_;
     if (locked_ && (pressed_ || dragging_)) {
-      pressed_ = false;
-      dragging_ = false;
+      // BUG-1471: this used to clear the flags without releasing capture, while
+      // the channel path (SetLocked) released it — same action, two behaviours.
+      CancelPointerGesture();
     }
     if (on_lock_) {
       on_lock_(locked_);
@@ -1793,14 +1826,17 @@ void FloatingLyricWindow::MaybeHoverLookup(float x, float y) {
   if (!hook_text_mode_ || !click_lookup_enabled_ || pressed_ || dragging_) {
     return;
   }
-  // 穿透态下「鼠标整个属于游戏」（BUG-951 的契约）：正文窗带 WS_EX_TRANSPARENT，
-  // 系统根本不投鼠标消息给它，但轮询定时器读的是全局光标位置，会绕过这条边界 ——
-  // 所以判据必须写在这里，而不是指望收不到消息。
-  if (pass_through_) {
-    StopHoverLookupPolling();
-    ResetHoverLookupAnchor();
-    return;
-  }
+  // BUG-1480：穿透态不再整窗吃掉查词。
+  //
+  // 旧契约是「鼠标整个属于游戏」，因为正文窗带 WS_EX_TRANSPARENT、系统根本不投鼠标
+  // 消息，于是这里必须显式挡掉靠全局光标位置轮询的悬停查词。现在穿透改成逐像素
+  // 命中：**背景像素归游戏、字形像素归我们**，所以「光标正压在一个字上」这件事本身
+  // 就是合法的查词信号，不该再被挡。
+  //
+  // 但仍保留一条收窄：穿透态只认**按住 Shift** 的悬停查词，不认「自动悬停即查」。
+  // 穿透的用途是把鼠标让给游戏，纯移动就弹卡片会在玩的过程中不停打断；Shift 是
+  // 用户的显式意图声明。点击查词不受此限（点在字上本来就到不了游戏）。
+  const bool pass_through_requires_shift = pass_through_;
   if (on_lookup_ == nullptr && on_context_lookup_ == nullptr) {
     return;
   }
@@ -1808,6 +1844,10 @@ void FloatingLyricWindow::MaybeHoverLookup(float x, float y) {
   // 在游戏那边，GetKeyState 读的是本线程消息队列的同步键态（对一个从不收键盘消息
   // 的窗口来说永远不会更新）。GetAsyncKeyState 读的是全局实时键态，才是对的。
   const bool shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+  if (pass_through_requires_shift && !shift) {
+    ResetHoverLookupAnchor();
+    return;
+  }
   if (!shift && !hover_auto_lookup_) {
     ResetHoverLookupAnchor();
     return;

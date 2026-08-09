@@ -70,6 +70,7 @@ class GalgameEntry {
     required this.addedAt,
     this.launchArgs = '',
     this.upscalingMode = '',
+    this.japaneseLocaleMode = '',
     this.coverPath,
     this.playStatus = GalgamePlayStatus.unset,
     this.primarySource,
@@ -111,6 +112,10 @@ class GalgameEntry {
   ///
   /// 与 [launchArgs] 同类：用户为该游戏设的启动期配置，随条目持久化，启动路径读一次。
   final String upscalingMode;
+
+  /// 该游戏的日语区域（转区）档位持久化 key（''/auto/on/off，见
+  /// `galgame_japanese_locale.dart`）。空串 = 未设置，解析层回落 auto。
+  final String japaneseLocaleMode;
 
   /// 可选封面图绝对路径（null = 用默认游戏图标）。
   final String? coverPath;
@@ -201,6 +206,7 @@ class GalgameEntry {
     String? workdir,
     String? launchArgs,
     String? upscalingMode,
+    String? japaneseLocaleMode,
     String? coverPath,
     GalgamePlayStatus? playStatus,
     String? primarySource,
@@ -219,6 +225,7 @@ class GalgameEntry {
       workdir: workdir ?? this.workdir,
       launchArgs: launchArgs ?? this.launchArgs,
       upscalingMode: upscalingMode ?? this.upscalingMode,
+      japaneseLocaleMode: japaneseLocaleMode ?? this.japaneseLocaleMode,
       coverPath: coverPath ?? this.coverPath,
       addedAt: addedAt,
       playStatus: playStatus ?? this.playStatus,

@@ -591,16 +591,55 @@ void main() {
       );
     });
 
-    test('respects maximumTerms limit', () {
+    // BUG-1472：maximumTerms 的单位是**词头卡**，不是 glossary 注释行。
+    // 这个 fixture 是同一个词头（食べる/たべる）跨两本词典共 3 条注释——旧断言
+    // 「maximumTerms=2 ⇒ 只剩 2 条注释」把 bug 本身写成了契约：用户会静默丢掉
+    // 第三本词典的释义，而真正该被上限约束的「还有几个别的读音/表记」反而不受控。
+    test('maximumTerms 约束词头卡数，不腰斩单个词头的注释', () {
       final lookupResults = makeLookupResults();
       final json = buildPopupJsonFromLookup(
         results: lookupResults,
         maximumTerms: 2,
       );
       final parsed = jsonDecode(json) as List;
+      expect(parsed.length, 1, reason: '两条结果同属一个词头，只该出一张卡');
       final entry = parsed.single as Map<String, dynamic>;
-      final glossaries = entry['glossaries'] as List;
-      expect(glossaries.length, 2);
+      expect(
+        (entry['glossaries'] as List).length,
+        3,
+        reason: '同一个词头的三本词典释义必须全在——按注释行计预算会砍掉第三本',
+      );
+    });
+
+    test('maximumTerms 真的截断词头卡数', () {
+      final json = buildPopupJsonFromLookup(
+        results: <FushiLookupResult>[
+          ...makeLookupResults(),
+          FushiLookupResult(
+            matched: '食べた',
+            deinflected: '食べる',
+            trace: const [],
+            preprocessorSteps: 0,
+            term: FushiTermResult(
+              expression: '喰べる',
+              reading: 'くべる',
+              rules: '',
+              glossaries: [
+                FushiGlossaryEntry(
+                  dictName: '大辞林',
+                  glossary: jsonEncode('別表記・別読み'),
+                  definitionTags: '',
+                  termTags: '',
+                ),
+              ],
+              frequencies: const [],
+              pitches: const [],
+            ),
+          ),
+        ],
+        maximumTerms: 1,
+      );
+      expect((jsonDecode(json) as List).length, 1);
     });
 
     test('returns empty array for empty results', () {

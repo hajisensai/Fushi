@@ -15,6 +15,7 @@ import 'package:fushi/src/mining/gal_hook_failure_text.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
+import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
@@ -285,6 +286,8 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         workdir: game.workdir,
         gameId: game.id,
         gameTitle: game.displayName,
+        japaneseLocaleMode:
+            galJapaneseLocaleModeFromKey(game.japaneseLocaleMode),
       );
       if (!mounted) return;
       // 每种结果都播报（BUG-1089）。旧实现只在 `!launched` 时说话，可注入降级和

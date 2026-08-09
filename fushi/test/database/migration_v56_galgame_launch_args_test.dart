@@ -73,7 +73,7 @@ CREATE TABLE galgame_sessions (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 74,
+    expect(db.schemaVersion, 75,
         reason: 'v56 给 galgames 加 launch_args（可配置游戏启动参数）');
 
     final GalgameRow? legacy = await db.getGalgame('legacy_game');
