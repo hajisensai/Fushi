@@ -459,4 +459,55 @@ void main() {
     expect((await dbB.getMiningStatisticsBySource('book')).single.count, 7,
         reason: '旧后缀快照被跳过就会读不到 A 的状态');
   });
+
+  // v76：lookup_mining_counters 本地行 per-identity 可多行，wire 合并键仍是
+  // {title,sourceType,dateKey}。物化必须按 wire 键把多行求和——逐行上行会在
+  // 合并 map 构建时 last-wins 静默丢数（同名双视频只剩后一行的计数）。
+  test(
+      'v76: same-title multi-identity counter rows are SUMMED into one '
+      'wire record, not last-wins dropped', () async {
+    final FushiDatabase db = await _freshDb('agg_fold_');
+    addTearDown(db.close);
+    await db.addLookupCount(
+        bookKey: 'uid-1',
+        title: '同名',
+        sourceType: 'video',
+        dateKey: '2026-06-01',
+        delta: 3);
+    await db.addLookupCount(
+        bookKey: 'uid-2',
+        title: '同名',
+        sourceType: 'video',
+        dateKey: '2026-06-01',
+        delta: 4);
+    await db.addMineCountPerBook(
+        bookKey: 'uid-2',
+        title: '同名',
+        sourceType: 'video',
+        dateKey: '2026-06-01',
+        delta: 2);
+
+    final AggregateSnapshot snap =
+        await AggregateSyncService(db).materializeLocalSnapshot();
+    final List<LookupMiningRecord> records = snap.lookupMiningCounters
+        .where((LookupMiningRecord r) => r.title == '同名')
+        .toList();
+    expect(records, hasLength(1), reason: 'wire 键去重，一条 record');
+    expect(records.single.lookupCount, 7, reason: '3+4 求和，不 last-wins');
+    expect(records.single.mineCount, 2);
+    expect(records.single.bookKey, isNotNull, reason: 'metadata 取首个非空身份');
+  });
+
+  test(
+      'v76: no-identity counter rows travel with wire bookKey null '
+      '(byte-compatible with pre-v76 snapshots)', () async {
+    final FushiDatabase db = await _freshDb('agg_nullkey_');
+    addTearDown(db.close);
+    await db.addLookupCount(sourceType: 'book', dateKey: '2026-06-01');
+
+    final AggregateSnapshot snap =
+        await AggregateSyncService(db).materializeLocalSnapshot();
+    expect(snap.lookupMiningCounters.single.bookKey, isNull,
+        reason: "存储 '' 必须映射回 wire null，旧端字节语义不变");
+  });
 }

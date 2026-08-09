@@ -79,4 +79,69 @@ void main() {
     expect(agg.daily.length, 30);
     expect(agg.daily.every((d) => d.chars == 0), isTrue);
   });
+
+  group('v76 身份分组（v39 展示层收尾）', () {
+    VideoWatchStatisticRow rowU(
+            String title, String? uid, String dateKey, int chars, int ms) =>
+        VideoWatchStatisticRow(
+          id: 0,
+          title: title,
+          bookUid: uid,
+          dateKey: dateKey,
+          subtitleChars: chars,
+          watchTimeMs: ms,
+          lastModified: 0,
+        );
+
+    test('同名双视频各自一张 tile，不再合并（互串的另一半根治）', () {
+      final agg = computeVideoStats(
+        stats: [
+          rowU('同名', 'uid-1', '2026-06-06', 10, 1000),
+          rowU('同名', 'uid-2', '2026-06-06', 20, 2000),
+        ],
+        completed: const [],
+        now: now,
+      );
+      expect(agg.byVideo.length, 2);
+      expect(agg.byVideo.map((v) => v.bookUid).toSet(), {'uid-1', 'uid-2'});
+      expect(agg.byVideo.every((v) => v.title == '同名'), isTrue);
+    });
+
+    test('unique-title 遗留 NULL 行并入唯一 uid tile（主流场景仍单 tile）', () {
+      final agg = computeVideoStats(
+        stats: [
+          rowU('A', 'uid-1', '2026-06-06', 10, 1000),
+          rowU('A', null, '2026-06-01', 5, 500), // v39 前遗留
+        ],
+        completed: const [],
+        now: now,
+      );
+      expect(agg.byVideo.length, 1, reason: '一个视频跨新旧数据仍是单 tile');
+      final v = agg.byVideo.single;
+      expect(v.bookUid, 'uid-1');
+      expect(v.ms, 1500, reason: '遗留行时长并入');
+      expect(v.absorbedUnattributed, isTrue, reason: '删除连带判据');
+    });
+
+    test('歧义遗留行（同名多 uid）独立成无身份 tile，不瞎归属', () {
+      final agg = computeVideoStats(
+        stats: [
+          rowU('同名', 'uid-1', '2026-06-06', 10, 1000),
+          rowU('同名', 'uid-2', '2026-06-06', 20, 2000),
+          rowU('同名', null, '2026-06-01', 5, 500),
+        ],
+        completed: const [],
+        now: now,
+      );
+      expect(agg.byVideo.length, 3);
+      final orphan = agg.byVideo.singleWhere((v) => v.bookUid == null);
+      expect(orphan.ms, 500);
+      expect(
+          agg.byVideo
+              .where((v) => v.bookUid != null)
+              .every((v) => !v.absorbedUnattributed),
+          isTrue,
+          reason: '歧义时谁也不吸收，删除不连带');
+    });
+  });
 }

@@ -485,6 +485,41 @@ class AggregateSyncService {
     ];
   }
 
+  /// v76：lookup_mining_counters 本地行 per-identity 可多行（bookKey 进唯一键），
+  /// wire 合并键仍冻结在 {title, sourceType, dateKey}——直接逐行上行会在合并 map
+  /// 构建时 last-wins **静默丢数**（同 title 多行只剩最后一行）。按 wire 键把多行
+  /// 求和成单条 record；bookKey metadata 取首个非空身份（存储 '' = 无身份 → wire
+  /// null，与 v76 前的 wire 字节逐位一致）。
+  static List<LookupMiningRecord> _foldLookupMiningRows(
+      List<LookupMiningCounterRow> rows) {
+    final Map<String, LookupMiningRecord> byWireKey =
+        <String, LookupMiningRecord>{};
+    for (final LookupMiningCounterRow r in rows) {
+      final LookupMiningRecord record = LookupMiningRecord(
+        bookKey: r.bookKey.isEmpty ? null : r.bookKey,
+        title: r.title,
+        sourceType: r.sourceType,
+        dateKey: r.dateKey,
+        lookupCount: r.lookupCount,
+        mineCount: r.mineCount,
+      );
+      final LookupMiningRecord? existing = byWireKey[record.key];
+      if (existing == null) {
+        byWireKey[record.key] = record;
+      } else {
+        byWireKey[record.key] = LookupMiningRecord(
+          bookKey: existing.bookKey ?? record.bookKey,
+          title: existing.title,
+          sourceType: existing.sourceType,
+          dateKey: existing.dateKey,
+          lookupCount: existing.lookupCount + record.lookupCount,
+          mineCount: existing.mineCount + record.mineCount,
+        );
+      }
+    }
+    return byWireKey.values.toList();
+  }
+
   /// Reads the whole local aggregate state (four statistic tables + mining +
   /// lookup/mine per-book counters + favorite words + favorite-sentence pref
   /// blob) into a snapshot. Pure read, no mutation.
@@ -553,17 +588,7 @@ class AggregateSyncService {
             count: r.count,
           ),
       ],
-      lookupMiningCounters: <LookupMiningRecord>[
-        for (final LookupMiningCounterRow r in lookupMining)
-          LookupMiningRecord(
-            bookKey: r.bookKey,
-            title: r.title,
-            sourceType: r.sourceType,
-            dateKey: r.dateKey,
-            lookupCount: r.lookupCount,
-            mineCount: r.mineCount,
-          ),
-      ],
+      lookupMiningCounters: _foldLookupMiningRows(lookupMining),
       favoriteWords: <FavoriteWordRecord>[
         for (final FavoriteWordRow r in favWords)
           FavoriteWordRecord(

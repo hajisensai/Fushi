@@ -458,7 +458,7 @@ class FushiDatabase extends _$FushiDatabase {
   FushiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 75;
+  int get schemaVersion => 76;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1712,6 +1712,53 @@ class FushiDatabase extends _$FushiDatabase {
             if (await _tableExists('galgames') &&
                 !await _columnExists('galgames', 'japanese_locale_mode')) {
               await m.addColumn(galgames, galgames.japaneseLocaleMode);
+            }
+          }
+          if (from < 76) {
+            // v76（v39 的另一半）：lookup_mining_counters 的 book_key 进唯一键，
+            // 根治同名不同视频的查词/制卡计数互串（旧唯一键 {title,source_type,
+            // date_key} 不含身份，addLookupCount/addMineCountPerBook 匹配现有行时
+            // 忽略 bookKey → 同名视频合进同一行）。三步：
+            // ① NULL → ''（新列定义 NOT NULL DEFAULT ''；先归一再重建，避免
+            //    TableMigration 拷贝时违反非空约束）；
+            // ② alterTable 按当前 Dart 定义重建（唯一键换 {book_key,title,
+            //    source_type,date_key}——新键是旧键超集，既有行必仍唯一，重建
+            //    不可能撞约束）；
+            // ③ 按 title 唯一匹配回填身份（v39 同判据、同 SQL 形状）：book 行
+            //    JOIN epub_books、video 行 JOIN video_books；同名多条目/无匹配
+            //    保持 ''（读取端按 title 回退归并，见 stat_shared 的身份分组）。
+            // 回填用库表 JOIN 而非重算派生函数：sanitizeTtuFilename 在 app 层，
+            // fushi_core 不该复制一份实现出双真相源。
+            if (await _tableExists('lookup_mining_counters')) {
+              await customStatement(
+                  'UPDATE lookup_mining_counters SET book_key = '
+                  "''"
+                  ' WHERE book_key IS NULL');
+              await m.alterTable(TableMigration(lookupMiningCounters));
+              if (await _tableExists('epub_books')) {
+                await customStatement(
+                  'UPDATE lookup_mining_counters SET book_key = COALESCE(('
+                  ' SELECT eb.book_key FROM epub_books eb'
+                  ' WHERE eb.title = lookup_mining_counters.title'
+                  ' AND NOT EXISTS (SELECT 1 FROM epub_books eb2'
+                  '  WHERE eb2.title = eb.title'
+                  '  AND eb2.book_key != eb.book_key)'
+                  "), '') WHERE book_key = '' AND title != ''"
+                  " AND source_type = 'book'",
+                );
+              }
+              if (await _tableExists('video_books')) {
+                await customStatement(
+                  'UPDATE lookup_mining_counters SET book_key = COALESCE(('
+                  ' SELECT vb.book_uid FROM video_books vb'
+                  ' WHERE vb.title = lookup_mining_counters.title'
+                  ' AND NOT EXISTS (SELECT 1 FROM video_books vb2'
+                  '  WHERE vb2.title = vb.title'
+                  '  AND vb2.book_uid != vb.book_uid)'
+                  "), '') WHERE book_key = '' AND title != ''"
+                  " AND source_type = 'video'",
+                );
+              }
             }
           }
         },
@@ -5167,8 +5214,13 @@ class FushiDatabase extends _$FushiDatabase {
     int delta = 1,
   }) =>
       transaction(() async {
+        // v76：匹配键含身份（null 归一 ''）——同名不同视频各记各行，不再互串。
+        // 遗留 '' 行与新带身份行并存时各自独立累加，读取端按身份分组归并
+        // （v39 的 NULL 遗留行共存语义，见 stat_shared）。
+        final String identity = bookKey ?? '';
         final existing = await (select(lookupMiningCounters)
               ..where((t) =>
+                  t.bookKey.equals(identity) &
                   t.title.equals(title) &
                   t.sourceType.equals(sourceType) &
                   t.dateKey.equals(dateKey)))
@@ -5182,7 +5234,7 @@ class FushiDatabase extends _$FushiDatabase {
         } else {
           await into(lookupMiningCounters).insert(
             LookupMiningCountersCompanion.insert(
-              bookKey: Value(bookKey),
+              bookKey: Value(identity),
               title: Value(title),
               sourceType: sourceType,
               dateKey: dateKey,
@@ -5207,8 +5259,11 @@ class FushiDatabase extends _$FushiDatabase {
     int delta = 1,
   }) =>
       transaction(() async {
+        // v76：匹配键含身份（同 [addLookupCount]）。
+        final String identity = bookKey ?? '';
         final existing = await (select(lookupMiningCounters)
               ..where((t) =>
+                  t.bookKey.equals(identity) &
                   t.title.equals(title) &
                   t.sourceType.equals(sourceType) &
                   t.dateKey.equals(dateKey)))
@@ -5222,7 +5277,7 @@ class FushiDatabase extends _$FushiDatabase {
         } else {
           await into(lookupMiningCounters).insert(
             LookupMiningCountersCompanion.insert(
-              bookKey: Value(bookKey),
+              bookKey: Value(identity),
               title: Value(title),
               sourceType: sourceType,
               dateKey: dateKey,
@@ -5247,30 +5302,65 @@ class FushiDatabase extends _$FushiDatabase {
     required int count,
   }) =>
       transaction(() async {
-        final existing = await (select(lookupMiningCounters)
+        // v76：wire 协议冻结在 title 粒度（LookupMiningRecord 的合并键不含
+        // bookKey），本地行 v76 起 per-identity 可多行。三分支镜像
+        // [setVideoWatchStatistic] 的 v39 决策：
+        //  - 无行：落单行（带 wire metadata 身份，peer-only 桶保住身份）；
+        //  - 单行：行内 MAX（最常见路径，行为与 v76 前逐字节一致）；
+        //  - 多行：MAX 对象是「该 title 全部行之和」（物化端按 title 求和上
+        //    行，见 aggregate_sync 的 materializeLocalSnapshot），塌成单一
+        //    '' 权威行——身份混桶后逐 uid 归因不可判，'' 如实标未归因；总量
+        //    取 max(count, 本地和) 保 MAX-union 单调。启用同步的库该日行退
+        //    化回 title 粒度，与视频统计同为已知限制。
+        final rows = await (select(lookupMiningCounters)
               ..where((t) =>
                   t.title.equals(title) &
                   t.sourceType.equals(sourceType) &
                   t.dateKey.equals(dateKey)))
-            .getSingleOrNull();
-        if (existing != null) {
-          if (count > existing.lookupCount) {
-            await (update(lookupMiningCounters)
-                  ..where((t) => t.id.equals(existing.id)))
-                .write(
-                    LookupMiningCountersCompanion(lookupCount: Value(count)));
-          }
-        } else {
+            .get();
+        if (rows.isEmpty) {
           await into(lookupMiningCounters).insert(
             LookupMiningCountersCompanion.insert(
-              bookKey: Value(bookKey),
+              bookKey: Value(bookKey ?? ''),
               title: Value(title),
               sourceType: sourceType,
               dateKey: dateKey,
               lookupCount: Value(count),
             ),
           );
+          return;
         }
+        if (rows.length == 1) {
+          final LookupMiningCounterRow existing = rows.single;
+          if (count > existing.lookupCount) {
+            await (update(lookupMiningCounters)
+                  ..where((t) => t.id.equals(existing.id)))
+                .write(
+                    LookupMiningCountersCompanion(lookupCount: Value(count)));
+          }
+          return;
+        }
+        int sumLookup = 0, sumMine = 0;
+        for (final LookupMiningCounterRow r in rows) {
+          sumLookup += r.lookupCount;
+          sumMine += r.mineCount;
+        }
+        await (delete(lookupMiningCounters)
+              ..where((t) =>
+                  t.title.equals(title) &
+                  t.sourceType.equals(sourceType) &
+                  t.dateKey.equals(dateKey)))
+            .go();
+        await into(lookupMiningCounters).insert(
+          LookupMiningCountersCompanion.insert(
+            bookKey: const Value(''),
+            title: Value(title),
+            sourceType: sourceType,
+            dateKey: dateKey,
+            lookupCount: Value(count > sumLookup ? count : sumLookup),
+            mineCount: Value(sumMine),
+          ),
+        );
       });
 
   /// MAX-union 语义（非累加）：把 (title, sourceType, dateKey) 行的 [mineCount]
@@ -5283,29 +5373,55 @@ class FushiDatabase extends _$FushiDatabase {
     required int count,
   }) =>
       transaction(() async {
-        final existing = await (select(lookupMiningCounters)
+        // v76：三分支与 [setLookupCount] 对称，注释见彼处。
+        final rows = await (select(lookupMiningCounters)
               ..where((t) =>
                   t.title.equals(title) &
                   t.sourceType.equals(sourceType) &
                   t.dateKey.equals(dateKey)))
-            .getSingleOrNull();
-        if (existing != null) {
-          if (count > existing.mineCount) {
-            await (update(lookupMiningCounters)
-                  ..where((t) => t.id.equals(existing.id)))
-                .write(LookupMiningCountersCompanion(mineCount: Value(count)));
-          }
-        } else {
+            .get();
+        if (rows.isEmpty) {
           await into(lookupMiningCounters).insert(
             LookupMiningCountersCompanion.insert(
-              bookKey: Value(bookKey),
+              bookKey: Value(bookKey ?? ''),
               title: Value(title),
               sourceType: sourceType,
               dateKey: dateKey,
               mineCount: Value(count),
             ),
           );
+          return;
         }
+        if (rows.length == 1) {
+          final LookupMiningCounterRow existing = rows.single;
+          if (count > existing.mineCount) {
+            await (update(lookupMiningCounters)
+                  ..where((t) => t.id.equals(existing.id)))
+                .write(LookupMiningCountersCompanion(mineCount: Value(count)));
+          }
+          return;
+        }
+        int sumLookup = 0, sumMine = 0;
+        for (final LookupMiningCounterRow r in rows) {
+          sumLookup += r.lookupCount;
+          sumMine += r.mineCount;
+        }
+        await (delete(lookupMiningCounters)
+              ..where((t) =>
+                  t.title.equals(title) &
+                  t.sourceType.equals(sourceType) &
+                  t.dateKey.equals(dateKey)))
+            .go();
+        await into(lookupMiningCounters).insert(
+          LookupMiningCountersCompanion.insert(
+            bookKey: const Value(''),
+            title: Value(title),
+            sourceType: sourceType,
+            dateKey: dateKey,
+            lookupCount: Value(sumLookup),
+            mineCount: Value(count > sumMine ? count : sumMine),
+          ),
+        );
       });
 
   /// 取某来源（'book' / 'video'）的全部查词/制卡计数行，供统计页汇总 + per-book
@@ -5580,18 +5696,46 @@ class FushiDatabase extends _$FushiDatabase {
         await insertStatisticsTombstone(title, statSourceBook);
       });
 
-  /// 删除某视频（按 [title] 聚合）的纯统计：观看时长/字幕字数（video_watch_statistics）
-  /// 与查词/制卡计数（lookup_mining_counters 的 video 行）。同一事务内立一条 video
-  /// 墓碑防复活。与 [deleteReadingStatisticsForTitle] 同样不动收藏 / 制卡历史 / 小时日志。
-  Future<void> deleteVideoStatisticsForTitle(String title) =>
+  /// 删除某视频的纯统计：观看时长/字幕字数（video_watch_statistics）与查词/制卡
+  /// 计数（lookup_mining_counters 的 video 行）。同一事务内立一条 video 墓碑防复活。
+  /// 与 [deleteReadingStatisticsForTitle] 同样不动收藏 / 制卡历史 / 小时日志。
+  ///
+  /// v76（v39 的删除侧收尾）：旧版按 [title] 连坐删——删 A 视频统计把同名 B 的
+  /// per-uid 行一起删掉。改为身份感知：
+  ///  - [bookUid] 非空 = 删该 uid 的行；[includeUnattributed] 再连带该 title 的
+  ///    无身份遗留行（读取端把 unique-title 遗留行归并进该 uid 的 tile，删 tile
+  ///    即删其展示的全部行——见 stat_shared 的身份分组契约）；
+  ///  - [bookUid] 为 null = 只删该 title 的无身份遗留行（歧义遗留 tile）。
+  /// 墓碑维持 (title, sourceType)：wire 协议是 title 粒度，更细的墓碑对同步复活
+  /// 无判别力。同名另一视频的 per-uid 行不动，但其后续同步复活仍受 title 墓碑
+  /// 压制——已知限制，随 wire 升级 per-uid 一并解除。
+  Future<void> deleteVideoStatisticsForIdentity({
+    required String title,
+    String? bookUid,
+    bool includeUnattributed = false,
+  }) =>
       transaction(() async {
-        await (delete(videoWatchStatistics)
-              ..where((t) => t.title.equals(title)))
-            .go();
-        await (delete(lookupMiningCounters)
-              ..where((t) =>
-                  t.title.equals(title) & t.sourceType.equals(statSourceVideo)))
-            .go();
+        if (bookUid != null) {
+          await (delete(videoWatchStatistics)
+                ..where((t) => t.bookUid.equals(bookUid)))
+              .go();
+          await (delete(lookupMiningCounters)
+                ..where((t) =>
+                    t.bookKey.equals(bookUid) &
+                    t.sourceType.equals(statSourceVideo)))
+              .go();
+        }
+        if (bookUid == null || includeUnattributed) {
+          await (delete(videoWatchStatistics)
+                ..where((t) => t.title.equals(title) & t.bookUid.isNull()))
+              .go();
+          await (delete(lookupMiningCounters)
+                ..where((t) =>
+                    t.bookKey.equals('') &
+                    t.title.equals(title) &
+                    t.sourceType.equals(statSourceVideo)))
+              .go();
+        }
         await insertStatisticsTombstone(title, statSourceVideo);
       });
 
