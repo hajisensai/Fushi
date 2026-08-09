@@ -89,7 +89,7 @@ void main() {
     });
   });
 
-  group('deleteVideoStatisticsForTitle', () {
+  group('deleteVideoStatisticsForIdentity', () {
     test(
         'clears video watch + lookup/mining (video) rows and writes a video '
         'tombstone; a same-title book stays', () async {
@@ -101,7 +101,7 @@ void main() {
       await db.addLookupCount(
           title: 'A', sourceType: 'video', dateKey: '2026-07-05');
 
-      await db.deleteVideoStatisticsForTitle('A');
+      await db.deleteVideoStatisticsForIdentity(title: 'A');
 
       expect(await db.getAllVideoWatchStatistics(), isEmpty);
       expect(await db.getLookupMiningCountersBySource('video'), isEmpty);
@@ -111,6 +111,70 @@ void main() {
       final Set<(String, String)> tombstones =
           await db.getStatisticsTombstoneKeys();
       expect(tombstones, contains(('A', 'video')));
+    });
+
+    test(
+        'v76: uid-scoped delete leaves a same-title sibling video untouched '
+        '(no more collateral title delete)', () async {
+      final FushiDatabase db = await _openDb();
+      // Same title, two identities (v39 storage model).
+      await db.addVideoWatchStatistic(
+          title: 'A',
+          bookUid: 'uid-1',
+          dateKey: '2026-07-05',
+          subtitleChars: 10,
+          watchTimeMs: 5);
+      await db.addVideoWatchStatistic(
+          title: 'A',
+          bookUid: 'uid-2',
+          dateKey: '2026-07-05',
+          subtitleChars: 20,
+          watchTimeMs: 7);
+      await db.addLookupCount(
+          bookKey: 'uid-1',
+          title: 'A',
+          sourceType: 'video',
+          dateKey: '2026-07-05');
+      await db.addLookupCount(
+          bookKey: 'uid-2',
+          title: 'A',
+          sourceType: 'video',
+          dateKey: '2026-07-05');
+
+      // Ambiguous title → tile absorbs nothing; delete uid-1 only.
+      await db.deleteVideoStatisticsForIdentity(
+          title: 'A', bookUid: 'uid-1', includeUnattributed: false);
+
+      final List<VideoWatchStatisticRow> watch =
+          await db.getAllVideoWatchStatistics();
+      expect(watch.single.bookUid, 'uid-2',
+          reason: 'sibling same-title video keeps its per-uid rows');
+      final List<LookupMiningCounterRow> counters =
+          await db.getLookupMiningCountersBySource('video');
+      expect(counters.single.bookKey, 'uid-2');
+    });
+
+    test(
+        'v76: includeUnattributed sweeps legacy NULL/empty-identity rows of '
+        'the same title along with the uid rows', () async {
+      final FushiDatabase db = await _openDb();
+      await db.addVideoWatchStatistic(
+          title: 'A',
+          bookUid: 'uid-1',
+          dateKey: '2026-07-05',
+          subtitleChars: 10,
+          watchTimeMs: 5);
+      // Legacy row (no identity) of the same title.
+      await db.addVideoWatchStatistic(
+          title: 'A', dateKey: '2026-07-04', subtitleChars: 3, watchTimeMs: 2);
+      await db.addLookupCount(
+          title: 'A', sourceType: 'video', dateKey: '2026-07-04');
+
+      await db.deleteVideoStatisticsForIdentity(
+          title: 'A', bookUid: 'uid-1', includeUnattributed: true);
+
+      expect(await db.getAllVideoWatchStatistics(), isEmpty);
+      expect(await db.getLookupMiningCountersBySource('video'), isEmpty);
     });
   });
 
@@ -133,7 +197,7 @@ void main() {
       final FushiDatabase db = await _openDb();
       await db.addVideoWatchStatistic(
           title: 'V', dateKey: '2026-07-05', subtitleChars: 1, watchTimeMs: 1);
-      await db.deleteVideoStatisticsForTitle('V');
+      await db.deleteVideoStatisticsForIdentity(title: 'V');
       expect(await db.getStatisticsTombstoneKeys(), contains(('V', 'video')));
 
       await db.addVideoWatchStatistic(

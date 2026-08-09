@@ -56,7 +56,8 @@ void main() {
           await db.getLookupMiningCountersBySource('book');
       expect(rows.length, 1);
       expect(rows.single.title, '');
-      expect(rows.single.bookKey, isNull);
+      // v76 起无身份存 ''（列非空，'' 进唯一键防 NULL 互异撑爆 no-book 行）。
+      expect(rows.single.bookKey, '');
       expect(rows.single.lookupCount, 2);
     });
 

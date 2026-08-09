@@ -648,10 +648,17 @@ class MiningStatistics extends Table {
 ///
 /// setLookupCount / setMineCount 用 MAX-union 语义（非累加），为将来备份合并 / 云聚合
 /// 幂等重导留口（本期 sync 不接）。
+///
+/// [bookKey] 自 v76 起从可空改 NOT NULL DEFAULT ''，且**进唯一键**——v39 给
+/// video_watch_statistics 修的「同名不同视频互串」在本表是同一个病：旧唯一键
+/// {title, sourceType, dateKey} 不含身份，两个同名视频的查词/制卡计数合进同一行。
+/// '' = 无书查词（title 也 ''）或 v76 前无法唯一归因的遗留行；''+title 仍在唯一键内，
+/// 遗留行按 title 互不合并。迁移按 epub_books/video_books 的 title 唯一匹配回填
+/// （v39 同判据），歧义保持 ''（读取端按 title 回退归并，见 stat_shared）。
 @DataClassName('LookupMiningCounterRow')
 class LookupMiningCounters extends Table {
   IntColumn get id => integer().autoIncrement()();
-  TextColumn get bookKey => text().nullable()();
+  TextColumn get bookKey => text().withDefault(const Constant(''))();
   TextColumn get title => text().withDefault(const Constant(''))();
   TextColumn get sourceType => text()(); // 'book' | 'video'
   TextColumn get dateKey => text()();
@@ -660,7 +667,7 @@ class LookupMiningCounters extends Table {
 
   @override
   List<Set<Column>> get uniqueKeys => [
-        {title, sourceType, dateKey},
+        {bookKey, title, sourceType, dateKey},
       ];
 }
 
