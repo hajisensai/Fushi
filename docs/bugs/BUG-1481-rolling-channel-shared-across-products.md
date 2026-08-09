@@ -72,6 +72,14 @@ develop 那一族，**桥包的 apk 每次 fushi 构建都会被判为 stale 删
   过滤点放在 `_downloadable()`——这是三个平台 `selectAsset` 把原始 asset map 变成候选的唯一
   漏斗，在漏斗上过滤则新增平台自动继承，也没有「某个调用点忘了传参」的空档。
 
+- `tool/check_release_policy.ps1`：原本硬断言字面量 `ROLLING_DEBUG_TAG=debug-rolling`，
+  改 tag 后它会让**发布工作流第一步就失败**（这条守卫是 CI step 1，Dart 定向测试与目录
+  枚举型守卫都扫不到 `.ps1`，是第一轮漏网的原因）。改成校验不变式本身：必须是固定
+  字面量（TODO-1049 的「不再每次 push 堆一个 prerelease」）、必须以 `debug-rolling`
+  结尾、两个 workflow 必须取同一个值（原字面量顺带保证了这点，换成模式后要显式补上，
+  否则同一 commit 的 Android 与桌面产物会落到两个不同 release）、且不得是无前缀的
+  `debug-rolling`（BUG-1481 本身）。
+
 桥包侧对称的那半（Android 自更新绝不选 `fushi-*`）已在 `561ea2174` 落地。
 
 ### 副作用与残余风险

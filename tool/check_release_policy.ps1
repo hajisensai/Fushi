@@ -118,10 +118,53 @@ Require-Text 'tool/publish_update_manifest.sh' $manifestScript 'DOWNLOAD_TAG' 'm
 foreach ($relativePath in $workflowPaths) {
   $content = Read-RepoFile $relativePath
   Require-Text $relativePath $content 'tag_name: ${{ steps.channel.outputs.publish_tag }}' 'the managed release must publish under publish_tag (rolling `debug-rolling` for debug), not the versioned tag (TODO-1049)'
-  Require-Text $relativePath $content 'ROLLING_DEBUG_TAG=debug-rolling' 'the debug channel must publish to the fixed rolling release tag `debug-rolling` (TODO-1049)'
   Require-Text $relativePath $content 'PUBLISH_TAG="$ROLLING_DEBUG_TAG"' 'debug channel PUBLISH_TAG must be the rolling tag so debug prereleases stop accumulating (TODO-1049)'
   Require-Text $relativePath $content 'DOWNLOAD_TAG: ${{ steps.channel.outputs.publish_tag }}' 'manifest publisher must form asset URLs under the actual release tag (publish_tag), not the versioned tag (TODO-1049)'
   Require-Text $relativePath $content 'echo "tag=$TAG"' 'the versioned tag must still be emitted so the manifest `tag` field drives client version comparison (TODO-1049)'
+}
+
+# TODO-1049 + BUG-1481: the rolling debug tag used to be asserted as the literal
+# `ROLLING_DEBUG_TAG=debug-rolling`. That literal encoded THREE invariants at
+# once and BUG-1481 had to change one of them, so assert the invariants directly
+# instead of the spelling:
+#   1. It is a fixed literal (no seq/sha/expression) -- that is what stops debug
+#      builds from piling up one prerelease per push (TODO-1049).
+#   2. Android and desktop use the SAME value, so both platforms' assets for one
+#      commit land on ONE release. The old literal enforced this by accident;
+#      losing it would silently split each debug build across two releases.
+#   3. It is product-scoped, i.e. NOT the bare historical `debug-rolling`
+#      (BUG-1481). That name is frozen for the `app.hibiki.reader` family; if
+#      Fushi took it back, both families' assets would share one release again
+#      and the prune step -- which groups candidates by PLATFORM only -- would
+#      delete the lower-sequence family's assets on every build.
+$rollingTags = @{}
+foreach ($relativePath in $workflowPaths) {
+  $content = Read-RepoFile $relativePath
+  $found = [regex]::Matches($content, 'ROLLING_DEBUG_TAG=(\S+)')
+  if ($found.Count -eq 0) {
+    $failures.Add("${relativePath}: missing a ROLLING_DEBUG_TAG assignment (the debug channel must publish to one fixed rolling release tag, TODO-1049)")
+    continue
+  }
+  $values = @($found | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+  if ($values.Count -ne 1) {
+    $failures.Add("${relativePath}: ROLLING_DEBUG_TAG is assigned conflicting values ($($values -join ', ')); all debug jobs in one workflow must publish to the same rolling release (TODO-1049)")
+    continue
+  }
+  $tag = $values[0]
+  if ($tag -notmatch '^[A-Za-z0-9._-]+$') {
+    $failures.Add("${relativePath}: ROLLING_DEBUG_TAG='$tag' is not a fixed literal; a computed tag reintroduces one prerelease per push (TODO-1049)")
+  }
+  if (-not $tag.EndsWith('debug-rolling')) {
+    $failures.Add("${relativePath}: ROLLING_DEBUG_TAG='$tag' must end with 'debug-rolling' so the rolling debug release stays recognizable (TODO-1049)")
+  }
+  if ($tag -eq 'debug-rolling') {
+    $failures.Add("${relativePath}: ROLLING_DEBUG_TAG='debug-rolling' is frozen for the app.hibiki.reader family; Fushi must use a product-scoped rolling tag or the two families share one release and prune deletes the lower-sequence family (BUG-1481)")
+  }
+  $rollingTags[$relativePath] = $tag
+}
+$distinctRollingTags = @($rollingTags.Values | Sort-Object -Unique)
+if ($rollingTags.Count -eq $workflowPaths.Count -and $distinctRollingTags.Count -gt 1) {
+  $failures.Add(".github/workflows: release.yml and release-desktop.yml disagree on ROLLING_DEBUG_TAG ($($distinctRollingTags -join ' vs ')); Android and desktop must land on the SAME rolling release for one commit (TODO-1049)")
 }
 
 $buildGradle = Read-RepoFile 'fushi/android/app/build.gradle'
