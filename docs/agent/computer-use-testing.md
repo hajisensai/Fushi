@@ -29,8 +29,8 @@ Computer Use 流程验证的是「用户真的看见并操作到的 app 状态�
   media_kit（音频 / 视频）初始化需要 DWM 合成的实窗，纯离屏 parked 窗口下
   `initialiseAudioHandler()` 会**永久挂起**（曾实测挂 1 小时）。
 
-**测试与用户的 Hibiki 并存**：测试 exe 在 `FUSHI_TEST_HIDDEN` 下跳过全局单实例互斥量
-（用隔离 WebView2 profile，无锁冲突），故你开着 Hibiki 也能跑、互不干扰
+**测试与用户的 Fushi 并存**：测试 exe 在 `FUSHI_TEST_HIDDEN` 下跳过全局单实例互斥量
+（用隔离 WebView2 profile，无锁冲突），故你开着 Fushi 也能跑、互不干扰
 （见 `windows/runner/main.cpp`）。
 
 **抓图 / 开页助手** `integration_test/helpers/observe_capture.dart`：
@@ -41,8 +41,8 @@ Computer Use 流程验证的是「用户真的看见并操作到的 app 状态�
 
 **确定性开页钩子**（离屏 / 非焦点下焦点驱动激活偶发不触发，故用这些直达；均 debug/profile
 only，`@visibleForTesting`）：`HomePage.debugSelectTab(tab)` 切顶层 tab、
-`ReaderHibikiHistoryPage.debugOpenBook(mediaIdentifier)` 走书卡同路径 openMedia 开书、
-`HomeVideoPage.debugRefreshVideos()` 重查视频列表、`ReaderHibikiPage.debugCaptureWebView`
+`ReaderFushiHistoryPage.debugOpenBook(mediaIdentifier)` 走书卡同路径 openMedia 开书、
+`HomeVideoPage.debugRefreshVideos()` 重查视频列表、`ReaderFushiPage.debugCaptureWebView`
 抓 WebView。
 
 **素材生成器** `integration_test/helpers/media_fixtures.dart` + `library_fixture.dart`：

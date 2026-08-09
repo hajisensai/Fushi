@@ -12,7 +12,7 @@
 # --file 的 DB **锚定脚本所在仓库根**（$0/../.vibe-coxswain/board.db 的绝对路径，
 # VIBE_COXSWAIN_DB 显式设置时才让位），并要求 DB 已存在——绝不静默新建空库落板
 # （错 cwd 落错库还报成功是对抗审查抓过的 major）。
-# 环境变量：PR_SWEEP_REPO（默认 hajisensai/hibiki）/ PR_SWEEP_BASE（默认 develop）
+# 环境变量：PR_SWEEP_REPO（默认 hajisensai/Fushi）/ PR_SWEEP_BASE（默认 develop）
 #           PR_SWEEP_SELF（默认 hajisensai）/ PR_SWEEP_LIMIT（默认 40）
 # 输出供值班 PM 与看板对照：「自动处理」区每行都应有对应 todo（按 PR 号/分支名
 # grep 看板），没有就建（--file 已自动建）；「外部 PR」区只读不动。
@@ -55,7 +55,7 @@ for arg in "$@"; do
   esac
 done
 
-REPO="${PR_SWEEP_REPO:-hajisensai/hibiki}"
+REPO="${PR_SWEEP_REPO:-hajisensai/Fushi}"
 BASE="${PR_SWEEP_BASE:-develop}"
 SELF="${PR_SWEEP_SELF:-hajisensai}"
 LIMIT="${PR_SWEEP_LIMIT:-40}"

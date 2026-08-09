@@ -1,4 +1,4 @@
-# Launch the Hibiki Flutter app in debug mode (PowerShell).
+# Launch the Fushi Flutter app in debug mode (PowerShell).
 #
 # Usage (from the repo root):
 #   .\run.ps1                    # run on Windows desktop (default)
@@ -13,7 +13,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $Root = $PSScriptRoot
-$AppDir = Join-Path $Root "hibiki"
+$AppDir = Join-Path $Root "fushi"
 
 $Flutter = $env:FLUTTER_BIN
 if (-not $Flutter) {

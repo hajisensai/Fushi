@@ -1,12 +1,12 @@
 # Galgame Hook 引擎适配 SOP
 
-本流程用于 Hibiki 的日语学习制卡功能：从用户本地、合法取得的游戏中采集当前文本、逐句语音和画面，供用户制作 Anki 卡片。它不用于复制或分发游戏内容。
+本流程用于 Fushi 的日语学习制卡功能：从用户本地、合法取得的游戏中采集当前文本、逐句语音和画面，供用户制作 Anki 卡片。它不用于复制或分发游戏内容。
 
 总设计见 [design.md](../specs/galgame-mining/design.md)，阶段计划与完成证据见 [engine-adapter-plan.md](../specs/galgame-mining/engine-adapter-plan.md)，当前支持状态以 `native/galgame_hook/engine-support.yaml` 为唯一真相源。
 
 ## 1. 边界与开工条件
 
-- native 采集组件在本仓 `native/galgame_hook/`（源码已合仓）。**进程/链接边界不变且是硬规则：绝不链接进 `Hibiki.exe`**。`tools/build_distribution.ps1` 单独构建 `voice_hook_<arch>.zip`；两架构 zip + `.sha256` 随 Windows 主包进入 `galgame_helper/` 供离线首装，同时由根 `.github/workflows/voice-hook-helper.yml` 发布供旧包与后台更新。app 校验后解压到 `voice_hook/<arch>/`，helper 仍以隔离子进程/DLL 运行。
+- native 采集组件在本仓 `native/galgame_hook/`（源码已合仓）。**进程/链接边界不变且是硬规则：绝不链接进 `fushi.exe`**。`tools/build_distribution.ps1` 单独构建 `voice_hook_<arch>.zip`；两架构 zip + `.sha256` 随 Windows 主包进入 `galgame_helper/` 供离线首装，同时由根 `.github/workflows/voice-hook-helper.yml` 发布供旧包与后台更新。app 校验后解压到 `voice_hook/<arch>/`，helper 仍以隔离子进程/DLL 运行。
 - 合仓的依据：迁出独立仓库的真正根因是「主仓库那份 workflow 不在默认分支、无法 workflow_dispatch」，合仓后 workflow 就在 develop 上，问题消失；而「必被杀软报毒」经实测证伪（Defender 签名 1.455.357.0 对全部文件与 zip 零检出，同轮 EICAR 阳性对照正常报出，见 hibiki-hook#8）。国产杀软未验证，若被拦按误报处理。
 - 消费端（IPC 消费、文本与音频配对、制卡 UI）与 native 采集实现现在同仓，**改 IPC 契约必须两侧在同一个 PR 里落地**——这正是合仓要消除的版本不同步。引擎支持矩阵唯一真相源是 `native/galgame_hook/docs/engine-support.md`（由同目录 `engine-support.yaml` 自动生成），不得另存副本。
 - 一引擎一任务、一独立 worktree；批量引擎任务只负责排队和汇总，不在同一实现任务里交叉试错。worktree 先运行 `tool/setup_worktree.ps1`，并按根 `CLAUDE.md` 登记 ownership。
@@ -79,7 +79,7 @@ powershell -ExecutionPolicy Bypass -File tool/galhook.ps1 probe 'D:\Games\Title\
 引擎 id 使用小写字母、数字和下划线：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tool/galhook.ps1 new example_engine --fushi-root 'C:\src\hibiki'
+powershell -ExecutionPolicy Bypass -File tool/galhook.ps1 new example_engine --fushi-root 'C:\src\Fushi'
 ```
 
 命令会拒绝覆盖已有文件，并生成或注册：
@@ -111,7 +111,7 @@ fixture 包含 `config`、按时间排序的 `events` 和 `expected`。至少覆
 
 不要把真实台词、语音字节或可还原游戏内容放进 fixture。失败时修 profile、adapter 或公共配对状态机，不通过延时、重试、吞异常或 fixture 特判绕过。
 
-## 6. native 与 Hibiki 验证门
+## 6. native 与 Fushi 验证门
 
 在 `native/galgame_hook/` 下至少执行：
 
@@ -129,7 +129,7 @@ cmake --build build-x86 --config Release
 ctest --test-dir build-x86 -C Release --output-on-failure
 ```
 
-若改动 Hibiki 的 Dart/Flutter 消费端，则在 `fushi/` 下按根规则执行 `dart format .`、相关定向测试，再执行完整 `flutter test` 与 `flutter analyze`。工具自身崩溃要原样记录，不能当作代码通过；可补充 `dart analyze` 的有效结果，但不能伪装成完整 analyze。
+若改动 Fushi 的 Dart/Flutter 消费端，则在 `fushi/` 下按根规则执行 `dart format .`、相关定向测试，再执行完整 `flutter test` 与 `flutter analyze`。工具自身崩溃要原样记录，不能当作代码通过；可补充 `dart analyze` 的有效结果，但不能伪装成完整 analyze。
 
 任何必需命令、双架构构建、replay、定向测试或完整测试被跳过、崩溃或因环境阻塞时，逐项记录命令和原因；该能力只能停在 `implemented_unverified`。Loopback 通过只证明降级链可用，不能替代引擎 Hook、逐句配对或纯人声验证。
 
@@ -150,4 +150,4 @@ ctest --test-dir build-x86 -C Release --output-on-failure
 
 ## 8. 提交与交接
 
-native 能力、Hibiki 消费端和进度文档可按审查边界拆提交，但同一 IPC 契约变更必须在一个 PR 内同时落两侧；不要把无行为变化重构与能力扩展混成一个提交。交接报告列出主仓提交哈希、全部验证命令、真实样本证据、仍未验证项和后续候选。许可方面，文本优先复用隔离运行的 LunaHook（GPLv3）；资源格式可参考 GARbro（MIT），保留必要署名与许可证；禁止 vendoring NonCommercial 或其他受限许可的二进制和数据。
+native 能力、Fushi 消费端和进度文档可按审查边界拆提交，但同一 IPC 契约变更必须在一个 PR 内同时落两侧；不要把无行为变化重构与能力扩展混成一个提交。交接报告列出主仓提交哈希、全部验证命令、真实样本证据、仍未验证项和后续候选。许可方面，文本优先复用隔离运行的 LunaHook（GPLv3）；资源格式可参考 GARbro（MIT），保留必要署名与许可证；禁止 vendoring NonCommercial 或其他受限许可的二进制和数据。

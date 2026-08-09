@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-  Hibiki cross-platform debug tool - trigger app events via API calls without mouse/click.
+  Fushi cross-platform debug tool - trigger app events via API calls without mouse/click.
   Supports Android (ADB) and Flutter VM Service (all platforms).
 
 .DESCRIPTION
@@ -46,7 +46,7 @@ param(
     [string]$Backend = 'auto',
 
     [string]$Device = '',
-    [string]$Package = 'app.hibiki.reader',
+    [string]$Package = 'app.fushi.reader',
     [string]$VmUrl = '',
     [switch]$Quiet,
     [switch]$Raw
@@ -505,7 +505,7 @@ function Handle-Prefs {
 
         if (-not $CmdArgs -or $CmdArgs.Count -eq 0) {
             # List preference keys from Drift SQLite
-            $result = Adb-Shell "run-as $Package sqlite3 databases/hibiki.db `"SELECT key FROM preferences ORDER BY key`" 2>&1"
+            $result = Adb-Shell "run-as $Package sqlite3 databases/fushi.db `"SELECT key FROM preferences ORDER BY key`" 2>&1"
             if (-not $result -or $result -like '*Error*') {
                 # Fallback: list SharedPreferences files
                 $result = Adb-Shell "run-as $Package ls shared_prefs/ 2>/dev/null"
@@ -519,12 +519,12 @@ function Handle-Prefs {
         if ($CmdArgs.Count -ge 2) {
             $value = $CmdArgs[1]
             $sql = "INSERT OR REPLACE INTO preferences (key, value) VALUES ('$key', '$value')"
-            $result = Adb-Shell "run-as $Package sqlite3 databases/hibiki.db `"$sql`" 2>&1"
+            $result = Adb-Shell "run-as $Package sqlite3 databases/fushi.db `"$sql`" 2>&1"
             if (-not $result) { $result = "set (restart app to apply)" }
             Format-Event 'android' 'state' 'prefs_set' @{ key = $key; value = $value } $result
         } else {
             $sql = "SELECT value FROM preferences WHERE key='$key'"
-            $result = Adb-Shell "run-as $Package sqlite3 databases/hibiki.db `"$sql`" 2>&1"
+            $result = Adb-Shell "run-as $Package sqlite3 databases/fushi.db `"$sql`" 2>&1"
             if (-not $result) { $result = "(not set)" }
             Format-Event 'android' 'state' 'prefs_get' @{ key = $key } $result
         }
@@ -558,7 +558,7 @@ function Handle-DbQuery {
     }
 
     $escaped = $sql -replace '"', '\"'
-    $result = Adb-Shell "run-as $Package sqlite3 databases/hibiki.db `"$escaped`""
+    $result = Adb-Shell "run-as $Package sqlite3 databases/fushi.db `"$escaped`""
     if (-not $result) { $result = "(empty result)" }
     Format-Event 'android' 'state' 'db_query' @{ sql = $sql } $result
 }
@@ -769,7 +769,7 @@ function Handle-Script {
 }
 
 function Handle-Help {
-    Write-Output "Hibiki Debug Tool - Cross-platform event triggering via API calls"
+    Write-Output "Fushi Debug Tool - Cross-platform event triggering via API calls"
     Write-Output ""
     Write-Output "INTENT COMMANDS (trigger app entry points):"
     Write-Output "  search <text>           WEB_SEARCH intent -> dictionary lookup"
@@ -802,7 +802,7 @@ function Handle-Help {
     Write-Output "  prefs                   List preference files/keys"
     Write-Output "  prefs <key>             Read preference value"
     Write-Output "  prefs <key> <value>     Set preference value"
-    Write-Output "  db-query <sql>          Direct SQLite query on hibiki.db"
+    Write-Output "  db-query <sql>          Direct SQLite query on fushi.db"
     Write-Output ""
     Write-Output "DEBUG:"
     Write-Output "  logcat [filter]         Filtered app logs (PID-based)"
@@ -827,7 +827,7 @@ function Handle-Help {
     Write-Output "OPTIONS:"
     Write-Output "  -Backend android|vm|auto   Force backend (default: auto-detect)"
     Write-Output "  -Device <serial>           ADB device serial"
-    Write-Output "  -Package <id>              App package (default: app.hibiki.reader)"
+    Write-Output "  -Package <id>              App package (default: app.fushi.reader)"
     Write-Output "  -VmUrl <url>               Flutter VM service WebSocket URL"
     Write-Output "  -Quiet                     Suppress formatted output"
     Write-Output "  -Raw                       Return PSObject instead of text"

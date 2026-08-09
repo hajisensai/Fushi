@@ -27,8 +27,8 @@ Gatekeeper 拦」的正解。
 |---|---|---|
 | iOS | `app.fushi.reader` | App Store / TestFlight 用；旧 `app.hibiki.reader` 已废弃 |
 | macOS | `app.fushi.reader` | 原 `com.example.hibiki` |
-| Android | `app.hibiki.reader` | **不动**：改了等于所有现有用户断更新 |
-| Linux | `com.example.hibiki` | 未在本轮范围内 |
+| Android | `app.fushi.reader` | 新包身份（`android/app/build.gradle` 的 `namespace`/`applicationId` 是唯一真相源）；老包 `app.hibiki.reader` 只作为过渡桥包与迁移探测目标存活 |
+| Linux | `app.fushi.reader` | `linux/CMakeLists.txt` 的 `APPLICATION_ID`（原 `com.example.hibiki`） |
 
 **macOS 换包名是有代价且已被明确接受的决定。** Flutter 的
 `getApplicationSupportDirectory()` 在 macOS 上返回
@@ -38,10 +38,14 @@ Gatekeeper 拦」的正解。
 下选择「不做迁移」。将来若要补迁移，落点是 `lib/src/storage/data_root_migrator.dart`
 旁边新加一条「平台 support 根变更」的一次性搬迁，而不是改 `AppPaths` 的解析逻辑。
 
-Android 的 `applicationId` 保持 `app.hibiki.reader` 是**硬约束**，不是遗漏：Play 商店
-以它作为 app 身份，改了现有用户全部断更新。同理，代码里的 MethodChannel 名
-（`app.hibiki.reader/anki`、`app.hibiki.reader/voice_hook`）只是字符串常量，与任何
-平台的 bundle ID 无关，跟着改毫无收益。
+**Android 换包名同样是有代价且已被明确接受的决定。** 改 `applicationId` 在 Android 上
+等于全新应用：老包 `app.hibiki.reader` 的私有数据目录不共享，Play/侧载更新链路也断。
+方案是**桥包迁移**而不是「不改」——老包出一版带导出器的过渡版，新包 `app.fushi.reader`
+带导入器（`lib/src/migration/`，旧包身份收口在常量 `kHibikiPackageName`），完整决策与
+阶段见 [docs/plans/2026-08-06-rename-fushi-migration.md](../plans/2026-08-06-rename-fushi-migration.md)。
+MethodChannel 前缀已同批切到 `app.fushi.reader/*`（Dart 真相源
+`fushi/lib/src/utils/misc/channel_constants.dart` 的 `FushiChannels._prefix`，Java 侧
+`app.fushi.reader.constants.ChannelNames` 必须同步）。
 
 ## 仓库 Secrets 清单
 

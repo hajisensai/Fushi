@@ -23,7 +23,7 @@
 
 守卫 `fushi/test/focus/media_page_focus_ownership_guard_test.dart` 禁止媒体页出现**任何形式**的 `requestFocus`（按裸 token 扫、按文件放行——`FocusScope.of(context).requestFocus(node)` 和经局部变量中转同样拦得住）。**别为了省事绕过它**：统一之前视频页 29 处、阅读器页 28 处补丁各带一套略有出入的门控，新增一个覆盖层就漏一处归还（BUG-1167 即此），这是回不去的老路。
 
-唯一豁免：整个 `reader_hibiki/caret.part.dart`——popup header ↔ 正文之间的焦点来回是**页面内部**焦点转移（两个都归 Flutter 的节点之间搬运），不是「从原生控件手里夺回」。
+唯一豁免：整个 `reader_fushi/caret.part.dart`——popup header ↔ 正文之间的焦点来回是**页面内部**焦点转移（两个都归 Flutter 的节点之间搬运），不是「从原生控件手里夺回」。
 
 ## cause 不是装饰，判据真的按它分流
 

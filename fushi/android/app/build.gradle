@@ -197,7 +197,7 @@ android {
 
     applicationVariants.all { variant ->
         variant.outputs.all { output ->
-            def appName = "hibiki"
+            def appName = "fushi"
             def buildType = variant.buildType.name
             def architecture = output.getFilter(com.android.build.OutputFile.ABI)
             def newName

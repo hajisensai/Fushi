@@ -37,8 +37,8 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 
 默认 push 只发 debug 通道；beta/test 和 formal 都必须手动触发。任何 push 触发的 GitHub Release 都必须是 prerelease 且 `make_latest: false`，不得创建或更新 Latest/正式 release。
 
-- debug（push 自动）：`main` / `develop` push 会走 `.github/workflows/main.yml` 上传 Actions artifact，并走 `.github/workflows/release.yml` 发布 Android debug GitHub prerelease；同时走 `.github/workflows/release-desktop.yml` 发布 Windows debug installer、macOS app zip、iOS no-codesign IPA。Artifact 名称为 `hibiki-debug-apk-${{ github.sha }}`，Actions artifact APK 文件名为 `hibiki-<version>-<short-sha>-debug.apk`，保留 14 天；Android debug GitHub Release 使用 release-signed debug-channel APK，文件名为 `hibiki-<version>-debug.<seq>-<short-sha>-debug.apk`；Windows debug GitHub Release 使用 Inno Setup installer，文件名为 `hibiki-<version>-debug.<seq>-windows-setup.exe`；macOS 为 `fushi-<version>-debug.<seq>-macos.zip`；iOS 为 `fushi-<version>-debug.<seq>-ios.ipa`。Windows/macOS/iOS 都用同一个 `0.x.y-debug.<seq>` 作为 Flutter `--build-name`，保证安装后的 `PackageInfo.version` 能停止同一 debug release 的重复提示/自动安装。GitHub Release 的 git tag 固定为滚动的 `debug-rolling`（TODO-1049，见上「滚动 debug release」）；客户端版本比较用的版本化 tag 仍为 `v<version>-debug.<seq>+<short-sha>`（写进 manifest `tag` 字段）。同一 commit 的 Android/Windows/macOS/iOS 自动 debug 必须落到同一个 GitHub Release（即同一个 `debug-rolling` 滚动 release），且必须是 prerelease / non-Latest；各客户端必须按本平台资产后缀过滤，不能互相吃错平台资产，也不能等 beta/test 或 formal installer。
-- beta/test（手动）：通过 `.github/workflows/release.yml` 或 `.github/workflows/release-desktop.yml` 的 `workflow_dispatch` 选择 `beta`，或手动发布一个勾选 prerelease 且非 Latest 的 GitHub Release。Android 默认 tag 为 `v<version>-beta.<seq>`，产物包含 `hibiki-<version>-<short-sha>-debug.apk` 与 split ABI release APK `hibiki-<version>-<abi>.apk`；Windows 产物为 `hibiki-<version>-windows-setup.exe`；macOS 产物为 `fushi-<version>-macos.zip`；iOS 产物为 `fushi-<version>-ios.ipa`。如需 Android、Windows、macOS、iOS 合并到同一 beta/test Release，两个手动 workflow 使用同一个 `tag_name`；未指定时，同一 commit 上两条 workflow 的默认 `<seq>` 相同，也会合并到同一 Release。
+- debug（push 自动）：`main` / `develop` push 会走 `.github/workflows/main.yml` 上传 Actions artifact，并走 `.github/workflows/release.yml` 发布 Android debug GitHub prerelease；同时走 `.github/workflows/release-desktop.yml` 发布 Windows debug installer、macOS app zip、iOS no-codesign IPA。Artifact 名称为 `fushi-debug-apk-${{ github.sha }}`，Actions artifact APK 文件名为 `fushi-<version>-<short-sha>-debug.apk`，保留 14 天；Android debug GitHub Release 使用 release-signed debug-channel APK，文件名为 `fushi-<version>-debug.<seq>-<short-sha>-debug.apk`；Windows debug GitHub Release 使用 Inno Setup installer，文件名为 `fushi-<version>-debug.<seq>-windows-setup.exe`；macOS 为 `fushi-<version>-debug.<seq>-macos.zip`；iOS 为 `fushi-<version>-debug.<seq>-ios.ipa`。Windows/macOS/iOS 都用同一个 `0.x.y-debug.<seq>` 作为 Flutter `--build-name`，保证安装后的 `PackageInfo.version` 能停止同一 debug release 的重复提示/自动安装。GitHub Release 的 git tag 固定为滚动的 `debug-rolling`（TODO-1049，见上「滚动 debug release」）；客户端版本比较用的版本化 tag 仍为 `v<version>-debug.<seq>+<short-sha>`（写进 manifest `tag` 字段）。同一 commit 的 Android/Windows/macOS/iOS 自动 debug 必须落到同一个 GitHub Release（即同一个 `debug-rolling` 滚动 release），且必须是 prerelease / non-Latest；各客户端必须按本平台资产后缀过滤，不能互相吃错平台资产，也不能等 beta/test 或 formal installer。
+- beta/test（手动）：通过 `.github/workflows/release.yml` 或 `.github/workflows/release-desktop.yml` 的 `workflow_dispatch` 选择 `beta`，或手动发布一个勾选 prerelease 且非 Latest 的 GitHub Release。Android 默认 tag 为 `v<version>-beta.<seq>`，产物包含 `fushi-<version>-<short-sha>-debug.apk` 与 split ABI release APK `fushi-<version>-<abi>.apk`；Windows 产物为 `fushi-<version>-windows-setup.exe`；macOS 产物为 `fushi-<version>-macos.zip`；iOS 产物为 `fushi-<version>-ios.ipa`。如需 Android、Windows、macOS、iOS 合并到同一 beta/test Release，两个手动 workflow 使用同一个 `tag_name`；未指定时，同一 commit 上两条 workflow 的默认 `<seq>` 相同，也会合并到同一 Release。
 - formal（手动）：通过手动 GitHub Release 或 `workflow_dispatch` 选择 `formal`。默认 tag 为 `v<version>`；Android 产物包含 debug APK 与 split ABI release APK，Windows 产物为 installer，macOS 为 app zip，iOS 为 no-codesign IPA。formal 是唯一允许成为 Latest 的通道。
 - 禁止事项：不要把 push、debug tag、debug APK 或 beta/test workflow 接到 formal/Latest；不要让 push 上传正式 release APK 或发布 formal/Latest；不要把 beta/test 发布成 non-prerelease 或 Latest。
 
@@ -87,7 +87,7 @@ Flutter 版本号以 `fushi/pubspec.yaml` 的 `version: X.Y.Z+build` 为准。�
 GitHub Actions 给每个仓库的缓存配额是**硬上限 10 GB**，超了就按 LRU 静默驱逐。
 驱逐不是洁癖问题：桌面发布 run `30729229450` 变红的最后一环就是 vcpkg 缓存被驱逐
 后冷编 + 拉外部镜像失败。2026-08-02 实测 `gh api
-repos/hajisensai/hibiki/actions/cache/usage` = **10.65 GB / 14 条**，长期在驱逐。
+repos/hajisensai/Fushi/actions/cache/usage` = **10.65 GB / 14 条**，长期在驱逐。
 
 三条铁律（守卫 `fushi/test/build/workflow_cache_quota_guard_test.dart`）：
 
@@ -127,8 +127,8 @@ develop 那条被驱逐，下一个 PR run 就 miss 并在自己的 PR 桶里存
 查用量与逐条明细：
 
 ```bash
-gh api repos/hajisensai/hibiki/actions/cache/usage
-gh api "repos/hajisensai/hibiki/actions/caches?per_page=100"   --jq '.actions_caches[] | "\(.size_in_bytes) \(.ref) \(.key)"' | sort -rn
+gh api repos/hajisensai/Fushi/actions/cache/usage
+gh api "repos/hajisensai/Fushi/actions/caches?per_page=100"   --jq '.actions_caches[] | "\(.size_in_bytes) \(.ref) \(.key)"' | sort -rn
 ```
 
 删存量缓存前先确认没有 in-flight 的 run 在用它（`gh run list --status in_progress`）。
@@ -146,7 +146,7 @@ Flutter 3.44.0 下部分上游依赖未适配，两种补法并存（对个别�
 
 galgame 一键制卡的引擎-hook 注入器（injector.exe + hook.dll + vendored LunaHook/Host DLL）含
 `CreateRemoteThread`/`WriteProcessMemory`。**源码在本仓 `native/galgame_hook/`**（与
-`native/fushidicts/`、`native/fushi_torrent/` 同级）。helper 绝不链接进 `Hibiki.exe`，运行时仍是
+`native/fushidicts/`、`native/fushi_torrent/` 同级）。helper 绝不链接进 `fushi.exe`，运行时仍是
 隔离子进程/DLL；但两架构的校验 zip 随 Windows 主包进入 `galgame_helper/`，从而离线首装可用。
 
 > 历史：这套组件曾整体迁到独立仓库 `hajisensai/hibiki-hook`。迁出的真正根因是 CI——主仓库那份
@@ -174,14 +174,14 @@ galgame 一键制卡的引擎-hook 注入器（injector.exe + hook.dll + vendore
   目录，Inno Setup 的 `recursesubdirs` 将其纳入安装器。`check_release_policy.ps1` 守卫这条链，禁止
   后续“构建仍绿但安装器漏带 helper”。
 - **历史下载 URL**（只服务已经发布的旧客户端；新客户端不再使用）：
-  `https://github.com/hajisensai/hibiki/releases/download/voice-hook-helper/voice_hook_<arch>.zip`（+ `.sha256`）。
+  `https://github.com/hajisensai/Fushi/releases/download/voice-hook-helper/voice_hook_<arch>.zip`（+ `.sha256`）。
 - **老客户端不断供**：已发布版本的 app 把 `hajisensai/hibiki-hook` 编进了常量，会继续从那个仓库取
   helper。**`hajisensai/hibiki-hook` 仓库与其 `voice-hook-helper` release 必须保留、不得删除**
   （Never break userspace）；它只作为老客户端的下载宿主冻结，新开发一律在本仓 `native/galgame_hook/`。
 - **app 端安装**：开 galgame 需要注入器却缺失时，`GalgameHelperInstaller`（`fushi/lib/src/mining/
   galgame_helper_installer.dart`）先读取 exe 同级 `galgame_helper/voice_hook_<arch>.zip` 与侧车，校验
   SHA-256 后解压/换入 `voice_hook/<arch>/`，全程零网络、零下载确认；正式 Windows 主包必须命中此路。
-  开发构建/旧包没有随包归档时提示更新/重新构建 Hibiki，**不回退网络**；已安装版本也没有后台自更新。
+  开发构建/旧包没有随包归档时提示更新/重新构建 Fushi，**不回退网络**；已安装版本也没有后台自更新。
 - **Magpie 同样随包唯一来源**（BUG-1292）：两个 Windows workflow 用
   `tools/build_magpie_slim.ps1` 生成 `Magpie-hibiki-slim-x64.zip` + `.sha256`，放进
   `magpie_bundle/`。`MagpieInstaller` 校验后换入 `magpie/`；ARM64 Windows 走系统 x64 模拟。

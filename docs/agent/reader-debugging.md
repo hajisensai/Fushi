@@ -4,16 +4,16 @@
 
 ## 当前阅读器构成
 
-- 页面：`fushi/lib/src/pages/implementations/reader_hibiki_page.dart`，类 `ReaderHibikiPage`（3242 行主体 + `reader_hibiki/` 下 8 个域 part 文件 `audiobook` / `caret` / `chrome` / `lookup` / `lyrics` / `mining` / `navigation` / `webview`，共 9583 行：WebView 拦截 + JS 分页引擎 + 有声书同步）。
-- source：`fushi/lib/src/media/sources/reader_hibiki_source.dart`，类 `ReaderHibikiSource`。
+- 页面：`fushi/lib/src/pages/implementations/reader_fushi_page.dart`，类 `ReaderFushiPage`（3242 行主体 + `reader_fushi/` 下 8 个域 part 文件 `audiobook` / `caret` / `chrome` / `lookup` / `lyrics` / `mining` / `navigation` / `webview`，共 9583 行：WebView 拦截 + JS 分页引擎 + 有声书同步）。
+- source：`fushi/lib/src/media/sources/reader_fushi_source.dart`，类 `ReaderFushiSource`。
 - JS / CSS：`fushi/lib/src/reader/` 下 `reader_pagination_scripts.dart`、`reader_content_styles.dart`、`reader_selection_scripts.dart`、`reader_caret_scripts.dart`。
-- **JS 桥接全局叫 `window.fushiReader`**（2026-08 已从旧名 hoshiReader 改名；`window.hoshiCaret` 等其余 hoshi 前缀运行时符号待后续批次）；字级焦点用 `window.hoshiCaret` + Dart `ReaderCaretRouter`。
+- **JS 桥接全局叫 `window.fushiReader`**（2026-08 已从旧名 hoshiReader 改名；其余 hoshi 前缀运行时符号已在 W5 批次清完）；字级焦点用 `window.fushiCaret` + Dart `ReaderCaretRouter`。
 - 当前阅读器问题**不要**去上游 ttu fork 仓库改。
 
 ## TTU 命名残留 vs 迁移代码
 
 - `reader_ttu` key、`setTtu*` 方法、`ttuBookId` 列、`ttu_*` i18n 只是**旧数据兼容残留**，不代表还有 TTU 阅读器。改这些 key/方法名前，必须先确认是否会破坏旧书籍、偏好、书签、阅读位置或迁移。
-- 旧 TTU 迁移代码已移除（develop `90c37b472`：`TtuMigrationServer`、`TtuIdbReader`、`assets/ttu-ebook-reader` 均已删除）。当前阅读器渲染/交互问题按 reader_hibiki 路径修。
+- 旧 TTU 迁移代码已移除（develop `90c37b472`：`TtuMigrationServer`、`TtuIdbReader`、`assets/ttu-ebook-reader` 均已删除）。当前阅读器渲染/交互问题按 reader_fushi 路径修。
 
 ## 调试约定
 
@@ -26,7 +26,7 @@
 
 ## 平台特例
 
-- **Windows WebView2** 阅读器/字级焦点本身不坏；caret 测试失败常因书架里残留 lyrics-mode 旧书 → seed/打开一本全新分页书（`book_entry_hoshi://book/<id>`）复测。
+- **Windows WebView2** 阅读器/字级焦点本身不坏；caret 测试失败常因书架里残留 lyrics-mode 旧书 → seed/打开一本全新分页书（`book_entry_fushi://book/<id>`）复测。
 - 桌面端 debug 跑断言（release 不报），注意 `Expanded`-in-trailing 类布局陷阱。
 
 ## 手工验证清单

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fully-automated, EMULATOR-ONLY integration test runner for Hibiki.
+# Fully-automated, EMULATOR-ONLY integration test runner for Fushi.
 #
 # One command: boots/selects an emulator, builds the debug APK once, provisions
 # every prerequisite (AnkiDroid + a collection + permission grant, dictionary
@@ -24,7 +24,7 @@ ADB="${ADB:-$(command -v adb 2>/dev/null || echo /d/android_sdk/platform-tools/a
 EMULATOR="${EMULATOR:-$(command -v emulator 2>/dev/null || echo /d/android_sdk/emulator/emulator)}"
 FLUTTER="${FLUTTER:-$(command -v flutter 2>/dev/null || echo /d/flutter_sdk/flutter_extracted/flutter/bin/flutter)}"
 AVD="${AVD:-}"   # resolved lazily below (boot block) if left empty
-PKG="${PKG:-app.hibiki.reader}"
+PKG="${PKG:-app.fushi.reader}"
 # Dictionary fixture for popup_dictionary / reader_dictionary. Those tests look
 # up basic vocabulary (猫 / 食べる), so the fixture must be a GENERAL J-J/J-C
 # dictionary — a grammar/bunkei dict would return zero results and fail them.
@@ -125,10 +125,10 @@ fi
 
 # ── Pre-install with all runtime perms granted (preserved across flutter
 #    drive's -r reinstall, so the AnkiDroid grant survives the run). ──
-echo ">>> Pre-installing Hibiki with runtime permissions granted..."
+echo ">>> Pre-installing Fushi with runtime permissions granted..."
 MSYS_NO_PATHCONV=1 $ADBD install -r -g "$(win_path "$APK_REL")"
 
-# Re-enable the default launcher activity-alias. Hibiki's runtime icon switcher
+# Re-enable the default launcher activity-alias. Fushi's runtime icon switcher
 # (IconSwitchHelper) disables .MainActivityDefault when the user picks a
 # different launcher icon; a fresh `install -r` can land with that alias still
 # disabled, leaving the app with no enabled LAUNCHER component — `flutter drive`

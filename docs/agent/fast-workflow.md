@@ -146,7 +146,7 @@ Get-CimInstance Win32_Process |
 | `test/sync/desktop_lookup_foreground_guard_static_test.dart` | `lib/src` 全树 | 抢前台/任务栏闪烁只能走单一封装 |
 | `test/storage/documents_whitelist_guard_test.dart` | `lib` 全树 | 新增 documents 子目录必须进迁移白名单 |
 | `test/storage/path_rebase_coverage_guard_test.dart` | `lib` 全树（pref 扫描） | 新增路径形 pref / DB 列必须双向登记 |
-| `test/focus/focus_architecture_static_test.dart` | `lib/src` 全树 | 焦点滚动必须走 `HibikiFocusScroll` |
+| `test/focus/focus_architecture_static_test.dart` | `lib/src` 全树 | 焦点滚动必须走 `FushiFocusScroll` |
 | `test/lookup/auto_read_surface_coverage_guard_test.dart` | `lib` 全树 | 每个 `searchDictionary(` 调用点须声明接不接自动朗读 |
 | `test/pages/lookup_overlay_dialog_gate_guard_test.dart` | `lib` 全树 | 查词浮层每个子项都能走到对话框隐藏计数 |
 | `test/shortcuts/shortcut_channel_wiring_guard_test.dart` | `lib` 全树 | 开放的输入通道必须真有解析入口 |
@@ -160,9 +160,9 @@ Get-CimInstance Win32_Process |
 | `test/media/video/real_path_directory_picker_test.dart` | `lib` 全树 | 生产代码不得用 iOS `FileType.audio` |
 | `test/ios/info_plist_media_permission_guard_test.dart` | `lib` 全树（作谓词） | 用了相机/相册/音频就必须有 `Info.plist` 声明 |
 | `test/i18n/i18n_completeness_test.dart` | `lib/i18n` 全部 17 份 | 17 语言 key 完整、无孤儿、插值一致 |
-| `test/pages/reader_hibiki_page_source_corpus_test.dart` | `reader_hibiki/` part 目录枚举 | 合并语料覆盖每个 part（漏登记会让 90+ 条守卫真空通过） |
+| `test/pages/reader_fushi_page_source_corpus_test.dart` | `reader_fushi/` part 目录枚举 | 合并语料覆盖每个 part（漏登记会让 90+ 条守卫真空通过） |
 | `test/pages/reader_history_source_corpus_test.dart` | `reader_history/` part 目录枚举 | 同上，书架页语料 |
-| `test/pages/video_hibiki_page_source_corpus_test.dart` | `video_hibiki/` part 目录枚举 | 同上，视频页语料 |
+| `test/pages/video_fushi_page_source_corpus_test.dart` | `video_fushi/` part 目录枚举 | 同上，视频页语料 |
 | `test/sync/sync_settings_schema_source_corpus_test.dart` | `sync_settings_schema/` part 目录枚举 | 同上，同步设置 schema 语料 |
 
 一条命令跑完，**当前基线 225 tests**（2026-08-02，`origin/develop@b4ed5d8f7` 实测）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
@@ -198,9 +198,9 @@ cd fushi && dart run tool/flutter_test_failures.dart --no-pub \
   test/media/drag_drop/drag_drop_platform_guard_test.dart test/media/media_cover_write_guard_test.dart \
   test/media/sources/book_history_split_guard_test.dart test/media/video/real_path_directory_picker_test.dart \
   test/ios/info_plist_media_permission_guard_test.dart test/i18n/i18n_completeness_test.dart \
-  test/pages/reader_hibiki_page_source_corpus_test.dart \
+  test/pages/reader_fushi_page_source_corpus_test.dart \
   test/pages/reader_history_source_corpus_test.dart \
-  test/pages/video_hibiki_page_source_corpus_test.dart \
+  test/pages/video_fushi_page_source_corpus_test.dart \
   test/sync/sync_settings_schema_source_corpus_test.dart
 ```
 
@@ -326,7 +326,7 @@ dart run tool/flutter_test_failures.dart --no-pub \
 
 | # | 原语 | 撞上的签名形态 | 后果 | 结局 |
 |---|---|---|---|---|
-| ① | `methodBody` | **箭头函数体** `Foo bar() => …;` | 找不到 `{`，配对扫描越界，读到**下一个声明**——守卫在一段完全无关的源码上做断言 | PR#768 已修（`291d42af0`），并加了 `HIBIKI_METHOD_BODY_AUDIT=1` 反向枚举全仓有多少守卫锚在箭头体上 |
+| ① | `methodBody` | **箭头函数体** `Foo bar() => …;` | 找不到 `{`，配对扫描越界，读到**下一个声明**——守卫在一段完全无关的源码上做断言 | PR#768 已修（`291d42af0`），并加了 `FUSHI_METHOD_BODY_AUDIT=1` 反向枚举全仓有多少守卫锚在箭头体上 |
 | ② | `balancedBlockFrom` | **具名参数签名** `void f({required A a}) {` | 从声明处找第一个 `{`，抓到的是**参数列表**的花括号，切出来的「方法体」其实是一串参数 | PR#771 绕开（`test/reader/reader_exit_bounded_probe_test.dart` 里留了注释说明为什么不能直接 `balancedBlockFrom(start)`） |
 | ③ | `topLevelFunctionBody` | **`async` / `async*` / `sync*` 体** | 右括号后第一个非空白字符不是 `{` 而是 `a`，被判成调用点、解析成 `null` ⇒ **实现正确时守卫转红** | PR#772 已修（`73eabe331`） |
 
@@ -384,7 +384,7 @@ grep    "FLUTTER TEST VERDICT" /tmp/blast_run.log           # 逐行看，别只
 ```bash
 BR=develop                                    # 换成你要核的分支名
 git ls-remote origin "refs/heads/$BR"
-gh api "repos/hajisensai/hibiki/git/ref/heads/$BR" --jq .object.sha
+gh api "repos/hajisensai/Fushi/git/ref/heads/$BR" --jq .object.sha
 git rev-parse HEAD                            # 再拿它和「你以为推上去的那个东西」比对
 ```
 
@@ -422,7 +422,7 @@ gh run list --branch develop --limit 20 \
   --json databaseId,headSha,workflowName,createdAt,status,conclusion
 SHA=$(gh run list --branch develop --limit 1 --json headSha --jq '.[0].headSha')
 gh api -H "Accept: application/vnd.github.raw" \
-  "repos/hajisensai/hibiki/contents/.github/workflows/main.yml?ref=$SHA" | head -40
+  "repos/hajisensai/Fushi/contents/.github/workflows/main.yml?ref=$SHA" | head -40
 ```
 
 ### 判「测试跑全了没」是结构问题，不是算术问题
@@ -441,7 +441,7 @@ gh api -H "Accept: application/vnd.github.raw" \
 
 ## 三条零散硬规矩（各自有实测出处）
 
-**① 改共用文案之前，先枚举它的全部使用点。** i18n key 不属于「某个页面」，属于**所有 import 了那个 widget 的页面**。实例：`scrape_all_confirm` 在 `fushi/lib/src/media/metadata/scrape_batch.dart` 里只出现一次，但 `ScrapeBatchDialog` 被 `home_video_page.dart` / `reader_hibiki_history_page.dart` / `games_library_page.dart` **三页共用**——只沿视频页那条路径验证「文案是否如实」，等于把同一句谎话原样搬到书架页和游戏库页。改之前先跑一遍：
+**① 改共用文案之前，先枚举它的全部使用点。** i18n key 不属于「某个页面」，属于**所有 import 了那个 widget 的页面**。实例：`scrape_all_confirm` 在 `fushi/lib/src/media/metadata/scrape_batch.dart` 里只出现一次，但 `ScrapeBatchDialog` 被 `home_video_page.dart` / `reader_fushi_history_page.dart` / `games_library_page.dart` **三页共用**——只沿视频页那条路径验证「文案是否如实」，等于把同一句谎话原样搬到书架页和游戏库页。改之前先跑一遍：
 
 ```bash
 cd fushi

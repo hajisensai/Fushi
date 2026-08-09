@@ -1,21 +1,21 @@
 <#
 .SYNOPSIS
-  Verify Hibiki P2P sync interop between the Windows host (sync server) and a
+  Verify Fushi P2P sync interop between the Windows host (sync server) and a
   connected Android emulator (P2P client), end-to-end over 10.0.2.2.
 
 .DESCRIPTION
   Network/protocol layer verification (the layer the sync settings UI configures) —
   no coordinate clicks, fully scripted per the repo test conventions.
 
-  1) Starts a REAL HibikiSyncServer on the host (hibiki/tool/p2p_host_harness.dart),
+  1) Starts a REAL FushiSyncServer on the host (fushi/tool/p2p_host_harness.dart),
      bound to 0.0.0.0:<Port>, seeded with one book.
   2) From the emulator, hits http://10.0.2.2:<Port> via `nc`:
-       - unauthenticated GET       -> expect HTTP 401 (reached the real Hibiki server)
+       - unauthenticated GET       -> expect HTTP 401 (reached the real Fushi server)
        - authenticated PROPFIND    -> expect HTTP 207 + the seeded "InteropBook"
          (full token-auth + WebDAV listing across the emulator<->host boundary)
   3) Tears the server down. Exit 0 on PASS, 1 on FAIL.
 
-  Pairs with test/sync/hibiki_p2p_roundtrip_test.dart (host-side client<->server
+  Pairs with test/sync/fushi_p2p_roundtrip_test.dart (host-side client<->server
   round-trip). Together they cover the protocol + the emulator<->host network hop.
 
   Real device (not emulator): point the client at the host LAN IP instead of
@@ -36,7 +36,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $proc = $null
 $repoRoot = (& git rev-parse --show-toplevel).Trim()
-$hibikiDir = Join-Path $repoRoot 'hibiki'
+$fushiDir = Join-Path $repoRoot 'fushi'
 
 function Stop-Harness {
     if ($script:proc -and -not $script:proc.HasExited) {
@@ -57,12 +57,12 @@ $emu = $m.Groups[1].Value
 Write-Host "[*] emulator: $emu"
 
 # ── 1) start the host sync server (background) ────────────────────────
-$outFile = Join-Path $env:TEMP 'hibiki_p2p_harness.out'
-$errFile = Join-Path $env:TEMP 'hibiki_p2p_harness.err'
+$outFile = Join-Path $env:TEMP 'fushi_p2p_harness.out'
+$errFile = Join-Path $env:TEMP 'fushi_p2p_harness.err'
 Remove-Item $outFile, $errFile -Force -ErrorAction SilentlyContinue
 $proc = Start-Process -FilePath $Dart `
     -ArgumentList @('run', 'tool/p2p_host_harness.dart', "$Port") `
-    -WorkingDirectory $hibikiDir `
+    -WorkingDirectory $fushiDir `
     -RedirectStandardOutput $outFile -RedirectStandardError $errFile `
     -PassThru -WindowStyle Hidden
 Write-Host "[*] host sync server starting (pid $($proc.Id)) on 0.0.0.0:$Port (dart run may compile first)..."
@@ -85,20 +85,20 @@ Write-Host "[+] server ready on port $Port"
 
 # ── 2) probe from the emulator over 10.0.2.2 ──────────────────────────
 # Requests are pushed as files (real CRLF) to dodge cross-shell quoting issues.
-$auth = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("hibiki:$token"))
+$auth = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("fushi:$token"))
 $reqUnauth = "GET /ttu-reader-data/ HTTP/1.0`r`nHost: h`r`n`r`n"
 $reqAuth = "PROPFIND /ttu-reader-data/ HTTP/1.0`r`nHost: h`r`nAuthorization: Basic $auth`r`nDepth: 1`r`n`r`n"
-$tmpU = Join-Path $env:TEMP 'hibiki_p2p_unauth.txt'
-$tmpA = Join-Path $env:TEMP 'hibiki_p2p_auth.txt'
+$tmpU = Join-Path $env:TEMP 'fushi_p2p_unauth.txt'
+$tmpA = Join-Path $env:TEMP 'fushi_p2p_auth.txt'
 [IO.File]::WriteAllBytes($tmpU, [Text.Encoding]::ASCII.GetBytes($reqUnauth))
 [IO.File]::WriteAllBytes($tmpA, [Text.Encoding]::ASCII.GetBytes($reqAuth))
-& $Adb -s $emu push $tmpU /data/local/tmp/hibiki_p2p_unauth.txt | Out-Null
-& $Adb -s $emu push $tmpA /data/local/tmp/hibiki_p2p_auth.txt | Out-Null
+& $Adb -s $emu push $tmpU /data/local/tmp/fushi_p2p_unauth.txt | Out-Null
+& $Adb -s $emu push $tmpA /data/local/tmp/fushi_p2p_auth.txt | Out-Null
 
 Write-Host "[*] $emu -> http://10.0.2.2:$Port  (unauthenticated, expect 401)"
-$r1 = (& $Adb -s $emu shell "nc -w 5 10.0.2.2 $Port < /data/local/tmp/hibiki_p2p_unauth.txt" 2>&1) -join "`n"
+$r1 = (& $Adb -s $emu shell "nc -w 5 10.0.2.2 $Port < /data/local/tmp/fushi_p2p_unauth.txt" 2>&1) -join "`n"
 Write-Host "[*] $emu -> http://10.0.2.2:$Port  (authenticated PROPFIND, expect 207 + InteropBook)"
-$r2 = (& $Adb -s $emu shell "nc -w 5 10.0.2.2 $Port < /data/local/tmp/hibiki_p2p_auth.txt" 2>&1) -join "`n"
+$r2 = (& $Adb -s $emu shell "nc -w 5 10.0.2.2 $Port < /data/local/tmp/fushi_p2p_auth.txt" 2>&1) -join "`n"
 
 # ── 3) assertions + cleanup ───────────────────────────────────────────
 $ok1 = $r1 -match '\b401\b'
@@ -108,12 +108,12 @@ $status2 = ([regex]::Match($r2, 'HTTP/\S+\s+\d+[^\r\n]*')).Value
 Write-Host "  unauth : $(if ($ok1) { 'OK' } else { 'FAIL' })  ($status1)"
 Write-Host "  authed : $(if ($ok2) { 'OK (207 + InteropBook)' } else { 'FAIL' })  ($status2)"
 
-& $Adb -s $emu shell "rm -f /data/local/tmp/hibiki_p2p_unauth.txt /data/local/tmp/hibiki_p2p_auth.txt" 2>&1 | Out-Null
+& $Adb -s $emu shell "rm -f /data/local/tmp/fushi_p2p_unauth.txt /data/local/tmp/fushi_p2p_auth.txt" 2>&1 | Out-Null
 Remove-Item $tmpU, $tmpA -Force -ErrorAction SilentlyContinue
 Stop-Harness
 
 if ($ok1 -and $ok2) {
-    Write-Host "`n[PASS] emulator <-> Windows-host Hibiki P2P interop verified." -ForegroundColor Green
+    Write-Host "`n[PASS] emulator <-> Windows-host Fushi P2P interop verified." -ForegroundColor Green
     exit 0
 }
 Write-Host "`n[FAIL] interop check failed (see statuses above)." -ForegroundColor Red
