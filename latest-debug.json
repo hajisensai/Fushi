@@ -8,22 +8,22 @@
   "notes": "Manual desktop debug-channel build from fix/migration-import-storage-permission @ b0334f6. Debug releases are prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-1.4.0-debug.10306-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/debug-rolling/fushi-1.4.0-debug.10306-ios.ipa",
-      "releaseSequence": 10306,
-      "tag": "v1.4.0-debug.10306+d0ac511",
-      "version": "1.4.0-debug.10306"
-    },
-    {
-      "name": "fushi-1.4.0-debug.10306-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/debug-rolling/fushi-1.4.0-debug.10306-macos.zip",
-      "releaseSequence": 10306,
-      "tag": "v1.4.0-debug.10306+d0ac511",
-      "version": "1.4.0-debug.10306"
-    },
-    {
       "name": "fushi-1.4.0-debug.10311-b0334f6-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/debug-rolling/fushi-1.4.0-debug.10311-b0334f6-debug.apk",
+      "releaseSequence": 10311,
+      "tag": "v1.4.0-debug.10311+b0334f6",
+      "version": "1.4.0-debug.10311"
+    },
+    {
+      "name": "fushi-1.4.0-debug.10311-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/debug-rolling/fushi-1.4.0-debug.10311-ios.ipa",
+      "releaseSequence": 10311,
+      "tag": "v1.4.0-debug.10311+b0334f6",
+      "version": "1.4.0-debug.10311"
+    },
+    {
+      "name": "fushi-1.4.0-debug.10311-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/debug-rolling/fushi-1.4.0-debug.10311-macos.zip",
       "releaseSequence": 10311,
       "tag": "v1.4.0-debug.10311+b0334f6",
       "version": "1.4.0-debug.10311"
