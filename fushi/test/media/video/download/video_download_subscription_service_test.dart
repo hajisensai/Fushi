@@ -127,7 +127,8 @@ VideoDownloadSubscriptionService _service({
 }
 
 void main() {
-  test('Nyaa strict rules, start anchor, and SxxExx item outbox are enforced',
+  test(
+      'Nyaa strict rules include the selected first episode and persist outbox',
       () async {
     final FushiDatabase database = await _openDatabase();
     final int sourceId = await _insertVideoSource(database);
@@ -193,14 +194,14 @@ void main() {
     expect(
       enqueued
           .map((VideoDownloadEnqueueRequest value) => value.resource.remoteId),
-      <String>['episode-2-best', 'episode-3'],
+      <String>['old', 'episode-2-best', 'episode-3'],
     );
     final List<VideoDownloadSubscriptionItemRow> items =
         await database.getVideoDownloadSubscriptionItems('anime');
     expect(
       items.map(
           (VideoDownloadSubscriptionItemRow value) => value.logicalItemKey),
-      <String>['S01E02', 'S01E03'],
+      <String>['S01E01', 'S01E02', 'S01E03'],
     );
     expect(
       items.every(

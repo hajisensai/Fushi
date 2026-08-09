@@ -1109,9 +1109,9 @@ class _VideoResourceSearchSurfaceState
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
                 labelText: t.video_jimaku_episode,
-                helperText: t.download_subscription_after_episode(
+                helperText: t.download_subscription_start_episode(
                   episode: _startAfterController.text.trim().isEmpty
-                      ? '0'
+                      ? '1'
                       : _startAfterController.text.trim(),
                 ),
               ),

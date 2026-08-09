@@ -397,7 +397,7 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
           ),
           if (subscription.startAfterEpisode != null)
             Text(
-              t.download_subscription_after_episode(
+              t.download_subscription_start_episode(
                 episode: subscription.startAfterEpisode!,
               ),
               style: theme.textTheme.bodySmall,

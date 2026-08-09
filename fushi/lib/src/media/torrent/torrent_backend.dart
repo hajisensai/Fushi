@@ -60,6 +60,7 @@ class TorrentSnapshot {
     required this.savePath,
     required this.contentPath,
     required this.amountLeft,
+    this.totalSizeBytes = -1,
     this.downRateBps = 0,
     this.upRateBps = 0,
     this.downloadedBytes = 0,
@@ -94,6 +95,10 @@ class TorrentSnapshot {
 
   /// 剩余待下载字节数；解析不出为 -1（= 未知，不当作完成）。
   final int amountLeft;
+
+  /// 用户实际选中下载的文件总大小；后端未提供时为 -1。
+  /// qBittorrent 对应 `total_size`，内置引擎对应 libtorrent `total_wanted`。
+  final int totalSizeBytes;
 
   /// 实时下载速率（字节/秒）。BUG-1294：native/qb 一直导出这些字段，此前在
   /// 本抽象层被整体丢弃，UI 无从显示速度/流量。

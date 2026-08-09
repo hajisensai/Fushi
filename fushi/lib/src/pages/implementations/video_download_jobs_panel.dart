@@ -1,12 +1,28 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:fushi_core/fushi_core.dart'
-    show FushiDatabase, VideoDownloadJobLifecycle, VideoDownloadJobRow;
+    show
+        FushiDatabase,
+        VideoDownloadJobLifecycle,
+        VideoDownloadJobRow,
+        VideoDownloadJobStage;
 
-import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/torrent/torrent_task_display.dart';
+import 'package:fushi/utils.dart';
 
 typedef VideoDownloadJobAction = Future<void> Function(
   VideoDownloadJobRow job,
+);
+
+typedef VideoDownloadJobMetricsLoader = Future<Map<String, TorrentSnapshot>>
+    Function(
+  Iterable<VideoDownloadJobRow> jobs,
+);
+
+typedef VideoDownloadJobSelectedSizeLoader = Future<Map<String, int>> Function(
+  Iterable<VideoDownloadJobRow> jobs,
 );
 
 /// Narrow read port used by [VideoDownloadJobsPanel].
@@ -39,6 +55,8 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     super.key,
     this.onRetry,
     this.onCancel,
+    this.metricsLoader,
+    this.selectedSizeLoader,
     this.lifecycleLabel,
     this.stageLabel,
   });
@@ -48,6 +66,8 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     Key? key,
     VideoDownloadJobAction? onRetry,
     VideoDownloadJobAction? onCancel,
+    VideoDownloadJobMetricsLoader? metricsLoader,
+    VideoDownloadJobSelectedSizeLoader? selectedSizeLoader,
     String Function(String lifecycle)? lifecycleLabel,
     String Function(String stage)? stageLabel,
   }) =>
@@ -56,6 +76,10 @@ class VideoDownloadJobsPanel extends StatefulWidget {
         store: DatabaseVideoDownloadJobsPanelStore(database),
         onRetry: onRetry,
         onCancel: onCancel,
+        metricsLoader: metricsLoader,
+        selectedSizeLoader: selectedSizeLoader ??
+            (Iterable<VideoDownloadJobRow> jobs) =>
+                _loadSelectedSizes(database, jobs),
         lifecycleLabel: lifecycleLabel,
         stageLabel: stageLabel,
       );
@@ -63,6 +87,8 @@ class VideoDownloadJobsPanel extends StatefulWidget {
   final VideoDownloadJobsPanelStore store;
   final VideoDownloadJobAction? onRetry;
   final VideoDownloadJobAction? onCancel;
+  final VideoDownloadJobMetricsLoader? metricsLoader;
+  final VideoDownloadJobSelectedSizeLoader? selectedSizeLoader;
 
   /// Optional localization hooks. The persisted values remain visible by
   /// default, which is useful for diagnosing a stopped pipeline stage.
@@ -131,23 +157,30 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
               message: t.anime_download_no_tasks,
             );
           }
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-            itemCount: jobs.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (BuildContext context, int index) =>
+          return _VideoDownloadJobList(
+            jobs: jobs,
+            metricsLoader: widget.metricsLoader,
+            selectedSizeLoader: widget.selectedSizeLoader,
+            itemBuilder: (
+              BuildContext context,
+              VideoDownloadJobRow job,
+              TorrentSnapshot? snapshot,
+              int? selectedSizeBytes,
+            ) =>
                 _VideoDownloadJobCard(
               key: ValueKey<String>(
-                'video-download-job-${jobs[index].jobId}',
+                'video-download-job-${job.jobId}',
               ),
-              job: jobs[index],
-              busy: _busyJobIds.contains(jobs[index].jobId),
+              job: job,
+              snapshot: snapshot,
+              selectedSizeBytes: selectedSizeBytes,
+              busy: _busyJobIds.contains(job.jobId),
               onRetry: widget.onRetry == null
                   ? null
-                  : () => _runAction(jobs[index], widget.onRetry!),
+                  : () => _runAction(job, widget.onRetry!),
               onCancel: widget.onCancel == null
                   ? null
-                  : () => _runAction(jobs[index], widget.onCancel!),
+                  : () => _runAction(job, widget.onCancel!),
               lifecycleLabel: widget.lifecycleLabel,
               stageLabel: widget.stageLabel,
             ),
@@ -158,9 +191,150 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
   }
 }
 
+Future<Map<String, int>> _loadSelectedSizes(
+  FushiDatabase database,
+  Iterable<VideoDownloadJobRow> jobs,
+) async {
+  final Map<String, int> result = <String, int>{};
+  await Future.wait(jobs.map((VideoDownloadJobRow job) async {
+    final files = await database.getVideoDownloadJobFiles(job.jobId);
+    final Iterable<int> sizes = files
+        .where((file) => file.selected && file.sizeBytes != null)
+        .map((file) => file.sizeBytes!);
+    if (sizes.isNotEmpty) {
+      result[job.jobId] = sizes.fold(0, (int sum, int size) => sum + size);
+    }
+  }));
+  return Map<String, int>.unmodifiable(result);
+}
+
+typedef _VideoDownloadJobItemBuilder = Widget Function(
+  BuildContext context,
+  VideoDownloadJobRow job,
+  TorrentSnapshot? snapshot,
+  int? selectedSizeBytes,
+);
+
+class _VideoDownloadJobList extends StatefulWidget {
+  const _VideoDownloadJobList({
+    required this.jobs,
+    required this.metricsLoader,
+    required this.selectedSizeLoader,
+    required this.itemBuilder,
+  });
+
+  final List<VideoDownloadJobRow> jobs;
+  final VideoDownloadJobMetricsLoader? metricsLoader;
+  final VideoDownloadJobSelectedSizeLoader? selectedSizeLoader;
+  final _VideoDownloadJobItemBuilder itemBuilder;
+
+  @override
+  State<_VideoDownloadJobList> createState() => _VideoDownloadJobListState();
+}
+
+class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
+  static const Duration _refreshInterval = Duration(seconds: 3);
+
+  Timer? _timer;
+  bool _loading = false;
+  Map<String, TorrentSnapshot> _snapshots = const <String, TorrentSnapshot>{};
+  Map<String, int> _selectedSizes = const <String, int>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _restartMetrics();
+  }
+
+  @override
+  void didUpdateWidget(_VideoDownloadJobList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final bool jobsChanged =
+        _jobIdentity(oldWidget.jobs) != _jobIdentity(widget.jobs);
+    if (oldWidget.metricsLoader != widget.metricsLoader || jobsChanged) {
+      _restartMetrics();
+    }
+    if (oldWidget.selectedSizeLoader != widget.selectedSizeLoader ||
+        jobsChanged) {
+      _loadSelectedSizesOnce();
+    }
+  }
+
+  String _jobIdentity(List<VideoDownloadJobRow> jobs) => jobs
+      .map((VideoDownloadJobRow job) =>
+          '${job.jobId}:${job.backendTaskId ?? job.torrentHash ?? ''}')
+      .join('|');
+
+  void _restartMetrics() {
+    _timer?.cancel();
+    _timer = null;
+    _loadSelectedSizesOnce();
+    if (widget.metricsLoader == null) {
+      _snapshots = const <String, TorrentSnapshot>{};
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_refreshMetrics());
+    });
+    _timer = Timer.periodic(
+      _refreshInterval,
+      (_) => unawaited(_refreshMetrics()),
+    );
+  }
+
+  void _loadSelectedSizesOnce() {
+    final VideoDownloadJobSelectedSizeLoader? loader =
+        widget.selectedSizeLoader;
+    if (loader == null) return;
+    unawaited(loader(widget.jobs).then((Map<String, int> sizes) {
+      if (mounted) setState(() => _selectedSizes = sizes);
+    }));
+  }
+
+  Future<void> _refreshMetrics() async {
+    final VideoDownloadJobMetricsLoader? loader = widget.metricsLoader;
+    if (!mounted || loader == null || _loading || !TickerMode.of(context)) {
+      return;
+    }
+    _loading = true;
+    try {
+      final Map<String, TorrentSnapshot> next = await loader(widget.jobs);
+      if (mounted) setState(() => _snapshots = next);
+    } on Object {
+      // 实时指标失败不影响持久任务本身的展示；保留上一帧避免数据闪烁。
+    } finally {
+      _loading = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ListView.separated(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+        itemCount: widget.jobs.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 8),
+        itemBuilder: (BuildContext context, int index) {
+          final VideoDownloadJobRow job = widget.jobs[index];
+          return widget.itemBuilder(
+            context,
+            job,
+            _snapshots[job.jobId],
+            _selectedSizes[job.jobId],
+          );
+        },
+      );
+}
+
 class _VideoDownloadJobCard extends StatelessWidget {
   const _VideoDownloadJobCard({
     required this.job,
+    required this.snapshot,
+    required this.selectedSizeBytes,
     required this.busy,
     required this.onRetry,
     required this.onCancel,
@@ -170,6 +344,8 @@ class _VideoDownloadJobCard extends StatelessWidget {
   });
 
   final VideoDownloadJobRow job;
+  final TorrentSnapshot? snapshot;
+  final int? selectedSizeBytes;
   final bool busy;
   final VoidCallback? onRetry;
   final VoidCallback? onCancel;
@@ -183,9 +359,11 @@ class _VideoDownloadJobCard extends StatelessWidget {
 
   bool get _canCancel => job.lifecycle == VideoDownloadJobLifecycle.active;
 
-  double get _progress => job.lifecycle == VideoDownloadJobLifecycle.completed
-      ? 1
-      : job.stageProgress.clamp(0, 1);
+  double get _progress =>
+      snapshot?.progress.clamp(0, 1).toDouble() ??
+      (job.lifecycle == VideoDownloadJobLifecycle.completed
+          ? 1
+          : job.stageProgress.clamp(0, 1));
 
   @override
   Widget build(BuildContext context) {
@@ -234,7 +412,9 @@ class _VideoDownloadJobCard extends StatelessWidget {
             runSpacing: 6,
             children: <Widget>[
               FushiTagChip(
-                label: lifecycleLabel?.call(job.lifecycle) ?? job.lifecycle,
+                label: _torrentStatusLabel ??
+                    lifecycleLabel?.call(job.lifecycle) ??
+                    job.lifecycle,
                 color: statusColor,
                 selected: true,
                 tone: FushiTagChipTone.surface,
@@ -244,6 +424,11 @@ class _VideoDownloadJobCard extends StatelessWidget {
                 tone: FushiTagChipTone.surface,
               ),
             ],
+          ),
+          const SizedBox(height: 10),
+          _TaskMetrics(
+            snapshot: snapshot,
+            selectedSizeBytes: selectedSizeBytes,
           ),
           const SizedBox(height: 10),
           Row(
@@ -335,6 +520,33 @@ class _VideoDownloadJobCard extends StatelessWidget {
 
   String get _progressLabel => '${(_progress * 100).round()}%';
 
+  String? get _torrentStatusLabel {
+    final TorrentSnapshot? value = snapshot;
+    if (value == null) {
+      if (job.lifecycle == VideoDownloadJobLifecycle.completed) {
+        return t.download_task_status_completed;
+      }
+      if (job.lifecycle == VideoDownloadJobLifecycle.active &&
+          job.stage == VideoDownloadJobStage.download) {
+        return t.download_task_status_downloading;
+      }
+      return null;
+    }
+    return switch (torrentDisplayStatusFor(value.state)) {
+      TorrentDisplayStatus.downloading => t.download_task_status_downloading,
+      TorrentDisplayStatus.seeding => t.download_task_status_seeding,
+      TorrentDisplayStatus.completed => t.download_task_status_completed,
+      TorrentDisplayStatus.paused => t.download_task_status_paused,
+      TorrentDisplayStatus.queued => t.download_task_status_queued,
+      TorrentDisplayStatus.stalled => t.download_task_status_stalled,
+      TorrentDisplayStatus.checking => t.download_task_status_checking,
+      TorrentDisplayStatus.fetchingMetadata => t.download_task_status_metadata,
+      TorrentDisplayStatus.moving => t.download_task_status_moving,
+      TorrentDisplayStatus.error => t.download_task_status_error,
+      TorrentDisplayStatus.unknown => null,
+    };
+  }
+
   Color _statusColor(ColorScheme colors) => switch (job.lifecycle) {
         VideoDownloadJobLifecycle.needsAttention => colors.tertiary,
         VideoDownloadJobLifecycle.failed => colors.error,
@@ -350,6 +562,102 @@ class _VideoDownloadJobCard extends StatelessWidget {
         VideoDownloadJobLifecycle.cancelled => Icons.block,
         _ => Icons.downloading_outlined,
       };
+}
+
+class _TaskMetrics extends StatelessWidget {
+  const _TaskMetrics({required this.snapshot, this.selectedSizeBytes});
+
+  final TorrentSnapshot? snapshot;
+  final int? selectedSizeBytes;
+
+  @override
+  Widget build(BuildContext context) {
+    final TorrentSnapshot? value = snapshot;
+    final List<(String, String)> metrics = <(String, String)>[
+      (
+        t.anime_download_sort_size,
+        (value?.totalSizeBytes ?? -1) < 0 && selectedSizeBytes == null
+            ? '—'
+            : FushiByteFormat.bytes(
+                (value?.totalSizeBytes ?? -1) >= 0
+                    ? value!.totalSizeBytes
+                    : selectedSizeBytes,
+              ),
+      ),
+      (
+        t.download_detail_seeds_label,
+        _peerMetric(value?.numSeeds, value?.swarmSeeds),
+      ),
+      (
+        t.download_detail_tab_peers,
+        _peerMetric(value?.numLeechs, value?.swarmLeechs),
+      ),
+      (
+        '↓',
+        value == null
+            ? '—'
+            : FushiByteFormat.speed(value.downRateBps.toDouble()),
+      ),
+      (
+        '↑',
+        value == null ? '—' : FushiByteFormat.speed(value.upRateBps.toDouble()),
+      ),
+      (
+        t.download_task_eta,
+        value == null
+            ? '—'
+            : formatTorrentEta(
+                  amountLeft: value.amountLeft,
+                  downRateBps: value.downRateBps,
+                ) ??
+                '∞',
+      ),
+      (
+        t.download_task_ratio,
+        value == null
+            ? '—'
+            : formatShareRatio(
+                  uploadedBytes: value.uploadedBytes,
+                  downloadedBytes: value.downloadedBytes,
+                ) ??
+                '—',
+      ),
+    ];
+    return Wrap(
+      spacing: 18,
+      runSpacing: 8,
+      children: metrics
+          .map(
+            ((String, String) metric) => SizedBox(
+              width: 118,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    metric.$1,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    metric.$2,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                ],
+              ),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  static String _peerMetric(int? connected, int? swarm) {
+    if (connected == null || connected < 0) return '—';
+    return swarm == null || swarm < 0 ? '$connected' : '$connected ($swarm)';
+  }
 }
 
 class _MessageState extends StatelessWidget {

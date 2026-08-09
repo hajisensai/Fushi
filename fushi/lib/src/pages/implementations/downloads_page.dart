@@ -43,6 +43,12 @@ class DownloadsPage extends ConsumerStatefulWidget {
 class _DownloadsPageState extends ConsumerState<DownloadsPage> {
   late Future<_DownloadsResourceDependencies?> _resourceDependencies;
   VideoDownloadPipelineService? _resourcePipelineSnapshot;
+  bool _hasLegacyAnimeTasks = false;
+
+  void _setLegacyAnimeTaskPresence(bool present) {
+    if (!mounted || _hasLegacyAnimeTasks == present) return;
+    setState(() => _hasLegacyAnimeTasks = present);
+  }
 
   @override
   void initState() {
@@ -210,36 +216,53 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                 _buildResourceTab(tabContext),
                 // 任务 tab：漫画目录卷下载队列（有任务才占位）+ torrent 任务，
                 // 统一下载中心的同屏任务视图。
-                Column(
-                  children: <Widget>[
-                    const MokuroMoeTasksSection(),
-                    Expanded(
-                      child: VideoDownloadJobsPanel.database(
-                        database: ref.read(appProvider).database,
-                        onRetry: (job) async {
-                          await ref
-                              .read(appProvider)
-                              .videoDownloadPipelineService
-                              ?.retryJob(job.jobId);
-                        },
-                        onCancel: (job) async {
-                          await ref
-                              .read(appProvider)
-                              .videoDownloadPipelineService
-                              ?.cancelJob(job.jobId);
-                        },
-                      ),
-                    ),
-                    Expanded(
-                      child: AnimeDownloadDialog(
-                        embedded: true,
-                        tasksOnly: true,
-                        showTasks: false,
-                        onOpenSettings: () =>
-                            DefaultTabController.of(tabContext).animateTo(3),
-                      ),
-                    ),
-                  ],
+                LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final double legacyHeight =
+                        (constraints.maxHeight * 0.38).clamp(180, 360);
+                    return Column(
+                      children: <Widget>[
+                        const MokuroMoeTasksSection(),
+                        Expanded(
+                          child: VideoDownloadJobsPanel.database(
+                            database: ref.read(appProvider).database,
+                            metricsLoader: ref
+                                .read(appProvider)
+                                .videoDownloadPipelineService
+                                ?.loadTaskSnapshots,
+                            onRetry: (job) async {
+                              await ref
+                                  .read(appProvider)
+                                  .videoDownloadPipelineService
+                                  ?.retryJob(job.jobId);
+                            },
+                            onCancel: (job) async {
+                              await ref
+                                  .read(appProvider)
+                                  .videoDownloadPipelineService
+                                  ?.cancelJob(job.jobId);
+                            },
+                          ),
+                        ),
+                        SizedBox(
+                          height: _hasLegacyAnimeTasks ? legacyHeight : 0,
+                          child: Offstage(
+                            offstage: !_hasLegacyAnimeTasks,
+                            child: AnimeDownloadDialog(
+                              embedded: true,
+                              tasksOnly: true,
+                              showTasks: false,
+                              onTaskPresenceChanged:
+                                  _setLegacyAnimeTaskPresence,
+                              onOpenSettings: () => DefaultTabController.of(
+                                tabContext,
+                              ).animateTo(3),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
                 const VideoDownloadSubscriptionsPanel(),
                 ListView(
