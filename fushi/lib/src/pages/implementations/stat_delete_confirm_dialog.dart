@@ -5,7 +5,7 @@ import 'package:fushi/utils.dart';
 ///
 /// 删除范围只含**纯统计数字**（阅读 / 观看时长、字数、查词 / 制卡计数），不动用户
 /// 收藏的词句与制卡历史（见 `FushiDatabase.deleteReadingStatisticsForTitle` /
-/// `deleteVideoStatisticsForTitle`）。自适应（Material / Cupertino）走 [showAppDialog]，
+/// `deleteVideoStatisticsForIdentity`）。自适应（Material / Cupertino）走 [showAppDialog]，
 /// 与书架删除确认（`ReaderHistoryDeleteDialog` / `_SeriesConfirmDialog`）同结构。
 @visibleForTesting
 class StatDeleteConfirmDialog extends StatelessWidget {

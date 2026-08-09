@@ -14901,8 +14901,10 @@ class $LookupMiningCountersTable extends LookupMiningCounters
       const VerificationMeta('bookKey');
   @override
   late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
-      'book_key', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
+      'book_key', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
   static const VerificationMeta _titleMeta = const VerificationMeta('title');
   @override
   late final GeneratedColumn<String> title = GeneratedColumn<String>(
@@ -14994,7 +14996,7 @@ class $LookupMiningCountersTable extends LookupMiningCounters
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
   List<Set<GeneratedColumn>> get uniqueKeys => [
-        {title, sourceType, dateKey},
+        {title, sourceType, dateKey, bookKey},
       ];
   @override
   LookupMiningCounterRow map(Map<String, dynamic> data, {String? tablePrefix}) {
@@ -15003,7 +15005,7 @@ class $LookupMiningCountersTable extends LookupMiningCounters
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
       bookKey: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}book_key']),
+          .read(DriftSqlType.string, data['${effectivePrefix}book_key'])!,
       title: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
       sourceType: attachedDatabase.typeMapping
@@ -15026,7 +15028,7 @@ class $LookupMiningCountersTable extends LookupMiningCounters
 class LookupMiningCounterRow extends DataClass
     implements Insertable<LookupMiningCounterRow> {
   final int id;
-  final String? bookKey;
+  final String bookKey;
   final String title;
   final String sourceType;
   final String dateKey;
@@ -15034,7 +15036,7 @@ class LookupMiningCounterRow extends DataClass
   final int mineCount;
   const LookupMiningCounterRow(
       {required this.id,
-      this.bookKey,
+      required this.bookKey,
       required this.title,
       required this.sourceType,
       required this.dateKey,
@@ -15044,9 +15046,7 @@ class LookupMiningCounterRow extends DataClass
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    if (!nullToAbsent || bookKey != null) {
-      map['book_key'] = Variable<String>(bookKey);
-    }
+    map['book_key'] = Variable<String>(bookKey);
     map['title'] = Variable<String>(title);
     map['source_type'] = Variable<String>(sourceType);
     map['date_key'] = Variable<String>(dateKey);
@@ -15058,9 +15058,7 @@ class LookupMiningCounterRow extends DataClass
   LookupMiningCountersCompanion toCompanion(bool nullToAbsent) {
     return LookupMiningCountersCompanion(
       id: Value(id),
-      bookKey: bookKey == null && nullToAbsent
-          ? const Value.absent()
-          : Value(bookKey),
+      bookKey: Value(bookKey),
       title: Value(title),
       sourceType: Value(sourceType),
       dateKey: Value(dateKey),
@@ -15074,7 +15072,7 @@ class LookupMiningCounterRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return LookupMiningCounterRow(
       id: serializer.fromJson<int>(json['id']),
-      bookKey: serializer.fromJson<String?>(json['bookKey']),
+      bookKey: serializer.fromJson<String>(json['bookKey']),
       title: serializer.fromJson<String>(json['title']),
       sourceType: serializer.fromJson<String>(json['sourceType']),
       dateKey: serializer.fromJson<String>(json['dateKey']),
@@ -15087,7 +15085,7 @@ class LookupMiningCounterRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'bookKey': serializer.toJson<String?>(bookKey),
+      'bookKey': serializer.toJson<String>(bookKey),
       'title': serializer.toJson<String>(title),
       'sourceType': serializer.toJson<String>(sourceType),
       'dateKey': serializer.toJson<String>(dateKey),
@@ -15098,7 +15096,7 @@ class LookupMiningCounterRow extends DataClass
 
   LookupMiningCounterRow copyWith(
           {int? id,
-          Value<String?> bookKey = const Value.absent(),
+          String? bookKey,
           String? title,
           String? sourceType,
           String? dateKey,
@@ -15106,7 +15104,7 @@ class LookupMiningCounterRow extends DataClass
           int? mineCount}) =>
       LookupMiningCounterRow(
         id: id ?? this.id,
-        bookKey: bookKey.present ? bookKey.value : this.bookKey,
+        bookKey: bookKey ?? this.bookKey,
         title: title ?? this.title,
         sourceType: sourceType ?? this.sourceType,
         dateKey: dateKey ?? this.dateKey,
@@ -15160,7 +15158,7 @@ class LookupMiningCounterRow extends DataClass
 class LookupMiningCountersCompanion
     extends UpdateCompanion<LookupMiningCounterRow> {
   final Value<int> id;
-  final Value<String?> bookKey;
+  final Value<String> bookKey;
   final Value<String> title;
   final Value<String> sourceType;
   final Value<String> dateKey;
@@ -15207,7 +15205,7 @@ class LookupMiningCountersCompanion
 
   LookupMiningCountersCompanion copyWith(
       {Value<int>? id,
-      Value<String?>? bookKey,
+      Value<String>? bookKey,
       Value<String>? title,
       Value<String>? sourceType,
       Value<String>? dateKey,
@@ -20481,7 +20479,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
   /// 且脏值/未来值读到时解析层直接回落关闭（不会因为 index 越界崩）。
   final String upscalingMode;
 
-  /// 该游戏的「日语区域（转区）」档位：`'auto'` / `'on'` / `'off'`（BUG-1476）。
+  /// 该游戏的「日语区域（转区）」档位：`'auto'` / `'on'` / `'off'`（BUG-1477）。
   ///
   /// 空串 = 用户没设过，解析层回落 `auto`（**不是** off —— 转区是用户明确要过的
   /// 功能，老行/老用户不能因为加了这一列就被莫名关掉）。
@@ -36230,7 +36228,7 @@ typedef $$BookTombstonesTableProcessedTableManager = ProcessedTableManager<
 typedef $$LookupMiningCountersTableCreateCompanionBuilder
     = LookupMiningCountersCompanion Function({
   Value<int> id,
-  Value<String?> bookKey,
+  Value<String> bookKey,
   Value<String> title,
   required String sourceType,
   required String dateKey,
@@ -36240,7 +36238,7 @@ typedef $$LookupMiningCountersTableCreateCompanionBuilder
 typedef $$LookupMiningCountersTableUpdateCompanionBuilder
     = LookupMiningCountersCompanion Function({
   Value<int> id,
-  Value<String?> bookKey,
+  Value<String> bookKey,
   Value<String> title,
   Value<String> sourceType,
   Value<String> dateKey,
@@ -36372,7 +36370,7 @@ class $$LookupMiningCountersTableTableManager extends RootTableManager<
                   $db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<String?> bookKey = const Value.absent(),
+            Value<String> bookKey = const Value.absent(),
             Value<String> title = const Value.absent(),
             Value<String> sourceType = const Value.absent(),
             Value<String> dateKey = const Value.absent(),
@@ -36390,7 +36388,7 @@ class $$LookupMiningCountersTableTableManager extends RootTableManager<
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<String?> bookKey = const Value.absent(),
+            Value<String> bookKey = const Value.absent(),
             Value<String> title = const Value.absent(),
             required String sourceType,
             required String dateKey,

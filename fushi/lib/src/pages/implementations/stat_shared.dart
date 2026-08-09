@@ -184,9 +184,103 @@ Widget buildStatDailyDurationChartSection(
   );
 }
 
+/// v76 读取端身份分组（v39「读取端按 title 回退」的成文契约）：把带可空身份的
+/// 统计行按「身份优先、unique-title 归并」分组。
+///
+///  - [identityOf] 非空的行按身份分组（同名不同视频各自一组，根治展示层互串）；
+///  - 身份为空的行（v76 前遗留 / sync 降级权威行）：其 title 恰好只被一个身份组
+///    占用 → 归并进该组（主流场景「一个视频跨新旧数据」仍是单 tile，与 v39 迁移
+///    「按 title 唯一匹配回填」同判据）；否则独立成无身份组（[identity] = null，
+///    歧义遗留如实分开展示）。
+///
+/// 组顺序：先身份组（按行序首见），后无身份组。吸收过无身份行的组置
+/// [absorbedUnattributed]，删除路径据此决定是否连带删该 title 的无身份行。
+class StatIdentityGroup<T> {
+  StatIdentityGroup({required this.identity, required this.title});
+
+  /// 身份键（视频=bookUid，计数行=bookKey）；null = 无身份遗留组。
+  final String? identity;
+
+  /// 展示标题（组内首见行的 title 快照）。
+  final String title;
+
+  /// 是否吸收了同 title 的无身份行（删除时连带的判据）。
+  bool absorbedUnattributed = false;
+
+  final List<T> rows = <T>[];
+}
+
+List<StatIdentityGroup<T>> groupStatRowsByIdentity<T>(
+  List<T> rows, {
+  required String Function(T) identityOf,
+  required String Function(T) titleOf,
+  Set<String> ambiguousTitles = const <String>{},
+}) {
+  final Map<String, StatIdentityGroup<T>> byIdentity =
+      <String, StatIdentityGroup<T>>{};
+  final List<T> unattributed = <T>[];
+  for (final T row in rows) {
+    final String identity = identityOf(row);
+    if (identity.isEmpty) {
+      unattributed.add(row);
+      continue;
+    }
+    byIdentity
+        .putIfAbsent(identity,
+            () => StatIdentityGroup<T>(identity: identity, title: titleOf(row)))
+        .rows
+        .add(row);
+  }
+  // title → 拥有它的身份组（unique-title 归并判据）。按组内**全部** title 快照
+  // 注册（review-9：改名视频一个 uid 组横跨多个 title，只登记首见 title 会让新
+  // title 的无身份行错落成孤儿组）。
+  final Map<String, List<StatIdentityGroup<T>>> ownersByTitle =
+      <String, List<StatIdentityGroup<T>>>{};
+  for (final StatIdentityGroup<T> g in byIdentity.values) {
+    final Set<String> groupTitles = <String>{
+      for (final T row in g.rows) titleOf(row),
+    };
+    for (final String title in groupTitles) {
+      ownersByTitle.putIfAbsent(title, () => <StatIdentityGroup<T>>[]).add(g);
+    }
+  }
+  final Map<String, StatIdentityGroup<T>> orphanGroups =
+      <String, StatIdentityGroup<T>>{};
+  for (final T row in unattributed) {
+    final String title = titleOf(row);
+    final List<StatIdentityGroup<T>>? owners = ownersByTitle[title];
+    // 吸收需同时过两道判据（review-2）：行宇宙里恰好一个身份组占用该 title，
+    // **且**调用方的权威面（如 video_books 库表）没有把该 title 判为多身份
+    // （[ambiguousTitles]）。行宇宙判据单独用会误吸：同名双视频都只有无身份
+    // 遗留行时，任何一方偶然产生的第一条带身份行会把混合遗留整体吸走并随它
+    // 被删——这正是本套分组要消灭的连坐。
+    if (owners != null &&
+        owners.length == 1 &&
+        !ambiguousTitles.contains(title)) {
+      owners.single
+        ..absorbedUnattributed = true
+        ..rows.add(row);
+    } else {
+      orphanGroups
+          .putIfAbsent(
+              title, () => StatIdentityGroup<T>(identity: null, title: title))
+          .rows
+          .add(row);
+    }
+  }
+  return <StatIdentityGroup<T>>[
+    ...byIdentity.values,
+    ...orphanGroups.values,
+  ];
+}
+
 /// TODO-1204：把查词/制卡计数行按 [LookupMiningCounterRow.title] 聚合成
-/// (查词数, 制卡数)，供 per-book / per-video tile 展示。无书查词（title 空）不入
+/// (查词数, 制卡数)，供 per-book tile 展示。无书查词（title 空）不入
 /// tile，只进汇总面板。聚合键与字数/时长 tile 的 title 一致。
+///
+/// **book 域专用**：书标题导入期强制去重、与 bookKey 双射，按 title 聚合即按身份
+/// 聚合。视频域标题可重复，必须走 [groupStatRowsByIdentity]，且观看/计数/收藏三个
+/// 行宇宙必须**同一次**分组（见 video_stat_aggregates 的 computeVideoStats）。
 Map<String, ({int lookups, int mines})> aggregateStatCountersByTitle(
     List<LookupMiningCounterRow> rows) {
   final Map<String, ({int lookups, int mines})> out =

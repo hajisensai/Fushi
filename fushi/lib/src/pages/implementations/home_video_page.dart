@@ -472,16 +472,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // v39 新行按 bookUid 键控；迁移遗留 NULL-uid 行按 title 建回退映射。
     final List<VideoWatchStatisticRow> watchRows =
         await db.getAllVideoWatchStatistics();
+    // 无身份判定 NULL 与 '' 都算（review4-9/review2-10：与统计页展示、删除谓词
+    // 同一判据）——'' 行进不了任何书架条目的 uid 匹配，落 title 回退才不会让该
+    // 视频从「最近观看」消失。
     final Map<String, DateTime> watchByUid = latestWatchAtByKey(
       <(String, int)>[
         for (final VideoWatchStatisticRow r in watchRows)
-          if (r.bookUid case final String uid) (uid, r.lastModified),
+          if (r.bookUid case final String uid when uid.isNotEmpty)
+            (uid, r.lastModified),
       ],
     );
     final Map<String, DateTime> legacyByTitle = latestWatchAtByKey(
       <(String, int)>[
         for (final VideoWatchStatisticRow r in watchRows)
-          if (r.bookUid == null) (r.title, r.lastModified),
+          if (r.bookUid == null || r.bookUid!.isEmpty)
+            (r.title, r.lastModified),
       ],
     );
     // TODO-2486：刮削资料批量预取——条目 airDate 派生年份（年份筛选）、合集资料

@@ -685,30 +685,39 @@ class BackupMergeEngine {
     );
   }
 
-  /// LookupMiningCounters MAX-union per {title, sourceType, dateKey} (TODO-1204).
-  /// Both counter columns (lookup_count / mine_count) are MAX-ed independently,
-  /// so a re-import of the same backup stays idempotent and never double-counts
-  /// (mirrors setLookupCount / setMineCountPerBook). Keyed by {title,
-  /// source_type, date_key} exactly like the table's unique key.
+  /// LookupMiningCounters MAX-union（TODO-1204；v76 起身份感知）。
+  ///
+  /// v76 把 book_key 收进唯一键 {book_key, title, source_type, date_key} 后，
+  /// 同 title 可以有多行（per-uid 行 + '' 无身份行），旧的三列键合并会双向出错：
+  /// src 身份行被 NOT EXISTS 静默丢弃；UPDATE 把同 title 每一行抬到标量子查询值
+  /// → 计数膨胀且不确定。修法与 [_mergeVideoWatchStatistics] 的 v39 身份感知
+  /// **完全同律**：桶身份 = 表唯一键（'' 无身份桶就是普通桶，只与对侧的 '' 桶
+  /// MAX 合并，绝不跨桶比较/塌缩）——INSERT 缺失桶、逐列 MAX 既有桶，重导幂等。
+  /// src 侧在 ATTACH 前已迁到当前 schema（book_key 已 NOT NULL），COALESCE 仅
+  /// 防御性归一。
+  ///
+  /// 迁移边界的已知精度限制（与 v39 watch 合并同款、同理由）：同一段活动在两侧
+  /// 落在不同桶里（一侧迁移回填出身份、另一侧仍是 '' 桶）时按两个桶各自并入，
+  /// 汇总可能偏高——桶间归属不可判，宁可保留全部数据也不瞎塌；展示层的身份分组
+  /// 会把歧义 '' 桶按 unique-title 判据归并或单列。
   ///
   /// This has NO book_tombstones guard (per-title activity, not per-book_key
   /// content), but DOES honour statistics_tombstones (TODO-1204 后续): once the
   /// user explicitly deleted a book/video's stats in the stats page, an old
   /// backup must not resurrect its lookup/mine counters. The INSERT below skips
-  /// src rows whose (title, source_type) is tombstoned; the UPDATE only touches
-  /// buckets the target already has (deleted buckets are gone), so it needs no
-  /// guard. On the INSERT of a bucket the target lacks, the src book_key travels;
-  /// on an UPDATE the target keeps its own book_key unless it was null, in which
-  /// case it adopts the src's non-null value (COALESCE) so book identity converges.
+  /// tombstoned (title, source_type); the UPDATE only touches buckets the
+  /// target already has (deleted buckets are gone), so it needs no guard.
   Future<void> _mergeLookupMiningCounters() async {
+    const String srcKey = "COALESCE(s.book_key, '')";
     await _db.customStatement(
       'INSERT INTO lookup_mining_counters '
       '(book_key, title, source_type, date_key, lookup_count, mine_count) '
-      'SELECT book_key, title, source_type, date_key, lookup_count, mine_count '
+      'SELECT $srcKey, title, source_type, date_key, '
+      'lookup_count, mine_count '
       'FROM $_srcAlias.lookup_mining_counters AS s '
       'WHERE NOT EXISTS (SELECT 1 FROM lookup_mining_counters AS t '
-      'WHERE t.title = s.title AND t.source_type = s.source_type '
-      'AND t.date_key = s.date_key) '
+      'WHERE t.book_key = $srcKey AND t.title = s.title '
+      'AND t.source_type = s.source_type AND t.date_key = s.date_key) '
       // TODO-1204 后续：用户删过该 (title, sourceType) 统计 → 旧备份不得复活其计数。
       'AND NOT EXISTS (SELECT 1 FROM statistics_tombstones st '
       'WHERE st.title = s.title AND st.source_type = s.source_type)',
@@ -717,21 +726,19 @@ class BackupMergeEngine {
       'UPDATE lookup_mining_counters SET '
       'lookup_count = MAX(lookup_count, ('
       'SELECT s.lookup_count FROM $_srcAlias.lookup_mining_counters AS s '
-      'WHERE s.title = lookup_mining_counters.title '
+      'WHERE $srcKey = lookup_mining_counters.book_key '
+      'AND s.title = lookup_mining_counters.title '
       'AND s.source_type = lookup_mining_counters.source_type '
       'AND s.date_key = lookup_mining_counters.date_key)), '
       'mine_count = MAX(mine_count, ('
       'SELECT s.mine_count FROM $_srcAlias.lookup_mining_counters AS s '
-      'WHERE s.title = lookup_mining_counters.title '
-      'AND s.source_type = lookup_mining_counters.source_type '
-      'AND s.date_key = lookup_mining_counters.date_key)), '
-      'book_key = COALESCE(book_key, ('
-      'SELECT s.book_key FROM $_srcAlias.lookup_mining_counters AS s '
-      'WHERE s.title = lookup_mining_counters.title '
+      'WHERE $srcKey = lookup_mining_counters.book_key '
+      'AND s.title = lookup_mining_counters.title '
       'AND s.source_type = lookup_mining_counters.source_type '
       'AND s.date_key = lookup_mining_counters.date_key)) '
       'WHERE EXISTS (SELECT 1 FROM $_srcAlias.lookup_mining_counters AS s '
-      'WHERE s.title = lookup_mining_counters.title '
+      'WHERE $srcKey = lookup_mining_counters.book_key '
+      'AND s.title = lookup_mining_counters.title '
       'AND s.source_type = lookup_mining_counters.source_type '
       'AND s.date_key = lookup_mining_counters.date_key)',
     );

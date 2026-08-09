@@ -648,19 +648,29 @@ class MiningStatistics extends Table {
 ///
 /// setLookupCount / setMineCount 用 MAX-union 语义（非累加），为将来备份合并 / 云聚合
 /// 幂等重导留口（本期 sync 不接）。
+///
+/// [bookKey] 自 v76 起从可空改 NOT NULL DEFAULT ''，且**进唯一键**——v39 给
+/// video_watch_statistics 修的「同名不同视频互串」在本表是同一个病：旧唯一键
+/// {title, sourceType, dateKey} 不含身份，两个同名视频的查词/制卡计数合进同一行。
+/// '' = 无书查词（title 也 ''）或 v76 前无法唯一归因的遗留行；''+title 仍在唯一键内，
+/// 遗留行按 title 互不合并。迁移按 epub_books/video_books 的 title 唯一匹配回填
+/// （v39 同判据），歧义保持 ''（读取端按 title 回退归并，见 stat_shared）。
 @DataClassName('LookupMiningCounterRow')
 class LookupMiningCounters extends Table {
   IntColumn get id => integer().autoIncrement()();
-  TextColumn get bookKey => text().nullable()();
+  TextColumn get bookKey => text().withDefault(const Constant(''))();
   TextColumn get title => text().withDefault(const Constant(''))();
   TextColumn get sourceType => text()(); // 'book' | 'video'
   TextColumn get dateKey => text()();
   IntColumn get lookupCount => integer().withDefault(const Constant(0))();
   IntColumn get mineCount => integer().withDefault(const Constant(0))();
 
+  /// 列序 {title, sourceType, dateKey, bookKey}（而非 bookKey 打头）：唯一索引
+  /// 要同时服务 add*（四列全等）与 set*/按 title 删除（三列前缀）——bookKey 打头
+  /// 会让全部 title 粒度查询退化成全表扫描（sync 应用逐 record 扫两遍）。
   @override
   List<Set<Column>> get uniqueKeys => [
-        {title, sourceType, dateKey},
+        {title, sourceType, dateKey, bookKey},
       ];
 }
 

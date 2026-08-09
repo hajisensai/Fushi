@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/aggregate_snapshot.dart';
 import 'package:fushi/src/sync/aggregate_sync_service.dart';
@@ -458,5 +459,184 @@ void main() {
 
     expect((await dbB.getMiningStatisticsBySource('book')).single.count, 7,
         reason: '旧后缀快照被跳过就会读不到 A 的状态');
+  });
+
+  // v76：lookup_mining_counters 本地行 per-identity 可多行，wire 合并键仍是
+  // {title,sourceType,dateKey}。物化必须按 wire 键把多行求和——逐行上行会在
+  // 合并 map 构建时 last-wins 静默丢数（同名双视频只剩后一行的计数）。
+  test(
+      'v76: same-title multi-identity counter rows are SUMMED into one '
+      'wire record, not last-wins dropped', () async {
+    final FushiDatabase db = await _freshDb('agg_fold_');
+    addTearDown(db.close);
+    await db.addLookupCount(
+        bookKey: 'uid-1',
+        title: '同名',
+        sourceType: 'video',
+        dateKey: '2026-06-01',
+        delta: 3);
+    await db.addLookupCount(
+        bookKey: 'uid-2',
+        title: '同名',
+        sourceType: 'video',
+        dateKey: '2026-06-01',
+        delta: 4);
+    await db.addMineCountPerBook(
+        bookKey: 'uid-2',
+        title: '同名',
+        sourceType: 'video',
+        dateKey: '2026-06-01',
+        delta: 2);
+
+    final AggregateSnapshot snap =
+        await AggregateSyncService(db).materializeLocalSnapshot();
+    final List<LookupMiningRecord> records = snap.lookupMiningCounters
+        .where((LookupMiningRecord r) => r.title == '同名')
+        .toList();
+    expect(records, hasLength(1), reason: 'wire 键去重，一条 record');
+    expect(records.single.lookupCount, 7, reason: '3+4 求和，不 last-wins');
+    expect(records.single.mineCount, 2);
+    expect(records.single.bookKey, isNull,
+        reason: '混桶总量不得归因单一身份——接收端会把 7 全记给 uid-1，'
+            '在对端重新制造互串（review-1）');
+  });
+
+  test(
+      'review3-1: same-title per-uid watch rows are SUMMED into one wire '
+      'record — no last-wins loss, and re-applying keeps local rows intact',
+      () async {
+    final FushiDatabase db = await _freshDb('agg_wfold_');
+    addTearDown(db.close);
+    await db.addVideoWatchStatistic(
+        title: '同名',
+        bookUid: 'uid-1',
+        dateKey: '2026-06-01',
+        subtitleChars: 100,
+        watchTimeMs: 3600000);
+    await db.addVideoWatchStatistic(
+        title: '同名',
+        bookUid: 'uid-2',
+        dateKey: '2026-06-01',
+        subtitleChars: 50,
+        watchTimeMs: 2400000);
+
+    final AggregateSyncService svc = AggregateSyncService(db);
+    final AggregateSnapshot snap = await svc.materializeLocalSnapshot();
+    final VideoStatRecord record =
+        snap.videoStats.singleWhere((VideoStatRecord r) => r.title == '同名');
+    expect(record.watchTimeMs, 6000000,
+        reason: '60+40 分钟求和上行，不 last-wins 丢掉一行（丢了对端 MAX 合并后'
+            '回写会把本地 100 分钟永久砍成 40）');
+    expect(record.subtitleChars, 150);
+
+    // 自回声应用：wire 值 == 本地和 → no-op，per-uid 行原样保留。
+    await svc.applySnapshotToLocal(snap);
+    final List<VideoWatchStatisticRow> rows =
+        await db.getAllVideoWatchStatistics();
+    expect(rows, hasLength(2), reason: 'wire 无新知不塌缩（review3-5），身份行不被同步周期性抹掉');
+  });
+
+  test(
+      'review4-2: watch collapse takes per-column max — a column the wire is '
+      'behind on never shrinks below the local sum', () async {
+    final FushiDatabase db = await _freshDb('agg_colmax_');
+    addTearDown(db.close);
+    // 本地：chars=500 / ms=1500（wire 只见过 ms=1000 的旧状态）。
+    await db.addVideoWatchStatistic(
+        title: 'T',
+        bookUid: 'uid-1',
+        dateKey: '2026-06-01',
+        subtitleChars: 500,
+        watchTimeMs: 1500);
+    // wire：chars 600（更多）但 ms 1000（落后）→ 单列超出触发塌缩。
+    await db.setVideoWatchStatistic(VideoWatchStatisticsCompanion(
+      title: const Value('T'),
+      dateKey: const Value('2026-06-01'),
+      subtitleChars: const Value(600),
+      watchTimeMs: const Value(1000),
+      lastModified: const Value(99),
+    ));
+    final VideoWatchStatisticRow row =
+        (await db.getAllVideoWatchStatistics()).single;
+    expect(row.subtitleChars, 600, reason: 'wire 更多的列抬上去');
+    expect(row.watchTimeMs, 1500, reason: 'wire 落后的列保本地和——往返窗口里的本地新增不许被砍');
+  });
+
+  test('review3-3: merge only keeps bookKey metadata both sides agree on',
+      () async {
+    const LookupMiningRecord localRec = LookupMiningRecord(
+      bookKey: 'uid-1',
+      title: 'T',
+      sourceType: 'video',
+      dateKey: '2026-06-01',
+      lookupCount: 1,
+      mineCount: 0,
+    );
+    const LookupMiningRecord remoteMixed = LookupMiningRecord(
+      bookKey: null, // v76 起 null = 刻意混桶，不是「不知道」
+      title: 'T',
+      sourceType: 'video',
+      dateKey: '2026-06-01',
+      lookupCount: 8,
+      mineCount: 0,
+    );
+    final AggregateSnapshot merged = AggregateSyncService.mergeSnapshots(
+      const AggregateSnapshot(
+          lookupMiningCounters: <LookupMiningRecord>[localRec]),
+      const AggregateSnapshot(
+          lookupMiningCounters: <LookupMiningRecord>[remoteMixed]),
+    );
+    final LookupMiningRecord out = merged.lookupMiningCounters.single;
+    expect(out.lookupCount, 8, reason: '数值照常 MAX');
+    expect(out.bookKey, isNull,
+        reason: '一侧是混桶 → 合并结果不得把混合总量重新归因给 uid-1'
+            '（否则全新设备落地时复刻互串）');
+
+    // 两侧一致时身份保留。
+    final AggregateSnapshot agreed = AggregateSyncService.mergeSnapshots(
+      const AggregateSnapshot(
+          lookupMiningCounters: <LookupMiningRecord>[localRec]),
+      const AggregateSnapshot(
+          lookupMiningCounters: <LookupMiningRecord>[localRec]),
+    );
+    expect(agreed.lookupMiningCounters.single.bookKey, 'uid-1');
+  });
+
+  test('v76: single-identity fold keeps its bookKey metadata', () async {
+    final FushiDatabase db = await _freshDb('agg_fold1_');
+    addTearDown(db.close);
+    await db.addLookupCount(
+        bookKey: 'uid-1',
+        title: '独占',
+        sourceType: 'video',
+        dateKey: '2026-06-01',
+        delta: 3);
+    await db.addMineCountPerBook(
+        bookKey: 'uid-1',
+        title: '独占',
+        sourceType: 'video',
+        dateKey: '2026-06-01',
+        delta: 2);
+
+    final AggregateSnapshot snap =
+        await AggregateSyncService(db).materializeLocalSnapshot();
+    final LookupMiningRecord record = snap.lookupMiningCounters
+        .singleWhere((LookupMiningRecord r) => r.title == '独占');
+    expect(record.bookKey, 'uid-1', reason: '桶内单一身份无歧义，metadata 保留');
+    expect(record.lookupCount, 3);
+    expect(record.mineCount, 2);
+  });
+
+  test(
+      'v76: no-identity counter rows travel with wire bookKey null '
+      '(byte-compatible with pre-v76 snapshots)', () async {
+    final FushiDatabase db = await _freshDb('agg_nullkey_');
+    addTearDown(db.close);
+    await db.addLookupCount(sourceType: 'book', dateKey: '2026-06-01');
+
+    final AggregateSnapshot snap =
+        await AggregateSyncService(db).materializeLocalSnapshot();
+    expect(snap.lookupMiningCounters.single.bookKey, isNull,
+        reason: "存储 '' 必须映射回 wire null，旧端字节语义不变");
   });
 }
