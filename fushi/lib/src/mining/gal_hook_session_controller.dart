@@ -690,13 +690,18 @@ class GalHookSessionController extends ChangeNotifier {
   /// 会在两个来源之间跳，且无身份行没有 `textEventId`/`hookTimestampMs`
   /// （只有引擎行会写 `_lineTextEventIdCache`），逐句配对只能退回时间戳兜底窗
   /// —— 正是 BUG-1159 的失败链。这一支保持与 v12 之前逐字节同一行为。
+  ///
+  /// 有身份行的判据是「这条 key 被本次选择认领过」（见 [_selectedThreadClaimedKeys]），
+  /// 而不是与选定 key 逐字节相等——后者会在剧情分支换调用点时把整段台词丢在发布期。
   static bool _publishesUnderSelection(
     TexthookerLineEntry entry,
     String? selectedKey,
+    Set<String> claimedKeys,
   ) {
     final String? key = entry.textThreadKey;
     if (key == null || key.isEmpty) return selectedKey == null;
-    return key == selectedKey;
+    if (selectedKey == null) return false;
+    return key == selectedKey || claimedKeys.contains(key);
   }
 
   /// 捕获工作台当前应展示的正式行。过滤判据见 [_publishesUnderSelection]；
@@ -705,8 +710,8 @@ class GalHookSessionController extends ChangeNotifier {
     final String? selectedKey = selectedTextThreadKey;
     final DateTime? startedAt = _state.sessionStartedAt;
     Iterable<TexthookerLineEntry> scoped = _textService.entries.where(
-      (TexthookerLineEntry entry) =>
-          _publishesUnderSelection(entry, selectedKey),
+      (TexthookerLineEntry entry) => _publishesUnderSelection(
+          entry, selectedKey, _selectedThreadClaimedKeys),
     );
     if (startedAt != null) {
       scoped = scoped.where(
@@ -744,7 +749,11 @@ class GalHookSessionController extends ChangeNotifier {
     return List<TexthookerLineEntry>.unmodifiable(
       _textService.entries.where(
         (TexthookerLineEntry entry) =>
-            _publishesUnderSelection(entry, selectedKey) &&
+            _publishesUnderSelection(
+              entry,
+              selectedKey,
+              _selectedThreadClaimedKeys,
+            ) &&
             !entry.receivedAt.isBefore(startedAt),
       ),
     );
@@ -800,6 +809,20 @@ class GalHookSessionController extends ChangeNotifier {
   /// thread_id 随之变，只按 threadId 精确匹配会把整段台词丢掉（BUG-1159 的原始症状）。
   /// face 从选定线程自己的行里学到，未见过为 0（此时退化为精确匹配，与旧实现同语义）。
   int _selectedTextThreadFaceId = 0;
+
+  /// 本次选择已认领的线程 key 集合——发布期过滤器的唯一判据来源。
+  ///
+  /// 为什么不能让发布期自己再写一份判据（BUG-1470）：采集期 [_acceptsLineFromSelectedThread]
+  /// 的判据是 `(threadId, faceId)`，带 BUG-1159 的同 hook 面兜底；发布期
+  /// [_publishesUnderSelection] 拿到的却是字符串 `textThreadKey`，它由 threadId 派生
+  /// （见 [GalHookedLine.textThreadKey]）。剧情一分支 ctx 变 → threadId 变 → key 变，
+  /// 于是同一句台词**过了采集、被发布全丢**：工作台正文与游戏窗浮窗同时空白，
+  /// 而线程预览区不受选择门控、照常有字——正是「预览有字、选进去没文字」的现场。
+  ///
+  /// 修法是让发布期成为采集期的**投影**而不是平行实现：采集放行一行就认领它的 key，
+  /// 发布只查集合。选择时用选定 key 自身播种，使直接往 [TexthookerService] 塞行、
+  /// 绕过采集期的调用方（既有测试与 WebSocket/剪贴板等无 helper 来源）保持原行为。
+  final Set<String> _selectedThreadClaimedKeys = <String>{};
   final SerialJobQueue _audioQueue = SerialJobQueue();
   final Set<String> _loopbackCacheInFlight = <String>{};
 
@@ -1009,6 +1032,7 @@ class GalHookSessionController extends ChangeNotifier {
     _selectedTextThreadKey = null;
     _selectedNativeTextThreadId = null;
     _selectedTextThreadFaceId = 0;
+    _selectedThreadClaimedKeys.clear();
     _setState(
       _state.copyWith(
         phase: GalHookSessionPhase.resolving,
@@ -1147,6 +1171,7 @@ class GalHookSessionController extends ChangeNotifier {
     _selectedTextThreadKey = null;
     _selectedNativeTextThreadId = null;
     _selectedTextThreadFaceId = 0;
+    _selectedThreadClaimedKeys.clear();
     _setState(
       _state.copyWith(
         phase: GalHookSessionPhase.resolving,
@@ -1921,10 +1946,21 @@ class GalHookSessionController extends ChangeNotifier {
     if (selected == null || selected == 0) return false;
     if (line.threadId == selected) {
       if (line.faceId != 0) _selectedTextThreadFaceId = line.faceId;
+      _claimThreadKey(line);
       return true;
     }
-    return _selectedTextThreadFaceId != 0 &&
-        line.faceId == _selectedTextThreadFaceId;
+    if (_selectedTextThreadFaceId != 0 &&
+        line.faceId == _selectedTextThreadFaceId) {
+      _claimThreadKey(line);
+      return true;
+    }
+    return false;
+  }
+
+  /// 采集期放行一行 ⇒ 认领它的线程 key，供发布期 [_publishesUnderSelection] 查表。
+  void _claimThreadKey(GalHookedLine line) {
+    final String? key = line.textThreadKey;
+    if (key != null && key.isNotEmpty) _selectedThreadClaimedKeys.add(key);
   }
 
   /// v13 文本分道的容量压力上报（每次计数增长各播一次，不刷屏）。
@@ -1978,6 +2014,16 @@ class GalHookSessionController extends ChangeNotifier {
     final GalTextPoll? poll = await engine.pollText(0);
     if (poll == null || engine != _engineSource) return;
     final Set<int> appended = _lineTextEventIdCache.values.toSet();
+    // 两趟：先把整批的 hook 面学完，再筛。
+    // 单趟不行——[_acceptsLineFromSelectedThread] 是带副作用的判据（精确命中时才学 face），
+    // 而 native 按 seq 升序返回，排在第一条精确命中**之前**的同 hook 面兄弟行会被判 false
+    // 且不再复评，静默漏捞。回捞本身就是"补回选中之前的行"，这个顺序依赖必然踩中。
+    for (final GalHookedLine line in poll.lines) {
+      if (line.eventKind != GalTextEventKind.line) continue;
+      if (line.threadId == selected && line.faceId != 0) {
+        _selectedTextThreadFaceId = line.faceId;
+      }
+    }
     final List<GalHookedLine> history = poll.lines
         .where((GalHookedLine line) =>
             line.eventKind == GalTextEventKind.line &&
@@ -2041,6 +2087,28 @@ class GalHookSessionController extends ChangeNotifier {
           threadId == null || threadId == 0 ? null : threadId;
       // 换线程就必须丢掉上一条线程的 hook 面，否则旧 face 会继续放行旧线程的行。
       _selectedTextThreadFaceId = 0;
+      // 认领集合用选定 key 自身播种：绕过采集期直接塞行的来源（无 helper 的
+      // WebSocket/剪贴板线程）据此保持原行为，引擎行则由采集期继续追加同 hook 面的
+      // 兄弟 key。换线程必须整体重置，否则上一条线程的 key 会继续放行它的行。
+      _selectedThreadClaimedKeys
+        ..clear()
+        ..addAll(<String>{
+          if (_selectedTextThreadKey != null) _selectedTextThreadKey!,
+        });
+      // 有 helper 却拿不到 native thread id：采集期判据 (_selectedNativeTextThreadId)
+      // 会对**所有**行返回 false，而 selectedTextThreadKey 非空又让就绪态判成
+      // 「正在监听」——弹窗关掉、状态条正常、一行文本都不来的静默死态。显式报出来。
+      if (engine != null &&
+          _selectedTextThreadKey != null &&
+          _selectedNativeTextThreadId == null) {
+        _record(
+          GalHookEventSeverity.warning,
+          'text',
+          'text.thread_selection_without_native_id',
+          'Selected text thread has no native thread id; no lines will arrive',
+          details: <String, Object?>{'threadKey': _selectedTextThreadKey},
+        );
+      }
       // 新线程在被选中之前写进自己那条道的行，现在补回来（v13 分道的直接收益）。
       await _recoverSelectedThreadHistory();
       if (remember) {

@@ -172,6 +172,105 @@ void main() {
     expect(texts, contains('選定スレッド'));
     expect(texts, isNot(contains('別スレッド')), reason: 'face 都是 0，不能因此互相放行');
   });
+
+  // ── 发布期过滤器（BUG-1470）───────────────────────────────────────────────
+  //
+  // 上面所有用例断言的都是 `service.entries`，只穿过**采集期**过滤器
+  // (_acceptsLineFromSelectedThread)。真正喂给工作台正文和游戏窗浮窗的是
+  // `workbenchLines` / `selectedSessionLines`，它们还要再过一道**发布期**过滤器。
+  // 两道判据值域不同（采集期看 (threadId, faceId)，发布期看字符串 textThreadKey），
+  // 发布期一旦只做 key 全等，同 hook 面的兄弟行就会「过了采集、被发布全丢」——
+  // 现场表现正是「线程预览里有字，选进去正文空白」。
+  //
+  // 这些用例必须同时断言两个 getter：工作台与浮窗共用同一份集合，漏一个就是
+  // 「工作台有字浮窗没字」的半盲态。
+  const List<GalHookedLine> kLinesWithDiscovery = <GalHookedLine>[
+    GalHookedLine(
+      seq: 1,
+      timestampMs: 900,
+      text: '',
+      threadId: 5,
+      faceId: kFace,
+      eventKind: GalTextEventKind.threadDiscovered,
+      hookName: 'EmbedKrkrZ',
+    ),
+    ...kLines,
+  ];
+
+  Future<({List<String> workbench, List<String> overlay})> runPublished({
+    required List<GalHookedLine> lines,
+    required int selectThreadId,
+    required String selectThreadKey,
+  }) async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _LaneEngine engine = _LaneEngine(lines: lines);
+    final GalHookSessionController controller =
+        build(service: service, endpoints: endpoints, engine: engine);
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 23, pid: 557, title: 'lane game'),
+    );
+    // 先让 threadDiscovered 事件把线程注册进目录——真机上用户能在弹窗里看到并挑中
+    // 某条线程，前提就是它已经被注册。没有这一步 selectedTextThreadKey 恒为 null。
+    for (int i = 0; i < 20; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    await controller.selectTextThread(
+      selectThreadId,
+      threadKey: selectThreadKey,
+    );
+    for (int i = 0; i < 60; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    final List<String> workbench = controller.workbenchLines
+        .map((TexthookerLineEntry e) => e.text)
+        .toList();
+    final List<String> overlay = controller.selectedSessionLines
+        .map((TexthookerLineEntry e) => e.text)
+        .toList();
+    await controller.close();
+    endpoints.dispose();
+    return (workbench: workbench, overlay: overlay);
+  }
+
+  test('发布期：选定线程自己的行进工作台，也进游戏窗浮窗', () async {
+    final result = await runPublished(
+      lines: kLinesWithDiscovery,
+      selectThreadId: 5,
+      selectThreadKey: 'hook:5',
+    );
+    expect(result.workbench, contains('選定スレッドの台詞'));
+    expect(result.overlay, contains('選定スレッドの台詞'));
+  });
+
+  test('发布期：同 hook 面的兄弟线程照样发布（ctx 一变 threadId 就变，key 也跟着变）', () async {
+    final result = await runPublished(
+      lines: kLinesWithDiscovery,
+      selectThreadId: 5,
+      selectThreadKey: 'hook:5',
+    );
+    expect(
+      result.workbench,
+      contains('同じフックの別呼び出し点'),
+      reason: '发布期只做 key 全等的话，这一句连同它之后整段台词都会被丢在发布期——'
+          '采集期放行了、正文却空白，正是「预览有字选进去没文字」的现场',
+    );
+    expect(
+      result.overlay,
+      contains('同じフックの別呼び出し点'),
+      reason: '工作台与游戏窗浮窗必须消费同一份集合，不允许一边有字一边空白',
+    );
+  });
+
+  test('发布期：别的 hook 面不因认领机制被放进来', () async {
+    final result = await runPublished(
+      lines: kLinesWithDiscovery,
+      selectThreadId: 5,
+      selectThreadKey: 'hook:5',
+    );
+    expect(result.workbench, isNot(contains('メニュー用スレッドの文字')));
+    expect(result.overlay, isNot(contains('メニュー用スレッドの文字')));
+  });
 }
 
 /// 只回一批固定文本行的桩引擎：本测试只关心「哪些行会被消费」。

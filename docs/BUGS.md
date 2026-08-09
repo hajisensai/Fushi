@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1367 条。点号进各自文件。
+> 共 1368 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1470](bugs/BUG-1470-gal-selected-thread-publish-filter.md) | ✅ | ✅ | 选中台词线程后工作台正文为空：发布期过滤器丢掉同 hook 面兄弟行 |
 | [BUG-1469](bugs/BUG-1469-futamata-kirikiri-launch-av.md) | ✅ | ✅ | 恋爱成双由 Hibiki 早注入后 Access Violation |
 | [BUG-1460](bugs/BUG-1460-win-installer-legacy-delete-rollback.md) | ✅ | ✅ | Windows 升级中途失败后 app 彻底消失：[InstallDelete] 先删旧名二进制且不可回滚 |
 | [BUG-1459](bugs/BUG-1459-installer-appdir-process-lock.md) | ✅ | ✅ | 安装器无法替换被残留子进程锁定的文件 |
