@@ -455,8 +455,11 @@ class AggregateSyncService {
           'mineCount': r.mineCount,
         }),
     };
-    // Identity + bookKey resolution: local first, then let a remote row adopt
-    // the bucket only to supply a non-null bookKey the local side lacked.
+    // Identity + bookKey resolution（review3-3）：v76 起 wire null 的语义是
+    // 「刻意混桶/未归因」（见 _foldLookupMiningRows），不再是「不知道、谁知道听
+    // 谁的」。两侧对同一桶的身份**一致才保留**，任一侧 null 或互相矛盾 → null
+    // ——旧的「null 被非空覆盖」规则会把混桶求和总量重新归因到单一视频，在下游
+    // 全新设备上复刻互串。peer-only 桶（本地无记录）仍原样落地保住身份。
     final Map<String, LookupMiningRecord> metaByKey =
         <String, LookupMiningRecord>{};
     for (final LookupMiningRecord r in local) {
@@ -466,8 +469,15 @@ class AggregateSyncService {
       final LookupMiningRecord? existing = metaByKey[r.key];
       if (existing == null) {
         metaByKey[r.key] = r;
-      } else if (existing.bookKey == null && r.bookKey != null) {
-        metaByKey[r.key] = r;
+      } else if (existing.bookKey != r.bookKey) {
+        metaByKey[r.key] = LookupMiningRecord(
+          bookKey: null,
+          title: existing.title,
+          sourceType: existing.sourceType,
+          dateKey: existing.dateKey,
+          lookupCount: existing.lookupCount,
+          mineCount: existing.mineCount,
+        );
       }
     }
     final Map<String, StatBucket> mergedMap =
@@ -494,6 +504,38 @@ class AggregateSyncService {
   /// 混桶（多身份 / 身份+'' 并存）→ null。求和总量盖上任意单一身份会让接收端把
   /// 整个 title 日总量归因到一个视频——在对端重新制造 v76 要根治的互串，且与本地
   /// 塌缩路径（setLookupCount 多行分支如实写 ''）自相矛盾（review-1）。
+  /// v76（review3-1）：watch 行按 wire 键 {title,dateKey} 求和上行——per-uid
+  /// 多行直接逐行上行会 last-wins 丢数（见 materializeLocalSnapshot 处注释）。
+  /// wire 不带身份（VideoStatRecord 无 bookUid 字段，冻结），无 metadata 之忧。
+  static List<VideoStatRecord> _foldVideoStatRows(
+      List<VideoWatchStatisticRow> rows) {
+    final Map<String, VideoStatRecord> byWireKey = <String, VideoStatRecord>{};
+    for (final VideoWatchStatisticRow r in rows) {
+      final VideoStatRecord record = VideoStatRecord(
+        title: r.title,
+        dateKey: r.dateKey,
+        subtitleChars: r.subtitleChars,
+        watchTimeMs: r.watchTimeMs,
+        lastModified: r.lastModified,
+      );
+      final VideoStatRecord? existing = byWireKey[record.key];
+      if (existing == null) {
+        byWireKey[record.key] = record;
+      } else {
+        byWireKey[record.key] = VideoStatRecord(
+          title: existing.title,
+          dateKey: existing.dateKey,
+          subtitleChars: existing.subtitleChars + record.subtitleChars,
+          watchTimeMs: existing.watchTimeMs + record.watchTimeMs,
+          lastModified: existing.lastModified > record.lastModified
+              ? existing.lastModified
+              : record.lastModified,
+        );
+      }
+    }
+    return byWireKey.values.toList();
+  }
+
   static List<LookupMiningRecord> _foldLookupMiningRows(
       List<LookupMiningCounterRow> rows) {
     final Map<String, LookupMiningRecord> byWireKey =
@@ -553,16 +595,11 @@ class AggregateSyncService {
             lastStatisticModified: r.lastStatisticModified,
           ),
       ],
-      videoStats: <VideoStatRecord>[
-        for (final VideoWatchStatisticRow r in video)
-          VideoStatRecord(
-            title: r.title,
-            dateKey: r.dateKey,
-            subtitleChars: r.subtitleChars,
-            watchTimeMs: r.watchTimeMs,
-            lastModified: r.lastModified,
-          ),
-      ],
+      // v76（review3-1）：watch 行 v39 起 per-uid 可多行，wire 键只有
+      // {title,dateKey}——逐行上行会在合并 map 构建时 last-wins **静默丢数**
+      // （同名双视频只剩最后一行的时长，apply 再把本地两行删掉写回小值 =
+      // 每轮同步永久丢观看时长）。与 counters 的 fold 同律：按 wire 键求和。
+      videoStats: _foldVideoStatRows(video),
       // 旧 wire 形状 = 逐时总量：v67 起本地行按 format 分桶，这里先按
       // {dateKey, hour} 折叠回「该小时全部阅读面之和」，旧端看到的字节语义与
       // 拆分前完全一致；拆分数据走下面的 readingHourlyByFormat。

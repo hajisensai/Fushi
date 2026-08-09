@@ -192,6 +192,35 @@ void main() {
     });
 
     test(
+        'review3-2 回归：includeUnattributed 扫面覆盖被删 uid 的全部历史 title'
+        '（展示层吸收了哪些行，删除就删哪些行）', () async {
+      final FushiDatabase db = await _openDb();
+      await db.addVideoWatchStatistic(
+          title: '旧名',
+          bookUid: 'uid-x',
+          dateKey: '2026-07-01',
+          subtitleChars: 1,
+          watchTimeMs: 1);
+      await db.addVideoWatchStatistic(
+          title: '新名',
+          bookUid: 'uid-x',
+          dateKey: '2026-07-05',
+          subtitleChars: 2,
+          watchTimeMs: 2);
+      // 新 title 的无身份遗留行——展示层按「组内全部 title 注册 owner」把它归并
+      // 进 uid-x 的 tile（review-9），删 tile 必须连它一起删。
+      await db.addVideoWatchStatistic(
+          title: '新名', dateKey: '2026-07-02', subtitleChars: 3, watchTimeMs: 3);
+
+      // tile 首见 title 是「旧名」——传入的是旧名，扫面仍须覆盖新名的遗留行。
+      await db.deleteVideoStatisticsForIdentity(
+          title: '旧名', bookUid: 'uid-x', includeUnattributed: true);
+
+      expect(await db.getAllVideoWatchStatistics(), isEmpty,
+          reason: '删 tile 即删其展示的全部行，不留「刚删完就复活的孤儿 tile」');
+    });
+
+    test(
         'review2-10 回归：bookUid 存成空串（而非 NULL）的行也算无身份，'
         '删得掉不复活', () async {
       final FushiDatabase db = await _openDb();
