@@ -200,6 +200,10 @@ class _MigrationImportPageState extends State<MigrationImportPage>
           fontsRootDirectory: fontsRoot,
           videosRootDirectory: videosRoot,
           onProgress: appModel.reportBackupImportProgress,
+          // 同机换包名：用户期望「一切原样搬过来」，而 merge 默认只搬内容、
+          // 不搬设置（那是给「另一台设备的备份」用的语义）。不开这个开关，
+          // 迁移完成后阅读器/视频/Anki/快捷键/界面/互联/同步后端全是默认值。
+          adoptSourcePreferences: true,
         );
       }
       // 合并后聚合校验：逐表行数不得低于各批清单最大值。

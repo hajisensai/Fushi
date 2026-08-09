@@ -2297,6 +2297,7 @@ class BackupService {
     String? fontsRootDirectory,
     String? videosRootDirectory,
     void Function(double progress)? onProgress,
+    bool adoptSourcePreferences = false,
   }) async {
     // Per-category merge selection (import dialog, merge mode). null = merge
     // every category (legacy full merge). Gates BOTH the DB row merge (via the
@@ -2376,6 +2377,7 @@ class BackupService {
             carriedVideoSourcePaths:
                 meta?.videoFiles.keys.toSet() ?? const <String>{},
             enabledCategoryNames: enabledCategoryNames,
+            adoptSourcePreferences: adoptSourcePreferences,
           ).merge();
         } finally {
           await db.customStatement('DETACH DATABASE mergesrc');

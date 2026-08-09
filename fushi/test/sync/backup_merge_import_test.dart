@@ -1220,4 +1220,71 @@ void main() {
     expect(rows.single.extractDir, p.join(booksRoot.path, 'sub', 'novel'),
         reason: '正常 rebase 的结果有效，兜底不得把它顶成 book_key 直落位置');
   });
+
+  test('adoptSourcePreferences：补齐老包设置，但绝不盖掉本库自己的状态标记', () async {
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = FushiDatabase(curDir.path);
+    // 新包自己的状态标记（描述「本库处于什么状态」，被老包值盖掉会毁库）。
+    await cur.customStatement(
+        'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
+        <Object?>['prefs_version', 'NEW']);
+    await cur.close();
+
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = FushiDatabase(srcDir.path);
+    await src.customStatement(
+        'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
+        <Object?>['prefs_version', 'OLD']);
+    await src.customStatement(
+        'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
+        <Object?>['src:reader_fushi:font_size', '22']);
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    await BackupService.mergeRestoreBackup(
+      dbDirectory: curDir.path,
+      zipPath: zip,
+      adoptSourcePreferences: true,
+    );
+
+    final after = FushiDatabase(curDir.path);
+    addTearDown(after.close);
+    final Map<String, String> prefs = await after.getAllPrefs();
+    expect(prefs['src:reader_fushi:font_size'], '22',
+        reason: '老包独有的用户设置必须补进来，否则迁移完全是默认值');
+    expect(prefs['prefs_version'], 'NEW', reason: '本库自己的状态标记不得被老包的值覆盖');
+  });
+
+  test('默认不接管源库设置（共享备份 merge 不动本机设置）', () async {
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = FushiDatabase(curDir.path);
+    await cur.close();
+
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = FushiDatabase(srcDir.path);
+    await src.customStatement(
+        'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
+        <Object?>['src:reader_fushi:font_size', '22']);
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    await BackupService.mergeRestoreBackup(
+        dbDirectory: curDir.path, zipPath: zip);
+
+    final after = FushiDatabase(curDir.path);
+    addTearDown(after.close);
+    final Map<String, String> prefs = await after.getAllPrefs();
+    expect(prefs.containsKey('src:reader_fushi:font_size'), false,
+        reason: '别人设备的备份 merge 进来不该改本机设置（这是 merge 的既有语义）');
+  });
 }
