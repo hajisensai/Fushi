@@ -6,15 +6,15 @@
 //   Shift+H     隐藏/显示字幕（站点原生字幕 + 扩展覆盖层，与 app 内视频页同键）
 //   Ctrl+Enter  制卡（等同点查词弹窗里的「＋」；判定不在本文件，见 vendor/popup.js）
 //   Ctrl+Shift+←/→/↓  字幕时轴偏移 −100ms / ＋100ms / 重置
-//   Ctrl+Shift+Z      复制当前字幕句到剪贴板（配合 Hibiki 剪贴板监看即查词）
+//   Ctrl+Shift+Z      复制当前字幕句到剪贴板（配合 Fushi 剪贴板监看即查词）
 //   Ctrl+Shift+[ / ]  播放速度 −0.25x / ＋0.25x
 // 判定是纯函数 decide()（node 可测）；执行端是 subtitle-panel.js 暴露的
-// window.hibikiSubtitleShortcut(action)（面板持有轨/偏移/模式状态），播放速度直接操作 <video>。
+// window.fushiSubtitleShortcut(action)（面板持有轨/偏移/模式状态），播放速度直接操作 <video>。
 // 输入框/可编辑区一律放行；旧 videoShortcutsEnabled 只作为升级时各动作的缺省值。
 (function (root, factory) {
   var api = factory();
   try { if (typeof module !== 'undefined' && module.exports) module.exports = api; } catch (_) { /* no-op */ }
-  if (root) root.HIBIKI_VIDEO_SHORTCUTS = api;
+  if (root) root.FUSHI_VIDEO_SHORTCUTS = api;
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
@@ -67,7 +67,7 @@
 // ── 浏览器运行时（node 单测里 window/document 缺省 → 整段跳过）──
 (function () {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
-  var api = (typeof self !== 'undefined' ? self : window).HIBIKI_VIDEO_SHORTCUTS;
+  var api = (typeof self !== 'undefined' ? self : window).FUSHI_VIDEO_SHORTCUTS;
   var bindingKeys = {
     'prev-cue': 'videoShortcutPrevCue',
     'next-cue': 'videoShortcutNextCue',
@@ -127,10 +127,10 @@
 
   // 当前视频是否已有任一字幕轨（store key 前缀匹配，与 subtitle-panel 同一契约）。
   function hasTrackForVideo() {
-    var store = window.hibikiEpisodeCues;
-    if (!store || typeof window.hibikiVideoKey !== 'function') return false;
+    var store = window.fushiEpisodeCues;
+    if (!store || typeof window.fushiVideoKey !== 'function') return false;
     var vid;
-    try { vid = String(window.hibikiVideoKey()); } catch (_) { return false; }
+    try { vid = String(window.fushiVideoKey()); } catch (_) { return false; }
     if (!vid) return false;
     for (var k in store) {
       if (k.indexOf(vid + '|') === 0 && store[k] && store[k].length) return true;
@@ -144,7 +144,7 @@
     var next = api.nextRate(v.playbackRate, delta);
     try { v.playbackRate = next; } catch (_) { return false; }
     try {
-      if (typeof window.hibikiToast === 'function') window.hibikiToast('播放速度 ' + next + 'x');
+      if (typeof window.fushiToast === 'function') window.fushiToast('播放速度 ' + next + 'x');
     } catch (_) {}
     return true;
   }
@@ -176,8 +176,8 @@
     var handled = false;
     if (decision.action === 'rate-up') handled = adjustRate(0.25);
     else if (decision.action === 'rate-down') handled = adjustRate(-0.25);
-    else if (typeof window.hibikiSubtitleShortcut === 'function') {
-      handled = window.hibikiSubtitleShortcut(decision.action) === true;
+    else if (typeof window.fushiSubtitleShortcut === 'function') {
+      handled = window.fushiSubtitleShortcut(decision.action) === true;
     }
     if (handled) {
       e.preventDefault();

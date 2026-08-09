@@ -1,0 +1,231 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+
+/// 防回归守卫：默认图标=文字、Windows 运行时切换通道存在、设置页跨平台。
+/// 这些是无法用 widget 测试覆盖的「跨语言契约 / 资源引用」，用源码扫描兜底。
+void main() {
+  String read(String relative) {
+    // 测试在 fushi/ 下运行；相对路径即相对该目录。
+    final File f = File(relative);
+    expect(f.existsSync(), isTrue, reason: '缺失文件: $relative');
+    return f.readAsStringSync();
+  }
+
+  test('Android 默认启动器图标引用不透明白 squircle 资源（TODO-1241）', () {
+    final String manifest = read('android/app/src/main/AndroidManifest.xml');
+    // <application> 默认图标应指向 squircle（不透明白，任意壁纸可见）。
+    final RegExp appIcon = RegExp(
+      r'android:name="\$\{applicationName\}"[\s\S]*?android:icon="@mipmap/launcher_icon_squircle"',
+    );
+    expect(appIcon.hasMatch(manifest), isTrue,
+        reason: '<application> 默认图标应引用 launcher_icon_squircle');
+    // 默认 alias 也应引用 squircle。
+    final RegExp defaultAlias = RegExp(
+      r'MainActivityDefault[\s\S]*?android:icon="@mipmap/launcher_icon_squircle"',
+    );
+    expect(defaultAlias.hasMatch(manifest), isTrue,
+        reason: '.MainActivityDefault 应引用 launcher_icon_squircle');
+    // squircle mipmap 资源（自适应 xml + 至少一档 legacy png）必须存在。
+    expect(
+        File('android/app/src/main/res/mipmap-anydpi-v26/launcher_icon_squircle.xml')
+            .existsSync(),
+        isTrue,
+        reason: '缺失 launcher_icon_squircle 自适应图标 xml');
+    expect(
+        File('android/app/src/main/res/mipmap-xxxhdpi/launcher_icon_squircle.png')
+            .existsSync(),
+        isTrue,
+        reason: '缺失 launcher_icon_squircle legacy png');
+  });
+
+  test('Android 透明（无背景）档保留为独立可选 alias（TODO-1241）', () {
+    final String manifest = read('android/app/src/main/AndroidManifest.xml');
+    // 透明档 alias 存在、默认禁用、引用透明 wordmark（launcher_icon_minimal）。
+    final RegExp transparentAlias = RegExp(
+      r'MainActivityFushiTransparent[\s\S]*?android:icon="@mipmap/launcher_icon_minimal"',
+    );
+    expect(transparentAlias.hasMatch(manifest), isTrue,
+        reason:
+            '.MainActivityFushiTransparent 应引用 launcher_icon_minimal（透明 wordmark）');
+    // 透明档在原生映射与预设映射里都可选。
+    final String helper = read(
+        'android/app/src/main/java/app/fushi/reader/IconSwitchHelper.java');
+    expect(helper.contains('"hibiki_transparent"'), isTrue,
+        reason: 'IconSwitchHelper 应把 hibiki_transparent 列为可选档');
+    expect(helper.contains('.MainActivityFushiTransparent'), isTrue);
+    final String prefs = read('lib/src/utils/misc/app_icon_preferences.dart');
+    expect(prefs.contains("'hibiki_transparent':"), isTrue);
+    expect(prefs.contains('assets/meta/launcher_icon_squircle.png'), isTrue,
+        reason: 'default 预设预览应指向 squircle 资源');
+  });
+
+  test('Windows runner 暴露 setWindowIcon 通道方法', () {
+    final String cpp = read('windows/runner/flutter_window.cpp');
+    expect(cpp.contains('"setWindowIcon"'), isTrue);
+    expect(cpp.contains('ApplyWindowIcon'), isTrue);
+    expect(cpp.contains('WM_SETICON'), isTrue);
+  });
+
+  test('Dart 侧有 setWindowIcon 封装', () {
+    final String dart = read('lib/src/utils/window_caption_channel.dart');
+    expect(dart.contains('setWindowIcon'), isTrue);
+  });
+
+  test('设置页图标网格对 Windows 可见', () {
+    final String page =
+        read('lib/src/pages/implementations/miscellaneous_settings_page.dart');
+    expect(page.contains('Platform.isWindows'), isTrue);
+    final String schema =
+        read('lib/src/settings/settings_schema_appearance.dart');
+    expect(schema.contains('Platform.isWindows'), isTrue);
+  });
+
+  test('Windows app icon 用已提交的 app_icon.ico wordmark', () {
+    // TODO-879（f9f5bb380）删除了 flutter_launcher_icons 配置块（generator 会
+    // 覆盖手调 adaptive 图标），Windows 改用已提交的 app_icon.ico。
+    // 守卫真实不变量：已提交的 ico 存在且非空 + Runner.rc 引用它。
+    final File ico = File('windows/runner/resources/app_icon.ico');
+    expect(ico.existsSync(), isTrue,
+        reason: '缺失已提交的 Windows 图标: windows/runner/resources/app_icon.ico');
+    expect(ico.lengthSync() > 0, isTrue,
+        reason: 'app_icon.ico 不应为空（应是文字 wordmark 图标）');
+
+    final String rc = read('windows/runner/Runner.rc');
+    // .rc 里路径用双反斜杠转义：resources\app_icon.ico。
+    final RegExp iconRef = RegExp(
+      r'IDI_APP_ICON\s+ICON\s+"resources\\\\app_icon\.ico"',
+    );
+    expect(iconRef.hasMatch(rc), isTrue,
+        reason: 'Runner.rc 应以 IDI_APP_ICON 引用 resources\\\\app_icon.ico');
+  });
+
+  test('Android 12+ 系统 splash 图标用专用 splash wordmark 前景（TODO-886）', () {
+    // TODO-886：splash 前景改用专用 ic_splash_minimal_foreground（内容窄于
+    // 自适应安全区），避免启动器前景 wordmark 太宽被圆遮罩裁切。
+    // 几何断言详见 test/android/splash_icon_guard_test.dart。
+    for (final String rel in <String>[
+      'android/app/src/main/res/values-v31/styles.xml',
+      'android/app/src/main/res/values-night-v31/styles.xml',
+    ]) {
+      final String styles = read(rel);
+      expect(
+        styles.contains('android:windowSplashScreenAnimatedIcon') &&
+            styles.contains('@drawable/ic_splash_minimal_foreground'),
+        isTrue,
+        reason: '$rel 的 Android 12+ splash 应显示专用 splash wordmark 前景',
+      );
+    }
+  });
+
+  test('TODO-868/1241：预设三档 default+hibiki_transparent+full，无重复的 hibiki_minimal',
+      () {
+    // 预设映射为三档，且不含去重掉的 hibiki_minimal。
+    final String prefs = read('lib/src/utils/misc/app_icon_preferences.dart');
+    expect(prefs.contains("'hibiki_minimal':"), isFalse,
+        reason: 'presetIconAssets 不应再映射已去重的 hibiki_minimal');
+    expect(prefs.contains("'default':"), isTrue);
+    expect(prefs.contains("'hibiki_transparent':"), isTrue);
+    expect(prefs.contains("'hibiki_full':"), isTrue);
+
+    // 设置页渲染三档 tile（含新透明档），仍不引用已删除的 hibiki_minimal / icon_minimal。
+    final String page =
+        read('lib/src/pages/implementations/miscellaneous_settings_page.dart');
+    expect(page.contains("key: 'hibiki_transparent'"), isTrue,
+        reason: '设置页应渲染 hibiki_transparent 预设 tile');
+    expect(page.contains("key: 'hibiki_minimal'"), isFalse,
+        reason: '设置页不应再渲染 hibiki_minimal 预设 tile');
+    expect(page.contains('t.icon_minimal'), isFalse,
+        reason: '设置页不应再引用已删除的 icon_minimal label');
+  });
+
+  test(
+      'TODO-868 Android 老用户安全：minimal alias 仍声明 + IconSwitchHelper 迁移回 default',
+      () {
+    // manifest 保留退役 alias 声明，避免老用户升级后 launcher 图标消失。
+    final String manifest = read('android/app/src/main/AndroidManifest.xml');
+    expect(manifest.contains('.MainActivityFushiMinimal'), isTrue,
+        reason: '退役 minimal alias 必须保留声明（老用户 launcher 安全）');
+
+    // IconSwitchHelper：不再把 hibiki_minimal 列为可选项，但提供迁移逻辑。
+    final String helper = read(
+        'android/app/src/main/java/app/fushi/reader/IconSwitchHelper.java');
+    expect(helper.contains('"hibiki_minimal"'), isFalse,
+        reason: 'hibiki_minimal 不应再出现在可选 ALIAS_KEYS 中');
+    expect(helper.contains('migrateRetiredMinimalIfEnabled'), isTrue,
+        reason: '必须提供老用户迁移逻辑，把启用的 minimal alias 迁回 default');
+    expect(helper.contains('RETIRED_MINIMAL_ALIAS'), isTrue);
+  });
+  test('TODO-1269 回归守卫：所有启动器自适应图标背景必须不透明且非纯黑（纯透明会被渲染成黑）', () {
+    // 根因：TODO-1241 把 ic_launcher_minimal_background 从 #FFFFFF 改成纯透明
+    // #00000000，adaptive-icon 背景层不能透明——Android 合成到不透明底层、多数
+    // 启动器渲染成纯黑，导致老用户（经 IconSwitchHelper 迁到 minimal wordmark）
+    // 升级后图标背景全黑。此守卫扫描所有 mipmap-anydpi-v26/launcher_icon*.xml，
+    // 解析其 <background> 引用的 @color，再从 values/colors.xml 解析真实色值，
+    // 断言：alpha == 0xFF（不透明）且 RGB 非纯黑 (0,0,0)。
+    final String colorsXml = read('android/app/src/main/res/values/colors.xml');
+    // 解析 colors.xml：name -> #RRGGBB / #AARRGGBB。
+    final Map<String, String> colorByName = <String, String>{};
+    final RegExp colorRe = RegExp(
+      r'<color\s+name="([^"]+)"\s*>\s*(#[0-9A-Fa-f]{6,8})\s*</color>',
+    );
+    for (final RegExpMatch m in colorRe.allMatches(colorsXml)) {
+      colorByName[m.group(1)!] = m.group(2)!;
+    }
+
+    // (alpha, r, g, b) 解析：#RRGGBB -> alpha 0xFF；#AARRGGBB -> 显式 alpha。
+    List<int> parseArgb(String hex) {
+      final String h = hex.substring(1);
+      if (h.length == 6) {
+        return <int>[
+          0xFF,
+          int.parse(h.substring(0, 2), radix: 16),
+          int.parse(h.substring(2, 4), radix: 16),
+          int.parse(h.substring(4, 6), radix: 16),
+        ];
+      }
+      return <int>[
+        int.parse(h.substring(0, 2), radix: 16),
+        int.parse(h.substring(2, 4), radix: 16),
+        int.parse(h.substring(4, 6), radix: 16),
+        int.parse(h.substring(6, 8), radix: 16),
+      ];
+    }
+
+    final Directory adaptiveDir =
+        Directory('android/app/src/main/res/mipmap-anydpi-v26');
+    expect(adaptiveDir.existsSync(), isTrue,
+        reason: '缺失自适应图标目录 mipmap-anydpi-v26');
+
+    final List<FileSystemEntity> iconXmls = adaptiveDir
+        .listSync()
+        .where((FileSystemEntity e) =>
+            e is File &&
+            e.uri.pathSegments.last.startsWith('launcher_icon') &&
+            e.path.endsWith('.xml'))
+        .toList();
+    expect(iconXmls, isNotEmpty, reason: '未发现任何 launcher_icon*.xml 自适应图标');
+
+    final RegExp bgRefRe = RegExp(
+      r'<background\s+android:drawable="@color/([^"]+)"',
+    );
+    for (final FileSystemEntity e in iconXmls) {
+      final String name = e.uri.pathSegments.last;
+      final String xml = (e as File).readAsStringSync();
+      final RegExpMatch? bg = bgRefRe.firstMatch(xml);
+      // 有的图标背景直接是 png drawable（非 @color），跳过——只校验 @color 背景。
+      if (bg == null) continue;
+      final String colorName = bg.group(1)!;
+      final String? hex = colorByName[colorName];
+      expect(hex, isNotNull,
+          reason: '$name 引用的 @color/$colorName 在 colors.xml 中未定义');
+      final List<int> argb = parseArgb(hex!);
+      expect(argb[0], 0xFF,
+          reason: '$name 背景 @color/$colorName = $hex 不是不透明（alpha != 0xFF）；'
+              '自适应图标背景纯/半透明会被渲染成黑（TODO-1269）');
+      final bool isPureBlack = argb[1] == 0 && argb[2] == 0 && argb[3] == 0;
+      expect(isPureBlack, isFalse,
+          reason: '$name 背景 @color/$colorName = $hex 是纯黑，图标会背景全黑（TODO-1269）');
+    }
+  });
+}

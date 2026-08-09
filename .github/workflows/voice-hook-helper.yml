@@ -9,7 +9,7 @@
 # x86 包另带 Locale Emulator 2.5.0.1 的 LoaderDll.dll / LocaleEmulator.dll 与 LGPL 文本，供
 # Hibiki 自动以日语 CP932 挂起启动旧式非 Unicode galgame；不运行安装器、不改系统区域设置。
 # 打成 voice_hook_<arch>.zip（文件平铺在 zip 根）+ .sha256 侧车供 app 校验完整性。app 下载 URL：
-#   https://github.com/hajisensai/hibiki/releases/download/voice-hook-helper/voice_hook_<arch>.zip
+#   https://github.com/hajisensai/fushi/releases/download/voice-hook-helper/voice_hook_<arch>.zip
 name: voice-hook-helper
 
 on:
@@ -21,11 +21,14 @@ on:
   # 合仓后必须用 paths **白名单**而不是原来的 paths-ignore：helper 现在住在 Hibiki 主仓库里，
   # 沿用 paths-ignore 会让主仓库任何一次非文档提交都去重建并重发 helper release。
   # 本 workflow 自身改动也要触发（否则改了发布逻辑却发不出去）。
-  push:
-    branches: [develop]
-    paths:
-      - 'native/galgame_hook/**'
-      - '.github/workflows/voice-hook-helper.yml'
+  # ⚠️ Fushi 改名过渡期（2026-08-07 用户指示）：暂停 push 自动发布——新版 Fushi
+  # 尚未正式就绪，自动发布会让老 Hibiki 用户经应用内更新拉到改名后的构建
+  # （Android 并存装新包 / helper 组件名对不上），迁移链发布前恢复本块。
+  # push:
+  #   branches: [develop]
+  #   paths:
+  #     - 'native/galgame_hook/**'
+  #     - '.github/workflows/voice-hook-helper.yml'
 
 # 同一时刻只跑一份发布（push 连发时后车顶掉前车，避免并发 upsert 同一 release 竞态）。
 concurrency:
@@ -90,7 +93,7 @@ jobs:
             本 release 为 prerelease、非 Latest。
 
             杀软说明：Windows Defender（签名 1.455.357.0）实扫全部文件与 zip 均无检出，
-            见 hibiki-hook#8 的 av-selfscan 实测。国产杀软（360/火绒等）未验证，若被拦为误报。
+            见 native/galgame_hook/docs/av-selfscan-evidence.md（原 hibiki-hook#8） 的 av-selfscan 实测。国产杀软（360/火绒等）未验证，若被拦为误报。
           prerelease: true
           make_latest: false
           files: |

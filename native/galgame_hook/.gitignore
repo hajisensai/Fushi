@@ -11,3 +11,5 @@ __pycache__/
 # 任务内 Hook 证据台账；release 前仅将脱敏、验签后的最终台账显式复制到 evidence/。
 .galhook-evidence/
 
+build-x64/
+build-x86/

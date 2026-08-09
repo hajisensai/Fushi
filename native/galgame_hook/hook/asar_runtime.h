@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 struct AsarVoiceEntry {
   uint64_t archive_offset = 0;
@@ -255,4 +255,4 @@ inline bool ParseAsarVoiceEntries(const char* json, size_t size,
   return cursor.ParseVoiceEntries(data_base, entries);
 }
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook

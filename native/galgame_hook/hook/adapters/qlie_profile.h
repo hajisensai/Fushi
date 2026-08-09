@@ -4,7 +4,7 @@
 
 #include "../qlie_pack.h"
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 inline volatile LONG g_qlie_profile_active = 0;
 
@@ -58,4 +58,4 @@ inline bool MatchesQlieProfile(const wchar_t*) {
          HasQliePackSignature(pack);
 }
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook

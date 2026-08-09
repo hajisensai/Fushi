@@ -206,7 +206,7 @@ done
 
 echo "[ffmpeg-min-smoke] synthesizing audiobook clip video (loop PNG + audio -> mov)"
 # TODO-1096: mirror buildFfmpegImageAudioToVideoArgs
-# (hibiki/lib/src/media/audiobook/audiobook_clip_export.dart). The clip export
+# (fushi/lib/src/media/audiobook/audiobook_clip_export.dart). The clip export
 # feeds a single text PNG as a looping video stream (`-loop 1 -i clip.png`) and
 # muxes mjpeg video + aac audio into a .mov. Reading the named PNG needs the
 # image2 demuxer; a missing image2 makes ffmpeg exit -1094995529
@@ -219,7 +219,7 @@ run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/clip.mov" -f null -
 
 echo "[ffmpeg-min-smoke] probing audio RMS energy envelope (aresample/asetnsamples/astats/ametadata)"
 # TODO-1096: mirror buildFfmpegPcmEnvelopeArgs
-# (hibiki/lib/src/media/video/audio_energy_probe.dart). Subtitle auto-align
+# (fushi/lib/src/media/video/audio_energy_probe.dart). Subtitle auto-align
 # (TODO-701) probes per-frame RMS energy through the SAME bundled ffmpeg via
 # `-af aresample=R,asetnsamples=n=N:p=0,astats=metadata=1:reset=1,ametadata=print:key=...`
 # `-f null -`. A minimal build missing asetnsamples/astats/ametadata parses
@@ -259,7 +259,7 @@ assert_log_contains "$WORK/rms.log" "lavfi.astats.Overall.RMS_level"
 echo "[ffmpeg-min-smoke] verifying network protocols (http/https/tls for YouTube mining)"
 # TODO-1214: YouTube/remote mining feeds ffmpeg an http(s) googlevideo stream and
 # adds -reconnect* input options (buildFfmpegRemoteInputArgs,
-# hibiki/lib/src/utils/misc/desktop_audio_clipper.dart). A build without
+# fushi/lib/src/utils/misc/desktop_audio_clipper.dart). A build without
 # --enable-network has NO http/https protocol, so opening the URL and the
 # -reconnect option both fail (AVERROR_OPTION_NOT_FOUND). Assert the protocols
 # exist up front so a dropped --enable-network fails loudly here, not at runtime.
@@ -344,7 +344,7 @@ if [ ! -x "$FFPROBE_MIN" ]; then
 fi
 
 # Shape 1: container tag extraction -- buildFfprobeFormatTagsArgs()
-# (hibiki/lib/src/utils/misc/desktop_audio_clipper.dart). Feeds an audiobook file
+# (fushi/lib/src/utils/misc/desktop_audio_clipper.dart). Feeds an audiobook file
 # and reads format.tags.{title,artist,album}; a null result makes the importer
 # fall back to the bare filename.
 run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
@@ -365,7 +365,7 @@ assert_log_contains "$WORK/tags.json" "Hibiki Probe Title"
 assert_log_contains "$WORK/tags.json" "Hibiki Probe Artist"
 
 # Shape 2: font attachment enumeration -- _enumerateFontAttachments()
-# (hibiki/lib/src/media/video/subtitle_embedded_fonts.dart). `-select_streams t`
+# (fushi/lib/src/media/video/subtitle_embedded_fonts.dart). `-select_streams t`
 # lists only attachment streams; the result drives ASS rendering with the video's
 # own embedded fonts instead of the system fallback.
 printf 'not-a-real-font-but-ffprobe-only-lists-the-stream' >"$WORK/fake.ttf"

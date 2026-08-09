@@ -5,20 +5,20 @@
       "name": "Hibiki (debug)",
       "type": "dart",
       "request": "launch",
-      "program": "hibiki/lib/main.dart"
+      "program": "fushi/lib/main.dart"
     },
     {
       "name": "Hibiki (profile)",
       "type": "dart",
       "request": "launch",
-      "program": "hibiki/lib/main.dart",
+      "program": "fushi/lib/main.dart",
       "flutterMode": "profile"
     },
     {
       "name": "Hibiki (release)",
       "type": "dart",
       "request": "launch",
-      "program": "hibiki/lib/main.dart",
+      "program": "fushi/lib/main.dart",
       "flutterMode": "release"
     }
   ]

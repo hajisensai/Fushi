@@ -111,7 +111,7 @@ void ObserveBgiVoiceArcRead(HANDLE file, const void* buffer, DWORD done,
     if (memcmp(bytes, "OggS", 4) == 0) {
       audio_start = true;
     } else if (done >= 12 && memcmp(bytes + 4, "bw  ", 4) == 0) {
-      const uint32_t ogg_offset = hibiki_voice_hook::bgi::ReadLe32(bytes);
+      const uint32_t ogg_offset = fushi_voice_hook::bgi::ReadLe32(bytes);
       audio_start = ogg_offset >= 8 && ogg_offset <= done - 4 &&
                     memcmp(bytes + ogg_offset, "OggS", 4) == 0;
     }
@@ -146,10 +146,10 @@ void ProcessBgiVoiceTask(BgiVoiceTask* task) {
   if (file == INVALID_HANDLE_VALUE) return;
 
   LARGE_INTEGER file_size = {};
-  uint8_t prefix[hibiki_voice_hook::bgi::kArc20HeaderBytes] = {0};
+  uint8_t prefix[fushi_voice_hook::bgi::kArc20HeaderBytes] = {0};
   uint8_t* index = nullptr;
   uint8_t* ogg = nullptr;
-  hibiki_voice_hook::bgi::Arc20Entry entry;
+  fushi_voice_hook::bgi::Arc20Entry entry;
   uint32_t count = 0;
   uint64_t data_base = 0;
   uint32_t ogg_offset = 0;
@@ -157,14 +157,14 @@ void ProcessBgiVoiceTask(BgiVoiceTask* task) {
   bool valid = GetFileSizeEx(file, &file_size) && file_size.QuadPart > 0 &&
                ReadExact(file, prefix, sizeof(prefix));
   if (valid &&
-      memcmp(prefix, hibiki_voice_hook::bgi::kArc20Signature,
-             hibiki_voice_hook::bgi::kArc20SignatureBytes) == 0) {
-    count = hibiki_voice_hook::bgi::ReadLe32(
-        prefix + hibiki_voice_hook::bgi::kArc20SignatureBytes);
-    data_base = hibiki_voice_hook::bgi::kArc20HeaderBytes +
+      memcmp(prefix, fushi_voice_hook::bgi::kArc20Signature,
+             fushi_voice_hook::bgi::kArc20SignatureBytes) == 0) {
+    count = fushi_voice_hook::bgi::ReadLe32(
+        prefix + fushi_voice_hook::bgi::kArc20SignatureBytes);
+    data_base = fushi_voice_hook::bgi::kArc20HeaderBytes +
         static_cast<uint64_t>(count) *
-            hibiki_voice_hook::bgi::kArc20EntryBytes;
-    valid = count > 0 && count <= hibiki_voice_hook::bgi::kMaxEntryCount &&
+            fushi_voice_hook::bgi::kArc20EntryBytes;
+    valid = count > 0 && count <= fushi_voice_hook::bgi::kMaxEntryCount &&
             data_base <= static_cast<uint64_t>(file_size.QuadPart) &&
             data_base <= SIZE_MAX;
   } else {
@@ -177,7 +177,7 @@ void ProcessBgiVoiceTask(BgiVoiceTask* task) {
       memcpy(index, prefix, sizeof(prefix));
       valid = ReadExact(file, index + sizeof(prefix),
                         static_cast<uint32_t>(data_base - sizeof(prefix))) &&
-              hibiki_voice_hook::bgi::FindEntryForRead(
+              fushi_voice_hook::bgi::FindEntryForRead(
                   index, static_cast<size_t>(data_base),
                   static_cast<uint64_t>(file_size.QuadPart),
                   task->read_offset, &entry);
@@ -193,7 +193,7 @@ void ProcessBgiVoiceTask(BgiVoiceTask* task) {
             : static_cast<uint32_t>(sizeof(member_header));
     valid = SetFilePointerEx(file, at, nullptr, FILE_BEGIN) != FALSE &&
             ReadExact(file, member_header, probe_bytes) &&
-            hibiki_voice_hook::bgi::ParseBwOggHeader(
+            fushi_voice_hook::bgi::ParseBwOggHeader(
                 member_header, probe_bytes, entry.member_size, &ogg_offset,
                 &ogg_size);
   }
@@ -204,7 +204,7 @@ void ProcessBgiVoiceTask(BgiVoiceTask* task) {
     valid = ogg != nullptr &&
             SetFilePointerEx(file, at, nullptr, FILE_BEGIN) != FALSE &&
             ReadExact(file, ogg, ogg_size) &&
-            hibiki_voice_hook::siglus::CompleteOggBytes(ogg, ogg_size) ==
+            fushi_voice_hook::siglus::CompleteOggBytes(ogg, ogg_size) ==
                 ogg_size;
   }
   const bool duplicate = valid &&
@@ -212,7 +212,7 @@ void ProcessBgiVoiceTask(BgiVoiceTask* task) {
       g_bgi_last_member == entry.member_offset &&
       _wcsicmp(g_bgi_last_path, task->path) == 0;
   if (valid && !duplicate) {
-    wchar_t member_name[hibiki_voice_hook::bgi::kArc20NameBytes + 1] = {0};
+    wchar_t member_name[fushi_voice_hook::bgi::kArc20NameBytes + 1] = {0};
     MultiByteToWideChar(CP_ACP, 0, entry.name, -1, member_name,
                         static_cast<int>(std::size(member_name)));
     const wchar_t* slash = wcsrchr(task->path, L'\\');
@@ -226,7 +226,7 @@ void ProcessBgiVoiceTask(BgiVoiceTask* task) {
     wcsncpy_s(g_bgi_last_path, task->path, _TRUNCATE);
     if (g_header != nullptr) {
       g_header->hook_diagnostics |=
-          hibiki_voice_hook::kDiagBgiArcVoiceCaptured;
+          fushi_voice_hook::kDiagBgiArcVoiceCaptured;
     }
   }
   free(ogg);
@@ -244,12 +244,12 @@ void ProcessBgiVoiceTasks() {
 }
 
 bool TryHookBgiArcVoice() {
-  if (!hibiki_voice_hook::MatchesBgiEthornellProfile(nullptr)) return false;
+  if (!fushi_voice_hook::MatchesBgiEthornellProfile(nullptr)) return false;
   const bool ready = TryHookSiglusOvk();
   if (ready) {
     InterlockedExchange(&g_bgi_arc_enabled, 1);
     if (g_header != nullptr) {
-      g_header->hook_diagnostics |= hibiki_voice_hook::kDiagBgiArcHooksReady;
+      g_header->hook_diagnostics |= fushi_voice_hook::kDiagBgiArcHooksReady;
     }
   }
   return ready;
@@ -266,11 +266,11 @@ void StopBgiArcVoice() {
   LeaveCriticalSection(&g_cs);
 }
 
-class BgiEthornellAdapter final : public hibiki_voice_hook::EngineAdapter {
+class BgiEthornellAdapter final : public fushi_voice_hook::EngineAdapter {
  public:
   const char* id() const override { return "bgi_ethornell"; }
   bool probe() const override {
-    return hibiki_voice_hook::MatchesBgiEthornellProfile(nullptr);
+    return fushi_voice_hook::MatchesBgiEthornellProfile(nullptr);
   }
   bool install() override {
     ready_ = TryHookBgiArcVoice();
@@ -278,10 +278,10 @@ class BgiEthornellAdapter final : public hibiki_voice_hook::EngineAdapter {
     return ready_;
   }
   void ProcessPendingEvents() { ProcessBgiVoiceTasks(); }
-  hibiki_voice_hook::AdapterCapability capabilities() const override {
-    return hibiki_voice_hook::AdapterCapability::kText |
-           hibiki_voice_hook::AdapterCapability::kResourceAudio |
-           hibiki_voice_hook::AdapterCapability::kPcmAudio;
+  fushi_voice_hook::AdapterCapability capabilities() const override {
+    return fushi_voice_hook::AdapterCapability::kText |
+           fushi_voice_hook::AdapterCapability::kResourceAudio |
+           fushi_voice_hook::AdapterCapability::kPcmAudio;
   }
   void onModuleLoaded(const wchar_t*) override {}
   void shutdown() override {
@@ -289,7 +289,7 @@ class BgiEthornellAdapter final : public hibiki_voice_hook::EngineAdapter {
     installed_ = false;
     ready_ = false;
   }
-  hibiki_voice_hook::AdapterDiagnostics diagnostics() const override {
+  fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), probe(), installed_,
             g_header == nullptr ? 0u : g_header->hook_diagnostics};
   }

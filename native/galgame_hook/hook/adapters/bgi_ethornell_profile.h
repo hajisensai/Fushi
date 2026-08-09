@@ -2,7 +2,7 @@
 
 #include <cwchar>
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 inline bool MatchesBgiEthornellProfile(const wchar_t* module_name) {
   wchar_t executable[MAX_PATH] = {0};
@@ -15,4 +15,4 @@ inline bool MatchesBgiEthornellProfile(const wchar_t* module_name) {
   return candidate != nullptr && _wcsicmp(candidate, L"BGI.exe") == 0;
 }
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook

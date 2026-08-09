@@ -151,8 +151,8 @@ void ProcessKirikiriVoiceTasks() {
     if (InterlockedCompareExchange(&task->state, 3, 2) != 2) continue;
 
     // 只扫一条道，候选上界就是道深（旧值 kTextSlotCount 现在是总槽数，放栈上会白占 20KB）。
-    hibiki_voice_hook::VoiceTextCandidate
-        candidates[hibiki_voice_hook::kTextLaneSlotCount] = {};
+    fushi_voice_hook::VoiceTextCandidate
+        candidates[fushi_voice_hook::kTextLaneSlotCount] = {};
     size_t candidate_count = 0;
     uint64_t selected_thread_id = task->pairing.selected_thread_id;
     if (g_header == nullptr || g_text_base == nullptr ||
@@ -164,8 +164,8 @@ void ProcessKirikiriVoiceTasks() {
       // 选定线程的行；放开非胜出线程后再扫全局，等于把每条线程的行都读进候选数组（配对解析
       // 器仍会按 thread_id 过滤掉它们，但候选数组会先被别的线程刷爆，真候选被顶出去）。
       // 读取可以跨越写者分区——分区只约束**认领**，不约束读。
-      hibiki_voice_hook::TextLane* lanes =
-          hibiki_voice_hook::TextLanesOf(g_header);
+      fushi_voice_hook::TextLane* lanes =
+          fushi_voice_hook::TextLanesOf(g_header);
       const uint32_t lane_count =
           lanes == nullptr ? 0 : g_header->text_lane_count;
       uint32_t lane_index = 0;
@@ -185,21 +185,21 @@ void ProcessKirikiriVoiceTasks() {
             lane_written > lane_slots ? lane_written - lane_slots + 1 : 1;
         for (uint64_t lane_seq = first_lane_seq;
              lane_seq <= lane_written &&
-             candidate_count < hibiki_voice_hook::kTextLaneSlotCount;
+             candidate_count < fushi_voice_hook::kTextLaneSlotCount;
              ++lane_seq) {
           auto* slot = reinterpret_cast<TextSlot*>(
-              hibiki_voice_hook::TextLaneSlotAt(g_header, lane_index,
+              fushi_voice_hook::TextLaneSlotAt(g_header, lane_index,
                                                 lane_seq));
           if (slot == nullptr) continue;
           if (ReadKirikiriSharedU64(&slot->lane_seq) != lane_seq) continue;
           MemoryBarrier();
-          hibiki_voice_hook::VoiceTextCandidate candidate;
+          fushi_voice_hook::VoiceTextCandidate candidate;
           candidate.seq = ReadKirikiriSharedU64(&slot->seq);
           candidate.timestamp_ms = slot->timestamp_ms;
           candidate.thread_id = slot->thread_id;
           candidate.byte_len = slot->byte_len;
           candidate.is_line =
-              slot->event_kind == hibiki_voice_hook::kTextEventLine;
+              slot->event_kind == fushi_voice_hook::kTextEventLine;
           MemoryBarrier();
           if (ReadKirikiriSharedU64(&slot->lane_seq) != lane_seq) continue;
           candidates[candidate_count++] = candidate;
@@ -209,13 +209,13 @@ void ProcessKirikiriVoiceTasks() {
 
     const uint64_t deadline_ms =
         task->pairing.resource_tick_ms +
-        hibiki_voice_hook::kKirikiriFollowingTextWindowMs;
-    const auto decision = hibiki_voice_hook::ResolveFollowingSelectedText(
+        fushi_voice_hook::kKirikiriFollowingTextWindowMs;
+    const auto decision = fushi_voice_hook::ResolveFollowingSelectedText(
         task->pairing.resource_tick_ms, deadline_ms, GetTickCount64(),
         selected_thread_id, task->pairing.baseline_text_seq, candidates,
         candidate_count);
     if (decision.state ==
-        hibiki_voice_hook::VoiceResourcePairState::kWait) {
+        fushi_voice_hook::VoiceResourcePairState::kWait) {
       InterlockedExchange(&task->state, 2);
       continue;
     }
@@ -335,7 +335,7 @@ void DumpVorbisDatasourceGuarded(void* datasource, void* vf, MiniOvCallbacks cal
       callbacks.read_func == nullptr || callbacks.seek_func == nullptr ||
       callbacks.tell_func == nullptr ||
       InterlockedCompareExchange(
-          &hibiki_voice_hook::g_qlie_profile_active, 0, 0) != 0) {
+          &fushi_voice_hook::g_qlie_profile_active, 0, 0) != 0) {
     return;
   }
   auto read_cb = reinterpret_cast<MiniOvReadCallback>(callbacks.read_func);
@@ -389,10 +389,10 @@ int __cdecl Detour_wu_ov_open_callbacks(void* datasource, void* vf,
                                             callbacks);
   if (r == 0 && vf != nullptr) {
     if (InterlockedCompareExchange(
-            &hibiki_voice_hook::g_qlie_profile_active, 0, 0) != 0 &&
+            &fushi_voice_hook::g_qlie_profile_active, 0, 0) != 0 &&
         g_header != nullptr) {
       g_header->reserved_hook_diagnostics |=
-          hibiki_voice_hook::kDiagQlieVorbisOpenObserved;
+          fushi_voice_hook::kDiagQlieVorbisOpenObserved;
     }
     uint32_t rate = 0, channels = 0;
     if (g_orig_wu_ov_info != nullptr) {
@@ -426,9 +426,9 @@ long __cdecl Detour_wu_ov_read(void* vf, char* buffer, int length, int bigendian
       RecordVoiceClipFmt(off, len, reinterpret_cast<uint64_t>(vf), rate, channels,
                          16, 0);
       if (InterlockedCompareExchange(
-              &hibiki_voice_hook::g_qlie_profile_active, 0, 0) != 0) {
+              &fushi_voice_hook::g_qlie_profile_active, 0, 0) != 0) {
         g_header->reserved_hook_diagnostics |=
-            hibiki_voice_hook::kDiagQlieVorbisPcmCaptured;
+            fushi_voice_hook::kDiagQlieVorbisPcmCaptured;
       }
     }
   }
@@ -486,9 +486,9 @@ long __cdecl Detour_wu_ov_read_float(void* vf, float*** pcm_channels,
   }
   if (returned_frames != 0 &&
       InterlockedCompareExchange(
-          &hibiki_voice_hook::g_qlie_profile_active, 0, 0) != 0) {
+          &fushi_voice_hook::g_qlie_profile_active, 0, 0) != 0) {
     g_header->reserved_hook_diagnostics |=
-        hibiki_voice_hook::kDiagQlieVorbisFloatPcmCaptured;
+        fushi_voice_hook::kDiagQlieVorbisFloatPcmCaptured;
   }
   return ret;
 }
@@ -576,15 +576,15 @@ bool TryHookKirikiriDecoders() {
             (p_read == nullptr) ? 0x400 : (read_ok ? 0x100 : 0x200);
         if (open_ok &&
             InterlockedCompareExchange(
-                &hibiki_voice_hook::g_qlie_profile_active, 0, 0) == 0) {
+                &fushi_voice_hook::g_qlie_profile_active, 0, 0) == 0) {
           g_header->hook_diagnostics |=
-              hibiki_voice_hook::kDiagKirikiriVorbisOpenHookReady;
+              fushi_voice_hook::kDiagKirikiriVorbisOpenHookReady;
         }
         if (InterlockedCompareExchange(
-                &hibiki_voice_hook::g_qlie_profile_active, 0, 0) != 0 &&
+                &fushi_voice_hook::g_qlie_profile_active, 0, 0) != 0 &&
             p_read_float != nullptr && read_float_ok) {
           g_header->reserved_hook_diagnostics |=
-              hibiki_voice_hook::kDiagQlieVorbisFloatHookReady;
+              fushi_voice_hook::kDiagQlieVorbisFloatHookReady;
         }
       }
       HookFn(reinterpret_cast<void*>(GetProcAddress(vorb, "wu_ov_clear")),
@@ -1154,14 +1154,14 @@ HRESULT HandleV2Link(ITVPFunctionExporter* exporter, V2Link_t orig) {
 }
 
 // 每个 hook 槽一个独立 detour（MinHook 共享 detour 无法区分各自 trampoline，故按 slot 展开）。
-#define HIBIKI_V2LINK_DETOUR(i)                               \
+#define FUSHI_V2LINK_DETOUR(i)                               \
   HRESULT NTAPI Detour_V2Link_##i(ITVPFunctionExporter* e) {  \
     return HandleV2Link(e, g_v2link_orig[i]);                 \
   }
-HIBIKI_V2LINK_DETOUR(0)
-HIBIKI_V2LINK_DETOUR(1)
-HIBIKI_V2LINK_DETOUR(2)
-HIBIKI_V2LINK_DETOUR(3)
+FUSHI_V2LINK_DETOUR(0)
+FUSHI_V2LINK_DETOUR(1)
+FUSHI_V2LINK_DETOUR(2)
+FUSHI_V2LINK_DETOUR(3)
 void* const g_v2link_detours[kMaxV2Link] = {
     reinterpret_cast<void*>(&Detour_V2Link_0), reinterpret_cast<void*>(&Detour_V2Link_1),
     reinterpret_cast<void*>(&Detour_V2Link_2), reinterpret_cast<void*>(&Detour_V2Link_3),

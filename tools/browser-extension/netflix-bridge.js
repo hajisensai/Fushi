@@ -21,7 +21,7 @@
 
   // TODO-1219/1363（面板要刷新/列表空的根因）：本脚本 document_start 抓字幕，隔离世界 content.js
   // document_idle 才注册接收端——postMessage fire-and-forget，先于接收端发出的 cue 消息永久丢失。
-  // 抓到的 cue payload 一律存档；content.js 就绪后发 {__hibikiNf:'replayCues'} 请求，这里整批重放。
+  // 抓到的 cue payload 一律存档；content.js 就绪后发 {__fushiNf:'replayCues'} 请求，这里整批重放。
   // 上限防呆：一部剧全部语言轨也就几十条，超上限丢最旧（绝不无界增长）。
   var cueArchive = [];
   var CUE_ARCHIVE_MAX = 80;
@@ -61,7 +61,7 @@
         .then(function (r) { return r.text(); })
         .then(function (text) {
           if (!text) return;
-          var payload = { __hibikiNf: 'cues', videoId: videoId, lang: lang, format: picked.format, text: text };
+          var payload = { __fushiNf: 'cues', videoId: videoId, lang: lang, format: picked.format, text: text };
           cueArchive.push(payload);
           if (cueArchive.length > CUE_ARCHIVE_MAX) cueArchive.shift();
           postCuesMessage(payload);
@@ -123,16 +123,16 @@
     if (e.origin !== ORIGIN || e.source !== window) return;
     var d = e.data;
     if (!d) return;
-    if (d.__hibikiNf === 'replayCues') {
+    if (d.__fushiNf === 'replayCues') {
       // content.js（隔离世界）接收端就绪：重放全部已存档 cue，消除注入时序竞态。
       for (var i = 0; i < cueArchive.length; i++) postCuesMessage(cueArchive[i]);
       return;
     }
-    if (d.__hibikiNf !== 'seek') return;
+    if (d.__fushiNf !== 'seek') return;
     var replied = false;
     var reply = function (ok, err) {
       if (replied) return; replied = true;
-      try { window.postMessage({ __hibikiNf: 'seekDone', ok: ok, err: err || '' }, '/'); } catch (_) {}
+      try { window.postMessage({ __fushiNf: 'seekDone', ok: ok, err: err || '' }, '/'); } catch (_) {}
     };
     try { nfSeek(d.ms, function () { reply(true, ''); }); }
     catch (x) { reply(false, String(x)); }

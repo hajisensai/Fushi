@@ -1,0 +1,1953 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:intl/date_symbol_data_local.dart';
+import 'package:intl/intl.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/utils.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/src/utils/misc/collection_exporter.dart';
+import 'package:fushi/src/media/display_title.dart';
+import 'package:fushi/src/media/video/m3u8_playlist.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
+    show GamepadLongPressActions;
+
+enum _CollectionType { sentence, mined, word }
+
+@visibleForTesting
+({int? episodeIndex, int? startMs}) resolveVideoFavoriteOpenTarget({
+  required VideoBookRow row,
+  required int? favoriteSectionIndex,
+  required int? favoriteStartMs,
+}) {
+  final int episodeCount = playlistEpisodeCount(row.playlistJson);
+  if (episodeCount <= 0) {
+    return (episodeIndex: null, startMs: favoriteStartMs);
+  }
+  if (favoriteSectionIndex == null) {
+    return (episodeIndex: null, startMs: null);
+  }
+  return (
+    episodeIndex: favoriteSectionIndex.clamp(0, episodeCount - 1),
+    startMs: favoriteStartMs,
+  );
+}
+
+/// 从一条**视频来源**收藏句解析出「该截哪个文件的哪段音频」。纯函数（无 IO），可单测。
+///
+/// 视频收藏句保存时（[VideoFushiPage] `_toggleFavoriteSentenceForVideo` /
+/// `_toggleFavoriteCueForVideo`）把 cue 时间窗直接编进收藏字段：
+/// - [favoriteSectionIndex] = 集索引（`_currentEpisode`，单视频恒 0）；
+/// - [favoriteStartMs] = cue 起点毫秒（存进 `normCharOffset`，**非字符偏移**）；
+/// - [favoriteDurationMs] = cue 时长毫秒（存进 `normCharLength`，可空）。
+///
+/// 因此收藏句**自带**裁剪所需的全部信息，无需经 [CollectionAudioMatcher]：直接据此
+/// 算出 `[startMs, endMs)`，并选出该集对应的视频文件路径（单视频用 [VideoBookRow.videoPath]；
+/// 多集播放列表按集索引从 [VideoBookRow.playlistJson] 取那一集的绝对路径）。
+///
+/// 返回 null 表示无法播放（缺起点、时长非正、播放列表越界 / 解析失败）——调用方据此
+/// 不显示播放按钮 / 点击后提示。
+@visibleForTesting
+({String filePath, int startMs, int endMs})? resolveVideoFavoriteAudioClip({
+  required VideoBookRow row,
+  required int? favoriteSectionIndex,
+  required int? favoriteStartMs,
+  required int? favoriteDurationMs,
+}) {
+  final int? startMs = favoriteStartMs;
+  if (startMs == null || startMs < 0) return null;
+  final int duration = favoriteDurationMs ?? 0;
+  if (duration <= 0) return null;
+  final int endMs = startMs + duration;
+
+  final int episodeCount = playlistEpisodeCount(row.playlistJson);
+  if (episodeCount <= 0) {
+    // 单视频：直接用 videoPath（与播放器单视频路径一致）。
+    return (filePath: row.videoPath, startMs: startMs, endMs: endMs);
+  }
+
+  // 多集播放列表：按收藏的集索引取那一集的绝对路径。
+  final int episodeIndex =
+      (favoriteSectionIndex ?? 0).clamp(0, episodeCount - 1);
+  try {
+    final dynamic decoded = jsonDecode(row.playlistJson!);
+    if (decoded is! List) return null;
+    final PlaylistEntry entry =
+        PlaylistEntry.fromJson(decoded[episodeIndex] as Map<String, dynamic>);
+    if (entry.path.isEmpty) return null;
+    return (filePath: entry.path, startMs: startMs, endMs: endMs);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// 用「跳回原文」所需的最小信息重建一条 [MediaItem]。
+///
+/// [format] 必须是**当前** `EpubBooks.format`（调用方现查），不能省略也不能默认成
+/// EPUB：`mediaSourceIdentifier` 决定打开哪个阅读器，写死成 `reader_fushi` 会让漫画 /
+/// PDF 书落进 EPUB 阅读器并在解析路径出错。派生走 [ReaderFushiSource.mediaSourceKeyFor]
+/// 这一唯一真相源，与书架列书同一条路径。
+MediaItem buildCollectionReaderMediaItem({
+  required String bookKey,
+  required String title,
+  required BookFormat format,
+}) {
+  return MediaItem(
+    mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(bookKey),
+    title: title,
+    mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
+    mediaSourceIdentifier: ReaderFushiSource.mediaSourceKeyFor(format),
+    position: 0,
+    duration: 1,
+    canDelete: false,
+    canEdit: true,
+  );
+}
+
+class _CollectionItem {
+  _CollectionItem({
+    required this.type,
+    required this.createdAt,
+    this.bookTitle,
+    this.bookKey,
+    this.text,
+    this.chapterLabel,
+    this.sectionIndex,
+    this.normCharOffset,
+    this.normCharLength,
+    this.favoriteId,
+    this.minedId,
+    this.wordReading,
+    this.wordSourceType,
+    this.source = kFavoriteSentenceSourceBook,
+  });
+
+  final _CollectionType type;
+  final DateTime createdAt;
+  final String? bookTitle;
+  final String? bookKey;
+  final String? text;
+  final String? chapterLabel;
+  final int? sectionIndex;
+  final int? normCharOffset;
+  final int? normCharLength;
+  final String? favoriteId;
+
+  /// 制卡历史行 id（TODO-633，[_CollectionType.mined] 专用，供删除一条用）。
+  final int? minedId;
+
+  /// 收藏词的振假名读音（[_CollectionType.word] 专用）。删除按 (expression, reading,
+  /// sourceType) 复合唯一键匹配 [FushiDatabase.removeFavoriteWord]，故读音/来源都要留存。
+  /// 这里 [text] 复用为 expression（词形），[chapterLabel] 复用为 glossary（释义）。
+  final String? wordReading;
+
+  /// 收藏词来源（'book' / 'video'，[_CollectionType.word] 专用），同上供删除匹配。
+  final String? wordSourceType;
+
+  /// 收藏句子来源（[kFavoriteSentenceSourceBook]/`Video`/`Audiobook`/`Lyrics`）。书签恒
+  /// 默认书籍；句子按 [FavoriteSentence.source] 透传。视频来源句子的 [bookKey] 是视频
+  /// bookUid，点击时走 [VideoFushiPage] 并按 [normCharOffset] 的 startMs seek。
+  final String source;
+
+  /// [source] 的枚举视图（BUG-1120）：UI 分支按四值穷尽 switch，未知/旧值回退
+  /// [SentenceSourceKind.book]。收藏词行（[_CollectionType.word]）的 [source] 复用
+  /// wordSourceType 值域，不走本 getter 的展示路径。
+  SentenceSourceKind get sourceKind => sentenceSourceKindOf(source);
+}
+
+class CollectionsPage extends BasePage {
+  const CollectionsPage({super.key});
+
+  @override
+  BasePageState<CollectionsPage> createState() => _CollectionsPageState();
+}
+
+class _CollectionsPageState extends BasePageState<CollectionsPage> {
+  bool _loading = true;
+  List<_CollectionItem> _items = [];
+  Map<String, String> _bookTitleMap = {};
+  Map<String, List<AudioCue>> _cueMap = {};
+  Map<String, List<File>> _audioFileMap = {};
+
+  /// 视频来源收藏句的 [VideoBookRow]（按 bookUid 索引），由 [_load] 填充。视频句的
+  /// 播放音频不走 [_cueMap]/[_audioFileMap]——收藏句字段自带 cue 时间窗，配上这里的
+  /// row 即可定位「该集视频文件 + 时间段」，按需 ffmpeg 抽音（见
+  /// [resolveVideoFavoriteAudioClip] / [_playVideoFavoriteAudio]）。
+  Map<String, VideoBookRow> _videoRowMap = {};
+
+  /// 正在截取/播放音频的**那一行**的列表键（[_itemKey]）；null = 无进行中播放。
+  /// 旧实现是全局 bool——一行在播，全列表按钮统一变沙漏且禁点（巡检 PR-3）。
+  String? _playingItemKey;
+
+  /// 收藏日期本地化格式（巡检 PR-3）：跟随 app 语言的月日顺序，当年条目省年份、
+  /// 跨年条目补年份（旧硬编码 'MM/dd HH:mm' 对 en 等 locale 月日顺序错，且去年
+  /// 条目与今年同形混淆）。date symbols 已在 [_load] 里 initializeDateFormatting；
+  /// 仅当 app 语言对 intl 是未知 locale（ArgumentError）时退回 intl 默认 locale。
+  String _formatCreatedAt(DateTime createdAt) {
+    final bool sameYear = createdAt.year == DateTime.now().year;
+    final String locale = LocaleSettings.currentLocale.languageTag;
+    DateFormat fmt;
+    try {
+      fmt = sameYear
+          ? DateFormat.Md(locale).add_Hm()
+          : DateFormat.yMd(locale).add_Hm();
+    } on ArgumentError {
+      fmt = sameYear ? DateFormat.Md().add_Hm() : DateFormat.yMd().add_Hm();
+    }
+    return fmt.format(createdAt);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+
+    // 本地化日期格式（[_formatCreatedAt]）需要 intl 的 date symbols；纯内存表
+    // 初始化（date_symbol_data_local，无 IO），在首次渲染行之前完成。
+    await initializeDateFormatting();
+
+    final db = appModel.database;
+    final favoriteRepo = FavoriteSentenceRepository(db);
+    final srtBookRepo = SrtBookRepository(db);
+    final abRepo = AudiobookRepository(db);
+
+    final allFavorites = await favoriteRepo.getAll();
+    final allMined = await db.getAllMinedSentences();
+    // BUG-462：弹窗 ☆ 收藏的词（FavoriteWords 表）此前只进导出管线、从不进收藏列表，
+    // 用户「收藏里没有收藏的单词」。这里与书签/收藏句/制卡句同结构落 _CollectionItem。
+    final allWords = await db.getAllFavoriteWords();
+
+    final srtBooks = await srtBookRepo.listAll();
+    final bookTitleMap = <String, String>{};
+    for (final b in srtBooks) {
+      if (b.bookKey.isNotEmpty) {
+        // P4：反查表的值即显示名——过 display-title 门面应用编辑弹窗写入的
+        // override（bookKey 非空的 SRT/有声书行与 EPUB 共享 `hoshi://book/`
+        // 身份，见 BUG-1018 A3；门面按 bookKey 优先分派）。
+        bookTitleMap[b.bookKey] = displayTitleForBook(
+          bookKey: b.bookKey,
+          srtUid: b.uid,
+          rawTitle: b.title,
+        );
+      }
+    }
+
+    final items = <_CollectionItem>[];
+
+    for (final fav in allFavorites) {
+      items.add(
+        _CollectionItem(
+          type: _CollectionType.sentence,
+          createdAt: fav.createdAt,
+          bookTitle: fav.bookTitle,
+          bookKey: fav.bookKey,
+          text: fav.text,
+          chapterLabel: fav.chapterLabel,
+          sectionIndex: fav.sectionIndex,
+          normCharOffset: fav.normCharOffset,
+          normCharLength: fav.normCharLength,
+          favoriteId: fav.id,
+          source: fav.source,
+        ),
+      );
+    }
+
+    // TODO-633 制卡历史：与收藏句同结构落 _CollectionItem，复用 _openBook /
+    // _openVideoSentence 跳回原文（来源 book/video 由 row.source 区分）。
+    for (final m in allMined) {
+      items.add(
+        _CollectionItem(
+          type: _CollectionType.mined,
+          createdAt: DateTime.fromMillisecondsSinceEpoch(m.createdAt),
+          bookTitle: m.documentTitle,
+          bookKey: m.bookKey,
+          text: m.sentence.isNotEmpty ? m.sentence : m.expression,
+          chapterLabel: m.chapterLabel,
+          sectionIndex: m.sectionIndex,
+          normCharOffset: m.normCharOffset,
+          normCharLength: m.normCharLength,
+          minedId: m.id,
+          source: m.source,
+        ),
+      );
+    }
+
+    for (final w in allWords) {
+      items.add(
+        _CollectionItem(
+          type: _CollectionType.word,
+          createdAt: DateTime.fromMillisecondsSinceEpoch(w.createdAt),
+          // text=词形（标题行）、chapterLabel=释义（副标题行）；无 bookKey（不可跳转，
+          // 收藏词不携带原文定位）。删除复合键由 wordReading/wordSourceType 保留。
+          text: w.expression,
+          chapterLabel: w.glossary.isNotEmpty ? w.glossary : null,
+          wordReading: w.reading,
+          wordSourceType: w.sourceType,
+          source: w.sourceType,
+        ),
+      );
+    }
+
+    items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    final allBookKeys = <String>{};
+    for (final fav in allFavorites) {
+      if (fav.bookKey != null && fav.bookKey!.isNotEmpty) {
+        allBookKeys.add(fav.bookKey!);
+      }
+    }
+    for (final m in allMined) {
+      if (m.source != kFavoriteSentenceSourceVideo &&
+          m.bookKey != null &&
+          m.bookKey!.isNotEmpty) {
+        allBookKeys.add(m.bookKey!);
+      }
+    }
+
+    // 视频来源收藏句的 bookUid（按需查 VideoBooks 表）。视频句的 bookKey 是视频
+    // bookUid，既不在 SrtBooks 也不在 Audiobooks 里，故单独解析。
+    final videoBookUids = <String>{};
+    for (final fav in allFavorites) {
+      if (fav.source == kFavoriteSentenceSourceVideo &&
+          fav.bookKey != null &&
+          fav.bookKey!.isNotEmpty) {
+        videoBookUids.add(fav.bookKey!);
+      }
+    }
+    for (final m in allMined) {
+      if (m.source == kFavoriteSentenceSourceVideo &&
+          m.bookKey != null &&
+          m.bookKey!.isNotEmpty) {
+        videoBookUids.add(m.bookKey!);
+      }
+    }
+    final videoRepo = VideoBookRepository(db);
+    final videoRowMap = <String, VideoBookRow>{};
+    for (final bookUid in videoBookUids) {
+      final VideoBookRow? row = await videoRepo.getByBookUid(bookUid);
+      if (row != null) videoRowMap[bookUid] = row;
+    }
+
+    final cueMap = <String, List<AudioCue>>{};
+    final audioFileMap = <String, List<File>>{};
+
+    final audiobookByKey = await abRepo.buildBookKeyMap();
+
+    for (final bookKey in allBookKeys) {
+      // SrtBook
+      final srtBook = await srtBookRepo.findByBookKey(bookKey);
+      if (srtBook != null) {
+        final cues = await srtBookRepo.cuesFor(srtBook.uid);
+        if (cues.isNotEmpty) {
+          final audioFiles = await _resolveAudioFiles(
+            audioPaths: srtBook.audioPaths,
+            audioRoot: srtBook.audioRoot,
+          );
+          if (audioFiles.isNotEmpty) {
+            cueMap[bookKey] = cues;
+            audioFileMap[bookKey] = audioFiles;
+            continue;
+          }
+        }
+      }
+
+      // Audiobook (Sasayaki)
+      final ab = audiobookByKey[bookKey];
+      if (ab == null) continue;
+
+      final cues = await abRepo.cuesForBook(ab.bookKey);
+      if (cues.isEmpty) continue;
+
+      final audioFiles = await _resolveAudioFiles(
+        audioPaths: ab.audioPaths,
+        audioRoot: ab.audioRoot,
+      );
+      if (audioFiles.isEmpty) continue;
+
+      cueMap[bookKey] = cues;
+      audioFileMap[bookKey] = audioFiles;
+    }
+
+    if (mounted) {
+      setState(() {
+        _items = items;
+        _bookTitleMap = bookTitleMap;
+        _cueMap = cueMap;
+        _audioFileMap = audioFileMap;
+        _videoRowMap = videoRowMap;
+        _loading = false;
+      });
+    }
+  }
+
+  /// P4：收藏/制卡/收藏词行「所属书/视频」的显示名统一解析。
+  ///
+  /// 行的 `bookTitle`（收藏句 `book_title` / 制卡句 `document_title`）是落库时的
+  /// **raw 身份快照**（写入端保持 raw 不动，见 chrome.part.dart / mining.part.dart），
+  /// 渲染端在这里按行身份过 display-title 门面：
+  /// - 视频来源句：`bookKey` 是视频 bookUid，视频改名直写 `video_books.title`
+  ///   （raw 即显示名），按 [_videoRowMap] 现查行取列值（[displayTitleForVideo]）；
+  ///   行已删则回落快照。
+  /// - 书来源句：按 bookKey 过 override 门面（[_bookTitleMap] 的 SRT 值已 facade，
+  ///   再过一次幂等）。
+  /// - 无 bookKey（收藏词/老数据）：原样返回快照。
+  String? _displayBookTitleFor({
+    required String? bookKey,
+    required String? source,
+    required String? rawSnapshot,
+  }) {
+    final String? raw =
+        (rawSnapshot != null && rawSnapshot.isNotEmpty) ? rawSnapshot : null;
+    if (bookKey == null || bookKey.isEmpty) return raw;
+    if (source == kFavoriteSentenceSourceVideo) {
+      final VideoBookRow? row = _videoRowMap[bookKey];
+      return row != null ? displayTitleForVideo(row) : raw;
+    }
+    final String display = displayTitleForBook(
+      bookKey: bookKey,
+      rawTitle: _bookTitleMap[bookKey] ?? raw ?? '',
+    );
+    return display.isEmpty ? raw : display;
+  }
+
+  /// [_displayBookTitleFor] 的 [_CollectionItem] 便捷入口（列表副标题/详情弹窗）。
+  String? _itemDisplayBookTitle(_CollectionItem item) => _displayBookTitleFor(
+        bookKey: item.bookKey,
+        source: item.source,
+        rawSnapshot: item.bookTitle,
+      );
+
+  Future<void> _openBook(_CollectionItem item) async {
+    final String? bookKey = item.bookKey;
+    if (bookKey == null || bookKey.isEmpty) return;
+
+    // 阅读器路由的真相源是**当前** `EpubBooks.format`，这里只有 bookKey，必须现查。
+    // 书行查不到（书已删、收藏还在）时按 EPUB 回退，与路由层 parseOrEpub 的既有
+    // 回退一致——反正随后阅读器自己会报「书不存在」，不在这里造第二种失败形态。
+    final EpubBookRow? book = await appModel.database.getEpubBook(bookKey);
+    final BookFormat format = BookFormat.parseOrEpub(book?.format);
+
+    // 标题仅作展示（身份走 mediaIdentifier=bookKey），过门面显示改名后书名。
+    final String title = _displayBookTitleFor(
+          bookKey: bookKey,
+          source: item.source,
+          rawSnapshot: item.bookTitle,
+        ) ??
+        '';
+
+    final MediaItem mediaItem = buildCollectionReaderMediaItem(
+      bookKey: bookKey,
+      title: title,
+      format: format,
+    );
+
+    // BUG-459: 三类行的 normCharOffset 计量不同——
+    //   bookmark：0-10000 章内进度分数（reader `_addBookmarkAtCurrentPosition` 写）。
+    //   sentence/mined：`getNormalizedOffset` 的章节内绝对可匹配字符索引（0..数千，
+    //                   收藏 `_toggleFavoriteSentence` / 制卡 `_recordMinedSentence` 写）。
+    // 旧代码把后者也塞进 Bookmark.normCharOffset，跳转端按分数 `/10000≈0` 还原 → 恒
+    // 跳章首。这里按行类型分流：句子/制卡走绝对字符锚（charAnchor）让阅读器精确恢复，
+    // 且标 preserveSavedPosition——临时浏览跳转不覆盖用户真实阅读进度。
+    final bool isSentenceJump = item.type == _CollectionType.sentence ||
+        item.type == _CollectionType.mined;
+    final Bookmark? bookmark = item.sectionIndex != null
+        ? Bookmark(
+            sectionIndex: item.sectionIndex!,
+            normCharOffset: isSentenceJump ? 0 : (item.normCharOffset ?? 0),
+            charAnchor: isSentenceJump ? item.normCharOffset : null,
+            // BUG-461: 句子/制卡跳转把句长一并透传，连续模式横排据此整句对齐进可见区，
+            // 句尾不被阅读底栏切（句子行才有 normCharLength；制卡行/老收藏可能为 null）。
+            charAnchorLength: isSentenceJump ? item.normCharLength : null,
+            preserveSavedPosition: isSentenceJump,
+            label: '',
+            createdAt: item.createdAt,
+          )
+        : null;
+
+    if (!mounted) return;
+    await appModel.openMedia(
+      ref: ref,
+      // 由 item 自己的 mediaSourceIdentifier 反查源，不写死 EPUB 阅读器。
+      mediaSource: mediaItem.getMediaSource(appModel: appModel),
+      item: mediaItem,
+      initialBookmarkJump: bookmark,
+    );
+  }
+
+  Future<void> _openVideoSentence(_CollectionItem item) async {
+    final String? bookUid = item.bookKey;
+    if (bookUid == null || bookUid.isEmpty) return;
+
+    final VideoBookRepository repo = VideoBookRepository(appModel.database);
+    final VideoBookRow? row = await repo.getByBookUid(bookUid);
+    if (row == null) return;
+
+    final int? startMs = await _resolveVideoFavoriteStartMs(repo, row, item);
+    final target = resolveVideoFavoriteOpenTarget(
+      row: row,
+      favoriteSectionIndex: item.sectionIndex,
+      favoriteStartMs: startMs,
+    );
+    // BUG-1067：本集若属于某 playlist 合集，必须带上主合集 id 进播放器——否则
+    // 视频初始化时系列级音轨/字幕调轴记忆分支（video_fushi_page 1884-1894，
+    // schema v52）被整段跳过，退回读本集 per-book 默认值（音轨 null / 调轴 0），
+    // 表现为「从收藏跳转后音轨与调好的字幕轴又被重置」。解析口径与书架/首页
+    // dashboard 续播一致（getPrimaryCollectionIdByEntry，key='video|<bookUid>'）。
+    final int? playlistCollectionId =
+        await _resolveVideoPlaylistCollectionId(row.bookUid);
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => VideoFushiPage.neutralized(
+          bookUid: row.bookUid,
+          repo: repo,
+          playlistCollectionId: playlistCollectionId,
+          initialCueStartMs: target.startMs,
+          initialEpisodeIndex: target.episodeIndex,
+          initialSubtitleListVisible: true,
+        ),
+      ),
+    );
+  }
+
+  /// 解析该视频条目所属的主 playlist 合集 id（无归属返回 null → 按散卡单视频打开）。
+  /// 与书架 [_open]（`collection.id`）、首页 dashboard 续播（`_primaryCollectionByEntry`）
+  /// 同口径，确保系列级音轨/字幕调轴记忆命中同一 collectionId（BUG-1067）。
+  Future<int?> _resolveVideoPlaylistCollectionId(String bookUid) async {
+    final Map<String, int> primaryByEntry =
+        await appModel.database.getPrimaryCollectionIdByEntry();
+    return primaryByEntry[MediaKind.video.compositeKey(bookUid)];
+  }
+
+  Future<int?> _resolveVideoFavoriteStartMs(
+    VideoBookRepository repo,
+    VideoBookRow row,
+    _CollectionItem item,
+  ) async {
+    if (_isPlaylistVideo(row) && item.sectionIndex == null) {
+      return null;
+    }
+    if (item.normCharOffset != null) return item.normCharOffset;
+    final String? text = item.text?.trim();
+    final String? bookUid = item.bookKey;
+    if (text == null || text.isEmpty || bookUid == null || bookUid.isEmpty) {
+      return null;
+    }
+    final List<AudioCue> cues = await repo.loadCues(bookUid);
+    for (final AudioCue cue in cues) {
+      if (cue.text.trim() == text) return cue.startMs;
+    }
+    return null;
+  }
+
+  bool _isPlaylistVideo(VideoBookRow row) =>
+      playlistEpisodeCount(row.playlistJson) > 0;
+
+  Future<List<File>> _resolveAudioFiles({
+    required List<String>? audioPaths,
+    required String? audioRoot,
+  }) async {
+    if (audioPaths != null && audioPaths.isNotEmpty) {
+      final files = <File>[];
+      for (final path in audioPaths) {
+        final f = File(path);
+        if (await f.exists()) files.add(f);
+      }
+      return files;
+    }
+    if (audioRoot != null) {
+      final dir = Directory(audioRoot);
+      if (!await dir.exists()) return [];
+      final entries = await dir.list().toList();
+      final files = entries.whereType<File>().where((f) {
+        final ext = f.path.toLowerCase();
+        return ext.endsWith('.mp3') ||
+            ext.endsWith('.m4a') ||
+            ext.endsWith('.m4b') ||
+            ext.endsWith('.ogg') ||
+            ext.endsWith('.aac') ||
+            ext.endsWith('.wav') ||
+            ext.endsWith('.mp4') ||
+            ext.endsWith('.flac') ||
+            ext.endsWith('.opus') ||
+            ext.endsWith('.wma') ||
+            ext.endsWith('.ac3') ||
+            ext.endsWith('.eac3');
+      }).toList()
+        ..sort((a, b) => compareAudioFilePath(a.path, b.path));
+      return files;
+    }
+    return [];
+  }
+
+  Future<void> _playItemAudio(_CollectionItem item) async {
+    final String? bookKey = item.bookKey;
+    if (bookKey == null || bookKey.isEmpty) {
+      FushiToast.show(
+        msg: t.srt_audio_unresolved,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+
+    // 巡检 PR-3：换行播放 = 先停旧后播新（其余行不再禁点）。只调整调用顺序，
+    // 播放器逻辑（TtsChannel.playFile / stop）不动。
+    if (_playingItemKey != null && _playingItemKey != _itemKey(item)) {
+      await TtsChannel.instance.stop();
+    }
+
+    // 视频来源句：从收藏字段自带的 cue 时间窗 + 该集视频文件抽音（容器内交错，但
+    // ffmpeg `-ss`/`-t` 在 `-i` 前快速输入定位，只解码这几秒，不读穿整个文件）。
+    if (item.source == kFavoriteSentenceSourceVideo) {
+      await _playVideoFavoriteAudio(item, bookKey);
+      return;
+    }
+
+    final List<File>? audioFiles = _audioFileMap[bookKey];
+    if (audioFiles == null || audioFiles.isEmpty) {
+      FushiToast.show(
+        msg: t.srt_audio_unresolved,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+
+    final List<AudioCue>? cues = _cueMap[bookKey];
+    if (cues == null || cues.isEmpty) {
+      FushiToast.show(
+        msg: t.srt_audio_unresolved,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+
+    final AudioPlaybackRange? range = CollectionAudioMatcher.findPlaybackRange(
+      cues: cues,
+      sectionIndex: item.sectionIndex,
+      normCharOffset: item.normCharOffset,
+      normCharLength: item.normCharLength,
+      text: item.text,
+    );
+    if (range == null) {
+      FushiToast.show(
+        msg: t.srt_audio_unresolved,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (range.audioFileIndex < 0 || range.audioFileIndex >= audioFiles.length) {
+      FushiToast.show(
+        msg: t.srt_audio_unresolved,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+
+    await _extractAndPlay(
+      itemKey: _itemKey(item),
+      inputPath: audioFiles[range.audioFileIndex].path,
+      startMs: range.startMs,
+      endMs: range.endMs,
+    );
+  }
+
+  /// 视频来源收藏句的音频播放：用 [resolveVideoFavoriteAudioClip] 从该集视频文件 +
+  /// 收藏自带的时间窗解析出 `[startMs, endMs)`，再走 [_extractAndPlay] 抽音播放。
+  /// 无法解析（缺 row / 缺起点时长 / 播放列表越界）时提示。
+  Future<void> _playVideoFavoriteAudio(
+    _CollectionItem item,
+    String bookUid,
+  ) async {
+    final VideoBookRow? row = _videoRowMap[bookUid];
+    if (row == null) {
+      FushiToast.show(
+        msg: t.srt_audio_unresolved,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    final ({String filePath, int startMs, int endMs})? clip =
+        resolveVideoFavoriteAudioClip(
+      row: row,
+      favoriteSectionIndex: item.sectionIndex,
+      favoriteStartMs: item.normCharOffset,
+      favoriteDurationMs: item.normCharLength,
+    );
+    if (clip == null) {
+      FushiToast.show(
+        msg: t.srt_audio_unresolved,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    await _extractAndPlay(
+      itemKey: _itemKey(item),
+      inputPath: clip.filePath,
+      startMs: clip.startMs,
+      endMs: clip.endMs,
+    );
+  }
+
+  /// 抽取 [inputPath] 的 `[startMs, endMs)` 段并播放。抽取失败（ffmpeg 不存在 / 损坏 /
+  /// 退出非零，返回 null）时弹 [t.audio_clip_failed] 提示——BUG-252：原先 result==null
+  /// 静默无反馈，用户看到「点了没用」；现在明确告知是音频截取失败而非按钮坏了。
+  /// 桌面端经 [TtsChannel.extractAudioSegment] → ffmpeg；ffmpeg 可执行的「覆盖>捆绑>
+  /// PATH」解析与捆绑损坏自动回退 PATH 由 ffmpeg_backend.dart 统一保证（BUG-233）。
+  Future<void> _extractAndPlay({
+    required String itemKey,
+    required String inputPath,
+    required int startMs,
+    required int endMs,
+  }) async {
+    setState(() => _playingItemKey = itemKey);
+    try {
+      final Directory tmpDir = await getTemporaryDirectory();
+      final String outputPath = p.join(
+        tmpDir.path,
+        'collections_audio_segment.aac',
+      );
+
+      final String? result = await TtsChannel.instance.extractAudioSegment(
+        inputPath: inputPath,
+        startMs: startMs,
+        endMs: endMs,
+        outputPath: outputPath,
+      );
+      if (result != null) {
+        await TtsChannel.instance.playFile(result);
+      } else {
+        FushiToast.show(
+          msg: t.audio_clip_failed,
+          severity: ToastSeverity.error,
+        );
+      }
+    } finally {
+      // 只清自己那一次的进行中标记：期间用户已点了别的行（先停旧后播新）时，
+      // 新行的 key 不能被旧 finally 抹掉。
+      if (mounted && _playingItemKey == itemKey) {
+        setState(() => _playingItemKey = null);
+      }
+    }
+  }
+
+  Future<void> _deleteItem(_CollectionItem item) async {
+    final db = appModel.database;
+    if (item.type == _CollectionType.mined) {
+      // TODO-633：制卡历史按行 id 删一条。
+      final minedId = item.minedId;
+      if (minedId == null) return;
+      await db.removeMinedSentence(minedId);
+    } else if (item.type == _CollectionType.word) {
+      // BUG-462：收藏词按 (expression, reading, sourceType) 复合唯一键删除（与
+      // [FushiDatabase.addFavoriteWord] 的 uniqueKeys 对齐）。
+      final String? expression = item.text;
+      if (expression == null || expression.isEmpty) return;
+      await db.removeFavoriteWord(
+        expression: expression,
+        reading: item.wordReading ?? '',
+        sourceType: item.wordSourceType ?? kFavoriteSentenceSourceBook,
+      );
+    } else {
+      final id = item.favoriteId;
+      if (id == null) return;
+      await FavoriteSentenceRepository(db).removeById(id);
+    }
+    setState(() => _items.remove(item));
+  }
+
+  /// 当前列表中出现过的收藏类型（书签/收藏句/制卡句/收藏词），按 [_CollectionType]
+  /// 声明顺序稳定排序。清空面板只列出真实存在的类型——空类型不给清空入口。
+  List<_CollectionType> get _presentClearTypes => _CollectionType.values
+      .where((type) => _items.any((item) => item.type == type))
+      .toList();
+
+  /// 打开「清空」范围面板：勾选要清空的收藏类型（默认全不勾，避免误删），确认后再走
+  /// [CollectionDeleteDialog] 二次销毁确认，最后按勾选批量清空。取代旧的「仅制卡句」
+  /// 特例——书签/收藏句/收藏词现在都能批量清空。
+  Future<void> _openClearSheet() async {
+    final List<_CollectionType> available = _presentClearTypes;
+    if (available.isEmpty) return;
+
+    final Set<_CollectionType>? scopes =
+        await showModalBottomSheet<Set<_CollectionType>>(
+      context: context,
+      builder: (ctx) => _ClearSheet(availableTypes: available),
+    );
+    if (scopes == null || scopes.isEmpty || !mounted) return;
+
+    final bool confirmed = await showAppDialog<bool>(
+          context: context,
+          builder: (ctx) => CollectionDeleteDialog(
+            message: t.collection_clear_confirm,
+            onConfirm: () => Navigator.pop(ctx, true),
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+
+    await _clearScopes(scopes);
+  }
+
+  /// 按勾选的类型批量清空 DB，再本地移除对应项刷新列表（与单条 [_deleteItem] 同样走
+  /// 本地 setState，不重跑昂贵的 [_load] 音频解析）。每类只删自己那张表/偏好键，互不牵连。
+  Future<void> _clearScopes(Set<_CollectionType> scopes) async {
+    final db = appModel.database;
+    if (scopes.contains(_CollectionType.sentence)) {
+      await FavoriteSentenceRepository(db).clear();
+    }
+    if (scopes.contains(_CollectionType.mined)) {
+      await db.clearMinedSentences();
+    }
+    if (scopes.contains(_CollectionType.word)) {
+      await db.clearAllFavoriteWords();
+    }
+    if (!mounted) return;
+    setState(() {
+      _items.removeWhere((item) => scopes.contains(item.type));
+    });
+  }
+
+  /// 当前列表中是否存在可导出条目（收藏句或制卡句任一存在即显示，TODO-913）。
+  /// AppBar 的「导出」按钮仅在为真时显示；收藏词单独由导出面板内的全部导出处理。
+  bool get _hasExportableItems => _items.any((item) =>
+      item.type == _CollectionType.sentence ||
+      item.type == _CollectionType.mined);
+
+  /// 把当前列表里的收藏句转成导出载体（按 bookTitle 分组、来源透传）。
+  ///
+  /// P4 身份/显示二分：导出是「给人看的导出」——分组标题（= 导出面板可选书目 =
+  /// 文内分组头）过 display-title 门面显示改名后书名；DB 快照列本身保持 raw
+  /// 不动。[_loadFavoritesForExport] 的分组键同过门面，勾选过滤两端恒一致。
+  List<ExportSentence> _favoriteSentencesForExport() => _items
+      .where((item) => item.type == _CollectionType.sentence)
+      .map((item) => ExportSentence(
+            text: item.text ?? '',
+            bookTitle: _itemDisplayBookTitle(item) ?? t.collection_sentence,
+            chapterLabel: item.chapterLabel,
+            source: item.source,
+            createdAt: item.createdAt,
+          ))
+      .toList();
+
+  /// 打开导出面板（TODO-829 / 913 / 914）：勾选制卡句/收藏句（默认全勾）+ 去重开关
+  /// （默认开），可单独导出收藏词；「全部」= 两类都勾，产出两段一份文件。
+  Future<void> _openExportSheet() async {
+    final List<ExportSentence> sentences = _favoriteSentencesForExport();
+    // 按 bookTitle 分组出可选书目（恒非空键）。
+    final List<String> bookTitles = <String>[];
+    for (final ExportSentence s in sentences) {
+      if (!bookTitles.contains(s.bookTitle)) bookTitles.add(s.bookTitle);
+    }
+
+    final _ExportChoice? choice = await showModalBottomSheet<_ExportChoice>(
+      context: context,
+      builder: (ctx) => _ExportSheet(bookTitles: bookTitles),
+    );
+    if (choice == null || !mounted) return;
+
+    // 收藏词独立项：与三模式并列，单独成文件（不进句料、不参与去重）。
+    if (choice.includeWords) {
+      await _exportAllWords(choice.format);
+      if (!mounted) return;
+    }
+
+    final bool wantMined = choice.scopes.contains(ExportScope.mined);
+    final bool wantFavorites = choice.scopes.contains(ExportScope.favorites);
+    if (!wantMined && !wantFavorites) return; // 仅导收藏词时已处理完。
+
+    if (wantMined && wantFavorites) {
+      await _exportCombined(choice);
+    } else if (wantMined) {
+      await _exportMinedOnly(choice);
+    } else {
+      await _exportFavoritesOnly(choice);
+    }
+  }
+
+  /// 读 DB 全量制卡句并映射成导出载体（与 913 口径一致）。
+  ///
+  /// P4：分组标题（给人看的导出）过 display-title 门面；`document_title` 快照列
+  /// 保持 raw 身份不动。
+  Future<List<ExportMinedSentence>> _loadMinedForExport() async {
+    final List<MinedSentenceRow> rows =
+        await appModel.database.getAllMinedSentences();
+    return rows
+        .map((r) => ExportMinedSentence(
+              sentence: r.sentence,
+              expression: r.expression,
+              reading: r.reading,
+              glossary: r.glossary,
+              bookTitle: _displayBookTitleFor(
+                    bookKey: r.bookKey,
+                    source: r.source,
+                    rawSnapshot: r.documentTitle,
+                  ) ??
+                  t.collection_export_mined_title,
+              source: r.source,
+              createdAt: DateTime.fromMillisecondsSinceEpoch(r.createdAt),
+            ))
+        .toList();
+  }
+
+  /// 读 DB 全量收藏句并映射成导出载体（口径=DB 全量，对齐制卡句 全量；不依赖页面
+  /// 内存 [_items]，避免「全部」模式两段覆盖范围隐性不一致）。可选按书过滤。
+  ///
+  /// P4：分组标题过 display-title 门面（与 [_favoriteSentencesForExport] 产出的
+  /// 可选书目同一口径，[bookTitle] 过滤两端恒一致）；`book_title` 快照列保持
+  /// raw 身份不动。
+  Future<List<ExportSentence>> _loadFavoritesForExport(
+      {String? bookTitle}) async {
+    final List<FavoriteSentence> all =
+        await FavoriteSentenceRepository(appModel.database).getAll();
+    final List<ExportSentence> mapped = all
+        .map((FavoriteSentence f) => ExportSentence(
+              text: f.text,
+              bookTitle: _displayBookTitleFor(
+                    bookKey: f.bookKey,
+                    source: f.source,
+                    rawSnapshot: f.bookTitle,
+                  ) ??
+                  t.collection_sentence,
+              chapterLabel: f.chapterLabel,
+              source: f.source,
+              createdAt: f.createdAt,
+            ))
+        .toList();
+    if (bookTitle == null) return mapped;
+    return mapped
+        .where((ExportSentence s) => s.bookTitle == bookTitle)
+        .toList();
+  }
+
+  Future<void> _emptyExportToast() async {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(t.collection_export_no_items)),
+    );
+  }
+
+  /// 仅制卡句（去重聚合 / 平铺二分，TODO-914）。
+  Future<void> _exportMinedOnly(_ExportChoice choice) async {
+    final List<ExportMinedSentence> items = await _loadMinedForExport();
+    if (!mounted) return;
+    if (items.isEmpty) {
+      await _emptyExportToast();
+      return;
+    }
+    final String content = choice.dedupe
+        ? buildMinedGroupedExport(dedupeMinedBySentence(items),
+            format: choice.format)
+        : buildMinedExport(items, format: choice.format);
+    await _saveExport(
+      content: content,
+      format: choice.format,
+      baseName: t.collection_export_mined_title,
+    );
+  }
+
+  /// 仅收藏句（去重 / 平铺二分；选具体书则只导该书，TODO-914）。
+  Future<void> _exportFavoritesOnly(_ExportChoice choice) async {
+    final List<ExportSentence> all =
+        await _loadFavoritesForExport(bookTitle: choice.bookTitle);
+    if (!mounted) return;
+    if (all.isEmpty) {
+      await _emptyExportToast();
+      return;
+    }
+    final List<ExportSentence> rows =
+        choice.dedupe ? dedupeSentences(all) : all;
+    final String content = buildSentenceExport(rows, format: choice.format);
+    await _saveExport(
+      content: content,
+      format: choice.format,
+      // P4 判断：导出文件名属「给人看的导出」（一次性产物，无任何程序把它
+      // re-parse 回书身份），随分组标题一起用门面显示名；真正的身份文件名
+      // （bookKey=sanitizeTtuFilename、同步资产键）不经此路径。
+      baseName: choice.bookTitle ?? t.collection_export_sentences_title,
+    );
+  }
+
+  /// 「全部」= 制卡句段 + 收藏句段，两段一份文件（段内各自去重，段间不互消，TODO-914）。
+  Future<void> _exportCombined(_ExportChoice choice) async {
+    final List<ExportMinedSentence> minedRows = await _loadMinedForExport();
+    if (!mounted) return;
+    final List<ExportSentence> favRows =
+        await _loadFavoritesForExport(bookTitle: choice.bookTitle);
+    if (!mounted) return;
+    if (minedRows.isEmpty && favRows.isEmpty) {
+      await _emptyExportToast();
+      return;
+    }
+    // 「全部」模式两段语义需要 words 结构，制卡段恒按句聚合（dedupe 开关对收藏段生效）。
+    final List<ExportMinedSentenceGroup> mined =
+        dedupeMinedBySentence(minedRows);
+    final List<ExportSentence> favorites =
+        choice.dedupe ? dedupeSentences(favRows) : favRows;
+    final String content = buildCombinedExport(
+      mined: mined,
+      favorites: favorites,
+      format: choice.format,
+    );
+    await _saveExport(
+      content: content,
+      format: choice.format,
+      baseName: t.dialog_export,
+    );
+  }
+
+  /// 落盘/分享导出内容（统一文件名/meta 处理）。
+  Future<void> _saveExport({
+    required String content,
+    required ExportFormat format,
+    required String baseName,
+  }) async {
+    final ExportFileMeta meta = exportFileMeta(format);
+    final String fileName = '${_sanitizeFileName(baseName)}.${meta.extension}';
+    if (!mounted) return;
+    await saveOrShareExport(
+      context: context,
+      content: content,
+      fileName: fileName,
+      mimeType: meta.mimeType,
+      subject: baseName,
+    );
+  }
+
+  /// 导出全部收藏词（按 sourceType 分组）。
+  Future<void> _exportAllWords(ExportFormat format) async {
+    final List<FavoriteWordRow> rows =
+        await appModel.database.getAllFavoriteWords();
+    if (!mounted) return;
+    if (rows.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.collection_export_no_items)),
+      );
+      return;
+    }
+    final List<ExportWord> words = rows
+        .map((r) => ExportWord(
+              expression: r.expression,
+              reading: r.reading,
+              glossary: r.glossary,
+              sourceType: r.sourceType,
+              createdAt: DateTime.fromMillisecondsSinceEpoch(r.createdAt),
+            ))
+        .toList();
+    final String content = buildWordExport(words, format: format);
+    final ExportFileMeta meta = exportFileMeta(format);
+    final String fileName =
+        '${_sanitizeFileName(t.collection_export_words_title)}.${meta.extension}';
+    if (!mounted) return;
+    await saveOrShareExport(
+      context: context,
+      content: content,
+      fileName: fileName,
+      mimeType: meta.mimeType,
+      subject: t.collection_export_words_title,
+    );
+  }
+
+  /// 把书名/标题清洗成安全文件名（去掉路径分隔符和保留字符），用于默认导出文件名。
+  String _sanitizeFileName(String name) {
+    final String cleaned = safeWindowsFileName(name).trim();
+    return cleaned.isEmpty ? 'export' : cleaned;
+  }
+
+  /// 行的稳定列表键（Dismissible key 与「播放中」行标记共用同一编码）。
+  String _itemKey(_CollectionItem item) {
+    switch (item.type) {
+      case _CollectionType.mined:
+        return 'mined_${item.minedId}';
+      case _CollectionType.word:
+        return 'word_${item.text}_${item.wordReading}_${item.wordSourceType}';
+      case _CollectionType.sentence:
+        return 'fav_${item.favoriteId}';
+    }
+  }
+
+  bool _hasAudio(_CollectionItem item) {
+    // 视频来源句：有该视频的 row 且收藏自带可用 cue 时间窗即可抽音（不进 _cueMap）。
+    if (item.source == kFavoriteSentenceSourceVideo) {
+      final VideoBookRow? row = _videoRowMap[item.bookKey];
+      if (row == null) return false;
+      return resolveVideoFavoriteAudioClip(
+            row: row,
+            favoriteSectionIndex: item.sectionIndex,
+            favoriteStartMs: item.normCharOffset,
+            favoriteDurationMs: item.normCharLength,
+          ) !=
+          null;
+    }
+    return _cueMap.containsKey(item.bookKey) &&
+        _audioFileMap.containsKey(item.bookKey);
+  }
+
+  Future<void> _showItemDialog(_CollectionItem item) async {
+    // BUG-1120：四值来源穷尽 switch（旧 isVideoSentence bool 把 audiobook/lyrics
+    // 静默展示成书）。audiobook/lyrics 的 bookKey 共享 hoshi://book/ 身份，打开
+    // 目的地仍是 _openBook（reader 内处理有声书/歌词模式），仅展示层区分。
+    final SentenceSourceKind kind = item.sourceKind;
+    final canNavigate = item.bookKey != null && item.bookKey!.isNotEmpty;
+    final hasAudio = _hasAudio(item);
+    final displayTitle = item.text ?? '';
+    // P4：副标题（所属书/视频名）过 display-title 门面（快照列保持 raw 身份）。
+    final String? bookDisplayTitle = _itemDisplayBookTitle(item);
+    final cs = Theme.of(context).colorScheme;
+
+    await showAppDialog<void>(
+      context: context,
+      builder: (ctx) => CollectionItemDialogFrame(
+        title: SelectableText(displayTitle, maxLines: 3),
+        content: bookDisplayTitle != null
+            ? Text(bookDisplayTitle, style: textTheme.bodyMedium)
+            : null,
+        actions: [
+          if (hasAudio)
+            TextButton.icon(
+              icon: Icon(
+                _playingItemKey == _itemKey(item)
+                    ? Icons.hourglass_top
+                    : Icons.volume_up_outlined,
+                size: 18,
+              ),
+              label: Text(t.dialog_play),
+              // 仅「本条」正在播时禁点；别的行在播不再连坐（点击先停旧后播新）。
+              onPressed: _playingItemKey == _itemKey(item)
+                  ? null
+                  : () {
+                      Navigator.pop(ctx);
+                      _playItemAudio(item);
+                    },
+            ),
+          if (item.text != null)
+            TextButton.icon(
+              icon: const Icon(Icons.copy_outlined, size: 18),
+              label: Text(t.copy),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: item.text!));
+                Navigator.pop(ctx);
+              },
+            ),
+          TextButton.icon(
+            icon: Icon(Icons.delete_outline, size: 18, color: cs.error),
+            label: Text(t.dialog_delete, style: TextStyle(color: cs.error)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _deleteItem(item);
+            },
+          ),
+          if (canNavigate)
+            FilledButton.icon(
+              icon: Icon(
+                switch (kind) {
+                  SentenceSourceKind.video => Icons.movie_outlined,
+                  SentenceSourceKind.audiobook => Icons.headphones_outlined,
+                  SentenceSourceKind.lyrics => Icons.lyrics_outlined,
+                  SentenceSourceKind.book => Icons.menu_book_outlined,
+                },
+                size: 18,
+              ),
+              label: Text(
+                kind == SentenceSourceKind.video ? t.nav_video : t.dialog_read,
+              ),
+              onPressed: () {
+                Navigator.pop(ctx);
+                switch (kind) {
+                  case SentenceSourceKind.video:
+                    _openVideoSentence(item);
+                  case SentenceSourceKind.book:
+                  case SentenceSourceKind.audiobook:
+                  case SentenceSourceKind.lyrics:
+                    _openBook(item);
+                }
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FushiPageScaffold(
+      title: t.collections,
+      actions: <Widget>[
+        // TODO-829: 仅当存在收藏句条目时显示「导出/分享」。
+        if (!_loading && _hasExportableItems)
+          FushiIconButton(
+            tooltip: t.dialog_export,
+            // 全平台统一 Material 分享图标（ios_share 是 iOS 专属视觉，巡检 PR-3）。
+            icon: Icons.share_outlined,
+            onTap: _openExportSheet,
+          ),
+        // 只要列表非空就显示「清空」；点开可选范围面板（书签/收藏句/制卡句/收藏词），
+        // 按勾选批量清空。取代旧的「仅制卡句才显示、只清制卡」特例。
+        if (!_loading && _items.isNotEmpty)
+          FushiIconButton(
+            tooltip: t.dialog_clear,
+            icon: Icons.delete_sweep_outlined,
+            onTap: _openClearSheet,
+          ),
+      ],
+      body: _loading
+          // 加载耗时源是逐书 cue + 音频文件存在性扫描（[_load]），可能数秒——补一行
+          // 说明文案，用户知道在等什么（巡检 PR-3）。
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  adaptiveIndicator(context: context),
+                  SizedBox(height: FushiDesignTokens.of(context).spacing.gap),
+                  Text(
+                    t.collection_loading_hint,
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : _items.isEmpty
+              ? Center(
+                  child: FushiPlaceholderMessage(
+                    icon: Icons.collections_bookmark_outlined,
+                    message: t.no_collections,
+                  ),
+                )
+              : ListView.builder(
+                  itemCount: _items.length,
+                  itemBuilder: (context, index) => _buildItem(_items[index]),
+                ),
+    );
+  }
+
+  /// 收藏行副标题：可截断的[metadata]（书名/章节/来源前缀）+ **恒可见**的收藏日期。
+  ///
+  /// BUG-469：窄屏（12.4" 平板横向空间不足）下用户「看不到收藏日期，全被书名和章节
+  /// 挤跑了」。根因=旧实现把元数据与日期拼成一个单行 [Text] 共用同一截断预算，日期排
+  /// 末尾被省略号吃掉。这里拆成 [Row]：[metadata] 走 [Flexible]+[TextOverflow.ellipsis]
+  /// 优先收缩让位，日期是定宽尾随段（不进 Flexible，故永不被裁），两段间隔仍用 ' · '。
+  /// 无 [metadata] 时只渲染日期。整行 [TextStyle] 由 [FushiListItem] 的
+  /// [DefaultTextStyle]（listSubtitle）注入，故此处不重复指定样式。
+  Widget _buildSubtitle({
+    required String? metadata,
+    required DateTime createdAt,
+  }) {
+    final String date = _formatCreatedAt(createdAt);
+    final bool hasMetadata = metadata != null && metadata.isNotEmpty;
+    if (!hasMetadata) {
+      return Text(date, maxLines: 1, overflow: TextOverflow.ellipsis);
+    }
+    // mainAxisSize 用默认 max：撑满 [FushiListItem] 给副标题的整行宽度，[Flexible]
+    // 才会收缩让位（min 时 Row 取子项固有宽 → 溢出，日期反而被挤出）。日期不进
+    // [Flexible]，作为定宽尾随段永远显示。
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Text(
+            metadata,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            softWrap: false,
+          ),
+        ),
+        const Text(' · '),
+        Text(date, maxLines: 1, overflow: TextOverflow.ellipsis),
+      ],
+    );
+  }
+
+  Widget _buildItem(_CollectionItem item) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool isMined = item.type == _CollectionType.mined;
+    final bool isWord = item.type == _CollectionType.word;
+    final IconData icon = isMined
+        ? Icons.style_outlined
+        : isWord
+            ? Icons.star_outline
+            : Icons.format_quote_outlined;
+    final String typeLabel = isMined
+        ? t.collection_mined
+        : isWord
+            ? t.collection_word
+            : t.collection_sentence;
+
+    final String title;
+    final String? subtitle;
+
+    // BUG-1120：句子/制卡行的来源枚举（旧 isVideoSentence bool 把 audiobook/lyrics
+    // 归并进书，来源前缀丢失）。收藏词行的 source 是 wordSourceType 值域，不进
+    // kind 展示路径，按书路径兜底（词行无 bookKey，实际不可跳转）。
+    final SentenceSourceKind kind =
+        isWord ? SentenceSourceKind.book : item.sourceKind;
+
+    if (isWord) {
+      // BUG-462：收藏词标题=词形，副标题=读音 · 释义（无原文定位，不显示书名/章节）。
+      title = item.text ?? '';
+      subtitle = [
+        if (item.wordReading != null && item.wordReading!.isNotEmpty)
+          item.wordReading,
+        item.chapterLabel,
+      ].where((s) => s != null && s.isNotEmpty).join(' · ');
+    } else {
+      // 非书来源标注来源前缀（视频/有声书/歌词），与书内来源区分；书来源无前缀
+      // （复用现有 i18n 键 nav_video / section_audiobook / lyrics_mode）。
+      final String? sourcePrefix = switch (kind) {
+        SentenceSourceKind.video => t.nav_video,
+        SentenceSourceKind.audiobook => t.section_audiobook,
+        SentenceSourceKind.lyrics => t.lyrics_mode,
+        SentenceSourceKind.book => null,
+      };
+      title = item.text ?? '';
+      subtitle = [
+        sourcePrefix,
+        // P4：所属书/视频名过 display-title 门面（快照列保持 raw 身份）。
+        _itemDisplayBookTitle(item),
+        item.chapterLabel,
+      ].where((s) => s != null && s.isNotEmpty).join(' · ');
+    }
+
+    final canNavigate = item.bookKey != null && item.bookKey!.isNotEmpty;
+
+    final String key = _itemKey(item);
+    final bool playingThis = _playingItemKey == key;
+
+    return Dismissible(
+      key: Key(key),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: EdgeInsets.only(
+          right: tokens.spacing.card + tokens.spacing.gap / 2,
+        ),
+        color: Theme.of(context).colorScheme.error,
+        child: Icon(
+          Icons.delete_outline,
+          color: Theme.of(context).colorScheme.onError,
+        ),
+      ),
+      confirmDismiss: (_) async {
+        final String message = item.text ?? '';
+        return await showAppDialog<bool>(
+              context: context,
+              builder: (ctx) => CollectionDeleteDialog(
+                message: message,
+                onConfirm: () => Navigator.pop(ctx, true),
+              ),
+            ) ??
+            false;
+      },
+      onDismissed: (_) => _deleteItem(item),
+      child: GamepadLongPressActions(
+        // Gamepad: hold-A opens the same item menu a mouse long-press does.
+        onLongPress: () => _showItemDialog(item),
+        child: GestureDetector(
+          onLongPress: () => _showItemDialog(item),
+          // Desktop: right-click (secondary tap) opens the same item menu a
+          // touch long-press does. The menu is a centered modal dialog, so the
+          // click position is irrelevant -- no positioning needed.
+          onSecondaryTap: () => _showItemDialog(item),
+          child: FushiListItem(
+            leading: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Icon(
+                  icon,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.tertiary,
+                ),
+                Text(
+                  typeLabel,
+                  style: textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
+            // BUG-469：副标题=可截断的元数据（书名/章节/来源） + **恒可见**的收藏日期。
+            // 旧实现把两者用 ' · ' 拼成一个 Text(maxLines:1, ellipsis)，窄屏（如 12.4"
+            // 平板横向空间不足）时书名+章节占满整行，排在末尾的日期被省略号吃掉看不见。
+            // 根因=两段不同截断语义（元数据可截、日期不可截）共用同一行宽预算。修=拆成
+            // Row：元数据 Flexible+ellipsis 优先让位，日期固定宽不参与收缩永远显示。
+            subtitle:
+                _buildSubtitle(metadata: subtitle, createdAt: item.createdAt),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 巡检 PR-3：仅正在播的那一行显示小转圈，其余行保持可点（点即
+                // 先停旧后播新，见 [_playItemAudio]）。
+                if (_hasAudio(item))
+                  playingThis
+                      ? Padding(
+                          padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                          child: const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : FushiIconButton(
+                          tooltip: t.dialog_play,
+                          icon: Icons.volume_up_outlined,
+                          size: 18,
+                          padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                          onTap: () => _playItemAudio(item),
+                        ),
+                if (item.text != null)
+                  FushiIconButton(
+                    tooltip: t.copy,
+                    icon: Icons.copy_outlined,
+                    size: 18,
+                    padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: item.text!));
+                    },
+                  ),
+                if (canNavigate)
+                  Icon(
+                    Icons.chevron_right,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+              ],
+            ),
+            // Non-navigable rows still get an onTap so they are a gamepad focus
+            // stop (otherwise hold-A / the item menu can never be reached).
+            onTap: canNavigate
+                ? () {
+                    switch (kind) {
+                      case SentenceSourceKind.video:
+                        _openVideoSentence(item);
+                      case SentenceSourceKind.book:
+                      case SentenceSourceKind.audiobook:
+                      case SentenceSourceKind.lyrics:
+                        // audiobook/lyrics 的 bookKey 共享 hoshi://book/ 身份，
+                        // reader 是正确目的地（内部处理有声书/歌词模式）。
+                        _openBook(item);
+                    }
+                  }
+                : () => _showItemDialog(item),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+class CollectionItemDialogFrame extends StatelessWidget {
+  const CollectionItemDialogFrame({
+    required this.title,
+    required this.content,
+    required this.actions,
+    super.key,
+  });
+
+  final Widget title;
+  final Widget? content;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+
+    return FushiDialogFrame(
+      maxWidth: 440,
+      maxHeightFactor: 0.78,
+      child: FushiModalSheetFrame(
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.card,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            DefaultTextStyle.merge(
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: tokens.type.listTitle.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+              child: title,
+            ),
+            if (content != null) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              DefaultTextStyle.merge(
+                style: tokens.type.listSubtitle,
+                child: content!,
+              ),
+            ],
+          ],
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: actions,
+        ),
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+class CollectionDeleteDialog extends StatelessWidget {
+  const CollectionDeleteDialog({
+    required this.message,
+    required this.onConfirm,
+    super.key,
+  });
+
+  final String message;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+
+    return FushiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.72,
+      child: FushiModalSheetFrame(
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.card,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Container(
+              padding: EdgeInsets.all(tokens.spacing.gap),
+              decoration: BoxDecoration(
+                color: colors.errorContainer,
+                borderRadius: tokens.radii.controlRadius,
+              ),
+              child: Icon(
+                Icons.delete_outline,
+                color: colors.onErrorContainer,
+                size: 20,
+              ),
+            ),
+            SizedBox(width: tokens.spacing.gap + 4),
+            Expanded(child: Text(message, style: tokens.type.listSubtitle)),
+          ],
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(t.dialog_close),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDestructiveAction: true,
+              onPressed: onConfirm,
+              child: Text(t.dialog_delete),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 导出面板的选择结果（TODO-914：可勾选多选 + 去重）。
+class _ExportChoice {
+  const _ExportChoice({
+    required this.scopes,
+    required this.includeWords,
+    required this.dedupe,
+    required this.format,
+    this.bookTitle,
+  });
+
+  /// 勾选的内容范围（制卡句 / 收藏句）；空集合且未勾收藏词时导出按钮 disabled。
+  final Set<ExportScope> scopes;
+
+  /// 是否额外导出全部收藏词（独立成文件，不进句料、不去重）。
+  final bool includeWords;
+
+  /// 句级去重开关（默认 on）。
+  final bool dedupe;
+  final ExportFormat format;
+
+  /// 收藏句仅导某本书时为目标书名；null = 全部书籍。
+  final String? bookTitle;
+}
+
+/// 导出面板（TODO-829 + 913 MD3 + 914 可勾选去重）：勾选制卡句/收藏句（默认全勾）
+/// + 去重开关（默认开）+ 可选收藏词 + 选格式（默认 Markdown）→ 确认返回 [_ExportChoice]。
+/// 外壳走 [FushiModalSheetFrame] + [FushiDesignTokens]。焦点驱动可达：勾选项与去重
+/// 均为共享 [FushiListItem]（leading [Checkbox] / trailing [Switch]，整行 Tab → Enter
+/// 翻转），格式是 [ChoiceChip]，确认是 [FilledButton]（勾选集空且未勾收藏词时
+/// `onPressed: null` 灰掉）。
+class _ExportSheet extends StatefulWidget {
+  const _ExportSheet({required this.bookTitles});
+
+  final List<String> bookTitles;
+
+  @override
+  State<_ExportSheet> createState() => _ExportSheetState();
+}
+
+class _ExportSheetState extends State<_ExportSheet> {
+  // 默认「全部」= 制卡句 + 收藏句都勾。
+  final Set<ExportScope> _scopes = <ExportScope>{
+    ExportScope.mined,
+    ExportScope.favorites,
+  };
+  bool _includeWords = false;
+  bool _dedupe = true;
+  // 收藏句二级：null = 全部书籍；否则某本书。
+  String? _targetBookTitle;
+  ExportFormat _format = ExportFormat.markdown;
+
+  static const Map<ExportFormat, String> _formatLabels = <ExportFormat, String>{
+    ExportFormat.markdown: 'Markdown',
+    ExportFormat.txt: 'TXT',
+    ExportFormat.csv: 'CSV',
+    ExportFormat.json: 'JSON',
+  };
+
+  bool get _canExport => _scopes.isNotEmpty || _includeWords;
+
+  void _toggleScope(ExportScope scope, bool? on) {
+    setState(() {
+      if (on ?? false) {
+        _scopes.add(scope);
+      } else {
+        _scopes.remove(scope);
+      }
+    });
+  }
+
+  void _confirm() {
+    final _ExportChoice choice = _ExportChoice(
+      scopes: Set<ExportScope>.of(_scopes),
+      includeWords: _includeWords,
+      dedupe: _dedupe,
+      format: _format,
+      bookTitle:
+          _scopes.contains(ExportScope.favorites) ? _targetBookTitle : null,
+    );
+    Navigator.pop(context, choice);
+  }
+
+  /// 导出范围复选行（MD3）：共享 [FushiListItem] + 裸 [Checkbox] 为 leading，
+  /// 整行 `onTap` 翻转勾选——等价旧 [CheckboxListTile] 的勾选/回调/标题，外观
+  /// 走设计令牌而非框架默认行。焦点驱动可达（Tab → Enter）。
+  Widget _exportCheckRow({
+    required String label,
+    required bool checked,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return FushiListItem(
+      selected: checked,
+      onTap: () => onChanged(!checked),
+      leading: Checkbox(
+        value: checked,
+        onChanged: (bool? v) => onChanged(v ?? false),
+      ),
+      title: Text(label),
+    );
+  }
+
+  /// 去重开关行（MD3）：共享 [FushiListItem] + 裸 [Switch] 为 trailing，整行
+  /// `onTap` 翻转——等价旧 [SwitchListTile] 的开关/回调/标题。
+  Widget _exportSwitchRow({
+    required String label,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return FushiListItem(
+      selected: value,
+      onTap: () => onChanged(!value),
+      title: Text(label),
+      trailing: Switch(
+        value: value,
+        onChanged: onChanged,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final EdgeInsets sectionPad = EdgeInsets.symmetric(
+      horizontal: tokens.spacing.card,
+    );
+
+    return FushiModalSheetFrame(
+      title: t.dialog_export,
+      maxHeightFactor: 0.82,
+      scrollable: true,
+      bodyPadding: EdgeInsets.fromLTRB(
+        0,
+        tokens.spacing.gap,
+        0,
+        tokens.spacing.gap,
+      ),
+      footerPadding: EdgeInsets.fromLTRB(
+        tokens.spacing.card,
+        tokens.spacing.gap,
+        tokens.spacing.card,
+        tokens.spacing.card,
+      ),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          // ── 导出范围（可勾选多选）──
+          Padding(
+            padding: sectionPad,
+            child: Text(
+              t.collection_export_scope,
+              style: tokens.type.listSubtitle.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          _exportCheckRow(
+            label: t.collection_export_all_mined,
+            checked: _scopes.contains(ExportScope.mined),
+            onChanged: (bool v) => _toggleScope(ExportScope.mined, v),
+          ),
+          _exportCheckRow(
+            label: t.collection_export_favorites_scope,
+            checked: _scopes.contains(ExportScope.favorites),
+            onChanged: (bool v) => _toggleScope(ExportScope.favorites, v),
+          ),
+          _exportCheckRow(
+            label: t.collection_export_all_words,
+            checked: _includeWords,
+            onChanged: (bool v) => setState(() => _includeWords = v),
+          ),
+          // 勾了「收藏句」且存在书目时展开「全部书籍 / 某本书」二级。
+          if (_scopes.contains(ExportScope.favorites) &&
+              widget.bookTitles.isNotEmpty) ...<Widget>[
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                0,
+                tokens.spacing.card,
+                tokens.spacing.gap,
+              ),
+              child: Text(
+                t.collection_export_pick_book,
+                style: tokens.type.listSubtitle,
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.only(left: tokens.spacing.card),
+              child: RadioListTile<String?>(
+                value: null,
+                groupValue: _targetBookTitle,
+                onChanged: (String? v) => setState(() => _targetBookTitle = v),
+                title: Text(t.collection_export_all_books),
+              ),
+            ),
+            for (final String title in widget.bookTitles)
+              Padding(
+                padding: EdgeInsets.only(left: tokens.spacing.card),
+                child: RadioListTile<String?>(
+                  value: title,
+                  groupValue: _targetBookTitle,
+                  onChanged: (String? v) =>
+                      setState(() => _targetBookTitle = v),
+                  title: Text(title, maxLines: 2),
+                ),
+              ),
+          ],
+          SizedBox(height: tokens.spacing.gap),
+          // ── 去重开关 ──
+          _exportSwitchRow(
+            label: t.collection_export_dedupe,
+            value: _dedupe,
+            onChanged: (bool v) => setState(() => _dedupe = v),
+          ),
+          Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
+          SizedBox(height: tokens.spacing.gap),
+          // ── 格式 ──
+          Padding(
+            padding: sectionPad,
+            child: Text(
+              t.collection_export_format,
+              style: tokens.type.listSubtitle.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              tokens.spacing.gap,
+              tokens.spacing.card,
+              0,
+            ),
+            child: Wrap(
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap,
+              children: <Widget>[
+                for (final ExportFormat f in ExportFormat.values)
+                  ChoiceChip(
+                    label: Text(_formatLabels[f]!),
+                    selected: _format == f,
+                    onSelected: (_) => setState(() => _format = f),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      footer: Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
+          icon: const Icon(Icons.share_outlined, size: 18),
+          label: Text(t.dialog_export),
+          onPressed: _canExport ? _confirm : null,
+        ),
+      ),
+    );
+  }
+}
+
+/// 「清空」范围面板（镜像 [_ExportSheet] 的可勾选多选 + 底部确认按钮范式）：只列出
+/// 当前收藏夹里真实存在的类型（书签/收藏句/制卡句/收藏词），默认**全不勾**（销毁操作
+/// 需用户显式勾选，杜绝一进面板就误清全部），底部「清空」按钮红色破坏性样式、未勾时
+/// `onPressed: null` 灰掉。确认返回勾选的 [_CollectionType] 集合（取消返回 null）。
+/// 焦点驱动可达：勾选项是共享 [FushiListItem]（leading [Checkbox]，整行 Tab → Enter
+/// 翻转），确认是 [FilledButton]。
+class _ClearSheet extends StatefulWidget {
+  const _ClearSheet({required this.availableTypes});
+
+  final List<_CollectionType> availableTypes;
+
+  @override
+  State<_ClearSheet> createState() => _ClearSheetState();
+}
+
+class _ClearSheetState extends State<_ClearSheet> {
+  final Set<_CollectionType> _selected = <_CollectionType>{};
+
+  bool get _canClear => _selected.isNotEmpty;
+
+  String _labelFor(_CollectionType type) {
+    switch (type) {
+      case _CollectionType.sentence:
+        return t.collection_sentence;
+      case _CollectionType.mined:
+        return t.collection_mined;
+      case _CollectionType.word:
+        return t.collection_word;
+    }
+  }
+
+  void _toggle(_CollectionType type, bool on) {
+    setState(() {
+      if (on) {
+        _selected.add(type);
+      } else {
+        _selected.remove(type);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+
+    return FushiModalSheetFrame(
+      title: t.dialog_clear,
+      maxHeightFactor: 0.72,
+      scrollable: true,
+      bodyPadding: EdgeInsets.fromLTRB(
+        0,
+        tokens.spacing.gap,
+        0,
+        tokens.spacing.gap,
+      ),
+      footerPadding: EdgeInsets.fromLTRB(
+        tokens.spacing.card,
+        tokens.spacing.gap,
+        tokens.spacing.card,
+        tokens.spacing.card,
+      ),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
+            child: Text(
+              t.collection_clear_scope,
+              style: tokens.type.listSubtitle.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          for (final _CollectionType type in widget.availableTypes)
+            FushiListItem(
+              selected: _selected.contains(type),
+              onTap: () => _toggle(type, !_selected.contains(type)),
+              leading: Checkbox(
+                value: _selected.contains(type),
+                onChanged: (bool? v) => _toggle(type, v ?? false),
+              ),
+              title: Text(_labelFor(type)),
+            ),
+        ],
+      ),
+      footer: Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: colors.error,
+            foregroundColor: colors.onError,
+          ),
+          icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+          label: Text(t.dialog_clear),
+          onPressed: _canClear
+              ? () => Navigator.pop(context, Set<_CollectionType>.of(_selected))
+              : null,
+        ),
+      ),
+    );
+  }
+}

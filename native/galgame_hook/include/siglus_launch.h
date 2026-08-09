@@ -13,7 +13,7 @@
 
 #include <string>
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 // Siglus 核心数据文件（两者同时存在才判定，几乎无误报）。
 inline const wchar_t* const kSiglusSignatureConfig = L"Gameexe.dat";
@@ -30,4 +30,4 @@ bool DirectoryLooksLikeSiglus(const std::wstring& dir, FileExists file_exists) {
          file_exists(dir, kSiglusSignatureScene);
 }
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook

@@ -1,0 +1,34 @@
+import 'package:flutter/material.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+
+const String _prefKey = 'shortcut_bindings_json';
+
+Future<void> loadShortcutRegistry(
+  FushiShortcutRegistry registry,
+  ReaderFushiSource source,
+  TargetPlatform platform,
+) async {
+  final String? json = source.getPreference<String?>(
+    key: _prefKey,
+    defaultValue: null,
+  );
+  // Both branches reset to platform defaults first and notify listeners, so a
+  // reload (e.g. on profile switch) fully swaps bindings and refreshes any open
+  // settings UI.
+  if (json != null) {
+    registry.loadFromJsonString(json, platform);
+  } else {
+    registry.resetToDefaults(platform);
+  }
+}
+
+Future<void> saveShortcutRegistry(
+  FushiShortcutRegistry registry,
+  ReaderFushiSource source,
+) async {
+  await source.setPreference<String>(
+    key: _prefKey,
+    value: registry.toJsonString(),
+  );
+}

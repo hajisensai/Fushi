@@ -60,7 +60,7 @@ test('statusRequestBody 缺指纹时省略字段（占位默认 → 等同旧 \'
 // ── action-popup 提示文案 ──
 
 test('stale 存在 → 提示指向 chrome://extensions 并带两侧 build 简写', () => {
-  const notice = popup.hibikiUpdateNotice({ remote: 'aaaabbbbcccc', local: 'ddddeeeeffff' });
+  const notice = popup.fushiUpdateNotice({ remote: 'aaaabbbbcccc', local: 'ddddeeeeffff' });
   assert.ok(notice.title.includes('新版本'));
   assert.ok(notice.detail.includes('chrome://extensions'));
   assert.ok(notice.detail.includes('aaaabbbb'));
@@ -68,8 +68,8 @@ test('stale 存在 → 提示指向 chrome://extensions 并带两侧 build 简�
 });
 
 test('无 stale → null（提示行隐藏）', () => {
-  assert.equal(popup.hibikiUpdateNotice(null), null);
-  assert.equal(popup.hibikiUpdateNotice({}), null);
+  assert.equal(popup.fushiUpdateNotice(null), null);
+  assert.equal(popup.fushiUpdateNotice({}), null);
 });
 
 // ── background.js 接线（源码断言，同 connection-reopen.test.js 风格）──
@@ -77,12 +77,12 @@ test('无 stale → null（提示行隐藏）', () => {
 const bg = fs.readFileSync(path.join(__dirname, 'background.js'), 'utf8');
 
 test('background 经 importScripts 装载 self-update 状态机并用它决策', () => {
-  assert.match(bg, /importScripts\('hibiki-defaults\.js', 'connection-diagnostics\.js', 'self-update\.js'\)/);
-  assert.match(bg, /HIBIKI_SELF_UPDATE\.decide\(/);
+  assert.match(bg, /importScripts\('fushi-defaults\.js', 'connection-diagnostics\.js', 'self-update\.js'\)/);
+  assert.match(bg, /FUSHI_SELF_UPDATE\.decide\(/);
 });
 
 test('background 状态请求不再写死 {}：心跳/启动检查与连接诊断都自报版本', () => {
-  assert.match(bg, /HIBIKI_SELF_UPDATE\.statusRequestBody\(/);
+  assert.match(bg, /FUSHI_SELF_UPDATE\.statusRequestBody\(/);
   // /api/extension/status 的两处 fetch 都用 statusRequestBody()。
   const statusFetches = bg.split("'/api/extension/status'").length - 1;
   const reportingBodies = bg.split('body: statusRequestBody(),').length - 1;
@@ -90,9 +90,9 @@ test('background 状态请求不再写死 {}：心跳/启动检查与连接诊�
   assert.equal(reportingBodies, statusFetches);
 });
 
-test('background stale 落盘 hibikiUpdateStale、恢复一致时清除', () => {
-  assert.match(bg, /chrome\.storage\.local\.set\(\{ hibikiUpdateStale: decision\.stale \}\)/);
-  assert.match(bg, /chrome\.storage\.local\.remove\(\['hibikiUpdateStale'\]\)/);
+test('background stale 落盘 fushiUpdateStale、恢复一致时清除', () => {
+  assert.match(bg, /chrome\.storage\.local\.set\(\{ fushiUpdateStale: decision\.stale \}\)/);
+  assert.match(bg, /chrome\.storage\.local\.remove\(\['fushiUpdateStale'\]\)/);
 });
 
 test('自更新角标让位录制角标：录制中跳过、录制结束恢复', () => {
@@ -109,8 +109,8 @@ test('action-popup 渲染 stale 提示并随 storage 实时显隐', () => {
   const js = fs.readFileSync(path.join(__dirname, 'vendor', 'action-popup.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, 'vendor', 'action-popup.html'), 'utf8');
   assert.match(html, /id="hp-update"/);
-  assert.match(js, /chrome\.storage\.local\.get\(\['hibikiUpdateStale'\]/);
-  assert.match(js, /changes\.hibikiUpdateStale/);
+  assert.match(js, /chrome\.storage\.local\.get\(\['fushiUpdateStale'\]/);
+  assert.match(js, /changes\.fushiUpdateStale/);
 });
 
 // ── describeUpdateState（options 页「版本与更新」卡片文案）──

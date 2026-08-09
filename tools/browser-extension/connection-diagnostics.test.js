@@ -3,14 +3,29 @@ const assert = require('node:assert/strict');
 
 const diagnostics = require('./connection-diagnostics.js');
 
-test('Hibiki status endpoint wins when it is ready', () => {
+test('Fushi status endpoint wins when it is ready', () => {
   assert.equal(
-    diagnostics.classify({ status: 200, body: { app: 'hibiki', ready: true } }),
+    diagnostics.classify({ status: 200, body: { app: 'fushi', ready: true } }),
     diagnostics.states.connected,
   );
 });
 
-test('old Hibiki lookup endpoint is recognised as a legacy connection', () => {
+test("retired 'hibiki' wire value is no longer accepted (extension was never published)", () => {
+  // 故意保留 'hibiki' 字面量：钉死已退役 wire 值被拒绝，防双值兼容回潮。
+  assert.equal(
+    diagnostics.classify({ status: 200, body: { app: 'hibiki', ready: true } }),
+    diagnostics.states.wrongService,
+  );
+});
+
+test('an unknown app value on the port is still wrong-service', () => {
+  assert.equal(
+    diagnostics.classify({ status: 200, body: { app: 'other' } }),
+    diagnostics.states.wrongService,
+  );
+});
+
+test('old Fushi lookup endpoint is recognised as a legacy connection', () => {
   assert.equal(
     diagnostics.classify(
       { status: 404 },
@@ -31,7 +46,7 @@ test('Yomitan API on the same port is reported as an actionable conflict', () =>
   );
   const message = diagnostics.copy(diagnostics.states.yomitanConflict, 19633);
   assert.match(message.detail, /Enable Yomitan API/);
-  assert.match(message.detail, /Hibiki/);
+  assert.match(message.detail, /Fushi/);
   assert.match(message.detail, /19633/);
 });
 

@@ -1,5 +1,5 @@
-#ifndef HIBIKI_LUNA_BRIDGE_H_
-#define HIBIKI_LUNA_BRIDGE_H_
+#ifndef FUSHI_LUNA_BRIDGE_H_
+#define FUSHI_LUNA_BRIDGE_H_
 
 #include <windows.h>
 
@@ -8,7 +8,7 @@
 
 #include "luna_version.h"
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 // Hibiki-owned boundary around the vendored LunaTranslator v10.16.1.2 ABI.
 // Only this header may describe LunaHost callback layouts or exported functions.
@@ -91,6 +91,6 @@ struct LunaBridgeExports {
   }
 };
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook
 
-#endif  // HIBIKI_LUNA_BRIDGE_H_
+#endif  // FUSHI_LUNA_BRIDGE_H_

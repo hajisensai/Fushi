@@ -29,10 +29,21 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1366 条。点号进各自文件。
+> 共 1387 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1480](bugs/BUG-1480-gal-passthrough-click-lookup.md) | ✅ | ✅ | 穿透态点不了文字查词：整窗 WS_EX_TRANSPARENT 让字和背景一视同仁 |
+| [BUG-1479](bugs/BUG-1479-gal-lookup-card-covered-by-game.md) | ✅ | ✅ | gal 查词卡被游戏盖住：置顶只设一次、永不重申 |
+| [BUG-1478](bugs/BUG-1478-gal-workbench-char-level-lookup.md) | ✅ | ✅ | 捕获工作台只能点整词、点不了单个字；加载更多按 glossary 行递增上限 |
+| [BUG-1477](bugs/BUG-1477-gal-japanese-locale-no-switch.md) | ✅ | ✅ | 汉化版被强制转区后启动即闪退：转区没有开关，判据把「32 位」当成「日文原版」 |
+| [BUG-1475](bugs/BUG-1475-gal-utterance-settle-drops-closing-tail.md) | ✅ | ✅ | 切句时收敛裸 return，最后 250ms 已进环的 PCM 从未被读走 |
+| [BUG-1474](bugs/BUG-1474-gal-picker-dialog-cramped-and-single-line-preview.md) | ✅ | ✅ | hook 选择弹窗过小/标题截断/预览只有一句 |
+| [BUG-1473](bugs/BUG-1473-gal-mining-serial-capture-and-raw-png.md) | ✅ | ✅ | gal 制卡慢：画面与语音串行 + 静态截图全分辨率 PNG 直送 Anki |
+| [BUG-1472](bugs/BUG-1472-lookup-term-budget-counts-glossaries.md) | ✅ | ✅ | 查词只出一个读音：maximumTerms 按 glossary 行计预算吃掉其它读音 |
+| [BUG-1471](bugs/BUG-1471-gal-overlay-gesture-state-stuck.md) | ✅ | ✅ | galgame 浮窗跑久了失去点击响应：手势事务只认 WM_LBUTTONUP 一个终止条件 |
+| [BUG-1470](bugs/BUG-1470-gal-selected-thread-publish-filter.md) | ✅ | ✅ | 选中台词线程后工作台正文为空：发布期过滤器丢掉同 hook 面兄弟行 |
+| [BUG-1469](bugs/BUG-1469-futamata-kirikiri-launch-av.md) | ✅ | ✅ | 恋爱成双由 Hibiki 早注入后 Access Violation |
 | [BUG-1469](bugs/BUG-1469-video-resource-dropdown-overflow.md) | ✅ | ✅ | 资源搜索对话框下拉框横向溢出 |
 | [BUG-1468](bugs/BUG-1468-video-home-card-footer-spacing.md) | ✅ | ✅ | 视频主页卡片底部信息留白过多 |
 | [BUG-1467](bugs/BUG-1467-video-home-badge-semantics.md) | ✅ | ✅ | 视频主页角标语义不一致 |
@@ -42,8 +53,18 @@
 | [BUG-1463](bugs/BUG-1463-video-series-detail-layout.md) | ✅ | ✅ | 系列详情重复、底部窄栏与首页播放目标错误 |
 | [BUG-1462](bugs/BUG-1462-mushoku-metadata-backfill.md) | ✅ | ✅ | 无职转生严格匹配无法人工确认且详情与剧集标题未回填 |
 | [BUG-1461](bugs/BUG-1461-himouto-tmdb-localized-title.md) | ✅ | ✅ | Himouto 罗马字标题被 TMDB 本地化结果严格门控拒绝 |
+| [BUG-1460](bugs/BUG-1460-win-installer-legacy-delete-rollback.md) | ✅ | ✅ | Windows 升级中途失败后 app 彻底消失：[InstallDelete] 先删旧名二进制且不可回滚 |
+| [BUG-1459](bugs/BUG-1459-installer-appdir-process-lock.md) | ✅ | ✅ | 安装器无法替换被残留子进程锁定的文件 |
+| [BUG-1458](bugs/BUG-1458-sync-collections-tombstone-day-red.md) | 🚧 | 🚧 | 集合同步墓碑用例在develop稳定红-疑日期敏感 |
+| [BUG-1457](bugs/BUG-1457-ai6-clean-voice.md) | ✅ | ✅ | AI6 制卡误用混合 BGM |
+| [BUG-1456](bugs/BUG-1456-manga-source-preview-loading.md) | ✅ | ✅ | 漫画源预览并发拉图、超时与重复操作 |
+| [BUG-1455](bugs/BUG-1455-lookup-popup-reactivates-main-window.md) | ✅ | ✅ | 拖动或缩放查词弹窗会把主窗口抬到前台 |
+| [BUG-1454](bugs/BUG-1454-kana-compound-popup-selection.md) | ✅ | ✅ | 查词结果正文含假名词被 ruby 占位文本截断 |
+| [BUG-1453](bugs/BUG-1453-video-gamepad-synthetic-right-click.md) | ✅ | ✅ | 手柄按键同时触发视频动作与右键菜单 |
+| [BUG-1452](bugs/BUG-1452-gal-unselected-thread-implies-audio.md) | ✅ | ✅ | 未选择台词线程时仍显示正在监听与句级音频 |
 | [BUG-1452](bugs/BUG-1452-ai6-clean-voice.md) | ✅ | ✅ | AI6 制卡误用混合 BGM |
 | [BUG-1451](bugs/BUG-1451-popup-copy-shortcut-and-context-menu.md) | ✅ | ✅ | 查词弹窗无法复制（Ctrl+C 与右键「复制」都无效） |
+| [BUG-1450](bugs/BUG-1450-windows-ime-swallows-shortcuts.md) | ✅ | ✅ | 中文输入法激活时全表面快捷键失效（IME 吞键） |
 | [BUG-1449](bugs/BUG-1449-gal-helper-bundled-as-plain-files.md) | ✅ | ✅ | helper 改为构建期解压随包，消灭需与本体同步的第二份副本 |
 | [BUG-1448](bugs/BUG-1448-gal-helper-version-check-short-circuited.md) | ✅ | ✅ | injector 存在即跳过 ensureInjector，随包新组件永不换入 |
 | [BUG-1447](bugs/BUG-1447-manga-remote-ocr-probe-ignores-models-ready.md) | ✅ | ✅ | 远端 OCR probe 只校验 supported 不校验 modelsReady，模型未下载的主机照样可选，白传一整卷才报错 |

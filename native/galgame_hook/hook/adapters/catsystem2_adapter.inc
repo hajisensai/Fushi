@@ -71,12 +71,12 @@ bool LoadCatSystem2Archive(const wchar_t* path, CatSystem2Archive* archive) {
       nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (file == INVALID_HANDLE_VALUE) return false;
   LARGE_INTEGER file_size = {};
-  uint8_t header_bytes[hibiki_voice_hook::catsystem2::kHeaderBytes] = {0};
-  hibiki_voice_hook::catsystem2::Header header;
+  uint8_t header_bytes[fushi_voice_hook::catsystem2::kHeaderBytes] = {0};
+  fushi_voice_hook::catsystem2::Header header;
   uint8_t* index = nullptr;
   bool valid = GetFileSizeEx(file, &file_size) && file_size.QuadPart > 0 &&
                ReadExact(file, header_bytes, sizeof(header_bytes)) &&
-               hibiki_voice_hook::catsystem2::ParseHeader(
+               fushi_voice_hook::catsystem2::ParseHeader(
                    header_bytes, sizeof(header_bytes), &header) &&
                header.index_bytes <= static_cast<uint64_t>(file_size.QuadPart) &&
                header.index_bytes <= UINT32_MAX;
@@ -93,16 +93,16 @@ bool LoadCatSystem2Archive(const wchar_t* path, CatSystem2Archive* archive) {
   std::vector<CatSystem2VoiceRange> ranges;
   bool encrypted = false;
   for (uint32_t i = 0; valid && i < header.entry_count; ++i) {
-    hibiki_voice_hook::catsystem2::EntryView entry;
-    valid = hibiki_voice_hook::catsystem2::ParseEntry(
+    fushi_voice_hook::catsystem2::EntryView entry;
+    valid = fushi_voice_hook::catsystem2::ParseEntry(
         index, header.index_bytes, i,
         static_cast<uint64_t>(file_size.QuadPart), &entry);
     if (!valid) break;
-    if (hibiki_voice_hook::catsystem2::IsEncryptionKey(entry)) {
+    if (fushi_voice_hook::catsystem2::IsEncryptionKey(entry)) {
       encrypted = true;
       continue;
     }
-    if (!hibiki_voice_hook::catsystem2::IsVoiceOgg(entry)) continue;
+    if (!fushi_voice_hook::catsystem2::IsVoiceOgg(entry)) continue;
     CatSystem2VoiceRange range;
     range.offset = entry.offset;
     range.size = entry.size;
@@ -313,7 +313,7 @@ void ProcessCatSystem2VoiceTask(CatSystem2VoiceTask* task) {
   bool valid = ogg != nullptr &&
                SetFilePointerEx(file, at, nullptr, FILE_BEGIN) != FALSE &&
                ReadExact(file, ogg, range.size) &&
-               hibiki_voice_hook::siglus::CompleteOggBytes(ogg, range.size) ==
+               fushi_voice_hook::siglus::CompleteOggBytes(ogg, range.size) ==
                    range.size;
   if (valid) {
     wchar_t name[kCatSystem2NameBytes] = {0};
@@ -325,7 +325,7 @@ void ProcessCatSystem2VoiceTask(CatSystem2VoiceTask* task) {
     g_catsystem2_last_tick = task->tick_ms;
     if (g_header != nullptr) {
       g_header->hook_diagnostics |=
-          hibiki_voice_hook::kDiagCatSystem2PcmVoiceCaptured;
+          fushi_voice_hook::kDiagCatSystem2PcmVoiceCaptured;
     }
   }
   free(ogg);
@@ -342,13 +342,13 @@ void ProcessCatSystem2VoiceTasks() {
 }
 
 bool TryHookCatSystem2PcmVoice() {
-  if (!hibiki_voice_hook::MatchesCatSystem2Profile(nullptr)) return false;
+  if (!fushi_voice_hook::MatchesCatSystem2Profile(nullptr)) return false;
   const bool hooks_ready = TryHookSiglusOvk();
   if (!hooks_ready || !FindAndLoadCatSystem2Archives()) return false;
   InterlockedExchange(&g_catsystem2_enabled, 1);
   if (g_header != nullptr) {
     g_header->hook_diagnostics |=
-        hibiki_voice_hook::kDiagCatSystem2PcmHooksReady;
+        fushi_voice_hook::kDiagCatSystem2PcmHooksReady;
   }
   return true;
 }
@@ -368,11 +368,11 @@ void StopCatSystem2PcmVoice() {
   }
 }
 
-class CatSystem2Adapter final : public hibiki_voice_hook::EngineAdapter {
+class CatSystem2Adapter final : public fushi_voice_hook::EngineAdapter {
  public:
   const char* id() const override { return "catsystem2"; }
   bool probe() const override {
-    return hibiki_voice_hook::MatchesCatSystem2Profile(nullptr);
+    return fushi_voice_hook::MatchesCatSystem2Profile(nullptr);
   }
   bool install() override {
     ready_ = TryHookCatSystem2PcmVoice();
@@ -380,10 +380,10 @@ class CatSystem2Adapter final : public hibiki_voice_hook::EngineAdapter {
     return ready_;
   }
   void ProcessPendingEvents() { ProcessCatSystem2VoiceTasks(); }
-  hibiki_voice_hook::AdapterCapability capabilities() const override {
-    return hibiki_voice_hook::AdapterCapability::kText |
-           hibiki_voice_hook::AdapterCapability::kResourceAudio |
-           hibiki_voice_hook::AdapterCapability::kPcmAudio;
+  fushi_voice_hook::AdapterCapability capabilities() const override {
+    return fushi_voice_hook::AdapterCapability::kText |
+           fushi_voice_hook::AdapterCapability::kResourceAudio |
+           fushi_voice_hook::AdapterCapability::kPcmAudio;
   }
   void onModuleLoaded(const wchar_t*) override {}
   void shutdown() override {
@@ -391,7 +391,7 @@ class CatSystem2Adapter final : public hibiki_voice_hook::EngineAdapter {
     installed_ = false;
     ready_ = false;
   }
-  hibiki_voice_hook::AdapterDiagnostics diagnostics() const override {
+  fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), probe(), installed_,
             g_header == nullptr ? 0u : g_header->hook_diagnostics};
   }

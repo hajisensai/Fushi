@@ -1,0 +1,40 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
+
+void main() {
+  setUp(() {
+    LocaleSettings.setLocale(AppLocale.en);
+  });
+
+  Widget buildApp(Widget home) {
+    return TranslationProvider(
+      child: MaterialApp(home: home),
+    );
+  }
+
+  testWidgets('reader history delete dialog fits a compact desktop window', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 240);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      buildApp(
+        ReaderHistoryDeleteDialog(
+          title: t.epub_delete_title,
+          message: t.srt_delete_confirm(
+            title:
+                'Very long EPUB title used to test compact Windows delete confirmation layout',
+          ),
+          onConfirm: (_) {},
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.dialog_delete), findsOneWidget);
+  });
+}

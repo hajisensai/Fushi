@@ -10,9 +10,9 @@
   },
   "events": [
     {"kind": "text", "id": "wrong-thread", "timestamp_ms": 900, "thread_id": 41, "text": "menu artifact"},
-    {"kind": "text", "id": "ai6-dialogue", "timestamp_ms": 1000, "thread_id": 523, "text": "redacted dialogue"},
+    {"kind": "text", "id": "ai6-dialogue", "text_event_id": 7, "timestamp_ms": 1000, "thread_id": 523, "text": "redacted dialogue"},
     {"kind": "loopback", "id": "mixed-bgm", "timestamp_ms": 1003, "format": "s16le", "channels": 2},
-    {"kind": "resource_audio", "id": "voice-arc-entry", "timestamp_ms": 1005, "available_at_ms": 1180, "format": "ogg", "channels": 1},
+    {"kind": "resource_audio", "id": "voice-arc-entry", "paired_text_event_id": 7, "timestamp_ms": 1005, "available_at_ms": 1180, "format": "ogg", "channels": 1},
     {"kind": "session_end", "timestamp_ms": 2400}
   ],
   "expected": {

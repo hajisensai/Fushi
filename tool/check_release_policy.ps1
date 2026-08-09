@@ -57,7 +57,7 @@ foreach ($relativePath in $workflowPaths) {
   $content = Read-RepoFile $relativePath
 
   Require-Text $relativePath $content 'concurrency:' 'release publishers must share a cross-workflow lock'
-  Require-Text $relativePath $content 'group: hibiki-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}' 'same tag/commit publishes serialize instead of racing separate releases'
+  Require-Text $relativePath $content 'group: fushi-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}' 'same tag/commit publishes serialize instead of racing separate releases'
   Require-Text $relativePath $content 'cancel-in-progress: false' 'Android and desktop publishers both need to complete'
   Require-Text $relativePath $content 'fetch-depth: 0' 'release sequence uses full git history'
   Require-Text $relativePath $content 'RELEASE_SEQUENCE=$(git rev-list --count HEAD)' 'release sequence must be shared by Android and desktop workflows'
@@ -124,26 +124,41 @@ foreach ($relativePath in $workflowPaths) {
   Require-Text $relativePath $content 'echo "tag=$TAG"' 'the versioned tag must still be emitted so the manifest `tag` field drives client version comparison (TODO-1049)'
 }
 
-$buildGradle = Read-RepoFile 'hibiki/android/app/build.gradle'
-Require-Text 'hibiki/android/app/build.gradle' $buildGradle 'def versionCodeBase = 1000000000' 'one-time versionCode migration floor must stay above every historically-shipped versionCode (TODO-414)'
-Require-Text 'hibiki/android/app/build.gradle' $buildGradle 'def maxVersionCode = 2100000000' 'versionCode ceiling guard must match Android''s 2.1e9 limit (TODO-414)'
-Require-Text 'hibiki/android/app/build.gradle' $buildGradle 'output.versionCodeOverride = computed' 'versionCode must be the bounds-checked computed value (TODO-414)'
+$buildGradle = Read-RepoFile 'fushi/android/app/build.gradle'
+Require-Text 'fushi/android/app/build.gradle' $buildGradle 'def versionCodeBase = 1000000000' 'one-time versionCode migration floor must stay above every historically-shipped versionCode (TODO-414)'
+Require-Text 'fushi/android/app/build.gradle' $buildGradle 'def maxVersionCode = 2100000000' 'versionCode ceiling guard must match Android''s 2.1e9 limit (TODO-414)'
+Require-Text 'fushi/android/app/build.gradle' $buildGradle 'output.versionCodeOverride = computed' 'versionCode must be the bounds-checked computed value (TODO-414)'
 
 $desktopWorkflow = Read-RepoFile '.github/workflows/release-desktop.yml'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow '--build-number "${{ steps.channel.outputs.release_sequence }}"' 'desktop build number must use the shared release sequence'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'flutter build windows --release' 'desktop workflow must still publish Windows'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'flutter build macos --release' 'desktop workflow must publish macOS app zips'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'flutter build ios --release --no-codesign' 'desktop workflow must publish unsigned iOS IPA artifacts without requiring Apple signing'
-Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'hibiki-*-windows-setup.exe' 'desktop workflow must upload Windows installer assets'
-Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'hibiki-*-macos.zip' 'desktop workflow must upload macOS zip assets'
-Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'hibiki-*-ios.ipa' 'desktop workflow must upload iOS IPA assets'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-windows-setup.exe' 'desktop workflow must upload Windows installer assets'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-macos.zip' 'desktop workflow must upload macOS zip assets'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-ios.ipa' 'desktop workflow must upload iOS IPA assets'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'Publish mirror update manifest (Apple assets)' 'Apple release assets must merge into the update manifest'
+# Apple 签名链路：细粒度不变式由 fushi/test/tools/apple_signing_workflow_guard_test.dart
+# 守（每个 PR 都跑）。这里只锁发布策略层面的那一条 —— TestFlight 上传绝不能挂到 push
+# 事件上：push 的 debug 通道每次提交都会跑，每次上传都消耗一个不可回收的构建号
+# （同一语义版本下 CFBundleVersion 必须单调递增）。
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow '[ "$GITHUB_EVENT_NAME" = workflow_dispatch ]' 'TestFlight upload must be gated on manual workflow_dispatch; a push-triggered upload burns an unrecoverable build number every commit'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'native/galgame_hook/tools/build_distribution.ps1 -RunTests' 'Windows releases must build the bundled offline galgame helper from the in-tree source'
-Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'Release\galgame_helper' 'Windows installer payload must contain both helper archives and sidecars'
+# BUG-1449: the helper is no longer shipped as zip + sidecar for the runtime to
+# unpack -- that layout left a second copy on disk that had to stay in sync with
+# the app, and "staying in sync" is exactly what broke in BUG-1448. Both Windows
+# workflows now unpack BOTH architectures into the build output at build time via
+# the shared install_into_bundle.ps1, so helper and app come out of one build.
+# Pin the bundle directory too: the archive-era `<config>\galgame_helper` payload
+# check could not tell Release from Debug, and unpacking into the wrong directory
+# ships an installer with no helper at all while the build stays green.
+# (The anti-regression side -- never copying zips back into galgame_helper/ --
+# lives in fushi/test/mining/gal_helper_bundled_as_plain_files_test.dart.)
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'install_into_bundle.ps1 -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Release"' 'Windows release payload must unpack both helper architectures into the packaged Release bundle (BUG-1449)'
 
 $multiplatformWorkflow = Read-RepoFile '.github/workflows/build-multiplatform.yml'
 Require-Text '.github/workflows/build-multiplatform.yml' $multiplatformWorkflow 'native/galgame_hook/tools/build_distribution.ps1 -RunTests' 'Windows CI must exercise the same bundled helper build as release'
-Require-Text '.github/workflows/build-multiplatform.yml' $multiplatformWorkflow 'Debug\galgame_helper' 'Windows debug bundle must exercise the offline helper payload layout'
+Require-Text '.github/workflows/build-multiplatform.yml' $multiplatformWorkflow 'install_into_bundle.ps1 -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Debug"' 'Windows debug bundle must exercise the same build-time helper unpack as release (BUG-1449)'
 
 # BUG-1292: Magpie has no download path left, so the bundled slim archive is the
 # ONLY way window upscaling can ever install. If a Windows workflow stops

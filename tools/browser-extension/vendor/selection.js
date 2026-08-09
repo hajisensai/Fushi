@@ -13,8 +13,8 @@ const JAPANESE_RANGES = [
     [0xff5b, 0xff60], [0xffe0, 0xffee],
 ];
 
-window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
-window.hoshiSelection = {
+window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
+window.fushiSelection = {
     selection: null,
     highlightWrappers: [],
     scanDelimiters: '。、！？…‥「」『』（）()【】〈〉《》〔〕｛｝{}［］[]・：；:;，,.─\n\r"\'“”‘’«»‹›',
@@ -35,11 +35,19 @@ window.hoshiSelection = {
         return !!el?.closest('rt, rp');
     },
 
+    isIgnoredLookupText(node) {
+        const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+        // postProcessRuby inserts a hidden copy of each reading before its base
+        // to reserve inline width. It is layout-only, just like <rt>/<rp>, and
+        // must not leak into mixed kanji/kana lookup scans (打ち合わせ, etc.).
+        return this.isFurigana(node) || !!el?.closest('.ruby-reserve');
+    },
+
     resolveRubyBase(node) {
         const rubyEl = node.parentElement?.closest('ruby');
         if (!rubyEl) return null;
         const walker = document.createTreeWalker(rubyEl, NodeFilter.SHOW_TEXT, {
-            acceptNode: (n) => this.isFurigana(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+            acceptNode: (n) => this.isIgnoredLookupText(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
         });
         const base = walker.nextNode();
         return base ? { node: base, offset: 0 } : null;
@@ -53,7 +61,7 @@ window.hoshiSelection = {
     createWalker(rootNode) {
         const root = rootNode || document.body;
         return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-            acceptNode: (n) => this.isFurigana(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+            acceptNode: (n) => this.isIgnoredLookupText(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
         });
     },
 
@@ -280,7 +288,7 @@ window.hoshiSelection = {
     // Build the popup word selection starting at (node, offset): expand a
     // non-Japanese hit left to its token start, scan forward up to maxLength
     // chars, and fire textSelected (→ a deeper lookup). Shared by the tap path
-    // (selectText) and the keyboard/gamepad caret (window.hoshiCaret.lookup).
+    // (selectText) and the keyboard/gamepad caret (window.fushiCaret.lookup).
     // x/y are optional — the caret omits them, so the rect falls back to the
     // first char's bounding box. Caller clears any prior selection first.
     selectFromPosition(node, offset, maxLength, x, y) {
@@ -384,14 +392,14 @@ window.hoshiSelection = {
             }
         }
 
-        if (window.__hoshiCssHighlightsSupported) {
+        if (window.__fushiCssHighlightsSupported) {
             const highlights = trimmedRanges.map(seg => {
                 const range = document.createRange();
                 range.setStart(seg.node, seg.start);
                 range.setEnd(seg.node, seg.end);
                 return range;
             });
-            CSS.highlights.set('hoshi-selection', new Highlight(...highlights));
+            CSS.highlights.set('fushi-selection', new Highlight(...highlights));
         } else {
             this.clearHighlightWrappers();
             const range = document.createRange();
@@ -400,7 +408,7 @@ window.hoshiSelection = {
                 range.setStart(seg.node, seg.start);
                 range.setEnd(seg.node, seg.end);
                 const wrapper = document.createElement('span');
-                wrapper.className = 'hoshi-dict-highlight';
+                wrapper.className = 'fushi-dict-highlight';
                 wrapper.appendChild(range.extractContents());
                 range.insertNode(wrapper);
                 this.highlightWrappers.push(wrapper);
@@ -426,8 +434,8 @@ window.hoshiSelection = {
 
     clearSelection() {
         window.getSelection()?.removeAllRanges();
-        if (window.__hoshiCssHighlightsSupported) {
-            CSS.highlights.delete('hoshi-selection');
+        if (window.__fushiCssHighlightsSupported) {
+            CSS.highlights.delete('fushi-selection');
         } else {
             this.clearHighlightWrappers();
         }

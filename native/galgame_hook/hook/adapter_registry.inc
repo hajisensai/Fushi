@@ -14,7 +14,7 @@ bool ModuleNameStartsWith(const wchar_t* module_name, const wchar_t* prefix) {
 }
 
 class GenericWindowsAudioAdapter final
-    : public hibiki_voice_hook::EngineAdapter {
+    : public fushi_voice_hook::EngineAdapter {
  public:
   const char* id() const override { return "xaudio2_directsound"; }
   bool probe() const override { return true; }
@@ -24,8 +24,8 @@ class GenericWindowsAudioAdapter final
     installed_ = true;
     return true;
   }
-  hibiki_voice_hook::AdapterCapability capabilities() const override {
-    return hibiki_voice_hook::AdapterCapability::kPcmAudio;
+  fushi_voice_hook::AdapterCapability capabilities() const override {
+    return fushi_voice_hook::AdapterCapability::kPcmAudio;
   }
   void onModuleLoaded(const wchar_t* module_name) override {
     if (module_name == nullptr || ModuleNameEquals(module_name, L"xaudio2_9.dll") ||
@@ -36,7 +36,7 @@ class GenericWindowsAudioAdapter final
     }
   }
   void shutdown() override { installed_ = false; }
-  hibiki_voice_hook::AdapterDiagnostics diagnostics() const override {
+  fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), probe(), installed_,
             g_header == nullptr ? 0u : g_header->hook_diagnostics};
   }
@@ -45,7 +45,7 @@ class GenericWindowsAudioAdapter final
   bool installed_ = false;
 };
 
-class SiglusAdapter final : public hibiki_voice_hook::EngineAdapter {
+class SiglusAdapter final : public fushi_voice_hook::EngineAdapter {
  public:
   const char* id() const override { return "siglus"; }
   bool probe() const override { return IsSiglusEngine(); }
@@ -65,10 +65,10 @@ class SiglusAdapter final : public hibiki_voice_hook::EngineAdapter {
   }
   void ProcessPendingEvents() { ProcessSiglusVoiceTasks(); }
   bool audio_ready() const { return audio_ready_; }
-  hibiki_voice_hook::AdapterCapability capabilities() const override {
-    return hibiki_voice_hook::AdapterCapability::kText |
-           hibiki_voice_hook::AdapterCapability::kResourceAudio |
-           hibiki_voice_hook::AdapterCapability::kPcmAudio;
+  fushi_voice_hook::AdapterCapability capabilities() const override {
+    return fushi_voice_hook::AdapterCapability::kText |
+           fushi_voice_hook::AdapterCapability::kResourceAudio |
+           fushi_voice_hook::AdapterCapability::kPcmAudio;
   }
   void onModuleLoaded(const wchar_t*) override {
     // Siglus hooks target the main executable and kernel32 file APIs; startup install + bounded
@@ -78,7 +78,7 @@ class SiglusAdapter final : public hibiki_voice_hook::EngineAdapter {
     installed_ = false;
     audio_ready_ = false;
   }
-  hibiki_voice_hook::AdapterDiagnostics diagnostics() const override {
+  fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), probe(), installed_,
             g_header == nullptr ? 0u : g_header->hook_diagnostics};
   }
@@ -88,7 +88,7 @@ class SiglusAdapter final : public hibiki_voice_hook::EngineAdapter {
   bool audio_ready_ = false;
 };
 
-class UnityIl2CppAdapter final : public hibiki_voice_hook::EngineAdapter {
+class UnityIl2CppAdapter final : public fushi_voice_hook::EngineAdapter {
  public:
   const char* id() const override { return "unity_il2cpp"; }
   bool probe() const override {
@@ -102,10 +102,10 @@ class UnityIl2CppAdapter final : public hibiki_voice_hook::EngineAdapter {
   }
   bool ready() const { return ready_; }
   void ProcessPendingEvents() { ProcessPendingUnityAudioEvents(); }
-  hibiki_voice_hook::AdapterCapability capabilities() const override {
-    return hibiki_voice_hook::AdapterCapability::kText |
-           hibiki_voice_hook::AdapterCapability::kResourceAudio |
-           hibiki_voice_hook::AdapterCapability::kPcmAudio;
+  fushi_voice_hook::AdapterCapability capabilities() const override {
+    return fushi_voice_hook::AdapterCapability::kText |
+           fushi_voice_hook::AdapterCapability::kResourceAudio |
+           fushi_voice_hook::AdapterCapability::kPcmAudio;
   }
   void onModuleLoaded(const wchar_t* module_name) override {
     if (module_name == nullptr ||
@@ -118,7 +118,7 @@ class UnityIl2CppAdapter final : public hibiki_voice_hook::EngineAdapter {
     installed_ = false;
     ready_ = false;
   }
-  hibiki_voice_hook::AdapterDiagnostics diagnostics() const override {
+  fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), probe(), installed_,
             g_header == nullptr ? 0u : g_header->hook_diagnostics};
   }
@@ -128,7 +128,7 @@ class UnityIl2CppAdapter final : public hibiki_voice_hook::EngineAdapter {
   bool ready_ = false;
 };
 
-class TextRenderAdapter final : public hibiki_voice_hook::EngineAdapter {
+class TextRenderAdapter final : public fushi_voice_hook::EngineAdapter {
  public:
   const char* id() const override { return "text_render"; }
   bool probe() const override { return true; }
@@ -137,8 +137,8 @@ class TextRenderAdapter final : public hibiki_voice_hook::EngineAdapter {
     installed_ = true;
     return true;
   }
-  hibiki_voice_hook::AdapterCapability capabilities() const override {
-    return hibiki_voice_hook::AdapterCapability::kText;
+  fushi_voice_hook::AdapterCapability capabilities() const override {
+    return fushi_voice_hook::AdapterCapability::kText;
   }
   void onModuleLoaded(const wchar_t* module_name) override {
     if (module_name == nullptr || ModuleNameEquals(module_name, L"gdi32.dll") ||
@@ -147,7 +147,7 @@ class TextRenderAdapter final : public hibiki_voice_hook::EngineAdapter {
     }
   }
   void shutdown() override { installed_ = false; }
-  hibiki_voice_hook::AdapterDiagnostics diagnostics() const override {
+  fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), probe(), installed_,
             g_header == nullptr ? 0u : g_header->hook_diagnostics};
   }
@@ -156,11 +156,11 @@ class TextRenderAdapter final : public hibiki_voice_hook::EngineAdapter {
   bool installed_ = false;
 };
 
-class KiriKiriAdapter final : public hibiki_voice_hook::EngineAdapter {
+class KiriKiriAdapter final : public fushi_voice_hook::EngineAdapter {
  public:
   const char* id() const override { return "kirikiri_z"; }
   bool probe() const override {
-    return !hibiki_voice_hook::MatchesQlieProfile(nullptr) &&
+    return !fushi_voice_hook::MatchesQlieProfile(nullptr) &&
            (GetModuleHandleW(L"wuvorbis.dll") != nullptr ||
             GetModuleHandleW(L"wuopus.dll") != nullptr);
   }
@@ -170,13 +170,13 @@ class KiriKiriAdapter final : public hibiki_voice_hook::EngineAdapter {
     return decoder_ready && voice_ready;
   }
   bool InstallDecoders() {
-    if (hibiki_voice_hook::MatchesQlieProfile(nullptr)) return false;
+    if (fushi_voice_hook::MatchesQlieProfile(nullptr)) return false;
     decoder_ready_ = TryHookKirikiriDecoders();
     installed_ = installed_ || decoder_ready_;
     return decoder_ready_;
   }
   bool InstallVoiceStream() {
-    if (hibiki_voice_hook::MatchesQlieProfile(nullptr)) return false;
+    if (fushi_voice_hook::MatchesQlieProfile(nullptr)) return false;
     voice_ready_ = TryHookKirikiriVoiceStream();
     installed_ = installed_ || voice_ready_;
     return voice_ready_;
@@ -184,10 +184,10 @@ class KiriKiriAdapter final : public hibiki_voice_hook::EngineAdapter {
   void ProcessPendingEvents() { ProcessKirikiriVoiceTasks(); }
   bool decoder_ready() const { return decoder_ready_; }
   bool voice_ready() const { return voice_ready_; }
-  hibiki_voice_hook::AdapterCapability capabilities() const override {
-    return hibiki_voice_hook::AdapterCapability::kText |
-           hibiki_voice_hook::AdapterCapability::kResourceAudio |
-           hibiki_voice_hook::AdapterCapability::kPcmAudio;
+  fushi_voice_hook::AdapterCapability capabilities() const override {
+    return fushi_voice_hook::AdapterCapability::kText |
+           fushi_voice_hook::AdapterCapability::kResourceAudio |
+           fushi_voice_hook::AdapterCapability::kPcmAudio;
   }
   void onModuleLoaded(const wchar_t* module_name) override {
     if (module_name == nullptr || ModuleNameEquals(module_name, L"wuvorbis.dll") ||
@@ -201,7 +201,7 @@ class KiriKiriAdapter final : public hibiki_voice_hook::EngineAdapter {
     decoder_ready_ = false;
     voice_ready_ = false;
   }
-  hibiki_voice_hook::AdapterDiagnostics diagnostics() const override {
+  fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), probe(), installed_,
             g_header == nullptr ? 0u : g_header->hook_diagnostics};
   }
@@ -212,13 +212,13 @@ class KiriKiriAdapter final : public hibiki_voice_hook::EngineAdapter {
   bool voice_ready_ = false;
 };
 
-class RenPyAdapter final : public hibiki_voice_hook::EngineAdapter {
+class RenPyAdapter final : public fushi_voice_hook::EngineAdapter {
  public:
   const char* id() const override { return "renpy_ffmpeg"; }
   bool probe() const override {
     uint32_t major = 0;
     return FindLoadedFfmpegModule(
-               hibiki_voice_hook::FfmpegModuleKind::kAvformat, &major) !=
+               fushi_voice_hook::FfmpegModuleKind::kAvformat, &major) !=
            nullptr;
   }
   bool install() override {
@@ -227,16 +227,16 @@ class RenPyAdapter final : public hibiki_voice_hook::EngineAdapter {
     return ready_;
   }
   bool ready() const { return ready_; }
-  hibiki_voice_hook::AdapterCapability capabilities() const override {
-    return hibiki_voice_hook::AdapterCapability::kText |
-           hibiki_voice_hook::AdapterCapability::kResourceAudio |
-           hibiki_voice_hook::AdapterCapability::kPcmAudio;
+  fushi_voice_hook::AdapterCapability capabilities() const override {
+    return fushi_voice_hook::AdapterCapability::kText |
+           fushi_voice_hook::AdapterCapability::kResourceAudio |
+           fushi_voice_hook::AdapterCapability::kPcmAudio;
   }
   void onModuleLoaded(const wchar_t* module_name) override {
-    const auto ffmpeg = hibiki_voice_hook::ParseFfmpegModuleName(module_name);
+    const auto ffmpeg = fushi_voice_hook::ParseFfmpegModuleName(module_name);
     if (module_name == nullptr ||
-        ffmpeg.kind != hibiki_voice_hook::FfmpegModuleKind::kNone ||
-        hibiki_voice_hook::IsMonolithicFfmpegModuleName(module_name)) {
+        ffmpeg.kind != fushi_voice_hook::FfmpegModuleKind::kNone ||
+        fushi_voice_hook::IsMonolithicFfmpegModuleName(module_name)) {
       install();
     }
   }
@@ -245,7 +245,7 @@ class RenPyAdapter final : public hibiki_voice_hook::EngineAdapter {
     installed_ = false;
     ready_ = false;
   }
-  hibiki_voice_hook::AdapterDiagnostics diagnostics() const override {
+  fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), probe(), installed_,
             g_header == nullptr ? 0u : g_header->hook_diagnostics};
   }
@@ -255,7 +255,7 @@ class RenPyAdapter final : public hibiki_voice_hook::EngineAdapter {
   bool ready_ = false;
 };
 
-class TyranoAdapter final : public hibiki_voice_hook::EngineAdapter {
+class TyranoAdapter final : public fushi_voice_hook::EngineAdapter {
  public:
   const char* id() const override { return "tyrano_nwjs"; }
   bool probe() const override {
@@ -268,8 +268,8 @@ class TyranoAdapter final : public hibiki_voice_hook::EngineAdapter {
   }
   bool ready() const { return ready_; }
   void ProcessPendingEvents() { ProcessTyranoAsarTasks(); }
-  hibiki_voice_hook::AdapterCapability capabilities() const override {
-    return hibiki_voice_hook::AdapterCapability::kResourceAudio;
+  fushi_voice_hook::AdapterCapability capabilities() const override {
+    return fushi_voice_hook::AdapterCapability::kResourceAudio;
   }
   void onModuleLoaded(const wchar_t*) override {}
   void shutdown() override {
@@ -277,7 +277,7 @@ class TyranoAdapter final : public hibiki_voice_hook::EngineAdapter {
     installed_ = false;
     ready_ = false;
   }
-  hibiki_voice_hook::AdapterDiagnostics diagnostics() const override {
+  fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), probe(), installed_,
             g_header == nullptr ? 0u : g_header->hook_diagnostics};
   }
@@ -287,7 +287,7 @@ class TyranoAdapter final : public hibiki_voice_hook::EngineAdapter {
   bool ready_ = false;
 };
 
-class LoopbackAdapter final : public hibiki_voice_hook::EngineAdapter {
+class LoopbackAdapter final : public fushi_voice_hook::EngineAdapter {
  public:
   const char* id() const override { return "process_loopback"; }
   bool probe() const override { return true; }
@@ -299,8 +299,8 @@ class LoopbackAdapter final : public hibiki_voice_hook::EngineAdapter {
     installed_ = g_lb_thread != nullptr;
     return installed_;
   }
-  hibiki_voice_hook::AdapterCapability capabilities() const override {
-    return hibiki_voice_hook::AdapterCapability::kPcmAudio;
+  fushi_voice_hook::AdapterCapability capabilities() const override {
+    return fushi_voice_hook::AdapterCapability::kPcmAudio;
   }
   void onModuleLoaded(const wchar_t*) override {}
   void shutdown() override {
@@ -311,7 +311,7 @@ class LoopbackAdapter final : public hibiki_voice_hook::EngineAdapter {
     }
     installed_ = false;
   }
-  hibiki_voice_hook::AdapterDiagnostics diagnostics() const override {
+  fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), probe(), installed_,
             g_header == nullptr ? 0u : g_header->hook_diagnostics};
   }

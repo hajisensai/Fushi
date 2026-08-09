@@ -90,7 +90,7 @@ namespace flutter_inappwebview_plugin
         : std::wstring();
     const std::wstring testUserDataFolder =
       configuredUserDataFolder.empty()
-        ? OptionalEnvWide(L"HIBIKI_WEBVIEW2_USER_DATA_FOLDER")
+        ? OptionalEnvWide(L"FUSHI_WEBVIEW2_USER_DATA_FOLDER")
         : std::wstring();
     const std::wstring& userDataFolder =
       configuredUserDataFolder.empty()

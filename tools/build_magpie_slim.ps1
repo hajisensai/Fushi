@@ -16,7 +16,7 @@
   编译失败（它们只有 0.37 MB，没有裁的价值）。
 
   产物：dist/Magpie-hibiki-slim-<arch>.zip 与同名 .sha256 侧车。
-  消费方：hibiki/lib/src/mining/magpie_installer.dart 的 _installBundledMagpie。
+  消费方：fushi/lib/src/mining/magpie_installer.dart 的 _installBundledMagpie。
 
 .PARAMETER Arch
   目标架构。默认只出 x64 —— ARM64 Windows 用户极少且能跑 x64 模拟，为它多背 4.7 MB

@@ -3,15 +3,15 @@
 #include "luna_bridge.h"
 
 int main() {
-  static_assert(hibiki_voice_hook::kLunaBridgeAbiVersion == 1);
-  static_assert(hibiki_voice_hook::kLunaVendoredVersion == 0x0A100102);
-  static_assert(sizeof(hibiki_voice_hook::LunaThreadParam) == 32);
-  static_assert(std::is_same_v<hibiki_voice_hook::PFN_Luna_ConnectProcess,
+  static_assert(fushi_voice_hook::kLunaBridgeAbiVersion == 1);
+  static_assert(fushi_voice_hook::kLunaVendoredVersion == 0x0A100102);
+  static_assert(sizeof(fushi_voice_hook::LunaThreadParam) == 32);
+  static_assert(std::is_same_v<fushi_voice_hook::PFN_Luna_ConnectProcess,
                                void (*)(DWORD)>);
-  static_assert(std::is_same_v<hibiki_voice_hook::PFN_Luna_InsertHookCode,
+  static_assert(std::is_same_v<fushi_voice_hook::PFN_Luna_InsertHookCode,
                                bool (*)(DWORD, const wchar_t*)>);
-  static_assert(std::is_same_v<hibiki_voice_hook::PFN_Luna_RemoveHook,
+  static_assert(std::is_same_v<fushi_voice_hook::PFN_Luna_RemoveHook,
                                void (*)(DWORD, uint64_t)>);
-  static_assert(hibiki_voice_hook::kLunaRequiredExports.size() == 4);
+  static_assert(fushi_voice_hook::kLunaRequiredExports.size() == 4);
   return 0;
 }

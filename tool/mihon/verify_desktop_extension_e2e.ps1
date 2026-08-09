@@ -43,7 +43,7 @@ $startInfo.UseShellExecute = $false
 $startInfo.CreateNoWindow = $true
 $startInfo.RedirectStandardOutput = $true
 $startInfo.RedirectStandardError = $true
-$startInfo.Environment["HIBIKI_MIHON_TOKEN"] = $token
+$startInfo.Environment["FUSHI_MIHON_TOKEN"] = $token
 $startInfo.ArgumentList.Add("-Xmx768m")
 $startInfo.ArgumentList.Add("-Djava.awt.headless=true")
 $startInfo.ArgumentList.Add(
@@ -106,7 +106,7 @@ try {
             Start-Sleep -Milliseconds 200
         }
     } while ([DateTime]::UtcNow -lt $deadline)
-    if ($null -eq $capabilities -or $capabilities.hibikiMihonBridge -ne 1) {
+    if ($null -eq $capabilities -or $capabilities.fushiMihonBridge -ne 1) {
         throw "M-Extension-Server did not expose the required capability."
     }
 

@@ -3,7 +3,7 @@
 
 #include "voice_hook_session.h"
 
-using hibiki_voice_hook::AdvanceUnityEventCursorIfCommitted;
+using fushi_voice_hook::AdvanceUnityEventCursorIfCommitted;
 
 int main() {
   uint64_t next_event = 6;

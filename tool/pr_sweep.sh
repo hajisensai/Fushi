@@ -65,7 +65,7 @@ LIMIT="${PR_SWEEP_LIMIT:-40}"
 # 导出（非仅 shell 变量）让内嵌 python 直接读到同一真值，默认只此一处。
 export PR_SWEEP_STALE_BEHIND="${PR_SWEEP_STALE_BEHIND:-20}"
 # fake-ip DNS 下 gh 直连必超时——需要代理。解析顺序见 tool/proxy_env.sh：
-# 调用方环境变量 > HIBIKI_BOOTSTRAP_PROXY > tool/bootstrap.local.env > 不设（照常跑）。
+# 调用方环境变量 > FUSHI_BOOTSTRAP_PROXY > tool/bootstrap.local.env > 不设（照常跑）。
 # 不在本文件写死地址：那会把本机端口带进公开仓库，且换机器指向不存在的端口。
 source "$(dirname "${BASH_SOURCE[0]}")/proxy_env.sh"
 export PYTHONUTF8=1   # Windows GBK 控制台下内嵌 python 打中文不乱码

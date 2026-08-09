@@ -5,7 +5,7 @@
 
 namespace {
 
-class FakeAdapter final : public hibiki_voice_hook::EngineAdapter {
+class FakeAdapter final : public fushi_voice_hook::EngineAdapter {
  public:
   const char* id() const override { return "fake"; }
   bool probe() const override { return applicable; }
@@ -13,13 +13,13 @@ class FakeAdapter final : public hibiki_voice_hook::EngineAdapter {
     installed = true;
     return true;
   }
-  hibiki_voice_hook::AdapterCapability capabilities() const override {
-    return hibiki_voice_hook::AdapterCapability::kText |
-           hibiki_voice_hook::AdapterCapability::kResourceAudio;
+  fushi_voice_hook::AdapterCapability capabilities() const override {
+    return fushi_voice_hook::AdapterCapability::kText |
+           fushi_voice_hook::AdapterCapability::kResourceAudio;
   }
   void onModuleLoaded(const wchar_t*) override { ++module_notifications; }
   void shutdown() override { installed = false; }
-  hibiki_voice_hook::AdapterDiagnostics diagnostics() const override {
+  fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), applicable, installed, 0x42u};
   }
 
@@ -32,7 +32,7 @@ class FakeAdapter final : public hibiki_voice_hook::EngineAdapter {
 
 int main() {
   FakeAdapter adapter;
-  hibiki_voice_hook::EngineAdapter* contract = &adapter;
+  fushi_voice_hook::EngineAdapter* contract = &adapter;
   assert(contract->probe());
   assert(contract->install());
   contract->onModuleLoaded(L"engine.dll");
@@ -40,14 +40,14 @@ int main() {
 
   const auto capabilities = static_cast<uint32_t>(contract->capabilities());
   assert((capabilities & static_cast<uint32_t>(
-                             hibiki_voice_hook::AdapterCapability::kText)) != 0);
+                             fushi_voice_hook::AdapterCapability::kText)) != 0);
   assert((capabilities &
           static_cast<uint32_t>(
-              hibiki_voice_hook::AdapterCapability::kResourceAudio)) != 0);
+              fushi_voice_hook::AdapterCapability::kResourceAudio)) != 0);
   assert((capabilities & static_cast<uint32_t>(
-                             hibiki_voice_hook::AdapterCapability::kPcmAudio)) == 0);
+                             fushi_voice_hook::AdapterCapability::kPcmAudio)) == 0);
 
-  const hibiki_voice_hook::AdapterDiagnostics diagnostics =
+  const fushi_voice_hook::AdapterDiagnostics diagnostics =
       contract->diagnostics();
   assert(diagnostics.applicable);
   assert(diagnostics.installed);

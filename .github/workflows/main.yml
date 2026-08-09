@@ -11,7 +11,7 @@ on:
   pull_request:
     branches: ['main', 'develop']
     paths:
-      - 'hibiki/**'
+      - 'fushi/**'
       - 'packages/**'
       # C ABI bridge 源码：只改 native/ 的 PR 以前触发不了任何构建，
       # 编译挂了要等下一个不相关改动才暴露。
@@ -70,7 +70,7 @@ jobs:
         cache: true
 
     - name: Remove local proxy from gradle.properties
-      working-directory: hibiki/android
+      working-directory: fushi/android
       run: |
         sed -i '/systemProp\.http\.proxyHost/d' gradle.properties
         sed -i '/systemProp\.http\.proxyPort/d' gradle.properties
@@ -90,14 +90,14 @@ jobs:
       env:
         GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
       run: |
-        dst=hibiki/lib/src/sync/google_oauth_secret.dart
+        dst=fushi/lib/src/sync/google_oauth_secret.dart
         if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
           oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
           printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
             "$oauth_secret_literal" \
             > "$dst"
         elif [ ! -f "$dst" ]; then
-          cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+          cp fushi/lib/src/sync/google_oauth_secret.example.dart "$dst"
         fi
     # dandanplay_secret.dart ships a committed empty placeholder (AppId/AppSecret
     # = '') so a fresh clone compiles and online danmaku degrades to unsigned. When
@@ -110,14 +110,14 @@ jobs:
         DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
         DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
       run: |
-        dst=hibiki/lib/src/media/video/dandanplay_secret.dart
+        dst=fushi/lib/src/media/video/dandanplay_secret.dart
         if [ -n "$DANDANPLAY_APP_ID" ]; then
           printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
             "$DANDANPLAY_APP_ID" \
             "$DANDANPLAY_APP_SECRET" \
             > "$dst"
         elif [ ! -f "$dst" ]; then
-          cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
+          cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
         fi
     # tmdb_default_key.dart ships a committed empty placeholder (key = '') so a
     # fresh clone compiles and TMDB scraping degrades to "not configured" (Bangumi
@@ -130,9 +130,9 @@ jobs:
       env:
         TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
       run: |
-        dst=hibiki/lib/src/media/video/scraper/tmdb_default_key.dart
+        dst=fushi/lib/src/media/video/scraper/tmdb_default_key.dart
         if [ ! -f "$dst" ]; then
-          cp hibiki/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
+          cp fushi/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
         fi
         if [ -n "$TMDB_API_KEY" ]; then
           # -i.bak（后缀紧贴 -i）是 GNU sed 与 BSD/macOS sed 通用的就地编辑写法；
@@ -147,7 +147,7 @@ jobs:
     # （main / release / build-multiplatform）的 path + key 必须逐字相同，且此步
     # 之前不得 sed 改 build.gradle / settings.gradle —— 否则同一份内容会被存成
     # 两条各 2.7 GB 的缓存。理由见 docs/agent/build.md 的「CI 缓存配额」，守卫见
-    # hibiki/test/build/workflow_cache_quota_guard_test.dart。
+    # fushi/test/build/workflow_cache_quota_guard_test.dart。
     - name: Cache Gradle caches
       uses: actions/cache@v4
       with:
@@ -155,18 +155,18 @@ jobs:
           ~/.gradle/caches/modules-2
           ~/.gradle/caches/journal-1
           ~/.gradle/wrapper/dists
-        key: ${{ runner.os }}-gradle-v2-${{ hashFiles('hibiki/android/**/*.gradle*', 'hibiki/android/gradle/wrapper/gradle-wrapper.properties') }}
+        key: ${{ runner.os }}-gradle-v2-${{ hashFiles('fushi/android/**/*.gradle*', 'fushi/android/gradle/wrapper/gradle-wrapper.properties') }}
         restore-keys: |
           ${{ runner.os }}-gradle-v2-
 
     - name: Remove aliyun mirrors from gradle files
-      working-directory: hibiki/android
+      working-directory: fushi/android
       run: |
         sed -i "/maven.*aliyun/d" build.gradle
         sed -i "/maven.*aliyun/d" settings.gradle
 
     - name: Flutter pub get
-      working-directory: hibiki
+      working-directory: fushi
       run: flutter pub get
 
     - name: Apply pub cache patches
@@ -175,23 +175,23 @@ jobs:
         bash ci/apply-patches.sh
 
     - name: Run dart analyze
-      working-directory: hibiki
+      working-directory: fushi
       run: flutter analyze
 
     # Golden image tests are gated to the reference platform (the dev host where
     # goldens were generated); Linux CI font/raster rendering differs and would
     # always mismatch, so exclude them here. They still run on a plain local
-    # `flutter test`. See hibiki/dart_test.yaml.
+    # `flutter test`. See fushi/dart_test.yaml.
     - name: Run unit tests with coverage (main app)
-      working-directory: hibiki
+      working-directory: fushi
       run: dart run tool/flutter_test_failures.dart --coverage --exclude-tags golden
 
     - name: Run package tests
       run: |
-        for pkg in packages/hibiki_core packages/hibiki_dictionary packages/hibiki_anki packages/hibiki_audio packages/hibiki_platform; do
+        for pkg in packages/fushi_core packages/fushi_dictionary packages/fushi_anki packages/fushi_audio packages/fushi_platform; do
           if [ -d "$pkg/test" ]; then
             echo "::group::Testing $pkg"
-            (cd "$pkg" && dart ../../hibiki/tool/flutter_test_failures.dart --output-dir=../../.codex-test/flutter-test/$(basename "$pkg"))
+            (cd "$pkg" && dart ../../fushi/tool/flutter_test_failures.dart --output-dir=../../.codex-test/flutter-test/$(basename "$pkg"))
             echo "::endgroup::"
           else
             echo "::warning title=No package tests::$pkg has no test/ dir — its code is only covered transitively by the main-app suite"
@@ -235,9 +235,9 @@ jobs:
     # raster the unshipped armv7/x86_64 slices just to exercise R8 keep-rules).
     - name: Generate throwaway keystore (no signing secret present)
       if: github.event_name == 'pull_request' && env.HAS_KEYSTORE != 'true'
-      working-directory: hibiki/android
+      working-directory: fushi/android
       run: |
-        keytool -genkeypair -v -keystore hibiki-release.jks \
+        keytool -genkeypair -v -keystore fushi-release.jks \
           -storepass ci_throwaway -keypass ci_throwaway -alias ci \
           -keyalg RSA -keysize 2048 -validity 1 \
           -dname "CN=Hibiki CI, O=CI, C=US"
@@ -245,14 +245,14 @@ jobs:
         storePassword=ci_throwaway
         keyPassword=ci_throwaway
         keyAlias=ci
-        storeFile=hibiki-release.jks
+        storeFile=fushi-release.jks
         EOF
       env:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
 
     - name: Verify release build (minify/R8/proguard/native)
       if: github.event_name == 'pull_request' && env.HAS_KEYSTORE != 'true'
-      working-directory: hibiki
+      working-directory: fushi
       run: >-
         flutter build apk --release --target-platform android-arm64
         --build-number "$RELEASE_SEQUENCE"
@@ -262,19 +262,19 @@ jobs:
     - name: Decode keystore
       if: github.event_name == 'pull_request' && env.HAS_KEYSTORE == 'true'
       run: |
-        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > hibiki/android/hibiki-release.jks
+        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > fushi/android/fushi-release.jks
       env:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
 
     - name: Create key.properties
       if: github.event_name == 'pull_request' && env.HAS_KEYSTORE == 'true'
-      working-directory: hibiki/android
+      working-directory: fushi/android
       run: |
         cat > key.properties <<EOF
         storePassword=${{ secrets.KEYSTORE_PASSWORD }}
         keyPassword=${{ secrets.KEY_PASSWORD }}
         keyAlias=${{ secrets.KEY_ALIAS }}
-        storeFile=hibiki-release.jks
+        storeFile=fushi-release.jks
         EOF
       env:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
@@ -284,7 +284,7 @@ jobs:
     # otherwise duplicate release.yml's published arm64 APK.
     - name: Verify release build (signed, minify/R8/proguard/native)
       if: github.event_name == 'pull_request' && env.HAS_KEYSTORE == 'true'
-      working-directory: hibiki
+      working-directory: fushi
       run: >-
         flutter build apk --release --target-platform android-arm64
         --build-number "$RELEASE_SEQUENCE"
@@ -292,6 +292,6 @@ jobs:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
 
     - name: Check dependency health
-      working-directory: hibiki
+      working-directory: fushi
       run: |
         flutter pub outdated || true

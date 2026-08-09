@@ -1,0 +1,281 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+
+void main() {
+  AudioPlaybackRange range(int fileIndex, int startMs, int endMs) =>
+      AudioPlaybackRange(
+        audioFileIndex: fileIndex,
+        startMs: startMs,
+        endMs: endMs,
+      );
+
+  group('joinMinedSentences', () {
+    test('single sentence is returned trimmed (equivalent to old behavior)',
+        () {
+      expect(joinMinedSentences(<String>['  これは一文です。 ']), 'これは一文です。');
+    });
+
+    test('multiple sentences join with newline in order', () {
+      expect(
+        joinMinedSentences(<String>['一句目。', '二句目。', '三句目。']),
+        '一句目。\n二句目。\n三句目。',
+      );
+    });
+
+    test('blank and whitespace-only sentences are dropped', () {
+      expect(
+        joinMinedSentences(<String>['一句目。', '   ', '', '二句目。']),
+        '一句目。\n二句目。',
+      );
+    });
+
+    test('empty list yields empty string', () {
+      expect(joinMinedSentences(<String>[]), '');
+    });
+  });
+
+  group('mergeMiningAudioRanges', () {
+    test('all null yields null (no audio to merge)', () {
+      expect(
+        mergeMiningAudioRanges(<AudioPlaybackRange?>[null, null]),
+        isNull,
+      );
+    });
+
+    test('same file merges to first start -> last end', () {
+      final AudioPlaybackRange? merged = mergeMiningAudioRanges(
+        <AudioPlaybackRange?>[
+          range(0, 1000, 1800),
+          range(0, 2200, 2800),
+          range(0, 3200, 4100),
+        ],
+      );
+      expect(merged, isNotNull);
+      expect(merged!.audioFileIndex, 0);
+      expect(merged.startMs, 1000);
+      expect(merged.endMs, 4100);
+    });
+
+    test('out-of-order ranges still take global min start / max end', () {
+      final AudioPlaybackRange? merged = mergeMiningAudioRanges(
+        <AudioPlaybackRange?>[
+          range(0, 3200, 4100),
+          range(0, 1000, 1800),
+        ],
+      );
+      expect(merged!.startMs, 1000);
+      expect(merged.endMs, 4100);
+    });
+
+    test('null gaps between present ranges are skipped, still merges', () {
+      final AudioPlaybackRange? merged = mergeMiningAudioRanges(
+        <AudioPlaybackRange?>[
+          range(0, 1000, 1800),
+          null,
+          range(0, 3200, 4100),
+        ],
+      );
+      expect(merged!.startMs, 1000);
+      expect(merged.endMs, 4100);
+    });
+
+    test('cross-file (cross-chapter) degrades to null — never splice bad audio',
+        () {
+      final AudioPlaybackRange? merged = mergeMiningAudioRanges(
+        <AudioPlaybackRange?>[
+          range(0, 1000, 1800),
+          range(1, 200, 900),
+        ],
+      );
+      expect(merged, isNull);
+    });
+
+    test('single present range is returned as-is', () {
+      final AudioPlaybackRange? merged = mergeMiningAudioRanges(
+        <AudioPlaybackRange?>[null, range(2, 500, 900), null],
+      );
+      expect(merged!.audioFileIndex, 2);
+      expect(merged.startMs, 500);
+      expect(merged.endMs, 900);
+    });
+  });
+
+  group('MiningSentenceDraft (TODO-393 directional context)', () {
+    MiningDraftSentence s(String text, {int? file, int? start, int? end}) =>
+        MiningDraftSentence(
+          sentence: text,
+          audioRange: file == null
+              ? null
+              : AudioPlaybackRange(
+                  audioFileIndex: file,
+                  startMs: start ?? 0,
+                  endMs: end ?? 0,
+                ),
+        );
+
+    test('starts empty', () {
+      final MiningSentenceDraft draft = MiningSentenceDraft();
+      expect(draft.isEmpty, isTrue);
+      expect(draft.length, 0);
+    });
+
+    test('setContext stores prev + next and counts both', () {
+      final MiningSentenceDraft draft = MiningSentenceDraft();
+      draft.setContext(
+        prev: <MiningDraftSentence>[s('前1。'), s('前2。')],
+        next: <MiningDraftSentence>[s('後1。')],
+      );
+      expect(draft.length, 3);
+      expect(draft.isEmpty, isFalse);
+      expect(draft.prevSentences.map((e) => e.sentence).toList(),
+          <String>['前1。', '前2。']);
+      expect(
+          draft.nextSentences.map((e) => e.sentence).toList(), <String>['後1。']);
+    });
+
+    test('setContext filters blank / whitespace-only sentences', () {
+      final MiningSentenceDraft draft = MiningSentenceDraft();
+      draft.setContext(
+        prev: <MiningDraftSentence>[s(''), s('  '), s('前。')],
+        next: <MiningDraftSentence>[s('   ')],
+      );
+      expect(draft.length, 1);
+      expect(draft.prevSentences.single.sentence, '前。');
+      expect(draft.nextSentences, isEmpty);
+    });
+
+    test('setContext replaces (not accumulates) previous context', () {
+      final MiningSentenceDraft draft = MiningSentenceDraft();
+      draft.setContext(prev: <MiningDraftSentence>[s('上1。')]);
+      expect(draft.length, 1);
+      // Re-selecting "上2" replaces, not adds.
+      draft.setContext(prev: <MiningDraftSentence>[s('上1。'), s('上2。')]);
+      expect(draft.length, 2);
+      draft.setContext();
+      expect(draft.isEmpty, isTrue);
+    });
+
+    test('composeText orders prev -> current -> next', () {
+      final MiningSentenceDraft draft = MiningSentenceDraft();
+      draft.setContext(
+        prev: <MiningDraftSentence>[s('前1。'), s('前2。')],
+        next: <MiningDraftSentence>[s('後1。')],
+      );
+      expect(draft.composeText('現在。'), '前1。\n前2。\n現在。\n後1。');
+    });
+
+    test('composeText with empty context equals the current sentence', () {
+      final MiningSentenceDraft draft = MiningSentenceDraft();
+      expect(draft.composeText('  唯一の一文。 '), '唯一の一文。');
+    });
+
+    // BUG-660：用户报视频制卡例句「アジアのほとんどを埋める砂漠で」重复两遍。沿真实代码
+    // 路径（video_fushi lookup_mining `_resolveVideoMiningRange` →
+    // `_miningDraft.composeText(_lastLookupSentence)`）：默认单句查词（未点上下文步进器，
+    // 草稿空）时合成 sentence 字段必须恰是当前 cue 一份，绝不出现「当前句 × 2」。develop
+    // 已单句（本守卫锁死反重复不变量，防未来把当前句拼两遍回归；与浏览器扩展 Netflix
+    // 叶子 span 去重 BUG-593 是两条独立路径）。
+    test('BUG-660: empty draft never doubles the current sentence', () {
+      final MiningSentenceDraft draft = MiningSentenceDraft();
+      const String cue = 'アジアのほとんどを埋める砂漠で';
+      final String composed = draft.composeText(cue);
+      expect(composed, cue);
+      // 反重复不变量：合成文本里当前句只出现一次（既非 "cuecue" 也非 "cue\ncue"）。
+      expect(cue.allMatches(composed).length, 1);
+    });
+
+    test('clear empties the buffer', () {
+      final MiningSentenceDraft draft = MiningSentenceDraft();
+      draft.setContext(prev: <MiningDraftSentence>[s('前。')]);
+      draft.clear();
+      expect(draft.isEmpty, isTrue);
+      expect(draft.composeText('現在の文。'), '現在の文。');
+    });
+
+    test('composeAudioRange merges prev + current + next in order', () {
+      final MiningSentenceDraft draft = MiningSentenceDraft();
+      draft.setContext(
+        prev: <MiningDraftSentence>[s('前。', file: 0, start: 1000, end: 1800)],
+        next: <MiningDraftSentence>[s('後。', file: 0, start: 3200, end: 4100)],
+      );
+      final AudioPlaybackRange? merged = draft.composeAudioRange(
+        AudioPlaybackRange(audioFileIndex: 0, startMs: 2200, endMs: 2800),
+      );
+      expect(merged!.startMs, 1000);
+      expect(merged.endMs, 4100);
+    });
+
+    test('composeAudioRange degrades to null across audio files', () {
+      final MiningSentenceDraft draft = MiningSentenceDraft();
+      draft.setContext(
+        prev: <MiningDraftSentence>[s('前章。', file: 0, start: 9000, end: 9500)],
+      );
+      final AudioPlaybackRange? merged = draft.composeAudioRange(
+        AudioPlaybackRange(audioFileIndex: 1, startMs: 200, endMs: 900),
+      );
+      expect(merged, isNull);
+    });
+
+    test('prevSentences / nextSentences snapshots do not leak internal lists',
+        () {
+      final MiningSentenceDraft draft = MiningSentenceDraft();
+      draft.setContext(prev: <MiningDraftSentence>[s('前。')]);
+      expect(() => draft.prevSentences.add(s('x')), throwsUnsupportedError);
+      expect(() => draft.nextSentences.add(s('x')), throwsUnsupportedError);
+    });
+  });
+
+  group('buildSentenceContextPreview (Niratan 制卡前调整模态)', () {
+    MiningDraftSentence s(String text) => MiningDraftSentence(sentence: text);
+
+    test('empty draft yields prev/next empty, total 0, current + offset echoed',
+        () {
+      final MiningSentenceDraft draft = MiningSentenceDraft();
+      final Map<String, Object?> p = buildSentenceContextPreview(
+        draft: draft,
+        current: '当前句。',
+        currentOffset: 3,
+      );
+      expect(p['prev'], <String>[]);
+      expect(p['next'], <String>[]);
+      expect(p['current'], '当前句。');
+      expect(p['currentOffset'], 3);
+      expect(p['total'], 0);
+    });
+
+    test('prev/next real texts echoed in reading order, total = prev + next',
+        () {
+      final MiningSentenceDraft draft = MiningSentenceDraft();
+      draft.setContext(
+        prev: <MiningDraftSentence>[s('前々。'), s('前。')],
+        next: <MiningDraftSentence>[s('后。')],
+      );
+      final Map<String, Object?> p = buildSentenceContextPreview(
+        draft: draft,
+        current: '当前。',
+        currentOffset: null,
+      );
+      expect(p['prev'], <String>['前々。', '前。']);
+      expect(p['next'], <String>['后。']);
+      expect(p['current'], '当前。');
+      expect(p['currentOffset'], isNull);
+      expect(p['total'], 3);
+    });
+
+    test('result is JSON-safe (bridge-serializable) — String/int/List<String>',
+        () {
+      final MiningSentenceDraft draft = MiningSentenceDraft()
+        ..setContext(prev: <MiningDraftSentence>[s('前。')]);
+      final Map<String, Object?> p = buildSentenceContextPreview(
+        draft: draft,
+        current: 'x',
+        currentOffset: 0,
+      );
+      expect(p['prev'], isA<List<String>>());
+      expect(p['next'], isA<List<String>>());
+      expect(p['current'], isA<String>());
+      expect(p['total'], isA<int>());
+    });
+  });
+}

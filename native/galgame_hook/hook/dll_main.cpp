@@ -74,36 +74,36 @@
 // CreateThread 把活儿丢给工作线程（在 loader lock 之外跑），这是 hook DLL 的正确形态。
 namespace {
 
-using hibiki_voice_hook::kClipCount;
-using hibiki_voice_hook::kDiagStartupAudioHooksReady;
-using hibiki_voice_hook::kDiagSiglusExactTextHookReady;
-using hibiki_voice_hook::kDiagSiglusExactTextObserved;
-using hibiki_voice_hook::kDiagSiglusOvkHooksReady;
-using hibiki_voice_hook::kDiagKirikiriVoiceStreamDumped;
-using hibiki_voice_hook::kDiagKirikiriVoiceStreamHookReady;
-using hibiki_voice_hook::kDiagUnityIl2CppClipCaptured;
-using hibiki_voice_hook::kDiagUnityIl2CppGetDataRejected;
-using hibiki_voice_hook::kDiagUnityIl2CppHooksReady;
-using hibiki_voice_hook::kDiagUnityIl2CppPlaybackObserved;
-using hibiki_voice_hook::kDiagUnityNaninovelTextHookReady;
-using hibiki_voice_hook::kDiagUnityTmpTextHooksReady;
-using hibiki_voice_hook::kUnityBundlePathChars;
-using hibiki_voice_hook::kUnityClipNameChars;
-using hibiki_voice_hook::kUnityVoiceEventCount;
-using hibiki_voice_hook::kLoopbackMarkerCount;
-using hibiki_voice_hook::kSharedMagic;
-using hibiki_voice_hook::kSharedVersion;
-using hibiki_voice_hook::kTextSlotBytes;
-using hibiki_voice_hook::kTextSlotCount;
-using hibiki_voice_hook::kTextHookCodeChars;
-using hibiki_voice_hook::kTextHookNameChars;
-using hibiki_voice_hook::LoopbackMarker;
-using hibiki_voice_hook::ReadyEventName;
-using hibiki_voice_hook::SharedHeader;
-using hibiki_voice_hook::SharedMemoryName;
-using hibiki_voice_hook::TextSlot;
-using hibiki_voice_hook::VoiceClip;
-using hibiki_voice_hook::UnityVoiceEvent;
+using fushi_voice_hook::kClipCount;
+using fushi_voice_hook::kDiagStartupAudioHooksReady;
+using fushi_voice_hook::kDiagSiglusExactTextHookReady;
+using fushi_voice_hook::kDiagSiglusExactTextObserved;
+using fushi_voice_hook::kDiagSiglusOvkHooksReady;
+using fushi_voice_hook::kDiagKirikiriVoiceStreamDumped;
+using fushi_voice_hook::kDiagKirikiriVoiceStreamHookReady;
+using fushi_voice_hook::kDiagUnityIl2CppClipCaptured;
+using fushi_voice_hook::kDiagUnityIl2CppGetDataRejected;
+using fushi_voice_hook::kDiagUnityIl2CppHooksReady;
+using fushi_voice_hook::kDiagUnityIl2CppPlaybackObserved;
+using fushi_voice_hook::kDiagUnityNaninovelTextHookReady;
+using fushi_voice_hook::kDiagUnityTmpTextHooksReady;
+using fushi_voice_hook::kUnityBundlePathChars;
+using fushi_voice_hook::kUnityClipNameChars;
+using fushi_voice_hook::kUnityVoiceEventCount;
+using fushi_voice_hook::kLoopbackMarkerCount;
+using fushi_voice_hook::kSharedMagic;
+using fushi_voice_hook::kSharedVersion;
+using fushi_voice_hook::kTextSlotBytes;
+using fushi_voice_hook::kTextSlotCount;
+using fushi_voice_hook::kTextHookCodeChars;
+using fushi_voice_hook::kTextHookNameChars;
+using fushi_voice_hook::LoopbackMarker;
+using fushi_voice_hook::ReadyEventName;
+using fushi_voice_hook::SharedHeader;
+using fushi_voice_hook::SharedMemoryName;
+using fushi_voice_hook::TextSlot;
+using fushi_voice_hook::VoiceClip;
+using fushi_voice_hook::UnityVoiceEvent;
 
 HANDLE g_mapping = nullptr;
 SharedHeader* g_header = nullptr;
@@ -157,24 +157,33 @@ std::wstring VoiceBaseName(const wchar_t* storagename) {
   return base;
 }
 
-void WriteVoiceOggAt(const uint8_t* data, uint32_t len,
+bool WriteVoiceOggAt(const uint8_t* data, uint32_t len,
                      const wchar_t* storagename, uint64_t tick_ms,
                      uint64_t text_event_id = 0) {
-  if (data == nullptr || len == 0) return;
+  if (data == nullptr || len == 0) return false;
   wchar_t temp[MAX_PATH] = {0};
   const DWORD n = GetTempPathW(MAX_PATH, temp);
-  if (n == 0 || n > MAX_PATH) return;
-  std::wstring dir = std::wstring(temp) + L"hibiki_gal_voice";
-  CreateDirectoryW(dir.c_str(), nullptr);
+  if (n == 0 || n >= MAX_PATH) return false;
+  std::wstring dir = std::wstring(temp) + L"fushi_gal_voice";
+  if (!CreateDirectoryW(dir.c_str(), nullptr) &&
+      GetLastError() != ERROR_ALREADY_EXISTS) {
+    return false;
+  }
   std::wstring file =
-      dir + L"\\" + hibiki_voice_hook::BuildVoiceResourceFileName(
+      dir + L"\\" + fushi_voice_hook::BuildVoiceResourceFileName(
                           tick_ms, VoiceBaseName(storagename), text_event_id);
   HANDLE f = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr,
                          CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-  if (f == INVALID_HANDLE_VALUE) return;
+  if (f == INVALID_HANDLE_VALUE) return false;
   DWORD written = 0;
-  WriteFile(f, data, len, &written, nullptr);
-  CloseHandle(f);
+  const bool write_ok = WriteFile(f, data, len, &written, nullptr) != FALSE &&
+      written == len;
+  const bool close_ok = CloseHandle(f) != FALSE;
+  if (!write_ok || !close_ok) {
+    DeleteFileW(file.c_str());
+    return false;
+  }
+  return true;
 }
 
 // 首次拿到语音格式的写入闩：多路 CreateSourceVoice 只让第一个写 header 格式字段。
@@ -236,7 +245,7 @@ DirectSoundCreate_t g_orig_DirectSoundCreate = nullptr;
 CreateSoundBuffer_t g_orig_CreateSoundBuffer = nullptr;
 DsbSetFrequency_t g_orig_DsbSetFrequency = nullptr;
 DsbUnlock_t g_orig_DsbUnlock = nullptr;
-hibiki_voice_hook::DirectSoundFormatRegistry<256> g_dsound_formats;
+fushi_voice_hook::DirectSoundFormatRegistry<256> g_dsound_formats;
 
 typedef HRESULT(WINAPI* CoCreateInstance_t)(REFCLSID rclsid,
                                              LPUNKNOWN pUnkOuter,
@@ -244,7 +253,7 @@ typedef HRESULT(WINAPI* CoCreateInstance_t)(REFCLSID rclsid,
                                              REFIID riid, LPVOID* ppv);
 CoCreateInstance_t g_orig_CoCreateInstance = nullptr;
 
-// 独立测试用 proof-of-life 标记文件：%TEMP%\hibiki_voice_hook_<pid>.marker。injector 之外也
+// 独立测试用 proof-of-life 标记文件：%TEMP%\fushi_voice_hook_<pid>.marker。injector 之外也
 // 能据此确认 DLL 真的被加载执行（不依赖事件）。
 void WriteMarkerFile(DWORD pid) {
   wchar_t temp[MAX_PATH] = {0};
@@ -253,7 +262,7 @@ void WriteMarkerFile(DWORD pid) {
     return;
   }
   std::wstring path =
-      std::wstring(temp) + L"hibiki_voice_hook_" + std::to_wstring(pid) +
+      std::wstring(temp) + L"fushi_voice_hook_" + std::to_wstring(pid) +
       L".marker";
   HANDLE f = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
                          CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -431,8 +440,8 @@ inline void RecordVoiceClip(uint32_t ring_offset, uint32_t byte_len,
 
 // 通知 injector IPC 契约已经可用。必须在任何 MinHook/引擎探测之前调用：
 // 这些重型安装可能被目标进程里已有的 hook 拖慢，不能因此让 injector 超时并释放共享内存。
-bool SignalReady(DWORD pid) {
-  const std::wstring evt = ReadyEventName(pid);
+bool SignalReady(DWORD pid, bool legacy_hibiki_ipc) {
+  const std::wstring evt = ReadyEventName(pid, legacy_hibiki_ipc);
   HANDLE ready = OpenEventW(EVENT_MODIFY_STATE, FALSE, evt.c_str());
   if (ready == nullptr) return false;
   const bool signaled = SetEvent(ready) != FALSE;
@@ -453,12 +462,19 @@ bool SignalReady(DWORD pid) {
 #include "adapter_registry.inc"
 
 // 工作线程：打开共享内存 -> 校验契约 -> 标记 hooked -> 由 registry 安装 adapter -> 通知 injector。
-DWORD WINAPI HookWorker(LPVOID) {
+DWORD WINAPI HookWorker(LPVOID module_context) {
   const DWORD pid = GetCurrentProcessId();
   AdapterRegistry registry;
   WriteMarkerFile(pid);
 
-  const std::wstring shm = SharedMemoryName(pid);
+  wchar_t module_path[MAX_PATH] = {0};
+  const DWORD module_path_length = GetModuleFileNameW(
+      reinterpret_cast<HMODULE>(module_context), module_path, MAX_PATH);
+  const bool legacy_hibiki_ipc =
+      module_path_length > 0 && module_path_length < MAX_PATH &&
+      fushi_voice_hook::ComponentUsesLegacyHibikiIpc(
+          std::wstring(module_path, module_path_length));
+  const std::wstring shm = SharedMemoryName(pid, legacy_hibiki_ipc);
   g_mapping = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, shm.c_str());
   if (g_mapping != nullptr) {
     g_header = static_cast<SharedHeader*>(
@@ -472,7 +488,7 @@ DWORD WINAPI HookWorker(LPVOID) {
 
       // 此时 DLL、共享内存与契约均已就绪，先让 injector 进入 hold 保住映射。
       // 后面的 MinHook/Siglus/KiriKiri 探测允许异步继续，不能阻塞 proof-of-life。
-      if (!SignalReady(pid)) return 1;
+      if (!SignalReady(pid, legacy_hibiki_ipc)) return 1;
 
       // ── C.2/C.3：缓存各区基址后安装捕获 hook ────────────────────────────
       g_ring_base =
@@ -535,7 +551,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
     case DLL_PROCESS_ATTACH:
       DisableThreadLibraryCalls(module);
       // 活儿丢给工作线程（loader lock 之外）。CreateThread 在 DllMain 中是允许的。
-      CreateThread(nullptr, 0, HookWorker, nullptr, 0, nullptr);
+      CreateThread(nullptr, 0, HookWorker, module, 0, nullptr);
       break;
     case DLL_PROCESS_DETACH:
       // 先关捕获总开关，堵住 SubmitSourceBuffer 回调用悬垂 g_ring_base 的窗口，再解映射。

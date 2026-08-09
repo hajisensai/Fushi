@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<!-- TODO-1184：点浏览器工具栏 Hibiki 图标弹出的「制卡队列管理」菜单。
+<!-- TODO-1184：点浏览器工具栏 Fushi 图标弹出的「制卡队列管理」菜单。
      站点无关的 browser-action popup（default_popup），普通网页 / Netflix / YouTube 都能点开。
      和 vendor/popup.html（查词渲染壳，注入到宿主页 #entries-container）是两回事，别混。
      设了 default_popup 后 chrome.action.onClicked 永不触发，故「开始生成/录制」入口迁到这里的
-     按钮（按钮点击即用户手势 → 发消息给 background 跑原 hibikiIconClick 逻辑）。 -->
+     按钮（按钮点击即用户手势 → 发消息给 background 跑原 fushiIconClick 逻辑）。 -->
 <html>
 <head>
   <meta charset="utf-8">
@@ -135,7 +135,7 @@
       text-align: center;
     }
     .hp-open-options:hover { background: rgba(128, 128, 128, 0.20); border-color: rgba(128, 128, 128, 0.7); }
-    /* BUG-1079：自更新失效提示（hibikiUpdateStale 存在时显示）：需到扩展管理页手动重新加载。 */
+    /* BUG-1079：自更新失效提示（fushiUpdateStale 存在时显示）：需到扩展管理页手动重新加载。 */
     .hp-update {
       margin: 0 14px 10px;
       padding: 9px 10px;
@@ -155,17 +155,17 @@
 </head>
 <body>
   <div class="hp-header">
-    <span class="hp-title">Hibiki 制卡队列</span>
+    <span class="hp-title">Fushi 制卡队列</span>
     <span class="hp-count" id="hp-count"></span>
   </div>
   <div class="hp-connection" id="hp-connection" data-tone="loading" title="点击重新检测连接">
     <span class="hp-connection-dot" aria-hidden="true"></span>
     <span class="hp-connection-copy">
-      <span class="hp-connection-title" id="hp-connection-title">正在检测 Hibiki…</span>
+      <span class="hp-connection-title" id="hp-connection-title">正在检测 Fushi…</span>
       <span class="hp-connection-detail" id="hp-connection-detail">查词与字幕服务</span>
     </span>
   </div>
-  <!-- BUG-1079：自更新失效提示（默认隐藏；chrome.storage.local.hibikiUpdateStale 存在时显示）。 -->
+  <!-- BUG-1079：自更新失效提示（默认隐藏；chrome.storage.local.fushiUpdateStale 存在时显示）。 -->
   <div class="hp-update" id="hp-update" hidden>
     <span class="hp-update-title" id="hp-update-title"></span>
     <span class="hp-update-detail" id="hp-update-detail"></span>

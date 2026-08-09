@@ -12,7 +12,7 @@ const vm = require('node:vm');
 //      不得挂出空面板。
 //   ③ 全语言：多语言轨（ja/en/zh）全部列进语言下拉，不偏向任何语言；live 采样轨垫底。
 //   ④ 通用化：非 Netflix 站点（example.com）同样可用；时间戳点击在通用站点直接改
-//      video.currentTime，Netflix 站点仍走 __hibikiNf:'seek' 桥（DRM 平台边界）。
+//      video.currentTime，Netflix 站点仍走 __fushiNf:'seek' 桥（DRM 平台边界）。
 
 const PANEL = path.join(__dirname, 'subtitle-panel.js');
 
@@ -102,7 +102,7 @@ function findByClassDeep(el, cls, out) {
   return out;
 }
 
-// 加载面板脚本进受控 vm。opts: hostname/pathname/stored(初始 storage)/store(hibikiEpisodeCues)。
+// 加载面板脚本进受控 vm。opts: hostname/pathname/stored(初始 storage)/store(fushiEpisodeCues)。
 function loadPanel(opts) {
   const src = fs.readFileSync(PANEL, 'utf8');
   const body = makeEl('body');
@@ -112,7 +112,7 @@ function loadPanel(opts) {
   const posted = [];
   const pushEl = opts.pushEl || null;
   const windowObj = {
-    hibikiEpisodeCues: opts.store || {},
+    fushiEpisodeCues: opts.store || {},
     postMessage: (msg) => posted.push(msg),
     addEventListener() {},
   };
@@ -168,7 +168,7 @@ function loadPanel(opts) {
     pushEl,
     enable: () => fireToggle(true),
     disable: () => fireToggle(false),
-    panel: () => findByIdDeep(body, 'hibiki-subtitle-panel'),
+    panel: () => findByIdDeep(body, 'fushi-subtitle-panel'),
   };
 }
 
@@ -211,7 +211,7 @@ test('3 全语言：ja/en/zh 轨全部列出，语言下拉可见', () => {
   });
   const panel = h.panel();
   assert.ok(panel);
-  const sel = findByClassDeep(panel, 'hibiki-sub-lang')[0];
+  const sel = findByClassDeep(panel, 'fushi-sub-lang')[0];
   assert.ok(sel, '缺语言下拉');
   const langs = sel.children.map((o) => o.value).sort();
   assert.deepStrictEqual(langs, ['en', 'ja', 'zh'], '三种语言轨必须全部列出');
@@ -225,7 +225,7 @@ test('3 live 采样轨垫底且显示中文标签', () => {
     store: Object.assign({ '81001|live': [{ startMs: 0, endMs: 500, text: 'x' }] }, NF_TRACKS),
     stored: { netflixSubtitlePanel: true },
   });
-  const sel = findByClassDeep(h.panel(), 'hibiki-sub-lang')[0];
+  const sel = findByClassDeep(h.panel(), 'fushi-sub-lang')[0];
   const last = sel.children[sel.children.length - 1];
   assert.strictEqual(last.value, 'live', 'live 轨必须排最后');
   assert.strictEqual(last.textContent, '实时采集', 'live 轨显示中文标签');
@@ -240,7 +240,7 @@ test('2 不挂空壳：store 只有别的视频的轨时，勾选与 cue 事件�
   });
   h.enable();
   assert.strictEqual(h.panel(), null, '别的视频的轨不得挂出（空）面板');
-  h.windowObj.hibikiSubtitlePanelOnCues('99999|ja');
+  h.windowObj.fushiSubtitlePanelOnCues('99999|ja');
   assert.strictEqual(h.panel(), null, '别的视频的 cue 事件不得挂出（空）面板');
 });
 
@@ -254,26 +254,26 @@ test('4 通用化：非 Netflix 站点可用，时间戳点击直接改 video.cu
   });
   const panel = h.panel();
   assert.ok(panel, '非 Netflix 站点开关开 + 有轨：面板必须挂载（通用化）');
-  const ts = findByClassDeep(panel, 'hibiki-sub-ts')[0];
+  const ts = findByClassDeep(panel, 'fushi-sub-ts')[0];
   assert.ok(ts, '缺时间戳按钮');
   ts.handlers.click[0]({ stopPropagation() {} });
   assert.strictEqual(h.video.currentTime, 5, '通用站点 seek 必须直接落到 video.currentTime');
   assert.strictEqual(h.posted.length, 0, '通用站点不得走 Netflix seek 桥');
 });
 
-test('4 Netflix 站点时间戳点击仍走 __hibikiNf seek 桥（DRM 边界不回退）', () => {
+test('4 Netflix 站点时间戳点击仍走 __fushiNf seek 桥（DRM 边界不回退）', () => {
   const h = loadPanel({
     hostname: 'www.netflix.com',
     pathname: '/watch/81001',
     store: NF_TRACKS,
     stored: { netflixSubtitlePanel: true },
   });
-  const ts = findByClassDeep(h.panel(), 'hibiki-sub-ts')[0];
+  const ts = findByClassDeep(h.panel(), 'fushi-sub-ts')[0];
   ts.handlers.click[0]({ stopPropagation() {} });
   assert.strictEqual(h.video.currentTime, 0, 'Netflix 不得直接改 currentTime（M7375）');
   assert.strictEqual(h.posted.length, 1);
   // vm 上下文对象原型不同，deepStrictEqual 会因 prototype 不等误报——逐属性断言。
-  assert.strictEqual(h.posted[0].__hibikiNf, 'seek');
+  assert.strictEqual(h.posted[0].__fushiNf, 'seek');
   assert.strictEqual(h.posted[0].ms, 1000);
 });
 
@@ -287,7 +287,7 @@ test('新 cue 到达（onCues）时勾选态面板自动出现（cue 晚于开�
   });
   assert.strictEqual(h.panel(), null, '尚无轨：不挂面板');
   store['81001|ja'] = [{ startMs: 0, endMs: 1000, text: 'late cue' }];
-  h.windowObj.hibikiSubtitlePanelOnCues('81001|ja');
+  h.windowObj.fushiSubtitlePanelOnCues('81001|ja');
   assert.ok(h.panel(), 'cue 到达后面板必须自动出现');
 });
 
@@ -300,15 +300,15 @@ test('live cue 对象就地扩长时刷新现有行文本，不要求数组长�
     store: { [key]: [cue] },
     stored: { netflixSubtitlePanel: true },
   });
-  let texts = findByClassDeep(h.panel(), 'hibiki-sub-text');
+  let texts = findByClassDeep(h.panel(), 'fushi-sub-text');
   assert.strictEqual(texts.length, 1);
   assert.strictEqual(texts[0].textContent, '自価総額およそ');
 
   cue.text = '自価総額およそ800兆円。';
   cue.endMs = 27000;
-  h.windowObj.hibikiSubtitlePanelOnCues(key);
+  h.windowObj.fushiSubtitlePanelOnCues(key);
 
-  texts = findByClassDeep(h.panel(), 'hibiki-sub-text');
+  texts = findByClassDeep(h.panel(), 'fushi-sub-text');
   assert.strictEqual(texts.length, 1, '就地更新不得重建出额外行');
   assert.strictEqual(texts[0].textContent, '自価総額およそ800兆円。',
     '数组长度不变时也必须把扩长后的文本刷新到现有行');
@@ -326,14 +326,14 @@ test('YouTube 整集字幕预取稍后到达时，从 live 兜底轨自动升级
     store,
     stored: { netflixSubtitlePanel: true },
   });
-  let texts = findByClassDeep(h.panel(), 'hibiki-sub-text');
+  let texts = findByClassDeep(h.panel(), 'fushi-sub-text');
   assert.strictEqual(texts.length, 1);
   assert.strictEqual(texts[0].textContent, '逐字采样');
 
   store[fullKey] = [{ startMs: 0, endMs: 3000, text: '整集字幕' }];
-  h.windowObj.hibikiSubtitlePanelOnCues(fullKey);
+  h.windowObj.fushiSubtitlePanelOnCues(fullKey);
 
-  texts = findByClassDeep(h.panel(), 'hibiki-sub-text');
+  texts = findByClassDeep(h.panel(), 'fushi-sub-text');
   assert.strictEqual(texts.length, 1, '整集轨到达后仍只渲染当前选中轨');
   assert.strictEqual(texts[0].textContent, '整集字幕',
     '真轨必须自动取代先到的 live 兜底轨');

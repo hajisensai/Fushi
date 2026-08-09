@@ -197,7 +197,7 @@ namespace flutter_inappwebview_plugin
       // app lifetime, so we intentionally do not pair a CoUninitialize.
       CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
       const std::wstring userDataFolder =
-        OptionalEnvWide(L"HIBIKI_WEBVIEW2_USER_DATA_FOLDER");
+        OptionalEnvWide(L"FUSHI_WEBVIEW2_USER_DATA_FOLDER");
       // BUG-1091: allow media autoplay without a user gesture. WebView2 has NO
       // per-view equivalent of `mediaPlaybackRequiresUserGesture` (the Dart-side
       // setting silently did nothing on this fork), so Chromium's autoplay policy
@@ -674,7 +674,7 @@ namespace flutter_inappwebview_plugin
               channelDelegate->onLoadStop(url);
             }
             else if (!InAppWebView::isSslError(webErrorType) && navigationAction) {
-              // 根治 hoshi.local 假失败：拦截器已为该主框架 URL 注入 2xx 响应，
+              // 根治 fushi.local 假失败：拦截器已为该主框架 URL 注入 2xx 响应，
               // 内容已渲染，引擎因自定义域 DNS 解析失败误报 IsSuccess=FALSE —— 当成功。
               if (url.has_value() && consumeMainFrameInjectedOk(url.value())) {
                 channelDelegate->onLoadStop(url);
@@ -1060,7 +1060,7 @@ namespace flutter_inappwebview_plugin
                   }
                   args->put_Response(response->toWebView2Response(webViewEnv));
                   // 根治准备：拦截器为主框架 document 注入了 2xx 响应时记下其 URL，
-                  // 供 NavigationCompleted 把 hoshi.local 的 DNS 假失败纠正为成功。
+                  // 供 NavigationCompleted 把 fushi.local 的 DNS 假失败纠正为成功。
                   COREWEBVIEW2_WEB_RESOURCE_CONTEXT resourceContext;
                   const int64_t statusCode = response->statusCode.value_or(200);
                   if (request->url.has_value() && statusCode >= 200 && statusCode < 300 &&

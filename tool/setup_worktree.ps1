@@ -84,8 +84,13 @@ else {
                 continue
             }
             # 目标必须已被 track(worktree checkout 出来的占位版)才能设 skip-worktree。
-            & git -C $here ls-files --error-unmatch $f *> $null
-            if ($LASTEXITCODE -ne 0) {
+            # 用 `ls-files -- <path>`(未 track 时输出空、退出码 0)而非
+            # `--error-unmatch`：后者未命中会写 stderr，PS 5.1 把原生命令的 stderr
+            # 包成 NativeCommandError 而中断整个脚本 —— 主 checkout 与 worktree 分处
+            # 目录改名前后的分支时(hibiki/ vs fushi/)必然逐个未命中，脚本会死在
+            # 第一个密钥文件上，连后面的 bootstrap 都不跑。
+            $tracked = & git -C $here ls-files -- $f
+            if (-not $tracked) {
                 Write-Host "  跳过(worktree 未 track 此文件): $f" -ForegroundColor DarkYellow
                 continue
             }

@@ -5,7 +5,7 @@
 
 constexpr size_t kMaliePathChars = 520;
 constexpr size_t kMalieNameBytes =
-    hibiki_voice_hook::malie::kLibpNameBytes + 1;
+    fushi_voice_hook::malie::kLibpNameBytes + 1;
 constexpr int kMalieArchiveSlots = 8;
 constexpr int kMalieHandleSlots = 16;
 constexpr int kMalieMappingSlots = 16;
@@ -75,24 +75,24 @@ bool LoadMalieArchive(const wchar_t* path, MalieArchive* archive) {
   if (file == INVALID_HANDLE_VALUE) return false;
 
   LARGE_INTEGER file_size = {};
-  uint8_t encrypted_header[hibiki_voice_hook::malie::kLibpHeaderBytes] = {};
-  uint8_t decrypted_header[hibiki_voice_hook::malie::kLibpHeaderBytes] = {};
-  hibiki_voice_hook::malie::LibpHeader header;
+  uint8_t encrypted_header[fushi_voice_hook::malie::kLibpHeaderBytes] = {};
+  uint8_t decrypted_header[fushi_voice_hook::malie::kLibpHeaderBytes] = {};
+  fushi_voice_hook::malie::LibpHeader header;
   uint8_t* encrypted_index = nullptr;
   uint8_t* decrypted_index = nullptr;
   bool valid = GetFileSizeEx(file, &file_size) && file_size.QuadPart > 0 &&
                ReadExact(file, encrypted_header, sizeof(encrypted_header));
   if (valid) {
-    hibiki_voice_hook::malie::DecryptCfiBlock(0, encrypted_header,
+    fushi_voice_hook::malie::DecryptCfiBlock(0, encrypted_header,
                                               decrypted_header);
-    valid = hibiki_voice_hook::malie::ParseLibpHeader(
+    valid = fushi_voice_hook::malie::ParseLibpHeader(
         decrypted_header, sizeof(decrypted_header),
         static_cast<uint64_t>(file_size.QuadPart), &header);
   }
 
   uint64_t encrypted_index_bytes = 0;
   if (valid) {
-    encrypted_index_bytes = hibiki_voice_hook::malie::AlignUp(
+    encrypted_index_bytes = fushi_voice_hook::malie::AlignUp(
         header.index_bytes, static_cast<uint64_t>(16));
     valid = encrypted_index_bytes <=
                 static_cast<uint64_t>(file_size.QuadPart) &&
@@ -110,19 +110,19 @@ bool LoadMalieArchive(const wchar_t* path, MalieArchive* archive) {
     valid = SetFilePointerEx(file, zero, nullptr, FILE_BEGIN) != FALSE &&
             ReadExact(file, encrypted_index,
                       static_cast<uint32_t>(encrypted_index_bytes)) &&
-            hibiki_voice_hook::malie::DecryptCfiRange(
+            fushi_voice_hook::malie::DecryptCfiRange(
                 0, encrypted_index, static_cast<size_t>(encrypted_index_bytes),
                 decrypted_index);
   }
 
   std::vector<MalieVoiceRange> ranges;
   for (uint32_t i = 0; valid && i < header.entry_count; ++i) {
-    hibiki_voice_hook::malie::LibpEntryView entry;
-    valid = hibiki_voice_hook::malie::ParseLibpEntry(
+    fushi_voice_hook::malie::LibpEntryView entry;
+    valid = fushi_voice_hook::malie::ParseLibpEntry(
         decrypted_index, static_cast<size_t>(encrypted_index_bytes), header, i,
         static_cast<uint64_t>(file_size.QuadPart), &entry);
-    if (!valid || !hibiki_voice_hook::malie::IsVoiceOgg(entry)) continue;
-    const uint64_t encrypted_member_bytes = hibiki_voice_hook::malie::AlignUp(
+    if (!valid || !fushi_voice_hook::malie::IsVoiceOgg(entry)) continue;
+    const uint64_t encrypted_member_bytes = fushi_voice_hook::malie::AlignUp(
         entry.size, static_cast<uint64_t>(16));
     if (encrypted_member_bytes >
         static_cast<uint64_t>(file_size.QuadPart) - entry.member_offset) {
@@ -209,7 +209,7 @@ void RememberMalieArchive(HANDLE handle, const wchar_t* path) {
       InterlockedExchangePointer(slot, handle);
       if (g_header != nullptr) {
         g_header->reserved_hook_diagnostics |=
-            hibiki_voice_hook::kDiagMalieArchiveHandleTracked;
+            fushi_voice_hook::kDiagMalieArchiveHandleTracked;
       }
       return;
     }
@@ -264,7 +264,7 @@ void RememberMalieMapping(HANDLE mapping, HANDLE file) {
       InterlockedExchangePointer(slot, mapping);
       if (g_header != nullptr) {
         g_header->reserved_hook_diagnostics |=
-            hibiki_voice_hook::kDiagMalieMappingTracked;
+            fushi_voice_hook::kDiagMalieMappingTracked;
       }
       return;
     }
@@ -285,7 +285,7 @@ void ForgetMalieMapping(HANDLE handle) {
 
 void ObserveMalieMappedRange(HANDLE mapping, uint64_t offset, SIZE_T bytes) {
   if (InterlockedCompareExchange(&g_malie_enabled, 0, 0) == 0 ||
-      bytes == 0 || bytes > hibiki_voice_hook::malie::kMaxVoiceBytes) {
+      bytes == 0 || bytes > fushi_voice_hook::malie::kMaxVoiceBytes) {
     return;
   }
   int archive_index = -1;
@@ -309,8 +309,8 @@ void ObserveMalieMappedRange(HANDLE mapping, uint64_t offset, SIZE_T bytes) {
     if (range.offset + range.size > offset) {
       if (g_header != nullptr) {
         g_header->reserved_hook_diagnostics |=
-            hibiki_voice_hook::kDiagMalieMappedRangeObserved |
-            hibiki_voice_hook::kDiagMalieVoiceRangeQueued;
+            fushi_voice_hook::kDiagMalieMappedRangeObserved |
+            fushi_voice_hook::kDiagMalieVoiceRangeQueued;
       }
       QueueMalieVoice(static_cast<uint32_t>(archive_index), i);
       return;
@@ -356,7 +356,7 @@ void ObserveMalieArchiveRange(HANDLE file, uint64_t start, uint64_t bytes) {
   const MalieArchive& archive = g_malie_archives[archive_index];
   if (g_header != nullptr) {
     g_header->reserved_hook_diagnostics |=
-        hibiki_voice_hook::kDiagMalieReadRangeObserved;
+        fushi_voice_hook::kDiagMalieReadRangeObserved;
   }
   uint32_t low = 0;
   uint32_t high = archive.range_count;
@@ -380,7 +380,7 @@ void ObserveMalieArchiveRange(HANDLE file, uint64_t start, uint64_t bytes) {
           start) {
     if (g_header != nullptr) {
       g_header->reserved_hook_diagnostics |=
-          hibiki_voice_hook::kDiagMalieVoiceRangeQueued;
+          fushi_voice_hook::kDiagMalieVoiceRangeQueued;
     }
     QueueMalieVoice(static_cast<uint32_t>(archive_index), candidate);
   }
@@ -431,7 +431,7 @@ void ProcessMalieVoiceTask(MalieVoiceTask* task) {
       task->tick_ms - g_malie_last_tick <= 2000) {
     return;
   }
-  const uint64_t encrypted_bytes64 = hibiki_voice_hook::malie::AlignUp(
+  const uint64_t encrypted_bytes64 = fushi_voice_hook::malie::AlignUp(
       range.size, static_cast<uint64_t>(16));
   if (encrypted_bytes64 > UINT32_MAX ||
       encrypted_bytes64 > archive.file_size - range.offset) {
@@ -450,9 +450,9 @@ void ProcessMalieVoiceTask(MalieVoiceTask* task) {
   bool valid = encrypted != nullptr && ogg != nullptr &&
                SetFilePointerEx(file, at, nullptr, FILE_BEGIN) != FALSE &&
                ReadExact(file, encrypted, encrypted_bytes) &&
-               hibiki_voice_hook::malie::DecryptCfiRange(
+               fushi_voice_hook::malie::DecryptCfiRange(
                    range.offset, encrypted, encrypted_bytes, ogg) &&
-               hibiki_voice_hook::siglus::CompleteOggBytes(ogg, range.size) ==
+               fushi_voice_hook::siglus::CompleteOggBytes(ogg, range.size) ==
                    range.size;
   if (valid) {
     wchar_t name[kMalieNameBytes] = {0};
@@ -464,7 +464,7 @@ void ProcessMalieVoiceTask(MalieVoiceTask* task) {
     g_malie_last_tick = task->tick_ms;
     if (g_header != nullptr) {
       g_header->hook_diagnostics |=
-          hibiki_voice_hook::kDiagMalieLibpVoiceCaptured;
+          fushi_voice_hook::kDiagMalieLibpVoiceCaptured;
     }
   }
   free(ogg);
@@ -482,12 +482,12 @@ void ProcessMalieVoiceTasks() {
 }
 
 bool TryHookMalieLibpVoice() {
-  if (!hibiki_voice_hook::MatchesMalieProfile(nullptr)) return false;
+  if (!fushi_voice_hook::MatchesMalieProfile(nullptr)) return false;
   const bool hooks_ready = TryHookSiglusOvk();
   if (!hooks_ready || !FindAndLoadMalieArchives()) return false;
   InterlockedExchange(&g_malie_enabled, 1);
   if (g_header != nullptr) {
-    g_header->hook_diagnostics |= hibiki_voice_hook::kDiagMalieLibpHooksReady;
+    g_header->hook_diagnostics |= fushi_voice_hook::kDiagMalieLibpHooksReady;
   }
   return true;
 }
@@ -511,11 +511,11 @@ void StopMalieLibpVoice() {
   }
 }
 
-class MalieLibpAdapter final : public hibiki_voice_hook::EngineAdapter {
+class MalieLibpAdapter final : public fushi_voice_hook::EngineAdapter {
  public:
   const char* id() const override { return "malie_libp"; }
   bool probe() const override {
-    return hibiki_voice_hook::MatchesMalieProfile(nullptr);
+    return fushi_voice_hook::MatchesMalieProfile(nullptr);
   }
   bool install() override {
     ready_ = TryHookMalieLibpVoice();
@@ -523,10 +523,10 @@ class MalieLibpAdapter final : public hibiki_voice_hook::EngineAdapter {
     return ready_;
   }
   void ProcessPendingEvents() { ProcessMalieVoiceTasks(); }
-  hibiki_voice_hook::AdapterCapability capabilities() const override {
-    return hibiki_voice_hook::AdapterCapability::kText |
-           hibiki_voice_hook::AdapterCapability::kResourceAudio |
-           hibiki_voice_hook::AdapterCapability::kPcmAudio;
+  fushi_voice_hook::AdapterCapability capabilities() const override {
+    return fushi_voice_hook::AdapterCapability::kText |
+           fushi_voice_hook::AdapterCapability::kResourceAudio |
+           fushi_voice_hook::AdapterCapability::kPcmAudio;
   }
   void onModuleLoaded(const wchar_t*) override {}
   void shutdown() override {
@@ -534,7 +534,7 @@ class MalieLibpAdapter final : public hibiki_voice_hook::EngineAdapter {
     installed_ = false;
     ready_ = false;
   }
-  hibiki_voice_hook::AdapterDiagnostics diagnostics() const override {
+  fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), probe(), installed_,
             g_header == nullptr ? 0u : g_header->hook_diagnostics};
   }

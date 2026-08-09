@@ -1,0 +1,646 @@
+import 'dart:convert';
+
+import 'package:drift/drift.dart' show Value;
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/profile/profile_keys.dart';
+import 'package:fushi/src/sync/backup_service.dart'
+    show rebaseFontCatalogJson, rebaseFontListJson;
+import 'package:fushi/src/sync/pref_redaction_policy.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+
+/// 配置方案导入失败：文件损坏 / 类型魔数不符 / 版本不兼容 / 结构非法。
+///
+/// 故意在写任何 DB 之前抛出（解析 + 校验阶段），使导入对 DB 是全有或全无，
+/// 一个坏文件绝不留下半个 Profile（事务零破坏）。
+class ProfileImportException implements Exception {
+  ProfileImportException(this.message);
+  final String message;
+  @override
+  String toString() => 'ProfileImportException: $message';
+}
+
+/// 导入模式：新建一个 Profile（默认，重名加后缀），或覆盖一个已有 Profile。
+enum ProfileImportMode { createNew, overwrite }
+
+/// 单 Profile 导出文件的解析结果（已剔除凭据、已 A1 剥字体绝对路径）。
+class ProfileExport {
+  ProfileExport({
+    required this.profileName,
+    required this.formatVersion,
+    required this.schemaVersion,
+    required this.settings,
+  });
+
+  /// 文件类型魔数：辨识这是 Hibiki 配置方案导出，而非任意 JSON / 整库备份。
+  static const String fileType = 'hibiki.profile';
+
+  /// 当前导出文件格式版本。结构变化时 +1；导入按此判兼容。
+  static const int currentFormatVersion = 1;
+
+  final String profileName;
+  final int formatVersion;
+  final int schemaVersion;
+
+  /// 每条 `{category, key, value}`；category ∈ {anki, pref, ...}。
+  final List<ProfileSettingEntry> settings;
+}
+
+/// 单条配置项（category/key/value），对应 profile_settings 行。
+class ProfileSettingEntry {
+  ProfileSettingEntry({
+    required this.category,
+    required this.key,
+    required this.value,
+  });
+  final String category;
+  final String key;
+  final String value;
+}
+
+class ProfileRepository {
+  ProfileRepository(this._db, this._ankiRepo);
+  final FushiDatabase _db;
+  final BaseAnkiRepository _ankiRepo;
+
+  Future<List<ProfileRow>> getAllProfiles() => _db.getAllProfiles();
+
+  Future<ProfileRow?> getProfileById(int id) => _db.getProfileById(id);
+
+  Future<int> getActiveProfileId() async {
+    final raw = await _db.getPref('active_profile_id');
+    return raw != null ? (int.tryParse(raw) ?? -1) : -1;
+  }
+
+  Future<void> setActiveProfileId(int id) =>
+      _db.setPref('active_profile_id', id.toString());
+
+  Future<int> createProfile(String name) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final id = await _db.insertProfile(
+      ProfilesCompanion.insert(
+        name: name,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    return id;
+  }
+
+  Future<void> renameProfile(int id, String name) =>
+      _db.updateProfileName(id, name);
+
+  Future<void> deleteProfile(int id) async {
+    final count = await _db.countProfiles();
+    if (count <= 1) return;
+
+    final activeId = await getActiveProfileId();
+    await _db.deleteProfile(id);
+
+    if (activeId == id) {
+      final remaining = await _db.getAllProfiles();
+      if (remaining.isNotEmpty) {
+        await setActiveProfileId(remaining.first.id);
+        await applyProfile(remaining.first.id);
+      }
+    }
+  }
+
+  Future<void> snapshotCurrentSettings(int profileId) async {
+    // Profile ids are autoincrement (always >= 1); a non-positive id is the
+    // "no active profile" sentinel (e.g. ProfileViewModel.dispose fires before
+    // _load assigns a real id, so state.activeProfileId is still -1).
+    // Snapshotting it would write orphan profile_settings rows / trip the FK.
+    if (profileId <= 0) return;
+
+    final entries = <ProfileSettingsCompanion>[];
+
+    // Anki settings (SharedPreferences)
+    final ankiSettings = await _ankiRepo.loadSettings();
+    final ankiMap = ProfileKeys.ankiSettingsToMap(ankiSettings);
+    for (final entry in ankiMap.entries) {
+      entries.add(ProfileSettingsCompanion.insert(
+        profileId: profileId,
+        category: ProfileKeys.categoryAnki,
+        key: entry.key,
+        value: entry.value,
+      ));
+    }
+
+    // ALL Drift prefs (excluding app-state keys)
+    final allPrefs = await _db.getAllPrefs();
+    for (final entry in allPrefs.entries) {
+      if (ProfileKeys.isExcludedPref(entry.key)) continue;
+      entries.add(ProfileSettingsCompanion.insert(
+        profileId: profileId,
+        category: ProfileKeys.categoryPref,
+        key: entry.key,
+        value: entry.value,
+      ));
+    }
+
+    // TODO-1077: dictionary enable-list / order / source / language visibility
+    // live in the standalone `dictionary_metadata` table, not in prefs, so they
+    // were previously shared across all profiles. Snapshot one row per
+    // dictionary (key = dictionary name) into the dedicated
+    // [ProfileKeys.categoryDictionaryMeta] category so they follow the profile.
+    final List<DictionaryMetaRow> dictRows =
+        await _db.getAllDictionaryMetadata();
+    for (final DictionaryMetaRow row in dictRows) {
+      entries.add(ProfileSettingsCompanion.insert(
+        profileId: profileId,
+        category: ProfileKeys.categoryDictionaryMeta,
+        key: row.name,
+        value: _encodeDictionaryMeta(row),
+      ));
+    }
+
+    await _db.replaceProfileSettings(profileId, entries);
+  }
+
+  Future<void> applyProfile(int profileId) async {
+    // A non-positive (sentinel) id has no snapshot rows, so the prune step
+    // below would delete EVERY non-excluded live pref — silent settings wipe.
+    // Ids are always >= 1, so guard the sentinel instead of nuking prefs.
+    if (profileId <= 0) return;
+
+    final rows = await _db.getProfileSettings(profileId);
+
+    final ankiMap = <String, String>{};
+    final prefMap = <String, String>{};
+    // TODO-1077: snapshot rows for the dictionary_metadata table. `hasDictMeta`
+    // distinguishes "profile has no dictionary_meta snapshot at all" (old
+    // snapshot, pre-TODO-1077) from "profile intentionally has zero
+    // dictionaries". Only the latter may prune the live table; the former MUST
+    // be left untouched so a switch never wipes the shared dictionary config.
+    final Map<String, DictionaryMetadataCompanion> dictMetaMap =
+        <String, DictionaryMetadataCompanion>{};
+    bool hasDictMeta = false;
+    for (final row in rows) {
+      switch (row.category) {
+        case ProfileKeys.categoryAnki:
+          ankiMap[row.key] = row.value;
+        case ProfileKeys.categoryPref:
+          prefMap[row.key] = row.value;
+        case ProfileKeys.categoryDictionaryMeta:
+          hasDictMeta = true;
+          final DictionaryMetadataCompanion? companion =
+              _decodeDictionaryMeta(row.key, row.value);
+          // Defensive: a single corrupt row degrades gracefully (skipped)
+          // instead of aborting the whole profile-apply (mirrors the Anki
+          // fieldMappings try/catch, HBK-AUDIT-043).
+          if (companion != null) dictMetaMap[row.key] = companion;
+        // Legacy categories from old snapshots
+        case ProfileKeys.categoryDictionary:
+          prefMap[row.key] = row.value;
+        case ProfileKeys.categoryReader:
+          // 旧快照里 reader 偏好按 MediaSource 命名空间还原；用单一真相编码器
+          // 而非硬编码 `src:reader_fushi:` 猜下层私有 key 格式（[dbSourcePrefKey]）。
+          prefMap[dbSourcePrefKey(kReaderSourcePersistedKey, row.key)] =
+              row.value;
+        default:
+          break;
+      }
+    }
+
+    // BUG-1019: old snapshots (taken before a key entered the exclusion list,
+    // e.g. audiobook_pos_* / audiobook_speed_* / override_title://*) may still
+    // carry excluded keys. Apply must neither restore those stale values (a
+    // months-old speed/position overwriting the live one) nor delete the live
+    // rows (the prune loop below already skips excluded keys) — so drop them
+    // from the restore map here. Same single source of truth as snapshot/prune:
+    // [ProfileKeys.isExcludedPref].
+    prefMap
+        .removeWhere((String key, String _) => ProfileKeys.isExcludedPref(key));
+
+    // Wrap DB writes in transaction for consistency
+    await _db.transaction(() async {
+      final currentPrefs = await _db.getAllPrefs();
+      for (final key in currentPrefs.keys) {
+        if (ProfileKeys.isExcludedPref(key)) continue;
+        if (!prefMap.containsKey(key)) {
+          await _db.deletePref(key);
+        }
+      }
+      // TODO-1077: replace dictionary_metadata with the profile snapshot
+      // ("snapshot wins"): upsert every snapshot row, then delete live rows the
+      // snapshot does not contain (mirrors the pref prune above). Guarded by
+      // `hasDictMeta` so a pre-TODO-1077 snapshot (no dictionary_meta rows) is
+      // NEVER mistaken for "empty dictionaries" and does not wipe the shared
+      // table — never break userspace.
+      if (hasDictMeta) {
+        final List<DictionaryMetaRow> liveDicts =
+            await _db.getAllDictionaryMetadata();
+        for (final DictionaryMetaRow live in liveDicts) {
+          if (!dictMetaMap.containsKey(live.name)) {
+            await _db.deleteDictionaryMeta(live.name);
+          }
+        }
+        for (final DictionaryMetadataCompanion companion
+            in dictMetaMap.values) {
+          await _db.upsertDictionaryMeta(companion);
+        }
+      }
+      for (final entry in prefMap.entries) {
+        // [FushiDatabase.setPref] auto-bumps the persisted prefs-version
+        // (TODO-855) for every non-version key written here, so the common
+        // profile switch (which always writes at least one pref) is already
+        // signalled to the :popup process.
+        await _db.setPref(entry.key, entry.value);
+      }
+      // TODO-855: guarantee a bump even for the edge cases the per-key
+      // auto-bump above does NOT cover — a switch into a profile with an empty
+      // snapshot, or one whose only effect is deleting prefs (deletePref does
+      // not bump). Read the CURRENT (post-loop, already-bumped) version and add
+      // one more so the counter is always present and strictly monotonic; an
+      // extra increment on top of the per-key bumps is harmless (the popup just
+      // reloads once on its next lookup). Written through _db.setPref against
+      // the version key itself, whose recursion guard skips re-bumping, so this
+      // does NOT double-count. prefs_version is excluded from profile snapshots,
+      // so it is neither pruned above nor present in prefMap.
+      final String? rawVersion =
+          await _db.getPref(PreferencesRepository.prefsVersionKey);
+      final int nextVersion =
+          (rawVersion == null ? 0 : PrefCodec.decode<int>(rawVersion, 0)) + 1;
+      await _db.setPref(
+        PreferencesRepository.prefsVersionKey,
+        PrefCodec.encode(nextVersion),
+      );
+    });
+
+    // Anki settings (SharedPreferences)
+    if (ankiMap.isNotEmpty) {
+      final current = await _ankiRepo.loadSettings();
+      final updated = ProfileKeys.mapToAnkiSettings(ankiMap, current);
+      await _ankiRepo.saveSettings(updated);
+    }
+  }
+
+  Future<int> copyProfile(int sourceId, String newName) async {
+    final newId = await createProfile(newName);
+    final sourceSettings = await _db.getProfileSettings(sourceId);
+    final copies = sourceSettings
+        .map((s) => ProfileSettingsCompanion.insert(
+              profileId: newId,
+              category: s.category,
+              key: s.key,
+              value: s.value,
+            ))
+        .toList();
+    await _db.replaceProfileSettings(newId, copies);
+    return newId;
+  }
+
+  /// 全部媒体类型绑定的**裸串视图**（key = [ProfileMediaKind.dbValue]；DB 列
+  /// 接受任意串，历史行可能含旧值域，原样透传不丢行）。
+  Future<Map<String, int>> getAllMediaTypeBindings() async {
+    final rows = await _db.getAllMediaTypeProfiles();
+    return {for (final r in rows) r.mediaType: r.profileId};
+  }
+
+  Future<void> setMediaTypeBinding(ProfileMediaKind mediaType, int profileId) =>
+      _db.setMediaTypeProfile(mediaType.dbValue, profileId);
+
+  Future<void> removeMediaTypeBinding(ProfileMediaKind mediaType) =>
+      _db.deleteMediaTypeProfile(mediaType.dbValue);
+
+  Future<int?> getBookProfileId(String bookUid) async {
+    final row = await _db.getBookProfile(bookUid);
+    return row?.profileId;
+  }
+
+  Future<void> setBookProfile(String bookUid, int profileId) =>
+      _db.setBookProfile(bookUid, profileId);
+
+  Future<void> removeBookProfile(String bookUid) =>
+      _db.deleteBookProfile(bookUid);
+
+  Future<int> resolveProfileId({
+    required String? bookUid,
+    required ProfileMediaKind? mediaType,
+  }) async {
+    if (bookUid != null) {
+      final bookProfileId = await getBookProfileId(bookUid);
+      if (bookProfileId != null) return bookProfileId;
+    }
+
+    if (mediaType != null) {
+      final mtRow = await _db.getMediaTypeProfile(mediaType.dbValue);
+      if (mtRow != null) return mtRow.profileId;
+    }
+
+    return getActiveProfileId();
+  }
+
+  // ── 导出 / 导入（单 Profile JSON 序列化）────────────────────────────
+
+  /// 判断一个 pref key 是否属于「设备本地 / 凭据」，导出时必须剔除。
+  ///
+  /// 判定本身收敛到 [PrefRedactionPolicy]（备份 zip / Profile 快照 / 本分享
+  /// JSON 三条出境通道共用的唯一真相源）。此前这里是一份独立实现，兜底被
+  /// `if (!lower.startsWith('sync_')) return false;` 锁死在 `sync_` 家族，于是
+  /// `media_source_secret_*`（SFTP/FTP 密码 + 私钥 PEM）、`qb_connection_config`
+  /// （明文密码）与 `*_api_key` 全部漏网 —— 分享一个 Profile 就把它们一起送出去。
+  static bool _isCredentialOrDeviceLocalPref(String key) =>
+      PrefRedactionPolicy.isDeviceLocalOrCredential(key);
+
+  /// 把单个 Profile 序列化成可分享的 JSON 字符串。
+  ///
+  /// - 激活 Profile：先 [snapshotCurrentSettings]（autosnapshot）把当前活的
+  ///   偏好写进快照再读，保证导出的是最新状态。
+  /// - 非激活 Profile：直读其已有快照，**不** snapshot（否则会用当前活偏好
+  ///   污染那个 Profile 的快照）。
+  /// - 凭据红线：导出前按 [_isCredentialOrDeviceLocalPref] 剔除全部凭据 /
+  ///   设备本地 key（白名单为主、LIKE 兜底），绝不让 base64 凭据进文件。
+  /// - 字体路径（A1）：把 `font_catalog` / 旧 shadow 列表里指向本机
+  ///   `custom_fonts/` 的绝对路径剥成相对（rebase 到空根），导到别的设备时
+  ///   该字体文件缺失则优雅降级（条目在、文件找不到、加载器跳过），不泄漏
+  ///   本机目录结构、也不会指向不存在的绝对路径。[fontsRootDirectory] 为 null
+  ///   （未知字体根）时跳过剥离，原样导出。
+  ///
+  /// 返回带缩进的 JSON 字符串。调用方负责落盘 / 分享。
+  Future<String> exportProfileToJson(
+    int profileId, {
+    String? fontsRootDirectory,
+  }) async {
+    final ProfileRow? profile = await _db.getProfileById(profileId);
+    if (profile == null) {
+      throw ProfileImportException('profile $profileId not found');
+    }
+
+    final int activeId = await getActiveProfileId();
+    if (profileId == activeId) {
+      // 激活 Profile：导出前刷一次快照，确保拿到当前活偏好。
+      await snapshotCurrentSettings(profileId);
+    }
+
+    final List<ProfileSettingRow> rows =
+        await _db.getProfileSettings(profileId);
+
+    final List<Map<String, String>> settings = <Map<String, String>>[];
+    for (final ProfileSettingRow row in rows) {
+      // 凭据红线：唯一前置防线，剔除全部凭据 / 设备本地 key。
+      if (row.category == ProfileKeys.categoryPref &&
+          _isCredentialOrDeviceLocalPref(row.key)) {
+        continue;
+      }
+      final String value = _exportFontPathStrippedValue(
+        category: row.category,
+        key: row.key,
+        value: row.value,
+        fontsRootDirectory: fontsRootDirectory,
+      );
+      settings.add(<String, String>{
+        'category': row.category,
+        'key': row.key,
+        'value': value,
+      });
+    }
+
+    final Map<String, dynamic> doc = <String, dynamic>{
+      'type': ProfileExport.fileType,
+      'formatVersion': ProfileExport.currentFormatVersion,
+      'schemaVersion': _db.schemaVersion,
+      'profileName': profile.name,
+      'settings': settings,
+    };
+    return const JsonEncoder.withIndent('  ').convert(doc);
+  }
+
+  /// A1 字体路径剥离：把字体配置 JSON 里指向本机 `custom_fonts/` 的绝对路径
+  /// 剥成相对（rebase 到空根）。非字体 key 原样返回。
+  String _exportFontPathStrippedValue({
+    required String category,
+    required String key,
+    required String value,
+    required String? fontsRootDirectory,
+  }) {
+    if (fontsRootDirectory == null) return value;
+    if (category != ProfileKeys.categoryPref) return value;
+    if (key == _fontCatalogPrefKey) {
+      return rebaseFontCatalogJson(value, fontsRootDirectory, '');
+    }
+    if (_legacyFontPrefKeys.contains(key)) {
+      return rebaseFontListJson(value, fontsRootDirectory, '');
+    }
+    return value;
+  }
+
+  /// 字体配置的持久化 key（与 backup_service 同一组值；那边因 const 上下文
+  /// 保留字面量并由 `db_source_pref_key_test` 锁一致）。这里经单一真相编码器
+  /// [dbSourcePrefKey] 生成，不再硬编码 `src:reader_fushi:` 格式。
+  static final String _fontCatalogPrefKey =
+      dbSourcePrefKey(kReaderSourcePersistedKey, 'font_catalog');
+  static final List<String> _legacyFontPrefKeys = <String>[
+    dbSourcePrefKey(kReaderSourcePersistedKey, 'custom_fonts'),
+    dbSourcePrefKey(kReaderSourcePersistedKey, 'app_ui_fonts'),
+    dbSourcePrefKey(kReaderSourcePersistedKey, 'dict_fonts'),
+    dbSourcePrefKey(kReaderSourcePersistedKey, 'video_sub_fonts'),
+  ];
+
+  /// 解析并校验一个导出 JSON 字符串。坏文件 / 魔数不符 / 版本不兼容 / 结构非法
+  /// 一律抛 [ProfileImportException]（**在写 DB 之前**）。
+  ProfileExport parseProfileExport(String json) {
+    final dynamic decoded;
+    try {
+      decoded = jsonDecode(json);
+    } catch (e) {
+      throw ProfileImportException('not valid JSON: $e');
+    }
+    if (decoded is! Map) {
+      throw ProfileImportException('top-level value is not an object');
+    }
+    final Map<String, dynamic> map = Map<String, dynamic>.from(decoded);
+
+    if (map['type'] != ProfileExport.fileType) {
+      throw ProfileImportException(
+          'unexpected file type: ${map['type']} (expected '
+          '${ProfileExport.fileType})');
+    }
+    final Object? rawFormat = map['formatVersion'];
+    final int formatVersion = rawFormat is int ? rawFormat : -1;
+    if (formatVersion <= 0 ||
+        formatVersion > ProfileExport.currentFormatVersion) {
+      throw ProfileImportException('unsupported format version: $rawFormat');
+    }
+    final Object? rawName = map['profileName'];
+    if (rawName is! String || rawName.trim().isEmpty) {
+      throw ProfileImportException('missing or empty profileName');
+    }
+    final Object? rawSettings = map['settings'];
+    if (rawSettings is! List) {
+      throw ProfileImportException('settings is not a list');
+    }
+    final Object? rawSchema = map['schemaVersion'];
+    final int schemaVersion = rawSchema is int ? rawSchema : 0;
+
+    final List<ProfileSettingEntry> entries = <ProfileSettingEntry>[];
+    for (final dynamic e in rawSettings) {
+      if (e is! Map) {
+        throw ProfileImportException('settings entry is not an object');
+      }
+      final Object? category = e['category'];
+      final Object? key = e['key'];
+      final Object? value = e['value'];
+      if (category is! String || key is! String || value is! String) {
+        throw ProfileImportException(
+            'settings entry has non-string category/key/value');
+      }
+      entries.add(ProfileSettingEntry(
+        category: category,
+        key: key,
+        value: value,
+      ));
+    }
+
+    return ProfileExport(
+      profileName: rawName,
+      formatVersion: formatVersion,
+      schemaVersion: schemaVersion,
+      settings: entries,
+    );
+  }
+
+  /// 把一个唯一的 Profile 名衍生出来：若 [base] 已被占用，追加 ` (2)`、` (3)`…
+  /// 直到不冲突（`Profiles.name` 有 unique 约束，重名插入会抛）。
+  Future<String> _uniqueProfileName(String base) async {
+    final List<ProfileRow> existing = await _db.getAllProfiles();
+    final Set<String> taken = existing.map((ProfileRow p) => p.name).toSet();
+    if (!taken.contains(base)) return base;
+    int n = 2;
+    while (taken.contains('$base ($n)')) {
+      n++;
+    }
+    return '$base ($n)';
+  }
+
+  /// 从导出 JSON 导回一个 Profile。
+  ///
+  /// 解析 + 校验阶段任何问题都在写 DB 前抛 [ProfileImportException]（事务零
+  /// 破坏）。校验通过后：
+  /// - [ProfileImportMode.createNew]（默认）：新建一个 Profile，名取自文件，
+  ///   重名自动加后缀。
+  /// - [ProfileImportMode.overwrite]：用文件内容覆盖 [targetProfileId] 指向的
+  ///   已有 Profile 的设置（[replaceProfileSettings] 已是事务）；若覆盖的是当前
+  ///   激活 Profile，调用方需再 [applyProfile] 让其立即生效。
+  ///
+  /// 返回写入的 Profile id。
+  Future<int> importProfileFromJson(
+    String json, {
+    ProfileImportMode mode = ProfileImportMode.createNew,
+    int? targetProfileId,
+  }) async {
+    final ProfileExport export = parseProfileExport(json);
+
+    switch (mode) {
+      case ProfileImportMode.createNew:
+        final String name = await _uniqueProfileName(export.profileName);
+        final int newId = await createProfile(name);
+        await _db.replaceProfileSettings(
+          newId,
+          _companionsFor(export.settings, newId),
+        );
+        return newId;
+      case ProfileImportMode.overwrite:
+        if (targetProfileId == null) {
+          throw ProfileImportException(
+              'overwrite mode requires targetProfileId');
+        }
+        final ProfileRow? target = await _db.getProfileById(targetProfileId);
+        if (target == null) {
+          throw ProfileImportException(
+              'overwrite target $targetProfileId not found');
+        }
+        await _db.replaceProfileSettings(
+          targetProfileId,
+          _companionsFor(export.settings, targetProfileId),
+        );
+        return targetProfileId;
+    }
+  }
+
+  /// 把解析出的设置项绑定到真实 profileId，构造 insert companions。
+  List<ProfileSettingsCompanion> _companionsFor(
+    List<ProfileSettingEntry> entries,
+    int profileId,
+  ) =>
+      entries
+          // v63 只拒绝旧全局超分键的 pref 分类。不要改成过滤全部
+          // isExcludedPref：其它排除键有各自的跨版本/设备本地语义，扩大过滤会
+          // 无授权地改变旧 Profile JSON 的导入行为；同名非 pref 分类也必须保留。
+          .where((ProfileSettingEntry e) =>
+              e.category != ProfileKeys.categoryPref ||
+              e.key != ProfileKeys.obsoleteGalgameUpscalingModePrefKey)
+          .map((ProfileSettingEntry e) => ProfileSettingsCompanion.insert(
+                profileId: profileId,
+                category: e.category,
+                key: e.key,
+                value: e.value,
+              ))
+          .toList();
+
+  // ── TODO-1077 dictionary_metadata snapshot serialization ────────────
+
+  /// Serialize one `dictionary_metadata` row into the JSON value stored in a
+  /// profile_settings row (key = dictionary name). Carries every profile-owned
+  /// column: order, formatKey (source), type, and the language-visibility /
+  /// metadata JSON blobs (kept as raw strings — they are already JSON).
+  String _encodeDictionaryMeta(DictionaryMetaRow row) {
+    return jsonEncode(<String, dynamic>{
+      'order': row.order,
+      'formatKey': row.formatKey,
+      'type': row.type,
+      'metadataJson': row.metadataJson,
+      'hiddenLanguagesJson': row.hiddenLanguagesJson,
+      'collapsedLanguagesJson': row.collapsedLanguagesJson,
+    });
+  }
+
+  /// Decode a snapshot dictionary-meta value back into an upsert companion.
+  /// Returns null (skip the row) on any malformed data — a single bad row must
+  /// not abort the whole profile-apply (mirrors [ProfileKeys] Anki parsing,
+  /// HBK-AUDIT-043). [name] is the profile_settings key (dictionary name / PK).
+  DictionaryMetadataCompanion? _decodeDictionaryMeta(
+      String name, String value) {
+    try {
+      final dynamic decoded = jsonDecode(value);
+      if (decoded is! Map) return null;
+      final Object? rawOrder = decoded['order'];
+      final int order =
+          rawOrder is int ? rawOrder : int.tryParse('$rawOrder') ?? 0;
+      String asString(Object? v, String fallback) => v is String ? v : fallback;
+      return DictionaryMetadataCompanion(
+        name: Value(name),
+        formatKey: Value(asString(decoded['formatKey'], '')),
+        order: Value(order),
+        type: Value(asString(decoded['type'], 'term')),
+        metadataJson: Value(asString(decoded['metadataJson'], '{}')),
+        hiddenLanguagesJson:
+            Value(asString(decoded['hiddenLanguagesJson'], '[]')),
+        collapsedLanguagesJson:
+            Value(asString(decoded['collapsedLanguagesJson'], '[]')),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> ensureDefaultProfile() async {
+    final existing = await _db.getAllProfiles();
+    if (existing.isEmpty) {
+      final id = await createProfile('Default');
+      await setActiveProfileId(id);
+      await snapshotCurrentSettings(id);
+      return;
+    }
+
+    final activeId = await getActiveProfileId();
+    final valid = existing.any((p) => p.id == activeId);
+    if (!valid) {
+      await setActiveProfileId(existing.first.id);
+      await applyProfile(existing.first.id);
+    }
+  }
+}

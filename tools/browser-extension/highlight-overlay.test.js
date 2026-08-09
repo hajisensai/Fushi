@@ -5,12 +5,12 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 // TODO-1272 行为守卫：浏览器扩展「Shift 悬停查词」时被查词的高亮**非常容易消失**。
-// 根因：旧实现走 selection.js 的 DOM 包裹路径（把宿主页文本节点裹进 <span class="hoshi-dict-highlight">），
+// 根因：旧实现走 selection.js 的 DOM 包裹路径（把宿主页文本节点裹进 <span class="fushi-dict-highlight">），
 // 动态站点（React/Vue/视频字幕逐帧重渲染）的框架 diff / MutationObserver 会在下一帧把这个凭空多出的
 // span revert 掉，高亮闪一下就没。修复：content.js 改画「扩展自有的顶层 fixed 覆盖层」（不改宿主页 DOM），
 // 保持到弹窗关闭。本测试在受控 vm 里真加载 content.js，断言：
-//   1) Shift 悬停查词后，宿主页 body 上出现扩展的覆盖层高亮（#hibiki-highlight-overlay），且**不**把
-//      宿主页文本节点裹进 hoshi-dict-highlight 包裹 span（宿主页 DOM 未被改动）。
+//   1) Shift 悬停查词后，宿主页 body 上出现扩展的覆盖层高亮（#fushi-highlight-overlay），且**不**把
+//      宿主页文本节点裹进 fushi-dict-highlight 包裹 span（宿主页 DOM 未被改动）。
 //   2) 宿主页事件（无 Shift 的 mousemove）不会撤掉高亮——高亮保持到弹窗关闭。
 //   3) 关闭弹窗（点弹窗外 mousedown）时覆盖层高亮被撤掉（跟随弹窗生命周期）。
 
@@ -128,7 +128,7 @@ function loadAndLookup() {
     innerHeight: 800,
     matchMedia: () => ({ matches: false }),
     // 与 app 同款 selection.js 的最小行为桩：命中一个字、扩成词、并暴露 selection.ranges 供覆盖层取 rects。
-    hoshiSelection: {
+    fushiSelection: {
       selection: { ranges: [{ node: hostTextNode, start: 0, end: 2 }], text: '世界' },
       getCharacterAtPoint: () => ({ node: hostTextNode, offset: 0 }),
       selectFromPosition: () => '世界',
@@ -145,7 +145,7 @@ function loadAndLookup() {
   vm.createContext(sandbox);
   vm.runInContext(src, sandbox, { filename: 'content.js' });
 
-  // 触发 Shift 悬停查词（→ 同步走完 lookup 回调 → hibikiRender → 画覆盖层高亮）。
+  // 触发 Shift 悬停查词（→ 同步走完 lookup 回调 → fushiRender → 画覆盖层高亮）。
   const ev = { shiftKey: true, clientX: 300, clientY: 400 };
   for (const fn of (docListeners.mousemove || [])) fn(ev);
 
@@ -154,33 +154,33 @@ function loadAndLookup() {
 
 test('Shift 悬停查词后画出扩展覆盖层高亮，且不改宿主页 DOM（无包裹 span）', () => {
   const { sandbox, body } = loadAndLookup();
-  const overlay = findById(body, 'hibiki-highlight-overlay');
-  assert.ok(overlay, '未画出扩展覆盖层高亮 #hibiki-highlight-overlay');
+  const overlay = findById(body, 'fushi-highlight-overlay');
+  assert.ok(overlay, '未画出扩展覆盖层高亮 #fushi-highlight-overlay');
   assert.ok(overlay.children.length >= 1, '覆盖层里没有高亮色块');
   assert.match(overlay.style.cssText, /pointer-events:none/, '覆盖层未穿透点击');
   assert.strictEqual(sandbox.__wrapperUsed, false,
     '仍走了 selection.js 的 DOM 包裹高亮路径（会被宿主页重绘冲掉）');
-  assert.strictEqual(findByClass(body, 'hoshi-dict-highlight'), null,
-    '宿主页文本被裹进 hoshi-dict-highlight span（动态站点会 revert 掉 → 高亮易消失）');
+  assert.strictEqual(findByClass(body, 'fushi-dict-highlight'), null,
+    '宿主页文本被裹进 fushi-dict-highlight span（动态站点会 revert 掉 → 高亮易消失）');
 });
 
 test('宿主页事件（无 Shift 的 mousemove）不撤高亮——高亮保持到弹窗关闭', () => {
   const { docListeners, body } = loadAndLookup();
-  assert.ok(findById(body, 'hibiki-highlight-overlay'), '前置：高亮应已画出');
+  assert.ok(findById(body, 'fushi-highlight-overlay'), '前置：高亮应已画出');
   // 模拟用户移向弹窗：一串不带 Shift 的 mousemove。
   for (const fn of (docListeners.mousemove || [])) {
     fn({ shiftKey: false, clientX: 500, clientY: 500 });
     fn({ shiftKey: false, clientX: 520, clientY: 520 });
   }
-  assert.ok(findById(body, 'hibiki-highlight-overlay'),
+  assert.ok(findById(body, 'fushi-highlight-overlay'),
     '无 Shift 的 mousemove 把高亮撤掉了（应保持到关弹窗）');
 });
 
 test('关闭弹窗（点弹窗外）时覆盖层高亮被撤掉（跟随弹窗生命周期）', () => {
   const { docListeners, body } = loadAndLookup();
-  assert.ok(findById(body, 'hibiki-highlight-overlay'), '前置：高亮应已画出');
+  assert.ok(findById(body, 'fushi-highlight-overlay'), '前置：高亮应已画出');
   const outside = makeEl('div'); // 弹窗容器之外的宿主页元素
   for (const fn of (docListeners.mousedown || [])) fn({ target: outside });
-  assert.strictEqual(findById(body, 'hibiki-highlight-overlay'), null,
+  assert.strictEqual(findById(body, 'fushi-highlight-overlay'), null,
     '关弹窗后覆盖层高亮未被撤掉（会残留在页面上）');
 });

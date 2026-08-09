@@ -4,10 +4,10 @@
 
 ## 当前阅读器构成
 
-- 页面：`hibiki/lib/src/pages/implementations/reader_hibiki_page.dart`，类 `ReaderHibikiPage`（3242 行主体 + `reader_hibiki/` 下 8 个域 part 文件 `audiobook` / `caret` / `chrome` / `lookup` / `lyrics` / `mining` / `navigation` / `webview`，共 9583 行：WebView 拦截 + JS 分页引擎 + 有声书同步）。
-- source：`hibiki/lib/src/media/sources/reader_hibiki_source.dart`，类 `ReaderHibikiSource`。
-- JS / CSS：`hibiki/lib/src/reader/` 下 `reader_pagination_scripts.dart`、`reader_content_styles.dart`、`reader_selection_scripts.dart`、`reader_caret_scripts.dart`。
-- **JS 桥接全局仍叫 `window.hoshiReader`**（历史命名，是真实符号，不要改）；字级焦点用 `window.hoshiCaret` + Dart `ReaderCaretRouter`。
+- 页面：`fushi/lib/src/pages/implementations/reader_hibiki_page.dart`，类 `ReaderHibikiPage`（3242 行主体 + `reader_hibiki/` 下 8 个域 part 文件 `audiobook` / `caret` / `chrome` / `lookup` / `lyrics` / `mining` / `navigation` / `webview`，共 9583 行：WebView 拦截 + JS 分页引擎 + 有声书同步）。
+- source：`fushi/lib/src/media/sources/reader_hibiki_source.dart`，类 `ReaderHibikiSource`。
+- JS / CSS：`fushi/lib/src/reader/` 下 `reader_pagination_scripts.dart`、`reader_content_styles.dart`、`reader_selection_scripts.dart`、`reader_caret_scripts.dart`。
+- **JS 桥接全局叫 `window.fushiReader`**（2026-08 已从旧名 hoshiReader 改名；`window.hoshiCaret` 等其余 hoshi 前缀运行时符号待后续批次）；字级焦点用 `window.hoshiCaret` + Dart `ReaderCaretRouter`。
 - 当前阅读器问题**不要**去上游 ttu fork 仓库改。
 
 ## TTU 命名残留 vs 迁移代码
@@ -17,10 +17,10 @@
 
 ## 调试约定
 
-- 书页空白、图片缺失、间距异常、播放栏遮挡等渲染问题，先查布局、overlay、page margin、WebView 可视区域、正文内容区域、资源拦截和 `window.hoshiReader` 状态；不要一上来假设是图片解码或缓存坏了。
+- 书页空白、图片缺失、间距异常、播放栏遮挡等渲染问题，先查布局、overlay、page margin、WebView 可视区域、正文内容区域、资源拦截和 `window.fushiReader` 状态；不要一上来假设是图片解码或缓存坏了。
 - 有声书播放栏问题必须**同时**看 Flutter 控件边界和 WebView/正文边界。重点记录 WebView bounds、正文 TextView/Image bounds、播放栏按钮 bounds；正文延伸到播放栏区域下方就是布局 inset 问题。
-- 还原/跳转/跟随音频问题优先检查真实 reader 状态和 cue 位置：`_currentChapter`、章节内 progress、保存的 `ReaderPosition`、当前句文本和 `window.hoshiReader` 的恢复/分页状态。已有保存位置时，位置数据优先于归一化文本匹配，文本匹配只能做 fallback。
-- 页面恢复问题重点看 `_readerContentReady`、`_restoreInFlight`、`onLoadStop`、`_navigateToChapter*()`、`window.hoshiReader.restoreProgress()`、`_readerSetupScript` 和分页脚本；不要只看 WebView 有内容就断言恢复完成。
+- 还原/跳转/跟随音频问题优先检查真实 reader 状态和 cue 位置：`_currentChapter`、章节内 progress、保存的 `ReaderPosition`、当前句文本和 `window.fushiReader` 的恢复/分页状态。已有保存位置时，位置数据优先于归一化文本匹配，文本匹配只能做 fallback。
+- 页面恢复问题重点看 `_readerContentReady`、`_restoreInFlight`、`onLoadStop`、`_navigateToChapter*()`、`window.fushiReader.restoreProgress()`、`_readerSetupScript` 和分页脚本；不要只看 WebView 有内容就断言恢复完成。
 - 遇到 WebView renderer crash、资源 404、CacheStorage 或旧资源症状，要区分当前资源拦截、旧迁移资产和用户设备缓存；不要加 TTU dummy 文件或用清数据掩盖真实升级问题。
 - 调试 DOM/JS 用 Chrome DevTools Protocol 或 WebView inspection 读 DOM、console、JS 变量和布局尺寸；截图只能证明视觉现象，不能替代 DOM/边界数据。
 

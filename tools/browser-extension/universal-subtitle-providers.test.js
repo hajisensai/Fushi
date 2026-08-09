@@ -11,7 +11,7 @@ const vm = require('node:vm');
 //   3) HTML5 video.textTracks 全量收割：原生字幕轨站点直接得到整集列表（含标签清洗与增量刷新）。
 
 const ADAPTERS = path.join(__dirname, 'subtitle-adapters.js');
-const CONTENT = process.env.HIBIKI_CONTENT_UNDER_TEST ||
+const CONTENT = process.env.FUSHI_CONTENT_UNDER_TEST ||
   path.join(__dirname, 'content.js');
 
 function loadContent(opts) {
@@ -133,7 +133,7 @@ test('接收端注册后立刻请求 replayCues（先注册后请求，消除注
   const h = loadContent({ hostname: 'www.netflix.com', pathname: '/watch/81001' });
   const listenerIdx = h.events.findIndex((e) => e.type === 'listener' && e.t === 'message');
   const replayIdx = h.events.findIndex(
-    (e) => e.type === 'post' && e.msg && e.msg.__hibikiNf === 'replayCues');
+    (e) => e.type === 'post' && e.msg && e.msg.__fushiNf === 'replayCues');
   assert.ok(listenerIdx >= 0, '必须注册 message 接收端');
   assert.ok(replayIdx >= 0, '必须发出 replayCues 请求');
   assert.ok(replayIdx > listenerIdx, 'replayCues 必须在接收端注册之后（否则重放也会丢）');
@@ -143,15 +143,15 @@ test('live 轨：句子出现即入轨、结束定格 end、倒退回看去重�
   const h = loadContent({ hostname: 'example.com', pathname: '/p' });
   assert.ok(h.sampler, '缺 200ms 采样器');
   const notified = [];
-  h.windowObj.hibikiSubtitlePanelOnCues = (key) => notified.push(key);
+  h.windowObj.fushiSubtitlePanelOnCues = (key) => notified.push(key);
 
   // 句子出现（t=1.0s）：立刻入轨（暂定 end）——勾选开关此刻就有内容可显示。
   h.video.currentTime = 1.0;
   h.state.subText = 'konnichiwa';
   h.sampler.fn();
   const key = 'example.com/p|live';
-  const store = h.windowObj.hibikiEpisodeCues;
-  assert.ok(store, 'content.js 必须暴露 hibikiEpisodeCues');
+  const store = h.windowObj.fushiEpisodeCues;
+  assert.ok(store, 'content.js 必须暴露 fushiEpisodeCues');
   assert.strictEqual(store[key].length, 1, '句子出现即入 live 轨');
   assert.strictEqual(store[key][0].startMs, 1000);
   assert.strictEqual(store[key][0].text, 'konnichiwa');
@@ -185,7 +185,7 @@ test('live 轨：句子出现即入轨、结束定格 end、倒退回看去重�
 test('live 轨：YouTube 同一句逐字扩长时就地更新，不把每个快照追加成重复行', () => {
   const h = loadContent({ hostname: 'www.youtube.com', pathname: '/watch', search: '?v=rolling' });
   const notified = [];
-  h.windowObj.hibikiSubtitlePanelOnCues = (key) => notified.push(key);
+  h.windowObj.fushiSubtitlePanelOnCues = (key) => notified.push(key);
   const key = 'yt-rolling|live';
 
   h.video.currentTime = 25.0;
@@ -202,7 +202,7 @@ test('live 轨：YouTube 同一句逐字扩长时就地更新，不把每个快�
   h.state.subText = '自価総額およそ800兆円。NIAはAIブーム';
   h.sampler.fn();
 
-  const track = h.windowObj.hibikiEpisodeCues[key];
+  const track = h.windowObj.fushiEpisodeCues[key];
   assert.strictEqual(track.length, 1, '同一句的逐字扩长快照必须合并到一行');
   assert.strictEqual(track[0].startMs, 25000, '就地更新不得改变原句起点');
   assert.strictEqual(track[0].text, '自価総額およそ800兆円。NIAはAIブーム');
@@ -233,7 +233,7 @@ test('BUG-1270：YouTube 累积 DOM 分段，回跳同一时间不再插入短�
     h.sampler.fn();
   }
 
-  const track = h.windowObj.hibikiEpisodeCues[key];
+  const track = h.windowObj.fushiEpisodeCues[key];
   assert.strictEqual(track.length, 2, '累积 DOM 必须按时间切成有界 cue');
   assert.strictEqual(track[0].startMs, 193000);
   assert.strictEqual(track[0].endMs, 205000);
@@ -261,7 +261,7 @@ test('短采样停顿：1.6 秒正向增长不是 seek，新增后缀不丢', ()
   h.video.currentTime = 11.6;
   h.state.subText = 'AB';
   h.sampler.fn();
-  const track = h.windowObj.hibikiEpisodeCues['yt-pause|live'];
+  const track = h.windowObj.fushiEpisodeCues['yt-pause|live'];
   assert.strictEqual(track.length, 1);
   assert.strictEqual(track[0].text, 'AB');
 });
@@ -279,7 +279,7 @@ test('非前缀更正与缩短各自成句，不回写上一 cue', () => {
   correction.state.subText = 'alpX';
   correction.sampler.fn();
   assert.strictEqual(
-    correction.windowObj.hibikiEpisodeCues['yt-correction|live']
+    correction.windowObj.fushiEpisodeCues['yt-correction|live']
       .map((cue) => cue.text)
       .join('|'),
     'alpha|alpX',
@@ -297,7 +297,7 @@ test('非前缀更正与缩短各自成句，不回写上一 cue', () => {
   shortening.state.subText = 'abc';
   shortening.sampler.fn();
   assert.strictEqual(
-    shortening.windowObj.hibikiEpisodeCues['yt-shortening|live']
+    shortening.windowObj.fushiEpisodeCues['yt-shortening|live']
       .map((cue) => cue.text)
       .join('|'),
     'abcdef|abc',
@@ -318,7 +318,7 @@ test('SPA 换视频：同文也建新轨，前缀增长不得污染旧视频 cue
   h.state.subText = 'same-new';
   h.sampler.fn();
 
-  const store = h.windowObj.hibikiEpisodeCues;
+  const store = h.windowObj.fushiEpisodeCues;
   assert.strictEqual(store['yt-one|live'][0].text, 'same');
   assert.strictEqual(store['yt-two|live'].length, 1);
   assert.strictEqual(store['yt-two|live'][0].text, 'same-new');
@@ -343,7 +343,7 @@ test('SPA A→B→A：回访已有轨的短前缀只读 replay，不追加重复
   h.state.subText = 'line-full';
   h.sampler.fn();
 
-  const track = h.windowObj.hibikiEpisodeCues['yt-A|live'];
+  const track = h.windowObj.fushiEpisodeCues['yt-A|live'];
   assert.strictEqual(track.length, 1);
   assert.strictEqual(track.map((cue) => cue.text).join('|'), 'line-full');
 });
@@ -364,7 +364,7 @@ test('SPA A→B→A：回访已有短轨的长前缀快照也只读 replay', () 
   h.state.subText = 'line-full';
   h.sampler.fn();
 
-  const track = h.windowObj.hibikiEpisodeCues['yt-A-long|live'];
+  const track = h.windowObj.fushiEpisodeCues['yt-A-long|live'];
   assert.strictEqual(track.length, 1);
   assert.strictEqual(track.map((cue) => cue.text).join('|'), 'line');
 });
@@ -376,7 +376,7 @@ test('player 销毁：定格当前代且不凭空插入 t=0 cue', () => {
   h.sampler.fn();
   h.destroyVideo();
   h.sampler.fn();
-  const track = h.windowObj.hibikiEpisodeCues['yt-gone|live'];
+  const track = h.windowObj.fushiEpisodeCues['yt-gone|live'];
   assert.strictEqual(track.length, 1);
   assert.strictEqual(track.filter((cue) => cue.startMs === 0).length, 0);
 
@@ -396,7 +396,7 @@ test('同视频 remount：旧代引用清空、旧轨稳定，离开 replay 后�
   h.video.currentTime = 10;
   h.state.subText = 'same';
   h.sampler.fn();
-  const track = h.windowObj.hibikiEpisodeCues['yt-remount|live'];
+  const track = h.windowObj.fushiEpisodeCues['yt-remount|live'];
 
   h.remountVideo(10);
   h.sampler.fn();
@@ -433,7 +433,7 @@ test('真实 seeking/seeked：seek 前定格，多次前后跳不重复旧轨', 
   h.state.subText = 'B';
   h.sampler.fn();
 
-  const track = h.windowObj.hibikiEpisodeCues['yt-multi-seek|live'];
+  const track = h.windowObj.fushiEpisodeCues['yt-multi-seek|live'];
   assert.strictEqual(track.find((cue) => cue.text === 'A').endMs, 11000);
   assert.strictEqual(track.filter((cue) => cue.text === 'A').length, 1);
   assert.strictEqual(track.filter((cue) => cue.text === 'B').length, 1);
@@ -453,7 +453,7 @@ test('只观察到 seeked 时仍按末次真实采样定格旧 cue', () => {
   h.state.subText = 'B';
   h.sampler.fn();
 
-  const track = h.windowObj.hibikiEpisodeCues['yt-seeked-only|live'];
+  const track = h.windowObj.fushiEpisodeCues['yt-seeked-only|live'];
   assert.strictEqual(track.find((cue) => cue.text === 'A').endMs, 11000);
   assert.strictEqual(track.find((cue) => cue.text === 'B').startMs, 20000);
 });
@@ -472,7 +472,7 @@ test('seek 后空白帧不消费 replay 门，短前缀稍后到达仍不重复'
   h.state.subText = 'A';
   h.sampler.fn();
 
-  const track = h.windowObj.hibikiEpisodeCues['yt-blank-seek|live'];
+  const track = h.windowObj.fushiEpisodeCues['yt-blank-seek|live'];
   assert.strictEqual(track.length, 1);
   assert.strictEqual(track[0].text, 'AB');
 });
@@ -493,7 +493,7 @@ test('replay 窗口与文本关系保持窄匹配，窗外/仅子串相似均不
   h.state.subText = 'xxsameyy';
   h.sampler.fn();
 
-  const track = h.windowObj.hibikiEpisodeCues['yt-boundary|live'];
+  const track = h.windowObj.fushiEpisodeCues['yt-boundary|live'];
   assert.strictEqual(track.filter((cue) => cue.startMs === 1000).length, 2,
     '仅子串相似不是前缀相关，不能误判 replay');
   assert.strictEqual(track.filter((cue) => cue.startMs === 10000).length, 1,
@@ -516,9 +516,9 @@ test('textTracks 收割：原生字幕轨整轨读出（清洗标签）并增量
   });
   assert.ok(h.harvester, '缺 1200ms textTracks 收割器');
   const notified = [];
-  h.windowObj.hibikiSubtitlePanelOnCues = (key) => notified.push(key);
+  h.windowObj.fushiSubtitlePanelOnCues = (key) => notified.push(key);
   h.harvester.fn();
-  const store = h.windowObj.hibikiEpisodeCues;
+  const store = h.windowObj.fushiEpisodeCues;
   const key = 'example.com/p|en';
   assert.ok(store[key], '原生字幕轨必须进 store');
   assert.strictEqual(store[key].length, 2);
@@ -541,14 +541,14 @@ test('textTracks 收割：原生字幕轨整轨读出（清洗标签）并增量
 
 test('videoKey 契约：netflix=watch id、youtube=yt-<v>、其它=host+path', () => {
   const nf = loadContent({ hostname: 'www.netflix.com', pathname: '/watch/81001' });
-  assert.strictEqual(nf.windowObj.hibikiVideoKey(), '81001');
+  assert.strictEqual(nf.windowObj.fushiVideoKey(), '81001');
   const yt = loadContent({
     hostname: 'www.youtube.com',
     pathname: '/watch',
     search: '?v=abc123',
   });
-  // hibikiYoutubeId 从 location.href 解析 v 参数。
-  assert.strictEqual(yt.windowObj.hibikiVideoKey(), 'yt-abc123');
+  // fushiYoutubeId 从 location.href 解析 v 参数。
+  assert.strictEqual(yt.windowObj.fushiVideoKey(), 'yt-abc123');
   const generic = loadContent({ hostname: 'example.com', pathname: '/show/1' });
-  assert.strictEqual(generic.windowObj.hibikiVideoKey(), 'example.com/show/1');
+  assert.strictEqual(generic.windowObj.fushiVideoKey(), 'example.com/show/1');
 });

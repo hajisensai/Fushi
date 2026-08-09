@@ -71,8 +71,8 @@ test('resolveWordAudio: background 抛错 (无 responder 抛) → 返回 null（
 
 // 89294bf4b (land PR#278) 起 playWordAudio 桥已从 bridge-shim 删除：播放收敛进
 // vendor/popup.js 的 playWordAudio（三端同一 HTML5 <audio> 路径，导出为
-// window.__hibikiPlayWordAudioUrl）。以下用源码切片在受控 vm 里断言新契约。
-const POPUP_EXPORT = 'window.__hibikiPlayWordAudioUrl = playWordAudio;';
+// window.__fushiPlayWordAudioUrl）。以下用源码切片在受控 vm 里断言新契约。
+const POPUP_EXPORT = 'window.__fushiPlayWordAudioUrl = playWordAudio;';
 
 function loadPopupPlayer() {
   const popupSrc = fs.readFileSync(
@@ -80,7 +80,7 @@ function loadPopupPlayer() {
   const start = popupSrc.indexOf('function playWordAudio(');
   const end = popupSrc.indexOf(POPUP_EXPORT);
   assert.ok(start >= 0 && end > start,
-    'vendor/popup.js 必须含 playWordAudio 及其 __hibikiPlayWordAudioUrl 导出');
+    'vendor/popup.js 必须含 playWordAudio 及其 __fushiPlayWordAudioUrl 导出');
   const slice = popupSrc.slice(start, end + POPUP_EXPORT.length);
   const played = [];
   const paused = [];
@@ -98,7 +98,7 @@ function loadPopupPlayer() {
   const ctx = { window: windowObj, Audio: FakeAudio };
   vm.createContext(ctx);
   vm.runInContext(slice, ctx);
-  return { play: windowObj.__hibikiPlayWordAudioUrl, played, paused };
+  return { play: windowObj.__fushiPlayWordAudioUrl, played, paused };
 }
 
 test('playWordAudio(popup): 用 HTML5 Audio 播放并返回 true', async () => {

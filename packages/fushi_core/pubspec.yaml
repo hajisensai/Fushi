@@ -1,0 +1,22 @@
+name: fushi_core
+description: Shared models, database, language config, and i18n for Hibiki
+publish_to: none
+
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+  flutter: ">=3.41.6"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  drift: ">=2.33.0 <2.34.0"
+  sqlite3: ">=2.4.0 <4.0.0"
+  sqlite3_flutter_libs: ^0.5.28
+  path: ^1.8.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  drift_dev: ^2.23.0
+  build_runner: ^2.3.3

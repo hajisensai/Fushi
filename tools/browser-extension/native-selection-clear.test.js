@@ -5,7 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 // TODO-1279 行为守卫：扩展 Shift 悬停查词时，浏览器会在 Shift 按住+指针移动时把「原生文本选区」
-// 从既有 caret 扩到指针 → 与我们自绘的覆盖层高亮（#hibiki-highlight-overlay）叠出一条多余的蓝色
+// 从既有 caret 扩到指针 → 与我们自绘的覆盖层高亮（#fushi-highlight-overlay）叠出一条多余的蓝色
 // 原生选区（用户报「一个我们的选区、一个浏览器自带的蓝色选区」）。修复：纯悬停（e.buttons===0）
 // 扫描时调 window.getSelection().removeAllRanges() 清掉原生选区，只留覆盖层；用户手动按住键拖拽
 // 划选复制（e.buttons!==0）不清，保住复制能力。这里在受控 vm 里真加载 content.js、捕获它注册的
@@ -74,8 +74,8 @@ function loadContent({ collapsed = false } = {}) {
     innerWidth: 1200, innerHeight: 800,
     getSelection: () => nativeSelection,
     getComputedStyle: () => ({ getPropertyValue: () => '' }),
-    // 覆盖层从 hoshiSelection.selection.ranges 只读取几何；给一个含 ranges 的最小取词状态。
-    hoshiSelection: {
+    // 覆盖层从 fushiSelection.selection.ranges 只读取几何；给一个含 ranges 的最小取词状态。
+    fushiSelection: {
       selection: { ranges: [{ node: { textContent: '世界です' }, start: 0, end: 2 }], text: '世界' },
       getCharacterAtPoint: () => ({ node: { textContent: '世界です', nodeType: 3 }, offset: 0 }),
       selectFromPosition() { return '世界'; },

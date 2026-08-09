@@ -1,0 +1,501 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
+
+import '../../helpers/source_guard.dart';
+
+/// BUG-278 / TODO-367：退出阅读 / 停止会话后有声书仍在播放。
+///
+/// 根因：[AudiobookSession.stop] 在 dispose 控制器前只 `pause()`（just_audio 语义
+/// 「保留解码器以便快速恢复」，不释放 native 资源），紧随的同步 `dispose()` 抢不过
+/// 异步的平台拆除，Android(ExoPlayer) 上表现为停止后音频仍在响。
+///
+/// 修复：控制器新增可 await 的 [AudiobookPlayerController.stopPlayback]（真正 stop
+/// 主播放器与 clip 播放器、释放解码器、force-flush 位置），[AudiobookSession.stop]
+/// 改为 `await controller.stopPlayback()` 再 `dispose()`。
+///
+/// 行为层断言（just_audio 公开播放态）：stopPlayback 把正在播放的主播放器停下。
+/// 撤掉 stopPlayback 里的 `_player.stop()`（退回只 pause / 不停）则播放器仍 playing
+/// → 红。另加源码守卫钉住 session.stop 用的是 stopPlayback 而非裸 pause。
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('AudiobookPlayerController.stopPlayback (BUG-278)', () {
+    test('releases the native player (stop), not just pause', () async {
+      final _FakeJustAudioPlatform plat = _installFakeAudioPlatform();
+
+      final AudiobookPlayerController controller = AudiobookPlayerController();
+      addTearDown(controller.dispose);
+      final File audioFile = _tempAudio('hibiki-audiobook-exit-stop.mp3');
+      addTearDown(() {
+        if (audioFile.existsSync()) audioFile.deleteSync();
+      });
+
+      await controller.load(
+        audiobook: _audiobook(),
+        audioFiles: <File>[audioFile],
+      );
+
+      // play() 激活 native 平台并把 playing=true（控制器内 play 是 unawaited，
+      // 故让微任务/事件循环把 _setPlatformActive(true) → init 跑完）。
+      await controller.play();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(
+        controller.debugMainPlayerPlaying,
+        isTrue,
+        reason: 'precondition: 播放器应处于播放态',
+      );
+      expect(plat.players, isNotEmpty,
+          reason: 'precondition: play 应激活 native 平台（创建 player）');
+
+      // 基线：stop 之前的 native 释放次数（激活过程本身会切换 idle↔native）。
+      final int disposeBefore = plat.disposePlayerCalls;
+      await controller.stopPlayback();
+
+      expect(
+        controller.debugMainPlayerPlaying,
+        isFalse,
+        reason: '停止会话后主播放器不应在播放',
+      );
+      // 关键区分：stop() 走 _setPlatformActive(false) 释放当前 native 解码器
+      // （触发一次 disposePlayer）；只 pause() 则保留解码器（计数不增），Android 上
+      // 仍占输出 / 可秒续 → 用户感知「退出后还在响」。断言 stop 期间释放次数 +1，
+      // 把「真停止/释放」钉死，挡住退回 pause 的回归。
+      expect(plat.disposePlayerCalls, greaterThan(disposeBefore),
+          reason: '停止会话必须释放 native 解码器（stop→disposePlayer 计数增加），'
+              '不能只 pause（解码器存活、停止后仍在响）');
+    });
+
+    test('stopPlayback then dispose does not crash (no platform race)',
+        () async {
+      _installFakeAudioPlatform();
+
+      final AudiobookPlayerController controller = AudiobookPlayerController();
+      final File audioFile = _tempAudio('hibiki-audiobook-exit-dispose.mp3');
+      addTearDown(() {
+        if (audioFile.existsSync()) audioFile.deleteSync();
+      });
+
+      await controller.load(
+        audiobook: _audiobook(),
+        audioFiles: <File>[audioFile],
+      );
+      await controller.play();
+      expect(controller.debugMainPlayerPlaying, isTrue);
+
+      // 退出/停止路径：先 await stop 让平台切换 settle，再 dispose（不竞争）。
+      await controller.stopPlayback();
+      controller.dispose();
+
+      await Future<void>.delayed(Duration.zero);
+    });
+
+    test('BUG-1240 immediate play then stop waits for platform activation',
+        () async {
+      final _FakeJustAudioPlatform plat = _installFakeAudioPlatform();
+      final AudiobookPlayerController controller = AudiobookPlayerController();
+      addTearDown(controller.dispose);
+      final File audioFile =
+          _tempAudio('hibiki-audiobook-immediate-play-stop.mp3');
+      addTearDown(() {
+        if (audioFile.existsSync()) audioFile.deleteSync();
+      });
+
+      await controller.load(
+        audiobook: _audiobook(),
+        audioFiles: <File>[audioFile],
+      );
+      plat.playGate = Completer<void>();
+
+      final Future<void> play = controller.play();
+      await plat.playStarted.future;
+      final int disposeBefore = plat.disposePlayerCalls;
+      final Future<void> stop = controller.stopPlayback();
+      await Future<void>.delayed(Duration.zero);
+      expect(plat.disposePlayerCalls, disposeBefore,
+          reason: 'stop must not deactivate a platform with play in flight');
+
+      plat.playGate!.complete();
+      await play;
+      await stop;
+      expect(plat.disposePlayerCalls, greaterThan(disposeBefore));
+    });
+
+    test('BUG-1240 repeated stop shares one terminal operation', () async {
+      final _FakeJustAudioPlatform plat = _installFakeAudioPlatform();
+      final AudiobookPlayerController controller = AudiobookPlayerController();
+      addTearDown(controller.dispose);
+      final File audioFile = _tempAudio('hibiki-audiobook-repeat-stop.mp3');
+      addTearDown(() {
+        if (audioFile.existsSync()) audioFile.deleteSync();
+      });
+
+      await controller.load(
+        audiobook: _audiobook(),
+        audioFiles: <File>[audioFile],
+      );
+      await controller.play();
+      final int disposeBefore = plat.disposePlayerCalls;
+
+      final Future<void> first = controller.stopPlayback();
+      final Future<void> second = controller.stopPlayback();
+      expect(identical(first, second), isTrue);
+      await Future.wait<void>(<Future<void>>[first, second]);
+      expect(plat.disposePlayerCalls, disposeBefore + 1,
+          reason: 'repeated stop must not run native teardown twice');
+    });
+
+    test('BUG-1240 native stop failure is surfaced after stop was attempted',
+        () async {
+      final _FakeJustAudioPlatform plat = _installFakeAudioPlatform();
+      final AudiobookPlayerController controller = AudiobookPlayerController();
+      final File audioFile = _tempAudio('hibiki-audiobook-stop-error.mp3');
+      addTearDown(() {
+        if (audioFile.existsSync()) audioFile.deleteSync();
+      });
+
+      await controller.load(
+        audiobook: _audiobook(),
+        audioFiles: <File>[audioFile],
+      );
+      await controller.play();
+      bool stopAttempted = false;
+      controller.debugStopMainPlayerForTesting = () async {
+        stopAttempted = true;
+        throw PlatformException(code: 'stop-failed');
+      };
+
+      await expectLater(
+        controller.stopPlayback(),
+        throwsA(isA<PlatformException>()),
+      );
+      expect(stopAttempted, isTrue);
+      final int disposeBefore = plat.disposePlayerCalls;
+      await expectLater(
+        controller.disposeAndRelease(),
+        throwsA(isA<PlatformException>()),
+      );
+      expect(plat.disposePlayerCalls, greaterThan(disposeBefore),
+          reason: 'disposeAndRelease must still release after stop throws');
+    });
+  });
+
+  group('AudiobookPlayerController.disposeAndRelease (TODO-1212)', () {
+    test('awaits the native player release before returning (handle freed)',
+        () async {
+      final _FakeJustAudioPlatform plat = _installFakeAudioPlatform();
+
+      final AudiobookPlayerController controller = AudiobookPlayerController();
+      final File audioFile = _tempAudio('hibiki-audiobook-migrate-release.mp3');
+      addTearDown(() {
+        if (audioFile.existsSync()) audioFile.deleteSync();
+      });
+
+      await controller.load(
+        audiobook: _audiobook(),
+        audioFiles: <File>[audioFile],
+      );
+      await controller.play();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(controller.debugMainPlayerPlaying, isTrue,
+          reason: 'precondition: 播放器应处于播放态（native 平台活跃、持文件句柄）');
+
+      final int disposeBefore = plat.disposePlayerCalls;
+
+      // TODO-1212：disposeAndRelease 必须 await 底层 AudioPlayer.dispose（这一步才
+      // 真正释放 native/libmpv 音频文件句柄）。await 返回时 disposePlayer/
+      // disposeAllPlayers 必已被调用完成——**无需任何额外 pump/delay**。这正是数据根
+      // 迁移依赖的契约：stop 返回 = 音频文件句柄已放，rename 数据根不再撞「文件被占用」。
+      // 旧的 fire-and-forget `dispose()`（丢弃 `_player.dispose()` 的 Future）做不到。
+      await controller.disposeAndRelease();
+
+      expect(plat.disposePlayerCalls, greaterThan(disposeBefore),
+          reason: 'disposeAndRelease 必须 await 到底层 native 释放完成再返回，'
+              '否则迁移 rename 时句柄仍在异步释放中会撞「文件被占用」');
+      // 已 super.dispose()——不再 addTearDown(controller.dispose)（避免二次 dispose）。
+    });
+  });
+
+  group('AudiobookSession.stop source guard (BUG-278)', () {
+    test('stop() releases the controller via stopPlayback() before dispose()',
+        () {
+      final File sessionFile = File(
+        '${Directory.current.path}/lib/src/media/audiobook/audiobook_session.dart',
+      );
+      expect(sessionFile.existsSync(), isTrue,
+          reason: 'audiobook_session.dart 应存在于预期路径');
+      final String source = sessionFile.readAsStringSync();
+
+      // 取真实 stop 实现（public stop 只负责生命周期队列）做局部断言。窗口=方法体
+      // （花括号配对），不再是 `stopIdx + 3000` 的定长切片：该方法体实测 2016 字符，
+      // 旧窗口越界 984 字符读进后面的方法——下面两条 isFalse 断言（不得退回
+      // `controller.pause()` / 同步 `controller.dispose();`）本来是在替邻居方法背锅，
+      // 邻居里出现任一写法就会让本守卫凭空变红。
+      final String stopBody =
+          methodBody(source, 'Future<void> _stopInternal() async');
+
+      expect(stopBody.contains('controller.stopPlayback()'), isTrue,
+          reason: 'stop() 必须调 controller.stopPlayback() 真正止声/释放解码器');
+      // 守卫回归：不得退回到只 pause（pause 不释放 native，停止后仍在响）。
+      expect(stopBody.contains('await controller.pause()'), isFalse,
+          reason: 'stop() 不应只 controller.pause()（pause 不释放 native 资源）');
+      // TODO-1212：stop() 必须用可 await 的 disposeAndRelease 释放句柄（真放掉 libmpv
+      // 音频文件句柄再返回），不得退回同步 controller.dispose()（fire-and-forget，返回
+      // 时句柄仍异步释放中 → 数据根迁移 rename 撞「文件被占用」）。
+      expect(stopBody.contains('await controller.disposeAndRelease()'), isTrue,
+          reason: 'stop() 必须 await controller.disposeAndRelease() 真放掉音频文件句柄');
+      expect(stopBody.contains('controller.dispose();'), isFalse,
+          reason: 'stop() 不应用同步 controller.dispose()（fire-and-forget 释放句柄）');
+    });
+
+    test('disposeAndRelease awaits the underlying _player.dispose()', () {
+      final File controllerFile = File(
+        '${Directory.current.path}/../packages/fushi_audio/lib/src/audiobook/'
+        'audiobook_controller.dart',
+      );
+      expect(controllerFile.existsSync(), isTrue,
+          reason: 'audiobook_controller.dart 应存在于预期路径');
+      final String source = controllerFile.readAsStringSync();
+
+      // 窗口=方法体（花括号配对），不再是 `idx + 1200`：该方法体实测 759 字符，
+      // 旧窗口越界 441 字符读进下一个方法。
+      final String body =
+          methodBody(source, 'Future<void> disposeAndRelease() async');
+      // 关键不变量：底层释放必须被 await（`await _player.dispose()`），否则句柄仍
+      // fire-and-forget 释放，迁移撞占用。
+      expect(body.contains('await _player.dispose();'), isTrue,
+          reason: 'disposeAndRelease 必须 await _player.dispose()（真释放文件句柄）');
+    });
+  });
+}
+
+File _tempAudio(String name) {
+  final File audioFile = File('${Directory.systemTemp.path}/$name');
+  if (!audioFile.existsSync()) {
+    audioFile.writeAsBytesSync(const <int>[0]);
+  }
+  return audioFile;
+}
+
+Audiobook _audiobook() {
+  return Audiobook()
+    ..bookKey = 'book'
+    ..audioPaths = const <String>[]
+    ..audioRoot = null
+    ..alignmentFormat = 'srt'
+    ..alignmentPath = '';
+}
+
+_FakeJustAudioPlatform _installFakeAudioPlatform() {
+  const MethodChannel audioSessionChannel =
+      MethodChannel('com.ryanheise.audio_session');
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(audioSessionChannel, (_) async => null);
+  addTearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(audioSessionChannel, null);
+  });
+
+  final JustAudioPlatform previousPlatform = JustAudioPlatform.instance;
+  final _FakeJustAudioPlatform platform = _FakeJustAudioPlatform();
+  JustAudioPlatform.instance = platform;
+  addTearDown(() {
+    JustAudioPlatform.instance = previousPlatform;
+  });
+  return platform;
+}
+
+class _FakeJustAudioPlatform extends JustAudioPlatform {
+  final List<_FakeAudioPlayer> players = <_FakeAudioPlayer>[];
+  Completer<void> playStarted = Completer<void>();
+  Completer<void>? playGate;
+
+  /// just_audio 释放某个 player 平台时的调用计数。`stop()` 切到 idle 平台会先
+  /// `disposePlayer(native)`，是「真释放 native 解码器」的可观测信号；`pause()`
+  /// 不触发。
+  int disposePlayerCalls = 0;
+
+  @override
+  Future<AudioPlayerPlatform> init(InitRequest request) async {
+    final _FakeAudioPlayer player = _FakeAudioPlayer(
+      request.id,
+      playStarted: playStarted,
+      playGate: playGate,
+    );
+    players.add(player);
+    return player;
+  }
+
+  @override
+  Future<DisposePlayerResponse> disposePlayer(
+    DisposePlayerRequest request,
+  ) async {
+    disposePlayerCalls++;
+    for (final _FakeAudioPlayer p in players) {
+      if (p.id == request.id) {
+        if (p.playInFlight) {
+          throw PlatformException(
+            code: 'abort',
+            message: 'Loading interrupted by stop',
+          );
+        }
+        await p.dispose(DisposeRequest());
+      }
+    }
+    return DisposePlayerResponse();
+  }
+
+  @override
+  Future<DisposeAllPlayersResponse> disposeAllPlayers(
+    DisposeAllPlayersRequest request,
+  ) async {
+    disposePlayerCalls++;
+    for (final _FakeAudioPlayer p in players) {
+      await p.dispose(DisposeRequest());
+    }
+    return DisposeAllPlayersResponse();
+  }
+}
+
+/// 立即完成 load/seek（不挂起），让 play() 能真正激活并保持 playing 状态。
+class _FakeAudioPlayer extends AudioPlayerPlatform {
+  _FakeAudioPlayer(
+    super.id, {
+    required this.playStarted,
+    required this.playGate,
+  });
+
+  final StreamController<PlaybackEventMessage> _events =
+      StreamController<PlaybackEventMessage>.broadcast();
+  bool _disposed = false;
+  bool playInFlight = false;
+  final Completer<void> playStarted;
+  final Completer<void>? playGate;
+
+  @override
+  Stream<PlaybackEventMessage> get playbackEventMessageStream => _events.stream;
+
+  void _emit(int ms, ProcessingStateMessage state, {required bool playing}) {
+    if (_disposed) return;
+    _events.add(PlaybackEventMessage(
+      processingState: state,
+      updateTime: DateTime.now(),
+      updatePosition: Duration(milliseconds: ms),
+      bufferedPosition: Duration(milliseconds: ms),
+      duration: const Duration(seconds: 10),
+      icyMetadata: null,
+      currentIndex: 0,
+      androidAudioSessionId: null,
+    ));
+  }
+
+  @override
+  Future<LoadResponse> load(LoadRequest request) async {
+    // 源就绪后处于 ready（解码器存活）：pause 维持 ready，stop 切到 idle 平台。
+    _emit(request.initialPosition?.inMilliseconds ?? 0,
+        ProcessingStateMessage.ready,
+        playing: false);
+    return LoadResponse(duration: const Duration(seconds: 10));
+  }
+
+  @override
+  Future<PlayResponse> play(PlayRequest request) async {
+    playInFlight = true;
+    if (!playStarted.isCompleted) playStarted.complete();
+    await playGate?.future;
+    _emit(0, ProcessingStateMessage.ready, playing: true);
+    playInFlight = false;
+    return PlayResponse();
+  }
+
+  @override
+  Future<PauseResponse> pause(PauseRequest request) async {
+    _emit(0, ProcessingStateMessage.ready, playing: false);
+    return PauseResponse();
+  }
+
+  @override
+  Future<SeekResponse> seek(SeekRequest request) async {
+    _emit(request.position?.inMilliseconds ?? 0, ProcessingStateMessage.ready,
+        playing: false);
+    return SeekResponse();
+  }
+
+  @override
+  Future<SetAndroidAudioAttributesResponse> setAndroidAudioAttributes(
+    SetAndroidAudioAttributesRequest request,
+  ) async =>
+      SetAndroidAudioAttributesResponse();
+
+  @override
+  Future<SetAutomaticallyWaitsToMinimizeStallingResponse>
+      setAutomaticallyWaitsToMinimizeStalling(
+    SetAutomaticallyWaitsToMinimizeStallingRequest request,
+  ) async =>
+          SetAutomaticallyWaitsToMinimizeStallingResponse();
+
+  @override
+  Future<SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse>
+      setCanUseNetworkResourcesForLiveStreamingWhilePaused(
+    SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest request,
+  ) async =>
+          SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
+
+  @override
+  Future<SetLoopModeResponse> setLoopMode(SetLoopModeRequest request) async =>
+      SetLoopModeResponse();
+
+  @override
+  Future<SetPitchResponse> setPitch(SetPitchRequest request) async =>
+      SetPitchResponse();
+
+  @override
+  Future<SetPreferredPeakBitRateResponse> setPreferredPeakBitRate(
+    SetPreferredPeakBitRateRequest request,
+  ) async =>
+      SetPreferredPeakBitRateResponse();
+
+  @override
+  Future<SetShuffleModeResponse> setShuffleMode(
+    SetShuffleModeRequest request,
+  ) async =>
+      SetShuffleModeResponse();
+
+  @override
+  Future<SetShuffleOrderResponse> setShuffleOrder(
+    SetShuffleOrderRequest request,
+  ) async =>
+      SetShuffleOrderResponse();
+
+  @override
+  Future<SetSkipSilenceResponse> setSkipSilence(
+    SetSkipSilenceRequest request,
+  ) async =>
+      SetSkipSilenceResponse();
+
+  @override
+  Future<SetSpeedResponse> setSpeed(SetSpeedRequest request) async =>
+      SetSpeedResponse();
+
+  @override
+  Future<SetVolumeResponse> setVolume(SetVolumeRequest request) async =>
+      SetVolumeResponse();
+
+  @override
+  Future<SetWebCrossOriginResponse> setWebCrossOrigin(
+    SetWebCrossOriginRequest request,
+  ) async =>
+      SetWebCrossOriginResponse();
+
+  @override
+  Future<DisposeResponse> dispose(DisposeRequest request) async {
+    if (_disposed) return DisposeResponse();
+    _disposed = true;
+    await _events.close();
+    return DisposeResponse();
+  }
+}

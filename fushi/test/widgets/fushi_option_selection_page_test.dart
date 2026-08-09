@@ -1,0 +1,82 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_option_selection_page.dart';
+
+Widget _harness(Widget child) {
+  return MaterialApp(
+    theme: ThemeData(
+      useMaterial3: true,
+      platform: TargetPlatform.android,
+      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
+    ),
+    home: child,
+  );
+}
+
+List<FushiOptionSelectionOption<String>> _langs() =>
+    const <FushiOptionSelectionOption<String>>[
+      FushiOptionSelectionOption<String>(value: 'en-US', label: 'English'),
+      FushiOptionSelectionOption<String>(value: 'ja', label: '日本語'),
+      FushiOptionSelectionOption<String>(value: 'zh-CN', label: '简体中文'),
+    ];
+
+void main() {
+  testWidgets('selected entry shows a check; tapping another pops its value',
+      (WidgetTester tester) async {
+    String? popped = 'SENTINEL';
+    await tester.pumpWidget(
+      _harness(
+        Builder(
+          builder: (BuildContext context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () async {
+                  popped = await pickOption<String>(
+                    context,
+                    title: 'Language',
+                    options: _langs(),
+                    selected: 'ja',
+                  );
+                },
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    // The selected entry (日本語) renders a trailing check.
+    expect(find.byIcon(Icons.check), findsOneWidget);
+
+    await tester.tap(find.text('English'));
+    await tester.pumpAndSettle();
+    expect(popped, 'en-US');
+  });
+
+  testWidgets('never renders a search field, even for long option sets',
+      (WidgetTester tester) async {
+    final List<FushiOptionSelectionOption<int>> many =
+        List<FushiOptionSelectionOption<int>>.generate(
+      20,
+      (int i) => FushiOptionSelectionOption<int>(value: i, label: 'Item $i'),
+    );
+    await tester.pumpWidget(
+      _harness(
+        FushiOptionSelectionPage<int>(
+          title: 'Pick',
+          options: many,
+          selected: 0,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(FushiTextField), findsNothing);
+    expect(find.byType(TextField), findsNothing);
+  });
+}

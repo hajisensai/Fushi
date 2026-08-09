@@ -5,7 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 // 字幕行为守卫：全轨读取侧偏移 / 防剧透模糊 / 悬浮字幕自动查词 /
-// 全轨覆盖层 / 快捷键执行端（window.hibikiSubtitleShortcut）。
+// 全轨覆盖层 / 快捷键执行端（window.fushiSubtitleShortcut）。
 // 在受控 vm 里真加载 subtitle-panel.js，store 预置「检测轨」（非外挂），驱动 200ms tick。
 
 const PANEL = path.join(__dirname, 'subtitle-panel.js');
@@ -82,12 +82,12 @@ function loadPanel(opts) {
   const lookups = [];
   let autoLookupResets = 0;
   const windowObj = {
-    hibikiEpisodeCues: opts.store || {},
+    fushiEpisodeCues: opts.store || {},
     postMessage() {},
     addEventListener() {},
-    hibikiToast: (m) => toasts.push(m),
-    hibikiLookupAtPoint: (...args) => lookups.push(args),
-    hibikiResetAutoLookupDedupe: () => { autoLookupResets++; },
+    fushiToast: (m) => toasts.push(m),
+    fushiLookupAtPoint: (...args) => lookups.push(args),
+    fushiResetAutoLookupDedupe: () => { autoLookupResets++; },
   };
   const documentObj = {
     body,
@@ -121,10 +121,10 @@ function loadPanel(opts) {
   return {
     body, video, windowObj, toasts, storageSets, clipboard, lookups,
     autoLookupResets: () => autoLookupResets,
-    panel: () => findByIdDeep(body, 'hibiki-subtitle-panel'),
-    overlay: () => findByIdDeep(body, 'hibiki-subtitle-overlay'),
+    panel: () => findByIdDeep(body, 'fushi-subtitle-panel'),
+    overlay: () => findByIdDeep(body, 'fushi-subtitle-overlay'),
     tick: () => { const t = intervals.find((it) => it.ms === 200); if (t) t.fn(); },
-    shortcut: (a) => windowObj.hibikiSubtitleShortcut(a),
+    shortcut: (a) => windowObj.fushiSubtitleShortcut(a),
   };
 }
 
@@ -142,13 +142,13 @@ test('检测轨也有时轴偏移：读取侧平移，store 不动', () => {
   const h = loadPanel({ stored: { netflixSubtitlePanel: true }, store: jaStore() });
   const panel = h.panel();
   assert.ok(panel, '有轨时面板应显示');
-  const offsetBar = findByClassDeep(panel, 'hibiki-sub-offset')[0];
+  const offsetBar = findByClassDeep(panel, 'fushi-sub-offset')[0];
   assert.ok(offsetBar, '检测轨也必须显示时轴偏移条（asb 全轨偏移）');
   assert.notStrictEqual(offsetBar.style._props.display, 'none');
   findBtnByTitle(offsetBar, '＋0.5')[0].fire('click');
-  assert.strictEqual(h.windowObj.hibikiEpisodeCues['example.com/video/1|ja'][0].startMs, 1000,
+  assert.strictEqual(h.windowObj.fushiEpisodeCues['example.com/video/1|ja'][0].startMs, 1000,
     'store 保持原始 cue');
-  const ts = findByClassDeep(h.panel(), 'hibiki-sub-ts')[0];
+  const ts = findByClassDeep(h.panel(), 'fushi-sub-ts')[0];
   ts.fire('click');
   assert.strictEqual(h.video.currentTime, 1.5, '行 seek 用偏移后的 1500ms');
 });
@@ -202,14 +202,14 @@ test('快捷键执行端：上一句/下一句/重播/复制/偏移', () => {
   h.video.currentTime = 1.8;
   assert.strictEqual(h.shortcut('replay-cue'), true);
   assert.strictEqual(h.video.currentTime, 1);
-  // 复制当前句到剪贴板（Hibiki 剪贴板监看联动）。
+  // 复制当前句到剪贴板（Fushi 剪贴板监看联动）。
   h.video.currentTime = 1.5;
   assert.strictEqual(h.shortcut('copy-cue'), true);
   assert.deepStrictEqual(h.clipboard, ['走り出した']);
   // 偏移快捷键：+100ms 两次 → 行 seek 用 1200ms。
   assert.strictEqual(h.shortcut('offset-plus'), true);
   assert.strictEqual(h.shortcut('offset-plus'), true);
-  const ts = findByClassDeep(h.panel(), 'hibiki-sub-ts')[0];
+  const ts = findByClassDeep(h.panel(), 'fushi-sub-ts')[0];
   ts.fire('click');
   assert.strictEqual(h.video.currentTime, 1.2);
   assert.ok(h.toasts.some((t) => t.indexOf('+0.2s') >= 0), '偏移量应有 toast 反馈');

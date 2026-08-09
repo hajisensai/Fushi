@@ -1,0 +1,707 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'package:fushi/src/sync/desktop_oauth.dart';
+import 'package:fushi/src/sync/pkce_oauth.dart';
+import 'package:fushi/src/sync/sync_http.dart';
+import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_remote_listing.dart';
+import 'package:fushi/src/sync/sync_backend_file_trio_mixin.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/sync_root_migration.dart';
+import 'package:fushi/src/sync/sync_utils.dart';
+import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi/src/sync/sync_file_ref.dart';
+import 'package:fushi/src/sync/ttu_models.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+/// Dropbox sync backend via Dropbox API v2.
+///
+/// Auth: OAuth 2.0 PKCE flow.
+/// Folder IDs are path strings like `/fushi-data/BookTitle`.
+class DropboxSyncBackend extends SyncBackend
+    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults
+    implements RemoteListingCapable {
+  DropboxSyncBackend._();
+  static final DropboxSyncBackend instance = DropboxSyncBackend._();
+
+  static const _clientId = 'dv2sk1o33j6pfi8';
+
+  /// Whether a real OAuth app key has been configured. Until it is, the
+  /// backend cannot authenticate, so the UI hides it from the picker.
+  static bool get isConfigured => !_clientId.startsWith('YOUR_');
+
+  static const _redirectUri = 'fushi://auth/dropbox';
+  static const _authorizeEndpoint = 'https://www.dropbox.com/oauth2/authorize';
+  static const _tokenEndpoint = 'https://api.dropboxapi.com/oauth2/token';
+  static const _apiBase = 'https://api.dropboxapi.com/2';
+  static const _contentBase = 'https://content.dropboxapi.com/2';
+  static const _rootFolderPath = '/$kSyncRootFolderName';
+
+  String? _accessToken;
+  String? _refreshToken;
+  String? _email;
+
+  /// Shared OAuth 2.0 PKCE token exchange (verifier/challenge + code/refresh).
+  static final PkceOAuthFlow _oauth = PkceOAuthFlow(
+    clientId: _clientId,
+    tokenEndpoint: _tokenEndpoint,
+  );
+
+  // ── Auth ──────────────────────────────────────────────────────────
+
+  @override
+  Future<bool> get isAuthenticated async => _accessToken != null;
+
+  @override
+  Future<String?> get currentEmail async => _email;
+
+  String? _pendingVerifier;
+  SyncRepository? _pendingRepo;
+
+  /// Fixed loopback port for desktop OAuth. Dropbox requires an exact
+  /// redirect-URI match, so this must be registered verbatim in the Dropbox
+  /// app console as `http://localhost:9004`.
+  static const int _desktopLoopbackPort = 9004;
+
+  Uri _buildAuthUrl(String challenge, String redirectUri) =>
+      Uri.parse(_authorizeEndpoint).replace(queryParameters: {
+        'client_id': _clientId,
+        'response_type': 'code',
+        'redirect_uri': redirectUri,
+        'code_challenge': challenge,
+        'code_challenge_method': 'S256',
+        'token_access_type': 'offline',
+      });
+
+  @override
+  Future<void> authenticate({required SyncRepository repo}) async {
+    if (_clientId.startsWith('YOUR_')) {
+      throw SyncAuthError('Dropbox integration not configured');
+    }
+    _pendingVerifier = null;
+    _pendingRepo = null;
+
+    final verifier = PkceOAuthFlow.generateCodeVerifier();
+    final challenge = PkceOAuthFlow.codeChallenge(verifier);
+
+    // Desktop: loopback HTTP redirect (RFC 8252), exchange inline.
+    if (isDesktopOAuthPlatform) {
+      final result = await runDesktopOAuthLoopback(
+        buildAuthUrl: (redirectUri) => _buildAuthUrl(challenge, redirectUri),
+        port: _desktopLoopbackPort,
+      );
+      await _exchangeCode(
+        code: result.code,
+        verifier: verifier,
+        redirectUri: result.redirectUri,
+        repo: repo,
+      );
+      return;
+    }
+
+    // Mobile: custom-URI-scheme redirect handled later by [handleAuthCode].
+    final authUrl = _buildAuthUrl(challenge, _redirectUri);
+    if (!await launchUrl(authUrl, mode: LaunchMode.externalApplication)) {
+      throw SyncAuthError('Failed to launch browser for Dropbox auth');
+    }
+
+    _pendingVerifier = verifier;
+    _pendingRepo = repo;
+  }
+
+  /// Called when the app receives the redirect URI with an auth code (mobile
+  /// custom-scheme flow).
+  Future<void> handleAuthCode(String code) async {
+    final verifier = _pendingVerifier;
+    final repo = _pendingRepo;
+    if (verifier == null || repo == null) {
+      throw SyncAuthError('No pending auth flow');
+    }
+    _pendingVerifier = null;
+    _pendingRepo = null;
+
+    await _exchangeCode(
+      code: code,
+      verifier: verifier,
+      redirectUri: _redirectUri,
+      repo: repo,
+    );
+  }
+
+  /// Exchange an authorization code for tokens. [redirectUri] must match the
+  /// value sent in the authorization request (custom scheme on mobile, the
+  /// loopback URL on desktop).
+  Future<void> _exchangeCode({
+    required String code,
+    required String verifier,
+    required String redirectUri,
+    required SyncRepository repo,
+  }) async {
+    final tokens = await _oauth.exchangeCode(
+      code: code,
+      redirectUri: redirectUri,
+      verifier: verifier,
+    );
+    _accessToken = tokens.accessToken;
+    _refreshToken = tokens.refreshToken;
+
+    await _fetchUserEmail();
+    await repo.setDropboxToken(jsonEncode({'refresh_token': _refreshToken}));
+  }
+
+  @override
+  Future<void> signOut({required SyncRepository repo}) async {
+    // Revoke the token.
+    if (_accessToken != null) {
+      try {
+        await (await obtainSyncHttpClient()).post(
+          Uri.parse('$_apiBase/auth/token/revoke'),
+          headers: {'Authorization': 'Bearer $_accessToken'},
+        );
+      } catch (_) {/* best-effort: failure is non-critical here */}
+    }
+    _accessToken = null;
+    _refreshToken = null;
+    _email = null;
+    clearCache();
+    await repo.setDropboxToken(null);
+  }
+
+  @override
+  Future<bool> restoreAuth(SyncRepository repo) async {
+    final stored = await repo.getDropboxToken();
+    if (stored == null) return false;
+
+    try {
+      final json = jsonDecode(stored) as Map<String, dynamic>;
+      _refreshToken = json['refresh_token'] as String?;
+      if (_refreshToken == null) return false;
+
+      await refreshAuth();
+      await _fetchUserEmail();
+      return true;
+    } catch (_) {
+      // Refresh failed — drop the stale tokens so isAuthenticated reports
+      // false instead of letting sync proceed with an expired token and loop
+      // on non-retryable 401s (HBK-AUDIT-159).
+      _accessToken = null;
+      _refreshToken = null;
+      return false;
+    }
+  }
+
+  @override
+  Future<void> refreshAuth() async {
+    if (_refreshToken == null) {
+      throw SyncAuthError('No refresh token available');
+    }
+
+    final tokens = await _oauth.refreshTokens(refreshToken: _refreshToken!);
+    _accessToken = tokens.accessToken;
+    // Dropbox may or may not return a new refresh token.
+    if (tokens.refreshToken != null) {
+      _refreshToken = tokens.refreshToken;
+    }
+  }
+
+  Future<void> _fetchUserEmail() async {
+    try {
+      final resp = await _apiPost('/users/get_current_account', null);
+      final json = jsonDecode(resp.body) as Map<String, dynamic>;
+      _email = json['email'] as String?;
+    } catch (_) {
+      // Non-fatal.
+    }
+  }
+
+  // ── HTTP helpers ──────────────────────────────────────────────────
+
+  Map<String, String> get _authHeaders => {
+        'Authorization': 'Bearer $_accessToken',
+        'Content-Type': 'application/json',
+      };
+
+  Future<http.Response> _apiPost(
+      String endpoint, Map<String, dynamic>? body) async {
+    final resp = await (await obtainSyncHttpClient()).post(
+      Uri.parse('$_apiBase$endpoint'),
+      headers: _authHeaders,
+      body: body != null ? jsonEncode(body) : null,
+    );
+    _checkResponse(resp, 'POST $endpoint');
+    return resp;
+  }
+
+  void _checkResponse(http.Response resp, String context) {
+    if (resp.statusCode == 401) {
+      throw SyncAuthError('Authentication expired: $context');
+    }
+    if (resp.statusCode == 409) {
+      // Dropbox uses 409 for path/not_found and conflict errors.
+      final body = jsonDecode(resp.body) as Map<String, dynamic>;
+      final error = body['error'] as Map<String, dynamic>?;
+      final tag = error?['.tag'] as String?;
+      if (tag == 'path' || tag == 'path_lookup') {
+        throw SyncBackendError('Not found: $context', isRetryable: true);
+      }
+      throw SyncBackendError(
+          '$context failed: HTTP ${resp.statusCode} ${resp.body}');
+    }
+    if (resp.statusCode >= 400) {
+      throw SyncBackendError(
+          '$context failed: HTTP ${resp.statusCode} ${resp.body}');
+    }
+  }
+
+  // ── Folder operations ─────────────────────────────────────────────
+
+  @override
+  Future<String> findOrCreateRootFolder() async {
+    if (rootFolderIdCache != null) return rootFolderIdCache!;
+
+    // Fushi 改名迁移三段（找新根 → 旧根远端 move_v2 改名 → 新建）。结果经
+    // rootFolderIdCache 记忆化：每会话只真正探测一次，旧根探测仅在新根缺席时
+    // 发生（迁移完成后的稳态零额外 API 往返）。
+    final String? existing = await migrateLegacySyncRoot<String>(
+      find: (String name) async {
+        try {
+          await _apiPost('/files/get_metadata', {'path': '/$name'});
+          return '/$name';
+        } on SyncBackendError catch (e) {
+          if (e.isRetryable) return null; // 409 path/not_found：不存在。
+          rethrow;
+        }
+      },
+      renameLegacy: (String legacyPath) async {
+        // files/move_v2 = 远端整树改名（数据原地不动）；autorename=false 保证
+        // 绝不产生 `fushi-data (1)` 这种分叉根。
+        await _apiPost('/files/move_v2', {
+          'from_path': legacyPath,
+          'to_path': _rootFolderPath,
+          'autorename': false,
+        });
+        return _rootFolderPath;
+      },
+      onRenameError: (Object e, StackTrace st) => ErrorLogService.instance
+          .log('DropboxSyncBackend.migrateLegacyRoot', e, st),
+    );
+    if (existing != null) {
+      rootFolderIdCache = existing;
+      return existing;
+    }
+
+    // Create the folder.
+    try {
+      await _apiPost('/files/create_folder_v2', {
+        'path': _rootFolderPath,
+        'autorename': false,
+      });
+    } on SyncBackendError catch (e) {
+      // 409 conflict means it already exists — that is fine.
+      if (!e.message.contains('409')) rethrow;
+    }
+
+    rootFolderIdCache = _rootFolderPath;
+    return rootFolderIdCache!;
+  }
+
+  @override
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async {
+    final entries = await _listFolder(rootFolderId);
+    return entries
+        .where((e) => e['.tag'] == 'folder')
+        .map((e) => SyncFileRef(
+              id: e['path_lower'] as String? ?? e['path_display'] as String,
+              name: e['name'] as String,
+            ))
+        .toList();
+  }
+
+  @override
+  Future<String> ensureBookFolder({
+    required String bookTitle,
+    required String rootFolderId,
+    SyncCoverDataProvider? readCoverData,
+  }) async {
+    final sanitized = requireBookFolderName(bookTitle);
+
+    if (folderIdCache.containsKey(sanitized)) {
+      return folderIdCache[sanitized]!;
+    }
+
+    final folderPath = '$rootFolderId/$sanitized';
+
+    // Try to create; ignore conflict if it already exists.
+    try {
+      await _apiPost('/files/create_folder_v2', {
+        'path': folderPath,
+        'autorename': false,
+      });
+    } on SyncBackendError catch (e) {
+      if (!e.message.contains('409')) rethrow;
+    }
+
+    folderIdCache[sanitized] = folderPath;
+
+    final Uint8List? coverData = await readCoverData?.call();
+    if (coverData != null) {
+      try {
+        final format = detectCoverFormat(coverData);
+        final coverName = 'cover_1_6.${format.extension}';
+        final existing = await findContentFile(folderPath, coverName);
+        if (existing == null) {
+          await _uploadBytes(
+            '$folderPath/$coverName',
+            coverData,
+            mode: 'add',
+          );
+        }
+      } catch (_) {/* best-effort: failure is non-critical here */}
+    }
+
+    return folderPath;
+  }
+
+  // ── Metadata sync ─────────────────────────────────────────────────
+
+  @override
+  Future<SyncFileTrio> listSyncFiles(String folderId) async {
+    final entries = await _listFolder(folderId);
+    final files = entries
+        .where((e) => e['.tag'] == 'file')
+        .map((e) => SyncFileRef(
+              id: e['path_lower'] as String? ?? e['path_display'] as String,
+              name: e['name'] as String,
+            ))
+        .toList();
+
+    return SyncFileTrio(
+      progress: findSyncFileByPrefix(files, 'progress_'),
+      statistics: findSyncFileByPrefix(files, 'statistics_'),
+      audioBook: findSyncFileByPrefix(files, 'audioBook_'),
+    );
+  }
+
+  // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
+  // 这里只给出 Dropbox 的下载原语（files/download API + jsonDecode）。
+  @override
+  Future<Object?> readJsonById(String fileId) => _downloadFileJson(fileId);
+
+  @override
+  Future<void> updateProgressFile({
+    required String folderId,
+    required String? fileId,
+    required TtuProgress progress,
+  }) async {
+    final fileName =
+        progressFileName(progress.lastBookmarkModified, progress.progress);
+    await _uploadJsonFile(folderId, fileName, progress.toJson());
+    // Upload-then-delete: keep the old file until the new one is uploaded so a
+    // failed upload never destroys the only copy (HBK-AUDIT-048).
+    if (fileId != null) await _deleteFile(fileId);
+  }
+
+  @override
+  Future<void> updateStatsFile({
+    required String folderId,
+    required String? fileId,
+    required List<TtuStatistics> stats,
+  }) async {
+    final fileName = statisticsFileName(stats);
+    await _uploadJsonFile(
+        folderId, fileName, stats.map((s) => s.toJson()).toList());
+    // Upload-then-delete (HBK-AUDIT-048).
+    if (fileId != null) await _deleteFile(fileId);
+  }
+
+  @override
+  Future<void> updateAudioBookFile({
+    required String folderId,
+    required String? fileId,
+    required TtuAudioBook audioBook,
+  }) async {
+    final fileName = audioBookFileName(
+        audioBook.lastAudioBookModified, audioBook.playbackPositionSec);
+    await _uploadJsonFile(folderId, fileName, audioBook.toJson());
+    // Upload-then-delete (HBK-AUDIT-048).
+    if (fileId != null) await _deleteFile(fileId);
+  }
+
+  // ── Content file sync ─────────────────────────────────────────────
+
+  @override
+  Future<void> uploadContentFile({
+    required String folderId,
+    required String fileName,
+    required File file,
+    void Function(double progress)? onProgress,
+  }) async {
+    final fileLength = await file.length();
+    final apiArg = jsonEncode({
+      'path': '$folderId/$fileName',
+      'mode': 'overwrite',
+      'autorename': false,
+      'mute': true,
+    });
+    final request = http.StreamedRequest(
+      'POST',
+      Uri.parse('$_contentBase/files/upload'),
+    );
+    request.headers['Authorization'] = 'Bearer $_accessToken';
+    request.headers['Content-Type'] = 'application/octet-stream';
+    request.headers['Dropbox-API-Arg'] = apiArg;
+    request.contentLength = fileLength;
+
+    final response = await streamUpload(request, file, fileLength, onProgress);
+    if (response.statusCode != 200) {
+      throw SyncBackendError(
+          'Dropbox upload failed: ${response.statusCode} ${response.body}');
+    }
+  }
+
+  @override
+  Future<void> downloadContentFile({
+    required String fileId,
+    required File destination,
+    void Function(double progress)? onProgress,
+  }) async {
+    final apiArg = jsonEncode({'path': fileId});
+    final request = http.Request(
+      'POST',
+      Uri.parse('$_contentBase/files/download'),
+    );
+    request.headers['Authorization'] = 'Bearer $_accessToken';
+    request.headers['Dropbox-API-Arg'] = apiArg;
+
+    final streamedResp = await (await obtainSyncHttpClient()).send(request);
+    if (streamedResp.statusCode >= 400) {
+      throw SyncBackendError(
+          'Download failed: HTTP ${streamedResp.statusCode}');
+    }
+
+    await writeSyncStreamToFile(
+      source: streamedResp.stream,
+      destination: destination,
+      totalBytes: streamedResp.contentLength,
+      onProgress: onProgress,
+    );
+  }
+
+  @override
+  Future<SyncFileRef?> findContentFile(String folderId, String fileName) async {
+    final path = '$folderId/$fileName';
+    try {
+      final resp = await _apiPost('/files/get_metadata', {'path': path});
+      final json = jsonDecode(resp.body) as Map<String, dynamic>;
+      return SyncFileRef(
+        id: json['path_lower'] as String? ?? json['path_display'] as String,
+        name: json['name'] as String,
+      );
+    } on SyncBackendError catch (e) {
+      if (e.isRetryable) return null; // 404 / path not found.
+      rethrow;
+    }
+  }
+
+  // ── Cache ─────────────────────────────────────────────────────────
+  //
+  // 缓存字段 + 六个 cache 方法收敛进 [SyncFolderCache] mixin（恒等 folderId，无尾
+  // 斜杠规范化）。
+
+  // ── SyncAssetStore ────────────────────────────────────────────────
+
+  @override
+  Future<String> ensureNamespace(String name) async {
+    // Top-level namespace == a folder directly under the root path.
+    return ensureFolder(_rootFolderPath, name);
+  }
+
+  @override
+  Future<String> ensureFolder(String parentId, String name) async {
+    final folderPath = '$parentId/$name';
+    try {
+      await _apiPost('/files/create_folder_v2', {
+        'path': folderPath,
+        'autorename': false,
+      });
+    } on SyncBackendError catch (e) {
+      // 409 conflict means it already exists — that is fine (idempotent).
+      if (!e.message.contains('409')) rethrow;
+    }
+    return folderPath;
+  }
+
+  @override
+  Future<List<AssetEntry>> listChildren(String namespaceId) async {
+    final entries = await _listFolder(namespaceId);
+    return entries
+        .map((e) => AssetEntry(
+              id: e['path_lower'] as String? ?? e['path_display'] as String,
+              name: e['name'] as String,
+              isFolder: e['.tag'] == 'folder',
+            ))
+        .toList();
+  }
+
+  @override
+  Future<Object?> getJsonAsset(String assetId) async {
+    return _downloadFileJson(assetId);
+  }
+
+  @override
+  Future<void> putJsonAsset(
+      String namespaceId, String name, Object? json) async {
+    await _uploadJsonFile(namespaceId, name, json);
+  }
+
+  @override
+  Future<void> deleteAsset(String id, {bool isFolder = false}) async {
+    // AssetEntry.id 对 Dropbox 是路径串；delete_v2 对文件夹递归删，
+    // _deleteFile 已吞 not-found，天然幂等，isFolder 无需分支。其它错误
+    // （网络/权限/协议）必须自然抛出，否则 UI 会把真实失败误报为「已删除」。
+    await _deleteFile(id);
+  }
+
+  // ── Private helpers ───────────────────────────────────────────────
+
+  /// 一次递归列出整个同步根：Dropbox 的 `list_folder` 原生支持 `recursive`，返回的
+  /// 每个条目都带完整路径，本地按「同步根的直接子文件夹」归位即可。
+  ///
+  /// 与逐本列举拿到的是同一批文件名，只是一次拿完（分页仍走同一个 cursor 循环）。
+  @override
+  Future<RemoteListingSnapshot?> snapshotListing(String rootFolderId) async {
+    try {
+      final List<Map<String, dynamic>> entries =
+          await _listFolder(rootFolderId, recursive: true);
+      final String prefix =
+          rootFolderId.endsWith('/') ? rootFolderId : '$rootFolderId/';
+      final String prefixLower = prefix.toLowerCase();
+
+      final RemoteListingBuilder builder = RemoteListingBuilder();
+      for (final Map<String, dynamic> e in entries) {
+        final String? display =
+            e['path_display'] as String? ?? e['path_lower'] as String?;
+        final String? name = e['name'] as String?;
+        if (display == null || name == null) continue;
+        if (!display.toLowerCase().startsWith(prefixLower)) continue;
+
+        final List<String> rel = display
+            .substring(prefix.length)
+            .split('/')
+            .where((String p) => p.isNotEmpty)
+            .toList();
+        final bool isFolder = e['.tag'] == 'folder';
+        final String id =
+            e['path_lower'] as String? ?? e['path_display'] as String;
+
+        // 深度 1 = 同步根的直接子项；深度 2 = 某个书文件夹 / 命名空间下的条目。
+        // 更深的层级当前布局里不存在，忽略而不是硬塞进某个文件夹。
+        if (rel.length == 1) {
+          if (isFolder) builder.addFolder(rel.first);
+        } else if (rel.length == 2) {
+          builder.addEntry(
+            parentName: rel.first,
+            name: name,
+            id: id,
+            isFolder: isFolder,
+          );
+        }
+      }
+      return builder.build();
+    } catch (e) {
+      debugPrint('[dropbox] snapshotListing failed, falling back: $e');
+      return null;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _listFolder(
+    String path, {
+    bool recursive = false,
+  }) async {
+    final resp = await _apiPost('/files/list_folder', {
+      'path': path,
+      'include_deleted': false,
+      if (recursive) 'recursive': true,
+    });
+    var json = jsonDecode(resp.body) as Map<String, dynamic>;
+    final entries = (json['entries'] as List).cast<Map<String, dynamic>>();
+
+    while (json['has_more'] == true) {
+      final contResp = await _apiPost('/files/list_folder/continue', {
+        'cursor': json['cursor'] as String,
+      });
+      json = jsonDecode(contResp.body) as Map<String, dynamic>;
+      entries.addAll((json['entries'] as List).cast<Map<String, dynamic>>());
+    }
+
+    return entries;
+  }
+
+  Future<dynamic> _downloadFileJson(String fileId) async {
+    final apiArg = jsonEncode({'path': fileId});
+    final resp = await (await obtainSyncHttpClient()).post(
+      Uri.parse('$_contentBase/files/download'),
+      headers: {
+        'Authorization': 'Bearer $_accessToken',
+        'Dropbox-API-Arg': apiArg,
+      },
+    );
+    if (resp.statusCode >= 400) {
+      throw SyncBackendError(
+          'Download failed: HTTP ${resp.statusCode} ${resp.body}');
+    }
+    return jsonDecode(resp.body);
+  }
+
+  Future<void> _uploadJsonFile(
+      String folderId, String fileName, dynamic data) async {
+    final bytes = utf8.encode(jsonEncode(data));
+    await _uploadBytes(
+      '$folderId/$fileName',
+      bytes,
+      mode: 'overwrite',
+    );
+  }
+
+  Future<void> _uploadBytes(
+    String path,
+    List<int> bytes, {
+    String mode = 'add',
+  }) async {
+    final apiArg = jsonEncode({
+      'path': path,
+      'mode': mode,
+      'autorename': false,
+      'mute': true,
+    });
+
+    final resp = await (await obtainSyncHttpClient()).post(
+      Uri.parse('$_contentBase/files/upload'),
+      headers: {
+        'Authorization': 'Bearer $_accessToken',
+        'Dropbox-API-Arg': apiArg,
+        'Content-Type': 'application/octet-stream',
+      },
+      body: bytes,
+    );
+
+    if (resp.statusCode >= 400) {
+      throw SyncBackendError(
+          'Upload failed: HTTP ${resp.statusCode} ${resp.body}');
+    }
+  }
+
+  Future<void> _deleteFile(String path) async {
+    try {
+      await _apiPost('/files/delete_v2', {'path': path});
+    } on SyncBackendError catch (e) {
+      // Ignore not-found on delete.
+      if (!e.isRetryable) rethrow;
+    }
+  }
+}

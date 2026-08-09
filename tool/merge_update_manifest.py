@@ -40,7 +40,7 @@ fresh publish supersedes it. The extra per-asset keys are ignored by the
 client (buildReleaseFromManifest reads only name + browser_download_url).
 
 Reading/writing a file (not a git tree) keeps this offline-testable:
-hibiki/test/tools/update_manifest_publish_race_test.dart drives this script
+fushi/test/tools/update_manifest_publish_race_test.dart drives this script
 twice over one file, and tool/merge_update_manifest_test.py unit-tests
 merge_manifest() directly.
 

@@ -47,14 +47,14 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 # Must stay identical to galgameHelperRequiredFiles() in
-# hibiki/lib/src/mining/galgame_helper_installer.dart. Two copies of a contract
+# fushi/lib/src/mining/galgame_helper_installer.dart. Two copies of a contract
 # is exactly the shape that caused BUG-1345, so it is pinned by a guard test:
-# hibiki/test/mining/gal_helper_bundle_manifest_parity_test.dart parses this
+# fushi/test/mining/gal_helper_bundle_manifest_parity_test.dart parses this
 # file and fails if the two lists ever diverge.
 $RequiredFiles = @{
   'x86' = @(
-    'hibiki_voice_injector.exe',
-    'hibiki_voice_hook.dll',
+    'fushi_voice_injector.exe',
+    'fushi_voice_hook.dll',
     'LunaHook32.dll',
     'LunaHost32.dll',
     'LoaderDll.dll',
@@ -62,11 +62,11 @@ $RequiredFiles = @{
     'LocaleEmulator-LGPL-3.0.txt'
   )
   'x64' = @(
-    'hibiki_voice_injector.exe',
-    'hibiki_voice_hook.dll',
+    'fushi_voice_injector.exe',
+    'fushi_voice_hook.dll',
     'LunaHook64.dll',
     'LunaHost64.dll',
-    'unity_audio_runtime/hibiki_unity_audio_extract.exe',
+    'unity_audio_runtime/fushi_unity_audio_extract.exe',
     'unity_audio_runtime/classdata.tpk',
     'unity_audio_runtime/vgmstream-cli.exe',
     'unity_audio_runtime/avcodec-vgmstream-59.dll',

@@ -26,7 +26,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace hibiki_voice_hook::malie {
+namespace fushi_voice_hook::malie {
 
 inline constexpr uint8_t kDiesAmantesCfiKey[32] = {
     0xA4, 0xA7, 0xA6, 0xA1, 0xA0, 0xA3, 0xA2, 0xAC,
@@ -101,4 +101,4 @@ inline bool DecryptCfiRange(uint64_t offset, const uint8_t* encrypted,
   return true;
 }
 
-}  // namespace hibiki_voice_hook::malie
+}  // namespace fushi_voice_hook::malie

@@ -25,6 +25,7 @@
 #include "launch_command_line.h"
 #include "launch_failure_policy.h"
 #include "locale_emulator_launch.h"
+#include "kirikiri_launch_profile.h"
 #include "siglus_launch.h"
 #include "steam_launch.h"
 #include "luna_bridge.h"
@@ -55,49 +56,49 @@
 //     --japanese-locale  用 injector 同目录的 Locale Emulator 运行库建立日语 CP932
 //               环境，再在同一个挂起进程里完成 Hibiki 早注入。运行库不可用时告警并安全
 //               回退普通启动（launch 专用；Steam 协议启动会明确告警且不伪装已转区）。
-//     --dll     hook DLL 路径（默认取同目录 arch 匹配的 hibiki_voice_hook.dll）
+//     --dll     hook DLL 路径（默认取同目录 arch 匹配的 fushi_voice_hook.dll）
 //     --wait-ms 等待就绪事件的超时毫秒（默认 5000）
 //     --hold    注入并确认后保持运行（host 模式，维持共享内存存活）；缺省=probe 模式，
 //               确认后退出。launch 模式下 --hold 会一直挂到游戏进程退出。
 //     --follow-child-processes  等启动器产生真实游戏子进程后再注入；Ren'Py 目录签名会自动启用。
 namespace {
 
-using hibiki_voice_hook::kClipCount;
-using hibiki_voice_hook::kDiagLunaConnected;
-using hibiki_voice_hook::kDiagLunaHostReady;
-using hibiki_voice_hook::kDiagLunaInjectFailed;
-using hibiki_voice_hook::kDiagLunaOutputObserved;
-using hibiki_voice_hook::kDiagStartupAudioHooksReady;
-using hibiki_voice_hook::kDiagUnityResourceExtracted;
-using hibiki_voice_hook::kDiagUnityResourceExtractFailed;
-using hibiki_voice_hook::kDiagUnityResourceExtractorReady;
-using hibiki_voice_hook::kLoopbackMarkerCount;
-using hibiki_voice_hook::kLoopbackSeconds;
-using hibiki_voice_hook::kMaxLoopbackBytes;
-using hibiki_voice_hook::kMaxRingBytes;
-using hibiki_voice_hook::kRingSeconds;
-using hibiki_voice_hook::kSharedMagic;
-using hibiki_voice_hook::kSharedVersion;
-using hibiki_voice_hook::kStableIpcVersion;
-using hibiki_voice_hook::kTextSlotBytes;
-using hibiki_voice_hook::kTextSlotCount;
-using hibiki_voice_hook::kUnityVoiceEventCount;
-using hibiki_voice_hook::LoopbackMarker;
-using hibiki_voice_hook::ReadyEventName;
-using hibiki_voice_hook::SharedHeader;
-using hibiki_voice_hook::SharedMemoryName;
-using hibiki_voice_hook::TextSlot;
-using hibiki_voice_hook::VoiceClip;
-using hibiki_voice_hook::UnityVoiceEvent;
-using hibiki_voice_hook::InspectMappingSession;
-using hibiki_voice_hook::AdvanceUnityEventCursorIfCommitted;
-using hibiki_voice_hook::MappingSessionAction;
-using hibiki_voice_hook::LunaBridgeExports;
-using hibiki_voice_hook::LunaThreadParam;
-using hibiki_voice_hook::PFN_Luna_DetachProcess;
-using hibiki_voice_hook::PFN_Luna_InsertHookCode;
-using hibiki_voice_hook::PFN_Luna_InsertPCHooks;
-using hibiki_voice_hook::PFN_Luna_RemoveHook;
+using fushi_voice_hook::kClipCount;
+using fushi_voice_hook::kDiagLunaConnected;
+using fushi_voice_hook::kDiagLunaHostReady;
+using fushi_voice_hook::kDiagLunaInjectFailed;
+using fushi_voice_hook::kDiagLunaOutputObserved;
+using fushi_voice_hook::kDiagStartupAudioHooksReady;
+using fushi_voice_hook::kDiagUnityResourceExtracted;
+using fushi_voice_hook::kDiagUnityResourceExtractFailed;
+using fushi_voice_hook::kDiagUnityResourceExtractorReady;
+using fushi_voice_hook::kLoopbackMarkerCount;
+using fushi_voice_hook::kLoopbackSeconds;
+using fushi_voice_hook::kMaxLoopbackBytes;
+using fushi_voice_hook::kMaxRingBytes;
+using fushi_voice_hook::kRingSeconds;
+using fushi_voice_hook::kSharedMagic;
+using fushi_voice_hook::kSharedVersion;
+using fushi_voice_hook::kStableIpcVersion;
+using fushi_voice_hook::kTextSlotBytes;
+using fushi_voice_hook::kTextSlotCount;
+using fushi_voice_hook::kUnityVoiceEventCount;
+using fushi_voice_hook::LoopbackMarker;
+using fushi_voice_hook::ReadyEventName;
+using fushi_voice_hook::SharedHeader;
+using fushi_voice_hook::SharedMemoryName;
+using fushi_voice_hook::TextSlot;
+using fushi_voice_hook::VoiceClip;
+using fushi_voice_hook::UnityVoiceEvent;
+using fushi_voice_hook::InspectMappingSession;
+using fushi_voice_hook::AdvanceUnityEventCursorIfCommitted;
+using fushi_voice_hook::MappingSessionAction;
+using fushi_voice_hook::LunaBridgeExports;
+using fushi_voice_hook::LunaThreadParam;
+using fushi_voice_hook::PFN_Luna_DetachProcess;
+using fushi_voice_hook::PFN_Luna_InsertHookCode;
+using fushi_voice_hook::PFN_Luna_InsertPCHooks;
+using fushi_voice_hook::PFN_Luna_RemoveHook;
 
 // 目标与自身位数（WOW64）必须一致才能注入：x86 DLL 只能进 32 位进程，x64 只能进 64 位。
 // 返回 true 表示匹配。CREATE_SUSPENDED 的新进程也能查（此刻映像已就绪，IsWow64Process 有效）。
@@ -110,21 +111,27 @@ bool BitnessMatches(HANDLE target, bool* target_is_wow64) {
   return (self_wow != FALSE) == (tgt_wow != FALSE);
 }
 
-// 默认 DLL 路径：同注入器目录下 hibiki_voice_hook.dll。
+// 默认 DLL 路径：跟随注入器 basename。旧 Hibiki host 启动
+// hibiki_voice_injector.exe 时必须继续加载 hibiki_voice_hook.dll，使两侧共同选择旧 IPC 名；
+// 正常 Fushi 分发保持 fushi_voice_hook.dll。
 std::wstring DefaultDllPath() {
   wchar_t exe[MAX_PATH] = {0};
   const DWORD n = GetModuleFileNameW(nullptr, exe, MAX_PATH);
   if (n == 0 || n >= MAX_PATH) {
-    return L"hibiki_voice_hook.dll";
+    return L"fushi_voice_hook.dll";
   }
-  std::wstring path(exe, n);
+  const std::wstring executable_path(exe, n);
+  const bool legacy_hibiki =
+      fushi_voice_hook::ComponentUsesLegacyHibikiIpc(executable_path);
+  std::wstring path = executable_path;
   const size_t slash = path.find_last_of(L"\\/");
   if (slash != std::wstring::npos) {
     path.resize(slash + 1);
   } else {
     path.clear();
   }
-  return path + L"hibiki_voice_hook.dll";
+  return path +
+         (legacy_hibiki ? L"hibiki_voice_hook.dll" : L"fushi_voice_hook.dll");
 }
 
 // 经 CreateRemoteThread(LoadLibraryW) 把 [dll_path] 注入 [target]。成功返回 true。
@@ -197,24 +204,24 @@ int Fail(const char* msg) {
 // 把结构化失败原因打成 host 可解析的一行。人类可读诊断保持原样（诊断包/日志仍要它），
 // 这一行只是让 Hibiki 不必去猜中文串，从而能对「需要管理员 / 位数不符 / 被杀软拦下 /
 // DLL 加载慢」给出各自不同的处置与重试策略。
-void ReportFailureReason(hibiki_voice_hook::LaunchFailureReason reason,
+void ReportFailureReason(fushi_voice_hook::LaunchFailureReason reason,
                          int exit_code) {
-  if (reason == hibiki_voice_hook::LaunchFailureReason::kNone) return;
+  if (reason == fushi_voice_hook::LaunchFailureReason::kNone) return;
   fprintf(stderr, "ERR reason=%s exit=%d\n",
-          hibiki_voice_hook::LaunchFailureToken(reason), exit_code);
+          fushi_voice_hook::LaunchFailureToken(reason), exit_code);
 }
 
 // 记录失败原因并返回退出码：每个失败出口都必须同时给出这两样，否则 host 只会看到
 // 一个没有原因的非零退出。
-int FailWith(hibiki_voice_hook::LaunchFailureReason* reason_out,
-             hibiki_voice_hook::LaunchFailureReason reason, int exit_code) {
+int FailWith(fushi_voice_hook::LaunchFailureReason* reason_out,
+             fushi_voice_hook::LaunchFailureReason reason, int exit_code) {
   if (reason_out != nullptr) *reason_out = reason;
   return exit_code;
 }
 
 // LunaHook 集成（host 侧全引擎文本 hook）。
 //
-// 游戏内的 hibiki_voice_hook.dll 只覆盖 GDI 文本（TextOut/GetGlyphOutline 等），抓不到
+// 游戏内的 fushi_voice_hook.dll 只覆盖 GDI 文本（TextOut/GetGlyphOutline 等），抓不到
 // KiriKiriZ/RenPy/Unity 这类把文本走自绘/脚本 VM 的引擎。LunaHook（Textractor 的后继、
 // GPLv3）是成熟的引擎级文本 hook 引擎，内置各引擎的精确台词 hook。这里在 **host 侧（injector
 // 进程内）** 用 vendored 的 LunaHost<arch>.dll 驱动 LunaHook：LunaHost.dll 加载进本进程，
@@ -281,7 +288,7 @@ bool RegularFileExists(const std::wstring& path) {
 UnityExtractorRuntime FindUnityExtractorRuntime() {
   const std::wstring base = InjectorDir() + L"unity_audio_runtime\\";
   UnityExtractorRuntime runtime;
-  runtime.executable = base + L"hibiki_unity_audio_extract.exe";
+  runtime.executable = base + L"fushi_unity_audio_extract.exe";
   runtime.classdata = base + L"classdata.tpk";
   runtime.decoder = base + L"vgmstream-cli.exe";
   runtime.ready = RegularFileExists(runtime.executable) &&
@@ -541,7 +548,7 @@ bool ExtractUnityVoice(const UnityExtractorRuntime& runtime,
   wchar_t temp[MAX_PATH] = {0};
   const DWORD temp_len = GetTempPathW(MAX_PATH, temp);
   if (temp_len == 0 || temp_len >= MAX_PATH) return false;
-  const std::wstring dir = std::wstring(temp) + L"hibiki_gal_voice";
+  const std::wstring dir = std::wstring(temp) + L"fushi_gal_voice";
   CreateDirectoryW(dir.c_str(), nullptr);
   const std::wstring output =
       dir + L"\\" + std::to_wstring(event.timestamp_ms) + L"_" +
@@ -650,8 +657,8 @@ bool LunaPassesFilter(const wchar_t* text, int len) {
 // 其内部工作线程并发触发，原子占号同样保证 injector 侧多次调用互不撞槽。
 uint64_t LunaTextThreadId(const wchar_t* hookcode, const char* hookname,
                           const LunaThreadParam& tp) {
-  return hibiki_voice_hook::NormalizeLunaTextThreadId(
-      hibiki_voice_hook::LunaTextThreadIdFrom(
+  return fushi_voice_hook::NormalizeLunaTextThreadId(
+      fushi_voice_hook::LunaTextThreadIdFrom(
           tp.processId, tp.addr, tp.ctx, tp.ctx2, hookcode, hookname));
 }
 
@@ -660,13 +667,13 @@ uint64_t LunaTextThreadId(const wchar_t* hookcode, const char* hookname,
 // 语义分类（角色名/正文），必须保留。判据实现在 luna_text_selector.h，与单测共用。
 uint64_t LunaTextFaceId(const wchar_t* hookcode, const char* hookname,
                         const LunaThreadParam& tp) {
-  return hibiki_voice_hook::LunaTextFaceIdFrom(tp.processId, tp.addr, tp.ctx2,
+  return fushi_voice_hook::LunaTextFaceIdFrom(tp.processId, tp.addr, tp.ctx2,
                                                hookcode, hookname);
 }
 
 // Luna 侧写者状态。**必须定义在所有写路径之前**：v13 起写文本道也要在这把锁下认领，
 // 与预览槽认领共用同一把锁、同一套下标分区。
-hibiki_voice_hook::LunaTextSelector g_lunaTextSelector;
+fushi_voice_hook::LunaTextSelector g_lunaTextSelector;
 CRITICAL_SECTION g_lunaSelectCs;
 bool g_lunaSelectCsInit = false;
 alignas(8) volatile uint64_t g_lunaPreviewGeneration = 0;
@@ -677,20 +684,20 @@ void WriteLunaTextEvent(SharedHeader* header, const wchar_t* hookcode,
                         uint32_t event_kind, uint32_t event_flags,
                         const wchar_t* text, int wlen) {
   if (header == nullptr ||
-      (event_kind == hibiki_voice_hook::kTextEventLine &&
+      (event_kind == fushi_voice_hook::kTextEventLine &&
        (text == nullptr || wlen <= 0))) {
     return;
   }
   // v13：写进本线程自己那条道（Luna 在 injector 进程，用低段下标）。认领要与 ShouldWrite
   // 共用同一把进程内锁；跨进程隔离由区段划分保证，见 voice_hook_ipc.h 的分道注释。
-  hibiki_voice_hook::TextLaneWrite write;
+  fushi_voice_hook::TextLaneWrite write;
   write.thread_id = thread_id;
   write.face_id = face_id;
   write.thread_address = tp.addr;
   write.thread_context = tp.ctx;
   write.thread_context2 = tp.ctx2;
   write.process_id = tp.processId;
-  write.source_kind = hibiki_voice_hook::kTextSourceLuna;
+  write.source_kind = fushi_voice_hook::kTextSourceLuna;
   write.event_kind = event_kind;
   write.event_flags = event_flags;
   write.is_utf8 = 0;  // UTF-16LE
@@ -703,8 +710,8 @@ void WriteLunaTextEvent(SharedHeader* header, const wchar_t* hookcode,
   write.hook_code = hookcode;
   const bool locked = g_lunaSelectCsInit;
   if (locked) EnterCriticalSection(&g_lunaSelectCs);
-  hibiki_voice_hook::WriteTextLaneEvent(
-      header, 0, hibiki_voice_hook::kLunaThreadPreviewCount, write);
+  fushi_voice_hook::WriteTextLaneEvent(
+      header, 0, fushi_voice_hook::kLunaThreadPreviewCount, write);
   if (locked) LeaveCriticalSection(&g_lunaSelectCs);
 }
 
@@ -713,7 +720,7 @@ void WriteLunaTextLine(SharedHeader* header, const wchar_t* hookcode,
                        uint64_t thread_id, uint64_t face_id,
                        const wchar_t* text, int wlen) {
   WriteLunaTextEvent(header, hookcode, hookname, tp, thread_id, face_id,
-                     hibiki_voice_hook::kTextEventLine, 0, text, wlen);
+                     fushi_voice_hook::kTextEventLine, 0, text, wlen);
 }
 
 // ── 文本线程准入（LunaHook 伪影过滤 + 显式线程选择）────
@@ -746,19 +753,19 @@ void WriteThreadPreview(SharedHeader* header, uint64_t thread_id,
     return;
   }
   EnterCriticalSection(&g_lunaSelectCs);
-  auto* slots = reinterpret_cast<hibiki_voice_hook::ThreadPreviewSlot*>(
+  auto* slots = reinterpret_cast<fushi_voice_hook::ThreadPreviewSlot*>(
       reinterpret_cast<uint8_t*>(header) + header->thread_preview_offset);
   const uint32_t count = (std::min)(header->thread_preview_slot_count,
-                                    hibiki_voice_hook::kLunaThreadPreviewCount);
-  hibiki_voice_hook::ThreadPreviewSlot* slot =
-      hibiki_voice_hook::FindThreadPreviewSlot(slots, count, thread_id);
+                                    fushi_voice_hook::kLunaThreadPreviewCount);
+  fushi_voice_hook::ThreadPreviewSlot* slot =
+      fushi_voice_hook::FindThreadPreviewSlot(slots, count, thread_id);
   if (slot == nullptr) {
     LeaveCriticalSection(&g_lunaSelectCs);
     return;  // 只有 64 条同时存活线程时才会满；ThreadRemove 后的槽会立即可复用。
   }
-  const uint64_t generation = hibiki_voice_hook::NextThreadPreviewGeneration(
+  const uint64_t generation = fushi_voice_hook::NextThreadPreviewGeneration(
       &g_lunaPreviewGeneration);
-  hibiki_voice_hook::BeginThreadPreviewWrite(slot, generation);
+  fushi_voice_hook::BeginThreadPreviewWrite(slot, generation);
   if (slot->thread_id == 0) {
     slot->line_count = 0;
     slot->artifact_count = 0;
@@ -771,16 +778,16 @@ void WriteThreadPreview(SharedHeader* header, uint64_t thread_id,
                           ? 0
                           : static_cast<uint32_t>(wlen) * sizeof(wchar_t);
   const uint32_t max_bytes =
-      hibiki_voice_hook::kThreadPreviewTextChars * sizeof(wchar_t);
+      fushi_voice_hook::kThreadPreviewTextChars * sizeof(wchar_t);
   if (byte_len > max_bytes) byte_len = max_bytes;  // 截断到槽容量（wchar 边界）
   if (byte_len != 0) memcpy(slot->text, text, byte_len);
   slot->byte_len = byte_len;
   slot->event_flags =
-      is_artifact ? hibiki_voice_hook::kThreadPreviewFlagArtifact : 0u;
+      is_artifact ? fushi_voice_hook::kThreadPreviewFlagArtifact : 0u;
   slot->timestamp_ms = GetTickCount64();
-  hibiki_voice_hook::PublishThreadPreviewWrite(slot, generation);
+  fushi_voice_hook::PublishThreadPreviewWrite(slot, generation);
   // 全局计数最后发布：把它当变化信号的 reader 看到新 generation 时，槽必已是稳定偶数态。
-  hibiki_voice_hook::PublishThreadPreviewChange(
+  fushi_voice_hook::PublishThreadPreviewChange(
       &header->thread_preview_write_count);
   LeaveCriticalSection(&g_lunaSelectCs);
 }
@@ -808,14 +815,14 @@ bool LunaShouldWriteLine(uint64_t thread_id, bool is_artifact,
 
 // ── Luna_Start 的回调实现（__cdecl 默认约定）─────────────────────────────────
 // Output：全引擎精确台词入口。过滤 + 写文本环。v10.16.1.2 ABI 返回 void。
-// LunaHook 逐行诊断（env `HIBIKI_LUNA_DIAG=1` 打开）：把**每一行**（含随后被 filter/伪影/线程
+// LunaHook 逐行诊断（env `FUSHI_LUNA_DIAG=1` 打开）：把**每一行**（含随后被 filter/伪影/线程
 // 选择丢弃的）连同其 hook 上下文（hookname / hookcode 签名 / addr / ctx / ctx2）打到 stderr。用于
 // 实证「系统菜单标题（读/存档确认）是否与对话走不同 hook」——若不同则可在 hook 层白名单精确排除，
 // 若同 hook 则只能回落文本层启发式。默认关（零开销）；不改任何写入路径，纯观测。
 bool LunaDiagEnabled() {
   static const bool enabled = []() {
     char buf[8] = {0};
-    const DWORD n = GetEnvironmentVariableA("HIBIKI_LUNA_DIAG", buf, sizeof(buf));
+    const DWORD n = GetEnvironmentVariableA("FUSHI_LUNA_DIAG", buf, sizeof(buf));
     return n > 0 && buf[0] != '0';
   }();
   return enabled;
@@ -842,7 +849,7 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
     g_luna.header->hook_diagnostics |= kDiagLunaOutputObserved;
     const int raw_len = static_cast<int>(wcslen(text));
     const int normalized_len =
-        hibiki_voice_hook::LunaNormalizedTextLengthForHook(hookname, text,
+        fushi_voice_hook::LunaNormalizedTextLengthForHook(hookname, text,
                                                            raw_len);
     if (LunaDiagEnabled()) {
       char u8[1024];
@@ -864,7 +871,7 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
     if (LunaPassesFilter(text, normalized_len)) {
       // 先判伪影，再决定本行是否写入文本环。
       const bool artifact =
-          hibiki_voice_hook::LunaTextIsArtifact(text, normalized_len);
+          fushi_voice_hook::LunaTextIsArtifact(text, normalized_len);
       const uint64_t thread_id = LunaTextThreadId(hookcode, hookname, tp);
       const uint64_t face_id = LunaTextFaceId(hookcode, hookname, tp);
       // v12：预览必须写在门控**之前**且无条件（含伪影行）。预览区的全部意义就是让用户
@@ -927,7 +934,7 @@ void LunaThreadCreate(const wchar_t* hookcode, const char* hookname,
   WriteLunaTextEvent(
       g_luna.header, hookcode, hookname, tp, thread_id,
       LunaTextFaceId(hookcode, hookname, tp),
-      hibiki_voice_hook::kTextEventThreadDiscovered, embedable ? 1u : 0u,
+      fushi_voice_hook::kTextEventThreadDiscovered, embedable ? 1u : 0u,
       nullptr, 0);
 }
 // 移除事件不透传到线程目录，且不清 selected_text_thread_id / face map：同 ThreadParam 短暂
@@ -940,22 +947,22 @@ void LunaThreadRemove(const wchar_t* hookcode, const char* hookname,
   }
   const uint64_t thread_id = LunaTextThreadId(hookcode, hookname, tp);
   EnterCriticalSection(&g_lunaSelectCs);
-  auto* slots = reinterpret_cast<hibiki_voice_hook::ThreadPreviewSlot*>(
+  auto* slots = reinterpret_cast<fushi_voice_hook::ThreadPreviewSlot*>(
       reinterpret_cast<uint8_t*>(g_luna.header) +
       g_luna.header->thread_preview_offset);
   const uint32_t count =
       (std::min)(g_luna.header->thread_preview_slot_count,
-                 hibiki_voice_hook::kLunaThreadPreviewCount);
+                 fushi_voice_hook::kLunaThreadPreviewCount);
   for (uint32_t i = 0; i < count; ++i) {
     auto* slot = &slots[i];
     if (slot->thread_id != thread_id) continue;
     const uint64_t generation =
-        hibiki_voice_hook::NextThreadPreviewGeneration(
+        fushi_voice_hook::NextThreadPreviewGeneration(
             &g_lunaPreviewGeneration);
-    hibiki_voice_hook::BeginThreadPreviewWrite(slot, generation);
-    hibiki_voice_hook::ClearThreadPreviewPayload(slot);
-    hibiki_voice_hook::PublishThreadPreviewWrite(slot, generation);
-    hibiki_voice_hook::PublishThreadPreviewChange(
+    fushi_voice_hook::BeginThreadPreviewWrite(slot, generation);
+    fushi_voice_hook::ClearThreadPreviewPayload(slot);
+    fushi_voice_hook::PublishThreadPreviewWrite(slot, generation);
+    fushi_voice_hook::PublishThreadPreviewChange(
         &g_luna.header->thread_preview_write_count);
     break;
   }
@@ -973,7 +980,7 @@ void LunaHostInfo(int type, const wchar_t* log) {
       &g_luna.blocked_hook_remove_confirmations, 0, 0);
   if (confirmations >= requests) return;
   for (const std::wstring& name : g_luna.blocked_hook_names) {
-    if (hibiki_voice_hook::LunaHostLogConfirmsHookRemoval(log, name) &&
+    if (fushi_voice_hook::LunaHostLogConfirmsHookRemoval(log, name) &&
         std::find(g_luna.confirmed_blocked_hook_names.begin(),
                   g_luna.confirmed_blocked_hook_names.end(),
                   name) == g_luna.confirmed_blocked_hook_names.end()) {
@@ -996,7 +1003,7 @@ void LunaHookInsert(DWORD pid, uint64_t addr, const wchar_t* hookcode) {
     fflush(stderr);
   }
   for (const std::wstring& blocked : g_luna.blocked_hook_codes) {
-    if (!hibiki_voice_hook::LunaHookCodeMatchesBlock(blocked, hookcode)) {
+    if (!fushi_voice_hook::LunaHookCodeMatchesBlock(blocked, hookcode)) {
       continue;
     }
     if (g_luna.remove_hook == nullptr) {
@@ -1149,7 +1156,7 @@ struct LunaOptions {
 };
 
 std::string ReadUtf8File(const std::wstring& path);
-hibiki_voice_hook::LunaTargetIdentity BuildTargetIdentity(
+fushi_voice_hook::LunaTargetIdentity BuildTargetIdentity(
     const std::wstring& executable, DWORD pid);
 
 void ApplyLunaProfiles(const std::wstring& executable, DWORD pid,
@@ -1158,7 +1165,7 @@ void ApplyLunaProfiles(const std::wstring& executable, DWORD pid,
   if (options == nullptr || executable.empty()) return;
   const auto identity = BuildTargetIdentity(executable, pid);
   auto apply = [&](const std::string& tsv, const char* source) {
-    const auto match = hibiki_voice_hook::MatchLunaHookProfiles(tsv, identity);
+    const auto match = fushi_voice_hook::MatchLunaHookProfiles(tsv, identity);
     if (match.codepage > 0) options->codepage = match.codepage;
     if (match.enable_pc_hooks) options->pc_hooks = true;
     if (match.defer_until_running_ms > options->defer_until_running_ms) {
@@ -1202,7 +1209,7 @@ void ApplyLunaProfiles(const std::wstring& executable, DWORD pid,
       }
     }
   };
-  apply(hibiki_voice_hook::BuiltInLunaHookProfiles(), "built-in");
+  apply(fushi_voice_hook::BuiltInLunaHookProfiles(), "built-in");
   if (!user_profile.empty()) {
     const std::string imported = ReadUtf8File(user_profile);
     if (imported.empty()) {
@@ -1310,10 +1317,10 @@ bool ResumeLaunchedGame(HANDLE process, HANDLE thread, const char* stage) {
 int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
                  DWORD wait_ms, bool hold, HANDLE resume_thread,
                  HANDLE hold_process, const LunaOptions& luna,
-                 hibiki_voice_hook::LaunchFailureReason* reason_out = nullptr,
+                 fushi_voice_hook::LaunchFailureReason* reason_out = nullptr,
                  bool* resumed_out = nullptr,
                  bool created_suspended = false) {
-  using hibiki_voice_hook::LaunchFailureReason;
+  using fushi_voice_hook::LaunchFailureReason;
   if (reason_out != nullptr) *reason_out = LaunchFailureReason::kNone;
   if (resumed_out != nullptr) *resumed_out = false;
   bool target_wow64 = false;
@@ -1334,21 +1341,23 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   //          [loopback 标记表 kLoopbackMarkerCount*sizeof(LoopbackMarker)]
   //          [线程预览区 kThreadPreviewCount*sizeof(ThreadPreviewSlot)]。各区偏移下面填进 header。
   // v13：文本区 = 道表 + 按道分块的槽区（尺寸算法与寻址同在契约头，写读两侧共用一份）。
-  const uint64_t text_region_bytes = hibiki_voice_hook::TextRegionBytes(
-      hibiki_voice_hook::kTextLaneCount,
-      hibiki_voice_hook::kTextLaneSlotCount);
+  const uint64_t text_region_bytes = fushi_voice_hook::TextRegionBytes(
+      fushi_voice_hook::kTextLaneCount,
+      fushi_voice_hook::kTextLaneSlotCount);
   const uint64_t clip_region_bytes =
       static_cast<uint64_t>(kClipCount) * sizeof(VoiceClip);
   const uint64_t loopback_marker_bytes =
       static_cast<uint64_t>(kLoopbackMarkerCount) * sizeof(LoopbackMarker);
   const uint64_t thread_preview_bytes =
-      static_cast<uint64_t>(hibiki_voice_hook::kThreadPreviewCount) *
-      sizeof(hibiki_voice_hook::ThreadPreviewSlot);
+      static_cast<uint64_t>(fushi_voice_hook::kThreadPreviewCount) *
+      sizeof(fushi_voice_hook::ThreadPreviewSlot);
   const uint64_t total_size = sizeof(SharedHeader) + ring_capacity +
                               text_region_bytes + clip_region_bytes +
                               loopback_capacity + loopback_marker_bytes +
                               thread_preview_bytes;
-  const std::wstring shm = SharedMemoryName(pid);
+  const bool legacy_hibiki_ipc =
+      fushi_voice_hook::ComponentUsesLegacyHibikiIpc(dll_path);
+  const std::wstring shm = SharedMemoryName(pid, legacy_hibiki_ipc);
   SetLastError(ERROR_SUCCESS);
   HANDLE mapping = CreateFileMappingW(
       INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
@@ -1390,15 +1399,15 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     header->version = kSharedVersion;
     header->ipc_protocol_version = kStableIpcVersion;
     header->luna_bridge_abi_version =
-        hibiki_voice_hook::kLunaBridgeAbiVersion;
-    header->luna_vendored_version = hibiki_voice_hook::kLunaVendoredVersion;
+        fushi_voice_hook::kLunaBridgeAbiVersion;
+    header->luna_vendored_version = fushi_voice_hook::kLunaVendoredVersion;
     header->ring_capacity = ring_capacity;
     // 文本环紧随音频环形；clip 索引紧随文本环。hook DLL 据此偏移定位两区。
     header->text_region_offset = expected_text_offset;
     header->clip_region_offset = expected_clip_offset;
     // v13 分道参数：写侧认领道、读侧定位槽都只认 header 里这两个值（冗余但让 reader 自洽）。
-    header->text_lane_count = hibiki_voice_hook::kTextLaneCount;
-    header->text_lane_slot_count = hibiki_voice_hook::kTextLaneSlotCount;
+    header->text_lane_count = fushi_voice_hook::kTextLaneCount;
+    header->text_lane_slot_count = fushi_voice_hook::kTextLaneSlotCount;
     // v9：loopback 环紧随 clip 索引；标记表紧随 loopback 环。
     header->loopback_ring_offset =
         static_cast<uint32_t>(header->clip_region_offset + clip_region_bytes);
@@ -1410,7 +1419,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     // 旧 host 即使只认到 v11 的字段也不会读错位（版本号仍会先把它挡掉，这只是纵深防御）。
     header->thread_preview_offset = static_cast<uint32_t>(
         header->loopback_marker_offset + loopback_marker_bytes);
-    header->thread_preview_slot_count = hibiki_voice_hook::kThreadPreviewCount;
+    header->thread_preview_slot_count = fushi_voice_hook::kThreadPreviewCount;
   } else {
     fprintf(stderr,
             "[session] reusing live hook mapping pid=%lu text=%u audioBytes=%llu\n",
@@ -1426,7 +1435,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
             "[unity-audio] resource extractor runtime missing; Unity audio will use normal fallback\n");
   }
   // 就绪事件（auto-reset，初始未触发）；hook DLL 装好后 SetEvent。
-  const std::wstring evt = ReadyEventName(pid);
+  const std::wstring evt = ReadyEventName(pid, legacy_hibiki_ipc);
   HANDLE ready = CreateEventW(nullptr, FALSE, FALSE, evt.c_str());
   if (ready == nullptr) {
     UnmapViewOfFile(header);
@@ -1500,7 +1509,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     // 挂起窗口只用总预算的一部分：与宿主超时同时到期会让 injector 在被 kill 时恰好还没
     // resume，游戏永久挂起（见 SuspendedStartupWaitBudgetMs 的说明）。
     const unsigned long startup_budget_ms =
-        hibiki_voice_hook::SuspendedStartupWaitBudgetMs(wait_ms);
+        fushi_voice_hook::SuspendedStartupWaitBudgetMs(wait_ms);
     const ULONGLONG deadline = GetTickCount64() + startup_budget_ms;
     while ((header->hook_diagnostics & kDiagStartupAudioHooksReady) == 0 &&
            GetTickCount64() < deadline) {
@@ -1674,7 +1683,7 @@ struct LeProcessInformation : PROCESS_INFORMATION {
 };
 
 using LeCreateProcessFunction = LONG(WINAPI*)(
-    hibiki_voice_hook::LeEnvironmentBlock*, PCWSTR, PWSTR, PCWSTR, ULONG,
+    fushi_voice_hook::LeEnvironmentBlock*, PCWSTR, PWSTR, PCWSTR, ULONG,
     LPSTARTUPINFOW, LeProcessInformation*, LPSECURITY_ATTRIBUTES,
     LPSECURITY_ATTRIBUTES, PVOID, HANDLE);
 
@@ -1719,7 +1728,7 @@ bool CreateJapaneseLocaleProcess(
     return false;
   }
 
-  auto environment = hibiki_voice_hook::BuildJapaneseLocaleEnvironment();
+  auto environment = fushi_voice_hook::BuildJapaneseLocaleEnvironment();
   LeProcessInformation le_process = {};
   const LONG status = create_process(
       &environment, executable.c_str(), command_line->data(),
@@ -1780,7 +1789,7 @@ bool LooksLikeRenpyRuntime(const std::wstring& exe) {
 }
 
 void InspectFfmpegModules(DWORD pid,
-                          hibiki_voice_hook::ChildProcessCandidate* candidate) {
+                          fushi_voice_hook::ChildProcessCandidate* candidate) {
   HANDLE snapshot = CreateToolhelp32Snapshot(
       TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
   if (snapshot == INVALID_HANDLE_VALUE) return;
@@ -1789,14 +1798,14 @@ void InspectFfmpegModules(DWORD pid,
   if (Module32FirstW(snapshot, &module)) {
     do {
       const auto parsed =
-          hibiki_voice_hook::ParseFfmpegModuleName(module.szModule);
+          fushi_voice_hook::ParseFfmpegModuleName(module.szModule);
       candidate->has_avcodec =
           candidate->has_avcodec ||
-          parsed.kind == hibiki_voice_hook::FfmpegModuleKind::kAvcodec;
+          parsed.kind == fushi_voice_hook::FfmpegModuleKind::kAvcodec;
       candidate->has_avformat =
           candidate->has_avformat ||
-          parsed.kind == hibiki_voice_hook::FfmpegModuleKind::kAvformat;
-      if (hibiki_voice_hook::IsMonolithicFfmpegModuleName(module.szModule)) {
+          parsed.kind == fushi_voice_hook::FfmpegModuleKind::kAvformat;
+      if (fushi_voice_hook::IsMonolithicFfmpegModuleName(module.szModule)) {
         candidate->has_avcodec = true;
         candidate->has_avformat = true;
       }
@@ -1809,7 +1818,7 @@ DWORD FindGameChildProcess(DWORD root_pid) {
   HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
   if (snapshot == INVALID_HANDLE_VALUE) return 0;
   struct OwnedCandidate {
-    hibiki_voice_hook::ChildProcessCandidate value;
+    fushi_voice_hook::ChildProcessCandidate value;
     std::wstring name;
   };
   std::vector<OwnedCandidate> owned;
@@ -1827,7 +1836,7 @@ DWORD FindGameChildProcess(DWORD root_pid) {
     } while (Process32NextW(snapshot, &process));
   }
   CloseHandle(snapshot);
-  std::vector<hibiki_voice_hook::ChildProcessCandidate> candidates;
+  std::vector<fushi_voice_hook::ChildProcessCandidate> candidates;
   candidates.reserve(owned.size());
   for (OwnedCandidate& item : owned) {
     item.value.executable_name = item.name.c_str();
@@ -1836,11 +1845,11 @@ DWORD FindGameChildProcess(DWORD root_pid) {
   // First select descendants without module inspection, then enrich every descendant. This keeps
   // Toolhelp module snapshots scoped to the launcher's process tree.
   for (size_t i = 0; i < candidates.size(); ++i) {
-    if (hibiki_voice_hook::DescendantDepth(root_pid, i, candidates) > 0) {
+    if (fushi_voice_hook::DescendantDepth(root_pid, i, candidates) > 0) {
       InspectFfmpegModules(candidates[i].pid, &candidates[i]);
     }
   }
-  return hibiki_voice_hook::SelectGameChildProcess(root_pid, candidates);
+  return fushi_voice_hook::SelectGameChildProcess(root_pid, candidates);
 }
 
 DWORD WaitForGameChildProcess(DWORD root_pid, DWORD wait_ms) {
@@ -1858,7 +1867,7 @@ DWORD WaitForGameChildProcess(DWORD root_pid, DWORD wait_ms) {
       stable_observations = candidate == 0 ? 0 : 1;
     }
     if (candidate == 0 && GetTickCount64() - started >= 1000) {
-      hibiki_voice_hook::ChildProcessCandidate launcher;
+      fushi_voice_hook::ChildProcessCandidate launcher;
       launcher.pid = root_pid;
       InspectFfmpegModules(root_pid, &launcher);
       if (launcher.has_avcodec && launcher.has_avformat) return 0;
@@ -1935,9 +1944,9 @@ std::string ReadUtf8File(const std::wstring& path) {
                : std::string();
 }
 
-hibiki_voice_hook::LunaTargetIdentity BuildTargetIdentity(
+fushi_voice_hook::LunaTargetIdentity BuildTargetIdentity(
     const std::wstring& executable, DWORD pid) {
-  hibiki_voice_hook::LunaTargetIdentity identity;
+  fushi_voice_hook::LunaTargetIdentity identity;
   identity.executable_sha256 = Sha256File(executable);
   HANDLE snapshot = CreateToolhelp32Snapshot(
       TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
@@ -1946,7 +1955,7 @@ hibiki_voice_hook::LunaTargetIdentity BuildTargetIdentity(
   module.dwSize = sizeof(module);
   if (Module32FirstW(snapshot, &module)) {
     do {
-      std::string name = hibiki_voice_hook::LowerAscii(WideToUtf8(module.szModule));
+      std::string name = fushi_voice_hook::LowerAscii(WideToUtf8(module.szModule));
       if (!name.empty() && identity.module_sha256.find(name) ==
                                identity.module_sha256.end()) {
         identity.module_sha256.emplace(name, Sha256File(module.szExePath));
@@ -1982,7 +1991,7 @@ bool LooksLikeUnityRuntime(const std::wstring& exe) {
 // 的早注入改为延迟附着，绕过 Enigma 保护壳拒绝挂起态注入导致的 launch_or_inject_failed。
 bool LooksLikeSiglusRuntime(const std::wstring& exe) {
   const std::wstring dir = ExecutableDirectory(exe);
-  return hibiki_voice_hook::DirectoryLooksLikeSiglus(
+  return fushi_voice_hook::DirectoryLooksLikeSiglus(
       dir, [](const std::wstring& d, const wchar_t* name) {
         return FileExists(JoinPath(d, name));
       });
@@ -2020,17 +2029,38 @@ BOOL CALLBACK FindReadyGameWindow(HWND window, LPARAM param) {
   return FALSE;
 }
 
-// Enigma 完成自校验并进入游戏消息循环后再注入。只看本次子进程的可见非保护器窗口，
-// 不靠固定 Sleep 猜机器速度；进程提前退出或超时都明确失败。
-bool WaitForSiglusGameWindow(HANDLE process, DWORD pid, DWORD timeout_ms) {
+// 延迟附着必须等目标进入游戏消息循环；需要时还要等 profile 指定的运行库已加载，确保
+// 注入不会再次进入已证实会崩溃的插件启动边界。只看本次子进程，不靠固定长 Sleep 猜机器速度。
+bool ProcessHasModule(DWORD pid, const wchar_t* expected_module) {
+  if (expected_module == nullptr || expected_module[0] == L'\0') return true;
+  HANDLE snapshot = CreateToolhelp32Snapshot(
+      TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
+  if (snapshot == INVALID_HANDLE_VALUE) return false;
+  bool found = false;
+  MODULEENTRY32W module = {0};
+  module.dwSize = sizeof(module);
+  if (Module32FirstW(snapshot, &module)) {
+    do {
+      if (_wcsicmp(module.szModule, expected_module) == 0) {
+        found = true;
+        break;
+      }
+    } while (Module32NextW(snapshot, &module));
+  }
+  CloseHandle(snapshot);
+  return found;
+}
+
+bool WaitForReadyGameWindow(HANDLE process, DWORD pid, DWORD timeout_ms,
+                            const wchar_t* readiness_module = nullptr) {
   const uint64_t deadline = GetTickCount64() + timeout_ms;
   while (GetTickCount64() < deadline) {
     if (WaitForSingleObject(process, 0) == WAIT_OBJECT_0) return false;
     ReadyWindowSearch search;
     search.pid = pid;
     EnumWindows(&FindReadyGameWindow, reinterpret_cast<LPARAM>(&search));
-    if (search.found) {
-      Sleep(200);  // 让窗口创建尾部退出保护器调用栈，再装 inline hooks。
+    if (search.found && ProcessHasModule(pid, readiness_module)) {
+      Sleep(200);  // 让窗口/模块初始化尾部退出启动调用栈，再装 inline hooks。
       return true;
     }
     Sleep(50);
@@ -2078,8 +2108,8 @@ bool ReadSmallUtf8File(const std::wstring& path, std::wstring* out) {
 }
 
 std::wstring DiscoverSteamAppId(const std::wstring& executable) {
-  hibiki_voice_hook::SteamLibraryPath library;
-  if (!hibiki_voice_hook::ParseSteamLibraryPath(executable, &library)) {
+  fushi_voice_hook::SteamLibraryPath library;
+  if (!fushi_voice_hook::ParseSteamLibraryPath(executable, &library)) {
     return L"";
   }
   const std::wstring pattern = library.steamapps_dir + L"\\appmanifest_*.acf";
@@ -2094,11 +2124,11 @@ std::wstring DiscoverSteamAppId(const std::wstring& executable) {
                            &manifest)) {
       continue;
     }
-    const std::wstring install = hibiki_voice_hook::ParseAcfQuotedValue(
+    const std::wstring install = fushi_voice_hook::ParseAcfQuotedValue(
         manifest, L"installdir");
     if (_wcsicmp(install.c_str(), library.install_dir.c_str()) != 0) continue;
     const std::wstring app_id =
-        hibiki_voice_hook::ParseAcfQuotedValue(manifest, L"appid");
+        fushi_voice_hook::ParseAcfQuotedValue(manifest, L"appid");
     if (!app_id.empty() &&
         std::all_of(app_id.begin(), app_id.end(),
                     [](wchar_t c) { return c >= L'0' && c <= L'9'; })) {
@@ -2171,7 +2201,7 @@ int RunSteamLaunch(const std::wstring& exe, const std::wstring& app_id,
             "pid=%lu image=%ls\n",
             pid, expected_exe.c_str());
   } else {
-    const std::wstring uri = hibiki_voice_hook::BuildSteamRunUri(app_id);
+    const std::wstring uri = fushi_voice_hook::BuildSteamRunUri(app_id);
     const HINSTANCE launched = ShellExecuteW(
         nullptr, L"open", uri.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     if (reinterpret_cast<INT_PTR>(launched) <= 32) {
@@ -2186,7 +2216,7 @@ int RunSteamLaunch(const std::wstring& exe, const std::wstring& app_id,
       fprintf(stderr,
               "Steam 已接受启动请求，但 45 秒内未发现目标进程：%ls\n",
               expected_exe.c_str());
-      ReportFailureReason(hibiki_voice_hook::LaunchFailureReason::kSteamTimeout,
+      ReportFailureReason(fushi_voice_hook::LaunchFailureReason::kSteamTimeout,
                           1);
       return 1;
     }
@@ -2197,8 +2227,8 @@ int RunSteamLaunch(const std::wstring& exe, const std::wstring& app_id,
   ApplyLunaProfiles(expected_exe, pid, luna.profile_path, &luna);
   // Steam 路径的游戏由客户端启动、始终处于运行态，没有可恢复的挂起主线程；但失败原因
   // 同样必须回报，否则 host 只能看到一个没有原因的非零退出。
-  hibiki_voice_hook::LaunchFailureReason reason =
-      hibiki_voice_hook::LaunchFailureReason::kNone;
+  fushi_voice_hook::LaunchFailureReason reason =
+      fushi_voice_hook::LaunchFailureReason::kNone;
   const int rc = RunInjection(target, pid, dll_path, wait_ms, hold, nullptr,
                               target, luna, &reason);
   CloseHandle(target);
@@ -2206,7 +2236,7 @@ int RunSteamLaunch(const std::wstring& exe, const std::wstring& app_id,
   return rc;
 }
 
-// launch 模式：一般 CREATE_SUSPENDED 早注入；Siglus 因 Enigma 保护壳改为正常启动后附着。
+// launch 模式：一般 CREATE_SUSPENDED 早注入；已验证不兼容早注入的 profile 改为正常启动后附着。
 // 命令行含 exe 本身（CreateProcessW 约定）；workdir 缺省=exe 所在目录。
 int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
               const std::vector<std::wstring>& extra_args,
@@ -2215,7 +2245,7 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
               bool force_direct_launch, const LunaOptions& luna) {
   if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES) {
     Fail("目标 exe 不存在（--launch <exe路径>）");
-    ReportFailureReason(hibiki_voice_hook::LaunchFailureReason::kGameExeMissing,
+    ReportFailureReason(fushi_voice_hook::LaunchFailureReason::kGameExeMissing,
                         1);
     return 1;
   }
@@ -2240,7 +2270,7 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   // 反解规则逐个转义 —— 直接空格拼接会让含空格/引号的参数在游戏侧被拆成多个 argv。
   // CreateProcessW 要求缓冲可写。
   const std::wstring cmdline =
-      hibiki_voice_hook::BuildLaunchCommandLine(exe, extra_args);
+      fushi_voice_hook::BuildLaunchCommandLine(exe, extra_args);
   const auto make_command_buffer = [&cmdline]() {
     std::vector<wchar_t> buffer(cmdline.begin(), cmdline.end());
     buffer.push_back(L'\0');
@@ -2252,6 +2282,13 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   si.cb = sizeof(si);
   PROCESS_INFORMATION pi = {0};
   const bool delayed_siglus = IsSiglusGame(exe);
+  const auto* delayed_kirikiri =
+      fushi_voice_hook::FindKirikiriDelayedAttachProfile(Sha256File(exe));
+  const bool delayed_attach = delayed_siglus || delayed_kirikiri != nullptr;
+  if (delayed_kirikiri != nullptr) {
+    fprintf(stderr, "[launch] delayed-attach profile=%s\n",
+            delayed_kirikiri->id);
+  }
   const bool follow_children =
       follow_child_processes || LooksLikeRenpyRuntime(exe);
   // SteamAPI_RestartAppIfNecessary 要求游戏由 Steam 客户端启动。直接 CreateProcess
@@ -2259,8 +2296,8 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   // 已退出的首进程。Steam 游戏改走客户端协议，并自动按完整 exe 路径发现/注入真实进程。
   const std::wstring steam_app_id = DiscoverSteamAppId(exe);
   if (!force_direct_launch &&
-      hibiki_voice_hook::ChooseSteamLaunchStrategy(steam_app_id) ==
-      hibiki_voice_hook::SteamLaunchStrategy::kSteamClient) {
+      fushi_voice_hook::ChooseSteamLaunchStrategy(steam_app_id) ==
+      fushi_voice_hook::SteamLaunchStrategy::kSteamClient) {
     if (!extra_args.empty()) {
       fprintf(stderr,
               "[steam] warning: custom --arg values are not forwarded by the "
@@ -2276,7 +2313,7 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
                           effective_luna);
   }
   const DWORD creation_flags =
-      (delayed_siglus || follow_children) ? 0 : CREATE_SUSPENDED;
+      (delayed_attach || follow_children) ? 0 : CREATE_SUSPENDED;
   wchar_t previous_steam_app_id[64] = {0};
   wchar_t previous_steam_game_id[64] = {0};
   const DWORD previous_app_id_chars = GetEnvironmentVariableW(
@@ -2326,7 +2363,7 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
       fprintf(stderr, "ERR reason=elevationRequired exit=1\n");
     } else {
       ReportFailureReason(
-          hibiki_voice_hook::LaunchFailureReason::kCreateProcessFailed, 1);
+          fushi_voice_hook::LaunchFailureReason::kCreateProcessFailed, 1);
     }
     return 1;
   }
@@ -2341,19 +2378,19 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   // 而 locale 路径下 LoaderDll 无论调用方传什么都会叠加 CREATE_SUSPENDED
   // （CreateJapaneseLocaleProcess 里的 `creation_flags | CREATE_SUSPENDED`），所以只要
   // 走了 locale 就一定是挂起态——旧代码算 created_suspended 时漏了这一半。
-  const bool launched_suspended = hibiki_voice_hook::LaunchedProcessIsSuspended(
+  const bool launched_suspended = fushi_voice_hook::LaunchedProcessIsSuspended(
       (creation_flags & CREATE_SUSPENDED) != 0, locale_launched);
   bool resumed_before_discovery = false;
 
   const auto locale_resume_policy =
-      hibiki_voice_hook::SelectLocaleThreadResumePolicy(
-          locale_launched, delayed_siglus, follow_children);
+      fushi_voice_hook::SelectLocaleThreadResumePolicy(
+          locale_launched, delayed_attach, follow_children);
   if (locale_resume_policy ==
-      hibiki_voice_hook::LocaleThreadResumePolicy::kBeforeProcessDiscovery) {
+      fushi_voice_hook::LocaleThreadResumePolicy::kBeforeProcessDiscovery) {
     if (!ResumeLaunchedGame(pi.hProcess, pi.hThread, "pre-discovery")) {
       fprintf(stderr,
               "[locale] failed to resume the game before process discovery\n");
-      ReportFailureReason(hibiki_voice_hook::LaunchFailureReason::kResumeFailed,
+      ReportFailureReason(fushi_voice_hook::LaunchFailureReason::kResumeFailed,
                           1);
       TerminateProcess(pi.hProcess, 1);
       CloseHandle(pi.hThread);
@@ -2363,9 +2400,12 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
     resumed_before_discovery = true;
   }
 
-  if (delayed_siglus &&
-      !WaitForSiglusGameWindow(pi.hProcess, pi.dwProcessId, 20000)) {
-    fprintf(stderr, "Siglus 保护壳初始化/游戏窗口等待超时\n");
+  const wchar_t* readiness_module =
+      delayed_kirikiri == nullptr ? nullptr : delayed_kirikiri->readiness_module;
+  if (delayed_attach &&
+      !WaitForReadyGameWindow(pi.hProcess, pi.dwProcessId, 20000,
+                              readiness_module)) {
+    fprintf(stderr, "延迟附着等待游戏窗口/运行库就绪超时\n");
     TerminateProcess(pi.hProcess, 1);
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
@@ -2413,10 +2453,10 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   // ResumeLaunchedGame 会退到进程级 NtResumeProcess，绝不再静默跳过。
   // hold_process 让 --hold 挂到游戏退出。
   const bool must_resume_after_injection =
-      hibiki_voice_hook::MustResumeAfterInjection(launched_suspended,
+      fushi_voice_hook::MustResumeAfterInjection(launched_suspended,
                                                  resumed_before_discovery);
-  hibiki_voice_hook::LaunchFailureReason reason =
-      hibiki_voice_hook::LaunchFailureReason::kNone;
+  fushi_voice_hook::LaunchFailureReason reason =
+      fushi_voice_hook::LaunchFailureReason::kNone;
   bool resumed = false;
   const int rc = RunInjection(target_process, target_pid, dll_path, wait_ms,
                               hold, pi.hThread, target_process, effective_luna,
@@ -2433,17 +2473,17 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   const bool created_suspended = launched_suspended;
   const bool already_resumed = resumed || resumed_before_discovery;
   if (rc != 0) {
-    hibiki_voice_hook::LaunchedProcessDisposition disposition =
-        hibiki_voice_hook::DecideLaunchedProcessDisposition(created_suspended,
+    fushi_voice_hook::LaunchedProcessDisposition disposition =
+        fushi_voice_hook::DecideLaunchedProcessDisposition(created_suspended,
                                                             already_resumed,
                                                             reason);
     if (disposition ==
-        hibiki_voice_hook::LaunchedProcessDisposition::kResumeDegraded) {
+        fushi_voice_hook::LaunchedProcessDisposition::kResumeDegraded) {
       if (!ResumeLaunchedGame(pi.hProcess, pi.hThread, "degraded")) {
         fprintf(stderr, "[launch] hook failed and resuming the game failed\n");
-        reason = hibiki_voice_hook::LaunchFailureReason::kResumeFailed;
+        reason = fushi_voice_hook::LaunchFailureReason::kResumeFailed;
         disposition =
-            hibiki_voice_hook::LaunchedProcessDisposition::kTerminate;
+            fushi_voice_hook::LaunchedProcessDisposition::kTerminate;
       } else {
         fprintf(stderr,
                 "[launch] hook failed; game resumed without hooks so it still "
@@ -2451,7 +2491,7 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
       }
     }
     if (disposition ==
-        hibiki_voice_hook::LaunchedProcessDisposition::kTerminate) {
+        fushi_voice_hook::LaunchedProcessDisposition::kTerminate) {
       TerminateProcess(pi.hProcess, 1);
     }
     ReportFailureReason(reason, rc);
@@ -2523,9 +2563,9 @@ int main() {
   if ((pid == 0) == launch_exe.empty()) {
     // 两个都没给 或 两个都给了。
     return Fail(
-        "usage: hibiki_voice_injector --pid <PID> [--dll <hook.dll>] "
+        "usage: fushi_voice_injector --pid <PID> [--dll <hook.dll>] "
         "[--wait-ms N] [--hold]\n"
-        "   or: hibiki_voice_injector --launch <exe> [--workdir <dir>] "
+        "   or: fushi_voice_injector --launch <exe> [--workdir <dir>] "
         "[--japanese-locale] "
         "[--arg <a>]... [--dll <hook.dll>] [--wait-ms N] [--hold] "
         "[--follow-child-processes] [--force-direct-launch]\n"
@@ -2539,7 +2579,7 @@ int main() {
   }
   if (GetFileAttributesW(dll_path.c_str()) == INVALID_FILE_ATTRIBUTES) {
     Fail("hook DLL not found (pass --dll <path>)");
-    ReportFailureReason(hibiki_voice_hook::LaunchFailureReason::kHookDllMissing,
+    ReportFailureReason(fushi_voice_hook::LaunchFailureReason::kHookDllMissing,
                         1);
     return 1;
   }
@@ -2578,8 +2618,8 @@ int main() {
             ExecutableBaseName(target_exe).c_str());
   }
 
-  hibiki_voice_hook::LaunchFailureReason reason =
-      hibiki_voice_hook::LaunchFailureReason::kNone;
+  fushi_voice_hook::LaunchFailureReason reason =
+      fushi_voice_hook::LaunchFailureReason::kNone;
   const int rc = RunInjection(target, pid, dll_path, wait_ms, hold, nullptr,
                               nullptr, effective_luna, &reason);
   CloseHandle(target);

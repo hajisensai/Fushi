@@ -175,8 +175,8 @@ flutter build windows --release
 <summary><b>Estrutura do projeto</b></summary>
 
 ```
-hibiki/                      # Raiz do repositório (workspace Melos: hibiki_workspace)
-├── hibiki/                  # Diretório principal do aplicativo Flutter
+hibiki/                      # Raiz do repositório (workspace Melos: fushi_workspace)
+├── fushi/                  # Diretório principal do aplicativo Flutter
 │   ├── lib/
 │   │   ├── i18n/            # Internacionalização (17 idiomas, Slang)
 │   │   ├── src/

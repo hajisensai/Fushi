@@ -3,11 +3,11 @@
 
 #include "voice_hook_session.h"
 
-using hibiki_voice_hook::InspectMappingSession;
-using hibiki_voice_hook::MappingSessionAction;
-using hibiki_voice_hook::SharedHeader;
-using hibiki_voice_hook::kSharedMagic;
-using hibiki_voice_hook::kSharedVersion;
+using fushi_voice_hook::InspectMappingSession;
+using fushi_voice_hook::MappingSessionAction;
+using fushi_voice_hook::SharedHeader;
+using fushi_voice_hook::kSharedMagic;
+using fushi_voice_hook::kSharedVersion;
 
 int main() {
   constexpr uint32_t kRing = 23040000;

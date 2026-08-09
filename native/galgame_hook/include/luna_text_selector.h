@@ -1,5 +1,5 @@
-#ifndef HIBIKI_LUNA_TEXT_SELECTOR_H_
-#define HIBIKI_LUNA_TEXT_SELECTOR_H_
+#ifndef FUSHI_LUNA_TEXT_SELECTOR_H_
+#define FUSHI_LUNA_TEXT_SELECTOR_H_
 
 #include <cstddef>
 #include <cstring>
@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 // 一个完整句的最小字符数。低于它不做前缀折叠，避免把「ああ」这类叠字噪声
 // （交给 LunaTextIsArtifact 判）或短感叹句误截。
@@ -241,6 +241,6 @@ class LunaTextSelector {
   std::map<uint64_t, uint64_t> thread_face_;
 };
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook
 
-#endif  // HIBIKI_LUNA_TEXT_SELECTOR_H_
+#endif  // FUSHI_LUNA_TEXT_SELECTOR_H_

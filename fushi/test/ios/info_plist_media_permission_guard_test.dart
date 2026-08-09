@@ -1,0 +1,105 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import '../helpers/scan_scale.dart';
+
+/// BUG-531 / TODO-1020 source-scan guard: iOS hard-crashes (SIGABRT) the first
+/// time it touches the camera or photo library unless Info.plist declares the
+/// matching usage-description key. `image_picker` with `ImageSource.camera`
+/// needs `NSCameraUsageDescription`; `ImageSource.gallery` needs
+/// `NSPhotoLibraryUsageDescription`.
+///
+/// Root cause: `lib/src/creator/enhancements/camera_enhancement.dart` opens
+/// `ImageSource.camera` and several call sites open `ImageSource.gallery`, but
+/// `ios/Runner/Info.plist` originally shipped only Microphone / LocalNetwork /
+/// Bonjour keys. On iOS the OS aborts the process when a privacy-sensitive API
+/// is hit with no purpose string, so mining a card via camera/gallery crashed.
+///
+/// BUG-641: iOS 27 also aborts the process when the audiobook/audio import
+/// path opens `FilePicker` with `FileType.audio` unless Info.plist declares
+/// `NSAppleMusicUsageDescription`.
+///
+/// The actual crash is an OS-level assertion (can't run here), so this guards
+/// the *contract*: if any Dart source under `lib/` still reaches for a given
+/// [ImageSource] but Info.plist drops its usage key, this test goes red.
+void main() {
+  // Tests run with CWD = `fushi/`.
+  final Directory libDir = Directory('lib');
+  final File plistFile = File('ios/Runner/Info.plist');
+
+  // libUses 命中即短路返回，数不出扫描规模，所以枚举面单独抽出来——它是这条守卫
+  // 唯一的输入，塌成空集时 `libUses` 恒 false，两条 test 都会静默全绿。
+  List<File> scannedDartFiles() => libDir
+      .listSync(recursive: true)
+      .whereType<File>()
+      .where((File f) => f.path.endsWith('.dart'))
+      .toList();
+
+  bool libUses(String needle) {
+    for (final File entity in scannedDartFiles()) {
+      if (entity.readAsStringSync().contains(needle)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  test('扫描规模哨兵：lib/ 确实被枚举到了', () {
+    expectScanScale(scannedDartFiles().length,
+        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+  });
+
+  test('iOS Info.plist declares media usage keys for used ImageSources', () {
+    expect(libDir.existsSync(), isTrue,
+        reason: 'lib/ must exist to scan for ImageSource usage');
+    expect(plistFile.existsSync(), isTrue,
+        reason: 'BUG-531/TODO-1020 fix lives in this Info.plist');
+
+    final String plist = plistFile.readAsStringSync();
+    final bool usesCamera = libUses('ImageSource.camera');
+    final bool usesGallery = libUses('ImageSource.gallery');
+
+    if (usesCamera) {
+      expect(
+        plist.contains('<key>NSCameraUsageDescription</key>'),
+        isTrue,
+        reason: 'BUG-531/TODO-1020: lib/ opens ImageSource.camera but '
+            'ios/Runner/Info.plist is missing NSCameraUsageDescription; iOS '
+            'hard-crashes (SIGABRT) the first time the camera is accessed',
+      );
+    }
+
+    if (usesGallery) {
+      expect(
+        plist.contains('<key>NSPhotoLibraryUsageDescription</key>'),
+        isTrue,
+        reason: 'BUG-531/TODO-1020: lib/ opens ImageSource.gallery but '
+            'ios/Runner/Info.plist is missing NSPhotoLibraryUsageDescription; '
+            'iOS hard-crashes (SIGABRT) the first time the photo library is '
+            'accessed',
+      );
+    }
+  });
+
+  test('iOS Info.plist declares Apple Music usage when audio files are picked',
+      () {
+    expect(libDir.existsSync(), isTrue,
+        reason: 'lib/ must exist to scan for FileType.audio usage');
+    expect(plistFile.existsSync(), isTrue,
+        reason: 'BUG-641 fix lives in this Info.plist');
+
+    final String plist = plistFile.readAsStringSync();
+    final bool usesAudioPicker = libUses('FileType.audio');
+
+    if (usesAudioPicker) {
+      expect(
+        plist.contains('<key>NSAppleMusicUsageDescription</key>'),
+        isTrue,
+        reason: 'BUG-641: lib/ opens FilePicker with FileType.audio but '
+            'ios/Runner/Info.plist is missing NSAppleMusicUsageDescription; '
+            'iOS hard-crashes (SIGABRT/TCC) the first time audio import '
+            'requests media access',
+      );
+    }
+  });
+}

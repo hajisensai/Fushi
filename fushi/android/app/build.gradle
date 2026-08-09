@@ -1,0 +1,287 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id "org.jetbrains.kotlin.plugin.serialization"
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
+def mihonSourceApiCommit = "fdb223d657cc60b2d7145c81b7ff690b8010d7aa"
+def mihonSourceArchiveSha256 = "645e84b2a9abbe0196057d6ba9e752abd6876b7e93bd8bee8a6cbcfe8abb154c"
+def mihonSourceArchive = layout.buildDirectory.file("downloads/mihon-${mihonSourceApiCommit}.zip")
+def mihonSourceOutput = layout.buildDirectory.dir("generated/mihonSourceApi")
+
+def sha256Of = { File file ->
+    def digest = java.security.MessageDigest.getInstance("SHA-256")
+    file.withInputStream { input ->
+        byte[] buffer = new byte[64 * 1024]
+        int count
+        while ((count = input.read(buffer)) > 0) {
+            digest.update(buffer, 0, count)
+        }
+    }
+    digest.digest().collect { String.format("%02x", it) }.join()
+}
+
+// The extension ABI is generated from an exact Apache-2.0 Mihon commit at
+// build time. It is never downloaded by the installed Android app. The archive
+// hash makes the generated source deterministic and fails closed on drift.
+def prepareMihonSourceApi = tasks.register("prepareMihonSourceApi") {
+    inputs.property("commit", mihonSourceApiCommit)
+    inputs.property("sha256", mihonSourceArchiveSha256)
+    outputs.dir(mihonSourceOutput)
+    doLast {
+        File archive = mihonSourceArchive.get().asFile
+        archive.parentFile.mkdirs()
+        if (!archive.exists() || sha256Of(archive) != mihonSourceArchiveSha256) {
+            new URL("https://github.com/mihonapp/mihon/archive/${mihonSourceApiCommit}.zip")
+                .withInputStream { input ->
+                    archive.withOutputStream { output -> output << input }
+                }
+        }
+        def actualSha = sha256Of(archive)
+        if (actualSha != mihonSourceArchiveSha256) {
+            archive.delete()
+            throw new GradleException("Mihon source archive SHA-256 mismatch: ${actualSha}")
+        }
+        File output = mihonSourceOutput.get().asFile
+        delete(output)
+        copy {
+            from zipTree(archive)
+            include "mihon-${mihonSourceApiCommit}/source-api/src/main/kotlin/**/*.kt"
+            eachFile { details ->
+                details.path = details.path.replaceFirst(
+                    "mihon-${mihonSourceApiCommit}/source-api/src/main/kotlin/",
+                    "",
+                )
+            }
+            includeEmptyDirs = false
+            into output
+        }
+    }
+}
+
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader ->
+        localProperties.load(reader)
+    }
+}
+
+def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
+if (flutterVersionCode == null) {
+    flutterVersionCode = '1'
+}
+
+def flutterVersionName = localProperties.getProperty('flutter.versionName')
+if (flutterVersionName == null) {
+    flutterVersionName = '1.0'
+}
+
+// TODO-414: one-time migration floor for the Android versionCode. The CI build
+// number (--build-number) is the monotonic `git rev-list --count HEAD` commit
+// count (see release.yml / main.yml). The shipped versionCode is
+//   versionCodeBase + 100 * versionCode + abiOffset
+// 1_000_000_000 sits safely above every historically-shipped versionCode
+// (the highest ever installed was ~6603) yet leaves ~10.9M commits of headroom
+// before the int32 / Android 2.1e9 ceiling, so no user has to uninstall. The
+// old `PUBSPEC_BUILD * 1_000_000 + seq` CI formula produced versionCode ~6.6e9,
+// which overflowed int32 and exceeded Android's 2.1e9 limit, so beta/release
+// Android packages could not be built. The maxVersionCode assertion in
+// applicationVariants below fails the build loudly if it ever nears the ceiling.
+def versionCodeBase = 1000000000
+def maxVersionCode = 2100000000
+
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('key.properties')
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+def requireReleaseKeystore = {
+    if (!keystorePropertiesFile.exists()) {
+        throw new GradleException("Release signing requires android/key.properties; refusing to build a debug-signed release APK.")
+    }
+    ["keyAlias", "keyPassword", "storeFile", "storePassword"].each { key ->
+        if (!keystoreProperties[key]) {
+            throw new GradleException("Release signing property '${key}' is missing in android/key.properties.")
+        }
+    }
+    def releaseStoreFile = file("${rootProject.projectDir}/${keystoreProperties['storeFile']}")
+    if (!releaseStoreFile.exists()) {
+        throw new GradleException("Release signing storeFile '${keystoreProperties['storeFile']}' does not exist.")
+    }
+}
+
+gradle.taskGraph.whenReady { taskGraph ->
+    if (taskGraph.allTasks.any { it.name.toLowerCase().contains("release") }) {
+        requireReleaseKeystore()
+    }
+}
+
+android {
+    namespace "app.fushi.reader"
+    compileSdk 36
+    ndkVersion '28.2.13676358'
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+        freeCompilerArgs += ['-Xcontext-parameters']
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+        main.java.srcDirs += mihonSourceOutput
+    }
+
+    defaultConfig {
+        applicationId "app.fushi.reader"
+        minSdkVersion 24
+        targetSdk 35
+        versionCode flutterVersionCode.toInteger()
+        versionName flutterVersionName
+
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++23"
+                arguments "-DANDROID_STL=c++_shared"
+            }
+        }
+        ndk {
+            // abiFilters omitted: --split-per-abi in CI controls ABI splits;
+            // fat APK includes all ABIs by default
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "../../../native/fushidicts/CMakeLists.txt"
+            version "3.22.1"
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+                storeFile file("${rootProject.projectDir}/${keystoreProperties['storeFile']}")
+                storePassword keystoreProperties['storePassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
+        }
+        debug {
+        }
+    }
+
+    packagingOptions {
+        pickFirst 'lib/**/libc++_shared.so'
+        pickFirst 'META-INF/versions/9/OSGI-INF/MANIFEST.MF'
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            def appName = "hibiki"
+            def buildType = variant.buildType.name
+            def architecture = output.getFilter(com.android.build.OutputFile.ABI)
+            def newName
+
+            if ("${architecture}" == "arm64-v8a") {
+                architecture = "arm64"
+            } else if ("${architecture}" == "armeabi-v7a") {
+                architecture = "armeabi"
+            }
+
+            if ("${architecture}" == "null") {
+                if (buildType == 'debug') {
+                    newName = "${appName}_${defaultConfig.versionName}-debug.apk"
+                } else {
+                    newName = "${appName}_${defaultConfig.versionName}.apk"
+                }
+                // HBK-AUDIT-071: the fat-APK branch computed newName but never
+                // applied it, so the fat APK kept the default app-<type>.apk
+                // name. Assign it like the split-ABI branch does.
+                outputFileName = newName
+                def computed = versionCodeBase + (100 * project.android.defaultConfig.versionCode)
+                if (computed > maxVersionCode) {
+                    throw new GradleException("Android versionCode ${computed} exceeds the ${maxVersionCode} ceiling (int32 / Android limit). Reduce versionCodeBase or the build number; see TODO-414.")
+                }
+                output.versionCodeOverride = computed
+            } else {
+                if (buildType == 'debug') {
+                    newName = "${appName}_${defaultConfig.versionName}-${architecture}-debug.apk"
+                } else {
+                    newName = "${appName}_${defaultConfig.versionName}-${architecture}.apk"
+                }
+
+                def offset
+                if (architecture == "armeabi") {
+                    offset = 1
+                } else if (architecture == "arm64") {
+                    offset = 2
+                } else if (architecture == "x86_64") {
+                    offset = 3
+                }
+
+                outputFileName = newName
+                def computed = versionCodeBase + (100 * project.android.defaultConfig.versionCode) + offset
+                if (computed > maxVersionCode) {
+                    throw new GradleException("Android versionCode ${computed} exceeds the ${maxVersionCode} ceiling (int32 / Android limit). Reduce versionCodeBase or the build number; see TODO-414.")
+                }
+                output.versionCodeOverride = computed
+            }
+        }
+    }
+}
+
+flutter {
+    source '../..'
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.20"
+    implementation 'androidx.multidex:multidex:2.0.1'
+    implementation 'com.github.ankidroid:Anki-Android:2.17alpha14'
+    implementation 'com.github.umair13adil:RxLogs:v1.0.18'
+    implementation 'androidx.documentfile:documentfile:1.0.1'
+
+    // Mihon extension host ABI/runtime. Versions follow M-Extension-Server
+    // v1.0.5.0 and current extensions-lib 1.4/1.6 expectations.
+    implementation 'com.squareup.okhttp3:okhttp:5.3.2'
+    implementation 'com.squareup.okhttp3:okhttp-brotli:5.3.2'
+    implementation 'com.squareup.okhttp3:okhttp-zstd:5.3.2'
+    implementation 'org.jsoup:jsoup:1.22.2'
+    implementation 'io.reactivex:rxjava:1.3.8'
+    implementation 'io.reactivex:rxandroid:1.2.1'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json-okio:1.11.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-protobuf:1.11.0'
+    implementation 'com.github.null2264.injekt:injekt-core:4135455a2a'
+    implementation 'com.github.zhanghai.quickjs-java:quickjs-android:547f5b1597'
+    implementation 'androidx.preference:preference-ktx:1.2.1'
+    implementation platform('androidx.compose:compose-bom:2026.05.00')
+    implementation 'androidx.compose.runtime:runtime'
+}
+
+tasks.configureEach { task ->
+    if (task.name.startsWith("compile") && task.name.endsWith("Kotlin")) {
+        task.dependsOn(prepareMihonSourceApi)
+    }
+}

@@ -1,7 +1,7 @@
 # Galgame 引擎支持矩阵
 
 > 此文件由 `engine-support.yaml` 通过 `tools/generate_engine_support.py` 自动生成，禁止手工编辑。
-> 状态基线：2026-08-02；来源：`hajisensai/hibiki/docs/specs/galgame-mining/engine-adapter-plan.md`（1. 当前真相）。
+> 状态基线：2026-07-23；来源：`hajisensai/hibiki/docs/specs/galgame-mining/engine-adapter-plan.md`（1. 当前真相）。
 > “已验证”只代表下方明确列出的真实样本、版本和能力，不外推到同家族的其它游戏。
 
 ## 总览
@@ -74,27 +74,21 @@ Tests：`tests/siglus_ovk_test.cpp`、`tests/siglus_launch_test.cpp`、`tests/si
 - 别名：AI6WIN、elf AI6
 - 家族：`elf`（elf AI6 archive-based engine）
 - 当前 adapter：`hook/adapters/elf_ai6_adapter.inc`
-- 进程策略：launch=`x86_locale_emulator_then_early_injection`，attach=`supported`，follow-child=`false`
+- 进程策略：launch=`unverified`，attach=`unverified`，follow-child=`false`
 
 识别签名（所有非空项均带真实样本或运行时观察证据）：
 
-- `executable_names`：AI6WIN.exe；证据：real_sample — 媚肉の香り original-path sample, 2026-08-02
-- `pe_architectures`：x86；证据：real_sample — AI6WIN.exe PE architecture measured on the original-path sample
-- `directory_files_all`：voice.arc；证据：real_sample — Sibling voice.arc validated as u32le count plus fixed 272-byte entries
-- `runtime_modules`：dsound.dll；证据：runtime_observation — The sample exposed one 44.1 kHz stereo DirectSound software-mixed stream
-- `resource_extensions`：.arc；证据：real_sample — voice.arc entry 3 exported byte-identically as Ogg/Vorbis
-- `hashes`：algorithm=sha256, scope=game_executable, value=2373B7C70005C02A1F1666ADC4DE6413400A6C15481BFDE6EFE7FA11F8C3FC86, version=original sample；证据：real_sample — Measured from C:/biniku/AI6WIN.exe on 2026-08-02
 
 文本能力：
 
-- `luna_textouta_hook`：`implemented_unverified` — TextOutA 0x7525c690 produced the selected dialogue thread in the 2026-08-02 run; full release gates were intentionally skipped.
+- `luna_textouta_hook`：`implemented_unverified` — Candidate Luna TextOutA route; original AI6 thread selection is not verified.
 - codepage：CP932
 - 线程提示：Select the stable TextOutA dialogue thread and reject title/menu rendering threads.
 
 音频优先级：
 
-1. `ai6_voice_arc_resource` — `implemented_unverified`；格式：Ogg/Vorbis in u32le count + count x 272-byte voice.arc index；clean voice：是
-2. `directsound_pcm` — `implemented_unverified`；格式：44100 Hz / stereo / signed 16-bit in the observed sample；clean voice：否
+1. `ai6_voice_arc_resource` — `implemented_unverified`；格式：candidate Ogg/Vorbis in u32le count + count x 272-byte voice.arc index；clean voice：是
+2. `directsound_pcm` — `implemented_unverified`；格式：generic DirectSound PCM fallback；clean voice：否
 3. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
 
 真实样本证据：
@@ -102,13 +96,13 @@ Tests：`tests/siglus_ovk_test.cpp`、`tests/siglus_launch_test.cpp`、`tests/si
 
 已知限制：
 
-- The original-path E2E run passed on one x86 executable hash, but the user explicitly requested skipping the complete x86/x64 release matrix, so this entry is not promoted.
-- DirectSound and process-loopback audio are software-mixed BGM plus voice in the observed sample and must not be described as clean voice.
-- The resource adapter supports only the strictly validated fixed 272-byte index layout with stored, complete Ogg members.
+- No AI6 original-install identity/timeline ledger or same-session text-resource-card E2E is available; this adapter is offline-only and implemented_unverified.
+- DirectSound and process-loopback are mixed-output fallbacks and must not be described as clean voice.
+- The candidate resource parser accepts only the bounded fixed 272-byte index layout with stored Ogg members that pass structural/EOS validation; Ogg CRC is not validated.
 
-Fixtures：`tests/fixtures/elf_ai6_replay.json`、`../../hibiki/test/fixtures/galhook/elf_ai6_replay.json`
+Fixtures：`tests/fixtures/elf_ai6_replay.json`、`../../fushi/test/fixtures/galhook/elf_ai6_replay.json`
 
-Tests：`tests/elf_ai6_adapter_test.cpp`、`tests/resource_audio_ready_test.cpp`、`../../hibiki/test/mining/elf_ai6_pairing_test.dart`
+Tests：`tests/elf_ai6_adapter_test.cpp`、`tests/resource_audio_ready_test.cpp`、`../../fushi/test/mining/elf_ai6_pairing_test.dart`
 
 ### RealLive / old VisualArt's (`reallive`)
 

@@ -2,7 +2,7 @@
 
 Upstream: https://pub.dev/packages/desktop_drop (0.5.0, MixinNetwork).
 Vendored (was a pub-cache ci-patch) so the cross-platform URL-drag delta lives as
-tracked, diffable source. Pointed at by `hibiki/pubspec.yaml` dependency_overrides.
+tracked, diffable source. Pointed at by `fushi/pubspec.yaml` dependency_overrides.
 
 ## Deltas vs upstream 0.5.0
 
@@ -11,7 +11,7 @@ tracked, diffable source. Pointed at by `hibiki/pubspec.yaml` dependency_overrid
    it (adds a `reinitialize` method handler + shared `RegisterDropTarget`). Without
    it, drag-import shows the forbidden cursor app-wide after opening/closing a
    reader/video/lookup WebView2. Guarded by
-   `hibiki/test/media/drag_drop/desktop_drop_reinit_test.dart`.
+   `fushi/test/media/drag_drop/desktop_drop_reinit_test.dart`.
 
 2. TODO-1306 — drag a URL (browser address bar / hyperlink) to import it as a
    stream video. Upstream only extracts file paths on all three desktop platforms,
@@ -29,4 +29,4 @@ tracked, diffable source. Pointed at by `hibiki/pubspec.yaml` dependency_overrid
    The URL rides the same channel as file paths; the app classifier
    (`classifyDroppedFiles`) disambiguates URLs from file paths by scheme and routes
    them to the stream-URL import (`_importStreamUrl`). Guarded by
-   `hibiki/test/media/drag_drop/url_drop_native_guard_test.dart`.
+   `fushi/test/media/drag_drop/url_drop_native_guard_test.dart`.

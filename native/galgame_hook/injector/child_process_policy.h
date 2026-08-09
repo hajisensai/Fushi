@@ -4,7 +4,7 @@
 #include <cwchar>
 #include <vector>
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 struct ChildProcessCandidate {
   uint32_t pid = 0;
@@ -74,4 +74,4 @@ inline uint32_t SelectGameChildProcess(
   return best_pid;
 }
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook

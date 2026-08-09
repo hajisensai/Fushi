@@ -1,0 +1,264 @@
+import 'dart:io';
+
+import 'package:archive/archive.dart';
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/aggregate_snapshot.dart';
+import 'package:fushi/src/sync/collection_manifest.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi/src/sync/fushi_sync_server.dart';
+import 'package:fushi/src/sync/sync_compare_dialog.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_core/fushi_core.dart';
+
+FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
+
+class _LiveBookLibraryService implements FushiLibraryHostService {
+  // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
+  @override
+  Future<File?> clipVideoAudio(String id,
+          {required int startMs,
+          required int endMs,
+          int episodeIndex = 0,
+          int? audioStreamIndex,
+          int? audioStreamCount,
+          int audioChannels = 1,
+          String audioBitrate = '64k'}) async =>
+      null;
+
+  @override
+  Future<List<RemoteActivityEvent>> listActivityEvents(
+          {int limit = 100}) async =>
+      const <RemoteActivityEvent>[];
+
+  @override
+  Future<String?> videoCoverPath(String id) async {
+    for (final RemoteVideoInfo v in await listVideos()) {
+      if (v.id == id) return v.coverPath;
+    }
+    return null;
+  }
+
+  @override
+  Future<String?> bookCoverPath(String id) async {
+    for (final RemoteBookInfo b in await listBooks()) {
+      if (b.downloadId == id || b.title == id) return b.coverPath;
+    }
+    return null;
+  }
+
+  @override
+  Future<AggregateSnapshot> getAggregateSnapshot() async =>
+      const AggregateSnapshot();
+
+  @override
+  Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async {}
+
+  @override
+  Future<CollectionManifest> getCollectionManifest() async =>
+      CollectionManifest.empty;
+
+  @override
+  Future<CollectionManifest> mergeCollectionManifest(
+          CollectionManifest incoming) async =>
+      incoming;
+
+  const _LiveBookLibraryService(this.bookTitle);
+
+  final String bookTitle;
+
+  @override
+  Future<List<RemoteBookInfo>> listBooks() async =>
+      <RemoteBookInfo>[RemoteBookInfo(title: bookTitle, hasContent: true)];
+
+  @override
+  Future<File> exportBook(String title) async {
+    final Directory tmp =
+        Directory.systemTemp.createTempSync('hibiki_compare_live_book');
+    final File file = File('${tmp.path}/book.epub');
+    final Archive archive = Archive();
+    archive
+        .addFile(ArchiveFile('mimetype', 20, 'application/epub+zip'.codeUnits));
+    await file.writeAsBytes(ZipEncoder().encode(archive)!);
+    return file;
+  }
+
+  @override
+  Future<void> importBook(File epubFile) async {}
+
+  @override
+  Future<void> deleteBook(String title) async {}
+
+  @override
+  Future<RemoteBookProgress> getBookProgress(String bookKey) async =>
+      RemoteBookProgress.empty;
+
+  @override
+  Future<void> putBookProgress(
+    String bookKey,
+    RemoteBookProgress progress,
+  ) async {}
+
+  @override
+  Future<List<RemoteDictionaryInfo>> listDictionaries() async =>
+      <RemoteDictionaryInfo>[];
+
+  @override
+  Future<File> exportDictionary(String name) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> importDictionary(File packageFile) async {}
+
+  @override
+  Future<void> deleteDictionary(String name) async {}
+
+  @override
+  Future<List<RemoteLocalAudioInfo>> listLocalAudio() async =>
+      <RemoteLocalAudioInfo>[];
+
+  @override
+  Future<File> exportLocalAudio(String displayName) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> importLocalAudio(File packageFile) async {}
+
+  @override
+  Future<void> deleteLocalAudio(String displayName) async {}
+
+  @override
+  Future<List<RemoteAudiobookInfo>> listAudiobooks() async =>
+      <RemoteAudiobookInfo>[];
+
+  @override
+  Future<File> exportAudiobook(String bookKey) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<bool> audiobookExists(String bookKey) async => false;
+
+  @override
+  Future<void> importAudiobook(
+    File packageFile, {
+    String? bookKeyOverride,
+  }) async {}
+
+  @override
+  Future<void> deleteAudiobook(String bookKey) async {}
+
+  @override
+  Future<List<RemoteVideoInfo>> listVideos() async => <RemoteVideoInfo>[];
+
+  @override
+  Future<bool> videoExists(String id) async => false;
+
+  @override
+  Future<void> importVideoSubtitle(File subtitleFile,
+      {required String id, required String suffix}) async {}
+
+  @override
+  Future<void> importVideo(File videoFile,
+      {required String id,
+      required String title,
+      String? originalFileName}) async {}
+
+  @override
+  Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async =>
+      null;
+
+  @override
+  Future<File?> resolveVideoSubtitle(String id,
+          {String langCode = 'ja', int episodeIndex = 0}) async =>
+      null;
+
+  @override
+  Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
+    String bookKey,
+  ) async =>
+      (positionMs: 0, updatedAtMs: 0);
+
+  @override
+  Future<void> putAudiobookPosition(
+    String bookKey,
+    int positionMs,
+    int updatedAtMs,
+  ) async {}
+
+  @override
+  Future<({int positionMs, int updatedAtMs})> getVideoPosition(
+    String id, {
+    int episodeIndex = 0,
+  }) async =>
+      (positionMs: 0, updatedAtMs: 0);
+
+  @override
+  Future<void> putVideoPosition(
+    String id,
+    int positionMs,
+    int updatedAtMs, {
+    int episodeIndex = 0,
+  }) async {}
+}
+
+Future<InterconnectSyncBackend> _buildLiveBackend({
+  required FushiDatabase db,
+  required String base,
+  required String token,
+}) async {
+  final SyncRepository repo = SyncRepository(db);
+  await repo.setFushiClientUrls(<FushiClientUrl>[
+    FushiClientUrl(url: base, enabled: true),
+  ]);
+  await repo.setFushiClientToken(token);
+  final InterconnectSyncBackend backend =
+      InterconnectSyncBackend.withProbe((String url, String tok) async => true);
+  await backend.restoreAuth(repo);
+  await backend.authenticate(repo: repo);
+  return backend;
+}
+
+void main() {
+  test(
+      'Hibiki interconnect compare lists remote-only live book as downloadable',
+      () async {
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final Directory tempDir =
+        Directory.systemTemp.createTempSync('hibiki_compare_live_tmp');
+    addTearDown(() {
+      try {
+        if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    final FushiSyncServer server = FushiSyncServer(
+      syncDataDir: '${tempDir.path}/server',
+      port: 0,
+      token: 'compare-live-token',
+      allowLan: false,
+      libraryService: const _LiveBookLibraryService('LiveOnlyBook'),
+    );
+    await server.start();
+    addTearDown(server.stop);
+
+    final InterconnectSyncBackend backend = await _buildLiveBackend(
+      db: db,
+      base: 'http://127.0.0.1:${server.port}',
+      token: 'compare-live-token',
+    );
+    addTearDown(backend.clearCache);
+
+    final List<SyncCompareEntry> entries =
+        await fetchCompareDataForTest(db, backend);
+    final SyncCompareEntry liveEntry =
+        entries.singleWhere((SyncCompareEntry e) => e.title == 'LiveOnlyBook');
+
+    expect(liveEntry.bookKey, isNull);
+    expect(liveEntry.remoteFolderId, isNull,
+        reason: 'live library book does not live in the WebDAV book folder');
+    expect(liveEntry.isDownloadableRemoteOnly, isTrue,
+        reason: 'Hibiki 互联 compare 必须读取 live /api/library/books');
+  });
+}

@@ -111,7 +111,7 @@ Security boundary (must not be weakened)
   request. Letting the host bind/close/hand over a port number instead is a
   TOCTOU: any local process can take the port in between, and the host would
   hand it the Bearer token. Both ends of this contract are guarded by
-  hibiki/test/build/mihon_vendored_server_guard_test.dart.
+  fushi/test/build/mihon_vendored_server_guard_test.dart.
 - /inspect never loads the APK. It is called *before* Hibiki shows the "third
   party extensions execute code with Hibiki permissions" trust dialog, so it
   stays on apksig plus PackageTools.getPackageInfo (zip + binary manifest
@@ -137,6 +137,6 @@ Security boundary (must not be weakened)
   host only ever terminates the Process handle it started (never a port or
   process-name scan). The upstream wire key __mangatan_bridge_context__ is
   deliberately kept; only the capability identifier is renamed to
-  hibikiMihonBridge.
+  fushiMihonBridge.
 - Shutdown stays explicit: POST /stop, itself authenticated, with the host
   falling back to killing its own child only on timeout.

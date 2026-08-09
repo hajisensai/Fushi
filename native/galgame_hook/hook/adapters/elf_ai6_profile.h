@@ -1,9 +1,38 @@
 #pragma once
 
+#include <windows.h>
+
+#include <cwchar>
+#include <string>
+
 #include "../elf_ai6_arc.h"
 
-namespace hibiki_voice_hook {
-inline bool MatchesElfAi6Profile(const wchar_t*) {
+namespace fushi_voice_hook {
+struct ElfAi6FileIdentity {
+  DWORD volume_serial = 0;
+  DWORD file_index_high = 0;
+  DWORD file_index_low = 0;
+};
+
+inline bool ReadElfAi6FileIdentity(HANDLE file, ElfAi6FileIdentity* out) {
+  if (file == INVALID_HANDLE_VALUE || out == nullptr) return false;
+  BY_HANDLE_FILE_INFORMATION info = {};
+  if (!GetFileInformationByHandle(file, &info)) return false;
+  if (info.nFileIndexHigh == 0 && info.nFileIndexLow == 0) return false;
+  out->volume_serial = info.dwVolumeSerialNumber;
+  out->file_index_high = info.nFileIndexHigh;
+  out->file_index_low = info.nFileIndexLow;
+  return true;
+}
+
+inline bool SameElfAi6FileIdentity(const ElfAi6FileIdentity& left,
+                                   const ElfAi6FileIdentity& right) {
+  return left.volume_serial == right.volume_serial &&
+      left.file_index_high == right.file_index_high &&
+      left.file_index_low == right.file_index_low;
+}
+
+inline bool ProbeElfAi6Profile(ElfAi6FileIdentity* identity_out) {
   wchar_t executable[MAX_PATH] = {0};
   if (GetModuleFileNameW(nullptr, executable, MAX_PATH) == 0) return false;
   wchar_t* slash = wcsrchr(executable, L'\\');
@@ -18,9 +47,11 @@ inline bool MatchesElfAi6Profile(const wchar_t*) {
                             nullptr);
   if (file == INVALID_HANDLE_VALUE) return false;
   LARGE_INTEGER file_size = {};
+  ElfAi6FileIdentity identity;
   uint8_t prefix[elf_ai6::kHeaderBytes + elf_ai6::kEntryBytes] = {0};
   DWORD read = 0;
   const bool read_ok = GetFileSizeEx(file, &file_size) &&
+      ReadElfAi6FileIdentity(file, &identity) &&
       ReadFile(file, prefix, sizeof(prefix), &read, nullptr) &&
       read == sizeof(prefix);
   CloseHandle(file);
@@ -37,8 +68,14 @@ inline bool MatchesElfAi6Profile(const wchar_t*) {
       record + elf_ai6::kNameBytes + 8);
   const uint64_t offset = elf_ai6::ReadBe32(
       record + elf_ai6::kNameBytes + 12);
-  return packed >= 4 && packed <= elf_ai6::kMaxVoiceBytes &&
+  const bool valid = packed >= 4 && packed <= elf_ai6::kMaxVoiceBytes &&
       packed == unpacked && offset == index_bytes &&
       packed <= static_cast<uint64_t>(file_size.QuadPart) - offset;
+  if (valid && identity_out != nullptr) *identity_out = identity;
+  return valid;
 }
-}  // namespace hibiki_voice_hook
+
+inline bool MatchesElfAi6Profile(const wchar_t*) {
+  return ProbeElfAi6Profile(nullptr);
+}
+}  // namespace fushi_voice_hook

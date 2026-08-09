@@ -38,7 +38,7 @@ $startInfo.UseShellExecute = $false
 $startInfo.CreateNoWindow = $true
 $startInfo.RedirectStandardOutput = $true
 $startInfo.RedirectStandardError = $true
-$startInfo.Environment["HIBIKI_MIHON_TOKEN"] = $token
+$startInfo.Environment["FUSHI_MIHON_TOKEN"] = $token
 $startInfo.ArgumentList.Add("-Xmx512m")
 $startInfo.ArgumentList.Add("-Djava.awt.headless=true")
 $startInfo.ArgumentList.Add("-Djava.util.prefs.userRoot=$(Join-Path $dataRoot 'preferences')")
@@ -67,7 +67,7 @@ try {
         try {
             $capabilities = Invoke-RestMethod -Uri "$baseUri/capabilities" -Headers $authenticatedHeaders -TimeoutSec 2
             if (
-                $capabilities.hibikiMihonBridge -eq 1 -and
+                $capabilities.fushiMihonBridge -eq 1 -and
                 $capabilities.sourceFactory -eq $true -and
                 $capabilities.preferenceCallbacks -eq $true -and
                 $capabilities.imageProxy -eq $true -and
@@ -81,7 +81,7 @@ try {
     } while ([DateTime]::UtcNow -lt $deadline)
     if (
         $null -eq $capabilities -or
-        $capabilities.hibikiMihonBridge -ne 1 -or
+        $capabilities.fushiMihonBridge -ne 1 -or
         $capabilities.sourceFactory -ne $true -or
         $capabilities.preferenceCallbacks -ne $true -or
         $capabilities.imageProxy -ne $true -or

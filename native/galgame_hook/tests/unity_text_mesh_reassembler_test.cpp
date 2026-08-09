@@ -7,7 +7,7 @@
 #include "unity_text_profile.h"
 
 int main() {
-  using hibiki_voice_hook::UnityTextMeshReassembler;
+  using fushi_voice_hook::UnityTextMeshReassembler;
 
   UnityTextMeshReassembler<32> line;
   assert(line.Append(L'前'));
@@ -28,19 +28,19 @@ int main() {
   assert(line.Append(L'中'));
   assert(std::wcscmp(line.text(), L"文\u3000中") == 0);
 
-  assert(hibiki_voice_hook::UsesSasasaLegacyTextMeshTerminator(
+  assert(fushi_voice_hook::UsesSasasaLegacyTextMeshTerminator(
       L"E:\\games\\Sasasa.exe"));
-  assert(hibiki_voice_hook::UsesSasasaLegacyTextMeshTerminator(
+  assert(fushi_voice_hook::UsesSasasaLegacyTextMeshTerminator(
       L"c:/games/SASASA.EXE"));
-  assert(!hibiki_voice_hook::UsesSasasaLegacyTextMeshTerminator(
+  assert(!fushi_voice_hook::UsesSasasaLegacyTextMeshTerminator(
       L"E:\\games\\manosaba.exe"));
 
-  const uint64_t native_id = hibiki_voice_hook::NativeTextThreadIdFrom(
+  const uint64_t native_id = fushi_voice_hook::NativeTextThreadIdFrom(
       0, L"UnityEngine.TextMesh.set_text(glyphs)",
       "Unity TextMesh line");
-  assert((native_id & hibiki_voice_hook::kNativeTextThreadNamespaceBit) != 0);
-  assert((hibiki_voice_hook::NormalizeLunaTextThreadId(native_id) &
-          hibiki_voice_hook::kNativeTextThreadNamespaceBit) == 0);
-  assert(native_id != hibiki_voice_hook::NormalizeLunaTextThreadId(native_id));
+  assert((native_id & fushi_voice_hook::kNativeTextThreadNamespaceBit) != 0);
+  assert((fushi_voice_hook::NormalizeLunaTextThreadId(native_id) &
+          fushi_voice_hook::kNativeTextThreadNamespaceBit) == 0);
+  assert(native_id != fushi_voice_hook::NormalizeLunaTextThreadId(native_id));
   return 0;
 }

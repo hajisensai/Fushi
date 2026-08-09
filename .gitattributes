@@ -41,6 +41,6 @@
 *.pdf   binary
 
 # TMDB 官方 logo 矢量原图：合约署名素材，必须与 themoviedb.org 下发文件逐字节相同
-# （守卫 hibiki/test/settings/tmdb_attribution_test.dart 按 sha256 校验）。虽然它是
+# （守卫 fushi/test/settings/tmdb_attribution_test.dart 按 sha256 校验）。虽然它是
 # 文本(SVG)，但绝不能参与行尾/文本规范化——任何一字节变动都会让哈希证据链断掉。
-hibiki/assets/attribution/tmdb/blue_square_1.svg binary
+fushi/assets/attribution/tmdb/blue_square_1.svg binary

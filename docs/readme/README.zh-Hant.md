@@ -181,8 +181,8 @@ flutter build windows --release
 <summary><b>專案結構</b></summary>
 
 ```
-hibiki/                      # 倉庫根（Melos workspace: hibiki_workspace）
-├── hibiki/                  # Flutter 應用程式主目錄
+hibiki/                      # 倉庫根（Melos workspace: fushi_workspace）
+├── fushi/                  # Flutter 應用程式主目錄
 │   ├── lib/
 │   │   ├── i18n/            # 國際化（17 種語言，Slang）
 │   │   ├── src/

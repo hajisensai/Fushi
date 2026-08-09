@@ -30,7 +30,7 @@ SELF="${CI_SWEEP_SELF:-hajisensai}"
 DAYS="${CI_SWEEP_DAYS:-3}"
 LIMIT="${CI_SWEEP_LIMIT:-50}"
 # fake-ip DNS 下 gh 直连必超时——需要代理。解析顺序见 tool/proxy_env.sh：
-# 调用方环境变量 > HIBIKI_BOOTSTRAP_PROXY > tool/bootstrap.local.env > 不设（照常跑）。
+# 调用方环境变量 > FUSHI_BOOTSTRAP_PROXY > tool/bootstrap.local.env > 不设（照常跑）。
 source "$(dirname "${BASH_SOURCE[0]}")/proxy_env.sh"
 export PYTHONUTF8=1   # Windows GBK 控制台下内嵌 python 打中文不乱码
 

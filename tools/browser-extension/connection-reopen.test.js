@@ -9,7 +9,7 @@ const popupSource = fs.readFileSync(
   'utf8',
 );
 
-test('设置页每次打开都绕过短时离线缓存，立即重新检测 Hibiki', () => {
+test('设置页每次打开都绕过短时离线缓存，立即重新检测 Fushi', () => {
   assert.match(
     optionsSource,
     /loadSettings\(\)\.then\(\(\) => refreshConnection\(true\)\)/,

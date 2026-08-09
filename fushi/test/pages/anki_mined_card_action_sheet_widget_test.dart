@@ -1,0 +1,348 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
+import 'package:fushi/utils.dart';
+
+/// TODO-1007/1008：点 ✓ 操作选择 + note viewer 的 widget 行为守卫。
+///
+/// 决策②：命中多张时列出全部供选择（不默默取最近一张）。
+/// 决策③：每次点 ✓ 都让用户选——至少 [覆写] / [新增重复卡] / [查看·在 Anki 中打开]。
+/// 决策⑤：note viewer 只读展示字段 + 覆写 + 在 Anki 中打开。
+
+/// 受控假 repo：findMatchingNotes / noteFields / openNoteInAnki 走内存数据。
+class _FakeRepo extends BaseAnkiRepository {
+  _FakeRepo(this.matches, {this.fields = const {}});
+
+  final List<MinedNoteRef> matches;
+  final Map<String, String> fields;
+  int openedNoteId = -1;
+
+  @override
+  Future<List<MinedNoteRef>> findMatchingNotes(
+          String expression, String reading) async =>
+      matches;
+
+  @override
+  Future<Map<String, String>?> noteFields(int noteId) async => fields;
+
+  @override
+  Future<bool> openNoteInAnki(int noteId) async {
+    openedNoteId = noteId;
+    return true;
+  }
+
+  @override
+  Future<AnkiFetchResult> fetchConfiguration() async =>
+      const AnkiFetchResult.error('unused');
+  @override
+  Future<MineOutcome> mineEntry(
+          {required String rawPayloadJson,
+          required AnkiMiningContext context}) async =>
+      const MineOutcome.success();
+  @override
+  Future<bool> isDuplicate(String expression, String reading) async => true;
+  @override
+  Future<bool> createNoteType(AnkiNoteTypeTemplate template) async => false;
+  @override
+  Future<bool> createDeck(String name) async => false;
+}
+
+Widget _host(Future<void> Function(BuildContext) onTapBody) {
+  return TranslationProvider(
+    child: MaterialApp(
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => Center(
+            child: ElevatedButton(
+              onPressed: () => onTapBody(context),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+void main() {
+  testWidgets('lists every matching card (decision 2) + three options',
+      (tester) async {
+    final repo = _FakeRepo(const [
+      MinedNoteRef(noteId: 300, preview: '日本語 A'),
+      MinedNoteRef(noteId: 200, preview: '日本語 B'),
+    ]);
+    AnkiCardMutationResult? result;
+
+    await tester.pumpWidget(_host((context) async {
+      result = await runAnkiMinedCardAction(
+        context: context,
+        repo: repo,
+        expression: '日本語',
+        reading: 'にほんご',
+        mineNew: () async => (ankiConnect: true, noteId: 999),
+        overwrite: (noteId) async => (ankiConnect: true, noteId: noteId),
+      );
+    }));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    // Both matching cards are listed (multi-match selection).
+    expect(find.text('日本語 A'), findsOneWidget);
+    expect(find.text('日本語 B'), findsOneWidget);
+    // The "add as a new card" option is always present (decision 3).
+    expect(find.text(t.anki_mined_action_add_duplicate), findsOneWidget);
+    // Per-card overwrite + view affordances exist (two cards -> two each).
+    expect(find.byIcon(Icons.edit_outlined), findsNWidgets(2));
+    expect(find.byIcon(Icons.open_in_new), findsNWidgets(2));
+
+    // Choosing "add as a new card" runs mineNew.
+    await tester.tap(find.text(t.anki_mined_action_add_duplicate));
+    await tester.pumpAndSettle();
+    expect(result, isNotNull);
+    expect(result!.noteId, 999);
+    expect(result!.ankiConnect, isTrue);
+  });
+
+  testWidgets('overwriting a specific card targets that note id',
+      (tester) async {
+    final repo = _FakeRepo(const [
+      MinedNoteRef(noteId: 300, preview: 'A'),
+      MinedNoteRef(noteId: 200, preview: 'B'),
+    ]);
+    AnkiCardMutationResult? result;
+    await tester.pumpWidget(_host((context) async {
+      result = await runAnkiMinedCardAction(
+        context: context,
+        repo: repo,
+        expression: 'x',
+        reading: '',
+        mineNew: () async => (ankiConnect: true, noteId: 999),
+        overwrite: (noteId) async => (ankiConnect: true, noteId: noteId),
+      );
+    }));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    // Overwrite the SECOND card (note 200) via its edit icon.
+    await tester.tap(find.byIcon(Icons.edit_outlined).last);
+    await tester.pumpAndSettle();
+    expect(result, isNotNull);
+    expect(result!.noteId, 200,
+        reason: 'overwrite targets the user-chosen card, not the newest');
+  });
+
+  testWidgets('no matches falls back to mineNew (deleted since detection)',
+      (tester) async {
+    final repo = _FakeRepo(const []);
+    AnkiCardMutationResult? result;
+    await tester.pumpWidget(_host((context) async {
+      result = await runAnkiMinedCardAction(
+        context: context,
+        repo: repo,
+        expression: 'gone',
+        reading: '',
+        mineNew: () async => (ankiConnect: true, noteId: 42),
+        overwrite: (noteId) async => (ankiConnect: false, noteId: null),
+      );
+    }));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    // No sheet shown; mined fresh directly.
+    expect(result, isNotNull);
+    expect(result!.noteId, 42);
+  });
+
+  testWidgets('note viewer shows fields read-only + open in Anki (decision 5)',
+      (tester) async {
+    final repo = _FakeRepo(
+      const [MinedNoteRef(noteId: 300, preview: 'A')],
+      fields: const {'Expression': '日本語', 'Meaning': 'language'},
+    );
+    await tester.pumpWidget(_host((context) async {
+      await runAnkiMinedCardAction(
+        context: context,
+        repo: repo,
+        expression: '日本語',
+        reading: '',
+        mineNew: () async => (ankiConnect: true, noteId: 999),
+        overwrite: (noteId) async => (ankiConnect: true, noteId: noteId),
+      );
+    }));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    // Open the viewer via the view icon.
+    await tester.tap(find.byIcon(Icons.open_in_new));
+    await tester.pumpAndSettle();
+    // Field names + values are shown read-only.
+    expect(find.text('Expression'), findsOneWidget);
+    expect(find.text('日本語'), findsWidgets);
+    expect(find.text('Meaning'), findsOneWidget);
+    expect(find.text('language'), findsOneWidget);
+    // "Open in Anki" triggers repo.openNoteInAnki for this note.
+    await tester.tap(find.text(t.anki_note_viewer_open_in_anki));
+    await tester.pumpAndSettle();
+    expect(repo.openedNoteId, 300);
+  });
+
+  // TODO-1007 健壮性：宿主回调抛错时，action sheet 不能卡在 _busy 进度条无反馈。
+  // 这三个用例构造抛错的 mineNew/overwrite，断言：异常不逃逸（无 takeException）、
+  // 弹窗仍在（未 pop 关闭）、操作可重试（_busy 已复位 → 按钮重新可点）。
+
+  testWidgets('回归复现：mineNew 抛错时复位 busy + 弹窗保留可重试（不卡进度条）', (tester) async {
+    final repo = _FakeRepo(const [MinedNoteRef(noteId: 300, preview: 'A')]);
+    int mineNewCalls = 0;
+    await tester.pumpWidget(_host((context) async {
+      await runAnkiMinedCardAction(
+        context: context,
+        repo: repo,
+        expression: 'x',
+        reading: '',
+        mineNew: () async {
+          mineNewCalls++;
+          throw StateError('host channel failed');
+        },
+        overwrite: (noteId) async => (ankiConnect: true, noteId: noteId),
+      );
+    }));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    // 点「新增重复卡」→ mineNew 抛错。
+    await tester.tap(find.text(t.anki_mined_action_add_duplicate));
+    await tester.pumpAndSettle();
+
+    // 异常被吞在 action sheet 内，不向 widget 树逃逸。
+    expect(tester.takeException(), isNull);
+    expect(mineNewCalls, 1);
+    // 弹窗未关闭（仍能看到选项），说明没误 pop。
+    expect(find.text(t.anki_mined_action_add_duplicate), findsOneWidget);
+    // _busy 已复位：再次点击会再次调用 mineNew（若仍 busy 则 onTap=null 不触发）。
+    await tester.tap(find.text(t.anki_mined_action_add_duplicate));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(mineNewCalls, 2, reason: '_busy 必须在失败后复位，否则按钮卡死无法重试');
+  });
+
+  testWidgets('回归复现：overwrite 抛错时复位 busy + 弹窗保留可重试', (tester) async {
+    final repo = _FakeRepo(const [MinedNoteRef(noteId: 200, preview: 'B')]);
+    int overwriteCalls = 0;
+    await tester.pumpWidget(_host((context) async {
+      await runAnkiMinedCardAction(
+        context: context,
+        repo: repo,
+        expression: 'x',
+        reading: '',
+        mineNew: () async => (ankiConnect: true, noteId: 999),
+        overwrite: (noteId) async {
+          overwriteCalls++;
+          throw StateError('host channel failed');
+        },
+      );
+    }));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(overwriteCalls, 1);
+    expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
+    // 复位后可重试。
+    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(overwriteCalls, 2, reason: '_busy 必须在失败后复位');
+  });
+
+  testWidgets('回归复现：note viewer overwrite 抛错时复位 busy + 对话框保留', (tester) async {
+    final repo = _FakeRepo(
+      const [MinedNoteRef(noteId: 300, preview: 'A')],
+      fields: const {'Expression': '日本語'},
+    );
+    int overwriteCalls = 0;
+    await tester.pumpWidget(_host((context) async {
+      await runAnkiMinedCardAction(
+        context: context,
+        repo: repo,
+        expression: '日本語',
+        reading: '',
+        mineNew: () async => (ankiConnect: true, noteId: 999),
+        overwrite: (noteId) async {
+          overwriteCalls++;
+          throw StateError('host channel failed');
+        },
+      );
+    }));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    // 打开 note viewer。
+    await tester.tap(find.byIcon(Icons.open_in_new));
+    await tester.pumpAndSettle();
+    // 点对话框里的「覆写」→ overwrite 抛错。
+    await tester.tap(find.text(t.anki_mined_action_overwrite));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(overwriteCalls, 1);
+    // 对话框仍在（未误 pop），覆写按钮还在 → 可重试。
+    expect(find.text(t.anki_mined_action_overwrite), findsOneWidget);
+    await tester.tap(find.text(t.anki_mined_action_overwrite));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(overwriteCalls, 2, reason: '_busy 必须在失败后复位');
+  });
+
+  // TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮的编排行为。区别于点 ✓：这里不制卡、
+  // 不覆写，只做「查找并在 Anki 中打开」。单卡直开、多卡弹轻量选择、无卡走 toast 不静默。
+
+  testWidgets('open-in-anki: single match opens that note directly (no sheet)',
+      (tester) async {
+    final repo = _FakeRepo(const [MinedNoteRef(noteId: 555, preview: 'solo')]);
+    await tester.pumpWidget(_host((context) async {
+      await openMinedCardInAnki(
+          context: context, repo: repo, expression: '語', reading: '');
+    }));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    // 直接打开该卡，不弹选择单（预览不出现）。
+    expect(repo.openedNoteId, 555);
+    expect(find.text('solo'), findsNothing);
+  });
+
+  testWidgets('open-in-anki: multiple matches show a picker; tap opens chosen',
+      (tester) async {
+    final repo = _FakeRepo(const [
+      MinedNoteRef(noteId: 300, preview: 'card A'),
+      MinedNoteRef(noteId: 200, preview: 'card B'),
+    ]);
+    await tester.pumpWidget(_host((context) async {
+      await openMinedCardInAnki(
+          context: context, repo: repo, expression: '語', reading: '');
+    }));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    // 两张都列出，未打开任何一张。
+    expect(find.text('card A'), findsOneWidget);
+    expect(find.text('card B'), findsOneWidget);
+    expect(repo.openedNoteId, -1);
+    // 点第二张 → 打开 note 200（用户选谁开谁，不默默取最近）。
+    await tester.tap(find.text('card B'));
+    await tester.pumpAndSettle();
+    expect(repo.openedNoteId, 200);
+  });
+
+  testWidgets('open-in-anki: no matches → no open call, no crash (toast path)',
+      (tester) async {
+    final repo = _FakeRepo(const []);
+    await tester.pumpWidget(_host((context) async {
+      await openMinedCardInAnki(
+          context: context, repo: repo, expression: 'gone', reading: '');
+    }));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    // 探测显示已制卡但现在查不到 → 不打开、不崩（走 toast 提示）。
+    expect(repo.openedNoteId, -1);
+    expect(tester.takeException(), isNull);
+  });
+}

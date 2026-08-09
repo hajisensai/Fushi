@@ -1,7 +1,7 @@
-# Hibiki 浏览器扩展（Hibiki Reader Bridge）
+# Fushi 浏览器扩展（Fushi Reader Bridge）
 
-在任意网页上用 Hibiki 的词典查词、采集/加载流媒体字幕、批量制卡。扩展本身没有词典和
-Anki 能力——一切经本机 Hibiki 桌面 App 内置的 yomitan API server（默认
+在任意网页上用 Fushi 的词典查词、采集/加载流媒体字幕、批量制卡。扩展本身没有词典和
+Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server（默认
 `http://127.0.0.1:19633`，HTTP + Basic auth）完成。**没有构建步骤**：纯 JS 散文件，MV3。
 
 ## 文件地图
@@ -21,33 +21,33 @@ Anki 能力——一切经本机 Hibiki 桌面 App 内置的 yomitan API server�
 | `scan.js` | 隔离 | 取词纯函数（词窗扩展/句子抽取） |
 | `self-update.js` | SW/options | 自更新决策纯状态机 + 状态文案（node 可测） |
 | `connection-diagnostics.js` | SW/options | 连接六态分类 + 中文文案（纯函数） |
-| `hibiki-defaults.js` | SW/options | 安装助手写入的自动配置（host/port/token/build 指纹） |
+| `fushi-defaults.js` | SW/options | 安装助手写入的自动配置（host/port/token/build 指纹） |
 | `offscreen.html/js` | offscreen | tabCapture MediaRecorder（Netflix 逐句回放录制） |
 | `options.html/css/js` | options | 设置页：连接、字幕偏好、逐动作视频快捷键、版本与更新卡片 |
-| `vendor/` | — | `popup.{js,css,html}`+`selection.js` = app 查词弹窗原样拷贝（上游 `hibiki/assets/popup/`）；`dict-media.js` 允许扩展分叉；`content.css` 由生成器产出；`action-popup.*` 扩展独有 |
+| `vendor/` | — | `popup.{js,css,html}`+`selection.js` = app 查词弹窗原样拷贝（上游 `fushi/assets/popup/`）；`dict-media.js` 允许扩展分叉；`content.css` 由生成器产出；`action-popup.*` 扩展独有 |
 | `scripts/` | 开发 | `generate-content-css.mjs`（popup.css → 零特异性重根 content.css）、`sync-mirrors.mjs`（镜像同步） |
 
 ## 三份镜像与同步（改代码必读）
 
 ```
-hibiki/assets/popup/  ──(手动 cp，方向固定)──▶  vendor/popup.js 等四件套
-tools/browser-extension/（真源，本目录） ──(node scripts/sync-mirrors.mjs)──▶ hibiki/assets/browser_extension/（Flutter asset）
+fushi/assets/popup/  ──(手动 cp，方向固定)──▶  vendor/popup.js 等四件套
+tools/browser-extension/（真源，本目录） ──(node scripts/sync-mirrors.mjs)──▶ fushi/assets/browser_extension/（Flutter asset）
 scripts/generate-content-css.mjs ──▶ 两处 vendor/content.css
 ```
 
 - **任何改动后跑 `node scripts/sync-mirrors.mjs`**（或 `--check` 只校验）。`*.test.js`、
   `scripts/`、`README.md` 不进 bundle；`THIRD_PARTY_LICENSES.md` 必须进入 bundle 与安装目录。
-- Dart 守卫（`hibiki/test/build/browser_extension_*` 等 30+ 个）会把「两镜像字节一致」当
+- Dart 守卫（`fushi/test/build/browser_extension_*` 等 30+ 个）会把「两镜像字节一致」当
   最后防线，漏同步 CI 必红。
-- 新增文件放本目录**平级**（或 `vendor/`）——`hibiki/pubspec.yaml` 只声明了这两层 asset 目录。
+- 新增文件放本目录**平级**（或 `vendor/`）——`fushi/pubspec.yaml` 只声明了这两层 asset 目录。
 
 ## 安装（导入浏览器）流水线
 
-1. 本目录随 app 以 Flutter asset 打包（镜像 `hibiki/assets/browser_extension/`）。
+1. 本目录随 app 以 Flutter asset 打包（镜像 `fushi/assets/browser_extension/`）。
 2. app 扩展页「准备扩展」→ `browser_extension_installer.dart` 解压到
    `<appSupport>/hibiki-browser-extension/`，并把**当前 server 真值**（host/port/token）与
-   **内容指纹 build**（全部文件排除 `hibiki-defaults.js` 的 sha256 前 16 hex）写进
-   `hibiki-defaults.js` → 用户浏览器「加载已解压」后零配置可用。
+   **内容指纹 build**（全部文件排除 `fushi-defaults.js` 的 sha256 前 16 hex）写进
+   `fushi-defaults.js` → 用户浏览器「加载已解压」后零配置可用。
 3. 用户可在 options 页覆盖连接参数（chrome.storage.local 优先于内置默认）。
 
 ## 自更新流水线
@@ -62,23 +62,23 @@ app 升级
          首见新 build           → chrome.runtime.reload()（从磁盘拉新；先置重注入标记）
          已 reload 过仍不一致    → stale：图标「↑」角标 + action-popup 提示 + options「版本与更新」卡片
          录制中                 → 跳过本轮（reload 会杀 offscreen 录制）
-  └─ reload 后：hibikiReinjectPending → 向已打开页面补注 content script（无需手动刷新）
+  └─ reload 后：fushiReinjectPending → 向已打开页面补注 content script（无需手动刷新）
 可视化：options 页「版本与更新」卡片实时显示 当前 build / 自动更新状态 / 失效指引
         （self-update.js describeUpdateState，扩展自报版本走 /api/extension/status 请求体）
 ```
 
 ## 与 App 的通信（endpoint 速览）
 
-全部 `POST http://<host>:<port>/api/...`，`Authorization: Basic base64('hibiki:'+token)`。
+全部 `POST http://<host>:<port>/api/...`，`Authorization: Basic base64('fushi:'+token)`。
 查词 `/api/lookup/dictionary` · 单词音频 `/api/lookup/audio` · 制卡 `/api/mine` · 查重
 `/api/duplicate` · 状态/心跳 `/api/extension/status` · 弹窗尺寸 `/api/extension/popup-size` ·
 YouTube 整集字幕 `/api/youtube/captions` · 外挂字幕解析 `/api/subtitle/parse`。
-服务端实现：`hibiki/lib/src/sync/yomitan_api_server.dart`。
+服务端实现：`fushi/lib/src/sync/yomitan_api_server.dart`。
 
 ## 字幕轨数据流（面板零站点特例）
 
-所有来源写同一个 store：`window.hibikiEpisodeCues['${videoKey}|${lang}'] = [{startMs,endMs,text}]`，
-新数据到达调 `window.hibikiSubtitlePanelOnCues(key)`。来源：
+所有来源写同一个 store：`window.fushiEpisodeCues['${videoKey}|${lang}'] = [{startMs,endMs,text}]`，
+新数据到达调 `window.fushiSubtitlePanelOnCues(key)`。来源：
 ① Netflix 整集拦截（netflix-bridge）② 通用流媒体桥（stream-bridge，见下表）③ YouTube 服务端
 整集字幕 ④ 原生 `video.textTracks` 收割 ⑤ DOM 字幕采样 live 轨 ⑥ 用户外挂文件（`外挂:` 前缀轨）。
 时轴偏移是**读取侧**的（store 永远存原始 cue），任意轨可偏移，会话内记忆。
@@ -100,7 +100,7 @@ YouTube 整集字幕 `/api/youtube/captions` · 外挂字幕解析 `/api/subtitl
 
 **新增站点适配器步骤**：① `stream-bridge.js` 加纯函数提取器 + `siteForHost` 路由 + 对应
 hook 安装；② `manifest.json` 的 stream-bridge matches 加域名；③ 新格式则在
-`subtitle-adapters.js` 加解析器并在 `content.js` `hibikiOnStreamCues` 分派；④ 加
+`subtitle-adapters.js` 加解析器并在 `content.js` `fushiOnStreamCues` 分派；④ 加
 `stream-bridge.test.js` 样例 JSON 测试；⑤ 跑 sync-mirrors。参考 asbplayer
 `extension/src/entrypoints/*-page.ts`（MIT）。
 
@@ -110,10 +110,10 @@ hook 安装；② `manifest.json` 的 stream-bridge matches 加域名；③ 新�
 |---|---|
 | ← / → | 上一句 / 下一句字幕（仅当前视频有字幕轨时接管） |
 | ↑ | 回当前句句首重播 |
-| Shift+S | 开关字幕列表面板（当前视频有 Hibiki 字幕轨时） |
-| Shift+H | 隐藏 / 显示字幕（站点原生字幕 + 扩展覆盖层；**不**需要 Hibiki 字幕轨） |
+| Shift+S | 开关字幕列表面板（当前视频有 Fushi 字幕轨时） |
+| Shift+H | 隐藏 / 显示字幕（站点原生字幕 + 扩展覆盖层；**不**需要 Fushi 字幕轨） |
 | Ctrl+Shift+← / → / ↓ | 字幕偏移 −100ms / ＋100ms / 重置 |
-| Ctrl+Shift+Z | 复制当前字幕句（配合 Hibiki 剪贴板监看即查词） |
+| Ctrl+Shift+Z | 复制当前字幕句（配合 Fushi 剪贴板监看即查词） |
 | Ctrl+Shift+[ / ] | 播放速度 −0.25x / ＋0.25x（0.25–4x） |
 
 这里使用固定键位 + 纯函数判定；每个动作在扩展设置页各有自己的开关。站点输入框/可编辑区
@@ -133,7 +133,7 @@ hook 安装；② `manifest.json` 的 stream-bridge matches 加域名；③ 新�
 不受上面的「视频页快捷键」总开关影响——它属于查词弹窗而不是视频页。按键判定在共享的
 popup.js 中；app 内由宿主分发快捷键，浏览器扩展没有绑定注入通道，使用内置默认值
 Ctrl+Enter。Windows app 外按焦点分流：可聚焦的剪贴板面板只有在用户点入并获得键盘焦点后，
-才使用 Hibiki 设置 → 快捷键 → 查词弹窗 → 制卡里的可改键绑定；永不抢焦点的瞬态查词覆盖窗
+才使用 Fushi 设置 → 快捷键 → 查词弹窗 → 制卡里的可改键绑定；永不抢焦点的瞬态查词覆盖窗
 带 `WS_EX_NOACTIVATE`，收不到键盘事件，因此没有制卡快捷键，也不注册全局热键，避免让当前
 游戏失焦。只有真的点到了按钮才吞掉按键，IME 组词期间与输入框内一律放行。
 
@@ -143,5 +143,5 @@ Ctrl+Enter。Windows app 外按焦点分流：可聚焦的剪贴板面板只有�
 node --test            # 本目录全部 *.test.js（node 内置 runner，零依赖）
 ```
 
-Dart 侧守卫（跑法见仓库根 CLAUDE.md）：`hibiki/test/{build,lookup,mining,sync,...}/browser_extension_*`
+Dart 侧守卫（跑法见仓库根 CLAUDE.md）：`fushi/test/{build,lookup,mining,sync,...}/browser_extension_*`
 做镜像字节一致 + 功能链存在性扫描。扩展 JS 单测目前不在 CI，提 PR 前请本地跑过。

@@ -3,9 +3,9 @@
 #include <cstring>
 #include <vector>
 
-#include "../hook/elf_ai6_arc.h"
+#include "../hook/adapters/elf_ai6_profile.h"
 
-namespace ai6 = hibiki_voice_hook::elf_ai6;
+namespace ai6 = fushi_voice_hook::elf_ai6;
 
 void WriteLe32(uint8_t* out, uint32_t value) {
   out[0] = static_cast<uint8_t>(value);
@@ -32,6 +32,12 @@ void WriteEntry(std::vector<uint8_t>* index, uint32_t number,
 }
 
 int main() {
+  const fushi_voice_hook::ElfAi6FileIdentity archive_identity = {1, 2, 3};
+  assert(fushi_voice_hook::SameElfAi6FileIdentity(
+      archive_identity, fushi_voice_hook::ElfAi6FileIdentity{1, 2, 3}));
+  assert(!fushi_voice_hook::SameElfAi6FileIdentity(
+      archive_identity, fushi_voice_hook::ElfAi6FileIdentity{1, 2, 4}));
+
   constexpr uint32_t count = 2;
   const uint32_t index_bytes = static_cast<uint32_t>(
       ai6::kHeaderBytes + count * ai6::kEntryBytes);
@@ -64,7 +70,34 @@ int main() {
             static_cast<uint32_t>(file_size - 8));
   assert(!ai6::FindEntryForRead(malformed.data(), malformed.size(), file_size,
                                 file_size - 8, &entry));
+
+  // The format contract does not prove index records are offset-sorted.
+  // Lookup must remain correct for a bounded reversed index.
+  std::vector<uint8_t> reversed(index_bytes, 0);
+  WriteLe32(reversed.data(), count);
+  WriteEntry(&reversed, 0, "voice_b", 48, index_bytes + 32);
+  WriteEntry(&reversed, 1, "voice_a", 32, index_bytes);
+  assert(ai6::FindEntryForRead(reversed.data(), reversed.size(), file_size,
+                               index_bytes, &entry));
+  assert(std::strcmp(entry.name, "voice_a") == 0);
+
+  // Ambiguous overlapping members are rejected rather than guessed.
+  std::vector<uint8_t> overlapping(index_bytes, 0);
+  WriteLe32(overlapping.data(), count);
+  WriteEntry(&overlapping, 0, "voice_a", 32, index_bytes);
+  WriteEntry(&overlapping, 1, "voice_b", 48, index_bytes + 16);
+  assert(!ai6::FindEntryForRead(overlapping.data(), overlapping.size(),
+                                file_size, index_bytes + 20, &entry));
+
   uint8_t bad_count[4] = {0xff, 0xff, 0xff, 0xff};
   assert(!ai6::IndexSize(bad_count, sizeof(bad_count), nullptr, nullptr));
+  uint8_t oversized_index[4] = {};
+  WriteLe32(oversized_index,
+            static_cast<uint32_t>((ai6::kMaxIndexBytes -
+                                   ai6::kHeaderBytes) /
+                                  ai6::kEntryBytes +
+                                  1));
+  assert(!ai6::IndexSize(oversized_index, sizeof(oversized_index), nullptr,
+                         nullptr));
   return 0;
 }

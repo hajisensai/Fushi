@@ -91,7 +91,7 @@ foreach ($config in @(
     # --no-tests=error: ctest defaults to returning 0 when NO test is registered,
     # so a CMakeLists refactor that stops registering the suite would read as a
     # pass. Same "zero tests executed masquerades as green" family as BUG-1157.
-    # Matches .github/workflows/native-hoshidicts-gate.yml.
+    # Matches .github/workflows/native-fushidicts-gate.yml.
     Invoke-Checked -FilePath ctest -Arguments @(
       '--test-dir', $buildDir, '-C', 'Release', '--output-on-failure',
       '--no-tests=error'
@@ -107,15 +107,15 @@ Reset-StageDirectory $stageX86
 $releaseX64 = Join-Path $buildRoot 'x64\Release'
 $releaseX86 = Join-Path $buildRoot 'x86\Release'
 foreach ($file in @(
-  'hibiki_voice_injector.exe',
-  'hibiki_voice_hook.dll',
+  'fushi_voice_injector.exe',
+  'fushi_voice_hook.dll',
   'LunaHook64.dll',
   'LunaHost64.dll'
 )) {
   Copy-Item -LiteralPath (Join-Path $releaseX64 $file) -Destination $stageX64 -Force
 }
 $unityAudioRuntimeFiles = @(
-  'unity_audio_runtime/hibiki_unity_audio_extract.exe',
+  'unity_audio_runtime/fushi_unity_audio_extract.exe',
   'unity_audio_runtime/classdata.tpk',
   'unity_audio_runtime/vgmstream-cli.exe',
   'unity_audio_runtime/avcodec-vgmstream-59.dll',
@@ -138,8 +138,8 @@ foreach ($file in $unityAudioRuntimeFiles) {
   Copy-Item -LiteralPath (Join-Path $releaseX64 $file) -Destination $destination -Force
 }
 foreach ($file in @(
-  'hibiki_voice_injector.exe',
-  'hibiki_voice_hook.dll',
+  'fushi_voice_injector.exe',
+  'fushi_voice_hook.dll',
   'LunaHook32.dll',
   'LunaHost32.dll'
 )) {
@@ -177,11 +177,11 @@ Invoke-WebRequest `
 
 $expected = @{
   x64 = @(
-    'hibiki_voice_injector.exe',
-    'hibiki_voice_hook.dll',
+    'fushi_voice_injector.exe',
+    'fushi_voice_hook.dll',
     'LunaHook64.dll',
     'LunaHost64.dll',
-    'unity_audio_runtime/hibiki_unity_audio_extract.exe',
+    'unity_audio_runtime/fushi_unity_audio_extract.exe',
     'unity_audio_runtime/classdata.tpk',
     'unity_audio_runtime/vgmstream-cli.exe',
     'unity_audio_runtime/avcodec-vgmstream-59.dll',
@@ -197,7 +197,7 @@ $expected = @{
     'unity_audio_runtime/libvorbis.dll',
     'unity_audio_runtime/COPYING'
   )
-  x86 = @('hibiki_voice_injector.exe', 'hibiki_voice_hook.dll', 'LunaHook32.dll', 'LunaHost32.dll', 'LoaderDll.dll', 'LocaleEmulator.dll', 'LocaleEmulator-LGPL-3.0.txt')
+  x86 = @('fushi_voice_injector.exe', 'fushi_voice_hook.dll', 'LunaHook32.dll', 'LunaHost32.dll', 'LoaderDll.dll', 'LocaleEmulator.dll', 'LocaleEmulator-LGPL-3.0.txt')
 }
 foreach ($arch in @('x64', 'x86')) {
   $stage = Join-Path $outputRoot $arch

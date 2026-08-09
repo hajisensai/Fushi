@@ -1,6 +1,6 @@
 #pragma once
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 inline bool MatchesMalieProfile(const wchar_t*) {
   wchar_t executable[MAX_PATH] = {0};
@@ -19,4 +19,4 @@ inline bool MatchesMalieProfile(const wchar_t*) {
   return GetFileAttributesW(archive.c_str()) != INVALID_FILE_ATTRIBUTES;
 }
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook

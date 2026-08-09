@@ -1,0 +1,51 @@
+import 'package:flutter/material.dart';
+import 'package:fushi/pages.dart';
+import 'package:fushi/src/pages/implementations/dictionary_progress_dialog_content.dart';
+import 'package:fushi/utils.dart';
+
+/// The content of the dialog used for showing dictionary import progress when
+/// deleting a dictionary from the dictionary menu. See the
+/// [DictionaryDialogPage].
+class DictionaryDialogDeletePage extends BasePage {
+  /// Create an instance of this page.
+  const DictionaryDialogDeletePage({
+    this.name,
+    super.key,
+  });
+
+  /// Name of current dictionary being deleted.
+  final String? name;
+
+  @override
+  BasePageState createState() => _DictionaryDialogDeletePageState();
+}
+
+class _DictionaryDialogDeletePageState
+    extends BasePageState<DictionaryDialogDeletePage> {
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+
+    return PopScope(
+      canPop: false,
+      child: FushiDialogFrame(
+        maxWidth: 420,
+        scrollable: false,
+        child: FushiModalSheetFrame(
+          bodyPadding: EdgeInsets.all(tokens.spacing.card),
+          body: buildProgressMessage(),
+        ),
+      ),
+    );
+  }
+
+  Widget buildProgressMessage() {
+    return DictionaryProgressDialogContent(
+      header: widget.name != null
+          ? '${t.delete_in_progress}\n${widget.name}'
+          : t.delete_in_progress,
+      message: t.dictionaries_deleting_data,
+      progressColor: theme.colorScheme.primary,
+    );
+  }
+}

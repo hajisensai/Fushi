@@ -1,0 +1,807 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:drift/drift.dart' show Value;
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/video/scraper/alias_cache.dart';
+import 'package:fushi/src/media/video/scraper/bangumi_client.dart';
+import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
+import 'package:fushi/src/media/video/scraper/offline_index.dart';
+import 'package:fushi/src/media/video/scraper/cover_downloader.dart';
+import 'package:fushi/src/media/video/scraper/cover_scraper_service.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/video/scraper/sidecar_scanner.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_import_dialog.dart'
+    show videoCoverFileName;
+import 'package:fushi_core/fushi_core.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:path/path.dart' as p;
+import 'package:transparent_image/transparent_image.dart';
+
+import '../../../helpers/cover_cache_test_helpers.dart';
+
+class _StubGeneratedArtifactChecker implements SidecarGeneratedArtifactChecker {
+  const _StubGeneratedArtifactChecker(this.result);
+
+  final bool result;
+
+  @override
+  Future<bool> isUnmodifiedGeneratedArtifact(String absolutePath) async =>
+      result;
+}
+
+/// 最小合法 PNG 魔数字节。
+final List<int> _fakePng = <int>[
+  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
+  0x00, 0x01, 0x02, 0x03,
+];
+
+/// 构造一个 Bangumi `/v0/search/subjects` 响应体（单条命中）。
+String _bangumiBody({
+  required int id,
+  required String name,
+  String? nameCn,
+}) =>
+    jsonEncode(<String, Object?>{
+      'data': <Object?>[
+        <String, Object?>{
+          'id': id,
+          'name': name,
+          if (nameCn != null) 'name_cn': nameCn,
+          'images': <String, Object?>{'large': 'https://img/b$id.png'},
+          'platform': 'TV',
+          'eps': 12,
+          'date': '2020-01-01',
+          'score': 8.0,
+        },
+      ],
+    });
+
+MockClient _pngClient() => MockClient((http.Request req) async {
+      return http.Response.bytes(
+        _fakePng,
+        200,
+        headers: const <String, String>{'content-type': 'image/png'},
+      );
+    });
+
+void main() {
+  // 刮削落盘点走 evictLocalCoverCache（需要 PaintingBinding）。
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  late FushiDatabase db;
+  late VideoBookRepository repo;
+  late Directory tmp;
+  late CoverMetaStore coverMeta;
+  late AliasCache aliasCache;
+
+  setUp(() async {
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
+    repo = VideoBookRepository(db);
+    tmp = await Directory.systemTemp.createTemp('poster_scraper_svc_');
+    coverMeta = CoverMetaStore(tmp);
+    aliasCache = AliasCache(tmp);
+  });
+
+  tearDown(() async {
+    await db.close();
+    if (await tmp.exists()) await tmp.delete(recursive: true);
+  });
+
+  Future<VideoBookRow> seed({
+    required String bookUid,
+    required String videoPath,
+    String title = 'seed',
+  }) async {
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: Value(bookUid),
+      title: Value(title),
+      videoPath: Value(videoPath),
+    ));
+    return (await repo.getByBookUid(bookUid))!;
+  }
+
+  OfflineIndex offlineWith(OfflineAnimeRecord record) =>
+      OfflineIndex(<OfflineAnimeRecord>[record]);
+
+  CoverScraperService build({
+    OfflineIndex? offline,
+    BangumiClient? bangumi,
+    bool enableSidecar = false,
+    SidecarGeneratedArtifactChecker? generatedSidecarArtifactChecker,
+  }) =>
+      CoverScraperService(
+        repository: repo,
+        coverMetaStore: coverMeta,
+        aliasCache: aliasCache,
+        bangumiClient: bangumi ??
+            BangumiClient(
+              client: MockClient(
+                (http.Request req) async => http.Response(
+                  _bangumiBody(id: 1, name: 'unused'),
+                  200,
+                  headers: const <String, String>{
+                    'content-type': 'application/json'
+                  },
+                ),
+              ),
+            ),
+        coverDownloader: CoverDownloader(client: _pngClient()),
+        offlineIndex: offline,
+        enableSidecar: enableSidecar,
+        generatedSidecarArtifactChecker: generatedSidecarArtifactChecker,
+        coversDirectory: tmp,
+      );
+
+  test('远端/流媒体路径不参与刮削 → notEligible', () async {
+    final VideoBookRow book = await seed(
+      bookUid: 'video/remote',
+      videoPath: 'https://host/stream.m3u8',
+    );
+    final ScrapeOutcome outcome = await build().scrapeOne(book);
+    expect(outcome, isA<ScrapeNotEligible>());
+  });
+
+  test('目录候选出 title、文件候选出 episode（合并解析）', () {
+    final CoverScraperService svc = build();
+    final ParsedMediaName? parsed = svc.parseForPath(
+      p.join('anime', '进击的巨人 第三季', '[组] 进击的巨人 - 04 [1080p].mkv'),
+    );
+    expect(parsed, isNotNull);
+    expect(parsed!.title, '进击的巨人');
+    expect(parsed.season, 3, reason: '季度来自目录候选');
+    expect(parsed.episode, 4, reason: '集数来自文件候选');
+  });
+
+  test('解析不出标题 → skippedNoTitle', () async {
+    final VideoBookRow book = await seed(
+      bookUid: 'video/dev',
+      videoPath: p.join('Downloads', 'VID_20260701.mkv'),
+    );
+    final ScrapeOutcome outcome = await build().scrapeOne(book);
+    expect(outcome, isA<ScrapeSkippedNoTitle>());
+  });
+
+  test('offline high 自动应用：落封面 + 写 scraped meta + 写别名', () async {
+    final VideoBookRow book = await seed(
+      bookUid: 'video/aot',
+      videoPath: p.join('anime', '进击的巨人', '进击的巨人 - 04.mkv'),
+    );
+    final CoverScraperService svc = build(
+      offline: offlineWith(const OfflineAnimeRecord(
+        title: '进击的巨人',
+        synonyms: <String>['Attack on Titan'],
+        type: ScrapeEntryType.tv,
+        episodes: 25,
+        year: 2013,
+        picture: 'https://img/aot.png',
+        sourceId: 'myanimelist.net/anime/16498',
+      )),
+    );
+
+    final ScrapeOutcome outcome = await svc.scrapeOne(book);
+    expect(outcome, isA<ScrapeApplied>());
+    final ScrapeApplied applied = outcome as ScrapeApplied;
+    expect(applied.origin, CoverOrigin.autoScraped);
+    expect(applied.decision!.confidence, MatchConfidence.high);
+
+    // 封面落库 + 文件存在。
+    final VideoBookRow updated = (await repo.getByBookUid('video/aot'))!;
+    expect(updated.coverPath, applied.coverPath);
+    expect(File(applied.coverPath).existsSync(), isTrue);
+
+    // 自动刮削元数据（程序做的决定 → autoScraped，不是用户手选的 userScraped）。
+    final CoverMeta? meta = await coverMeta.get('video/aot');
+    expect(meta!.origin, CoverOrigin.autoScraped);
+    expect(meta.source, ScrapeSource.offlineDb);
+    expect(meta.entryId, 'myanimelist.net/anime/16498');
+
+    // 别名缓存写入（key=解析标题）。
+    final (ScrapeSource, String)? alias = await aliasCache.get('进击的巨人');
+    expect(alias, isNotNull);
+    expect(alias!.$1, ScrapeSource.offlineDb);
+  });
+
+  test('别名命中短路：即便候选标题不同也强制应用记住的 entryId', () async {
+    final VideoBookRow book = await seed(
+      bookUid: 'video/alias',
+      videoPath: p.join('anime', '某作品', '某作品 - 01.mkv'),
+    );
+    // 预先记一条纠错：某作品 → bangumi/777。
+    await aliasCache.put('某作品', ScrapeSource.bangumi, '777');
+
+    // Bangumi 返回 id=777 但标题完全不同（正常打分会是 low）。
+    final BangumiClient bangumi = BangumiClient(
+      client: MockClient(
+        (http.Request req) async => http.Response(
+          _bangumiBody(id: 777, name: 'Totally Different Title'),
+          200,
+          headers: const <String, String>{'content-type': 'application/json'},
+        ),
+      ),
+    );
+    final ScrapeOutcome outcome = await build(bangumi: bangumi).scrapeOne(book);
+    expect(outcome, isA<ScrapeApplied>());
+    final CoverMeta? meta = await coverMeta.get('video/alias');
+    expect(meta!.source, ScrapeSource.bangumi);
+    expect(meta.entryId, '777');
+  });
+
+  test('sidecar 直取：同目录 poster.jpg → 复制为封面、origin=sidecar', () async {
+    final Directory lib = await Directory.systemTemp.createTemp('sidecar_lib_');
+    addTearDown(() async {
+      if (await lib.exists()) await lib.delete(recursive: true);
+    });
+    final Directory showDirectory = Directory(p.join(lib.path, 'My Show'));
+    await showDirectory.create();
+    final File video = File(p.join(showDirectory.path, 'My Show - 01.mkv'));
+    await video.writeAsBytes(<int>[0, 1, 2, 3]);
+    await File(p.join(showDirectory.path, 'poster.jpg')).writeAsBytes(_fakePng);
+
+    final VideoBookRow book = await seed(
+      bookUid: 'video/sidecar',
+      videoPath: video.path,
+    );
+    final ScrapeOutcome outcome =
+        await build(enableSidecar: true).scrapeOne(book);
+    expect(outcome, isA<ScrapeApplied>());
+    expect((outcome as ScrapeApplied).origin, CoverOrigin.sidecar);
+
+    final VideoBookRow updated = (await repo.getByBookUid('video/sidecar'))!;
+    expect(File(updated.coverPath!).existsSync(), isTrue);
+    expect(File(updated.coverPath!).readAsBytesSync(), _fakePng);
+    final CoverMeta? meta = await coverMeta.get('video/sidecar');
+    expect(meta!.origin, CoverOrigin.sidecar);
+  });
+
+  test('未改动的 Fushi 生成海报不写成永久保护的 sidecar origin', () async {
+    final Directory lib =
+        await Directory.systemTemp.createTemp('generated_sidecar_lib_');
+    addTearDown(() async {
+      if (await lib.exists()) await lib.delete(recursive: true);
+    });
+    final File video = File(p.join(lib.path, 'My Show - 01.mkv'));
+    await video.writeAsBytes(<int>[0, 1, 2, 3]);
+    await File(p.join(lib.path, 'poster.jpg')).writeAsBytes(_fakePng);
+
+    final VideoBookRow book = await seed(
+      bookUid: 'video/generated-sidecar',
+      videoPath: video.path,
+    );
+    final String parsedTitle = build().parseForPath(video.path)!.title;
+    final CoverScraperService service = build(
+      enableSidecar: true,
+      generatedSidecarArtifactChecker:
+          const _StubGeneratedArtifactChecker(true),
+      offline: offlineWith(OfflineAnimeRecord(
+        title: parsedTitle,
+        type: ScrapeEntryType.tv,
+        picture: 'https://img/my-show.png',
+        sourceId: 'mal/123',
+      )),
+    );
+
+    final ScrapeOutcome outcome = await service.scrapeOne(book);
+
+    expect(outcome, isA<ScrapeApplied>());
+    expect((outcome as ScrapeApplied).origin, CoverOrigin.autoScraped);
+    expect(
+      (await coverMeta.get('video/generated-sidecar'))!.origin,
+      CoverOrigin.autoScraped,
+    );
+  });
+
+  test('artifact hash 不一致的生成海报仍作为用户 sidecar 保护', () async {
+    final Directory lib =
+        await Directory.systemTemp.createTemp('modified_sidecar_lib_');
+    addTearDown(() async {
+      if (await lib.exists()) await lib.delete(recursive: true);
+    });
+    final File video = File(p.join(lib.path, 'Modified Show - 01.mkv'));
+    await video.writeAsBytes(<int>[0, 1, 2, 3]);
+    await File(p.join(lib.path, 'poster.jpg')).writeAsBytes(_fakePng);
+
+    final VideoBookRow book = await seed(
+      bookUid: 'video/modified-sidecar',
+      videoPath: video.path,
+    );
+    final ScrapeOutcome outcome = await build(
+      enableSidecar: true,
+      generatedSidecarArtifactChecker:
+          const _StubGeneratedArtifactChecker(false),
+    ).scrapeOne(book);
+
+    expect(outcome, isA<ScrapeApplied>());
+    expect((outcome as ScrapeApplied).origin, CoverOrigin.sidecar);
+    expect(
+      (await coverMeta.get('video/modified-sidecar'))!.origin,
+      CoverOrigin.sidecar,
+    );
+  });
+
+  test('applyHighConfidence=false：high 也只返回 needsConfirm，不落盘', () async {
+    final VideoBookRow book = await seed(
+      bookUid: 'video/preview',
+      videoPath: p.join('anime', '进击的巨人', '进击的巨人 - 04.mkv'),
+    );
+    final CoverScraperService svc = build(
+      offline: offlineWith(const OfflineAnimeRecord(
+        title: '进击的巨人',
+        type: ScrapeEntryType.tv,
+        episodes: 25,
+        picture: 'https://img/aot.png',
+        sourceId: 'mal/16498',
+      )),
+    );
+    final ScrapeOutcome outcome =
+        await svc.scrapeOne(book, applyHighConfidence: false);
+    expect(outcome, isA<ScrapeNeedsConfirm>());
+    // 未落盘：封面路径仍空、无 meta。
+    expect((await repo.getByBookUid('video/preview'))!.coverPath, isNull);
+    expect(await coverMeta.get('video/preview'), isNull);
+  });
+
+  test('批量跳过 manual 封面，处理 autoFrame 无记录的书', () async {
+    final VideoBookRow manualBook = await seed(
+      bookUid: 'video/manual',
+      videoPath: p.join('anime', '进击的巨人', '进击的巨人 - 01.mkv'),
+    );
+    final VideoBookRow autoBook = await seed(
+      bookUid: 'video/auto',
+      videoPath: p.join('anime', '进击的巨人', '进击的巨人 - 02.mkv'),
+    );
+    await coverMeta.set(
+        'video/manual', const CoverMeta(origin: CoverOrigin.manual));
+
+    final CoverScraperService svc = build(
+      offline: offlineWith(const OfflineAnimeRecord(
+        title: '进击的巨人',
+        type: ScrapeEntryType.tv,
+        episodes: 25,
+        picture: 'https://img/aot.png',
+        sourceId: 'mal/16498',
+      )),
+    );
+    final List<BatchScrapeProgress> events =
+        await svc.scrapeLibrary(<VideoBookRow>[manualBook, autoBook]).toList();
+    expect(events, hasLength(2));
+
+    final ScrapeOutcome manualOutcome = events
+        .firstWhere((BatchScrapeProgress e) => e.book.bookUid == 'video/manual')
+        .outcome;
+    expect(manualOutcome, isA<ScrapeSkippedProtected>());
+    expect(
+        (manualOutcome as ScrapeSkippedProtected).origin, CoverOrigin.manual);
+
+    final ScrapeOutcome autoOutcome = events
+        .firstWhere((BatchScrapeProgress e) => e.book.bookUid == 'video/auto')
+        .outcome;
+    expect(autoOutcome, isA<ScrapeApplied>());
+    // manual 封面不被覆盖。
+    expect((await repo.getByBookUid('video/manual'))!.coverPath, isNull);
+  });
+
+  test('applyCandidateToBooks 单本：下载落封面 + updateCover + scraped meta + alias',
+      () async {
+    await seed(
+      bookUid: 'video/manual_apply',
+      videoPath: p.join('anime', 'X', 'X - 01.mkv'),
+    );
+    final CoverScraperService svc = build();
+    const ScrapeCandidate candidate = ScrapeCandidate(
+      source: ScrapeSource.bangumi,
+      entryId: '999',
+      title: 'X',
+      posterUrl: 'https://img/x.png',
+    );
+    await svc.applyCandidateToBooks(
+      bookUids: <String>['video/manual_apply'],
+      candidate: candidate,
+      aliasKey: 'X',
+    );
+    final VideoBookRow updated =
+        (await repo.getByBookUid('video/manual_apply'))!;
+    expect(updated.coverPath, isNotNull);
+    expect(File(updated.coverPath!).existsSync(), isTrue);
+    final CoverMeta? meta = await coverMeta.get('video/manual_apply');
+    expect(meta!.source, ScrapeSource.bangumi);
+    expect((await aliasCache.get('X'))!.$2, '999');
+  });
+
+  test('批量：单本网络异常记 failed 但不中断整批', () async {
+    final VideoBookRow b1 = await seed(
+      bookUid: 'video/e1',
+      videoPath: p.join('anime', 'Foo', 'Foo - 01.mkv'),
+    );
+    final VideoBookRow b2 = await seed(
+      bookUid: 'video/e2',
+      videoPath: p.join('anime', 'Bar', 'Bar - 01.mkv'),
+    );
+    // Bangumi 恒 500 → search 抛 ScrapeNetworkException；无离线、无 TMDB。
+    final BangumiClient failing = BangumiClient(
+      client: MockClient((http.Request req) async => http.Response('err', 500)),
+    );
+    final List<BatchScrapeProgress> events = await build(bangumi: failing)
+        .scrapeLibrary(<VideoBookRow>[b1, b2]).toList();
+    expect(events, hasLength(2));
+    expect(events[0].outcome, isA<ScrapeFailed>());
+    expect(events[1].outcome, isA<ScrapeFailed>());
+  });
+
+  // ── BUG-1325：整库刮削按「封面是谁定的」决定能不能覆盖 ──────────────
+  //
+  // 页头「全部刮削」是唯一开 rescrapeScraped: true 的路径。这个开关只解锁
+  // 「覆盖**自动**刮来的旧结果」（autoScraped），**不解锁**用户亲手选定的封面
+  // （userScraped / manual / sidecar）；来源未知的存量 scraped 记录还要再过
+  // 「唯一归一化精确标题」才允许覆盖。
+
+  /// 建一本已带封面、且封面来源记为 [origin] 的书。
+  Future<VideoBookRow> seedWithCover(
+    String bookUid,
+    String videoPath,
+    CoverOrigin origin,
+  ) async {
+    await seed(bookUid: bookUid, videoPath: videoPath);
+    final File existing = File(p.join(tmp.path, videoCoverFileName(bookUid)));
+    await existing.writeAsBytes(_fakePng);
+    await repo.updateCover(bookUid, existing.path);
+    await coverMeta.set(bookUid, CoverMeta(origin: origin));
+    return (await repo.getByBookUid(bookUid))!;
+  }
+
+  /// 建一本封面来源为**存量未知**（旧版本写的 scraped）的书。
+  Future<VideoBookRow> seedConfirmed(String bookUid, String videoPath) =>
+      seedWithCover(bookUid, videoPath, CoverOrigin.scraped);
+
+  /// 只有一条近似（非精确）高分候选的离线库：唯一精确闸门下会被拦，
+  /// 不加闸门时按综合分 high 落盘。
+  CoverScraperService approxOnlyService() => build(
+        offline: offlineWith(const OfflineAnimeRecord(
+          title: 'Attack on Titan Final',
+          type: ScrapeEntryType.tv,
+          episodes: 16,
+          picture: 'https://img/aot_final.png',
+          sourceId: 'mal/40028',
+        )),
+      );
+
+  test('BUG-1325 用户在弹窗里选定的封面：开着覆盖开关的整库刮削也绝不覆盖', () async {
+    // 用户手动纠错的典型场景：文件名标题搜不出正确条目，用户在匹配弹窗里亲手
+    // 挑了一部。此后无论整库刮削怎么跑，这张封面都不许动。
+    final VideoBookRow book = await seedWithCover(
+      'video/user_picked',
+      p.join('anime', 'Attack on Titan', 'Attack on Titan - 01.mkv'),
+      CoverOrigin.userScraped,
+    );
+    final String before = book.coverPath!;
+
+    // 离线库里放一条**唯一且精确**同名条目：连最严格的闸门都会放行，
+    // 唯一还能拦住它的只有「这是用户亲手选的」这一个事实。
+    final CoverScraperService svc = build(
+      offline: offlineWith(const OfflineAnimeRecord(
+        title: 'Attack on Titan',
+        type: ScrapeEntryType.tv,
+        episodes: 25,
+        picture: 'https://img/aot.png',
+        sourceId: 'mal/16498',
+      )),
+    );
+
+    final List<BatchScrapeProgress> events = await svc.scrapeLibrary(
+      <VideoBookRow>[book],
+      rescrapeScraped: true,
+    ).toList();
+
+    final ScrapeOutcome outcome = events.single.outcome;
+    expect(outcome, isA<ScrapeSkippedProtected>());
+    expect(
+      (outcome as ScrapeSkippedProtected).origin,
+      CoverOrigin.userScraped,
+    );
+    final VideoBookRow after = (await repo.getByBookUid('video/user_picked'))!;
+    expect(after.coverPath, before, reason: '用户手选的封面不得被整库刮削改掉');
+    final CoverMeta? meta = await coverMeta.get('video/user_picked');
+    expect(meta?.origin, CoverOrigin.userScraped, reason: '保护标记不得被抹掉');
+  });
+
+  test('BUG-1325 applyCandidateToBooks 落的是 userScraped（用户亲手拍板）', () async {
+    await seed(
+      bookUid: 'video/pick_meta',
+      videoPath: p.join('anime', 'X', 'X - 01.mkv'),
+    );
+    await build().applyCandidateToBooks(
+      bookUids: <String>['video/pick_meta'],
+      candidate: const ScrapeCandidate(
+        source: ScrapeSource.bangumi,
+        entryId: '999',
+        title: 'X',
+        posterUrl: 'https://img/x.png',
+      ),
+    );
+    final CoverMeta? meta = await coverMeta.get('video/pick_meta');
+    expect(meta?.origin, CoverOrigin.userScraped);
+  });
+
+  test('BUG-1325 自动刮来的旧封面：覆盖开关打开时照样更新（不许一起挡死）', () async {
+    final VideoBookRow book = await seedWithCover(
+      'video/auto_scraped',
+      p.join('anime', 'Attack on Titan', 'Attack on Titan - 01.mkv'),
+      CoverOrigin.autoScraped,
+    );
+
+    // 近似高分候选：存量未知记录会被闸门拦下，自动刮来的记录不该被拦——
+    // 覆盖开关本来就是为它们准备的。
+    final List<BatchScrapeProgress> events = await approxOnlyService()
+        .scrapeLibrary(<VideoBookRow>[book], rescrapeScraped: true).toList();
+
+    expect(events.single.outcome, isA<ScrapeApplied>());
+    final CoverMeta? meta = await coverMeta.get('video/auto_scraped');
+    expect(meta?.entryId, 'mal/40028', reason: '自动刮来的旧结果应被刷新');
+    expect(meta?.origin, CoverOrigin.autoScraped);
+  });
+
+  test('BUG-1325 自动刮来的旧封面：覆盖开关关着时不动', () async {
+    final VideoBookRow book = await seedWithCover(
+      'video/auto_scraped_off',
+      p.join('anime', 'Attack on Titan', 'Attack on Titan - 01.mkv'),
+      CoverOrigin.autoScraped,
+    );
+    final String before = book.coverPath!;
+
+    final List<BatchScrapeProgress> events =
+        await approxOnlyService().scrapeLibrary(<VideoBookRow>[book]).toList();
+
+    final ScrapeOutcome outcome = events.single.outcome;
+    expect(outcome, isA<ScrapeSkippedProtected>());
+    expect(
+      (outcome as ScrapeSkippedProtected).origin,
+      CoverOrigin.autoScraped,
+    );
+    expect(
+      (await repo.getByBookUid('video/auto_scraped_off'))!.coverPath,
+      before,
+    );
+  });
+
+  test('BUG-1325 存量未知来源（旧 scraped）整库重刮：唯一归一化精确标题才自动落盘', () async {
+    final VideoBookRow book = await seedConfirmed(
+      'video/exact_one',
+      p.join('anime', 'Attack on Titan', 'Attack on Titan - 01.mkv'),
+    );
+    final String before = book.coverPath!;
+    final CoverScraperService svc = build(
+      offline: offlineWith(const OfflineAnimeRecord(
+        title: 'Attack on Titan',
+        type: ScrapeEntryType.tv,
+        episodes: 25,
+        picture: 'https://img/aot.png',
+        sourceId: 'mal/16498',
+      )),
+    );
+
+    final List<BatchScrapeProgress> events = await svc.scrapeLibrary(
+      <VideoBookRow>[book],
+      rescrapeScraped: true,
+    ).toList();
+
+    expect(events.single.outcome, isA<ScrapeApplied>());
+    final CoverMeta? meta = await coverMeta.get('video/exact_one');
+    expect(meta?.entryId, 'mal/16498', reason: '唯一精确命中应真正落盘');
+    expect(before, isNotEmpty);
+  });
+
+  test('BUG-1325 存量未知来源（旧 scraped）整库重刮：多个同名精确候选不自动覆盖，降级待确认', () async {
+    final VideoBookRow book = await seedConfirmed(
+      'video/exact_two',
+      p.join('anime', 'Attack on Titan', 'Attack on Titan - 01.mkv'),
+    );
+    final String before = book.coverPath!;
+    // 同名不同作（重制/不同源同名条目）：综合分都是 1.0 的 high，但「是哪一部」
+    // 无法判定，绝不能替用户拍板去覆盖一张已经存在的封面。
+    final CoverScraperService svc = build(
+      offline: OfflineIndex(const <OfflineAnimeRecord>[
+        OfflineAnimeRecord(
+          title: 'Attack on Titan',
+          type: ScrapeEntryType.tv,
+          episodes: 25,
+          picture: 'https://img/aot_a.png',
+          sourceId: 'mal/16498',
+        ),
+        OfflineAnimeRecord(
+          title: 'Attack on Titan',
+          type: ScrapeEntryType.tv,
+          episodes: 12,
+          picture: 'https://img/aot_b.png',
+          sourceId: 'mal/99999',
+        ),
+      ]),
+    );
+
+    final List<BatchScrapeProgress> events = await svc.scrapeLibrary(
+      <VideoBookRow>[book],
+      rescrapeScraped: true,
+    ).toList();
+
+    expect(events.single.outcome, isA<ScrapeNeedsConfirm>());
+    final VideoBookRow after = (await repo.getByBookUid('video/exact_two'))!;
+    expect(after.coverPath, before, reason: '已有封面不得被覆盖');
+    final CoverMeta? meta = await coverMeta.get('video/exact_two');
+    expect(meta?.origin, CoverOrigin.scraped);
+    expect(meta?.entryId, isNull, reason: '没落盘就不该写条目身份');
+  });
+
+  test('BUG-1325 存量未知来源（旧 scraped）整库重刮：高分近似（非精确）候选降级待确认，不覆盖', () async {
+    final VideoBookRow book = await seedConfirmed(
+      'video/approx',
+      p.join('anime', 'Attack on Titan', 'Attack on Titan - 01.mkv'),
+    );
+    final String before = book.coverPath!;
+    // 标题相似度足够高（token dice 0.857 ≥ 0.85）→ MatchScorer 判 high，
+    // 但归一化后并不相等。旧判据（只看 high）会当场覆盖用户已确认的封面。
+    final CoverScraperService svc = build(
+      offline: offlineWith(const OfflineAnimeRecord(
+        title: 'Attack on Titan Final',
+        type: ScrapeEntryType.tv,
+        episodes: 16,
+        picture: 'https://img/aot_final.png',
+        sourceId: 'mal/40028',
+      )),
+    );
+
+    final List<BatchScrapeProgress> events = await svc.scrapeLibrary(
+      <VideoBookRow>[book],
+      rescrapeScraped: true,
+    ).toList();
+
+    expect(
+      events.single.outcome,
+      isA<ScrapeNeedsConfirm>(),
+      reason: '近似命中只能进待确认，不能无人值守覆盖',
+    );
+    final VideoBookRow after = (await repo.getByBookUid('video/approx'))!;
+    expect(after.coverPath, before);
+  });
+
+  test('BUG-1325 存量未知来源（旧 scraped）整库重刮：精确候选存在但按分数落选时，同样不自动落盘', () async {
+    // 「唯一精确」必须落在**获胜候选**身上：库里恰好有一条精确同名条目，却因为
+    // 年份/集数加分被另一条近似条目挤下去时，落盘的会是那条近似的——只数
+    // 「精确条目有几个」而不校验赢家是不是它，闸门就是漏的。
+    final VideoBookRow book = await seedConfirmed(
+      'video/exact_loses',
+      p.join(
+          'anime', 'Attack on Titan (2013)', 'Attack on Titan (2013) - 01.mkv'),
+    );
+    final String before = book.coverPath!;
+    final CoverScraperService svc = build(
+      offline: OfflineIndex(const <OfflineAnimeRecord>[
+        // 精确同名，但没有年份/集数可加分。
+        OfflineAnimeRecord(
+          title: 'Attack on Titan',
+          type: ScrapeEntryType.tv,
+          picture: 'https://img/aot_exact.png',
+          sourceId: 'mal/16498',
+        ),
+        // 近似标题，靠年份吻合 + 集数命中把综合分顶到精确条目之上。
+        OfflineAnimeRecord(
+          title: 'Attack on Titan Final',
+          type: ScrapeEntryType.tv,
+          episodes: 16,
+          year: 2013,
+          picture: 'https://img/aot_final.png',
+          sourceId: 'mal/40028',
+        ),
+      ]),
+    );
+
+    final List<BatchScrapeProgress> events = await svc.scrapeLibrary(
+      <VideoBookRow>[book],
+      rescrapeScraped: true,
+    ).toList();
+
+    final ScrapeOutcome outcome = events.single.outcome;
+    expect(
+      outcome,
+      isA<ScrapeNeedsConfirm>(),
+      reason: '获胜候选不是那条精确同名的，不能无人值守落盘',
+    );
+    expect(
+      (outcome as ScrapeNeedsConfirm).candidates.single.candidate.entryId,
+      'mal/40028',
+      reason: '前提校验：按分数获胜的确实是近似那条，否则本用例没测到东西',
+    );
+    final VideoBookRow after = (await repo.getByBookUid('video/exact_loses'))!;
+    expect(after.coverPath, before);
+  });
+
+  test('BUG-1325 默认（自动刮削路径）判据不变：高分近似仍落抽帧封面', () async {
+    // 防过度收敛：requireUniqueExactTitle 默认 false，既有 _maybeAutoScrape
+    // 只覆盖 autoFrame 封面，判据仍是综合分 high。
+    final VideoBookRow book = await seed(
+      bookUid: 'video/auto_frame',
+      videoPath: p.join('anime', 'Attack on Titan', 'Attack on Titan - 01.mkv'),
+    );
+    final CoverScraperService svc = build(
+      offline: offlineWith(const OfflineAnimeRecord(
+        title: 'Attack on Titan Final',
+        type: ScrapeEntryType.tv,
+        episodes: 16,
+        picture: 'https://img/aot_final.png',
+        sourceId: 'mal/40028',
+      )),
+    );
+
+    final List<BatchScrapeProgress> events =
+        await svc.scrapeLibrary(<VideoBookRow>[book]).toList();
+
+    expect(events.single.outcome, isA<ScrapeApplied>());
+    final CoverMeta? meta = await coverMeta.get('video/auto_frame');
+    expect(meta?.entryId, 'mal/40028');
+  });
+
+  test('sidecar 覆盖已有封面后双键驱逐旧解码缓存（BUG-1118）', () async {
+    final Directory lib = await Directory.systemTemp.createTemp('sidecar_ev_');
+    addTearDown(() async {
+      if (await lib.exists()) await lib.delete(recursive: true);
+    });
+    final File video = File(p.join(lib.path, 'My Show - 01.mkv'));
+    await video.writeAsBytes(<int>[0, 1, 2, 3]);
+    // kTransparentImage 是真实可解码 PNG（缓存 populate 需要真解码）。
+    await File(p.join(lib.path, 'poster.jpg')).writeAsBytes(kTransparentImage);
+
+    final VideoBookRow book = await seed(
+      bookUid: 'video/sidecar_evict',
+      videoPath: video.path,
+    );
+    final CoverScraperService svc = build(enableSidecar: true);
+
+    // 首次刮削落封面，模拟卡片渲染（双键入缓存）。
+    final ScrapeOutcome first = await svc.scrapeOne(book);
+    final String coverPath = (first as ScrapeApplied).coverPath;
+    await populateBothCoverKeys(coverPath);
+
+    // 再次刮削命中同一 poster.jpg，_copySidecarCover 覆盖同一路径 → 双键驱逐。
+    final ScrapeOutcome second = await svc.scrapeOne(book);
+    expect((second as ScrapeApplied).coverPath, coverPath,
+        reason: '同 uid 恒落同一路径（覆盖写）');
+    await expectBothCoverKeysEvicted(coverPath);
+  });
+
+  test('applyCandidateToBooks 合集分发：每个成员封面路径均双键驱逐（BUG-1118）', () async {
+    await seed(
+      bookUid: 'video/coll_1',
+      videoPath: p.join('anime', 'Y', 'Y - 01.mkv'),
+    );
+    await seed(
+      bookUid: 'video/coll_2',
+      videoPath: p.join('anime', 'Y', 'Y - 02.mkv'),
+    );
+    // 预置旧封面（可解码）并把双键解码进缓存，模拟换图前卡片已渲染过。
+    final List<String> dests = <String>[
+      p.join(tmp.path, videoCoverFileName('video/coll_1')),
+      p.join(tmp.path, videoCoverFileName('video/coll_2')),
+    ];
+    for (final String dest in dests) {
+      await File(dest).writeAsBytes(kTransparentImage);
+      await populateBothCoverKeys(dest);
+    }
+
+    const ScrapeCandidate candidate = ScrapeCandidate(
+      source: ScrapeSource.bangumi,
+      entryId: '888',
+      title: 'Y',
+      posterUrl: 'https://img/y.png',
+    );
+    await build().applyCandidateToBooks(
+      bookUids: <String>['video/coll_1', 'video/coll_2'],
+      candidate: candidate,
+    );
+
+    // 首成员走 downloadCover、其余成员走 copy 分发：两条路径都必须驱逐。
+    for (final String dest in dests) {
+      await expectBothCoverKeysEvicted(dest);
+    }
+  });
+}

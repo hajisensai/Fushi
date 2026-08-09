@@ -1,0 +1,521 @@
+import 'dart:io';
+
+import 'package:flutter/services.dart' hide ModifierKey;
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
+
+import '../../pages/video_fushi_page_source_corpus.dart';
+
+/// Source guard: video keyboard interaction + autoplay both need a real libmpv
+/// player (the host has none; load()/Player construction throws), so structure
+/// is pinned at the source level.
+///
+/// TODO-134: the video keyboard keys were migrated out of the hard-coded
+/// Map<ShortcutActivator, VoidCallback> in video_player_shortcuts.dart into the
+/// remappable registry. The DEFAULT bindings now live in shortcut_defaults.dart
+/// (ShortcutDefaults.forPlatform); the action->callback WIRING is
+/// videoActionCallbacks in video_player_shortcuts.dart; the callback BEHAVIOUR
+/// still lives in video_fushi_page.dart. Assertions that used to scan the
+/// shortcuts source for LogicalKeyboardKey.xxx strings now assert the registry
+/// defaults (using the real enum / InputBinding, stronger than string scans);
+/// the page behaviour assertions are unchanged.
+void main() {
+  String read(String relPath) => File(relPath).readAsStringSync();
+
+  String region(String src, String startSig, String endSig) {
+    final int start = src.indexOf(startSig);
+    expect(start, greaterThanOrEqualTo(0), reason: 'missing $startSig');
+    final int end = src.indexOf(endSig, start + startSig.length);
+    expect(end, greaterThan(start), reason: 'missing $endSig after $startSig');
+    return src.substring(start, end);
+  }
+
+  // Windows defaults are the canonical desktop video bindings (asbplayer/mpv).
+  final Map<ShortcutAction, ShortcutBindingSet> videoDefaults =
+      ShortcutDefaults.forPlatform(TargetPlatform.windows);
+
+  // Whether [action] has a keyboard default matching [key] + [modifiers].
+  bool defaultHasKey(
+    ShortcutAction action,
+    LogicalKeyboardKey key, {
+    Set<ModifierKey> modifiers = const <ModifierKey>{},
+  }) {
+    final InputBinding target = InputBinding(key: key, modifiers: modifiers);
+    return videoDefaults[action]!.keyboardBindings.contains(target);
+  }
+
+  group('video page Escape overrides media_kit default', () {
+    final String page = readVideoFushiSource();
+
+    test('desktop controls theme overrides keyboardShortcuts', () {
+      expect(
+          page.contains('keyboardShortcuts: _videoKeyboardShortcuts('), isTrue,
+          reason:
+              'media_kit default Escape only exits fullscreen; must replace '
+              'the whole table');
+    });
+
+    test('Escape exits page when windowed, exits fullscreen when fullscreen',
+        () {
+      // Escape 现在是全 app 唯一「返回上一级」(globalBack) 的默认键之一，视频页在
+      // video scope 未命中后兜底解析它，执行体仍是本页的逐级退出阶梯。
+      expect(
+          defaultHasKey(ShortcutAction.globalBack, LogicalKeyboardKey.escape),
+          isTrue,
+          reason: 'globalBack default must bind Escape');
+      expect(page.contains('escape: () {'), isTrue,
+          reason: 'page must wire the Escape action to real exit logic');
+      expect(page.contains('isFullscreen('), isTrue,
+          reason: 'fullscreen Escape exits fullscreen');
+      expect(page.contains('_exitVideoFullscreen('), isTrue,
+          reason: 'Escape fullscreen exit goes through the neutralised helper');
+      expect(page.contains('_handleBackOrExit()'), isTrue,
+          reason: 'windowed Escape exits the video page');
+    });
+
+    test('Escape cancels video control edit mode before video exit handling',
+        () {
+      final String escapeBody = region(page, 'escape: () {', '},\n      ),');
+      final int editGate = escapeBody.indexOf('_videoControlEditMode.value');
+      final int cancelEdit = escapeBody.indexOf(
+        '_hideVideoControlEditOverlay(revealControls: false)',
+      );
+      final int fullscreenExit = escapeBody.indexOf('_exitVideoFullscreen(');
+      final int backExit = escapeBody.indexOf('_handleBackOrExit()');
+
+      expect(editGate, greaterThanOrEqualTo(0),
+          reason: 'Escape must first test on-video control edit mode');
+      expect(cancelEdit, greaterThan(editGate),
+          reason: 'editing Escape should cancel the draft overlay');
+      expect(fullscreenExit, greaterThan(cancelEdit),
+          reason: 'fullscreen exit must only run after edit cancel gate');
+      expect(backExit, greaterThan(cancelEdit),
+          reason: 'page exit must only run after edit cancel gate');
+    });
+
+    test('exit confluence: PopScope and Escape share _handleBackOrExit', () {
+      expect(page.contains('Future<void> _handleBackOrExit() async'), isTrue);
+      expect('_handleBackOrExit()'.allMatches(page).length,
+          greaterThanOrEqualTo(2),
+          reason:
+              'PopScope onPop and Escape both converge on _handleBackOrExit');
+    });
+
+    test('fullscreen helper uses the controls-subtree context', () {
+      expect(page.contains('_videoControlsContext = controlsContext'), isTrue,
+          reason: 'isFullscreen/toggle/exitFullscreen need a controls-subtree '
+              'context');
+    });
+  });
+
+  group('asbplayer-style playback shortcuts', () {
+    final String page = readVideoFushiSource();
+    final String shortcuts =
+        read('lib/src/media/video/video_player_shortcuts.dart');
+
+    test('TODO-090: bare arrowLeft = time seek (seekBackward)', () {
+      // Bare (unmodified) arrows are time seek, not sentence skip (asbplayer).
+      // Default-key source of truth is now the registry: videoSeekBackward
+      // binds bare arrowLeft.
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoSeekBackward, LogicalKeyboardKey.arrowLeft),
+          isTrue,
+          reason: 'bare arrowLeft must bind videoSeekBackward (TODO-090)');
+      // Bare arrowLeft must NOT be sentence skip (that is the Ctrl combo).
+      expect(
+          defaultHasKey(ShortcutAction.videoPreviousSubtitle,
+              LogicalKeyboardKey.arrowLeft),
+          isFalse,
+          reason: 'bare arrowLeft does not bind previousSubtitle');
+      // action->callback wiring: videoSeekBackward -> actions.seekBackward.
+      expect(
+          shortcuts.contains(
+              'ShortcutAction.videoSeekBackward: actions.seekBackward'),
+          isTrue);
+    });
+
+    test('TODO-090: bare arrowRight = time seek (seekForward)', () {
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoSeekForward, LogicalKeyboardKey.arrowRight),
+          isTrue,
+          reason: 'bare arrowRight must bind videoSeekForward (TODO-090)');
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoNextSubtitle, LogicalKeyboardKey.arrowRight),
+          isFalse,
+          reason: 'bare arrowRight does not bind nextSubtitle');
+      expect(
+          shortcuts
+              .contains('ShortcutAction.videoSeekForward: actions.seekForward'),
+          isTrue);
+    });
+
+    test('TODO-090: Ctrl+Left/Right = prev/next subtitle (sentence seek)', () {
+      // Ctrl+arrow = sentence skip; default keys provided by the registry
+      // (videoPreviousSubtitle / videoNextSubtitle bind Ctrl+arrow); wiring in
+      // videoActionCallbacks.
+      expect(
+          defaultHasKey(ShortcutAction.videoPreviousSubtitle,
+              LogicalKeyboardKey.arrowLeft,
+              modifiers: const <ModifierKey>{ModifierKey.ctrl}),
+          isTrue,
+          reason: 'Ctrl+Left must bind videoPreviousSubtitle (sentence skip)');
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoNextSubtitle, LogicalKeyboardKey.arrowRight,
+              modifiers: const <ModifierKey>{ModifierKey.ctrl}),
+          isTrue,
+          reason: 'Ctrl+Right must bind videoNextSubtitle (sentence skip)');
+      expect(
+          shortcuts.contains(
+              'ShortcutAction.videoPreviousSubtitle: actions.previousSubtitle'),
+          isTrue);
+      expect(
+          shortcuts.contains(
+              'ShortcutAction.videoNextSubtitle: actions.nextSubtitle'),
+          isTrue);
+    });
+
+    test('TODO-085: Ctrl+Left far-prev degrades to seek back Xs', () {
+      expect(page.contains('skipToPrevCueOrSeekBack('), isTrue,
+          reason: 'Ctrl+Left goes through the degrade decision method');
+      expect(page.contains('seekSeconds: _asbConfig.seekSeconds'), isTrue,
+          reason: 'degrade threshold uses the configured seekSeconds');
+      expect(page.contains('skipToNextCueOrSeekForward('), isTrue,
+          reason:
+              'next sentence uses the centralised decision method (TODO-073)');
+      expect(page.contains('_asbSeekMs'), isTrue);
+    });
+
+    test('TODO-119: prev-sentence button degrades on no-subtitle segments', () {
+      // No bare controller.skipToPrevCue() left in the page (BUG-200).
+      expect(page.contains('controller.skipToPrevCue()'), isFalse,
+          reason: 'no bare controller.skipToPrevCue() (no-op on gap, BUG-200)');
+      expect(page.contains('skipToPrevCueOrSeekBack('), isTrue,
+          reason: 'prev-sentence must go through skipToPrevCueOrSeekBack');
+
+      final int helperAt =
+          page.indexOf('Future<void> _skipCueAndPokeControls(');
+      expect(helperAt, greaterThanOrEqualTo(0),
+          reason: 'cannot find _skipCueAndPokeControls');
+      final int helperEnd =
+          page.indexOf('AudioCue? _currentCueForAction(', helperAt);
+      expect(helperEnd, greaterThan(helperAt));
+      final String body = page.substring(helperAt, helperEnd);
+      expect(body.contains('skipToPrevCueOrSeekBack('), isTrue,
+          reason: 'backward branch uses skipToPrevCueOrSeekBack (TODO-119)');
+      expect(body.contains('skipToNextCueOrSeekForward('), isTrue,
+          reason: 'forward branch uses skipToNextCueOrSeekForward (TODO-073)');
+    });
+
+    test('TODO-085 prevSeekDecisionFor exists and degrades on seekSeconds', () {
+      final String controller =
+          read('lib/src/media/video/video_player_controller.dart');
+      expect(
+          controller.contains('static PrevSeekDecision prevSeekDecisionFor('),
+          isTrue);
+      expect(controller.contains('final int thresholdMs = seekSeconds * 1000;'),
+          isTrue,
+          reason: 'threshold = seekSeconds');
+      expect(controller.contains('if (gapMs > thresholdMs)'), isTrue,
+          reason: 'only degrade when gap exceeds threshold');
+    });
+
+    test('A/D and Shift+F use one configured asbplayer seek value', () {
+      expect(page.contains('int get _asbSeekMs =>'), isTrue);
+      expect(page.contains('_asbConfig.seekSeconds * 1000'), isTrue);
+      expect(page.contains('_asbFastSeekMs'), isFalse);
+      expect(page.contains('fastSeekSeconds'), isFalse);
+      // A/D time-seek default keys now come from the registry
+      // (videoSeekBackward has KeyA; videoSeekForward has KeyD and Shift+KeyF).
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoSeekBackward, LogicalKeyboardKey.keyA),
+          isTrue,
+          reason: 'A = seek back');
+      expect(page.contains('seekRelative(-_asbSeekMs)'), isTrue);
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoSeekForward, LogicalKeyboardKey.keyD),
+          isTrue,
+          reason: 'D = seek forward');
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoSeekForward, LogicalKeyboardKey.keyF,
+              modifiers: const <ModifierKey>{ModifierKey.shift}),
+          isTrue,
+          reason: 'Shift+F = seek forward');
+      expect(page.contains('seekRelative(_asbSeekMs)'), isTrue);
+    });
+
+    test('up/down remain volume keys and do not adjust subtitle offset', () {
+      // Up/Down are always volume (registry: videoVolumeUp has arrowUp,
+      // videoVolumeDown has arrowDown); never subtitle sync.
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoVolumeUp, LogicalKeyboardKey.arrowUp),
+          isTrue);
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoVolumeDown, LogicalKeyboardKey.arrowDown),
+          isTrue);
+      expect(page.contains('_adjustVolume(_volumeStep)'), isTrue);
+      expect(page.contains('_adjustVolume(-_volumeStep)'), isTrue);
+      expect(shortcuts.contains('_adjustSubtitleOffset'), isFalse);
+
+      final String volumeHud = region(
+        page,
+        'void _showVolumeOsd(double volume) {',
+        'void _showBrightnessOsd(double brightness) {',
+      );
+      expect(volumeHud.contains('_showLevelHud('), isTrue,
+          reason:
+              'Keyboard volume keys must show the right-side page-level HUD.');
+      expect(volumeHud.contains('_showOsd('), isFalse,
+          reason:
+              'Keyboard volume keys must not display volume in the top-left OSD.');
+    });
+
+    test('subtitle sync is both a settings control and a z/x key binding', () {
+      // TODO-060: subtitle sync is a settings panel row, committed via
+      // onSetDelay -> _setDelayMs. 用户请求（本轮）：额外把整体延迟平移绑到键盘
+      // z/x（mpv 惯例），每次 ±_kSubtitleDelayNudgeMs，走同一 _setDelayMs 写穿路径。
+      // 仍不绑到裸箭头键（箭头是 time seek，TODO-090），故与既有 seek 语义不冲突。
+      expect(page.contains('onSetDelay: _setDelayMs'), isTrue);
+      expect(page.contains('_setDelayMs'), isTrue);
+      // 键盘默认：z = 减小字幕延迟、x = 增大（video co-active 组内无冲突）。
+      expect(
+          defaultHasKey(ShortcutAction.videoSubtitleDelayDecrease,
+              LogicalKeyboardKey.keyZ),
+          isTrue,
+          reason: 'z decreases subtitle delay (mpv-style)');
+      expect(
+          defaultHasKey(ShortcutAction.videoSubtitleDelayIncrease,
+              LogicalKeyboardKey.keyX),
+          isTrue,
+          reason: 'x increases subtitle delay (mpv-style)');
+      // 裸箭头仍不绑字幕延迟（保持 time seek 语义）。
+      expect(
+          defaultHasKey(ShortcutAction.videoSubtitleDelayDecrease,
+              LogicalKeyboardKey.arrowLeft),
+          isFalse,
+          reason: 'subtitle delay is not bound to bare arrows');
+      // 页面把两个动作接到 _setDelayMs(_delayMs ± step)，与设置面板同一写穿路径。
+      expect(page.contains('_setDelayMs(_delayMs + _kSubtitleDelayNudgeMs)'),
+          isTrue);
+      expect(page.contains('_setDelayMs(_delayMs - _kSubtitleDelayNudgeMs)'),
+          isTrue);
+      // action->callback 接线在 videoActionCallbacks 里。
+      expect(
+          shortcuts.contains('ShortcutAction.videoSubtitleDelayIncrease: '
+              'actions.subtitleDelayIncrease'),
+          isTrue);
+      // 仍不引入旧的被否决实现名。
+      expect(page.contains('_adjustSubtitleOffset'), isFalse);
+      expect(page.contains('_subtitleOffsetStepMs'), isFalse);
+    });
+
+    test('asbplayer 式字幕偏移对齐绑 Ctrl+Shift+←/→，走纯函数 + _setDelayMs', () {
+      // 用户请求（本轮）：Ctrl+Shift+← 对齐上一句、Ctrl+Shift+→ 对齐下一句字幕到当前
+      // 播放点（按目标 cue 求绝对偏移，与 z/x 步进微调互补）。镜像 Ctrl+←/→ 跳句手感。
+      expect(
+        defaultHasKey(ShortcutAction.videoAlignSubtitleToPrev,
+            LogicalKeyboardKey.arrowLeft, modifiers: const <ModifierKey>{
+          ModifierKey.ctrl,
+          ModifierKey.shift
+        }),
+        isTrue,
+        reason: 'Ctrl+Shift+Left 对齐上一句字幕到当前点',
+      );
+      expect(
+        defaultHasKey(ShortcutAction.videoAlignSubtitleToNext,
+            LogicalKeyboardKey.arrowRight, modifiers: const <ModifierKey>{
+          ModifierKey.ctrl,
+          ModifierKey.shift
+        }),
+        isTrue,
+        reason: 'Ctrl+Shift+Right 对齐下一句字幕到当前点',
+      );
+      // 仍不绑裸箭头（箭头=time seek，TODO-090），也不绑 Ctrl+箭头（=跳句），避免撞语义。
+      expect(
+        defaultHasKey(ShortcutAction.videoAlignSubtitleToNext,
+            LogicalKeyboardKey.arrowRight,
+            modifiers: const <ModifierKey>{ModifierKey.ctrl}),
+        isFalse,
+        reason: 'Ctrl+Right 仍是跳句（videoNextSubtitle），不是对齐',
+      );
+      // action->callback 接线在 videoActionCallbacks 里。
+      expect(
+        shortcuts.contains(
+            'ShortcutAction.videoAlignSubtitleToPrev: actions.alignSubtitleToPrev'),
+        isTrue,
+      );
+      expect(
+        shortcuts.contains(
+            'ShortcutAction.videoAlignSubtitleToNext: actions.alignSubtitleToNext'),
+        isTrue,
+      );
+      // 页面胶水调纯函数 snapSubtitleDelayMs，写穿仍走既有 _setDelayMs（与 z/x 同源）。
+      expect(page.contains('_snapSubtitleDelayToCue(next: false)'), isTrue);
+      expect(page.contains('_snapSubtitleDelayToCue(next: true)'), isTrue);
+      expect(
+          page.contains('VideoPlayerController.snapSubtitleDelayMs('), isTrue);
+    });
+
+    test('speed changes by configured asbplayer step', () {
+      expect(page.contains('double get _speedStep => _asbConfig.speedStep'),
+          isTrue);
+      expect(page.contains('_adjustSpeed(_speedStep)'), isTrue);
+      expect(page.contains('_adjustSpeed(-_speedStep)'), isTrue);
+    });
+
+    test('mpv-style common playback shortcuts are mapped where supported', () {
+      // mpv-style default keys all live in the registry now (TODO-134). Assert
+      // each registry default; assert the callback behaviour on the page side.
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoTogglePlayPause, LogicalKeyboardKey.keyP),
+          isTrue,
+          reason: 'mpv default: p toggles play/pause');
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoVolumeDown, LogicalKeyboardKey.digit9),
+          isTrue,
+          reason: 'mpv default: 9 decreases volume');
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoVolumeUp, LogicalKeyboardKey.digit0),
+          isTrue,
+          reason: 'mpv default: 0 increases volume');
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoToggleMute, LogicalKeyboardKey.keyM),
+          isTrue,
+          reason: 'mpv default: m toggles mute');
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoSpeedDown, LogicalKeyboardKey.bracketLeft),
+          isTrue,
+          reason: 'mpv default: [ decreases speed');
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoSpeedUp, LogicalKeyboardKey.bracketRight),
+          isTrue,
+          reason: 'mpv default: ] increases speed');
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoResetSpeed, LogicalKeyboardKey.backspace),
+          isTrue,
+          reason: 'mpv default: Backspace resets speed');
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoPreviousFrame, LogicalKeyboardKey.comma),
+          isTrue,
+          reason: 'mpv default: , steps one frame backward');
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoNextFrame, LogicalKeyboardKey.period),
+          isTrue,
+          reason: 'mpv default: . steps one frame forward');
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoScreenshot, LogicalKeyboardKey.keyS),
+          isTrue,
+          reason: 'mpv default: s takes a screenshot');
+      expect(page.contains('_toggleMute()'), isTrue);
+      expect(page.contains('_setSpeed(1.0)'), isTrue);
+      expect(page.contains('frameStep(forward: false)'), isTrue);
+      expect(page.contains('frameStep(forward: true)'), isTrue);
+      expect(page.contains('_saveScreenshot()'), isTrue);
+    });
+  });
+
+  group('lookup popup re-tap on same sentence: switch word, keep paused', () {
+    final String page = readVideoFushiSource();
+
+    test('dismiss barrier uses onTapUp -> _onDismissBarrierTap (coord check)',
+        () {
+      expect(page.contains('onTapUp: (TapUpDetails d) =>'), isTrue);
+      expect(page.contains('_onDismissBarrierTap(d.globalPosition)'), isTrue,
+          reason: 'barrier needs a coordinate check, not a blind pop');
+    });
+
+    test('_onDismissBarrierTap: hit char -> lookup handler; else dismiss', () {
+      final RegExpMatch? body = RegExp(
+        r'void _onDismissBarrierTap\(Offset globalPos\) \{(.*?)\n  \}',
+        dotAll: true,
+      ).firstMatch(page);
+      expect(body, isNotNull, reason: 'cannot find _onDismissBarrierTap body');
+      final String b = body!.group(1)!;
+      // BUG-910：barrier 关闭判定用 exactOnly:true（跳过查词裙边容差），点字幕行周围空白
+      // halo 不误判成切词重查。查词/悬停仍用宽容差（不在本方法体）。
+      final int hitAt =
+          b.indexOf('_subtitleHitTester.hitTest(globalPos, exactOnly: true)');
+      final int handlerAt = b.indexOf('_handleSubtitleLookupTap(');
+      final int popAt = b.indexOf('_popNestedPopupAt(0)');
+      expect(hitAt, greaterThanOrEqualTo(0),
+          reason: 'hit-test the char first with exactOnly (BUG-910)');
+      expect(handlerAt, greaterThan(hitAt),
+          reason: 'on hit, switch lookup through the lookup gate handler');
+      expect(popAt, greaterThan(handlerAt),
+          reason: 'else clear whole stack via _popNestedPopupAt(0) (TODO-834)');
+    });
+
+    test('_handleSubtitleLookupTap gates lookup before _lookupAt', () {
+      final RegExpMatch? body = RegExp(
+        r'void _handleSubtitleLookupTap\(\n'
+        r'    String sentence,\n'
+        r'    int graphemeIndex,\n'
+        r'    Rect charRect,\n'
+        r'  \) \{(.*?)\n  \}',
+        dotAll: true,
+      ).firstMatch(page);
+      expect(body, isNotNull,
+          reason: 'cannot find _handleSubtitleLookupTap body');
+      final String b = body!.group(1)!;
+      final int gate = b.indexOf('_immersiveAllowsLookup');
+      final int lookupAt = b.indexOf('_lookupAt(');
+      expect(gate, greaterThanOrEqualTo(0),
+          reason: 'subtitle lookup must respect lookup-only immersive modes');
+      expect(lookupAt, greaterThan(gate),
+          reason: 'lookup handler must call _lookupAt only after the gate');
+    });
+
+    test('subtitle overlay binds _subtitleHitTester', () {
+      expect(page.contains('hitTester: _subtitleHitTester'), isTrue);
+    });
+  });
+
+  group('autoplay on enter page / episode switch', () {
+    final String controller =
+        read('lib/src/media/video/video_player_controller.dart');
+    final String page = readVideoFushiSource();
+
+    test('load supports the autoPlay parameter', () {
+      expect(controller.contains('bool autoPlay = false'), isTrue,
+          reason: 'autoPlay defaults to false to preserve existing behaviour');
+    });
+
+    test('autoPlay calls player.play() after the restore seek', () {
+      final int restore = controller.indexOf('await player.seek(');
+      // BUG-344: autoPlay 守卫用 _isCurrentLoad 双判据（换集复用同一 player 时单判
+      // `_player == player` 会误向被新 load 接管的 player 发 play()）。
+      final int auto = controller
+          .indexOf('if (autoPlay && _isCurrentLoad(player, loadToken))');
+      final int play = controller.indexOf('await player.play();');
+      expect(restore, greaterThanOrEqualTo(0));
+      expect(auto, greaterThan(restore),
+          reason: 'autoPlay must play after the restore seek');
+      expect(play, greaterThan(auto));
+    });
+
+    test('page _loadVideo passes autoPlay: true', () {
+      expect(page.contains('autoPlay: true'), isTrue,
+          reason: 'enter page / episode switch should start playing');
+    });
+  });
+}

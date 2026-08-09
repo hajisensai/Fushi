@@ -1,6 +1,6 @@
 #pragma once
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 inline bool MatchesCatSystem2Profile(const wchar_t*) {
   wchar_t executable[MAX_PATH] = {0};
@@ -27,4 +27,4 @@ inline bool MatchesCatSystem2Profile(const wchar_t*) {
   return true;
 }
 
-}  // namespace hibiki_voice_hook
+}  // namespace fushi_voice_hook

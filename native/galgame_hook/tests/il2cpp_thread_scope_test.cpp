@@ -9,8 +9,8 @@
 
 #include "il2cpp_thread_scope.h"
 
-using hibiki_voice_hook::Il2CppManagedThreadScope;
-using hibiki_voice_hook::Il2CppThreadFns;
+using fushi_voice_hook::Il2CppManagedThreadScope;
+using fushi_voice_hook::Il2CppThreadFns;
 
 namespace {
 

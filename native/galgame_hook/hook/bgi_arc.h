@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace hibiki_voice_hook::bgi {
+namespace fushi_voice_hook::bgi {
 
 constexpr char kArc20Signature[] = "BURIKO ARC20";
 constexpr size_t kArc20SignatureBytes = 12;
@@ -94,4 +94,4 @@ inline bool ParseBwOggHeader(const uint8_t* header, size_t header_bytes,
   return true;
 }
 
-}  // namespace hibiki_voice_hook::bgi
+}  // namespace fushi_voice_hook::bgi

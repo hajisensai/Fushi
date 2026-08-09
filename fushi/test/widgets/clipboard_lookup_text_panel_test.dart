@@ -1,0 +1,304 @@
+import 'dart:ui';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
+
+void main() {
+  Widget buildSubject({
+    required String text,
+    required void Function(String query, Rect rect) onLookup,
+    double dictionaryHeadwordScale = 1.0,
+  }) {
+    return MaterialApp(
+      home: Scaffold(
+        body: SourceLookupTextPanel(
+          text: text,
+          onLookup: onLookup,
+          dictionaryHeadwordScale: dictionaryHeadwordScale,
+        ),
+      ),
+    );
+  }
+
+  testWidgets('tapping a character looks up the suffix from that character',
+      (WidgetTester tester) async {
+    String? query;
+    Rect? rect;
+
+    await tester.pumpWidget(
+      buildSubject(
+        text: 'abcdef',
+        onLookup: (String value, Rect localRect) {
+          query = value;
+          rect = localRect;
+        },
+      ),
+    );
+
+    await tester.tap(find.text('c'));
+
+    expect(query, 'cdef');
+    expect(rect, isNotNull);
+    expect(rect, isNot(Rect.zero));
+  });
+
+  testWidgets('shift-hover looks up the suffix under the pointer',
+      (WidgetTester tester) async {
+    String? query;
+    Rect? rect;
+
+    await tester.pumpWidget(
+      buildSubject(
+        text: 'abcdef',
+        onLookup: (String value, Rect localRect) {
+          query = value;
+          rect = localRect;
+        },
+      ),
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    final TestGesture mouse =
+        await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: tester.getCenter(find.text('c')));
+    await tester.pump();
+    await mouse.moveTo(tester.getCenter(find.text('c')));
+    await tester.pump();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await mouse.removePointer();
+
+    expect(query, 'cdef');
+    expect(rect, isNotNull);
+    expect(rect, isNot(Rect.zero));
+  });
+
+  testWidgets('tap rect is reported in the nearest stack coordinate space',
+      (WidgetTester tester) async {
+    Rect? rect;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Positioned(
+                left: 40,
+                top: 30,
+                child: SourceLookupTextPanel(
+                  text: 'abc',
+                  onLookup: (_, Rect localRect) {
+                    rect = localRect;
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('a'));
+
+    expect(rect, isNotNull);
+    expect(rect!.left, greaterThanOrEqualTo(40));
+    expect(rect!.top, greaterThanOrEqualTo(30));
+    expect(rect!.width, greaterThan(0));
+    expect(rect!.height, greaterThan(0));
+  });
+
+  testWidgets('blank text renders nothing and cannot trigger lookup',
+      (WidgetTester tester) async {
+    bool called = false;
+
+    await tester.pumpWidget(
+      buildSubject(
+        text: '   ',
+        onLookup: (_, __) => called = true,
+      ),
+    );
+
+    expect(find.byType(SourceLookupTextPanel), findsOneWidget);
+    expect(find.byType(GestureDetector), findsNothing);
+    expect(called, isFalse);
+  });
+
+  testWidgets('external lookup text renders as an unframed strip',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildSubject(
+        text: 'abcdef',
+        onLookup: (_, __) {},
+      ),
+    );
+
+    expect(find.byType(SourceLookupTextPanel), findsOneWidget);
+    expect(find.byType(FushiCard), findsNothing);
+  });
+
+  testWidgets('generic source lookup panel has no clipboard-only identity',
+      (WidgetTester tester) async {
+    String? query;
+
+    await tester.pumpWidget(
+      buildSubject(
+        text: 'abcdef',
+        onLookup: (String value, Rect _) {
+          query = value;
+        },
+      ),
+    );
+
+    expect(find.byType(SourceLookupTextPanel), findsOneWidget);
+    expect(find.textContaining('Clipboard'), findsNothing);
+    expect(find.textContaining('剪贴板'), findsNothing);
+
+    await tester.tap(find.text('d'));
+
+    expect(query, 'def');
+  });
+
+  // BUG-175 / TODO-222：剪贴板查词标题必须和词典弹窗 headword 标题同级，
+  // 不能退回到 metadata 的 labelMedium（≈12）或普通 bodyLarge（≈16）小字。
+  testWidgets('characters render at dictionary headword title size',
+      (WidgetTester tester) async {
+    late final ThemeData theme;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (BuildContext context) {
+              theme = Theme.of(context);
+              return SourceLookupTextPanel(
+                text: 'あ',
+                onLookup: (_, __) {},
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    final Text rendered = tester.widget<Text>(find.text('あ'));
+    final double? fontSize = rendered.style?.fontSize;
+    final double labelMedium = theme.textTheme.labelMedium?.fontSize ?? 12;
+
+    expect(fontSize, isNotNull);
+    expect(fontSize, 26);
+    expect(rendered.style?.fontWeight, FontWeight.w600);
+    expect(fontSize, greaterThan(labelMedium));
+    expect(fontSize, greaterThan(theme.textTheme.bodyLarge?.fontSize ?? 16));
+  });
+
+  testWidgets('characters scale with the dictionary font ratio',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildSubject(
+        text: 'あ',
+        onLookup: (_, __) {},
+        dictionaryHeadwordScale: 1.5,
+      ),
+    );
+
+    final Text rendered = tester.widget<Text>(find.text('あ'));
+
+    expect(rendered.style?.fontSize, 39);
+    expect(rendered.style?.fontWeight, FontWeight.w600);
+  });
+
+  // BUG-175：剪贴板查词文字「默认居中了」。回归守卫——本组件占满父级宽度并
+  // 把内容左对齐，不依赖父级 Column 的 crossAxisAlignment。
+  testWidgets('panel fills width and left-aligns its content',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            // 模拟 home_dictionary_page 把本条挂在默认居中的 Column 下。
+            children: <Widget>[
+              SourceLookupTextPanel(
+                text: 'あいう',
+                onLookup: (_, __) {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    // 占满父级宽度：本组件最外层撑满整屏宽。
+    final double screenWidth = tester.getSize(find.byType(Scaffold)).width;
+    final double panelWidth =
+        tester.getSize(find.byType(SourceLookupTextPanel)).width;
+    expect(panelWidth, equals(screenWidth));
+
+    // 左对齐：第一个字符紧贴 16px 左内边距，不被居中推到屏幕中间。
+    final double firstCharLeft = tester.getTopLeft(find.text('あ')).dx;
+    expect(firstCharLeft, lessThan(screenWidth / 4));
+
+    // Align 把内容钉在左上角。
+    final Align align = tester.widget<Align>(
+      find
+          .descendant(
+            of: find.byType(SourceLookupTextPanel),
+            matching: find.byType(Align),
+          )
+          .first,
+    );
+    expect(align.alignment, Alignment.topLeft);
+  });
+
+  // BUG-442：超长剪贴板文本逐字符建可点 widget 会把主 isolate 撑爆。面板必须对
+  // 渲染字符数硬截断到 kMaxLookupInputChars（即便上游漏截断，渲染层永不爆）。
+  testWidgets('caps rendered characters to kMaxLookupInputChars (BUG-442)',
+      (WidgetTester tester) async {
+    final String longText = 'あ' * 10000;
+
+    await tester.pumpWidget(
+      buildSubject(
+        text: longText,
+        onLookup: (_, __) {},
+      ),
+    );
+    await tester.pump();
+
+    // 不抛异常（pumpWidget 已经过）且可点字符数被钳到上限。
+    final int gestureCount = find.byType(GestureDetector).evaluate().length;
+    expect(gestureCount, lessThanOrEqualTo(kMaxLookupInputChars));
+    expect(gestureCount, kMaxLookupInputChars,
+        reason: '超过上限的输入应渲染恰好 kMaxLookupInputChars 个可点字符');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('lookup suffix is computed from the capped text (BUG-442)',
+      (WidgetTester tester) async {
+    String? query;
+    // 上限个 'あ' 后跟一段永远不会被渲染的尾巴。点第一个可见字符 → 后缀必须是
+    // 截断后的全部 kMax 个 'あ'，绝不能把被裁掉的尾部 'X...' 带进查询。
+    final String tail = 'X' * 50;
+    final String longText = '${'あ' * kMaxLookupInputChars}$tail';
+
+    await tester.pumpWidget(
+      buildSubject(
+        text: longText,
+        onLookup: (String value, Rect _) {
+          query = value;
+        },
+      ),
+    );
+    await tester.pump();
+
+    final Finder visibleChars = find.text('あ');
+    expect(visibleChars, findsWidgets);
+    // 第一个字符总在视口内，点它取整段后缀（= 截断后的全部可点字符）。
+    await tester.tap(visibleChars.first, warnIfMissed: false);
+
+    expect(query, isNotNull);
+    expect(query!.characters.length, kMaxLookupInputChars,
+        reason: '后缀长度 = 截断后的字符数，被裁掉的尾部不计入');
+    expect(query, isNot(contains('X')), reason: '后缀绝不能包含被裁掉的尾部');
+  });
+}

@@ -9,7 +9,7 @@
 # 不通就把配法打在前面（只示警不拦路，实测单次探测会误报），pub get 真失败时
 # 再把同一份配法作为报错抛出，而不是甩一句光秃秃的 socket error。
 #   1) 调用方已设的 HTTPS_PROXY / HTTP_PROXY / ALL_PROXY（最高优先级）
-#   2) HIBIKI_BOOTSTRAP_PROXY（只影响 bootstrap，不污染其它工具）
+#   2) FUSHI_BOOTSTRAP_PROXY（只影响 bootstrap，不污染其它工具）
 #   3) <主 checkout>/tool/bootstrap.local.env（gitignore，本机私有，一次配置长期生效）
 # 三条都没有也照常跑（CI / 直连可用的机器不受影响）。
 
@@ -23,16 +23,16 @@ try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 $root = Split-Path -Parent $PSScriptRoot
 
 # --- flutter 可执行文件 ----------------------------------------------------
-# 顺序：HIBIKI_FLUTTER > 本机钉定路径（保持既有行为）> PATH。
+# 顺序：FUSHI_FLUTTER > 本机钉定路径（保持既有行为）> PATH。
 function Resolve-FlutterExe {
     [OutputType([string])]
     param()
 
-    if ($env:HIBIKI_FLUTTER) {
-        if (-not (Test-Path $env:HIBIKI_FLUTTER)) {
-            throw "HIBIKI_FLUTTER 指向的文件不存在: $($env:HIBIKI_FLUTTER)"
+    if ($env:FUSHI_FLUTTER) {
+        if (-not (Test-Path $env:FUSHI_FLUTTER)) {
+            throw "FUSHI_FLUTTER 指向的文件不存在: $($env:FUSHI_FLUTTER)"
         }
-        return $env:HIBIKI_FLUTTER
+        return $env:FUSHI_FLUTTER
     }
 
     $pinned = "D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat"
@@ -42,7 +42,7 @@ function Resolve-FlutterExe {
         Select-Object -First 1
     if ($onPath) { return $onPath.Source }
 
-    throw "找不到 flutter：既不在 $pinned，也不在 PATH。设 HIBIKI_FLUTTER=<flutter.bat 完整路径> 后重跑。"
+    throw "找不到 flutter：既不在 $pinned，也不在 PATH。设 FUSHI_FLUTTER=<flutter.bat 完整路径> 后重跑。"
 }
 
 # --- 代理解析 --------------------------------------------------------------
@@ -133,9 +133,9 @@ function Resolve-BootstrapProxy {
     $fromEnv = Get-ProxyFromEnv
     if ($fromEnv) { return @{ Proxy = $fromEnv; Source = '调用方环境变量' } }
 
-    if ($env:HIBIKI_BOOTSTRAP_PROXY) {
-        $explicit = $env:HIBIKI_BOOTSTRAP_PROXY.Trim()
-        return @{ Proxy = $explicit; Source = 'HIBIKI_BOOTSTRAP_PROXY' }
+    if ($env:FUSHI_BOOTSTRAP_PROXY) {
+        $explicit = $env:FUSHI_BOOTSTRAP_PROXY.Trim()
+        return @{ Proxy = $explicit; Source = 'FUSHI_BOOTSTRAP_PROXY' }
     }
 
     $configPath = Join-Path (Get-MainCheckoutRoot -Fallback $RepoRoot) 'tool/bootstrap.local.env'
@@ -158,7 +158,7 @@ function Get-ProxyHelpText {
        PowerShell: `$env:HTTPS_PROXY='http://<host>:<port>'; powershell -ExecutionPolicy Bypass -File tool/setup_worktree.ps1
        Bash:       HTTPS_PROXY=http://<host>:<port> powershell -ExecutionPolicy Bypass -File tool/setup_worktree.ps1
   2) 只给 bootstrap 用，不污染其它工具：
-       `$env:HIBIKI_BOOTSTRAP_PROXY='http://<host>:<port>'
+       `$env:FUSHI_BOOTSTRAP_PROXY='http://<host>:<port>'
   3) 一次配置、所有 worktree 长期生效 —— 在主 checkout 建 tool/bootstrap.local.env
      （已 gitignore，仅本机，绝不入库）：
        HTTPS_PROXY=http://<host>:<port>
@@ -183,7 +183,7 @@ if ($proxy) {
 # 预检只是提前示警，不当闸门 —— 实测单次 HEAD 探测会误报（探测 10s 超时失败，
 # 同一时刻 pub get 自带重试仍然 45s 跑通）。拿它拦下能跑的环境是纯粹的倒退，
 # 所以这里只把话说在前面，真判死刑交给 pub get 自己。
-if (-not $env:HIBIKI_BOOTSTRAP_SKIP_NETCHECK) {
+if (-not $env:FUSHI_BOOTSTRAP_SKIP_NETCHECK) {
     if (-not (Test-PubDevReachable -ProxyUrl $proxy)) {
         if ($proxy) {
             Write-Warning "预检没连通 pub.dev（经代理 $proxy，来源: $($resolved.Source)，10s 超时）。可能只是抖动，继续往下跑；接下来若 pub get 报网络错误，先确认该代理进程还活着、端口没变。"
@@ -192,17 +192,17 @@ if (-not $env:HIBIKI_BOOTSTRAP_SKIP_NETCHECK) {
             Write-Warning "预检没连通 pub.dev（直连，10s 超时），且当前没有配置任何代理。可能只是抖动，继续往下跑；接下来若 pub get 卡住或报 socket error，按下面的办法配代理后重跑。"
             Write-Host (Get-ProxyHelpText) -ForegroundColor DarkYellow
         }
-        Write-Host "（本机就该直连、这条预检恒误报的话，设 HIBIKI_BOOTSTRAP_SKIP_NETCHECK=1 可整个跳过预检。）" -ForegroundColor DarkGray
+        Write-Host "（本机就该直连、这条预检恒误报的话，设 FUSHI_BOOTSTRAP_SKIP_NETCHECK=1 可整个跳过预检。）" -ForegroundColor DarkGray
     }
 }
 
 $packages = @(
-    "$root\packages\hibiki_core",
-    "$root\packages\hibiki_dictionary",
-    "$root\packages\hibiki_anki",
-    "$root\packages\hibiki_audio",
-    "$root\packages\hibiki_platform",
-    "$root\hibiki"
+    "$root\packages\fushi_core",
+    "$root\packages\fushi_dictionary",
+    "$root\packages\fushi_anki",
+    "$root\packages\fushi_audio",
+    "$root\packages\fushi_platform",
+    "$root\fushi"
 )
 
 foreach ($pkg in $packages) {
@@ -231,4 +231,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "`nBootstrap complete. Build with, e.g.:" -ForegroundColor Green
-Write-Host "  cd hibiki; & '$flutter' build windows --release"
+Write-Host "  cd fushi; & '$flutter' build windows --release"

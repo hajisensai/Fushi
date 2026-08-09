@@ -48,7 +48,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-HIBIKI_MIHON_TOKEN="$token" "$java" -Xmx256m -Djava.awt.headless=true \
+FUSHI_MIHON_TOKEN="$token" "$java" -Xmx256m -Djava.awt.headless=true \
   -Djava.util.prefs.userRoot="$data_directory/preferences" \
   -jar "$server" "$port" "$data_directory" >"$stdout_log" 2>"$stderr_log" &
 pid="$!"
@@ -83,7 +83,7 @@ import json
 import sys
 value = json.loads(sys.argv[1])
 required = {
-    "hibikiMihonBridge": 1,
+    "fushiMihonBridge": 1,
     "sourceFactory": True,
     "preferenceCallbacks": True,
     "imageProxy": True,

@@ -77,12 +77,12 @@ bool LoadArtemisPfsIndex(const wchar_t* path,
       nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (file == INVALID_HANDLE_VALUE) return false;
   LARGE_INTEGER file_size = {};
-  uint8_t header[hibiki_voice_hook::artemis::kMinimumHeaderBytes] = {0};
-  hibiki_voice_hook::artemis::IndexInfo info;
+  uint8_t header[fushi_voice_hook::artemis::kMinimumHeaderBytes] = {0};
+  fushi_voice_hook::artemis::IndexInfo info;
   uint8_t* index = nullptr;
   bool valid = GetFileSizeEx(file, &file_size) && file_size.QuadPart > 0 &&
                ReadExact(file, header, sizeof(header)) &&
-               hibiki_voice_hook::artemis::ParseIndexInfo(
+               fushi_voice_hook::artemis::ParseIndexInfo(
                    header, sizeof(header), &info) &&
                info.total_bytes <= static_cast<uint64_t>(file_size.QuadPart) &&
                info.total_bytes <= UINT32_MAX;
@@ -96,19 +96,19 @@ bool LoadArtemisPfsIndex(const wchar_t* path,
     }
   }
   if (valid) {
-    hibiki_voice_hook::artemis::EntryCursor cursor;
-    valid = hibiki_voice_hook::artemis::BeginEntries(
+    fushi_voice_hook::artemis::EntryCursor cursor;
+    valid = fushi_voice_hook::artemis::BeginEntries(
         index, info.total_bytes, &cursor, &info);
     for (uint32_t i = 0; valid && i < info.entry_count; ++i) {
-      hibiki_voice_hook::artemis::EntryView entry;
-      valid = hibiki_voice_hook::artemis::NextEntry(
+      fushi_voice_hook::artemis::EntryView entry;
+      valid = fushi_voice_hook::artemis::NextEntry(
           &cursor, static_cast<uint64_t>(file_size.QuadPart), &entry);
-      if (!valid || !hibiki_voice_hook::artemis::IsVoiceOgg(entry)) continue;
+      if (!valid || !fushi_voice_hook::artemis::IsVoiceOgg(entry)) continue;
       ArtemisVoiceRange range;
       range.offset = entry.offset;
       range.size = entry.size;
       const size_t name_bytes = (std::min)(
-          hibiki_voice_hook::artemis::TrimmedNameLength(entry),
+          fushi_voice_hook::artemis::TrimmedNameLength(entry),
           kArtemisNameBytes - 1);
       memcpy(range.name, entry.name, name_bytes);
       range.name[name_bytes] = 0;
@@ -122,10 +122,10 @@ bool LoadArtemisPfsIndex(const wchar_t* path,
                  const ArtemisVoiceRange& right) {
                 return left.offset < right.offset;
               });
-    *encrypted = info.format == hibiki_voice_hook::artemis::Format::kPf8;
+    *encrypted = info.format == fushi_voice_hook::artemis::Format::kPf8;
     if (*encrypted) {
       valid = ComputeArtemisSha1(
-          index + hibiki_voice_hook::artemis::kIndexDataStart,
+          index + fushi_voice_hook::artemis::kIndexDataStart,
           info.index_size, key);
     } else {
       memset(key, 0, kArtemisSha1Bytes);
@@ -318,7 +318,7 @@ void ProcessArtemisVoiceTask(ArtemisVoiceTask* task) {
     }
   }
   valid = valid &&
-      hibiki_voice_hook::siglus::CompleteOggBytes(ogg, range.size) == range.size;
+      fushi_voice_hook::siglus::CompleteOggBytes(ogg, range.size) == range.size;
   if (valid) {
     wchar_t name[kArtemisNameBytes] = {0};
     int converted = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
@@ -334,7 +334,7 @@ void ProcessArtemisVoiceTask(ArtemisVoiceTask* task) {
     g_artemis_last_tick = task->tick_ms;
     if (g_header != nullptr) {
       g_header->hook_diagnostics |=
-          hibiki_voice_hook::kDiagArtemisPfsVoiceCaptured;
+          fushi_voice_hook::kDiagArtemisPfsVoiceCaptured;
     }
   }
   free(ogg);
@@ -351,12 +351,12 @@ void ProcessArtemisVoiceTasks() {
 }
 
 bool TryHookArtemisPfsVoice() {
-  if (!hibiki_voice_hook::MatchesArtemisProfile(nullptr)) return false;
+  if (!fushi_voice_hook::MatchesArtemisProfile(nullptr)) return false;
   const bool hooks_ready = TryHookSiglusOvk();
   if (!hooks_ready || !FindAndLoadArtemisPfs()) return false;
   InterlockedExchange(&g_artemis_enabled, 1);
   if (g_header != nullptr) {
-    g_header->hook_diagnostics |= hibiki_voice_hook::kDiagArtemisPfsHooksReady;
+    g_header->hook_diagnostics |= fushi_voice_hook::kDiagArtemisPfsHooksReady;
   }
   return true;
 }
@@ -373,11 +373,11 @@ void StopArtemisPfsVoice() {
   InterlockedExchange(&g_artemis_range_count, 0);
 }
 
-class ArtemisPfsAdapter final : public hibiki_voice_hook::EngineAdapter {
+class ArtemisPfsAdapter final : public fushi_voice_hook::EngineAdapter {
  public:
   const char* id() const override { return "artemis_pfs"; }
   bool probe() const override {
-    return hibiki_voice_hook::MatchesArtemisProfile(nullptr);
+    return fushi_voice_hook::MatchesArtemisProfile(nullptr);
   }
   bool install() override {
     ready_ = TryHookArtemisPfsVoice();
@@ -385,10 +385,10 @@ class ArtemisPfsAdapter final : public hibiki_voice_hook::EngineAdapter {
     return ready_;
   }
   void ProcessPendingEvents() { ProcessArtemisVoiceTasks(); }
-  hibiki_voice_hook::AdapterCapability capabilities() const override {
-    return hibiki_voice_hook::AdapterCapability::kText |
-           hibiki_voice_hook::AdapterCapability::kResourceAudio |
-           hibiki_voice_hook::AdapterCapability::kPcmAudio;
+  fushi_voice_hook::AdapterCapability capabilities() const override {
+    return fushi_voice_hook::AdapterCapability::kText |
+           fushi_voice_hook::AdapterCapability::kResourceAudio |
+           fushi_voice_hook::AdapterCapability::kPcmAudio;
   }
   void onModuleLoaded(const wchar_t*) override {}
   void shutdown() override {
@@ -396,7 +396,7 @@ class ArtemisPfsAdapter final : public hibiki_voice_hook::EngineAdapter {
     installed_ = false;
     ready_ = false;
   }
-  hibiki_voice_hook::AdapterDiagnostics diagnostics() const override {
+  fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), probe(), installed_,
             g_header == nullptr ? 0u : g_header->hook_diagnostics};
   }

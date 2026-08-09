@@ -5,21 +5,24 @@ on:
   # not fire the full ~49m release build. Scope the PUSH trigger to build-relevant
   # paths. The `release` and `workflow_dispatch` triggers below are intentionally
   # left UNfiltered so manual beta/formal publishes always run regardless of what
-  # changed. A version bump lives in hibiki/pubspec.yaml (under hibiki/**) so it
+  # changed. A version bump lives in fushi/pubspec.yaml (under fushi/**) so it
   # still triggers; the rolling debug seq = commit count, so skipping a seq on a
   # docs-only push is harmless.
-  push:
-    branches: ['main', 'develop']
-    paths:
-      - 'hibiki/**'
-      - 'packages/**'
-      - 'ci/**'
-      - 'tool/**'
-      - 'third_party/**'
-      - '.github/workflows/**'
-      - 'melos.yaml'
-      - 'pubspec.yaml'
-      - 'pubspec.lock'
+  # ⚠️ Fushi 改名过渡期（2026-08-07 用户指示）：暂停 push 自动发布——新版 Fushi
+  # 尚未正式就绪，自动发布会让老 Hibiki 用户经应用内更新拉到改名后的构建
+  # （Android 并存装新包 / helper 组件名对不上），迁移链发布前恢复本块。
+  # push:
+  #   branches: ['main', 'develop']
+  #   paths:
+  #     - 'fushi/**'
+  #     - 'packages/**'
+  #     - 'ci/**'
+  #     - 'tool/**'
+  #     - 'third_party/**'
+  #     - '.github/workflows/**'
+  #     - 'melos.yaml'
+  #     - 'pubspec.yaml'
+  #     - 'pubspec.lock'
   release:
     types: [published]
   workflow_dispatch:
@@ -46,7 +49,7 @@ on:
         type: boolean
 
 concurrency:
-  group: hibiki-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
+  group: fushi-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -77,7 +80,7 @@ jobs:
 
     - name: Resolve Android release channel
       id: channel
-      working-directory: hibiki
+      working-directory: fushi
       shell: bash
       env:
         INPUT_CHANNEL: ${{ github.event.inputs.channel }}
@@ -119,7 +122,7 @@ jobs:
         BODY=""
         PRERELEASE=true
         MAKE_LATEST=false
-        FILES="hibiki/build/release-artifacts/*-debug.apk"
+        FILES="fushi/build/release-artifacts/*-debug.apk"
         BUILD_DEBUG_APK=true
         BUILD_DEBUG_CHANNEL_APK=false
         BUILD_SPLIT_RELEASE_APK=false
@@ -159,7 +162,7 @@ jobs:
                 TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
                 NAME="${NAME:-Hibiki ${VERSION} beta ${RELEASE_SEQUENCE}}"
                 BODY="Manual beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
-                FILES="hibiki/build/release-artifacts/hibiki-*.apk"
+                FILES="fushi/build/release-artifacts/fushi-*.apk"
                 BUILD_DEBUG_APK=false
                 BUILD_SPLIT_RELEASE_APK=true
                 NEEDS_RELEASE_KEYSTORE=true
@@ -170,7 +173,7 @@ jobs:
                 BODY="Manual formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
                 PRERELEASE=false
                 MAKE_LATEST=true
-                FILES="hibiki/build/release-artifacts/hibiki-*.apk"
+                FILES="fushi/build/release-artifacts/fushi-*.apk"
                 BUILD_DEBUG_APK=false
                 BUILD_SPLIT_RELEASE_APK=true
                 NEEDS_RELEASE_KEYSTORE=true
@@ -185,7 +188,7 @@ jobs:
           release)
             CHANNEL=github-release
             TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
-            FILES="hibiki/build/release-artifacts/hibiki-*.apk"
+            FILES="fushi/build/release-artifacts/fushi-*.apk"
             BUILD_SPLIT_RELEASE_APK=true
             NEEDS_RELEASE_KEYSTORE=true
             # BUG-869: a manually-published, NON-prerelease GitHub Release IS the
@@ -278,21 +281,21 @@ jobs:
     - name: Decode keystore
       if: steps.channel.outputs.needs_release_keystore == 'true'
       run: |
-        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > hibiki/android/hibiki-release.jks
+        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > fushi/android/fushi-release.jks
 
     - name: Create key.properties
       if: steps.channel.outputs.needs_release_keystore == 'true'
-      working-directory: hibiki/android
+      working-directory: fushi/android
       run: |
         cat > key.properties <<EOF
         storePassword=${{ secrets.KEYSTORE_PASSWORD }}
         keyPassword=${{ secrets.KEY_PASSWORD }}
         keyAlias=${{ secrets.KEY_ALIAS }}
-        storeFile=hibiki-release.jks
+        storeFile=fushi-release.jks
         EOF
 
     - name: Remove local proxy from gradle.properties
-      working-directory: hibiki/android
+      working-directory: fushi/android
       run: |
         sed -i '/systemProp\.http\.proxyHost/d' gradle.properties
         sed -i '/systemProp\.http\.proxyPort/d' gradle.properties
@@ -312,14 +315,14 @@ jobs:
       env:
         GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
       run: |
-        dst=hibiki/lib/src/sync/google_oauth_secret.dart
+        dst=fushi/lib/src/sync/google_oauth_secret.dart
         if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
           oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
           printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
             "$oauth_secret_literal" \
             > "$dst"
         elif [ ! -f "$dst" ]; then
-          cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+          cp fushi/lib/src/sync/google_oauth_secret.example.dart "$dst"
         fi
     # log_upload_secret.dart ships a committed empty placeholder (endpoint = '')
     # so a fresh clone compiles and the log-upload button stays hidden (it is
@@ -335,7 +338,7 @@ jobs:
         LOG_UPLOAD_ENDPOINT: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
         LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}
       run: |
-        dst=hibiki/lib/src/utils/misc/log_upload_secret.dart
+        dst=fushi/lib/src/utils/misc/log_upload_secret.dart
         if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
           log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
           log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
@@ -344,7 +347,7 @@ jobs:
             "$log_token_literal" \
             > "$dst"
         elif [ ! -f "$dst" ]; then
-          cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
+          cp fushi/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
         fi
     # dandanplay_secret.dart ships a committed empty placeholder (AppId/AppSecret
     # = '') so a fresh clone compiles and online danmaku degrades to unsigned.
@@ -357,14 +360,14 @@ jobs:
         DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
         DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
       run: |
-        dst=hibiki/lib/src/media/video/dandanplay_secret.dart
+        dst=fushi/lib/src/media/video/dandanplay_secret.dart
         if [ -n "$DANDANPLAY_APP_ID" ]; then
           printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
             "$DANDANPLAY_APP_ID" \
             "$DANDANPLAY_APP_SECRET" \
             > "$dst"
         elif [ ! -f "$dst" ]; then
-          cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
+          cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
         fi
 
     # TODO-2721: 只缓存 Gradle 的下载物（modules-2 / wrapper dists），不缓存
@@ -372,7 +375,7 @@ jobs:
     # （main / release / build-multiplatform）的 path + key 必须逐字相同，且此步
     # 之前不得 sed 改 build.gradle / settings.gradle —— 否则同一份内容会被存成
     # 两条各 2.7 GB 的缓存。理由见 docs/agent/build.md 的「CI 缓存配额」，守卫见
-    # hibiki/test/build/workflow_cache_quota_guard_test.dart。
+    # fushi/test/build/workflow_cache_quota_guard_test.dart。
     - name: Cache Gradle caches
       uses: actions/cache@v4
       with:
@@ -380,18 +383,18 @@ jobs:
           ~/.gradle/caches/modules-2
           ~/.gradle/caches/journal-1
           ~/.gradle/wrapper/dists
-        key: ${{ runner.os }}-gradle-v2-${{ hashFiles('hibiki/android/**/*.gradle*', 'hibiki/android/gradle/wrapper/gradle-wrapper.properties') }}
+        key: ${{ runner.os }}-gradle-v2-${{ hashFiles('fushi/android/**/*.gradle*', 'fushi/android/gradle/wrapper/gradle-wrapper.properties') }}
         restore-keys: |
           ${{ runner.os }}-gradle-v2-
 
     - name: Remove aliyun mirrors from gradle files
-      working-directory: hibiki/android
+      working-directory: fushi/android
       run: |
         sed -i "/maven.*aliyun/d" build.gradle
         sed -i "/maven.*aliyun/d" settings.gradle
 
     - name: Flutter pub get
-      working-directory: hibiki
+      working-directory: fushi
       run: flutter pub get
 
     - name: Apply pub cache patches
@@ -412,7 +415,7 @@ jobs:
     # runs (see its job-level `if`), keeping the manual fast-release path intact.
     - name: Collect Android release build diagnostics
       if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
-      working-directory: hibiki
+      working-directory: fushi
       shell: bash
       run: |
         set -euo pipefail
@@ -434,7 +437,7 @@ jobs:
 
     - name: Build debug APK
       if: steps.channel.outputs.build_debug_apk == 'true'
-      working-directory: hibiki
+      working-directory: fushi
       timeout-minutes: 20
       shell: bash
       run: |
@@ -445,7 +448,7 @@ jobs:
 
     - name: Prepare debug APK release asset
       if: steps.channel.outputs.build_debug_apk == 'true'
-      working-directory: hibiki
+      working-directory: fushi
       shell: bash
       run: |
         set -euo pipefail
@@ -459,12 +462,12 @@ jobs:
           exit 1
         fi
         mkdir -p "$OUT_DIR"
-        rm -f "$OUT_DIR"/hibiki-*.apk
-        cp "$DEBUG_APK" "$OUT_DIR/hibiki-${BUILD_VERSION_NAME}-${SHORT_SHA}-debug.apk"
+        rm -f "$OUT_DIR"/fushi-*.apk
+        cp "$DEBUG_APK" "$OUT_DIR/fushi-${BUILD_VERSION_NAME}-${SHORT_SHA}-debug.apk"
 
     - name: Build release-signed debug-channel APK
       if: steps.channel.outputs.build_debug_channel_apk == 'true'
-      working-directory: hibiki
+      working-directory: fushi
       timeout-minutes: 30
       shell: bash
       run: |
@@ -475,7 +478,7 @@ jobs:
 
     - name: Prepare release-signed debug-channel APK asset
       if: steps.channel.outputs.build_debug_channel_apk == 'true'
-      working-directory: hibiki
+      working-directory: fushi
       shell: bash
       run: |
         set -euo pipefail
@@ -489,12 +492,12 @@ jobs:
           exit 1
         fi
         mkdir -p "$OUT_DIR"
-        rm -f "$OUT_DIR"/hibiki-*.apk
-        cp "$DEBUG_CHANNEL_APK" "$OUT_DIR/hibiki-${BUILD_VERSION_NAME}-${SHORT_SHA}-debug.apk"
+        rm -f "$OUT_DIR"/fushi-*.apk
+        cp "$DEBUG_CHANNEL_APK" "$OUT_DIR/fushi-${BUILD_VERSION_NAME}-${SHORT_SHA}-debug.apk"
 
     - name: Build release APK (split per ABI)
       if: steps.channel.outputs.build_split_release_apk == 'true'
-      working-directory: hibiki
+      working-directory: fushi
       timeout-minutes: 60
       shell: bash
       run: |
@@ -505,7 +508,7 @@ jobs:
 
     - name: Collect Android post-build diagnostics
       if: ${{ always() && (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') }}
-      working-directory: hibiki
+      working-directory: fushi
       shell: bash
       run: |
         set -euo pipefail
@@ -517,7 +520,7 @@ jobs:
 
     - name: Prepare release APK assets
       if: steps.channel.outputs.build_split_release_apk == 'true'
-      working-directory: hibiki
+      working-directory: fushi
       shell: bash
       run: |
         set -euo pipefail
@@ -527,7 +530,7 @@ jobs:
         mkdir -p "$OUT_DIR"
         for f in "$APK_DIR"/app-*-release.apk; do
           ABI=$(basename "$f" | sed 's/^app-//;s/-release\.apk$//')
-          cp "$f" "$OUT_DIR/hibiki-${BUILD_VERSION_NAME}-${ABI}.apk"
+          cp "$f" "$OUT_DIR/fushi-${BUILD_VERSION_NAME}-${ABI}.apk"
         done
 
     # TODO-866: the prepared APKs in build/release-artifacts/ are otherwise only
@@ -544,8 +547,8 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v7
       with:
-        name: hibiki-${{ steps.channel.outputs.channel }}-apk-${{ github.sha }}
-        path: hibiki/build/release-artifacts/*.apk
+        name: fushi-${{ steps.channel.outputs.channel }}-apk-${{ github.sha }}
+        path: fushi/build/release-artifacts/*.apk
         if-no-files-found: ignore
         retention-days: 14
 
@@ -555,7 +558,7 @@ jobs:
       with:
         tag_name: ${{ steps.channel.outputs.tag }}
         files: |
-          hibiki/build/release-artifacts/hibiki-*.apk
+          fushi/build/release-artifacts/fushi-*.apk
 
     # TODO-1049 / TODO-1123: the debug channel reuses ONE rolling GitHub Release
     # (tag `debug-rolling`). softprops upserts same-named assets but never
@@ -623,7 +626,7 @@ jobs:
         fi
         ASSET_NAMES=("${PLATFORM_ASSETS[@]}")
         # Asset names embed the versionName token `-<base>-debug.<seq>-` (e.g.
-        # hibiki-0.11.1-debug.5633-3cf5905-debug.apk). Parse the current build's
+        # fushi-0.11.1-debug.5633-3cf5905-debug.apk). Parse the current build's
         # seq from BUILD_VERSION_NAME (0.11.1-debug.5633), extract every asset's
         # seq the same way, keep the top KEEP_SEQS distinct seqs (numeric desc),
         # and delete only assets whose seq is NOT in that set. Assets with no
@@ -760,8 +763,8 @@ jobs:
         NOTES: ${{ steps.channel.outputs.body }}
         VERSION: ${{ steps.channel.outputs.build_version_name }}
         RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
-        ARTIFACTS_DIR: hibiki/build/release-artifacts
-        ASSET_GLOB: hibiki-*.apk
+        ARTIFACTS_DIR: fushi/build/release-artifacts
+        ASSET_GLOB: fushi-*.apk
         PLATFORM_LABEL: android
       run: bash tool/publish_update_manifest.sh
 
@@ -796,14 +799,14 @@ jobs:
       env:
         GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
       run: |
-        dst=hibiki/lib/src/sync/google_oauth_secret.dart
+        dst=fushi/lib/src/sync/google_oauth_secret.dart
         if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
           oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
           printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
             "$oauth_secret_literal" \
             > "$dst"
         elif [ ! -f "$dst" ]; then
-          cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+          cp fushi/lib/src/sync/google_oauth_secret.example.dart "$dst"
         fi
     # Symmetric with the build job (BUG-290): every job that injects the
     # google_oauth stub must also inject the log_upload stub so the symmetry
@@ -817,7 +820,7 @@ jobs:
         LOG_UPLOAD_ENDPOINT: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
         LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}
       run: |
-        dst=hibiki/lib/src/utils/misc/log_upload_secret.dart
+        dst=fushi/lib/src/utils/misc/log_upload_secret.dart
         if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
           log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
           log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
@@ -826,7 +829,7 @@ jobs:
             "$log_token_literal" \
             > "$dst"
         elif [ ! -f "$dst" ]; then
-          cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
+          cp fushi/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
         fi
 
     - name: Provide gitignored dandanplay secret stub
@@ -835,18 +838,18 @@ jobs:
         DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
         DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
       run: |
-        dst=hibiki/lib/src/media/video/dandanplay_secret.dart
+        dst=fushi/lib/src/media/video/dandanplay_secret.dart
         if [ -n "$DANDANPLAY_APP_ID" ]; then
           printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
             "$DANDANPLAY_APP_ID" \
             "$DANDANPLAY_APP_SECRET" \
             > "$dst"
         elif [ ! -f "$dst" ]; then
-          cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
+          cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
         fi
 
     - name: Flutter pub get
-      working-directory: hibiki
+      working-directory: fushi
       run: flutter pub get
 
     - name: Apply pub cache patches
@@ -855,19 +858,19 @@ jobs:
         bash ci/apply-patches.sh
 
     - name: Run dart analyze
-      working-directory: hibiki
+      working-directory: fushi
       run: flutter analyze
 
     - name: Run unit tests (main app)
-      working-directory: hibiki
+      working-directory: fushi
       run: dart run tool/flutter_test_failures.dart --exclude-tags golden
 
     - name: Run package tests
       run: |
-        for pkg in packages/hibiki_core packages/hibiki_dictionary packages/hibiki_anki packages/hibiki_audio packages/hibiki_platform; do
+        for pkg in packages/fushi_core packages/fushi_dictionary packages/fushi_anki packages/fushi_audio packages/fushi_platform; do
           if [ -d "$pkg/test" ]; then
             echo "::group::Testing $pkg"
-            (cd "$pkg" && dart ../../hibiki/tool/flutter_test_failures.dart --output-dir=../../.codex-test/flutter-test/$(basename "$pkg"))
+            (cd "$pkg" && dart ../../fushi/tool/flutter_test_failures.dart --output-dir=../../.codex-test/flutter-test/$(basename "$pkg"))
             echo "::endgroup::"
           else
             echo "::warning title=No package tests::$pkg has no test/ dir — its code is only covered transitively by the main-app suite"

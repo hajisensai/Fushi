@@ -53,7 +53,7 @@ namespace flutter_inappwebview_plugin
     {
       wchar_t root[MAX_PATH];
       const DWORD len =
-        GetEnvironmentVariableW(L"HIBIKI_TEST_ROOT", root, MAX_PATH);
+        GetEnvironmentVariableW(L"FUSHI_TEST_ROOT", root, MAX_PATH);
       if (len == 0 || len >= MAX_PATH) {
         return std::wstring();
       }
@@ -83,7 +83,7 @@ namespace flutter_inappwebview_plugin
       }
       std::wstring dir(local_app_data);
       CoTaskMemFree(local_app_data);
-      dir += L"\\Hibiki";
+      dir += L"\\Fushi";
       if (!CreateDirectoryW(dir.c_str(), nullptr) &&
         GetLastError() != ERROR_ALREADY_EXISTS) {
         return std::wstring();

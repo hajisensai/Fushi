@@ -1,0 +1,368 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/ocr/manga_ocr_model_manifest.dart';
+import 'package:fushi/src/ocr/manga_ocr_pipeline.dart';
+import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi/src/ocr/manga_ocr_service_impl.dart';
+import 'package:fushi/src/ocr/ocr_inference.dart';
+import 'package:path/path.dart' as p;
+
+/// 与真实清单同名同形（detector + encoder/decoder/vocab），尺寸缩成几字节，
+/// 让 modelStatus/_resolveModelPaths 的路径逻辑全程走真实分支。
+const List<MangaOcrModelFile> _tinyManifest = <MangaOcrModelFile>[
+  MangaOcrModelFile(
+    fileName: 'detector-v4-s_int8.onnx',
+    url: 'http://unused.invalid/detector-v4-s_int8.onnx',
+    expectedBytes: 4,
+    role: MangaOcrModelRole.detector,
+  ),
+  MangaOcrModelFile(
+    fileName: 'encoder_model.onnx',
+    url: 'http://unused.invalid/encoder_model.onnx',
+    expectedBytes: 5,
+    role: MangaOcrModelRole.recognizer,
+  ),
+  MangaOcrModelFile(
+    fileName: 'decoder_model.onnx',
+    url: 'http://unused.invalid/decoder_model.onnx',
+    expectedBytes: 6,
+    role: MangaOcrModelRole.recognizer,
+  ),
+  MangaOcrModelFile(
+    fileName: 'vocab.txt',
+    url: 'http://unused.invalid/vocab.txt',
+    expectedBytes: 7,
+    role: MangaOcrModelRole.recognizer,
+  ),
+];
+
+/// 进程内可编排的 fake 任务。
+class _FakeJob implements MangaOcrVolumeJob {
+  final Completer<String> completer = Completer<String>();
+  bool cancelled = false;
+
+  @override
+  Future<String> get result => completer.future;
+
+  @override
+  void cancel() {
+    cancelled = true;
+    if (!completer.isCompleted) {
+      completer.completeError(const OcrCancelledException());
+    }
+  }
+}
+
+class _FakeRunner implements MangaOcrVolumeJobRunner {
+  final List<MangaOcrVolumeJobRequest> requests = <MangaOcrVolumeJobRequest>[];
+  _FakeJob? lastJob;
+  void Function(int, int)? lastOnProgress;
+  void Function(MangaOcrAcceleration)? lastOnAcceleration;
+
+  @override
+  MangaOcrVolumeJob start(
+    MangaOcrVolumeJobRequest request, {
+    required void Function(int pagesDone, int pagesTotal) onProgress,
+    void Function(MangaOcrAcceleration acceleration)? onAcceleration,
+  }) {
+    requests.add(request);
+    lastOnProgress = onProgress;
+    lastOnAcceleration = onAcceleration;
+    return lastJob = _FakeJob();
+  }
+}
+
+void main() {
+  late Directory modelsDir;
+
+  setUp(() {
+    modelsDir = Directory.systemTemp.createTempSync('manga_ocr_models_');
+  });
+
+  tearDown(() {
+    if (modelsDir.existsSync()) {
+      modelsDir.deleteSync(recursive: true);
+    }
+  });
+
+  MangaOcrServiceImpl service(_FakeRunner runner) => MangaOcrServiceImpl(
+        modelsDirProvider: () async => modelsDir,
+        manifest: _tinyManifest,
+        jobRunner: runner,
+      );
+
+  void writeAllModels() {
+    for (final MangaOcrModelFile model in _tinyManifest) {
+      File(p.join(modelsDir.path, model.fileName))
+          .writeAsBytesSync(List<int>.filled(model.expectedBytes, 1));
+    }
+  }
+
+  group('modelStatus / deleteModels', () {
+    test('空目录：全不就绪，totalBytes = 清单总和', () async {
+      final MangaOcrServiceImpl impl = service(_FakeRunner());
+      final MangaOcrModelStatus status = await impl.modelStatus();
+      expect(status.detectorReady, isFalse);
+      expect(status.recognizerReady, isFalse);
+      expect(status.allReady, isFalse);
+      expect(status.downloadedBytes, 0);
+      expect(status.totalBytes, 4 + 5 + 6 + 7);
+    });
+
+    test('只有检测器就绪：detectorReady 单独为真', () async {
+      File(p.join(modelsDir.path, 'detector-v4-s_int8.onnx'))
+          .writeAsBytesSync(<int>[1, 2, 3, 4]);
+      final MangaOcrModelStatus status =
+          await service(_FakeRunner()).modelStatus();
+      expect(status.detectorReady, isTrue);
+      expect(status.recognizerReady, isFalse);
+      expect(status.downloadedBytes, 4);
+    });
+
+    test('零字节文件不算就绪', () async {
+      File(p.join(modelsDir.path, 'detector-v4-s_int8.onnx')).createSync();
+      final MangaOcrModelStatus status =
+          await service(_FakeRunner()).modelStatus();
+      expect(status.detectorReady, isFalse);
+    });
+
+    test('全就绪 + deleteModels 释放磁盘', () async {
+      writeAllModels();
+      final MangaOcrServiceImpl impl = service(_FakeRunner());
+      MangaOcrModelStatus status = await impl.modelStatus();
+      expect(status.allReady, isTrue);
+      expect(status.downloadedBytes, status.totalBytes);
+
+      await impl.deleteModels();
+      expect(modelsDir.existsSync(), isFalse);
+      status = await impl.modelStatus();
+      expect(status.allReady, isFalse);
+      expect(status.downloadedBytes, 0);
+    });
+  });
+
+  group('ocrFolder 编排', () {
+    test('模型未就绪：error 结束流，任务不启动', () async {
+      final _FakeRunner runner = _FakeRunner();
+      final MangaOcrServiceImpl impl = service(runner);
+      await expectLater(
+        impl.ocrFolder(imageDirPath: 'D:/whatever').toList(),
+        throwsA(isA<StateError>()),
+      );
+      expect(runner.requests, isEmpty);
+    });
+
+    test('happy path：逐页事件转发 + finished 携带 manga.json 路径', () async {
+      writeAllModels();
+      final _FakeRunner runner = _FakeRunner();
+      final MangaOcrServiceImpl impl = service(runner);
+
+      final List<MangaOcrVolumeEvent> events = <MangaOcrVolumeEvent>[];
+      final Future<void> done = impl
+          .ocrFolder(imageDirPath: 'D:/vol1', volumeTitle: '第1卷')
+          .forEach(events.add);
+      // 等 onListen 异步链启动。
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.requests.single.imageDirPath, 'D:/vol1');
+      expect(runner.requests.single.volumeTitle, '第1卷');
+      // 模型路径接线：detector/encoder/decoder/vocab 各归其位。
+      final MangaOcrModelPaths paths = runner.requests.single.modelPaths;
+      expect(p.basename(paths.detectorPath), 'detector-v4-s_int8.onnx');
+      expect(p.basename(paths.encoderPath), 'encoder_model.onnx');
+      expect(p.basename(paths.decoderPath), 'decoder_model.onnx');
+      expect(p.basename(paths.vocabPath), 'vocab.txt');
+
+      runner.lastOnProgress!(1, 2);
+      runner.lastOnProgress!(2, 2);
+      runner.lastJob!.completer.complete('D:/vol1/manga_ocr_out/manga.json');
+      await done;
+
+      expect(events, hasLength(3));
+      expect(events[0].pagesDone, 1);
+      expect(events[0].pagesTotal, 2);
+      expect(events[0].finished, isFalse);
+      expect(events[1].pagesDone, 2);
+      expect(events[2].finished, isTrue);
+      expect(events[2].pagesDone, 2);
+      expect(events[2].mangaJsonPath, 'D:/vol1/manga_ocr_out/manga.json');
+    });
+
+    test('取消订阅：job.cancel 被调、流静默收尾（无 error）', () async {
+      writeAllModels();
+      final _FakeRunner runner = _FakeRunner();
+      final MangaOcrServiceImpl impl = service(runner);
+
+      final List<MangaOcrVolumeEvent> events = <MangaOcrVolumeEvent>[];
+      Object? streamError;
+      final StreamSubscription<MangaOcrVolumeEvent> sub = impl
+          .ocrFolder(imageDirPath: 'D:/vol1')
+          .listen(events.add, onError: (Object e) => streamError = e);
+      await Future<void>.delayed(Duration.zero);
+      runner.lastOnProgress!(1, 3);
+      await Future<void>.delayed(Duration.zero);
+
+      await sub.cancel();
+      expect(runner.lastJob!.cancelled, isTrue, reason: '取消订阅必须传导为任务取消');
+      await Future<void>.delayed(Duration.zero);
+      expect(streamError, isNull, reason: '取消不是错误');
+      expect(events.map((MangaOcrVolumeEvent e) => e.finished),
+          isNot(contains(true)));
+    });
+
+    // BUG-1163：EP 降级不允许静默。runner 回报的加速状态必须挂到每一个
+    // 进度事件和 finished 事件上，UI 才有东西可显示。
+    test('加速状态随每个事件回传，降级原因不丢', () async {
+      writeAllModels();
+      final _FakeRunner runner = _FakeRunner();
+      final MangaOcrServiceImpl impl = service(runner);
+
+      final List<MangaOcrVolumeEvent> events = <MangaOcrVolumeEvent>[];
+      final Future<void> done =
+          impl.ocrFolder(imageDirPath: 'D:/vol1').forEach(events.add);
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.lastOnAcceleration, isNotNull,
+          reason: '服务必须订阅加速回调，否则降级无从观测');
+
+      // 加速状态尚未回报前先来一页进度：该页只能是 null，不能瞎猜成 GPU。
+      runner.lastOnProgress!(1, 2);
+      runner.lastOnAcceleration!(const MangaOcrAcceleration(
+        detection: OcrExecutionProvider.cpu,
+        recognition: OcrExecutionProvider.cpu,
+        degradeReasons: <String>['detector: directml -> cpu (INVALID_PROVIDER)'],
+      ));
+      runner.lastOnProgress!(2, 2);
+      runner.lastJob!.completer.complete('D:/vol1/manga_ocr_out/manga.json');
+      await done;
+
+      expect(events[0].acceleration, isNull);
+      final MangaOcrAcceleration? mid = events[1].acceleration;
+      expect(mid, isNotNull);
+      expect(mid!.degraded, isTrue);
+      expect(mid.label, 'CPU');
+      expect(mid.degradeReasons.single, contains('INVALID_PROVIDER'));
+      expect(events.last.finished, isTrue);
+      expect(events.last.acceleration?.degraded, isTrue,
+          reason: 'finished 事件也要带上降级状态，收尾提示才能显示');
+    });
+
+    test('未降级时加速状态不报降级', () async {
+      writeAllModels();
+      final _FakeRunner runner = _FakeRunner();
+      final MangaOcrServiceImpl impl = service(runner);
+      final List<MangaOcrVolumeEvent> events = <MangaOcrVolumeEvent>[];
+      final Future<void> done =
+          impl.ocrFolder(imageDirPath: 'D:/vol1').forEach(events.add);
+      await Future<void>.delayed(Duration.zero);
+      runner.lastOnAcceleration!(const MangaOcrAcceleration(
+        detection: OcrExecutionProvider.cuda,
+        recognition: OcrExecutionProvider.cpu,
+      ));
+      runner.lastOnProgress!(1, 1);
+      runner.lastJob!.completer.complete('D:/vol1/manga_ocr_out/manga.json');
+      await done;
+
+      expect(events.first.acceleration!.degraded, isFalse);
+      expect(events.first.acceleration!.label, 'CUDA/CPU');
+    });
+
+    test('任务失败：error 事件结束流', () async {
+      writeAllModels();
+      final _FakeRunner runner = _FakeRunner();
+      final MangaOcrServiceImpl impl = service(runner);
+      final Future<List<MangaOcrVolumeEvent>> future =
+          impl.ocrFolder(imageDirPath: 'D:/vol1').toList();
+      await Future<void>.delayed(Duration.zero);
+      runner.lastJob!.completer.completeError(StateError('boom'));
+      await expectLater(future, throwsA(isA<StateError>()));
+    });
+  });
+
+  group('EP 策略接线（纯函数组合）', () {
+    test('resolveOcrPlatform 映射', () {
+      expect(resolveOcrPlatform('windows'), OcrPlatform.windows);
+      expect(resolveOcrPlatform('macos'), OcrPlatform.macos);
+      expect(resolveOcrPlatform('ios'), OcrPlatform.ios);
+      expect(resolveOcrPlatform('android'), OcrPlatform.android);
+      expect(resolveOcrPlatform('linux'), OcrPlatform.linux);
+      expect(resolveOcrPlatform('fuchsia'), OcrPlatform.linux,
+          reason: '未知平台落纯 CPU 档');
+    });
+
+    test('Windows 有 CUDA：检测与识别都走 CUDA→CPU', () {
+      for (final OcrModelKind kind in OcrModelKind.values) {
+        expect(
+          selectOcrExecutionProviders(
+            kind: kind,
+            platform: resolveOcrPlatform('windows'),
+            cudaAvailable: true,
+          ),
+          <OcrExecutionProvider>[
+            OcrExecutionProvider.cuda,
+            OcrExecutionProvider.cpu,
+          ],
+        );
+      }
+    });
+
+    test('Windows 无 CUDA：检测 DirectML→CPU，识别纯 CPU', () {
+      expect(
+        selectOcrExecutionProviders(
+          kind: OcrModelKind.detection,
+          platform: resolveOcrPlatform('windows'),
+          cudaAvailable: false,
+        ),
+        <OcrExecutionProvider>[
+          OcrExecutionProvider.directml,
+          OcrExecutionProvider.cpu,
+        ],
+      );
+      expect(
+        selectOcrExecutionProviders(
+          kind: OcrModelKind.recognition,
+          platform: resolveOcrPlatform('windows'),
+          cudaAvailable: false,
+        ),
+        <OcrExecutionProvider>[OcrExecutionProvider.cpu],
+      );
+    });
+
+    test('macOS：检测 CoreML→CPU，识别纯 CPU', () {
+      expect(
+        selectOcrExecutionProviders(
+          kind: OcrModelKind.detection,
+          platform: resolveOcrPlatform('macos'),
+          cudaAvailable: false,
+        ),
+        <OcrExecutionProvider>[
+          OcrExecutionProvider.coreml,
+          OcrExecutionProvider.cpu,
+        ],
+      );
+      expect(
+        selectOcrExecutionProviders(
+          kind: OcrModelKind.recognition,
+          platform: resolveOcrPlatform('macos'),
+          cudaAvailable: false,
+        ),
+        <OcrExecutionProvider>[OcrExecutionProvider.cpu],
+      );
+    });
+
+    test('Linux / Android：纯 CPU', () {
+      for (final String os in <String>['linux', 'android']) {
+        for (final OcrModelKind kind in OcrModelKind.values) {
+          expect(
+            selectOcrExecutionProviders(
+              kind: kind,
+              platform: resolveOcrPlatform(os),
+              cudaAvailable: false,
+            ),
+            <OcrExecutionProvider>[OcrExecutionProvider.cpu],
+          );
+        }
+      }
+    });
+  });
+}

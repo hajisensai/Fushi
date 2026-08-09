@@ -4,10 +4,10 @@
 #include "launch_failure_policy.h"
 
 int main() {
-  using hibiki_voice_hook::DecideLaunchedProcessDisposition;
-  using hibiki_voice_hook::LaunchedProcessDisposition;
-  using hibiki_voice_hook::LaunchFailureReason;
-  using hibiki_voice_hook::LaunchFailureToken;
+  using fushi_voice_hook::DecideLaunchedProcessDisposition;
+  using fushi_voice_hook::LaunchedProcessDisposition;
+  using fushi_voice_hook::LaunchFailureReason;
+  using fushi_voice_hook::LaunchFailureToken;
 
   // 根因回归：CREATE_SUSPENDED 拉起的游戏在 ResumeThread 之前失败时，绝不允许把进程
   // 留在挂起态。旧实现对「就绪事件超时」「旧映射不可复用」这两条（都在 Resume 之前

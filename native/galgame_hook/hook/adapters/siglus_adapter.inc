@@ -123,7 +123,7 @@ void RememberSiglusOvk(HANDLE handle, const wchar_t* path) {
     if (g_header != nullptr) {
       g_header->reserved_luna |= kDiagSiglusOvkOpened;
       g_header->hook_diagnostics |=
-          hibiki_voice_hook::kDiagVisualArtsOvkHooksReady;
+          fushi_voice_hook::kDiagVisualArtsOvkHooksReady;
     }
   }
 }
@@ -342,13 +342,13 @@ void ProcessSiglusVoiceTask(SiglusVoiceTask* task) {
   uint32_t count = 0;
   uint8_t* index = nullptr;
   uint8_t* ogg = nullptr;
-  hibiki_voice_hook::siglus::OvkEntry entry;
+  fushi_voice_hook::siglus::OvkEntry entry;
   bool valid = GetFileSizeEx(file, &size) && size.QuadPart > 0 &&
                ReadExact(file, &count, sizeof(count)) && count > 0 &&
-               count <= hibiki_voice_hook::siglus::kMaxEntryCount;
+               count <= fushi_voice_hook::siglus::kMaxEntryCount;
   if (valid) {
     const uint64_t index_bytes64 = sizeof(uint32_t) +
-        static_cast<uint64_t>(count) * hibiki_voice_hook::siglus::kOvkEntryBytes;
+        static_cast<uint64_t>(count) * fushi_voice_hook::siglus::kOvkEntryBytes;
     valid = index_bytes64 <= static_cast<uint64_t>(size.QuadPart) &&
             index_bytes64 <= SIZE_MAX;
     if (valid) {
@@ -361,7 +361,7 @@ void ProcessSiglusVoiceTask(SiglusVoiceTask* task) {
                           static_cast<uint32_t>(index_bytes - sizeof(count)));
       }
       if (valid) {
-        valid = hibiki_voice_hook::siglus::FindEntryAtOffset(
+        valid = fushi_voice_hook::siglus::FindEntryAtOffset(
             index, index_bytes, static_cast<uint64_t>(size.QuadPart),
             task->offset, &entry);
       }
@@ -375,7 +375,7 @@ void ProcessSiglusVoiceTask(SiglusVoiceTask* task) {
   if (valid) {
     ogg = static_cast<uint8_t*>(malloc(entry.byte_len));
     valid = ogg != nullptr && ReadExact(file, ogg, entry.byte_len) &&
-            hibiki_voice_hook::siglus::CompleteOggBytes(ogg, entry.byte_len) ==
+            fushi_voice_hook::siglus::CompleteOggBytes(ogg, entry.byte_len) ==
                 entry.byte_len;
   }
   if (valid) {
@@ -387,7 +387,7 @@ void ProcessSiglusVoiceTask(SiglusVoiceTask* task) {
     if (g_header != nullptr) {
       g_header->reserved_luna |= kDiagSiglusVoiceDumped;
       g_header->hook_diagnostics |=
-          hibiki_voice_hook::kDiagVisualArtsOvkCaptured;
+          fushi_voice_hook::kDiagVisualArtsOvkCaptured;
     }
   }
   free(ogg);

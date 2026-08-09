@@ -1,0 +1,13 @@
+## BUG-1450 · 中文输入法激活时全表面快捷键失效（IME 吞键）
+- **报告**：2026-08-02（用户：日语输入法能用空格快捷键了，中文输入法不行，快捷键之类的用不了）
+- **真实性**：✅ 真 bug —— 根因是平台层而非快捷键解析层。Flutter 的 Windows 窗口**终生**保留 IME context：`Win32Window::SetChildContent` 把焦点交给 Flutter view 子窗口（`hibiki/windows/runner/win32_window.cpp:353`），而引擎从不在「无文本输入客户端」时解除该窗口的 IME 关联。于是只要输入法处于吞键模式，每次按键都被输入法拿走，以 `WM_KEYDOWN / wParam=VK_PROCESSKEY` 到达，引擎再按 BUG-1427 钉死的平台事实把它报成 `physical=0 / logical=0` 的 KeyEvent，`HibikiShortcutRegistry.resolveKeyboard` 的精确相等与物理键回退**同时**落空（`hibiki/lib/src/shortcuts/shortcut_registry.dart:322-352`），整张快捷键表静默失效。
+  - **本机实测取证**（Win32 消息探针，微软拼音中文态）：字母键到达窗口的确实是 `WM_KEYDOWN wParam=0x00E5`（`VK_PROCESSKEY`），lParam 保留真实 scancode（0x15=Y / 0x2C=Z / 0x24=J / 0x32=M / 0x02=数字1）。即消息通道没变，变的是键的身份被输入法接管。
+  - **「日语能用」不是反例**：日语输入法常驻半角英数态时根本不吃字母，只有空格被吃；那一个键恰好被 BUG-1239 的 native 单键转发救回（`hibiki/windows/runner/ime_space_dispatch.cpp`，仅识别 scancode `0x39` 且仅接在视频页）。中文拼音没有等价的英数态（切英文即切走输入法），所以空格 + 全部字母快捷键一起废——BUG-1239 那条单键补丁在结构上救不了其余键。
+- **[x] ① 已修复** — 不再逐键补转发（那等于在 app 内重建键盘管线，且必然与真实文本输入打架），而是消除特殊情况本身：**没有可编辑焦点时解除窗口 IME 关联，文本框拿焦时立刻恢复**。Dart 侧持有焦点真相、native 侧持有 HWND，经 `app.hibiki/windows_ime_guard` 通道对接。
+  - Dart：`hibiki/lib/src/platform/windows_ime_guard.dart`（纯谓词 `imeShouldBeEnabled` + `FocusManager` 驱动，定位焦点复用既有 `focusedEditableText()`，再按 `EditableText.readOnly` 区分真实输入与 `SelectableText` 的只读选择焦点），在 `runApp` 前 `install()`（`hibiki/lib/main.dart`），冷启动第一帧即生效。
+  - native：`hibiki/windows/runner/ime_association_guard.{h,cpp}` 状态机 + `FlutterWindow::RegisterImeGuardChannel`（`hibiki/windows/runner/flutter_window.cpp`）。实际调用 `ImmAssociateContextEx(hwnd, nullptr, IACE_DEFAULT / 0)`（与 Chromium `InputMethodWinImm32` 同契约），作用于**持焦的 Flutter view HWND**而非顶层框架窗口——IME context 是 per-HWND 的，只改顶层无效。
+  - 兼容性：仅 Windows 生效（`defaultTargetPlatform` 判定），其余平台空转；旧 runner 缺通道时吞 `MissingPluginException` 回到修复前行为；BUG-1239 的空格通道原样保留不动（Never break userspace），只是修复后它基本不再触发。
+- **[x] ② 已加自动化测试** — 两侧各自可执行，且**均已变异实测**（变异内容不写进注释）：
+  - Dart：`hibiki/test/platform/windows_ime_guard_test.dart`——冷启动即解除、点击 `SelectableText` 不得恢复、`SelectableText ↔ TextField` 切焦只按真实输入能力翻转、文本框拿焦必须恢复（否则中日文全打不了，比原 bug 更糟）、失焦再解除、同状态焦点 churn 不重复打通道、非 Windows 空转。
+  - native：`hibiki/windows/runner/tests/ime_association_guard_test.cpp`，由 `CMakeLists.txt` 的 `hibiki_windows_ime_association_gate` 在每次 Windows runner 构建时编译执行（沿用 BUG-1239 的构建门模式）——首次 disable 必须落地、重复请求合并、re-enable 必须落地、首次 enable 也要落地（热重启后窗口可能已解除）、平台调用失败不得记账。变异「去掉去重」实测转红。以项目真实编译选项 `/W4 /WX` 零警告通过。
+- **备注**：真 Windows IME / 设备验收尚未执行。需覆盖：① 中文拼音激活时视频页/阅读器的空格与字母快捷键；② 点击可选文本后快捷键仍可用；③ 点进搜索框/笔记框/Anki 字段后能否立刻输入中文与日文；④ 输入完离开文本框后快捷键是否恢复。

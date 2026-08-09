@@ -17,14 +17,14 @@ const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Applic
 const W = 1000, H = 800;
 const cssPaginated = `html,body{margin:0;padding:0;}html{overflow:hidden;}
  body{width:${W}px;height:${H}px;padding:0 20px;box-sizing:border-box;column-width:${W-40}px;column-gap:22px;column-fill:auto;font-size:22px;line-height:1.8;overflow:hidden;writing-mode:horizontal-tb;}
- img.block-img{display:block;max-width:var(--hoshi-image-max-width,${W-40}px);max-height:var(--hoshi-image-max-height,${H}px);width:auto;height:auto;break-inside:avoid;}
+ img.block-img{display:block;max-width:var(--fushi-image-max-width,${W-40}px);max-height:var(--fushi-image-max-height,${H}px);width:auto;height:auto;break-inside:avoid;}
  .block-img-wrapper{display:flex;align-items:center;justify-content:center;width:${W-40}px;height:${H}px;break-inside:avoid;} p{margin:0 0 1em 0;}`;
 const cssContinuous = `html,body{margin:0;padding:0;}
  body{width:${W}px;padding:0 20px;box-sizing:border-box;font-size:22px;line-height:1.8;writing-mode:horizontal-tb;}
- img.block-img{display:block;max-width:var(--hoshi-image-max-width,${W-40}px);max-height:var(--hoshi-image-max-height,${H}px);width:auto;height:auto;}
+ img.block-img{display:block;max-width:var(--fushi-image-max-width,${W-40}px);max-height:var(--fushi-image-max-height,${H}px);width:auto;height:auto;}
  .block-img-wrapper{display:flex;align-items:center;justify-content:center;width:${W-40}px;height:${H}px;} p{margin:0 0 1em 0;}`;
 const paras = Array.from({length: 60}, (_, i) => `<p>P${i} これはテスト本文です。ページ分割の幾何を検証するための十分な長さのダミーテキストを並べています。文章文章文章文章文章文章文章文章。</p>`).join('\n');
-const img = (n) => `<img loading="lazy" src="https://hoshi.local/img${n}.png" alt="">`;
+const img = (n) => `<img loading="lazy" src="https://fushi.local/img${n}.png" alt="">`;
 const BODIES = {
   imageOnly3: `${img(1)}${img(2)}${img(3)}`,
   textThenImages: `${paras}\n${img(1)}${img(2)}${img(3)}`,
@@ -35,7 +35,7 @@ const bigPng = png(300, 760);
 
 async function measure(pg, mode){
   return await pg.evaluate((mode) => {
-    const r = window.hoshiReader;
+    const r = window.fushiReader;
     if (mode === 'paginated') { const c = r.getScrollContext(); return { pos: r.getPagePosition(c), unit: c.pageSize }; }
     const el = document.scrollingElement || document.documentElement;
     return { pos: el.scrollTop, unit: window.innerHeight, max: el.scrollHeight - el.clientHeight };
@@ -43,7 +43,7 @@ async function measure(pg, mode){
 }
 
 async function openChapter(mode, bodyHtml){
-  const shellFile = mode === 'paginated' ? 'hoshi_shell_paginated.html' : 'hoshi_shell_continuous.html';
+  const shellFile = mode === 'paginated' ? 'fushi_shell_paginated.html' : 'fushi_shell_continuous.html';
   const shell = fs.readFileSync(path.join(os.tmpdir(), shellFile), 'utf8');
   const css = mode === 'paginated' ? cssPaginated : cssContinuous;
   // shell 放 <head>：真实 reader 用 _stripScriptTags 剥离后单独注入 JS，createWalker(body)
@@ -54,12 +54,12 @@ async function openChapter(mode, bodyHtml){
   await pg.setRequestInterception(true);
   pg.on('request', async q => {
     const u = q.url();
-    if (u === 'https://hoshi.local/chapter') return q.respond({status:200,contentType:'text/html',body:full});
-    if (u.startsWith('https://hoshi.local/img')) return q.respond({status:200,contentType:'image/png',body:bigPng});
-    if (u.startsWith('https://hoshi.local')) return q.respond({status:404,body:''});
+    if (u === 'https://fushi.local/chapter') return q.respond({status:200,contentType:'text/html',body:full});
+    if (u.startsWith('https://fushi.local/img')) return q.respond({status:200,contentType:'image/png',body:bigPng});
+    if (u.startsWith('https://fushi.local')) return q.respond({status:404,body:''});
     return q.continue();
   });
-  await pg.goto('https://hoshi.local/chapter', {waitUntil:'load', timeout:8000}).catch(()=>{});
+  await pg.goto('https://fushi.local/chapter', {waitUntil:'load', timeout:8000}).catch(()=>{});
   await new Promise(r => setTimeout(r, 900)); // 等图 decode + block-img 归类 + 初始 restore(0)
   return { b, pg };
 }
@@ -68,9 +68,9 @@ async function openChapter(mode, bodyHtml){
 async function runLanding(mode, bodyName){
   const { b, pg } = await openChapter(mode, BODIES[bodyName]);
   // 先滚到章首（模拟往前翻进入本章的初始态），再发章尾恢复。
-  await pg.evaluate(() => window.hoshiReader.restoreProgress(0));
+  await pg.evaluate(() => window.fushiReader.restoreProgress(0));
   await new Promise(r => setTimeout(r, 120));
-  await pg.evaluate(() => window.hoshiReader.restoreProgress(0.99));
+  await pg.evaluate(() => window.fushiReader.restoreProgress(0.99));
   await new Promise(r => setTimeout(r, 300));
   const m = await measure(pg, mode);
   await b.close();

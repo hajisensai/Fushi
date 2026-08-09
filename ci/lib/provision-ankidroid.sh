@@ -52,7 +52,7 @@ provision_ankidroid() {
   # 1. Install AnkiDroid if absent.
   if ! MSYS_NO_PATHCONV=1 $ADBD shell pm path "$ANKI_PKG" >/dev/null 2>&1; then
     echo ">>> AnkiDroid not installed; downloading from mirror..."
-    local tmp_anki="$REPO_ROOT/hibiki/.anki_apk_download.apk"
+    local tmp_anki="$REPO_ROOT/fushi/.anki_apk_download.apk"
     if ! curl -L --ssl-no-revoke -o "$tmp_anki" "$ANKI_APK_URL"; then
       echo ">>> WARN: AnkiDroid download failed — anki_integration will fail." >&2
       rm -f "$tmp_anki"
@@ -115,7 +115,7 @@ provision_ankidroid() {
 
 # Grant Hibiki the AnkiDroid API permission and verify it stuck. Assumes the
 # Hibiki APK is already installed (with -g). Returns 0 if granted=true.
-grant_hibiki_ankidroid_permission() {
+grant_fushi_ankidroid_permission() {
   MSYS_NO_PATHCONV=1 $ADBD shell pm grant "$PKG" "$ANKI_PERM" >/dev/null 2>&1 || true
   local granted
   granted=$(MSYS_NO_PATHCONV=1 $ADBD shell dumpsys package "$PKG" 2>/dev/null | grep "$ANKI_PERM: granted=true" || true)

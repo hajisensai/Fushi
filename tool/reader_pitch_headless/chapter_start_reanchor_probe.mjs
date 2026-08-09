@@ -28,19 +28,19 @@ const W = 1000, H = 800;
 // block-img-wrapper 用满页高（扉页插图占整页），text 落到下一页/滚动位。
 const cssPaginated = `html,body{margin:0;padding:0;}html{overflow:hidden;}
  body{width:${W}px;height:${H}px;padding:0 20px;box-sizing:border-box;column-width:${W-40}px;column-gap:22px;column-fill:auto;font-size:22px;line-height:1.8;overflow:hidden;writing-mode:horizontal-tb;}
- img.block-img{display:block;max-width:var(--hoshi-image-max-width,${W-40}px);max-height:var(--hoshi-image-max-height,${H}px);width:auto;height:auto;break-inside:avoid;}
+ img.block-img{display:block;max-width:var(--fushi-image-max-width,${W-40}px);max-height:var(--fushi-image-max-height,${H}px);width:auto;height:auto;break-inside:avoid;}
  .block-img-wrapper{display:flex;align-items:center;justify-content:center;width:${W-40}px;height:${H}px;break-inside:avoid;} p{margin:0 0 1em 0;}`;
 // 连续模式：纵向滚动，前导插图占满一屏，文字接在其后。
 const cssContinuous = `html,body{margin:0;padding:0;}
  body{width:${W}px;padding:0 20px;box-sizing:border-box;font-size:22px;line-height:1.8;writing-mode:horizontal-tb;}
- img.block-img{display:block;max-width:var(--hoshi-image-max-width,${W-40}px);max-height:var(--hoshi-image-max-height,${H}px);width:auto;height:auto;}
+ img.block-img{display:block;max-width:var(--fushi-image-max-width,${W-40}px);max-height:var(--fushi-image-max-height,${H}px);width:auto;height:auto;}
  .block-img-wrapper{display:flex;align-items:center;justify-content:center;width:${W-40}px;height:${H}px;} p{margin:0 0 1em 0;}`;
 const paras = Array.from({length: 60}, (_, i) => `<p>P${i} これはテスト本文です。ページ分割の幾何を検証するための十分な長さのダミーテキストを並べています。文章文章文章文章文章文章文章文章。</p>`).join('\n');
 // 前导几何：single=1 张满页图（≈1 页前导，旧 ±1 hint 恰好兜住）；multi=2 张满页图
 // （≈2 页前导：扉页图 + 标题/第二张，首文本落到第 2 页，旧 ±1 hint 失效 → 复现 (B)）。
 const LEADS = {
-  single: `<img id="lead" loading="lazy" src="https://hoshi.local/lead.png" alt="">`,
-  multi: `<img loading="lazy" src="https://hoshi.local/lead1.png" alt=""><img loading="lazy" src="https://hoshi.local/lead2.png" alt="">`,
+  single: `<img id="lead" loading="lazy" src="https://fushi.local/lead.png" alt="">`,
+  multi: `<img loading="lazy" src="https://fushi.local/lead1.png" alt=""><img loading="lazy" src="https://fushi.local/lead2.png" alt="">`,
 };
 function png(w, h){const raw=Buffer.alloc((w*3+1)*h);for(let y=0;y<h;y++){raw[y*(w*3+1)]=0;for(let x=0;x<w;x++){const o=y*(w*3+1)+1+x*3;raw[o]=136;raw[o+1]=136;raw[o+2]=136;}}const d=zlib.deflateSync(raw);const sig=Buffer.from([137,80,78,71,13,10,26,10]);const ih=Buffer.alloc(13);ih.writeUInt32BE(w,0);ih.writeUInt32BE(h,4);ih[8]=8;ih[9]=2;const crc=b=>{let c=~0;for(let i=0;i<b.length;i++){c^=b[i];for(let k=0;k<8;k++)c=(c>>>1)^(0xEDB88320&-(c&1));}return ~c;};const ch=(t,dd)=>{const l=Buffer.alloc(4);l.writeUInt32BE(dd.length,0);const tt=Buffer.from(t);const cc=Buffer.alloc(4);cc.writeUInt32BE(crc(Buffer.concat([tt,dd]))>>>0,0);return Buffer.concat([l,tt,dd,cc]);};return Buffer.concat([sig,ch('IHDR',ih),ch('IDAT',d),ch('IEND',Buffer.alloc(0))]);}
 const bigPng = png(300, 760);
@@ -48,7 +48,7 @@ const bigPng = png(300, 760);
 // 统一位置读数：分页读 getPagePosition→页号；连续读 scrollingElement.scrollTop→页高倍数。
 async function measure(pg, mode){
   return await pg.evaluate((mode) => {
-    const r = window.hoshiReader;
+    const r = window.fushiReader;
     if (mode === 'paginated') {
       const c = r.getScrollContext();
       return { pos: r.getPagePosition(c), unit: c.pageSize };
@@ -60,7 +60,7 @@ async function measure(pg, mode){
 
 // 打开一章（前导图 leadHtml + 正文），等图片 decode + 初始 restore(progress0) 落地。
 async function openChapter(mode, leadHtml){
-  const shellFile = mode === 'paginated' ? 'hoshi_shell_paginated.html' : 'hoshi_shell_continuous.html';
+  const shellFile = mode === 'paginated' ? 'fushi_shell_paginated.html' : 'fushi_shell_continuous.html';
   const shell = fs.readFileSync(path.join(os.tmpdir(), shellFile), 'utf8');
   const css = mode === 'paginated' ? cssPaginated : cssContinuous;
   const full = `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body>${leadHtml}\n${paras}\n${shell}</body></html>`;
@@ -69,12 +69,12 @@ async function openChapter(mode, leadHtml){
   let rel; const ready = new Promise(r => rel = r); await pg.setRequestInterception(true);
   pg.on('request', async q => {
     const u = q.url();
-    if (u === 'https://hoshi.local/chapter') return q.respond({status:200,contentType:'text/html',body:full});
-    if (u.startsWith('https://hoshi.local/lead')) { await ready; return q.respond({status:200,contentType:'image/png',body:bigPng}); }
-    if (u.startsWith('https://hoshi.local')) return q.respond({status:404,body:''});
+    if (u === 'https://fushi.local/chapter') return q.respond({status:200,contentType:'text/html',body:full});
+    if (u.startsWith('https://fushi.local/lead')) { await ready; return q.respond({status:200,contentType:'image/png',body:bigPng}); }
+    if (u.startsWith('https://fushi.local')) return q.respond({status:404,body:''});
     return q.continue();
   });
-  await pg.goto('https://hoshi.local/chapter', {waitUntil:'load', timeout:8000}).catch(()=>{});
+  await pg.goto('https://fushi.local/chapter', {waitUntil:'load', timeout:8000}).catch(()=>{});
   await new Promise(r => setTimeout(r, 350)); rel(); await new Promise(r => setTimeout(r, 700));
   return { b, pg };
 }
@@ -84,7 +84,7 @@ async function run(mode, action, leadName){
   const { b, pg } = await openChapter(mode, LEADS[leadName]);
   const before = await measure(pg, mode);
   const info = await pg.evaluate((action) => {
-    const r = window.hoshiReader;
+    const r = window.fushiReader;
     const fvco = r.getFirstVisibleCharOffset();
     if (action === 'chromeInsets') { r.setChromeInsets(0, 60); }
     else if (action === 'renavChar') { r.restoreToCharOffset(fvco); }
@@ -118,14 +118,14 @@ async function run(mode, action, leadName){
 async function runPreserve(mode, leadName, label, seedChar, action){
   const { b, pg } = await openChapter(mode, LEADS[leadName]);
   const info = await pg.evaluate((seedChar) => {
-    const r = window.hoshiReader;
+    const r = window.fushiReader;
     r.scrollToCharOffset(seedChar);
     return { fvco: r.getFirstVisibleCharOffset() };
   }, seedChar);
   await new Promise(r => setTimeout(r, 120));
   const before = await measure(pg, mode);
   const na = await pg.evaluate((action) => {
-    const r = window.hoshiReader;
+    const r = window.fushiReader;
     if (action === 'chromeInsets') { r.setChromeInsets(0, 60); return false; }
     if (action === 'styleReanchor') {
       if (typeof r.beginStyleReanchor !== 'function') return true;

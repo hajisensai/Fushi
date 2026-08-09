@@ -1,0 +1,733 @@
+// GENERATED / hand-mirrored — do not edit by hand except to re-run ffigen.
+//
+// 本文件是 `ffigen.yaml` 对 native/fushi_torrent/.../fushi_torrent.h 的产物。
+// 本机装有 LLVM/libclang 时可 `dart run ffigen --config ffigen.yaml` 覆盖重生；
+// 内容与 ffigen 对该 C ABI 的输出等价（单一 DynamicLibrary 构造 +
+// lookup 惰性字段），与仓库既有 fushidicts FFI 手写范式一致。
+//
+// ignore_for_file: always_specify_types, camel_case_types, non_constant_identifier_names
+
+import 'dart:ffi' as ffi;
+
+/// Dart FFI bindings for the fushi_torrent C ABI bridge over libtorrent.
+class FushiTorrentBindings {
+  /// Holds the symbol lookup function.
+  final ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName)
+      _lookup;
+
+  /// The symbols are looked up in [dynamicLibrary].
+  FushiTorrentBindings(ffi.DynamicLibrary dynamicLibrary)
+      : _lookup = dynamicLibrary.lookup;
+
+  /// The symbols are looked up with [lookup].
+  FushiTorrentBindings.fromLookup(
+    ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName) lookup,
+  ) : _lookup = lookup;
+
+  /// 返回 libtorrent 运行时版本串（如 "2.0.11.0"）。指向 libtorrent 内部
+  /// 静态存储，调用方不得 free。
+  ffi.Pointer<ffi.Char> ht_libtorrent_version() {
+    return _ht_libtorrent_version();
+  }
+
+  late final _ht_libtorrent_versionPtr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<ffi.Char> Function()>>(
+          'ht_libtorrent_version');
+  late final _ht_libtorrent_version =
+      _ht_libtorrent_versionPtr.asFunction<ffi.Pointer<ffi.Char> Function()>();
+
+  /// 创建 libtorrent session；listen_interfaces NULL/空串 = 不监听，
+  /// enable_dht 非 0 开 DHT。失败返回 NULL。
+  ffi.Pointer<ffi.Void> ht_session_create(
+    ffi.Pointer<ffi.Char> listen_interfaces,
+    int enable_dht,
+  ) {
+    return _ht_session_create(listen_interfaces, enable_dht);
+  }
+
+  late final _ht_session_createPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Void> Function(
+              ffi.Pointer<ffi.Char>, ffi.Int)>>('ht_session_create');
+  late final _ht_session_create = _ht_session_createPtr
+      .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Char>, int)>();
+
+  /// 销毁 ht_session_create 返回的句柄；传 NULL 为 no-op。
+  void ht_session_destroy(ffi.Pointer<ffi.Void> session) {
+    return _ht_session_destroy(session);
+  }
+
+  late final _ht_session_destroyPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+          'ht_session_destroy');
+  late final _ht_session_destroy =
+      _ht_session_destroyPtr.asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  /// 实际监听端口；未监听/无效返回 0。
+  int ht_session_listen_port(ffi.Pointer<ffi.Void> session) {
+    return _ht_session_listen_port(session);
+  }
+
+  late final _ht_session_listen_portPtr =
+      _lookup<ffi.NativeFunction<ffi.Int Function(ffi.Pointer<ffi.Void>)>>(
+          'ht_session_listen_port');
+  late final _ht_session_listen_port = _ht_session_listen_portPtr
+      .asFunction<int Function(ffi.Pointer<ffi.Void>)>();
+
+  /// 全局速率上限（字节/秒；<=0 不限）。1 成功 0 失败。
+  int ht_session_set_rate_limits(
+    ffi.Pointer<ffi.Void> session,
+    int download_bps,
+    int upload_bps,
+  ) {
+    return _ht_session_set_rate_limits(session, download_bps, upload_bps);
+  }
+
+  late final _ht_session_set_rate_limitsPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int,
+              ffi.Int)>>('ht_session_set_rate_limits');
+  late final _ht_session_set_rate_limits = _ht_session_set_rate_limitsPtr
+      .asFunction<int Function(ffi.Pointer<ffi.Void>, int, int)>();
+
+  /// 一次设全局资源限制（速率 bps + 连接数）。1 成功 0 失败。
+  int ht_apply_limits(
+    ffi.Pointer<ffi.Void> session,
+    int download_bps,
+    int upload_bps,
+    int connections_limit,
+  ) {
+    return _ht_apply_limits(
+        session, download_bps, upload_bps, connections_limit);
+  }
+
+  late final _ht_apply_limitsPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int, ffi.Int,
+              ffi.Int)>>('ht_apply_limits');
+  late final _ht_apply_limits = _ht_apply_limitsPtr
+      .asFunction<int Function(ffi.Pointer<ffi.Void>, int, int, int)>();
+
+  /// 同 [ht_apply_limits]，多一个 `limit_local_peers`（非 0 = 限速同时作用于
+  /// 局域网 peer）。1 成功 0 失败。
+  ///
+  /// 调用前必须先看 [hasApplyLimitsEx]：随包的 Windows DLL 是**预编译产物**，
+  /// 比本文件旧的 DLL 里没有这个符号，直接调会抛 [ArgumentError]。
+  int ht_apply_limits_ex(
+    ffi.Pointer<ffi.Void> session,
+    int download_bps,
+    int upload_bps,
+    int connections_limit,
+    int limit_local_peers,
+  ) {
+    return _ht_apply_limits_ex(session, download_bps, upload_bps,
+        connections_limit, limit_local_peers);
+  }
+
+  late final _ht_apply_limits_exPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int, ffi.Int, ffi.Int,
+              ffi.Int)>>('ht_apply_limits_ex');
+  late final _ht_apply_limits_ex = _ht_apply_limits_exPtr
+      .asFunction<int Function(ffi.Pointer<ffi.Void>, int, int, int, int)>();
+
+  /// 已加载的库里是否有 [ht_apply_limits_ex]。
+  ///
+  /// 这不是防御性编程，是真实的部署形态：`fushi_torrent_ffi.dll` 由
+  /// `native/fushi_torrent/build_windows_dll.ps1` 单独产出、以 vendored 预编译
+  /// 二进制随包（`prebuilt/windows-x64/`，不入库），所以 Dart 侧更新了、DLL 没
+  /// 重编的组合是会真实发生的。符号缺失时按老 DLL 的能力降级，绝不让 app 崩。
+  late final bool hasApplyLimitsEx = _probeApplyLimitsEx();
+
+  bool _probeApplyLimitsEx() {
+    try {
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int, ffi.Int, ffi.Int,
+                  ffi.Int)>>('ht_apply_limits_ex');
+      return true;
+    } on ArgumentError {
+      return false;
+    }
+  }
+
+  /// 【已废弃】历史上传开关（BUG-1293：旧 DLL 把 0 实现成置 upload_mode =
+  /// 停止下载）。新 DLL 里 upload_enabled 非 0 = 清 upload_mode（治愈残留）、
+  /// 0 = no-op。新代码走 [ht_set_unchoke_slots] / [ht_pause_torrent]。
+  int ht_set_upload_mode(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+    int upload_enabled,
+  ) {
+    return _ht_set_upload_mode(session, info_hash, upload_enabled);
+  }
+
+  late final _ht_set_upload_modePtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+              ffi.Int)>>('ht_set_upload_mode');
+  late final _ht_set_upload_mode = _ht_set_upload_modePtr.asFunction<
+      int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)>();
+
+  /// 会话级 unchoke 槽位（BUG-1293 的「关上传」正确原语）：slots >= 0 精确
+  /// 设置（0 = 停止上传 payload，下载不受影响）；slots < 0 恢复默认。
+  /// 1 成功 0 失败。调用前必须先看 [hasUploadControl]（旧 DLL 无此符号）。
+  int ht_set_unchoke_slots(
+    ffi.Pointer<ffi.Void> session,
+    int slots,
+  ) {
+    return _ht_set_unchoke_slots(session, slots);
+  }
+
+  late final _ht_set_unchoke_slotsPtr = _lookup<
+          ffi.NativeFunction<ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int)>>(
+      'ht_set_unchoke_slots');
+  late final _ht_set_unchoke_slots = _ht_set_unchoke_slotsPtr
+      .asFunction<int Function(ffi.Pointer<ffi.Void>, int)>();
+
+  /// 种子暂停/恢复（做种停止的正确原语）。info_hash 空串 = 全量；pause 非 0 =
+  /// 清 auto_managed 再 pause、0 = 恢复 auto_managed 并 resume。1 成功 0 失败。
+  /// 调用前必须先看 [hasUploadControl]（旧 DLL 无此符号）。
+  int ht_pause_torrent(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+    int pause,
+  ) {
+    return _ht_pause_torrent(session, info_hash, pause);
+  }
+
+  late final _ht_pause_torrentPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+              ffi.Int)>>('ht_pause_torrent');
+  late final _ht_pause_torrent = _ht_pause_torrentPtr.asFunction<
+      int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)>();
+
+  /// 已加载的库里是否同时有 [ht_set_unchoke_slots] 与 [ht_pause_torrent]
+  /// （上传策略两个原语一起用，缺一即整体降级）。
+  ///
+  /// 与 [hasApplyLimitsEx] 同理：随包 DLL 是 vendored 预编译产物，Dart 侧
+  /// 更新了、DLL 没重编的组合真实存在。符号缺失时上传策略降级为「不动
+  /// 任何 flag」——宁可继续上传，也绝不用 upload_mode 掐死下载（BUG-1293）。
+  late final bool hasUploadControl = _probeUploadControl();
+
+  bool _probeUploadControl() {
+    try {
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Int Function(
+                  ffi.Pointer<ffi.Void>, ffi.Int)>>('ht_set_unchoke_slots');
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+                  ffi.Int)>>('ht_pause_torrent');
+      return true;
+    } on ArgumentError {
+      return false;
+    }
+  }
+
+  /// 应用内存占用设置（<=0 保持默认）。1 成功 0 失败。
+  int ht_apply_memory_settings(
+    ffi.Pointer<ffi.Void> session,
+    int connections_limit,
+    int max_queued_disk_bytes,
+    int send_buffer_watermark,
+    int max_peerlist_size,
+  ) {
+    return _ht_apply_memory_settings(session, connections_limit,
+        max_queued_disk_bytes, send_buffer_watermark, max_peerlist_size);
+  }
+
+  late final _ht_apply_memory_settingsPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int, ffi.Int, ffi.Int,
+              ffi.Int)>>('ht_apply_memory_settings');
+  late final _ht_apply_memory_settings = _ht_apply_memory_settingsPtr
+      .asFunction<int Function(ffi.Pointer<ffi.Void>, int, int, int, int)>();
+
+  /// 应用会话级设置（端口/DHT/LSD/UPnP/NAT-PMP/加密/匿名/活跃数/上传槽）。
+  int ht_apply_session_settings(
+    ffi.Pointer<ffi.Void> session,
+    int listen_port,
+    int enable_dht,
+    int enable_lsd,
+    int enable_upnp,
+    int enable_natpmp,
+    int enc_policy,
+    int anonymous_mode,
+    int active_downloads,
+    int active_seeds,
+    int max_upload_slots,
+  ) {
+    return _ht_apply_session_settings(
+        session,
+        listen_port,
+        enable_dht,
+        enable_lsd,
+        enable_upnp,
+        enable_natpmp,
+        enc_policy,
+        anonymous_mode,
+        active_downloads,
+        active_seeds,
+        max_upload_slots);
+  }
+
+  late final _ht_apply_session_settingsPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(
+              ffi.Pointer<ffi.Void>,
+              ffi.Int,
+              ffi.Int,
+              ffi.Int,
+              ffi.Int,
+              ffi.Int,
+              ffi.Int,
+              ffi.Int,
+              ffi.Int,
+              ffi.Int,
+              ffi.Int)>>('ht_apply_session_settings');
+  late final _ht_apply_session_settings =
+      _ht_apply_session_settingsPtr.asFunction<
+          int Function(ffi.Pointer<ffi.Void>, int, int, int, int, int, int, int,
+              int, int, int)>();
+
+  /// 添加磁力；返回 malloc JSON（ht_free_string 释放）。
+  ffi.Pointer<ffi.Char> ht_add_magnet(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> magnet_uri,
+    ffi.Pointer<ffi.Char> save_path,
+    int sequential,
+  ) {
+    return _ht_add_magnet(session, magnet_uri, save_path, sequential);
+  }
+
+  late final _ht_add_magnetPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+              ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>,
+              ffi.Pointer<ffi.Char>,
+              ffi.Int)>>('ht_add_magnet');
+  late final _ht_add_magnet = _ht_add_magnetPtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Char>, int)>();
+
+  /// 添加本地 .torrent 文件；返回 malloc JSON（ht_free_string 释放）。
+  ffi.Pointer<ffi.Char> ht_add_torrent_file(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> torrent_path,
+    ffi.Pointer<ffi.Char> save_path,
+    int sequential,
+  ) {
+    return _ht_add_torrent_file(session, torrent_path, save_path, sequential);
+  }
+
+  late final _ht_add_torrent_filePtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+              ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>,
+              ffi.Pointer<ffi.Char>,
+              ffi.Int)>>('ht_add_torrent_file');
+  late final _ht_add_torrent_file = _ht_add_torrent_filePtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Char>, int)>();
+
+  /// 从本地文件/目录生成 .torrent；返回 malloc JSON（ht_free_string 释放）。
+  ffi.Pointer<ffi.Char> ht_make_torrent(
+    ffi.Pointer<ffi.Char> content_path,
+    ffi.Pointer<ffi.Char> out_torrent_path,
+  ) {
+    return _ht_make_torrent(content_path, out_torrent_path);
+  }
+
+  late final _ht_make_torrentPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Char>,
+              ffi.Pointer<ffi.Char>)>>('ht_make_torrent');
+  late final _ht_make_torrent = _ht_make_torrentPtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Char>)>();
+
+  /// 手动连接 peer。1 成功 0 失败。
+  int ht_connect_peer(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+    ffi.Pointer<ffi.Char> ip,
+    int port,
+  ) {
+    return _ht_connect_peer(session, info_hash, ip, port);
+  }
+
+  late final _ht_connect_peerPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+              ffi.Pointer<ffi.Char>, ffi.Int)>>('ht_connect_peer');
+  late final _ht_connect_peer = _ht_connect_peerPtr.asFunction<
+      int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Char>, int)>();
+
+  /// 列出所有种子；返回 malloc JSON 数组（ht_free_string 释放）。
+  ffi.Pointer<ffi.Char> ht_list_torrents(ffi.Pointer<ffi.Void> session) {
+    return _ht_list_torrents(session);
+  }
+
+  late final _ht_list_torrentsPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+              ffi.Pointer<ffi.Void>)>>('ht_list_torrents');
+  late final _ht_list_torrents = _ht_list_torrentsPtr
+      .asFunction<ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>)>();
+
+  /// 某种子的文件列表；返回 malloc JSON（ht_free_string 释放）。
+  ffi.Pointer<ffi.Char> ht_torrent_files(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+  ) {
+    return _ht_torrent_files(session, info_hash);
+  }
+
+  late final _ht_torrent_filesPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>)>>('ht_torrent_files');
+  late final _ht_torrent_files = _ht_torrent_filesPtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+
+  /// 分片持有位图；返回 malloc JSON（ht_free_string 释放）。
+  ffi.Pointer<ffi.Char> ht_torrent_pieces(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+  ) {
+    return _ht_torrent_pieces(session, info_hash);
+  }
+
+  late final _ht_torrent_piecesPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>)>>('ht_torrent_pieces');
+  late final _ht_torrent_pieces = _ht_torrent_piecesPtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+
+  /// 排空 piece 完成事件；返回 malloc JSON 数组（ht_free_string 释放）。
+  ffi.Pointer<ffi.Char> ht_poll_piece_events(ffi.Pointer<ffi.Void> session) {
+    return _ht_poll_piece_events(session);
+  }
+
+  late final _ht_poll_piece_eventsPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+              ffi.Pointer<ffi.Void>)>>('ht_poll_piece_events');
+  late final _ht_poll_piece_events = _ht_poll_piece_eventsPtr
+      .asFunction<ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>)>();
+
+  /// 单 piece 截止期（ms）。1 成功 0 失败。
+  int ht_set_piece_deadline(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+    int piece,
+    int deadline_ms,
+  ) {
+    return _ht_set_piece_deadline(session, info_hash, piece, deadline_ms);
+  }
+
+  late final _ht_set_piece_deadlinePtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+              ffi.Int, ffi.Int)>>('ht_set_piece_deadline');
+  late final _ht_set_piece_deadline = _ht_set_piece_deadlinePtr.asFunction<
+      int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int, int)>();
+
+  /// 首尾 piece 提优。1 已应用 0 元数据未就绪 -1 种子不存在。
+  int ht_apply_first_last_priority(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+  ) {
+    return _ht_apply_first_last_priority(session, info_hash);
+  }
+
+  late final _ht_apply_first_last_priorityPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>)>>('ht_apply_first_last_priority');
+  late final _ht_apply_first_last_priority = _ht_apply_first_last_priorityPtr
+      .asFunction<int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+
+  /// 某种子当前连接的 peer 列表；返回 malloc JSON（ht_free_string 释放）。
+  ffi.Pointer<ffi.Char> ht_torrent_peers(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+  ) {
+    return _ht_torrent_peers(session, info_hash);
+  }
+
+  late final _ht_torrent_peersPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>)>>('ht_torrent_peers');
+  late final _ht_torrent_peers = _ht_torrent_peersPtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+
+  /// 用换行分隔的 CIDR 列表整体重建 ip_filter。1 成功 0 失败。
+  int ht_apply_ip_filter(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> cidrs,
+  ) {
+    return _ht_apply_ip_filter(session, cidrs);
+  }
+
+  late final _ht_apply_ip_filterPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>)>>('ht_apply_ip_filter');
+  late final _ht_apply_ip_filter = _ht_apply_ip_filterPtr
+      .asFunction<int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+
+  /// 移除种子。1 成功 0 失败。
+  int ht_remove_torrent(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+    int delete_files,
+  ) {
+    return _ht_remove_torrent(session, info_hash, delete_files);
+  }
+
+  late final _ht_remove_torrentPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+              ffi.Int)>>('ht_remove_torrent');
+  late final _ht_remove_torrent = _ht_remove_torrentPtr.asFunction<
+      int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)>();
+
+  /// 引擎侧给种子内第 file_index 个文件改名（做种不断）；同步等回执最多
+  /// timeout_ms。返回 malloc JSON（ht_free_string 释放）。
+  ffi.Pointer<ffi.Char> ht_rename_file(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+    int file_index,
+    ffi.Pointer<ffi.Char> new_path,
+    int timeout_ms,
+  ) {
+    return _ht_rename_file(
+        session, info_hash, file_index, new_path, timeout_ms);
+  }
+
+  late final _ht_rename_filePtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+              ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>,
+              ffi.Int,
+              ffi.Pointer<ffi.Char>,
+              ffi.Int)>>('ht_rename_file');
+  late final _ht_rename_file = _ht_rename_filePtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>, int, ffi.Pointer<ffi.Char>, int)>();
+
+  /// 引擎侧把种子内容整体移动到 new_save_path（做种不断；目标已存在则整体
+  /// 失败，绝不覆盖）。返回 malloc JSON（ht_free_string 释放）。
+  ffi.Pointer<ffi.Char> ht_move_storage(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+    ffi.Pointer<ffi.Char> new_save_path,
+    int timeout_ms,
+  ) {
+    return _ht_move_storage(session, info_hash, new_save_path, timeout_ms);
+  }
+
+  late final _ht_move_storagePtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+              ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>,
+              ffi.Pointer<ffi.Char>,
+              ffi.Int)>>('ht_move_storage');
+  late final _ht_move_storage = _ht_move_storagePtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Char>, int)>();
+
+  /// 把所有已有元数据的种子的 resume data 落盘到 out_dir；同步等待最多
+  /// timeout_ms（<=0 取默认 5000）。返回 malloc JSON（ht_free_string 释放）。
+  ffi.Pointer<ffi.Char> ht_save_resume_data(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> out_dir,
+    int timeout_ms,
+  ) {
+    return _ht_save_resume_data(session, out_dir, timeout_ms);
+  }
+
+  late final _ht_save_resume_dataPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>, ffi.Int)>>('ht_save_resume_data');
+  late final _ht_save_resume_data = _ht_save_resume_dataPtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)>();
+
+  /// 把 dir 下所有 `*.resume` 重新 add 回 session（启动续跑）。
+  /// 返回 malloc JSON（ht_free_string 释放）。
+  ffi.Pointer<ffi.Char> ht_load_resume_dir(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> dir,
+  ) {
+    return _ht_load_resume_dir(session, dir);
+  }
+
+  late final _ht_load_resume_dirPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>)>>('ht_load_resume_dir');
+  late final _ht_load_resume_dir = _ht_load_resume_dirPtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+
+  /// TODO-2482：某种子的 tracker 列表（url/tier/工作状态/错误/scrape 数）；
+  /// 返回 malloc JSON（ht_free_string 释放）。调用前先看 [hasDetailInfo]。
+  ffi.Pointer<ffi.Char> ht_torrent_trackers(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+  ) {
+    return _ht_torrent_trackers(session, info_hash);
+  }
+
+  late final _ht_torrent_trackersPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>)>>('ht_torrent_trackers');
+  late final _ht_torrent_trackers = _ht_torrent_trackersPtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+
+  /// TODO-2482：每个文件的下载优先级（0~7，0=不下载，下标=文件 index）；
+  /// 返回 malloc JSON（ht_free_string 释放）。调用前先看 [hasDetailInfo]。
+  ffi.Pointer<ffi.Char> ht_get_file_priorities(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+  ) {
+    return _ht_get_file_priorities(session, info_hash);
+  }
+
+  late final _ht_get_file_prioritiesPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>)>>('ht_get_file_priorities');
+  late final _ht_get_file_priorities = _ht_get_file_prioritiesPtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+
+  /// TODO-2526：每个 piece 的下载优先级（诊断/测试用，0~7，下标=piece
+  /// index）；返回 malloc JSON（ht_free_string 释放）。调用前先看
+  /// [hasPiecePriorities]。
+  ffi.Pointer<ffi.Char> ht_get_piece_priorities(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+  ) {
+    return _ht_get_piece_priorities(session, info_hash);
+  }
+
+  late final _ht_get_piece_prioritiesPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>)>>('ht_get_piece_priorities');
+  late final _ht_get_piece_priorities = _ht_get_piece_prioritiesPtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+
+  /// TODO-2526：已加载的库是否导出 ht_get_piece_priorities。**独立探测**、
+  /// 不并进 [hasDetailInfo]：随包旧 DLL 有详情四符号但没有本符号时，详情页
+  /// 不该整体降级；缺本符号只影响 piece 优先级读取（返回 null）。
+  late final bool hasPiecePriorities = _probePiecePriorities();
+
+  bool _probePiecePriorities() {
+    try {
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+                  ffi.Pointer<ffi.Char>)>>('ht_get_piece_priorities');
+      return true;
+    } on ArgumentError {
+      return false;
+    }
+  }
+
+  /// TODO-2482：设置单个文件的下载优先级（0~7，0=不下载）。1 成功 0 失败。
+  /// 调用前先看 [hasDetailInfo]。
+  int ht_set_file_priority(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+    int file_index,
+    int priority,
+  ) {
+    return _ht_set_file_priority(session, info_hash, file_index, priority);
+  }
+
+  late final _ht_set_file_priorityPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+              ffi.Int, ffi.Int)>>('ht_set_file_priority');
+  late final _ht_set_file_priority = _ht_set_file_priorityPtr.asFunction<
+      int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int, int)>();
+
+  /// TODO-2482：会话协议状态（DHT/LSD/端口映射/监听端口/会话级速率）。
+  /// 非阻塞：dht_nodes 首轮 -1、下一轮即有值；速率要到**第三轮**才有值
+  /// （第二轮收割到首个采样只够建基线，第三轮才差分得出）。返回 malloc
+  /// JSON（ht_free_string 释放）。调用前先看 [hasDetailInfo]。
+  ffi.Pointer<ffi.Char> ht_session_status(ffi.Pointer<ffi.Void> session) {
+    return _ht_session_status(session);
+  }
+
+  late final _ht_session_statusPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+              ffi.Pointer<ffi.Void>)>>('ht_session_status');
+  late final _ht_session_status = _ht_session_statusPtr
+      .asFunction<ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>)>();
+
+  /// 已加载的库里是否有 TODO-2482 详情批次的全部符号
+  /// （trackers / 文件优先级读写 / 会话状态，缺一即整体降级）。
+  ///
+  /// 与 [hasApplyLimitsEx] 同理：随包 DLL 是 vendored 预编译产物，Dart 侧
+  /// 更新了、DLL 没重编的组合真实存在。符号缺失时详情页显示「当前后端
+  /// 不支持」，绝不让 lookup 在运行时抛。
+  late final bool hasDetailInfo = _probeDetailInfo();
+
+  bool _probeDetailInfo() {
+    try {
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+                  ffi.Pointer<ffi.Char>)>>('ht_torrent_trackers');
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+                  ffi.Pointer<ffi.Char>)>>('ht_get_file_priorities');
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+                  ffi.Int, ffi.Int)>>('ht_set_file_priority');
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Pointer<ffi.Char> Function(
+                  ffi.Pointer<ffi.Void>)>>('ht_session_status');
+      return true;
+    } on ArgumentError {
+      return false;
+    }
+  }
+
+  /// 释放本库返回的 char* 串；传 NULL 为 no-op。
+  void ht_free_string(ffi.Pointer<ffi.Char> s) {
+    return _ht_free_string(s);
+  }
+
+  late final _ht_free_stringPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Char>)>>(
+          'ht_free_string');
+  late final _ht_free_string =
+      _ht_free_stringPtr.asFunction<void Function(ffi.Pointer<ffi.Char>)>();
+}

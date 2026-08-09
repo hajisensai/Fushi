@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace hibiki_voice_hook::siglus {
+namespace fushi_voice_hook::siglus {
 
 constexpr size_t kInvalidTextFunctionOffset = static_cast<size_t>(-1);
 
@@ -66,4 +66,4 @@ inline size_t FindExactTextFunctionOffset(const uint8_t* image,
   return kInvalidTextFunctionOffset;
 }
 
-}  // namespace hibiki_voice_hook::siglus
+}  // namespace fushi_voice_hook::siglus

@@ -3,9 +3,10 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace hibiki_voice_hook {
+namespace fushi_voice_hook {
 
 constexpr uint64_t kKirikiriFollowingTextWindowMs = 1500;
+constexpr uint64_t kAi6PrecedingTextWindowMs = 1500;
 
 struct VoiceTextCandidate {
   uint64_t seq = 0;
@@ -62,4 +63,39 @@ inline VoiceResourcePairDecision ResolveFollowingSelectedText(
   return {VoiceResourcePairState::kWait, 0};
 }
 
-}  // namespace hibiki_voice_hook
+// AI6 reads the selected voice.arc member after the corresponding text has
+// already been published. Bind only to the newest complete line on the still
+// selected thread inside a narrow preceding window; absence is a deliberate
+// unpaired fallback, never permission to guess a nearby line in the host.
+inline VoiceResourcePairDecision ResolvePrecedingSelectedText(
+    uint64_t resource_tick_ms, uint64_t selected_thread_id,
+    const VoiceTextCandidate* candidates, size_t candidate_count,
+    uint64_t max_age_ms = kAi6PrecedingTextWindowMs) {
+  if (selected_thread_id == 0) {
+    return {VoiceResourcePairState::kUnselected, 0};
+  }
+
+  uint64_t newest_seq = 0;
+  uint64_t newest_timestamp = 0;
+  for (size_t i = 0; i < candidate_count; ++i) {
+    const VoiceTextCandidate& candidate = candidates[i];
+    if (!candidate.is_line || candidate.byte_len == 0 ||
+        candidate.thread_id != selected_thread_id || candidate.seq == 0 ||
+        candidate.timestamp_ms > resource_tick_ms ||
+        resource_tick_ms - candidate.timestamp_ms > max_age_ms) {
+      continue;
+    }
+    if (newest_seq == 0 || candidate.timestamp_ms > newest_timestamp ||
+        (candidate.timestamp_ms == newest_timestamp &&
+         candidate.seq > newest_seq)) {
+      newest_seq = candidate.seq;
+      newest_timestamp = candidate.timestamp_ms;
+    }
+  }
+  return newest_seq == 0
+      ? VoiceResourcePairDecision{VoiceResourcePairState::kExpired, 0}
+      : VoiceResourcePairDecision{VoiceResourcePairState::kMatched,
+                                  newest_seq};
+}
+
+}  // namespace fushi_voice_hook

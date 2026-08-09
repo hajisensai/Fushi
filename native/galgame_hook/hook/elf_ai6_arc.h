@@ -4,13 +4,14 @@
 #include <cstdint>
 #include <cstring>
 
-namespace hibiki_voice_hook::elf_ai6 {
+namespace fushi_voice_hook::elf_ai6 {
 
 constexpr size_t kHeaderBytes = 4;
 constexpr size_t kEntryBytes = 272;
 constexpr size_t kNameBytes = 256;
 constexpr uint32_t kMaxEntryCount = 1u << 20;
-constexpr uint32_t kMaxVoiceBytes = 64u * 1024u * 1024u;
+constexpr uint64_t kMaxIndexBytes = 32u * 1024u * 1024u;
+constexpr uint32_t kMaxVoiceBytes = 32u * 1024u * 1024u;
 
 struct ArcEntry {
   char name[kNameBytes + 1] = {0};
@@ -39,6 +40,7 @@ inline bool IndexSize(const uint8_t* prefix, size_t prefix_bytes,
   if (count == 0 || count > kMaxEntryCount) return false;
   const uint64_t index_bytes = kHeaderBytes +
       static_cast<uint64_t>(count) * kEntryBytes;
+  if (index_bytes > kMaxIndexBytes) return false;
   if (count_out != nullptr) *count_out = count;
   if (index_bytes_out != nullptr) *index_bytes_out = index_bytes;
   return true;
@@ -79,26 +81,25 @@ inline bool FindEntryForRead(const uint8_t* index, size_t index_bytes,
   if (out == nullptr || !IndexSize(index, index_bytes, &count, nullptr)) {
     return false;
   }
-  uint32_t low = 0;
-  uint32_t high = count;
-  while (low < high) {
-    const uint32_t mid = low + (high - low) / 2;
+  bool found = false;
+  ArcEntry match;
+  for (uint32_t entry_index = 0; entry_index < count; ++entry_index) {
     ArcEntry candidate;
-    if (!ParseEntry(index, index_bytes, file_size, mid, &candidate)) {
+    if (!ParseEntry(index, index_bytes, file_size, entry_index, &candidate)) {
       return false;
     }
-    if (read_offset < candidate.offset) {
-      high = mid;
+    if (read_offset < candidate.offset ||
+        read_offset >= candidate.offset + candidate.size) {
       continue;
     }
-    if (read_offset >= candidate.offset + candidate.size) {
-      low = mid + 1;
-      continue;
-    }
-    *out = candidate;
-    return true;
+    // A read offset mapping to two members is ambiguous and must never publish
+    // bytes under a guessed resource identity.
+    if (found) return false;
+    match = candidate;
+    found = true;
   }
-  return false;
+  if (found) *out = match;
+  return found;
 }
 
-}  // namespace hibiki_voice_hook::elf_ai6
+}  // namespace fushi_voice_hook::elf_ai6

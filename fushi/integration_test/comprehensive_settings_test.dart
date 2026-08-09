@@ -1,0 +1,266 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
+
+import 'package:fushi/main.dart' as app;
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/sync_settings_schema.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+
+import 'helpers/focus_driver.dart';
+import 'test_helpers.dart';
+
+/// Comprehensive settings, focus-driven (synthetic key events only — no
+/// coordinate taps), on the REAL app.
+///
+/// Tab-traverses the REAL [DisplaySettingsPage] and drives each settings row it
+/// lands on by its kind — Switch is activated with Space, Slider/Stepper/
+/// Segmented are nudged with the D-pad (each is a single `_GamepadAdjustable`
+/// focus stop). Tabbing also scrolls the lazy list into view and builds rows on
+/// demand, so this reaches controls past the first screenful without coordinate
+/// scrolling. Then it asserts the changes wrote through to the prefs DB and
+/// restores every pref it touched.
+///
+/// The old version pushed a SYNTHETIC harness page on top of DisplaySettings to
+/// cover every control type; that depended on the under-route going off-stage,
+/// which only holds on mobile — on the desktop two-pane the pushed route does
+/// not render, so the harness saw 0 controls. Control-TYPE coverage already
+/// lives in the platform-agnostic widget test
+/// `test/settings/settings_schema_coverage_test.dart` (full focus-driven schema
+/// + effect probes), so this integration test focuses on the unique value: the
+/// REAL app's REAL settings page driven by focus. Runs on emulator + desktop
+/// (Windows/Mac hidden runner).
+void main() {
+  final IntegrationTestWidgetsFlutterBinding binding =
+      IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets(
+      'comprehensive settings: focus-driven real controls persist real changes',
+      (WidgetTester tester) async {
+    final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
+    final FlutterExceptionHandler? oldHandler = FlutterError.onError;
+    FlutterError.onError = (FlutterErrorDetails details) {
+      errors.add(details);
+      debugPrint('[comprehensive-settings] ${details.exceptionAsString()}');
+    };
+
+    try {
+      app.main();
+      expect(await waitForHome(tester), isTrue);
+      await tester.pump(const Duration(seconds: 2));
+
+      final ProviderContainer container = ProviderScope.containerOf(
+        tester.element(find.byType(MaterialApp).first),
+      );
+      final AppModel appModel = container.read(appProvider);
+
+      // 焦点驱动前置：实验焦点导航开关关闭（默认）时 Tab 被全局中和为
+      // DoNothingIntent（TODO-112，global_navigation.dart），_focusDriveSettingsRows
+      // 一步也走不动（iOS 模拟器每个测试文件都是全新容器，rows=0 实锤；macOS
+      // 此前只是碰巧吃到 app_smoke 残留的持久化偏好）。与 app_smoke /
+      // feature_flows 同范式先开开关；放在偏好快照之前，避免开关本身混进
+      // 「控件写穿 DB」的 before/after 差异断言。
+      await appModel.setExperimentalFocusNavigationEnabled(true);
+      for (int i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 250));
+      }
+
+      await appModel.prefsRepo.refreshFromDb();
+      final Map<String, String> before =
+          Map<String, String>.from(appModel.prefsRepo.prefsSnapshot);
+
+      await _openReadingSettingsPage(tester);
+
+      final FocusDriver driver = FocusDriver(tester);
+      final int driven =
+          await _focusDriveSettingsRows(tester, driver, target: 3);
+      debugPrint('[comprehensive-settings] focus-driven rows=$driven');
+      expect(driven, greaterThanOrEqualTo(2),
+          reason: 'focus must drive at least two real settings controls '
+              '(Switch/Slider/Stepper/Segmented) on the reading settings page');
+
+      await appModel.prefsRepo.refreshFromDb();
+      final Map<String, String> after =
+          Map<String, String>.from(appModel.prefsRepo.prefsSnapshot);
+      expect(_mapsEqual(before, after), isFalse,
+          reason: 'focus-driven control changes must write through to prefs');
+
+      await _exerciseSyncSettings(tester, appModel);
+
+      // Restore every pref this test changed back to its pre-test value so the
+      // user's real settings are untouched.
+      for (final MapEntry<String, String> e in before.entries) {
+        if (after[e.key] != e.value) {
+          await appModel.database.setPref(e.key, e.value);
+        }
+      }
+      for (final String k in after.keys) {
+        if (!before.containsKey(k)) {
+          await appModel.database.deletePref(k);
+        }
+      }
+      await appModel.prefsRepo.refreshFromDb();
+
+      await takeScreenshot(binding, 'comprehensive_settings');
+      assertStrictErrors(errors);
+    } finally {
+      FlutterError.onError = oldHandler;
+    }
+  });
+}
+
+/// Tab through the current page; whenever focus lands on a settings row, drive
+/// it by its kind (Switch → Space activate; Slider/Stepper/Segmented → D-pad
+/// arrow). Tabbing scrolls + builds lazy rows. Stops after [target] rows driven.
+Future<int> _focusDriveSettingsRows(
+  WidgetTester tester,
+  FocusDriver driver, {
+  required int target,
+}) async {
+  int driven = 0;
+  final Set<FocusNode> seen = <FocusNode>{};
+  for (int step = 0; step < 150 && driven < target; step++) {
+    final FocusNode? node = FocusManager.instance.primaryFocus;
+    if (node != null && seen.add(node)) {
+      final _RowKind? kind = _focusedRowKind();
+      if (kind == _RowKind.switchRow) {
+        await driver.activate();
+        await tester.pump(const Duration(milliseconds: 250));
+        driven++;
+      } else if (kind != null) {
+        await driver.adjust(steps: 2);
+        await tester.pump(const Duration(milliseconds: 250));
+        driven++;
+      }
+    }
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump(const Duration(milliseconds: 60));
+  }
+  return driven;
+}
+
+enum _RowKind { switchRow, slider, stepper, segmented }
+
+_RowKind? _focusedRowKind() {
+  final BuildContext? ctx = FocusManager.instance.primaryFocus?.context;
+  if (ctx == null) return null;
+  _RowKind? found;
+  ctx.visitAncestorElements((Element el) {
+    final Widget w = el.widget;
+    if (w is AdaptiveSettingsSwitchRow) {
+      found = _RowKind.switchRow;
+      return false;
+    }
+    if (w is AdaptiveSettingsSliderRow) {
+      found = _RowKind.slider;
+      return false;
+    }
+    if (w is AdaptiveSettingsStepperRow) {
+      found = _RowKind.stepper;
+      return false;
+    }
+    if (w is AdaptiveSettingsSegmentedRow) {
+      found = _RowKind.segmented;
+      return false;
+    }
+    return true;
+  });
+  return found;
+}
+
+/// Push the REAL reading settings detail page — the same schema destination the
+/// removed DisplaySettingsPage used to project — rendered through the unified
+/// settings detail shell (SettingsDetailPage). It carries the same focusable
+/// Switch/Slider/Stepper/Segmented controls the focus driver exercises.
+Future<void> _openReadingSettingsPage(WidgetTester tester) async {
+  final NavigatorState nav = Navigator.of(
+    tester.element(find.byType(Scaffold).first),
+  );
+  unawaited(nav.push(
+    MaterialPageRoute<void>(
+      builder: (BuildContext routeCtx) => Consumer(
+        builder: (BuildContext ctx, WidgetRef ref, _) {
+          final SettingsContext sctx = SettingsContext(
+            context: ctx,
+            appModel: ref.read(appProvider),
+            ref: ref,
+            readerSource: ReaderFushiSource.instance,
+            refresh: () {},
+          );
+          final SettingsDestination reading = buildSettingsSchema(sctx)
+              .firstWhere((SettingsDestination d) =>
+                  d.id == SettingsDestinationId.reading);
+          return SettingsDetailPage(destination: reading);
+        },
+      ),
+    ),
+  ));
+  await tester.pump(const Duration(seconds: 2));
+}
+
+Future<void> _exerciseSyncSettings(
+  WidgetTester tester,
+  AppModel appModel,
+) async {
+  final SyncRepository repo = SyncRepository(appModel.database);
+  final SyncBackendType originalBackend = await repo.getBackendType();
+  final bool originalContent = await repo.isSyncContentEnabled();
+  final bool originalStats = await repo.isSyncStatsEnabled();
+  final bool nextContent = !originalContent;
+
+  try {
+    await _pushSettingsDestination(tester, buildSyncBackupDestination());
+    await repo.setBackendType(SyncBackendType.webDav);
+    await repo.setSyncContentEnabled(nextContent);
+    await repo.setSyncStatsEnabled(!originalStats);
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(await repo.getBackendType(), SyncBackendType.webDav);
+    expect(await repo.isSyncContentEnabled(), nextContent);
+    expect(await repo.isSyncStatsEnabled(), !originalStats);
+  } finally {
+    await repo.setBackendType(originalBackend);
+    await repo.setSyncContentEnabled(originalContent);
+    await repo.setSyncStatsEnabled(originalStats);
+    final Finder detailPage = find.byType(SettingsDetailPage);
+    if (detailPage.evaluate().isNotEmpty) {
+      Navigator.of(tester.element(detailPage.first)).pop();
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+  }
+}
+
+Future<void> _pushSettingsDestination(
+  WidgetTester tester,
+  SettingsDestination destination,
+) async {
+  final NavigatorState nav = Navigator.of(
+    tester.element(find.byType(Scaffold).first),
+  );
+  unawaited(nav.push(
+    MaterialPageRoute<void>(
+      builder: (_) => SettingsDetailPage(destination: destination),
+    ),
+  ));
+  await tester.pump(const Duration(seconds: 2));
+}
+
+bool _mapsEqual(Map<String, String> a, Map<String, String> b) {
+  if (a.length != b.length) return false;
+  for (final MapEntry<String, String> entry in a.entries) {
+    if (b[entry.key] != entry.value) return false;
+  }
+  return true;
+}

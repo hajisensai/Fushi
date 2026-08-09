@@ -13,7 +13,7 @@ import 'custom_platform_view.dart';
 /// [WebResourceError] 描述前缀。上层（reader）凭此 sentinel 区分「native 实例创建
 /// 失败」与普通页面加载错误，只对前者走可见恢复（toast + 退回书架）。
 const String kInAppWebViewCreationFailedSentinel =
-    'HIBIKI_INAPPWEBVIEW_CREATION_FAILED';
+    'FUSHI_INAPPWEBVIEW_CREATION_FAILED';
 
 /// Object specifying creation parameters for creating a [PlatformInAppWebViewWidget].
 ///

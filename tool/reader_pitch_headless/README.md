@@ -1,6 +1,6 @@
 # reader_pitch_headless — 竖排阅读器分页列周期真实渲染探针
 
-仓库的分页几何守卫 `hibiki/test/reader/reader_vertical_pitch_invariant_test.dart` 是**纯
+仓库的分页几何守卫 `fushi/test/reader/reader_vertical_pitch_invariant_test.dart` 是**纯
 代数影子**：它把「真实列周期」直接定义成 `columnWidth + gap`（名义值），所以结构上**测不出**
 浏览器 multicol 实际渲染的列周期是否真等于这个名义值。这个盲点让一个**不存在**的「竖排翻页
 累积偏移」问题拿到了 P0（见 `docs/bugs/BUG-405-pagination-cumulative-offset.md`）。

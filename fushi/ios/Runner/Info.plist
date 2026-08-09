@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+	<dict>
+		<key>NSMicrophoneUsageDescription</key>
+		<string>Fushi needs the microphone to record audio for your Anki cards.</string>
+		<key>NSAppleMusicUsageDescription</key>
+		<string>Fushi accesses your media library to import audio files for audiobooks and Anki cards.</string>
+		<key>NSCameraUsageDescription</key>
+		<string>Fushi uses the camera to capture images to add to your Anki cards.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>Fushi accesses your photo library to pick images to add to your Anki cards.</string>
+		<key>NSLocalNetworkUsageDescription</key>
+		<string>Fushi finds other Fushi devices on your local network to sync your library.</string>
+		<key>NSBonjourServices</key>
+		<array>
+			<string>_fushi-sync._tcp</string>
+		</array>
+		<key>CFBundleDevelopmentRegion</key>
+		<string>$(DEVELOPMENT_LANGUAGE)</string>
+		<key>CFBundleDisplayName</key>
+		<string>Fushi</string>
+		<key>CFBundleExecutable</key>
+		<string>$(EXECUTABLE_NAME)</string>
+		<key>CFBundleIdentifier</key>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+		<key>CFBundleInfoDictionaryVersion</key>
+		<string>6.0</string>
+		<key>CFBundleName</key>
+		<string>Fushi</string>
+		<key>CFBundlePackageType</key>
+		<string>APPL</string>
+		<key>CFBundleShortVersionString</key>
+		<string>$(FLUTTER_BUILD_NAME)</string>
+		<key>CFBundleSignature</key>
+		<string>????</string>
+		<key>CFBundleVersion</key>
+		<string>$(FLUTTER_BUILD_NUMBER)</string>
+		<key>LSRequiresIPhoneOS</key>
+		<true/>
+		<key>UILaunchStoryboardName</key>
+		<string>LaunchScreen</string>
+		<key>UIMainStoryboardFile</key>
+		<string>Main</string>
+		<key>UISupportedInterfaceOrientations</key>
+		<array>
+			<string>UIInterfaceOrientationPortrait</string>
+			<string>UIInterfaceOrientationLandscapeLeft</string>
+			<string>UIInterfaceOrientationLandscapeRight</string>
+		</array>
+		<key>UISupportedInterfaceOrientations~ipad</key>
+		<array>
+			<string>UIInterfaceOrientationPortrait</string>
+			<string>UIInterfaceOrientationPortraitUpsideDown</string>
+			<string>UIInterfaceOrientationLandscapeLeft</string>
+			<string>UIInterfaceOrientationLandscapeRight</string>
+		</array>
+		<key>UIViewControllerBasedStatusBarAppearance</key>
+		<false/>
+		<key>UIStatusBarHidden</key>
+		<false/>
+		<!-- 解放 ProMotion 120Hz：置 false（或缺省）时 CoreAnimation 把 Flutter
+		     渲染钉在 60fps 上限，读书/滚动在 120Hz 机型上明显掉刷新率。true =
+		     允许高于 60fps 的帧率，交由系统按内容需求调度。 -->
+		<key>CADisableMinimumFrameDurationOnPhone</key>
+		<false/>
+		<key>UIApplicationSceneManifest</key>
+			<dict>
+				<key>UIApplicationSupportsMultipleScenes</key>
+				<false/>
+				<key>UISceneConfigurations</key>
+				<dict>
+					<key>UIWindowSceneSessionRoleApplication</key>
+					<array>
+						<dict>
+							<key>UISceneClassName</key>
+							<string>UIWindowScene</string>
+							<key>UISceneDelegateClassName</key>
+							<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+							<key>UISceneConfigurationName</key>
+							<string>flutter</string>
+							<key>UISceneStoryboardFile</key>
+							<string>Main</string>
+						</dict>
+					</array>
+				</dict>
+			</dict>
+			<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>com.googleusercontent.apps.963096957716-a5iep3fd7jqsef4vdb2c4nq7mm7i3rnn</string>
+				</array>
+			</dict>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>fushi</string>
+				</array>
+			</dict>
+		</array>
+		<key>LSApplicationQueriesSchemes</key>
+		<array>
+			<string>anki</string>
+		</array>
+		<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+		<!--
+			出口合规声明。不写这个键的话，每个上传到 TestFlight 的构建都会卡在
+			「缺少出口合规信息」，必须去 App Store Connect 网页上手动答一遍问卷才
+			能分发给测试员 —— CI 自动发布就没有意义了。
+			false = 不使用「非豁免加密」：Hibiki 只用系统提供的 HTTPS/TLS（同步、
+			词典下载、TMDB/dandanplay 等 API），没有自实现或专有的加密算法，属于
+			Apple 明确列出的豁免范围。若将来引入自研加密（例如端到端加密的互联
+			同步），必须回头改这个值并补交年度自分类报告。
+		-->
+		<key>ITSAppUsesNonExemptEncryption</key>
+		<false/>
+</dict>
+</plist>

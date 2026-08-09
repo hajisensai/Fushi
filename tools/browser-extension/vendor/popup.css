@@ -143,7 +143,7 @@ html {
 
 .entry {
     padding: 8px 0;
-    /* TODO-1325 #5 part1: hoshiFocusDictionaryEntryMove 的 scrollIntoView 落点留白，
+    /* TODO-1325 #5 part1: fushiFocusDictionaryEntryMove 的 scrollIntoView 落点留白，
        避免当前词条被顶部句子横幅(.global-lookup-sentence)或弹窗边缘贴死。 */
     scroll-margin-top: 14px;
     scroll-margin-bottom: 14px;
@@ -157,8 +157,8 @@ html {
 
 /* TODO-1325 #5 part1: 多词条焦点导航——当前词条(.entry-current)在其标题行左侧画一枚
    #1a73e8 蓝三角(纯 CSS 边框三角，零字体依赖，与折叠三角同法，且不受注入词典字体影响)。
-   焦点态由 hoshiFocusDictionaryEntryMove('next'|'prev') 切换 .entry-current，与逐字光标
-   hoshiCaret 正交(只移动词条级指示与视口，不动 caret ring)。三角绝对定位在 body 左侧
+   焦点态由 fushiFocusDictionaryEntryMove('next'|'prev') 切换 .entry-current，与逐字光标
+   fushiCaret 正交(只移动词条级指示与视口，不动 caret ring)。三角绝对定位在 body 左侧
    10px 留白里，垂直居中于标题行，随字号自适应。 */
 .entry-current .entry-header {
     position: relative;
@@ -504,13 +504,13 @@ html.global-lookup .mine-button:not(:disabled) {
     cursor: default;
 }
 
-/* BUG-842：.hoshi-btn-tip 是内联动作按钮（调整上下文 / 清空已加句子 等）的 DOM 悬停/
+/* BUG-842：.fushi-btn-tip 是内联动作按钮（调整上下文 / 清空已加句子 等）的 DOM 悬停/
    聚焦提示，取代会在离屏 WebView2（DComp visual→WGC→texture）上飞到窗口角落的原生
-   title。与 .audio-hint 共用视觉；由 popup.js setInlineButtonTip / __hoshiShowButtonTip
+   title。与 .audio-hint 共用视觉；由 popup.js setInlineButtonTip / __fushiShowButtonTip
    按屏幕坐标定位。 */
 .audio-hint,
 .inline-hint,
-.hoshi-btn-tip {
+.fushi-btn-tip {
     position: fixed;
     z-index: 10000;
     max-width: 220px;
@@ -530,7 +530,7 @@ html.global-lookup .mine-button:not(:disabled) {
 
 .audio-hint.visible,
 .inline-hint.visible,
-.hoshi-btn-tip.visible {
+.fushi-btn-tip.visible {
     opacity: 1;
 }
 
@@ -1254,18 +1254,18 @@ html[data-theme="dark"] :where(.glossary-group, .glossary-content) [class^="glos
     margin-right: 1px;
 }
 
-::highlight(hoshi-selection) {
-    background-color: var(--hoshi-primary-highlight, rgba(160, 160, 160, 0.4));
+::highlight(fushi-selection) {
+    background-color: var(--fushi-primary-highlight, rgba(160, 160, 160, 0.4));
     color: inherit;
 }
 
-.hoshi-dict-highlight {
-    background-color: var(--hoshi-primary-highlight, rgba(160, 160, 160, 0.4)) !important;
+.fushi-dict-highlight {
+    background-color: var(--fushi-primary-highlight, rgba(160, 160, 160, 0.4)) !important;
     color: inherit;
 }
 
 ::selection {
-    background-color: var(--hoshi-primary-highlight, rgba(100, 140, 230, 0.35));
+    background-color: var(--fushi-primary-highlight, rgba(100, 140, 230, 0.35));
     color: inherit;
 }
 
@@ -1332,7 +1332,7 @@ html[data-theme="dark"] {
     margin-top: 4px;
     padding: 8px 10px;
     border: 1px solid var(--outline-variant);
-    border-radius: var(--hibiki-radius-card, 10px);
+    border-radius: var(--fushi-radius-card, 10px);
     background: var(--surface-container);
 }
 
@@ -1411,7 +1411,7 @@ html[data-theme="dark"] {
  * in-app — zero regression to the in-app popup or to the tested --dict-columns
  * grid — and only style the bare WebView2 lookup window.
  *
- * Card chrome ports hoshi's reader-popup-host.js `.hoshi-reader-popup-shell`
+ * Card chrome ports hoshi's reader-popup-host.js `.fushi-reader-popup-shell`
  * (border 1px rgba(120,120,128,0.36) / radius 10px). The opaque, NON-layered
  * WebView2 window (see global_lookup_window.cpp: "No WS_EX_LAYERED") cannot
  * carry a real drop-shadow inside CSS — that is a platform limitation, not an
@@ -1432,11 +1432,11 @@ html.global-lookup body {
        same rgb triplet the theme injects into --background-color, so this line
        is byte-equivalent to the old opaque fill for the in-app popup and the
        transient overlay (zero regression). The clipboard panel sets
-       --hibiki-card-bg-alpha < 1 (opacity slider) so the Win11 acrylic backdrop
+       --fushi-card-bg-alpha < 1 (opacity slider) so the Win11 acrylic backdrop
        (ApplySystemBackdrop) shows through; when the backdrop is unavailable
        Dart always passes 1. */
-    background: rgba(var(--hibiki-card-bg-rgb, 255, 255, 255),
-        var(--hibiki-card-bg-alpha, 1));
+    background: rgba(var(--fushi-card-bg-rgb, 255, 255, 255),
+        var(--fushi-card-bg-alpha, 1));
 }
 
 html.global-lookup[data-theme="dark"] body {
@@ -1472,7 +1472,7 @@ html.global-lookup[data-theme="dark"] body {
    span/div[class*="gloss-sc-"]{float:none!important;position:static!important;display:inline}
    是 BUG-520 的根因——display:inline 把所有词典靠 div block 布局做的分行
    压成一行、行高为 0 的图标容器互相重叠，禁止再引入（守卫见
-   hibiki/test/pages/popup_glossary_link_scope_test.js 第 (3) 节）。
+   fushi/test/pages/popup_glossary_link_scope_test.js 第 (3) 节）。
    上面的 a.gloss-sc-a 规则保留：它还兜住词典自带 styles.css 对 <a> 的
    float/position（BUG-435 的次要成因），且 <a> 本就是行内元素零副作用。 */
 
@@ -1484,7 +1484,7 @@ html.global-lookup[data-theme="dark"] body {
 .global-lookup-sentence {
     margin: 0 0 8px 0;
     padding: 8px 10px;
-    border-radius: var(--hibiki-radius-card, 10px);
+    border-radius: var(--fushi-radius-card, 10px);
     background: var(--surface-variant, rgba(128, 128, 128, 0.12));
     /* 真机反馈（2026-07-10）：左侧 3px 强调色竖条（引用块样式）在面板里像
        「搜索栏左边一块莫名深色」——去掉竖条，改四边细边框的普通搜索框外观。 */
@@ -1514,13 +1514,13 @@ html.global-lookup[data-theme="dark"] body {
    （真机第 4 轮「不应该按照字来划分，应该按照正常的来断」）。 */
 .global-lookup-sentence:not(.global-lookup-sentence-panel)
     .global-lookup-sentence-char:hover {
-    background: var(--hoshi-primary-highlight, rgba(56, 106, 88, 0.22));
+    background: var(--fushi-primary-highlight, rgba(56, 106, 88, 0.22));
     border-radius: 2px;
 }
 
 /* 引擎匹配到的词（bestLength）在面板选词区的整词高亮——与查词高亮同色变量。 */
 .global-lookup-sentence-hit {
-    background: var(--hoshi-primary-highlight, rgba(56, 106, 88, 0.22));
+    background: var(--fushi-primary-highlight, rgba(56, 106, 88, 0.22));
     border-radius: 2px;
 }
 
@@ -1533,7 +1533,7 @@ html.global-lookup[data-theme="dark"] body {
    BUG：上面 .ctx-adjust-button 规则原缺闭合 }，CSS 错误恢复把本条整规则当无效
    声明吞掉（ext-hit 高亮从未生效）；补上闭合后本条恢复。 */
 .global-lookup-ext-hit {
-    background: var(--hoshi-primary-highlight, rgba(56, 106, 88, 0.22));
+    background: var(--fushi-primary-highlight, rgba(56, 106, 88, 0.22));
     border-radius: 2px;
 }
 
@@ -1571,7 +1571,7 @@ html.global-lookup[data-theme="dark"] body {
     flex-direction: column;
     gap: 8px;
     padding: 16px;
-    border-radius: var(--hibiki-radius-card, 12px);
+    border-radius: var(--fushi-radius-card, 12px);
     background: var(--md-surface-container-high, var(--background-color));
     color: var(--text-color);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
@@ -1690,11 +1690,11 @@ html.eink *::after {
 }
 
 html.eink {
-    --hibiki-radius-card: 0;
+    --fushi-radius-card: 0;
     /* 杀掉亚克力/半透明卡片底（Win11 backdrop 在 e-ink 上只是脏灰）。 */
-    --hibiki-card-bg-alpha: 1;
+    --fushi-card-bg-alpha: 1;
     /* 查词命中不再用半透明色块（消费端见下方 underline 覆盖）。 */
-    --hoshi-primary-highlight: transparent;
+    --fushi-primary-highlight: transparent;
     /* tags：色块 → 透明底 + 描边（描边规则见下）。 */
     --expr-tag-color: transparent;
 }
@@ -1716,7 +1716,7 @@ html.eink[data-theme="light"] {
     --primary-color: #000;
     --on-surface-variant: #000;
     --freq-tag-color: #000;
-    --hibiki-card-bg-rgb: 255, 255, 255;
+    --fushi-card-bg-rgb: 255, 255, 255;
 }
 
 html.eink[data-theme="dark"] {
@@ -1734,7 +1734,7 @@ html.eink[data-theme="dark"] {
     --primary-color: #fff;
     --on-surface-variant: #fff;
     --freq-tag-color: #fff;
-    --hibiki-card-bg-rgb: 0, 0, 0;
+    --fushi-card-bg-rgb: 0, 0, 0;
 }
 
 /* tags / 词频：色块改「透明底 + 1px 实线描边」；词频来源药丸反色（黑底白字 /
@@ -1769,7 +1769,7 @@ html.eink .mine-button.latest {
 }
 
 /* 查词/嵌套查词命中：半透明色块 → 下划线（贴文字的一条线，刷新面积最小）。 */
-html.eink ::highlight(hoshi-selection) {
+html.eink ::highlight(fushi-selection) {
     background-color: transparent;
     text-decoration-line: underline;
     text-decoration-color: currentColor;
@@ -1777,7 +1777,7 @@ html.eink ::highlight(hoshi-selection) {
     text-underline-offset: 0.15em;
 }
 
-html.eink .hoshi-dict-highlight {
+html.eink .fushi-dict-highlight {
     background-color: transparent !important;
     text-decoration-line: underline;
     text-decoration-color: currentColor;

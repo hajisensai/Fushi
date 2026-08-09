@@ -28,7 +28,7 @@
 
 #include "malie_cfi.h"
 
-namespace hibiki_voice_hook::malie {
+namespace fushi_voice_hook::malie {
 
 constexpr uint32_t kLibpHeaderBytes = 16;
 constexpr uint32_t kLibpEntryBytes = 32;
@@ -164,4 +164,4 @@ inline bool IsVoiceOgg(const LibpEntryView& entry) {
          EndsWithInsensitive(entry.name, entry.name_length, ".ogg");
 }
 
-}  // namespace hibiki_voice_hook::malie
+}  // namespace fushi_voice_hook::malie

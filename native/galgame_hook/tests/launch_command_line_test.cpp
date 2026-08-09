@@ -33,7 +33,7 @@ std::vector<std::wstring> ParseCommandLine(const std::wstring& command_line) {
 void AssertRoundTrip(const std::wstring& exe,
                      const std::vector<std::wstring>& args) {
   const std::wstring command_line =
-      hibiki_voice_hook::BuildLaunchCommandLine(exe, args);
+      fushi_voice_hook::BuildLaunchCommandLine(exe, args);
   const std::vector<std::wstring> parsed = ParseCommandLine(command_line);
   assert(parsed.size() == args.size() + 1);
   assert(parsed[0] == exe);
@@ -45,8 +45,8 @@ void AssertRoundTrip(const std::wstring& exe,
 }  // namespace
 
 int main() {
-  using hibiki_voice_hook::AppendQuotedArgument;
-  using hibiki_voice_hook::BuildLaunchCommandLine;
+  using fushi_voice_hook::AppendQuotedArgument;
+  using fushi_voice_hook::BuildLaunchCommandLine;
 
   // ── 1. 向后兼容：没有 extra args 时，输出必须与历史实现逐字节相同。
   assert(BuildLaunchCommandLine(L"C:\\Games\\Title\\game.exe", {}) ==

@@ -1,0 +1,5 @@
+module CHoshiDicts {
+    header "fushidicts.h"
+    requires cplusplus
+    export *
+}

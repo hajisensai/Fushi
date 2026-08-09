@@ -28,7 +28,7 @@ for arg in "$@"; do
   esac
 done
 
-cd "$(dirname "$0")/../hibiki"
+cd "$(dirname "$0")/../fushi"
 
 # --- 1. Start emulator if not running ---
 if ! $ADB devices 2>/dev/null | grep -q "$DEVICE.*device"; then
@@ -64,7 +64,7 @@ if [ "$SKIP_PUSH" = false ]; then
   mkdir -p "$TMPDIR_LOCAL"
 
   # HBK-AUDIT-077: source fixtures from env-overridable paths; defaults point at
-  # the repo's documented fixtures dir (see hibiki/CLAUDE.md) instead of one
+  # the repo's documented fixtures dir (see fushi/CLAUDE.md) instead of one
   # developer's personal media. Missing files warn rather than hard-fail.
   FIXTURES_DIR="${FIXTURES_DIR:-$(cd "$(dirname "$0")/.." && pwd)/.codex-test/fixtures/kagami}"
   cp "${DICT_ZIP:-/d/辞典/[JA-JA] 明鏡国語辞典 第三版[2025-08-18].zip}" "$TMPDIR_LOCAL/meikyo3.zip" 2>/dev/null || echo "WARN: set DICT_ZIP to a dictionary .zip"
