@@ -40,6 +40,8 @@ import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_subtitle_attach.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
 import 'package:hibiki/src/media/video/video_library_overview.dart';
+import 'package:hibiki/src/media/video/video_library_section.dart';
+import 'package:hibiki/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_shader_downloader.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
@@ -62,7 +64,7 @@ import 'package:hibiki/src/media/selection/media_selection_controller.dart';
 import 'package:hibiki/src/media/selection/selection_gestures.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_batch_dialog.dart';
-import 'package:hibiki/src/pages/implementations/media_collection_detail_page.dart';
+import 'package:hibiki/src/pages/implementations/video_work_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
 import 'package:hibiki/src/pages/implementations/media_sources_dialog.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
@@ -116,6 +118,8 @@ Future<void> openLocalVideoBook({
   );
 }
 
+enum _AllVideosLayout { grid, list }
+
 /// 首页「视频」tab 的内容：已导入视频的库（独立于书架的 EPUB/有声书分区）。
 ///
 /// 仅在实验性视频开关开启时由 [HomePage] 装配进底栏（见 home_page.dart 的
@@ -130,7 +134,11 @@ class HomeVideoPage extends BaseModuleTabPage {
   const HomeVideoPage({
     required this.repo,
     this.navigation,
+    this.section = VideoLibrarySection.home,
     this.libraryRefreshSignal,
+    this.onOpenScrapeTasks,
+    this.scrapeTaskController,
+    this.onOpenSources,
     this.remoteVideoClientLoader,
     this.cloudRemoteVideoClientLoader,
     this.remoteVideoDownloadDestination,
@@ -142,12 +150,16 @@ class HomeVideoPage extends BaseModuleTabPage {
   /// 库页视图导航条（由 [MediaLibraryShell] 传入，作为页头主内容与动作同一行）。
   /// 本页被独立使用时为 null，页头与此前逐像素一致。
   final Widget? navigation;
+  final VideoLibrarySection section;
 
   /// 来源扫描或来源页批量刮削完成后的刷新信号。
   ///
   /// UID stream 只能发现插入/删除；合集成员、排序与封面列变化需要本信号让保活的
   /// 视频库重读。
   final Listenable? libraryRefreshSignal;
+  final VoidCallback? onOpenScrapeTasks;
+  final VideoSourceScrapeTaskController? scrapeTaskController;
+  final VoidCallback? onOpenSources;
   final Future<RemoteVideoClient?> Function()? remoteVideoClientLoader;
 
   /// 测试钩子（多端库联合视图 §2.2/§2.6）：注入云视频目录 client（[CloudRemoteVideoClient]），
@@ -171,6 +183,7 @@ class HomeVideoPage extends BaseModuleTabPage {
 class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Future<List<VideoBookRow>>? _future;
   Future<_RemoteVideoState?>? _remoteFuture;
+  _AllVideosLayout _allVideosLayout = _AllVideosLayout.grid;
 
   /// 当前远端视频来源：互联 host live 库 或 云盘目录，**至多一个**（TODO-2119）。
   ///
@@ -291,6 +304,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       const <String, VideoScrapeMetaRow>{};
   Map<int, CollectionScrapeMetaRow> _collectionScrapeMetaById =
       const <int, CollectionScrapeMetaRow>{};
+  Map<int, VideoMetadataWorkRow> _metadataWorkByCollection =
+      const <int, VideoMetadataWorkRow>{};
+  Map<String, VideoMetadataWorkRow> _metadataWorkByBook =
+      const <String, VideoMetadataWorkRow>{};
+  Map<int, List<VideoMetadataImageRow>> _metadataImagesByWork =
+      const <int, List<VideoMetadataImageRow>>{};
+  Map<String, int> _runtimeMinutesByBookUid = const <String, int>{};
+  Set<String> _localExtraBookUids = const <String>{};
 
   /// v68 附加图组（media_images）按归属分桶：合集（hero 背景/logo、续播行横卡）
   /// 与散装视频（续播行横卡）。与 [_loadLibraryMaps] 同批预取（一次全表查询）。
@@ -311,6 +332,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// TODO-2486：横滚行控制器（WheelToHorizontalScroll 滚轮桥需要显式 controller）。
   final ScrollController _continueRowController = ScrollController();
+  final ScrollController _nextRowController = ScrollController();
   final ScrollController _recentRowController = ScrollController();
 
   @override
@@ -368,6 +390,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _searchController.dispose();
     _heroPageController.dispose();
     _continueRowController.dispose();
+    _nextRowController.dispose();
     _recentRowController.dispose();
     _videoUidsSub?.cancel();
     widget.libraryRefreshSignal?.removeListener(_onLibraryRefreshRequested);
@@ -517,6 +540,40 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           in await db.getAllCollectionScrapeMeta())
         r.collectionId: r,
     };
+    final List<VideoMetadataWorkRow> metadataWorks =
+        await db.getAllVideoMetadataWorks();
+    final Map<int, VideoMetadataWorkRow> metadataWorkByCollection =
+        <int, VideoMetadataWorkRow>{
+      for (final VideoMetadataWorkRow work in metadataWorks)
+        if (work.collectionId != null) work.collectionId!: work,
+    };
+    final Map<String, VideoMetadataWorkRow> metadataWorkByBook =
+        <String, VideoMetadataWorkRow>{
+      for (final VideoMetadataWorkRow work in metadataWorks)
+        if (work.bookUid != null) work.bookUid!: work,
+    };
+    final Map<int, List<VideoMetadataImageRow>> metadataImagesByWork =
+        <int, List<VideoMetadataImageRow>>{};
+    for (final VideoMetadataImageRow image
+        in await db.getAllVideoMetadataImages()) {
+      if (image.workId case final int workId) {
+        (metadataImagesByWork[workId] ??= <VideoMetadataImageRow>[]).add(image);
+      }
+    }
+    final Map<String, int> runtimeMinutesByBookUid = <String, int>{};
+    for (final VideoMetadataEpisodeRow episode
+        in await db.getAllVideoMetadataEpisodes()) {
+      if (episode.bookUid case final String uid) {
+        if (episode.runtimeMinutes case final int minutes) {
+          runtimeMinutesByBookUid[uid] = minutes;
+        }
+      }
+    }
+    final Set<String> localExtraBookUids = <String>{
+      for (final VideoMetadataExtraRow extra
+          in await db.getAllVideoMetadataExtras())
+        if (extra.bookUid != null) extra.bookUid!,
+    };
     // v68 附加图组：一次全表查询按归属分桶（hero 背景/logo、续播行横卡）。
     final Map<int, List<MediaImageRow>> imagesByCollection =
         <int, List<MediaImageRow>>{};
@@ -543,6 +600,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         _airYearByUid = airYearByUid;
         _videoScrapeMetaByUid = scrapeMetaByUid;
         _collectionScrapeMetaById = collectionMetaById;
+        _metadataWorkByCollection = metadataWorkByCollection;
+        _metadataWorkByBook = metadataWorkByBook;
+        _metadataImagesByWork = metadataImagesByWork;
+        _runtimeMinutesByBookUid = runtimeMinutesByBookUid;
+        _localExtraBookUids = localExtraBookUids;
         _mediaImagesByCollection = imagesByCollection;
         _mediaImagesByBookUid = imagesByBookUid;
       });
@@ -565,6 +627,34 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
     return null;
   }
+
+  ImageProvider? _canonicalWorkPosterProvider(VideoMetadataWorkRow? work) {
+    if (work == null) return null;
+    final List<VideoMetadataImageRow>? rows = _metadataImagesByWork[work.id];
+    if (rows == null) return null;
+    final List<VideoMetadataImageRow> ordered = rows.toList()
+      ..sort((VideoMetadataImageRow a, VideoMetadataImageRow b) =>
+          a.position.compareTo(b.position));
+    for (final String kind in const <String>['cover', 'poster']) {
+      for (final VideoMetadataImageRow row in ordered) {
+        if (row.kind != kind) continue;
+        final String? localPath = row.localPath;
+        if (localPath != null &&
+            localPath.isNotEmpty &&
+            File(localPath).existsSync()) {
+          return resizedFileImage(File(localPath));
+        }
+        if (row.remoteUrl.isNotEmpty) return NetworkImage(row.remoteUrl);
+      }
+    }
+    return null;
+  }
+
+  ImageProvider? _canonicalCollectionPosterProvider(int collectionId) =>
+      _canonicalWorkPosterProvider(_metadataWorkByCollection[collectionId]);
+
+  ImageProvider? _canonicalBookPosterProvider(String bookUid) =>
+      _canonicalWorkPosterProvider(_metadataWorkByBook[bookUid]);
 
   /// 用户切换排序方式：立即重排 + 偏好持久化（跨启动记住）。
   void _setSortMode(ShelfSortMode mode) {
@@ -1910,6 +2000,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     return createVideoScraperBundle(
       repository: widget.repo,
       configuredTmdbKey: userTmdbKey,
+      artifactDatabase: ref.read(appProvider).database,
     );
   }
 
@@ -1959,7 +2050,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       onRescrape: () async {
         await widget.repo.deleteScrapeMetadata(book.bookUid);
         _autoScrape?.forget(book.bookUid);
-        await _maybeAutoScrape();
+        if (book.sourceId == null) {
+          await _maybeAutoScrape();
+        } else if (mounted) {
+          await _openCoverMatch(book);
+        }
       },
       // 添加/修改 Bangumi 映射：跳到在线匹配弹窗（可搜索或贴条目 ID/URL 改绑）。
       onEditMapping: () => _openCoverMatch(book),
@@ -2089,8 +2184,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             child: Column(
               children: <Widget>[
                 if (!isCupertinoPlatform(context)) _buildPageHeader(),
-                _buildVideoSearchBar(),
-                _buildTagFilterBar(allTags),
+                if (widget.section != VideoLibrarySection.home)
+                  _buildVideoSearchBar(),
+                if (widget.section != VideoLibrarySection.home)
+                  _buildTagFilterBar(allTags),
                 // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
                 const SyncProgressBanner(),
                 Expanded(
@@ -2154,12 +2251,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // [matchesMediaSearch]（全角/片假名/标点折叠），三页搜出的结果口径一致。
         final List<VideoBookRow> searched = _searchQuery.trim().isEmpty
             ? books
-            : books
-                .where((VideoBookRow b) => matchesMediaSearch(
-                      query: _searchQuery,
-                      titles: <String>[b.title],
-                    ))
-                .toList();
+            : books.where((VideoBookRow b) {
+                final int? collectionId = _primaryCollectionByEntry[
+                    MediaKind.video.compositeKey(b.bookUid)];
+                return matchesMediaSearch(
+                  query: _searchQuery,
+                  titles: <String>[
+                    b.title,
+                    if (_metadataWorkByBook[b.bookUid]?.title
+                        case final String title)
+                      title,
+                    if (collectionId != null &&
+                        _metadataWorkByCollection[collectionId] != null)
+                      _metadataWorkByCollection[collectionId]!.title,
+                  ],
+                );
+              }).toList();
         // 排序交互重设计：卡片间序在 group 层按当前排序方式做（[_groupVideos]），
         // 这里不再预排散列表（旧 ShelfEntries.sortOrder 死权重已废弃，用户拍板）。
         // TODO-2486：年份 / 看完状态下拉筛选（本地即筛）。年份由条目刮削 airDate
@@ -2167,7 +2274,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // lastPositionMs 三档判。
         final List<VideoBookRow> ordered = <VideoBookRow>[
           for (final VideoBookRow b in searched)
-            if (_yearFilter.matches(_airYearByUid[b.bookUid]) &&
+            if (!(widget.section == VideoLibrarySection.series &&
+                    _localExtraBookUids.contains(b.bookUid)) &&
+                _yearFilter.matches(_airYearByUid[b.bookUid]) &&
                 matchesVideoWatchStatus(
                   filter: _watchStatusFilter,
                   completed: b.completedAt != null,
@@ -2235,7 +2344,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       // [all] 描述整库，不随标签筛选变。
                       // BUG-995：只看互联远端视频（无本地视频）时也要显示概览+继续观看，
                       // 故门控与数据都并入 remoteVideos（否则整块消失=用户实报「远端的没有」）。
-                      if (all.isNotEmpty || remoteVideos.isNotEmpty)
+                      if (widget.section == VideoLibrarySection.home &&
+                          (all.isNotEmpty || remoteVideos.isNotEmpty))
                         SliverToBoxAdapter(
                           child: _buildOverviewSection(
                             all,
@@ -2245,8 +2355,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                             cardLayout,
                           ),
                         ),
-                      ..._buildLocalVideoSlivers(
-                          all, ordered, remoteVideos, cardLayout),
+                      if (widget.section == VideoLibrarySection.series)
+                        ..._buildLocalVideoSlivers(
+                            all, ordered, remoteVideos, cardLayout),
+                      if (widget.section == VideoLibrarySection.allVideos)
+                        ..._buildAllVideoSlivers(
+                            all, ordered, remoteVideos, cardLayout),
+                      if (widget.section == VideoLibrarySection.home &&
+                          all.isEmpty &&
+                          remoteVideos.isEmpty)
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: _buildEmpty(),
+                        ),
                     ],
                   );
                 },
@@ -2275,14 +2396,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final double coverHeight =
         videoCoverHeightForPortraitWidth(cardLayout.cardWidth);
-    final Widget? hero = _buildHeroCarousel(
-      all,
-      availableWidth - tokens.spacing.card * 2,
-    );
     final Widget? continueRow =
         _buildContinueRow(filtered, remoteVideos, coverHeight);
+    final Widget? nextRow = _buildNextEpisodeRow(filtered, coverHeight);
     final Widget? recentRow = _buildRecentlyAddedRow(filtered, coverHeight);
-    if (hero == null && continueRow == null && recentRow == null) {
+    if (continueRow == null && nextRow == null && recentRow == null) {
       return const SizedBox.shrink();
     }
     return Padding(
@@ -2295,8 +2413,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          if (hero != null) hero,
           if (continueRow != null) continueRow,
+          if (nextRow != null) nextRow,
           if (recentRow != null) recentRow,
         ],
       ),
@@ -2352,7 +2470,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       DateTime? lastWatched;
       int latestImported = 0;
       int completed = 0;
-      bool hasTrace = false;
+      bool hasPartial = false;
       for (final VideoBookRow m in members) {
         final DateTime? at =
             _watchAtByUid[m.bookUid] ?? _legacyWatchAtByTitle[m.title];
@@ -2362,7 +2480,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         final int imported = m.importedAt ?? 0;
         if (imported > latestImported) latestImported = imported;
         if (m.completedAt != null) completed++;
-        if (m.completedAt != null || m.lastPositionMs > 0) hasTrace = true;
+        if (m.completedAt == null && m.lastPositionMs > 0) hasPartial = true;
       }
       candidates.add(VideoHeroCandidate<_VideoHeroItem>(
         unit: _VideoHeroItem.collection(
@@ -2372,7 +2490,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ),
         lastWatchedAt: lastWatched,
         latestImportedAt: latestImported,
-        hasUnfinishedTrace: hasTrace && completed < members.length,
+        hasUnfinishedTrace: hasPartial && completed < members.length,
       ));
     });
     return selectVideoHeroUnits<_VideoHeroItem>(candidates);
@@ -2382,6 +2500,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// （尊重 prefers-reduced-motion 精神）。无候选合集（零合集库）返回 null 整块
   /// 隐藏。桌面鼠标拖拽翻页经共享 [HorizontalDragScrollable] 放开；滚轮不桥——
   /// hero 占满整宽，滚轮语义留给页面纵滚。
+  // Kept for the legacy experimental overview renderer; the new fixed home
+  // section deliberately does not include a carousel.
+  // ignore: unused_element
   Widget? _buildHeroCarousel(List<VideoBookRow> all, double availableWidth) {
     final List<_VideoHeroItem> items = _heroItems(all);
     if (items.isEmpty) return null;
@@ -2703,6 +2824,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ));
   }
 
+  String _workTitle(MediaCollectionRow collection) {
+    return _metadataWorkByCollection[collection.id]?.title ??
+        _collectionScrapeMetaById[collection.id]?.title ??
+        collection.name;
+  }
+
   /// hero / 行卡成员封面回落链：首个有本地封面的成员（组内序），全缺返回 null。
   ImageProvider? _collectionMembersCoverProvider(List<VideoBookRow> members) {
     for (final VideoBookRow m in members) {
@@ -2723,6 +2850,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         <int, List<VideoBookRow>>{};
     final List<VideoBookRow> looseLocal = <VideoBookRow>[];
     for (final VideoBookRow book in filtered) {
+      if (_localExtraBookUids.contains(book.bookUid)) continue;
       final int? cid =
           _primaryCollectionByEntry[MediaKind.video.compositeKey(book.bookUid)];
       if (cid != null && _collectionsById.containsKey(cid)) {
@@ -2743,19 +2871,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         return ia.compareTo(ib);
       });
       int completed = 0;
-      bool hasTrace = false;
       DateTime? lastWatched;
       for (final VideoBookRow m in members) {
         if (m.completedAt != null) completed++;
-        if (m.completedAt != null || m.lastPositionMs > 0) hasTrace = true;
         final DateTime? at =
             _watchAtByUid[m.bookUid] ?? _legacyWatchAtByTitle[m.title];
         if (at != null && (lastWatched == null || at.isAfter(lastWatched))) {
           lastWatched = at;
         }
       }
-      // 与合集卡进度行同口径：有痕迹且未整套看完才算「在看」。
-      if (!hasTrace || completed >= members.length) return;
+      final int? currentIndex = latestPlayedSeriesIndex(
+        _seriesPlaybackStates(members),
+      );
+      if (currentIndex == null) return;
+      final VideoBookRow current = members[currentIndex];
+      // “继续观看”只续播用户最后实际播放且尚未完成的那一集，不能退回序列中
+      // 更早的未完成集，也不能误跳到合集最后一集。
+      if (current.completedAt != null || current.lastPositionMs <= 0) return;
       final MediaCollectionRow collection = _collectionsById[cid]!;
       items.add(_VideoRowItem(
         recentMs: lastWatched?.millisecondsSinceEpoch ?? 0,
@@ -2764,6 +2896,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           members,
           coverHeight,
           completed,
+          currentIndex,
         ),
       ));
     });
@@ -2794,6 +2927,85 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
+  List<VideoSeriesPlaybackState> _seriesPlaybackStates(
+    List<VideoBookRow> members,
+  ) =>
+      <VideoSeriesPlaybackState>[
+        for (final VideoBookRow member in members)
+          VideoSeriesPlaybackState(
+            lastWatchedAtMs: (_watchAtByUid[member.bookUid] ??
+                        _legacyWatchAtByTitle[member.title])
+                    ?.millisecondsSinceEpoch ??
+                0,
+            positionMs: member.lastPositionMs,
+            completed: member.completedAt != null,
+          ),
+      ];
+
+  Widget? _buildNextEpisodeRow(
+    List<VideoBookRow> filtered,
+    double coverHeight,
+  ) {
+    final Map<int, List<VideoBookRow>> grouped = <int, List<VideoBookRow>>{};
+    for (final VideoBookRow book in filtered) {
+      if (_localExtraBookUids.contains(book.bookUid)) continue;
+      final int? cid =
+          _primaryCollectionByEntry[MediaKind.video.compositeKey(book.bookUid)];
+      if (cid != null && _collectionsById.containsKey(cid)) {
+        grouped.putIfAbsent(cid, () => <VideoBookRow>[]).add(book);
+      }
+    }
+    final List<_VideoRowItem> items = <_VideoRowItem>[];
+    grouped.forEach((int cid, List<VideoBookRow> members) {
+      members.sort((VideoBookRow a, VideoBookRow b) =>
+          (_memberSortIndex[MediaKind.video.compositeKey(a.bookUid)] ?? 1 << 30)
+              .compareTo(
+                  _memberSortIndex[MediaKind.video.compositeKey(b.bookUid)] ??
+                      1 << 30));
+      int recentMs = 0;
+      for (final VideoBookRow member in members) {
+        final DateTime? watched = _watchAtByUid[member.bookUid] ??
+            _legacyWatchAtByTitle[member.title];
+        if (watched != null) {
+          recentMs = recentMs < watched.millisecondsSinceEpoch
+              ? watched.millisecondsSinceEpoch
+              : recentMs;
+        }
+      }
+      final int? targetIndex = nextEpisodeAfterLatestPlayed(
+        _seriesPlaybackStates(members),
+      );
+      if (targetIndex == null) return;
+      final MediaCollectionRow collection = _collectionsById[cid]!;
+      final VideoBookRow target = members[targetIndex];
+      items.add(_VideoRowItem(
+        recentMs: recentMs,
+        build: () => _buildRowMediaCard(
+          cardKey: ValueKey<String>('home_video_next_collection_$cid'),
+          focusId: HibikiFocusId('home-video-next-collection-$cid'),
+          cover: _localCoverProvider(target) ??
+              _collectionRowCoverProvider(collection, members),
+          title: _workTitle(collection),
+          coverHeight: coverHeight,
+          onTap: () => unawaited(_open(target, playlistCollectionId: cid)),
+          onLongPress: () => _showCollectionContextMenu(collection),
+          episodeNumber: targetIndex + 1,
+          secondaryText: t.video_home_next_episode_number(n: targetIndex + 1),
+        ),
+      ));
+    });
+    if (items.isEmpty) return null;
+    items.sort(
+      (_VideoRowItem a, _VideoRowItem b) => b.recentMs.compareTo(a.recentMs),
+    );
+    return _buildHorizontalCardRow(
+      title: t.video_next_episode,
+      controller: _nextRowController,
+      coverHeight: coverHeight,
+      items: items.take(15).toList(growable: false),
+    );
+  }
+
   /// 「最近添加」横滚行：入库 [kVideoRecentlyAddedWindow]（14 天）内的本地条目
   /// 按入库时刻倒序取前 15，「新」角标。远端占位无入库时刻，不进本行。
   Widget? _buildRecentlyAddedRow(
@@ -2801,23 +3013,80 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     double coverHeight,
   ) {
     final DateTime now = DateTime.now();
-    final List<VideoBookRow> recent = <VideoBookRow>[
-      for (final VideoBookRow b in filtered)
-        if (isVideoRecentlyAdded(importedAt: b.importedAt, now: now)) b,
-    ]..sort((VideoBookRow a, VideoBookRow b) =>
-        (b.importedAt ?? 0).compareTo(a.importedAt ?? 0));
+    final Map<int, List<VideoBookRow>> allMembersByCollection =
+        <int, List<VideoBookRow>>{};
+    final Map<int, List<VideoBookRow>> grouped = <int, List<VideoBookRow>>{};
+    final List<VideoBookRow> loose = <VideoBookRow>[];
+    for (final VideoBookRow book in filtered) {
+      if (_localExtraBookUids.contains(book.bookUid)) continue;
+      final int? allCid =
+          _primaryCollectionByEntry[MediaKind.video.compositeKey(book.bookUid)];
+      if (allCid != null && _collectionsById.containsKey(allCid)) {
+        allMembersByCollection
+            .putIfAbsent(allCid, () => <VideoBookRow>[])
+            .add(book);
+      }
+      if (!isVideoRecentlyAdded(importedAt: book.importedAt, now: now)) {
+        continue;
+      }
+      final int? cid =
+          _primaryCollectionByEntry[MediaKind.video.compositeKey(book.bookUid)];
+      if (cid != null && _collectionsById.containsKey(cid)) {
+        grouped.putIfAbsent(cid, () => <VideoBookRow>[]).add(book);
+      } else {
+        loose.add(book);
+      }
+    }
+    final List<_VideoRowItem> recent = <_VideoRowItem>[];
+    grouped.forEach((int cid, List<VideoBookRow> members) {
+      members.sort((VideoBookRow a, VideoBookRow b) =>
+          (b.importedAt ?? 0).compareTo(a.importedAt ?? 0));
+      final MediaCollectionRow collection = _collectionsById[cid]!;
+      final VideoBookRow latest = members.first;
+      final List<VideoBookRow> allMembers =
+          allMembersByCollection[cid] ?? members;
+      allMembers.sort((VideoBookRow a, VideoBookRow b) =>
+          (_memberSortIndex[MediaKind.video.compositeKey(a.bookUid)] ?? 1 << 30)
+              .compareTo(
+                  _memberSortIndex[MediaKind.video.compositeKey(b.bookUid)] ??
+                      1 << 30));
+      final int latestIndex = allMembers.indexWhere(
+        (VideoBookRow value) => value.bookUid == latest.bookUid,
+      );
+      final int? episodeNumber = latestIndex < 0 ? null : latestIndex + 1;
+      recent.add(_VideoRowItem(
+        recentMs: members.first.importedAt ?? 0,
+        build: () => _buildRowMediaCard(
+          cardKey: ValueKey<String>('home_video_recent_collection_$cid'),
+          focusId: HibikiFocusId('home-video-recent-collection-$cid'),
+          cover: _collectionRowCoverProvider(collection, members),
+          title: _workTitle(collection),
+          coverHeight: coverHeight,
+          onTap: () => _openCollectionDetail(collection),
+          onLongPress: () => _showCollectionContextMenu(collection),
+          episodeNumber: episodeNumber,
+          secondaryText: episodeNumber == null
+              ? t.video_playlist_episodes(count: allMembers.length)
+              : t.video_home_recent_episode_number(n: episodeNumber),
+          newBadge: true,
+        ),
+      ));
+    });
+    for (final VideoBookRow book in loose) {
+      recent.add(_VideoRowItem(
+        recentMs: book.importedAt ?? 0,
+        build: () => _buildRecentlyAddedCard(book, coverHeight),
+      ));
+    }
+    recent.sort(
+      (_VideoRowItem a, _VideoRowItem b) => b.recentMs.compareTo(a.recentMs),
+    );
     if (recent.isEmpty) return null;
     return _buildHorizontalCardRow(
       title: t.home_recently_added,
       controller: _recentRowController,
       coverHeight: coverHeight,
-      items: <_VideoRowItem>[
-        for (final VideoBookRow book in recent.take(15))
-          _VideoRowItem(
-            recentMs: book.importedAt ?? 0,
-            build: () => _buildRecentlyAddedCard(book, coverHeight),
-          ),
-      ],
+      items: recent.take(15).toList(growable: false),
     );
   }
 
@@ -2841,7 +3110,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             child: Text(title, style: tokens.type.sectionLabel),
           ),
           SizedBox(
-            height: coverHeight + _videoCardTextBlock(context),
+            height: coverHeight + _videoRowCardTextBlock(context),
             child: WheelToHorizontalScroll(
               controller: controller,
               child: HorizontalDragScrollable(
@@ -2876,7 +3145,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     required VoidCallback onTap,
     VoidCallback? onLongPress,
     double? progressFraction,
-    int? episodeCount,
+    int? episodeNumber,
+    String? secondaryText,
     bool newBadge = false,
     bool cloudBadge = false,
   }) {
@@ -2925,19 +3195,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                               Theme.of(context).colorScheme.surfaceContainer,
                         ),
                       ),
-                    if (episodeCount != null && episodeCount >= 2)
+                    if (newBadge || episodeNumber != null)
                       Positioned(
                         top: 6,
                         right: 6,
-                        child: _buildPlaylistBadge(episodeCount),
-                      ),
-                    if (newBadge)
-                      Positioned(
-                        top: 6,
-                        left: 6,
-                        child: CoverBadge(
-                          icon: Icons.fiber_new_outlined,
-                          label: t.video_recently_added_badge,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            if (newBadge)
+                              CoverBadge(
+                                icon: Icons.fiber_new_outlined,
+                                label: t.video_recently_added_badge,
+                              ),
+                            if (newBadge && episodeNumber != null)
+                              const SizedBox(width: 4),
+                            if (episodeNumber != null)
+                              _buildPlaylistBadge(episodeNumber),
+                          ],
                         ),
                       ),
                     if (cloudBadge)
@@ -2967,20 +3241,32 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    child: ShelfTitleOverflowTooltip(
-                      title: title,
-                      style: titleStyle,
-                      maxLines: 2,
-                      child: Text(
-                        title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      ShelfTitleOverflowTooltip(
+                        title: title,
                         style: titleStyle,
+                        maxLines: 1,
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: titleStyle,
+                        ),
                       ),
-                    ),
+                      if (secondaryText != null && secondaryText.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            secondaryText,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: HibikiDesignTokens.of(context).type.metadata,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -3011,7 +3297,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             ],
           ) ??
           _localCoverProvider(book),
-      title: book.title,
+      title: _metadataWorkByBook[book.bookUid]?.title ?? book.title,
       coverHeight: coverHeight,
       onTap: () => _open(book),
       onLongPress: () => _showVideoMenu(book),
@@ -3020,7 +3306,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         currentEpisode: book.currentEpisode,
         episodeCount: episodeCount,
       ),
-      episodeCount: episodeCount,
+      episodeNumber: episodeCount > 1 ? book.currentEpisode + 1 : null,
+      secondaryText: _continueSecondaryText(
+        book,
+        episodeNumber: episodeCount > 1 ? book.currentEpisode + 1 : null,
+      ),
     );
   }
 
@@ -3031,6 +3321,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     List<VideoBookRow> members,
     double coverHeight,
     int completedCount,
+    int currentIndex,
   ) {
     return _buildRowMediaCard(
       cardKey:
@@ -3046,26 +3337,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             ],
           ) ??
           _collectionRowCoverProvider(collection, members),
-      title: collection.name,
+      title: _workTitle(collection),
       coverHeight: coverHeight,
       onTap: () {
         if (members.isEmpty) return;
-        final List<CollectionMemberProgress> progresses =
-            <CollectionMemberProgress>[
-          for (final VideoBookRow m in members)
-            CollectionMemberProgress(
-              positionMs: m.lastPositionMs,
-              completed: m.completedAt != null,
-            ),
-        ];
-        final int index =
-            continueMemberIndex(progresses).clamp(0, members.length - 1);
-        unawaited(_open(members[index], playlistCollectionId: collection.id));
+        unawaited(_open(
+          members[currentIndex],
+          playlistCollectionId: collection.id,
+        ));
       },
       onLongPress: () => _showCollectionContextMenu(collection),
       progressFraction:
           members.isEmpty ? null : completedCount / members.length,
-      episodeCount: members.length,
+      episodeNumber: currentIndex + 1,
+      secondaryText: _continueSecondaryText(
+        members[currentIndex],
+        episodeNumber: currentIndex + 1,
+      ),
     );
   }
 
@@ -3081,7 +3369,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       coverHeight: coverHeight,
       onTap: () => _openRemote(video),
       onLongPress: () => _showRemoteVideoDialog(video),
-      episodeCount: video.isPlaylist ? video.episodes.length : null,
+      secondaryText: video.isPlaylist
+          ? t.video_playlist_episodes(count: video.episodes.length)
+          : t.remote_video_info,
       cloudBadge: true,
     );
   }
@@ -3094,13 +3384,43 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       cardKey: ValueKey<String>('home_video_recent_${book.bookUid}'),
       focusId: HibikiFocusId('home-video-recent-${book.bookUid}'),
       cover: _localCoverProvider(book),
-      title: book.title,
+      title: _metadataWorkByBook[book.bookUid]?.title ?? book.title,
       coverHeight: coverHeight,
       onTap: () => _open(book, playlistCollectionId: cid),
       onLongPress: () => _showVideoMenu(book),
-      episodeCount: playlistEpisodeCount(book.playlistJson),
+      episodeNumber: playlistEpisodeCount(book.playlistJson) > 1
+          ? book.currentEpisode + 1
+          : null,
+      secondaryText: playlistEpisodeCount(book.playlistJson) > 1
+          ? t.video_home_recent_episode_number(n: book.currentEpisode + 1)
+          : t.video_recently_added_badge,
       newBadge: true,
     );
+  }
+
+  String _continueSecondaryText(
+    VideoBookRow book, {
+    int? episodeNumber,
+  }) {
+    final List<String> parts = <String>[
+      if (episodeNumber != null)
+        t.video_home_continue_episode_number(n: episodeNumber),
+    ];
+    final int? runtimeMinutes = _runtimeMinutesByBookUid[book.bookUid];
+    if (runtimeMinutes != null && runtimeMinutes > 0) {
+      final int remainingMs = runtimeMinutes * 60000 - book.lastPositionMs;
+      if (remainingMs > 60000) {
+        parts.add(t.video_home_remaining_minutes(
+          minutes: (remainingMs / 60000).ceil(),
+        ));
+      }
+    }
+    if (parts.isEmpty && book.lastPositionMs > 0) {
+      parts.add(
+        t.video_watched_up_to(time: formatVideoPosition(book.lastPositionMs)),
+      );
+    }
+    return parts.join(' · ');
   }
 
   /// 合集行卡封面 provider：自有封面优先 → 成员借用链（与墙卡同序）。
@@ -3198,7 +3518,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         loose.add(_VideoLooseCard(
           sortKey: _groupSortKey(group),
           entry: _VideoWallEntry(
-            cover: _videoSlotCoverProvider(slot),
+            cover: _videoSlotCoverProvider(slot, preferWorkPoster: true),
+            forcedOrientation: VideoCardOrientation.portrait,
             build: (VideoCardOrientation orientation) =>
                 _buildVideoSlotCard(slot, orientation: orientation),
           ),
@@ -3225,6 +3546,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       for (final CollectionGroup<_VideoSlot> group in collectionGroups)
         _VideoWallEntry(
           cover: _collectionCoverProvider(group),
+          forcedOrientation: VideoCardOrientation.portrait,
           build: (VideoCardOrientation orientation) =>
               _buildCollectionCoverCard(group, orientation: orientation),
         ),
@@ -3240,20 +3562,274 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ];
   }
 
+  /// “全部视频”逐条展示原始 VideoBook，不按合集折叠；本地预告/花絮也因此保留。
+  List<Widget> _buildAllVideoSlivers(
+    List<VideoBookRow> all,
+    List<VideoBookRow> books,
+    List<RemoteVideoInfo> remoteVideos,
+    ({int columns, double cardWidth}) cardLayout,
+  ) {
+    if (all.isEmpty && remoteVideos.isEmpty) {
+      return <Widget>[
+        SliverFillRemaining(hasScrollBody: false, child: _buildEmpty()),
+      ];
+    }
+    if (books.isEmpty && remoteVideos.isEmpty) {
+      return <Widget>[
+        SliverFillRemaining(hasScrollBody: false, child: _buildFilteredEmpty()),
+      ];
+    }
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final List<VideoBookRow> ordered = books.toList()
+      ..sort((VideoBookRow a, VideoBookRow b) => compareShelfSortKeys(
+            _videoSortKey(a),
+            _videoSortKey(b),
+            _sortMode,
+          ));
+    _visibleCollectionIds = const <int>[];
+    _selection.setVisibleOrder(
+      loose: <String>[for (final VideoBookRow book in ordered) book.bookUid],
+      collections: const <int>[],
+    );
+    if (_allVideosLayout == _AllVideosLayout.list) {
+      final List<Widget> rows = <Widget>[
+        for (final VideoBookRow book in ordered) _buildAllVideoListRow(book),
+        for (final RemoteVideoInfo video in remoteVideos)
+          _buildAllVideoRemoteListRow(video),
+      ];
+      return <Widget>[
+        SliverPadding(
+          padding: EdgeInsets.all(tokens.spacing.card),
+          sliver: SliverList.builder(
+            itemCount: rows.length,
+            itemBuilder: (BuildContext context, int index) => Padding(
+              padding: EdgeInsets.only(
+                bottom: index == rows.length - 1 ? 0 : tokens.spacing.gap,
+              ),
+              child: rows[index],
+            ),
+          ),
+        ),
+      ];
+    }
+    return <Widget>[
+      _buildVideoWallSliver(
+        <_VideoWallEntry>[
+          for (final VideoBookRow book in ordered)
+            _VideoWallEntry(
+              cover: _localCoverProvider(book),
+              build: (VideoCardOrientation orientation) =>
+                  _buildCard(book, orientation: orientation),
+            ),
+          for (final RemoteVideoInfo video in remoteVideos)
+            _VideoWallEntry(
+              cover: _remoteCoverProvider(video),
+              build: (VideoCardOrientation orientation) =>
+                  _buildRemoteVideoCard(video, orientation: orientation),
+            ),
+        ],
+        EdgeInsets.all(tokens.spacing.card),
+        cardLayout,
+      ),
+    ];
+  }
+
+  Widget _buildAllVideoListRow(VideoBookRow book) {
+    final bool selected =
+        _selectionMode && _selectedUids.contains(book.bookUid);
+    final SelectionSlot slot = SelectionSlot.loose(book.bookUid);
+    void handleTap() {
+      if (_selectionMode) {
+        _toggleSelection(book.bookUid);
+      } else if (selectionEntryModifierPressed(context)) {
+        _enterSelectionWith(slot);
+      } else {
+        _open(book);
+      }
+    }
+
+    final Widget row = HibikiCard(
+      key: ValueKey<String>('home_video_list_${book.bookUid}'),
+      focusId: HibikiFocusId('home-video-list-${book.bookUid}'),
+      padding: EdgeInsets.zero,
+      selected: selected,
+      onTap: handleTap,
+      onLongPress: _selectionMode ? null : () => _showVideoMenu(book),
+      onSecondaryTap: _selectionMode ? null : () => _showVideoMenu(book),
+      child: SizedBox(
+        height: 96,
+        child: Row(
+          children: <Widget>[
+            SizedBox(
+              width: 164,
+              child: Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  _buildCover(book, poster: false, landscapeSlot: true),
+                  if (_selectionMode)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: ShelfSelectionCheck(selected: selected),
+                    ),
+                  if (selected)
+                    const Positioned.fill(child: ShelfSelectedOverlay()),
+                ],
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    book.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _buildCardWatchMeta(book).isNotEmpty
+                        ? _buildCardWatchMeta(book)
+                        : book.videoPath,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: HibikiDesignTokens.of(context).type.metadata,
+                  ),
+                ],
+              ),
+            ),
+            if (!_selectionMode)
+              IconButton(
+                tooltip: t.common_more_actions,
+                onPressed: () => _showVideoMenu(book),
+                icon: const Icon(Icons.more_horiz),
+              ),
+            const SizedBox(width: 6),
+          ],
+        ),
+      ),
+    );
+    final Widget tagged = _selectionMode
+        ? row
+        : BookDragTarget(
+            bookId: book.bookUid,
+            onTagDropped: (BookTagRow tag) =>
+                _addTagToVideoBook(book.bookUid, tag),
+            child: row,
+          );
+    // BookDragTarget 内部使用 StackFit.expand；SliverList 的主轴约束是无界的，
+    // 必须在完整交互外壳外给出行高，不能只约束最里面的卡片内容。
+    return SizedBox(
+      height: 96,
+      child: CardDropZone<VideoBookRow>(
+        meta: book,
+        child: MediaCardDraggable(
+          mediaRef: MediaRef(kind: MediaKind.video, entryKey: book.bookUid),
+          label: book.title,
+          enabled: !_selectionMode,
+          child: SelectionSlotTarget(slot: slot, child: tagged),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAllVideoRemoteListRow(RemoteVideoInfo video) {
+    final String safeKey = _safeRemoteKey(video.id);
+    return HibikiCard(
+      key: ValueKey<String>('remote_video_list_$safeKey'),
+      focusId: HibikiFocusId('home-video-remote-list-$safeKey'),
+      padding: EdgeInsets.zero,
+      onTap: () => _openRemote(video),
+      onLongPress: _selectionMode ? null : () => _showRemoteVideoDialog(video),
+      onSecondaryTap:
+          _selectionMode ? null : () => _showRemoteVideoDialog(video),
+      child: SizedBox(
+        height: 96,
+        child: Row(
+          children: <Widget>[
+            SizedBox(
+              width: 164,
+              child: _buildRemoteVideoCover(
+                video,
+                poster: false,
+                landscapeSlot: true,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    video.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    t.remote_video_info,
+                    style: HibikiDesignTokens.of(context).type.metadata,
+                  ),
+                ],
+              ),
+            ),
+            _remoteVideoCloudBadge(safeKey),
+            const SizedBox(width: 14),
+          ],
+        ),
+      ),
+    );
+  }
+
+  ShelfSortKey _videoSortKey(VideoBookRow book) => ShelfSortKey(
+        recentScore:
+            (_watchAtByUid[book.bookUid] ?? _legacyWatchAtByTitle[book.title])
+                    ?.millisecondsSinceEpoch ??
+                book.importedAt ??
+                0,
+        title: book.title,
+        importedAt: book.importedAt ?? 0,
+        tieKey: book.bookUid,
+      );
+
   /// 散卡分派：本地卡 [_buildCard] / 远端占位卡 [_buildRemoteVideoCard]（任务10 union）。
   Widget _buildVideoSlotCard(
     _VideoSlot slot, {
     VideoCardOrientation orientation = VideoCardOrientation.portrait,
   }) {
     final VideoBookRow? local = slot.local;
-    if (local != null) return _buildCard(local, orientation: orientation);
+    if (local != null) {
+      return _buildCard(
+        local,
+        orientation: orientation,
+        coverOverride: widget.section == VideoLibrarySection.series
+            ? _canonicalBookPosterProvider(local.bookUid)
+            : null,
+        onTapOverride: widget.section == VideoLibrarySection.series
+            ? () => _openBookWorkDetail(local)
+            : null,
+      );
+    }
     return _buildRemoteVideoCard(slot.remote!, orientation: orientation);
   }
 
   /// 墙格朝向探测封面 provider（与卡内封面同键共享解码）。
-  ImageProvider? _videoSlotCoverProvider(_VideoSlot slot) {
+  ImageProvider? _videoSlotCoverProvider(
+    _VideoSlot slot, {
+    bool preferWorkPoster = false,
+  }) {
     final VideoBookRow? local = slot.local;
-    if (local != null) return _localCoverProvider(local);
+    if (local != null) {
+      return (preferWorkPoster
+              ? _canonicalBookPosterProvider(local.bookUid)
+              : null) ??
+          _localCoverProvider(local);
+    }
     return _remoteCoverProvider(slot.remote!);
   }
 
@@ -3287,6 +3863,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final String? own = group.collection?.coverPath;
     if (own != null && own.isNotEmpty && File(own).existsSync()) {
       return resizedFileImage(File(own));
+    }
+    final int? collectionId = group.collection?.id;
+    if (collectionId != null) {
+      final ImageProvider? canonical =
+          _canonicalCollectionPosterProvider(collectionId);
+      if (canonical != null) return canonical;
     }
     for (final CollectionOrderingItem<_VideoSlot> it in group.items) {
       final VideoBookRow? local = it.payload.local;
@@ -3397,7 +3979,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
     return ShelfSortKey(
       recentScore: recent,
-      title: collection.name,
+      title: _workTitle(collection),
       importedAt: imported,
       tieKey: 'c${collection.id}',
     );
@@ -3515,11 +4097,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
                   // TODO-2490：两行仍放不下时，桌面悬停显示完整合集名。
                   child: ShelfTitleOverflowTooltip(
-                    title: collection.name,
+                    title: _workTitle(collection),
                     style: Theme.of(context).textTheme.bodyMedium,
                     maxLines: 2,
                     child: Text(
-                      collection.name,
+                      _workTitle(collection),
                       // BUG-1184：与同网格的散卡标题同规格（两行）。
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -3590,6 +4172,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ),
       );
     }
+    final int? collectionId = group.collection?.id;
+    if (collectionId != null) {
+      final ImageProvider? canonical =
+          _canonicalCollectionPosterProvider(collectionId);
+      if (canonical != null) {
+        return PortraitCoverImage(
+          image: canonical,
+          landscapeSlot: landscapeSlot,
+          errorBuilder: (BuildContext _) => ShelfCoverPlaceholder(
+            icon: Icons.movie_outlined,
+            backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+          ),
+        );
+      }
+    }
     for (final CollectionOrderingItem<_VideoSlot> it in group.items) {
       final VideoBookRow? local = it.payload.local;
       if (local == null) continue;
@@ -3633,25 +4230,33 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   String _collectionProgressLabel(CollectionGroup<_VideoSlot> group) {
     final int total = group.items.length;
     int completed = 0;
-    bool hasTrace = false;
-    final List<CollectionMemberProgress> progresses =
-        <CollectionMemberProgress>[
-      for (final CollectionOrderingItem<_VideoSlot> it in group.items)
-        CollectionMemberProgress(
-          // 远端占位无本地播放断点：用远端进度 positionMs、completed 恒 false。
-          positionMs: it.payload.local?.lastPositionMs ??
-              it.payload.remote?.positionMs ??
-              0,
-          completed: it.payload.local?.completedAt != null,
-        ),
-    ];
-    for (final CollectionMemberProgress p in progresses) {
-      if (p.completed) completed++;
-      if (p.completed || (p.positionMs ?? 0) > 0) hasTrace = true;
+    final List<VideoSeriesPlaybackState> playback =
+        <VideoSeriesPlaybackState>[];
+    for (final CollectionOrderingItem<_VideoSlot> item in group.items) {
+      final VideoBookRow? local = item.payload.local;
+      final RemoteVideoInfo? remote = item.payload.remote;
+      final bool isCompleted = local?.completedAt != null;
+      if (isCompleted) completed++;
+      playback.add(VideoSeriesPlaybackState(
+        lastWatchedAtMs: local == null
+            ? remote?.positionUpdatedAtMs ?? 0
+            : (_watchAtByUid[local.bookUid] ??
+                        _legacyWatchAtByTitle[local.title])
+                    ?.millisecondsSinceEpoch ??
+                0,
+        positionMs: local?.lastPositionMs ?? remote?.positionMs ?? 0,
+        completed: isCompleted,
+      ));
     }
-    if (hasTrace && completed < total) {
+    final int? latestIndex = latestPlayedSeriesIndex(playback);
+    final int? continueIndex = latestIndex != null &&
+            !playback[latestIndex].completed &&
+            playback[latestIndex].positionMs > 0
+        ? latestIndex
+        : nextEpisodeAfterLatestPlayed(playback);
+    if (continueIndex != null && completed < total) {
       return t.collection_continue_progress(
-        n: continueMemberIndex(progresses) + 1,
+        n: continueIndex + 1,
       );
     }
     return t.collection_watched_progress(done: completed, total: total);
@@ -3880,6 +4485,36 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 页头：视频入库与整库刮削已统一迁到「来源」视图；媒体库只保留库内管理动作。
   Widget _buildPageHeader() {
     final List<Widget> actions = <Widget>[
+      if (widget.section == VideoLibrarySection.allVideos)
+        HibikiIconButton(
+          key: const ValueKey<String>('video-all-videos-layout-toggle'),
+          tooltip: _allVideosLayout == _AllVideosLayout.grid
+              ? t.video_all_videos_list_view
+              : t.video_all_videos_grid_view,
+          label: _allVideosLayout == _AllVideosLayout.grid
+              ? t.video_all_videos_list_view
+              : t.video_all_videos_grid_view,
+          icon: _allVideosLayout == _AllVideosLayout.grid
+              ? Icons.view_list_outlined
+              : Icons.grid_view_outlined,
+          onTap: () => setState(() {
+            _allVideosLayout = _allVideosLayout == _AllVideosLayout.grid
+                ? _AllVideosLayout.list
+                : _AllVideosLayout.grid;
+          }),
+        ),
+      if (widget.onOpenScrapeTasks != null)
+        Badge(
+          isLabelVisible: widget.scrapeTaskController?.isBusy == true,
+          child: HibikiIconButton(
+            tooltip: t.video_source_scrape_tasks_open,
+            label: t.video_source_scrape_tasks_open,
+            icon: widget.scrapeTaskController?.pendingConfirmation == null
+                ? Icons.sync_outlined
+                : Icons.rule_folder_outlined,
+            onTap: widget.onOpenScrapeTasks!,
+          ),
+        ),
       // 「番剧下载」不再占页头：它是下载子系统的入口，在「下载」页
       // （downloads_page）里有完整入口，视频库页头只留库管理动作。
       // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
@@ -4271,6 +4906,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     return HibikiPlaceholderMessage(
       icon: Icons.movie_outlined,
       message: t.video_library_empty_source_hint,
+      action: widget.onOpenSources == null
+          ? null
+          : FilledButton.icon(
+              onPressed: widget.onOpenSources,
+              icon: const Icon(Icons.create_new_folder_outlined),
+              label: Text(t.media_source_add),
+            ),
     );
   }
 
@@ -4316,6 +4958,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     return titleLine * 2 + 8 + metaLine + 6 + kTextBlockSlack;
   }
 
+  /// 主页横卡只需要一行作品名 + 一行季集/进度，不复用墙卡为两行长标题预留的高度。
+  static double _videoRowCardTextBlock(BuildContext context) {
+    final double titleLine = textLineHeight(
+      context,
+      Theme.of(context).textTheme.bodyMedium ?? const TextStyle(fontSize: 14),
+    );
+    final double metaLine =
+        textLineHeight(context, HibikiDesignTokens.of(context).type.metadata);
+    return titleLine + metaLine + 12 + kTextBlockSlack;
+  }
+
   /// 媒体库墙 sliver（TODO-2486，随主 [CustomScrollView] 滚动）：**行高固定**
   /// （封面高 + 文字块）、竖横混排流式换行（Wrap）。卡宽随封面朝向（竖 2:3 /
   /// 横 16:9，[CoverOrientationBuilder] 探测），封面底边天然对齐；合集卡在前、
@@ -4337,19 +4990,29 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           runSpacing: 12,
           children: <Widget>[
             for (final _VideoWallEntry cell in cells)
-              CoverOrientationBuilder(
-                image: cell.cover,
-                builder:
-                    (BuildContext context, VideoCardOrientation orientation) =>
-                        SizedBox(
+              if (cell.forcedOrientation case final VideoCardOrientation forced)
+                SizedBox(
                   width: videoCardWidthForOrientation(
-                    orientation: orientation,
+                    orientation: forced,
                     coverHeight: coverHeight,
                   ),
                   height: cellHeight,
-                  child: cell.build(orientation),
+                  child: cell.build(forced),
+                )
+              else
+                CoverOrientationBuilder(
+                  image: cell.cover,
+                  builder: (BuildContext context,
+                          VideoCardOrientation orientation) =>
+                      SizedBox(
+                    width: videoCardWidthForOrientation(
+                      orientation: orientation,
+                      coverHeight: coverHeight,
+                    ),
+                    height: cellHeight,
+                    child: cell.build(orientation),
+                  ),
                 ),
-              ),
           ],
         ),
       ),
@@ -4556,30 +5219,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       context,
       adaptivePageRoute<void>(
         context: context,
-        builder: (_) => MediaCollectionDetailPage(
+        builder: (_) => VideoWorkDetailPage(
           database: db,
-          collection: collection,
-          loadMembers: () async {
-            final List<MediaCollectionItemRow> members =
-                await repo.getCollectionItems(collection.id);
-            final List<VideoBookRow> rows = <VideoBookRow>[];
-            for (final MediaCollectionItemRow m in members) {
-              if (m.mediaType != MediaKind.video.dbValue) continue;
-              final VideoBookRow? r = await repo.getByBookUid(m.entryKey);
-              if (r != null) rows.add(r);
-            }
-            return rows;
-          },
-          onOpenEpisode: (VideoBookRow ep) =>
-              _open(ep, playlistCollectionId: collection.id),
+          repository: repo,
+          workRef: VideoWorkRef.collection(collection.id),
           onChanged: _refresh,
-          // 「连同视频一起删」：逐集删视频 DB 行 + app 拥有副本（封面/字幕），保留用户
-          // 原始视频文件；逐集不 VACUUM，循环后一次性 compact（避免逐集 VACUUM）。
-          // 复用批量删除同一纪律（_batchDeleteConfirm）。
           onDeleteMembersMedia: (List<VideoBookRow> members) async {
-            for (final VideoBookRow ep in members) {
+            for (final VideoBookRow member in members) {
               await repo.deleteVideoBookAndReclaimAssets(
-                ep.bookUid,
+                member.bookUid,
                 compactDatabase: false,
               );
             }
@@ -4587,6 +5235,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               await repo.compactAfterVideoDeleteBestEffort();
             }
           },
+        ),
+      ),
+    );
+  }
+
+  void _openBookWorkDetail(VideoBookRow book) {
+    Navigator.push<void>(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => VideoWorkDetailPage(
+          database: ref.read(appProvider).database,
+          repository: widget.repo,
+          workRef: VideoWorkRef.book(book.bookUid),
+          onChanged: _refresh,
         ),
       ),
     );
@@ -4602,7 +5265,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     int? playlistCollectionId,
     bool selectable = true,
     VideoCardOrientation orientation = VideoCardOrientation.portrait,
+    VoidCallback? onTapOverride,
+    ImageProvider? coverOverride,
   }) {
+    final String displayTitle = widget.section == VideoLibrarySection.series
+        ? (_metadataWorkByBook[book.bookUid]?.title ?? book.title)
+        : book.title;
     final List<BookTagRow> tags =
         ref.watch(videoBookTagMapProvider).valueOrNull?[book.bookUid] ??
             const <BookTagRow>[];
@@ -4629,7 +5297,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         _enterSelectionWith(slot);
         return;
       }
-      _open(book, playlistCollectionId: playlistCollectionId);
+      if (onTapOverride != null) {
+        onTapOverride();
+      } else {
+        _open(book, playlistCollectionId: playlistCollectionId);
+      }
     }
 
     final HibikiCard hibikiCard = HibikiCard(
@@ -4663,11 +5335,25 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             child: Stack(
               fit: StackFit.expand,
               children: <Widget>[
-                _buildCover(
-                  book,
-                  poster: true,
-                  landscapeSlot: orientation == VideoCardOrientation.landscape,
-                ),
+                if (coverOverride != null)
+                  PortraitCoverImage(
+                    image: coverOverride,
+                    landscapeSlot:
+                        orientation == VideoCardOrientation.landscape,
+                    errorBuilder: (BuildContext _) => _buildCover(
+                      book,
+                      poster: true,
+                      landscapeSlot:
+                          orientation == VideoCardOrientation.landscape,
+                    ),
+                  )
+                else
+                  _buildCover(
+                    book,
+                    poster: true,
+                    landscapeSlot:
+                        orientation == VideoCardOrientation.landscape,
+                  ),
                 // UI 巡检 PR-4：多选态勾选框占左上角（同为 top:6,left:6），标签层
                 // 让位隐藏——此前两层同角重叠，勾选框压在标签 chip 上两者都花。
                 if (tags.isNotEmpty && !showSelection)
@@ -4724,11 +5410,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   // TODO-2490：两行仍放不下时，桌面悬停显示完整标题；触屏长按
                   // 菜单（MediaItemDialogFrame 标题不限行）看全名。
                   child: ShelfTitleOverflowTooltip(
-                    title: book.title,
+                    title: displayTitle,
                     style: Theme.of(context).textTheme.bodyMedium,
                     maxLines: 2,
                     child: Text(
-                      book.title,
+                      displayTitle,
                       // BUG-1184：窄屏卡宽只有约 154px，单行放不下一个日文剧名。
                       // 文字块高度已按两行标题算出（[_videoCardTextBlock]）。
                       maxLines: 2,
@@ -5172,9 +5858,14 @@ class _VideoLooseCard {
 /// 媒体库墙一格（TODO-2486）：封面 provider（朝向探测用，与卡内封面同键共享
 /// 解码）+ 按朝向构造卡片。
 class _VideoWallEntry {
-  const _VideoWallEntry({required this.cover, required this.build});
+  const _VideoWallEntry({
+    required this.cover,
+    required this.build,
+    this.forcedOrientation,
+  });
 
   final ImageProvider? cover;
+  final VideoCardOrientation? forcedOrientation;
   final Widget Function(VideoCardOrientation orientation) build;
 }
 

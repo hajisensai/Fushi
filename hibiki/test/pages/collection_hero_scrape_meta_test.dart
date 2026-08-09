@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/video/cover_ui/landscape_cover_image.dart';
+import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:hibiki/src/media/video/scraper/collection_scrape_apply.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_detail_page.dart';
@@ -18,7 +19,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 ///
 /// 本文件锁三件事：
 ///  1. 有资料 → hero 渲染年份/话数/评分/评分人数/标签/简介/原名；
-///  2. 无资料 → 回落到「标题 + 进度 + 播放」的旧形态，且**不出现**任何空占位；
+///  2. 无资料 → 保留标题 + 进度 + 播放，并明确提示从来源重试刮削；
 ///  3. 背景槽向：有横版 backdrop 用它（正确槽向），无则回落 [LandscapeCoverImage]，
 ///     且两种情况下海报卡的出现与否互斥（同一张图不得在同屏出现两次）。
 void main() {
@@ -170,13 +171,23 @@ void main() {
     );
   });
 
-  testWidgets('未刮削 → 回落旧形态：只有标题 + 进度 + 播放，无空占位', (WidgetTester tester) async {
+  testWidgets('未刮削 → 保留播放能力并明确显示资料待刮削状态', (WidgetTester tester) async {
     await pumpWide(tester);
 
+    expect(
+      find.byKey(const ValueKey<String>('video-work-hero-card')),
+      findsOneWidget,
+      reason: '合集详情必须使用作品级 hero',
+    );
     expect(find.text('Tensei Oujo v2 播放列表'), findsOneWidget);
     expect(find.textContaining('已看完'), findsWidgets);
+    expect(find.textContaining('暂无详细资料'), findsOneWidget);
     expect(find.textContaining('★'), findsNothing, reason: '没有评分就不该出现评分符号');
-    expect(find.textContaining('全 '), findsNothing, reason: '没有话数就不该出现「全 N 话」');
+    expect(
+      find.text('全 1 话'),
+      findsOneWidget,
+      reason: '本地作品索引会用确定的合集成员数补出话数，但不会伪造在线评分',
+    );
     expect(
       find.byKey(const ValueKey<String>('collection-hero-poster')),
       findsNothing,
@@ -199,10 +210,74 @@ void main() {
       findsOneWidget,
       reason: '海报回到它自己的 2:3 卡槽',
     );
+    final Rect hero = tester.getRect(
+      find.byKey(const ValueKey<String>('video-work-hero-card')),
+    );
+    expect(hero.left, 0, reason: '大背景必须从内容区左边缘开始，不能居中留白');
+    expect(hero.right, 1600, reason: '大背景必须平铺到内容区右边缘');
+    expect(hero.height, greaterThanOrEqualTo(460));
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey<String>('collection-hero-poster')),
+          )
+          .height,
+      greaterThanOrEqualTo(400),
+      reason: '桌面宽屏使用大竖版海报，不再缩成 hero 角落的小卡',
+    );
     expect(
       find.byType(LandscapeCoverImage),
       findsNothing,
       reason: '有真横图时不需要模糊垫底那套补救',
+    );
+  });
+
+  testWidgets('作品目录无法安全落盘时仍用规范远程背景与大海报', (WidgetTester tester) async {
+    final int workId = await db.upsertVideoMetadataWork(
+      VideoMetadataWorksCompanion.insert(
+        collectionId: Value<int?>(collectionId),
+        mediaType: 'tv',
+        title: 'Remote artwork series',
+        updatedAt: 1,
+      ),
+    );
+    await db.replaceVideoMetadataImages(
+      workId: workId,
+      images: <VideoMetadataImagesCompanion>[
+        VideoMetadataImagesCompanion.insert(
+          provider: 'tmdb',
+          kind: 'cover',
+          remoteUrl: 'https://image.example/poster.jpg',
+          updatedAt: 1,
+        ),
+        VideoMetadataImagesCompanion.insert(
+          provider: 'tmdb',
+          kind: 'backdrop',
+          remoteUrl: 'https://image.example/backdrop.jpg',
+          updatedAt: 1,
+        ),
+      ],
+    );
+
+    await pumpWide(tester);
+
+    expect(
+      find.byKey(const ValueKey<String>('collection-hero-backdrop')),
+      findsOneWidget,
+    );
+    final PortraitCoverImage poster = tester.widget<PortraitCoverImage>(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey<String>('collection-hero-poster'),
+        ),
+        matching: find.byType(PortraitCoverImage),
+      ),
+    );
+    expect(poster.image, isA<ResizeImage>());
+    expect(
+      (poster.image as ResizeImage).imageProvider,
+      isA<NetworkImage>(),
+      reason: '安全目录判定阻止作品根图落盘时，详情页不能退回分集截图',
     );
   });
 

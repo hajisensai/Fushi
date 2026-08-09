@@ -9,6 +9,7 @@ import 'package:hibiki/src/media/torrent/download_save_root.dart';
 import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 
@@ -649,6 +650,7 @@ class _TorrentSettingsSectionState
             ),
           ],
         ],
+        const VideoExternalProviderSettingsSection(),
       ],
     );
     return Align(

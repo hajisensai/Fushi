@@ -109,6 +109,28 @@ void main() {
         videoPath: p.join('E:', 'anime', 'V2.mkv'),
         subtitleSource: const Value('off:'),
       ));
+      final int metadataWorkId = await db.upsertVideoMetadataWork(
+        VideoMetadataWorksCompanion.insert(
+          bookUid: const Value<String?>('video/V1'),
+          mediaType: 'movie',
+          title: 'V1',
+          updatedAt: 1,
+        ),
+      );
+      await db.upsertVideoMetadataExtra(
+        VideoMetadataExtrasCompanion.insert(
+          extraKey: 'local:video/V1',
+          workId: metadataWorkId,
+          bookUid: const Value<String?>('video/V1'),
+          kind: 'extra',
+          sourceKind: 'local',
+          title: 'Local extra',
+          thumbnailPath: Value<String?>(
+            docs(<String>['video_covers', 'v1.jpg']),
+          ),
+          updatedAt: 1,
+        ),
+      );
       await db.upsertMediaItem(MediaItemsCompanion.insert(
         mediaIdentifier: 'Bk',
         title: 'Bk',
@@ -200,6 +222,15 @@ void main() {
       for (final MediaItemRow m in await db.getAllMediaItems()) {
         out['media.${m.uniqueKey}.image'] = m.imageUrl;
       }
+      final List<QueryRow> extras = await db
+          .customSelect(
+            'SELECT extra_key, thumbnail_path FROM video_metadata_extras',
+          )
+          .get();
+      for (final QueryRow row in extras) {
+        out['extra.${row.read<String>('extra_key')}.thumbnail'] =
+            row.read<String?>('thumbnail_path');
+      }
       final Map<String, String> prefs = await db.getAllPrefs();
       for (final String key in <String>[
         'galgame_library',
@@ -244,6 +275,11 @@ void main() {
     expect(snap['video.video/V2.sub'], equals('off:'), reason: 'off: 哨兵必须原样保留');
     expect(snap['video.video/V1.path'], equals(p.join('E:', 'anime', 'V1.mkv')),
         reason: '用户原位外部视频不该被改写');
+    expect(
+      snap['extra.local:video/V1.thumbnail'],
+      equals(at(<String>['video_covers', 'v1.jpg'])),
+      reason: '本地视频附加内容复用的封面必须与 VideoBook.coverPath 同步重挂',
+    );
     expect(
         snap['media.reader/Bk.image'],
         equals(Uri.file(at(<String>['hoshi_books', 'Bk', 'cover.jpg']))

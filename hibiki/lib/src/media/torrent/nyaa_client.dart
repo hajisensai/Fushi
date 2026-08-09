@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:html/dom.dart' as html_dom;
+import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
 
@@ -394,9 +396,12 @@ String _childText(XmlElement item, String local) {
   return '';
 }
 
-/// Nyaa（nyaa.si）RSS 搜索客户端。无需鉴权。
+/// Nyaa（nyaa.si）搜索客户端。无需鉴权。
 ///
-/// 端点：`GET {base}/?page=rss&q=<query>&c=<category>&f=<filter>`。
+/// 首屏端点：`GET {base}/?page=rss&q=<query>&c=<category>&f=<filter>`。
+/// 后续页使用 Nyaa 的 HTML 搜索端点 `GET {base}/?p=<page>&...`。Nyaa
+/// 上游虽然会解析 RSS 请求里的 `p`，但 RSS 查询分支只做 `limit`、不做
+/// `offset`，会重复返回首屏；因此不能用 RSS 假装分页。
 /// category 直接透传（常用：`1_0` 全部动画 / `1_2` 英译 / `1_3` 非英译 /
 /// `1_4` 生肉 Raw）；filter：`0` 无过滤 / `2` 仅 trusted。
 class NyaaClient {
@@ -415,17 +420,24 @@ class NyaaClient {
     String query, {
     String category = '1_0',
     String filter = '0',
+    int page = 1,
   }) async {
+    if (page <= 0) throw ArgumentError.value(page, 'page');
+    final bool renderAsRss = page == 1;
     final Uri uri = Uri.parse(baseUrl).replace(
       path: '/',
       queryParameters: <String, String>{
-        'page': 'rss',
+        if (renderAsRss) 'page': 'rss' else 'p': page.toString(),
         'q': query,
         'c': category,
         'f': filter,
       },
     );
     final http.Response res = await _client.get(uri);
+    if (!renderAsRss && res.statusCode == 404) {
+      // Nyaa returns 404 when a valid HTML search asks past its final page.
+      return const <NyaaTorrent>[];
+    }
     if (res.statusCode != 200) {
       throw http.ClientException('HTTP ${res.statusCode}', uri);
     }
@@ -459,6 +471,7 @@ class NyaaClient {
         'response body was empty',
       );
     }
+    if (!renderAsRss) return _parseNyaaHtmlSearch(body, uri);
     try {
       final XmlDocument doc = XmlDocument.parse(body);
       final String? xmlEncoding = doc.declaration?.encoding?.toLowerCase();
@@ -482,4 +495,113 @@ class NyaaClient {
   }
 
   void close() => _client.close();
+}
+
+List<NyaaTorrent> _parseNyaaHtmlSearch(String body, Uri requestUri) {
+  final html_dom.Document document = html_parser.parse(body);
+  final html_dom.Element? table = document.querySelector('table.torrent-list');
+  if (table == null) {
+    final bool noResults = document.querySelectorAll('h3').any(
+          (html_dom.Element heading) =>
+              heading.text.trim().toLowerCase() == 'no results found',
+        );
+    if (noResults) return const <NyaaTorrent>[];
+    throw NyaaFeedFormatException(
+      NyaaFeedErrorCode.missingStructure,
+      'HTML search page is missing table.torrent-list',
+    );
+  }
+
+  final List<NyaaTorrent> torrents = <NyaaTorrent>[];
+  for (final html_dom.Element row in table.querySelectorAll('tbody tr')) {
+    final List<html_dom.Element> cells = row.children
+        .where((html_dom.Element element) => element.localName == 'td')
+        .toList(growable: false);
+    if (cells.length < 5) {
+      throw NyaaFeedFormatException(
+        NyaaFeedErrorCode.missingStructure,
+        'HTML torrent row has fewer than five cells',
+      );
+    }
+
+    final html_dom.Element? detailLink = cells[1]
+        .querySelectorAll('a[href]')
+        .cast<html_dom.Element?>()
+        .firstWhere(
+      (html_dom.Element? link) {
+        final String href = link?.attributes['href'] ?? '';
+        return Uri.tryParse(href)?.path.startsWith('/view/') == true;
+      },
+      orElse: () => null,
+    );
+    final html_dom.Element? magnetLink = cells[2]
+        .querySelectorAll('a[href]')
+        .cast<html_dom.Element?>()
+        .firstWhere(
+          (html_dom.Element? link) =>
+              (link?.attributes['href'] ?? '').startsWith('magnet:'),
+          orElse: () => null,
+        );
+    final String title =
+        (detailLink?.attributes['title'] ?? detailLink?.text ?? '').trim();
+    final String magnet = magnetLink?.attributes['href'] ?? '';
+    final String? exactTopic = Uri.tryParse(magnet)?.queryParameters['xt'];
+    final String infoHash =
+        exactTopic?.toLowerCase().startsWith('urn:btih:') == true
+            ? exactTopic!.substring('urn:btih:'.length).toLowerCase()
+            : '';
+    if (title.isEmpty ||
+        detailLink == null ||
+        !RegExp(r'^[0-9a-f]{40}$').hasMatch(infoHash)) {
+      throw NyaaFeedFormatException(
+        NyaaFeedErrorCode.missingField,
+        'HTML torrent row is missing title, detail URL, or info hash',
+      );
+    }
+
+    String torrentUrl = '';
+    for (final html_dom.Element link in cells[2].querySelectorAll('a[href]')) {
+      final String href = link.attributes['href'] ?? '';
+      if (Uri.tryParse(href)?.path.endsWith('.torrent') == true) {
+        torrentUrl = requestUri.resolve(href).toString();
+        break;
+      }
+    }
+    String categoryId = '';
+    for (final html_dom.Element link in cells[0].querySelectorAll('a[href]')) {
+      final String? candidate =
+          Uri.tryParse(link.attributes['href'] ?? '')?.queryParameters['c'];
+      if (candidate?.isNotEmpty == true) {
+        categoryId = candidate!;
+        break;
+      }
+    }
+    final int? timestampSeconds =
+        int.tryParse(cells[4].attributes['data-timestamp'] ?? '');
+    torrents.add(
+      NyaaTorrent(
+        title: title,
+        torrentUrl: torrentUrl,
+        pageUrl: requestUri.resolve(detailLink.attributes['href']!).toString(),
+        infoHash: infoHash,
+        seeders: cells.length > 5 ? int.tryParse(cells[5].text.trim()) ?? 0 : 0,
+        leechers:
+            cells.length > 6 ? int.tryParse(cells[6].text.trim()) ?? 0 : 0,
+        downloads:
+            cells.length > 7 ? int.tryParse(cells[7].text.trim()) ?? 0 : 0,
+        sizeText: cells[3].text.trim(),
+        sizeBytes: parseNyaaSize(cells[3].text.trim()),
+        categoryId: categoryId,
+        trusted: row.classes.contains('success'),
+        remake: row.classes.contains('danger'),
+        pubDate: timestampSeconds == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(
+                timestampSeconds * 1000,
+                isUtc: true,
+              ),
+      ),
+    );
+  }
+  return List<NyaaTorrent>.unmodifiable(torrents);
 }

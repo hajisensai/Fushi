@@ -172,3 +172,37 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
       RemoteVideoInfo(id: book.bookUid, title: book.title);
   return (client: client, info: info);
 }
+
+/// Builds an ephemeral in-app playback target for an online work attachment.
+/// Unlike [buildStreamVideoLaunch], this deliberately does not create or
+/// require a VideoBook row, so trailers stay attached to their canonical work
+/// and never leak into the raw video library.
+Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
+    buildOnlineVideoExtraLaunch({
+  required String id,
+  required String title,
+  required String url,
+}) async {
+  final UrlStreamVideoClient client;
+  if (isYoutubeUrl(url)) {
+    final YoutubeResolvedSource resolved =
+        await resolveYoutubeSource(url, withCaptions: false);
+    client = UrlStreamVideoClient(
+      streamUrl: resolved.streamUrl,
+      audioStreamUrl: resolved.audioStreamUrl,
+      miningVideoUrl: resolved.miningVideoUrl,
+      miningVideoHasAudio: resolved.miningVideoHasAudio,
+      youtubeCaptionsUrl: url,
+      httpHeaderFields: resolved.httpHeaders,
+    );
+  } else {
+    client = UrlStreamVideoClient(
+      streamUrl: url,
+      miningVideoHasAudio: true,
+    );
+  }
+  return (
+    client: client,
+    info: RemoteVideoInfo(id: 'work-extra:$id', title: title),
+  );
+}

@@ -4,6 +4,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/scraper/sidecar_scanner.dart';
 import 'package:path/path.dart' as p;
 
+class _StubGeneratedArtifactChecker implements SidecarGeneratedArtifactChecker {
+  const _StubGeneratedArtifactChecker(
+      {required this.result, this.throwError = false});
+
+  final bool result;
+  final bool throwError;
+
+  @override
+  Future<bool> isUnmodifiedGeneratedArtifact(String absolutePath) async {
+    if (throwError) {
+      throw StateError('artifact lookup failed');
+    }
+    return result;
+  }
+}
+
 void main() {
   late Directory tmp;
   late String videoPath;
@@ -72,6 +88,47 @@ void main() {
       final SidecarResult result = await SidecarScanner.scan(videoPath);
 
       expect(result.posterFile, isNull);
+    });
+
+    test('artifact 与当前文件一致时保留命中并标记为 Hibiki 生成物', () async {
+      await writeFile('poster.jpg', 'generated');
+
+      final SidecarResult result = await SidecarScanner.scan(
+        videoPath,
+        generatedArtifactChecker:
+            const _StubGeneratedArtifactChecker(result: true),
+      );
+
+      expect(result.posterFile, isNotNull);
+      expect(result.posterIsUnmodifiedGeneratedArtifact, isTrue);
+    });
+
+    test('artifact 不存在或 hash 不一致时仍按用户 sidecar 处理', () async {
+      await writeFile('poster.jpg', 'modified');
+
+      final SidecarResult result = await SidecarScanner.scan(
+        videoPath,
+        generatedArtifactChecker:
+            const _StubGeneratedArtifactChecker(result: false),
+      );
+
+      expect(result.posterFile, isNotNull);
+      expect(result.posterIsUnmodifiedGeneratedArtifact, isFalse);
+    });
+
+    test('artifact 校验异常时保守按用户 sidecar 处理', () async {
+      await writeFile('poster.jpg', 'unreadable ownership');
+
+      final SidecarResult result = await SidecarScanner.scan(
+        videoPath,
+        generatedArtifactChecker: const _StubGeneratedArtifactChecker(
+          result: false,
+          throwError: true,
+        ),
+      );
+
+      expect(result.posterFile, isNotNull);
+      expect(result.posterIsUnmodifiedGeneratedArtifact, isFalse);
     });
   });
 

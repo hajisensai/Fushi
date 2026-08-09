@@ -949,6 +949,7 @@ class DataRootMigrator {
         await _rebaseCollectionScrapeMeta(db, docs);
         await _rebaseCollectionRelations(db, docs);
         await _rebaseMediaImages(db, docs);
+        await _rebaseVideoMetadataExtras(db, docs);
         await _rebaseMediaItems(db, docs);
         await _rebasePreferences(db, docs, newSupportRoot);
         await _rebaseProfileSettings(db, docs, newSupportRoot);
@@ -1124,6 +1125,32 @@ class DataRootMigrator {
       await db.customStatement(
         'UPDATE media_images SET path = ? WHERE id = ?',
         <Object?>[newPath, row.id],
+      );
+    }
+  }
+
+  /// video_metadata_extras：本地 NCOP/NCED 等附加视频的 thumbnail_path
+  /// 直接复用 VideoBook.coverPath，必须与 video_books.cover_path 同步重挂。
+  /// 在线项只有 remote_url / thumbnail_url，不参与本机路径改写。
+  static Future<void> _rebaseVideoMetadataExtras(
+    HibikiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    final List<QueryRow> rows = await db
+        .customSelect(
+          'SELECT extra_key, thumbnail_path FROM video_metadata_extras '
+          'WHERE thumbnail_path IS NOT NULL',
+        )
+        .get();
+    for (final QueryRow row in rows) {
+      final String key = row.read<String>('extra_key');
+      final String? current = row.read<String?>('thumbnail_path');
+      final String? rebased = docs.rebaseNullable(current);
+      if (rebased == current) continue;
+      await db.customStatement(
+        'UPDATE video_metadata_extras SET thumbnail_path = ? '
+        'WHERE extra_key = ?',
+        <Object?>[rebased, key],
       );
     }
   }

@@ -362,6 +362,75 @@ void main() {
       client.close();
     });
 
+    test('第二页使用 HTML p 参数并解析完整候选，不重复 RSS 首屏', () async {
+      Uri? captured;
+      final MockClient mock = MockClient((http.Request request) async {
+        captured = request.url;
+        return http.Response('''
+<!doctype html><html><body>
+<table class="table torrent-list"><tbody>
+  <tr class="success">
+    <td><a href="/?c=1_2">Anime</a></td>
+    <td colspan="2"><a href="/view/200" title="[SubsPlease] Example - 100 [1080p]">Example</a></td>
+    <td>
+      <a href="/download/200.torrent">download</a>
+      <a href="magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&amp;dn=Example">magnet</a>
+    </td>
+    <td>1.5 GiB</td>
+    <td data-timestamp="1700000000">2023-11-14 22:13</td>
+    <td>42</td><td>3</td><td>900</td>
+  </tr>
+</tbody></table>
+</body></html>''', 200);
+      });
+      final NyaaClient client = NyaaClient(client: mock);
+
+      final List<NyaaTorrent> items = await client.search(
+        'Example',
+        category: '1_2',
+        filter: '2',
+        page: 2,
+      );
+
+      expect(captured!.queryParameters, <String, String>{
+        'p': '2',
+        'q': 'Example',
+        'c': '1_2',
+        'f': '2',
+      });
+      expect(items, hasLength(1));
+      final NyaaTorrent item = items.single;
+      expect(item.title, '[SubsPlease] Example - 100 [1080p]');
+      expect(item.infoHash, '0123456789abcdef0123456789abcdef01234567');
+      expect(item.torrentUrl, 'https://nyaa.si/download/200.torrent');
+      expect(item.pageUrl, 'https://nyaa.si/view/200');
+      expect(item.categoryId, '1_2');
+      expect(item.sizeBytes, (1.5 * 1024 * 1024 * 1024).round());
+      expect(item.seeders, 42);
+      expect(item.leechers, 3);
+      expect(item.downloads, 900);
+      expect(item.trusted, isTrue);
+      expect(
+        item.pubDate,
+        DateTime.fromMillisecondsSinceEpoch(1700000000 * 1000, isUtc: true),
+      );
+      client.close();
+    });
+
+    test('HTML 后续页 404 表示越过末页并安全结束', () async {
+      Uri? captured;
+      final NyaaClient client = NyaaClient(
+        client: MockClient((http.Request request) async {
+          captured = request.url;
+          return http.Response('not found', 404);
+        }),
+      );
+
+      expect(await client.search('Example', page: 3), isEmpty);
+      expect(captured!.queryParameters['p'], '3');
+      client.close();
+    });
+
     test(
       '默认 category=1_0 / filter=0；非 200 → 抛 ClientException（含状态码）',
       () async {

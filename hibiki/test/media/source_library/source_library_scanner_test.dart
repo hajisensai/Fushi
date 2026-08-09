@@ -338,7 +338,8 @@ void main() {
       ));
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-      await SourceLibraryScanner(db).scan(source);
+      final SourceScanSummary summary =
+          await SourceLibraryScanner(db).scan(source);
 
       final List<VideoBookRow> videos = await repo.listAll();
       expect(videos, hasLength(1));
@@ -356,6 +357,12 @@ void main() {
       expect(after.mediaCount, 1);
       expect(after.lastScannedAt, isNotNull);
       expect(after.lastScanError, isNull);
+      expect(summary.sourceId, sid);
+      expect(summary.succeeded, isTrue);
+      expect(summary.discoveredPaths, contains(p.join(tmp.path, 'movie.mp4')));
+      expect(summary.createdVideoUids, <String>[videos.single.bookUid]);
+      expect(summary.reusedVideoUids, isEmpty);
+      expect(summary.createdCollectionIds, isEmpty);
     });
 
     test('nested episodic videos form one additive, stable playlist', () async {
@@ -376,13 +383,16 @@ void main() {
       ));
       SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-      await SourceLibraryScanner(db).scan(source);
+      final SourceScanSummary firstSummary =
+          await SourceLibraryScanner(db).scan(source);
       expect(await repo.listAll(), hasLength(2));
       final List<MediaCollectionRow> firstCollections =
           await db.getAllMediaCollections();
       expect(firstCollections, hasLength(1));
       final int collectionId = firstCollections.single.id;
       expect(firstCollections.single.name, 'Show');
+      expect(firstSummary.createdVideoUids, hasLength(2));
+      expect(firstSummary.createdCollectionIds, <int>[collectionId]);
       final List<String> firstTitles = <String>[];
       for (final MediaCollectionItemRow member
           in await db.getCollectionItems(collectionId)) {

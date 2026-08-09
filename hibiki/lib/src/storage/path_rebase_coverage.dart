@@ -361,6 +361,108 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
           '合集封面同型）。当前尚无写入方（下载归 UI 接力线程），但列语义即'
           '文档根内路径 —— 不改写 = 换数据根后相关作品卡封面变死链。'),
 
+  // ── video_metadata_* / video_sidecar_artifacts（schema v69）────────
+  PathRebaseColumn('VideoMetadataPeople', 'profileUrl', PathRebaseKind.notAPath,
+      '人物头像的远端 provider URL，不是本机路径。'),
+  PathRebaseColumn(
+      'VideoMetadataPeople',
+      'profilePath',
+      PathRebaseKind.externalUserPath,
+      '预留给媒体来源旁的人物头像 sidecar；位于用户选择的来源根，不随 Hibiki 数据根迁移。'),
+  PathRebaseColumn('VideoMetadataCharacters', 'imageUrl',
+      PathRebaseKind.notAPath, '角色图片的远端 provider URL，不是本机路径。'),
+  PathRebaseColumn(
+      'VideoMetadataCharacters',
+      'imagePath',
+      PathRebaseKind.externalUserPath,
+      '预留给媒体来源旁的角色图片 sidecar；位于用户选择的来源根，不随 Hibiki 数据根迁移。'),
+  PathRebaseColumn('VideoMetadataProviderIdentities', 'externalUrl',
+      PathRebaseKind.notAPath, 'provider 条目详情页的远端 URL，不是本机路径。'),
+  PathRebaseColumn('VideoMetadataRawSnapshots', 'rawJson',
+      PathRebaseKind.notAPath, 'provider 原始响应的结构化 JSON，不承载本机数据根路径。'),
+  PathRebaseColumn('VideoMetadataImages', 'remoteUrl', PathRebaseKind.notAPath,
+      '待下载或重下的 provider/Fanart 远端图片 URL。'),
+  PathRebaseColumn(
+      'VideoMetadataImages',
+      'localPath',
+      PathRebaseKind.externalUserPath,
+      'v69 来源刮削写在用户媒体目录旁的图片 sidecar 绝对路径；来源根是外部用户路径。'),
+  PathRebaseColumn('VideoSourceScrapeRuns', 'summaryJson',
+      PathRebaseKind.notAPath, '来源刮削运行摘要与错误计数 JSON，无本机路径。'),
+  PathRebaseColumn(
+      'VideoSidecarArtifacts',
+      'path',
+      PathRebaseKind.externalUserPath,
+      'Hibiki 生成的 NFO/图片在用户媒体来源目录中的规范绝对路径；不得随应用数据根改写。'),
+
+  // ── video_metadata_extras（schema v69 本地/在线附加内容）──────────
+  PathRebaseColumn('VideoMetadataExtras', 'sourceKind', PathRebaseKind.notAPath,
+      '附加内容来源枚举（local/online），不是路径。'),
+  PathRebaseColumn('VideoMetadataExtras', 'remoteUrl', PathRebaseKind.notAPath,
+      '在线预告或花絮的远端 URL，不是本机路径。'),
+  PathRebaseColumn('VideoMetadataExtras', 'thumbnailUrl',
+      PathRebaseKind.notAPath, '在线附加内容缩略图的远端 URL，不是本机路径。'),
+  PathRebaseColumn(
+      'VideoMetadataExtras',
+      'thumbnailPath',
+      PathRebaseKind.documentsRooted,
+      '本地 NCOP/NCED 等附加视频复用 VideoBook.coverPath，位于 '
+          '<documents>/video_covers；必须与原视频封面一起重挂。'),
+
+  // ── video_download_*（schema v71，device-local 持久流水线）────────
+  PathRebaseColumn('VideoDownloadJobs', 'resourceProvider',
+      PathRebaseKind.notAPath, '资源 provider/实例身份，不是路径。'),
+  PathRebaseColumn('VideoDownloadJobs', 'selectedResourceId',
+      PathRebaseKind.notAPath, 'provider 侧资源 ID，不是路径。'),
+  PathRebaseColumn('VideoDownloadJobs', 'resourceTitle',
+      PathRebaseKind.notAPath, '发布标题文本，不是路径。'),
+  PathRebaseColumn('VideoDownloadJobs', 'coverUrl', PathRebaseKind.notAPath,
+      '发现来源的远端封面 URL，不是本机路径。'),
+  PathRebaseColumn('VideoDownloadJobs', 'backendProfileId',
+      PathRebaseKind.notAPath, '下载后端配置身份，不是文件路径。'),
+  PathRebaseColumn(
+      'VideoDownloadJobs',
+      'observedSavePath',
+      PathRebaseKind.externalUserPath,
+      '下载后端报告的远端或用户外部保存根；由显式 remote→local 映射解释，不能随应用数据根改写。'),
+  PathRebaseColumn('VideoDownloadJobs', 'targetRelativeRoot',
+      PathRebaseKind.notAPath, '受管来源内的相对整理根，不是绝对路径。'),
+  PathRebaseColumn('VideoDownloadJobFiles', 'originalRelativePath',
+      PathRebaseKind.notAPath, '下载后端内的原始相对路径。'),
+  PathRebaseColumn('VideoDownloadJobFiles', 'currentRelativePath',
+      PathRebaseKind.notAPath, '下载后端内保持做种的当前相对路径。'),
+  PathRebaseColumn('VideoDownloadJobFiles', 'targetRelativePath',
+      PathRebaseKind.notAPath, '受管来源内的目标相对路径。'),
+  PathRebaseColumn(
+      'VideoDownloadJobFiles',
+      'finalAbsolutePath',
+      PathRebaseKind.externalUserPath,
+      '用户选择的 MediaSource 内最终视频绝对路径；MediaSources.rootPath 同样明确不随应用数据根改写。'),
+  PathRebaseColumn('VideoDownloadJobSubtitles', 'originalFileName',
+      PathRebaseKind.notAPath, 'provider 返回的原始字幕文件名，不是绝对路径。'),
+  PathRebaseColumn(
+      'VideoDownloadJobSubtitles',
+      'stagedPath',
+      PathRebaseKind.externalUserPath,
+      '新任务暂存文件与视频 sidecar 同目录；legacy 导入要求保留原路径语义，均不随应用数据根改写。'),
+  PathRebaseColumn(
+      'VideoDownloadJobSubtitles',
+      'finalPath',
+      PathRebaseKind.externalUserPath,
+      '安装在用户 MediaSource 中的字幕 sidecar 绝对路径，不随应用数据根改写。'),
+  PathRebaseColumn('VideoDownloadSubscriptions', 'resourceProvider',
+      PathRebaseKind.notAPath, '资源 provider/实例身份，不是路径。'),
+  PathRebaseColumn('VideoDownloadSubscriptions', 'coverUrl',
+      PathRebaseKind.notAPath, '发现来源的远端封面 URL，不是本机路径。'),
+  PathRebaseColumn('VideoDownloadSubscriptions', 'filterJson',
+      PathRebaseKind.notAPath, '严格版本规则 JSON（组、分辨率、编码、语言），不承载路径或凭据。'),
+  PathRebaseColumn('VideoDownloadSubscriptions', 'backendProfileId',
+      PathRebaseKind.notAPath, '下载后端配置身份，不是文件路径。'),
+  PathRebaseColumn('VideoDownloadSubscriptionItems', 'resourceProvider',
+      PathRebaseKind.notAPath, '资源 provider/实例身份，不是路径。'),
+  PathRebaseColumn('VideoDownloadSubscriptionItems', 'selectedResourceId',
+      PathRebaseKind.notAPath, 'provider 侧资源 ID，不是路径。'),
+
   // ── galgames ──────────────────────────────────────────────────────
   PathRebaseColumn('Galgames', 'exePath', PathRebaseKind.externalUserPath,
       '用户外部游戏安装位置（hook 注入目标），不在数据根内。'),
@@ -499,6 +601,12 @@ final List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
       PathValueShape.jsonStringList,
       'BUG-1174 漏项：下载根历史（JSON 字符串数组），含被压栈的旧默认根；不改写 → 迁移后'
           '这些历史根下的老任务在下载页整批失认。'),
+  PathRebasePref(
+      'video_download_backend_path_mappings',
+      PathRebaseKind.externalUserPath,
+      PathValueShape.none,
+      'qBittorrent remoteRoot→localRoot 显式映射；localRoot 是用户/后端外部文件系统路径，'
+          '与 MediaSources.rootPath 同语义，不能随 Hibiki 应用数据根改写。'),
   PathRebasePref('video_mpv_shader_dir', PathRebaseKind.externalUserPath,
       PathValueShape.none, '用户本机 mpv 着色器目录，外部路径，不随数据根走。'),
   PathRebasePref('manga_external_mokuro_path', PathRebaseKind.externalUserPath,

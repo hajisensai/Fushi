@@ -21,12 +21,35 @@ import 'package:hibiki/src/anki/anki_view_model.dart'
     show ankiRepositoryProvider;
 import 'package:hibiki/src/anki/lapis_template_service.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
-import 'package:hibiki/src/media/metadata/scrape_batch.dart';
-import 'package:hibiki/src/media/video/cover_ui/video_scrape_actions.dart';
+import 'package:hibiki/src/media/external_provider.dart';
+import 'package:hibiki/src/media/source_library/source_library_row.dart';
+import 'package:hibiki/src/media/source_library/source_library_scanner.dart';
+import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
+import 'package:drift/drift.dart' show Value;
+import 'package:hibiki/src/media/collections/collection_continue.dart';
+import 'package:hibiki/src/media/torrent/nyaa_resource_provider.dart';
+import 'package:hibiki/src/media/torrent/video_resource_provider.dart';
+import 'package:hibiki/src/media/video/discovery/video_discovery_provider.dart';
+import 'package:hibiki/src/media/video/discovery/video_discovery_service.dart';
+import 'package:hibiki/src/media/video/download/video_download_backend_identity.dart';
+import 'package:hibiki/src/media/video/download/video_download_pipeline_service.dart';
+import 'package:hibiki/src/media/video/download/video_resource_registry.dart';
+import 'package:hibiki/src/media/video/subtitle/video_subtitle_provider.dart'
+    show VideoSubtitleCandidate;
+import 'package:hibiki/src/media/video/video_subtitle_attach.dart';
+import 'package:hibiki/src/media/video/metadata/video_metadata_models.dart';
+import 'package:hibiki/src/media/video/metadata/video_source_scrape_config.dart';
+import 'package:hibiki/src/media/video/metadata/video_source_scrape_coordinator.dart';
+import 'package:hibiki/src/media/video/metadata/video_source_scrape_dialog.dart';
+import 'package:hibiki/src/media/video/metadata/video_source_scrape_task.dart';
+import 'package:hibiki/src/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:hibiki/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki/src/pages/implementations/media_library_shell.dart';
-import 'package:hibiki/src/pages/implementations/media_sources_page.dart';
+import 'package:hibiki/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
+import 'package:hibiki/src/pages/implementations/video_discovery_detail_page.dart';
+import 'package:hibiki/src/pages/implementations/video_discovery_page.dart'
+    show VideoDiscoveryController;
+import 'package:hibiki/src/pages/implementations/video_library_shell.dart';
 import 'package:hibiki/src/media/audiobook/now_listening_mini_bar.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/pages.dart';
@@ -44,6 +67,21 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
         focusedEditableText,
         gamepadMoveFocusInDirection;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:hibiki_core/hibiki_core.dart'
+    show
+        MediaCollectionItemRow,
+        MediaKind,
+        MediaSourceRow,
+        VideoBookRow,
+        VideoDownloadJobLifecycle,
+        VideoDownloadJobRow,
+        VideoDownloadJobStage,
+        VideoDownloadSubscriptionRow,
+        VideoDownloadSubscriptionsCompanion,
+        VideoMetadataProviderIdentityRow,
+        VideoMetadataWorkRow,
+        VideoSourceScrapeRunRow,
+        VideoSourceScrapeSettingRow;
 
 /// 顶层 tab 的逻辑身份（取代写死的整数索引 0/1/2）。条件 tab（video/downloads 常驻、
 /// games 仅 Windows）用枚举身份而非位置来切换/路由——插入条件 tab 不会再打乱「设置/词典」
@@ -236,6 +274,30 @@ Sidebar buildHibikiMacosSidebar({required List<HomeTab> activeTabs}) {
 bool shouldWarnOnExit({required bool syncing, required bool isSettingsTab}) =>
     syncing && !isSettingsTab;
 
+/// Keeps the UI contract out of the provider layer. The production service can
+/// therefore stay usable by tests and background code without importing pages.
+class _ProductionVideoDiscoveryController implements VideoDiscoveryController {
+  const _ProductionVideoDiscoveryController(this.service);
+
+  final VideoDiscoveryService service;
+
+  @override
+  Future<ProviderBatchResult<VideoDiscoveryPage>> load(
+    VideoDiscoveryRequest request,
+  ) =>
+      service.load(request);
+}
+
+String? _videoMetadataImageUrl(
+  VideoMetadataWork work,
+  VideoMetadataImageKind kind,
+) {
+  for (final VideoMetadataImage image in work.images) {
+    if (image.kind == kind && image.url.trim().isNotEmpty) return image.url;
+  }
+  return null;
+}
+
 class HomePage extends BasePage {
   const HomePage({super.key});
 
@@ -259,6 +321,15 @@ class _HomePageState extends BasePageState<HomePage>
   final FocusNode _keyboardFocusNode = FocusNode();
   final ValueNotifier<int> _dictFocusSignal = ValueNotifier<int>(0);
   final ValueNotifier<int> _videoLibraryRefreshSignal = ValueNotifier<int>(0);
+  VideoSourceScrapeCoordinator? _videoSourceScrapeCoordinator;
+  VideoSourceScrapeTaskController? _videoSourceScrapeTaskController;
+  String? _videoSourceScrapeConfigFingerprint;
+  bool _videoSourceScrapePanelOpen = false;
+  VideoDiscoveryService? _videoDiscoveryService;
+  VideoDiscoveryController? _videoDiscoveryController;
+  String? _videoDiscoveryConfigFingerprint;
+  int _downloadsInitialTabIndex = 0;
+  int _downloadsGeneration = 0;
 
   /// 定时后台同步：app 存活期每隔 [_periodicSyncInterval] 重跑一次 app-open 语义的全量
   /// sweep，让「手机一直开着、电脑那边改了数据」这种没有任何事件触发的场景也能自动拉到
@@ -328,6 +399,20 @@ class _HomePageState extends BasePageState<HomePage>
       }
 
       _triggerFullAutoSync();
+      unawaited(appModel.database
+          .interruptStaleVideoSourceScrapeRuns()
+          .catchError((Object error, StackTrace stackTrace) {
+        ErrorLogService.instance.log(
+          'HomePage.interruptStaleVideoScrapeRuns',
+          error,
+          stackTrace,
+        );
+        return 0;
+      }));
+      // v70 之前已经存在于库中的来源不会自动重触发扫描。启动时做一次纯本地、
+      // 幂等的作品索引，把旧合集/独立电影补成规范 VideoMetadataWork；否则系列页
+      // 能看到临时卡片，点进详情却永远只能落到无资料的旧合集视图。
+      unawaited(_backfillVideoMetadataWorks());
       // 首帧同步之后挂定时轮询，让静止不动的设备也能周期性拉到远端改动（见
       // [_periodicSyncInterval] 注释）。dispose 时 cancel。
       _periodicSyncTimer =
@@ -427,6 +512,27 @@ class _HomePageState extends BasePageState<HomePage>
     setState(() {});
   }
 
+  Future<void> _backfillVideoMetadataWorks() async {
+    final List<SourceLibraryRow> sources =
+        await appModel.database.getMediaSourcesByKind('video');
+    final VideoSourceMetadataIndexer indexer =
+        VideoSourceMetadataIndexer(appModel.database);
+    bool changed = false;
+    for (final SourceLibraryRow source in sources) {
+      try {
+        await indexer.index(source);
+        changed = true;
+      } on Object catch (error, stackTrace) {
+        ErrorLogService.instance.log(
+          'HomePage.backfillVideoMetadataWorks.${source.id}',
+          error,
+          stackTrace,
+        );
+      }
+    }
+    if (changed && mounted) _notifyVideoLibraryChanged();
+  }
+
   /// TODO-376：响应显式「打开查词 tab」请求（[AppModel.homeDictionaryTabRequest]）。
   /// 桌面悬浮字幕条点词（reader 路由 `_lookupFromFloatingLyric`）这类**显式**手势会先
   /// 把待查词排进 [DesktopLookupService.pendingText]、唤主窗前台，再发本请求；这里只把
@@ -450,6 +556,10 @@ class _HomePageState extends BasePageState<HomePage>
       return true;
     }());
     _periodicSyncTimer?.cancel();
+    _shutdownVideoSourceScrape();
+    _videoDiscoveryService?.close();
+    _videoDiscoveryService = null;
+    _videoDiscoveryController = null;
     _dictFocusSignal.dispose();
     _videoLibraryRefreshSignal.dispose();
     _keyboardFocusNode.dispose();
@@ -475,6 +585,8 @@ class _HomePageState extends BasePageState<HomePage>
       // 首页键事件 Focus，导致切窗回来后页级 / 全局快捷键全死，只能重启 app 才靠
       // autofocus 抢回。对齐视频页 [_reclaimVideoFocusIfOwned] 的 resumed 回收范式。
       _reclaimHomeFocusIfOwned();
+    } else if (AppLifecycleState.detached == state) {
+      _videoSourceScrapeTaskController?.markInterrupted();
     } else if (AppLifecycleState.paused == state) {
       if (appModel.lowMemoryMode) {
         PaintingBinding.instance.imageCache.clear();
@@ -1036,19 +1148,834 @@ class _HomePageState extends BasePageState<HomePage>
   VideoBookRepository get _videoRepository =>
       _videoRepo ??= VideoBookRepository(appModel.database);
 
+  VideoDiscoveryController get _productionVideoDiscoveryController {
+    final String configuredTmdbKey = appModelNoUpdate.prefsRepo
+        .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String;
+    final VideoSourceScrapeGlobalConfig config =
+        VideoSourceScrapeGlobalConfig.fromPreferences(
+      appModelNoUpdate.prefsRepo,
+      resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
+    );
+    final String fingerprint = <Object>[
+      config.tmdbApiKey,
+      config.bangumiToken,
+      config.locale,
+    ].join('\u0000');
+    final VideoDiscoveryController? existing = _videoDiscoveryController;
+    if (existing != null && _videoDiscoveryConfigFingerprint == fingerprint) {
+      return existing;
+    }
+    _videoDiscoveryService?.close();
+    final VideoDiscoveryService service =
+        VideoDiscoveryService.production(config);
+    final VideoDiscoveryController controller =
+        _ProductionVideoDiscoveryController(service);
+    _videoDiscoveryService = service;
+    _videoDiscoveryController = controller;
+    _videoDiscoveryConfigFingerprint = fingerprint;
+    return controller;
+  }
+
+  VideoDiscoveryActions get _productionVideoDiscoveryActions =>
+      VideoDiscoveryActions(
+        loadDetails: _loadVideoDiscoveryDetails,
+        watchStatus: _watchVideoDiscoveryStatus,
+        onSearchResource: _openVideoDiscoveryResourceSearch,
+        onSearchSubtitle: _openVideoDiscoverySubtitleSearch,
+        onSubscribe: _openVideoDiscoverySubscription,
+        onPlay: _openLocalVideoDiscoveryWork,
+        onOpenDownloads: () => _openDownloadsTab(0),
+        onOpenSubscriptions: _openVideoDiscoverySubscriptionsPanel,
+      );
+
+  void _openVideoDiscoverySubscriptionsPanel() {
+    unawaited(Navigator.of(context).maybePop().then((_) {
+      if (mounted) _openDownloadsTab(2);
+    }));
+  }
+
+  Future<VideoDiscoveryDetailData> _loadVideoDiscoveryDetails(
+    VideoDiscoveryItem item,
+  ) async {
+    final VideoMetadataWork? work =
+        await _videoDiscoveryService?.loadDetails(item);
+    if (work == null) return VideoDiscoveryDetailData(item: item);
+    final VideoDiscoveryItem detailedItem = VideoDiscoveryItem(
+      reference: item.reference,
+      overview: work.plot ?? item.overview,
+      posterUrl: _videoMetadataImageUrl(
+            work,
+            VideoMetadataImageKind.cover,
+          ) ??
+          item.posterUrl,
+      backdropUrl: _videoMetadataImageUrl(
+            work,
+            VideoMetadataImageKind.backdrop,
+          ) ??
+          item.backdropUrl,
+      score: work.rating ?? item.score,
+      releaseDate: work.premiered ?? item.releaseDate,
+      genres: work.genres.isEmpty ? item.genres : work.genres,
+      metadataWork: work,
+      confirmedLookup: item.confirmedLookup,
+    );
+    final Map<String, VideoDiscoveryPerson> people =
+        <String, VideoDiscoveryPerson>{};
+    for (final VideoMetadataCredit credit in work.credits) {
+      final VideoMetadataPerson person = credit.person;
+      final String key =
+          person.id?.trim().isNotEmpty == true ? person.id! : person.name;
+      people.putIfAbsent(
+        key,
+        () => VideoDiscoveryPerson(
+          name: person.name,
+          role: credit.roleName ?? credit.job ?? credit.department,
+          imageUrl: person.profileUrl,
+        ),
+      );
+    }
+    return VideoDiscoveryDetailData(
+      item: detailedItem,
+      facts: <VideoDiscoveryFact>[
+        if (work.year != null)
+          VideoDiscoveryFact(
+            label: t.video_filter_year,
+            value: '${work.year}',
+          ),
+        if (work.episodeCount != null)
+          VideoDiscoveryFact(
+            label: t.video_scrape_episodes,
+            value: '${work.episodeCount}',
+          ),
+        if (work.studios.isNotEmpty)
+          VideoDiscoveryFact(
+            label: t.video_work_studios,
+            value: work.studios.join(' · '),
+          ),
+        if (work.countries.isNotEmpty)
+          VideoDiscoveryFact(
+            label: t.video_work_countries,
+            value: work.countries.join(' · '),
+          ),
+        if (work.contentRating?.trim().isNotEmpty == true)
+          VideoDiscoveryFact(
+            label: t.video_work_content_rating,
+            value: work.contentRating!,
+          ),
+      ],
+      people: people.values,
+    );
+  }
+
+  Future<void> _openVideoDiscoveryResourceSearch(
+    BuildContext context,
+    VideoDiscoveryItem item,
+  ) async {
+    final VideoResourceRegistry? registry =
+        appModelNoUpdate.videoResourceRegistry;
+    final VideoDownloadPipelineService? pipeline =
+        appModelNoUpdate.videoDownloadPipelineService;
+    if (registry == null || pipeline == null) {
+      _showVideoDiscoveryMessage(context, t.download_backend_not_configured);
+      return;
+    }
+    final List<MediaSourceRow> sources =
+        await appModelNoUpdate.getManagedVideoDownloadSources();
+    if (!context.mounted) return;
+    if (sources.isEmpty) {
+      _showVideoDiscoveryMessage(context, t.media_source_no_sources);
+      return;
+    }
+    final VideoDownloadBackendIdentity identity;
+    try {
+      identity = await appModelNoUpdate.currentVideoDownloadBackendIdentity();
+    } on Object {
+      if (context.mounted) {
+        _showVideoDiscoveryMessage(context, t.download_backend_not_configured);
+      }
+      return;
+    }
+    if (!context.mounted) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => VideoDiscoveryResourceSearchPage(
+          item: item,
+          registry: registry,
+          sources: sources,
+          defaultSourceId:
+              appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
+          onSubmit: (VideoDiscoveryDownloadSelection selection) async {
+            await pipeline.enqueue(
+              VideoDownloadEnqueueRequest(
+                media: selection.media,
+                resource: selection.resource,
+                backendIdentity: identity,
+                targetSourceId: selection.source.id,
+                subtitlePolicy: selection.subtitlePolicy,
+                coverUrl: item.posterUrl,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openVideoDiscoverySubscription(
+    BuildContext context,
+    VideoDiscoveryItem item,
+  ) async {
+    final List<VideoDownloadSubscriptionRow> existing =
+        await _matchingVideoDiscoverySubscriptions(item.reference);
+    if (!context.mounted) return;
+    if (existing.any((VideoDownloadSubscriptionRow row) => row.enabled)) {
+      Navigator.of(context).pop();
+      _openDownloadsTab(2);
+      return;
+    }
+    final VideoResourceRegistry? registry =
+        appModelNoUpdate.videoResourceRegistry;
+    if (registry == null ||
+        appModelNoUpdate.videoDownloadPipelineService == null ||
+        appModelNoUpdate.videoDownloadSubscriptionService == null) {
+      _showVideoDiscoveryMessage(context, t.download_backend_not_configured);
+      return;
+    }
+    final List<MediaSourceRow> sources =
+        await appModelNoUpdate.getManagedVideoDownloadSources();
+    if (!context.mounted) return;
+    if (sources.isEmpty) {
+      _showVideoDiscoveryMessage(context, t.media_source_no_sources);
+      return;
+    }
+    final VideoDownloadBackendIdentity identity;
+    try {
+      identity = await appModelNoUpdate.currentVideoDownloadBackendIdentity();
+    } on Object {
+      if (context.mounted) {
+        _showVideoDiscoveryMessage(context, t.download_backend_not_configured);
+      }
+      return;
+    }
+    if (!context.mounted) return;
+    await showAppDialog<void>(
+      context: context,
+      builder: (_) => VideoDiscoverySubscriptionDialog(
+        item: item,
+        registry: registry,
+        sources: sources,
+        defaultSourceId: appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
+        onSubmit: (VideoDiscoverySubscriptionSelection selection) async {
+          final int now = DateTime.now().millisecondsSinceEpoch;
+          final String subscriptionId =
+              videoDiscoverySubscriptionId(item.reference);
+          final VideoDownloadSubscriptionRow? previous = await appModelNoUpdate
+              .database
+              .getVideoDownloadSubscription(subscriptionId);
+          final VideoResourceCandidate resource = selection.download.resource;
+          await appModelNoUpdate.database.upsertVideoDownloadSubscription(
+            VideoDownloadSubscriptionsCompanion.insert(
+              subscriptionId: subscriptionId,
+              resourceProvider: persistedVideoResourceProviderId(resource),
+              metadataProvider: Value<String?>(item.reference.providerId),
+              externalId: Value<String?>(item.reference.mediaId),
+              mediaKind: item.reference.mediaKind.name,
+              discoveryCategory:
+                  Value<String?>(item.reference.discoveryCategory.name),
+              title: item.reference.title,
+              year: Value<int?>(item.reference.year),
+              season: Value<int?>(item.reference.season),
+              coverUrl: Value<String?>(item.posterUrl),
+              searchQuery: _videoResourceSearchQuery(item.reference),
+              filterJson: Value<String>(selection.filter.json),
+              mode: Value<String>(
+                item.reference.mediaKind == VideoMetadataMediaKind.movie
+                    ? 'oneShot'
+                    : 'ongoing',
+              ),
+              startAfterEpisode: Value<int?>(selection.startAfterEpisode),
+              backendKind: identity.kind,
+              backendProfileId: Value<String?>(identity.profileId),
+              fingerprint: identity.fingerprint,
+              category: Value<String?>(identity.category),
+              targetSourceId: Value<int?>(selection.download.source.id),
+              organizationPolicy: const Value<String>('library'),
+              subtitlePolicy:
+                  Value<String>(selection.download.subtitlePolicy.name),
+              enabled: const Value<bool>(true),
+              nextCheckAt: Value<int?>(now),
+              claimedBy: const Value<String?>(null),
+              claimExpiresAt: const Value<int?>(null),
+              retryCount: const Value<int>(0),
+              fulfilledAt: const Value<int?>(null),
+              lastError: const Value<String?>(null),
+              createdAt: previous?.createdAt ?? now,
+              updatedAt: now,
+            ),
+          );
+          await appModelNoUpdate.videoDownloadSubscriptionService?.checkNow();
+        },
+      ),
+    );
+  }
+
+  Future<void> _openVideoDiscoverySubtitleSearch(
+    BuildContext context,
+    VideoDiscoveryItem item,
+  ) async {
+    final registry = appModelNoUpdate.videoSubtitleRegistry;
+    if (registry == null) {
+      _showVideoDiscoveryMessage(context, t.video_discovery_load_failed);
+      return;
+    }
+    final VideoDownloadPipelineService? pipeline =
+        appModelNoUpdate.videoDownloadPipelineService;
+    final List<VideoDownloadJobRow> attachableJobs =
+        (await appModelNoUpdate.database.getVideoDownloadJobs())
+            .where(
+              (VideoDownloadJobRow job) =>
+                  isAttachableVideoDownloadJob(job, item.reference),
+            )
+            .toList(growable: false);
+    if (!context.mounted) return;
+    await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        builder: (_) => VideoDiscoverySubtitleSearchPage(
+          item: item,
+          registry: registry,
+          pickVideo: (BuildContext pickerContext) => pickRealFilePath(
+            context: pickerContext,
+            appModel: appModelNoUpdate,
+            allowedExtensions: videoDiscoveryPickerExtensions,
+          ),
+          pickDirectory: (BuildContext pickerContext) => pickRealDirectoryPath(
+            context: pickerContext,
+            appModel: appModelNoUpdate,
+          ),
+          attachableJobs: attachableJobs,
+          onAttach: pipeline == null
+              ? null
+              : (
+                  VideoDownloadJobRow job,
+                  VideoSubtitleCandidate candidate,
+                ) =>
+                  pipeline.attachSubtitleSelection(
+                    jobId: job.jobId,
+                    candidate: candidate,
+                    season: item.reference.season,
+                    episode: item.reference.episode,
+                  ),
+          onInstalled: (
+            SubtitleInstallTarget target,
+            String selectedPath,
+            String installedPath,
+          ) async {
+            if (target != SubtitleInstallTarget.existingVideo) return;
+            final VideoBookRow? book =
+                await _videoRepository.findByVideoPath(selectedPath);
+            if (book == null) return;
+            final SubtitleAttachResult result = await attachSubtitleToVideoBook(
+              repo: _videoRepository,
+              book: book,
+              subtitlePath: installedPath,
+            );
+            if (result.outcome == SubtitleAttachOutcome.attached) {
+              _notifyVideoLibraryChanged();
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  String _videoResourceSearchQuery(VideoMediaReference reference) {
+    if (reference.discoveryCategory != VideoDiscoveryCategory.anime) {
+      return reference.title;
+    }
+    final List<String> queries = preferredNyaaSearchQueries(
+      VideoResourceSearchRequest(media: reference),
+    );
+    return queries.isEmpty ? reference.title : queries.first;
+  }
+
+  void _showVideoDiscoveryMessage(BuildContext context, String message) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  void _openDownloadsTab(int tabIndex) {
+    setState(() {
+      _downloadsInitialTabIndex = tabIndex.clamp(0, 2);
+      _downloadsGeneration++;
+    });
+    _selectTab(HomeTab.downloads);
+  }
+
+  Stream<VideoDiscoveryAcquisitionState> _watchVideoDiscoveryStatus(
+    VideoMediaReference reference,
+  ) {
+    late final StreamController<VideoDiscoveryAcquisitionState> controller;
+    final List<StreamSubscription<Object?>> subscriptions =
+        <StreamSubscription<Object?>>[];
+    bool reading = false;
+    bool pending = false;
+
+    Future<void> emit() async {
+      if (reading) {
+        pending = true;
+        return;
+      }
+      reading = true;
+      do {
+        pending = false;
+        final VideoDiscoveryAcquisitionState state =
+            await _readVideoDiscoveryStatus(reference);
+        if (!controller.isClosed) controller.add(state);
+      } while (pending && !controller.isClosed);
+      reading = false;
+    }
+
+    void onLibraryRefresh() => unawaited(emit());
+    controller = StreamController<VideoDiscoveryAcquisitionState>(
+      onListen: () {
+        subscriptions.add(
+          appModelNoUpdate.database.watchVideoDownloadJobs().listen(
+                (_) => unawaited(emit()),
+              ),
+        );
+        subscriptions.add(
+          appModelNoUpdate.database.watchVideoDownloadSubscriptions().listen(
+                (_) => unawaited(emit()),
+              ),
+        );
+        subscriptions.add(
+          _videoRepository.watchVideoBookUids().listen(
+                (_) => unawaited(emit()),
+              ),
+        );
+        _videoLibraryRefreshSignal.addListener(onLibraryRefresh);
+        unawaited(emit());
+      },
+      onCancel: () async {
+        _videoLibraryRefreshSignal.removeListener(onLibraryRefresh);
+        for (final StreamSubscription<Object?> subscription in subscriptions) {
+          await subscription.cancel();
+        }
+      },
+    );
+    return controller.stream;
+  }
+
+  Future<VideoDiscoveryAcquisitionState> _readVideoDiscoveryStatus(
+    VideoMediaReference reference,
+  ) async {
+    final List<VideoDownloadJobRow> jobs =
+        (await appModelNoUpdate.database.getVideoDownloadJobs())
+            .where((VideoDownloadJobRow row) => _discoveryIdentityMatches(
+                  reference,
+                  row.metadataProvider,
+                  row.externalId,
+                ))
+            .toList(growable: false);
+    final List<VideoDownloadSubscriptionRow> subscriptions =
+        await _matchingVideoDiscoverySubscriptions(reference);
+    final VideoMetadataWorkRow? local =
+        await _findLocalVideoDiscoveryWork(reference);
+    final VideoDownloadJobRow? job = jobs.firstOrNull;
+    final bool busy = job?.lifecycle == VideoDownloadJobLifecycle.active;
+    final bool subscribed = subscriptions.any(
+      (VideoDownloadSubscriptionRow row) => row.enabled,
+    );
+    return VideoDiscoveryAcquisitionState(
+      statusLabel: _videoDiscoveryStatusLabel(
+        job: job,
+        subscribed: subscribed,
+        inLibrary: local != null,
+      ),
+      isSubscribed: subscribed,
+      isInLibrary: local != null,
+      isBusy: busy,
+    );
+  }
+
+  String? _videoDiscoveryStatusLabel({
+    required VideoDownloadJobRow? job,
+    required bool subscribed,
+    required bool inLibrary,
+  }) {
+    if (job != null) {
+      if (job.lifecycle == VideoDownloadJobLifecycle.needsAttention ||
+          job.lifecycle == VideoDownloadJobLifecycle.failed) {
+        return '${t.download_task_status_error} · '
+            '${_videoDownloadStageLabel(job.stage)}';
+      }
+      if (job.lifecycle == VideoDownloadJobLifecycle.cancelled) {
+        return t.download_status_cancelled;
+      }
+      if (job.lifecycle == VideoDownloadJobLifecycle.active) {
+        return _videoDownloadStageLabel(job.stage);
+      }
+      if (job.lifecycle == VideoDownloadJobLifecycle.completed && !inLibrary) {
+        return t.download_task_status_completed;
+      }
+    }
+    if (inLibrary) return t.video_discovery_in_library;
+    if (subscribed) return t.download_airing_calendar_subscribed;
+    return null;
+  }
+
+  String _videoDownloadStageLabel(String stage) => switch (stage) {
+        VideoDownloadJobStage.enqueue => t.download_status_queued,
+        VideoDownloadJobStage.download => t.download_task_status_downloading,
+        VideoDownloadJobStage.organize => t.download_task_status_moving,
+        VideoDownloadJobStage.subtitle => t.video_loading_subtitle,
+        VideoDownloadJobStage.import => t.import_step_persisting,
+        VideoDownloadJobStage.scrape => t.video_source_scrape_phase_applying,
+        _ => t.video_discovery_pipeline_idle,
+      };
+
+  Future<List<VideoDownloadSubscriptionRow>>
+      _matchingVideoDiscoverySubscriptions(
+    VideoMediaReference reference,
+  ) async =>
+          (await appModelNoUpdate.database.getVideoDownloadSubscriptions())
+              .where(
+                (VideoDownloadSubscriptionRow row) => _discoveryIdentityMatches(
+                  reference,
+                  row.metadataProvider,
+                  row.externalId,
+                ),
+              )
+              .toList(growable: false);
+
+  bool _discoveryIdentityMatches(
+    VideoMediaReference reference,
+    String? provider,
+    String? externalId,
+  ) {
+    final String normalizedProvider = provider?.trim().toLowerCase() ?? '';
+    final String normalizedId = externalId?.trim().toLowerCase() ?? '';
+    if (normalizedProvider.isEmpty || normalizedId.isEmpty) return false;
+    if (normalizedProvider == reference.providerId.trim().toLowerCase() &&
+        normalizedId == reference.mediaId.trim().toLowerCase()) {
+      return true;
+    }
+    return switch (normalizedProvider) {
+      'tmdb' => normalizedId == reference.tmdbId?.toString(),
+      'anilist' => normalizedId == reference.anilistId?.toString(),
+      'bangumi' => normalizedId == reference.bangumiId?.toString(),
+      'imdb' => normalizedId == reference.imdbId?.trim().toLowerCase(),
+      'tvdb' => normalizedId == reference.tvdbId?.toString(),
+      _ => reference.externalIds.entries.any(
+          (MapEntry<String, String> entry) =>
+              entry.key.trim().toLowerCase() == normalizedProvider &&
+              entry.value.trim().toLowerCase() == normalizedId,
+        ),
+    };
+  }
+
+  Future<VideoMetadataWorkRow?> _findLocalVideoDiscoveryWork(
+    VideoMediaReference reference,
+  ) async {
+    final List<VideoMetadataWorkRow> works =
+        await appModelNoUpdate.database.getAllVideoMetadataWorks();
+    for (final VideoMetadataWorkRow work in works) {
+      if (work.mediaType != reference.mediaKind.name) continue;
+      final List<VideoMetadataProviderIdentityRow> identities =
+          await appModelNoUpdate.database.getVideoMetadataProviderIdentities(
+        workId: work.id,
+      );
+      if (identities.any(
+        (VideoMetadataProviderIdentityRow identity) =>
+            _discoveryIdentityMatches(
+          reference,
+          identity.provider,
+          identity.externalId,
+        ),
+      )) {
+        return work;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _openLocalVideoDiscoveryWork(
+    BuildContext context,
+    VideoDiscoveryItem item,
+  ) async {
+    final VideoMetadataWorkRow? work =
+        await _findLocalVideoDiscoveryWork(item.reference);
+    if (work == null || !context.mounted) return;
+    final String? bookUid = work.bookUid;
+    if (bookUid != null) {
+      final VideoBookRow? book =
+          await appModelNoUpdate.database.getVideoBookByBookUid(bookUid);
+      if (book == null || !context.mounted) return;
+      await openLocalVideoBook(
+        context: context,
+        repo: _videoRepository,
+        bookUid: book.bookUid,
+      );
+      return;
+    }
+    final int? collectionId = work.collectionId;
+    if (collectionId == null) return;
+    final List<MediaCollectionItemRow> items =
+        await appModelNoUpdate.database.getCollectionItems(collectionId);
+    final List<VideoBookRow> members = <VideoBookRow>[];
+    for (final MediaCollectionItemRow entry in items) {
+      if (MediaKind.tryParse(entry.mediaType) != MediaKind.video) continue;
+      final VideoBookRow? book =
+          await appModelNoUpdate.database.getVideoBookByBookUid(entry.entryKey);
+      if (book != null) members.add(book);
+    }
+    if (members.isEmpty || !context.mounted) return;
+    final int index = continueMemberIndex(
+      members
+          .map(
+            (VideoBookRow book) => CollectionMemberProgress(
+              positionMs: book.lastPositionMs,
+              completed: book.completedAt != null,
+            ),
+          )
+          .toList(growable: false),
+    );
+    await openLocalVideoBook(
+      context: context,
+      repo: _videoRepository,
+      bookUid: members[index].bookUid,
+      playlistCollectionId: collectionId,
+    );
+  }
+
   void _notifyVideoLibraryChanged() {
     _videoLibraryRefreshSignal.value++;
   }
 
-  Future<void> _scrapeAllVideosFromSources() async {
+  VideoSourceScrapeTaskController get _videoSourceScrapeController {
+    final VideoSourceScrapeTaskController? existing =
+        _videoSourceScrapeTaskController;
     final String configuredTmdbKey = appModelNoUpdate.prefsRepo
         .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String;
-    final ScrapeBatchSummary? summary = await showVideoScrapeAllDialog(
-      context: context,
-      repository: _videoRepository,
-      configuredTmdbKey: configuredTmdbKey,
+    final VideoSourceScrapeGlobalConfig config =
+        VideoSourceScrapeGlobalConfig.fromPreferences(
+      appModelNoUpdate.prefsRepo,
+      resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
     );
-    if (summary != null && mounted) _notifyVideoLibraryChanged();
+    final String fingerprint = <Object>[
+      config.primaryProvider.name,
+      config.tmdbApiKey,
+      config.fanartApiKey,
+      config.bangumiToken,
+      config.doubanEndpoint,
+      config.doubanToken,
+      config.locale,
+    ].join('\u0000');
+    if (existing != null &&
+        (existing.isBusy ||
+            _videoSourceScrapeConfigFingerprint == fingerprint)) {
+      return existing;
+    }
+    existing?.removeListener(_onVideoSourceScrapeTaskChanged);
+    existing?.dispose();
+    _videoSourceScrapeCoordinator?.close();
+    final VideoSourceScrapeCoordinator coordinator =
+        VideoSourceScrapeCoordinator(
+      database: appModel.database,
+      config: config,
+    );
+    _videoSourceScrapeCoordinator = coordinator;
+    _videoSourceScrapeConfigFingerprint = fingerprint;
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(coordinator)
+          ..addListener(_onVideoSourceScrapeTaskChanged);
+    return _videoSourceScrapeTaskController = controller;
+  }
+
+  void _onVideoSourceScrapeTaskChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _openVideoSourceScrapeTasks() async {
+    if (!mounted || _videoSourceScrapePanelOpen) return;
+    _videoSourceScrapePanelOpen = true;
+    try {
+      await showVideoSourceScrapeTaskPanel(
+        context: context,
+        controller: _videoSourceScrapeController,
+        loadRuns: () => appModel.database.getVideoSourceScrapeRuns(limit: 20),
+        onRetry: (VideoSourceScrapeRunRow run) async {
+          final int? sourceId = run.sourceId;
+          if (sourceId == null) return;
+          final SourceLibraryRow? source =
+              await appModel.database.getMediaSourceById(sourceId);
+          if (source == null) return;
+          await _scrapeVideoSource(source);
+        },
+      );
+    } finally {
+      _videoSourceScrapePanelOpen = false;
+    }
+  }
+
+  Future<SourceScrapeReport> _observeVideoSourceScrape(
+    Future<SourceScrapeReport> task,
+  ) {
+    unawaited(task.then<void>((SourceScrapeReport _) {
+      if (mounted) _notifyVideoLibraryChanged();
+    }, onError: (Object error, StackTrace stackTrace) {
+      ErrorLogService.instance.log(
+        'HomePage.videoSourceScrape',
+        error,
+        stackTrace,
+      );
+    }));
+    return task;
+  }
+
+  Future<void> _scrapeVideoSource(SourceLibraryRow source) async {
+    final ({bool proceed, bool grant}) overwrite =
+        await _confirmProtectedSidecarOverwrite(<SourceLibraryRow>[source]);
+    if (!mounted || !overwrite.proceed) return;
+    final VideoSourceScrapeTaskController controller =
+        _videoSourceScrapeController;
+    _observeVideoSourceScrape(
+      controller.scrapeSource(
+        source,
+        interactive: true,
+        allowProtectedOverwrite: overwrite.grant,
+      ),
+    );
+    if (!mounted) return;
+    HibikiToast.show(msg: t.video_source_scrape_background_started);
+    unawaited(_openVideoSourceScrapeTasks());
+  }
+
+  Future<void> _scrapeAllVideosFromSources() async {
+    final List<SourceLibraryRow> sources =
+        await appModel.database.getMediaSourcesByKind('video');
+    final List<SourceLibraryRow> localSources = sources
+        .where((SourceLibraryRow source) => source.transport == 'local')
+        .toList(growable: false);
+    if (!mounted) return;
+    if (localSources.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.media_source_no_sources)),
+      );
+      return;
+    }
+    final ({bool proceed, bool grant}) overwrite =
+        await _confirmProtectedSidecarOverwrite(localSources);
+    if (!mounted || !overwrite.proceed) return;
+    final VideoSourceScrapeTaskController controller =
+        _videoSourceScrapeController;
+    _observeVideoSourceScrape(
+      controller.scrapeAllSources(
+        localSources,
+        interactive: true,
+        allowProtectedOverwrite: overwrite.grant,
+      ),
+    );
+    if (!mounted) return;
+    HibikiToast.show(msg: t.video_source_scrape_background_started);
+    unawaited(_openVideoSourceScrapeTasks());
+  }
+
+  Future<({bool proceed, bool grant})> _confirmProtectedSidecarOverwrite(
+    Iterable<SourceLibraryRow> sources,
+  ) async {
+    bool requested = false;
+    for (final SourceLibraryRow source in sources) {
+      final VideoSourceScrapeSettingRow? settings =
+          await appModel.database.getVideoSourceScrapeSettings(source.id);
+      if (settings?.allowExternalOverwrite == true &&
+          (settings?.nfoPolicy == 'overwrite' ||
+              settings?.imagePolicy == 'overwrite')) {
+        requested = true;
+        break;
+      }
+    }
+    if (!requested) return (proceed: true, grant: false);
+    if (!mounted) return (proceed: false, grant: false);
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+        title: Text(
+          t.video_source_scrape_external_overwrite_confirm_title,
+        ),
+        content: Text(
+          t.video_source_scrape_external_overwrite_confirm_body,
+        ),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: dialogContext,
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(t.dialog_cancel),
+          ),
+          adaptiveDialogAction(
+            context: dialogContext,
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(t.dialog_replace),
+          ),
+        ],
+      ),
+    );
+    return (proceed: confirmed == true, grant: confirmed == true);
+  }
+
+  /// Widget dispose 不能 await；先标记中断并让在途 Future 到下一取消边界，再关闭
+  /// HTTP client/ChangeNotifier，避免已释放 notifier 或已关闭 client 被异步任务继续用。
+  void _shutdownVideoSourceScrape() {
+    final VideoSourceScrapeTaskController? controller =
+        _videoSourceScrapeTaskController;
+    final VideoSourceScrapeCoordinator? coordinator =
+        _videoSourceScrapeCoordinator;
+    _videoSourceScrapeTaskController = null;
+    _videoSourceScrapeCoordinator = null;
+    _videoSourceScrapeConfigFingerprint = null;
+    if (controller == null) {
+      coordinator?.close();
+      return;
+    }
+    controller.removeListener(_onVideoSourceScrapeTaskChanged);
+    controller.markInterrupted();
+    final Future<SourceScrapeReport>? active = controller.activeTask;
+    if (active == null) {
+      controller.dispose();
+      coordinator?.close();
+      return;
+    }
+    unawaited(active
+        .then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    )
+        .whenComplete(() {
+      controller.dispose();
+      coordinator?.close();
+    }));
+  }
+
+  Future<void> _onVideoSourceScanCompleted(
+    SourceLibraryRow source,
+    SourceScanSummary summary,
+  ) async {
+    _notifyVideoLibraryChanged();
+    if (!summary.succeeded) return;
+    final VideoSourceScrapeSettingRow? settings =
+        await appModel.database.getVideoSourceScrapeSettings(source.id);
+    if (!mounted ||
+        settings?.enabled == false ||
+        settings?.autoAfterScan != true ||
+        _videoSourceScrapeController.isRunning) {
+      return;
+    }
+    _observeVideoSourceScrape(
+      _videoSourceScrapeController.scrapeSource(source),
+    );
   }
 
   Widget buildBody() {
@@ -1077,6 +2004,26 @@ class _HomePageState extends BasePageState<HomePage>
             key: ValueKey<HomeTab>(visible),
             child: _buildTabContent(visible),
           ),
+        if (_videoSourceScrapeTaskController case final controller?)
+          if (controller.isBusy)
+            Positioned(
+              right: 20,
+              bottom: 20,
+              child: SafeArea(
+                child: FloatingActionButton.small(
+                  key: const ValueKey<String>(
+                    'video-source-background-task-panel',
+                  ),
+                  tooltip: t.video_source_scrape_tasks_open,
+                  onPressed: () => unawaited(_openVideoSourceScrapeTasks()),
+                  child: Icon(
+                    controller.pendingConfirmation == null
+                        ? Icons.sync
+                        : Icons.rule_folder_outlined,
+                  ),
+                ),
+              ),
+            ),
       ],
     );
   }
@@ -1086,36 +2033,23 @@ class _HomePageState extends BasePageState<HomePage>
       case HomeTab.home:
         return HomeDashboardPage(videoRepo: _videoRepository);
       case HomeTab.video:
-        // 视频是「媒体库 + 来源」两视图（与书 / 漫画同一套导航结构）。视频没有在线
-        // 浏览源——番剧下载走 torrent 栈、入口在下载页——所以不放「浏览」空壳 tab。
-        return MediaLibraryShell(
-          focusIdPrefix: 'video-library-view',
-          views: <MediaLibraryViewSpec>[
-            MediaLibraryViewSpec(
-              kind: MediaLibraryViewKind.library,
-              label: t.library_view_media,
-              builder: (BuildContext context, Widget navigation) =>
-                  HomeVideoPage(
-                repo: _videoRepository,
-                navigation: navigation,
-                libraryRefreshSignal: _videoLibraryRefreshSignal,
-              ),
-            ),
-            MediaLibraryViewSpec(
-              kind: MediaLibraryViewKind.sources,
-              label: t.library_view_sources,
-              builder: (BuildContext context, Widget navigation) =>
-                  MediaSourcesPage(
-                mediaKind: 'video',
-                navigation: navigation,
-                onScrapeAll: _scrapeAllVideosFromSources,
-                onLibraryChanged: _notifyVideoLibraryChanged,
-              ),
-            ),
-          ],
+        return VideoLibraryShell(
+          repository: _videoRepository,
+          libraryRefreshSignal: _videoLibraryRefreshSignal,
+          scrapeTaskController: _videoSourceScrapeController,
+          onScrapeAll: _scrapeAllVideosFromSources,
+          onScrapeSource: _scrapeVideoSource,
+          onVideoScanCompleted: _onVideoSourceScanCompleted,
+          onOpenScrapeTasks: () => unawaited(_openVideoSourceScrapeTasks()),
+          onLibraryChanged: _notifyVideoLibraryChanged,
+          discoveryController: _productionVideoDiscoveryController,
+          discoveryActions: _productionVideoDiscoveryActions,
         );
       case HomeTab.downloads:
-        return const DownloadsPage();
+        return DownloadsPage(
+          key: ValueKey<String>('downloads-$_downloadsGeneration'),
+          initialTabIndex: _downloadsInitialTabIndex,
+        );
       case HomeTab.dictionaries:
         return HomeDictionaryPage(
           focusSignal: _dictFocusSignal,

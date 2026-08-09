@@ -34,6 +34,10 @@ void main() {
         'jimaku_api_key',
         'manga_cloud_ocr_api_key',
         'video_scraper_tmdb_api_key',
+        'video_metadata_fanart_api_key',
+        'video_metadata_bangumi_token',
+        'video_metadata_douban_authorized_token',
+        'video_metadata_douban_authorized_endpoint',
       ];
       for (final String key in previouslyLeaking) {
         expect(PrefRedactionPolicy.isDeviceLocalOrCredential(key), isTrue,
@@ -83,6 +87,9 @@ void main() {
         'eink_mode',
         'reader_font_size',
         'current_home_tab_index',
+        // 视频刮削的普通行为偏好应继续随备份/Profile 迁移；只有凭据留在设备。
+        'video_metadata_primary_provider',
+        'video_metadata_locale',
       ];
       for (final String key in mustTravel) {
         expect(PrefRedactionPolicy.isDeviceLocalOrCredential(key), isFalse,

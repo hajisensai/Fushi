@@ -109,16 +109,33 @@ int? parseSubtitleEpisode(String fileName) {
   return parseVideoFilename(stem).episode;
 }
 
-/// 解析 Jimaku entries 响应（JSON 数组）为 [JimakuEntry] 列表。纯函数，容错。
-List<JimakuEntry> parseJimakuEntries(String body) {
+/// 解析 Jimaku entries 响应（JSON 数组）为 [JimakuEntry] 列表。
+/// 默认保留历史 fail-open 语义；provider 聚合层用 [strict] 区分「合法空数组」
+/// 与损坏响应。
+List<JimakuEntry> parseJimakuEntries(String body, {bool strict = false}) {
   try {
     final dynamic json = jsonDecode(body);
-    if (json is! List) return const <JimakuEntry>[];
+    if (json is! List) {
+      throw const FormatException('Jimaku entries response is not an array');
+    }
     final List<JimakuEntry> out = <JimakuEntry>[];
-    for (final dynamic e in json) {
-      if (e is! Map) continue;
+    for (int index = 0; index < json.length; index++) {
+      final dynamic e = json[index];
+      if (e is! Map) {
+        if (strict) {
+          throw FormatException(
+              'Jimaku entry at index $index is not an object');
+        }
+        continue;
+      }
       final dynamic id = e['id'];
-      if (id is! int) continue;
+      if (id is! int) {
+        if (strict) {
+          throw FormatException(
+              'Jimaku entry at index $index has no integer id');
+        }
+        continue;
+      }
       final String primaryName = (e['name'] as String?)?.trim() ?? '';
       final String englishName = (e['english_name'] as String?)?.trim() ?? '';
       out.add(JimakuEntry(
@@ -132,10 +149,16 @@ List<JimakuEntry> parseJimakuEntries(String body) {
       ));
     }
     return out;
-  } catch (e) {
+  } catch (e, stack) {
     // fail-open：解析失败返回空列表（同旧行为），补 diagnostic 便于排障。
     ErrorLogService.instance
         .logDiagnostic('JimakuClient.parseJimakuEntries', e);
+    if (strict) {
+      Error.throwWithStackTrace(
+        const JimakuRequestException('invalid search response'),
+        stack,
+      );
+    }
     return const <JimakuEntry>[];
   }
 }
@@ -354,14 +377,26 @@ class JimakuClient {
       };
 
   /// 按 AniList id 搜 Jimaku 条目。
-  Future<List<JimakuEntry>> searchByAnilistId(int anilistId) async {
-    return _searchEntries(<String, String>{'anilist_id': '$anilistId'});
+  Future<List<JimakuEntry>> searchByAnilistId(
+    int anilistId, {
+    bool throwOnError = false,
+  }) async {
+    return _searchEntries(
+      <String, String>{'anilist_id': '$anilistId'},
+      throwOnError: throwOnError,
+    );
   }
 
   /// 按文本搜 Jimaku 条目（AniList 匹配不到时的回退）。
-  Future<List<JimakuEntry>> searchByQuery(String query) async {
+  Future<List<JimakuEntry>> searchByQuery(
+    String query, {
+    bool throwOnError = false,
+  }) async {
     if (query.trim().isEmpty) return const <JimakuEntry>[];
-    return _searchEntries(<String, String>{'query': query});
+    return _searchEntries(
+      <String, String>{'query': query},
+      throwOnError: throwOnError,
+    );
   }
 
   /// 「先按 AniList id 搜、搜不到再按文本搜」的收敛入口——Jimaku 条目只有被人工挂上
@@ -372,30 +407,51 @@ class JimakuClient {
   Future<List<JimakuEntry>> searchEntries({
     int? anilistId,
     List<String> queryFallbacks = const <String>[],
+    bool throwOnError = false,
   }) async {
     if (anilistId != null) {
-      final List<JimakuEntry> byId = await searchByAnilistId(anilistId);
+      final List<JimakuEntry> byId = await searchByAnilistId(
+        anilistId,
+        throwOnError: throwOnError,
+      );
       if (byId.isNotEmpty) return byId;
     }
     for (final String query in queryFallbacks) {
       if (query.trim().isEmpty) continue;
-      final List<JimakuEntry> byQuery = await searchByQuery(query);
+      final List<JimakuEntry> byQuery = await searchByQuery(
+        query,
+        throwOnError: throwOnError,
+      );
       if (byQuery.isNotEmpty) return byQuery;
     }
     return const <JimakuEntry>[];
   }
 
-  Future<List<JimakuEntry>> _searchEntries(Map<String, String> params) async {
+  Future<List<JimakuEntry>> _searchEntries(
+    Map<String, String> params, {
+    required bool throwOnError,
+  }) async {
     try {
       final Uri uri =
           Uri.parse('$_base/entries/search').replace(queryParameters: params);
       final http.Response res = await _client.get(uri, headers: _headers);
-      if (res.statusCode != 200) return const <JimakuEntry>[];
+      if (res.statusCode != 200) {
+        if (throwOnError) {
+          throw JimakuRequestException(
+            'search entries failed',
+            statusCode: res.statusCode,
+          );
+        }
+        return const <JimakuEntry>[];
+      }
       return parseJimakuEntries(
-          utf8.decode(res.bodyBytes, allowMalformed: true));
-    } catch (e) {
+        utf8.decode(res.bodyBytes, allowMalformed: true),
+        strict: throwOnError,
+      );
+    } catch (e, stack) {
       // fail-open：预期可失败的网络路径，返回空列表（同旧行为），补 diagnostic。
       ErrorLogService.instance.logDiagnostic('JimakuClient.searchEntries', e);
+      if (throwOnError) Error.throwWithStackTrace(e, stack);
       return const <JimakuEntry>[];
     }
   }
@@ -435,15 +491,27 @@ class JimakuClient {
   }
 
   /// 下载 [fileUrl] 的字节；失败返回 null。
-  Future<Uint8List?> downloadFile(String fileUrl) async {
+  Future<Uint8List?> downloadFile(
+    String fileUrl, {
+    bool throwOnError = false,
+  }) async {
     try {
       final http.Response res =
           await _client.get(Uri.parse(fileUrl), headers: _headers);
-      if (res.statusCode != 200) return null;
+      if (res.statusCode != 200) {
+        if (throwOnError) {
+          throw JimakuRequestException(
+            'subtitle download failed',
+            statusCode: res.statusCode,
+          );
+        }
+        return null;
+      }
       return res.bodyBytes;
-    } catch (e) {
+    } catch (e, stack) {
       // fail-open：预期可失败的网络路径，返回 null（同旧行为），补 diagnostic。
       ErrorLogService.instance.logDiagnostic('JimakuClient.downloadFile', e);
+      if (throwOnError) Error.throwWithStackTrace(e, stack);
       return null;
     }
   }

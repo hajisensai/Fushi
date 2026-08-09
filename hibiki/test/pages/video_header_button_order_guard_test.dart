@@ -95,7 +95,7 @@ void main() {
     expect(collectionsIdx, lessThan(statsIdx), reason: '视频收藏夹按钮应在统计之前');
   });
 
-  test('视频空库不再提供单视频 CTA，只提示从来源添加文件夹', () {
+  test('视频空库只提供前往来源的目录 CTA，不提供单视频导入', () {
     final String body = methodBody(
       videoSrc.readAsStringSync(),
       'Widget _buildEmpty()',
@@ -103,7 +103,9 @@ void main() {
     expect(body, contains('t.video_library_empty_source_hint'));
     expect(body, isNot(contains('home_video_empty_import')));
     expect(body, isNot(contains('t.video_import_action')));
-    expect(body, isNot(contains('FilledButton')));
+    expect(body, contains('widget.onOpenSources'));
+    expect(body, contains('t.media_source_add'));
+    expect(body, contains('Icons.create_new_folder_outlined'));
   });
 
   test('播放器顶栏片段导出按钮紧挨截图按钮', () {

@@ -16,10 +16,12 @@ class InterconnectServiceConfigSnapshot {
   ///
   /// `yomitan_api_key` is deliberately absent: it protects this device's local
   /// inbound API. Bangumi/Anki credentials and `media_source_secret_*` are also
-  /// device-scoped or have external write authority and remain local.
+  /// device-scoped or have external write authority and remain local. Video
+  /// metadata provider keys/tokens (including the legacy TMDB override) and an
+  /// authorized Douban endpoint are likewise device-local and never enter this
+  /// payload.
   static const Set<String> sharedPreferenceKeys = <String>{
     'jimaku_api_key',
-    'video_scraper_tmdb_api_key',
     'qb_connection_config',
     'manga_online_catalog_base_url',
     'manga_online_catalog_enabled',
@@ -27,7 +29,6 @@ class InterconnectServiceConfigSnapshot {
 
   static final Map<String, String> _defaultRawValues = <String, String>{
     'jimaku_api_key': PrefCodec.encode(''),
-    'video_scraper_tmdb_api_key': PrefCodec.encode(''),
     'qb_connection_config': PrefCodec.encode(''),
     'manga_online_catalog_base_url': PrefCodec.encode('https://mokuro.moe'),
     'manga_online_catalog_enabled': PrefCodec.encode(true),

@@ -91,5 +91,25 @@ void main() {
         reason: '进度更新不改变 uid 集合',
       );
     });
+
+    test('notifyVideoLibraryChanged emits without changing business columns',
+        () async {
+      final db = await _openDb();
+      await db.upsertVideoBook(_book());
+      final emissions = <List<String>>[];
+      final sub = db.watchVideoBookUids().listen(emissions.add);
+      addTearDown(sub.cancel);
+      await pumpEventQueue();
+      expect(emissions, hasLength(1));
+
+      final before = await db.getVideoBookByBookUid('video/1');
+      db.notifyVideoLibraryChanged();
+      await pumpEventQueue();
+
+      expect(emissions, hasLength(2));
+      expect(emissions.last, <String>['video/1']);
+      final after = await db.getVideoBookByBookUid('video/1');
+      expect(after, before, reason: '显式刷新只能发表级通知，不能借机改业务列');
+    });
   });
 }
