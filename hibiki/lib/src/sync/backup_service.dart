@@ -970,6 +970,7 @@ class BackupService {
     Set<BackupCategory>? categories,
     Set<String>? bookKeys,
     Set<String>? videoKeys,
+    bool keepDeviceLocalData = false,
   }) async {
     bool wants(BackupCategory c) =>
         categories == null || categories.contains(c);
@@ -1024,7 +1025,7 @@ class BackupService {
       // (TODO-1195 part C). This keeps the switch consistent: a book that isn't
       // packed never appears after import.
       final bool includeBooks = wants(BackupCategory.books);
-      await _stripCredentials(tmpDir.path);
+      if (!keepDeviceLocalData) await _stripCredentials(tmpDir.path);
       if (!includeDictionary) {
         await _stripDictionaryState(tmpDir.path);
       }
