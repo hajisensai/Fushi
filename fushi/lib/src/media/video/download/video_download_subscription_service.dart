@@ -823,9 +823,17 @@ _SubscriptionLogicalItem? _logicalItem(
   if (subscription.season != null && subscription.season != season) {
     return null;
   }
-  if (subscription.startAfterEpisode != null &&
-      episode <= subscription.startAfterEpisode!) {
-    return null;
+  if (subscription.startAfterEpisode != null) {
+    // BUG-1485：新版发现订阅页会用用户选中的 release 集数预填此字段，且不会
+    // 另外把该 release 直接入队。旧判断 `episode <= anchor` 因而必然跳过用户
+    // 选中的首集（选第 1 集，卡片变成“第 1 集之后”，实际从第 2 集开始）。
+    // `library` 是新版持久流水线创建的订阅，字段按“从该集开始”解释；legacy
+    // 订阅是在已推送当前种子后创建，仍保持“该集之后”的历史契约。
+    final bool inclusiveStart = subscription.organizationPolicy == 'library';
+    final bool beforeWindow = inclusiveStart
+        ? episode < subscription.startAfterEpisode!
+        : episode <= subscription.startAfterEpisode!;
+    if (beforeWindow) return null;
   }
   return _SubscriptionLogicalItem(
     key: 'S${season.toString().padLeft(2, '0')}'

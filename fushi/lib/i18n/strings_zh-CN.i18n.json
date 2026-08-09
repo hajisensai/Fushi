@@ -2882,6 +2882,7 @@
   "video_scrape_collection_rename_keep": "保留当前名称",
   "video_scrape_collection_rename_confirm": "重命名",
   "download_task_toggle_failed": "暂停/恢复操作失败",
+  "download_subscription_start_episode": "从第 $episode 集开始",
   "download_task_eta": "剩余",
   "download_task_ratio": "分享率",
   "download_task_status_downloading": "下载中",

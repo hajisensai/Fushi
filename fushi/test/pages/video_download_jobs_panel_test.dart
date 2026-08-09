@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart';
 
 final class _MemoryJobsStore implements VideoDownloadJobsPanelStore {
@@ -127,7 +128,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Downloading show'), findsOneWidget);
-    expect(find.text(VideoDownloadJobLifecycle.active), findsOneWidget);
+    expect(find.text(t.download_task_status_downloading), findsOneWidget);
     expect(find.text(VideoDownloadJobStage.download), findsOneWidget);
     expect(find.text('37%'), findsOneWidget);
     expect(
@@ -137,7 +138,7 @@ void main() {
     expect(find.text(VideoDownloadJobLifecycle.needsAttention), findsOneWidget);
     expect(find.text(VideoDownloadJobStage.subtitle), findsOneWidget);
     expect(find.text('72%'), findsOneWidget);
-    expect(find.text(VideoDownloadJobLifecycle.completed), findsOneWidget);
+    expect(find.text(t.download_task_status_completed), findsOneWidget);
     expect(find.text('100%'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -256,6 +257,83 @@ void main() {
       const ValueKey<String>('video-download-job-wide'),
     );
     expect(tester.getSize(card).width, greaterThan(1300));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('shows real torrent size, status, peers, rates, ETA and ratio',
+      (WidgetTester tester) async {
+    final _MemoryJobsStore store = _MemoryJobsStore();
+    addTearDown(store.close);
+    await _pumpPanel(
+      tester,
+      size: const Size(1400, 800),
+      panel: VideoDownloadJobsPanel(
+        store: store,
+        metricsLoader: (Iterable<VideoDownloadJobRow> jobs) async =>
+            <String, TorrentSnapshot>{
+          'metrics': const TorrentSnapshot(
+            hash: 'hash',
+            name: 'Metrics release',
+            progress: 0.5,
+            state: 'downloading',
+            savePath: r'D:\Downloads',
+            contentPath: r'D:\Downloads\Metrics release',
+            amountLeft: 10485760,
+            totalSizeBytes: 2147483648,
+            downRateBps: 1048576,
+            upRateBps: 524288,
+            downloadedBytes: 1073741824,
+            uploadedBytes: 536870912,
+            numSeeds: 3,
+            swarmSeeds: 20,
+            numLeechs: 7,
+            swarmLeechs: 42,
+          ),
+        },
+      ),
+    );
+    store.emit(<VideoDownloadJobRow>[
+      _job(id: 'metrics', title: 'Metrics task'),
+    ]);
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text(t.download_task_status_downloading), findsOneWidget);
+    expect(find.text('2.0 GB'), findsOneWidget);
+    expect(find.text('3 (20)'), findsOneWidget);
+    expect(find.text('7 (42)'), findsOneWidget);
+    expect(find.text('1.0 MB/s'), findsOneWidget);
+    expect(find.text('512.0 KB/s'), findsOneWidget);
+    expect(find.text('10s'), findsOneWidget);
+    expect(find.text('0.50'), findsOneWidget);
+    expect(find.text('50%'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('falls back to durable selected file size without live backend',
+      (WidgetTester tester) async {
+    final _MemoryJobsStore store = _MemoryJobsStore();
+    addTearDown(store.close);
+    await _pumpPanel(
+      tester,
+      panel: VideoDownloadJobsPanel(
+        store: store,
+        selectedSizeLoader: (Iterable<VideoDownloadJobRow> jobs) async =>
+            <String, int>{'history': 659721721},
+      ),
+    );
+    store.emit(<VideoDownloadJobRow>[
+      _job(
+        id: 'history',
+        title: 'Historical completed task',
+        lifecycle: VideoDownloadJobLifecycle.completed,
+      ),
+    ]);
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('629.2 MB'), findsOneWidget);
+    expect(find.text(t.download_task_status_completed), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

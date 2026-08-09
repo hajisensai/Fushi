@@ -49,6 +49,7 @@ List<TorrentSnapshot> parseQbTorrentInfos(String body) {
         contentPath:
             e['content_path'] is String ? e['content_path'] as String : '',
         amountLeft: e['amount_left'] is int ? e['amount_left'] as int : -1,
+        totalSizeBytes: e['total_size'] is int ? e['total_size'] as int : -1,
         // BUG-1294：qb 一直返回这些字段，此前解析时被丢弃。
         downRateBps: e['dlspeed'] is int ? e['dlspeed'] as int : 0,
         upRateBps: e['upspeed'] is int ? e['upspeed'] as int : 0,

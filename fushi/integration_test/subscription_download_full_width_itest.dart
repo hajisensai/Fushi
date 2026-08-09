@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/main.dart' as app;
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/download/video_resource_registry.dart';
@@ -157,6 +158,11 @@ void main() {
       expect(
         tester.getSize(jobCard).width,
         greaterThan(downloadsSize.width * 0.9),
+      );
+      expect(
+        find.text(t.anime_download_no_tasks),
+        findsNothing,
+        reason: '旧番剧队列为空时不得显示第二个空态并遮挡新版任务列表',
       );
       await _expectShot(tester, 'subscription-download-full-width-tasks');
 
