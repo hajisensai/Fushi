@@ -242,19 +242,24 @@ class AppModelLibraryHostService
 
   // ── 书籍 ─────────────────────────────────────────────────────────────────
 
-  /// bookKey → 标签名列表 的一趟映射（TODO-1165，避免逐书 N+1 查询）。
-  Future<Map<String, List<String>>> _tagNamesByBookKey() async {
+  /// 某 kind 的 entryKey → 标签名列表 的一趟映射（TODO-1165，避免逐条 N+1 查询）。
+  Future<Map<String, List<String>>> _tagNamesForKind(TagHostKind kind) async {
     final Map<int, String> nameById = <int, String>{
       for (final BookTagRow t in await _db.getAllTags()) t.id: t.name,
     };
     final Map<String, List<String>> result = <String, List<String>>{};
-    for (final BookTagMappingRow m in await _db.getAllBookTagMappings()) {
+    for (final TagAssignmentRow m in await _db.getAllTagAssignments()) {
+      if (m.mediaKind != kind.dbValue) continue;
       final String? name = nameById[m.tagId];
       if (name == null) continue;
-      (result[m.bookKey] ??= <String>[]).add(name);
+      (result[m.entryKey] ??= <String>[]).add(name);
     }
     return result;
   }
+
+  /// bookKey → 标签名列表。
+  Future<Map<String, List<String>>> _tagNamesByBookKey() =>
+      _tagNamesForKind(TagHostKind.epub);
 
   /// `'<mediaType>|<entryKey>'` → 该条目的**主合集归属**（多端库联合视图 §2.3
   /// 任务5.1）的一趟映射。归属跟随 [FushiDatabase.getPrimaryCollectionIdByEntry] 的
@@ -295,19 +300,8 @@ class AppModelLibraryHostService
   }
 
   /// videoBookUid → 标签名列表 的一趟映射（TODO-1165）。
-  Future<Map<String, List<String>>> _tagNamesByVideoUid() async {
-    final Map<int, String> nameById = <int, String>{
-      for (final BookTagRow t in await _db.getAllTags()) t.id: t.name,
-    };
-    final Map<String, List<String>> result = <String, List<String>>{};
-    for (final VideoBookTagMappingRow m
-        in await _db.getAllVideoBookTagMappings()) {
-      final String? name = nameById[m.tagId];
-      if (name == null) continue;
-      (result[m.bookUid] ??= <String>[]).add(name);
-    }
-    return result;
-  }
+  Future<Map<String, List<String>>> _tagNamesByVideoUid() =>
+      _tagNamesForKind(TagHostKind.video);
 
   /// host 当前书库清单（从 EpubBooks 表读）。
   /// [RemoteBookInfo.hasContent] 为 true 当且仅当该书存在可导出的 EPUB 根目录。

@@ -395,39 +395,42 @@ class BookTags extends Table {
   IntColumn get createdAt => integer()();
 }
 
-// ── book_tag_mappings ─────────────────────────────────────────────
-@DataClassName('BookTagMappingRow')
-class BookTagMappings extends Table {
-  IntColumn get id => integer().autoIncrement()();
-  TextColumn get bookKey =>
-      text().references(EpubBooks, #bookKey, onDelete: KeyAction.cascade)();
+// ── tag_assignments（v79：五张标签映射表合一） ─────────────────────
+/// 标签 ↔ 宿主 的统一多对多映射，取代 v79 前的五张同形表
+/// （book/srt/video/collection/galgame *_tag_mappings）。标签定义仍是共享的
+/// [BookTags] 池。
+///
+/// 设计拍板（2026-08 数据层重构，用户令合并并重新决策差异）：
+///  - **[mediaKind] + [entryKey] 逻辑外键**（仓库既定惯例，同
+///    [ShelfEntries].entryKey / [MediaCollectionItems].entryKey）：epub=bookKey /
+///    srt=SrtBooks.uid（v79 起弃本机自增 int id，换跨设备稳定的 uid）/
+///    video=bookUid / collection=MediaCollections.id 字符串化 / game=Galgames.id。
+///    宿主删除经各删除路径显式清理（不再依赖五张表各自的 DB cascade），读取期
+///    过滤兜底；[tagId] 对 [BookTags] 的真 FK 保留（删标签仍 cascade）。
+///  - **[addedAt] 统一都记**：记的是「何时打的标签」这一事实，写入成本为零。
+///    旧决策让 game/collection 不带时钟（怕被误读成在同步），代价是把「不进
+///    sync」编码进表的形状里、真要同步时只能回填 0 丢失真实时间。哪些 kind
+///    参与 sync 由合并层一处写死（当前仅 epub/video；game/collection 不进
+///    live-sync 的事实不变）。旧行迁移填 0（最古 add，语义同旧 book/video 表）。
+///  - 墓碑不变：[BookTagMembershipTombstones] 本就是 (itemKey, mediaType,
+///    tagName) 通用形，天然覆盖全部 kind。
+@DataClassName('TagAssignmentRow')
+class TagAssignments extends Table {
+  /// 宿主种类：'epub' | 'srt' | 'video' | 'collection' | 'game'。
+  TextColumn get mediaKind => text()();
+
+  /// 宿主稳定身份（值域见类 doc）。
+  TextColumn get entryKey => text()();
+
   IntColumn get tagId =>
       integer().references(BookTags, #id, onDelete: KeyAction.cascade)();
 
-  /// 该映射被加入的毫秒戳（TODO tags-sync：LWW-element-set 的 add 时钟——与
-  /// [BookTagMembershipTombstones].deletedAt 比较决定 add-wins/remove-wins，防跨设备
-  /// 复活/误删）。旧行迁移填 0（最古 add，任何带时间戳的远端移除都能压过）。
+  /// 该映射被加入的毫秒戳（epub/video 域是 LWW-element-set 的 add 时钟——与
+  /// [BookTagMembershipTombstones].deletedAt 比较决定 add-wins/remove-wins）。
   IntColumn get addedAt => integer().withDefault(const Constant(0))();
 
   @override
-  List<Set<Column>> get uniqueKeys => [
-        {bookKey, tagId},
-      ];
-}
-
-// ── srt_book_tag_mappings ─────────────────────────────────────────
-@DataClassName('SrtBookTagMappingRow')
-class SrtBookTagMappings extends Table {
-  IntColumn get id => integer().autoIncrement()();
-  IntColumn get srtBookId =>
-      integer().references(SrtBooks, #id, onDelete: KeyAction.cascade)();
-  IntColumn get tagId =>
-      integer().references(BookTags, #id, onDelete: KeyAction.cascade)();
-
-  @override
-  List<Set<Column>> get uniqueKeys => [
-        {srtBookId, tagId},
-      ];
+  Set<Column> get primaryKey => {mediaKind, entryKey, tagId};
 }
 
 // ── profiles ────────────────────────────────────────────────────────
@@ -550,45 +553,8 @@ class VideoBooks extends Table {
   Set<Column> get primaryKey => {bookUid};
 }
 
-// ── video_book_tag_mappings ───────────────────────────────────────
-// 视频书 ↔ 标签 多对多映射。标签定义复用共享的 [BookTags]，与 EPUB
-// （[BookTagMappings]）、SRT（[SrtBookTagMappings]）共用同一标签池。
-@DataClassName('VideoBookTagMappingRow')
-class VideoBookTagMappings extends Table {
-  IntColumn get id => integer().autoIncrement()();
-
-  /// 视频书外键（v57 起与被引列 [VideoBooks].bookUid 同名；旧列名 video_book_uid）。
-  TextColumn get bookUid =>
-      text().references(VideoBooks, #bookUid, onDelete: KeyAction.cascade)();
-  IntColumn get tagId =>
-      integer().references(BookTags, #id, onDelete: KeyAction.cascade)();
-
-  /// 该映射被加入的毫秒戳（LWW-element-set 的 add 时钟，见 [BookTagMappings].addedAt）。
-  IntColumn get addedAt => integer().withDefault(const Constant(0))();
-
-  @override
-  List<Set<Column>> get uniqueKeys => [
-        {bookUid, tagId},
-      ];
-}
-
-// ── collection_tag_mappings ───────────────────────────────────────
-// 合集 ↔ 标签 多对多映射。标签定义复用共享的 [BookTags]，与 EPUB
-// （[BookTagMappings]）、SRT（[SrtBookTagMappings]）、视频（[VideoBookTagMappings]）
-// 共用同一标签池。合集删除 / 标签删除经外键 cascade 自动清理本表。
-@DataClassName('CollectionTagMappingRow')
-class CollectionTagMappings extends Table {
-  IntColumn get id => integer().autoIncrement()();
-  IntColumn get collectionId => integer()
-      .references(MediaCollections, #id, onDelete: KeyAction.cascade)();
-  IntColumn get tagId =>
-      integer().references(BookTags, #id, onDelete: KeyAction.cascade)();
-
-  @override
-  List<Set<Column>> get uniqueKeys => [
-        {collectionId, tagId},
-      ];
-}
+// （v79：video_book_tag_mappings / collection_tag_mappings 已并入
+// [TagAssignments]，旧表只活在迁移阶梯的冻结 SQL 里。）
 
 // ── favorite_words ──────────────────────────────────────────────────
 /// 查词弹窗「收藏」的词条（书内阅读与视频共用同一套，按 [sourceType] 区分）。
@@ -2341,39 +2307,11 @@ class GalgameSessions extends Table {
   TextColumn get dateKey => text()();
 }
 
-// ── galgame_tag_mappings ────────────────────────────────────────────
-/// v59（BUG-1113「游戏没有标签」）：游戏 ↔ **用户标签** 多对多映射。标签定义复用
-/// 共享的 [BookTags]，与 EPUB（[BookTagMappings]）、SRT（[SrtBookTagMappings]）、
-/// 视频（[VideoBookTagMappings]）、合集（[CollectionTagMappings]）**同一个标签池**
-/// ——这正是本表存在的理由：上层筛选栏 / 标签管理页早已是四种媒体共用，唯独游戏
-/// 没有落表，于是接不进来（不是 UI 忘接，是 schema 缺口）。
-///
-/// 与游戏**元数据标签**（bgm/vndb 刮削来的字符串，存 [GalgameSources].dataJson +
-/// [Galgames].customDataJson，由 `galgame_library_query.dart` 按名筛选）是两个正交
-/// 维度，刻意不合并：元数据标签是外部事实、动辄上百个且随刮削变动，塞进用户标签池
-/// 会污染书/视频共享的那份手工标签。
-///
-/// **刻意不带 `addedAt`**（对比 [BookTagMappings] / [VideoBookTagMappings]）：那一列
-/// 是 LWW-element-set 的 add 时钟，只为跨端同步裁决而存在。游戏身份 [Galgames].id 是
-/// 添加时刻微秒戳，**本机局域身份**——`galgames` 整张表既不进 live-sync 清单也不进
-/// 备份合并导入，故游戏标签同样不跨端传播、不需要墓碑（[BookTagMembershipTombstones]
-/// 不覆盖游戏）。全量备份恢复走整库文件拷贝，本表随之原样还原。加一个没有消费者的
-/// 时钟列只会让人误以为它在同步。同款取舍见 [CollectionTagMappings]。
-///
-/// 删游戏 / 删标签经外键 cascade 自动清理本表。
-@DataClassName('GalgameTagMappingRow')
-class GalgameTagMappings extends Table {
-  IntColumn get id => integer().autoIncrement()();
-  TextColumn get gameId =>
-      text().references(Galgames, #id, onDelete: KeyAction.cascade)();
-  IntColumn get tagId =>
-      integer().references(BookTags, #id, onDelete: KeyAction.cascade)();
-
-  @override
-  List<Set<Column>> get uniqueKeys => [
-        {gameId, tagId},
-      ];
-}
+// （v79：galgame_tag_mappings 已并入 [TagAssignments]。与游戏**元数据标签**
+// （bgm/vndb 刮削字符串，存 [GalgameSources].dataJson + [Galgames].customDataJson）
+// 仍是两条正交轴，刻意不合并：元数据标签是外部事实、动辄上百个且随刮削变动，
+// 塞进用户标签池会污染书/视频共享的那份手工标签。游戏标签依旧不进 live-sync /
+// 备份合并导入（合并层按 kind 过滤），全量备份恢复走整库文件拷贝原样还原。）
 
 // ── manga_extension_stores ──────────────────────────────────────────
 /// v65：用户自行添加的 Mihon 扩展仓库。Fushi 不预置第三方仓库。

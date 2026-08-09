@@ -159,7 +159,7 @@ void main() {
     final SrtBook tagged = await seedSrt('srtHit', '命中的有声书');
     await seedEpub('epubMiss', '未命中的书');
     final int tagId = await db.createTag('日语', 0xFF112233);
-    await db.addTagToSrtBook(tagged.id!, tagId);
+    await db.addTagToSrtBook(tagged.uid, tagId);
 
     await pumpPage(tester, selectedTagIds: <int>{tagId});
 

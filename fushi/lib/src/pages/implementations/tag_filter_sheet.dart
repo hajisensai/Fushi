@@ -22,36 +22,31 @@ final allTagsProvider = FutureProvider<List<BookTagRow>>((ref) async {
   return db.getAllTags();
 });
 
-final bookTagMapProvider =
-    FutureProvider<Map<String, List<BookTagRow>>>((ref) async {
-  final db = ref.watch(appProvider).database;
+/// v77 合表后的通用组装：某 kind 的「entryKey → 标签列表」。
+Future<Map<String, List<BookTagRow>>> _tagMapForKind(
+    FushiDatabase db, TagHostKind kind) async {
   final tags = await db.getAllTags();
-  final mappings = await db.getAllBookTagMappings();
   final tagById = {for (final t in tags) t.id: t};
   final Map<String, List<BookTagRow>> result = {};
-  for (final m in mappings) {
+  for (final TagAssignmentRow m in await db.getAllTagAssignments()) {
+    if (m.mediaKind != kind.dbValue) continue;
     final tag = tagById[m.tagId];
     if (tag != null) {
-      result.putIfAbsent(m.bookKey, () => []).add(tag);
+      result.putIfAbsent(m.entryKey, () => []).add(tag);
     }
   }
   return result;
+}
+
+final bookTagMapProvider =
+    FutureProvider<Map<String, List<BookTagRow>>>((ref) async {
+  return _tagMapForKind(ref.watch(appProvider).database, TagHostKind.epub);
 });
 
+/// SRT 书 → 标签列表（v77 起 keyed by SrtBooks.uid，弃本机自增 int id）。
 final srtBookTagMapProvider =
-    FutureProvider<Map<int, List<BookTagRow>>>((ref) async {
-  final db = ref.watch(appProvider).database;
-  final tags = await db.getAllTags();
-  final mappings = await db.getAllSrtBookTagMappings();
-  final tagById = {for (final t in tags) t.id: t};
-  final Map<int, List<BookTagRow>> result = {};
-  for (final m in mappings) {
-    final tag = tagById[m.tagId];
-    if (tag != null) {
-      result.putIfAbsent(m.srtBookId, () => []).add(tag);
-    }
-  }
-  return result;
+    FutureProvider<Map<String, List<BookTagRow>>>((ref) async {
+  return _tagMapForKind(ref.watch(appProvider).database, TagHostKind.srt);
 });
 
 /// 合集 → 标签列表（keyed by collectionId）。与 [bookTagMapProvider] 等同形，
@@ -59,43 +54,27 @@ final srtBookTagMapProvider =
 /// （详情页早有展示，列表行此前没有——用户实报「打了标签但列表上看不见」）。
 final collectionTagMapProvider =
     FutureProvider<Map<int, List<BookTagRow>>>((ref) async {
-  final db = ref.watch(appProvider).database;
-  final tags = await db.getAllTags();
-  final mappings = await db.getAllCollectionTagMappings();
-  final tagById = {for (final t in tags) t.id: t};
-  final Map<int, List<BookTagRow>> result = {};
-  for (final m in mappings) {
-    final tag = tagById[m.tagId];
-    if (tag != null) {
-      result.putIfAbsent(m.collectionId, () => []).add(tag);
-    }
-  }
-  return result;
+  final byKey = await _tagMapForKind(
+      ref.watch(appProvider).database, TagHostKind.collection);
+  return <int, List<BookTagRow>>{
+    for (final MapEntry<String, List<BookTagRow>> e in byKey.entries)
+      if (int.tryParse(e.key) case final int id) id: e.value,
+  };
 });
 
-final filteredSrtBookIdsProvider = FutureProvider<Set<int>?>((ref) async {
+/// v77 起返回 srt uid 集合（弃 int id）。
+final filteredSrtBookUidsProvider = FutureProvider<Set<String>?>((ref) async {
   final tagIds = ref.watch(selectedTagIdsProvider);
   if (tagIds.isEmpty) return null;
   final db = ref.watch(appProvider).database;
-  return db.getSrtBookIdsForAllTags(tagIds);
+  return db.getSrtUidsForAllTags(tagIds);
 });
 
 /// 视频书 → 标签列表（keyed by bookUid）。与 [bookTagMapProvider] /
 /// [srtBookTagMapProvider] 同形，三者共用同一 [BookTags] 标签池。
 final videoBookTagMapProvider =
     FutureProvider<Map<String, List<BookTagRow>>>((ref) async {
-  final db = ref.watch(appProvider).database;
-  final tags = await db.getAllTags();
-  final mappings = await db.getAllVideoBookTagMappings();
-  final tagById = {for (final t in tags) t.id: t};
-  final Map<String, List<BookTagRow>> result = {};
-  for (final m in mappings) {
-    final tag = tagById[m.tagId];
-    if (tag != null) {
-      result.putIfAbsent(m.bookUid, () => []).add(tag);
-    }
-  }
-  return result;
+  return _tagMapForKind(ref.watch(appProvider).database, TagHostKind.video);
 });
 
 /// 当前标签筛选下命中的视频 bookUid 集合（共享 [selectedTagIdsProvider]，与
@@ -115,18 +94,7 @@ final filteredVideoBookUidsProvider = FutureProvider<Set<String>?>((ref) async {
 /// 那是外部事实、另一条筛选轴，由游戏库筛选面板按名筛，不进这个用户标签池。
 final gameTagMapProvider =
     FutureProvider<Map<String, List<BookTagRow>>>((ref) async {
-  final db = ref.watch(appProvider).database;
-  final tags = await db.getAllTags();
-  final mappings = await db.getAllGameTagMappings();
-  final tagById = {for (final t in tags) t.id: t};
-  final Map<String, List<BookTagRow>> result = {};
-  for (final m in mappings) {
-    final tag = tagById[m.tagId];
-    if (tag != null) {
-      result.putIfAbsent(m.gameId, () => []).add(tag);
-    }
-  }
-  return result;
+  return _tagMapForKind(ref.watch(appProvider).database, TagHostKind.game);
 });
 
 /// 当前标签筛选下命中的游戏 id 集合（共享 [selectedTagIdsProvider]，与书架 / 视频

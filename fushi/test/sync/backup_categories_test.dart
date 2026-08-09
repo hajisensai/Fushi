@@ -1035,7 +1035,7 @@ void main() {
       expect(await countRows(db, 'media_collection_items'), 1);
       expect(await countRows(db, 'shelf_entries'), 1);
       expect(await countRows(db, 'book_tags'), 1);
-      expect(await countRows(db, 'book_tag_mappings'), 1);
+      expect(await countRows(db, 'tag_assignments'), 1);
     } finally {
       await db.close();
     }
@@ -1061,8 +1061,8 @@ void main() {
       expect(await countRows(db, 'media_collections'), 0,
           reason: 'empty collection dropped');
       expect(await countRows(db, 'shelf_entries'), 0);
-      expect(await countRows(db, 'book_tag_mappings'), 0,
-          reason: 'FK cascade cleared the mapping with the book');
+      expect(await countRows(db, 'tag_assignments'), 0,
+          reason: 'v77 逻辑外键：导出裁剪按宿主存在性显式收敛映射');
       expect(await countRows(db, 'book_tags'), 0,
           reason: 'tag pool drained of the now-unreferenced tag');
     } finally {

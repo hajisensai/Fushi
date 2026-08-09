@@ -484,10 +484,9 @@ void main() {
     await dragTopTagToVideoCard(tester);
     await dragTopTagToVideoCard(tester);
 
-    final List<VideoBookTagMappingRow> mappings =
-        await db.getAllVideoBookTagMappings();
+    final List<TagAssignmentRow> mappings = await db.getAllTagAssignments();
     expect(mappings, hasLength(1));
-    expect(mappings.single.bookUid, 'video/1');
+    expect(mappings.single.entryKey, 'video/1');
   });
 
   // ── TODO-063 视频批量选择（标签栏旁的「选择」+ 批量打标签/删除）──────────

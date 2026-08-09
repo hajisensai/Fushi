@@ -1932,17 +1932,27 @@ class BackupService {
           '(SELECT DISTINCT collection_id FROM media_collection_items)',
         );
       }
-      // Drain the shared tag pool of rows no longer referenced by ANY surviving
-      // mapping — the three per-content book mappings AND `collection_tag_mappings`
-      // (a tag can label a collection without labelling any book, so this union
-      // must include it or a collection-only tag would be wrongly drained).
-      // Content mappings for excluded content were FK-cascade-cleared above.
+      // v77：标签映射是逻辑外键，被裁剪内容的映射行不再随 FK cascade 消失——
+      // 先按「宿主在本份导出里已不存在」显式收敛（与旧 cascade 语义精确等价，
+      // 且顺带清掉任何历史悬垂行），再排干无引用的共享标签池（合集可以只有
+      // 标签没有成员，drain 必须以统一表为准，否则 collection-only 标签会被
+      // 误排掉）。
+      await db.customStatement(
+        'DELETE FROM tag_assignments WHERE '
+        "(media_kind = 'epub' AND entry_key NOT IN "
+        '(SELECT book_key FROM epub_books)) '
+        "OR (media_kind = 'srt' AND entry_key NOT IN "
+        '(SELECT uid FROM srt_books)) '
+        "OR (media_kind = 'video' AND entry_key NOT IN "
+        '(SELECT book_uid FROM video_books)) '
+        "OR (media_kind = 'collection' AND entry_key NOT IN "
+        '(SELECT CAST(id AS TEXT) FROM media_collections)) '
+        "OR (media_kind = 'game' AND entry_key NOT IN "
+        '(SELECT id FROM galgames))',
+      );
       await db.customStatement(
         'DELETE FROM book_tags WHERE id NOT IN ('
-        'SELECT tag_id FROM book_tag_mappings '
-        'UNION SELECT tag_id FROM srt_book_tag_mappings '
-        'UNION SELECT tag_id FROM video_book_tag_mappings '
-        'UNION SELECT tag_id FROM collection_tag_mappings)',
+        'SELECT tag_id FROM tag_assignments)',
       );
 
       // (3) Category-gated deletion tombstones.

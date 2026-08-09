@@ -17,6 +17,7 @@ import 'media_kind.dart';
 import 'pref_codec.dart';
 import 'sync_tombstone_kind.dart';
 import 'tables.dart';
+import 'tag_host_kind.dart';
 
 part 'database.g.dart';
 
@@ -413,15 +414,13 @@ void _requireOneVideoMetadataOwner({
   DictionaryHistory,
   EpubBooks,
   BookTags,
-  BookTagMappings,
-  SrtBookTagMappings,
+  TagAssignments,
   Profiles,
   ProfileSettings,
   MediaTypeProfiles,
   BookProfiles,
   SyncBaselines,
   VideoBooks,
-  VideoBookTagMappings,
   VideoWatchStatistics,
   VideoHourlyLogs,
   FavoriteWords,
@@ -439,7 +438,6 @@ void _requireOneVideoMetadataOwner({
   StatisticsTombstones,
   BookTagMembershipTombstones,
   BookCustomCss,
-  CollectionTagMappings,
   SyncDeletionTombstones,
   RevealedImages,
   ActivityEvents,
@@ -451,7 +449,6 @@ void _requireOneVideoMetadataOwner({
   Galgames,
   GalgameSources,
   GalgameSessions,
-  GalgameTagMappings,
   MangaExtensionStores,
   MangaExtensions,
   MangaOnlineSources,
@@ -501,7 +498,7 @@ class FushiDatabase extends _$FushiDatabase {
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 78;
+  int get schemaVersion => 79;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -547,7 +544,16 @@ class FushiDatabase extends _$FushiDatabase {
           }
           if (from < 6) {
             await m.createTable(bookTags);
-            await m.createTable(bookTagMappings);
+            // v77 起 book_tag_mappings 并入 tag_assignments，Dart 表类已删；
+            // 本阶梯步冻结为当年 m.createTable 生成的 SQL 原文（此表在 v77 步
+            // 被整体搬移后 DROP）。
+            await customStatement(
+                'CREATE TABLE IF NOT EXISTS "book_tag_mappings" ('
+                '"id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, '
+                '"book_key" TEXT NOT NULL REFERENCES epub_books (book_key) ON DELETE CASCADE, '
+                '"tag_id" INTEGER NOT NULL REFERENCES book_tags (id) ON DELETE CASCADE, '
+                '"added_at" INTEGER NOT NULL DEFAULT 0, '
+                'UNIQUE ("book_key", "tag_id"))');
           }
           if (from < 7) {
             if (!await _columnExists('book_tags', 'sort_order')) {
@@ -677,7 +683,13 @@ class FushiDatabase extends _$FushiDatabase {
             }
           }
           if (from < 13) {
-            await m.createTable(srtBookTagMappings);
+            // v77 冻结（同 book_tag_mappings 处说明）。
+            await customStatement(
+                'CREATE TABLE IF NOT EXISTS "srt_book_tag_mappings" ('
+                '"id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, '
+                '"srt_book_id" INTEGER NOT NULL REFERENCES srt_books (id) ON DELETE CASCADE, '
+                '"tag_id" INTEGER NOT NULL REFERENCES book_tags (id) ON DELETE CASCADE, '
+                'UNIQUE ("srt_book_id", "tag_id"))');
           }
           if (from < 14) {
             // Indexes were previously (re)created in beforeOpen on every open
@@ -744,7 +756,16 @@ class FushiDatabase extends _$FushiDatabase {
             // from<20 convergence above (FK target). Guard so a fresh DB (table
             // already built by onCreate's createAll) doesn't recreate it.
             if (!await _tableExists('video_book_tag_mappings')) {
-              await m.createTable(videoBookTagMappings);
+              // v77 冻结（同 book_tag_mappings 处说明）。注意此步创建的是 v57
+              // 改名后的现名列 book_uid——与原 m.createTable(当前 Dart 定义) 行为
+              // 一致（阶梯步从来就是建当前形，守卫测试认可）。
+              await customStatement(
+                  'CREATE TABLE IF NOT EXISTS "video_book_tag_mappings" ('
+                  '"id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, '
+                  '"book_uid" TEXT NOT NULL REFERENCES video_books (book_uid) ON DELETE CASCADE, '
+                  '"tag_id" INTEGER NOT NULL REFERENCES book_tags (id) ON DELETE CASCADE, '
+                  '"added_at" INTEGER NOT NULL DEFAULT 0, '
+                  'UNIQUE ("book_uid", "tag_id"))');
             }
           }
           if (from < 22) {
@@ -1016,14 +1037,16 @@ class FushiDatabase extends _$FushiDatabase {
             // 无损迁移：只 addColumn + createTable，不 DROP / 不回填（旧库升级后
             // added_at 全 0、墓碑表空 = sync 合并与旧版 additive 行为等价，Never break
             // userspace）。守卫幂等（fresh DB 走 onCreate.createAll）。
+            // （v77 冻结：两表的 Dart 类已删，addColumn 改等价裸 SQL。）
             if (await _tableExists('book_tag_mappings') &&
                 !await _columnExists('book_tag_mappings', 'added_at')) {
-              await m.addColumn(bookTagMappings, bookTagMappings.addedAt);
+              await customStatement('ALTER TABLE book_tag_mappings '
+                  'ADD COLUMN added_at INTEGER NOT NULL DEFAULT 0');
             }
             if (await _tableExists('video_book_tag_mappings') &&
                 !await _columnExists('video_book_tag_mappings', 'added_at')) {
-              await m.addColumn(
-                  videoBookTagMappings, videoBookTagMappings.addedAt);
+              await customStatement('ALTER TABLE video_book_tag_mappings '
+                  'ADD COLUMN added_at INTEGER NOT NULL DEFAULT 0');
             }
             if (!await _tableExists('book_tag_membership_tombstones')) {
               await m.createTable(bookTagMembershipTombstones);
@@ -1043,7 +1066,13 @@ class FushiDatabase extends _$FushiDatabase {
             // 空表 = sync 零命中 = 行为与旧版一致（Never break userspace）。守卫幂等
             // （fresh DB 已由 onCreate 的 createAll 建好）。
             if (!await _tableExists('collection_tag_mappings')) {
-              await m.createTable(collectionTagMappings);
+              // v77 冻结（同 book_tag_mappings 处说明）。
+              await customStatement(
+                  'CREATE TABLE IF NOT EXISTS "collection_tag_mappings" ('
+                  '"id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, '
+                  '"collection_id" INTEGER NOT NULL REFERENCES media_collections (id) ON DELETE CASCADE, '
+                  '"tag_id" INTEGER NOT NULL REFERENCES book_tags (id) ON DELETE CASCADE, '
+                  'UNIQUE ("collection_id", "tag_id"))');
             }
           }
           if (from < 44) {
@@ -1234,13 +1263,11 @@ class FushiDatabase extends _$FushiDatabase {
               if (await _tableExists('video_book_tag_mappings') &&
                   await _columnExists(
                       'video_book_tag_mappings', 'video_book_uid')) {
-                await m.alterTable(TableMigration(
-                  videoBookTagMappings,
-                  columnTransformer: {
-                    videoBookTagMappings.bookUid:
-                        const CustomExpression<String>('video_book_uid'),
-                  },
-                ));
+                // v77 冻结：表类已删，原 TableMigration(columnTransformer) 是
+                // 单列改名，等价 RENAME COLUMN（SQLite ≥3.25；本表 v77 步终将
+                // 整体搬移后 DROP，中间形只需列名对齐）。
+                await customStatement('ALTER TABLE video_book_tag_mappings '
+                    'RENAME COLUMN video_book_uid TO book_uid');
               }
               if (await _tableExists('collection_member_tombstones') &&
                   await _columnExists(
@@ -1308,7 +1335,13 @@ class FushiDatabase extends _$FushiDatabase {
             // v59（BUG-1113「游戏没有标签」）：把游戏接进共享 BookTags 标签池。
             // 纯新增映射表；游戏与标签均为本机局域数据，不进入 live-sync。
             if (!await _tableExists('galgame_tag_mappings')) {
-              await m.createTable(galgameTagMappings);
+              // v77 冻结（同 book_tag_mappings 处说明）。
+              await customStatement(
+                  'CREATE TABLE IF NOT EXISTS "galgame_tag_mappings" ('
+                  '"id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, '
+                  '"game_id" TEXT NOT NULL REFERENCES galgames (id) ON DELETE CASCADE, '
+                  '"tag_id" INTEGER NOT NULL REFERENCES book_tags (id) ON DELETE CASCADE, '
+                  'UNIQUE ("game_id", "tag_id"))');
             }
             await _ensureIndexes();
           }
@@ -1882,6 +1915,79 @@ class FushiDatabase extends _$FushiDatabase {
             }
             await _ensureIndexes();
           }
+          if (from < 79) {
+            // v79（五张标签映射表合一，2026-08 数据层重构·用户拍板）：
+            // book/srt/video/collection/galgame *_tag_mappings → tag_assignments
+            // （统一 (media_kind, entry_key, tag_id, added_at)，设计取舍见
+            // tables.dart 的 [TagAssignments] doc）。逐表搬移后 DROP：
+            //  - epub/video：entry_key 与 added_at 原样平移；
+            //  - srt：弃本机自增 int id，JOIN srt_books 换跨设备稳定的 uid
+            //    （孤儿映射行 JOIN 天然丢弃）；
+            //  - collection：id 字符串化；game：id 原样。三者旧表无 added_at，
+            //    落 0（最古 add，同 v41 给 book/video 补列的语义）。
+            // INSERT OR IGNORE 防 PK 撞（正常数据不会撞，防御性幂等）。
+            // 守卫幂等：fresh DB 走 onCreate（无旧表，全部 _tableExists 短路）。
+            if (!await _tableExists('tag_assignments')) {
+              await m.createTable(tagAssignments);
+            }
+            // 极老/极简库可能连 book_tags 都没有（v1 基线表只在 onCreate 建）：
+            // 没有标签定义表就不可能有有效映射，跳过搬移只做 DROP；tag_assignments
+            // 的 tag_id FK 在 INSERT 时要解析父表，缺表会直接抛。
+            final bool hasBookTags = await _tableExists('book_tags');
+            if (hasBookTags && await _tableExists('book_tag_mappings')) {
+              await customStatement('INSERT OR IGNORE INTO tag_assignments '
+                  '(media_kind, entry_key, tag_id, added_at) '
+                  "SELECT 'epub', book_key, tag_id, added_at "
+                  'FROM book_tag_mappings');
+              await customStatement('DROP TABLE book_tag_mappings');
+            }
+            if (hasBookTags && await _tableExists('srt_book_tag_mappings')) {
+              // uid 换键要 JOIN srt_books（v1 基线表，极简合成库可能没有——
+              // 没有宿主表映射就不可解析，跳过搬移只 DROP）。
+              if (await _tableExists('srt_books')) {
+                await customStatement('INSERT OR IGNORE INTO tag_assignments '
+                    '(media_kind, entry_key, tag_id, added_at) '
+                    "SELECT 'srt', sb.uid, sm.tag_id, 0 "
+                    'FROM srt_book_tag_mappings sm '
+                    'JOIN srt_books sb ON sb.id = sm.srt_book_id');
+              }
+              await customStatement('DROP TABLE srt_book_tag_mappings');
+            }
+            if (hasBookTags && await _tableExists('video_book_tag_mappings')) {
+              await customStatement('INSERT OR IGNORE INTO tag_assignments '
+                  '(media_kind, entry_key, tag_id, added_at) '
+                  "SELECT 'video', book_uid, tag_id, added_at "
+                  'FROM video_book_tag_mappings');
+              await customStatement('DROP TABLE video_book_tag_mappings');
+            }
+            if (hasBookTags && await _tableExists('collection_tag_mappings')) {
+              await customStatement('INSERT OR IGNORE INTO tag_assignments '
+                  '(media_kind, entry_key, tag_id, added_at) '
+                  "SELECT 'collection', CAST(collection_id AS TEXT), tag_id, 0 "
+                  'FROM collection_tag_mappings');
+              await customStatement('DROP TABLE collection_tag_mappings');
+            }
+            if (hasBookTags && await _tableExists('galgame_tag_mappings')) {
+              await customStatement('INSERT OR IGNORE INTO tag_assignments '
+                  '(media_kind, entry_key, tag_id, added_at) '
+                  "SELECT 'game', game_id, tag_id, 0 "
+                  'FROM galgame_tag_mappings');
+              await customStatement('DROP TABLE galgame_tag_mappings');
+            }
+            if (!hasBookTags) {
+              for (final String legacy in <String>[
+                'book_tag_mappings',
+                'srt_book_tag_mappings',
+                'video_book_tag_mappings',
+                'collection_tag_mappings',
+                'galgame_tag_mappings',
+              ]) {
+                if (await _tableExists(legacy)) {
+                  await customStatement('DROP TABLE ' + legacy);
+                }
+              }
+            }
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -1982,11 +2088,6 @@ class FushiDatabase extends _$FushiDatabase {
         'CREATE INDEX IF NOT EXISTS idx_srt_books_book_key '
             'ON srt_books (book_key)'
       ],
-      [
-        'book_tag_mappings',
-        'CREATE INDEX IF NOT EXISTS idx_book_tag_mappings_book_key '
-            'ON book_tag_mappings (book_key)'
-      ],
       // BUG-906 (B): hot-path indexes that were missing.
       // audio_cues is read on every audiobook chapter load via
       // getCuesForChapter (WHERE book_key AND chapter_href ORDER BY
@@ -2000,35 +2101,13 @@ class FushiDatabase extends _$FushiDatabase {
         'CREATE INDEX IF NOT EXISTS idx_audio_cues_book_chapter_sentence '
             'ON audio_cues (book_key, chapter_href, sentence_index)'
       ],
-      // tag_id lookups: countBooksForTag on each mapping table runs
-      // `WHERE tag_id IN (...) GROUP BY <owner> HAVING COUNT(DISTINCT tag_id)`.
-      // The existing indexes only cover the owner-key side (book_key / etc.),
-      // leaving the tag_id filter to a full scan. Add a tag_id index to every
-      // mapping table.
+      // tag_id lookups（v77 合表后一条索引服务全部 kind）：countBooksForTag /
+      // _entryKeysForAllTags 按 tag_id 过滤，PK (media_kind, entry_key, tag_id)
+      // 服务不了 tag_id 单列查询。
       [
-        'book_tag_mappings',
-        'CREATE INDEX IF NOT EXISTS idx_book_tag_mappings_tag_id '
-            'ON book_tag_mappings (tag_id)'
-      ],
-      [
-        'srt_book_tag_mappings',
-        'CREATE INDEX IF NOT EXISTS idx_srt_book_tag_mappings_tag_id '
-            'ON srt_book_tag_mappings (tag_id)'
-      ],
-      [
-        'video_book_tag_mappings',
-        'CREATE INDEX IF NOT EXISTS idx_video_book_tag_mappings_tag_id '
-            'ON video_book_tag_mappings (tag_id)'
-      ],
-      [
-        'galgame_tag_mappings',
-        'CREATE INDEX IF NOT EXISTS idx_galgame_tag_mappings_tag_id '
-            'ON galgame_tag_mappings (tag_id)'
-      ],
-      [
-        'galgame_tag_mappings',
-        'CREATE INDEX IF NOT EXISTS idx_galgame_tag_mappings_game_id '
-            'ON galgame_tag_mappings (game_id)'
+        'tag_assignments',
+        'CREATE INDEX IF NOT EXISTS idx_tag_assignments_tag_id '
+            'ON tag_assignments (tag_id)'
       ],
       // favorite_words is filtered by source_type ('book' | 'video') in
       // getFavoritesBySource; the table had no index on it.
@@ -5112,14 +5191,14 @@ class FushiDatabase extends _$FushiDatabase {
       (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
           .write(VideoBooksCompanion(title: Value(title)));
 
-  /// 删除视频书：FK `onDelete: cascade` 自动清掉它在 video_book_tag_mappings 的
-  /// 标签映射；audio_cues 的 bookKey 不是外键（它对有声书/SRT/视频共用一个字符串
-  /// owner key，无法挂 FK），故必须在同一事务里显式删掉本视频的字幕 cue 行
-  /// （BUG-276：否则删视频后 cue 行永久残留，删一本占用却不降）。
+  /// 删除视频书：标签映射（v77 起逻辑外键）与 audio_cues 的 bookKey 都不是 DB
+  /// 外键（cue 的 owner key 对有声书/SRT/视频共用一个字符串，无法挂 FK），必须
+  /// 在同一事务里显式清（BUG-276：否则删视频后 cue 行永久残留）。
   Future<void> deleteVideoBook(String bookUid) => transaction(() async {
         await (delete(audioCues)..where((t) => t.bookKey.equals(bookUid))).go();
         // TODO-616：同事务清 shelf_entry（mediaType='video'、entryKey=bookUid）。
         await deleteShelfEntry(MediaKind.video, bookUid);
+        await deleteTagAssignmentsForHost(TagHostKind.video, bookUid);
         await (delete(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
             .go();
       });
@@ -5695,6 +5774,8 @@ class FushiDatabase extends _$FushiDatabase {
         await (delete(mediaCollectionItems)
               ..where((t) => t.collectionId.equals(id)))
             .go();
+        await deleteTagAssignmentsForHost(
+            TagHostKind.collection, id.toString());
         final int deleted = await (delete(mediaCollections)
               ..where((t) => t.id.equals(id)))
             .go();
@@ -5853,6 +5934,8 @@ class FushiDatabase extends _$FushiDatabase {
                   ..where((t) => t.collectionId.equals(collectionId)))
                 .get();
         if (remaining.isEmpty) {
+          await deleteTagAssignmentsForHost(
+              TagHostKind.collection, collectionId.toString());
           await (delete(mediaCollections)
                 ..where((t) => t.id.equals(collectionId)))
               .go();
@@ -5960,6 +6043,8 @@ class FushiDatabase extends _$FushiDatabase {
                     ..where((t) => t.collectionId.equals(cid)))
                   .get();
           if (rem.isEmpty) {
+            await deleteTagAssignmentsForHost(
+                TagHostKind.collection, cid.toString());
             await (delete(mediaCollections)..where((t) => t.id.equals(cid)))
                 .go();
           }
@@ -6079,6 +6164,8 @@ class FushiDatabase extends _$FushiDatabase {
         await (delete(mediaCollectionItems)
               ..where((t) => t.collectionId.equals(id)))
             .go();
+        await deleteTagAssignmentsForHost(
+            TagHostKind.collection, id.toString());
         await (delete(mediaCollections)..where((t) => t.id.equals(id))).go();
       });
 
@@ -6151,6 +6238,7 @@ class FushiDatabase extends _$FushiDatabase {
         await (delete(audioCues)..where((t) => t.bookKey.equals(uid))).go();
         // TODO-616：同事务清 shelf_entry（mediaType='srt'、entryKey=uid）。
         await deleteShelfEntry(MediaKind.srt, uid);
+        await deleteTagAssignmentsForHost(TagHostKind.srt, uid);
         return (delete(srtBooks)..where((t) => t.uid.equals(uid))).go();
       });
 
@@ -6515,9 +6603,12 @@ class FushiDatabase extends _$FushiDatabase {
   Future<void> upsertGalgame(GalgamesCompanion entry) =>
       into(galgames).insertOnConflictUpdate(entry);
 
-  /// 删除一条游戏。`galgame_sources` / `galgame_sessions` 经 FK cascade 连带清理。
-  Future<int> deleteGalgame(String id) =>
-      (delete(galgames)..where((t) => t.id.equals(id))).go();
+  /// 删除一条游戏。`galgame_sources` / `galgame_sessions` 经 FK cascade 连带清理；
+  /// 标签映射 v77 起是逻辑外键，同事务显式清。
+  Future<int> deleteGalgame(String id) => transaction(() async {
+        await deleteTagAssignmentsForHost(TagHostKind.game, id);
+        return (delete(galgames)..where((t) => t.id.equals(id))).go();
+      });
 
   /// 只改游玩状态（0=未设置 / 1=想玩 / 2=玩过 / 3=在玩 / 4=搁置 / 5=弃坑）。
   Future<int> setGalgamePlayStatus(String id, int status) =>
@@ -7837,8 +7928,11 @@ class FushiDatabase extends _$FushiDatabase {
             .get();
         for (final String uid in srtUids) {
           await (delete(audioCues)..where((t) => t.bookKey.equals(uid))).go();
+          // v77：标签映射是逻辑外键，随宿主显式清理（附属 SRT 行也一并清）。
+          await deleteTagAssignmentsForHost(TagHostKind.srt, uid);
         }
         await (delete(srtBooks)..where((t) => t.bookKey.equals(bookKey))).go();
+        await deleteTagAssignmentsForHost(TagHostKind.epub, bookKey);
         // Audiobook + its cues are keyed directly by bookKey now.
         await (delete(audioCues)..where((t) => t.bookKey.equals(bookKey))).go();
         await (delete(audiobooks)..where((t) => t.bookKey.equals(bookKey)))
@@ -7867,17 +7961,86 @@ class FushiDatabase extends _$FushiDatabase {
         ]))
       .get();
 
-  Future<List<BookTagRow>> getTagsForBook(String bookKey) {
+  // ── tag_assignments 通用内核（v77 五表合一）───────────────────────
+  // 五种宿主的公开 API 保持类型化签名（addTagToBook / addTagToGame / ...），
+  // 内脏统一走这四个泛型内核——语义差异（谁写墓碑、谁进 sync）留在公开方法层，
+  // 数据形状只有一份。
+
+  /// 宿主当前标签（按 createdAt 升序，五域一致）。
+  Future<List<BookTagRow>> _tagsForHost(TagHostKind kind, String entryKey) {
     final query = select(bookTags).join([
-      innerJoin(
-        bookTagMappings,
-        bookTagMappings.tagId.equalsExp(bookTags.id),
-      ),
+      innerJoin(tagAssignments, tagAssignments.tagId.equalsExp(bookTags.id)),
     ])
-      ..where(bookTagMappings.bookKey.equals(bookKey))
+      ..where(tagAssignments.mediaKind.equals(kind.dbValue) &
+          tagAssignments.entryKey.equals(entryKey))
       ..orderBy([OrderingTerm.asc(bookTags.createdAt)]);
     return query.map((row) => row.readTable(bookTags)).get();
   }
+
+  /// upsert 一条映射并写 [addedAt]（无则插入，有则刷新 addedAt——LWW add 时钟）。
+  Future<void> _upsertAssignmentWithTime(
+      TagHostKind kind, String entryKey, int tagId, int addedAt) async {
+    await into(tagAssignments).insert(
+      TagAssignmentsCompanion.insert(
+        mediaKind: kind.dbValue,
+        entryKey: entryKey,
+        tagId: tagId,
+        addedAt: Value(addedAt),
+      ),
+      onConflict: DoUpdate(
+        (old) => TagAssignmentsCompanion(addedAt: Value(addedAt)),
+        target: [
+          tagAssignments.mediaKind,
+          tagAssignments.entryKey,
+          tagAssignments.tagId,
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteAssignment(
+          TagHostKind kind, String entryKey, int tagId) =>
+      (delete(tagAssignments)
+            ..where((t) =>
+                t.mediaKind.equals(kind.dbValue) &
+                t.entryKey.equals(entryKey) &
+                t.tagId.equals(tagId)))
+          .go();
+
+  /// 含【全部】选中标签的宿主键（AND 语义）。空集返回空。
+  Future<Set<String>> _entryKeysForAllTags(
+      TagHostKind kind, Set<int> tagIds) async {
+    if (tagIds.isEmpty) return <String>{};
+    final int tagCount = tagIds.length;
+    final String placeholders = List.generate(tagCount, (_) => '?').join(',');
+    final rows = await customSelect(
+      'SELECT entry_key FROM tag_assignments '
+      'WHERE media_kind = ? AND tag_id IN ($placeholders) '
+      'GROUP BY entry_key '
+      'HAVING COUNT(DISTINCT tag_id) = ?',
+      variables: <Variable>[
+        Variable<String>(kind.dbValue),
+        ...tagIds.map((id) => Variable<int>(id)),
+        Variable<int>(tagCount),
+      ],
+    ).get();
+    return rows.map((row) => row.read<String>('entry_key')).toSet();
+  }
+
+  /// 宿主删除路径的映射清理（v77 起五表 cascade 由显式清理取代——逻辑外键，
+  /// 同 ShelfEntries 惯例）。
+  Future<void> deleteTagAssignmentsForHost(TagHostKind kind, String entryKey) =>
+      (delete(tagAssignments)
+            ..where((t) =>
+                t.mediaKind.equals(kind.dbValue) & t.entryKey.equals(entryKey)))
+          .go();
+
+  /// 全部映射行（供筛选面板/互联 host 批量组装；按 kind 过滤在调用方）。
+  Future<List<TagAssignmentRow>> getAllTagAssignments() =>
+      select(tagAssignments).get();
+
+  Future<List<BookTagRow>> getTagsForBook(String bookKey) =>
+      _tagsForHost(TagHostKind.epub, bookKey);
 
   Future<int> createTag(String name, int colorValue) async {
     final maxQuery = selectOnly(bookTags)
@@ -7939,77 +8102,56 @@ class FushiDatabase extends _$FushiDatabase {
       (delete(bookTags)..where((t) => t.id.equals(id))).go();
 
   Future<void> setTagsForBook(String bookKey, Set<int> tagIds) =>
+      _setTagsWithTombstones(TagHostKind.epub, MediaKind.epub, bookKey, tagIds);
+
+  /// 带墓碑的整组替换内核（epub/video 共用；srt/collection/game 不进 sync，
+  /// 无墓碑语义，走各自的简单增删）。
+  Future<void> _setTagsWithTombstones(TagHostKind kind, MediaKind tombstoneKind,
+          String entryKey, Set<int> tagIds) =>
       transaction(() async {
         final int now = DateTime.now().millisecondsSinceEpoch;
-        final existing = await (select(bookTagMappings)
-              ..where((t) => t.bookKey.equals(bookKey)))
+        final existing = await (select(tagAssignments)
+              ..where((t) =>
+                  t.mediaKind.equals(kind.dbValue) &
+                  t.entryKey.equals(entryKey)))
             .get();
-        final existingTagIds = existing.map((e) => e.tagId).toSet();
+        final existingTagIds =
+            existing.map((TagAssignmentRow e) => e.tagId).toSet();
 
-        final toRemove = existingTagIds.difference(tagIds);
-        final toAdd = tagIds.difference(existingTagIds);
-
-        for (final tagId in toRemove) {
+        for (final tagId in existingTagIds.difference(tagIds)) {
           final String? name = await _tagNameById(tagId);
-          await (delete(bookTagMappings)
-                ..where(
-                    (t) => t.bookKey.equals(bookKey) & t.tagId.equals(tagId)))
-              .go();
-          if (name != null)
-            await _upsertTagTombstone(bookKey, MediaKind.epub, name, now);
+          await _deleteAssignment(kind, entryKey, tagId);
+          if (name != null) {
+            await _upsertTagTombstone(entryKey, tombstoneKind, name, now);
+          }
         }
-        for (final tagId in toAdd) {
-          await _upsertBookTagMappingWithTime(bookKey, tagId, now);
+        for (final tagId in tagIds.difference(existingTagIds)) {
+          await _upsertAssignmentWithTime(kind, entryKey, tagId, now);
           final String? name = await _tagNameById(tagId);
-          if (name != null)
-            await _clearTagTombstone(bookKey, MediaKind.epub, name);
+          if (name != null) {
+            await _clearTagTombstone(entryKey, tombstoneKind, name);
+          }
         }
       });
 
   Future<void> addTagToBook(String bookKey, int tagId) async {
     final int now = DateTime.now().millisecondsSinceEpoch;
-    await _upsertBookTagMappingWithTime(bookKey, tagId, now);
+    await _upsertAssignmentWithTime(TagHostKind.epub, bookKey, tagId, now);
     final String? name = await _tagNameById(tagId);
     if (name != null) await _clearTagTombstone(bookKey, MediaKind.epub, name);
   }
 
   Future<void> removeTagFromBook(String bookKey, int tagId) async {
     final String? name = await _tagNameById(tagId);
-    await (delete(bookTagMappings)
-          ..where((t) => t.bookKey.equals(bookKey) & t.tagId.equals(tagId)))
-        .go();
+    await _deleteAssignment(TagHostKind.epub, bookKey, tagId);
     if (name != null) {
       await _upsertTagTombstone(
           bookKey, MediaKind.epub, name, DateTime.now().millisecondsSinceEpoch);
     }
   }
 
-  Future<Set<String>> getBookKeysForAllTags(Set<int> tagIds) async {
-    if (tagIds.isEmpty) return {};
-    final tagCount = tagIds.length;
-    final placeholders = List.generate(tagCount, (_) => '?').join(',');
-    final variables = <Variable>[
-      ...tagIds.map((id) => Variable<int>(id)),
-      Variable<int>(tagCount),
-    ];
-    final rows = await customSelect(
-      'SELECT book_key FROM book_tag_mappings '
-      'WHERE tag_id IN ($placeholders) '
-      'GROUP BY book_key '
-      'HAVING COUNT(DISTINCT tag_id) = ?',
-      variables: variables,
-    ).get();
-    return rows.map((row) => row.read<String>('book_key')).toSet();
-  }
-
-  Future<List<BookTagMappingRow>> getAllBookTagMappings() =>
-      select(bookTagMappings).get();
-
-  /// 全部合集↔标签映射（批量，供 `collectionTagMapProvider` 组装
-  /// `Map<collectionId, List<BookTagRow>>`，让书架/视频列表的合集行也能展示标签
-  /// chip——与书/视频卡的批量标签 map 同形）。
-  Future<List<CollectionTagMappingRow>> getAllCollectionTagMappings() =>
-      select(collectionTagMappings).get();
+  Future<Set<String>> getBookKeysForAllTags(Set<int> tagIds) =>
+      _entryKeysForAllTags(TagHostKind.epub, tagIds);
 
   Future<void> reorderTags(List<int> orderedTagIds) => transaction(() async {
         for (int i = 0; i < orderedTagIds.length; i++) {
@@ -8018,117 +8160,55 @@ class FushiDatabase extends _$FushiDatabase {
         }
       });
 
-  /// 某标签下的条目数量 = EPUB + 有声书(SRT) + 视频 + 游戏四张映射表各自命中该
-  /// tagId 的行数之和。
-  ///
-  /// BUG（用户报「标签管理器显示 0 本，实际 2 本」）：旧实现只 COUNT `book_tag_mappings`
-  /// （EPUB）一张表，给有声书 / 视频打的标签在管理器里恒显示 0——卡片走分类型正确查询能
-  /// 显示标签，计数却漏了另外两张表。BUG-1113 同型：游戏也必须计入。
-  /// 合集刻意不计：合集是容器而非条目。
+  /// 某标签下的条目数量 = EPUB + 有声书(SRT) + 视频 + 游戏命中该 tagId 的映射
+  /// 行数（合集刻意不计：合集是容器而非条目）。v77 合表后一条 COUNT 搞定——
+  /// 旧实现逐表 COUNT 漏表的 bug 形状（BUG-1113）在结构上不可能再犯。
   Future<int> countBooksForTag(int tagId) async {
-    final epubCnt = countAll();
-    final epubRow = await (selectOnly(bookTagMappings)
-          ..where(bookTagMappings.tagId.equals(tagId))
-          ..addColumns([epubCnt]))
+    final cnt = countAll();
+    final row = await (selectOnly(tagAssignments)
+          ..where(tagAssignments.tagId.equals(tagId) &
+              tagAssignments.mediaKind
+                  .equals(TagHostKind.collection.dbValue)
+                  .not())
+          ..addColumns([cnt]))
         .getSingle();
-    final srtCnt = countAll();
-    final srtRow = await (selectOnly(srtBookTagMappings)
-          ..where(srtBookTagMappings.tagId.equals(tagId))
-          ..addColumns([srtCnt]))
-        .getSingle();
-    final videoCnt = countAll();
-    final videoRow = await (selectOnly(videoBookTagMappings)
-          ..where(videoBookTagMappings.tagId.equals(tagId))
-          ..addColumns([videoCnt]))
-        .getSingle();
-    final gameCnt = countAll();
-    final gameRow = await (selectOnly(galgameTagMappings)
-          ..where(galgameTagMappings.tagId.equals(tagId))
-          ..addColumns([gameCnt]))
-        .getSingle();
-    final int epub = epubRow.read(epubCnt) ?? 0;
-    final int srt = srtRow.read(srtCnt) ?? 0;
-    final int video = videoRow.read(videoCnt) ?? 0;
-    final int game = gameRow.read(gameCnt) ?? 0;
-    return epub + srt + video + game;
+    return row.read(cnt) ?? 0;
   }
 
   // ── srt book tags ───────────────────────────────────────────────
+  // v77 起宿主键换 SrtBooks.uid（跨设备稳定），弃本机自增 int id。
 
-  Future<List<BookTagRow>> getTagsForSrtBook(int srtBookId) {
-    final query = select(bookTags).join([
-      innerJoin(
-        srtBookTagMappings,
-        srtBookTagMappings.tagId.equalsExp(bookTags.id),
-      ),
-    ])
-      ..where(srtBookTagMappings.srtBookId.equals(srtBookId))
-      ..orderBy([OrderingTerm.asc(bookTags.createdAt)]);
-    return query.map((row) => row.readTable(bookTags)).get();
-  }
+  Future<List<BookTagRow>> getTagsForSrtBook(String srtUid) =>
+      _tagsForHost(TagHostKind.srt, srtUid);
 
-  Future<void> addTagToSrtBook(int srtBookId, int tagId) =>
-      into(srtBookTagMappings).insert(
-        SrtBookTagMappingsCompanion.insert(srtBookId: srtBookId, tagId: tagId),
-        mode: InsertMode.insertOrIgnore,
-      );
+  Future<void> addTagToSrtBook(String srtUid, int tagId) =>
+      _upsertAssignmentWithTime(TagHostKind.srt, srtUid, tagId,
+          DateTime.now().millisecondsSinceEpoch);
 
-  Future<void> removeTagFromSrtBook(int srtBookId, int tagId) => (delete(
-          srtBookTagMappings)
-        ..where((t) => t.srtBookId.equals(srtBookId) & t.tagId.equals(tagId)))
-      .go();
+  Future<void> removeTagFromSrtBook(String srtUid, int tagId) =>
+      _deleteAssignment(TagHostKind.srt, srtUid, tagId);
 
-  Future<List<SrtBookTagMappingRow>> getAllSrtBookTagMappings() =>
-      select(srtBookTagMappings).get();
-
-  Future<Set<int>> getSrtBookIdsForAllTags(Set<int> tagIds) async {
-    if (tagIds.isEmpty) return {};
-    final tagCount = tagIds.length;
-    final placeholders = List.generate(tagCount, (_) => '?').join(',');
-    final variables = <Variable>[
-      ...tagIds.map((id) => Variable<int>(id)),
-      Variable<int>(tagCount),
-    ];
-    final rows = await customSelect(
-      'SELECT srt_book_id FROM srt_book_tag_mappings '
-      'WHERE tag_id IN ($placeholders) '
-      'GROUP BY srt_book_id '
-      'HAVING COUNT(DISTINCT tag_id) = ?',
-      variables: variables,
-    ).get();
-    return rows.map((row) => row.read<int>('srt_book_id')).toSet();
-  }
+  Future<Set<String>> getSrtUidsForAllTags(Set<int> tagIds) =>
+      _entryKeysForAllTags(TagHostKind.srt, tagIds);
 
   // ── video book tags ─────────────────────────────────────────────
-  // 视频书复用共享 BookTags 标签池，映射经 video_book_tag_mappings。
-  // 全套镜像 SRT 标签 API，键从 srtBookId(int) 换成 videoBookUid(String)。
 
-  Future<List<BookTagRow>> getTagsForVideoBook(String videoBookUid) {
-    final query = select(bookTags).join([
-      innerJoin(
-        videoBookTagMappings,
-        videoBookTagMappings.tagId.equalsExp(bookTags.id),
-      ),
-    ])
-      ..where(videoBookTagMappings.bookUid.equals(videoBookUid))
-      ..orderBy([OrderingTerm.asc(bookTags.createdAt)]);
-    return query.map((row) => row.readTable(bookTags)).get();
-  }
+  Future<List<BookTagRow>> getTagsForVideoBook(String videoBookUid) =>
+      _tagsForHost(TagHostKind.video, videoBookUid);
 
   Future<void> addTagToVideoBook(String videoBookUid, int tagId) async {
     final int now = DateTime.now().millisecondsSinceEpoch;
-    await _upsertVideoTagMappingWithTime(videoBookUid, tagId, now);
+    await _upsertAssignmentWithTime(
+        TagHostKind.video, videoBookUid, tagId, now);
     final String? name = await _tagNameById(tagId);
-    if (name != null)
+    if (name != null) {
       await _clearTagTombstone(videoBookUid, MediaKind.video, name);
+    }
   }
 
   Future<void> removeTagFromVideoBook(String videoBookUid, int tagId) async {
     final String? name = await _tagNameById(tagId);
-    await (delete(videoBookTagMappings)
-          ..where(
-              (t) => t.bookUid.equals(videoBookUid) & t.tagId.equals(tagId)))
-        .go();
+    await _deleteAssignment(TagHostKind.video, videoBookUid, tagId);
     if (name != null) {
       await _upsertTagTombstone(videoBookUid, MediaKind.video, name,
           DateTime.now().millisecondsSinceEpoch);
@@ -8138,91 +8218,49 @@ class FushiDatabase extends _$FushiDatabase {
   // ── 合集标签（复用 BookTags 池；只增不删并集，无墓碑——见 collection-tags 设计 §5）──
 
   /// 合集当前挂的标签（按 createdAt 升序，与 getTagsForBook 一致）。
-  Future<List<BookTagRow>> getTagsForCollection(int collectionId) {
-    final query = select(bookTags).join([
-      innerJoin(
-        collectionTagMappings,
-        collectionTagMappings.tagId.equalsExp(bookTags.id),
-      ),
-    ])
-      ..where(collectionTagMappings.collectionId.equals(collectionId))
-      ..orderBy([OrderingTerm.asc(bookTags.createdAt)]);
-    return query.map((row) => row.readTable(bookTags)).get();
-  }
+  Future<List<BookTagRow>> getTagsForCollection(int collectionId) =>
+      _tagsForHost(TagHostKind.collection, collectionId.toString());
 
-  /// 给合集加标签（INSERT OR IGNORE 幂等；不写墓碑——合集标签同步不消费墓碑）。
-  Future<void> addTagToCollection(int collectionId, int tagId) async {
-    await into(collectionTagMappings).insert(
-      CollectionTagMappingsCompanion.insert(
-        collectionId: collectionId,
-        tagId: tagId,
-      ),
-      mode: InsertMode.insertOrIgnore,
-    );
-  }
+  /// 给合集加标签（幂等；不写墓碑——合集标签同步不消费墓碑）。
+  Future<void> addTagToCollection(int collectionId, int tagId) =>
+      _upsertAssignmentWithTime(TagHostKind.collection, collectionId.toString(),
+          tagId, DateTime.now().millisecondsSinceEpoch);
 
   /// 从合集移除标签（纯 DELETE，本地生效；同步不传播移除——同书/视频标签现状）。
-  Future<void> removeTagFromCollection(int collectionId, int tagId) async {
-    await (delete(collectionTagMappings)
-          ..where((t) =>
-              t.collectionId.equals(collectionId) & t.tagId.equals(tagId)))
-        .go();
-  }
+  Future<void> removeTagFromCollection(int collectionId, int tagId) =>
+      _deleteAssignment(TagHostKind.collection, collectionId.toString(), tagId);
 
   /// 含【全部】选中标签的合集 id（AND 语义，仿 getBookKeysForAllTags）。空集返回空。
   Future<Set<int>> getCollectionIdsForAllTags(Set<int> tagIds) async {
-    if (tagIds.isEmpty) return <int>{};
-    final int tagCount = tagIds.length;
-    final String placeholders = List.generate(tagCount, (_) => '?').join(',');
-    final List<Variable> variables = <Variable>[
-      ...tagIds.map((id) => Variable<int>(id)),
-      Variable<int>(tagCount),
-    ];
-    final rows = await customSelect(
-      'SELECT collection_id FROM collection_tag_mappings '
-      'WHERE tag_id IN ($placeholders) '
-      'GROUP BY collection_id '
-      'HAVING COUNT(DISTINCT tag_id) = ?',
-      variables: variables,
-    ).get();
-    return rows.map((row) => row.read<int>('collection_id')).toSet();
+    final Set<String> keys =
+        await _entryKeysForAllTags(TagHostKind.collection, tagIds);
+    return <int>{
+      for (final String key in keys)
+        if (int.tryParse(key) case final int id) id,
+    };
   }
 
   // ── 游戏标签（v59 / BUG-1113；复用 BookTags 池；仅本机）──────────────
 
-  Future<List<BookTagRow>> getTagsForGame(String gameId) {
-    final query = select(bookTags).join([
-      innerJoin(
-        galgameTagMappings,
-        galgameTagMappings.tagId.equalsExp(bookTags.id),
-      ),
-    ])
-      ..where(galgameTagMappings.gameId.equals(gameId))
-      ..orderBy([OrderingTerm.asc(bookTags.createdAt)]);
-    return query.map((row) => row.readTable(bookTags)).get();
-  }
+  Future<List<BookTagRow>> getTagsForGame(String gameId) =>
+      _tagsForHost(TagHostKind.game, gameId);
 
-  Future<void> addTagToGame(String gameId, int tagId) async {
-    await into(galgameTagMappings).insert(
-      GalgameTagMappingsCompanion.insert(gameId: gameId, tagId: tagId),
-      mode: InsertMode.insertOrIgnore,
-    );
-  }
+  Future<void> addTagToGame(String gameId, int tagId) =>
+      _upsertAssignmentWithTime(TagHostKind.game, gameId, tagId,
+          DateTime.now().millisecondsSinceEpoch);
 
-  Future<void> removeTagFromGame(String gameId, int tagId) async {
-    await (delete(galgameTagMappings)
-          ..where((t) => t.gameId.equals(gameId) & t.tagId.equals(tagId)))
-        .go();
-  }
+  Future<void> removeTagFromGame(String gameId, int tagId) =>
+      _deleteAssignment(TagHostKind.game, gameId, tagId);
 
   Future<void> setTagsForGame(String gameId, Set<int> tagIds) =>
       transaction(() async {
-        final List<GalgameTagMappingRow> existing =
-            await (select(galgameTagMappings)
-                  ..where((t) => t.gameId.equals(gameId)))
-                .get();
+        final existing = await (select(tagAssignments)
+              ..where((t) =>
+                  t.mediaKind.equals(TagHostKind.game.dbValue) &
+                  t.entryKey.equals(gameId)))
+            .get();
         final Set<int> existingTagIds =
-            existing.map((GalgameTagMappingRow e) => e.tagId).toSet();
+            existing.map((TagAssignmentRow e) => e.tagId).toSet();
         for (final int tagId in existingTagIds.difference(tagIds)) {
           await removeTagFromGame(gameId, tagId);
         }
@@ -8231,58 +8269,12 @@ class FushiDatabase extends _$FushiDatabase {
         }
       });
 
-  Future<Set<String>> getGameIdsForAllTags(Set<int> tagIds) async {
-    if (tagIds.isEmpty) return <String>{};
-    final int tagCount = tagIds.length;
-    final String placeholders = List.generate(tagCount, (_) => '?').join(',');
-    final List<Variable> variables = <Variable>[
-      ...tagIds.map((id) => Variable<int>(id)),
-      Variable<int>(tagCount),
-    ];
-    final rows = await customSelect(
-      'SELECT game_id FROM galgame_tag_mappings '
-      'WHERE tag_id IN ($placeholders) '
-      'GROUP BY game_id '
-      'HAVING COUNT(DISTINCT tag_id) = ?',
-      variables: variables,
-    ).get();
-    return rows.map((row) => row.read<String>('game_id')).toSet();
-  }
-
-  Future<List<GalgameTagMappingRow>> getAllGameTagMappings() =>
-      select(galgameTagMappings).get();
+  Future<Set<String>> getGameIdsForAllTags(Set<int> tagIds) =>
+      _entryKeysForAllTags(TagHostKind.game, tagIds);
 
   Future<void> setTagsForVideoBook(String videoBookUid, Set<int> tagIds) =>
-      transaction(() async {
-        final int now = DateTime.now().millisecondsSinceEpoch;
-        final existing = await (select(videoBookTagMappings)
-              ..where((t) => t.bookUid.equals(videoBookUid)))
-            .get();
-        final existingTagIds = existing.map((e) => e.tagId).toSet();
-
-        final toRemove = existingTagIds.difference(tagIds);
-        final toAdd = tagIds.difference(existingTagIds);
-
-        for (final tagId in toRemove) {
-          final String? name = await _tagNameById(tagId);
-          await (delete(videoBookTagMappings)
-                ..where((t) =>
-                    t.bookUid.equals(videoBookUid) & t.tagId.equals(tagId)))
-              .go();
-          if (name != null) {
-            await _upsertTagTombstone(videoBookUid, MediaKind.video, name, now);
-          }
-        }
-        for (final tagId in toAdd) {
-          await _upsertVideoTagMappingWithTime(videoBookUid, tagId, now);
-          final String? name = await _tagNameById(tagId);
-          if (name != null)
-            await _clearTagTombstone(videoBookUid, MediaKind.video, name);
-        }
-      });
-
-  Future<List<VideoBookTagMappingRow>> getAllVideoBookTagMappings() =>
-      select(videoBookTagMappings).get();
+      _setTagsWithTombstones(
+          TagHostKind.video, MediaKind.video, videoBookUid, tagIds);
 
   // ── tags 跨端同步（LWW-element-set：added_at vs 墓碑 deleted_at）──────────────
   // 标签跨设备身份 = name。sync 合并按名并集两端「当前标签(带 addedAt)」与「移除墓碑
@@ -8297,32 +8289,28 @@ class FushiDatabase extends _$FushiDatabase {
     return row?.name;
   }
 
-  /// 当前书 [bookKey] 的标签「名 → 加入毫秒戳」（sync 合并的 add 时钟）。
-  Future<Map<String, int>> bookTagAddedAtByName(String bookKey) async {
-    final rows = await (select(bookTagMappings).join([
-      innerJoin(bookTags, bookTags.id.equalsExp(bookTagMappings.tagId)),
+  /// 宿主标签「名 → 加入毫秒戳」（sync 合并的 add 时钟）。
+  Future<Map<String, int>> _tagAddedAtByName(
+      TagHostKind kind, String entryKey) async {
+    final rows = await (select(tagAssignments).join([
+      innerJoin(bookTags, bookTags.id.equalsExp(tagAssignments.tagId)),
     ])
-          ..where(bookTagMappings.bookKey.equals(bookKey)))
+          ..where(tagAssignments.mediaKind.equals(kind.dbValue) &
+              tagAssignments.entryKey.equals(entryKey)))
         .get();
     return <String, int>{
       for (final row in rows)
-        row.readTable(bookTags).name: row.readTable(bookTagMappings).addedAt,
+        row.readTable(bookTags).name: row.readTable(tagAssignments).addedAt,
     };
   }
 
+  /// 当前书 [bookKey] 的标签「名 → 加入毫秒戳」。
+  Future<Map<String, int>> bookTagAddedAtByName(String bookKey) =>
+      _tagAddedAtByName(TagHostKind.epub, bookKey);
+
   /// 当前视频 [videoBookUid] 的标签「名 → 加入毫秒戳」。
-  Future<Map<String, int>> videoTagAddedAtByName(String videoBookUid) async {
-    final rows = await (select(videoBookTagMappings).join([
-      innerJoin(bookTags, bookTags.id.equalsExp(videoBookTagMappings.tagId)),
-    ])
-          ..where(videoBookTagMappings.bookUid.equals(videoBookUid)))
-        .get();
-    return <String, int>{
-      for (final row in rows)
-        row.readTable(bookTags).name:
-            row.readTable(videoBookTagMappings).addedAt,
-    };
-  }
+  Future<Map<String, int>> videoTagAddedAtByName(String videoBookUid) =>
+      _tagAddedAtByName(TagHostKind.video, videoBookUid);
 
   /// 某宿主 [itemKey]（[mediaType] 为 [MediaKind.epub]/[MediaKind.video]）的
   /// 标签移除墓碑「名 → 移除毫秒戳」。
@@ -8336,37 +8324,32 @@ class FushiDatabase extends _$FushiDatabase {
     return <String, int>{for (final r in rows) r.tagName: r.deletedAt};
   }
 
-  /// 全库书标签「bookKey → (名 → 加入毫秒戳)」一趟批查。
+  /// 某 kind 全库标签「entryKey → (名 → 加入毫秒戳)」一趟批查。
   ///
-  /// 互联 host 清单（listBooks）逐书调 [bookTagAddedAtByName] 是 O(N) 次查询，
-  /// 大库拖慢清单端点；这里一条 join 拉全量再按 bookKey 分组，语义与逐书版逐条一致。
-  Future<Map<String, Map<String, int>>> allBookTagAddedAtByName() async {
-    final rows = await select(bookTagMappings).join([
-      innerJoin(bookTags, bookTags.id.equalsExp(bookTagMappings.tagId)),
-    ]).get();
+  /// 互联 host 清单（listBooks/listVideos）逐条调 [bookTagAddedAtByName] 是
+  /// O(N) 次查询，大库拖慢清单端点；这里一条 join 拉全量再按 entryKey 分组，
+  /// 语义与逐条版一致。
+  Future<Map<String, Map<String, int>>> _allTagAddedAtByName(
+      TagHostKind kind) async {
+    final rows = await (select(tagAssignments).join([
+      innerJoin(bookTags, bookTags.id.equalsExp(tagAssignments.tagId)),
+    ])
+          ..where(tagAssignments.mediaKind.equals(kind.dbValue)))
+        .get();
     final Map<String, Map<String, int>> out = <String, Map<String, int>>{};
     for (final row in rows) {
-      final BookTagMappingRow m = row.readTable(bookTagMappings);
-      (out[m.bookKey] ??= <String, int>{})[row.readTable(bookTags).name] =
+      final TagAssignmentRow m = row.readTable(tagAssignments);
+      (out[m.entryKey] ??= <String, int>{})[row.readTable(bookTags).name] =
           m.addedAt;
     }
     return out;
   }
 
-  /// 全库视频标签「videoBookUid → (名 → 加入毫秒戳)」一趟批查（对称
-  /// [allBookTagAddedAtByName]，供互联 host listVideos 批量预取）。
-  Future<Map<String, Map<String, int>>> allVideoTagAddedAtByName() async {
-    final rows = await select(videoBookTagMappings).join([
-      innerJoin(bookTags, bookTags.id.equalsExp(videoBookTagMappings.tagId)),
-    ]).get();
-    final Map<String, Map<String, int>> out = <String, Map<String, int>>{};
-    for (final row in rows) {
-      final VideoBookTagMappingRow m = row.readTable(videoBookTagMappings);
-      (out[m.bookUid] ??= <String, int>{})[row.readTable(bookTags).name] =
-          m.addedAt;
-    }
-    return out;
-  }
+  Future<Map<String, Map<String, int>>> allBookTagAddedAtByName() =>
+      _allTagAddedAtByName(TagHostKind.epub);
+
+  Future<Map<String, Map<String, int>>> allVideoTagAddedAtByName() =>
+      _allTagAddedAtByName(TagHostKind.video);
 
   /// 某 [mediaType] 全部标签移除墓碑「itemKey → (名 → 移除毫秒戳)」一趟批查
   /// （替代清单端点逐条 [tagTombstonesByName]）。
@@ -8402,95 +8385,54 @@ class FushiDatabase extends _$FushiDatabase {
                 t.tagName.equals(tagName)))
           .go();
 
-  /// upsert 一条 (bookKey, tagId) 映射并写 [addedAt]（无则插入，有则刷新 addedAt）。
-  Future<void> _upsertBookTagMappingWithTime(
-      String bookKey, int tagId, int addedAt) async {
-    final existing = await (select(bookTagMappings)
-          ..where((t) => t.bookKey.equals(bookKey) & t.tagId.equals(tagId))
-          ..limit(1))
-        .getSingleOrNull();
-    if (existing == null) {
-      await into(bookTagMappings).insert(BookTagMappingsCompanion.insert(
-        bookKey: bookKey,
-        tagId: tagId,
-        addedAt: Value(addedAt),
-      ));
-    } else {
-      await (update(bookTagMappings)..where((t) => t.id.equals(existing.id)))
-          .write(BookTagMappingsCompanion(addedAt: Value(addedAt)));
-    }
-  }
-
-  Future<void> _upsertVideoTagMappingWithTime(
-      String videoBookUid, int tagId, int addedAt) async {
-    final existing = await (select(videoBookTagMappings)
-          ..where((t) => t.bookUid.equals(videoBookUid) & t.tagId.equals(tagId))
-          ..limit(1))
-        .getSingleOrNull();
-    if (existing == null) {
-      await into(videoBookTagMappings).insert(
-          VideoBookTagMappingsCompanion.insert(
-              bookUid: videoBookUid, tagId: tagId, addedAt: Value(addedAt)));
-    } else {
-      await (update(videoBookTagMappings)
-            ..where((t) => t.id.equals(existing.id)))
-          .write(VideoBookTagMappingsCompanion(addedAt: Value(addedAt)));
-    }
-  }
+  /// LWW-element-set 合并内核（epub/video 两个 sync kind 共用）：把远端标签快照
+  /// 合并进宿主本地状态。[remoteAddedAt]=远端当前标签名→加入戳；
+  /// [remoteTombstones]=远端移除墓碑名→移除戳。按名并集两端 add 时钟与墓碑时钟，
+  /// 逐名 max(add) > max(removed) ⇒ present（写映射，addedAt=合并后 add 戳）；
+  /// 否则 removed（删映射 + 写墓碑）。幂等。
+  Future<void> _mergeRemoteTags(
+    TagHostKind kind,
+    MediaKind tombstoneKind,
+    String entryKey, {
+    required Map<String, int> remoteAddedAt,
+    required Map<String, int> remoteTombstones,
+  }) =>
+      transaction(() async {
+        final Map<String, int> localAdded =
+            await _tagAddedAtByName(kind, entryKey);
+        final Map<String, int> localTomb =
+            await tagTombstonesByName(entryKey, tombstoneKind);
+        final _MergedTagState merged = _mergeTagClocks(
+            localAdded, remoteAddedAt, localTomb, remoteTombstones);
+        for (final MapEntry<String, int> e in merged.present.entries) {
+          final int tagId = await getOrCreateTagByName(e.key);
+          await _upsertAssignmentWithTime(kind, entryKey, tagId, e.value);
+          await _clearTagTombstone(entryKey, tombstoneKind, e.key);
+        }
+        for (final MapEntry<String, int> e in merged.tombstones.entries) {
+          final int? tagId = await _tagIdByName(e.key);
+          if (tagId != null) await _deleteAssignment(kind, entryKey, tagId);
+          await _upsertTagTombstone(entryKey, tombstoneKind, e.key, e.value);
+        }
+      });
 
   /// LWW-element-set：把远端标签快照合并进书 [bookKey] 本地状态。
-  /// [remoteAddedAt]=远端当前标签名→加入戳；[remoteTombstones]=远端移除墓碑名→移除戳。
-  /// 按名并集两端 add 时钟与墓碑时钟，逐名 max(add) > max(removed) ⇒ present（写映射，
-  /// addedAt=合并后 add 戳）；否则 removed（删映射 + 写墓碑，deletedAt=合并后墓碑戳）。
-  /// 幂等；无远端墓碑（旧端只传名单）时以 [nowMs] 视作 add 戳，退化为并集只增（向后兼容）。
   Future<void> mergeRemoteBookTags(
     String bookKey, {
     required Map<String, int> remoteAddedAt,
     Map<String, int> remoteTombstones = const <String, int>{},
   }) =>
-      transaction(() async {
-        final Map<String, int> localAdded = await bookTagAddedAtByName(bookKey);
-        final Map<String, int> localTomb =
-            await tagTombstonesByName(bookKey, MediaKind.epub);
-        final _MergedTagState merged = _mergeTagClocks(
-            localAdded, remoteAddedAt, localTomb, remoteTombstones);
-        for (final MapEntry<String, int> e in merged.present.entries) {
-          final int tagId = await getOrCreateTagByName(e.key);
-          await _upsertBookTagMappingWithTime(bookKey, tagId, e.value);
-          await _clearTagTombstone(bookKey, MediaKind.epub, e.key);
-        }
-        for (final MapEntry<String, int> e in merged.tombstones.entries) {
-          final int? tagId = await _tagIdByName(e.key);
-          if (tagId != null) await removeTagFromBook(bookKey, tagId);
-          await _upsertTagTombstone(bookKey, MediaKind.epub, e.key, e.value);
-        }
-      });
+      _mergeRemoteTags(TagHostKind.epub, MediaKind.epub, bookKey,
+          remoteAddedAt: remoteAddedAt, remoteTombstones: remoteTombstones);
 
-  /// LWW-element-set：把远端标签快照合并进视频 [videoBookUid] 本地状态（同 [mergeRemoteBookTags]）。
+  /// LWW-element-set：把远端标签快照合并进视频 [videoBookUid] 本地状态。
   Future<void> mergeRemoteVideoTags(
     String videoBookUid, {
     required Map<String, int> remoteAddedAt,
     Map<String, int> remoteTombstones = const <String, int>{},
   }) =>
-      transaction(() async {
-        final Map<String, int> localAdded =
-            await videoTagAddedAtByName(videoBookUid);
-        final Map<String, int> localTomb =
-            await tagTombstonesByName(videoBookUid, MediaKind.video);
-        final _MergedTagState merged = _mergeTagClocks(
-            localAdded, remoteAddedAt, localTomb, remoteTombstones);
-        for (final MapEntry<String, int> e in merged.present.entries) {
-          final int tagId = await getOrCreateTagByName(e.key);
-          await _upsertVideoTagMappingWithTime(videoBookUid, tagId, e.value);
-          await _clearTagTombstone(videoBookUid, MediaKind.video, e.key);
-        }
-        for (final MapEntry<String, int> e in merged.tombstones.entries) {
-          final int? tagId = await _tagIdByName(e.key);
-          if (tagId != null) await removeTagFromVideoBook(videoBookUid, tagId);
-          await _upsertTagTombstone(
-              videoBookUid, MediaKind.video, e.key, e.value);
-        }
-      });
+      _mergeRemoteTags(TagHostKind.video, MediaKind.video, videoBookUid,
+          remoteAddedAt: remoteAddedAt, remoteTombstones: remoteTombstones);
 
   Future<int?> _tagIdByName(String name) async {
     final BookTagRow? row = await (select(bookTags)
@@ -8657,23 +8599,8 @@ class FushiDatabase extends _$FushiDatabase {
             return changed;
           });
 
-  Future<Set<String>> getVideoBookUidsForAllTags(Set<int> tagIds) async {
-    if (tagIds.isEmpty) return {};
-    final tagCount = tagIds.length;
-    final placeholders = List.generate(tagCount, (_) => '?').join(',');
-    final variables = <Variable>[
-      ...tagIds.map((id) => Variable<int>(id)),
-      Variable<int>(tagCount),
-    ];
-    final rows = await customSelect(
-      'SELECT book_uid FROM video_book_tag_mappings '
-      'WHERE tag_id IN ($placeholders) '
-      'GROUP BY book_uid '
-      'HAVING COUNT(DISTINCT tag_id) = ?',
-      variables: variables,
-    ).get();
-    return rows.map((row) => row.read<String>('book_uid')).toSet();
-  }
+  Future<Set<String>> getVideoBookUidsForAllTags(Set<int> tagIds) =>
+      _entryKeysForAllTags(TagHostKind.video, tagIds);
 
   // ── profiles ──────────────────────────────────────────────────────
   Future<List<ProfileRow>> getAllProfiles() =>

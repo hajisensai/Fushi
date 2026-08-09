@@ -512,14 +512,14 @@ void main() {
     final int targetTagId = tagRows.single.data['id'] as int;
     // The mapping points at the REMAPPED target id, not the src id.
     final maps = await after
-        .customSelect('SELECT tag_id FROM book_tag_mappings '
-            "WHERE book_key = 'book1'")
+        .customSelect('SELECT tag_id FROM tag_assignments '
+            "WHERE media_kind = 'epub' AND entry_key = 'book1'")
         .get();
     expect(maps, hasLength(1));
     expect(maps.single.data['tag_id'], targetTagId);
     // No dangling FK: every mapping tag_id resolves to a real tag.
     final dangling = await after
-        .customSelect('SELECT COUNT(*) AS c FROM book_tag_mappings m '
+        .customSelect('SELECT COUNT(*) AS c FROM tag_assignments m '
             'WHERE NOT EXISTS (SELECT 1 FROM book_tags t WHERE t.id = m.tag_id)')
         .getSingle();
     expect(dangling.data['c'], 0);

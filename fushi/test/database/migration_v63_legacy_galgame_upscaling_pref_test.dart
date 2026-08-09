@@ -126,8 +126,8 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 78);
-    expect(db.schemaVersion, 78);
+    expect(version.read<int>('user_version'), 79);
+    expect(db.schemaVersion, 79);
 
     final List<QueryRow> preferences = await db
         .customSelect(
@@ -240,24 +240,18 @@ void main() {
         'video_metadata_extras',
         'video_source_scrape_settings',
         'video_source_scrape_runs',
-        'video_metadata_extras',
         'video_sidecar_artifacts',
         'video_download_jobs',
         'video_download_job_files',
         'video_download_job_subtitles',
         'video_download_subscriptions',
         'video_download_subscription_items',
-        'video_download_jobs',
-        'video_download_job_files',
-        'video_download_job_subtitles',
-        'video_download_subscriptions',
-        'video_download_subscription_items',
+        'tag_assignments',
       },
       reason: '除 v64 的 collection_scrape_meta、v65 的 Mihon 五表、v66 的 '
-          'collection_relations、v68 的 media_images、v77 视频来源刮削表与 '
-          'v78 下载流水线表外，'
-          '升级不得新增任何表',
-    );
+          'collection_relations、v68 的 media_images、v77 视频来源刮削表、'
+          'v78 下载流水线表与 v79 的 tag_assignments（五张标签映射表合一）外，'
+          '升级不得新增任何表',    );
   });
 
   test('v63 is idempotent when the obsolete rows are already absent', () async {
@@ -274,7 +268,7 @@ void main() {
     expect(await db.getPref('theme'), 's:dark');
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 78);
+    expect(version.read<int>('user_version'), 79);
   });
 
   test(
@@ -305,7 +299,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 78);
+      expect(probe.select('PRAGMA user_version').first.values.first, 79);
       expect(
         probe.select(
           'SELECT 1 FROM profile_settings '

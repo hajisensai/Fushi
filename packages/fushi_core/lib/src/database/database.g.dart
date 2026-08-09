@@ -7488,30 +7488,24 @@ class BookTagsCompanion extends UpdateCompanion<BookTagRow> {
   }
 }
 
-class $BookTagMappingsTable extends BookTagMappings
-    with TableInfo<$BookTagMappingsTable, BookTagMappingRow> {
+class $TagAssignmentsTable extends TagAssignments
+    with TableInfo<$TagAssignmentsTable, TagAssignmentRow> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
-  $BookTagMappingsTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  $TagAssignmentsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _mediaKindMeta =
+      const VerificationMeta('mediaKind');
   @override
-  late final GeneratedColumn<int> id = GeneratedColumn<int>(
-      'id', aliasedName, false,
-      hasAutoIncrement: true,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      defaultConstraints:
-          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
-  static const VerificationMeta _bookKeyMeta =
-      const VerificationMeta('bookKey');
+  late final GeneratedColumn<String> mediaKind = GeneratedColumn<String>(
+      'media_kind', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _entryKeyMeta =
+      const VerificationMeta('entryKey');
   @override
-  late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
-      'book_key', aliasedName, false,
-      type: DriftSqlType.string,
-      requiredDuringInsert: true,
-      defaultConstraints: GeneratedColumn.constraintIsAlways(
-          'REFERENCES epub_books (book_key) ON DELETE CASCADE'));
+  late final GeneratedColumn<String> entryKey = GeneratedColumn<String>(
+      'entry_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
   static const VerificationMeta _tagIdMeta = const VerificationMeta('tagId');
   @override
   late final GeneratedColumn<int> tagId = GeneratedColumn<int>(
@@ -7529,25 +7523,28 @@ class $BookTagMappingsTable extends BookTagMappings
       requiredDuringInsert: false,
       defaultValue: const Constant(0));
   @override
-  List<GeneratedColumn> get $columns => [id, bookKey, tagId, addedAt];
+  List<GeneratedColumn> get $columns => [mediaKind, entryKey, tagId, addedAt];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
   String get actualTableName => $name;
-  static const String $name = 'book_tag_mappings';
+  static const String $name = 'tag_assignments';
   @override
-  VerificationContext validateIntegrity(Insertable<BookTagMappingRow> instance,
+  VerificationContext validateIntegrity(Insertable<TagAssignmentRow> instance,
       {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
-    if (data.containsKey('book_key')) {
-      context.handle(_bookKeyMeta,
-          bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta));
+    if (data.containsKey('media_kind')) {
+      context.handle(_mediaKindMeta,
+          mediaKind.isAcceptableOrUnknown(data['media_kind']!, _mediaKindMeta));
     } else if (isInserting) {
-      context.missing(_bookKeyMeta);
+      context.missing(_mediaKindMeta);
+    }
+    if (data.containsKey('entry_key')) {
+      context.handle(_entryKeyMeta,
+          entryKey.isAcceptableOrUnknown(data['entry_key']!, _entryKeyMeta));
+    } else if (isInserting) {
+      context.missing(_entryKeyMeta);
     }
     if (data.containsKey('tag_id')) {
       context.handle(
@@ -7563,19 +7560,15 @@ class $BookTagMappingsTable extends BookTagMappings
   }
 
   @override
-  Set<GeneratedColumn> get $primaryKey => {id};
+  Set<GeneratedColumn> get $primaryKey => {mediaKind, entryKey, tagId};
   @override
-  List<Set<GeneratedColumn>> get uniqueKeys => [
-        {bookKey, tagId},
-      ];
-  @override
-  BookTagMappingRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+  TagAssignmentRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return BookTagMappingRow(
-      id: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      bookKey: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}book_key'])!,
+    return TagAssignmentRow(
+      mediaKind: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}media_kind'])!,
+      entryKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}entry_key'])!,
       tagId: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}tag_id'])!,
       addedAt: attachedDatabase.typeMapping
@@ -7584,51 +7577,53 @@ class $BookTagMappingsTable extends BookTagMappings
   }
 
   @override
-  $BookTagMappingsTable createAlias(String alias) {
-    return $BookTagMappingsTable(attachedDatabase, alias);
+  $TagAssignmentsTable createAlias(String alias) {
+    return $TagAssignmentsTable(attachedDatabase, alias);
   }
 }
 
-class BookTagMappingRow extends DataClass
-    implements Insertable<BookTagMappingRow> {
-  final int id;
-  final String bookKey;
+class TagAssignmentRow extends DataClass
+    implements Insertable<TagAssignmentRow> {
+  /// 宿主种类：'epub' | 'srt' | 'video' | 'collection' | 'game'。
+  final String mediaKind;
+
+  /// 宿主稳定身份（值域见类 doc）。
+  final String entryKey;
   final int tagId;
 
-  /// 该映射被加入的毫秒戳（TODO tags-sync：LWW-element-set 的 add 时钟——与
-  /// [BookTagMembershipTombstones].deletedAt 比较决定 add-wins/remove-wins，防跨设备
-  /// 复活/误删）。旧行迁移填 0（最古 add，任何带时间戳的远端移除都能压过）。
+  /// 该映射被加入的毫秒戳（epub/video 域是 LWW-element-set 的 add 时钟——与
+  /// [BookTagMembershipTombstones].deletedAt 比较决定 add-wins/remove-wins）。
   final int addedAt;
-  const BookTagMappingRow(
-      {required this.id,
-      required this.bookKey,
+  const TagAssignmentRow(
+      {required this.mediaKind,
+      required this.entryKey,
       required this.tagId,
       required this.addedAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['id'] = Variable<int>(id);
-    map['book_key'] = Variable<String>(bookKey);
+    map['media_kind'] = Variable<String>(mediaKind);
+    map['entry_key'] = Variable<String>(entryKey);
     map['tag_id'] = Variable<int>(tagId);
     map['added_at'] = Variable<int>(addedAt);
     return map;
   }
 
-  BookTagMappingsCompanion toCompanion(bool nullToAbsent) {
-    return BookTagMappingsCompanion(
-      id: Value(id),
-      bookKey: Value(bookKey),
+  TagAssignmentsCompanion toCompanion(bool nullToAbsent) {
+    return TagAssignmentsCompanion(
+      mediaKind: Value(mediaKind),
+      entryKey: Value(entryKey),
       tagId: Value(tagId),
       addedAt: Value(addedAt),
     );
   }
 
-  factory BookTagMappingRow.fromJson(Map<String, dynamic> json,
+  factory TagAssignmentRow.fromJson(Map<String, dynamic> json,
       {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return BookTagMappingRow(
-      id: serializer.fromJson<int>(json['id']),
-      bookKey: serializer.fromJson<String>(json['bookKey']),
+    return TagAssignmentRow(
+      mediaKind: serializer.fromJson<String>(json['mediaKind']),
+      entryKey: serializer.fromJson<String>(json['entryKey']),
       tagId: serializer.fromJson<int>(json['tagId']),
       addedAt: serializer.fromJson<int>(json['addedAt']),
     );
@@ -7637,25 +7632,25 @@ class BookTagMappingRow extends DataClass
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
-      'id': serializer.toJson<int>(id),
-      'bookKey': serializer.toJson<String>(bookKey),
+      'mediaKind': serializer.toJson<String>(mediaKind),
+      'entryKey': serializer.toJson<String>(entryKey),
       'tagId': serializer.toJson<int>(tagId),
       'addedAt': serializer.toJson<int>(addedAt),
     };
   }
 
-  BookTagMappingRow copyWith(
-          {int? id, String? bookKey, int? tagId, int? addedAt}) =>
-      BookTagMappingRow(
-        id: id ?? this.id,
-        bookKey: bookKey ?? this.bookKey,
+  TagAssignmentRow copyWith(
+          {String? mediaKind, String? entryKey, int? tagId, int? addedAt}) =>
+      TagAssignmentRow(
+        mediaKind: mediaKind ?? this.mediaKind,
+        entryKey: entryKey ?? this.entryKey,
         tagId: tagId ?? this.tagId,
         addedAt: addedAt ?? this.addedAt,
       );
-  BookTagMappingRow copyWithCompanion(BookTagMappingsCompanion data) {
-    return BookTagMappingRow(
-      id: data.id.present ? data.id.value : this.id,
-      bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
+  TagAssignmentRow copyWithCompanion(TagAssignmentsCompanion data) {
+    return TagAssignmentRow(
+      mediaKind: data.mediaKind.present ? data.mediaKind.value : this.mediaKind,
+      entryKey: data.entryKey.present ? data.entryKey.value : this.entryKey,
       tagId: data.tagId.present ? data.tagId.value : this.tagId,
       addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
     );
@@ -7663,9 +7658,9 @@ class BookTagMappingRow extends DataClass
 
   @override
   String toString() {
-    return (StringBuffer('BookTagMappingRow(')
-          ..write('id: $id, ')
-          ..write('bookKey: $bookKey, ')
+    return (StringBuffer('TagAssignmentRow(')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('entryKey: $entryKey, ')
           ..write('tagId: $tagId, ')
           ..write('addedAt: $addedAt')
           ..write(')'))
@@ -7673,70 +7668,78 @@ class BookTagMappingRow extends DataClass
   }
 
   @override
-  int get hashCode => Object.hash(id, bookKey, tagId, addedAt);
+  int get hashCode => Object.hash(mediaKind, entryKey, tagId, addedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is BookTagMappingRow &&
-          other.id == this.id &&
-          other.bookKey == this.bookKey &&
+      (other is TagAssignmentRow &&
+          other.mediaKind == this.mediaKind &&
+          other.entryKey == this.entryKey &&
           other.tagId == this.tagId &&
           other.addedAt == this.addedAt);
 }
 
-class BookTagMappingsCompanion extends UpdateCompanion<BookTagMappingRow> {
-  final Value<int> id;
-  final Value<String> bookKey;
+class TagAssignmentsCompanion extends UpdateCompanion<TagAssignmentRow> {
+  final Value<String> mediaKind;
+  final Value<String> entryKey;
   final Value<int> tagId;
   final Value<int> addedAt;
-  const BookTagMappingsCompanion({
-    this.id = const Value.absent(),
-    this.bookKey = const Value.absent(),
+  final Value<int> rowid;
+  const TagAssignmentsCompanion({
+    this.mediaKind = const Value.absent(),
+    this.entryKey = const Value.absent(),
     this.tagId = const Value.absent(),
     this.addedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
   });
-  BookTagMappingsCompanion.insert({
-    this.id = const Value.absent(),
-    required String bookKey,
+  TagAssignmentsCompanion.insert({
+    required String mediaKind,
+    required String entryKey,
     required int tagId,
     this.addedAt = const Value.absent(),
-  })  : bookKey = Value(bookKey),
+    this.rowid = const Value.absent(),
+  })  : mediaKind = Value(mediaKind),
+        entryKey = Value(entryKey),
         tagId = Value(tagId);
-  static Insertable<BookTagMappingRow> custom({
-    Expression<int>? id,
-    Expression<String>? bookKey,
+  static Insertable<TagAssignmentRow> custom({
+    Expression<String>? mediaKind,
+    Expression<String>? entryKey,
     Expression<int>? tagId,
     Expression<int>? addedAt,
+    Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
-      if (id != null) 'id': id,
-      if (bookKey != null) 'book_key': bookKey,
+      if (mediaKind != null) 'media_kind': mediaKind,
+      if (entryKey != null) 'entry_key': entryKey,
       if (tagId != null) 'tag_id': tagId,
       if (addedAt != null) 'added_at': addedAt,
+      if (rowid != null) 'rowid': rowid,
     });
   }
 
-  BookTagMappingsCompanion copyWith(
-      {Value<int>? id,
-      Value<String>? bookKey,
+  TagAssignmentsCompanion copyWith(
+      {Value<String>? mediaKind,
+      Value<String>? entryKey,
       Value<int>? tagId,
-      Value<int>? addedAt}) {
-    return BookTagMappingsCompanion(
-      id: id ?? this.id,
-      bookKey: bookKey ?? this.bookKey,
+      Value<int>? addedAt,
+      Value<int>? rowid}) {
+    return TagAssignmentsCompanion(
+      mediaKind: mediaKind ?? this.mediaKind,
+      entryKey: entryKey ?? this.entryKey,
       tagId: tagId ?? this.tagId,
       addedAt: addedAt ?? this.addedAt,
+      rowid: rowid ?? this.rowid,
     );
   }
 
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    if (id.present) {
-      map['id'] = Variable<int>(id.value);
+    if (mediaKind.present) {
+      map['media_kind'] = Variable<String>(mediaKind.value);
     }
-    if (bookKey.present) {
-      map['book_key'] = Variable<String>(bookKey.value);
+    if (entryKey.present) {
+      map['entry_key'] = Variable<String>(entryKey.value);
     }
     if (tagId.present) {
       map['tag_id'] = Variable<int>(tagId.value);
@@ -7744,247 +7747,20 @@ class BookTagMappingsCompanion extends UpdateCompanion<BookTagMappingRow> {
     if (addedAt.present) {
       map['added_at'] = Variable<int>(addedAt.value);
     }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
     return map;
   }
 
   @override
   String toString() {
-    return (StringBuffer('BookTagMappingsCompanion(')
-          ..write('id: $id, ')
-          ..write('bookKey: $bookKey, ')
+    return (StringBuffer('TagAssignmentsCompanion(')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('entryKey: $entryKey, ')
           ..write('tagId: $tagId, ')
-          ..write('addedAt: $addedAt')
-          ..write(')'))
-        .toString();
-  }
-}
-
-class $SrtBookTagMappingsTable extends SrtBookTagMappings
-    with TableInfo<$SrtBookTagMappingsTable, SrtBookTagMappingRow> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $SrtBookTagMappingsTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
-  @override
-  late final GeneratedColumn<int> id = GeneratedColumn<int>(
-      'id', aliasedName, false,
-      hasAutoIncrement: true,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      defaultConstraints:
-          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
-  static const VerificationMeta _srtBookIdMeta =
-      const VerificationMeta('srtBookId');
-  @override
-  late final GeneratedColumn<int> srtBookId = GeneratedColumn<int>(
-      'srt_book_id', aliasedName, false,
-      type: DriftSqlType.int,
-      requiredDuringInsert: true,
-      defaultConstraints: GeneratedColumn.constraintIsAlways(
-          'REFERENCES srt_books (id) ON DELETE CASCADE'));
-  static const VerificationMeta _tagIdMeta = const VerificationMeta('tagId');
-  @override
-  late final GeneratedColumn<int> tagId = GeneratedColumn<int>(
-      'tag_id', aliasedName, false,
-      type: DriftSqlType.int,
-      requiredDuringInsert: true,
-      defaultConstraints: GeneratedColumn.constraintIsAlways(
-          'REFERENCES book_tags (id) ON DELETE CASCADE'));
-  @override
-  List<GeneratedColumn> get $columns => [id, srtBookId, tagId];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'srt_book_tag_mappings';
-  @override
-  VerificationContext validateIntegrity(
-      Insertable<SrtBookTagMappingRow> instance,
-      {bool isInserting = false}) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
-    if (data.containsKey('srt_book_id')) {
-      context.handle(
-          _srtBookIdMeta,
-          srtBookId.isAcceptableOrUnknown(
-              data['srt_book_id']!, _srtBookIdMeta));
-    } else if (isInserting) {
-      context.missing(_srtBookIdMeta);
-    }
-    if (data.containsKey('tag_id')) {
-      context.handle(
-          _tagIdMeta, tagId.isAcceptableOrUnknown(data['tag_id']!, _tagIdMeta));
-    } else if (isInserting) {
-      context.missing(_tagIdMeta);
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {id};
-  @override
-  List<Set<GeneratedColumn>> get uniqueKeys => [
-        {srtBookId, tagId},
-      ];
-  @override
-  SrtBookTagMappingRow map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return SrtBookTagMappingRow(
-      id: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      srtBookId: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}srt_book_id'])!,
-      tagId: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}tag_id'])!,
-    );
-  }
-
-  @override
-  $SrtBookTagMappingsTable createAlias(String alias) {
-    return $SrtBookTagMappingsTable(attachedDatabase, alias);
-  }
-}
-
-class SrtBookTagMappingRow extends DataClass
-    implements Insertable<SrtBookTagMappingRow> {
-  final int id;
-  final int srtBookId;
-  final int tagId;
-  const SrtBookTagMappingRow(
-      {required this.id, required this.srtBookId, required this.tagId});
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['id'] = Variable<int>(id);
-    map['srt_book_id'] = Variable<int>(srtBookId);
-    map['tag_id'] = Variable<int>(tagId);
-    return map;
-  }
-
-  SrtBookTagMappingsCompanion toCompanion(bool nullToAbsent) {
-    return SrtBookTagMappingsCompanion(
-      id: Value(id),
-      srtBookId: Value(srtBookId),
-      tagId: Value(tagId),
-    );
-  }
-
-  factory SrtBookTagMappingRow.fromJson(Map<String, dynamic> json,
-      {ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return SrtBookTagMappingRow(
-      id: serializer.fromJson<int>(json['id']),
-      srtBookId: serializer.fromJson<int>(json['srtBookId']),
-      tagId: serializer.fromJson<int>(json['tagId']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'id': serializer.toJson<int>(id),
-      'srtBookId': serializer.toJson<int>(srtBookId),
-      'tagId': serializer.toJson<int>(tagId),
-    };
-  }
-
-  SrtBookTagMappingRow copyWith({int? id, int? srtBookId, int? tagId}) =>
-      SrtBookTagMappingRow(
-        id: id ?? this.id,
-        srtBookId: srtBookId ?? this.srtBookId,
-        tagId: tagId ?? this.tagId,
-      );
-  SrtBookTagMappingRow copyWithCompanion(SrtBookTagMappingsCompanion data) {
-    return SrtBookTagMappingRow(
-      id: data.id.present ? data.id.value : this.id,
-      srtBookId: data.srtBookId.present ? data.srtBookId.value : this.srtBookId,
-      tagId: data.tagId.present ? data.tagId.value : this.tagId,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('SrtBookTagMappingRow(')
-          ..write('id: $id, ')
-          ..write('srtBookId: $srtBookId, ')
-          ..write('tagId: $tagId')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(id, srtBookId, tagId);
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is SrtBookTagMappingRow &&
-          other.id == this.id &&
-          other.srtBookId == this.srtBookId &&
-          other.tagId == this.tagId);
-}
-
-class SrtBookTagMappingsCompanion
-    extends UpdateCompanion<SrtBookTagMappingRow> {
-  final Value<int> id;
-  final Value<int> srtBookId;
-  final Value<int> tagId;
-  const SrtBookTagMappingsCompanion({
-    this.id = const Value.absent(),
-    this.srtBookId = const Value.absent(),
-    this.tagId = const Value.absent(),
-  });
-  SrtBookTagMappingsCompanion.insert({
-    this.id = const Value.absent(),
-    required int srtBookId,
-    required int tagId,
-  })  : srtBookId = Value(srtBookId),
-        tagId = Value(tagId);
-  static Insertable<SrtBookTagMappingRow> custom({
-    Expression<int>? id,
-    Expression<int>? srtBookId,
-    Expression<int>? tagId,
-  }) {
-    return RawValuesInsertable({
-      if (id != null) 'id': id,
-      if (srtBookId != null) 'srt_book_id': srtBookId,
-      if (tagId != null) 'tag_id': tagId,
-    });
-  }
-
-  SrtBookTagMappingsCompanion copyWith(
-      {Value<int>? id, Value<int>? srtBookId, Value<int>? tagId}) {
-    return SrtBookTagMappingsCompanion(
-      id: id ?? this.id,
-      srtBookId: srtBookId ?? this.srtBookId,
-      tagId: tagId ?? this.tagId,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (id.present) {
-      map['id'] = Variable<int>(id.value);
-    }
-    if (srtBookId.present) {
-      map['srt_book_id'] = Variable<int>(srtBookId.value);
-    }
-    if (tagId.present) {
-      map['tag_id'] = Variable<int>(tagId.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('SrtBookTagMappingsCompanion(')
-          ..write('id: $id, ')
-          ..write('srtBookId: $srtBookId, ')
-          ..write('tagId: $tagId')
+          ..write('addedAt: $addedAt, ')
+          ..write('rowid: $rowid')
           ..write(')'))
         .toString();
   }
@@ -10070,279 +9846,6 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
           ..write('sourceId: $sourceId, ')
           ..write('streamSpecJson: $streamSpecJson, ')
           ..write('rowid: $rowid')
-          ..write(')'))
-        .toString();
-  }
-}
-
-class $VideoBookTagMappingsTable extends VideoBookTagMappings
-    with TableInfo<$VideoBookTagMappingsTable, VideoBookTagMappingRow> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $VideoBookTagMappingsTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
-  @override
-  late final GeneratedColumn<int> id = GeneratedColumn<int>(
-      'id', aliasedName, false,
-      hasAutoIncrement: true,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      defaultConstraints:
-          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
-  static const VerificationMeta _bookUidMeta =
-      const VerificationMeta('bookUid');
-  @override
-  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
-      'book_uid', aliasedName, false,
-      type: DriftSqlType.string,
-      requiredDuringInsert: true,
-      defaultConstraints: GeneratedColumn.constraintIsAlways(
-          'REFERENCES video_books (book_uid) ON DELETE CASCADE'));
-  static const VerificationMeta _tagIdMeta = const VerificationMeta('tagId');
-  @override
-  late final GeneratedColumn<int> tagId = GeneratedColumn<int>(
-      'tag_id', aliasedName, false,
-      type: DriftSqlType.int,
-      requiredDuringInsert: true,
-      defaultConstraints: GeneratedColumn.constraintIsAlways(
-          'REFERENCES book_tags (id) ON DELETE CASCADE'));
-  static const VerificationMeta _addedAtMeta =
-      const VerificationMeta('addedAt');
-  @override
-  late final GeneratedColumn<int> addedAt = GeneratedColumn<int>(
-      'added_at', aliasedName, false,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      defaultValue: const Constant(0));
-  @override
-  List<GeneratedColumn> get $columns => [id, bookUid, tagId, addedAt];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'video_book_tag_mappings';
-  @override
-  VerificationContext validateIntegrity(
-      Insertable<VideoBookTagMappingRow> instance,
-      {bool isInserting = false}) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
-    if (data.containsKey('book_uid')) {
-      context.handle(_bookUidMeta,
-          bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta));
-    } else if (isInserting) {
-      context.missing(_bookUidMeta);
-    }
-    if (data.containsKey('tag_id')) {
-      context.handle(
-          _tagIdMeta, tagId.isAcceptableOrUnknown(data['tag_id']!, _tagIdMeta));
-    } else if (isInserting) {
-      context.missing(_tagIdMeta);
-    }
-    if (data.containsKey('added_at')) {
-      context.handle(_addedAtMeta,
-          addedAt.isAcceptableOrUnknown(data['added_at']!, _addedAtMeta));
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {id};
-  @override
-  List<Set<GeneratedColumn>> get uniqueKeys => [
-        {bookUid, tagId},
-      ];
-  @override
-  VideoBookTagMappingRow map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return VideoBookTagMappingRow(
-      id: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      bookUid: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}book_uid'])!,
-      tagId: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}tag_id'])!,
-      addedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}added_at'])!,
-    );
-  }
-
-  @override
-  $VideoBookTagMappingsTable createAlias(String alias) {
-    return $VideoBookTagMappingsTable(attachedDatabase, alias);
-  }
-}
-
-class VideoBookTagMappingRow extends DataClass
-    implements Insertable<VideoBookTagMappingRow> {
-  final int id;
-
-  /// 视频书外键（v57 起与被引列 [VideoBooks].bookUid 同名；旧列名 video_book_uid）。
-  final String bookUid;
-  final int tagId;
-
-  /// 该映射被加入的毫秒戳（LWW-element-set 的 add 时钟，见 [BookTagMappings].addedAt）。
-  final int addedAt;
-  const VideoBookTagMappingRow(
-      {required this.id,
-      required this.bookUid,
-      required this.tagId,
-      required this.addedAt});
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['id'] = Variable<int>(id);
-    map['book_uid'] = Variable<String>(bookUid);
-    map['tag_id'] = Variable<int>(tagId);
-    map['added_at'] = Variable<int>(addedAt);
-    return map;
-  }
-
-  VideoBookTagMappingsCompanion toCompanion(bool nullToAbsent) {
-    return VideoBookTagMappingsCompanion(
-      id: Value(id),
-      bookUid: Value(bookUid),
-      tagId: Value(tagId),
-      addedAt: Value(addedAt),
-    );
-  }
-
-  factory VideoBookTagMappingRow.fromJson(Map<String, dynamic> json,
-      {ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return VideoBookTagMappingRow(
-      id: serializer.fromJson<int>(json['id']),
-      bookUid: serializer.fromJson<String>(json['bookUid']),
-      tagId: serializer.fromJson<int>(json['tagId']),
-      addedAt: serializer.fromJson<int>(json['addedAt']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'id': serializer.toJson<int>(id),
-      'bookUid': serializer.toJson<String>(bookUid),
-      'tagId': serializer.toJson<int>(tagId),
-      'addedAt': serializer.toJson<int>(addedAt),
-    };
-  }
-
-  VideoBookTagMappingRow copyWith(
-          {int? id, String? bookUid, int? tagId, int? addedAt}) =>
-      VideoBookTagMappingRow(
-        id: id ?? this.id,
-        bookUid: bookUid ?? this.bookUid,
-        tagId: tagId ?? this.tagId,
-        addedAt: addedAt ?? this.addedAt,
-      );
-  VideoBookTagMappingRow copyWithCompanion(VideoBookTagMappingsCompanion data) {
-    return VideoBookTagMappingRow(
-      id: data.id.present ? data.id.value : this.id,
-      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
-      tagId: data.tagId.present ? data.tagId.value : this.tagId,
-      addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('VideoBookTagMappingRow(')
-          ..write('id: $id, ')
-          ..write('bookUid: $bookUid, ')
-          ..write('tagId: $tagId, ')
-          ..write('addedAt: $addedAt')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(id, bookUid, tagId, addedAt);
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is VideoBookTagMappingRow &&
-          other.id == this.id &&
-          other.bookUid == this.bookUid &&
-          other.tagId == this.tagId &&
-          other.addedAt == this.addedAt);
-}
-
-class VideoBookTagMappingsCompanion
-    extends UpdateCompanion<VideoBookTagMappingRow> {
-  final Value<int> id;
-  final Value<String> bookUid;
-  final Value<int> tagId;
-  final Value<int> addedAt;
-  const VideoBookTagMappingsCompanion({
-    this.id = const Value.absent(),
-    this.bookUid = const Value.absent(),
-    this.tagId = const Value.absent(),
-    this.addedAt = const Value.absent(),
-  });
-  VideoBookTagMappingsCompanion.insert({
-    this.id = const Value.absent(),
-    required String bookUid,
-    required int tagId,
-    this.addedAt = const Value.absent(),
-  })  : bookUid = Value(bookUid),
-        tagId = Value(tagId);
-  static Insertable<VideoBookTagMappingRow> custom({
-    Expression<int>? id,
-    Expression<String>? bookUid,
-    Expression<int>? tagId,
-    Expression<int>? addedAt,
-  }) {
-    return RawValuesInsertable({
-      if (id != null) 'id': id,
-      if (bookUid != null) 'book_uid': bookUid,
-      if (tagId != null) 'tag_id': tagId,
-      if (addedAt != null) 'added_at': addedAt,
-    });
-  }
-
-  VideoBookTagMappingsCompanion copyWith(
-      {Value<int>? id,
-      Value<String>? bookUid,
-      Value<int>? tagId,
-      Value<int>? addedAt}) {
-    return VideoBookTagMappingsCompanion(
-      id: id ?? this.id,
-      bookUid: bookUid ?? this.bookUid,
-      tagId: tagId ?? this.tagId,
-      addedAt: addedAt ?? this.addedAt,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (id.present) {
-      map['id'] = Variable<int>(id.value);
-    }
-    if (bookUid.present) {
-      map['book_uid'] = Variable<String>(bookUid.value);
-    }
-    if (tagId.present) {
-      map['tag_id'] = Variable<int>(tagId.value);
-    }
-    if (addedAt.present) {
-      map['added_at'] = Variable<int>(addedAt.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('VideoBookTagMappingsCompanion(')
-          ..write('id: $id, ')
-          ..write('bookUid: $bookUid, ')
-          ..write('tagId: $tagId, ')
-          ..write('addedAt: $addedAt')
           ..write(')'))
         .toString();
   }
@@ -16115,241 +15618,6 @@ class BookCustomCssCompanion extends UpdateCompanion<BookCustomCssRow> {
   }
 }
 
-class $CollectionTagMappingsTable extends CollectionTagMappings
-    with TableInfo<$CollectionTagMappingsTable, CollectionTagMappingRow> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $CollectionTagMappingsTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
-  @override
-  late final GeneratedColumn<int> id = GeneratedColumn<int>(
-      'id', aliasedName, false,
-      hasAutoIncrement: true,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      defaultConstraints:
-          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
-  static const VerificationMeta _collectionIdMeta =
-      const VerificationMeta('collectionId');
-  @override
-  late final GeneratedColumn<int> collectionId = GeneratedColumn<int>(
-      'collection_id', aliasedName, false,
-      type: DriftSqlType.int,
-      requiredDuringInsert: true,
-      defaultConstraints: GeneratedColumn.constraintIsAlways(
-          'REFERENCES media_collections (id) ON DELETE CASCADE'));
-  static const VerificationMeta _tagIdMeta = const VerificationMeta('tagId');
-  @override
-  late final GeneratedColumn<int> tagId = GeneratedColumn<int>(
-      'tag_id', aliasedName, false,
-      type: DriftSqlType.int,
-      requiredDuringInsert: true,
-      defaultConstraints: GeneratedColumn.constraintIsAlways(
-          'REFERENCES book_tags (id) ON DELETE CASCADE'));
-  @override
-  List<GeneratedColumn> get $columns => [id, collectionId, tagId];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'collection_tag_mappings';
-  @override
-  VerificationContext validateIntegrity(
-      Insertable<CollectionTagMappingRow> instance,
-      {bool isInserting = false}) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
-    if (data.containsKey('collection_id')) {
-      context.handle(
-          _collectionIdMeta,
-          collectionId.isAcceptableOrUnknown(
-              data['collection_id']!, _collectionIdMeta));
-    } else if (isInserting) {
-      context.missing(_collectionIdMeta);
-    }
-    if (data.containsKey('tag_id')) {
-      context.handle(
-          _tagIdMeta, tagId.isAcceptableOrUnknown(data['tag_id']!, _tagIdMeta));
-    } else if (isInserting) {
-      context.missing(_tagIdMeta);
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {id};
-  @override
-  List<Set<GeneratedColumn>> get uniqueKeys => [
-        {collectionId, tagId},
-      ];
-  @override
-  CollectionTagMappingRow map(Map<String, dynamic> data,
-      {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return CollectionTagMappingRow(
-      id: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      collectionId: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}collection_id'])!,
-      tagId: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}tag_id'])!,
-    );
-  }
-
-  @override
-  $CollectionTagMappingsTable createAlias(String alias) {
-    return $CollectionTagMappingsTable(attachedDatabase, alias);
-  }
-}
-
-class CollectionTagMappingRow extends DataClass
-    implements Insertable<CollectionTagMappingRow> {
-  final int id;
-  final int collectionId;
-  final int tagId;
-  const CollectionTagMappingRow(
-      {required this.id, required this.collectionId, required this.tagId});
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['id'] = Variable<int>(id);
-    map['collection_id'] = Variable<int>(collectionId);
-    map['tag_id'] = Variable<int>(tagId);
-    return map;
-  }
-
-  CollectionTagMappingsCompanion toCompanion(bool nullToAbsent) {
-    return CollectionTagMappingsCompanion(
-      id: Value(id),
-      collectionId: Value(collectionId),
-      tagId: Value(tagId),
-    );
-  }
-
-  factory CollectionTagMappingRow.fromJson(Map<String, dynamic> json,
-      {ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return CollectionTagMappingRow(
-      id: serializer.fromJson<int>(json['id']),
-      collectionId: serializer.fromJson<int>(json['collectionId']),
-      tagId: serializer.fromJson<int>(json['tagId']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'id': serializer.toJson<int>(id),
-      'collectionId': serializer.toJson<int>(collectionId),
-      'tagId': serializer.toJson<int>(tagId),
-    };
-  }
-
-  CollectionTagMappingRow copyWith({int? id, int? collectionId, int? tagId}) =>
-      CollectionTagMappingRow(
-        id: id ?? this.id,
-        collectionId: collectionId ?? this.collectionId,
-        tagId: tagId ?? this.tagId,
-      );
-  CollectionTagMappingRow copyWithCompanion(
-      CollectionTagMappingsCompanion data) {
-    return CollectionTagMappingRow(
-      id: data.id.present ? data.id.value : this.id,
-      collectionId: data.collectionId.present
-          ? data.collectionId.value
-          : this.collectionId,
-      tagId: data.tagId.present ? data.tagId.value : this.tagId,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('CollectionTagMappingRow(')
-          ..write('id: $id, ')
-          ..write('collectionId: $collectionId, ')
-          ..write('tagId: $tagId')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(id, collectionId, tagId);
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is CollectionTagMappingRow &&
-          other.id == this.id &&
-          other.collectionId == this.collectionId &&
-          other.tagId == this.tagId);
-}
-
-class CollectionTagMappingsCompanion
-    extends UpdateCompanion<CollectionTagMappingRow> {
-  final Value<int> id;
-  final Value<int> collectionId;
-  final Value<int> tagId;
-  const CollectionTagMappingsCompanion({
-    this.id = const Value.absent(),
-    this.collectionId = const Value.absent(),
-    this.tagId = const Value.absent(),
-  });
-  CollectionTagMappingsCompanion.insert({
-    this.id = const Value.absent(),
-    required int collectionId,
-    required int tagId,
-  })  : collectionId = Value(collectionId),
-        tagId = Value(tagId);
-  static Insertable<CollectionTagMappingRow> custom({
-    Expression<int>? id,
-    Expression<int>? collectionId,
-    Expression<int>? tagId,
-  }) {
-    return RawValuesInsertable({
-      if (id != null) 'id': id,
-      if (collectionId != null) 'collection_id': collectionId,
-      if (tagId != null) 'tag_id': tagId,
-    });
-  }
-
-  CollectionTagMappingsCompanion copyWith(
-      {Value<int>? id, Value<int>? collectionId, Value<int>? tagId}) {
-    return CollectionTagMappingsCompanion(
-      id: id ?? this.id,
-      collectionId: collectionId ?? this.collectionId,
-      tagId: tagId ?? this.tagId,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (id.present) {
-      map['id'] = Variable<int>(id.value);
-    }
-    if (collectionId.present) {
-      map['collection_id'] = Variable<int>(collectionId.value);
-    }
-    if (tagId.present) {
-      map['tag_id'] = Variable<int>(tagId.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('CollectionTagMappingsCompanion(')
-          ..write('id: $id, ')
-          ..write('collectionId: $collectionId, ')
-          ..write('tagId: $tagId')
-          ..write(')'))
-        .toString();
-  }
-}
-
 class $SyncDeletionTombstonesTable extends SyncDeletionTombstones
     with TableInfo<$SyncDeletionTombstonesTable, SyncDeletionTombstoneRow> {
   @override
@@ -21696,234 +20964,6 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
           ..write('endMs: $endMs, ')
           ..write('durationSeconds: $durationSeconds, ')
           ..write('dateKey: $dateKey')
-          ..write(')'))
-        .toString();
-  }
-}
-
-class $GalgameTagMappingsTable extends GalgameTagMappings
-    with TableInfo<$GalgameTagMappingsTable, GalgameTagMappingRow> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $GalgameTagMappingsTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
-  @override
-  late final GeneratedColumn<int> id = GeneratedColumn<int>(
-      'id', aliasedName, false,
-      hasAutoIncrement: true,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      defaultConstraints:
-          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
-  static const VerificationMeta _gameIdMeta = const VerificationMeta('gameId');
-  @override
-  late final GeneratedColumn<String> gameId = GeneratedColumn<String>(
-      'game_id', aliasedName, false,
-      type: DriftSqlType.string,
-      requiredDuringInsert: true,
-      defaultConstraints: GeneratedColumn.constraintIsAlways(
-          'REFERENCES galgames (id) ON DELETE CASCADE'));
-  static const VerificationMeta _tagIdMeta = const VerificationMeta('tagId');
-  @override
-  late final GeneratedColumn<int> tagId = GeneratedColumn<int>(
-      'tag_id', aliasedName, false,
-      type: DriftSqlType.int,
-      requiredDuringInsert: true,
-      defaultConstraints: GeneratedColumn.constraintIsAlways(
-          'REFERENCES book_tags (id) ON DELETE CASCADE'));
-  @override
-  List<GeneratedColumn> get $columns => [id, gameId, tagId];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'galgame_tag_mappings';
-  @override
-  VerificationContext validateIntegrity(
-      Insertable<GalgameTagMappingRow> instance,
-      {bool isInserting = false}) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
-    if (data.containsKey('game_id')) {
-      context.handle(_gameIdMeta,
-          gameId.isAcceptableOrUnknown(data['game_id']!, _gameIdMeta));
-    } else if (isInserting) {
-      context.missing(_gameIdMeta);
-    }
-    if (data.containsKey('tag_id')) {
-      context.handle(
-          _tagIdMeta, tagId.isAcceptableOrUnknown(data['tag_id']!, _tagIdMeta));
-    } else if (isInserting) {
-      context.missing(_tagIdMeta);
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {id};
-  @override
-  List<Set<GeneratedColumn>> get uniqueKeys => [
-        {gameId, tagId},
-      ];
-  @override
-  GalgameTagMappingRow map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return GalgameTagMappingRow(
-      id: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      gameId: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}game_id'])!,
-      tagId: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}tag_id'])!,
-    );
-  }
-
-  @override
-  $GalgameTagMappingsTable createAlias(String alias) {
-    return $GalgameTagMappingsTable(attachedDatabase, alias);
-  }
-}
-
-class GalgameTagMappingRow extends DataClass
-    implements Insertable<GalgameTagMappingRow> {
-  final int id;
-  final String gameId;
-  final int tagId;
-  const GalgameTagMappingRow(
-      {required this.id, required this.gameId, required this.tagId});
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['id'] = Variable<int>(id);
-    map['game_id'] = Variable<String>(gameId);
-    map['tag_id'] = Variable<int>(tagId);
-    return map;
-  }
-
-  GalgameTagMappingsCompanion toCompanion(bool nullToAbsent) {
-    return GalgameTagMappingsCompanion(
-      id: Value(id),
-      gameId: Value(gameId),
-      tagId: Value(tagId),
-    );
-  }
-
-  factory GalgameTagMappingRow.fromJson(Map<String, dynamic> json,
-      {ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return GalgameTagMappingRow(
-      id: serializer.fromJson<int>(json['id']),
-      gameId: serializer.fromJson<String>(json['gameId']),
-      tagId: serializer.fromJson<int>(json['tagId']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'id': serializer.toJson<int>(id),
-      'gameId': serializer.toJson<String>(gameId),
-      'tagId': serializer.toJson<int>(tagId),
-    };
-  }
-
-  GalgameTagMappingRow copyWith({int? id, String? gameId, int? tagId}) =>
-      GalgameTagMappingRow(
-        id: id ?? this.id,
-        gameId: gameId ?? this.gameId,
-        tagId: tagId ?? this.tagId,
-      );
-  GalgameTagMappingRow copyWithCompanion(GalgameTagMappingsCompanion data) {
-    return GalgameTagMappingRow(
-      id: data.id.present ? data.id.value : this.id,
-      gameId: data.gameId.present ? data.gameId.value : this.gameId,
-      tagId: data.tagId.present ? data.tagId.value : this.tagId,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('GalgameTagMappingRow(')
-          ..write('id: $id, ')
-          ..write('gameId: $gameId, ')
-          ..write('tagId: $tagId')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(id, gameId, tagId);
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is GalgameTagMappingRow &&
-          other.id == this.id &&
-          other.gameId == this.gameId &&
-          other.tagId == this.tagId);
-}
-
-class GalgameTagMappingsCompanion
-    extends UpdateCompanion<GalgameTagMappingRow> {
-  final Value<int> id;
-  final Value<String> gameId;
-  final Value<int> tagId;
-  const GalgameTagMappingsCompanion({
-    this.id = const Value.absent(),
-    this.gameId = const Value.absent(),
-    this.tagId = const Value.absent(),
-  });
-  GalgameTagMappingsCompanion.insert({
-    this.id = const Value.absent(),
-    required String gameId,
-    required int tagId,
-  })  : gameId = Value(gameId),
-        tagId = Value(tagId);
-  static Insertable<GalgameTagMappingRow> custom({
-    Expression<int>? id,
-    Expression<String>? gameId,
-    Expression<int>? tagId,
-  }) {
-    return RawValuesInsertable({
-      if (id != null) 'id': id,
-      if (gameId != null) 'game_id': gameId,
-      if (tagId != null) 'tag_id': tagId,
-    });
-  }
-
-  GalgameTagMappingsCompanion copyWith(
-      {Value<int>? id, Value<String>? gameId, Value<int>? tagId}) {
-    return GalgameTagMappingsCompanion(
-      id: id ?? this.id,
-      gameId: gameId ?? this.gameId,
-      tagId: tagId ?? this.tagId,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (id.present) {
-      map['id'] = Variable<int>(id.value);
-    }
-    if (gameId.present) {
-      map['game_id'] = Variable<String>(gameId.value);
-    }
-    if (tagId.present) {
-      map['tag_id'] = Variable<int>(tagId.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('GalgameTagMappingsCompanion(')
-          ..write('id: $id, ')
-          ..write('gameId: $gameId, ')
-          ..write('tagId: $tagId')
           ..write(')'))
         .toString();
   }
@@ -40037,10 +39077,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $DictionaryHistoryTable dictionaryHistory =
       $DictionaryHistoryTable(this);
   late final $BookTagsTable bookTags = $BookTagsTable(this);
-  late final $BookTagMappingsTable bookTagMappings =
-      $BookTagMappingsTable(this);
-  late final $SrtBookTagMappingsTable srtBookTagMappings =
-      $SrtBookTagMappingsTable(this);
+  late final $TagAssignmentsTable tagAssignments = $TagAssignmentsTable(this);
   late final $ProfilesTable profiles = $ProfilesTable(this);
   late final $ProfileSettingsTable profileSettings =
       $ProfileSettingsTable(this);
@@ -40049,8 +39086,6 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $BookProfilesTable bookProfiles = $BookProfilesTable(this);
   late final $SyncBaselinesTable syncBaselines = $SyncBaselinesTable(this);
   late final $VideoBooksTable videoBooks = $VideoBooksTable(this);
-  late final $VideoBookTagMappingsTable videoBookTagMappings =
-      $VideoBookTagMappingsTable(this);
   late final $VideoWatchStatisticsTable videoWatchStatistics =
       $VideoWatchStatisticsTable(this);
   late final $VideoHourlyLogsTable videoHourlyLogs =
@@ -40077,8 +39112,6 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $BookTagMembershipTombstonesTable bookTagMembershipTombstones =
       $BookTagMembershipTombstonesTable(this);
   late final $BookCustomCssTable bookCustomCss = $BookCustomCssTable(this);
-  late final $CollectionTagMappingsTable collectionTagMappings =
-      $CollectionTagMappingsTable(this);
   late final $SyncDeletionTombstonesTable syncDeletionTombstones =
       $SyncDeletionTombstonesTable(this);
   late final $RevealedImagesTable revealedImages = $RevealedImagesTable(this);
@@ -40097,8 +39130,6 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $GalgameSourcesTable galgameSources = $GalgameSourcesTable(this);
   late final $GalgameSessionsTable galgameSessions =
       $GalgameSessionsTable(this);
-  late final $GalgameTagMappingsTable galgameTagMappings =
-      $GalgameTagMappingsTable(this);
   late final $MangaExtensionStoresTable mangaExtensionStores =
       $MangaExtensionStoresTable(this);
   late final $MangaExtensionsTable mangaExtensions =
@@ -40175,15 +39206,13 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
         dictionaryMetadata,
         dictionaryHistory,
         bookTags,
-        bookTagMappings,
-        srtBookTagMappings,
+        tagAssignments,
         profiles,
         profileSettings,
         mediaTypeProfiles,
         bookProfiles,
         syncBaselines,
         videoBooks,
-        videoBookTagMappings,
         videoWatchStatistics,
         videoHourlyLogs,
         favoriteWords,
@@ -40200,7 +39229,6 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
         statisticsTombstones,
         bookTagMembershipTombstones,
         bookCustomCss,
-        collectionTagMappings,
         syncDeletionTombstones,
         revealedImages,
         activityEvents,
@@ -40212,7 +39240,6 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
         galgames,
         galgameSources,
         galgameSessions,
-        galgameTagMappings,
         mangaExtensionStores,
         mangaExtensions,
         mangaOnlineSources,
@@ -40259,31 +39286,10 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
             ],
           ),
           WritePropagation(
-            on: TableUpdateQuery.onTableName('epub_books',
-                limitUpdateKind: UpdateKind.delete),
-            result: [
-              TableUpdate('book_tag_mappings', kind: UpdateKind.delete),
-            ],
-          ),
-          WritePropagation(
             on: TableUpdateQuery.onTableName('book_tags',
                 limitUpdateKind: UpdateKind.delete),
             result: [
-              TableUpdate('book_tag_mappings', kind: UpdateKind.delete),
-            ],
-          ),
-          WritePropagation(
-            on: TableUpdateQuery.onTableName('srt_books',
-                limitUpdateKind: UpdateKind.delete),
-            result: [
-              TableUpdate('srt_book_tag_mappings', kind: UpdateKind.delete),
-            ],
-          ),
-          WritePropagation(
-            on: TableUpdateQuery.onTableName('book_tags',
-                limitUpdateKind: UpdateKind.delete),
-            result: [
-              TableUpdate('srt_book_tag_mappings', kind: UpdateKind.delete),
+              TableUpdate('tag_assignments', kind: UpdateKind.delete),
             ],
           ),
           WritePropagation(
@@ -40315,20 +39321,6 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
             ],
           ),
           WritePropagation(
-            on: TableUpdateQuery.onTableName('video_books',
-                limitUpdateKind: UpdateKind.delete),
-            result: [
-              TableUpdate('video_book_tag_mappings', kind: UpdateKind.delete),
-            ],
-          ),
-          WritePropagation(
-            on: TableUpdateQuery.onTableName('book_tags',
-                limitUpdateKind: UpdateKind.delete),
-            result: [
-              TableUpdate('video_book_tag_mappings', kind: UpdateKind.delete),
-            ],
-          ),
-          WritePropagation(
             on: TableUpdateQuery.onTableName('series',
                 limitUpdateKind: UpdateKind.delete),
             result: [
@@ -40340,20 +39332,6 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
                 limitUpdateKind: UpdateKind.delete),
             result: [
               TableUpdate('media_collection_items', kind: UpdateKind.delete),
-            ],
-          ),
-          WritePropagation(
-            on: TableUpdateQuery.onTableName('media_collections',
-                limitUpdateKind: UpdateKind.delete),
-            result: [
-              TableUpdate('collection_tag_mappings', kind: UpdateKind.delete),
-            ],
-          ),
-          WritePropagation(
-            on: TableUpdateQuery.onTableName('book_tags',
-                limitUpdateKind: UpdateKind.delete),
-            result: [
-              TableUpdate('collection_tag_mappings', kind: UpdateKind.delete),
             ],
           ),
           WritePropagation(
@@ -40396,20 +39374,6 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
                 limitUpdateKind: UpdateKind.delete),
             result: [
               TableUpdate('galgame_sessions', kind: UpdateKind.delete),
-            ],
-          ),
-          WritePropagation(
-            on: TableUpdateQuery.onTableName('galgames',
-                limitUpdateKind: UpdateKind.delete),
-            result: [
-              TableUpdate('galgame_tag_mappings', kind: UpdateKind.delete),
-            ],
-          ),
-          WritePropagation(
-            on: TableUpdateQuery.onTableName('book_tags',
-                limitUpdateKind: UpdateKind.delete),
-            result: [
-              TableUpdate('galgame_tag_mappings', kind: UpdateKind.delete),
             ],
           ),
           WritePropagation(
@@ -42108,28 +41072,6 @@ typedef $$SrtBooksTableUpdateCompanionBuilder = SrtBooksCompanion Function({
   Value<String> bookKey,
 });
 
-final class $$SrtBooksTableReferences
-    extends BaseReferences<_$FushiDatabase, $SrtBooksTable, SrtBookRow> {
-  $$SrtBooksTableReferences(super.$_db, super.$_table, super.$_typedResult);
-
-  static MultiTypedResultKey<$SrtBookTagMappingsTable,
-      List<SrtBookTagMappingRow>> _srtBookTagMappingsRefsTable(
-          _$FushiDatabase db) =>
-      MultiTypedResultKey.fromTable(db.srtBookTagMappings,
-          aliasName: 'srt_books__id__srt_book_tag_mappings__srt_book_id');
-
-  $$SrtBookTagMappingsTableProcessedTableManager get srtBookTagMappingsRefs {
-    final manager =
-        $$SrtBookTagMappingsTableTableManager($_db, $_db.srtBookTagMappings)
-            .filter((f) => f.srtBookId.id.sqlEquals($_itemColumn<int>('id')!));
-
-    final cache =
-        $_typedResult.readTableOrNull(_srtBookTagMappingsRefsTable($_db));
-    return ProcessedTableManager(
-        manager.$state.copyWith(prefetchedData: cache));
-  }
-}
-
 class $$SrtBooksTableFilterComposer
     extends Composer<_$FushiDatabase, $SrtBooksTable> {
   $$SrtBooksTableFilterComposer({
@@ -42169,27 +41111,6 @@ class $$SrtBooksTableFilterComposer
 
   ColumnFilters<String> get bookKey => $composableBuilder(
       column: $table.bookKey, builder: (column) => ColumnFilters(column));
-
-  Expression<bool> srtBookTagMappingsRefs(
-      Expression<bool> Function($$SrtBookTagMappingsTableFilterComposer f) f) {
-    final $$SrtBookTagMappingsTableFilterComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.id,
-        referencedTable: $db.srtBookTagMappings,
-        getReferencedColumn: (t) => t.srtBookId,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$SrtBookTagMappingsTableFilterComposer(
-              $db: $db,
-              $table: $db.srtBookTagMappings,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return f(composer);
-  }
 }
 
 class $$SrtBooksTableOrderingComposer
@@ -42271,28 +41192,6 @@ class $$SrtBooksTableAnnotationComposer
 
   GeneratedColumn<String> get bookKey =>
       $composableBuilder(column: $table.bookKey, builder: (column) => column);
-
-  Expression<T> srtBookTagMappingsRefs<T extends Object>(
-      Expression<T> Function($$SrtBookTagMappingsTableAnnotationComposer a) f) {
-    final $$SrtBookTagMappingsTableAnnotationComposer composer =
-        $composerBuilder(
-            composer: this,
-            getCurrentColumn: (t) => t.id,
-            referencedTable: $db.srtBookTagMappings,
-            getReferencedColumn: (t) => t.srtBookId,
-            builder: (joinBuilder,
-                    {$addJoinBuilderToRootComposer,
-                    $removeJoinBuilderFromRootComposer}) =>
-                $$SrtBookTagMappingsTableAnnotationComposer(
-                  $db: $db,
-                  $table: $db.srtBookTagMappings,
-                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-                  joinBuilder: joinBuilder,
-                  $removeJoinBuilderFromRootComposer:
-                      $removeJoinBuilderFromRootComposer,
-                ));
-    return f(composer);
-  }
 }
 
 class $$SrtBooksTableTableManager extends RootTableManager<
@@ -42304,9 +41203,9 @@ class $$SrtBooksTableTableManager extends RootTableManager<
     $$SrtBooksTableAnnotationComposer,
     $$SrtBooksTableCreateCompanionBuilder,
     $$SrtBooksTableUpdateCompanionBuilder,
-    (SrtBookRow, $$SrtBooksTableReferences),
+    (SrtBookRow, BaseReferences<_$FushiDatabase, $SrtBooksTable, SrtBookRow>),
     SrtBookRow,
-    PrefetchHooks Function({bool srtBookTagMappingsRefs})> {
+    PrefetchHooks Function()> {
   $$SrtBooksTableTableManager(_$FushiDatabase db, $SrtBooksTable table)
       : super(TableManagerState(
           db: db,
@@ -42366,35 +41265,9 @@ class $$SrtBooksTableTableManager extends RootTableManager<
             bookKey: bookKey,
           ),
           withReferenceMapper: (p0) => p0
-              .map((e) =>
-                  (e.readTable(table), $$SrtBooksTableReferences(db, table, e)))
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
-          prefetchHooksCallback: ({srtBookTagMappingsRefs = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [
-                if (srtBookTagMappingsRefs) db.srtBookTagMappings
-              ],
-              addJoins: null,
-              getPrefetchedDataCallback: (items) async {
-                return [
-                  if (srtBookTagMappingsRefs)
-                    await $_getPrefetchedData<SrtBookRow, $SrtBooksTable,
-                            SrtBookTagMappingRow>(
-                        currentTable: table,
-                        referencedTable: $$SrtBooksTableReferences
-                            ._srtBookTagMappingsRefsTable(db),
-                        managerFromTypedResult: (p0) =>
-                            $$SrtBooksTableReferences(db, table, p0)
-                                .srtBookTagMappingsRefs,
-                        referencedItemsForCurrentItem:
-                            (item, referencedItems) => referencedItems
-                                .where((e) => e.srtBookId == item.id),
-                        typedResults: items)
-                ];
-              },
-            );
-          },
+          prefetchHooksCallback: null,
         ));
 }
 
@@ -42407,9 +41280,9 @@ typedef $$SrtBooksTableProcessedTableManager = ProcessedTableManager<
     $$SrtBooksTableAnnotationComposer,
     $$SrtBooksTableCreateCompanionBuilder,
     $$SrtBooksTableUpdateCompanionBuilder,
-    (SrtBookRow, $$SrtBooksTableReferences),
+    (SrtBookRow, BaseReferences<_$FushiDatabase, $SrtBooksTable, SrtBookRow>),
     SrtBookRow,
-    PrefetchHooks Function({bool srtBookTagMappingsRefs})>;
+    PrefetchHooks Function()>;
 typedef $$ReaderPositionsTableCreateCompanionBuilder = ReaderPositionsCompanion
     Function({
   Value<int> id,
@@ -43506,23 +42379,6 @@ final class $$EpubBooksTableReferences
         manager.$state.copyWith(prefetchedData: cache));
   }
 
-  static MultiTypedResultKey<$BookTagMappingsTable, List<BookTagMappingRow>>
-      _bookTagMappingsRefsTable(_$FushiDatabase db) =>
-          MultiTypedResultKey.fromTable(db.bookTagMappings,
-              aliasName: 'epub_books__book_key__book_tag_mappings__book_key');
-
-  $$BookTagMappingsTableProcessedTableManager get bookTagMappingsRefs {
-    final manager =
-        $$BookTagMappingsTableTableManager($_db, $_db.bookTagMappings).filter(
-            (f) =>
-                f.bookKey.bookKey.sqlEquals($_itemColumn<String>('book_key')!));
-
-    final cache =
-        $_typedResult.readTableOrNull(_bookTagMappingsRefsTable($_db));
-    return ProcessedTableManager(
-        manager.$state.copyWith(prefetchedData: cache));
-  }
-
   static MultiTypedResultKey<$RevealedImagesTable, List<RevealedImageRow>>
       _revealedImagesRefsTable(_$FushiDatabase db) =>
           MultiTypedResultKey.fromTable(db.revealedImages,
@@ -43625,27 +42481,6 @@ class $$EpubBooksTableFilterComposer
             $$BookmarksTableFilterComposer(
               $db: $db,
               $table: $db.bookmarks,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return f(composer);
-  }
-
-  Expression<bool> bookTagMappingsRefs(
-      Expression<bool> Function($$BookTagMappingsTableFilterComposer f) f) {
-    final $$BookTagMappingsTableFilterComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.bookKey,
-        referencedTable: $db.bookTagMappings,
-        getReferencedColumn: (t) => t.bookKey,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$BookTagMappingsTableFilterComposer(
-              $db: $db,
-              $table: $db.bookTagMappings,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -43844,27 +42679,6 @@ class $$EpubBooksTableAnnotationComposer
     return f(composer);
   }
 
-  Expression<T> bookTagMappingsRefs<T extends Object>(
-      Expression<T> Function($$BookTagMappingsTableAnnotationComposer a) f) {
-    final $$BookTagMappingsTableAnnotationComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.bookKey,
-        referencedTable: $db.bookTagMappings,
-        getReferencedColumn: (t) => t.bookKey,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$BookTagMappingsTableAnnotationComposer(
-              $db: $db,
-              $table: $db.bookTagMappings,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return f(composer);
-  }
-
   Expression<T> revealedImagesRefs<T extends Object>(
       Expression<T> Function($$RevealedImagesTableAnnotationComposer a) f) {
     final $$RevealedImagesTableAnnotationComposer composer = $composerBuilder(
@@ -43899,10 +42713,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
     (EpubBookRow, $$EpubBooksTableReferences),
     EpubBookRow,
     PrefetchHooks Function(
-        {bool sourceId,
-        bool bookmarksRefs,
-        bool bookTagMappingsRefs,
-        bool revealedImagesRefs})> {
+        {bool sourceId, bool bookmarksRefs, bool revealedImagesRefs})> {
   $$EpubBooksTableTableManager(_$FushiDatabase db, $EpubBooksTable table)
       : super(TableManagerState(
           db: db,
@@ -43994,13 +42805,11 @@ class $$EpubBooksTableTableManager extends RootTableManager<
           prefetchHooksCallback: (
               {sourceId = false,
               bookmarksRefs = false,
-              bookTagMappingsRefs = false,
               revealedImagesRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (bookmarksRefs) db.bookmarks,
-                if (bookTagMappingsRefs) db.bookTagMappings,
                 if (revealedImagesRefs) db.revealedImages
               ],
               addJoins: <
@@ -44044,19 +42853,6 @@ class $$EpubBooksTableTableManager extends RootTableManager<
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.bookKey == item.bookKey),
                         typedResults: items),
-                  if (bookTagMappingsRefs)
-                    await $_getPrefetchedData<EpubBookRow, $EpubBooksTable,
-                            BookTagMappingRow>(
-                        currentTable: table,
-                        referencedTable: $$EpubBooksTableReferences
-                            ._bookTagMappingsRefsTable(db),
-                        managerFromTypedResult: (p0) =>
-                            $$EpubBooksTableReferences(db, table, p0)
-                                .bookTagMappingsRefs,
-                        referencedItemsForCurrentItem:
-                            (item, referencedItems) => referencedItems
-                                .where((e) => e.bookKey == item.bookKey),
-                        typedResults: items),
                   if (revealedImagesRefs)
                     await $_getPrefetchedData<EpubBookRow, $EpubBooksTable,
                             RevealedImageRow>(
@@ -44089,10 +42885,7 @@ typedef $$EpubBooksTableProcessedTableManager = ProcessedTableManager<
     (EpubBookRow, $$EpubBooksTableReferences),
     EpubBookRow,
     PrefetchHooks Function(
-        {bool sourceId,
-        bool bookmarksRefs,
-        bool bookTagMappingsRefs,
-        bool revealedImagesRefs})>;
+        {bool sourceId, bool bookmarksRefs, bool revealedImagesRefs})>;
 typedef $$BookmarksTableCreateCompanionBuilder = BookmarksCompanion Function({
   Value<int> id,
   required String bookKey,
@@ -45303,88 +44096,16 @@ final class $$BookTagsTableReferences
     extends BaseReferences<_$FushiDatabase, $BookTagsTable, BookTagRow> {
   $$BookTagsTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static MultiTypedResultKey<$BookTagMappingsTable, List<BookTagMappingRow>>
-      _bookTagMappingsRefsTable(_$FushiDatabase db) =>
-          MultiTypedResultKey.fromTable(db.bookTagMappings,
-              aliasName: 'book_tags__id__book_tag_mappings__tag_id');
+  static MultiTypedResultKey<$TagAssignmentsTable, List<TagAssignmentRow>>
+      _tagAssignmentsRefsTable(_$FushiDatabase db) =>
+          MultiTypedResultKey.fromTable(db.tagAssignments,
+              aliasName: 'book_tags__id__tag_assignments__tag_id');
 
-  $$BookTagMappingsTableProcessedTableManager get bookTagMappingsRefs {
-    final manager =
-        $$BookTagMappingsTableTableManager($_db, $_db.bookTagMappings)
-            .filter((f) => f.tagId.id.sqlEquals($_itemColumn<int>('id')!));
-
-    final cache =
-        $_typedResult.readTableOrNull(_bookTagMappingsRefsTable($_db));
-    return ProcessedTableManager(
-        manager.$state.copyWith(prefetchedData: cache));
-  }
-
-  static MultiTypedResultKey<$SrtBookTagMappingsTable,
-      List<SrtBookTagMappingRow>> _srtBookTagMappingsRefsTable(
-          _$FushiDatabase db) =>
-      MultiTypedResultKey.fromTable(db.srtBookTagMappings,
-          aliasName: 'book_tags__id__srt_book_tag_mappings__tag_id');
-
-  $$SrtBookTagMappingsTableProcessedTableManager get srtBookTagMappingsRefs {
-    final manager =
-        $$SrtBookTagMappingsTableTableManager($_db, $_db.srtBookTagMappings)
-            .filter((f) => f.tagId.id.sqlEquals($_itemColumn<int>('id')!));
-
-    final cache =
-        $_typedResult.readTableOrNull(_srtBookTagMappingsRefsTable($_db));
-    return ProcessedTableManager(
-        manager.$state.copyWith(prefetchedData: cache));
-  }
-
-  static MultiTypedResultKey<$VideoBookTagMappingsTable,
-      List<VideoBookTagMappingRow>> _videoBookTagMappingsRefsTable(
-          _$FushiDatabase db) =>
-      MultiTypedResultKey.fromTable(db.videoBookTagMappings,
-          aliasName: 'book_tags__id__video_book_tag_mappings__tag_id');
-
-  $$VideoBookTagMappingsTableProcessedTableManager
-      get videoBookTagMappingsRefs {
-    final manager =
-        $$VideoBookTagMappingsTableTableManager($_db, $_db.videoBookTagMappings)
-            .filter((f) => f.tagId.id.sqlEquals($_itemColumn<int>('id')!));
-
-    final cache =
-        $_typedResult.readTableOrNull(_videoBookTagMappingsRefsTable($_db));
-    return ProcessedTableManager(
-        manager.$state.copyWith(prefetchedData: cache));
-  }
-
-  static MultiTypedResultKey<$CollectionTagMappingsTable,
-      List<CollectionTagMappingRow>> _collectionTagMappingsRefsTable(
-          _$FushiDatabase db) =>
-      MultiTypedResultKey.fromTable(db.collectionTagMappings,
-          aliasName: 'book_tags__id__collection_tag_mappings__tag_id');
-
-  $$CollectionTagMappingsTableProcessedTableManager
-      get collectionTagMappingsRefs {
-    final manager = $$CollectionTagMappingsTableTableManager(
-            $_db, $_db.collectionTagMappings)
+  $$TagAssignmentsTableProcessedTableManager get tagAssignmentsRefs {
+    final manager = $$TagAssignmentsTableTableManager($_db, $_db.tagAssignments)
         .filter((f) => f.tagId.id.sqlEquals($_itemColumn<int>('id')!));
 
-    final cache =
-        $_typedResult.readTableOrNull(_collectionTagMappingsRefsTable($_db));
-    return ProcessedTableManager(
-        manager.$state.copyWith(prefetchedData: cache));
-  }
-
-  static MultiTypedResultKey<$GalgameTagMappingsTable,
-      List<GalgameTagMappingRow>> _galgameTagMappingsRefsTable(
-          _$FushiDatabase db) =>
-      MultiTypedResultKey.fromTable(db.galgameTagMappings,
-          aliasName: 'book_tags__id__galgame_tag_mappings__tag_id');
-
-  $$GalgameTagMappingsTableProcessedTableManager get galgameTagMappingsRefs {
-    final manager =
-        $$GalgameTagMappingsTableTableManager($_db, $_db.galgameTagMappings)
-            .filter((f) => f.tagId.id.sqlEquals($_itemColumn<int>('id')!));
-
-    final cache =
-        $_typedResult.readTableOrNull(_galgameTagMappingsRefsTable($_db));
+    final cache = $_typedResult.readTableOrNull(_tagAssignmentsRefsTable($_db));
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
@@ -45414,106 +44135,19 @@ class $$BookTagsTableFilterComposer
   ColumnFilters<int> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnFilters(column));
 
-  Expression<bool> bookTagMappingsRefs(
-      Expression<bool> Function($$BookTagMappingsTableFilterComposer f) f) {
-    final $$BookTagMappingsTableFilterComposer composer = $composerBuilder(
+  Expression<bool> tagAssignmentsRefs(
+      Expression<bool> Function($$TagAssignmentsTableFilterComposer f) f) {
+    final $$TagAssignmentsTableFilterComposer composer = $composerBuilder(
         composer: this,
         getCurrentColumn: (t) => t.id,
-        referencedTable: $db.bookTagMappings,
+        referencedTable: $db.tagAssignments,
         getReferencedColumn: (t) => t.tagId,
         builder: (joinBuilder,
                 {$addJoinBuilderToRootComposer,
                 $removeJoinBuilderFromRootComposer}) =>
-            $$BookTagMappingsTableFilterComposer(
+            $$TagAssignmentsTableFilterComposer(
               $db: $db,
-              $table: $db.bookTagMappings,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return f(composer);
-  }
-
-  Expression<bool> srtBookTagMappingsRefs(
-      Expression<bool> Function($$SrtBookTagMappingsTableFilterComposer f) f) {
-    final $$SrtBookTagMappingsTableFilterComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.id,
-        referencedTable: $db.srtBookTagMappings,
-        getReferencedColumn: (t) => t.tagId,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$SrtBookTagMappingsTableFilterComposer(
-              $db: $db,
-              $table: $db.srtBookTagMappings,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return f(composer);
-  }
-
-  Expression<bool> videoBookTagMappingsRefs(
-      Expression<bool> Function($$VideoBookTagMappingsTableFilterComposer f)
-          f) {
-    final $$VideoBookTagMappingsTableFilterComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.id,
-        referencedTable: $db.videoBookTagMappings,
-        getReferencedColumn: (t) => t.tagId,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$VideoBookTagMappingsTableFilterComposer(
-              $db: $db,
-              $table: $db.videoBookTagMappings,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return f(composer);
-  }
-
-  Expression<bool> collectionTagMappingsRefs(
-      Expression<bool> Function($$CollectionTagMappingsTableFilterComposer f)
-          f) {
-    final $$CollectionTagMappingsTableFilterComposer composer =
-        $composerBuilder(
-            composer: this,
-            getCurrentColumn: (t) => t.id,
-            referencedTable: $db.collectionTagMappings,
-            getReferencedColumn: (t) => t.tagId,
-            builder: (joinBuilder,
-                    {$addJoinBuilderToRootComposer,
-                    $removeJoinBuilderFromRootComposer}) =>
-                $$CollectionTagMappingsTableFilterComposer(
-                  $db: $db,
-                  $table: $db.collectionTagMappings,
-                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-                  joinBuilder: joinBuilder,
-                  $removeJoinBuilderFromRootComposer:
-                      $removeJoinBuilderFromRootComposer,
-                ));
-    return f(composer);
-  }
-
-  Expression<bool> galgameTagMappingsRefs(
-      Expression<bool> Function($$GalgameTagMappingsTableFilterComposer f) f) {
-    final $$GalgameTagMappingsTableFilterComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.id,
-        referencedTable: $db.galgameTagMappings,
-        getReferencedColumn: (t) => t.tagId,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$GalgameTagMappingsTableFilterComposer(
-              $db: $db,
-              $table: $db.galgameTagMappings,
+              $table: $db.tagAssignments,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -45572,114 +44206,24 @@ class $$BookTagsTableAnnotationComposer
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
-  Expression<T> bookTagMappingsRefs<T extends Object>(
-      Expression<T> Function($$BookTagMappingsTableAnnotationComposer a) f) {
-    final $$BookTagMappingsTableAnnotationComposer composer = $composerBuilder(
+  Expression<T> tagAssignmentsRefs<T extends Object>(
+      Expression<T> Function($$TagAssignmentsTableAnnotationComposer a) f) {
+    final $$TagAssignmentsTableAnnotationComposer composer = $composerBuilder(
         composer: this,
         getCurrentColumn: (t) => t.id,
-        referencedTable: $db.bookTagMappings,
+        referencedTable: $db.tagAssignments,
         getReferencedColumn: (t) => t.tagId,
         builder: (joinBuilder,
                 {$addJoinBuilderToRootComposer,
                 $removeJoinBuilderFromRootComposer}) =>
-            $$BookTagMappingsTableAnnotationComposer(
+            $$TagAssignmentsTableAnnotationComposer(
               $db: $db,
-              $table: $db.bookTagMappings,
+              $table: $db.tagAssignments,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
                   $removeJoinBuilderFromRootComposer,
             ));
-    return f(composer);
-  }
-
-  Expression<T> srtBookTagMappingsRefs<T extends Object>(
-      Expression<T> Function($$SrtBookTagMappingsTableAnnotationComposer a) f) {
-    final $$SrtBookTagMappingsTableAnnotationComposer composer =
-        $composerBuilder(
-            composer: this,
-            getCurrentColumn: (t) => t.id,
-            referencedTable: $db.srtBookTagMappings,
-            getReferencedColumn: (t) => t.tagId,
-            builder: (joinBuilder,
-                    {$addJoinBuilderToRootComposer,
-                    $removeJoinBuilderFromRootComposer}) =>
-                $$SrtBookTagMappingsTableAnnotationComposer(
-                  $db: $db,
-                  $table: $db.srtBookTagMappings,
-                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-                  joinBuilder: joinBuilder,
-                  $removeJoinBuilderFromRootComposer:
-                      $removeJoinBuilderFromRootComposer,
-                ));
-    return f(composer);
-  }
-
-  Expression<T> videoBookTagMappingsRefs<T extends Object>(
-      Expression<T> Function($$VideoBookTagMappingsTableAnnotationComposer a)
-          f) {
-    final $$VideoBookTagMappingsTableAnnotationComposer composer =
-        $composerBuilder(
-            composer: this,
-            getCurrentColumn: (t) => t.id,
-            referencedTable: $db.videoBookTagMappings,
-            getReferencedColumn: (t) => t.tagId,
-            builder: (joinBuilder,
-                    {$addJoinBuilderToRootComposer,
-                    $removeJoinBuilderFromRootComposer}) =>
-                $$VideoBookTagMappingsTableAnnotationComposer(
-                  $db: $db,
-                  $table: $db.videoBookTagMappings,
-                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-                  joinBuilder: joinBuilder,
-                  $removeJoinBuilderFromRootComposer:
-                      $removeJoinBuilderFromRootComposer,
-                ));
-    return f(composer);
-  }
-
-  Expression<T> collectionTagMappingsRefs<T extends Object>(
-      Expression<T> Function($$CollectionTagMappingsTableAnnotationComposer a)
-          f) {
-    final $$CollectionTagMappingsTableAnnotationComposer composer =
-        $composerBuilder(
-            composer: this,
-            getCurrentColumn: (t) => t.id,
-            referencedTable: $db.collectionTagMappings,
-            getReferencedColumn: (t) => t.tagId,
-            builder: (joinBuilder,
-                    {$addJoinBuilderToRootComposer,
-                    $removeJoinBuilderFromRootComposer}) =>
-                $$CollectionTagMappingsTableAnnotationComposer(
-                  $db: $db,
-                  $table: $db.collectionTagMappings,
-                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-                  joinBuilder: joinBuilder,
-                  $removeJoinBuilderFromRootComposer:
-                      $removeJoinBuilderFromRootComposer,
-                ));
-    return f(composer);
-  }
-
-  Expression<T> galgameTagMappingsRefs<T extends Object>(
-      Expression<T> Function($$GalgameTagMappingsTableAnnotationComposer a) f) {
-    final $$GalgameTagMappingsTableAnnotationComposer composer =
-        $composerBuilder(
-            composer: this,
-            getCurrentColumn: (t) => t.id,
-            referencedTable: $db.galgameTagMappings,
-            getReferencedColumn: (t) => t.tagId,
-            builder: (joinBuilder,
-                    {$addJoinBuilderToRootComposer,
-                    $removeJoinBuilderFromRootComposer}) =>
-                $$GalgameTagMappingsTableAnnotationComposer(
-                  $db: $db,
-                  $table: $db.galgameTagMappings,
-                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-                  joinBuilder: joinBuilder,
-                  $removeJoinBuilderFromRootComposer:
-                      $removeJoinBuilderFromRootComposer,
-                ));
     return f(composer);
   }
 }
@@ -45695,12 +44239,7 @@ class $$BookTagsTableTableManager extends RootTableManager<
     $$BookTagsTableUpdateCompanionBuilder,
     (BookTagRow, $$BookTagsTableReferences),
     BookTagRow,
-    PrefetchHooks Function(
-        {bool bookTagMappingsRefs,
-        bool srtBookTagMappingsRefs,
-        bool videoBookTagMappingsRefs,
-        bool collectionTagMappingsRefs,
-        bool galgameTagMappingsRefs})> {
+    PrefetchHooks Function({bool tagAssignmentsRefs})> {
   $$BookTagsTableTableManager(_$FushiDatabase db, $BookTagsTable table)
       : super(TableManagerState(
           db: db,
@@ -45743,85 +44282,24 @@ class $$BookTagsTableTableManager extends RootTableManager<
               .map((e) =>
                   (e.readTable(table), $$BookTagsTableReferences(db, table, e)))
               .toList(),
-          prefetchHooksCallback: (
-              {bookTagMappingsRefs = false,
-              srtBookTagMappingsRefs = false,
-              videoBookTagMappingsRefs = false,
-              collectionTagMappingsRefs = false,
-              galgameTagMappingsRefs = false}) {
+          prefetchHooksCallback: ({tagAssignmentsRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
-                if (bookTagMappingsRefs) db.bookTagMappings,
-                if (srtBookTagMappingsRefs) db.srtBookTagMappings,
-                if (videoBookTagMappingsRefs) db.videoBookTagMappings,
-                if (collectionTagMappingsRefs) db.collectionTagMappings,
-                if (galgameTagMappingsRefs) db.galgameTagMappings
+                if (tagAssignmentsRefs) db.tagAssignments
               ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
                 return [
-                  if (bookTagMappingsRefs)
+                  if (tagAssignmentsRefs)
                     await $_getPrefetchedData<BookTagRow, $BookTagsTable,
-                            BookTagMappingRow>(
+                            TagAssignmentRow>(
                         currentTable: table,
                         referencedTable: $$BookTagsTableReferences
-                            ._bookTagMappingsRefsTable(db),
+                            ._tagAssignmentsRefsTable(db),
                         managerFromTypedResult: (p0) =>
                             $$BookTagsTableReferences(db, table, p0)
-                                .bookTagMappingsRefs,
-                        referencedItemsForCurrentItem: (item,
-                                referencedItems) =>
-                            referencedItems.where((e) => e.tagId == item.id),
-                        typedResults: items),
-                  if (srtBookTagMappingsRefs)
-                    await $_getPrefetchedData<BookTagRow, $BookTagsTable,
-                            SrtBookTagMappingRow>(
-                        currentTable: table,
-                        referencedTable: $$BookTagsTableReferences
-                            ._srtBookTagMappingsRefsTable(db),
-                        managerFromTypedResult: (p0) =>
-                            $$BookTagsTableReferences(db, table, p0)
-                                .srtBookTagMappingsRefs,
-                        referencedItemsForCurrentItem: (item,
-                                referencedItems) =>
-                            referencedItems.where((e) => e.tagId == item.id),
-                        typedResults: items),
-                  if (videoBookTagMappingsRefs)
-                    await $_getPrefetchedData<BookTagRow, $BookTagsTable,
-                            VideoBookTagMappingRow>(
-                        currentTable: table,
-                        referencedTable: $$BookTagsTableReferences
-                            ._videoBookTagMappingsRefsTable(db),
-                        managerFromTypedResult: (p0) =>
-                            $$BookTagsTableReferences(db, table, p0)
-                                .videoBookTagMappingsRefs,
-                        referencedItemsForCurrentItem: (item,
-                                referencedItems) =>
-                            referencedItems.where((e) => e.tagId == item.id),
-                        typedResults: items),
-                  if (collectionTagMappingsRefs)
-                    await $_getPrefetchedData<BookTagRow, $BookTagsTable,
-                            CollectionTagMappingRow>(
-                        currentTable: table,
-                        referencedTable: $$BookTagsTableReferences
-                            ._collectionTagMappingsRefsTable(db),
-                        managerFromTypedResult: (p0) =>
-                            $$BookTagsTableReferences(db, table, p0)
-                                .collectionTagMappingsRefs,
-                        referencedItemsForCurrentItem: (item,
-                                referencedItems) =>
-                            referencedItems.where((e) => e.tagId == item.id),
-                        typedResults: items),
-                  if (galgameTagMappingsRefs)
-                    await $_getPrefetchedData<BookTagRow, $BookTagsTable,
-                            GalgameTagMappingRow>(
-                        currentTable: table,
-                        referencedTable: $$BookTagsTableReferences
-                            ._galgameTagMappingsRefsTable(db),
-                        managerFromTypedResult: (p0) =>
-                            $$BookTagsTableReferences(db, table, p0)
-                                .galgameTagMappingsRefs,
+                                .tagAssignmentsRefs,
                         referencedItemsForCurrentItem: (item,
                                 referencedItems) =>
                             referencedItems.where((e) => e.tagId == item.id),
@@ -45844,48 +44322,31 @@ typedef $$BookTagsTableProcessedTableManager = ProcessedTableManager<
     $$BookTagsTableUpdateCompanionBuilder,
     (BookTagRow, $$BookTagsTableReferences),
     BookTagRow,
-    PrefetchHooks Function(
-        {bool bookTagMappingsRefs,
-        bool srtBookTagMappingsRefs,
-        bool videoBookTagMappingsRefs,
-        bool collectionTagMappingsRefs,
-        bool galgameTagMappingsRefs})>;
-typedef $$BookTagMappingsTableCreateCompanionBuilder = BookTagMappingsCompanion
+    PrefetchHooks Function({bool tagAssignmentsRefs})>;
+typedef $$TagAssignmentsTableCreateCompanionBuilder = TagAssignmentsCompanion
     Function({
-  Value<int> id,
-  required String bookKey,
+  required String mediaKind,
+  required String entryKey,
   required int tagId,
   Value<int> addedAt,
+  Value<int> rowid,
 });
-typedef $$BookTagMappingsTableUpdateCompanionBuilder = BookTagMappingsCompanion
+typedef $$TagAssignmentsTableUpdateCompanionBuilder = TagAssignmentsCompanion
     Function({
-  Value<int> id,
-  Value<String> bookKey,
+  Value<String> mediaKind,
+  Value<String> entryKey,
   Value<int> tagId,
   Value<int> addedAt,
+  Value<int> rowid,
 });
 
-final class $$BookTagMappingsTableReferences extends BaseReferences<
-    _$FushiDatabase, $BookTagMappingsTable, BookTagMappingRow> {
-  $$BookTagMappingsTableReferences(
+final class $$TagAssignmentsTableReferences extends BaseReferences<
+    _$FushiDatabase, $TagAssignmentsTable, TagAssignmentRow> {
+  $$TagAssignmentsTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $EpubBooksTable _bookKeyTable(_$FushiDatabase db) => db.epubBooks
-      .createAlias('book_tag_mappings__book_key__epub_books__book_key');
-
-  $$EpubBooksTableProcessedTableManager get bookKey {
-    final $_column = $_itemColumn<String>('book_key')!;
-
-    final manager = $$EpubBooksTableTableManager($_db, $_db.epubBooks)
-        .filter((f) => f.bookKey.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_bookKeyTable($_db));
-    if (item == null) return manager;
-    return ProcessedTableManager(
-        manager.$state.copyWith(prefetchedData: [item]));
-  }
-
   static $BookTagsTable _tagIdTable(_$FushiDatabase db) =>
-      db.bookTags.createAlias('book_tag_mappings__tag_id__book_tags__id');
+      db.bookTags.createAlias('tag_assignments__tag_id__book_tags__id');
 
   $$BookTagsTableProcessedTableManager get tagId {
     final $_column = $_itemColumn<int>('tag_id')!;
@@ -45899,41 +44360,24 @@ final class $$BookTagMappingsTableReferences extends BaseReferences<
   }
 }
 
-class $$BookTagMappingsTableFilterComposer
-    extends Composer<_$FushiDatabase, $BookTagMappingsTable> {
-  $$BookTagMappingsTableFilterComposer({
+class $$TagAssignmentsTableFilterComposer
+    extends Composer<_$FushiDatabase, $TagAssignmentsTable> {
+  $$TagAssignmentsTableFilterComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnFilters<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnFilters(column));
+  ColumnFilters<String> get mediaKind => $composableBuilder(
+      column: $table.mediaKind, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get entryKey => $composableBuilder(
+      column: $table.entryKey, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<int> get addedAt => $composableBuilder(
       column: $table.addedAt, builder: (column) => ColumnFilters(column));
 
-  $$EpubBooksTableFilterComposer get bookKey {
-    final $$EpubBooksTableFilterComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.bookKey,
-        referencedTable: $db.epubBooks,
-        getReferencedColumn: (t) => t.bookKey,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$EpubBooksTableFilterComposer(
-              $db: $db,
-              $table: $db.epubBooks,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-
   $$BookTagsTableFilterComposer get tagId {
     final $$BookTagsTableFilterComposer composer = $composerBuilder(
         composer: this,
@@ -45955,41 +44399,24 @@ class $$BookTagMappingsTableFilterComposer
   }
 }
 
-class $$BookTagMappingsTableOrderingComposer
-    extends Composer<_$FushiDatabase, $BookTagMappingsTable> {
-  $$BookTagMappingsTableOrderingComposer({
+class $$TagAssignmentsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $TagAssignmentsTable> {
+  $$TagAssignmentsTableOrderingComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnOrderings<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<String> get mediaKind => $composableBuilder(
+      column: $table.mediaKind, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get entryKey => $composableBuilder(
+      column: $table.entryKey, builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<int> get addedAt => $composableBuilder(
       column: $table.addedAt, builder: (column) => ColumnOrderings(column));
 
-  $$EpubBooksTableOrderingComposer get bookKey {
-    final $$EpubBooksTableOrderingComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.bookKey,
-        referencedTable: $db.epubBooks,
-        getReferencedColumn: (t) => t.bookKey,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$EpubBooksTableOrderingComposer(
-              $db: $db,
-              $table: $db.epubBooks,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-
   $$BookTagsTableOrderingComposer get tagId {
     final $$BookTagsTableOrderingComposer composer = $composerBuilder(
         composer: this,
@@ -46011,41 +44438,24 @@ class $$BookTagMappingsTableOrderingComposer
   }
 }
 
-class $$BookTagMappingsTableAnnotationComposer
-    extends Composer<_$FushiDatabase, $BookTagMappingsTable> {
-  $$BookTagMappingsTableAnnotationComposer({
+class $$TagAssignmentsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $TagAssignmentsTable> {
+  $$TagAssignmentsTableAnnotationComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  GeneratedColumn<int> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
+  GeneratedColumn<String> get mediaKind =>
+      $composableBuilder(column: $table.mediaKind, builder: (column) => column);
+
+  GeneratedColumn<String> get entryKey =>
+      $composableBuilder(column: $table.entryKey, builder: (column) => column);
 
   GeneratedColumn<int> get addedAt =>
       $composableBuilder(column: $table.addedAt, builder: (column) => column);
 
-  $$EpubBooksTableAnnotationComposer get bookKey {
-    final $$EpubBooksTableAnnotationComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.bookKey,
-        referencedTable: $db.epubBooks,
-        getReferencedColumn: (t) => t.bookKey,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$EpubBooksTableAnnotationComposer(
-              $db: $db,
-              $table: $db.epubBooks,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-
   $$BookTagsTableAnnotationComposer get tagId {
     final $$BookTagsTableAnnotationComposer composer = $composerBuilder(
         composer: this,
@@ -46067,60 +44477,64 @@ class $$BookTagMappingsTableAnnotationComposer
   }
 }
 
-class $$BookTagMappingsTableTableManager extends RootTableManager<
+class $$TagAssignmentsTableTableManager extends RootTableManager<
     _$FushiDatabase,
-    $BookTagMappingsTable,
-    BookTagMappingRow,
-    $$BookTagMappingsTableFilterComposer,
-    $$BookTagMappingsTableOrderingComposer,
-    $$BookTagMappingsTableAnnotationComposer,
-    $$BookTagMappingsTableCreateCompanionBuilder,
-    $$BookTagMappingsTableUpdateCompanionBuilder,
-    (BookTagMappingRow, $$BookTagMappingsTableReferences),
-    BookTagMappingRow,
-    PrefetchHooks Function({bool bookKey, bool tagId})> {
-  $$BookTagMappingsTableTableManager(
-      _$FushiDatabase db, $BookTagMappingsTable table)
+    $TagAssignmentsTable,
+    TagAssignmentRow,
+    $$TagAssignmentsTableFilterComposer,
+    $$TagAssignmentsTableOrderingComposer,
+    $$TagAssignmentsTableAnnotationComposer,
+    $$TagAssignmentsTableCreateCompanionBuilder,
+    $$TagAssignmentsTableUpdateCompanionBuilder,
+    (TagAssignmentRow, $$TagAssignmentsTableReferences),
+    TagAssignmentRow,
+    PrefetchHooks Function({bool tagId})> {
+  $$TagAssignmentsTableTableManager(
+      _$FushiDatabase db, $TagAssignmentsTable table)
       : super(TableManagerState(
           db: db,
           table: table,
           createFilteringComposer: () =>
-              $$BookTagMappingsTableFilterComposer($db: db, $table: table),
+              $$TagAssignmentsTableFilterComposer($db: db, $table: table),
           createOrderingComposer: () =>
-              $$BookTagMappingsTableOrderingComposer($db: db, $table: table),
+              $$TagAssignmentsTableOrderingComposer($db: db, $table: table),
           createComputedFieldComposer: () =>
-              $$BookTagMappingsTableAnnotationComposer($db: db, $table: table),
+              $$TagAssignmentsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
-            Value<int> id = const Value.absent(),
-            Value<String> bookKey = const Value.absent(),
+            Value<String> mediaKind = const Value.absent(),
+            Value<String> entryKey = const Value.absent(),
             Value<int> tagId = const Value.absent(),
             Value<int> addedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
           }) =>
-              BookTagMappingsCompanion(
-            id: id,
-            bookKey: bookKey,
+              TagAssignmentsCompanion(
+            mediaKind: mediaKind,
+            entryKey: entryKey,
             tagId: tagId,
             addedAt: addedAt,
+            rowid: rowid,
           ),
           createCompanionCallback: ({
-            Value<int> id = const Value.absent(),
-            required String bookKey,
+            required String mediaKind,
+            required String entryKey,
             required int tagId,
             Value<int> addedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
           }) =>
-              BookTagMappingsCompanion.insert(
-            id: id,
-            bookKey: bookKey,
+              TagAssignmentsCompanion.insert(
+            mediaKind: mediaKind,
+            entryKey: entryKey,
             tagId: tagId,
             addedAt: addedAt,
+            rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (
                     e.readTable(table),
-                    $$BookTagMappingsTableReferences(db, table, e)
+                    $$TagAssignmentsTableReferences(db, table, e)
                   ))
               .toList(),
-          prefetchHooksCallback: ({bookKey = false, tagId = false}) {
+          prefetchHooksCallback: ({tagId = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [],
@@ -46137,25 +44551,14 @@ class $$BookTagMappingsTableTableManager extends RootTableManager<
                       dynamic,
                       dynamic,
                       dynamic>>(state) {
-                if (bookKey) {
-                  state = state.withJoin(
-                    currentTable: table,
-                    currentColumn: table.bookKey,
-                    referencedTable:
-                        $$BookTagMappingsTableReferences._bookKeyTable(db),
-                    referencedColumn: $$BookTagMappingsTableReferences
-                        ._bookKeyTable(db)
-                        .bookKey,
-                  ) as T;
-                }
                 if (tagId) {
                   state = state.withJoin(
                     currentTable: table,
                     currentColumn: table.tagId,
                     referencedTable:
-                        $$BookTagMappingsTableReferences._tagIdTable(db),
+                        $$TagAssignmentsTableReferences._tagIdTable(db),
                     referencedColumn:
-                        $$BookTagMappingsTableReferences._tagIdTable(db).id,
+                        $$TagAssignmentsTableReferences._tagIdTable(db).id,
                   ) as T;
                 }
 
@@ -46169,335 +44572,18 @@ class $$BookTagMappingsTableTableManager extends RootTableManager<
         ));
 }
 
-typedef $$BookTagMappingsTableProcessedTableManager = ProcessedTableManager<
+typedef $$TagAssignmentsTableProcessedTableManager = ProcessedTableManager<
     _$FushiDatabase,
-    $BookTagMappingsTable,
-    BookTagMappingRow,
-    $$BookTagMappingsTableFilterComposer,
-    $$BookTagMappingsTableOrderingComposer,
-    $$BookTagMappingsTableAnnotationComposer,
-    $$BookTagMappingsTableCreateCompanionBuilder,
-    $$BookTagMappingsTableUpdateCompanionBuilder,
-    (BookTagMappingRow, $$BookTagMappingsTableReferences),
-    BookTagMappingRow,
-    PrefetchHooks Function({bool bookKey, bool tagId})>;
-typedef $$SrtBookTagMappingsTableCreateCompanionBuilder
-    = SrtBookTagMappingsCompanion Function({
-  Value<int> id,
-  required int srtBookId,
-  required int tagId,
-});
-typedef $$SrtBookTagMappingsTableUpdateCompanionBuilder
-    = SrtBookTagMappingsCompanion Function({
-  Value<int> id,
-  Value<int> srtBookId,
-  Value<int> tagId,
-});
-
-final class $$SrtBookTagMappingsTableReferences extends BaseReferences<
-    _$FushiDatabase, $SrtBookTagMappingsTable, SrtBookTagMappingRow> {
-  $$SrtBookTagMappingsTableReferences(
-      super.$_db, super.$_table, super.$_typedResult);
-
-  static $SrtBooksTable _srtBookIdTable(_$FushiDatabase db) => db.srtBooks
-      .createAlias('srt_book_tag_mappings__srt_book_id__srt_books__id');
-
-  $$SrtBooksTableProcessedTableManager get srtBookId {
-    final $_column = $_itemColumn<int>('srt_book_id')!;
-
-    final manager = $$SrtBooksTableTableManager($_db, $_db.srtBooks)
-        .filter((f) => f.id.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_srtBookIdTable($_db));
-    if (item == null) return manager;
-    return ProcessedTableManager(
-        manager.$state.copyWith(prefetchedData: [item]));
-  }
-
-  static $BookTagsTable _tagIdTable(_$FushiDatabase db) =>
-      db.bookTags.createAlias('srt_book_tag_mappings__tag_id__book_tags__id');
-
-  $$BookTagsTableProcessedTableManager get tagId {
-    final $_column = $_itemColumn<int>('tag_id')!;
-
-    final manager = $$BookTagsTableTableManager($_db, $_db.bookTags)
-        .filter((f) => f.id.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_tagIdTable($_db));
-    if (item == null) return manager;
-    return ProcessedTableManager(
-        manager.$state.copyWith(prefetchedData: [item]));
-  }
-}
-
-class $$SrtBookTagMappingsTableFilterComposer
-    extends Composer<_$FushiDatabase, $SrtBookTagMappingsTable> {
-  $$SrtBookTagMappingsTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnFilters(column));
-
-  $$SrtBooksTableFilterComposer get srtBookId {
-    final $$SrtBooksTableFilterComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.srtBookId,
-        referencedTable: $db.srtBooks,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$SrtBooksTableFilterComposer(
-              $db: $db,
-              $table: $db.srtBooks,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-
-  $$BookTagsTableFilterComposer get tagId {
-    final $$BookTagsTableFilterComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.tagId,
-        referencedTable: $db.bookTags,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$BookTagsTableFilterComposer(
-              $db: $db,
-              $table: $db.bookTags,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-}
-
-class $$SrtBookTagMappingsTableOrderingComposer
-    extends Composer<_$FushiDatabase, $SrtBookTagMappingsTable> {
-  $$SrtBookTagMappingsTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnOrderings(column));
-
-  $$SrtBooksTableOrderingComposer get srtBookId {
-    final $$SrtBooksTableOrderingComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.srtBookId,
-        referencedTable: $db.srtBooks,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$SrtBooksTableOrderingComposer(
-              $db: $db,
-              $table: $db.srtBooks,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-
-  $$BookTagsTableOrderingComposer get tagId {
-    final $$BookTagsTableOrderingComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.tagId,
-        referencedTable: $db.bookTags,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$BookTagsTableOrderingComposer(
-              $db: $db,
-              $table: $db.bookTags,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-}
-
-class $$SrtBookTagMappingsTableAnnotationComposer
-    extends Composer<_$FushiDatabase, $SrtBookTagMappingsTable> {
-  $$SrtBookTagMappingsTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<int> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
-
-  $$SrtBooksTableAnnotationComposer get srtBookId {
-    final $$SrtBooksTableAnnotationComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.srtBookId,
-        referencedTable: $db.srtBooks,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$SrtBooksTableAnnotationComposer(
-              $db: $db,
-              $table: $db.srtBooks,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-
-  $$BookTagsTableAnnotationComposer get tagId {
-    final $$BookTagsTableAnnotationComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.tagId,
-        referencedTable: $db.bookTags,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$BookTagsTableAnnotationComposer(
-              $db: $db,
-              $table: $db.bookTags,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-}
-
-class $$SrtBookTagMappingsTableTableManager extends RootTableManager<
-    _$FushiDatabase,
-    $SrtBookTagMappingsTable,
-    SrtBookTagMappingRow,
-    $$SrtBookTagMappingsTableFilterComposer,
-    $$SrtBookTagMappingsTableOrderingComposer,
-    $$SrtBookTagMappingsTableAnnotationComposer,
-    $$SrtBookTagMappingsTableCreateCompanionBuilder,
-    $$SrtBookTagMappingsTableUpdateCompanionBuilder,
-    (SrtBookTagMappingRow, $$SrtBookTagMappingsTableReferences),
-    SrtBookTagMappingRow,
-    PrefetchHooks Function({bool srtBookId, bool tagId})> {
-  $$SrtBookTagMappingsTableTableManager(
-      _$FushiDatabase db, $SrtBookTagMappingsTable table)
-      : super(TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$SrtBookTagMappingsTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$SrtBookTagMappingsTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$SrtBookTagMappingsTableAnnotationComposer(
-                  $db: db, $table: table),
-          updateCompanionCallback: ({
-            Value<int> id = const Value.absent(),
-            Value<int> srtBookId = const Value.absent(),
-            Value<int> tagId = const Value.absent(),
-          }) =>
-              SrtBookTagMappingsCompanion(
-            id: id,
-            srtBookId: srtBookId,
-            tagId: tagId,
-          ),
-          createCompanionCallback: ({
-            Value<int> id = const Value.absent(),
-            required int srtBookId,
-            required int tagId,
-          }) =>
-              SrtBookTagMappingsCompanion.insert(
-            id: id,
-            srtBookId: srtBookId,
-            tagId: tagId,
-          ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (
-                    e.readTable(table),
-                    $$SrtBookTagMappingsTableReferences(db, table, e)
-                  ))
-              .toList(),
-          prefetchHooksCallback: ({srtBookId = false, tagId = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [],
-              addJoins: <
-                  T extends TableManagerState<
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic>>(state) {
-                if (srtBookId) {
-                  state = state.withJoin(
-                    currentTable: table,
-                    currentColumn: table.srtBookId,
-                    referencedTable:
-                        $$SrtBookTagMappingsTableReferences._srtBookIdTable(db),
-                    referencedColumn: $$SrtBookTagMappingsTableReferences
-                        ._srtBookIdTable(db)
-                        .id,
-                  ) as T;
-                }
-                if (tagId) {
-                  state = state.withJoin(
-                    currentTable: table,
-                    currentColumn: table.tagId,
-                    referencedTable:
-                        $$SrtBookTagMappingsTableReferences._tagIdTable(db),
-                    referencedColumn:
-                        $$SrtBookTagMappingsTableReferences._tagIdTable(db).id,
-                  ) as T;
-                }
-
-                return state;
-              },
-              getPrefetchedDataCallback: (items) async {
-                return [];
-              },
-            );
-          },
-        ));
-}
-
-typedef $$SrtBookTagMappingsTableProcessedTableManager = ProcessedTableManager<
-    _$FushiDatabase,
-    $SrtBookTagMappingsTable,
-    SrtBookTagMappingRow,
-    $$SrtBookTagMappingsTableFilterComposer,
-    $$SrtBookTagMappingsTableOrderingComposer,
-    $$SrtBookTagMappingsTableAnnotationComposer,
-    $$SrtBookTagMappingsTableCreateCompanionBuilder,
-    $$SrtBookTagMappingsTableUpdateCompanionBuilder,
-    (SrtBookTagMappingRow, $$SrtBookTagMappingsTableReferences),
-    SrtBookTagMappingRow,
-    PrefetchHooks Function({bool srtBookId, bool tagId})>;
+    $TagAssignmentsTable,
+    TagAssignmentRow,
+    $$TagAssignmentsTableFilterComposer,
+    $$TagAssignmentsTableOrderingComposer,
+    $$TagAssignmentsTableAnnotationComposer,
+    $$TagAssignmentsTableCreateCompanionBuilder,
+    $$TagAssignmentsTableUpdateCompanionBuilder,
+    (TagAssignmentRow, $$TagAssignmentsTableReferences),
+    TagAssignmentRow,
+    PrefetchHooks Function({bool tagId})>;
 typedef $$ProfilesTableCreateCompanionBuilder = ProfilesCompanion Function({
   Value<int> id,
   required String name,
@@ -47818,26 +45904,6 @@ final class $$VideoBooksTableReferences
         manager.$state.copyWith(prefetchedData: [item]));
   }
 
-  static MultiTypedResultKey<$VideoBookTagMappingsTable,
-      List<VideoBookTagMappingRow>> _videoBookTagMappingsRefsTable(
-          _$FushiDatabase db) =>
-      MultiTypedResultKey.fromTable(db.videoBookTagMappings,
-          aliasName:
-              'video_books__book_uid__video_book_tag_mappings__book_uid');
-
-  $$VideoBookTagMappingsTableProcessedTableManager
-      get videoBookTagMappingsRefs {
-    final manager =
-        $$VideoBookTagMappingsTableTableManager($_db, $_db.videoBookTagMappings)
-            .filter((f) =>
-                f.bookUid.bookUid.sqlEquals($_itemColumn<String>('book_uid')!));
-
-    final cache =
-        $_typedResult.readTableOrNull(_videoBookTagMappingsRefsTable($_db));
-    return ProcessedTableManager(
-        manager.$state.copyWith(prefetchedData: cache));
-  }
-
   static MultiTypedResultKey<$VideoScrapeMetaTable, List<VideoScrapeMetaRow>>
       _videoScrapeMetaRefsTable(_$FushiDatabase db) =>
           MultiTypedResultKey.fromTable(db.videoScrapeMeta,
@@ -48009,28 +46075,6 @@ class $$VideoBooksTableFilterComposer
                   $removeJoinBuilderFromRootComposer,
             ));
     return composer;
-  }
-
-  Expression<bool> videoBookTagMappingsRefs(
-      Expression<bool> Function($$VideoBookTagMappingsTableFilterComposer f)
-          f) {
-    final $$VideoBookTagMappingsTableFilterComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.bookUid,
-        referencedTable: $db.videoBookTagMappings,
-        getReferencedColumn: (t) => t.bookUid,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$VideoBookTagMappingsTableFilterComposer(
-              $db: $db,
-              $table: $db.videoBookTagMappings,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return f(composer);
   }
 
   Expression<bool> videoScrapeMetaRefs(
@@ -48305,29 +46349,6 @@ class $$VideoBooksTableAnnotationComposer
     return composer;
   }
 
-  Expression<T> videoBookTagMappingsRefs<T extends Object>(
-      Expression<T> Function($$VideoBookTagMappingsTableAnnotationComposer a)
-          f) {
-    final $$VideoBookTagMappingsTableAnnotationComposer composer =
-        $composerBuilder(
-            composer: this,
-            getCurrentColumn: (t) => t.bookUid,
-            referencedTable: $db.videoBookTagMappings,
-            getReferencedColumn: (t) => t.bookUid,
-            builder: (joinBuilder,
-                    {$addJoinBuilderToRootComposer,
-                    $removeJoinBuilderFromRootComposer}) =>
-                $$VideoBookTagMappingsTableAnnotationComposer(
-                  $db: $db,
-                  $table: $db.videoBookTagMappings,
-                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-                  joinBuilder: joinBuilder,
-                  $removeJoinBuilderFromRootComposer:
-                      $removeJoinBuilderFromRootComposer,
-                ));
-    return f(composer);
-  }
-
   Expression<T> videoScrapeMetaRefs<T extends Object>(
       Expression<T> Function($$VideoScrapeMetaTableAnnotationComposer a) f) {
     final $$VideoScrapeMetaTableAnnotationComposer composer = $composerBuilder(
@@ -48452,7 +46473,6 @@ class $$VideoBooksTableTableManager extends RootTableManager<
     VideoBookRow,
     PrefetchHooks Function(
         {bool sourceId,
-        bool videoBookTagMappingsRefs,
         bool videoScrapeMetaRefs,
         bool mediaImagesRefs,
         bool videoMetadataWorksRefs,
@@ -48556,7 +46576,6 @@ class $$VideoBooksTableTableManager extends RootTableManager<
               .toList(),
           prefetchHooksCallback: (
               {sourceId = false,
-              videoBookTagMappingsRefs = false,
               videoScrapeMetaRefs = false,
               mediaImagesRefs = false,
               videoMetadataWorksRefs = false,
@@ -48565,7 +46584,6 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
-                if (videoBookTagMappingsRefs) db.videoBookTagMappings,
                 if (videoScrapeMetaRefs) db.videoScrapeMeta,
                 if (mediaImagesRefs) db.mediaImages,
                 if (videoMetadataWorksRefs) db.videoMetadataWorks,
@@ -48600,19 +46618,6 @@ class $$VideoBooksTableTableManager extends RootTableManager<
               },
               getPrefetchedDataCallback: (items) async {
                 return [
-                  if (videoBookTagMappingsRefs)
-                    await $_getPrefetchedData<VideoBookRow, $VideoBooksTable,
-                            VideoBookTagMappingRow>(
-                        currentTable: table,
-                        referencedTable: $$VideoBooksTableReferences
-                            ._videoBookTagMappingsRefsTable(db),
-                        managerFromTypedResult: (p0) =>
-                            $$VideoBooksTableReferences(db, table, p0)
-                                .videoBookTagMappingsRefs,
-                        referencedItemsForCurrentItem:
-                            (item, referencedItems) => referencedItems
-                                .where((e) => e.bookUid == item.bookUid),
-                        typedResults: items),
                   if (videoScrapeMetaRefs)
                     await $_getPrefetchedData<VideoBookRow, $VideoBooksTable,
                             VideoScrapeMetaRow>(
@@ -48698,347 +46703,11 @@ typedef $$VideoBooksTableProcessedTableManager = ProcessedTableManager<
     VideoBookRow,
     PrefetchHooks Function(
         {bool sourceId,
-        bool videoBookTagMappingsRefs,
         bool videoScrapeMetaRefs,
         bool mediaImagesRefs,
         bool videoMetadataWorksRefs,
         bool videoMetadataEpisodesRefs,
         bool videoMetadataExtrasRefs})>;
-typedef $$VideoBookTagMappingsTableCreateCompanionBuilder
-    = VideoBookTagMappingsCompanion Function({
-  Value<int> id,
-  required String bookUid,
-  required int tagId,
-  Value<int> addedAt,
-});
-typedef $$VideoBookTagMappingsTableUpdateCompanionBuilder
-    = VideoBookTagMappingsCompanion Function({
-  Value<int> id,
-  Value<String> bookUid,
-  Value<int> tagId,
-  Value<int> addedAt,
-});
-
-final class $$VideoBookTagMappingsTableReferences extends BaseReferences<
-    _$FushiDatabase, $VideoBookTagMappingsTable, VideoBookTagMappingRow> {
-  $$VideoBookTagMappingsTableReferences(
-      super.$_db, super.$_table, super.$_typedResult);
-
-  static $VideoBooksTable _bookUidTable(_$FushiDatabase db) => db.videoBooks
-      .createAlias('video_book_tag_mappings__book_uid__video_books__book_uid');
-
-  $$VideoBooksTableProcessedTableManager get bookUid {
-    final $_column = $_itemColumn<String>('book_uid')!;
-
-    final manager = $$VideoBooksTableTableManager($_db, $_db.videoBooks)
-        .filter((f) => f.bookUid.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_bookUidTable($_db));
-    if (item == null) return manager;
-    return ProcessedTableManager(
-        manager.$state.copyWith(prefetchedData: [item]));
-  }
-
-  static $BookTagsTable _tagIdTable(_$FushiDatabase db) =>
-      db.bookTags.createAlias('video_book_tag_mappings__tag_id__book_tags__id');
-
-  $$BookTagsTableProcessedTableManager get tagId {
-    final $_column = $_itemColumn<int>('tag_id')!;
-
-    final manager = $$BookTagsTableTableManager($_db, $_db.bookTags)
-        .filter((f) => f.id.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_tagIdTable($_db));
-    if (item == null) return manager;
-    return ProcessedTableManager(
-        manager.$state.copyWith(prefetchedData: [item]));
-  }
-}
-
-class $$VideoBookTagMappingsTableFilterComposer
-    extends Composer<_$FushiDatabase, $VideoBookTagMappingsTable> {
-  $$VideoBookTagMappingsTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<int> get addedAt => $composableBuilder(
-      column: $table.addedAt, builder: (column) => ColumnFilters(column));
-
-  $$VideoBooksTableFilterComposer get bookUid {
-    final $$VideoBooksTableFilterComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.bookUid,
-        referencedTable: $db.videoBooks,
-        getReferencedColumn: (t) => t.bookUid,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$VideoBooksTableFilterComposer(
-              $db: $db,
-              $table: $db.videoBooks,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-
-  $$BookTagsTableFilterComposer get tagId {
-    final $$BookTagsTableFilterComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.tagId,
-        referencedTable: $db.bookTags,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$BookTagsTableFilterComposer(
-              $db: $db,
-              $table: $db.bookTags,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-}
-
-class $$VideoBookTagMappingsTableOrderingComposer
-    extends Composer<_$FushiDatabase, $VideoBookTagMappingsTable> {
-  $$VideoBookTagMappingsTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<int> get addedAt => $composableBuilder(
-      column: $table.addedAt, builder: (column) => ColumnOrderings(column));
-
-  $$VideoBooksTableOrderingComposer get bookUid {
-    final $$VideoBooksTableOrderingComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.bookUid,
-        referencedTable: $db.videoBooks,
-        getReferencedColumn: (t) => t.bookUid,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$VideoBooksTableOrderingComposer(
-              $db: $db,
-              $table: $db.videoBooks,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-
-  $$BookTagsTableOrderingComposer get tagId {
-    final $$BookTagsTableOrderingComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.tagId,
-        referencedTable: $db.bookTags,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$BookTagsTableOrderingComposer(
-              $db: $db,
-              $table: $db.bookTags,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-}
-
-class $$VideoBookTagMappingsTableAnnotationComposer
-    extends Composer<_$FushiDatabase, $VideoBookTagMappingsTable> {
-  $$VideoBookTagMappingsTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<int> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
-
-  GeneratedColumn<int> get addedAt =>
-      $composableBuilder(column: $table.addedAt, builder: (column) => column);
-
-  $$VideoBooksTableAnnotationComposer get bookUid {
-    final $$VideoBooksTableAnnotationComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.bookUid,
-        referencedTable: $db.videoBooks,
-        getReferencedColumn: (t) => t.bookUid,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$VideoBooksTableAnnotationComposer(
-              $db: $db,
-              $table: $db.videoBooks,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-
-  $$BookTagsTableAnnotationComposer get tagId {
-    final $$BookTagsTableAnnotationComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.tagId,
-        referencedTable: $db.bookTags,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$BookTagsTableAnnotationComposer(
-              $db: $db,
-              $table: $db.bookTags,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-}
-
-class $$VideoBookTagMappingsTableTableManager extends RootTableManager<
-    _$FushiDatabase,
-    $VideoBookTagMappingsTable,
-    VideoBookTagMappingRow,
-    $$VideoBookTagMappingsTableFilterComposer,
-    $$VideoBookTagMappingsTableOrderingComposer,
-    $$VideoBookTagMappingsTableAnnotationComposer,
-    $$VideoBookTagMappingsTableCreateCompanionBuilder,
-    $$VideoBookTagMappingsTableUpdateCompanionBuilder,
-    (VideoBookTagMappingRow, $$VideoBookTagMappingsTableReferences),
-    VideoBookTagMappingRow,
-    PrefetchHooks Function({bool bookUid, bool tagId})> {
-  $$VideoBookTagMappingsTableTableManager(
-      _$FushiDatabase db, $VideoBookTagMappingsTable table)
-      : super(TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$VideoBookTagMappingsTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$VideoBookTagMappingsTableOrderingComposer(
-                  $db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$VideoBookTagMappingsTableAnnotationComposer(
-                  $db: db, $table: table),
-          updateCompanionCallback: ({
-            Value<int> id = const Value.absent(),
-            Value<String> bookUid = const Value.absent(),
-            Value<int> tagId = const Value.absent(),
-            Value<int> addedAt = const Value.absent(),
-          }) =>
-              VideoBookTagMappingsCompanion(
-            id: id,
-            bookUid: bookUid,
-            tagId: tagId,
-            addedAt: addedAt,
-          ),
-          createCompanionCallback: ({
-            Value<int> id = const Value.absent(),
-            required String bookUid,
-            required int tagId,
-            Value<int> addedAt = const Value.absent(),
-          }) =>
-              VideoBookTagMappingsCompanion.insert(
-            id: id,
-            bookUid: bookUid,
-            tagId: tagId,
-            addedAt: addedAt,
-          ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (
-                    e.readTable(table),
-                    $$VideoBookTagMappingsTableReferences(db, table, e)
-                  ))
-              .toList(),
-          prefetchHooksCallback: ({bookUid = false, tagId = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [],
-              addJoins: <
-                  T extends TableManagerState<
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic>>(state) {
-                if (bookUid) {
-                  state = state.withJoin(
-                    currentTable: table,
-                    currentColumn: table.bookUid,
-                    referencedTable:
-                        $$VideoBookTagMappingsTableReferences._bookUidTable(db),
-                    referencedColumn: $$VideoBookTagMappingsTableReferences
-                        ._bookUidTable(db)
-                        .bookUid,
-                  ) as T;
-                }
-                if (tagId) {
-                  state = state.withJoin(
-                    currentTable: table,
-                    currentColumn: table.tagId,
-                    referencedTable:
-                        $$VideoBookTagMappingsTableReferences._tagIdTable(db),
-                    referencedColumn: $$VideoBookTagMappingsTableReferences
-                        ._tagIdTable(db)
-                        .id,
-                  ) as T;
-                }
-
-                return state;
-              },
-              getPrefetchedDataCallback: (items) async {
-                return [];
-              },
-            );
-          },
-        ));
-}
-
-typedef $$VideoBookTagMappingsTableProcessedTableManager
-    = ProcessedTableManager<
-        _$FushiDatabase,
-        $VideoBookTagMappingsTable,
-        VideoBookTagMappingRow,
-        $$VideoBookTagMappingsTableFilterComposer,
-        $$VideoBookTagMappingsTableOrderingComposer,
-        $$VideoBookTagMappingsTableAnnotationComposer,
-        $$VideoBookTagMappingsTableCreateCompanionBuilder,
-        $$VideoBookTagMappingsTableUpdateCompanionBuilder,
-        (VideoBookTagMappingRow, $$VideoBookTagMappingsTableReferences),
-        VideoBookTagMappingRow,
-        PrefetchHooks Function({bool bookUid, bool tagId})>;
 typedef $$VideoWatchStatisticsTableCreateCompanionBuilder
     = VideoWatchStatisticsCompanion Function({
   Value<int> id,
@@ -50661,25 +48330,6 @@ final class $$MediaCollectionsTableReferences extends BaseReferences<
         manager.$state.copyWith(prefetchedData: cache));
   }
 
-  static MultiTypedResultKey<$CollectionTagMappingsTable,
-      List<CollectionTagMappingRow>> _collectionTagMappingsRefsTable(
-          _$FushiDatabase db) =>
-      MultiTypedResultKey.fromTable(db.collectionTagMappings,
-          aliasName:
-              'media_collections__id__collection_tag_mappings__collection_id');
-
-  $$CollectionTagMappingsTableProcessedTableManager
-      get collectionTagMappingsRefs {
-    final manager = $$CollectionTagMappingsTableTableManager(
-            $_db, $_db.collectionTagMappings)
-        .filter((f) => f.collectionId.id.sqlEquals($_itemColumn<int>('id')!));
-
-    final cache =
-        $_typedResult.readTableOrNull(_collectionTagMappingsRefsTable($_db));
-    return ProcessedTableManager(
-        manager.$state.copyWith(prefetchedData: cache));
-  }
-
   static MultiTypedResultKey<$CollectionScrapeMetaTable,
       List<CollectionScrapeMetaRow>> _collectionScrapeMetaRefsTable(
           _$FushiDatabase db) =>
@@ -50832,29 +48482,6 @@ class $$MediaCollectionsTableFilterComposer
               $removeJoinBuilderFromRootComposer:
                   $removeJoinBuilderFromRootComposer,
             ));
-    return f(composer);
-  }
-
-  Expression<bool> collectionTagMappingsRefs(
-      Expression<bool> Function($$CollectionTagMappingsTableFilterComposer f)
-          f) {
-    final $$CollectionTagMappingsTableFilterComposer composer =
-        $composerBuilder(
-            composer: this,
-            getCurrentColumn: (t) => t.id,
-            referencedTable: $db.collectionTagMappings,
-            getReferencedColumn: (t) => t.collectionId,
-            builder: (joinBuilder,
-                    {$addJoinBuilderToRootComposer,
-                    $removeJoinBuilderFromRootComposer}) =>
-                $$CollectionTagMappingsTableFilterComposer(
-                  $db: $db,
-                  $table: $db.collectionTagMappings,
-                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-                  joinBuilder: joinBuilder,
-                  $removeJoinBuilderFromRootComposer:
-                      $removeJoinBuilderFromRootComposer,
-                ));
     return f(composer);
   }
 
@@ -51080,29 +48707,6 @@ class $$MediaCollectionsTableAnnotationComposer
     return f(composer);
   }
 
-  Expression<T> collectionTagMappingsRefs<T extends Object>(
-      Expression<T> Function($$CollectionTagMappingsTableAnnotationComposer a)
-          f) {
-    final $$CollectionTagMappingsTableAnnotationComposer composer =
-        $composerBuilder(
-            composer: this,
-            getCurrentColumn: (t) => t.id,
-            referencedTable: $db.collectionTagMappings,
-            getReferencedColumn: (t) => t.collectionId,
-            builder: (joinBuilder,
-                    {$addJoinBuilderToRootComposer,
-                    $removeJoinBuilderFromRootComposer}) =>
-                $$CollectionTagMappingsTableAnnotationComposer(
-                  $db: $db,
-                  $table: $db.collectionTagMappings,
-                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-                  joinBuilder: joinBuilder,
-                  $removeJoinBuilderFromRootComposer:
-                      $removeJoinBuilderFromRootComposer,
-                ));
-    return f(composer);
-  }
-
   Expression<T> collectionScrapeMetaRefs<T extends Object>(
       Expression<T> Function($$CollectionScrapeMetaTableAnnotationComposer a)
           f) {
@@ -51229,7 +48833,6 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
     MediaCollectionRow,
     PrefetchHooks Function(
         {bool mediaCollectionItemsRefs,
-        bool collectionTagMappingsRefs,
         bool collectionScrapeMetaRefs,
         bool mediaImagesRefs,
         bool videoMetadataWorksRefs,
@@ -51306,7 +48909,6 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
               .toList(),
           prefetchHooksCallback: (
               {mediaCollectionItemsRefs = false,
-              collectionTagMappingsRefs = false,
               collectionScrapeMetaRefs = false,
               mediaImagesRefs = false,
               videoMetadataWorksRefs = false,
@@ -51316,7 +48918,6 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
               db: db,
               explicitlyWatchedTables: [
                 if (mediaCollectionItemsRefs) db.mediaCollectionItems,
-                if (collectionTagMappingsRefs) db.collectionTagMappings,
                 if (collectionScrapeMetaRefs) db.collectionScrapeMeta,
                 if (mediaImagesRefs) db.mediaImages,
                 if (videoMetadataWorksRefs) db.videoMetadataWorks,
@@ -51336,19 +48937,6 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
                         managerFromTypedResult: (p0) =>
                             $$MediaCollectionsTableReferences(db, table, p0)
                                 .mediaCollectionItemsRefs,
-                        referencedItemsForCurrentItem:
-                            (item, referencedItems) => referencedItems
-                                .where((e) => e.collectionId == item.id),
-                        typedResults: items),
-                  if (collectionTagMappingsRefs)
-                    await $_getPrefetchedData<MediaCollectionRow,
-                            $MediaCollectionsTable, CollectionTagMappingRow>(
-                        currentTable: table,
-                        referencedTable: $$MediaCollectionsTableReferences
-                            ._collectionTagMappingsRefsTable(db),
-                        managerFromTypedResult: (p0) =>
-                            $$MediaCollectionsTableReferences(db, table, p0)
-                                .collectionTagMappingsRefs,
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.collectionId == item.id),
@@ -51440,7 +49028,6 @@ typedef $$MediaCollectionsTableProcessedTableManager = ProcessedTableManager<
     MediaCollectionRow,
     PrefetchHooks Function(
         {bool mediaCollectionItemsRefs,
-        bool collectionTagMappingsRefs,
         bool collectionScrapeMetaRefs,
         bool mediaImagesRefs,
         bool videoMetadataWorksRefs,
@@ -52903,329 +50490,6 @@ typedef $$BookCustomCssTableProcessedTableManager = ProcessedTableManager<
     ),
     BookCustomCssRow,
     PrefetchHooks Function()>;
-typedef $$CollectionTagMappingsTableCreateCompanionBuilder
-    = CollectionTagMappingsCompanion Function({
-  Value<int> id,
-  required int collectionId,
-  required int tagId,
-});
-typedef $$CollectionTagMappingsTableUpdateCompanionBuilder
-    = CollectionTagMappingsCompanion Function({
-  Value<int> id,
-  Value<int> collectionId,
-  Value<int> tagId,
-});
-
-final class $$CollectionTagMappingsTableReferences extends BaseReferences<
-    _$FushiDatabase, $CollectionTagMappingsTable, CollectionTagMappingRow> {
-  $$CollectionTagMappingsTableReferences(
-      super.$_db, super.$_table, super.$_typedResult);
-
-  static $MediaCollectionsTable _collectionIdTable(_$FushiDatabase db) =>
-      db.mediaCollections.createAlias(
-          'collection_tag_mappings__collection_id__media_collections__id');
-
-  $$MediaCollectionsTableProcessedTableManager get collectionId {
-    final $_column = $_itemColumn<int>('collection_id')!;
-
-    final manager =
-        $$MediaCollectionsTableTableManager($_db, $_db.mediaCollections)
-            .filter((f) => f.id.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_collectionIdTable($_db));
-    if (item == null) return manager;
-    return ProcessedTableManager(
-        manager.$state.copyWith(prefetchedData: [item]));
-  }
-
-  static $BookTagsTable _tagIdTable(_$FushiDatabase db) =>
-      db.bookTags.createAlias('collection_tag_mappings__tag_id__book_tags__id');
-
-  $$BookTagsTableProcessedTableManager get tagId {
-    final $_column = $_itemColumn<int>('tag_id')!;
-
-    final manager = $$BookTagsTableTableManager($_db, $_db.bookTags)
-        .filter((f) => f.id.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_tagIdTable($_db));
-    if (item == null) return manager;
-    return ProcessedTableManager(
-        manager.$state.copyWith(prefetchedData: [item]));
-  }
-}
-
-class $$CollectionTagMappingsTableFilterComposer
-    extends Composer<_$FushiDatabase, $CollectionTagMappingsTable> {
-  $$CollectionTagMappingsTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnFilters(column));
-
-  $$MediaCollectionsTableFilterComposer get collectionId {
-    final $$MediaCollectionsTableFilterComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.collectionId,
-        referencedTable: $db.mediaCollections,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$MediaCollectionsTableFilterComposer(
-              $db: $db,
-              $table: $db.mediaCollections,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-
-  $$BookTagsTableFilterComposer get tagId {
-    final $$BookTagsTableFilterComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.tagId,
-        referencedTable: $db.bookTags,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$BookTagsTableFilterComposer(
-              $db: $db,
-              $table: $db.bookTags,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-}
-
-class $$CollectionTagMappingsTableOrderingComposer
-    extends Composer<_$FushiDatabase, $CollectionTagMappingsTable> {
-  $$CollectionTagMappingsTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnOrderings(column));
-
-  $$MediaCollectionsTableOrderingComposer get collectionId {
-    final $$MediaCollectionsTableOrderingComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.collectionId,
-        referencedTable: $db.mediaCollections,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$MediaCollectionsTableOrderingComposer(
-              $db: $db,
-              $table: $db.mediaCollections,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-
-  $$BookTagsTableOrderingComposer get tagId {
-    final $$BookTagsTableOrderingComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.tagId,
-        referencedTable: $db.bookTags,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$BookTagsTableOrderingComposer(
-              $db: $db,
-              $table: $db.bookTags,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-}
-
-class $$CollectionTagMappingsTableAnnotationComposer
-    extends Composer<_$FushiDatabase, $CollectionTagMappingsTable> {
-  $$CollectionTagMappingsTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<int> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
-
-  $$MediaCollectionsTableAnnotationComposer get collectionId {
-    final $$MediaCollectionsTableAnnotationComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.collectionId,
-        referencedTable: $db.mediaCollections,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$MediaCollectionsTableAnnotationComposer(
-              $db: $db,
-              $table: $db.mediaCollections,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-
-  $$BookTagsTableAnnotationComposer get tagId {
-    final $$BookTagsTableAnnotationComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.tagId,
-        referencedTable: $db.bookTags,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$BookTagsTableAnnotationComposer(
-              $db: $db,
-              $table: $db.bookTags,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-}
-
-class $$CollectionTagMappingsTableTableManager extends RootTableManager<
-    _$FushiDatabase,
-    $CollectionTagMappingsTable,
-    CollectionTagMappingRow,
-    $$CollectionTagMappingsTableFilterComposer,
-    $$CollectionTagMappingsTableOrderingComposer,
-    $$CollectionTagMappingsTableAnnotationComposer,
-    $$CollectionTagMappingsTableCreateCompanionBuilder,
-    $$CollectionTagMappingsTableUpdateCompanionBuilder,
-    (CollectionTagMappingRow, $$CollectionTagMappingsTableReferences),
-    CollectionTagMappingRow,
-    PrefetchHooks Function({bool collectionId, bool tagId})> {
-  $$CollectionTagMappingsTableTableManager(
-      _$FushiDatabase db, $CollectionTagMappingsTable table)
-      : super(TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$CollectionTagMappingsTableFilterComposer(
-                  $db: db, $table: table),
-          createOrderingComposer: () =>
-              $$CollectionTagMappingsTableOrderingComposer(
-                  $db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$CollectionTagMappingsTableAnnotationComposer(
-                  $db: db, $table: table),
-          updateCompanionCallback: ({
-            Value<int> id = const Value.absent(),
-            Value<int> collectionId = const Value.absent(),
-            Value<int> tagId = const Value.absent(),
-          }) =>
-              CollectionTagMappingsCompanion(
-            id: id,
-            collectionId: collectionId,
-            tagId: tagId,
-          ),
-          createCompanionCallback: ({
-            Value<int> id = const Value.absent(),
-            required int collectionId,
-            required int tagId,
-          }) =>
-              CollectionTagMappingsCompanion.insert(
-            id: id,
-            collectionId: collectionId,
-            tagId: tagId,
-          ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (
-                    e.readTable(table),
-                    $$CollectionTagMappingsTableReferences(db, table, e)
-                  ))
-              .toList(),
-          prefetchHooksCallback: ({collectionId = false, tagId = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [],
-              addJoins: <
-                  T extends TableManagerState<
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic>>(state) {
-                if (collectionId) {
-                  state = state.withJoin(
-                    currentTable: table,
-                    currentColumn: table.collectionId,
-                    referencedTable: $$CollectionTagMappingsTableReferences
-                        ._collectionIdTable(db),
-                    referencedColumn: $$CollectionTagMappingsTableReferences
-                        ._collectionIdTable(db)
-                        .id,
-                  ) as T;
-                }
-                if (tagId) {
-                  state = state.withJoin(
-                    currentTable: table,
-                    currentColumn: table.tagId,
-                    referencedTable:
-                        $$CollectionTagMappingsTableReferences._tagIdTable(db),
-                    referencedColumn: $$CollectionTagMappingsTableReferences
-                        ._tagIdTable(db)
-                        .id,
-                  ) as T;
-                }
-
-                return state;
-              },
-              getPrefetchedDataCallback: (items) async {
-                return [];
-              },
-            );
-          },
-        ));
-}
-
-typedef $$CollectionTagMappingsTableProcessedTableManager
-    = ProcessedTableManager<
-        _$FushiDatabase,
-        $CollectionTagMappingsTable,
-        CollectionTagMappingRow,
-        $$CollectionTagMappingsTableFilterComposer,
-        $$CollectionTagMappingsTableOrderingComposer,
-        $$CollectionTagMappingsTableAnnotationComposer,
-        $$CollectionTagMappingsTableCreateCompanionBuilder,
-        $$CollectionTagMappingsTableUpdateCompanionBuilder,
-        (CollectionTagMappingRow, $$CollectionTagMappingsTableReferences),
-        CollectionTagMappingRow,
-        PrefetchHooks Function({bool collectionId, bool tagId})>;
 typedef $$SyncDeletionTombstonesTableCreateCompanionBuilder
     = SyncDeletionTombstonesCompanion Function({
   required String mediaType,
@@ -55639,23 +52903,6 @@ final class $$GalgamesTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
-
-  static MultiTypedResultKey<$GalgameTagMappingsTable,
-      List<GalgameTagMappingRow>> _galgameTagMappingsRefsTable(
-          _$FushiDatabase db) =>
-      MultiTypedResultKey.fromTable(db.galgameTagMappings,
-          aliasName: 'galgames__id__galgame_tag_mappings__game_id');
-
-  $$GalgameTagMappingsTableProcessedTableManager get galgameTagMappingsRefs {
-    final manager =
-        $$GalgameTagMappingsTableTableManager($_db, $_db.galgameTagMappings)
-            .filter((f) => f.gameId.id.sqlEquals($_itemColumn<String>('id')!));
-
-    final cache =
-        $_typedResult.readTableOrNull(_galgameTagMappingsRefsTable($_db));
-    return ProcessedTableManager(
-        manager.$state.copyWith(prefetchedData: cache));
-  }
 }
 
 class $$GalgamesTableFilterComposer
@@ -55745,27 +52992,6 @@ class $$GalgamesTableFilterComposer
             $$GalgameSessionsTableFilterComposer(
               $db: $db,
               $table: $db.galgameSessions,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return f(composer);
-  }
-
-  Expression<bool> galgameTagMappingsRefs(
-      Expression<bool> Function($$GalgameTagMappingsTableFilterComposer f) f) {
-    final $$GalgameTagMappingsTableFilterComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.id,
-        referencedTable: $db.galgameTagMappings,
-        getReferencedColumn: (t) => t.gameId,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$GalgameTagMappingsTableFilterComposer(
-              $db: $db,
-              $table: $db.galgameTagMappings,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -55923,28 +53149,6 @@ class $$GalgamesTableAnnotationComposer
             ));
     return f(composer);
   }
-
-  Expression<T> galgameTagMappingsRefs<T extends Object>(
-      Expression<T> Function($$GalgameTagMappingsTableAnnotationComposer a) f) {
-    final $$GalgameTagMappingsTableAnnotationComposer composer =
-        $composerBuilder(
-            composer: this,
-            getCurrentColumn: (t) => t.id,
-            referencedTable: $db.galgameTagMappings,
-            getReferencedColumn: (t) => t.gameId,
-            builder: (joinBuilder,
-                    {$addJoinBuilderToRootComposer,
-                    $removeJoinBuilderFromRootComposer}) =>
-                $$GalgameTagMappingsTableAnnotationComposer(
-                  $db: $db,
-                  $table: $db.galgameTagMappings,
-                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-                  joinBuilder: joinBuilder,
-                  $removeJoinBuilderFromRootComposer:
-                      $removeJoinBuilderFromRootComposer,
-                ));
-    return f(composer);
-  }
 }
 
 class $$GalgamesTableTableManager extends RootTableManager<
@@ -55959,9 +53163,7 @@ class $$GalgamesTableTableManager extends RootTableManager<
     (GalgameRow, $$GalgamesTableReferences),
     GalgameRow,
     PrefetchHooks Function(
-        {bool galgameSourcesRefs,
-        bool galgameSessionsRefs,
-        bool galgameTagMappingsRefs})> {
+        {bool galgameSourcesRefs, bool galgameSessionsRefs})> {
   $$GalgamesTableTableManager(_$FushiDatabase db, $GalgamesTable table)
       : super(TableManagerState(
           db: db,
@@ -56045,15 +53247,12 @@ class $$GalgamesTableTableManager extends RootTableManager<
                   (e.readTable(table), $$GalgamesTableReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: (
-              {galgameSourcesRefs = false,
-              galgameSessionsRefs = false,
-              galgameTagMappingsRefs = false}) {
+              {galgameSourcesRefs = false, galgameSessionsRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (galgameSourcesRefs) db.galgameSources,
-                if (galgameSessionsRefs) db.galgameSessions,
-                if (galgameTagMappingsRefs) db.galgameTagMappings
+                if (galgameSessionsRefs) db.galgameSessions
               ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
@@ -56083,19 +53282,6 @@ class $$GalgamesTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem: (item,
                                 referencedItems) =>
                             referencedItems.where((e) => e.gameId == item.id),
-                        typedResults: items),
-                  if (galgameTagMappingsRefs)
-                    await $_getPrefetchedData<GalgameRow, $GalgamesTable,
-                            GalgameTagMappingRow>(
-                        currentTable: table,
-                        referencedTable: $$GalgamesTableReferences
-                            ._galgameTagMappingsRefsTable(db),
-                        managerFromTypedResult: (p0) =>
-                            $$GalgamesTableReferences(db, table, p0)
-                                .galgameTagMappingsRefs,
-                        referencedItemsForCurrentItem: (item,
-                                referencedItems) =>
-                            referencedItems.where((e) => e.gameId == item.id),
                         typedResults: items)
                 ];
               },
@@ -56116,9 +53302,7 @@ typedef $$GalgamesTableProcessedTableManager = ProcessedTableManager<
     (GalgameRow, $$GalgamesTableReferences),
     GalgameRow,
     PrefetchHooks Function(
-        {bool galgameSourcesRefs,
-        bool galgameSessionsRefs,
-        bool galgameTagMappingsRefs})>;
+        {bool galgameSourcesRefs, bool galgameSessionsRefs})>;
 typedef $$GalgameSourcesTableCreateCompanionBuilder = GalgameSourcesCompanion
     Function({
   required String gameId,
@@ -56712,322 +53896,6 @@ typedef $$GalgameSessionsTableProcessedTableManager = ProcessedTableManager<
     (GalgameSessionRow, $$GalgameSessionsTableReferences),
     GalgameSessionRow,
     PrefetchHooks Function({bool gameId})>;
-typedef $$GalgameTagMappingsTableCreateCompanionBuilder
-    = GalgameTagMappingsCompanion Function({
-  Value<int> id,
-  required String gameId,
-  required int tagId,
-});
-typedef $$GalgameTagMappingsTableUpdateCompanionBuilder
-    = GalgameTagMappingsCompanion Function({
-  Value<int> id,
-  Value<String> gameId,
-  Value<int> tagId,
-});
-
-final class $$GalgameTagMappingsTableReferences extends BaseReferences<
-    _$FushiDatabase, $GalgameTagMappingsTable, GalgameTagMappingRow> {
-  $$GalgameTagMappingsTableReferences(
-      super.$_db, super.$_table, super.$_typedResult);
-
-  static $GalgamesTable _gameIdTable(_$FushiDatabase db) =>
-      db.galgames.createAlias('galgame_tag_mappings__game_id__galgames__id');
-
-  $$GalgamesTableProcessedTableManager get gameId {
-    final $_column = $_itemColumn<String>('game_id')!;
-
-    final manager = $$GalgamesTableTableManager($_db, $_db.galgames)
-        .filter((f) => f.id.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_gameIdTable($_db));
-    if (item == null) return manager;
-    return ProcessedTableManager(
-        manager.$state.copyWith(prefetchedData: [item]));
-  }
-
-  static $BookTagsTable _tagIdTable(_$FushiDatabase db) =>
-      db.bookTags.createAlias('galgame_tag_mappings__tag_id__book_tags__id');
-
-  $$BookTagsTableProcessedTableManager get tagId {
-    final $_column = $_itemColumn<int>('tag_id')!;
-
-    final manager = $$BookTagsTableTableManager($_db, $_db.bookTags)
-        .filter((f) => f.id.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_tagIdTable($_db));
-    if (item == null) return manager;
-    return ProcessedTableManager(
-        manager.$state.copyWith(prefetchedData: [item]));
-  }
-}
-
-class $$GalgameTagMappingsTableFilterComposer
-    extends Composer<_$FushiDatabase, $GalgameTagMappingsTable> {
-  $$GalgameTagMappingsTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnFilters(column));
-
-  $$GalgamesTableFilterComposer get gameId {
-    final $$GalgamesTableFilterComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.gameId,
-        referencedTable: $db.galgames,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$GalgamesTableFilterComposer(
-              $db: $db,
-              $table: $db.galgames,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-
-  $$BookTagsTableFilterComposer get tagId {
-    final $$BookTagsTableFilterComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.tagId,
-        referencedTable: $db.bookTags,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$BookTagsTableFilterComposer(
-              $db: $db,
-              $table: $db.bookTags,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-}
-
-class $$GalgameTagMappingsTableOrderingComposer
-    extends Composer<_$FushiDatabase, $GalgameTagMappingsTable> {
-  $$GalgameTagMappingsTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnOrderings(column));
-
-  $$GalgamesTableOrderingComposer get gameId {
-    final $$GalgamesTableOrderingComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.gameId,
-        referencedTable: $db.galgames,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$GalgamesTableOrderingComposer(
-              $db: $db,
-              $table: $db.galgames,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-
-  $$BookTagsTableOrderingComposer get tagId {
-    final $$BookTagsTableOrderingComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.tagId,
-        referencedTable: $db.bookTags,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$BookTagsTableOrderingComposer(
-              $db: $db,
-              $table: $db.bookTags,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-}
-
-class $$GalgameTagMappingsTableAnnotationComposer
-    extends Composer<_$FushiDatabase, $GalgameTagMappingsTable> {
-  $$GalgameTagMappingsTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<int> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
-
-  $$GalgamesTableAnnotationComposer get gameId {
-    final $$GalgamesTableAnnotationComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.gameId,
-        referencedTable: $db.galgames,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$GalgamesTableAnnotationComposer(
-              $db: $db,
-              $table: $db.galgames,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-
-  $$BookTagsTableAnnotationComposer get tagId {
-    final $$BookTagsTableAnnotationComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.tagId,
-        referencedTable: $db.bookTags,
-        getReferencedColumn: (t) => t.id,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$BookTagsTableAnnotationComposer(
-              $db: $db,
-              $table: $db.bookTags,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return composer;
-  }
-}
-
-class $$GalgameTagMappingsTableTableManager extends RootTableManager<
-    _$FushiDatabase,
-    $GalgameTagMappingsTable,
-    GalgameTagMappingRow,
-    $$GalgameTagMappingsTableFilterComposer,
-    $$GalgameTagMappingsTableOrderingComposer,
-    $$GalgameTagMappingsTableAnnotationComposer,
-    $$GalgameTagMappingsTableCreateCompanionBuilder,
-    $$GalgameTagMappingsTableUpdateCompanionBuilder,
-    (GalgameTagMappingRow, $$GalgameTagMappingsTableReferences),
-    GalgameTagMappingRow,
-    PrefetchHooks Function({bool gameId, bool tagId})> {
-  $$GalgameTagMappingsTableTableManager(
-      _$FushiDatabase db, $GalgameTagMappingsTable table)
-      : super(TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$GalgameTagMappingsTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$GalgameTagMappingsTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$GalgameTagMappingsTableAnnotationComposer(
-                  $db: db, $table: table),
-          updateCompanionCallback: ({
-            Value<int> id = const Value.absent(),
-            Value<String> gameId = const Value.absent(),
-            Value<int> tagId = const Value.absent(),
-          }) =>
-              GalgameTagMappingsCompanion(
-            id: id,
-            gameId: gameId,
-            tagId: tagId,
-          ),
-          createCompanionCallback: ({
-            Value<int> id = const Value.absent(),
-            required String gameId,
-            required int tagId,
-          }) =>
-              GalgameTagMappingsCompanion.insert(
-            id: id,
-            gameId: gameId,
-            tagId: tagId,
-          ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (
-                    e.readTable(table),
-                    $$GalgameTagMappingsTableReferences(db, table, e)
-                  ))
-              .toList(),
-          prefetchHooksCallback: ({gameId = false, tagId = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [],
-              addJoins: <
-                  T extends TableManagerState<
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic>>(state) {
-                if (gameId) {
-                  state = state.withJoin(
-                    currentTable: table,
-                    currentColumn: table.gameId,
-                    referencedTable:
-                        $$GalgameTagMappingsTableReferences._gameIdTable(db),
-                    referencedColumn:
-                        $$GalgameTagMappingsTableReferences._gameIdTable(db).id,
-                  ) as T;
-                }
-                if (tagId) {
-                  state = state.withJoin(
-                    currentTable: table,
-                    currentColumn: table.tagId,
-                    referencedTable:
-                        $$GalgameTagMappingsTableReferences._tagIdTable(db),
-                    referencedColumn:
-                        $$GalgameTagMappingsTableReferences._tagIdTable(db).id,
-                  ) as T;
-                }
-
-                return state;
-              },
-              getPrefetchedDataCallback: (items) async {
-                return [];
-              },
-            );
-          },
-        ));
-}
-
-typedef $$GalgameTagMappingsTableProcessedTableManager = ProcessedTableManager<
-    _$FushiDatabase,
-    $GalgameTagMappingsTable,
-    GalgameTagMappingRow,
-    $$GalgameTagMappingsTableFilterComposer,
-    $$GalgameTagMappingsTableOrderingComposer,
-    $$GalgameTagMappingsTableAnnotationComposer,
-    $$GalgameTagMappingsTableCreateCompanionBuilder,
-    $$GalgameTagMappingsTableUpdateCompanionBuilder,
-    (GalgameTagMappingRow, $$GalgameTagMappingsTableReferences),
-    GalgameTagMappingRow,
-    PrefetchHooks Function({bool gameId, bool tagId})>;
 typedef $$MangaExtensionStoresTableCreateCompanionBuilder
     = MangaExtensionStoresCompanion Function({
   required String indexUrl,
@@ -72000,10 +68868,8 @@ class $FushiDatabaseManager {
       $$DictionaryHistoryTableTableManager(_db, _db.dictionaryHistory);
   $$BookTagsTableTableManager get bookTags =>
       $$BookTagsTableTableManager(_db, _db.bookTags);
-  $$BookTagMappingsTableTableManager get bookTagMappings =>
-      $$BookTagMappingsTableTableManager(_db, _db.bookTagMappings);
-  $$SrtBookTagMappingsTableTableManager get srtBookTagMappings =>
-      $$SrtBookTagMappingsTableTableManager(_db, _db.srtBookTagMappings);
+  $$TagAssignmentsTableTableManager get tagAssignments =>
+      $$TagAssignmentsTableTableManager(_db, _db.tagAssignments);
   $$ProfilesTableTableManager get profiles =>
       $$ProfilesTableTableManager(_db, _db.profiles);
   $$ProfileSettingsTableTableManager get profileSettings =>
@@ -72016,8 +68882,6 @@ class $FushiDatabaseManager {
       $$SyncBaselinesTableTableManager(_db, _db.syncBaselines);
   $$VideoBooksTableTableManager get videoBooks =>
       $$VideoBooksTableTableManager(_db, _db.videoBooks);
-  $$VideoBookTagMappingsTableTableManager get videoBookTagMappings =>
-      $$VideoBookTagMappingsTableTableManager(_db, _db.videoBookTagMappings);
   $$VideoWatchStatisticsTableTableManager get videoWatchStatistics =>
       $$VideoWatchStatisticsTableTableManager(_db, _db.videoWatchStatistics);
   $$VideoHourlyLogsTableTableManager get videoHourlyLogs =>
@@ -72054,8 +68918,6 @@ class $FushiDatabaseManager {
               _db, _db.bookTagMembershipTombstones);
   $$BookCustomCssTableTableManager get bookCustomCss =>
       $$BookCustomCssTableTableManager(_db, _db.bookCustomCss);
-  $$CollectionTagMappingsTableTableManager get collectionTagMappings =>
-      $$CollectionTagMappingsTableTableManager(_db, _db.collectionTagMappings);
   $$SyncDeletionTombstonesTableTableManager get syncDeletionTombstones =>
       $$SyncDeletionTombstonesTableTableManager(
           _db, _db.syncDeletionTombstones);
@@ -72079,8 +68941,6 @@ class $FushiDatabaseManager {
       $$GalgameSourcesTableTableManager(_db, _db.galgameSources);
   $$GalgameSessionsTableTableManager get galgameSessions =>
       $$GalgameSessionsTableTableManager(_db, _db.galgameSessions);
-  $$GalgameTagMappingsTableTableManager get galgameTagMappings =>
-      $$GalgameTagMappingsTableTableManager(_db, _db.galgameTagMappings);
   $$MangaExtensionStoresTableTableManager get mangaExtensionStores =>
       $$MangaExtensionStoresTableTableManager(_db, _db.mangaExtensionStores);
   $$MangaExtensionsTableTableManager get mangaExtensions =>

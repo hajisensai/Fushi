@@ -71,8 +71,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       focusId: FushiFocusId('${focusIdPrefix}reader-shelf-srt-${book.uid}'),
       selectionKey: selectable ? selKey : null,
       dragBookId: srtBookId,
-      onTagDropped:
-          srtBookId == null ? null : (tag) => _addTagToSrtBook(srtBookId, tag),
+      onTagDropped: (tag) => _addTagToSrtBook(book.uid, tag),
       // 拖卡进合集：SRT 的合集身份是 **uid**，不是上面打标签用的 int 主键
       // `srtBookId`（`_addSrtToCollection` 同源）——两者不可混用。
       dragMediaRef: MediaRef(kind: MediaKind.srt, entryKey: book.uid),
@@ -190,8 +189,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
 
   Future<void> _openSrtBook(SrtBook book) async {
     if (book.bookKey.isEmpty) {
-      FushiToast.show(
-          msg: t.srt_epub_not_ready, severity: ToastSeverity.error);
+      FushiToast.show(msg: t.srt_epub_not_ready, severity: ToastSeverity.error);
       return;
     }
     // BUG-456: SRT books must use the normal media entry so AppModel registers
@@ -678,7 +676,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     ref.invalidate(bookTagMapProvider);
     ref.invalidate(srtBookTagMapProvider);
     ref.invalidate(filteredBookIdsProvider);
-    ref.invalidate(filteredSrtBookIdsProvider);
+    ref.invalidate(filteredSrtBookUidsProvider);
   }
 
   /// 块3：批量「组合」按钮三档自适应（[classifyCombine]）。书架选择键经
@@ -939,8 +937,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     );
     if (scope == null) return;
 
-    final DeleteBookResult result =
-        await ReaderFushiSource.instance.deleteBook(
+    final DeleteBookResult result = await ReaderFushiSource.instance.deleteBook(
       db: appModel.database,
       bookKey: bookKey,
       scope: scope,

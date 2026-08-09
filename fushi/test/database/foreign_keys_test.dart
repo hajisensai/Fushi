@@ -159,7 +159,9 @@ void main() {
     expect(await _count(db, 'book_profiles'), 0);
   });
 
-  test('deleting an epub book cascades tag mappings', () async {
+  test(
+      'deleting an epub book clears its tag assignments (v77 逻辑外键：'
+      '删除路径显式清理，不再依赖 DB cascade)', () async {
     final db = await _openRealDb();
     final now = DateTime.now().millisecondsSinceEpoch;
     const String bookKey = 'Book';
@@ -180,14 +182,26 @@ void main() {
             createdAt: now,
           ),
         );
-    await db.into(db.bookTagMappings).insert(
-          BookTagMappingsCompanion.insert(bookKey: bookKey, tagId: tagId),
+    await db.addTagToBook(bookKey, tagId);
+    expect(await _count(db, 'tag_assignments'), 1);
+
+    await db.deleteEpubBook(bookKey);
+
+    expect(await _count(db, 'tag_assignments'), 0);
+  });
+
+  test('deleting a tag cascades its assignments (tag_id 真 FK 保留)', () async {
+    final db = await _openRealDb();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final tagId = await db.into(db.bookTags).insert(
+          BookTagsCompanion.insert(name: 'T', createdAt: now),
         );
+    await db.addTagToGame('game-1', tagId);
+    expect(await _count(db, 'tag_assignments'), 1);
 
-    await (db.delete(db.epubBooks)..where((t) => t.bookKey.equals(bookKey)))
-        .go();
+    await db.deleteTag(tagId);
 
-    expect(await _count(db, 'book_tag_mappings'), 0);
+    expect(await _count(db, 'tag_assignments'), 0);
   });
 
   test(

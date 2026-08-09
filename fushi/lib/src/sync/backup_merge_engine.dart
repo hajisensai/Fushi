@@ -841,8 +841,21 @@ class BackupMergeEngine {
   }
 
   /// BookTags UNION by name (device keeps its own tag row + id on a name clash),
-  /// then the three mapping tables with the src tagId REMAPPED to the target id
-  /// resolved by tag name. Owner rows (book/srt/video) must already be merged.
+  /// then the unified tag_assignments with the src tagId REMAPPED to the target
+  /// id resolved by tag name. Owner rows must already be merged.
+  ///
+  /// v77（五表合一 + 用户令全 kind 合并）：src 在 ATTACH 前已迁到当前 schema，
+  /// 五张旧映射表已并成 tag_assignments——这里按 kind 分两路：
+  ///  - epub/srt/video/**game**：entry_key 本身跨库可比（bookKey / srt uid /
+  ///    bookUid / game id），宿主存在性逐 kind 校验后直插。game 的 id 是本机
+  ///    局域身份且 galgames 表不参与备份合并——只有 target 恰好有同 id 游戏
+  ///    （同机恢复 / 整库迁移后补合并）时才并得上，这是「能并尽并」的物理上限；
+  ///    跨机新游戏的标签随不上（对端没有那行游戏可挂）。
+  ///  - collection：src 本地 id 无跨库意义，经 media_collections
+  ///    (name, collection_type) 自然键映射到 target id（JOIN 不命中——被删除
+  ///    墓碑跳过、target 无同名合集——天然不插入）。
+  /// added_at 随行携带（缺失桶落 src 时钟；已存在桶保 target 时钟，additive
+  /// union 语义同旧版）。
   Future<void> _mergeTagsAndMappings() async {
     await _db.customStatement(
       'INSERT INTO book_tags (name, color_value, sort_order, created_at) '
@@ -851,58 +864,46 @@ class BackupMergeEngine {
       'WHERE NOT EXISTS (SELECT 1 FROM book_tags AS t WHERE t.name = s.name)',
     );
     await _db.customStatement(
-      'INSERT INTO book_tag_mappings (book_key, tag_id) '
-      'SELECT sm.book_key, tt.id '
-      'FROM $_srcAlias.book_tag_mappings AS sm '
+      'INSERT INTO tag_assignments (media_kind, entry_key, tag_id, added_at) '
+      'SELECT sm.media_kind, sm.entry_key, tt.id, sm.added_at '
+      'FROM $_srcAlias.tag_assignments AS sm '
       'JOIN $_srcAlias.book_tags AS st ON st.id = sm.tag_id '
       'JOIN book_tags AS tt ON tt.name = st.name '
-      'WHERE EXISTS '
-      '(SELECT 1 FROM epub_books AS b WHERE b.book_key = sm.book_key) '
-      'AND NOT EXISTS (SELECT 1 FROM book_tag_mappings AS m '
-      'WHERE m.book_key = sm.book_key AND m.tag_id = tt.id)',
-    );
-    await _db.customStatement(
-      'INSERT INTO srt_book_tag_mappings (srt_book_id, tag_id) '
-      'SELECT ts.id, tt.id '
-      'FROM $_srcAlias.srt_book_tag_mappings AS sm '
-      'JOIN $_srcAlias.srt_books AS ss ON ss.id = sm.srt_book_id '
-      'JOIN srt_books AS ts ON ts.uid = ss.uid '
-      'JOIN $_srcAlias.book_tags AS st ON st.id = sm.tag_id '
-      'JOIN book_tags AS tt ON tt.name = st.name '
-      'WHERE NOT EXISTS (SELECT 1 FROM srt_book_tag_mappings AS m '
-      'WHERE m.srt_book_id = ts.id AND m.tag_id = tt.id)',
-    );
-    await _db.customStatement(
-      'INSERT INTO video_book_tag_mappings (book_uid, tag_id) '
-      'SELECT sm.book_uid, tt.id '
-      'FROM $_srcAlias.video_book_tag_mappings AS sm '
-      'JOIN $_srcAlias.book_tags AS st ON st.id = sm.tag_id '
-      'JOIN book_tags AS tt ON tt.name = st.name '
-      'WHERE EXISTS (SELECT 1 FROM video_books AS v '
-      'WHERE v.book_uid = sm.book_uid) '
-      'AND NOT EXISTS (SELECT 1 FROM video_book_tag_mappings AS m '
-      'WHERE m.book_uid = sm.book_uid AND m.tag_id = tt.id)',
+      'WHERE ('
+      "(sm.media_kind = 'epub' AND EXISTS "
+      '(SELECT 1 FROM epub_books AS b WHERE b.book_key = sm.entry_key)) '
+      "OR (sm.media_kind = 'srt' AND EXISTS "
+      '(SELECT 1 FROM srt_books AS sb WHERE sb.uid = sm.entry_key)) '
+      "OR (sm.media_kind = 'video' AND EXISTS "
+      '(SELECT 1 FROM video_books AS v WHERE v.book_uid = sm.entry_key)) '
+      "OR (sm.media_kind = 'game' AND EXISTS "
+      '(SELECT 1 FROM galgames AS g WHERE g.id = sm.entry_key))'
+      ') '
+      'AND NOT EXISTS (SELECT 1 FROM tag_assignments AS m '
+      'WHERE m.media_kind = sm.media_kind AND m.entry_key = sm.entry_key '
+      'AND m.tag_id = tt.id)',
     );
   }
 
-  /// 合集标签映射 UNION by (合集自然键 + 标签名)。src 的 collection_id 经
-  /// media_collections (name, collection_type) 自然键映射到 target id，tag_id 经
-  /// book_tags.name 映射。JOIN 不命中（被删除墓碑跳过、target 无同名合集）的行天然
-  /// 不插入——尊重墓碑是 JOIN 的副产品。owner 合集与 book_tags 须已合并（本方法在
-  /// [_mergeMediaCollections] 与 [_mergeTagsAndMappings] 之后调用）。
+  /// 合集标签映射 UNION by (合集自然键 + 标签名)——v77 起读统一表的
+  /// collection kind（详见 [_mergeTagsAndMappings] doc）。owner 合集与
+  /// book_tags 须已合并（本方法在 [_mergeMediaCollections] 与
+  /// [_mergeTagsAndMappings] 之后调用）。
   Future<void> _mergeCollectionTags() async {
-    if (!await _srcTableExists('collection_tag_mappings')) return; // 旧备份无此表
     await _db.customStatement(
-      'INSERT INTO collection_tag_mappings (collection_id, tag_id) '
-      'SELECT tc.id, tt.id '
-      'FROM $_srcAlias.collection_tag_mappings AS sm '
-      'JOIN $_srcAlias.media_collections AS sc ON sc.id = sm.collection_id '
+      'INSERT INTO tag_assignments (media_kind, entry_key, tag_id, added_at) '
+      "SELECT 'collection', CAST(tc.id AS TEXT), tt.id, sm.added_at "
+      'FROM $_srcAlias.tag_assignments AS sm '
+      'JOIN $_srcAlias.media_collections AS sc '
+      'ON CAST(sc.id AS TEXT) = sm.entry_key '
       'JOIN media_collections AS tc '
       'ON tc.name = sc.name AND tc.collection_type = sc.collection_type '
       'JOIN $_srcAlias.book_tags AS st ON st.id = sm.tag_id '
       'JOIN book_tags AS tt ON tt.name = st.name '
-      'WHERE NOT EXISTS (SELECT 1 FROM collection_tag_mappings AS m '
-      'WHERE m.collection_id = tc.id AND m.tag_id = tt.id)',
+      "WHERE sm.media_kind = 'collection' "
+      'AND NOT EXISTS (SELECT 1 FROM tag_assignments AS m '
+      "WHERE m.media_kind = 'collection' "
+      'AND m.entry_key = CAST(tc.id AS TEXT) AND m.tag_id = tt.id)',
     );
   }
 

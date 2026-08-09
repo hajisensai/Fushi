@@ -61,7 +61,7 @@ void main() {
       await db.addTagToGame(game, tagId);
 
       expect(await db.getTagsForGame(game), hasLength(1));
-      expect(await db.getAllGameTagMappings(), hasLength(1));
+      expect(await db.getAllTagAssignments(), hasLength(1));
     });
 
     test('removeTagFromGame 只摘这一条，同标签的其它游戏不受影响', () async {
@@ -146,7 +146,7 @@ void main() {
 
       await db.deleteGalgame(game);
 
-      expect(await db.getAllGameTagMappings(), isEmpty);
+      expect(await db.getAllTagAssignments(), isEmpty);
       expect((await db.getAllTags()).single.id, tagId,
           reason: '删游戏不该连坐删掉共享标签池里的标签');
     });
@@ -161,7 +161,7 @@ void main() {
 
       await db.deleteTag(tagId);
 
-      expect(await db.getAllGameTagMappings(), isEmpty);
+      expect(await db.getAllTagAssignments(), isEmpty);
       expect(await db.getGalgame(a), isNotNull, reason: '删标签不该连坐删游戏');
       expect(await db.getGalgame(b), isNotNull);
     });
