@@ -1111,4 +1111,113 @@ void main() {
         .toSet();
     expect(members, <String>{'e1', 'e2'}, reason: '成员复合主键去重，不翻倍');
   });
+
+  test('书根名记错致 rebase 失配时，extract_dir 按 book_key 落回本机书根', () async {
+    // 真实踩中的形态（跨包名迁移）：导出端声明的书根是改名前的旧名，行里
+    // extract_dir 的真实前缀却是新名，于是 rebasePath 的前缀匹配失败并**静默
+    // 原样返回**导出设备的绝对路径。库看着导入成功，每本书却都「找不到书籍
+    // 文件」——那个路径是老包的私有沙箱，新包永远读不到，尽管内容早已解包到
+    // 本机书根下。
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = FushiDatabase(curDir.path);
+    await cur.close();
+
+    // 本机书根：解包落点 <booksRoot>/<bookKey> 已存在（文件确实搬过来了）。
+    final booksRoot = await _tempDir('mg_books_');
+    addTearDown(() => cleanupTempDir(booksRoot));
+    await Directory(p.join(booksRoot.path, 'novel')).create(recursive: true);
+
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = FushiDatabase(srcDir.path);
+    await src.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: 'novel',
+      title: 'novel',
+      epubPath: '/data/user/0/app.old.pkg/app_flutter/fushi_books/novel.epub',
+      extractDir: '/data/user/0/app.old.pkg/app_flutter/fushi_books/novel',
+      chapterCount: 1,
+      chaptersJson: '[]',
+      importedAt: _now(),
+    ));
+    // 声明的书根与行里前缀对不上（模拟导出端写了改名前的旧目录名）。
+    final srcBooks = await _tempDir('mg_srcbooks_');
+    addTearDown(() => cleanupTempDir(srcBooks));
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await BackupService(
+      db: src,
+      dbDirectory: srcDir.path,
+      appVersion: '2.0.0',
+      booksRootDirectory: srcBooks.path,
+    ).createBackup(zip);
+    await src.close();
+
+    await BackupService.mergeRestoreBackup(
+      dbDirectory: curDir.path,
+      zipPath: zip,
+      booksRootDirectory: booksRoot.path,
+    );
+
+    final after = FushiDatabase(curDir.path);
+    addTearDown(after.close);
+    final List<EpubBookRow> rows = await after.getAllEpubBooks();
+    expect(rows.single.extractDir, p.join(booksRoot.path, 'novel'),
+        reason: 'rebase 前缀失配时必须落回本机确定位置，'
+            '不能留着导出设备的绝对路径（那是另一个应用的沙箱）');
+  });
+
+  test('rebase 结果在本机存在时不被 book_key 回退改写', () async {
+    // 回退只能在「rebase 结果不存在」时兜底，不得越权顶掉一个有效的嵌套路径，
+    // 否则普通备份恢复会被这条兜底改坏（Never break userspace）。
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = FushiDatabase(curDir.path);
+    await cur.close();
+
+    final booksRoot = await _tempDir('mg_books_');
+    addTearDown(() => cleanupTempDir(booksRoot));
+    // 两个都存在：rebase 结果（嵌套）与 book_key 直落位置。必须选前者。
+    await Directory(p.join(booksRoot.path, 'sub', 'novel'))
+        .create(recursive: true);
+    await Directory(p.join(booksRoot.path, 'novel')).create(recursive: true);
+
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = FushiDatabase(srcDir.path);
+    final srcBooks = await _tempDir('mg_srcbooks_');
+    addTearDown(() => cleanupTempDir(srcBooks));
+    await src.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: 'novel',
+      title: 'novel',
+      epubPath: p.join(srcBooks.path, 'sub', 'novel.epub'),
+      extractDir: p.join(srcBooks.path, 'sub', 'novel'),
+      chapterCount: 1,
+      chaptersJson: '[]',
+      importedAt: _now(),
+    ));
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await BackupService(
+      db: src,
+      dbDirectory: srcDir.path,
+      appVersion: '2.0.0',
+      booksRootDirectory: srcBooks.path,
+    ).createBackup(zip);
+    await src.close();
+
+    await BackupService.mergeRestoreBackup(
+      dbDirectory: curDir.path,
+      zipPath: zip,
+      booksRootDirectory: booksRoot.path,
+    );
+
+    final after = FushiDatabase(curDir.path);
+    addTearDown(after.close);
+    final List<EpubBookRow> rows = await after.getAllEpubBooks();
+    expect(rows.single.extractDir, p.join(booksRoot.path, 'sub', 'novel'),
+        reason: '正常 rebase 的结果有效，兜底不得把它顶成 book_key 直落位置');
+  });
 }
