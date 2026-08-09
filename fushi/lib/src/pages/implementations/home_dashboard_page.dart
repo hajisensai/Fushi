@@ -2935,6 +2935,10 @@ class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
   bool _hasTransferData = false;
   bool _legacyInstalled = false;
 
+  /// 是否持有「所有文件访问权限」。决定 [_legacyInstalled] 能不能当兜底入口用：
+  /// 只有**没**权限时「读不到中转数据」才是不可信的答案。
+  bool _storageGranted = true;
+
   bool get _importDone =>
       widget.appModel.prefsRepo.getPref(kMigrationImportDonePrefKey) == true;
 
@@ -2966,10 +2970,12 @@ class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
     final bool hasData = _importer.hasTransferData(dir);
     final bool installed =
         await _channel.isPackageInstalled(kHibikiPackageName);
+    final bool granted = await _channel.hasAllFilesAccess();
     if (!mounted) return;
     setState(() {
       _hasTransferData = hasData;
       _legacyInstalled = installed;
+      _storageGranted = granted;
     });
   }
 
@@ -2977,11 +2983,17 @@ class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     Widget? inner;
-    // 老包还装着也要显示入口，不能只看「读得到中转数据」：缺「所有文件访问
-    // 权限」时 existsSync 直接返回 false（它不抛异常，兜不住），入口一藏，用户
-    // 就再也走不到那个能授权的页面——权限没了 → 看不到入口 → 无法授权 → 死锁。
-    // 宁可多显示一次入口（进去会如实说「没有找到迁移数据」），也不留死路。
-    if (!_importDone && (_hasTransferData || _legacyInstalled)) {
+    // 「老包还装着」只能在**没有存储权限时**当兜底入口，不能单独成立。
+    //
+    // 要兜的死路是：缺「所有文件访问权限」时 existsSync 直接返回 false（不抛
+    // 异常，兜不住），入口一藏用户就再也走不到那个能授权的页面 → 无法授权 →
+    // 死锁。那种情况下「读不到数据」是个不可信的答案，宁可多显示一次入口。
+    //
+    // 但**有**权限时它就是可信的：导入成功后中转目录已被整个删掉，此时老包大
+    // 概率还没卸（卸载提示正是下面那条分支要做的事），若仍拿它当入口，用户会
+    // 在数据早已导完、无事可做的情况下一直被问「检测到迁移数据，现在导入？」。
+    if (!_importDone &&
+        (_hasTransferData || (_legacyInstalled && !_storageGranted))) {
       inner = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[

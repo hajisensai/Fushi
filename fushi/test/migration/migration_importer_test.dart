@@ -191,11 +191,17 @@ void main() {
       final String src =
           File('lib/src/pages/implementations/home_dashboard_page.dart')
               .readAsStringSync();
-      final int idx = src.indexOf('if (!_importDone && ');
+      // 锚不带尾随空格：条件长到被 dart format 折行后，紧跟的是换行而非空格。
+      final int idx = src.indexOf('if (!_importDone &&');
       expect(idx, greaterThan(-1), reason: 'banner 显示条件的形状变了，更新这条守卫');
       final String cond = src.substring(idx, src.indexOf(') {', idx));
       expect(cond, contains('_legacyInstalled'),
           reason: '老包还装着就必须给入口，否则权限一没就是死锁');
+      // 但它只能在没权限时兜底：有权限时「读不到数据」是可信的答案，导入成功
+      // 后中转目录已被整个删掉，此时还拿老包当入口，用户就会在无事可做的情况下
+      // 一直被问「现在导入？」（真机实测：11.4GB 导完、目录已清，banner 仍在）。
+      expect(cond, contains('_storageGranted'),
+          reason: '老包装着不能单独成立，必须与「没有存储权限」同时满足');
     });
 
     test('源码守卫：首页 banner 不得调用 scan()', () {
