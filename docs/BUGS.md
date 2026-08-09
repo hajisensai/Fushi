@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1377 条。点号进各自文件。
+> 共 1378 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -37,6 +37,7 @@
 | [BUG-1479](bugs/BUG-1479-gal-lookup-card-covered-by-game.md) | ✅ | ✅ | gal 查词卡被游戏盖住：置顶只设一次、永不重申 |
 | [BUG-1478](bugs/BUG-1478-gal-workbench-char-level-lookup.md) | ✅ | ✅ | 捕获工作台只能点整词、点不了单个字；加载更多按 glossary 行递增上限 |
 | [BUG-1477](bugs/BUG-1477-gal-japanese-locale-no-switch.md) | ✅ | ✅ | 汉化版被强制转区后启动即闪退：转区没有开关，判据把「32 位」当成「日文原版」 |
+| [BUG-1476](bugs/BUG-1476-migration-settings-never-merged.md) | ✅ | ✅ | 跨包名迁移不搬任何设置：merge 引擎从不消费 settings 类别 |
 | [BUG-1475](bugs/BUG-1475-gal-utterance-settle-drops-closing-tail.md) | ✅ | ✅ | 切句时收敛裸 return，最后 250ms 已进环的 PCM 从未被读走 |
 | [BUG-1474](bugs/BUG-1474-gal-picker-dialog-cramped-and-single-line-preview.md) | ✅ | ✅ | hook 选择弹窗过小/标题截断/预览只有一句 |
 | [BUG-1473](bugs/BUG-1473-gal-mining-serial-capture-and-raw-png.md) | ✅ | ✅ | gal 制卡慢：画面与语音串行 + 静态截图全分辨率 PNG 直送 Anki |

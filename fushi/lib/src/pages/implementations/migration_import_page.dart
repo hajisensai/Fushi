@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:external_path/external_path.dart';
@@ -6,6 +7,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/migration/migration_exporter.dart';
 import 'package:fushi/src/migration/migration_importer.dart';
 import 'package:fushi/src/migration/migration_readonly.dart';
+import 'package:fushi/src/migration/migration_target_channel.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show backupImportRestart;
@@ -42,25 +44,107 @@ Future<Directory> migrationTransferDir() async {
   return Directory(p.join(documents, 'Hibiki', 'migration'));
 }
 
-class _MigrationImportPageState extends State<MigrationImportPage> {
+class _MigrationImportPageState extends State<MigrationImportPage>
+    with WidgetsBindingObserver {
   static const MigrationImporter _importer = MigrationImporter();
+  static const MigrationTargetChannel _channel = MigrationTargetChannel();
 
   MigrationScanResult? _scan;
   bool _running = false;
   String? _status;
   String? _error;
 
+  /// 扫描进度（校验哪一批 / 已完成几批）。11GB 库的全量 SHA-256 要好几分钟，
+  /// 这段时间必须让用户看得见在动，否则和卡死没有区别。
+  String? _scanningLabel;
+
   @override
   void initState() {
     super.initState();
-    _rescan();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_rescan());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 从系统授权页回来时自动重扫：这个权限只能跳设置页手动开，没有回调，
+    // 不在 resume 复查的话用户开完权限回来还是那句「没权限」。
+    if (state == AppLifecycleState.resumed &&
+        !_running &&
+        _scan?.storagePermissionGranted == false) {
+      unawaited(_rescan());
+    }
   }
 
   Future<void> _rescan() async {
     final Directory dir = await migrationTransferDir();
-    final MigrationScanResult r = await _importer.scan(dir);
+    final bool granted = await _channel.hasAllFilesAccess();
     if (!mounted) return;
-    setState(() => _scan = r);
+    setState(() {
+      _scan = null;
+      _scanningLabel = granted ? '' : null;
+    });
+    final MigrationScanResult r = await _importer.scan(
+      dir,
+      permissionGranted: granted,
+      onProgress: (MigrationBatch batch, int done, int total) {
+        if (!mounted) return;
+        setState(() => _scanningLabel = t.migration_import_verifying(
+              batch: _batchLabel(batch),
+              done: done + 1,
+              total: total,
+            ));
+      },
+    );
+    if (!mounted) return;
+    setState(() {
+      _scan = r;
+      _scanningLabel = null;
+    });
+    // 校验不过是终止性结果，必须打断——只在列表里堆几行，用户等了几分钟
+    // 校验之后看到的是一屏静默的红字，很容易以为还在跑。
+    if (r.problems.isNotEmpty) await _showProblemsDialog(r);
+  }
+
+  /// 逐批问题的弹窗。列表仍留在页面上供反复查看。
+  Future<void> _showProblemsDialog(MigrationScanResult scan) async {
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(t.migration_import_entry),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              for (final MapEntry<String, List<String>> e
+                  in scan.problems.entries) ...<Widget>[
+                Text(t.migration_import_verify_failed(
+                    batch: e.key, detail: e.value.join('; '))),
+                const SizedBox(height: 8),
+              ],
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(t.dialog_close),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 跳系统授权页。回来后由 [didChangeAppLifecycleState] 复查并重扫。
+  Future<void> _requestPermission() async {
+    await _channel.requestAllFilesAccess();
   }
 
   String _batchLabel(MigrationBatch batch) => switch (batch) {
@@ -95,8 +179,17 @@ class _MigrationImportPageState extends State<MigrationImportPage> {
           p.join(appModel.appDirectory.path, 'custom_fonts');
       final String videosRoot = p.join(appModel.appDirectory.path, 'videos');
       for (final MigrationImportBatch batch in scan.ready) {
-        setState(() => _status =
-            t.migration_import_running(batch: _batchLabel(batch.batch)));
+        // **不能裸调 setState**：beginBackupImport() 上的是全屏遮罩，本页已被
+        // 移出 widget 树（State 进入 defunct）。循环第一句就会抛
+        // 「called after dispose」→ 落进下面的 catch → 2 秒后
+        // System.exit 重启，于是 mergeRestoreBackup 一次都没被调用过——用户看到
+        // 的是「校验全过、导入却瞬间失败、中转文件原封不动、库还是空的」。
+        // 进度归遮罩管（reportBackupImportProgress 已在下面传给它）；本页的
+        // _status 只在页面还活着时有意义。
+        if (mounted) {
+          setState(() => _status =
+              t.migration_import_running(batch: _batchLabel(batch.batch)));
+        }
         await BackupService.mergeRestoreBackup(
           dbDirectory: appModel.databaseDirectory.path,
           zipPath: batch.archivePath,
@@ -107,6 +200,10 @@ class _MigrationImportPageState extends State<MigrationImportPage> {
           fontsRootDirectory: fontsRoot,
           videosRootDirectory: videosRoot,
           onProgress: appModel.reportBackupImportProgress,
+          // 同机换包名：用户期望「一切原样搬过来」，而 merge 默认只搬内容、
+          // 不搬设置（那是给「另一台设备的备份」用的语义）。不开这个开关，
+          // 迁移完成后阅读器/视频/Anki/快捷键/界面/互联/同步后端全是默认值。
+          adoptSourcePreferences: true,
         );
       }
       // 合并后聚合校验：逐表行数不得低于各批清单最大值。
@@ -119,6 +216,11 @@ class _MigrationImportPageState extends State<MigrationImportPage> {
       final List<String> countProblems = MigrationImporter.verifyImportedCounts(
           dbPath: dbPath, expected: expected);
       if (countProblems.isNotEmpty) {
+        // 同上：重启会带走屏幕上的说明，先落日志。
+        debugPrint(
+            '[Fushi][migration] count verification failed: ${countProblems.join("; ")}');
+        ErrorLogService.instance.log('MigrationImportPage.verifyCounts',
+            StateError(countProblems.join('; ')), StackTrace.current);
         // 行数不足：不删中转文件、不置完成标志（绝不进卸载流程），重启后可重试。
         appModel.failBackupImport(
             t.migration_import_counts_failed(detail: countProblems.join('; ')));
@@ -138,7 +240,12 @@ class _MigrationImportPageState extends State<MigrationImportPage> {
       appModel.completeBackupImport(t.migration_import_success);
       await Future<void>.delayed(const Duration(seconds: 1));
       await backupImportRestart(appModel);
-    } catch (e) {
+    } catch (e, st) {
+      // **必须落日志**：这条 detail 此前只塞进 UI 文案，而失败路径 2 秒后就
+      // System.exit 重启，于是唯一有诊断价值的信息随进程一起消失——release 抓
+      // 不到，debug 也抓不到（压根没有日志语句）。实测三次复现都拿不到原因。
+      ErrorLogService.instance.log('MigrationImportPage.runImport', e, st);
+      debugPrint('[Fushi][migration] import failed: $e\n$st');
       appModel.failBackupImport(
           t.migration_import_verify_failed(batch: '', detail: '$e'));
       await Future<void>.delayed(const Duration(seconds: 2));
@@ -164,7 +271,46 @@ class _MigrationImportPageState extends State<MigrationImportPage> {
           Text(t.migration_import_entry_subtitle),
           const SizedBox(height: 16),
           if (scan == null)
-            const Center(child: CircularProgressIndicator())
+            Column(
+              children: <Widget>[
+                const Center(child: CircularProgressIndicator()),
+                const SizedBox(height: 12),
+                // 只给转圈＝用户无法把「正在校验」和「卡死」区分开。
+                Text(_scanningLabel ?? t.migration_import_verifying_hint,
+                    textAlign: TextAlign.center),
+                if (_scanningLabel != null) ...<Widget>[
+                  const SizedBox(height: 4),
+                  Text(
+                    t.migration_import_verifying_hint,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ],
+            )
+          else if (!scan.storagePermissionGranted)
+            // 根因面：没权限时该请求权限，不是报「清单损坏」再让用户自己去翻设置。
+            FushiCard(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      t.migration_import_permission_title,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(t.migration_import_permission_body),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: _requestPermission,
+                      child: Text(t.migration_import_permission_grant),
+                    ),
+                  ],
+                ),
+              ),
+            )
           else if (!scan.hasAnything)
             Text(t.migration_import_nothing)
           else ...<Widget>[

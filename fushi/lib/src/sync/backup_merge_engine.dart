@@ -45,12 +45,25 @@ class BackupMergeEngine {
     String srcAlias = 'mergesrc',
     Set<String> carriedVideoSourcePaths = const <String>{},
     Set<String>? enabledCategoryNames,
+    bool adoptSourcePreferences = false,
   })  : _srcAlias = srcAlias,
         _carriedVideoSourcePaths = carriedVideoSourcePaths,
-        _enabledCategoryNames = enabledCategoryNames;
+        _enabledCategoryNames = enabledCategoryNames,
+        _adoptSourcePreferences = adoptSourcePreferences;
 
   final FushiDatabase _db;
   final String _srcAlias;
+
+  /// 是否把源库的 `preferences` 整体接管过来（**只有同机换包名的迁移**该开）。
+  ///
+  /// 平时关着是对的：备份 merge 的语义是「把**另一台**设备的内容并进来，不动
+  /// 本机设置」。但迁移不是那个场景——它是同一台机器、同一个用户、只换了包名，
+  /// 用户期望「一切原样搬过来」。关着的后果是实测过的：11.4GB 库迁移成功后
+  /// `preferences` 只剩 21 行，且没有一条是用户设置（阅读器、视频、Anki、
+  /// 快捷键、界面、互联、同步后端全丢），因为下面那三处点名的 pref 合并
+  /// （收藏句 / 有声书位置 / 音频来源）就是 merge 对 `preferences` 的全部处理，
+  /// 而迁移声明的 `BackupCategory.settings` 在这条路径上从来没有消费方。
+  final bool _adoptSourcePreferences;
 
   /// Per-category merge gate (the `BackupCategory.name`s the user kept ticked in
   /// the import dialog); null = merge every category (legacy full merge). Only
@@ -165,7 +178,26 @@ class BackupMergeEngine {
         await _mergeAudiobookPositionPrefs();
       }
       if (_wants('localAudio')) await _mergeAudioSourcePrefs();
+      // 迁移专用，放在全部点名 pref 合并之后：那几处是「按内容语义合并」（可能
+      // 覆盖/取较新），这里只补它们没管的 key，不能反过来盖掉它们的结果。
+      if (_adoptSourcePreferences) await _adoptMissingPreferences();
     });
+  }
+
+  /// 把源库里**本机还没有**的 `preferences` 行补进来（insert-if-absent）。
+  ///
+  /// 只补不覆盖是刻意的，而且是这个操作能安全存在的前提：目标库是刚建的新包，
+  /// 已经写入了属于**它自己**的标记（`prefs_version`、`first_time_setup`、
+  /// `active_profile_id`、各种 `*_migrated`）。这些描述的是「本库处于什么状态」，
+  /// 拿老包的值去盖会让新库自称成另一个 schema 状态，是真正会毁库的一步。
+  /// `NOT EXISTS` 守卫天然把它们挡在外面，同时放行老包独有的用户设置。
+  Future<void> _adoptMissingPreferences() async {
+    await _db.customStatement(
+      'INSERT INTO preferences ("key", "value") '
+      'SELECT s."key", s."value" FROM $_srcAlias.preferences AS s '
+      'WHERE NOT EXISTS '
+      '(SELECT 1 FROM preferences AS t WHERE t."key" = s."key")',
+    );
   }
 
   /// Read-only estimate of what [merge] would change, for the import confirm

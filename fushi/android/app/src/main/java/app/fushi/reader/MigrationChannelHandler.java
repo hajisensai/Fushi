@@ -5,6 +5,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
+import android.os.Environment;
+import android.provider.Settings;
 
 import androidx.annotation.NonNull;
 
@@ -30,6 +33,21 @@ import io.flutter.plugin.common.MethodChannel;
  */
 public final class MigrationChannelHandler {
     private MigrationChannelHandler() {}
+
+    /**
+     * 是否持有「所有文件访问权限」（{@code MANAGE_EXTERNAL_STORAGE}）。
+     *
+     * <p>迁移中转目录在公共 {@code Documents/Hibiki/migration}（有意如此：不在
+     * {@code /Android/data} 下，卸载老包不会被系统清掉）。但分区存储下，**别的
+     * 应用创建的非媒体文件**（.zip/.manifest.json）本包默认读不到——没有这个
+     * 权限时连 683 字节的清单都会抛 {@code PathAccessException}。
+     *
+     * <p>Android 10 及以下没有这个概念，全靠 legacy 外部存储，恒为 true。
+     */
+    private static boolean hasAllFilesAccess() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return true;
+        return Environment.isExternalStorageManager();
+    }
 
     public static void registerWith(
             @NonNull FlutterEngine engine, @NonNull Context context) {
@@ -79,6 +97,33 @@ public final class MigrationChannelHandler {
                                     Intent.ACTION_DELETE, Uri.parse("package:" + name));
                             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                             context.startActivity(intent);
+                            result.success(null);
+                            return;
+                        }
+                        case "hasAllFilesAccess": {
+                            result.success(hasAllFilesAccess());
+                            return;
+                        }
+                        case "requestAllFilesAccess": {
+                            // 这个权限没有 runtime 权限那种「弹框直接给」的路径：
+                            // 系统只允许跳到设置页由用户手动打开（Android 11+）。
+                            // 调用方必须在 onResume 时用 hasAllFilesAccess 复查，
+                            // 不得因为「跳过了设置页」就当已授权。
+                            if (!hasAllFilesAccess()) {
+                                Intent intent = new Intent(
+                                        Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                        Uri.parse("package:" + context.getPackageName()));
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                try {
+                                    context.startActivity(intent);
+                                } catch (Exception e) {
+                                    // 个别 ROM 没有这个 per-app 页面，退回全局列表页。
+                                    Intent fallback = new Intent(
+                                            Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+                                    fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                    context.startActivity(fallback);
+                                }
+                            }
                             result.success(null);
                             return;
                         }

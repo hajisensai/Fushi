@@ -762,10 +762,9 @@ class _HomeDashboardPageState
       final List<RemoteActivityEvent> remoteActivity =
           results[2] as List<RemoteActivityEvent>;
       if (!mounted) return;
-      final List<MediaItem> books = ref
-              .read(fushiBooksProvider(JapaneseLanguage.instance))
-              .valueOrNull ??
-          const <MediaItem>[];
+      final List<MediaItem> books =
+          ref.read(fushiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
+              const <MediaItem>[];
       final Set<String> localBookKeys = <String>{
         for (final MediaItem item in books)
           ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
@@ -2309,8 +2308,8 @@ class _HomeDashboardPageState
               height: 56,
               child: FadeInImage(
                 placeholder: MemoryImage(kTransparentImage),
-                image: ReaderFushiSource.instance
-                    .getDisplayThumbnailFromMediaItem(
+                image:
+                    ReaderFushiSource.instance.getDisplayThumbnailFromMediaItem(
                   appModel: appModel,
                   item: book,
                 ),
@@ -2936,6 +2935,10 @@ class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
   bool _hasTransferData = false;
   bool _legacyInstalled = false;
 
+  /// 是否持有「所有文件访问权限」。决定 [_legacyInstalled] 能不能当兜底入口用：
+  /// 只有**没**权限时「读不到中转数据」才是不可信的答案。
+  bool _storageGranted = true;
+
   bool get _importDone =>
       widget.appModel.prefsRepo.getPref(kMigrationImportDonePrefKey) == true;
 
@@ -2960,13 +2963,19 @@ class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
 
   Future<void> _refresh() async {
     final Directory dir = await migrationTransferDir();
-    final MigrationScanResult scan = await _importer.scan(dir);
+    // **只做存在性检查**，绝不在这里调 scan()：banner 只需要知道「要不要显示
+    // 入口」，而 scan 会把中转目录全量算一遍 SHA-256（11GB 库＝CPU 满载数分钟）。
+    // 这个方法在 initState 和每次回前台都跑，用 scan 等于让手机一直在发烫。
+    // 归档到底能不能信，由导入页在用户真的要导时去校验。
+    final bool hasData = _importer.hasTransferData(dir);
     final bool installed =
         await _channel.isPackageInstalled(kHibikiPackageName);
+    final bool granted = await _channel.hasAllFilesAccess();
     if (!mounted) return;
     setState(() {
-      _hasTransferData = scan.hasAnything;
+      _hasTransferData = hasData;
       _legacyInstalled = installed;
+      _storageGranted = granted;
     });
   }
 
@@ -2974,7 +2983,17 @@ class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     Widget? inner;
-    if (!_importDone && _hasTransferData) {
+    // 「老包还装着」只能在**没有存储权限时**当兜底入口，不能单独成立。
+    //
+    // 要兜的死路是：缺「所有文件访问权限」时 existsSync 直接返回 false（不抛
+    // 异常，兜不住），入口一藏用户就再也走不到那个能授权的页面 → 无法授权 →
+    // 死锁。那种情况下「读不到数据」是个不可信的答案，宁可多显示一次入口。
+    //
+    // 但**有**权限时它就是可信的：导入成功后中转目录已被整个删掉，此时老包大
+    // 概率还没卸（卸载提示正是下面那条分支要做的事），若仍拿它当入口，用户会
+    // 在数据早已导完、无事可做的情况下一直被问「检测到迁移数据，现在导入？」。
+    if (!_importDone &&
+        (_hasTransferData || (_legacyInstalled && !_storageGranted))) {
       inner = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
