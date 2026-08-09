@@ -215,6 +215,49 @@ CREATE TABLE statistics_tombstones (
     expect(rows.single.lookupCount, 10);
   });
 
+  test('review3-4：单行身份与 wire 错配时不许行内抬升，塌 空 行如实标未归因', () async {
+    final FushiDatabase db = await openV75Db();
+
+    // 本地只有 uid-1 的行（lookup=2）。
+    await db.addLookupCount(
+        bookKey: 'uid-1',
+        title: '错配',
+        sourceType: 'video',
+        dateKey: '2026-08-03',
+        delta: 2);
+
+    // wire 混桶（bookKey null）总量 7 > 本地和 2 → 不许把 7 记到 uid-1 头上。
+    await db.setLookupCount(
+        title: '错配', sourceType: 'video', dateKey: '2026-08-03', count: 7);
+
+    final List<LookupMiningCounterRow> rows =
+        (await db.getAllLookupMiningCounters())
+            .where((LookupMiningCounterRow r) => r.title == '错配')
+            .toList();
+    expect(rows, hasLength(1));
+    expect(rows.single.bookKey, '',
+        reason: '身份错配 → 塌 空 行，别的视频的查词不得挂到 uid-1 的 tile 上');
+    expect(rows.single.lookupCount, 7);
+
+    // 身份一致时仍走行内抬升、身份保留。
+    await db.addLookupCount(
+        bookKey: 'uid-9',
+        title: '一致',
+        sourceType: 'video',
+        dateKey: '2026-08-03',
+        delta: 1);
+    await db.setLookupCount(
+        bookKey: 'uid-9',
+        title: '一致',
+        sourceType: 'video',
+        dateKey: '2026-08-03',
+        count: 5);
+    final LookupMiningCounterRow kept = (await db.getAllLookupMiningCounters())
+        .singleWhere((LookupMiningCounterRow r) => r.title == '一致');
+    expect(kept.bookKey, 'uid-9', reason: '身份一致行内抬升，身份保留');
+    expect(kept.lookupCount, 5);
+  });
+
   test('fresh 库由 onCreate 直接建出 v76 键形（含身份唯一键）', () async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);

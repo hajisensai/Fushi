@@ -1721,9 +1721,9 @@ class FushiDatabase extends _$FushiDatabase {
             // 忽略 bookKey → 同名视频合进同一行）。三步：
             // ① NULL → ''（新列定义 NOT NULL DEFAULT ''；先归一再重建，避免
             //    TableMigration 拷贝时违反非空约束）；
-            // ② alterTable 按当前 Dart 定义重建（唯一键换 {book_key,title,
-            //    source_type,date_key}——新键是旧键超集，既有行必仍唯一，重建
-            //    不可能撞约束）；
+            // ② alterTable 按当前 Dart 定义重建（唯一键换 {title,source_type,
+            //    date_key,book_key}，title 打头保三列前缀查询的索引——新键是旧键
+            //    超集，既有行必仍唯一，重建不可能撞约束）；
             // ③ 按 title 唯一匹配回填身份（v39 同判据、同 SQL 形状）：book 行
             //    JOIN epub_books、video 行 JOIN video_books；同名多条目/无匹配
             //    保持 ''（读取端按 title 回退归并，见 stat_shared 的身份分组）。
@@ -4582,14 +4582,18 @@ class FushiDatabase extends _$FushiDatabase {
       transaction(() async {
         // v39：有 bookUid（当前所有真实写入方）按 (bookUid,dateKey) 键控，同名
         // 不同视频各自累计；无 bookUid（兼容旧调用）按旧 (title,dateKey) 且只命中
-        // 遗留 NULL-uid 行，不污染新键控行。
-        final existing = await (select(videoWatchStatistics)
-              ..where((t) => bookUid != null
-                  ? (t.bookUid.equals(bookUid) & t.dateKey.equals(dateKey))
-                  : (t.title.equals(title) &
-                      t.dateKey.equals(dateKey) &
-                      t.bookUid.isNull())))
-            .getSingleOrNull();
+        // 无身份行，不污染新键控行。无身份判定 NULL 与 '' 都算（review3-9：与
+        // 删除/展示层同一判据，防 '' 编码漂移把无身份统计裂成两行）。
+        final List<VideoWatchStatisticRow> candidates =
+            await (select(videoWatchStatistics)
+                  ..where((t) => bookUid != null
+                      ? (t.bookUid.equals(bookUid) & t.dateKey.equals(dateKey))
+                      : (t.title.equals(title) &
+                          t.dateKey.equals(dateKey) &
+                          (t.bookUid.isNull() | t.bookUid.equals('')))))
+                .get();
+        final VideoWatchStatisticRow? existing =
+            candidates.isEmpty ? null : candidates.first;
         if (existing != null) {
           await (update(videoWatchStatistics)
                 ..where((t) => t.id.equals(existing.id)))
@@ -4955,10 +4959,34 @@ class FushiDatabase extends _$FushiDatabase {
   Future<void> setVideoWatchStatistic(VideoWatchStatisticsCompanion stat) =>
       transaction(() async {
         // v39：本地行按 bookUid 键控，但互通聚合线协议仍是 title 粒度。OVERWRITE
-        // 语义改为「删该 (title,dateKey) 全部行（含 per-uid 行）→ 写单一 NULL-uid
+        // 语义 =「删该 (title,dateKey) 全部行（含 per-uid 行）→ 写单一 NULL-uid
         // 权威行」——沿用旧“每 (title,date) 一行”语义、避免与 per-uid 行叠加双计；
         // 代价是启用互通统计同步的库该日行退化回 title 粒度（协议升级 per-uid 前
         // 的已知限制，见 UI v2 计划文档）。
+        //
+        // v76（review3-5，与 setLookupCount 的 review-5 守卫同律）：wire 值不超过
+        // 本地全部行之和 → 完全 no-op。物化端按 title 求和上行（_foldVideoStatRows）
+        // 后，sync 自回声恒等 → 不塌缩，per-uid 行不再被每轮同步周期性抹掉（塌缩
+        // 还会顺带毁掉按 bookUid 收历史 title 的删除墓碑考古）。塌缩只发生在 wire
+        // 真知道更多时。
+        final List<VideoWatchStatisticRow> rows =
+            await (select(videoWatchStatistics)
+                  ..where((t) =>
+                      t.title.equals(stat.title.value) &
+                      t.dateKey.equals(stat.dateKey.value)))
+                .get();
+        int sumChars = 0, sumMs = 0;
+        for (final VideoWatchStatisticRow r in rows) {
+          sumChars += r.subtitleChars;
+          sumMs += r.watchTimeMs;
+        }
+        final int wireChars =
+            stat.subtitleChars.present ? stat.subtitleChars.value : 0;
+        final int wireMs =
+            stat.watchTimeMs.present ? stat.watchTimeMs.value : 0;
+        if (rows.isNotEmpty && wireChars <= sumChars && wireMs <= sumMs) {
+          return;
+        }
         await (delete(videoWatchStatistics)
               ..where((t) =>
                   t.title.equals(stat.title.value) &
@@ -5330,25 +5358,25 @@ class FushiDatabase extends _$FushiDatabase {
           );
           return;
         }
-        if (rows.length == 1) {
-          final LookupMiningCounterRow existing = rows.single;
-          if (count > existing.lookupCount) {
-            await (update(lookupMiningCounters)
-                  ..where((t) => t.id.equals(existing.id)))
-                .write(
-                    LookupMiningCountersCompanion(lookupCount: Value(count)));
-          }
-          return;
-        }
         int sumLookup = 0, sumMine = 0;
         for (final LookupMiningCounterRow r in rows) {
           sumLookup += r.lookupCount;
           sumMine += r.mineCount;
         }
-        // 多行且 wire 值不超过本地和：MAX-union 无可抬升，**不塌缩**——否则每轮
+        // wire 值不超过本地和：MAX-union 无可抬升，**完全 no-op**——否则每轮
         // sync 应用都会把 per-identity 行塌回 '' 行，v76 的分身份修复被周期性
         // 回退、tile 数字震荡（review-5）。塌缩只发生在 wire 真的知道更多时。
         if (count <= sumLookup) return;
+        // 单行且身份与 wire 一致（review3-4）：行内抬升、身份保留。身份错配
+        // （如本地只有 uid-2 行、wire 是混桶 null）不许行内抬——那会把别的视频
+        // 的查词记到 uid-2 头上；走下面的 '' 塌缩，如实标未归因。
+        final String wireIdentity = bookKey ?? '';
+        if (rows.length == 1 && rows.single.bookKey == wireIdentity) {
+          await (update(lookupMiningCounters)
+                ..where((t) => t.id.equals(rows.single.id)))
+              .write(LookupMiningCountersCompanion(lookupCount: Value(count)));
+          return;
+        }
         await (delete(lookupMiningCounters)
               ..where((t) =>
                   t.title.equals(title) &
@@ -5396,22 +5424,20 @@ class FushiDatabase extends _$FushiDatabase {
           );
           return;
         }
-        if (rows.length == 1) {
-          final LookupMiningCounterRow existing = rows.single;
-          if (count > existing.mineCount) {
-            await (update(lookupMiningCounters)
-                  ..where((t) => t.id.equals(existing.id)))
-                .write(LookupMiningCountersCompanion(mineCount: Value(count)));
-          }
-          return;
-        }
         int sumLookup = 0, sumMine = 0;
         for (final LookupMiningCounterRow r in rows) {
           sumLookup += r.lookupCount;
           sumMine += r.mineCount;
         }
-        // 与 [setLookupCount] 对称：wire 值不超过本地和 → 不塌缩（review-5）。
+        // 与 [setLookupCount] 三分支完全对称（review-5 / review3-4 注释见彼处）。
         if (count <= sumMine) return;
+        final String wireIdentity = bookKey ?? '';
+        if (rows.length == 1 && rows.single.bookKey == wireIdentity) {
+          await (update(lookupMiningCounters)
+                ..where((t) => t.id.equals(rows.single.id)))
+              .write(LookupMiningCountersCompanion(mineCount: Value(count)));
+          return;
+        }
         await (delete(lookupMiningCounters)
               ..where((t) =>
                   t.title.equals(title) &
@@ -5741,9 +5767,7 @@ class FushiDatabase extends _$FushiDatabase {
                   .get();
           tombstoneTitles
             ..addAll(uidWatchRows.map((VideoWatchStatisticRow r) => r.title))
-            ..addAll(uidCounterRows
-                .map((LookupMiningCounterRow r) => r.title)
-                .where((String t) => t.isNotEmpty));
+            ..addAll(uidCounterRows.map((LookupMiningCounterRow r) => r.title));
           await (delete(videoWatchStatistics)
                 ..where((t) => t.bookUid.equals(bookUid)))
               .go();
@@ -5753,16 +5777,25 @@ class FushiDatabase extends _$FushiDatabase {
                     t.sourceType.equals(statSourceVideo)))
               .go();
         }
+        // '' 不是合法的墓碑/扫面 title：no-book 计数行的 title 就是 ''，给它立碑
+        // 会永久压制全部无书查词计数的同步，且没有任何写入方能清（清碑都守
+        // isNotEmpty；review3-7）。
+        tombstoneTitles.remove('');
         if (bookUid == null || includeUnattributed) {
+          // 扫面覆盖被删 uid 的**全部历史 title**（review3-2）：展示层把这些
+          // title 的无身份遗留行都归并进了本 tile（owners 按组内全部 title 快照
+          // 注册），删 tile 即删其展示的全部行——只扫传入 title 会把改名前/后另一
+          // 半留成「刚删完就复活的孤儿 tile」。
+          final List<String> sweepTitles = tombstoneTitles.toList();
           await (delete(videoWatchStatistics)
                 ..where((t) =>
-                    t.title.equals(title) &
+                    t.title.isIn(sweepTitles) &
                     (t.bookUid.isNull() | t.bookUid.equals(''))))
               .go();
           await (delete(lookupMiningCounters)
                 ..where((t) =>
                     t.bookKey.equals('') &
-                    t.title.equals(title) &
+                    t.title.isIn(sweepTitles) &
                     t.sourceType.equals(statSourceVideo)))
               .go();
         }

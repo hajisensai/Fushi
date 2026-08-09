@@ -30,10 +30,11 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   /// 合集归属映射（书架同源）：按视频 tile 显示所属合集名用。
   /// - [_collectionNamesById]：collectionId → 合集名。
   /// - [_primaryCollectionByEntry]：'video|<bookUid>' → 折叠归属的主 collectionId。
-  /// - [_bookUidByTitle]：video_watch_statistics 按 title 聚合，经 video_books 反查 uid。
+  /// - [_libraryUidsByTitle]：库表 title→uid 集合（歧义否决与合集名回退共用，
+  ///   一套政策：同名多 uid 谁也不许猜）。
   Map<int, String> _collectionNamesById = <int, String>{};
   Map<String, int> _primaryCollectionByEntry = <String, int>{};
-  Map<String, String> _bookUidByTitle = <String, String>{};
+  Map<String, Set<String>> _libraryUidsByTitle = <String, Set<String>>{};
 
   // 制卡 / 收藏计数（来源 'video'），按今日/本周/本月/全部分桶。
   StatActivityBuckets _mined = StatActivityBuckets();
@@ -70,11 +71,15 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
           .map((VideoBookRow b) => b.completedAt)
           .whereType<DateTime>()
           .toList();
-      // 合集归属（书架同源）：title→bookUid→'video|bookUid'→合集名，喂 per-video tile。
-      // bookUid 直接取自已加载的 video_books（无需额外查询）。
-      _bookUidByTitle = <String, String>{
-        for (final VideoBookRow b in books) b.title: b.bookUid,
-      };
+      // 合集归属（书架同源）：title→bookUid→'video|bookUid'→合集名，喂 per-video
+      // tile。同一份 title→uids 事实同时喂歧义否决与合集名回退（review3-10：两个
+      // 消费方一套政策——同名多 uid 的 title 谁也不许猜）。
+      _libraryUidsByTitle = <String, Set<String>>{};
+      for (final VideoBookRow b in books) {
+        _libraryUidsByTitle
+            .putIfAbsent(b.title, () => <String>{})
+            .add(b.bookUid);
+      }
       _collectionNamesById = <int, String>{
         for (final MediaCollectionRow c in await db.getAllMediaCollections())
           c.id: c.name,
@@ -91,11 +96,10 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       // v76：观看 / 计数 / 收藏三个行宇宙进同一次身份分组，tile 自带全部数字
       // （吸收判据全局一致，绝不各分各的再拼——那是计数在同名 tile 间游走的根因）。
       // 库表级同名判定（≥2 个 uid 共享一个 title）喂给吸收否决：与迁移回填的
-      // 唯一匹配判据同源，行宇宙判据单独用会误吸混合遗留（review-2）。
-      final Map<String, int> uidCountByTitle = <String, int>{};
-      for (final VideoBookRow b in books) {
-        uidCountByTitle[b.title] = (uidCountByTitle[b.title] ?? 0) + 1;
-      }
+      // 唯一匹配判据同源，行宇宙判据单独用会误吸混合遗留（review-2）。已知限制
+      // （review3-6）：歧义不粘——同名视频之一被移出库且没留下任何带身份统计行
+      // 后，「曾经同名」这一事实没有任何观察者能复原，遗留行会按 unique-title
+      // 判据归并给幸存者；粘化需要新增持久面，成本与收益不成比例，不做。
       _agg = computeVideoStats(
         stats: stats,
         completed: completed,
@@ -103,8 +107,9 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
         counters: counters,
         favorites: favs,
         ambiguousTitles: <String>{
-          for (final MapEntry<String, int> e in uidCountByTitle.entries)
-            if (e.value >= 2) e.key,
+          for (final MapEntry<String, Set<String>> e
+              in _libraryUidsByTitle.entries)
+            if (e.value.length >= 2) e.key,
         },
       );
       _favorited = bucketActivityByDateKey(
@@ -315,9 +320,15 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   }
 
   /// 按视频 tile 的所属合集名（书架同款「主合集」折叠归属，无则 null）。tile 自带
-  /// bookUid（v76 身份分组）优先；无身份遗留 tile 回退 title→bookUid 反查。
+  /// bookUid（v76 身份分组）优先；无身份遗留 tile 只在库表 title→uid **唯一**时
+  /// 回退反查（review3-10：同名多 uid 的歧义 tile 不许 last-wins 乱标一个视频的
+  /// 合集名——它存在的意义就是「归属不可判」）。
   String? _collectionNameForVideo(VideoStatBookData video) {
-    final String? bookUid = video.bookUid ?? _bookUidByTitle[video.title];
+    final Set<String>? libraryUids = _libraryUidsByTitle[video.title];
+    final String? bookUid = video.bookUid ??
+        (libraryUids != null && libraryUids.length == 1
+            ? libraryUids.single
+            : null);
     if (bookUid == null) return null;
     return statCollectionName(
       MediaKind.video.compositeKey(bookUid),

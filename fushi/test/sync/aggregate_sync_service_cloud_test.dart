@@ -500,6 +500,81 @@ void main() {
             '在对端重新制造互串（review-1）');
   });
 
+  test(
+      'review3-1: same-title per-uid watch rows are SUMMED into one wire '
+      'record — no last-wins loss, and re-applying keeps local rows intact',
+      () async {
+    final FushiDatabase db = await _freshDb('agg_wfold_');
+    addTearDown(db.close);
+    await db.addVideoWatchStatistic(
+        title: '同名',
+        bookUid: 'uid-1',
+        dateKey: '2026-06-01',
+        subtitleChars: 100,
+        watchTimeMs: 3600000);
+    await db.addVideoWatchStatistic(
+        title: '同名',
+        bookUid: 'uid-2',
+        dateKey: '2026-06-01',
+        subtitleChars: 50,
+        watchTimeMs: 2400000);
+
+    final AggregateSyncService svc = AggregateSyncService(db);
+    final AggregateSnapshot snap = await svc.materializeLocalSnapshot();
+    final VideoStatRecord record =
+        snap.videoStats.singleWhere((VideoStatRecord r) => r.title == '同名');
+    expect(record.watchTimeMs, 6000000,
+        reason: '60+40 分钟求和上行，不 last-wins 丢掉一行（丢了对端 MAX 合并后'
+            '回写会把本地 100 分钟永久砍成 40）');
+    expect(record.subtitleChars, 150);
+
+    // 自回声应用：wire 值 == 本地和 → no-op，per-uid 行原样保留。
+    await svc.applySnapshotToLocal(snap);
+    final List<VideoWatchStatisticRow> rows =
+        await db.getAllVideoWatchStatistics();
+    expect(rows, hasLength(2), reason: 'wire 无新知不塌缩（review3-5），身份行不被同步周期性抹掉');
+  });
+
+  test('review3-3: merge only keeps bookKey metadata both sides agree on',
+      () async {
+    const LookupMiningRecord localRec = LookupMiningRecord(
+      bookKey: 'uid-1',
+      title: 'T',
+      sourceType: 'video',
+      dateKey: '2026-06-01',
+      lookupCount: 1,
+      mineCount: 0,
+    );
+    const LookupMiningRecord remoteMixed = LookupMiningRecord(
+      bookKey: null, // v76 起 null = 刻意混桶，不是「不知道」
+      title: 'T',
+      sourceType: 'video',
+      dateKey: '2026-06-01',
+      lookupCount: 8,
+      mineCount: 0,
+    );
+    final AggregateSnapshot merged = AggregateSyncService.mergeSnapshots(
+      const AggregateSnapshot(
+          lookupMiningCounters: <LookupMiningRecord>[localRec]),
+      const AggregateSnapshot(
+          lookupMiningCounters: <LookupMiningRecord>[remoteMixed]),
+    );
+    final LookupMiningRecord out = merged.lookupMiningCounters.single;
+    expect(out.lookupCount, 8, reason: '数值照常 MAX');
+    expect(out.bookKey, isNull,
+        reason: '一侧是混桶 → 合并结果不得把混合总量重新归因给 uid-1'
+            '（否则全新设备落地时复刻互串）');
+
+    // 两侧一致时身份保留。
+    final AggregateSnapshot agreed = AggregateSyncService.mergeSnapshots(
+      const AggregateSnapshot(
+          lookupMiningCounters: <LookupMiningRecord>[localRec]),
+      const AggregateSnapshot(
+          lookupMiningCounters: <LookupMiningRecord>[localRec]),
+    );
+    expect(agreed.lookupMiningCounters.single.bookKey, 'uid-1');
+  });
+
   test('v76: single-identity fold keeps its bookKey metadata', () async {
     final FushiDatabase db = await _freshDb('agg_fold1_');
     addTearDown(db.close);

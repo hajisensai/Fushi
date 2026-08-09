@@ -346,11 +346,14 @@ void main() {
       expect(snap.readingHourlyByFormat, isEmpty);
     });
 
-    test('lookup/mine counters MAX both columns; bookKey prefers non-null', () {
+    test('lookup/mine counters MAX both columns; bookKey only when agreed', () {
+      // v76（review3-3）语义：wire null = 刻意混桶/未归因（fold 端已把混合身份
+      // 折成 null），不再是「不知道、听非空的」。两侧不一致 → 合并结果 null，
+      // 否则会把混桶总量重新归因到单一视频、在下游全新设备上复刻互串。
       const AggregateSnapshot a = AggregateSnapshot(
         lookupMiningCounters: <LookupMiningRecord>[
           LookupMiningRecord(
-            bookKey: null, // A had no book identity on this bucket
+            bookKey: null, // A 侧：混桶/未归因
             title: 'Book A',
             sourceType: 'book',
             dateKey: 'd',
@@ -388,14 +391,20 @@ void main() {
       // lookupCount MAX(10,4)=10, mineCount MAX(2,9)=9 (each column independent).
       expect(sharedAb.lookupCount, 10);
       expect(sharedAb.mineCount, 9);
-      // The null bookKey is filled from the peer's non-null one.
-      expect(sharedAb.bookKey, 'keyA');
-      // bookKey resolution is order-independent (non-null wins either way).
+      // 两侧身份不一致（null 混桶 vs keyA）→ null：混桶总量不得归因 keyA。
+      expect(sharedAb.bookKey, isNull);
+      // 判据顺序无关（两个方向都判不一致 → 都是 null）。
       final LookupMiningRecord sharedBa = ba.lookupMiningCounters
           .firstWhere((LookupMiningRecord r) => r.title == 'Book A');
-      expect(sharedBa.bookKey, 'keyA');
+      expect(sharedBa.bookKey, isNull);
       expect(sharedBa.lookupCount, 10);
       expect(sharedBa.mineCount, 9);
+      // peer-only 桶原样落地，身份保留。
+      expect(
+          ab.lookupMiningCounters
+              .firstWhere((LookupMiningRecord r) => r.title == 'Book B')
+              .bookKey,
+          'keyB');
     });
   });
 
