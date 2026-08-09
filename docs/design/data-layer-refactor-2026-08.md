@@ -64,6 +64,22 @@ key(含类型注解),守卫测试扫描源码中的 `getPreference/setPreference
 里的新 key 报红——存量冻结,增量必须过注册表。凭据类 key(`media_source_secret_*`)
 在注册表中单独分组标注红线。
 
+### C. 「5 张标签映射表应合并成一张」——撤销
+
+看似重复,实为**有文档的刻意差异**:`GalgameTagMappings` 注释明写「刻意不带
+addedAt——加一个没有消费者的时钟列只会让人误以为它在同步」;`CollectionTagMappings`
+同款取舍;epub/video 映射表带 LWW add 时钟因为它们**真的进 sync**。合并成
+`(mediaType, entryKey, tagId, addedAt?)` 一张表 = 把三种拍板过的语义差压进一个表里
+造特例(addedAt 对 game/collection 无意义、宿主键 int/string 混型、FK cascade 全丢
+改手工清孤儿)。仓库已经打过这场官司,别重开。
+
+### D. database.dart God 类拆分(7300 行/~360 方法)——值得做,但推迟到静默点
+
+纯机械(@DriftAccessor 分片 + 门面委托保调用点零改),零行为风险。不现在做的唯一
+理由是**调度**:此刻有约 20 个在飞 draft PR,database.dart 是公共热点文件,360 个
+方法搬家会让每一个在飞 PR 合并时撞冲突。应在一批 PR 合净后的静默点作为独立 PR
+一次做完(先拆 DAO、后收调用点,两步两 PR)。
+
 ## 分期项(本轮出方案与骨架,不落地,理由写死)
 
 ### P3. 书身份 bookKey(=sanitized title)→ 稳定 uid
