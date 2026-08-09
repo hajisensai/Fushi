@@ -4,15 +4,32 @@ import 'package:fushi/src/utils/misc/ruby_markup.dart';
 
 enum TexthookerLineSource { websocket, engineHook, unknown }
 
+/// 线程选择弹窗每条线程保留的预览句数上限（BUG-1474）。
+///
+/// 3 是因为选择弹窗那行本来就写着 `maxLines: 3`；再多也显示不出来，只是白占内存。
+const int kTexthookerPreviewHistory = 3;
+
 /// 线程选择下拉的副标题：`[N 行有音频 · ]最近台词预览`。两段都空返回 null
 /// （该行保持单行）。[audioLabel] 由调用方用 i18n 拼好传入（纯函数不碰 t）。
 String? texthookerThreadSubtitle({
   required int audioLineCount,
   required String? latestText,
   required String audioLabel,
+
+  /// BUG-1474：该线程最近若干句（新→旧，已去重）。非空时**取代** [latestText]，
+  /// 一句一行地展示——选择弹窗那行早就写着 `maxLines: 3`，缺的从来是数据不是 UI：
+  /// native 线程预览区每线程恒一条，一句话根本不够用户判断"这条是不是正文流"。
+  /// 缺省 const [] ⇒ 与旧行为逐字等价（既有调用点/测试不受影响）。
+  List<String> recentTexts = const <String>[],
 }) {
-  final String preview =
-      latestText == null ? '' : collapseTexthookerPreview(latestText);
+  final List<String> previews = <String>[
+    for (final String text in recentTexts)
+      if (collapseTexthookerPreview(text).isNotEmpty)
+        collapseTexthookerPreview(text),
+  ];
+  final String preview = previews.isNotEmpty
+      ? previews.join('\n')
+      : (latestText == null ? '' : collapseTexthookerPreview(latestText));
   final List<String> parts = <String>[
     if (audioLineCount > 0) audioLabel,
     if (preview.isNotEmpty) preview,
@@ -171,7 +188,38 @@ class TexthookerTextThread {
     this.observedLineCount = 0,
     this.observedArtifactCount = 0,
     this.previewIsArtifact = false,
+    this.recentPreviewTexts = const <String>[],
   });
+
+  /// 全字段拷贝。
+  ///
+  /// BUG-1474：本类原先有**四处**手写全字段构造，加一个字段就得改四处，漏一处就是
+  /// 该字段在某条路径上被静默清空（`disambiguateThreadLabels` 只想改个 label，却要
+  /// 把十几个字段逐个抄一遍）。纯拷贝的那两处改走这里，结构上不可能再漏。
+  TexthookerTextThread copyWith({
+    String? label,
+    String? previewText,
+    int? observedLineCount,
+    int? observedArtifactCount,
+    bool? previewIsArtifact,
+    List<String>? recentPreviewTexts,
+  }) =>
+      TexthookerTextThread(
+        key: key,
+        label: label ?? this.label,
+        hookCode: hookCode,
+        nativeThreadId: nativeThreadId,
+        lineCount: lineCount,
+        latestAt: latestAt,
+        latestText: latestText,
+        audioLineCount: audioLineCount,
+        previewText: previewText ?? this.previewText,
+        observedLineCount: observedLineCount ?? this.observedLineCount,
+        observedArtifactCount:
+            observedArtifactCount ?? this.observedArtifactCount,
+        previewIsArtifact: previewIsArtifact ?? this.previewIsArtifact,
+        recentPreviewTexts: recentPreviewTexts ?? this.recentPreviewTexts,
+      );
 
   final String key;
   final String label;
@@ -207,6 +255,13 @@ class TexthookerTextThread {
 
   /// 预览里这最近一行是否被判为伪影。
   final bool previewIsArtifact;
+
+  /// 该线程最近若干句 native 预览（新→旧，已去重，最多 [kTexthookerPreviewHistory] 条）。
+  ///
+  /// native 预览区**每线程恒一条**，所以这份历史只能由 Dart 侧跨轮询累积
+  /// （见 [TexthookerService.applyTextThreadPreviews]）。用户诉求是「一条线程要能看到
+  /// 2~3 句才判断得出这是不是正文流」——一句话经常是「……」或人名，分辨不了。
+  final List<String> recentPreviewTexts;
 
   /// 下拉展示用的预览文本：优先已发布台词，回落 native 预览行。
   String? get displayPreviewText => latestText ?? previewText;
@@ -421,20 +476,13 @@ class TexthookerService extends ChangeNotifier {
         if (nativeId == null) continue;
         final TexthookerThreadPreview? preview = _threadPreviews[nativeId];
         if (preview == null) continue;
-        final TexthookerTextThread thread = entry.value;
-        byKey[entry.key] = TexthookerTextThread(
-          key: thread.key,
-          label: thread.label,
-          hookCode: thread.hookCode,
-          nativeThreadId: thread.nativeThreadId,
-          lineCount: thread.lineCount,
-          latestAt: thread.latestAt,
-          latestText: thread.latestText,
-          audioLineCount: thread.audioLineCount,
-          previewText: preview.text.isEmpty ? thread.previewText : preview.text,
+        byKey[entry.key] = entry.value.copyWith(
+          previewText: preview.text.isEmpty ? null : preview.text,
           observedLineCount: preview.observedLineCount,
           observedArtifactCount: preview.observedArtifactCount,
           previewIsArtifact: preview.isArtifact,
+          recentPreviewTexts:
+              _threadPreviewHistory[nativeId] ?? const <String>[],
         );
       }
     }
@@ -466,19 +514,8 @@ class TexthookerService extends ChangeNotifier {
         if ((labelCounts[thread.label] ?? 0) <= 1)
           thread
         else
-          TexthookerTextThread(
-            key: thread.key,
+          thread.copyWith(
             label: '${thread.label} · #${_threadKeySuffix(thread.key)}',
-            hookCode: thread.hookCode,
-            nativeThreadId: thread.nativeThreadId,
-            lineCount: thread.lineCount,
-            latestAt: thread.latestAt,
-            latestText: thread.latestText,
-            audioLineCount: thread.audioLineCount,
-            previewText: thread.previewText,
-            observedLineCount: thread.observedLineCount,
-            observedArtifactCount: thread.observedArtifactCount,
-            previewIsArtifact: thread.previewIsArtifact,
           ),
     ];
   }
@@ -526,6 +563,13 @@ class TexthookerService extends ChangeNotifier {
   final Map<int, TexthookerThreadPreview> _threadPreviews =
       <int, TexthookerThreadPreview>{};
 
+  /// native thread id → 该线程最近若干句（新→旧）。
+  ///
+  /// BUG-1474：native 预览区**每线程恒一条**（快照语义，见 [applyTextThreadPreviews]），
+  /// 所以「显示 2~3 句」只能由 Dart 侧跨轮询累积。这份历史与 [_threadPreviews] 的
+  /// 生命周期一致（同建同清），但**不是**替换语义——它就是要留住上一轮那句。
+  final Map<int, List<String>> _threadPreviewHistory = <int, List<String>>{};
+
   /// 用 native 的线程预览快照整体替换本地副本。
   ///
   /// 是**替换**不是合并：预览区本身就是全量快照（每线程恒一条），合并只会让已经消失的
@@ -547,6 +591,27 @@ class TexthookerService extends ChangeNotifier {
       }
     }
     if (!changed) return; // 无变化不通知，避免每次轮询都重建线程下拉
+    // BUG-1474：先按新快照累积历史，再整体替换快照。顺序不能反——替换之后就再也
+    // 分不出「这句是新的还是上一轮那句」了。
+    for (final TexthookerThreadPreview preview in previews) {
+      final String text = preview.text.trim();
+      if (text.isEmpty) continue;
+      final List<String> ring = _threadPreviewHistory.putIfAbsent(
+        preview.nativeThreadId,
+        () => <String>[],
+      );
+      // 同一句在多轮快照里会重复出现（逐字重绘引擎尤其）；只在**变了**的时候入环。
+      if (ring.isNotEmpty && ring.first == text) continue;
+      ring.insert(0, text);
+      if (ring.length > kTexthookerPreviewHistory) {
+        ring.removeRange(kTexthookerPreviewHistory, ring.length);
+      }
+    }
+    // 本轮快照里已消失的线程，其历史也跟着走——否则死线程会一直挂在列表里带着旧句。
+    final Set<int> live = <int>{
+      for (final TexthookerThreadPreview p in previews) p.nativeThreadId,
+    };
+    _threadPreviewHistory.removeWhere((int id, _) => !live.contains(id));
     _threadPreviews
       ..clear()
       ..addEntries(
@@ -559,8 +624,9 @@ class TexthookerService extends ChangeNotifier {
   }
 
   void clearTextThreadPreviews() {
-    if (_threadPreviews.isEmpty) return;
+    if (_threadPreviews.isEmpty && _threadPreviewHistory.isEmpty) return;
     _threadPreviews.clear();
+    _threadPreviewHistory.clear();
     notifyListeners();
   }
 

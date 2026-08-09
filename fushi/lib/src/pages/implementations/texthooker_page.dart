@@ -722,6 +722,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     ];
     final ExternalWindowInfo? picked = await showAppDialog<ExternalWindowInfo>(
       context: context,
+      // BUG-1474：这个 SimpleDialog 原先一条尺寸约束都没有，走 Flutter 默认的
+      // minWidth 280 + intrinsic 宽度——窗口标题（往往是「游戏名 - 章节 - 存档」这类
+      // 长串）一律被挤成一行省略号。同文件的音轨弹窗早就用 SizedBox(width: 520)，
+      // 这里照同一规格给出可用宽度。
       builder: (BuildContext ctx) => SimpleDialog(
         title: Text(t.external_window_select),
         children: <Widget>[
@@ -729,25 +733,31 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             // BUG-1425：行骨架走共享 MD3 组件，不再裸 ListTile（豁免理由只覆盖
             // hook 状态胶囊）。autofocus 是 BUG-1049 的焦点驱动行为，随之收进
             // [FushiListItem]，不能在收口时悄悄丢掉。
-            FushiListItem(
-              // 焦点驱动纪律：这一项拿到初始焦点，Tab/方向键从它开始，Enter 直接确认。
-              autofocus: gamePid != null
-                  ? window.pid == gamePid
-                  : window.hwnd == boundHwnd,
-              title: Text(
-                window.title.isEmpty ? '#${window.hwnd}' : window.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+            SizedBox(
+              width: 560,
+              child: FushiListItem(
+                // 焦点驱动纪律：这一项拿到初始焦点，Tab/方向键从它开始，Enter 直接确认。
+                autofocus: gamePid != null
+                    ? window.pid == gamePid
+                    : window.hwnd == boundHwnd,
+                // BUG-1184 定的规矩：放宽标题行数必须逐调用点显式做，不改默认值。
+                // 这里父容器高度自由（SimpleDialog 的 children 列），放宽安全。
+                titleMaxLines: 2,
+                title: Text(
+                  window.title.isEmpty ? '#${window.hwnd}' : window.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: gamePid != null && window.pid == gamePid
+                    ? Text(
+                        t.external_window_current_game,
+                        style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
+                              color: Theme.of(ctx).colorScheme.primary,
+                            ),
+                      )
+                    : null,
+                onTap: () => Navigator.of(ctx).pop(window),
               ),
-              trailing: gamePid != null && window.pid == gamePid
-                  ? Text(
-                      t.external_window_current_game,
-                      style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
-                            color: Theme.of(ctx).colorScheme.primary,
-                          ),
-                    )
-                  : null,
-              onTap: () => Navigator.of(ctx).pop(window),
             ),
         ],
       ),
@@ -1826,6 +1836,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                             unawaited(_pickLineTrack(l)),
                         onRecapture: (TexthookerLineEntry l) =>
                             unawaited(_toggleLineRecapture(l)),
+                        onCopy: (TexthookerLineEntry l) =>
+                            _appModel.copyToClipboard(l.text),
                       );
                     },
                   ),
@@ -1943,10 +1955,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
             onTap: () => popNestedPopupAt(_topVisiblePopupIndex, _popup),
-            onHorizontalDragStart:
-                ReaderFushiSource.instance.enableSwipeToClose
-                    ? _onBarrierHorizontalDragStart
-                    : null,
+            onHorizontalDragStart: ReaderFushiSource.instance.enableSwipeToClose
+                ? _onBarrierHorizontalDragStart
+                : null,
             onHorizontalDragUpdate:
                 ReaderFushiSource.instance.enableSwipeToClose
                     ? _onBarrierHorizontalDragUpdate
@@ -2658,6 +2669,7 @@ class _TexthookerLine extends StatelessWidget {
     required this.onPreviewAudio,
     required this.onPickTrack,
     required this.onRecapture,
+    required this.onCopy,
   });
 
   final TexthookerLineEntry line;
@@ -2686,6 +2698,9 @@ class _TexthookerLine extends StatelessWidget {
 
   /// 开/收本行补录窗口（missing/兜底行的一键补救，与浮窗「重播并录音」同出口）。
   final ValueChanged<TexthookerLineEntry> onRecapture;
+
+  /// 把整句复制到剪贴板（用户诉求：方便丢给 AI 分析）。
+  final ValueChanged<TexthookerLineEntry> onCopy;
   final void Function(
     TexthookerLineEntry line,
     String word,
@@ -2780,6 +2795,14 @@ class _TexthookerLine extends StatelessWidget {
                   ),
                   const SizedBox(width: 4),
                 ],
+                FushiIconButton(
+                  icon: Icons.copy_all_outlined,
+                  tooltip: t.game_line_copy_tooltip,
+                  size: 18,
+                  focusId: FushiFocusId('game-line-copy-${line.id}'),
+                  onTap: () => onCopy(line),
+                ),
+                const SizedBox(width: 4),
                 // 会话内存态收藏星（不落 DB）；已收藏填充金黄星，未收藏描边星。
                 FushiIconButton(
                   icon: line.favorited ? Icons.star : Icons.star_border,

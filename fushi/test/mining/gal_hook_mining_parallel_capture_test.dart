@@ -5,8 +5,6 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
-import 'package:fushi/src/mining/galgame_window_gif.dart'
-    show GalWindowAnimatedCapture;
 import 'package:fushi/src/mining/immersion_mining_request.dart'
     show MiningAnimatedFormat, VideoMiningImageMode;
 import 'package:fushi/src/mining/window_capture_channel.dart';

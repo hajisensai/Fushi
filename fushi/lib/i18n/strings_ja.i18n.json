@@ -3153,5 +3153,6 @@
   "migration_import_nothing": "No migration data found in the transfer folder.",
   "migration_uninstall_prompt": "Migration finished. Uninstall the old Hibiki app?",
   "migration_uninstall_button": "Uninstall Hibiki",
-  "migration_uninstall_still_installed": "Hibiki is still installed. You can uninstall it any time."
+  "migration_uninstall_still_installed": "Hibiki is still installed. You can uninstall it any time.",
+  "game_line_copy_tooltip": "Copy sentence"
 }
