@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'package:hibiki/src/media/torrent/anime_release_descriptor.dart';
 import 'package:hibiki/src/media/torrent/nyaa_client.dart';
 
 /// 构造只关心 [title] / [infoHash] 的最小 [NyaaTorrent]，供派生 getter 测试用。
@@ -207,12 +208,82 @@ void main() {
       expect(makeTorrent('[G] Show (2160p)').resolution, '2160p');
       expect(makeTorrent('[G] Show [720p]').resolution, '720p');
       expect(makeTorrent('[G] Show 480p').resolution, '480p');
+      expect(makeTorrent('[G] Show 1920x1080').resolution, '1080p');
+      expect(makeTorrent('[G] Show [4K]').resolution, '2160p');
       expect(makeTorrent('[G] Show').resolution, isNull);
     });
 
     test('releaseGroup 取开头第一个方括号块', () {
       expect(makeTorrent('[SubsPlease] Show - 05').releaseGroup, 'SubsPlease');
       expect(makeTorrent('Show - 05 [1080p]').releaseGroup, isNull);
+    });
+  });
+
+  group('releaseDescriptor', () {
+    test('解析 WEB-DL、编码、位深、HDR、音频与软字幕', () {
+      final AnimeReleaseDescriptor descriptor = makeTorrent(
+        '[SubsPlease] Show - 05 (2160p) '
+        '[WEB-DL HEVC Main10 HDR10+ DV E-AC-3 AAC SoftSubs]',
+      ).releaseDescriptor;
+
+      expect(descriptor.releaseGroup, 'SubsPlease');
+      expect(descriptor.resolutionHeight, 2160);
+      expect(descriptor.videoSource, AnimeVideoSource.webDl);
+      expect(descriptor.videoCodec, AnimeVideoCodec.hevc);
+      expect(descriptor.bitDepth, 10);
+      expect(
+        descriptor.dynamicRanges,
+        <AnimeDynamicRange>{
+          AnimeDynamicRange.hdr10Plus,
+          AnimeDynamicRange.dolbyVision,
+        },
+      );
+      expect(
+        descriptor.audioCodecs,
+        <AnimeAudioCodec>{AnimeAudioCodec.eac3, AnimeAudioCodec.aac},
+      );
+      expect(
+        descriptor.subtitlePresentation,
+        AnimeSubtitlePresentation.soft,
+      );
+      expect(descriptor.isHdr, isTrue);
+    });
+
+    test('解析蓝光尺寸、AVC、FLAC/DTS-HD 与硬字幕', () {
+      final AnimeReleaseDescriptor descriptor = makeTorrent(
+        '[VCB-Studio] Show [BDRip 1920x1080 x264 10bit FLAC DTS-HD MA HardSub]',
+      ).releaseDescriptor;
+
+      expect(descriptor.resolution, '1080p');
+      expect(descriptor.videoSource, AnimeVideoSource.bluRay);
+      expect(descriptor.videoCodec, AnimeVideoCodec.avc);
+      expect(descriptor.bitDepth, 10);
+      expect(
+        descriptor.audioCodecs,
+        <AnimeAudioCodec>{AnimeAudioCodec.flac, AnimeAudioCodec.dtsHd},
+      );
+      expect(
+        descriptor.subtitlePresentation,
+        AnimeSubtitlePresentation.hard,
+      );
+      expect(descriptor.isHdr, isFalse);
+    });
+
+    test('没有明确标签时不猜资源规格', () {
+      final AnimeReleaseDescriptor descriptor =
+          makeTorrent('Show - 05 [ABCD1234]').releaseDescriptor;
+
+      expect(descriptor.releaseGroup, isNull);
+      expect(descriptor.resolution, isNull);
+      expect(descriptor.videoSource, AnimeVideoSource.unknown);
+      expect(descriptor.videoCodec, AnimeVideoCodec.unknown);
+      expect(descriptor.bitDepth, isNull);
+      expect(descriptor.dynamicRanges, isEmpty);
+      expect(descriptor.audioCodecs, isEmpty);
+      expect(
+        descriptor.subtitlePresentation,
+        AnimeSubtitlePresentation.unknown,
+      );
     });
   });
 
