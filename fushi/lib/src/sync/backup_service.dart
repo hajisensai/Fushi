@@ -2560,6 +2560,7 @@ class BackupService {
     String? fontsRootDirectory,
     String? videosRootDirectory,
     void Function(double progress)? onProgress,
+    bool adoptSourcePreferences = false,
   }) async {
     // Per-category merge selection (import dialog, merge mode). null = merge
     // every category (legacy full merge). Gates BOTH the DB row merge (via the
@@ -2639,6 +2640,7 @@ class BackupService {
             carriedVideoSourcePaths:
                 meta?.videoFiles.keys.toSet() ?? const <String>{},
             enabledCategoryNames: enabledCategoryNames,
+            adoptSourcePreferences: adoptSourcePreferences,
           ).merge();
         } finally {
           await db.customStatement('DETACH DATABASE mergesrc');
@@ -3787,6 +3789,28 @@ class BackupService {
   /// this device's [newBooksRoot] / [newAudiobooksRoot]. No-op for a legacy
   /// backup (meta has no roots). Cover paths can live under EITHER tree (epub
   /// covers in hoshi_books, audiobook covers in audiobooks), so they try both.
+  /// EPUB 解包目录在本机的**确定性回退**。
+  ///
+  /// [rebasePath] 靠「老根前缀」做字符串替换。一旦备份记录的
+  /// [BackupMeta.booksRoot] 与行里的真实前缀对不上，前缀匹配会失败并**静默原样
+  /// 返回**导出设备的绝对路径——库看着导入成功，每本书却都「找不到书籍文件」。
+  /// 真实踩中的形态：跨包名迁移时导出端把书根名写成改名前的旧名（`hoshi_books`），
+  /// 而行里是 `fushi_books`，于是 rebase 全程无声失效，四本书的 `extract_dir`
+  /// 仍指向老包私有目录 `/data/user/0/<老包名>/...`——那是另一个应用的沙箱，
+  /// 新包永远读不到，尽管文件早已解包到本机书根下。
+  ///
+  /// 解包落点本身是确定的（`<booksRoot>/<bookKey>`），所以不必去猜老根：rebase
+  /// 结果在本机不存在、而该确定位置存在时，用后者。**原路径有效时一律不动**，
+  /// 普通备份恢复的行为不变。
+  static String _resolveExtractDirOnDevice(
+      String rebased, String bookKey, String newBooksRoot) {
+    if (rebased.isNotEmpty && Directory(rebased).existsSync()) return rebased;
+    if (bookKey.isEmpty) return rebased;
+    final String byKey = p.join(newBooksRoot, bookKey);
+    if (Directory(byKey).existsSync()) return byKey;
+    return rebased;
+  }
+
   static Future<void> _rebaseContentPaths({
     required String dbDirectory,
     required BackupMeta meta,
@@ -3806,7 +3830,11 @@ class BackupService {
           await db.updateEpubBookContentPaths(
             b.bookKey,
             epubPath: rebasePath(b.epubPath, oldBooks, newBooksRoot),
-            extractDir: rebasePath(b.extractDir, oldBooks, newBooksRoot),
+            extractDir: _resolveExtractDirOnDevice(
+              rebasePath(b.extractDir, oldBooks, newBooksRoot),
+              b.bookKey,
+              newBooksRoot,
+            ),
             coverPath: b.coverPath == null
                 ? null
                 : _rebaseEither(b.coverPath!, oldBooks, newBooksRoot, oldAudio,

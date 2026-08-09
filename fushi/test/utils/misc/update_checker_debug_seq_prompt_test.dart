@@ -26,14 +26,14 @@ String _debugManifestJson({
     'assets': assets ??
         <Map<String, dynamic>>[
           <String, dynamic>{
-            'name': 'hibiki-$version-abc1234-debug.apk',
+            'name': 'fushi-$version-abc1234-debug.apk',
             'browser_download_url':
-                'https://github.com/hajisensai/hibiki/releases/download/$tag/hibiki-$version-abc1234-debug.apk',
+                'https://github.com/hajisensai/hibiki/releases/download/$tag/fushi-$version-abc1234-debug.apk',
           },
           <String, dynamic>{
-            'name': 'hibiki-$version-windows-setup.exe',
+            'name': 'fushi-$version-windows-setup.exe',
             'browser_download_url':
-                'https://github.com/hajisensai/hibiki/releases/download/$tag/hibiki-$version-windows-setup.exe',
+                'https://github.com/hajisensai/hibiki/releases/download/$tag/fushi-$version-windows-setup.exe',
           },
         ],
   });
@@ -67,7 +67,7 @@ void main() {
       expect(selected!.version, '0.11.1-debug.5614');
       expect(
         selected.downloadUrl,
-        'https://github.com/hajisensai/hibiki/releases/download/v0.11.1-debug.5614+abc1234/hibiki-0.11.1-debug.5614-windows-setup.exe',
+        'https://github.com/hajisensai/hibiki/releases/download/v0.11.1-debug.5614+abc1234/fushi-0.11.1-debug.5614-windows-setup.exe',
       );
     });
 
@@ -133,14 +133,14 @@ void main() {
         version: version,
         assets: <Map<String, dynamic>>[
           <String, dynamic>{
-            'name': 'hibiki-$version-abc1234-debug.apk',
+            'name': 'fushi-$version-abc1234-debug.apk',
             'browser_download_url':
-                'https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-$version-abc1234-debug.apk',
+                'https://github.com/hajisensai/hibiki/releases/download/debug-rolling/fushi-$version-abc1234-debug.apk',
           },
           <String, dynamic>{
-            'name': 'hibiki-$version-windows-setup.exe',
+            'name': 'fushi-$version-windows-setup.exe',
             'browser_download_url':
-                'https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-$version-windows-setup.exe',
+                'https://github.com/hajisensai/hibiki/releases/download/debug-rolling/fushi-$version-windows-setup.exe',
           },
         ],
       );
@@ -171,7 +171,7 @@ void main() {
       // 下载 URL 原样透传滚动 tag：客户端不从 URL 反解 tag，滚动 tag 不影响下载。
       expect(
         selected.downloadUrl,
-        'https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-0.11.1-debug.5614-windows-setup.exe',
+        'https://github.com/hajisensai/hibiki/releases/download/debug-rolling/fushi-0.11.1-debug.5614-windows-setup.exe',
       );
     });
 

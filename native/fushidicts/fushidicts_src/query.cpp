@@ -88,8 +88,35 @@ DictionaryQuery::Dictionary::~Dictionary() = default;
 DictionaryQuery::Dictionary::Dictionary(Dictionary&&) noexcept = default;
 DictionaryQuery::Dictionary& DictionaryQuery::Dictionary::operator=(Dictionary&&) noexcept = default;
 
+namespace {
+
+// 词典目录的「导入已完成」标记。
+//
+// 改名后**写入端**（importer.cpp）只产出 `.fushidicts_1`，但用户磁盘上存量词典
+// 目录里全是导入当时写下的旧名 `.hoshidicts_1`。这里只认新名的后果不是「少一个
+// 标记」——是 add_dict 直接 return，**一个词典都加载不进引擎**，表现为查词永远
+// 零结果（用户实测：26 个词典全部失效，资源文件却完好无损）。
+//
+// 故读侧同时接受两个名字（新名优先）。这是「读旧数据的迁移代码」，不追改用户
+// 磁盘上的存量文件——重命名用户数据既不可逆，也会让回退到旧版的用户反过来坏掉。
+constexpr const char* kDictCompleteMarkers[] = {
+    "/.fushidicts_1",   // 当前写入端产出
+    "/.hoshidicts_1",   // 改名前的存量（冻结，只读不写）
+};
+
+bool has_dict_complete_marker(const std::string& path) {
+  for (const char* marker : kDictCompleteMarkers) {
+    if (std::filesystem::is_regular_file(fushi::fs_path(path + marker))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+}  // namespace
+
 void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
-  if (!std::filesystem::is_regular_file(fushi::fs_path(path + "/.fushidicts_1"))) {
+  if (!has_dict_complete_marker(path)) {
     return;
   }
 

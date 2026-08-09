@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
 import 'package:path/path.dart' as p;
 
 /// TODO-781 regression: two platform publish jobs (android / desktop) push the
@@ -307,7 +308,12 @@ class _Fixture {
         '-C',
         p.join(root.path, 'origin.git'),
         'show',
-        'update-manifest:latest-debug.json',
+        // BUG-1481: the filename the REAL script writes must carry the product
+        // family. Deriving it from the client-side constant makes this the
+        // cross-side pin: if publish_update_manifest.sh and the Dart client ever
+        // disagree about the suffix again, this read fails and the test reds --
+        // which is the exact failure that let two products share one file.
+        'update-manifest:latest-debug$kFushiManifestSuffix.json',
       ],
       stdoutEncoding: utf8,
       stderrEncoding: utf8,

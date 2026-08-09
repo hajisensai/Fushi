@@ -2003,7 +2003,11 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
         ReassertTopmost();
         return 0;
       }
-      break;
+      // 别的定时器（本类目前没有，但别给未来留坑）交回系统。
+      // 这里**不能**写 break：本 switch 每个分支都 return，break 会掉到函数尾部
+      // 而没有返回值 —— CI 的 /WX 把 C4715 当错误（本机 debug 构建不开 /WX，
+      // 所以本地那次 `flutter build windows --debug` 是绿的，别再被它骗一次）。
+      return DefWindowProc(hwnd_, message, wparam, lparam);
     case fushi::kLowLevelMouseClickMessage:
       // BUG-1048 — 钩子线程投递的全局点击（wparam 打包屏幕物理坐标，lparam=是否
       // 落在本窗口 rect 内）。真正的决策（关闭 / 转发给 host）在这里做，钩子线程

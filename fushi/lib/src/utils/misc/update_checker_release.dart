@@ -14,7 +14,8 @@ const String kGitHubRepo = 'hajisensai/fushi';
 /// `hajisensai/hibiki`），一直靠同一套重定向工作；留着它只是多一跳同目标的链路，
 /// 而 `hajisensai/hibiki` 是单跳、更近的名字。顺带说明这套重定向早已在生产验证过：
 /// 旧账号名连 `raw.githubusercontent.com/.../update-manifest/latest-stable.json`
-/// 都能 200，正是 GFW 下唯一可成功的那条检查路径。
+/// 都能 200，正是 GFW 下唯一可成功的那条检查路径。（那是当时的文件名；现在清单按产品族
+/// 分文件，本体读的是带 `-fushi` 后缀的那份，见 [kFushiManifestSuffix]。）
 const String kLegacyGitHubRepo = 'hajisensai/hibiki';
 
 @visibleForTesting
@@ -1492,29 +1493,47 @@ String stableReleasesHtmlUrlForRepo(String repo) {
   return 'https://github.com/$repo/releases';
 }
 
+/// 镜像清单文件名的**产品族**后缀（BUG-1481）。
+///
+/// 文件名必须是 `f(产品族, 通道)`，只按通道分会出人命：改名过渡期有两个产品从**同一个
+/// GitHub 仓库**发版——桥包 `app.hibiki.reader`（bridge 分支）和本体 `app.fushi.reader`。
+/// 一个仓库只有一条 `update-manifest` 分支，于是两族写进同一个文件；CI
+/// `merge_update_manifest.py` 的单调 seq 守卫（TODO-1173）再把顶层 release 永久判给
+/// commit 数更高的那一族，另一族的客户端从此读到的 version/tag/assets 全不是自己的，
+/// 自更新**不可能成功**。
+///
+/// 历史文件名 `latest-<channel>.json` **冻结给 hibiki 族**：已在野的 Hibiki 客户端
+/// （v1.2.0 及更早）把那个 URL 编译进了包里，改不动。Fushi 从未发过 stable/beta，
+/// 让路成本为零，所以是 Fushi 换名。CI 侧真值在 `tool/publish_update_manifest.sh` 的
+/// `MANIFEST_PRODUCT_SUFFIX`，两侧由
+/// `fushi/test/tools/update_manifest_product_split_test.dart` 钉死。
+const String kFushiManifestSuffix = '-fushi';
+
 /// CI 发到 `update-manifest` 孤儿分支的镜像清单本通道文件名前缀（TODO-705）。
-/// 路径是 `raw.githubusercontent.com/<repo>/update-manifest/latest-<channel>.json`：
+/// 路径是 `raw.githubusercontent.com/<repo>/update-manifest/latest-<channel>-fushi.json`：
 /// `raw` 资源经公共 gh 代理可透传（[updateCheckUrls] 套镜像前缀），是
 /// 纯 GFW 下 beta/debug 检查唯一可成功路径（`api.github.com/.../releases` 列表被镜像 403）。
 const String kBetaManifestUrl =
-    'https://raw.githubusercontent.com/$kGitHubRepo/update-manifest/latest-beta.json';
+    'https://raw.githubusercontent.com/$kGitHubRepo/update-manifest/latest-beta$kFushiManifestSuffix.json';
 const String kLegacyBetaManifestUrl =
-    'https://raw.githubusercontent.com/$kLegacyGitHubRepo/update-manifest/latest-beta.json';
+    'https://raw.githubusercontent.com/$kLegacyGitHubRepo/update-manifest/latest-beta$kFushiManifestSuffix.json';
 
 /// debug 通道镜像清单（见 [kBetaManifestUrl]）。
 const String kDebugManifestUrl =
-    'https://raw.githubusercontent.com/$kGitHubRepo/update-manifest/latest-debug.json';
+    'https://raw.githubusercontent.com/$kGitHubRepo/update-manifest/latest-debug$kFushiManifestSuffix.json';
 const String kLegacyDebugManifestUrl =
-    'https://raw.githubusercontent.com/$kLegacyGitHubRepo/update-manifest/latest-debug.json';
+    'https://raw.githubusercontent.com/$kLegacyGitHubRepo/update-manifest/latest-debug$kFushiManifestSuffix.json';
 
 /// stable 通道镜像清单（BUG-846「谁后用谁」）。CI `publish_update_manifest.sh` 的 formal 分支
 /// 已生成 `latest-stable.json`（`merge_update_manifest.py` 写顶层 `releaseSequence`）。客户端读它
 /// 才能拿到正式版 release sequence，与同基预发布按「谁后构建谁赢」比较；读不到（手动 GitHub
 /// Release 未发 manifest）则回退 302 跳转（无 seq，同基保守不 churn）。与 beta/debug 同构。
+/// **注意**：`latest-stable.json`（无后缀）是老 Hibiki 客户端的 URL，本体不得再读写它
+/// （BUG-1481，见 [kFushiManifestSuffix]）。
 const String kStableManifestUrl =
-    'https://raw.githubusercontent.com/$kGitHubRepo/update-manifest/latest-stable.json';
+    'https://raw.githubusercontent.com/$kGitHubRepo/update-manifest/latest-stable$kFushiManifestSuffix.json';
 const String kLegacyStableManifestUrl =
-    'https://raw.githubusercontent.com/$kLegacyGitHubRepo/update-manifest/latest-stable.json';
+    'https://raw.githubusercontent.com/$kLegacyGitHubRepo/update-manifest/latest-stable$kFushiManifestSuffix.json';
 
 /// CI 生成镜像清单时识别的 schema 版本（TODO-705）。客户端只认该版本；
 /// 未来结构不兼容的变更递增该号，旧客户端不识别则安全回退 API 直连。

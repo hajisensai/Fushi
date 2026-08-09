@@ -18,17 +18,17 @@ void main() {
     test('picks the -windows-setup.exe asset', () async {
       final WindowsUpdater u = WindowsUpdater();
       final String? url = await _urlOf(u.selectAsset(_assets(<String>[
-        'hibiki-0.4.2-arm64-v8a.apk',
-        'hibiki-0.4.2-windows-setup.exe',
-        'hibiki-0.4.2-linux-x86_64.AppImage',
+        'fushi-0.4.2-arm64-v8a.apk',
+        'fushi-0.4.2-windows-setup.exe',
+        'fushi-0.4.2-linux-x86_64.AppImage',
       ])));
-      expect(url, 'https://example.com/hibiki-0.4.2-windows-setup.exe');
+      expect(url, 'https://example.com/fushi-0.4.2-windows-setup.exe');
     });
 
     test('returns null when no windows asset present', () async {
       final WindowsUpdater u = WindowsUpdater();
       final UpdateAsset? url =
-          await u.selectAsset(_assets(<String>['hibiki-0.4.2-arm64-v8a.apk']));
+          await u.selectAsset(_assets(<String>['fushi-0.4.2-arm64-v8a.apk']));
       expect(url, isNull);
     });
 
@@ -36,14 +36,14 @@ void main() {
       final WindowsUpdater u = WindowsUpdater();
       final String? url = await _urlOf(u.selectAsset(
         _assets(<String>[
-          'hibiki-0.5.1-windows-setup.exe',
-          'hibiki-0.5.1-debug.412-windows-setup.exe',
+          'fushi-0.5.1-windows-setup.exe',
+          'fushi-0.5.1-debug.412-windows-setup.exe',
         ]),
         channel: UpdateChannel.debug,
       ));
       expect(
         url,
-        'https://example.com/hibiki-0.5.1-debug.412-windows-setup.exe',
+        'https://example.com/fushi-0.5.1-debug.412-windows-setup.exe',
       );
     });
 
@@ -53,15 +53,15 @@ void main() {
           'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
       final UpdateAsset? asset = await u.selectAsset(<Map<String, dynamic>>[
         <String, dynamic>{
-          'name': 'hibiki-0.4.2-windows-setup.exe',
+          'name': 'fushi-0.4.2-windows-setup.exe',
           'browser_download_url':
-              'https://example.com/hibiki-0.4.2-windows-setup.exe',
+              'https://example.com/fushi-0.4.2-windows-setup.exe',
           'size': 12345,
           'digest': 'sha256:$digest',
         },
       ]);
 
-      expect(asset?.url, 'https://example.com/hibiki-0.4.2-windows-setup.exe');
+      expect(asset?.url, 'https://example.com/fushi-0.4.2-windows-setup.exe');
       expect(asset?.sizeBytes, 12345);
       expect(asset?.sha256Digest, digest);
     });
@@ -69,7 +69,7 @@ void main() {
     test('stable and beta ignore debug Windows setup assets', () async {
       final WindowsUpdater u = WindowsUpdater();
       final List<Map<String, dynamic>> assets = _assets(<String>[
-        'hibiki-0.5.1-debug.412-windows-setup.exe',
+        'fushi-0.5.1-debug.412-windows-setup.exe',
       ]);
 
       expect(
@@ -95,11 +95,11 @@ void main() {
         abiProvider: () async => <String>['arm64-v8a'],
       );
       final String? url = await _urlOf(u.selectAsset(_assets(<String>[
-        'hibiki-0.4.2-armeabi-v7a.apk',
-        'hibiki-0.4.2-arm64-v8a.apk',
-        'hibiki-0.4.2-windows-setup.exe',
+        'fushi-0.4.2-armeabi-v7a.apk',
+        'fushi-0.4.2-arm64-v8a.apk',
+        'fushi-0.4.2-windows-setup.exe',
       ])));
-      expect(url, 'https://example.com/hibiki-0.4.2-arm64-v8a.apk');
+      expect(url, 'https://example.com/fushi-0.4.2-arm64-v8a.apk');
     });
 
     test('stable and beta ignore debug APK assets', () async {
@@ -107,17 +107,17 @@ void main() {
         abiProvider: () async => <String>['arm64-v8a'],
       );
       final List<Map<String, dynamic>> assets = _assets(<String>[
-        'hibiki-0.5.1-debug.412-abc1234-debug.apk',
-        'hibiki-0.5.1-arm64-v8a.apk',
+        'fushi-0.5.1-debug.412-abc1234-debug.apk',
+        'fushi-0.5.1-arm64-v8a.apk',
       ]);
 
       expect(
         await _urlOf(u.selectAsset(assets, channel: UpdateChannel.stable)),
-        'https://example.com/hibiki-0.5.1-arm64-v8a.apk',
+        'https://example.com/fushi-0.5.1-arm64-v8a.apk',
       );
       expect(
         await _urlOf(u.selectAsset(assets, channel: UpdateChannel.beta)),
-        'https://example.com/hibiki-0.5.1-arm64-v8a.apk',
+        'https://example.com/fushi-0.5.1-arm64-v8a.apk',
       );
     });
 
@@ -129,16 +129,16 @@ void main() {
       expect(
         await _urlOf(u.selectAsset(
           _assets(<String>[
-            'hibiki-0.5.1-arm64-v8a.apk',
-            'hibiki-0.5.1-debug.412-abc1234-debug.apk',
+            'fushi-0.5.1-arm64-v8a.apk',
+            'fushi-0.5.1-debug.412-abc1234-debug.apk',
           ]),
           channel: UpdateChannel.debug,
         )),
-        'https://example.com/hibiki-0.5.1-debug.412-abc1234-debug.apk',
+        'https://example.com/fushi-0.5.1-debug.412-abc1234-debug.apk',
       );
       expect(
         await u.selectAsset(
-          _assets(<String>['hibiki-0.5.1-arm64-v8a.apk']),
+          _assets(<String>['fushi-0.5.1-arm64-v8a.apk']),
           channel: UpdateChannel.debug,
         ),
         isNull,
@@ -150,17 +150,17 @@ void main() {
         abiProvider: () async => <String>['x86_64'],
       );
       final String? url = await _urlOf(u.selectAsset(_assets(<String>[
-        'hibiki-0.4.2-armeabi-v7a.apk',
-        'hibiki-0.4.2-arm64-v8a.apk',
+        'fushi-0.4.2-armeabi-v7a.apk',
+        'fushi-0.4.2-arm64-v8a.apk',
       ])));
-      expect(url, 'https://example.com/hibiki-0.4.2-armeabi-v7a.apk');
+      expect(url, 'https://example.com/fushi-0.4.2-armeabi-v7a.apk');
     });
 
     test('returns null when no apk asset', () async {
       final AndroidUpdater u =
           AndroidUpdater(abiProvider: () async => <String>[]);
       final UpdateAsset? url = await u
-          .selectAsset(_assets(<String>['hibiki-0.4.2-windows-setup.exe']));
+          .selectAsset(_assets(<String>['fushi-0.4.2-windows-setup.exe']));
       expect(url, isNull);
     });
   });
@@ -198,7 +198,7 @@ void main() {
   group('windowsInstallerArgs', () {
     test('runs installer very-silently and skips initial prompt', () {
       final List<String> args =
-          windowsInstallerArgs(r'C:\tmp\hibiki-0.4.2-windows-setup.exe');
+          windowsInstallerArgs(r'C:\tmp\fushi-0.4.2-windows-setup.exe');
       expect(args, contains('/VERYSILENT'));
       expect(args, contains('/SP-'));
     });
@@ -206,7 +206,7 @@ void main() {
     test('does not ask Inno to close, force-close, or restart applications',
         () {
       final List<String> args =
-          windowsInstallerArgs(r'C:\tmp\hibiki-0.4.2-windows-setup.exe');
+          windowsInstallerArgs(r'C:\tmp\fushi-0.4.2-windows-setup.exe');
 
       expect(args, isNot(contains('/CLOSEAPPLICATIONS')));
       expect(args, isNot(contains('/FORCECLOSEAPPLICATIONS')));
@@ -219,7 +219,7 @@ void main() {
 
     test('suppresses Inno action dialogs and writes one install log', () {
       final List<String> args =
-          windowsInstallerArgs(r'C:\tmp\hibiki-0.4.2-windows-setup.exe');
+          windowsInstallerArgs(r'C:\tmp\fushi-0.4.2-windows-setup.exe');
 
       expect(args, contains('/SUPPRESSMSGBOXES'));
 
@@ -227,12 +227,12 @@ void main() {
           args.where((String arg) => arg.startsWith('/LOG='));
       expect(logArgs, hasLength(1));
       expect(
-          logArgs.single, contains('hibiki-0.4.2-windows-setup.install.log'));
+          logArgs.single, contains('fushi-0.4.2-windows-setup.install.log'));
     });
 
     test('pins the installer target to the current executable directory', () {
       final List<String> args = windowsInstallerArgs(
-        r'C:\tmp\hibiki-0.4.2-windows-setup.exe',
+        r'C:\tmp\fushi-0.4.2-windows-setup.exe',
         targetInstallDir: r'D:\Portable\Hibiki',
       );
 
@@ -434,7 +434,7 @@ void main() {
       addTearDown(() async {
         if (tmp.existsSync()) await tmp.delete(recursive: true);
       });
-      final File bogus = File('${tmp.path}/hibiki-0.4.2-windows-setup.exe');
+      final File bogus = File('${tmp.path}/fushi-0.4.2-windows-setup.exe');
       await bogus.writeAsString('<html>rate limited</html>');
 
       await expectLater(
@@ -467,7 +467,7 @@ void main() {
       addTearDown(() async {
         if (tmp.existsSync()) await tmp.delete(recursive: true);
       });
-      final File bogus = File('${tmp.path}/hibiki-0.4.2-windows-setup.exe');
+      final File bogus = File('${tmp.path}/fushi-0.4.2-windows-setup.exe');
       await bogus.writeAsString('<html>rate limited</html>');
 
       var diagnosticsCalls = 0;
@@ -532,19 +532,19 @@ void main() {
     test('picks the -macos.zip asset (stable)', () async {
       final MacUpdater u = MacUpdater();
       final String? url = await _urlOf(u.selectAsset(_assets(<String>[
-        'hibiki-0.4.2-arm64-v8a.apk',
-        'hibiki-0.4.2-windows-setup.exe',
-        'hibiki-0.4.2-macos.zip',
-        'hibiki-0.4.2-ios.ipa',
+        'fushi-0.4.2-arm64-v8a.apk',
+        'fushi-0.4.2-windows-setup.exe',
+        'fushi-0.4.2-macos.zip',
+        'fushi-0.4.2-ios.ipa',
       ])));
-      expect(url, 'https://example.com/hibiki-0.4.2-macos.zip');
+      expect(url, 'https://example.com/fushi-0.4.2-macos.zip');
     });
 
     test('returns null when no macOS asset present', () async {
       final MacUpdater u = MacUpdater();
       final UpdateAsset? asset = await u.selectAsset(_assets(<String>[
-        'hibiki-0.4.2-arm64-v8a.apk',
-        'hibiki-0.4.2-windows-setup.exe',
+        'fushi-0.4.2-arm64-v8a.apk',
+        'fushi-0.4.2-windows-setup.exe',
       ]));
       expect(asset, isNull);
     });
@@ -553,23 +553,23 @@ void main() {
       final MacUpdater u = MacUpdater();
       final String? url = await _urlOf(u.selectAsset(
         _assets(<String>[
-          'hibiki-0.5.1-macos.zip',
-          'hibiki-0.5.1-debug.412-macos.zip',
+          'fushi-0.5.1-macos.zip',
+          'fushi-0.5.1-debug.412-macos.zip',
         ]),
         channel: UpdateChannel.debug,
       ));
-      expect(url, 'https://example.com/hibiki-0.5.1-debug.412-macos.zip');
+      expect(url, 'https://example.com/fushi-0.5.1-debug.412-macos.zip');
     });
 
     test('stable channel ignores the debug macOS zip', () async {
       final MacUpdater u = MacUpdater();
       final String? url = await _urlOf(u.selectAsset(
         _assets(<String>[
-          'hibiki-0.5.1-debug.412-macos.zip',
-          'hibiki-0.5.1-macos.zip',
+          'fushi-0.5.1-debug.412-macos.zip',
+          'fushi-0.5.1-macos.zip',
         ]),
       ));
-      expect(url, 'https://example.com/hibiki-0.5.1-macos.zip');
+      expect(url, 'https://example.com/fushi-0.5.1-macos.zip');
     });
 
     test('macOS updater advertises in-app install support', () {
@@ -583,8 +583,8 @@ void main() {
     test('never selects an asset (info-only, opens release page)', () async {
       final IosUpdater u = IosUpdater();
       final UpdateAsset? asset = await u.selectAsset(_assets(<String>[
-        'hibiki-0.4.2-ios.ipa',
-        'hibiki-0.4.2-macos.zip',
+        'fushi-0.4.2-ios.ipa',
+        'fushi-0.4.2-macos.zip',
       ]));
       expect(asset, isNull);
     });

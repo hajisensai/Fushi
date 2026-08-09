@@ -35,14 +35,14 @@ void main() {
             tag: 'v0.5.1-debug.20+abc1234',
             prerelease: true,
             assets: <String>[
-              'hibiki-0.5.1-debug.20-abc1234-debug.apk',
+              'fushi-0.5.1-debug.20-abc1234-debug.apk',
             ],
           ),
           _release(
             tag: 'v0.5.1-debug.19+abc1234',
             prerelease: true,
             assets: <String>[
-              'hibiki-0.5.1-debug.19-windows-setup.exe',
+              'fushi-0.5.1-debug.19-windows-setup.exe',
             ],
           ),
         ],
@@ -55,7 +55,7 @@ void main() {
       expect(selected!.version, '0.5.1-debug.19');
       expect(
         selected.downloadUrl,
-        'https://example.com/hibiki-0.5.1-debug.19-windows-setup.exe',
+        'https://example.com/fushi-0.5.1-debug.19-windows-setup.exe',
       );
     });
 
@@ -68,14 +68,14 @@ void main() {
             tag: 'v0.5.1-debug.20+abc1234',
             prerelease: true,
             assets: <String>[
-              'hibiki-0.5.1-debug.20-windows-setup.exe',
+              'fushi-0.5.1-debug.20-windows-setup.exe',
             ],
           ),
           _release(
             tag: 'v0.5.1-debug.19+abc1234',
             prerelease: true,
             assets: <String>[
-              'hibiki-0.5.1-debug.19-abc1234-debug.apk',
+              'fushi-0.5.1-debug.19-abc1234-debug.apk',
             ],
           ),
         ],
@@ -90,7 +90,7 @@ void main() {
       expect(selected!.version, '0.5.1-debug.19');
       expect(
         selected.downloadUrl,
-        'https://example.com/hibiki-0.5.1-debug.19-abc1234-debug.apk',
+        'https://example.com/fushi-0.5.1-debug.19-abc1234-debug.apk',
       );
     });
 
@@ -103,7 +103,7 @@ void main() {
             tag: 'v0.5.5-debug.55+abc1234',
             prerelease: true,
             assets: <String>[
-              'hibiki-0.5.5-debug.55-abc1234-debug.apk',
+              'fushi-0.5.5-debug.55-abc1234-debug.apk',
             ],
           ),
         ],
@@ -124,7 +124,7 @@ void main() {
             tag: 'v0.5.5-debug.55+abc1234',
             prerelease: true,
             assets: <String>[
-              'hibiki-0.5.5-debug.55-windows-setup.exe',
+              'fushi-0.5.5-debug.55-windows-setup.exe',
             ],
           ),
         ],
@@ -144,8 +144,8 @@ void main() {
         tag: 'v0.5.5-debug.55+abc1234',
         prerelease: true,
         assets: <String>[
-          'hibiki-0.5.5-debug.55-windows-setup.exe',
-          'hibiki-0.5.5-debug.55-abc1234-debug.apk',
+          'fushi-0.5.5-debug.55-windows-setup.exe',
+          'fushi-0.5.5-debug.55-abc1234-debug.apk',
         ],
       );
 
@@ -168,11 +168,11 @@ void main() {
 
       expect(
         windowsSelected?.downloadUrl,
-        'https://example.com/hibiki-0.5.5-debug.55-windows-setup.exe',
+        'https://example.com/fushi-0.5.5-debug.55-windows-setup.exe',
       );
       expect(
         androidSelected?.downloadUrl,
-        'https://example.com/hibiki-0.5.5-debug.55-abc1234-debug.apk',
+        'https://example.com/fushi-0.5.5-debug.55-abc1234-debug.apk',
       );
     });
 
@@ -185,7 +185,7 @@ void main() {
             tag: 'v0.5.5-debug.55+abc1234',
             prerelease: true,
             assets: <String>[
-              'hibiki-0.5.5-debug.55-windows-setup.exe',
+              'fushi-0.5.5-debug.55-windows-setup.exe',
             ],
           ),
         ],
@@ -208,14 +208,14 @@ void main() {
             tag: 'v0.5.1-debug.20+abc1234',
             prerelease: true,
             assets: <String>[
-              'hibiki-0.5.1-debug.20-windows-setup.exe',
+              'fushi-0.5.1-debug.20-windows-setup.exe',
             ],
           ),
           _release(
             tag: 'v0.5.1-beta.19',
             prerelease: true,
             assets: <String>[
-              'hibiki-0.5.1-windows-setup.exe',
+              'fushi-0.5.1-windows-setup.exe',
             ],
           ),
         ],
@@ -228,7 +228,7 @@ void main() {
       expect(selected!.version, '0.5.1-beta.19');
       expect(
         selected.downloadUrl,
-        'https://example.com/hibiki-0.5.1-windows-setup.exe',
+        'https://example.com/fushi-0.5.1-windows-setup.exe',
       );
     });
 
@@ -241,14 +241,14 @@ void main() {
             tag: 'v0.5.2-debug.20+abc1234',
             prerelease: true,
             assets: <String>[
-              'hibiki-0.5.2-debug.20-windows-setup.exe',
+              'fushi-0.5.2-debug.20-windows-setup.exe',
             ],
           ),
           _release(
             tag: 'v0.5.2',
             prerelease: false,
             assets: <String>[
-              'hibiki-0.5.2-windows-setup.exe',
+              'fushi-0.5.2-windows-setup.exe',
             ],
           ),
         ],
@@ -261,7 +261,7 @@ void main() {
       expect(selected!.version, '0.5.2');
       expect(
         selected.downloadUrl,
-        'https://example.com/hibiki-0.5.2-windows-setup.exe',
+        'https://example.com/fushi-0.5.2-windows-setup.exe',
       );
     });
   });

@@ -29,22 +29,24 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1387 条。点号进各自文件。
+> 共 1389 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1481](bugs/BUG-1481-rolling-channel-shared-across-products.md) | ✅ | ✅ | fushi 与 hibiki 共用同一套发布通道，hibiki 自更新被结构性阻断 |
 | [BUG-1480](bugs/BUG-1480-gal-passthrough-click-lookup.md) | ✅ | ✅ | 穿透态点不了文字查词：整窗 WS_EX_TRANSPARENT 让字和背景一视同仁 |
 | [BUG-1479](bugs/BUG-1479-gal-lookup-card-covered-by-game.md) | ✅ | ✅ | gal 查词卡被游戏盖住：置顶只设一次、永不重申 |
 | [BUG-1478](bugs/BUG-1478-gal-workbench-char-level-lookup.md) | ✅ | ✅ | 捕获工作台只能点整词、点不了单个字；加载更多按 glossary 行递增上限 |
 | [BUG-1477](bugs/BUG-1477-gal-japanese-locale-no-switch.md) | ✅ | ✅ | 汉化版被强制转区后启动即闪退：转区没有开关，判据把「32 位」当成「日文原版」 |
+| [BUG-1476](bugs/BUG-1476-migration-settings-never-merged.md) | ✅ | ✅ | 跨包名迁移不搬任何设置：merge 引擎从不消费 settings 类别 |
 | [BUG-1475](bugs/BUG-1475-gal-utterance-settle-drops-closing-tail.md) | ✅ | ✅ | 切句时收敛裸 return，最后 250ms 已进环的 PCM 从未被读走 |
 | [BUG-1474](bugs/BUG-1474-gal-picker-dialog-cramped-and-single-line-preview.md) | ✅ | ✅ | hook 选择弹窗过小/标题截断/预览只有一句 |
 | [BUG-1473](bugs/BUG-1473-gal-mining-serial-capture-and-raw-png.md) | ✅ | ✅ | gal 制卡慢：画面与语音串行 + 静态截图全分辨率 PNG 直送 Anki |
 | [BUG-1472](bugs/BUG-1472-lookup-term-budget-counts-glossaries.md) | ✅ | ✅ | 查词只出一个读音：maximumTerms 按 glossary 行计预算吃掉其它读音 |
 | [BUG-1471](bugs/BUG-1471-gal-overlay-gesture-state-stuck.md) | ✅ | ✅ | galgame 浮窗跑久了失去点击响应：手势事务只认 WM_LBUTTONUP 一个终止条件 |
 | [BUG-1470](bugs/BUG-1470-gal-selected-thread-publish-filter.md) | ✅ | ✅ | 选中台词线程后工作台正文为空：发布期过滤器丢掉同 hook 面兄弟行 |
-| [BUG-1469](bugs/BUG-1469-futamata-kirikiri-launch-av.md) | ✅ | ✅ | 恋爱成双由 Hibiki 早注入后 Access Violation |
 | [BUG-1469](bugs/BUG-1469-video-resource-dropdown-overflow.md) | ✅ | ✅ | 资源搜索对话框下拉框横向溢出 |
+| [BUG-1469](bugs/BUG-1469-futamata-kirikiri-launch-av.md) | ✅ | ✅ | 恋爱成双由 Hibiki 早注入后 Access Violation |
 | [BUG-1468](bugs/BUG-1468-video-home-card-footer-spacing.md) | ✅ | ✅ | 视频主页卡片底部信息留白过多 |
 | [BUG-1467](bugs/BUG-1467-video-home-badge-semantics.md) | ✅ | ✅ | 视频主页角标语义不一致 |
 | [BUG-1466](bugs/BUG-1466-re-zero-metadata-match.md) | ✅ | ✅ | Re Zero 罗马字标题无法通过 TMDB 严格识别 |

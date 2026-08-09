@@ -245,7 +245,16 @@ jobs:
         # the GitHub Release actually uses; TAG stays the versioned/seq tag that
         # the client compares (manifest `tag` field) and that names the APK.
         # beta/formal are unchanged: their release IS the version tag.
-        ROLLING_DEBUG_TAG=debug-rolling
+        #
+        # BUG-1481: the rolling tag is per PRODUCT FAMILY. The bridge product
+        # (`app.hibiki.reader`) keeps the historical `debug-rolling`; Fushi takes
+        # its own tag. Sharing one rolling tag put both families' assets in one
+        # release, and the prune step below groups candidates by PLATFORM only
+        # (`case "$name" in *.apk)`) before keeping the top KEEP_SEQS sequences --
+        # so the family with the higher commit count deleted the other family's
+        # assets on every build. Per-family tags make that grouping single-product
+        # again; do NOT re-merge them.
+        ROLLING_DEBUG_TAG=fushi-debug-rolling
         if [ "$CHANNEL" = debug ]; then
           PUBLISH_TAG="$ROLLING_DEBUG_TAG"
           ROLLING_DEBUG=true
