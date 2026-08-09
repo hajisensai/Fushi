@@ -180,6 +180,14 @@ class MigrationExporter {
     await _backup.createBackup(
       archivePath,
       categories: categoriesForBatch(batch),
+      // 迁移不是「把备份交给另一台设备」，而是同一台机器上换包名。默认的
+      // 剥离策略（设备本地表 + 凭据类 pref）前提是「产物会离开本机」，在这里
+      // 不成立：剥了，用户迁完就得手工重配互联配对、同步后端、漫画源。
+      //
+      // 权衡：中转目录在共享存储，明文凭据会短暂落盘。缓解的是 Android 11+
+      // 分区存储——其他应用读不到该目录的非媒体文件（迁移导入时那个
+      // PathAccessException 正是这条规则的体现），且导入方每批校验通过就删文件。
+      keepDeviceLocalData: true,
     );
     final MigrationManifest manifest =
         await MigrationManifest.computeForArchive(
