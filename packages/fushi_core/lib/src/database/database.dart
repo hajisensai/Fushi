@@ -399,7 +399,7 @@ void _requireOneVideoMetadataOwner({
 }
 
 @DriftDatabase(tables: [
-  MediaItems,
+  MediaOpenHistory,
   AnkiMappings,
   SearchHistoryItems,
   Audiobooks,
@@ -498,7 +498,7 @@ class FushiDatabase extends _$FushiDatabase {
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 79;
+  int get schemaVersion => 80;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1988,6 +1988,60 @@ class FushiDatabase extends _$FushiDatabase {
               }
             }
           }
+          if (from < 80) {
+            // v80（media_items → media_open_history，2026-08 数据层重构·用户令
+            // 弃 jidoujisho 血统重设计）：19 列摊平的旧最近打开表收敛为
+            // 身份 (media_source, media_id) + opened_at + 进度两列 + snapshot
+            // JSON（title/封面/URL/作者/extra 等展示与重开载荷）。逐行 Dart 搬移
+            // （行数被 trim 钉在每类型 ≤100，循环无量级问题）；遗留 base64 图片
+            // 原样进 snapshot（无活写入方，随行被 trim 自然消亡）。旧表 DROP。
+            if (!await _tableExists('media_open_history')) {
+              await m.createTable(mediaOpenHistory);
+            }
+            if (await _tableExists('media_items')) {
+              final List<QueryRow> legacyRows = await customSelect(
+                'SELECT media_identifier, title, media_type_identifier, '
+                'media_source_identifier, base64_image, image_url, audio_url, '
+                'author, author_identifier, extra_url, extra, source_metadata, '
+                'position, duration, imported_at FROM media_items',
+              ).get();
+              for (final QueryRow r in legacyRows) {
+                final Map<String, Object?> snapshot = <String, Object?>{
+                  'title': r.read<String>('title'),
+                  if (r.read<String?>('base64_image') case final String v)
+                    'base64Image': v,
+                  if (r.read<String?>('image_url') case final String v)
+                    'imageUrl': v,
+                  if (r.read<String?>('audio_url') case final String v)
+                    'audioUrl': v,
+                  if (r.read<String?>('author') case final String v)
+                    'author': v,
+                  if (r.read<String?>('author_identifier') case final String v)
+                    'authorIdentifier': v,
+                  if (r.read<String?>('extra_url') case final String v)
+                    'extraUrl': v,
+                  if (r.read<String?>('extra') case final String v) 'extra': v,
+                  if (r.read<String?>('source_metadata') case final String v)
+                    'sourceMetadata': v,
+                };
+                await customStatement(
+                  'INSERT OR REPLACE INTO media_open_history '
+                  '(media_type, media_source, media_id, opened_at, position, '
+                  'duration, snapshot_json) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                  <Object?>[
+                    r.read<String>('media_type_identifier'),
+                    r.read<String>('media_source_identifier'),
+                    r.read<String>('media_identifier'),
+                    r.read<int>('imported_at'),
+                    r.read<int>('position'),
+                    r.read<int>('duration'),
+                    jsonEncode(snapshot),
+                  ],
+                );
+              }
+              await customStatement('DROP TABLE media_items');
+            }
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -3211,44 +3265,37 @@ class FushiDatabase extends _$FushiDatabase {
     });
   }
 
-  // ── media items ─────────────────────────────────────────────────
-  Future<List<MediaItemRow>> getAllMediaItems() =>
-      (select(mediaItems)..orderBy([(t) => OrderingTerm.desc(t.importedAt)]))
+  // ── media open history（v78：取代 media_items）─────────────────────
+  Future<List<MediaOpenHistoryRow>> getAllMediaOpenHistory() =>
+      (select(mediaOpenHistory)
+            ..orderBy([(t) => OrderingTerm.desc(t.openedAt)]))
           .get();
 
-  Future<void> upsertMediaItem(MediaItemsCompanion item) =>
-      into(mediaItems).insertOnConflictUpdate(item);
+  /// upsert 一条最近打开（PK = (mediaSource, mediaId)，重开同条目刷新行）。
+  Future<void> upsertMediaOpenHistory(MediaOpenHistoryCompanion entry) =>
+      into(mediaOpenHistory).insertOnConflictUpdate(entry);
 
-  Future<int> deleteMediaItemByUniqueKey(String uk) =>
-      (delete(mediaItems)..where((t) => t.uniqueKey.equals(uk))).go();
+  Future<int> deleteMediaOpenHistory(String mediaSource, String mediaId) =>
+      (delete(mediaOpenHistory)
+            ..where((t) =>
+                t.mediaSource.equals(mediaSource) & t.mediaId.equals(mediaId)))
+          .go();
 
-  Future<int> deleteMediaItemById(int id) =>
-      (delete(mediaItems)..where((t) => t.id.equals(id))).go();
+  Future<int> deleteMediaOpenHistoryByMediaId(String mediaId) =>
+      (delete(mediaOpenHistory)..where((t) => t.mediaId.equals(mediaId))).go();
 
-  Future<int> deleteMediaItemsByIdentifier(String ident) =>
-      (delete(mediaItems)..where((t) => t.mediaIdentifier.equals(ident))).go();
-
-  Future<MediaItemRow?> getMediaItemByUniqueKey(String uk) =>
-      (select(mediaItems)..where((t) => t.uniqueKey.equals(uk)))
-          .getSingleOrNull();
-
+  /// 该类型只保留最近 [maxItems] 条（按 [MediaOpenHistory.openedAt] 旧者先删；
+  /// 旧实现按自增 id 序 trim，v78 起时间就是唯一序）。
   Future<void> trimMediaHistory(String typeId, int maxItems) async {
     await transaction(() async {
-      final cnt = countAll();
-      final q = selectOnly(mediaItems)
-        ..where(mediaItems.mediaTypeIdentifier.equals(typeId))
-        ..addColumns([cnt]);
-      final row = await q.getSingle();
-      final count = row.read(cnt)!;
-      if (count <= maxItems) return;
-      final surplus = count - maxItems;
-      final oldestIds = await (select(mediaItems)
-            ..where((t) => t.mediaTypeIdentifier.equals(typeId))
-            ..orderBy([(t) => OrderingTerm.asc(t.id)])
-            ..limit(surplus))
-          .map((r) => r.id)
+      final rows = await (select(mediaOpenHistory)
+            ..where((t) => t.mediaType.equals(typeId))
+            ..orderBy([(t) => OrderingTerm.desc(t.openedAt)]))
           .get();
-      await (delete(mediaItems)..where((t) => t.id.isIn(oldestIds))).go();
+      if (rows.length <= maxItems) return;
+      for (final MediaOpenHistoryRow r in rows.skip(maxItems)) {
+        await deleteMediaOpenHistory(r.mediaSource, r.mediaId);
+      }
     });
   }
 

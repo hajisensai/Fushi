@@ -172,7 +172,17 @@ class BackupMergeEngine {
       await _mergeTagsAndMappings();
       await _mergeCollectionTags();
       await _mergeProfilesAndChildren();
-      await _insertMissing('media_items', 'unique_key');
+      // v80：media_items → media_open_history，PK 是 (media_source, media_id)
+      // 双列，_insertMissing 的单键形装不下，展开写。
+      await _db.customStatement(
+        'INSERT INTO media_open_history '
+        '(media_type, media_source, media_id, opened_at, position, duration, '
+        'snapshot_json) '
+        'SELECT media_type, media_source, media_id, opened_at, position, '
+        'duration, snapshot_json FROM $_srcAlias.media_open_history AS s '
+        'WHERE NOT EXISTS (SELECT 1 FROM media_open_history AS t '
+        'WHERE t.media_source = s.media_source AND t.media_id = s.media_id)',
+      );
       await _insertMissing('search_history_items', 'unique_key');
       await _insertMissing('anki_mappings', 'label');
       if (_wants('progress')) {

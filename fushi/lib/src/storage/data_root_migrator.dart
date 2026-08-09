@@ -950,7 +950,7 @@ class DataRootMigrator {
         await _rebaseCollectionRelations(db, docs);
         await _rebaseMediaImages(db, docs);
         await _rebaseVideoMetadataExtras(db, docs);
-        await _rebaseMediaItems(db, docs);
+        await _rebaseMediaOpenHistory(db, docs);
         await _rebasePreferences(db, docs, newSupportRoot);
         await _rebaseProfileSettings(db, docs, newSupportRoot);
       });
@@ -1180,18 +1180,27 @@ class DataRootMigrator {
   /// media_items：image_url（本地书封面存 `file://<绝对路径>` URI）。BUG-1174 漏项 ——
   /// 不改写 = 书架/首页「最近」卡片封面全空白，直到该书被重新打开刷新。远端源的
   /// http(s) URL scheme 非 file，[DocumentsPathRebaser.rebaseFileUri] 原样返回。
-  static Future<void> _rebaseMediaItems(
+  static Future<void> _rebaseMediaOpenHistory(
     FushiDatabase db,
     DocumentsPathRebaser docs,
   ) async {
-    for (final MediaItemRow m in await db.getAllMediaItems()) {
-      final String? url = m.imageUrl;
-      if (url == null) continue;
+    for (final MediaOpenHistoryRow m in await db.getAllMediaOpenHistory()) {
+      // v80：imageUrl 在 snapshot JSON 里，逐行解码改写（行数被 trim 钉死）。
+      Map<String, dynamic> snapshot;
+      try {
+        snapshot = jsonDecode(m.snapshotJson) as Map<String, dynamic>;
+      } catch (_) {
+        continue;
+      }
+      final Object? url = snapshot['imageUrl'];
+      if (url is! String) continue;
       final String rebased = docs.rebaseFileUri(url);
       if (rebased == url) continue;
+      snapshot['imageUrl'] = rebased;
       await db.customStatement(
-        'UPDATE media_items SET image_url = ? WHERE id = ?',
-        <Object?>[rebased, m.id],
+        'UPDATE media_open_history SET snapshot_json = ? '
+        'WHERE media_source = ? AND media_id = ?',
+        <Object?>[jsonEncode(snapshot), m.mediaSource, m.mediaId],
       );
     }
   }

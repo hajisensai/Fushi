@@ -392,9 +392,8 @@ class AppModelLibraryHostService
     };
     final Map<String, ({int percent, int updatedAtMs})> out =
         <String, ({int percent, int updatedAtMs})>{};
-    for (final MediaItemRow m in await _db.getAllMediaItems()) {
-      final RegExpMatch? match =
-          _fushiBookKeyPattern.firstMatch(m.mediaIdentifier);
+    for (final MediaOpenHistoryRow m in await _db.getAllMediaOpenHistory()) {
+      final RegExpMatch? match = _fushiBookKeyPattern.firstMatch(m.mediaId);
       if (match == null) continue;
       final String bookKey = match.group(1)!;
       if (m.duration <= 0 || m.position <= 0) continue;

@@ -131,31 +131,24 @@ void main() {
           updatedAt: 1,
         ),
       );
-      await db.upsertMediaItem(MediaItemsCompanion.insert(
-        mediaIdentifier: 'Bk',
-        title: 'Bk',
-        mediaTypeIdentifier: 'reader_media_type',
-        mediaSourceIdentifier: 'reader_fushi',
-        uniqueKey: 'reader/Bk',
-        imageUrl: Value(
-            Uri.file(docs(<String>['fushi_books', 'Bk', 'cover.jpg']))
-                .toString()),
-        position: 0,
-        duration: 0,
-        canDelete: true,
-        canEdit: true,
+      await db.upsertMediaOpenHistory(MediaOpenHistoryCompanion(
+        mediaType: const Value('reader_media_type'),
+        mediaSource: const Value('reader_fushi'),
+        mediaId: const Value('Bk'),
+        snapshotJson: Value(jsonEncode(<String, Object?>{
+          'title': 'Bk',
+          'imageUrl': Uri.file(docs(<String>['fushi_books', 'Bk', 'cover.jpg']))
+              .toString(),
+        })),
       ));
-      await db.upsertMediaItem(MediaItemsCompanion.insert(
-        mediaIdentifier: 'Remote',
-        title: 'Remote',
-        mediaTypeIdentifier: 'reader_media_type',
-        mediaSourceIdentifier: 'remote',
-        uniqueKey: 'reader/Remote',
-        imageUrl: const Value('https://example.com/cover.jpg'),
-        position: 0,
-        duration: 0,
-        canDelete: true,
-        canEdit: true,
+      await db.upsertMediaOpenHistory(MediaOpenHistoryCompanion(
+        mediaType: const Value('reader_media_type'),
+        mediaSource: const Value('remote'),
+        mediaId: const Value('Remote'),
+        snapshotJson: Value(jsonEncode(<String, Object?>{
+          'title': 'Remote',
+          'imageUrl': 'https://example.com/cover.jpg',
+        })),
       ));
       await db.setPref(
         'galgame_library',
@@ -219,8 +212,11 @@ void main() {
         out['video.${v.bookUid}.sub2'] = v.secondarySubtitleSource;
         out['video.${v.bookUid}.path'] = v.videoPath;
       }
-      for (final MediaItemRow m in await db.getAllMediaItems()) {
-        out['media.${m.uniqueKey}.image'] = m.imageUrl;
+      for (final MediaOpenHistoryRow m in await db.getAllMediaOpenHistory()) {
+        final Map<String, dynamic> snap =
+            jsonDecode(m.snapshotJson) as Map<String, dynamic>;
+        out['media.${m.mediaSource}/${m.mediaId}.image'] =
+            snap['imageUrl'] as String?;
       }
       final List<QueryRow> extras = await db
           .customSelect(
@@ -281,10 +277,10 @@ void main() {
       reason: '本地视频附加内容复用的封面必须与 VideoBook.coverPath 同步重挂',
     );
     expect(
-        snap['media.reader/Bk.image'],
+        snap['media.reader_fushi/Bk.image'],
         equals(Uri.file(at(<String>['fushi_books', 'Bk', 'cover.jpg']))
             .toString()));
-    expect(snap['media.reader/Remote.image'],
+    expect(snap['media.remote/Remote.image'],
         equals('https://example.com/cover.jpg'),
         reason: '远端 http 封面不是 file: URI，必须原样返回');
 

@@ -3,864 +3,383 @@
 part of 'database.dart';
 
 // ignore_for_file: type=lint
-class $MediaItemsTable extends MediaItems
-    with TableInfo<$MediaItemsTable, MediaItemRow> {
+class $MediaOpenHistoryTable extends MediaOpenHistory
+    with TableInfo<$MediaOpenHistoryTable, MediaOpenHistoryRow> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
-  $MediaItemsTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  $MediaOpenHistoryTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _mediaTypeMeta =
+      const VerificationMeta('mediaType');
   @override
-  late final GeneratedColumn<int> id = GeneratedColumn<int>(
-      'id', aliasedName, false,
-      hasAutoIncrement: true,
+  late final GeneratedColumn<String> mediaType = GeneratedColumn<String>(
+      'media_type', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _mediaSourceMeta =
+      const VerificationMeta('mediaSource');
+  @override
+  late final GeneratedColumn<String> mediaSource = GeneratedColumn<String>(
+      'media_source', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _mediaIdMeta =
+      const VerificationMeta('mediaId');
+  @override
+  late final GeneratedColumn<String> mediaId = GeneratedColumn<String>(
+      'media_id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _openedAtMeta =
+      const VerificationMeta('openedAt');
+  @override
+  late final GeneratedColumn<int> openedAt = GeneratedColumn<int>(
+      'opened_at', aliasedName, false,
       type: DriftSqlType.int,
       requiredDuringInsert: false,
-      defaultConstraints:
-          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
-  static const VerificationMeta _mediaIdentifierMeta =
-      const VerificationMeta('mediaIdentifier');
-  @override
-  late final GeneratedColumn<String> mediaIdentifier = GeneratedColumn<String>(
-      'media_identifier', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _titleMeta = const VerificationMeta('title');
-  @override
-  late final GeneratedColumn<String> title = GeneratedColumn<String>(
-      'title', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _mediaTypeIdentifierMeta =
-      const VerificationMeta('mediaTypeIdentifier');
-  @override
-  late final GeneratedColumn<String> mediaTypeIdentifier =
-      GeneratedColumn<String>('media_type_identifier', aliasedName, false,
-          type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _mediaSourceIdentifierMeta =
-      const VerificationMeta('mediaSourceIdentifier');
-  @override
-  late final GeneratedColumn<String> mediaSourceIdentifier =
-      GeneratedColumn<String>('media_source_identifier', aliasedName, false,
-          type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _uniqueKeyMeta =
-      const VerificationMeta('uniqueKey');
-  @override
-  late final GeneratedColumn<String> uniqueKey = GeneratedColumn<String>(
-      'unique_key', aliasedName, false,
-      type: DriftSqlType.string,
-      requiredDuringInsert: true,
-      defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'));
-  static const VerificationMeta _base64ImageMeta =
-      const VerificationMeta('base64Image');
-  @override
-  late final GeneratedColumn<String> base64Image = GeneratedColumn<String>(
-      'base64_image', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
-  static const VerificationMeta _imageUrlMeta =
-      const VerificationMeta('imageUrl');
-  @override
-  late final GeneratedColumn<String> imageUrl = GeneratedColumn<String>(
-      'image_url', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
-  static const VerificationMeta _audioUrlMeta =
-      const VerificationMeta('audioUrl');
-  @override
-  late final GeneratedColumn<String> audioUrl = GeneratedColumn<String>(
-      'audio_url', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
-  static const VerificationMeta _authorMeta = const VerificationMeta('author');
-  @override
-  late final GeneratedColumn<String> author = GeneratedColumn<String>(
-      'author', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
-  static const VerificationMeta _authorIdentifierMeta =
-      const VerificationMeta('authorIdentifier');
-  @override
-  late final GeneratedColumn<String> authorIdentifier = GeneratedColumn<String>(
-      'author_identifier', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
-  static const VerificationMeta _extraUrlMeta =
-      const VerificationMeta('extraUrl');
-  @override
-  late final GeneratedColumn<String> extraUrl = GeneratedColumn<String>(
-      'extra_url', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
-  static const VerificationMeta _extraMeta = const VerificationMeta('extra');
-  @override
-  late final GeneratedColumn<String> extra = GeneratedColumn<String>(
-      'extra', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
-  static const VerificationMeta _sourceMetadataMeta =
-      const VerificationMeta('sourceMetadata');
-  @override
-  late final GeneratedColumn<String> sourceMetadata = GeneratedColumn<String>(
-      'source_metadata', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
+      defaultValue: const Constant(0));
   static const VerificationMeta _positionMeta =
       const VerificationMeta('position');
   @override
   late final GeneratedColumn<int> position = GeneratedColumn<int>(
       'position', aliasedName, false,
-      type: DriftSqlType.int, requiredDuringInsert: true);
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
   static const VerificationMeta _durationMeta =
       const VerificationMeta('duration');
   @override
   late final GeneratedColumn<int> duration = GeneratedColumn<int>(
       'duration', aliasedName, false,
-      type: DriftSqlType.int, requiredDuringInsert: true);
-  static const VerificationMeta _canDeleteMeta =
-      const VerificationMeta('canDelete');
-  @override
-  late final GeneratedColumn<bool> canDelete = GeneratedColumn<bool>(
-      'can_delete', aliasedName, false,
-      type: DriftSqlType.bool,
-      requiredDuringInsert: true,
-      defaultConstraints:
-          GeneratedColumn.constraintIsAlways('CHECK ("can_delete" IN (0, 1))'));
-  static const VerificationMeta _canEditMeta =
-      const VerificationMeta('canEdit');
-  @override
-  late final GeneratedColumn<bool> canEdit = GeneratedColumn<bool>(
-      'can_edit', aliasedName, false,
-      type: DriftSqlType.bool,
-      requiredDuringInsert: true,
-      defaultConstraints:
-          GeneratedColumn.constraintIsAlways('CHECK ("can_edit" IN (0, 1))'));
-  static const VerificationMeta _importedAtMeta =
-      const VerificationMeta('importedAt');
-  @override
-  late final GeneratedColumn<int> importedAt = GeneratedColumn<int>(
-      'imported_at', aliasedName, false,
       type: DriftSqlType.int,
       requiredDuringInsert: false,
       defaultValue: const Constant(0));
+  static const VerificationMeta _snapshotJsonMeta =
+      const VerificationMeta('snapshotJson');
+  @override
+  late final GeneratedColumn<String> snapshotJson = GeneratedColumn<String>(
+      'snapshot_json', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('{}'));
   @override
   List<GeneratedColumn> get $columns => [
-        id,
-        mediaIdentifier,
-        title,
-        mediaTypeIdentifier,
-        mediaSourceIdentifier,
-        uniqueKey,
-        base64Image,
-        imageUrl,
-        audioUrl,
-        author,
-        authorIdentifier,
-        extraUrl,
-        extra,
-        sourceMetadata,
+        mediaType,
+        mediaSource,
+        mediaId,
+        openedAt,
         position,
         duration,
-        canDelete,
-        canEdit,
-        importedAt
+        snapshotJson
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
   String get actualTableName => $name;
-  static const String $name = 'media_items';
+  static const String $name = 'media_open_history';
   @override
-  VerificationContext validateIntegrity(Insertable<MediaItemRow> instance,
+  VerificationContext validateIntegrity(
+      Insertable<MediaOpenHistoryRow> instance,
       {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
-    if (data.containsKey('media_identifier')) {
-      context.handle(
-          _mediaIdentifierMeta,
-          mediaIdentifier.isAcceptableOrUnknown(
-              data['media_identifier']!, _mediaIdentifierMeta));
+    if (data.containsKey('media_type')) {
+      context.handle(_mediaTypeMeta,
+          mediaType.isAcceptableOrUnknown(data['media_type']!, _mediaTypeMeta));
     } else if (isInserting) {
-      context.missing(_mediaIdentifierMeta);
+      context.missing(_mediaTypeMeta);
     }
-    if (data.containsKey('title')) {
+    if (data.containsKey('media_source')) {
       context.handle(
-          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+          _mediaSourceMeta,
+          mediaSource.isAcceptableOrUnknown(
+              data['media_source']!, _mediaSourceMeta));
     } else if (isInserting) {
-      context.missing(_titleMeta);
+      context.missing(_mediaSourceMeta);
     }
-    if (data.containsKey('media_type_identifier')) {
-      context.handle(
-          _mediaTypeIdentifierMeta,
-          mediaTypeIdentifier.isAcceptableOrUnknown(
-              data['media_type_identifier']!, _mediaTypeIdentifierMeta));
+    if (data.containsKey('media_id')) {
+      context.handle(_mediaIdMeta,
+          mediaId.isAcceptableOrUnknown(data['media_id']!, _mediaIdMeta));
     } else if (isInserting) {
-      context.missing(_mediaTypeIdentifierMeta);
+      context.missing(_mediaIdMeta);
     }
-    if (data.containsKey('media_source_identifier')) {
-      context.handle(
-          _mediaSourceIdentifierMeta,
-          mediaSourceIdentifier.isAcceptableOrUnknown(
-              data['media_source_identifier']!, _mediaSourceIdentifierMeta));
-    } else if (isInserting) {
-      context.missing(_mediaSourceIdentifierMeta);
-    }
-    if (data.containsKey('unique_key')) {
-      context.handle(_uniqueKeyMeta,
-          uniqueKey.isAcceptableOrUnknown(data['unique_key']!, _uniqueKeyMeta));
-    } else if (isInserting) {
-      context.missing(_uniqueKeyMeta);
-    }
-    if (data.containsKey('base64_image')) {
-      context.handle(
-          _base64ImageMeta,
-          base64Image.isAcceptableOrUnknown(
-              data['base64_image']!, _base64ImageMeta));
-    }
-    if (data.containsKey('image_url')) {
-      context.handle(_imageUrlMeta,
-          imageUrl.isAcceptableOrUnknown(data['image_url']!, _imageUrlMeta));
-    }
-    if (data.containsKey('audio_url')) {
-      context.handle(_audioUrlMeta,
-          audioUrl.isAcceptableOrUnknown(data['audio_url']!, _audioUrlMeta));
-    }
-    if (data.containsKey('author')) {
-      context.handle(_authorMeta,
-          author.isAcceptableOrUnknown(data['author']!, _authorMeta));
-    }
-    if (data.containsKey('author_identifier')) {
-      context.handle(
-          _authorIdentifierMeta,
-          authorIdentifier.isAcceptableOrUnknown(
-              data['author_identifier']!, _authorIdentifierMeta));
-    }
-    if (data.containsKey('extra_url')) {
-      context.handle(_extraUrlMeta,
-          extraUrl.isAcceptableOrUnknown(data['extra_url']!, _extraUrlMeta));
-    }
-    if (data.containsKey('extra')) {
-      context.handle(
-          _extraMeta, extra.isAcceptableOrUnknown(data['extra']!, _extraMeta));
-    }
-    if (data.containsKey('source_metadata')) {
-      context.handle(
-          _sourceMetadataMeta,
-          sourceMetadata.isAcceptableOrUnknown(
-              data['source_metadata']!, _sourceMetadataMeta));
+    if (data.containsKey('opened_at')) {
+      context.handle(_openedAtMeta,
+          openedAt.isAcceptableOrUnknown(data['opened_at']!, _openedAtMeta));
     }
     if (data.containsKey('position')) {
       context.handle(_positionMeta,
           position.isAcceptableOrUnknown(data['position']!, _positionMeta));
-    } else if (isInserting) {
-      context.missing(_positionMeta);
     }
     if (data.containsKey('duration')) {
       context.handle(_durationMeta,
           duration.isAcceptableOrUnknown(data['duration']!, _durationMeta));
-    } else if (isInserting) {
-      context.missing(_durationMeta);
     }
-    if (data.containsKey('can_delete')) {
-      context.handle(_canDeleteMeta,
-          canDelete.isAcceptableOrUnknown(data['can_delete']!, _canDeleteMeta));
-    } else if (isInserting) {
-      context.missing(_canDeleteMeta);
-    }
-    if (data.containsKey('can_edit')) {
-      context.handle(_canEditMeta,
-          canEdit.isAcceptableOrUnknown(data['can_edit']!, _canEditMeta));
-    } else if (isInserting) {
-      context.missing(_canEditMeta);
-    }
-    if (data.containsKey('imported_at')) {
+    if (data.containsKey('snapshot_json')) {
       context.handle(
-          _importedAtMeta,
-          importedAt.isAcceptableOrUnknown(
-              data['imported_at']!, _importedAtMeta));
+          _snapshotJsonMeta,
+          snapshotJson.isAcceptableOrUnknown(
+              data['snapshot_json']!, _snapshotJsonMeta));
     }
     return context;
   }
 
   @override
-  Set<GeneratedColumn> get $primaryKey => {id};
+  Set<GeneratedColumn> get $primaryKey => {mediaSource, mediaId};
   @override
-  MediaItemRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+  MediaOpenHistoryRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return MediaItemRow(
-      id: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      mediaIdentifier: attachedDatabase.typeMapping.read(
-          DriftSqlType.string, data['${effectivePrefix}media_identifier'])!,
-      title: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
-      mediaTypeIdentifier: attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}media_type_identifier'])!,
-      mediaSourceIdentifier: attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}media_source_identifier'])!,
-      uniqueKey: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}unique_key'])!,
-      base64Image: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}base64_image']),
-      imageUrl: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}image_url']),
-      audioUrl: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}audio_url']),
-      author: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}author']),
-      authorIdentifier: attachedDatabase.typeMapping.read(
-          DriftSqlType.string, data['${effectivePrefix}author_identifier']),
-      extraUrl: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}extra_url']),
-      extra: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}extra']),
-      sourceMetadata: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}source_metadata']),
+    return MediaOpenHistoryRow(
+      mediaType: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}media_type'])!,
+      mediaSource: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}media_source'])!,
+      mediaId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}media_id'])!,
+      openedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}opened_at'])!,
       position: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}position'])!,
       duration: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}duration'])!,
-      canDelete: attachedDatabase.typeMapping
-          .read(DriftSqlType.bool, data['${effectivePrefix}can_delete'])!,
-      canEdit: attachedDatabase.typeMapping
-          .read(DriftSqlType.bool, data['${effectivePrefix}can_edit'])!,
-      importedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}imported_at'])!,
+      snapshotJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}snapshot_json'])!,
     );
   }
 
   @override
-  $MediaItemsTable createAlias(String alias) {
-    return $MediaItemsTable(attachedDatabase, alias);
+  $MediaOpenHistoryTable createAlias(String alias) {
+    return $MediaOpenHistoryTable(attachedDatabase, alias);
   }
 }
 
-class MediaItemRow extends DataClass implements Insertable<MediaItemRow> {
-  final int id;
-  final String mediaIdentifier;
-  final String title;
-  final String mediaTypeIdentifier;
-  final String mediaSourceIdentifier;
-  final String uniqueKey;
-  final String? base64Image;
-  final String? imageUrl;
-  final String? audioUrl;
-  final String? author;
-  final String? authorIdentifier;
-  final String? extraUrl;
-  final String? extra;
-  final String? sourceMetadata;
+class MediaOpenHistoryRow extends DataClass
+    implements Insertable<MediaOpenHistoryRow> {
+  /// 媒体类型 key（冻结值域 = 旧 mediaTypeIdentifier：'reader' / 'player' / …）。
+  final String mediaType;
+
+  /// 媒体源 key（旧 mediaSourceIdentifier）。
+  final String mediaSource;
+
+  /// 源内身份（旧 mediaIdentifier：库内 = bookKey 派生 URI，外部 = URL）。
+  final String mediaId;
+
+  /// 最后打开毫秒戳（排序与 trim 的键；旧 imported_at 平移）。
+  final int openedAt;
+
+  /// 进度两数（互联 host 的百分比换算要在 SQL 面上可用，故留列不进 JSON）。
   final int position;
   final int duration;
-  final bool canDelete;
-  final bool canEdit;
-  final int importedAt;
-  const MediaItemRow(
-      {required this.id,
-      required this.mediaIdentifier,
-      required this.title,
-      required this.mediaTypeIdentifier,
-      required this.mediaSourceIdentifier,
-      required this.uniqueKey,
-      this.base64Image,
-      this.imageUrl,
-      this.audioUrl,
-      this.author,
-      this.authorIdentifier,
-      this.extraUrl,
-      this.extra,
-      this.sourceMetadata,
+
+  /// 其余展示/重开载荷（MediaItem.toJson 去掉列化字段后的 JSON）。
+  final String snapshotJson;
+  const MediaOpenHistoryRow(
+      {required this.mediaType,
+      required this.mediaSource,
+      required this.mediaId,
+      required this.openedAt,
       required this.position,
       required this.duration,
-      required this.canDelete,
-      required this.canEdit,
-      required this.importedAt});
+      required this.snapshotJson});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['id'] = Variable<int>(id);
-    map['media_identifier'] = Variable<String>(mediaIdentifier);
-    map['title'] = Variable<String>(title);
-    map['media_type_identifier'] = Variable<String>(mediaTypeIdentifier);
-    map['media_source_identifier'] = Variable<String>(mediaSourceIdentifier);
-    map['unique_key'] = Variable<String>(uniqueKey);
-    if (!nullToAbsent || base64Image != null) {
-      map['base64_image'] = Variable<String>(base64Image);
-    }
-    if (!nullToAbsent || imageUrl != null) {
-      map['image_url'] = Variable<String>(imageUrl);
-    }
-    if (!nullToAbsent || audioUrl != null) {
-      map['audio_url'] = Variable<String>(audioUrl);
-    }
-    if (!nullToAbsent || author != null) {
-      map['author'] = Variable<String>(author);
-    }
-    if (!nullToAbsent || authorIdentifier != null) {
-      map['author_identifier'] = Variable<String>(authorIdentifier);
-    }
-    if (!nullToAbsent || extraUrl != null) {
-      map['extra_url'] = Variable<String>(extraUrl);
-    }
-    if (!nullToAbsent || extra != null) {
-      map['extra'] = Variable<String>(extra);
-    }
-    if (!nullToAbsent || sourceMetadata != null) {
-      map['source_metadata'] = Variable<String>(sourceMetadata);
-    }
+    map['media_type'] = Variable<String>(mediaType);
+    map['media_source'] = Variable<String>(mediaSource);
+    map['media_id'] = Variable<String>(mediaId);
+    map['opened_at'] = Variable<int>(openedAt);
     map['position'] = Variable<int>(position);
     map['duration'] = Variable<int>(duration);
-    map['can_delete'] = Variable<bool>(canDelete);
-    map['can_edit'] = Variable<bool>(canEdit);
-    map['imported_at'] = Variable<int>(importedAt);
+    map['snapshot_json'] = Variable<String>(snapshotJson);
     return map;
   }
 
-  MediaItemsCompanion toCompanion(bool nullToAbsent) {
-    return MediaItemsCompanion(
-      id: Value(id),
-      mediaIdentifier: Value(mediaIdentifier),
-      title: Value(title),
-      mediaTypeIdentifier: Value(mediaTypeIdentifier),
-      mediaSourceIdentifier: Value(mediaSourceIdentifier),
-      uniqueKey: Value(uniqueKey),
-      base64Image: base64Image == null && nullToAbsent
-          ? const Value.absent()
-          : Value(base64Image),
-      imageUrl: imageUrl == null && nullToAbsent
-          ? const Value.absent()
-          : Value(imageUrl),
-      audioUrl: audioUrl == null && nullToAbsent
-          ? const Value.absent()
-          : Value(audioUrl),
-      author:
-          author == null && nullToAbsent ? const Value.absent() : Value(author),
-      authorIdentifier: authorIdentifier == null && nullToAbsent
-          ? const Value.absent()
-          : Value(authorIdentifier),
-      extraUrl: extraUrl == null && nullToAbsent
-          ? const Value.absent()
-          : Value(extraUrl),
-      extra:
-          extra == null && nullToAbsent ? const Value.absent() : Value(extra),
-      sourceMetadata: sourceMetadata == null && nullToAbsent
-          ? const Value.absent()
-          : Value(sourceMetadata),
+  MediaOpenHistoryCompanion toCompanion(bool nullToAbsent) {
+    return MediaOpenHistoryCompanion(
+      mediaType: Value(mediaType),
+      mediaSource: Value(mediaSource),
+      mediaId: Value(mediaId),
+      openedAt: Value(openedAt),
       position: Value(position),
       duration: Value(duration),
-      canDelete: Value(canDelete),
-      canEdit: Value(canEdit),
-      importedAt: Value(importedAt),
+      snapshotJson: Value(snapshotJson),
     );
   }
 
-  factory MediaItemRow.fromJson(Map<String, dynamic> json,
+  factory MediaOpenHistoryRow.fromJson(Map<String, dynamic> json,
       {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return MediaItemRow(
-      id: serializer.fromJson<int>(json['id']),
-      mediaIdentifier: serializer.fromJson<String>(json['mediaIdentifier']),
-      title: serializer.fromJson<String>(json['title']),
-      mediaTypeIdentifier:
-          serializer.fromJson<String>(json['mediaTypeIdentifier']),
-      mediaSourceIdentifier:
-          serializer.fromJson<String>(json['mediaSourceIdentifier']),
-      uniqueKey: serializer.fromJson<String>(json['uniqueKey']),
-      base64Image: serializer.fromJson<String?>(json['base64Image']),
-      imageUrl: serializer.fromJson<String?>(json['imageUrl']),
-      audioUrl: serializer.fromJson<String?>(json['audioUrl']),
-      author: serializer.fromJson<String?>(json['author']),
-      authorIdentifier: serializer.fromJson<String?>(json['authorIdentifier']),
-      extraUrl: serializer.fromJson<String?>(json['extraUrl']),
-      extra: serializer.fromJson<String?>(json['extra']),
-      sourceMetadata: serializer.fromJson<String?>(json['sourceMetadata']),
+    return MediaOpenHistoryRow(
+      mediaType: serializer.fromJson<String>(json['mediaType']),
+      mediaSource: serializer.fromJson<String>(json['mediaSource']),
+      mediaId: serializer.fromJson<String>(json['mediaId']),
+      openedAt: serializer.fromJson<int>(json['openedAt']),
       position: serializer.fromJson<int>(json['position']),
       duration: serializer.fromJson<int>(json['duration']),
-      canDelete: serializer.fromJson<bool>(json['canDelete']),
-      canEdit: serializer.fromJson<bool>(json['canEdit']),
-      importedAt: serializer.fromJson<int>(json['importedAt']),
+      snapshotJson: serializer.fromJson<String>(json['snapshotJson']),
     );
   }
   @override
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
-      'id': serializer.toJson<int>(id),
-      'mediaIdentifier': serializer.toJson<String>(mediaIdentifier),
-      'title': serializer.toJson<String>(title),
-      'mediaTypeIdentifier': serializer.toJson<String>(mediaTypeIdentifier),
-      'mediaSourceIdentifier': serializer.toJson<String>(mediaSourceIdentifier),
-      'uniqueKey': serializer.toJson<String>(uniqueKey),
-      'base64Image': serializer.toJson<String?>(base64Image),
-      'imageUrl': serializer.toJson<String?>(imageUrl),
-      'audioUrl': serializer.toJson<String?>(audioUrl),
-      'author': serializer.toJson<String?>(author),
-      'authorIdentifier': serializer.toJson<String?>(authorIdentifier),
-      'extraUrl': serializer.toJson<String?>(extraUrl),
-      'extra': serializer.toJson<String?>(extra),
-      'sourceMetadata': serializer.toJson<String?>(sourceMetadata),
+      'mediaType': serializer.toJson<String>(mediaType),
+      'mediaSource': serializer.toJson<String>(mediaSource),
+      'mediaId': serializer.toJson<String>(mediaId),
+      'openedAt': serializer.toJson<int>(openedAt),
       'position': serializer.toJson<int>(position),
       'duration': serializer.toJson<int>(duration),
-      'canDelete': serializer.toJson<bool>(canDelete),
-      'canEdit': serializer.toJson<bool>(canEdit),
-      'importedAt': serializer.toJson<int>(importedAt),
+      'snapshotJson': serializer.toJson<String>(snapshotJson),
     };
   }
 
-  MediaItemRow copyWith(
-          {int? id,
-          String? mediaIdentifier,
-          String? title,
-          String? mediaTypeIdentifier,
-          String? mediaSourceIdentifier,
-          String? uniqueKey,
-          Value<String?> base64Image = const Value.absent(),
-          Value<String?> imageUrl = const Value.absent(),
-          Value<String?> audioUrl = const Value.absent(),
-          Value<String?> author = const Value.absent(),
-          Value<String?> authorIdentifier = const Value.absent(),
-          Value<String?> extraUrl = const Value.absent(),
-          Value<String?> extra = const Value.absent(),
-          Value<String?> sourceMetadata = const Value.absent(),
+  MediaOpenHistoryRow copyWith(
+          {String? mediaType,
+          String? mediaSource,
+          String? mediaId,
+          int? openedAt,
           int? position,
           int? duration,
-          bool? canDelete,
-          bool? canEdit,
-          int? importedAt}) =>
-      MediaItemRow(
-        id: id ?? this.id,
-        mediaIdentifier: mediaIdentifier ?? this.mediaIdentifier,
-        title: title ?? this.title,
-        mediaTypeIdentifier: mediaTypeIdentifier ?? this.mediaTypeIdentifier,
-        mediaSourceIdentifier:
-            mediaSourceIdentifier ?? this.mediaSourceIdentifier,
-        uniqueKey: uniqueKey ?? this.uniqueKey,
-        base64Image: base64Image.present ? base64Image.value : this.base64Image,
-        imageUrl: imageUrl.present ? imageUrl.value : this.imageUrl,
-        audioUrl: audioUrl.present ? audioUrl.value : this.audioUrl,
-        author: author.present ? author.value : this.author,
-        authorIdentifier: authorIdentifier.present
-            ? authorIdentifier.value
-            : this.authorIdentifier,
-        extraUrl: extraUrl.present ? extraUrl.value : this.extraUrl,
-        extra: extra.present ? extra.value : this.extra,
-        sourceMetadata:
-            sourceMetadata.present ? sourceMetadata.value : this.sourceMetadata,
+          String? snapshotJson}) =>
+      MediaOpenHistoryRow(
+        mediaType: mediaType ?? this.mediaType,
+        mediaSource: mediaSource ?? this.mediaSource,
+        mediaId: mediaId ?? this.mediaId,
+        openedAt: openedAt ?? this.openedAt,
         position: position ?? this.position,
         duration: duration ?? this.duration,
-        canDelete: canDelete ?? this.canDelete,
-        canEdit: canEdit ?? this.canEdit,
-        importedAt: importedAt ?? this.importedAt,
+        snapshotJson: snapshotJson ?? this.snapshotJson,
       );
-  MediaItemRow copyWithCompanion(MediaItemsCompanion data) {
-    return MediaItemRow(
-      id: data.id.present ? data.id.value : this.id,
-      mediaIdentifier: data.mediaIdentifier.present
-          ? data.mediaIdentifier.value
-          : this.mediaIdentifier,
-      title: data.title.present ? data.title.value : this.title,
-      mediaTypeIdentifier: data.mediaTypeIdentifier.present
-          ? data.mediaTypeIdentifier.value
-          : this.mediaTypeIdentifier,
-      mediaSourceIdentifier: data.mediaSourceIdentifier.present
-          ? data.mediaSourceIdentifier.value
-          : this.mediaSourceIdentifier,
-      uniqueKey: data.uniqueKey.present ? data.uniqueKey.value : this.uniqueKey,
-      base64Image:
-          data.base64Image.present ? data.base64Image.value : this.base64Image,
-      imageUrl: data.imageUrl.present ? data.imageUrl.value : this.imageUrl,
-      audioUrl: data.audioUrl.present ? data.audioUrl.value : this.audioUrl,
-      author: data.author.present ? data.author.value : this.author,
-      authorIdentifier: data.authorIdentifier.present
-          ? data.authorIdentifier.value
-          : this.authorIdentifier,
-      extraUrl: data.extraUrl.present ? data.extraUrl.value : this.extraUrl,
-      extra: data.extra.present ? data.extra.value : this.extra,
-      sourceMetadata: data.sourceMetadata.present
-          ? data.sourceMetadata.value
-          : this.sourceMetadata,
+  MediaOpenHistoryRow copyWithCompanion(MediaOpenHistoryCompanion data) {
+    return MediaOpenHistoryRow(
+      mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
+      mediaSource:
+          data.mediaSource.present ? data.mediaSource.value : this.mediaSource,
+      mediaId: data.mediaId.present ? data.mediaId.value : this.mediaId,
+      openedAt: data.openedAt.present ? data.openedAt.value : this.openedAt,
       position: data.position.present ? data.position.value : this.position,
       duration: data.duration.present ? data.duration.value : this.duration,
-      canDelete: data.canDelete.present ? data.canDelete.value : this.canDelete,
-      canEdit: data.canEdit.present ? data.canEdit.value : this.canEdit,
-      importedAt:
-          data.importedAt.present ? data.importedAt.value : this.importedAt,
+      snapshotJson: data.snapshotJson.present
+          ? data.snapshotJson.value
+          : this.snapshotJson,
     );
   }
 
   @override
   String toString() {
-    return (StringBuffer('MediaItemRow(')
-          ..write('id: $id, ')
-          ..write('mediaIdentifier: $mediaIdentifier, ')
-          ..write('title: $title, ')
-          ..write('mediaTypeIdentifier: $mediaTypeIdentifier, ')
-          ..write('mediaSourceIdentifier: $mediaSourceIdentifier, ')
-          ..write('uniqueKey: $uniqueKey, ')
-          ..write('base64Image: $base64Image, ')
-          ..write('imageUrl: $imageUrl, ')
-          ..write('audioUrl: $audioUrl, ')
-          ..write('author: $author, ')
-          ..write('authorIdentifier: $authorIdentifier, ')
-          ..write('extraUrl: $extraUrl, ')
-          ..write('extra: $extra, ')
-          ..write('sourceMetadata: $sourceMetadata, ')
+    return (StringBuffer('MediaOpenHistoryRow(')
+          ..write('mediaType: $mediaType, ')
+          ..write('mediaSource: $mediaSource, ')
+          ..write('mediaId: $mediaId, ')
+          ..write('openedAt: $openedAt, ')
           ..write('position: $position, ')
           ..write('duration: $duration, ')
-          ..write('canDelete: $canDelete, ')
-          ..write('canEdit: $canEdit, ')
-          ..write('importedAt: $importedAt')
+          ..write('snapshotJson: $snapshotJson')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(
-      id,
-      mediaIdentifier,
-      title,
-      mediaTypeIdentifier,
-      mediaSourceIdentifier,
-      uniqueKey,
-      base64Image,
-      imageUrl,
-      audioUrl,
-      author,
-      authorIdentifier,
-      extraUrl,
-      extra,
-      sourceMetadata,
-      position,
-      duration,
-      canDelete,
-      canEdit,
-      importedAt);
+  int get hashCode => Object.hash(mediaType, mediaSource, mediaId, openedAt,
+      position, duration, snapshotJson);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is MediaItemRow &&
-          other.id == this.id &&
-          other.mediaIdentifier == this.mediaIdentifier &&
-          other.title == this.title &&
-          other.mediaTypeIdentifier == this.mediaTypeIdentifier &&
-          other.mediaSourceIdentifier == this.mediaSourceIdentifier &&
-          other.uniqueKey == this.uniqueKey &&
-          other.base64Image == this.base64Image &&
-          other.imageUrl == this.imageUrl &&
-          other.audioUrl == this.audioUrl &&
-          other.author == this.author &&
-          other.authorIdentifier == this.authorIdentifier &&
-          other.extraUrl == this.extraUrl &&
-          other.extra == this.extra &&
-          other.sourceMetadata == this.sourceMetadata &&
+      (other is MediaOpenHistoryRow &&
+          other.mediaType == this.mediaType &&
+          other.mediaSource == this.mediaSource &&
+          other.mediaId == this.mediaId &&
+          other.openedAt == this.openedAt &&
           other.position == this.position &&
           other.duration == this.duration &&
-          other.canDelete == this.canDelete &&
-          other.canEdit == this.canEdit &&
-          other.importedAt == this.importedAt);
+          other.snapshotJson == this.snapshotJson);
 }
 
-class MediaItemsCompanion extends UpdateCompanion<MediaItemRow> {
-  final Value<int> id;
-  final Value<String> mediaIdentifier;
-  final Value<String> title;
-  final Value<String> mediaTypeIdentifier;
-  final Value<String> mediaSourceIdentifier;
-  final Value<String> uniqueKey;
-  final Value<String?> base64Image;
-  final Value<String?> imageUrl;
-  final Value<String?> audioUrl;
-  final Value<String?> author;
-  final Value<String?> authorIdentifier;
-  final Value<String?> extraUrl;
-  final Value<String?> extra;
-  final Value<String?> sourceMetadata;
+class MediaOpenHistoryCompanion extends UpdateCompanion<MediaOpenHistoryRow> {
+  final Value<String> mediaType;
+  final Value<String> mediaSource;
+  final Value<String> mediaId;
+  final Value<int> openedAt;
   final Value<int> position;
   final Value<int> duration;
-  final Value<bool> canDelete;
-  final Value<bool> canEdit;
-  final Value<int> importedAt;
-  const MediaItemsCompanion({
-    this.id = const Value.absent(),
-    this.mediaIdentifier = const Value.absent(),
-    this.title = const Value.absent(),
-    this.mediaTypeIdentifier = const Value.absent(),
-    this.mediaSourceIdentifier = const Value.absent(),
-    this.uniqueKey = const Value.absent(),
-    this.base64Image = const Value.absent(),
-    this.imageUrl = const Value.absent(),
-    this.audioUrl = const Value.absent(),
-    this.author = const Value.absent(),
-    this.authorIdentifier = const Value.absent(),
-    this.extraUrl = const Value.absent(),
-    this.extra = const Value.absent(),
-    this.sourceMetadata = const Value.absent(),
+  final Value<String> snapshotJson;
+  final Value<int> rowid;
+  const MediaOpenHistoryCompanion({
+    this.mediaType = const Value.absent(),
+    this.mediaSource = const Value.absent(),
+    this.mediaId = const Value.absent(),
+    this.openedAt = const Value.absent(),
     this.position = const Value.absent(),
     this.duration = const Value.absent(),
-    this.canDelete = const Value.absent(),
-    this.canEdit = const Value.absent(),
-    this.importedAt = const Value.absent(),
+    this.snapshotJson = const Value.absent(),
+    this.rowid = const Value.absent(),
   });
-  MediaItemsCompanion.insert({
-    this.id = const Value.absent(),
-    required String mediaIdentifier,
-    required String title,
-    required String mediaTypeIdentifier,
-    required String mediaSourceIdentifier,
-    required String uniqueKey,
-    this.base64Image = const Value.absent(),
-    this.imageUrl = const Value.absent(),
-    this.audioUrl = const Value.absent(),
-    this.author = const Value.absent(),
-    this.authorIdentifier = const Value.absent(),
-    this.extraUrl = const Value.absent(),
-    this.extra = const Value.absent(),
-    this.sourceMetadata = const Value.absent(),
-    required int position,
-    required int duration,
-    required bool canDelete,
-    required bool canEdit,
-    this.importedAt = const Value.absent(),
-  })  : mediaIdentifier = Value(mediaIdentifier),
-        title = Value(title),
-        mediaTypeIdentifier = Value(mediaTypeIdentifier),
-        mediaSourceIdentifier = Value(mediaSourceIdentifier),
-        uniqueKey = Value(uniqueKey),
-        position = Value(position),
-        duration = Value(duration),
-        canDelete = Value(canDelete),
-        canEdit = Value(canEdit);
-  static Insertable<MediaItemRow> custom({
-    Expression<int>? id,
-    Expression<String>? mediaIdentifier,
-    Expression<String>? title,
-    Expression<String>? mediaTypeIdentifier,
-    Expression<String>? mediaSourceIdentifier,
-    Expression<String>? uniqueKey,
-    Expression<String>? base64Image,
-    Expression<String>? imageUrl,
-    Expression<String>? audioUrl,
-    Expression<String>? author,
-    Expression<String>? authorIdentifier,
-    Expression<String>? extraUrl,
-    Expression<String>? extra,
-    Expression<String>? sourceMetadata,
+  MediaOpenHistoryCompanion.insert({
+    required String mediaType,
+    required String mediaSource,
+    required String mediaId,
+    this.openedAt = const Value.absent(),
+    this.position = const Value.absent(),
+    this.duration = const Value.absent(),
+    this.snapshotJson = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : mediaType = Value(mediaType),
+        mediaSource = Value(mediaSource),
+        mediaId = Value(mediaId);
+  static Insertable<MediaOpenHistoryRow> custom({
+    Expression<String>? mediaType,
+    Expression<String>? mediaSource,
+    Expression<String>? mediaId,
+    Expression<int>? openedAt,
     Expression<int>? position,
     Expression<int>? duration,
-    Expression<bool>? canDelete,
-    Expression<bool>? canEdit,
-    Expression<int>? importedAt,
+    Expression<String>? snapshotJson,
+    Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
-      if (id != null) 'id': id,
-      if (mediaIdentifier != null) 'media_identifier': mediaIdentifier,
-      if (title != null) 'title': title,
-      if (mediaTypeIdentifier != null)
-        'media_type_identifier': mediaTypeIdentifier,
-      if (mediaSourceIdentifier != null)
-        'media_source_identifier': mediaSourceIdentifier,
-      if (uniqueKey != null) 'unique_key': uniqueKey,
-      if (base64Image != null) 'base64_image': base64Image,
-      if (imageUrl != null) 'image_url': imageUrl,
-      if (audioUrl != null) 'audio_url': audioUrl,
-      if (author != null) 'author': author,
-      if (authorIdentifier != null) 'author_identifier': authorIdentifier,
-      if (extraUrl != null) 'extra_url': extraUrl,
-      if (extra != null) 'extra': extra,
-      if (sourceMetadata != null) 'source_metadata': sourceMetadata,
+      if (mediaType != null) 'media_type': mediaType,
+      if (mediaSource != null) 'media_source': mediaSource,
+      if (mediaId != null) 'media_id': mediaId,
+      if (openedAt != null) 'opened_at': openedAt,
       if (position != null) 'position': position,
       if (duration != null) 'duration': duration,
-      if (canDelete != null) 'can_delete': canDelete,
-      if (canEdit != null) 'can_edit': canEdit,
-      if (importedAt != null) 'imported_at': importedAt,
+      if (snapshotJson != null) 'snapshot_json': snapshotJson,
+      if (rowid != null) 'rowid': rowid,
     });
   }
 
-  MediaItemsCompanion copyWith(
-      {Value<int>? id,
-      Value<String>? mediaIdentifier,
-      Value<String>? title,
-      Value<String>? mediaTypeIdentifier,
-      Value<String>? mediaSourceIdentifier,
-      Value<String>? uniqueKey,
-      Value<String?>? base64Image,
-      Value<String?>? imageUrl,
-      Value<String?>? audioUrl,
-      Value<String?>? author,
-      Value<String?>? authorIdentifier,
-      Value<String?>? extraUrl,
-      Value<String?>? extra,
-      Value<String?>? sourceMetadata,
+  MediaOpenHistoryCompanion copyWith(
+      {Value<String>? mediaType,
+      Value<String>? mediaSource,
+      Value<String>? mediaId,
+      Value<int>? openedAt,
       Value<int>? position,
       Value<int>? duration,
-      Value<bool>? canDelete,
-      Value<bool>? canEdit,
-      Value<int>? importedAt}) {
-    return MediaItemsCompanion(
-      id: id ?? this.id,
-      mediaIdentifier: mediaIdentifier ?? this.mediaIdentifier,
-      title: title ?? this.title,
-      mediaTypeIdentifier: mediaTypeIdentifier ?? this.mediaTypeIdentifier,
-      mediaSourceIdentifier:
-          mediaSourceIdentifier ?? this.mediaSourceIdentifier,
-      uniqueKey: uniqueKey ?? this.uniqueKey,
-      base64Image: base64Image ?? this.base64Image,
-      imageUrl: imageUrl ?? this.imageUrl,
-      audioUrl: audioUrl ?? this.audioUrl,
-      author: author ?? this.author,
-      authorIdentifier: authorIdentifier ?? this.authorIdentifier,
-      extraUrl: extraUrl ?? this.extraUrl,
-      extra: extra ?? this.extra,
-      sourceMetadata: sourceMetadata ?? this.sourceMetadata,
+      Value<String>? snapshotJson,
+      Value<int>? rowid}) {
+    return MediaOpenHistoryCompanion(
+      mediaType: mediaType ?? this.mediaType,
+      mediaSource: mediaSource ?? this.mediaSource,
+      mediaId: mediaId ?? this.mediaId,
+      openedAt: openedAt ?? this.openedAt,
       position: position ?? this.position,
       duration: duration ?? this.duration,
-      canDelete: canDelete ?? this.canDelete,
-      canEdit: canEdit ?? this.canEdit,
-      importedAt: importedAt ?? this.importedAt,
+      snapshotJson: snapshotJson ?? this.snapshotJson,
+      rowid: rowid ?? this.rowid,
     );
   }
 
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    if (id.present) {
-      map['id'] = Variable<int>(id.value);
+    if (mediaType.present) {
+      map['media_type'] = Variable<String>(mediaType.value);
     }
-    if (mediaIdentifier.present) {
-      map['media_identifier'] = Variable<String>(mediaIdentifier.value);
+    if (mediaSource.present) {
+      map['media_source'] = Variable<String>(mediaSource.value);
     }
-    if (title.present) {
-      map['title'] = Variable<String>(title.value);
+    if (mediaId.present) {
+      map['media_id'] = Variable<String>(mediaId.value);
     }
-    if (mediaTypeIdentifier.present) {
-      map['media_type_identifier'] =
-          Variable<String>(mediaTypeIdentifier.value);
-    }
-    if (mediaSourceIdentifier.present) {
-      map['media_source_identifier'] =
-          Variable<String>(mediaSourceIdentifier.value);
-    }
-    if (uniqueKey.present) {
-      map['unique_key'] = Variable<String>(uniqueKey.value);
-    }
-    if (base64Image.present) {
-      map['base64_image'] = Variable<String>(base64Image.value);
-    }
-    if (imageUrl.present) {
-      map['image_url'] = Variable<String>(imageUrl.value);
-    }
-    if (audioUrl.present) {
-      map['audio_url'] = Variable<String>(audioUrl.value);
-    }
-    if (author.present) {
-      map['author'] = Variable<String>(author.value);
-    }
-    if (authorIdentifier.present) {
-      map['author_identifier'] = Variable<String>(authorIdentifier.value);
-    }
-    if (extraUrl.present) {
-      map['extra_url'] = Variable<String>(extraUrl.value);
-    }
-    if (extra.present) {
-      map['extra'] = Variable<String>(extra.value);
-    }
-    if (sourceMetadata.present) {
-      map['source_metadata'] = Variable<String>(sourceMetadata.value);
+    if (openedAt.present) {
+      map['opened_at'] = Variable<int>(openedAt.value);
     }
     if (position.present) {
       map['position'] = Variable<int>(position.value);
@@ -868,40 +387,26 @@ class MediaItemsCompanion extends UpdateCompanion<MediaItemRow> {
     if (duration.present) {
       map['duration'] = Variable<int>(duration.value);
     }
-    if (canDelete.present) {
-      map['can_delete'] = Variable<bool>(canDelete.value);
+    if (snapshotJson.present) {
+      map['snapshot_json'] = Variable<String>(snapshotJson.value);
     }
-    if (canEdit.present) {
-      map['can_edit'] = Variable<bool>(canEdit.value);
-    }
-    if (importedAt.present) {
-      map['imported_at'] = Variable<int>(importedAt.value);
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
     }
     return map;
   }
 
   @override
   String toString() {
-    return (StringBuffer('MediaItemsCompanion(')
-          ..write('id: $id, ')
-          ..write('mediaIdentifier: $mediaIdentifier, ')
-          ..write('title: $title, ')
-          ..write('mediaTypeIdentifier: $mediaTypeIdentifier, ')
-          ..write('mediaSourceIdentifier: $mediaSourceIdentifier, ')
-          ..write('uniqueKey: $uniqueKey, ')
-          ..write('base64Image: $base64Image, ')
-          ..write('imageUrl: $imageUrl, ')
-          ..write('audioUrl: $audioUrl, ')
-          ..write('author: $author, ')
-          ..write('authorIdentifier: $authorIdentifier, ')
-          ..write('extraUrl: $extraUrl, ')
-          ..write('extra: $extra, ')
-          ..write('sourceMetadata: $sourceMetadata, ')
+    return (StringBuffer('MediaOpenHistoryCompanion(')
+          ..write('mediaType: $mediaType, ')
+          ..write('mediaSource: $mediaSource, ')
+          ..write('mediaId: $mediaId, ')
+          ..write('openedAt: $openedAt, ')
           ..write('position: $position, ')
           ..write('duration: $duration, ')
-          ..write('canDelete: $canDelete, ')
-          ..write('canEdit: $canEdit, ')
-          ..write('importedAt: $importedAt')
+          ..write('snapshotJson: $snapshotJson, ')
+          ..write('rowid: $rowid')
           ..write(')'))
         .toString();
   }
@@ -39055,7 +38560,8 @@ class VideoDownloadSubscriptionItemsCompanion
 abstract class _$FushiDatabase extends GeneratedDatabase {
   _$FushiDatabase(QueryExecutor e) : super(e);
   $FushiDatabaseManager get managers => $FushiDatabaseManager(this);
-  late final $MediaItemsTable mediaItems = $MediaItemsTable(this);
+  late final $MediaOpenHistoryTable mediaOpenHistory =
+      $MediaOpenHistoryTable(this);
   late final $AnkiMappingsTable ankiMappings = $AnkiMappingsTable(this);
   late final $SearchHistoryItemsTable searchHistoryItems =
       $SearchHistoryItemsTable(this);
@@ -39190,7 +38696,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
   List<DatabaseSchemaEntity> get allSchemaEntities => [
-        mediaItems,
+        mediaOpenHistory,
         ankiMappings,
         searchHistoryItems,
         audiobooks,
@@ -39709,104 +39215,49 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       );
 }
 
-typedef $$MediaItemsTableCreateCompanionBuilder = MediaItemsCompanion Function({
-  Value<int> id,
-  required String mediaIdentifier,
-  required String title,
-  required String mediaTypeIdentifier,
-  required String mediaSourceIdentifier,
-  required String uniqueKey,
-  Value<String?> base64Image,
-  Value<String?> imageUrl,
-  Value<String?> audioUrl,
-  Value<String?> author,
-  Value<String?> authorIdentifier,
-  Value<String?> extraUrl,
-  Value<String?> extra,
-  Value<String?> sourceMetadata,
-  required int position,
-  required int duration,
-  required bool canDelete,
-  required bool canEdit,
-  Value<int> importedAt,
-});
-typedef $$MediaItemsTableUpdateCompanionBuilder = MediaItemsCompanion Function({
-  Value<int> id,
-  Value<String> mediaIdentifier,
-  Value<String> title,
-  Value<String> mediaTypeIdentifier,
-  Value<String> mediaSourceIdentifier,
-  Value<String> uniqueKey,
-  Value<String?> base64Image,
-  Value<String?> imageUrl,
-  Value<String?> audioUrl,
-  Value<String?> author,
-  Value<String?> authorIdentifier,
-  Value<String?> extraUrl,
-  Value<String?> extra,
-  Value<String?> sourceMetadata,
+typedef $$MediaOpenHistoryTableCreateCompanionBuilder
+    = MediaOpenHistoryCompanion Function({
+  required String mediaType,
+  required String mediaSource,
+  required String mediaId,
+  Value<int> openedAt,
   Value<int> position,
   Value<int> duration,
-  Value<bool> canDelete,
-  Value<bool> canEdit,
-  Value<int> importedAt,
+  Value<String> snapshotJson,
+  Value<int> rowid,
+});
+typedef $$MediaOpenHistoryTableUpdateCompanionBuilder
+    = MediaOpenHistoryCompanion Function({
+  Value<String> mediaType,
+  Value<String> mediaSource,
+  Value<String> mediaId,
+  Value<int> openedAt,
+  Value<int> position,
+  Value<int> duration,
+  Value<String> snapshotJson,
+  Value<int> rowid,
 });
 
-class $$MediaItemsTableFilterComposer
-    extends Composer<_$FushiDatabase, $MediaItemsTable> {
-  $$MediaItemsTableFilterComposer({
+class $$MediaOpenHistoryTableFilterComposer
+    extends Composer<_$FushiDatabase, $MediaOpenHistoryTable> {
+  $$MediaOpenHistoryTableFilterComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnFilters<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnFilters(column));
+  ColumnFilters<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get mediaIdentifier => $composableBuilder(
-      column: $table.mediaIdentifier,
-      builder: (column) => ColumnFilters(column));
+  ColumnFilters<String> get mediaSource => $composableBuilder(
+      column: $table.mediaSource, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get title => $composableBuilder(
-      column: $table.title, builder: (column) => ColumnFilters(column));
+  ColumnFilters<String> get mediaId => $composableBuilder(
+      column: $table.mediaId, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get mediaTypeIdentifier => $composableBuilder(
-      column: $table.mediaTypeIdentifier,
-      builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get mediaSourceIdentifier => $composableBuilder(
-      column: $table.mediaSourceIdentifier,
-      builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get uniqueKey => $composableBuilder(
-      column: $table.uniqueKey, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get base64Image => $composableBuilder(
-      column: $table.base64Image, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get imageUrl => $composableBuilder(
-      column: $table.imageUrl, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get audioUrl => $composableBuilder(
-      column: $table.audioUrl, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get author => $composableBuilder(
-      column: $table.author, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get authorIdentifier => $composableBuilder(
-      column: $table.authorIdentifier,
-      builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get extraUrl => $composableBuilder(
-      column: $table.extraUrl, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get extra => $composableBuilder(
-      column: $table.extra, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get sourceMetadata => $composableBuilder(
-      column: $table.sourceMetadata,
-      builder: (column) => ColumnFilters(column));
+  ColumnFilters<int> get openedAt => $composableBuilder(
+      column: $table.openedAt, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<int> get position => $composableBuilder(
       column: $table.position, builder: (column) => ColumnFilters(column));
@@ -39814,71 +39265,30 @@ class $$MediaItemsTableFilterComposer
   ColumnFilters<int> get duration => $composableBuilder(
       column: $table.duration, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<bool> get canDelete => $composableBuilder(
-      column: $table.canDelete, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<bool> get canEdit => $composableBuilder(
-      column: $table.canEdit, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<int> get importedAt => $composableBuilder(
-      column: $table.importedAt, builder: (column) => ColumnFilters(column));
+  ColumnFilters<String> get snapshotJson => $composableBuilder(
+      column: $table.snapshotJson, builder: (column) => ColumnFilters(column));
 }
 
-class $$MediaItemsTableOrderingComposer
-    extends Composer<_$FushiDatabase, $MediaItemsTable> {
-  $$MediaItemsTableOrderingComposer({
+class $$MediaOpenHistoryTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MediaOpenHistoryTable> {
+  $$MediaOpenHistoryTableOrderingComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnOrderings<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get mediaIdentifier => $composableBuilder(
-      column: $table.mediaIdentifier,
-      builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<String> get mediaSource => $composableBuilder(
+      column: $table.mediaSource, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get title => $composableBuilder(
-      column: $table.title, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<String> get mediaId => $composableBuilder(
+      column: $table.mediaId, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get mediaTypeIdentifier => $composableBuilder(
-      column: $table.mediaTypeIdentifier,
-      builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get mediaSourceIdentifier => $composableBuilder(
-      column: $table.mediaSourceIdentifier,
-      builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get uniqueKey => $composableBuilder(
-      column: $table.uniqueKey, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get base64Image => $composableBuilder(
-      column: $table.base64Image, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get imageUrl => $composableBuilder(
-      column: $table.imageUrl, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get audioUrl => $composableBuilder(
-      column: $table.audioUrl, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get author => $composableBuilder(
-      column: $table.author, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get authorIdentifier => $composableBuilder(
-      column: $table.authorIdentifier,
-      builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get extraUrl => $composableBuilder(
-      column: $table.extraUrl, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get extra => $composableBuilder(
-      column: $table.extra, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get sourceMetadata => $composableBuilder(
-      column: $table.sourceMetadata,
-      builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<int> get openedAt => $composableBuilder(
+      column: $table.openedAt, builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<int> get position => $composableBuilder(
       column: $table.position, builder: (column) => ColumnOrderings(column));
@@ -39886,66 +39296,31 @@ class $$MediaItemsTableOrderingComposer
   ColumnOrderings<int> get duration => $composableBuilder(
       column: $table.duration, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<bool> get canDelete => $composableBuilder(
-      column: $table.canDelete, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<bool> get canEdit => $composableBuilder(
-      column: $table.canEdit, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<int> get importedAt => $composableBuilder(
-      column: $table.importedAt, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<String> get snapshotJson => $composableBuilder(
+      column: $table.snapshotJson,
+      builder: (column) => ColumnOrderings(column));
 }
 
-class $$MediaItemsTableAnnotationComposer
-    extends Composer<_$FushiDatabase, $MediaItemsTable> {
-  $$MediaItemsTableAnnotationComposer({
+class $$MediaOpenHistoryTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MediaOpenHistoryTable> {
+  $$MediaOpenHistoryTableAnnotationComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  GeneratedColumn<int> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
+  GeneratedColumn<String> get mediaType =>
+      $composableBuilder(column: $table.mediaType, builder: (column) => column);
 
-  GeneratedColumn<String> get mediaIdentifier => $composableBuilder(
-      column: $table.mediaIdentifier, builder: (column) => column);
+  GeneratedColumn<String> get mediaSource => $composableBuilder(
+      column: $table.mediaSource, builder: (column) => column);
 
-  GeneratedColumn<String> get title =>
-      $composableBuilder(column: $table.title, builder: (column) => column);
+  GeneratedColumn<String> get mediaId =>
+      $composableBuilder(column: $table.mediaId, builder: (column) => column);
 
-  GeneratedColumn<String> get mediaTypeIdentifier => $composableBuilder(
-      column: $table.mediaTypeIdentifier, builder: (column) => column);
-
-  GeneratedColumn<String> get mediaSourceIdentifier => $composableBuilder(
-      column: $table.mediaSourceIdentifier, builder: (column) => column);
-
-  GeneratedColumn<String> get uniqueKey =>
-      $composableBuilder(column: $table.uniqueKey, builder: (column) => column);
-
-  GeneratedColumn<String> get base64Image => $composableBuilder(
-      column: $table.base64Image, builder: (column) => column);
-
-  GeneratedColumn<String> get imageUrl =>
-      $composableBuilder(column: $table.imageUrl, builder: (column) => column);
-
-  GeneratedColumn<String> get audioUrl =>
-      $composableBuilder(column: $table.audioUrl, builder: (column) => column);
-
-  GeneratedColumn<String> get author =>
-      $composableBuilder(column: $table.author, builder: (column) => column);
-
-  GeneratedColumn<String> get authorIdentifier => $composableBuilder(
-      column: $table.authorIdentifier, builder: (column) => column);
-
-  GeneratedColumn<String> get extraUrl =>
-      $composableBuilder(column: $table.extraUrl, builder: (column) => column);
-
-  GeneratedColumn<String> get extra =>
-      $composableBuilder(column: $table.extra, builder: (column) => column);
-
-  GeneratedColumn<String> get sourceMetadata => $composableBuilder(
-      column: $table.sourceMetadata, builder: (column) => column);
+  GeneratedColumn<int> get openedAt =>
+      $composableBuilder(column: $table.openedAt, builder: (column) => column);
 
   GeneratedColumn<int> get position =>
       $composableBuilder(column: $table.position, builder: (column) => column);
@@ -39953,124 +39328,76 @@ class $$MediaItemsTableAnnotationComposer
   GeneratedColumn<int> get duration =>
       $composableBuilder(column: $table.duration, builder: (column) => column);
 
-  GeneratedColumn<bool> get canDelete =>
-      $composableBuilder(column: $table.canDelete, builder: (column) => column);
-
-  GeneratedColumn<bool> get canEdit =>
-      $composableBuilder(column: $table.canEdit, builder: (column) => column);
-
-  GeneratedColumn<int> get importedAt => $composableBuilder(
-      column: $table.importedAt, builder: (column) => column);
+  GeneratedColumn<String> get snapshotJson => $composableBuilder(
+      column: $table.snapshotJson, builder: (column) => column);
 }
 
-class $$MediaItemsTableTableManager extends RootTableManager<
+class $$MediaOpenHistoryTableTableManager extends RootTableManager<
     _$FushiDatabase,
-    $MediaItemsTable,
-    MediaItemRow,
-    $$MediaItemsTableFilterComposer,
-    $$MediaItemsTableOrderingComposer,
-    $$MediaItemsTableAnnotationComposer,
-    $$MediaItemsTableCreateCompanionBuilder,
-    $$MediaItemsTableUpdateCompanionBuilder,
+    $MediaOpenHistoryTable,
+    MediaOpenHistoryRow,
+    $$MediaOpenHistoryTableFilterComposer,
+    $$MediaOpenHistoryTableOrderingComposer,
+    $$MediaOpenHistoryTableAnnotationComposer,
+    $$MediaOpenHistoryTableCreateCompanionBuilder,
+    $$MediaOpenHistoryTableUpdateCompanionBuilder,
     (
-      MediaItemRow,
-      BaseReferences<_$FushiDatabase, $MediaItemsTable, MediaItemRow>
+      MediaOpenHistoryRow,
+      BaseReferences<_$FushiDatabase, $MediaOpenHistoryTable,
+          MediaOpenHistoryRow>
     ),
-    MediaItemRow,
+    MediaOpenHistoryRow,
     PrefetchHooks Function()> {
-  $$MediaItemsTableTableManager(_$FushiDatabase db, $MediaItemsTable table)
+  $$MediaOpenHistoryTableTableManager(
+      _$FushiDatabase db, $MediaOpenHistoryTable table)
       : super(TableManagerState(
           db: db,
           table: table,
           createFilteringComposer: () =>
-              $$MediaItemsTableFilterComposer($db: db, $table: table),
+              $$MediaOpenHistoryTableFilterComposer($db: db, $table: table),
           createOrderingComposer: () =>
-              $$MediaItemsTableOrderingComposer($db: db, $table: table),
+              $$MediaOpenHistoryTableOrderingComposer($db: db, $table: table),
           createComputedFieldComposer: () =>
-              $$MediaItemsTableAnnotationComposer($db: db, $table: table),
+              $$MediaOpenHistoryTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
-            Value<int> id = const Value.absent(),
-            Value<String> mediaIdentifier = const Value.absent(),
-            Value<String> title = const Value.absent(),
-            Value<String> mediaTypeIdentifier = const Value.absent(),
-            Value<String> mediaSourceIdentifier = const Value.absent(),
-            Value<String> uniqueKey = const Value.absent(),
-            Value<String?> base64Image = const Value.absent(),
-            Value<String?> imageUrl = const Value.absent(),
-            Value<String?> audioUrl = const Value.absent(),
-            Value<String?> author = const Value.absent(),
-            Value<String?> authorIdentifier = const Value.absent(),
-            Value<String?> extraUrl = const Value.absent(),
-            Value<String?> extra = const Value.absent(),
-            Value<String?> sourceMetadata = const Value.absent(),
+            Value<String> mediaType = const Value.absent(),
+            Value<String> mediaSource = const Value.absent(),
+            Value<String> mediaId = const Value.absent(),
+            Value<int> openedAt = const Value.absent(),
             Value<int> position = const Value.absent(),
             Value<int> duration = const Value.absent(),
-            Value<bool> canDelete = const Value.absent(),
-            Value<bool> canEdit = const Value.absent(),
-            Value<int> importedAt = const Value.absent(),
+            Value<String> snapshotJson = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
           }) =>
-              MediaItemsCompanion(
-            id: id,
-            mediaIdentifier: mediaIdentifier,
-            title: title,
-            mediaTypeIdentifier: mediaTypeIdentifier,
-            mediaSourceIdentifier: mediaSourceIdentifier,
-            uniqueKey: uniqueKey,
-            base64Image: base64Image,
-            imageUrl: imageUrl,
-            audioUrl: audioUrl,
-            author: author,
-            authorIdentifier: authorIdentifier,
-            extraUrl: extraUrl,
-            extra: extra,
-            sourceMetadata: sourceMetadata,
+              MediaOpenHistoryCompanion(
+            mediaType: mediaType,
+            mediaSource: mediaSource,
+            mediaId: mediaId,
+            openedAt: openedAt,
             position: position,
             duration: duration,
-            canDelete: canDelete,
-            canEdit: canEdit,
-            importedAt: importedAt,
+            snapshotJson: snapshotJson,
+            rowid: rowid,
           ),
           createCompanionCallback: ({
-            Value<int> id = const Value.absent(),
-            required String mediaIdentifier,
-            required String title,
-            required String mediaTypeIdentifier,
-            required String mediaSourceIdentifier,
-            required String uniqueKey,
-            Value<String?> base64Image = const Value.absent(),
-            Value<String?> imageUrl = const Value.absent(),
-            Value<String?> audioUrl = const Value.absent(),
-            Value<String?> author = const Value.absent(),
-            Value<String?> authorIdentifier = const Value.absent(),
-            Value<String?> extraUrl = const Value.absent(),
-            Value<String?> extra = const Value.absent(),
-            Value<String?> sourceMetadata = const Value.absent(),
-            required int position,
-            required int duration,
-            required bool canDelete,
-            required bool canEdit,
-            Value<int> importedAt = const Value.absent(),
+            required String mediaType,
+            required String mediaSource,
+            required String mediaId,
+            Value<int> openedAt = const Value.absent(),
+            Value<int> position = const Value.absent(),
+            Value<int> duration = const Value.absent(),
+            Value<String> snapshotJson = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
           }) =>
-              MediaItemsCompanion.insert(
-            id: id,
-            mediaIdentifier: mediaIdentifier,
-            title: title,
-            mediaTypeIdentifier: mediaTypeIdentifier,
-            mediaSourceIdentifier: mediaSourceIdentifier,
-            uniqueKey: uniqueKey,
-            base64Image: base64Image,
-            imageUrl: imageUrl,
-            audioUrl: audioUrl,
-            author: author,
-            authorIdentifier: authorIdentifier,
-            extraUrl: extraUrl,
-            extra: extra,
-            sourceMetadata: sourceMetadata,
+              MediaOpenHistoryCompanion.insert(
+            mediaType: mediaType,
+            mediaSource: mediaSource,
+            mediaId: mediaId,
+            openedAt: openedAt,
             position: position,
             duration: duration,
-            canDelete: canDelete,
-            canEdit: canEdit,
-            importedAt: importedAt,
+            snapshotJson: snapshotJson,
+            rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
@@ -40079,20 +39406,21 @@ class $$MediaItemsTableTableManager extends RootTableManager<
         ));
 }
 
-typedef $$MediaItemsTableProcessedTableManager = ProcessedTableManager<
+typedef $$MediaOpenHistoryTableProcessedTableManager = ProcessedTableManager<
     _$FushiDatabase,
-    $MediaItemsTable,
-    MediaItemRow,
-    $$MediaItemsTableFilterComposer,
-    $$MediaItemsTableOrderingComposer,
-    $$MediaItemsTableAnnotationComposer,
-    $$MediaItemsTableCreateCompanionBuilder,
-    $$MediaItemsTableUpdateCompanionBuilder,
+    $MediaOpenHistoryTable,
+    MediaOpenHistoryRow,
+    $$MediaOpenHistoryTableFilterComposer,
+    $$MediaOpenHistoryTableOrderingComposer,
+    $$MediaOpenHistoryTableAnnotationComposer,
+    $$MediaOpenHistoryTableCreateCompanionBuilder,
+    $$MediaOpenHistoryTableUpdateCompanionBuilder,
     (
-      MediaItemRow,
-      BaseReferences<_$FushiDatabase, $MediaItemsTable, MediaItemRow>
+      MediaOpenHistoryRow,
+      BaseReferences<_$FushiDatabase, $MediaOpenHistoryTable,
+          MediaOpenHistoryRow>
     ),
-    MediaItemRow,
+    MediaOpenHistoryRow,
     PrefetchHooks Function()>;
 typedef $$AnkiMappingsTableCreateCompanionBuilder = AnkiMappingsCompanion
     Function({
@@ -68836,8 +68164,8 @@ typedef $$VideoDownloadSubscriptionItemsTableProcessedTableManager
 class $FushiDatabaseManager {
   final _$FushiDatabase _db;
   $FushiDatabaseManager(this._db);
-  $$MediaItemsTableTableManager get mediaItems =>
-      $$MediaItemsTableTableManager(_db, _db.mediaItems);
+  $$MediaOpenHistoryTableTableManager get mediaOpenHistory =>
+      $$MediaOpenHistoryTableTableManager(_db, _db.mediaOpenHistory);
   $$AnkiMappingsTableTableManager get ankiMappings =>
       $$AnkiMappingsTableTableManager(_db, _db.ankiMappings);
   $$SearchHistoryItemsTableTableManager get searchHistoryItems =>

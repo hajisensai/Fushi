@@ -105,8 +105,8 @@ void main() {
     );
     addTearDown(db.close);
 
-    expect(db.schemaVersion, 79);
-    expect(await _userVersion(db), 79);
+    expect(db.schemaVersion, 80);
+    expect(await _userVersion(db), 80);
 
     // v63 真跑了：两处废弃偏好都没了。
     expect(
@@ -168,7 +168,7 @@ void main() {
     );
     addTearDown(db.close);
 
-    expect(await _userVersion(db), 79);
+    expect(await _userVersion(db), 80);
     final Set<String> tables = await _tableNames(db);
     for (final String table in _mangaTables) {
       expect(tables, contains(table), reason: 'from=63 时 v65 必须仍然建表：缺 $table');
@@ -185,7 +185,7 @@ void main() {
     addTearDown(db.close);
 
     // 表已存在不能让 onUpgrade 抛异常——抛了 v63 的删除也会一起回滚。
-    expect(await _userVersion(db), 79);
+    expect(await _userVersion(db), 80);
     expect(
       await _countRows(
         db,
@@ -204,7 +204,7 @@ void main() {
     final FushiDatabase first = FushiDatabase.forTesting(
       NativeDatabase.memory(setup: _seedV62),
     );
-    expect(await _userVersion(first), 79);
+    expect(await _userVersion(first), 80);
     await first.close();
 
     // 同一份内存库不能跨实例复用，这里改用「第二次打开已是 v65 的形状」：
@@ -220,7 +220,7 @@ void main() {
       ),
     );
     addTearDown(second.close);
-    expect(await _userVersion(second), 79);
+    expect(await _userVersion(second), 80);
     expect(
       await _countRows(second, "SELECT 1 FROM preferences WHERE key = 'theme'"),
       1,

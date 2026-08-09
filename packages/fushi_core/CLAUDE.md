@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-共享核心模块：定义 Drift SQLite 数据库 schema（61 张表，当前 schemaVersion=77；以 `database.dart` 的 `schemaVersion` getter 与 `@DriftDatabase(tables: [...])` 注册清单为准，本文数字仅作快照）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
+共享核心模块：定义 Drift SQLite 数据库 schema（61 张表，当前 schemaVersion=78；以 `database.dart` 的 `schemaVersion` getter 与 `@DriftDatabase(tables: [...])` 注册清单为准，本文数字仅作快照）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
 
 ## 入口与启动
 
@@ -30,7 +30,7 @@
 
 | 分组 | 表名 |
 |------|------|
-| 媒体 | `MediaItems` |
+| 媒体 | `MediaOpenHistory`（v78 最近打开流，取代 jidoujisho 血统的 `MediaItems`） |
 | 来源库 | `MediaSources` |
 | Anki | `AnkiMappings` |
 | 搜索 | `SearchHistoryItems` |

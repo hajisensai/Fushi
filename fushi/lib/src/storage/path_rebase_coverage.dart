@@ -126,22 +126,17 @@ class PathRebasePref {
 /// 守卫双向比对：路径形列漏声明红、声明了但列已不存在也红。
 /// 按 tables.dart 出现顺序排列，便于人工对照。
 const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
-  // ── media_items（媒体历史）─────────────────────────────────────────
-  PathRebaseColumn('MediaItems', 'mediaSourceIdentifier',
-      PathRebaseKind.notAPath, '媒体源标识（MediaSource.uniqueKey），不是路径。'),
+  // ── media_open_history（v80 最近打开流，取代 media_items）──────────
+  PathRebaseColumn('MediaOpenHistory', 'mediaSource', PathRebaseKind.notAPath,
+      '媒体源标识（MediaSource.uniqueKey），不是路径。'),
   PathRebaseColumn(
-      'MediaItems',
-      'imageUrl',
+      'MediaOpenHistory',
+      'snapshotJson',
       PathRebaseKind.documentsRooted,
-      '本地书封面存 file://<绝对路径> URI（reader_fushi_source.dart 的 '
-          'Uri.file(candidate)，候选全在 <documents>/fushi_books 下；SRT 书同款）。'
-          '远端源存 http(s) URL，scheme 非 file 时改写器原样跳过。'),
-  PathRebaseColumn('MediaItems', 'audioUrl', PathRebaseKind.notAPath,
-      '历史 MediaItem 的远端音频 URL 字段；生产代码无写入点（jidoujisho 血统遗留）。'),
-  PathRebaseColumn('MediaItems', 'extraUrl', PathRebaseKind.notAPath,
-      '同 audioUrl：生产代码无写入点，只被历史仓库原样搬运。'),
-  PathRebaseColumn('MediaItems', 'sourceMetadata', PathRebaseKind.notAPath,
-      '每章字符数 JSON（jsonEncode(sectionChars)），无路径。'),
+      '展示/重开载荷 JSON；其中 imageUrl 键可能是本地书封面的 '
+          'file://<绝对路径> URI（候选全在 <documents>/fushi_books 下），由 '
+          '_rebaseMediaOpenHistory 逐行解码改写；其余键（audioUrl/extraUrl 等）为远端 '
+          'URL 或无路径数据，scheme 非 file 时改写器原样跳过。'),
 
   // ── anki_mappings ─────────────────────────────────────────────────
   PathRebaseColumn('AnkiMappings', 'exportFieldKeysJson',

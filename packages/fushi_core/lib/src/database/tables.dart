@@ -1,27 +1,41 @@
 import 'package:drift/drift.dart';
 
-// ── media_items ─────────────────────────────────────────────────────
-@DataClassName('MediaItemRow')
-class MediaItems extends Table {
-  IntColumn get id => integer().autoIncrement()();
-  TextColumn get mediaIdentifier => text()();
-  TextColumn get title => text()();
-  TextColumn get mediaTypeIdentifier => text()();
-  TextColumn get mediaSourceIdentifier => text()();
-  TextColumn get uniqueKey => text().unique()();
-  TextColumn get base64Image => text().nullable()();
-  TextColumn get imageUrl => text().nullable()();
-  TextColumn get audioUrl => text().nullable()();
-  TextColumn get author => text().nullable()();
-  TextColumn get authorIdentifier => text().nullable()();
-  TextColumn get extraUrl => text().nullable()();
-  TextColumn get extra => text().nullable()();
-  TextColumn get sourceMetadata => text().nullable()();
-  IntColumn get position => integer()();
-  IntColumn get duration => integer()();
-  BoolColumn get canDelete => boolean()();
-  BoolColumn get canEdit => boolean()();
-  IntColumn get importedAt => integer().withDefault(const Constant(0))();
+// ── media_open_history（v80：取代 jidoujisho 血统的 media_items） ────
+/// 「最近打开流」：一行 = 一个媒体条目最近一次被打开的事实。旧 media_items 把
+/// 身份（uniqueKey/mediaIdentifier 双轨）、展示快照（title/author/**base64 图片
+/// 进 SQLite 行**）、播放状态（position/duration）、UI 能力位（canDelete/canEdit）
+/// 四种东西摊成 19 列；本表只留身份 + 时刻 + 排序/换算要用的两个进度数，其余
+/// 全部收进 [snapshotJson]（重开外部媒体的必要载荷——在线漫画/网页/流媒体没有
+/// 库表行可 join，title/封面/源参数只能随历史行走；库内媒体的快照只是打开当时
+/// 的展示缓存，真相仍在专表）。
+///
+/// 主键 (mediaSource, mediaId) 与旧 uniqueKey（'$source/$id'）同构，去掉自增
+/// id 与派生列。UI 能力位回归运行时按 source 推导，不再持久化。新写入不再产生
+/// base64 图片（无活写入方）；v80 前遗留的 base64 随 snapshot 平移，随行被
+/// trim 自然消亡。
+@DataClassName('MediaOpenHistoryRow')
+class MediaOpenHistory extends Table {
+  /// 媒体类型 key（冻结值域 = 旧 mediaTypeIdentifier：'reader' / 'player' / …）。
+  TextColumn get mediaType => text()();
+
+  /// 媒体源 key（旧 mediaSourceIdentifier）。
+  TextColumn get mediaSource => text()();
+
+  /// 源内身份（旧 mediaIdentifier：库内 = bookKey 派生 URI，外部 = URL）。
+  TextColumn get mediaId => text()();
+
+  /// 最后打开毫秒戳（排序与 trim 的键；旧 imported_at 平移）。
+  IntColumn get openedAt => integer().withDefault(const Constant(0))();
+
+  /// 进度两数（互联 host 的百分比换算要在 SQL 面上可用，故留列不进 JSON）。
+  IntColumn get position => integer().withDefault(const Constant(0))();
+  IntColumn get duration => integer().withDefault(const Constant(0))();
+
+  /// 其余展示/重开载荷（MediaItem.toJson 去掉列化字段后的 JSON）。
+  TextColumn get snapshotJson => text().withDefault(const Constant('{}'))();
+
+  @override
+  Set<Column> get primaryKey => {mediaSource, mediaId};
 }
 
 // ── anki_mappings ──────────────────────────────────────────────────

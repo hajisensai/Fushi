@@ -123,24 +123,16 @@ void main() {
       );
     });
 
-    test('deleteMediaItemById removes by id', () async {
+    test('deleteMediaItemById removes by uniqueKey (v80：无自增 id)', () async {
       repo.addMediaItem(_item());
       await _settle();
       final item = repo.mediaItems.first;
-      expect(item.id, isNotNull);
       await repo.deleteMediaItemById(item);
       expect(repo.mediaItems, isEmpty);
-    });
 
-    test('deleteMediaItemById with null id only clears cache', () async {
-      final item = _item();
-      expect(item.id, isNull);
-      repo.addMediaItem(item);
-      await repo.deleteMediaItemById(item);
-      expect(
-        repo.mediaItems.where((m) => m.id == null),
-        isEmpty,
-      );
+      final repo2 = MediaHistoryRepository(db);
+      await repo2.loadFromDb();
+      expect(repo2.mediaItems, isEmpty, reason: 'DB 行也删了');
     });
   });
 
@@ -381,8 +373,10 @@ void main() {
       expect(loaded.mediaSourceIdentifier, 'hoshi');
       expect(loaded.position, 42);
       expect(loaded.duration, 999);
+      // v78：能力位不再持久化，读取端按 source 语义推导（历史条目恒可删、
+      // 不可编辑）。
       expect(loaded.canDelete, true);
-      expect(loaded.canEdit, true);
+      expect(loaded.canEdit, false);
       expect(loaded.base64Image, 'abc123');
       expect(loaded.imageUrl, 'https://img.example.com/cover.jpg');
       expect(loaded.audioUrl, 'https://audio.example.com/track.mp3');
