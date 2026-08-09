@@ -290,19 +290,7 @@ void GlobalLookupWindow::ForwardGlobalWheelToHost(
 GlobalLookupWindow::GlobalLookupWindow() = default;
 
 GlobalLookupWindow::~GlobalLookupWindow() {
-  if (foreground_hook_ != nullptr) {
-    UnhookWinEvent(foreground_hook_);
-    foreground_hook_ = nullptr;
-  }
-  if (mouse_hook_armed_) {
-    fushi::DisarmLowLevelMouseHook();
-    mouse_hook_armed_ = false;
-  }
-  // Only clear the hook owner if it is ours (two instances share the static;
-  // see Hide()).
-  if (s_hook_owner_ == this) {
-    s_hook_owner_ = nullptr;
-  }
+  ReleaseDismissHooks();
   if (controller_) {
     controller_->Close();
   }
@@ -360,10 +348,31 @@ bool GlobalLookupWindow::OwnsLiveWindow() const {
              GetWindowLongPtr(hwnd_, GWLP_USERDATA)) == this;
 }
 
+void GlobalLookupWindow::ReleaseDismissHooks() {
+  if (foreground_hook_ != nullptr) {
+    UnhookWinEvent(foreground_hook_);
+    foreground_hook_ = nullptr;
+  }
+  if (mouse_hook_armed_) {
+    fushi::DisarmLowLevelMouseHook();
+    mouse_hook_armed_ = false;
+  }
+  // spec 2026-07-10 — only clear the hook owner if it is OURS: the persistent
+  // clipboard panel never arms the hooks, and its Hide() must not disarm the
+  // transient lookup overlay's live click-outside callbacks.
+  if (s_hook_owner_ == this) {
+    s_hook_owner_ = nullptr;
+  }
+}
+
 void GlobalLookupWindow::ForgetDeadWindow() {
   if (hwnd_ == nullptr || OwnsLiveWindow()) {
     return;
   }
+  // BUG-1471: the hooks were armed against this now-dead HWND. Releasing them
+  // here is what keeps arm/disarm balanced across the crash path — otherwise
+  // the mouse hook's liveness timer re-arms a dead pass-through hook forever.
+  ReleaseDismissHooks();
   // The HWND was destroyed out from under us (WebView2 runtime crash/update,
   // owner teardown, or any external DestroyWindow) yet hwnd_ stayed non-null,
   // so every later ShowAt took the SetWindowPos(else) branch against a corpse
@@ -821,20 +830,7 @@ void GlobalLookupWindow::Hide(bool notify) {
   // cascade and re-posts fresh rects (the host resets its de-dup key in
   // beginLookup), so a stale region can never clip the next card.
   shell_rects_css_.clear();
-  if (foreground_hook_ != nullptr) {
-    UnhookWinEvent(foreground_hook_);
-    foreground_hook_ = nullptr;
-  }
-  if (mouse_hook_armed_) {
-    fushi::DisarmLowLevelMouseHook();
-    mouse_hook_armed_ = false;
-  }
-  // spec 2026-07-10 — only clear the hook owner if it is OURS: the persistent
-  // clipboard panel never arms the hooks, and its Hide() must not disarm the
-  // transient lookup overlay's live click-outside callbacks.
-  if (s_hook_owner_ == this) {
-    s_hook_owner_ = nullptr;
-  }
+  ReleaseDismissHooks();
   if (hwnd_ != nullptr) {
     ShowWindow(hwnd_, SW_HIDE);
   }

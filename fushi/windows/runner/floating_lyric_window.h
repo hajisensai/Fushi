@@ -259,6 +259,20 @@ class FloatingLyricWindow {
   // that window cannot be created the body stays interactive and pass_through_
   // is dropped back to false — better to ignore the toggle than to strand the
   // user behind an overlay they can no longer click.
+  // Drop any in-flight left-button gesture and hand mouse capture back.
+  //
+  // BUG-1471: `pressed_` / `dragging_` / `press_was_text_` are one transaction,
+  // and WM_LBUTTONUP is NOT its only terminator. This body is a background
+  // thread window created WS_EX_NOACTIVATE, so the moment the foreground window
+  // changes (the game taking focus back, a modal it pops, an alt-tab) the system
+  // revokes our capture and the button-up is delivered somewhere else, or not at
+  // all. Every terminator must therefore route through this one function --
+  // three sites each clearing half the state is exactly how `pressed_` got stuck
+  // true forever, which silently kills hover lookup (see MaybeHoverLookup) and
+  // turns the next click into a phantom drag. Idempotent on purpose: it is also
+  // called from the WM_CAPTURECHANGED we raise ourselves on a normal button-up.
+  void CancelPointerGesture();
+
   void ApplyPassThroughExStyle();
   // Adds / removes WS_EX_TRANSPARENT on the body window. Called ONLY from
   // ApplyPassThroughExStyle (see the guard test).

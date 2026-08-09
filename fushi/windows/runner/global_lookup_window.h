@@ -257,6 +257,17 @@ class GlobalLookupWindow {
   // WebView2 proxies so the next ShowAt/PrewarmWebView rebuilds from scratch.
   bool OwnsLiveWindow() const;
   void ForgetDeadWindow();
+
+  // Tear down the dismissal hooks (foreground WinEvent + low-level mouse) and
+  // give up hook ownership if it is ours.
+  //
+  // BUG-1471: arming happens in Reveal()/RevealStack(), but disarming used to
+  // live only in Hide() and the destructor. ForgetDeadWindow() — the path taken
+  // when the HWND is destroyed under us — dropped every other resource and left
+  // these armed, pointing at a dead HWND. The low-level mouse hook has a 1s
+  // liveness re-arm timer, so that leak does not decay: it keeps a pure
+  // pass-through hook alive on the chain forever. One funnel, two callers.
+  void ReleaseDismissHooks();
   // 防截屏 — 把 block_capture_ 应用到当前 hwnd_（SetWindowDisplayAffinity）。
   // 每次 CreateWindowExW 之后调用一次，故窗口重建（ForgetDeadWindow / 崩溃恢复）
   // 后依然按最后一次 SetBlockCapture 的值生效。No-op before the window exists.

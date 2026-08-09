@@ -352,11 +352,24 @@ bool FloatingLyricWindow::Show(HWND owner) {
   return true;
 }
 
+void FloatingLyricWindow::CancelPointerGesture() {
+  pressed_ = false;
+  dragging_ = false;
+  press_was_text_ = false;
+  if (hwnd_ != nullptr && GetCapture() == hwnd_) {
+    ReleaseCapture();
+  }
+}
+
 void FloatingLyricWindow::Hide() {
   visible_ = false;
   hovered_ = false;
   tracking_mouse_leave_ = false;
-  dragging_ = false;
+  // BUG-1471: a hidden window never receives the WM_LBUTTONUP that would end an
+  // in-flight press. Clearing only `dragging_` here left `pressed_` stuck true
+  // across the hide, and MaybeHoverLookup bails on `pressed_` -- hover lookup
+  // then stayed dead for the rest of the session while the text kept updating.
+  CancelPointerGesture();
   // 隐藏后收不到 WM_MOUSELEAVE：定时器留着就是后台空转。
   StopHoverLookupPolling();
   ResetHoverLookupAnchor();
@@ -537,11 +550,7 @@ void FloatingLyricWindow::SetLocked(bool locked) {
   // a half-dragging state; drop any in-flight gesture so the next click is
   // interpreted fresh.
   if (locked_ && (pressed_ || dragging_)) {
-    pressed_ = false;
-    dragging_ = false;
-    if (GetCapture() == hwnd_) {
-      ReleaseCapture();
-    }
+    CancelPointerGesture();
   }
   RequestRender();
 }
@@ -551,11 +560,7 @@ void FloatingLyricWindow::SetPassThrough(bool enabled) {
     return;
   }
   pass_through_ = enabled;
-  pressed_ = false;
-  dragging_ = false;
-  if (GetCapture() == hwnd_) {
-    ReleaseCapture();
-  }
+  CancelPointerGesture();
   // A click-through body receives no mouse messages at all, so it will never
   // see the WM_MOUSELEAVE that would normally clear the hover state. Clear it
   // here or the body would render its hovered appearance forever.
@@ -904,17 +909,21 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       SetCapture(hwnd_);
       return 0;
     }
+    // BUG-1471: the system took our capture away (foreground window changed —
+    // the game grabbing focus back is a per-session event for a WS_EX_NOACTIVATE
+    // background-thread window). The button-up for this press will never arrive,
+    // so end the gesture here or `pressed_` stays true forever and hover lookup
+    // goes silent for the rest of the session while the text keeps updating.
+    case WM_CAPTURECHANGED: {
+      CancelPointerGesture();
+      return 0;
+    }
     case WM_LBUTTONUP: {
       const bool was_dragging = dragging_;
       const bool was_pressed = pressed_;
       const bool was_text = press_was_text_;
       const POINT lookup_pt = press_client_;
-      dragging_ = false;
-      pressed_ = false;
-      press_was_text_ = false;
-      if (GetCapture() == hwnd_) {
-        ReleaseCapture();
-      }
+      CancelPointerGesture();
       POINT cursor;
       if (GetCursorPos(&cursor)) {
         RECT rc;
@@ -1609,8 +1618,9 @@ void FloatingLyricWindow::DispatchControlAction(const std::string& action) {
     // state to Dart; it is never a no-op (unlike the old desktop strip).
     locked_ = !locked_;
     if (locked_ && (pressed_ || dragging_)) {
-      pressed_ = false;
-      dragging_ = false;
+      // BUG-1471: this used to clear the flags without releasing capture, while
+      // the channel path (SetLocked) released it — same action, two behaviours.
+      CancelPointerGesture();
     }
     if (on_lock_) {
       on_lock_(locked_);

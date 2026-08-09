@@ -174,6 +174,11 @@ class HookToolbarWindow {
   // past the threshold, so a still press on the background is not a 1px drag.
   bool pressed_ = false;
   bool dragging_ = false;
+
+  // BUG-1471: same one-transaction rule as FloatingLyricWindow -- WM_LBUTTONUP
+  // is not the only terminator, the system revokes capture whenever the
+  // foreground window changes underneath this WS_EX_NOACTIVATE window.
+  void CancelPointerGesture();
   POINT press_origin_ = {0, 0};   // screen point where the press began
   POINT owner_drag_anchor_ = {0, 0};  // cursor offset inside the OWNER rect
 
