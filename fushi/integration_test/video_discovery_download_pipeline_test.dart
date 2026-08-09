@@ -31,7 +31,7 @@ const VideoDownloadBackendIdentity _backendIdentity =
   kind: 'embedded',
   profileId: 'embedded',
   fingerprint: 'integration-installation',
-  category: 'hibiki-video',
+  category: 'fushi-video',
 );
 
 void main() {
@@ -42,7 +42,7 @@ void main() {
 void registerVideoDiscoveryDownloadPipelineTests() {
   test('发现资源完整进入下载、整理、字幕、导入和精确刮削闭环', () async {
     final Directory sandbox =
-        await Directory.systemTemp.createTemp('hibiki-video-pipeline-itest-');
+        await Directory.systemTemp.createTemp('fushi-video-pipeline-itest-');
     final Directory incoming = Directory(p.join(sandbox.path, 'incoming'));
     final Directory library = Directory(p.join(sandbox.path, 'library'));
     await incoming.create(recursive: true);

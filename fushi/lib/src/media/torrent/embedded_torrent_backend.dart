@@ -126,7 +126,7 @@ class EmbeddedTorrentBackend
     try {
       final Directory root = _metainfoTempDirectory ?? Directory.systemTemp;
       await root.create(recursive: true);
-      temporaryDirectory = await root.createTemp('hibiki-metainfo-');
+      temporaryDirectory = await root.createTemp('fushi-metainfo-');
       final String fileName = _safeMetainfoFileName(payload.fileName);
       final File file =
           File('${temporaryDirectory.path}${Platform.pathSeparator}$fileName');

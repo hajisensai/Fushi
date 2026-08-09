@@ -28,7 +28,7 @@ VideoDownloadSubscriptionRow _subscription({
       backendKind: 'embedded',
       backendProfileId: null,
       fingerprint: 'embedded-test',
-      category: 'hibiki-video',
+      category: 'fushi-video',
       targetSourceId: null,
       collectionId: null,
       organizationPolicy: 'library',

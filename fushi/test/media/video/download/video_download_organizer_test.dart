@@ -28,7 +28,7 @@ void main() {
   test('episodic organizer uses managed naming and backend-only mutation',
       () async {
     final Directory root = await Directory.systemTemp.createTemp(
-      'hibiki-organizer-',
+      'fushi-organizer-',
     );
     addTearDown(() async {
       if (await root.exists()) await root.delete(recursive: true);
@@ -78,7 +78,7 @@ void main() {
   test('movie organizer chooses the largest video and keeps extras distinct',
       () async {
     final Directory root = await Directory.systemTemp.createTemp(
-      'hibiki-organizer-movie-',
+      'fushi-organizer-movie-',
     );
     addTearDown(() async {
       if (await root.exists()) await root.delete(recursive: true);
@@ -124,7 +124,7 @@ void main() {
   test('unparseable episodic filename blocks before backend mutation',
       () async {
     final Directory root = await Directory.systemTemp.createTemp(
-      'hibiki-organizer-block-',
+      'fushi-organizer-block-',
     );
     addTearDown(() async {
       if (await root.exists()) await root.delete(recursive: true);

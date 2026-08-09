@@ -29,7 +29,7 @@ const VideoDownloadBackendIdentity _expectedIdentity =
   kind: 'embedded',
   profileId: 'embedded',
   fingerprint: 'installation-fingerprint',
-  category: 'hibiki-video',
+  category: 'fushi-video',
 );
 
 void main() {
@@ -156,7 +156,7 @@ void main() {
         kind: 'embedded',
         profileId: 'embedded',
         fingerprint: 'different-installation',
-        category: 'hibiki-video',
+        category: 'fushi-video',
       ),
     ),
     (
@@ -227,7 +227,7 @@ void main() {
                   kind: 'embedded',
                   profileId: 'embedded',
                   fingerprint: 'changed-after-download',
-                  category: 'hibiki-video',
+                  category: 'fushi-video',
                 ),
         );
       },
@@ -806,7 +806,7 @@ void main() {
         season: const Value<int?>(1),
         episode: const Value<int?>(2),
         originalFileName: const Value<String?>('Show.zh.srt'),
-        stagedPath: Value<String?>('${installed.path}.$jobId.hibiki.tmp'),
+        stagedPath: Value<String?>('${installed.path}.$jobId.fushi.tmp'),
         finalPath: Value<String?>(installed.path),
         status: const Value<String>(
           VideoDownloadJobSubtitleStatus.resolving,
@@ -959,7 +959,7 @@ void main() {
           kind: 'embedded',
           profileId: 'embedded',
           fingerprint: 'another-installation',
-          category: 'hibiki-video',
+          category: 'fushi-video',
         ),
       ),
     );
@@ -1069,7 +1069,7 @@ class _PipelineEnvironment {
     final FushiDatabase database =
         FushiDatabase.forTesting(NativeDatabase.memory());
     final Directory root =
-        await Directory.systemTemp.createTemp('hibiki-pipeline-service-');
+        await Directory.systemTemp.createTemp('fushi-pipeline-service-');
     final int sourceId = await database.insertMediaSource(
       MediaSourcesCompanion.insert(
         label: 'Managed videos',

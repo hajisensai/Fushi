@@ -328,7 +328,7 @@ Future<String> installDiscoverySubtitle({
     final File temporary = File(
       p.join(
         directory.path,
-        '.$leaf.hibiki-${Random.secure().nextInt(0x7fffffff).toRadixString(16)}.tmp',
+        '.$leaf.fushi-${Random.secure().nextInt(0x7fffffff).toRadixString(16)}.tmp',
       ),
     );
     await temporary.create(exclusive: true);

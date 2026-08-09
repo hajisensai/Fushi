@@ -1135,7 +1135,7 @@ class VideoDownloadPipelineService {
           '${p.basenameWithoutExtension(video.path)}.$language$extension',
         );
         final int now = DateTime.now().millisecondsSinceEpoch;
-        final String initialTempPath = '$initialTarget.${job.jobId}.hibiki.tmp';
+        final String initialTempPath = '$initialTarget.${job.jobId}.fushi.tmp';
         // Persist the selected remote identity before downloading its temporary
         // payload. OpenSubtitles/Jimaku URLs themselves are never persisted.
         await database.upsertVideoDownloadJobSubtitle(
@@ -1165,7 +1165,7 @@ class VideoDownloadPipelineService {
           bytes: download.bytes,
           initialTarget: initialTarget,
         );
-        final String tempPath = '$selectedTarget.${job.jobId}.hibiki.tmp';
+        final String tempPath = '$selectedTarget.${job.jobId}.fushi.tmp';
         // The exact conflict-free destination is another durable intent. If
         // the process exits after rename but before `placed`, the next run
         // downloads the same selected item, verifies content at this path and
@@ -1492,7 +1492,7 @@ class VideoDownloadPipelineService {
       final String stem = p.basenameWithoutExtension(initialTarget);
       target = p.join(
         p.dirname(initialTarget),
-        '$stem.hibiki${suffix + 1}$extension',
+        '$stem.fushi${suffix + 1}$extension',
       );
     }
     throw const VideoDownloadPipelineActionRequired(

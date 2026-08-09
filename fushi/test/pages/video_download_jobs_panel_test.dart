@@ -47,7 +47,7 @@ VideoDownloadJobRow _job({
       backendTaskId: null,
       backendProfileId: 'default',
       fingerprint: 'embedded-test',
-      category: 'hibiki-video',
+      category: 'fushi-video',
       targetSourceId: null,
       collectionId: null,
       organizationPolicy: 'library',

@@ -3,7 +3,7 @@ import 'package:fushi_core/fushi_core.dart'
     show FushiDatabase, VideoDownloadJobLifecycle, VideoDownloadJobRow;
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/components/hibiki_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 typedef VideoDownloadJobAction = Future<void> Function(
   VideoDownloadJobRow job,
