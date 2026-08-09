@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1364 条。点号进各自文件。
+> 共 1365 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1469](bugs/BUG-1469-video-resource-dropdown-overflow.md) | ✅ | ✅ | 资源搜索对话框下拉框横向溢出 |
 | [BUG-1468](bugs/BUG-1468-video-home-card-footer-spacing.md) | ✅ | ✅ | 视频主页卡片底部信息留白过多 |
 | [BUG-1467](bugs/BUG-1467-video-home-badge-semantics.md) | ✅ | ✅ | 视频主页角标语义不一致 |
 | [BUG-1466](bugs/BUG-1466-re-zero-metadata-match.md) | ✅ | ✅ | Re Zero 罗马字标题无法通过 TMDB 严格识别 |
