@@ -311,7 +311,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       _popup.fillResult(
         item,
         result: dictionaryResult,
-        allLoaded: dictionaryResult.entries.length < overrideMaximumTerms,
+        allLoaded: !dictionaryResult.truncated,
       );
 
       // TODO-058 / BUG-480：嵌套冷层继续挂起到 popupRendered；复用热槽也不能裸奔
@@ -387,7 +387,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       _popup.fillResult(
         entry,
         result: result,
-        allLoaded: result.entries.length < newMax,
+        allLoaded: !result.truncated,
       );
     } finally {
       // fillResult 成功路径已把 isSearching 清 false；失败/提前 return 在此兜底复位。

@@ -916,7 +916,7 @@ mixin DictionaryPageMixin {
           controller.fillResult(
             entry,
             result: result,
-            allLoaded: result.entries.length < maxTerms,
+            allLoaded: !result.truncated,
           );
           // TODO-058 / BUG-480：真实空结果走 Flutter 占位，可立即显示；有词条/汉字卡
           // 的结果必须等当前 WebView render 信号，哪怕复用 warm slot。macOS 隐藏
@@ -1009,7 +1009,7 @@ mixin DictionaryPageMixin {
         setState(() => controller.fillResult(
               entry,
               result: result,
-              allLoaded: result.entries.length < newMax,
+              allLoaded: !result.truncated,
             ));
       }
     } finally {

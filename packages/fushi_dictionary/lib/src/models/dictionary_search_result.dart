@@ -11,6 +11,7 @@ class DictionarySearchResult {
     return DictionarySearchResult(
       searchTerm: map['searchTerm'] as String,
       bestLength: map['bestLength'] as int? ?? 0,
+      truncated: map['truncated'] as bool? ?? false,
       scrollPosition: map['scrollPosition'] as int? ?? 0,
       entries: entriesJson.map(DictionaryEntry.fromJson).toList(),
       kanjiResults: kanjiJson
@@ -25,12 +26,21 @@ class DictionarySearchResult {
     this.bestLength = 0,
     this.scrollPosition = 0,
     this.kanjiResults = const [],
+    this.truncated = false,
   });
 
   final String searchTerm;
   final List<DictionaryEntry> entries;
   final int bestLength;
   int scrollPosition;
+
+  /// 本次结果是否因 `maximumTerms` 被截断（还有更多词头没返回）。
+  ///
+  /// BUG-1472：以前消费方靠 `entries.length < maximumTerms` **反推**有没有被截断。
+  /// 那个反推在预算单位 = glossary 注释行时勉强成立，改成按词头计预算后就彻底错位
+  /// （一个词头能带 N 条 entries，两个数字不再可比）。截断是构造结果的人才知道的
+  /// 事实，让它显式带出来，消费方不再猜。
+  final bool truncated;
 
   /// Per-character kanji dictionary results for a single-character lookup
   /// (onyomi / kunyomi / radical / strokes / meanings). Empty for multi-char
@@ -52,6 +62,7 @@ class DictionarySearchResult {
       bestLength: bestLength,
       scrollPosition: scrollPosition,
       kanjiResults: kanji,
+      truncated: truncated,
     );
     copy.popupJson = popupJson;
     return copy;
@@ -61,6 +72,7 @@ class DictionarySearchResult {
     return jsonEncode({
       'searchTerm': searchTerm,
       'bestLength': bestLength,
+      'truncated': truncated,
       'scrollPosition': scrollPosition,
       'entries': entries.map((e) => e.toJson()).toList(),
       'kanjiResults': kanjiResults.map((k) => k.toMap()).toList(),

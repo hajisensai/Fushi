@@ -113,12 +113,21 @@ void main() {
 
     test('每个 term 至少一条 glossary ⇒ N 个结果必凑够 N 条词头预算', () {
       // 这是「上限可以从结果数降到词头数」的核心前提：预算先于结果数耗尽。
+      //
+      // BUG-1472 后断言的单位改回**词头**。fixture 每个词头带 2 本词典的注释，
+      // 旧断言 `entries.length == 10` 其实是在断言 5 个词头——正是那条 bug 的本体
+      // （引擎按词头发 10 条，Dart 只消费得下 5 条，另 5 条白解压且用户看不到）。
+      // 现在 10 个结果 ↔ 10 条词头预算恰好对齐，BUG-1307 的前提比以前更紧。
       final DictionarySearchResult r = buildResultFromLookup(
         searchTerm: '図書館',
         results: engineResults(count: 10),
         maximumTerms: 10,
       );
-      expect(r.entries.length, 10);
+      final Set<String> headwords = r.entries
+          .map((DictionaryEntry e) => '${e.word}\n${e.reading}')
+          .toSet();
+      expect(headwords.length, 10);
+      expect(r.truncated, isFalse);
     });
   });
 

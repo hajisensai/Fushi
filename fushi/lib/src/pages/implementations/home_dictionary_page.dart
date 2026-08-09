@@ -723,7 +723,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       }
 
       _result = result;
-      _allLoaded = result.entries.length < overrideMaximumTerms;
+      _allLoaded = !result.truncated;
 
       if (writeHistory) {
         _historyWritten = true;
