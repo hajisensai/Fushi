@@ -20,6 +20,7 @@ import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_hook_code_profile.dart';
+import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
@@ -840,6 +841,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         workdir: known?.workdir ?? '',
         gameId: known?.id,
         gameTitle: known?.displayName,
+        // 库里没有这个 exe（临时选的文件）→ auto，与旧行为等价。
+        japaneseLocaleMode:
+            galJapaneseLocaleModeFromKey(known?.japaneseLocaleMode),
       );
       if (!mounted) return;
       // 与游戏库页共用同一条结果播报（BUG-1089）。旧实现在这里自己判 `boundWindow`

@@ -126,8 +126,8 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 74);
-    expect(db.schemaVersion, 74);
+    expect(version.read<int>('user_version'), 75);
+    expect(db.schemaVersion, 75);
 
     final List<QueryRow> preferences = await db
         .customSelect(
@@ -193,6 +193,23 @@ void main() {
     //     自己仍然一张表都不许建。
     final Map<String, String> schemaAfter = await _tableSqlFromDrift(db);
     for (final MapEntry<String, String> entry in schemaBefore.entries) {
+      if (entry.key == 'galgames') {
+        // v75（BUG-1477）在同一条阶梯上给 galgames **合法地** ADD COLUMN
+        // japanese_locale_mode。这里不能因此放弃比对——判据改成「把那一列的片段
+        // 摘掉之后必须与 v62 形状逐字节相同」，这样既容下这一次加列，又仍然钉死
+        // 「v63 不得 ALTER/DROP/rebuild、不得偷改任何其它列」。
+        final String after = schemaAfter[entry.key] ?? '';
+        expect(after, contains('japanese_locale_mode'),
+            reason: 'v75 必须给 galgames 加出该列');
+        final String stripped = after.replaceAll(
+          RegExp(r',\s*"?japanese_locale_mode"?[^,)]*'),
+          '',
+        );
+        expect(stripped, entry.value,
+            reason: '除 v75 那一列外，galgames 的形状必须逐字节不变'
+                '（v63 只能删行，不得 ALTER/DROP/rebuild）');
+        continue;
+      }
       expect(schemaAfter[entry.key], entry.value,
           reason: 'v63 只能删行，不得 ALTER/DROP/rebuild 既有表 ${entry.key}');
     }
@@ -227,7 +244,7 @@ void main() {
     expect(await db.getPref('theme'), 's:dark');
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 74);
+    expect(version.read<int>('user_version'), 75);
   });
 
   test(
@@ -258,7 +275,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 74);
+      expect(probe.select('PRAGMA user_version').first.values.first, 75);
       expect(
         probe.select(
           'SELECT 1 FROM profile_settings '

@@ -3154,5 +3154,10 @@
   "migration_uninstall_prompt": "迁移完成。卸载旧版 Hibiki？",
   "migration_uninstall_button": "卸载 Hibiki",
   "migration_uninstall_still_installed": "旧版 Hibiki 仍安装在设备上，可随时卸载。",
-  "game_line_copy_tooltip": "复制句子"
+  "game_line_copy_tooltip": "复制句子",
+  "game_japanese_locale_auto": "自动",
+  "game_japanese_locale_on": "始终开启",
+  "game_japanese_locale_off": "关闭",
+  "game_japanese_locale": "日语区域（转区）",
+  "game_japanese_locale_hint": "汉化版/英化版请选「关闭」，否则启动即闪退"
 }

@@ -20243,6 +20243,14 @@ class $GalgamesTable extends Galgames
       type: DriftSqlType.string,
       requiredDuringInsert: false,
       defaultValue: const Constant(''));
+  static const VerificationMeta _japaneseLocaleModeMeta =
+      const VerificationMeta('japaneseLocaleMode');
+  @override
+  late final GeneratedColumn<String> japaneseLocaleMode =
+      GeneratedColumn<String>('japanese_locale_mode', aliasedName, false,
+          type: DriftSqlType.string,
+          requiredDuringInsert: false,
+          defaultValue: const Constant(''));
   static const VerificationMeta _coverPathMeta =
       const VerificationMeta('coverPath');
   @override
@@ -20297,6 +20305,7 @@ class $GalgamesTable extends Galgames
         workdir,
         launchArgs,
         upscalingMode,
+        japaneseLocaleMode,
         coverPath,
         addedAt,
         playStatus,
@@ -20349,6 +20358,12 @@ class $GalgamesTable extends Galgames
           _upscalingModeMeta,
           upscalingMode.isAcceptableOrUnknown(
               data['upscaling_mode']!, _upscalingModeMeta));
+    }
+    if (data.containsKey('japanese_locale_mode')) {
+      context.handle(
+          _japaneseLocaleModeMeta,
+          japaneseLocaleMode.isAcceptableOrUnknown(
+              data['japanese_locale_mode']!, _japaneseLocaleModeMeta));
     }
     if (data.containsKey('cover_path')) {
       context.handle(_coverPathMeta,
@@ -20409,6 +20424,8 @@ class $GalgamesTable extends Galgames
           .read(DriftSqlType.string, data['${effectivePrefix}launch_args'])!,
       upscalingMode: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}upscaling_mode'])!,
+      japaneseLocaleMode: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}japanese_locale_mode'])!,
       coverPath: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}cover_path']),
       addedAt: attachedDatabase.typeMapping
@@ -20464,6 +20481,16 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
   /// 且脏值/未来值读到时解析层直接回落关闭（不会因为 index 越界崩）。
   final String upscalingMode;
 
+  /// 该游戏的「日语区域（转区）」档位：`'auto'` / `'on'` / `'off'`（BUG-1476）。
+  ///
+  /// 空串 = 用户没设过，解析层回落 `auto`（**不是** off —— 转区是用户明确要过的
+  /// 功能，老行/老用户不能因为加了这一列就被莫名关掉）。
+  ///
+  /// 与 [upscalingMode] / [launchArgs] 同类，都是「用户为该游戏设的启动期配置」。
+  /// 为什么必须每游戏一档而不是全局开关：同一个库里日文原版和汉化版并存，
+  /// 汉化版转区会直接闪退，日文原版不转区会乱码，全局值两边都不对。
+  final String japaneseLocaleMode;
+
   /// 本地封面绝对路径；null = 用默认手柄图标。
   final String? coverPath;
 
@@ -20494,6 +20521,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       required this.workdir,
       required this.launchArgs,
       required this.upscalingMode,
+      required this.japaneseLocaleMode,
       this.coverPath,
       required this.addedAt,
       required this.playStatus,
@@ -20510,6 +20538,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
     map['workdir'] = Variable<String>(workdir);
     map['launch_args'] = Variable<String>(launchArgs);
     map['upscaling_mode'] = Variable<String>(upscalingMode);
+    map['japanese_locale_mode'] = Variable<String>(japaneseLocaleMode);
     if (!nullToAbsent || coverPath != null) {
       map['cover_path'] = Variable<String>(coverPath);
     }
@@ -20536,6 +20565,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       workdir: Value(workdir),
       launchArgs: Value(launchArgs),
       upscalingMode: Value(upscalingMode),
+      japaneseLocaleMode: Value(japaneseLocaleMode),
       coverPath: coverPath == null && nullToAbsent
           ? const Value.absent()
           : Value(coverPath),
@@ -20564,6 +20594,8 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       workdir: serializer.fromJson<String>(json['workdir']),
       launchArgs: serializer.fromJson<String>(json['launchArgs']),
       upscalingMode: serializer.fromJson<String>(json['upscalingMode']),
+      japaneseLocaleMode:
+          serializer.fromJson<String>(json['japaneseLocaleMode']),
       coverPath: serializer.fromJson<String?>(json['coverPath']),
       addedAt: serializer.fromJson<int>(json['addedAt']),
       playStatus: serializer.fromJson<int>(json['playStatus']),
@@ -20583,6 +20615,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       'workdir': serializer.toJson<String>(workdir),
       'launchArgs': serializer.toJson<String>(launchArgs),
       'upscalingMode': serializer.toJson<String>(upscalingMode),
+      'japaneseLocaleMode': serializer.toJson<String>(japaneseLocaleMode),
       'coverPath': serializer.toJson<String?>(coverPath),
       'addedAt': serializer.toJson<int>(addedAt),
       'playStatus': serializer.toJson<int>(playStatus),
@@ -20600,6 +20633,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           String? workdir,
           String? launchArgs,
           String? upscalingMode,
+          String? japaneseLocaleMode,
           Value<String?> coverPath = const Value.absent(),
           int? addedAt,
           int? playStatus,
@@ -20614,6 +20648,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
         workdir: workdir ?? this.workdir,
         launchArgs: launchArgs ?? this.launchArgs,
         upscalingMode: upscalingMode ?? this.upscalingMode,
+        japaneseLocaleMode: japaneseLocaleMode ?? this.japaneseLocaleMode,
         coverPath: coverPath.present ? coverPath.value : this.coverPath,
         addedAt: addedAt ?? this.addedAt,
         playStatus: playStatus ?? this.playStatus,
@@ -20635,6 +20670,9 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       upscalingMode: data.upscalingMode.present
           ? data.upscalingMode.value
           : this.upscalingMode,
+      japaneseLocaleMode: data.japaneseLocaleMode.present
+          ? data.japaneseLocaleMode.value
+          : this.japaneseLocaleMode,
       coverPath: data.coverPath.present ? data.coverPath.value : this.coverPath,
       addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
       playStatus:
@@ -20660,6 +20698,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           ..write('workdir: $workdir, ')
           ..write('launchArgs: $launchArgs, ')
           ..write('upscalingMode: $upscalingMode, ')
+          ..write('japaneseLocaleMode: $japaneseLocaleMode, ')
           ..write('coverPath: $coverPath, ')
           ..write('addedAt: $addedAt, ')
           ..write('playStatus: $playStatus, ')
@@ -20679,6 +20718,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       workdir,
       launchArgs,
       upscalingMode,
+      japaneseLocaleMode,
       coverPath,
       addedAt,
       playStatus,
@@ -20696,6 +20736,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           other.workdir == this.workdir &&
           other.launchArgs == this.launchArgs &&
           other.upscalingMode == this.upscalingMode &&
+          other.japaneseLocaleMode == this.japaneseLocaleMode &&
           other.coverPath == this.coverPath &&
           other.addedAt == this.addedAt &&
           other.playStatus == this.playStatus &&
@@ -20712,6 +20753,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
   final Value<String> workdir;
   final Value<String> launchArgs;
   final Value<String> upscalingMode;
+  final Value<String> japaneseLocaleMode;
   final Value<String?> coverPath;
   final Value<int> addedAt;
   final Value<int> playStatus;
@@ -20727,6 +20769,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     this.workdir = const Value.absent(),
     this.launchArgs = const Value.absent(),
     this.upscalingMode = const Value.absent(),
+    this.japaneseLocaleMode = const Value.absent(),
     this.coverPath = const Value.absent(),
     this.addedAt = const Value.absent(),
     this.playStatus = const Value.absent(),
@@ -20743,6 +20786,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     required String workdir,
     this.launchArgs = const Value.absent(),
     this.upscalingMode = const Value.absent(),
+    this.japaneseLocaleMode = const Value.absent(),
     this.coverPath = const Value.absent(),
     required int addedAt,
     this.playStatus = const Value.absent(),
@@ -20763,6 +20807,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     Expression<String>? workdir,
     Expression<String>? launchArgs,
     Expression<String>? upscalingMode,
+    Expression<String>? japaneseLocaleMode,
     Expression<String>? coverPath,
     Expression<int>? addedAt,
     Expression<int>? playStatus,
@@ -20779,6 +20824,8 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
       if (workdir != null) 'workdir': workdir,
       if (launchArgs != null) 'launch_args': launchArgs,
       if (upscalingMode != null) 'upscaling_mode': upscalingMode,
+      if (japaneseLocaleMode != null)
+        'japanese_locale_mode': japaneseLocaleMode,
       if (coverPath != null) 'cover_path': coverPath,
       if (addedAt != null) 'added_at': addedAt,
       if (playStatus != null) 'play_status': playStatus,
@@ -20797,6 +20844,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
       Value<String>? workdir,
       Value<String>? launchArgs,
       Value<String>? upscalingMode,
+      Value<String>? japaneseLocaleMode,
       Value<String?>? coverPath,
       Value<int>? addedAt,
       Value<int>? playStatus,
@@ -20812,6 +20860,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
       workdir: workdir ?? this.workdir,
       launchArgs: launchArgs ?? this.launchArgs,
       upscalingMode: upscalingMode ?? this.upscalingMode,
+      japaneseLocaleMode: japaneseLocaleMode ?? this.japaneseLocaleMode,
       coverPath: coverPath ?? this.coverPath,
       addedAt: addedAt ?? this.addedAt,
       playStatus: playStatus ?? this.playStatus,
@@ -20843,6 +20892,9 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     }
     if (upscalingMode.present) {
       map['upscaling_mode'] = Variable<String>(upscalingMode.value);
+    }
+    if (japaneseLocaleMode.present) {
+      map['japanese_locale_mode'] = Variable<String>(japaneseLocaleMode.value);
     }
     if (coverPath.present) {
       map['cover_path'] = Variable<String>(coverPath.value);
@@ -20880,6 +20932,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
           ..write('workdir: $workdir, ')
           ..write('launchArgs: $launchArgs, ')
           ..write('upscalingMode: $upscalingMode, ')
+          ..write('japaneseLocaleMode: $japaneseLocaleMode, ')
           ..write('coverPath: $coverPath, ')
           ..write('addedAt: $addedAt, ')
           ..write('playStatus: $playStatus, ')
@@ -39541,6 +39594,7 @@ typedef $$GalgamesTableCreateCompanionBuilder = GalgamesCompanion Function({
   required String workdir,
   Value<String> launchArgs,
   Value<String> upscalingMode,
+  Value<String> japaneseLocaleMode,
   Value<String?> coverPath,
   required int addedAt,
   Value<int> playStatus,
@@ -39557,6 +39611,7 @@ typedef $$GalgamesTableUpdateCompanionBuilder = GalgamesCompanion Function({
   Value<String> workdir,
   Value<String> launchArgs,
   Value<String> upscalingMode,
+  Value<String> japaneseLocaleMode,
   Value<String?> coverPath,
   Value<int> addedAt,
   Value<int> playStatus,
@@ -39645,6 +39700,10 @@ class $$GalgamesTableFilterComposer
 
   ColumnFilters<String> get upscalingMode => $composableBuilder(
       column: $table.upscalingMode, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get japaneseLocaleMode => $composableBuilder(
+      column: $table.japaneseLocaleMode,
+      builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get coverPath => $composableBuilder(
       column: $table.coverPath, builder: (column) => ColumnFilters(column));
@@ -39760,6 +39819,10 @@ class $$GalgamesTableOrderingComposer
       column: $table.upscalingMode,
       builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get japaneseLocaleMode => $composableBuilder(
+      column: $table.japaneseLocaleMode,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get coverPath => $composableBuilder(
       column: $table.coverPath, builder: (column) => ColumnOrderings(column));
 
@@ -39810,6 +39873,9 @@ class $$GalgamesTableAnnotationComposer
 
   GeneratedColumn<String> get upscalingMode => $composableBuilder(
       column: $table.upscalingMode, builder: (column) => column);
+
+  GeneratedColumn<String> get japaneseLocaleMode => $composableBuilder(
+      column: $table.japaneseLocaleMode, builder: (column) => column);
 
   GeneratedColumn<String> get coverPath =>
       $composableBuilder(column: $table.coverPath, builder: (column) => column);
@@ -39929,6 +39995,7 @@ class $$GalgamesTableTableManager extends RootTableManager<
             Value<String> workdir = const Value.absent(),
             Value<String> launchArgs = const Value.absent(),
             Value<String> upscalingMode = const Value.absent(),
+            Value<String> japaneseLocaleMode = const Value.absent(),
             Value<String?> coverPath = const Value.absent(),
             Value<int> addedAt = const Value.absent(),
             Value<int> playStatus = const Value.absent(),
@@ -39945,6 +40012,7 @@ class $$GalgamesTableTableManager extends RootTableManager<
             workdir: workdir,
             launchArgs: launchArgs,
             upscalingMode: upscalingMode,
+            japaneseLocaleMode: japaneseLocaleMode,
             coverPath: coverPath,
             addedAt: addedAt,
             playStatus: playStatus,
@@ -39961,6 +40029,7 @@ class $$GalgamesTableTableManager extends RootTableManager<
             required String workdir,
             Value<String> launchArgs = const Value.absent(),
             Value<String> upscalingMode = const Value.absent(),
+            Value<String> japaneseLocaleMode = const Value.absent(),
             Value<String?> coverPath = const Value.absent(),
             required int addedAt,
             Value<int> playStatus = const Value.absent(),
@@ -39977,6 +40046,7 @@ class $$GalgamesTableTableManager extends RootTableManager<
             workdir: workdir,
             launchArgs: launchArgs,
             upscalingMode: upscalingMode,
+            japaneseLocaleMode: japaneseLocaleMode,
             coverPath: coverPath,
             addedAt: addedAt,
             playStatus: playStatus,

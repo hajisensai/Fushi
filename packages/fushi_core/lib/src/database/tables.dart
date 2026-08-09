@@ -1439,6 +1439,16 @@ class Galgames extends Table {
   /// 且脏值/未来值读到时解析层直接回落关闭（不会因为 index 越界崩）。
   TextColumn get upscalingMode => text().withDefault(const Constant(''))();
 
+  /// 该游戏的「日语区域（转区）」档位：`'auto'` / `'on'` / `'off'`（BUG-1477）。
+  ///
+  /// 空串 = 用户没设过，解析层回落 `auto`（**不是** off —— 转区是用户明确要过的
+  /// 功能，老行/老用户不能因为加了这一列就被莫名关掉）。
+  ///
+  /// 与 [upscalingMode] / [launchArgs] 同类，都是「用户为该游戏设的启动期配置」。
+  /// 为什么必须每游戏一档而不是全局开关：同一个库里日文原版和汉化版并存，
+  /// 汉化版转区会直接闪退，日文原版不转区会乱码，全局值两边都不对。
+  TextColumn get japaneseLocaleMode => text().withDefault(const Constant(''))();
+
   /// 本地封面绝对路径；null = 用默认手柄图标。
   TextColumn get coverPath => text().nullable()();
 

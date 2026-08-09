@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
@@ -101,6 +102,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -152,6 +155,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           engine,
       windowListLoader: () async => const <ExternalWindowInfo>[],
@@ -207,6 +212,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -271,6 +278,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -365,6 +374,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -427,6 +438,8 @@ void main() {
           int? lunaCodepage,
           List<String> launchArguments = const <String>[],
           String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
         }) =>
             _FakeEngineSource(pairedBytes: Uint8List(0), rawReady: true),
         loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -506,6 +519,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) {
         capturedLunaPcHooks = lunaPcHooks;
         return engine;
@@ -567,6 +582,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -635,6 +652,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -704,6 +723,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -792,6 +813,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -887,6 +910,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -949,6 +974,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -1029,6 +1056,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           engine,
       textPollInterval: const Duration(milliseconds: 5),
@@ -1085,6 +1114,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -1138,6 +1169,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -1201,6 +1234,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -1232,8 +1267,7 @@ void main() {
   });
 
   test('游戏活动落库：hook 台词只把字符数写入 activity_events（game 类别，不写时长）', () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
@@ -1272,6 +1306,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -1317,8 +1353,7 @@ void main() {
   });
 
   test('游戏库启动活动统一写 galgames.id 与当前显示名，不再把 exePath 当 mediaKey', () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
@@ -1349,6 +1384,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -1391,8 +1428,7 @@ void main() {
   });
 
   test('BUG-1085：重复台词/标点不计入字数，引擎计数后外部通道行不再双计', () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
@@ -1438,6 +1474,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -1480,8 +1518,7 @@ void main() {
   });
 
   test('BUG-1085：引擎无文本时外部通道是唯一计数源，照常计数', () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
@@ -1504,6 +1541,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -1693,6 +1732,8 @@ void _bug950Guard() {
           int? lunaCodepage,
           List<String> launchArguments = const <String>[],
           String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
         }) =>
             queue.isEmpty ? recovered : queue.removeAt(0),
         loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -1765,6 +1806,8 @@ void _bug950Guard() {
           int? lunaCodepage,
           List<String> launchArguments = const <String>[],
           String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
         }) {
           factoryCalls++;
           return denied;
@@ -1831,6 +1874,8 @@ void _bug950Guard() {
           int? lunaCodepage,
           List<String> launchArguments = const <String>[],
           String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
         }) =>
             queue.isEmpty ? recovered : queue.removeAt(0),
         loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -1886,6 +1931,8 @@ void _bug950Guard() {
           int? lunaCodepage,
           List<String> launchArguments = const <String>[],
           String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
         }) =>
             failing,
         loopbackSourceFactory: _FakeLoopbackSource.new,

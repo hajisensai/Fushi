@@ -71,8 +71,7 @@ void main() {
 
         test('YouTube/Netflix 两条生成路径都走分类器出队', () {
           final String src = content.readAsStringSync();
-          expect(
-              'resolve(fushiClassifyMineResp(resp));'.allMatches(src).length,
+          expect('resolve(fushiClassifyMineResp(resp));'.allMatches(src).length,
               greaterThanOrEqualTo(2),
               reason: '${content.path} 生成路径未统一走分类器（应 >=2 处）');
           // 只有 done 才 push okIds 被剔除。

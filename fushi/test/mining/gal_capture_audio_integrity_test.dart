@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
@@ -174,6 +175,8 @@ void main() {
             int? lunaCodepage,
             List<String> launchArguments = const <String>[],
             String launchWorkdir = '',
+            GalJapaneseLocaleMode japaneseLocaleMode =
+                kGalDefaultJapaneseLocaleMode,
           }) =>
               engine,
           loopbackSourceFactory: () => _NullLoopback(),

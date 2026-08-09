@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
@@ -55,8 +56,7 @@ class _IsolationTestEngine extends EngineHookGalAudioSource {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const MethodChannel channel =
-      MethodChannel('app.fushi.reader/gal_hook_text');
+  const MethodChannel channel = MethodChannel('app.fushi.reader/gal_hook_text');
   late TexthookerService textService;
   late GalHookSessionController session;
   late GalHookTextOverlayController controller;
@@ -82,6 +82,8 @@ void main() {
         int? lunaCodepage,
         List<String> launchArguments = const <String>[],
         String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
       }) =>
           _IsolationTestEngine(),
       endpointStatusLoader: () => const [],

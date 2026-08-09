@@ -458,7 +458,7 @@ class FushiDatabase extends _$FushiDatabase {
   FushiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 74;
+  int get schemaVersion => 75;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1697,6 +1697,21 @@ class FushiDatabase extends _$FushiDatabase {
                   "SET value = 's:fushiServer' "
                   "WHERE key = 'sync_backend_type' "
                   "AND value = 's:hibikiServer'");
+            }
+          }
+          if (from < 75) {
+            // v75（每游戏日语区域档位，BUG-1477）：galgames 加 japanese_locale_mode
+            // 列，存 'auto' / 'on' / 'off'。与 v62 的 upscaling_mode、v56 的
+            // launch_args 同型：都是「用户为该游戏设的启动期配置」。
+            //
+            // 无损迁移：列带 DEFAULT ''，SQLite ADD COLUMN 把既有全部行回填空串。
+            // 注意空串在解析层回落的是 **auto** 而不是 off——转区是用户明确要过的
+            // 功能（BUG-1038），加了开关就把老用户默默关掉才是破坏用户空间。
+            // 守卫幂等（fresh DB 已由 onCreate 的 createAll 建好，重复升级
+            // _columnExists 短路 no-op）。
+            if (await _tableExists('galgames') &&
+                !await _columnExists('galgames', 'japanese_locale_mode')) {
+              await m.addColumn(galgames, galgames.japaneseLocaleMode);
             }
           }
         },
@@ -4701,6 +4716,12 @@ class FushiDatabase extends _$FushiDatabase {
   Future<int> setGalgameUpscalingMode(String id, String modeKey) =>
       (update(galgames)..where((t) => t.id.equals(id)))
           .write(GalgamesCompanion(upscalingMode: Value<String>(modeKey)));
+
+  /// 只改该游戏的日语区域（转区）档位（'auto' / 'on' / 'off'；空串 = 未设置，
+  /// 解析层回落 auto）。列非空，所以清空是写空串而不是写 null。
+  Future<int> setGalgameJapaneseLocaleMode(String id, String modeKey) =>
+      (update(galgames)..where((t) => t.id.equals(id)))
+          .write(GalgamesCompanion(japaneseLocaleMode: Value<String>(modeKey)));
 
   /// 刮削成功后回写主显示源与发行日（发行日上提成列是为了 SQL 排序）。
   Future<int> setGalgameScrapeResult(

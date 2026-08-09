@@ -299,8 +299,8 @@ void main() {
           // fushiWaitForBuffered → beginClip（暂停不推进 currentTime → 保留 200ms
           // 头部提前量）。TODO-1361（BUG-685）在暂停与缓冲门之间加了 seek 落定门。
           final int pauseIdx = src.indexOf('try { v.pause(); } catch (_) {}');
-          final int settledIdx = src
-              .indexOf('await fushiWaitForSeekSettled(v, targetSec, 4000);');
+          final int settledIdx =
+              src.indexOf('await fushiWaitForSeekSettled(v, targetSec, 4000);');
           final int bufIdx =
               src.indexOf('await fushiWaitForBuffered(v, 3000);');
           final int beginIdx = src.indexOf("type: 'beginClip'");

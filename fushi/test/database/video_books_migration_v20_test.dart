@@ -158,8 +158,7 @@ void main() {
       // This is the lineage real user DBs are stuck on, and the one the
       // from<16/from<17 steps silently skip. The convergence must run name-PK
       // late AND rebuild the legacy video_books.
-      final db =
-          FushiDatabase.forTesting(NativeDatabase.memory(setup: (rawDb) {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory(setup: (rawDb) {
         rawDb.execute(_legacyEpubBooksDdl);
         _seedThreeBooks(rawDb);
         rawDb.execute(_legacyVideoBooksDdl);
@@ -177,8 +176,7 @@ void main() {
     test(
         'PATH B: develop name-PK v16 (book_key epub, no video_books) '
         '-> v20 adds book_uid video_books, epub untouched', () async {
-      final db =
-          FushiDatabase.forTesting(NativeDatabase.memory(setup: (rawDb) {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory(setup: (rawDb) {
         rawDb.execute(_namePkEpubBooksDdl);
         // Name-PK rows: book_key directly.
         rawDb.execute(
@@ -196,8 +194,7 @@ void main() {
 
     test('PATH C: clean ancestor v15 (id-PK epub, no video_books) -> v20',
         () async {
-      final db =
-          FushiDatabase.forTesting(NativeDatabase.memory(setup: (rawDb) {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory(setup: (rawDb) {
         rawDb.execute(_legacyEpubBooksDdl);
         _seedThreeBooks(rawDb);
         rawDb.execute('PRAGMA user_version = 15');

@@ -3154,5 +3154,10 @@
   "migration_uninstall_prompt": "Migration finished. Uninstall the old Hibiki app?",
   "migration_uninstall_button": "Uninstall Hibiki",
   "migration_uninstall_still_installed": "Hibiki is still installed. You can uninstall it any time.",
-  "game_line_copy_tooltip": "Copy sentence"
+  "game_line_copy_tooltip": "Copy sentence",
+  "game_japanese_locale_auto": "Auto",
+  "game_japanese_locale_on": "Always on",
+  "game_japanese_locale_off": "Off",
+  "game_japanese_locale": "Japanese locale",
+  "game_japanese_locale_hint": "Chinese/English patched builds must turn this off, or the game crashes on launch"
 }

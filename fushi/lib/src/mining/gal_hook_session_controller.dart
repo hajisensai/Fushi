@@ -7,6 +7,7 @@ import 'package:fushi/src/mining/gal_hook_activity_accumulator.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_char_count.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_hook_code_profile.dart';
 import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
@@ -527,6 +528,10 @@ typedef GalEngineSourceFactory = EngineHookGalAudioSource Function({
   // launch 专用且可选：attach 路径（引擎重试、窗口绑定）不传，行为不变。
   List<String> launchArguments,
   String launchWorkdir,
+  // BUG-1477：该游戏的日语区域（转区）档位。以前整条 UI→source 的通路上**根本没有
+  // 这个形参**，所以不是「忘了传」而是没有这个自由度——汉化版被强制转区后闪退，
+  // 用户无法自救。attach 路径不传，转区在 source 侧必然短路（launchMode 为首个合取项）。
+  GalJapaneseLocaleMode japaneseLocaleMode,
 });
 typedef GalLoopbackSourceFactory = LoopbackGalAudioSource Function();
 typedef GalTargetWow64Probe = Future<bool?> Function(int pid);
@@ -914,6 +919,7 @@ class GalHookSessionController extends ChangeNotifier {
     int? lunaCodepage,
     List<String> launchArguments = const <String>[],
     String launchWorkdir = '',
+    GalJapaneseLocaleMode japaneseLocaleMode = kGalDefaultJapaneseLocaleMode,
   }) {
     return EngineHookGalAudioSource(
       targetPid: targetPid,
@@ -923,6 +929,7 @@ class GalHookSessionController extends ChangeNotifier {
       injectorPath: injectorPath,
       lunaPcHooks: lunaPcHooks,
       lunaCodepage: lunaCodepage,
+      japaneseLocaleMode: japaneseLocaleMode,
     );
   }
 
@@ -1153,6 +1160,9 @@ class GalHookSessionController extends ChangeNotifier {
     String workdir = '',
     String? gameId,
     String? gameTitle,
+
+    /// 该游戏的日语区域（转区）档位（BUG-1477）。缺省 auto = 与旧行为等价。
+    GalJapaneseLocaleMode japaneseLocaleMode = kGalDefaultJapaneseLocaleMode,
   }) async {
     final int generation = ++_operationGeneration;
     await _stopSources();
@@ -1234,6 +1244,7 @@ class GalHookSessionController extends ChangeNotifier {
       launchWorkdir: workdir,
       injectorPath: injector,
       lunaPcHooks: lunaPcHooks,
+      japaneseLocaleMode: japaneseLocaleMode,
     );
     await _attachPersistedHookProfiles(engine);
     _setState(_state.copyWith(phase: GalHookSessionPhase.injecting));

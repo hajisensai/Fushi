@@ -122,8 +122,7 @@ void main() {
           expect(src.contains('fushiDrawHighlightOverlay(hl.rects)'), isTrue,
               reason: '${content.path} fushiRender 未改画覆盖层高亮');
           // 关窗即撤覆盖层高亮（高亮跟随弹窗生命周期）。
-          final int removeIdx2 =
-              src.indexOf('function fushiRemoveContainer()');
+          final int removeIdx2 = src.indexOf('function fushiRemoveContainer()');
           final String removeBody2 = src.substring(
               removeIdx2, (removeIdx2 + 800).clamp(0, src.length));
           expect(removeBody2.contains('fushiClearHighlightOverlay()'), isTrue,
@@ -154,8 +153,7 @@ void main() {
               isTrue,
               reason: '${content.path} 未向 background 发 lookup 查词消息');
           // mousemove 命中后调用 fushiSendLookup（1132 抽取后的分发点）。
-          expect(
-              src.contains('fushiSendLookup(term, fushiAnchorRect)'), isTrue,
+          expect(src.contains('fushiSendLookup(term, fushiAnchorRect)'), isTrue,
               reason: '${content.path} mousemove 未调用 fushiSendLookup 发查词');
         });
 

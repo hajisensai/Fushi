@@ -70,8 +70,7 @@ void main() {
           reason: 'an unloaded frame must report its own distinct reason');
     });
 
-    test('iframe realm plays via __fushiPlayWordAudioUrl and reports back',
-        () {
+    test('iframe realm plays via __fushiPlayWordAudioUrl and reports back', () {
       // The eval body drives popup.js's own <audio> entry and posts the REAL
       // audio.play() outcome through the wrapped per-frame bridge.
       expect(js.contains('window.__fushiPlayWordAudioUrl'), isTrue);
