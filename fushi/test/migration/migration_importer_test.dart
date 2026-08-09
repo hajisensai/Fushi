@@ -147,6 +147,43 @@ void main() {
           reason: '入口该显示，让用户进去看到「校验不过」，而不是入口直接消失');
     });
 
+    test('源码守卫：上遮罩之后的 setState 必须有 mounted 守卫', () {
+      // 真实事故（真机 logcat 实证）：beginBackupImport 上的是全屏遮罩，本页被
+      // 移出 widget 树，导入循环第一句裸 setState 即抛
+      // 「setState() called after dispose()」→ 落进 catch → 2 秒 System.exit，
+      // mergeRestoreBackup 一次都没跑过。表现为「校验全过但导入瞬间失败、中转
+      // 文件原封不动、库还是空的」，且失败原因只在屏幕上闪 2 秒。
+      final String src =
+          File('lib/src/pages/implementations/migration_import_page.dart')
+              .readAsStringSync();
+      final int beginIdx = src.indexOf('appModel.beginBackupImport()');
+      expect(beginIdx, greaterThan(-1));
+      final int catchIdx = src.indexOf('} catch (e, st) {', beginIdx);
+      expect(catchIdx, greaterThan(beginIdx));
+      final String masked = src.substring(beginIdx, catchIdx);
+
+      // 遮罩期内每一处 setState 前面都必须先判 mounted。
+      for (final Match m in RegExp(r'setState\(').allMatches(masked)) {
+        final String before = masked.substring(0, m.start);
+        expect(before.contains('if (mounted)'), isTrue,
+            reason: '遮罩期内的裸 setState 会抛 dispose 异常，导入一批都跑不了');
+      }
+    });
+
+    test('源码守卫：失败分支必须落日志', () {
+      // 否则唯一的诊断信息只在屏幕上活 2 秒就随 System.exit 消失（实测三轮抓不到）。
+      final String src =
+          File('lib/src/pages/implementations/migration_import_page.dart')
+              .readAsStringSync();
+      final int catchIdx = src.indexOf('} catch (e, st) {');
+      expect(catchIdx, greaterThan(-1), reason: 'catch 必须捕获 StackTrace 才能记栈');
+      final String tail =
+          src.substring(catchIdx, (catchIdx + 600).clamp(0, src.length));
+      expect(tail, contains('debugPrint'),
+          reason: 'debugPrint 不受 debug_log_enabled 开关影响，是最后的兜底');
+      expect(tail, contains('ErrorLogService'));
+    });
+
     test('源码守卫：banner 入口不得只依赖「读得到中转数据」', () {
       // 死锁形态：覆盖安装会把 MANAGE_EXTERNAL_STORAGE 重置（实测 adb install -r
       // 后 appop 从 allow 变回 default）。此时 existsSync 返回 false，若入口只看

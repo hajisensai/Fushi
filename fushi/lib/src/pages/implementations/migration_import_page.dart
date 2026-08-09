@@ -179,8 +179,17 @@ class _MigrationImportPageState extends State<MigrationImportPage>
           p.join(appModel.appDirectory.path, 'custom_fonts');
       final String videosRoot = p.join(appModel.appDirectory.path, 'videos');
       for (final MigrationImportBatch batch in scan.ready) {
-        setState(() => _status =
-            t.migration_import_running(batch: _batchLabel(batch.batch)));
+        // **不能裸调 setState**：beginBackupImport() 上的是全屏遮罩，本页已被
+        // 移出 widget 树（State 进入 defunct）。循环第一句就会抛
+        // 「called after dispose」→ 落进下面的 catch → 2 秒后
+        // System.exit 重启，于是 mergeRestoreBackup 一次都没被调用过——用户看到
+        // 的是「校验全过、导入却瞬间失败、中转文件原封不动、库还是空的」。
+        // 进度归遮罩管（reportBackupImportProgress 已在下面传给它）；本页的
+        // _status 只在页面还活着时有意义。
+        if (mounted) {
+          setState(() => _status =
+              t.migration_import_running(batch: _batchLabel(batch.batch)));
+        }
         await BackupService.mergeRestoreBackup(
           dbDirectory: appModel.databaseDirectory.path,
           zipPath: batch.archivePath,
@@ -203,6 +212,11 @@ class _MigrationImportPageState extends State<MigrationImportPage>
       final List<String> countProblems = MigrationImporter.verifyImportedCounts(
           dbPath: dbPath, expected: expected);
       if (countProblems.isNotEmpty) {
+        // 同上：重启会带走屏幕上的说明，先落日志。
+        debugPrint(
+            '[Fushi][migration] count verification failed: ${countProblems.join("; ")}');
+        ErrorLogService.instance.log('MigrationImportPage.verifyCounts',
+            StateError(countProblems.join('; ')), StackTrace.current);
         // 行数不足：不删中转文件、不置完成标志（绝不进卸载流程），重启后可重试。
         appModel.failBackupImport(
             t.migration_import_counts_failed(detail: countProblems.join('; ')));
@@ -222,7 +236,12 @@ class _MigrationImportPageState extends State<MigrationImportPage>
       appModel.completeBackupImport(t.migration_import_success);
       await Future<void>.delayed(const Duration(seconds: 1));
       await backupImportRestart(appModel);
-    } catch (e) {
+    } catch (e, st) {
+      // **必须落日志**：这条 detail 此前只塞进 UI 文案，而失败路径 2 秒后就
+      // System.exit 重启，于是唯一有诊断价值的信息随进程一起消失——release 抓
+      // 不到，debug 也抓不到（压根没有日志语句）。实测三次复现都拿不到原因。
+      ErrorLogService.instance.log('MigrationImportPage.runImport', e, st);
+      debugPrint('[Fushi][migration] import failed: $e\n$st');
       appModel.failBackupImport(
           t.migration_import_verify_failed(batch: '', detail: '$e'));
       await Future<void>.delayed(const Duration(seconds: 2));
