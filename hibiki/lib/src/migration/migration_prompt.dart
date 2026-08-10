@@ -22,18 +22,26 @@ void resetMigrationPromptForTest() => _shownThisLaunch = false;
 
 /// 是否该弹迁移提示（纯函数，便于单测覆盖全部组合）。
 ///
-/// - [migrated]：已完成导出（只读态）。已迁移的不再打扰，首页有常驻横幅接手。
+/// - [migrated]：已完成导出（只读态）。
+/// - [fushiInstalled]：Fushi **此刻**是否装在这台设备上。
 /// - [isAndroid]：跨包名迁移只存在于 Android；桌面端数据目录可直接搬，弹窗只会
 ///   徒增困惑。
 /// - [alreadyShownThisLaunch]：本进程弹过就不再弹。
+///
+/// BUG-1501：判据是「迁移这件事是否已经有落点」，不是「导出过没有」。
+/// 已导出**且 Fushi 还在** → 安静，首页横幅接手（原有行为）。
+/// 已导出**但 Fushi 不在**（没装成 / 装完又被卸了）→ 用户此刻两头落空：旧版只读
+/// 不再写入也不再更新，新版根本不存在。这和「还没迁移」一样属于必须主动告知的
+/// 状态，只在首页顶上留一条横幅是不够的。
 bool shouldShowMigrationPrompt({
   required bool migrated,
   required bool isAndroid,
   required bool alreadyShownThisLaunch,
+  required bool fushiInstalled,
 }) {
-  if (migrated) return false;
   if (!isAndroid) return false;
   if (alreadyShownThisLaunch) return false;
+  if (migrated && fushiInstalled) return false;
   return true;
 }
 
@@ -44,6 +52,7 @@ bool shouldShowMigrationPrompt({
 Future<void> showMigrationPromptIfNeeded(
   BuildContext context, {
   required bool migrated,
+  required bool fushiInstalled,
   required String title,
   required String body,
   required String migrateLabel,
@@ -56,6 +65,7 @@ Future<void> showMigrationPromptIfNeeded(
     migrated: migrated,
     isAndroid: isAndroid,
     alreadyShownThisLaunch: _shownThisLaunch,
+    fushiInstalled: fushiInstalled,
   )) {
     return;
   }

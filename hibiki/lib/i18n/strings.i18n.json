@@ -3132,7 +3132,7 @@
   "anki_connect_backend_switch_failed": "Could not switch Anki backend: $error",
   "migration_settings_entry": "Migrate to Fushi",
   "migration_settings_entry_subtitle": "Move all data to the new Fushi app",
-  "migration_intro": "Fushi is the new name of this app. Migration exports all your data in batches to a transfer folder, then Fushi imports and verifies it. Your data here stays untouched until you uninstall this app.",
+  "migration_intro": "Fushi is Hibiki under its new name, and all further development happens there. Migration runs in two stages: this app copies your data in batches to a transfer folder in device storage (Documents/Hibiki/migration), then Fushi imports each batch and verifies it item by item. That folder lives outside app-private storage, so uninstalling this app will not wipe it. Everything is copied, never moved — nothing here is touched, so you can wait until Fushi reports a clean import before deciding whether to remove the old app.",
   "migration_target_missing": "Fushi is not installed yet. Install Fushi first, then return here.",
   "migration_download_fushi": "Get Fushi",
   "migration_start": "Start migration",
@@ -3142,11 +3142,11 @@
   "migration_batch_done": "$batch exported",
   "migration_export_done": "Export complete. Open Fushi to import and verify.",
   "migration_export_failed": "Export failed: $error",
-  "migration_readonly_note": "Your data has been exported to Fushi. This app is now read-only: use Fushi for reading and mining. You can re-export at any time if Fushi reports missing data.",
+  "migration_readonly_note": "Your data has been exported to Fushi, so this old app switched to read-only: no auto-sync, no background writes, and it no longer holds the interconnect or lookup ports (they would clash with Fushi). Read and mine in Fushi from now on. Your old data is still here untouched — if Fushi reports anything missing, come back and re-export.",
   "migration_reexport": "Re-export",
   "migration_batch_core_label": "Settings, progress & statistics",
   "migration_prompt_title": "Hibiki is now Fushi",
-  "migration_prompt_body": "This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.",
+  "migration_prompt_body": "This is the last release of Hibiki; everything from here on ships as Fushi. Because the app package name changed, Android cannot upgrade it in place — a separate app has to be installed and your data moved across. Tap below and this app will download and install Fushi for you, then hand over your books, dictionaries, audiobooks, reading progress and statistics in one pass. Nothing here is deleted along the way.",
   "migration_prompt_action": "Download Fushi and migrate",
   "migration_prompt_later": "Later",
   "migration_prompt_details": "See details",
@@ -3162,5 +3162,7 @@
   "migration_step_export": "Export data",
   "migration_step_import": "Import in Fushi",
   "migration_space_blocked_title": "Not enough storage",
-  "migration_size_total": "Total $size"
+  "migration_size_total": "Total $size",
+  "migration_missing_title": "Fushi is not on this device",
+  "migration_missing_body": "Your data has already been exported, but Fushi is not installed here — either it never finished installing, or it was uninstalled afterwards. This old app is read-only now: it will not record anything new and will not be updated, so staying here leaves you with neither app working. Install Fushi again to pick up the exported data; if the transfer folder has since been cleaned up, just re-export once from the migration page."
 }

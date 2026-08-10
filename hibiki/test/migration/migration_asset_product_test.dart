@@ -209,19 +209,33 @@ void main() {
           migrated: false,
           isAndroid: true,
           alreadyShownThisLaunch: false,
+          fushiInstalled: false,
         ),
         isTrue,
       );
     });
 
-    test('已迁移不再打扰（首页常驻横幅接手）', () {
+    test('已迁移且 Fushi 还在 → 不再打扰（首页常驻横幅接手）', () {
       expect(
         shouldShowMigrationPrompt(
           migrated: true,
           isAndroid: true,
           alreadyShownThisLaunch: false,
+          fushiInstalled: true,
         ),
         isFalse,
+      );
+    });
+
+    test('BUG-1501：已迁移但 Fushi 被卸了 → 必须弹（旧版只读 + 新版不存在＝两头落空）', () {
+      expect(
+        shouldShowMigrationPrompt(
+          migrated: true,
+          isAndroid: true,
+          alreadyShownThisLaunch: false,
+          fushiInstalled: false,
+        ),
+        isTrue,
       );
     });
 
@@ -231,6 +245,7 @@ void main() {
           migrated: false,
           isAndroid: false,
           alreadyShownThisLaunch: false,
+          fushiInstalled: false,
         ),
         isFalse,
       );
@@ -242,6 +257,7 @@ void main() {
           migrated: false,
           isAndroid: true,
           alreadyShownThisLaunch: true,
+          fushiInstalled: false,
         ),
         isFalse,
       );

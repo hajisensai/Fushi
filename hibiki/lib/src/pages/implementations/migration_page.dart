@@ -106,7 +106,13 @@ class _MigrationPageState extends State<MigrationPage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && _step != _Step.done) {
+    // BUG-1501：done 态也必须重新探包。卸载 Fushi 发生在别的界面（系统设置 /
+    // 桌面长按），本进程收不到任何回调，resumed 是唯一能重新确认的时机；旧的
+    // `_step != _Step.done` 把「导出完成」这个持久事实当成了「Fushi 还装着」，
+    // 于是「卸掉 Fushi 再回来」这条路径永远刷不新，页面常驻一个死的「打开 Fushi」。
+    // `_onResumed` 自身的接力逻辑仍由 `_pendingExportAfterInstall` / `_step` 把关，
+    // done 态走到探包就返回。
+    if (state == AppLifecycleState.resumed) {
       unawaited(_onResumed());
     }
   }
@@ -135,6 +141,19 @@ class _MigrationPageState extends State<MigrationPage>
         _error = t.migration_install_incomplete;
       });
     }
+  }
+
+  /// 「打开 Fushi」的落地执行。
+  ///
+  /// BUG-1501：`launchFushi()` 的返回值以前被 `() => _channel.launchFushi()` 丢掉，
+  /// 拉不起来（刚被卸掉 / 组件被禁用）就是**静默无反应**。这里失败即重新探包并把
+  /// 结论写进页面，让 UI 从「打开」翻回「下载」，而不是让用户对着按钮反复点。
+  Future<void> _openFushi() async {
+    final bool launched = await _channel.launchFushi();
+    if (launched || !mounted) return;
+    await _refreshTarget();
+    if (!mounted) return;
+    setState(() => _error = t.migration_target_missing);
   }
 
   Future<void> _refreshTarget() async {
@@ -556,10 +575,24 @@ class _MigrationPageState extends State<MigrationPage>
             else if (done) ...<Widget>[
               Text(t.migration_export_done),
               const SizedBox(height: 8),
-              FilledButton(
-                onPressed: _busy ? null : () => _channel.launchFushi(),
-                child: Text(t.migration_open_fushi),
-              ),
+              // BUG-1501：导出完成 ≠ Fushi 还装着。本页明明一直有 `_fushiInstalled`
+              // 这个真值探测，这个按钮却只看 `done`，所以用户卸掉 Fushi 之后仍然
+              // 看到「打开 Fushi」。没装就换成下载安装入口，别给死按钮。
+              if (!_fushiInstalled) ...<Widget>[
+                Text(
+                  t.migration_target_missing,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+                const SizedBox(height: 8),
+                FilledButton(
+                  onPressed: _busy ? null : () => _migrateNow(),
+                  child: Text(t.migration_download_fushi),
+                ),
+              ] else
+                FilledButton(
+                  onPressed: _busy ? null : () => unawaited(_openFushi()),
+                  child: Text(t.migration_open_fushi),
+                ),
               TextButton(
                 onPressed: _busy ? null : () => _migrateNow(fresh: true),
                 child: Text(t.migration_reexport),
