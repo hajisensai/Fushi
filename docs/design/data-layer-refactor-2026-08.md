@@ -93,12 +93,34 @@ addedAt——加一个没有消费者的时钟列只会让人误以为它在同�
 - 当前模型是**自洽的**:导入期强制标题去重 + display_title 展示/身份分离 + 远端下载改键
   迁移,丑但没有活 bug。换句话说这是债,不是火。
 
+**Stage 1a 已落地(v81,PR #796)**:epub_books.uid 列(insertEpubBook 单点
+自动生成 book_<时刻>_<计数>;迁移回填 book_<rowid>_<时刻>;partial 唯一索引
+WHERE uid != '' 防裸插撞约束)+ getEpubBookByUid 读取口。身份从此随行积累,
+与 v39 给视频先落 bookUid 列、v76 收尾的两步走同款。
+
+**Stage 1b 关键雷区(切子表键前必读)**:reader_positions/bookmarks/
+book_custom_css/revealed_images 进备份合并与 sync——键切 uid 后两库的随机
+uid 互不可比,合并引擎四张表的 SQL 必须改为经 epub_books 双侧 JOIN 换键
+(src.uid → src.book_key → target.book_key → target.uid),否则合并静默零命中。
+这是当初分期的真正原因,不是工作量而是数据正确性雷区。
+
 分期骨架(后续任务按此执行):
 1. Stage 1:EpubBooks 加 `uid` 列(导入时生成,迁移回填随机 uid),**同 PR 内**把
    ReaderPositions/Bookmarks/RevealedImages/BookCustomCss 的读写切到 uid(FK 重建),
    bookKey 降级为 sync/备份专用派生属性。
 2. Stage 2:ShelfEntries/MediaCollectionItems entryKey 换 uid(含远端下载改键路径删除)。
-3. Stage 3:sync 协议升级 per-uid(对端能力协商,旧端回退 title)。
+3. ~~Stage 3:sync 协议升级 per-uid~~ **2026-08-10 复核后归档不做**——动机已蒸发:
+   ① 改名不断链:epub 无 raw title 改名,用户改名走 display-title override 层
+   (`display_title.dart` 红线:身份恒 raw、显示恒过门面),sync 键不动;② 同名
+   互串:零用户报告,且 per-uid 结构上修不了(uid 本机随机、映射表建立仍靠
+   title 对齐,`tables.dart` epub uid 注释是定义级契约「本列不进 wire」);
+   ③ 空标题坍缩已根治(跳过 + pruneRootSpill)。**触发条件式重启**(启动的
+   不是 per-uid 而是对应正解):a) epub raw 改名真排期 → 「wire 键冻结在存储
+   bookKey 列」微改造(~15 处 `sanitizeTtuFilename(title)` 现场派生点改读存储
+   列,零协议变更);b) 真实同名互串报告 → 内容哈希 sidecar 消歧独立立项
+   (互联走 `/api/capabilities` 能力位 additive 字段,云端 per-book manifest
+   sidecar、布局不动旧端零感知);c) 两端 uid 映射表协商在任何条件下都不是
+   正解,禁止领走。
 
 ### P4. 统计投影表塌缩为事实表
 

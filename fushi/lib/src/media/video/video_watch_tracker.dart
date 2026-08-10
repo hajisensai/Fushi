@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/video/video_playback_source.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/fushi_time_format.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 完成判定纯函数：进度 ≥ 90% 且尚未完成、且时长已知。
 bool shouldMarkCompleted(int? positionMs, int? durationMs, bool already) {
@@ -45,52 +45,55 @@ List<(String, int, int)> splitWatchTime(DateTime start, DateTime now) {
   return <(String, int, int)>[(_dateKey(start), start.hour, elapsed)];
 }
 
-String _dateKey(DateTime d) => FushiTimeFormat.dayKey(d);
+// P4 写侧收敛：dateKey 派生统一走 DB 层权威实现（与复合入口同一份格式化）。
+String _dateKey(DateTime d) => FushiDatabase.statDateKeyOf(d);
 
 /// 视频观看统计采集器：观看时长（仅播放时累加）+ 字幕字数（单调去重）+ 完成标记。
 ///
 /// 不直接依赖 `VideoPlayerController`（其状态读 libmpv，测试宿主无法实例化），
 /// 而经 [VideoPlaybackSource] 接口，因此纯单测可用 fake 验证采集逻辑。
 ///
-/// 三类回调由上层（页面）注入，统一落 DB：
-/// - [_addStat]：把一条增量（字幕字数或观看时长，另一维度传 0）累加进
-///   (title, dateKey) 行。**dateKey 由本采集器决定**（字幕字数用当下日期；观看时长
-///   用 [splitWatchTime] 各桶各自日期），上层回调直接透传，不得另算「今日」——否则
-///   跨午夜的 flush 会与 [_addHourly] 的小时日志日归属不一致。
-/// - [_addHourly]：把观看时长增量累加进 (dateKey, hour) 小时日志（可空：无需小时
-///   统计的场景/测试传 null）。
+/// 三类回调由上层（页面）注入，统一落 DB（P4 写侧收敛后两条统计路都指向
+/// `FushiDatabase.recordWatchFlush` 复合入口）：
+/// - [_recordFlush]：把一次 flush 的观看时长桶（[splitWatchTime] 输出，
+///   **dateKey/hour 由本采集器按各桶自身时刻决定**，跨午夜正确归两天）交给上层
+///   同一事务写小时日志 + 日聚合。上层直接透传，不得另算「今日」。
+/// - [_addSubtitleChars]：把一句新 cue 的字幕字数按 cue 时刻的 dateKey 累加进
+///   日聚合（不进小时日志）。
 /// - [_markCompleted]：首次进度达阈值时标记该 bookUid 完成（幂等由 DB 层保证）。
 class VideoWatchTracker {
   VideoWatchTracker({
     required this.title,
     required this.bookUid,
     required FutureOr<void> Function(
-            String title, String dateKey, int subtitleChars, int watchTimeMs)
-        addStat,
+            List<(String dateKey, int hour, int watchMs)> buckets)
+        recordFlush,
+    required FutureOr<void> Function(String dateKey, int subtitleChars)
+        addSubtitleChars,
     required Future<void> Function(String bookUid) markCompleted,
-    Future<void> Function(String dateKey, int hour, int deltaMs)? addHourly,
     FutureOr<void> Function(String title, String bookUid, String dateKey,
             int timestampMs, int durationMs, int subtitleChars)?
         recordActivity,
     FutureOr<void> Function()? onEpisodeCompleted,
-  })  : _addStat = addStat,
+  })  : _recordFlush = recordFlush,
+        _addSubtitleChars = addSubtitleChars,
         _markCompleted = markCompleted,
-        _addHourly = addHourly,
         _recordActivity = recordActivity,
         _onEpisodeCompleted = onEpisodeCompleted;
 
   final String title;
   final String bookUid;
   final FutureOr<void> Function(
-          String title, String dateKey, int subtitleChars, int watchTimeMs)
-      _addStat;
+      List<(String dateKey, int hour, int watchMs)> buckets) _recordFlush;
+  final FutureOr<void> Function(String dateKey, int subtitleChars)
+      _addSubtitleChars;
   final Future<void> Function(String bookUid) _markCompleted;
-  final Future<void> Function(String dateKey, int hour, int deltaMs)?
-      _addHourly;
 
   /// v49：一次观看 session（attach→stop 生命周期）结束时写一条精确时刻的活动事件，
-  /// 喂首页 Activity 时间轴。与按 60s tick 落库的 [_addStat] 不同——那会一坐产生几十
-  /// 行噪声，故活动事件在 session 累积后**只落一行**（总时长 + 总字幕字数）。
+  /// 喂首页 Activity 时间轴。与按 60s tick 落库的 [_recordFlush] 不同——那会一坐
+  /// 产生几十行噪声，故活动事件在 session 累积后**只落一行**（总时长 + 总字幕字数），
+  /// dateKey 取 **stop 时刻**。跨午夜时它与桶的日归属**刻意**不同（session 事件 vs
+  /// 桶粒度投影，见 recordWatchFlush 的 doc），不得从桶派生、不得「顺手统一」。
   final FutureOr<void> Function(String title, String bookUid, String dateKey,
       int timestampMs, int durationMs, int subtitleChars)? _recordActivity;
   final FutureOr<void> Function()? _onEpisodeCompleted;
@@ -172,7 +175,7 @@ class VideoWatchTracker {
         debugSubtitleChars += chars;
         _sessionChars += chars;
         unawaited(Future<void>.value(
-            _addStat(title, _dateKey(DateTime.now()), chars, 0)));
+            _addSubtitleChars(_dateKey(DateTime.now()), chars)));
       }
     }
   }
@@ -195,12 +198,15 @@ class VideoWatchTracker {
       // 系统睡眠 / 长 GC 停顿致定时器跨越非播放窗口），整窗丢弃而非凭空计入观看时长，
       // 并保证 [splitWatchTime] 输入恒 ≤ kMaxWatchGap（单次至多跨一个边界）。
       if (s.isPlaying && isContinuousWatchGap(start, now)) {
-        for (final (String dateKey, int hour, int ms)
-            in splitWatchTime(start, now)) {
-          await _addHourly?.call(dateKey, hour, ms);
-          // 逐桶配各自 dateKey：跨午夜正确归两天。
-          await _addStat(title, dateKey, 0, ms);
-          _sessionWatchMs += ms; // v49 session 累积（净观看时长，已过挂起守卫）。
+        final List<(String, int, int)> buckets = splitWatchTime(start, now);
+        if (buckets.isNotEmpty) {
+          // P4 写侧收敛：整批桶一次交给复合入口（同一事务写小时日志 + 日聚合，
+          // 桶归属不变——逐桶配各自 dateKey，跨午夜正确归两天），消掉旧接线
+          // 「两次独立 await 各自 fail-open」的 hourly/daily 不同步丢失面。
+          await _recordFlush(buckets);
+          for (final (_, _, int ms) in buckets) {
+            _sessionWatchMs += ms; // v49 session 累积（净观看时长，已过挂起守卫）。
+          }
         }
       }
 

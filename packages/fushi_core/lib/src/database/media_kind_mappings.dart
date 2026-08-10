@@ -17,6 +17,7 @@ library;
 import 'activity_event_types.dart';
 import 'media_kind.dart';
 import 'stat_source_kind.dart';
+import 'tag_host_kind.dart';
 
 /// 合集/书架种类 → 活动事件种类（epub / srt 都折叠进活动域的 `book`）。
 ActivityMediaKind activityMediaKindOf(MediaKind kind) => switch (kind) {
@@ -44,4 +45,17 @@ StatSourceKind? statSourceKindOf(MediaKind kind) => switch (kind) {
       MediaKind.epub || MediaKind.srt => StatSourceKind.book,
       MediaKind.video => StatSourceKind.video,
       MediaKind.game => null,
+    };
+
+/// 标签宿主种类 → 标签墓碑域（[BookTagMembershipTombstones].mediaType 的值域，
+/// 复用 [MediaKind]）。只有 epub/video 进 tag live-sync、有墓碑语义；其余
+/// kind 调到这里是调用方 bug——扔 ArgumentError 而不是静默写错域（写错域的
+/// 墓碑所有读取端都命不中，跨端标签移除会静默失传，review5-9）。
+MediaKind tombstoneMediaKindOf(TagHostKind kind) => switch (kind) {
+      TagHostKind.epub => MediaKind.epub,
+      TagHostKind.video => MediaKind.video,
+      TagHostKind.srt ||
+      TagHostKind.collection ||
+      TagHostKind.game =>
+        throw ArgumentError.value(kind, 'kind', '该 kind 不进 tag sync，无墓碑域'),
     };

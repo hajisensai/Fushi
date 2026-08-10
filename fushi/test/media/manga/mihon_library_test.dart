@@ -96,7 +96,7 @@ void main() {
     );
     expect(selected.currentChapter?.name, 'Chapter 1');
     final ReaderPosition? position =
-        await ReaderPositionRepository(database).findByBookKey(row.bookKey);
+        await ReaderPositionRepository(database).findByBookUid(row.uid);
     expect(position?.sectionIndex, 0);
 
     final EpubBookRow addedAgain = await service.add(

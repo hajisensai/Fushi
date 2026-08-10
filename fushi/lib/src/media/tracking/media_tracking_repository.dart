@@ -359,14 +359,16 @@ class MediaTrackingRepository {
       );
     }
 
+    // v82：reader_positions 键 = 书 uid，按行 uid 直查（空 uid 视同无阅读记录）。
     final Map<String, ReaderPositionRow> positions =
         <String, ReaderPositionRow>{
       for (final ReaderPositionRow position
           in await _db.getAllReaderPositions())
-        position.bookKey: position,
+        position.bookUid: position,
     };
     for (final EpubBookRow book in await _db.getAllEpubBooks()) {
-      final ReaderPositionRow? position = positions[book.bookKey];
+      final ReaderPositionRow? position =
+          book.uid.isEmpty ? null : positions[book.uid];
       final DateTime? completedAt = book.completedAt;
       if ((position == null && completedAt == null) ||
           isMapped(TrackingMediaType.book, book.bookKey)) {
@@ -703,7 +705,9 @@ class MediaTrackingRepository {
     if (format.isPagedImageBook) {
       return (format: format, chapterProgress: null);
     }
-    final ReaderPositionRow? position = await _db.getReaderPosition(bookKey);
+    // v82：位置键 = 书 uid（行在手直接取；空 uid 视同无阅读记录）。
+    final ReaderPositionRow? position =
+        book.uid.isEmpty ? null : await _db.getReaderPosition(book.uid);
     if (position == null) {
       return (
         format: format,
@@ -829,8 +833,10 @@ class MediaTrackingRepository {
       }
       final EpubBookRow? book = await _db.getEpubBook(mapping.mediaKey);
       if (book == null) continue;
+      // v82：mapping.mediaKey 是 bookKey（映射面貌冻结）；位置键 = 书 uid，
+      // 从刚查到的行取（空 uid 视同无阅读记录）。
       final ReaderPositionRow? position =
-          await _db.getReaderPosition(mapping.mediaKey);
+          book.uid.isEmpty ? null : await _db.getReaderPosition(book.uid);
       final DateTime? completedAt = book.completedAt;
       if (position == null && completedAt == null) continue;
       final int localEvidenceAt = math.max(

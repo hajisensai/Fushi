@@ -53,11 +53,14 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
   /// 合集归属映射（书架同源）：按书 tile 显示所属合集名用。
   /// - [_collectionNamesById]：collectionId → 合集名。
-  /// - [_primaryCollectionByEntry]：'epub|<bookKey>' → 折叠归属的主 collectionId。
+  /// - [_primaryCollectionByEntry]：'epub|<uid>' → 折叠归属的主 collectionId
+  ///   （v83：成员表 epub entryKey = `epub_books.uid`）。
   /// - [_bookKeyByTitle]：reading_statistics 只存 title，经 epub_books 反查 bookKey。
+  /// - [_epubUidByBookKey]：bookKey → uid 换算表（查归属映射前转一跳）。
   Map<int, String> _collectionNamesById = <int, String>{};
   Map<String, int> _primaryCollectionByEntry = <String, int>{};
   Map<String, String> _bookKeyByTitle = <String, String>{};
+  Map<String, String> _epubUidByBookKey = <String, String>{};
 
   // 聚合数据
   int _todayChars = 0;
@@ -175,6 +178,12 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       _primaryCollectionByEntry = await db.getPrimaryCollectionIdByEntry();
       _bookKeyByTitle = <String, String>{
         for (final EpubBookRow r in epubRows) r.title: r.bookKey,
+      };
+      // v83：成员表 epub entryKey = uid，同批行顺带建换算表（空 uid 异常行不进
+      // 表，查归属时按 bookKey 原样回退）。
+      _epubUidByBookKey = <String, String>{
+        for (final EpubBookRow r in epubRows)
+          if (r.uid.isNotEmpty) r.bookKey: r.uid,
       };
       // 收藏语句按 source 分桶：非视频来源（书内 / 有声书 / 歌词）都归阅读统计。
       // BUG-893：写入端此前不带 dateKey，旧的 `dateKey != null` 过滤把所有书内收藏
@@ -1280,12 +1289,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   }
 
   /// 按书 tile 的所属合集名（书架同款「主合集」折叠归属，无则 null）。title→bookKey
-  /// 经 epub_books 反查（reading_statistics 只存 title），拼 'epub|<bookKey>' 命中。
+  /// 经 epub_books 反查（reading_statistics 只存 title），再经 [_epubUidByBookKey]
+  /// 换算拼 'epub|<uid>' 命中（v83 成员表键；换算不上按 bookKey 回退）。
   String? _collectionNameForBook(String title) {
     final String? bookKey = _bookKeyByTitle[title];
     if (bookKey == null) return null;
     return statCollectionName(
-      MediaKind.epub.compositeKey(bookKey),
+      MediaKind.epub.compositeKey(_epubUidByBookKey[bookKey] ?? bookKey),
       _primaryCollectionByEntry,
       _collectionNamesById,
     );
@@ -1297,8 +1307,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   String _bookDisplayTitle(String title) {
     final String? bookKey = _bookKeyByTitle[title];
     if (bookKey == null) return title;
-    return ReaderFushiSource.instance.overrideTitleForBookKey(bookKey) ??
-        title;
+    return ReaderFushiSource.instance.overrideTitleForBookKey(bookKey) ?? title;
   }
 
   Widget _buildBookTile(_BookData book) {

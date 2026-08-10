@@ -4,10 +4,10 @@ import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-616 B(排序) + A(系列) shelf_entries / series DAO 守卫：
 ///  - upsertShelfOrder / setSeriesForEntry 的部分更新（不互相清空）。
-///  - migrateShelfEntryKey 的四条路径（迁移 / 新行已存在不覆盖 / 等键 no-op /
-///    无旧行 no-op）。
 ///  - 四个删书 DAO 方法同事务清 shelf_entry（删后无孤儿），含幂等删 0 行。
+///    v83 起 epub 域 entryKey = epub_books.uid（deleteEpubBook 按 uid 清行）。
 ///  - deleteSeries FK setNull 把成员 seriesId 归 NULL（散回，不连坐删）。
+/// （migrateShelfEntryKey 四路径组已随该 DAO 在 v83 删除，见下方组注释。）
 void main() {
   late FushiDatabase db;
 
@@ -85,73 +85,21 @@ void main() {
     });
   });
 
-  group('migrateShelfEntryKey (远端书改键迁移 §0🔴2)', () {
-    test('旧行迁移到新键，sortOrder/seriesId 延续，旧行删除', () async {
-      final int sid = await db.createSeries('S');
-      await db.upsertShelfOrder(MediaKind.epub, 'old', 3);
-      await db.setSeriesForEntry(MediaKind.epub, 'old', sid);
-
-      await db.migrateShelfEntryKey(MediaKind.epub, 'old', 'new');
-
-      expect(await db.getShelfEntry(MediaKind.epub, 'old'), isNull,
-          reason: '旧 downloadId 行迁移后删除');
-      final moved = (await db.getShelfEntry(MediaKind.epub, 'new'))!;
-      expect(moved.sortOrder, 3);
-      expect(moved.seriesId, sid, reason: '归属延续');
-    });
-
-    test('新行已存在 → 本地优先不覆盖，仅删旧行', () async {
-      await db.upsertShelfOrder(MediaKind.epub, 'old', 3);
-      await db.upsertShelfOrder(MediaKind.epub, 'new', 99);
-
-      await db.migrateShelfEntryKey(MediaKind.epub, 'old', 'new');
-
-      expect(await db.getShelfEntry(MediaKind.epub, 'old'), isNull);
-      final kept = (await db.getShelfEntry(MediaKind.epub, 'new'))!;
-      expect(kept.sortOrder, 99, reason: '已存在的本地新行不被旧行覆盖');
-    });
-
-    test('等键 no-op', () async {
-      await db.upsertShelfOrder(MediaKind.epub, 'same', 4);
-      await db.migrateShelfEntryKey(MediaKind.epub, 'same', 'same');
-      final row = (await db.getShelfEntry(MediaKind.epub, 'same'))!;
-      expect(row.sortOrder, 4);
-    });
-
-    test('无旧行 no-op（importer 降级 / localBookKey==null 后旧行已是孤儿）', () async {
-      await db.migrateShelfEntryKey(MediaKind.epub, 'absent', 'target');
-      expect(await db.getShelfEntry(MediaKind.epub, 'target'), isNull);
-      expect(await db.getAllShelfEntries(), isEmpty);
-    });
-
-    // TODO-616 A3：远端书先归入系列（以 downloadId 登记），下载后 bookKey 漂移，
-    // 改键迁移后系列归属延续——getShelfEntriesBySeries 反映新键、旧键不再属系列。
-    test('远端书归系列 → 下载改键后系列归属延续（A3 路径）', () async {
-      final int sid = await db.createSeries('远端系列');
-      const String downloadId = 'remote-download-id';
-      const String localBookKey = 'local_book_key_after_import';
-      await db.setSeriesForEntry(MediaKind.epub, downloadId, sid);
-
-      await db.migrateShelfEntryKey(MediaKind.epub, downloadId, localBookKey);
-
-      final List<ShelfEntryRow> members = await db.getShelfEntriesBySeries(sid);
-      expect(members, hasLength(1));
-      expect(members.single.entryKey, localBookKey,
-          reason: '系列成员改键到本地 bookKey');
-      expect(await db.getShelfEntry(MediaKind.epub, downloadId), isNull,
-          reason: '旧 downloadId 行迁移后删除，不再属系列');
-    });
-  });
+  // v83：migrateShelfEntryKey 已随「远端书下载改键路径」删除（epub 域
+  // entryKey 换稳定 uid 后导入时刻定死、不再漂移；该路径删除前已恒 no-op）。
 
   group('删书四方法同事务清 shelf_entry（无孤儿 §0🔴3）', () {
-    test('deleteEpubBook 删 epub shelf_entry', () async {
+    test('deleteEpubBook 删 epub shelf_entry（v83：行键 = uid）', () async {
       final String key = await insertEpub('E');
-      await db.upsertShelfOrder(MediaKind.epub, key, 1);
-      expect(await db.getShelfEntry(MediaKind.epub, key), isNotNull);
+      // v83：shelf_entries 的 epub 域 entryKey = epub_books.uid（导入时生成），
+      // deleteEpubBook 按 uid 清行——种子行必须落在 uid 键上才是真实域。
+      final String uid = (await db.resolveEpubBookUid(key))!;
+      await db.upsertShelfOrder(MediaKind.epub, uid, 1);
+      expect(await db.getShelfEntry(MediaKind.epub, uid), isNotNull);
 
       await db.deleteEpubBook(key);
-      expect(await db.getShelfEntry(MediaKind.epub, key), isNull,
-          reason: 'deleteEpubBook 必须同事务清 epub shelf_entry');
+      expect(await db.getShelfEntry(MediaKind.epub, uid), isNull,
+          reason: 'deleteEpubBook 必须同事务清 epub shelf_entry（uid 键）');
     });
 
     test('deleteVideoBook 删 video shelf_entry', () async {

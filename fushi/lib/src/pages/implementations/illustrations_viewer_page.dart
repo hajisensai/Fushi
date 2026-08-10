@@ -39,7 +39,7 @@ class IllustrationsViewerPage extends StatefulWidget {
   const IllustrationsViewerPage({
     required this.bookTitle,
     required this.extractDir,
-    required this.bookKey,
+    required this.bookUid,
     required this.database,
     super.key,
   });
@@ -49,8 +49,9 @@ class IllustrationsViewerPage extends StatefulWidget {
   /// The book's on-disk extracted directory (`EpubBooks.extractDir`).
   final String extractDir;
 
-  /// 书稳定身份（= EpubBooks.bookKey）；图片 reveal 状态按它键控持久化。
-  final String bookKey;
+  /// 书稳定身份（v82 起 = EpubBooks.uid）；图片 reveal 状态按它键控持久化。
+  /// 空串 = 旧行无 uid（不应出现）——reveal 只在内存生效、不落库。
+  final String bookUid;
 
   /// 图片 reveal 状态真相源（与阅读器 WebView 共享，实现书内↔图片库双向同步）。
   final FushiDatabase database;
@@ -81,14 +82,16 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
   }
 
   Future<void> _loadRevealedThenImages() async {
-    try {
-      final Set<String> keys =
-          await widget.database.getRevealedImageKeys(widget.bookKey);
-      if (!mounted) return;
-      _revealed.addAll(keys);
-    } catch (e, stack) {
-      ErrorLogService.instance
-          .log('IllustrationsViewer.loadRevealed', e, stack);
+    if (widget.bookUid.isNotEmpty) {
+      try {
+        final Set<String> keys =
+            await widget.database.getRevealedImageKeys(widget.bookUid);
+        if (!mounted) return;
+        _revealed.addAll(keys);
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('IllustrationsViewer.loadRevealed', e, stack);
+      }
     }
     await _extractImages();
   }
@@ -105,9 +108,10 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
     final String? key = im.revealKey;
     if (key == null || !_revealed.add(key)) return;
     setState(() {});
+    if (widget.bookUid.isEmpty) return; // 无 uid 只留内存态，不落孤儿行。
     try {
       await widget.database.markImageRevealed(
-          widget.bookKey, key, DateTime.now().millisecondsSinceEpoch);
+          widget.bookUid, key, DateTime.now().millisecondsSinceEpoch);
     } catch (e, stack) {
       ErrorLogService.instance.log('IllustrationsViewer.reveal', e, stack);
     }

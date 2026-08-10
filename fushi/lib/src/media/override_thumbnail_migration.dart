@@ -52,16 +52,17 @@ Future<bool> migrateOverrideThumbnailPrefixes({
   required Directory thumbnailsDirectory,
 }) async {
   if (!thumbnailsDirectory.existsSync()) return true;
+  // v80 起最近打开流在 media_open_history（media_id = 旧 media_identifier 语义）。
   final List<QueryRow> rows = await db
       .customSelect(
-        'SELECT DISTINCT media_identifier FROM media_items '
-        "WHERE media_identifier LIKE 'fushi://book/%' "
-        "OR media_identifier LIKE 'fushi://srtbook/%'",
+        'SELECT DISTINCT media_id FROM media_open_history '
+        "WHERE media_id LIKE 'fushi://book/%' "
+        "OR media_id LIKE 'fushi://srtbook/%'",
       )
       .get();
   bool clean = true;
   for (final QueryRow row in rows) {
-    final String id = row.read<String>('media_identifier');
+    final String id = row.read<String>('media_id');
     final File target = File(
         p.join(thumbnailsDirectory.path, canonicalOverrideThumbnailName(id)));
     if (target.existsSync()) continue;

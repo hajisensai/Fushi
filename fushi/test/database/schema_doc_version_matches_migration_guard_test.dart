@@ -49,6 +49,13 @@ import '../helpers/source_guard.dart';
 /// 刻意**不**收 `columnTransformer:` —— 那是**改名**（v57 removed_at→deleted_at），
 /// 不是列的诞生地；收了会把一堆老列错标成 v57。
 ///
+/// **重建换列惯用形**（v82 起）：`CREATE TABLE <表>_vNN (…) … RENAME TO <表>` 的
+/// create-copy-drop-rename 重建会在 vNN **诞生新列**（如 v82 把 bookmarks 的
+/// book_key 换成 book_uid）。解析器把 `<表>_vNN` 记进 `tableRebuiltAt[<表>]`；
+/// 比对时列声明命中其宿主表的某次重建版本也算说实话（不逐列解析重建 DDL 的列清
+/// 单——「宁可漏报不可误报」，重建版本集合已足够把真话放行、把凭空编造的版本号
+/// 拦下）。
+///
 /// ## 为什么守在 `fushi/test/` 而不是 `packages/fushi_core/test/`
 ///
 /// 两个原因，都不是随手放的：
@@ -118,6 +125,16 @@ void main() {
         index.columnAddedAt.containsKey('collectionMemberTombstones.deletedAt'),
         isFalse,
         reason: 'columnTransformer（改名）不得被当成列的落地点');
+
+    // 重建换列惯用形锚点：v82 `CREATE TABLE bookmarks_v82` / v83
+    // `CREATE TABLE shelf_entries_v83` 必须被认成对应表的重建版本；解析器漂移
+    // 这里先红（否则 bookmarks.bookUid 这类「重建时诞生的列」的 doc 会被误报）。
+    expect(index.tableRebuiltAt['bookmarks'], contains(82),
+        reason: 'v82 重建（book_key→book_uid 换列）形态');
+    expect(index.tableRebuiltAt['shelfEntries'], contains(83),
+        reason: 'v83 重建（epub entryKey 换 uid）形态');
+    expect(index.tableRebuiltAt['mediaCollectionItems'], contains(83),
+        reason: 'v83 重建形态');
   });
 
   test('tables.dart 里确实有一批 doc 声明了版本号（判据塌成空集必须红）', () {
@@ -161,6 +178,14 @@ void main() {
       }
       checked++;
       if (actual != d.version) {
+        // 重建换列：列在宿主表的 create-copy-drop-rename 重建里诞生（如 v82 的
+        // bookmarks.bookUid）。doc 声明命中该表的某次重建版本 = 说实话，放行。
+        final int dot = d.symbol.indexOf('.');
+        final String table = dot < 0 ? d.symbol : d.symbol.substring(0, dot);
+        if (dot >= 0 &&
+            (index.tableRebuiltAt[table]?.contains(d.version) ?? false)) {
+          continue;
+        }
         offenders.add('$tablesPath:${d.line}  ${d.symbol} '
             'doc 声明 v${d.version}，实际落地于 v$actual\n'
             '      doc: ${d.evidence}');
@@ -394,13 +419,19 @@ int? _declaredVersion(String text, {required int maxVersion}) {
 // ---------------------------------------------------------------------------
 
 class _MigrationIndex {
-  _MigrationIndex._(this.tableCreatedAt, this.columnAddedAt, this.maxVersion);
+  _MigrationIndex._(this.tableCreatedAt, this.columnAddedAt,
+      this.tableRebuiltAt, this.maxVersion);
 
   /// drift 表访问器（`mediaCollections`）→ createTable 所在的迁移版本。
   final Map<String, int> tableCreatedAt;
 
   /// `表访问器.列 getter`（`mediaCollections.coverPath`）→ addColumn 所在版本。
   final Map<String, int> columnAddedAt;
+
+  /// 表访问器 → create-copy-drop-rename 重建（`CREATE TABLE <表>_vNN`）发生的
+  /// 版本集合。重建时可整体换列（v82 bookmarks book_key→book_uid），列 doc 声明
+  /// 命中重建版本视为落地属实。
+  final Map<String, Set<int>> tableRebuiltAt;
 
   final int maxVersion;
 
@@ -414,7 +445,11 @@ class _MigrationIndex {
     return tableCreatedAt[dot < 0 ? symbol : symbol.substring(0, dot)];
   }
 
-  static final RegExp _blockHead = RegExp(r'if\s*\(\s*from\s*<\s*(\d+)\s*\)');
+  // 块头两种形态：`if (from < 82)` 与带附加守卫的 `if (from < 83 && …)`（v83
+  // 起加了 `_tableExists` 门控）。只认闭括号会把带守卫的块整个并进上一个块，
+  // 其中的建表/重建被错误归给上一个版本号。
+  static final RegExp _blockHead =
+      RegExp(r'if\s*\(\s*from\s*<\s*(\d+)\s*(?:\)|&&)');
   static final RegExp _createTable =
       RegExp(r'\bm\s*\.\s*createTable\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)');
   static final RegExp _addColumn = RegExp(r'\bm\s*\.\s*addColumn\(\s*'
@@ -432,6 +467,9 @@ class _MigrationIndex {
       r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)',
       caseSensitive: false);
 
+  /// 重建换列惯用形的表名后缀：`bookmarks_v82` → 基表 `bookmarks`。
+  static final RegExp _rebuildSuffix = RegExp(r'^(\w+)_v\d+$');
+
   static _MigrationIndex parse(String databaseSrc, _TableModel model) {
     // 阶梯窗口用结构原语定边界，别用「从 onUpgrade 往后数 N 个字符」——方法体一
     // 变长断言就凭空变假。
@@ -447,6 +485,7 @@ class _MigrationIndex {
 
     final Map<String, int> tableCreatedAt = <String, int>{};
     final Map<String, int> columnAddedAt = <String, int>{};
+    final Map<String, Set<int>> tableRebuiltAt = <String, Set<int>>{};
 
     final List<RegExpMatch> heads = _blockHead.allMatches(code).toList();
     int maxVersion = 0;
@@ -480,8 +519,22 @@ class _MigrationIndex {
         }
       }
       for (final RegExpMatch m in _rawCreateTable.allMatches(block)) {
-        final String? cls = snakeTables[m.group(1)!.toLowerCase()];
-        if (cls != null) noteTable(_TableModel.accessorOf(cls));
+        final String raw = m.group(1)!.toLowerCase();
+        final String? cls = snakeTables[raw];
+        if (cls != null) {
+          noteTable(_TableModel.accessorOf(cls));
+          continue;
+        }
+        // 重建换列惯用形：`CREATE TABLE <表>_vNN`（随后 RENAME TO <表>）。
+        // 按去掉 `_vNN` 后缀的基表名反查，命中则记该表在本块被重建。
+        final RegExpMatch? rebuilt = _rebuildSuffix.firstMatch(raw);
+        if (rebuilt != null) {
+          final String? base = snakeTables[rebuilt.group(1)!];
+          if (base != null) {
+            (tableRebuiltAt[_TableModel.accessorOf(base)] ??= <int>{})
+                .add(version);
+          }
+        }
       }
       for (final RegExpMatch m in _rawAddColumn.allMatches(block)) {
         final String? cls = snakeTables[m.group(1)!.toLowerCase()];
@@ -493,6 +546,7 @@ class _MigrationIndex {
       }
     }
 
-    return _MigrationIndex._(tableCreatedAt, columnAddedAt, maxVersion);
+    return _MigrationIndex._(
+        tableCreatedAt, columnAddedAt, tableRebuiltAt, maxVersion);
   }
 }

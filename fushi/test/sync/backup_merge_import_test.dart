@@ -429,6 +429,92 @@ void main() {
     expect(byKey['']!.lookupCount, 7, reason: 'src 无身份桶按自己的桶并入');
   });
 
+  test(
+      'game tags cross-machine: scrape identity two-hop lands the tag on the '
+      "target's own game row (v79 二跳)", () async {
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = FushiDatabase(curDir.path);
+    // B 机：同一部游戏，本机局域 id 不同，但刮削到同一个 bgm 条目。
+    await cur.upsertGalgame(GalgamesCompanion.insert(
+      id: '222000000',
+      name: 'GameB',
+      exePath: r'D:\g.exe',
+      workdir: r'D:\g',
+      addedAt: 2,
+    ));
+    await cur.upsertGalgameSource(GalgameSourcesCompanion.insert(
+      gameId: '222000000',
+      source: 'bgm',
+      externalId: const Value('12345'),
+      dataJson: '{}',
+      fetchedAt: 2,
+    ));
+    // 干扰游戏：无刮削身份，绝不许被打上标签。
+    await cur.upsertGalgame(GalgamesCompanion.insert(
+      id: '333000000',
+      name: 'Bystander',
+      exePath: r'D:\g\c.exe',
+      workdir: r'D:\g',
+      addedAt: 3,
+    ));
+    await cur.close();
+
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = FushiDatabase(srcDir.path);
+    // A 机：不同的本机 id + 同 bgm 条目 + 标签；另一部无刮削的游戏带标签
+    // （跨机无身份可匹配 → 如实丢弃）。
+    await src.upsertGalgame(GalgamesCompanion.insert(
+      id: '111000000',
+      name: 'GameA',
+      exePath: r'E:\games.exe',
+      workdir: r'E:\games',
+      addedAt: 1,
+    ));
+    await src.upsertGalgameSource(GalgameSourcesCompanion.insert(
+      gameId: '111000000',
+      source: 'bgm',
+      externalId: const Value('12345'),
+      dataJson: '{}',
+      fetchedAt: 1,
+    ));
+    final int tagId = await src.getOrCreateTagByName('神作');
+    await src.addTagToGame('111000000', tagId);
+    await src.upsertGalgame(GalgamesCompanion.insert(
+      id: '444000000',
+      name: 'Unscraped',
+      exePath: r'E:\games\d.exe',
+      workdir: r'E:\games',
+      addedAt: 4,
+    ));
+    await src.addTagToGame('444000000', tagId);
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    // 导两遍——幂等。
+    await BackupService.mergeRestoreBackup(
+        dbDirectory: curDir.path, zipPath: zip);
+    await BackupService.mergeRestoreBackup(
+        dbDirectory: curDir.path, zipPath: zip);
+
+    final after = FushiDatabase(curDir.path);
+    addTearDown(after.close);
+    final tagged = (await after.getTagAssignmentsForKind(TagHostKind.game));
+    expect(tagged, hasLength(1), reason: '二跳恰命中一行，重导不双计');
+    expect(tagged.single.entryKey, '222000000',
+        reason: '标签落在 B 机自己的游戏行上（经 bgm 12345 二跳），'
+            '不是 A 机的局域 id');
+    expect((await after.getTagsForGame('222000000')).single.name, '神作');
+    expect(await after.getTagsForGame('333000000'), isEmpty,
+        reason: '无刮削身份的旁观游戏不被误标');
+    expect(await after.getAllGalgames(), hasLength(2),
+        reason: 'galgames 行本身仍不搬运（A 机的游戏没被带过来）');
+  });
+
   test('favorite words dedupe-union keeps earlier createdAt', () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
@@ -512,14 +598,14 @@ void main() {
     final int targetTagId = tagRows.single.data['id'] as int;
     // The mapping points at the REMAPPED target id, not the src id.
     final maps = await after
-        .customSelect('SELECT tag_id FROM book_tag_mappings '
-            "WHERE book_key = 'book1'")
+        .customSelect('SELECT tag_id FROM tag_assignments '
+            "WHERE media_kind = 'epub' AND entry_key = 'book1'")
         .get();
     expect(maps, hasLength(1));
     expect(maps.single.data['tag_id'], targetTagId);
     // No dangling FK: every mapping tag_id resolves to a real tag.
     final dangling = await after
-        .customSelect('SELECT COUNT(*) AS c FROM book_tag_mappings m '
+        .customSelect('SELECT COUNT(*) AS c FROM tag_assignments m '
             'WHERE NOT EXISTS (SELECT 1 FROM book_tags t WHERE t.id = m.tag_id)')
         .getSingle();
     expect(dangling.data['c'], 0);
@@ -643,14 +729,157 @@ void main() {
     expect(rows, hasLength(2)); // dup dropped, distinct one added
   });
 
+  // P4 B3：activity_events 补 union 合并（此前 merge 对它零处理 = 静默丢弃）。
+  test(
+      'activity events dedupe-union by {type, media, title, ms}; idempotent '
+      'and never derives projection rows', () async {
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = FushiDatabase(curDir.path);
+    await cur.addActivityEvent(
+        eventType: 'read',
+        mediaType: 'book',
+        title: 'A',
+        mediaKey: 'A',
+        dateKey: '2026-01-01',
+        timestampMs: 1111,
+        durationMs: 60000,
+        charsDelta: 100);
+    // 两侧共有的同一事件（四元自然键完全一致）→ 只留一条。
+    await cur.addActivityEvent(
+        eventType: 'watch',
+        mediaType: 'video',
+        title: 'V',
+        dateKey: '2026-01-02',
+        timestampMs: 2222,
+        durationMs: 30000,
+        charsDelta: 50);
+    await cur.close();
+
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = FushiDatabase(srcDir.path);
+    await src.addActivityEvent(
+        eventType: 'watch',
+        mediaType: 'video',
+        title: 'V',
+        dateKey: '2026-01-02',
+        timestampMs: 2222,
+        durationMs: 30000,
+        charsDelta: 50);
+    // 备份独有事件 → 并入。
+    await src.addActivityEvent(
+        eventType: 'read',
+        mediaType: 'book',
+        title: 'B',
+        dateKey: '2026-01-03',
+        timestampMs: 3333,
+        durationMs: 90000,
+        charsDelta: 200);
+    // 同题同毫秒但不同 event_type —— 是不同事件，自然键必须含 event_type。
+    await src.addActivityEvent(
+        eventType: 'added',
+        mediaType: 'video',
+        title: 'V',
+        dateKey: '2026-01-02',
+        timestampMs: 2222);
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    // 导两遍——幂等（dedupe-UNION，绝不翻倍）。
+    await BackupService.mergeRestoreBackup(
+        dbDirectory: curDir.path, zipPath: zip);
+    await BackupService.mergeRestoreBackup(
+        dbDirectory: curDir.path, zipPath: zip);
+
+    final after = FushiDatabase(curDir.path);
+    addTearDown(after.close);
+    final rows = await after.getRecentActivityEvents(limit: 100);
+    expect(rows, hasLength(4), reason: '并集去重：共享事件只留一条，重导同一备份幂等');
+    expect(rows.where((r) => r.eventType == 'watch'), hasLength(1),
+        reason: '两侧同一 watch 事件不双计');
+    expect(rows.where((r) => r.eventType == 'added'), hasLength(1),
+        reason: '同题同毫秒不同 type 是不同事件，必须保留');
+    expect(rows.map((r) => r.title).toSet(), <String>{'A', 'V', 'B'});
+    // 不产投影：activity 事实行合并绝不派生 reading_statistics 等投影。
+    expect(await after.getAllReadingStatistics(), isEmpty,
+        reason: 'activity 合并只搬事实行，不得生成投影');
+  });
+
+  test(
+      'galgame_sessions do NOT merge — machine-local game identity, by design '
+      '(P4 B3 成文决策)', () async {
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = FushiDatabase(curDir.path);
+    // 本机自己的游戏 + 会话必须原样保留。
+    await cur.upsertGalgame(GalgamesCompanion.insert(
+      id: '222000000',
+      name: 'LocalGame',
+      exePath: r'D:\g\g.exe',
+      workdir: r'D:\g',
+      addedAt: 2,
+    ));
+    await cur.insertGalgameSession(GalgameSessionsCompanion.insert(
+      gameId: '222000000',
+      startMs: 1000,
+      endMs: 61000,
+      durationSeconds: 60,
+      dateKey: '2026-01-01',
+    ));
+    await cur.close();
+
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = FushiDatabase(srcDir.path);
+    await src.upsertGalgame(GalgamesCompanion.insert(
+      id: '111000000',
+      name: 'RemoteGame',
+      exePath: r'E:\games\r.exe',
+      workdir: r'E:\games',
+      addedAt: 1,
+    ));
+    await src.insertGalgameSession(GalgameSessionsCompanion.insert(
+      gameId: '111000000',
+      startMs: 5000,
+      endMs: 125000,
+      durationSeconds: 120,
+      dateKey: '2026-02-02',
+    ));
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    await BackupService.mergeRestoreBackup(
+        dbDirectory: curDir.path, zipPath: zip);
+
+    final after = FushiDatabase(curDir.path);
+    addTearDown(after.close);
+    expect((await after.getAllGalgames()).single.id, '222000000',
+        reason: '游戏行本机局域身份，不随备份合并搬运');
+    final QueryRow sessions = await after
+        .customSelect('SELECT COUNT(*) AS c FROM galgame_sessions')
+        .getSingle();
+    expect(sessions.data['c'], 1,
+        reason: '成文决策：src 会话的 game_id 在目标库无宿主，不合并——'
+            '本机那条原样保留');
+  });
+
   test('reader position LWW: newer updatedAt wins, older does not clobber',
       () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
     final cur = FushiDatabase(curDir.path);
     await cur.insertEpubBook(_book('lwwbook'));
+    // v82：两库各自 insertEpubBook 自动生成互异 uid，位置行挂各自 uid——
+    // 「同 book_key、uid 不同仍命中」的双侧 JOIN 换键正是被测行为。
     await cur.upsertReaderPosition(ReaderPositionsCompanion.insert(
-      bookKey: 'lwwbook',
+      bookUid: (await cur.resolveEpubBookUid('lwwbook'))!,
       sectionIndex: 2,
       normCharOffset: 5000,
       updatedAt: 100,
@@ -662,7 +891,7 @@ void main() {
     final src = FushiDatabase(srcDir.path);
     await src.insertEpubBook(_book('lwwbook'));
     await src.upsertReaderPosition(ReaderPositionsCompanion.insert(
-      bookKey: 'lwwbook',
+      bookUid: (await src.resolveEpubBookUid('lwwbook'))!,
       sectionIndex: 9,
       normCharOffset: 9999,
       updatedAt: 200, // newer → wins
@@ -678,7 +907,9 @@ void main() {
 
     final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
-    final pos = await after.getReaderPosition('lwwbook');
+    // 本库位置行仍挂本库 uid（合并只换值不换键）。
+    final String afterUid = (await after.resolveEpubBookUid('lwwbook'))!;
+    final pos = await after.getReaderPosition(afterUid);
     expect(pos!.sectionIndex, 9); // backup (newer) won
     expect(pos.normCharOffset, 9999);
 
@@ -688,7 +919,7 @@ void main() {
     final src2 = FushiDatabase(src2Dir.path);
     await src2.insertEpubBook(_book('lwwbook'));
     await src2.upsertReaderPosition(ReaderPositionsCompanion.insert(
-      bookKey: 'lwwbook',
+      bookUid: (await src2.resolveEpubBookUid('lwwbook'))!,
       sectionIndex: 0,
       normCharOffset: 1,
       updatedAt: 50, // older → must lose
@@ -698,7 +929,7 @@ void main() {
     await src2.close();
     await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip2);
-    final pos2 = await after.getReaderPosition('lwwbook');
+    final pos2 = await after.getReaderPosition(afterUid);
     expect(pos2!.sectionIndex, 9); // unchanged — older backup ignored
   });
 
@@ -759,21 +990,18 @@ void main() {
     // Bookmark whose owning book is NOT in the backup (and not on device).
     await src.insertEpubBook(_book('owned'));
     await src.customStatement(
-      'INSERT INTO bookmarks (book_key, section_index, norm_char_offset, '
+      'INSERT INTO bookmarks (book_uid, section_index, norm_char_offset, '
       'label, created_at) VALUES (?, ?, ?, ?, ?)',
-      <Object?>['owned', 1, 100, 'kept', 10],
+      <Object?>[await src.resolveEpubBookUid('owned'), 1, 100, 'kept', 10],
     );
-    // A second epub_books row exists in src, but we delete it AFTER making a
-    // bookmark to simulate an orphan reference — instead, just add a bookmark
-    // referencing 'owned' which both have; verify it merges. For the skip case,
-    // craft a bookmark on a book missing from BOTH by temporarily disabling FK.
-    await src.customStatement('PRAGMA foreign_keys = OFF');
+    // For the skip case, craft a bookmark whose book_uid joins no epub_books
+    // row on either side（v82 后 bookmarks 无 SQL FK，孤儿防线在 merge 的
+    // uid 存在性 guard——这正是被测行为）。
     await src.customStatement(
-      'INSERT INTO bookmarks (book_key, section_index, norm_char_offset, '
+      'INSERT INTO bookmarks (book_uid, section_index, norm_char_offset, '
       'label, created_at) VALUES (?, ?, ?, ?, ?)',
       <Object?>['ghost', 5, 500, 'skipme', 20],
     );
-    await src.customStatement('PRAGMA foreign_keys = ON');
     final zipDir = await _tempDir('mg_zip_');
     addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
@@ -792,11 +1020,11 @@ void main() {
             .toSet();
     expect(labels.contains('kept'), true);
     expect(labels.contains('skipme'), false); // ghost-book bookmark skipped
-    // No dangling FK.
+    // No dangling reference（v82：bookmarks.book_uid ↔ epub_books.uid）.
     final dangling = await after
         .customSelect('SELECT COUNT(*) AS c FROM bookmarks b '
             'WHERE NOT EXISTS (SELECT 1 FROM epub_books e '
-            'WHERE e.book_key = b.book_key)')
+            'WHERE e.uid = b.book_uid)')
         .getSingle();
     expect(dangling.data['c'], 0);
   });
@@ -953,8 +1181,9 @@ void main() {
     final cur = FushiDatabase(curDir.path);
     addTearDown(cur.close);
     await cur.insertEpubBook(_book('shared'));
+    // v82：两库 uid 互异，preview 的双侧 JOIN 换键按 book_key 对上同一本书。
     await cur.upsertReaderPosition(ReaderPositionsCompanion.insert(
-      bookKey: 'shared',
+      bookUid: (await cur.resolveEpubBookUid('shared'))!,
       sectionIndex: 1,
       normCharOffset: 100,
       updatedAt: 100,
@@ -968,7 +1197,7 @@ void main() {
     await src.insertEpubBook(_book('new2'));
     // Newer position for the shared book → counts as an update.
     await src.upsertReaderPosition(ReaderPositionsCompanion.insert(
-      bookKey: 'shared',
+      bookUid: (await src.resolveEpubBookUid('shared'))!,
       sectionIndex: 5,
       normCharOffset: 999,
       updatedAt: 200,

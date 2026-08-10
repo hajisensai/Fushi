@@ -2136,8 +2136,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             // so ESC still exits the book after a page turn (BUG-136).
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
             final String dir = args[0] as String;
-            final bool invert =
-                ReaderFushiSource.instance.invertSwipeDirection;
+            final bool invert = ReaderFushiSource.instance.invertSwipeDirection;
             // BUG-横排滑动翻页方向不随书写方向翻转：滑动/鼠标拖动翻页此前只看
             // invertSwipeDirection 开关，不看书写方向，横排与竖排共用同一套映射。
             // 键盘方向键早已用 `leftIsForward = rtl ^ reverse` 按书写方向翻转
@@ -2276,9 +2275,13 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
                 ImageRevealKey.normalize(args[0]?.toString() ?? '');
             if (key == null) return;
             // 仅新揭开才写库（省重复写）；DB 失败不阻塞 UI（内存集已生效）。
+            // v82：revealed_images 键 = 书 uid（[_bookUid]）；uid 缺失只留内存
+            // 集（本次会话有效），不拿 bookKey 兜底写孤儿行。
             if (_revealedImageKeys.add(key)) {
+              final String? bookUid = _bookUid;
+              if (bookUid == null) return;
               unawaited(appModel.database.markImageRevealed(
-                widget.bookKey,
+                bookUid,
                 key,
                 DateTime.now().millisecondsSinceEpoch,
               ));

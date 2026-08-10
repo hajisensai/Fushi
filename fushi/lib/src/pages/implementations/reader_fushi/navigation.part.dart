@@ -1178,6 +1178,13 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     if (_suppressPositionPersist) {
       return;
     }
+    // v82：位置键 = EpubBooks.uid（[_bookUid]，开书定位时解析）。uid 缺失（书行
+    // 不在库——正常路径 init 早已 pop，此处仅防御）时跳过写入，不拿 bookKey 兜底
+    // 造永远 JOIN 不上的孤儿行。
+    final String? bookUid = _bookUid;
+    if (bookUid == null) {
+      return;
+    }
     _lastSavedSection = section;
     _lastSavedProgress = progress;
 
@@ -1192,7 +1199,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         ReaderPositionRepository(appModel.database);
     try {
       await repo.save(
-        bookKey: widget.bookKey,
+        bookUid: bookUid,
         sectionIndex: section,
         normCharOffset: saveArgs.normCharOffset,
         // BUG-162: >=0 写精确锚（char_offset 列）。<0（WebView 当帧算不出精确偏移）
@@ -1414,29 +1421,19 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // `now - _sessionStartTime` 墙钟差。早退路径（无新字数且时长未达阈值）不消费
     // 累计器，这段时长留到下次真正落库时一并计入——旧实现在这里蒸发。
     final int elapsedMs = _sessionReadingMs;
-    final String dateKey = statDateKey(now);
+
     final int charsRead = _sessionCharsRead;
     final String title = _book!.title;
     _sessionCharsRead = 0;
     _sessionReadingMs = 0;
     try {
-      await appModel.database.addReadingStatistic(
-        title: title,
-        dateKey: dateKey,
-        charsRead: charsRead,
-        timeMs: elapsedMs,
-      );
-      // v49：同一 session 追加一条精确时刻的活动事件，喂首页 Activity 时间轴
-      // （按天统计表只有每日总量，无法还原「几小时前 · 本次多久」）。
-      await appModel.database.addActivityEvent(
-        eventType: kActivityRead,
-        mediaType: kActivityMediaBook,
+      // P4：事实（activity 时间轴行）+ 派生投影（日聚合）走单一复合入口。
+      await appModel.database.recordReadingSession(
         title: title,
         mediaKey: widget.bookKey,
-        dateKey: dateKey,
-        timestampMs: now.millisecondsSinceEpoch,
-        durationMs: elapsedMs,
-        charsDelta: charsRead,
+        charsRead: charsRead,
+        timeMs: elapsedMs,
+        at: now,
       );
     } catch (e, stack) {
       // fail-open：本次统计增量丢弃（计数器已清零，不会重复累加），补 debugPrint +

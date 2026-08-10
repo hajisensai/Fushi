@@ -80,9 +80,15 @@ void main() {
       await tester.pumpAndSettle();
 
       // Start from a clean baseline so charOffset assertions are unambiguous.
+      // v82：reader_positions 键 = 书 uid，导入后 resolve 一次供全测使用。
+      final String? resolvedUid =
+          await appModel.database.resolveEpubBookUid(bookKey);
+      expect(resolvedUid, isNotNull,
+          reason: 'Imported book must have a stable uid (v81 backfill).');
+      final String bookUid = resolvedUid!;
       final ReaderPositionRepository posRepo =
           ReaderPositionRepository(appModel.database);
-      await posRepo.delete(bookKey);
+      await posRepo.delete(bookUid);
 
       // Open the reader via the SOURCE's real launch page (the exact widget the
       // shelf pushes). Avoids relying on focus traversal through a crowded
@@ -164,7 +170,7 @@ void main() {
       // Let the debounced persist flush.
       await tester.pump(const Duration(seconds: 2));
 
-      final ReaderPosition? saved = await posRepo.findByBookKey(bookKey);
+      final ReaderPosition? saved = await posRepo.findByBookUid(bookUid);
       debugPrint('[t375] saved DB: section=${saved?.sectionIndex} '
           'normOffset=${saved?.normCharOffset} charOffset=${saved?.charOffset}');
       expect(saved, isNotNull, reason: 'Reader must persist a position');
@@ -188,7 +194,7 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
-      final ReaderPosition? afterClose = await posRepo.findByBookKey(bookKey);
+      final ReaderPosition? afterClose = await posRepo.findByBookUid(bookUid);
       debugPrint('[t375] after-close DB: section=${afterClose?.sectionIndex} '
           'charOffset=${afterClose?.charOffset}');
       expect(afterClose?.sectionIndex, 0);

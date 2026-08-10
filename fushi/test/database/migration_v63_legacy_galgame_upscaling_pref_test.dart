@@ -126,8 +126,8 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 78);
-    expect(db.schemaVersion, 78);
+    expect(version.read<int>('user_version'), 83);
+    expect(db.schemaVersion, 83);
 
     final List<QueryRow> preferences = await db
         .customSelect(
@@ -246,11 +246,13 @@ void main() {
         'video_download_job_subtitles',
         'video_download_subscriptions',
         'video_download_subscription_items',
+        'tag_assignments',
+        'media_open_history',
       },
       reason: '除 v64 的 collection_scrape_meta、v65 的 Mihon 五表、v66 的 '
-          'collection_relations、v68 的 media_images、v77 视频来源刮削表与 '
-          'v78 下载流水线表外，'
-          '升级不得新增任何表',
+          'collection_relations、v68 的 media_images、v77 视频来源刮削表、'
+          'v78 下载流水线表、v79 的 tag_assignments（五张标签映射表合一）与 '
+          'v80 的 media_open_history（取代 media_items）外，升级不得新增任何表',
     );
   });
 
@@ -268,7 +270,7 @@ void main() {
     expect(await db.getPref('theme'), 's:dark');
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 78);
+    expect(version.read<int>('user_version'), 83);
   });
 
   test(
@@ -299,7 +301,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 78);
+      expect(probe.select('PRAGMA user_version').first.values.first, 83);
       expect(
         probe.select(
           'SELECT 1 FROM profile_settings '

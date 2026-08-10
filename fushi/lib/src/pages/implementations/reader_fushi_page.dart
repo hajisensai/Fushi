@@ -1294,8 +1294,7 @@ class ReaderFushiPage extends BaseSourcePage {
   static Future<void> Function(FavoriteSentence fav)? debugJumpToFavorite;
 
   @override
-  BaseSourcePageState<ReaderFushiPage> createState() =>
-      _ReaderFushiPageState();
+  BaseSourcePageState<ReaderFushiPage> createState() => _ReaderFushiPageState();
 }
 
 class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
@@ -1337,6 +1336,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool _spreadDocumentLoaded = false;
   ReaderSettings? _settings;
   String? _extractDir;
+
+  /// v82：本书子表键（= EpubBooks.uid，开书定位时一次解析存下，写库不再逐次
+  /// resolve）。null = 书行缺失或旧行无 uid——reader_positions / revealed_images
+  /// 的读写跳过，**不**拿 bookKey 兜底写入（epub 域 uid 缺失即 no-op，与
+  /// resolveEpubBookUid 的契约一致）。
+  String? _bookUid;
 
   /// 库内 part 文件（extension）改状态的入口：扩展不被视作 State 子类实例成员，
   /// 直接调 @protected 的 setState 会报 invalid_use_of_protected_member。由本 State
@@ -1916,7 +1921,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   Future<void> _initBook() async {
     // BUG-437: 整个 init 链里多处 DB await（_resolveProfileAndSettings /
-    // db.getEpubBook / _resolveAudioSlot / repo.findByBookKey）此前无任何 top-level
+    // db.getEpubBook / _resolveAudioSlot / repo.findByBookUid）此前无任何 top-level
     // 错误兜底。任一抛异常（双实例共享 WAL DB 写锁超 busy_timeout 抛 SQLITE_BUSY、
     // 磁盘/解析故障等）就逃逸出这个 async 链 → _book / _audioSlotResolved 永不置好 →
     // 尾部 setState 永不执行 → _buildBody 永远返回 spinner → WebView 从不构造 →
@@ -1930,8 +1935,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       debugPrint('[ReaderFushi] _initBook failed: $e\n$stack');
       ErrorLogService.instance.log('ReaderFushi._initBook', e, stack);
       if (!mounted) return;
-      FushiToast.show(
-          msg: t.reader_open_failed, severity: ToastSeverity.error);
+      FushiToast.show(msg: t.reader_open_failed, severity: ToastSeverity.error);
       // BUG-782 同款并发退出合流：init 失败自动退与用户手动退（PopScope 的
       // onPopInvokedWithResult）可能同窗竞发，两条各自 pop 会连退两级把书架也
       // 弹掉。共用同一把 _popInProgress 锁：用户已在退出就让用户路径收尾，这里
@@ -1946,8 +1950,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 同步的真相源）。必须在首次注入分页脚本 revealedKeysJson 之前完成，历史揭开项才不会
   /// 被重新遮罩。DB 失败不阻塞开书（退化为全部遮罩，与旧版一致）。
   Future<void> _loadRevealedImageKeys(FushiDatabase db) async {
+    // v82：revealed_images 键 = 书 uid（[_bookUid]，_initBookInner 定位后已就绪）。
+    final String? bookUid = _bookUid;
+    if (bookUid == null) return;
     try {
-      final Set<String> keys = await db.getRevealedImageKeys(widget.bookKey);
+      final Set<String> keys = await db.getRevealedImageKeys(bookUid);
       _revealedImageKeys.addAll(keys);
     } catch (e, s) {
       ErrorLogService.instance.log('ReaderFushi.loadRevealedImageKeys', e, s);
@@ -1962,14 +1969,22 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // 并行起跑把 profile/settings 的 DB 往返与 EPUB 解析 isolate 重叠，缩短白屏。
     final Future<void> profileSettingsFuture = _resolveProfileAndSettings(db);
     final Future<_BookLocateResult> bookLocateFuture = _locateBookOnDisk(db);
-    // TODO-131 同思路：恢复位置只按 bookKey 查（与 profile / EPUB 解析 / 音频槽
-    // 均无依赖），此前却串行排在整条 init 链末尾。提前起跑与解析重叠，消费点仍在
-    // 原位置 await（书签跳转分支不消费）。ignore() 防「书不在盘上」等早退路径把
-    // 它留成未处理异步错误；正常路径 await 时错误照常抛给 _initBook 的兜底。
+    // TODO-131 同思路：恢复位置查询提前起跑与解析重叠，消费点仍在原位置 await
+    // （书签跳转分支不消费）。v82 起位置键 = EpubBooks.uid，需先等 locate 拿到书行
+    // （仍与 profile/settings 链、EPUB 解析 isolate 并行，只比旧的纯并行多一跳
+    // locate 依赖——uid 本来就来自那次查询）。uid 缺失（书行不在库/旧行空 uid）
+    // 视同无保存位置。ignore() 防「书不在盘上」等早退路径把它留成未处理异步错误；
+    // 正常路径 await 时错误照常抛给 _initBook 的兜底。
     final Future<ReaderPosition?> savedPositionFuture =
         widget.initialBookmarkJump != null
             ? Future<ReaderPosition?>.value(null)
-            : ReaderPositionRepository(db).findByBookKey(widget.bookKey);
+            : bookLocateFuture.then((_BookLocateResult located) {
+                final String? uid = located.bookRow?.uid;
+                if (uid == null || uid.isEmpty) {
+                  return Future<ReaderPosition?>.value(null);
+                }
+                return ReaderPositionRepository(db).findByBookUid(uid);
+              });
     savedPositionFuture.ignore();
 
     await profileSettingsFuture;
@@ -1992,6 +2007,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     final EpubBookRow? bookRow = located.bookRow;
     final String extractDir = located.extractDir;
     _extractDir = extractDir;
+    // v82：子表（阅读位置/揭图）键 = 书稳定 uid，一次解析存字段。空 uid（不应
+    // 出现，v81 回填兜底）视同缺失——相关写入跳过，不拿 bookKey 兜底。
+    final String? locatedUid = bookRow?.uid;
+    _bookUid = (locatedUid == null || locatedUid.isEmpty) ? null : locatedUid;
 
     // TODO-131: charsFromDb 命中 = 跳过整本 html_parser 计数（导入时已落库）。
     // 缺失（旧书 / 异常）时为 null → 后台 compute 补算，首屏不阻塞。

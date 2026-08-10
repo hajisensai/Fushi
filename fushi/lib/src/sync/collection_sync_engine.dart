@@ -456,11 +456,26 @@ class CollectionLocalChanges {
 
 /// 从本地 DB 构建合集全量快照清单。成员 sortIndex 用**位置序号 0..n-1**（而非
 /// 历史稀疏 sortIndex 原值）：清单只关心序列，归一化让「内容相等 ⇒ 字节相等」。
-Future<CollectionManifest> loadLocalCollectionManifest(
-    FushiDatabase db) async {
+Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
   final List<MediaCollectionRow> rows = await db.getAllMediaCollections();
   final List<CollectionMemberTombstoneRow> tombRows =
       await db.getAllCollectionMemberTombstones();
+
+  // v83：成员表 epub 域 entryKey = 本机 epub_books.uid（本地书）或对端 bookKey
+  // （透传行）。wire 冻结面要求清单里 epub entryKey 恒为 bookKey——出 wire 前经
+  // uid→bookKey 换算（一趟全表 map，免逐成员反查）。查不上照抄：透传行的
+  // entry_key 本就是对端 bookKey，照抄即闭环。仅 epub 门控——srt/video/game 键
+  // 天然稳定且不在 uid 值域，误换算即数据损坏。
+  // 墓碑（CollectionMemberTombstones.entryKey）已拍板冻结在 bookKey 域（写墓碑
+  // 时由 removeFromCollectionRaw 反查落 bookKey），出 wire 零换算。
+  final Map<String, String> bookKeyByUid = <String, String>{
+    for (final EpubBookRow b in await db.getAllEpubBooks())
+      if (b.uid.isNotEmpty) b.uid: b.bookKey,
+  };
+  String wireEntryKey(String mediaType, String entryKey) =>
+      mediaType == MediaKind.epub.dbValue
+          ? (bookKeyByUid[entryKey] ?? entryKey)
+          : entryKey;
 
   // 墓碑按自然键分组；哨兵行单独归为合集级 deletedAt。
   final Map<String, List<CollectionMemberTombstoneRow>> memberTombsByKey =
@@ -509,7 +524,8 @@ Future<CollectionManifest> loadLocalCollectionManifest(
           if (items[i].mediaType.isNotEmpty && items[i].entryKey.isNotEmpty)
             CollectionManifestMember(
               mediaType: items[i].mediaType,
-              entryKey: items[i].entryKey,
+              // epub：本地 uid → wire bookKey（透传行照抄，见上）。
+              entryKey: wireEntryKey(items[i].mediaType, items[i].entryKey),
               sortIndex: i,
             ),
       ],
@@ -517,6 +533,7 @@ Future<CollectionManifest> loadLocalCollectionManifest(
         for (final CollectionMemberTombstoneRow t
             in memberTombsByKey[key] ?? const <CollectionMemberTombstoneRow>[])
           // 空键 / 负 deletedAt 是脏数据：跳过（对端 codec 会拒之）。
+          // v83：墓碑 entryKey 冻结在 bookKey 域（= wire 域），零换算直发。
           if (t.mediaType.isNotEmpty &&
               t.entryKey.isNotEmpty &&
               t.deletedAt >= 0)
@@ -581,6 +598,21 @@ Future<int> applyCollectionLocalChanges(
   // v68：附加图行随删行 cascade 消失，同一顺序约束，路径也在删前快照。
   final List<MediaCollectionRow> dissolved = <MediaCollectionRow>[];
   final List<String> dissolvedImagePaths = <String>[];
+  // v83：wire 清单 epub entryKey 恒为 bookKey，成员表本地面貌是 uid——落地前经
+  // bookKey→uid 换算（一趟全表 map）。查不上**必须照抄透传，绝不丢弃**：合集清单
+  // 是跨端 union，本机没有这本书也要替对端转发其归属（透传行，entry_key 保持
+  // 对端 bookKey）；书下载落地后，下一轮 apply 该 bookKey 可解析 → desiredKeys
+  // 变成 uid → diff 自动删 bookKey 行、插 uid 行，归属收敛，无需专用改键。
+  // 仅 epub 门控——srt/video/game 键误换算即数据损坏。事务内不增删书行，map
+  // 在事务外构建一次是安全的。
+  final Map<String, String> uidByBookKey = <String, String>{
+    for (final EpubBookRow b in await db.getAllEpubBooks())
+      if (b.uid.isNotEmpty) b.bookKey: b.uid,
+  };
+  String localEntryKey(String mediaType, String entryKey) =>
+      mediaType == MediaKind.epub.dbValue
+          ? (uidByBookKey[entryKey] ?? entryKey)
+          : entryKey;
   await db.transaction(() async {
     for (final CollectionManifestEntry e in changes.entries) {
       final MediaCollectionRow? row =
@@ -623,8 +655,19 @@ Future<int> applyCollectionLocalChanges(
         // 调和成员：删多余、按位置 upsert（sortIndex = 清单位置序号）。
         final List<MediaCollectionItemRow> current =
             await db.getCollectionItems(id);
-        final Set<String> desiredKeys = <String>{
+        // v83：desiredKeys 在**本地键域**比较——wire 成员先经 localEntryKey 整体
+        // 换域（epub bookKey→uid，查不上照抄透传），与 current 行同域直比。
+        final List<CollectionManifestMember> localMembers =
+            <CollectionManifestMember>[
           for (final CollectionManifestMember m in e.members)
+            CollectionManifestMember(
+              mediaType: m.mediaType,
+              entryKey: localEntryKey(m.mediaType, m.entryKey),
+              sortIndex: m.sortIndex,
+            ),
+        ];
+        final Set<String> desiredKeys = <String>{
+          for (final CollectionManifestMember m in localMembers)
             '${m.mediaType}\u0000${m.entryKey}',
         };
         for (final MediaCollectionItemRow it in current) {
@@ -632,9 +675,9 @@ Future<int> applyCollectionLocalChanges(
             await db.deleteCollectionItemRaw(id, it.mediaType, it.entryKey);
           }
         }
-        for (int i = 0; i < e.members.length; i++) {
+        for (int i = 0; i < localMembers.length; i++) {
           await db.upsertCollectionItemAt(
-              id, e.members[i].mediaType, e.members[i].entryKey, i);
+              id, localMembers[i].mediaType, localMembers[i].entryKey, i);
         }
         await db.setCollectionOrderUpdatedAt(id, e.orderUpdatedAt);
         // 合集标签只增不删（同步语义）：按名 getOrCreate + addTagToCollection。
@@ -644,6 +687,8 @@ Future<int> applyCollectionLocalChanges(
           await db.addTagToCollection(id, tagId);
         }
       }
+      // v83：墓碑镜像零换算——本地墓碑表 entryKey 冻结在 bookKey 域（= wire 域），
+      // 合集级删除哨兵 '' 同样原样镜像，绝不过 localEntryKey。
       await db.replaceCollectionTombstonesFor(
           e.name, e.collectionType, <CollectionMemberTombstonesCompanion>[
         for (final CollectionMemberTombstone t in e.memberTombstones)

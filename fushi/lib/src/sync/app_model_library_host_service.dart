@@ -242,19 +242,13 @@ class AppModelLibraryHostService
 
   // ── 书籍 ─────────────────────────────────────────────────────────────────
 
-  /// bookKey → 标签名列表 的一趟映射（TODO-1165，避免逐书 N+1 查询）。
-  Future<Map<String, List<String>>> _tagNamesByBookKey() async {
-    final Map<int, String> nameById = <int, String>{
-      for (final BookTagRow t in await _db.getAllTags()) t.id: t.name,
-    };
-    final Map<String, List<String>> result = <String, List<String>>{};
-    for (final BookTagMappingRow m in await _db.getAllBookTagMappings()) {
-      final String? name = nameById[m.tagId];
-      if (name == null) continue;
-      (result[m.bookKey] ??= <String>[]).add(name);
-    }
-    return result;
-  }
+  /// bookKey → 标签名列表 的一趟映射（TODO-1165，避免逐条 N+1 查询）。
+  /// 复用 DB 层 SQL 过滤的批查（review-reuse-2：内层 map 的 key 即标签名，
+  /// 别再全表拉 assignments 手工 join）。
+  Future<Map<String, List<String>>> _tagNamesByBookKey() async =>
+      (await _db.allBookTagAddedAtByName()).map(
+          (String key, Map<String, int> byName) =>
+              MapEntry(key, byName.keys.toList()));
 
   /// `'<mediaType>|<entryKey>'` → 该条目的**主合集归属**（多端库联合视图 §2.3
   /// 任务5.1）的一趟映射。归属跟随 [FushiDatabase.getPrimaryCollectionIdByEntry] 的
@@ -281,6 +275,8 @@ class AppModelLibraryHostService
       if (col == null) continue; // 孤儿引用：归属合集已删 → 该条目退化散卡。
       for (final MediaCollectionItemRow item
           in await _db.getCollectionItems(cid)) {
+        // v83：epub 成员行 entryKey = 本机 epub_books.uid（透传行 = 对端 bookKey），
+        // 本 map 键随成员表面貌走——bookKey 侧消费方（listBooks）负责先换到 uid。
         final String key = '${item.mediaType}|${item.entryKey}';
         // 仅记录以本合集为主归属的成员（该条目也可能在别的更大 id 合集里）。
         if (primaryByEntry[key] != cid) continue;
@@ -295,19 +291,10 @@ class AppModelLibraryHostService
   }
 
   /// videoBookUid → 标签名列表 的一趟映射（TODO-1165）。
-  Future<Map<String, List<String>>> _tagNamesByVideoUid() async {
-    final Map<int, String> nameById = <int, String>{
-      for (final BookTagRow t in await _db.getAllTags()) t.id: t.name,
-    };
-    final Map<String, List<String>> result = <String, List<String>>{};
-    for (final VideoBookTagMappingRow m
-        in await _db.getAllVideoBookTagMappings()) {
-      final String? name = nameById[m.tagId];
-      if (name == null) continue;
-      (result[m.bookUid] ??= <String>[]).add(name);
-    }
-    return result;
-  }
+  Future<Map<String, List<String>>> _tagNamesByVideoUid() async =>
+      (await _db.allVideoTagAddedAtByName()).map(
+          (String key, Map<String, int> byName) =>
+              MapEntry(key, byName.keys.toList()));
 
   /// host 当前书库清单（从 EpubBooks 表读）。
   /// [RemoteBookInfo.hasContent] 为 true 当且仅当该书存在可导出的 EPUB 根目录。
@@ -363,10 +350,14 @@ class AppModelLibraryHostService
         tags: tagsByBookKey[r.bookKey] ?? const <String>[],
         tagsAddedAt: tagAddedAtByKey[r.bookKey] ?? const <String, int>{},
         tagTombstones: tagTombByKey[r.bookKey] ?? const <String, int>{},
-        // 合集成员键：epub 条目 mediaType='epub'、entryKey=bookKey（§2.3 任务5.1）。
-        // srt-backed 有声书兜底：该书以 srt|uid 入合集时，epub|bookKey 会 miss，
-        // 回退查 srt|uid（BUG-812）。散卡（两键都无）= null。
-        collection: membership[MediaKind.epub.compositeKey(r.bookKey)] ??
+        // 合集成员键（v83）：epub 成员行 entryKey = 本机 epub_books.uid，书侧组键
+        // 用 r.uid（§2.3 任务5.1 的 wire 面貌仍是 bookKey，与本地键域无关）。
+        // epub|bookKey 兜底：sync 落地的透传行（书当时还没下载）在下一轮 apply
+        // 收敛前仍以对端 bookKey 为键，窗口期内按 bookKey 也查一把，归属不闪断。
+        // srt-backed 有声书兜底：该书以 srt|uid 入合集时，epub 两键都 miss，
+        // 回退查 srt|uid（BUG-812）。散卡（三键都无）= null。
+        collection: membership[MediaKind.epub.compositeKey(r.uid)] ??
+            membership[MediaKind.epub.compositeKey(r.bookKey)] ??
             (srtUidByBookKey[r.bookKey] != null
                 ? membership[
                     MediaKind.srt.compositeKey(srtUidByBookKey[r.bookKey]!)]
@@ -392,15 +383,20 @@ class AppModelLibraryHostService
   /// `reader_positions.updatedAt`。两趟全表读，无逐书查询。
   Future<Map<String, ({int percent, int updatedAtMs})>>
       _bookProgressByKey() async {
+    // v82：reader_positions 键 = 书 uid，wire/mediaId 面貌仍是 bookKey——
+    // 经 epub_books 反查（uid → bookKey）后出 wire。
+    final Map<String, String> bookKeyByUid = <String, String>{
+      for (final EpubBookRow b in await _db.getAllEpubBooks())
+        if (b.uid.isNotEmpty) b.uid: b.bookKey,
+    };
     final Map<String, int> updatedAtByKey = <String, int>{
       for (final ReaderPositionRow r in await _db.getAllReaderPositions())
-        r.bookKey: r.updatedAt,
+        if (bookKeyByUid[r.bookUid] case final String key) key: r.updatedAt,
     };
     final Map<String, ({int percent, int updatedAtMs})> out =
         <String, ({int percent, int updatedAtMs})>{};
-    for (final MediaItemRow m in await _db.getAllMediaItems()) {
-      final RegExpMatch? match =
-          _fushiBookKeyPattern.firstMatch(m.mediaIdentifier);
+    for (final MediaOpenHistoryRow m in await _db.getAllMediaOpenHistory()) {
+      final RegExpMatch? match = _fushiBookKeyPattern.firstMatch(m.mediaId);
       if (match == null) continue;
       final String bookKey = match.group(1)!;
       if (m.duration <= 0 || m.position <= 0) continue;
@@ -509,7 +505,10 @@ class AppModelLibraryHostService
   /// [RemoteBookProgress.empty]。
   @override
   Future<RemoteBookProgress> getBookProgress(String bookKey) async {
-    final ReaderPositionRow? row = await _db.getReaderPosition(bookKey);
+    // v82：wire 键 bookKey → 本地子表键 uid 换算；书不在库视同无记录。
+    final EpubBookRow? book = await _db.getEpubBook(bookKey);
+    if (book == null || book.uid.isEmpty) return RemoteBookProgress.empty;
+    final ReaderPositionRow? row = await _db.getReaderPosition(book.uid);
     if (row == null) return RemoteBookProgress.empty;
     return RemoteBookProgress(
       sectionIndex: row.sectionIndex,
@@ -536,7 +535,8 @@ class AppModelLibraryHostService
     // 从没读过的陈旧位置 = 进度污染。与视频 `updateVideoBookPosition`「UPDATE
     // 不存在即 no-op」语义对齐。syncContent 开时 client 独有书已先经
     // `_syncBooksContentLive` importBook 推成 host 书，故正常同步不被此闸门误挡。）
-    if (await _db.getEpubBook(bookKey) == null) return;
+    final EpubBookRow? hostBook = await _db.getEpubBook(bookKey);
+    if (hostBook == null || hostBook.uid.isEmpty) return;
     final RemoteBookProgress current = await getBookProgress(bookKey);
     final RemoteBookProgress incoming = RemoteBookProgress(
       sectionIndex: progress.sectionIndex < 0 ? 0 : progress.sectionIndex,
@@ -554,7 +554,7 @@ class AppModelLibraryHostService
     }
     await _runExclusive(() async {
       await _db.upsertReaderPosition(ReaderPositionsCompanion(
-        bookKey: Value(bookKey),
+        bookUid: Value(hostBook.uid),
         sectionIndex: Value(winner.sectionIndex),
         normCharOffset: Value(winner.normCharOffset),
         charOffset: Value(winner.charOffset),

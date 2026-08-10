@@ -110,21 +110,26 @@ void main() {
     );
   });
 
-  test('Linux：身份没改过 —— 一旦改动，必须先给 Linux 补搬迁', () {
+  test('Linux：CMake 身份与搬迁对照表的新身份一致（改身份必须同步补搬迁）', () {
     final String cmake = linuxCMake.readAsStringSync();
     final String? applicationId = cmakeSetValue(cmake, 'APPLICATION_ID');
     expect(applicationId, isNotNull,
         reason: 'linux/CMakeLists.txt 必须声明 APPLICATION_ID。');
 
+    final String migrationSrc = migration.readAsStringSync();
     expect(
       applicationId,
-      dartStringConst(
-          migration.readAsStringSync(), 'kLinuxApplicationIdUnchangedByRename'),
+      dartStringConst(migrationSrc, 'kFushiLinuxApplicationId'),
       reason: 'path_provider 在 Linux 上把 app-support 根解析成 XDG_DATA_HOME '
-          '下以 APPLICATION_ID 命名的目录。本次 Fushi 改名刻意没动 Linux 身份，'
-          '所以 Linux 无断裂、无需搬迁。谁要改 APPLICATION_ID，必须在同一个 '
-          'commit 里给 legacy_support_dir_migration.dart 补一条 Linux 旧根分支，'
-          '否则 Linux 用户的库会静默消失。',
+          '下以 APPLICATION_ID 命名的目录。PR #790 把 Linux 身份改成 fushi 后，'
+          'legacy_support_dir_migration.dart 已补 Linux 搬迁分支——CMake 再改'
+          '身份，这里的新身份常量必须同一个 commit 跟上，否则 Linux 用户的库'
+          '会静默消失。',
+    );
+    expect(
+      dartStringConst(migrationSrc, 'kLegacyLinuxApplicationId'),
+      'com.example.hibiki',
+      reason: '旧身份是历史事实（存量安装的落盘目录名），永远不许改。',
     );
   });
 

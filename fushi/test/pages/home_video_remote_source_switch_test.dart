@@ -9,6 +9,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
@@ -145,6 +146,8 @@ void main() {
           home: Scaffold(
             body: HomeVideoPage(
               repo: repo,
+              // #792 起混排墙在 series 分区(home 是 dashboard)。
+              section: VideoLibrarySection.series,
               // 互联启用时给互联 client；关掉后返 null → 页面回退云盘分支，
               // 与生产的 `_resolveRemoteVideoClient` 语义一致。
               remoteVideoClientLoader: () async =>
@@ -218,6 +221,7 @@ void main() {
           home: Scaffold(
             body: HomeVideoPage(
               repo: repo,
+              section: VideoLibrarySection.series,
               remoteVideoClientLoader: () async =>
                   interconnectEnabled ? interconnect : null,
               cloudRemoteVideoClientLoader: () async => cloud,
@@ -273,6 +277,7 @@ void main() {
           home: Scaffold(
             body: HomeVideoPage(
               repo: repo,
+              section: VideoLibrarySection.series,
               remoteVideoClientLoader: () async => interconnect,
             ),
           ),

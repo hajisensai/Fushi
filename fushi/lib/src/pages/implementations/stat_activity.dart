@@ -1,4 +1,4 @@
-import 'package:fushi/src/utils/misc/fushi_time_format.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 // 统计来源标识 kStatSourceBook / kStatSourceVideo（命名统一 Phase 3.4）已挪进
 // hibiki_core 的 stat_source_kind.dart（同枚举 StatSourceKind）——它们是 schema
@@ -17,9 +17,9 @@ class StatActivityBuckets {
 
 /// 统计行 dateKey 的权威格式器：形如 `2026-06-07`（零填充月/日，可字典序比较），
 /// 与 DB 里 reading_statistics / mining_statistics / favorite_words 的 dateKey 同格式。
-/// 收藏/制卡记账、活动分桶共用此一处实现（委托 [FushiTimeFormat.dayKey]），
-/// 避免各调用点各写一遍。
-String statDateKey(DateTime d) => FushiTimeFormat.dayKey(d);
+/// P4 写侧收敛：委托 [FushiDatabase.statDateKeyOf]（复合入口在 DB 层派生 dateKey
+/// 的同一实现），收藏/查词记账、活动分桶共用，避免各调用点各写一遍。
+String statDateKey(DateTime d) => FushiDatabase.statDateKeyOf(d);
 
 /// 「今天」的统计 dateKey（按本地时区当天）。记账写入（[addMiningCount] 等）取此值。
 String statTodayKey() => statDateKey(DateTime.now());

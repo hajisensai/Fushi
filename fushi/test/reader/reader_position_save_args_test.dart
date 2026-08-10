@@ -77,7 +77,7 @@ void main() {
     });
 
     Future<void> saveVia({
-      required String bookKey,
+      required String bookUid,
       required int section,
       required double progress,
       required int charOffset,
@@ -85,7 +85,7 @@ void main() {
       final ({int normCharOffset, int? charOffset}) args =
           readerPositionSaveArgs(progress: progress, charOffset: charOffset);
       await repo.save(
-        bookKey: bookKey,
+        bookUid: bookUid,
         sectionIndex: section,
         normCharOffset: args.normCharOffset,
         charOffset: args.charOffset,
@@ -94,8 +94,8 @@ void main() {
 
     test('精确锚往返不动点：save(p, c>=0) → load → (c, p±量化)', () async {
       await saveVia(
-          bookKey: 'rt-book', section: 3, progress: 0.5, charOffset: 777);
-      final ReaderPosition? saved = await repo.findByBookKey('rt-book');
+          bookUid: 'rt-book', section: 3, progress: 0.5, charOffset: 777);
+      final ReaderPosition? saved = await repo.findByBookUid('rt-book');
       expect(saved, isNotNull);
       // 页面恢复端映射（_initBookInner）：charOffset ?? -1、normCharOffset/10000。
       expect(saved!.charOffset ?? -1, 777);
@@ -105,11 +105,11 @@ void main() {
 
     test('BUG-285 全链：同 section 原地 -1 瞬态不吃掉既有精确锚', () async {
       await saveVia(
-          bookKey: 'rt-book', section: 3, progress: 0.5, charOffset: 777);
+          bookUid: 'rt-book', section: 3, progress: 0.5, charOffset: 777);
       // 重排/竖排边缘采样的瞬态：charOffset=-1，位置未移动（分数不变）。
       await saveVia(
-          bookKey: 'rt-book', section: 3, progress: 0.5, charOffset: -1);
-      final ReaderPosition? saved = await repo.findByBookKey('rt-book');
+          bookUid: 'rt-book', section: 3, progress: 0.5, charOffset: -1);
+      final ReaderPosition? saved = await repo.findByBookUid('rt-book');
       expect(saved!.charOffset ?? -1, 777,
           reason: '同 section 原地瞬态 -1 → null → repo 保留既有精确锚');
       expect(saved.normCharOffset, 5000);
@@ -117,12 +117,12 @@ void main() {
 
     test('TODO-1292 全链：同 section 分数移动且无新精确锚 → 旧锚失效回退分数', () async {
       await saveVia(
-          bookKey: 'rt-book', section: 3, progress: 0.5, charOffset: 777);
+          bookUid: 'rt-book', section: 3, progress: 0.5, charOffset: 777);
       // 位置真的推进了（0.5→0.6）但当帧测不到精确偏移：旧锚已陈旧，必须失效——
       // 否则恢复优先精确锚会跳回旧位置（「退出图1重进图2」的根因）。
       await saveVia(
-          bookKey: 'rt-book', section: 3, progress: 0.6, charOffset: -1);
-      final ReaderPosition? saved = await repo.findByBookKey('rt-book');
+          bookUid: 'rt-book', section: 3, progress: 0.6, charOffset: -1);
+      final ReaderPosition? saved = await repo.findByBookUid('rt-book');
       expect(saved!.charOffset ?? -1, -1,
           reason: '精确锚绝不能比分数陈旧：分数移动+无新锚 ⇒ 旧锚失效');
       expect(saved.normCharOffset, 6000, reason: '分数进度照常前移，恢复回退分数粒度');
@@ -130,10 +130,10 @@ void main() {
 
     test('跨 section 后旧精确锚失效（repo 侧决策经归一化漏斗仍生效）', () async {
       await saveVia(
-          bookKey: 'rt-book', section: 3, progress: 0.5, charOffset: 777);
+          bookUid: 'rt-book', section: 3, progress: 0.5, charOffset: 777);
       await saveVia(
-          bookKey: 'rt-book', section: 4, progress: 0.1, charOffset: -1);
-      final ReaderPosition? saved = await repo.findByBookKey('rt-book');
+          bookUid: 'rt-book', section: 4, progress: 0.1, charOffset: -1);
+      final ReaderPosition? saved = await repo.findByBookUid('rt-book');
       expect(saved!.sectionIndex, 4);
       expect(saved.charOffset ?? -1, -1, reason: '跨 section 精确锚必须失效，恢复端回退分数粒度');
     });

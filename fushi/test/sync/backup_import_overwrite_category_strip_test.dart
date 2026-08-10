@@ -44,8 +44,10 @@ void main() {
       chaptersJson: '["c"]',
       importedAt: _now(),
     ));
+    // v82：reader_positions 键 = epub_books.uid（insertEpubBook 自动生成）。
+    final String b1Uid = (await src.resolveEpubBookUid('B1'))!;
     await src.upsertReaderPosition(ReaderPositionsCompanion.insert(
-        bookKey: 'B1', sectionIndex: 0, normCharOffset: 100, updatedAt: 1));
+        bookUid: b1Uid, sectionIndex: 0, normCharOffset: 100, updatedAt: 1));
     await src.setReadingStatistic(ReadingStatisticsCompanion.insert(
       title: 'B1',
       dateKey: '2026-01-01',

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
@@ -92,19 +93,17 @@ void main() {
           );
       await seed('reading');
       await seed('untouched');
-      await db.upsertMediaItem(MediaItemsCompanion.insert(
-        mediaIdentifier: 'fushi://book/reading',
-        title: 'reading',
-        mediaTypeIdentifier: 'reader',
-        mediaSourceIdentifier: 'hibiki',
-        uniqueKey: 'reader/hibiki/fushi://book/reading',
-        position: 760,
-        duration: 1000,
-        canDelete: true,
-        canEdit: false,
+      await db.upsertMediaOpenHistory(const MediaOpenHistoryCompanion(
+        mediaType: Value('reader'),
+        mediaSource: Value('hibiki'),
+        mediaId: Value('fushi://book/reading'),
+        position: Value(760),
+        duration: Value(1000),
       ));
+      // v82：reader_positions 键 = epub_books.uid（insertEpubBook 已自动生成）。
+      final String readingUid = (await db.resolveEpubBookUid('reading'))!;
       await db.upsertReaderPosition(ReaderPositionsCompanion.insert(
-        bookKey: 'reading',
+        bookUid: readingUid,
         sectionIndex: 3,
         normCharOffset: 7600,
         updatedAt: 123456789,

@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-共享核心模块：定义 Drift SQLite 数据库 schema（61 张表，当前 schemaVersion=76；以 `database.dart` 的 `schemaVersion` getter 与 `@DriftDatabase(tables: [...])` 注册清单为准，本文数字仅作快照）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
+共享核心模块：定义 Drift SQLite 数据库 schema（77 张表，当前 schemaVersion=82；以 `database.dart` 的 `schemaVersion` getter 与 `@DriftDatabase(tables: [...])` 注册清单为准，本文数字仅作快照。v82：ReaderPositions/Bookmarks/BookCustomCss/RevealedImages 书键从 bookKey 切稳定 uid）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
 
 ## 入口与启动
 
@@ -26,11 +26,11 @@
 
 ## 数据模型
 
-53 张 Drift 表（按功能分组，以 `database.dart` 的 `@DriftDatabase(tables: [...])` 注册清单为准）：
+77 张 Drift 表（按功能分组，以 `database.dart` 的 `@DriftDatabase(tables: [...])` 注册清单为准）：
 
 | 分组 | 表名 |
 |------|------|
-| 媒体 | `MediaItems` |
+| 媒体 | `MediaOpenHistory`（v78 最近打开流，取代 jidoujisho 血统的 `MediaItems`） |
 | 来源库 | `MediaSources` |
 | Anki | `AnkiMappings` |
 | 搜索 | `SearchHistoryItems` |
@@ -42,14 +42,14 @@
 | 剪贴板/活动 | `ClipboardHistory`, `ActivityEvents` |
 | 词典 | `DictionaryMetadata`, `DictionaryHistory` |
 | EPUB | `EpubBooks` |
-| 标签 | `BookTags`, `BookTagMappings`, `SrtBookTagMappings`, `CollectionTagMappings` |
+| 标签 | `BookTags`, `TagAssignments`（v77 五张映射表合一，宿主逻辑外键） |
 | Profile | `Profiles`, `ProfileSettings`, `MediaTypeProfiles`, `BookProfiles` |
 | 同步基线 | `SyncBaselines` |
-| 视频 | `VideoBooks`, `VideoBookTagMappings`, `VideoWatchStatistics`, `VideoHourlyLogs` |
+| 视频 | `VideoBooks`, `VideoWatchStatistics`, `VideoHourlyLogs` |
 | 收藏/制卡 | `FavoriteWords`, `MiningStatistics`, `MinedSentences`, `LookupMiningCounters` |
 | 合集/系列 | `MediaCollections`, `MediaCollectionItems`, `Series`, `ShelfEntries` |
 | 互联 | `FushiPairedPeers` |
-| 游戏库 | `Galgames`, `GalgameSources`, `GalgameSessions`, `GalgameTagMappings` |
+| 游戏库 | `Galgames`, `GalgameSources`, `GalgameSessions` |
 | 删除墓碑 | `BookTombstones`, `StatisticsTombstones`, `CollectionMemberTombstones`, `BookTagMembershipTombstones`, `SyncDeletionTombstones` |
 
 新增表（相对旧文档的 28 张补齐的 18 张）用途：

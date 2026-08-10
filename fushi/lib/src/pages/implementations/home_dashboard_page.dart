@@ -477,9 +477,12 @@ class _HomeDashboardPageState
   /// - [_collectionNamesById]：collectionId → 合集名。
   /// - [_primaryCollectionByEntry]：'<mediaType>|<entryKey>' → 折叠归属主 collectionId。
   /// - [_bookKeyByTitle]：reading_statistics 行只存 title，经 epub_books 反查 bookKey。
+  /// - [_epubUidByBookKey]：v83 起成员表 epub entryKey = `epub_books.uid`，页面
+  ///   手里的 bookKey 查归属映射前经此表换算（书架 `_epubUidByKey` 同款口径）。
   Map<int, String> _collectionNamesById = const <int, String>{};
   Map<String, int> _primaryCollectionByEntry = const <String, int>{};
   Map<String, String> _bookKeyByTitle = const <String, String>{};
+  Map<String, String> _epubUidByBookKey = const <String, String>{};
 
   /// epub bookKey → 导入时刻（epoch 毫秒，`EpubBooks.importedAt`），
   /// 「最近添加」行的书侧排序时间源（视频侧用 [VideoBookRow.importedAt]）。
@@ -627,6 +630,12 @@ class _HomeDashboardPageState
     final Map<String, int> epubImportedAtByKey = <String, int>{
       for (final EpubBookRow r in epubRows) r.bookKey: r.importedAt,
     };
+    // v83：成员表 epub entryKey = uid，同批行顺带建 bookKey→uid 换算表（空 uid
+    // 异常行不进表，查归属时按 bookKey 原样回退）。
+    final Map<String, String> epubUidByBookKey = <String, String>{
+      for (final EpubBookRow r in epubRows)
+        if (r.uid.isNotEmpty) r.bookKey: r.uid,
+    };
 
     // 每日「读到的字数」按来源拆三份（热力图筛选 全部/阅读/观看/游戏）：书内阅读、
     // 视频字幕字数（看带字幕的视频也是在读字，用户反馈「阅读活动只有书籍，其他的
@@ -710,6 +719,7 @@ class _HomeDashboardPageState
       _mediaImagesByCollection = imagesByCollection;
       _mediaImagesByBookUid = imagesByBookUid;
       _bookKeyByTitle = bookKeyByTitle;
+      _epubUidByBookKey = epubUidByBookKey;
       _epubImportedAtByKey = epubImportedAtByKey;
       _memberSortIndex = memberSortIndex;
       _videoWatchAtByUid = watchAt;
@@ -818,6 +828,10 @@ class _HomeDashboardPageState
             const <MediaItem>[];
     final Map<String, int> lastReadByKey =
         ref.watch(bookLastReadAtProvider).valueOrNull ?? const <String, int>{};
+    // v82：lastReadByKey 的键是书 uid；MediaItem 身份是 bookKey，查前经此表换算。
+    final Map<String, String> epubUidByKey =
+        ref.watch(epubBookUidByKeyProvider).valueOrNull ??
+            const <String, String>{};
     final DateTime now = DateTime.now();
 
     // 活动条封面/点击直达需要「mediaKey → 本地条目」反查映射（渲染层现算，不
@@ -833,8 +847,8 @@ class _HomeDashboardPageState
       for (final VideoBookRow v in _videos) v.bookUid: v,
     };
 
-    final Widget continueCard =
-        _buildContinueSection(tokens, appModel, books, lastReadByKey);
+    final Widget continueCard = _buildContinueSection(
+        tokens, appModel, books, lastReadByKey, epubUidByKey);
     final Widget heatmapCard = _buildHeatmapCard(tokens);
     final Widget activityCard =
         _buildActivitySection(tokens, now, appModel, booksByKey, videosByUid);
@@ -944,6 +958,7 @@ class _HomeDashboardPageState
     AppModel appModel,
     List<MediaItem> books,
     Map<String, int> lastReadByKey,
+    Map<String, String> epubUidByKey,
   ) {
     final List<_ContinueEntry> entries = <_ContinueEntry>[];
     for (final MediaItem item in books) {
@@ -951,7 +966,9 @@ class _HomeDashboardPageState
         final String bookKey =
             ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
                 item.mediaIdentifier;
-        final int recent = lastReadByKey[bookKey] ?? 0;
+        // v82：位置表键 = uid，bookKey 经换算表转一跳；换算不上（standalone
+        // SRT / 书行已删）保持原键查询——与旧行为同样查不到、recent=0。
+        final int recent = lastReadByKey[epubUidByKey[bookKey] ?? bookKey] ?? 0;
         final int percent =
             ((item.position / item.duration) * 100).clamp(0, 100).round();
         entries.add(_ContinueEntry(
@@ -1230,13 +1247,16 @@ class _HomeDashboardPageState
           ? MediaKind.srt
           : MediaKind.epub;
 
-  /// 书 [MediaItem] → 合集归属键：epub 用 bookKey（'epub|<bookKey>'），standalone
-  /// SRT 书身份是 `hoshi://srtbook/<uid>`（BUG-1018 A3）→ 'srt|<uid>'；识别不出
-  /// 回退 epub 键（查不中合集，安全降级）。
+  /// 书 [MediaItem] → 合集归属键：epub 用 uid（v83 成员表键；bookKey 经
+  /// [_epubUidByBookKey] 换算，换算不上按 bookKey 回退——与透传成员行同键），
+  /// standalone SRT 书身份是 `hoshi://srtbook/<uid>`（BUG-1018 A3）→ 'srt|<uid>'；
+  /// 识别不出回退 epub 键（查不中合集，安全降级）。
   String _bookCollectionKey(MediaItem item) {
     final String? bookKey =
         ReaderFushiSource.parseBookKey(item.mediaIdentifier);
-    if (bookKey != null) return MediaKind.epub.compositeKey(bookKey);
+    if (bookKey != null) {
+      return MediaKind.epub.compositeKey(_epubUidByBookKey[bookKey] ?? bookKey);
+    }
     final String? srtUid =
         ReaderFushiSource.parseSrtBookUid(item.mediaIdentifier);
     if (srtUid != null) return MediaKind.srt.compositeKey(srtUid);
@@ -1924,8 +1944,10 @@ class _HomeDashboardPageState
     );
     final String? bookKey = _bookKeyByTitle[title];
     if (bookKey == null) return display;
+    // v83：归属映射 epub 键 = uid，bookKey 经换算表转一跳。
     return collectionQualifiedTitle(
-      entryKey: MediaKind.epub.compositeKey(bookKey),
+      entryKey:
+          MediaKind.epub.compositeKey(_epubUidByBookKey[bookKey] ?? bookKey),
       rawTitle: display,
       primaryByEntry: _primaryCollectionByEntry,
       collectionNamesById: _collectionNamesById,
@@ -2221,11 +2243,16 @@ class _HomeDashboardPageState
         // 书事件的 mediaKey 无类型标记：按 core 跨域映射表
         // [shelfKindsOfActivityMedia] 的既定顺序（epub 键优先，standalone SRT
         // （mediaKey=uid）回退 srt 键）逐一试探；都不中就是散卡。
+        // v83：epub 试探键 = uid（mediaKey 的 bookKey 经换算表转一跳；srt 试探
+        // 键本就是 uid 值域，原样）。
         String? collectionName;
         for (final MediaKind shelfKind
             in shelfKindsOfActivityMedia(ActivityMediaKind.book)) {
+          final String entryKey = shelfKind == MediaKind.epub
+              ? (_epubUidByBookKey[bookKey] ?? bookKey)
+              : bookKey;
           collectionName = statCollectionName(
-            shelfKind.compositeKey(bookKey),
+            shelfKind.compositeKey(entryKey),
             _primaryCollectionByEntry,
             _collectionNamesById,
           );

@@ -2,26 +2,27 @@ import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'reader_position_model.dart';
 
-/// 阅读位置持久化。键为书的 `bookKey`（EpubBooks 主键 = sanitize 后的标题）。
+/// 阅读位置持久化。键为书稳定身份（v82 起 = EpubBooks.uid；非 epub 域沿用其
+/// 既有稳定键）。
 class ReaderPositionRepository {
   const ReaderPositionRepository(this._db);
 
   final FushiDatabase _db;
 
-  Future<ReaderPosition?> findByBookKey(String bookKey) async {
-    final row = await _db.getReaderPosition(bookKey);
+  Future<ReaderPosition?> findByBookUid(String bookUid) async {
+    final row = await _db.getReaderPosition(bookUid);
     if (row == null) return null;
     return _rowToModel(row);
   }
 
   Future<void> save({
-    required String bookKey,
+    required String bookUid,
     required int sectionIndex,
     required int normCharOffset,
     int? charOffset,
   }) async {
     final ReaderPositionRow? existing =
-        charOffset == null ? await _db.getReaderPosition(bookKey) : null;
+        charOffset == null ? await _db.getReaderPosition(bookUid) : null;
     // TODO-1292 / BUG（退出图1重进图2）：char_offset（精确锚）与 norm_char_offset（分数）
     // 是同一位置的两套坐标，恢复时精确锚优先（reader shell 在 initialCharOffset>=0 时走
     // restoreToCharOffset）。此前同 section 传 null（WebView 当帧算不出精确偏移：竖排/ruby
@@ -46,7 +47,7 @@ class ReaderPositionRepository {
       charOffsetValue = const Value.absent();
     }
     await _db.upsertReaderPosition(ReaderPositionsCompanion(
-      bookKey: Value(bookKey),
+      bookUid: Value(bookUid),
       sectionIndex: Value(sectionIndex),
       normCharOffset: Value(normCharOffset),
       charOffset: charOffsetValue,
@@ -54,12 +55,12 @@ class ReaderPositionRepository {
     ));
   }
 
-  Future<void> delete(String bookKey) => _db.deleteReaderPosition(bookKey);
+  Future<void> delete(String bookUid) => _db.deleteReaderPosition(bookUid);
 
   static ReaderPosition _rowToModel(ReaderPositionRow r) {
     final pos = ReaderPosition();
     pos.id = r.id;
-    pos.bookKey = r.bookKey;
+    pos.bookUid = r.bookUid;
     pos.sectionIndex = r.sectionIndex;
     pos.normCharOffset = r.normCharOffset;
     pos.charOffset = r.charOffset >= 0 ? r.charOffset : null;

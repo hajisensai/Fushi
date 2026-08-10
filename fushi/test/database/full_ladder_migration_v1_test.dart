@@ -159,14 +159,17 @@ void main() {
           reason: 'both books survive the re-key with key == sanitized title');
 
       // (d) v16 row-level data-preservation for reader_positions: the two
-      //     positions re-keyed from ttu_book_id -> book_key, every other column
-      //     intact, reachable via the typed getReaderPosition(bookKey).
-      final posA = await db.getReaderPosition(_kTitleA);
+      //     positions re-keyed from ttu_book_id -> book_key (v16) -> stable
+      //     uid (v82), every other column intact, reachable via the typed
+      //     getReaderPosition(bookUid)（bookKey 经 resolveEpubBookUid 换算）.
+      final String uidA = (await db.resolveEpubBookUid(_kTitleA))!;
+      final String uidB = (await db.resolveEpubBookUid(_kTitleB))!;
+      final posA = await db.getReaderPosition(uidA);
       expect(posA, isNotNull, reason: 'position for book 1 survived re-key');
       expect(posA!.sectionIndex, 5);
       expect(posA.normCharOffset, 3333);
       expect(posA.updatedAt, 1111);
-      final posB = await db.getReaderPosition(_kTitleB);
+      final posB = await db.getReaderPosition(uidB);
       expect(posB, isNotNull, reason: 'position for book 2 survived re-key');
       expect(posB!.sectionIndex, 7);
       expect(posB.normCharOffset, 6666);
@@ -198,7 +201,7 @@ void main() {
           'dictionary_metadata',
           'sync_baselines',
           'video_books',
-          'video_book_tag_mappings',
+          'tag_assignments',
           'video_watch_statistics',
           'video_hourly_logs',
           'favorite_words',
@@ -273,7 +276,9 @@ CREATE TABLE dictionary_metadata (
       expect(version.read<int>('user_version'), db.schemaVersion);
 
       // Book re-keyed, position carried through, ttu_char_offset gone.
-      final pos = await db.getReaderPosition(_kTitleA);
+      // （v82 起进度键 = uid，bookKey 经 resolveEpubBookUid 换算后查。）
+      final pos =
+          await db.getReaderPosition((await db.resolveEpubBookUid(_kTitleA))!);
       expect(pos, isNotNull);
       expect(pos!.sectionIndex, 9);
       expect(pos.normCharOffset, 4242);

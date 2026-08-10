@@ -105,7 +105,7 @@ void main() {
       await db.addTagToVideoBook(v1, tagId);
       await db.addTagToVideoBook(v2, tagId);
 
-      expect(await db.getAllVideoBookTagMappings(), hasLength(2));
+      expect(await db.getAllTagAssignments(), hasLength(2));
     });
 
     test('video and EPUB share the same BookTags row', () async {
@@ -139,7 +139,7 @@ void main() {
 
       await db.deleteVideoBook(uid);
 
-      expect(await db.getAllVideoBookTagMappings(), isEmpty);
+      expect(await db.getAllTagAssignments(), isEmpty);
       // 标签本身（共享池）不被删除。
       expect(await db.getAllTags(), hasLength(1));
     });
@@ -153,7 +153,7 @@ void main() {
       await db.deleteTag(tagId);
 
       expect(await db.getTagsForVideoBook(uid), isEmpty);
-      expect(await db.getAllVideoBookTagMappings(), isEmpty);
+      expect(await db.getAllTagAssignments(), isEmpty);
     });
   });
 

@@ -58,15 +58,32 @@ final srtBooksProvider = FutureProvider<List<SrtBook>>((ref) {
   return SrtBookRepository(db).listAll();
 });
 
-/// 每本书的「最后阅读时间」（`reader_positions.updatedAt` 毫秒，key=bookKey，
-/// EPUB/SRT 同源——SRT 书经阅读器落位置也用 bookKey）。BUG-777：继续阅读 hero
-/// 与书架「最近阅读」排序的唯一 recency 真相源；关书时与 [fushiBooksProvider]
-/// 同点失效（[ReaderFushiSource.onSourceExit]），不会陈旧。
+/// 每本书的「最后阅读时间」（`reader_positions.updatedAt` 毫秒，key=书稳定身份：
+/// v82 起 epub 行 = `EpubBooks.uid`，非 epub 遗留行沿用其原键。EPUB/SRT 同源——
+/// SRT 书经阅读器落位置也用其配对 epub 行的 uid）。消费方手里是 bookKey 时先经
+/// [epubBookUidByKeyProvider] 换算再查。BUG-777：继续阅读 hero 与书架「最近阅读」
+/// 排序的唯一 recency 真相源；关书时与 [fushiBooksProvider] 同点失效
+/// （[ReaderFushiSource.onSourceExit]），不会陈旧。
 final bookLastReadAtProvider = FutureProvider<Map<String, int>>((ref) async {
   final FushiDatabase db = ref.watch(appProvider).database;
   final List<ReaderPositionRow> rows = await db.getAllReaderPositions();
   return <String, int>{
-    for (final ReaderPositionRow r in rows) r.bookKey: r.updatedAt,
+    for (final ReaderPositionRow r in rows) r.bookUid: r.updatedAt,
+  };
+});
+
+/// bookKey → `EpubBooks.uid` 换算表（v82）。书架/首页的通货是 MediaItem
+/// （身份 = mediaIdentifier 里的 bookKey），查 [bookLastReadAtProvider] 前经此
+/// 换算；空 uid 行不进表（查不到 = 无阅读记录，与 resolveEpubBookUid 契约一致）。
+/// 订阅书集合流，导入/删除后自动重算（uid 对既有行恒不变）。
+final epubBookUidByKeyProvider =
+    FutureProvider<Map<String, String>>((ref) async {
+  ref.watch(_epubBookKeysProvider);
+  final FushiDatabase db = ref.watch(appProvider).database;
+  final List<EpubBookRow> rows = await db.getAllEpubBooks();
+  return <String, String>{
+    for (final EpubBookRow r in rows)
+      if (r.uid.isNotEmpty) r.bookKey: r.uid,
   };
 });
 
@@ -543,7 +560,9 @@ class ReaderFushiSource extends ReaderMediaSource {
 
     // TODO-1346：进度纳入当前章内 charOffset（与章字数同单位），并对老书无字数时
     // 回退章级粗粒度，避免书架恒显 0%。见 [computeBookProgress]。
-    final pos = await posRepo.findByBookKey(book.bookKey);
+    // v82：位置键 = 行 uid（行在手直接取；空 uid 视同无阅读记录）。
+    final ReaderPosition? pos =
+        book.uid.isEmpty ? null : await posRepo.findByBookUid(book.uid);
     final ({int position, int duration}) prog = pageBased
         // PDF Phase 3 / 漫画同款：进度单位是**页**（sectionIndex=当前页 0-based，
         // chapterCount=总页数）。chaptersJson='[]' 无字数，走 computeBookProgress 会恒回

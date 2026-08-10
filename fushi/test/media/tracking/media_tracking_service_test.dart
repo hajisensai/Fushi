@@ -642,7 +642,7 @@ void main() {
     );
     await db.upsertReaderPosition(
       ReaderPositionsCompanion.insert(
-        bookKey: 'legacy-novel',
+        bookUid: (await db.resolveEpubBookUid('legacy-novel'))!,
         sectionIndex: 2,
         normCharOffset: 5000,
         updatedAt: 4000,
@@ -816,7 +816,7 @@ void main() {
     );
     await db.upsertReaderPosition(
       ReaderPositionsCompanion.insert(
-        bookKey: 'series-volume-1',
+        bookUid: (await db.resolveEpubBookUid('series-volume-1'))!,
         sectionIndex: 2,
         normCharOffset: 0,
         updatedAt: 2,
@@ -896,7 +896,7 @@ void main() {
 
     await db.upsertReaderPosition(
       ReaderPositionsCompanion.insert(
-        bookKey: 'series-volume-1',
+        bookUid: (await db.resolveEpubBookUid('series-volume-1'))!,
         sectionIndex: 3,
         normCharOffset: 10000,
         updatedAt: 3,
@@ -944,7 +944,7 @@ void main() {
     );
     await db.upsertReaderPosition(
       ReaderPositionsCompanion.insert(
-        bookKey: 'pdf-key',
+        bookUid: (await db.resolveEpubBookUid('pdf-key'))!,
         sectionIndex: 137,
         normCharOffset: 5000,
         updatedAt: 2,
@@ -1514,7 +1514,7 @@ void main() {
       );
       await db.upsertReaderPosition(
         ReaderPositionsCompanion.insert(
-          bookKey: 'retry-book',
+          bookUid: (await db.resolveEpubBookUid('retry-book'))!,
           sectionIndex: 2,
           normCharOffset: 0,
           updatedAt: 2,
@@ -1581,7 +1581,7 @@ void main() {
       );
       await db.upsertReaderPosition(
         ReaderPositionsCompanion.insert(
-          bookKey: 'manual-book',
+          bookUid: (await db.resolveEpubBookUid('manual-book'))!,
           sectionIndex: 2,
           normCharOffset: 0,
           updatedAt: 2,

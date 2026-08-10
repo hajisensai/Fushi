@@ -22,7 +22,9 @@ import 'package:fushi_core/fushi_core.dart';
 /// - statistics (reading / video / hourly / mining / lookup+mine counters) ->
 ///   per-bucket MAX-union, so re-importing the same backup is idempotent and
 ///   never double-counts.
-/// - favorites / mined sentences -> dedupe-UNION (both kept, duplicates dropped).
+/// - favorites / mined sentences / activity events -> dedupe-UNION (both kept,
+///   duplicates dropped). galgame_sessions deliberately do NOT merge (their
+///   `galgames` hosts are machine-local and never travel; see merge()).
 /// - favorite SENTENCES (a `favorite_sentences` preference JSON blob, NOT a
 ///   table) -> content dedupe-UNION, delegated to [AggregateMergeService] (the
 ///   ATTACH SQL cannot merge a JSON blob, so this used to be dropped entirely).
@@ -132,8 +134,7 @@ class BackupMergeEngine {
       // content and their FK/EXISTS guards no-op harmlessly when their owners
       // were skipped.
       if (_wants('books')) {
-        await _insertMissing('epub_books', 'book_key',
-            skipBookTombstones: true);
+        await _insertMissingEpubBooks();
         // srt_books dedups on `uid` but must honour the deleted book's tombstone
         // via its own `book_key` — else deleting a book then merging an old
         // backup resurrects an orphan srt row (no epub) = an "empty book".
@@ -167,18 +168,39 @@ class BackupMergeEngine {
         await _mergeLookupMiningCounters();
         await _mergeFavoriteWords();
         await _mergeMinedSentences();
+        await _mergeActivityEvents();
+        // galgame_sessions 刻意不合并（成文决策，不是遗漏）：游戏是本机局域
+        // 身份，galgames 行本身就不搬运（见 tables.dart 的 GalgameTagMappings
+        // 注释——整套游戏数据不进 live-sync 也不进备份合并导入，全量备份恢复
+        // 走整库文件拷贝原样还原），src 会话行的 game_id 在目标库没有宿主，
+        // 并进来只会造出悬空引用。唯一例外是游戏标签：它经刮削身份二跳落到
+        // 目标库自己的游戏行上（[_mergeTagsAndMappings] 的 v79 二跳）。
       }
       await _mergeFavoriteSentencePrefs();
       await _mergeTagsAndMappings();
       await _mergeCollectionTags();
       await _mergeProfilesAndChildren();
-      await _insertMissing('media_items', 'unique_key');
+      // v80：media_items → media_open_history，PK 是 (media_source, media_id)
+      // 双列，_insertMissing 的单键形装不下，展开写。
+      await _db.customStatement(
+        'INSERT INTO media_open_history '
+        '(media_type, media_source, media_id, opened_at, position, duration, '
+        'snapshot_json) '
+        'SELECT media_type, media_source, media_id, opened_at, position, '
+        'duration, snapshot_json FROM $_srcAlias.media_open_history AS s '
+        'WHERE NOT EXISTS (SELECT 1 FROM media_open_history AS t '
+        'WHERE t.media_source = s.media_source AND t.media_id = s.media_id)',
+      );
       await _insertMissing('search_history_items', 'unique_key');
       await _insertMissing('anki_mappings', 'label');
       if (_wants('progress')) {
         await _mergeBookmarks();
         await _mergeAudiobookPositionPrefs();
       }
+      // v82：书自定义 CSS / 图片揭开状态（uid 键 LWW）。无 dialog toggle——
+      // 存在性 guard 让「书没随备份来」时自然 no-op（与 collections/tags 同规）。
+      await _mergeBookCustomCss();
+      await _mergeRevealedImages();
       if (_wants('localAudio')) await _mergeAudioSourcePrefs();
       // 迁移专用，放在全部点名 pref 合并之后：那几处是「按内容语义合并」（可能
       // 覆盖/取较新），这里只补它们没管的 key，不能反过来盖掉它们的结果。
@@ -262,16 +284,33 @@ class BackupMergeEngine {
     return row.data['c'] as int;
   }
 
+  /// v82 双侧 JOIN 换键：src 子表行的 book_uid（源库随机 uid）经
+  /// src.epub_books（uid→book_key）→ 本库 epub_books（book_key→uid）换成本库
+  /// uid。JOIN 不上（SRT 等非 epub 域，两库键同为派生串仍可比；或书还没插进
+  /// 来）COALESCE 回落原值。表达式内的 `s` 是调用方 SQL 里的 src 行别名。
+  String get _srcBookUidRekey =>
+      "COALESCE((SELECT tb.uid FROM epub_books AS tb WHERE tb.uid != '' "
+      'AND tb.book_key = (SELECT sb.book_key FROM $_srcAlias.epub_books AS sb '
+      'WHERE sb.uid = s.book_uid)), s.book_uid)';
+
+  /// 墓碑 guard 键仍冻结在 book_key：src 行的 uid 反查 src 库 book_key，
+  /// 非 epub 域回落键值本身。
+  String get _srcBookKeyForTombstone =>
+      'COALESCE((SELECT sb.book_key FROM $_srcAlias.epub_books AS sb '
+      'WHERE sb.uid = s.book_uid), s.book_uid)';
+
   /// Counts reader positions the merge would touch: a src book the target lacks
   /// (new) or a src position strictly newer than the target's (LWW update).
+  /// 与 [_mergeReaderPositions] 逐字镜像（含换键表达式）。
   Future<int> _countReaderPositionChanges() async {
     final row = await _db
         .customSelect(
           'SELECT COUNT(*) AS c FROM $_srcAlias.reader_positions AS s '
           'WHERE NOT EXISTS (SELECT 1 FROM reader_positions AS t '
-          'WHERE t.book_key = s.book_key) '
+          'WHERE t.book_uid = $_srcBookUidRekey) '
           'OR EXISTS (SELECT 1 FROM reader_positions AS t '
-          'WHERE t.book_key = s.book_key AND s.updated_at > t.updated_at)',
+          'WHERE t.book_uid = $_srcBookUidRekey '
+          'AND s.updated_at > t.updated_at)',
         )
         .getSingle();
     return row.data['c'] as int;
@@ -319,6 +358,29 @@ class BackupMergeEngine {
       'SELECT $colList FROM $_srcAlias.$table AS s '
       'WHERE NOT EXISTS (SELECT 1 FROM $table AS t '
       'WHERE t.$keyColumn = s.$keyColumn) $tombstoneGuard',
+    );
+  }
+
+  /// epub_books 专用 insert-missing（v82）：uid 列不能直搬——两库各自生成的
+  /// `book_<rowid>_<epoch>` 形 uid 可能撞本库 partial 唯一索引，撞上会炸掉整个
+  /// merge 事务。撞时按同命名空间重生成（src rowid + 当前 epoch + `_m` 后缀，
+  /// 批内唯一；万一再撞由唯一索引大声失败，绝不静默错配）。
+  Future<void> _insertMissingEpubBooks() async {
+    final List<String> cols = await _columnsExceptId('epub_books');
+    final String colList = cols.join(', ');
+    final String selList = cols.map((String c) {
+      if (c != '"uid"') return 's.$c';
+      return "CASE WHEN s.uid != '' AND EXISTS "
+          '(SELECT 1 FROM epub_books AS e WHERE e.uid = s.uid) '
+          "THEN 'book_' || s.rowid || '_' || strftime('%s','now') || '_m' "
+          'ELSE s.uid END';
+    }).join(', ');
+    await _db.customStatement(
+      'INSERT INTO epub_books ($colList) '
+      'SELECT $selList FROM $_srcAlias.epub_books AS s '
+      'WHERE NOT EXISTS (SELECT 1 FROM epub_books AS t '
+      'WHERE t.book_key = s.book_key) '
+      'AND s.book_key NOT IN (SELECT book_key FROM book_tombstones)',
     );
   }
 
@@ -374,6 +436,44 @@ class BackupMergeEngine {
         )
         .get();
     if (srcCols.isEmpty) return;
+
+    // v83：成员表 epub 域 entry_key = 各库自己的 epub_books.uid（本地书）或对端
+    // bookKey（透传行）。uid 是每库随机生成的本机局域串，跨库直搬必错——照
+    // Stage 1b 的 [_srcBookUidRekey] 双侧换键，但本函数是 Dart 逐行循环，改用两
+    // 张查表 map。本 map 在 [_insertMissingEpubBooks] **之后**构建（merge() 顺序
+    // 保证）：src 书刚插进本库（含 uid 撞库重生成 `_m` 后缀的）也在映射里，成员
+    // 自动 remap 到重生成后的 uid。仅 mediaType=='epub' 门控——srt/video/game
+    // 键天然稳定，误换算即数据损坏。
+    final Map<String, String> srcBookKeyByUid = <String, String>{};
+    if (await _srcTableExists('epub_books')) {
+      for (final QueryRow r in await _db
+          .customSelect('SELECT uid, book_key FROM $_srcAlias.epub_books')
+          .get()) {
+        final String uid = r.read<String>('uid');
+        if (uid.isNotEmpty) srcBookKeyByUid[uid] = r.read<String>('book_key');
+      }
+    }
+    final Map<String, String> localUidByBookKey = <String, String>{};
+    for (final QueryRow r in await _db
+        .customSelect("SELECT uid, book_key FROM epub_books WHERE uid != ''")
+        .get()) {
+      localUidByBookKey[r.read<String>('book_key')] = r.read<String>('uid');
+    }
+    // epub 键归一到 bookKey 域（墓碑匹配用——本地成员墓碑冻结在 bookKey 域）：
+    // src uid → src bookKey；查不上 = entry_key 本就在 bookKey 域（src 的透传行）
+    // 或 src 书已删的游离 uid，照抄。uid 值域 `book_<rowid>_<epoch>[_m]` 与
+    // bookKey 值域 sanitize(title) 仅在病态标题恰为 `book_<n>_<n>` 形时碰撞
+    // （§7.4 已记：概率忽略）。
+    String normalizeEpubToBookKey(String entryKey) =>
+        srcBookKeyByUid[entryKey] ?? entryKey;
+    // epub 三级回落换键（落库用）：本库有书 → 本库 uid；本库无书 → 回落
+    // bookKey 域（保持 wire 可续接，日后 sync/下载落地自动收敛）；src 也无书行
+    // → 照抄原值。无需 uid 撞库防线追加：成员表无 uid 唯一索引（复合 PK
+    // INSERT OR IGNORE 天然去重），epub_books 的 uid 重生成防线 Stage 1b 已做。
+    String rekeyEpubEntryKey(String entryKey) {
+      final String bookKey = normalizeEpubToBookKey(entryKey);
+      return localUidByBookKey[bookKey] ?? bookKey;
+    }
 
     // 本地墓碑（防复活，任务7）：合集级删除哨兵按自然键 (name, type)、成员移出墓碑按
     // (name, type, mediaType, entryKey)。用 record 集合（结构相等），避免拼接分隔符歧义。
@@ -434,6 +534,17 @@ class BackupMergeEngine {
         srcToTargetId[srcId] = existing;
         continue;
       }
+      // v83：cover_source='<mediaType>|<entryKey>' 是隐藏 entryKey 载体（合集借
+      // 成员封面，tables.dart:841）。epub 借用键与成员行同律换键，否则借用断链、
+      // 封面静默回退占位（§7 风险5）。非 epub 前缀（video|/srt|/game|、NULL）
+      // 原样直搬。目标已有同名合集时不走此分支，保留目标自己的 cover_source。
+      final String? srcCover = c.read<String?>('cover_source');
+      final String epubCoverPrefix = '${MediaKind.epub.dbValue}|';
+      final String? coverForInsert =
+          (srcCover != null && srcCover.startsWith(epubCoverPrefix))
+              ? epubCoverPrefix +
+                  rekeyEpubEntryKey(srcCover.substring(epubCoverPrefix.length))
+              : srcCover;
       final int newId = await _db.customInsert(
         'INSERT INTO media_collections '
         '(name, collection_type, cover_source, sort_order, created_at) '
@@ -442,7 +553,7 @@ class BackupMergeEngine {
           Variable<String>(name),
           Variable<String>(type),
           // cover_source 可空：Variable<String> 接受 null 值 → 落 SQL NULL。
-          Variable<String>(c.read<String?>('cover_source')),
+          Variable<String>(coverForInsert),
           Variable<int>(nextSort++),
           Variable<int>(c.read<int>('created_at')),
         ],
@@ -465,12 +576,19 @@ class BackupMergeEngine {
       if (tgt == null) continue; // 合集被删除墓碑跳过或未映射：连带跳过成员。
       final String mediaType = it.read<String>('media_type');
       final String entryKey = it.read<String>('entry_key');
+      final bool isEpub = mediaType == MediaKind.epub.dbValue;
+      // 墓碑匹配在 bookKey 域：本地成员墓碑 entry_key 冻结在 bookKey 域（§4），
+      // src epub 成员先归一再比；非 epub 键值自身即稳定键，直比。
+      final String tombstoneKey =
+          isEpub ? normalizeEpubToBookKey(entryKey) : entryKey;
       final (String, String)? natural = srcIdToNatural[srcCollectionId];
       if (natural != null &&
           removedMemberKeys
-              .contains((natural.$1, natural.$2, mediaType, entryKey))) {
+              .contains((natural.$1, natural.$2, mediaType, tombstoneKey))) {
         continue; // 成员移出墓碑命中：跳过（防复活已移出成员）。
       }
+      // 落库键：epub 三级回落换到本库键域；同书的 uid 行与透传 bookKey 行换键后
+      // 可能收敛为同一键——复合 PK 上的 INSERT OR IGNORE 顺带去重。
       await _db.customStatement(
         'INSERT OR IGNORE INTO media_collection_items '
         '(collection_id, media_type, entry_key, sort_index) '
@@ -478,7 +596,7 @@ class BackupMergeEngine {
         <Object?>[
           tgt,
           mediaType,
-          entryKey,
+          isEpub ? rekeyEpubEntryKey(entryKey) : entryKey,
           it.read<int>('sort_index'),
         ],
       );
@@ -535,28 +653,33 @@ class BackupMergeEngine {
   }
 
   /// Reader positions LWW: a src row wins only when the target lacks a row for
-  /// that book_key, or the src `updated_at` is strictly greater.
+  /// that book(uid), or the src `updated_at` is strictly greater. v82 起
+  /// book_uid 经 [_srcBookUidRekey] 双侧换键（两库随机 uid 不可直比）。
   Future<void> _mergeReaderPositions() async {
     final List<String> cols = await _columnsExceptId('reader_positions');
     final String colList = cols.join(', ');
+    final String selList = cols
+        .map((String c) => c == '"book_uid"' ? _srcBookUidRekey : 's.$c')
+        .join(', ');
     await _db.customStatement(
       'INSERT INTO reader_positions ($colList) '
-      'SELECT $colList FROM $_srcAlias.reader_positions AS s '
+      'SELECT $selList FROM $_srcAlias.reader_positions AS s '
       'WHERE NOT EXISTS (SELECT 1 FROM reader_positions AS t '
-      'WHERE t.book_key = s.book_key) '
+      'WHERE t.book_uid = $_srcBookUidRekey) '
       // TODO-1195 part B: never re-add a deleted book's reading position.
-      'AND s.book_key NOT IN (SELECT book_key FROM book_tombstones)',
+      'AND $_srcBookKeyForTombstone NOT IN '
+      '(SELECT book_key FROM book_tombstones)',
     );
     final String setClause = cols
-        .where((String c) => c != '"book_key"')
+        .where((String c) => c != '"book_uid"')
         .map((String c) => '$c = ('
             'SELECT s.$c FROM $_srcAlias.reader_positions AS s '
-            'WHERE s.book_key = reader_positions.book_key)')
+            'WHERE $_srcBookUidRekey = reader_positions.book_uid)')
         .join(', ');
     await _db.customStatement(
       'UPDATE reader_positions SET $setClause '
       'WHERE EXISTS (SELECT 1 FROM $_srcAlias.reader_positions AS s '
-      'WHERE s.book_key = reader_positions.book_key '
+      'WHERE $_srcBookUidRekey = reader_positions.book_uid '
       'AND s.updated_at > reader_positions.updated_at)',
     );
   }
@@ -776,6 +899,38 @@ class BackupMergeEngine {
     );
   }
 
+  /// ActivityEvents dedupe-UNION（session 粒度事实流，与 [_mergeMinedSentences]
+  /// 同形：无唯一约束，按内容指纹 NOT EXISTS 去重插入）。
+  ///
+  /// 自然键 = {event_type, media_type, title, timestamp_ms}：timestamp_ms 是
+  /// session 落库的精确毫秒时刻，同型、同媒体、同题、同毫秒即同一事件——重导
+  /// 同一备份幂等，两台设备各自的真实 session 几乎不可能四元全撞。media_key
+  /// 刻意不进键：它是 nullable 的打开锚点（书=bookKey、视频=bookUid），跨库/
+  /// 跨版本身份空间可能不同，进键会把同一事件在两侧判成两条。行本身原样搬运
+  /// （含 media_key），dateKey 与 timestamp_ms 同行同源，无需重算。
+  ///
+  /// 不产投影：activity 行只是时间线事实，投影表（reading_statistics 等）由
+  /// 上面各自的 MAX-union 独立合并，绝不从这里派生（防双计）。
+  ///
+  /// 无 statistics_tombstones 守卫：activity 删除对称性是尚未拍板的独立任务
+  /// （P4 B2——本地删除路径 deleteActivityEventsForTitle 目前零生产调用方），
+  /// 本地都不删，合并侧守卫没有语义可对齐；B2 落地时同步补。
+  ///
+  /// 代价：target 无 {event_type, ...} 复合索引，NOT EXISTS 对每条 src 行走
+  /// 全表扫描（O(src×target)）。activity 是 session 粒度（每天几行~几十行），
+  /// 年级数据也在万行内，SQLite 毫秒级，不值得为 merge 加索引。
+  Future<void> _mergeActivityEvents() async {
+    final List<String> cols = await _columnsExceptId('activity_events');
+    final String colList = cols.join(', ');
+    await _db.customStatement(
+      'INSERT INTO activity_events ($colList) '
+      'SELECT $colList FROM $_srcAlias.activity_events AS s '
+      'WHERE NOT EXISTS (SELECT 1 FROM activity_events AS t '
+      'WHERE t.event_type = s.event_type AND t.media_type = s.media_type '
+      'AND t.title = s.title AND t.timestamp_ms = s.timestamp_ms)',
+    );
+  }
+
   /// Favorite SENTENCES dedupe-UNION. Unlike favorite words / mined sentences
   /// these are NOT a table but a JSON list stored in the target's and src's
   /// `preferences` row `favorite_sentences`, so the ATTACH SQL merge cannot
@@ -841,8 +996,25 @@ class BackupMergeEngine {
   }
 
   /// BookTags UNION by name (device keeps its own tag row + id on a name clash),
-  /// then the three mapping tables with the src tagId REMAPPED to the target id
-  /// resolved by tag name. Owner rows (book/srt/video) must already be merged.
+  /// then the unified tag_assignments with the src tagId REMAPPED to the target
+  /// id resolved by tag name. Owner rows must already be merged.
+  ///
+  /// v79（五表合一 + 用户令全 kind 合并）：src 在 ATTACH 前已迁到当前 schema，
+  /// 五张旧映射表已并成 tag_assignments——这里按 kind 分三路：
+  ///  - epub/srt/video/**game 直键**：entry_key 本身跨库可比（bookKey / srt uid /
+  ///    bookUid / game id），宿主存在性逐 kind 校验后直插。game 的 id 是本机
+  ///    局域身份且 galgames 行不参与备份合并——直键只在 target 恰好有同 id 游戏
+  ///    （同机恢复 / 整库迁移后补合并）时命中；
+  ///  - **game 二跳**（用户令跨机也要并）：直键不命中的游戏标签行，经
+  ///    「src 该游戏的刮削身份 (source, external_id) → target 拥有同刮削身份的
+  ///    游戏」二跳落地——bgm/vndb 条目 id 是游戏唯一的跨机稳定身份（两机各自
+  ///    刮削同一部游戏得到同一个 subject id）。两侧任一没刮削/未命中 → 仍丢
+  ///    （按名/按路径猜会把标签打到别的游戏头上，宁缺毋错）；
+  ///  - collection：src 本地 id 无跨库意义，经 media_collections
+  ///    (name, collection_type) 自然键映射到 target id（JOIN 不命中——被删除
+  ///    墓碑跳过、target 无同名合集——天然不插入）。
+  /// added_at 随行携带（缺失桶落 src 时钟；已存在桶保 target 时钟，additive
+  /// union 语义同旧版）。
   Future<void> _mergeTagsAndMappings() async {
     await _db.customStatement(
       'INSERT INTO book_tags (name, color_value, sort_order, created_at) '
@@ -851,58 +1023,67 @@ class BackupMergeEngine {
       'WHERE NOT EXISTS (SELECT 1 FROM book_tags AS t WHERE t.name = s.name)',
     );
     await _db.customStatement(
-      'INSERT INTO book_tag_mappings (book_key, tag_id) '
-      'SELECT sm.book_key, tt.id '
-      'FROM $_srcAlias.book_tag_mappings AS sm '
+      'INSERT INTO tag_assignments (media_kind, entry_key, tag_id, added_at) '
+      'SELECT sm.media_kind, sm.entry_key, tt.id, sm.added_at '
+      'FROM $_srcAlias.tag_assignments AS sm '
       'JOIN $_srcAlias.book_tags AS st ON st.id = sm.tag_id '
       'JOIN book_tags AS tt ON tt.name = st.name '
-      'WHERE EXISTS '
-      '(SELECT 1 FROM epub_books AS b WHERE b.book_key = sm.book_key) '
-      'AND NOT EXISTS (SELECT 1 FROM book_tag_mappings AS m '
-      'WHERE m.book_key = sm.book_key AND m.tag_id = tt.id)',
+      'WHERE ('
+      "(sm.media_kind = 'epub' AND EXISTS "
+      '(SELECT 1 FROM epub_books AS b WHERE b.book_key = sm.entry_key)) '
+      "OR (sm.media_kind = 'srt' AND EXISTS "
+      '(SELECT 1 FROM srt_books AS sb WHERE sb.uid = sm.entry_key)) '
+      "OR (sm.media_kind = 'video' AND EXISTS "
+      '(SELECT 1 FROM video_books AS v WHERE v.book_uid = sm.entry_key)) '
+      "OR (sm.media_kind = 'game' AND EXISTS "
+      '(SELECT 1 FROM galgames AS g WHERE g.id = sm.entry_key))'
+      ') '
+      'AND NOT EXISTS (SELECT 1 FROM tag_assignments AS m '
+      'WHERE m.media_kind = sm.media_kind AND m.entry_key = sm.entry_key '
+      'AND m.tag_id = tt.id)',
     );
+    // game 二跳：直键不命中（target 无同 id 游戏 = 跨机场景）的游戏标签行，
+    // 按刮削身份重定位到 target 的对应游戏。DISTINCT 防同一 (game, tag) 经
+    // bgm+vndb 双源命中同一 target 游戏时重复；同一 externalId 在 target 命中
+    // 多个游戏（用户重复添加同一部）时每个都打上——标签是并集语义，多打不为错。
     await _db.customStatement(
-      'INSERT INTO srt_book_tag_mappings (srt_book_id, tag_id) '
-      'SELECT ts.id, tt.id '
-      'FROM $_srcAlias.srt_book_tag_mappings AS sm '
-      'JOIN $_srcAlias.srt_books AS ss ON ss.id = sm.srt_book_id '
-      'JOIN srt_books AS ts ON ts.uid = ss.uid '
+      'INSERT INTO tag_assignments (media_kind, entry_key, tag_id, added_at) '
+      "SELECT DISTINCT 'game', ts.game_id, tt.id, sm.added_at "
+      'FROM $_srcAlias.tag_assignments AS sm '
+      'JOIN $_srcAlias.galgame_sources AS ss '
+      'ON ss.game_id = sm.entry_key '
+      "AND ss.external_id IS NOT NULL AND ss.external_id != '' "
+      'JOIN galgame_sources AS ts '
+      'ON ts.source = ss.source AND ts.external_id = ss.external_id '
       'JOIN $_srcAlias.book_tags AS st ON st.id = sm.tag_id '
       'JOIN book_tags AS tt ON tt.name = st.name '
-      'WHERE NOT EXISTS (SELECT 1 FROM srt_book_tag_mappings AS m '
-      'WHERE m.srt_book_id = ts.id AND m.tag_id = tt.id)',
-    );
-    await _db.customStatement(
-      'INSERT INTO video_book_tag_mappings (book_uid, tag_id) '
-      'SELECT sm.book_uid, tt.id '
-      'FROM $_srcAlias.video_book_tag_mappings AS sm '
-      'JOIN $_srcAlias.book_tags AS st ON st.id = sm.tag_id '
-      'JOIN book_tags AS tt ON tt.name = st.name '
-      'WHERE EXISTS (SELECT 1 FROM video_books AS v '
-      'WHERE v.book_uid = sm.book_uid) '
-      'AND NOT EXISTS (SELECT 1 FROM video_book_tag_mappings AS m '
-      'WHERE m.book_uid = sm.book_uid AND m.tag_id = tt.id)',
+      "WHERE sm.media_kind = 'game' "
+      'AND NOT EXISTS (SELECT 1 FROM galgames AS g WHERE g.id = sm.entry_key) '
+      'AND NOT EXISTS (SELECT 1 FROM tag_assignments AS m '
+      "WHERE m.media_kind = 'game' AND m.entry_key = ts.game_id "
+      'AND m.tag_id = tt.id)',
     );
   }
 
-  /// 合集标签映射 UNION by (合集自然键 + 标签名)。src 的 collection_id 经
-  /// media_collections (name, collection_type) 自然键映射到 target id，tag_id 经
-  /// book_tags.name 映射。JOIN 不命中（被删除墓碑跳过、target 无同名合集）的行天然
-  /// 不插入——尊重墓碑是 JOIN 的副产品。owner 合集与 book_tags 须已合并（本方法在
-  /// [_mergeMediaCollections] 与 [_mergeTagsAndMappings] 之后调用）。
+  /// 合集标签映射 UNION by (合集自然键 + 标签名)——v77 起读统一表的
+  /// collection kind（详见 [_mergeTagsAndMappings] doc）。owner 合集与
+  /// book_tags 须已合并（本方法在 [_mergeMediaCollections] 与
+  /// [_mergeTagsAndMappings] 之后调用）。
   Future<void> _mergeCollectionTags() async {
-    if (!await _srcTableExists('collection_tag_mappings')) return; // 旧备份无此表
     await _db.customStatement(
-      'INSERT INTO collection_tag_mappings (collection_id, tag_id) '
-      'SELECT tc.id, tt.id '
-      'FROM $_srcAlias.collection_tag_mappings AS sm '
-      'JOIN $_srcAlias.media_collections AS sc ON sc.id = sm.collection_id '
+      'INSERT INTO tag_assignments (media_kind, entry_key, tag_id, added_at) '
+      "SELECT 'collection', CAST(tc.id AS TEXT), tt.id, sm.added_at "
+      'FROM $_srcAlias.tag_assignments AS sm '
+      'JOIN $_srcAlias.media_collections AS sc '
+      'ON CAST(sc.id AS TEXT) = sm.entry_key '
       'JOIN media_collections AS tc '
       'ON tc.name = sc.name AND tc.collection_type = sc.collection_type '
       'JOIN $_srcAlias.book_tags AS st ON st.id = sm.tag_id '
       'JOIN book_tags AS tt ON tt.name = st.name '
-      'WHERE NOT EXISTS (SELECT 1 FROM collection_tag_mappings AS m '
-      'WHERE m.collection_id = tc.id AND m.tag_id = tt.id)',
+      "WHERE sm.media_kind = 'collection' "
+      'AND NOT EXISTS (SELECT 1 FROM tag_assignments AS m '
+      "WHERE m.media_kind = 'collection' "
+      'AND m.entry_key = CAST(tc.id AS TEXT) AND m.tag_id = tt.id)',
     );
   }
 
@@ -946,21 +1127,84 @@ class BackupMergeEngine {
     );
   }
 
-  /// Bookmarks dedupe-union by {book_key, section_index, norm_char_offset,
-  /// created_at}, FK-guarded on epub_books(book_key) so a bookmark for a book
-  /// the backup omitted is skipped rather than violating the cascade FK.
+  /// Bookmarks dedupe-union by {book_uid, section_index, norm_char_offset,
+  /// created_at}, existence-guarded on epub_books(uid) so a bookmark for a book
+  /// the backup omitted is skipped（v82 换键后 guard 语义不变）.
   Future<void> _mergeBookmarks() async {
     final List<String> cols = await _columnsExceptId('bookmarks');
     final String colList = cols.join(', ');
+    final String selList = cols
+        .map((String c) => c == '"book_uid"' ? _srcBookUidRekey : 's.$c')
+        .join(', ');
     await _db.customStatement(
       'INSERT INTO bookmarks ($colList) '
-      'SELECT $colList FROM $_srcAlias.bookmarks AS s '
+      'SELECT $selList FROM $_srcAlias.bookmarks AS s '
       'WHERE EXISTS '
-      '(SELECT 1 FROM epub_books AS b WHERE b.book_key = s.book_key) '
+      '(SELECT 1 FROM epub_books AS b WHERE b.uid = $_srcBookUidRekey) '
       'AND NOT EXISTS (SELECT 1 FROM bookmarks AS t '
-      'WHERE t.book_key = s.book_key AND t.section_index = s.section_index '
+      'WHERE t.book_uid = $_srcBookUidRekey '
+      'AND t.section_index = s.section_index '
       'AND t.norm_char_offset = s.norm_char_offset '
       'AND t.created_at = s.created_at)',
+    );
+  }
+
+  /// v82：书自定义 CSS LWW 合并（per {book_uid, relative_path}，updatedAt 取
+  /// 较新；重置墓碑 deleted 行同样传播）。此前该表不进 merge（src 静默丢弃）。
+  Future<void> _mergeBookCustomCss() async {
+    if (!await _srcTableExists('book_custom_css')) return;
+    await _db.customStatement(
+      'INSERT INTO book_custom_css '
+      '(book_uid, relative_path, content, deleted, updated_at) '
+      'SELECT $_srcBookUidRekey, s.relative_path, s.content, s.deleted, '
+      's.updated_at FROM $_srcAlias.book_custom_css AS s '
+      'WHERE EXISTS '
+      '(SELECT 1 FROM epub_books AS b WHERE b.uid = $_srcBookUidRekey) '
+      'AND NOT EXISTS (SELECT 1 FROM book_custom_css AS t '
+      'WHERE t.book_uid = $_srcBookUidRekey '
+      'AND t.relative_path = s.relative_path)',
+    );
+    await _db.customStatement(
+      'UPDATE book_custom_css SET '
+      'content = (SELECT s.content FROM $_srcAlias.book_custom_css AS s '
+      'WHERE $_srcBookUidRekey = book_custom_css.book_uid '
+      'AND s.relative_path = book_custom_css.relative_path), '
+      'deleted = (SELECT s.deleted FROM $_srcAlias.book_custom_css AS s '
+      'WHERE $_srcBookUidRekey = book_custom_css.book_uid '
+      'AND s.relative_path = book_custom_css.relative_path), '
+      'updated_at = (SELECT s.updated_at FROM $_srcAlias.book_custom_css AS s '
+      'WHERE $_srcBookUidRekey = book_custom_css.book_uid '
+      'AND s.relative_path = book_custom_css.relative_path) '
+      'WHERE EXISTS (SELECT 1 FROM $_srcAlias.book_custom_css AS s '
+      'WHERE $_srcBookUidRekey = book_custom_css.book_uid '
+      'AND s.relative_path = book_custom_css.relative_path '
+      'AND s.updated_at > book_custom_css.updated_at)',
+    );
+  }
+
+  /// v82：图片揭开状态合并（per {book_uid, image_key}，revealedAt 取较新；
+  /// 语义上「任一端揭开即揭开」，union + LWW 刷新时刻）。此前不进 merge。
+  Future<void> _mergeRevealedImages() async {
+    if (!await _srcTableExists('revealed_images')) return;
+    await _db.customStatement(
+      'INSERT INTO revealed_images (book_uid, image_key, revealed_at) '
+      'SELECT $_srcBookUidRekey, s.image_key, s.revealed_at '
+      'FROM $_srcAlias.revealed_images AS s '
+      'WHERE EXISTS '
+      '(SELECT 1 FROM epub_books AS b WHERE b.uid = $_srcBookUidRekey) '
+      'AND NOT EXISTS (SELECT 1 FROM revealed_images AS t '
+      'WHERE t.book_uid = $_srcBookUidRekey AND t.image_key = s.image_key)',
+    );
+    await _db.customStatement(
+      'UPDATE revealed_images SET '
+      'revealed_at = (SELECT s.revealed_at '
+      'FROM $_srcAlias.revealed_images AS s '
+      'WHERE $_srcBookUidRekey = revealed_images.book_uid '
+      'AND s.image_key = revealed_images.image_key) '
+      'WHERE EXISTS (SELECT 1 FROM $_srcAlias.revealed_images AS s '
+      'WHERE $_srcBookUidRekey = revealed_images.book_uid '
+      'AND s.image_key = revealed_images.image_key '
+      'AND s.revealed_at > revealed_images.revealed_at)',
     );
   }
 

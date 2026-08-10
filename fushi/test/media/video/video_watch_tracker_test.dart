@@ -98,15 +98,16 @@ void main() {
   group('subtitle char counting (monotonic dedup per episode)', () {
     late _FakeSource src;
     late VideoWatchTracker tracker;
-    late List<(String, String, int, int)> recorded;
+    late List<(String, int)> recorded;
     setUp(() {
-      recorded = <(String, String, int, int)>[];
+      recorded = <(String, int)>[];
       src = _FakeSource();
       tracker = VideoWatchTracker(
         title: 'A',
         bookUid: 'u1',
-        addStat: (title, dateKey, chars, ms) =>
-            recorded.add((title, dateKey, chars, ms)),
+        recordFlush: (List<(String, int, int)> buckets) {},
+        addSubtitleChars: (String dateKey, int chars) =>
+            recorded.add((dateKey, chars)),
         markCompleted: (_) async {},
       )..attach(src);
     });
@@ -126,15 +127,14 @@ void main() {
       expect(tracker.debugSubtitleChars, 7);
     });
 
-    test('addStat receives a yyyy-MM-dd dateKey for subtitle chars', () {
+    test('addSubtitleChars receives a yyyy-MM-dd dateKey for subtitle chars',
+        () {
       src.currentCueIndex = 0;
       src.currentCue = _cue('あいう');
       src.emit();
       expect(recorded, hasLength(1));
-      expect(recorded.single.$1, 'A'); // title
-      expect(recorded.single.$2, matches(r'^\d{4}-\d{2}-\d{2}$')); // dateKey
-      expect(recorded.single.$3, 3); // chars
-      expect(recorded.single.$4, 0); // watchTimeMs（字幕路径不计时长）
+      expect(recorded.single.$1, matches(r'^\d{4}-\d{2}-\d{2}$')); // dateKey
+      expect(recorded.single.$2, 3); // chars
     });
 
     test('onEpisodeChanged resets dedup set', () {
@@ -157,20 +157,23 @@ void main() {
   });
 
   group('exit flush awaits async stat writes (TODO-086/BUG-192)', () {
-    test('stop() future completes only after the async stat write commits',
+    test('stop() future completes only after the async flush write commits',
         () async {
       final List<int> committed = <int>[];
       final _FakeSource src = _FakeSource()..isPlaying = true;
-      // addStat 模拟异步落库（后台 isolate 写 Drift）：只有当 tracker 真的 await
-      // 它，stop() 返回时 committed 才非空。撤掉 _flush/stop 的 await（改回
+      // recordFlush 模拟异步落库（后台 isolate 写 Drift）：只有当 tracker 真的
+      // await 它，stop() 返回时 committed 才非空。撤掉 _flush/stop 的 await（改回
       // fire-and-forget）会让本断言转红——锁住退出时统计不丢。
       final VideoWatchTracker tracker = VideoWatchTracker(
         title: 'A',
         bookUid: 'u1',
-        addStat: (String t, String dateKey, int chars, int ms) async {
+        recordFlush: (List<(String, int, int)> buckets) async {
           await Future<void>.delayed(const Duration(milliseconds: 20));
-          if (ms > 0) committed.add(ms); // 只看观看时长写（chars 路径 ms=0）
+          for (final (_, _, int ms) in buckets) {
+            if (ms > 0) committed.add(ms);
+          }
         },
+        addSubtitleChars: (String dateKey, int chars) {},
         markCompleted: (_) async {},
       )..attach(src);
 
@@ -195,7 +198,8 @@ void main() {
       final VideoWatchTracker tracker = VideoWatchTracker(
         title: 'A',
         bookUid: 'u1',
-        addStat: (_, __, ___, ____) {},
+        recordFlush: (List<(String, int, int)> buckets) {},
+        addSubtitleChars: (String dateKey, int chars) {},
         markCompleted: (_) async {},
         onEpisodeCompleted: () => completed++,
       )..attach(src);
@@ -222,7 +226,8 @@ void main() {
       final VideoWatchTracker tracker = VideoWatchTracker(
         title: 'A',
         bookUid: 'u1',
-        addStat: (String t, String dateKey, int chars, int ms) async {},
+        recordFlush: (List<(String, int, int)> buckets) async {},
+        addSubtitleChars: (String dateKey, int chars) {},
         markCompleted: (_) async {},
         recordActivity: (String t, String uid, String dateKey, int timestampMs,
             int durationMs, int chars) {
@@ -246,7 +251,8 @@ void main() {
       final VideoWatchTracker tracker = VideoWatchTracker(
         title: 'A',
         bookUid: 'u1',
-        addStat: (String t, String dateKey, int chars, int ms) async {},
+        recordFlush: (List<(String, int, int)> buckets) async {},
+        addSubtitleChars: (String dateKey, int chars) {},
         markCompleted: (_) async {},
         recordActivity: (String t, String uid, String dateKey, int timestampMs,
                 int durationMs, int chars) =>
@@ -266,7 +272,8 @@ void main() {
       final VideoWatchTracker tracker = VideoWatchTracker(
         title: 'A',
         bookUid: 'u1',
-        addStat: (String t, String dateKey, int chars, int ms) async {},
+        recordFlush: (List<(String, int, int)> buckets) async {},
+        addSubtitleChars: (String dateKey, int chars) {},
         markCompleted: (_) async {},
         recordActivity: (String t, String uid, String dateKey, int timestampMs,
                 int durationMs, int chars) =>
@@ -277,6 +284,40 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
       await tracker.stop();
       expect(durations, isEmpty);
+    });
+
+    test('活动事件 dateKey 取 stop 时刻（session 语义，刻意区别于桶归属）', () async {
+      // 防「顺手统一」：activity 行是 session 事件（stop 时刻 dateKey + 总量），
+      // 桶（recordFlush）各归各日。这里锁 activity 的 dateKey 形状与「= stop 当日」。
+      String? activityDateKey;
+      final _FakeSource src = _FakeSource()..isPlaying = true;
+      final VideoWatchTracker tracker = VideoWatchTracker(
+        title: 'A',
+        bookUid: 'u1',
+        recordFlush: (List<(String, int, int)> buckets) async {},
+        addSubtitleChars: (String dateKey, int chars) {},
+        markCompleted: (_) async {},
+        recordActivity: (String t, String uid, String dateKey, int timestampMs,
+                int durationMs, int chars) =>
+            activityDateKey = dateKey,
+      )..attach(src);
+
+      tracker.start();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      final DateTime beforeStop = DateTime.now();
+      await tracker.stop();
+      final DateTime afterStop = DateTime.now();
+
+      expect(activityDateKey, isNotNull);
+      // stop 前后取到的「当日」至少有一个等于 activity 的 dateKey（测试恰跨午夜时
+      // 两者取其一），锁住「activity dateKey = stop 时刻当日」的语义。
+      final Set<String> stopDays = <String>{
+        '${beforeStop.year}-${beforeStop.month.toString().padLeft(2, '0')}-'
+            '${beforeStop.day.toString().padLeft(2, '0')}',
+        '${afterStop.year}-${afterStop.month.toString().padLeft(2, '0')}-'
+            '${afterStop.day.toString().padLeft(2, '0')}',
+      };
+      expect(stopDays, contains(activityDateKey));
     });
   });
 }

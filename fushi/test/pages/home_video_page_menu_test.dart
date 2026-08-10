@@ -14,6 +14,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/media/video/video_storage.dart';
 import 'package:fushi/src/media/video/video_subtitle_source.dart';
@@ -271,8 +272,13 @@ void main() {
             // HomeVideoPage 不再自带 Scaffold（与书架/词典 tab 统一，运行时挂在
             // HomePage 的外层 Scaffold 内）；测试照样在 Scaffold 内 pump，
             // FushiPageHeader 的 FushiIconButton(InkWell) 才有 Material 祖先。
+            // #792 分区化后 home 分区只渲染 dashboard 概览；标签栏/选择入口与
+            // 全量墙卡（tap 直接 _open 开播）都在 allVideos 分区，钉住该分区。
             home: Scaffold(
-              body: HomeVideoPage(repo: repo ?? VideoBookRepository(db)),
+              body: HomeVideoPage(
+                repo: repo ?? VideoBookRepository(db),
+                section: VideoLibrarySection.allVideos,
+              ),
             ),
           ),
         ),
@@ -484,10 +490,9 @@ void main() {
     await dragTopTagToVideoCard(tester);
     await dragTopTagToVideoCard(tester);
 
-    final List<VideoBookTagMappingRow> mappings =
-        await db.getAllVideoBookTagMappings();
+    final List<TagAssignmentRow> mappings = await db.getAllTagAssignments();
     expect(mappings, hasLength(1));
-    expect(mappings.single.bookUid, 'video/1');
+    expect(mappings.single.entryKey, 'video/1');
   });
 
   // ── TODO-063 视频批量选择（标签栏旁的「选择」+ 批量打标签/删除）──────────

@@ -94,8 +94,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   AudioCue? cueAtCurrentPositionInBook() {
     if (_allBookCues.isEmpty) return _currentCue;
     final int audioFileIndex = _player.currentIndex ?? 0;
-    final int effectiveMs = (_player.position.inMilliseconds - delayMs.value)
-        .clamp(0, 1 << 30);
+    final int effectiveMs =
+        (_player.position.inMilliseconds - delayMs.value).clamp(0, 1 << 30);
     AudioCue? best;
     int bestStart = -1;
     for (final AudioCue cue in _allBookCues) {
@@ -134,8 +134,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     final int audioFileIndex = _player.currentIndex ?? 0;
     final List<AudioCue> fileCues = _chapterCuesForAudioFile(audioFileIndex);
     if (fileCues.isEmpty) return _currentCue;
-    final int effectiveMs = (_player.position.inMilliseconds - delayMs.value)
-        .clamp(0, 1 << 30);
+    final int effectiveMs =
+        (_player.position.inMilliseconds - delayMs.value).clamp(0, 1 << 30);
     return _displayCueFor(cues: fileCues, effectiveMs: effectiveMs);
   }
 
@@ -414,7 +414,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   @visibleForTesting
   static bool shouldSnapAfterImagePauseResume({
     required bool readerMovedDuringPause,
-  }) => !readerMovedDuringPause;
+  }) =>
+      !readerMovedDuringPause;
 
   void setImagePauseSec(int sec) {
     final int clamped = sec.clamp(0, 15);
@@ -1191,12 +1192,12 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 状态变化时 just_audio 自发降频到 maxPeriod）。
     _positionSub = _player
         .createPositionStream(
-          minPeriod: const Duration(milliseconds: 125),
-          maxPeriod: const Duration(milliseconds: 125),
-        )
+      minPeriod: const Duration(milliseconds: 125),
+      maxPeriod: const Duration(milliseconds: 125),
+    )
         .listen((pos) {
-          _updateCurrentCue(pos.inMilliseconds);
-        });
+      _updateCurrentCue(pos.inMilliseconds);
+    });
     // 订阅播放状态流：just_audio 内部状态翻转（包括焦点丢失、播完自动暂停）
     // 都会在这里得到通知，UI 即时刷新播放/暂停图标。
     _playingSub = _player.playingStream.listen((_) {

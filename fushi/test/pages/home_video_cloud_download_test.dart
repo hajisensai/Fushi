@@ -10,6 +10,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
@@ -96,6 +97,9 @@ void main() {
             home: Scaffold(
               body: HomeVideoPage(
                 repo: repo,
+                // #792 分区化：home 分区只渲染 dashboard 概览，云占位卡所在的
+                // 混排墙（_buildLocalVideoSlivers）搬进了 series 分区，钉住它。
+                section: VideoLibrarySection.series,
                 // 互联 client 缺省 → _resolveRemoteVideoClient 返 null，走云后端分支。
                 cloudRemoteVideoClientLoader: () async => cloud,
                 remoteVideoDownloadDestination: (RemoteVideoInfo v) async =>

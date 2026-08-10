@@ -270,6 +270,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 时间；SRT 卡的 SrtBook 自带）。
   Map<String, int> _epubImportedAtByKey = const <String, int>{};
 
+  /// v82：epub bookKey → 稳定 uid（[bookLastReadAtProvider] 的键换算表，与
+  /// [_epubImportedAtByKey] 同批预取）。v83 起同时是合集域的换算表：成员表
+  /// epub entryKey = uid，页面身份（选择键/MediaItem）仍是 bookKey，查归属映射
+  /// 或落 addToCollection 前都经此表单向换算。
+  Map<String, String> _epubUidByKey = const <String, String>{};
+
   /// 已标记「读完」的书 bookKey 集合（EpubBooks.completedAt 非 null 的单一真值）。
   /// EPUB 小说卡按自身 bookKey、有声书 SRT 卡按其配对 bookKey 命中同一集合，供概览
   /// 「Completed」统计、卡片完成视觉、菜单「标记/取消」标签联动。随 [_loadShelfMaps]
@@ -567,10 +573,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                             if (key == null) return false;
                             // BUG-940：成员命中标签、或所属合集命中标签都保留（后者让
                             // 打了标签的合集其成员整组存活，折叠出合集组）。
+                            // v83：归属映射 epub 键 = uid，bookKey 经换算表转一跳。
                             return keepMemberUnderTagFilter(
                               memberMatched: filterSet.contains(key),
                               primaryCollectionId: _primaryCollectionByEntry[
-                                  MediaKind.epub.compositeKey(key)],
+                                  MediaKind.epub
+                                      .compositeKey(_epubUidByKey[key] ?? key)],
                               collectionFilter: tagCollectionFilter,
                             );
                           }).toList();
@@ -789,6 +797,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     _epubImportedAtByKey = <String, int>{
       for (final EpubBookRow r in epubRows) r.bookKey: r.importedAt,
     };
+    // v82：reader_positions 键 = uid；书架条目身份仍是 bookKey，查 recency 前
+    // 经此表换算（同一批行零额外查询）。空 uid 行不进表（视同无阅读记录）。
+    _epubUidByKey = <String, String>{
+      for (final EpubBookRow r in epubRows)
+        if (r.uid.isNotEmpty) r.bookKey: r.uid,
+    };
     _completedBookKeys = await appModel.database.getCompletedEpubBookKeys();
     _memberSortIndex = memberSortIndex;
     _collectionsById = <int, MediaCollectionRow>{
@@ -853,8 +867,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         ShelfSortMode.imported => t.sort_imported,
       };
 
-  /// 每本书（bookKey → reader_positions.updatedAt 毫秒）的最后阅读时间；
-  /// 关书时经 [ReaderFushiSource.onSourceExit] 与书列表同点失效（BUG-777）。
+  /// 每本书（书稳定身份 → reader_positions.updatedAt 毫秒）的最后阅读时间；
+  /// v82 起键 = epub uid（bookKey 经 [_epubUidByKey] 换算后查）。关书时经
+  /// [ReaderFushiSource.onSourceExit] 与书列表同点失效（BUG-777）。
   Map<String, int> get _lastReadAtByBookKey =>
       ref.watch(bookLastReadAtProvider).valueOrNull ?? const <String, int>{};
 
@@ -879,7 +894,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       }
       final String? bookKey = it.payload.srt?.bookKey ??
           _parseBookKey(it.payload.epub!.mediaIdentifier);
-      return _lastReadAtByBookKey[bookKey] ?? it.importedAt;
+      // v82：recency 表键 = uid；bookKey（SRT 卡为其配对 epub bookKey）经换算表
+      // 转一跳，换算不上（standalone SRT 空键/书行已删）与旧行为同样查不到。
+      return _lastReadAtByBookKey[_epubUidByKey[bookKey] ?? bookKey] ??
+          it.importedAt;
     }
 
     final MediaCollectionRow? collection = group.collection;
@@ -982,16 +1000,16 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  Future<void> _addTagToSrtBook(int srtBookId, BookTagRow tag) async {
+  Future<void> _addTagToSrtBook(String srtUid, BookTagRow tag) async {
     final existing = ref.read(srtBookTagMapProvider).valueOrNull;
     await _addTagToMedia(
-      alreadyHas: existing?[srtBookId]?.any((t) => t.id == tag.id) ?? false,
+      alreadyHas: existing?[srtUid]?.any((t) => t.id == tag.id) ?? false,
       tag: tag,
       addToDb: () =>
-          ref.read(appProvider).database.addTagToSrtBook(srtBookId, tag.id),
+          ref.read(appProvider).database.addTagToSrtBook(srtUid, tag.id),
       invalidate: <ProviderOrFamily>[
         srtBookTagMapProvider,
-        filteredSrtBookIdsProvider,
+        filteredSrtBookUidsProvider,
       ],
       successMsg: t.tag_added_to_book(name: tag.name),
     );
@@ -1238,8 +1256,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           }).toList();
 
     final bool hasActiveFilter = ref.read(selectedTagIdsProvider).isNotEmpty;
-    final Set<int>? srtFilterSet =
-        ref.watch(filteredSrtBookIdsProvider).valueOrNull;
+    final Set<String>? srtFilterSet =
+        ref.watch(filteredSrtBookUidsProvider).valueOrNull;
     // BUG-940：合集标签维度（含全部选中标签的合集 id）。srt 成员级过滤与末尾的
     // 合集组保留（[shelfGroups.removeWhere]）共用此集，避免「合集打了标签但成员没打」
     // 时 srt 成员被剥光、折叠不出合集组。
@@ -1248,10 +1266,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     final List<SrtBook> srtBooks;
     if (srtFilterSet != null) {
       srtBooks = allSrtBooks
-          .where((b) =>
-              b.id != null &&
-              keepMemberUnderTagFilter(
-                memberMatched: srtFilterSet.contains(b.id),
+          .where((b) => keepMemberUnderTagFilter(
+                memberMatched: srtFilterSet.contains(b.uid),
                 primaryCollectionId: _primaryCollectionByEntry[
                     MediaKind.srt.compositeKey(b.uid)],
                 collectionFilter: collectionFilter,
@@ -1303,19 +1319,22 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           importedAt: srt.importedAt,
           payload: _ShelfBookSlot(srt: srt),
         ),
+      // v83：本地 epub 折叠身份 = uid（成员表/归属映射同键）；uid 缺失的异常行
+      // 沿用 bookKey（与透传成员行同键，仍可折进合集）。
       for (final MediaItem epub in epubBooks)
-        CollectionOrderingItem<_ShelfBookSlot>(
-          mediaType: MediaKind.epub,
-          entryKey: _parseBookKey(epub.mediaIdentifier) ?? '',
-          importedAt:
-              _epubImportedAtByKey[_parseBookKey(epub.mediaIdentifier) ?? ''] ??
-                  0,
-          payload: _ShelfBookSlot(epub: epub),
-        ),
+        if ((_parseBookKey(epub.mediaIdentifier) ?? '') case final String k)
+          CollectionOrderingItem<_ShelfBookSlot>(
+            mediaType: MediaKind.epub,
+            entryKey: _epubUidByKey[k] ?? k,
+            importedAt: _epubImportedAtByKey[k] ?? 0,
+            payload: _ShelfBookSlot(epub: epub),
+          ),
     ];
     // 远端占位书混入（多端库联合视图 §2.3 任务10）：远端书是 host EPUB 库条目，给
-    // **真实 mediaType='epub' + entryKey=bookKey**（downloadId），使其能与本地 epub 成员
-    // 共键折进合集。importedAt 用 `-1-index`：全为负，稳定排在所有本地条目（正毫秒戳）之后，
+    // **真实 mediaType='epub' + entryKey=bookKey**（downloadId）。v83 后本地成员键
+    // 是 uid，但远端-only 书的成员行是照抄 wire bookKey 的透传行——占位卡与透传行
+    // 天然同键；host 路径的归属注入（下方 membership 分支）也按同键写映射。
+    // importedAt 用 `-1-index`：全为负，稳定排在所有本地条目（正毫秒戳）之后，
     // 组内保持远端目录序（spec §2.1「无本地 importedAt/lastReadAt 时目录序退化」）。
     // 纯 SRT 远端有声书占位混入：mediaType='srt' + entryKey=uid，与本地 SRT 成员及
     // 已同步的合集成员（entryKey=uid）**同键**，故经现有 _primaryCollectionByEntry 就能
@@ -1364,12 +1383,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         continue;
       }
       // 云盘后端（CloudRemoteBookClient）没有 host 实时库 API，不下发 collection
-      // 字段。但合集成员已由 collection_sync_engine 落进本地 MediaCollectionItems
-      // （entryKey = 本地 bookKey = sanitizeTtuFilename(title)）。远端占位卡的 title
-      // 与本地书同名，故用其本地等价 bookKey 回查已同步的折叠归属注入——云盘远端书
-      // 也能折进对应合集行（否则云盘合集永远不成组，BUG：云盘书架合集不渲染）。
-      final String localKey =
-          MediaKind.epub.compositeKey(sanitizeTtuFilename(book.title));
+      // 字段。但合集成员已由 collection_sync_engine 落进本地 MediaCollectionItems。
+      // 远端占位卡的 title 与本地书同名，故用其本地等价 bookKey 回查已同步的折叠
+      // 归属注入——云盘远端书也能折进对应合集行（否则云盘合集永远不成组，BUG：
+      // 云盘书架合集不渲染）。v83：本地有同名书行的成员键 = uid（bookKey 经换算
+      // 表转一跳）；本地无行的透传成员键仍是对端 bookKey，换算不上原样查。
+      final String sanitizedKey = sanitizeTtuFilename(book.title);
+      final String localKey = MediaKind.epub
+          .compositeKey(_epubUidByKey[sanitizedKey] ?? sanitizedKey);
       final int? cid = _primaryCollectionByEntry[localKey];
       if (cid == null) continue; // 本地无已同步的合集归属 → 散卡降级
       primaryByEntry[key] = cid;
@@ -1769,9 +1790,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     for (final MediaCollectionItemRow m in members) {
       switch (MediaKind.tryParse(m.mediaType)) {
         case MediaKind.epub:
+          // v83：本地成员行 entryKey = uid，删本体前反查 bookKey；反查不上的是
+          // 透传行（远端-only 书，本地无行可删）或残留 bookKey 旧值——沿用原值
+          // 交给 deleteBook 按 bookKey 处理（本地无行时自然 no-op，不误删）。
+          final String epubBookKey =
+              await appModel.database.resolveEpubBookKeyByUid(m.entryKey) ??
+                  m.entryKey;
           await ReaderFushiSource.instance.deleteBook(
             db: appModel.database,
-            bookKey: m.entryKey,
+            bookKey: epubBookKey,
             appModel: appModel,
           );
         case MediaKind.srt:
@@ -1839,8 +1866,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       return null;
     }
     if (kind == MediaKind.epub) {
+      // v83：本地成员行 entryKey = uid；透传行（远端-only）仍是对端 bookKey。
+      // uid / bookKey 双判据匹配可见书——两个值域形状不同（uid 是生成串），
+      // 撞值概率忽略；下载落地、sync 尚未把 bookKey 行收敛成 uid 行的窗口期
+      // 也因此不丢卡。
       for (final MediaItem item in _visibleEpubBooks) {
-        if (_parseBookKey(item.mediaIdentifier) == entryKey) {
+        final String? bookKey = _parseBookKey(item.mediaIdentifier);
+        if (bookKey == null) continue;
+        if (bookKey == entryKey || _epubUidByKey[bookKey] == entryKey) {
           return _buildEpubBookCard(
             item,
             removeFromCollection: onRemoveFromCollection,
@@ -1870,8 +1903,11 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       return;
     }
     if (kind == MediaKind.epub) {
+      // v83：uid / bookKey 双判据匹配（与 [_buildCollectionMemberCard] 同口径）。
       for (final MediaItem item in _visibleEpubBooks) {
-        if (_parseBookKey(item.mediaIdentifier) == entryKey) {
+        final String? bookKey = _parseBookKey(item.mediaIdentifier);
+        if (bookKey == null) continue;
+        if (bookKey == entryKey || _epubUidByKey[bookKey] == entryKey) {
           final MediaSource source = item.getMediaSource(appModel: appModel);
           unawaited(
               appModel.openMedia(ref: ref, mediaSource: source, item: item));
@@ -2012,10 +2048,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       onTagDropped:
           bookKey == null ? null : (tag) => _addTagToBook(bookKey, tag),
       // 拖卡进合集：EPUB / PDF / 漫画同为 EpubBooks 行，合集身份统一是
-      // (epub, bookKey)——漫画书架复用本卡，故一处接线两个书架都生效。
+      // (epub, uid)（v83；bookKey 经 [_epubUidByKey] 换算，卡片渲染时映射已随
+      // [_loadShelfMaps] 就绪）——漫画书架复用本卡，故一处接线两个书架都生效。
       dragMediaRef: bookKey == null
           ? null
-          : MediaRef(kind: MediaKind.epub, entryKey: bookKey),
+          : MediaRef(
+              kind: MediaKind.epub,
+              entryKey: _epubUidByKey[bookKey] ?? bookKey,
+            ),
       dragLabel: displayTitleForBook(item: item, rawTitle: item.title),
       onTap: () async {
         final MediaSource source = item.getMediaSource(appModel: appModel);
@@ -2103,8 +2143,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         icon: Icons.image_search_outlined,
         onPressed: () => _scrapeEpubCover(item),
       ),
-      // 单卡「加入合集」：与批量三档共用同一 DAO 路径；entryKey 编码与
-      // shelfSelectionToEntry 对 epub 选择键的解码一致（= bookKey）。
+      // 单卡「加入合集」：与批量三档共用同一 DAO 路径；身份从 bookKey 起步，
+      // 落库前在 _addEpubToCollection 内换算成 uid（v83 成员表键）。
       if (!inCollectionDetail)
         DialogListAction(
           label: t.add_to_collection,
@@ -2294,7 +2334,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     if (!mounted) return;
     ref.invalidate(bookTagMapProvider);
     ref.invalidate(filteredBookIdsProvider);
-    ref.invalidate(filteredSrtBookIdsProvider);
+    ref.invalidate(filteredSrtBookUidsProvider);
   }
 
   /// 单卡「加入合集」（EPUB 卡菜单入口）：先收起长按菜单，再弹共享的合集选择
@@ -2302,13 +2342,19 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// [_combineAddToExisting] 同款刷新（重取分组映射 + 重绘）。
   Future<void> _addEpubToCollection(MediaItem item, String bookKey) async {
     Navigator.pop(context);
+    // v83：成员表 epub entryKey = uid。卡菜单手里只有 MediaItem 的 bookKey，落库
+    // 前按 DB 真值换算（不用页缓存——弹窗开着期间书可能刚导入/重载）；换算不上
+    // （书行被并发删除的残余竞态）沿用 bookKey，与批量档的兜底口径一致。
+    final String entryKey =
+        await appModel.database.resolveEpubBookUid(bookKey) ?? bookKey;
+    if (!mounted) return;
     final bool added = await showAddToCollectionDialog(
       context: context,
       database: appModel.database,
       mediaType: MediaKind.epub,
-      entryKey: bookKey,
+      entryKey: entryKey,
       // P4：用户看到的默认合集名应是改名后的显示名（身份 entryKey 仍是 raw
-      // bookKey，不受影响）。
+      // 键，不受影响）。
       defaultNewName: deriveSeriesDefaultName(
         <String>[displayTitleForBook(item: item, rawTitle: item.title)],
         fallback: t.series_default_name,

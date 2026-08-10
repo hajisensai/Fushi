@@ -386,22 +386,21 @@ class _BatchTagPickerDialogState extends State<_BatchTagPickerDialog> {
       }
     }
 
-    final List<int> srtBookIds = await _resolveSrtBookIds(srtUids);
-
+    // v77：SRT 标签映射按 uid 落库，selectedKeys 里的 uid 直用，不再解析 int id。
     for (final tagId in _addTagIds) {
       for (final bookKey in epubBookKeys) {
         await db.addTagToBook(bookKey, tagId);
       }
-      for (final srtId in srtBookIds) {
-        await db.addTagToSrtBook(srtId, tagId);
+      for (final srtUid in srtUids) {
+        await db.addTagToSrtBook(srtUid, tagId);
       }
     }
     for (final tagId in _removeTagIds) {
       for (final bookKey in epubBookKeys) {
         await db.removeTagFromBook(bookKey, tagId);
       }
-      for (final srtId in srtBookIds) {
-        await db.removeTagFromSrtBook(srtId, tagId);
+      for (final srtUid in srtUids) {
+        await db.removeTagFromSrtBook(srtUid, tagId);
       }
     }
 
@@ -427,16 +426,6 @@ class _BatchTagPickerDialogState extends State<_BatchTagPickerDialog> {
       );
     }
     Navigator.pop(context);
-  }
-
-  Future<List<int>> _resolveSrtBookIds(List<String> uids) async {
-    final List<int> ids = [];
-    final repo = SrtBookRepository(widget.database);
-    for (final uid in uids) {
-      final book = await repo.findByUid(uid);
-      if (book?.id != null) ids.add(book!.id!);
-    }
-    return ids;
   }
 
   void _setTagIntent(BookTagRow tag, _BatchTagIntent intent) {

@@ -11,8 +11,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// host-apply 测试（TODO-767 / BUG-417）：互联书籍进度 live 端点必须真读写 host
 /// 自己的 `reader_positions` DB（修复根因：旧路径只把进度写进 host 永不回灌 DB 的
 /// WebDAV 文件箱 progress_*.json）。
-AppModelLibraryHostService _svc(FushiDatabase db) =>
-    AppModelLibraryHostService(
+AppModelLibraryHostService _svc(FushiDatabase db) => AppModelLibraryHostService(
       db: db,
       dictionaryResourceRoot: Directory.systemTemp,
       packages: SyncAssetPackageService(db: db),
@@ -27,14 +26,25 @@ Future<void> _seedLocalPosition(
   required int normCharOffset,
   required int charOffset,
   required int updatedAt,
-}) =>
-    db.upsertReaderPosition(ReaderPositionsCompanion(
-      bookKey: Value(bookKey),
-      sectionIndex: Value(sectionIndex),
-      normCharOffset: Value(normCharOffset),
-      charOffset: Value(charOffset),
-      updatedAt: Value(updatedAt),
-    ));
+}) async {
+  // v82：reader_positions 键 = epub_books.uid；wire 仍是 bookKey，造数前书行
+  // 必须已存在（_seedHostBook），经 resolveEpubBookUid 换算。
+  final String bookUid = (await db.resolveEpubBookUid(bookKey))!;
+  await db.upsertReaderPosition(ReaderPositionsCompanion(
+    bookUid: Value(bookUid),
+    sectionIndex: Value(sectionIndex),
+    normCharOffset: Value(normCharOffset),
+    charOffset: Value(charOffset),
+    updatedAt: Value(updatedAt),
+  ));
+}
+
+/// bookKey → uid 换算后的直查 DB 口（v82 后 getReaderPosition 只认 uid）。
+Future<ReaderPositionRow?> _positionOf(FushiDatabase db, String bookKey) async {
+  final String? uid = await db.resolveEpubBookUid(bookKey);
+  if (uid == null) return null;
+  return db.getReaderPosition(uid);
+}
 
 /// 把书 [bookKey] 插进 host 自己的 epub_books 表（真实场景：host 有这本书才允许
 /// 接受其进度 PUT；putBookProgress 的存在性闸门要求 host 书库先有该书）。
@@ -129,6 +139,8 @@ void main() {
     });
 
     test('host 有 reader_positions 行 → 返回真实字段', () async {
+      // v82：进度行必须挂在 host 书行的 uid 上，无书行的进度不可见。
+      await _seedHostBook(db, 'BookA');
       await _seedLocalPosition(db,
           bookKey: 'BookA',
           sectionIndex: 4,
@@ -158,7 +170,7 @@ void main() {
       );
 
       // 直查 DB：真行落地（这正是旧路径缺失的——host 从不回灌 DB）。
-      final ReaderPositionRow? row = await db.getReaderPosition('BookB');
+      final ReaderPositionRow? row = await _positionOf(db, 'BookB');
       expect(row, isNotNull);
       expect(row!.sectionIndex, 2);
       expect(row.normCharOffset, 3000);
@@ -191,7 +203,7 @@ void main() {
             updatedAtMs: 1000), // 更旧
       );
 
-      final ReaderPositionRow? row = await db.getReaderPosition('BookC');
+      final ReaderPositionRow? row = await _positionOf(db, 'BookC');
       expect(row!.sectionIndex, 9); // host 新进度保留
       expect(row.updatedAt, 2000);
     });
@@ -215,7 +227,7 @@ void main() {
             updatedAtMs: 5000), // 更新
       );
 
-      final ReaderPositionRow? row = await db.getReaderPosition('BookD');
+      final ReaderPositionRow? row = await _positionOf(db, 'BookD');
       expect(row!.sectionIndex, 6);
       expect(row.updatedAt, 5000);
     });
@@ -231,7 +243,7 @@ void main() {
             charOffset: -1,
             updatedAtMs: 1234),
       );
-      final ReaderPositionRow? row = await db.getReaderPosition('BookE');
+      final ReaderPositionRow? row = await _positionOf(db, 'BookE');
       expect(row!.normCharOffset, 0);
     });
 
@@ -248,7 +260,7 @@ void main() {
             updatedAtMs: 1700000000000),
       );
 
-      final ReaderPositionRow? row = await db.getReaderPosition('BookOrphan');
+      final ReaderPositionRow? row = await _positionOf(db, 'BookOrphan');
       expect(row, isNull); // 孤儿写被挡，DB 无该 bookKey 行。
 
       // GET 端点也对不存在的书返回 empty。

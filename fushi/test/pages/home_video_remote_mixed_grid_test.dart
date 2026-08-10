@@ -82,9 +82,11 @@ void main() {
     }
   });
 
+  // #792 起 home 分区是 dashboard,混排墙位于 series/allVideos 分区;
+  // 旧用例守的墙(_buildLocalVideoSlivers)一比一搬进了 series。
   Widget buildApp(
     RemoteVideoClient client, {
-    VideoLibrarySection section = VideoLibrarySection.home,
+    VideoLibrarySection section = VideoLibrarySection.series,
   }) =>
       ProviderScope(
         overrides: <Override>[

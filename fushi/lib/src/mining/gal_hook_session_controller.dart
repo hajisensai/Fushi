@@ -36,6 +36,17 @@ typedef GalHookActivityWriter = Future<void> Function({
   required int charsDelta,
 });
 
+/// 建游玩计时器的工厂（契约 §3.1 的时长侧）。生产默认建真 [GalgamePlayTracker]
+/// （Windows 前台窗口 + 候选进程组计时）；单测注入带假 probe / 假时钟的实例。
+///
+/// 控制器只提供三件事实——游戏 id、游戏目录、结算落库回调——计时策略与平台细节
+/// 全部留在 tracker 本体，工厂签名刻意不透传 mode / 间隔等调参项。
+typedef GalgamePlayTrackerFactory = GalgamePlayTracker Function({
+  required String gameId,
+  required String gameDirectory,
+  required GalgamePlaySessionSink onSessionEnded,
+});
+
 enum GalHookSessionPhase {
   idle,
   resolving,
@@ -593,8 +604,10 @@ class GalHookSessionController extends ChangeNotifier {
     Listenable? endpointListenable,
     List<TexthookerEndpointStatus> Function()? endpointStatusLoader,
     GalHookActivityWriter? activityWriter,
+    GalgamePlayTrackerFactory? playTrackerFactory,
   })  : _textService = textService ?? TexthookerService.instance,
         _activityWriter = activityWriter,
+        _playTrackerFactory = playTrackerFactory ?? _defaultPlayTrackerFactory,
         _engineSourceFactory = engineSourceFactory ?? _defaultEngineFactory,
         _loopbackSourceFactory =
             loopbackSourceFactory ?? LoopbackGalAudioSource.new,
@@ -864,7 +877,7 @@ class GalHookSessionController extends ChangeNotifier {
       _pendingResourceMatches =
       <String, ({int timestampMs, int textEventId})>{};
 
-  // ── 游戏活动记账（首页「游戏」活动 = activity_events 的唯一写入方）─────────
+  // ── 游戏活动记账（首页「游戏」活动的字符侧写入方；时长侧见 _playTracker）──
   /// 纯累计器：把 hook 文本行累计成活跃时长 + 字符数（挂机间隔封顶，见其实现）。
   final GalHookActivityAccumulator _activityAccumulator =
       GalHookActivityAccumulator();
@@ -910,6 +923,32 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 当前会话的稳定游戏 id（launch 模式为可执行文件路径），无稳定 id 时为 null。
   String? _activityGameKey;
+
+  // ── 游玩时长记账（galgame_sessions 事实表的唯一生产写入方）──────────────
+  /// 建游玩计时器的工厂（见 [GalgamePlayTrackerFactory]）。
+  final GalgamePlayTrackerFactory _playTrackerFactory;
+
+  /// 当前游玩计时器；null = 没有从游戏库启动的在跑会话。
+  ///
+  /// 生命周期**刻意与 hook 捕获会话解耦**（stop 侧）：`stopCapture` 只停监听不停
+  /// 计时——用户关掉捕获浮窗继续玩是常态，计时靠 tracker 自己的进程判活结束
+  /// （游戏退出→结算落库→定时器自停）。会真正停它的只有三处：再次 [launchGame]
+  /// （换游戏/重开）、[close]（app 正常退出）、[ExitFlushRegistry]（点 X 快杀）。
+  GalgamePlayTracker? _playTracker;
+
+  /// 登记进 [ExitFlushRegistry] 的游玩计时落库回调；首个 tracker 启动时登记。
+  ExitFlushCallback? _playTrackerExitFlush;
+
+  static GalgamePlayTracker _defaultPlayTrackerFactory({
+    required String gameId,
+    required String gameDirectory,
+    required GalgamePlaySessionSink onSessionEnded,
+  }) =>
+      GalgamePlayTracker(
+        gameId: gameId,
+        gameDirectory: gameDirectory,
+        onSessionEnded: onSessionEnded,
+      );
 
   static EngineHookGalAudioSource _defaultEngineFactory({
     required int targetPid,
@@ -1166,6 +1205,8 @@ class GalHookSessionController extends ChangeNotifier {
   }) async {
     final int generation = ++_operationGeneration;
     await _stopSources();
+    // 换游戏/重开同一游戏：上一场游玩先结算落库，本次再起新计时器。
+    await _stopPlayTracker();
     // 两种早退原因必须分开：非 Windows 是「这台机器不支持」，被抢占是「这次操作作废」。
     // 旧实现用同一个 `false` 表达，于是 UI 对二者说同一句无信息的话。
     if (!_isWindows) {
@@ -1196,14 +1237,12 @@ class GalHookSessionController extends ChangeNotifier {
       ),
     );
     final String normalizedTitle = gameTitle?.trim() ?? '';
+    final String activityTitle = normalizedTitle.isEmpty
+        ? _displayNameForExecutable(executablePath)
+        : normalizedTitle;
     // 活动 mediaKey 的跨层契约统一为 galgames.id。历史版本写过 exePath，读取侧保留
     // 兼容；新写入不再延续一字段两种身份的歧义。
-    _beginActivitySession(
-      title: normalizedTitle.isEmpty
-          ? _displayNameForExecutable(executablePath)
-          : normalizedTitle,
-      mediaKey: gameId,
-    );
+    _beginActivitySession(title: activityTitle, mediaKey: gameId);
     // 降级策略必须在这里恢复，不能搭 [_applyTrackMemory] 的便车：资源模式压根不枚举
     // 音轨（native 只枚举 PCM 环），等音轨快照就等不到，用户上次选的「禁止降级」会
     // 在最需要它的资源模式游戏里静默失效。
@@ -1292,6 +1331,14 @@ class GalHookSessionController extends ChangeNotifier {
           generation,
           pid: runningPid,
           diagnostics: diagnostics,
+        );
+        // 注入失败但游戏在跑：hook 降级不影响时长记账（计时与 hook 彻底解耦）。
+        _startPlayTracker(
+          generation: generation,
+          gameId: gameId,
+          title: activityTitle,
+          executablePath: executablePath,
+          mainPid: runningPid,
         );
         return const GalHookLaunchResult.launched();
       }
@@ -1384,6 +1431,13 @@ class GalHookSessionController extends ChangeNotifier {
       // gamePid 为空表示 hook 根本没拿到目标进程，没有可重试的匹配依据。
       if (gamePid != null) _startWindowRebindWatch(generation, gamePid);
     }
+    _startPlayTracker(
+      generation: generation,
+      gameId: gameId,
+      title: activityTitle,
+      executablePath: executablePath,
+      mainPid: gamePid,
+    );
     return const GalHookLaunchResult.launched();
   }
 
@@ -2891,6 +2945,12 @@ class GalHookSessionController extends ChangeNotifier {
       ExitFlushRegistry.instance.unregister(exitFlush);
       _magpieExitFlush = null;
     }
+    final ExitFlushCallback? playFlush = _playTrackerExitFlush;
+    if (playFlush != null) {
+      ExitFlushRegistry.instance.unregister(playFlush);
+      _playTrackerExitFlush = null;
+    }
+    await _stopPlayTracker();
     await shutdownMagpieUpscaling();
     await _stopSources();
     dispose();
@@ -2917,6 +2977,100 @@ class GalHookSessionController extends ChangeNotifier {
   /// 窗口超分编排器（UI 订阅它显示超分状态）。未注入 / 非 Windows 时为 null，
   /// 调用方据此整行不显示。
   MagpieUpscalingService? get magpieUpscaling => _magpieUpscaling;
+
+  /// 当前游玩计时器（单测断言接线/生命周期用）。
+  @visibleForTesting
+  GalgamePlayTracker? get playTracker => _playTracker;
+
+  /// 从游戏库启动成功后开始游玩计时（P4 B1 接线）。
+  ///
+  /// 只有带 `galgames.id` 的启动才计时：裸 exe 启动（texthooker 页）没有库内身份，
+  /// `galgame_sessions.gameId` 无处指向（FK 到 [Galgames]），刻意不落账。
+  /// [mainPid] 未知时喂 0：状态机对死 PID 连续判活失败后会按游戏目录重扫候选组，
+  /// 前台逃逸检测也会当场收编真实进程，不丢账。
+  void _startPlayTracker({
+    required int generation,
+    required String? gameId,
+    required String title,
+    required String executablePath,
+    required int? mainPid,
+  }) {
+    if (gameId == null || gameId.isEmpty) return;
+    // 换代守卫：本次 launch 已被更新的操作取代时不得再起计时器——新操作入口的
+    // [_stopPlayTracker] 已经跑过，这里再起就是无人回收的泄漏。
+    if (generation != _operationGeneration) return;
+    final GalgamePlayTracker tracker = _playTrackerFactory(
+      gameId: gameId,
+      gameDirectory: File(executablePath).parent.path,
+      onSessionEnded: _makePlaySessionSink(gameId: gameId, title: title),
+    );
+    _playTracker = tracker;
+    tracker.start(mainPid: mainPid ?? 0);
+    // 桌面点 X 走 `exit(0)` 快杀，[close] 不会被调用；与超分同款，登记退出 flush
+    // 把结算写穿再放进程死（登记点就在启动处，换人再启动也不会漏）。
+    _playTrackerExitFlush ??=
+        ExitFlushRegistry.instance.register(_stopPlayTracker);
+  }
+
+  /// 停止游玩计时并等待结算落库完成。幂等；无在跑计时器时是空操作。
+  Future<void> _stopPlayTracker() async {
+    final GalgamePlayTracker? tracker = _playTracker;
+    if (tracker == null) return;
+    _playTracker = null;
+    await tracker.stop();
+  }
+
+  /// 一段游玩会话的结算落库：`galgame_sessions` 事实行 + 一条带时长的 game 活动行。
+  ///
+  /// 时长与字符数是**互补的两条写入**（契约 §3.1）：hook 文本路径只写 `charsDelta`
+  /// （durationMs 恒 null），这里只写 `durationMs`（charsDelta 刻意不传）——
+  /// `getActivityDailyTotals` 的 SUM 才不会把同一次游玩计两遍。
+  /// `galgame_sessions` 刻意无统计投影，读取端一律现算 GROUP BY（表注释）。
+  GalgamePlaySessionSink _makePlaySessionSink({
+    required String gameId,
+    required String title,
+  }) {
+    return (GalgamePlaySessionResult result) async {
+      final FushiDatabase? database = _activityDatabaseResolver?.call();
+      if (database == null) return;
+      try {
+        final String dateKey = FushiTimeFormat.dayKey(
+          DateTime.fromMillisecondsSinceEpoch(result.endMs),
+        );
+        await database.insertGalgameSession(
+          GalgameSessionsCompanion.insert(
+            gameId: result.gameId,
+            startMs: result.startMs,
+            endMs: result.endMs,
+            durationSeconds: result.durationSeconds,
+            dateKey: dateKey,
+          ),
+        );
+        await database.addActivityEvent(
+          eventType: kActivityGame,
+          mediaType: kActivityMediaGame,
+          title: title,
+          mediaKey: gameId,
+          dateKey: dateKey,
+          timestampMs: result.endMs,
+          durationMs: result.durationSeconds * 1000,
+          // charsDelta 刻意不传（留 null）：字符数由 hook 文本路径独立写行。
+        );
+      } catch (error, stack) {
+        // 会话在游戏退出瞬间结算，游戏可能已被用户从库里删除（FK cascade 把
+        // galgame_sessions 一并清了，这条账本来就该消失）——落库失败降级为
+        // 结构化警告，不打断退出/换游戏路径。
+        _record(
+          GalHookEventSeverity.warning,
+          'activity',
+          'activity.session_write_failed',
+          'Failed to persist a play session',
+          details: <String, Object?>{'error': '$error', 'stack': '$stack'},
+          notify: false,
+        );
+      }
+    };
+  }
 
   /// 开始一段游戏活动记账：先把上一段残留 flush（防上次异常未落），再复位累计器并
   /// 绑定本会话的游戏标题/稳定 id。会话开始（attach / launch）时调用。

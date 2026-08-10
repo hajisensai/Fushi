@@ -2,8 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 
 /// 守卫统计页「按书/按视频 tile 显示所属合集名」的解析契约：
-/// '<mediaType>|<entryKey>' 归属键（epub=bookKey / video=bookUid）经折叠归属主
-/// collectionId 映到合集名，任一步缺失回退 null。
+/// '<mediaType>|<entryKey>' 归属键（v83：epub=epub_books.uid、透传行=对端
+/// bookKey / video=bookUid）经折叠归属主 collectionId 映到合集名，任一步缺失
+/// 回退 null。本函数对键值不透明——bookKey→uid 换算在统计页组键处完成。
 void main() {
   group('statCollectionName', () {
     final Map<String, int> primaryByEntry = <String, int>{

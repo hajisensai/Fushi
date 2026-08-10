@@ -200,16 +200,20 @@ void main() {
         ]));
     expect(triples.length, 4, reason: '不多不少：无关行不动、不产生新行');
 
-    // ── media_items ──────────────────────────────────────────────────
+    // ── media_items（v80 搬进 media_open_history，按 (source,id) 断言）──
     final mi = await db
-        .customSelect('SELECT media_identifier, media_source_identifier, '
-            'unique_key FROM media_items ORDER BY id')
+        .customSelect('SELECT media_source, media_id FROM media_open_history')
         .get();
-    expect(mi[0].read<String>('media_source_identifier'), 'reader_fushi');
-    expect(mi[0].read<String>('unique_key'), 'reader_fushi/fushi://book/A');
-    expect(mi[0].read<String>('media_identifier'), 'fushi://book/A',
+    final Set<(String, String)> pairs = mi
+        .map(
+            (r) => (r.read<String>('media_source'), r.read<String>('media_id')))
+        .toSet();
+    expect(
+        pairs,
+        containsAll(<(String, String)>[
+          ('reader_fushi', 'fushi://book/A'),
+          ('reader_pdf', 'fushi://book/B'),
+        ]),
         reason: 'v70 只换源键段；hoshi:// 段由 v73 接力改写为 fushi://');
-    expect(mi[1].read<String>('media_source_identifier'), 'reader_pdf');
-    expect(mi[1].read<String>('unique_key'), 'reader_pdf/fushi://book/B');
   });
 }

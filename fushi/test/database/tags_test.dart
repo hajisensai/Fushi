@@ -164,8 +164,7 @@ void main() {
         srtPath: '/tmp/a.srt',
         importedAt: DateTime.now().millisecondsSinceEpoch,
       ));
-      final SrtBookRow? srtRow = await db.getSrtBookByUid('srt/1');
-      await db.addTagToSrtBook(srtRow!.id, tagId);
+      await db.addTagToSrtBook('srt/1', tagId);
 
       // 视频打标签——旧实现同样漏计。
       await db.upsertVideoBook(VideoBooksCompanion(
@@ -188,7 +187,7 @@ void main() {
       await db.deleteTag(tagId);
 
       expect(await db.getTagsForBook(bookId), isEmpty);
-      expect(await db.getAllBookTagMappings(), isEmpty);
+      expect(await db.getAllTagAssignments(), isEmpty);
     });
   });
 }

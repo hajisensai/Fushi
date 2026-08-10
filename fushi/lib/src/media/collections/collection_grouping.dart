@@ -31,7 +31,8 @@ class CollectionOrderingItem<T> {
   /// 媒体种类（合集/书架值域）。
   final MediaKind mediaType;
 
-  /// 稳定身份：epub=bookKey / srt=uid / video=bookUid。
+  /// 稳定身份：epub=uid（v83 成员表键；远端-only 占位卡 = 对端 bookKey 透传）/
+  /// srt=uid / video=bookUid。调用方负责与归属映射同域构键。
   final String entryKey;
 
   /// 统一媒体身份视图（复合键 [MediaRef.compositeKey] 的真相源）。

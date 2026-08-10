@@ -97,7 +97,7 @@ void main() {
       await seedBook(key, format);
       await db.upsertReaderPosition(
         ReaderPositionsCompanion.insert(
-          bookKey: key,
+          bookUid: (await db.resolveEpubBookUid(key))!,
           sectionIndex: 137, // 第 137 页
           normCharOffset: 9990,
           updatedAt: 5000,
@@ -129,7 +129,7 @@ void main() {
     await seedBook(key, BookFormat.pdf);
     await db.upsertReaderPosition(
       ReaderPositionsCompanion.insert(
-        bookKey: key,
+        bookUid: (await db.resolveEpubBookUid(key))!,
         sectionIndex: 137,
         normCharOffset: 5000,
         updatedAt: 5000,
@@ -168,7 +168,7 @@ void main() {
     await seedBook('p-epub', BookFormat.epub);
     await db.upsertReaderPosition(
       ReaderPositionsCompanion.insert(
-        bookKey: 'p-epub',
+        bookUid: (await db.resolveEpubBookUid('p-epub'))!,
         sectionIndex: 3,
         normCharOffset: 9990,
         updatedAt: 5000,

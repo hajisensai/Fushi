@@ -23,7 +23,8 @@ void main() {
     final int version =
         (await db.customSelect('PRAGMA user_version').getSingle())
             .read<int>('user_version');
-    expect(version, 78);
+    expect(version, db.schemaVersion,
+        reason: '阶梯必须一路升到当前版');
 
     final Set<String> tables = (await db
             .customSelect(

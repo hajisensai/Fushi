@@ -224,8 +224,9 @@ void main() {
         format: const Value<String>('manga'),
       ));
       // 预存进度：第 2 页（0-based sectionIndex=1，charOffset 显式 0）。
+      // v82：进度键 = epub_books.uid（insertEpubBook 自动生成，取回换算）。
       await ReaderPositionRepository(db).save(
-        bookKey: bookKey,
+        bookUid: (await db.resolveEpubBookUid(bookKey))!,
         sectionIndex: 1,
         normCharOffset: 0,
         charOffset: 0,
@@ -431,12 +432,12 @@ void main() {
 
     // 页面的落库口径：sectionIndex=页码、normCharOffset=0、charOffset=千分比。
     await repo.save(
-      bookKey: bookKey,
+      bookUid: bookKey,
       sectionIndex: 3,
       normCharOffset: 0,
       charOffset: MangaFushiPage.webtoonFractionToCharOffset(0.75),
     );
-    final ReaderPosition? restored = await repo.findByBookKey(bookKey);
+    final ReaderPosition? restored = await repo.findByBookUid(bookKey);
     expect(restored, isNotNull);
     expect(restored!.sectionIndex, 3);
     expect(

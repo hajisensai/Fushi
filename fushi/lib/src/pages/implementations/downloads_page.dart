@@ -44,6 +44,7 @@ class DownloadsPage extends ConsumerStatefulWidget {
 class _DownloadsPageState extends ConsumerState<DownloadsPage> {
   late Future<_DownloadsResourceDependencies?> _resourceDependencies;
   VideoDownloadPipelineService? _resourcePipelineSnapshot;
+  Stream<List<VideoDownloadJobRow>>? _videoJobsStream;
 
   @override
   void initState() {
@@ -215,22 +216,38 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                 Column(
                   children: <Widget>[
                     const MokuroMoeTasksSection(),
-                    Expanded(
-                      child: VideoDownloadJobsPanel.database(
-                        database: ref.read(appProvider).database,
-                        onRetry: (VideoDownloadJobRow job) async {
-                          await ref
-                              .read(appProvider)
-                              .videoDownloadPipelineService
-                              ?.retryJob(job.jobId);
-                        },
-                        onCancel: (VideoDownloadJobRow job) async {
-                          await ref
-                              .read(appProvider)
-                              .videoDownloadPipelineService
-                              ?.cancelJob(job.jobId);
-                        },
-                      ),
+                    // 视频下载队列与漫画卷队列同规：有任务才占位。空态只留
+                    // torrent 任务视图一份，避免同屏叠两条相同的「暂无任务」。
+                    StreamBuilder<List<VideoDownloadJobRow>>(
+                      stream: _videoJobsStream ??= ref
+                          .read(appProvider)
+                          .database
+                          .watchVideoDownloadJobs(),
+                      builder: (
+                        BuildContext context,
+                        AsyncSnapshot<List<VideoDownloadJobRow>> snapshot,
+                      ) {
+                        if (snapshot.data?.isEmpty ?? true) {
+                          return const SizedBox.shrink();
+                        }
+                        return Expanded(
+                          child: VideoDownloadJobsPanel.database(
+                            database: ref.read(appProvider).database,
+                            onRetry: (VideoDownloadJobRow job) async {
+                              await ref
+                                  .read(appProvider)
+                                  .videoDownloadPipelineService
+                                  ?.retryJob(job.jobId);
+                            },
+                            onCancel: (VideoDownloadJobRow job) async {
+                              await ref
+                                  .read(appProvider)
+                                  .videoDownloadPipelineService
+                                  ?.cancelJob(job.jobId);
+                            },
+                          ),
+                        );
+                      },
                     ),
                     Expanded(
                       child: AnimeDownloadDialog(

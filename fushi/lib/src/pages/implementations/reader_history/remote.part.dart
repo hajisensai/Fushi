@@ -406,21 +406,9 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         },
       );
       final String? localBookKey = await _importRemoteBookFile(dest);
-      // TODO-616 §0🔴2：远端书的排序/系列归属（以 downloadId 登记的 shelf_entry）
-      // 在下载后延续。EPUB 落库后 bookKey 可能漂移（标题派生 + 同名重命名，BUG-414），
-      // 故把 ShelfEntries 的 entryKey 从 downloadId 改键到本地 bookKey。改键迁移是
-      // EPUB 行 commit 之后的独立 DAO 事务（非同一事务），失败不阻断下载主流程——
-      // 失败留旧 downloadId 孤儿行交读取期过滤兜底。仅在真发生漂移时迁移。
-      if (localBookKey != null && localBookKey != book.downloadId) {
-        try {
-          await appModel.database.migrateShelfEntryKey(
-              MediaKind.epub, book.downloadId, localBookKey);
-        } catch (e, stack) {
-          // 排序/系列元数据迁移失败不能让已成功的下载失败。
-          ErrorLogService.instance
-              .log('ReaderFushiHistoryPage.migrateShelfEntryKey', e, stack);
-        }
-      }
+      // v83：旧「远端书下载后 bookKey 漂移改键迁移」（TODO-616 §0🔴2）已删——
+      // epub 域 entryKey 换稳定 uid 后导入时刻定死；且该路径删除前已恒 no-op
+      //（能建 downloadId 行的写入方早随 shelf_reorder_page 消亡）。
       // tags 稳健档：LWW 合并 host 传来的标签时钟 + 移除墓碑（删除/改名跨端传播、
       // 防复活）。host 带 tagsAddedAt/tagTombstones（v2）→ mergeRemoteBookTags；旧 host
       // 只有 tags 名单 → 合成 addedAt=1 退化为「只增 + 尊重本地移除墓碑」（向后兼容）。
@@ -522,9 +510,12 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     try {
       final RemoteBookProgress remote =
           await client.remoteBookProgress(book.downloadId);
-      if (remote.updatedAtMs > 0) {
+      // v82：子表键 = 书 uid。刚导入的书必有行，反查不到（异常路径）直接跳过。
+      final String? localUid =
+          await appModel.database.resolveEpubBookUid(localBookKey);
+      if (remote.updatedAtMs > 0 && localUid != null) {
         await appModel.database.upsertReaderPosition(ReaderPositionsCompanion(
-          bookKey: Value(localBookKey),
+          bookUid: Value(localUid),
           sectionIndex: Value(remote.sectionIndex),
           normCharOffset: Value(remote.normCharOffset),
           charOffset: Value(remote.charOffset),
@@ -550,9 +541,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         }
       } catch (e, stack) {
         ErrorLogService.instance.log(
-            'ReaderFushiHistoryPage.downloadRemoteAudiobookPosition',
-            e,
-            stack);
+            'ReaderFushiHistoryPage.downloadRemoteAudiobookPosition', e, stack);
       }
     }
   }

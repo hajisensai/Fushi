@@ -176,9 +176,11 @@ void main() {
       coverPath: 'OEBPS/images/1.png',
     );
     // 「最后阅读时刻」的真值载体：ReaderPositions.updatedAt（书架「最近阅读」按它排）。
+    // v82：进度键 = epub_books.uid（insertEpubBook 自动生成，取回换算）。
+    final String bookUid = (await db.resolveEpubBookUid(bookKey))!;
     await db.upsertReaderPosition(
       ReaderPositionsCompanion.insert(
-        bookKey: bookKey,
+        bookUid: bookUid,
         sectionIndex: 3,
         normCharOffset: 4200,
         charOffset: const Value<int>(777),
@@ -186,7 +188,8 @@ void main() {
       ),
     );
     final int collectionId = await db.createMediaCollection('扫描本');
-    await db.addToCollection(collectionId, MediaKind.epub, bookKey);
+    // v83：合集成员 epub 域 entryKey = uid（与进度键同域）；转化不动 uid。
+    await db.addToCollection(collectionId, MediaKind.epub, bookUid);
 
     final String identifierBefore =
         ReaderFushiSource.mediaIdentifierFor(bookKey);
@@ -205,7 +208,7 @@ void main() {
     // ② 书架恰好一条（书架列的就是 EpubBooks 行）。
     expect(await db.getAllEpubBooks(), hasLength(1));
     // ③ 进度与最后阅读时刻不丢。
-    final ReaderPositionRow posAsManga = (await db.getReaderPosition(bookKey))!;
+    final ReaderPositionRow posAsManga = (await db.getReaderPosition(bookUid))!;
     expect(posAsManga.sectionIndex, 3);
     expect(posAsManga.normCharOffset, 4200);
     expect(posAsManga.charOffset, 777);
@@ -216,9 +219,9 @@ void main() {
           BookFormat.parseOrEpub(asManga.format)),
       MangaFushiSource.kUniqueKey,
     );
-    // 合集成员没断。
+    // 合集成员没断（v83 成员键 = uid）。
     expect(
-        (await db.getCollectionItems(collectionId)).single.entryKey, bookKey);
+        (await db.getCollectionItems(collectionId)).single.entryKey, bookUid);
 
     // ── 转回书 ──
     await BookFormatRebuild.convert(
@@ -229,10 +232,10 @@ void main() {
     final EpubBookRow asBook = await row();
 
     expect(asBook.bookKey, bookKey, reason: '①往返后主键仍逐字节不变');
-    expect(ReaderFushiSource.mediaIdentifierFor(asBook.bookKey),
-        identifierBefore);
+    expect(
+        ReaderFushiSource.mediaIdentifierFor(asBook.bookKey), identifierBefore);
     expect(await db.getAllEpubBooks(), hasLength(1), reason: '②往返后仍恰好一条');
-    final ReaderPositionRow posAsBook = (await db.getReaderPosition(bookKey))!;
+    final ReaderPositionRow posAsBook = (await db.getReaderPosition(bookUid))!;
     expect(posAsBook.sectionIndex, 3);
     expect(posAsBook.charOffset, 777);
     expect(posAsBook.updatedAt, 1712345678901, reason: '③最后阅读时刻不丢');
@@ -243,7 +246,7 @@ void main() {
       reason: '④转回书后必须回到 EPUB 阅读器',
     );
     expect(
-        (await db.getCollectionItems(collectionId)).single.entryKey, bookKey);
+        (await db.getCollectionItems(collectionId)).single.entryKey, bookUid);
 
     // 转回书是**重建**：chaptersJson 由重新解析解压树得到，不是留着漫画的 '[]'。
     expect(asBook.format, BookFormat.epub.dbValue);
@@ -404,8 +407,7 @@ void main() {
     expect(after.coverPath, PdfImporter.kCoverFileName);
     expect(after.mangaReadingMode, isNull);
     expect(
-      ReaderFushiSource.mediaSourceKeyFor(
-          BookFormat.parseOrEpub(after.format)),
+      ReaderFushiSource.mediaSourceKeyFor(BookFormat.parseOrEpub(after.format)),
       ReaderPdfSource.kUniqueKey,
       reason: '转回 PDF 后必须进 PDF 阅读器，不是 EPUB 阅读器',
     );

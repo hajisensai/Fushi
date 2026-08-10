@@ -402,11 +402,11 @@ Future<void> _recordMinedStats(
 ) async {
   try {
     final FushiDatabase db = model.database;
-    final String dateKey = statTodayKey();
-    await db.addMiningCount(sourceType: kStatSourceBook, dateKey: dateKey);
-    // TODO-1204：并行写 per-book 制卡计数（app 外查词无书 → bookKey/title 空，
-    // 只进统计页「查词」汇总。addMiningCount 保留不动，Never break userspace）。
-    await db.addMineCountPerBook(sourceType: kStatSourceBook, dateKey: dateKey);
+    final DateTime now = DateTime.now();
+    final String dateKey = statDateKey(now);
+    // P4 写侧收敛：全局汇总 + per-book 计数走 DB 复合入口（同事务；app 外查词
+    // 无书 → bookKey/title 空，只进汇总桶）。制卡历史行与之共用同一时刻的 dateKey。
+    await db.recordMiningEvent(sourceType: kStatSourceBook, at: now);
     await db.addMinedSentence(
       source: kStatSourceBook,
       dateKey: dateKey,

@@ -101,6 +101,19 @@ final List<_Exemption> _appIdExemptions = <_Exemption>[
         '闪退」的根因叙述，旧包名是叙述本体；规则本身由 '
         'android_app_package_keep_rule_guard_test 从 build.gradle 反推校验。',
   ),
+  _Exemption(
+    pathSuffix: 'tool/check_release_policy.ps1',
+    context: RegExp(r'BUG-1481'),
+    reason: 'BUG-1481 发布通道按产品族分开：旧族 app.hibiki.reader 的冻结名'
+        '（debug-rolling 归属）正是该守卫脚本的检查对象本体——根因注释与'
+        '报错文案里的旧族真名不是残留。',
+  ),
+  _Exemption(
+    pathSuffix: 'tool/publish_update_manifest.sh',
+    context: RegExp(r'migration bridge'),
+    reason: '同 BUG-1481：注释说明 update-manifest 按产品族分文件——旧族 '
+        'app.hibiki.reader 是迁移桥产物（bridge 分支构建），叙述需要旧族真名。',
+  ),
 ];
 
 /// B：owner 相同但仓库不是当前仓库的 slug。

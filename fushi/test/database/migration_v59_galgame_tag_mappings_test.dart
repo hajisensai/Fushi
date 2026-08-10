@@ -85,7 +85,7 @@ CREATE TABLE galgame_sessions (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 78,
+    expect(db.schemaVersion, 83,
         reason: 'v59 新建 galgame_tag_mappings（BUG-1113 游戏接入共享标签池）');
 
     final GalgameRow? legacy = await db.getGalgame('legacy_game');
@@ -94,7 +94,7 @@ CREATE TABLE galgame_sessions (
     expect(legacy.playStatus, 3);
 
     // 关键的向后兼容断言：升级后新表为空 = 旧库观感逐像素不变。
-    expect(await db.getAllGameTagMappings(), isEmpty);
+    expect(await db.getAllTagAssignments(), isEmpty);
     expect(await db.getTagsForGame('legacy_game'), isEmpty);
   });
 
@@ -115,7 +115,7 @@ CREATE TABLE galgame_sessions (
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
-    expect(await db.getAllGameTagMappings(), isEmpty,
+    expect(await db.getAllTagAssignments(), isEmpty,
         reason: 'onCreate 的 createAll 必须包含 galgame_tag_mappings');
   });
 }
