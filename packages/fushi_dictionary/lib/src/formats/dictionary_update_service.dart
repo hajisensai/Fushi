@@ -5,6 +5,8 @@ import 'package:dio/dio.dart';
 
 import 'package:path/path.dart' as path;
 
+import 'dictionary_downloader.dart' show createDictionaryDio;
+
 /// TODO-861③（移植 Hoshi `94d0c41` #59）：词典自动更新的检查周期。`.name` 持久化
 /// （daily/weekly/monthly），默认 weekly。每档对应一个 [Duration]。
 enum DictionaryUpdateInterval {
@@ -152,7 +154,9 @@ class DictionaryUpdateService {
     if (indexUrl.isEmpty) {
       return const DictionaryRemoteIndexResult.failure();
     }
-    final Dio client = dio ?? Dio();
+    // BUG-1493：index.json 与词典包同源（github / huggingface），必须走同一套代理 +
+    // 超时装配，否则「检查更新」这一步就能在没有代理的直连上无限挂住。
+    final Dio client = dio ?? await createDictionaryDio();
     try {
       final Response<String> resp = await client.get<String>(
         indexUrl,

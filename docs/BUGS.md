@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1391 条。点号进各自文件。
+> 共 1393 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1493](bugs/BUG-1493-dict-download-no-proxy-no-progress.md) | ✅ | ✅ | 词典下载不走系统代理、无超时，且下载/导入阶段无可归因进度 |
+| [BUG-1492](bugs/BUG-1492-dict-update-stale-lookup-cache.md) | ✅ | ✅ | 词典覆盖导入/在线更新后查词缓存不失效，更新完的词典查不到词 |
 | [BUG-1486](bugs/BUG-1486-waveform-align-strip-list-out-of-sync.md) | ✅ | ✅ | 波形对轴面板上下字幕不一致 |
 | [BUG-1484](bugs/BUG-1484-subtitle-list-follow-nearest-cue.md) | ✅ | ✅ | 字幕列表打开时未定位到最近字幕 |
 | [BUG-1483](bugs/BUG-1483-webview2-userdata-readonly-install.md) | ✅ | ✅ | Windows 装进不可写目录后 WebView2 数据目录建不出来（启动必弹错 + 更新失败） |

@@ -2178,6 +2178,12 @@ class AppModel with ChangeNotifier {
       // 一装载好就把进程级读取器接上去，此后任何 applyAppProxy(client) 都自动拿到同一个值，
       // 不必沿调用链穿参（穿漏一处 = 一条不走代理的暗路）。
       appUserProxyReader = () => prefsRepo.updateCustomProxy;
+      // BUG-1493：词典包与 index.json 全托管在 github / raw.githubusercontent /
+      // huggingface 上，而 fushi_dictionary 用的是裸 Dio——`findProxy` 为 null，既不读
+      // HTTP_PROXY 也不读系统代理，于是「浏览器秒开 GitHub、app 里下 30MB 词典却像卡
+      // 死」。fushi_dictionary 是下游包，反向 import 不了 applyAppProxy，故在这里把它
+      // 接进包内的进程级钩子。未接线时钩子是 no-op，行为与接线前逐字等价。
+      installDictionaryDioFactory();
       _applyMemoryPolicy();
       _mediaTrackingService = MediaTrackingService(
         repository: MediaTrackingRepository(_database),
@@ -4039,8 +4045,9 @@ class AppModel with ChangeNotifier {
     // 下载/index URL 回填来源）。默认 null/false，本地导入向后兼容、行为不变。
     bool forceReplaceExisting = false,
     Map<String, String>? sourceOverride,
-  }) =>
-      _dictImportManager.importFromFile(
+  }) async {
+    try {
+      await _dictImportManager.importFromFile(
         file: file,
         progressNotifier: progressNotifier,
         onImportSuccess: onImportSuccess,
@@ -4051,6 +4058,14 @@ class AppModel with ChangeNotifier {
         forceReplaceExisting: forceReplaceExisting,
         sourceOverride: sourceOverride,
       );
+    } finally {
+      // BUG-1492：词典集合变了，已经渲染在屏上的查词结果还停在旧集合上。缓存失效由
+      // dictRepo 的写/删路径负责，这里只负责把「重查一次」推给已打开的查词页/弹窗，
+      // 与 delete / reorder 路径对称（BUG-355）。放 finally：覆盖导入失败时旧词典可能
+      // 已被删掉，那种半状态同样必须让 UI 重查，不能停在更旧的结果上。
+      dictionarySearchAgainNotifier.notifyListeners();
+    }
+  }
 
   // ── dictionary auto-update (TODO-861③, ported from Hoshi 94d0c41) ────
 
