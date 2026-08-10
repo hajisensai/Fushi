@@ -328,9 +328,9 @@ class VideoDiscoveryService {
 }
 
 /// 跨来源身份合并。强 ID 优先；没有共享 ID 时，只有聚合媒体类型、规范化标题和
-/// 非空年份三者完全一致才合并。AniList 把部分单集长篇 ONA 标成 TV，而 TMDB 将
-/// 同一作品标成电影；这种可验证的单集动画按电影聚合。任何共同命名空间出现冲突值
-/// 都会否决本次合并。
+/// 非空年份三者完全一致才合并。AniList/Bangumi 会把部分单集 ONA 标成 TV，而
+/// TMDB 将同一作品标成电影；搜索摘要不保证携带时长，因此可验证的单集动画按电影
+/// 聚合。任何共同命名空间出现冲突值都会否决本次合并。
 List<VideoDiscoveryItem> mergeVideoDiscoveryItems(
   Iterable<VideoDiscoveryItem> items, {
   required VideoDiscoveryRequest request,
@@ -530,8 +530,7 @@ VideoMetadataMediaKind _aggregationKind(VideoDiscoveryItem item) {
   }
   final VideoMetadataWork? work = item.metadataWork;
   if (item.reference.discoveryCategory == VideoDiscoveryCategory.anime &&
-      work?.episodeCount == 1 &&
-      (work?.runtimeMinutes ?? 0) >= 60) {
+      work?.episodeCount == 1) {
     return VideoMetadataMediaKind.movie;
   }
   return item.reference.mediaKind;

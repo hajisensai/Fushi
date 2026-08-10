@@ -816,20 +816,20 @@ void main() {
       expect(result, hasLength(2));
     });
 
-    test('merges a single long-form anime ONA with the matching movie', () {
-      final VideoMetadataWork anilistWork = VideoMetadataWork(
-        provider: VideoMetadataProviderKind.anilist,
+    test('merges a single-episode anime TV summary with the matching movie',
+        () {
+      final VideoMetadataWork bangumiWork = VideoMetadataWork(
+        provider: VideoMetadataProviderKind.bangumi,
         kind: VideoMetadataMediaKind.tv,
         title: '超时空辉夜姬！',
         year: 2026,
-        runtimeMinutes: 143,
         episodeCount: 1,
         ids: const <VideoMetadataId>[
-          VideoMetadataId(type: 'anilist', value: '195591', isDefault: true),
+          VideoMetadataId(type: 'bangumi', value: '604826', isDefault: true),
         ],
       );
-      final VideoDiscoveryItem anilist = VideoDiscoveryItem.fromMetadataWork(
-        work: anilistWork,
+      final VideoDiscoveryItem bangumi = VideoDiscoveryItem.fromMetadataWork(
+        work: bangumiWork,
         discoveryCategory: VideoDiscoveryCategory.anime,
       );
       final VideoDiscoveryItem tmdb = _item(
@@ -840,7 +840,7 @@ void main() {
       );
 
       final List<VideoDiscoveryItem> result = mergeVideoDiscoveryItems(
-        <VideoDiscoveryItem>[anilist, tmdb],
+        <VideoDiscoveryItem>[bangumi, tmdb],
         request: const VideoDiscoveryRequest(query: '辉夜姬'),
       );
 
@@ -848,7 +848,7 @@ void main() {
       expect(result.single.reference.mediaKind, VideoMetadataMediaKind.movie);
       expect(result.single.reference.providerId, 'tmdb');
       expect(result.single.reference.tmdbId, 1234);
-      expect(result.single.reference.anilistId, 195591);
+      expect(result.single.reference.bangumiId, 604826);
     });
 
     test('does not merge a multi-episode anime series into a movie', () {
