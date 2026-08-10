@@ -87,9 +87,78 @@ bool WaitForSingleInstanceMutex(HANDLE mutex, DWORD timeout_ms) {
 // flutter_tool 永远拿不到 VM service URI（报 "log reader stopped unexpectedly"，整套
 // Windows itest 无法 attach）。跳过是安全的：守卫唯一目的是防两进程共享默认 WebView2
 // userDataFolder（BUG-437），而 harness 已用 FUSHI_WEBVIEW2_USER_DATA_FOLDER 把测试
-// runner 的 WebView2 profile 隔离开，冲突不存在。生产从不设该变量，行为字节不变。
+// runner 的 WebView2 profile 隔离开，冲突不存在。生产侧该变量只会被下面的
+// EnsureWritableWebView2UserDataFolder 按 exe 路径确定性地设置（BUG-1483），同一
+// exe 的多进程仍指向同一目录，守卫职责不变。
 bool IsTestRunnerMode() {
   return ::GetEnvironmentVariableW(L"FUSHI_TEST_HIDDEN", nullptr, 0) > 0;
+}
+
+// BUG-1483: [dir] 下能否创建文件（进而创建 WebView2 数据目录）。用一次性探针文件
+// 实测 ACL，FILE_FLAG_DELETE_ON_CLOSE 保证句柄一关探针即消失，不留垃圾。
+bool DirectoryWritable(const std::wstring &dir) {
+  const std::wstring probe = dir + L"\\.fushi-webview2-write-probe";
+  HANDLE handle = ::CreateFileW(
+      probe.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+      FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, nullptr);
+  if (handle == INVALID_HANDLE_VALUE) {
+    return false;
+  }
+  ::CloseHandle(handle);
+  return true;
+}
+
+// BUG-1483: WebView2 不传 userDataFolder 时默认把数据目录建在 exe 旁
+// （<exe>.WebView2\EBWebView）。装进 Program Files 这类普通用户不可写的目录后，
+// msedgewebview2 建不出数据目录 → 每次启动弹「无法创建数据目录」、阅读器/查词
+// WebView 整体不可用。fork 的两个环境创建点（in_app_webview.cpp 默认环境 +
+// webview_environment.cpp 自定义环境）都以 FUSHI_WEBVIEW2_USER_DATA_FOLDER 为
+// 唯一覆盖入口，所以在引擎起来之前探测一次：
+// - 变量已设（itest harness，TODO-1003）→ 原样尊重；
+// - exe 旁可写（含既有 <exe>.WebView2 profile 本身可写）→ 什么都不做，存量
+//   安装的 profile 位置字节不变（Never break userspace）；
+// - 不可写 → 把变量指到 %LOCALAPPDATA%\Fushi\WebView2（与全局查词浮窗的
+//   OverlayUserDataFolder 同根不同叶，不会撞 0x8007139F 选项冲突）。
+// 值只由 exe 路径与 ACL 决定，同一 exe 的两个进程仍会算出同一目录，单实例
+// 守卫（BUG-437）防并发共享的职责不变。
+void EnsureWritableWebView2UserDataFolder() {
+  if (::GetEnvironmentVariableW(L"FUSHI_WEBVIEW2_USER_DATA_FOLDER", nullptr,
+                                0) > 0) {
+    return;
+  }
+  wchar_t exe_path[MAX_PATH];
+  const DWORD len = ::GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
+  if (len == 0 || len >= MAX_PATH) {
+    return;  // 拿不到 exe 路径：维持默认行为，错误留给 WebView2 自己浮现。
+  }
+  const std::wstring exe(exe_path, len);
+  const size_t slash = exe.find_last_of(L'\\');
+  if (slash == std::wstring::npos) {
+    return;
+  }
+  const std::wstring default_folder = exe + L".WebView2";
+  const DWORD attrs = ::GetFileAttributesW(default_folder.c_str());
+  const bool has_default_dir = attrs != INVALID_FILE_ATTRIBUTES &&
+                               (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0;
+  // 既有 profile 在就探它自己（它可写即可继续用），否则探 exe 目录
+  // （WebView2 需要在这里新建 <exe>.WebView2）。
+  if (DirectoryWritable(has_default_dir ? default_folder
+                                        : exe.substr(0, slash))) {
+    return;
+  }
+  wchar_t local_appdata[MAX_PATH];
+  const DWORD n =
+      ::GetEnvironmentVariableW(L"LOCALAPPDATA", local_appdata, MAX_PATH);
+  if (n == 0 || n >= MAX_PATH) {
+    return;
+  }
+  std::wstring fallback(local_appdata, n);
+  fallback += L"\\Fushi";
+  ::CreateDirectoryW(fallback.c_str(), nullptr);
+  fallback += L"\\WebView2";
+  ::CreateDirectoryW(fallback.c_str(), nullptr);
+  ::SetEnvironmentVariableW(L"FUSHI_WEBVIEW2_USER_DATA_FOLDER",
+                            fallback.c_str());
 }
 
 }  // namespace
@@ -149,6 +218,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     ::CloseHandle(single_instance_mutex);
     return EXIT_SUCCESS;
   }
+
+  // BUG-1483：必须在 Flutter engine（进而 WebView2 环境）创建之前决定用户数据
+  // 目录，见函数注释。
+  EnsureWritableWebView2UserDataFolder();
 
   // BUG-209 / TODO-398：在 Flutter engine / COM 初始化之前安装进程级 minidump
   // 写出（写进 %LOCALAPPDATA%\Fushi\crashdumps\，链回引擎既有 filter），让

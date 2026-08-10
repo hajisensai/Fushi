@@ -325,3 +325,48 @@ begin
     Sleep(MutexReleasePollIntervalMs);
   end;
 end;
+
+{ BUG-1483: 选目录页写入预检。本安装器 PrivilegesRequired=lowest（不提权），
+  用户手选 Program Files 这类需要管理员权限的目录时，老行为是复制阶段才蹦
+  "Error 5: 拒绝访问" 中断安装；就算用户再手动提权装进去，运行期还有第二排雷：
+  应用以普通权限跑，WebView2 数据目录与应用内自动更新都写不进安装目录
+  （更新每次都得提权）。所以在用户点「下一步」时就实测一把可写性，拦下并给出
+  明确指引，而不是让错误在安装中途/运行期反复浮现。
+  探测方式：目录已存在→写探针文件再删掉；不存在→建目录链（建成后目录留给
+  正式安装直接用，不回滚——马上就要装进去，且 RemoveDir 误删既有空目录的
+  风险比留一个空目录大）。}
+function InstallDirWritable(const Dir: String): Boolean;
+var
+  Probe: String;
+begin
+  Result := False;
+  if not DirExists(Dir) then
+  begin
+    if not ForceDirectories(Dir) then
+      Exit;
+  end;
+  Probe := AddBackslash(Dir) + '.fushi-setup-write-test';
+  if SaveStringToFile(Probe, 'fushi setup preflight', False) then
+  begin
+    DeleteFile(Probe);
+    Result := True;
+  end;
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if CurPageID = wpSelectDir then
+  begin
+    if not InstallDirWritable(WizardDirValue) then
+    begin
+      MsgBox('当前权限无法写入所选目录：' + #13#10 + WizardDirValue + #13#10#13#10
+        + '请改选用户可写的目录（推荐默认目录 '
+        + ExpandConstant('{localappdata}\Fushi') + '）。' + #13#10#13#10
+        + '不建议装进需要管理员权限的目录：即使以管理员身份重装到该目录，'
+        + '应用日常以普通权限运行，之后每次自动更新都需要再次提权。',
+        mbError, MB_OK);
+      Result := False;
+    end;
+  end;
+end;
