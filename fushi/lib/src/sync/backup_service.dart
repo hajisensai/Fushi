@@ -65,7 +65,10 @@ enum BackupCategory {
   /// Reading / video / mining statistics + favorite words. Covers
   /// `reading_statistics`, `reading_hourly_logs`, `video_watch_statistics`,
   /// `video_hourly_logs`, `mining_statistics`, `lookup_mining_counters`,
-  /// `mined_sentences` and `favorite_words`. Stripped from the DB copy when
+  /// `mined_sentences`, `favorite_words`, plus the two fact streams
+  /// `activity_events` (home Activity timeline) and `galgame_sessions`
+  /// (play-session facts; the `galgames` library rows themselves are content,
+  /// not statistics, and always travel). Stripped from the DB copy when
   /// unticked. Included by default.
   statistics,
 
@@ -562,7 +565,15 @@ class BackupService {
 
   /// Content tables stripped from the exported DB copy when the `statistics`
   /// category is unticked (TODO-1193). None is FK-targeted by another content
-  /// table, so a wholesale DELETE is safe.
+  /// table, so a wholesale DELETE is safe (`galgame_sessions` is itself an FK
+  /// CHILD of `galgames`; nothing references it, so deleting it trips nothing).
+  ///
+  /// `activity_events` / `galgame_sessions` are session-granularity FACT
+  /// streams, not aggregates, but they are what the statistics pages render
+  /// from — the untick promise ("my stats don't travel") must cover them too.
+  /// The `galgames` library rows stay: games are content, their sessions are
+  /// statistics (mirrors `clearAllGalgameStatistics`, which deletes only the
+  /// session facts).
   static const List<String> _statisticsTables = <String>[
     'reading_statistics',
     'reading_hourly_logs',
@@ -572,6 +583,8 @@ class BackupService {
     'lookup_mining_counters',
     'mined_sentences',
     'favorite_words',
+    'activity_events',
+    'galgame_sessions',
   ];
 
   /// The four profile-layer tables in CHILD-first order, so a DELETE sweep of

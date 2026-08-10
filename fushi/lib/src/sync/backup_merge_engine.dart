@@ -22,7 +22,9 @@ import 'package:fushi_core/fushi_core.dart';
 /// - statistics (reading / video / hourly / mining / lookup+mine counters) ->
 ///   per-bucket MAX-union, so re-importing the same backup is idempotent and
 ///   never double-counts.
-/// - favorites / mined sentences -> dedupe-UNION (both kept, duplicates dropped).
+/// - favorites / mined sentences / activity events -> dedupe-UNION (both kept,
+///   duplicates dropped). galgame_sessions deliberately do NOT merge (their
+///   `galgames` hosts are machine-local and never travel; see merge()).
 /// - favorite SENTENCES (a `favorite_sentences` preference JSON blob, NOT a
 ///   table) -> content dedupe-UNION, delegated to [AggregateMergeService] (the
 ///   ATTACH SQL cannot merge a JSON blob, so this used to be dropped entirely).
@@ -166,6 +168,13 @@ class BackupMergeEngine {
         await _mergeLookupMiningCounters();
         await _mergeFavoriteWords();
         await _mergeMinedSentences();
+        await _mergeActivityEvents();
+        // galgame_sessions 刻意不合并（成文决策，不是遗漏）：游戏是本机局域
+        // 身份，galgames 行本身就不搬运（见 tables.dart 的 GalgameTagMappings
+        // 注释——整套游戏数据不进 live-sync 也不进备份合并导入，全量备份恢复
+        // 走整库文件拷贝原样还原），src 会话行的 game_id 在目标库没有宿主，
+        // 并进来只会造出悬空引用。唯一例外是游戏标签：它经刮削身份二跳落到
+        // 目标库自己的游戏行上（[_mergeTagsAndMappings] 的 v79 二跳）。
       }
       await _mergeFavoriteSentencePrefs();
       await _mergeTagsAndMappings();
@@ -887,6 +896,38 @@ class BackupMergeEngine {
       'WHERE t.source = s.source AND t.date_key = s.date_key '
       'AND t.expression = s.expression AND t.reading = s.reading '
       'AND t.created_at = s.created_at)',
+    );
+  }
+
+  /// ActivityEvents dedupe-UNION（session 粒度事实流，与 [_mergeMinedSentences]
+  /// 同形：无唯一约束，按内容指纹 NOT EXISTS 去重插入）。
+  ///
+  /// 自然键 = {event_type, media_type, title, timestamp_ms}：timestamp_ms 是
+  /// session 落库的精确毫秒时刻，同型、同媒体、同题、同毫秒即同一事件——重导
+  /// 同一备份幂等，两台设备各自的真实 session 几乎不可能四元全撞。media_key
+  /// 刻意不进键：它是 nullable 的打开锚点（书=bookKey、视频=bookUid），跨库/
+  /// 跨版本身份空间可能不同，进键会把同一事件在两侧判成两条。行本身原样搬运
+  /// （含 media_key），dateKey 与 timestamp_ms 同行同源，无需重算。
+  ///
+  /// 不产投影：activity 行只是时间线事实，投影表（reading_statistics 等）由
+  /// 上面各自的 MAX-union 独立合并，绝不从这里派生（防双计）。
+  ///
+  /// 无 statistics_tombstones 守卫：activity 删除对称性是尚未拍板的独立任务
+  /// （P4 B2——本地删除路径 deleteActivityEventsForTitle 目前零生产调用方），
+  /// 本地都不删，合并侧守卫没有语义可对齐；B2 落地时同步补。
+  ///
+  /// 代价：target 无 {event_type, ...} 复合索引，NOT EXISTS 对每条 src 行走
+  /// 全表扫描（O(src×target)）。activity 是 session 粒度（每天几行~几十行），
+  /// 年级数据也在万行内，SQLite 毫秒级，不值得为 merge 加索引。
+  Future<void> _mergeActivityEvents() async {
+    final List<String> cols = await _columnsExceptId('activity_events');
+    final String colList = cols.join(', ');
+    await _db.customStatement(
+      'INSERT INTO activity_events ($colList) '
+      'SELECT $colList FROM $_srcAlias.activity_events AS s '
+      'WHERE NOT EXISTS (SELECT 1 FROM activity_events AS t '
+      'WHERE t.event_type = s.event_type AND t.media_type = s.media_type '
+      'AND t.title = s.title AND t.timestamp_ms = s.timestamp_ms)',
     );
   }
 

@@ -366,11 +366,17 @@ mixin _FushiDbStatistics
     ];
   }
 
-  /// 删除某标题的全部活动事件（书/视频被删除时清理，对齐统计表清理路径）。
+  // ── 活动事件的删除对称性(P4 B2,2026-08-10 用户拍板) ──────────────
+  // 决策:活动时间轴是**历史事实日志**,不是现存库的视图——删书/删视频
+  // **不**连带删其活动事件("我上个月读过什么"的历史不随删库改写)。
+  // 下面两个清理函数因此**刻意零生产调用**,不是漏接线;保留是给将来
+  // 可能的显式清理入口(用户主动"清除活动历史")备用,勿在删除路径接线。
+
+  /// 删除某标题的全部活动事件。刻意无生产调用方(见上方决策注释)。
   Future<int> deleteActivityEventsForTitle(String title) =>
       (delete(activityEvents)..where((t) => t.title.equals(title))).go();
 
-  /// 清空全部活动事件（统计「清除全部」路径联动）。
+  /// 清空全部活动事件。刻意无生产调用方(见上方决策注释)。
   Future<int> clearAllActivityEvents() => delete(activityEvents).go();
 
   // ── galgames / galgame_sources / galgame_sessions (v55 游戏库) ──────

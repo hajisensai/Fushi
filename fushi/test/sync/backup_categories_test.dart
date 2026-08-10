@@ -181,6 +181,32 @@ void main() {
         charactersRead: 10,
         readingTimeMs: 1000,
         lastStatisticModified: 1));
+    // P4 B3：统计类目还覆盖两条 session 粒度事实流——首页活动时间线与游戏
+    // 游玩会话（galgames 游戏行本身是内容，不随统计裁剪）。
+    await db.addActivityEvent(
+      eventType: 'read',
+      mediaType: 'book',
+      title: 'Bk',
+      mediaKey: 'Bk',
+      dateKey: '2026-01-01',
+      timestampMs: 1000,
+      durationMs: 1000,
+      charsDelta: 10,
+    );
+    await db.upsertGalgame(GalgamesCompanion.insert(
+      id: '111000000',
+      name: 'G1',
+      exePath: r'D:\g\g.exe',
+      workdir: r'D:\g',
+      addedAt: 1,
+    ));
+    await db.insertGalgameSession(GalgameSessionsCompanion.insert(
+      gameId: '111000000',
+      startMs: 1000,
+      endMs: 61000,
+      durationSeconds: 60,
+      dateKey: '2026-01-01',
+    ));
     await db.setPref('theme_mode', 'dark');
     await db.setPref('favorite_sentences', '[]');
     await db.setPref('local_audio_dbs', '[]');
@@ -682,6 +708,10 @@ void main() {
       expect(prefs.keys.any((String k) => k.startsWith('audiobook_pos_')),
           isFalse);
       expect(await countRows(db, 'reading_statistics'), 1);
+      expect(await countRows(db, 'activity_events'), 1,
+          reason: '统计勾选 → 活动事实流照常随包');
+      expect(await countRows(db, 'galgame_sessions'), 1,
+          reason: '统计勾选 → 游戏会话事实照常随包');
       expect(prefs['theme_mode'], 'dark');
     } finally {
       await db.close();
@@ -699,6 +729,13 @@ void main() {
     final FushiDatabase db = await openBackupDb(zip, dst);
     try {
       expect(await countRows(db, 'reading_statistics'), 0);
+      // P4 B3：取消勾选「统计」时，两条 session 粒度事实流也必须被裁掉——
+      // 勾选框说话算数，不能只裁投影表却让事实流随整库偷渡。
+      expect(await countRows(db, 'activity_events'), 0,
+          reason: '活动时间线事实流跟随统计类目裁剪');
+      expect(await countRows(db, 'galgame_sessions'), 0,
+          reason: '游戏会话事实流跟随统计类目裁剪');
+      expect(await countRows(db, 'galgames'), 1, reason: '游戏行是内容不是统计，不随统计类目裁剪');
       expect(await countRows(db, 'reader_positions'), 1);
     } finally {
       await db.close();

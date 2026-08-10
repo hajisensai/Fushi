@@ -729,6 +729,147 @@ void main() {
     expect(rows, hasLength(2)); // dup dropped, distinct one added
   });
 
+  // P4 B3：activity_events 补 union 合并（此前 merge 对它零处理 = 静默丢弃）。
+  test(
+      'activity events dedupe-union by {type, media, title, ms}; idempotent '
+      'and never derives projection rows', () async {
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = FushiDatabase(curDir.path);
+    await cur.addActivityEvent(
+        eventType: 'read',
+        mediaType: 'book',
+        title: 'A',
+        mediaKey: 'A',
+        dateKey: '2026-01-01',
+        timestampMs: 1111,
+        durationMs: 60000,
+        charsDelta: 100);
+    // 两侧共有的同一事件（四元自然键完全一致）→ 只留一条。
+    await cur.addActivityEvent(
+        eventType: 'watch',
+        mediaType: 'video',
+        title: 'V',
+        dateKey: '2026-01-02',
+        timestampMs: 2222,
+        durationMs: 30000,
+        charsDelta: 50);
+    await cur.close();
+
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = FushiDatabase(srcDir.path);
+    await src.addActivityEvent(
+        eventType: 'watch',
+        mediaType: 'video',
+        title: 'V',
+        dateKey: '2026-01-02',
+        timestampMs: 2222,
+        durationMs: 30000,
+        charsDelta: 50);
+    // 备份独有事件 → 并入。
+    await src.addActivityEvent(
+        eventType: 'read',
+        mediaType: 'book',
+        title: 'B',
+        dateKey: '2026-01-03',
+        timestampMs: 3333,
+        durationMs: 90000,
+        charsDelta: 200);
+    // 同题同毫秒但不同 event_type —— 是不同事件，自然键必须含 event_type。
+    await src.addActivityEvent(
+        eventType: 'added',
+        mediaType: 'video',
+        title: 'V',
+        dateKey: '2026-01-02',
+        timestampMs: 2222);
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    // 导两遍——幂等（dedupe-UNION，绝不翻倍）。
+    await BackupService.mergeRestoreBackup(
+        dbDirectory: curDir.path, zipPath: zip);
+    await BackupService.mergeRestoreBackup(
+        dbDirectory: curDir.path, zipPath: zip);
+
+    final after = FushiDatabase(curDir.path);
+    addTearDown(after.close);
+    final rows = await after.getRecentActivityEvents(limit: 100);
+    expect(rows, hasLength(4), reason: '并集去重：共享事件只留一条，重导同一备份幂等');
+    expect(rows.where((r) => r.eventType == 'watch'), hasLength(1),
+        reason: '两侧同一 watch 事件不双计');
+    expect(rows.where((r) => r.eventType == 'added'), hasLength(1),
+        reason: '同题同毫秒不同 type 是不同事件，必须保留');
+    expect(rows.map((r) => r.title).toSet(), <String>{'A', 'V', 'B'});
+    // 不产投影：activity 事实行合并绝不派生 reading_statistics 等投影。
+    expect(await after.getAllReadingStatistics(), isEmpty,
+        reason: 'activity 合并只搬事实行，不得生成投影');
+  });
+
+  test(
+      'galgame_sessions do NOT merge — machine-local game identity, by design '
+      '(P4 B3 成文决策)', () async {
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = FushiDatabase(curDir.path);
+    // 本机自己的游戏 + 会话必须原样保留。
+    await cur.upsertGalgame(GalgamesCompanion.insert(
+      id: '222000000',
+      name: 'LocalGame',
+      exePath: r'D:\g\g.exe',
+      workdir: r'D:\g',
+      addedAt: 2,
+    ));
+    await cur.insertGalgameSession(GalgameSessionsCompanion.insert(
+      gameId: '222000000',
+      startMs: 1000,
+      endMs: 61000,
+      durationSeconds: 60,
+      dateKey: '2026-01-01',
+    ));
+    await cur.close();
+
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = FushiDatabase(srcDir.path);
+    await src.upsertGalgame(GalgamesCompanion.insert(
+      id: '111000000',
+      name: 'RemoteGame',
+      exePath: r'E:\games\r.exe',
+      workdir: r'E:\games',
+      addedAt: 1,
+    ));
+    await src.insertGalgameSession(GalgameSessionsCompanion.insert(
+      gameId: '111000000',
+      startMs: 5000,
+      endMs: 125000,
+      durationSeconds: 120,
+      dateKey: '2026-02-02',
+    ));
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    await BackupService.mergeRestoreBackup(
+        dbDirectory: curDir.path, zipPath: zip);
+
+    final after = FushiDatabase(curDir.path);
+    addTearDown(after.close);
+    expect((await after.getAllGalgames()).single.id, '222000000',
+        reason: '游戏行本机局域身份，不随备份合并搬运');
+    final QueryRow sessions = await after
+        .customSelect('SELECT COUNT(*) AS c FROM galgame_sessions')
+        .getSingle();
+    expect(sessions.data['c'], 1,
+        reason: '成文决策：src 会话的 game_id 在目标库无宿主，不合并——'
+            '本机那条原样保留');
+  });
+
   test('reader position LWW: newer updatedAt wins, older does not clobber',
       () async {
     final curDir = await _tempDir('mg_cur_');

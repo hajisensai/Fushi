@@ -9,9 +9,12 @@ import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
+import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   // BUG-1027 音轨快照自动刷新会在会话激活后触发（未 mock 的）voice_hook channel 的
@@ -1574,7 +1577,323 @@ void main() {
     endpoints.dispose();
   });
 
+  _playTrackerLaunchWiring();
+  _playTrackerWiringGuard();
   _bug950Guard();
+}
+
+/// P4 B1：游玩时长账本接线（`GalgamePlayTracker` → `galgame_sessions` +
+/// 带时长的 game 活动行）。计时语义按状态机既有设计 = 前台聚焦计时（playtime），
+/// 与 `galgame_sessions` 表注释「前台窗口计时器」一致。
+void _playTrackerLaunchWiring() {
+  final String gameDir = p.join(p.rootPrefix(p.current), 'Games', 'Anemoi');
+  final String gameExe = p.join(gameDir, 'game.exe');
+
+  /// 与库页启动同参的 launch 用控制器：真 [GalgamePlayTracker]（假 probe +
+  /// 1ms 双定时器，1 个 accrual tick = 1「前台秒」）驱动，工厂调用与实例可断言。
+  ({
+    GalHookSessionController controller,
+    _FakePlayProbe probe,
+    List<({String gameId, String gameDirectory})> factoryCalls,
+    ChangeNotifier endpoints,
+  }) buildHarness(FushiDatabase db) {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakePlayProbe probe = _FakePlayProbe(
+      processes: <int, String>{4242: gameExe},
+      foregroundPid: 4242,
+    );
+    final List<({String gameId, String gameDirectory})> factoryCalls =
+        <({String gameId, String gameDirectory})>[];
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+      }) =>
+          _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        audioFormat: null,
+        textReady: true,
+      ),
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      playTrackerFactory: ({
+        required String gameId,
+        required String gameDirectory,
+        required GalgamePlaySessionSink onSessionEnded,
+      }) {
+        factoryCalls.add((gameId: gameId, gameDirectory: gameDirectory));
+        return GalgamePlayTracker(
+          gameId: gameId,
+          gameDirectory: gameDirectory,
+          onSessionEnded: onSessionEnded,
+          probe: probe,
+          isWindows: true,
+          foregroundInterval: const Duration(milliseconds: 1),
+          accrualInterval: const Duration(milliseconds: 1),
+        );
+      },
+    );
+    controller.attachActivityDatabase(() => db);
+    return (
+      controller: controller,
+      probe: probe,
+      factoryCalls: factoryCalls,
+      endpoints: endpoints,
+    );
+  }
+
+  Future<FushiDatabase> openDbWithGame() async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    await db.upsertGalgame(
+      GalgamesCompanion.insert(
+        id: 'galgame-row-42',
+        name: '统一后的显示名',
+        exePath: gameExe,
+        workdir: gameDir,
+        addedAt: 0,
+      ),
+    );
+    return db;
+  }
+
+  Future<void> accrueUntil(GalgamePlayTracker tracker, int seconds) async {
+    for (int i = 0;
+        i < 400 && (tracker.machine?.activeSeconds ?? 0) < seconds;
+        i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(tracker.machine?.activeSeconds ?? 0, greaterThanOrEqualTo(seconds));
+  }
+
+  test('P4 B1：库页启动接线游玩计时，游戏进程退出自动结算落库', () async {
+    final FushiDatabase db = await openDbWithGame();
+    final harness = buildHarness(db);
+
+    final GalHookLaunchResult result = await harness.controller.launchGame(
+      gameExe,
+      gameId: 'galgame-row-42',
+      gameTitle: '统一后的显示名',
+    );
+    expect(result.launched, isTrue);
+    // 工厂拿到的是 galgames.id + 由 exe 路径派生的游戏目录（候选进程组判归属用）。
+    expect(harness.factoryCalls, hasLength(1));
+    expect(harness.factoryCalls.single.gameId, 'galgame-row-42');
+    expect(
+        harness.factoryCalls.single.gameDirectory, File(gameExe).parent.path);
+    final GalgamePlayTracker tracker = harness.controller.playTracker!;
+    expect(tracker.isRunning, isTrue);
+
+    await accrueUntil(tracker, kMinSessionSeconds);
+
+    // 游戏进程退出 → 连续判活失败 → 状态机自行结束并结算（无需任何 UI 动作）。
+    harness.probe.processes.clear();
+    harness.probe.deadPids.add(4242);
+    List<GalgameSessionRow> sessions = const <GalgameSessionRow>[];
+    for (int i = 0; i < 400 && sessions.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      sessions = await db.getGalgameSessions('galgame-row-42');
+    }
+    expect(sessions, hasLength(1));
+    final GalgameSessionRow session = sessions.single;
+    expect(session.durationSeconds, greaterThanOrEqualTo(kMinSessionSeconds));
+    expect(session.endMs, greaterThanOrEqualTo(session.startMs));
+    expect(
+      session.dateKey,
+      // 与事实表 dateKey 约定同源：取 endMs 的本地日期。
+      matches(RegExp(r'^\d{4}-\d{2}-\d{2}$')),
+    );
+
+    // 活动行是时长侧的**对偶写入**：durationMs 有值、charsDelta 恒 null（字符侧
+    // 由 hook 文本路径独立写行，两侧 SUM 才不会把同一次游玩计两遍）。
+    final List<ActivityEventRow> activities =
+        await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]);
+    expect(activities, hasLength(1));
+    expect(activities.single.mediaType, kActivityMediaGame);
+    expect(activities.single.title, '统一后的显示名');
+    expect(activities.single.mediaKey, 'galgame-row-42');
+    expect(activities.single.durationMs, session.durationSeconds * 1000);
+    expect(activities.single.charsDelta, isNull);
+    expect(activities.single.dateKey, session.dateKey);
+
+    // getActivityDailyTotals(kActivityGame) 的 duration 不再恒 0（B1 缺口本体）。
+    final List<(String, int, int)> totals =
+        await db.getActivityDailyTotals(kActivityGame);
+    expect(totals.single.$3, session.durationSeconds * 1000);
+
+    await harness.controller.close();
+    harness.endpoints.dispose();
+  });
+
+  test('P4 B1：重复启动 → 上一场先结算落库、旧计时器停止不泄漏', () async {
+    final FushiDatabase db = await openDbWithGame();
+    final harness = buildHarness(db);
+
+    expect(
+      (await harness.controller.launchGame(
+        gameExe,
+        gameId: 'galgame-row-42',
+        gameTitle: '统一后的显示名',
+      ))
+          .launched,
+      isTrue,
+    );
+    final GalgamePlayTracker first = harness.controller.playTracker!;
+    await accrueUntil(first, kMinSessionSeconds);
+
+    expect(
+      (await harness.controller.launchGame(
+        gameExe,
+        gameId: 'galgame-row-42',
+        gameTitle: '统一后的显示名',
+      ))
+          .launched,
+      isTrue,
+    );
+    // 入口先 stop 旧计时器并 await 结算写穿，无需轮询即可读到上一场。
+    expect(first.isRunning, isFalse);
+    expect(await db.getGalgameSessions('galgame-row-42'), hasLength(1));
+    final GalgamePlayTracker second = harness.controller.playTracker!;
+    expect(identical(first, second), isFalse);
+    expect(second.isRunning, isTrue);
+    expect(harness.factoryCalls, hasLength(2));
+
+    // 第二场未达门槛即关闭：计时器停止、不落第二行。
+    await harness.controller.close();
+    expect(second.isRunning, isFalse);
+    expect(await db.getGalgameSessions('galgame-row-42'), hasLength(1));
+    harness.endpoints.dispose();
+  });
+
+  test('P4 B1：app 退出（close / 退出 flush 登记）结算在跑会话', () async {
+    final FushiDatabase db = await openDbWithGame();
+    final harness = buildHarness(db);
+    final int flushBaseline = ExitFlushRegistry.instance.callbackCount;
+
+    expect(
+      (await harness.controller.launchGame(
+        gameExe,
+        gameId: 'galgame-row-42',
+        gameTitle: '统一后的显示名',
+      ))
+          .launched,
+      isTrue,
+    );
+    // 桌面点 X 走 exit(0) 快杀，close 不可靠——启动即登记退出 flush（与超分同款）。
+    expect(ExitFlushRegistry.instance.callbackCount, flushBaseline + 1);
+    final GalgamePlayTracker tracker = harness.controller.playTracker!;
+    await accrueUntil(tracker, kMinSessionSeconds);
+
+    await harness.controller.close();
+    expect(tracker.isRunning, isFalse);
+    expect(ExitFlushRegistry.instance.callbackCount, flushBaseline);
+    expect(await db.getGalgameSessions('galgame-row-42'), hasLength(1));
+    harness.endpoints.dispose();
+  });
+
+  test('P4 B1：裸 exe 启动（无 galgames.id）不建计时器', () async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final harness = buildHarness(db);
+
+    expect(
+      (await harness.controller.launchGame(gameExe)).launched,
+      isTrue,
+    );
+    expect(harness.factoryCalls, isEmpty);
+    expect(harness.controller.playTracker, isNull);
+
+    await harness.controller.close();
+    harness.endpoints.dispose();
+  });
+}
+
+/// P4 B1 源码守卫：钉死「时长账本有人写」。缺口形状（data-layer-p4-plan.md §4）：
+/// `GalgamePlayTracker` 在 lib 无构造点、`insertGalgameSession` 无生产调用方——
+/// 账本断供后 UI 不红不报，`getActivityDailyTotals(kActivityGame)` 只是恒 0。
+void _playTrackerWiringGuard() {
+  test('P4 B1 守卫：launch 路径必须接线游玩计时器并落 galgame_sessions', () {
+    final File src = File('lib/src/mining/gal_hook_session_controller.dart');
+    expect(src.existsSync(), isTrue);
+    // 注释里出现的同名字面量不算接线：先剥掉行注释再匹配。
+    final String body = src.readAsStringSync().split('\n').map((String line) {
+      final int at = line.indexOf('//');
+      return at >= 0 ? line.substring(0, at) : line;
+    }).join('\n');
+    expect(
+      body.contains('GalgamePlayTracker('),
+      isTrue,
+      reason: '生产构造点（默认工厂）不得移除；接线挪家请同步更新本守卫',
+    );
+    expect(
+      body.contains('.insertGalgameSession('),
+      isTrue,
+      reason: 'galgame_sessions 事实表必须由会话结算 sink 落库（B1）',
+    );
+    final int launchAt =
+        body.indexOf('Future<GalHookLaunchResult> launchGame(');
+    expect(launchAt, greaterThan(0), reason: 'launchGame 不存在，守卫需更新');
+    final int launchEnd =
+        body.indexOf('void _startWindowRebindWatch', launchAt);
+    expect(launchEnd, greaterThan(launchAt), reason: '找不到 launchGame 结尾');
+    final String launchBody = body.substring(launchAt, launchEnd);
+    expect(
+      RegExp(r'_startPlayTracker\(').allMatches(launchBody).length,
+      2,
+      reason: 'launch 的两条成功路径（正常 / 注入失败但游戏在跑）都必须起计时',
+    );
+    expect(
+      launchBody.contains('_stopPlayTracker('),
+      isTrue,
+      reason: '重复启动必须先结算上一场，否则旧计时器泄漏',
+    );
+  });
+}
+
+/// 假游玩 probe：进程表 = `{pid: exe 路径}`；前台恒返回 [foregroundPid]，
+/// [deadPids] 里的 pid 判活失败。
+class _FakePlayProbe implements GalgameProcessProbe {
+  _FakePlayProbe({required this.processes, this.foregroundPid});
+
+  final Map<int, String> processes;
+  int? foregroundPid;
+  final Set<int> deadPids = <int>{};
+
+  @override
+  int? foregroundProcessId() => foregroundPid;
+
+  @override
+  bool isProcessAlive(int pid) =>
+      processes.containsKey(pid) && !deadPids.contains(pid);
+
+  @override
+  String? processImagePath(int pid) => processes[pid];
+
+  @override
+  List<GalgameProcessInfo> listProcesses() => processes.entries
+      .map(
+        (MapEntry<int, String> entry) =>
+            GalgameProcessInfo(pid: entry.key, imagePath: entry.value),
+      )
+      .toList(growable: false);
+
+  @override
+  String? canonicalize(String path) => path;
 }
 
 void _bug950Guard() {
