@@ -6700,6 +6700,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 触屏点画面唤回视频左侧锁 / 解锁按钮（TODO-126）。沉浸态下控制条指针被 gate，但本
     // 外层 Listener 在 gate 之外仍收到指针，故沉浸态点画面也能唤回解锁按钮（移动端无 hover）。
     _pokeLockButton();
+    // 选集横轨打开时，视频区由 dismiss barrier 接管这次点击并只关闭横轨；外层
+    // Listener 仍会先收到 pointer-up，必须在 barrier 的 onTap 执行前早返回，否则同一次
+    // 点击还会进入双击 / 暂停 / 全屏判定（BUG-1501）。点横轨自身也会经过本 Listener，
+    // 同样早返回才能保证选集卡片只执行换集、不误触播放器手势。
+    if (_episodeListVisible.value) {
+      _lastVideoPointerUpAt = null;
+      _lastVideoPointerUpPosition = null;
+      return;
+    }
     // 侧栏（设置 / 字幕列表 / 音轨等）打开时，点面板本身不应被误判成「点画面」（BUG-246）：
     // 侧栏 overlay 是本 Stack 的子节点，但本外层 [Listener] 用 translucent 命中行为，仍会
     // 收到落在面板上的 pointer-up；若放行下方逻辑，连续两次点面板会被 400ms/48px 双击判据

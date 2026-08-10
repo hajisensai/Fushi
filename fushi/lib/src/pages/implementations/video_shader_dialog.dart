@@ -33,6 +33,7 @@ class VideoShaderManagerView extends StatefulWidget {
     required this.onSelectTier,
     this.initialMpvDir = '',
     this.onMpvDirChanged,
+    this.embedded = false,
     this.titlePlacement = SettingsSectionTitlePlacement.outside,
     super.key,
   });
@@ -63,6 +64,10 @@ class VideoShaderManagerView extends StatefulWidget {
 
   /// 用户手动指定 mpv 目录后回调（持久化，下次优先扫它）。
   final Future<void> Function(String dir)? onMpvDirChanged;
+
+  /// 嵌入已有设置 surface 时只渲染分组标题、行与分隔线，避免在外层卡片里再次
+  /// 套三张 [AdaptiveSettingsSection] 卡片。独立页面保持原来的分组卡片布局。
+  final bool embedded;
 
   final SettingsSectionTitlePlacement titlePlacement;
 
@@ -375,9 +380,9 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         // ── 画质档位（无/低/中/高/极高）：一键选档即下载+启用，普通用户唯一需要的入口 ──
-        AdaptiveSettingsSection(
+        _shaderSection(
           title: t.video_shader_quality_tier,
-          titlePlacement: widget.titlePlacement,
+          first: true,
           children: <Widget>[
             VideoShaderTierSelector(
               current: _currentTier,
@@ -407,9 +412,8 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
           ],
         ),
         // ── 进阶：手动导入文件 / 粘贴链接下载 / 从本机 mpv 导入（给懂的人用的逃生口）──
-        AdaptiveSettingsSection(
+        _shaderSection(
           title: t.video_shader_section_advanced,
-          titlePlacement: widget.titlePlacement,
           children: <Widget>[
             _actionRow(
               title: t.video_shader_import,
@@ -432,12 +436,30 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
             ),
           ],
         ),
-        AdaptiveSettingsSection(
+        _shaderSection(
           title: t.video_shader_section_installed,
-          titlePlacement: widget.titlePlacement,
           children: installedRows,
         ),
       ],
+    );
+  }
+
+  Widget _shaderSection({
+    required String title,
+    required List<Widget> children,
+    bool first = false,
+  }) {
+    if (!widget.embedded) {
+      return AdaptiveSettingsSection(
+        title: title,
+        titlePlacement: widget.titlePlacement,
+        children: children,
+      );
+    }
+    return _EmbeddedShaderSection(
+      title: title,
+      showTopDivider: !first,
+      children: children,
     );
   }
 
@@ -454,6 +476,47 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
       showIcon: true,
       trailing: const Icon(Icons.chevron_right),
       onTap: onTap,
+    );
+  }
+}
+
+/// 已有 settings surface 内的扁平分组：只保留标题和分隔线，不再创建卡片。
+class _EmbeddedShaderSection extends StatelessWidget {
+  const _EmbeddedShaderSection({
+    required this.title,
+    required this.children,
+    required this.showTopDivider,
+  });
+
+  final String title;
+  final List<Widget> children;
+  final bool showTopDivider;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color dividerColor = Theme.of(context).colorScheme.outlineVariant;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (showTopDivider)
+          Divider(height: 1, thickness: 0.5, color: dividerColor),
+        SettingsSectionHeader(
+          title,
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+        ),
+        for (int index = 0; index < children.length; index++) ...<Widget>[
+          if (index > 0)
+            Divider(
+              height: 1,
+              thickness: 0.5,
+              indent: 16,
+              endIndent: 16,
+              color: dividerColor,
+            ),
+          children[index],
+        ],
+      ],
     );
   }
 }
@@ -604,9 +667,8 @@ class Anime4kPresetPickerDialog extends StatelessWidget {
                       // 列出」（即那两处 CheckboxListTile），从不覆盖这个预设列表。
                       return FushiListItem(
                         padding: EdgeInsets.symmetric(
-                          vertical: FushiDesignTokens.of(context)
-                              .spacing
-                              .rowVertical,
+                          vertical:
+                              FushiDesignTokens.of(context).spacing.rowVertical,
                         ),
                         title: Text(preset.name),
                         // 预设说明是两三句话，裸 ListTile 的 subtitle 不截行；
