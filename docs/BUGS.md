@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1402 条。点号进各自文件。
+> 共 1403 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1504](bugs/BUG-1504-jimaku-dialog-size-search-jank.md) | ✅ | ✅ | Jimaku 字幕框偏小且搜索首帧卡顿 |
 | [BUG-1503](bugs/BUG-1503-migration-v79-legacy-video-tag-column.md) | ✅ | ✅ | v79 标签迁移不兼容旧 video_book_uid 列导致启动失败 |
 | [BUG-1502](bugs/BUG-1502-video-shader-nested-cards.md) | ✅ | ✅ | 视频画质增强嵌入设置重复嵌套卡片 |
 | [BUG-1501](bugs/BUG-1501-video-episode-click-outside-close.md) | ✅ | ✅ | 选集横轨只能点 X 关闭，点击视频区域无效 |
