@@ -496,30 +496,22 @@ mixin DictionaryPageMixin {
   ///
   /// 视频页等覆写 [onMineEntry]、绕过基类成功分支的页面，在自己的成功路径上
   /// 直接调本方法记账（来源仍走各自的 [dictionarySourceType]），不必复制
-  /// [addMiningCount] 的契约细节。
+  /// [FushiDatabase.recordMiningEvent] 的契约细节。
   @protected
   Future<void> recordMined() async {
-    final String dateKey = _statTodayKey();
-    try {
-      // 全局按日汇总（保留不动：备份合并 / 云同步依赖它，Never break userspace）。
-      await mixinAppModel.database.addMiningCount(
-        sourceType: dictionarySourceType,
-        dateKey: dateKey,
-      );
-    } catch (e, st) {
-      debugPrint('[fushi-stats] addMiningCount failed: $e\n$st');
-    }
-    // TODO-1204：并行写 per-book 制卡计数（视频带 bookUid+标题；无书来源 title=''）。
+    // P4 写侧收敛：全局汇总 + per-book 计数走 DB 复合入口
+    // [FushiDatabase.recordMiningEvent]（同事务，dateKey 由 DB 层从 at 派生），
+    // 半写漂移不再可能。best-effort 契约不变：失败吞掉记日志。
     final ({String? bookKey, String? title})? identity = lookupBookIdentity;
     try {
-      await mixinAppModel.database.addMineCountPerBook(
+      await mixinAppModel.database.recordMiningEvent(
         bookKey: identity?.bookKey,
         title: identity?.title ?? '',
         sourceType: dictionarySourceType,
-        dateKey: dateKey,
+        at: DateTime.now(),
       );
     } catch (e, st) {
-      debugPrint('[fushi-stats] addMineCountPerBook failed: $e\n$st');
+      debugPrint('[fushi-stats] recordMiningEvent failed: $e\n$st');
     }
   }
 

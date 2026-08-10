@@ -695,6 +695,63 @@ mixin _FushiDbStatistics
         }
       });
 
+  /// P4 写侧收敛（2026-08 数据层重构）：视频观看统计**累加写的唯一落库入口**
+  /// （tick/桶粒度，供 VideoWatchTracker 的 flush 与字幕字数路径）。
+  ///
+  /// 同一事务内逐桶写小时账本（[addVideoHourlyWatchTime]）与日聚合投影
+  /// （[addVideoWatchStatistic]），**桶归属零改动**——dateKey/hour 由调用方按各桶
+  /// 自身时刻拆好（splitWatchTime），跨午夜正确归两天依赖于此。此前接线是同一次
+  /// flush 两次独立 await 各自 fail-open，hourly 与 daily 可能不同步丢；收敛后
+  /// 两表同一事务、要么都落要么都不落。
+  ///
+  /// [subtitleChars] > 0 时把字幕字数按 [subtitleCharsDateKey]（调用方按 cue 时刻
+  /// 派生）累加进日聚合投影；字幕字数不进小时账本（它只记观看时长）。
+  ///
+  /// activity 行（addActivityEvent, watch）**刻意不在此**：它是 session 事件
+  /// （stop 时刻 dateKey + session 总量），与本入口的桶粒度天然不同构——跨午夜时
+  /// activity 全额归 stop 日、桶各归各日，两边数字与 dateKey 的口径差是**故意的**
+  /// （ed2f36443f）。不得从桶派生 activity 行，也不得「顺手统一」两边 dateKey，
+  /// 否则引入跨午夜归属 bug。
+  Future<void> recordWatchFlush({
+    required String title,
+    required String bookUid,
+    List<(String dateKey, int hour, int watchMs)> buckets = const <(
+      String,
+      int,
+      int
+    )>[],
+    int subtitleChars = 0,
+    String? subtitleCharsDateKey,
+  }) {
+    if (subtitleChars > 0 && subtitleCharsDateKey == null) {
+      throw ArgumentError(
+          'recordWatchFlush: subtitleChars > 0 需要 subtitleCharsDateKey');
+    }
+    return transaction(() async {
+      for (final (String dateKey, int hour, int watchMs) in buckets) {
+        await addVideoHourlyWatchTime(
+            dateKey: dateKey, hour: hour, deltaMs: watchMs);
+        // 逐桶配各自 dateKey：跨午夜正确归两天。
+        await addVideoWatchStatistic(
+          title: title,
+          dateKey: dateKey,
+          subtitleChars: 0,
+          watchTimeMs: watchMs,
+          bookUid: bookUid,
+        );
+      }
+      if (subtitleChars > 0) {
+        await addVideoWatchStatistic(
+          title: title,
+          dateKey: subtitleCharsDateKey!,
+          subtitleChars: subtitleChars,
+          watchTimeMs: 0,
+          bookUid: bookUid,
+        );
+      }
+    });
+  }
+
   Future<List<VideoHourlyLogRow>> getVideoHourlyLogsForDate(String dateKey) =>
       (select(videoHourlyLogs)..where((t) => t.dateKey.equals(dateKey))).get();
 
@@ -983,6 +1040,35 @@ mixin _FushiDbStatistics
             await clearStatisticsTombstone(title, sourceType);
           }
         }
+      });
+
+  /// P4 写侧收敛（2026-08 数据层重构）：一次成功制卡的**唯一记账入口**。
+  ///
+  /// 同一事务写全局按日汇总（mining_statistics 经 [addMiningCount]）与 per-book
+  /// 计数（lookup_mining_counters 经 [addMineCountPerBook]），dateKey 从 [at]
+  /// 经 [statDateKeyOf] 派生一次。此前各制卡面两表各自 await、各自吞异常（半写
+  /// 即让恒等式 `MiningStatistics.count == Σ mineCount` 漂移），另有 PDF/漫画
+  /// 只写全局漏 per-book（确定性单边偏差）——收敛后数字与时刻只进一次，新写入
+  /// 下恒等式结构性成立（存量删除不对称属 B 组议题，不在此修）。
+  ///
+  /// [bookKey]/[title] 身份键域同 [addMineCountPerBook]（v76 per-identity）：
+  /// 无书来源传 null/''，只进全局汇总桶。[title] 是统计聚合键，**恒 raw**
+  /// （书行原始 title），不得过 display-title 门面——否则改名前后计数分叉两桶。
+  Future<void> recordMiningEvent({
+    String? bookKey,
+    String title = '',
+    required String sourceType,
+    required DateTime at,
+  }) =>
+      transaction(() async {
+        final String dateKey = _FushiDbStatistics.statDateKeyOf(at);
+        await addMiningCount(sourceType: sourceType, dateKey: dateKey);
+        await addMineCountPerBook(
+          bookKey: bookKey,
+          title: title,
+          sourceType: sourceType,
+          dateKey: dateKey,
+        );
       });
 
   /// MAX-union 语义（非累加）：把 (title, sourceType, dateKey) 行的 [lookupCount]

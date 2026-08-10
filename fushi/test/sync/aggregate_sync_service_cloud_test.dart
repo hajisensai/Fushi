@@ -188,6 +188,46 @@ void main() {
     expect((await repo.getAll()).single.text, '消したい文');
   });
 
+  test('sync 落地只写投影，不产 activity 行（P4 A3 负向断言）', () async {
+    // 发送端：经复合入口产生真实统计（阅读 session 会顺带写 activity 事实行）。
+    final FushiDatabase src = await _freshDb('agg_act_src_');
+    addTearDown(src.close);
+    await src.recordReadingSession(
+      title: 'Book A',
+      mediaKey: 'bk-a',
+      charsRead: 120,
+      timeMs: 60000,
+      at: DateTime(2026, 8, 10, 21),
+    );
+    await src.recordMiningEvent(
+      bookKey: 'bk-a',
+      title: 'Book A',
+      sourceType: FushiDatabase.statSourceBook,
+      at: DateTime(2026, 8, 10, 21, 5),
+    );
+    await src.recordWatchFlush(
+      title: 'Ep1',
+      bookUid: 'v1',
+      buckets: <(String, int, int)>[('2026-08-10', 21, 30000)],
+    );
+    final AggregateSnapshot snap =
+        await AggregateSyncService(src).materializeLocalSnapshot();
+    expect(snap.readingStats, isNotEmpty);
+    expect(snap.miningStats, isNotEmpty);
+    expect(snap.videoStats, isNotEmpty);
+
+    // 接收端：落地全部统计投影后 activity_events 必须仍为空——activity 是本机
+    // session 事实流，sync 落地面（set* MAX / deficit-lift）不得替对端伪造
+    // session 事件。落地若改走复合入口（会顺带写 activity），本断言转红。
+    final FushiDatabase dst = await _freshDb('agg_act_dst_');
+    addTearDown(dst.close);
+    await AggregateSyncService(dst).applySnapshotToLocal(snap);
+    expect(await dst.getAllReadingStatistics(), isNotEmpty,
+        reason: '投影确实落地了（前置：不是空快照假绿）');
+    expect(await dst.getRecentActivityEvents(limit: 10), isEmpty,
+        reason: 'sync 落地不产 activity 行');
+  });
+
   test('two devices converge to the union via the store', () async {
     final FakeAssetStore store = FakeAssetStore();
 

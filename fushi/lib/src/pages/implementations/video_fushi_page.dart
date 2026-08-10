@@ -3038,17 +3038,22 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _watchTracker = VideoWatchTracker(
         title: title,
         bookUid: widget.bookUid,
-        // dateKey 由采集器决定（字幕字数=当下日期；观看时长=各桶各自日期），直接透传，
-        // 不在此另算「今日」——否则跨午夜的 flush 会与小时日志的日归属不一致。
-        addStat: (String t, String dateKey, int chars, int ms) => unawaited(
-          db.addVideoWatchStatistic(
-            title: t,
-            dateKey: dateKey,
-            subtitleChars: chars,
-            watchTimeMs: ms,
-            // v39：按视频稳定身份键控（同名不同视频统计不再互串）。本地视频
-            // 每集独立页面（pushReplacement 换集）→ widget.bookUid 恒为当前集。
+        // P4 写侧收敛：两条统计路都走 DB 复合入口 recordWatchFlush。dateKey 由
+        // 采集器决定（字幕字数=cue 时刻；观看时长=各桶各自日期），直接透传，不在此
+        // 另算「今日」——否则跨午夜的 flush 会与小时日志的日归属不一致。
+        // v39：按视频稳定身份键控（同名不同视频统计不再互串）。本地视频每集独立
+        // 页面（pushReplacement 换集）→ widget.bookUid 恒为当前集。
+        recordFlush: (List<(String, int, int)> buckets) => db.recordWatchFlush(
+          title: title,
+          bookUid: widget.bookUid,
+          buckets: buckets,
+        ),
+        addSubtitleChars: (String dateKey, int chars) => unawaited(
+          db.recordWatchFlush(
+            title: title,
             bookUid: widget.bookUid,
+            subtitleChars: chars,
+            subtitleCharsDateKey: dateKey,
           ),
         ),
         markCompleted: (String uid) =>
@@ -3060,12 +3065,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           episodeIndex: _currentEpisode,
           seriesCompleted:
               _episodes.isNotEmpty && _currentEpisode == _episodes.length - 1,
-        ),
-        addHourly: (String dateKey, int hour, int deltaMs) =>
-            db.addVideoHourlyWatchTime(
-          dateKey: dateKey,
-          hour: hour,
-          deltaMs: deltaMs,
         ),
         // v49：一次观看 session 结束落一条活动事件，喂首页 Activity 时间轴。
         recordActivity: (String t, String uid, String dateKey, int timestampMs,

@@ -3034,6 +3034,14 @@ class FushiDatabase extends _$FushiDatabase
   /// sourceType 常量：与统计聚合 / lookup_mining_counters 的 source_type 同值。
   static const String statSourceBook = 'book';
   static const String statSourceVideo = 'video';
+
+  /// 统计日分组键（本地时区 `yyyy-MM-dd`）的**唯一权威派生**（P4 写侧收敛 A 组）。
+  /// app 层 `statDateKey` / 视频桶拆分等统计写入面的 dateKey 一律直接或间接走
+  /// 这里，别再各自格式化一份。委托 [_FushiDbStatistics.statDateKeyOf]（复合
+  /// 入口 recordReadingSession / recordMiningEvent 在 DB 层派生 dateKey 用的
+  /// 同一实现）。
+  static String statDateKeyOf(DateTime d) =>
+      _FushiDbStatistics.statDateKeyOf(d);
 }
 
 int _epubBookUidCounter = 0;

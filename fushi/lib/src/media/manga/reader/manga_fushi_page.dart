@@ -53,7 +53,6 @@ import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/media/manga/reader/manga_window_load_gate.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
@@ -583,6 +582,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     with WidgetsBindingObserver {
   InAppWebViewController? _controller;
   EpubBookRow? _bookRow;
+
+  /// P4 写侧收敛：查词 / 制卡计数归属本书（此前漫画漏覆写，全落 '' 汇总桶）。
+  /// 口径照抄 EPUB 阅读器（reader_fushi_page 的同名覆写）：[bookKey] 存书身份
+  /// （在线阅读的兜底行同样以 widget.bookKey 为身份键），title 恒 raw
+  /// （`_bookRow?.title`，统计聚合键不过 display-title 门面）。
+  @override
+  ({String? bookKey, String? title})? get lookupBookIdentity =>
+      (bookKey: widget.bookKey, title: _bookRow?.title);
 
   /// v82：阅读位置子表键（= **持久化**书行的 `uid`）。与 [_bookRow] 分开存：
   /// 在线阅读无持久行时 [_bookRow] 是现造 uid 的内存兜底行（v81，仅供 UI 元数据），
@@ -2753,10 +2760,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }
 
   Future<void> _recordMinedCount() async {
+    // P4 写侧收敛：走 DB 复合入口（同事务全局汇总 + per-book 计数），并补上此前
+    // 漏写的书身份（旧代码只写全局 addMiningCount，per-book 恒漏 → 恒等式单边偏差）。
+    final ({String? bookKey, String? title})? identity = lookupBookIdentity;
     try {
-      await appModel.database.addMiningCount(
+      await appModel.database.recordMiningEvent(
+        bookKey: identity?.bookKey,
+        title: identity?.title ?? '',
         sourceType: kStatSourceBook,
-        dateKey: statDateKey(DateTime.now()),
+        at: DateTime.now(),
       );
     } catch (e, stack) {
       ErrorLogService.instance.log('MangaFushiPage.recordMined', e, stack);

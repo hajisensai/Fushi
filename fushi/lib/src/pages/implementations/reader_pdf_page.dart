@@ -16,7 +16,6 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/lookup/sentence_extraction.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/utils.dart';
@@ -54,6 +53,13 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
 
   /// 打开时读回的书行（标题/总页数）与已保存页码，供恢复与进度落库使用。
   EpubBookRow? _bookRow;
+
+  /// P4 写侧收敛：查词 / 制卡计数归属本书（此前 PDF 漏覆写，全落 '' 汇总桶）。
+  /// 口径照抄 EPUB 阅读器（reader_fushi_page 的同名覆写）：[bookKey] 存书身份，
+  /// title 恒 raw（`_bookRow?.title`，统计聚合键不过 display-title 门面）。
+  @override
+  ({String? bookKey, String? title})? get lookupBookIdentity =>
+      (bookKey: widget.bookKey, title: _bookRow?.title);
 
   /// v82：位置/书签子表键（= [_bookRow] 的 `uid`，_load 时一次解析）。null =
   /// 书行缺失或旧行无 uid——相关读写跳过，不拿 bookKey 兜底写孤儿行。
@@ -620,10 +626,15 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   }
 
   Future<void> _recordMinedCount() async {
+    // P4 写侧收敛：走 DB 复合入口（同事务全局汇总 + per-book 计数），并补上此前
+    // 漏写的书身份（旧代码只写全局 addMiningCount，per-book 恒漏 → 恒等式单边偏差）。
+    final ({String? bookKey, String? title})? identity = lookupBookIdentity;
     try {
-      await appModel.database.addMiningCount(
+      await appModel.database.recordMiningEvent(
+        bookKey: identity?.bookKey,
+        title: identity?.title ?? '',
         sourceType: kStatSourceBook,
-        dateKey: statDateKey(DateTime.now()),
+        at: DateTime.now(),
       );
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderPdfPage.recordMined', e, stack);

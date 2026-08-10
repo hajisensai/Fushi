@@ -256,7 +256,7 @@ extension _ReaderMining on _ReaderFushiPageState {
         : '';
     final described = describeMineOutcome(outcome, deckName: deckName);
     // 制卡成功计入书籍统计（reader 走 BaseSourcePageState.onMineFromPopup，不
-    // mixin DictionaryPageMixin，故直接 addMiningCount，来源固定 book）。失败吞掉记日志。
+    // mixin DictionaryPageMixin，故自调 recordMiningEvent，来源固定 book）。失败吞掉记日志。
     if (described.record) unawaited(_recordMined());
     // TODO-633: success also lands one mined-sentence history row (sentence +
     // locator anchors to jump back), complementing the per-day count above.
@@ -378,31 +378,21 @@ extension _ReaderMining on _ReaderFushiPageState {
 
   /// 把一次成功制卡计入书籍统计。reader 走 [BaseSourcePageState.onMineFromPopup]，
   /// 不 mixin [DictionaryPageMixin]，故自带本记账（来源固定 [kStatSourceBook]，与
-  /// mixin 的 `recordMined` 同契约：[FushiDatabase.addMiningCount]）。失败吞掉并记日志。
+  /// mixin 的 `recordMined` 同契约：[FushiDatabase.recordMiningEvent]）。失败吞掉并记日志。
   Future<void> _recordMined() async {
-    final String dateKey = statTodayKey();
-    try {
-      // 全局按日汇总（保留不动：备份合并 / 云同步依赖它，Never break userspace）。
-      await appModel.database.addMiningCount(
-        sourceType: kStatSourceBook,
-        dateKey: dateKey,
-      );
-    } catch (e, st) {
-      debugPrint('[fushi-stats] reader addMiningCount failed: $e\n$st');
-    }
-    // TODO-1204：并行写 per-book 制卡计数（book 来源，带 bookKey + 标题；title 与
-    // 阅读统计 tile 的聚合键 [EpubBook.title] 对齐）。
+    // P4 写侧收敛：全局汇总 + per-book 计数走 DB 复合入口
+    // [FushiDatabase.recordMiningEvent]（同事务，dateKey 由 DB 层从 at 派生）。
     // P4 身份红线：这里的 title 是统计聚合键，**恒 raw**（`_book?.title`）——
     // 过 override 门面会让改名前后的计数分叉成两个桶。
     try {
-      await appModel.database.addMineCountPerBook(
+      await appModel.database.recordMiningEvent(
         bookKey: widget.bookKey,
         title: _book?.title ?? '',
         sourceType: kStatSourceBook,
-        dateKey: dateKey,
+        at: DateTime.now(),
       );
     } catch (e, st) {
-      debugPrint('[fushi-stats] reader addMineCountPerBook failed: $e\n$st');
+      debugPrint('[fushi-stats] reader recordMiningEvent failed: $e\n$st');
     }
   }
 
