@@ -17,7 +17,7 @@
   `displayTitle` 不带时刻（`fushi/lib/src/sync/fushi_library_host_service.dart:229-311`，改前），
   所以接收端连做 LWW 的原料都没有。
 
-- **[x] ① 已修复** — `1c9a0e1e4a`。**Drift schema v83 → v84**，给 override 一个时刻载体
+- **[x] ① 已修复** — `8e71131845`。**Drift schema v83 → v84**，给 override 一个时刻载体
   并把三条通道统一到同一条裁决规则。
   - **schema**：`Preferences` 加 `IntColumn updatedAt`（int 毫秒、无 `Ms` 后缀，
     withDefault 0，`packages/fushi_core/lib/src/database/tables.dart`）。
@@ -73,7 +73,8 @@
   ② 同函数 `updatedAt: Value(updatedAt)` → 写 `now` → 8 例转红；
   ③ host `displayTitleAt: …?.updatedAt ?? 0` → 恒 `0` → 1 例转红；
   ④ wire 键 `'displayTitleAt'` → `'displayTitleAtX'` → 1 例转红；
-  ⑥ `_mergeOverrideTitlePrefs` 的 update-newer 语句删掉 → 1 例转红。
+  ⑤ `_mergeOverrideTitlePrefs` 的 update-newer 语句删掉 → 1 例转红
+  （第六条 `putRemoteBook` header 变异记在 BUG-1503）。
 
 - **备注**：迁移阶梯的既有测试断言了 `schemaVersion == 83`，本轮一并推到 84
   （42 处 + 4 处非常规写法）；`migration_v63_legacy_galgame_upscaling_pref_test`

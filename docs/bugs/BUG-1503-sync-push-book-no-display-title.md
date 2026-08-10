@@ -18,7 +18,7 @@
     —— 这是全域唯一没走元数据参数的资产（视频早有
     `importVideo(File, {id, title, originalFileName})`）。
 
-- **[x] ① 已修复** — `1c9a0e1e4a`。**选的方案：additive 自定义 header**，理由是
+- **[x] ① 已修复** — `8e71131845`。**选的方案：additive 自定义 header**，理由是
   它是本仓这条链路**已有的先例**而不是新发明——视频推送的
   `X-Hibiki-Video-Title` / `X-Hibiki-Video-Filename`
   （client `interconnect_sync_backend.dart` ↔ host `_decodeHeaderValue`
