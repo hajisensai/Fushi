@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1399 条。点号进各自文件。
+> 共 1401 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1502](bugs/BUG-1502-video-shader-nested-cards.md) | ✅ | ✅ | 视频画质增强嵌入设置重复嵌套卡片 |
+| [BUG-1501](bugs/BUG-1501-video-episode-click-outside-close.md) | ✅ | ✅ | 选集横轨只能点 X 关闭，点击视频区域无效 |
 | [BUG-1493](bugs/BUG-1493-dict-download-no-proxy-no-progress.md) | ✅ | ✅ | 词典下载不走系统代理、无超时，且下载/导入阶段无可归因进度 |
 | [BUG-1492](bugs/BUG-1492-dict-update-stale-lookup-cache.md) | ✅ | ✅ | 词典覆盖导入/在线更新后查词缓存不失效，更新完的词典查不到词 |
 | [BUG-1491](bugs/BUG-1491-anki-dedup-serial-delete.md) | ✅ | ✅ | Anki 媒体去重逐个删除过慢 |
