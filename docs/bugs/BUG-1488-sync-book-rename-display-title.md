@@ -57,6 +57,11 @@
   「本机已有 override」的子设备上（只有第一次、以及子设备没自己改过名的情况会生效）。
   要补必须给 override 一个 `updatedAt` 载体（对照 `BookCustomCss` 的 `updatedAt` + `deleted`
   墓碑），那是独立的 schema 变更，本轮刻意不做。
+  另一处**未覆盖的方向**：自动同步的「内容 push」（`SyncOrchestrator._syncBooksContentLive`
+  → `InterconnectSyncBackend.putRemoteBook` → host `importBook(File)`）是**裸 .epub 文件上传，
+  无任何元数据 sidecar**，所以「本端把书推给对端」这个方向的改名仍不跟随。要补得给上传端点
+  也加一个 displayTitle 参数（第二处 wire 变更），本轮刻意不扩大范围。本 bug 报告的方向
+  （母设备当 host、子设备浏览/下载）已覆盖。
   另：`_overrideTitleByBookKey` 只认 BUG-1317 后的**规范** key 形态；BUG-1317 之前改的名若此后
   从未在 host 本机显示过（读取期回退尚未把它就地重写成规范键），不会随清单下发。
   **未做真机双设备验证**（母/子两台真设备互联对拉）——只有单测覆盖。
