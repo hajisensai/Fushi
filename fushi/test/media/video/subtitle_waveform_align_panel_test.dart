@@ -726,4 +726,93 @@ void main() {
     // 无 onCommitDelay：字幕条只读，不挂对轴拖动手势（key 不存在）。
     expect(find.byKey(_stripKey), findsNothing);
   });
+
+  // ---------------------------------------------------------------------
+  // BUG-1486：波形字幕条（上）与字幕列表（下）必须锚在同一时间——两块是同一份 cue 的
+  // 两个视图，用户拿它们互相对照「这段波形是哪句话」。历史上只有列表跟随播放头、波形横向
+  // 滚动恒停在 offset 0，于是上面显示片头几句、下面高亮当前句，上下字幕对不上。
+  // ---------------------------------------------------------------------
+
+  /// 一分钟、每秒一句的 cue 列表（S0..S59），用来把「上下锚点」拉开到肉眼可见。
+  List<AudioCue> secondlyCues() => <AudioCue>[
+        for (int i = 0; i < 60; i++)
+          _cue(i * 1000, i * 1000 + 800, text: 'S$i'),
+      ];
+
+  Finder stripText(String text) =>
+      find.descendant(of: find.byKey(_stripKey), matching: find.text(text));
+
+  Finder listText(String text) => find.descendant(
+        of: find.byKey(const ValueKey<String>('subtitle-waveform-cue-list')),
+        matching: find.text(text),
+      );
+
+  /// 关掉放大视图，停掉 30fps ticker（避免 pending timer 泄漏）。
+  Future<void> closeZoom(WidgetTester tester) async {
+    await tester.tap(find.descendant(
+      of: find.byType(SubtitleWaveformZoomView),
+      matching: find.byIcon(Icons.close),
+    ));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets(
+      'BUG-1486: opening mid-video anchors BOTH the waveform strip and the '
+      'cue list to the playhead', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1200, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(_host(
+      cues: secondlyCues(),
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      onCommitDelay: (int _) async {},
+      onPlayCue: (int _) async {},
+      // 暂停打开：跟随不生效，全靠开场锚定；不锚就是上下都停在片头。
+      isPlaying: () => false,
+      currentPositionMs: () => 30000,
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+
+    // 上（字幕条）与下（列表）显示同一句：播放头所在的 S30。
+    expect(stripText('S30'), findsOneWidget);
+    expect(listText('S30'), findsOneWidget);
+    // 上面不再停在片头（历史 bug 的症状）。
+    expect(stripText('S0'), findsNothing);
+    await closeZoom(tester);
+  });
+
+  testWidgets(
+      'BUG-1486: while playing, the waveform strip follows the playhead '
+      'together with the cue list', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1200, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    int posMs = 1500;
+    await tester.pumpWidget(_host(
+      cues: secondlyCues(),
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      onCommitDelay: (int _) async {},
+      onPlayCue: (int _) async {},
+      isPlaying: () => true,
+      currentPositionMs: () => posMs,
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    // 开场：上下都在片头（播放头就在那儿）。
+    expect(stripText('S1'), findsOneWidget);
+
+    // 播到 45s：30fps 自驱 ticker 推进 → 当前句变化 → 上下一起跟随。
+    posMs = 45000;
+    for (int i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 40));
+    }
+    await tester.pumpAndSettle();
+
+    expect(stripText('S45'), findsOneWidget);
+    expect(listText('S45'), findsOneWidget);
+    // 上面没有把片头那几句一起留着（说明真的滚过去了，不是靠裁剪余量蒙对）。
+    expect(stripText('S1'), findsNothing);
+    await closeZoom(tester);
+  });
 }

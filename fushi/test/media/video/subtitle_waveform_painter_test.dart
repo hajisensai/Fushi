@@ -275,4 +275,103 @@ void main() {
       expect(find.byType(CustomPaint), findsWidgets);
     });
   });
+
+  group('waveformFollowOffset (BUG-1486)', () {
+    test('播放头在视口安全区内 => null（不抢用户的手动平移）', () {
+      expect(
+        waveformFollowOffset(
+          playheadX: 500,
+          viewportWidth: 800,
+          maxScrollExtent: 6400,
+          currentOffset: 200,
+          keepVisibleMarginPx: 96,
+        ),
+        isNull,
+      );
+    });
+
+    test('播放头进了左边距 => 重新居中', () {
+      final double? offset = waveformFollowOffset(
+        playheadX: 1250,
+        viewportWidth: 800,
+        maxScrollExtent: 6400,
+        currentOffset: 1200,
+        keepVisibleMarginPx: 96,
+      );
+      // 1250 < 1200+96 => 已进左侧安全边距，需要滚；目标把播放头居中。
+      expect(offset, 1250 - 400);
+    });
+
+    test('播放头跑到视口右侧外 => 居中', () {
+      expect(
+        waveformFollowOffset(
+          playheadX: 3000,
+          viewportWidth: 800,
+          maxScrollExtent: 6400,
+          currentOffset: 0,
+          keepVisibleMarginPx: 96,
+        ),
+        3000 - 400,
+      );
+    });
+
+    test('目标 clamp 在 [0, maxScrollExtent]', () {
+      expect(
+        waveformFollowOffset(
+          playheadX: 10,
+          viewportWidth: 800,
+          maxScrollExtent: 6400,
+          currentOffset: 5000,
+          keepVisibleMarginPx: 96,
+        ),
+        0,
+      );
+      expect(
+        waveformFollowOffset(
+          playheadX: 7100,
+          viewportWidth: 800,
+          maxScrollExtent: 6400,
+          currentOffset: 0,
+          keepVisibleMarginPx: 96,
+        ),
+        6400,
+      );
+    });
+
+    test('margin=infinity => 无条件居中（跳到播放头 / 开场锚定）', () {
+      expect(
+        waveformFollowOffset(
+          playheadX: 500,
+          viewportWidth: 800,
+          maxScrollExtent: 6400,
+          currentOffset: 200,
+          keepVisibleMarginPx: double.infinity,
+        ),
+        100,
+      );
+    });
+
+    test('非法输入 => null（不滚）', () {
+      expect(
+        waveformFollowOffset(
+          playheadX: double.nan,
+          viewportWidth: 800,
+          maxScrollExtent: 6400,
+          currentOffset: 0,
+          keepVisibleMarginPx: 96,
+        ),
+        isNull,
+      );
+      expect(
+        waveformFollowOffset(
+          playheadX: 100,
+          viewportWidth: 0,
+          maxScrollExtent: 0,
+          currentOffset: 0,
+          keepVisibleMarginPx: 96,
+        ),
+        isNull,
+      );
+    });
+  });
 }
