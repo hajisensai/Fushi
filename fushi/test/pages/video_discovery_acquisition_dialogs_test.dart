@@ -267,7 +267,7 @@ void main() {
     expect(await File(secondPath).readAsBytes(), <int>[4, 5, 6]);
   });
 
-  testWidgets('BUG-1469 资源对话框双下拉框在窄宽度不横向溢出', (WidgetTester tester) async {
+  testWidgets('BUG-1499 资源对话框双下拉框在窄宽度不横向溢出', (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(700, 760));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 

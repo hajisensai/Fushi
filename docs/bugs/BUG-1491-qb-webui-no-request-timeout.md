@@ -1,4 +1,4 @@
-## BUG-1032 · qB WebUI 请求缺少超时
+## BUG-1491 · qB WebUI 请求缺少超时
 - **报告**：2026-07-23（用户：）
 - **真实性**：✅ 真 bug。`QBittorrentClient.login`、GET 与 POST 请求原先直接等待 `package:http` Future，没有应用级截止时间；WebUI 地址不可达或连接半开时，设置页“测试连接”和后台轮询可能一直等到操作系统 TCP 超时。根因：`hibiki/lib/src/media/torrent/qbittorrent_client.dart:111`、`:242`、`:244`。
 - **[x] ① 已修复** — qB WebUI 所有登录、GET 与 POST 请求统一使用默认 10 秒超时，仍保持客户端“失败返回、不抛异常”的既有契约。

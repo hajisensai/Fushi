@@ -22,7 +22,7 @@ class AnimeDownloadImportOutcome {
   final int collectionId;
 }
 
-/// 单个下载中任务的实时观测值（BUG-1294：进度之外补上速度/流量/peer 数）。
+/// 单个下载中任务的实时观测值（BUG-1494：进度之外补上速度/流量/peer 数）。
 ///
 /// 值语义相等（==/hashCode），供「内容没变不通知」的发布路径用。
 @immutable
@@ -284,7 +284,7 @@ class AnimeDownloadService {
   final ValueNotifier<Map<String, double>> downloadProgress =
       ValueNotifier<Map<String, double>>(const <String, double>{});
 
-  /// 下载中计划的实时观测值（planId → 速度/流量/peer 数；BUG-1294）。
+  /// 下载中计划的实时观测值（planId → 速度/流量/peer 数；BUG-1494）。
   /// 键集合与 [downloadProgress] 一致，UI 任务行用它渲染速度与流量。
   final ValueNotifier<Map<String, DownloadTaskStats>> downloadStats =
       ValueNotifier<Map<String, DownloadTaskStats>>(
@@ -303,7 +303,7 @@ class AnimeDownloadService {
   }
 
   /// 有活跃下载（内置引擎）时的加密轮询间隔。20s 的常规 tick 对「速度/进度在
-  /// 动」的观感来说等于静止（BUG-1294）；内置引擎的 listTorrents 是本进程内
+  /// 动」的观感来说等于静止（BUG-1494）；内置引擎的 listTorrents 是本进程内
   /// 同步 FFI，3s 一次开销可忽略。外接 qb 保持 [interval]：每 tick 都是一次
   /// 全新 WebUI 登录，提频会放大认证失败计数（qb 默认 5 次封 IP 一小时）。
   static const Duration activeInterval = Duration(seconds: 3);
@@ -430,7 +430,7 @@ class AnimeDownloadService {
       final (List<String> videos, _) = _classifyContent(plan, info, files);
       if (videos.isEmpty) return false;
       if (!info.isComplete) {
-        // BUG-1296：这里手上就有完整快照，必须把观测值一起带上。`_publishProgress`
+        // BUG-1496：这里手上就有完整快照，必须把观测值一起带上。`_publishProgress`
         // 是无条件覆盖 `downloadStats`，只传进度等于把**全表**的速度/流量清空，
         // 任务行要一直等到下一轮 tick 才恢复。
         _publishProgress(<String, double>{

@@ -151,7 +151,7 @@ void main() {
     expect(service.downloadProgress.value, isEmpty);
   });
 
-  test('tick 同步发布速度/流量观测值到 downloadStats（BUG-1294）', () async {
+  test('tick 同步发布速度/流量观测值到 downloadStats（BUG-1494）', () async {
     backend.torrents = <TorrentSnapshot>[
       _snapshot(
         progress: 0.42,
@@ -174,11 +174,11 @@ void main() {
     expect(service.downloadStats.value, isEmpty);
   });
 
-  // BUG-1296：`_publishProgress` 是**无条件覆盖** downloadStats，而 importNow 那条
+  // BUG-1496：`_publishProgress` 是**无条件覆盖** downloadStats，而 importNow 那条
   // 路径此前只传进度、stats 走默认空 map → 一次「立即导入」把全表观测值抹掉，
   // 任务行退成不定进度环（UI 侧的百分比也一并没了）直到下一轮 tick 才恢复。
   // 契约：任何发布点都不得把别处刚发布的观测值降级成空。
-  test('importNow 发布进度时不清空 downloadStats（BUG-1296）', () async {
+  test('importNow 发布进度时不清空 downloadStats（BUG-1496）', () async {
     backend.torrents = <TorrentSnapshot>[
       _snapshot(
         progress: 0.42,
@@ -210,7 +210,7 @@ void main() {
     );
   });
 
-  test('轮询周期决策：内置引擎 + 有活跃下载才提频（BUG-1294）', () {
+  test('轮询周期决策：内置引擎 + 有活跃下载才提频（BUG-1494）', () {
     const QbConnectionConfig embedded =
         QbConnectionConfig(backend: QbConnectionConfig.backendEmbedded);
     const Duration idle = Duration(seconds: 20);

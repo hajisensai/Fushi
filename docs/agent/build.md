@@ -182,7 +182,7 @@ galgame 一键制卡的引擎-hook 注入器（injector.exe + hook.dll + vendore
   galgame_helper_installer.dart`）先读取 exe 同级 `galgame_helper/voice_hook_<arch>.zip` 与侧车，校验
   SHA-256 后解压/换入 `voice_hook/<arch>/`，全程零网络、零下载确认；正式 Windows 主包必须命中此路。
   开发构建/旧包没有随包归档时提示更新/重新构建 Hibiki，**不回退网络**；已安装版本也没有后台自更新。
-- **Magpie 同样随包唯一来源**（BUG-1292）：两个 Windows workflow 用
+- **Magpie 同样随包唯一来源**（BUG-1492）：两个 Windows workflow 用
   `tools/build_magpie_slim.ps1` 生成 `Magpie-hibiki-slim-x64.zip` + `.sha256`，放进
   `magpie_bundle/`。`MagpieInstaller` 校验后换入 `magpie/`；ARM64 Windows 走系统 x64 模拟。
   缺包、损坏和旧构建会直接报告“安装包不完整/内置组件校验失败”，没有下载确认、镜像兜底

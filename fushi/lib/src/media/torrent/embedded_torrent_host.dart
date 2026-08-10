@@ -108,7 +108,7 @@ class EmbeddedTorrentHost {
   final Map<String, int> _seedStartMs = <String, int>{};
 
   /// 已下发的会话级上传开关（null = 尚未下发；避免每 tick 重复 FFI）。
-  /// BUG-1293：「关上传」的正确原语是会话级 unchoke 槽位清零，不是
+  /// BUG-1493：「关上传」的正确原语是会话级 unchoke 槽位清零，不是
   /// upload_mode（那是「停止下载」，正好相反）。
   bool? _appliedSessionUploadEnabled;
 
@@ -149,7 +149,7 @@ class EmbeddedTorrentHost {
     );
   }
 
-  /// 是否已做过一次性「清 upload_mode 残留」治愈（BUG-1293：旧版本给种子打上
+  /// 是否已做过一次性「清 upload_mode 残留」治愈（BUG-1493：旧版本给种子打上
   /// 的 upload_mode flag 会随 resume 复活，掐死下载；开机清一次即可）。
   bool _healedUploadMode = false;
 
@@ -210,7 +210,7 @@ class EmbeddedTorrentHost {
   /// 跳过 DLL 加载与 resume 恢复。存在的理由与
   /// `apply_limits_local_peers_test` 相同：要 DLL 的用例在 CI 整组 skip，
   /// 上传策略「绝不下发 upload_mode、关上传走 unchoke/pause」这条命脉
-  /// （BUG-1293）必须有任何环境都会跑的用例守着。
+  /// （BUG-1493）必须有任何环境都会跑的用例守着。
   @visibleForTesting
   static EmbeddedTorrentHost forTesting({
     required EmbeddedTorrentEngine engine,
@@ -578,7 +578,7 @@ class EmbeddedTorrentHost {
     sweepUploadPolicy();
   }
 
-  /// 上传/做种策略扫描（BUG-1293 重写）。
+  /// 上传/做种策略扫描（BUG-1493 重写）。
   ///
   /// 旧实现把「不上传」翻译成 per-torrent `setUploadMode(enabled: false)`，而
   /// libtorrent 的 `upload_mode` flag 语义是「不再发出 piece 请求」= **停止

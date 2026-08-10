@@ -472,7 +472,7 @@ char* add_with_params(lt::session* ses, lt::add_torrent_params params,
   // add 即启动：默认旗标带 paused，起始瞬间会丢弃 connect_peer 且无
   // tracker/DHT 时无从再发现 peer；本引擎的 add 语义就是「开始下载」。
   params.flags &= ~lt::torrent_flags::paused;
-  // BUG-1293：upload_mode = 「只上不下」（停止下载）。旧版本误用它表达
+  // BUG-1493：upload_mode = 「只上不下」（停止下载）。旧版本误用它表达
   // 「关上传」，用户的 resume/重复 add 参数里可能带着残留，进来一律清掉。
   params.flags &= ~lt::torrent_flags::upload_mode;
   lt::error_code ec;
@@ -680,7 +680,7 @@ HT_EXPORT int ht_set_upload_mode(void* session, const char* info_hash,
                                  int upload_enabled) {
   if (session == nullptr) return 0;
   try {
-    // BUG-1293：torrent_flags::upload_mode 的 libtorrent 语义是「不再发出任何
+    // BUG-1493：torrent_flags::upload_mode 的 libtorrent 语义是「不再发出任何
     // piece 请求」= 只上不下（磁盘写失败时引擎自己会置它以停止下载保做种），
     // 与旧实现宣称的「只下不上」正好相反 —— 置上它 = 掐死下载。
     // 因此本函数：允许上传时**清除**该 flag（治愈历史 resume/旧版本留下的
@@ -717,7 +717,7 @@ HT_EXPORT int ht_set_unchoke_slots(void* session, int slots) {
                      lt::settings_pack::unchoke_slots_limit));
     } else {
       // 0 = 不给任何 peer unchoke 槽位 = 会话级停止上传 payload。我们发出的
-      // piece 请求是协议消息、不占 unchoke 槽，下载不受影响（BUG-1293 的
+      // piece 请求是协议消息、不占 unchoke 槽，下载不受影响（BUG-1493 的
       // 「关上传」正确原语；upload_mode 是反的，见 ht_set_upload_mode）。
       sp.set_int(lt::settings_pack::unchoke_slots_limit, slots);
     }
@@ -1429,7 +1429,7 @@ HT_EXPORT char* ht_load_resume_dir(void* session, const char* dir) {
       // 与 add_with_params 同一语义：本引擎的 add = 「开始跑」。resume 里
       // 存的 paused 旗标必须清掉，否则加回来是暂停态，既不续传也不做种。
       params.flags &= ~lt::torrent_flags::paused;
-      // BUG-1293：旧版本把「关上传」误写成置 upload_mode（实际语义是停止
+      // BUG-1493：旧版本把「关上传」误写成置 upload_mode（实际语义是停止
       // 下载），已升级用户的 resume 里可能带着残留 flag，加载时一律治愈。
       params.flags &= ~lt::torrent_flags::upload_mode;
       lt::error_code add_ec;

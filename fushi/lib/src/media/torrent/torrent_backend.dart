@@ -100,7 +100,7 @@ class TorrentSnapshot {
   /// qBittorrent 对应 `total_size`，内置引擎对应 libtorrent `total_wanted`。
   final int totalSizeBytes;
 
-  /// 实时下载速率（字节/秒）。BUG-1294：native/qb 一直导出这些字段，此前在
+  /// 实时下载速率（字节/秒）。BUG-1494：native/qb 一直导出这些字段，此前在
   /// 本抽象层被整体丢弃，UI 无从显示速度/流量。
   final int downRateBps;
 

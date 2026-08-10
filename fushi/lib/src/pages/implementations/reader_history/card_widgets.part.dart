@@ -167,7 +167,7 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
         placeholderIcon,
       ),
       placeholder: MemoryImage(kTransparentImage),
-      // BUG-959: 降采样解码，避免 EPUB 原始封面(常 1600×2400)整帧撑爆 ImageCache。
+      // BUG-1489: 降采样解码，避免 EPUB 原始封面(常 1600×2400)整帧撑爆 ImageCache。
       image: resizedFileImage(File(coverPath)),
       alignment: Alignment.topCenter,
       fit: _bookCardCoverFit,

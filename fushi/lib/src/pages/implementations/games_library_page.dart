@@ -1655,7 +1655,7 @@ typedef _GameMenuItem = ({
 
 /// 游戏封面缩略图（库页卡片 / 合集行成员卡 / 合集详情成员卡共用）。
 ///
-/// 有 coverPath 且文件真实存在 → 经 [ShelfFileCover] 降采样加载（BUG-959 同类：
+/// 有 coverPath 且文件真实存在 → 经 [ShelfFileCover] 降采样加载（BUG-1489 同类：
 /// 旧裸 `Image.file` 整帧解码游戏包装图会撑爆 ImageCache）；否则共享占位件
 /// [ShelfCoverPlaceholder]（保留原 surfaceContainerHighest 底色 + 手柄图标 48）。
 /// existsSync 短路语义保留：缺失文件直接画占位，不进图片加载失败路径。

@@ -1,4 +1,4 @@
-// 「安装器不得联网」这条不变式的**共享判据**。BUG-1196（helper）与 BUG-1292（Magpie）
+// 「安装器不得联网」这条不变式的**共享判据**。BUG-1196（helper）与 BUG-1492（Magpie）
 // 守的是同一件事，判据只能有一份。
 //
 // 🔴 为什么不能只用字面量黑名单（这一版存在的全部理由）：
@@ -140,7 +140,7 @@ const Set<String> kGalgameHelperInstallerImports = <String>{
   'package:fushi/utils.dart',
 };
 
-/// Magpie 安装器的离线依赖面（BUG-1292）。
+/// Magpie 安装器的离线依赖面（BUG-1492）。
 const Set<String> kMagpieInstallerImports = <String>{
   'dart:convert',
   'dart:io',

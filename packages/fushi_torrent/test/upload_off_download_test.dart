@@ -1,4 +1,4 @@
-// BUG-1293 行为闭环：「关上传」的正确原语不影响下载。
+// BUG-1493 行为闭环：「关上传」的正确原语不影响下载。
 //
 // 事故本体：旧实现用 torrent_flags::upload_mode 表达「关上传」，而该 flag 的
 // libtorrent 语义是「不再发出任何 piece 请求」= 停止下载 —— 默认关上传的用户
@@ -78,7 +78,7 @@ void main() {
 
       expect(leecher.supportsUploadControl, isTrue,
           reason: '新构建的 DLL 必须带上传策略原语');
-      // 关上传（BUG-1293 的正确原语）：**下载开始前**就钉死 0 槽位。
+      // 关上传（BUG-1493 的正确原语）：**下载开始前**就钉死 0 槽位。
       expect(leecher.setUnchokeSlots(0), isTrue);
 
       final Directory dlDir = Directory('${tempDir.path}/dl')..createSync();

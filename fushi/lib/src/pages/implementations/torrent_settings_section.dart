@@ -93,7 +93,7 @@ class _TorrentSettingsSectionState
   }
 
   /// 测试与下载后端的连通性（按当前配置解析后端；qb = WebUI 版本号）。
-  /// 成功 snack 显示版本；失败时透传后端给的具体原因（BUG-1295：网络不通/
+  /// 成功 snack 显示版本；失败时透传后端给的具体原因（BUG-1495：网络不通/
   /// 账密错/qb 封 IP 此前折叠成同一句「检查地址与账号密码」，无从自查）。
   Future<void> _probeConnection() async {
     if (_probing) return;

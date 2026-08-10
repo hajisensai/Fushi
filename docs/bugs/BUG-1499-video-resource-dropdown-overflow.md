@@ -1,4 +1,4 @@
-## BUG-1469 · 资源搜索对话框下拉框横向溢出
+## BUG-1499 · 资源搜索对话框下拉框横向溢出
 - **报告**：2026-08-09（用户：截图反馈）
 - **真实性**：✅ 真 bug。`hibiki/lib/src/pages/implementations/video_discovery_acquisition_dialogs.dart:909` 与 `:935` 的两个 `DropdownButtonFormField` 默认 `isExpanded = false`，按最长菜单项的固有宽度布局；字幕“必需”文案超出半宽字段，导致 `RenderFlex` 向右溢出 61 px。
 - **[x] ① 已修复** — 两个下拉框均启用 `isExpanded: true`，并将字幕选项限制为单行省略，使选中项在字段真实可用宽度内布局（`8514d78f7`）。

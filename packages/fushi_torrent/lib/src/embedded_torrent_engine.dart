@@ -729,7 +729,7 @@ class EmbeddedTorrentSession {
         1;
   }
 
-  /// 【已废弃，仅存量兼容】历史上传开关。BUG-1293：libtorrent 的
+  /// 【已废弃，仅存量兼容】历史上传开关。BUG-1493：libtorrent 的
   /// `upload_mode` flag 语义是「不再发出 piece 请求」= **停止下载**，与旧
   /// 注释宣称的「只下不上」正好相反——旧 DLL 的 `enabled: false` 会掐死下载。
   /// 新代码一律走 [setUnchokeSlots]（会话级停上传）/ [pauseTorrent]（做种停止）；

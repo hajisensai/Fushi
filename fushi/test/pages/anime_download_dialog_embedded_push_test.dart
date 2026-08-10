@@ -293,10 +293,10 @@ void main() {
     }
   });
 
-  // BUG-1296：百分比与确定进度环的存活条件必须是「有进度」，不是「有完整观测
-  // 值」。BUG-1294 把任务行整个搬到 downloadStats 之后，任何只发布进度不发布观测
+  // BUG-1496：百分比与确定进度环的存活条件必须是「有进度」，不是「有完整观测
+  // 值」。BUG-1494 把任务行整个搬到 downloadStats 之后，任何只发布进度不发布观测
   // 值的路径（`importNow`）都会让百分比直接消失。这里正反两面各钉一次。
-  testWidgets('任务行：只有进度也渲染百分比；有观测值才追加速度/流量（BUG-1296）', (
+  testWidgets('任务行：只有进度也渲染百分比；有观测值才追加速度/流量（BUG-1496）', (
     WidgetTester tester,
   ) async {
     final (_FakeAppModel appModel, GlobalKey<NavigatorState> navKey) =
@@ -362,7 +362,7 @@ void main() {
     expect(
       find.textContaining('55% · ↓ '),
       findsOneWidget,
-      reason: 'BUG-1294 的速度/流量是百分比之后的追加段，不是替换',
+      reason: 'BUG-1494 的速度/流量是百分比之后的追加段，不是替换',
     );
   });
 

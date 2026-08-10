@@ -469,7 +469,7 @@ void main([List<String> args = const <String>[]]) {
       }));
     }
 
-    // galgame helper 与 Magpie 都只从 Windows 主包随附归档安装（BUG-1196 / BUG-1292）。
+    // galgame helper 与 Magpie 都只从 Windows 主包随附归档安装（BUG-1196 / BUG-1492）。
     // 版本与 app 强绑定：要新组件就更新 Hibiki。不要恢复后台静默下载或旧包联网兜底。
 
     /// Capture Flutter framework errors with full details.

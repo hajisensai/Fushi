@@ -151,7 +151,7 @@ class FushiTorrentBindings {
     }
   }
 
-  /// 【已废弃】历史上传开关（BUG-1293：旧 DLL 把 0 实现成置 upload_mode =
+  /// 【已废弃】历史上传开关（BUG-1493：旧 DLL 把 0 实现成置 upload_mode =
   /// 停止下载）。新 DLL 里 upload_enabled 非 0 = 清 upload_mode（治愈残留）、
   /// 0 = no-op。新代码走 [ht_set_unchoke_slots] / [ht_pause_torrent]。
   int ht_set_upload_mode(
@@ -169,7 +169,7 @@ class FushiTorrentBindings {
   late final _ht_set_upload_mode = _ht_set_upload_modePtr.asFunction<
       int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)>();
 
-  /// 会话级 unchoke 槽位（BUG-1293 的「关上传」正确原语）：slots >= 0 精确
+  /// 会话级 unchoke 槽位（BUG-1493 的「关上传」正确原语）：slots >= 0 精确
   /// 设置（0 = 停止上传 payload，下载不受影响）；slots < 0 恢复默认。
   /// 1 成功 0 失败。调用前必须先看 [hasUploadControl]（旧 DLL 无此符号）。
   int ht_set_unchoke_slots(
@@ -208,7 +208,7 @@ class FushiTorrentBindings {
   ///
   /// 与 [hasApplyLimitsEx] 同理：随包 DLL 是 vendored 预编译产物，Dart 侧
   /// 更新了、DLL 没重编的组合真实存在。符号缺失时上传策略降级为「不动
-  /// 任何 flag」——宁可继续上传，也绝不用 upload_mode 掐死下载（BUG-1293）。
+  /// 任何 flag」——宁可继续上传，也绝不用 upload_mode 掐死下载（BUG-1493）。
   late final bool hasUploadControl = _probeUploadControl();
 
   bool _probeUploadControl() {

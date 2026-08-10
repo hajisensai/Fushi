@@ -187,7 +187,7 @@ class ShelfCoverPlaceholder extends StatelessWidget {
 
 /// 本地文件封面的统一加载（书架 / 视频库 / 游戏库共用）。
 ///
-/// BUG-959：一律经 [resizedFileImage] 降采样解码，避免原始封面（EPUB 常
+/// BUG-1489：一律经 [resizedFileImage] 降采样解码，避免原始封面（EPUB 常
 /// 1600×2400、游戏包装图更大）整帧解码撑爆 ImageCache；FadeInImage 提供淡入与
 /// 解码失败回退 [placeholder]。文件是否存在由调用方判定（各页对缺失文件的
 /// 短路语义不同，不在此处吞）。

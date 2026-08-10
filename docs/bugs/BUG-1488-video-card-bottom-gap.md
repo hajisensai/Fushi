@@ -1,4 +1,4 @@
-## BUG-943 · 视频卡底部常驻空白（续 BUG-926 16:9 封面修复）
+## BUG-1488 · 视频卡底部常驻空白（续 BUG-926 16:9 封面修复）
 - **报告**：2026-07-21（用户：底部多显示了一块）。截图为视频 tab 合集横排行 S01E06/07 等成员卡：16:9 封面顶对齐正常，但标题下方常驻约 50px 空白块。
 - **真实性**：✅ 真 bug。根因在 `hibiki/lib/src/pages/implementations/home_video_page.dart`。
   - BUG-926 把封面锁死 16:9（`AspectRatio(16/9)`）后，封面下方文字块高度由常量 `_kVideoCardTextBlock`（`home_video_page.dart:2431`，原值 83）固定预留，卡总高 `_videoCardExtent = cardWidth × 9/16 + _kVideoCardTextBlock`。

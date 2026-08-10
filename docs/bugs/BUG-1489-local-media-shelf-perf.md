@@ -1,4 +1,4 @@
-## BUG-959 · 本地视频/书籍页首屏慢：封面全分辨率解码+合集N+1查询+首帧同步stat
+## BUG-1489 · 本地视频/书籍页首屏慢：封面全分辨率解码+合集N+1查询+首帧同步stat
 - **报告**：2026-07-21（用户：桌面端打开「视频」页，合集与封面要等半天；书籍/有声书页同理）
 - **真实性**：✅ 真 bug。桌面本地媒体库首屏三条慢路径（均在 origin/develop `f045b1201` 上验真，主 checkout 落后 683 提交故不可信）：
   - **合集 N+1**：视频页 `hibiki/lib/src/pages/implementations/home_video_page.dart:275-282`（`_loadLibraryMaps` 对每个合集各跑一次 `getCollectionItems`）；书籍页 `hibiki/lib/src/pages/implementations/reader_hibiki_history_page.dart:533-540`（`_loadShelfMaps` 同款）。合集横排行渲染被这条串行 N 查询 gate，合集越多越慢——归属映射早已用单条 `GROUP BY MIN` 聚合（`packages/hibiki_core/lib/src/database/database.dart:2648` `getPrimaryCollectionIdByEntry`）拿到，组内 sortIndex 却退回逐合集查。
@@ -12,4 +12,4 @@
   - DB 等价性单测 `hibiki/test/database/media_collections_dao_test.dart`（新增 2 例）：`getAllCollectionItems` 按 collectionId 分组逐组等于 `getCollectionItems`；内存分组 `memberSortIndex` 与旧逐合集逻辑逐键等价。
   - 源码守卫 `hibiki/test/tools/local_media_cover_perf_guard_test.dart`（7 例）：DB 有 `getAllCollectionItems`、视频/书架分组不再逐合集查、`_buildCover`/迷你条封面 `cacheWidth` 降采样、书籍封面走 `resizedFileImage`。
   - 全量 `flutter test` 12250 通过（含上面被异步改动回归、现已修复的 3 例删除回收测试）。
-- **备注**：BUG-943 号已被在途 PR#293 占用，本条改用 946。互联/远端封面（BUG-846/847/935/936）是另一条路径，不在本 bug 范围。首页 `home_dashboard_page.dart` 的「继续观看」视频封面也无降采样（同根因），用户本次未提，留后续跟进不扩散本 PR。
+- **备注**：BUG-1488 号已被在途 PR#293 占用，本条改用 946。互联/远端封面（BUG-846/847/935/936）是另一条路径，不在本 bug 范围。首页 `home_dashboard_page.dart` 的「继续观看」视频封面也无降采样（同根因），用户本次未提，留后续跟进不扩散本 PR。

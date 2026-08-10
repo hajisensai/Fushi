@@ -50,7 +50,7 @@ List<TorrentSnapshot> parseQbTorrentInfos(String body) {
             e['content_path'] is String ? e['content_path'] as String : '',
         amountLeft: e['amount_left'] is int ? e['amount_left'] as int : -1,
         totalSizeBytes: e['total_size'] is int ? e['total_size'] as int : -1,
-        // BUG-1294：qb 一直返回这些字段，此前解析时被丢弃。
+        // BUG-1494：qb 一直返回这些字段，此前解析时被丢弃。
         downRateBps: e['dlspeed'] is int ? e['dlspeed'] as int : 0,
         upRateBps: e['upspeed'] is int ? e['upspeed'] as int : 0,
         downloadedBytes: e['downloaded'] is int ? e['downloaded'] as int : 0,
@@ -312,13 +312,13 @@ class QBittorrentClient {
   String? _sid;
 
   /// qBittorrent 开着「对本地主机的客户端跳过身份验证」时，登录接口仍校验
-  /// 账密（用户往往根本没设/记不得），但业务接口匿名即可用。BUG-1295：
+  /// 账密（用户往往根本没设/记不得），但业务接口匿名即可用。BUG-1495：
   /// 登录失败后做一次匿名探测，通了就免登录直连，别把可用的 API 卡死在
   /// 登录门外。true = 已验证匿名可用。
   bool _anonymousOk = false;
 
   /// 最近一次连接/登录失败的可读原因（英文原样，探测 UI 透传显示）；
-  /// 成功后清空。BUG-1295：此前所有失败路径都折叠成一个 null，用户无从自查。
+  /// 成功后清空。BUG-1495：此前所有失败路径都折叠成一个 null，用户无从自查。
   String? get lastFailure => _lastFailure;
   String? _lastFailure;
 
@@ -711,7 +711,7 @@ class QBittorrentClient {
     return parseQbPieceStates(res.body);
   }
 
-  /// 带会话编排的请求：懒登录（登录失败退匿名探测，BUG-1295）→ 发请求 →
+  /// 带会话编排的请求：懒登录（登录失败退匿名探测，BUG-1495）→ 发请求 →
   /// 403 时重新认证一次并重试。任何异常/认证失败返回 null。
   Future<http.Response?> _request(
     String method,

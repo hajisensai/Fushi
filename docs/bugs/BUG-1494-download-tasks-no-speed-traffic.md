@@ -1,4 +1,4 @@
-## BUG-1294 · 下载任务行无速度与流量显示
+## BUG-1494 · 下载任务行无速度与流量显示
 - **报告**：2026-07-31（用户：内置引擎「没有进度、流量显示」）
 - **真实性**：✅ 真 bug（缺失链断在抽象层）。native `ht_list_torrents` 一直导出
   `down_rate/up_rate/uploaded/downloaded/num_peers`
@@ -16,7 +16,7 @@
   - `AnimeDownloadService` 新增 `downloadStats`（planId → `DownloadTaskStats`，
     值相等性去抖）；轮询周期自适应：内置引擎 + 有活跃下载时 3s
     （`resolvePollInterval` 纯函数；外接 qb 保持 20s——每 tick 都是全新
-    WebUI 登录，提频会放大 qb 认证失败计数，见 BUG-1295）。
+    WebUI 登录，提频会放大 qb 认证失败计数，见 BUG-1495）。
   - 任务行订阅 `downloadStats`，显示 `37% · ↓ 1.0 MB/s · ↑ 2.0 KB/s · 4.0 KB`
     （`HibikiByteFormat`，纯数字/符号，零新增 i18n key）。
 - **[x] ② 已加自动化测试** —

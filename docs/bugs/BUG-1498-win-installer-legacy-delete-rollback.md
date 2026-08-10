@@ -1,4 +1,4 @@
-## BUG-1460 · Windows 升级中途失败后 app 彻底消失：[InstallDelete] 先删旧名二进制且不可回滚
+## BUG-1498 · Windows 升级中途失败后 app 彻底消失：[InstallDelete] 先删旧名二进制且不可回滚
 - **报告**：2026-08-08（用户：升级后 app 完全打不开）
 - **真实性**：✅ 真 bug，根因 `fushi/windows/installer/fushi.iss:56-67`（修复前）
   - 现场证据：注册表 `HKCU\...\Uninstall\{8F2C1A3E-...}_is1` 的 `InstallLocation=D:\APP\Hibiki\`（自定义目录），

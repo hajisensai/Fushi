@@ -30,7 +30,7 @@ class QbTorrentBackend
   @override
   Future<String?> probeConnection() => _client.fetchVersion();
 
-  /// 最近一次连接/登录失败的可读原因（BUG-1295：设置页测试连接透传显示，
+  /// 最近一次连接/登录失败的可读原因（BUG-1495：设置页测试连接透传显示，
   /// 不再把网络不通/账密错/IP 被封折叠成同一句话）。
   String? get lastProbeFailure => _client.lastFailure;
 

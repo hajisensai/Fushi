@@ -567,7 +567,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
-  /// 封面：有 coverPath 且文件存在则经 [ShelfFileCover] 降采样加载（BUG-959 同类，
+  /// 封面：有 coverPath 且文件存在则经 [ShelfFileCover] 降采样加载（BUG-1489 同类，
   /// 裸 Image.file 整帧解码包装图撑爆 ImageCache），否则共享占位件
   /// [ShelfCoverPlaceholder]（保持原 overlay 底色 + 手柄图标 40）。
   Widget _buildCover(BuildContext context, GalgameEntry game) {

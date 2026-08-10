@@ -33,6 +33,18 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1499](bugs/BUG-1499-video-resource-dropdown-overflow.md) | ✅ | ✅ | 资源搜索对话框下拉框横向溢出 |
+| [BUG-1498](bugs/BUG-1498-win-installer-legacy-delete-rollback.md) | ✅ | ✅ | Windows 升级中途失败后 app 彻底消失：[InstallDelete] 先删旧名二进制且不可回滚 |
+| [BUG-1497](bugs/BUG-1497-ai6-clean-voice.md) | ✅ | ✅ | AI6 制卡误用混合 BGM |
+| [BUG-1496](bugs/BUG-1496-anime-download-task-row-progress-lost.md) | ✅ | ✅ | 下载任务行百分比/确定进度环依赖 downloadStats，「立即导入」一跑就整列消失 |
+| [BUG-1495](bugs/BUG-1495-qb-test-connection-undiagnosable.md) | ✅ | ✅ | qB测试连接失败无法自查且本机免密被登录门卡死 |
+| [BUG-1494](bugs/BUG-1494-download-tasks-no-speed-traffic.md) | ✅ | ✅ | 下载任务行无速度与流量显示 |
+| [BUG-1493](bugs/BUG-1493-embedded-upload-mode-kills-download.md) | ✅ | ✅ | 内置引擎默认关上传误用upload_mode掐死下载 |
+| [BUG-1492](bugs/BUG-1492-magpie-bundled-only.md) | ✅ | ✅ | Magpie 内置后仍显示并保留下载路径 |
+| [BUG-1491](bugs/BUG-1491-qb-webui-no-request-timeout.md) | ✅ | ✅ | qB WebUI 请求缺少超时 |
+| [BUG-1490](bugs/BUG-1490-download-default-config-no-completion-poll.md) | ✅ | ✅ | 默认下载配置未传给完成轮询 |
+| [BUG-1489](bugs/BUG-1489-local-media-shelf-perf.md) | ✅ | ✅ | 本地视频/书籍页首屏慢：封面全分辨率解码+合集N+1查询+首帧同步stat |
+| [BUG-1488](bugs/BUG-1488-video-card-bottom-gap.md) | ✅ | ✅ | 视频卡底部常驻空白（续 BUG-926 16:9 封面修复） |
 | [BUG-1487](bugs/BUG-1487-parent-extras-split-series.md) | ✅ | ✅ | 父作品短篇被错误拆成独立系列卡 |
 | [BUG-1486](bugs/BUG-1486-subscription-episode-selection-order.md) | ✅ | ✅ | 订阅选集季号错误、重复下载且顺序按完成时间乱序 |
 | [BUG-1485](bugs/BUG-1485-subscription-first-episode-skipped.md) | ✅ | ✅ | 发现订阅跳过所选首集 |
@@ -50,7 +62,6 @@
 | [BUG-1472](bugs/BUG-1472-lookup-term-budget-counts-glossaries.md) | ✅ | ✅ | 查词只出一个读音：maximumTerms 按 glossary 行计预算吃掉其它读音 |
 | [BUG-1471](bugs/BUG-1471-gal-overlay-gesture-state-stuck.md) | ✅ | ✅ | galgame 浮窗跑久了失去点击响应：手势事务只认 WM_LBUTTONUP 一个终止条件 |
 | [BUG-1470](bugs/BUG-1470-gal-selected-thread-publish-filter.md) | ✅ | ✅ | 选中台词线程后工作台正文为空：发布期过滤器丢掉同 hook 面兄弟行 |
-| [BUG-1469](bugs/BUG-1469-video-resource-dropdown-overflow.md) | ✅ | ✅ | 资源搜索对话框下拉框横向溢出 |
 | [BUG-1469](bugs/BUG-1469-futamata-kirikiri-launch-av.md) | ✅ | ✅ | 恋爱成双由 Hibiki 早注入后 Access Violation |
 | [BUG-1468](bugs/BUG-1468-video-home-card-footer-spacing.md) | ✅ | ✅ | 视频主页卡片底部信息留白过多 |
 | [BUG-1467](bugs/BUG-1467-video-home-badge-semantics.md) | ✅ | ✅ | 视频主页角标语义不一致 |
@@ -60,7 +71,6 @@
 | [BUG-1463](bugs/BUG-1463-video-series-detail-layout.md) | ✅ | ✅ | 系列详情重复、底部窄栏与首页播放目标错误 |
 | [BUG-1462](bugs/BUG-1462-mushoku-metadata-backfill.md) | ✅ | ✅ | 无职转生严格匹配无法人工确认且详情与剧集标题未回填 |
 | [BUG-1461](bugs/BUG-1461-himouto-tmdb-localized-title.md) | ✅ | ✅ | Himouto 罗马字标题被 TMDB 本地化结果严格门控拒绝 |
-| [BUG-1460](bugs/BUG-1460-win-installer-legacy-delete-rollback.md) | ✅ | ✅ | Windows 升级中途失败后 app 彻底消失：[InstallDelete] 先删旧名二进制且不可回滚 |
 | [BUG-1459](bugs/BUG-1459-installer-appdir-process-lock.md) | ✅ | ✅ | 安装器无法替换被残留子进程锁定的文件 |
 | [BUG-1458](bugs/BUG-1458-sync-collections-tombstone-day-red.md) | 🚧 | 🚧 | 集合同步墓碑用例在develop稳定红-疑日期敏感 |
 | [BUG-1457](bugs/BUG-1457-ai6-clean-voice.md) | ✅ | ✅ | AI6 制卡误用混合 BGM |
@@ -69,7 +79,6 @@
 | [BUG-1454](bugs/BUG-1454-kana-compound-popup-selection.md) | ✅ | ✅ | 查词结果正文含假名词被 ruby 占位文本截断 |
 | [BUG-1453](bugs/BUG-1453-video-gamepad-synthetic-right-click.md) | ✅ | ✅ | 手柄按键同时触发视频动作与右键菜单 |
 | [BUG-1452](bugs/BUG-1452-gal-unselected-thread-implies-audio.md) | ✅ | ✅ | 未选择台词线程时仍显示正在监听与句级音频 |
-| [BUG-1452](bugs/BUG-1452-ai6-clean-voice.md) | ✅ | ✅ | AI6 制卡误用混合 BGM |
 | [BUG-1451](bugs/BUG-1451-popup-copy-shortcut-and-context-menu.md) | ✅ | ✅ | 查词弹窗无法复制（Ctrl+C 与右键「复制」都无效） |
 | [BUG-1450](bugs/BUG-1450-windows-ime-swallows-shortcuts.md) | ✅ | ✅ | 中文输入法激活时全表面快捷键失效（IME 吞键） |
 | [BUG-1449](bugs/BUG-1449-gal-helper-bundled-as-plain-files.md) | ✅ | ✅ | helper 改为构建期解压随包，消灭需与本体同步的第二份副本 |
@@ -176,11 +185,6 @@
 | [BUG-1299](bugs/BUG-1299-continue-cover-portrait-crop.md) | ✅ | ✅ | 竖版海报封面在继续/继续观看/合集详情被裁切或留灰带 |
 | [BUG-1298](bugs/BUG-1298-collection-hero-portrait-cover.md) | ✅ | ✅ | 合集详情页 hero 用竖版刮削海报时被 BoxFit.cover 裁成中间一条 |
 | [BUG-1297](bugs/BUG-1297-danmaku-scroll-exit.md) | ✅ | ✅ | 滚动弹幕退场突兀：没滑出屏幕就被整条抹掉 |
-| [BUG-1296](bugs/BUG-1296-anime-download-task-row-progress-lost.md) | ✅ | ✅ | 下载任务行百分比/确定进度环依赖 downloadStats，「立即导入」一跑就整列消失 |
-| [BUG-1295](bugs/BUG-1295-qb-test-connection-undiagnosable.md) | ✅ | ✅ | qB测试连接失败无法自查且本机免密被登录门卡死 |
-| [BUG-1294](bugs/BUG-1294-download-tasks-no-speed-traffic.md) | ✅ | ✅ | 下载任务行无速度与流量显示 |
-| [BUG-1293](bugs/BUG-1293-embedded-upload-mode-kills-download.md) | ✅ | ✅ | 内置引擎默认关上传误用upload_mode掐死下载 |
-| [BUG-1292](bugs/BUG-1292-magpie-bundled-only.md) | ✅ | ✅ | Magpie 内置后仍显示并保留下载路径 |
 | [BUG-1291](bugs/BUG-1291-destructive-confirm-checkbox-truncated.md) | ✅ | ✅ | 销毁确认弹窗勾选行文案被单行省略号截断 |
 | [BUG-1290](bugs/BUG-1290-bangumi-dashboard-history.md) | ✅ | ✅ | Bangumi 首页卡把映射误当观看历史且不列待手动关联条目 |
 | [BUG-1289](bugs/BUG-1289-youtube-caption-track-labels-ambiguous.md) | ✅ | ✅ | YouTube 字幕轨标签退化成语言码且人工/ASR 重名，无法分辨选哪条 |
@@ -428,8 +432,6 @@
 | [BUG-1035](bugs/BUG-1035-glossary-first-ignores-selected-dict.md) | ✅ | ✅ | 长按选中词典对制卡无效：{glossary-first} 恒取第一本，Lapis 默认无字段消费 {selected-glossary} |
 | [BUG-1034](bugs/BUG-1034-subtitle-row-extent-clip.md) | ✅ | ✅ | 视频字幕列表当前行末行文字被裁掉一半 |
 | [BUG-1033](bugs/BUG-1033-popup-zoom-tooltip-misfire.md) | ✅ | ✅ | 嵌套查词弹出时 A- 的「缩小查词字号」tooltip 自动弹出遮挡正文 |
-| [BUG-1032](bugs/BUG-1032-qb-webui-no-request-timeout.md) | ✅ | ✅ | qB WebUI 请求缺少超时 |
-| [BUG-1031](bugs/BUG-1031-download-default-config-no-completion-poll.md) | ✅ | ✅ | 默认下载配置未传给完成轮询 |
 | [BUG-1030](bugs/BUG-1030-extension-subtitle-panel-overlay.md) | ✅ | ✅ | 浏览器扩展字幕列表覆盖页面而非挤压画面 |
 | [BUG-1029](bugs/BUG-1029-extension-subtitle-live-cumulative.md) | ✅ | ✅ | 浏览器扩展 YouTube 字幕列表逐字累积为重复行 |
 | [BUG-1028](bugs/BUG-1028-texthooker-popup-cold-webview.md) | ✅ | ✅ | 捕获工作台查词弹窗每次冷建WebView加载缓慢 |
@@ -487,7 +489,6 @@
 | [BUG-962](bugs/BUG-962-space-textfield-swallowed.md) | ✅ | ✅ | 文本框物理键盘空格被全局 DoNothingIntent 吞掉 |
 | [BUG-961](bugs/BUG-961-voice-hook-helper-release-missing.md) | ✅ | ✅ | galgame voice hook helper 引擎组件下载 404（release 从未产出） |
 | [BUG-960](bugs/BUG-960-textrender-thread-catalog.md) | ✅ | ✅ | 9nine 的 Luna 线程列表缺少 TextRender |
-| [BUG-959](bugs/BUG-959-local-media-shelf-perf.md) | ✅ | ✅ | 本地视频/书籍页首屏慢：封面全分辨率解码+合集N+1查询+首帧同步stat |
 | [BUG-958](bugs/BUG-958-gal-hook-ready-signal-late.md) | ✅ | ✅ | Galgame helper 已注入但 ready 信号过晚导致 engine_attach_failed |
 | [BUG-957](bugs/BUG-957-galgame-dead-session-controller-leftover.md) | ✅ | ✅ | 旧 GalgameSessionController 死代码残留致查词面板 galgame 制卡出口失效 |
 | [BUG-956](bugs/BUG-956-gal-mining-serial-queue-poisoning.md) | ✅ | ✅ | galgame 制卡串行队列异常毒化后所有后续制卡永久挂起 |
@@ -503,7 +504,6 @@
 | [BUG-946](bugs/BUG-946-database-schema-v48-compat.md) | ✅ | ✅ | 游戏分支无法打开 schema v48 用户数据库 |
 | [BUG-945](bugs/BUG-945-texthooker-popup-ui-scale.md) | ✅ | ✅ | 捕获工作台非默认缩放下查词断言 |
 | [BUG-944](bugs/BUG-944-gal-text-thread-selector.md) | ✅ | ✅ | Galgame 捕获文本缺少 Luna 风格线程选择 |
-| [BUG-943](bugs/BUG-943-video-card-bottom-gap.md) | ✅ | ✅ | 视频卡底部常驻空白（续 BUG-926 16:9 封面修复） |
 | [BUG-942](bugs/BUG-942-prev-cue-button-always-jump.md) | ✅ | ✅ | 上/下一句字幕按钮太远时退化成 3 秒 seek |
 | [BUG-941](bugs/BUG-941-texthooker-popup-platform-view-reparent.md) | ✅ | ✅ | 捕获工作台查词 WebView 重建后空白卡死 |
 | [BUG-940](bugs/BUG-940-tag-filter-collection-rescue.md) | ✅ | ✅ | 标签筛选:打了标签的合集筛不出来(成员级过滤先于折叠剥空合集组) |

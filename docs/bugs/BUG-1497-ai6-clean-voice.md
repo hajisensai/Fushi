@@ -1,4 +1,4 @@
-## BUG-1452 · AI6 制卡误用混合 BGM
+## BUG-1497 · AI6 制卡误用混合 BGM
 - **报告**：2026-08-02（用户：AI6WIN 文本可抓，但制卡音频是 BGM 而非角色语音）
 - **真实性**：✅ 真 bug。该样本的 DirectSound 只暴露一条 44.1 kHz 双声道软件混音流；旧链路没有 AI6 `voice.arc` 资源适配器，只能落到 PCM/系统 Loopback，因此无法靠“改音轨”分离 BGM。缺口位于 `native/galgame_hook/hook/adapter_registry.inc` 的引擎注册表和 `hook/adapters/` 的资源采集实现；修复入口见 `native/galgame_hook/hook/adapters/elf_ai6_adapter.inc:1`。
 - **[x] ① 已修复** — 新增 `elf_ai6` profile 与有界 `voice.arc` 解析器，hook `CreateFileA/W`、`ReadFile`、`CloseHandle`，回调只排队，worker 按 `u32le count + count×272` 索引定位完整 Ogg，并经现有 `WriteVoiceOggAt` 发布；宿主同步识别新增诊断位。2026-08-02 x86 原始路径实测 `hookio=0x1f800000`，Hibiki `TextOutA 0x7525c690` 台词显示 `game_resource`。

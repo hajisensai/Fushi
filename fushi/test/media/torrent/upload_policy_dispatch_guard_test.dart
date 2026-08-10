@@ -1,4 +1,4 @@
-// BUG-1293 守卫：上传策略的 FFI 下发链 —— **不需要 native DLL**。
+// BUG-1493 守卫：上传策略的 FFI 下发链 —— **不需要 native DLL**。
 //
 // 事故本体：旧实现把「关上传」（默认配置 uploadEnabled=false）翻译成给每个
 // 种子置 libtorrent 的 `torrent_flags::upload_mode`，而该 flag 的真实语义是
@@ -161,7 +161,7 @@ void main() {
     _torrentsJson = '[]';
   });
 
-  group('BUG-1293：关上传绝不下发 upload_mode（那是「停止下载」）', () {
+  group('BUG-1493：关上传绝不下发 upload_mode（那是「停止下载」）', () {
     test('默认配置（uploadEnabled=false）+ 下载中种子：unchoke 清零、不碰种子', () {
       final EmbeddedTorrentHost host = _host(withUploadControl: true);
       host.setUploadPolicy(const QbConnectionConfig());

@@ -656,7 +656,7 @@ void main() {
             throw StateError('不该走到这'),
       );
       await service.onGameWindowReady(hwnd: 1234);
-      // BUG-1292：`auto` 承诺「用内置的那份」，随包归档缺失就是**安装包不完整**，
+      // BUG-1492：`auto` 承诺「用内置的那份」，随包归档缺失就是**安装包不完整**，
       // 不是「这台机器暂时没这个功能」。降级成 unavailable 会把交付错误伪装成常态。
       expect(service.report.status, MagpieUpscalingStatus.failed);
       expect(service.report.failureReason,
@@ -811,7 +811,7 @@ void main() {
         'MagpieProfileSkipReason',
         'MagpieUpscalingFailureReason',
       ];
-      // failureReason 这一维以前没被遍历过，于是 BUG-1292 新加的两条交付错误文案完全
+      // failureReason 这一维以前没被遍历过，于是 BUG-1492 新加的两条交付错误文案完全
       // 不在守卫范围内 —— 「failed verification」里的 failed 就是 MagpieUpscalingStatus
       // 的枚举名。三维全遍历才守得住。
       for (final MagpieUpscalingStatus status in MagpieUpscalingStatus.values) {
@@ -1330,7 +1330,7 @@ void main() {
       expect(kMagpieExitQuitGrace, lessThan(kMagpieQuitGrace));
     });
 
-    test('BUG-1292 契约：安装器不再有确认框或体积探测', () {
+    test('BUG-1492 契约：安装器不再有确认框或体积探测', () {
       final File installer = File(
         p.join(Directory.current.path, 'lib/src/mining/magpie_installer.dart'),
       );
@@ -1340,7 +1340,7 @@ void main() {
       expect(source.contains('HttpClient'), isFalse);
     });
 
-    test('BUG-1292 契约：正式包缺 Magpie 必须进入 failed，不得伪装成 unavailable', () {
+    test('BUG-1492 契约：正式包缺 Magpie 必须进入 failed，不得伪装成 unavailable', () {
       final int missingCase =
           serviceSource.indexOf('case MagpieInstallResult.bundleMissing:');
       final int invalidCase =

@@ -24,7 +24,7 @@ class TorrentUploadMetrics {
 
 /// 判定某种子当前是否应允许上传/做种。纯函数，无副作用，便于单测——
 /// 内置引擎宿主 tick 用它算出每个种子的期望上传状态，再落到正确原语
-/// （BUG-1293：总开关走会话级 `setUnchokeSlots`，做种停止走 `pauseTorrent`；
+/// （BUG-1493：总开关走会话级 `setUnchokeSlots`，做种停止走 `pauseTorrent`；
 /// **绝不用 upload_mode**——那个 flag 是「停止下载」，与关上传正好相反）。
 /// 语义（用户诉求：默认关上传、开启后可设做种时长/分享率）：
 ///

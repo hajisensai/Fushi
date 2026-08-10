@@ -71,7 +71,7 @@ HT_EXPORT int ht_apply_limits_ex(void* session, int download_bps,
                                  int upload_bps, int connections_limit,
                                  int limit_local_peers);
 
-// 【已废弃，勿在新代码调用】历史上传开关。BUG-1293：旧实现把「关上传」翻译成
+// 【已废弃，勿在新代码调用】历史上传开关。BUG-1493：旧实现把「关上传」翻译成
 // 置 torrent_flags::upload_mode，但该 flag 的 libtorrent 语义是「不再发出任何
 // piece 请求」= **只上不下、停止下载**，与本函数宣称的「只下不上」正好相反 ——
 // 默认关上传的用户所有种子在 add 后 20s 内被打上此 flag，下载速率归零。
@@ -82,7 +82,7 @@ HT_EXPORT int ht_apply_limits_ex(void* session, int download_bps,
 HT_EXPORT int ht_set_upload_mode(void* session, const char* info_hash,
                                  int upload_enabled);
 
-// 会话级 unchoke 槽位（BUG-1293 的「关上传」正确原语）：
+// 会话级 unchoke 槽位（BUG-1493 的「关上传」正确原语）：
 // [slots] >= 0 精确设置 settings_pack::unchoke_slots_limit（0 = 不给任何 peer
 // unchoke 槽位 = 会话级停止上传 payload；我们发出的 piece 请求是协议消息，
 // 不占 unchoke 槽，下载不受影响）；[slots] < 0 恢复 libtorrent 出厂默认。

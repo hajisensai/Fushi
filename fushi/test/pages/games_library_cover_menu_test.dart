@@ -176,7 +176,7 @@ void main() {
     ]);
     await pumpPage(tester, appModel);
 
-    // 封面统一走 ShelfFileCover（BUG-959：resizedFileImage 降采样 + FadeInImage），
+    // 封面统一走 ShelfFileCover（BUG-1489：resizedFileImage 降采样 + FadeInImage），
     // 底层 provider 是 ResizeImage 包 FileImage——两层都断言，防退回裸 Image.file。
     expect(
       find.byWidgetPredicate(

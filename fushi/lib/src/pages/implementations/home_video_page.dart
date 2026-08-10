@@ -4965,7 +4965,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 进度行并溢出。这里按真实行高算，而不是再猜一个常量：大字号下文字块自动变高，
   /// 不会像固定值那样在 textScale≥1.2 时把进度行切掉一半。
   ///
-  /// 与 BUG-943（旧值 83 → 52，消除卡底常驻空白）不冲突：那次收敛掉的是「为两行
+  /// 与 BUG-1488（旧值 83 → 52，消除卡底常驻空白）不冲突：那次收敛掉的是「为两行
   /// 标题预留、但绝大多数卡用不到」的最坏情况余量，代价是长标题永远显示不全。现在
   /// 高度按需算出（默认字号实测约 74，仍小于当年的 83），长标题真的用得上第二行。
   static double _videoCardTextBlock(BuildContext context) {
@@ -5421,7 +5421,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           // 文字块占封面下方剩余固定高度（cell 高 − 2:3 封面 = _kVideoCardTextBlock）。
           // 标题单行 ellipsis 内收；进度行用 Flexible 让位，浮动高度不反灌进封面区
           // （BUG-926 血缘）、大字号倍率下也不溢出。无进度时仅剩常规内边距、无显眼空块
-          // （BUG-943：单行标题无进度卡曾常驻约 50px 空白）。
+          // （BUG-1488：单行标题无进度卡曾常驻约 50px 空白）。
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -5637,7 +5637,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       );
     }
     if (poster) {
-      // 解码上限与下方 cacheWidth 同源（resizedFileImage 默认 720，BUG-959）。
+      // 解码上限与下方 cacheWidth 同源（resizedFileImage 默认 720，BUG-1489）。
       return PortraitCoverImage(
         image: resizedFileImage(File(cover)),
         landscapeSlot: landscapeSlot,
@@ -5653,7 +5653,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       Image.file(
         File(cover),
         fit: BoxFit.contain,
-        // BUG-959: 按物理像素上限解码，避免视频原生分辨率(1080p/4K)整帧撑爆 ImageCache。
+        // BUG-1489: 按物理像素上限解码，避免视频原生分辨率(1080p/4K)整帧撑爆 ImageCache。
         cacheWidth: kLocalCoverDecodePixelWidth,
         errorBuilder: (_, __, ___) => ShelfCoverPlaceholder(
           icon: Icons.movie_outlined,

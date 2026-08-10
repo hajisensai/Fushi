@@ -2358,8 +2358,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       final AnimeDownloadService? service =
           ref.read(appProvider).animeDownloadService;
       if (service != null) {
-        // BUG-1296：百分比与确定进度环只认 [AnimeDownloadService.downloadProgress]
-        // ——它是恒发布的规范通道。BUG-1294 的速度/流量走 downloadStats，只是**增强
+        // BUG-1496：百分比与确定进度环只认 [AnimeDownloadService.downloadProgress]
+        // ——它是恒发布的规范通道。BUG-1494 的速度/流量走 downloadStats，只是**增强
         // 位**：拿不到观测值时少一截后缀即可，不能把百分比一起吞掉（`_importNowUnlocked`
         // 那条路径就会短暂只发进度不发观测值）。
         return ValueListenableBuilder<Map<String, double>>(
@@ -2409,9 +2409,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
               ),
             ),
     };
-    // BUG-1294：进度百分比之外补速度与累计流量（单位串是纯数字/符号，无需
+    // BUG-1494：进度百分比之外补速度与累计流量（单位串是纯数字/符号，无需
     // i18n key）。速率为 0 时仍显示（「0 B/s 卡住了」本身就是有效信息）。
-    // BUG-1296：百分比只依赖 progress；观测值缺席就只渲染百分比，不整条消失。
+    // BUG-1496：百分比只依赖 progress；观测值缺席就只渲染百分比，不整条消失。
     // TODO-2481：再补状态文本 / ETA / 分享率 —— 三者都是增强位，算不出
     // （未知词 / 零速度 / 零分母）就整段不渲染，绝不把百分比一起吞掉。
     final TorrentDisplayStatus? displayStatus =

@@ -1,4 +1,4 @@
-## BUG-1293 · 内置引擎默认关上传误用upload_mode掐死下载
+## BUG-1493 · 内置引擎默认关上传误用upload_mode掐死下载
 - **报告**：2026-07-31（用户：内置引擎下载速度几乎为 0，进度不涨）
 - **真实性**：✅ 真 bug。链路：默认配置 `uploadEnabled = false`
   （`hibiki/lib/src/media/torrent/anime_download_config.dart:20`）→

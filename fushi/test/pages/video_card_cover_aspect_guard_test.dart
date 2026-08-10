@@ -63,7 +63,7 @@ void main() {
             '文字块高度浮动、把空隙灌回封面区（BUG-928 回归）',
       );
 
-      // BUG-1184 起标题改为两行（原 BUG-943 要求单行，见下方 text block 用例里
+      // BUG-1184 起标题改为两行（原 BUG-1488 要求单行，见下方 text block 用例里
       // 记录的权衡）：窄屏卡宽只有约 154px，单行 ellipsis 放不下一个日文剧名。
       expect(
         body,
@@ -74,9 +74,9 @@ void main() {
     }
   });
 
-  // BUG-943 与 BUG-1184 的权衡，明确记录在此，便于日后一句话回退：
+  // BUG-1488 与 BUG-1184 的权衡，明确记录在此，便于日后一句话回退：
   //
-  // - BUG-943（用户实报「底部多显示了一块」）的根因是文字块**死钳 83px**——那是
+  // - BUG-1488（用户实报「底部多显示了一块」）的根因是文字块**死钳 83px**——那是
   //   「2 行标题 + 进度行」的最坏情况预留，而绝大多数卡是单行标题、无进度，于是
   //   底部常驻约 50px 空白。当时的修法是把常量收敛到 52 并把标题钳成单行。
   // - BUG-1184（用户实报窄屏「书/视频的名字显示不全」）暴露了那次修法的代价：
@@ -84,19 +84,19 @@ void main() {
   //
   // 现在文字块高度**按真实行高算出**（_videoCardTextBlock），不再是任何一个猜出来
   // 的常量：默认字号下**实测约 74px**（bodyMedium 行高 1.43、labelMedium 1.33），
-  // 仍小于当年的最坏预留 83，比收敛后的 52 多约 22px。也就是说 BUG-943 抱怨的那块
+  // 仍小于当年的最坏预留 83，比收敛后的 52 多约 22px。也就是说 BUG-1488 抱怨的那块
   // 约 50px 空白并没有回归，短标题卡多出的约 22px 是让长标题能显示第二行必须付的
   // 代价。下面两个用例守住的是「不得回到最坏预留、也不得算漏一行」这条区间。
   test(
       'video card text block is computed from real line heights, not a '
-      'worst-case constant — BUG-943 / BUG-1184', () {
+      'worst-case constant — BUG-1488 / BUG-1184', () {
     final String source = File(path).readAsStringSync();
 
     expect(
       source,
       isNot(contains('_kVideoCardTextBlock =')),
       reason: '文字块高度不得再退回硬编码常量——它必须随字号/文字缩放算出，否则'
-          '大字号下要么裁字（BUG-1184）要么留空白（BUG-943）',
+          '大字号下要么裁字（BUG-1184）要么留空白（BUG-1488）',
     );
     expect(
       source,
@@ -106,7 +106,7 @@ void main() {
   });
 
   // 上面两条锁的是「必须算出来、不许再是常量」。这条锁的是**算出来的值本身**：
-  // 默认字号下必须仍明显小于 BUG-943 当年的最坏预留 83px，否则卡底空白就是回归。
+  // 默认字号下必须仍明显小于 BUG-1488 当年的最坏预留 83px，否则卡底空白就是回归。
   //
   // 这里刻意用真实主题 / 真实 design token 现算，而不是在测试里再抄一遍系数——
   // 「各自猜行高系数」正是 BUG-1184 的根因之一（MD3 里 bodyMedium 行高是 1.43、
@@ -114,7 +114,7 @@ void main() {
   // token 变化把文字块推过 83，这条会红。
   testWidgets(
       'computed video card text block stays well under the old worst-case '
-      '83px reservation — BUG-943 / BUG-1184', (WidgetTester tester) async {
+      '83px reservation — BUG-1488 / BUG-1184', (WidgetTester tester) async {
     double? measured;
     await tester.pumpWidget(
       buildTestApp(
@@ -139,7 +139,7 @@ void main() {
     expect(
       measured!,
       lessThan(83),
-      reason: '文字块高度必须明显小于 BUG-943 当年的最坏预留 83px，否则视频卡底部'
+      reason: '文字块高度必须明显小于 BUG-1488 当年的最坏预留 83px，否则视频卡底部'
           '再次出现常驻空白块',
     );
     expect(

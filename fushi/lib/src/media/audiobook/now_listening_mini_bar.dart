@@ -181,7 +181,7 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
         width: 36,
         height: 36,
         fit: BoxFit.cover,
-        // BUG-959: 迷你条封面按物理像素上限解码（36 逻辑像素，144 物理已足够），
+        // BUG-1489: 迷你条封面按物理像素上限解码（36 逻辑像素，144 物理已足够），
         // 大幅省解码内存。保留 existsSync 短路（缺失走 _coverFallback），避免对
         // 不存在文件发起无谓异步解码。
         cacheWidth: kMiniCoverDecodePixelWidth,

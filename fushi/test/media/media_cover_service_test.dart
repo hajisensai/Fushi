@@ -1,7 +1,7 @@
 // 媒体统一路线 P3：MediaCoverService（三岛封面统一服务）。
 //
 // 覆盖三条 apply 路径的真实落盘 + 「同路径覆盖写后必须双键驱逐解码缓存」不变量
-// （裸 FileImage 键 + resizedFileImage 的 ResizeImage 键，BUG-959 / 视频封面
+// （裸 FileImage 键 + resizedFileImage 的 ResizeImage 键，BUG-1489 / 视频封面
 // 旧缺陷：video_import_dialog 换封面只清 FileImage 键，走降采样渲染的卡片
 // 重建仍命中旧解码），以及统一选图入口的平台分流委托（BUG-1074）。
 

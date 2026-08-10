@@ -130,7 +130,7 @@ void main() {
                 : http.Response('Forbidden', 403)),
       );
       expect(await client.login(), isFalse);
-      // BUG-1295：失败原因可读，不再折叠成裸 null。
+      // BUG-1495：失败原因可读，不再折叠成裸 null。
       expect(client.lastFailure, contains('rejected'));
       // 登录失败 + 匿名也 403 → 依赖会话的调用失败而不是抛异常。
       expect(await client.fetchVersion(), isNull);
@@ -147,7 +147,7 @@ void main() {
         }),
       );
       expect(await client.login(), isFalse);
-      // BUG-1295：网络异常原样透出（与账密错区分开）。
+      // BUG-1495：网络异常原样透出（与账密错区分开）。
       expect(client.lastFailure, contains('connection refused'));
       expect(await client.fetchVersion(), isNull);
       expect(await client.addTorrents(<String>['magnet:?xt=x']), isFalse);
@@ -155,7 +155,7 @@ void main() {
       client.close();
     });
 
-    test('reports qBittorrent IP ban distinctly (BUG-1295)', () async {
+    test('reports qBittorrent IP ban distinctly (BUG-1495)', () async {
       final QBittorrentClient client = QBittorrentClient(
         baseUrl: 'http://qb.local:8080',
         username: 'admin',
@@ -171,7 +171,7 @@ void main() {
     });
   });
 
-  group('anonymous fallback（qb localhost 免密，BUG-1295）', () {
+  group('anonymous fallback（qb localhost 免密，BUG-1495）', () {
     test('login Fails. 但接口匿名可用 → 探测成功且不带 Cookie', () async {
       final List<http.Request> versionRequests = <http.Request>[];
       int loginAttempts = 0;
@@ -513,7 +513,7 @@ void main() {
       expect(infos.single.progress, 1.0);
     });
 
-    test('parses speed/traffic/peer fields (BUG-1294)', () {
+    test('parses speed/traffic/peer fields (BUG-1494)', () {
       final String body = jsonEncode(<Map<String, dynamic>>[
         <String, dynamic>{
           'hash': 'h1',
