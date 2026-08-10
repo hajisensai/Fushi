@@ -509,13 +509,19 @@ class UpdateChecker {
   /// 更高基版本，永不掉队。按 [_channelsAdmittedBy] 把本通道接纳的每个轨道各拉一次
   /// （stable→[stable]；beta→[stable,beta]；debug→[stable,beta,debug]）并合并——上层
   /// [selectUpdateReleaseForCurrentPlatform] 会按「最新优先」排序后择一，对多轨并集透明。
+  ///
+  /// [product] 选**读哪一族的清单**（BUG-1481）：自更新读本族（默认），跨包名迁移
+  /// 取包读 Fushi 族。两族的清单是同一分支上的两个文件，不是一个文件里的两组资产——
+  /// 只在选包阶段按产品族过滤是不够的，那样只会在本族清单里把资产全滤空。
   static Future<List<Map<String, dynamic>>> _fetchReleasesForChannel(
     HttpClient client,
-    UpdateChannel channel,
-  ) async {
+    UpdateChannel channel, {
+    ReleaseProduct product = ReleaseProduct.own,
+  }) async {
     final List<Map<String, dynamic>> merged = <Map<String, dynamic>>[];
     for (final UpdateChannel track in _channelsAdmittedBy(channel)) {
-      merged.addAll(await _fetchReleasesForExactChannel(client, track));
+      merged.addAll(
+          await _fetchReleasesForExactChannel(client, track, product: product));
     }
     return merged;
   }
@@ -524,8 +530,9 @@ class UpdateChecker {
   /// [_fetchReleasesForChannel] 抽出以便按合集并集复用）。
   static Future<List<Map<String, dynamic>>> _fetchReleasesForExactChannel(
     HttpClient client,
-    UpdateChannel channel,
-  ) async {
+    UpdateChannel channel, {
+    ReleaseProduct product = ReleaseProduct.own,
+  }) async {
     if (channel == UpdateChannel.stable) {
       // BUG-846「谁后用谁」：正式版**优先**读 `latest-stable.json` 镜像清单——它顶层带
       // `releaseSequence`（CI `merge_update_manifest.py` 写入），是客户端唯一能拿到正式版
@@ -533,7 +540,8 @@ class UpdateChecker {
       // 302 跳转 / API 直连（拿不到 seq，同基保守不 churn）。手动 GitHub Release 未发 manifest
       // 时自然走回退，fail-open。
       final Map<String, dynamic>? manifestRelease =
-          await _fetchChannelReleaseFromManifest(client, channel);
+          await _fetchChannelReleaseFromManifest(client, channel,
+              product: product);
       if (manifestRelease != null) {
         return <Map<String, dynamic>>[manifestRelease];
       }
@@ -551,7 +559,8 @@ class UpdateChecker {
     // assets/notes），两条路返回值都是「与 GitHub API 同构的 release map 列表」，对上层
     // [selectUpdateReleaseForCurrentPlatform] 完全透明——纯叠加，不破坏既有行为。
     final Map<String, dynamic>? manifestRelease =
-        await _fetchChannelReleaseFromManifest(client, channel);
+        await _fetchChannelReleaseFromManifest(client, channel,
+            product: product);
     if (manifestRelease != null) {
       return <Map<String, dynamic>>[manifestRelease];
     }
@@ -578,10 +587,11 @@ class UpdateChecker {
   /// → 返 null（调用方回退 `api.github.com` 直连）。
   static Future<Map<String, dynamic>?> _fetchChannelReleaseFromManifest(
     HttpClient client,
-    UpdateChannel channel,
-  ) async {
+    UpdateChannel channel, {
+    ReleaseProduct product = ReleaseProduct.own,
+  }) async {
     for (final MapEntry<String, String> candidate
-        in manifestUrlsForChannel(channel).entries) {
+        in manifestUrlsForChannel(channel, product: product).entries) {
       final String? body = await _httpGetString(client, candidate.value);
       if (body == null) continue;
       final Map<String, dynamic>? release =
@@ -1507,30 +1517,59 @@ const String kLegacyStableManifestUrl =
 /// 未来结构不兼容的变更递增该号，旧客户端不识别则安全回退 API 直连。
 const int kUpdateManifestSchemaVersion = 1;
 
+/// BUG-1481：镜像清单文件名的键是**「产品族 × 通道」**，不是只有通道。
+///
+/// 改名过渡期一个仓库出两个产品，`update-manifest` 只有一条分支，两族按通道写同名
+/// 文件就会互相覆盖——而 `merge_update_manifest.py` 的单调 seq 闸门（TODO-1173）会把
+/// 顶层永久判给 commit 数更高的那一族，另一族的客户端从此读到不属于自己的
+/// version/tag/assets 且再也升不上去。
+///
+/// 历史名 `latest-<channel>.json` 属于 **Hibiki 族**且已**冻结**：已发出去的老客户端把
+/// 这个 URL 编译进了包里，改不掉。Fushi 族改用 `-fushi` 后缀另开一份。发布侧真相源是
+/// `tool/publish_update_manifest.sh` 的 `MANIFEST_PRODUCT_SUFFIX`。
+const String kFushiManifestSuffix = '-fushi';
+
+/// **纯函数**：某产品族在某通道下的镜像清单文件名。
+///
+/// [ReleaseProduct.any] / [ReleaseProduct.own] 都落到本族（桥自己的冻结名）——
+/// 「不按产品族过滤资产」说的是**选包**，不是「去读别人家的清单」。
+@visibleForTesting
+String manifestFileForChannel(
+  UpdateChannel channel, {
+  ReleaseProduct product = ReleaseProduct.own,
+}) {
+  final String base = switch (channel) {
+    UpdateChannel.beta => 'latest-beta',
+    UpdateChannel.debug => 'latest-debug',
+    UpdateChannel.stable => 'latest-stable',
+  };
+  return product == ReleaseProduct.fushi
+      ? '$base$kFushiManifestSuffix.json'
+      : '$base.json';
+}
+
 /// **纯函数**：按通道返回镜像清单 URL（TODO-705 / BUG-846）。三通道均有 manifest
 /// （stable 读它拿正式版 seq；读不到再回退 302）。
 @visibleForTesting
-String? manifestUrlForChannel(UpdateChannel channel) {
-  final Map<String, String> urls = manifestUrlsForChannel(channel);
+String? manifestUrlForChannel(
+  UpdateChannel channel, {
+  ReleaseProduct product = ReleaseProduct.own,
+}) {
+  final Map<String, String> urls =
+      manifestUrlsForChannel(channel, product: product);
   if (urls.isEmpty) return null;
   return urls.values.first;
 }
 
 @visibleForTesting
-Map<String, String> manifestUrlsForChannel(UpdateChannel channel) {
-  return switch (channel) {
-    UpdateChannel.beta => const <String, String>{
-        kGitHubRepo: kBetaManifestUrl,
-        kLegacyGitHubRepo: kLegacyBetaManifestUrl,
-      },
-    UpdateChannel.debug => const <String, String>{
-        kGitHubRepo: kDebugManifestUrl,
-        kLegacyGitHubRepo: kLegacyDebugManifestUrl,
-      },
-    UpdateChannel.stable => const <String, String>{
-        kGitHubRepo: kStableManifestUrl,
-        kLegacyGitHubRepo: kLegacyStableManifestUrl,
-      },
+Map<String, String> manifestUrlsForChannel(
+  UpdateChannel channel, {
+  ReleaseProduct product = ReleaseProduct.own,
+}) {
+  final String file = manifestFileForChannel(channel, product: product);
+  return <String, String>{
+    for (final String repo in kGitHubRepoFallbacks)
+      repo: 'https://raw.githubusercontent.com/$repo/update-manifest/$file',
   };
 }
 
