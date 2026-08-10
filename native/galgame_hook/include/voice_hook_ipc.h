@@ -360,16 +360,27 @@ constexpr uint32_t kLookupHitFlagSubmit = 0x00000001u;
 
 // host → hook：一帧卡片位图的元数据。
 //
+// **两个序号是两回事，别再压成一个字段。** 早先只有一个 `seq`（既当发布序、又当"回应
+// 哪次 hit"），结果 dismiss 直接死在自己手里：收卡帧复用被撤那张卡的 hit seq，而那个 seq
+// 刚 present 过，注入侧的"丢弃不比已应用的新"过滤把它当陈旧帧扔了——加个 0×0 分支也救不
+// 回来，因为帧压根进不了候选。这不是漏了个分支，是数据结构错了：
+//   * `seq`     = **发布序**。host 每投一帧（present 或 dismiss）都 +1，单调。注入侧用它
+//                 判新与去重，也用它算槽下标。
+//   * `hit_seq` = 这帧**回应哪次 hit**。注入侧用它判"这张卡是不是已经被更新的命中作废了"。
+// 分开之后 dismiss 就是普通一帧，不需要任何特例。
+//
 // **槽下标规则（两侧唯一约定，别各写各的）**：元数据槽下标与像素块下标**同为**
-// `seq % lookup_frame_count`。host 不许用自己的轮转计数器放元数据、再用 seq%N 放像素——
-// 那样注入侧会全量拒帧，而症状（卡片永远不出现）和「host 压根没投帧」完全同形，真机上
-// 根本分不开。注入侧按此下标读，不一致即丢帧并置 kLookupDiagFrameRejected。
+// `seq % lookup_frame_count`（发布序，不是 hit_seq）。host 不许用自己的轮转计数器放元数据、
+// 再用 seq%N 放像素——那样注入侧会全量拒帧，而症状（卡片永远不出现）和「host 压根没投帧」
+// 完全同形，真机上根本分不开。注入侧按此下标读，不一致即丢帧并置 kLookupDiagFrameRejected。
 //
 // `ready` **最后**写：0=host 正在写，1=可读。hook 拷完必须复查 seq/ready 未变，否则丢弃。
 struct LookupFrame {
-  volatile uint64_t seq;      // 对应哪次 hit；hook 丢弃比当前 hit 旧的帧
-  uint32_t width;             // 像素宽
-  uint32_t height;            // 像素高
+  volatile uint64_t seq;      // 发布序：host 每投一帧 +1，单调。注入侧据此判新/去重/算槽
+  uint64_t hit_seq;           // 这帧回应哪次 hit；比最新 hit 旧即作废
+  uint32_t flags;             // kLookupFrame* 位
+  uint32_t width;             // 像素宽（dismiss 帧为 0）
+  uint32_t height;            // 像素高（dismiss 帧为 0）
   // 行字节跨距，**恒为正、恒自顶向下**（>= width*4）。这块内存是我们自己的，没有理由
   // 继承任何一侧的行序怪癖。游戏 Layer 那侧的 mainImageBufferPitch 可能为负（KiriKiri
   // 自底向上），那是注入侧搬运时的事，不许漏进这个跨进程契约。
@@ -381,7 +392,13 @@ struct LookupFrame {
   uint32_t byte_len;          // 位图有效字节数（= pitch*height，<= kLookupBitmapBytes）
   volatile uint32_t ready;    // 0=写入中，1=可读
   uint32_t reserved;
+  uint32_t reserved2;
 };
+
+// LookupFrame::flags 位。
+// 收卡是**普通一帧**，靠这个位自述，不靠「width==0 是收卡」这种魔法编码：后者要求每个
+// 读侧都记住这条隐规则，而它和「host 投了张废帧」在字节上完全一样。
+constexpr uint32_t kLookupFrameDismiss = 0x00000001u;
 
 // hook → host：落在卡片矩形内、需要喂给离屏 WebView2 的输入事件。
 struct LookupInputSlot {
@@ -847,6 +864,22 @@ inline const uint8_t* LookupBitmapAt(const SharedHeader* header,
   return reinterpret_cast<const uint8_t*>(header) +
          LookupBitmapsByteOffset(header) +
          static_cast<size_t>(index) * header->lookup_bitmap_bytes;
+}
+
+// 「这帧该不该应用」的**唯一判据**。注入侧与 replay 测试共用同一份——判据一旦各写各的，
+// replay 绿了也只证明参照实现自洽，证明不了生产代码对。收卡曾经整条不通就是死在这个判据上
+// （详见 LookupFrame 注释），那种错必须能被离线回归抓住，而不是等真机。
+//
+// ready 位不在这里判：它是「host 写完没有」的内存可见性问题，归调用点，与「这帧是否过期」
+// 是两件事。seq 由调用点原子读出后传进来，同理。
+inline bool ShouldApplyLookupFrame(uint64_t frame_seq, uint64_t frame_hit_seq,
+                                   uint64_t presented_seq,
+                                   uint64_t current_hit_seq) {
+  // 发布序不比已处理的新 → 这帧我处理过了。
+  if (frame_seq <= presented_seq) return false;
+  // 回应的那次查询已被更新的命中作废 → 迟到帧，绝不能顶掉新卡片。
+  if (frame_hit_seq < current_hit_seq) return false;
+  return true;
 }
 
 // 帧自洽校验。**注入侧必须先过这一关再拷贝**：跨进程来的 width/height/pitch 全是不可信
