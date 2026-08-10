@@ -62,15 +62,15 @@ void main() {
       await db.close();
     });
 
-    test('映射 = bookKey → updatedAt（EPUB/SRT 同走 bookKey，一次批量查询）', () async {
+    test('映射 = bookUid → updatedAt（EPUB 行走 uid、SRT 行沿用原键，一次批量查询）', () async {
       await db.upsertReaderPosition(const ReaderPositionsCompanion(
-        bookKey: Value('老书'),
+        bookUid: Value('老书'),
         sectionIndex: Value(3),
         normCharOffset: Value(5000),
         updatedAt: Value(200),
       ));
       await db.upsertReaderPosition(const ReaderPositionsCompanion(
-        bookKey: Value('新导入'),
+        bookUid: Value('新导入'),
         sectionIndex: Value(0),
         normCharOffset: Value(10),
         updatedAt: Value(100),
@@ -83,7 +83,7 @@ void main() {
 
     test('重读后 invalidate 重取拿到新 updatedAt（关书 onSourceExit 失效语义）', () async {
       await db.upsertReaderPosition(const ReaderPositionsCompanion(
-        bookKey: Value('书'),
+        bookUid: Value('书'),
         sectionIndex: Value(0),
         normCharOffset: Value(1),
         updatedAt: Value(1),
@@ -94,7 +94,7 @@ void main() {
       );
 
       await db.upsertReaderPosition(const ReaderPositionsCompanion(
-        bookKey: Value('书'),
+        bookUid: Value('书'),
         sectionIndex: Value(2),
         normCharOffset: Value(9),
         updatedAt: Value(999),

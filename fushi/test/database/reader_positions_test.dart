@@ -11,13 +11,13 @@ Future<FushiDatabase> _openDb() async {
 
 void main() {
   group('ReaderPositions table', () {
-    test('upsert and retrieve by bookKey', () async {
+    test('upsert and retrieve by bookUid', () async {
       final db = await _openDb();
       final now = DateTime.now().millisecondsSinceEpoch;
 
       await db.upsertReaderPosition(
         ReaderPositionsCompanion.insert(
-          bookKey: 'book-42',
+          bookUid: 'book-42',
           sectionIndex: 3,
           normCharOffset: 1500,
           updatedAt: now,
@@ -42,7 +42,7 @@ void main() {
 
       await db.upsertReaderPosition(
         ReaderPositionsCompanion.insert(
-          bookKey: 'book-1',
+          bookUid: 'book-1',
           sectionIndex: 0,
           normCharOffset: 0,
           updatedAt: now,
@@ -50,7 +50,7 @@ void main() {
       );
       await db.upsertReaderPosition(
         ReaderPositionsCompanion.insert(
-          bookKey: 'book-1',
+          bookUid: 'book-1',
           sectionIndex: 5,
           normCharOffset: 3000,
           updatedAt: now + 1000,
@@ -67,7 +67,7 @@ void main() {
       final now = DateTime.now().millisecondsSinceEpoch;
       await db.upsertReaderPosition(
         ReaderPositionsCompanion.insert(
-          bookKey: 'book-10',
+          bookUid: 'book-10',
           sectionIndex: 0,
           normCharOffset: 0,
           updatedAt: now,
@@ -86,7 +86,7 @@ void main() {
       // 默认 -1（= 无精确偏移）。
       await db.upsertReaderPosition(
         ReaderPositionsCompanion.insert(
-          bookKey: 'book-co',
+          bookUid: 'book-co',
           sectionIndex: 1,
           normCharOffset: 4200,
           updatedAt: now,
@@ -97,7 +97,7 @@ void main() {
       // 精确偏移往返。
       await db.upsertReaderPosition(
         ReaderPositionsCompanion(
-          bookKey: const Value('book-co'),
+          bookUid: const Value('book-co'),
           sectionIndex: const Value(1),
           normCharOffset: const Value(4200),
           charOffset: const Value(1234),
@@ -126,9 +126,10 @@ void main() {
         ),
       );
 
+      // v82：bookmarks 键 = epub_books.uid（insertEpubBook 自动生成，取回换算）。
       await db.into(db.bookmarks).insert(
             BookmarksCompanion.insert(
-              bookKey: bookKey,
+              bookUid: (await db.resolveEpubBookUid(bookKey))!,
               sectionIndex: 2,
               normCharOffset: 500,
               label: 'Important Part',
@@ -158,7 +159,7 @@ void main() {
       );
       await db.into(db.bookmarks).insert(
             BookmarksCompanion.insert(
-              bookKey: bookKey,
+              bookUid: (await db.resolveEpubBookUid(bookKey))!,
               sectionIndex: 0,
               normCharOffset: 0,
               label: 'Mark',

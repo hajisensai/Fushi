@@ -239,13 +239,13 @@ Future<EpubBookRow> _seedBook(FushiDatabase db, String title) async {
 
 Future<void> _seedPosition(
   FushiDatabase db,
-  String bookKey, {
+  String bookUid, {
   required int updatedAt,
   required double fraction,
 }) async {
   final int normOffset = (fraction * 10000).round();
   await db.upsertReaderPosition(ReaderPositionsCompanion(
-    bookKey: Value(bookKey),
+    bookUid: Value(bookUid),
     sectionIndex: const Value(0),
     normCharOffset: Value(normOffset),
     updatedAt: Value(updatedAt),
@@ -256,7 +256,7 @@ Future<void> _seedPosition(
 // so the dialog renders entries and the primary action button is present.
 Future<_FakeSyncBackend> _seedConflict(FushiDatabase db) async {
   final EpubBookRow book = await _seedBook(db, 'BookA');
-  await _seedPosition(db, book.bookKey, updatedAt: 120, fraction: 0.6);
+  await _seedPosition(db, book.uid, updatedAt: 120, fraction: 0.6);
   await db.setSyncBaseline(sanitizeTtuFilename('BookA'), 'progress', 50);
   return _FakeSyncBackend(
     remoteBooks: <String, _RemoteBook>{

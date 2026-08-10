@@ -377,9 +377,15 @@ class AppModelLibraryHostService
   /// `reader_positions.updatedAt`。两趟全表读，无逐书查询。
   Future<Map<String, ({int percent, int updatedAtMs})>>
       _bookProgressByKey() async {
+    // v82：reader_positions 键 = 书 uid，wire/mediaId 面貌仍是 bookKey——
+    // 经 epub_books 反查（uid → bookKey）后出 wire。
+    final Map<String, String> bookKeyByUid = <String, String>{
+      for (final EpubBookRow b in await _db.getAllEpubBooks())
+        if (b.uid.isNotEmpty) b.uid: b.bookKey,
+    };
     final Map<String, int> updatedAtByKey = <String, int>{
       for (final ReaderPositionRow r in await _db.getAllReaderPositions())
-        r.bookKey: r.updatedAt,
+        if (bookKeyByUid[r.bookUid] case final String key) key: r.updatedAt,
     };
     final Map<String, ({int percent, int updatedAtMs})> out =
         <String, ({int percent, int updatedAtMs})>{};
@@ -493,7 +499,10 @@ class AppModelLibraryHostService
   /// [RemoteBookProgress.empty]。
   @override
   Future<RemoteBookProgress> getBookProgress(String bookKey) async {
-    final ReaderPositionRow? row = await _db.getReaderPosition(bookKey);
+    // v82：wire 键 bookKey → 本地子表键 uid 换算；书不在库视同无记录。
+    final EpubBookRow? book = await _db.getEpubBook(bookKey);
+    if (book == null || book.uid.isEmpty) return RemoteBookProgress.empty;
+    final ReaderPositionRow? row = await _db.getReaderPosition(book.uid);
     if (row == null) return RemoteBookProgress.empty;
     return RemoteBookProgress(
       sectionIndex: row.sectionIndex,
@@ -520,7 +529,8 @@ class AppModelLibraryHostService
     // 从没读过的陈旧位置 = 进度污染。与视频 `updateVideoBookPosition`「UPDATE
     // 不存在即 no-op」语义对齐。syncContent 开时 client 独有书已先经
     // `_syncBooksContentLive` importBook 推成 host 书，故正常同步不被此闸门误挡。）
-    if (await _db.getEpubBook(bookKey) == null) return;
+    final EpubBookRow? hostBook = await _db.getEpubBook(bookKey);
+    if (hostBook == null || hostBook.uid.isEmpty) return;
     final RemoteBookProgress current = await getBookProgress(bookKey);
     final RemoteBookProgress incoming = RemoteBookProgress(
       sectionIndex: progress.sectionIndex < 0 ? 0 : progress.sectionIndex,
@@ -538,7 +548,7 @@ class AppModelLibraryHostService
     }
     await _runExclusive(() async {
       await _db.upsertReaderPosition(ReaderPositionsCompanion(
-        bookKey: Value(bookKey),
+        bookUid: Value(hostBook.uid),
         sectionIndex: Value(winner.sectionIndex),
         normCharOffset: Value(winner.normCharOffset),
         charOffset: Value(winner.charOffset),

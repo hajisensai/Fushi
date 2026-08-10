@@ -234,13 +234,13 @@ Future<EpubBookRow> _seedBook(FushiDatabase db, String title) async {
 
 Future<void> _seedPosition(
   FushiDatabase db,
-  String bookKey, {
+  String bookUid, {
   required int updatedAt,
   required double fraction,
 }) async {
   final int normOffset = (fraction * 10000).round();
   await db.upsertReaderPosition(ReaderPositionsCompanion(
-    bookKey: Value(bookKey),
+    bookUid: Value(bookUid),
     sectionIndex: const Value(0),
     normCharOffset: Value(normOffset),
     updatedAt: Value(updatedAt),
@@ -269,7 +269,7 @@ void main() {
   Future<(FushiDatabase, _FakeSyncBackend)> seedForkedLibrary() async {
     final FushiDatabase db = _memDb();
     final EpubBookRow book = await _seedBook(db, 'BookA');
-    await _seedPosition(db, book.bookKey, updatedAt: 120, fraction: 0.6);
+    await _seedPosition(db, book.uid, updatedAt: 120, fraction: 0.6);
     await db.setSyncBaseline(sanitizeTtuFilename('BookA'), 'progress', 50);
     final _FakeSyncBackend fake = _FakeSyncBackend(
       remoteBooks: <String, _RemoteBook>{
@@ -331,8 +331,7 @@ void main() {
 
   testWidgets('manual source presents the conflict resolution dialog',
       (WidgetTester tester) async {
-    final (FushiDatabase db, _FakeSyncBackend fake) =
-        await seedForkedLibrary();
+    final (FushiDatabase db, _FakeSyncBackend fake) = await seedForkedLibrary();
     addTearDown(db.close);
     final SyncConflictPrompter prompter = SyncConflictPrompter();
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
@@ -360,8 +359,7 @@ void main() {
 
   testWidgets('auto source while in-book does NOT present',
       (WidgetTester tester) async {
-    final (FushiDatabase db, _FakeSyncBackend fake) =
-        await seedForkedLibrary();
+    final (FushiDatabase db, _FakeSyncBackend fake) = await seedForkedLibrary();
     addTearDown(db.close);
     final SyncConflictPrompter prompter = SyncConflictPrompter();
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
@@ -384,8 +382,7 @@ void main() {
   });
 
   testWidgets('background source never presents', (WidgetTester tester) async {
-    final (FushiDatabase db, _FakeSyncBackend fake) =
-        await seedForkedLibrary();
+    final (FushiDatabase db, _FakeSyncBackend fake) = await seedForkedLibrary();
     addTearDown(db.close);
     final SyncConflictPrompter prompter = SyncConflictPrompter();
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
@@ -409,8 +406,7 @@ void main() {
 
   testWidgets('auto source out-of-book presents the dialog',
       (WidgetTester tester) async {
-    final (FushiDatabase db, _FakeSyncBackend fake) =
-        await seedForkedLibrary();
+    final (FushiDatabase db, _FakeSyncBackend fake) = await seedForkedLibrary();
     addTearDown(db.close);
     final SyncConflictPrompter prompter = SyncConflictPrompter();
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();

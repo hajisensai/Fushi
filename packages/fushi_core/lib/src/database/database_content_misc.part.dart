@@ -125,6 +125,18 @@ mixin _FushiDbContentMisc
   Future<EpubBookRow?> getEpubBookByUid(String uid) =>
       (select(epubBooks)..where((t) => t.uid.equals(uid))).getSingleOrNull();
 
+  /// bookKey → 本机稳定 uid 换算口（v82；wire/备份/旧偏好等 bookKey 面貌
+  /// 冻结的通道在落 uid 键子表前经此换算）。书不在库返回 null——调用方沿用
+  /// no-op 语义（host service 写入闸门同款），不得用 bookKey 兜底写入。
+  Future<String?> resolveEpubBookUid(String bookKey) async {
+    final String? uid = await (selectOnly(epubBooks)
+          ..addColumns([epubBooks.uid])
+          ..where(epubBooks.bookKey.equals(bookKey)))
+        .map((r) => r.read(epubBooks.uid))
+        .getSingleOrNull();
+    return (uid == null || uid.isEmpty) ? null : uid;
+  }
+
   // ── book tombstones (TODO-1195 part B) ──────────────────────────────
   /// Records that [bookKey] was deleted, so a subsequent backup MERGE import
   /// never resurrects it from an old backup. Idempotent (upsert on the PK).
@@ -501,14 +513,27 @@ mixin _FushiDbContentMisc
   /// book from an export copy) pass the default false so no tombstone leaks.
   Future<int> deleteEpubBook(String bookKey, {bool tombstone = false}) =>
       transaction(() async {
-        await (delete(readerPositions)..where((t) => t.bookKey.equals(bookKey)))
-            .go();
-        // bookmarks / book_tag_mappings declare ON DELETE CASCADE on
-        // epub_books(bookKey), but we delete them explicitly rather than rely on
-        // the cascade: this stays correct regardless of the runtime
-        // foreign_keys pragma state and documents the full set of dependent
-        // rows in one place.
-        await (delete(bookmarks)..where((t) => t.bookKey.equals(bookKey))).go();
+        // v82：uid 键子表（reader_positions/bookmarks/book_custom_css/
+        // revealed_images）按书行 uid 显式清理——这些表刻意无 SQL FK（uid 唯一
+        // 性是 partial 索引，FK 会 mismatch），本函数即全量级联的唯一真相源，
+        // 与 runtime foreign_keys pragma 状态无关。
+        final String? bookUid = await (selectOnly(epubBooks)
+              ..addColumns([epubBooks.uid])
+              ..where(epubBooks.bookKey.equals(bookKey)))
+            .map((r) => r.read(epubBooks.uid))
+            .getSingleOrNull();
+        if (bookUid != null && bookUid.isNotEmpty) {
+          await (delete(readerPositions)
+                ..where((t) => t.bookUid.equals(bookUid)))
+              .go();
+          await (delete(bookmarks)..where((t) => t.bookUid.equals(bookUid)))
+              .go();
+          await (delete(bookCustomCss)..where((t) => t.bookUid.equals(bookUid)))
+              .go();
+          await (delete(revealedImages)
+                ..where((t) => t.bookUid.equals(bookUid)))
+              .go();
+        }
         // SRT books linked to this epub key their cues on srt_books.uid, NOT
         // the epub bookKey, so delete those cues before dropping the srt rows.
         // (HBK-AUDIT-041 follow-up: deleteEpubBook owns the full cascade; the

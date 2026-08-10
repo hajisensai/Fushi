@@ -522,9 +522,12 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     try {
       final RemoteBookProgress remote =
           await client.remoteBookProgress(book.downloadId);
-      if (remote.updatedAtMs > 0) {
+      // v82：子表键 = 书 uid。刚导入的书必有行，反查不到（异常路径）直接跳过。
+      final String? localUid =
+          await appModel.database.resolveEpubBookUid(localBookKey);
+      if (remote.updatedAtMs > 0 && localUid != null) {
         await appModel.database.upsertReaderPosition(ReaderPositionsCompanion(
-          bookKey: Value(localBookKey),
+          bookUid: Value(localUid),
           sectionIndex: Value(remote.sectionIndex),
           normCharOffset: Value(remote.normCharOffset),
           charOffset: Value(remote.charOffset),
@@ -550,9 +553,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         }
       } catch (e, stack) {
         ErrorLogService.instance.log(
-            'ReaderFushiHistoryPage.downloadRemoteAudiobookPosition',
-            e,
-            stack);
+            'ReaderFushiHistoryPage.downloadRemoteAudiobookPosition', e, stack);
       }
     }
   }

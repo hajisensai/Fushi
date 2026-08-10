@@ -735,8 +735,10 @@ void main() {
     addTearDown(() => cleanupTempDir(curDir));
     final cur = FushiDatabase(curDir.path);
     await cur.insertEpubBook(_book('lwwbook'));
+    // v82：两库各自 insertEpubBook 自动生成互异 uid，位置行挂各自 uid——
+    // 「同 book_key、uid 不同仍命中」的双侧 JOIN 换键正是被测行为。
     await cur.upsertReaderPosition(ReaderPositionsCompanion.insert(
-      bookKey: 'lwwbook',
+      bookUid: (await cur.resolveEpubBookUid('lwwbook'))!,
       sectionIndex: 2,
       normCharOffset: 5000,
       updatedAt: 100,
@@ -748,7 +750,7 @@ void main() {
     final src = FushiDatabase(srcDir.path);
     await src.insertEpubBook(_book('lwwbook'));
     await src.upsertReaderPosition(ReaderPositionsCompanion.insert(
-      bookKey: 'lwwbook',
+      bookUid: (await src.resolveEpubBookUid('lwwbook'))!,
       sectionIndex: 9,
       normCharOffset: 9999,
       updatedAt: 200, // newer → wins
@@ -764,7 +766,9 @@ void main() {
 
     final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
-    final pos = await after.getReaderPosition('lwwbook');
+    // 本库位置行仍挂本库 uid（合并只换值不换键）。
+    final String afterUid = (await after.resolveEpubBookUid('lwwbook'))!;
+    final pos = await after.getReaderPosition(afterUid);
     expect(pos!.sectionIndex, 9); // backup (newer) won
     expect(pos.normCharOffset, 9999);
 
@@ -774,7 +778,7 @@ void main() {
     final src2 = FushiDatabase(src2Dir.path);
     await src2.insertEpubBook(_book('lwwbook'));
     await src2.upsertReaderPosition(ReaderPositionsCompanion.insert(
-      bookKey: 'lwwbook',
+      bookUid: (await src2.resolveEpubBookUid('lwwbook'))!,
       sectionIndex: 0,
       normCharOffset: 1,
       updatedAt: 50, // older → must lose
@@ -784,7 +788,7 @@ void main() {
     await src2.close();
     await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip2);
-    final pos2 = await after.getReaderPosition('lwwbook');
+    final pos2 = await after.getReaderPosition(afterUid);
     expect(pos2!.sectionIndex, 9); // unchanged — older backup ignored
   });
 
@@ -845,21 +849,18 @@ void main() {
     // Bookmark whose owning book is NOT in the backup (and not on device).
     await src.insertEpubBook(_book('owned'));
     await src.customStatement(
-      'INSERT INTO bookmarks (book_key, section_index, norm_char_offset, '
+      'INSERT INTO bookmarks (book_uid, section_index, norm_char_offset, '
       'label, created_at) VALUES (?, ?, ?, ?, ?)',
-      <Object?>['owned', 1, 100, 'kept', 10],
+      <Object?>[await src.resolveEpubBookUid('owned'), 1, 100, 'kept', 10],
     );
-    // A second epub_books row exists in src, but we delete it AFTER making a
-    // bookmark to simulate an orphan reference — instead, just add a bookmark
-    // referencing 'owned' which both have; verify it merges. For the skip case,
-    // craft a bookmark on a book missing from BOTH by temporarily disabling FK.
-    await src.customStatement('PRAGMA foreign_keys = OFF');
+    // For the skip case, craft a bookmark whose book_uid joins no epub_books
+    // row on either side（v82 后 bookmarks 无 SQL FK，孤儿防线在 merge 的
+    // uid 存在性 guard——这正是被测行为）。
     await src.customStatement(
-      'INSERT INTO bookmarks (book_key, section_index, norm_char_offset, '
+      'INSERT INTO bookmarks (book_uid, section_index, norm_char_offset, '
       'label, created_at) VALUES (?, ?, ?, ?, ?)',
       <Object?>['ghost', 5, 500, 'skipme', 20],
     );
-    await src.customStatement('PRAGMA foreign_keys = ON');
     final zipDir = await _tempDir('mg_zip_');
     addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
@@ -878,11 +879,11 @@ void main() {
             .toSet();
     expect(labels.contains('kept'), true);
     expect(labels.contains('skipme'), false); // ghost-book bookmark skipped
-    // No dangling FK.
+    // No dangling reference（v82：bookmarks.book_uid ↔ epub_books.uid）.
     final dangling = await after
         .customSelect('SELECT COUNT(*) AS c FROM bookmarks b '
             'WHERE NOT EXISTS (SELECT 1 FROM epub_books e '
-            'WHERE e.book_key = b.book_key)')
+            'WHERE e.uid = b.book_uid)')
         .getSingle();
     expect(dangling.data['c'], 0);
   });
@@ -1039,8 +1040,9 @@ void main() {
     final cur = FushiDatabase(curDir.path);
     addTearDown(cur.close);
     await cur.insertEpubBook(_book('shared'));
+    // v82：两库 uid 互异，preview 的双侧 JOIN 换键按 book_key 对上同一本书。
     await cur.upsertReaderPosition(ReaderPositionsCompanion.insert(
-      bookKey: 'shared',
+      bookUid: (await cur.resolveEpubBookUid('shared'))!,
       sectionIndex: 1,
       normCharOffset: 100,
       updatedAt: 100,
@@ -1054,7 +1056,7 @@ void main() {
     await src.insertEpubBook(_book('new2'));
     // Newer position for the shared book → counts as an update.
     await src.upsertReaderPosition(ReaderPositionsCompanion.insert(
-      bookKey: 'shared',
+      bookUid: (await src.resolveEpubBookUid('shared'))!,
       sectionIndex: 5,
       normCharOffset: 999,
       updatedAt: 200,

@@ -114,18 +114,20 @@ Future<void> _seedBook(
   int normCharOffset = 5000,
   int? baseline,
 }) async {
-  await db.into(db.epubBooks).insert(EpubBooksCompanion.insert(
-        bookKey: 'key-$title',
-        title: title,
-        epubPath: '/tmp/$title.epub',
-        extractDir: '/tmp/$title',
-        chapterCount: 1,
-        chaptersJson: '[{"title":"c1","characters":1000}]',
-        importedAt: 1,
-      ));
+  // v82：insertEpubBook 单点自动生成 uid；reader_positions 键随之换 uid。
+  await db.insertEpubBook(EpubBooksCompanion.insert(
+    bookKey: 'key-$title',
+    title: title,
+    epubPath: '/tmp/$title.epub',
+    extractDir: '/tmp/$title',
+    chapterCount: 1,
+    chaptersJson: '[{"title":"c1","characters":1000}]',
+    importedAt: 1,
+  ));
   if (updatedAt != null) {
+    final String bookUid = (await db.resolveEpubBookUid('key-$title'))!;
     await db.upsertReaderPosition(ReaderPositionsCompanion(
-      bookKey: Value<String>('key-$title'),
+      bookUid: Value<String>(bookUid),
       sectionIndex: const Value<int>(0),
       normCharOffset: Value<int>(normCharOffset),
       updatedAt: Value<int>(updatedAt),

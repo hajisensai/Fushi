@@ -218,13 +218,13 @@ Future<EpubBookRow> _seedBook(FushiDatabase db, String title) async {
 /// (single 1000-char chapter), stamped with [updatedAt].
 Future<void> _seedPosition(
   FushiDatabase db,
-  String bookKey, {
+  String bookUid, {
   required int updatedAt,
   required double fraction,
 }) async {
   final int normOffset = (fraction * 10000).round();
   await db.upsertReaderPosition(ReaderPositionsCompanion(
-    bookKey: Value(bookKey),
+    bookUid: Value(bookUid),
     sectionIndex: const Value(0),
     normCharOffset: Value(normOffset),
     updatedAt: Value(updatedAt),
@@ -240,7 +240,7 @@ void main() {
     addTearDown(db.close);
 
     final EpubBookRow book = await _seedBook(db, title);
-    await _seedPosition(db, book.bookKey, updatedAt: 120, fraction: 0.6);
+    await _seedPosition(db, book.uid, updatedAt: 120, fraction: 0.6);
     await db.setSyncBaseline(assetKey, 'progress', 50);
 
     final backend = _FakeSyncBackend(
@@ -269,7 +269,7 @@ void main() {
 
     // No write: local position untouched (still updatedAt 120, normOffset 6000),
     // remote export not called, base untouched.
-    final ReaderPositionRow pos = (await db.getReaderPosition(book.bookKey))!;
+    final ReaderPositionRow pos = (await db.getReaderPosition(book.uid))!;
     expect(pos.updatedAt, 120);
     expect(pos.normCharOffset, 6000);
     expect(backend.exportedProgress, isNull);
@@ -281,7 +281,7 @@ void main() {
     addTearDown(db.close);
 
     final EpubBookRow book = await _seedBook(db, title);
-    await _seedPosition(db, book.bookKey, updatedAt: 120, fraction: 0.6);
+    await _seedPosition(db, book.uid, updatedAt: 120, fraction: 0.6);
     await db.setSyncBaseline(assetKey, 'progress', 50);
 
     final backend = _FakeSyncBackend(
@@ -314,7 +314,7 @@ void main() {
     addTearDown(db.close);
 
     final EpubBookRow book = await _seedBook(db, title);
-    await _seedPosition(db, book.bookKey, updatedAt: 50, fraction: 0.3);
+    await _seedPosition(db, book.uid, updatedAt: 50, fraction: 0.3);
     await db.setSyncBaseline(assetKey, 'progress', 50);
 
     final backend = _FakeSyncBackend(
@@ -337,7 +337,7 @@ void main() {
 
     expect(result.direction, SyncResult.imported);
     // base == remote progress timestamp, which import also wrote to local updatedAt.
-    final ReaderPositionRow pos = (await db.getReaderPosition(book.bookKey))!;
+    final ReaderPositionRow pos = (await db.getReaderPosition(book.uid))!;
     expect(pos.updatedAt, 100);
     expect(await db.getSyncBaseline(assetKey, 'progress'), 100);
   });
@@ -356,7 +356,7 @@ void main() {
 
     final EpubBookRow book = await _seedBook(db, title);
     // Local moved past the old common ancestor (50) → this is an export.
-    await _seedPosition(db, book.bookKey, updatedAt: 120, fraction: 0.6);
+    await _seedPosition(db, book.uid, updatedAt: 120, fraction: 0.6);
     await db.setSyncBaseline(assetKey, 'progress', 50);
 
     // Seed a local reading statistic so the export's merged stats are non-empty

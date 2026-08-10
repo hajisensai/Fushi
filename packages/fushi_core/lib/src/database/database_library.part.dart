@@ -1042,11 +1042,13 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
       });
 
   // ── reader positions ────────────────────────────────────────────
-  Future<ReaderPositionRow?> getReaderPosition(String bookKey) =>
-      (select(readerPositions)..where((t) => t.bookKey.equals(bookKey)))
+  // v82 起键 = 书稳定 uid（epub 书 = epub_books.uid；非 epub 域沿用其既有
+  // 稳定键）。调用方持 bookKey 时先经 resolveEpubBookUid 换算。
+  Future<ReaderPositionRow?> getReaderPosition(String bookUid) =>
+      (select(readerPositions)..where((t) => t.bookUid.equals(bookUid)))
           .getSingleOrNull();
 
-  /// BUG-777: bulk read for the shelf's "last read at" map (bookKey ->
+  /// BUG-777: bulk read for the shelf's "last read at" map (bookUid ->
   /// updatedAt). One query instead of N per-book lookups.
   Future<List<ReaderPositionRow>> getAllReaderPositions() =>
       select(readerPositions).get();
@@ -1056,10 +1058,10 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
         pos,
         onConflict: DoUpdate(
           (old) => pos,
-          target: [readerPositions.bookKey],
+          target: [readerPositions.bookUid],
         ),
       );
 
-  Future<int> deleteReaderPosition(String bookKey) =>
-      (delete(readerPositions)..where((t) => t.bookKey.equals(bookKey))).go();
+  Future<int> deleteReaderPosition(String bookUid) =>
+      (delete(readerPositions)..where((t) => t.bookUid.equals(bookUid))).go();
 }

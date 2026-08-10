@@ -186,7 +186,7 @@ Future<EpubBookRow> _seedBookWithPosition(FushiDatabase db) async {
   ));
   final EpubBookRow book = (await db.getAllEpubBooks()).single;
   await db.upsertReaderPosition(ReaderPositionsCompanion(
-    bookKey: Value(book.bookKey),
+    bookUid: Value(book.uid),
     sectionIndex: const Value(0),
     normCharOffset: const Value(5000),
     updatedAt: const Value(1000),
@@ -324,7 +324,7 @@ void main() {
       expect(result.direction, SyncResult.imported);
       expect(backend.downloadContentCalls, 0,
           reason: 'Upload book files 不能在导入远端元数据时顺手下载内容文件');
-      final ReaderPositionRow? pos = await db.getReaderPosition(book.bookKey);
+      final ReaderPositionRow? pos = await db.getReaderPosition(book.uid);
       expect(pos?.updatedAt, 2000, reason: '进度/冲突解决仍应接受远端元数据');
     });
   });

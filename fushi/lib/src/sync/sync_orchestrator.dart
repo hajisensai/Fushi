@@ -1582,8 +1582,9 @@ class SyncOrchestrator {
       try {
         final RemoteBookProgress remote =
             await backend.remoteBookProgress(book.bookKey);
+        // v82：wire 键仍是 bookKey（REST 路径冻结），本地子表键是书 uid。
         final ReaderPositionRow? localRow =
-            await _db.getReaderPosition(book.bookKey);
+            await _db.getReaderPosition(book.uid);
         final RemoteBookProgress local = localRow == null
             ? RemoteBookProgress.empty
             : RemoteBookProgress(
@@ -1611,7 +1612,7 @@ class SyncOrchestrator {
             winner.updatedAtMs != local.updatedAtMs;
         if (localChanged && winner.updatedAtMs > 0) {
           await _db.upsertReaderPosition(ReaderPositionsCompanion(
-            bookKey: Value(book.bookKey),
+            bookUid: Value(book.uid),
             sectionIndex: Value(winner.sectionIndex),
             normCharOffset: Value(winner.normCharOffset),
             charOffset: Value(winner.charOffset),
@@ -2578,10 +2579,9 @@ class SyncOrchestrator {
         );
         // 先认新名，再回落 Hibiki 时代的旧名：漏认旧名会把「云上已有有声书」
         // 判成没有，于是重新上传一份新名资产，同一本书在云上留下两份包。
-        final AssetEntry? existing =
-            await _backend.findAsset(folderId, kSyncAudiobookAssetName) ??
-                await _backend.findAsset(
-                    folderId, kLegacySyncAudiobookAssetName);
+        final AssetEntry? existing = await _backend.findAsset(
+                folderId, kSyncAudiobookAssetName) ??
+            await _backend.findAsset(folderId, kLegacySyncAudiobookAssetName);
 
         if (hasLocal && existing == null) {
           tmp = _tmpFile('.fushiaudio');
@@ -2812,12 +2812,15 @@ Future<void> _applyRemoteBookFolderCss(
   final Map<String, ({String content, bool deleted, int updatedAt})> remote =
       parseBookCssSidecar(json);
   if (remote.isEmpty) return;
-  final List<({String relativePath, String content, bool deleted})> changed =
-      await db.mergeRemoteBookCss(bookKey, remote);
-  if (changed.isEmpty) return;
+  // v82：DB 键 = 书 uid（云端文件夹身份仍是 title 派生 bookKey）。书不在库
+  // （wire 有 sidecar 但本地没这本书）安全跳过——沿用「反查不到就不落」语义。
   final EpubBookRow? book = await db.getEpubBook(bookKey);
-  final String? extractDir = book?.extractDir;
-  if (extractDir == null || extractDir.isEmpty) return;
+  if (book == null || book.uid.isEmpty) return;
+  final List<({String relativePath, String content, bool deleted})> changed =
+      await db.mergeRemoteBookCss(book.uid, remote);
+  if (changed.isEmpty) return;
+  final String extractDir = book.extractDir;
+  if (extractDir.isEmpty) return;
   final BookCssRepository repo = BookCssRepository(extractDir);
   final Map<String, CssFileEntry> byRel = <String, CssFileEntry>{
     for (final CssFileEntry e in repo.discoverCssFiles()) e.relativePath: e,

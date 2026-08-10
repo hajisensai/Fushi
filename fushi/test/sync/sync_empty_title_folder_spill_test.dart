@@ -219,7 +219,7 @@ void main() {
       // and an audiobook position), to prove the skip fires before any write.
       final EpubBookRow book = await _insertBook(db, '');
       await db.upsertReaderPosition(ReaderPositionsCompanion(
-        bookKey: Value(book.bookKey),
+        bookUid: Value(book.uid),
         sectionIndex: const Value(0),
         normCharOffset: const Value(0),
         updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
@@ -251,7 +251,7 @@ void main() {
 
       final EpubBookRow book = await _insertBook(db, 'Normal Book');
       await db.upsertReaderPosition(ReaderPositionsCompanion(
-        bookKey: Value(book.bookKey),
+        bookUid: Value(book.uid),
         sectionIndex: const Value(0),
         normCharOffset: const Value(0),
         updatedAt: Value(DateTime.now().millisecondsSinceEpoch),

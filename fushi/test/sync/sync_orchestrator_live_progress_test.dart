@@ -42,14 +42,25 @@ Future<void> _seedPosition(
   required int norm,
   required int charOffset,
   required int updatedAt,
-}) =>
-    db.upsertReaderPosition(ReaderPositionsCompanion(
-      bookKey: Value(bookKey),
-      sectionIndex: Value(section),
-      normCharOffset: Value(norm),
-      charOffset: Value(charOffset),
-      updatedAt: Value(updatedAt),
-    ));
+}) async {
+  // v82：reader_positions 键 = epub_books.uid；wire 面貌仍是 bookKey，本地
+  // 造数经 resolveEpubBookUid 换算（书必须已 _seedBook）。
+  final String bookUid = (await db.resolveEpubBookUid(bookKey))!;
+  await db.upsertReaderPosition(ReaderPositionsCompanion(
+    bookUid: Value(bookUid),
+    sectionIndex: Value(section),
+    normCharOffset: Value(norm),
+    charOffset: Value(charOffset),
+    updatedAt: Value(updatedAt),
+  ));
+}
+
+/// bookKey → uid 换算后的本地读取口（断言侧同样只认本地 uid 键）。
+Future<ReaderPositionRow?> _positionOf(FushiDatabase db, String bookKey) async {
+  final String? uid = await db.resolveEpubBookUid(bookKey);
+  if (uid == null) return null;
+  return db.getReaderPosition(uid);
+}
 
 Future<void> _seedHostVideo(
   FushiDatabase db,
@@ -176,8 +187,7 @@ void main() {
       await orch.syncBookProgressLiveForTest(report, backend);
       expect(report.errors, isEmpty, reason: '${report.errors}');
 
-      final ReaderPositionRow? hostRow =
-          await hostDb.getReaderPosition('BookA');
+      final ReaderPositionRow? hostRow = await _positionOf(hostDb, 'BookA');
       expect(hostRow, isNotNull);
       expect(hostRow!.sectionIndex, 4);
       expect(hostRow.normCharOffset, 4200);
@@ -186,6 +196,9 @@ void main() {
 
     test('host newer progress, local old -> apply to local (newer-wins)',
         () async {
+      // v82：host 位置行必须 JOIN 到 host epub_books（uid 键），无书行的进度
+      // 不再可见——host 有进度必有书，先种书。
+      await _seedBook(hostDb, 'BookB');
       await _seedPosition(hostDb, 'BookB',
           section: 9, norm: 9000, charOffset: 90, updatedAt: 5000);
 
@@ -203,8 +216,7 @@ void main() {
 
       await orch.syncBookProgressLiveForTest(SyncRunReport(), backend);
 
-      final ReaderPositionRow? localRow =
-          await localDb.getReaderPosition('BookB');
+      final ReaderPositionRow? localRow = await _positionOf(localDb, 'BookB');
       expect(localRow!.sectionIndex, 9);
       expect(localRow.updatedAt, 5000);
     });
@@ -228,11 +240,9 @@ void main() {
 
       await orch.syncBookProgressLiveForTest(SyncRunReport(), backend);
 
-      final ReaderPositionRow? localRow =
-          await localDb.getReaderPosition('BookC');
+      final ReaderPositionRow? localRow = await _positionOf(localDb, 'BookC');
       expect(localRow!.sectionIndex, 7);
-      final ReaderPositionRow? hostRow =
-          await hostDb.getReaderPosition('BookC');
+      final ReaderPositionRow? hostRow = await _positionOf(hostDb, 'BookC');
       expect(hostRow!.sectionIndex, 7);
       expect(hostRow.updatedAt, 9000);
     });
@@ -247,6 +257,8 @@ void main() {
     // pref at play time, so it looked like it synced — hence the asymmetry.
     test('host-newer pull sets localBookProgressPulled + needsRefresh',
         () async {
+      // v82：host 进度必须挂在 host epub_books.uid 上，先种书。
+      await _seedBook(hostDb, 'BookRefresh');
       await _seedPosition(hostDb, 'BookRefresh',
           section: 9, norm: 9000, charOffset: 90, updatedAt: 5000);
 
@@ -267,7 +279,7 @@ void main() {
 
       // Progress actually landed locally...
       final ReaderPositionRow? localRow =
-          await localDb.getReaderPosition('BookRefresh');
+          await _positionOf(localDb, 'BookRefresh');
       expect(localRow!.sectionIndex, 9);
       // ...and the run flags the shelf for a refresh so it becomes visible.
       expect(report.localBookProgressPulled, 1,
@@ -572,8 +584,7 @@ void main() {
       expect(report.errors, isEmpty,
           reason: 'run() full sweep no errors: ${report.errors}');
 
-      final ReaderPositionRow? hostBook =
-          await hostDb.getReaderPosition('BookRun');
+      final ReaderPositionRow? hostBook = await _positionOf(hostDb, 'BookRun');
       expect(hostBook, isNotNull);
       expect(hostBook!.sectionIndex, 3);
 

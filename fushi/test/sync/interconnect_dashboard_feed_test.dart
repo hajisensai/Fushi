@@ -100,8 +100,10 @@ void main() {
         position: Value(760),
         duration: Value(1000),
       ));
+      // v82：reader_positions 键 = epub_books.uid（insertEpubBook 已自动生成）。
+      final String readingUid = (await db.resolveEpubBookUid('reading'))!;
       await db.upsertReaderPosition(ReaderPositionsCompanion.insert(
-        bookKey: 'reading',
+        bookUid: readingUid,
         sectionIndex: 3,
         normCharOffset: 7600,
         updatedAt: 123456789,

@@ -42,6 +42,9 @@ CREATE TABLE reader_positions (
   updated_at INTEGER NOT NULL
 )
 ''');
+        // 真实 v23 库必有 epub_books（v5 建表）；v82 换键步 JOIN 它回填
+        // book_uid（空表 ⇒ JOIN 不上 ⇒ 照抄原键）。名主键 = post-v20 形。
+        rawDb.execute(_epubBooksV23Ddl);
         int order = 0;
         seededOffsets.forEach((String bookKey, int ttuCharOffset) {
           order += 1;
@@ -59,6 +62,22 @@ CREATE TABLE reader_positions (
   addTearDown(db.close);
   return db;
 }
+
+/// 真实 v23 库的 epub_books 最小形（v5 建表、v20 名主键重建后；后续列由
+/// 各 guarded ALTER 步补齐）。同步给两个 seed 用，防两处漂开。
+const String _epubBooksV23Ddl = '''
+CREATE TABLE epub_books (
+  book_key TEXT NOT NULL PRIMARY KEY,
+  title TEXT NOT NULL,
+  epub_path TEXT NOT NULL,
+  extract_dir TEXT NOT NULL,
+  cover_path TEXT,
+  author TEXT,
+  chapter_count INTEGER NOT NULL,
+  chapters_json TEXT NOT NULL,
+  imported_at INTEGER NOT NULL
+)
+''';
 
 Future<Set<String>> _columnNames(FushiDatabase db, String table) async {
   final rows = await db.customSelect("PRAGMA table_info('$table')").get();
@@ -101,18 +120,20 @@ void main() {
           reason: 'primary key is still the autoincrement id, unchanged');
 
       // (b) Every row preserved: 3 rows, all other columns byte-for-byte.
+      //     梯子继续走到 v82：book_key 列被重建成 book_uid；这些行 JOIN 不上
+      //     epub_books（空表），按 v82 语义照抄原键值。
       final rows = await db
-          .customSelect('SELECT book_key, section_index, norm_char_offset, '
+          .customSelect('SELECT book_uid, section_index, norm_char_offset, '
               'updated_at, char_offset FROM reader_positions ORDER BY id')
           .get();
       expect(rows, hasLength(3), reason: 'DROP COLUMN must not drop rows');
-      expect(rows[0].read<String>('book_key'), 'こころ');
+      expect(rows[0].read<String>('book_uid'), 'こころ');
       expect(rows[0].read<int>('section_index'), 1);
       expect(rows[0].read<int>('norm_char_offset'), 100);
       expect(rows[0].read<int>('updated_at'), 1000);
-      expect(rows[1].read<String>('book_key'), '吾輩は猫である');
+      expect(rows[1].read<String>('book_uid'), '吾輩は猫である');
       expect(rows[1].read<int>('norm_char_offset'), 200);
-      expect(rows[2].read<String>('book_key'), '坊っちゃん');
+      expect(rows[2].read<String>('book_uid'), '坊っちゃん');
       expect(rows[2].read<int>('norm_char_offset'), 300);
 
       // (c) char_offset default: every pre-existing row gets the -1 sentinel
@@ -127,7 +148,7 @@ void main() {
       // (d) The new column is usable: upsert a precise char_offset and read it
       //     back through the typed API.
       await db.upsertReaderPosition(const ReaderPositionsCompanion(
-        bookKey: Value('こころ'),
+        bookUid: Value('こころ'),
         sectionIndex: Value(1),
         normCharOffset: Value(100),
         charOffset: Value(1234),
@@ -160,6 +181,7 @@ CREATE TABLE reader_positions (
   updated_at INTEGER NOT NULL
 )
 ''');
+            rawDb.execute(_epubBooksV23Ddl);
             rawDb.execute(
               'INSERT INTO reader_positions '
               '(book_key, section_index, norm_char_offset, ttu_char_offset, '

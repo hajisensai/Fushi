@@ -584,6 +584,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   InAppWebViewController? _controller;
   EpubBookRow? _bookRow;
 
+  /// v82：阅读位置子表键（= **持久化**书行的 `uid`）。与 [_bookRow] 分开存：
+  /// 在线阅读无持久行时 [_bookRow] 是现造 uid 的内存兜底行（v81，仅供 UI 元数据），
+  /// 那个随机 uid 不在库里、绝不能拿去写 reader_positions（每次会话都变，写了就是
+  /// 永远 JOIN 不上的孤儿行）。null = 无持久行/旧行空 uid → 位置读写跳过。
+  String? _bookUid;
+
   /// `<书目录>/images`（页图根，拦截器/封面解析的穿越守卫边界）。
   String? _imagesDir;
   MangaReaderSession? _pageSession;
@@ -975,12 +981,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
 
     // 恢复进度：sectionIndex=0-based 页码；webtoon 的页内 fraction 从 charOffset
-    // （千分比 0..1000）换算回来。
+    // （千分比 0..1000）换算回来。v82：键 = 书行 uid（行在手直接取）。
+    _bookUid = row.uid.isEmpty ? null : row.uid;
     int restoredPage = 0;
     double restoredFraction = 0;
     ReaderPosition? saved;
     try {
-      saved = await ReaderPositionRepository(db).findByBookKey(widget.bookKey);
+      if (_bookUid != null) {
+        saved = await ReaderPositionRepository(db).findByBookUid(_bookUid!);
+      }
     } catch (e, stack) {
       ErrorLogService.instance.log('MangaFushiPage.restore', e, stack);
     }
@@ -1217,13 +1226,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             detectReadingMode(payload);
     final List<MangaSpreadEntry> spreads = _buildSpreadsFor(payload, mode);
 
+    // v82：持久位置键 = **持久化**行的 uid；内存兜底行的现造 uid 不参与位置
+    // 读写（见 [_bookUid] doc）。
+    final String? persistedUid =
+        (persistedRow != null && persistedRow.uid.isNotEmpty)
+            ? persistedRow.uid
+            : null;
+    _bookUid = persistedUid;
     int restoredPage = input.initialPage ?? 0;
     double restoredFraction = 0;
     ReaderPosition? saved;
-    if (input.persistProgress && input.initialPage == null) {
+    if (input.persistProgress &&
+        input.initialPage == null &&
+        persistedUid != null) {
       try {
         saved = await ReaderPositionRepository(appModel.database)
-            .findByBookKey(widget.bookKey);
+            .findByBookUid(persistedUid);
       } on Object catch (error, stack) {
         ErrorLogService.instance
             .log('MangaFushiPage.restoreOnline', error, stack);
@@ -2836,9 +2854,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (!_persistProgress) return;
     final FushiDatabase db = appModel.database;
     final bool isWebtoon = _mode == MangaReadingMode.webtoon;
+    // v82：uid 缺失 = 库里没有这本书的持久行（内存兜底行不算），位置与「已读完」
+    // 都无处可落，整段跳过——不拿 bookKey / 现造 uid 兜底写孤儿行。
+    final String? bookUid = _bookUid;
+    if (bookUid == null) return;
     try {
       await ReaderPositionRepository(db).save(
-        bookKey: widget.bookKey,
+        bookUid: bookUid,
         sectionIndex: page,
         normCharOffset: 0,
         // 漫画无章内字符偏移。**必须显式传值**（传 null 会掉进 EPUB 专用的「跨

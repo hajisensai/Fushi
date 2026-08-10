@@ -117,7 +117,11 @@ class SrtBooks extends Table {
 @DataClassName('ReaderPositionRow')
 class ReaderPositions extends Table {
   IntColumn get id => integer().autoIncrement()();
-  TextColumn get bookKey => text().unique()();
+
+  /// v82 起的书稳定身份:epub 书 = EpubBooks.uid(本机稳定,标题改名不丢位置);
+  /// 非 epub 域(SRT 书等)沿用其既有稳定键。刻意无 FK——本表跨书族,孤儿防线
+  /// 在应用层(host service 写入闸门 + deleteEpubBook 显式清理)。
+  TextColumn get bookUid => text().unique()();
   IntColumn get sectionIndex => integer()();
   IntColumn get normCharOffset => integer()();
   // BUG-162: section 内精确绝对字符偏移（退出再进的恢复锚）。-1 = 无精确偏移
@@ -131,8 +135,10 @@ class ReaderPositions extends Table {
 @DataClassName('BookmarkRow')
 class Bookmarks extends Table {
   IntColumn get id => integer().autoIncrement()();
-  TextColumn get bookKey =>
-      text().references(EpubBooks, #bookKey, onDelete: KeyAction.cascade)();
+
+  /// v82:= EpubBooks.uid。无 SQL FK(uid 唯一性是 partial 索引,FK 会
+  /// mismatch);删书清理走 deleteEpubBook 显式级联,守卫测试兜底。
+  TextColumn get bookUid => text()();
   IntColumn get sectionIndex => integer()();
   IntColumn get normCharOffset => integer()();
   TextColumn get label => text()();
@@ -1063,8 +1069,9 @@ class BookTagMembershipTombstones extends Table {
 // int 毫秒戳）。
 @DataClassName('BookCustomCssRow')
 class BookCustomCss extends Table {
-  /// 书稳定身份（= EpubBooks.bookKey，内容派生跨设备一致）。
-  TextColumn get bookKey => text()();
+  /// 书稳定身份（v82 起 = EpubBooks.uid，本机稳定；跨设备/备份合并经
+  /// epub_books 双侧 JOIN 换键）。删书清理走 deleteEpubBook 显式级联。
+  TextColumn get bookUid => text()();
 
   /// 书内 CSS 文件相对路径（extractDir 内，正斜杠归一，同 [CssFileEntry].relativePath）。
   TextColumn get relativePath => text()();
@@ -1079,7 +1086,7 @@ class BookCustomCss extends Table {
   IntColumn get updatedAt => integer()();
 
   @override
-  Set<Column> get primaryKey => {bookKey, relativePath};
+  Set<Column> get primaryKey => {bookUid, relativePath};
 }
 
 // ── sync_deletion_tombstones ────────────────────────────────────────
@@ -1120,18 +1127,18 @@ class SyncDeletionTombstones extends Table {
 // [BookCustomCss]（text 复合键 + int 毫秒戳，为将来 sync/backup 留 LWW 口）。
 @DataClassName('RevealedImageRow')
 class RevealedImages extends Table {
-  /// 书稳定身份（= EpubBooks.bookKey，内容派生跨设备一致）。删书 cascade 清本表。
-  TextColumn get bookKey =>
-      text().references(EpubBooks, #bookKey, onDelete: KeyAction.cascade)();
+  /// 书稳定身份（v82 起 = EpubBooks.uid）。无 SQL FK（uid 唯一性是 partial
+  /// 索引），删书清理走 deleteEpubBook 显式级联，守卫测试兜底。
+  TextColumn get bookUid => text()();
 
   /// 图片稳定 key（extractDir 相对、解码、正斜杠路径，如 `OEBPS/images/foo.jpg`）。
   TextColumn get imageKey => text()();
 
-  /// 揭开毫秒戳（LWW 比较键；将来跨端同步/备份合并取较新）。
+  /// 揭开毫秒戳（LWW 比较键；备份合并取较新）。
   IntColumn get revealedAt => integer()();
 
   @override
-  Set<Column> get primaryKey => {bookKey, imageKey};
+  Set<Column> get primaryKey => {bookUid, imageKey};
 }
 
 // ── collection_scrape_meta ──────────────────────────────────────────

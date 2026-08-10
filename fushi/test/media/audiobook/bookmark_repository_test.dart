@@ -24,7 +24,7 @@ void main() {
       normCharOffset: 1000,
       label: 'first',
       createdAt: DateTime.utc(2026, 5, 15, 1),
-      bookKey: 'Book',
+      bookUid: 'Book',
       bookTitle: 'Book',
     );
     final second = Bookmark(
@@ -32,7 +32,7 @@ void main() {
       normCharOffset: 2000,
       label: 'second',
       createdAt: DateTime.utc(2026, 5, 15, 2),
-      bookKey: 'Book',
+      bookUid: 'Book',
       bookTitle: 'Book',
     );
 
@@ -50,20 +50,24 @@ void main() {
   test('per-book legacy JSON preference drains into rows and is removed',
       () async {
     // The instance-level drainer (_migrateLegacyBookmarks) keys on
-    // `bookmarks_<bookKey>` and runs on first getBookmarks(bookKey).
+    // `bookmarks_<legacyBookKey>`；v82 起 DB 键与遗留偏好键空间解耦，迁移
+    // 需要调用方显式传 legacyBookKey。
     final legacy = [
       Bookmark(
         sectionIndex: 3,
         normCharOffset: 3000,
         label: 'legacy',
         createdAt: DateTime.utc(2026, 5, 15, 3),
-        bookKey: 'Legacy Book',
+        bookUid: 'Legacy Book',
         bookTitle: 'Legacy Book',
       ).toJson(),
     ];
     await db.setPref('bookmarks_Legacy Book', jsonEncode(legacy));
 
-    final bookmarks = await repo.getBookmarks('Legacy Book');
+    final bookmarks = await repo.getBookmarks(
+      'Legacy Book',
+      legacyBookKey: 'Legacy Book',
+    );
 
     expect(bookmarks, hasLength(1));
     expect(bookmarks.single.id, isNotNull);
@@ -78,7 +82,7 @@ void main() {
         normCharOffset: 3000,
         label: 'legacy',
         createdAt: DateTime.utc(2026, 5, 15, 3),
-        bookKey: 'Legacy Book',
+        bookUid: 'Legacy Book',
         bookTitle: 'Legacy Book',
       ).toJson(),
     ];
@@ -93,7 +97,10 @@ void main() {
     );
     await db.setPref('bookmarks_Legacy Book', jsonEncode(legacy));
 
-    final bookmarks = await repo.getBookmarks('Legacy Book');
+    final bookmarks = await repo.getBookmarks(
+      'Legacy Book',
+      legacyBookKey: 'Legacy Book',
+    );
 
     expect(await db.getPref('bookmarks_Legacy Book'), isNull);
     expect(bookmarks, hasLength(1));

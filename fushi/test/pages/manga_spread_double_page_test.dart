@@ -134,8 +134,9 @@ Future<void> _pumpBook(
       format: const Value<String>('manga'),
     ));
     if (savedPage > 0) {
+      // v82：进度键 = epub_books.uid（insertEpubBook 自动生成，取回换算）。
       await ReaderPositionRepository(db).save(
-        bookKey: bookKey,
+        bookUid: (await db.resolveEpubBookUid(bookKey))!,
         sectionIndex: savedPage,
         normCharOffset: 0,
         charOffset: 0,

@@ -507,49 +507,49 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
 
   // ── per-book 自定义 CSS 跨端同步（LWW by updatedAt）──────────────────────────
 
-  /// 记录/刷新书 [bookKey] 的 CSS 文件 [relativePath] 自定义内容（保存时调，updatedAt=now）。
+  /// 记录/刷新书 [bookUid]（v82 起 = 书稳定 uid）的 CSS 文件 [relativePath] 自定义内容（保存时调，updatedAt=now）。
   Future<void> upsertBookCss(
-          String bookKey, String relativePath, String content, int updatedAt) =>
+          String bookUid, String relativePath, String content, int updatedAt) =>
       into(bookCustomCss).insertOnConflictUpdate(BookCustomCssRow(
-        bookKey: bookKey,
+        bookUid: bookUid,
         relativePath: relativePath,
         content: content,
         deleted: false,
         updatedAt: updatedAt,
       ));
 
-  /// 记录书 [bookKey] 的 CSS 文件 [relativePath] 已重置回原始（重置墓碑，updatedAt=now）。
+  /// 记录书 [bookUid] 的 CSS 文件 [relativePath] 已重置回原始（重置墓碑，updatedAt=now）。
   /// 使「reset」跨端传播（LWW 较新的重置让他端也 reset）。
   Future<void> markBookCssReset(
-          String bookKey, String relativePath, int updatedAt) =>
+          String bookUid, String relativePath, int updatedAt) =>
       into(bookCustomCss).insertOnConflictUpdate(BookCustomCssRow(
-        bookKey: bookKey,
+        bookUid: bookUid,
         relativePath: relativePath,
         content: '',
         deleted: true,
         updatedAt: updatedAt,
       ));
 
-  /// 书 [bookKey] 的全部自定义 CSS 行（含重置墓碑）。sync push 快照用。
-  Future<List<BookCustomCssRow>> getBookCssRows(String bookKey) =>
-      (select(bookCustomCss)..where((t) => t.bookKey.equals(bookKey))).get();
+  /// 书 [bookUid] 的全部自定义 CSS 行（含重置墓碑）。sync push 快照用。
+  Future<List<BookCustomCssRow>> getBookCssRows(String bookUid) =>
+      (select(bookCustomCss)..where((t) => t.bookUid.equals(bookUid))).get();
 
   // ── 图片防剧透遮罩揭开状态（持久 per-book；书内↔图片库双向同步，BUG-898）──────────
 
-  /// 标记书 [bookKey] 的图片 [imageKey]（extractDir 相对、解码、正斜杠归一路径）已揭开
+  /// 标记书 [bookUid] 的图片 [imageKey]（extractDir 相对、解码、正斜杠归一路径）已揭开
   /// 遮罩。幂等 upsert（重复揭开刷新 [revealedAt]）。阅读器点击/手柄/音频跨图、图片库
   /// 点开都调它，DB 是唯一真相源。
   Future<void> markImageRevealed(
-          String bookKey, String imageKey, int revealedAt) =>
+          String bookUid, String imageKey, int revealedAt) =>
       into(revealedImages).insertOnConflictUpdate(RevealedImageRow(
-        bookKey: bookKey,
+        bookUid: bookUid,
         imageKey: imageKey,
         revealedAt: revealedAt,
       ));
 
-  /// 一次标记书 [bookKey] 的多张图片已揭开（音频跨多图一次全揭时批量写，省往返）。
+  /// 一次标记书 [bookUid] 的多张图片已揭开（音频跨多图一次全揭时批量写，省往返）。
   Future<void> markImagesRevealed(
-      String bookKey, Iterable<String> imageKeys, int revealedAt) {
+      String bookUid, Iterable<String> imageKeys, int revealedAt) {
     final List<String> keys = imageKeys.toList(growable: false);
     if (keys.isEmpty) return Future<void>.value();
     return batch((Batch b) {
@@ -557,26 +557,26 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
         b.insert(
           revealedImages,
           RevealedImageRow(
-              bookKey: bookKey, imageKey: k, revealedAt: revealedAt),
+              bookUid: bookUid, imageKey: k, revealedAt: revealedAt),
           mode: InsertMode.insertOrReplace,
         );
       }
     });
   }
 
-  /// 书 [bookKey] 全部已揭开图片 key 集合。阅读器打开时读它灌入会话集、图片库渲染时读它
+  /// 书 [bookUid] 全部已揭开图片 key 集合。阅读器打开时读它灌入会话集、图片库渲染时读它
   /// 判断哪些图不遮罩。
-  Future<Set<String>> getRevealedImageKeys(String bookKey) async {
+  Future<Set<String>> getRevealedImageKeys(String bookUid) async {
     final List<RevealedImageRow> rows = await (select(revealedImages)
-          ..where((t) => t.bookKey.equals(bookKey)))
+          ..where((t) => t.bookUid.equals(bookUid)))
         .get();
     return rows.map((RevealedImageRow r) => r.imageKey).toSet();
   }
 
-  /// 书 [bookKey] 已揭开图片 key 的实时流（图片库/阅读器 live 双向同步：一端揭开另一端
+  /// 书 [bookUid] 已揭开图片 key 的实时流（图片库/阅读器 live 双向同步：一端揭开另一端
   /// 自动收到更新）。
-  Stream<Set<String>> watchRevealedImageKeys(String bookKey) =>
-      (select(revealedImages)..where((t) => t.bookKey.equals(bookKey)))
+  Stream<Set<String>> watchRevealedImageKeys(String bookUid) =>
+      (select(revealedImages)..where((t) => t.bookUid.equals(bookUid)))
           .watch()
           .map((List<RevealedImageRow> rows) =>
               rows.map((RevealedImageRow r) => r.imageKey).toSet());
@@ -627,13 +627,13 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
   /// 渲染真相源。幂等（同快照重复合并第二次返回空）。
   Future<List<({String relativePath, String content, bool deleted})>>
       mergeRemoteBookCss(
-    String bookKey,
+    String bookUid,
     Map<String, ({String content, bool deleted, int updatedAt})> remote,
   ) =>
           transaction(() async {
             final Map<String, BookCustomCssRow> localByPath =
                 <String, BookCustomCssRow>{
-              for (final BookCustomCssRow r in await getBookCssRows(bookKey))
+              for (final BookCustomCssRow r in await getBookCssRows(bookUid))
                 r.relativePath: r,
             };
             final List<({String relativePath, String content, bool deleted})>
@@ -647,7 +647,7 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
               if (local != null && local.updatedAt >= e.value.updatedAt)
                 continue;
               await into(bookCustomCss).insertOnConflictUpdate(BookCustomCssRow(
-                bookKey: bookKey,
+                bookUid: bookUid,
                 relativePath: e.key,
                 content: e.value.deleted ? '' : e.value.content,
                 deleted: e.value.deleted,

@@ -818,6 +818,10 @@ class _HomeDashboardPageState
             const <MediaItem>[];
     final Map<String, int> lastReadByKey =
         ref.watch(bookLastReadAtProvider).valueOrNull ?? const <String, int>{};
+    // v82：lastReadByKey 的键是书 uid；MediaItem 身份是 bookKey，查前经此表换算。
+    final Map<String, String> epubUidByKey =
+        ref.watch(epubBookUidByKeyProvider).valueOrNull ??
+            const <String, String>{};
     final DateTime now = DateTime.now();
 
     // 活动条封面/点击直达需要「mediaKey → 本地条目」反查映射（渲染层现算，不
@@ -833,8 +837,8 @@ class _HomeDashboardPageState
       for (final VideoBookRow v in _videos) v.bookUid: v,
     };
 
-    final Widget continueCard =
-        _buildContinueSection(tokens, appModel, books, lastReadByKey);
+    final Widget continueCard = _buildContinueSection(
+        tokens, appModel, books, lastReadByKey, epubUidByKey);
     final Widget heatmapCard = _buildHeatmapCard(tokens);
     final Widget activityCard =
         _buildActivitySection(tokens, now, appModel, booksByKey, videosByUid);
@@ -944,6 +948,7 @@ class _HomeDashboardPageState
     AppModel appModel,
     List<MediaItem> books,
     Map<String, int> lastReadByKey,
+    Map<String, String> epubUidByKey,
   ) {
     final List<_ContinueEntry> entries = <_ContinueEntry>[];
     for (final MediaItem item in books) {
@@ -951,7 +956,9 @@ class _HomeDashboardPageState
         final String bookKey =
             ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
                 item.mediaIdentifier;
-        final int recent = lastReadByKey[bookKey] ?? 0;
+        // v82：位置表键 = uid，bookKey 经换算表转一跳；换算不上（standalone
+        // SRT / 书行已删）保持原键查询——与旧行为同样查不到、recent=0。
+        final int recent = lastReadByKey[epubUidByKey[bookKey] ?? bookKey] ?? 0;
         final int percent =
             ((item.position / item.duration) * 100).clamp(0, 100).round();
         entries.add(_ContinueEntry(

@@ -23,9 +23,9 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
   int _selectedIndex = 0;
   bool _loading = true;
 
-  /// 该书 bookKey（按 extractDir 反查；用于把 CSS 编辑记进 book_custom_css 供跨端同步）。
-  /// null = 书未入库（临时/找不到）→ 只存磁盘、不同步（优雅降级）。
-  String? _bookKey;
+  /// 该书稳定 uid（按 extractDir 反查书行取 `.uid`，v82 起 book_custom_css 键）。
+  /// null = 书未入库（临时/找不到）或旧行无 uid → 只存磁盘、不同步（优雅降级）。
+  String? _bookUid;
 
   final Map<int, TextEditingController> _textControllers = {};
   final Map<int, String> _diskContent = {};
@@ -34,38 +34,39 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
   void initState() {
     super.initState();
     _repo = BookCssRepository(widget.extractDir);
-    _resolveBookKey();
+    _resolveBookUid();
     _reload();
   }
 
-  Future<void> _resolveBookKey() async {
+  Future<void> _resolveBookUid() async {
     try {
       final row = await ref
           .read(appProvider)
           .database
           .getEpubBookByExtractDir(widget.extractDir);
-      if (mounted) _bookKey = row?.bookKey;
+      final String? uid = row?.uid;
+      if (mounted) _bookUid = (uid == null || uid.isEmpty) ? null : uid;
     } catch (_) {
       // 反查失败：只存磁盘不同步（不影响编辑器可用）。
     }
   }
 
   /// 把一次 CSS 保存/重置记进 book_custom_css（LWW 时间戳载体），供跨端同步。
-  /// bookKey 未解析（书未入库）时静默跳过——磁盘写照常，只是不参与同步。
+  /// uid 未解析（书未入库）时静默跳过——磁盘写照常，只是不参与同步。
   Future<void> _recordCss(
     CssFileEntry entry, {
     required bool reset,
     String content = '',
   }) async {
-    final String? bookKey = _bookKey;
-    if (bookKey == null) return;
+    final String? bookUid = _bookUid;
+    if (bookUid == null) return;
     try {
       final db = ref.read(appProvider).database;
       final int now = DateTime.now().millisecondsSinceEpoch;
       if (reset) {
-        await db.markBookCssReset(bookKey, entry.relativePath, now);
+        await db.markBookCssReset(bookUid, entry.relativePath, now);
       } else {
-        await db.upsertBookCss(bookKey, entry.relativePath, content, now);
+        await db.upsertBookCss(bookUid, entry.relativePath, content, now);
       }
     } catch (_) {
       // best-effort：同步记账失败不影响磁盘保存已成功。

@@ -54,6 +54,10 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
 
   /// 打开时读回的书行（标题/总页数）与已保存页码，供恢复与进度落库使用。
   EpubBookRow? _bookRow;
+
+  /// v82：位置/书签子表键（= [_bookRow] 的 `uid`，_load 时一次解析）。null =
+  /// 书行缺失或旧行无 uid——相关读写跳过，不拿 bookKey 兜底写孤儿行。
+  String? _bookUid;
   int _restorePageIndex = 0;
 
   /// 当前页（0-based）。pdfrx 的 `pageNumber` 是 1-based，落库统一 0-based
@@ -145,10 +149,13 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     if (!File(path).existsSync()) return null;
 
     _bookRow = row;
+    // v82：位置/书签键 = EpubBooks.uid（行在手直接取；空 uid 视同缺失，读写跳过）。
+    _bookUid = row.uid.isEmpty ? null : row.uid;
 
     // 读回已保存页码（sectionIndex = 0-based 页）。越界守卫按总页数。
-    final ReaderPosition? saved =
-        await ReaderPositionRepository(db).findByBookKey(widget.bookKey);
+    final ReaderPosition? saved = _bookUid == null
+        ? null
+        : await ReaderPositionRepository(db).findByBookUid(_bookUid!);
     if (saved != null &&
         saved.sectionIndex >= 0 &&
         saved.sectionIndex < row.chapterCount) {
@@ -192,17 +199,23 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   Future<void> _persistPosition(int pageIndex) async {
     _lastSavedPageIndex = pageIndex;
     final FushiDatabase db = appModel.database;
-    try {
-      await ReaderPositionRepository(db).save(
-        bookKey: widget.bookKey,
-        sectionIndex: pageIndex,
-        normCharOffset: 0,
-        // PDF 无章内字符偏移。**必须显式传值**（传 null 会掉进 EPUB 专用的
-        // 「跨 section 精确锚失效」启发式）。
-        charOffset: 0,
-      );
-    } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderPdfPage._persistPosition', e, stack);
+    // v82：uid 缺失时只跳过位置写入（不拿 bookKey 兜底造孤儿行）；下方「已读完」
+    // 标记走 bookKey 键的 epub_books 表，照常执行。
+    final String? bookUid = _bookUid;
+    if (bookUid != null) {
+      try {
+        await ReaderPositionRepository(db).save(
+          bookUid: bookUid,
+          sectionIndex: pageIndex,
+          normCharOffset: 0,
+          // PDF 无章内字符偏移。**必须显式传值**（传 null 会掉进 EPUB 专用的
+          // 「跨 section 精确锚失效」启发式）。
+          charOffset: 0,
+        );
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('ReaderPdfPage._persistPosition', e, stack);
+      }
     }
     // 翻到最后一页 → 幂等写「已读完」（判据用总页数，PDF 无 chapters）。
     final int pageCount = _bookRow?.chapterCount ?? 0;
@@ -435,21 +448,22 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   // ── Phase 5：书签（复用 EPUB 的 Bookmarks 表）───────────────────────
 
   /// 在当前页加书签。PDF 复用同一张 `Bookmarks` 表：`sectionIndex` 存 0-based 页码
-  /// （与 [ReaderPositions] 同口径），`normCharOffset` 恒 0。外键指向 `EpubBooks`，
-  /// PDF 行已在该表，故删书时书签随级联自动清掉，零额外接线。
+  /// （与 [ReaderPositions] 同口径），`normCharOffset` 恒 0。键 = 书 uid（v82），
+  /// PDF 行已在 `EpubBooks`，删书时由 `deleteEpubBook` 显式级联清掉，零额外接线。
   Future<void> _addBookmarkAtCurrentPage() async {
     final EpubBookRow? row = _bookRow;
-    if (row == null) return;
+    final String? bookUid = _bookUid;
+    if (row == null || bookUid == null) return;
     try {
       await BookmarkRepository(appModel.database).addBookmark(
-        widget.bookKey,
+        bookUid,
         Bookmark(
           sectionIndex: _currentPageIndex,
           normCharOffset: 0,
           // 标签用页序（1-based，与页码指示器一致）；纯数字免 i18n。
           label: 'P.${_currentPageIndex + 1}',
           createdAt: DateTime.now(),
-          bookKey: widget.bookKey,
+          bookUid: bookUid,
           bookTitle: row.title,
         ),
       );
@@ -462,10 +476,13 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   }
 
   Future<void> _showBookmarks() async {
+    final String? bookUid = _bookUid;
+    if (bookUid == null) return;
     List<Bookmark> bookmarks;
     try {
+      // legacyBookKey：`bookmarks_<bookKey>` 遗留偏好一次性迁进 DB（键换 uid）。
       bookmarks = await BookmarkRepository(appModel.database)
-          .getBookmarks(widget.bookKey);
+          .getBookmarks(bookUid, legacyBookKey: widget.bookKey);
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderPdfPage.getBookmarks', e, stack);
       return;

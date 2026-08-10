@@ -6,8 +6,8 @@
 class ReaderPosition {
   int? id;
 
-  /// EpubBooks.bookKey（书的主键 = sanitize 后的标题），按书一条。
-  late String bookKey;
+  /// 书稳定身份（v82 起 = EpubBooks.uid；非 epub 域沿用其既有稳定键），按书一条。
+  late String bookUid;
 
   /// EPUB spine 章节 index（0-based）。
   late int sectionIndex;

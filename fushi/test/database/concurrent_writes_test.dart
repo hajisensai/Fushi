@@ -283,7 +283,7 @@ void main() {
           n,
           (i) => db.upsertReaderPosition(
             ReaderPositionsCompanion.insert(
-              bookKey: 'book-1',
+              bookUid: 'book-1',
               sectionIndex: i % 10,
               normCharOffset: i * 100,
               updatedAt: baseUpdatedAt + i,
@@ -309,7 +309,7 @@ void main() {
           n,
           (i) => db.upsertReaderPosition(
             ReaderPositionsCompanion.insert(
-              bookKey: 'book-$i',
+              bookUid: 'book-$i',
               sectionIndex: i,
               normCharOffset: i * 100,
               updatedAt: DateTime.now().millisecondsSinceEpoch,

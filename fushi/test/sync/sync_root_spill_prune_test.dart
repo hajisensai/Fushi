@@ -164,8 +164,8 @@ void main() {
       await store.ensureFolder('root', '屍人荘の殺人');
       await seedFile(store, 'root/屍人荘の殺人', _spilledAudioBook);
       await seedFile(store, 'root', '屍人荘の殺人$_spilledAudioBook');
-      await seedFile(store, 'root',
-          '屍人荘の殺人audioBook_1_6_1700000009999_43.5.json');
+      await seedFile(
+          store, 'root', '屍人荘の殺人audioBook_1_6_1700000009999_43.5.json');
       await seedFile(store, 'root', '屍人荘の殺人$_spilledCover');
 
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
@@ -249,7 +249,7 @@ void main() {
       // 恒为 0——与用户 DB 现象一致）。
       await db.upsertReaderPosition(
         ReaderPositionsCompanion(
-          bookKey: const Value('安達としまむら2'),
+          bookUid: const Value('安達としまむら2'),
           sectionIndex: const Value(12),
           normCharOffset: const Value(8334),
           charOffset: const Value(12981),

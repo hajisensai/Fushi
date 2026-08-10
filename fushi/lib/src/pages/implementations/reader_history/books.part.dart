@@ -972,10 +972,11 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       adaptivePageRoute(
         context: context,
         builder: (_) => IllustrationsViewerPage(
-          // P4：页标题给人看，过门面；插画定位身份走 extractDir/bookKey（raw）。
+          // P4：页标题给人看，过门面；插画定位身份走 extractDir + uid（v82：
+          // revealed_images 键 = EpubBooks.uid，行在手直接取）。
           bookTitle: displayTitleForBook(item: item, rawTitle: item.title),
           extractDir: row.extractDir,
-          bookKey: bookKey,
+          bookUid: row.uid,
           database: appModel.database,
         ),
       ),

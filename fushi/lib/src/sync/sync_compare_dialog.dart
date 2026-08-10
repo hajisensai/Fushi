@@ -228,7 +228,7 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
 
     if (local != null) {
       try {
-        final pos = await db.getReaderPosition(local.bookKey);
+        final pos = await db.getReaderPosition(local.uid);
         if (pos != null) {
           final chapters = parseChaptersJson(local.chaptersJson);
           final total = totalCharacterCount(chapters);

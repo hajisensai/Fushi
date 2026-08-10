@@ -315,7 +315,8 @@ class SyncManager {
         ? listing.trioFor(assetKey)
         : await _backend.listSyncFiles(folderId);
 
-    final localPosition = await _db.getReaderPosition(book.bookKey);
+    // v82：子表键 = 书稳定 uid（wire/assetKey 仍是 title 派生键，不动）。
+    final localPosition = await _db.getReaderPosition(book.uid);
     final chapters = parseChaptersJson(book.chaptersJson);
 
     // HBK-AUDIT-047: compute the local progress fraction so a timestamp tie
@@ -574,7 +575,7 @@ class SyncManager {
       chapters: chapters,
     );
     await _db.upsertReaderPosition(ReaderPositionsCompanion(
-      bookKey: Value(book.bookKey),
+      bookUid: Value(book.uid),
       sectionIndex: Value(pos.sectionIndex),
       normCharOffset: Value(pos.normCharOffset),
       updatedAt: Value(remoteProgress.lastBookmarkModified),
@@ -784,8 +785,7 @@ class SyncManager {
 
     // per-book 自定义 CSS sidecar（LWW by updatedAt）。用户改写的书内 CSS 存 book_css.json
     // 权威全量快照（含重置墓碑 deleted），供他端按 updatedAt 取较新落地。有行才写。
-    final List<BookCustomCssRow> cssRows =
-        await _db.getBookCssRows(book.bookKey);
+    final List<BookCustomCssRow> cssRows = await _db.getBookCssRows(book.uid);
     if (cssRows.isNotEmpty) {
       await _backend
           .putJsonAsset(folderId, kSyncBookCssAssetName, <String, Object?>{

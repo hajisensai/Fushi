@@ -22,7 +22,7 @@ Future<void> _seedAll(FushiDatabase db) async {
       normCharOffset: 100,
       label: '题记',
       createdAt: DateTime(2026, 7, 16, 13, 20),
-      bookKey: 'book/边城',
+      bookUid: 'book/边城',
       bookTitle: '边城',
     ),
   );

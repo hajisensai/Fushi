@@ -55,11 +55,8 @@ mixin _FushiDbInfra on _$FushiDatabase {
         'book_profiles',
         'CREATE INDEX IF NOT EXISTS idx_book_profiles_profile ON book_profiles (profile_id)'
       ],
-      [
-        'bookmarks',
-        'CREATE INDEX IF NOT EXISTS idx_bookmarks_book_key_created '
-            'ON bookmarks (book_key, created_at DESC)'
-      ],
+      // bookmarks 索引 v82 起换 book_uid 列，移出本清单（清单会被早期迁移步
+      // 调用，彼时新列不存在）：v82 步与 onCreate 成对内联维护。
       [
         'media_items',
         'CREATE INDEX IF NOT EXISTS idx_media_items_type '

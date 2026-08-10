@@ -71,7 +71,7 @@ void main() {
         home: IllustrationsViewerPage(
           bookTitle: 'Book',
           extractDir: extractDir.path,
-          bookKey: 'test-book',
+          bookUid: 'test-book',
           database: db,
         ),
       ),

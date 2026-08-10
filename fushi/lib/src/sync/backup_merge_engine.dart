@@ -132,8 +132,7 @@ class BackupMergeEngine {
       // content and their FK/EXISTS guards no-op harmlessly when their owners
       // were skipped.
       if (_wants('books')) {
-        await _insertMissing('epub_books', 'book_key',
-            skipBookTombstones: true);
+        await _insertMissingEpubBooks();
         // srt_books dedups on `uid` but must honour the deleted book's tombstone
         // via its own `book_key` — else deleting a book then merging an old
         // backup resurrects an orphan srt row (no epub) = an "empty book".
@@ -189,6 +188,10 @@ class BackupMergeEngine {
         await _mergeBookmarks();
         await _mergeAudiobookPositionPrefs();
       }
+      // v82：书自定义 CSS / 图片揭开状态（uid 键 LWW）。无 dialog toggle——
+      // 存在性 guard 让「书没随备份来」时自然 no-op（与 collections/tags 同规）。
+      await _mergeBookCustomCss();
+      await _mergeRevealedImages();
       if (_wants('localAudio')) await _mergeAudioSourcePrefs();
       // 迁移专用，放在全部点名 pref 合并之后：那几处是「按内容语义合并」（可能
       // 覆盖/取较新），这里只补它们没管的 key，不能反过来盖掉它们的结果。
@@ -272,16 +275,33 @@ class BackupMergeEngine {
     return row.data['c'] as int;
   }
 
+  /// v82 双侧 JOIN 换键：src 子表行的 book_uid（源库随机 uid）经
+  /// src.epub_books（uid→book_key）→ 本库 epub_books（book_key→uid）换成本库
+  /// uid。JOIN 不上（SRT 等非 epub 域，两库键同为派生串仍可比；或书还没插进
+  /// 来）COALESCE 回落原值。表达式内的 `s` 是调用方 SQL 里的 src 行别名。
+  String get _srcBookUidRekey =>
+      "COALESCE((SELECT tb.uid FROM epub_books AS tb WHERE tb.uid != '' "
+      'AND tb.book_key = (SELECT sb.book_key FROM $_srcAlias.epub_books AS sb '
+      'WHERE sb.uid = s.book_uid)), s.book_uid)';
+
+  /// 墓碑 guard 键仍冻结在 book_key：src 行的 uid 反查 src 库 book_key，
+  /// 非 epub 域回落键值本身。
+  String get _srcBookKeyForTombstone =>
+      'COALESCE((SELECT sb.book_key FROM $_srcAlias.epub_books AS sb '
+      'WHERE sb.uid = s.book_uid), s.book_uid)';
+
   /// Counts reader positions the merge would touch: a src book the target lacks
   /// (new) or a src position strictly newer than the target's (LWW update).
+  /// 与 [_mergeReaderPositions] 逐字镜像（含换键表达式）。
   Future<int> _countReaderPositionChanges() async {
     final row = await _db
         .customSelect(
           'SELECT COUNT(*) AS c FROM $_srcAlias.reader_positions AS s '
           'WHERE NOT EXISTS (SELECT 1 FROM reader_positions AS t '
-          'WHERE t.book_key = s.book_key) '
+          'WHERE t.book_uid = $_srcBookUidRekey) '
           'OR EXISTS (SELECT 1 FROM reader_positions AS t '
-          'WHERE t.book_key = s.book_key AND s.updated_at > t.updated_at)',
+          'WHERE t.book_uid = $_srcBookUidRekey '
+          'AND s.updated_at > t.updated_at)',
         )
         .getSingle();
     return row.data['c'] as int;
@@ -329,6 +349,29 @@ class BackupMergeEngine {
       'SELECT $colList FROM $_srcAlias.$table AS s '
       'WHERE NOT EXISTS (SELECT 1 FROM $table AS t '
       'WHERE t.$keyColumn = s.$keyColumn) $tombstoneGuard',
+    );
+  }
+
+  /// epub_books 专用 insert-missing（v82）：uid 列不能直搬——两库各自生成的
+  /// `book_<rowid>_<epoch>` 形 uid 可能撞本库 partial 唯一索引，撞上会炸掉整个
+  /// merge 事务。撞时按同命名空间重生成（src rowid + 当前 epoch + `_m` 后缀，
+  /// 批内唯一；万一再撞由唯一索引大声失败，绝不静默错配）。
+  Future<void> _insertMissingEpubBooks() async {
+    final List<String> cols = await _columnsExceptId('epub_books');
+    final String colList = cols.join(', ');
+    final String selList = cols.map((String c) {
+      if (c != '"uid"') return 's.$c';
+      return "CASE WHEN s.uid != '' AND EXISTS "
+          '(SELECT 1 FROM epub_books AS e WHERE e.uid = s.uid) '
+          "THEN 'book_' || s.rowid || '_' || strftime('%s','now') || '_m' "
+          'ELSE s.uid END';
+    }).join(', ');
+    await _db.customStatement(
+      'INSERT INTO epub_books ($colList) '
+      'SELECT $selList FROM $_srcAlias.epub_books AS s '
+      'WHERE NOT EXISTS (SELECT 1 FROM epub_books AS t '
+      'WHERE t.book_key = s.book_key) '
+      'AND s.book_key NOT IN (SELECT book_key FROM book_tombstones)',
     );
   }
 
@@ -545,28 +588,33 @@ class BackupMergeEngine {
   }
 
   /// Reader positions LWW: a src row wins only when the target lacks a row for
-  /// that book_key, or the src `updated_at` is strictly greater.
+  /// that book(uid), or the src `updated_at` is strictly greater. v82 起
+  /// book_uid 经 [_srcBookUidRekey] 双侧换键（两库随机 uid 不可直比）。
   Future<void> _mergeReaderPositions() async {
     final List<String> cols = await _columnsExceptId('reader_positions');
     final String colList = cols.join(', ');
+    final String selList = cols
+        .map((String c) => c == '"book_uid"' ? _srcBookUidRekey : 's.$c')
+        .join(', ');
     await _db.customStatement(
       'INSERT INTO reader_positions ($colList) '
-      'SELECT $colList FROM $_srcAlias.reader_positions AS s '
+      'SELECT $selList FROM $_srcAlias.reader_positions AS s '
       'WHERE NOT EXISTS (SELECT 1 FROM reader_positions AS t '
-      'WHERE t.book_key = s.book_key) '
+      'WHERE t.book_uid = $_srcBookUidRekey) '
       // TODO-1195 part B: never re-add a deleted book's reading position.
-      'AND s.book_key NOT IN (SELECT book_key FROM book_tombstones)',
+      'AND $_srcBookKeyForTombstone NOT IN '
+      '(SELECT book_key FROM book_tombstones)',
     );
     final String setClause = cols
-        .where((String c) => c != '"book_key"')
+        .where((String c) => c != '"book_uid"')
         .map((String c) => '$c = ('
             'SELECT s.$c FROM $_srcAlias.reader_positions AS s '
-            'WHERE s.book_key = reader_positions.book_key)')
+            'WHERE $_srcBookUidRekey = reader_positions.book_uid)')
         .join(', ');
     await _db.customStatement(
       'UPDATE reader_positions SET $setClause '
       'WHERE EXISTS (SELECT 1 FROM $_srcAlias.reader_positions AS s '
-      'WHERE s.book_key = reader_positions.book_key '
+      'WHERE $_srcBookUidRekey = reader_positions.book_uid '
       'AND s.updated_at > reader_positions.updated_at)',
     );
   }
@@ -982,21 +1030,84 @@ class BackupMergeEngine {
     );
   }
 
-  /// Bookmarks dedupe-union by {book_key, section_index, norm_char_offset,
-  /// created_at}, FK-guarded on epub_books(book_key) so a bookmark for a book
-  /// the backup omitted is skipped rather than violating the cascade FK.
+  /// Bookmarks dedupe-union by {book_uid, section_index, norm_char_offset,
+  /// created_at}, existence-guarded on epub_books(uid) so a bookmark for a book
+  /// the backup omitted is skipped（v82 换键后 guard 语义不变）.
   Future<void> _mergeBookmarks() async {
     final List<String> cols = await _columnsExceptId('bookmarks');
     final String colList = cols.join(', ');
+    final String selList = cols
+        .map((String c) => c == '"book_uid"' ? _srcBookUidRekey : 's.$c')
+        .join(', ');
     await _db.customStatement(
       'INSERT INTO bookmarks ($colList) '
-      'SELECT $colList FROM $_srcAlias.bookmarks AS s '
+      'SELECT $selList FROM $_srcAlias.bookmarks AS s '
       'WHERE EXISTS '
-      '(SELECT 1 FROM epub_books AS b WHERE b.book_key = s.book_key) '
+      '(SELECT 1 FROM epub_books AS b WHERE b.uid = $_srcBookUidRekey) '
       'AND NOT EXISTS (SELECT 1 FROM bookmarks AS t '
-      'WHERE t.book_key = s.book_key AND t.section_index = s.section_index '
+      'WHERE t.book_uid = $_srcBookUidRekey '
+      'AND t.section_index = s.section_index '
       'AND t.norm_char_offset = s.norm_char_offset '
       'AND t.created_at = s.created_at)',
+    );
+  }
+
+  /// v82：书自定义 CSS LWW 合并（per {book_uid, relative_path}，updatedAt 取
+  /// 较新；重置墓碑 deleted 行同样传播）。此前该表不进 merge（src 静默丢弃）。
+  Future<void> _mergeBookCustomCss() async {
+    if (!await _srcTableExists('book_custom_css')) return;
+    await _db.customStatement(
+      'INSERT INTO book_custom_css '
+      '(book_uid, relative_path, content, deleted, updated_at) '
+      'SELECT $_srcBookUidRekey, s.relative_path, s.content, s.deleted, '
+      's.updated_at FROM $_srcAlias.book_custom_css AS s '
+      'WHERE EXISTS '
+      '(SELECT 1 FROM epub_books AS b WHERE b.uid = $_srcBookUidRekey) '
+      'AND NOT EXISTS (SELECT 1 FROM book_custom_css AS t '
+      'WHERE t.book_uid = $_srcBookUidRekey '
+      'AND t.relative_path = s.relative_path)',
+    );
+    await _db.customStatement(
+      'UPDATE book_custom_css SET '
+      'content = (SELECT s.content FROM $_srcAlias.book_custom_css AS s '
+      'WHERE $_srcBookUidRekey = book_custom_css.book_uid '
+      'AND s.relative_path = book_custom_css.relative_path), '
+      'deleted = (SELECT s.deleted FROM $_srcAlias.book_custom_css AS s '
+      'WHERE $_srcBookUidRekey = book_custom_css.book_uid '
+      'AND s.relative_path = book_custom_css.relative_path), '
+      'updated_at = (SELECT s.updated_at FROM $_srcAlias.book_custom_css AS s '
+      'WHERE $_srcBookUidRekey = book_custom_css.book_uid '
+      'AND s.relative_path = book_custom_css.relative_path) '
+      'WHERE EXISTS (SELECT 1 FROM $_srcAlias.book_custom_css AS s '
+      'WHERE $_srcBookUidRekey = book_custom_css.book_uid '
+      'AND s.relative_path = book_custom_css.relative_path '
+      'AND s.updated_at > book_custom_css.updated_at)',
+    );
+  }
+
+  /// v82：图片揭开状态合并（per {book_uid, image_key}，revealedAt 取较新；
+  /// 语义上「任一端揭开即揭开」，union + LWW 刷新时刻）。此前不进 merge。
+  Future<void> _mergeRevealedImages() async {
+    if (!await _srcTableExists('revealed_images')) return;
+    await _db.customStatement(
+      'INSERT INTO revealed_images (book_uid, image_key, revealed_at) '
+      'SELECT $_srcBookUidRekey, s.image_key, s.revealed_at '
+      'FROM $_srcAlias.revealed_images AS s '
+      'WHERE EXISTS '
+      '(SELECT 1 FROM epub_books AS b WHERE b.uid = $_srcBookUidRekey) '
+      'AND NOT EXISTS (SELECT 1 FROM revealed_images AS t '
+      'WHERE t.book_uid = $_srcBookUidRekey AND t.image_key = s.image_key)',
+    );
+    await _db.customStatement(
+      'UPDATE revealed_images SET '
+      'revealed_at = (SELECT s.revealed_at '
+      'FROM $_srcAlias.revealed_images AS s '
+      'WHERE $_srcBookUidRekey = revealed_images.book_uid '
+      'AND s.image_key = revealed_images.image_key) '
+      'WHERE EXISTS (SELECT 1 FROM $_srcAlias.revealed_images AS s '
+      'WHERE $_srcBookUidRekey = revealed_images.book_uid '
+      'AND s.image_key = revealed_images.image_key '
+      'AND s.revealed_at > revealed_images.revealed_at)',
     );
   }
 

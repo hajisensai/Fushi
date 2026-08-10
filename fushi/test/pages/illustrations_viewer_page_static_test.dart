@@ -7,14 +7,13 @@ import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 
 void main() {
   test('illustrations viewer page library compiles', () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     expect(
       IllustrationsViewerPage(
         bookTitle: 'Book',
         extractDir: '/tmp/book',
-        bookKey: 'book',
+        bookUid: 'book',
         database: db,
       ),
       isA<IllustrationsViewerPage>(),

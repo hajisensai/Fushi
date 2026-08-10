@@ -254,12 +254,18 @@ class MihonLibraryService {
         ],
       ),
     );
-    await ReaderPositionRepository(manager.database).save(
-      bookKey: bookKey,
-      sectionIndex: 0,
-      normCharOffset: 0,
-      charOffset: 0,
-    );
+    // v82：位置键 = 书 uid。此处只有 bookKey（调用方有的持行、有的只持键），
+    // 统一 resolve 一次；书不在库（不应发生——上面刚更新过该行）则跳过置零，
+    // 沿 resolveEpubBookUid 的 no-op 契约。
+    final String? bookUid = await manager.database.resolveEpubBookUid(bookKey);
+    if (bookUid != null) {
+      await ReaderPositionRepository(manager.database).save(
+        bookUid: bookUid,
+        sectionIndex: 0,
+        normCharOffset: 0,
+        charOffset: 0,
+      );
+    }
     return updated;
   }
 

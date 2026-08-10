@@ -164,10 +164,12 @@ void main() {
       chaptersJson: '["c"]',
       importedAt: 0,
     ));
+    // v82：reader_positions/bookmarks 键 = epub_books.uid（insertEpubBook 自动生成）。
+    final String bkUid = (await db.resolveEpubBookUid('Bk'))!;
     await db.upsertReaderPosition(ReaderPositionsCompanion.insert(
-        bookKey: 'Bk', sectionIndex: 0, normCharOffset: 100, updatedAt: 1));
+        bookUid: bkUid, sectionIndex: 0, normCharOffset: 100, updatedAt: 1));
     await db.into(db.bookmarks).insert(BookmarksCompanion.insert(
-        bookKey: 'Bk',
+        bookUid: bkUid,
         sectionIndex: 0,
         normCharOffset: 100,
         label: 'bm',

@@ -120,9 +120,11 @@ void main() {
 
   test('转化后阅读进度与完成标记仍在（进度单位换轨是另一回事，行不能丢）', () async {
     final FushiDatabase db = await seedImageEpub();
+    // v82：进度行按书稳定 uid 关联（insertEpubBook 自动生成，取回换算）。
+    final String bookUid = (await db.resolveEpubBookUid(key))!;
     await db.upsertReaderPosition(
       ReaderPositionsCompanion.insert(
-        bookKey: key,
+        bookUid: bookUid,
         sectionIndex: 3,
         normCharOffset: 4200,
         updatedAt: 1700000000000,
@@ -139,8 +141,8 @@ void main() {
       coverPath: 'images/page_0001.png',
     );
 
-    final ReaderPositionRow? pos = await db.getReaderPosition(key);
-    expect(pos, isNotNull, reason: '进度行按 bookKey 关联，身份不变就不该丢');
+    final ReaderPositionRow? pos = await db.getReaderPosition(bookUid);
+    expect(pos, isNotNull, reason: '进度行按 bookUid 关联，身份不变就不该丢');
     expect(pos!.sectionIndex, 3);
     expect((await db.getEpubBook(key))!.completedAt, isNotNull);
   });

@@ -270,6 +270,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 时间；SRT 卡的 SrtBook 自带）。
   Map<String, int> _epubImportedAtByKey = const <String, int>{};
 
+  /// v82：epub bookKey → 稳定 uid（[bookLastReadAtProvider] 的键换算表，与
+  /// [_epubImportedAtByKey] 同批预取）。
+  Map<String, String> _epubUidByKey = const <String, String>{};
+
   /// 已标记「读完」的书 bookKey 集合（EpubBooks.completedAt 非 null 的单一真值）。
   /// EPUB 小说卡按自身 bookKey、有声书 SRT 卡按其配对 bookKey 命中同一集合，供概览
   /// 「Completed」统计、卡片完成视觉、菜单「标记/取消」标签联动。随 [_loadShelfMaps]
@@ -789,6 +793,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     _epubImportedAtByKey = <String, int>{
       for (final EpubBookRow r in epubRows) r.bookKey: r.importedAt,
     };
+    // v82：reader_positions 键 = uid；书架条目身份仍是 bookKey，查 recency 前
+    // 经此表换算（同一批行零额外查询）。空 uid 行不进表（视同无阅读记录）。
+    _epubUidByKey = <String, String>{
+      for (final EpubBookRow r in epubRows)
+        if (r.uid.isNotEmpty) r.bookKey: r.uid,
+    };
     _completedBookKeys = await appModel.database.getCompletedEpubBookKeys();
     _memberSortIndex = memberSortIndex;
     _collectionsById = <int, MediaCollectionRow>{
@@ -853,8 +863,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         ShelfSortMode.imported => t.sort_imported,
       };
 
-  /// 每本书（bookKey → reader_positions.updatedAt 毫秒）的最后阅读时间；
-  /// 关书时经 [ReaderFushiSource.onSourceExit] 与书列表同点失效（BUG-777）。
+  /// 每本书（书稳定身份 → reader_positions.updatedAt 毫秒）的最后阅读时间；
+  /// v82 起键 = epub uid（bookKey 经 [_epubUidByKey] 换算后查）。关书时经
+  /// [ReaderFushiSource.onSourceExit] 与书列表同点失效（BUG-777）。
   Map<String, int> get _lastReadAtByBookKey =>
       ref.watch(bookLastReadAtProvider).valueOrNull ?? const <String, int>{};
 
@@ -879,7 +890,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       }
       final String? bookKey = it.payload.srt?.bookKey ??
           _parseBookKey(it.payload.epub!.mediaIdentifier);
-      return _lastReadAtByBookKey[bookKey] ?? it.importedAt;
+      // v82：recency 表键 = uid；bookKey（SRT 卡为其配对 epub bookKey）经换算表
+      // 转一跳，换算不上（standalone SRT 空键/书行已删）与旧行为同样查不到。
+      return _lastReadAtByBookKey[_epubUidByKey[bookKey] ?? bookKey] ??
+          it.importedAt;
     }
 
     final MediaCollectionRow? collection = group.collection;

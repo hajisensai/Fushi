@@ -514,7 +514,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 81;
+  int get schemaVersion => 82;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -2092,6 +2092,130 @@ class FushiDatabase extends _$FushiDatabase
                   "ON epub_books (uid) WHERE uid != ''");
             }
           }
+          if (from < 82) {
+            // v82（P3 Stage 1b）：四张子表书键从 book_key(=sanitize(title))
+            // 切到本机稳定 uid（v81 地基）。create-copy-drop-rename（v24 同形，
+            // 裸 SQL 保证与 drift 生成形一致）：
+            // - reader_positions 跨书族：epub 命中换 uid，JOIN 不上的行（SRT
+            //   等非 epub 域）照抄原键值（该域键本就稳定）；
+            // - bookmarks / book_custom_css / revealed_images 纯 epub 域：
+            //   INNER JOIN 顺带清孤儿（css 历史无 FK 会积孤儿行）。
+            // 列级重入守卫：book_key 列还在才重建（v82 后建的库/已迁完直接跳过）。
+            // epub_books 守卫与阶梯其它触碰步同风格（合成/partial 测试库防炸；
+            // 真实阶梯库 from<5 必建 epub_books）。
+            final bool hasEpubBooks = await _tableExists('epub_books');
+            if (hasEpubBooks &&
+                await _tableExists('reader_positions') &&
+                await _columnExists('reader_positions', 'book_key')) {
+              await customStatement('''
+              CREATE TABLE reader_positions_v82 (
+                id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                book_uid TEXT NOT NULL UNIQUE,
+                section_index INTEGER NOT NULL,
+                norm_char_offset INTEGER NOT NULL,
+                char_offset INTEGER NOT NULL DEFAULT -1,
+                updated_at INTEGER NOT NULL)''');
+              await customStatement('''
+              INSERT INTO reader_positions_v82
+                (id, book_uid, section_index, norm_char_offset, char_offset,
+                 updated_at)
+              SELECT rp.id,
+                     COALESCE((SELECT eb.uid FROM epub_books eb
+                               WHERE eb.book_key = rp.book_key
+                                 AND eb.uid != ''),
+                              rp.book_key),
+                     rp.section_index, rp.norm_char_offset, rp.char_offset,
+                     rp.updated_at
+              FROM reader_positions rp''');
+              await customStatement('DROP TABLE reader_positions');
+              await customStatement(
+                  'ALTER TABLE reader_positions_v82 RENAME TO reader_positions');
+            }
+            if (hasEpubBooks &&
+                await _tableExists('bookmarks') &&
+                await _columnExists('bookmarks', 'book_key')) {
+              await customStatement('''
+              CREATE TABLE bookmarks_v82 (
+                id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                book_uid TEXT NOT NULL,
+                section_index INTEGER NOT NULL,
+                norm_char_offset INTEGER NOT NULL,
+                label TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                book_title TEXT,
+                page_in_chapter INTEGER,
+                total_pages_in_chapter INTEGER)''');
+              await customStatement('''
+              INSERT INTO bookmarks_v82
+                (id, book_uid, section_index, norm_char_offset, label,
+                 created_at, book_title, page_in_chapter,
+                 total_pages_in_chapter)
+              SELECT bm.id, eb.uid, bm.section_index, bm.norm_char_offset,
+                     bm.label, bm.created_at, bm.book_title,
+                     bm.page_in_chapter, bm.total_pages_in_chapter
+              FROM bookmarks bm
+              JOIN epub_books eb
+                ON eb.book_key = bm.book_key AND eb.uid != ''
+              ''');
+              await customStatement('DROP TABLE bookmarks');
+              await customStatement(
+                  'ALTER TABLE bookmarks_v82 RENAME TO bookmarks');
+            }
+            if (hasEpubBooks &&
+                await _tableExists('book_custom_css') &&
+                await _columnExists('book_custom_css', 'book_key')) {
+              await customStatement('''
+              CREATE TABLE book_custom_css_v82 (
+                book_uid TEXT NOT NULL,
+                relative_path TEXT NOT NULL,
+                content TEXT NOT NULL DEFAULT '',
+                deleted INTEGER NOT NULL DEFAULT 0 CHECK (deleted IN (0, 1)),
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (book_uid, relative_path))''');
+              await customStatement('''
+              INSERT INTO book_custom_css_v82
+                (book_uid, relative_path, content, deleted, updated_at)
+              SELECT eb.uid, c.relative_path, c.content, c.deleted,
+                     c.updated_at
+              FROM book_custom_css c
+              JOIN epub_books eb
+                ON eb.book_key = c.book_key AND eb.uid != ''
+              ''');
+              await customStatement('DROP TABLE book_custom_css');
+              await customStatement(
+                  'ALTER TABLE book_custom_css_v82 RENAME TO book_custom_css');
+            }
+            if (hasEpubBooks &&
+                await _tableExists('revealed_images') &&
+                await _columnExists('revealed_images', 'book_key')) {
+              await customStatement('''
+              CREATE TABLE revealed_images_v82 (
+                book_uid TEXT NOT NULL,
+                image_key TEXT NOT NULL,
+                revealed_at INTEGER NOT NULL,
+                PRIMARY KEY (book_uid, image_key))''');
+              await customStatement('''
+              INSERT INTO revealed_images_v82
+                (book_uid, image_key, revealed_at)
+              SELECT eb.uid, r.image_key, r.revealed_at
+              FROM revealed_images r
+              JOIN epub_books eb
+                ON eb.book_key = r.book_key AND eb.uid != ''
+              ''');
+              await customStatement('DROP TABLE revealed_images');
+              await customStatement(
+                  'ALTER TABLE revealed_images_v82 RENAME TO revealed_images');
+            }
+            // 书签索引换列成对重建（旧 idx 已随 DROP TABLE 消亡；本索引与
+            // idx_epub_books_uid 同理不进 _ensureIndexes——那个清单会被更早
+            // 的迁移步调用，彼时新列还不存在）。
+            if (await _tableExists('bookmarks') &&
+                await _columnExists('bookmarks', 'book_uid')) {
+              await customStatement(
+                  'CREATE INDEX IF NOT EXISTS idx_bookmarks_book_uid_created '
+                  'ON bookmarks (book_uid, created_at DESC)');
+            }
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -2100,6 +2224,10 @@ class FushiDatabase extends _$FushiDatabase
           await customStatement(
               'CREATE UNIQUE INDEX IF NOT EXISTS idx_epub_books_uid '
               "ON epub_books (uid) WHERE uid != ''");
+          // 与 v82 步成对：书签索引换 book_uid 列，同理不进 _ensureIndexes。
+          await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_bookmarks_book_uid_created '
+              'ON bookmarks (book_uid, created_at DESC)');
           await _ensureIndexes();
         },
         beforeOpen: (details) async {

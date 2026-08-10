@@ -1178,6 +1178,13 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     if (_suppressPositionPersist) {
       return;
     }
+    // v82：位置键 = EpubBooks.uid（[_bookUid]，开书定位时解析）。uid 缺失（书行
+    // 不在库——正常路径 init 早已 pop，此处仅防御）时跳过写入，不拿 bookKey 兜底
+    // 造永远 JOIN 不上的孤儿行。
+    final String? bookUid = _bookUid;
+    if (bookUid == null) {
+      return;
+    }
     _lastSavedSection = section;
     _lastSavedProgress = progress;
 
@@ -1192,7 +1199,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         ReaderPositionRepository(appModel.database);
     try {
       await repo.save(
-        bookKey: widget.bookKey,
+        bookUid: bookUid,
         sectionIndex: section,
         normCharOffset: saveArgs.normCharOffset,
         // BUG-162: >=0 写精确锚（char_offset 列）。<0（WebView 当帧算不出精确偏移）
