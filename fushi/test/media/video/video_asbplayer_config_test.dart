@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
+import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
 
 void main() {
   test('defaults mirror asbplayer playback preferences', () {
@@ -9,6 +10,11 @@ void main() {
     expect(VideoAsbplayerConfig.defaults.longPressSpeed, 2.0);
     // TODO-173/BUG-231: 双击行为默认 0=关（向后兼容，双击仍走暂停/全屏，不分区）。
     expect(VideoAsbplayerConfig.defaults.doubleTapSeekSeconds, 0);
+    // BUG-1485: 横滑 seek 默认中档（拖过整屏 ≈ 90 秒），比旧的比例制钝一个数量级。
+    expect(
+      VideoAsbplayerConfig.defaults.dragSeekSensitivity,
+      VideoSeekSensitivity.medium,
+    );
   });
 
   test('encode/decode round trips user playback preferences', () {
@@ -18,6 +24,7 @@ void main() {
       pauseAtSubtitleEnd: true,
       doubleTapSeekSeconds: 10,
       longPressSpeed: 2.5,
+      dragSeekSensitivity: VideoSeekSensitivity.low,
     );
 
     final VideoAsbplayerConfig decoded =
@@ -28,6 +35,36 @@ void main() {
     expect(decoded.pauseAtSubtitleEnd, isTrue);
     expect(decoded.doubleTapSeekSeconds, 10);
     expect(decoded.longPressSpeed, 2.5);
+    expect(decoded.dragSeekSensitivity, VideoSeekSensitivity.low);
+  });
+
+  test('BUG-1485: 旧档（无 dragSeekSensitivity 键）与脏值都回落默认档', () {
+    // 升级前写下的配置里没有这个键——不得抛、不得变成别的档。
+    expect(
+      VideoAsbplayerConfig.decode(
+        '{"seekSeconds":5,"speedStep":0.2,"pauseAtSubtitleEnd":false}',
+      ).dragSeekSensitivity,
+      VideoSeekSensitivity.medium,
+    );
+    // 脏值：类型不对（数字，例如误存了枚举 index）/ 不认识的档名。
+    expect(
+      VideoAsbplayerConfig.decode('{"dragSeekSensitivity":2}')
+          .dragSeekSensitivity,
+      VideoSeekSensitivity.medium,
+    );
+    expect(
+      VideoAsbplayerConfig.decode('{"dragSeekSensitivity":"turbo"}')
+          .dragSeekSensitivity,
+      VideoSeekSensitivity.medium,
+    );
+    // 存的是枚举 name 而非 index，改枚举顺序不串档。
+    expect(
+      VideoAsbplayerConfig.encode(
+        VideoAsbplayerConfig.defaults
+            .copyWith(dragSeekSensitivity: VideoSeekSensitivity.high),
+      ),
+      contains('"dragSeekSensitivity":"high"'),
+    );
   });
 
   test('decode tolerates empty and clamps unsupported values', () {

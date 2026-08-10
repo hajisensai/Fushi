@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
+
 class VideoAsbplayerConfig {
   const VideoAsbplayerConfig({
     required this.seekSeconds,
@@ -7,6 +9,7 @@ class VideoAsbplayerConfig {
     required this.pauseAtSubtitleEnd,
     required this.doubleTapSeekSeconds,
     required this.longPressSpeed,
+    required this.dragSeekSensitivity,
   });
 
   /// 双击「字幕跳句」哨兵值（TODO-173/BUG-231）：[doubleTapSeekSeconds] 取此值时，
@@ -31,12 +34,18 @@ class VideoAsbplayerConfig {
     pauseAtSubtitleEnd: false,
     doubleTapSeekSeconds: 0,
     longPressSpeed: 2.0,
+    dragSeekSensitivity: VideoSeekSensitivity.medium,
   );
 
   final int seekSeconds;
   final double speedStep;
   final bool pauseAtSubtitleEnd;
   final double longPressSpeed;
+
+  /// 移动端横滑拖动 seek 的灵敏度档位（BUG-1485）。语义是「拖过整屏 = 多长视频时间」，
+  /// 与视频总时长解耦；换算模型见 [VideoHorizontalSeekGesture]。仅移动端消费（桌面
+  /// 无横滑手势）。
+  final VideoSeekSensitivity dragSeekSensitivity;
 
   /// 双击视频左/右区的行为（TODO-173/BUG-231）。见 [doubleTapSeekOptions] /
   /// [kDoubleTapSubtitle]。0=关（双击仍走平台默认的暂停/全屏，不分区）。
@@ -48,6 +57,7 @@ class VideoAsbplayerConfig {
     bool? pauseAtSubtitleEnd,
     int? doubleTapSeekSeconds,
     double? longPressSpeed,
+    VideoSeekSensitivity? dragSeekSensitivity,
   }) {
     return VideoAsbplayerConfig(
       seekSeconds: seekSeconds ?? this.seekSeconds,
@@ -55,6 +65,7 @@ class VideoAsbplayerConfig {
       pauseAtSubtitleEnd: pauseAtSubtitleEnd ?? this.pauseAtSubtitleEnd,
       doubleTapSeekSeconds: doubleTapSeekSeconds ?? this.doubleTapSeekSeconds,
       longPressSpeed: longPressSpeed ?? this.longPressSpeed,
+      dragSeekSensitivity: dragSeekSensitivity ?? this.dragSeekSensitivity,
     );
   }
 
@@ -64,6 +75,7 @@ class VideoAsbplayerConfig {
         'pauseAtSubtitleEnd': pauseAtSubtitleEnd,
         'doubleTapSeekSeconds': doubleTapSeekSeconds,
         'longPressSpeed': longPressSpeed,
+        'dragSeekSensitivity': dragSeekSensitivity.name,
       };
 
   static String encode(VideoAsbplayerConfig config) =>
@@ -87,6 +99,9 @@ class VideoAsbplayerConfig {
             _readDouble(raw['longPressSpeed'], defaults.longPressSpeed)
                 .clamp(1.0, 4.0)
                 .toDouble(),
+        dragSeekSensitivity: _readDragSeekSensitivity(
+          raw['dragSeekSensitivity'],
+        ),
       );
     } catch (_) {
       return defaults;
@@ -111,5 +126,12 @@ class VideoAsbplayerConfig {
       if (doubleTapSeekOptions.contains(v)) return v;
     }
     return defaults.doubleTapSeekSeconds;
+  }
+
+  /// 横滑 seek 档位（BUG-1485）：只接受枚举 name 字符串（存 name 而非 index，改序不串
+  /// 档）。旧档（无此键）/非法值回落默认档，不抛。
+  static VideoSeekSensitivity _readDragSeekSensitivity(Object? raw) {
+    if (raw is String) return VideoSeekSensitivity.fromName(raw);
+    return defaults.dragSeekSensitivity;
   }
 }

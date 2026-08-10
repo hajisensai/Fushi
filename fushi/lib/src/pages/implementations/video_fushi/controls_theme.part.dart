@@ -190,14 +190,30 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 拉满亮度/音量。值越大越不敏感（见 [_videoVerticalGestureSensitivity]）。
       verticalGestureSensitivity:
           _VideoFushiPageState._videoVerticalGestureSensitivity,
-      // TODO-916 症状①：启用 fork 内置横滑 seek（third_party/media_kit_video 的
-      // MaterialVideoControls.onHorizontalDragUpdate/End）：按 [position + diff *
-      // duration / horizontalGestureSensitivity] 换算目标、松手 player.seek，拖回
-      // 原点（swipeDuration==0）自动取消。仅移动端 theme 启用；桌面
+      // TODO-916 症状①：启用 fork 的横滑 seek（third_party/media_kit_video 的
+      // MaterialVideoControls.onHorizontalDragUpdate/End）：拖动中算目标、松手
+      // player.seek，拖回原点（增量 0）自动取消。仅移动端 theme 启用；桌面
       // [_desktopControlsTheme] 不含此字段（鼠标拖进度条 + 键盘 seek 键，诚实降级）。
       seekGesture: true,
-      horizontalGestureSensitivity:
-          _VideoFushiPageState._videoHorizontalGestureSensitivity,
+      // BUG-1485：把像素→时间的换算从 fork 内建公式换成 Hibiki 侧纯函数。fork 默认
+      // `seconds = dragDx * duration / 1000` 让**每像素跨越的时间与总时长成正比**，
+      // 2 小时的片子每像素 7.2 秒、拖满屏宽 = 48 分钟，用户「一拽就起飞」的根因。
+      // [VideoHorizontalSeekGesture] 改成「拖过整屏 = 固定一段时长」（与总时长解耦）
+      // + 超长/超短片钳制 + 幂函数阻尼，档位由用户设置 [_asbConfig.dragSeekSensitivity]
+      // 决定。闭包每次调用现读 `_asbConfig`，设置改完立即生效（无需重开播放页）。
+      horizontalSeekResolver: ({
+        required double dragDx,
+        required double surfaceWidth,
+        required Duration duration,
+        required Duration position,
+      }) =>
+          VideoHorizontalSeekGesture.resolveDelta(
+        dragDx: dragDx,
+        surfaceWidth: surfaceWidth,
+        duration: duration,
+        position: position,
+        sensitivity: _asbConfig.dragSeekSensitivity,
+      ),
       // 居中 HUD：fork 默认只显增量，这里替换成「目标绝对时间 + 增量」两行（主流
       // 播放器手感）。builder 每帧随拖动重建，读 controller 实时 position + 增量算
       // 目标时间（clamp [0,duration]）。delta 为 fork 回传的有符号 swipeDuration。
