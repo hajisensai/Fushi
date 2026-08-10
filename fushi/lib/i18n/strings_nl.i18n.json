@@ -3297,5 +3297,10 @@
   "video_external_categories_invalid": "Categories must be comma-separated numeric IDs.",
   "video_download_path_mapping_invalid": "Enter a profile ID, remote root, and absolute local root.",
   "video_opensubtitles_endpoint": "API endpoint",
-  "video_download_target_source_empty": "No locally accessible video source is available. Add one on the Sources tab first."
+  "video_download_target_source_empty": "No locally accessible video source is available. Add one on the Sources tab first.",
+  "video_setting_drag_seek_sensitivity": "Drag-to-seek sensitivity",
+  "video_setting_drag_seek_sensitivity_hint": "How far one full-width swipe seeks on a touch screen: Low about 45s, Medium about 90s, High about 180s. Independent of the video's total length. Touch drag only; mouse and keyboard seeking are unaffected.",
+  "video_setting_drag_seek_sensitivity_low": "Low",
+  "video_setting_drag_seek_sensitivity_medium": "Medium",
+  "video_setting_drag_seek_sensitivity_high": "High"
 }

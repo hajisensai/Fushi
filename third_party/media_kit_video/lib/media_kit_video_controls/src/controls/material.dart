@@ -12,6 +12,26 @@ import 'package:media_kit_video/media_kit_video_controls/src/controls/extensions
 import 'package:media_kit_video/media_kit_video_controls/src/controls/methods/video_state.dart';
 import 'package:media_kit_video/media_kit_video_controls/src/controls/widgets/video_controls_theme_data_injector.dart';
 
+/// Hibiki patch (BUG-1485): injection point for the horizontal drag-to-seek
+/// pixel→time mapping.
+///
+/// Upstream hard-codes `seconds = dragDx * duration / horizontalGestureSensitivity`,
+/// i.e. the seek amount per pixel scales with the **total duration** — a 2h movie
+/// flies ~48 minutes across one screen width. Hosts that want a duration-decoupled
+/// (and/or non-linear, user-configurable) mapping supply this resolver instead;
+/// when it is `null` the upstream formula is used verbatim.
+///
+/// [dragDx] is the signed horizontal displacement from the drag origin in logical
+/// pixels (positive = forward). Returns the signed delta to apply to [position];
+/// the resolver is responsible for keeping `position + delta` inside
+/// `[Duration.zero, duration]`.
+typedef HorizontalSeekResolver = Duration Function({
+  required double dragDx,
+  required double surfaceWidth,
+  required Duration duration,
+  required Duration position,
+});
+
 /// {@template material_video_controls}
 ///
 /// [Video] controls which use Material design.
@@ -177,7 +197,14 @@ class MaterialVideoControlsThemeData {
   final double verticalGestureSensitivity;
 
   /// Gesture sensitivity on horizontal drag gestures, the higher the value is the less sensitive the gesture.
+  ///
+  /// NOTE (Hibiki patch, BUG-1485): ignored when [horizontalSeekResolver] is
+  /// non-null — the resolver fully replaces the built-in mapping.
   final double horizontalGestureSensitivity;
+
+  /// Hibiki patch (BUG-1485): replaces the built-in horizontal drag-to-seek
+  /// pixel→time mapping. See [HorizontalSeekResolver]. `null` = upstream formula.
+  final HorizontalSeekResolver? horizontalSeekResolver;
 
   /// Color of backdrop that comes up when controls are visible.
   final Color? backdropColor;
@@ -356,6 +383,7 @@ class MaterialVideoControlsThemeData {
     this.speedUpFactor = 2.0,
     this.verticalGestureSensitivity = 100,
     this.horizontalGestureSensitivity = 1000,
+    this.horizontalSeekResolver,
     this.backdropColor = const Color(0x66000000),
     this.padding,
     this.controlsHoverDuration = const Duration(seconds: 3),
@@ -426,6 +454,7 @@ class MaterialVideoControlsThemeData {
     double? speedUpFactor,
     double? verticalGestureSensitivity,
     double? horizontalGestureSensitivity,
+    HorizontalSeekResolver? horizontalSeekResolver,
     Color? backdropColor,
     Duration? controlsHoverDuration,
     Duration? controlsTransitionDuration,
@@ -494,6 +523,8 @@ class MaterialVideoControlsThemeData {
           verticalGestureSensitivity ?? this.verticalGestureSensitivity,
       horizontalGestureSensitivity:
           horizontalGestureSensitivity ?? this.horizontalGestureSensitivity,
+      horizontalSeekResolver:
+          horizontalSeekResolver ?? this.horizontalSeekResolver,
       backdropColor: backdropColor ?? this.backdropColor,
       controlsHoverDuration:
           controlsHoverDuration ?? this.controlsHoverDuration,
@@ -609,7 +640,11 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
 
   Offset _dragInitialDelta =
       Offset.zero; // Initial position for horizontal drag
-  int swipeDuration = 0; // Duration to seek in video
+  // Hibiki patch (BUG-1485): retyped from `int swipeDuration` (whole seconds) to
+  // a `Duration` so a host-supplied [HorizontalSeekResolver] can express
+  // sub-second deltas (the old whole-second quantisation made fine-grained
+  // scrubbing impossible).
+  Duration swipeDuration = Duration.zero; // Duration to seek in video
   bool showSwipeDuration = false; // Whether to show the seek duration overlay
 
   bool _speedUpIndicator = false;
@@ -847,6 +882,24 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
       return;
     }
 
+    final resolver = _theme(context).horizontalSeekResolver;
+    if (resolver != null) {
+      // Hibiki patch (BUG-1485): host-supplied mapping. Signed drag displacement
+      // from the drag origin, positive = forward.
+      final delta = resolver(
+        dragDx: details.localPosition.dx - _dragInitialDelta.dx,
+        surfaceWidth: widgetWidth(context),
+        duration: controller(context).player.state.duration,
+        position: controller(context).player.state.position,
+      );
+      setState(() {
+        swipeDuration = delta;
+        showSwipeDuration = true;
+        _seekBarDeltaValueNotifier.value = delta;
+      });
+      return;
+    }
+
     final diff = _dragInitialDelta.dx - details.localPosition.dx;
     final duration = controller(context).player.state.duration.inSeconds;
     final position = controller(context).player.state.position.inSeconds;
@@ -858,7 +911,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
 
     if (relativePosition <= duration && relativePosition >= 0) {
       setState(() {
-        swipeDuration = seconds;
+        swipeDuration = Duration(seconds: seconds);
         showSwipeDuration = true;
         _seekBarDeltaValueNotifier.value = Duration(seconds: seconds);
       });
@@ -866,9 +919,9 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
   }
 
   void onHorizontalDragEnd() {
-    if (swipeDuration != 0) {
-      Duration newPosition = controller(context).player.state.position +
-          Duration(seconds: swipeDuration);
+    if (swipeDuration != Duration.zero) {
+      Duration newPosition =
+          controller(context).player.state.position + swipeDuration;
       newPosition = newPosition.clamp(
         Duration.zero,
         controller(context).player.state.duration,
@@ -879,6 +932,10 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
     setState(() {
       _dragInitialDelta = Offset.zero;
       showSwipeDuration = false;
+      // Hibiki patch (BUG-1485): clear the committed delta, otherwise a following
+      // degenerate drag (one that never reaches a second update) would re-apply
+      // the previous drag's delta on release.
+      swipeDuration = Duration.zero;
     });
   }
 
@@ -1519,7 +1576,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                     opacity: showSwipeDuration ? 1 : 0,
                     child: _theme(context)
                             .seekIndicatorBuilder
-                            ?.call(context, Duration(seconds: swipeDuration)) ??
+                            ?.call(context, swipeDuration) ??
                         Container(
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
@@ -1529,9 +1586,9 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                           height: 52.0,
                           width: 108.0,
                           child: Text(
-                            swipeDuration > 0
-                                ? "+ ${Duration(seconds: swipeDuration).label()}"
-                                : "- ${Duration(seconds: swipeDuration).label()}",
+                            swipeDuration > Duration.zero
+                                ? "+ ${swipeDuration.label()}"
+                                : "- ${swipeDuration.label()}",
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               fontSize: 14.0,

@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1389 条。点号进各自文件。
+> 共 1390 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1485](bugs/BUG-1485-mobile-video-drag-seek-sensitivity.md) | ✅ | ✅ | 移动端视频横滑 seek 灵敏度过高 |
 | [BUG-1483](bugs/BUG-1483-webview2-userdata-readonly-install.md) | ✅ | ✅ | Windows 装进不可写目录后 WebView2 数据目录建不出来（启动必弹错 + 更新失败） |
 | [BUG-1482](bugs/BUG-1482-video-resource-dropdown-overflow.md) | ✅ | ✅ | 资源搜索对话框下拉框横向溢出 |
 | [BUG-1481](bugs/BUG-1481-rolling-channel-shared-across-products.md) | ✅ | ✅ | fushi 与 hibiki 共用同一套发布通道，hibiki 自更新被结构性阻断 |

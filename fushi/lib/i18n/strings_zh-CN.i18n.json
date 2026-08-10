@@ -3297,5 +3297,10 @@
   "video_external_categories_invalid": "分类必须是用逗号分隔的数字 ID。",
   "video_download_path_mapping_invalid": "请输入配置 ID、远程根目录和本机绝对根目录。",
   "video_opensubtitles_endpoint": "API 端点",
-  "video_download_target_source_empty": "没有可访问的本地视频来源。请先在来源页添加。"
+  "video_download_target_source_empty": "没有可访问的本地视频来源。请先在来源页添加。",
+  "video_setting_drag_seek_sensitivity": "拖动调进度灵敏度",
+  "video_setting_drag_seek_sensitivity_hint": "触屏横向滑动调进度时，划过整屏宽度对应的时长：低约 45 秒、中约 90 秒、高约 180 秒。与视频总长无关。只影响触屏拖动，鼠标和键盘调进度不受影响。",
+  "video_setting_drag_seek_sensitivity_low": "低",
+  "video_setting_drag_seek_sensitivity_medium": "中",
+  "video_setting_drag_seek_sensitivity_high": "高"
 }
