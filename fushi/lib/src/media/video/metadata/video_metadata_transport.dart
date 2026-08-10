@@ -9,6 +9,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:fushi/src/utils/net/app_http.dart';
 
 class VideoMetadataNetworkException implements Exception {
   const VideoMetadataNetworkException(
@@ -78,7 +79,7 @@ class VideoMetadataHttpClient {
     VideoMetadataRetrySleep? sleep,
     VideoMetadataNow? now,
   })  : assert(maxAttempts > 0),
-        _client = client ?? http.Client(),
+        _client = client ?? createAppHttpIoClient(),
         _ownsClient = client == null,
         _sleep = sleep ?? Future<void>.delayed,
         _now = now ?? DateTime.now;

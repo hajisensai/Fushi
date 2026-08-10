@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
 
 import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi/src/utils/net/app_http.dart';
 
 const String _nyaaNamespace = 'https://nyaa.si/xmlns/nyaa';
 
@@ -403,7 +404,7 @@ String _childText(XmlElement item, String local) {
 /// `1_4` 生肉 Raw）；filter：`0` 无过滤 / `2` 仅 trusted。
 class NyaaClient {
   NyaaClient({this.baseUrl = 'https://nyaa.si', http.Client? client})
-      : _client = client ?? http.Client();
+      : _client = client ?? createAppHttpIoClient();
 
   final String baseUrl;
   final http.Client _client;

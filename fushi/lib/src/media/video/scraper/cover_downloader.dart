@@ -29,6 +29,7 @@ import 'package:fushi/src/media/video/video_import_dialog.dart'
 import 'package:fushi/src/media/video/video_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
+import 'package:fushi/src/utils/net/app_http.dart';
 
 /// 海报下载器。构造注入 [http.Client]（默认自建），测试用 mock client。
 class CoverDownloader {
@@ -37,7 +38,7 @@ class CoverDownloader {
     this.timeout = kCoverImageDownloadTimeout,
     this.maxAttempts = kTransportMaxAttempts,
     Future<void> Function(Duration delay)? retrySleep,
-  })  : _client = client ?? http.Client(),
+  })  : _client = client ?? createAppHttpIoClient(),
         _retrySleep = retrySleep;
 
   final http.Client _client;

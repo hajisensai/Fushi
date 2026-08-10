@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 
 import '../anki_media_dedup.dart';
 import '../anki_models.dart';
+import '../anki_remote_media_http.dart';
 import '../anki_note_type_definition.dart';
 import '../base_anki_repository.dart';
 import '../lapis_note_type.dart';
@@ -1977,7 +1978,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           );
           return AudioFetchOutcome.stored(filename);
         case AnkiAudioRefKind.remoteUrl:
-          final client = HttpClient();
+          // BUG-1498：任意公网 URL（Forvo / 词典音频源），必须经应用代理出口，
+          // 否则挂着代理的机器上音频静默抓不到、卡片少一半。
+          final client = createAnkiRemoteMediaHttpClient();
           try {
             final request = await client.getUrl(Uri.parse(url));
             final response = await request.close();
