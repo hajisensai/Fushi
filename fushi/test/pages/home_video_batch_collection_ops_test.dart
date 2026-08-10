@@ -10,10 +10,12 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -84,7 +86,10 @@ void main() {
     ));
   }
 
-  Widget buildApp() => ProviderScope(
+  // #792 分区化：合集封面卡+散卡混排墙（_buildLocalVideoSlivers）搬进 series
+  // 分区，标签栏/选择入口只在非 home 分区渲染，默认钉 series。
+  Widget buildApp({VideoLibrarySection section = VideoLibrarySection.series}) =>
+      ProviderScope(
         overrides: <Override>[
           platformServicesProvider.overrideWithValue(platformServices),
           ankiRepositoryProvider.overrideWithValue(ankiRepository),
@@ -92,19 +97,27 @@ void main() {
         ],
         child: TranslationProvider(
           child: MaterialApp(
-            home: Scaffold(body: HomeVideoPage(repo: VideoBookRepository(db))),
+            home: Scaffold(
+              body: HomeVideoPage(
+                repo: VideoBookRepository(db),
+                section: section,
+              ),
+            ),
           ),
         ),
       );
 
-  Future<void> pumpPage(WidgetTester tester) async {
+  Future<void> pumpPage(
+    WidgetTester tester, {
+    VideoLibrarySection section = VideoLibrarySection.series,
+  }) async {
     // TODO-2486：顶部新增 hero 轮播（最高 420），800 高视口下墙卡中心会落到
     // 视口之外、tap 判 miss；抬高视口让墙完整可见。
     tester.view.physicalSize = const Size(1280, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(buildApp());
+    await tester.pumpWidget(buildApp(section: section));
     await tester.pumpAndSettle();
   }
 
@@ -313,7 +326,7 @@ void main() {
         reason: '混选确认文案含媒体数 + 合集数');
   });
 
-  testWidgets('TODO-2486 多选纪律：横滚行卡不开播不勾选、hero 按钮禁用',
+  testWidgets('TODO-2486 多选纪律：横滚行卡不开播不勾选、三手势全部让位批量操作',
       (WidgetTester tester) async {
     await seedVideo('video/ep1', '第1集');
     // 入库时刻 = 现在 → 「最近添加」横滚行出现（14 天窗口）。
@@ -326,12 +339,21 @@ void main() {
     final int cid = await db.createMediaCollection('合集甲');
     await db.addToCollection(cid, MediaKind.video, 'video/ep1');
 
-    await pumpPage(tester);
+    // #792 分区化：hero 轮播 + 最近添加行只在 home 分区（dashboard 概览），而
+    // 选择入口（标签栏 checklist）只在非 home 分区。运行时 shell 是**单实例**
+    // HomeVideoPage 切 section 参数（video_library_shell.dart），选择态跨分区
+    // 保留——此处镜像该真实路径：home 验前置 → 切 allVideos 进多选 → 切回
+    // home 断言 hero/行卡的多选态纪律。
+    await pumpPage(tester, section: VideoLibrarySection.home);
     final Finder recentCard =
         find.byKey(const ValueKey<String>('home_video_recent_video/fresh'));
     expect(recentCard, findsOneWidget, reason: '前置：最近添加行须出现');
 
+    await tester.pumpWidget(buildApp(section: VideoLibrarySection.allVideos));
+    await tester.pumpAndSettle();
     await enterSelectionMode(tester);
+    await tester.pumpWidget(buildApp(section: VideoLibrarySection.home));
+    await tester.pumpAndSettle();
     // 行卡是墙内容的快捷镜像、不参与勾选：多选态点击不得开播（弹进播放器会把
     // 批量操作打断）也不得改变选中计数。
     await tester.tap(recentCard, warnIfMissed: false);
@@ -340,12 +362,12 @@ void main() {
         reason: '多选态点行卡不得推走库页（不开播）');
     expect(find.text(t.batch_selected_count(n: 0)), findsOneWidget,
         reason: '行卡不参与勾选，计数保持 0');
-    // hero 两按钮多选态渲染禁用（onPressed=null），背景导航同门控。
-    final OutlinedButton heroDetail = tester.widget<OutlinedButton>(
-        find.byKey(ValueKey<String>('home_video_hero_detail_$cid')));
-    expect(heroDetail.onPressed, isNull, reason: '多选态 hero「详情」必须禁用');
-    final FilledButton heroContinue = tester.widget<FilledButton>(
-        find.byKey(ValueKey<String>('home_video_hero_continue_$cid')));
-    expect(heroContinue.onPressed, isNull, reason: '多选态 hero 续播必须禁用');
+    // #792 dashboard 化后 home 无 hero 轮播（_buildHeroCarousel 已弃用），多选
+    // 纪律由共享行卡 builder 承担：多选态行卡三个手势全部置 null（点击/长按/
+    // 右键都让位给批量操作）。
+    final FushiCard recentFushiCard = tester.widget<FushiCard>(recentCard);
+    expect(recentFushiCard.onTap, isNull, reason: '多选态行卡点击必须置 null');
+    expect(recentFushiCard.onLongPress, isNull, reason: '多选态行卡长按必须让位扫选');
+    expect(recentFushiCard.onSecondaryTap, isNull, reason: '多选态行卡右键必须让位扫选');
   });
 }

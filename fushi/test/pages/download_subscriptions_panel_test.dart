@@ -1,8 +1,10 @@
 import 'dart:io';
 
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
@@ -113,6 +115,14 @@ class _FakeAppModel extends AppModel {
 
   @override
   bool get torrentUploadIntroShown => true;
+
+  // #794 起下载页任务 tab 直接读 appModel.database(VideoDownloadJobsPanel),
+  // fake 懒建内存库,用到任务 tab 的用例负责 close。
+  FushiDatabase? testDatabase;
+
+  @override
+  FushiDatabase get database =>
+      testDatabase ??= FushiDatabase.forTesting(NativeDatabase.memory());
 }
 
 void main() {
@@ -271,5 +281,6 @@ void main() {
 
     service.checking.dispose();
     store.revision.dispose();
+    await appModel.testDatabase?.close();
   });
 }

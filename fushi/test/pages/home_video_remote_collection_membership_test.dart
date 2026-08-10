@@ -10,6 +10,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
@@ -91,6 +92,9 @@ void main() {
             home: Scaffold(
               body: HomeVideoPage(
                 repo: VideoBookRepository(db),
+                // #792 分区化：home 分区只渲染 dashboard 概览，合集封面卡与远端
+                // 占位卡所在的混排墙（_buildLocalVideoSlivers）搬进了 series 分区。
+                section: VideoLibrarySection.series,
                 remoteVideoClientLoader: () async => client,
                 remoteVideoDownloadDestination: (RemoteVideoInfo v) async =>
                     File('${pathProviderDir.path}/${v.id.hashCode}.mp4'),
