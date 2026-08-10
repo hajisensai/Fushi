@@ -514,7 +514,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 83;
+  int get schemaVersion => 84;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -535,6 +535,26 @@ class FushiDatabase extends _$FushiDatabase
               dbVersion: from,
               appSchemaVersion: to,
             );
+          }
+          // v84（BUG-1502）：给 preferences 一列 updated_at，让「是内容的偏好行」
+          // （书改名的 `override_title://` 覆盖行）能跨端 last-write-wins。
+          //
+          // ⚠️ **这一步必须排在整条阶梯最前**，而不是按版本号排在末尾：后面的迁移
+          // 步会用 drift 的**类型化** API 读写 preferences（如
+          // `migrateLegacyBookmarkPreferences` 走 `getAllPrefs()`），而类型化行
+          // 映射按代码里的列集取值——列还没加时它对缺失列做 null 断言，直接把整条
+          // onUpgrade 炸掉。加列是纯 additive 且带 `_columnExists` 幂等守卫，提前
+          // 执行对任何版本的老库都等价。
+          //
+          // 存量行**刻意留 0**（=「时刻未知」），不填迁移时刻：填迁移时刻会让跨端
+          // 「谁赢」由两台设备各自的升级时间决定——后升级的一侧会无条件覆盖先升级
+          // 一侧的所有存量改名，而用户什么操作都没做。取 0 则存量行彼此平局，LWW
+          // 平局规则「保留本机」正好等于升级前的 insert-if-absent 行为（零回归）；
+          // 任一侧真正改过一次名后立刻胜出。取舍全文见 [Preferences.updatedAt]。
+          if (from < 84 &&
+              await _tableExists('preferences') &&
+              !await _columnExists('preferences', 'updated_at')) {
+            await m.addColumn(preferences, preferences.updatedAt);
           }
           if (from < 2) {
             if (!await _columnExists('dictionary_metadata', 'type')) {

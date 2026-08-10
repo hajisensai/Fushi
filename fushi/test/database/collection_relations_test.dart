@@ -50,7 +50,7 @@ void main() {
         'fresh DB (v66) has collection_relations table and '
         'video_scrape_meta.episode_number column', () async {
       final FushiDatabase db = await openDb();
-      expect(db.schemaVersion, 83);
+      expect(db.schemaVersion, 84);
       final List<QueryRow> tables = await db
           .customSelect(
               "SELECT name FROM sqlite_master WHERE type='table' AND name='collection_relations'")

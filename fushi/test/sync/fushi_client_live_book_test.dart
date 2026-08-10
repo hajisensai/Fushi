@@ -93,7 +93,8 @@ class _FakeLibraryService implements FushiLibraryHostService {
   }
 
   @override
-  Future<void> importBook(File epubFile) async =>
+  Future<void> importBook(File epubFile,
+          {String? displayTitle, int displayTitleAt = 0}) async =>
       imported.add(await epubFile.readAsString());
 
   @override

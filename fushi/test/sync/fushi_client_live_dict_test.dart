@@ -97,7 +97,8 @@ class _FakeLibraryService implements FushiLibraryHostService {
       throw UnimplementedError('export not needed in this test');
 
   @override
-  Future<void> importBook(File epubFile) async {}
+  Future<void> importBook(File epubFile,
+      {String? displayTitle, int displayTitleAt = 0}) async {}
 
   @override
   Future<void> deleteBook(String title) async {}

@@ -11,6 +11,7 @@ import 'package:fushi/src/sync/collection_manifest.dart';
 import 'package:fushi/src/sync/collection_sync_engine.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/override_title_lookup.dart';
 import 'package:fushi/src/sync/interconnect_service_config.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/aggregate_sync_service.dart';
@@ -1510,6 +1511,11 @@ class SyncOrchestrator {
         sanitizeTtuFilename(b.title): b.title,
     };
 
+    // BUG-1503：本机用户给这些书改的名字 + LWW 戳，随上传一起走 header。一趟读
+    // 完（推多本书只查一次偏好表），没改过名的书查不到 → 不发 header。
+    final Map<String, OverrideTitleEntry> overrideTitles =
+        await readOverrideTitlesByBookKey(_db);
+
     final int total = diff.toPush.length;
     int index = 0;
 
@@ -1542,9 +1548,14 @@ class SyncOrchestrator {
           index++;
           continue;
         }
+        // 显示名跟着书走，**身份不跟着走**（BUG-1488 定的红线）：端点寻址、
+        // host 端 bookKey 派生仍恒用 raw [title]。
+        final OverrideTitleEntry? override = overrideTitles[row.bookKey];
         await backend.putRemoteBook(
           title,
           tmp,
+          displayTitle: override?.title,
+          displayTitleAt: override?.updatedAt ?? 0,
           onProgress: (double f) => _emit(SyncPhase.books,
               itemIndex: index,
               itemTotal: total,
