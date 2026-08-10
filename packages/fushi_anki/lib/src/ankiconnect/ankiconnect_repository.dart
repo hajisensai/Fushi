@@ -110,21 +110,21 @@ const int _isolateMediaThresholdBytes = 64 * 1024;
 /// AnkiConnect 上传路径：计算 sha256 文件名 + base64 数据。大媒体在后台 isolate 完成，
 /// 小媒体同步完成。返回记录 `(filename, base64Data)` 供 `storeMediaFile`。
 Future<({String filename, String base64Data})>
-fushiAnkiMediaEncodeForUploadAsync({
+    fushiAnkiMediaEncodeForUploadAsync({
   required String prefix,
   required List<int> bytes,
   required String sourceName,
   String fallbackExtension = 'bin',
 }) {
   ({String filename, String base64Data}) encode() => (
-    filename: fushiAnkiMediaFilenameForBytes(
-      prefix: prefix,
-      bytes: bytes,
-      sourceName: sourceName,
-      fallbackExtension: fallbackExtension,
-    ),
-    base64Data: base64Encode(bytes),
-  );
+        filename: fushiAnkiMediaFilenameForBytes(
+          prefix: prefix,
+          bytes: bytes,
+          sourceName: sourceName,
+          fallbackExtension: fallbackExtension,
+        ),
+        base64Data: base64Encode(bytes),
+      );
   if (bytes.length < _isolateMediaThresholdBytes) {
     return Future<({String filename, String base64Data})>.value(encode());
   }
@@ -140,11 +140,11 @@ Future<String> fushiAnkiMediaFilenameForBytesAsync({
   String fallbackExtension = 'bin',
 }) {
   String compute() => fushiAnkiMediaFilenameForBytes(
-    prefix: prefix,
-    bytes: bytes,
-    sourceName: sourceName,
-    fallbackExtension: fallbackExtension,
-  );
+        prefix: prefix,
+        bytes: bytes,
+        sourceName: sourceName,
+        fallbackExtension: fallbackExtension,
+      );
   if (bytes.length < _isolateMediaThresholdBytes) {
     return Future<String>.value(compute());
   }
@@ -185,9 +185,9 @@ String _mediaExtensionFromSource(
 
 String _safeMediaExtension(String extension, {required String fallback}) {
   final String safe = extension.toLowerCase().replaceAll(
-    RegExp(r'[^a-z0-9]'),
-    '',
-  );
+        RegExp(r'[^a-z0-9]'),
+        '',
+      );
   if (safe.isEmpty || safe.length > 12) return fallback;
   return safe;
 }
@@ -220,8 +220,7 @@ String _sha256Hex(List<int> bytes) {
   for (int chunk = 0; chunk < padded.length; chunk += 64) {
     for (int i = 0; i < 16; i++) {
       final int j = chunk + i * 4;
-      w[i] =
-          ((padded[j] << 24) |
+      w[i] = ((padded[j] << 24) |
               (padded[j + 1] << 16) |
               (padded[j + 2] << 8) |
               padded[j + 3]) &
@@ -391,8 +390,8 @@ class _MediaUploadCoordinator {
 /// peer. Files that existed before this attempt are never deletion candidates.
 class _MediaUploadTransaction {
   _MediaUploadTransaction(this.service)
-    : coordinator = _mediaUploadCoordinators[service] ??=
-          _MediaUploadCoordinator(service);
+      : coordinator = _mediaUploadCoordinators[service] ??=
+            _MediaUploadCoordinator(service);
 
   final AnkiConnectService service;
   final _MediaUploadCoordinator coordinator;
@@ -404,14 +403,15 @@ class _MediaUploadTransaction {
   Future<void> upload({
     required String filename,
     required Future<void> Function() write,
-  }) => _uploads[filename] ??= _upload(filename: filename, write: write);
+  }) =>
+      _uploads[filename] ??= _upload(filename: filename, write: write);
 
   Future<void> _upload({
     required String filename,
     required Future<void> Function() write,
   }) async {
-    final bool existedBefore = await (_existenceChecks[filename] ??= service
-        .mediaFileExists(filename));
+    final bool existedBefore = await (_existenceChecks[filename] ??=
+        service.mediaFileExists(filename));
     if (!existedBefore) {
       // Register before the write: a lost storeMediaFile response may still
       // mean Anki committed the file, so the failure path must try to remove it.
@@ -477,16 +477,34 @@ class _PreparedMinedFields {
 
 /// 一条笔记的字段改写计划：[before] 是改写前的原值（journal 用来回溯），
 /// [after] 是要写进 Anki 的新值。两者键集相同，只含真正会变的字段。
-class _NoteFieldRewrite {
-  const _NoteFieldRewrite({required this.before, required this.after});
+/// 待处理的一个多余副本 + 它要改指的保留份。组结构在批量阶段没有意义，副本
+/// 自带保留份就够了。
+class _DedupCandidate {
+  const _DedupCandidate({required this.dupe, required this.canonical});
 
-  final Map<String, String> before;
-  final Map<String, String> after;
+  final String dupe;
+  final String canonical;
+}
+
+/// 一个副本过完全部安全闸后的落地计划。
+class _DedupPlan {
+  const _DedupPlan({
+    required this.candidate,
+    required this.notePlan,
+    required this.deletion,
+  });
+
+  final _DedupCandidate candidate;
+
+  /// noteId → (字段名 → **本轮去重前**的原值)，只覆盖被本副本影响的字段。
+  final Map<int, Map<String, String>> notePlan;
+
+  final MediaDedupDeletion deletion;
 }
 
 class AnkiConnectRepository extends BaseAnkiRepository {
   AnkiConnectRepository({AnkiConnectService? service})
-    : _fixedService = service;
+      : _fixedService = service;
 
   final AnkiConnectService? _fixedService;
   AnkiConnectService? _cachedService;
@@ -642,8 +660,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final settings = await loadSettings();
     final service = _serviceForSettings(settings);
 
-    final deck =
-        settings.availableDecks.firstWhereOrNull(
+    final deck = settings.availableDecks.firstWhereOrNull(
           (d) => d.id == settings.selectedDeckId,
         ) ??
         (settings.selectedDeckName != null
@@ -653,8 +670,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
             : null);
     if (deck == null) return const MineOutcome.notConfigured();
 
-    final noteType =
-        settings.availableNoteTypes.firstWhereOrNull(
+    final noteType = settings.availableNoteTypes.firstWhereOrNull(
           (t) => t.id == settings.selectedNoteTypeId,
         ) ??
         (settings.selectedNoteTypeName != null
@@ -972,8 +988,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       _duplicateCheckUnreachableUntil = null;
     }
     final settings = await loadSettings();
-    final deck =
-        settings.availableDecks.firstWhereOrNull(
+    final deck = settings.availableDecks.firstWhereOrNull(
           (d) => d.id == settings.selectedDeckId,
         ) ??
         (settings.selectedDeckName != null
@@ -1024,8 +1039,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final settings = await loadSettings();
     if (settings.overwriteScope != AnkiOverwriteScope.all) return null;
     if (expression.isEmpty) return null;
-    final deck =
-        settings.availableDecks.firstWhereOrNull(
+    final deck = settings.availableDecks.firstWhereOrNull(
           (d) => d.id == settings.selectedDeckId,
         ) ??
         (settings.selectedDeckName != null
@@ -1066,8 +1080,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   ) async {
     if (expression.isEmpty) return const <MinedNoteRef>[];
     final settings = await loadSettings();
-    final deck =
-        settings.availableDecks.firstWhereOrNull(
+    final deck = settings.availableDecks.firstWhereOrNull(
           (d) => d.id == settings.selectedDeckId,
         ) ??
         (settings.selectedDeckName != null
@@ -1356,27 +1369,31 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     );
   }
 
-  /// 一条笔记的字段改写计划（null = 这条笔记清不干净，整份副本不许删）。
-  Future<_NoteFieldRewrite?> _planNoteFieldRewrite(
-    AnkiConnectService service,
-    int noteId,
+  /// 一条笔记里被 [dupe] 影响的字段 → **去重前的原值**（null = 这条笔记清不
+  /// 干净，整份副本不许删）。
+  ///
+  /// 只记原值、不记改写结果：真正写回的新值在 [_rewriteNoteFieldsBatch] 里按
+  /// 笔记合并时重算（同一条笔记可能被本批多个副本命中），提前算一份改写结果
+  /// 只会变成没人用的死数据。
+  ///
+  /// **纯函数**：[fields] 由调用方用 [AnkiConnectService.notesInfoMany] 一次批量
+  /// 拉齐，不再每条笔记一次往返。[fields] 为 null = 这条笔记读不到（检索命中后
+  /// 被删走、或返回形状异常）——同样按「清不干净」处理。
+  Map<String, String>? _planNoteFieldRewrite(
+    Map<String, String>? fields,
     String dupe,
     String canonical,
-  ) async {
-    final Map<String, String>? fields = await service.notesInfo(noteId);
+  ) {
     if (fields == null) return null;
     final Map<String, String> before = <String, String>{};
-    final Map<String, String> after = <String, String>{};
     fields.forEach((String key, String value) {
-      final String rewritten = rewriteMediaReferences(value, dupe, canonical);
-      if (rewritten == value) return;
+      if (rewriteMediaReferences(value, dupe, canonical) == value) return;
       before[key] = value;
-      after[key] = rewritten;
     });
     // 检索命中却一处也改不动：引用形态无法识别（或恰是别的更长文件名的子串，
     // 检索分不出来）——不删这份副本。
-    if (after.isEmpty) return null;
-    return _NoteFieldRewrite(before: before, after: after);
+    if (before.isEmpty) return null;
+    return before;
   }
 
   /// 干跑用：哪些 note type 的模板/styling 引用了 [dupe]（不改写，只统计）。
@@ -1398,6 +1415,245 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       }
     }
     return hits;
+  }
+
+  /// 一批副本的**判定**：查引用、拉字段、逐条过安全闸，返回允许进入删除路径
+  /// 的那些（顺序与 [chunk] 一致）。一个字节都不写。
+  ///
+  /// 往返数是**常数 2**（`findNotes` 批 + `notesInfo` 批），不随 [chunk] 长度
+  /// 增长；旧实现是「每个副本 1 次 findNotes + 每条命中笔记 1 次 notesInfo」。
+  Future<List<_DedupPlan>> _planDedupChunk(
+    AnkiConnectService service,
+    Directory mediaDir,
+    List<_DedupCandidate> chunk, {
+    required Map<String, int> sizes,
+    required Map<String, String> referencingMedia,
+    required void Function() onSkipped,
+  }) async {
+    final List<List<int>?> hits = await service.findNotesByQueries(
+      <String>[for (final _DedupCandidate c in chunk) '"${c.dupe}"'],
+    );
+    // 整批涉及的全部笔记一次拉齐（同一条笔记被多个副本命中也只拉一次）。
+    final Set<int> noteIds = <int>{for (final List<int>? ids in hits) ...?ids};
+    final Map<int, Map<String, String>> noteFields = noteIds.isEmpty
+        ? <int, Map<String, String>>{}
+        : await service.notesInfoMany(noteIds.toList()..sort());
+
+    final List<_DedupPlan> survivors = <_DedupPlan>[];
+    for (int i = 0; i < chunk.length; i++) {
+      final _DedupCandidate c = chunk[i];
+      final List<int>? ids = i < hits.length ? hits[i] : null;
+      // 检索失败 = 不知道还有没有人引用 → 绝不删（保守，同 BUG-1262 口径）。
+      if (ids == null) {
+        onSkipped();
+        continue;
+      }
+      final Map<int, Map<String, String>> notePlan =
+          <int, Map<String, String>>{};
+      bool referencesResolvable = true;
+      for (final int id in ids) {
+        final Map<String, String>? planned = _planNoteFieldRewrite(
+          noteFields[id],
+          c.dupe,
+          c.canonical,
+        );
+        if (planned == null) {
+          referencesResolvable = false;
+          continue;
+        }
+        notePlan[id] = planned;
+      }
+
+      // 媒体文件内部引用（css/js/svg 的 url()/@import/相对引用）。
+      final bool referencedByMedia = referencingMedia.entries.any(
+        (MapEntry<String, String> e) =>
+            e.key != c.dupe && textReferencesMediaName(e.value, c.dupe),
+      );
+      if (!referencesResolvable || referencedByMedia) {
+        onSkipped();
+        continue;
+      }
+
+      // 字节级复核：与保留份必须逐字节相同才允许进入删除路径。
+      if (!await _mediaBytesIdentical(mediaDir, c.dupe, c.canonical)) {
+        onSkipped();
+        continue;
+      }
+
+      survivors.add(
+        _DedupPlan(
+          candidate: c,
+          notePlan: notePlan,
+          deletion: MediaDedupDeletion(
+            filename: c.dupe,
+            canonical: c.canonical,
+            bytes: sizes[c.dupe] ?? 0,
+          ),
+        ),
+      );
+    }
+    return survivors;
+  }
+
+  /// 把整批 [survivors] 对笔记字段的改写**按笔记合并**后一次写回，返回真正写
+  /// 成功的 note id。
+  ///
+  /// 必须合并：同一条笔记可能同时引用本批里的多个副本，而 `updateNoteFields`
+  /// 是整字段覆盖——各改各的会让后写的把先写的抹掉。合并 = 在同一份字段原值上
+  /// 依次套用每个副本的 `dupe → canonical` 替换；不同文件名的边界安全替换互不
+  /// 影响、可交换，结果与旧实现逐个串行改写逐字一致。
+  Future<Set<int>> _rewriteNoteFieldsBatch(
+    AnkiConnectService service,
+    List<_DedupPlan> survivors, {
+    Future<void> Function(Map<String, dynamic> entry)? onJournal,
+  }) async {
+    final Map<int, List<_DedupPlan>> byNote = <int, List<_DedupPlan>>{};
+    for (final _DedupPlan plan in survivors) {
+      for (final int id in plan.notePlan.keys) {
+        (byNote[id] ??= <_DedupPlan>[]).add(plan);
+      }
+    }
+    final List<AnkiNoteFieldsUpdate> updates = <AnkiNoteFieldsUpdate>[];
+    for (final MapEntry<int, List<_DedupPlan>> e in byNote.entries) {
+      final Map<String, String> merged = <String, String>{};
+      for (final _DedupPlan plan in e.value) {
+        plan.notePlan[e.key]!.forEach((String field, String original) {
+          final String base = merged[field] ?? original;
+          merged[field] = rewriteMediaReferences(
+            base,
+            plan.candidate.dupe,
+            plan.candidate.canonical,
+          );
+        });
+      }
+      if (merged.isEmpty) continue;
+      updates.add(AnkiNoteFieldsUpdate(noteId: e.key, fields: merged));
+    }
+
+    // journal 带上改写**前**的原值：这是出事后能把字段还原回去的唯一依据，
+    // 只记字段名等于没有保险带。一个副本一条（粒度与旧实现一致），且每条的
+    // `before` 都是**本轮去重前**的原值，所以任意子集、任意顺序回放都收敛到
+    // 去重前的状态。全部 journal 先落盘，再动 Anki。
+    for (final _DedupPlan plan in survivors) {
+      for (final MapEntry<int, Map<String, String>> e
+          in plan.notePlan.entries) {
+        await onJournal?.call(<String, dynamic>{
+          'type': 'noteFields',
+          'noteId': e.key,
+          'from': plan.candidate.dupe,
+          'to': plan.candidate.canonical,
+          'before': e.value,
+        });
+      }
+    }
+
+    if (updates.isEmpty) return <int>{};
+    final List<AnkiConnectBatchResult> results =
+        await service.updateNoteFieldsMany(updates);
+    final Set<int> written = <int>{};
+    for (int i = 0; i < updates.length; i++) {
+      // 写失败的笔记不算「已改写」。副本到底能不能删由随后的复核检索说了算
+      // ——那条检索直接看 Anki 的真实状态，比逐条返回码更权威（也能兜住部分
+      // 写入成功的情况）。
+      if (i < results.length && results[i].isError) continue;
+      written.add(updates[i].noteId);
+    }
+    return written;
+  }
+
+  /// 整批副本对卡模板/styling 的改写：一起算完，每个 note type 最多写一次
+  /// （旧实现是「每个副本 × 每个 note type」各写一次）。
+  Future<void> _rewriteModelsBatch(
+    AnkiConnectService service,
+    List<_DedupPlan> plans,
+    List<String> modelNames,
+    Map<String, List<AnkiCardTemplate>> modelTemplates,
+    Map<String, String> modelCss, {
+    Future<void> Function(Map<String, dynamic> entry)? onJournal,
+    required Set<String> modelsRewritten,
+  }) async {
+    if (plans.isEmpty) return;
+    for (final String m in modelNames) {
+      final List<AnkiCardTemplate> tmpls = modelTemplates[m]!;
+      final String css = modelCss[m]!;
+      // 哪些副本真的在这个 note type 里出现过——journal 要如实记，而且没人引用
+      // 的 note type 一个字都不能碰（碰了 Lapis 指纹就漂）。
+      final List<_DedupPlan> touching = plans
+          .where(
+            (_DedupPlan p) =>
+                tmpls.any(
+                  (AnkiCardTemplate t) =>
+                      textReferencesMediaName(t.front, p.candidate.dupe) ||
+                      textReferencesMediaName(t.back, p.candidate.dupe),
+                ) ||
+                textReferencesMediaName(css, p.candidate.dupe),
+          )
+          .toList();
+      if (touching.isEmpty) continue;
+
+      List<AnkiCardTemplate> newTmpls = tmpls;
+      String newCss = css;
+      for (final _DedupPlan p in touching) {
+        newTmpls = <AnkiCardTemplate>[
+          for (final AnkiCardTemplate t in newTmpls)
+            AnkiCardTemplate(
+              name: t.name,
+              front: rewriteMediaReferences(
+                t.front,
+                p.candidate.dupe,
+                p.candidate.canonical,
+              ),
+              back: rewriteMediaReferences(
+                t.back,
+                p.candidate.dupe,
+                p.candidate.canonical,
+              ),
+            ),
+        ];
+        newCss = rewriteMediaReferences(
+          newCss,
+          p.candidate.dupe,
+          p.candidate.canonical,
+        );
+      }
+      final bool templatesChanged = !_templatesEqual(tmpls, newTmpls);
+      final bool cssChanged = newCss != css;
+      if (!templatesChanged && !cssChanged) continue;
+
+      for (final _DedupPlan p in touching) {
+        await onJournal?.call(<String, dynamic>{
+          'type': 'model',
+          'model': m,
+          'from': p.candidate.dupe,
+          'to': p.candidate.canonical,
+        });
+      }
+      if (templatesChanged) {
+        await service.updateModelTemplates(m, newTmpls);
+        modelTemplates[m] = newTmpls;
+      }
+      if (cssChanged) {
+        await service.updateModelStyling(m, newCss);
+        modelCss[m] = newCss;
+        await _realignLapisCssShaAfterRewrite(
+          modelName: m,
+          cssBefore: css,
+          cssAfter: newCss,
+        );
+      }
+      modelsRewritten.add(m);
+    }
+  }
+
+  static bool _templatesEqual(
+    List<AnkiCardTemplate> a,
+    List<AnkiCardTemplate> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i].front != b[i].front || a[i].back != b[i].back) return false;
+    }
+    return true;
   }
 
   @override
@@ -1467,168 +1723,131 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final Set<int> notesRewritten = <int>{};
     final Set<String> modelsRewritten = <String>{};
 
-    final int totalDupes = groups.fold<int>(
-      0,
-      (int sum, MediaDedupGroup g) => sum + g.duplicates.length,
-    );
+    // 副本拍平成一个确定序的列表：批量以它为单位切块。组的边界在这一步之后
+    // 没有意义——每个副本自带它的保留份，跨组同批处理完全安全。
+    final List<_DedupCandidate> candidates = <_DedupCandidate>[
+      for (final MediaDedupGroup group in groups)
+        for (final String dupe in group.duplicates)
+          _DedupCandidate(dupe: dupe, canonical: group.canonical),
+    ];
+    final int totalDupes = candidates.length;
     int processedDupes = 0;
     int bytesFreed = 0;
 
-    outer:
-    for (final MediaDedupGroup group in groups) {
-      for (final String dupe in group.duplicates) {
-        // 取消在副本边界生效：当前副本要么完整处理、要么完全没动，绝不半截。
-        if (checkCancel()) break outer;
-        onProgress?.call(
-          AnkiMediaDedupProgress(
-            stage: AnkiMediaDedupStage.resolving,
-            done: processedDupes,
-            total: totalDupes,
-            currentFile: dupe,
-            bytesFreed: bytesFreed,
-          ),
-        );
-        processedDupes++;
-        // ── 阶段一：全部判定与计划，一个字节都不写 ────────────────────
-        // 顺序是刻意的：先把所有「不许删」的证据收齐再动手。上一版把模板/
-        // styling 改写放在判定之前，跳过删除时已经把 Anki 端改脏了（Lapis
-        // 指纹随之漂掉，自动迁移永久停手）。
-        final List<int> noteIds = await service.findNotesByQuery('"$dupe"');
-        final Map<int, _NoteFieldRewrite> notePlan = <int, _NoteFieldRewrite>{};
-        bool referencesResolvable = true;
-        for (final int id in noteIds) {
-          final _NoteFieldRewrite? planned = await _planNoteFieldRewrite(
-            service,
-            id,
-            dupe,
-            group.canonical,
-          );
-          if (planned == null) {
-            referencesResolvable = false;
-            continue;
-          }
-          notePlan[id] = planned;
-        }
+    for (int start = 0;
+        start < candidates.length;
+        start += kAnkiMediaDedupBatchSize) {
+      // 取消在**批边界**生效：一批要么完整处理、要么完全没动，绝不半截。
+      // （旧实现是副本边界；批量化把粒度换成了速度，见
+      // [kAnkiMediaDedupBatchSize] 的取舍说明。）
+      if (checkCancel()) break;
+      final int end = start + kAnkiMediaDedupBatchSize > candidates.length
+          ? candidates.length
+          : start + kAnkiMediaDedupBatchSize;
+      final List<_DedupCandidate> chunk = candidates.sublist(start, end);
+      onProgress?.call(
+        AnkiMediaDedupProgress(
+          stage: AnkiMediaDedupStage.resolving,
+          done: processedDupes,
+          total: totalDupes,
+          currentFile: chunk.first.dupe,
+          bytesFreed: bytesFreed,
+        ),
+      );
 
-        // 媒体文件内部引用（css/js/svg 的 url()/@import/相对引用）。
-        final bool referencedByMedia = referencingMedia.entries.any(
-          (MapEntry<String, String> e) =>
-              e.key != dupe && textReferencesMediaName(e.value, dupe),
-        );
+      // ── 阶段一：全部判定与计划，一个字节都不写 ──────────────────────
+      // 顺序是刻意的：先把所有「不许删」的证据收齐再动手。曾经把模板/styling
+      // 改写放在判定之前，跳过删除时已经把 Anki 端改脏了（Lapis 指纹随之漂掉，
+      // 自动迁移永久停手）。
+      final List<_DedupPlan> survivors = await _planDedupChunk(
+        service,
+        mediaDir,
+        chunk,
+        sizes: sizes,
+        referencingMedia: referencingMedia,
+        onSkipped: () => skippedCount++,
+      );
 
-        if (!referencesResolvable || referencedByMedia) {
-          skippedCount++;
-          continue;
-        }
-
-        // 字节级复核：与保留份必须逐字节相同才允许进入删除路径。
-        if (!await _mediaBytesIdentical(mediaDir, dupe, group.canonical)) {
-          skippedCount++;
-          continue;
-        }
-
-        final MediaDedupDeletion planned = MediaDedupDeletion(
-          filename: dupe,
-          canonical: group.canonical,
-          bytes: sizes[dupe] ?? 0,
-        );
-
-        if (dryRun) {
-          deletions.add(planned);
-          bytesFreed += planned.bytes;
-          notesRewritten.addAll(notePlan.keys);
+      if (dryRun) {
+        for (final _DedupPlan plan in survivors) {
+          deletions.add(plan.deletion);
+          bytesFreed += plan.deletion.bytes;
+          notesRewritten.addAll(plan.notePlan.keys);
           modelsRewritten.addAll(
-            _modelsReferencing(modelNames, modelTemplates, modelCss, dupe),
+            _modelsReferencing(
+              modelNames,
+              modelTemplates,
+              modelCss,
+              plan.candidate.dupe,
+            ),
           );
-          continue;
         }
+        processedDupes += chunk.length;
+        continue;
+      }
 
-        // ── 阶段二：落地。笔记字段先写，复核通过后才动模板与文件 ────────
-        for (final MapEntry<int, _NoteFieldRewrite> e in notePlan.entries) {
-          // journal 带上改写**前**的原值：这是出事后能把字段还原回去的唯一
-          // 依据，只记字段名等于没有保险带。
-          await onJournal?.call(<String, dynamic>{
-            'type': 'noteFields',
-            'noteId': e.key,
-            'from': dupe,
-            'to': group.canonical,
-            'before': e.value.before,
-          });
-          await service.updateNoteFields(e.key, e.value.after);
-          notesRewritten.add(e.key);
-        }
+      // 判定阶段纯读：在这里取消仍然一个字节都没写过。
+      if (checkCancel()) break;
 
-        // 复核：字段里彻底没有这个文件名了才继续。没清干净就到此为止——
-        // 模板/styling 一个字都没动，Lapis 指纹不会漂。
-        final List<int> remaining = await service.findNotesByQuery('"$dupe"');
-        if (remaining.isNotEmpty) {
+      // ── 阶段二：落地。笔记字段先写，复核通过后才动模板与文件 ──────────
+      notesRewritten.addAll(
+        await _rewriteNoteFieldsBatch(service, survivors, onJournal: onJournal),
+      );
+
+      // 复核：一次往返把整批「字段里还有没有这个文件名」查完。没清干净的副本
+      // 到此为止——模板/styling 一个字都没动，Lapis 指纹不会漂。
+      final List<List<int>?> remaining = await service.findNotesByQueries(
+        <String>[for (final _DedupPlan p in survivors) '"${p.candidate.dupe}"'],
+      );
+      final List<_DedupPlan> clean = <_DedupPlan>[];
+      for (int i = 0; i < survivors.length; i++) {
+        final List<int>? ids = i < remaining.length ? remaining[i] : null;
+        // 查询失败 = 不知道清没清干净 → 不删（与 BUG-1262 的保守口径一致）。
+        if (ids == null || ids.isNotEmpty) {
           skippedCount++;
           continue;
         }
+        clean.add(survivors[i]);
+      }
 
-        // 模板与 styling：模板先写（写坏了不影响指纹），styling 后写并当场
-        // 对齐 Lapis 指纹。
-        for (final String m in modelNames) {
-          final List<AnkiCardTemplate> tmpls = modelTemplates[m]!;
-          bool templatesChanged = false;
-          final List<AnkiCardTemplate> newTmpls = tmpls.map((
-            AnkiCardTemplate tpl,
-          ) {
-            final String front = rewriteMediaReferences(
-              tpl.front,
-              dupe,
-              group.canonical,
-            );
-            final String back = rewriteMediaReferences(
-              tpl.back,
-              dupe,
-              group.canonical,
-            );
-            if (front != tpl.front || back != tpl.back) {
-              templatesChanged = true;
-            }
-            return AnkiCardTemplate(name: tpl.name, front: front, back: back);
-          }).toList();
-          final String css = modelCss[m]!;
-          final String newCss = rewriteMediaReferences(
-            css,
-            dupe,
-            group.canonical,
-          );
-          final bool cssChanged = newCss != css;
-          if (!templatesChanged && !cssChanged) continue;
-          await onJournal?.call(<String, dynamic>{
-            'type': 'model',
-            'model': m,
-            'from': dupe,
-            'to': group.canonical,
-          });
-          if (templatesChanged) {
-            await service.updateModelTemplates(m, newTmpls);
-            modelTemplates[m] = newTmpls;
-          }
-          if (cssChanged) {
-            await service.updateModelStyling(m, newCss);
-            modelCss[m] = newCss;
-            await _realignLapisCssShaAfterRewrite(
-              modelName: m,
-              cssBefore: css,
-              cssAfter: newCss,
-            );
-          }
-          modelsRewritten.add(m);
-        }
+      // 模板与 styling：整批一起算，每个 note type 最多写一次（旧实现是
+      // 「每个副本 × 每个 note type」各写一次）。模板先写（写坏了不影响指纹），
+      // styling 后写并当场对齐 Lapis 指纹。
+      await _rewriteModelsBatch(
+        service,
+        clean,
+        modelNames,
+        modelTemplates,
+        modelCss,
+        onJournal: onJournal,
+        modelsRewritten: modelsRewritten,
+      );
 
+      // 删除：整批一次往返（旧实现是一个副本一次 deleteMediaFile —— 用户看到
+      // 的「真就一个一个删」正是这里）。
+      for (final _DedupPlan plan in clean) {
         await onJournal?.call(<String, dynamic>{
           'type': 'delete',
-          'filename': dupe,
-          'canonical': group.canonical,
-          'bytes': planned.bytes,
+          'filename': plan.candidate.dupe,
+          'canonical': plan.candidate.canonical,
+          'bytes': plan.deletion.bytes,
         });
-        await service.deleteMediaFile(dupe);
-        deletions.add(planned);
-        bytesFreed += planned.bytes;
       }
+      final List<AnkiConnectBatchResult> deleteResults =
+          await service.deleteMediaFiles(
+        <String>[for (final _DedupPlan p in clean) p.candidate.dupe],
+      );
+      for (int i = 0; i < clean.length; i++) {
+        // 批内单条失败只影响它自己：引用已经改指保留份，文件没删掉不会产生
+        // 悬空引用，按「跳过」如实计数即可。
+        if (i < deleteResults.length && deleteResults[i].isError) {
+          skippedCount++;
+          continue;
+        }
+        deletions.add(clean[i].deletion);
+        bytesFreed += clean[i].deletion.bytes;
+      }
+      processedDupes += chunk.length;
     }
 
     onProgress?.call(

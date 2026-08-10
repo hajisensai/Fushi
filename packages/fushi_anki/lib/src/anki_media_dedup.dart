@@ -149,6 +149,21 @@ bool isReferencingMediaFile(String filename) {
       .contains(filename.substring(dot + 1).toLowerCase());
 }
 
+/// 真删/干跑的 resolving 阶段一次处理多少个副本。
+///
+/// 每个副本的判定（查引用、拉字段）与落地（改字段、复核、删文件）都被打成
+/// AnkiConnect `multi` 批量请求，所以这个数字直接决定「往返数 ≈ 副本数 ÷ 它」。
+///
+/// 取 50 的取舍：
+/// - **收益**：AnkiConnect 的 HTTP 服务是 25 ms QTimer 协作轮询、每 tick 只
+///   accept 一条连接、无 keep-alive（见 `AnkiConnectService.kMultiBatchSize`
+///   的注释），每个请求的地板成本与请求大小无关。940 个副本从 ~4700 次往返降
+///   到 ~95 次，量级差别就是这个常数。
+/// - **代价**：**取消粒度变粗**——取消只在批边界生效，一批之内不可中断。50 个
+///   副本一批 = 5 次往返 + Anki 主线程上约 100 次全库检索，取消延迟在秒级而不
+///   是瞬时。再调大就该让用户觉得「取消按钮没反应」了。
+const int kAnkiMediaDedupBatchSize = 50;
+
 /// 去重进行到哪个阶段（进度回调用）。
 ///
 /// 940 个副本的真删 = 数千次串行 AnkiConnect 请求，分钟级长任务；没有阶段化
