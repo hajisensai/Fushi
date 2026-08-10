@@ -2184,6 +2184,16 @@ class AppModel with ChangeNotifier {
       // 死」。fushi_dictionary 是下游包，反向 import 不了 applyAppProxy，故在这里把它
       // 接进包内的进程级钩子。未接线时钩子是 no-op，行为与接线前逐字等价。
       installDictionaryDioFactory();
+      // BUG-1498：把「平台 GUI 系统代理探测」这一步异步工作提前做掉并缓存，之后
+      // `createAppHttpIoClient()` / `createAppDio()` 就能在构造函数初始化列表里**同步**
+      // 装配出口——那正是全仓 40+ 条裸出站接不上代理层的结构性原因（初始化列表不能
+      // await）。不 await 它：prime 只影响「GUI 系统代理」那一格，没 prime 前解析退化成
+      // `env > DIRECT`，仍不比接线前差，没必要为它拖慢启动。
+      unawaited(primeAppProxy());
+      // BUG-1498：远程发音（Forvo / 词典音频源等公网 URL）的抓取住在 fushi_anki 包里，
+      // 同样反向 import 不了 applyAppProxy。只接**远程媒体**这一条，AnkiConnect 自身
+      // （localhost:8765，也可能是局域网另一台机）绝不经过它。
+      installAnkiRemoteMediaHttpClientFactory();
       _applyMemoryPolicy();
       _mediaTrackingService = MediaTrackingService(
         repository: MediaTrackingRepository(_database),

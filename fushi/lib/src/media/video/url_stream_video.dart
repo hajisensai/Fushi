@@ -10,6 +10,7 @@ import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/media/video/youtube_source_resolver.dart'
     show isYoutubeUrl, youtubeVideoIdOrNull, YoutubeCaptionTrack;
 import 'package:http/http.dart' as http;
+import 'package:fushi/src/utils/net/app_http.dart';
 
 /// 纯函数：判断 [url] 是否是可直接交给播放器的网络流 URL（TODO-850 阶段①）。
 ///
@@ -234,7 +235,7 @@ class UrlStreamVideoClient implements RemoteVideoClient {
     this.youtubeCaptionsUrl,
     this.httpHeaderFields = const <String, String>{},
     http.Client? httpClient,
-  }) : _httpClient = httpClient ?? http.Client();
+  }) : _httpClient = httpClient ?? createAppHttpIoClient();
 
   /// 远端清单缓存里的来源身份（BUG-1202）。本 client 从不进库页的清单缓存
   /// （[listRemoteVideos] 恒空，它只是把一条粘贴来的 URL 包成播放页能吃的契约），

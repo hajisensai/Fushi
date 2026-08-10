@@ -17,6 +17,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi/src/utils/net/app_http.dart';
 
 /// 默认进度事件的字节间隔（避免大文件每 chunk 一事件淹没 UI）。
 const int kMangaOcrDownloadProgressInterval = 512 * 1024;
@@ -33,8 +34,11 @@ class MangaOcrModelDownloader {
   /// 两次进度事件之间至少累积的字节数（首尾事件恒发）。
   final int progressByteInterval;
 
-  static HttpClient _defaultClient() =>
-      HttpClient()..findProxy = HttpClient.findProxyFromEnvironment;
+  // BUG-1498：原先是 `findProxyFromEnvironment`——只读 HTTPS_PROXY/HTTP_PROXY 环境
+  // 变量，读不到 Windows 注册表 / macOS / Linux 的 GUI 系统代理。而这条链路要从
+  // huggingface 下约 470MB 模型，clash「系统代理」模式（写注册表、不导出 env）下
+  // 等于裸直连。改走统一装配点后 env > GUI 系统代理 > DIRECT 一致生效。
+  static HttpClient _defaultClient() => createAppHttpClient();
 
   /// 下载清单里所有未就绪文件到 [targetDir]。
   ///

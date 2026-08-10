@@ -367,7 +367,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
   Future<http.Client> _createHttpClient() {
     final Future<http.Client> Function()? factory = widget.httpClientFactory;
     return factory == null
-        ? Future<http.Client>.value(http.Client())
+        ? Future<http.Client>.value(createAppHttpIoClient())
         : factory();
   }
 

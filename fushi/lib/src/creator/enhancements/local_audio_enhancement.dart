@@ -31,7 +31,7 @@ Future<File?> materializeWordAudioRef(
     final File f = File(path);
     return f.existsSync() ? f : null;
   }
-  final http.Client c = client ?? http.Client();
+  final http.Client c = client ?? createAppHttpIoClient();
   try {
     final Uri uri = Uri.parse(ref);
     final http.Response res = await c.get(uri);

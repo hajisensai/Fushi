@@ -15,13 +15,14 @@ import 'package:fushi/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
+import 'package:fushi/src/utils/net/app_http.dart';
 
 /// 离线库下载器。构造可注入 [http.Client]（默认自建）与覆盖 [downloadUrl]（镜像/测试）。
 class OfflineDbDownloader {
   OfflineDbDownloader({
     http.Client? client,
     Uri? downloadUrl,
-  })  : _client = client ?? http.Client(),
+  })  : _client = client ?? createAppHttpIoClient(),
         _downloadUrl = downloadUrl ?? Uri.parse(_defaultUrl);
 
   final http.Client _client;

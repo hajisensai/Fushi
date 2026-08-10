@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:fushi/src/utils/net/app_http.dart';
 
 /// AniList 媒体（番剧）搜索结果的最小模型。
 class AniListMedia {
@@ -236,7 +237,8 @@ AniListAiringPage parseAniListAiringResponse(String body) {
 
 /// AniList GraphQL 客户端：按标题搜番拿 anilist id（Jimaku 按 anilist_id 查字幕的前置）。
 class AniListClient {
-  AniListClient({http.Client? client}) : _client = client ?? http.Client();
+  AniListClient({http.Client? client})
+      : _client = client ?? createAppHttpIoClient();
 
   final http.Client _client;
 
