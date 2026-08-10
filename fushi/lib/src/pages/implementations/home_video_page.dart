@@ -38,6 +38,7 @@ import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
+import 'package:fushi/src/media/video/video_subtitle_attach_messages.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_library_overview.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
@@ -1130,7 +1131,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // 旧实现走 _openVideoImportPrefilled→VideoImportDialog._doImport，对已存在
         // 视频重算 singleVideoBookUid 触发同名去重、建 `video/<name> (2)` 重复条目，
         // 字幕没挂到原视频（TODO-079 根因）。
-        _attachSubtitleToVideoCard(hit!, files.subtitles.first);
+        // 结果所有者是 [_attachSubtitleToVideoCard] 自己：它 await 落库、把每种
+        // 结果都变成 SnackBar。这里显式 unawaited 而不是裸丢 Future——drop 回调
+        // 是同步的，没有调用栈能承接异步失败（BUG-1504）。
+        unawaited(_attachSubtitleToVideoCard(hit!, files.subtitles.first));
       case DropIntent.needCardTarget:
         debugPrint('[fushi-drop] [home-video] intent=needCardTarget');
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1206,7 +1210,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 经 [attachSubtitleToVideoBook]：拷盘到 `<appDocs>/video_subtitles/` → 解析 cue →
   /// 对命中卡 `book.bookUid` 原子 saveSubtitleSelection（源指针 + cue），下次进播放页
   /// 直接 `loadCues` 命中。不新建视频书、不去重加后缀（修掉旧重复导入路径的 bug）。
-  /// 按结果给 SnackBar 反馈；播放列表卡无单一字幕语义，提示进播放页按集挂。
+  ///
+  /// **本方法是这条拖放链路的结果所有者**（BUG-1504）：drop 回调是同步的、只负责
+  /// 发起，成败一律由这里 await 到手再变成 SnackBar。[attachSubtitleToVideoBook]
+  /// 是全函数（不抛），所以「无人接的异步异常」不再可能——每种结果都有文案，且
+  /// 文案与字幕搜索页安装路径同源（[subtitleAttachMessage]）。
   Future<void> _attachSubtitleToVideoCard(
     VideoBookRow book,
     String subtitlePath,
@@ -1216,46 +1224,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       book: book,
       subtitlePath: subtitlePath,
     );
+    debugPrint(
+      '[fushi-drop] [home-video] attachSubtitle outcome=${result.outcome.name} '
+      'cueFailure=${result.cueFailure?.name} bookUid=${book.bookUid} '
+      'cues=${result.cueCount} label=${result.label}',
+    );
     if (!mounted) return;
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-    final String message;
-    switch (result.outcome) {
-      case SubtitleAttachOutcome.attached:
-        message = t.video_subtitle_attached_to_video(
-          title: book.title,
-          count: result.cueCount,
-        );
-        debugPrint(
-          '[fushi-drop] [home-video] attachSubtitle outcome=attached '
-          'bookUid=${book.bookUid} cues=${result.cueCount}',
-        );
-        _refresh();
-      case SubtitleAttachOutcome.playlistNeedsPlayer:
-        message = t.video_subtitle_attach_playlist_hint;
-        debugPrint(
-          '[fushi-drop] [home-video] attachSubtitle outcome=playlistNeedsPlayer '
-          'bookUid=${book.bookUid}',
-        );
-      case SubtitleAttachOutcome.unsupported:
-        message = t.video_subtitle_import_unsupported;
-        debugPrint(
-          '[fushi-drop] [home-video] attachSubtitle outcome=unsupported '
-          'bookUid=${book.bookUid}',
-        );
-      case SubtitleAttachOutcome.copyFailed:
-        message = t.video_subtitle_import_failed;
-        debugPrint(
-          '[fushi-drop] [home-video] attachSubtitle outcome=copyFailed '
-          'bookUid=${book.bookUid}',
-        );
-      case SubtitleAttachOutcome.emptyCues:
-        message = t.video_subtitle_load_failed(label: result.label);
-        debugPrint(
-          '[fushi-drop] [home-video] attachSubtitle outcome=emptyCues '
-          'bookUid=${book.bookUid} label=${result.label}',
-        );
-    }
-    messenger.showSnackBar(SnackBar(content: Text(message)));
+    if (result.outcome == SubtitleAttachOutcome.attached) _refresh();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(subtitleAttachMessage(result, title: book.title)),
+      ),
+    );
   }
 
   void _openStatistics() {
