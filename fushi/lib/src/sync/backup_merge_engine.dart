@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart' show QueryRow, Variable;
+import 'package:fushi/src/media/override_title_key.dart';
 import 'package:fushi/src/sync/aggregate_merge_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_audio/fushi_audio.dart' show FavoriteSentence;
@@ -64,8 +65,9 @@ class BackupMergeEngine {
   /// 本机设置」。但迁移不是那个场景——它是同一台机器、同一个用户、只换了包名，
   /// 用户期望「一切原样搬过来」。关着的后果是实测过的：11.4GB 库迁移成功后
   /// `preferences` 只剩 21 行，且没有一条是用户设置（阅读器、视频、Anki、
-  /// 快捷键、界面、互联、同步后端全丢），因为下面那三处点名的 pref 合并
-  /// （收藏句 / 有声书位置 / 音频来源）就是 merge 对 `preferences` 的全部处理，
+  /// 快捷键、界面、互联、同步后端全丢），因为下面那四处点名的 pref 合并
+  /// （收藏句 / 有声书位置 / 音频来源 / 书名 override）就是 merge 对
+  /// `preferences` 的全部处理，
   /// 而迁移声明的 `BackupCategory.settings` 在这条路径上从来没有消费方。
   final bool _adoptSourcePreferences;
 
@@ -201,6 +203,8 @@ class BackupMergeEngine {
       // 存在性 guard 让「书没随备份来」时自然 no-op（与 collections/tags 同规）。
       await _mergeBookCustomCss();
       await _mergeRevealedImages();
+      // BUG-1488：用户给书改的名字（override_title pref）是内容，跟着书走。
+      await _mergeOverrideTitlePrefs();
       if (_wants('localAudio')) await _mergeAudioSourcePrefs();
       // 迁移专用，放在全部点名 pref 合并之后：那几处是「按内容语义合并」（可能
       // 覆盖/取较新），这里只补它们没管的 key，不能反过来盖掉它们的结果。
@@ -1217,6 +1221,30 @@ class BackupMergeEngine {
       'INSERT INTO preferences ("key", "value") '
       'SELECT "key", "value" FROM $_srcAlias.preferences AS s '
       "WHERE s.\"key\" LIKE 'audiobook_pos_%' "
+      'AND NOT EXISTS (SELECT 1 FROM preferences AS t WHERE t."key" = s."key")',
+    );
+  }
+
+  /// 用户给书改的名字（BUG-1488）。
+  ///
+  /// 改名不写 `epub_books.title`（那一列派生主键 `bookKey`，改列 = 换身份），而是
+  /// 往 `preferences` 写一行 `…override_title://fushi://book/<bookKey>` 覆盖。
+  /// 于是它撞上了本引擎「preferences 是设备设置 → 不合并」的默认律：母设备改过名
+  /// 的书合并到子设备后，子设备显示的仍是导入时的原始书名。它和 `audiobook_pos_%`
+  /// 一样是**内容**（跟着书走，不是这台设备的偏好），必须合并。
+  ///
+  /// UNION push-only（insert-if-absent），与 [_mergeAudiobookPositionPrefs] 同律：
+  /// 本机已给这本书起过名就保留本机的（merge 从不 clobber 本地）。
+  ///
+  /// ⚠️ 已知能力缺口，不是遗漏：override pref **没有时刻列**（`preferences` 只有
+  /// key/value 两列），所以这里做不了 LWW。母设备**第二次**改名传不到已有 override
+  /// 的子设备上——要修得先给 override 一个 `updatedAt` 载体（对照 `book_custom_css`
+  /// 的做法），那是独立的 schema 变更。
+  Future<void> _mergeOverrideTitlePrefs() async {
+    await _db.customStatement(
+      'INSERT INTO preferences ("key", "value") '
+      'SELECT s."key", s."value" FROM $_srcAlias.preferences AS s '
+      "WHERE instr(s.\"key\", '$kOverrideTitleKeyMarker') > 0 "
       'AND NOT EXISTS (SELECT 1 FROM preferences AS t WHERE t."key" = s."key")',
     );
   }

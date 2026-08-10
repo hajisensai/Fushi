@@ -222,7 +222,10 @@ class RemoteCollectionMembership {
 
 /// host 实时书籍的清单条目。
 ///
-/// [title]      书名（与 DB `epub_books.title` 列一致）。
+/// [title]      书名（与 DB `epub_books.title` 列一致）。**身份用**：`downloadId`
+///              / `bookKey` 派生 / 去重全走它，永远是 raw 列值。
+/// [displayTitle] 用户在 host 上改过的显示名（BUG-1488）。**只给人看**，绝不参与
+///              任何键派生。null = host 没改过名 / 旧 host 不带该字段。
 /// [hasContent] 存在可导出的 EPUB 根目录时为 true——表示该书可被导出。
 ///              无内容的书（extractDir 丢失或空）不应被 pull（与 orchestrator
 ///              `importRemoteBooks` 的跳过语义一致）。
@@ -230,6 +233,7 @@ class RemoteBookInfo {
   const RemoteBookInfo({
     required this.title,
     required this.hasContent,
+    this.displayTitle,
     this.bookKey,
     this.hasEmbeddedCover = false,
     this.coverUrl,
@@ -259,6 +263,17 @@ class RemoteBookInfo {
   final int progressUpdatedAtMs;
 
   final String title;
+
+  /// host 端用户自定义的显示名（BUG-1488；host `preferences` 表的
+  /// `override_title://` 覆盖层，写入方 `MediaSource.setOverrideTitleFromMediaItem`）。
+  ///
+  /// additive wire 字段 `'displayTitle'`：**只在与 [title] 不同时才写键**，所以
+  /// 「没改过名」的书清单 wire 字节完全不变、旧 client 忽略、旧 host 不发。
+  /// 消费恒走 [displayName]——直接读本字段的调用点在旧 host 上会拿到 null。
+  ///
+  /// ⚠️ 身份红线：[downloadId] / `bookKey` / 去重键一律用 [title]，本字段永不参与。
+  final String? displayTitle;
+
   final bool hasContent;
   final String? bookKey;
 
@@ -291,11 +306,17 @@ class RemoteBookInfo {
 
   String get downloadId => _isNonEmpty(bookKey) ? bookKey! : title;
 
+  /// 该书**给人看**的名字：host 改过名用改后的，否则回落 raw [title]。
+  /// 一切 UI 上屏点必须走这里（与本地书的 `displayTitleForBook` 门面对称）。
+  String get displayName => _isNonEmpty(displayTitle) ? displayTitle! : title;
+
   bool get hasDisplayCover =>
       hasEmbeddedCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
 
   Map<String, Object?> toJson() => <String, Object?>{
         'title': title,
+        if (_isNonEmpty(displayTitle) && displayTitle != title)
+          'displayTitle': displayTitle,
         if (_isNonEmpty(bookKey)) 'bookKey': bookKey,
         'hasContent': hasContent,
         if (hasDisplayCover) 'hasCover': true,
@@ -311,6 +332,7 @@ class RemoteBookInfo {
       };
 
   RemoteBookInfo copyWith({
+    String? displayTitle,
     String? bookKey,
     bool? hasEmbeddedCover,
     String? coverUrl,
@@ -327,6 +349,7 @@ class RemoteBookInfo {
       RemoteBookInfo(
         title: title,
         hasContent: hasContent,
+        displayTitle: displayTitle ?? this.displayTitle,
         bookKey: bookKey ?? this.bookKey,
         hasEmbeddedCover: hasEmbeddedCover ?? this.hasEmbeddedCover,
         coverUrl: coverUrl ?? this.coverUrl,
@@ -347,6 +370,8 @@ class RemoteBookInfo {
     return RemoteBookInfo(
       title: json['title']?.toString() ?? '',
       hasContent: json['hasContent'] == true,
+      // 旧 host 无该键 → null → [displayName] 回落 raw title（向后兼容）。
+      displayTitle: _jsonString(json['displayTitle']),
       bookKey: _jsonString(json['bookKey']),
       // wire `hasCover` 是对端的 hasDisplayCover；解码侧无从区分「内嵌」与「其它
       // 来源」，与 coverUrl/coverPath 一并折进本字段（客户端只消费 hasDisplayCover）。

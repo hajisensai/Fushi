@@ -10,6 +10,10 @@ import 'package:fushi/src/media/video/video_sidecar.dart'
     show findSidecarSubtitle, isSidecarSubtitleSuffix, pickSidecar;
 import 'package:fushi_audio/fushi_audio.dart'
     show AudioCue, readTextWithEncoding;
+import 'package:fushi/src/media/media_source.dart'
+    show MediaSource, dbSourcePrefKey;
+import 'package:fushi/src/media/sources/reader_fushi_source.dart'
+    show ReaderFushiSource, kReaderSourcePersistedKey;
 import 'package:fushi/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:fushi/src/sync/aggregate_snapshot.dart';
 import 'package:fushi/src/sync/aggregate_sync_service.dart';
@@ -318,6 +322,9 @@ class AppModelLibraryHostService
         await _db.allTagTombstonesByName(MediaKind.epub);
     final Map<String, RemoteCollectionMembership> membership =
         await _primaryCollectionMembership();
+    // BUG-1488：host 上用户改过的书名（`preferences` 的 override 覆盖层）随清单
+    // 下发，否则 peer 永远只看得到 raw `epub_books.title`。一趟 prefs 读。
+    final Map<String, String> overrideTitles = await _overrideTitleByBookKey();
     // 阅读进度内联（首页仪表盘「继续」的互联数据源）：percent 与本地首页同源同算
     // （MediaItems.position/duration），最近阅读时刻取 reader_positions.updatedAt。
     // 各一趟批查；旧 client 忽略这两个 additive 字段。
@@ -342,6 +349,8 @@ class AppModelLibraryHostService
       );
       return RemoteBookInfo(
         title: r.title,
+        // BUG-1488：只在真改过名时非 null（toJson 亦只在与 title 不同时写键）。
+        displayTitle: overrideTitles[r.bookKey],
         bookKey: r.bookKey,
         hasContent: resolveExtractedEpubRoot(r.extractDir) != null,
         hasEmbeddedCover: coverPath != null,
@@ -372,6 +381,36 @@ class AppModelLibraryHostService
         kind: MediaKind.epub,
       );
     }).toList();
+  }
+
+  /// 批查「bookKey → 用户自定义显示名」（BUG-1488）。
+  ///
+  /// 改名不改 `epub_books.title`（标题派生 bookKey 是跨端身份，改列 = 十来张子表
+  /// 连坐改键），而是往 `preferences` 写一行覆盖，key 形如
+  /// `src:reader_fushi:override_title://fushi://book/<bookKey>`。三段前缀分别由
+  /// [dbSourcePrefKey] / [MediaSource.overrideTitleKeyFor] /
+  /// [ReaderFushiSource.mediaIdentifierFor] 各自的真相源拼出，本层零硬编码字符串。
+  ///
+  /// 只认**规范**键形态：BUG-1317 之前的旧键（源键出现两次）由读取期回退在 host
+  /// 自己的书架上就地重写成规范键，而改名动作本身恒写规范键，所以旧形态只可能
+  /// 属于「BUG-1317 之前改的名 + 此后从未在本机显示过」的书，可忽略。
+  Future<Map<String, String>> _overrideTitleByBookKey() async {
+    final String prefix = dbSourcePrefKey(
+      kReaderSourcePersistedKey,
+      MediaSource.overrideTitleKeyFor(ReaderFushiSource.mediaIdentifierFor('')),
+    );
+    final Map<String, String> out = <String, String>{};
+    for (final MapEntry<String, String> e
+        in (await _db.getAllPrefs()).entries) {
+      if (!e.key.startsWith(prefix)) continue;
+      final String bookKey = e.key.substring(prefix.length);
+      if (bookKey.isEmpty) continue;
+      // 清除改名写的是 null 值行（不是删行），解出来非 String 即「无 override」。
+      final Object? decoded = PrefCodec.decodeUntyped(e.value);
+      if (decoded is! String || decoded.isEmpty) continue;
+      out[bookKey] = decoded;
+    }
+    return out;
   }
 
   static final RegExp _fushiBookKeyPattern = RegExp(r'^fushi://book/(.+)$');
