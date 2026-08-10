@@ -35,6 +35,13 @@ class MigrationTargetAsset {
 ///
 /// 返回 null = 本通道下找不到 Fushi 产物。调用方据此提示并允许重试，**绝不能**
 /// 退化成「装桥包自己」——产品族过滤由 [ReleaseProduct.fushi] 硬保证。
+///
+/// BUG-1481 起，两族的镜像清单是 `update-manifest` 分支上的**两个文件**
+/// （本族 `latest-<channel>.json` 冻结名 / Fushi 族 `-fushi` 后缀），所以取包必须
+/// 连**读哪份清单**一起表态：只在 `selectAsset` 里按产品族过滤，等于在本族清单里
+/// 把资产全滤空，`resolveMigrationTargetAsset` 会恒返 null（清单命中后不会回退
+/// `api.github.com`，见 [UpdateChecker._fetchReleasesForExactChannel] 的 short-circuit），
+/// 一键迁移必然停在「找不到 Fushi 产物」。
 Future<MigrationTargetAsset?> resolveMigrationTargetAsset({
   UpdateChannel channel = UpdateChannel.stable,
   String customProxy = '',
@@ -43,7 +50,8 @@ Future<MigrationTargetAsset?> resolveMigrationTargetAsset({
   try {
     await applyAppProxy(client, userProxy: customProxy);
     final List<Map<String, dynamic>> releases =
-        await UpdateChecker._fetchReleasesForChannel(client, channel);
+        await UpdateChecker._fetchReleasesForChannel(client, channel,
+            product: ReleaseProduct.fushi);
     final PlatformUpdater updater = updaterForCurrentPlatform();
     // 「谁后构建谁赢」——与自更新同一把尺（[_compareReleaseRecency]），
     // 避免多轨并集里按拉取顺序误选更旧的 Fushi。
