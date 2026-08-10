@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -10,6 +11,7 @@ import 'package:fushi/pages.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
+import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/models/dictionary_import_manager.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
@@ -49,12 +51,17 @@ String dictionaryDownloadStageMessage({
 /// 会定格在满格一动不动——这正是「看起来卡死」的直接来源。归零后
 /// `LinearProgressIndicator(value: progress > 0 ? progress : null)` 退化成不定态
 /// 动画，如实表达「正在处理、无法估算剩余」。
+///
+/// BUG-1499：同一个「不可分割的 FFI 调用、C++ 侧无回调」也决定了导入**中途取消不
+/// 可达**，所以进了这一阶段必须把取消按钮禁掉——传 [job] 让阶段一并切过去。
 @visibleForTesting
 void enterDictionaryImportStage({
   required String name,
   required ValueNotifier<String> progressNotifier,
   required ValueNotifier<double> downloadProgress,
+  DictionaryDownloadJob? job,
 }) {
+  job?.markImportPhase();
   downloadProgress.value = 0;
   progressNotifier.value = t.import_name(name: name);
 }
@@ -77,7 +84,10 @@ class DictionaryDialogPage extends BasePage {
 
 class _DictionaryDialogPageState extends BasePageState {
   DictionaryType _selectedType = DictionaryType.term;
-  bool _isDownloading = false;
+
+  /// BUG-1500：判「是否已有下载在跑」的唯一真相源是 app 级 controller，不再是页面
+  /// 私有的 bool——页面 bool 挡不住启动时的静默自动更新，两条流程能并发写同一本词典。
+  bool get _isDownloading => appModel.dictionaryDownloadController.isBusy;
 
   @override
   void initState() {
@@ -116,6 +126,8 @@ class _DictionaryDialogPageState extends BasePageState {
             : const <Widget>[],
         children: [
           if (!cupertino) _buildActionBar(),
+          // 收进后台的下载/更新任务的回程入口（BUG-1499）；无任务时是零高度。
+          _buildDownloadStatusRow(),
           compact ? _buildDictionaryTypePicker() : _buildCategorySelector(),
           buildContent(),
           // TODO-1075：自动更新设置卡移到词典列表之后（页尾设置区），不再横切
@@ -913,15 +925,22 @@ class _DictionaryDialogPageState extends BasePageState {
 
     await _runWithDownloadProgressDialog(
       initialMessage: t.import_start,
-      body: (
-        ValueNotifier<String> progressNotifier,
-        ValueNotifier<double> downloadProgress,
-      ) async {
+      body: (DictionaryDownloadJob job) async {
+        final ValueNotifier<String> progressNotifier = job.message;
+        final ValueNotifier<double> downloadProgress = job.progress;
         int successCount = 0;
         String? lastError;
+        bool cancelled = false;
 
         try {
           for (final RecommendedDictionary rec in toDownload) {
+            // BUG-1499：本间边界是**除下载传输之外唯一安全的中断时点**——上一本已
+            // 完整发布、下一本还没碰任何东西，词典库状态与取消前完全一致。
+            if (job.isCancelled) {
+              cancelled = true;
+              break;
+            }
+            job.markDownloadPhase();
             progressNotifier.value = t.dict_downloading(name: rec.name);
             downloadProgress.value = 0;
 
@@ -930,6 +949,7 @@ class _DictionaryDialogPageState extends BasePageState {
                 url: rec.url,
                 tempDir: tempDir,
                 progressNotifier: downloadProgress,
+                cancelToken: job.cancelToken,
                 onBytes: (int received, int total) =>
                     progressNotifier.value = dictionaryDownloadStageMessage(
                   name: rec.name,
@@ -939,11 +959,12 @@ class _DictionaryDialogPageState extends BasePageState {
               );
 
               // BUG-1493：与单本更新同一套阶段切换（归零进度条 → 不定态），否则导入
-              // 期间进度条定格满格，看起来就是卡死。
+              // 期间进度条定格满格，看起来就是卡死。BUG-1499：同时把取消按钮禁掉。
               enterDictionaryImportStage(
                 name: rec.name,
                 progressNotifier: progressNotifier,
                 downloadProgress: downloadProgress,
+                job: job,
               );
               // TODO-1075：初装即把「可更新性」权威信号锚定在 catalog 来源真值上。
               // 对存在**分离 index.json 端点**的来源（yomidevs releases / wty，见
@@ -970,6 +991,11 @@ class _DictionaryDialogPageState extends BasePageState {
               );
               successCount++;
             } catch (e, st) {
+              // 取消不是失败：不记错误日志、不计进失败汇总，只停整批。
+              if (DictionaryDownloadController.isCancellation(e)) {
+                cancelled = true;
+                break;
+              }
               // 完整诊断进错误日志（含异常类型 / URL / 栈），不再被静默吞掉。
               ErrorLogService.instance.log(
                 'DictionaryDialog.download',
@@ -981,7 +1007,9 @@ class _DictionaryDialogPageState extends BasePageState {
             }
           }
 
-          if (successCount == toDownload.length) {
+          if (cancelled) {
+            progressNotifier.value = t.dict_download_cancelled;
+          } else if (successCount == toDownload.length) {
             progressNotifier.value = t.dict_download_complete;
           } else if (successCount > 0) {
             progressNotifier.value = t.dict_download_partial(
@@ -995,65 +1023,130 @@ class _DictionaryDialogPageState extends BasePageState {
           }
           await Future<void>.delayed(const Duration(seconds: 2));
         } finally {
+          // 取消时这一步同时清掉了半个 zip：temp 目录整棵删，不留残渣。
           if (tempDir.existsSync()) {
             tempDir.deleteSync(recursive: true);
           }
         }
+
+        // BUG-927：把失败的词典名持久汇总给用户（LENGTH_LONG），而不是只在那个 2 秒
+        // 就消失的进度框里一闪而过。BUG-1499：交给 controller 发——用户可能已经收起
+        // 进度框离开词典页，这条汇总仍必须送达。
+        if (cancelled) {
+          return DictionaryDownloadOutcome(
+            message: t.dict_download_cancelled,
+            severity: ToastSeverity.info,
+          );
+        }
+        if (failedNames.isNotEmpty) {
+          return DictionaryDownloadOutcome(
+            message:
+                DictionaryImportManager.formatImportFailureSummary(failedNames),
+            toastLength: Toast.LENGTH_LONG,
+            severity: ToastSeverity.error,
+          );
+        }
+        return null;
       },
     );
-
-    // BUG-927：进度框关闭后，把失败的词典名持久汇总给用户（LENGTH_LONG），而不是
-    // 只在那个 2 秒就消失的进度框里一闪而过。与文件导入路径同一套失败汇总文案。
-    if (failedNames.isNotEmpty) {
-      FushiToast.show(
-        msg: DictionaryImportManager.formatImportFailureSummary(failedNames),
-        toastLength: Toast.LENGTH_LONG,
-        severity: ToastSeverity.error,
-      );
-    }
   }
 
-  /// 下载/更新词典共用的进度对话框样板（原为四处逐字复制：在线下载
-  /// [_downloadSelectedDictionaries]、单本在线更新 [_updateSingleDictionary]、
-  /// 从文件覆盖更新 [_updateDictionaryFromFile]、批量检查更新 [_checkForUpdates]）：
-  /// 置 [_isDownloading]、建文案/进度两个 notifier、弹不可关闭的
-  /// [DictionaryDownloadProgressDialog]，跑完 [body] 后统一 dispose、复位下载
-  /// 标志、收掉进度框并刷新列表。
+  /// 下载/更新词典共用的样板（四处复用：在线下载 [_downloadSelectedDictionaries]、
+  /// 单本在线更新 [_updateSingleDictionary]、从文件覆盖更新
+  /// [_updateDictionaryFromFile]、批量检查更新 [_checkForUpdates]）。
+  ///
+  /// BUG-1499：**任务不再属于这个对话框**。以前 notifier 建在这里、`await body(...)`
+  /// 在这里、收尾 `Navigator.pop(context)` 也在这里——于是没有任何合法途径把进度框
+  /// 收起来（真收起来了，收尾那一 pop 会把词典页本身弹掉），也没有取消入口。现在
+  /// 任务交给 app 级 [DictionaryDownloadController]（挂在 [AppModel] 上），本方法只
+  /// 负责：忙则拒绝、开一个**视图**、等任务结束刷新列表。视图关掉与否与任务无关。
   Future<void> _runWithDownloadProgressDialog({
     required String initialMessage,
-    required Future<void> Function(
-      ValueNotifier<String> progressNotifier,
-      ValueNotifier<double> downloadProgress,
+    required Future<DictionaryDownloadOutcome?> Function(
+      DictionaryDownloadJob job,
     ) body,
   }) async {
-    _isDownloading = true;
-    final ValueNotifier<String> progressNotifier =
-        ValueNotifier<String>(initialMessage);
-    final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0);
+    final DictionaryDownloadController controller =
+        appModel.dictionaryDownloadController;
+    if (controller.isBusy) {
+      // 忙的原因可能是启动时的静默自动更新（BUG-1500），不是只有本页会占用它，
+      // 所以要明确告诉用户「已有下载在跑」而不是静默 return。
+      FushiToast.show(msg: t.dict_download_busy, severity: ToastSeverity.info);
+      return;
+    }
+    _showDownloadProgressDialog();
+    await controller.run(initialMessage: initialMessage, body: body);
+    if (mounted) setState(() {});
+  }
 
-    showAppDialog(
+  /// 打开进度框视图。可重复调用（收起后从状态行再打开）——同一个 controller，
+  /// 同一份进度。
+  void _showDownloadProgressDialog() {
+    final DictionaryDownloadController controller =
+        appModel.dictionaryDownloadController;
+    showAppDialog<void>(
       barrierDismissible: false,
       context: context,
-      builder: (ctx) => ValueListenableBuilder<String>(
-        valueListenable: progressNotifier,
-        builder: (ctx, String msg, __) => DictionaryDownloadProgressDialog(
-          message: msg,
-          progressListenable: downloadProgress,
+      builder: (BuildContext ctx) => DictionaryDownloadProgressAutoCloser(
+        phase: controller.phase,
+        child: ValueListenableBuilder<String>(
+          valueListenable: controller.message,
+          builder: (_, String msg, __) => ValueListenableBuilder<bool>(
+            valueListenable: controller.cancellable,
+            builder: (_, bool cancellable, __) =>
+                DictionaryDownloadProgressDialog(
+              message: msg,
+              progressListenable: controller.progress,
+              // 导入阶段 cancellable 为 false → 按钮置灰 + 说明为什么停不下来，
+              // 而不是给一个按了没反应的按钮（BUG-1499）。
+              onCancel: cancellable ? controller.requestCancel : null,
+              cancelDisabledHint: t.dict_download_import_uncancellable,
+              onHide: () => Navigator.of(ctx).pop(),
+            ),
+          ),
         ),
       ),
     );
+  }
 
-    try {
-      await body(progressNotifier, downloadProgress);
-    } finally {
-      progressNotifier.dispose();
-      downloadProgress.dispose();
-      _isDownloading = false;
-      if (mounted) {
-        Navigator.pop(context);
-        setState(() {});
-      }
-    }
+  /// BUG-1499：任务被收进后台时，词典页顶部这条状态行是**唯一的回程入口**——没有它
+  /// 用户收起来就再也看不到进度了。任务结束（phase 回 idle）自动消失。
+  Widget _buildDownloadStatusRow() {
+    final DictionaryDownloadController controller =
+        appModel.dictionaryDownloadController;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return ValueListenableBuilder<DictionaryDownloadPhase>(
+      valueListenable: controller.phase,
+      builder: (_, DictionaryDownloadPhase phase, __) {
+        if (phase == DictionaryDownloadPhase.idle) {
+          return const SizedBox.shrink();
+        }
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: tokens.spacing.gap + tokens.spacing.gap / 2,
+          ),
+          child: FushiCard(
+            padding: EdgeInsets.zero,
+            child: ValueListenableBuilder<String>(
+              valueListenable: controller.message,
+              builder: (_, String msg, __) => FushiListItem(
+                minHeight: 44,
+                leading: const Icon(Icons.cloud_download_outlined, size: 18),
+                title: Text(
+                  msg.isEmpty ? t.dict_update_checking : msg,
+                  style: textTheme.bodySmall,
+                ),
+                titleMaxLines: 2,
+                trailing: TextButton(
+                  onPressed: _showDownloadProgressDialog,
+                  child: Text(t.dict_download_progress_show),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   static const _safChannel = FushiChannels.saf;
@@ -1639,20 +1732,23 @@ class _DictionaryDialogPageState extends BasePageState {
   Future<bool> _redownloadAndReimport({
     required String name,
     required String downloadUrl,
-    required ValueNotifier<String> progressNotifier,
-    required ValueNotifier<double> downloadProgress,
+    required DictionaryDownloadJob job,
     required Map<String, String> sourceOverride,
   }) async {
+    final ValueNotifier<String> progressNotifier = job.message;
+    final ValueNotifier<double> downloadProgress = job.progress;
     final Directory tempDir = Directory(
       path.join(appModel.dictionaryResourceDirectory.path, 'update_temp'),
     );
     try {
+      job.markDownloadPhase();
       progressNotifier.value = t.dict_update_updating(name: name);
       downloadProgress.value = 0;
       final File zipFile = await DictionaryDownloader.download(
         url: downloadUrl,
         tempDir: tempDir,
         progressNotifier: downloadProgress,
+        cancelToken: job.cancelToken,
         onBytes: (int received, int total) => progressNotifier.value =
             dictionaryDownloadStageMessage(
                 name: name, received: received, total: total),
@@ -1661,6 +1757,7 @@ class _DictionaryDialogPageState extends BasePageState {
         name: name,
         progressNotifier: progressNotifier,
         downloadProgress: downloadProgress,
+        job: job,
       );
       await appModel.importDictionary(
         file: zipFile,
@@ -1681,50 +1778,56 @@ class _DictionaryDialogPageState extends BasePageState {
     if (_isDownloading) return;
     if (!dictionary.isUpdatable) return;
 
-    String resultMsg = t.dict_update_latest;
-    // 三种结局（已最新 / 已更新 / 更新失败）共用一条 toast，配色跟着文案一起定，
-    // 否则失败也是一条无色提示、与「已是最新」长得一模一样。
-    ToastSeverity resultSeverity = ToastSeverity.info;
     await _runWithDownloadProgressDialog(
       initialMessage: t.dict_update_checking,
-      body: (
-        ValueNotifier<String> progressNotifier,
-        ValueNotifier<double> downloadProgress,
-      ) async {
+      body: (DictionaryDownloadJob job) async {
+        // 三种结局（已最新 / 已更新 / 更新失败）共用一条 toast，配色跟着文案一起定，
+        // 否则失败也是一条无色提示、与「已是最新」长得一模一样。
         try {
           final String? remoteRevision =
               await DictionaryUpdateService.fetchRemoteIndex(
                   dictionary.indexUrl);
           if (!DictionaryUpdateService.needsUpdate(
               dictionary.revision, remoteRevision)) {
-            resultMsg = t.dict_update_latest;
-            resultSeverity = ToastSeverity.info;
-          } else {
-            await _redownloadAndReimport(
-              name: dictionary.name,
-              downloadUrl: dictionary.downloadUrl,
-              progressNotifier: progressNotifier,
-              downloadProgress: downloadProgress,
-              // W-2：更新即知本词典可更新——显式回填 isUpdatable:'true' + 两 URL，使
-              // 即便重导包内 index.json 不声明 isUpdatable，更新后仍保持可更新（不丢按钮）。
-              sourceOverride: <String, String>{
-                'isUpdatable': 'true',
-                'downloadUrl': dictionary.downloadUrl,
-                'indexUrl': dictionary.indexUrl,
-              },
+            return DictionaryDownloadOutcome(
+              message: t.dict_update_latest,
+              severity: ToastSeverity.info,
             );
-            resultMsg = t.dict_update_done(name: dictionary.name);
-            resultSeverity = ToastSeverity.success;
           }
+          await _redownloadAndReimport(
+            name: dictionary.name,
+            downloadUrl: dictionary.downloadUrl,
+            job: job,
+            // W-2：更新即知本词典可更新——显式回填 isUpdatable:'true' + 两 URL，使
+            // 即便重导包内 index.json 不声明 isUpdatable，更新后仍保持可更新（不丢按钮）。
+            sourceOverride: <String, String>{
+              'isUpdatable': 'true',
+              'downloadUrl': dictionary.downloadUrl,
+              'indexUrl': dictionary.indexUrl,
+            },
+          );
+          return DictionaryDownloadOutcome(
+            message: t.dict_update_done(name: dictionary.name),
+            severity: ToastSeverity.success,
+          );
         } catch (e, stack) {
+          // 取消不是失败：不写错误日志，只回一条中性提示。此刻词典库与取消前一致——
+          // 取消只可能落在下载传输中，导入一旦开始就到底（BUG-1499）。
+          if (DictionaryDownloadController.isCancellation(e)) {
+            return DictionaryDownloadOutcome(
+              message: t.dict_download_cancelled,
+              severity: ToastSeverity.info,
+            );
+          }
           ErrorLogService.instance
               .log('DictionaryDialog.updateSingle', e, stack);
-          resultMsg = t.dict_update_failed(error: '$e');
-          resultSeverity = ToastSeverity.error;
+          return DictionaryDownloadOutcome(
+            message: t.dict_update_failed(error: '$e'),
+            severity: ToastSeverity.error,
+          );
         }
       },
     );
-    FushiToast.show(msg: resultMsg, severity: resultSeverity);
   }
 
   /// TODO-839：本地导入 / 旧词典（isUpdatable=false，无在线来源）的「从文件重选覆盖
@@ -1775,34 +1878,37 @@ class _DictionaryDialogPageState extends BasePageState {
 
     if (!mounted) return;
 
-    String resultMsg = t.dict_update_done(name: dictionary.name);
-    // 覆盖导入没抛异常即成功；catch 里连同文案一起翻成 error 配色。
-    ToastSeverity resultSeverity = ToastSeverity.success;
     await _runWithDownloadProgressDialog(
       initialMessage: t.dict_update_updating(name: dictionary.name),
-      body: (
-        ValueNotifier<String> progressNotifier,
-        ValueNotifier<double> downloadProgress,
-      ) async {
+      body: (DictionaryDownloadJob job) async {
+        // 本地文件覆盖更新**全程都是导入阶段**（没有下载），故整条路径不可取消：
+        // 进入 body 就切 importing，取消按钮从头到尾是灰的（BUG-1499）。
+        job.markImportPhase();
         try {
           await appModel.importDictionary(
             file: file,
-            progressNotifier: progressNotifier,
+            progressNotifier: job.message,
             onImportSuccess: () {},
             forceReplaceExisting: true,
+          );
+          // 覆盖导入没抛异常即成功。
+          return DictionaryDownloadOutcome(
+            message: t.dict_update_done(name: dictionary.name),
+            severity: ToastSeverity.success,
           );
         } catch (e, stack) {
           ErrorLogService.instance
               .log('DictionaryDialog.updateFromFile', e, stack);
-          resultMsg = t.dict_update_failed(error: '$e');
-          resultSeverity = ToastSeverity.error;
+          return DictionaryDownloadOutcome(
+            message: t.dict_update_failed(error: '$e'),
+            severity: ToastSeverity.error,
+          );
         }
       },
     );
     if (Platform.isAndroid || Platform.isIOS) {
       await FilePicker.platform.clearTemporaryFiles();
     }
-    FushiToast.show(msg: resultMsg, severity: resultSeverity);
   }
 
   /// 异名覆盖确认对话框：所选文件包名 [incoming] 与被更新词典 [existing] 不同时弹出，
@@ -1852,21 +1958,21 @@ class _DictionaryDialogPageState extends BasePageState {
       return;
     }
 
-    int updated = 0;
-    int current = 0;
-    int failed = 0;
     await _runWithDownloadProgressDialog(
       initialMessage: t.dict_update_checking,
-      body: (
-        ValueNotifier<String> progressNotifier,
-        ValueNotifier<double> downloadProgress,
-      ) async {
+      body: (DictionaryDownloadJob job) async {
+        int updated = 0;
+        int current = 0;
+        int failed = 0;
         for (final Dictionary d in updatable) {
+          // 本间边界：上一本已完整发布，停在这里词典库状态一致（BUG-1499）。
+          if (job.isCancelled) break;
           try {
             // W-1：每本检查前归零进度条，避免上一本下载完的满格残留在「检查 revision」
             // 阶段误显 100%。
-            downloadProgress.value = 0;
-            progressNotifier.value = t.dict_update_checking;
+            job.markDownloadPhase();
+            job.progress.value = 0;
+            job.message.value = t.dict_update_checking;
             final String? remoteRevision =
                 await DictionaryUpdateService.fetchRemoteIndex(d.indexUrl);
             if (!DictionaryUpdateService.needsUpdate(
@@ -1877,8 +1983,7 @@ class _DictionaryDialogPageState extends BasePageState {
             await _redownloadAndReimport(
               name: d.name,
               downloadUrl: d.downloadUrl,
-              progressNotifier: progressNotifier,
-              downloadProgress: downloadProgress,
+              job: job,
               sourceOverride: <String, String>{
                 'isUpdatable': 'true',
                 'downloadUrl': d.downloadUrl,
@@ -1887,22 +1992,23 @@ class _DictionaryDialogPageState extends BasePageState {
             );
             updated++;
           } catch (e, stack) {
+            if (DictionaryDownloadController.isCancellation(e)) break;
             ErrorLogService.instance
                 .log('DictionaryDialog.checkUpdates', e, stack);
             failed++;
           }
         }
+        return DictionaryDownloadOutcome(
+          message: t.dict_update_summary(
+            updated: updated.toString(),
+            current: current.toString(),
+            failed: failed.toString(),
+          ),
+          toastLength: Toast.LENGTH_LONG,
+          // 有失败即「部分成功」→ warning；全成或全已最新才算 success。
+          severity: failed > 0 ? ToastSeverity.warning : ToastSeverity.success,
+        );
       },
-    );
-    FushiToast.show(
-      msg: t.dict_update_summary(
-        updated: updated.toString(),
-        current: current.toString(),
-        failed: failed.toString(),
-      ),
-      toastLength: Toast.LENGTH_LONG,
-      // 有失败即「部分成功」→ warning；全成或全已最新才算 success。
-      severity: failed > 0 ? ToastSeverity.warning : ToastSeverity.success,
     );
   }
 
@@ -2028,15 +2134,29 @@ class DictionaryDownloadProgressDialog extends StatelessWidget {
   const DictionaryDownloadProgressDialog({
     required this.message,
     required this.progressListenable,
+    this.onCancel,
+    this.onHide,
+    this.cancelDisabledHint,
     super.key,
   });
 
   final String message;
   final ValueNotifier<double> progressListenable;
 
+  /// 取消回调。**null = 当前阶段停不下来**（导入中），按钮置灰并显示
+  /// [cancelDisabledHint]。给一个按了没反应的按钮比没有按钮更坏（BUG-1499）。
+  final VoidCallback? onCancel;
+
+  /// 收起进度框（任务继续在后台跑）。null 时不显示该按钮。
+  final VoidCallback? onHide;
+
+  /// 取消不可用时显示的一行说明。
+  final String? cancelDisabledHint;
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool hasActions = onCancel != null || onHide != null;
 
     return FushiDialogFrame(
       maxWidth: 420,
@@ -2049,17 +2169,106 @@ class DictionaryDownloadProgressDialog extends StatelessWidget {
           tokens.spacing.card,
           0,
           tokens.spacing.card,
+          hasActions ? tokens.spacing.gap : tokens.spacing.card,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
           tokens.spacing.card,
         ),
-        body: ValueListenableBuilder<double>(
-          valueListenable: progressListenable,
-          builder: (_, double progress, __) => LinearProgressIndicator(
-            value: progress > 0 ? progress : null,
-          ),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            ValueListenableBuilder<double>(
+              valueListenable: progressListenable,
+              builder: (_, double progress, __) => LinearProgressIndicator(
+                value: progress > 0 ? progress : null,
+              ),
+            ),
+            if (onCancel == null && cancelDisabledHint != null) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              Text(
+                cancelDisabledHint!,
+                style: tokens.type.listSubtitle,
+              ),
+            ],
+          ],
         ),
+        footer: hasActions
+            ? Wrap(
+                alignment: WrapAlignment.end,
+                spacing: tokens.spacing.gap,
+                runSpacing: tokens.spacing.gap,
+                children: <Widget>[
+                  adaptiveDialogAction(
+                    context: context,
+                    onPressed: onCancel,
+                    child: Text(t.dialog_cancel),
+                  ),
+                  if (onHide != null)
+                    adaptiveDialogAction(
+                      context: context,
+                      isDefaultAction: true,
+                      onPressed: onHide,
+                      child: Text(t.dict_download_hide),
+                    ),
+                ],
+              )
+            : null,
       ),
     );
   }
+}
+
+/// 让进度框在任务真正结束时**自己**关闭。
+///
+/// BUG-1499：旧实现是任务收尾处无条件 `Navigator.pop(context)`——一旦允许用户先把
+/// 进度框收起来，那一 pop 就会把词典页本身弹掉。谁开的谁关：本 widget 活在 dialog
+/// route 内，监听 [phase]，回到 [DictionaryDownloadPhase.idle] 就 pop 自己；用户
+/// 已经手动收起时它早已 dispose、listener 已摘，绝不会误弹别的路由。
+@visibleForTesting
+class DictionaryDownloadProgressAutoCloser extends StatefulWidget {
+  const DictionaryDownloadProgressAutoCloser({
+    required this.phase,
+    required this.child,
+    super.key,
+  });
+
+  final ValueListenable<DictionaryDownloadPhase> phase;
+  final Widget child;
+
+  @override
+  State<DictionaryDownloadProgressAutoCloser> createState() =>
+      _DictionaryDownloadProgressAutoCloserState();
+}
+
+class _DictionaryDownloadProgressAutoCloserState
+    extends State<DictionaryDownloadProgressAutoCloser> {
+  @override
+  void initState() {
+    super.initState();
+    widget.phase.addListener(_onPhaseChanged);
+    // 任务可能在对话框插进树之前就跑完了（本地覆盖导入的极快路径），此时不会再有
+    // 任何一次 phase 变化来触发关闭，必须在首帧后补查一次。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onPhaseChanged());
+  }
+
+  @override
+  void dispose() {
+    widget.phase.removeListener(_onPhaseChanged);
+    super.dispose();
+  }
+
+  void _onPhaseChanged() {
+    if (!mounted) return;
+    if (widget.phase.value != DictionaryDownloadPhase.idle) return;
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 @visibleForTesting

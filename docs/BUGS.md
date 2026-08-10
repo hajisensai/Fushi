@@ -29,11 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1404 条。点号进各自文件。
+> 共 1406 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1504](bugs/BUG-1504-subtitle-drop-attach-silent-failure.md) | ✅ | ✅ | 拖放字幕到视频卡失败无任何提示 |
+| [BUG-1500](bugs/BUG-1500-dict-concurrent-import-temp-race.md) | ✅ | ✅ | 词典手动下载与静默自动更新无互斥，共用 import_temp 互相删除 |
+| [BUG-1499](bugs/BUG-1499-dict-download-no-cancel-no-background.md) | ✅ | ✅ | 词典下载进度框无法取消也无法后台化 |
 | [BUG-1497](bugs/BUG-1497-remote-download-progress-fake-importer-no-db-row.md) | ✅ | ✅ | 远端书下载进度回填测试假 importer 不落库，v82 uid 闸门后回填永不发生 |
 | [BUG-1496](bugs/BUG-1496-collection-member-entrykey-uid-test-stale.md) | ✅ | ✅ | 合集详情焦点测试用 bookKey 加成员，v83 entryKey 切 uid 后合集行不渲染 |
 | [BUG-1495](bugs/BUG-1495-dashboard-drift-watch-teardown-timer.md) | ✅ | ✅ | 首页 dashboard widget 测试全挂：drift .watch() 隔离清单漏了新增消费方 |

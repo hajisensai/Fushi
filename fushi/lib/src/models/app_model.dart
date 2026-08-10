@@ -24,6 +24,7 @@ import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
+import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/export_directory.dart';
@@ -857,6 +858,14 @@ class AppModel with ChangeNotifier {
     ..onFloatingLyricClosePersist = (() => setShowFloatingLyric(false))
     ..onToggleFloatingLyricFromNotification = toggleFloatingLyricFromControls;
   late DictionaryImportManager _dictImportManager;
+
+  /// BUG-1499 / BUG-1500：词典下载/更新任务的所有权持有者。挂在 [AppModel] 上而不是
+  /// 词典页的 State 上，任务因此不随进度对话框的开关而生死——用户可以把进度框收起来
+  /// 回去用 app，下载照跑；也因此它能成为「手动下载」与「启动静默自动更新」两条流程
+  /// 的**唯一互斥点**（两条流程的导入共用同一个 `import_temp` 暂存目录，并发会互删）。
+  final DictionaryDownloadController dictionaryDownloadController =
+      DictionaryDownloadController();
+
   late FileExportManager _fileExportManager;
   late LocalAudioManager _localAudioManager;
 
@@ -4080,16 +4089,21 @@ class AppModel with ChangeNotifier {
 
   DateTime? get lastDictionaryUpdateAt => prefsRepo.lastDictionaryUpdateAt;
 
-  /// 自动更新是否正在进行的再入守卫（与导入并发由 import manager 内部串行，但此处
-  /// 防止启动 hook 与潜在重复触发叠加）。
-  bool _autoUpdateInProgress = false;
-
   /// TODO-861③：启动时 check-due 自动更新词典（前台、静默、不弹错）。先用纯函数
   /// [shouldAutoUpdateDictionaries] 守门（未开 / 未到期 / 无可更新 / 正忙 → 直接
   /// 返回），再逐本拉远端 index 比 revision、有新版才下载 force 重导。**失败不中断
   /// 整批**（逐本 try/catch 收集失败）；整批检查完成（无新版也算完成）才写
   /// `lastDictionaryUpdateAt`，任一本检查/重导失败则不推进时间，留待下次启动重试。
   /// 复用手动更新同款「下载→force 重导（保留 order/hidden/collapsed）」链路。
+  ///
+  /// BUG-1500：整批跑在 [dictionaryDownloadController] 的互斥 `run` 里。此前的再入
+  /// 守卫是本类私有的 `_autoUpdateInProgress`，而手动下载用的是词典页私有的
+  /// `_isDownloading`——两个 bool 互不感知，用户在词典页点「更新」的同时启动 hook 正
+  /// 在静默更新同一本词典时，两条流程会同时使用**同一个** `<资源目录>/import_temp`
+  /// 暂存目录，后者的 `deleteSync(recursive: true)` 直接把前者正在写的暂存删掉；更糟
+  /// 的是两边都会「删旧目录 + 删 meta 再 publish」，交错执行能落成「旧的已删、新的没
+  /// 落地」。收进同一把锁后，谁先谁独占，另一条直接跳过（自动更新本就是 check-due，
+  /// 跳过一轮下次启动重来，零损失）。
   Future<void> maybeAutoUpdateDictionaries() async {
     if (!autoUpdateDictionaries) return;
     final List<Dictionary> updatable =
@@ -4099,69 +4113,84 @@ class AppModel with ChangeNotifier {
       lastUpdate: lastDictionaryUpdateAt,
       interval: dictionaryUpdateInterval,
       hasUpdatable: updatable.isNotEmpty,
-      isBusy: _autoUpdateInProgress,
+      isBusy: dictionaryDownloadController.isBusy,
     )) {
       return;
     }
-    _autoUpdateInProgress = true;
-    int completedCount = 0;
-    try {
-      for (final Dictionary dictionary in updatable) {
-        try {
-          final DictionaryRemoteIndexResult remote =
-              await DictionaryUpdateService.fetchRemoteIndexResult(
-            dictionary.indexUrl,
-          );
-          if (!remote.succeeded) {
-            debugPrint('[Fushi] auto dict update could not check '
-                '${dictionary.name}');
-            continue;
-          }
-          if (!DictionaryUpdateService.needsUpdate(
-              dictionary.revision, remote.revision)) {
+    await dictionaryDownloadController.run(
+      initialMessage: t.dict_update_checking,
+      body: (DictionaryDownloadJob job) async {
+        int completedCount = 0;
+        for (final Dictionary dictionary in updatable) {
+          // 用户在状态行/进度框里按了取消 → 本间边界停整批（当前这本已完整发布）。
+          if (job.isCancelled) break;
+          try {
+            job.markDownloadPhase();
+            job.message.value = t.dict_update_checking;
+            final DictionaryRemoteIndexResult remote =
+                await DictionaryUpdateService.fetchRemoteIndexResult(
+              dictionary.indexUrl,
+            );
+            if (!remote.succeeded) {
+              debugPrint('[Fushi] auto dict update could not check '
+                  '${dictionary.name}');
+              continue;
+            }
+            if (!DictionaryUpdateService.needsUpdate(
+                dictionary.revision, remote.revision)) {
+              completedCount++;
+              continue;
+            }
+            await _autoRedownloadAndReimport(dictionary, job);
             completedCount++;
-            continue;
+          } catch (e, stack) {
+            if (DictionaryDownloadController.isCancellation(e)) break;
+            // 单本失败不中断其余（移植 Hoshi 的 failures-collect 语义）。
+            ErrorLogService.instance
+                .log('AppModel.autoUpdateDictionary', e, stack);
+            debugPrint('[Fushi] auto dict update failed for '
+                '${dictionary.name}: $e');
           }
-          await _autoRedownloadAndReimport(dictionary);
-          completedCount++;
-        } catch (e, stack) {
-          // 单本失败不中断其余（移植 Hoshi 的 failures-collect 语义）。
-          ErrorLogService.instance
-              .log('AppModel.autoUpdateDictionary', e, stack);
-          debugPrint('[Fushi] auto dict update failed for '
-              '${dictionary.name}: $e');
         }
-      }
-      // BUG-1281：检查成功且无需更新也是完整成功；旧逻辑只在真正重导过词典时写
-      // 时间，导致长期没有新版的用户永远显示“从未”并在每次启动重复联网。
-      if (didCompleteDictionaryAutoUpdateBatch(
-        totalCount: updatable.length,
-        completedCount: completedCount,
-      )) {
-        await prefsRepo.setLastDictionaryUpdateAt(DateTime.now());
-      }
-    } finally {
-      _autoUpdateInProgress = false;
-    }
+        // BUG-1281：检查成功且无需更新也是完整成功；旧逻辑只在真正重导过词典时写
+        // 时间，导致长期没有新版的用户永远显示“从未”并在每次启动重复联网。
+        if (didCompleteDictionaryAutoUpdateBatch(
+          totalCount: updatable.length,
+          completedCount: completedCount,
+        )) {
+          await prefsRepo.setLastDictionaryUpdateAt(DateTime.now());
+        }
+        // 静默路径：不弹结果 toast（TODO-861③ 的原语义，失败也不打扰）。
+        return null;
+      },
+    );
   }
 
   /// 静默下载 + force 重导单本词典（复用手动链路语义：保留 order/hidden/collapsed，
-  /// 回填 isUpdatable/URL 来源）。无 UI ValueNotifier，用一次性内部 notifier。
-  Future<void> _autoRedownloadAndReimport(Dictionary dictionary) async {
+  /// 回填 isUpdatable/URL 来源）。进度写进 [job] 的 notifier，让「后台正在更新什么」
+  /// 在词典页状态行 / 进度框里可见且可取消（下载阶段）。
+  Future<void> _autoRedownloadAndReimport(
+    Dictionary dictionary,
+    DictionaryDownloadJob job,
+  ) async {
     final Directory tempDir = Directory(
       path.join(dictionaryResourceDirectory.path, 'auto_update_temp'),
     );
-    final ValueNotifier<String> progressNotifier = ValueNotifier<String>('');
-    final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0);
     try {
+      job.markDownloadPhase();
+      job.progress.value = 0;
+      job.message.value = t.dict_update_updating(name: dictionary.name);
       final File zipFile = await DictionaryDownloader.download(
         url: dictionary.downloadUrl,
         tempDir: tempDir,
-        progressNotifier: downloadProgress,
+        progressNotifier: job.progress,
+        cancelToken: job.cancelToken,
       );
+      job.markImportPhase();
+      job.progress.value = 0;
       await importDictionary(
         file: zipFile,
-        progressNotifier: progressNotifier,
+        progressNotifier: job.message,
         onImportSuccess: () {},
         forceReplaceExisting: true,
         sourceOverride: <String, String>{
@@ -4171,8 +4200,6 @@ class AppModel with ChangeNotifier {
         },
       );
     } finally {
-      progressNotifier.dispose();
-      downloadProgress.dispose();
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
     }
   }
@@ -5334,6 +5361,7 @@ class AppModel with ChangeNotifier {
       themeNotifier.dispose();
       _themeListenerAdded = false;
     }
+    dictionaryDownloadController.dispose();
     dictionaryEntriesNotifier.dispose();
     clipboardHistoryNotifier.dispose();
     dictionarySearchAgainNotifier.dispose();
