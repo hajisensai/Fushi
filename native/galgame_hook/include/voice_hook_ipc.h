@@ -307,6 +307,11 @@ struct LoopbackMarker {
 //   hit   : hook → host，单槽 latest-wins（用户查得再快也只关心最后一次）
 //   input : hook → host，环（落在卡片矩形内的鼠标/滚轮事件，供 host 喂 SendMouseInput）
 //   frame : host → hook，双缓冲（避免 host 写下一帧时撕裂 hook 正在拷的这一帧）
+//
+// **像素格式：BGRA8，直通（非预乘）alpha，自顶向下。** 两端都按直通最省事——host 侧
+// WebView2 取帧经 PNG 解码出来的本来就是直通；注入侧 KiriKiri 的 ltAlpha 也正是直通
+// （预乘对应的是 ltAddAlpha）。任何一侧擅自改成预乘，症状是卡片半透明边缘发暗，不会
+// 报错，只会看起来"有点脏"——所以在这里写死，别靠两边默契。
 constexpr uint32_t kLookupLineBytes = 1024;      // 单行台词 UTF-8 上限（整行，不截断）
 constexpr uint32_t kLookupInputSlotCount = 64;   // 输入转发环槽数
 constexpr uint32_t kLookupFrameCount = 2;        // 位图双缓冲
@@ -329,8 +334,15 @@ constexpr uint32_t kLookupDiagFrameRejected = 0x00000080u;    // 收到过不合
 // 保证 payload 对 reader 先可见），与 VoiceClip / LoopbackMarker 同一套纪律。
 struct LookupHitSlot {
   volatile uint64_t seq;   // 单调；host 据此判新。0=从未命中
-  uint32_t char_index;     // 光标落在第几个字符（本行内下标）
-  uint32_t char_count;     // 本行字符数（自洽校验：char_index < char_count）
+  // 光标落在第几个字符。**单位是 UTF-16 code unit**，不是 UTF-8 字节、不是 code point。
+  //
+  // 为什么是这个单位而不是随便挑一个：两端天然就都是 UTF-16——TJS 的 tjs_char 是 wchar_t
+  // （UTF-16LE），Dart 的 String 下标也是 UTF-16 code unit。选它，两侧各自「就是自己的字符串
+  // 下标」，零转换；选 UTF-8 字节或 code point，两端都要转，而转错的症状是**含非 ASCII 或
+  // 非 BMP 字符的行整体偏移**——日文行必然含非 ASCII，也就是必错，但错得像"命中判定有点飘"
+  // 而不像编码 bug，极难定位。line_utf8 用 UTF-8 只是因为它要跨 C ABI，不影响本字段单位。
+  uint32_t char_index;
+  uint32_t char_count;     // 本行 UTF-16 code unit 数（自洽校验：char_index < char_count）
   int32_t glyph_x;         // 命中字形矩形，primaryLayer 坐标
   int32_t glyph_y;
   int32_t glyph_w;
@@ -346,13 +358,22 @@ struct LookupHitSlot {
 
 constexpr uint32_t kLookupHitFlagSubmit = 0x00000001u;
 
-// host → hook：一帧卡片位图的元数据。像素本体在位图区的第 (seq % kLookupFrameCount) 块。
-// `ready` **最后**写：0=host 正在写，1=可读。hook 拷完必须复查 seq 未变，否则丢弃。
+// host → hook：一帧卡片位图的元数据。
+//
+// **槽下标规则（两侧唯一约定，别各写各的）**：元数据槽下标与像素块下标**同为**
+// `seq % lookup_frame_count`。host 不许用自己的轮转计数器放元数据、再用 seq%N 放像素——
+// 那样注入侧会全量拒帧，而症状（卡片永远不出现）和「host 压根没投帧」完全同形，真机上
+// 根本分不开。注入侧按此下标读，不一致即丢帧并置 kLookupDiagFrameRejected。
+//
+// `ready` **最后**写：0=host 正在写，1=可读。hook 拷完必须复查 seq/ready 未变，否则丢弃。
 struct LookupFrame {
   volatile uint64_t seq;      // 对应哪次 hit；hook 丢弃比当前 hit 旧的帧
   uint32_t width;             // 像素宽
   uint32_t height;            // 像素高
-  uint32_t pitch;             // 行字节跨距（>= width*4）
+  // 行字节跨距，**恒为正、恒自顶向下**（>= width*4）。这块内存是我们自己的，没有理由
+  // 继承任何一侧的行序怪癖。游戏 Layer 那侧的 mainImageBufferPitch 可能为负（KiriKiri
+  // 自底向上），那是注入侧搬运时的事，不许漏进这个跨进程契约。
+  uint32_t pitch;
   int32_t anchor_x;           // 卡片左上角，primaryLayer 坐标（host 决定，含避让与钳制）
   int32_t anchor_y;
   uint32_t highlight_start;   // 字幕高亮起始字符下标
