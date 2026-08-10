@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1396 条。点号进各自文件。
+> 共 1397 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1491](bugs/BUG-1491-anki-dedup-serial-delete.md) | ✅ | ✅ | Anki 媒体去重逐个删除过慢 |
+| [BUG-1490](bugs/BUG-1490-desktop-non-utf8-subtitle-unsupported.md) | ✅ | ✅ | 桌面端非 UTF-8 字幕全被误报为不支持 |
 | [BUG-1489](bugs/BUG-1489-media-kind-guard-frozen-migration.md) | ✅ | ✅ | MediaKind 复合键守卫误判迁移冻结字面量 |
 | [BUG-1488](bugs/BUG-1488-sync-book-rename-display-title.md) | ✅ | ✅ | 母设备重命名的书同步到子设备仍显示原书名 |
 | [BUG-1487](bugs/BUG-1487-ios-popup-furigana-webkit.md) | ✅ | ✅ | iOS 查词弹窗振假名渲染异常 |

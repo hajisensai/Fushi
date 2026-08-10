@@ -926,6 +926,42 @@ String embeddedSubtitleTrackLabel(EmbeddedSubtitleTrack track) {
   return '内封 ${track.streamIndex}: ${parts.join(' / ')}';
 }
 
+/// 字幕 cue 加载失败的**原因**。
+///
+/// BUG-1490：原实现把「格式不支持」「图形轨」「ffmpeg 抽取失败」「文件读不出」
+/// 「内容解析不出」五种完全不同的根因统统压成一个空 `List<AudioCue>`，UI 只能
+/// 用同一句「可能是图形或不支持的字幕轨」兜底——对一个明明是文本 ASS 的文件，
+/// 那句话是**错的**，把用户引向「换个字幕」而不是真正的问题。
+enum SubtitleCueLoadFailure {
+  /// 扩展名 / codec 不在受支持的文本字幕格式里（含图形轨如 PGS/VobSub）。
+  unsupportedFormat,
+
+  /// 内嵌轨需要 ffmpeg demux，但没抽出文件（ffmpeg 缺失 / 超时 / 坏轨）。
+  extractionFailed,
+
+  /// 文件读不出来（不存在 / 无权限 / IO 错误）。
+  fileUnreadable,
+
+  /// 内容读到了，但解析不出任何 cue（结构损坏、空文件、解析器抛异常）。
+  parseFailed,
+}
+
+/// 一次字幕 cue 加载的结果：要么拿到非空 cue，要么带一个明确的失败原因。
+///
+/// 不变式：`cues.isNotEmpty` ⇔ `failure == null`。
+@immutable
+class SubtitleCueLoadResult {
+  const SubtitleCueLoadResult.loaded(this.cues) : failure = null;
+
+  const SubtitleCueLoadResult.failed(SubtitleCueLoadFailure this.failure)
+      : cues = const <AudioCue>[];
+
+  final List<AudioCue> cues;
+  final SubtitleCueLoadFailure? failure;
+
+  bool get isFailure => failure != null;
+}
+
 /// 加载某字幕源为 cue 列表。
 ///
 /// - 内嵌源：ffmpeg `-map 0:s:N` 抽到临时文件 → [readTextWithEncoding] →
@@ -933,7 +969,20 @@ String embeddedSubtitleTrackLabel(EmbeddedSubtitleTrack track) {
 /// - 外挂源：[readTextWithEncoding] 读文件 → 按扩展名路由 parser。
 ///
 /// 任一步失败（ffmpeg 缺失 / 文件读不出 / 格式不支持）返回空列表，不抛。
+/// **需要区分失败原因（例如给用户不同文案）时用 [loadSubtitleCueResult]**；
+/// 本函数只是它丢掉原因的薄封装，保留给不关心原因的调用方。
 Future<List<AudioCue>> loadCuesForSource(
+  SubtitleSource source,
+  String videoPath,
+  String bookUid,
+) async {
+  final SubtitleCueLoadResult result =
+      await loadSubtitleCueResult(source, videoPath, bookUid);
+  return result.cues;
+}
+
+/// 同 [loadCuesForSource]，但**保留失败原因**（[SubtitleCueLoadFailure]）。不抛。
+Future<SubtitleCueLoadResult> loadSubtitleCueResult(
   SubtitleSource source,
   String videoPath,
   String bookUid,
@@ -1021,13 +1070,17 @@ Future<DefaultEmbeddedSubtitleLoadResult> loadDefaultTextEmbeddedSubtitleCues({
   );
 }
 
-Future<List<AudioCue>> _loadEmbeddedCues(
+Future<SubtitleCueLoadResult> _loadEmbeddedCues(
   SubtitleSource source,
   String videoPath,
   String bookUid,
 ) async {
   final SubtitleFormat? format = subtitleFormatForCodec(source.codec ?? '');
-  if (format == null) return const <AudioCue>[];
+  if (format == null) {
+    return const SubtitleCueLoadResult.failed(
+      SubtitleCueLoadFailure.unsupportedFormat,
+    );
+  }
 
   // BUG-104: extracting one embedded subtitle out of a multi-GB interleaved
   // container costs a full read of the file (~20s for a 27GB BluRay REMUX),
@@ -1042,18 +1095,54 @@ Future<List<AudioCue>> _loadEmbeddedCues(
     await _ensureAllEmbeddedSubtitlesExtracted(videoPath, cacheDir);
   }
   if (!(cached.existsSync() && cached.lengthSync() > 0)) {
-    return const <AudioCue>[];
+    return const SubtitleCueLoadResult.failed(
+      SubtitleCueLoadFailure.extractionFailed,
+    );
   }
+  return _readAndParse(cached, format, bookUid);
+}
+
+/// 读文件 + 解析的公共尾段：把「读不出」「解析不出」分开成两种失败原因。
+///
+/// 异常按来源分流而不是 `catch (_)` 一把抓——读文件的异常是
+/// [SubtitleCueLoadFailure.fileUnreadable]，解析阶段的异常是
+/// [SubtitleCueLoadFailure.parseFailed]。编码问题不再会出现在这里：
+/// [readTextWithEncoding] 已经保证任何字节都能解出字符串（BUG-1490）。
+Future<SubtitleCueLoadResult> _readAndParse(
+  File file,
+  SubtitleFormat format,
+  String bookUid,
+) async {
+  final String text;
   try {
-    final String text = await readTextWithEncoding(cached);
-    return await parseSubtitleContentAsync(
+    text = await readTextWithEncoding(file);
+  } catch (e) {
+    // 不带栈：读文件失败的异常本身已含路径与 OS errno，栈没有额外信息，
+    // 而这条路径（缺失的 sidecar 等）在正常使用中会反复命中。
+    debugPrint('[subtitle] read failed: ${file.path}: $e');
+    return const SubtitleCueLoadResult.failed(
+      SubtitleCueLoadFailure.fileUnreadable,
+    );
+  }
+  final List<AudioCue> cues;
+  try {
+    cues = await parseSubtitleContentAsync(
       format,
       content: text,
       bookUid: bookUid,
     );
-  } catch (_) {
-    return const <AudioCue>[];
+  } catch (e, stack) {
+    debugPrint('[subtitle] parse failed: ${file.path}: $e\n$stack');
+    return const SubtitleCueLoadResult.failed(
+      SubtitleCueLoadFailure.parseFailed,
+    );
   }
+  if (cues.isEmpty) {
+    return const SubtitleCueLoadResult.failed(
+      SubtitleCueLoadFailure.parseFailed,
+    );
+  }
+  return SubtitleCueLoadResult.loaded(cues);
 }
 
 /// Pre-extracts text embedded subtitle tracks for [videoPath] into the shared
@@ -1218,23 +1307,18 @@ Duration subtitleExtractTimeoutForBytes(int sizeBytes) {
   return Duration(seconds: seconds);
 }
 
-Future<List<AudioCue>> _loadExternalCues(
+Future<SubtitleCueLoadResult> _loadExternalCues(
   SubtitleSource source,
   String bookUid,
 ) async {
   final String path = source.externalPath!;
   final SubtitleFormat? format = subtitleFormatForPath(path);
-  if (format == null) return const <AudioCue>[];
-  try {
-    final String text = await readTextWithEncoding(File(path));
-    return await parseSubtitleContentAsync(
-      format,
-      content: text,
-      bookUid: bookUid,
+  if (format == null) {
+    return const SubtitleCueLoadResult.failed(
+      SubtitleCueLoadFailure.unsupportedFormat,
     );
-  } catch (_) {
-    return const <AudioCue>[];
   }
+  return _readAndParse(File(path), format, bookUid);
 }
 
 /// 临时抽字幕文件的扩展名（让 ffmpeg 按扩展名选输出 muxer）。

@@ -462,13 +462,24 @@ hello async vtt
         ),
       ).readAsStringSync();
 
+      // BUG-1490 起「读文件 + 解析」抽成共享的 _readAndParse（为的是把失败原因
+      // 分成 fileUnreadable / parseFailed 两类）。TODO-475 的意图不变：视频字幕
+      // 加载路径必须经**异步** parser 入口（大文件走 isolate），不能退回同步
+      // parseString。所以这里既钉共享尾段用异步入口，也钉两个 loader 都必须经它
+      // ——否则谁绕过去自己 readAsString + 同步解析，本守卫照样红。
       expect(
-        _functionBody(source, 'Future<List<AudioCue>> _loadEmbeddedCues'),
+        _functionBody(source, 'Future<SubtitleCueLoadResult> _readAndParse'),
         contains('await parseSubtitleContentAsync('),
       );
       expect(
-        _functionBody(source, 'Future<List<AudioCue>> _loadExternalCues'),
-        contains('await parseSubtitleContentAsync('),
+        _functionBody(
+            source, 'Future<SubtitleCueLoadResult> _loadEmbeddedCues'),
+        contains('_readAndParse('),
+      );
+      expect(
+        _functionBody(
+            source, 'Future<SubtitleCueLoadResult> _loadExternalCues'),
+        contains('_readAndParse('),
       );
     });
   });

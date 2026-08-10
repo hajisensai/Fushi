@@ -3302,5 +3302,6 @@
   "video_setting_drag_seek_sensitivity_hint": "触屏横向滑动调进度时，划过整屏宽度对应的时长：低约 45 秒、中约 90 秒、高约 180 秒。与视频总长无关。只影响触屏拖动，鼠标和键盘调进度不受影响。",
   "video_setting_drag_seek_sensitivity_low": "低",
   "video_setting_drag_seek_sensitivity_medium": "中",
-  "video_setting_drag_seek_sensitivity_high": "高"
+  "video_setting_drag_seek_sensitivity_high": "高",
+  "video_subtitle_read_failed": "无法读取该字幕文件（内容损坏或为空）：$label"
 }

@@ -3302,5 +3302,6 @@
   "video_setting_drag_seek_sensitivity_hint": "How far one full-width swipe seeks on a touch screen: Low about 45s, Medium about 90s, High about 180s. Independent of the video's total length. Touch drag only; mouse and keyboard seeking are unaffected.",
   "video_setting_drag_seek_sensitivity_low": "Low",
   "video_setting_drag_seek_sensitivity_medium": "Medium",
-  "video_setting_drag_seek_sensitivity_high": "High"
+  "video_setting_drag_seek_sensitivity_high": "High",
+  "video_subtitle_read_failed": "Couldn't read this subtitle file (damaged or empty): $label"
 }
