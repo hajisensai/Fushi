@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_library.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
@@ -332,6 +333,7 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
                   Expanded(
                     child: MihonSourceImage(
                       runtime: widget.manager.runtime,
+                      cache: widget.manager.coverCache,
                       context: _sourceContext!,
                       url: manga.coverUrl,
                       loadQueue: _imageLoadQueue,
@@ -517,6 +519,7 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
                             borderRadius: FushiBorderRadius.poster,
                             child: MihonSourceImage(
                               runtime: widget.manager.runtime,
+                              cache: widget.manager.coverCache,
                               context: widget.sourceContext,
                               url: details.coverUrl,
                             ),
@@ -609,6 +612,7 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
 class MihonSourceImage extends StatefulWidget {
   const MihonSourceImage({
     required this.runtime,
+    required this.cache,
     required this.context,
     required this.url,
     super.key,
@@ -616,6 +620,7 @@ class MihonSourceImage extends StatefulWidget {
   });
 
   final MihonRuntime runtime;
+  final MihonCoverCache cache;
   final MihonSourceContext context;
   final String? url;
 
@@ -653,7 +658,7 @@ class _MihonSourceImageState extends State<MihonSourceImage> {
       _future = null;
       return;
     }
-    Future<Uint8List> fetch() {
+    Future<Uint8List> load() {
       if (!mounted || generation != _generation) {
         return Future<Uint8List>.error(
           const MihonRuntimeException(
@@ -662,15 +667,34 @@ class _MihonSourceImageState extends State<MihonSourceImage> {
           ),
         );
       }
-      return widget.runtime.fetchSourceImage(
-        widget.context.extension,
-        widget.context.source,
-        url,
-        preferences: widget.context.preferences,
+      return widget.cache.load(
+        extensionPackage: widget.context.extension.packageName,
+        sourceId: widget.context.source.id,
+        url: url,
+        fetch: () {
+          Future<Uint8List> fetchSource() {
+            if (!mounted || generation != _generation) {
+              return Future<Uint8List>.error(
+                const MihonRuntimeException(
+                  'IMAGE_LOAD_CANCELLED',
+                  'The source image left the preview queue before it started',
+                ),
+              );
+            }
+            return widget.runtime.fetchSourceImage(
+              widget.context.extension,
+              widget.context.source,
+              url,
+              preferences: widget.context.preferences,
+            );
+          }
+
+          return widget.loadQueue?.run<Uint8List>(fetchSource) ?? fetchSource();
+        },
       );
     }
 
-    _future = widget.loadQueue?.run<Uint8List>(fetch) ?? fetch();
+    _future = load();
   }
 
   @override
@@ -712,7 +736,8 @@ class _MihonSourceImageState extends State<MihonSourceImage> {
 ///
 /// `GridView.builder` 虽然懒建，但仍会为当前视口和 cacheExtent 同时创建多张封面；
 /// 没有这个闸门时，每个 [MihonSourceImage] 都会立刻发请求。队列只限制正在执行的
-/// 网络任务，不把结果集中缓存，因此图片仍由各自的 widget 独立渲染和释放。
+/// 缓存未命中网络任务；命中磁盘的封面不占用网络并发名额，图片仍由各自 widget
+/// 独立解码与渲染。
 class MihonSourceImageLoadQueue {
   MihonSourceImageLoadQueue({required this.maxConcurrent})
       : assert(maxConcurrent > 0);

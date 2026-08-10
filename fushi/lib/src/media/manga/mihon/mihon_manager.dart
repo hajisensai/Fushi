@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
@@ -29,6 +30,9 @@ class MihonManager extends ChangeNotifier {
     MihonExtensionStoreClient? storeClient,
     this.seedDefaultStore = false,
   }) : _storeClient = storeClient ?? MihonExtensionStoreClient() {
+    coverCache = MihonCoverCache(
+      Directory(p.join(rootDirectory.path, 'cache', 'covers')),
+    );
     if (Platform.isWindows || Platform.isMacOS) {
       _exitShutdown =
           ExitFlushRegistry.instance.register(shutdownRuntimeForExit);
@@ -38,6 +42,7 @@ class MihonManager extends ChangeNotifier {
   final FushiDatabase database;
   final Directory rootDirectory;
   final MihonRuntime runtime;
+  late final MihonCoverCache coverCache;
   final MihonExtensionStoreClient _storeClient;
 
   /// 是否在 [initialise] 里装配默认扩展仓库（见 [kMihonDefaultStoreIndexUrl]）。

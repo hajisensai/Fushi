@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1406 条。点号进各自文件。
+> 共 1407 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1508](bugs/BUG-1508-mihon-cover-disk-cache.md) | ✅ | ✅ | Mihon 在线漫画封面刷新重复下载 |
 | [BUG-1507](bugs/BUG-1507-video-discovery-genre-facet-pollution.md) | ✅ | ✅ | 视频发现页类型菜单混入年份日期 |
 | [BUG-1506](bugs/BUG-1506-video-discovery-cover-disk-cache.md) | ✅ | ✅ | 视频发现与系列页封面刷新重复下载 |
 | [BUG-1505](bugs/BUG-1505-video-discovery-card-overflow-year-input.md) | ✅ | ✅ | 视频发现卡片溢出且年份下拉过长 |
