@@ -1,19 +1,12 @@
 {
   "schemaVersion": 1,
-  "version": "1.4.0-debug.10363",
-  "tag": "v1.4.0-debug.10363+0203640",
+  "version": "1.4.0-debug.10392",
+  "tag": "v1.4.0-debug.10392+1405c90",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 10363,
-  "notes": "Manual desktop debug-channel build from develop @ 0203640. Debug releases are prerelease and never Latest.",
+  "releaseSequence": 10392,
+  "notes": "Manual release-signed debug-channel build from develop @ 1405c90. Debug releases are prerelease and never Latest.",
   "assets": [
-    {
-      "name": "fushi-1.4.0-debug.10363-0203640-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.10363-0203640-debug.apk",
-      "releaseSequence": 10363,
-      "tag": "v1.4.0-debug.10363+0203640",
-      "version": "1.4.0-debug.10363"
-    },
     {
       "name": "fushi-1.4.0-debug.10363-ios.ipa",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.10363-ios.ipa",
@@ -34,6 +27,13 @@
       "releaseSequence": 10363,
       "tag": "v1.4.0-debug.10363+0203640",
       "version": "1.4.0-debug.10363"
+    },
+    {
+      "name": "fushi-1.4.0-debug.10392-1405c90-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.10392-1405c90-debug.apk",
+      "releaseSequence": 10392,
+      "tag": "v1.4.0-debug.10392+1405c90",
+      "version": "1.4.0-debug.10392"
     }
   ]
 }
