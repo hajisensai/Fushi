@@ -1,5 +1,4 @@
 // P1 zero-behaviour-change split: included inside dll_main.cpp anonymous namespace.
-#include <winhttp.h>
 // ══ C.2c KiriKiri 解码器捕获链（引擎级干净人声）══════════════════════════════════
 // XAudio2/DirectSound 抓的是**输出**（混音后各源），KiriKiriZ 的人声不走这两条（实测输出源全
 // 是 BGM/SE）。人声在**解码环节**：KiriKiriZ 给每个正在播放的声音建一个独立解码器实例，语音是
@@ -99,6 +98,12 @@ struct KiriKiriVoiceTask {
 
 KiriKiriVoiceTask g_kirikiri_voice_tasks[kKirikiriVoiceTaskSlots];
 
+// 游戏内查词传感器的安装重试点（x86 才有真实实现；KiriKiriZ 是 32 位引擎，x64 为空）。
+// 为什么要重试：`lookup_enabled` 是 host 运行期开关，而 exporter 只在 V2Link / exe 直取那
+// 一瞬间到手。若用户在游戏起来之后才打开查词，安装窗口早过去了；这里借 registry 每轮都会
+// 调的 ProcessPendingEvents 复查开关，拿缓存的 exporter 补装。
+void PollKirikiriLookupInstall();
+
 uint64_t ReadKirikiriSharedU64(volatile uint64_t* value) {
   return value == nullptr
              ? 0
@@ -147,6 +152,7 @@ void EnqueueKirikiriVoiceResourceOwned(
 }
 
 void ProcessKirikiriVoiceTasks() {
+  PollKirikiriLookupInstall();
   for (int i = 0; i < kKirikiriVoiceTaskSlots; ++i) {
     KiriKiriVoiceTask* task = &g_kirikiri_voice_tasks[i];
     if (InterlockedCompareExchange(&task->state, 3, 2) != 2) continue;
@@ -690,6 +696,9 @@ struct TjsString {
 typedef TjsVariantString*(__stdcall* TJSAllocVariantStringStub_t)(const wchar_t* value);
 typedef void(__stdcall* TJSVariantStringReleaseStub_t)(TjsVariantString* value);
 typedef void(__stdcall* TVPExecuteScriptStub_t)(const TjsString& content, void* result);
+// TVPExecuteExpression 与 TVPExecuteScript 同型，但 result 会被真正填成一个 tTJSVariant。
+// 它是 hook 侧读回 TJS 传感器读数（命中几何、整行台词、输入事件）的唯一通道。
+typedef void(__stdcall* TVPExecuteExpressionStub_t)(const TjsString& content, void* result);
 typedef void(__stdcall* TVPAddContinuousEventHookStub_t)(TvpContinuousEventCallback* callback);
 typedef void(__stdcall* TVPRemoveContinuousEventHookStub_t)(TvpContinuousEventCallback* callback);
 
@@ -699,36 +708,64 @@ TVPCreateStream_t g_orig_TVPCreateStream = nullptr;
 TJSAllocVariantStringStub_t g_lookup_alloc_string = nullptr;
 TJSVariantStringReleaseStub_t g_lookup_release_string = nullptr;
 TVPExecuteScriptStub_t g_lookup_execute_script = nullptr;
+TVPExecuteExpressionStub_t g_lookup_execute_expression = nullptr;
 TVPAddContinuousEventHookStub_t g_lookup_add_continuous = nullptr;
 TVPRemoveContinuousEventHookStub_t g_lookup_remove_continuous = nullptr;
+ITVPFunctionExporter* g_lookup_exporter = nullptr;
 TjsVariantString* g_lookup_bootstrap_script = nullptr;
 volatile LONG g_lookup_bootstrap_state = 0;  // 0=off, 1=registered, 2=running, 3=done
-CRITICAL_SECTION g_lookup_response_cs;
-bool g_lookup_response_cs_ready = false;
-std::wstring g_lookup_response_script;
-std::wstring g_lookup_request_path;
-HANDLE g_lookup_worker = nullptr;
 
+// TextRender 之外的捕获路径（Layer.drawText / MessageLayer.processCh）只在换游戏、
+// TextRender 一条都不命中时才有诊断价值。运行日志已证伪它们在本样本上的作用，故默认
+// **编译期关闭**：游戏内渲染意味着主线程上的每一毫秒都直接变掉帧，不能为了"万一有用"
+// 在生产路径上并行跑四份没人读的排版计算。
+constexpr bool kKirikiriLookupProbePaths = false;
+
+// TJS 传感器。职责边界只有四件事：采字符几何、做命中测试、把 host 给的位图端到游戏渲染树
+// 里、把落在卡片上的输入转发出去。分词、查词、卡片排版、外字、发音、制卡全部在 Hibiki
+// 进程；这里没有网络客户端、没有认证凭据、没有 JSON、也不 eval 任何拼出来的源码。
+//
+// 三条通道都由 DLL 在游戏主线程的连续帧回调里驱动：
+//   hook→host   TJS 把值写进 global，DLL 用 TVPExecuteExpression 读走再落进共享内存。
+//               每帧只读 fushiLookupNotify 一个整数；它不变就一行 TJS 都不再跑。
+//   host→hook   DLL 先调 global.fushiLookupPrepare(anchorX, anchorY, cardW, cardH) 把卡片
+//               层建/调到位，再把 BGRA8（**直通 alpha、自顶向下**，与契约头一致；直通对应
+//               ltAlpha，预乘才是 ltAddAlpha）memcpy 进它的像素缓冲，最后调
+//               global.fushiLookupApply(seq, highlightStart, highlightLen,
+//                                       anchorX, anchorY, cardW, cardH)。
+//               两个入口的实参全是整数——"只允许整数"约束的是不许拼动态字符串，不是参数个数。
 constexpr wchar_t kKirikiriLookupBootstrapScript[] = LR"TJS(
-class FushiLookupHitLayer extends Layer
+class FushiLookupCardLayer extends Layer
 {
-	var fushiLookupMessage;
-	function FushiLookupHitLayer(owner, parent, message)
+	function FushiLookupCardLayer(owner, parent)
 	{
 		super.Layer(owner, parent);
-		fushiLookupMessage = message;
 	}
+	// 卡片层就是卡片本身：按 host 给的 cardW×cardH 建、摆在 anchor 上，**不覆盖全屏**，而且
+	// 延迟到真要显示第一帧时才建。命中判定用引擎天然的矩形命中（htRect），不依赖"alpha 为 0
+	// 的像素会把点击透传下去"这条未在本引擎验证过的行为。这条选择是为了把失败面关死：全视口
+	// 层一旦穿透语义不符预期，用户没查词时整个游戏就点不动了——那是把"查词不好使"放大成
+	// "游戏坏了"。现在最坏情况也只是卡片自己那块矩形吃掉点击，而那块本来就该吃掉。
+	// 事件坐标是层内坐标；入队时加回层位置换成视口坐标，减 anchor 由 DLL 做（帧元数据在它手上）。
 	function onMouseDown(x, y, button)
 	{
-		if(button == mbLeft) global.fushiLookupSubmit(fushiLookupMessage, x, y);
+		if(button == mbLeft) global.fushiLookupQueueInput(1, x, y, 0);
+	}
+	function onMouseUp(x, y, button)
+	{
+		if(button == mbLeft) global.fushiLookupQueueInput(2, x, y, 0);
 	}
 	function onMouseMove(x, y)
 	{
-		var index = global.fushiLookupGlyphAt(fushiLookupMessage, x, y);
-		if(index >= 0)
-		{
-			global.fushiLookupPaint(fushiLookupMessage, index, 1, 72);
-		}
+		global.fushiLookupQueueInput(0, x, y, 0);
+	}
+	function onMouseWheel(shift, delta, x, y)
+	{
+		global.fushiLookupQueueInput(3, x, y, delta);
+	}
+	function onMouseLeave()
+	{
+		global.fushiLookupQueueInput(4, 0, 0, 0);
 	}
 }
 
@@ -739,307 +776,43 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 		if(typeof global.kag == "undefined" || global.kag === null) return;
 		try
 		{
-			if(typeof global.fushiLookupCard == "undefined")
-			{
-				var owner = global.kag;
-				var root = owner.primaryLayer.parent;
-				var layer = new Layer(owner, root);
-				owner.add(layer);
-				layer.name = "Hibiki in-game dictionary";
-				layer.fushiLookupIgnore = true;
-				layer.setPos(64, 54);
-				layer.setSize(760, 344);
-				layer.type = ltAlpha;
-				layer.absolute = 2147483000;
-				layer.hitType = htMask;
-				layer.hitThreshold = 256;
-				layer.fillRect(0, 0, layer.width, layer.height, 0x071525);
-				layer.colorRect(0, 0, 8, layer.height, 0x31d7ff, 255);
-				layer.font.height = 28;
-				layer.font.bold = true;
-				layer.drawText(26, 14, "HIBIKI // IN-GAME LOOKUP", 0x31d7ff, 255, true);
-				layer.font.height = 22;
-				layer.font.bold = false;
-				layer.drawText(26, 58, "Click a subtitle glyph, or press Shift over it", 0xffffff, 255, true);
-				layer.drawText(26, 88, "Waiting for a subtitle lookup", 0xa7b8c9, 255, true);
-				layer.visible = true;
-				global.fushiLookupCard = layer;
-			}
-
-			global.fushiLookupRequestPath = "__FUSHI_REQUEST_PATH__";
-			global.fushiLookupSequence = 0;
-			global.fushiLookupPending = void;
-
-			global.fushiLookupEnsureHighlight = function(message)
-			{
-				if(typeof message.fushiLookupAbsolute != "undefined")
-				{
-					if(typeof global.fushiLookupAbsoluteHighlight != "undefined")
-					{
-						global.fushiLookupAbsoluteHighlight.setPos(0, 0);
-						global.fushiLookupAbsoluteHighlight.setSize(global.kag.primaryLayer.width,
-							global.kag.primaryLayer.height);
-						return global.fushiLookupAbsoluteHighlight;
-					}
-					var absoluteHighlight = new Layer(global.kag, global.kag.primaryLayer.parent);
-					global.kag.add(absoluteHighlight);
-					absoluteHighlight.name = "Hibiki absolute subtitle word highlight";
-					absoluteHighlight.fushiLookupIgnore = true;
-					absoluteHighlight.setPos(0, 0);
-					absoluteHighlight.setSize(global.kag.primaryLayer.width, global.kag.primaryLayer.height);
-					absoluteHighlight.type = ltAlpha;
-					absoluteHighlight.absolute = 2147482000;
-					absoluteHighlight.hitType = htMask;
-					absoluteHighlight.hitThreshold = 256;
-					absoluteHighlight.visible = true;
-					global.fushiLookupAbsoluteHighlight = absoluteHighlight;
-					return absoluteHighlight;
-				}
-				if(typeof message.fushiLookupHighlight != "undefined")
-				{
-					message.fushiLookupHighlight.setPos(message.imageLeft, message.imageTop);
-					message.fushiLookupHighlight.setSize(message.imageWidth, message.imageHeight);
-					return message.fushiLookupHighlight;
-				}
-				var hl = new FushiLookupHitLayer(global.kag, message, message);
-				global.kag.add(hl);
-				hl.name = "Hibiki subtitle word highlight";
-				hl.fushiLookupIgnore = true;
-				hl.setPos(message.imageLeft, message.imageTop);
-				hl.setSize(message.imageWidth, message.imageHeight);
-				hl.type = ltAlpha;
-				hl.absolute = 2147482000;
-				hl.hitType = htMask;
-				hl.hitThreshold = 256;
-				hl.visible = true;
-				message.fushiLookupHighlight = hl;
-				return hl;
-			};
-
-			global.fushiLookupGetGlyphs = function(message)
-			{
-				if(typeof message.fushiLookupLayerGlyphs != "undefined" &&
-					message.fushiLookupLayerGlyphs.count > 0) return message.fushiLookupLayerGlyphs;
-				if(typeof message.fushiLookupGlyphs != "undefined") return message.fushiLookupGlyphs;
-				return void;
-			};
-
-			global.fushiLookupPaint = function(message, start, length, opacity)
-			{
-				var hl = global.fushiLookupEnsureHighlight(message);
-				hl.fillRect(0, 0, hl.width, hl.height, 0);
-				var glyphs = global.fushiLookupGetGlyphs(message);
-				if(glyphs === void) return;
-				var units = 0;
-				var offsetX = typeof message.fushiLookupGlyphOffsetX == "undefined" ? 0 :
-					message.fushiLookupGlyphOffsetX;
-				var offsetY = typeof message.fushiLookupGlyphOffsetY == "undefined" ? 0 :
-					message.fushiLookupGlyphOffsetY;
-				for(var i = start; i < glyphs.count && units < length; i++)
-				{
-					var g = glyphs[i];
-					hl.colorRect(g.x + offsetX, g.y + offsetY, g.w, g.h, 0x00d8ff, opacity);
-					units += g.ch.length;
-				}
-			};
-
-			global.fushiLookupGlyphAt = function(message, x, y)
-			{
-				var glyphs = global.fushiLookupGetGlyphs(message);
-				if(glyphs === void) return -1;
-				for(var i = glyphs.count - 1; i >= 0; i--)
-				{
-					var g = glyphs[i];
-					if(x >= g.x && x < g.x + g.w && y >= g.y && y < g.y + g.h) return i;
-				}
-				return -1;
-			};
-
-			global.fushiLookupShowLoading = function(query)
-			{
-				var layer = global.fushiLookupCard;
-				layer.fillRect(0, 0, layer.width, layer.height, 0x071525);
-				layer.colorRect(0, 0, 8, layer.height, 0x31d7ff, 255);
-				layer.font.bold = true; layer.font.height = 28;
-				layer.drawText(26, 14, "HIBIKI // LOOKING UP", 0x31d7ff, 255, true);
-				layer.font.bold = false; layer.font.height = 30;
-				layer.drawText(26, 58, query, 0xffffff, 255, true);
-				layer.font.height = 20;
-				layer.drawText(26, 108, "Searching Hibiki dictionaries...", 0xa7b8c9, 255, true);
-				layer.visible = true;
-			};
-
-			global.fushiLookupSubmit = function(message, x, y)
-			{
-				var index = global.fushiLookupGlyphAt(message, x, y);
-				if(index < 0) return false;
-				var glyphs = global.fushiLookupGetGlyphs(message);
-				var query = "";
-				for(var i = index; i < glyphs.count && query.length < 48; i++)
-				{
-					var ch = glyphs[i].ch;
-					if(ch == "。" || ch == "、" || ch == "！" || ch == "？" || ch == "\n") break;
-					query += ch;
-				}
-				if(query == "") return false;
-				var id = ++global.fushiLookupSequence;
-				global.fushiLookupPending = %[id:id, message:message, start:index, query:query];
-				global.fushiLookupPaint(message, index, 1, 96);
-				global.fushiLookupShowLoading(query);
-				[id, query].save(global.fushiLookupRequestPath);
-				return true;
-			};
+			// 这一批必须最先建立：DLL 每帧都会求值 fushiLookupNotify，晚一步就是每帧一次
+			// TJS 异常。
+			global.fushiLookupNotify = 0;
+			global.fushiLookupHitSeq = 0;
+			global.fushiLookupHitCharIndex = 0;
+			global.fushiLookupHitCharCount = 0;
+			global.fushiLookupHitGlyphX = 0;
+			global.fushiLookupHitGlyphY = 0;
+			global.fushiLookupHitGlyphW = 0;
+			global.fushiLookupHitGlyphH = 0;
+			global.fushiLookupHitViewW = 0;
+			global.fushiLookupHitViewH = 0;
+			global.fushiLookupHitFlags = 0;
+			global.fushiLookupHitLine = "";
+			global.fushiLookupInputQueue = [];
+			global.fushiLookupShiftDown = false;
+			global.fushiLookupProbeMode = __FUSHI_PROBE_MODE__;
+			global.fushiLookupProbeDrawText = 0;
+			global.fushiLookupProbeProcessCh = 0;
+			global.fushiLookupProbeError = "";
+			global.fushiLookupCardPath = "__FUSHI_CARD_PATH__";
+			global.fushiLookupCardSeq = 0;
+			global.fushiLookupRegistry = [];
+			global.fushiLookupClock = 0;
+			global.fushiLookupHoverKey = "";
+			global.fushiLookupHitEntry = void;
+			global.fushiLookupHitOffsetX = 0;
+			global.fushiLookupHitOffsetY = 0;
+			global.fushiLookupHighlightRect = void;
+			global.fushiLookupBoundRenderer = void;
+			global.fushiLookupBoundLayer = void;
+			global.fushiLookupBoundX = 0;
+			global.fushiLookupBoundY = 0;
 
 )TJS" LR"TJS(
 
-			global.fushiLookupShowResult = function(id, expression, reading, dictionary, definition, bestLength)
-			{
-				var pending = global.fushiLookupPending;
-				if(pending === void || pending.id != id) return;
-				global.fushiLookupPaint(pending.message, pending.start, bestLength, 150);
-				var layer = global.fushiLookupCard;
-				layer.fillRect(0, 0, layer.width, layer.height, 0x071525);
-				layer.colorRect(0, 0, 8, layer.height, 0x31d7ff, 255);
-				layer.font.bold = true; layer.font.height = 26;
-				layer.drawText(26, 12, "HIBIKI // LIVE LOOKUP", 0x31d7ff, 255, true);
-				layer.font.height = 38;
-				layer.drawText(26, 52, expression, 0xffffff, 255, true);
-				layer.font.bold = false; layer.font.height = 22;
-				layer.drawText(26, 98, reading, 0x65dfff, 255, true);
-				layer.font.height = 17;
-				layer.drawText(26, 132, dictionary, 0xa7b8c9, 255, true);
-				layer.colorRect(26, 160, layer.width - 52, 2, 0x31d7ff, 210);
-				layer.font.height = 20;
-				var clean = definition.replace(/\r/g, "").replace(/\n+/g, " ");
-				var line = 0;
-				for(var pos = 0; pos < clean.length && line < 7; pos += 30, line++)
-					layer.drawText(26, 178 + line * 23, clean.substr(pos, 30), 0xffffff, 255, true);
-				layer.visible = true;
-			};
-
-			global.fushiLookupRecordGlyph = function(message, ch)
-			{
-				if(typeof message.fushiLookupGlyphs == "undefined") message.fushiLookupGlyphs = [];
-				var glyphs = message.fushiLookupGlyphs;
-				var cw = message.lineLayer.font.getTextWidth(ch) + message.pitch;
-				var lx, ly, w, h;
-				if(!message.vertical)
-				{
-					lx = message.lineLayerPos - cw; ly = message.lineLayerBase - message.fontSize;
-					w = cw; h = message.fontSize;
-				}
-				else
-				{
-					lx = message.lineLayerBase - (message.fontSize >> 1); ly = message.lineLayerPos - cw;
-					w = message.fontSize; h = cw;
-				}
-				var ox = message.lineLayerOriginX, oy = message.lineLayerOriginY;
-				glyphs.add(%[ch:ch, lx:lx, ly:ly, w:w, h:h, ox:ox, oy:oy,
-					x:message.lineLayer.left+lx, y:message.lineLayer.top+ly]);
-				for(var i = glyphs.count - 1; i >= 0; i--)
-				{
-					var g = glyphs[i];
-					if(g.ox != ox || g.oy != oy) break;
-					g.x = message.lineLayer.left + g.lx;
-					g.y = message.lineLayer.top + g.ly;
-				}
-			};
-
-			global.fushiLookupLayerRegistry = [];
-			global.fushiLookupLayerRunSequence = 0;
-			global.fushiLookupLayerGlyphSequence = 0;
-			global.fushiLookupLayerDrawCount = 0;
-			global.fushiLookupLayerLastText = "";
-
-			global.fushiLookupTextHasJapanese = function(text)
-			{
-				return typeof text == "String" && /[\u3000-\u30ff\u3400-\u9fff\uff00-\uffef]/.test(text);
-			};
-
-			global.fushiLookupRemoveLayerGlyphs = function(layer, x, y, w, h)
-			{
-				if(typeof layer.fushiLookupLayerGlyphs == "undefined" || w <= 0 || h <= 0) return;
-				var kept = [];
-				var glyphs = layer.fushiLookupLayerGlyphs;
-				for(var i = 0; i < glyphs.count; i++)
-				{
-					var g = glyphs[i];
-					if(g.x + g.w <= x || g.y + g.h <= y || g.x >= x + w || g.y >= y + h)
-						kept.add(g);
-				}
-				layer.fushiLookupLayerGlyphs = kept;
-			};
-
-			global.fushiLookupCaptureLayerText = function(layer, x, y, text)
-			{
-				if(typeof layer.fushiLookupIgnore != "undefined" ||
-					!global.fushiLookupTextHasJapanese(text)) return;
-				var angle = layer.font.angle;
-				if(angle != 0 && angle != 2700) return;
-				if(typeof layer.fushiLookupLayerGlyphs == "undefined") layer.fushiLookupLayerGlyphs = [];
-				if(typeof layer.fushiLookupLayerRegistered == "undefined")
-				{
-					layer.fushiLookupLayerRegistered = true;
-					global.fushiLookupLayerRegistry.add(layer);
-				}
-				var height = Math.abs(layer.font.height);
-				if(height < 1) height = 1;
-				var total = layer.font.getTextWidth(text);
-				if(angle == 0)
-					global.fushiLookupRemoveLayerGlyphs(layer, x, y, total, height);
-				else
-					global.fushiLookupRemoveLayerGlyphs(layer, x - height, y, height, total);
-				var run = ++global.fushiLookupLayerRunSequence;
-				for(var i = 0; i < text.length; i++)
-				{
-					var ch = text.charAt(i);
-					var begin = layer.font.getTextWidth(text.substr(0, i));
-					var finish = layer.font.getTextWidth(text.substr(0, i + 1));
-					var advance = finish - begin;
-					if(advance < 1) advance = 1;
-					var gx, gy, gw, gh;
-					if(angle == 0)
-					{
-						gx = x + begin; gy = y; gw = advance; gh = height;
-					}
-					else
-					{
-						gx = x - height; gy = y + begin; gw = height; gh = advance;
-					}
-					layer.fushiLookupLayerGlyphs.add(%[ch:ch, x:gx, y:gy, w:gw, h:gh,
-						run:run, seq:++global.fushiLookupLayerGlyphSequence, angle:angle]);
-				}
-				global.fushiLookupLayerDrawCount++;
-				global.fushiLookupLayerLastText = text;
-			};
-
-			global.fushiLookupOriginalLayerDrawText = global.Layer.drawText;
-			global.Layer.drawText = function(x, y, text, color, opacity, antialiased)
-			{
-				var result = (global.fushiLookupOriginalLayerDrawText incontextof this)(...);
-				global.fushiLookupCaptureLayerText(this, x, y, text);
-				return result;
-			};
-
-			global.fushiLookupOriginalLayerFillRect = global.Layer.fillRect;
-			global.Layer.fillRect = function(x, y, width, height, value)
-			{
-				var result = (global.fushiLookupOriginalLayerFillRect incontextof this)(...);
-				if(typeof this.fushiLookupIgnore == "undefined" && this.face != dfProvince)
-					global.fushiLookupRemoveLayerGlyphs(this, x, y, width, height);
-				return result;
-			};
-
-)TJS" LR"TJS(
-
-			global.fushiLookupTextRenderRegistry = [];
-			global.fushiLookupTextRenderCaptureCount = 0;
-			global.fushiLookupTextRenderLastMethod = "";
-			global.fushiLookupTextRenderLastError = "";
-			global.fushiLookupTextRenderPatchTrace = [];
-			global.fushiLookupTextRenderActiveDraw = void;
-
-			global.fushiLookupTextRenderValue = function(value, name, fallback)
+			global.fushiLookupField = function(value, name)
 			{
 				try
 				{
@@ -1047,400 +820,39 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					if(found !== void) return found;
 				}
 				catch(e) {}
-				return fallback;
-			};
-
-			global.fushiLookupTextRenderDescribe = function(value)
-			{
-				var type = typeof value;
-				if(type == "String") return value.substr(0, 80);
-				if(type == "Integer" || type == "Real") return "" + value;
-				return "<" + type + ">";
-			};
-
-			global.fushiLookupTextRenderSample = function(value)
-			{
-				var names = ["text", "x", "y", "cw", "size", "left", "top", "width", "height",
-					"pos", "link", "linkName"];
-				var sample = [];
-				for(var i = 0; i < names.count; i++)
-				{
-					var found = global.fushiLookupTextRenderValue(value, names[i], void);
-					if(found !== void) sample.add(names[i] + "=" +
-						global.fushiLookupTextRenderDescribe(found));
-				}
-				return sample.join(",");
-			};
-
-			global.fushiLookupFindTextRenderTarget = function(renderer)
-			{
-				for(var registryIndex = 0;
-					registryIndex < global.fushiLookupTextRenderRegistry.count; registryIndex++)
-					if(global.fushiLookupTextRenderRegistry[registryIndex].renderer === renderer)
-						return global.fushiLookupTextRenderRegistry[registryIndex];
 				return void;
 			};
 
-			global.fushiLookupBindTextRenderOrigin = function(renderer, layer, originX, originY, source)
+			// 上限 8 + 淘汰最久未用。TJS 没有弱引用，registry 只增不减就等于把每个用过的
+			// renderer 连同它的整行几何永久钉在游戏进程里（prototype 的真实泄漏源）。
+			global.fushiLookupEntryFor = function(renderer)
 			{
-				if(layer === void || layer === null || !isvalid layer ||
-					(typeof originX != "Integer" && typeof originX != "Real") ||
-					(typeof originY != "Integer" && typeof originY != "Real")) return;
-				var target = global.fushiLookupFindTextRenderTarget(renderer);
-				if(target === void) return;
-				target.targetLayer = layer;
-				target.originX = originX;
-				target.originY = originY;
-				target.originSource = source;
+				var registry = global.fushiLookupRegistry;
+				var oldest = 0;
+				for(var i = 0; i < registry.count; i++)
+				{
+					if(registry[i].renderer === renderer) return registry[i];
+					if(registry[i].used < registry[oldest].used) oldest = i;
+				}
+				if(registry.count < 8)
+				{
+					var fresh = %[renderer:renderer, glyphs:[], line:"", used:0,
+						minX:0, minY:0, maxX:0, maxY:0, layer:void, originX:0, originY:0];
+					registry.add(fresh);
+					return fresh;
+				}
+				var reused = registry[oldest];
+				reused.renderer = renderer;
+				reused.glyphs = [];
+				reused.line = "";
+				reused.used = 0;
+				reused.layer = void;
+				reused.originX = 0;
+				reused.originY = 0;
+				return reused;
 			};
 
-			global.fushiLookupCaptureTextRender = function(renderer, method, a, b, c, d, e, f)
-			{
-				try
-				{
-					if(typeof renderer.getCharacters != "Object") return;
-					var characters = (renderer.getCharacters incontextof renderer)(0, 0);
-					if(characters === void || typeof characters.count == "undefined") return;
-					var glyphs = [];
-					for(var i = 0; i < characters.count; i++)
-					{
-						var character = characters[i];
-						var text = global.fushiLookupTextRenderValue(character, "text", "");
-						if(typeof text != "String" || text == "") continue;
-						var x = global.fushiLookupTextRenderValue(character, "left",
-							global.fushiLookupTextRenderValue(character, "x", void));
-						var y = global.fushiLookupTextRenderValue(character, "top",
-							global.fushiLookupTextRenderValue(character, "y", void));
-						var width = global.fushiLookupTextRenderValue(character, "width",
-							global.fushiLookupTextRenderValue(character, "cw", void));
-						var height = global.fushiLookupTextRenderValue(character, "height",
-							global.fushiLookupTextRenderValue(character, "size", void));
-						if(x === void || y === void || width === void || height === void ||
-							width <= 0 || height <= 0) continue;
-						glyphs.add(%[ch:text, x:x, y:y, w:width, h:height, run:0, seq:i]);
-					}
-
-					var target = global.fushiLookupFindTextRenderTarget(renderer);
-					if(target === void)
-					{
-						target = %[renderer:renderer, fushiLookupAbsolute:true,
-							fushiLookupGlyphOffsetX:0, fushiLookupGlyphOffsetY:0];
-						global.fushiLookupTextRenderRegistry.add(target);
-					}
-					target.fushiLookupLayerGlyphs = glyphs;
-					target.characters = characters;
-					target.method = method;
-					target.capture = ++global.fushiLookupTextRenderCaptureCount;
-					target.args = [global.fushiLookupTextRenderDescribe(a),
-						global.fushiLookupTextRenderDescribe(b), global.fushiLookupTextRenderDescribe(c),
-						global.fushiLookupTextRenderDescribe(d), global.fushiLookupTextRenderDescribe(e),
-						global.fushiLookupTextRenderDescribe(f)];
-					target.sample = characters.count > 0 ?
-						global.fushiLookupTextRenderSample(characters[0]) : "";
-					target.lastSample = characters.count > 0 ?
-						global.fushiLookupTextRenderSample(characters[characters.count - 1]) : "";
-					if(typeof global.fushiLookupTextRenderActiveDraw != "undefined" &&
-						global.fushiLookupTextRenderActiveDraw !== void &&
-						global.fushiLookupTextRenderActiveDraw.renderer === renderer)
-						global.fushiLookupBindTextRenderOrigin(renderer,
-							global.fushiLookupTextRenderActiveDraw.layer,
-							global.fushiLookupTextRenderActiveDraw.originX,
-							global.fushiLookupTextRenderActiveDraw.originY, "TextRender.draw");
-					global.fushiLookupTextRenderLastTarget = target;
-					global.fushiLookupTextRenderLastMethod = method;
-				}
-				catch(error)
-				{
-					global.fushiLookupTextRenderLastError = method + ":" + error.message;
-				}
-			};
-
-)TJS" LR"TJS(
-
-			try
-			{
-				global.fushiLookupTextRenderPatchTrace.add("TextRenderBase=" + typeof global.TextRenderBase);
-				if(typeof global.TextRenderBase == "Object")
-				{
-					global.fushiLookupTextRenderPatchTrace.add("TextRenderBase.render=" +
-						typeof global.TextRenderBase.render);
-					if(typeof global.TextRenderBase.render == "Object")
-					{
-						global.fushiLookupOriginalTextRenderBaseRender = global.TextRenderBase.render;
-						global.TextRenderBase.render = function(a, b, c, d, e, f)
-						{
-							var result = (global.fushiLookupOriginalTextRenderBaseRender incontextof this)(...);
-							global.fushiLookupCaptureTextRender(this, "TextRenderBase.render",
-								a, b, c, d, e, f);
-							return result;
-						};
-					}
-					global.fushiLookupTextRenderPatchTrace.add("TextRenderBase.done=" +
-						typeof global.TextRenderBase.done);
-					if(typeof global.TextRenderBase.done == "Object")
-					{
-						global.fushiLookupOriginalTextRenderBaseDone = global.TextRenderBase.done;
-						global.TextRenderBase.done = function()
-						{
-							var result = (global.fushiLookupOriginalTextRenderBaseDone incontextof this)(...);
-							global.fushiLookupCaptureTextRender(this, "TextRenderBase.done",
-								void, void, void, void, void, void);
-							return result;
-						};
-					}
-				}
-			}
-			catch(error)
-			{
-				global.fushiLookupTextRenderPatchTrace.add("TextRenderBase!" + error.message);
-			}
-
-)TJS" LR"TJS(
-
-			try
-			{
-				global.fushiLookupTextRenderPatchTrace.add("TextRender=" + typeof global.TextRender);
-				if(typeof global.TextRender == "Object" && global.TextRender !== global.TextRenderBase)
-				{
-					global.fushiLookupTextRenderPatchTrace.add("TextRender.draw=" +
-						typeof global.TextRender.draw);
-					if(typeof global.TextRender.draw == "Object")
-					{
-						global.fushiLookupOriginalTextRenderDraw = global.TextRender.draw;
-						global.TextRender.draw = function(layer, ox, oy, width, height, text,
-							autoIndent, base)
-						{
-							var previous = typeof global.fushiLookupTextRenderActiveDraw == "undefined" ?
-								void : global.fushiLookupTextRenderActiveDraw;
-							global.fushiLookupTextRenderActiveDraw = %[
-								renderer:this, layer:layer, originX:ox, originY:oy];
-							var result;
-							try
-							{
-								result = (global.fushiLookupOriginalTextRenderDraw incontextof this)(...);
-							}
-							catch(error)
-							{
-								global.fushiLookupTextRenderActiveDraw = previous;
-								throw error;
-							}
-							global.fushiLookupTextRenderActiveDraw = previous;
-							global.fushiLookupBindTextRenderOrigin(this, layer, ox, oy,
-								"TextRender.draw");
-							return result;
-						};
-					}
-					global.fushiLookupTextRenderPatchTrace.add("TextRender.drawAll=" +
-						typeof global.TextRender.drawAll);
-					if(typeof global.TextRender.drawAll == "Object")
-					{
-						global.fushiLookupOriginalTextRenderDrawAll = global.TextRender.drawAll;
-						global.TextRender.drawAll = function(layer, ox, oy)
-						{
-							var previous = typeof global.fushiLookupTextRenderActiveDraw == "undefined" ?
-								void : global.fushiLookupTextRenderActiveDraw;
-							global.fushiLookupTextRenderActiveDraw = %[
-								renderer:this, layer:layer, originX:ox, originY:oy];
-							var result;
-							try
-							{
-								result = (global.fushiLookupOriginalTextRenderDrawAll incontextof this)(...);
-							}
-							catch(error)
-							{
-								global.fushiLookupTextRenderActiveDraw = previous;
-								throw error;
-							}
-							global.fushiLookupTextRenderActiveDraw = previous;
-							global.fushiLookupBindTextRenderOrigin(this, layer, ox, oy,
-								"TextRender.drawAll");
-							return result;
-						};
-					}
-					global.fushiLookupTextRenderPatchTrace.add("TextRender.drawCh=" +
-						typeof global.TextRender.drawCh);
-					if(typeof global.TextRender.drawCh == "Object")
-					{
-						global.fushiLookupOriginalTextRenderDrawCh = global.TextRender.drawCh;
-						global.TextRender.drawCh = function(layer, ox, oy, ch)
-						{
-							global.fushiLookupBindTextRenderOrigin(this, layer, ox, oy,
-								"TextRender.drawCh");
-							return (global.fushiLookupOriginalTextRenderDrawCh incontextof this)(...);
-						};
-					}
-					global.fushiLookupTextRenderPatchTrace.add("TextRender.render=" +
-						typeof global.TextRender.render);
-					if(typeof global.TextRender.render == "Object")
-					{
-						global.fushiLookupOriginalTextRenderRender = global.TextRender.render;
-						global.TextRender.render = function(a, b, c, d, e, f)
-						{
-							var result = (global.fushiLookupOriginalTextRenderRender incontextof this)(...);
-							global.fushiLookupCaptureTextRender(this, "TextRender.render",
-								a, b, c, d, e, f);
-							return result;
-						};
-					}
-					global.fushiLookupTextRenderPatchTrace.add("TextRender.done=" +
-						typeof global.TextRender.done);
-					if(typeof global.TextRender.done == "Object")
-					{
-						global.fushiLookupOriginalTextRenderDone = global.TextRender.done;
-						global.TextRender.done = function()
-						{
-							var result = (global.fushiLookupOriginalTextRenderDone incontextof this)(...);
-							global.fushiLookupCaptureTextRender(this, "TextRender.done",
-								void, void, void, void, void, void);
-							return result;
-						};
-					}
-				}
-			}
-			catch(error)
-			{
-				global.fushiLookupTextRenderPatchTrace.add("TextRender!" + error.message);
-			}
-
-)TJS" LR"TJS(
-
-			global.fushiLookupPatchMessage = function(message)
-			{
-				if(message === void || !isvalid message) return;
-				if(typeof message.fushiLookupGlyphs == "undefined") message.fushiLookupGlyphs = [];
-				if(typeof message.fushiLookupProcessChCount == "undefined") message.fushiLookupProcessChCount = 0;
-				if(typeof message.fushiLookupLastCh == "undefined") message.fushiLookupLastCh = "";
-				if(typeof message.processCh != "Object") return;
-				if(typeof message.fushiLookupInstanceWrapperProcessCh != "undefined" &&
-					message.processCh === message.fushiLookupInstanceWrapperProcessCh) return;
-				message.fushiLookupInstancePatched = true;
-				message.fushiLookupInstanceOriginalProcessCh = message.processCh;
-				message.fushiLookupInstanceWrapperProcessCh = function(ch, steptime)
-				{
-					this.fushiLookupProcessChCount++;
-					this.fushiLookupLastCh = ch;
-					var result = (this.fushiLookupInstanceOriginalProcessCh incontextof this)(...);
-					if(!result) global.fushiLookupRecordGlyph(this, ch);
-					return result;
-				} incontextof message;
-				message.processCh = message.fushiLookupInstanceWrapperProcessCh;
-				if(typeof message.clear == "Object" &&
-					(typeof message.fushiLookupInstanceWrapperClear == "undefined" ||
-					message.clear !== message.fushiLookupInstanceWrapperClear)
-				)
-				{
-					message.fushiLookupInstanceOriginalClear = message.clear;
-					message.fushiLookupInstanceWrapperClear = function(all)
-					{
-						this.fushiLookupGlyphs = [];
-						if(typeof this.fushiLookupHighlight != "undefined")
-							this.fushiLookupHighlight.fillRect(0, 0, this.fushiLookupHighlight.width,
-								this.fushiLookupHighlight.height, 0);
-						return (this.fushiLookupInstanceOriginalClear incontextof this)(...);
-					} incontextof message;
-					message.clear = message.fushiLookupInstanceWrapperClear;
-				}
-			};
-
-			global.fushiLookupPatchAllMessages = function()
-			{
-				var pages = [global.kag.fore.messages, global.kag.back.messages];
-				for(var page = 0; page < pages.count; page++)
-					for(var message = 0; message < pages[page].count; message++)
-						global.fushiLookupPatchMessage(pages[page][message]);
-				if(typeof global.kag.current != "undefined" && global.kag.current !== void)
-					global.fushiLookupPatchMessage(global.kag.current);
-			};
-			if(typeof global.kag.tagHandlers == "Object" &&
-				typeof global.kag.tagHandlers.ch == "Object")
-			{
-				global.fushiLookupOriginalChHandler = global.kag.tagHandlers.ch;
-				global.fushiLookupChHandler = function(elm)
-				{
-					if(typeof this.current != "undefined" && this.current !== void)
-						global.fushiLookupPatchMessage(this.current);
-					return (global.fushiLookupOriginalChHandler incontextof this)(...);
-				} incontextof global.kag;
-				global.kag.tagHandlers.ch = global.fushiLookupChHandler;
-			}
-			global.fushiLookupPatchAllMessages();
-			global.fushiLookupRefreshMessages = function(tick)
-			{
-				try { global.fushiLookupPatchAllMessages(); } catch(e) {}
-			};
-			System.addContinuousHandler(global.fushiLookupRefreshMessages);
-
-)TJS" LR"TJS(
-
-			global.fushiLookupAtTextRenderRegistry = function(submit)
-			{
-				var primary = global.kag.primaryLayer;
-				var cursorX = primary.cursorX - primary.imageLeft;
-				var cursorY = primary.cursorY - primary.imageTop;
-				global.fushiLookupLastTrace.add("textRender captures=" +
-					global.fushiLookupTextRenderCaptureCount + " registry=" +
-					global.fushiLookupTextRenderRegistry.count + " lastMethod=" +
-					global.fushiLookupTextRenderLastMethod + " error=" +
-					global.fushiLookupTextRenderLastError + " cursor=" + cursorX + "," + cursorY);
-
-)TJS" LR"TJS(
-
-				for(var patchIndex = 0;
-					patchIndex < global.fushiLookupTextRenderPatchTrace.count; patchIndex++)
-					global.fushiLookupLastTrace.add("textRenderPatch=" +
-						global.fushiLookupTextRenderPatchTrace[patchIndex]);
-				for(var registryIndex = global.fushiLookupTextRenderRegistry.count - 1;
-					registryIndex >= 0; registryIndex--)
-				{
-					var target = global.fushiLookupTextRenderRegistry[registryIndex];
-					var glyphs = target.fushiLookupLayerGlyphs;
-					var targetLayer = global.fushiLookupTextRenderValue(target,
-						"targetLayer", void);
-					var originX = global.fushiLookupTextRenderValue(target, "originX", void);
-					var originY = global.fushiLookupTextRenderValue(target, "originY", void);
-					var originSource = global.fushiLookupTextRenderValue(target,
-						"originSource", "unbound");
-					var row = "textRender=" + registryIndex + " method=" + target.method +
-						" capture=" + target.capture + " chars=" + target.characters.count +
-						" glyphs=" + glyphs.count + " args=" + target.args.join("|") +
-						" first={" + target.sample + "} last={" +
-						target.lastSample + "}";
-					if(glyphs.count > 0)
-					{
-						var first = glyphs[0], last = glyphs[glyphs.count - 1];
-						row += " bounds=" + first.ch + "@" + first.x + "," + first.y + "," +
-							first.w + "," + first.h + ".." + last.ch + "@" + last.x + "," +
-							last.y + "," + last.w + "," + last.h;
-					}
-					if(targetLayer === void || targetLayer === null || !isvalid targetLayer ||
-						originX === void || originY === void)
-					{
-						global.fushiLookupLastTrace.add(row + " origin=unbound");
-						continue;
-					}
-					var layerX = targetLayer.cursorX - targetLayer.imageLeft;
-					var layerY = targetLayer.cursorY - targetLayer.imageTop;
-					var localX = layerX - originX;
-					var localY = layerY - originY;
-					var visible = global.fushiLookupLayerIsVisible(targetLayer);
-					target.fushiLookupGlyphOffsetX = cursorX - layerX + originX;
-					target.fushiLookupGlyphOffsetY = cursorY - layerY + originY;
-					row += " origin=" + originSource + "@" + originX + "," + originY +
-						" layerCursor=" + targetLayer.cursorX + "," + targetLayer.cursorY +
-						" image=" + targetLayer.imageLeft + "," + targetLayer.imageTop +
-						" local=" + localX + "," + localY + " visible=" + visible;
-					global.fushiLookupLastTrace.add(row);
-					if(!visible) continue;
-					var index = global.fushiLookupGlyphAt(target, localX, localY);
-					if(index < 0) continue;
-					global.fushiLookupPaint(target, index, 1, 72);
-					if(submit) return global.fushiLookupSubmit(target, localX, localY);
-					return true;
-				}
-				return false;
-			};
-
-			global.fushiLookupLayerIsVisible = function(layer)
+			global.fushiLookupVisible = function(layer)
 			{
 				var current = layer;
 				while(current !== void && current !== null && isvalid current)
@@ -1451,165 +863,499 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				return true;
 			};
 
-			global.fushiLookupAtLayerRegistry = function(submit)
+			// 高亮层同样延迟到第一次真要高亮时才建。它是全视口的，但 hitThreshold=256 是
+			// 引擎里"永不命中"这个明确取值——与卡片依赖的 alpha 穿透不是一回事，不会把
+			// 输入吃掉。
+			global.fushiLookupEnsureHighlight = function()
 			{
-				global.fushiLookupLastTrace.add("drawText=" + global.fushiLookupLayerDrawCount +
-					" registry=" + global.fushiLookupLayerRegistry.count +
-					" lastText=" + global.fushiLookupLayerLastText);
-				for(var registryIndex = global.fushiLookupLayerRegistry.count - 1;
-					registryIndex >= 0; registryIndex--)
+				var primary = global.kag.primaryLayer;
+				var layer = global.fushiLookupHighlightLayer;
+				if(layer === void || !isvalid layer)
 				{
-					var layer = global.fushiLookupLayerRegistry[registryIndex];
-					if(layer === void || !isvalid layer ||
-						typeof layer.fushiLookupLayerGlyphs == "undefined" ||
-						layer.fushiLookupLayerGlyphs.count == 0) continue;
-					var visible = global.fushiLookupLayerIsVisible(layer);
-					var x = layer.cursorX - layer.imageLeft;
-					var y = layer.cursorY - layer.imageTop;
-					var glyphs = layer.fushiLookupLayerGlyphs;
-					var last = glyphs[glyphs.count - 1];
-					global.fushiLookupLastTrace.add("layer=" + registryIndex +
-						" visible=" + visible + " cursor=" + layer.cursorX + "," + layer.cursorY +
-						" image=" + layer.imageLeft + "," + layer.imageTop +
-						" local=" + x + "," + y + " glyphs=" + glyphs.count +
-						" last=" + last.ch + "@" + last.x + "," + last.y + "," + last.w + "," + last.h);
-					if(!visible) continue;
-					var index = global.fushiLookupGlyphAt(layer, x, y);
-					if(index < 0) continue;
-					global.fushiLookupPaint(layer, index, 1, 72);
-					if(submit) return global.fushiLookupSubmit(layer, x, y);
-					return true;
+					layer = new Layer(global.kag, primary.parent);
+					global.kag.add(layer);
+					layer.name = "Hibiki subtitle highlight";
+					layer.fushiLookupIgnore = true;
+					layer.type = ltAlpha;
+					layer.absolute = 2147482000;
+					layer.opacity = 255;
+					layer.hitType = htMask;
+					layer.hitThreshold = 256;
+					layer.visible = false;
+					global.fushiLookupHighlightLayer = layer;
+					global.fushiLookupHighlightRect = void;
 				}
-				return false;
+				if(layer.imageWidth != primary.imageWidth ||
+					layer.imageHeight != primary.imageHeight)
+				{
+					layer.setImageSize(primary.imageWidth, primary.imageHeight);
+					layer.setSizeToImageSize();
+					layer.setPos(0, 0);
+					layer.fillRect(0, 0, layer.imageWidth, layer.imageHeight, 0);
+					global.fushiLookupHighlightRect = void;
+				}
+				return layer;
 			};
 
-			global.fushiLookupAtCursor = function(submit)
+)TJS" LR"TJS(
+
+			// 只擦上一次的包围盒，且只有命中字符**变化**时才会走到这里。prototype 每次
+			// mousemove 都对一个 primaryLayer 尺寸的层做全屏 fillRect，那是按秒计的主线程开销。
+			global.fushiLookupPaintHighlight = function(entry, offsetX, offsetY, start, length)
 			{
-				global.fushiLookupLastTrace = [];
-				if(global.fushiLookupAtTextRenderRegistry(submit)) return true;
-				if(global.fushiLookupAtLayerRegistry(submit)) return true;
-				global.fushiLookupPatchAllMessages();
-				var pages = [global.kag.fore.messages, global.kag.back.messages];
-				var sawCurrent = false;
-				for(var page = 0; page < pages.count; page++)
+				var layer = global.fushiLookupEnsureHighlight();
+				if(layer === void || !isvalid layer) return;
+				var previous = global.fushiLookupHighlightRect;
+				if(previous !== void)
+					layer.fillRect(previous.x, previous.y, previous.w, previous.h, 0);
+				global.fushiLookupHighlightRect = void;
+				var glyphs = entry.glyphs;
+				if(start < 0 || start >= glyphs.count || length <= 0)
 				{
-					var messages = pages[page];
-					for(var i = messages.count - 1; i >= 0; i--)
+					layer.visible = false;
+					layer.update();
+					return;
+				}
+				var last = start + length - 1;
+				if(last >= glyphs.count) last = glyphs.count - 1;
+				var x0 = glyphs[start].x + offsetX, y0 = glyphs[start].y + offsetY;
+				var x1 = x0 + glyphs[start].w, y1 = y0 + glyphs[start].h;
+				for(var i = start + 1; i <= last; i++)
+				{
+					var g = glyphs[i];
+					var gx = g.x + offsetX, gy = g.y + offsetY;
+					if(gx < x0) x0 = gx;
+					if(gy < y0) y0 = gy;
+					if(gx + g.w > x1) x1 = gx + g.w;
+					if(gy + g.h > y1) y1 = gy + g.h;
+				}
+				if(x0 < 0) x0 = 0;
+				if(y0 < 0) y0 = 0;
+				if(x1 > layer.imageWidth) x1 = layer.imageWidth;
+				if(y1 > layer.imageHeight) y1 = layer.imageHeight;
+				if(x1 <= x0 || y1 <= y0)
+				{
+					layer.visible = false;
+					layer.update();
+					return;
+				}
+				layer.colorRect(x0, y0, x1 - x0, y1 - y0, 0x31d7ff, 88);
+				global.fushiLookupHighlightRect = %[x:x0, y:y0, w:x1 - x0, h:y1 - y0];
+				layer.visible = true;
+				layer.update();
+			};
+
+			global.fushiLookupClearHover = function()
+			{
+				if(global.fushiLookupHoverKey == "") return;
+				global.fushiLookupHoverKey = "";
+				global.fushiLookupHitEntry = void;
+				var layer = global.fushiLookupHighlightLayer;
+				var previous = global.fushiLookupHighlightRect;
+				if(layer !== void && isvalid layer && previous !== void)
+				{
+					layer.fillRect(previous.x, previous.y, previous.w, previous.h, 0);
+					layer.visible = false;
+					layer.update();
+				}
+				global.fushiLookupHighlightRect = void;
+			};
+
+			// 收起 = 层不可见。不可见层在引擎里既不绘制也不参与命中，这是引擎最基本的语义，
+			// 不像 alpha 穿透那样需要额外验证。层留着复用（下一次查词多半尺寸相近），只是
+			// 绝不会停在"可见且可命中"的状态上。
+			global.fushiLookupDismiss = function()
+			{
+				try
+				{
+					var card = global.fushiLookupCard;
+					if(card !== void && isvalid card && card.visible)
 					{
-						var message = messages[i];
-						if(typeof message.fushiLookupGlyphs == "undefined") continue;
-						var glyphs = message.fushiLookupGlyphs;
-						var x = message.cursorX - message.imageLeft;
-						var y = message.cursorY - message.imageTop;
-						var isCurrent = typeof global.kag.current != "undefined" && global.kag.current === message;
-						if(isCurrent) sawCurrent = true;
-						var row = "page=" + page + " message=" + i +
-							" visible=" + message.visible + " cursor=" + message.cursorX + "," + message.cursorY +
-							" image=" + message.imageLeft + "," + message.imageTop +
-							" local=" + x + "," + y + " glyphs=" + glyphs.count +
-							" processCh=" + message.fushiLookupProcessChCount +
-							" lastCh=" + message.fushiLookupLastCh + " current=" + isCurrent +
-							" wrapped=" + (typeof message.fushiLookupInstanceWrapperProcessCh != "undefined" &&
-								message.processCh === message.fushiLookupInstanceWrapperProcessCh);
-						if(glyphs.count > 0)
+						card.visible = false;
+						card.update();
+					}
+				}
+				catch(e) {}
+				global.fushiLookupCardSeq = 0;
+				global.fushiLookupClearHover();
+			};
+
+			// DLL 写像素**之前**调：把卡片层建/调到 anchor + cardW×cardH。第一次真要显示
+			// 时才建层——没查词的时候游戏渲染树里根本没有这个对象。
+			global.fushiLookupPrepare = function(anchorX, anchorY, cardW, cardH)
+			{
+				try
+				{
+					if(cardW <= 0 || cardH <= 0) return;
+					var card = global.fushiLookupCard;
+					if(card === void || !isvalid card)
+					{
+						card = new FushiLookupCardLayer(global.kag,
+							global.kag.primaryLayer.parent);
+						global.kag.add(card);
+						card.name = "Hibiki in-game lookup card";
+						card.fushiLookupIgnore = true;
+						card.type = ltAlpha;
+						card.absolute = 2147483000;
+						card.opacity = 255;
+						card.hitType = htRect;
+						card.visible = false;
+						global.fushiLookupCard = card;
+					}
+					if(card.imageWidth != cardW || card.imageHeight != cardH)
+					{
+						card.setImageSize(cardW, cardH);
+						card.setSizeToImageSize();
+					}
+					card.setPos(anchorX, anchorY);
+				}
+				catch(e) {}
+			};
+
+)TJS" LR"TJS(
+
+			// DLL 写完像素之后调。seq==0 或空尺寸 = 收起卡片（host 关开关 / 投空帧）。
+			// 几何随帧一起传进来，这里当**不变量**用：与 prepare 时的层不一致就说明写像素
+			// 与本次显示之间层被动过，露出来只会是半张错位的卡片，宁可等下一帧。
+			global.fushiLookupApply = function(seq, highlightStart, highlightLen,
+				anchorX, anchorY, cardW, cardH)
+			{
+				try
+				{
+					if(seq == 0 || cardW <= 0 || cardH <= 0)
+					{
+						global.fushiLookupDismiss();
+						return;
+					}
+					var card = global.fushiLookupCard;
+					if(card === void || !isvalid card) return;
+					if(card.imageWidth != cardW || card.imageHeight != cardH ||
+						card.left != anchorX || card.top != anchorY) return;
+					global.fushiLookupCardSeq = seq;
+					card.visible = true;
+					card.update();
+					var entry = global.fushiLookupHitEntry;
+					if(entry !== void && highlightLen > 0)
+						global.fushiLookupPaintHighlight(entry, global.fushiLookupHitOffsetX,
+							global.fushiLookupHitOffsetY, highlightStart, highlightLen);
+				}
+				catch(e) {}
+			};
+
+			// 备路：主路（mainImageBufferForWrite）查询或求值失败时，host 把 cardW×cardH 的
+			// 卡片写成 PNG 落在 %TEMP%，由这里 loadImages 进来。路径在 bootstrap 时由 DLL
+			// 一次性代入，不参与任何运行期拼接；游戏目录始终不被写入（资产带 .sig 校验）。
+			global.fushiLookupApplyPng = function(seq, highlightStart, highlightLen,
+				anchorX, anchorY, cardW, cardH)
+			{
+				try
+				{
+					global.fushiLookupPrepare(anchorX, anchorY, cardW, cardH);
+					var card = global.fushiLookupCard;
+					if(card === void || !isvalid card) return;
+					card.loadImages(global.fushiLookupCardPath);
+					card.setSizeToImageSize();
+					card.setPos(anchorX, anchorY);
+					card.type = ltAlpha;
+				}
+				catch(e) {}
+				global.fushiLookupApply(seq, highlightStart, highlightLen, anchorX, anchorY,
+					cardW, cardH);
+			};
+
+			// 输入转发。层事件给的是层内坐标；这里加回层位置换成视口坐标入队，减 anchor 仍由
+			// DLL 做——帧元数据在它手上，层位置与当前帧 anchor 万一不同步时它的值才是对的。
+			// 打包成一个正整数，DLL 取一次就是一个事件。
+			global.fushiLookupQueueInput = function(kind, x, y, wheel)
+			{
+				var queue = global.fushiLookupInputQueue;
+				var card = global.fushiLookupCard;
+				if(card !== void && isvalid card)
+				{
+					x = x + card.left;
+					y = y + card.top;
+				}
+				// 连续 move 就地合并：鼠标一秒能出上百个 move，逐个过共享内存毫无意义。
+				if(kind == 0 && queue.count > 0 && (queue[queue.count - 1] & 15) == 0)
+					queue.erase(queue.count - 1);
+				if(x < -32768) x = -32768;
+				if(x > 32767) x = 32767;
+				if(y < -32768) y = -32768;
+				if(y > 32767) y = 32767;
+				if(wheel < -2048) wheel = -2048;
+				if(wheel > 2047) wheel = 2047;
+				var keys = 0;
+				if(global.fushiLookupShiftDown) keys = keys | 1;
+				queue.add((1 << 52) | ((y + 32768) << 36) | ((x + 32768) << 20) |
+					((wheel + 2048) << 8) | (keys << 4) | kind);
+				if(queue.count > 64) queue.erase(0);
+				global.fushiLookupNotify++;
+			};
+
+			global.fushiLookupInputTake = function()
+			{
+				var queue = global.fushiLookupInputQueue;
+				if(queue.count == 0) return 0;
+				var packed = queue[0];
+				queue.erase(0);
+				return packed;
+			};
+
+)TJS" LR"TJS(
+
+			// TextRender.render / done → renderer.getCharacters(0,0) 是本样本唯一命中的捕获
+			// 边界（其余四条路径已被运行日志证伪）。只留自己的几何快照，绝不长期持有引擎
+			// 返回的 characters 数组。
+			global.fushiLookupCapture = function(renderer)
+			{
+				try
+				{
+					if(typeof renderer.getCharacters != "Object") return;
+					var characters = (renderer.getCharacters incontextof renderer)(0, 0);
+					if(characters === void || typeof characters.count == "undefined") return;
+					var glyphs = [], line = "";
+					var minX = 0, minY = 0, maxX = 0, maxY = 0;
+					for(var i = 0; i < characters.count; i++)
+					{
+						var character = characters[i];
+						var text = global.fushiLookupField(character, "text");
+						if(typeof text != "String" || text == "") continue;
+						var x = global.fushiLookupField(character, "x");
+						var y = global.fushiLookupField(character, "y");
+						var w = global.fushiLookupField(character, "cw");
+						var h = global.fushiLookupField(character, "size");
+						if(x === void) x = global.fushiLookupField(character, "left");
+						if(y === void) y = global.fushiLookupField(character, "top");
+						if(w === void) w = global.fushiLookupField(character, "width");
+						if(h === void) h = global.fushiLookupField(character, "height");
+						if(x === void || y === void || w === void || h === void) continue;
+						if(w <= 0 || h <= 0) continue;
+						if(glyphs.count == 0)
 						{
-							var first = glyphs[0], last = glyphs[glyphs.count - 1];
-							row += " first=" + first.x + "," + first.y + "," + first.w + "," + first.h +
-								" last=" + last.x + "," + last.y + "," + last.w + "," + last.h;
+							minX = x; minY = y; maxX = x + w; maxY = y + h;
 						}
-						global.fushiLookupLastTrace.add(row);
-						var index = global.fushiLookupGlyphAt(message, x, y);
-						if(index < 0) continue;
-						global.fushiLookupPaint(message, index, 1, 72);
-						if(submit) return global.fushiLookupSubmit(message, x, y);
+						else
+						{
+							if(x < minX) minX = x;
+							if(y < minY) minY = y;
+							if(x + w > maxX) maxX = x + w;
+							if(y + h > maxY) maxY = y + h;
+						}
+						glyphs.add(%[ch:text, x:x, y:y, w:w, h:h]);
+						line += text;
+					}
+					if(glyphs.count == 0) return;
+					var entry = global.fushiLookupEntryFor(renderer);
+					var changed = entry.line != line;
+					entry.glyphs = glyphs;
+					entry.line = line;
+					entry.minX = minX;
+					entry.minY = minY;
+					entry.maxX = maxX;
+					entry.maxY = maxY;
+					entry.used = ++global.fushiLookupClock;
+					// 台词真的换了才收卡片：同一行重复 render（打字机动画）不该把用户正在读的
+					// 卡片一帧一帧地打掉。
+					if(changed) global.fushiLookupDismiss();
+				}
+				catch(e) {}
+			};
+
+			// drawCh 是逐字符调用，先用一组"上次绑定"快照挡住重复调用，别让每个字都去扫 registry。
+			global.fushiLookupBindOrigin = function(renderer, layer, originX, originY)
+			{
+				if(global.fushiLookupBoundRenderer === renderer &&
+					global.fushiLookupBoundLayer === layer &&
+					global.fushiLookupBoundX == originX &&
+					global.fushiLookupBoundY == originY) return;
+				if(layer === void || layer === null || !isvalid layer) return;
+				if(typeof originX != "Integer" && typeof originX != "Real") return;
+				if(typeof originY != "Integer" && typeof originY != "Real") return;
+				var entry = global.fushiLookupEntryFor(renderer);
+				entry.layer = layer;
+				entry.originX = originX;
+				entry.originY = originY;
+				global.fushiLookupBoundRenderer = renderer;
+				global.fushiLookupBoundLayer = layer;
+				global.fushiLookupBoundX = originX;
+				global.fushiLookupBoundY = originY;
+			};
+
+)TJS" LR"TJS(
+
+			global.fushiLookupReport = function(entry, index, offsetX, offsetY, submit)
+			{
+				var key = entry.line + "#" + index;
+				// 命中字符没变就什么都不做：既不重绘高亮，也不惊动 host。
+				if(!submit && key == global.fushiLookupHoverKey) return;
+				global.fushiLookupHoverKey = key;
+				var glyph = entry.glyphs[index];
+				var primary = global.kag.primaryLayer;
+				global.fushiLookupHitEntry = entry;
+				global.fushiLookupHitOffsetX = offsetX;
+				global.fushiLookupHitOffsetY = offsetY;
+				global.fushiLookupHitCharIndex = index;
+				global.fushiLookupHitCharCount = entry.glyphs.count;
+				global.fushiLookupHitGlyphX = glyph.x + offsetX;
+				global.fushiLookupHitGlyphY = glyph.y + offsetY;
+				global.fushiLookupHitGlyphW = glyph.w;
+				global.fushiLookupHitGlyphH = glyph.h;
+				global.fushiLookupHitViewW = primary.imageWidth;
+				global.fushiLookupHitViewH = primary.imageHeight;
+				global.fushiLookupHitFlags = submit ? 1 : 0;
+				// **整行**，不截断。制卡要的是完整句子，分词是 host 的事。
+				global.fushiLookupHitLine = entry.line;
+				global.fushiLookupHitSeq++;
+				global.fushiLookupNotify++;
+				global.fushiLookupPaintHighlight(entry, offsetX, offsetY, index, 1);
+			};
+
+			global.fushiLookupProbe = function(submit)
+			{
+				var primary = global.kag.primaryLayer;
+				var px = primary.cursorX - primary.imageLeft;
+				var py = primary.cursorY - primary.imageTop;
+				var registry = global.fushiLookupRegistry;
+				for(var i = registry.count - 1; i >= 0; i--)
+				{
+					var entry = registry[i];
+					if(entry.glyphs.count == 0) continue;
+					var layer = entry.layer;
+					if(layer === void || layer === null || !isvalid layer) continue;
+					var rx = layer.cursorX - layer.imageLeft - entry.originX;
+					var ry = layer.cursorY - layer.imageTop - entry.originY;
+					// 廉价矩形判定挡在前面：整行包围盒不含光标就整条跳过，逐字扫描只在真正
+					// 落在台词上时才发生。
+					if(rx < entry.minX || rx >= entry.maxX) continue;
+					if(ry < entry.minY || ry >= entry.maxY) continue;
+					if(!global.fushiLookupVisible(layer)) continue;
+					var glyphs = entry.glyphs;
+					for(var g = glyphs.count - 1; g >= 0; g--)
+					{
+						var glyph = glyphs[g];
+						if(rx < glyph.x || rx >= glyph.x + glyph.w) continue;
+						if(ry < glyph.y || ry >= glyph.y + glyph.h) continue;
+						global.fushiLookupReport(entry, g, px - rx, py - ry, submit);
 						return true;
 					}
 				}
-				if(global.fushiLookupLastTrace.count == 0) global.fushiLookupLastTrace.add("no-message");
-				if(!sawCurrent && typeof global.kag.current != "undefined" && global.kag.current !== void)
-				{
-					var current = global.kag.current;
-					global.fushiLookupLastTrace.add("current-outside-pages glyphs=" +
-						(typeof current.fushiLookupGlyphs == "undefined" ? -1 : current.fushiLookupGlyphs.count) +
-						" processCh=" + (typeof current.fushiLookupProcessChCount == "undefined" ? -1 : current.fushiLookupProcessChCount) +
-						" lastCh=" + (typeof current.fushiLookupLastCh == "undefined" ? "" : current.fushiLookupLastCh));
-				}
+				if(!submit) global.fushiLookupClearHover();
 				return false;
+			};
+
+			// 卡片层自己（htRect）已经吃掉落在它矩形内的事件；KAG 全局钩子这一侧再判一次，
+			// 免得同一次点击既推进剧情又被卡片处理。层现在就是卡片本身，所以这是一次纯矩形
+			// 判定——不再需要 getMainPixel 去问 alpha。
+			global.fushiLookupOverCard = function()
+			{
+				if(global.fushiLookupCardSeq == 0) return false;
+				try
+				{
+					var card = global.fushiLookupCard;
+					if(card === void || !isvalid card || !card.visible) return false;
+					var x = card.cursorX - card.imageLeft;
+					var y = card.cursorY - card.imageTop;
+					return x >= 0 && y >= 0 && x < card.imageWidth && y < card.imageHeight;
+				}
+				catch(e) { return false; }
 			};
 
 )TJS" LR"TJS(
 
 			global.fushiLookupLeftClickHook = function()
 			{
-				var hit = global.fushiLookupAtCursor(true);
-				try
-				{
-					var trace = ["leftClick", hit];
-					for(var traceIndex = 0; traceIndex < global.fushiLookupLastTrace.count; traceIndex++)
-						trace.add(global.fushiLookupLastTrace[traceIndex]);
-					trace.save(global.fushiLookupRequestPath + ".trace");
-				} catch(e) {}
-				return hit;
+				if(global.fushiLookupOverCard()) return true;
+				return global.fushiLookupProbe(true);
 			};
 			global.fushiLookupMouseMoveHook = function(x, y)
 			{
-				global.fushiLookupAtCursor(false);
+				if(global.fushiLookupOverCard()) return false;
+				global.fushiLookupProbe(false);
 				return false;
 			};
 			global.fushiLookupKeyDownHook = function(key, shift)
 			{
-				if(key == VK_SHIFT) return global.fushiLookupAtCursor(true);
+				global.fushiLookupShiftDown = (key == 0x10);
+				if(key == 0x1B && global.fushiLookupCardSeq != 0)
+				{
+					global.fushiLookupDismiss();
+					return true;
+				}
+				if(key == 0x10) return global.fushiLookupProbe(true);
 				return false;
 			};
+
+			// bootstrap 只装传感器，**一个渲染层都不建**：卡片层由 fushiLookupPrepare 在真要
+			// 显示第一帧时建，高亮层由 fushiLookupEnsureHighlight 在第一次真要高亮时建。
+			// 没查词的时候游戏渲染树与它注入前逐字节一致。
+			global.fushiLookupCard = void;
+			global.fushiLookupHighlightLayer = void;
+
+			if(typeof global.TextRender == "Object")
+			{
+				if(typeof global.TextRender.render == "Object")
+				{
+					global.fushiLookupOriginalRender = global.TextRender.render;
+					global.TextRender.render = function(a, b, c, d, e, f)
+					{
+						var result = (global.fushiLookupOriginalRender incontextof this)(...);
+						global.fushiLookupCapture(this);
+						return result;
+					};
+				}
+				if(typeof global.TextRender.done == "Object")
+				{
+					global.fushiLookupOriginalDone = global.TextRender.done;
+					global.TextRender.done = function()
+					{
+						var result = (global.fushiLookupOriginalDone incontextof this)(...);
+						global.fushiLookupCapture(this);
+						return result;
+					};
+				}
+				if(typeof global.TextRender.drawCh == "Object")
+				{
+					global.fushiLookupOriginalDrawCh = global.TextRender.drawCh;
+					global.TextRender.drawCh = function(layer, ox, oy, ch)
+					{
+						global.fushiLookupBindOrigin(this, layer, ox, oy);
+						return (global.fushiLookupOriginalDrawCh incontextof this)(...);
+					};
+				}
+			}
+
+)TJS" LR"TJS(
+
+			// 默认关闭的探测分支：换游戏、TextRender 一条都不命中时才开，用来判断"文本到底
+			// 走哪条路"。只数次数，不做几何、不建 registry、不改任何绘制结果。
+			if(global.fushiLookupProbeMode)
+			{
+				try
+				{
+					global.fushiLookupProbeOriginalDrawText = global.Layer.drawText;
+					global.Layer.drawText = function(x, y, text, color, opacity, antialiased)
+					{
+						global.fushiLookupProbeDrawText++;
+						return (global.fushiLookupProbeOriginalDrawText incontextof this)(...);
+					};
+					global.fushiLookupProbeOriginalProcessCh = global.MessageLayer.processCh;
+					global.MessageLayer.processCh = function(ch, steptime)
+					{
+						global.fushiLookupProbeProcessCh++;
+						return (global.fushiLookupProbeOriginalProcessCh incontextof this)(...);
+					} incontextof global.MessageLayer;
+				}
+				catch(error)
+				{
+					global.fushiLookupProbeError = error.message;
+				}
+			}
+
 			global.kag.addHook("leftClick", global.fushiLookupLeftClickHook);
 			global.kag.addHook("mouseMove", global.fushiLookupMouseMoveHook);
 			global.kag.addHook("keyDown", global.fushiLookupKeyDownHook);
 
-			global.fushiLookupOriginalProcessCh = global.MessageLayer.processCh;
-			global.MessageLayer.processCh = function(ch, steptime)
-			{
-				var result = (global.fushiLookupOriginalProcessCh incontextof this)(...);
-				if(!result && typeof this.fushiLookupInstancePatched == "undefined")
-					global.fushiLookupRecordGlyph(this, ch);
-				return result;
-			} incontextof global.MessageLayer;
-
-			global.fushiLookupOriginalClear = global.MessageLayer.clear;
-			global.MessageLayer.clear = function(all)
-			{
-				this.fushiLookupGlyphs = [];
-				if(typeof this.fushiLookupHighlight != "undefined")
-					this.fushiLookupHighlight.fillRect(0, 0, this.fushiLookupHighlight.width, this.fushiLookupHighlight.height, 0);
-				return (global.fushiLookupOriginalClear incontextof this)(...);
-			} incontextof global.MessageLayer;
-
-			global.fushiLookupOriginalMouseMove = global.MessageLayer.onMouseMove;
-			global.MessageLayer.onMouseMove = function(x, y)
-			{
-				var localX = x - this.imageLeft, localY = y - this.imageTop;
-				var index = global.fushiLookupGlyphAt(this, localX, localY);
-				if(index >= 0)
-				{
-					global.fushiLookupPaint(this, index, 1, 72);
-				}
-				return (global.fushiLookupOriginalMouseMove incontextof this)(...);
-			} incontextof global.MessageLayer;
-
-			global.fushiLookupOriginalMouseDown = global.MessageLayer.onMouseDown;
-			global.MessageLayer.onMouseDown = function(x, y, button)
-			{
-				if(button == mbLeft && global.fushiLookupSubmit(this, x - this.imageLeft, y - this.imageTop)) return;
-				return (global.fushiLookupOriginalMouseDown incontextof this)(...);
-			} incontextof global.MessageLayer;
-
-			global.fushiLookupOriginalKeyDown = global.MessageLayer.onKeyDown;
-			global.MessageLayer.onKeyDown = function(key, shift)
-			{
-				if(key == VK_SHIFT && global.fushiLookupSubmit(this, this.cursorX - this.imageLeft, this.cursorY - this.imageTop)) return;
-				return (global.fushiLookupOriginalKeyDown incontextof this)(...);
-			} incontextof global.MessageLayer;
-
-			Debug.notice("[HibikiLookup] KAGEX glyph lookup installed");
+			Debug.notice("[HibikiLookup] sensor installed");
 			System.removeContinuousHandler(global.fushiLookupBootstrap);
 			global.fushiLookupBootstrap = void;
 		}
@@ -1624,436 +1370,564 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 }
 )TJS";
 
-std::wstring Utf8ToWide(const std::string& value) {
-  if (value.empty()) return {};
-  const int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
-                                         static_cast<int>(value.size()), nullptr, 0);
-  if (count <= 0) return {};
-  std::wstring result(static_cast<size_t>(count), L'\0');
-  MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
-                      static_cast<int>(value.size()), result.data(), count);
-  return result;
-}
+// ── DLL 侧：像素落地 + 传感器读数搬运 ─────────────────────────────────────────────
+//
+// 这一整段只做三件事：把 host 的 BGRA 帧 memcpy 进游戏渲染树里的卡片 Layer、把 TJS 传感器
+// 的读数搬进共享内存、把落在卡片上的输入搬进输入环。prototype 里的 WinHTTP 客户端、
+// 认证 token 环境变量、手写 JSON 解析器、临时文件 IPC 轮询线程、拼 TJS 源码再 eval——全部
+// 不在了：跨边界的东西只剩一块位图和一串整数。
 
-std::string WideToUtf8(const std::wstring& value) {
-  if (value.empty()) return {};
-  const int count = WideCharToMultiByte(CP_UTF8, 0, value.data(),
-                                        static_cast<int>(value.size()), nullptr, 0,
-                                        nullptr, nullptr);
-  if (count <= 0) return {};
-  std::string result(static_cast<size_t>(count), '\0');
-  WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()),
-                      result.data(), count, nullptr, nullptr);
-  return result;
-}
+// 本地缓冲上界。真正的契约上界是 kLookupLineBytes（UTF-8 字节），这里只是宽松的字符数。
+constexpr size_t kKirikiriLookupLineChars = 1200;
 
-std::wstring EscapeTjsString(const std::wstring& value) {
-  std::wstring result;
-  result.reserve(value.size() + 16);
-  for (wchar_t ch : value) {
-    switch (ch) {
-      case L'\\': result += L"\\\\"; break;
-      case L'\"': result += L"\\\""; break;
-      case L'\r': result += L"\\r"; break;
-      case L'\n': result += L"\\n"; break;
-      case 0x2028: result += L" "; break;
-      case 0x2029: result += L" "; break;
-      default: result.push_back(ch); break;
-    }
-  }
-  return result;
-}
-
-std::string EscapeJsonString(const std::string& value) {
-  std::string result;
-  result.reserve(value.size() + 16);
-  static constexpr char hex[] = "0123456789abcdef";
-  for (unsigned char ch : value) {
-    switch (ch) {
-      case '\\': result += "\\\\"; break;
-      case '\"': result += "\\\""; break;
-      case '\r': result += "\\r"; break;
-      case '\n': result += "\\n"; break;
-      case '\t': result += "\\t"; break;
-      default:
-        if (ch < 0x20) {
-          result += "\\u00";
-          result.push_back(hex[ch >> 4]);
-          result.push_back(hex[ch & 15]);
-        } else {
-          result.push_back(static_cast<char>(ch));
-        }
-        break;
-    }
-  }
-  return result;
-}
-
-void AppendUtf8CodePoint(std::string& output, uint32_t codepoint) {
-  if (codepoint <= 0x7f) {
-    output.push_back(static_cast<char>(codepoint));
-  } else if (codepoint <= 0x7ff) {
-    output.push_back(static_cast<char>(0xc0 | (codepoint >> 6)));
-    output.push_back(static_cast<char>(0x80 | (codepoint & 0x3f)));
-  } else if (codepoint <= 0xffff) {
-    output.push_back(static_cast<char>(0xe0 | (codepoint >> 12)));
-    output.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3f)));
-    output.push_back(static_cast<char>(0x80 | (codepoint & 0x3f)));
-  } else {
-    output.push_back(static_cast<char>(0xf0 | (codepoint >> 18)));
-    output.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3f)));
-    output.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3f)));
-    output.push_back(static_cast<char>(0x80 | (codepoint & 0x3f)));
-  }
-}
-
-int JsonHex(char ch) {
-  if (ch >= '0' && ch <= '9') return ch - '0';
-  if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
-  if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
-  return -1;
-}
-
-bool ParseJsonString(const std::string& json, size_t quote, std::string* value,
-                     size_t* next) {
-  if (value == nullptr || quote >= json.size() || json[quote] != '\"') return false;
-  value->clear();
-  for (size_t i = quote + 1; i < json.size(); i++) {
-    const char ch = json[i];
-    if (ch == '\"') {
-      if (next != nullptr) *next = i + 1;
-      return true;
-    }
-    if (ch != '\\') {
-      value->push_back(ch);
-      continue;
-    }
-    if (++i >= json.size()) return false;
-    switch (json[i]) {
-      case '\"': value->push_back('\"'); break;
-      case '\\': value->push_back('\\'); break;
-      case '/': value->push_back('/'); break;
-      case 'b': value->push_back('\b'); break;
-      case 'f': value->push_back('\f'); break;
-      case 'n': value->push_back('\n'); break;
-      case 'r': value->push_back('\r'); break;
-      case 't': value->push_back('\t'); break;
-      case 'u': {
-        if (i + 4 >= json.size()) return false;
-        uint32_t codepoint = 0;
-        for (int n = 0; n < 4; n++) {
-          const int digit = JsonHex(json[++i]);
-          if (digit < 0) return false;
-          codepoint = (codepoint << 4) | static_cast<uint32_t>(digit);
-        }
-        AppendUtf8CodePoint(*value, codepoint);
-        break;
-      }
-      default: return false;
-    }
-  }
-  return false;
-}
-
-bool FindJsonStringField(const std::string& json, const char* key,
-                         std::string* value, size_t start = 0,
-                         size_t limit = std::string::npos) {
-  const std::string needle = std::string("\"") + key + "\"";
-  size_t pos = start;
-  const size_t end = std::min(limit, json.size());
-  while ((pos = json.find(needle, pos)) != std::string::npos && pos < end) {
-    pos += needle.size();
-    pos = json.find(':', pos);
-    if (pos == std::string::npos || pos >= end) return false;
-    pos++;
-    while (pos < end && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\r' ||
-                          json[pos] == '\n')) pos++;
-    if (pos < end && json[pos] == '\"') return ParseJsonString(json, pos, value, nullptr);
-  }
-  return false;
-}
-
-int FindJsonIntegerField(const std::string& json, const char* key, int fallback) {
-  const std::string needle = std::string("\"") + key + "\"";
-  size_t pos = json.find(needle);
-  if (pos == std::string::npos) return fallback;
-  pos = json.find(':', pos + needle.size());
-  if (pos == std::string::npos) return fallback;
-  while (++pos < json.size() && (json[pos] == ' ' || json[pos] == '\t')) {}
-  int value = 0;
-  bool any = false;
-  while (pos < json.size() && json[pos] >= '0' && json[pos] <= '9') {
-    any = true;
-    value = value * 10 + (json[pos++] - '0');
-  }
-  return any ? value : fallback;
-}
-
-struct LookupDictionaryEntry {
-  std::string word;
-  std::string reading;
-  std::string dictionary;
-  std::string meaning;
+// tTJSVariant 的字段偏移**不是**插件 ABI 的稳定部分（各 krkr 分支的 pack 与字段序都可能
+// 不同），所以不写死：安装时求值一个已知 64 位常量，按候选布局逐个比对，命中的那套才启用。
+// 猜错的代价是把游戏进程里的随机内存当指针解引用，宁可探一次。
+struct TjsVariantLayout {
+  uint32_t type_offset;
+  uint32_t value_offset;
 };
 
-bool ParseLookupResponse(const std::string& json, int* best_length,
-                         LookupDictionaryEntry* selected) {
-  if (best_length == nullptr || selected == nullptr) return false;
-  *best_length = FindJsonIntegerField(json, "bestLength", 1);
-  const size_t entries_key = json.find("\"entries\"");
-  if (entries_key == std::string::npos) return false;
-  size_t pos = json.find('[', entries_key);
-  if (pos == std::string::npos) return false;
-  LookupDictionaryEntry fallback;
-  bool have_fallback = false;
-  while (++pos < json.size()) {
-    while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\r' ||
-                                 json[pos] == '\n' || json[pos] == ',')) pos++;
-    if (pos >= json.size() || json[pos] == ']') break;
-    if (json[pos] != '\"') return false;
-    std::string encoded_entry;
-    size_t next = pos;
-    if (!ParseJsonString(json, pos, &encoded_entry, &next)) return false;
-    LookupDictionaryEntry entry;
-    FindJsonStringField(encoded_entry, "word", &entry.word);
-    FindJsonStringField(encoded_entry, "reading", &entry.reading);
-    FindJsonStringField(encoded_entry, "dictionaryName", &entry.dictionary);
-    FindJsonStringField(encoded_entry, "meaning", &entry.meaning);
-    if (!entry.word.empty() && !entry.dictionary.empty()) {
-      if (!have_fallback) {
-        fallback = entry;
-        have_fallback = true;
-      }
-      if (entry.dictionary.find("Jitendex") != std::string::npos) {
-        *selected = entry;
-        return true;
-      }
-    }
-    pos = next - 1;
-  }
-  if (have_fallback) *selected = fallback;
-  return have_fallback;
+constexpr uint32_t kTjsVariantBytes = 64;  // 实测 16；留足余量并全部清零后再交给引擎赋值
+constexpr uint32_t kTjsVariantTypeString = 2;
+constexpr uint32_t kTjsVariantTypeInteger = 4;
+constexpr int64_t kTjsVariantProbeMagic = 0x0123456789ABCDEFLL;
+constexpr TjsVariantLayout kTjsVariantLayouts[] = {{0u, 8u}, {0u, 4u}, {8u, 0u}};
+constexpr int kTjsVariantProbeAttempts = 8;
+
+TjsVariantLayout g_lookup_variant = {0u, 8u};
+bool g_lookup_variant_ready = false;
+int g_lookup_variant_attempts = 0;
+
+std::wstring g_lookup_card_path;  // 备路 PNG，恒在 %TEMP%（游戏目录一个字节都不写）
+
+// 卡片层就是卡片本身（cardW×cardH，摆在 anchor 上），所以目标缓冲整块都归本帧所有：
+// 既不需要脏矩形，也不需要在层内做偏移——这两样都是"全视口卡片层"那版才需要的。
+int32_t g_lookup_frame_anchor_x = 0;
+int32_t g_lookup_frame_anchor_y = 0;
+uint64_t g_lookup_presented_seq = 0;
+uint64_t g_lookup_hit_seq = 0;
+int64_t g_lookup_last_notify = -1;
+bool g_lookup_card_shown = false;
+bool g_lookup_sensor_live = false;
+bool g_lookup_input_pending = false;  // 上一帧撞到每帧搬运上限，队列里还有剩
+uint32_t g_lookup_sensor_idle_ticks = 0;
+
+void WriteKirikiriSharedU64(volatile uint64_t* value, uint64_t next) {
+  if (value == nullptr) return;
+  InterlockedExchange64(reinterpret_cast<volatile LONGLONG*>(value),
+                        static_cast<LONGLONG>(next));
 }
 
-std::string PlainLookupMeaning(const std::string& meaning) {
-  const size_t glossary = meaning.find("glossary");
-  const size_t start = glossary == std::string::npos ? 0 : glossary;
-  size_t limit = meaning.find("extra-info", start);
-  if (limit == std::string::npos) limit = meaning.size();
-  std::vector<std::string> leaves;
-  size_t pos = start;
-  while (pos < limit && leaves.size() < 6) {
-    const size_t key = meaning.find("\"content\"", pos);
-    if (key == std::string::npos || key >= limit) break;
-    const size_t colon = meaning.find(':', key + 9);
-    if (colon == std::string::npos || colon >= limit) break;
-    size_t quote = colon + 1;
-    while (quote < limit && (meaning[quote] == ' ' || meaning[quote] == '\t')) quote++;
-    std::string leaf;
-    size_t next = quote + 1;
-    if (quote < limit && meaning[quote] == '\"' &&
-        ParseJsonString(meaning, quote, &leaf, &next) &&
-        !leaf.empty() && leaf != "glossary" && leaf != "noun") {
-      leaves.push_back(leaf);
-    }
-    pos = std::max(next, key + 9);
-  }
-  std::string result;
-  for (size_t i = 0; i < leaves.size(); i++) {
-    if (!result.empty()) result += "  ";
-    result += std::to_string(i + 1) + ". " + leaves[i];
-  }
-  return result.empty() ? "Dictionary entry found" : result;
+uint32_t LookupEnabledNow() {
+  if (g_header == nullptr) return 0;
+  return static_cast<uint32_t>(InterlockedCompareExchange(
+      reinterpret_cast<volatile LONG*>(&g_header->lookup_enabled), 0, 0));
 }
 
-bool ReadLookupRequest(int* id, std::wstring* query) {
-  if (id == nullptr || query == nullptr || g_lookup_request_path.empty()) return false;
-  HANDLE file = CreateFileW(g_lookup_request_path.c_str(), GENERIC_READ,
-                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-  if (file == INVALID_HANDLE_VALUE) return false;
-  const DWORD size = GetFileSize(file, nullptr);
-  if (size == INVALID_FILE_SIZE || size == 0 || size > 64 * 1024) {
-    CloseHandle(file);
+void SetLookupDiag(uint32_t bits) {
+  if (g_header == nullptr) return;
+  InterlockedOr(reinterpret_cast<volatile LONG*>(&g_header->lookup_diag),
+                static_cast<LONG>(bits));
+}
+
+// UTF-16 → UTF-8，按 UTF-8 首字节边界截断。切碎多字节序列等于整行报废（host 侧按 UTF-8
+// 解码），而"整行不截断"只是**语义**上的不截断——真超了 kLookupLineBytes 仍必须安全收尾。
+uint32_t EncodeLookupLineUtf8(const wchar_t* line, uint8_t* out, uint32_t capacity) {
+  if (line == nullptr || out == nullptr || capacity == 0) return 0;
+  // 只在游戏主线程的连续帧回调里用，故用静态缓冲避免每帧几 KB 的栈压力。
+  static char scratch[kKirikiriLookupLineChars * 4];
+  const int written =
+      WideCharToMultiByte(CP_UTF8, 0, line, -1, scratch,
+                          static_cast<int>(sizeof(scratch)), nullptr, nullptr);
+  if (written <= 1) return 0;  // 只有终止符 = 空行
+  uint32_t bytes = static_cast<uint32_t>(written - 1);
+  if (bytes > capacity) {
+    bytes = capacity;
+    while (bytes > 0 && (static_cast<uint8_t>(scratch[bytes]) & 0xC0u) == 0x80u) {
+      bytes--;
+    }
+  }
+  memcpy(out, scratch, bytes);
+  return bytes;
+}
+
+uint32_t ReadVariantU32(const uint8_t* variant, uint32_t offset) {
+  uint32_t value = 0;
+  memcpy(&value, variant + offset, sizeof(value));
+  return value;
+}
+
+int64_t ReadVariantI64(const uint8_t* variant, uint32_t offset) {
+  int64_t value = 0;
+  memcpy(&value, variant + offset, sizeof(value));
+  return value;
+}
+
+// 分配 ttstr → 求值 → 释放。缓冲必须先清零：TJS 的 tTJSVariant 赋值会先 Clear() 目标，
+// 全零在任何候选布局下都是 tvtVoid，Clear() 不会去释放一个野指针。
+bool ExecuteTjsExpressionGuarded(const wchar_t* expression, uint8_t* variant) {
+  if (g_lookup_execute_expression == nullptr || g_lookup_alloc_string == nullptr ||
+      g_lookup_release_string == nullptr || expression == nullptr) {
     return false;
   }
-  std::vector<uint8_t> bytes(size);
-  DWORD read = 0;
-  const bool ok = ReadFile(file, bytes.data(), size, &read, nullptr) != FALSE;
-  CloseHandle(file);
-  if (!ok || read != size) return false;
-  std::wstring text;
-  if (size >= 2 && bytes[0] == 0xff && bytes[1] == 0xfe) {
-    const wchar_t* begin = reinterpret_cast<const wchar_t*>(bytes.data() + 2);
-    text.assign(begin, begin + (size - 2) / sizeof(wchar_t));
-  } else {
-    size_t offset = size >= 3 && bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf ? 3 : 0;
-    text = Utf8ToWide(std::string(reinterpret_cast<const char*>(bytes.data() + offset),
-                                  size - offset));
-  }
-  const size_t newline = text.find_first_of(L"\r\n");
-  if (newline == std::wstring::npos) return false;
-  *id = _wtoi(text.substr(0, newline).c_str());
-  const size_t query_start = text.find_first_not_of(L"\r\n", newline);
-  if (*id <= 0 || query_start == std::wstring::npos) return false;
-  *query = text.substr(query_start);
-  while (!query->empty() && (query->back() == L'\r' || query->back() == L'\n' ||
-                             query->back() == L'\0')) query->pop_back();
-  return !query->empty();
-}
-
-bool PostLookupRequest(const std::wstring& query, std::string* response) {
-  if (response == nullptr) return false;
-  wchar_t port_text[16] = {};
-  wchar_t token[256] = {};
-  if (GetEnvironmentVariableW(L"FUSHI_KIRIKIRI_LOOKUP_PORT", port_text, 16) == 0 ||
-      GetEnvironmentVariableW(L"FUSHI_KIRIKIRI_LOOKUP_TOKEN", token, 256) == 0) return false;
-  const int port = _wtoi(port_text);
-  if (port <= 0 || port > 65535) return false;
-  HINTERNET session = WinHttpOpen(L"FushiKirikiriLookup/1.0",
-                                  WINHTTP_ACCESS_TYPE_NO_PROXY,
-                                  WINHTTP_NO_PROXY_NAME,
-                                  WINHTTP_NO_PROXY_BYPASS, 0);
-  if (session == nullptr) return false;
-  WinHttpSetTimeouts(session, 1000, 1000, 2000, 5000);
-  HINTERNET connection = WinHttpConnect(session, L"127.0.0.1",
-                                        static_cast<INTERNET_PORT>(port), 0);
-  HINTERNET request = connection == nullptr ? nullptr :
-      WinHttpOpenRequest(connection, L"POST", L"/api/lookup/dictionary", nullptr,
-                         WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
+  memset(variant, 0, kTjsVariantBytes);
+  TjsVariantString* text = nullptr;
   bool ok = false;
-  if (request != nullptr) {
-    const std::wstring auth = std::wstring(L"Authorization: Bearer ") + token + L"\r\n" +
-                              L"Content-Type: application/json\r\n";
-    const std::string body = std::string("{\"term\":\"") +
-        EscapeJsonString(WideToUtf8(query)) + "\",\"maximumTerms\":1,\"record\":false}";
-    ok = WinHttpAddRequestHeaders(request, auth.c_str(), static_cast<DWORD>(-1),
-                                  WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE) != FALSE &&
-         WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
-                            const_cast<char*>(body.data()), static_cast<DWORD>(body.size()),
-                            static_cast<DWORD>(body.size()), 0) != FALSE &&
-         WinHttpReceiveResponse(request, nullptr) != FALSE;
-    DWORD status = 0;
-    DWORD status_size = sizeof(status);
-    if (!ok || !WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE |
-                                    WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX,
-                                    &status, &status_size, WINHTTP_NO_HEADER_INDEX) || status != 200) {
-      ok = false;
+  try {
+    text = g_lookup_alloc_string(expression);
+    if (text != nullptr) {
+      const TjsString content = {text};
+      g_lookup_execute_expression(content, variant);
+      ok = true;
     }
-    while (ok) {
-      DWORD available = 0;
-      if (!WinHttpQueryDataAvailable(request, &available)) { ok = false; break; }
-      if (available == 0) break;
-      const size_t old_size = response->size();
-      response->resize(old_size + available);
-      DWORD chunk = 0;
-      if (!WinHttpReadData(request, response->data() + old_size, available, &chunk)) {
-        ok = false; break;
-      }
-      response->resize(old_size + chunk);
-      if (response->size() > 8 * 1024 * 1024) { ok = false; break; }
-    }
+  } catch (...) {
+    // 传感器还没建立时表达式会引用不存在的 global，TJS 抛异常是正常时序而非故障。
+    ok = false;
   }
-  if (request != nullptr) WinHttpCloseHandle(request);
-  if (connection != nullptr) WinHttpCloseHandle(connection);
-  WinHttpCloseHandle(session);
-  SecureZeroMemory(token, sizeof(token));
+  if (text != nullptr) g_lookup_release_string(text);
   return ok;
 }
 
-void QueueLookupResultScript(int id, const LookupDictionaryEntry& entry,
-                             int best_length) {
-  const std::wstring word = EscapeTjsString(Utf8ToWide(entry.word));
-  const std::wstring reading = EscapeTjsString(Utf8ToWide(entry.reading));
-  const std::wstring dictionary = EscapeTjsString(Utf8ToWide(entry.dictionary));
-  const std::wstring definition = EscapeTjsString(Utf8ToWide(PlainLookupMeaning(entry.meaning)));
-  std::wstring script = L"if(typeof global.fushiLookupShowResult != \"undefined\") "
-                        L"global.fushiLookupShowResult(";
-  script += std::to_wstring(id) + L",\"" + word + L"\",\"" + reading + L"\",\"" +
-            dictionary + L"\",\"" + definition + L"\"," +
-            std::to_wstring(std::max(1, best_length)) + L");";
-  EnterCriticalSection(&g_lookup_response_cs);
-  g_lookup_response_script = std::move(script);
-  LeaveCriticalSection(&g_lookup_response_cs);
-}
-
-DWORD WINAPI KiriKiriLookupWorker(void*) {
-  int last_id = 0;
-  while (!g_stop) {
-    int id = 0;
-    std::wstring query;
-    if (ReadLookupRequest(&id, &query) && id != last_id) {
-      last_id = id;
-      std::string response;
-      LookupDictionaryEntry entry;
-      int best_length = 1;
-      if (PostLookupRequest(query, &response) &&
-          ParseLookupResponse(response, &best_length, &entry)) {
-        QueueLookupResultScript(id, entry, best_length);
-      } else {
-        LookupDictionaryEntry error;
-        error.word = WideToUtf8(query.substr(0, std::min<size_t>(query.size(), 24)));
-        error.dictionary = "Hibiki lookup";
-        error.meaning = "No dictionary result. Make sure Fushi dictionary service is running.";
-        QueueLookupResultScript(id, error, 1);
-      }
+bool ProbeTjsVariantLayout() {
+  if (g_lookup_variant_attempts >= kTjsVariantProbeAttempts) return false;
+  g_lookup_variant_attempts++;
+  uint8_t variant[kTjsVariantBytes];
+  if (!ExecuteTjsExpressionGuarded(L"0x0123456789ABCDEF", variant)) return false;
+  for (const TjsVariantLayout& candidate : kTjsVariantLayouts) {
+    if (ReadVariantU32(variant, candidate.type_offset) != kTjsVariantTypeInteger) {
+      continue;
     }
-    Sleep(50);
+    if (ReadVariantI64(variant, candidate.value_offset) != kTjsVariantProbeMagic) {
+      continue;
+    }
+    g_lookup_variant = candidate;
+    return true;
   }
-  return 0;
+  return false;
 }
 
-class KiriKiriLookupResultCallback final : public TvpContinuousEventCallback {
+bool EvaluateTjsInteger(const wchar_t* expression, int64_t* value) {
+  if (value == nullptr || !g_lookup_variant_ready) return false;
+  uint8_t variant[kTjsVariantBytes];
+  if (!ExecuteTjsExpressionGuarded(expression, variant)) return false;
+  if (ReadVariantU32(variant, g_lookup_variant.type_offset) != kTjsVariantTypeInteger) {
+    return false;
+  }
+  *value = ReadVariantI64(variant, g_lookup_variant.value_offset);
+  return true;
+}
+
+// SEH 守卫从 tTJSVariantString 拷字符（只碰裸数组，可 __try）。长串优先，缺则内联短串。
+bool CopyTjsVariantStringGuarded(const TjsVariantString* text, wchar_t* out,
+                                 size_t out_chars) {
+  __try {
+    const wchar_t* src =
+        text->long_string != nullptr ? text->long_string : text->short_string;
+    if (src == nullptr) return false;
+    size_t k = 0;
+    for (; src[k] != 0 && k + 1 < out_chars; k++) out[k] = src[k];
+    out[k] = 0;
+    return true;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+}
+
+bool EvaluateTjsString(const wchar_t* expression, wchar_t* out, size_t out_chars) {
+  if (out == nullptr || out_chars == 0 || !g_lookup_variant_ready) return false;
+  uint8_t variant[kTjsVariantBytes];
+  if (!ExecuteTjsExpressionGuarded(expression, variant)) return false;
+  if (ReadVariantU32(variant, g_lookup_variant.type_offset) != kTjsVariantTypeString) {
+    return false;
+  }
+  TjsVariantString* text = nullptr;
+  memcpy(&text, variant + g_lookup_variant.value_offset, sizeof(text));
+  if (text == nullptr) {  // TJS 用空指针表示空串
+    out[0] = 0;
+    return true;
+  }
+  const bool copied = CopyTjsVariantStringGuarded(text, out, out_chars);
+  if (g_lookup_release_string != nullptr) g_lookup_release_string(text);
+  return copied;
+}
+
+void ExecuteTjsScriptGuarded(const wchar_t* script) {
+  if (g_lookup_execute_script == nullptr || g_lookup_alloc_string == nullptr ||
+      g_lookup_release_string == nullptr || script == nullptr) {
+    return;
+  }
+  TjsVariantString* text = nullptr;
+  try {
+    text = g_lookup_alloc_string(script);
+    if (text != nullptr) {
+      const TjsString content = {text};
+      g_lookup_execute_script(content, nullptr);
+    }
+  } catch (...) {
+    // 插件 ABI 边界绝不把 C++/TJS 异常抛回游戏事件循环。
+  }
+  if (text != nullptr) g_lookup_release_string(text);
+}
+
+// 回执脚本。七个实参**全部**是 std::to_wstring 出来的整数，脚本里不存在任何来自 host、
+// 游戏或用户的字符串——注入面不是"escape 得更严"，而是结构上没有可注入的位置。参数个数
+// 不是约束点：约束点是"不许把动态字符串拼进会被 eval 的文本"。
+void ApplyKirikiriLookupCard(uint64_t seq, uint32_t highlight_start,
+                             uint32_t highlight_len, int32_t anchor_x,
+                             int32_t anchor_y, uint32_t card_w, uint32_t card_h,
+                             bool png_route) {
+  std::wstring script = png_route ? L"global.fushiLookupApplyPng("
+                                  : L"global.fushiLookupApply(";
+  script += std::to_wstring(seq);
+  script += L",";
+  script += std::to_wstring(highlight_start);
+  script += L",";
+  script += std::to_wstring(highlight_len);
+  script += L",";
+  script += std::to_wstring(anchor_x);
+  script += L",";
+  script += std::to_wstring(anchor_y);
+  script += L",";
+  script += std::to_wstring(card_w);
+  script += L",";
+  script += std::to_wstring(card_h);
+  script += L");";
+  ExecuteTjsScriptGuarded(script.c_str());
+}
+
+// 写像素之前调：卡片层不存在就建，尺寸/位置不对就调。层是**按卡片尺寸**建的，所以这一步
+// 之后目标缓冲整块都属于本帧。
+void PrepareKirikiriLookupCard(int32_t anchor_x, int32_t anchor_y, uint32_t card_w,
+                               uint32_t card_h) {
+  std::wstring script = L"global.fushiLookupPrepare(";
+  script += std::to_wstring(anchor_x);
+  script += L",";
+  script += std::to_wstring(anchor_y);
+  script += L",";
+  script += std::to_wstring(card_w);
+  script += L",";
+  script += std::to_wstring(card_h);
+  script += L");";
+  ExecuteTjsScriptGuarded(script.c_str());
+}
+
+void HideKirikiriLookupCard() {
+  if (!g_lookup_card_shown) return;
+  g_lookup_card_shown = false;
+  ApplyKirikiriLookupCard(0, 0, 0, 0, 0, 0, 0, false);
+}
+
+// 逐行拷。源侧（共享内存）按契约恒为正 pitch、恒自顶向下；目标侧是游戏 Layer，
+// mainImageBufferPitch 可能为负（KiriKiri 允许自底向上的行序），故行步进用带符号 stride：
+// base + row*stride 对两种行序都走出同一个视觉行序。层已按卡片尺寸备好，故整块都是本帧的，
+// 不需要擦上一帧、也不需要层内偏移。
+bool BlitLookupFrameGuarded(uint8_t* base, int32_t stride, uint32_t width,
+                            uint32_t height, uint32_t source_pitch,
+                            const uint8_t* pixels) {
+  __try {
+    for (uint32_t row = 0; row < height; ++row) {
+      uint8_t* dst = base + static_cast<ptrdiff_t>(row) * stride;
+      memcpy(dst, pixels + static_cast<size_t>(row) * source_pitch,
+             static_cast<size_t>(width) * 4u);
+    }
+    return true;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+}
+
+void PresentKirikiriLookupFrame() {
+  if (g_header == nullptr) return;
+  fushi_voice_hook::LookupHitSlot* hit = fushi_voice_hook::LookupHitOf(g_header);
+  const uint64_t hit_seq = hit == nullptr ? 0 : ReadKirikiriSharedU64(&hit->seq);
+
+  fushi_voice_hook::LookupFrame* best = nullptr;
+  uint32_t best_index = 0;
+  uint64_t best_seq = 0;
+  for (uint32_t i = 0; i < g_header->lookup_frame_count; ++i) {
+    fushi_voice_hook::LookupFrame* frame = fushi_voice_hook::LookupFrameAt(g_header, i);
+    if (frame == nullptr || frame->ready == 0) continue;
+    // 判据只有一份，在契约头（ShouldApplyLookupFrame），replay 测试跑的是同一个函数。
+    // seq 是**发布序**（host 每投一帧 +1），hit_seq 才是"回应哪次查询"；两者分开之后
+    // 收卡帧就是普通一帧，不会再被自己刚 present 过的那个 seq 挡在门外——那正是收卡
+    // 一直不生效的根因。
+    const uint64_t seq = ReadKirikiriSharedU64(&frame->seq);
+    if (seq <= best_seq) continue;  // 本轮已找到更新的候选
+    if (!fushi_voice_hook::ShouldApplyLookupFrame(seq, frame->hit_seq,
+                                                  g_lookup_presented_seq,
+                                                  hit_seq)) {
+      continue;
+    }
+    best = frame;
+    best_index = i;
+    best_seq = seq;
+  }
+  if (best == nullptr) return;
+  g_lookup_presented_seq = best_seq;
+
+  // 收卡由 flags 自述，不靠"width==0 就是收卡"的魔法编码——后者要求每个读侧都记住这条
+  // 隐规则，而它和"host 投了张废帧"在字节上完全一样。必须在 IsLookupFrameSane 之前认掉：
+  // 收卡帧按定义没有像素，过不了那道校验。
+  if ((best->flags & fushi_voice_hook::kLookupFrameDismiss) != 0) {
+    g_lookup_card_shown = true;  // 强制发一次收起，别让"以为已经隐藏"把信号吞掉
+    HideKirikiriLookupCard();
+    return;
+  }
+
+  // 跨进程来的 width/height/pitch 全是不可信输入：先过契约校验，再谈拷贝。
+  if (!fushi_voice_hook::IsLookupFrameSane(g_header, best) ||
+      static_cast<uint32_t>(best_seq % g_header->lookup_frame_count) != best_index) {
+    SetLookupDiag(fushi_voice_hook::kLookupDiagFrameRejected);
+    return;
+  }
+  const uint8_t* pixels = fushi_voice_hook::LookupBitmapAt(g_header, best_index);
+  if (pixels == nullptr) {
+    SetLookupDiag(fushi_voice_hook::kLookupDiagFrameRejected);
+    return;
+  }
+
+  const uint32_t highlight_start = best->highlight_start;
+  const uint32_t highlight_len = best->highlight_len;
+  const int32_t anchor_x = best->anchor_x;
+  const int32_t anchor_y = best->anchor_y;
+  const uint32_t width = best->width;
+  const uint32_t height = best->height;
+  const uint32_t source_pitch = best->pitch;
+
+  // 建/调卡片层必须在取写指针**之前**：层是按本帧 cardW×cardH 建的，尺寸变化会重新分配
+  // 缓冲，先取指针再改尺寸就是往已经释放的内存里写。
+  PrepareKirikiriLookupCard(anchor_x, anchor_y, width, height);
+
+  int64_t layer_w = 0;
+  int64_t layer_h = 0;
+  int64_t buffer = 0;
+  int64_t stride64 = 0;
+  // 写指针**每帧重取**：copy-on-write 与 layer 尺寸变化都会让上一帧的指针失效，缓存它就是
+  // 往已经不属于该层的内存里写。pitch 必须在取写指针之后读——取写指针可能换掉整块缓冲。
+  const bool geometry =
+      EvaluateTjsInteger(L"global.fushiLookupCard.imageWidth", &layer_w) &&
+      EvaluateTjsInteger(L"global.fushiLookupCard.imageHeight", &layer_h) &&
+      EvaluateTjsInteger(L"global.fushiLookupCard.mainImageBufferForWrite", &buffer) &&
+      EvaluateTjsInteger(L"global.fushiLookupCard.mainImageBufferPitch", &stride64) &&
+      buffer != 0;
+
+  if (!geometry) {
+    // 备路：主路不可用时由 host 把这张 cardW×cardH 的卡片写成 PNG 落 %TEMP%，
+    // TJS loadImages 进来。慢一个数量级，但零新 ABI，且同样不碰游戏目录（.sig 校验）。
+    if (g_lookup_card_path.empty()) return;
+    SetLookupDiag(fushi_voice_hook::kLookupDiagFallbackPngRoute);
+    g_lookup_frame_anchor_x = anchor_x;
+    g_lookup_frame_anchor_y = anchor_y;
+    g_lookup_card_shown = true;
+    ApplyKirikiriLookupCard(best_seq, highlight_start, highlight_len, anchor_x,
+                            anchor_y, width, height, true);
+    SetLookupDiag(fushi_voice_hook::kLookupDiagFramePresented);
+    return;
+  }
+  SetLookupDiag(fushi_voice_hook::kLookupDiagBufferRouteReady);
+
+  // 层就是卡片，所以尺寸必须**逐像素相等**——不等说明 prepare 没生效（层被别处改过、或
+  // setImageSize 失败），此时按本帧尺寸拷就是越界写。这是比"装得下就行"更强也更简单的
+  // 不变量：目标缓冲整块都归本帧。
+  const int32_t stride = static_cast<int32_t>(stride64);
+  const int32_t stride_abs = stride < 0 ? -stride : stride;
+  if (layer_w != static_cast<int64_t>(width) ||
+      layer_h != static_cast<int64_t>(height) ||
+      stride_abs < static_cast<int32_t>(width) * 4) {
+    SetLookupDiag(fushi_voice_hook::kLookupDiagFrameRejected);
+    return;
+  }
+
+  if (!BlitLookupFrameGuarded(
+          reinterpret_cast<uint8_t*>(static_cast<uintptr_t>(buffer)), stride, width,
+          height, source_pitch, pixels)) {
+    SetLookupDiag(fushi_voice_hook::kLookupDiagFrameRejected);
+    return;
+  }
+
+  // 拷完复查 seq/ready：host 若在拷贝中途改写了这一格，画面就是撕裂的半张卡，宁可不显示
+  // 让下一帧重来。
+  if (ReadKirikiriSharedU64(&best->seq) != best_seq || best->ready == 0) return;
+
+  g_lookup_frame_anchor_x = anchor_x;
+  g_lookup_frame_anchor_y = anchor_y;
+  g_lookup_card_shown = true;
+  ApplyKirikiriLookupCard(best_seq, highlight_start, highlight_len, anchor_x,
+                          anchor_y, width, height, false);
+  SetLookupDiag(fushi_voice_hook::kLookupDiagFramePresented);
+}
+
+void PublishKirikiriLookupHit() {
+  fushi_voice_hook::LookupHitSlot* slot = fushi_voice_hook::LookupHitOf(g_header);
+  if (slot == nullptr) return;
+  int64_t seq = 0;
+  if (!EvaluateTjsInteger(L"global.fushiLookupHitSeq", &seq)) return;
+  if (seq <= 0 || static_cast<uint64_t>(seq) == g_lookup_hit_seq) return;
+
+  int64_t char_index = 0;
+  int64_t char_count = 0;
+  int64_t glyph_x = 0;
+  int64_t glyph_y = 0;
+  int64_t glyph_w = 0;
+  int64_t glyph_h = 0;
+  int64_t view_w = 0;
+  int64_t view_h = 0;
+  int64_t flags = 0;
+  if (!EvaluateTjsInteger(L"global.fushiLookupHitCharIndex", &char_index) ||
+      !EvaluateTjsInteger(L"global.fushiLookupHitCharCount", &char_count) ||
+      !EvaluateTjsInteger(L"global.fushiLookupHitGlyphX", &glyph_x) ||
+      !EvaluateTjsInteger(L"global.fushiLookupHitGlyphY", &glyph_y) ||
+      !EvaluateTjsInteger(L"global.fushiLookupHitGlyphW", &glyph_w) ||
+      !EvaluateTjsInteger(L"global.fushiLookupHitGlyphH", &glyph_h) ||
+      !EvaluateTjsInteger(L"global.fushiLookupHitViewW", &view_w) ||
+      !EvaluateTjsInteger(L"global.fushiLookupHitViewH", &view_h) ||
+      !EvaluateTjsInteger(L"global.fushiLookupHitFlags", &flags)) {
+    return;
+  }
+  if (char_count <= 0 || char_index < 0 || char_index >= char_count) return;
+
+  // 只在游戏主线程用；放静态区避免每次命中往栈上压 2.4KB。
+  static wchar_t line[kKirikiriLookupLineChars];
+  if (!EvaluateTjsString(L"global.fushiLookupHitLine", line,
+                         kKirikiriLookupLineChars)) {
+    return;
+  }
+  const uint32_t line_bytes = EncodeLookupLineUtf8(
+      line, slot->line_utf8, fushi_voice_hook::kLookupLineBytes);
+  if (line_bytes == 0) return;
+
+  slot->char_index = static_cast<uint32_t>(char_index);
+  slot->char_count = static_cast<uint32_t>(char_count);
+  slot->glyph_x = static_cast<int32_t>(glyph_x);
+  slot->glyph_y = static_cast<int32_t>(glyph_y);
+  slot->glyph_w = static_cast<int32_t>(glyph_w);
+  slot->glyph_h = static_cast<int32_t>(glyph_h);
+  slot->view_w = static_cast<int32_t>(view_w);
+  slot->view_h = static_cast<int32_t>(view_h);
+  slot->flags = static_cast<uint32_t>(flags) & fushi_voice_hook::kLookupHitFlagSubmit;
+  slot->line_bytes = line_bytes;
+  // seq **最后**写：Interlocked 是全栅栏，保证上面的 payload 对 host 先可见。
+  WriteKirikiriSharedU64(&slot->seq, static_cast<uint64_t>(seq));
+  g_lookup_hit_seq = static_cast<uint64_t>(seq);
+  InterlockedIncrement64(
+      reinterpret_cast<volatile LONGLONG*>(&g_header->lookup_hit_count));
+  SetLookupDiag(fushi_voice_hook::kLookupDiagGeometryObserved |
+                fushi_voice_hook::kLookupDiagHitSubmitted);
+}
+
+void DrainKirikiriLookupInput() {
+  fushi_voice_hook::LookupInputSlot* inputs = fushi_voice_hook::LookupInputsOf(g_header);
+  const uint32_t slots = g_header->lookup_input_slot_count;
+  g_lookup_input_pending = false;
+  if (inputs == nullptr || slots == 0) return;
+  // 每帧至多搬 32 条（TJS 侧已把连续 move 就地合并），回调不做无界循环。撞上限时置 pending，
+  // 让下一帧继续搬——否则 notify 不再变化，剩下的事件会一直卡在 TJS 队列里。
+  g_lookup_input_pending = true;
+  for (int drained = 0; drained < 32; ++drained) {
+    int64_t packed = 0;
+    if (!EvaluateTjsInteger(L"global.fushiLookupInputTake()", &packed)) break;
+    if (packed == 0) {
+      g_lookup_input_pending = false;
+      break;
+    }
+    const uint64_t next =
+        ReadKirikiriSharedU64(&g_header->lookup_input_count) + 1;
+    fushi_voice_hook::LookupInputSlot* slot = &inputs[(next - 1) % slots];
+    // anchor 只有这一侧知道（它在帧元数据里），故减法在 DLL 做；TJS 报的是视口坐标。
+    slot->x = static_cast<int32_t>((packed >> 20) & 0xFFFF) - 32768 -
+              g_lookup_frame_anchor_x;
+    slot->y = static_cast<int32_t>((packed >> 36) & 0xFFFF) - 32768 -
+              g_lookup_frame_anchor_y;
+    slot->kind = static_cast<uint32_t>(packed & 0xF);
+    slot->wheel = static_cast<int32_t>((packed >> 8) & 0xFFF) - 2048;
+    slot->keys = static_cast<uint32_t>((packed >> 4) & 0xF);
+    slot->reserved = 0;
+    WriteKirikiriSharedU64(&slot->seq, next);
+    WriteKirikiriSharedU64(&g_header->lookup_input_count, next);
+  }
+}
+
+// 游戏主线程的每帧入口。开关关着、查词区不存在、传感器还没建立时，这里一个字节都不写。
+void PumpKirikiriLookup() {
+  if (g_stop || !fushi_voice_hook::HasLookupRegion(g_header)) return;
+  if (LookupEnabledNow() == 0) {
+    HideKirikiriLookupCard();
+    return;
+  }
+  if (!g_lookup_variant_ready) {
+    if (!ProbeTjsVariantLayout()) return;
+    g_lookup_variant_ready = true;
+    SetLookupDiag(fushi_voice_hook::kLookupDiagExpressionReady);
+  }
+  if (!g_lookup_sensor_live) {
+    // TJS bootstrap 由 System.addContinuousHandler 驱动，可能比这里晚若干帧；在它建立
+    // 之前每帧求值都会走一次 TJS 异常，故退避到每 30 帧探一次。
+    if (++g_lookup_sensor_idle_ticks < 30) return;
+    g_lookup_sensor_idle_ticks = 0;
+  }
+  int64_t notify = 0;
+  // 稳态下每帧只有这一次求值：notify 不变就一行 TJS 都不再跑。
+  if (!EvaluateTjsInteger(L"global.fushiLookupNotify", &notify)) return;
+  if (!g_lookup_sensor_live) {
+    g_lookup_sensor_live = true;
+    SetLookupDiag(fushi_voice_hook::kLookupDiagSensorInstalled);
+  }
+  if (notify != g_lookup_last_notify) {
+    g_lookup_last_notify = notify;
+    PublishKirikiriLookupHit();
+    DrainKirikiriLookupInput();
+  } else if (g_lookup_input_pending) {
+    DrainKirikiriLookupInput();
+  }
+  PresentKirikiriLookupFrame();
+}
+
+class KiriKiriLookupPumpCallback final : public TvpContinuousEventCallback {
  public:
   void __cdecl OnContinuousCallback(uint64_t) override {
-    if (!g_lookup_response_cs_ready || g_lookup_execute_script == nullptr ||
-        g_lookup_alloc_string == nullptr || g_lookup_release_string == nullptr) return;
-    std::wstring script;
-    EnterCriticalSection(&g_lookup_response_cs);
-    script.swap(g_lookup_response_script);
-    LeaveCriticalSection(&g_lookup_response_cs);
-    if (script.empty()) return;
-    TjsVariantString* value = nullptr;
     try {
-      value = g_lookup_alloc_string(script.c_str());
-      if (value != nullptr) {
-        const TjsString content = {value};
-        g_lookup_execute_script(content, nullptr);
-      }
+      PumpKirikiriLookup();
     } catch (...) {
+      // 插件 ABI 边界绝不把 C++/TJS 异常抛回游戏事件循环。
     }
-    if (value != nullptr) g_lookup_release_string(value);
   }
 };
 
-KiriKiriLookupResultCallback g_lookup_result_callback;
+KiriKiriLookupPumpCallback g_lookup_pump_callback;
 
-bool PrepareKirikiriLookupRequestPath() {
+// 备路 PNG 路径。反斜杠一律换成正斜杠：KiriKiri 的 storage 名接受 '/'，脚本里因此不存在
+// 任何需要转义的字符，prototype 那套 TJS 字符串转义 helper 整条删除。
+bool PrepareKirikiriLookupCardPath() {
   wchar_t temp[MAX_PATH] = {};
   const DWORD length = GetTempPathW(MAX_PATH, temp);
   if (length == 0 || length >= MAX_PATH) return false;
-  g_lookup_request_path = temp;
-  g_lookup_request_path += L"fushi-kirikiri-lookup-" + std::to_wstring(GetCurrentProcessId()) + L".txt";
-  DeleteFileW(g_lookup_request_path.c_str());
+  std::wstring path = temp;
+  path += L"fushi-kirikiri-card-";
+  path += std::to_wstring(GetCurrentProcessId());
+  path += L".png";
+  for (wchar_t& ch : path) {
+    if (ch == L'\\') ch = L'/';
+  }
+  // 反常路径（残留引号/反斜杠/换行）宁可放弃备路，也不把可疑内容塞进脚本。
+  if (path.find_first_of(L"\"\\\r\n") != std::wstring::npos) return false;
+  g_lookup_card_path = path;
   return true;
+}
+
+void ReplaceLookupPlaceholder(std::wstring& script, const wchar_t* placeholder,
+                              const std::wstring& value) {
+  const size_t pos = script.find(placeholder);
+  if (pos == std::wstring::npos) return;
+  script.replace(pos, wcslen(placeholder), value);
 }
 
 std::wstring BuildKirikiriLookupBootstrapScript() {
   std::wstring script = kKirikiriLookupBootstrapScript;
-  const std::wstring placeholder = L"__FUSHI_REQUEST_PATH__";
-  const size_t pos = script.find(placeholder);
-  if (pos != std::wstring::npos) {
-    script.replace(pos, placeholder.size(), EscapeTjsString(g_lookup_request_path));
-  }
+  ReplaceLookupPlaceholder(script, L"__FUSHI_PROBE_MODE__",
+                           kKirikiriLookupProbePaths ? L"1" : L"0");
+  ReplaceLookupPlaceholder(script, L"__FUSHI_CARD_PATH__", g_lookup_card_path);
   return script;
-}
-
-bool IsKirikiriLookupProbeRequested() {
-  wchar_t value[8] = {};
-  const DWORD length = GetEnvironmentVariableW(
-      L"FUSHI_KIRIKIRI_NATIVE_LOOKUP_PROBE", value,
-      static_cast<DWORD>(sizeof(value) / sizeof(value[0])));
-  return length == 1 && value[0] == L'1';
 }
 
 class KiriKiriLookupBootstrapCallback final : public TvpContinuousEventCallback {
@@ -2061,8 +1935,9 @@ class KiriKiriLookupBootstrapCallback final : public TvpContinuousEventCallback 
   void __cdecl OnContinuousCallback(uint64_t) override {
     if (InterlockedCompareExchange(&g_lookup_bootstrap_state, 2, 1) != 1) return;
 
-    // 官方实现允许 continuous callback 在遍历时移除自身；先移除再执行，确保任何异常也不会形成
-    // 每帧重试。TJS 内部另用 System.addContinuousHandler 等待 global.kag 这个真实生命周期条件。
+    // 官方实现允许 continuous callback 在遍历时移除自身；先移除再执行，确保任何异常也不会
+    // 形成每帧重试。TJS 内部另用 System.addContinuousHandler 等待 global.kag 这个真实生命
+    // 周期条件。
     if (g_lookup_remove_continuous != nullptr) g_lookup_remove_continuous(this);
 
     TjsVariantString* script = g_lookup_bootstrap_script;
@@ -2072,7 +1947,7 @@ class KiriKiriLookupBootstrapCallback final : public TvpContinuousEventCallback 
       try {
         g_lookup_execute_script(content, nullptr);
       } catch (...) {
-        // 插件 ABI 边界绝不能把 TJS/C++ 异常抛回游戏事件循环；脚本自身也有 TJS try/catch。
+        // 插件 ABI 边界绝不把 TJS/C++ 异常抛回游戏事件循环；脚本自身也有 TJS try/catch。
       }
     }
     if (script != nullptr && g_lookup_release_string != nullptr) {
@@ -2094,11 +1969,13 @@ bool QueryKirikiriNativeLookupFunctions(ITVPFunctionExporter* exporter,
   }
 }
 
-void InstallKirikiriNativeLookupProbe(ITVPFunctionExporter* exporter) {
-  if (exporter == nullptr || !IsKirikiriLookupProbeRequested() ||
-      InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 0) {
-    return;
-  }
+// 幂等安装。`lookup_enabled==0` 时**一个 hook 都不装**，因此这里既是首装点也是重试点：
+// 用户在游戏起来之后才打开查词是常态，而 exporter 只在 V2Link / exe 直取那一瞬间到手。
+void PollKirikiriLookupInstall() {
+  if (g_stop || g_lookup_exporter == nullptr) return;
+  if (!fushi_voice_hook::HasLookupRegion(g_header)) return;
+  if (LookupEnabledNow() == 0) return;
+  if (InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 0) return;
 
   const char* names[] = {
       "tTJSVariantString * ::TJSAllocVariantString(const tjs_char *)",
@@ -2108,7 +1985,19 @@ void InstallKirikiriNativeLookupProbe(ITVPFunctionExporter* exporter) {
       "void ::TVPRemoveContinuousEventHook(tTVPContinuousEventCallbackIntf *)",
   };
   void* functions[5] = {};
-  if (!QueryKirikiriNativeLookupFunctions(exporter, names, functions, 5)) return;
+  if (!QueryKirikiriNativeLookupFunctions(g_lookup_exporter, names, functions, 5)) {
+    return;
+  }
+  // 单独查：缺 TVPExecuteExpression 就读不回任何传感器读数（hit 与 input 都靠它），此时
+  // 装一半比不装更糟——卡片会挂在屏幕上却永远收不到内容。
+  const char* expression_name =
+      "void ::TVPExecuteExpression(const ttstr &,tTJSVariant *)";
+  void* expression = nullptr;
+  if (!QueryKirikiriNativeLookupFunctions(g_lookup_exporter, &expression_name,
+                                          &expression, 1) ||
+      expression == nullptr) {
+    return;
+  }
 
   g_lookup_alloc_string =
       reinterpret_cast<TJSAllocVariantStringStub_t>(functions[0]);
@@ -2119,6 +2008,8 @@ void InstallKirikiriNativeLookupProbe(ITVPFunctionExporter* exporter) {
       reinterpret_cast<TVPAddContinuousEventHookStub_t>(functions[3]);
   g_lookup_remove_continuous =
       reinterpret_cast<TVPRemoveContinuousEventHookStub_t>(functions[4]);
+  g_lookup_execute_expression =
+      reinterpret_cast<TVPExecuteExpressionStub_t>(expression);
   if (g_lookup_alloc_string == nullptr || g_lookup_release_string == nullptr ||
       g_lookup_execute_script == nullptr || g_lookup_add_continuous == nullptr ||
       g_lookup_remove_continuous == nullptr) {
@@ -2126,24 +2017,26 @@ void InstallKirikiriNativeLookupProbe(ITVPFunctionExporter* exporter) {
   }
 
   try {
-    if (!PrepareKirikiriLookupRequestPath()) return;
-    if (!g_lookup_response_cs_ready) {
-      InitializeCriticalSection(&g_lookup_response_cs);
-      g_lookup_response_cs_ready = true;
-    }
+    PrepareKirikiriLookupCardPath();  // 备路缺失不阻断主路
     const std::wstring bootstrap = BuildKirikiriLookupBootstrapScript();
     g_lookup_bootstrap_script = g_lookup_alloc_string(bootstrap.c_str());
     if (g_lookup_bootstrap_script == nullptr) return;
     InterlockedExchange(&g_lookup_bootstrap_state, 1);
-    g_lookup_add_continuous(&g_lookup_result_callback);
+    g_lookup_add_continuous(&g_lookup_pump_callback);
     g_lookup_add_continuous(&g_lookup_bootstrap_callback);
-    g_lookup_worker = CreateThread(nullptr, 0, KiriKiriLookupWorker, nullptr, 0, nullptr);
   } catch (...) {
     TjsVariantString* script = g_lookup_bootstrap_script;
     g_lookup_bootstrap_script = nullptr;
     InterlockedExchange(&g_lookup_bootstrap_state, 0);
     if (script != nullptr) g_lookup_release_string(script);
   }
+}
+
+// 拿到 exporter 的两条路径（exe 直取 / 插件 V2Link）共用的入口：先记住 exporter，再按
+// 当前开关状态决定装不装。
+void InstallKirikiriLookupSensor(ITVPFunctionExporter* exporter) {
+  if (exporter != nullptr) g_lookup_exporter = exporter;
+  PollKirikiriLookupInstall();
 }
 
 // exe 直取 / V2Link 两条拿 exporter 的路径共享的一次性安装闩（InterlockedCompareExchange）。
@@ -2620,7 +2513,7 @@ HRESULT HandleV2Link(ITVPFunctionExporter* exporter, V2Link_t orig) {
   }
   const HRESULT result = orig != nullptr ? orig(exporter) : S_OK;
   // 原插件的 V2Link 已完成后才登记连续帧回调；真正执行 TJS 还会再等到下一次引擎事件循环。
-  InstallKirikiriNativeLookupProbe(exporter);
+  InstallKirikiriLookupSensor(exporter);
   return result;
 }
 
@@ -2736,6 +2629,8 @@ bool TryHookKirikiriVoiceStream() {
     if (exp != nullptr) {
       if (g_header != nullptr) g_header->reserved_luna |= 0x10000;  // 经 exe 导出拿到 exporter
       InstallVoiceStreamHookWithExporter(exp);                      // 幂等
+      // 未加壳游戏在这条路径上就能拿到 exporter，不必等插件 V2Link。同样幂等。
+      InstallKirikiriLookupSensor(exp);
     }
   }
 
@@ -2746,5 +2641,6 @@ bool TryHookKirikiriVoiceStream() {
 
 // KiriKiriZ 是 32 位引擎；x64 构建此路径为空实现（仅保证两架构都能编译）。
 bool TryHookKirikiriVoiceStream() { return true; }
+void PollKirikiriLookupInstall() {}
 
 #endif  // _M_IX86
