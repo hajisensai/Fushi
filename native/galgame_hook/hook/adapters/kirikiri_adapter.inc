@@ -1,4 +1,5 @@
 // P1 zero-behaviour-change split: included inside dll_main.cpp anonymous namespace.
+#include <winhttp.h>
 // ══ C.2c KiriKiri 解码器捕获链（引擎级干净人声）══════════════════════════════════
 // XAudio2/DirectSound 抓的是**输出**（混音后各源），KiriKiriZ 的人声不走这两条（实测输出源全
 // 是 BGM/SE）。人声在**解码环节**：KiriKiriZ 给每个正在播放的声音建一个独立解码器实例，语音是
@@ -674,8 +675,1476 @@ typedef IStream*(__stdcall* TVPCreateIStreamStub_t)(const void* name, uint32_t m
 // 内部 TVPCreateStream：KrkrZ = MSVC __fastcall(ecx=name(const ttstr&), edx=mode)，返回 tTJSBinaryStream*。
 typedef TjsBinaryStream*(__fastcall* TVPCreateStream_t)(const void* name, uint32_t mode);
 
+// KiriKiri 官方插件 ABI 的连续帧回调。V2Link 发生在 Plugins.link 的加载栈里，不能在那里重入
+// TJS；先登记此回调，下一次引擎事件循环再在游戏主线程执行一次 bootstrap。
+struct TvpContinuousEventCallback {
+  virtual void __cdecl OnContinuousCallback(uint64_t tick) = 0;
+};
+
+// ttstr 在 x86 插件 ABI 中只有一个 tTJSVariantString*。字符串必须用引擎导出的分配/释放桩创建，
+// 不能把 hook DLL 自己的 wchar_t 缓冲冒充成 ttstr（引用计数与长/短串所有权都属于 TJS）。
+struct TjsString {
+  TjsVariantString* ptr;
+};
+
+typedef TjsVariantString*(__stdcall* TJSAllocVariantStringStub_t)(const wchar_t* value);
+typedef void(__stdcall* TJSVariantStringReleaseStub_t)(TjsVariantString* value);
+typedef void(__stdcall* TVPExecuteScriptStub_t)(const TjsString& content, void* result);
+typedef void(__stdcall* TVPAddContinuousEventHookStub_t)(TvpContinuousEventCallback* callback);
+typedef void(__stdcall* TVPRemoveContinuousEventHookStub_t)(TvpContinuousEventCallback* callback);
+
 TVPCreateIStreamStub_t g_orig_TVPCreateIStreamStub = nullptr;
 TVPCreateStream_t g_orig_TVPCreateStream = nullptr;
+
+TJSAllocVariantStringStub_t g_lookup_alloc_string = nullptr;
+TJSVariantStringReleaseStub_t g_lookup_release_string = nullptr;
+TVPExecuteScriptStub_t g_lookup_execute_script = nullptr;
+TVPAddContinuousEventHookStub_t g_lookup_add_continuous = nullptr;
+TVPRemoveContinuousEventHookStub_t g_lookup_remove_continuous = nullptr;
+TjsVariantString* g_lookup_bootstrap_script = nullptr;
+volatile LONG g_lookup_bootstrap_state = 0;  // 0=off, 1=registered, 2=running, 3=done
+CRITICAL_SECTION g_lookup_response_cs;
+bool g_lookup_response_cs_ready = false;
+std::wstring g_lookup_response_script;
+std::wstring g_lookup_request_path;
+HANDLE g_lookup_worker = nullptr;
+
+constexpr wchar_t kKirikiriLookupBootstrapScript[] = LR"TJS(
+class FushiLookupHitLayer extends Layer
+{
+	var fushiLookupMessage;
+	function FushiLookupHitLayer(owner, parent, message)
+	{
+		super.Layer(owner, parent);
+		fushiLookupMessage = message;
+	}
+	function onMouseDown(x, y, button)
+	{
+		if(button == mbLeft) global.fushiLookupSubmit(fushiLookupMessage, x, y);
+	}
+	function onMouseMove(x, y)
+	{
+		var index = global.fushiLookupGlyphAt(fushiLookupMessage, x, y);
+		if(index >= 0)
+		{
+			global.fushiLookupPaint(fushiLookupMessage, index, 1, 72);
+		}
+	}
+}
+
+if(typeof global.fushiLookupBootstrap == "undefined")
+{
+	global.fushiLookupBootstrap = function(tick)
+	{
+		if(typeof global.kag == "undefined" || global.kag === null) return;
+		try
+		{
+			if(typeof global.fushiLookupCard == "undefined")
+			{
+				var owner = global.kag;
+				var root = owner.primaryLayer.parent;
+				var layer = new Layer(owner, root);
+				owner.add(layer);
+				layer.name = "Hibiki in-game dictionary";
+				layer.fushiLookupIgnore = true;
+				layer.setPos(64, 54);
+				layer.setSize(760, 344);
+				layer.type = ltAlpha;
+				layer.absolute = 2147483000;
+				layer.hitType = htMask;
+				layer.hitThreshold = 256;
+				layer.fillRect(0, 0, layer.width, layer.height, 0x071525);
+				layer.colorRect(0, 0, 8, layer.height, 0x31d7ff, 255);
+				layer.font.height = 28;
+				layer.font.bold = true;
+				layer.drawText(26, 14, "HIBIKI // IN-GAME LOOKUP", 0x31d7ff, 255, true);
+				layer.font.height = 22;
+				layer.font.bold = false;
+				layer.drawText(26, 58, "Click a subtitle glyph, or press Shift over it", 0xffffff, 255, true);
+				layer.drawText(26, 88, "Waiting for a subtitle lookup", 0xa7b8c9, 255, true);
+				layer.visible = true;
+				global.fushiLookupCard = layer;
+			}
+
+			global.fushiLookupRequestPath = "__FUSHI_REQUEST_PATH__";
+			global.fushiLookupSequence = 0;
+			global.fushiLookupPending = void;
+
+			global.fushiLookupEnsureHighlight = function(message)
+			{
+				if(typeof message.fushiLookupAbsolute != "undefined")
+				{
+					if(typeof global.fushiLookupAbsoluteHighlight != "undefined")
+					{
+						global.fushiLookupAbsoluteHighlight.setPos(0, 0);
+						global.fushiLookupAbsoluteHighlight.setSize(global.kag.primaryLayer.width,
+							global.kag.primaryLayer.height);
+						return global.fushiLookupAbsoluteHighlight;
+					}
+					var absoluteHighlight = new Layer(global.kag, global.kag.primaryLayer.parent);
+					global.kag.add(absoluteHighlight);
+					absoluteHighlight.name = "Hibiki absolute subtitle word highlight";
+					absoluteHighlight.fushiLookupIgnore = true;
+					absoluteHighlight.setPos(0, 0);
+					absoluteHighlight.setSize(global.kag.primaryLayer.width, global.kag.primaryLayer.height);
+					absoluteHighlight.type = ltAlpha;
+					absoluteHighlight.absolute = 2147482000;
+					absoluteHighlight.hitType = htMask;
+					absoluteHighlight.hitThreshold = 256;
+					absoluteHighlight.visible = true;
+					global.fushiLookupAbsoluteHighlight = absoluteHighlight;
+					return absoluteHighlight;
+				}
+				if(typeof message.fushiLookupHighlight != "undefined")
+				{
+					message.fushiLookupHighlight.setPos(message.imageLeft, message.imageTop);
+					message.fushiLookupHighlight.setSize(message.imageWidth, message.imageHeight);
+					return message.fushiLookupHighlight;
+				}
+				var hl = new FushiLookupHitLayer(global.kag, message, message);
+				global.kag.add(hl);
+				hl.name = "Hibiki subtitle word highlight";
+				hl.fushiLookupIgnore = true;
+				hl.setPos(message.imageLeft, message.imageTop);
+				hl.setSize(message.imageWidth, message.imageHeight);
+				hl.type = ltAlpha;
+				hl.absolute = 2147482000;
+				hl.hitType = htMask;
+				hl.hitThreshold = 256;
+				hl.visible = true;
+				message.fushiLookupHighlight = hl;
+				return hl;
+			};
+
+			global.fushiLookupGetGlyphs = function(message)
+			{
+				if(typeof message.fushiLookupLayerGlyphs != "undefined" &&
+					message.fushiLookupLayerGlyphs.count > 0) return message.fushiLookupLayerGlyphs;
+				if(typeof message.fushiLookupGlyphs != "undefined") return message.fushiLookupGlyphs;
+				return void;
+			};
+
+			global.fushiLookupPaint = function(message, start, length, opacity)
+			{
+				var hl = global.fushiLookupEnsureHighlight(message);
+				hl.fillRect(0, 0, hl.width, hl.height, 0);
+				var glyphs = global.fushiLookupGetGlyphs(message);
+				if(glyphs === void) return;
+				var units = 0;
+				var offsetX = typeof message.fushiLookupGlyphOffsetX == "undefined" ? 0 :
+					message.fushiLookupGlyphOffsetX;
+				var offsetY = typeof message.fushiLookupGlyphOffsetY == "undefined" ? 0 :
+					message.fushiLookupGlyphOffsetY;
+				for(var i = start; i < glyphs.count && units < length; i++)
+				{
+					var g = glyphs[i];
+					hl.colorRect(g.x + offsetX, g.y + offsetY, g.w, g.h, 0x00d8ff, opacity);
+					units += g.ch.length;
+				}
+			};
+
+			global.fushiLookupGlyphAt = function(message, x, y)
+			{
+				var glyphs = global.fushiLookupGetGlyphs(message);
+				if(glyphs === void) return -1;
+				for(var i = glyphs.count - 1; i >= 0; i--)
+				{
+					var g = glyphs[i];
+					if(x >= g.x && x < g.x + g.w && y >= g.y && y < g.y + g.h) return i;
+				}
+				return -1;
+			};
+
+			global.fushiLookupShowLoading = function(query)
+			{
+				var layer = global.fushiLookupCard;
+				layer.fillRect(0, 0, layer.width, layer.height, 0x071525);
+				layer.colorRect(0, 0, 8, layer.height, 0x31d7ff, 255);
+				layer.font.bold = true; layer.font.height = 28;
+				layer.drawText(26, 14, "HIBIKI // LOOKING UP", 0x31d7ff, 255, true);
+				layer.font.bold = false; layer.font.height = 30;
+				layer.drawText(26, 58, query, 0xffffff, 255, true);
+				layer.font.height = 20;
+				layer.drawText(26, 108, "Searching Hibiki dictionaries...", 0xa7b8c9, 255, true);
+				layer.visible = true;
+			};
+
+			global.fushiLookupSubmit = function(message, x, y)
+			{
+				var index = global.fushiLookupGlyphAt(message, x, y);
+				if(index < 0) return false;
+				var glyphs = global.fushiLookupGetGlyphs(message);
+				var query = "";
+				for(var i = index; i < glyphs.count && query.length < 48; i++)
+				{
+					var ch = glyphs[i].ch;
+					if(ch == "。" || ch == "、" || ch == "！" || ch == "？" || ch == "\n") break;
+					query += ch;
+				}
+				if(query == "") return false;
+				var id = ++global.fushiLookupSequence;
+				global.fushiLookupPending = %[id:id, message:message, start:index, query:query];
+				global.fushiLookupPaint(message, index, 1, 96);
+				global.fushiLookupShowLoading(query);
+				[id, query].save(global.fushiLookupRequestPath);
+				return true;
+			};
+
+)TJS" LR"TJS(
+
+			global.fushiLookupShowResult = function(id, expression, reading, dictionary, definition, bestLength)
+			{
+				var pending = global.fushiLookupPending;
+				if(pending === void || pending.id != id) return;
+				global.fushiLookupPaint(pending.message, pending.start, bestLength, 150);
+				var layer = global.fushiLookupCard;
+				layer.fillRect(0, 0, layer.width, layer.height, 0x071525);
+				layer.colorRect(0, 0, 8, layer.height, 0x31d7ff, 255);
+				layer.font.bold = true; layer.font.height = 26;
+				layer.drawText(26, 12, "HIBIKI // LIVE LOOKUP", 0x31d7ff, 255, true);
+				layer.font.height = 38;
+				layer.drawText(26, 52, expression, 0xffffff, 255, true);
+				layer.font.bold = false; layer.font.height = 22;
+				layer.drawText(26, 98, reading, 0x65dfff, 255, true);
+				layer.font.height = 17;
+				layer.drawText(26, 132, dictionary, 0xa7b8c9, 255, true);
+				layer.colorRect(26, 160, layer.width - 52, 2, 0x31d7ff, 210);
+				layer.font.height = 20;
+				var clean = definition.replace(/\r/g, "").replace(/\n+/g, " ");
+				var line = 0;
+				for(var pos = 0; pos < clean.length && line < 7; pos += 30, line++)
+					layer.drawText(26, 178 + line * 23, clean.substr(pos, 30), 0xffffff, 255, true);
+				layer.visible = true;
+			};
+
+			global.fushiLookupRecordGlyph = function(message, ch)
+			{
+				if(typeof message.fushiLookupGlyphs == "undefined") message.fushiLookupGlyphs = [];
+				var glyphs = message.fushiLookupGlyphs;
+				var cw = message.lineLayer.font.getTextWidth(ch) + message.pitch;
+				var lx, ly, w, h;
+				if(!message.vertical)
+				{
+					lx = message.lineLayerPos - cw; ly = message.lineLayerBase - message.fontSize;
+					w = cw; h = message.fontSize;
+				}
+				else
+				{
+					lx = message.lineLayerBase - (message.fontSize >> 1); ly = message.lineLayerPos - cw;
+					w = message.fontSize; h = cw;
+				}
+				var ox = message.lineLayerOriginX, oy = message.lineLayerOriginY;
+				glyphs.add(%[ch:ch, lx:lx, ly:ly, w:w, h:h, ox:ox, oy:oy,
+					x:message.lineLayer.left+lx, y:message.lineLayer.top+ly]);
+				for(var i = glyphs.count - 1; i >= 0; i--)
+				{
+					var g = glyphs[i];
+					if(g.ox != ox || g.oy != oy) break;
+					g.x = message.lineLayer.left + g.lx;
+					g.y = message.lineLayer.top + g.ly;
+				}
+			};
+
+			global.fushiLookupLayerRegistry = [];
+			global.fushiLookupLayerRunSequence = 0;
+			global.fushiLookupLayerGlyphSequence = 0;
+			global.fushiLookupLayerDrawCount = 0;
+			global.fushiLookupLayerLastText = "";
+
+			global.fushiLookupTextHasJapanese = function(text)
+			{
+				return typeof text == "String" && /[\u3000-\u30ff\u3400-\u9fff\uff00-\uffef]/.test(text);
+			};
+
+			global.fushiLookupRemoveLayerGlyphs = function(layer, x, y, w, h)
+			{
+				if(typeof layer.fushiLookupLayerGlyphs == "undefined" || w <= 0 || h <= 0) return;
+				var kept = [];
+				var glyphs = layer.fushiLookupLayerGlyphs;
+				for(var i = 0; i < glyphs.count; i++)
+				{
+					var g = glyphs[i];
+					if(g.x + g.w <= x || g.y + g.h <= y || g.x >= x + w || g.y >= y + h)
+						kept.add(g);
+				}
+				layer.fushiLookupLayerGlyphs = kept;
+			};
+
+			global.fushiLookupCaptureLayerText = function(layer, x, y, text)
+			{
+				if(typeof layer.fushiLookupIgnore != "undefined" ||
+					!global.fushiLookupTextHasJapanese(text)) return;
+				var angle = layer.font.angle;
+				if(angle != 0 && angle != 2700) return;
+				if(typeof layer.fushiLookupLayerGlyphs == "undefined") layer.fushiLookupLayerGlyphs = [];
+				if(typeof layer.fushiLookupLayerRegistered == "undefined")
+				{
+					layer.fushiLookupLayerRegistered = true;
+					global.fushiLookupLayerRegistry.add(layer);
+				}
+				var height = Math.abs(layer.font.height);
+				if(height < 1) height = 1;
+				var total = layer.font.getTextWidth(text);
+				if(angle == 0)
+					global.fushiLookupRemoveLayerGlyphs(layer, x, y, total, height);
+				else
+					global.fushiLookupRemoveLayerGlyphs(layer, x - height, y, height, total);
+				var run = ++global.fushiLookupLayerRunSequence;
+				for(var i = 0; i < text.length; i++)
+				{
+					var ch = text.charAt(i);
+					var begin = layer.font.getTextWidth(text.substr(0, i));
+					var finish = layer.font.getTextWidth(text.substr(0, i + 1));
+					var advance = finish - begin;
+					if(advance < 1) advance = 1;
+					var gx, gy, gw, gh;
+					if(angle == 0)
+					{
+						gx = x + begin; gy = y; gw = advance; gh = height;
+					}
+					else
+					{
+						gx = x - height; gy = y + begin; gw = height; gh = advance;
+					}
+					layer.fushiLookupLayerGlyphs.add(%[ch:ch, x:gx, y:gy, w:gw, h:gh,
+						run:run, seq:++global.fushiLookupLayerGlyphSequence, angle:angle]);
+				}
+				global.fushiLookupLayerDrawCount++;
+				global.fushiLookupLayerLastText = text;
+			};
+
+			global.fushiLookupOriginalLayerDrawText = global.Layer.drawText;
+			global.Layer.drawText = function(x, y, text, color, opacity, antialiased)
+			{
+				var result = (global.fushiLookupOriginalLayerDrawText incontextof this)(...);
+				global.fushiLookupCaptureLayerText(this, x, y, text);
+				return result;
+			};
+
+			global.fushiLookupOriginalLayerFillRect = global.Layer.fillRect;
+			global.Layer.fillRect = function(x, y, width, height, value)
+			{
+				var result = (global.fushiLookupOriginalLayerFillRect incontextof this)(...);
+				if(typeof this.fushiLookupIgnore == "undefined" && this.face != dfProvince)
+					global.fushiLookupRemoveLayerGlyphs(this, x, y, width, height);
+				return result;
+			};
+
+)TJS" LR"TJS(
+
+			global.fushiLookupTextRenderRegistry = [];
+			global.fushiLookupTextRenderCaptureCount = 0;
+			global.fushiLookupTextRenderLastMethod = "";
+			global.fushiLookupTextRenderLastError = "";
+			global.fushiLookupTextRenderPatchTrace = [];
+			global.fushiLookupTextRenderActiveDraw = void;
+
+			global.fushiLookupTextRenderValue = function(value, name, fallback)
+			{
+				try
+				{
+					var found = value[name];
+					if(found !== void) return found;
+				}
+				catch(e) {}
+				return fallback;
+			};
+
+			global.fushiLookupTextRenderDescribe = function(value)
+			{
+				var type = typeof value;
+				if(type == "String") return value.substr(0, 80);
+				if(type == "Integer" || type == "Real") return "" + value;
+				return "<" + type + ">";
+			};
+
+			global.fushiLookupTextRenderSample = function(value)
+			{
+				var names = ["text", "x", "y", "cw", "size", "left", "top", "width", "height",
+					"pos", "link", "linkName"];
+				var sample = [];
+				for(var i = 0; i < names.count; i++)
+				{
+					var found = global.fushiLookupTextRenderValue(value, names[i], void);
+					if(found !== void) sample.add(names[i] + "=" +
+						global.fushiLookupTextRenderDescribe(found));
+				}
+				return sample.join(",");
+			};
+
+			global.fushiLookupFindTextRenderTarget = function(renderer)
+			{
+				for(var registryIndex = 0;
+					registryIndex < global.fushiLookupTextRenderRegistry.count; registryIndex++)
+					if(global.fushiLookupTextRenderRegistry[registryIndex].renderer === renderer)
+						return global.fushiLookupTextRenderRegistry[registryIndex];
+				return void;
+			};
+
+			global.fushiLookupBindTextRenderOrigin = function(renderer, layer, originX, originY, source)
+			{
+				if(layer === void || layer === null || !isvalid layer ||
+					(typeof originX != "Integer" && typeof originX != "Real") ||
+					(typeof originY != "Integer" && typeof originY != "Real")) return;
+				var target = global.fushiLookupFindTextRenderTarget(renderer);
+				if(target === void) return;
+				target.targetLayer = layer;
+				target.originX = originX;
+				target.originY = originY;
+				target.originSource = source;
+			};
+
+			global.fushiLookupCaptureTextRender = function(renderer, method, a, b, c, d, e, f)
+			{
+				try
+				{
+					if(typeof renderer.getCharacters != "Object") return;
+					var characters = (renderer.getCharacters incontextof renderer)(0, 0);
+					if(characters === void || typeof characters.count == "undefined") return;
+					var glyphs = [];
+					for(var i = 0; i < characters.count; i++)
+					{
+						var character = characters[i];
+						var text = global.fushiLookupTextRenderValue(character, "text", "");
+						if(typeof text != "String" || text == "") continue;
+						var x = global.fushiLookupTextRenderValue(character, "left",
+							global.fushiLookupTextRenderValue(character, "x", void));
+						var y = global.fushiLookupTextRenderValue(character, "top",
+							global.fushiLookupTextRenderValue(character, "y", void));
+						var width = global.fushiLookupTextRenderValue(character, "width",
+							global.fushiLookupTextRenderValue(character, "cw", void));
+						var height = global.fushiLookupTextRenderValue(character, "height",
+							global.fushiLookupTextRenderValue(character, "size", void));
+						if(x === void || y === void || width === void || height === void ||
+							width <= 0 || height <= 0) continue;
+						glyphs.add(%[ch:text, x:x, y:y, w:width, h:height, run:0, seq:i]);
+					}
+
+					var target = global.fushiLookupFindTextRenderTarget(renderer);
+					if(target === void)
+					{
+						target = %[renderer:renderer, fushiLookupAbsolute:true,
+							fushiLookupGlyphOffsetX:0, fushiLookupGlyphOffsetY:0];
+						global.fushiLookupTextRenderRegistry.add(target);
+					}
+					target.fushiLookupLayerGlyphs = glyphs;
+					target.characters = characters;
+					target.method = method;
+					target.capture = ++global.fushiLookupTextRenderCaptureCount;
+					target.args = [global.fushiLookupTextRenderDescribe(a),
+						global.fushiLookupTextRenderDescribe(b), global.fushiLookupTextRenderDescribe(c),
+						global.fushiLookupTextRenderDescribe(d), global.fushiLookupTextRenderDescribe(e),
+						global.fushiLookupTextRenderDescribe(f)];
+					target.sample = characters.count > 0 ?
+						global.fushiLookupTextRenderSample(characters[0]) : "";
+					target.lastSample = characters.count > 0 ?
+						global.fushiLookupTextRenderSample(characters[characters.count - 1]) : "";
+					if(typeof global.fushiLookupTextRenderActiveDraw != "undefined" &&
+						global.fushiLookupTextRenderActiveDraw !== void &&
+						global.fushiLookupTextRenderActiveDraw.renderer === renderer)
+						global.fushiLookupBindTextRenderOrigin(renderer,
+							global.fushiLookupTextRenderActiveDraw.layer,
+							global.fushiLookupTextRenderActiveDraw.originX,
+							global.fushiLookupTextRenderActiveDraw.originY, "TextRender.draw");
+					global.fushiLookupTextRenderLastTarget = target;
+					global.fushiLookupTextRenderLastMethod = method;
+				}
+				catch(error)
+				{
+					global.fushiLookupTextRenderLastError = method + ":" + error.message;
+				}
+			};
+
+)TJS" LR"TJS(
+
+			try
+			{
+				global.fushiLookupTextRenderPatchTrace.add("TextRenderBase=" + typeof global.TextRenderBase);
+				if(typeof global.TextRenderBase == "Object")
+				{
+					global.fushiLookupTextRenderPatchTrace.add("TextRenderBase.render=" +
+						typeof global.TextRenderBase.render);
+					if(typeof global.TextRenderBase.render == "Object")
+					{
+						global.fushiLookupOriginalTextRenderBaseRender = global.TextRenderBase.render;
+						global.TextRenderBase.render = function(a, b, c, d, e, f)
+						{
+							var result = (global.fushiLookupOriginalTextRenderBaseRender incontextof this)(...);
+							global.fushiLookupCaptureTextRender(this, "TextRenderBase.render",
+								a, b, c, d, e, f);
+							return result;
+						};
+					}
+					global.fushiLookupTextRenderPatchTrace.add("TextRenderBase.done=" +
+						typeof global.TextRenderBase.done);
+					if(typeof global.TextRenderBase.done == "Object")
+					{
+						global.fushiLookupOriginalTextRenderBaseDone = global.TextRenderBase.done;
+						global.TextRenderBase.done = function()
+						{
+							var result = (global.fushiLookupOriginalTextRenderBaseDone incontextof this)(...);
+							global.fushiLookupCaptureTextRender(this, "TextRenderBase.done",
+								void, void, void, void, void, void);
+							return result;
+						};
+					}
+				}
+			}
+			catch(error)
+			{
+				global.fushiLookupTextRenderPatchTrace.add("TextRenderBase!" + error.message);
+			}
+
+)TJS" LR"TJS(
+
+			try
+			{
+				global.fushiLookupTextRenderPatchTrace.add("TextRender=" + typeof global.TextRender);
+				if(typeof global.TextRender == "Object" && global.TextRender !== global.TextRenderBase)
+				{
+					global.fushiLookupTextRenderPatchTrace.add("TextRender.draw=" +
+						typeof global.TextRender.draw);
+					if(typeof global.TextRender.draw == "Object")
+					{
+						global.fushiLookupOriginalTextRenderDraw = global.TextRender.draw;
+						global.TextRender.draw = function(layer, ox, oy, width, height, text,
+							autoIndent, base)
+						{
+							var previous = typeof global.fushiLookupTextRenderActiveDraw == "undefined" ?
+								void : global.fushiLookupTextRenderActiveDraw;
+							global.fushiLookupTextRenderActiveDraw = %[
+								renderer:this, layer:layer, originX:ox, originY:oy];
+							var result;
+							try
+							{
+								result = (global.fushiLookupOriginalTextRenderDraw incontextof this)(...);
+							}
+							catch(error)
+							{
+								global.fushiLookupTextRenderActiveDraw = previous;
+								throw error;
+							}
+							global.fushiLookupTextRenderActiveDraw = previous;
+							global.fushiLookupBindTextRenderOrigin(this, layer, ox, oy,
+								"TextRender.draw");
+							return result;
+						};
+					}
+					global.fushiLookupTextRenderPatchTrace.add("TextRender.drawAll=" +
+						typeof global.TextRender.drawAll);
+					if(typeof global.TextRender.drawAll == "Object")
+					{
+						global.fushiLookupOriginalTextRenderDrawAll = global.TextRender.drawAll;
+						global.TextRender.drawAll = function(layer, ox, oy)
+						{
+							var previous = typeof global.fushiLookupTextRenderActiveDraw == "undefined" ?
+								void : global.fushiLookupTextRenderActiveDraw;
+							global.fushiLookupTextRenderActiveDraw = %[
+								renderer:this, layer:layer, originX:ox, originY:oy];
+							var result;
+							try
+							{
+								result = (global.fushiLookupOriginalTextRenderDrawAll incontextof this)(...);
+							}
+							catch(error)
+							{
+								global.fushiLookupTextRenderActiveDraw = previous;
+								throw error;
+							}
+							global.fushiLookupTextRenderActiveDraw = previous;
+							global.fushiLookupBindTextRenderOrigin(this, layer, ox, oy,
+								"TextRender.drawAll");
+							return result;
+						};
+					}
+					global.fushiLookupTextRenderPatchTrace.add("TextRender.drawCh=" +
+						typeof global.TextRender.drawCh);
+					if(typeof global.TextRender.drawCh == "Object")
+					{
+						global.fushiLookupOriginalTextRenderDrawCh = global.TextRender.drawCh;
+						global.TextRender.drawCh = function(layer, ox, oy, ch)
+						{
+							global.fushiLookupBindTextRenderOrigin(this, layer, ox, oy,
+								"TextRender.drawCh");
+							return (global.fushiLookupOriginalTextRenderDrawCh incontextof this)(...);
+						};
+					}
+					global.fushiLookupTextRenderPatchTrace.add("TextRender.render=" +
+						typeof global.TextRender.render);
+					if(typeof global.TextRender.render == "Object")
+					{
+						global.fushiLookupOriginalTextRenderRender = global.TextRender.render;
+						global.TextRender.render = function(a, b, c, d, e, f)
+						{
+							var result = (global.fushiLookupOriginalTextRenderRender incontextof this)(...);
+							global.fushiLookupCaptureTextRender(this, "TextRender.render",
+								a, b, c, d, e, f);
+							return result;
+						};
+					}
+					global.fushiLookupTextRenderPatchTrace.add("TextRender.done=" +
+						typeof global.TextRender.done);
+					if(typeof global.TextRender.done == "Object")
+					{
+						global.fushiLookupOriginalTextRenderDone = global.TextRender.done;
+						global.TextRender.done = function()
+						{
+							var result = (global.fushiLookupOriginalTextRenderDone incontextof this)(...);
+							global.fushiLookupCaptureTextRender(this, "TextRender.done",
+								void, void, void, void, void, void);
+							return result;
+						};
+					}
+				}
+			}
+			catch(error)
+			{
+				global.fushiLookupTextRenderPatchTrace.add("TextRender!" + error.message);
+			}
+
+)TJS" LR"TJS(
+
+			global.fushiLookupPatchMessage = function(message)
+			{
+				if(message === void || !isvalid message) return;
+				if(typeof message.fushiLookupGlyphs == "undefined") message.fushiLookupGlyphs = [];
+				if(typeof message.fushiLookupProcessChCount == "undefined") message.fushiLookupProcessChCount = 0;
+				if(typeof message.fushiLookupLastCh == "undefined") message.fushiLookupLastCh = "";
+				if(typeof message.processCh != "Object") return;
+				if(typeof message.fushiLookupInstanceWrapperProcessCh != "undefined" &&
+					message.processCh === message.fushiLookupInstanceWrapperProcessCh) return;
+				message.fushiLookupInstancePatched = true;
+				message.fushiLookupInstanceOriginalProcessCh = message.processCh;
+				message.fushiLookupInstanceWrapperProcessCh = function(ch, steptime)
+				{
+					this.fushiLookupProcessChCount++;
+					this.fushiLookupLastCh = ch;
+					var result = (this.fushiLookupInstanceOriginalProcessCh incontextof this)(...);
+					if(!result) global.fushiLookupRecordGlyph(this, ch);
+					return result;
+				} incontextof message;
+				message.processCh = message.fushiLookupInstanceWrapperProcessCh;
+				if(typeof message.clear == "Object" &&
+					(typeof message.fushiLookupInstanceWrapperClear == "undefined" ||
+					message.clear !== message.fushiLookupInstanceWrapperClear)
+				)
+				{
+					message.fushiLookupInstanceOriginalClear = message.clear;
+					message.fushiLookupInstanceWrapperClear = function(all)
+					{
+						this.fushiLookupGlyphs = [];
+						if(typeof this.fushiLookupHighlight != "undefined")
+							this.fushiLookupHighlight.fillRect(0, 0, this.fushiLookupHighlight.width,
+								this.fushiLookupHighlight.height, 0);
+						return (this.fushiLookupInstanceOriginalClear incontextof this)(...);
+					} incontextof message;
+					message.clear = message.fushiLookupInstanceWrapperClear;
+				}
+			};
+
+			global.fushiLookupPatchAllMessages = function()
+			{
+				var pages = [global.kag.fore.messages, global.kag.back.messages];
+				for(var page = 0; page < pages.count; page++)
+					for(var message = 0; message < pages[page].count; message++)
+						global.fushiLookupPatchMessage(pages[page][message]);
+				if(typeof global.kag.current != "undefined" && global.kag.current !== void)
+					global.fushiLookupPatchMessage(global.kag.current);
+			};
+			if(typeof global.kag.tagHandlers == "Object" &&
+				typeof global.kag.tagHandlers.ch == "Object")
+			{
+				global.fushiLookupOriginalChHandler = global.kag.tagHandlers.ch;
+				global.fushiLookupChHandler = function(elm)
+				{
+					if(typeof this.current != "undefined" && this.current !== void)
+						global.fushiLookupPatchMessage(this.current);
+					return (global.fushiLookupOriginalChHandler incontextof this)(...);
+				} incontextof global.kag;
+				global.kag.tagHandlers.ch = global.fushiLookupChHandler;
+			}
+			global.fushiLookupPatchAllMessages();
+			global.fushiLookupRefreshMessages = function(tick)
+			{
+				try { global.fushiLookupPatchAllMessages(); } catch(e) {}
+			};
+			System.addContinuousHandler(global.fushiLookupRefreshMessages);
+
+)TJS" LR"TJS(
+
+			global.fushiLookupAtTextRenderRegistry = function(submit)
+			{
+				var primary = global.kag.primaryLayer;
+				var cursorX = primary.cursorX - primary.imageLeft;
+				var cursorY = primary.cursorY - primary.imageTop;
+				global.fushiLookupLastTrace.add("textRender captures=" +
+					global.fushiLookupTextRenderCaptureCount + " registry=" +
+					global.fushiLookupTextRenderRegistry.count + " lastMethod=" +
+					global.fushiLookupTextRenderLastMethod + " error=" +
+					global.fushiLookupTextRenderLastError + " cursor=" + cursorX + "," + cursorY);
+
+)TJS" LR"TJS(
+
+				for(var patchIndex = 0;
+					patchIndex < global.fushiLookupTextRenderPatchTrace.count; patchIndex++)
+					global.fushiLookupLastTrace.add("textRenderPatch=" +
+						global.fushiLookupTextRenderPatchTrace[patchIndex]);
+				for(var registryIndex = global.fushiLookupTextRenderRegistry.count - 1;
+					registryIndex >= 0; registryIndex--)
+				{
+					var target = global.fushiLookupTextRenderRegistry[registryIndex];
+					var glyphs = target.fushiLookupLayerGlyphs;
+					var targetLayer = global.fushiLookupTextRenderValue(target,
+						"targetLayer", void);
+					var originX = global.fushiLookupTextRenderValue(target, "originX", void);
+					var originY = global.fushiLookupTextRenderValue(target, "originY", void);
+					var originSource = global.fushiLookupTextRenderValue(target,
+						"originSource", "unbound");
+					var row = "textRender=" + registryIndex + " method=" + target.method +
+						" capture=" + target.capture + " chars=" + target.characters.count +
+						" glyphs=" + glyphs.count + " args=" + target.args.join("|") +
+						" first={" + target.sample + "} last={" +
+						target.lastSample + "}";
+					if(glyphs.count > 0)
+					{
+						var first = glyphs[0], last = glyphs[glyphs.count - 1];
+						row += " bounds=" + first.ch + "@" + first.x + "," + first.y + "," +
+							first.w + "," + first.h + ".." + last.ch + "@" + last.x + "," +
+							last.y + "," + last.w + "," + last.h;
+					}
+					if(targetLayer === void || targetLayer === null || !isvalid targetLayer ||
+						originX === void || originY === void)
+					{
+						global.fushiLookupLastTrace.add(row + " origin=unbound");
+						continue;
+					}
+					var layerX = targetLayer.cursorX - targetLayer.imageLeft;
+					var layerY = targetLayer.cursorY - targetLayer.imageTop;
+					var localX = layerX - originX;
+					var localY = layerY - originY;
+					var visible = global.fushiLookupLayerIsVisible(targetLayer);
+					target.fushiLookupGlyphOffsetX = cursorX - layerX + originX;
+					target.fushiLookupGlyphOffsetY = cursorY - layerY + originY;
+					row += " origin=" + originSource + "@" + originX + "," + originY +
+						" layerCursor=" + targetLayer.cursorX + "," + targetLayer.cursorY +
+						" image=" + targetLayer.imageLeft + "," + targetLayer.imageTop +
+						" local=" + localX + "," + localY + " visible=" + visible;
+					global.fushiLookupLastTrace.add(row);
+					if(!visible) continue;
+					var index = global.fushiLookupGlyphAt(target, localX, localY);
+					if(index < 0) continue;
+					global.fushiLookupPaint(target, index, 1, 72);
+					if(submit) return global.fushiLookupSubmit(target, localX, localY);
+					return true;
+				}
+				return false;
+			};
+
+			global.fushiLookupLayerIsVisible = function(layer)
+			{
+				var current = layer;
+				while(current !== void && current !== null && isvalid current)
+				{
+					if(!current.visible || current.opacity <= 0) return false;
+					current = current.parent;
+				}
+				return true;
+			};
+
+			global.fushiLookupAtLayerRegistry = function(submit)
+			{
+				global.fushiLookupLastTrace.add("drawText=" + global.fushiLookupLayerDrawCount +
+					" registry=" + global.fushiLookupLayerRegistry.count +
+					" lastText=" + global.fushiLookupLayerLastText);
+				for(var registryIndex = global.fushiLookupLayerRegistry.count - 1;
+					registryIndex >= 0; registryIndex--)
+				{
+					var layer = global.fushiLookupLayerRegistry[registryIndex];
+					if(layer === void || !isvalid layer ||
+						typeof layer.fushiLookupLayerGlyphs == "undefined" ||
+						layer.fushiLookupLayerGlyphs.count == 0) continue;
+					var visible = global.fushiLookupLayerIsVisible(layer);
+					var x = layer.cursorX - layer.imageLeft;
+					var y = layer.cursorY - layer.imageTop;
+					var glyphs = layer.fushiLookupLayerGlyphs;
+					var last = glyphs[glyphs.count - 1];
+					global.fushiLookupLastTrace.add("layer=" + registryIndex +
+						" visible=" + visible + " cursor=" + layer.cursorX + "," + layer.cursorY +
+						" image=" + layer.imageLeft + "," + layer.imageTop +
+						" local=" + x + "," + y + " glyphs=" + glyphs.count +
+						" last=" + last.ch + "@" + last.x + "," + last.y + "," + last.w + "," + last.h);
+					if(!visible) continue;
+					var index = global.fushiLookupGlyphAt(layer, x, y);
+					if(index < 0) continue;
+					global.fushiLookupPaint(layer, index, 1, 72);
+					if(submit) return global.fushiLookupSubmit(layer, x, y);
+					return true;
+				}
+				return false;
+			};
+
+			global.fushiLookupAtCursor = function(submit)
+			{
+				global.fushiLookupLastTrace = [];
+				if(global.fushiLookupAtTextRenderRegistry(submit)) return true;
+				if(global.fushiLookupAtLayerRegistry(submit)) return true;
+				global.fushiLookupPatchAllMessages();
+				var pages = [global.kag.fore.messages, global.kag.back.messages];
+				var sawCurrent = false;
+				for(var page = 0; page < pages.count; page++)
+				{
+					var messages = pages[page];
+					for(var i = messages.count - 1; i >= 0; i--)
+					{
+						var message = messages[i];
+						if(typeof message.fushiLookupGlyphs == "undefined") continue;
+						var glyphs = message.fushiLookupGlyphs;
+						var x = message.cursorX - message.imageLeft;
+						var y = message.cursorY - message.imageTop;
+						var isCurrent = typeof global.kag.current != "undefined" && global.kag.current === message;
+						if(isCurrent) sawCurrent = true;
+						var row = "page=" + page + " message=" + i +
+							" visible=" + message.visible + " cursor=" + message.cursorX + "," + message.cursorY +
+							" image=" + message.imageLeft + "," + message.imageTop +
+							" local=" + x + "," + y + " glyphs=" + glyphs.count +
+							" processCh=" + message.fushiLookupProcessChCount +
+							" lastCh=" + message.fushiLookupLastCh + " current=" + isCurrent +
+							" wrapped=" + (typeof message.fushiLookupInstanceWrapperProcessCh != "undefined" &&
+								message.processCh === message.fushiLookupInstanceWrapperProcessCh);
+						if(glyphs.count > 0)
+						{
+							var first = glyphs[0], last = glyphs[glyphs.count - 1];
+							row += " first=" + first.x + "," + first.y + "," + first.w + "," + first.h +
+								" last=" + last.x + "," + last.y + "," + last.w + "," + last.h;
+						}
+						global.fushiLookupLastTrace.add(row);
+						var index = global.fushiLookupGlyphAt(message, x, y);
+						if(index < 0) continue;
+						global.fushiLookupPaint(message, index, 1, 72);
+						if(submit) return global.fushiLookupSubmit(message, x, y);
+						return true;
+					}
+				}
+				if(global.fushiLookupLastTrace.count == 0) global.fushiLookupLastTrace.add("no-message");
+				if(!sawCurrent && typeof global.kag.current != "undefined" && global.kag.current !== void)
+				{
+					var current = global.kag.current;
+					global.fushiLookupLastTrace.add("current-outside-pages glyphs=" +
+						(typeof current.fushiLookupGlyphs == "undefined" ? -1 : current.fushiLookupGlyphs.count) +
+						" processCh=" + (typeof current.fushiLookupProcessChCount == "undefined" ? -1 : current.fushiLookupProcessChCount) +
+						" lastCh=" + (typeof current.fushiLookupLastCh == "undefined" ? "" : current.fushiLookupLastCh));
+				}
+				return false;
+			};
+
+)TJS" LR"TJS(
+
+			global.fushiLookupLeftClickHook = function()
+			{
+				var hit = global.fushiLookupAtCursor(true);
+				try
+				{
+					var trace = ["leftClick", hit];
+					for(var traceIndex = 0; traceIndex < global.fushiLookupLastTrace.count; traceIndex++)
+						trace.add(global.fushiLookupLastTrace[traceIndex]);
+					trace.save(global.fushiLookupRequestPath + ".trace");
+				} catch(e) {}
+				return hit;
+			};
+			global.fushiLookupMouseMoveHook = function(x, y)
+			{
+				global.fushiLookupAtCursor(false);
+				return false;
+			};
+			global.fushiLookupKeyDownHook = function(key, shift)
+			{
+				if(key == VK_SHIFT) return global.fushiLookupAtCursor(true);
+				return false;
+			};
+			global.kag.addHook("leftClick", global.fushiLookupLeftClickHook);
+			global.kag.addHook("mouseMove", global.fushiLookupMouseMoveHook);
+			global.kag.addHook("keyDown", global.fushiLookupKeyDownHook);
+
+			global.fushiLookupOriginalProcessCh = global.MessageLayer.processCh;
+			global.MessageLayer.processCh = function(ch, steptime)
+			{
+				var result = (global.fushiLookupOriginalProcessCh incontextof this)(...);
+				if(!result && typeof this.fushiLookupInstancePatched == "undefined")
+					global.fushiLookupRecordGlyph(this, ch);
+				return result;
+			} incontextof global.MessageLayer;
+
+			global.fushiLookupOriginalClear = global.MessageLayer.clear;
+			global.MessageLayer.clear = function(all)
+			{
+				this.fushiLookupGlyphs = [];
+				if(typeof this.fushiLookupHighlight != "undefined")
+					this.fushiLookupHighlight.fillRect(0, 0, this.fushiLookupHighlight.width, this.fushiLookupHighlight.height, 0);
+				return (global.fushiLookupOriginalClear incontextof this)(...);
+			} incontextof global.MessageLayer;
+
+			global.fushiLookupOriginalMouseMove = global.MessageLayer.onMouseMove;
+			global.MessageLayer.onMouseMove = function(x, y)
+			{
+				var localX = x - this.imageLeft, localY = y - this.imageTop;
+				var index = global.fushiLookupGlyphAt(this, localX, localY);
+				if(index >= 0)
+				{
+					global.fushiLookupPaint(this, index, 1, 72);
+				}
+				return (global.fushiLookupOriginalMouseMove incontextof this)(...);
+			} incontextof global.MessageLayer;
+
+			global.fushiLookupOriginalMouseDown = global.MessageLayer.onMouseDown;
+			global.MessageLayer.onMouseDown = function(x, y, button)
+			{
+				if(button == mbLeft && global.fushiLookupSubmit(this, x - this.imageLeft, y - this.imageTop)) return;
+				return (global.fushiLookupOriginalMouseDown incontextof this)(...);
+			} incontextof global.MessageLayer;
+
+			global.fushiLookupOriginalKeyDown = global.MessageLayer.onKeyDown;
+			global.MessageLayer.onKeyDown = function(key, shift)
+			{
+				if(key == VK_SHIFT && global.fushiLookupSubmit(this, this.cursorX - this.imageLeft, this.cursorY - this.imageTop)) return;
+				return (global.fushiLookupOriginalKeyDown incontextof this)(...);
+			} incontextof global.MessageLayer;
+
+			Debug.notice("[HibikiLookup] KAGEX glyph lookup installed");
+			System.removeContinuousHandler(global.fushiLookupBootstrap);
+			global.fushiLookupBootstrap = void;
+		}
+		catch(e)
+		{
+			Debug.notice("[HibikiLookup] install failed: " + e.message);
+			System.removeContinuousHandler(global.fushiLookupBootstrap);
+			global.fushiLookupBootstrap = void;
+		}
+	};
+	System.addContinuousHandler(global.fushiLookupBootstrap);
+}
+)TJS";
+
+std::wstring Utf8ToWide(const std::string& value) {
+  if (value.empty()) return {};
+  const int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+                                         static_cast<int>(value.size()), nullptr, 0);
+  if (count <= 0) return {};
+  std::wstring result(static_cast<size_t>(count), L'\0');
+  MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+                      static_cast<int>(value.size()), result.data(), count);
+  return result;
+}
+
+std::string WideToUtf8(const std::wstring& value) {
+  if (value.empty()) return {};
+  const int count = WideCharToMultiByte(CP_UTF8, 0, value.data(),
+                                        static_cast<int>(value.size()), nullptr, 0,
+                                        nullptr, nullptr);
+  if (count <= 0) return {};
+  std::string result(static_cast<size_t>(count), '\0');
+  WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()),
+                      result.data(), count, nullptr, nullptr);
+  return result;
+}
+
+std::wstring EscapeTjsString(const std::wstring& value) {
+  std::wstring result;
+  result.reserve(value.size() + 16);
+  for (wchar_t ch : value) {
+    switch (ch) {
+      case L'\\': result += L"\\\\"; break;
+      case L'\"': result += L"\\\""; break;
+      case L'\r': result += L"\\r"; break;
+      case L'\n': result += L"\\n"; break;
+      case 0x2028: result += L" "; break;
+      case 0x2029: result += L" "; break;
+      default: result.push_back(ch); break;
+    }
+  }
+  return result;
+}
+
+std::string EscapeJsonString(const std::string& value) {
+  std::string result;
+  result.reserve(value.size() + 16);
+  static constexpr char hex[] = "0123456789abcdef";
+  for (unsigned char ch : value) {
+    switch (ch) {
+      case '\\': result += "\\\\"; break;
+      case '\"': result += "\\\""; break;
+      case '\r': result += "\\r"; break;
+      case '\n': result += "\\n"; break;
+      case '\t': result += "\\t"; break;
+      default:
+        if (ch < 0x20) {
+          result += "\\u00";
+          result.push_back(hex[ch >> 4]);
+          result.push_back(hex[ch & 15]);
+        } else {
+          result.push_back(static_cast<char>(ch));
+        }
+        break;
+    }
+  }
+  return result;
+}
+
+void AppendUtf8CodePoint(std::string& output, uint32_t codepoint) {
+  if (codepoint <= 0x7f) {
+    output.push_back(static_cast<char>(codepoint));
+  } else if (codepoint <= 0x7ff) {
+    output.push_back(static_cast<char>(0xc0 | (codepoint >> 6)));
+    output.push_back(static_cast<char>(0x80 | (codepoint & 0x3f)));
+  } else if (codepoint <= 0xffff) {
+    output.push_back(static_cast<char>(0xe0 | (codepoint >> 12)));
+    output.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3f)));
+    output.push_back(static_cast<char>(0x80 | (codepoint & 0x3f)));
+  } else {
+    output.push_back(static_cast<char>(0xf0 | (codepoint >> 18)));
+    output.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3f)));
+    output.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3f)));
+    output.push_back(static_cast<char>(0x80 | (codepoint & 0x3f)));
+  }
+}
+
+int JsonHex(char ch) {
+  if (ch >= '0' && ch <= '9') return ch - '0';
+  if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+  if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+  return -1;
+}
+
+bool ParseJsonString(const std::string& json, size_t quote, std::string* value,
+                     size_t* next) {
+  if (value == nullptr || quote >= json.size() || json[quote] != '\"') return false;
+  value->clear();
+  for (size_t i = quote + 1; i < json.size(); i++) {
+    const char ch = json[i];
+    if (ch == '\"') {
+      if (next != nullptr) *next = i + 1;
+      return true;
+    }
+    if (ch != '\\') {
+      value->push_back(ch);
+      continue;
+    }
+    if (++i >= json.size()) return false;
+    switch (json[i]) {
+      case '\"': value->push_back('\"'); break;
+      case '\\': value->push_back('\\'); break;
+      case '/': value->push_back('/'); break;
+      case 'b': value->push_back('\b'); break;
+      case 'f': value->push_back('\f'); break;
+      case 'n': value->push_back('\n'); break;
+      case 'r': value->push_back('\r'); break;
+      case 't': value->push_back('\t'); break;
+      case 'u': {
+        if (i + 4 >= json.size()) return false;
+        uint32_t codepoint = 0;
+        for (int n = 0; n < 4; n++) {
+          const int digit = JsonHex(json[++i]);
+          if (digit < 0) return false;
+          codepoint = (codepoint << 4) | static_cast<uint32_t>(digit);
+        }
+        AppendUtf8CodePoint(*value, codepoint);
+        break;
+      }
+      default: return false;
+    }
+  }
+  return false;
+}
+
+bool FindJsonStringField(const std::string& json, const char* key,
+                         std::string* value, size_t start = 0,
+                         size_t limit = std::string::npos) {
+  const std::string needle = std::string("\"") + key + "\"";
+  size_t pos = start;
+  const size_t end = std::min(limit, json.size());
+  while ((pos = json.find(needle, pos)) != std::string::npos && pos < end) {
+    pos += needle.size();
+    pos = json.find(':', pos);
+    if (pos == std::string::npos || pos >= end) return false;
+    pos++;
+    while (pos < end && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\r' ||
+                          json[pos] == '\n')) pos++;
+    if (pos < end && json[pos] == '\"') return ParseJsonString(json, pos, value, nullptr);
+  }
+  return false;
+}
+
+int FindJsonIntegerField(const std::string& json, const char* key, int fallback) {
+  const std::string needle = std::string("\"") + key + "\"";
+  size_t pos = json.find(needle);
+  if (pos == std::string::npos) return fallback;
+  pos = json.find(':', pos + needle.size());
+  if (pos == std::string::npos) return fallback;
+  while (++pos < json.size() && (json[pos] == ' ' || json[pos] == '\t')) {}
+  int value = 0;
+  bool any = false;
+  while (pos < json.size() && json[pos] >= '0' && json[pos] <= '9') {
+    any = true;
+    value = value * 10 + (json[pos++] - '0');
+  }
+  return any ? value : fallback;
+}
+
+struct LookupDictionaryEntry {
+  std::string word;
+  std::string reading;
+  std::string dictionary;
+  std::string meaning;
+};
+
+bool ParseLookupResponse(const std::string& json, int* best_length,
+                         LookupDictionaryEntry* selected) {
+  if (best_length == nullptr || selected == nullptr) return false;
+  *best_length = FindJsonIntegerField(json, "bestLength", 1);
+  const size_t entries_key = json.find("\"entries\"");
+  if (entries_key == std::string::npos) return false;
+  size_t pos = json.find('[', entries_key);
+  if (pos == std::string::npos) return false;
+  LookupDictionaryEntry fallback;
+  bool have_fallback = false;
+  while (++pos < json.size()) {
+    while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\r' ||
+                                 json[pos] == '\n' || json[pos] == ',')) pos++;
+    if (pos >= json.size() || json[pos] == ']') break;
+    if (json[pos] != '\"') return false;
+    std::string encoded_entry;
+    size_t next = pos;
+    if (!ParseJsonString(json, pos, &encoded_entry, &next)) return false;
+    LookupDictionaryEntry entry;
+    FindJsonStringField(encoded_entry, "word", &entry.word);
+    FindJsonStringField(encoded_entry, "reading", &entry.reading);
+    FindJsonStringField(encoded_entry, "dictionaryName", &entry.dictionary);
+    FindJsonStringField(encoded_entry, "meaning", &entry.meaning);
+    if (!entry.word.empty() && !entry.dictionary.empty()) {
+      if (!have_fallback) {
+        fallback = entry;
+        have_fallback = true;
+      }
+      if (entry.dictionary.find("Jitendex") != std::string::npos) {
+        *selected = entry;
+        return true;
+      }
+    }
+    pos = next - 1;
+  }
+  if (have_fallback) *selected = fallback;
+  return have_fallback;
+}
+
+std::string PlainLookupMeaning(const std::string& meaning) {
+  const size_t glossary = meaning.find("glossary");
+  const size_t start = glossary == std::string::npos ? 0 : glossary;
+  size_t limit = meaning.find("extra-info", start);
+  if (limit == std::string::npos) limit = meaning.size();
+  std::vector<std::string> leaves;
+  size_t pos = start;
+  while (pos < limit && leaves.size() < 6) {
+    const size_t key = meaning.find("\"content\"", pos);
+    if (key == std::string::npos || key >= limit) break;
+    const size_t colon = meaning.find(':', key + 9);
+    if (colon == std::string::npos || colon >= limit) break;
+    size_t quote = colon + 1;
+    while (quote < limit && (meaning[quote] == ' ' || meaning[quote] == '\t')) quote++;
+    std::string leaf;
+    size_t next = quote + 1;
+    if (quote < limit && meaning[quote] == '\"' &&
+        ParseJsonString(meaning, quote, &leaf, &next) &&
+        !leaf.empty() && leaf != "glossary" && leaf != "noun") {
+      leaves.push_back(leaf);
+    }
+    pos = std::max(next, key + 9);
+  }
+  std::string result;
+  for (size_t i = 0; i < leaves.size(); i++) {
+    if (!result.empty()) result += "  ";
+    result += std::to_string(i + 1) + ". " + leaves[i];
+  }
+  return result.empty() ? "Dictionary entry found" : result;
+}
+
+bool ReadLookupRequest(int* id, std::wstring* query) {
+  if (id == nullptr || query == nullptr || g_lookup_request_path.empty()) return false;
+  HANDLE file = CreateFileW(g_lookup_request_path.c_str(), GENERIC_READ,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) return false;
+  const DWORD size = GetFileSize(file, nullptr);
+  if (size == INVALID_FILE_SIZE || size == 0 || size > 64 * 1024) {
+    CloseHandle(file);
+    return false;
+  }
+  std::vector<uint8_t> bytes(size);
+  DWORD read = 0;
+  const bool ok = ReadFile(file, bytes.data(), size, &read, nullptr) != FALSE;
+  CloseHandle(file);
+  if (!ok || read != size) return false;
+  std::wstring text;
+  if (size >= 2 && bytes[0] == 0xff && bytes[1] == 0xfe) {
+    const wchar_t* begin = reinterpret_cast<const wchar_t*>(bytes.data() + 2);
+    text.assign(begin, begin + (size - 2) / sizeof(wchar_t));
+  } else {
+    size_t offset = size >= 3 && bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf ? 3 : 0;
+    text = Utf8ToWide(std::string(reinterpret_cast<const char*>(bytes.data() + offset),
+                                  size - offset));
+  }
+  const size_t newline = text.find_first_of(L"\r\n");
+  if (newline == std::wstring::npos) return false;
+  *id = _wtoi(text.substr(0, newline).c_str());
+  const size_t query_start = text.find_first_not_of(L"\r\n", newline);
+  if (*id <= 0 || query_start == std::wstring::npos) return false;
+  *query = text.substr(query_start);
+  while (!query->empty() && (query->back() == L'\r' || query->back() == L'\n' ||
+                             query->back() == L'\0')) query->pop_back();
+  return !query->empty();
+}
+
+bool PostLookupRequest(const std::wstring& query, std::string* response) {
+  if (response == nullptr) return false;
+  wchar_t port_text[16] = {};
+  wchar_t token[256] = {};
+  if (GetEnvironmentVariableW(L"FUSHI_KIRIKIRI_LOOKUP_PORT", port_text, 16) == 0 ||
+      GetEnvironmentVariableW(L"FUSHI_KIRIKIRI_LOOKUP_TOKEN", token, 256) == 0) return false;
+  const int port = _wtoi(port_text);
+  if (port <= 0 || port > 65535) return false;
+  HINTERNET session = WinHttpOpen(L"FushiKirikiriLookup/1.0",
+                                  WINHTTP_ACCESS_TYPE_NO_PROXY,
+                                  WINHTTP_NO_PROXY_NAME,
+                                  WINHTTP_NO_PROXY_BYPASS, 0);
+  if (session == nullptr) return false;
+  WinHttpSetTimeouts(session, 1000, 1000, 2000, 5000);
+  HINTERNET connection = WinHttpConnect(session, L"127.0.0.1",
+                                        static_cast<INTERNET_PORT>(port), 0);
+  HINTERNET request = connection == nullptr ? nullptr :
+      WinHttpOpenRequest(connection, L"POST", L"/api/lookup/dictionary", nullptr,
+                         WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
+  bool ok = false;
+  if (request != nullptr) {
+    const std::wstring auth = std::wstring(L"Authorization: Bearer ") + token + L"\r\n" +
+                              L"Content-Type: application/json\r\n";
+    const std::string body = std::string("{\"term\":\"") +
+        EscapeJsonString(WideToUtf8(query)) + "\",\"maximumTerms\":1,\"record\":false}";
+    ok = WinHttpAddRequestHeaders(request, auth.c_str(), static_cast<DWORD>(-1),
+                                  WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE) != FALSE &&
+         WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                            const_cast<char*>(body.data()), static_cast<DWORD>(body.size()),
+                            static_cast<DWORD>(body.size()), 0) != FALSE &&
+         WinHttpReceiveResponse(request, nullptr) != FALSE;
+    DWORD status = 0;
+    DWORD status_size = sizeof(status);
+    if (!ok || !WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE |
+                                    WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX,
+                                    &status, &status_size, WINHTTP_NO_HEADER_INDEX) || status != 200) {
+      ok = false;
+    }
+    while (ok) {
+      DWORD available = 0;
+      if (!WinHttpQueryDataAvailable(request, &available)) { ok = false; break; }
+      if (available == 0) break;
+      const size_t old_size = response->size();
+      response->resize(old_size + available);
+      DWORD chunk = 0;
+      if (!WinHttpReadData(request, response->data() + old_size, available, &chunk)) {
+        ok = false; break;
+      }
+      response->resize(old_size + chunk);
+      if (response->size() > 8 * 1024 * 1024) { ok = false; break; }
+    }
+  }
+  if (request != nullptr) WinHttpCloseHandle(request);
+  if (connection != nullptr) WinHttpCloseHandle(connection);
+  WinHttpCloseHandle(session);
+  SecureZeroMemory(token, sizeof(token));
+  return ok;
+}
+
+void QueueLookupResultScript(int id, const LookupDictionaryEntry& entry,
+                             int best_length) {
+  const std::wstring word = EscapeTjsString(Utf8ToWide(entry.word));
+  const std::wstring reading = EscapeTjsString(Utf8ToWide(entry.reading));
+  const std::wstring dictionary = EscapeTjsString(Utf8ToWide(entry.dictionary));
+  const std::wstring definition = EscapeTjsString(Utf8ToWide(PlainLookupMeaning(entry.meaning)));
+  std::wstring script = L"if(typeof global.fushiLookupShowResult != \"undefined\") "
+                        L"global.fushiLookupShowResult(";
+  script += std::to_wstring(id) + L",\"" + word + L"\",\"" + reading + L"\",\"" +
+            dictionary + L"\",\"" + definition + L"\"," +
+            std::to_wstring(std::max(1, best_length)) + L");";
+  EnterCriticalSection(&g_lookup_response_cs);
+  g_lookup_response_script = std::move(script);
+  LeaveCriticalSection(&g_lookup_response_cs);
+}
+
+DWORD WINAPI KiriKiriLookupWorker(void*) {
+  int last_id = 0;
+  while (!g_stop) {
+    int id = 0;
+    std::wstring query;
+    if (ReadLookupRequest(&id, &query) && id != last_id) {
+      last_id = id;
+      std::string response;
+      LookupDictionaryEntry entry;
+      int best_length = 1;
+      if (PostLookupRequest(query, &response) &&
+          ParseLookupResponse(response, &best_length, &entry)) {
+        QueueLookupResultScript(id, entry, best_length);
+      } else {
+        LookupDictionaryEntry error;
+        error.word = WideToUtf8(query.substr(0, std::min<size_t>(query.size(), 24)));
+        error.dictionary = "Hibiki lookup";
+        error.meaning = "No dictionary result. Make sure Fushi dictionary service is running.";
+        QueueLookupResultScript(id, error, 1);
+      }
+    }
+    Sleep(50);
+  }
+  return 0;
+}
+
+class KiriKiriLookupResultCallback final : public TvpContinuousEventCallback {
+ public:
+  void __cdecl OnContinuousCallback(uint64_t) override {
+    if (!g_lookup_response_cs_ready || g_lookup_execute_script == nullptr ||
+        g_lookup_alloc_string == nullptr || g_lookup_release_string == nullptr) return;
+    std::wstring script;
+    EnterCriticalSection(&g_lookup_response_cs);
+    script.swap(g_lookup_response_script);
+    LeaveCriticalSection(&g_lookup_response_cs);
+    if (script.empty()) return;
+    TjsVariantString* value = nullptr;
+    try {
+      value = g_lookup_alloc_string(script.c_str());
+      if (value != nullptr) {
+        const TjsString content = {value};
+        g_lookup_execute_script(content, nullptr);
+      }
+    } catch (...) {
+    }
+    if (value != nullptr) g_lookup_release_string(value);
+  }
+};
+
+KiriKiriLookupResultCallback g_lookup_result_callback;
+
+bool PrepareKirikiriLookupRequestPath() {
+  wchar_t temp[MAX_PATH] = {};
+  const DWORD length = GetTempPathW(MAX_PATH, temp);
+  if (length == 0 || length >= MAX_PATH) return false;
+  g_lookup_request_path = temp;
+  g_lookup_request_path += L"fushi-kirikiri-lookup-" + std::to_wstring(GetCurrentProcessId()) + L".txt";
+  DeleteFileW(g_lookup_request_path.c_str());
+  return true;
+}
+
+std::wstring BuildKirikiriLookupBootstrapScript() {
+  std::wstring script = kKirikiriLookupBootstrapScript;
+  const std::wstring placeholder = L"__FUSHI_REQUEST_PATH__";
+  const size_t pos = script.find(placeholder);
+  if (pos != std::wstring::npos) {
+    script.replace(pos, placeholder.size(), EscapeTjsString(g_lookup_request_path));
+  }
+  return script;
+}
+
+bool IsKirikiriLookupProbeRequested() {
+  wchar_t value[8] = {};
+  const DWORD length = GetEnvironmentVariableW(
+      L"FUSHI_KIRIKIRI_NATIVE_LOOKUP_PROBE", value,
+      static_cast<DWORD>(sizeof(value) / sizeof(value[0])));
+  return length == 1 && value[0] == L'1';
+}
+
+class KiriKiriLookupBootstrapCallback final : public TvpContinuousEventCallback {
+ public:
+  void __cdecl OnContinuousCallback(uint64_t) override {
+    if (InterlockedCompareExchange(&g_lookup_bootstrap_state, 2, 1) != 1) return;
+
+    // 官方实现允许 continuous callback 在遍历时移除自身；先移除再执行，确保任何异常也不会形成
+    // 每帧重试。TJS 内部另用 System.addContinuousHandler 等待 global.kag 这个真实生命周期条件。
+    if (g_lookup_remove_continuous != nullptr) g_lookup_remove_continuous(this);
+
+    TjsVariantString* script = g_lookup_bootstrap_script;
+    g_lookup_bootstrap_script = nullptr;
+    if (script != nullptr && g_lookup_execute_script != nullptr) {
+      const TjsString content = {script};
+      try {
+        g_lookup_execute_script(content, nullptr);
+      } catch (...) {
+        // 插件 ABI 边界绝不能把 TJS/C++ 异常抛回游戏事件循环；脚本自身也有 TJS try/catch。
+      }
+    }
+    if (script != nullptr && g_lookup_release_string != nullptr) {
+      g_lookup_release_string(script);
+    }
+    InterlockedExchange(&g_lookup_bootstrap_state, 3);
+  }
+};
+
+KiriKiriLookupBootstrapCallback g_lookup_bootstrap_callback;
+
+bool QueryKirikiriNativeLookupFunctions(ITVPFunctionExporter* exporter,
+                                        const char** names, void** functions,
+                                        uint32_t count) {
+  __try {
+    return exporter->QueryFunctionsByNarrowString(names, functions, count);
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+}
+
+void InstallKirikiriNativeLookupProbe(ITVPFunctionExporter* exporter) {
+  if (exporter == nullptr || !IsKirikiriLookupProbeRequested() ||
+      InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 0) {
+    return;
+  }
+
+  const char* names[] = {
+      "tTJSVariantString * ::TJSAllocVariantString(const tjs_char *)",
+      "void tTJSVariantString::Release()",
+      "void ::TVPExecuteScript(const ttstr &,tTJSVariant *)",
+      "void ::TVPAddContinuousEventHook(tTVPContinuousEventCallbackIntf *)",
+      "void ::TVPRemoveContinuousEventHook(tTVPContinuousEventCallbackIntf *)",
+  };
+  void* functions[5] = {};
+  if (!QueryKirikiriNativeLookupFunctions(exporter, names, functions, 5)) return;
+
+  g_lookup_alloc_string =
+      reinterpret_cast<TJSAllocVariantStringStub_t>(functions[0]);
+  g_lookup_release_string =
+      reinterpret_cast<TJSVariantStringReleaseStub_t>(functions[1]);
+  g_lookup_execute_script = reinterpret_cast<TVPExecuteScriptStub_t>(functions[2]);
+  g_lookup_add_continuous =
+      reinterpret_cast<TVPAddContinuousEventHookStub_t>(functions[3]);
+  g_lookup_remove_continuous =
+      reinterpret_cast<TVPRemoveContinuousEventHookStub_t>(functions[4]);
+  if (g_lookup_alloc_string == nullptr || g_lookup_release_string == nullptr ||
+      g_lookup_execute_script == nullptr || g_lookup_add_continuous == nullptr ||
+      g_lookup_remove_continuous == nullptr) {
+    return;
+  }
+
+  try {
+    if (!PrepareKirikiriLookupRequestPath()) return;
+    if (!g_lookup_response_cs_ready) {
+      InitializeCriticalSection(&g_lookup_response_cs);
+      g_lookup_response_cs_ready = true;
+    }
+    const std::wstring bootstrap = BuildKirikiriLookupBootstrapScript();
+    g_lookup_bootstrap_script = g_lookup_alloc_string(bootstrap.c_str());
+    if (g_lookup_bootstrap_script == nullptr) return;
+    InterlockedExchange(&g_lookup_bootstrap_state, 1);
+    g_lookup_add_continuous(&g_lookup_result_callback);
+    g_lookup_add_continuous(&g_lookup_bootstrap_callback);
+    g_lookup_worker = CreateThread(nullptr, 0, KiriKiriLookupWorker, nullptr, 0, nullptr);
+  } catch (...) {
+    TjsVariantString* script = g_lookup_bootstrap_script;
+    g_lookup_bootstrap_script = nullptr;
+    InterlockedExchange(&g_lookup_bootstrap_state, 0);
+    if (script != nullptr) g_lookup_release_string(script);
+  }
+}
 
 // exe 直取 / V2Link 两条拿 exporter 的路径共享的一次性安装闩（InterlockedCompareExchange）。
 volatile LONG g_voice_installed = 0;
@@ -1149,8 +2618,10 @@ HRESULT HandleV2Link(ITVPFunctionExporter* exporter, V2Link_t orig) {
     if (g_header != nullptr) g_header->reserved_luna |= 0x4000000;  // 经 V2Link 拿到 exporter
     InstallVoiceStreamHookWithExporter(exporter);                   // 幂等
   }
-  if (orig != nullptr) return orig(exporter);
-  return S_OK;
+  const HRESULT result = orig != nullptr ? orig(exporter) : S_OK;
+  // 原插件的 V2Link 已完成后才登记连续帧回调；真正执行 TJS 还会再等到下一次引擎事件循环。
+  InstallKirikiriNativeLookupProbe(exporter);
+  return result;
 }
 
 // 每个 hook 槽一个独立 detour（MinHook 共享 detour 无法区分各自 trampoline，故按 slot 展开）。

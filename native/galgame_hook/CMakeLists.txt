@@ -70,7 +70,7 @@ add_library(fushi_voice_hook SHARED
 )
 target_include_directories(fushi_voice_hook PRIVATE "include")
 target_compile_definitions(fushi_voice_hook PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
-target_link_libraries(fushi_voice_hook PRIVATE minhook)
+target_link_libraries(fushi_voice_hook PRIVATE minhook winhttp)
 
 # Siglus OVK 索引/Ogg 完整性解析是纯函数，独立小测试不需启动或注入游戏。
 enable_testing()
