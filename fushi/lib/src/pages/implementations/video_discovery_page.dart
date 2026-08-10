@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
@@ -42,6 +44,17 @@ typedef VideoDiscoveryImageResolver = ImageProvider? Function(
   bool landscape,
 );
 
+/// 发现页年份输入解析：空串表示清除筛选（0）；只有 1900..当前年+2 的完整四位
+/// 年份才生效，输入途中的 1–3 位返回 null，不触发无意义的联网刷新。
+int? parseVideoDiscoveryYearInput(String raw, {required int newestYear}) {
+  final String value = raw.trim();
+  if (value.isEmpty) return 0;
+  if (value.length != 4) return null;
+  final int? year = int.tryParse(value);
+  if (year == null || year < 1900 || year > newestYear) return null;
+  return year;
+}
+
 class VideoDiscoveryPage extends StatefulWidget {
   const VideoDiscoveryPage({
     required this.navigation,
@@ -67,12 +80,14 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   static const int _pageSize = 30;
 
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _yearController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode(
     debugLabel: 'video-discovery-search',
   );
   final ScrollController _scrollController = ScrollController();
 
   Timer? _debounce;
+  Timer? _yearDebounce;
   int _generation = 0;
   int _page = 1;
   bool _loading = true;
@@ -93,8 +108,6 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   List<discovery.VideoDiscoveryItem> _works =
       const <discovery.VideoDiscoveryItem>[];
   List<ExternalProviderFailure> _failures = const <ExternalProviderFailure>[];
-  final Set<int> _knownYears = <int>{};
-  final Set<String> _knownGenres = <String>{};
 
   VideoDiscoveryController get _controller =>
       widget.controller ?? const EmptyVideoDiscoveryController();
@@ -125,11 +138,13 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   @override
   void dispose() {
     _debounce?.cancel();
+    _yearDebounce?.cancel();
     _scrollController
       ..removeListener(_onScroll)
       ..dispose();
     _searchFocusNode.dispose();
     _searchController.dispose();
+    _yearController.dispose();
     super.dispose();
   }
 
@@ -159,6 +174,41 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     unawaited(_reload());
   }
 
+  void _scheduleYearFilter(String raw) {
+    _yearDebounce?.cancel();
+    final int? year = parseVideoDiscoveryYearInput(
+      raw,
+      newestYear: DateTime.now().year + 2,
+    );
+    if (year == null) return;
+    _yearDebounce = Timer(_searchDebounce, () => _applyYearFilter(year));
+  }
+
+  void _submitYearFilter(String raw) {
+    _yearDebounce?.cancel();
+    final int? year = parseVideoDiscoveryYearInput(
+      raw,
+      newestYear: DateTime.now().year + 2,
+    );
+    if (year == null) {
+      _yearController.text = _year == 0 ? '' : '$_year';
+      return;
+    }
+    _applyYearFilter(year);
+  }
+
+  void _applyYearFilter(int year) {
+    if (!mounted || _year == year) return;
+    setState(() => _year = year);
+    unawaited(_reload());
+  }
+
+  void _clearYearFilter() {
+    _yearDebounce?.cancel();
+    _yearController.clear();
+    _applyYearFilter(0);
+  }
+
   Future<void> _reload() async {
     final int generation = ++_generation;
     if (_scrollController.hasClients) {
@@ -176,7 +226,6 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
           await _safeLoad(_request(page: 1));
       if (!mounted || generation != _generation) return;
       final _FlattenedDiscoveryBatch flattened = _flatten(result);
-      _rememberFacets(flattened.items);
       setState(() {
         _works = flattened.items;
         _popular = const <discovery.VideoDiscoveryItem>[];
@@ -214,11 +263,6 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     final _FlattenedDiscoveryBatch popular = _flatten(results[0]);
     final _FlattenedDiscoveryBatch anime = _flatten(results[1]);
     final _FlattenedDiscoveryBatch works = _flatten(results[2]);
-    _rememberFacets(<discovery.VideoDiscoveryItem>[
-      ...popular.items,
-      ...anime.items,
-      ...works.items,
-    ]);
     final ProviderBatchResult<discovery.VideoDiscoveryPage> merged =
         ProviderBatchResult.merge<discovery.VideoDiscoveryPage>(results);
     setState(() {
@@ -241,7 +285,6 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
         await _safeLoad(_request(page: nextPage));
     if (!mounted || generation != _generation) return;
     final _FlattenedDiscoveryBatch flattened = _flatten(result);
-    _rememberFacets(flattened.items);
     setState(() {
       _page = nextPage;
       _works = _deduplicate(<discovery.VideoDiscoveryItem>[
@@ -337,16 +380,6 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     ];
   }
 
-  void _rememberFacets(Iterable<discovery.VideoDiscoveryItem> items) {
-    for (final discovery.VideoDiscoveryItem item in items) {
-      final int? year = item.reference.year;
-      if (year != null) _knownYears.add(year);
-      _knownGenres.addAll(
-        item.genres.where((String value) => value.trim().isNotEmpty),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return DesktopContentLayout(
@@ -418,7 +451,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                 children: <Widget>[
                   Expanded(child: search),
                   SizedBox(width: tokens.spacing.gap),
-                  _buildYearMenu(),
+                  _buildYearField(),
                   SizedBox(width: tokens.spacing.gap),
                   _buildRegionMenu(),
                   SizedBox(width: tokens.spacing.gap),
@@ -469,7 +502,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
               spacing: tokens.spacing.gap,
               runSpacing: tokens.spacing.gap,
               children: <Widget>[
-                _buildYearMenu(),
+                _buildYearField(),
                 _buildRegionMenu(),
                 _buildGenreMenu(),
                 _buildSortMenu(),
@@ -481,24 +514,35 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     );
   }
 
-  Widget _buildYearMenu() {
-    final List<int> years = _availableYears;
-    return PopupMenuButton<int>(
+  Widget _buildYearField() {
+    return SizedBox(
       key: const ValueKey<String>('video-discovery-filter-year'),
-      tooltip: t.video_filter_year,
-      initialValue: _year,
-      onSelected: (int value) {
-        setState(() => _year = value);
-        unawaited(_reload());
-      },
-      itemBuilder: (_) => <PopupMenuEntry<int>>[
-        PopupMenuItem<int>(value: 0, child: Text(t.home_filter_all)),
-        for (final int year in years)
-          PopupMenuItem<int>(value: year, child: Text('$year')),
-      ],
-      child: _filterButton(
-        label: _year == 0 ? t.video_filter_year : '$_year',
-        active: _year != 0,
+      width: 112,
+      child: TextField(
+        controller: _yearController,
+        keyboardType: TextInputType.number,
+        textInputAction: TextInputAction.done,
+        inputFormatters: <TextInputFormatter>[
+          FilteringTextInputFormatter.digitsOnly,
+          LengthLimitingTextInputFormatter(4),
+        ],
+        decoration: InputDecoration(
+          labelText: t.video_filter_year,
+          hintText: 'YYYY',
+          isDense: true,
+          suffixIcon: _year == 0
+              ? null
+              : IconButton(
+                  key: const ValueKey<String>(
+                    'video-discovery-filter-year-clear',
+                  ),
+                  tooltip: t.clear,
+                  onPressed: _clearYearFilter,
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                ),
+        ),
+        onChanged: _scheduleYearFilter,
+        onSubmitted: _submitYearFilter,
       ),
     );
   }
@@ -674,7 +718,9 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                 ),
                 mainAxisSpacing: tokens.spacing.gap,
                 crossAxisSpacing: tokens.spacing.gap,
-                childAspectRatio: 0.52,
+                // BUG-1505：0.52 在长标题 + 当前 UI scale 下让海报+两行标题+元数据
+                // 比网格格子高约 2.4px；0.50 留出稳定正文余量且保持海报密度。
+                childAspectRatio: 0.50,
               ),
               delegate: SliverChildBuilderDelegate(
                 (BuildContext context, int index) => _DiscoveryMediaCard(
@@ -755,16 +801,6 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     );
   }
 
-  List<int> get _availableYears {
-    final int newest = DateTime.now().year + 2;
-    final List<int> result = <int>{
-      for (int year = newest; year >= 1900; year--) year,
-      ..._knownYears,
-    }.toList()
-      ..sort((int a, int b) => b.compareTo(a));
-    return result;
-  }
-
   List<String> get _availableGenres {
     final List<String> result = <String>{
       'Action',
@@ -797,7 +833,6 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       'Thriller',
       'War',
       'Western',
-      ..._knownGenres,
     }.toList()
       ..sort();
     return result;
@@ -852,7 +887,8 @@ class _DiscoveryShelf extends StatelessWidget {
           ),
           SizedBox(height: tokens.spacing.card),
           SizedBox(
-            height: 224,
+            // BUG-1505：横向卡的 16:9 封面 + 标题/元数据在大字体下会超过 224。
+            height: 240,
             child: HorizontalDragScrollable(
               child: ListView.separated(
                 key: PageStorageKey<String>('video-discovery-shelf-$title'),
@@ -968,7 +1004,7 @@ class _DiscoveryMediaCard extends StatelessWidget {
                 : item.posterUrl ?? item.backdropUrl)
             ?.trim() ??
         '';
-    return value.isEmpty ? null : NetworkImage(value);
+    return value.isEmpty ? null : CachedNetworkImageProvider(value);
   }
 }
 

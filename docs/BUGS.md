@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1403 条。点号进各自文件。
+> 共 1406 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1507](bugs/BUG-1507-video-discovery-genre-facet-pollution.md) | ✅ | ✅ | 视频发现页类型菜单混入年份日期 |
+| [BUG-1506](bugs/BUG-1506-video-discovery-cover-disk-cache.md) | ✅ | ✅ | 视频发现与系列页封面刷新重复下载 |
+| [BUG-1505](bugs/BUG-1505-video-discovery-card-overflow-year-input.md) | ✅ | ✅ | 视频发现卡片溢出且年份下拉过长 |
 | [BUG-1504](bugs/BUG-1504-jimaku-dialog-size-search-jank.md) | ✅ | ✅ | Jimaku 字幕框偏小且搜索首帧卡顿 |
 | [BUG-1503](bugs/BUG-1503-migration-v79-legacy-video-tag-column.md) | ✅ | ✅ | v79 标签迁移不兼容旧 video_book_uid 列导致启动失败 |
 | [BUG-1502](bugs/BUG-1502-video-shader-nested-cards.md) | ✅ | ✅ | 视频画质增强嵌入设置重复嵌套卡片 |

@@ -1,6 +1,7 @@
 import 'dart:async' show StreamSubscription, unawaited;
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:drift/drift.dart' show Value;
 // BUG-994：shellTab 覆写用（切回视频 tab 自动重拉远端，监听收口在基类）。
 import 'package:fushi/src/pages/base_module_tab_page.dart';
@@ -649,7 +650,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             File(localPath).existsSync()) {
           return resizedFileImage(File(localPath));
         }
-        if (row.remoteUrl.isNotEmpty) return NetworkImage(row.remoteUrl);
+        if (row.remoteUrl.isNotEmpty) {
+          return CachedNetworkImageProvider(row.remoteUrl);
+        }
       }
     }
     return null;
