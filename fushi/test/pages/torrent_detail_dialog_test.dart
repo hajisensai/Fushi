@@ -193,7 +193,60 @@ Future<void> _dismiss(WidgetTester tester) async {
   await tester.pumpWidget(const SizedBox.shrink());
 }
 
+Future<void> _pumpPersistedFallback(WidgetTester tester) async {
+  await tester.pumpWidget(
+    const ProviderScope(
+      child: MaterialApp(
+        home: Material(
+          child: TorrentTaskDetailDialog.task(
+            torrentId: _hash,
+            title: 'Persisted Series',
+            torrentTitle: 'Persisted release title',
+            backendOverride: null,
+            initialSnapshot: TorrentSnapshot(
+              hash: _hash,
+              name: 'Persisted Series',
+              progress: 1,
+              state: 'completed',
+              savePath: r'D:\downloads',
+              contentPath: r'D:\downloads\ep01.mkv',
+              amountLeft: 0,
+              totalSizeBytes: 4096,
+              downloadedBytes: 4096,
+            ),
+            initialFiles: <TorrentFileEntry>[
+              TorrentFileEntry(
+                name: 'ep01.mkv',
+                size: 4096,
+                progress: 1,
+                index: 0,
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pump();
+}
+
 void main() {
+  testWidgets('原后端离线时仍展示持久化总览和文件', (
+    WidgetTester tester,
+  ) async {
+    await _pumpPersistedFallback(tester);
+    expect(find.text('Persisted Series'), findsOneWidget);
+    expect(find.textContaining('100.0%'), findsOneWidget);
+    expect(
+      find.textContaining('The original download backend is offline'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Files'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('ep01.mkv'), findsOneWidget);
+    await _dismiss(tester);
+  });
+
   testWidgets('基础后端：总览渲染快照，Peers/Trackers tab 显示不支持', (
     WidgetTester tester,
   ) async {

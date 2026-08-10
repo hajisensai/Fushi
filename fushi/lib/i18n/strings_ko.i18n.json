@@ -3320,5 +3320,6 @@
   "download_detail_remaining_label": "Remaining",
   "download_detail_save_path_label": "Save path",
   "download_detail_content_path_label": "Content path",
-  "download_detail_raw_state_label": "Backend state"
+  "download_detail_raw_state_label": "Backend state",
+  "download_detail_backend_offline": "The original download backend is offline. Persisted task information is shown; live parameters are unavailable."
 }

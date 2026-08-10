@@ -252,8 +252,8 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                                   'The download service is not available',
                                 );
                               }
-                              final backend = await pipeline
-                                  .resolveJobDetailBackend(job.jobId);
+                              final details =
+                                  await pipeline.loadJobDetails(job.jobId);
                               if (!mounted) return;
                               final String torrentId =
                                   (job.backendTaskId ?? job.torrentHash ?? '')
@@ -269,7 +269,9 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                                               true
                                           ? job.resourceTitle!.trim()
                                           : job.title,
-                                  backendOverride: backend,
+                                  backendOverride: details.backend,
+                                  initialSnapshot: details.snapshot,
+                                  initialFiles: details.files,
                                 ),
                               );
                             },

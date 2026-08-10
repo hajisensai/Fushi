@@ -76,6 +76,7 @@ class VideoDiscoveryPage extends StatefulWidget {
 }
 
 class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
+  static const double _filterControlHeight = 44;
   static const Duration _searchDebounce = Duration(milliseconds: 350);
   static const int _pageSize = 30;
 
@@ -518,6 +519,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     return SizedBox(
       key: const ValueKey<String>('video-discovery-filter-year'),
       width: 112,
+      height: _filterControlHeight,
       child: TextField(
         controller: _yearController,
         keyboardType: TextInputType.number,
@@ -530,6 +532,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
           labelText: t.video_filter_year,
           hintText: 'YYYY',
           isDense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
           suffixIcon: _year == 0
               ? null
               : IconButton(
@@ -621,20 +624,22 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   Widget _filterButton({required String label, required bool active}) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
-    return FushiCard(
-      padding: EdgeInsets.symmetric(
-        horizontal: tokens.spacing.rowHorizontal,
-        vertical: tokens.spacing.gap,
-      ),
-      color: active ? tokens.surfaces.selected : tokens.surfaces.page,
-      borderColor: active ? colors.primary : tokens.surfaces.outline,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(label, style: tokens.type.controlLabel),
-          SizedBox(width: tokens.spacing.gap / 2),
-          const Icon(Icons.expand_more_rounded, size: 18),
-        ],
+    return SizedBox(
+      height: _filterControlHeight,
+      child: FushiCard(
+        padding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.rowHorizontal,
+        ),
+        color: active ? tokens.surfaces.selected : tokens.surfaces.page,
+        borderColor: active ? colors.primary : tokens.surfaces.outline,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(label, style: tokens.type.controlLabel),
+            SizedBox(width: tokens.spacing.gap / 2),
+            const Icon(Icons.expand_more_rounded, size: 18),
+          ],
+        ),
       ),
     );
   }

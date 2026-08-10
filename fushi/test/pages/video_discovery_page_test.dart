@@ -257,6 +257,34 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('年份、国家、类型和排序筛选控件等高', (WidgetTester tester) async {
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (_) async => _result(<discovery.VideoDiscoveryItem>[
+        _item('aligned-filters', '等高筛选控件'),
+      ]),
+    );
+    await tester.pumpWidget(_harness(controller));
+    await tester.pumpAndSettle();
+
+    final double expectedHeight = tester
+        .getSize(
+          find.byKey(
+            const ValueKey<String>('video-discovery-filter-year'),
+          ),
+        )
+        .height;
+    for (final String key in <String>[
+      'video-discovery-filter-region',
+      'video-discovery-filter-genre',
+      'video-discovery-filter-sort',
+    ]) {
+      expect(
+        tester.getSize(find.byKey(ValueKey<String>(key))).height,
+        expectedHeight,
+      );
+    }
+  });
+
   testWidgets('年份输入与题材菜单不依赖首批趋势卡片', (WidgetTester tester) async {
     final _FakeDiscoveryController controller = _FakeDiscoveryController(
       (_) async => _result(<discovery.VideoDiscoveryItem>[

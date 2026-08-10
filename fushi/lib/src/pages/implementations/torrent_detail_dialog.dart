@@ -30,7 +30,10 @@ class TorrentTaskDetailDialog extends ConsumerStatefulWidget {
     @visibleForTesting this.backendOverride,
   })  : torrentId = plan.id,
         title = plan.seriesTitle,
-        torrentTitle = plan.torrentTitle;
+        torrentTitle = plan.torrentTitle,
+        initialSnapshot = null,
+        initialFiles = null,
+        resolveBackendFromAppModel = true;
 
   /// Durable download jobs use the same real backend detail surface without
   /// manufacturing a legacy [AnimeDownloadPlan].
@@ -39,8 +42,10 @@ class TorrentTaskDetailDialog extends ConsumerStatefulWidget {
     required this.title,
     required this.torrentTitle,
     required this.backendOverride,
+    required this.initialSnapshot,
+    required this.initialFiles,
     super.key,
-  });
+  }) : resolveBackendFromAppModel = false;
 
   final String torrentId;
   final String title;
@@ -49,6 +54,13 @@ class TorrentTaskDetailDialog extends ConsumerStatefulWidget {
   /// 仅测试用：注入假后端，跳过 AppModel 的真实后端工厂（widget 测试
   /// 不必拉起整个应用模型）。注入的后端由**调用方**负责 close。
   final TorrentBackend? backendOverride;
+  final TorrentSnapshot? initialSnapshot;
+  final List<TorrentFileEntry>? initialFiles;
+
+  /// Legacy plan dialogs may resolve the currently configured backend. Durable
+  /// job dialogs must never do that because their persisted backend identity
+  /// can refer to another qBittorrent instance.
+  final bool resolveBackendFromAppModel;
 
   @override
   ConsumerState<TorrentTaskDetailDialog> createState() =>
@@ -91,13 +103,16 @@ class _TorrentTaskDetailDialogState
         unawaited(_refresh());
       }
     });
+    _snapshot = widget.initialSnapshot;
+    _snapshotLoaded = widget.initialSnapshot != null;
+    _files = widget.initialFiles;
     final TorrentBackend? override = widget.backendOverride;
     if (override != null) {
       _backend = override;
       _ownsBackend = false;
       _detailCapable =
           override is TorrentDetailBackend && override.detailAvailable;
-    } else {
+    } else if (widget.resolveBackendFromAppModel) {
       final AppModel appModel = ref.read(appProvider);
       if (torrentBackendReady(appModel)) {
         final TorrentBackend backend = appModel.createTorrentBackend(
@@ -238,8 +253,13 @@ class _TorrentTaskDetailDialogState
 
   /// 缺详情能力时各 tab 的占位（「当前后端不支持」，绝不空白）。
   Widget _buildUnsupported(ThemeData theme) {
-    return _buildEmptyNote(theme, t.download_detail_backend_unsupported);
+    return _buildEmptyNote(theme, _backendUnavailableMessage);
   }
+
+  String get _backendUnavailableMessage =>
+      !widget.resolveBackendFromAppModel && _backend == null
+          ? t.download_detail_backend_offline
+          : t.download_detail_backend_unsupported;
 
   Widget _buildEmptyNote(ThemeData theme, String text) {
     return Center(
@@ -362,7 +382,11 @@ class _TorrentTaskDetailDialogState
           style: theme.textTheme.titleSmall,
         ),
         const SizedBox(height: 4),
-        _statRow(theme, t.download_detail_hash_label, snapshot.hash),
+        _statRow(
+          theme,
+          t.download_detail_hash_label,
+          snapshot.hash.trim().isEmpty ? '—' : snapshot.hash,
+        ),
         _statRow(
           theme,
           t.download_detail_raw_state_label,
@@ -459,7 +483,7 @@ class _TorrentTaskDetailDialogState
     if (!_detailCapable) {
       return <Widget>[
         Text(
-          t.download_detail_backend_unsupported,
+          _backendUnavailableMessage,
           style: theme.textTheme.bodySmall
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),

@@ -77,6 +77,22 @@ class VideoDownloadBackendBinding {
   final List<VideoDownloadPathMapping> pathMappings;
 }
 
+/// Details that remain useful even when the backend recorded by a durable job
+/// is no longer reachable. [backend] is only populated when that exact backend
+/// identity can be resolved; [snapshot] and [files] always have persisted
+/// fallbacks so opening the details dialog never depends on live infrastructure.
+class VideoDownloadJobDetails {
+  const VideoDownloadJobDetails({
+    required this.snapshot,
+    required this.files,
+    this.backend,
+  });
+
+  final TorrentBackend? backend;
+  final TorrentSnapshot snapshot;
+  final List<TorrentFileEntry> files;
+}
+
 typedef VideoDownloadBackendResolver = Future<VideoDownloadBackendBinding?>
     Function(VideoDownloadJobRow job);
 
@@ -461,26 +477,128 @@ class VideoDownloadPipelineService {
     return null;
   }
 
-  /// Resolves the exact backend instance recorded by a durable task for the
-  /// live details dialog. A changed profile/configuration is rejected instead
-  /// of accidentally showing data from another qBittorrent instance.
-  Future<TorrentBackend> resolveJobDetailBackend(String jobId) async {
+  /// Loads details for a durable job. Live data is preferred when the exact
+  /// recorded backend is available; otherwise the database snapshot remains
+  /// viewable instead of blocking the entire dialog on backend startup.
+  Future<VideoDownloadJobDetails> loadJobDetails(String jobId) async {
     final VideoDownloadJobRow? job = await database.getVideoDownloadJob(jobId);
     if (job == null) {
       throw const VideoDownloadPipelineActionRequired(
         'The selected download job no longer exists',
       );
     }
+    final List<VideoDownloadJobFileRow> rows =
+        await database.getVideoDownloadJobFiles(jobId);
     final String torrentId =
         (job.backendTaskId ?? job.torrentHash ?? '').trim();
-    if (torrentId.isEmpty) {
-      throw const VideoDownloadPipelineActionRequired(
-        'Torrent details are not available until the task is added to the backend',
-      );
+
+    final double persistedProgress =
+        (job.lifecycle == VideoDownloadJobLifecycle.completed
+                ? 1.0
+                : job.stageProgress)
+            .clamp(0.0, 1.0)
+            .toDouble();
+    final List<TorrentFileEntry> persistedFiles = <TorrentFileEntry>[
+      for (int index = 0; index < rows.length; index++)
+        TorrentFileEntry(
+          name: rows[index].currentRelativePath.trim().isNotEmpty
+              ? rows[index].currentRelativePath
+              : rows[index].originalRelativePath,
+          size: rows[index].sizeBytes ?? 0,
+          progress: _persistedFileIsComplete(rows[index].status)
+              ? 1.0
+              : persistedProgress,
+          index: rows[index].backendFileIndex ?? index,
+        ),
+    ];
+
+    TorrentBackend? backend;
+    TorrentSnapshot? liveSnapshot;
+    List<TorrentFileEntry>? liveFiles;
+    if (torrentId.isNotEmpty) {
+      try {
+        final VideoDownloadBackendBinding? binding = await backendResolver(job);
+        _validateBackendBinding(job, binding);
+        backend = binding!.backend;
+        final List<TorrentSnapshot> snapshots =
+            await backend.listTorrents(category: job.category);
+        for (final TorrentSnapshot snapshot in snapshots) {
+          if (snapshot.hash.toLowerCase() == torrentId.toLowerCase()) {
+            liveSnapshot = snapshot;
+            break;
+          }
+        }
+        final List<TorrentFileEntry> backendFiles =
+            await backend.listFiles(torrentId);
+        if (backendFiles.isNotEmpty) liveFiles = backendFiles;
+      } on Object {
+        // The exact original backend may be unavailable after an app upgrade,
+        // profile change or incomplete package install. Do not substitute the
+        // current global backend: it could be a different qBittorrent server.
+        backend = null;
+      }
     }
-    final VideoDownloadBackendBinding? binding = await backendResolver(job);
-    _validateBackendBinding(job, binding);
-    return binding!.backend;
+
+    final int knownTotalBytes = rows.fold<int>(
+      0,
+      (int total, VideoDownloadJobFileRow row) => total + (row.sizeBytes ?? 0),
+    );
+    final String savePath = job.observedSavePath?.trim() ?? '';
+    String contentPath = '';
+    for (final VideoDownloadJobFileRow row in rows) {
+      final String finalPath = row.finalAbsolutePath?.trim() ?? '';
+      if (finalPath.isNotEmpty) {
+        contentPath = finalPath;
+        break;
+      }
+    }
+    if (contentPath.isEmpty && savePath.isNotEmpty && rows.isNotEmpty) {
+      contentPath = p.join(savePath, rows.first.currentRelativePath);
+    }
+    final int remainingBytes = knownTotalBytes > 0
+        ? (knownTotalBytes * (1 - persistedProgress)).round()
+        : -1;
+    final TorrentSnapshot persistedSnapshot = TorrentSnapshot(
+      hash: torrentId,
+      name: job.resourceTitle?.trim().isNotEmpty == true
+          ? job.resourceTitle!.trim()
+          : job.title,
+      progress: persistedProgress,
+      state: _persistedTorrentState(job),
+      savePath: savePath,
+      contentPath: contentPath,
+      amountLeft: remainingBytes,
+      totalSizeBytes: knownTotalBytes > 0 ? knownTotalBytes : -1,
+      downloadedBytes: knownTotalBytes > 0
+          ? (knownTotalBytes * persistedProgress).round()
+          : 0,
+    );
+
+    return VideoDownloadJobDetails(
+      backend: backend,
+      snapshot: liveSnapshot ?? persistedSnapshot,
+      files: liveFiles ?? persistedFiles,
+    );
+  }
+
+  static bool _persistedFileIsComplete(String status) =>
+      status == VideoDownloadJobFileStatus.downloaded ||
+      status == VideoDownloadJobFileStatus.organized ||
+      status == VideoDownloadJobFileStatus.imported;
+
+  static String _persistedTorrentState(VideoDownloadJobRow job) {
+    if (job.lifecycle == VideoDownloadJobLifecycle.completed) {
+      return 'completed';
+    }
+    if (job.lifecycle == VideoDownloadJobLifecycle.cancelled) {
+      return 'pausedDL';
+    }
+    if (job.lifecycle == VideoDownloadJobLifecycle.failed ||
+        job.lifecycle == VideoDownloadJobLifecycle.needsAttention) {
+      return 'error';
+    }
+    if (job.stage == VideoDownloadJobStage.download) return 'downloading';
+    return job.stage;
   }
 
   /// Removes a durable task and, when requested, only the files that this task
