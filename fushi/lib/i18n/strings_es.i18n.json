@@ -3303,5 +3303,6 @@
   "video_setting_drag_seek_sensitivity_low": "Low",
   "video_setting_drag_seek_sensitivity_medium": "Medium",
   "video_setting_drag_seek_sensitivity_high": "High",
-  "video_subtitle_read_failed": "Couldn't read this subtitle file (damaged or empty): $label"
+  "video_subtitle_read_failed": "Couldn't read this subtitle file (damaged or empty): $label",
+  "dict_downloading_size": "Downloading $name ($done / $total)"
 }

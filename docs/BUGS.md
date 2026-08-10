@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1397 条。点号进各自文件。
+> 共 1399 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1493](bugs/BUG-1493-dict-download-no-proxy-no-progress.md) | ✅ | ✅ | 词典下载不走系统代理、无超时，且下载/导入阶段无可归因进度 |
+| [BUG-1492](bugs/BUG-1492-dict-update-stale-lookup-cache.md) | ✅ | ✅ | 词典覆盖导入/在线更新后查词缓存不失效，更新完的词典查不到词 |
 | [BUG-1491](bugs/BUG-1491-anki-dedup-serial-delete.md) | ✅ | ✅ | Anki 媒体去重逐个删除过慢 |
 | [BUG-1490](bugs/BUG-1490-desktop-non-utf8-subtitle-unsupported.md) | ✅ | ✅ | 桌面端非 UTF-8 字幕全被误报为不支持 |
 | [BUG-1489](bugs/BUG-1489-media-kind-guard-frozen-migration.md) | ✅ | ✅ | MediaKind 复合键守卫误判迁移冻结字面量 |

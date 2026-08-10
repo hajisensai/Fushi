@@ -158,6 +158,13 @@ class DictionaryRepository {
 
   // ── dictionary metadata CRUD ─────────────────────────────────────────
 
+  /// BUG-1492：写词典元数据 = 引擎里的词典集合变了。**引擎重载与查词缓存失效必须
+  /// 同时发生**，否则新装/重导的词典虽然进了引擎，之前缓存的查询结果仍会被原样重放
+  /// ——用户表现为「更新完这本词典就查不到词了，重新导入才好」（重新导入之所以「治
+  /// 好」，只是因为 [DictionaryImportManager.importFromFile] 在**开头**清了一次缓存）。
+  ///
+  /// 缓存失效收在这里而不是留给每个调用方各自补：调用点已有 3 个（导入、
+  /// hidden 切换、类型自愈迁移），少补一个就是一条静默的陈旧结果通路。
   Future<void> persistDictionary(Dictionary dictionary) async {
     final idx = _dictionariesCache.indexWhere((d) => d.name == dictionary.name);
     if (idx >= 0) {
@@ -167,6 +174,7 @@ class DictionaryRepository {
       _dictionariesCache.sort((a, b) => a.order.compareTo(b.order));
     }
     _onCacheRebuild?.call();
+    clearDictionaryResultsCache();
     await _db.upsertDictionaryMeta(_dictionaryToCompanion(dictionary));
   }
 
@@ -237,8 +245,18 @@ class DictionaryRepository {
     return null;
   }
 
+  /// BUG-1492：删词典元数据与 [persistDictionary] 对称——引擎必须立刻重载到「不含
+  /// 这本」的集合，查词缓存必须失效。
+  ///
+  /// 旧实现只动内存 list + DB。**覆盖导入/在线更新**（`importFromFile` 的
+  /// replaceExact / replaceOldVersion 分支）正是先删旧目录 + 删旧 meta、再把新包
+  /// publish 到位，中间隔着一次整包落盘：这段窗口里引擎的 in-memory 索引还指着**已
+  /// 被删除的目录**，此时任何一次查词都会拿到残缺结果并把它写进缓存。窗口本身由这里
+  /// 的重载消除，窗口内被污染的缓存由收尾的 [persistDictionary] 清掉。
   Future<void> deleteDictionaryMeta(String name) async {
     _dictionariesCache.removeWhere((d) => d.name == name);
+    _onCacheRebuild?.call();
+    clearDictionaryResultsCache();
     await _db.deleteDictionaryMeta(name);
   }
 

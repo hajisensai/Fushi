@@ -15,6 +15,50 @@ import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/utils.dart';
 
+// ── BUG-1493：下载/导入两阶段的可归因进度 ──────────────────────────────
+//
+// 顶层函数而非 State 的私有方法：这两条是「用户看到的是不是一个能归因的进度」的
+// 全部逻辑，必须能被单测直接钉住（State 是私有类，测试够不着）。
+
+/// 下载阶段的文案：**说清在下载、下了多少**。
+///
+/// 旧实现整个下载期只有一句静态「正在更新 X…」，配上一条几乎贴着最左端不动的进度
+/// 条——用户完全看不出是在下载、下到哪了、还是已经挂死。词典包 30~55MB 且源在
+/// GitHub / HuggingFace，慢是常态，慢而无归因才是缺陷。
+///
+/// 服务器不给 `Content-Length` 时 `total <= 0`，退回不带分母的「正在下载 X…」，
+/// **不显示假的分母**。
+@visibleForTesting
+String dictionaryDownloadStageMessage({
+  required String name,
+  required int received,
+  required int total,
+}) {
+  if (total <= 0) return t.dict_downloading(name: name);
+  return t.dict_downloading_size(
+    name: name,
+    done: FushiByteFormat.bytes(received),
+    total: FushiByteFormat.bytes(total),
+  );
+}
+
+/// 从下载阶段切进导入阶段。
+///
+/// **必须把 [downloadProgress] 归零**：下载结束时它是 1.0，而导入阶段没有任何一处
+/// 会再写它（native 导入是一次不可分割的 FFI 调用，C++ 侧无进度回调），于是进度条
+/// 会定格在满格一动不动——这正是「看起来卡死」的直接来源。归零后
+/// `LinearProgressIndicator(value: progress > 0 ? progress : null)` 退化成不定态
+/// 动画，如实表达「正在处理、无法估算剩余」。
+@visibleForTesting
+void enterDictionaryImportStage({
+  required String name,
+  required ValueNotifier<String> progressNotifier,
+  required ValueNotifier<double> downloadProgress,
+}) {
+  downloadProgress.value = 0;
+  progressNotifier.value = t.import_name(name: name);
+}
+
 /// Page used for managing installed dictionaries.
 class DictionaryDialogPage extends BasePage {
   /// Create an instance of this page.
@@ -886,9 +930,21 @@ class _DictionaryDialogPageState extends BasePageState {
                 url: rec.url,
                 tempDir: tempDir,
                 progressNotifier: downloadProgress,
+                onBytes: (int received, int total) =>
+                    progressNotifier.value = dictionaryDownloadStageMessage(
+                  name: rec.name,
+                  received: received,
+                  total: total,
+                ),
               );
 
-              progressNotifier.value = t.import_extract;
+              // BUG-1493：与单本更新同一套阶段切换（归零进度条 → 不定态），否则导入
+              // 期间进度条定格满格，看起来就是卡死。
+              enterDictionaryImportStage(
+                name: rec.name,
+                progressNotifier: progressNotifier,
+                downloadProgress: downloadProgress,
+              );
               // TODO-1075：初装即把「可更新性」权威信号锚定在 catalog 来源真值上。
               // 对存在**分离 index.json 端点**的来源（yomidevs releases / wty，见
               // [RecommendedDictionary.indexUrl]）回填 isUpdatable:'true' + indexUrl +
@@ -1597,6 +1653,14 @@ class _DictionaryDialogPageState extends BasePageState {
         url: downloadUrl,
         tempDir: tempDir,
         progressNotifier: downloadProgress,
+        onBytes: (int received, int total) => progressNotifier.value =
+            dictionaryDownloadStageMessage(
+                name: name, received: received, total: total),
+      );
+      enterDictionaryImportStage(
+        name: name,
+        progressNotifier: progressNotifier,
+        downloadProgress: downloadProgress,
       );
       await appModel.importDictionary(
         file: zipFile,

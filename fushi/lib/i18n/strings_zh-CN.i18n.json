@@ -3303,5 +3303,6 @@
   "video_setting_drag_seek_sensitivity_low": "低",
   "video_setting_drag_seek_sensitivity_medium": "中",
   "video_setting_drag_seek_sensitivity_high": "高",
-  "video_subtitle_read_failed": "无法读取该字幕文件（内容损坏或为空）：$label"
+  "video_subtitle_read_failed": "无法读取该字幕文件（内容损坏或为空）：$label",
+  "dict_downloading_size": "正在下载 $name（$done / $total）"
 }
