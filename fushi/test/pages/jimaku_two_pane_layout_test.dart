@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -138,6 +140,32 @@ void main() {
         reason: '宽屏下结果列表应在筛选面板右侧（两栏并排）');
     expect(listRect.top, lessThan(queryRect.bottom),
         reason: '两栏应大致同排（列表顶端不低于筛选面板首个输入框底端）');
+    expect(tester.getSize(find.byType(Dialog)).width, greaterThan(900),
+        reason: 'BUG-1504：桌面 Jimaku 框不应继续被 720dp 上限压成窄条');
+  });
+
+  test('BUG-1504: search paints loading frame before persistence and network',
+      () {
+    final String source =
+        File('lib/src/pages/implementations/jimaku_subtitle_dialog.dart')
+            .readAsStringSync();
+    final int methodStart = source.indexOf('Future<void> _search() async {');
+    final int methodEnd = source.indexOf(
+      'Future<void> _selectSeries(',
+      methodStart,
+    );
+    final String search = source.substring(methodStart, methodEnd);
+
+    final int searchingState = search.indexOf('_searching = true;');
+    final int paintFrame =
+        search.indexOf('await WidgetsBinding.instance.endOfFrame;');
+    final int persistKey =
+        search.indexOf('await widget.onApiKeyChanged(apiKey);');
+    final int createClient = search.indexOf('AniListClient(');
+    expect(searchingState, greaterThanOrEqualTo(0));
+    expect(paintFrame, greaterThan(searchingState));
+    expect(persistKey, greaterThan(paintFrame));
+    expect(createClient, greaterThan(persistKey));
   });
 
   testWidgets('narrow screen: single column (list below filter pane)',

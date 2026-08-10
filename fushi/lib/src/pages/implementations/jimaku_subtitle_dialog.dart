@@ -258,8 +258,8 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
     if (query.isEmpty) return;
     // 集数：空或非法 → null（不传 episode = 现状列全部），保底逻辑见 §1.2。
     final int? episode = int.tryParse(_episodeCtrl.text.trim());
-    await widget.onApiKeyChanged(apiKey);
 
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _searching = true;
       _searched = false;
@@ -267,6 +267,13 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
       _seriesMatches = const <AniListMedia>[];
       _selectedSeriesId = null;
     });
+    // BUG-1504：先让「按钮禁用 + 结果区 loading」完整绘制一帧，再做偏好写入、
+    // 代理 client 初始化和联网。旧顺序先 await onApiKeyChanged，慢磁盘/数据库下点击后
+    // 首帧没有任何反馈，看起来像整块 UI 卡住；这里与 backup import 的重 IO 遮罩采用
+    // 同一条 paint-before-work 约束。
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    await widget.onApiKeyChanged(apiKey);
 
     AniListClient? anilist;
     try {
@@ -300,6 +307,8 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
       _searching = true;
       _candidates = const <JimakuCandidate>[];
     });
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
     try {
       await _fetchCandidates(
         anilistId: media.id,
@@ -554,7 +563,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
   static const double _twoPaneMinWidth = 560;
 
   /// 宽屏左侧筛选面板宽（dp）。
-  static const double _filterPaneWidth = 252;
+  static const double _filterPaneWidth = 300;
 
   /// 筛选面板（宽屏左栏 / 窄屏上段），配置项按操作顺序分组：① API key（可折叠）
   /// ② 搜索（番名/集数/搜索按钮）③ 系列消歧 ④ 结果筛选（语言/关键词，有结果才显示）。
@@ -708,11 +717,12 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
     // Flexible 能正确分到剩余空间，候选列表内部普通（非 shrinkWrap）ListView 正常
     // 滚动，保留 BUG-279 不变量。若用 frame 默认 scrollable:true 包
     // SingleChildScrollView 给无界高度，Flexible 会坍缩成 0 高 → 回归 BUG-279，故此
-    // 处必须 scrollable:false。maxWidth 720 让大屏走两栏；insetPadding 保留
-    // horizontal:16（手机宽=屏宽-32，大屏由 720 封顶居中）。
+    // 处必须 scrollable:false。BUG-1504：桌面端从 720×0.86 放大到 1040×0.92，
+    // 结果文件名和番名获得更完整的横向空间，列表也能多显示一行；窄屏仍由 insetPadding
+    // 和 max constraint 自动收缩，布局断点不变。
     return FushiDialogFrame(
-      maxWidth: 720,
-      maxHeightFactor: 0.86,
+      maxWidth: 1040,
+      maxHeightFactor: 0.92,
       scrollable: false,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
