@@ -275,6 +275,8 @@ class AppModelLibraryHostService
       if (col == null) continue; // 孤儿引用：归属合集已删 → 该条目退化散卡。
       for (final MediaCollectionItemRow item
           in await _db.getCollectionItems(cid)) {
+        // v83：epub 成员行 entryKey = 本机 epub_books.uid（透传行 = 对端 bookKey），
+        // 本 map 键随成员表面貌走——bookKey 侧消费方（listBooks）负责先换到 uid。
         final String key = '${item.mediaType}|${item.entryKey}';
         // 仅记录以本合集为主归属的成员（该条目也可能在别的更大 id 合集里）。
         if (primaryByEntry[key] != cid) continue;
@@ -348,10 +350,14 @@ class AppModelLibraryHostService
         tags: tagsByBookKey[r.bookKey] ?? const <String>[],
         tagsAddedAt: tagAddedAtByKey[r.bookKey] ?? const <String, int>{},
         tagTombstones: tagTombByKey[r.bookKey] ?? const <String, int>{},
-        // 合集成员键：epub 条目 mediaType='epub'、entryKey=bookKey（§2.3 任务5.1）。
-        // srt-backed 有声书兜底：该书以 srt|uid 入合集时，epub|bookKey 会 miss，
-        // 回退查 srt|uid（BUG-812）。散卡（两键都无）= null。
-        collection: membership[MediaKind.epub.compositeKey(r.bookKey)] ??
+        // 合集成员键（v83）：epub 成员行 entryKey = 本机 epub_books.uid，书侧组键
+        // 用 r.uid（§2.3 任务5.1 的 wire 面貌仍是 bookKey，与本地键域无关）。
+        // epub|bookKey 兜底：sync 落地的透传行（书当时还没下载）在下一轮 apply
+        // 收敛前仍以对端 bookKey 为键，窗口期内按 bookKey 也查一把，归属不闪断。
+        // srt-backed 有声书兜底：该书以 srt|uid 入合集时，epub 两键都 miss，
+        // 回退查 srt|uid（BUG-812）。散卡（三键都无）= null。
+        collection: membership[MediaKind.epub.compositeKey(r.uid)] ??
+            membership[MediaKind.epub.compositeKey(r.bookKey)] ??
             (srtUidByBookKey[r.bookKey] != null
                 ? membership[
                     MediaKind.srt.compositeKey(srtUidByBookKey[r.bookKey]!)]

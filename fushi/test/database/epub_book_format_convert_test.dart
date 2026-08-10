@@ -99,7 +99,10 @@ void main() {
   test('转化后合集成员仍指向这本书（身份不变 → 零悬挂引用）', () async {
     final FushiDatabase db = await seedImageEpub();
     final int collectionId = await db.createMediaCollection('扫描本');
-    await db.addToCollection(collectionId, MediaKind.epub, key);
+    // v83：合集成员 epub 域 entryKey = epub_books.uid（导入时刻定死）；转化只改
+    // format 列、不动 uid，成员引用零悬挂。
+    final String uid = (await db.resolveEpubBookUid(key))!;
+    await db.addToCollection(collectionId, MediaKind.epub, uid);
 
     await db.updateEpubBookFormat(
       key,
@@ -113,7 +116,8 @@ void main() {
     final List<MediaCollectionItemRow> items =
         await db.getCollectionItems(collectionId);
     expect(items, hasLength(1));
-    expect(items.single.entryKey, key);
+    expect(items.single.entryKey, uid,
+        reason: 'v83 成员键 = uid，转化前后不变（bookKey 已不是成员键域）');
     expect(items.single.mediaType, MediaKind.epub.dbValue,
         reason: '漫画在合集值域里就是 epub——MediaKind 里根本没有 manga');
   });

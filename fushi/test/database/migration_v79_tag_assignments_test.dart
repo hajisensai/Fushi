@@ -112,7 +112,7 @@ CREATE TABLE galgame_tag_mappings (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 81);
+    expect(db.schemaVersion, 83);
 
     final List<TagAssignmentRow> rows = await db.getAllTagAssignments();
     expect(rows, hasLength(5), reason: '5 张表各 1 行有效映射（孤儿 srt 行丢弃）');

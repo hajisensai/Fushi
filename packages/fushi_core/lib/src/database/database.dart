@@ -514,7 +514,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 82;
+  int get schemaVersion => 83;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -2214,6 +2214,80 @@ class FushiDatabase extends _$FushiDatabase
               await customStatement(
                   'CREATE INDEX IF NOT EXISTS idx_bookmarks_book_uid_created '
                   'ON bookmarks (book_uid, created_at DESC)');
+            }
+          }
+          if (from < 83 && await _tableExists('epub_books')) {
+            // v83（P3 Stage 2）：shelf_entries / media_collection_items 的
+            // epub 域 entryKey 从 bookKey 换稳定 uid；media_collections 的
+            // cover_source 'epub|<key>' 同步换键。
+            // - 远端透传行（epub 无本地行）**照抄保留**——与 v82 清孤儿刻意
+            //   不同：合集清单是跨端 union，epub 无主行可能是「替对端转发」
+            //   的远端归属，清了丢数据。
+            // - 两表 PK 含 entry_key，直 UPDATE 可能撞 PK（脏数据 bookKey 行
+            //   与 uid 行并存）→ create-copy-drop-rename + INSERT OR IGNORE
+            //   顺带去重（v82 同形）。
+            // - 重入/幂等：uid 值（book_<..>形）不落 sanitize(title) 值域，
+            //   重跑 COALESCE 不再命中（病态标题恰为 book_<n>_<n> 形的碰撞
+            //   概率忽略，记档于此）。
+            if (await _tableExists('shelf_entries')) {
+              await customStatement('''
+              CREATE TABLE shelf_entries_v83 (
+                media_type TEXT NOT NULL,
+                entry_key TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                series_id INTEGER REFERENCES series (id) ON DELETE SET NULL,
+                PRIMARY KEY (media_type, entry_key))''');
+              await customStatement('''
+              INSERT OR IGNORE INTO shelf_entries_v83
+                (media_type, entry_key, sort_order, series_id)
+              SELECT s.media_type,
+                     CASE WHEN s.media_type = 'epub' THEN
+                       COALESCE((SELECT eb.uid FROM epub_books eb
+                                 WHERE eb.book_key = s.entry_key
+                                   AND eb.uid != ''),
+                                s.entry_key)
+                     ELSE s.entry_key END,
+                     s.sort_order, s.series_id
+              FROM shelf_entries s''');
+              await customStatement('DROP TABLE shelf_entries');
+              await customStatement(
+                  'ALTER TABLE shelf_entries_v83 RENAME TO shelf_entries');
+            }
+            if (await _tableExists('media_collection_items')) {
+              await customStatement('''
+              CREATE TABLE media_collection_items_v83 (
+                collection_id INTEGER NOT NULL
+                  REFERENCES media_collections (id) ON DELETE CASCADE,
+                media_type TEXT NOT NULL,
+                entry_key TEXT NOT NULL,
+                sort_index INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (collection_id, media_type, entry_key))''');
+              await customStatement('''
+              INSERT OR IGNORE INTO media_collection_items_v83
+                (collection_id, media_type, entry_key, sort_index)
+              SELECT i.collection_id, i.media_type,
+                     CASE WHEN i.media_type = 'epub' THEN
+                       COALESCE((SELECT eb.uid FROM epub_books eb
+                                 WHERE eb.book_key = i.entry_key
+                                   AND eb.uid != ''),
+                                i.entry_key)
+                     ELSE i.entry_key END,
+                     i.sort_index
+              FROM media_collection_items i''');
+              await customStatement('DROP TABLE media_collection_items');
+              await customStatement('ALTER TABLE media_collection_items_v83 '
+                  'RENAME TO media_collection_items');
+            }
+            if (await _tableExists('media_collections')) {
+              await customStatement('''
+              UPDATE media_collections SET cover_source = 'epub|' ||
+                (SELECT eb.uid FROM epub_books eb
+                 WHERE eb.book_key = substr(cover_source, 6)
+                   AND eb.uid != '')
+              WHERE cover_source LIKE 'epub|%'
+                AND EXISTS (SELECT 1 FROM epub_books eb
+                            WHERE eb.book_key = substr(cover_source, 6)
+                              AND eb.uid != '')''');
             }
           }
         },

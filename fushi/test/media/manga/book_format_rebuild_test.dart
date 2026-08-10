@@ -188,7 +188,8 @@ void main() {
       ),
     );
     final int collectionId = await db.createMediaCollection('扫描本');
-    await db.addToCollection(collectionId, MediaKind.epub, bookKey);
+    // v83：合集成员 epub 域 entryKey = uid（与进度键同域）；转化不动 uid。
+    await db.addToCollection(collectionId, MediaKind.epub, bookUid);
 
     final String identifierBefore =
         ReaderFushiSource.mediaIdentifierFor(bookKey);
@@ -218,9 +219,9 @@ void main() {
           BookFormat.parseOrEpub(asManga.format)),
       MangaFushiSource.kUniqueKey,
     );
-    // 合集成员没断。
+    // 合集成员没断（v83 成员键 = uid）。
     expect(
-        (await db.getCollectionItems(collectionId)).single.entryKey, bookKey);
+        (await db.getCollectionItems(collectionId)).single.entryKey, bookUid);
 
     // ── 转回书 ──
     await BookFormatRebuild.convert(
@@ -245,7 +246,7 @@ void main() {
       reason: '④转回书后必须回到 EPUB 阅读器',
     );
     expect(
-        (await db.getCollectionItems(collectionId)).single.entryKey, bookKey);
+        (await db.getCollectionItems(collectionId)).single.entryKey, bookUid);
 
     // 转回书是**重建**：chaptersJson 由重新解析解压树得到，不是留着漫画的 '[]'。
     expect(asBook.format, BookFormat.epub.dbValue);

@@ -88,8 +88,11 @@ Future<List<MediaCollectionItemRow>> sortedCollectionRows({
   final List<VideoBookRow> videos = await db.allVideoBooks();
   final Map<String, ({String title, int importedAt})> meta =
       <String, ({String title, int importedAt})>{
+    // v83：成员表 epub entryKey = `epub_books.uid`，meta 直接按行内 uid 建键
+    // （uid 为空的异常行回退 bookKey）。透传成员行（远端-only 书，entryKey =
+    // 对端 bookKey）本地无行可查，落 metaOf 的 `(entryKey, 0)` 兜底——刻意如此。
     for (final EpubBookRow r in epubs)
-      MediaKind.epub.compositeKey(r.bookKey): (
+      MediaKind.epub.compositeKey(r.uid.isNotEmpty ? r.uid : r.bookKey): (
         title: r.title,
         importedAt: r.importedAt,
       ),

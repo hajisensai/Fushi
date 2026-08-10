@@ -406,33 +406,9 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
                 t.entryKey.equals(entryKey)))
           .go();
 
-  /// 远端书下载后 bookKey 漂移的改键迁移（TODO-616 §0🔴2）：独立事务，读旧行 →
-  /// 若新行不存在则改键写（沿用旧行 sortOrder/seriesId）→ 删旧行；新行已存在则本地
-  /// 优先不覆盖、仅删旧行。等键 / 无旧行 no-op。
-  Future<void> migrateShelfEntryKey(
-          MediaKind mediaType, String oldEntryKey, String newEntryKey) =>
-      transaction(() async {
-        if (oldEntryKey == newEntryKey) return;
-        final ShelfEntryRow? oldRow =
-            await getShelfEntry(mediaType, oldEntryKey);
-        if (oldRow == null) return;
-        final ShelfEntryRow? newRow =
-            await getShelfEntry(mediaType, newEntryKey);
-        if (newRow == null) {
-          await into(shelfEntries).insert(ShelfEntriesCompanion.insert(
-            mediaType: mediaType.dbValue,
-            entryKey: newEntryKey,
-            sortOrder: Value(oldRow.sortOrder),
-            seriesId: Value(oldRow.seriesId),
-          ));
-        }
-        // 新行已存在 → 本地优先不覆盖，仅删旧行（下面统一删）。
-        await (delete(shelfEntries)
-              ..where((t) =>
-                  t.mediaType.equals(mediaType.dbValue) &
-                  t.entryKey.equals(oldEntryKey)))
-            .go();
-      });
+  // v83：migrateShelfEntryKey（远端书下载后 bookKey 漂移改键，TODO-616 §0🔴2）
+  // 已删除——epub 域 entryKey 换稳定 uid 后导入时刻定死、不再漂移；且该路径在删
+  // 除前已恒 no-op（唯一能建 downloadId 行的写入方早已随 shelf_reorder_page 消亡）。
 
   // ── media collections (统一合集：Jellyfin 式容器 + 成员引用) ─────────
   /// 全部合集，按 sortOrder 升序、id 升序（卡片列表稳定排序，同 [getAllSeries] 范式）。
@@ -694,10 +670,33 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
             collectionName: col.name,
             collectionType: col.collectionType,
             mediaType: mediaType,
-            entryKey: entryKey,
+            entryKey: await _tombstoneEntryKeyOf(mediaType, entryKey),
           );
         }
       });
+
+  /// uid → bookKey 反向换算口（v83；resolveEpubBookUid 的对偶，住本 mixin 是
+  /// 因为 on 链拓扑——misc mixin 在本 mixin 之上）。出 wire / 写 bookKey 域
+  /// 墓碑前用。书不在库返回 null——透传行（远端 epub 的 entryKey 本就是对端
+  /// bookKey）反查不上时直接沿用原值即闭环。
+  Future<String?> resolveEpubBookKeyByUid(String uid) async {
+    if (uid.isEmpty) return null;
+    final String? bookKey = await (selectOnly(epubBooks)
+          ..addColumns([epubBooks.bookKey])
+          ..where(epubBooks.uid.equals(uid)))
+        .map((r) => r.read(epubBooks.bookKey))
+        .getSingleOrNull();
+    return bookKey;
+  }
+
+  /// 成员墓碑键域归一（v83）：墓碑冻结在 **bookKey 域**（= wire 域）——它是
+  /// 跨端防复活证据，必须在成员行消亡后仍可与对端（bookKey 键）直比。epub 成
+  /// 员行键是本机 uid → 写/清墓碑前反查 bookKey；反查不上 = 透传行（原值本就
+  /// 是对端 bookKey）照抄即闭环。非 epub 域键原样。
+  Future<String> _tombstoneEntryKeyOf(String mediaType, String entryKey) async {
+    if (mediaType != MediaKind.epub.dbValue) return entryKey;
+    return await resolveEpubBookKeyByUid(entryKey) ?? entryKey;
+  }
 
   /// 移出成员；移空后自动删该合集（沿用旧 removeEntryFromSeries 语义，避免留 0 成员
   /// 孤儿合集卡）。同事务写成员移出墓碑（schema v40：跨端合集同步是成员并集，无墓碑
@@ -728,7 +727,10 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
             collectionName: col.name,
             collectionType: col.collectionType,
             mediaType: mediaType,
-            entryKey: entryKey,
+            // v83：墓碑冻结 bookKey 域（见 [_tombstoneEntryKeyOf]）——uid 域
+            // 墓碑会原样出 wire（本机 uid 泄漏）、对端匹配不上（移出不传播、
+            // 本端下轮并集复活刚移出的成员）。
+            entryKey: await _tombstoneEntryKeyOf(mediaType, entryKey),
             deletedAt: DateTime.now().millisecondsSinceEpoch,
           );
         }
@@ -1037,6 +1039,9 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
         await (delete(audioCues)..where((t) => t.bookKey.equals(uid))).go();
         // TODO-616：同事务清 shelf_entry（mediaType='srt'、entryKey=uid）。
         await deleteShelfEntry(MediaKind.srt, uid);
+        // v83 顺手修的历史缺口：srt 删除此前不清合集成员行（与 epub 同修，
+        // 见 deleteEpubBook）。
+        await removeEntryFromAllCollections(MediaKind.srt, uid);
         await deleteTagAssignmentsForHost(TagHostKind.srt, uid);
         return (delete(srtBooks)..where((t) => t.uid.equals(uid))).go();
       });

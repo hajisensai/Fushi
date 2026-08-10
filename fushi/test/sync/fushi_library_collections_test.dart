@@ -51,8 +51,12 @@ void main() {
       ));
       final int cid =
           await db.createMediaCollection('文学全集', collectionType: 'collection');
+      // v83：本地书的成员行 entryKey = epub_books.uid；'Other' 本地无书行，是
+      // 照抄对端 bookKey 的透传行（合集清单跨端 union，本机替对端转发归属）。
       await db.addToCollection(cid, MediaKind.epub, 'Other'); // sortIndex 0
-      await db.addToCollection(cid, MediaKind.epub, 'BookA'); // sortIndex 1
+      await db.addToCollection(
+          cid, MediaKind.epub, (await db.resolveEpubBookUid('BookA'))!);
+      // ↑ sortIndex 1
 
       final List<RemoteBookInfo> books = await buildSvc(db).listBooks();
       final RemoteBookInfo bookA =
@@ -92,14 +96,40 @@ void main() {
       final int first = await db.createMediaCollection('先建'); // 较小 id
       final int second = await db.createMediaCollection('后建'); // 较大 id
       expect(first < second, isTrue);
-      await db.addToCollection(second, MediaKind.epub, 'Multi');
-      await db.addToCollection(first, MediaKind.epub, 'Multi');
+      // v83：成员行 entryKey = uid。
+      final String multiUid = (await db.resolveEpubBookUid('Multi'))!;
+      await db.addToCollection(second, MediaKind.epub, multiUid);
+      await db.addToCollection(first, MediaKind.epub, multiUid);
 
       final List<RemoteBookInfo> books = await buildSvc(db).listBooks();
       final RemoteBookInfo multi =
           books.firstWhere((RemoteBookInfo b) => b.bookKey == 'Multi');
       expect(multi.collection!.collectionName, '先建',
           reason: '主归属 = 最小 collectionId 的合集');
+    });
+
+    test('v83 窗口期兜底：成员行还是 bookKey（sync 透传行未收敛）时归属不闪断', () async {
+      final FushiDatabase db = memDb();
+      await db.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: 'WindowBook',
+        title: 'WindowBook',
+        epubPath: '/tmp/WindowBook.epub',
+        extractDir: '/tmp/WindowBook',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+      ));
+      final int cid =
+          await db.createMediaCollection('窗口集', collectionType: 'collection');
+      // 刻意用 bookKey 落成员行：模拟「书刚下载落地、sync 尚未把透传行 diff 收敛
+      // 成 uid 行」的窗口期。listBooks 组键按 uid 优先、bookKey 兜底，两键任一命
+      // 中都要带上归属（收敛由下一轮 apply 完成，此处不许闪断）。
+      await db.addToCollection(cid, MediaKind.epub, 'WindowBook');
+
+      final List<RemoteBookInfo> books = await buildSvc(db).listBooks();
+      expect(books.single.collection, isNotNull,
+          reason: '未收敛的 bookKey 成员行也必须带归属（uid 优先 + bookKey 兜底）');
+      expect(books.single.collection!.collectionName, '窗口集');
     });
 
     test('BUG-812: srt-backed 有声书经 srt|uid 成员键折进合集（listBooks 兜底）', () async {
@@ -285,8 +315,7 @@ void main() {
 
     tearDown(() async => server.stop());
 
-    Future<InterconnectSyncBackend> buildBackend(
-        FushiDatabase clientDb) async {
+    Future<InterconnectSyncBackend> buildBackend(FushiDatabase clientDb) async {
       final SyncRepository repo = SyncRepository(clientDb);
       await repo.setFushiClientUrls(<FushiClientUrl>[
         FushiClientUrl(url: base, enabled: true),

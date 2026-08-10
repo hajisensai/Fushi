@@ -130,13 +130,38 @@ void main() {
       'List<DialogAction> _srtExtraActions(',
       '  Future<void> _showSrtBookDialog(',
     );
-    // EPUB 卡：有入口，entryKey 编码与批量三档一致（epub → bookKey），
+    // EPUB 卡：有入口，entryKey 编码与批量三档一致（v83：epub 成员键 = uid，
+    // 页面身份 bookKey 在 _addEpubToCollection 落库前经 resolveEpubBookUid 换算），
     // 合集详情页成员卡语境（inCollectionDetail）隐藏。
     expect(epubActions, contains('t.add_to_collection'));
     // P5：mediaType 走 MediaKind 枚举（落库串仍 'epub'，见 media_kind_test）。
     expect(epubActions, contains('mediaType: MediaKind.epub'));
-    expect(epubActions, contains('entryKey: bookKey'));
     expect(epubActions, contains('if (!inCollectionDetail)'));
+    // v83 换算针：落库入口必须先 bookKey→uid（换算不上兜底沿用 bookKey——透传
+    // 语义），再以换算结果传 entryKey。切出 _addEpubToCollection 方法体单独断言，
+    // 免得同文件标签域（tag_assignments epub 键冻结在 bookKey，有意分期）的
+    // `entryKey: bookKey` 字面量把「isNot」断言污染成假红/假绿。
+    final String addToCollectionBody = _sectionSource(
+      src,
+      'Future<void> _addEpubToCollection(MediaItem item, String bookKey)',
+      '  Future<void> _toggleBookCompleted(',
+    );
+    expect(
+      addToCollectionBody,
+      contains('resolveEpubBookUid(bookKey) ?? bookKey'),
+      reason: 'v83：单卡加入合集必须把 bookKey 换算成成员表键域的 uid'
+          '（换算不上沿用 bookKey，与批量档兜底口径一致）。',
+    );
+    expect(
+      addToCollectionBody,
+      contains('entryKey: entryKey'),
+      reason: '落库传换算后的 entryKey（uid）。',
+    );
+    expect(
+      addToCollectionBody,
+      isNot(contains('entryKey: bookKey')),
+      reason: '直接拿 bookKey 当合集成员 entryKey 是 v83 前的旧域——回归即红。',
+    );
     // SRT/有声书卡：有入口，entryKey 编码一致（srt → uid），详情页注入
     // 「移出合集」时隐藏（removeFromCollection 非空）。
     expect(srtActions, contains('t.add_to_collection'));

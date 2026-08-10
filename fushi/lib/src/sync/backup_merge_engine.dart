@@ -428,6 +428,44 @@ class BackupMergeEngine {
         .get();
     if (srcCols.isEmpty) return;
 
+    // v83：成员表 epub 域 entry_key = 各库自己的 epub_books.uid（本地书）或对端
+    // bookKey（透传行）。uid 是每库随机生成的本机局域串，跨库直搬必错——照
+    // Stage 1b 的 [_srcBookUidRekey] 双侧换键，但本函数是 Dart 逐行循环，改用两
+    // 张查表 map。本 map 在 [_insertMissingEpubBooks] **之后**构建（merge() 顺序
+    // 保证）：src 书刚插进本库（含 uid 撞库重生成 `_m` 后缀的）也在映射里，成员
+    // 自动 remap 到重生成后的 uid。仅 mediaType=='epub' 门控——srt/video/game
+    // 键天然稳定，误换算即数据损坏。
+    final Map<String, String> srcBookKeyByUid = <String, String>{};
+    if (await _srcTableExists('epub_books')) {
+      for (final QueryRow r in await _db
+          .customSelect('SELECT uid, book_key FROM $_srcAlias.epub_books')
+          .get()) {
+        final String uid = r.read<String>('uid');
+        if (uid.isNotEmpty) srcBookKeyByUid[uid] = r.read<String>('book_key');
+      }
+    }
+    final Map<String, String> localUidByBookKey = <String, String>{};
+    for (final QueryRow r in await _db
+        .customSelect("SELECT uid, book_key FROM epub_books WHERE uid != ''")
+        .get()) {
+      localUidByBookKey[r.read<String>('book_key')] = r.read<String>('uid');
+    }
+    // epub 键归一到 bookKey 域（墓碑匹配用——本地成员墓碑冻结在 bookKey 域）：
+    // src uid → src bookKey；查不上 = entry_key 本就在 bookKey 域（src 的透传行）
+    // 或 src 书已删的游离 uid，照抄。uid 值域 `book_<rowid>_<epoch>[_m]` 与
+    // bookKey 值域 sanitize(title) 仅在病态标题恰为 `book_<n>_<n>` 形时碰撞
+    // （§7.4 已记：概率忽略）。
+    String normalizeEpubToBookKey(String entryKey) =>
+        srcBookKeyByUid[entryKey] ?? entryKey;
+    // epub 三级回落换键（落库用）：本库有书 → 本库 uid；本库无书 → 回落
+    // bookKey 域（保持 wire 可续接，日后 sync/下载落地自动收敛）；src 也无书行
+    // → 照抄原值。无需 uid 撞库防线追加：成员表无 uid 唯一索引（复合 PK
+    // INSERT OR IGNORE 天然去重），epub_books 的 uid 重生成防线 Stage 1b 已做。
+    String rekeyEpubEntryKey(String entryKey) {
+      final String bookKey = normalizeEpubToBookKey(entryKey);
+      return localUidByBookKey[bookKey] ?? bookKey;
+    }
+
     // 本地墓碑（防复活，任务7）：合集级删除哨兵按自然键 (name, type)、成员移出墓碑按
     // (name, type, mediaType, entryKey)。用 record 集合（结构相等），避免拼接分隔符歧义。
     // 备份 DB 早于该表 schema 时无此表（防 SELECT 崩溃）——空集即无墓碑约束。
@@ -487,6 +525,17 @@ class BackupMergeEngine {
         srcToTargetId[srcId] = existing;
         continue;
       }
+      // v83：cover_source='<mediaType>|<entryKey>' 是隐藏 entryKey 载体（合集借
+      // 成员封面，tables.dart:841）。epub 借用键与成员行同律换键，否则借用断链、
+      // 封面静默回退占位（§7 风险5）。非 epub 前缀（video|/srt|/game|、NULL）
+      // 原样直搬。目标已有同名合集时不走此分支，保留目标自己的 cover_source。
+      final String? srcCover = c.read<String?>('cover_source');
+      final String epubCoverPrefix = '${MediaKind.epub.dbValue}|';
+      final String? coverForInsert =
+          (srcCover != null && srcCover.startsWith(epubCoverPrefix))
+              ? epubCoverPrefix +
+                  rekeyEpubEntryKey(srcCover.substring(epubCoverPrefix.length))
+              : srcCover;
       final int newId = await _db.customInsert(
         'INSERT INTO media_collections '
         '(name, collection_type, cover_source, sort_order, created_at) '
@@ -495,7 +544,7 @@ class BackupMergeEngine {
           Variable<String>(name),
           Variable<String>(type),
           // cover_source 可空：Variable<String> 接受 null 值 → 落 SQL NULL。
-          Variable<String>(c.read<String?>('cover_source')),
+          Variable<String>(coverForInsert),
           Variable<int>(nextSort++),
           Variable<int>(c.read<int>('created_at')),
         ],
@@ -518,12 +567,19 @@ class BackupMergeEngine {
       if (tgt == null) continue; // 合集被删除墓碑跳过或未映射：连带跳过成员。
       final String mediaType = it.read<String>('media_type');
       final String entryKey = it.read<String>('entry_key');
+      final bool isEpub = mediaType == MediaKind.epub.dbValue;
+      // 墓碑匹配在 bookKey 域：本地成员墓碑 entry_key 冻结在 bookKey 域（§4），
+      // src epub 成员先归一再比；非 epub 键值自身即稳定键，直比。
+      final String tombstoneKey =
+          isEpub ? normalizeEpubToBookKey(entryKey) : entryKey;
       final (String, String)? natural = srcIdToNatural[srcCollectionId];
       if (natural != null &&
           removedMemberKeys
-              .contains((natural.$1, natural.$2, mediaType, entryKey))) {
+              .contains((natural.$1, natural.$2, mediaType, tombstoneKey))) {
         continue; // 成员移出墓碑命中：跳过（防复活已移出成员）。
       }
+      // 落库键：epub 三级回落换到本库键域；同书的 uid 行与透传 bookKey 行换键后
+      // 可能收敛为同一键——复合 PK 上的 INSERT OR IGNORE 顺带去重。
       await _db.customStatement(
         'INSERT OR IGNORE INTO media_collection_items '
         '(collection_id, media_type, entry_key, sort_index) '
@@ -531,7 +587,7 @@ class BackupMergeEngine {
         <Object?>[
           tgt,
           mediaType,
-          entryKey,
+          isEpub ? rekeyEpubEntryKey(entryKey) : entryKey,
           it.read<int>('sort_index'),
         ],
       );

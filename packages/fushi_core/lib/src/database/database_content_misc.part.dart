@@ -137,6 +137,11 @@ mixin _FushiDbContentMisc
     return (uid == null || uid.isEmpty) ? null : uid;
   }
 
+  // uid → bookKey 反向换算口 resolveEpubBookKeyByUid（[resolveEpubBookUid]
+  // 的对偶）定义在 database_library.part.dart——墓碑键域归一
+  // （_tombstoneEntryKeyOf）在那个 mixin 里，而本 mixin 在 on 链上位于其上，
+  // 方法只能住在被依赖侧。
+
   // ── book tombstones (TODO-1195 part B) ──────────────────────────────
   /// Records that [bookKey] was deleted, so a subsequent backup MERGE import
   /// never resurrects it from an old backup. Idempotent (upsert on the PK).
@@ -554,10 +559,15 @@ mixin _FushiDbContentMisc
         await (delete(audioCues)..where((t) => t.bookKey.equals(bookKey))).go();
         await (delete(audiobooks)..where((t) => t.bookKey.equals(bookKey)))
             .go();
-        // TODO-616：同事务清 shelf_entry（mediaType='epub'、entryKey=bookKey）。
+        // TODO-616：同事务清 shelf_entry。v83 起 epub 域 entryKey = uid。
         // 若该书还登记过 'srt' 行（EPUB 附属有声书），deleteAudiobookByBookKey 已
         // 幂等清，此处只清 'epub' 行。
-        await deleteShelfEntry(MediaKind.epub, bookKey);
+        if (bookUid != null && bookUid.isNotEmpty) {
+          await deleteShelfEntry(MediaKind.epub, bookUid);
+          // v83 顺手修的历史缺口：epub 删除此前不清合集成员行 → 计数虚高、
+          // 移空自删失效、孤儿被 sync 原样发布。与 video/game 删除路径对齐。
+          await removeEntryFromAllCollections(MediaKind.epub, bookUid);
+        }
         if (tombstone) {
           await into(bookTombstones).insertOnConflictUpdate(
             BookTombstonesCompanion.insert(

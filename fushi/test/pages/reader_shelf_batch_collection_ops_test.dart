@@ -217,13 +217,15 @@ void main() {
     expect(collections.length, 1, reason: '新建一个合集');
     final List<MediaCollectionItemRow> members =
         await db.getCollectionItems(collections.single.id);
-    // EPUB entryKey = 裸 bookKey；SRT entryKey = 裸 uid（见 shelfSelectionToEntry）。
+    // v83：成员表 epub 域 entryKey = epub_books.uid（选择键解码仍产 bookKey，
+    // 批量组合在落库前换算）；SRT entryKey = 裸 uid（见 shelfSelectionToEntry）。
+    final String epubUid1 = (await db.resolveEpubBookUid('epubKey1'))!;
     expect(
       members
           .map((MediaCollectionItemRow m) => '${m.mediaType}|${m.entryKey}')
           .toSet(),
-      <String>{'epub|epubKey1', 'srt|srtUid1'},
-      reason: 'epub + srt 两张散卡都写进新合集',
+      <String>{'epub|$epubUid1', 'srt|srtUid1'},
+      reason: 'epub 散卡以稳定 uid 写进新合集（不再是漂移 bookKey），srt 以 uid',
     );
   });
 
@@ -232,7 +234,9 @@ void main() {
     await seedEpub('memberKey', '成员书');
     await seedEpub('looseKey', '散书');
     final int cid = await db.createMediaCollection('合集乙');
-    await db.addToCollection(cid, MediaKind.epub, 'memberKey');
+    // v83：成员行 entryKey = uid（书架页按 uid 折叠合集行，bookKey 行折不进去）。
+    final String memberUid = (await db.resolveEpubBookUid('memberKey'))!;
+    await db.addToCollection(cid, MediaKind.epub, memberUid);
 
     await pumpPage(tester);
     final Finder row =
@@ -254,10 +258,11 @@ void main() {
 
     final List<MediaCollectionItemRow> members =
         await db.getCollectionItems(cid);
+    final String looseUid = (await db.resolveEpubBookUid('looseKey'))!;
     expect(
       members.map((MediaCollectionItemRow m) => m.entryKey).toSet(),
-      <String>{'memberKey', 'looseKey'},
-      reason: '散卡并入现有合集',
+      <String>{memberUid, looseUid},
+      reason: '散卡以 uid 并入现有合集（v83 成员键域）',
     );
     expect((await db.getAllMediaCollections()).length, 1, reason: '不新建合集');
   });
@@ -266,7 +271,9 @@ void main() {
       (WidgetTester tester) async {
     await seedEpub('bodyKey', '正文书');
     final int cid = await db.createMediaCollection('待解散');
-    await db.addToCollection(cid, MediaKind.epub, 'bodyKey');
+    // v83：成员行 entryKey = uid（同上，bookKey 行折不进合集横排行）。
+    await db.addToCollection(
+        cid, MediaKind.epub, (await db.resolveEpubBookUid('bodyKey'))!);
 
     await pumpPage(tester);
     final Finder row =

@@ -299,8 +299,9 @@ Map<String, ({int lookups, int mines})> aggregateStatCountersByTitle(
 
 /// 纯函数：把 '<mediaType>|<entryKey>' 归属键解析成合集名。[key] 命中折叠归属的主
 /// collectionId（[primaryByEntry]，即 getPrimaryCollectionIdByEntry），再取 [namesById]
-/// 的名字；任一步缺失返回 null。锁死统计页 'epub|<bookKey>' / 'video|<bookUid>' 键契约
-/// （书架成员表 entryKey：epub=bookKey、video=bookUid）。
+/// 的名字；任一步缺失返回 null。锁死统计页 'epub|<uid>' / 'video|<bookUid>' 键契约
+/// （v83 成员表 entryKey：epub=`epub_books.uid`（调用方持 bookKey 时先换算）、
+/// video=bookUid）。
 String? statCollectionName(
   String key,
   Map<String, int> primaryByEntry,
@@ -313,7 +314,7 @@ String? statCollectionName(
 
 /// 纯函数：非合集上下文的「合集名 + 条目名」显示名解析（显示名只在渲染层拼，DB
 /// 落库保持原名——BUG-1018 惯例）。[entryKey] 是 '<mediaType>|<entryKey>' 归属键
-/// （与 [statCollectionName] 同契约：epub=bookKey / srt=srtUid / video=bookUid）；
+/// （与 [statCollectionName] 同契约：epub=uid（v83）/ srt=srtUid / video=bookUid）；
 /// 命中合集返回 (合集名, 原名)，未命中 (null, 原名)——调用方据此决定
 /// 「标题=合集名、副标题=条目名」还是「标题=条目名」。
 ({String? collectionName, String title}) resolveEntryDisplayTitle({

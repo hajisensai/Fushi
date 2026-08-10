@@ -109,7 +109,18 @@ uid 互不可比,合并引擎四张表的 SQL 必须改为经 epub_books 双侧 
    ReaderPositions/Bookmarks/RevealedImages/BookCustomCss 的读写切到 uid(FK 重建),
    bookKey 降级为 sync/备份专用派生属性。
 2. Stage 2:ShelfEntries/MediaCollectionItems entryKey 换 uid(含远端下载改键路径删除)。
-3. Stage 3:sync 协议升级 per-uid(对端能力协商,旧端回退 title)。
+3. ~~Stage 3:sync 协议升级 per-uid~~ **2026-08-10 复核后归档不做**——动机已蒸发:
+   ① 改名不断链:epub 无 raw title 改名,用户改名走 display-title override 层
+   (`display_title.dart` 红线:身份恒 raw、显示恒过门面),sync 键不动;② 同名
+   互串:零用户报告,且 per-uid 结构上修不了(uid 本机随机、映射表建立仍靠
+   title 对齐,`tables.dart` epub uid 注释是定义级契约「本列不进 wire」);
+   ③ 空标题坍缩已根治(跳过 + pruneRootSpill)。**触发条件式重启**(启动的
+   不是 per-uid 而是对应正解):a) epub raw 改名真排期 → 「wire 键冻结在存储
+   bookKey 列」微改造(~15 处 `sanitizeTtuFilename(title)` 现场派生点改读存储
+   列,零协议变更);b) 真实同名互串报告 → 内容哈希 sidecar 消歧独立立项
+   (互联走 `/api/capabilities` 能力位 additive 字段,云端 per-book manifest
+   sidecar、布局不动旧端零感知);c) 两端 uid 映射表协商在任何条件下都不是
+   正解,禁止领走。
 
 ### P4. 统计投影表塌缩为事实表
 

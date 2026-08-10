@@ -800,10 +800,11 @@ class ShelfEntries extends Table {
   /// `galgame_library_query.dart` 的视图偏好，合集归属见 [MediaCollectionItems]）。
   TextColumn get mediaType => text()();
 
-  /// 条目稳定身份：本地 = bookKey / srtUid / videoBookUid；远端 = downloadId /
-  /// video.id。远端书下载后 bookKey 漂移 → 由 _downloadRemoteBook 改键迁移（独立
-  /// 事务），归属延续。**逻辑外键**（不对本地三表加 FK：远端 entryKey 无本地表行，
-  /// 写 FK 会在插远端归属时违反约束）。孤儿由删除路径主动清理 + 读取期过滤兜底。
+  /// 条目稳定身份（v83 起 epub 域 = epub_books.uid,导入时刻定死、改标题不再
+  /// 漂移,旧的下载后改键迁移已删）：本地 = epubUid / srtUid / videoBookUid；
+  /// 远端 = 对端 bookKey（照抄透传,本地无行）/ video.id。**逻辑外键**（不对
+  /// 本地三表加 FK：远端 entryKey 无本地表行，写 FK 会在插远端归属时违反
+  /// 约束）。孤儿由删除路径主动清理 + 读取期过滤兜底。
   TextColumn get entryKey => text()();
 
   /// 自定义排序权重（拖拽回写）。无行的旧条目退化为 importedAt 倒序（向后兼容）。

@@ -381,10 +381,13 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
   }
 
   /// 该 epub bookKey 是否已折进某合集（= 合集成员，不作散卡单选/全选）。
+  /// v83：成员表 epub entryKey = uid，bookKey 经 [_epubUidByKey] 换算后查；
+  /// 换算不上（uid 缺失的异常行）沿用 bookKey——与透传行同键，仍可命中。
   bool _isEpubCollectionMember(String? bookKey) =>
       bookKey != null &&
-      _primaryCollectionByEntry
-          .containsKey(MediaKind.epub.compositeKey(bookKey));
+      _primaryCollectionByEntry.containsKey(
+        MediaKind.epub.compositeKey(_epubUidByKey[bookKey] ?? bookKey),
+      );
 
   /// 该 srt uid 是否已折进某合集。
   bool _isSrtCollectionMember(String uid) =>
@@ -633,6 +636,13 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     // `getAllMediaItems()` 是另一张表、另一套 mediaIdentifier 语义，拿它做判据
     // 会把全部选中项误判成幽灵键而整批剔光。
     final List<EpubBookRow> epubBooks = await db.getAllEpubBooks();
+    // v83：合集成员表 epub entryKey = `epub_books.uid`，而选择键解码出的身份仍是
+    // bookKey。批量组合/加合集都在本剪枝之后立即落库，借同一批行顺带刷新
+    // bookKey→uid 换算表（[_loadShelfMaps] 同款口径），保证写库前换算不吃旧值。
+    _epubUidByKey = <String, String>{
+      for (final EpubBookRow row in epubBooks)
+        if (row.uid.isNotEmpty) row.bookKey: row.uid,
+    };
     final List<SrtBook> srtBooks = await SrtBookRepository(db).listAll();
     final List<MediaCollectionRow> collections =
         await db.getAllMediaCollections();
@@ -681,6 +691,16 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     ref.invalidate(filteredBookIdsProvider);
     ref.invalidate(filteredSrtBookUidsProvider);
   }
+
+  /// v83：合集成员表的 epub entryKey 已切 `epub_books.uid`；选区解码身份
+  /// （[shelfSelectionToEntry]）与标题/封面映射仍在 bookKey 域。排序、标题匹配
+  /// 全程留在 bookKey 域，只在**落库那一步**经本函数单向换算；换算不上（书行
+  /// 被并发删除的残余竞态）沿用原值——与 addToCollection 撞外键的既有剪枝兜底
+  /// 一致，不静默丢条目。srt/video 键本就是稳定 uid，原样透传。
+  String _collectionEntryKeyFor(ShelfEntryRef ref) =>
+      ref.mediaType == MediaKind.epub
+          ? (_epubUidByKey[ref.entryKey] ?? ref.entryKey)
+          : ref.entryKey;
 
   /// 块3：批量「组合」按钮三档自适应（[classifyCombine]）。书架选择键经
   /// shelfSelectionToEntry 解码成 (mediaType, entryKey)：
@@ -778,8 +798,9 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     final int collectionId =
         await appModel.database.createMediaCollection(name);
     for (final ShelfEntryRef ref in refs) {
-      await appModel.database
-          .addToCollection(collectionId, ref.mediaType, ref.entryKey);
+      // v83：epub 落库键 = uid（[_collectionEntryKeyFor]，剪枝时已刷新换算表）。
+      await appModel.database.addToCollection(
+          collectionId, ref.mediaType, _collectionEntryKeyFor(ref));
     }
     if (!mounted) return;
     _exitSelectionMode();
@@ -794,8 +815,9 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     List<ShelfEntryRef> refs,
   ) async {
     for (final ShelfEntryRef ref in refs) {
-      await appModel.database
-          .addToCollection(collectionId, ref.mediaType, ref.entryKey);
+      // v83：epub 落库键 = uid（[_collectionEntryKeyFor]，剪枝时已刷新换算表）。
+      await appModel.database.addToCollection(
+          collectionId, ref.mediaType, _collectionEntryKeyFor(ref));
     }
     if (!mounted) return;
     _exitSelectionMode();
@@ -852,7 +874,9 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       await deleteMediaCollectionWithAssets(db, id);
     }
     for (final ShelfEntryRef ref in refs) {
-      await db.addToCollection(targetId, ref.mediaType, ref.entryKey);
+      // v83：epub 落库键 = uid（[_collectionEntryKeyFor]，剪枝时已刷新换算表）。
+      await db.addToCollection(
+          targetId, ref.mediaType, _collectionEntryKeyFor(ref));
     }
     await db.renameMediaCollection(targetId, name);
     if (!mounted) return;

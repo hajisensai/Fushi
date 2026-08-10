@@ -202,7 +202,9 @@ extension _ReaderMining on _ReaderFushiPageState {
   /// 反查当前书/有声书所属合集名（供制卡「合集名标签」用）。折叠归属跟随
   /// [FushiDatabase.getPrimaryCollectionIdByEntry] 的「最小 collectionId」语义，与书架
   /// 折叠归行一致。键构造（见 collection_grouping / shelf_ordering）：
-  /// - EPUB / 普通 EPUB-有声书 → `'epub|<bookKey>'`（[bookKey] 恒同步可用）。
+  /// - EPUB / 普通 EPUB-有声书 → `'epub|<uid>'`（v83：成员表 epub entryKey =
+  ///   `epub_books.uid`；页面手里的 [bookKey] 经 resolveEpubBookUid 换算，换算
+  ///   不上——书行已删的边缘竞态——沿用 bookKey，与旧行为同样查不中即 null）。
   /// - 纯 SRT 有声书（[_srtBookUid] 非空）→ `'srt|<uid>'`；srt-backed 有声书两身份都试
   ///   （BUG-812：可能存成 `srt|uid`，先 epub 键 miss 再回退，与 host service 同策略）。
   /// 不属任何合集 / 合集已删（孤儿）→ `null`，[buildNoteTags] 不追加。
@@ -211,11 +213,13 @@ extension _ReaderMining on _ReaderFushiPageState {
     final Map<String, int> primaryByEntry =
         await db.getPrimaryCollectionIdByEntry();
     if (primaryByEntry.isEmpty) return null;
+    final String epubEntryKey =
+        await db.resolveEpubBookUid(widget.bookKey) ?? widget.bookKey;
     final String? srtUid = _srtBookUid;
     final int? collectionId = srtUid != null
         ? (primaryByEntry[MediaKind.srt.compositeKey(srtUid)] ??
-            primaryByEntry[MediaKind.epub.compositeKey(widget.bookKey)])
-        : primaryByEntry[MediaKind.epub.compositeKey(widget.bookKey)];
+            primaryByEntry[MediaKind.epub.compositeKey(epubEntryKey)])
+        : primaryByEntry[MediaKind.epub.compositeKey(epubEntryKey)];
     if (collectionId == null) return null;
     return (await db.getMediaCollectionById(collectionId))?.name;
   }

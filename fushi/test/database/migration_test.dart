@@ -1078,7 +1078,7 @@ void main() {
       // now 31 (v30 series/shelf_entries + v31 paired peers 表). This v28 DB
       // upgrades all the way to current; TODO-894's backfill still ran (asserted
       // below). The literal had to track the bump.
-      expect(db.schemaVersion, 81,
+      expect(db.schemaVersion, 83,
           reason: 'global schemaVersion is now 38 (TODO-616 v30 + TODO-1017 '
               'v31 + TODO-1195 v32 + TODO-1204 v33 + v34 statistics_tombstones + '
               'TODO-1157 v35 stream_spec_json + TODO-1252 v36 favorite_words '
@@ -1155,7 +1155,7 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 81,
+      expect(db.schemaVersion, 83,
           reason:
               'TODO-1288 bumps schema to v37 (audiobook srt_books self-heal)');
 
@@ -1210,15 +1210,18 @@ void main() {
       expect(epubColNames, isNot(contains('id')));
 
       // reader_positions row-level preservation: both positions re-keyed from
-      // ttu_book_id -> book_key, every payload column intact, reachable via the
-      // typed getReaderPosition(bookKey). (ASCII titles sanitize verbatim.)
-      final posA = await db.getReaderPosition('AlphaBook');
+      // ttu_book_id -> book_key (v16) -> stable uid (v82), every payload column
+      // intact, reachable via the typed getReaderPosition(bookUid). (ASCII
+      // titles sanitize verbatim; bookKey 经 resolveEpubBookUid 换算后查。)
+      final String uidA = (await db.resolveEpubBookUid('AlphaBook'))!;
+      final String uidB = (await db.resolveEpubBookUid('BetaBook'))!;
+      final posA = await db.getReaderPosition(uidA);
       expect(posA, isNotNull,
           reason: 'book 1 reading position survived the re-key');
       expect(posA!.sectionIndex, 4);
       expect(posA.normCharOffset, 1234);
       expect(posA.updatedAt, 9001);
-      final posB = await db.getReaderPosition('BetaBook');
+      final posB = await db.getReaderPosition(uidB);
       expect(posB, isNotNull,
           reason: 'book 2 reading position survived the re-key');
       expect(posB!.sectionIndex, 8);
@@ -1230,13 +1233,13 @@ void main() {
       expect(posB.charOffset, -1);
 
       // bookmarks row-level preservation: the seeded bookmark re-keyed to
-      // book_key with all payload fields intact.
+      // book_key (v16) then stable uid (v82) with all payload fields intact.
       final bm = await db
-          .customSelect('SELECT book_key, section_index, norm_char_offset, '
+          .customSelect('SELECT book_uid, section_index, norm_char_offset, '
               'label, created_at, book_title FROM bookmarks')
           .get();
       expect(bm, hasLength(1), reason: 'the bookmark survived the re-key');
-      expect(bm.single.read<String>('book_key'), 'AlphaBook');
+      expect(bm.single.read<String>('book_uid'), uidA);
       expect(bm.single.read<int>('section_index'), 4);
       expect(bm.single.read<int>('norm_char_offset'), 1234);
       expect(bm.single.read<String>('label'), 'Chapter 1');
@@ -1310,7 +1313,7 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 81,
+      expect(db.schemaVersion, 83,
           reason: 'global schemaVersion is now 38 (…v35 + TODO-1252 v36 + '
               'TODO-1288 v37 audiobook srt_books self-heal + v38 unified '
               'media_collections); v29->v30 '
@@ -1361,7 +1364,7 @@ void main() {
           .map((r) => r.data['name'] as String)
           .toSet();
       expect(tableNames, containsAll(['series', 'shelf_entries']));
-      expect(db.schemaVersion, 81);
+      expect(db.schemaVersion, 83);
     });
 
     test(
@@ -1370,7 +1373,7 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 81,
+      expect(db.schemaVersion, 83,
           reason:
               'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)');
 
@@ -1404,7 +1407,7 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 81,
+      expect(db.schemaVersion, 83,
           reason:
               'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)');
 
@@ -1444,7 +1447,7 @@ void main() {
     test('fresh DB (v35) has video_books.stream_spec_json column (TODO-1157)',
         () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 81);
+      expect(db.schemaVersion, 83);
       final cols =
           await db.customSelect("PRAGMA table_info('video_books')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1475,7 +1478,7 @@ void main() {
 
     test('fresh DB (v45) has media_collections.anilist_id column', () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 81);
+      expect(db.schemaVersion, 83);
       final cols =
           await db.customSelect("PRAGMA table_info('media_collections')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1509,7 +1512,7 @@ void main() {
 
     test('fresh DB (v46) has epub_books.completed_at column', () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 81);
+      expect(db.schemaVersion, 83);
       final cols =
           await db.customSelect("PRAGMA table_info('epub_books')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1521,7 +1524,7 @@ void main() {
         'fresh DB (v36) has favorite_words.book_key + title columns (TODO-1252)',
         () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 81);
+      expect(db.schemaVersion, 83);
       final cols =
           await db.customSelect("PRAGMA table_info('favorite_words')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1557,7 +1560,7 @@ void main() {
     // 且既有合集行**一行不少、一列不改**（升级绝不能碰用户数据）。
     test('fresh DB (v64) has collection_scrape_meta table', () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 81);
+      expect(db.schemaVersion, 83);
       final rows = await db
           .customSelect(
               "SELECT name FROM sqlite_master WHERE type='table' AND name='collection_scrape_meta'")

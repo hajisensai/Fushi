@@ -5,6 +5,11 @@ import 'package:fushi_core/fushi_core.dart';
 /// shelf_ordering 纯函数守卫（widget-free）。
 /// UI v2 Phase E：旧 groupAndSortShelfEntries 已删（分组唯一真相源 =
 /// collection_grouping.groupByCollections，另有专测），本文件只余选择键解码守卫。
+///
+/// v83 契约：本解码器的 epub 域产物**仍是 bookKey**（选择键 `fushi://book/…`
+/// 编码的就是页面身份 bookKey）；成员表键域已切 epub_books.uid，bookKey→uid 的
+/// 换算发生在各消费点（批量组合 books.part / 单卡 _addEpubToCollection 等），
+/// 不在解码器——解码器保持纯字符串切片、零 DB 依赖。
 void main() {
   group('shelfSelectionToEntry', () {
     test('books surface: srt_ 前缀 → (srt, uid)', () {
