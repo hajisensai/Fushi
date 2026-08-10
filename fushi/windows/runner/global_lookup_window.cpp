@@ -2,10 +2,15 @@
 
 #include <dwmapi.h>
 #include <shlwapi.h>
+#include <wincodec.h>  // WIC：CapturePreview 的 PNG 流 → BGRA8 直通 alpha 位图
 #include <windowsx.h>  // GET_X_LPARAM / GET_KEYSTATE_WPARAM（composition 鼠标转发）
 
 #include "low_level_mouse_hook.h"
 #include "resource.h"
+
+// v14 游戏内查词的输入 kind 取值真相源。只为下面那组 static_assert 而 include：
+// InjectLookupInput 的 [kind] 是跨进程契约的一部分，在这里手抄 0..4 就又造一个漂移源。
+#include "../../../native/galgame_hook/include/voice_hook_ipc.h"
 
 #include <cmath>
 #include <fstream>
@@ -167,6 +172,108 @@ std::wstring OverlayUserDataFolder(const std::wstring& leaf) {
     return std::wstring();
   }
   return base + L"\\Fushi\\" + leaf;
+}
+
+// v14 游戏内查词 — 把 CapturePreview 吐出的 PNG 流解成契约规定的
+// **BGRA8 / 直通（非预乘）alpha / 自顶向下**（voice_hook_ipc.h 的 v14 查词区注释）。
+//
+// 🔴 必须是 `GUID_WICPixelFormat32bppBGRA` 而**不是** `…32bppPBGRA`：后者是预乘。
+// 两端都用直通是有原因的——PNG 解码出来的本来就是直通（不转换就是零成本），注入侧
+// KiriKiri 的 `ltAlpha` 也正是直通合成模式（预乘对应的是 `ltAddAlpha`）。写成预乘不会
+// 报任何错，只会让卡片的半透明边缘（圆角、阴影、文字抗锯齿）整体发暗，症状是"看起来
+// 有点脏"，在真机上极难归因到像素格式。
+//
+// pitch 恒为 width*4（正数）、行序自顶向下：这块共享内存是我们自己的，不继承任何一侧
+// 的行序怪癖（游戏 Layer 的 pitch 可能为负，那是注入侧搬运时的事）。
+//
+// [max_width]/[max_height] 是硬裁剪上界（不是缩放）：超出就按左上角切，并置 [clamped]。
+// 缩放会让卡片文字糊掉，而卡片的价值就是"与 Hibiki 自身像素一致"——宁可切也不缩。
+// 全程 HRESULT 校验、零异常（runner 以 _HAS_EXCEPTIONS=0 编译）。
+bool DecodePngStreamToStraightBgra(IStream* stream, uint32_t max_width,
+                            uint32_t max_height, std::vector<uint8_t>* out,
+                            uint32_t* out_width, uint32_t* out_height,
+                            uint32_t* out_pitch, bool* out_clamped) {
+  if (stream == nullptr || out == nullptr || out_width == nullptr ||
+      out_height == nullptr || out_pitch == nullptr || out_clamped == nullptr) {
+    return false;
+  }
+  out->clear();
+  *out_width = 0;
+  *out_height = 0;
+  *out_pitch = 0;
+  *out_clamped = false;
+  if (max_width == 0 || max_height == 0) {
+    return false;
+  }
+  LARGE_INTEGER origin;
+  origin.QuadPart = 0;
+  HRESULT hr = stream->Seek(origin, STREAM_SEEK_SET, nullptr);
+  if (FAILED(hr)) {
+    return false;
+  }
+  wil::com_ptr<IWICImagingFactory> factory;
+  hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                        IID_PPV_ARGS(&factory));
+  if (FAILED(hr) || factory == nullptr) {
+    return false;
+  }
+  wil::com_ptr<IWICBitmapDecoder> decoder;
+  hr = factory->CreateDecoderFromStream(stream, nullptr,
+                                        WICDecodeMetadataCacheOnDemand,
+                                        &decoder);
+  if (FAILED(hr) || decoder == nullptr) {
+    return false;
+  }
+  wil::com_ptr<IWICBitmapFrameDecode> frame;
+  hr = decoder->GetFrame(0, &frame);
+  if (FAILED(hr) || frame == nullptr) {
+    return false;
+  }
+  UINT src_w = 0;
+  UINT src_h = 0;
+  hr = frame->GetSize(&src_w, &src_h);
+  if (FAILED(hr) || src_w == 0 || src_h == 0) {
+    return false;
+  }
+  UINT width = src_w;
+  UINT height = src_h;
+  if (width > max_width) {
+    width = static_cast<UINT>(max_width);
+    *out_clamped = true;
+  }
+  if (height > max_height) {
+    height = static_cast<UINT>(max_height);
+    *out_clamped = true;
+  }
+  wil::com_ptr<IWICBitmapSource> converted;
+  // 直通 alpha（见函数头注释）。改成 32bppPBGRA 会静默地把卡片边缘弄暗。
+  hr = WICConvertBitmapSource(GUID_WICPixelFormat32bppBGRA, frame.get(),
+                              &converted);
+  if (FAILED(hr) || converted == nullptr) {
+    return false;
+  }
+  const uint64_t pitch = static_cast<uint64_t>(width) * 4u;
+  const uint64_t needed = pitch * height;
+  // 上界纯防御：调用方给的 max_* 已经把它压到 3MiB 量级，这里只挡住溢出/畸形帧。
+  if (needed == 0 || needed > 0x20000000ull) {  // 512MiB 硬顶
+    return false;
+  }
+  out->resize(static_cast<size_t>(needed));
+  WICRect rect;
+  rect.X = 0;
+  rect.Y = 0;
+  rect.Width = static_cast<INT>(width);
+  rect.Height = static_cast<INT>(height);
+  hr = converted->CopyPixels(&rect, static_cast<UINT>(pitch),
+                             static_cast<UINT>(needed), out->data());
+  if (FAILED(hr)) {
+    out->clear();
+    return false;
+  }
+  *out_width = static_cast<uint32_t>(width);
+  *out_height = static_cast<uint32_t>(height);
+  *out_pitch = static_cast<uint32_t>(pitch);
+  return true;
 }
 
 }  // namespace
@@ -1087,6 +1194,109 @@ void GlobalLookupWindow::ForwardCompositionMouse(UINT message, WPARAM wparam,
   const auto keys = static_cast<COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS>(
       GET_KEYSTATE_WPARAM(wparam));
   composition_controller_->SendMouseInput(kind, keys, mouse_data, point);
+}
+
+// v14 游戏内查词 — 注入侧转发来的 kind 与本地映射必须锁死在契约上。手抄 0..4 就等于
+// 在 host 侧复制一份枚举，注入侧改了这边不会红——所以直接对真相源做 static_assert。
+static_assert(fushi_voice_hook::kLookupInputMove == 0, "lookup input kind drift");
+static_assert(fushi_voice_hook::kLookupInputLeftDown == 1,
+              "lookup input kind drift");
+static_assert(fushi_voice_hook::kLookupInputLeftUp == 2,
+              "lookup input kind drift");
+static_assert(fushi_voice_hook::kLookupInputWheel == 3,
+              "lookup input kind drift");
+static_assert(fushi_voice_hook::kLookupInputLeave == 4,
+              "lookup input kind drift");
+
+bool GlobalLookupWindow::InjectLookupInput(uint32_t kind, int32_t x, int32_t y,
+                                           int32_t wheel, uint32_t keys) {
+  // 游戏内卡片没有子 HWND，输入只能经 composition controller 进 WebView2。
+  // windowed 实例在这里返回 false 而不是"看起来成功"，是为了让上层的
+  // "卡片点不动" 立刻定位到"像素源实例没开 composition"，而不是去猜坐标换算。
+  if (composition_controller_ == nullptr) {
+    return false;
+  }
+  COREWEBVIEW2_MOUSE_EVENT_KIND event_kind =
+      COREWEBVIEW2_MOUSE_EVENT_KIND_MOVE;
+  UINT32 mouse_data = 0;
+  POINT point{static_cast<LONG>(x), static_cast<LONG>(y)};
+  switch (kind) {
+    case fushi_voice_hook::kLookupInputMove:
+      event_kind = COREWEBVIEW2_MOUSE_EVENT_KIND_MOVE;
+      break;
+    case fushi_voice_hook::kLookupInputLeftDown:
+      event_kind = COREWEBVIEW2_MOUSE_EVENT_KIND_LEFT_BUTTON_DOWN;
+      break;
+    case fushi_voice_hook::kLookupInputLeftUp:
+      event_kind = COREWEBVIEW2_MOUSE_EVENT_KIND_LEFT_BUTTON_UP;
+      break;
+    case fushi_voice_hook::kLookupInputWheel:
+      event_kind = COREWEBVIEW2_MOUSE_EVENT_KIND_WHEEL;
+      // WebView2 与 WM_MOUSEWHEEL 同款：mouseData 是 WHEEL_DELTA 的倍数（有符号，
+      // 经 UINT32 传递）。注入侧填的就是游戏那边的原始 delta，这里不做二次缩放。
+      mouse_data = static_cast<UINT32>(wheel);
+      break;
+    case fushi_voice_hook::kLookupInputLeave:
+      event_kind = COREWEBVIEW2_MOUSE_EVENT_KIND_LEAVE;
+      // SDK 契约：LEAVE 必须带 (0,0)，否则 SendMouseInput 返回 E_INVALIDARG。
+      point.x = 0;
+      point.y = 0;
+      break;
+    default:
+      return false;
+  }
+  const auto virtual_keys =
+      static_cast<COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS>(keys);
+  return SUCCEEDED(composition_controller_->SendMouseInput(
+      event_kind, virtual_keys, mouse_data, point));
+}
+
+void GlobalLookupWindow::CaptureBgraAsync(uint32_t max_width,
+                                          uint32_t max_height,
+                                          BgraFrameCallback done) {
+  if (!done) {
+    return;
+  }
+  // 失败一律走同一条出口：调用方永远收得到一次 continuation，绝不出现"投帧请求
+  // 石沉大海"——那会让 Dart 侧的 present 调用永远挂着不回。
+  auto fail = [&done]() {
+    done(false, false, std::vector<uint8_t>(), 0, 0, 0);
+  };
+  if (webview_ == nullptr || !webview_ready_ || recovering_) {
+    fail();
+    return;
+  }
+  wil::com_ptr<IStream> stream;
+  stream.attach(SHCreateMemStream(nullptr, 0));
+  if (stream == nullptr) {
+    fail();
+    return;
+  }
+  // WRL 的 Callback 要求可调用对象可拷贝，而 BgraFrameCallback 只保证可移动语义可用；
+  // 包一层 shared_ptr 既满足可拷贝，又保证 continuation 只有一份状态。
+  auto sink = std::make_shared<BgraFrameCallback>(std::move(done));
+  const HRESULT hr = webview_->CapturePreview(
+      COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG, stream.get(),
+      Callback<ICoreWebView2CapturePreviewCompletedHandler>(
+          [stream, sink, max_width, max_height](HRESULT result) -> HRESULT {
+            std::vector<uint8_t> bgra;
+            uint32_t width = 0;
+            uint32_t height = 0;
+            uint32_t pitch = 0;
+            bool clamped = false;
+            const bool ok =
+                SUCCEEDED(result) &&
+                DecodePngStreamToStraightBgra(stream.get(), max_width, max_height,
+                                       &bgra, &width, &height, &pitch,
+                                       &clamped);
+            (*sink)(ok, clamped, bgra, width, height, pitch);
+            return S_OK;
+          })
+          .Get());
+  if (FAILED(hr)) {
+    // 同步失败 => 完成回调不会被调用，必须在这里补一次 continuation。
+    (*sink)(false, false, std::vector<uint8_t>(), 0, 0, 0);
+  }
 }
 
 void GlobalLookupWindow::EnsureWebView() {
