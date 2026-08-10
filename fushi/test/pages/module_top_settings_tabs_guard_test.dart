@@ -20,6 +20,7 @@ void main() {
     const String commentsOnly = '''
 // kind: MediaLibraryViewKind.settings
 /* value: GameSection.settings
+value: VideoLibrarySection.settings
 Tab(text: t.settings)
 child: const TorrentSettingsSection()
 */
@@ -35,6 +36,10 @@ child: const TorrentSettingsSection()
       _containsCode(commentsOnly, 'value: GameSection.settings'),
       isFalse,
     );
+    expect(
+      _containsCode(commentsOnly, 'value: VideoLibrarySection.settings'),
+      isFalse,
+    );
     expect(_hasSettingsTab(commentsOnly), isFalse);
     expect(
       _containsCode(commentsOnly, 'child: const TorrentSettingsSection()'),
@@ -47,6 +52,7 @@ child: const TorrentSettingsSection()
 const String decoy = '''
 kind: MediaLibraryViewKind.settings
 value: GameSection.settings
+value: VideoLibrarySection.settings
 Tab(text: t.settings)
 child: const TorrentSettingsSection()
 ''';
@@ -57,6 +63,10 @@ child: const TorrentSettingsSection()
     );
     expect(
       _containsCode(stringsOnly, 'value: GameSection.settings'),
+      isFalse,
+    );
+    expect(
+      _containsCode(stringsOnly, 'value: VideoLibrarySection.settings'),
       isFalse,
     );
     expect(_hasSettingsTab(stringsOnly), isFalse);
@@ -70,7 +80,6 @@ child: const TorrentSettingsSection()
     for (final String path in <String>[
       'lib/src/pages/implementations/home_reader_page.dart',
       'lib/src/media/manga/manga_library_page.dart',
-      'lib/src/pages/implementations/home_page.dart',
     ]) {
       expect(
         _containsCode(source(path), 'kind: MediaLibraryViewKind.settings'),
@@ -78,6 +87,17 @@ child: const TorrentSettingsSection()
         reason: '$path 顶部导航缺少设置页',
       );
     }
+
+    // #792 起视频模块从 home_page 的 MediaLibraryShell 换成独立
+    // VideoLibraryShell,设置段随之搬家——守卫针跟着扎到新位置。
+    final String video = source(
+      'lib/src/pages/implementations/video_library_shell.dart',
+    );
+    expect(
+      _containsCode(video, 'value: VideoLibrarySection.settings'),
+      isTrue,
+      reason: '视频顶部导航缺少设置页',
+    );
 
     final String game = source(
       'lib/src/pages/implementations/game_shared.dart',

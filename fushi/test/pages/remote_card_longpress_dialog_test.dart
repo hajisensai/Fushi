@@ -10,6 +10,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
@@ -151,6 +152,8 @@ void main() {
             home: Scaffold(
               body: HomeVideoPage(
                 repo: VideoBookRepository(db),
+                // #792 起远端卡所在的混排墙在 series 分区。
+                section: VideoLibrarySection.series,
                 remoteVideoClientLoader: () async => client,
                 remoteVideoDownloadDestination: (RemoteVideoInfo v) async =>
                     File('${pathProviderDir.path}/${v.id.hashCode}.mp4'),

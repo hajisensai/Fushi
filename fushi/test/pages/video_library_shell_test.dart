@@ -138,7 +138,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('页签顺序固定为首页、发现、系列、全部视频、来源', (WidgetTester tester) async {
+  testWidgets('页签顺序固定为首页、发现、系列、全部视频、来源、设置', (WidgetTester tester) async {
     await tester.pumpWidget(harness());
     await tester.pump();
 
@@ -153,6 +153,7 @@ void main() {
         VideoLibrarySection.series,
         VideoLibrarySection.allVideos,
         VideoLibrarySection.sources,
+        VideoLibrarySection.settings,
       ],
     );
     expect(

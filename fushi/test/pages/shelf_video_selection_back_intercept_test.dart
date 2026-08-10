@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
@@ -72,7 +73,11 @@ void main() {
         child: TranslationProvider(
           child: MaterialApp(
             home: Scaffold(
-              body: HomeVideoPage(repo: VideoBookRepository(db)),
+              // #792 分区化后墙卡/多选入口只在 allVideos 分区渲染。
+              body: HomeVideoPage(
+                repo: VideoBookRepository(db),
+                section: VideoLibrarySection.allVideos,
+              ),
             ),
           ),
         ),
