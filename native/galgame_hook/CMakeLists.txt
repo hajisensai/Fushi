@@ -221,6 +221,27 @@ target_compile_definitions(fushi_text_lane_ipc_test
 add_test(NAME fushi_text_lane_ipc_test
   COMMAND fushi_text_lane_ipc_test)
 
+# v14 游戏内查词区的契约级测试：各子区不重叠/不越界/8 对齐、IsLookupFrameSane 的每条
+# 拒绝理由、旧会话给 nullptr 而非野指针、以及"v14 是纯追加"这条不变量。
+add_executable(fushi_lookup_ipc_contract_test
+  tests/lookup_ipc_contract_test.cpp)
+target_include_directories(fushi_lookup_ipc_contract_test PRIVATE include)
+target_compile_definitions(fushi_lookup_ipc_contract_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_lookup_ipc_contract_test
+  COMMAND fushi_lookup_ipc_contract_test)
+
+# 游戏内查词的会话 replay：hit→frame→apply、旧帧丢弃、未开启零写入、卡片外输入不转发、
+# 会话结束清理不串数据。fixture 走 argv（与 fushi_luna_text_replay_test 同一路子）。
+add_executable(fushi_lookup_session_replay_test
+  tests/lookup_session_replay_test.cpp)
+target_include_directories(fushi_lookup_session_replay_test PRIVATE include)
+target_compile_definitions(fushi_lookup_session_replay_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_lookup_session_replay_test
+  COMMAND fushi_lookup_session_replay_test
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/kirikiri_lookup_replay.tsv")
+
 add_executable(fushi_unity_text_mesh_reassembler_test
   tests/unity_text_mesh_reassembler_test.cpp)
 target_include_directories(fushi_unity_text_mesh_reassembler_test

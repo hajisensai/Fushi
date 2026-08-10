@@ -421,6 +421,15 @@ class GalIngameLookupController {
   /// 之后再夹一次 `[0, view - card]`：[computeFrameRect] 在空间不足时会把**它算出来
   /// 的**宽高收缩，而我们要投的位图尺寸是固定的（收缩不了），所以卡片比视口还大的
   /// 退化情形要显式贴边，否则右/下会溢出到视口外被裁掉。
+  /// 测试入口：定位算法必须被**直接**测到，不许在测试里转写一份。
+  ///
+  /// 这条不是洁癖。本次改造里 replay 的判据就是「参照实现」，生产代码的收卡判据改完
+  /// 之后它照样绿——那种绿只证明参照实现自洽。定位算法同理：转写一份就等于把 bug
+  /// 复制两遍，然后互相验证说没问题。
+  @visibleForTesting
+  ({int x, int y}) debugResolveAnchor(GalLookupHit hit, int cardW, int cardH) =>
+      _resolveAnchor(hit, cardW, cardH);
+
   ({int x, int y}) _resolveAnchor(GalLookupHit hit, int cardW, int cardH) {
     if (hit.viewW <= 0 || hit.viewH <= 0) {
       // hook 没报视口（老 hook / 取不到 primaryLayer 尺寸）：退化成「字形正下方」，
