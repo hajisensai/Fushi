@@ -41,6 +41,7 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:hibiki/src/utils/misc/dashboard_remote_merge.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/migration/fushi_presence_gate.dart';
 import 'package:hibiki/src/migration/migration_prompt.dart';
 import 'package:hibiki/src/migration/migration_target_channel.dart';
 import 'package:hibiki/src/pages/implementations/migration_page.dart';
@@ -507,22 +508,31 @@ class _HomeDashboardPageState
     unawaited(_loadDashboardData());
     // Fushi 迁移 P1-3：老包换了包名，系统层面不可能原地升级，必须**主动**告知。
     // 每次启动弹一次，只有「稍后」一个退出口；已迁移（只读态）后由常驻横幅接手。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       final AppModel appModel = ref.read(appProvider);
-      unawaited(showMigrationPromptIfNeeded(
+      final bool migrated = appModel.isMigrationReadonly;
+      // BUG-1501：判据是「迁移有没有落点」，所以必须先探包再决定弹不弹、弹哪套文案。
+      // 已导出但 Fushi 不在（没装成 / 装完又被卸了）时，旧版只读、新版不存在，用户
+      // 两头落空——这属于必须主动告知，只在首页顶上留一条横幅是不够的。
+      final bool installed =
+          await const MigrationTargetChannel().isFushiInstalled();
+      if (!mounted) return;
+      await showMigrationPromptIfNeeded(
         context,
-        migrated: appModel.isMigrationReadonly,
-        title: t.migration_prompt_title,
-        body: t.migration_prompt_body,
-        migrateLabel: t.migration_prompt_action,
+        migrated: migrated,
+        fushiInstalled: installed,
+        title: migrated ? t.migration_missing_title : t.migration_prompt_title,
+        body: migrated ? t.migration_missing_body : t.migration_prompt_body,
+        migrateLabel:
+            migrated ? t.migration_download_fushi : t.migration_prompt_action,
         laterLabel: t.migration_prompt_later,
         onMigrate: () => Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => MigrationPage(appModel: appModel),
           ),
         ),
-      ));
+      );
     });
     // 阅读/观看/导入写库 → 表级变更 → 防抖后重查聚合，首页自动刷新（竞态无关：
     // 信号在写入 commit 后才发，重查读到的是已落库数据）。
@@ -2900,9 +2910,27 @@ class _MigrationReadonlyBanner extends StatelessWidget {
             const SizedBox(height: 8),
             Row(
               children: <Widget>[
-                FilledButton.tonal(
-                  onPressed: () => _channel.launchFushi(),
-                  child: Text(t.migration_open_fushi),
+                // 「打开 Fushi」只在 Fushi**当下真装着**时才给（BUG-1501）：只读态是
+                // 持久偏好，用户完全可能事后把 Fushi 卸了；那时给的按钮点下去
+                // launchFushi 返回 false 且被丢弃，表现为静默无反应。没装就把入口
+                // 换成「下载 Fushi」，指回迁移页的下载安装路径。
+                FushiPresenceGate(
+                  builder: (BuildContext context, bool installed) {
+                    if (!installed) {
+                      return FilledButton.tonal(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => MigrationPage(appModel: appModel),
+                          ),
+                        ),
+                        child: Text(t.migration_download_fushi),
+                      );
+                    }
+                    return FilledButton.tonal(
+                      onPressed: () => _channel.launchFushi(),
+                      child: Text(t.migration_open_fushi),
+                    );
+                  },
                 ),
                 const SizedBox(width: 8),
                 TextButton(

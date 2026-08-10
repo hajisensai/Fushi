@@ -3162,5 +3162,7 @@
   "migration_step_export": "Export data",
   "migration_step_import": "Import in Fushi",
   "migration_space_blocked_title": "Not enough storage",
-  "migration_size_total": "Total $size"
+  "migration_size_total": "Total $size",
+  "migration_missing_title": "Fushi is not installed",
+  "migration_missing_body": "Your data was exported, but Fushi is not on this device."
 }

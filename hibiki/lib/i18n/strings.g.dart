@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 53788 (3164 per locale)
+/// Strings: 53822 (3166 per locale)
 ///
-/// Built on 2026-08-08 at 18:15 UTC
+/// Built on 2026-08-10 at 18:37 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4218,7 +4218,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get migration_settings_entry_subtitle =>
       'Move all data to the new Fushi app';
   String get migration_intro =>
-      'Fushi is the new name of this app. Migration exports all your data in batches to a transfer folder, then Fushi imports and verifies it. Your data here stays untouched until you uninstall this app.';
+      'Fushi is Hibiki under its new name, and all further development happens there. Migration runs in two stages: this app copies your data in batches to a transfer folder in device storage (Documents/Hibiki/migration), then Fushi imports each batch and verifies it item by item. That folder lives outside app-private storage, so uninstalling this app will not wipe it. Everything is copied, never moved — nothing here is touched, so you can wait until Fushi reports a clean import before deciding whether to remove the old app.';
   String get migration_target_missing =>
       'Fushi is not installed yet. Install Fushi first, then return here.';
   String get migration_download_fushi => 'Get Fushi';
@@ -4234,12 +4234,12 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String migration_export_failed({required Object error}) =>
       'Export failed: ${error}';
   String get migration_readonly_note =>
-      'Your data has been exported to Fushi. This app is now read-only: use Fushi for reading and mining. You can re-export at any time if Fushi reports missing data.';
+      'Your data has been exported to Fushi, so this old app switched to read-only: no auto-sync, no background writes, and it no longer holds the interconnect or lookup ports (they would clash with Fushi). Read and mine in Fushi from now on. Your old data is still here untouched — if Fushi reports anything missing, come back and re-export.';
   String get migration_reexport => 'Re-export';
   String get migration_batch_core_label => 'Settings, progress & statistics';
   String get migration_prompt_title => 'Hibiki is now Fushi';
   String get migration_prompt_body =>
-      'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+      'This is the last release of Hibiki; everything from here on ships as Fushi. Because the app package name changed, Android cannot upgrade it in place — a separate app has to be installed and your data moved across. Tap below and this app will download and install Fushi for you, then hand over your books, dictionaries, audiobooks, reading progress and statistics in one pass. Nothing here is deleted along the way.';
   String get migration_prompt_action => 'Download Fushi and migrate';
   String get migration_prompt_later => 'Later';
   String get migration_prompt_details => 'See details';
@@ -4264,6 +4264,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get migration_step_import => 'Import in Fushi';
   String get migration_space_blocked_title => 'Not enough storage';
   String migration_size_total({required Object size}) => 'Total ${size}';
+  String get migration_missing_title => 'Fushi is not on this device';
+  String get migration_missing_body =>
+      'Your data has already been exported, but Fushi is not installed here — either it never finished installing, or it was uninstalled afterwards. This old app is read-only now: it will not record anything new and will not be updated, so staying here leaves you with neither app working. Install Fushi again to pick up the exported data; if the transfer folder has since been cleaned up, just re-export once from the migration page.';
 }
 
 // Path: <root>
@@ -11541,6 +11544,11 @@ class _StringsAr extends _StringsEn {
   String get migration_space_blocked_title => 'Not enough storage';
   @override
   String migration_size_total({required Object size}) => 'Total ${size}';
+  @override
+  String get migration_missing_title => 'Fushi is not installed';
+  @override
+  String get migration_missing_body =>
+      'Your data was exported, but Fushi is not on this device.';
 }
 
 // Path: <root>
@@ -18885,6 +18893,11 @@ class _StringsDe extends _StringsEn {
   String get migration_space_blocked_title => 'Not enough storage';
   @override
   String migration_size_total({required Object size}) => 'Total ${size}';
+  @override
+  String get migration_missing_title => 'Fushi is not installed';
+  @override
+  String get migration_missing_body =>
+      'Your data was exported, but Fushi is not on this device.';
 }
 
 // Path: <root>
@@ -26244,6 +26257,11 @@ class _StringsEs extends _StringsEn {
   String get migration_space_blocked_title => 'Not enough storage';
   @override
   String migration_size_total({required Object size}) => 'Total ${size}';
+  @override
+  String get migration_missing_title => 'Fushi is not installed';
+  @override
+  String get migration_missing_body =>
+      'Your data was exported, but Fushi is not on this device.';
 }
 
 // Path: <root>
@@ -33615,6 +33633,11 @@ class _StringsFr extends _StringsEn {
   String get migration_space_blocked_title => 'Not enough storage';
   @override
   String migration_size_total({required Object size}) => 'Total ${size}';
+  @override
+  String get migration_missing_title => 'Fushi is not installed';
+  @override
+  String get migration_missing_body =>
+      'Your data was exported, but Fushi is not on this device.';
 }
 
 // Path: <root>
@@ -40915,6 +40938,11 @@ class _StringsId extends _StringsEn {
   String get migration_space_blocked_title => 'Not enough storage';
   @override
   String migration_size_total({required Object size}) => 'Total ${size}';
+  @override
+  String get migration_missing_title => 'Fushi is not installed';
+  @override
+  String get migration_missing_body =>
+      'Your data was exported, but Fushi is not on this device.';
 }
 
 // Path: <root>
@@ -48261,6 +48289,11 @@ class _StringsIt extends _StringsEn {
   String get migration_space_blocked_title => 'Not enough storage';
   @override
   String migration_size_total({required Object size}) => 'Total ${size}';
+  @override
+  String get migration_missing_title => 'Fushi is not installed';
+  @override
+  String get migration_missing_body =>
+      'Your data was exported, but Fushi is not on this device.';
 }
 
 // Path: <root>
@@ -55424,6 +55457,11 @@ class _StringsJa extends _StringsEn {
   String get migration_space_blocked_title => 'Not enough storage';
   @override
   String migration_size_total({required Object size}) => 'Total ${size}';
+  @override
+  String get migration_missing_title => 'Fushi is not installed';
+  @override
+  String get migration_missing_body =>
+      'Your data was exported, but Fushi is not on this device.';
 }
 
 // Path: <root>
@@ -62591,6 +62629,11 @@ class _StringsKo extends _StringsEn {
   String get migration_space_blocked_title => 'Not enough storage';
   @override
   String migration_size_total({required Object size}) => 'Total ${size}';
+  @override
+  String get migration_missing_title => 'Fushi is not installed';
+  @override
+  String get migration_missing_body =>
+      'Your data was exported, but Fushi is not on this device.';
 }
 
 // Path: <root>
@@ -69917,6 +69960,11 @@ class _StringsNl extends _StringsEn {
   String get migration_space_blocked_title => 'Not enough storage';
   @override
   String migration_size_total({required Object size}) => 'Total ${size}';
+  @override
+  String get migration_missing_title => 'Fushi is not installed';
+  @override
+  String get migration_missing_body =>
+      'Your data was exported, but Fushi is not on this device.';
 }
 
 // Path: <root>
@@ -77256,6 +77304,11 @@ class _StringsPtBr extends _StringsEn {
   String get migration_space_blocked_title => 'Not enough storage';
   @override
   String migration_size_total({required Object size}) => 'Total ${size}';
+  @override
+  String get migration_missing_title => 'Fushi is not installed';
+  @override
+  String get migration_missing_body =>
+      'Your data was exported, but Fushi is not on this device.';
 }
 
 // Path: <root>
@@ -84579,6 +84632,11 @@ class _StringsRu extends _StringsEn {
   String get migration_space_blocked_title => 'Not enough storage';
   @override
   String migration_size_total({required Object size}) => 'Total ${size}';
+  @override
+  String get migration_missing_title => 'Fushi is not installed';
+  @override
+  String get migration_missing_body =>
+      'Your data was exported, but Fushi is not on this device.';
 }
 
 // Path: <root>
@@ -91850,6 +91908,11 @@ class _StringsTh extends _StringsEn {
   String get migration_space_blocked_title => 'Not enough storage';
   @override
   String migration_size_total({required Object size}) => 'Total ${size}';
+  @override
+  String get migration_missing_title => 'Fushi is not installed';
+  @override
+  String get migration_missing_body =>
+      'Your data was exported, but Fushi is not on this device.';
 }
 
 // Path: <root>
@@ -99153,6 +99216,11 @@ class _StringsTr extends _StringsEn {
   String get migration_space_blocked_title => 'Not enough storage';
   @override
   String migration_size_total({required Object size}) => 'Total ${size}';
+  @override
+  String get migration_missing_title => 'Fushi is not installed';
+  @override
+  String get migration_missing_body =>
+      'Your data was exported, but Fushi is not on this device.';
 }
 
 // Path: <root>
@@ -106441,6 +106509,11 @@ class _StringsVi extends _StringsEn {
   String get migration_space_blocked_title => 'Not enough storage';
   @override
   String migration_size_total({required Object size}) => 'Total ${size}';
+  @override
+  String get migration_missing_title => 'Fushi is not installed';
+  @override
+  String get migration_missing_body =>
+      'Your data was exported, but Fushi is not on this device.';
 }
 
 // Path: <root>
@@ -113148,7 +113221,7 @@ class _StringsZhCn extends _StringsEn {
   String get migration_settings_entry_subtitle => '把全部数据搬到新的 Fushi 应用';
   @override
   String get migration_intro =>
-      'Fushi 是本应用的新名字。迁移会把你的全部数据分批导出到中转目录，再由 Fushi 导入并逐项校验。在你卸载旧版之前，这里的数据原样保留。';
+      'Fushi 就是 Hibiki 改名后的新应用，后续开发和修复都在它上面。迁移分两步：这里先把数据分批复制到手机存储的中转目录（Documents/Hibiki/migration），再由 Fushi 逐批导入并逐项校验。中转目录不在应用私有目录下，卸载旧版也不会被系统清掉。全程是复制不是移动——旧版这边的数据一个字都不动，等 Fushi 校验通过之后你再决定要不要删旧版。';
   @override
   String get migration_target_missing => '尚未安装 Fushi。请先安装 Fushi，再回到这里。';
   @override
@@ -113169,7 +113242,7 @@ class _StringsZhCn extends _StringsEn {
   String migration_export_failed({required Object error}) => '导出失败：${error}';
   @override
   String get migration_readonly_note =>
-      '数据已导出到 Fushi。本应用已进入只读模式：请改用 Fushi 阅读和制卡。若 Fushi 校验发现缺失，可随时在此重新导出。';
+      '数据已经导出给 Fushi，这个旧版随即切换成只读：不再自动同步、不再后台写入，也不再占用互联与查词端口（否则会和 Fushi 抢）。请到 Fushi 里阅读和制卡。旧数据仍原样留在这里，Fushi 那边若提示有缺失，随时可以回来重新导出。';
   @override
   String get migration_reexport => '重新导出';
   @override
@@ -113178,7 +113251,7 @@ class _StringsZhCn extends _StringsEn {
   String get migration_prompt_title => 'Hibiki 已更名为 Fushi';
   @override
   String get migration_prompt_body =>
-      '本应用已更名为 Fushi 并换用新的包名，无法原地升级。点下方按钮即可自动下载 Fushi 并把书籍、词典、进度和统计全部搬过去。';
+      '这是 Hibiki 的最后一个版本，后续更新都在新应用 Fushi 上。因为换了应用包名，系统层面没法原地升级，只能装一个新 app 再把数据搬过去。点下面的按钮，这里会自动下载安装 Fushi，并把书籍、词典、有声书、阅读进度和统计整批导给它，不用你手动找文件。搬完之前旧数据原样保留。';
   @override
   String get migration_prompt_action => '下载 Fushi 并迁移';
   @override
@@ -113215,6 +113288,11 @@ class _StringsZhCn extends _StringsEn {
   String get migration_space_blocked_title => '存储空间不足';
   @override
   String migration_size_total({required Object size}) => '合计 ${size}';
+  @override
+  String get migration_missing_title => '这台设备上找不到 Fushi';
+  @override
+  String get migration_missing_body =>
+      '你的数据已经导出过，但现在这台设备上没有 Fushi——可能一直没装上，也可能装完之后被卸载了。旧版此刻是只读的：不会再写入新数据，也不会再更新，继续留在这里等于两头落空。重新装回 Fushi 就能接着用已导出的数据；如果中转目录已经被清理掉，在迁移页重新导出一次即可。';
 }
 
 // Path: <root>
@@ -120300,6 +120378,11 @@ class _StringsZhHk extends _StringsEn {
   String get migration_space_blocked_title => 'Not enough storage';
   @override
   String migration_size_total({required Object size}) => 'Total ${size}';
+  @override
+  String get migration_missing_title => 'Fushi is not installed';
+  @override
+  String get migration_missing_body =>
+      'Your data was exported, but Fushi is not on this device.';
 }
 
 /// Flat map(s) containing all translations.
@@ -126728,7 +126811,7 @@ extension on _StringsEn {
       case 'migration_settings_entry_subtitle':
         return 'Move all data to the new Fushi app';
       case 'migration_intro':
-        return 'Fushi is the new name of this app. Migration exports all your data in batches to a transfer folder, then Fushi imports and verifies it. Your data here stays untouched until you uninstall this app.';
+        return 'Fushi is Hibiki under its new name, and all further development happens there. Migration runs in two stages: this app copies your data in batches to a transfer folder in device storage (Documents/Hibiki/migration), then Fushi imports each batch and verifies it item by item. That folder lives outside app-private storage, so uninstalling this app will not wipe it. Everything is copied, never moved — nothing here is touched, so you can wait until Fushi reports a clean import before deciding whether to remove the old app.';
       case 'migration_target_missing':
         return 'Fushi is not installed yet. Install Fushi first, then return here.';
       case 'migration_download_fushi':
@@ -126748,7 +126831,7 @@ extension on _StringsEn {
       case 'migration_export_failed':
         return ({required Object error}) => 'Export failed: ${error}';
       case 'migration_readonly_note':
-        return 'Your data has been exported to Fushi. This app is now read-only: use Fushi for reading and mining. You can re-export at any time if Fushi reports missing data.';
+        return 'Your data has been exported to Fushi, so this old app switched to read-only: no auto-sync, no background writes, and it no longer holds the interconnect or lookup ports (they would clash with Fushi). Read and mine in Fushi from now on. Your old data is still here untouched — if Fushi reports anything missing, come back and re-export.';
       case 'migration_reexport':
         return 'Re-export';
       case 'migration_batch_core_label':
@@ -126756,7 +126839,7 @@ extension on _StringsEn {
       case 'migration_prompt_title':
         return 'Hibiki is now Fushi';
       case 'migration_prompt_body':
-        return 'This app has been renamed to Fushi and moved to a new package, so it cannot update in place. Tap below to download Fushi and move all your books, dictionaries, progress and statistics over automatically.';
+        return 'This is the last release of Hibiki; everything from here on ships as Fushi. Because the app package name changed, Android cannot upgrade it in place — a separate app has to be installed and your data moved across. Tap below and this app will download and install Fushi for you, then hand over your books, dictionaries, audiobooks, reading progress and statistics in one pass. Nothing here is deleted along the way.';
       case 'migration_prompt_action':
         return 'Download Fushi and migrate';
       case 'migration_prompt_later':
@@ -126792,6 +126875,10 @@ extension on _StringsEn {
         return 'Not enough storage';
       case 'migration_size_total':
         return ({required Object size}) => 'Total ${size}';
+      case 'migration_missing_title':
+        return 'Fushi is not on this device';
+      case 'migration_missing_body':
+        return 'Your data has already been exported, but Fushi is not installed here — either it never finished installing, or it was uninstalled afterwards. This old app is read-only now: it will not record anything new and will not be updated, so staying here leaves you with neither app working. Install Fushi again to pick up the exported data; if the transfer folder has since been cleaned up, just re-export once from the migration page.';
       default:
         return null;
     }
@@ -133282,6 +133369,10 @@ extension on _StringsAr {
         return 'Not enough storage';
       case 'migration_size_total':
         return ({required Object size}) => 'Total ${size}';
+      case 'migration_missing_title':
+        return 'Fushi is not installed';
+      case 'migration_missing_body':
+        return 'Your data was exported, but Fushi is not on this device.';
       default:
         return null;
     }
@@ -139794,6 +139885,10 @@ extension on _StringsDe {
         return 'Not enough storage';
       case 'migration_size_total':
         return ({required Object size}) => 'Total ${size}';
+      case 'migration_missing_title':
+        return 'Fushi is not installed';
+      case 'migration_missing_body':
+        return 'Your data was exported, but Fushi is not on this device.';
       default:
         return null;
     }
@@ -146305,6 +146400,10 @@ extension on _StringsEs {
         return 'Not enough storage';
       case 'migration_size_total':
         return ({required Object size}) => 'Total ${size}';
+      case 'migration_missing_title':
+        return 'Fushi is not installed';
+      case 'migration_missing_body':
+        return 'Your data was exported, but Fushi is not on this device.';
       default:
         return null;
     }
@@ -152822,6 +152921,10 @@ extension on _StringsFr {
         return 'Not enough storage';
       case 'migration_size_total':
         return ({required Object size}) => 'Total ${size}';
+      case 'migration_missing_title':
+        return 'Fushi is not installed';
+      case 'migration_missing_body':
+        return 'Your data was exported, but Fushi is not on this device.';
       default:
         return null;
     }
@@ -159321,6 +159424,10 @@ extension on _StringsId {
         return 'Not enough storage';
       case 'migration_size_total':
         return ({required Object size}) => 'Total ${size}';
+      case 'migration_missing_title':
+        return 'Fushi is not installed';
+      case 'migration_missing_body':
+        return 'Your data was exported, but Fushi is not on this device.';
       default:
         return null;
     }
@@ -165834,6 +165941,10 @@ extension on _StringsIt {
         return 'Not enough storage';
       case 'migration_size_total':
         return ({required Object size}) => 'Total ${size}';
+      case 'migration_missing_title':
+        return 'Fushi is not installed';
+      case 'migration_missing_body':
+        return 'Your data was exported, but Fushi is not on this device.';
       default:
         return null;
     }
@@ -172309,6 +172420,10 @@ extension on _StringsJa {
         return 'Not enough storage';
       case 'migration_size_total':
         return ({required Object size}) => 'Total ${size}';
+      case 'migration_missing_title':
+        return 'Fushi is not installed';
+      case 'migration_missing_body':
+        return 'Your data was exported, but Fushi is not on this device.';
       default:
         return null;
     }
@@ -178788,6 +178903,10 @@ extension on _StringsKo {
         return 'Not enough storage';
       case 'migration_size_total':
         return ({required Object size}) => 'Total ${size}';
+      case 'migration_missing_title':
+        return 'Fushi is not installed';
+      case 'migration_missing_body':
+        return 'Your data was exported, but Fushi is not on this device.';
       default:
         return null;
     }
@@ -185295,6 +185414,10 @@ extension on _StringsNl {
         return 'Not enough storage';
       case 'migration_size_total':
         return ({required Object size}) => 'Total ${size}';
+      case 'migration_missing_title':
+        return 'Fushi is not installed';
+      case 'migration_missing_body':
+        return 'Your data was exported, but Fushi is not on this device.';
       default:
         return null;
     }
@@ -191799,6 +191922,10 @@ extension on _StringsPtBr {
         return 'Not enough storage';
       case 'migration_size_total':
         return ({required Object size}) => 'Total ${size}';
+      case 'migration_missing_title':
+        return 'Fushi is not installed';
+      case 'migration_missing_body':
+        return 'Your data was exported, but Fushi is not on this device.';
       default:
         return null;
     }
@@ -198308,6 +198435,10 @@ extension on _StringsRu {
         return 'Not enough storage';
       case 'migration_size_total':
         return ({required Object size}) => 'Total ${size}';
+      case 'migration_missing_title':
+        return 'Fushi is not installed';
+      case 'migration_missing_body':
+        return 'Your data was exported, but Fushi is not on this device.';
       default:
         return null;
     }
@@ -204800,6 +204931,10 @@ extension on _StringsTh {
         return 'Not enough storage';
       case 'migration_size_total':
         return ({required Object size}) => 'Total ${size}';
+      case 'migration_missing_title':
+        return 'Fushi is not installed';
+      case 'migration_missing_body':
+        return 'Your data was exported, but Fushi is not on this device.';
       default:
         return null;
     }
@@ -211301,6 +211436,10 @@ extension on _StringsTr {
         return 'Not enough storage';
       case 'migration_size_total':
         return ({required Object size}) => 'Total ${size}';
+      case 'migration_missing_title':
+        return 'Fushi is not installed';
+      case 'migration_missing_body':
+        return 'Your data was exported, but Fushi is not on this device.';
       default:
         return null;
     }
@@ -217798,6 +217937,10 @@ extension on _StringsVi {
         return 'Not enough storage';
       case 'migration_size_total':
         return ({required Object size}) => 'Total ${size}';
+      case 'migration_missing_title':
+        return 'Fushi is not installed';
+      case 'migration_missing_body':
+        return 'Your data was exported, but Fushi is not on this device.';
       default:
         return null;
     }
@@ -224176,7 +224319,7 @@ extension on _StringsZhCn {
       case 'migration_settings_entry_subtitle':
         return '把全部数据搬到新的 Fushi 应用';
       case 'migration_intro':
-        return 'Fushi 是本应用的新名字。迁移会把你的全部数据分批导出到中转目录，再由 Fushi 导入并逐项校验。在你卸载旧版之前，这里的数据原样保留。';
+        return 'Fushi 就是 Hibiki 改名后的新应用，后续开发和修复都在它上面。迁移分两步：这里先把数据分批复制到手机存储的中转目录（Documents/Hibiki/migration），再由 Fushi 逐批导入并逐项校验。中转目录不在应用私有目录下，卸载旧版也不会被系统清掉。全程是复制不是移动——旧版这边的数据一个字都不动，等 Fushi 校验通过之后你再决定要不要删旧版。';
       case 'migration_target_missing':
         return '尚未安装 Fushi。请先安装 Fushi，再回到这里。';
       case 'migration_download_fushi':
@@ -224196,7 +224339,7 @@ extension on _StringsZhCn {
       case 'migration_export_failed':
         return ({required Object error}) => '导出失败：${error}';
       case 'migration_readonly_note':
-        return '数据已导出到 Fushi。本应用已进入只读模式：请改用 Fushi 阅读和制卡。若 Fushi 校验发现缺失，可随时在此重新导出。';
+        return '数据已经导出给 Fushi，这个旧版随即切换成只读：不再自动同步、不再后台写入，也不再占用互联与查词端口（否则会和 Fushi 抢）。请到 Fushi 里阅读和制卡。旧数据仍原样留在这里，Fushi 那边若提示有缺失，随时可以回来重新导出。';
       case 'migration_reexport':
         return '重新导出';
       case 'migration_batch_core_label':
@@ -224204,7 +224347,7 @@ extension on _StringsZhCn {
       case 'migration_prompt_title':
         return 'Hibiki 已更名为 Fushi';
       case 'migration_prompt_body':
-        return '本应用已更名为 Fushi 并换用新的包名，无法原地升级。点下方按钮即可自动下载 Fushi 并把书籍、词典、进度和统计全部搬过去。';
+        return '这是 Hibiki 的最后一个版本，后续更新都在新应用 Fushi 上。因为换了应用包名，系统层面没法原地升级，只能装一个新 app 再把数据搬过去。点下面的按钮，这里会自动下载安装 Fushi，并把书籍、词典、有声书、阅读进度和统计整批导给它，不用你手动找文件。搬完之前旧数据原样保留。';
       case 'migration_prompt_action':
         return '下载 Fushi 并迁移';
       case 'migration_prompt_later':
@@ -224239,6 +224382,10 @@ extension on _StringsZhCn {
         return '存储空间不足';
       case 'migration_size_total':
         return ({required Object size}) => '合计 ${size}';
+      case 'migration_missing_title':
+        return '这台设备上找不到 Fushi';
+      case 'migration_missing_body':
+        return '你的数据已经导出过，但现在这台设备上没有 Fushi——可能一直没装上，也可能装完之后被卸载了。旧版此刻是只读的：不会再写入新数据，也不会再更新，继续留在这里等于两头落空。重新装回 Fushi 就能接着用已导出的数据；如果中转目录已经被清理掉，在迁移页重新导出一次即可。';
       default:
         return null;
     }
@@ -230709,6 +230856,10 @@ extension on _StringsZhHk {
         return 'Not enough storage';
       case 'migration_size_total':
         return ({required Object size}) => 'Total ${size}';
+      case 'migration_missing_title':
+        return 'Fushi is not installed';
+      case 'migration_missing_body':
+        return 'Your data was exported, but Fushi is not on this device.';
       default:
         return null;
     }
