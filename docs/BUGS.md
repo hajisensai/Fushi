@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1403 条。点号进各自文件。
+> 共 1405 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1503](bugs/BUG-1503-sync-push-book-no-display-title.md) | ✅ | ✅ | 本端把书 push 给 host 时不带显示名（裸 epub 上传无元数据） |
+| [BUG-1502](bugs/BUG-1502-sync-override-title-lww.md) | ✅ | ✅ | 书改名跨端合并无时刻列做不了 LWW（第二次改名传不到子设备） |
 | [BUG-1497](bugs/BUG-1497-remote-download-progress-fake-importer-no-db-row.md) | ✅ | ✅ | 远端书下载进度回填测试假 importer 不落库，v82 uid 闸门后回填永不发生 |
 | [BUG-1496](bugs/BUG-1496-collection-member-entrykey-uid-test-stale.md) | ✅ | ✅ | 合集详情焦点测试用 bookKey 加成员，v83 entryKey 切 uid 后合集行不渲染 |
 | [BUG-1495](bugs/BUG-1495-dashboard-drift-watch-teardown-timer.md) | ✅ | ✅ | 首页 dashboard widget 测试全挂：drift .watch() 隔离清单漏了新增消费方 |

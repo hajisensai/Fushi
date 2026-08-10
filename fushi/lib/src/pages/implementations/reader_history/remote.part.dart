@@ -500,9 +500,11 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// EPUB 元数据（还可能因同名冲突加了 `(2)` 后缀），所以不落 override 的话，母
   /// 设备改的名字在子设备上永远看不到。
   ///
-  /// 只在**本地还没有该书的 override** 时写（与合并导入「绝不 clobber 本地」同律：
-  /// 用户在本机改过的名字优先于对端的）。host 没改过名（[RemoteBookInfo.displayTitle]
-  /// 为 null）或旧 host 不带该字段时是纯 no-op。
+  /// 裁决走 last-write-wins（BUG-1502）：host 的改名戳（`displayTitleAt`）严格晚于
+  /// 本机这行的戳才覆盖，平局保留本机，本机没有 override 则无条件采纳。所以 host
+  /// 的**第二次**改名也能落到「本机也改过名」的这台设备上，而旧 host（不带时刻 →
+  /// 0）退化成原来的 insert-if-absent，绝不覆盖本机用户刚改的名字。
+  /// host 没改过名（[RemoteBookInfo.displayTitle] 为 null）时是纯 no-op。
   Future<void> _adoptRemoteBookDisplayTitle(
     RemoteBookInfo book,
     String? localBookKey,
@@ -513,10 +515,10 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     }
     try {
       final ReaderFushiSource source = ReaderFushiSource.instance;
-      if (source.overrideTitleForBookKey(localBookKey) != null) return;
-      await source.setOverrideTitleFromMediaItem(
+      await source.adoptOverrideTitleIfNewer(
         item: source.overrideTitleMediaItemForBookKey(localBookKey),
         title: remoteTitle,
+        updatedAt: book.displayTitleAt,
       );
     } catch (e, stack) {
       ErrorLogService.instance

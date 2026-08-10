@@ -4505,8 +4505,16 @@ class $PreferencesTable extends Preferences
   late final GeneratedColumn<String> value = GeneratedColumn<String>(
       'value', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
   @override
-  List<GeneratedColumn> get $columns => [key, value];
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+      'updated_at', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns => [key, value, updatedAt];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -4529,6 +4537,10 @@ class $PreferencesTable extends Preferences
     } else if (isInserting) {
       context.missing(_valueMeta);
     }
+    if (data.containsKey('updated_at')) {
+      context.handle(_updatedAtMeta,
+          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+    }
     return context;
   }
 
@@ -4542,6 +4554,8 @@ class $PreferencesTable extends Preferences
           .read(DriftSqlType.string, data['${effectivePrefix}key'])!,
       value: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}value'])!,
+      updatedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}updated_at'])!,
     );
   }
 
@@ -4554,12 +4568,34 @@ class $PreferencesTable extends Preferences
 class PreferenceRow extends DataClass implements Insertable<PreferenceRow> {
   final String key;
   final String value;
-  const PreferenceRow({required this.key, required this.value});
+
+  /// 该行最后一次写入的毫秒戳（v84 / BUG-1502）——**跨端 LWW 的比较键**。
+  ///
+  /// 绝大多数偏好是设备设置、从不跨端合并，这一列对它们只是无害的记账。它存在
+  /// 是因为**有些偏好行是内容**：书的改名（`override_title://` 覆盖行，BUG-1488）
+  /// 跟着书走、必须跨端合并，而 `preferences` 原先只有 key/value 两列，合并端
+  /// 无从判断「谁更新」，只能退化成 insert-if-absent —— 母设备**第二次**改名
+  /// 就传不到已有 override 的子设备了。
+  ///
+  /// **默认 0 = 「时刻未知」，是刻意的取舍**：v84 迁移不给存量行填迁移时刻。
+  /// 填迁移时刻会让「谁赢」由两台设备各自的升级时间决定（后升级的一侧无条件
+  /// 覆盖先升级的一侧，用户什么都没做却发生覆盖）；取 0 则存量行彼此平局，
+  /// 而 LWW 的平局规则是「保留本机」——正好等于升级前的 insert-if-absent 行为，
+  /// 零回归；任何一侧**真正改过一次名**之后（时刻 > 0）立刻胜出。同理，旧对端
+  /// 发来的无时刻数据一律按 0 收，永远不会覆盖本机改过的名字。
+  ///
+  /// 写入方：[FushiDatabase.setPref] / `setPrefs` / `compareAndSetPref` 填
+  /// `now`；跨端采纳走 [FushiDatabase.setPrefIfNewer]，**填对端的时刻而不是
+  /// now**（填 now 会让本机永远最新，母设备的下一次改名再也传不进来）。
+  final int updatedAt;
+  const PreferenceRow(
+      {required this.key, required this.value, required this.updatedAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['key'] = Variable<String>(key);
     map['value'] = Variable<String>(value);
+    map['updated_at'] = Variable<int>(updatedAt);
     return map;
   }
 
@@ -4567,6 +4603,7 @@ class PreferenceRow extends DataClass implements Insertable<PreferenceRow> {
     return PreferencesCompanion(
       key: Value(key),
       value: Value(value),
+      updatedAt: Value(updatedAt),
     );
   }
 
@@ -4576,6 +4613,7 @@ class PreferenceRow extends DataClass implements Insertable<PreferenceRow> {
     return PreferenceRow(
       key: serializer.fromJson<String>(json['key']),
       value: serializer.fromJson<String>(json['value']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
     );
   }
   @override
@@ -4584,17 +4622,21 @@ class PreferenceRow extends DataClass implements Insertable<PreferenceRow> {
     return <String, dynamic>{
       'key': serializer.toJson<String>(key),
       'value': serializer.toJson<String>(value),
+      'updatedAt': serializer.toJson<int>(updatedAt),
     };
   }
 
-  PreferenceRow copyWith({String? key, String? value}) => PreferenceRow(
+  PreferenceRow copyWith({String? key, String? value, int? updatedAt}) =>
+      PreferenceRow(
         key: key ?? this.key,
         value: value ?? this.value,
+        updatedAt: updatedAt ?? this.updatedAt,
       );
   PreferenceRow copyWithCompanion(PreferencesCompanion data) {
     return PreferenceRow(
       key: data.key.present ? data.key.value : this.key,
       value: data.value.present ? data.value.value : this.value,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
   }
 
@@ -4602,53 +4644,64 @@ class PreferenceRow extends DataClass implements Insertable<PreferenceRow> {
   String toString() {
     return (StringBuffer('PreferenceRow(')
           ..write('key: $key, ')
-          ..write('value: $value')
+          ..write('value: $value, ')
+          ..write('updatedAt: $updatedAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(key, value);
+  int get hashCode => Object.hash(key, value, updatedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is PreferenceRow &&
           other.key == this.key &&
-          other.value == this.value);
+          other.value == this.value &&
+          other.updatedAt == this.updatedAt);
 }
 
 class PreferencesCompanion extends UpdateCompanion<PreferenceRow> {
   final Value<String> key;
   final Value<String> value;
+  final Value<int> updatedAt;
   final Value<int> rowid;
   const PreferencesCompanion({
     this.key = const Value.absent(),
     this.value = const Value.absent(),
+    this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   PreferencesCompanion.insert({
     required String key,
     required String value,
+    this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : key = Value(key),
         value = Value(value);
   static Insertable<PreferenceRow> custom({
     Expression<String>? key,
     Expression<String>? value,
+    Expression<int>? updatedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (key != null) 'key': key,
       if (value != null) 'value': value,
+      if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
 
   PreferencesCompanion copyWith(
-      {Value<String>? key, Value<String>? value, Value<int>? rowid}) {
+      {Value<String>? key,
+      Value<String>? value,
+      Value<int>? updatedAt,
+      Value<int>? rowid}) {
     return PreferencesCompanion(
       key: key ?? this.key,
       value: value ?? this.value,
+      updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -4662,6 +4715,9 @@ class PreferencesCompanion extends UpdateCompanion<PreferenceRow> {
     if (value.present) {
       map['value'] = Variable<String>(value.value);
     }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -4673,6 +4729,7 @@ class PreferencesCompanion extends UpdateCompanion<PreferenceRow> {
     return (StringBuffer('PreferencesCompanion(')
           ..write('key: $key, ')
           ..write('value: $value, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -11945,10 +12002,11 @@ class ShelfEntryRow extends DataClass implements Insertable<ShelfEntryRow> {
   /// `galgame_library_query.dart` 的视图偏好，合集归属见 [MediaCollectionItems]）。
   final String mediaType;
 
-  /// 条目稳定身份：本地 = bookKey / srtUid / videoBookUid；远端 = downloadId /
-  /// video.id。远端书下载后 bookKey 漂移 → 由 _downloadRemoteBook 改键迁移（独立
-  /// 事务），归属延续。**逻辑外键**（不对本地三表加 FK：远端 entryKey 无本地表行，
-  /// 写 FK 会在插远端归属时违反约束）。孤儿由删除路径主动清理 + 读取期过滤兜底。
+  /// 条目稳定身份（v83 起 epub 域 = epub_books.uid,导入时刻定死、改标题不再
+  /// 漂移,旧的下载后改键迁移已删）：本地 = epubUid / srtUid / videoBookUid；
+  /// 远端 = 对端 bookKey（照抄透传,本地无行）/ video.id。**逻辑外键**（不对
+  /// 本地三表加 FK：远端 entryKey 无本地表行，写 FK 会在插远端归属时违反
+  /// 约束）。孤儿由删除路径主动清理 + 读取期过滤兜底。
   final String entryKey;
 
   /// 自定义排序权重（拖拽回写）。无行的旧条目退化为 importedAt 倒序（向后兼容）。
@@ -41447,12 +41505,14 @@ typedef $$PreferencesTableCreateCompanionBuilder = PreferencesCompanion
     Function({
   required String key,
   required String value,
+  Value<int> updatedAt,
   Value<int> rowid,
 });
 typedef $$PreferencesTableUpdateCompanionBuilder = PreferencesCompanion
     Function({
   Value<String> key,
   Value<String> value,
+  Value<int> updatedAt,
   Value<int> rowid,
 });
 
@@ -41470,6 +41530,9 @@ class $$PreferencesTableFilterComposer
 
   ColumnFilters<String> get value => $composableBuilder(
       column: $table.value, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
 }
 
 class $$PreferencesTableOrderingComposer
@@ -41486,6 +41549,9 @@ class $$PreferencesTableOrderingComposer
 
   ColumnOrderings<String> get value => $composableBuilder(
       column: $table.value, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
 }
 
 class $$PreferencesTableAnnotationComposer
@@ -41502,6 +41568,9 @@ class $$PreferencesTableAnnotationComposer
 
   GeneratedColumn<String> get value =>
       $composableBuilder(column: $table.value, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
 }
 
 class $$PreferencesTableTableManager extends RootTableManager<
@@ -41532,21 +41601,25 @@ class $$PreferencesTableTableManager extends RootTableManager<
           updateCompanionCallback: ({
             Value<String> key = const Value.absent(),
             Value<String> value = const Value.absent(),
+            Value<int> updatedAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               PreferencesCompanion(
             key: key,
             value: value,
+            updatedAt: updatedAt,
             rowid: rowid,
           ),
           createCompanionCallback: ({
             required String key,
             required String value,
+            Value<int> updatedAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               PreferencesCompanion.insert(
             key: key,
             value: value,
+            updatedAt: updatedAt,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
