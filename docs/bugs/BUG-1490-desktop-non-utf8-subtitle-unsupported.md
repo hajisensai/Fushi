@@ -31,7 +31,7 @@
   `catch (_)` 吞成 0 条弹幕。
 
 ### 修复
-- **[x] ① 已修复** — 提交 `<pending>`
+- **[x] ① 已修复** — 提交 `e98dc5a5b6`
   1. `packages/fushi_audio/lib/src/parsers/text_file_io.dart` 重写解码策略，**纯 Dart、零新依赖**：
      `detectEncodingFromBom`（UTF-32 LE/BE 优先于 UTF-16 LE/BE，消除 `FF FE 00 00` 与 `FF FE`
      的前缀歧义）→ `detectBomlessUtf16`（无 BOM 启发式：某奇偶位 `0x00` 占比 >30% 且另一位 <5%）
@@ -51,7 +51,7 @@
      `_subtitleFailureMessage`：只有 `unsupportedFormat` / `extractionFailed` 仍说「图形或不支持的轨」，
      `fileUnreadable` / `parseFailed` 改用新 key `video_subtitle_read_failed`
      （「无法读取该字幕文件（内容损坏或为空）」）。
-- **[x] ② 已加自动化测试** — 提交 `<pending>`
+- **[x] ② 已加自动化测试** — 提交 `e98dc5a5b6`
   - `fushi/test/media/audiobook/text_file_io_encoding_test.dart`（33 条）：BOM 判定全枚举、
     UTF-32/UTF-16 前缀歧义、无 BOM UTF-16 启发式正负例、代理对往返、
     真文件端到端（UTF-8 / UTF-8+BOM / UTF-16LE+BOM / UTF-16BE+BOM / UTF-16LE 无 BOM /
