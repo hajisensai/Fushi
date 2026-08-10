@@ -3297,5 +3297,6 @@
   "video_external_categories_invalid": "Categories must be comma-separated numeric IDs.",
   "video_download_path_mapping_invalid": "Enter a profile ID, remote root, and absolute local root.",
   "video_opensubtitles_endpoint": "API endpoint",
-  "video_download_target_source_empty": "No locally accessible video source is available. Add one on the Sources tab first."
+  "video_download_target_source_empty": "No locally accessible video source is available. Add one on the Sources tab first.",
+  "video_subtitle_read_failed": "Couldn't read this subtitle file (damaged or empty): $label"
 }

@@ -47,7 +47,7 @@ void main() {
   });
 
   test('_selectSubtitleSource 在抽取前后包裹遮罩（show…try/finally hide）', () {
-    // 截取 _selectSubtitleSource 方法体，断言遮罩 show 在 loadCuesForSource 之前、
+    // 截取 _selectSubtitleSource 方法体，断言遮罩 show 在 loadSubtitleCueResult 之前、
     // hide 在 finally 里，保证任何返回/异常路径都会收起遮罩、不留死遮罩。
     // 上界=方法体的右花括号（花括号配对），不再是 `loadAt + 200` 定长窗口：
     // try/finally 到 hide 之间多写两行（如加一条 OSD 提示）就会把 hide 挤出旧
@@ -55,8 +55,9 @@ void main() {
     // try/finally/hide」这条语义不放松（不是拿整个方法体去 contains）。
     final String method =
         methodBody(src, 'Future<bool> _selectSubtitleSource(');
-    final int loadAt = method.indexOf('loadCuesForSource(source, videoPath');
-    expect(loadAt, greaterThan(-1), reason: '缺 loadCuesForSource 抽取调用');
+    final int loadAt =
+        method.indexOf('loadSubtitleCueResult(source, videoPath');
+    expect(loadAt, greaterThan(-1), reason: '缺 loadSubtitleCueResult 抽取调用');
 
     final int showAt = method.indexOf('_showSubtitleLoadingOverlay();');
     expect(showAt, greaterThan(-1), reason: '缺遮罩 show 调用');

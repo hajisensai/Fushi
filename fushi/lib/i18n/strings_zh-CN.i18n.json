@@ -3297,5 +3297,6 @@
   "video_external_categories_invalid": "分类必须是用逗号分隔的数字 ID。",
   "video_download_path_mapping_invalid": "请输入配置 ID、远程根目录和本机绝对根目录。",
   "video_opensubtitles_endpoint": "API 端点",
-  "video_download_target_source_empty": "没有可访问的本地视频来源。请先在来源页添加。"
+  "video_download_target_source_empty": "没有可访问的本地视频来源。请先在来源页添加。",
+  "video_subtitle_read_failed": "无法读取该字幕文件（内容损坏或为空）：$label"
 }
