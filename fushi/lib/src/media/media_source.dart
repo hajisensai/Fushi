@@ -9,6 +9,7 @@ import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/override_title_key.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -476,14 +477,20 @@ abstract class MediaSource {
   ///
   /// BUG-1317：只含 `mediaIdentifier`，不含任何源键——override 跟着**条目**走。
   String getOverrideTitleKey(MediaItem item) =>
-      'override_title://${item.mediaIdentifier}';
+      overrideTitleKeyFor(item.mediaIdentifier);
+
+  /// [getOverrideTitleKey] 的纯函数形态：手上只有 `mediaIdentifier`、拿不到
+  /// [MediaItem] 的层（互联 host 清单、备份 / 合并的 SQL 谓词）用它，避免各自
+  /// 硬编码 `override_title://` 前缀导致键形状漂移。
+  static String overrideTitleKeyFor(String mediaIdentifier) =>
+      '$kOverrideTitleKeyMarker$mediaIdentifier';
 
   /// BUG-1317 之前的旧书名键形态（源键出现两次）。只用于读取期回退与清除。
   static String legacyOverrideTitleKey({
     required String sourceId,
     required String mediaIdentifier,
   }) =>
-      'override_title://$sourceId/$sourceId/$mediaIdentifier';
+      '$kOverrideTitleKeyMarker$sourceId/$sourceId/$mediaIdentifier';
 
   /// The map value used to store the override thumbnail of an item.
   ///

@@ -333,7 +333,18 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// [overrideStore]，回退位置取自 `this` 的 [legacyOverrideStores]（书族三源全在
   /// 内），所以本处填哪个源键都读到同一个值。保留 `uniqueKey` 只因它对本类自洽。
   String? _overrideTitleForIdentifier(String mediaIdentifier) {
-    return getOverrideTitleFromMediaItem(MediaItem(
+    return getOverrideTitleFromMediaItem(
+        overrideTitleMediaItemForIdentifier(mediaIdentifier));
+  }
+
+  /// 只为 override 书名读写而合成的**最小 [MediaItem]**（BUG-1488 提取为公开）。
+  ///
+  /// `canEdit: true` 是硬要求：[getOverrideTitleFromMediaItem] 与
+  /// [setOverrideTitleFromMediaItem] 在 `!canEdit` 时**静默失效**（读返 null、
+  /// 写…也照写但读不回来）。手上只有 bookKey 的写入方（互联下载后收下 host 改名）
+  /// 必须复用本入口，别再各自 new 一个 MediaItem 踩这个无报错的坑。
+  MediaItem overrideTitleMediaItemForIdentifier(String mediaIdentifier) {
+    return MediaItem(
       mediaIdentifier: mediaIdentifier,
       title: '',
       mediaTypeIdentifier: mediaType.uniqueKey,
@@ -342,8 +353,12 @@ class ReaderFushiSource extends ReaderMediaSource {
       duration: 1,
       canDelete: false,
       canEdit: true,
-    ));
+    );
   }
+
+  /// [overrideTitleMediaItemForIdentifier] 的 bookKey 便捷形态。
+  MediaItem overrideTitleMediaItemForBookKey(String bookKey) =>
+      overrideTitleMediaItemForIdentifier(mediaIdentifierFor(bookKey));
 
   /// BUG-220: EPUB books carry an editable author column, so expose author
   /// editing in the media edit dialog.
