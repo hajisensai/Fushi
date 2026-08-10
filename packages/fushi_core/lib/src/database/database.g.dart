@@ -3916,6 +3916,13 @@ class $EpubBooksTable extends EpubBooks
   late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
       'book_key', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _uidMeta = const VerificationMeta('uid');
+  @override
+  late final GeneratedColumn<String> uid = GeneratedColumn<String>(
+      'uid', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
   static const VerificationMeta _titleMeta = const VerificationMeta('title');
   @override
   late final GeneratedColumn<String> title = GeneratedColumn<String>(
@@ -4005,6 +4012,7 @@ class $EpubBooksTable extends EpubBooks
   @override
   List<GeneratedColumn> get $columns => [
         bookKey,
+        uid,
         title,
         author,
         coverPath,
@@ -4035,6 +4043,10 @@ class $EpubBooksTable extends EpubBooks
           bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta));
     } else if (isInserting) {
       context.missing(_bookKeyMeta);
+    }
+    if (data.containsKey('uid')) {
+      context.handle(
+          _uidMeta, uid.isAcceptableOrUnknown(data['uid']!, _uidMeta));
     }
     if (data.containsKey('title')) {
       context.handle(
@@ -4129,6 +4141,8 @@ class $EpubBooksTable extends EpubBooks
     return EpubBookRow(
       bookKey: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}book_key'])!,
+      uid: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}uid'])!,
       title: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
       author: attachedDatabase.typeMapping
@@ -4168,6 +4182,18 @@ class $EpubBooksTable extends EpubBooks
 
 class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   final String bookKey;
+
+  /// v81（P3 Stage 1，数据层重构 2026-08）：书的**本机稳定身份**。bookKey 由
+  /// 用户可见可改的标题派生（改名 = 身份变 = 十来张子表连坐改键，这正是它当
+  /// 头号根因的原因）；本列是导入时生成一次、此后永不变的机器局域 uid
+  /// （`book_<rowid/时刻>` 形，[generateEpubBookUid]），为后续把
+  /// ReaderPositions/Bookmarks/RevealedImages/BookCustomCss 等子表键切过来
+  /// （Stage 1b）与最终支持改名铺地基——v39 给视频先落 bookUid 列、v76 展示层
+  /// 才收尾的同款两步走。**wire/sync/备份仍走 bookKey**（title 派生键契约冻
+  /// 结），本列不进 wire；跨库合并经 bookKey 对齐后各自保留本机 uid。
+  /// 唯一性由独立唯一索引保证（迁移路径 ADD COLUMN 不能带 UNIQUE）；插入时
+  /// 未携带则由 [insertEpubBook] 单点自动生成，调用方零改动。
+  final String uid;
   final String title;
   final String? author;
   final String? coverPath;
@@ -4202,6 +4228,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   final int? sourceId;
   const EpubBookRow(
       {required this.bookKey,
+      required this.uid,
       required this.title,
       this.author,
       this.coverPath,
@@ -4220,6 +4247,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['book_key'] = Variable<String>(bookKey);
+    map['uid'] = Variable<String>(uid);
     map['title'] = Variable<String>(title);
     if (!nullToAbsent || author != null) {
       map['author'] = Variable<String>(author);
@@ -4254,6 +4282,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   EpubBooksCompanion toCompanion(bool nullToAbsent) {
     return EpubBooksCompanion(
       bookKey: Value(bookKey),
+      uid: Value(uid),
       title: Value(title),
       author:
           author == null && nullToAbsent ? const Value.absent() : Value(author),
@@ -4289,6 +4318,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return EpubBookRow(
       bookKey: serializer.fromJson<String>(json['bookKey']),
+      uid: serializer.fromJson<String>(json['uid']),
       title: serializer.fromJson<String>(json['title']),
       author: serializer.fromJson<String?>(json['author']),
       coverPath: serializer.fromJson<String?>(json['coverPath']),
@@ -4310,6 +4340,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'bookKey': serializer.toJson<String>(bookKey),
+      'uid': serializer.toJson<String>(uid),
       'title': serializer.toJson<String>(title),
       'author': serializer.toJson<String?>(author),
       'coverPath': serializer.toJson<String?>(coverPath),
@@ -4329,6 +4360,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
 
   EpubBookRow copyWith(
           {String? bookKey,
+          String? uid,
           String? title,
           Value<String?> author = const Value.absent(),
           Value<String?> coverPath = const Value.absent(),
@@ -4345,6 +4377,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           Value<int?> sourceId = const Value.absent()}) =>
       EpubBookRow(
         bookKey: bookKey ?? this.bookKey,
+        uid: uid ?? this.uid,
         title: title ?? this.title,
         author: author.present ? author.value : this.author,
         coverPath: coverPath.present ? coverPath.value : this.coverPath,
@@ -4366,6 +4399,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   EpubBookRow copyWithCompanion(EpubBooksCompanion data) {
     return EpubBookRow(
       bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
+      uid: data.uid.present ? data.uid.value : this.uid,
       title: data.title.present ? data.title.value : this.title,
       author: data.author.present ? data.author.value : this.author,
       coverPath: data.coverPath.present ? data.coverPath.value : this.coverPath,
@@ -4398,6 +4432,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   String toString() {
     return (StringBuffer('EpubBookRow(')
           ..write('bookKey: $bookKey, ')
+          ..write('uid: $uid, ')
           ..write('title: $title, ')
           ..write('author: $author, ')
           ..write('coverPath: $coverPath, ')
@@ -4419,6 +4454,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   @override
   int get hashCode => Object.hash(
       bookKey,
+      uid,
       title,
       author,
       coverPath,
@@ -4438,6 +4474,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       identical(this, other) ||
       (other is EpubBookRow &&
           other.bookKey == this.bookKey &&
+          other.uid == this.uid &&
           other.title == this.title &&
           other.author == this.author &&
           other.coverPath == this.coverPath &&
@@ -4456,6 +4493,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
 
 class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
   final Value<String> bookKey;
+  final Value<String> uid;
   final Value<String> title;
   final Value<String?> author;
   final Value<String?> coverPath;
@@ -4473,6 +4511,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
   final Value<int> rowid;
   const EpubBooksCompanion({
     this.bookKey = const Value.absent(),
+    this.uid = const Value.absent(),
     this.title = const Value.absent(),
     this.author = const Value.absent(),
     this.coverPath = const Value.absent(),
@@ -4491,6 +4530,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
   });
   EpubBooksCompanion.insert({
     required String bookKey,
+    this.uid = const Value.absent(),
     required String title,
     this.author = const Value.absent(),
     this.coverPath = const Value.absent(),
@@ -4515,6 +4555,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
         importedAt = Value(importedAt);
   static Insertable<EpubBookRow> custom({
     Expression<String>? bookKey,
+    Expression<String>? uid,
     Expression<String>? title,
     Expression<String>? author,
     Expression<String>? coverPath,
@@ -4533,6 +4574,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
   }) {
     return RawValuesInsertable({
       if (bookKey != null) 'book_key': bookKey,
+      if (uid != null) 'uid': uid,
       if (title != null) 'title': title,
       if (author != null) 'author': author,
       if (coverPath != null) 'cover_path': coverPath,
@@ -4553,6 +4595,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
 
   EpubBooksCompanion copyWith(
       {Value<String>? bookKey,
+      Value<String>? uid,
       Value<String>? title,
       Value<String?>? author,
       Value<String?>? coverPath,
@@ -4570,6 +4613,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       Value<int>? rowid}) {
     return EpubBooksCompanion(
       bookKey: bookKey ?? this.bookKey,
+      uid: uid ?? this.uid,
       title: title ?? this.title,
       author: author ?? this.author,
       coverPath: coverPath ?? this.coverPath,
@@ -4593,6 +4637,9 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     final map = <String, Expression>{};
     if (bookKey.present) {
       map['book_key'] = Variable<String>(bookKey.value);
+    }
+    if (uid.present) {
+      map['uid'] = Variable<String>(uid.value);
     }
     if (title.present) {
       map['title'] = Variable<String>(title.value);
@@ -4646,6 +4693,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
   String toString() {
     return (StringBuffer('EpubBooksCompanion(')
           ..write('bookKey: $bookKey, ')
+          ..write('uid: $uid, ')
           ..write('title: $title, ')
           ..write('author: $author, ')
           ..write('coverPath: $coverPath, ')
@@ -41640,6 +41688,7 @@ typedef $$MediaSourcesTableProcessedTableManager = ProcessedTableManager<
         bool videoDownloadSubscriptionsRefs})>;
 typedef $$EpubBooksTableCreateCompanionBuilder = EpubBooksCompanion Function({
   required String bookKey,
+  Value<String> uid,
   required String title,
   Value<String?> author,
   Value<String?> coverPath,
@@ -41658,6 +41707,7 @@ typedef $$EpubBooksTableCreateCompanionBuilder = EpubBooksCompanion Function({
 });
 typedef $$EpubBooksTableUpdateCompanionBuilder = EpubBooksCompanion Function({
   Value<String> bookKey,
+  Value<String> uid,
   Value<String> title,
   Value<String?> author,
   Value<String?> coverPath,
@@ -41734,6 +41784,9 @@ class $$EpubBooksTableFilterComposer
   });
   ColumnFilters<String> get bookKey => $composableBuilder(
       column: $table.bookKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get uid => $composableBuilder(
+      column: $table.uid, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get title => $composableBuilder(
       column: $table.title, builder: (column) => ColumnFilters(column));
@@ -41851,6 +41904,9 @@ class $$EpubBooksTableOrderingComposer
   ColumnOrderings<String> get bookKey => $composableBuilder(
       column: $table.bookKey, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get uid => $composableBuilder(
+      column: $table.uid, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get title => $composableBuilder(
       column: $table.title, builder: (column) => ColumnOrderings(column));
 
@@ -41926,6 +41982,9 @@ class $$EpubBooksTableAnnotationComposer
   });
   GeneratedColumn<String> get bookKey =>
       $composableBuilder(column: $table.bookKey, builder: (column) => column);
+
+  GeneratedColumn<String> get uid =>
+      $composableBuilder(column: $table.uid, builder: (column) => column);
 
   GeneratedColumn<String> get title =>
       $composableBuilder(column: $table.title, builder: (column) => column);
@@ -42054,6 +42113,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
               $$EpubBooksTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<String> bookKey = const Value.absent(),
+            Value<String> uid = const Value.absent(),
             Value<String> title = const Value.absent(),
             Value<String?> author = const Value.absent(),
             Value<String?> coverPath = const Value.absent(),
@@ -42072,6 +42132,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
           }) =>
               EpubBooksCompanion(
             bookKey: bookKey,
+            uid: uid,
             title: title,
             author: author,
             coverPath: coverPath,
@@ -42090,6 +42151,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
           ),
           createCompanionCallback: ({
             required String bookKey,
+            Value<String> uid = const Value.absent(),
             required String title,
             Value<String?> author = const Value.absent(),
             Value<String?> coverPath = const Value.absent(),
@@ -42108,6 +42170,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
           }) =>
               EpubBooksCompanion.insert(
             bookKey: bookKey,
+            uid: uid,
             title: title,
             author: author,
             coverPath: coverPath,

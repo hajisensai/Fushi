@@ -514,7 +514,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 80;
+  int get schemaVersion => 81;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -2071,9 +2071,35 @@ class FushiDatabase extends _$FushiDatabase
               await customStatement('DROP TABLE media_items');
             }
           }
+          if (from < 81) {
+            // v81（P3 Stage 1：书身份地基）：epub_books 加本机稳定 uid 列。
+            // 存量回填 `book_<rowid>_<epoch>`——rowid 保批内唯一，与导入路径
+            // 的 [generateEpubBookUid]（时刻+计数器）同一命名空间不同后缀形，
+            // 不可能撞。回填后建独立唯一索引（ADD COLUMN 不能带 UNIQUE；这条
+            // 索引也刻意**不进 _ensureIndexes** ——那个清单会被更早的迁移步
+            // 调用，彼时列还不存在会当场崩，见 onCreate 侧的成对内联）。
+            if (await _tableExists('epub_books')) {
+              if (!await _columnExists('epub_books', 'uid')) {
+                await customStatement(
+                    "ALTER TABLE epub_books ADD COLUMN uid TEXT NOT NULL "
+                    "DEFAULT ''");
+                await customStatement(
+                    "UPDATE epub_books SET uid = 'book_' || rowid || '_' || "
+                    "strftime('%s','now') WHERE uid = ''");
+              }
+              await customStatement(
+                  'CREATE UNIQUE INDEX IF NOT EXISTS idx_epub_books_uid '
+                  "ON epub_books (uid) WHERE uid != ''");
+            }
+          }
         },
         onCreate: (m) async {
           await m.createAll();
+          // 与 v81 步成对：uid 唯一索引不进 _ensureIndexes（会被早期迁移步在
+          // 列不存在时调用），fresh 库在此内联补上。
+          await customStatement(
+              'CREATE UNIQUE INDEX IF NOT EXISTS idx_epub_books_uid '
+              "ON epub_books (uid) WHERE uid != ''");
           await _ensureIndexes();
         },
         beforeOpen: (details) async {
@@ -2807,6 +2833,15 @@ class FushiDatabase extends _$FushiDatabase
   static const String statSourceBook = 'book';
   static const String statSourceVideo = 'video';
 }
+
+int _epubBookUidCounter = 0;
+
+/// 书的本机稳定 uid 生成（v81 / P3 Stage 1）：`book_<微秒时刻>_<进程内计数>`。
+/// 与迁移回填的 `book_<rowid>_<秒时刻>` 同命名空间不同后缀形，互不相撞；
+/// 进程内计数器兜同微秒批量导入。**机器局域**身份，不进 wire（那边仍是
+/// bookKey）；跨设备无需一致。
+String generateEpubBookUid() => 'book_${DateTime.now().microsecondsSinceEpoch}_'
+    '${_epubBookUidCounter++}';
 
 /// Mutable accumulator for reading_statistics merge during v16 migration.
 class _StatAccum {

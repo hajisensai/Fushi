@@ -103,8 +103,15 @@ mixin _FushiDbContentMisc
   }
 
   /// Inserts a book; returns its bookKey (the primary key) on success.
+  ///
+  /// v81：companion 未携带（或空）本机稳定 uid 时在此**单点自动生成**——
+  /// 全部导入方（epub/manga/pdf/远端下载/格式重建）零改动即获得身份列。
   Future<String> insertEpubBook(EpubBooksCompanion book) async {
-    await into(epubBooks).insert(book);
+    final EpubBooksCompanion withUid =
+        (book.uid.present && book.uid.value.isNotEmpty)
+            ? book
+            : book.copyWith(uid: Value(generateEpubBookUid()));
+    await into(epubBooks).insert(withUid);
     // Re-adding a book cancels any prior deletion tombstone so a later merge
     // may bring its data again (TODO-1195 part B).
     await clearBookTombstone(book.bookKey.value);
@@ -113,6 +120,10 @@ mixin _FushiDbContentMisc
     await clearSyncDeletionTombstone('book', book.bookKey.value);
     return book.bookKey.value;
   }
+
+  /// 按本机稳定 uid 取书（v81；身份与展示解耦的读取口）。
+  Future<EpubBookRow?> getEpubBookByUid(String uid) =>
+      (select(epubBooks)..where((t) => t.uid.equals(uid))).getSingleOrNull();
 
   // ── book tombstones (TODO-1195 part B) ──────────────────────────────
   /// Records that [bookKey] was deleted, so a subsequent backup MERGE import

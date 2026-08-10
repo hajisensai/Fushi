@@ -359,6 +359,18 @@ class MediaTrackingOutbox extends Table {
 class EpubBooks extends Table {
   // bookKey = sanitizeTtuFilename(title): the cross-device book identity.
   TextColumn get bookKey => text()();
+
+  /// v81（P3 Stage 1，数据层重构 2026-08）：书的**本机稳定身份**。bookKey 由
+  /// 用户可见可改的标题派生（改名 = 身份变 = 十来张子表连坐改键，这正是它当
+  /// 头号根因的原因）；本列是导入时生成一次、此后永不变的机器局域 uid
+  /// （`book_<rowid/时刻>` 形，[generateEpubBookUid]），为后续把
+  /// ReaderPositions/Bookmarks/RevealedImages/BookCustomCss 等子表键切过来
+  /// （Stage 1b）与最终支持改名铺地基——v39 给视频先落 bookUid 列、v76 展示层
+  /// 才收尾的同款两步走。**wire/sync/备份仍走 bookKey**（title 派生键契约冻
+  /// 结），本列不进 wire；跨库合并经 bookKey 对齐后各自保留本机 uid。
+  /// 唯一性由独立唯一索引保证（迁移路径 ADD COLUMN 不能带 UNIQUE）；插入时
+  /// 未携带则由 [insertEpubBook] 单点自动生成，调用方零改动。
+  TextColumn get uid => text().withDefault(const Constant(''))();
   TextColumn get title => text()();
   TextColumn get author => text().nullable()();
   TextColumn get coverPath => text().nullable()();

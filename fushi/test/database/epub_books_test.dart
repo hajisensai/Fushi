@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -129,6 +130,43 @@ void main() {
         isTrue,
         reason: '改路径不改变 bookKey 集合',
       );
+    });
+  });
+
+  group('v81 本机稳定 uid（P3 Stage 1 身份地基）', () {
+    test('insertEpubBook 未携带 uid 时单点自动生成，且互不重复', () async {
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      await db.insertEpubBook(_book(title: 'A'));
+      await db.insertEpubBook(_book(title: 'B'));
+
+      final rows = await db.getAllEpubBooks();
+      final uids = rows.map((r) => r.uid).toSet();
+      expect(uids.length, 2, reason: '自动生成且唯一');
+      expect(uids.every((u) => u.startsWith('book_')), isTrue);
+      expect(await db.getEpubBookByUid(rows.first.uid), isNotNull,
+          reason: '按 uid 读取口可用');
+    });
+
+    test('携带 uid 时尊重调用方（迁移/恢复路径要保留既有身份）', () async {
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      await db.insertEpubBook(
+          _book(title: 'A').copyWith(uid: const Value('book_fixed_1')));
+      expect((await db.getAllEpubBooks()).single.uid, 'book_fixed_1');
+    });
+
+    test('fresh 库 uid 唯一索引在场（onCreate 内联，与 v81 迁移步成对）', () async {
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final idx = await db
+          .customSelect("SELECT name FROM sqlite_master WHERE type='index' "
+              "AND name='idx_epub_books_uid'")
+          .get();
+      expect(idx, hasLength(1));
     });
   });
 }

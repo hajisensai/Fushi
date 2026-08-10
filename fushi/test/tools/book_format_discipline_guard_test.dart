@@ -31,7 +31,10 @@ import '../helpers/source_guard.dart';
 import '../helpers/scan_scale.dart';
 
 /// DAO 所在文件（相对 `fushi/`，故要跳出去一层）。
-const String kDaoFile = '../packages/fushi_core/lib/src/database/database.dart';
+/// God 类拆分(2026-08)后 DAO 方法分布在 database.dart + 各域 part 文件,
+/// 守卫按文件名前缀收全（updateEpubBookFormat 现居 content_misc part）。
+const String kDaoFile =
+    '../packages/fushi_core/lib/src/database/database_content_misc.part.dart';
 
 /// 枚举定义文件。
 const String kEnumFile =

@@ -1200,6 +1200,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           )
         : EpubBookRow(
             bookKey: widget.bookKey,
+            // v81：无持久行的内存兜底行——身份生成一次;真正落库仍经
+            // insertEpubBook 单点(见其 doc)。
+            uid: generateEpubBookUid(),
             title: input.manga.title,
             author: input.manga.author ?? input.manga.artist,
             epubPath: p.basename(mangaJson.path),
