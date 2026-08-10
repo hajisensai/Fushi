@@ -37,6 +37,7 @@ import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart'
     show VideoSubtitleCandidate;
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
+import 'package:fushi/src/media/video/video_subtitle_attach_messages.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
@@ -1471,9 +1472,20 @@ class _HomePageState extends BasePageState<HomePage>
             String installedPath,
           ) async {
             if (target != SubtitleInstallTarget.existingVideo) return;
+            // BUG-1504：字幕下载成功 ≠ 挂上了。此前这里只在 attached 时刷新，
+            // 「视频不在库」「格式不支持」「文件坏」「落库失败」全部静默，弹窗
+            // 照样关掉报喜。现在每条失败都由这里 await 到手并呈现给用户——文案
+            // 与主页拖放同源（[subtitleAttachMessage]）。
             final VideoBookRow? book =
                 await _videoRepository.findByVideoPath(selectedPath);
-            if (book == null) return;
+            if (book == null) {
+              if (!context.mounted) return;
+              _showVideoDiscoveryMessage(
+                context,
+                t.video_subtitle_attach_book_missing,
+              );
+              return;
+            }
             final SubtitleAttachResult result = await attachSubtitleToVideoBook(
               repo: _videoRepository,
               book: book,
@@ -1481,7 +1493,13 @@ class _HomePageState extends BasePageState<HomePage>
             );
             if (result.outcome == SubtitleAttachOutcome.attached) {
               _notifyVideoLibraryChanged();
+              return;
             }
+            if (!context.mounted) return;
+            _showVideoDiscoveryMessage(
+              context,
+              subtitleAttachMessage(result, title: book.title),
+            );
           },
         ),
       ),
