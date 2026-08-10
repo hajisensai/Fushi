@@ -816,6 +816,74 @@ void main() {
       expect(result, hasLength(2));
     });
 
+    test('merges a single long-form anime ONA with the matching movie', () {
+      final VideoMetadataWork anilistWork = VideoMetadataWork(
+        provider: VideoMetadataProviderKind.anilist,
+        kind: VideoMetadataMediaKind.tv,
+        title: '超时空辉夜姬！',
+        year: 2026,
+        runtimeMinutes: 143,
+        episodeCount: 1,
+        ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'anilist', value: '195591', isDefault: true),
+        ],
+      );
+      final VideoDiscoveryItem anilist = VideoDiscoveryItem.fromMetadataWork(
+        work: anilistWork,
+        discoveryCategory: VideoDiscoveryCategory.anime,
+      );
+      final VideoDiscoveryItem tmdb = _item(
+        provider: 'tmdb',
+        id: '1234',
+        title: '超时空辉夜姬!',
+        year: 2026,
+      );
+
+      final List<VideoDiscoveryItem> result = mergeVideoDiscoveryItems(
+        <VideoDiscoveryItem>[anilist, tmdb],
+        request: const VideoDiscoveryRequest(query: '辉夜姬'),
+      );
+
+      expect(result, hasLength(1));
+      expect(result.single.reference.mediaKind, VideoMetadataMediaKind.movie);
+      expect(result.single.reference.providerId, 'tmdb');
+      expect(result.single.reference.tmdbId, 1234);
+      expect(result.single.reference.anilistId, 195591);
+    });
+
+    test('does not merge a multi-episode anime series into a movie', () {
+      final VideoMetadataWork anilistWork = VideoMetadataWork(
+        provider: VideoMetadataProviderKind.anilist,
+        kind: VideoMetadataMediaKind.tv,
+        title: 'Same title',
+        year: 2026,
+        runtimeMinutes: 24,
+        episodeCount: 12,
+        ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'anilist', value: '99', isDefault: true),
+        ],
+      );
+      final VideoDiscoveryItem anilist = VideoDiscoveryItem.fromMetadataWork(
+        work: anilistWork,
+        discoveryCategory: VideoDiscoveryCategory.anime,
+      );
+
+      final List<VideoDiscoveryItem> result = mergeVideoDiscoveryItems(
+        <VideoDiscoveryItem>[
+          anilist,
+          _item(
+            provider: 'tmdb',
+            id: '100',
+            title: 'Same title',
+            year: 2026,
+          ),
+        ],
+        request: const VideoDiscoveryRequest(query: 'Same title'),
+      );
+
+      expect(result, hasLength(2));
+    });
+
     test('a transitive match cannot bypass another namespace conflict', () {
       final VideoDiscoveryItem tmdb = VideoDiscoveryItem(
         reference: VideoMediaReference(

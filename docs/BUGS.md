@@ -29,10 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1408 条。点号进各自文件。
+> 共 1411 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1512](bugs/BUG-1512-video-discovery-long-anime-movie-dedup.md) | ✅ | ✅ | 发现页同一单集长篇动画电影被重复展示 |
+| [BUG-1511](bugs/BUG-1511-subscription-first-episode-skipped.md) | ✅ | ✅ | 发现订阅跳过所选首集 |
+| [BUG-1510](bugs/BUG-1510-download-task-empty-overlay-metrics.md) | ✅ | ✅ | 下载任务空态遮挡且缺少实时指标 |
+| [BUG-1509](bugs/BUG-1509-subscription-embedded-backend-missing.md) | ✅ | ✅ | 订阅创建后因内置下载引擎缺失而全部卡在需处理 |
 | [BUG-1508](bugs/BUG-1508-mihon-cover-disk-cache.md) | ✅ | ✅ | Mihon 在线漫画封面刷新重复下载 |
 | [BUG-1507](bugs/BUG-1507-video-discovery-genre-facet-pollution.md) | ✅ | ✅ | 视频发现页类型菜单混入年份日期 |
 | [BUG-1506](bugs/BUG-1506-video-discovery-cover-disk-cache.md) | ✅ | ✅ | 视频发现与系列页封面刷新重复下载 |
@@ -52,7 +56,6 @@
 | [BUG-1485](bugs/BUG-1485-mobile-video-drag-seek-sensitivity.md) | ✅ | ✅ | 移动端视频横滑 seek 灵敏度过高 |
 | [BUG-1484](bugs/BUG-1484-subtitle-list-follow-nearest-cue.md) | ✅ | ✅ | 字幕列表打开时未定位到最近字幕 |
 | [BUG-1483](bugs/BUG-1483-webview2-userdata-readonly-install.md) | ✅ | ✅ | Windows 装进不可写目录后 WebView2 数据目录建不出来（启动必弹错 + 更新失败） |
-| [BUG-1483](bugs/BUG-1483-subscription-embedded-backend-missing.md) | ✅ | ✅ | 订阅创建后因内置下载引擎缺失而全部卡在需处理 |
 | [BUG-1482](bugs/BUG-1482-video-resource-dropdown-overflow.md) | ✅ | ✅ | 资源搜索对话框下拉框横向溢出 |
 | [BUG-1481](bugs/BUG-1481-rolling-channel-shared-across-products.md) | ✅ | ✅ | fushi 与 hibiki 共用同一套发布通道，hibiki 自更新被结构性阻断 |
 | [BUG-1480](bugs/BUG-1480-gal-passthrough-click-lookup.md) | ✅ | ✅ | 穿透态点不了文字查词：整窗 WS_EX_TRANSPARENT 让字和背景一视同仁 |

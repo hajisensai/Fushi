@@ -824,7 +824,7 @@ _SubscriptionLogicalItem? _logicalItem(
     return null;
   }
   if (subscription.startAfterEpisode != null) {
-    // BUG-1485：新版发现订阅页会用用户选中的 release 集数预填此字段，且不会
+    // BUG-1511：新版发现订阅页会用用户选中的 release 集数预填此字段，且不会
     // 另外把该 release 直接入队。旧判断 `episode <= anchor` 因而必然跳过用户
     // 选中的首集（选第 1 集，卡片变成“第 1 集之后”，实际从第 2 集开始）。
     // `library` 是新版持久流水线创建的订阅，字段按“从该集开始”解释；legacy

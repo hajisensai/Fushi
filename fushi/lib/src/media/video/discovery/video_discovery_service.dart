@@ -327,8 +327,10 @@ class VideoDiscoveryService {
   }
 }
 
-/// 跨来源身份合并。强 ID 优先；没有共享 ID 时，只有媒体类型、规范化标题和非空
-/// 年份三者完全一致才合并。任何共同命名空间出现冲突值都会否决本次合并。
+/// 跨来源身份合并。强 ID 优先；没有共享 ID 时，只有聚合媒体类型、规范化标题和
+/// 非空年份三者完全一致才合并。AniList 把部分单集长篇 ONA 标成 TV，而 TMDB 将
+/// 同一作品标成电影；这种可验证的单集动画按电影聚合。任何共同命名空间出现冲突值
+/// 都会否决本次合并。
 List<VideoDiscoveryItem> mergeVideoDiscoveryItems(
   Iterable<VideoDiscoveryItem> items, {
   required VideoDiscoveryRequest request,
@@ -370,7 +372,7 @@ class _MergedDiscoveryItem {
   bool canMerge(VideoDiscoveryItem candidate) {
     bool matched = false;
     for (final VideoDiscoveryItem existing in _items) {
-      if (existing.reference.mediaKind != candidate.reference.mediaKind) {
+      if (_aggregationKind(existing) != _aggregationKind(candidate)) {
         return false;
       }
       final Map<String, String> left = _strongIdentities(existing.reference);
@@ -401,10 +403,23 @@ class _MergedDiscoveryItem {
       (VideoDiscoveryItem item) =>
           item.reference.discoveryCategory == VideoDiscoveryCategory.anime,
     );
+    final VideoMetadataMediaKind aggregationKind =
+        _aggregationKind(_items.first);
     final List<VideoDiscoveryItem> ranked = List<VideoDiscoveryItem>.of(_items)
-      ..sort((VideoDiscoveryItem a, VideoDiscoveryItem b) =>
-          _primaryRank(a.reference.providerId, anime: anime)
-              .compareTo(_primaryRank(b.reference.providerId, anime: anime)));
+      ..sort((VideoDiscoveryItem a, VideoDiscoveryItem b) {
+        // When an anime provider calls a single long-form work TV/ONA while a
+        // movie database calls it a movie, keep the movie identity as primary.
+        // This makes the merged card open/scrape as a movie, matching the
+        // MoviePilot-style result users see, while retaining the anime ids.
+        if (aggregationKind == VideoMetadataMediaKind.movie) {
+          final int kindRank =
+              (a.reference.mediaKind == aggregationKind ? 0 : 1)
+                  .compareTo(b.reference.mediaKind == aggregationKind ? 0 : 1);
+          if (kindRank != 0) return kindRank;
+        }
+        return _primaryRank(a.reference.providerId, anime: anime)
+            .compareTo(_primaryRank(b.reference.providerId, anime: anime));
+      });
     final VideoDiscoveryItem primary = ranked.first;
     final Map<String, String> externalIds = <String, String>{};
     final List<VideoMetadataId> metadataIds = <VideoMetadataId>[];
@@ -507,6 +522,19 @@ class _MergedDiscoveryItem {
       confirmedLookup: primary.confirmedLookup,
     );
   }
+}
+
+VideoMetadataMediaKind _aggregationKind(VideoDiscoveryItem item) {
+  if (item.reference.mediaKind == VideoMetadataMediaKind.movie) {
+    return VideoMetadataMediaKind.movie;
+  }
+  final VideoMetadataWork? work = item.metadataWork;
+  if (item.reference.discoveryCategory == VideoDiscoveryCategory.anime &&
+      work?.episodeCount == 1 &&
+      (work?.runtimeMinutes ?? 0) >= 60) {
+    return VideoMetadataMediaKind.movie;
+  }
+  return item.reference.mediaKind;
 }
 
 Map<String, String> _strongIdentities(VideoMediaReference reference) {
