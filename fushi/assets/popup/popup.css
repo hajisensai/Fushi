@@ -906,7 +906,8 @@ html[data-theme="dark"] .glossary-group {
        ruby base box and Blink would size it to max(base, rt); with
        rt{font-size:0.5em} a >=3-kana reading is wider than its kanji, so each
        base would stretch to its annotation width and 明鏡-style 逐字 ruby lines
-       go ragged. Keeping the <rt> out of the inline flow (position:absolute)
+       go ragged. Keeping the reading out of the inline flow (the absolutely
+       positioned .ruby-rt box — BUG-1487 moved that role off the <rt> itself)
        collapses every base box back to the kanji width while centring the
        furigana above it. (The reading may still spill a few px past a very
        narrow single kanji, as before — that residual ink overhang is BUG-345's
@@ -921,12 +922,15 @@ html[data-theme="dark"] .glossary-group {
        rounding (amplified by the zoom factor and real CJK line metrics) made the
        furigana drift up and collide with the line above. The reserve is now
        intrinsic to the .ruby-unit and expressed purely in em: padding-top
-       reserves room for the <rt>, which anchors to the unit's own top (top:0).
-       Reserve and annotation live on one element on one em chain, so they scale
-       together under any zoom and never depend on the neighbouring line.
-   The <ruby> itself stays inline-block+relative only as a fallback anchor: if
-   postProcessRuby ever failed to wrap (never in practice), a bare <rt> would
-   still pin to the <ruby> instead of escaping to the viewport. */
+       reserves room for the reading box, which anchors to the unit's own top
+       (top:0). Reserve and annotation live on one element on one em chain, so
+       they scale together under any zoom and never depend on the neighbouring
+       line.
+   The <ruby> itself stays inline-block+relative as the outer fallback anchor.
+   Since BUG-1487 an <rt> that postProcessRuby never wrapped is plain in-flow
+   inline text (no position of its own), so it degrades to an unstyled reading
+   next to its base rather than escaping the popup — it can no longer be
+   positioned against the wrong ancestor. */
 :where(.glossary-group, .glossary-content, .expression) ruby {
     display: inline-block;
     position: relative;
@@ -945,15 +949,68 @@ html[data-theme="dark"] .glossary-group {
     text-align: center;
 }
 
-:where(.glossary-group, .glossary-content, .expression) rt {
-    font-size: 0.5em;
+/* BUG-1487 — the annotation BOX is a plain <span class="ruby-rt">, never the
+   <rt> itself. Everything above (per-base anchor, em reserve, compaction) is
+   unchanged; only the element that carries `position: absolute` moved.
+
+   Root cause of "iOS 振假名有 bug": WebKit force-resets `position` to `static`
+   on <rt> at the renderer level, so EVERY declaration in the old
+   `:where(...) rt { position: absolute; left/right/top }` rule was silently
+   dropped on iOS/macOS (the two WKWebView platforms) while Blink — Windows
+   WebView2 and the Android system WebView — honoured it. Measured on a real
+   WKWebView (macOS 15.7 + iOS 18.6 simulator) against the identical DOM:
+   `getComputedStyle(rt).position === "static"`, `.display === "inline"`. The
+   reading therefore fell back into the inline flow and rendered as a half-size
+   run to the RIGHT of its kanji, sharing the base's baseline — 将しょう棋ぎ
+   instead of 将/棋 with the readings above them — while the 0.55em padding-top
+   band sat empty. Blink measured the identical markup at rt = (unit.x, unit.y,
+   22.5x7.5) i.e. correctly inside the reserve; WebKit measured (unit.x+15,
+   unit.y+13.25) i.e. beside the kanji.
+
+   This is NOT display-driven and cannot be fixed on <rt>: forcing
+   `display: block` on the rt makes WebKit report `display: block` and STILL
+   `position: static` (measured). The reset keys off the element being an <rt>,
+   so the only engine-neutral fix is to stop asking <rt> to be the positioned
+   box. postProcessRuby now wraps each reading in a neutral
+   <span class="ruby-rt"> — no engine special-cases a bare span — and <rt> stays
+   a purely semantic in-flow inline run inside it. <rt> is deliberately KEPT
+   (rather than replaced by a span) so ruby lookup selection
+   (selection.js `closest('rt, rp')`, BUG-110/123/125/129), the `.expression rt`
+   user-select rule and dictionary-supplied `rt {}` custom CSS all keep working.
+
+   Verified byte-for-byte geometry parity on Blink: with and without the
+   wrapper, ruby = 37.5x23.25, units = [22.5, 15], annotation boxes =
+   [(x+0, y+0, 22.5x7.5), (x+22.5, y+0, 15x7.5)], reading overlap 0px. */
+:where(.glossary-group, .glossary-content, .expression) .ruby-rt {
     position: absolute;
     left: 0;
     right: 0;
     top: 0;
+    /* The em chain lives on the BOX, not on <rt>: an absolutely positioned box
+       derives its strut from its OWN font-size, so leaving the box at 1em made
+       it 16px tall and pushed the 0.5em reading out of the padding band. */
+    font-size: 0.5em;
     text-align: center;
     white-space: nowrap;
     line-height: 1;
+}
+
+:where(.glossary-group, .glossary-content, .expression) rt {
+    /* Both engines already settle on `inline` for a wrapped <rt>; declaring it
+       stops Blink from spinning up an anonymous ruby container around the
+       leftover `display: ruby-text`. */
+    display: inline;
+    /* Fallback size for an <rt> postProcessRuby never wrapped (bare markup that
+       skipped the pass) — inside .ruby-rt the box already applied the 0.5em. */
+    font-size: 0.5em;
+    /* UA stylesheets declare `rt { line-height: normal }`, which beats the
+       inherited 1 and inflates the annotation box (Blink measured 11px instead
+       of 7.5px). */
+    line-height: 1;
+}
+
+:where(.glossary-group, .glossary-content, .expression) .ruby-rt rt {
+    font-size: 1em;
 }
 
 /* BUG-850 (horizontal reserve — completes the compaction's missing axis): the
