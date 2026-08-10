@@ -417,8 +417,13 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   /// 字幕列表滚动控制器（随播放自动滚到当前句）。
   final ScrollController _listController = ScrollController();
 
-  /// 上次自动滚动到的列表行下标（仅在当前句变化时滚一次，避免每帧抖动）。
+  /// 上次跟随到的当前句下标（仅在当前句变化时滚一次，避免每帧抖动）。波形时间轴与
+  /// 字幕列表**共用**这一个记号——两者由同一个 [_followPlayhead] 驱动，绝不各滚各的。
   int _lastAutoScrollIndex = -1;
+
+  /// 波形时间轴「播放头跟随」的视口安全边距（逻辑像素）：播放头离视口边缘不足这么多
+  /// 就把它重新居中。留边距而非每句都居中，避免播放中把用户的手动平移反复拽回。
+  static const double _playheadFollowMarginPx = 96.0;
 
   /// 字幕列表固定行高（逻辑像素）：给定 itemExtent 让虚拟化与自动滚动定位都是 O(1)。
   static const double _listItemExtent = 54.0;
@@ -452,6 +457,12 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
         const Duration(milliseconds: 33),
         (_) => _onPositionTick(),
       );
+      // 打开即把**两个视图**锚到播放头（BUG-1486）：滚动控制器要等首帧布局完才有
+      // clients，故落在 postFrame。开场不做动画（一步到位，别让用户看着列表/波形滑过去）。
+      WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+        if (!mounted) return;
+        _anchorToPlayhead(animate: false);
+      });
     }
   }
 
@@ -467,7 +478,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     final int posMs = read();
     if (posMs == _livePositionMs.value) return;
     _livePositionMs.value = posMs;
-    _maybeAutoScrollCueList(posMs);
+    _followPlayhead(posMs);
   }
 
   /// 当前句下标（按有效时间 = 位置 - 当前预览延迟，落在 cue [startMs,endMs] 内）。
@@ -492,18 +503,100 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     return -1;
   }
 
-  /// 播放中当前句变化时把列表滚到该句居中（用户暂停/手动浏览时不抢滚动）。
-  void _maybeAutoScrollCueList(int posMs) {
+  /// 播放中当前句变化时，把**波形时间轴与字幕列表一起**锚到当前句（BUG-1486）。
+  ///
+  /// 这两块显示的是同一份 cue 的两个视图（上：铺在时间轴上的字幕条；下：竖排字幕列表），
+  /// 用户拿它们互相对照「这段波形是哪句话」。历史上只有列表跟随播放头、波形横向滚动从不
+  /// 跟随（开场恒在 offset 0），于是播了几分钟后**上面显示片头几句、下面高亮当前句**，
+  /// 上下字幕对不上（用户报「波形对轴上下的字幕不同」）。跟随现在只此一个入口、共用
+  /// [_lastAutoScrollIndex] 一个记号，两个视图不可能再各锚各的。
+  ///
+  /// 用户暂停 / 手动浏览时不抢滚动（判据与历史一致）；播放中波形也只在播放头接近视口边缘
+  /// （[_playheadFollowMarginPx]）时才重新居中，手动平移的小偏移不会被反复拽回。
+  void _followPlayhead(int posMs) {
     if (!(widget.isPlaying?.call() ?? false)) return;
     final int idx = _currentCueIndex(posMs);
     if (idx < 0 || idx == _lastAutoScrollIndex) return;
     _lastAutoScrollIndex = idx;
-    final int? row = _origToDisplayRow[idx]; // 空文本当前句不在列表：不滚。
+    _scrollCueListToCue(idx, animate: true);
+    _scrollWaveformToPlayhead(
+      posMs,
+      animate: true,
+      keepVisibleMarginPx: _playheadFollowMarginPx,
+    );
+  }
+
+  /// 打开弹窗时把两个视图一次锚到播放头（BUG-1486）：波形滚到播放头居中、列表滚到当前句
+  /// 居中。跟随（[_followPlayhead]）只在播放中生效，暂停打开时若不锚这一次，上下就都停在
+  /// 片头、离用户真正要对的那句十万八千里。
+  void _anchorToPlayhead({required bool animate}) {
+    final int Function()? read = widget.currentPositionMs;
+    if (read == null) return;
+    final int posMs = read();
+    if (posMs < 0) return;
+    // 边距取无穷 => 安全区为空 => 无条件把播放头居中（「跳到播放头」按钮的历史语义，
+    // 开场锚定同款：不做「够近就不动」的判断）。
+    _scrollWaveformToPlayhead(
+      posMs,
+      animate: animate,
+      keepVisibleMarginPx: double.infinity,
+    );
+    final int idx = _currentCueIndex(posMs);
+    if (idx < 0) return;
+    _lastAutoScrollIndex = idx;
+    _scrollCueListToCue(idx, animate: animate);
+  }
+
+  /// 把字幕列表滚到第 [cueIndex] 句（原始 cue 下标）所在行居中。空文本句不在列表里
+  /// （[_origToDisplayRow] 无该键）时不滚。
+  void _scrollCueListToCue(int cueIndex, {required bool animate}) {
+    final int? row = _origToDisplayRow[cueIndex];
     if (row == null || !_listController.hasClients) return;
     final double target =
         (row * _listItemExtent - _cueListHeight / 2 + _listItemExtent / 2)
             .clamp(0.0, _listController.position.maxScrollExtent);
+    if (!animate) {
+      _listController.jumpTo(target);
+      return;
+    }
     _listController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  /// 把波形时间轴横向滚到播放头（[posMs]）。是否真滚由纯函数 [waveformFollowOffset] 判：
+  /// 播放头已在视口安全区（[keepVisibleMarginPx] 边距）内就不动。内容宽 / 视口宽从
+  /// [ScrollPosition] 取真值（不在 build 里碰 `context.size`）。
+  void _scrollWaveformToPlayhead(
+    int posMs, {
+    required bool animate,
+    required double keepVisibleMarginPx,
+  }) {
+    if (posMs < 0 || !_scrollController.hasClients) return;
+    final ScrollPosition pos = _scrollController.position;
+    final double viewWidth = pos.viewportDimension;
+    final double contentWidth = viewWidth + pos.maxScrollExtent;
+    final double x = timeToX(
+      timeMs: posMs,
+      windowStartMs: 0,
+      windowEndMs: widget.windowEndMs,
+      width: contentWidth,
+    );
+    final double? target = waveformFollowOffset(
+      playheadX: x,
+      viewportWidth: viewWidth,
+      maxScrollExtent: pos.maxScrollExtent,
+      currentOffset: pos.pixels,
+      keepVisibleMarginPx: keepVisibleMarginPx,
+    );
+    if (target == null) return;
+    if (!animate) {
+      _scrollController.jumpTo(target);
+      return;
+    }
+    _scrollController.animateTo(
       target,
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeOutCubic,
@@ -596,30 +689,9 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     });
   }
 
-  /// 把滚动位置移到播放头附近（居中显示）。播放头未知时 no-op。交互回调里读，
-  /// 内容宽 / 视口宽从 ScrollPosition 取真值（不在 build 里碰 context.size）。
-  void _jumpToPlayhead() {
-    final int Function()? read = widget.currentPositionMs;
-    if (read == null || !_scrollController.hasClients) return;
-    final int posMs = read();
-    if (posMs < 0) return;
-    final ScrollPosition pos = _scrollController.position;
-    final double viewWidth = pos.viewportDimension;
-    final double contentWidth = viewWidth + pos.maxScrollExtent;
-    final double x = timeToX(
-      timeMs: posMs,
-      windowStartMs: 0,
-      windowEndMs: widget.windowEndMs,
-      width: contentWidth,
-    );
-    if (x.isNaN) return;
-    final double target = (x - viewWidth / 2).clamp(0.0, pos.maxScrollExtent);
-    _scrollController.animateTo(
-      target,
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOutCubic,
-    );
-  }
+  /// 「跳到播放头」按钮：把**两个视图**一起移到播放头（与开场锚定、播放中跟随同一入口，
+  /// 上下永远同源）。播放头未知时 no-op。
+  void _jumpToPlayhead() => _anchorToPlayhead(animate: true);
 
   @override
   Widget build(BuildContext context) {

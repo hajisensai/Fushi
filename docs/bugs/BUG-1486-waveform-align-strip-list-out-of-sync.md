@@ -1,0 +1,22 @@
+## BUG-1486 · 波形对轴面板上下字幕不一致
+- **报告**：2026-08-10（用户：「波形对轴上下的字幕不同。不知道是不是缓存原因。」）
+- **真实性**：✅ 真 bug。**不是缓存问题**——上下两块用的是同一份 `widget.cues`，分歧全在**滚动锚点**。
+  - 上（波形时间轴 + 铺在上面的字幕条）：`fushi/lib/src/media/video/subtitle_waveform_align_panel.dart:871`（`_buildCueStrip`，按 `_scrollController.offset` 裁剪出可见 cue 片段）。该横向 `ScrollController` **从不跟随播放头**，打开弹窗时恒在 `offset == 0`（只有用户手动滚轮/滚动条，或点「跳到播放头」按钮才动）。
+  - 下（字幕列表）：同文件 `_maybeAutoScrollCueList`（旧 `:496-511`）在播放中**每换一句就把列表滚到当前句居中**。
+  - 于是同一时刻上面显示片头几句、下面显示/高亮当前句。实测（本机 widget 探针，播放头 30s、每秒一句的 cue）：字幕条 = `S0..S11`，字幕列表 = `S28..S32`（高亮 `S30`）——上下完全是两批句子。
+  - 根因一句话：**同一份 cue 的两个视图各有一套跟随逻辑（一个跟、一个完全不跟），时间锚点不同源**。
+- **[x] ① 已修复** — 把「跟随播放头」收敛成**唯一入口**，两个视图共用一个 `_lastAutoScrollIndex` 记号，不可能再各锚各的：
+  - `subtitle_waveform_align_panel.dart`：`_maybeAutoScrollCueList` → `_followPlayhead(posMs)`，同时滚字幕列表与波形时间轴；新增 `_anchorToPlayhead({required bool animate})`（打开弹窗时经 `addPostFrameCallback` 锚一次，暂停打开也生效）；`_jumpToPlayhead()`（「跳到播放头」按钮）改为复用 `_anchorToPlayhead(animate: true)`，按钮从「只挪波形」升级为「上下一起挪」；滚动动作拆成 `_scrollCueListToCue` / `_scrollWaveformToPlayhead` 两个带类型签名的 helper。
+  - `subtitle_waveform_painter.dart`：新增**纯函数** `waveformFollowOffset(...)`（视口安全边距判据 + 居中目标 + clamp）。跟随传 `_playheadFollowMarginPx = 96`（播放头没接近视口边缘就不动，不抢用户的手动平移）；开场锚定 / 跳到播放头传 `double.infinity`（安全区退化为空 = 无条件居中）——同一个函数覆盖两种语义，不加特例分支。
+  - 保留原有「暂停/手动浏览时不抢滚动」的判据（`isPlaying`），未改任何持久化字段、未动 cue 数据本身。
+  - 提交：`<PENDING>`（见分支 `agent-a54bf61d54a5a0a6c`）
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/media/video/subtitle_waveform_align_panel_test.dart`：
+    - `BUG-1486: opening mid-video anchors BOTH the waveform strip and the cue list to the playhead`（暂停打开也锚；断言上下同为 `S30`，且上面不再停在 `S0`）
+    - `BUG-1486: while playing, the waveform strip follows the playhead together with the cue list`（播到 45s，断言上下同为 `S45`，且片头 `S1` 已滚出）
+  - `fushi/test/media/video/subtitle_waveform_painter_test.dart`：`group('waveformFollowOffset (BUG-1486)')` 6 条纯函数单测（安全区内不滚 / 进左边距重居中 / 右侧外重居中 / clamp / infinity 无条件居中 / 非法输入返回 null）。
+  - **变异实测**：在 `_scrollWaveformToPlayhead` 首行插 `if (1 == 1) return;` → 两条 widget 守卫双双变红（`Found 0 widgets with text "S30"/"S45"` in `subtitle-waveform-cue-strip`）；反向替换还原后复绿。
+- **备注**：
+  - 用户猜的「缓存」查证为**无关**：`WaveformEnvelopeCache`（`fushi/lib/src/media/video/waveform_envelope_cache.dart`）缓存的是**音频能量包络**，key = `videoPath|audioStreamIndex`，与字幕轨/延迟无关，也不参与上下两块的 cue 数据。
+  - 相邻但**未在本条修复**的既有不一致（另立条目更合适，本轮不扩大爆炸半径）：① 字幕列表行显示的时间戳 `_formatTime(cue.startMs)` 不含当前延迟，而字幕条按 `start + delay` 定位；② 波形时间窗上界是探测上界 `kSubtitleAutoAlignProbeLimitMs = 20min`，超出该窗的 cue 在字幕条里被裁掉，却仍完整列在字幕列表里。
+  - 真机验证：未做（本轮仅 widget 层验证）。

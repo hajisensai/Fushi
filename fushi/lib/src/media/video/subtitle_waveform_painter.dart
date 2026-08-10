@@ -69,6 +69,39 @@ double timeToX({
   return (timeMs - windowStartMs) / span * width;
 }
 
+/// **纯函数**：求「播放头跟随」所需的新横向滚动 offset（BUG-1486）。
+///
+/// 波形时间轴与它下方的字幕条铺在一条横向可滚动的内容上；[playheadX] 是播放头在**内容
+/// 坐标**里的 x（由 [timeToX] 按 contentWidth 算得）。可视区是
+/// `[currentOffset, currentOffset + viewportWidth)`，两侧各留 [keepVisibleMarginPx]
+/// 的安全边距：
+/// - 播放头落在安全区内 → 返回 `null`（不滚，用户手动平移的一点点偏移不被反复拉回）；
+/// - 落在安全区外 → 返回把播放头**居中**的 offset（clamp 到 `[0, maxScrollExtent]`）。
+///
+/// 视口比两倍边距还窄时安全区退化为空，等价于「每次都居中」；传
+/// [keepVisibleMarginPx] = `double.infinity` 即显式要求**无条件居中**（「跳到播放头」
+/// 按钮与开场锚定走这条）——同一个函数覆盖跟随与跳转，不做特例分支。
+/// 非法输入（视口 <= 0、playheadX 为 NaN）返回 `null`（调用方不滚）。
+double? waveformFollowOffset({
+  required double playheadX,
+  required double viewportWidth,
+  required double maxScrollExtent,
+  required double currentOffset,
+  required double keepVisibleMarginPx,
+}) {
+  if (playheadX.isNaN || viewportWidth <= 0) return null;
+  final double margin = keepVisibleMarginPx < 0 ? 0.0 : keepVisibleMarginPx;
+  final double safeLeft = currentOffset + margin;
+  final double safeRight = currentOffset + viewportWidth - margin;
+  if (safeLeft <= safeRight &&
+      playheadX >= safeLeft &&
+      playheadX <= safeRight) {
+    return null;
+  }
+  final double max = maxScrollExtent < 0 ? 0.0 : maxScrollExtent;
+  return (playheadX - viewportWidth / 2).clamp(0.0, max);
+}
+
 /// 字幕对轴波形 painter（TODO-1051 阶段B）。纯绘制，几何走上面的纯函数。
 class SubtitleWaveformPainter extends CustomPainter {
   SubtitleWaveformPainter({
