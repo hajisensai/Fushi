@@ -461,6 +461,28 @@ class VideoDownloadPipelineService {
     return null;
   }
 
+  /// Resolves the exact backend instance recorded by a durable task for the
+  /// live details dialog. A changed profile/configuration is rejected instead
+  /// of accidentally showing data from another qBittorrent instance.
+  Future<TorrentBackend> resolveJobDetailBackend(String jobId) async {
+    final VideoDownloadJobRow? job = await database.getVideoDownloadJob(jobId);
+    if (job == null) {
+      throw const VideoDownloadPipelineActionRequired(
+        'The selected download job no longer exists',
+      );
+    }
+    final String torrentId =
+        (job.backendTaskId ?? job.torrentHash ?? '').trim();
+    if (torrentId.isEmpty) {
+      throw const VideoDownloadPipelineActionRequired(
+        'Torrent details are not available until the task is added to the backend',
+      );
+    }
+    final VideoDownloadBackendBinding? binding = await backendResolver(job);
+    _validateBackendBinding(job, binding);
+    return binding!.backend;
+  }
+
   /// Removes a durable task and, when requested, only the files that this task
   /// explicitly recorded. Directories are never recursively removed here.
   Future<void> deleteJob(

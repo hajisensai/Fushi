@@ -3312,5 +3312,13 @@
   "download_task_location_open_failed": "Could not open the file location.",
   "download_subscription_start_episode": "从第 $episode 集开始",
   "download_task_delete_confirm": "Delete the download task for ${title}?",
-  "download_task_action_failed": "The task action failed: ${error}"
+  "download_task_action_failed": "The task action failed: ${error}",
+  "download_task_details": "View details",
+  "download_detail_section_task": "Task",
+  "download_detail_hash_label": "Info hash",
+  "download_detail_total_size_label": "Total size",
+  "download_detail_remaining_label": "Remaining",
+  "download_detail_save_path_label": "Save path",
+  "download_detail_content_path_label": "Content path",
+  "download_detail_raw_state_label": "Backend state"
 }

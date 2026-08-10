@@ -68,6 +68,7 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     super.key,
     this.onRetry,
     this.onCancel,
+    this.onOpenDetails,
     this.locationLoader,
     this.onDelete,
     this.pathRevealer = revealVideoDownloadPath,
@@ -82,6 +83,7 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     Key? key,
     VideoDownloadJobAction? onRetry,
     VideoDownloadJobAction? onCancel,
+    VideoDownloadJobAction? onOpenDetails,
     VideoDownloadJobLocationLoader? locationLoader,
     VideoDownloadJobDeleteAction? onDelete,
     VideoDownloadPathRevealer pathRevealer = revealVideoDownloadPath,
@@ -95,6 +97,7 @@ class VideoDownloadJobsPanel extends StatefulWidget {
         store: DatabaseVideoDownloadJobsPanelStore(database),
         onRetry: onRetry,
         onCancel: onCancel,
+        onOpenDetails: onOpenDetails,
         locationLoader: locationLoader,
         onDelete: onDelete,
         pathRevealer: pathRevealer,
@@ -109,6 +112,7 @@ class VideoDownloadJobsPanel extends StatefulWidget {
   final VideoDownloadJobsPanelStore store;
   final VideoDownloadJobAction? onRetry;
   final VideoDownloadJobAction? onCancel;
+  final VideoDownloadJobAction? onOpenDetails;
   final VideoDownloadJobLocationLoader? locationLoader;
   final VideoDownloadJobDeleteAction? onDelete;
   final VideoDownloadPathRevealer pathRevealer;
@@ -290,6 +294,9 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
               onCancel: widget.onCancel == null
                   ? null
                   : () => _runAction(job, widget.onCancel!),
+              onOpenDetails: widget.onOpenDetails == null
+                  ? null
+                  : () => _runAction(job, widget.onOpenDetails!),
               onOpenLocation: widget.locationLoader == null
                   ? null
                   : () => _openLocation(job),
@@ -452,6 +459,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
     required this.busy,
     required this.onRetry,
     required this.onCancel,
+    required this.onOpenDetails,
     required this.onOpenLocation,
     required this.onDelete,
     required this.lifecycleLabel,
@@ -465,6 +473,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
   final bool busy;
   final VoidCallback? onRetry;
   final VoidCallback? onCancel;
+  final VoidCallback? onOpenDetails;
   final VoidCallback? onOpenLocation;
   final VoidCallback? onDelete;
   final String Function(String lifecycle)? lifecycleLabel;
@@ -490,6 +499,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
     final Color statusColor = _statusColor(colors);
     return FushiCard(
       padding: const EdgeInsets.all(12),
+      onTap: busy ? null : onOpenDetails,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -522,6 +532,14 @@ class _VideoDownloadJobCard extends StatelessWidget {
                   ],
                 ),
               ),
+              if (onOpenDetails != null) ...<Widget>[
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.chevron_right,
+                  color: colors.onSurfaceVariant,
+                  size: 20,
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 10),
@@ -585,6 +603,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
           ],
           if ((_canRetry && onRetry != null) ||
               (_canCancel && onCancel != null) ||
+              onOpenDetails != null ||
               onOpenLocation != null ||
               onDelete != null) ...<Widget>[
             const SizedBox(height: 8),
@@ -594,6 +613,15 @@ class _VideoDownloadJobCard extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 6,
                 children: <Widget>[
+                  if (onOpenDetails != null)
+                    OutlinedButton.icon(
+                      key: ValueKey<String>(
+                        'video-download-job-details-${job.jobId}',
+                      ),
+                      onPressed: busy ? null : onOpenDetails,
+                      icon: const Icon(Icons.info_outline, size: 18),
+                      label: Text(t.download_task_details),
+                    ),
                   if (_canRetry && onRetry != null)
                     FilledButton.tonalIcon(
                       key: ValueKey<String>(

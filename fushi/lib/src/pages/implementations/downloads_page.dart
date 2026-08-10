@@ -9,6 +9,7 @@ import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/airing_calendar_page.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
+import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
 import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart';
@@ -241,6 +242,36 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                                   .read(appProvider)
                                   .videoDownloadPipelineService
                                   ?.cancelJob(job.jobId);
+                            },
+                            onOpenDetails: (job) async {
+                              final pipeline = ref
+                                  .read(appProvider)
+                                  .videoDownloadPipelineService;
+                              if (pipeline == null) {
+                                throw const VideoDownloadPipelineActionRequired(
+                                  'The download service is not available',
+                                );
+                              }
+                              final backend = await pipeline
+                                  .resolveJobDetailBackend(job.jobId);
+                              if (!mounted) return;
+                              final String torrentId =
+                                  (job.backendTaskId ?? job.torrentHash ?? '')
+                                      .trim();
+                              await showAppDialog<void>(
+                                context: context,
+                                builder: (BuildContext dialogContext) =>
+                                    TorrentTaskDetailDialog.task(
+                                  torrentId: torrentId,
+                                  title: job.title,
+                                  torrentTitle:
+                                      job.resourceTitle?.trim().isNotEmpty ==
+                                              true
+                                          ? job.resourceTitle!.trim()
+                                          : job.title,
+                                  backendOverride: backend,
+                                ),
+                              );
                             },
                             locationLoader: (job) async {
                               final pipeline = ref

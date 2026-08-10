@@ -3312,5 +3312,13 @@
   "download_task_location_missing": "找不到该任务对应的文件位置。",
   "download_task_location_open_failed": "无法打开文件位置。",
   "download_task_delete_confirm": "删除“${title}”的下载任务吗？",
-  "download_task_action_failed": "任务操作失败：${error}"
+  "download_task_action_failed": "任务操作失败：${error}",
+  "download_task_details": "查看详情",
+  "download_detail_section_task": "任务",
+  "download_detail_hash_label": "信息哈希",
+  "download_detail_total_size_label": "总大小",
+  "download_detail_remaining_label": "剩余大小",
+  "download_detail_save_path_label": "保存路径",
+  "download_detail_content_path_label": "内容路径",
+  "download_detail_raw_state_label": "后端状态"
 }

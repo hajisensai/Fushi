@@ -24,14 +24,27 @@ import 'package:fushi/utils.dart';
 /// session 的短命视图，close 不连累会话），每 2s 刷当前 tab 需要的数据，
 /// 切 tab 立即补一轮 —— 不给不可见的 tab 白拉数据。
 class TorrentTaskDetailDialog extends ConsumerStatefulWidget {
-  const TorrentTaskDetailDialog({
-    required this.plan,
+  TorrentTaskDetailDialog({
+    required AnimeDownloadPlan plan,
     super.key,
     @visibleForTesting this.backendOverride,
+  })  : torrentId = plan.id,
+        title = plan.seriesTitle,
+        torrentTitle = plan.torrentTitle;
+
+  /// Durable download jobs use the same real backend detail surface without
+  /// manufacturing a legacy [AnimeDownloadPlan].
+  const TorrentTaskDetailDialog.task({
+    required this.torrentId,
+    required this.title,
+    required this.torrentTitle,
+    required this.backendOverride,
+    super.key,
   });
 
-  /// 详情对象（`plan.id` = infohash）。
-  final AnimeDownloadPlan plan;
+  final String torrentId;
+  final String title;
+  final String torrentTitle;
 
   /// 仅测试用：注入假后端，跳过 AppModel 的真实后端工厂（widget 测试
   /// 不必拉起整个应用模型）。注入的后端由**调用方**负责 close。
@@ -113,7 +126,7 @@ class _TorrentTaskDetailDialogState
     if (backend == null || _refreshing || !mounted) return;
     _refreshing = true;
     try {
-      final String wantedHash = widget.plan.id.toLowerCase();
+      final String wantedHash = widget.torrentId.toLowerCase();
       final List<TorrentSnapshot> torrents = await backend.listTorrents();
       TorrentSnapshot? snapshot;
       for (final TorrentSnapshot t in torrents) {
@@ -133,15 +146,15 @@ class _TorrentTaskDetailDialogState
       switch (_tabController.index) {
         case 0:
           sessionStatus = await detail?.sessionStatus() ?? sessionStatus;
-          pieces = await detail?.pieceStates(widget.plan.id) ?? pieces;
+          pieces = await detail?.pieceStates(widget.torrentId) ?? pieces;
         case 1:
-          files = await backend.listFiles(widget.plan.id);
+          files = await backend.listFiles(widget.torrentId);
           priorities =
-              await detail?.filePriorities(widget.plan.id) ?? priorities;
+              await detail?.filePriorities(widget.torrentId) ?? priorities;
         case 2:
-          peers = await detail?.listPeers(widget.plan.id) ?? peers;
+          peers = await detail?.listPeers(widget.torrentId) ?? peers;
         case 3:
-          trackers = await detail?.listTrackers(widget.plan.id) ?? trackers;
+          trackers = await detail?.listTrackers(widget.torrentId) ?? trackers;
       }
       if (!mounted) return;
       setState(() {
@@ -165,7 +178,7 @@ class _TorrentTaskDetailDialogState
   ) async {
     final TorrentBackend? backend = _backend;
     if (backend is! TorrentDetailBackend || !_detailCapable) return;
-    await backend.setFilePriority(widget.plan.id, fileIndex, priority);
+    await backend.setFilePriority(widget.torrentId, fileIndex, priority);
     await _refresh();
   }
 
@@ -181,10 +194,10 @@ class _TorrentTaskDetailDialogState
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Text(widget.plan.seriesTitle, style: theme.textTheme.titleLarge),
+          Text(widget.title, style: theme.textTheme.titleLarge),
           const SizedBox(height: 2),
           Text(
-            widget.plan.torrentTitle,
+            widget.torrentTitle,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall
@@ -343,6 +356,42 @@ class _TorrentTaskDetailDialogState
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
         ],
+        const SizedBox(height: 12),
+        Text(
+          t.download_detail_section_task,
+          style: theme.textTheme.titleSmall,
+        ),
+        const SizedBox(height: 4),
+        _statRow(theme, t.download_detail_hash_label, snapshot.hash),
+        _statRow(
+          theme,
+          t.download_detail_raw_state_label,
+          snapshot.state,
+        ),
+        if (snapshot.totalSizeBytes >= 0)
+          _statRow(
+            theme,
+            t.download_detail_total_size_label,
+            FushiByteFormat.bytes(snapshot.totalSizeBytes),
+          ),
+        if (snapshot.amountLeft >= 0)
+          _statRow(
+            theme,
+            t.download_detail_remaining_label,
+            FushiByteFormat.bytes(snapshot.amountLeft),
+          ),
+        if (snapshot.savePath.trim().isNotEmpty)
+          _statRow(
+            theme,
+            t.download_detail_save_path_label,
+            snapshot.savePath,
+          ),
+        if (snapshot.contentPath.trim().isNotEmpty)
+          _statRow(
+            theme,
+            t.download_detail_content_path_label,
+            snapshot.contentPath,
+          ),
         const SizedBox(height: 12),
         Text(t.download_detail_section_transfer,
             style: theme.textTheme.titleSmall),
