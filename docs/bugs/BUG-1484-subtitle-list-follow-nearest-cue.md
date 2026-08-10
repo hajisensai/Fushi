@@ -33,6 +33,6 @@
 
 **高亮不受影响**：仍读裸 `currentCueIndex`，静默段依然没有高亮行（与画面一致）。
 
-- **[x] ① 已修复** — 分支 `worktree-agent-ad28939c9b011f65c`（提交哈希见下方「提交」条）。
+- **[x] ① 已修复** — 提交 `090d61c1a`，分支 `worktree-agent-ad28939c9b011f65c`。
 - **[x] ② 已加自动化测试** — `fushi/test/media/video/video_subtitle_list_follow_nearest_cue_test.dart`（19 条）：纯函数的空列表 / 首条之前 / 落 gap / 末条之后 / startMs 并列 / 未排序 / 重叠 + 逐字卡拉OK 合并后 raw→代表行映射 + 4 条真面板 widget 行为（跟随开启定位最近行、跟随关闭保持停在开头、gap→gap seek 跟随、早于首条定位首条）。变异实测：去掉最近行回落 ⇒ 5 红；去掉「早于首条 → 首条」回落 ⇒ 2 红。
 - **备注**：`resolveFollowCueIndex` 的 `follow` 参数就是面板头部的「自动滚动 / 跟随播放」开关，关掉时零行为变化。
