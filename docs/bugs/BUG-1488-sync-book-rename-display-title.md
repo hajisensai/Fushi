@@ -25,7 +25,7 @@
      互相打架 → 不勾 `settings` 导出时，用户所有书的改名被一并 strip 掉。
      （视频改名直写 `video_books.title` 列，天然跟着行走，所以这条不对称只砸书。）
 
-- **[x] ① 已修复** — `290968ce9`。三条出境通道全部按「只搬显示名、绝不搬身份」打通：
+- **[x] ① 已修复** — `5f55247696`。三条出境通道全部按「只搬显示名、绝不搬身份」打通：
   - wire：`RemoteBookInfo` 新增 additive 字段 `displayTitle` + 消费入口 `displayName`
     （`fushi/lib/src/sync/fushi_library_host_service.dart`）。**与 raw title 相同时不写 wire 键**，
     旧 host 不发 / 旧 peer 忽略，清单字节零变化。`downloadId` / `bookKey` / 去重键仍恒用 raw `title`。
