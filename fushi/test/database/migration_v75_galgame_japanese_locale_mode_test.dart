@@ -77,7 +77,7 @@ CREATE TABLE galgame_sessions (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 76,
+    expect(db.schemaVersion, 81,
         reason: 'v75 给 galgames 加 japanese_locale_mode（每游戏转区档位）');
 
     final List<QueryRow> columns =

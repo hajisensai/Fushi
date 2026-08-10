@@ -30,9 +30,12 @@ bool isEpubBackedAudiobookSrt(SrtBook book) {
 
 /// books domain methods extracted via part-of (TODO-587); shared private scope.
 extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
-  Widget? _buildSrtBookTagLabels(int srtBookId) => _tagLabelsFromMap(
+  // v79：srtBookTagMapProvider 键换 uid（String）。泛型 map 索引不受编译器
+  // 保护——int 键查 String 键 map 恒 miss 且 analyze 全绿（review5-3），
+  // 类型签名钉死在 String 上防复发。
+  Widget? _buildSrtBookTagLabels(String srtUid) => _tagLabelsFromMap(
         ref.watch(srtBookTagMapProvider).valueOrNull,
-        srtBookId,
+        srtUid,
       );
 
   /// [selectable]（默认 true）= 多选态可单独勾选。块2：合集行成员卡传 false
@@ -47,7 +50,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       VoidCallback? removeFromCollection,
       String focusIdPrefix = ''}) {
     final String selKey = 'srt_${book.uid}';
-    final tagWidget = book.id != null ? _buildSrtBookTagLabels(book.id!) : null;
+    final tagWidget = _buildSrtBookTagLabels(book.uid);
     final int? srtBookId = book.id;
     // TODO-919 / BUG-441：EPUB 有声书配对行（TODO-894 落的 srt_books）保留耳机角标，
     // 纯字幕书仍用字幕角标。
@@ -71,8 +74,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       focusId: FushiFocusId('${focusIdPrefix}reader-shelf-srt-${book.uid}'),
       selectionKey: selectable ? selKey : null,
       dragBookId: srtBookId,
-      onTagDropped:
-          srtBookId == null ? null : (tag) => _addTagToSrtBook(srtBookId, tag),
+      onTagDropped: (tag) => _addTagToSrtBook(book.uid, tag),
       // 拖卡进合集：SRT 的合集身份是 **uid**，不是上面打标签用的 int 主键
       // `srtBookId`（`_addSrtToCollection` 同源）——两者不可混用。
       dragMediaRef: MediaRef(kind: MediaKind.srt, entryKey: book.uid),
@@ -190,8 +192,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
 
   Future<void> _openSrtBook(SrtBook book) async {
     if (book.bookKey.isEmpty) {
-      FushiToast.show(
-          msg: t.srt_epub_not_ready, severity: ToastSeverity.error);
+      FushiToast.show(msg: t.srt_epub_not_ready, severity: ToastSeverity.error);
       return;
     }
     // BUG-456: SRT books must use the normal media entry so AppModel registers
@@ -678,7 +679,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     ref.invalidate(bookTagMapProvider);
     ref.invalidate(srtBookTagMapProvider);
     ref.invalidate(filteredBookIdsProvider);
-    ref.invalidate(filteredSrtBookIdsProvider);
+    ref.invalidate(filteredSrtBookUidsProvider);
   }
 
   /// 块3：批量「组合」按钮三档自适应（[classifyCombine]）。书架选择键经
@@ -939,8 +940,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     );
     if (scope == null) return;
 
-    final DeleteBookResult result =
-        await ReaderFushiSource.instance.deleteBook(
+    final DeleteBookResult result = await ReaderFushiSource.instance.deleteBook(
       db: appModel.database,
       bookKey: bookKey,
       scope: scope,

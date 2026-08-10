@@ -101,12 +101,19 @@ void main() {
       .firstWhere((VideoBookRow r) => r.bookUid == uid)
       .title;
 
+  // #792 起入口收进 more_horiz 管理菜单，不再是顶栏独立 IconButton。
+  Future<void> invokeEpisodeRename(WidgetTester tester) async {
+    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.collection_episode_rename).last);
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('确认全部 → 两集集名都写穿 E01/E02 格式', (WidgetTester tester) async {
     await seedEpisodeMeta();
     await pumpWide(tester);
 
-    await tester.tap(find.byIcon(Icons.format_list_numbered));
-    await tester.pumpAndSettle();
+    await invokeEpisodeRename(tester);
 
     expect(find.text('raw_file_01'), findsWidgets, reason: '弹窗逐行显示旧名');
     expect(find.text('E01 出会い'), findsOneWidget, reason: '弹窗逐行显示新名');
@@ -123,8 +130,7 @@ void main() {
     await seedEpisodeMeta();
     await pumpWide(tester);
 
-    await tester.tap(find.byIcon(Icons.format_list_numbered));
-    await tester.pumpAndSettle();
+    await invokeEpisodeRename(tester);
 
     await tester.tap(find.byKey(
       const ValueKey<String>('episode-rename-row-video/e2'),
@@ -140,8 +146,7 @@ void main() {
   testWidgets('未刮集级资料 → 无对照，直接提示零弹窗零写入', (WidgetTester tester) async {
     await pumpWide(tester);
 
-    await tester.tap(find.byIcon(Icons.format_list_numbered));
-    await tester.pumpAndSettle();
+    await invokeEpisodeRename(tester);
 
     expect(find.byType(AlertDialog), findsNothing, reason: '空对照不该弹确认框');
     expect(await titleOf('video/e1'), 'raw_file_01');

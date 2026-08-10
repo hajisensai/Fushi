@@ -93,6 +93,17 @@ addedAt——加一个没有消费者的时钟列只会让人误以为它在同�
 - 当前模型是**自洽的**:导入期强制标题去重 + display_title 展示/身份分离 + 远端下载改键
   迁移,丑但没有活 bug。换句话说这是债,不是火。
 
+**Stage 1a 已落地(v81,PR #796)**:epub_books.uid 列(insertEpubBook 单点
+自动生成 book_<时刻>_<计数>;迁移回填 book_<rowid>_<时刻>;partial 唯一索引
+WHERE uid != '' 防裸插撞约束)+ getEpubBookByUid 读取口。身份从此随行积累,
+与 v39 给视频先落 bookUid 列、v76 收尾的两步走同款。
+
+**Stage 1b 关键雷区(切子表键前必读)**:reader_positions/bookmarks/
+book_custom_css/revealed_images 进备份合并与 sync——键切 uid 后两库的随机
+uid 互不可比,合并引擎四张表的 SQL 必须改为经 epub_books 双侧 JOIN 换键
+(src.uid → src.book_key → target.book_key → target.uid),否则合并静默零命中。
+这是当初分期的真正原因,不是工作量而是数据正确性雷区。
+
 分期骨架(后续任务按此执行):
 1. Stage 1:EpubBooks 加 `uid` 列(导入时生成,迁移回填随机 uid),**同 PR 内**把
    ReaderPositions/Bookmarks/RevealedImages/BookCustomCss 的读写切到 uid(FK 重建),

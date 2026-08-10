@@ -26,12 +26,9 @@ void main() {
   });
 
   Future<void> seedItem(String identifier) => db.customStatement(
-        'INSERT INTO media_items '
-        '(media_identifier, title, media_type_identifier, '
-        'media_source_identifier, unique_key, position, duration, '
-        'can_delete, can_edit) '
-        "VALUES ('$identifier', 'T', 'reader', 'reader_fushi', "
-        "'reader_fushi/$identifier', 0, 0, 1, 1)",
+        'INSERT INTO media_open_history '
+        '(media_type, media_source, media_id) '
+        "VALUES ('reader', 'reader_fushi', '$identifier')",
       );
 
   File fileFor(String name) => File(p.join(thumbs.path, name));

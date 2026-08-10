@@ -42,10 +42,9 @@ void main() {
       importedAt: 1,
       bookKey: const Value('ttu-tag'),
     ));
-    final SrtBookRow srt = (await sourceDb.getSrtBookByUid('srt-tag'))!;
     for (final String name in tagNames) {
       final int tagId = await sourceDb.getOrCreateTagByName(name);
-      await sourceDb.addTagToSrtBook(srt.id, tagId);
+      await sourceDb.addTagToSrtBook('srt-tag', tagId);
     }
 
     return SyncAssetPackageService(db: sourceDb).exportAudioDatabasePackage(
@@ -79,8 +78,7 @@ void main() {
       audioDatabaseRoot: targetAudio,
     );
 
-    final SrtBookRow targetSrt = (await targetDb.getSrtBookByUid('srt-tag'))!;
-    final Set<String> names = (await targetDb.getTagsForSrtBook(targetSrt.id))
+    final Set<String> names = (await targetDb.getTagsForSrtBook('srt-tag'))
         .map((BookTagRow t) => t.name)
         .toSet();
     expect(names, <String>{'听力', 'N2'});
@@ -114,9 +112,8 @@ void main() {
     expect(all.single.id, existingId);
     expect(all.single.colorValue, 0xFF010203);
 
-    final SrtBookRow targetSrt = (await targetDb.getSrtBookByUid('srt-tag'))!;
     final List<BookTagRow> mapped =
-        await targetDb.getTagsForSrtBook(targetSrt.id);
+        await targetDb.getTagsForSrtBook('srt-tag');
     expect(mapped, hasLength(1));
     expect(mapped.single.id, existingId);
   });

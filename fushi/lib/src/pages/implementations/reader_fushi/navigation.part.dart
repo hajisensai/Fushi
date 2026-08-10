@@ -1414,29 +1414,19 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // `now - _sessionStartTime` 墙钟差。早退路径（无新字数且时长未达阈值）不消费
     // 累计器，这段时长留到下次真正落库时一并计入——旧实现在这里蒸发。
     final int elapsedMs = _sessionReadingMs;
-    final String dateKey = statDateKey(now);
+
     final int charsRead = _sessionCharsRead;
     final String title = _book!.title;
     _sessionCharsRead = 0;
     _sessionReadingMs = 0;
     try {
-      await appModel.database.addReadingStatistic(
-        title: title,
-        dateKey: dateKey,
-        charsRead: charsRead,
-        timeMs: elapsedMs,
-      );
-      // v49：同一 session 追加一条精确时刻的活动事件，喂首页 Activity 时间轴
-      // （按天统计表只有每日总量，无法还原「几小时前 · 本次多久」）。
-      await appModel.database.addActivityEvent(
-        eventType: kActivityRead,
-        mediaType: kActivityMediaBook,
+      // P4：事实（activity 时间轴行）+ 派生投影（日聚合）走单一复合入口。
+      await appModel.database.recordReadingSession(
         title: title,
         mediaKey: widget.bookKey,
-        dateKey: dateKey,
-        timestampMs: now.millisecondsSinceEpoch,
-        durationMs: elapsedMs,
-        charsDelta: charsRead,
+        charsRead: charsRead,
+        timeMs: elapsedMs,
+        at: now,
       );
     } catch (e, stack) {
       // fail-open：本次统计增量丢弃（计数器已清零，不会重复累加），补 debugPrint +

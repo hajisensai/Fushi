@@ -26,8 +26,9 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final String coverImageSrc =
       File('lib/src/utils/cover_image.dart').readAsStringSync();
+  // God 拆分（2026-08）后合集 DAO 居 library part。
   final String dbSrc =
-      File('../packages/fushi_core/lib/src/database/database.dart')
+      File('../packages/fushi_core/lib/src/database/database_library.part.dart')
           .readAsStringSync();
   final String videoPageSrc =
       File('lib/src/pages/implementations/home_video_page.dart')

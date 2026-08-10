@@ -198,7 +198,7 @@ void main() {
           'dictionary_metadata',
           'sync_baselines',
           'video_books',
-          'video_book_tag_mappings',
+          'tag_assignments',
           'video_watch_statistics',
           'video_hourly_logs',
           'favorite_words',

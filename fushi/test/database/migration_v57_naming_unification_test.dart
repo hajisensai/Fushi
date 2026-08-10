@@ -85,6 +85,28 @@ CREATE TABLE video_books (
 )
 ''');
           rawDb.execute('''
+CREATE TABLE shelf_entries (
+  media_type TEXT NOT NULL,
+  entry_key TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  series_id INTEGER,
+  PRIMARY KEY (media_type, entry_key)
+)
+''');
+          rawDb.execute('''
+CREATE TABLE audio_cues (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  book_key TEXT NOT NULL,
+  chapter_href TEXT NOT NULL,
+  sentence_index INTEGER NOT NULL,
+  text_fragment_id TEXT NOT NULL,
+  cue_text TEXT NOT NULL,
+  start_ms INTEGER NOT NULL,
+  end_ms INTEGER NOT NULL,
+  audio_file_index INTEGER NOT NULL
+)
+''');
+          rawDb.execute('''
 CREATE TABLE video_book_tag_mappings (
   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   video_book_uid TEXT NOT NULL
@@ -169,15 +191,15 @@ CREATE TABLE book_tag_membership_tombstones (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 78,
+    expect(db.schemaVersion, 81,
         reason: 'v57 = 命名统一；v58 = 外部媒体自动记录；v59 = 游戏标签；'
             'v60 = 阅读页数；v61 = 合集自有封面；v62 = 每游戏窗口超分档位；'
             'v63 = 清理旧全局超分 pref');
 
-    final Set<String> mapping = await columnsOf(db, 'video_book_tag_mappings');
-    expect(mapping, contains('book_uid'));
-    expect(mapping, isNot(contains('video_book_uid')),
-        reason: '① FK 列与被引列 VideoBooks.bookUid 同名化');
+    // ① 的旧表在 v77 已整体搬进 tag_assignments 并 DROP；改名正确性由
+    // 「v57 ①」测试用搬移后的行值（entryKey/addedAt 保真）证明。
+    expect(await columnsOf(db, 'video_book_tag_mappings'), isEmpty,
+        reason: '旧映射表在 v77 已 DROP');
 
     final Set<String> collTomb =
         await columnsOf(db, 'collection_member_tombstones');
@@ -207,25 +229,24 @@ CREATE TABLE book_tag_membership_tombstones (
     expect(b!.importedAt, isNull, reason: 'NULL 不被 ×1000 造出假时间');
   });
 
-  test('v57 ①：映射行值保真，重建后的 FK ON DELETE CASCADE 仍生效', () async {
+  test('v57 ①：映射行值保真（v77 后落 tag_assignments），删除路径清理生效', () async {
     final FushiDatabase db = await openV56Db();
 
-    final List<VideoBookTagMappingRow> rows =
-        await db.getAllVideoBookTagMappings();
+    final List<TagAssignmentRow> rows = await db.getAllTagAssignments();
     expect(rows, hasLength(1));
-    expect(rows.single.bookUid, 'video/a');
+    expect(rows.single.entryKey, 'video/a');
+    expect(rows.single.mediaKind, TagHostKind.video.dbValue);
     expect(rows.single.tagId, 1);
-    expect(rows.single.addedAt, 111, reason: 'LWW add 时钟原样搬运');
+    expect(rows.single.addedAt, 111, reason: 'LWW add 时钟原样搬运（v57→v77 两跳）');
 
-    // 标签查询链路（join + where 新列）活着。
+    // 标签查询链路（join + where）活着。
     final tags = await db.getTagsForVideoBook('video/a');
     expect(tags.single.name, '收藏');
 
-    // 重建表的 FK 子句必须保住 ON DELETE CASCADE：删视频行连坐清映射。
-    await db
-        .customStatement("DELETE FROM video_books WHERE book_uid = 'video/a'");
-    expect(await db.getAllVideoBookTagMappings(), isEmpty,
-        reason: '重建后的 FK cascade 行为与 v56 一致');
+    // v77 起映射是逻辑外键：删视频经显式删除路径清映射（不再是 DB cascade）。
+    await db.deleteVideoBook('video/a');
+    expect(await db.getAllTagAssignments(), isEmpty,
+        reason: '删除路径显式清理，行为与旧 cascade 等价');
   });
 
   test('v57 ②：两张墓碑表值保真、主键/upsert 语义不变', () async {
@@ -266,8 +287,8 @@ CREATE TABLE book_tag_membership_tombstones (
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
-    expect(
-        await columnsOf(db, 'video_book_tag_mappings'), contains('book_uid'));
+    expect(await columnsOf(db, 'tag_assignments'), contains('entry_key'),
+        reason: 'v77：fresh 库映射直接落统一表');
     expect(await columnsOf(db, 'collection_member_tombstones'),
         contains('deleted_at'));
     expect(await columnsOf(db, 'book_tag_membership_tombstones'),

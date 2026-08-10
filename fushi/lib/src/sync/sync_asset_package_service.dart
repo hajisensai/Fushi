@@ -129,7 +129,7 @@ class SyncAssetPackageService {
     final String cueKey = audiobook != null ? effectiveBookKey : srtBookUid;
     final List<AudioCueRow> cues = await _db.getCuesForBook(cueKey);
     // TODO-1165：SRT 书标签名（标签每设备本地，跨设备按名带进 manifest）。
-    final List<BookTagRow> srtTags = await _db.getTagsForSrtBook(srtBook.id);
+    final List<BookTagRow> srtTags = await _db.getTagsForSrtBook(srtBook.uid);
     final List<File> files = _audioPackageFiles(audiobook, srtBook);
 
     // 主 isolate：分配唯一文件名，建立 manifest 的 resources 映射（源路径→名）
@@ -274,14 +274,11 @@ class SyncAssetPackageService {
           ]
         : const <String>[];
     if (srtTagNames.isNotEmpty) {
-      final SrtBookRow? importedSrt =
-          await _db.getSrtBookByUid(_stringValue(srtBook, 'uid'));
-      if (importedSrt != null) {
-        for (final String name in srtTagNames) {
-          if (name.isEmpty) continue;
-          final int tagId = await _db.getOrCreateTagByName(name);
-          await _db.addTagToSrtBook(importedSrt.id, tagId);
-        }
+      final String importedSrtUid = _stringValue(srtBook, 'uid');
+      for (final String name in srtTagNames) {
+        if (name.isEmpty) continue;
+        final int tagId = await _db.getOrCreateTagByName(name);
+        await _db.addTagToSrtBook(importedSrtUid, tagId);
       }
     }
 
@@ -354,13 +351,10 @@ class SyncAssetPackageService {
           ]
         : const <String>[];
     if (srtTagNames.isNotEmpty) {
-      final SrtBookRow? importedSrt = await _db.getSrtBookByUid(uid);
-      if (importedSrt != null) {
-        for (final String name in srtTagNames) {
-          if (name.isEmpty) continue;
-          final int tagId = await _db.getOrCreateTagByName(name);
-          await _db.addTagToSrtBook(importedSrt.id, tagId);
-        }
+      for (final String name in srtTagNames) {
+        if (name.isEmpty) continue;
+        final int tagId = await _db.getOrCreateTagByName(name);
+        await _db.addTagToSrtBook(uid, tagId);
       }
     }
 

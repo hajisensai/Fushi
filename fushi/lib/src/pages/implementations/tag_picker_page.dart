@@ -40,17 +40,8 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
 
   FushiDatabase get _db => ref.read(appProvider).database;
 
-  /// SRT 书标签映射按 SrtBooks 整型主键落库；[MediaRef.entryKey]（= uid）在此
-  /// 解析成行 id（构造点只持有稳定 uid，不强迫调用方先查 id）。
-  Future<int> _srtBookIdOf(String uid) async {
-    final SrtBookRow? row = await _db.getSrtBookByUid(uid);
-    if (row == null) {
-      throw StateError('TagPickerPage: srt book not found for uid $uid');
-    }
-    return row.id;
-  }
-
   /// 读当前目标已挂的标签（合集直取；媒体按 [MediaKind] 穷尽分派）。
+  /// v77 起 SRT 标签映射按 uid 落库，[MediaRef.entryKey]（= uid）直传，无需解析 id。
   Future<List<BookTagRow>> _currentTags() async {
     final int? collectionId = widget.collectionId;
     if (collectionId != null) return _db.getTagsForCollection(collectionId);
@@ -59,7 +50,7 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
       case MediaKind.epub:
         return _db.getTagsForBook(media.entryKey);
       case MediaKind.srt:
-        return _db.getTagsForSrtBook(await _srtBookIdOf(media.entryKey));
+        return _db.getTagsForSrtBook(media.entryKey);
       case MediaKind.video:
         return _db.getTagsForVideoBook(media.entryKey);
       case MediaKind.game:
@@ -77,7 +68,7 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
       case MediaKind.epub:
         return _db.addTagToBook(media.entryKey, tagId);
       case MediaKind.srt:
-        return _db.addTagToSrtBook(await _srtBookIdOf(media.entryKey), tagId);
+        return _db.addTagToSrtBook(media.entryKey, tagId);
       case MediaKind.video:
         return _db.addTagToVideoBook(media.entryKey, tagId);
       case MediaKind.game:
@@ -95,8 +86,7 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
       case MediaKind.epub:
         return _db.removeTagFromBook(media.entryKey, tagId);
       case MediaKind.srt:
-        return _db.removeTagFromSrtBook(
-            await _srtBookIdOf(media.entryKey), tagId);
+        return _db.removeTagFromSrtBook(media.entryKey, tagId);
       case MediaKind.video:
         return _db.removeTagFromVideoBook(media.entryKey, tagId);
       case MediaKind.game:

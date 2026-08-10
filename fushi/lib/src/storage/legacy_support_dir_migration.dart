@@ -32,7 +32,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 路径创建并缓存空 prefs，之后搬什么都晚了）。`main()` 在 `ensureInitialized`
 /// 之后立刻调。
 Future<LegacySupportMigrationOutcome> migrateLegacySupportDir() async {
-  if (!Platform.isWindows && !Platform.isMacOS) {
+  if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) {
     return LegacySupportMigrationOutcome.notApplicable;
   }
   try {
@@ -40,6 +40,7 @@ Future<LegacySupportMigrationOutcome> migrateLegacySupportDir() async {
     final Directory? legacy = legacySupportDirFor(
       current,
       isMacOS: Platform.isMacOS,
+      isLinux: Platform.isLinux,
     );
     if (legacy == null) return LegacySupportMigrationOutcome.notApplicable;
     final LegacySupportMigrationOutcome outcome =
@@ -105,12 +106,15 @@ const List<String> kLegacyWindowsAppDataSegments = <String>['Hibiki', 'Hibiki'];
 /// Windows 改名后的 APPDATA 两段（Runner.rc 的 CompanyName / ProductName）。
 const List<String> kFushiWindowsAppDataSegments = <String>['Fushi', 'Fushi'];
 
-/// Linux 的 app-support 根身份（`linux/CMakeLists.txt` 的 `APPLICATION_ID`）。
-/// 本次改名**没动它**，所以 Linux 侧没有断裂、不需要搬迁。守卫
-/// `test/storage/desktop_identity_continuity_guard_test.dart` 会把这个常量与
-/// CMake 里的真值对上：哪天真去改 Linux 身份，守卫先红，逼着在本文件补一条
-/// Linux 旧根，而不是让 Linux 用户静默丢库。
-const String kLinuxApplicationIdUnchangedByRename = 'com.example.hibiki';
+/// Linux 存量安装的 APPLICATION_ID（改名前 `linux/CMakeLists.txt` 的值）。
+const String kLegacyLinuxApplicationId = 'com.example.hibiki';
+
+/// Linux 改名后的 APPLICATION_ID（PR #790 W9 收尾把 CMakeLists 一并换成了
+/// fushi 身份——守卫 `desktop_identity_continuity_guard_test.dart` 当场红，
+/// 本条 Linux 搬迁分支即它逼出来的补齐：XDG_DATA_HOME 下
+/// `com.example.hibiki` → `app.fushi.reader`，与 macOS 同为「同父目录换末段」
+/// 布局，共用同一套 migrateSupportDirTree/rebase 管线）。
+const String kFushiLinuxApplicationId = 'app.fushi.reader';
 
 /// 由**当前** app-support 根反推同一台机器上改名前的 app-support 根。
 ///
@@ -123,6 +127,7 @@ const String kLinuxApplicationIdUnchangedByRename = 'com.example.hibiki';
 Directory? legacySupportDirFor(
   Directory current, {
   required bool isMacOS,
+  bool isLinux = false,
   p.Context? context,
 }) {
   final p.Context ctx = context ?? p.context;
@@ -131,6 +136,12 @@ Directory? legacySupportDirFor(
     // ~/Library/Application Support/app.fushi.reader → 同级 com.example.hibiki
     if (segments.last != kFushiMacosBundleId) return null;
     return Directory(ctx.join(ctx.dirname(current.path), kLegacyMacosBundleId));
+  }
+  if (isLinux) {
+    // $XDG_DATA_HOME/app.fushi.reader → 同级 com.example.hibiki。
+    if (segments.last != kFushiLinuxApplicationId) return null;
+    return Directory(
+        ctx.join(ctx.dirname(current.path), kLegacyLinuxApplicationId));
   }
   // Windows：Roaming\Fushi\Fushi → Roaming\Hibiki\Hibiki。
   final int depth = kFushiWindowsAppDataSegments.length;

@@ -982,16 +982,16 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  Future<void> _addTagToSrtBook(int srtBookId, BookTagRow tag) async {
+  Future<void> _addTagToSrtBook(String srtUid, BookTagRow tag) async {
     final existing = ref.read(srtBookTagMapProvider).valueOrNull;
     await _addTagToMedia(
-      alreadyHas: existing?[srtBookId]?.any((t) => t.id == tag.id) ?? false,
+      alreadyHas: existing?[srtUid]?.any((t) => t.id == tag.id) ?? false,
       tag: tag,
       addToDb: () =>
-          ref.read(appProvider).database.addTagToSrtBook(srtBookId, tag.id),
+          ref.read(appProvider).database.addTagToSrtBook(srtUid, tag.id),
       invalidate: <ProviderOrFamily>[
         srtBookTagMapProvider,
-        filteredSrtBookIdsProvider,
+        filteredSrtBookUidsProvider,
       ],
       successMsg: t.tag_added_to_book(name: tag.name),
     );
@@ -1238,8 +1238,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           }).toList();
 
     final bool hasActiveFilter = ref.read(selectedTagIdsProvider).isNotEmpty;
-    final Set<int>? srtFilterSet =
-        ref.watch(filteredSrtBookIdsProvider).valueOrNull;
+    final Set<String>? srtFilterSet =
+        ref.watch(filteredSrtBookUidsProvider).valueOrNull;
     // BUG-940：合集标签维度（含全部选中标签的合集 id）。srt 成员级过滤与末尾的
     // 合集组保留（[shelfGroups.removeWhere]）共用此集，避免「合集打了标签但成员没打」
     // 时 srt 成员被剥光、折叠不出合集组。
@@ -1248,10 +1248,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     final List<SrtBook> srtBooks;
     if (srtFilterSet != null) {
       srtBooks = allSrtBooks
-          .where((b) =>
-              b.id != null &&
-              keepMemberUnderTagFilter(
-                memberMatched: srtFilterSet.contains(b.id),
+          .where((b) => keepMemberUnderTagFilter(
+                memberMatched: srtFilterSet.contains(b.uid),
                 primaryCollectionId: _primaryCollectionByEntry[
                     MediaKind.srt.compositeKey(b.uid)],
                 collectionFilter: collectionFilter,
@@ -2294,7 +2292,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     if (!mounted) return;
     ref.invalidate(bookTagMapProvider);
     ref.invalidate(filteredBookIdsProvider);
-    ref.invalidate(filteredSrtBookIdsProvider);
+    ref.invalidate(filteredSrtBookUidsProvider);
   }
 
   /// 单卡「加入合集」（EPUB 卡菜单入口）：先收起长按菜单，再弹共享的合集选择

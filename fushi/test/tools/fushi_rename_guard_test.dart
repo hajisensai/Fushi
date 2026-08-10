@@ -57,6 +57,8 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
       'packages/fushi_core/lib/src/database/database.dart':
           'v16 阶梯（legacy uid / identifier 重键）与 v73 前缀改写步的旧值'
               '输入：读旧库做一次性改写的迁移代码。',
+      'packages/fushi_core/lib/src/database/database_tags_sync.part.dart':
+          'v16 重键 DAO 方法体（God 拆分后移居此 part），同上一次性迁移输入。',
       'lib/src/media/override_thumbnail_migration.dart':
           '按新 identifier 反推旧形态 hash 文件名的清扫输入（hoshi:// 前缀'
               '换回构造旧 key）。',
@@ -74,8 +76,10 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     regex: RegExp('reader_ttu'),
     allowed: <String, String>{
       'packages/fushi_core/lib/src/database/database.dart':
-          'v16 阶梯 _kLegacyUidPrefix（reader_ttu/hoshi://book/）与 v70 改写步的'
-              '旧前缀输入：读旧库做一次性改写的迁移代码，旧字面量是必要输入。',
+          'v70 改写步的旧前缀输入：读旧库做一次性改写的迁移代码。',
+      'packages/fushi_core/lib/src/database/database_tags_sync.part.dart':
+          'v16 重键 _kLegacyUidPrefix（reader_ttu/hoshi://book/）——God 拆分后'
+              '移居此 part 的一次性迁移输入。',
       'lib/src/media/override_thumbnail_migration.dart':
           'BUG-1317 前 legacy 封面文件名烧入的历史源键（reader_ttu 当年的'
               '字面量永远不变），清扫反推旧 hash 名的必要输入。',
@@ -92,6 +96,12 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
       'packages/fushi_core/lib/src/database/database.dart':
           '历史 SQL 列名 ttu_book_id / ttu_char_offset（v16/v24 迁移阶梯输入）'
               '与 v70 剥前缀步的旧前缀输入，只活在迁移代码里。',
+      'packages/fushi_core/lib/src/database/database_infra.part.dart':
+          '同上历史列名（God 拆分后基础设施探测代码移居此 part）。',
+      'packages/fushi_core/lib/src/database/database_prefs_media.part.dart':
+          '同上（God 拆分后 prefs/书签 JSON 兼容读取移居此 part）。',
+      'packages/fushi_core/lib/src/database/database_tags_sync.part.dart':
+          '同上（God 拆分后 v16 重键 DAO 移居此 part）。',
     },
   ),
   _ForbiddenPattern(
@@ -101,9 +111,9 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     name: 'ttu*-camel 符号',
     regex: RegExp(r'\bttu[A-Z]'),
     allowed: <String, String>{
-      'packages/fushi_core/lib/src/database/database.dart':
-          "legacy 书签 JSON 的 'ttuBookId' wire 键及其局部变量（迁移代码），"
-              '命名跟随冻结 wire 本名。',
+      'packages/fushi_core/lib/src/database/database_prefs_media.part.dart':
+          "legacy 书签 JSON 的 'ttuBookId' wire 键及其局部变量（God 拆分后"
+              '移居此 part 的迁移代码），命名跟随冻结 wire 本名。',
     },
   ),
   _ForbiddenPattern(

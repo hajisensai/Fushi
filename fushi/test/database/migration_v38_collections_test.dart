@@ -354,13 +354,12 @@ void main() {
     await db.getAllMediaCollections();
 
     // 标签：3 集各有 tag 1，父映射已随父行 cascade 删。
-    // （断言跑在整条阶梯之后，v57 已把 video_book_uid 更名 book_uid。）
-    final tagRows = await db
-        .customSelect('SELECT book_uid, tag_id FROM video_book_tag_mappings')
-        .get();
-    final tagged = tagRows
-        .where((r) => r.read<int>('tag_id') == 1)
-        .map((r) => r.read<String>('book_uid'))
+    // （断言跑在整条阶梯之后：v57 已把 video_book_uid 更名 book_uid，v77 又把
+    // 五张映射表并进 tag_assignments——查统一表的 video kind。）
+    final tagged = (await db.getAllTagAssignments())
+        .where((TagAssignmentRow r) =>
+            r.tagId == 1 && r.mediaKind == TagHostKind.video.dbValue)
+        .map((TagAssignmentRow r) => r.entryKey)
         .toSet();
     expect(tagged, <String>{_e1, _e2, _e3});
 

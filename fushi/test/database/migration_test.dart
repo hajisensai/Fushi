@@ -721,7 +721,7 @@ void main() {
         tableNames,
         containsAll([
           'preferences',
-          'media_items',
+          'media_open_history',
           'epub_books',
           'audiobooks',
           'audio_cues',
@@ -731,7 +731,7 @@ void main() {
           'profiles',
           'profile_settings',
           'book_tags',
-          'book_tag_mappings',
+          'tag_assignments',
           'reader_positions',
           'bookmarks',
           'reading_statistics',
@@ -739,7 +739,6 @@ void main() {
           'search_history_items',
           'sync_baselines',
           'video_books',
-          'video_book_tag_mappings',
           'video_watch_statistics',
           'video_hourly_logs',
           'favorite_words',
@@ -822,11 +821,11 @@ void main() {
       expect(row.delayMs, 0);
     });
 
-    test('real v20->v21 upgrade creates a usable video_book_tag_mappings table',
+    test('real v20->v21 upgrade creates a usable video tag mapping path',
         () async {
       // A v20 DB has video_books but no video_book_tag_mappings; opening it must
-      // drive the from<21 onUpgrade branch (createTable(videoBookTagMappings))
-      // rather than onCreate.
+      // drive the from<21 onUpgrade branch（v77 冻结 SQL 建表，随后 v77 步把行
+      // 搬进 tag_assignments 并 DROP 旧表）——标签链路必须在全阶梯后仍可用。
       final db = await _openV20DbWithoutVideoTagMappings();
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
@@ -1079,7 +1078,7 @@ void main() {
       // now 31 (v30 series/shelf_entries + v31 paired peers 表). This v28 DB
       // upgrades all the way to current; TODO-894's backfill still ran (asserted
       // below). The literal had to track the bump.
-      expect(db.schemaVersion, 78,
+      expect(db.schemaVersion, 81,
           reason: 'global schemaVersion is now 38 (TODO-616 v30 + TODO-1017 '
               'v31 + TODO-1195 v32 + TODO-1204 v33 + v34 statistics_tombstones + '
               'TODO-1157 v35 stream_spec_json + TODO-1252 v36 favorite_words '
@@ -1156,7 +1155,7 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 78,
+      expect(db.schemaVersion, 81,
           reason:
               'TODO-1288 bumps schema to v37 (audiobook srt_books self-heal)');
 
@@ -1245,14 +1244,17 @@ void main() {
       expect(bm.single.read<String>('book_title'), 'AlphaBook');
     });
 
-    test('video_book_tag_mappings references video_books and book_tags',
-        () async {
+    test(
+        'tag_assignments references book_tags via foreign key (v77：宿主是'
+        '逻辑外键，只有 tag_id 挂真 FK)', () async {
       final db = await _openDb();
       final fks = await db
-          .customSelect("PRAGMA foreign_key_list('video_book_tag_mappings')")
+          .customSelect("PRAGMA foreign_key_list('tag_assignments')")
           .get();
       final tables = fks.map((r) => r.data['table'] as String).toSet();
-      expect(tables, containsAll(['video_books', 'book_tags']));
+      expect(tables, contains('book_tags'));
+      expect(tables, isNot(contains('video_books')),
+          reason: '宿主键跨五 kind 复用，不挂 DB FK（ShelfEntries 同惯例）');
     });
 
     test('preferences table has key and value columns', () async {
@@ -1263,15 +1265,16 @@ void main() {
       expect(colNames, containsAll(['key', 'value']));
     });
 
-    test('media_items has unique_key column with UNIQUE constraint', () async {
+    test('media_open_history keys on (media_source, media_id)', () async {
       final db = await _openDb();
-      final indices =
-          await db.customSelect("PRAGMA index_list('media_items')").get();
-      final uniqueIndices = indices
-          .where((r) => r.data['unique'] == 1)
+      final cols = await db
+          .customSelect("PRAGMA table_info('media_open_history')")
+          .get();
+      final pkCols = cols
+          .where((r) => (r.data['pk'] as int) > 0)
           .map((r) => r.data['name'] as String)
-          .toList();
-      expect(uniqueIndices, isNotEmpty);
+          .toSet();
+      expect(pkCols, <String>{'media_source', 'media_id'});
     });
 
     test('epub_books has epub_path and extract_dir columns', () async {
@@ -1300,15 +1303,6 @@ void main() {
       expect(colNames, containsAll(['date_key', 'characters_read']));
     });
 
-    test('book_tag_mappings references book_tags via foreign key', () async {
-      final db = await _openDb();
-      final fks = await db
-          .customSelect("PRAGMA foreign_key_list('book_tag_mappings')")
-          .get();
-      final tables = fks.map((r) => r.data['table'] as String).toSet();
-      expect(tables, contains('book_tags'));
-    });
-
     test(
         'real v29->v30 creates series + shelf_entries, bumps user_version to 30, '
         'preserves既有数据 (TODO-616)', () async {
@@ -1316,7 +1310,7 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 78,
+      expect(db.schemaVersion, 81,
           reason: 'global schemaVersion is now 38 (…v35 + TODO-1252 v36 + '
               'TODO-1288 v37 audiobook srt_books self-heal + v38 unified '
               'media_collections); v29->v30 '
@@ -1367,7 +1361,7 @@ void main() {
           .map((r) => r.data['name'] as String)
           .toSet();
       expect(tableNames, containsAll(['series', 'shelf_entries']));
-      expect(db.schemaVersion, 78);
+      expect(db.schemaVersion, 81);
     });
 
     test(
@@ -1376,7 +1370,7 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 78,
+      expect(db.schemaVersion, 81,
           reason:
               'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)');
 
@@ -1410,7 +1404,7 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 78,
+      expect(db.schemaVersion, 81,
           reason:
               'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)');
 
@@ -1450,7 +1444,7 @@ void main() {
     test('fresh DB (v35) has video_books.stream_spec_json column (TODO-1157)',
         () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 78);
+      expect(db.schemaVersion, 81);
       final cols =
           await db.customSelect("PRAGMA table_info('video_books')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1481,7 +1475,7 @@ void main() {
 
     test('fresh DB (v45) has media_collections.anilist_id column', () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 78);
+      expect(db.schemaVersion, 81);
       final cols =
           await db.customSelect("PRAGMA table_info('media_collections')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1515,7 +1509,7 @@ void main() {
 
     test('fresh DB (v46) has epub_books.completed_at column', () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 78);
+      expect(db.schemaVersion, 81);
       final cols =
           await db.customSelect("PRAGMA table_info('epub_books')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1527,7 +1521,7 @@ void main() {
         'fresh DB (v36) has favorite_words.book_key + title columns (TODO-1252)',
         () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 78);
+      expect(db.schemaVersion, 81);
       final cols =
           await db.customSelect("PRAGMA table_info('favorite_words')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1563,7 +1557,7 @@ void main() {
     // 且既有合集行**一行不少、一列不改**（升级绝不能碰用户数据）。
     test('fresh DB (v64) has collection_scrape_meta table', () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 78);
+      expect(db.schemaVersion, 81);
       final rows = await db
           .customSelect(
               "SELECT name FROM sqlite_master WHERE type='table' AND name='collection_scrape_meta'")

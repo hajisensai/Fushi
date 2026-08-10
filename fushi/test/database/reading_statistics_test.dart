@@ -266,4 +266,59 @@ void main() {
       expect(await db.getHourlyLogsForDate('2020-01-01'), isEmpty);
     });
   });
+
+  group('recordReadingSession（P4 写侧收敛：事实 + 派生投影单入口）', () {
+    test('一次调用同份数字落 activity 事实行与 reading_statistics 投影', () async {
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final DateTime at = DateTime(2026, 8, 10, 21, 30);
+
+      await db.recordReadingSession(
+        title: 'BookA',
+        mediaKey: 'bk-a',
+        charsRead: 250,
+        timeMs: 60000,
+        pagesRead: 3,
+        at: at,
+      );
+
+      final stat = (await db.getAllReadingStatistics()).single;
+      expect(stat.title, 'BookA');
+      expect(stat.dateKey, '2026-08-10');
+      expect(stat.charactersRead, 250);
+      expect(stat.readingTimeMs, 60000);
+      expect(stat.pagesRead, 3);
+
+      final events = await db.getRecentActivityEvents(limit: 5);
+      final ev = events.single;
+      expect(ev.eventType, 'read');
+      expect(ev.mediaType, 'book');
+      expect(ev.mediaKey, 'bk-a');
+      expect(ev.dateKey, stat.dateKey,
+          reason: '事实与投影的 dateKey 由同一时刻在 DB 层派生，结构上不可能漂移');
+      expect(ev.charsDelta, 250);
+      expect(ev.durationMs, 60000);
+      expect(ev.timestampMs, at.millisecondsSinceEpoch);
+    });
+
+    test('复合入口保留清统计墓碑语义（重读复活）', () async {
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      await db.insertStatisticsTombstone('BookA', FushiDatabase.statSourceBook);
+
+      await db.recordReadingSession(
+        title: 'BookA',
+        mediaKey: 'bk-a',
+        charsRead: 1,
+        timeMs: 1,
+        at: DateTime(2026, 8, 10),
+      );
+
+      expect(await db.getStatisticsTombstoneKeys(),
+          isNot(contains(('BookA', 'book'))),
+          reason: '经 addReadingStatistic 派生投影，清碑语义原样保留');
+    });
+  });
 }

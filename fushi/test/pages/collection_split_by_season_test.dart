@@ -101,12 +101,19 @@ void main() {
           it.entryKey,
       ];
 
+  // #792 起拆分入口收进 more_horiz 管理菜单，不再是顶栏独立 IconButton。
+  Future<void> openSplitDialog(WidgetTester tester) async {
+    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.collection_split_by_season).last);
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('拆分（保留原合集）：逐季建合集 + 成员按季映射 + 前传/续作链，原合集成员不动',
       (WidgetTester tester) async {
     await pumpWide(tester);
 
-    await tester.tap(find.byIcon(Icons.call_split));
-    await tester.pumpAndSettle();
+    await openSplitDialog(tester);
     // 预览：三个名字输入框（第1/第2季/PV·特典），默认「原名 组名」。
     expect(find.byKey(const ValueKey<String>('collection-split-name-0')),
         findsOneWidget);
@@ -149,8 +156,7 @@ void main() {
   testWidgets('拆分（不保留原合集）：原合集被删除', (WidgetTester tester) async {
     await pumpWide(tester);
 
-    await tester.tap(find.byIcon(Icons.call_split));
-    await tester.pumpAndSettle();
+    await openSplitDialog(tester);
     await tester.tap(find.byKey(
       const ValueKey<String>('collection-split-keep-original'),
     ));
@@ -170,9 +176,16 @@ void main() {
     await db.removeFromCollection(collectionId, MediaKind.video, 'video/pv');
     await pumpWide(tester);
 
-    final IconButton button = tester.widget<IconButton>(
-      find.widgetWithIcon(IconButton, Icons.call_split),
+    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.pumpAndSettle();
+    final PopupMenuItem<Object?> item = tester.widget<PopupMenuItem<Object?>>(
+      find.ancestor(
+        of: find.byIcon(Icons.call_split),
+        matching: find.byWidgetPredicate(
+          (Widget w) => w is PopupMenuItem<Object?>,
+        ),
+      ),
     );
-    expect(button.onPressed, isNull, reason: '单季合集拆分无意义，必须灰显');
+    expect(item.enabled, isFalse, reason: '单季合集拆分无意义，必须灰显');
   });
 }
