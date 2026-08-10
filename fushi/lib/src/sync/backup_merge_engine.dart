@@ -854,13 +854,17 @@ class BackupMergeEngine {
   /// then the unified tag_assignments with the src tagId REMAPPED to the target
   /// id resolved by tag name. Owner rows must already be merged.
   ///
-  /// v77（五表合一 + 用户令全 kind 合并）：src 在 ATTACH 前已迁到当前 schema，
-  /// 五张旧映射表已并成 tag_assignments——这里按 kind 分两路：
-  ///  - epub/srt/video/**game**：entry_key 本身跨库可比（bookKey / srt uid /
+  /// v79（五表合一 + 用户令全 kind 合并）：src 在 ATTACH 前已迁到当前 schema，
+  /// 五张旧映射表已并成 tag_assignments——这里按 kind 分三路：
+  ///  - epub/srt/video/**game 直键**：entry_key 本身跨库可比（bookKey / srt uid /
   ///    bookUid / game id），宿主存在性逐 kind 校验后直插。game 的 id 是本机
-  ///    局域身份且 galgames 表不参与备份合并——只有 target 恰好有同 id 游戏
-  ///    （同机恢复 / 整库迁移后补合并）时才并得上，这是「能并尽并」的物理上限；
-  ///    跨机新游戏的标签随不上（对端没有那行游戏可挂）。
+  ///    局域身份且 galgames 行不参与备份合并——直键只在 target 恰好有同 id 游戏
+  ///    （同机恢复 / 整库迁移后补合并）时命中；
+  ///  - **game 二跳**（用户令跨机也要并）：直键不命中的游戏标签行，经
+  ///    「src 该游戏的刮削身份 (source, external_id) → target 拥有同刮削身份的
+  ///    游戏」二跳落地——bgm/vndb 条目 id 是游戏唯一的跨机稳定身份（两机各自
+  ///    刮削同一部游戏得到同一个 subject id）。两侧任一没刮削/未命中 → 仍丢
+  ///    （按名/按路径猜会把标签打到别的游戏头上，宁缺毋错）；
   ///  - collection：src 本地 id 无跨库意义，经 media_collections
   ///    (name, collection_type) 自然键映射到 target id（JOIN 不命中——被删除
   ///    墓碑跳过、target 无同名合集——天然不插入）。
@@ -891,6 +895,27 @@ class BackupMergeEngine {
       ') '
       'AND NOT EXISTS (SELECT 1 FROM tag_assignments AS m '
       'WHERE m.media_kind = sm.media_kind AND m.entry_key = sm.entry_key '
+      'AND m.tag_id = tt.id)',
+    );
+    // game 二跳：直键不命中（target 无同 id 游戏 = 跨机场景）的游戏标签行，
+    // 按刮削身份重定位到 target 的对应游戏。DISTINCT 防同一 (game, tag) 经
+    // bgm+vndb 双源命中同一 target 游戏时重复；同一 externalId 在 target 命中
+    // 多个游戏（用户重复添加同一部）时每个都打上——标签是并集语义，多打不为错。
+    await _db.customStatement(
+      'INSERT INTO tag_assignments (media_kind, entry_key, tag_id, added_at) '
+      "SELECT DISTINCT 'game', ts.game_id, tt.id, sm.added_at "
+      'FROM $_srcAlias.tag_assignments AS sm '
+      'JOIN $_srcAlias.galgame_sources AS ss '
+      'ON ss.game_id = sm.entry_key '
+      "AND ss.external_id IS NOT NULL AND ss.external_id != '' "
+      'JOIN galgame_sources AS ts '
+      'ON ts.source = ss.source AND ts.external_id = ss.external_id '
+      'JOIN $_srcAlias.book_tags AS st ON st.id = sm.tag_id '
+      'JOIN book_tags AS tt ON tt.name = st.name '
+      "WHERE sm.media_kind = 'game' "
+      'AND NOT EXISTS (SELECT 1 FROM galgames AS g WHERE g.id = sm.entry_key) '
+      'AND NOT EXISTS (SELECT 1 FROM tag_assignments AS m '
+      "WHERE m.media_kind = 'game' AND m.entry_key = ts.game_id "
       'AND m.tag_id = tt.id)',
     );
   }

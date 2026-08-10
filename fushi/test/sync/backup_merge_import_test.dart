@@ -429,6 +429,92 @@ void main() {
     expect(byKey['']!.lookupCount, 7, reason: 'src 无身份桶按自己的桶并入');
   });
 
+  test(
+      'game tags cross-machine: scrape identity two-hop lands the tag on the '
+      "target's own game row (v79 二跳)", () async {
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = FushiDatabase(curDir.path);
+    // B 机：同一部游戏，本机局域 id 不同，但刮削到同一个 bgm 条目。
+    await cur.upsertGalgame(GalgamesCompanion.insert(
+      id: '222000000',
+      name: 'GameB',
+      exePath: r'D:\g.exe',
+      workdir: r'D:\g',
+      addedAt: 2,
+    ));
+    await cur.upsertGalgameSource(GalgameSourcesCompanion.insert(
+      gameId: '222000000',
+      source: 'bgm',
+      externalId: const Value('12345'),
+      dataJson: '{}',
+      fetchedAt: 2,
+    ));
+    // 干扰游戏：无刮削身份，绝不许被打上标签。
+    await cur.upsertGalgame(GalgamesCompanion.insert(
+      id: '333000000',
+      name: 'Bystander',
+      exePath: r'D:\g\c.exe',
+      workdir: r'D:\g',
+      addedAt: 3,
+    ));
+    await cur.close();
+
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = FushiDatabase(srcDir.path);
+    // A 机：不同的本机 id + 同 bgm 条目 + 标签；另一部无刮削的游戏带标签
+    // （跨机无身份可匹配 → 如实丢弃）。
+    await src.upsertGalgame(GalgamesCompanion.insert(
+      id: '111000000',
+      name: 'GameA',
+      exePath: r'E:\games.exe',
+      workdir: r'E:\games',
+      addedAt: 1,
+    ));
+    await src.upsertGalgameSource(GalgameSourcesCompanion.insert(
+      gameId: '111000000',
+      source: 'bgm',
+      externalId: const Value('12345'),
+      dataJson: '{}',
+      fetchedAt: 1,
+    ));
+    final int tagId = await src.getOrCreateTagByName('神作');
+    await src.addTagToGame('111000000', tagId);
+    await src.upsertGalgame(GalgamesCompanion.insert(
+      id: '444000000',
+      name: 'Unscraped',
+      exePath: r'E:\games\d.exe',
+      workdir: r'E:\games',
+      addedAt: 4,
+    ));
+    await src.addTagToGame('444000000', tagId);
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    // 导两遍——幂等。
+    await BackupService.mergeRestoreBackup(
+        dbDirectory: curDir.path, zipPath: zip);
+    await BackupService.mergeRestoreBackup(
+        dbDirectory: curDir.path, zipPath: zip);
+
+    final after = FushiDatabase(curDir.path);
+    addTearDown(after.close);
+    final tagged = (await after.getTagAssignmentsForKind(TagHostKind.game));
+    expect(tagged, hasLength(1), reason: '二跳恰命中一行，重导不双计');
+    expect(tagged.single.entryKey, '222000000',
+        reason: '标签落在 B 机自己的游戏行上（经 bgm 12345 二跳），'
+            '不是 A 机的局域 id');
+    expect((await after.getTagsForGame('222000000')).single.name, '神作');
+    expect(await after.getTagsForGame('333000000'), isEmpty,
+        reason: '无刮削身份的旁观游戏不被误标');
+    expect(await after.getAllGalgames(), hasLength(2),
+        reason: 'galgames 行本身仍不搬运（A 机的游戏没被带过来）');
+  });
+
   test('favorite words dedupe-union keeps earlier createdAt', () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
