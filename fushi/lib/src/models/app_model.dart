@@ -5314,9 +5314,29 @@ class AppModel with ChangeNotifier {
   FushiDatabase get database => _database;
 
   /// Close the database and notify listeners, without exiting the app.
+  /// BUG-1505：关库**之前**把后台写手停掉。
+  ///
+  /// `closeDatabase()` 只关连接，不停任何人。下载流水线这类常驻 drain 循环仍在跑，
+  /// 于是关库后每次唤醒都撞上 drift 的
+  /// 「Tried to send Request ... over isolate channel, but the connection was
+  /// closed!」——用户机器上实测一次迁移导入刷出 8 条。它至少污染诊断日志（真正的
+  /// 失败原因被淹没），更糟的是合并导入正在直接操作同一个库文件，此时放任第二个
+  /// 写手继续往里写是数据安全问题，不是噪声问题。
+  ///
+  /// 只停「后台自己会写库」的那几个（下载/订阅/漫画队列），不碰查词、TTS 这类只读
+  /// 子系统：closeDatabase 之后调用方一律走重启，停多了没收益、只增加爆炸半径。
+  Future<void> quiesceBackgroundDatabaseWriters() async {
+    _animeDownloadService?.stop();
+    _animeDownloadSubscriptionService?.stop();
+    _mokuroMoeDownloadQueue?.dispose();
+    _mokuroMoeDownloadQueue = null;
+    await _disposeVideoDownloadPipelineRuntime();
+  }
+
   Future<void> closeDatabase() async {
     _isInitialised = false;
     databaseCloseNotifier.notifyListeners();
+    await quiesceBackgroundDatabaseWriters();
     await _database.close();
   }
 

@@ -221,11 +221,17 @@ class _MigrationImportPageState extends State<MigrationImportPage>
             '[Fushi][migration] count verification failed: ${countProblems.join("; ")}');
         ErrorLogService.instance.log('MigrationImportPage.verifyCounts',
             StateError(countProblems.join('; ')), StackTrace.current);
+        // BUG-1505：等落盘写完再交还控制权。ErrorLogService.log 是 fire-and-forget
+        // 异步 append，这条日志此前总是随强制重启一起消失（用户机器实测：导入失败后
+        // 「错误日志 (0)」，一条都没有）。
+        await ErrorLogService.instance.flush();
         // 行数不足：不删中转文件、不置完成标志（绝不进卸载流程），重启后可重试。
         appModel.failBackupImport(
             t.migration_import_counts_failed(detail: countProblems.join('; ')));
-        await Future<void>.delayed(const Duration(seconds: 2));
-        await backupImportRestart(appModel);
+        // BUG-1505：**失败不再自动重启**。遮罩的失败态本来就设计成「由用户读完原因
+        // 手点『立即重启』」（见 main.dart 的 BackupImportOverlayView 注释），这里
+        // 却又补了 2 秒后强制 System.exit，把设计覆盖掉——用户看到的是「报个错，页面
+        // 一下就没了」，连原因都来不及读。成功路径保留自动重启（没有要读的东西）。
         return;
       }
       // 校验通过：删已导入批文件；问题批保留（重传通道）。
@@ -246,10 +252,13 @@ class _MigrationImportPageState extends State<MigrationImportPage>
       // 不到，debug 也抓不到（压根没有日志语句）。实测三次复现都拿不到原因。
       ErrorLogService.instance.log('MigrationImportPage.runImport', e, st);
       debugPrint('[Fushi][migration] import failed: $e\n$st');
+      // BUG-1505：await 落盘。上面那条「必须落日志」的修复其实没生效——log() 只是
+      // 把 append 挂进 fire-and-forget 串行链，2 秒后的 System.exit 会连同在途写入
+      // 一起带走，所以用户机器上导入失败后「错误日志 (0)」。
+      await ErrorLogService.instance.flush();
       appModel.failBackupImport(
           t.migration_import_verify_failed(batch: '', detail: '$e'));
-      await Future<void>.delayed(const Duration(seconds: 2));
-      await backupImportRestart(appModel);
+      // BUG-1505：失败停在遮罩上，重启交给用户点（理由同 verifyCounts 分支）。
     } finally {
       if (mounted) {
         setState(() {
