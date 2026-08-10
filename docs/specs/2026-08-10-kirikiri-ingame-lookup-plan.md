@@ -247,3 +247,46 @@ Fushi 侧：`dart format` 改动文件 + 定向 `flutter test --no-pub`；合入
 - 不在游戏进程里保留任何网络客户端或认证凭据。
 - 不为「独占全屏」保留一套平行的游戏外 UI。
 - 不动 `engine-support.yaml` 的支持状态，直到 P3 E2E 完成。
+
+## 10. 实施记录
+
+### 10.1 对 P0 门的调整（用户决定）
+
+原计划把 P0 探针设成**阻塞门**：`mainImageBufferForWrite` / `TVPExecuteExpression` 没在真机验过就不写 P1。
+
+用户明确要求不等探针、直接实施。因此改为：**主备两路都实现**，由注入侧在运行期自证走了哪条——
+
+| 位 | 含义 |
+|---|---|
+| `kLookupDiagExpressionReady` | `TVPExecuteExpression` 查到了 |
+| `kLookupDiagBufferRouteReady` | `mainImageBufferForWrite` 拿到了合法写指针 → 走主路 |
+| `kLookupDiagFallbackPngRoute` | 上面任一失败 → 降级 PNG + `loadImages` |
+| `kLookupDiagFramePresented` | 位图真落进了游戏 Layer |
+
+这样探针的四个问题变成**真机上的一次自证**，而不是一道前置门。代价是备路代码也得写完；收益是不用为拿四个布尔值单独跑一轮真机。
+
+**这不改变结论的性质**：在 `kLookupDiagFramePresented` 于真机置位之前，整件事仍然是 `implemented_unverified`。
+
+### 10.2 已落地
+
+- **v14 IPC 契约**（`native/galgame_hook/include/voice_hook_ipc.h`）：`kSharedVersion` 13→14，纯追加，前面各区偏移逐字节不动。三通道 hit / input / frame，含 `IsLookupFrameSane()` 作为「按跨进程不可信 width/height 盲拷 → 越界写」的唯一闸门。
+- **injector 分配**（`injector/injector_main.cpp`）：查词区紧随线程预览区，追加在布局最尾；`lookup_enabled` 初值 0，由 host 在用户真开启时置 1。
+- 契约头在 **x86 与 x64 双架构 `/W4 /WX` 下语法检查通过**，访问器实跑自检全部返回预期；查词区实测 **6,294,672 字节（6.00 MiB）**。
+  - 过程中修掉一处自埋的坑：区内偏移原本用 `uint64_t`，在 x86 上做指针算术会截断，`/WX` 的 runner 上直接是编译错误。改用 `size_t`，整区**总字节数**仍用 `uint64_t`（要参与 injector 的 `total_size` 求和）。
+
+### 10.3 并行分工（互不相交的文件集）
+
+| 线 | 文件集 |
+|---|---|
+| 契约 | `include/voice_hook_ipc.h`、`injector/injector_main.cpp` |
+| 注入侧 | `hook/adapters/kirikiri_adapter.inc` |
+| 宿主 native | `fushi/windows/runner/{voice_hook_reader,global_lookup_window}.{h,cpp}` |
+| 宿主 Dart | `fushi/lib/src/lookup/**` |
+| 测试守卫 | `native/galgame_hook/tests/**`、`fushi/test/**`、`engine-support.yaml` |
+
+MethodChannel 契约（两侧钉死）：
+
+- runner → Dart：`onGalLookupHit {seq,line,charIndex,charCount,glyphX,glyphY,glyphW,glyphH,viewW,viewH,submit}`、`onGalLookupInput {seq,x,y,kind,wheel,keys}`
+- Dart → runner：`galLookupSetEnabled {enabled}`、`galLookupPresent {seq,anchorX,anchorY,highlightStart,highlightLen}`、`galLookupDismiss {seq}`
+
+**位图永远不经过 Dart**：像素在 C++ 侧从离屏 WebView2 直接进共享内存。Dart 只做编排。
