@@ -42,12 +42,12 @@ AnkiDroid（`AnkiRepository`）与 AnkiMobile **不覆写** `supportsMediaMainte
 ### 有意未改
 note type 快照（`modelTemplates` + `modelStyling` 每个 note type 各一次）仍是逐个往返：它是 O(note type 数) 而不是 O(副本数)，20 个 note type = 40 次往返，在 4706 次的背景里是噪声。批量化它只会扩大 diff。
 
-- **[x] ① 已修复** — `5723b652fb`
+- **[x] ① 已修复** — `85c2479e92`
   - `packages/fushi_anki/lib/src/ankiconnect/ankiconnect_service.dart`：`requestMulti` / `deleteMediaFiles` / `updateNoteFieldsMany` / `findNotesByQueries` + `AnkiConnectAction` / `AnkiConnectBatchResult` / `AnkiNoteFieldsUpdate`
   - `packages/fushi_anki/lib/src/ankiconnect/ankiconnect_repository.dart`：`runMediaDedup` 分批编排 + `_planDedupChunk` / `_rewriteNoteFieldsBatch` / `_rewriteModelsBatch`
   - `packages/fushi_anki/lib/src/anki_media_dedup.dart`：`kAnkiMediaDedupBatchSize`
   - `packages/fushi_anki/lib/src/base_anki_repository.dart`：后端不对称成文
-- **[x] ② 已加自动化测试** — `5723b652fb`，`packages/fushi_anki/test/anki_media_dedup_batching_test.dart`（12 条）
+- **[x] ② 已加自动化测试** — `85c2479e92`，`packages/fushi_anki/test/anki_media_dedup_batching_test.dart`（12 条）
   - 核心不变量：N 个副本的删除只发 `ceil(N/kAnkiMediaDedupBatchSize)` 次往返、总往返数 `< N`
   - 干跑（用户确认前那一遍）同样批量：每批 2 次往返、零写入
   - 批内单条删除失败 / 单条笔记改写失败 / 单条检索失败：各自只让该副本 `skipped`，同批其余照删
