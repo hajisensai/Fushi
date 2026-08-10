@@ -3321,5 +3321,6 @@
   "download_detail_save_path_label": "保存路径",
   "download_detail_content_path_label": "内容路径",
   "download_detail_raw_state_label": "后端状态",
-  "download_detail_backend_offline": "原下载后端当前离线。这里仍显示已保存的任务信息，但实时参数暂不可用。"
+  "download_detail_backend_offline": "原下载后端当前离线。这里仍显示已保存的任务信息，但实时参数暂不可用。",
+  "download_detail_task_missing": "原下载后端在线，但该 torrent 已不在引擎中。实时节点和 Tracker 无法恢复，这里显示已保存的任务信息。"
 }

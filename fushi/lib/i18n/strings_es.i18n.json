@@ -3321,5 +3321,6 @@
   "download_detail_save_path_label": "Save path",
   "download_detail_content_path_label": "Content path",
   "download_detail_raw_state_label": "Backend state",
-  "download_detail_backend_offline": "The original download backend is offline. Persisted task information is shown; live parameters are unavailable."
+  "download_detail_backend_offline": "The original download backend is offline. Persisted task information is shown; live parameters are unavailable.",
+  "download_detail_task_missing": "The original download backend is online, but this torrent is no longer present. Live peers and trackers cannot be recovered; persisted task information is shown."
 }

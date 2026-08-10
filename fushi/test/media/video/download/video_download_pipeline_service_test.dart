@@ -58,6 +58,13 @@ void main() {
     expect(details.backend, isNull);
     expect(details.snapshot.hash, _torrentHash);
     expect(details.snapshot.progress, 0.25);
+
+    await deletePersistedVideoDownloadJob(
+      database: environment.database,
+      job: job,
+      deleteFiles: false,
+    );
+    expect(await environment.database.getVideoDownloadJob(jobId), isNull);
   });
 
   test(

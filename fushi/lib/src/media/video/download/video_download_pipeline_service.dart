@@ -86,9 +86,11 @@ class VideoDownloadJobDetails {
     required this.snapshot,
     required this.files,
     this.backend,
+    this.backendOnline = false,
   });
 
   final TorrentBackend? backend;
+  final bool backendOnline;
   final TorrentSnapshot snapshot;
   final List<TorrentFileEntry> files;
 }
@@ -165,6 +167,61 @@ String _persistedTorrentState(VideoDownloadJobRow job) {
   }
   if (job.stage == VideoDownloadJobStage.download) return 'downloading';
   return job.stage;
+}
+
+/// Deletes the durable half of a job independently of the active pipeline.
+/// Only exact file/link paths recorded by this job are removed; directories
+/// are deliberately never deleted recursively.
+Future<void> deletePersistedVideoDownloadJob({
+  required FushiDatabase database,
+  required VideoDownloadJobRow job,
+  required bool deleteFiles,
+}) async {
+  if (deleteFiles) {
+    final List<VideoDownloadJobFileRow> files =
+        await database.getVideoDownloadJobFiles(job.jobId);
+    final List<VideoDownloadJobSubtitleRow> subtitles =
+        await database.getVideoDownloadJobSubtitles(job.jobId);
+    final Set<String> managedPaths = <String>{
+      for (final VideoDownloadJobFileRow file in files)
+        if (file.finalAbsolutePath?.trim().isNotEmpty == true)
+          p.normalize(file.finalAbsolutePath!.trim()),
+      for (final VideoDownloadJobSubtitleRow subtitle in subtitles)
+        if (subtitle.finalPath?.trim().isNotEmpty == true)
+          p.normalize(subtitle.finalPath!.trim()),
+      for (final VideoDownloadJobSubtitleRow subtitle in subtitles)
+        if (subtitle.stagedPath?.trim().isNotEmpty == true)
+          p.normalize(subtitle.stagedPath!.trim()),
+      if (job.observedSavePath?.trim().isNotEmpty == true)
+        for (final VideoDownloadJobFileRow file in files)
+          if (file.currentRelativePath.trim().isNotEmpty)
+            p.normalize(
+              p.join(
+                job.observedSavePath!.trim(),
+                file.currentRelativePath,
+              ),
+            ),
+    };
+    final Set<String> normalizedManagedPaths =
+        managedPaths.map(normalizeVideoPath).toSet();
+    final VideoBookRepository repository = VideoBookRepository(database);
+    for (final VideoBookRow book in await repository.listAll()) {
+      if (normalizedManagedPaths.contains(normalizeVideoPath(book.videoPath))) {
+        await repository.deleteVideoBook(book.bookUid);
+      }
+    }
+    for (final String path in managedPaths) {
+      final FileSystemEntityType type =
+          await FileSystemEntity.type(path, followLinks: false);
+      if (type == FileSystemEntityType.file) {
+        await File(path).delete();
+      } else if (type == FileSystemEntityType.link) {
+        await Link(path).delete();
+      }
+    }
+    database.notifyVideoLibraryChanged();
+  }
+  await database.deleteVideoDownloadJob(job.jobId);
 }
 
 typedef VideoDownloadBackendResolver = Future<VideoDownloadBackendBinding?>
@@ -569,6 +626,7 @@ class VideoDownloadPipelineService {
         (job.backendTaskId ?? job.torrentHash ?? '').trim();
 
     TorrentBackend? backend;
+    bool backendOnline = false;
     TorrentSnapshot? liveSnapshot;
     List<TorrentFileEntry>? liveFiles;
     if (torrentId.isNotEmpty) {
@@ -576,6 +634,7 @@ class VideoDownloadPipelineService {
         final VideoDownloadBackendBinding? binding = await backendResolver(job);
         _validateBackendBinding(job, binding);
         backend = binding!.backend;
+        backendOnline = true;
         final List<TorrentSnapshot> snapshots =
             await backend.listTorrents(category: job.category);
         for (final TorrentSnapshot snapshot in snapshots) {
@@ -592,11 +651,13 @@ class VideoDownloadPipelineService {
         // profile change or incomplete package install. Do not substitute the
         // current global backend: it could be a different qBittorrent server.
         backend = null;
+        backendOnline = false;
       }
     }
 
     return VideoDownloadJobDetails(
-      backend: backend,
+      backend: liveSnapshot == null ? null : backend,
+      backendOnline: backendOnline,
       snapshot: liveSnapshot ?? persistedDetails.snapshot,
       files: liveFiles ?? persistedDetails.files,
     );
@@ -619,8 +680,6 @@ class VideoDownloadPipelineService {
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
 
-    final files = await database.getVideoDownloadJobFiles(jobId);
-    final subtitles = await database.getVideoDownloadJobSubtitles(jobId);
     final String torrentId =
         (job.backendTaskId ?? job.torrentHash ?? '').trim();
     if (torrentId.isNotEmpty) {
@@ -637,48 +696,11 @@ class VideoDownloadPipelineService {
       }
     }
 
-    if (deleteFiles) {
-      final Set<String> managedPaths = <String>{
-        for (final file in files)
-          if (file.finalAbsolutePath?.trim().isNotEmpty == true)
-            p.normalize(file.finalAbsolutePath!.trim()),
-        for (final subtitle in subtitles)
-          if (subtitle.finalPath?.trim().isNotEmpty == true)
-            p.normalize(subtitle.finalPath!.trim()),
-        for (final subtitle in subtitles)
-          if (subtitle.stagedPath?.trim().isNotEmpty == true)
-            p.normalize(subtitle.stagedPath!.trim()),
-        if (job.observedSavePath?.trim().isNotEmpty == true)
-          for (final file in files)
-            if (file.currentRelativePath.trim().isNotEmpty)
-              p.normalize(
-                p.join(
-                  job.observedSavePath!.trim(),
-                  file.currentRelativePath,
-                ),
-              ),
-      };
-      final Set<String> normalizedManagedPaths =
-          managedPaths.map(normalizeVideoPath).toSet();
-      for (final VideoBookRow book in await _videoRepository.listAll()) {
-        if (normalizedManagedPaths
-            .contains(normalizeVideoPath(book.videoPath))) {
-          await _videoRepository.deleteVideoBook(book.bookUid);
-        }
-      }
-      for (final String path in managedPaths) {
-        final FileSystemEntityType type =
-            await FileSystemEntity.type(path, followLinks: false);
-        if (type == FileSystemEntityType.file) {
-          await File(path).delete();
-        } else if (type == FileSystemEntityType.link) {
-          await Link(path).delete();
-        }
-      }
-      database.notifyVideoLibraryChanged();
-    }
-
-    await database.deleteVideoDownloadJob(jobId);
+    await deletePersistedVideoDownloadJob(
+      database: database,
+      job: job,
+      deleteFiles: deleteFiles,
+    );
     wake();
   }
 

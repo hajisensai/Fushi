@@ -193,9 +193,12 @@ Future<void> _dismiss(WidgetTester tester) async {
   await tester.pumpWidget(const SizedBox.shrink());
 }
 
-Future<void> _pumpPersistedFallback(WidgetTester tester) async {
+Future<void> _pumpPersistedFallback(
+  WidgetTester tester, {
+  bool backendTaskMissing = false,
+}) async {
   await tester.pumpWidget(
-    const ProviderScope(
+    ProviderScope(
       child: MaterialApp(
         home: Material(
           child: TorrentTaskDetailDialog.task(
@@ -203,7 +206,8 @@ Future<void> _pumpPersistedFallback(WidgetTester tester) async {
             title: 'Persisted Series',
             torrentTitle: 'Persisted release title',
             backendOverride: null,
-            initialSnapshot: TorrentSnapshot(
+            backendTaskMissing: backendTaskMissing,
+            initialSnapshot: const TorrentSnapshot(
               hash: _hash,
               name: 'Persisted Series',
               progress: 1,
@@ -215,7 +219,7 @@ Future<void> _pumpPersistedFallback(WidgetTester tester) async {
               totalSizeBytes: 4096,
               downloadedBytes: 4096,
             ),
-            initialFiles: <TorrentFileEntry>[
+            initialFiles: const <TorrentFileEntry>[
               TorrentFileEntry(
                 name: 'ep01.mkv',
                 size: 4096,
@@ -232,6 +236,23 @@ Future<void> _pumpPersistedFallback(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('后端在线但任务已不存在时明确说明节点无法恢复', (
+    WidgetTester tester,
+  ) async {
+    await _pumpPersistedFallback(tester, backendTaskMissing: true);
+    expect(
+      find.textContaining('this torrent is no longer present'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Peers'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(
+      find.textContaining('Live peers and trackers cannot be recovered'),
+      findsOneWidget,
+    );
+    await _dismiss(tester);
+  });
+
   testWidgets('原后端离线时仍展示持久化总览和文件', (
     WidgetTester tester,
   ) async {

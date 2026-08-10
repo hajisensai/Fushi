@@ -33,6 +33,7 @@ class TorrentTaskDetailDialog extends ConsumerStatefulWidget {
         torrentTitle = plan.torrentTitle,
         initialSnapshot = null,
         initialFiles = null,
+        backendTaskMissing = false,
         resolveBackendFromAppModel = true;
 
   /// Durable download jobs use the same real backend detail surface without
@@ -44,6 +45,7 @@ class TorrentTaskDetailDialog extends ConsumerStatefulWidget {
     required this.backendOverride,
     required this.initialSnapshot,
     required this.initialFiles,
+    required this.backendTaskMissing,
     super.key,
   }) : resolveBackendFromAppModel = false;
 
@@ -56,6 +58,7 @@ class TorrentTaskDetailDialog extends ConsumerStatefulWidget {
   final TorrentBackend? backendOverride;
   final TorrentSnapshot? initialSnapshot;
   final List<TorrentFileEntry>? initialFiles;
+  final bool backendTaskMissing;
 
   /// Legacy plan dialogs may resolve the currently configured backend. Durable
   /// job dialogs must never do that because their persisted backend identity
@@ -256,8 +259,9 @@ class _TorrentTaskDetailDialogState
     return _buildEmptyNote(theme, _backendUnavailableMessage);
   }
 
-  String get _backendUnavailableMessage =>
-      !widget.resolveBackendFromAppModel && _backend == null
+  String get _backendUnavailableMessage => widget.backendTaskMissing
+      ? t.download_detail_task_missing
+      : !widget.resolveBackendFromAppModel && _backend == null
           ? t.download_detail_backend_offline
           : t.download_detail_backend_unsupported;
 

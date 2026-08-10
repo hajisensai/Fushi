@@ -270,6 +270,8 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                                           ? job.resourceTitle!.trim()
                                           : job.title,
                                   backendOverride: details.backend,
+                                  backendTaskMissing: details.backendOnline &&
+                                      details.backend == null,
                                   initialSnapshot: details.snapshot,
                                   initialFiles: details.files,
                                 ),
@@ -285,13 +287,21 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                                       .resolveJobLocation(job.jobId);
                             },
                             onDelete: (job, {required bool deleteFiles}) async {
-                              await ref
-                                  .read(appProvider)
-                                  .videoDownloadPipelineService
-                                  ?.deleteJob(
-                                    job.jobId,
-                                    deleteFiles: deleteFiles,
-                                  );
+                              final appModel = ref.read(appProvider);
+                              final pipeline =
+                                  appModel.videoDownloadPipelineService;
+                              if (pipeline != null) {
+                                await pipeline.deleteJob(
+                                  job.jobId,
+                                  deleteFiles: deleteFiles,
+                                );
+                              } else {
+                                await deletePersistedVideoDownloadJob(
+                                  database: appModel.database,
+                                  job: job,
+                                  deleteFiles: deleteFiles,
+                                );
+                              }
                             },
                           ),
                         ),
