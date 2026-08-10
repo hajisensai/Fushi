@@ -244,23 +244,15 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     // 留到下次 flush 一并计入（不丢时长）。
     if (elapsedMs < 1000) return;
     _sessionReadingMs = 0;
-    final String dateKey = statDateKey(now);
+
     try {
-      await appModel.database.addReadingStatistic(
-        title: row.title,
-        dateKey: dateKey,
-        charsRead: 0,
-        timeMs: elapsedMs,
-      );
-      await appModel.database.addActivityEvent(
-        eventType: kActivityRead,
-        mediaType: kActivityMediaBook,
+      // P4：事实 + 派生投影走单一复合入口。
+      await appModel.database.recordReadingSession(
         title: row.title,
         mediaKey: widget.bookKey,
-        dateKey: dateKey,
-        timestampMs: now.millisecondsSinceEpoch,
-        durationMs: elapsedMs,
-        charsDelta: 0,
+        charsRead: 0,
+        timeMs: elapsedMs,
+        at: now,
       );
     } catch (e, stack) {
       ErrorLogService.instance
@@ -480,8 +472,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     }
     if (!mounted) return;
     if (bookmarks.isEmpty) {
-      FushiToast.show(
-          msg: t.pdf_bookmarks_empty, severity: ToastSeverity.info);
+      FushiToast.show(msg: t.pdf_bookmarks_empty, severity: ToastSeverity.info);
       return;
     }
     await showAppDialog<void>(

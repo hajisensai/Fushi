@@ -225,6 +225,56 @@ mixin _FushiDbStatistics
   // ── activity events (v49) ───────────────────────────────────────
   /// 追加一条活动事件（每次阅读/观看 session 结束或导入完成时写一行）。纯追加，
   /// 不去重、不累加——同书同日多次 session = 多行，读取端按需分组/计数。
+  /// 统计日分组键（本地时区 `yyyy-MM-dd`）。与 app 层 `statDateKey` /
+  /// fushi_audio 的小时桶 dateKey 同构——[recordReadingSession] 在 DB 层派生
+  /// dateKey 的单一来源，别再让调用方自算一份传进来。
+  static String statDateKeyOf(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
+
+  /// P4 写侧收敛（2026-08 数据层重构）：一次阅读 session 的**唯一落库入口**。
+  ///
+  /// 同一事务写活动事实行（activity_events，精确时刻的 session 事实）并从
+  /// **同一份数字**派生日聚合投影（reading_statistics 经 [addReadingStatistic]，
+  /// 含清统计墓碑语义）。此前三个阅读面（EPUB/漫画/PDF）各自按顺序散调两个
+  /// DAO、事实与投影的 chars/timeMs/dateKey 各传一遍——传得不一致没有任何
+  /// 东西拦（结构性漂移面）；收敛后数字与时刻只进一次。
+  ///
+  /// 小时桶（reading_hourly_logs）**刻意不在此**：它是 ReadingTimeTracker 的
+  /// tick 粒度账本（60s 窗口 + 连续性守卫 + 跨时/日边界拆桶，BUG-892/1052），
+  /// 与 session 粒度不同构。视频侧同理不设 session 复合入口：
+  /// video_watch_statistics 的 flush 是**桶粒度**（dateKey 按各桶归属，跨午夜
+  /// 正确性依赖于此），与 activity 的 session 总量数值天然不同，强行统一会
+  /// 引入跨午夜归属 bug——见 video_fushi_page 的 VideoWatchTracker 接线注释。
+  Future<void> recordReadingSession({
+    required String title,
+    required String mediaKey,
+    required int charsRead,
+    required int timeMs,
+    int pagesRead = 0,
+    required DateTime at,
+  }) =>
+      transaction(() async {
+        final String dateKey = _FushiDbStatistics.statDateKeyOf(at);
+        await addActivityEvent(
+          eventType: 'read',
+          mediaType: 'book',
+          title: title,
+          mediaKey: mediaKey,
+          dateKey: dateKey,
+          timestampMs: at.millisecondsSinceEpoch,
+          durationMs: timeMs,
+          charsDelta: charsRead,
+        );
+        await addReadingStatistic(
+          title: title,
+          dateKey: dateKey,
+          charsRead: charsRead,
+          timeMs: timeMs,
+          pagesRead: pagesRead,
+        );
+      });
+
   Future<void> addActivityEvent({
     required String eventType,
     required String mediaType,

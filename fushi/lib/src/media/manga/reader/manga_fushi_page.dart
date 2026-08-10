@@ -1667,8 +1667,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       final MokuroImage image = payload.images[page];
       pages.add(image);
       imgSrcs.add(MangaFushiPage.mangaImageUrl(image.url));
-      final int spreadIndex =
-          MangaFushiPage.spreadIndexForPage(_spreads, page);
+      final int spreadIndex = MangaFushiPage.spreadIndexForPage(_spreads, page);
       pageSpreadIndices.add(spreadIndex);
       pagesPerSpread.add(spreadIndex >= 0 && spreadIndex < _spreads.length
           ? _spreads[spreadIndex].pageIndices.length
@@ -2103,8 +2102,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _currentPageImagePath = null;
       return;
     }
-    final int page =
-        MangaFushiPage.firstPageOfSpread(_spreads, _currentSpread);
+    final int page = MangaFushiPage.firstPageOfSpread(_spreads, _currentSpread);
     if (page < 0 || page >= payload.images.length) {
       _currentPageImagePath = null;
       return;
@@ -2356,8 +2354,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       if (!mounted) return;
       setState(() => _rescanModelReady = status.recognizerReady);
     } on Object catch (error, stack) {
-      ErrorLogService.instance
-          .log('MangaFushiPage.rescanStatus', error, stack);
+      ErrorLogService.instance.log('MangaFushiPage.rescanStatus', error, stack);
     }
   }
 
@@ -2849,8 +2846,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             : 0,
       );
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('MangaFushiPage._persistPosition', e, stack);
+      ErrorLogService.instance.log('MangaFushiPage._persistPosition', e, stack);
     }
     // 翻到最后一页 → 幂等写「已读完」（判据用总页数）。
     final int pageCount = _payload?.images.length ?? 0;
@@ -2899,24 +2895,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final int pagesRead = _sessionPagesRead;
     _sessionCharsRead = 0;
     _sessionPagesRead = 0;
-    final String dateKey = statDateKey(now);
+
     try {
-      await appModel.database.addReadingStatistic(
+      // P4：事实 + 派生投影走单一复合入口（数字与时刻只进一次）。
+      await appModel.database.recordReadingSession(
         title: row.title,
-        dateKey: dateKey,
+        mediaKey: widget.bookKey,
         charsRead: charsRead,
         timeMs: elapsedMs,
         pagesRead: pagesRead,
-      );
-      await appModel.database.addActivityEvent(
-        eventType: kActivityRead,
-        mediaType: kActivityMediaBook,
-        title: row.title,
-        mediaKey: widget.bookKey,
-        dateKey: dateKey,
-        timestampMs: now.millisecondsSinceEpoch,
-        durationMs: elapsedMs,
-        charsDelta: charsRead,
+        at: now,
       );
     } catch (e, stack) {
       ErrorLogService.instance
