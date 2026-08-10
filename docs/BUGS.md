@@ -29,10 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1399 条。点号进各自文件。
+> 共 1403 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1497](bugs/BUG-1497-remote-download-progress-fake-importer-no-db-row.md) | ✅ | ✅ | 远端书下载进度回填测试假 importer 不落库，v82 uid 闸门后回填永不发生 |
+| [BUG-1496](bugs/BUG-1496-collection-member-entrykey-uid-test-stale.md) | ✅ | ✅ | 合集详情焦点测试用 bookKey 加成员，v83 entryKey 切 uid 后合集行不渲染 |
+| [BUG-1495](bugs/BUG-1495-dashboard-drift-watch-teardown-timer.md) | ✅ | ✅ | 首页 dashboard widget 测试全挂：drift .watch() 隔离清单漏了新增消费方 |
+| [BUG-1494](bugs/BUG-1494-mining-guards-stale-addminingcount.md) | ✅ | ✅ | 制卡记账守卫仍钉 addMiningCount，P4 写侧收敛后把红带进 develop |
 | [BUG-1493](bugs/BUG-1493-dict-download-no-proxy-no-progress.md) | ✅ | ✅ | 词典下载不走系统代理、无超时，且下载/导入阶段无可归因进度 |
 | [BUG-1492](bugs/BUG-1492-dict-update-stale-lookup-cache.md) | ✅ | ✅ | 词典覆盖导入/在线更新后查词缓存不失效，更新完的词典查不到词 |
 | [BUG-1491](bugs/BUG-1491-anki-dedup-serial-delete.md) | ✅ | ✅ | Anki 媒体去重逐个删除过慢 |
