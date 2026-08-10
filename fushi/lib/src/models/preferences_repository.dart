@@ -1772,6 +1772,23 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 「游戏内查词」（KiriKiri in-game lookup）默认**关**：它要往游戏进程里投位图，
+  /// 只对有 profile 证据的引擎组合有效，开着对其余游戏纯属白付代价。
+  static const bool galIngameLookupEnabledDefault = false;
+
+  /// 游戏内查词总开关（仅 Windows 生效）。
+  bool get galIngameLookupEnabled =>
+      getPref(
+        'gal_hook_ingame_lookup_enabled',
+        defaultValue: galIngameLookupEnabledDefault,
+      ) ==
+      true;
+
+  Future<void> setGalIngameLookupEnabled(bool value) async {
+    await setPref('gal_hook_ingame_lookup_enabled', value);
+    notifyListeners();
+  }
+
   bool get floatingLyricClickLookup =>
       getPref('floating_lyric_click_lookup', defaultValue: true) as bool;
 

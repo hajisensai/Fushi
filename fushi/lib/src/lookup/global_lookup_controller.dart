@@ -53,6 +53,14 @@ class GlobalLookupController {
   /// 可用；不可用一律退回主窗 tab，请求不丢。
   bool get isAvailable => isSupported && _started;
 
+  /// 当前 root 卡的引擎匹配长度（UTF-16 code unit，`bestLength`）。
+  ///
+  /// 引擎按查询串做最长匹配并回报它——这是全 app 统一的「命中跨度」真值（弹窗高亮、
+  /// 剪贴板面板横幅高亮、扩展 originalTextLength 都用它）。游戏内查词据此把台词上的
+  /// 高亮铺成整词而不是一个字。无结果 / 尚未查词时为 0。
+  int get rootBestLength =>
+      _frameResults[kGlobalLookupRootFrameId]?.bestLength ?? 0;
+
   AppModel? _appModel;
   HotKey? _hotKey;
   // TODO-1066 — the live shortcut registry we read the global-lookup hotkey
@@ -70,6 +78,18 @@ class GlobalLookupController {
   // (the 872 prerequisite) so a future mining-preserving switch can hook it. Not
   // fired for the between-lookups reset (that hide passes notify=false).
   void Function()? onHidden;
+  // KiriKiri 游戏内查词 — 卡片「内容已渲染、尺寸已定」的**唯一可靠**信号。
+  //
+  // 真值来自 host 自测量回报的 union bbox（_applyOverlayBox）：那一刻 popup.js 已
+  // 把这次查词的内容画完并量出真实尺寸，覆盖窗才据此 reveal/resize。游戏内查词必须
+  // 等到这里才把帧投进游戏——早一步投就抓到上一帧或空白（这正是不能用固定延时兜的
+  // 原因：冷 WebView2 的首帧耗时跨两个数量级）。
+  //
+  // 参数是**物理像素**的卡片尺寸（与投给游戏的位图逐像素一致），供调用方算锚点。
+  // 首帧 reveal 与后续 resize（嵌套子卡 / Ctrl+滚轮改字号）都会回调，所以游戏里的
+  // 卡片会跟着内容长大，而不是停在首帧尺寸。READY-SAFETY 兜底 reveal 也会回调——
+  // 那是「真渲染失败」的最后一招，此时投的确实可能是空白卡，但比卡在不可见强。
+  void Function(int physicalWidth, int physicalHeight)? onRevealed;
   // Last physical size pushed to the overlay; used to converge the page's
   // resize -> re-measure loop (see _onJsMessage 'overlaySize'). Reset per
   // lookup so a new card re-sizes from scratch.
@@ -727,6 +747,7 @@ class GlobalLookupController {
         glog('reveal: READY-SAFETY (ready=$ready attempt=$attempt) '
             'w=$width h=$height');
         unawaited(GlobalLookupChannel.reveal(width: width, height: height));
+        onRevealed?.call(width, height);
         return;
       }
       // Surface still loading — defer instead of revealing blank.
@@ -1389,6 +1410,7 @@ class GlobalLookupController {
           height: h,
           left: ratcheted.left,
           top: ratcheted.top));
+      onRevealed?.call(w, h);
     } else if (w != _lastSentWidth ||
         h != _lastSentHeight ||
         dx != _lastSentDx ||
@@ -1407,6 +1429,7 @@ class GlobalLookupController {
           height: h,
           left: ratcheted.left,
           top: ratcheted.top));
+      onRevealed?.call(w, h);
     }
   }
 
@@ -1426,11 +1449,13 @@ class GlobalLookupController {
       _lastSentHeight = height;
       glog('reveal(scalar): dpr=$dpr physH=$physH -> w=$width h=$height');
       unawaited(GlobalLookupChannel.reveal(width: width, height: height));
+      onRevealed?.call(width, height);
     } else if (width != _lastSentWidth || height != _lastSentHeight) {
       _lastSentWidth = width;
       _lastSentHeight = height;
       glog('resize(scalar): dpr=$dpr physH=$physH -> w=$width h=$height');
       unawaited(GlobalLookupChannel.resize(width: width, height: height));
+      onRevealed?.call(width, height);
     }
   }
 }

@@ -66,6 +66,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'floating_lyric_font_size',
   'floating_lyric_text_opacity',
   'floating_lyric_width',
+  'gal_hook_ingame_lookup_enabled',
   'gal_hook_text_font_size',
   'gal_mining_animated_format',
   'gal_mining_image_mode',
