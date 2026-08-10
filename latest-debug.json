@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "1.3.3-debug.10190",
-  "tag": "v1.3.3-debug.10190+802bd6f",
+  "version": "1.3.3-debug.10191",
+  "tag": "v1.3.3-debug.10191+a81a980",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 10190,
-  "notes": "Manual release-signed debug-channel build from bridge/auto-migrate-download @ 802bd6f. Debug releases are prerelease and never Latest.",
+  "releaseSequence": 10191,
+  "notes": "Manual release-signed debug-channel build from bridge/auto-migrate-download @ a81a980. Debug releases are prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-1.3.2-debug.10182-ios.ipa",
@@ -29,11 +29,11 @@
       "version": "1.3.2-debug.10182"
     },
     {
-      "name": "hibiki-1.3.3-debug.10190-802bd6f-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/debug-rolling/hibiki-1.3.3-debug.10190-802bd6f-debug.apk",
-      "releaseSequence": 10190,
-      "tag": "v1.3.3-debug.10190+802bd6f",
-      "version": "1.3.3-debug.10190"
+      "name": "hibiki-1.3.3-debug.10191-a81a980-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/debug-rolling/hibiki-1.3.3-debug.10191-a81a980-debug.apk",
+      "releaseSequence": 10191,
+      "tag": "v1.3.3-debug.10191+a81a980",
+      "version": "1.3.3-debug.10191"
     }
   ]
 }
