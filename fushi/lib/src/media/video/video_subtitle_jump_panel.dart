@@ -116,6 +116,64 @@ String formatCueTimestamp(int startMs) =>
   return (byRep: merged, repByRaw: repByRaw);
 }
 
+/// 播放头**最近的**（不晚于它的）cue 下标（BUG-1484）。纯函数，面板与测试同源。
+///
+/// [JsonAlignmentParser.findCueIndex] 是「命中」语义：播放头落进静默 gap（OP 之后、章节
+/// 间隙）或早于首句时返回 -1，视频字幕 overlay 据此清空（BUG-074，那是对的——真实字幕过
+/// 了时间窗就该消失）。但字幕**列表**的「跟随播放」要的是另一种语义：静默段里没有「当前
+/// 句」，用户仍然希望列表停在刚播过的那一行附近，而不是被扔回列表开头。
+///
+/// 定义（未排序 / 时间轴重叠也有唯一确定结果，测试钉死）：
+/// - 空列表返回 -1；
+/// - 取所有 `startMs <= positionMs` 的 cue 中 `startMs` **最大**者；`startMs` 并列时取
+///   列表中**最先**出现的那条（与 [_VideoSubtitleJumpPanelState._dedupedRawIndexes] 的
+///   「首条为代表行」同源，重叠特效层折叠后仍落在同一代表行上）；
+/// - 播放头早于所有 cue 时返回 `startMs` **最小**者（并列同样取最先出现的），即「定位到
+///   第一条」。
+///
+/// 线性扫描而非二分：列表实际由 `VideoPlayerController.setCues` 排过序，但本函数的契约
+/// 不依赖排序（外挂 ASS 多层特效轨的 raw 顺序并非总严格升序），一集 cue 量级下代价可忽略。
+int nearestCueIndexAtOrBefore(List<AudioCue> cues, int positionMs) {
+  int best = -1;
+  int bestStart = 0;
+  int earliest = -1;
+  int earliestStart = 0;
+  for (int i = 0; i < cues.length; i++) {
+    final int start = cues[i].startMs;
+    if (earliest < 0 || start < earliestStart) {
+      earliest = i;
+      earliestStart = start;
+    }
+    if (start <= positionMs && (best < 0 || start > bestStart)) {
+      best = i;
+      bestStart = start;
+    }
+  }
+  return best >= 0 ? best : earliest;
+}
+
+/// 字幕列表「应该定位到哪一行」的**唯一求法**（BUG-1484）：初始打开定位与跟随滚动共用它，
+/// 调用点不再各自判空/加 if。
+///
+/// - [currentCueIndex] 有效（播放头正落在某条 cue 的时间窗内）时直接用它——它带着
+///   `VideoPlayerController` 侧的音画延迟修正与 `skipToCue` 的 preRoll snap，比按位置重算
+///   更准；
+/// - 命中为空（gap / 早于首句 / cues 尚未加载）且[follow]开启时，回落到
+///   [nearestCueIndexAtOrBefore]；
+/// - [follow] 关闭时保持历史行为：没有当前句就不定位（返回 -1），列表不动。
+int resolveFollowCueIndex({
+  required List<AudioCue> cues,
+  required int currentCueIndex,
+  required int? positionMs,
+  required bool follow,
+}) {
+  if (currentCueIndex >= 0 && currentCueIndex < cues.length) {
+    return currentCueIndex;
+  }
+  if (!follow || positionMs == null) return -1;
+  return nearestCueIndexAtOrBefore(cues, positionMs);
+}
+
 /// 字幕列表行**时间戳列宽度**（TODO-567 / TODO-1200）。纯函数，页面与测试同源。
 ///
 /// 时间戳用 tabular figures 单行不换行渲染，列宽须容下最宽的时间戳字符串，否则文本溢出到
@@ -467,6 +525,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   late final ScrollController _scrollController;
 
   int _lastScrolledIndex = -1;
+
+  /// 上一次的**跟随目标行**（[_followCueIndex] 的结果，非裸 `controller.currentCueIndex`，
+  /// BUG-1484）。gap 里裸下标恒为 -1，用它做变化检测会把「从一段静默 seek 到另一段静默」
+  /// 判成没变、列表不跟随；跟目标行比才是真的「要滚的行变了吗」。
   int _lastControllerCueIndex = -1;
   bool _lastSubtitleCuesLoading = false;
   int? _scrollTargetRawIndex;
@@ -694,15 +756,25 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       widget.isCueSelectedForCard != null &&
       widget.onToggleCueSelection != null;
 
+  /// 面板「该定位到哪一行」的单一入口（BUG-1484）：跟随开启时静默 gap 回落最近一行，
+  /// 关闭时保持历史「无当前句就不定位」。高亮**不走这里**（gap 里画面没字幕，列表也不该
+  /// 有高亮行），它仍读裸 `controller.currentCueIndex`。
+  int _followCueIndex() => resolveFollowCueIndex(
+        cues: widget.controller.cues,
+        currentCueIndex: widget.controller.currentCueIndex,
+        // 音画延迟校正后的位置：与 controller 求 cue 命中同一根时间轴。
+        positionMs: widget.controller.effectivePositionMs,
+        follow: _autoScroll,
+      );
+
   @override
   void initState() {
     super.initState();
-    _lastControllerCueIndex = widget.controller.currentCueIndex;
+    _lastControllerCueIndex = _followCueIndex();
     _lastSubtitleCuesLoading = widget.controller.isSubtitleCuesLoading;
     // BUG-841：当前句可能落在被折叠的重复项上——追踪其**代表行** raw（列表渲染的唯一行），
     // 否则高亮 / 滚动定位不到（rowKey 按代表行 raw 挂）。
-    final int initialRawIndex =
-        _representativeRaw(widget.controller.currentCueIndex);
+    final int initialRawIndex = _representativeRaw(_lastControllerCueIndex);
     _scrollTargetRawIndex =
         _isCurrentCueVisible(initialRawIndex) ? initialRawIndex : null;
     _retainRowKeyFor(_scrollTargetRawIndex);
@@ -779,11 +851,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_onControllerChanged);
       widget.controller.addListener(_onControllerChanged);
-      _lastControllerCueIndex = widget.controller.currentCueIndex;
+      _lastControllerCueIndex = _followCueIndex();
       _lastSubtitleCuesLoading = widget.controller.isSubtitleCuesLoading;
       _lastScrolledIndex = -1;
-      final int currentRep =
-          _representativeRaw(widget.controller.currentCueIndex);
+      final int currentRep = _representativeRaw(_lastControllerCueIndex);
       _scrollTargetRawIndex =
           _isCurrentCueVisible(currentRep) ? currentRep : null;
       _rowKeys.clear();
@@ -835,7 +906,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   void _onControllerChanged() {
     if (!mounted) return;
-    final int currentIndex = widget.controller.currentCueIndex;
+    final int currentIndex = _followCueIndex();
     final bool cuesLoading = widget.controller.isSubtitleCuesLoading;
     final bool cueChanged = currentIndex != _lastControllerCueIndex;
     final bool loadingChanged = cuesLoading != _lastSubtitleCuesLoading;
@@ -863,7 +934,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   void _scrollToCurrentCueIfNeeded() {
     if (!_autoScroll) return;
-    final int rawIndex = widget.controller.currentCueIndex;
+    final int rawIndex = _followCueIndex();
     final List<AudioCue> cues = widget.controller.cues;
     if (rawIndex < 0 || rawIndex >= cues.length) return;
     final List<int> visibleIndexes = _visibleCueIndexes(cues);
@@ -894,11 +965,13 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       cues,
       rowWidth,
     );
+    final AudioCue targetCue = _rowCue(cues, currentIndex);
     final double rowExtent = _rowExtentForCue(
-      _rowCue(cues, currentIndex),
+      targetCue,
       rowWidth,
-      // 目标行就是当前播放句，渲染时必加粗。
-      bold: true,
+      // 与 [_estimatedScrollOffsetForVisibleIndex] / 真实渲染同源判加粗：目标行正在播放
+      // 时加粗，落在静默 gap 里回落到的最近行则不加粗（BUG-1484），否则估算行高偏大。
+      bold: _isRowBold(currentIndex, targetCue),
     );
     final double target = rowOffset - (viewport / 2) + (rowExtent / 2);
     final double clamped =
@@ -1124,7 +1197,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   }
 
   double _initialScrollOffsetForCurrentCue() {
-    final int currentIndex = widget.controller.currentCueIndex;
+    // BUG-1484：跟随开启时，打开面板落在静默段也定位到最近一行（否则列表停在开头）。
+    final int currentIndex = _followCueIndex();
     final List<AudioCue> cues = widget.controller.cues;
     if (currentIndex < 0 || currentIndex >= cues.length) return 0;
     final List<int> visibleIndexes = _visibleCueIndexes(cues);
