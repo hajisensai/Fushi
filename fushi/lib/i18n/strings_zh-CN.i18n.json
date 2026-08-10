@@ -3304,5 +3304,10 @@
   "video_setting_drag_seek_sensitivity_medium": "中",
   "video_setting_drag_seek_sensitivity_high": "高",
   "video_subtitle_read_failed": "无法读取该字幕文件（内容损坏或为空）：$label",
-  "dict_downloading_size": "正在下载 $name（$done / $total）"
+  "dict_downloading_size": "正在下载 $name（$done / $total）",
+  "dict_download_hide": "后台继续",
+  "dict_download_progress_show": "查看进度",
+  "dict_download_cancelled": "已取消下载。",
+  "dict_download_import_uncancellable": "导入阶段无法中断",
+  "dict_download_busy": "已有词典下载正在进行。"
 }
