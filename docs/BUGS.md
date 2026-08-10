@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1393 条。点号进各自文件。
+> 共 1394 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1487](bugs/BUG-1487-parent-extras-split-series.md) | ✅ | ✅ | 父作品短篇被错误拆成独立系列卡 |
 | [BUG-1486](bugs/BUG-1486-subscription-episode-selection-order.md) | ✅ | ✅ | 订阅选集季号错误、重复下载且顺序按完成时间乱序 |
 | [BUG-1485](bugs/BUG-1485-subscription-first-episode-skipped.md) | ✅ | ✅ | 发现订阅跳过所选首集 |
 | [BUG-1484](bugs/BUG-1484-download-task-empty-overlay-metrics.md) | ✅ | ✅ | 下载任务空态遮挡且缺少实时指标 |
