@@ -2279,6 +2279,13 @@ class FushiDatabase extends _$FushiDatabase
                   'RENAME TO media_collection_items');
             }
             if (await _tableExists('media_collections')) {
+              // frozen-migration-literal（BUG-1489）：下面这两处 `'epub|'` 是
+              // **冻结历史串**，绝不能换成 `MediaKind.epub.dbValue`。迁移步读写的
+              // 是「升到 v83 那一刻磁盘上真实存在」的形态：`LIKE 'epub|%'` 认老行、
+              // `substr(cover_source, 6)`（6 = len('epub|') + 1）切 bookKey。引用
+              // 运行时枚举串后，谁改了 dbValue 这段历史迁移就跟着漂——老库匹配不上、
+              // 换键静默不做，而同一步里不带前缀的 shelf_entries /
+              // media_collection_items 照常换成了 uid，cover_source 从此永久悬空。
               await customStatement('''
               UPDATE media_collections SET cover_source = 'epub|' ||
                 (SELECT eb.uid FROM epub_books eb
