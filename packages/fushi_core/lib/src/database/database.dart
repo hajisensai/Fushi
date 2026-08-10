@@ -1976,9 +1976,26 @@ class FushiDatabase extends _$FushiDatabase
               await customStatement('DROP TABLE srt_book_tag_mappings');
             }
             if (hasBookTags && await _tableExists('video_book_tag_mappings')) {
+              // 真实旧库存在 schema-version 已推进、但 v57 列改名未落地的分支血统：
+              // 表仍是 video_book_uid。v79 不能假定 book_uid 必然存在，否则启动迁移
+              // 直接报 no such column、整库打不开。按物理 schema 选键列；added_at
+              // 同样对 v41 前形态兜底为 0，保证已知两代旧表都能无损/可解释地并表。
+              final String videoEntryColumn =
+                  await _columnExists('video_book_tag_mappings', 'book_uid')
+                      ? 'book_uid'
+                      : await _columnExists(
+                              'video_book_tag_mappings', 'video_book_uid')
+                          ? 'video_book_uid'
+                          : throw StateError(
+                              'video_book_tag_mappings has no known video key column',
+                            );
+              final String videoAddedAt =
+                  await _columnExists('video_book_tag_mappings', 'added_at')
+                      ? 'added_at'
+                      : '0';
               await customStatement('INSERT OR IGNORE INTO tag_assignments '
                   '(media_kind, entry_key, tag_id, added_at) '
-                  "SELECT 'video', book_uid, tag_id, added_at "
+                  "SELECT 'video', $videoEntryColumn, tag_id, $videoAddedAt "
                   'FROM video_book_tag_mappings '
                   'WHERE tag_id IN (SELECT id FROM book_tags)');
               await customStatement('DROP TABLE video_book_tag_mappings');
