@@ -3304,5 +3304,13 @@
   "video_setting_drag_seek_sensitivity_medium": "Medium",
   "video_setting_drag_seek_sensitivity_high": "High",
   "video_subtitle_read_failed": "Couldn't read this subtitle file (damaged or empty): $label",
-  "dict_downloading_size": "Downloading $name ($done / $total)"
+  "dict_downloading_size": "Downloading $name ($done / $total)",
+  "download_task_open_location": "Show in folder",
+  "download_task_delete": "Delete task",
+  "download_task_delete_files": "Also delete downloaded files",
+  "download_task_location_missing": "The task file location is unavailable.",
+  "download_task_location_open_failed": "Could not open the file location.",
+  "download_subscription_start_episode": "从第 $episode 集开始",
+  "download_task_delete_confirm": "Delete the download task for ${title}?",
+  "download_task_action_failed": "The task action failed: ${error}"
 }

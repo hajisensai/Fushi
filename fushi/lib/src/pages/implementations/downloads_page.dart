@@ -242,6 +242,24 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                                   .videoDownloadPipelineService
                                   ?.cancelJob(job.jobId);
                             },
+                            locationLoader: (job) async {
+                              final pipeline = ref
+                                  .read(appProvider)
+                                  .videoDownloadPipelineService;
+                              return pipeline == null
+                                  ? null
+                                  : await pipeline
+                                      .resolveJobLocation(job.jobId);
+                            },
+                            onDelete: (job, {required bool deleteFiles}) async {
+                              await ref
+                                  .read(appProvider)
+                                  .videoDownloadPipelineService
+                                  ?.deleteJob(
+                                    job.jobId,
+                                    deleteFiles: deleteFiles,
+                                  );
+                            },
                           ),
                         ),
                         SizedBox(

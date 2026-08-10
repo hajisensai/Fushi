@@ -235,6 +235,7 @@ class VideoDownloadPipelineService {
   bool _running = false;
   bool _disposed = false;
   VideoDownloadLeaseGuard? _activeLease;
+  String? _activeJobId;
 
   Future<String> enqueue(VideoDownloadEnqueueRequest request) async {
     final MediaSourceRow? source =
@@ -415,6 +416,131 @@ class VideoDownloadPipelineService {
     }
   }
 
+  /// Returns the most useful existing path for Explorer/Finder integration.
+  /// Final organized files win; an in-progress task falls back to the backend
+  /// content path and then its observed save directory.
+  Future<String?> resolveJobLocation(String jobId) async {
+    final VideoDownloadJobRow? job = await database.getVideoDownloadJob(jobId);
+    if (job == null) return null;
+    final files = await database.getVideoDownloadJobFiles(jobId);
+    final subtitles = await database.getVideoDownloadJobSubtitles(jobId);
+    final List<String?> candidates = <String?>[
+      for (final file in files) file.finalAbsolutePath,
+      for (final subtitle in subtitles) subtitle.finalPath,
+      for (final subtitle in subtitles) subtitle.stagedPath,
+    ];
+
+    try {
+      final TorrentSnapshot? snapshot =
+          (await loadTaskSnapshots(<VideoDownloadJobRow>[job]))[jobId];
+      candidates
+        ..add(snapshot?.contentPath)
+        ..add(snapshot?.savePath);
+    } on Object {
+      // The durable paths below still make the shortcut useful while the
+      // configured torrent backend is offline.
+    }
+
+    final String? savePath = job.observedSavePath?.trim();
+    if (savePath?.isNotEmpty == true) {
+      candidates.addAll(<String?>[
+        for (final file in files)
+          if (file.currentRelativePath.trim().isNotEmpty)
+            p.join(savePath!, file.currentRelativePath),
+        savePath,
+      ]);
+    }
+    for (final String? candidate in candidates) {
+      final String path = candidate?.trim() ?? '';
+      if (path.isEmpty) continue;
+      if (await FileSystemEntity.type(path, followLinks: false) !=
+          FileSystemEntityType.notFound) {
+        return p.normalize(path);
+      }
+    }
+    return null;
+  }
+
+  /// Removes a durable task and, when requested, only the files that this task
+  /// explicitly recorded. Directories are never recursively removed here.
+  Future<void> deleteJob(
+    String jobId, {
+    required bool deleteFiles,
+  }) async {
+    VideoDownloadJobRow? job = await database.getVideoDownloadJob(jobId);
+    if (job == null) return;
+    if (job.lifecycle != VideoDownloadJobLifecycle.completed &&
+        job.lifecycle != VideoDownloadJobLifecycle.cancelled) {
+      await cancelJob(jobId);
+      job = await database.getVideoDownloadJob(jobId) ?? job;
+    }
+    while (_activeJobId == jobId) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+
+    final files = await database.getVideoDownloadJobFiles(jobId);
+    final subtitles = await database.getVideoDownloadJobSubtitles(jobId);
+    final String torrentId =
+        (job.backendTaskId ?? job.torrentHash ?? '').trim();
+    if (torrentId.isNotEmpty) {
+      try {
+        final VideoDownloadBackendBinding? binding = await backendResolver(job);
+        _validateBackendBinding(job, binding);
+        final TorrentBackend backend = binding!.backend;
+        if (backend is TorrentRemovalBackend) {
+          await backend.removeTorrent(torrentId, deleteFiles: deleteFiles);
+        }
+      } on Object {
+        // A stale/offline backend must not make a durable UI row impossible to
+        // remove. Exact known files are still handled below when requested.
+      }
+    }
+
+    if (deleteFiles) {
+      final Set<String> managedPaths = <String>{
+        for (final file in files)
+          if (file.finalAbsolutePath?.trim().isNotEmpty == true)
+            p.normalize(file.finalAbsolutePath!.trim()),
+        for (final subtitle in subtitles)
+          if (subtitle.finalPath?.trim().isNotEmpty == true)
+            p.normalize(subtitle.finalPath!.trim()),
+        for (final subtitle in subtitles)
+          if (subtitle.stagedPath?.trim().isNotEmpty == true)
+            p.normalize(subtitle.stagedPath!.trim()),
+        if (job.observedSavePath?.trim().isNotEmpty == true)
+          for (final file in files)
+            if (file.currentRelativePath.trim().isNotEmpty)
+              p.normalize(
+                p.join(
+                  job.observedSavePath!.trim(),
+                  file.currentRelativePath,
+                ),
+              ),
+      };
+      final Set<String> normalizedManagedPaths =
+          managedPaths.map(normalizeVideoPath).toSet();
+      for (final VideoBookRow book in await _videoRepository.listAll()) {
+        if (normalizedManagedPaths
+            .contains(normalizeVideoPath(book.videoPath))) {
+          await _videoRepository.deleteVideoBook(book.bookUid);
+        }
+      }
+      for (final String path in managedPaths) {
+        final FileSystemEntityType type =
+            await FileSystemEntity.type(path, followLinks: false);
+        if (type == FileSystemEntityType.file) {
+          await File(path).delete();
+        } else if (type == FileSystemEntityType.link) {
+          await Link(path).delete();
+        }
+      }
+      database.notifyVideoLibraryChanged();
+    }
+
+    await database.deleteVideoDownloadJob(jobId);
+    wake();
+  }
+
   /// 读取任务页所需的真实后端快照。
   ///
   /// 按后端身份与分类分组，每组只列一次 torrent；返回值以持久任务 id 为键。
@@ -512,6 +638,7 @@ class VideoDownloadPipelineService {
         leaseDurationMs: leaseDuration.inMilliseconds,
       ),
     );
+    _activeJobId = job.jobId;
     _activeLease = lease;
     lease.start();
     try {
@@ -521,6 +648,7 @@ class VideoDownloadPipelineService {
       // persisted stage is the only safe place from which to continue.
     } finally {
       if (identical(_activeLease, lease)) _activeLease = null;
+      if (_activeJobId == job.jobId) _activeJobId = null;
       await lease.stop();
     }
   }
