@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/source_guard.dart';
 import '../../pages/video_fushi_page_source_corpus.dart';
 
 /// TODO-057 守卫：视频画面「左半区竖滑调屏幕亮度 / 右半区竖滑调音量 + 指示条」。
@@ -56,7 +57,27 @@ void main() {
           reason:
               'TODO-916 enabled horizontal seek; stale disable must be gone');
       expect(videoPage.contains('seekGesture: true'), isTrue);
-      expect(videoPage.contains('horizontalGestureSensitivity:'), isTrue);
+      // BUG-1506：换算入口在 BUG-1485 换掉了，这条锚点没跟上，把 develop 守成恒红。
+      // 旧断言钉的是 fork 内建的 `horizontalGestureSensitivity:`（每像素时间与总时长
+      // 成正比 = 「一拽就起飞」的根因）；现在换算由 Hibiki 侧注入的
+      // [VideoHorizontalSeekGesture.resolveDelta] 接管，fork 的比例制灵敏度在 resolver
+      // 在场时根本不被读。三条一起断，才既守住新契约又堵回旧公式：
+      // ① resolver 字段在；② 它真接到了那个可单测的纯函数（只有字段名等于没接线）；
+      // ③ 带冒号的具名参数形态**不许回来**——不带冒号会被
+      //    `video_fushi_page.dart` 里那条解释性注释命中（本文件读的是合并语料）。
+      // 三条都走 containsCodeLine 剥注释，注释里的同名字面量一律不算数。
+      expect(containsCodeLine(videoPage, 'horizontalSeekResolver:'), isTrue,
+          reason: 'BUG-1485/1506：横滑换算必须经 Hibiki 侧 resolver 注入');
+      expect(
+        containsCodeLine(videoPage, 'VideoHorizontalSeekGesture.resolveDelta('),
+        isTrue,
+        reason: 'BUG-1506：resolver 必须真接到纯函数，光有字段名不算接线',
+      );
+      expect(
+        containsCodeLine(videoPage, 'horizontalGestureSensitivity:'),
+        isFalse,
+        reason: 'BUG-1485：改回按视频总时长比例换算的 fork 灵敏度即回归',
+      );
       // 居中 HUD 替换 fork 默认增量条，显目标绝对时间 + 增量两行。
       expect(
         videoPage.contains(

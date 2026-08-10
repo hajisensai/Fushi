@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1407 条。点号进各自文件。
+> 共 1408 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1506](bugs/BUG-1506-video-drag-seek-guard-stale-anchor.md) | ✅ | ✅ | 视频横滑 seek 守卫锚点在 BUG-1485 后失效 |
 | [BUG-1505](bugs/BUG-1505-migration-import-failure-force-restart.md) | 🚧 | 🚧 | 迁移导入失败被强制重启带走：页面与失败原因一起消失，错误日志 0 条 |
 | [BUG-1504](bugs/BUG-1504-subtitle-drop-attach-silent-failure.md) | ✅ | ✅ | 拖放字幕到视频卡失败无任何提示 |
 | [BUG-1500](bugs/BUG-1500-dict-concurrent-import-temp-race.md) | ✅ | ✅ | 词典手动下载与静默自动更新无互斥，共用 import_temp 互相删除 |
