@@ -33,6 +33,33 @@ const VideoDownloadBackendIdentity _expectedIdentity =
 );
 
 void main() {
+  test('持久化详情不依赖运行中的下载服务或后端', () async {
+    final _FakeTorrentBackend backend = _FakeTorrentBackend(
+      snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.25)],
+    );
+    final _PipelineEnvironment environment =
+        await _PipelineEnvironment.create(backend: backend);
+    addTearDown(environment.close);
+    final String jobId = await environment.service.enqueue(
+      environment.enqueueRequest(),
+    );
+    final VideoDownloadJobRow job = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) => row.stage == VideoDownloadJobStage.download,
+    );
+
+    final VideoDownloadJobDetails details =
+        buildPersistedVideoDownloadJobDetails(
+      job,
+      await environment.database.getVideoDownloadJobFiles(jobId),
+    );
+
+    expect(details.backend, isNull);
+    expect(details.snapshot.hash, _torrentHash);
+    expect(details.snapshot.progress, 0.25);
+  });
+
   test(
       'enqueue persists intent and verified hash before backend add side effect',
       () async {

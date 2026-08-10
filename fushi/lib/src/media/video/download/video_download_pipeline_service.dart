@@ -93,6 +93,80 @@ class VideoDownloadJobDetails {
   final List<TorrentFileEntry> files;
 }
 
+/// Builds the durable half of task details without requiring a running
+/// pipeline service. This keeps completed/history rows inspectable even when
+/// startup deliberately disables downloads because their engine is missing.
+VideoDownloadJobDetails buildPersistedVideoDownloadJobDetails(
+  VideoDownloadJobRow job,
+  List<VideoDownloadJobFileRow> rows,
+) {
+  final String torrentId = (job.backendTaskId ?? job.torrentHash ?? '').trim();
+  final double progress = (job.lifecycle == VideoDownloadJobLifecycle.completed
+          ? 1.0
+          : job.stageProgress)
+      .clamp(0.0, 1.0)
+      .toDouble();
+  final List<TorrentFileEntry> files = <TorrentFileEntry>[
+    for (int index = 0; index < rows.length; index++)
+      TorrentFileEntry(
+        name: rows[index].currentRelativePath.trim().isNotEmpty
+            ? rows[index].currentRelativePath
+            : rows[index].originalRelativePath,
+        size: rows[index].sizeBytes ?? 0,
+        progress: _persistedFileIsComplete(rows[index].status) ? 1.0 : progress,
+        index: rows[index].backendFileIndex ?? index,
+      ),
+  ];
+  final int totalBytes = rows.fold<int>(
+    0,
+    (int total, VideoDownloadJobFileRow row) => total + (row.sizeBytes ?? 0),
+  );
+  final String savePath = job.observedSavePath?.trim() ?? '';
+  String contentPath = '';
+  for (final VideoDownloadJobFileRow row in rows) {
+    final String finalPath = row.finalAbsolutePath?.trim() ?? '';
+    if (finalPath.isNotEmpty) {
+      contentPath = finalPath;
+      break;
+    }
+  }
+  if (contentPath.isEmpty && savePath.isNotEmpty && rows.isNotEmpty) {
+    contentPath = p.join(savePath, rows.first.currentRelativePath);
+  }
+  return VideoDownloadJobDetails(
+    snapshot: TorrentSnapshot(
+      hash: torrentId,
+      name: job.resourceTitle?.trim().isNotEmpty == true
+          ? job.resourceTitle!.trim()
+          : job.title,
+      progress: progress,
+      state: _persistedTorrentState(job),
+      savePath: savePath,
+      contentPath: contentPath,
+      amountLeft: totalBytes > 0 ? (totalBytes * (1 - progress)).round() : -1,
+      totalSizeBytes: totalBytes > 0 ? totalBytes : -1,
+      downloadedBytes: totalBytes > 0 ? (totalBytes * progress).round() : 0,
+    ),
+    files: files,
+  );
+}
+
+bool _persistedFileIsComplete(String status) =>
+    status == VideoDownloadJobFileStatus.downloaded ||
+    status == VideoDownloadJobFileStatus.organized ||
+    status == VideoDownloadJobFileStatus.imported;
+
+String _persistedTorrentState(VideoDownloadJobRow job) {
+  if (job.lifecycle == VideoDownloadJobLifecycle.completed) return 'completed';
+  if (job.lifecycle == VideoDownloadJobLifecycle.cancelled) return 'pausedDL';
+  if (job.lifecycle == VideoDownloadJobLifecycle.failed ||
+      job.lifecycle == VideoDownloadJobLifecycle.needsAttention) {
+    return 'error';
+  }
+  if (job.stage == VideoDownloadJobStage.download) return 'downloading';
+  return job.stage;
+}
+
 typedef VideoDownloadBackendResolver = Future<VideoDownloadBackendBinding?>
     Function(VideoDownloadJobRow job);
 
@@ -489,28 +563,10 @@ class VideoDownloadPipelineService {
     }
     final List<VideoDownloadJobFileRow> rows =
         await database.getVideoDownloadJobFiles(jobId);
+    final VideoDownloadJobDetails persistedDetails =
+        buildPersistedVideoDownloadJobDetails(job, rows);
     final String torrentId =
         (job.backendTaskId ?? job.torrentHash ?? '').trim();
-
-    final double persistedProgress =
-        (job.lifecycle == VideoDownloadJobLifecycle.completed
-                ? 1.0
-                : job.stageProgress)
-            .clamp(0.0, 1.0)
-            .toDouble();
-    final List<TorrentFileEntry> persistedFiles = <TorrentFileEntry>[
-      for (int index = 0; index < rows.length; index++)
-        TorrentFileEntry(
-          name: rows[index].currentRelativePath.trim().isNotEmpty
-              ? rows[index].currentRelativePath
-              : rows[index].originalRelativePath,
-          size: rows[index].sizeBytes ?? 0,
-          progress: _persistedFileIsComplete(rows[index].status)
-              ? 1.0
-              : persistedProgress,
-          index: rows[index].backendFileIndex ?? index,
-        ),
-    ];
 
     TorrentBackend? backend;
     TorrentSnapshot? liveSnapshot;
@@ -539,66 +595,11 @@ class VideoDownloadPipelineService {
       }
     }
 
-    final int knownTotalBytes = rows.fold<int>(
-      0,
-      (int total, VideoDownloadJobFileRow row) => total + (row.sizeBytes ?? 0),
-    );
-    final String savePath = job.observedSavePath?.trim() ?? '';
-    String contentPath = '';
-    for (final VideoDownloadJobFileRow row in rows) {
-      final String finalPath = row.finalAbsolutePath?.trim() ?? '';
-      if (finalPath.isNotEmpty) {
-        contentPath = finalPath;
-        break;
-      }
-    }
-    if (contentPath.isEmpty && savePath.isNotEmpty && rows.isNotEmpty) {
-      contentPath = p.join(savePath, rows.first.currentRelativePath);
-    }
-    final int remainingBytes = knownTotalBytes > 0
-        ? (knownTotalBytes * (1 - persistedProgress)).round()
-        : -1;
-    final TorrentSnapshot persistedSnapshot = TorrentSnapshot(
-      hash: torrentId,
-      name: job.resourceTitle?.trim().isNotEmpty == true
-          ? job.resourceTitle!.trim()
-          : job.title,
-      progress: persistedProgress,
-      state: _persistedTorrentState(job),
-      savePath: savePath,
-      contentPath: contentPath,
-      amountLeft: remainingBytes,
-      totalSizeBytes: knownTotalBytes > 0 ? knownTotalBytes : -1,
-      downloadedBytes: knownTotalBytes > 0
-          ? (knownTotalBytes * persistedProgress).round()
-          : 0,
-    );
-
     return VideoDownloadJobDetails(
       backend: backend,
-      snapshot: liveSnapshot ?? persistedSnapshot,
-      files: liveFiles ?? persistedFiles,
+      snapshot: liveSnapshot ?? persistedDetails.snapshot,
+      files: liveFiles ?? persistedDetails.files,
     );
-  }
-
-  static bool _persistedFileIsComplete(String status) =>
-      status == VideoDownloadJobFileStatus.downloaded ||
-      status == VideoDownloadJobFileStatus.organized ||
-      status == VideoDownloadJobFileStatus.imported;
-
-  static String _persistedTorrentState(VideoDownloadJobRow job) {
-    if (job.lifecycle == VideoDownloadJobLifecycle.completed) {
-      return 'completed';
-    }
-    if (job.lifecycle == VideoDownloadJobLifecycle.cancelled) {
-      return 'pausedDL';
-    }
-    if (job.lifecycle == VideoDownloadJobLifecycle.failed ||
-        job.lifecycle == VideoDownloadJobLifecycle.needsAttention) {
-      return 'error';
-    }
-    if (job.stage == VideoDownloadJobStage.download) return 'downloading';
-    return job.stage;
   }
 
   /// Removes a durable task and, when requested, only the files that this task

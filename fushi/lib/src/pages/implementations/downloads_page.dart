@@ -244,16 +244,16 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                                   ?.cancelJob(job.jobId);
                             },
                             onOpenDetails: (job) async {
-                              final pipeline = ref
-                                  .read(appProvider)
-                                  .videoDownloadPipelineService;
-                              if (pipeline == null) {
-                                throw const VideoDownloadPipelineActionRequired(
-                                  'The download service is not available',
-                                );
-                              }
-                              final details =
-                                  await pipeline.loadJobDetails(job.jobId);
+                              final appModel = ref.read(appProvider);
+                              final pipeline =
+                                  appModel.videoDownloadPipelineService;
+                              final details = pipeline != null
+                                  ? await pipeline.loadJobDetails(job.jobId)
+                                  : buildPersistedVideoDownloadJobDetails(
+                                      job,
+                                      await appModel.database
+                                          .getVideoDownloadJobFiles(job.jobId),
+                                    );
                               if (!mounted) return;
                               final String torrentId =
                                   (job.backendTaskId ?? job.torrentHash ?? '')

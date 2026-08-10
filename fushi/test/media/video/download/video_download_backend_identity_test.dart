@@ -18,7 +18,7 @@ void main() {
         isA<VideoDownloadBackendUnavailable>().having(
           (VideoDownloadBackendUnavailable error) => error.message,
           'message',
-          contains('built-in download engine is unavailable'),
+          contains('built-in download engine runtime is missing'),
         ),
       ),
     );

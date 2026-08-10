@@ -285,7 +285,7 @@ void main() {
     }
   });
 
-  testWidgets('年份输入与题材菜单不依赖首批趋势卡片', (WidgetTester tester) async {
+  testWidgets('年份与题材菜单不依赖首批趋势卡片', (WidgetTester tester) async {
     final _FakeDiscoveryController controller = _FakeDiscoveryController(
       (_) async => _result(<discovery.VideoDiscoveryItem>[
         _item('current', '首批作品'),
@@ -296,13 +296,14 @@ void main() {
 
     final Finder yearFinder =
         find.byKey(const ValueKey<String>('video-discovery-filter-year'));
-    expect(find.descendant(of: yearFinder, matching: find.byType(TextField)),
-        findsOneWidget);
-    await tester.enterText(
-      find.descendant(of: yearFinder, matching: find.byType(TextField)),
-      '1999',
-    );
-    await tester.pump(const Duration(milliseconds: 400));
+    final PopupMenuButton<int> yearMenu =
+        tester.widget<PopupMenuButton<int>>(yearFinder);
+    final Iterable<int?> yearValues = yearMenu
+        .itemBuilder(tester.element(yearFinder))
+        .whereType<PopupMenuItem<int>>()
+        .map((PopupMenuItem<int> entry) => entry.value);
+    expect(yearValues, containsAll(<int>[0, 1999, DateTime.now().year + 2]));
+    yearMenu.onSelected!(1999);
     await tester.pumpAndSettle();
     expect(controller.requests.last.year, 1999);
 
@@ -371,14 +372,6 @@ void main() {
     final PortraitCoverImage cover = tester
         .widget<PortraitCoverImage>(find.byType(PortraitCoverImage).first);
     expect(cover.image, isA<CachedNetworkImageProvider>());
-  });
-
-  test('年份输入仅接受完整有效年份，空值清除筛选', () {
-    expect(parseVideoDiscoveryYearInput('', newestYear: 2028), 0);
-    expect(parseVideoDiscoveryYearInput('1999', newestYear: 2028), 1999);
-    expect(parseVideoDiscoveryYearInput('20', newestYear: 2028), isNull);
-    expect(parseVideoDiscoveryYearInput('1899', newestYear: 2028), isNull);
-    expect(parseVideoDiscoveryYearInput('2029', newestYear: 2028), isNull);
   });
 
   testWidgets('部分来源失败保留结果并展示来源警告', (WidgetTester tester) async {

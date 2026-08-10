@@ -209,7 +209,8 @@ Future<void> _pumpPersistedFallback(WidgetTester tester) async {
               progress: 1,
               state: 'completed',
               savePath: r'D:\downloads',
-              contentPath: r'D:\downloads\ep01.mkv',
+              contentPath: r'D:\downloads\a-very-long-library-folder\season-03\'
+                  r'a-very-long-release-name-that-must-wrap-inside-the-dialog.mkv',
               amountLeft: 0,
               totalSizeBytes: 4096,
               downloadedBytes: 4096,
@@ -235,6 +236,7 @@ void main() {
     WidgetTester tester,
   ) async {
     await _pumpPersistedFallback(tester);
+    expect(tester.takeException(), isNull);
     expect(find.text('Persisted Series'), findsOneWidget);
     expect(find.textContaining('100.0%'), findsOneWidget);
     expect(

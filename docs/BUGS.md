@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1413 条。点号进各自文件。
+> 共 1415 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1516](bugs/BUG-1516-download-task-details-service-unavailable.md) | ✅ | ✅ | 下载服务未启动时任务详情打不开 |
+| [BUG-1515](bugs/BUG-1515-download-task-detail-path-overflow.md) | ✅ | ✅ | 下载任务详情长路径溢出 |
 | [BUG-1514](bugs/BUG-1514-video-discovery-filter-height.md) | ✅ | ✅ | 视频发现筛选控件高度不一致 |
 | [BUG-1513](bugs/BUG-1513-download-task-details-offline-backend.md) | ✅ | ✅ | 下载任务详情被离线原后端阻断 |
 | [BUG-1512](bugs/BUG-1512-video-discovery-long-anime-movie-dedup.md) | ✅ | ✅ | 发现页同一单集长篇动画电影被重复展示 |

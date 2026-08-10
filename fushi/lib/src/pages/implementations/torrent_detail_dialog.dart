@@ -283,6 +283,7 @@ class _TorrentTaskDetailDialogState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Expanded(
+            flex: 1,
             child: Text(
               label,
               style: theme.textTheme.bodySmall
@@ -290,7 +291,15 @@ class _TorrentTaskDetailDialogState
             ),
           ),
           const SizedBox(width: 12),
-          Text(value, style: theme.textTheme.bodySmall),
+          Expanded(
+            flex: 2,
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              softWrap: true,
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
         ],
       ),
     );
