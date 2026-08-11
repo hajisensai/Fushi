@@ -1637,15 +1637,20 @@ class AppModelLibraryHostService
     await _runExclusive(() async {
       final CollectionManifest local = await loadLocalCollectionManifest(_db);
       final SyncRepository repo = SyncRepository(_db);
-      final int baseline = await repo.getCollectionsSyncBaselineMs();
+      // BUG-1579：host 收 POST 走**自己那本账**（[SyncChannelScope.host]）。它与
+      // 本机作为 client 跑的云/互联通道是三条独立的因果轴：共用一个键时，client
+      // 通道刚推进的基线会把对端 POST 来的移出墓碑判成旧闻 → 引擎按「活胜」撤销
+      // → 再回传给对端，用户的移出被自己另一条通道悄悄撤销。
+      final int baseline =
+          await repo.getCollectionsSyncBaselineMs(SyncChannelScope.host);
       final CollectionSyncOutcome outcome = CollectionSyncEngine.merge(
         local: local,
         remote: incoming,
         lastSyncedAtMs: baseline,
       );
       await applyCollectionLocalChanges(_db, outcome.changes);
-      await repo
-          .setCollectionsSyncBaselineMs(DateTime.now().millisecondsSinceEpoch);
+      await repo.setCollectionsSyncBaselineMs(
+          SyncChannelScope.host, DateTime.now().millisecondsSinceEpoch);
       merged = outcome.merged;
     });
     return merged;

@@ -614,12 +614,14 @@ void main() {
       addTearDown(db.close);
 
       // 整轮 sweep 前：从未同步过 -> 无冷却时间戳。
-      expect(await SyncRepository(db).getLastSyncMs(), isNull);
+      expect(await SyncRepository(db).getLastSyncMs(SyncChannelScope.unscoped),
+          isNull);
 
       await _orchestrator(db, backend, tmp, tmp, tmp).run();
 
       // 整轮完成 -> 记录冷却时间戳（下次 app-open 在冷却窗内不再重复整轮 sweep）。
-      expect(await SyncRepository(db).getLastSyncMs(), isNotNull,
+      expect(await SyncRepository(db).getLastSyncMs(SyncChannelScope.unscoped),
+          isNotNull,
           reason: '完整完成的 sweep 必须记录冷却时间戳');
     });
 
@@ -640,7 +642,8 @@ void main() {
       );
 
       // 中断态被丢弃：lastSyncMs 未写 -> 下次 app-open 自动同步重新整轮重试。
-      expect(await SyncRepository(db).getLastSyncMs(), isNull,
+      expect(await SyncRepository(db).getLastSyncMs(SyncChannelScope.unscoped),
+          isNull,
           reason: '被中断的残缺 sweep 不得记录冷却时间戳，否则会压制下次重试');
     });
   });

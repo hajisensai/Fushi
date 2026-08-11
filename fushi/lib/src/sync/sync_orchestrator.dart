@@ -254,10 +254,24 @@ class SyncRunReport {
   final List<DeletionPropagationCandidate> deletionCandidates =
       <DeletionPropagationCandidate>[];
 
-  /// 本轮呈现的删除候选里最大的远端 deletedAt。UI 层在用户处理完确认框后据此推进
+  /// 本轮呈现的删除候选里最大的远端 deletedAt，**按通道分开记**（BUG-1579）。
+  ///
+  /// UI 层在用户处理完确认框后据此推进
   /// [SyncRepository.setDeletionTombstonesBaselineMs]（=已复核到此时刻的删除标记），
-  /// 恰好压制已复核的、放行更新的删除。0 = 本轮无候选。
-  int deletionTombstonesHighWaterMs = 0;
+  /// 恰好压制已复核的、放行更新的删除。空 map = 本轮无候选。
+  ///
+  /// 为什么是 map 而不是一个 int：手动同步会把两条通道的报告 [mergeFrom] 成一份，
+  /// 一个标量在那一刻就把「这个时刻是相对哪个远端的」丢了——推进任一通道的基线都
+  /// 会用另一条通道的时刻去压制自己还没复核过的删除。
+  final Map<String, int> deletionTombstonesHighWaterMsByScope = <String, int>{};
+
+  /// 记一条通道本轮复核到的删除时刻（取该通道的 max）。
+  void noteDeletionHighWater(SyncChannelScope scope, int deletedAt) {
+    final int? prev = deletionTombstonesHighWaterMsByScope[scope.id];
+    if (prev == null || deletedAt > prev) {
+      deletionTombstonesHighWaterMsByScope[scope.id] = deletedAt;
+    }
+  }
 
   /// True when the run imported data into this device's local library caches or
   /// visible shelves. Export-only runs mutate the remote side and do not need a
@@ -292,6 +306,15 @@ class SyncRunReport {
     }
     conflicts.addAll(other.conflicts);
     deletionCandidates.addAll(other.deletionCandidates);
+    // 逐槽位取 max：两条通道的复核时刻各归各的轴，绝不折成一个标量（那会用一条
+    // 通道的时刻去推进另一条通道的基线）。
+    other.deletionTombstonesHighWaterMsByScope
+        .forEach((String scopeId, int at) {
+      final int? prev = deletionTombstonesHighWaterMsByScope[scopeId];
+      if (prev == null || at > prev) {
+        deletionTombstonesHighWaterMsByScope[scopeId] = at;
+      }
+    });
   }
 
   /// 记一条维度/条目级失败。
@@ -388,10 +411,16 @@ class SyncOrchestrator {
         _dictionaryResourceRoot = dictionaryResourceRoot,
         _audioDatabaseRoot = audioDatabaseRoot,
         _tempDir = tempDir,
+        _scope = syncChannelScopeOf(backend),
         _packages = SyncAssetPackageService(db: db);
 
   final FushiDatabase _db;
   final SyncBackend _backend;
+
+  /// 本轮编排跑的是哪条通道（BUG-1579 / BUG-1580）。合集因果基线、删除墓碑消费
+  /// 基线、整轮冷却戳、聚合快照哈希都是「本端相对**某一个远端**」的账，双通道并存
+  /// 时共用一份键就会互相覆盖/互相压制，故一律按槽位分开记。
+  final SyncChannelScope _scope;
   final Directory _dictionaryResourceRoot;
   final Directory _audioDatabaseRoot;
   final Directory _tempDir;
@@ -614,7 +643,7 @@ class SyncOrchestrator {
     // 启动再同步」。此前该时间戳写在 SyncManager.syncAllBooks 书阶段末尾（sweep 中途），
     // 书阶段后被打断的残缺同步会误记冷却、错误地压制下次重试。
     await SyncRepository(_db)
-        .setLastSyncMs(DateTime.now().millisecondsSinceEpoch);
+        .setLastSyncMs(_scope, DateTime.now().millisecondsSinceEpoch);
 
     return report;
   }
@@ -628,7 +657,7 @@ class SyncOrchestrator {
   /// 维度同纪律）。删除不跨端传播；无 schema 变更。
   Future<void> _syncAggregate(SyncRunReport report) async {
     try {
-      await AggregateSyncService(_db).sync(
+      await AggregateSyncService(_db, scope: _scope).sync(
         store: _backend,
         deviceId: deviceId,
       );
@@ -668,7 +697,7 @@ class SyncOrchestrator {
     InterconnectSyncBackend backend,
   ) async {
     try {
-      await AggregateSyncService(_db).syncOverClient(
+      await AggregateSyncService(_db, scope: _scope).syncOverClient(
         fetchRemote: backend.getRemoteAggregate,
         pushMerged: backend.putRemoteAggregate,
       );
@@ -785,7 +814,7 @@ class SyncOrchestrator {
 
       // 时钟回拨钳制：持久化基线晚于 now（时钟被拨回）时钳到 now，避免基线永远大于
       // 一切 publishedAt/removedAt 而把所有墓碑当旧闻。
-      int baseline = await repo.getCollectionsSyncBaselineMs();
+      int baseline = await repo.getCollectionsSyncBaselineMs(_scope);
       if (baseline > nextBaseline) baseline = nextBaseline;
 
       // 折叠对端 per-device 文件 + 旧单文件成远端并集（按文件级 lastWrittenAt 裁决墓碑，
@@ -826,7 +855,7 @@ class SyncOrchestrator {
       // finding 2：跳过了任一他端损坏文件 ⇒ 本轮没读全知识，不推进基线。本端自愈不算
       // （本端知识来自本地 DB，未依赖那份损坏文件）。
       if (!skippedPeer) {
-        await repo.setCollectionsSyncBaselineMs(nextBaseline);
+        await repo.setCollectionsSyncBaselineMs(_scope, nextBaseline);
       }
     } catch (e) {
       report.noteError('collections sync', e);
@@ -871,7 +900,7 @@ class SyncOrchestrator {
       final CollectionManifest local = await loadLocalCollectionManifest(_db);
       final SyncRepository repo = SyncRepository(_db);
       // 时钟回拨钳制：持久化基线晚于 now 时钳到 now。
-      int baseline = await repo.getCollectionsSyncBaselineMs();
+      int baseline = await repo.getCollectionsSyncBaselineMs(_scope);
       if (baseline > nextBaseline) baseline = nextBaseline;
       final CollectionSyncOutcome outcome = CollectionSyncEngine.merge(
         local: local,
@@ -888,7 +917,7 @@ class SyncOrchestrator {
       if (outcome.merged.canonicalJson() != remote.canonicalJson()) {
         await backend.putRemoteCollectionManifest(outcome.merged);
       }
-      await repo.setCollectionsSyncBaselineMs(nextBaseline);
+      await repo.setCollectionsSyncBaselineMs(_scope, nextBaseline);
     } catch (e) {
       report.noteError('collections live sync', e);
     }
@@ -1011,7 +1040,7 @@ class SyncOrchestrator {
 
       final Map<String, Set<String>> present =
           await _collectPresentDeletionKeys();
-      int baseline = await repo.getDeletionTombstonesBaselineMs();
+      int baseline = await repo.getDeletionTombstonesBaselineMs(_scope);
       if (baseline > nextBaseline) baseline = nextBaseline; // 时钟回拨钳制。
 
       // deleteLocal 方向：远端有标记 ∧ 本地在库。localTombstones/remotePresent 传空
@@ -1027,9 +1056,7 @@ class SyncOrchestrator {
         final int? at = remoteDeletedAt['${c.mediaType}\u0000${c.itemKey}'];
         if (at == null || at <= baseline) continue; // 旧闻 / 已处理，不再弹。
         report.deletionCandidates.add(c);
-        if (at > report.deletionTombstonesHighWaterMs) {
-          report.deletionTombstonesHighWaterMs = at;
-        }
+        report.noteDeletionHighWater(_scope, at);
       }
     } catch (e) {
       report.noteError('deletion tombstones sync', e);
@@ -1080,7 +1107,7 @@ class SyncOrchestrator {
       final SyncRepository repo = SyncRepository(_db);
       final Map<String, Set<String>> present =
           await _collectPresentDeletionKeys();
-      int baseline = await repo.getDeletionTombstonesBaselineMs();
+      int baseline = await repo.getDeletionTombstonesBaselineMs(_scope);
       if (baseline > nextBaseline) baseline = nextBaseline;
 
       final List<DeletionPropagationCandidate> raw = computeDeletionPropagation(
@@ -1094,9 +1121,7 @@ class SyncOrchestrator {
         final int? at = remoteDeletedAt['${c.mediaType}\u0000${c.itemKey}'];
         if (at == null || at <= baseline) continue;
         report.deletionCandidates.add(c);
-        if (at > report.deletionTombstonesHighWaterMs) {
-          report.deletionTombstonesHighWaterMs = at;
-        }
+        report.noteDeletionHighWater(_scope, at);
       }
     } catch (e) {
       report.noteError('deletion tombstones live sync', e);

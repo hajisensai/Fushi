@@ -593,7 +593,7 @@ class AppModel with ChangeNotifier {
       navigatorKey: navigatorKey,
       db: database,
       views: views,
-      highWaterMs: report.deletionTombstonesHighWaterMs,
+      highWaterMsByScope: report.deletionTombstonesHighWaterMsByScope,
       applyDeletions: _applyConfirmedDeletions,
       source: ConflictSource.auto,
       inBook: isMediaOpen,
@@ -2159,8 +2159,16 @@ class AppModel with ChangeNotifier {
       //    selection to the independent interconnect toggle (interconnect and a
       //    cloud backup backend can now coexist).
       await BackupService.recoverPendingImport(_databaseDirectory.path);
+      //    cloud backup backend can now coexist);
+      // 4) BUG-1576: drop the pre-decoupling GLOBAL folder cache. Two channels
+      //    took turns writing that single pair of keys, so its value can no
+      //    longer be attributed to any one remote — and an interconnect/WebDAV
+      //    folderId is an ABSOLUTE URL, which the other channel would then hit
+      //    (Basic credentials attached). It is a pure cache: every backend
+      //    re-resolves its root/book folders by name on the next sweep.
       await SyncRepository(_database).migrateSmbToWebDav();
       await SyncRepository(_database).migrateInterconnectBackendToToggle();
+      await SyncRepository(_database).migrateFolderCacheToPerChannel();
 
       /// Prepare all repositories (objects created first, then loaded in
       /// parallel to avoid serial await chains).
@@ -4299,27 +4307,45 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  /// Best-effort removal of a deleted dictionary's package from the remote sync
-  /// staging namespace (BUG-086). Only runs when dictionary sync is enabled and
-  /// the backend is configured/authenticated; offline / unconfigured / errors
-  /// are swallowed (logged) so a local delete never depends on the network.
-  /// Serialized through the sync mutex so it can't race an in-flight sync on the
-  /// singleton backend (the BUG-083 hazard).
+  /// Best-effort removal of a deleted dictionary's package from **每条启用的同步
+  /// 通道** 的远端暂存命名空间（BUG-086 的删除传播 + BUG-1566 的通道覆盖）。
+  ///
+  /// BUG-1566 根因：这里原来只按「云备份 backendType」解析出的那一条通道去删，
+  /// 门控也只读云备份的 `isSyncDictionaryEnabled`。用户「云备份=Google
+  /// Drive + 互联启用」时，删词典只把云暂存删了，互联对端上那份原封不动；而词典是并集
+  /// 同步（[SyncOrchestrator] 的词典维度），下一轮又被拉回来 → 幽灵词典永远删不掉。
+  /// 通道枚举必须复用同步真正跑的那份 [enabledSyncChannelBackends]（云 + 已启用互联），
+  /// 门控按通道走 [resolveChannelSyncFlags]（互联通道读互联专属上传开关，BUG-988 语义）。
+  ///
+  /// 每条通道各自认证成功才动手；未配置/离线/出错的通道只记账并继续下一条——一条云通道
+  /// 掉线不得挡住互联通道的删除传播（BUG-1552 同型的通道隔离）。整体仍在
+  /// [runExclusiveWithSync] 里串行，避免与在飞同步抢单例后端（BUG-083）。本地删除从不
+  /// 依赖网络：所有错误都被吞掉（记 log）。
   Future<void> _propagateDictionaryDeleteToRemote(String name) async {
     try {
       final SyncRepository repo = SyncRepository(database);
-      if (!await repo.isSyncDictionaryEnabled()) return;
-      final SyncBackend backend =
-          resolveSyncBackend(await repo.getBackendType());
+      final List<SyncChannel> channels = await enabledSyncChannelBackends(repo);
       await runExclusiveWithSync(() async {
-        if (!await backend.restoreAuth(repo)) return;
-        if (!await backend.isAuthenticated) return;
-        // 互联（live）后端直接走 host DELETE 端点；云后端走暂存删除路径。
-        if (backend is InterconnectSyncBackend) {
-          await backend.deleteRemoteDictionary(name);
-          return;
+        for (final SyncChannel channel in channels) {
+          try {
+            final ChannelSyncFlags flags = await resolveChannelSyncFlags(
+              repo,
+              isInterconnect: channel.isInterconnect,
+            );
+            if (!flags.syncDictionary) continue;
+            final SyncBackend backend = channel.backend;
+            if (!await backend.restoreAuth(repo)) continue;
+            if (!await backend.isAuthenticated) continue;
+            // 互联（live）后端直接走 host DELETE 端点；云后端走暂存删除路径。
+            if (backend is InterconnectSyncBackend) {
+              await backend.deleteRemoteDictionary(name);
+              continue;
+            }
+            await deleteRemoteDictionaryAsset(backend, name);
+          } catch (e, stack) {
+            ErrorLogService.instance.log('deleteDictionary.remote', e, stack);
+          }
         }
-        await deleteRemoteDictionaryAsset(backend, name);
       });
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionary.remote', e, stack);
@@ -5355,6 +5381,11 @@ class AppModel with ChangeNotifier {
 
   Future<void> closeDatabase() async {
     _isInitialised = false;
+    // BUG-1569②：合集观察者持有本库的表订阅 + 未决防抖 Timer，关库前必须撤——
+    // 否则防抖到点后 _runCollectionsSync 会对已关闭的 db 发起查询（drift「connection
+    // was closed」异常）。initialise 装载（installCollectionsSyncWatcher），此前只有
+    // 测试 teardown 调过 uninstall，生产三条关库路径全都不撤订阅。
+    uninstallCollectionsSyncWatcher();
     databaseCloseNotifier.notifyListeners();
     await quiesceBackgroundDatabaseWriters();
     await _database.close();
@@ -5367,6 +5398,9 @@ class AppModel with ChangeNotifier {
   }
 
   Future<void> closeForPopup() async {
+    // BUG-1569②：与 [closeDatabase] 同理——撤合集观察者，防止防抖 Timer 对已
+    // 关闭的 db 跑轻量同步。
+    uninstallCollectionsSyncWatcher();
     _prefsRepo?.removeListener(notifyListeners);
     databaseCloseNotifier.notifyListeners();
     await _database.close();
@@ -5382,9 +5416,17 @@ class AppModel with ChangeNotifier {
       // syncServerController 是 late final 带初始化器（读即构造）：仅在已 init（即已被
       // startIfEnabled 构造）时读它，避免「从未 init 却只为销毁而构造」。它既是常驻
       // 服务又是 ChangeNotifier，故 stop() 后还需 dispose()。
+      // BUG-1573：dispose() 现在**自己**拆掉广播 / server / LAN 发现浏览器，并在
+      // `_disposed` 后把 notifyListeners 变成 no-op —— 原来这两行的顺序（同步的
+      // dispose 之后 stop 才恢复执行）必然让 stop 尾部的 notify 撞
+      // 「dispose 后不得 notify」断言。stop 现在对并发调用幂等，这一行保留只是让
+      // 关停在 dispose 之前就开始。
       unawaited(syncServerController.stop());
       syncServerController.dispose();
     }
+    // BUG-1569②：合集观察者是模块级全局（幂等，未装载时 no-op），dispose 路径
+    // 也对称撤掉，防止未决防抖 Timer 在 AppModel 销毁后仍去摸 db。
+    uninstallCollectionsSyncWatcher();
     // 其余三个 stop 都 null 安全 / 单例安全，未启动也可调，无需 _isInitialised 守卫。
     unawaited(TexthookerWsClientManager.instance.stop());
     unawaited(stopYomitanApiServer());

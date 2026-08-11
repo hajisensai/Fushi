@@ -138,11 +138,17 @@ class SyncManager {
     this.onContentProgress,
   })  : _db = db,
         _repo = SyncRepository(db),
-        _backend = backend;
+        _backend = backend,
+        _scope = syncChannelScopeOf(backend);
 
   final FushiDatabase _db;
   final SyncRepository _repo;
   final SyncBackend _backend;
+
+  /// 本 manager 这条通道的持久化槽位（BUG-1576）。folder 缓存描述的是**某一个
+  /// 远端**的目录布局，绝不能与另一条通道共用一份键——互联/WebDAV 的 folderId 是
+  /// 绝对 URL，串槽后会让本通道把书籍 JSON 连同自己的凭据 PUT 到对端主机。
+  final SyncChannelScope _scope;
 
   /// Reports content-file (EPUB/audio) transfer progress as a fraction 0..1.
   /// Only fires when content sync is enabled and a file is being transferred.
@@ -941,8 +947,8 @@ class SyncManager {
 
   Future<void> _restoreDriveCache() async {
     if (_backend.cachedRootFolderId != null) return;
-    final rootId = await _repo.getRootFolderId();
-    final folderCache = await _repo.getFolderCache();
+    final rootId = await _repo.getRootFolderId(_scope);
+    final folderCache = await _repo.getFolderCache(_scope);
     _backend.restoreCache(rootFolderId: rootId, titleToFolderId: folderCache);
     // 刚读出来的就是磁盘现值，直接当脏判定基线，省掉「恢复后第一次落盘」的无谓
     // 整表重写。刻意用**未经 normalizeFolderId 归一化**的原值：这样 restoreCache
@@ -955,12 +961,12 @@ class SyncManager {
   Future<void> _persistDriveCache() async {
     final rootId = _backend.cachedRootFolderId;
     if (rootId != null && rootId != _persistedRootFolderId) {
-      await _repo.setRootFolderId(rootId);
+      await _repo.setRootFolderId(_scope, rootId);
       _persistedRootFolderId = rootId;
     }
     final cache = _backend.cachedFolderIds;
     if (cache.isNotEmpty && !_sameFolderCache(cache, _persistedFolderCache)) {
-      await _repo.setFolderCache(cache);
+      await _repo.setFolderCache(_scope, cache);
       _persistedFolderCache = Map<String, String>.unmodifiable(cache);
     }
   }

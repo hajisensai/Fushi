@@ -171,7 +171,9 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
       final repo = SyncRepository(widget.settingsContext.appModel.database);
       await backend.signOut(repo: repo);
       backend.clearCache();
-      await repo.clearFolderCache();
+      // BUG-1576：只清**这个账号所属通道**那格的目录缓存。登出云盘不该顺手抹掉
+      // 互联通道刚建好的目录映射。
+      await repo.clearFolderCache(syncChannelScopeOf(backend));
       _backend = null;
       await _checkAuth();
     } catch (e) {
