@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1435 条。点号进各自文件。
+> 共 1436 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -40,6 +40,7 @@
 | [BUG-1545](bugs/BUG-1545-kon-collection-detail-crash.md) | ✅ | ✅ | 视频起播时 hwdec=auto 抢先下发，CUDA 硬解初始化崩溃整个进程（Windows/NVIDIA） |
 | [BUG-1544](bugs/BUG-1544-episode-number-follow-parsed.md) | ✅ | ✅ | 选集卡片序号用导入顺位号而非文件名解析出的真实集数 |
 | [BUG-1543](bugs/BUG-1543-season-split-not-splitting.md) | ✅ | ✅ | 合集分季识别吃不下「标题 2 - 集号」形态，多季全挤进第 1 季 |
+| [BUG-1542](bugs/BUG-1542-collection-continue-wrong-episode.md) | ✅ | ✅ | 合集继续播放选错集：选条目层只按位置取最靠后有痕迹成员，忽略最近播放时刻 |
 | [BUG-1541](bugs/BUG-1541-gamepad-bt-idle-dead.md) | ✅ | ✅ | 蓝牙手柄待机断连后按键永久失效，必须重启 app |
 | [BUG-1540](bugs/BUG-1540-download-task-error-detail.md) | ✅ | ✅ | 下载任务卡错误展示：英文裸串整句铺开、无点击详情、chip 未本地化 |
 | [BUG-1539](bugs/BUG-1539-resource-search-button-dead.md) | ✅ | ✅ | 下载资源页手动搜索按钮禁用但无任何原因提示 |

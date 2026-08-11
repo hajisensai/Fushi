@@ -1768,6 +1768,7 @@ class _HomePageState extends BasePageState<HomePage>
             (VideoBookRow book) => CollectionMemberProgress(
               positionMs: book.lastPositionMs,
               completed: book.completedAt != null,
+              lastPlayedAt: book.lastPlayedAt,
             ),
           )
           .toList(growable: false),
