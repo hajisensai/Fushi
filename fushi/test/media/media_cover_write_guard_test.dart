@@ -127,10 +127,6 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
     CoverDeriverRole.writesViaService,
     'galgame 封面解析/落盘，字节走 applyCover*。',
   ),
-  'lib/src/pages/implementations/media_collection_detail_page.dart': (
-    CoverDeriverRole.derivesPathOnly,
-    '合集详情页只按路径读封面显示，不落盘。',
-  ),
   'lib/src/storage/app_paths.dart': (
     CoverDeriverRole.derivesPathOnly,
     '目录派生的定义处，自身不落盘。',

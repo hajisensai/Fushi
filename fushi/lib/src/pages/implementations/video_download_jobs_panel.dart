@@ -457,7 +457,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
             // （BUG-1540），只展示分类后的本地化摘要；完整原文进对话框可复制。
             InkWell(
               key: ValueKey<String>('video-download-job-error-${job.jobId}'),
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: FushiBorderRadius.chip,
               onTap: () => _showErrorDetail(context),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),
