@@ -33,6 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1535](bugs/BUG-1535-download-task-details-service-unavailable.md) | ✅ | ✅ | 下载服务未启动时任务详情打不开 |
 | [BUG-1534](bugs/BUG-1534-download-task-detail-path-overflow.md) | ✅ | ✅ | 下载任务详情长路径溢出 |
 | [BUG-1533](bugs/BUG-1533-video-discovery-filter-height.md) | ✅ | ✅ | 视频发现筛选控件高度不一致 |
 | [BUG-1532](bugs/BUG-1532-download-task-details-offline-backend.md) | ✅ | ✅ | 下载任务详情被离线原后端阻断 |
@@ -51,7 +52,6 @@
 | [BUG-1519](bugs/BUG-1519-video-download-missing-embedded-recovery.md) | ✅ | ✅ | 内置下载任务丢失后无法重新入队 |
 | [BUG-1518](bugs/BUG-1518-download-task-delete-service-unavailable.md) | ✅ | ✅ | 下载服务未启动时任务删除无效 |
 | [BUG-1517](bugs/BUG-1517-download-detail-missing-backend-task.md) | ✅ | ✅ | 下载详情未区分后端任务已丢失 |
-| [BUG-1516](bugs/BUG-1516-download-task-details-service-unavailable.md) | ✅ | ✅ | 下载服务未启动时任务详情打不开 |
 | [BUG-1515](bugs/BUG-1515-parent-extras-split-series.md) | ✅ | ✅ | 父作品短篇被错误拆成独立系列卡 |
 | [BUG-1514](bugs/BUG-1514-subscription-episode-selection-order.md) | ✅ | ✅ | 订阅选集季号错误、重复下载且顺序按完成时间乱序 |
 | [BUG-1513](bugs/BUG-1513-subscription-first-episode-skipped.md) | ✅ | ✅ | 发现订阅跳过所选首集 |
