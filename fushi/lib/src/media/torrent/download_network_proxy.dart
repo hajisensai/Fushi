@@ -44,6 +44,12 @@ const Duration kDownloadConnectionTimeout = Duration(seconds: 10);
 ///
 /// Torrent payload traffic is owned by qBittorrent/the embedded engine and is
 /// deliberately not affected by this setting.
+///
+/// **默认 = direct（BUG-1538 / TODO-2798）**：下载域流量默认不走代理，只有用户
+/// 显式选了 auto（跟随环境变量/系统代理）或 custom（手填 host:port）才套代理。
+/// 已保存 `'auto'` 的用户不受影响——只有「从未设置」和「未知值」落到 direct。
+/// 未知值落 direct 而不是 auto，是因为下载域的失败模式不对称：误直连最多是慢/
+/// 连不上并在 10s 内报错重试，误套一个不存在的代理则把所有请求黑洞掉。
 enum DownloadNetworkProxyMode {
   auto,
   direct,
@@ -51,16 +57,16 @@ enum DownloadNetworkProxyMode {
 
   static DownloadNetworkProxyMode parse(String? value) {
     return switch (value) {
-      'direct' => DownloadNetworkProxyMode.direct,
+      'auto' => DownloadNetworkProxyMode.auto,
       'custom' => DownloadNetworkProxyMode.custom,
-      _ => DownloadNetworkProxyMode.auto,
+      _ => DownloadNetworkProxyMode.direct,
     };
   }
 }
 
 class DownloadNetworkProxyConfig {
   const DownloadNetworkProxyConfig({
-    this.mode = DownloadNetworkProxyMode.auto,
+    this.mode = DownloadNetworkProxyMode.direct,
     this.customProxy = '',
   });
 
