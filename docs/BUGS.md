@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1405 条。点号进各自文件。
+> 共 1406 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1510](bugs/BUG-1510-migration-import-completion-pref-on-closed-db.md) | 🚧 | 🚧 | 导入完成标志写已关闭的 drift 连接：合并其实成功却谎报『校验未通过已保留待重传』，而批次文件已被删 |
 | [BUG-1505](bugs/BUG-1505-migration-import-failure-force-restart.md) | 🚧 | 🚧 | 迁移导入失败被强制重启带走：页面与失败原因一起消失，错误日志 0 条 |
 | [BUG-1504](bugs/BUG-1504-subtitle-drop-attach-silent-failure.md) | ✅ | ✅ | 拖放字幕到视频卡失败无任何提示 |
 | [BUG-1497](bugs/BUG-1497-remote-download-progress-fake-importer-no-db-row.md) | ✅ | ✅ | 远端书下载进度回填测试假 importer 不落库，v82 uid 闸门后回填永不发生 |
