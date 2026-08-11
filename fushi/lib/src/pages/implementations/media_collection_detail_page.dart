@@ -452,6 +452,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   String _episodeDisplayTitle(VideoBookRow row) =>
       _scrapedEpisodeTitle(row) ?? row.title;
 
+  /// 集卡**序号**：文件名解析出的真实集号优先，解析不出才回落列表顺位号
+  /// （BUG-1544）。缺集 / 只导入了一部分时顺位号必然与真实集号错位——用户看到
+  /// 「03」点开却是 E05。集号是文件名里写着的事实，不是列表下标的函数。
+  int _episodeDisplayNumber(VideoBookRow row, int index) =>
+      parsedEpisodeNumberOf(row.videoPath) ?? index + 1;
+
   /// 集简介（集级刮削 summary；无 → null 不占位）。
   String? _episodeSummary(VideoBookRow row) {
     final String? summary = (_canonicalEpisodeByUid[row.bookUid]?.overview ??
@@ -1001,24 +1007,29 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         for (final CollectionSeasonSection<VideoBookRow> section in sections)
           CollectionSplitPlanSection(
             defaultName: '$_name ${_groupLabel(section.groupKey)}',
-            memberTitles: <String>[
+            members: <CollectionSplitMember>[
               for (final VideoBookRow row in section.items)
-                _episodeDisplayTitle(row),
+                CollectionSplitMember(
+                  id: row.bookUid,
+                  title: _episodeDisplayTitle(row),
+                ),
             ],
+            isSeason: seasonNumberOfGroupKey(section.groupKey) != null,
           ),
       ],
     );
-    if (choice == null || !mounted) return;
+    if (choice == null || !mounted || choice.groups.isEmpty) return;
+    // 手动移动后组与 sections 不再一一对应（可能空掉/新增），一律按 choice 落盘。
+    final List<CollectionSplitGroupChoice> groups = choice.groups;
     final List<int> newIds = <int>[];
     await widget.database.transaction(() async {
-      for (int i = 0; i < sections.length; i++) {
+      for (final CollectionSplitGroupChoice group in groups) {
         final int id = await widget.database.createMediaCollection(
-          choice.names[i],
+          group.name,
           collectionType: 'playlist',
         );
-        for (final VideoBookRow row in sections[i].items) {
-          await widget.database
-              .addToCollection(id, MediaKind.video, row.bookUid);
+        for (final String uid in group.memberIds) {
+          await widget.database.addToCollection(id, MediaKind.video, uid);
         }
         newIds.add(id);
       }
@@ -1026,8 +1037,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       // 'local'（本地拆分产生的边，非刮削源），subjectId 用 'collection:<目标id>'
       // ——与唯一键 (collectionId, source, subjectId) 天然兼容且稳定可重入。
       final List<int> seasonIndexes = <int>[
-        for (int i = 0; i < sections.length; i++)
-          if (seasonNumberOfGroupKey(sections[i].groupKey) != null) i,
+        for (int i = 0; i < groups.length; i++)
+          if (groups[i].isSeason) i,
       ];
       for (int k = 0; k < seasonIndexes.length; k++) {
         final int i = seasonIndexes[k];
@@ -1039,7 +1050,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             collectionId: newIds[i],
             type: CollectionRelationType.prequel,
             targetCollectionId: newIds[prev],
-            title: choice.names[prev],
+            title: groups[prev].name,
             sortIndex: edges.length,
           ));
         }
@@ -1049,7 +1060,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             collectionId: newIds[i],
             type: CollectionRelationType.sequel,
             targetCollectionId: newIds[next],
-            title: choice.names[next],
+            title: groups[next].name,
             sortIndex: edges.length,
           ));
         }
@@ -2155,7 +2166,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
                         Text(
-                          '${index + 1}. ${_episodeDisplayTitle(episode)}',
+                          // BUG-1544：序号跟随文件名解析出的真实集数（缺集时
+                          // 不再用顺位号冒充）；解析不出时回退顺位号。
+                          '${_episodeDisplayNumber(episode, index)}. '
+                          '${_episodeDisplayTitle(episode)}',
                           // BUG-1546：无刮削集名时标题是整条发布文件名（VCB-Studio
                           // 一类动辄 80+ 字符），单行省略后关键的集号/规格全被吃掉，
                           // 用户分不清 PV/特典各条目。放两行再省略；卡高 128 下
