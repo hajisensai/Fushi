@@ -1,6 +1,8 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/collection_relations_section.dart';
@@ -151,5 +153,100 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(downloaded?.title, '某作品 剧场版');
+  });
+
+  // ---------------------------------------------------------------------
+  // BUG-1536：横滚行不得抢走整页纵向滚动（用户实报「视频主页的横向滚动要按住
+  // shift+滚轮才行，不然会把上下滚动行为抢走」）。本区与视频首页横滚行是同一套
+  // 包装（HorizontalDragScrollable + 横向 ListView，无滚轮投轴桥），在这里钉住
+  // 行为：裸滚轮 → 外层纵滚；Shift + 滚轮 → 横滚（Flutter 内建翻轴）。
+  // ---------------------------------------------------------------------
+
+  Future<void> seedManyRelations({int count = 10}) =>
+      db.replaceCollectionRelations(
+        collectionId,
+        List<CollectionRelationsCompanion>.generate(
+          count,
+          (int i) => CollectionRelationsCompanion.insert(
+            collectionId: collectionId,
+            relationType: 'sequel',
+            sortIndex: Value<int>(i),
+            targetCollectionId: const Value<int?>(null),
+            source: 'bangumi',
+            subjectId: '${400 + i}',
+            title: '相关作品 $i',
+          ),
+        ),
+      );
+
+  /// 把本区放进一个**真的能纵向滚动**的页面（合集详情页同构）：只有外层有滚动
+  /// 余量，「滚轮被谁吃掉」才是可观测的。
+  Widget buildScrollHarness() => TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: Column(
+                children: <Widget>[
+                  CollectionRelationsSection(
+                    database: db,
+                    collectionId: collectionId,
+                    onOpenCollection: (int _) {},
+                    onDownload: (CollectionRelationRow _) {},
+                  ),
+                  const SizedBox(height: 1200),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+  ScrollableState scrollableTowards(WidgetTester tester, AxisDirection dir) =>
+      tester.state<ScrollableState>(find.byWidgetPredicate(
+        (Widget w) => w is Scrollable && w.axisDirection == dir,
+      ));
+
+  testWidgets('BUG-1536：裸滚轮停在横滚行上 → 整页纵滚，横向纹丝不动', (WidgetTester tester) async {
+    await seedManyRelations();
+    await tester.pumpWidget(buildScrollHarness());
+    await tester.pumpAndSettle();
+
+    final ScrollableState row = scrollableTowards(tester, AxisDirection.right);
+    final ScrollableState page = scrollableTowards(tester, AxisDirection.down);
+    // 前置条件：两个方向都必须有滚动余量，否则本用例是假绿。
+    expect(row.position.maxScrollExtent, greaterThan(0), reason: '横向内容必须超出视口');
+    expect(page.position.maxScrollExtent, greaterThan(0),
+        reason: '页面必须有纵向滚动余量');
+
+    final TestPointer mouse = TestPointer(1, PointerDeviceKind.mouse);
+    final Offset onRow = tester.getCenter(find.text('相关作品 0'));
+    await tester.sendEventToBinding(mouse.hover(onRow));
+    await tester.sendEventToBinding(mouse.scroll(const Offset(0, 120)));
+    await tester.pump();
+
+    expect(row.position.pixels, 0,
+        reason: '裸滚轮不得横滚（回归判据：包回 WheelToHorizontalScroll 这里就 >0）');
+    expect(page.position.pixels, greaterThan(0), reason: '滚轮必须冒泡给外层纵向滚动');
+  });
+
+  testWidgets('BUG-1536：Shift + 滚轮 → 横滚该行，整页不动', (WidgetTester tester) async {
+    await seedManyRelations();
+    await tester.pumpWidget(buildScrollHarness());
+    await tester.pumpAndSettle();
+
+    final ScrollableState row = scrollableTowards(tester, AxisDirection.right);
+    final ScrollableState page = scrollableTowards(tester, AxisDirection.down);
+
+    final TestPointer mouse = TestPointer(1, PointerDeviceKind.mouse);
+    final Offset onRow = tester.getCenter(find.text('相关作品 0'));
+    await tester.sendEventToBinding(mouse.hover(onRow));
+    await simulateKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendEventToBinding(mouse.scroll(const Offset(0, 120)));
+    await tester.pump();
+    await simulateKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+
+    expect(row.position.pixels, greaterThan(0),
+        reason: 'Shift + 滚轮必须横滚（Flutter 内建 pointerAxisModifiers 翻轴）');
+    expect(page.position.pixels, 0, reason: '横滚时整页不得跟着动');
   });
 }
