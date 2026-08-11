@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 触达一台 Hibiki 同步服务器的一个候选地址。
@@ -997,13 +998,9 @@ class SyncRepository {
     return updated;
   }
 
-  /// 指纹相等比较：去冒号、去空白、转小写后逐字符比对（与
-  /// hibiki_pinning_http 的归一化同语义，避免 aa:bb vs AABB 误判为不符）。
-  static bool _fingerprintEquals(String a, String b) {
-    String norm(String s) =>
-        s.replaceAll(':', '').replaceAll(RegExp(r'\s'), '').toLowerCase();
-    return norm(a) == norm(b);
-  }
+  /// 指纹相等比较——直接用铉扎层那份归一化（BUG-1557：原本这里自己又写了一遍
+  /// 同语义的 norm，两份实现一旦漂开就会出现「铉扎握手过了、TOFU 说不符」）。
+  static bool _fingerprintEquals(String a, String b) => fingerprintEquals(a, b);
 
   Future<String?> getFushiClientToken() async {
     final encoded = await _getStringOrNull(_keyFushiClientToken);
@@ -1051,6 +1048,45 @@ class SyncRepository {
           deviceName: u.deviceName,
         ),
     ]);
+  }
+
+  /// BUG-1557：某条地址已铉扎的证书指纹（未铉扎 / 地址不在列表里 → null）。
+  ///
+  /// 配对前的 TOFU 比对靠它：**先**拿这个已存值与本次握手所见指纹比，不符就
+  /// 当场中止；而不是先把设备名/deviceId 送出去、等 host 都落库了才发现不对。
+  Future<String?> getFushiClientFingerprint(String url) async {
+    final List<FushiClientUrl> urls = await getFushiClientUrls();
+    for (final FushiClientUrl u in urls) {
+      if (u.url == url) {
+        final String? fp = u.fingerprintSha256;
+        return (fp != null && fp.isEmpty) ? null : fp;
+      }
+    }
+    return null;
+  }
+
+  /// BUG-1557：清掉某条地址的铉扎指纹（下次配对重新 TOFU）。返回是否真清了。
+  ///
+  /// [addFushiClientUrl] 的 MITM 守卫故意**绝不覆盖**已存指纹，那就必须给用户一个
+  /// 显式的重置入口，否则 host 真换了机器 / 重置了证书时，那条 URL 永远连不上也
+  /// 修不好（只能删了重加，而用户根本不知道要那么做）。
+  Future<bool> clearFushiClientFingerprint(String url) async {
+    final List<FushiClientUrl> urls = await getFushiClientUrls();
+    final int idx = urls.indexWhere((FushiClientUrl u) => u.url == url);
+    if (idx < 0) return false;
+    final FushiClientUrl existing = urls[idx];
+    final String? fp = existing.fingerprintSha256;
+    if (fp == null || fp.isEmpty) return false;
+    final List<FushiClientUrl> updated = <FushiClientUrl>[...urls];
+    // 显式构造而非 copyWith：copyWith 的 `?? this.x` 语义根本清不掉字段。
+    updated[idx] = FushiClientUrl(
+      url: existing.url,
+      enabled: existing.enabled,
+      deviceName: existing.deviceName,
+      token: existing.token,
+    );
+    await setFushiClientUrls(updated);
+    return true;
   }
 
   // ── Device-local key catalog ──────────────────────────────────────

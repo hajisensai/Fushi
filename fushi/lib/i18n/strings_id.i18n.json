@@ -3339,5 +3339,12 @@
   "collection_split_selected": "$n selected",
   "sync_pair_rate_limited": "Too many attempts. Wait a few minutes and try again.",
   "sync_pair_tls_failed": "Certificate check failed. The peer's certificate does not match the pinned one.",
-  "sync_pair_timeout": "The peer did not respond in time."
+  "sync_pair_timeout": "The peer did not respond in time.",
+  "sync_pair_expired": "Pairing timed out. Start pairing again from this device.",
+  "sync_pair_upgrade_required": "The other device runs an older version that cannot pair securely from this network. Update it, then pair again.",
+  "sync_pair_fingerprint_changed_title": "Certificate changed",
+  "sync_pair_fingerprint_stored_label": "Pinned earlier",
+  "sync_pair_fingerprint_new_label": "Seen now",
+  "sync_pair_fingerprint_retrust": "Clear and trust again",
+  "sync_pair_fingerprint_changed_body": "This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection."
 }

@@ -3339,5 +3339,12 @@
   "collection_split_selected": "已选 $n 集",
   "sync_pair_rate_limited": "尝试次数过多，请等几分钟后重试。",
   "sync_pair_tls_failed": "证书校验失败：对端证书与已记录的指纹不符。",
-  "sync_pair_timeout": "对端没有及时响应。"
+  "sync_pair_timeout": "对端没有及时响应。",
+  "sync_pair_expired": "配对会话已超时，请重新发起配对。",
+  "sync_pair_upgrade_required": "对方版本过旧，无法在当前网络下安全配对（需要 PIN）。请更新对方后重新配对。",
+  "sync_pair_fingerprint_changed_title": "证书已变更",
+  "sync_pair_fingerprint_stored_label": "此前已钉扎",
+  "sync_pair_fingerprint_new_label": "本次握手所见",
+  "sync_pair_fingerprint_retrust": "清除已存指纹并重新信任",
+  "sync_pair_fingerprint_changed_body": "这条地址此前钉扎的是另一张证书。只有在你确知对方重装/重置过设备时才继续，否则连接可能正被中间人拦截。"
 }
