@@ -15,6 +15,23 @@ import 'package:path/path.dart' as p;
 //   「对端（通常是 host 角色）的条目」，`RemoteBookInfo` = 对端 host 书库里的一本书。
 //   host 端 materialize 自己的库为同一 DTO 下发，client 端 fromJson 消费。
 
+// ── 书籍 push 的元数据 header（BUG-1503）────────────────────────────────────
+//
+// `PUT /api/library/books/<title>` 的 body 是**裸 .epub 字节流**（无 multipart、
+// 无 sidecar、无 query），所以随行元数据只能走自定义 header——沿用视频推送
+// `X-Hibiki-Video-Title` 的既有先例。两侧共用这两个常量，避免字面量各写一份漂开。
+//
+// ⚠️ header 值只收 ASCII：写侧必须 `Uri.encodeComponent`，读侧 `Uri.decodeComponent`
+// （日文书名直接塞进 header 会抛）。additive：没改过名就不发，旧 host 对未知 header
+// 静默忽略，旧 client 不发 → 新 host 读到 null，两个方向都零破坏。
+
+/// 本机用户给这本书改的显示名（`Uri.encodeComponent` 编码）。
+const String kBookDisplayTitleHeader = 'X-Hibiki-Book-Display-Title';
+
+/// [kBookDisplayTitleHeader] 的 LWW 毫秒戳（十进制 ASCII）。缺失 = 0 =「时刻未知」，
+/// 收下的一方按 LWW 平局处理（保留本机），见 `FushiDatabase.setPrefIfNewer`。
+const String kBookDisplayTitleAtHeader = 'X-Hibiki-Book-Display-Title-At';
+
 // ── 键集 union diff（本地音频 / 有声书 / 词典共享）──────────────────────────
 
 /// 按字符串键 union 的双向同步 diff 结果。
@@ -222,7 +239,10 @@ class RemoteCollectionMembership {
 
 /// host 实时书籍的清单条目。
 ///
-/// [title]      书名（与 DB `epub_books.title` 列一致）。
+/// [title]      书名（与 DB `epub_books.title` 列一致）。**身份用**：`downloadId`
+///              / `bookKey` 派生 / 去重全走它，永远是 raw 列值。
+/// [displayTitle] 用户在 host 上改过的显示名（BUG-1488）。**只给人看**，绝不参与
+///              任何键派生。null = host 没改过名 / 旧 host 不带该字段。
 /// [hasContent] 存在可导出的 EPUB 根目录时为 true——表示该书可被导出。
 ///              无内容的书（extractDir 丢失或空）不应被 pull（与 orchestrator
 ///              `importRemoteBooks` 的跳过语义一致）。
@@ -230,6 +250,8 @@ class RemoteBookInfo {
   const RemoteBookInfo({
     required this.title,
     required this.hasContent,
+    this.displayTitle,
+    this.displayTitleAt = 0,
     this.bookKey,
     this.hasEmbeddedCover = false,
     this.coverUrl,
@@ -259,6 +281,27 @@ class RemoteBookInfo {
   final int progressUpdatedAtMs;
 
   final String title;
+
+  /// host 端用户自定义的显示名（BUG-1488；host `preferences` 表的
+  /// `override_title://` 覆盖层，写入方 `MediaSource.setOverrideTitleFromMediaItem`）。
+  ///
+  /// additive wire 字段 `'displayTitle'`：**只在与 [title] 不同时才写键**，所以
+  /// 「没改过名」的书清单 wire 字节完全不变、旧 client 忽略、旧 host 不发。
+  /// 消费恒走 [displayName]——直接读本字段的调用点在旧 host 上会拿到 null。
+  ///
+  /// ⚠️ 身份红线：[downloadId] / `bookKey` / 去重键一律用 [title]，本字段永不参与。
+  final String? displayTitle;
+
+  /// [displayTitle] 的最后修改毫秒戳（BUG-1502，host `preferences.updated_at`）。
+  ///
+  /// additive wire 字段 `'displayTitleAt'`：只在 `> 0` 且真发了 [displayTitle]
+  /// 时写键。**0 = 「时刻未知」**，涵盖两种对端：不带该键的旧 host（BUG-1488 那
+  /// 一代只发名字不发时刻），以及 host 上 v84 迁移前就改好、之后没再动过的存量行。
+  ///
+  /// 收下 0 的一方按 LWW 平局处理 → 保留本机（见 `setPrefIfNewer`），所以旧对端
+  /// 永远不会覆盖本机用户刚改的名字；本机没有 override 时仍照常采纳。
+  final int displayTitleAt;
+
   final bool hasContent;
   final String? bookKey;
 
@@ -291,11 +334,21 @@ class RemoteBookInfo {
 
   String get downloadId => _isNonEmpty(bookKey) ? bookKey! : title;
 
+  /// 该书**给人看**的名字：host 改过名用改后的，否则回落 raw [title]。
+  /// 一切 UI 上屏点必须走这里（与本地书的 `displayTitleForBook` 门面对称）。
+  String get displayName => _isNonEmpty(displayTitle) ? displayTitle! : title;
+
   bool get hasDisplayCover =>
       hasEmbeddedCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
 
   Map<String, Object?> toJson() => <String, Object?>{
         'title': title,
+        if (_isNonEmpty(displayTitle) && displayTitle != title)
+          'displayTitle': displayTitle,
+        if (_isNonEmpty(displayTitle) &&
+            displayTitle != title &&
+            displayTitleAt > 0)
+          'displayTitleAt': displayTitleAt,
         if (_isNonEmpty(bookKey)) 'bookKey': bookKey,
         'hasContent': hasContent,
         if (hasDisplayCover) 'hasCover': true,
@@ -311,6 +364,8 @@ class RemoteBookInfo {
       };
 
   RemoteBookInfo copyWith({
+    String? displayTitle,
+    int? displayTitleAt,
     String? bookKey,
     bool? hasEmbeddedCover,
     String? coverUrl,
@@ -327,6 +382,8 @@ class RemoteBookInfo {
       RemoteBookInfo(
         title: title,
         hasContent: hasContent,
+        displayTitle: displayTitle ?? this.displayTitle,
+        displayTitleAt: displayTitleAt ?? this.displayTitleAt,
         bookKey: bookKey ?? this.bookKey,
         hasEmbeddedCover: hasEmbeddedCover ?? this.hasEmbeddedCover,
         coverUrl: coverUrl ?? this.coverUrl,
@@ -347,6 +404,10 @@ class RemoteBookInfo {
     return RemoteBookInfo(
       title: json['title']?.toString() ?? '',
       hasContent: json['hasContent'] == true,
+      // 旧 host 无该键 → null → [displayName] 回落 raw title（向后兼容）。
+      displayTitle: _jsonString(json['displayTitle']),
+      // 旧 host 无该键 → 0 =「时刻未知」→ LWW 平局 → 保留本机（BUG-1502）。
+      displayTitleAt: _jsonNonNegativeInt(json['displayTitleAt']),
       bookKey: _jsonString(json['bookKey']),
       // wire `hasCover` 是对端的 hasDisplayCover；解码侧无从区分「内嵌」与「其它
       // 来源」，与 coverUrl/coverPath 一并折进本字段（客户端只消费 hasDisplayCover）。
@@ -1216,7 +1277,21 @@ abstract class FushiLibraryHostService {
   Future<File> exportBook(String title);
 
   /// 把 [epubFile] 导入 host 书库（复用 EpubImporter）。
-  Future<void> importBook(File epubFile);
+  ///
+  /// [displayTitle] / [displayTitleAt]（BUG-1503）是**推送方用户给这本书改的名字**
+  /// 及其 LWW 毫秒戳，经 [kBookDisplayTitleHeader] / [kBookDisplayTitleAtHeader]
+  /// 随行。落地后按 last-write-wins 写成 host 本机的 `override_title://` 覆盖行。
+  ///
+  /// ⚠️ 身份红线（BUG-1488 定的原则）：只搬显示名，**绝不搬身份**。host 端这本书
+  /// 的 bookKey / uid 仍完全由 [epubFile] 的内容 + 文件名经 `EpubImporter` 派生
+  /// （含重名 `(2)` 后缀），[displayTitle] 永不参与任何键派生。
+  ///
+  /// 旧 client 不发这两个 header → 两参为 null/0 → 与本轮之前逐字同行为。
+  Future<void> importBook(
+    File epubFile, {
+    String? displayTitle,
+    int displayTitleAt = 0,
+  });
 
   /// 从 host 书库删除书名为 [title] 的书（DB 行 + 磁盘目录）。
   /// [title] 含路径穿越字符时抛 [ArgumentError]。

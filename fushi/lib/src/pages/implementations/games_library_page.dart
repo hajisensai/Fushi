@@ -16,6 +16,7 @@ import 'package:fushi/src/media/collections/collection_shelf_row.dart'
 import 'package:fushi/src/media/collections/collection_drag.dart'
     show CollectionAddOutcome, MediaCardDraggable, addMediaRefToCollection;
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
+import 'package:fushi/src/media/tags/tag_drop.dart' show reorderTagsSafely;
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/metadata/scrape_batch.dart';
 import 'package:fushi/src/media/metadata/scrape_title_matcher.dart';
@@ -816,8 +817,11 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     final List<BookTagRow> reordered = List<BookTagRow>.from(tags);
     final BookTagRow moved = reordered.removeAt(oldIndex);
     reordered.insert(newIndex, moved);
-    await _appModel.database
-        .reorderTags(reordered.map((BookTagRow tag) => tag.id).toList());
+    final bool ok = await reorderTagsSafely(
+      write: () => _appModel.database
+          .reorderTags(reordered.map((BookTagRow tag) => tag.id).toList()),
+    );
+    if (!ok) return;
     ref.invalidate(allTagsProvider);
   }
 

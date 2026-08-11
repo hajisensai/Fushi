@@ -102,8 +102,10 @@ class AnkiConnectService {
     return IOClient(ioClient);
   }
 
+  /// [idempotent] 覆盖按 [action] 名推导的默认值。只有 `multi` 需要它：批次
+  /// 的可重试性由**里面装了什么**决定，而不是外层动作名。
   Future<dynamic> _request(String action,
-      [Map<String, dynamic>? params]) async {
+      [Map<String, dynamic>? params, bool? idempotent]) async {
     final body = jsonEncode({
       'action': action,
       'version': 6,
@@ -115,7 +117,7 @@ class AnkiConnectService {
     final response = await _postWithStaleConnectionRetry(
       body,
       action: action,
-      idempotent: !_nonIdempotentActions.contains(action),
+      idempotent: idempotent ?? !_nonIdempotentActions.contains(action),
     );
     // A process other than AnkiConnect (proxy, captive portal, wrong port)
     // can answer with a non-200 or non-JSON body; surface a clear error
@@ -287,6 +289,102 @@ class AnkiConnectService {
     return result.cast<String>();
   }
 
+  // ── 批量请求（AnkiConnect `multi`）──────────────────────────────────────
+
+  /// 一次 `multi` 往返最多打包多少条子 action。
+  ///
+  /// 为什么批量是数量级的收益：AnkiConnect 的 HTTP 服务是**协作式轮询**——
+  /// `QTimer` 按 `apiPollInterval`（默认 **25 ms**）触发一次 `advance()`，每次
+  /// tick 只 `accept()` **一条**连接，全程跑在 Anki 的 Qt 主线程上，而且响应写
+  /// 完即 `close()`（无 keep-alive）。于是**每个请求的地板成本 = 一次 TCP 建连
+  /// + 至少一个 25 ms tick**，与请求本身多小完全无关。N 个操作串行发就是 N 个
+  /// tick；打成一批就是 1 个。
+  ///
+  /// 100 是「往返数够少」与「单条 JSON 别涨到几十 MB」之间的取舍——
+  /// `updateNoteFields` 要把整条笔记的字段正文发回去，批太大 payload 会失控。
+  static const int kMultiBatchSize = 100;
+
+  /// 把 [actions] 打包成**恰好一次** AnkiConnect `multi` 往返。
+  ///
+  /// 返回值与 [actions] 一一对应、同序。**子 action 失败不抛**，而是在对应位置
+  /// 带上 [AnkiConnectBatchResult.error]：`multi` 的语义就是逐条报告，一条失败
+  /// 不该把整批吞掉——调用方按自己的策略决定跳过还是中止。
+  ///
+  /// 每条子 action 都显式带 `version: 6`。不带时 AnkiConnect 的成功路径返回
+  /// **裸值**、失败路径才返回 `{result, error}` 信封（`format_success_reply`
+  /// 看版本、`format_exception_reply` 不看），同一个结果数组里两种形状混着无法
+  /// 可靠区分——裸值自己就可能是带 `error` 键的 map。带上 version 后形状统一。
+  ///
+  /// 不做「老版本 AnkiConnect 没有 multi」的回退：`multi` 自 2017 年就在且从无
+  /// 版本门槛，而本仓库的去重链路依赖的 `getMediaDirPath` 是 2023 年才加的——
+  /// 能走到这里的 AnkiConnect 必然支持 `multi`。
+  Future<List<AnkiConnectBatchResult>> requestMulti(
+    List<AnkiConnectAction> actions,
+  ) async {
+    if (actions.isEmpty) return const <AnkiConnectBatchResult>[];
+    // 批次的可重试性由内容决定：只要有一条不可盲重发，整批就按不可盲重发处理。
+    final bool idempotent = actions.every(
+      (AnkiConnectAction a) => !_nonIdempotentActions.contains(a.action),
+    );
+    final dynamic result = await _request(
+      'multi',
+      <String, dynamic>{
+        'actions': <Map<String, dynamic>>[
+          for (final AnkiConnectAction a in actions)
+            <String, dynamic>{
+              'action': a.action,
+              'version': 6,
+              if (a.params != null) 'params': a.params,
+            },
+        ],
+      },
+      idempotent,
+    );
+    if (result is! List || result.length != actions.length) {
+      throw AnkiConnectException(
+        'Unexpected AnkiConnect response for multi (expected '
+        '${actions.length} results, got '
+        '${result is List ? '${result.length}' : result.runtimeType})',
+      );
+    }
+    return <AnkiConnectBatchResult>[
+      for (final dynamic item in result) _decodeMultiItem(item),
+    ];
+  }
+
+  static AnkiConnectBatchResult _decodeMultiItem(dynamic item) {
+    if (item is Map &&
+        item.containsKey('result') &&
+        item.containsKey('error')) {
+      final Object? error = item['error'];
+      return AnkiConnectBatchResult(
+        result: item['result'],
+        error: error?.toString(),
+      );
+    }
+    // 我们永远发 version: 6，理论上到不了这里；真到了就当裸成功值，别把一个
+    // 形状意外拖成整批失败。
+    return AnkiConnectBatchResult(result: item);
+  }
+
+  /// 按 [kMultiBatchSize] 切块跑 [actions]，结果按原序拼回。
+  ///
+  /// 往返数 = `ceil(actions.length / kMultiBatchSize)`（空表 0 次）。
+  Future<List<AnkiConnectBatchResult>> _requestMultiChunked(
+    List<AnkiConnectAction> actions,
+  ) async {
+    // 空批一次都不发：这些批量入口经常被喂空表（整批副本全被跳过），发一个
+    // 空 multi 就是白白多一次往返。
+    if (actions.isEmpty) return const <AnkiConnectBatchResult>[];
+    if (actions.length <= kMultiBatchSize) return requestMulti(actions);
+    final List<AnkiConnectBatchResult> out = <AnkiConnectBatchResult>[];
+    for (int i = 0; i < actions.length; i += kMultiBatchSize) {
+      final int end = (i + kMultiBatchSize).clamp(0, actions.length);
+      out.addAll(await requestMulti(actions.sublist(i, end)));
+    }
+    return out;
+  }
+
   Future<bool> isAvailable() async {
     try {
       await _request('version');
@@ -456,6 +554,19 @@ class AnkiConnectService {
     await _request('deleteMediaFile', {'filename': filename});
   }
 
+  /// 批量删除媒体文件。往返数 = `ceil(filenames.length / kMultiBatchSize)`，
+  /// **不是** `filenames.length`——这正是媒体去重从「一个一个删」变快的地方。
+  ///
+  /// 逐条报告结果（同序），失败条不抛：一个文件删不掉不该让剩下几百个都不删。
+  Future<List<AnkiConnectBatchResult>> deleteMediaFiles(
+    List<String> filenames,
+  ) {
+    return _requestMultiChunked(<AnkiConnectAction>[
+      for (final String f in filenames)
+        AnkiConnectAction('deleteMediaFile', <String, dynamic>{'filename': f}),
+    ]);
+  }
+
   /// 按任意 Anki 搜索式查 note id（去重用 `"<文件名>"` 全字段文本检索）。
   Future<List<int>> findNotesByQuery(String query) async {
     final result = await _request('findNotes', {'query': query});
@@ -468,6 +579,36 @@ class AnkiConnectService {
       if (id is int) return id;
       return int.parse(id.toString());
     }).toList();
+  }
+
+  /// 批量查 note id。往返数 = `ceil(queries.length / kMultiBatchSize)`。
+  ///
+  /// 返回与 [queries] 同序；**某条查询失败（或结果形状不对）时该位置是
+  /// `null`**，绝不降级成空列表。去重靠这个结果判断「还有没有人引用这个文件」，
+  /// 把失败静默当成「没人引用」就会删掉仍在用的媒体——null 强制调用方显式处理。
+  Future<List<List<int>?>> findNotesByQueries(List<String> queries) async {
+    final List<AnkiConnectBatchResult> results =
+        await _requestMultiChunked(<AnkiConnectAction>[
+      for (final String q in queries)
+        AnkiConnectAction('findNotes', <String, dynamic>{'query': q}),
+    ]);
+    return <List<int>?>[
+      for (final AnkiConnectBatchResult r in results) _asNoteIds(r),
+    ];
+  }
+
+  /// 把一条批量结果解成 note id 列表；失败或形状不对返回 null（保守）。
+  static List<int>? _asNoteIds(AnkiConnectBatchResult r) {
+    if (r.isError) return null;
+    final Object? value = r.result;
+    if (value is! List) return null;
+    final List<int> ids = <int>[];
+    for (final dynamic raw in value) {
+      final int? id = raw is int ? raw : int.tryParse(raw.toString());
+      if (id == null) return null;
+      ids.add(id);
+    }
+    return ids;
   }
 
   Future<void> createModel(AnkiNoteTypeTemplate template) async {
@@ -557,6 +698,21 @@ class AnkiConnectService {
         'fields': fields,
       },
     });
+  }
+
+  /// 批量覆写笔记字段。往返数 = `ceil(updates.length / kMultiBatchSize)`。
+  ///
+  /// 逐条报告结果（与 [updates] 同序），失败条不抛：调用方要能分清哪几条没写
+  /// 进去。单条 `updateNoteFields` 幂等，整批同样幂等。
+  Future<List<AnkiConnectBatchResult>> updateNoteFieldsMany(
+    List<AnkiNoteFieldsUpdate> updates,
+  ) {
+    return _requestMultiChunked(<AnkiConnectAction>[
+      for (final AnkiNoteFieldsUpdate u in updates)
+        AnkiConnectAction('updateNoteFields', <String, dynamic>{
+          'note': <String, dynamic>{'id': u.noteId, 'fields': u.fields},
+        }),
+    ]);
   }
 
   // TODO-270 C1：读取一个 note 的现有字段。AnkiConnect `notesInfo` 接收
@@ -758,6 +914,39 @@ class AnkiConnectPreDeliveryException extends http.ClientException {
   );
 
   final Object cause;
+}
+
+/// 一条待打进 `multi` 的 AnkiConnect action。
+class AnkiConnectAction {
+  const AnkiConnectAction(this.action, [this.params]);
+
+  /// AnkiConnect action 名（`deleteMediaFile` / `findNotes` / …）。
+  final String action;
+
+  /// 该 action 的 `params`；无参时为 null（字段整体省略）。
+  final Map<String, dynamic>? params;
+}
+
+/// `multi` 里一条子 action 的结果。
+///
+/// [error] 非空 = 这一条失败了（其余条不受影响）。AnkiConnect 对失败的子
+/// action 永远返回 `{result: null, error: "..."}`，所以失败信息不会丢。
+class AnkiConnectBatchResult {
+  const AnkiConnectBatchResult({this.result, this.error});
+
+  final Object? result;
+  final String? error;
+
+  bool get isError => error != null;
+}
+
+/// [AnkiConnectService.updateNoteFieldsMany] 的一条：给 [noteId] 覆盖 [fields]
+/// 里列出的字段（未列出的字段保持不变）。
+class AnkiNoteFieldsUpdate {
+  const AnkiNoteFieldsUpdate({required this.noteId, required this.fields});
+
+  final int noteId;
+  final Map<String, String> fields;
 }
 
 class AnkiConnectException implements Exception {

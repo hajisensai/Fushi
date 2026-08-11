@@ -179,8 +179,26 @@ function analyze(rubyNode) {
   assert.ok(ruby, 'renderStructuredContent must produce a <ruby> under .glossary-content');
   const units = ruby.childNodes.filter((n) => n.nodeType === 1 && n.classList && n.classList.contains('ruby-unit'));
   const rtDirectlyUnderRuby = ruby.childNodes.filter((n) => n.nodeType === 1 && n.tagName === 'RT').length;
-  const rtInsideUnits = units.reduce((a, u) => a + u.childNodes.filter((n) => n.nodeType === 1 && n.tagName === 'RT').length, 0);
-  return { units: units.length, rtDirectlyUnderRuby, rtInsideUnits, ruby, unitList: units };
+  // BUG-1487: the <rt> now lives one level deeper, inside the per-reading
+  // <span class="ruby-rt"> that carries position:absolute (WebKit force-resets
+  // `position` on <rt> itself, so the box can never be the rt). What this test
+  // pins down is unchanged — the reading must end up INSIDE its own base's
+  // unit rather than staying a sibling of the whole <ruby> — so count the rt
+  // anywhere in the unit's subtree instead of only its direct children.
+  const rtInSubtree = (el) => el.childNodes.reduce(
+    (a, n) => a + (n.nodeType !== 1 ? 0 : (n.tagName === 'RT' ? 1 : 0) + rtInSubtree(n)), 0);
+  const rtInsideUnits = units.reduce((a, u) => a + rtInSubtree(u), 0);
+  // BUG-1487 shape check: every reading is wrapped in exactly one positioned
+  // <span class="ruby-rt">, and the <rt> is inside it (never a bare child of
+  // the unit — a bare <rt> gets no position in WebKit and falls back inline).
+  const rtBoxes = units.reduce((a, u) => a + u.childNodes.filter(
+    (n) => n.nodeType === 1 && n.classList && n.classList.contains('ruby-rt')).length, 0);
+  const rtBareInUnits = units.reduce((a, u) => a + u.childNodes.filter(
+    (n) => n.nodeType === 1 && n.tagName === 'RT').length, 0);
+  return {
+    units: units.length, rtDirectlyUnderRuby, rtInsideUnits,
+    rtBoxes, rtBareInUnits, ruby, unitList: units, rtInSubtree,
+  };
 }
 
 function ruby(content) { return { tag: 'ruby', content }; }
@@ -232,8 +250,35 @@ function rt(reading) { return { tag: 'rt', content: reading }; }
   assert.strictEqual(r.units, 2, 'multi-kanji: one .ruby-unit per base (BUG-722); got ' + r.units);
   assert.strictEqual(r.rtDirectlyUnderRuby, 0, 'multi-kanji: no <rt> left under <ruby> (BUG-722); got ' + r.rtDirectlyUnderRuby);
   assert.strictEqual(r.rtInsideUnits, 2, 'multi-kanji: each <rt> inside its own unit (BUG-722); got ' + r.rtInsideUnits);
-  assert.strictEqual(r.unitList[0].childNodes.filter((n) => n.nodeType === 1 && n.tagName === 'RT').length, 1, 'unit 0 holds exactly its own <rt>');
-  assert.strictEqual(r.unitList[1].childNodes.filter((n) => n.nodeType === 1 && n.tagName === 'RT').length, 1, 'unit 1 holds exactly its own <rt>');
+  assert.strictEqual(r.rtInSubtree(r.unitList[0]), 1, 'unit 0 holds exactly its own <rt>');
+  assert.strictEqual(r.rtInSubtree(r.unitList[1]), 1, 'unit 1 holds exactly its own <rt>');
+}
+
+// Case 7 — BUG-1487: every reading must be wrapped in a positioned
+// <span class="ruby-rt">, and NO <rt> may stay a bare child of the unit.
+// WebKit force-resets `position` to static on <rt> at the renderer level, so an
+// unwrapped <rt> silently loses the absolute anchor on iOS/macOS and the
+// reading renders inline to the right of its kanji (将しょう棋ぎ) while the
+// padding-top reserve sits empty. Blink honoured it, which is why this only
+// ever surfaced on Apple platforms.
+{
+  for (const [label, node] of [
+    ['bare-text bases', ruby(['将', rt('しょう'), '棋', rt('ぎ')])],
+    ['<rb> element bases', ruby([
+      { tag: 'rb', content: '将' }, rt('しょう'),
+      { tag: 'rb', content: '棋' }, rt('ぎ'),
+    ])],
+  ]) {
+    const r = analyze(node);
+    assert.strictEqual(r.rtBoxes, 2,
+      label + ': each reading needs its own .ruby-rt positioning box (BUG-1487); got ' + r.rtBoxes);
+    assert.strictEqual(r.rtBareInUnits, 0,
+      label + ': no <rt> may remain a BARE child of the unit — WebKit refuses to '
+      + 'position an <rt>, so a bare one falls back inline beside its kanji (BUG-1487); got '
+      + r.rtBareInUnits);
+    assert.strictEqual(r.rtInsideUnits, 2,
+      label + ': both readings still live inside their own unit; got ' + r.rtInsideUnits);
+  }
 }
 
 // Case 6 — multi-kanji word, <rb> element bases (both prior bugs at once).

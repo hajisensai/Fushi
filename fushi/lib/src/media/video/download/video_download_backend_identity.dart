@@ -19,12 +19,31 @@ class VideoDownloadBackendIdentity {
   final String category;
 }
 
+class VideoDownloadBackendUnavailable implements Exception {
+  const VideoDownloadBackendUnavailable(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+const String videoDownloadEmbeddedBackendUnavailableMessage =
+    'The built-in download engine is unavailable. Reinstall the complete '
+    'Windows package or configure qBittorrent in download settings.';
+
 VideoDownloadBackendIdentity buildVideoDownloadBackendIdentity({
   required QbConnectionConfig config,
   required String resolvedBackend,
   required String embeddedInstallationId,
+  bool embeddedAvailable = true,
 }) {
   if (resolvedBackend == QbConnectionConfig.backendEmbedded) {
+    if (!embeddedAvailable) {
+      throw const VideoDownloadBackendUnavailable(
+        videoDownloadEmbeddedBackendUnavailableMessage,
+      );
+    }
     final String installationId = embeddedInstallationId.trim();
     if (installationId.isEmpty) {
       throw ArgumentError('embedded installation id must not be empty');

@@ -38,6 +38,7 @@ import 'package:fushi/src/utils/misc/safe_file_name.dart';
 import 'package:http/http.dart' as http;
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi/src/utils/net/app_http.dart';
 
 /// Builds the ffmpeg argument list to extract the **embedded cover art** of a
 /// video container (e.g. an mkv with a `cover.jpg`/`cover.png` attachment, or an
@@ -161,7 +162,7 @@ Future<String?> downloadVideoCoverToPath({
 }) async {
   final Uri? uri = Uri.tryParse(coverUrl);
   if (uri == null || !uri.hasScheme) return null;
-  final http.Client client = httpClient ?? http.Client();
+  final http.Client client = httpClient ?? createAppHttpIoClient();
   try {
     final http.Response res = await client.get(uri);
     if (res.statusCode < 200 || res.statusCode >= 300) return null;

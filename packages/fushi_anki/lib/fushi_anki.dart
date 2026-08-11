@@ -1,6 +1,7 @@
 library hibiki_anki;
 
 export 'src/anki_media_dedup.dart';
+export 'src/anki_remote_media_http.dart';
 export 'src/anki_models.dart';
 export 'src/anki_note_type_definition.dart';
 export 'src/base_anki_repository.dart';

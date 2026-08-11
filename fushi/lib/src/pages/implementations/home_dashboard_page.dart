@@ -1332,6 +1332,7 @@ class _HomeDashboardPageState
         CollectionMemberProgress(
           positionMs: m.lastPositionMs,
           completed: m.completedAt != null,
+          lastPlayedAt: m.lastPlayedAt,
         ),
     ]);
     final VideoBookRow resume = sorted[idx];

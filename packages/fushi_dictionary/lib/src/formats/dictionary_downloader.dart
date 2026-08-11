@@ -5,6 +5,45 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
+/// BUG-1493：词典下载 / 索引拉取所用 [Dio] 的**进程级装配钩子**。
+///
+/// 词典源全部托管在 `github.com` / `raw.githubusercontent.com` / `huggingface.co`
+/// （见下方 base 常量），而本包一直用裸 `Dio()` 出站：Dio 默认的 `IOHttpClientAdapter`
+/// 建出来的 `HttpClient` 其 `findProxy` 为 null，**既不读 `HTTP_PROXY`/`HTTPS_PROXY`
+/// 环境变量，也不读 Windows 注册表里的系统代理**。于是在一台开着代理、浏览器能秒开
+/// GitHub 的机器上，app 里下同一个 30MB 词典包却是直连——慢到进度条像卡死，或者干脆
+/// 挂住（本链路此前还没有任何超时）。
+///
+/// 代理解析层 `applyAppProxy` 住在 `fushi` 应用侧（它要读偏好、跑 `reg query` /
+/// `scutil` / `gsettings`），而 `fushi_dictionary` 是被 `fushi` 依赖的下游包，不能反向
+/// import。故这里留一个与 `appUserProxyReader` 同款的进程级注入点：应用启动时接线，
+/// 未接线（单测 / popup 等精简入口）时回退裸 `Dio()`，行为与接线前逐字等价。
+///
+/// **钩子交出的是整个 [Dio]，而不是一个 `HttpClient`**：装代理要碰
+/// `IOHttpClientAdapter`，而它的构造参数名在 dio 5.x 内部变过
+/// （`onHttpClientCreate` → `createHttpClient`），本包与 app 各自解析到的 dio 版本并不
+/// 相同（app 锁在 5.1.2、本包 5.11）。把 adapter 的装配留在 app 侧，本包就只依赖
+/// 两版都稳定的 `Dio` / `BaseOptions` 表面，不会出现「包内 analyze 绿、app 编译红」。
+Future<Dio> Function()? dictionaryDioFactory;
+
+/// 连接建立（DNS + TCP + TLS）预算。GitHub 直连在国内时好时坏，给足重试余量后仍连不上
+/// 就该报错，而不是把用户永远留在「正在更新…」上。
+const Duration kDictionaryConnectTimeout = Duration(seconds: 30);
+
+/// **两个数据块之间**的最大间隔（不是整包总时长——大词典包本来就要下几分钟）。
+/// 用来把「服务器把连接晾着不发数据」这种静默挂死变成一个可见的失败。
+const Duration kDictionaryStallTimeout = Duration(seconds: 60);
+
+/// 词典链路统一的出站 [Dio]：代理来自 [dictionaryDioFactory]，超时在这里兜底钉死
+/// （工厂给的 Dio 也一样要吃这两条预算，避免「接了代理反而丢了超时」）。
+/// 调用方负责 `close()`。
+Future<Dio> createDictionaryDio() async {
+  final Dio dio = await dictionaryDioFactory?.call() ?? Dio();
+  dio.options.connectTimeout = kDictionaryConnectTimeout;
+  dio.options.receiveTimeout = kDictionaryStallTimeout;
+  return dio;
+}
+
 enum DictionaryCategory {
   jaEn,
   jaJa,
@@ -769,11 +808,15 @@ class DictionaryDownloader {
     return selected;
   }
 
+  /// 下载 [url] 到 [tempDir]。[progressNotifier] 收 0..1 的比例（供进度条），
+  /// [onBytes] 收原始字节数（供「x / y MB」这类可归因文案，BUG-1493）——服务器不给
+  /// `Content-Length` 时 `total` 为 -1，调用方据此退化成只显示已收字节。
   static Future<File> download({
     required String url,
     required Directory tempDir,
     required ValueNotifier<double> progressNotifier,
     CancelToken? cancelToken,
+    void Function(int received, int total)? onBytes,
   }) async {
     if (!tempDir.existsSync()) {
       tempDir.createSync(recursive: true);
@@ -781,7 +824,7 @@ class DictionaryDownloader {
 
     final String fileName = Uri.parse(url).pathSegments.last;
     final String destPath = path.join(tempDir.path, fileName);
-    final Dio dio = Dio();
+    final Dio dio = await createDictionaryDio();
 
     try {
       await dio.download(
@@ -796,6 +839,7 @@ class DictionaryDownloader {
           if (total > 0) {
             progressNotifier.value = received / total;
           }
+          onBytes?.call(received, total);
         },
       );
       return File(destPath);

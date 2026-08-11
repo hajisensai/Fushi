@@ -230,8 +230,7 @@ class AdaptiveSettingsSurface extends StatelessWidget {
           ),
       ],
     );
-    final bool hasFocusRoot =
-        FushiFocusRoot.maybeControllerOf(context) != null;
+    final bool hasFocusRoot = FushiFocusRoot.maybeControllerOf(context) != null;
     final Widget tappable = cupertino
         ? GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -456,6 +455,12 @@ class AdaptiveSettingsRow extends StatelessWidget {
   /// 一条稍长的说明（尤其带路径/警告拼接的那些）第 4 行起直接被吃掉，用户看不到
   /// 配置项到底在说什么。说明文字的唯一职责就是解释配置项，截断即等于失效，因此
   /// 默认改为不限；需要压缩的场景（列表密度敏感处）显式传一个有限值。
+  ///
+  /// BUG-1537：上面那次修复只改了 maxLines，说明文字的 `Text` 仍恒传
+  /// `TextOverflow.ellipsis`——而 ellipsis 配 `maxLines: null` 在 Flutter 里不是
+  /// 「不生效」，是把整段压成**单行**，比原来的 3 行更糟。所以 overflow 必须跟着
+  /// 本字段联动（见 [_SettingsLabel]），守卫在
+  /// `test/settings/settings_row_subtitle_wrap_test.dart`。
   final int? subtitleMaxLines;
 
   /// CONTRACT: [trailing] must be self-sizing. With [controlBelow] false it is
@@ -530,8 +535,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
     );
 
     if (onTap == null) return content;
-    final bool hasFocusRoot =
-        FushiFocusRoot.maybeControllerOf(context) != null;
+    final bool hasFocusRoot = FushiFocusRoot.maybeControllerOf(context) != null;
     if (cupertino) {
       // Cupertino 是隐藏内部能力，维持原有两分支（结构恒定化只做 Material
       // 主路径）。无焦点根时 FushiFocusable 保持方向键可达（GestureDetector
@@ -1947,9 +1951,15 @@ class _SettingsLabel extends StatelessWidget {
                   .bodySmall
                   ?.copyWith(color: subtitleColor),
               // BUG-1184：null = 不钳行数，说明文字整段显示（见
-              // [AdaptiveSettingsRow.subtitleMaxLines]）。仍保留 ellipsis，
-              // 只在调用点显式传有限值时才生效。
-              overflow: TextOverflow.ellipsis,
+              // [AdaptiveSettingsRow.subtitleMaxLines]）。
+              //
+              // overflow 必须跟着 maxLines 走，不能恒为 ellipsis：Flutter 的
+              // ellipsis 在 maxLines 缺省时并不是「不生效」，而是把整段压成
+              // **单行** + 省略号（RenderParagraph 实测：同一段文字 clip 排 8 行、
+              // ellipsis 只排 1 行且 didExceedMaxLines=true）。BUG-1184 把默认从
+              // 3 行改成 null 却留着 ellipsis，等于把说明文字从 3 行钳到 1 行——
+              // 比修复前更糟。null 时交回 DefaultTextStyle（clip），换行显示整段。
+              overflow: subtitleMaxLines == null ? null : TextOverflow.ellipsis,
               maxLines: subtitleMaxLines,
             ),
           ),

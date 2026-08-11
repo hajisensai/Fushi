@@ -33,4 +33,24 @@ void main() {
           '否则软键盘弹出会把贴底「下载任务」区顶到顶部输入框边上（BUG-1003）',
     );
   });
+
+  test('downloads task, subscription, and settings surfaces are full width',
+      () {
+    final String downloads = File(
+      'lib/src/pages/implementations/downloads_page.dart',
+    ).readAsStringSync();
+    final String jobs = File(
+      'lib/src/pages/implementations/video_download_jobs_panel.dart',
+    ).readAsStringSync();
+    final String subscriptions = File(
+      'lib/src/pages/implementations/video_download_subscriptions_panel.dart',
+    ).readAsStringSync();
+
+    expect(
+      downloads,
+      contains('TorrentSettingsSection(constrainWidth: false)'),
+    );
+    expect(jobs, isNot(contains('BoxConstraints(maxWidth: 840)')));
+    expect(subscriptions, isNot(contains('BoxConstraints(maxWidth: 840)')));
+  });
 }

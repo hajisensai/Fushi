@@ -25,6 +25,14 @@ import 'package:youtube_explode_dart/src/videos/video_controller.dart'
 // ignore: implementation_imports
 import 'package:youtube_explode_dart/src/reverse_engineering/player/player_response.dart'
     show PlayerResponse, ClosedCaptionTrack;
+import 'package:fushi/src/utils/net/app_http.dart';
+
+/// BUG-1498：youtube_explode 自带的 `YoutubeHttpClient` 内部是裸 `http.Client()`
+/// （`findProxy` 为 null，连 `HTTPS_PROXY` 都不读），而 youtube.com / googlevideo.com
+/// 在多数用户所在网络需要代理。它的构造函数收一个 `http.Client`，于是这里把应用代理
+/// 出口喂进去；除出口外行为（UA / cookie / 重试）一律沿用上游默认。
+yt.YoutubeHttpClient _createYoutubeHttpClient() =>
+    yt.YoutubeHttpClient(createAppHttpIoClient());
 
 /// YouTube 解析结果：可播放流 URL + 字幕 cue + header + 标题。
 ///
@@ -216,13 +224,15 @@ Future<YoutubeMetadata> resolveYoutubeMetadata(
   // 用完关闭。把「videos.get 拿标题」（需真网络、外部契约）与「缩略图探测」（可离线注入）解耦。
   http.Client? thumbnailProbeClient,
 }) async {
-  final yt.YoutubeExplode client = yt.YoutubeExplode();
+  final yt.YoutubeExplode client =
+      yt.YoutubeExplode(_createYoutubeHttpClient());
   try {
     final yt.Video video = await client.videos.get(url).timeout(timeout);
     // TODO-1314（C7）：多分辨率缩略图回退——HEAD 探测 maxres→sd→hq，取首个可用者作导入封面
     // 源（高清缺失自动退次高，绝不因 maxres 404 落到无封面）。best-effort：探测失败退 hqdefault
     // （恒存在，= 旧行为）。探测在导入路径、一次性、有界（每候选 6s），换更清晰的书架封面。
-    final http.Client probeClient = thumbnailProbeClient ?? http.Client();
+    final http.Client probeClient =
+        thumbnailProbeClient ?? createAppHttpIoClient();
     try {
       final String bestThumbnail = await resolveBestThumbnailUrl(
         video.id.value,
@@ -466,7 +476,8 @@ Future<YoutubeResolvedSource> resolveYoutubeSource(
   // A1 多 client 兜底顺序（默认 [kYoutubeManifestClientFallback]=androidVr→ios→tv）。
   List<yt.YoutubeApiClient>? ytClients,
 }) async {
-  final yt.YoutubeExplode client = yt.YoutubeExplode();
+  final yt.YoutubeExplode client =
+      yt.YoutubeExplode(_createYoutubeHttpClient());
   try {
     // 加超时：YouTube 的 innertube/googlevideo 偶发 tarpit（高频请求被限流时连接不完成），
     // youtube_explode 内部无超时 → 会永久挂住，UI 表现为「点了没反应也没报错」。超时后
@@ -658,7 +669,8 @@ Future<YoutubeVariantSet> resolveYoutubeVideoVariants(
   Duration timeout = const Duration(seconds: 20),
   List<yt.YoutubeApiClient>? ytClients,
 }) async {
-  final yt.YoutubeExplode client = yt.YoutubeExplode();
+  final yt.YoutubeExplode client =
+      yt.YoutubeExplode(_createYoutubeHttpClient());
   try {
     return await _resolveYoutubeVideoVariantsInner(
       client,
@@ -980,7 +992,7 @@ Future<List<AudioCue>> resolveYoutubeCaptionCues(
   YoutubeCaptionTrack track, {
   required String bookKey,
 }) async {
-  final yt.YoutubeHttpClient http = yt.YoutubeHttpClient();
+  final yt.YoutubeHttpClient http = _createYoutubeHttpClient();
   try {
     final String body = await http.getString(track.cueDownloadUrl);
     return parseYoutubeTimedTextToCues(content: body, bookKey: bookKey);
@@ -998,7 +1010,7 @@ Future<List<AudioCue>> resolveYoutubeCaptionCues(
 /// TODO-1307（A2）：只做**一次** getPlayerResponse（androidVr），不再先取 WatchPage——实测
 /// androidVr 不带 watchPage 即返回全部字幕轨（含 ja）且省一次往返（见文件头）。
 Future<List<YoutubeCaptionTrack>> _fetchCaptionTracks(yt.VideoId id) async {
-  final yt.YoutubeHttpClient http = yt.YoutubeHttpClient();
+  final yt.YoutubeHttpClient http = _createYoutubeHttpClient();
   try {
     final PlayerResponse response = await VideoController(http)
         .getPlayerResponse(id, yt.YoutubeApiClient.androidVr);

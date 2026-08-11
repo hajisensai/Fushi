@@ -30,7 +30,7 @@ void main() {
     test('updateVideoBookPosition writes through', () async {
       final db = await _openDb();
       await db.upsertVideoBook(_book());
-      await db.updateVideoBookPosition('video/1', 12345);
+      await db.updateVideoBookPosition('video/1', 12345, playedAt: 1700);
       final row = await db.getVideoBookByBookUid('video/1');
       expect(row!.lastPositionMs, 12345);
     });
@@ -82,7 +82,7 @@ void main() {
 
       // 纯列更新（进度回写）：即便 Drift 表级失效再发流，集合仍是 {video/1}，
       // 消费方据此去重不触发无谓刷新（避免自愈写回→重刷环）。
-      await db.updateVideoBookPosition('video/1', 5000);
+      await db.updateVideoBookPosition('video/1', 5000, playedAt: 1700);
       await pumpEventQueue();
       expect(
         emissions

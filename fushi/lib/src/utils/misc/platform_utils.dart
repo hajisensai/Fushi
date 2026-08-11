@@ -118,6 +118,13 @@ class HorizontalDragScrollable extends StatelessWidget {
 /// 事件派发是内层优先：内层 `Scrollable` 若已表态（如触控板给了 dx、或 Shift 已
 /// 翻轴），它先登记、本件的登记自动变 no-op，不会双份滚动。内容没超出视口时本件
 /// 不登记，滚轮照常冒泡给外层（弹窗纵向滚动不被吞）。
+///
+/// **什么时候不要用**（BUG-1536）：横向区**嵌在纵向滚动页面里**时不要包本件——
+/// 内容超出视口时它会一直登记，指针停在这一行上整页就纵向滚不动了（用户实报的
+/// 视频首页横滚行症状）。那种场景把本件撤掉即可：未按 Shift 时横向 `Scrollable`
+/// 取 `dx`（物理滚轮恒 0）不登记，滚轮冒泡给外层纵滚；按住 Shift 时 Flutter 自己
+/// 就翻轴横滚。本件只留给**自身占满一屏、外面没有纵向滚动可抢**的横向面板（如
+/// 波形对轴弹窗的时间轴，那里用户明确要过裸滚轮平移）。
 class WheelToHorizontalScroll extends StatelessWidget {
   const WheelToHorizontalScroll({
     required this.controller,
@@ -284,6 +291,21 @@ const double kFushiSettingsWideMinHeight = 440.0;
 /// 全屏 push 的设置类页面（如 `BookCssEditorPage`）也用它约束正文宽度，与限宽弹窗
 /// 里的兄弟设置页保持同宽，消除各处重复出现的 `900` 魔法数。
 const double kFushiSettingsDialogMaxWidth = 900.0;
+
+/// 页内快捷设置面板（视频设置侧栏等）的自适应内容宽度：取窗口宽度的一半，
+/// 下限 [kFushiSettingsWideThreshold]（560，即旧固定宽——窄窗行为零变化），
+/// 上限对齐兄弟设置弹窗的 [kFushiSettingsDialogMaxWidth]（900）。
+///
+/// BUG-1546：视频页内设置侧栏此前硬编码 560 固定宽，桌面大窗口下被挤成窄条
+/// （用户实报「视频、小说等设置被限制了宽度」）。宽度跟随窗口自适应后，
+/// ≥1120 逻辑宽的窗口面板随之放宽，≥1800 达到 900 上限；同时下限保住旧值，
+/// 手机 / 窄窗仍由 [VideoTranslucentSidePanel] 的 94% 可用宽钳制兜底。
+double fushiQuickSettingsPanelWidth(double windowWidth) {
+  if (!windowWidth.isFinite) return kFushiSettingsWideThreshold;
+  return (windowWidth * 0.5)
+      .clamp(kFushiSettingsWideThreshold, kFushiSettingsDialogMaxWidth)
+      .toDouble();
+}
 
 class DesktopContentLayout extends StatelessWidget {
   const DesktopContentLayout({

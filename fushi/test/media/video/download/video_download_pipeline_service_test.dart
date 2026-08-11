@@ -706,6 +706,33 @@ void main() {
     expect(idsAfterCompletion, isEmpty);
   });
 
+  test('library embedded resume ids keep completed torrents available to seed',
+      () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    await environment.insertJob(
+      jobId: 'library-resume-completed',
+      stage: VideoDownloadJobStage.scrape,
+      organizationPolicy: 'library',
+      backendKind: 'embedded',
+    );
+    await environment.database.updateVideoDownloadJob(
+      'library-resume-completed',
+      const VideoDownloadJobsCompanion(
+        lifecycle: Value<String>(VideoDownloadJobLifecycle.completed),
+      ),
+    );
+
+    expect(
+      legacyEmbeddedTorrentResumeIds(
+        await environment.database.getVideoDownloadJobs(),
+      ),
+      <String>{_torrentHash},
+    );
+  });
+
   test('manual subtitle selection is durable and resumes an actionable job',
       () async {
     final _PipelineEnvironment environment = await _PipelineEnvironment.create(

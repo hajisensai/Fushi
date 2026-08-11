@@ -349,6 +349,57 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('订阅使用与资源搜索相同的独立全屏页面', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: VideoDiscoverySubscriptionPage(
+            item: VideoDiscoveryItem(reference: _reference()),
+            registry: VideoResourceRegistry(
+              const <VideoResourceProvider>[],
+            ),
+            sources: const <MediaSourceRow>[
+              MediaSourceRow(
+                id: 1,
+                label: 'himoto',
+                mediaKind: 'video',
+                transport: 'local',
+                rootPath: r'D:\\media',
+                mediaCount: 0,
+                recursive: true,
+                sortOrder: 0,
+                createdAt: 1,
+              ),
+            ],
+            onSubmit: (VideoDiscoverySubscriptionSelection selection) async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Scaffold), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AppBar),
+        matching: find.text(t.video_discovery_subscribe),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-resource-query')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-subscription-submit')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('字幕搜索使用独立页而不是居中对话框', (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 760));
     addTearDown(() => tester.binding.setSurfaceSize(null));

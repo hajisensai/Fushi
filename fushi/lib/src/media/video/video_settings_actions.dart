@@ -503,7 +503,7 @@ Widget buildVideoShaderManager(SettingsContext context) {
       context.refresh();
     },
     initialMpvDir: context.appModel.videoMpvShaderDir,
-    titlePlacement: SettingsSectionTitlePlacement.inside,
+    embedded: true,
     onMpvDirChanged: (String dir) async {
       await host.onMpvShaderDirChanged?.call(dir);
       context.refresh();

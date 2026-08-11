@@ -514,7 +514,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 83;
+  int get schemaVersion => 85;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -535,6 +535,26 @@ class FushiDatabase extends _$FushiDatabase
               dbVersion: from,
               appSchemaVersion: to,
             );
+          }
+          // v84（BUG-1502）：给 preferences 一列 updated_at，让「是内容的偏好行」
+          // （书改名的 `override_title://` 覆盖行）能跨端 last-write-wins。
+          //
+          // ⚠️ **这一步必须排在整条阶梯最前**，而不是按版本号排在末尾：后面的迁移
+          // 步会用 drift 的**类型化** API 读写 preferences（如
+          // `migrateLegacyBookmarkPreferences` 走 `getAllPrefs()`），而类型化行
+          // 映射按代码里的列集取值——列还没加时它对缺失列做 null 断言，直接把整条
+          // onUpgrade 炸掉。加列是纯 additive 且带 `_columnExists` 幂等守卫，提前
+          // 执行对任何版本的老库都等价。
+          //
+          // 存量行**刻意留 0**（=「时刻未知」），不填迁移时刻：填迁移时刻会让跨端
+          // 「谁赢」由两台设备各自的升级时间决定——后升级的一侧会无条件覆盖先升级
+          // 一侧的所有存量改名，而用户什么操作都没做。取 0 则存量行彼此平局，LWW
+          // 平局规则「保留本机」正好等于升级前的 insert-if-absent 行为（零回归）；
+          // 任一侧真正改过一次名后立刻胜出。取舍全文见 [Preferences.updatedAt]。
+          if (from < 84 &&
+              await _tableExists('preferences') &&
+              !await _columnExists('preferences', 'updated_at')) {
+            await m.addColumn(preferences, preferences.updatedAt);
           }
           if (from < 2) {
             if (!await _columnExists('dictionary_metadata', 'type')) {
@@ -1853,6 +1873,122 @@ class FushiDatabase extends _$FushiDatabase
               }
             }
           }
+          // 分支血统补跑（PR #798）：本地视频分支曾把 v69/v70/v71 三个号
+          // 段用在自己的视频元数据/下载表上，与上游同号的三条改名迁移撞车。
+          // 来自该分支的库停在 69-71 时，`from < 69/70/71` 全部为假，上游那
+          // 三条改名于是被整体跳过（表名、阅读器源命名空间、句子音频键都停在
+          // 旧字面量上）。这里按来源版本精确补跑，不新增 schema 版本——它修的
+          // 是「本该跑却没跑」的既有阶梯，不是新结构。所有操作都有表存在性守卫
+          // 或天然幂等（前缀/值已是新形态时匹配零行），正常上游 69-71 的库重复
+          // 经过也不会改到任何一行。
+          if (from >= 69 && from <= 71) {
+            if (await _tableExists('hibiki_paired_peers') &&
+                !await _tableExists('fushi_paired_peers')) {
+              await customStatement(
+                'ALTER TABLE hibiki_paired_peers '
+                'RENAME TO fushi_paired_peers',
+              );
+            }
+          }
+          if (from >= 70 && from <= 71) {
+            const String oldNs = 'src:reader_ttu:';
+            const String newNs = 'src:reader_fushi:';
+            const String oldLegacyOverride =
+                'src:reader_fushi:override_title://reader_ttu/reader_ttu/';
+            const String newLegacyOverride =
+                'src:reader_fushi:override_title://reader_fushi/reader_fushi/';
+            const String oldShort = 'src:reader_fushi:ttu_';
+            for (final String table in <String>[
+              'preferences',
+              'profile_settings',
+            ]) {
+              if (!await _tableExists(table)) continue;
+              await _rewriteTextPrefix(
+                table: table,
+                column: 'key',
+                from: oldNs,
+                to: newNs,
+              );
+              await _rewriteTextPrefix(
+                table: table,
+                column: 'key',
+                from: oldLegacyOverride,
+                to: newLegacyOverride,
+              );
+              await _rewriteTextPrefix(
+                table: table,
+                column: 'key',
+                from: oldShort,
+                to: newNs,
+              );
+            }
+            if (await _tableExists('profile_settings')) {
+              await _rewriteTextPrefix(
+                table: 'profile_settings',
+                column: 'key',
+                from: 'ttu_',
+                to: '',
+                extraWhere: "category = 'reader'",
+              );
+            }
+            for (final String table in <String>[
+              'preferences',
+              'profile_settings',
+            ]) {
+              if (!await _tableExists(table)) continue;
+              await customStatement(
+                "UPDATE $table SET value = 's:reader_fushi' "
+                "WHERE key LIKE 'current\\_source/%' ESCAPE '\\' "
+                "AND value = 's:reader_ttu'",
+              );
+              await customStatement(
+                "UPDATE $table SET value = 'reader_fushi' "
+                "WHERE key LIKE 'current\\_source/%' ESCAPE '\\' "
+                "AND value = 'reader_ttu'",
+              );
+            }
+            if (await _tableExists('media_items')) {
+              await customStatement(
+                'UPDATE OR REPLACE media_items '
+                "SET media_source_identifier = 'reader_fushi' "
+                "WHERE media_source_identifier = 'reader_ttu'",
+              );
+              await _rewriteTextPrefix(
+                table: 'media_items',
+                column: 'unique_key',
+                from: 'reader_ttu/',
+                to: 'reader_fushi/',
+              );
+            }
+          }
+          if (from == 71) {
+            if (await _tableExists('audio_cues')) {
+              await _rewriteTextPrefix(
+                table: 'audio_cues',
+                column: 'text_fragment_id',
+                from: 'sasayaki://',
+                to: 'fushi-cue://',
+              );
+            }
+            for (final String table in <String>[
+              'preferences',
+              'profile_settings',
+            ]) {
+              if (!await _tableExists(table)) continue;
+              await customStatement(
+                'UPDATE $table '
+                "SET value = REPLACE(value, 'sasayakiColor', "
+                "'sentenceAudioHighlightColor') "
+                "WHERE key = 'custom_themes' "
+                "AND value LIKE '%sasayakiColor%'",
+              );
+              await customStatement(
+                'UPDATE OR REPLACE $table '
+                "SET key = 'custom_theme_sentence_audio_color' "
+                "WHERE key = 'custom_theme_sasayaki_color'",
+              );
+            }
+          }
           if (from < 77) {
             // v77：视频来源规范刮削与 NFO sidecar 的结构化宿主（PR #792，
             // 开发期编号 v69/v70 两步在合入 develop 时收拢为一步）。全部是
@@ -1976,9 +2112,26 @@ class FushiDatabase extends _$FushiDatabase
               await customStatement('DROP TABLE srt_book_tag_mappings');
             }
             if (hasBookTags && await _tableExists('video_book_tag_mappings')) {
+              // 真实旧库存在 schema-version 已推进、但 v57 列改名未落地的分支血统：
+              // 表仍是 video_book_uid。v79 不能假定 book_uid 必然存在，否则启动迁移
+              // 直接报 no such column、整库打不开。按物理 schema 选键列；added_at
+              // 同样对 v41 前形态兜底为 0，保证已知两代旧表都能无损/可解释地并表。
+              final String videoEntryColumn =
+                  await _columnExists('video_book_tag_mappings', 'book_uid')
+                      ? 'book_uid'
+                      : await _columnExists(
+                              'video_book_tag_mappings', 'video_book_uid')
+                          ? 'video_book_uid'
+                          : throw StateError(
+                              'video_book_tag_mappings has no known video key column',
+                            );
+              final String videoAddedAt =
+                  await _columnExists('video_book_tag_mappings', 'added_at')
+                      ? 'added_at'
+                      : '0';
               await customStatement('INSERT OR IGNORE INTO tag_assignments '
                   '(media_kind, entry_key, tag_id, added_at) '
-                  "SELECT 'video', book_uid, tag_id, added_at "
+                  "SELECT 'video', $videoEntryColumn, tag_id, $videoAddedAt "
                   'FROM video_book_tag_mappings '
                   'WHERE tag_id IN (SELECT id FROM book_tags)');
               await customStatement('DROP TABLE video_book_tag_mappings');
@@ -2279,6 +2432,13 @@ class FushiDatabase extends _$FushiDatabase
                   'RENAME TO media_collection_items');
             }
             if (await _tableExists('media_collections')) {
+              // frozen-migration-literal（BUG-1489）：下面这两处 `'epub|'` 是
+              // **冻结历史串**，绝不能换成 `MediaKind.epub.dbValue`。迁移步读写的
+              // 是「升到 v83 那一刻磁盘上真实存在」的形态：`LIKE 'epub|%'` 认老行、
+              // `substr(cover_source, 6)`（6 = len('epub|') + 1）切 bookKey。引用
+              // 运行时枚举串后，谁改了 dbValue 这段历史迁移就跟着漂——老库匹配不上、
+              // 换键静默不做，而同一步里不带前缀的 shelf_entries /
+              // media_collection_items 照常换成了 uid，cover_source 从此永久悬空。
               await customStatement('''
               UPDATE media_collections SET cover_source = 'epub|' ||
                 (SELECT eb.uid FROM epub_books eb
@@ -2288,6 +2448,31 @@ class FushiDatabase extends _$FushiDatabase
                 AND EXISTS (SELECT 1 FROM epub_books eb
                             WHERE eb.book_key = substr(cover_source, 6)
                               AND eb.uid != '')''');
+            }
+          }
+          // v85（BUG-1542）：video_books 加 last_played_at，给「有进度」这个事实
+          // 补上时刻维度——合集续播锚点从此是「用户刚才在看哪一集」，不再靠「排序
+          // 位置最靠后的有痕迹成员」瞎猜。
+          //
+          // 存量回填：从 video_watch_statistics 取每个 bookUid 的 max(last_modified)
+          // （v39 起该表按 bookUid 键控）。这是磁盘上唯一可得的历史近似——不回填的话
+          // 老库要等每一集都被重看一遍才恢复正确，而回填后用户现有库当场就对。回填不
+          // 到的成员留 NULL，[continueMemberIndex] 对「全员无时刻」自动退回旧的位置
+          // 口径（逐字节等价旧行为），对「部分有时刻」优先信有时刻的一侧。
+          if (from < 85 &&
+              await _tableExists('video_books') &&
+              !await _columnExists('video_books', 'last_played_at')) {
+            await m.addColumn(videoBooks, videoBooks.lastPlayedAt);
+            if (await _tableExists('video_watch_statistics')) {
+              await customStatement('''
+              UPDATE video_books SET last_played_at = (
+                SELECT MAX(w.last_modified) FROM video_watch_statistics w
+                WHERE w.book_uid = video_books.book_uid
+                  AND w.last_modified > 0)
+              WHERE EXISTS (
+                SELECT 1 FROM video_watch_statistics w
+                WHERE w.book_uid = video_books.book_uid
+                  AND w.last_modified > 0)''');
             }
           }
         },

@@ -15,8 +15,9 @@
 // 不套 wrapper，所以不裁。
 //
 // 修法不引入新机制：词头 ruby 并入 glossary 那套已验证的 per-base 单元
-//（BUG-108/363/722/850：.ruby-unit 的 em padding-top 纵向预留 + 绝对定位 rt +
+//（BUG-108/363/722/850：.ruby-unit 的 em padding-top 纵向预留 + 绝对定位的注音盒 +
 // .ruby-reserve 横向零高孪生），postProcessRuby 一并处理 `.expression ruby`。
+// BUG-1487 之后那个绝对定位盒是中性的 `.ruby-rt` span，不再是 <rt> 本身。
 // .expression 是 26px，旧的硬编码 13px 恰好等于共享的 0.5em——像素不变，但从此随
 // 弹窗 content zoom 等比缩放，而不是让溢出量随 zoom 线性放大。
 //
@@ -52,6 +53,9 @@ void main() {
         'ruby',
         '.ruby-unit',
         'rt',
+        // BUG-1487：注音的定位盒从 <rt> 挪到中性的 .ruby-rt（WebKit 在渲染器层把
+        // <rt> 的 position 强制重置为 static），词头同样要吃到这条作用域。
+        '.ruby-rt',
         '.ruby-reserve',
       ]) {
         expect(sharedRubyRuleBody(css, name), isNotNull,
@@ -68,8 +72,9 @@ void main() {
           reason: 'line-height:1 保证纵向空间只来自 em padding-top');
     });
 
-    test('rt 绝对定位在预留里（top:0），字号是 em 不是硬编码 px', () {
-      final String body = sharedRubyRuleBody(css, 'rt')!;
+    test('注音盒绝对定位在预留里（top:0），字号是 em 不是硬编码 px', () {
+      // BUG-1487：承载定位与 em 字号的是 .ruby-rt 这个中性 span，不是 <rt> 本身。
+      final String body = sharedRubyRuleBody(css, '.ruby-rt')!;
       expect(RegExp(r'position\s*:\s*absolute').hasMatch(body), isTrue);
       expect(RegExp(r'top\s*:\s*0\b').hasMatch(body), isTrue);
       expect(RegExp(r'font-size\s*:\s*[\d.]+em').hasMatch(body), isTrue);
@@ -139,6 +144,7 @@ void main() {
           'ruby',
           '.ruby-unit',
           'rt',
+          '.ruby-rt',
           '.ruby-reserve',
         ]) {
           expect(sharedRubyRuleBody(content, name), isNotNull,

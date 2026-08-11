@@ -1068,18 +1068,29 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
   /// 文件拖入书架后的路由：分类 → 命中测试 → 决策 → 打开对应对话框/提示。
   /// [globalPosition] 为 [FushiFileDropTarget] 透出的 Flutter global/view 坐标，
   /// 可直接与卡片登记表（同坐标系屏幕矩形）命中测试。
-  void _handleShelfDrop(List<String> paths, Offset globalPosition) {
+  Future<void> _handleShelfDrop(
+    List<String> paths,
+    Offset globalPosition,
+  ) async {
     final ModalRoute<dynamic>? route = ModalRoute.of(context);
     if (route != null && !route.isCurrent) return;
+
+    // 图片型 .zip（一包页图的漫画）与 Yomitan 词典包同形，要真读包才分得出——与导入
+    // 对话框的分派同一判据，两条入口对「这算不算漫画」回答一致。但那次「真读包」是
+    // **同步解整个压缩包**，原来就长在下面 classifyDroppedFiles 的注入谓词里，也就
+    // 长在 desktop_drop 回调的同步栈上：拖个大包进来 UI 线程直接卡死。先离线程一次
+    // 性判完（[probeDroppedImageArchives]），再把结果当同步谓词喂回去，分类函数保持
+    // 纯函数不变。
+    final Map<String, bool> imageArchives =
+        await probeDroppedImageArchives(paths);
+    if (!mounted) return;
 
     // 目录（漫画页图文件夹）没有扩展名，纯分类函数分不出来——把真实文件系统判据
     // 注入进去（分类层本身仍不碰 IO）。
     final DroppedFiles files = classifyDroppedFiles(
       paths,
       isDirectory: (String pth) => Directory(pth).existsSync(),
-      // 图片型 .zip（一包页图的漫画）与 Yomitan 词典包同形，要真读包才分得出——
-      // 与导入对话框的分派同一判据，两条入口对「这算不算漫画」回答一致。
-      isImageArchive: MangaModule.isImageArchive,
+      isImageArchive: (String pth) => imageArchives[pth] ?? false,
     );
     debugPrint(
       '[fushi-drop] [reader-shelf] classified '

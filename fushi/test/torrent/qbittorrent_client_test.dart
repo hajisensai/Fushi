@@ -478,6 +478,7 @@ void main() {
           'save_path': '/downloads',
           'content_path': '/downloads/Show S01',
           'amount_left': 1024,
+          'total_size': 4096,
         },
       ]);
       final QBittorrentClient client = QBittorrentClient(
@@ -500,6 +501,7 @@ void main() {
       expect(infos.first.savePath, '/downloads');
       expect(infos.first.contentPath, '/downloads/Show S01');
       expect(infos.first.amountLeft, 1024);
+      expect(infos.first.totalSizeBytes, 4096);
       client.close();
     });
 

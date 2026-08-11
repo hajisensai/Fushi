@@ -273,6 +273,26 @@ class Preferences extends Table {
   TextColumn get key => text()();
   TextColumn get value => text()();
 
+  /// 该行最后一次写入的毫秒戳（v84 / BUG-1502）——**跨端 LWW 的比较键**。
+  ///
+  /// 绝大多数偏好是设备设置、从不跨端合并，这一列对它们只是无害的记账。它存在
+  /// 是因为**有些偏好行是内容**：书的改名（`override_title://` 覆盖行，BUG-1488）
+  /// 跟着书走、必须跨端合并，而 `preferences` 原先只有 key/value 两列，合并端
+  /// 无从判断「谁更新」，只能退化成 insert-if-absent —— 母设备**第二次**改名
+  /// 就传不到已有 override 的子设备了。
+  ///
+  /// **默认 0 = 「时刻未知」，是刻意的取舍**：v84 迁移不给存量行填迁移时刻。
+  /// 填迁移时刻会让「谁赢」由两台设备各自的升级时间决定（后升级的一侧无条件
+  /// 覆盖先升级的一侧，用户什么都没做却发生覆盖）；取 0 则存量行彼此平局，
+  /// 而 LWW 的平局规则是「保留本机」——正好等于升级前的 insert-if-absent 行为，
+  /// 零回归；任何一侧**真正改过一次名**之后（时刻 > 0）立刻胜出。同理，旧对端
+  /// 发来的无时刻数据一律按 0 收，永远不会覆盖本机改过的名字。
+  ///
+  /// 写入方：[FushiDatabase.setPref] / `setPrefs` / `compareAndSetPref` 填
+  /// `now`；跨端采纳走 [FushiDatabase.setPrefIfNewer]，**填对端的时刻而不是
+  /// now**（填 now 会让本机永远最新，母设备的下一次改名再也传不进来）。
+  IntColumn get updatedAt => integer().withDefault(const Constant(0))();
+
   @override
   Set<Column> get primaryKey => {key};
 }
@@ -544,6 +564,21 @@ class VideoBooks extends Table {
   IntColumn get embeddedSubtitleTrack => integer().nullable()();
   TextColumn get coverPath => text().nullable()();
   IntColumn get lastPositionMs => integer().withDefault(const Constant(0))();
+
+  /// 最近一次播放的毫秒时刻（schema v85，BUG-1542）；null = 从未播放 / v85 前旧行
+  /// 回填不到。与 [lastPositionMs] **成对写入**（同一个 `updateVideoBookPosition`
+  /// 事务），使「这一行有进度」和「这进度是什么时候留下的」不可能失配。
+  ///
+  /// 有了它，合集续播的锚点才能是「用户刚才在看哪一集」。此前 `VideoBooks` 只有
+  /// 位置没有时刻，`continueMemberIndex` 只能拿「排序位置最靠后的有痕迹成员」当
+  /// 代理——等价于假设用户永远按集号单调前进，用户回头看 PV/补看早期某集后就选错
+  /// （BUG-1542：刚退出 PV 第 1 集，头部显示「继续看 第233集」）。
+  ///
+  /// 为什么不复用 `video_watch_statistics.lastModified`：那是**按天聚合**行的
+  /// mtime，且云聚合合并（`setVideoWatchStatistic`）会改写它 → 不是「本机最近播放
+  /// 这一集」的可靠事实；远端进度经 sync 写进 [lastPositionMs] 时也根本不产生统计
+  /// 行。v85 迁移仍从它回填存量库（唯一可得的历史近似），新写入一律走本列。
+  IntColumn get lastPlayedAt => integer().nullable()();
 
   /// 导入时间（毫秒戳，同 [EpubBooks].importedAt / [SrtBooks].importedAt int
   /// 范式）；null = 旧数据无导入时间。v57 前是 drift DateTime（Unix 秒存储），

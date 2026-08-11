@@ -403,3 +403,45 @@ avoidance are computed from one source instead of two guesses.
 
 Source-guard test: `fushi/test/pages/video_subtitle_push_up_guard_test.dart`
 (`BUG-1224：桌面 theme 与字幕避让读同一份进度条几何…`).
+
+## BUG-1485: host-injectable horizontal drag-to-seek mapping (`horizontalSeekResolver`)
+
+`lib/media_kit_video_controls/src/controls/material.dart` — `HorizontalSeekResolver`
+typedef, `MaterialVideoControlsThemeData` (+ constructor / `copyWith`), the
+`swipeDuration` State field and `onHorizontalDragUpdate` / `onHorizontalDragEnd`.
+
+Upstream maps the mobile horizontal drag-to-seek gesture with
+`seconds = dragDx * duration / horizontalGestureSensitivity` (default divisor
+1000), i.e. **the seek amount per pixel is proportional to the video's total
+duration**. On a 2-hour movie that is 7.2 seconds per logical pixel — a ~400dp
+phone screen width spans 48 minutes, so the lightest flick throws the playhead
+across half the film (user report: "一拽就起飞"). On a 3-minute clip the very
+same formula is far too coarse in the other direction.
+
+The patch:
+
+- adds `typedef HorizontalSeekResolver` (named params: `dragDx`, `surfaceWidth`,
+  `duration`, `position`; returns the signed delta) and an optional
+  `final HorizontalSeekResolver? horizontalSeekResolver;` theme field;
+- `onHorizontalDragUpdate` calls the resolver when non-null and returns early;
+  when `null` the upstream formula runs verbatim (including the
+  `relativePosition` range check), so pub.dev behaviour is preserved;
+- **retypes** the `swipeDuration` State field from `int` (whole seconds) to
+  `Duration`, so a resolver can express sub-second deltas — the old whole-second
+  quantisation made fine scrubbing impossible. All three read sites
+  (`_seekBarDeltaValueNotifier`, `seekIndicatorBuilder`, the built-in fallback
+  HUD text) were updated;
+- clears `swipeDuration` in `onHorizontalDragEnd`, so a following degenerate drag
+  (one that never reaches a second update) cannot re-apply the previous drag's
+  delta on release.
+
+`horizontalGestureSensitivity` is left in place and is simply ignored while a
+resolver is installed.
+
+Hibiki injects `VideoHorizontalSeekGesture.resolveDelta` (duration-decoupled
+"one screen width = N seconds" + power damping + a user-selectable sensitivity
+step) through `_mobileControlsTheme` only. The desktop theme has no horizontal
+drag gesture at all, so mouse / keyboard seeking is untouched.
+
+Source-guard test: `fushi/test/pages/video_horizontal_seek_test.dart`
+(group `BUG-1485: 横滑 seek 换算模型接线守卫`).

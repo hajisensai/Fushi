@@ -7,6 +7,7 @@ import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
+import 'package:fushi/src/media/override_title_key.dart';
 import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/sync/backup_merge_engine.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
@@ -608,6 +609,11 @@ class BackupService {
   ///   - `local_audio_dbs`         -> local-audio registry (`localAudio`, BUG-816)
   ///   - `audio_source_configs`    -> audio-source config (`localAudio`, BUG-816)
   ///   - font catalog + legacy font prefs -> font registry (`fonts`, BUG-816)
+  ///   - `*override_title://*`     -> 用户给书改的名字，是**内容**不是设置
+  ///     (BUG-1488)。`ProfileKeys.isExcludedPref` 早就这么归类（改名不进 Profile
+  ///     快照），这里却把它当 app 设置 strip 掉 —— 不勾 `settings` 导出，用户
+  ///     所有书的改名一并消失（视频改名落在 `video_books.title` 列上，不受影响，
+  ///     所以这条不对称只砸书）。
   /// BUG-816: `sync_*` behaviour toggles ARE settings (see `sync_repository.dart`
   /// — they are treated as user settings that travel), so they are NO LONGER
   /// excepted here: unticking `settings` now strips them from the export and the
@@ -632,8 +638,14 @@ class BackupService {
         .map((String k) => "'${k.replaceAll("'", "''")}'")
         .join(', ');
     return "key NOT LIKE 'audiobook_pos_%' "
-        'AND key NOT IN ($notIn)';
+        'AND key NOT IN ($notIn) '
+        'AND $_notOverrideTitleSql';
   }
+
+  /// 「这行 pref 不是书名 override」的 SQL 判据。用 `instr` 而非 `LIKE '%…%'`：
+  /// 前缀里的 `_` 在 LIKE 里是通配符，`instr` 是逐字节子串匹配，零歧义。
+  static const String _notOverrideTitleSql =
+      "instr(key, '$kOverrideTitleKeyMarker') = 0";
 
   /// Predicate for the keep-THIS-device-settings restore ([_reapplySettingsLayer],
   /// the `importSettings=false` overwrite path). Restores from bak every pref row
@@ -646,6 +658,8 @@ class BackupService {
   ///     backup's registration so the `.db` files landed but no source was
   ///     registered → imported local audio silently stopped working).
   ///   - font catalog + legacy font prefs -> font registry (the `fonts` category)
+  ///   - `*override_title://*`  -> 用户给书改的名字是内容，跟着导入的备份走
+  ///     （BUG-1488；与 [settingsPrefPredicate] 的内容/设置切分保持对称）
   /// UNLIKE [settingsPrefPredicate] this KEEPS `sync_*` restored from bak: the
   /// keep-settings path writes no `{'mode':'prefs'}` sidecar and never calls
   /// [_applyPreservedConfig], so this wholesale restore is the ONLY place the
@@ -666,7 +680,8 @@ class BackupService {
     final String notIn = contentRegistryKeys
         .map((String k) => "'${k.replaceAll("'", "''")}'")
         .join(', ');
-    return "key NOT LIKE 'audiobook_pos_%' AND key NOT IN ($notIn)";
+    return "key NOT LIKE 'audiobook_pos_%' AND key NOT IN ($notIn) "
+        'AND $_notOverrideTitleSql';
   }
 
   /// Sidecar file holding this device's sync config across an import. Written

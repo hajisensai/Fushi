@@ -448,6 +448,25 @@ extension _VideoSubtitle on _VideoFushiPageState {
     });
   }
 
+  /// **纯映射**：把 [SubtitleCueLoadFailure] 翻成给用户看的一句话。
+  ///
+  /// BUG-1490：原来五种失败共用一句「可能是图形或不支持的字幕轨」，用户拿一个
+  /// 明明是文本 ASS 的文件看到「不支持」，会去换字幕而不是查真正的问题。
+  /// 现在只有**真的**跟轨类型/格式有关的两种才这么说，「读不出 / 解不出」另给一句。
+  String _subtitleFailureMessage(
+    SubtitleCueLoadFailure failure,
+    String label,
+  ) {
+    switch (failure) {
+      case SubtitleCueLoadFailure.unsupportedFormat:
+      case SubtitleCueLoadFailure.extractionFailed:
+        return t.video_subtitle_load_failed(label: label);
+      case SubtitleCueLoadFailure.fileUnreadable:
+      case SubtitleCueLoadFailure.parseFailed:
+        return t.video_subtitle_read_failed(label: label);
+    }
+  }
+
   /// 选中某副字幕源（TODO-857 / TODO-1312）：抽 cue → [VideoPlayerController.setSecondaryCues]
   /// 交给 Flutter overlay 副层渲染（**不再** libmpv `secondary-sid` 自渲染）→ 持久化
   /// `embedded:<n>` / 外挂路径 → setState。副字幕因此与主字幕同款可逐字符查词。与主字幕
@@ -460,20 +479,21 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final String? videoPath = _currentVideoPath;
     if (videoPath == null) return false;
     _showSubtitleLoadingOverlay();
-    final List<AudioCue> cues;
+    final SubtitleCueLoadResult result;
     try {
-      cues = await loadCuesForSource(source, videoPath, widget.bookUid);
+      result = await loadSubtitleCueResult(source, videoPath, widget.bookUid);
     } finally {
       _hideSubtitleLoadingOverlay();
     }
     if (!mounted) return false;
-    if (cues.isEmpty) {
+    if (result.isFailure) {
       _showOsd(
-        t.video_subtitle_load_failed(label: source.label),
+        _subtitleFailureMessage(result.failure!, source.label),
         severity: ToastSeverity.error,
       );
       return false;
     }
+    final List<AudioCue> cues = result.cues;
     controller.setSecondaryCues(cues);
     final String persisted = source.toPersistedValue();
     await widget.repo.updateSecondarySubtitleSource(widget.bookUid, persisted);
@@ -1019,23 +1039,25 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // ~20s。期间给一个不可关的加载遮罩，否则底栏菜单一关、画面字幕没变，用户会以为
     // 「点了没反应、没切换过去」。抽取走单趟全轨缓存，同一视频后续切换瞬时命中。
     _showSubtitleLoadingOverlay();
-    final List<AudioCue> cues;
+    final SubtitleCueLoadResult result;
     try {
-      cues = await loadCuesForSource(source, videoPath, widget.bookUid);
+      result = await loadSubtitleCueResult(source, videoPath, widget.bookUid);
     } finally {
       _hideSubtitleLoadingOverlay();
     }
     if (!mounted) return false;
-    // 抽取/解析后无任何 cue（图形字幕、ffmpeg 缺失、轨损坏等）：诚实告知失败，
-    // **不切换、不持久化**——避免谎报「已切换」却空屏，也避免用一个坏内封轨覆盖掉
-    // 当前正常工作的字幕源（下次进来还是空）。
-    if (cues.isEmpty) {
+    // 抽取/解析后无任何 cue（图形字幕、ffmpeg 缺失、轨损坏、文件读不出等）：诚实告知
+    // 失败，**不切换、不持久化**——避免谎报「已切换」却空屏，也避免用一个坏内封轨覆盖
+    // 掉当前正常工作的字幕源（下次进来还是空）。文案按失败原因分流，见
+    // [_subtitleFailureMessage]（BUG-1490）。
+    if (result.isFailure) {
       _showOsd(
-        t.video_subtitle_load_failed(label: source.label),
+        _subtitleFailureMessage(result.failure!, source.label),
         severity: ToastSeverity.error,
       );
       return false;
     }
+    final List<AudioCue> cues = result.cues;
     controller.setCues(cues);
     // 选了文本字幕源就关掉 libmpv 画面字幕，避免与可点 overlay 双重渲染。
     await controller.selectSubtitleTrack(SubtitleTrack.no());

@@ -114,7 +114,9 @@ void main() {
     expect(auth, 'Basic ${base64Encode(utf8.encode('hibiki:secret'))}');
   });
 
-  test('401 抛 SyncAuthError 且不再试下一个候选（共用同一 token）', () async {
+  // BUG-1550：401 只否掉**这一台**。全部候选都拒了才抛 SyncAuthError——调用方
+  // （BUG-1185 的查重 fail-soft）仍能据此区分「没查成」与「查过了没有」。
+  test('全部候选都 401 时才抛 SyncAuthError', () async {
     final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = await _repo(
@@ -134,7 +136,59 @@ void main() {
     );
 
     await expectLater(_post(transport), throwsA(isA<SyncAuthError>()));
-    expect(calls, 1, reason: '一次拒绝即全部失败，不该拿同一个 token 再试别的候选');
+    expect(calls, 2, reason: '一台拒绝不代表其余都拒绝，必须问完');
+  });
+
+  // BUG-1550 核心回归：第一台对端吊销了我的凭据，第二台仍应正常服务。
+  test('前一台 401 不再株连后一台，且各用各的 per-peer token', () async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = await _repo(
+      db: db,
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(url: 'http://a:8765', token: 'token-a'),
+        FushiClientUrl(url: 'http://b:8765', token: 'token-b'),
+      ],
+      token: 'global-token',
+    );
+    final Map<String, String?> authByHost = <String, String?>{};
+    final InterconnectPostTransport transport = InterconnectPostTransport(
+      repo: repo,
+      httpClient: MockClient((http.Request request) async {
+        authByHost[request.url.host] = request.headers['Authorization'];
+        if (request.url.host == 'a') return http.Response('no', 401);
+        return http.Response(jsonEncode(<String, dynamic>{'ok': true}), 200);
+      }),
+    );
+
+    final InterconnectPostOutcome outcome = await _post(transport);
+    expect(outcome.json?['ok'], isTrue);
+    expect(authByHost['a'],
+        'Basic ${base64Encode(utf8.encode('hibiki:token-a'))}');
+    expect(authByHost['b'],
+        'Basic ${base64Encode(utf8.encode('hibiki:token-b'))}');
+  });
+
+  // 老配置（行上无 token）回落全局键，升级路径零破坏。
+  test('行上无 token 的候选回落全局 token', () async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = await _repo(
+      db: db,
+      urls: const <FushiClientUrl>[FushiClientUrl(url: 'http://legacy:8765')],
+      token: 'global-token',
+    );
+    String? auth;
+    final InterconnectPostTransport transport = InterconnectPostTransport(
+      repo: repo,
+      httpClient: MockClient((http.Request request) async {
+        auth = request.headers['Authorization'];
+        return http.Response(jsonEncode(<String, dynamic>{'ok': true}), 200);
+      }),
+    );
+
+    await _post(transport);
+    expect(auth, 'Basic ${base64Encode(utf8.encode('hibiki:global-token'))}');
   });
 
   test('404/405 视为老 host 无此端点，继续下一个候选', () async {

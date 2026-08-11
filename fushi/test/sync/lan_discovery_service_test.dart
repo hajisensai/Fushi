@@ -20,6 +20,33 @@ BonsoirService _resolved({
     );
 
 void main() {
+  // BUG-1554 守卫：dispose 之后 startDiscovery 必须是 no-op。
+  //
+  // `_init` 的形状是「先 register 再 await startDiscovery()」，用户在这个 await 窗口
+  // 里关掉设置页时 dispose() 已经跑完并 unregister 了；旧实现照样新起一个原生 Bonsoir
+  // browser —— 既不在 controller 的活跃集合里、也没有 owner，正是 TODO-036/BUG-191
+  // 要防的「引擎拆了事件还在派发」崩溃源。守卫用「没有平台通道也不抛」做判别器：
+  // 一旦回到「无条件 new BonsoirDiscovery + initialize」，这条会因缺 MethodChannel
+  // 实现而失败。
+  group('LanDiscoveryService lifecycle', () {
+    test('startDiscovery after dispose is a no-op', () async {
+      final LanDiscoveryService service = LanDiscoveryService(deviceId: 'self');
+      await service.dispose();
+      expect(service.isDisposed, isTrue);
+      await service.startDiscovery();
+      expect(service.hasActiveBrowser, isFalse,
+          reason: 'dispose 之后再起 browser 就是没人停得掉的孤儿');
+      expect(service.currentDevices, isEmpty);
+    });
+
+    test('dispose is idempotent and never touches a closed stream', () async {
+      final LanDiscoveryService service = LanDiscoveryService(deviceId: 'self');
+      await service.dispose();
+      await service.dispose();
+      expect(service.isDisposed, isTrue);
+    });
+  });
+
   group('FushiDevice', () {
     test('serializes to and from JSON', () {
       final device = FushiDevice(

@@ -462,13 +462,26 @@ hello async vtt
         ),
       ).readAsStringSync();
 
+      // BUG-1490 起「读文件 + 解析」抽成共享的 _readAndParse（为的是把失败原因
+      // 分成 fileUnreadable / parseFailed 两类）。TODO-475 的意图不变：视频字幕
+      // 加载路径必须经**异步** parser 入口（大文件走 isolate），不能退回同步
+      // parseString。所以这里既钉共享尾段用异步入口，也钉两个 loader 都必须经它
+      // ——否则谁绕过去自己 readAsString + 同步解析，本守卫照样红。
       expect(
-        _functionBody(source, 'Future<List<AudioCue>> _loadEmbeddedCues'),
+        _functionBody(source, 'Future<SubtitleCueLoadResult> _readAndParse'),
         contains('await parseSubtitleContentAsync('),
       );
       expect(
-        _functionBody(source, 'Future<List<AudioCue>> _loadExternalCues'),
-        contains('await parseSubtitleContentAsync('),
+        _functionBody(
+            source, 'Future<SubtitleCueLoadResult> _loadEmbeddedCues'),
+        contains('_readAndParse('),
+      );
+      expect(
+        _functionBody(
+          source,
+          'Future<SubtitleCueLoadResult> loadExternalSubtitleCueResult',
+        ),
+        contains('_readAndParse('),
       );
     });
   });
@@ -1552,7 +1565,25 @@ String _assTimestamp(int millis) {
 String _functionBody(String source, String signature) {
   final int start = source.indexOf(signature);
   if (start < 0) return '';
-  final int open = source.indexOf('{', start);
+  // 先跳过整个参数表：命名可选参数本身就是一对 `{...}`，直接找第一个 `{` 会把
+  // 参数表当函数体截走（守卫会变成永远看不到函数体的假绿）。
+  final int paramsOpen = source.indexOf('(', start);
+  if (paramsOpen < 0) return '';
+  int parenDepth = 0;
+  int paramsClose = -1;
+  for (int i = paramsOpen; i < source.length; i++) {
+    if (source[i] == '(') {
+      parenDepth++;
+    } else if (source[i] == ')') {
+      parenDepth--;
+      if (parenDepth == 0) {
+        paramsClose = i;
+        break;
+      }
+    }
+  }
+  if (paramsClose < 0) return '';
+  final int open = source.indexOf('{', paramsClose);
   if (open < 0) return '';
   int depth = 0;
   for (int i = open; i < source.length; i++) {

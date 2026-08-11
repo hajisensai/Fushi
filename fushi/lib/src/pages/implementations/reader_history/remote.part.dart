@@ -167,7 +167,9 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       // 书卡长按一致（TODO-768 / BUG-416）。
       onLongPress: () => _showRemoteBookDialog(book),
       child: _bookCardLayout(
-        title: book.title,
+        // BUG-1488：上屏名走 host 下发的显示名（host 改过名即用改后的），身份键
+        // （safeKey / _downloadingBooks / downloadId）仍恒用 raw title。
+        title: book.displayName,
         cover: _remoteBookCoverWithCloudBadge(book, safeKey),
         // TODO-655a：远端书卡右上角是下载按钮 / 下载进度，类型徽章（有声书耳机 /
         // 普通书本）放左上角，与本地书卡（buildMediaItemContent）的类型语义一致。
@@ -207,7 +209,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
         cover: _buildRemoteBookCover(book),
-        title: book.title,
+        title: book.displayName,
         showLaunchAction: false,
         quickActions: <DialogQuickAction>[
           DialogQuickAction(
@@ -249,7 +251,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     showAppDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
-        title: Text(book.title),
+        title: Text(book.displayName),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -277,7 +279,8 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     RemoteBookInfo book,
     InterconnectSyncBackend backend,
   ) async {
-    final bool? confirmed = await _confirmRemoteDelete(book.title);
+    // 确认文案是给人看的 → 显示名（BUG-1488）；下面的删除仍走 downloadId 身份键。
+    final bool? confirmed = await _confirmRemoteDelete(book.displayName);
     if (confirmed != true) return;
     bool failed = false;
     try {
@@ -429,6 +432,10 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           remoteTombstones: book.tagTombstones,
         );
       }
+      // BUG-1488：把 host 上的自定义书名一并落成本地 override，否则下载后的本地卡
+      // 又变回原始书名（本地书的显示名只认 override 偏好，raw title 来自 EPUB 元
+      // 数据）。放在标签之后、进度之前，与它们同样独立吞错。
+      await _adoptRemoteBookDisplayTitle(book, localBookKey);
       // BUG-813：把该书在 host 端的阅读进度 + 有声书播放断点一并拉回本地，手动下载
       // 远端书时不再丢「阅读记录」（放在有声书下载之前、独立吞错，保证进度回填不被
       // 有声书失败连带跳过）。
@@ -485,6 +492,38 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(t.remote_book_downloaded)),
     );
+  }
+
+  /// EPUB 导入成功后，把 host 端用户改过的书名落成本地 override（BUG-1488）。
+  ///
+  /// 本地书的显示名唯一来源是 `override_title://` 偏好；下载落库的 raw title 来自
+  /// EPUB 元数据（还可能因同名冲突加了 `(2)` 后缀），所以不落 override 的话，母
+  /// 设备改的名字在子设备上永远看不到。
+  ///
+  /// 裁决走 last-write-wins（BUG-1502）：host 的改名戳（`displayTitleAt`）严格晚于
+  /// 本机这行的戳才覆盖，平局保留本机，本机没有 override 则无条件采纳。所以 host
+  /// 的**第二次**改名也能落到「本机也改过名」的这台设备上，而旧 host（不带时刻 →
+  /// 0）退化成原来的 insert-if-absent，绝不覆盖本机用户刚改的名字。
+  /// host 没改过名（[RemoteBookInfo.displayTitle] 为 null）时是纯 no-op。
+  Future<void> _adoptRemoteBookDisplayTitle(
+    RemoteBookInfo book,
+    String? localBookKey,
+  ) async {
+    final String? remoteTitle = book.displayTitle;
+    if (localBookKey == null || remoteTitle == null || remoteTitle.isEmpty) {
+      return;
+    }
+    try {
+      final ReaderFushiSource source = ReaderFushiSource.instance;
+      await source.adoptOverrideTitleIfNewer(
+        item: source.overrideTitleMediaItemForBookKey(localBookKey),
+        title: remoteTitle,
+        updatedAt: book.displayTitleAt,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderFushiHistoryPage.adoptRemoteBookDisplayTitle', e, stack);
+    }
   }
 
   /// EPUB 导入成功后，把该书在 host 端的**阅读进度**（reader_positions）与**有声书

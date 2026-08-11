@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 // 收藏按钮（音频按钮旁的「☆/★」）曾被 894fe165d 顺手删除，导致 FavoriteWords 表
 // 没有写入入口、getAllFavoriteWords 恒空、收藏夹「全部收藏词」导出为空（TODO-913）。
 // 已复活：与 BUG-123（reader_content_styles.dart 竖排选区 rt/rp 遮罩）无任何耦合，
@@ -52,13 +54,24 @@ void main() {
     final String src =
         File('lib/src/pages/implementations/dictionary_page_mixin.dart')
             .readAsStringSync();
-    expect(src, contains('String get dictionarySourceType => kStatSourceBook'),
+    expect(
+        containsCodeLine(
+            src, 'String get dictionarySourceType => kStatSourceBook'),
+        isTrue,
         reason: '默认归书籍统计');
-    expect(src, contains('Future<bool> onFavoriteEntry('));
-    expect(src, contains('Future<bool> onFavoriteCheck('));
-    expect(src, contains('recordMined()'), reason: '制卡成功应计入统计');
-    expect(src, contains('addMiningCount('));
-    expect(src, contains('onFavoriteEntry: onFavoriteEntry'),
+    expect(containsCodeLine(src, 'Future<bool> onFavoriteEntry('), isTrue);
+    expect(containsCodeLine(src, 'Future<bool> onFavoriteCheck('), isTrue);
+    expect(containsIdentifierCall(src, 'recordMined'), isTrue,
+        reason: '制卡成功应计入统计');
+    // P4 写侧收敛（a8439b2f45）后底层 addMiningCount 由 DB 复合入口独占，
+    // 页面层的落地判据是「记账 helper 体内调 recordMiningEvent」。
+    expect(
+        containsIdentifierCall(
+            methodBody(src, 'Future<void> recordMined() async {'),
+            'recordMiningEvent'),
+        isTrue,
+        reason: '记账必须走 FushiDatabase.recordMiningEvent 复合入口');
+    expect(containsCodeLine(src, 'onFavoriteEntry: onFavoriteEntry'), isTrue,
         reason: 'mixin 要把收藏 handler 接进 layer');
   });
 

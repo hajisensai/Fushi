@@ -163,4 +163,40 @@ void main() {
     expect(find.text(t.download_subscription_empty_body), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('wide subscription header and cards fill the page width',
+      (WidgetTester tester) async {
+    await _pump(
+      tester,
+      size: const Size(1400, 800),
+      subscriptions: <VideoDownloadSubscriptionRow>[_subscription()],
+      onToggle: (_, __) async {},
+      onCheck: (_) async {},
+      onDelete: (_) async {},
+    );
+
+    expect(
+      tester
+          .getSize(
+            find.byKey(
+              const ValueKey<String>('video-subscriptions-header'),
+            ),
+          )
+          .width,
+      greaterThan(1300),
+    );
+    expect(
+      tester
+          .getSize(
+            find.byKey(
+              const ValueKey<String>(
+                'video-subscription-card-subscription-1',
+              ),
+            ),
+          )
+          .width,
+      greaterThan(1300),
+    );
+    expect(tester.takeException(), isNull);
+  });
 }

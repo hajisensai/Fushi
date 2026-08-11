@@ -3,6 +3,7 @@ import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
+import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
@@ -144,6 +145,38 @@ SettingsDestination buildVideoDestination() {
                 settingsContext,
                 (VideoAsbplayerConfig c) =>
                     c.copyWith(doubleTapSeekSeconds: value),
+              );
+            },
+          ),
+          // BUG-1485：触屏横滑调进度的灵敏度。旧实现把「每像素跨多少时间」按视频总
+          // 时长比例换算，长片一拽就起飞；换算模型改成「拖过整屏 = 固定一段时长」
+          // （[VideoHorizontalSeekGesture]），这里让用户在三档之间选。仅移动端可见
+          // ——桌面无横滑手势（鼠标拖进度条 + 键盘 seek 键），显出来是假开关。
+          SettingsSegmentedItem<VideoSeekSensitivity>(
+            id: 'video.playback.drag_seek_sensitivity',
+            title: t.video_setting_drag_seek_sensitivity,
+            subtitle: t.video_setting_drag_seek_sensitivity_hint,
+            icon: Icons.swipe_outlined,
+            visible: (_) => isMobilePlatform,
+            video: VideoPlacement(group: VideoGroup.playback, order: 95),
+            options: <SettingsSegmentOption<VideoSeekSensitivity>>[
+              for (final VideoSeekSensitivity value
+                  in VideoSeekSensitivity.values)
+                SettingsSegmentOption<VideoSeekSensitivity>(
+                  value: value,
+                  label: _videoDragSeekSensitivityLabel(value),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                currentVideoAsbConfig(settingsContext).dragSeekSensitivity,
+            onChanged: (
+              SettingsContext settingsContext,
+              VideoSeekSensitivity value,
+            ) async {
+              await commitVideoAsbConfig(
+                settingsContext,
+                (VideoAsbplayerConfig c) =>
+                    c.copyWith(dragSeekSensitivity: value),
               );
             },
           ),
@@ -1590,5 +1623,18 @@ String _videoSubtitleObscureModeLabel(VideoSubtitleObscureMode mode) {
       return t.video_setting_subtitle_obscure_blur;
     case VideoSubtitleObscureMode.hide:
       return t.video_setting_subtitle_obscure_hide;
+  }
+}
+
+/// 横滑调进度灵敏度三档的本地化标签（BUG-1485）。穷举枚举无 default，新增档编译期
+/// 强制补齐。
+String _videoDragSeekSensitivityLabel(VideoSeekSensitivity value) {
+  switch (value) {
+    case VideoSeekSensitivity.low:
+      return t.video_setting_drag_seek_sensitivity_low;
+    case VideoSeekSensitivity.medium:
+      return t.video_setting_drag_seek_sensitivity_medium;
+    case VideoSeekSensitivity.high:
+      return t.video_setting_drag_seek_sensitivity_high;
   }
 }

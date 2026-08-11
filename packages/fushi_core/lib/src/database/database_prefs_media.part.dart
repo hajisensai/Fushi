@@ -24,7 +24,15 @@ mixin _FushiDbPrefsMedia
     // never observes the new value paired with a stale version.
     await transaction(() async {
       await into(preferences).insertOnConflictUpdate(
-        PreferencesCompanion.insert(key: key, value: value),
+        PreferencesCompanion.insert(
+          key: key,
+          value: value,
+          // BUG-1502: every local write stamps `now`. Without it the upsert
+          // would leave `updated_at` at whatever it was (DO UPDATE SET only
+          // touches columns present in the companion), so a locally renamed
+          // book would keep an ancient stamp and lose the cross-device LWW.
+          updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+        ),
       );
       // Bump the cross-process change signal for every real pref write. Skip
       // the version key itself (a direct write of it — e.g. a sync/backup
@@ -55,9 +63,16 @@ mixin _FushiDbPrefsMedia
   Future<void> setPrefs(Map<String, String> entries) async {
     if (entries.isEmpty) return;
     await transaction(() async {
+      // BUG-1502: one stamp for the whole group — it is ONE logical setting
+      // written atomically, so its rows must not disagree on when that was.
+      final int now = DateTime.now().millisecondsSinceEpoch;
       for (final MapEntry<String, String> entry in entries.entries) {
         await into(preferences).insertOnConflictUpdate(
-          PreferencesCompanion.insert(key: entry.key, value: entry.value),
+          PreferencesCompanion.insert(
+            key: entry.key,
+            value: entry.value,
+            updatedAt: Value<int>(now),
+          ),
         );
       }
       if (entries.keys
@@ -86,7 +101,12 @@ mixin _FushiDbPrefsMedia
               (t) => t.key.equals(key) & t.value.equals(expectedValue),
             ))
           .write(
-        PreferencesCompanion(value: Value<String>(newValue)),
+        PreferencesCompanion(
+          value: Value<String>(newValue),
+          // BUG-1502: same rule as [setPref] — a successful local write is a
+          // write, and must advance the LWW stamp.
+          updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+        ),
       );
       if (updated != 1) return false;
       if (key != FushiDatabase.prefsVersionKey) {
@@ -119,6 +139,61 @@ mixin _FushiDbPrefsMedia
     );
   }
 
+  /// Adopts a preference value that came from ANOTHER device, last-write-wins
+  /// (BUG-1502). Returns whether the row was actually written.
+  ///
+  /// This is the single cross-device merge primitive for preference rows that
+  /// are CONTENT rather than device settings (today: the `override_title://`
+  /// rename rows, BUG-1488). Its three properties are the whole point:
+  ///
+  ///  - **Stamps [updatedAt], not `now`.** Adopting with `now` would make this
+  ///    device's copy permanently the newest, so the origin device's NEXT
+  ///    rename could never land again — exactly the bug this replaces.
+  ///  - **Strictly-newer wins; ties keep the local row.** A tie is either two
+  ///    pre-v84 rows (both stamped 0 = "unknown", see [Preferences.updatedAt])
+  ///    or an old peer that sends no stamp at all (decoded as 0). Keeping local
+  ///    on a tie makes both cases degrade to the previous insert-if-absent
+  ///    behaviour — an old peer can never clobber a name this user just typed.
+  ///  - **Absent row always adopts** (`NOT EXISTS` beats any comparison), so a
+  ///    book this device has never renamed still picks up the peer's name even
+  ///    when the peer sends stamp 0.
+  ///
+  /// Bumps the cross-process prefs version exactly when it writes, so a popup /
+  /// second process re-reads instead of serving a stale cached name.
+  Future<bool> setPrefIfNewer(
+    String key,
+    String value, {
+    required int updatedAt,
+  }) async {
+    return transaction(() async {
+      final PreferenceRow? existing = await (select(preferences)
+            ..where((t) => t.key.equals(key)))
+          .getSingleOrNull();
+      if (existing != null && existing.updatedAt >= updatedAt) return false;
+      await into(preferences).insertOnConflictUpdate(
+        PreferencesCompanion.insert(
+          key: key,
+          value: value,
+          updatedAt: Value<int>(updatedAt),
+        ),
+      );
+      if (key != FushiDatabase.prefsVersionKey) {
+        await _bumpPrefsVersion();
+      }
+      return true;
+    });
+  }
+
+  /// The LWW stamp of one preference row (BUG-1502); null when the row is
+  /// absent. 0 means "written before v84 / by a device that had no clock" —
+  /// see [Preferences.updatedAt].
+  Future<int?> getPrefUpdatedAt(String key) async {
+    final PreferenceRow? row = await (select(preferences)
+          ..where((t) => t.key.equals(key)))
+        .getSingleOrNull();
+    return row?.updatedAt;
+  }
+
   Future<T> getPrefTyped<T>(String key, T defaultValue) async {
     final raw = await getPref(key);
     if (raw == null) return defaultValue;
@@ -136,6 +211,11 @@ mixin _FushiDbPrefsMedia
     final rows = await select(preferences).get();
     return Map.fromEntries(rows.map((r) => MapEntry(r.key, r.value)));
   }
+
+  /// Every preference row WITH its LWW stamp (BUG-1502) — the [getAllPrefs]
+  /// sibling for callers that must ship the stamp across the wire (interconnect
+  /// host book manifest) rather than just display the value.
+  Future<List<PreferenceRow>> getAllPrefRows() => select(preferences).get();
 
   Future<void> migrateLegacyBookmarkPreferences() async {
     if (!await _tableExists('preferences')) {

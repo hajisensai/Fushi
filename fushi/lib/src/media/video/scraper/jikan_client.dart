@@ -17,10 +17,12 @@ import 'package:fushi/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
 import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 import 'package:http/http.dart' as http;
+import 'package:fushi/src/utils/net/app_http.dart';
 
 /// Jikan 搜索客户端。构造可注入 [http.Client]（默认自建）。
 class JikanClient {
-  JikanClient({http.Client? client}) : _client = client ?? http.Client();
+  JikanClient({http.Client? client})
+      : _client = client ?? createAppHttpIoClient();
 
   final http.Client _client;
 

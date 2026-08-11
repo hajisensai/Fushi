@@ -118,7 +118,26 @@ void main() {
                 ),
                 remoteBookImporter: (File file) async {
                   importedFiles.add(file);
-                  return importedBookKey;
+                  final String? key = importedBookKey;
+                  // 真 importer 是「落库 + 返回 bookKey」；假 importer 以前只返回
+                  // 字符串，等于「书根本没进库」。v82（P3 Stage 1b，7a3505ca7a）把
+                  // reader_positions 等四子表的键从 bookKey 切成稳定 uid 之后，下游
+                  // 回填要先 `resolveEpubBookUid(localBookKey)`，查不到就整段跳过
+                  // （remote.part.dart:551 的闸门，契约明写不得用 bookKey 兜底写入）。
+                  // 于是 BUG-813 的进度回填在假 importer 下永远不发生（BUG-1497）。
+                  // 这里补上落库，让假 importer 与真 importer 的**后置条件**一致。
+                  if (key != null) {
+                    await db.insertEpubBook(EpubBooksCompanion.insert(
+                      bookKey: key,
+                      title: key,
+                      epubPath: file.path,
+                      extractDir: pathProviderDir.path,
+                      chapterCount: 1,
+                      chaptersJson: '["a"]',
+                      importedAt: 0,
+                    ));
+                  }
+                  return key;
                 },
                 remoteAudiobookFetcher: (String remoteBookKey) async {
                   fetchedAudiobookKeys.add(remoteBookKey);
@@ -422,16 +441,20 @@ void main() {
         'remote_book_download_Remote_Book',
       )));
       // 轮询直到进度回填落库（下载 → 导入 → 拉进度 upsert 是异步链）。
+      // v82：reader_positions 的键是导入后书行的稳定 uid，不是 bookKey。
       for (int i = 0; i < 60; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 50));
-        if (await db.getReaderPosition('local-book-key') != null) break;
+        final String? uid = await db.resolveEpubBookUid('local-book-key');
+        if (uid != null && await db.getReaderPosition(uid) != null) break;
       }
     });
     await tester.pump();
 
-    // 下载动作把 host 端阅读进度回填进本地 reader_positions（键 = 导入后的本地
-    // bookKey，非 host downloadId）——手动下载不再丢「阅读记录」。
-    final ReaderPositionRow? row = await db.getReaderPosition('local-book-key');
+    // 下载动作把 host 端阅读进度回填进本地 reader_positions（键 = 导入后本地书行的
+    // 稳定 uid，由本地 bookKey 换算，非 host downloadId）——手动下载不再丢「阅读记录」。
+    final String? localUid = await db.resolveEpubBookUid('local-book-key');
+    expect(localUid, isNotNull, reason: '导入后本地书行必须存在且带稳定 uid');
+    final ReaderPositionRow? row = await db.getReaderPosition(localUid!);
     expect(row, isNotNull,
         reason: 'BUG-813：下载远端书必须把 host 阅读进度落进 reader_positions');
     expect(row!.sectionIndex, 3);

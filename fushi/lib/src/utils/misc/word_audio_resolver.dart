@@ -10,6 +10,7 @@ import 'package:fushi/src/sync/fushi_remote_lookup_client.dart'
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/local_audio_db.dart'
     show LocalAudioUnavailableError;
+import 'package:fushi/src/utils/net/app_http.dart';
 
 /// 弱网下的连接超时上限：从 5s 放宽到 8s，减少慢握手被误判为失败（TODO-1057）。
 const Duration kRemoteAudioConnectTimeout = Duration(seconds: 8);
@@ -76,8 +77,7 @@ class WordAudioResolver {
         if (remote != null && remote.isNotEmpty) return remote;
         continue;
       }
-      if (template == fushiRemoteAudioUrl ||
-          template == legacyRemoteAudioUrl) {
+      if (template == fushiRemoteAudioUrl || template == legacyRemoteAudioUrl) {
         final String? remote = await _queryRemoteLegacy(expression, reading);
         if (remote != null && remote.isNotEmpty) return remote;
         continue;
@@ -258,7 +258,12 @@ class WordAudioResolver {
         .replaceAll('{reading}', Uri.encodeComponent(reading));
   }
 
-  static final Dio _dio = Dio(BaseOptions(
+  // BUG-1498：远端发音源默认是公网 Cloudflare Worker，用户也可自填任意源；原先是裸
+  // `Dio(...)` 不走任何代理。经统一装配点后，用户填的 `localhost:5050`（local-audio-
+  // yomichan）/ `localhost:8765`（AnkiConnect local-audio）仍走直连——`isDirectProxyTarget`
+  // 闸门在解析层就把本机目标挡在代理之外。
+  static final Dio _dio = createAppDio(
+      options: BaseOptions(
     connectTimeout: kRemoteAudioConnectTimeout,
     receiveTimeout: kRemoteAudioReceiveTimeout,
   ));

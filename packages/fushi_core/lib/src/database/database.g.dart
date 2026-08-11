@@ -4505,8 +4505,16 @@ class $PreferencesTable extends Preferences
   late final GeneratedColumn<String> value = GeneratedColumn<String>(
       'value', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
   @override
-  List<GeneratedColumn> get $columns => [key, value];
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+      'updated_at', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns => [key, value, updatedAt];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -4529,6 +4537,10 @@ class $PreferencesTable extends Preferences
     } else if (isInserting) {
       context.missing(_valueMeta);
     }
+    if (data.containsKey('updated_at')) {
+      context.handle(_updatedAtMeta,
+          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+    }
     return context;
   }
 
@@ -4542,6 +4554,8 @@ class $PreferencesTable extends Preferences
           .read(DriftSqlType.string, data['${effectivePrefix}key'])!,
       value: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}value'])!,
+      updatedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}updated_at'])!,
     );
   }
 
@@ -4554,12 +4568,34 @@ class $PreferencesTable extends Preferences
 class PreferenceRow extends DataClass implements Insertable<PreferenceRow> {
   final String key;
   final String value;
-  const PreferenceRow({required this.key, required this.value});
+
+  /// 该行最后一次写入的毫秒戳（v84 / BUG-1502）——**跨端 LWW 的比较键**。
+  ///
+  /// 绝大多数偏好是设备设置、从不跨端合并，这一列对它们只是无害的记账。它存在
+  /// 是因为**有些偏好行是内容**：书的改名（`override_title://` 覆盖行，BUG-1488）
+  /// 跟着书走、必须跨端合并，而 `preferences` 原先只有 key/value 两列，合并端
+  /// 无从判断「谁更新」，只能退化成 insert-if-absent —— 母设备**第二次**改名
+  /// 就传不到已有 override 的子设备了。
+  ///
+  /// **默认 0 = 「时刻未知」，是刻意的取舍**：v84 迁移不给存量行填迁移时刻。
+  /// 填迁移时刻会让「谁赢」由两台设备各自的升级时间决定（后升级的一侧无条件
+  /// 覆盖先升级的一侧，用户什么都没做却发生覆盖）；取 0 则存量行彼此平局，
+  /// 而 LWW 的平局规则是「保留本机」——正好等于升级前的 insert-if-absent 行为，
+  /// 零回归；任何一侧**真正改过一次名**之后（时刻 > 0）立刻胜出。同理，旧对端
+  /// 发来的无时刻数据一律按 0 收，永远不会覆盖本机改过的名字。
+  ///
+  /// 写入方：[FushiDatabase.setPref] / `setPrefs` / `compareAndSetPref` 填
+  /// `now`；跨端采纳走 [FushiDatabase.setPrefIfNewer]，**填对端的时刻而不是
+  /// now**（填 now 会让本机永远最新，母设备的下一次改名再也传不进来）。
+  final int updatedAt;
+  const PreferenceRow(
+      {required this.key, required this.value, required this.updatedAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['key'] = Variable<String>(key);
     map['value'] = Variable<String>(value);
+    map['updated_at'] = Variable<int>(updatedAt);
     return map;
   }
 
@@ -4567,6 +4603,7 @@ class PreferenceRow extends DataClass implements Insertable<PreferenceRow> {
     return PreferencesCompanion(
       key: Value(key),
       value: Value(value),
+      updatedAt: Value(updatedAt),
     );
   }
 
@@ -4576,6 +4613,7 @@ class PreferenceRow extends DataClass implements Insertable<PreferenceRow> {
     return PreferenceRow(
       key: serializer.fromJson<String>(json['key']),
       value: serializer.fromJson<String>(json['value']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
     );
   }
   @override
@@ -4584,17 +4622,21 @@ class PreferenceRow extends DataClass implements Insertable<PreferenceRow> {
     return <String, dynamic>{
       'key': serializer.toJson<String>(key),
       'value': serializer.toJson<String>(value),
+      'updatedAt': serializer.toJson<int>(updatedAt),
     };
   }
 
-  PreferenceRow copyWith({String? key, String? value}) => PreferenceRow(
+  PreferenceRow copyWith({String? key, String? value, int? updatedAt}) =>
+      PreferenceRow(
         key: key ?? this.key,
         value: value ?? this.value,
+        updatedAt: updatedAt ?? this.updatedAt,
       );
   PreferenceRow copyWithCompanion(PreferencesCompanion data) {
     return PreferenceRow(
       key: data.key.present ? data.key.value : this.key,
       value: data.value.present ? data.value.value : this.value,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
   }
 
@@ -4602,53 +4644,64 @@ class PreferenceRow extends DataClass implements Insertable<PreferenceRow> {
   String toString() {
     return (StringBuffer('PreferenceRow(')
           ..write('key: $key, ')
-          ..write('value: $value')
+          ..write('value: $value, ')
+          ..write('updatedAt: $updatedAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(key, value);
+  int get hashCode => Object.hash(key, value, updatedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is PreferenceRow &&
           other.key == this.key &&
-          other.value == this.value);
+          other.value == this.value &&
+          other.updatedAt == this.updatedAt);
 }
 
 class PreferencesCompanion extends UpdateCompanion<PreferenceRow> {
   final Value<String> key;
   final Value<String> value;
+  final Value<int> updatedAt;
   final Value<int> rowid;
   const PreferencesCompanion({
     this.key = const Value.absent(),
     this.value = const Value.absent(),
+    this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   PreferencesCompanion.insert({
     required String key,
     required String value,
+    this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : key = Value(key),
         value = Value(value);
   static Insertable<PreferenceRow> custom({
     Expression<String>? key,
     Expression<String>? value,
+    Expression<int>? updatedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (key != null) 'key': key,
       if (value != null) 'value': value,
+      if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
 
   PreferencesCompanion copyWith(
-      {Value<String>? key, Value<String>? value, Value<int>? rowid}) {
+      {Value<String>? key,
+      Value<String>? value,
+      Value<int>? updatedAt,
+      Value<int>? rowid}) {
     return PreferencesCompanion(
       key: key ?? this.key,
       value: value ?? this.value,
+      updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -4662,6 +4715,9 @@ class PreferencesCompanion extends UpdateCompanion<PreferenceRow> {
     if (value.present) {
       map['value'] = Variable<String>(value.value);
     }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -4673,6 +4729,7 @@ class PreferencesCompanion extends UpdateCompanion<PreferenceRow> {
     return (StringBuffer('PreferencesCompanion(')
           ..write('key: $key, ')
           ..write('value: $value, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -8577,6 +8634,12 @@ class $VideoBooksTable extends VideoBooks
       type: DriftSqlType.int,
       requiredDuringInsert: false,
       defaultValue: const Constant(0));
+  static const VerificationMeta _lastPlayedAtMeta =
+      const VerificationMeta('lastPlayedAt');
+  @override
+  late final GeneratedColumn<int> lastPlayedAt = GeneratedColumn<int>(
+      'last_played_at', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
   static const VerificationMeta _importedAtMeta =
       const VerificationMeta('importedAt');
   @override
@@ -8643,6 +8706,7 @@ class $VideoBooksTable extends VideoBooks
         embeddedSubtitleTrack,
         coverPath,
         lastPositionMs,
+        lastPlayedAt,
         importedAt,
         playlistJson,
         currentEpisode,
@@ -8714,6 +8778,12 @@ class $VideoBooksTable extends VideoBooks
           _lastPositionMsMeta,
           lastPositionMs.isAcceptableOrUnknown(
               data['last_position_ms']!, _lastPositionMsMeta));
+    }
+    if (data.containsKey('last_played_at')) {
+      context.handle(
+          _lastPlayedAtMeta,
+          lastPlayedAt.isAcceptableOrUnknown(
+              data['last_played_at']!, _lastPlayedAtMeta));
     }
     if (data.containsKey('imported_at')) {
       context.handle(
@@ -8787,6 +8857,8 @@ class $VideoBooksTable extends VideoBooks
           .read(DriftSqlType.string, data['${effectivePrefix}cover_path']),
       lastPositionMs: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}last_position_ms'])!,
+      lastPlayedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}last_played_at']),
       importedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}imported_at']),
       playlistJson: attachedDatabase.typeMapping
@@ -8826,6 +8898,21 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   final int? embeddedSubtitleTrack;
   final String? coverPath;
   final int lastPositionMs;
+
+  /// 最近一次播放的毫秒时刻（schema v85，BUG-1542）；null = 从未播放 / v85 前旧行
+  /// 回填不到。与 [lastPositionMs] **成对写入**（同一个 `updateVideoBookPosition`
+  /// 事务），使「这一行有进度」和「这进度是什么时候留下的」不可能失配。
+  ///
+  /// 有了它，合集续播的锚点才能是「用户刚才在看哪一集」。此前 `VideoBooks` 只有
+  /// 位置没有时刻，`continueMemberIndex` 只能拿「排序位置最靠后的有痕迹成员」当
+  /// 代理——等价于假设用户永远按集号单调前进，用户回头看 PV/补看早期某集后就选错
+  /// （BUG-1542：刚退出 PV 第 1 集，头部显示「继续看 第233集」）。
+  ///
+  /// 为什么不复用 `video_watch_statistics.lastModified`：那是**按天聚合**行的
+  /// mtime，且云聚合合并（`setVideoWatchStatistic`）会改写它 → 不是「本机最近播放
+  /// 这一集」的可靠事实；远端进度经 sync 写进 [lastPositionMs] 时也根本不产生统计
+  /// 行。v85 迁移仍从它回填存量库（唯一可得的历史近似），新写入一律走本列。
+  final int? lastPlayedAt;
 
   /// 导入时间（毫秒戳，同 [EpubBooks].importedAt / [SrtBooks].importedAt int
   /// 范式）；null = 旧数据无导入时间。v57 前是 drift DateTime（Unix 秒存储），
@@ -8870,6 +8957,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       this.embeddedSubtitleTrack,
       this.coverPath,
       required this.lastPositionMs,
+      this.lastPlayedAt,
       this.importedAt,
       this.playlistJson,
       required this.currentEpisode,
@@ -8901,6 +8989,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       map['cover_path'] = Variable<String>(coverPath);
     }
     map['last_position_ms'] = Variable<int>(lastPositionMs);
+    if (!nullToAbsent || lastPlayedAt != null) {
+      map['last_played_at'] = Variable<int>(lastPlayedAt);
+    }
     if (!nullToAbsent || importedAt != null) {
       map['imported_at'] = Variable<int>(importedAt);
     }
@@ -8945,6 +9036,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           ? const Value.absent()
           : Value(coverPath),
       lastPositionMs: Value(lastPositionMs),
+      lastPlayedAt: lastPlayedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastPlayedAt),
       importedAt: importedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(importedAt),
@@ -8983,6 +9077,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           serializer.fromJson<int?>(json['embeddedSubtitleTrack']),
       coverPath: serializer.fromJson<String?>(json['coverPath']),
       lastPositionMs: serializer.fromJson<int>(json['lastPositionMs']),
+      lastPlayedAt: serializer.fromJson<int?>(json['lastPlayedAt']),
       importedAt: serializer.fromJson<int?>(json['importedAt']),
       playlistJson: serializer.fromJson<String?>(json['playlistJson']),
       currentEpisode: serializer.fromJson<int>(json['currentEpisode']),
@@ -9007,6 +9102,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       'embeddedSubtitleTrack': serializer.toJson<int?>(embeddedSubtitleTrack),
       'coverPath': serializer.toJson<String?>(coverPath),
       'lastPositionMs': serializer.toJson<int>(lastPositionMs),
+      'lastPlayedAt': serializer.toJson<int?>(lastPlayedAt),
       'importedAt': serializer.toJson<int?>(importedAt),
       'playlistJson': serializer.toJson<String?>(playlistJson),
       'currentEpisode': serializer.toJson<int>(currentEpisode),
@@ -9028,6 +9124,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           Value<int?> embeddedSubtitleTrack = const Value.absent(),
           Value<String?> coverPath = const Value.absent(),
           int? lastPositionMs,
+          Value<int?> lastPlayedAt = const Value.absent(),
           Value<int?> importedAt = const Value.absent(),
           Value<String?> playlistJson = const Value.absent(),
           int? currentEpisode,
@@ -9052,6 +9149,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
             : this.embeddedSubtitleTrack,
         coverPath: coverPath.present ? coverPath.value : this.coverPath,
         lastPositionMs: lastPositionMs ?? this.lastPositionMs,
+        lastPlayedAt:
+            lastPlayedAt.present ? lastPlayedAt.value : this.lastPlayedAt,
         importedAt: importedAt.present ? importedAt.value : this.importedAt,
         playlistJson:
             playlistJson.present ? playlistJson.value : this.playlistJson,
@@ -9085,6 +9184,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       lastPositionMs: data.lastPositionMs.present
           ? data.lastPositionMs.value
           : this.lastPositionMs,
+      lastPlayedAt: data.lastPlayedAt.present
+          ? data.lastPlayedAt.value
+          : this.lastPlayedAt,
       importedAt:
           data.importedAt.present ? data.importedAt.value : this.importedAt,
       playlistJson: data.playlistJson.present
@@ -9118,6 +9220,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           ..write('embeddedSubtitleTrack: $embeddedSubtitleTrack, ')
           ..write('coverPath: $coverPath, ')
           ..write('lastPositionMs: $lastPositionMs, ')
+          ..write('lastPlayedAt: $lastPlayedAt, ')
           ..write('importedAt: $importedAt, ')
           ..write('playlistJson: $playlistJson, ')
           ..write('currentEpisode: $currentEpisode, ')
@@ -9141,6 +9244,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       embeddedSubtitleTrack,
       coverPath,
       lastPositionMs,
+      lastPlayedAt,
       importedAt,
       playlistJson,
       currentEpisode,
@@ -9162,6 +9266,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           other.embeddedSubtitleTrack == this.embeddedSubtitleTrack &&
           other.coverPath == this.coverPath &&
           other.lastPositionMs == this.lastPositionMs &&
+          other.lastPlayedAt == this.lastPlayedAt &&
           other.importedAt == this.importedAt &&
           other.playlistJson == this.playlistJson &&
           other.currentEpisode == this.currentEpisode &&
@@ -9182,6 +9287,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
   final Value<int?> embeddedSubtitleTrack;
   final Value<String?> coverPath;
   final Value<int> lastPositionMs;
+  final Value<int?> lastPlayedAt;
   final Value<int?> importedAt;
   final Value<String?> playlistJson;
   final Value<int> currentEpisode;
@@ -9201,6 +9307,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.embeddedSubtitleTrack = const Value.absent(),
     this.coverPath = const Value.absent(),
     this.lastPositionMs = const Value.absent(),
+    this.lastPlayedAt = const Value.absent(),
     this.importedAt = const Value.absent(),
     this.playlistJson = const Value.absent(),
     this.currentEpisode = const Value.absent(),
@@ -9221,6 +9328,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.embeddedSubtitleTrack = const Value.absent(),
     this.coverPath = const Value.absent(),
     this.lastPositionMs = const Value.absent(),
+    this.lastPlayedAt = const Value.absent(),
     this.importedAt = const Value.absent(),
     this.playlistJson = const Value.absent(),
     this.currentEpisode = const Value.absent(),
@@ -9243,6 +9351,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     Expression<int>? embeddedSubtitleTrack,
     Expression<String>? coverPath,
     Expression<int>? lastPositionMs,
+    Expression<int>? lastPlayedAt,
     Expression<int>? importedAt,
     Expression<String>? playlistJson,
     Expression<int>? currentEpisode,
@@ -9265,6 +9374,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
         'embedded_subtitle_track': embeddedSubtitleTrack,
       if (coverPath != null) 'cover_path': coverPath,
       if (lastPositionMs != null) 'last_position_ms': lastPositionMs,
+      if (lastPlayedAt != null) 'last_played_at': lastPlayedAt,
       if (importedAt != null) 'imported_at': importedAt,
       if (playlistJson != null) 'playlist_json': playlistJson,
       if (currentEpisode != null) 'current_episode': currentEpisode,
@@ -9287,6 +9397,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       Value<int?>? embeddedSubtitleTrack,
       Value<String?>? coverPath,
       Value<int>? lastPositionMs,
+      Value<int?>? lastPlayedAt,
       Value<int?>? importedAt,
       Value<String?>? playlistJson,
       Value<int>? currentEpisode,
@@ -9308,6 +9419,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
           embeddedSubtitleTrack ?? this.embeddedSubtitleTrack,
       coverPath: coverPath ?? this.coverPath,
       lastPositionMs: lastPositionMs ?? this.lastPositionMs,
+      lastPlayedAt: lastPlayedAt ?? this.lastPlayedAt,
       importedAt: importedAt ?? this.importedAt,
       playlistJson: playlistJson ?? this.playlistJson,
       currentEpisode: currentEpisode ?? this.currentEpisode,
@@ -9352,6 +9464,9 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     if (lastPositionMs.present) {
       map['last_position_ms'] = Variable<int>(lastPositionMs.value);
     }
+    if (lastPlayedAt.present) {
+      map['last_played_at'] = Variable<int>(lastPlayedAt.value);
+    }
     if (importedAt.present) {
       map['imported_at'] = Variable<int>(importedAt.value);
     }
@@ -9394,6 +9509,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
           ..write('embeddedSubtitleTrack: $embeddedSubtitleTrack, ')
           ..write('coverPath: $coverPath, ')
           ..write('lastPositionMs: $lastPositionMs, ')
+          ..write('lastPlayedAt: $lastPlayedAt, ')
           ..write('importedAt: $importedAt, ')
           ..write('playlistJson: $playlistJson, ')
           ..write('currentEpisode: $currentEpisode, ')
@@ -11945,10 +12061,11 @@ class ShelfEntryRow extends DataClass implements Insertable<ShelfEntryRow> {
   /// `galgame_library_query.dart` 的视图偏好，合集归属见 [MediaCollectionItems]）。
   final String mediaType;
 
-  /// 条目稳定身份：本地 = bookKey / srtUid / videoBookUid；远端 = downloadId /
-  /// video.id。远端书下载后 bookKey 漂移 → 由 _downloadRemoteBook 改键迁移（独立
-  /// 事务），归属延续。**逻辑外键**（不对本地三表加 FK：远端 entryKey 无本地表行，
-  /// 写 FK 会在插远端归属时违反约束）。孤儿由删除路径主动清理 + 读取期过滤兜底。
+  /// 条目稳定身份（v83 起 epub 域 = epub_books.uid,导入时刻定死、改标题不再
+  /// 漂移,旧的下载后改键迁移已删）：本地 = epubUid / srtUid / videoBookUid；
+  /// 远端 = 对端 bookKey（照抄透传,本地无行）/ video.id。**逻辑外键**（不对
+  /// 本地三表加 FK：远端 entryKey 无本地表行，写 FK 会在插远端归属时违反
+  /// 约束）。孤儿由删除路径主动清理 + 读取期过滤兜底。
   final String entryKey;
 
   /// 自定义排序权重（拖拽回写）。无行的旧条目退化为 importedAt 倒序（向后兼容）。
@@ -41447,12 +41564,14 @@ typedef $$PreferencesTableCreateCompanionBuilder = PreferencesCompanion
     Function({
   required String key,
   required String value,
+  Value<int> updatedAt,
   Value<int> rowid,
 });
 typedef $$PreferencesTableUpdateCompanionBuilder = PreferencesCompanion
     Function({
   Value<String> key,
   Value<String> value,
+  Value<int> updatedAt,
   Value<int> rowid,
 });
 
@@ -41470,6 +41589,9 @@ class $$PreferencesTableFilterComposer
 
   ColumnFilters<String> get value => $composableBuilder(
       column: $table.value, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
 }
 
 class $$PreferencesTableOrderingComposer
@@ -41486,6 +41608,9 @@ class $$PreferencesTableOrderingComposer
 
   ColumnOrderings<String> get value => $composableBuilder(
       column: $table.value, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
 }
 
 class $$PreferencesTableAnnotationComposer
@@ -41502,6 +41627,9 @@ class $$PreferencesTableAnnotationComposer
 
   GeneratedColumn<String> get value =>
       $composableBuilder(column: $table.value, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
 }
 
 class $$PreferencesTableTableManager extends RootTableManager<
@@ -41532,21 +41660,25 @@ class $$PreferencesTableTableManager extends RootTableManager<
           updateCompanionCallback: ({
             Value<String> key = const Value.absent(),
             Value<String> value = const Value.absent(),
+            Value<int> updatedAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               PreferencesCompanion(
             key: key,
             value: value,
+            updatedAt: updatedAt,
             rowid: rowid,
           ),
           createCompanionCallback: ({
             required String key,
             required String value,
+            Value<int> updatedAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               PreferencesCompanion.insert(
             key: key,
             value: value,
+            updatedAt: updatedAt,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
@@ -44986,6 +45118,7 @@ typedef $$VideoBooksTableCreateCompanionBuilder = VideoBooksCompanion Function({
   Value<int?> embeddedSubtitleTrack,
   Value<String?> coverPath,
   Value<int> lastPositionMs,
+  Value<int?> lastPlayedAt,
   Value<int?> importedAt,
   Value<String?> playlistJson,
   Value<int> currentEpisode,
@@ -45006,6 +45139,7 @@ typedef $$VideoBooksTableUpdateCompanionBuilder = VideoBooksCompanion Function({
   Value<int?> embeddedSubtitleTrack,
   Value<String?> coverPath,
   Value<int> lastPositionMs,
+  Value<int?> lastPlayedAt,
   Value<int?> importedAt,
   Value<String?> playlistJson,
   Value<int> currentEpisode,
@@ -45164,6 +45298,9 @@ class $$VideoBooksTableFilterComposer
   ColumnFilters<int> get lastPositionMs => $composableBuilder(
       column: $table.lastPositionMs,
       builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get lastPlayedAt => $composableBuilder(
+      column: $table.lastPlayedAt, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => ColumnFilters(column));
@@ -45357,6 +45494,10 @@ class $$VideoBooksTableOrderingComposer
       column: $table.lastPositionMs,
       builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<int> get lastPlayedAt => $composableBuilder(
+      column: $table.lastPlayedAt,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => ColumnOrderings(column));
 
@@ -45438,6 +45579,9 @@ class $$VideoBooksTableAnnotationComposer
 
   GeneratedColumn<int> get lastPositionMs => $composableBuilder(
       column: $table.lastPositionMs, builder: (column) => column);
+
+  GeneratedColumn<int> get lastPlayedAt => $composableBuilder(
+      column: $table.lastPlayedAt, builder: (column) => column);
 
   GeneratedColumn<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => column);
@@ -45629,6 +45773,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             Value<int?> embeddedSubtitleTrack = const Value.absent(),
             Value<String?> coverPath = const Value.absent(),
             Value<int> lastPositionMs = const Value.absent(),
+            Value<int?> lastPlayedAt = const Value.absent(),
             Value<int?> importedAt = const Value.absent(),
             Value<String?> playlistJson = const Value.absent(),
             Value<int> currentEpisode = const Value.absent(),
@@ -45649,6 +45794,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             embeddedSubtitleTrack: embeddedSubtitleTrack,
             coverPath: coverPath,
             lastPositionMs: lastPositionMs,
+            lastPlayedAt: lastPlayedAt,
             importedAt: importedAt,
             playlistJson: playlistJson,
             currentEpisode: currentEpisode,
@@ -45669,6 +45815,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             Value<int?> embeddedSubtitleTrack = const Value.absent(),
             Value<String?> coverPath = const Value.absent(),
             Value<int> lastPositionMs = const Value.absent(),
+            Value<int?> lastPlayedAt = const Value.absent(),
             Value<int?> importedAt = const Value.absent(),
             Value<String?> playlistJson = const Value.absent(),
             Value<int> currentEpisode = const Value.absent(),
@@ -45689,6 +45836,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             embeddedSubtitleTrack: embeddedSubtitleTrack,
             coverPath: coverPath,
             lastPositionMs: lastPositionMs,
+            lastPlayedAt: lastPlayedAt,
             importedAt: importedAt,
             playlistJson: playlistJson,
             currentEpisode: currentEpisode,

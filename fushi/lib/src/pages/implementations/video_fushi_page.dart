@@ -56,6 +56,7 @@ import 'package:fushi/src/media/video/youtube_source_resolver.dart'
         isYoutubeUrl;
 import 'package:fushi/src/media/video/video_resource_check.dart';
 import 'package:fushi/src/media/video/video_long_press_speed_badge.dart';
+import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
 import 'package:fushi/src/media/video/video_seek_indicator_label.dart';
 import 'package:fushi/src/media/video/series_playback_prefs.dart';
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
@@ -866,14 +867,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 无此手势、不设此参数（诚实降级）。
   static const double _videoVerticalGestureSensitivity = 320.0;
 
-  /// TODO-916 症状①：media_kit 移动控制条横滑 seek 的灵敏度（仅移动端有此手势，
-  /// 桌面走鼠标拖进度条 + 键盘 seek 键 085/090，不接横滑）。media_kit 公式是
-  /// `seconds = -(diff.dx * duration / horizontalGestureSensitivity)`——按视频时长
-  /// 比例换算（不是固定 ±N 秒），值越大越不敏感。沿用 fork 默认 1000：满 1000 逻辑
-  /// 像素横拖 = 整段时长，手机屏宽 ~400dp 拖满全屏宽约 = 时长的 40%，与主流播放器
-  /// （bilibili/YouTube）的比例制横拖手感一致。HUD 文本格式见
-  /// [VideoSeekIndicatorLabel]。
-  static const double _videoHorizontalGestureSensitivity = 1000.0;
+  // TODO-916 症状① / BUG-1485：移动控制条横滑 seek（仅移动端有此手势，桌面走鼠标拖
+  // 进度条 + 键盘 seek 键 085/090，不接横滑）。像素→时间的换算**不再**用 media_kit 的
+  // `horizontalGestureSensitivity`（那条公式按视频总时长比例换算，2 小时的片子每像素
+  // 7.2 秒，一拽就起飞），改由 [VideoHorizontalSeekGesture] 这个纯函数模型接管，档位
+  // 走用户设置 `_asbConfig.dragSeekSensitivity`。接线见 [_mobileControlsTheme]，HUD
+  // 文本格式见 [VideoSeekIndicatorLabel]。
 
   // TODO-057: 视频左半区竖滑调屏幕亮度、右半区竖滑调音量。手势 + 指示器复用
   // media_kit 移动控制条竖滑手势接线见 [_mobileControlsTheme]；亮度落设备背光经
@@ -6701,6 +6700,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 触屏点画面唤回视频左侧锁 / 解锁按钮（TODO-126）。沉浸态下控制条指针被 gate，但本
     // 外层 Listener 在 gate 之外仍收到指针，故沉浸态点画面也能唤回解锁按钮（移动端无 hover）。
     _pokeLockButton();
+    // 选集横轨打开时，视频区由 dismiss barrier 接管这次点击并只关闭横轨；外层
+    // Listener 仍会先收到 pointer-up，必须在 barrier 的 onTap 执行前早返回，否则同一次
+    // 点击还会进入双击 / 暂停 / 全屏判定（BUG-1501）。点横轨自身也会经过本 Listener，
+    // 同样早返回才能保证选集卡片只执行换集、不误触播放器手势。
+    if (_episodeListVisible.value) {
+      _lastVideoPointerUpAt = null;
+      _lastVideoPointerUpPosition = null;
+      return;
+    }
     // 侧栏（设置 / 字幕列表 / 音轨等）打开时，点面板本身不应被误判成「点画面」（BUG-246）：
     // 侧栏 overlay 是本 Stack 的子节点，但本外层 [Listener] 用 translucent 命中行为，仍会
     // 收到落在面板上的 pointer-up；若放行下方逻辑，连续两次点面板会被 400ms/48px 双击判据

@@ -30,14 +30,32 @@ CREATE TABLE preferences (
         );
 
         raw.execute('''
+CREATE TABLE profiles (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+)''');
+        raw.execute(
+          "INSERT INTO profiles (id, name, created_at, updated_at) "
+          "VALUES (1, 'Default', 1, 1)",
+        );
+        // profile_settings 必须按**真实**表形建（每 Profile 一行快照 + profile_id
+        // 外键）。原来 seed 写成裸 `(key, value)` 两列：迁移阶梯跑到
+        // `_ensureIndexes()` 建 `idx_profile_settings_profile ON
+        // profile_settings (profile_id)` 时炸 "no such column"，红的是 seed 不是迁移。
+        raw.execute('''
 CREATE TABLE profile_settings (
-  key TEXT NOT NULL PRIMARY KEY,
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  profile_id INTEGER NOT NULL REFERENCES profiles (id) ON DELETE CASCADE,
+  category TEXT NOT NULL,
+  key TEXT NOT NULL,
   value TEXT NOT NULL
 )''');
         raw.execute(
-          'INSERT INTO profile_settings (key, value) VALUES '
+          'INSERT INTO profile_settings (profile_id, category, key, value) '
           // ③ 每 Profile 快照里的同一键，同样要改。
-          "('sync_backend_type', 's:hibikiServer')",
+          "VALUES (1, 'pref', 'sync_backend_type', 's:hibikiServer')",
         );
 
         raw.execute('PRAGMA user_version = 73');

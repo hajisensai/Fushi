@@ -85,8 +85,9 @@ void main() {
     expect(result.popupJson, '{"html":"ok"}');
   });
 
-  test('401 stops lookup instead of trying another address with same token',
-      () async {
+  // BUG-1550：401 只否掉**这一台**（每台对端有自己的 per-peer 凭据）。全部候选都拒了
+  // 才抛 SyncAuthError——「凭据被拒」这个语义本身对调用方不变。
+  test('401 on every candidate still surfaces SyncAuthError', () async {
     final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = await _repo(
@@ -113,7 +114,8 @@ void main() {
       ),
       throwsA(isA<SyncAuthError>()),
     );
-    expect(requestedHosts, <String>['lan']);
+    expect(requestedHosts, <String>['lan', 'wan'],
+        reason: '一台拒绝不代表其余都拒绝，必须问完再判定');
   });
 
   test('remote audio lookup returns url and treats 404 as unsupported',

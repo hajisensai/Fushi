@@ -100,6 +100,58 @@ void main() {
     expect(await db.getCollectionItems(initial.collectionId), hasLength(2));
   });
 
+  test('自动下载追加的单集按季集号重排且不冒充用户手动排序', () async {
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final VideoBookRepository repo = VideoBookRepository(db);
+    int? collectionId;
+    for (final int episode in <int>[4, 3, 2, 5, 6, 7, 1]) {
+      final SplitPlaylistImportResult result = await repo.importSplitPlaylist(
+        collectionName: 'Mushoku Tensei III',
+        entries: <PlaylistEntry>[
+          PlaylistEntry(
+            title: 'Episode $episode',
+            path: 'D:/Videos/Mushoku Tensei III - '
+                'S03E${episode.toString().padLeft(2, '0')}.mkv',
+          ),
+        ],
+        reuseExistingPaths: true,
+      );
+      collectionId = result.collectionId;
+    }
+    expect(
+      (await db.getCollectionItems(collectionId!))
+          .map((MediaCollectionItemRow row) => row.entryKey),
+      <String>[
+        'video/Mushoku Tensei III - S03E04',
+        'video/Mushoku Tensei III - S03E03',
+        'video/Mushoku Tensei III - S03E02',
+        'video/Mushoku Tensei III - S03E05',
+        'video/Mushoku Tensei III - S03E06',
+        'video/Mushoku Tensei III - S03E07',
+        'video/Mushoku Tensei III - S03E01',
+      ],
+      reason: '独立任务完成顺序会先原样落库，排序只能由下载流水线显式触发',
+    );
+
+    await repo.reorderDownloadedCollectionEpisodes(collectionId);
+
+    expect(
+      (await db.getCollectionItems(collectionId))
+          .map((MediaCollectionItemRow row) => row.entryKey),
+      <String>[
+        for (int episode = 1; episode <= 7; episode++)
+          'video/Mushoku Tensei III - '
+              'S03E${episode.toString().padLeft(2, '0')}',
+      ],
+    );
+    expect(
+      (await db.getMediaCollectionById(collectionId))!.orderUpdatedAt,
+      0,
+      reason: '自动下载整理不能覆盖跨端同步中的用户手动排序时钟',
+    );
+  });
+
   test('删某集清合集引用；删空则合集自删', () async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);

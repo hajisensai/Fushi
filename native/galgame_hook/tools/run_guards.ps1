@@ -3,7 +3,7 @@
 # Why this file exists instead of an inline multi-line `run:` block:
 # GitHub Actions `shell: pwsh` steps only honour the exit code of the LAST
 # command in the block. Every earlier native command that fails is silently
-# swallowed and the step still reports success. voice-hook-helper.yml's
+# swallowed and the step still reports success. The now-deleted voice-hook-helper.yml's
 # "Verify engine support manifest" step listed seven commands that way, so six
 # of the seven guards were decorative -- proven in practice: the generated
 # include/luna_hook_profiles.inc drifted away from config/luna_hook_profiles.tsv
@@ -15,7 +15,7 @@
 # exit code is asserted, so a red guard is always a red job.
 #
 # Deliberately ASCII-only and pwsh/PowerShell-5.1 safe: it is executed by
-# ubuntu-latest pwsh (PR gate), windows-2022 pwsh (helper release) and by hand.
+# ubuntu-latest pwsh (PR gate) and by hand.
 # All guards are pure verification -- no writes, no network, no publishing.
 
 $ErrorActionPreference = 'Stop'

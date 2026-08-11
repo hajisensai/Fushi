@@ -176,8 +176,11 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // TODO-057: 启用 media_kit 移动控制条内建的「左半区竖滑调亮度 / 右半区竖滑
       // 调音量」手势，指示器由 Hibiki 的左右百分比 HUD 接管。仅移动端有此控制条；桌面走
       // [_desktopControlsTheme]（无此手势，屏幕亮度本就不可控，诚实降级）。横滑 seek
-      // 见下方 [seekGesture]（TODO-916 症状①，按时长比例换算 + 居中 HUD 显目标绝对
-      // 时间；与既有 seek 键 085/090 / 双击全屏语义并存，竞技场先达成者胜）。
+      // 见下方 [seekGesture] + [horizontalSeekResolver]（TODO-916 症状①；换算已在
+      // BUG-1485 改成「拖过整屏 = 固定一段时长」的 [VideoHorizontalSeekGesture]，与
+      // 视频总时长**解耦**——这里原先写着「按时长比例换算」，那正是被换掉的旧公式，
+      // 别照着它推断当前行为。居中 HUD 显目标绝对时间；与既有 seek 键 085/090 /
+      // 双击全屏语义并存，竞技场先达成者胜）。
       // 单击暂停 / 字幕点击查词不受影响：media_kit 的竖直 drag 与 tap 同一手势 arena，
       // 纯点击时 drag 不启动。亮度回调经 [ScreenBrightnessController]（桌面 no-op）。
       volumeGesture: true,
@@ -190,14 +193,30 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 拉满亮度/音量。值越大越不敏感（见 [_videoVerticalGestureSensitivity]）。
       verticalGestureSensitivity:
           _VideoFushiPageState._videoVerticalGestureSensitivity,
-      // TODO-916 症状①：启用 fork 内置横滑 seek（third_party/media_kit_video 的
-      // MaterialVideoControls.onHorizontalDragUpdate/End）：按 [position + diff *
-      // duration / horizontalGestureSensitivity] 换算目标、松手 player.seek，拖回
-      // 原点（swipeDuration==0）自动取消。仅移动端 theme 启用；桌面
+      // TODO-916 症状①：启用 fork 的横滑 seek（third_party/media_kit_video 的
+      // MaterialVideoControls.onHorizontalDragUpdate/End）：拖动中算目标、松手
+      // player.seek，拖回原点（增量 0）自动取消。仅移动端 theme 启用；桌面
       // [_desktopControlsTheme] 不含此字段（鼠标拖进度条 + 键盘 seek 键，诚实降级）。
       seekGesture: true,
-      horizontalGestureSensitivity:
-          _VideoFushiPageState._videoHorizontalGestureSensitivity,
+      // BUG-1485：把像素→时间的换算从 fork 内建公式换成 Hibiki 侧纯函数。fork 默认
+      // `seconds = dragDx * duration / 1000` 让**每像素跨越的时间与总时长成正比**，
+      // 2 小时的片子每像素 7.2 秒、拖满屏宽 = 48 分钟，用户「一拽就起飞」的根因。
+      // [VideoHorizontalSeekGesture] 改成「拖过整屏 = 固定一段时长」（与总时长解耦）
+      // + 超长/超短片钳制 + 幂函数阻尼，档位由用户设置 [_asbConfig.dragSeekSensitivity]
+      // 决定。闭包每次调用现读 `_asbConfig`，设置改完立即生效（无需重开播放页）。
+      horizontalSeekResolver: ({
+        required double dragDx,
+        required double surfaceWidth,
+        required Duration duration,
+        required Duration position,
+      }) =>
+          VideoHorizontalSeekGesture.resolveDelta(
+        dragDx: dragDx,
+        surfaceWidth: surfaceWidth,
+        duration: duration,
+        position: position,
+        sensitivity: _asbConfig.dragSeekSensitivity,
+      ),
       // 居中 HUD：fork 默认只显增量，这里替换成「目标绝对时间 + 增量」两行（主流
       // 播放器手感）。builder 每帧随拖动重建，读 controller 实时 position + 增量算
       // 目标时间（clamp [0,duration]）。delta 为 fork 回传的有符号 swipeDuration。

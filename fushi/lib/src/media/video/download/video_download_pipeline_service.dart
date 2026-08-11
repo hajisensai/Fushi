@@ -81,18 +81,18 @@ typedef VideoDownloadBackendResolver = Future<VideoDownloadBackendBinding?>
     Function(VideoDownloadJobRow job);
 
 /// Resume ids that remain owned by the v78 pipeline after legacy JSON files
-/// have been archived. Completed/cancelled jobs no longer need a live torrent;
-/// active, failed, and actionable jobs must keep their embedded resume data so
-/// a restart can reconcile or continue seeding them.
+/// have been archived. New library jobs keep completed torrents alive so upload
+/// policy, seeding and task metrics continue across restarts. Legacy imports
+/// retain their historical terminal-state cleanup contract.
 Set<String> legacyEmbeddedTorrentResumeIds(
   Iterable<VideoDownloadJobRow> jobs,
 ) {
   final Set<String> ids = <String>{};
   for (final VideoDownloadJobRow job in jobs) {
-    if (job.organizationPolicy != 'legacy' ||
-        job.backendKind != 'embedded' ||
-        job.lifecycle == VideoDownloadJobLifecycle.completed ||
-        job.lifecycle == VideoDownloadJobLifecycle.cancelled) {
+    if (job.backendKind != 'embedded' ||
+        job.lifecycle == VideoDownloadJobLifecycle.cancelled ||
+        (job.organizationPolicy == 'legacy' &&
+            job.lifecycle == VideoDownloadJobLifecycle.completed)) {
       continue;
     }
     for (final String? candidate in <String?>[
@@ -413,6 +413,55 @@ class VideoDownloadPipelineService {
         'The download job changed while it was being cancelled',
       );
     }
+  }
+
+  /// 读取任务页所需的真实后端快照。
+  ///
+  /// 按后端身份与分类分组，每组只列一次 torrent；返回值以持久任务 id 为键。
+  /// 已完成但仍在做种的任务也会被观察，所以任务页能继续显示上传速度、节点与
+  /// 分享率。配置已切换或后端不可用的组安全降级为空，由 UI 显示未知值。
+  Future<Map<String, TorrentSnapshot>> loadTaskSnapshots(
+    Iterable<VideoDownloadJobRow> jobs,
+  ) async {
+    final Map<String, List<VideoDownloadJobRow>> groups =
+        <String, List<VideoDownloadJobRow>>{};
+    for (final VideoDownloadJobRow job in jobs) {
+      final String torrentId =
+          (job.backendTaskId ?? job.torrentHash ?? '').trim().toLowerCase();
+      if (torrentId.isEmpty) continue;
+      final String key = <String?>[
+        job.backendKind,
+        job.backendProfileId,
+        job.fingerprint,
+        job.category,
+      ].map((String? value) => value ?? '').join('\u0000');
+      groups.putIfAbsent(key, () => <VideoDownloadJobRow>[]).add(job);
+    }
+
+    final Map<String, TorrentSnapshot> result = <String, TorrentSnapshot>{};
+    for (final List<VideoDownloadJobRow> group in groups.values) {
+      final VideoDownloadJobRow first = group.first;
+      try {
+        final VideoDownloadBackendBinding? binding =
+            await backendResolver(first);
+        _validateBackendBinding(first, binding);
+        final List<TorrentSnapshot> snapshots =
+            await binding!.backend.listTorrents(category: first.category);
+        final Map<String, TorrentSnapshot> byHash = <String, TorrentSnapshot>{
+          for (final TorrentSnapshot snapshot in snapshots)
+            snapshot.hash.toLowerCase(): snapshot,
+        };
+        for (final VideoDownloadJobRow job in group) {
+          final String torrentId =
+              (job.backendTaskId ?? job.torrentHash ?? '').trim().toLowerCase();
+          final TorrentSnapshot? snapshot = byHash[torrentId];
+          if (snapshot != null) result[job.jobId] = snapshot;
+        }
+      } on Object {
+        // 指标是增强信息；后端暂不可读不能让持久任务列表一起消失。
+      }
+    }
+    return Map<String, TorrentSnapshot>.unmodifiable(result);
   }
 
   void start() {
@@ -1566,6 +1615,8 @@ class VideoDownloadPipelineService {
       );
       _ensureLeaseHeld();
       collectionId = result.collectionId;
+      await _videoRepository.reorderDownloadedCollectionEpisodes(collectionId);
+      _ensureLeaseHeld();
       for (int index = 0; index < files.length; index++) {
         bookUidByFileId[files[index].id] = result.episodeUids[index];
       }

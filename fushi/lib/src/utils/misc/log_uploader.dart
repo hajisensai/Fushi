@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/log_upload_config.dart';
+import 'package:fushi/src/utils/net/app_http.dart';
 
 /// 上传结果状态。
 enum LogUploadStatus {
@@ -61,7 +62,7 @@ Future<LogUploadOutcome> performLogUpload({
   required String tsIso,
   http.Client? client,
 }) async {
-  final http.Client c = client ?? http.Client();
+  final http.Client c = client ?? createAppHttpIoClient();
   try {
     final String body = jsonEncode(<String, dynamic>{
       'kind': kind,

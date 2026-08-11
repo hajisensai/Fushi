@@ -903,7 +903,11 @@ class _CustomFontsPageState extends BasePageState {
     }
 
     try {
-      final dio = Dio(BaseOptions(
+      // BUG-1498：字体全在 cdn.jsdelivr.net / raw.githubusercontent.com /
+      // fonts.google.com 上，原先是裸 `Dio(...)`（`findProxy` 为 null，连 HTTPS_PROXY
+      // 都不读）。改经统一装配点，三级 URL 回退逻辑不变。
+      final dio = createAppDio(
+          options: BaseOptions(
         connectTimeout: const Duration(seconds: 15),
         receiveTimeout: const Duration(minutes: 10),
         followRedirects: true,

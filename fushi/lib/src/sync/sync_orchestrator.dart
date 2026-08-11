@@ -11,6 +11,7 @@ import 'package:fushi/src/sync/collection_manifest.dart';
 import 'package:fushi/src/sync/collection_sync_engine.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/override_title_lookup.dart';
 import 'package:fushi/src/sync/interconnect_service_config.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/aggregate_sync_service.dart';
@@ -1510,6 +1511,11 @@ class SyncOrchestrator {
         sanitizeTtuFilename(b.title): b.title,
     };
 
+    // BUG-1503：本机用户给这些书改的名字 + LWW 戳，随上传一起走 header。一趟读
+    // 完（推多本书只查一次偏好表），没改过名的书查不到 → 不发 header。
+    final Map<String, OverrideTitleEntry> overrideTitles =
+        await readOverrideTitlesByBookKey(_db);
+
     final int total = diff.toPush.length;
     int index = 0;
 
@@ -1542,9 +1548,14 @@ class SyncOrchestrator {
           index++;
           continue;
         }
+        // 显示名跟着书走，**身份不跟着走**（BUG-1488 定的红线）：端点寻址、
+        // host 端 bookKey 派生仍恒用 raw [title]。
+        final OverrideTitleEntry? override = overrideTitles[row.bookKey];
         await backend.putRemoteBook(
           title,
           tmp,
+          displayTitle: override?.title,
+          displayTitleAt: override?.updatedAt ?? 0,
           onProgress: (double f) => _emit(SyncPhase.books,
               itemIndex: index,
               itemTotal: total,
@@ -1767,7 +1778,11 @@ class SyncOrchestrator {
         await _db.setPrefTyped<int>(
             videoRemotePositionAtPrefKey(uid), updatedAtMs);
         if (rowPositionByUid.containsKey(uid)) {
-          await _db.updateVideoBookPosition(uid, positionMs);
+          // 时刻用**对端的** updatedAtMs（不是 now）：这是「对方在那个时刻看到这
+          // 里」的事实。传 now 会把三天前的远端进度冒充成本机刚看的，直接把合集
+          // 续播锚点（BUG-1542）钉在一集用户根本没在看的集上。
+          await _db.updateVideoBookPosition(uid, positionMs,
+              playedAt: updatedAtMs);
         }
       },
     );

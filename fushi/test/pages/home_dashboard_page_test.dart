@@ -85,6 +85,37 @@ void main() {
     }
   });
 
+  /// **书侧 provider 的 drift `.watch()` 隔离清单——全文件只此一份。**
+  ///
+  /// `reader_fushi_source.dart` 里的 `_epubBookKeysProvider` 是个 drift `.watch()`
+  /// StreamProvider；凡直接或间接 `ref.watch` 到它的 provider（`fushiBooksProvider` /
+  /// `bookLastReadAtProvider` / `epubBookUidByKeyProvider`）都必须在这里被打桩。
+  ///
+  /// 不打桩就必红（BUG-1495 实测）：widget 测试结束时 flutter_test 用
+  /// `runApp(Container())` 卸载整棵树 → `ProviderContainer.dispose` →
+  /// `QueryStream._onCancelOrPause` → drift `StreamQueryStore.markAsClosed` 里的
+  /// `Timer.run(...)` 排了个**零延时 timer**；而 `_verifyInvariants` 紧接着就检查
+  /// `timersPending`，中间没有任何一帧能让它跑掉 ⇒「A Timer is still pending even
+  /// after the widget tree was disposed」必现，随后整条用例挂到 10 分钟超时。
+  /// 用例体里补 pump 没用——卸载发生在用例体**之后**。
+  ///
+  /// 为什么收成一个函数：以前三处 `ProviderScope` 各抄了一份两条的清单，于是 P3
+  /// Stage 1b/2（7a3505ca7a / 2ceccf8bda）给首页新增 `epubBookUidByKeyProvider`
+  /// 消费方时，三处得同时被想起来——一处都没被想起来，红就那样进了 develop。
+  /// 清单只有一份，新增消费方就只有一个地方要改。
+  List<Override> bookStreamOverrides({
+    List<MediaItem> books = const <MediaItem>[],
+    Map<String, int> lastReadAt = const <String, int>{},
+  }) =>
+      <Override>[
+        fushiBooksProvider.overrideWith((ref, language) async => books),
+        bookLastReadAtProvider.overrideWith((ref) async => lastReadAt),
+        // 空表 ⇒ `lastReadByKey[epubUidByKey[bookKey] ?? bookKey]` 走 bookKey 回退，
+        // 与上面 lastReadAt 的键域（bookKey）一致。
+        epubBookUidByKeyProvider
+            .overrideWith((ref) async => <String, String>{}),
+      ];
+
   Widget buildApp({
     Future<void> Function(
       BuildContext context,
@@ -98,12 +129,8 @@ void main() {
           platformServicesProvider.overrideWithValue(platformServices),
           ankiRepositoryProvider.overrideWithValue(ankiRepository),
           appProvider.overrideWith((ref) => appModel),
-          // 覆盖书列表 provider：真实实现依赖 _epubBookKeysProvider 的 drift .watch()
-          // 流，会让 widget 测试进程永不终止（drift watch teardown 挂起 gotcha）。本
-          // 测试聚焦布局不崩 + 视频继续/热力图/活动渲染，书列表用空值即可。
-          fushiBooksProvider
-              .overrideWith((ref, language) async => <MediaItem>[]),
-          bookLastReadAtProvider.overrideWith((ref) async => <String, int>{}),
+          // 本测试聚焦布局不崩 + 视频继续/热力图/活动渲染，书侧数据用空值即可。
+          ...bookStreamOverrides(),
         ],
         child: TranslationProvider(
           child: MaterialApp(
@@ -204,8 +231,7 @@ void main() {
 
     final DateTime now = DateTime.now();
     for (int i = 0; i < 20; i++) {
-      final String dk =
-          FushiTimeFormat.dayKey(now.subtract(Duration(days: i)));
+      final String dk = FushiTimeFormat.dayKey(now.subtract(Duration(days: i)));
       await db.addReadingStatistic(
         title: '书$i',
         dateKey: dk,
@@ -276,10 +302,10 @@ void main() {
         platformServicesProvider.overrideWithValue(platformServices),
         ankiRepositoryProvider.overrideWithValue(ankiRepository),
         appProvider.overrideWith((ref) => appModel),
-        fushiBooksProvider
-            .overrideWith((ref, language) async => <MediaItem>[book]),
-        bookLastReadAtProvider
-            .overrideWith((ref) async => <String, int>{'测试书key': 1}),
+        ...bookStreamOverrides(
+          books: <MediaItem>[book],
+          lastReadAt: const <String, int>{'测试书key': 1},
+        ),
       ],
       child: TranslationProvider(
         child: MaterialApp(
@@ -318,10 +344,10 @@ void main() {
         platformServicesProvider.overrideWithValue(platformServices),
         ankiRepositoryProvider.overrideWithValue(ankiRepository),
         appProvider.overrideWith((ref) => appModel),
-        fushiBooksProvider
-            .overrideWith((ref, language) async => <MediaItem>[book]),
-        bookLastReadAtProvider
-            .overrideWith((ref) async => <String, int>{'横滑书key': 1}),
+        ...bookStreamOverrides(
+          books: <MediaItem>[book],
+          lastReadAt: const <String, int>{'横滑书key': 1},
+        ),
       ],
       child: TranslationProvider(
         child: MaterialApp(

@@ -62,30 +62,35 @@ void main() {
   });
 
   test(
-      'glossary rt is taken out of the inline flow (absolute, anchored to the '
-      'unit top) so it cannot widen the base box (BUG-345 / BUG-363)', () {
-    final RegExp rtRule = RegExp(
-      r':where\([^)]*\bglossary-group\b[^)]*,[^)]*\bglossary-content\b[^)]*\)\s*rt\s*\{([^}]*)\}',
+      'the glossary reading is taken out of the inline flow (absolute, anchored '
+      'to the unit top) so it cannot widen the base box (BUG-345 / BUG-363)',
+      () {
+    // BUG-1487: the positioned box is the `.ruby-rt` wrapper, not the <rt> —
+    // WebKit force-resets `position` to static on <rt>, so declaring it there
+    // silently did nothing on iOS/macOS and the reading fell back into the
+    // inline flow (exactly the BUG-345 widening this guard exists to prevent).
+    final RegExp rtBoxRule = RegExp(
+      r':where\([^)]*\bglossary-group\b[^)]*,[^)]*\bglossary-content\b[^)]*\)\s*\.ruby-rt\s*\{([^}]*)\}',
     );
-    final RegExpMatch? match = rtRule.firstMatch(css);
+    final RegExpMatch? match = rtBoxRule.firstMatch(css);
     expect(
       match,
       isNotNull,
-      reason: 'popup.css must scope an rt block to the glossary surfaces',
+      reason: 'popup.css must scope a .ruby-rt block to the glossary surfaces',
     );
     final String body = match!.group(1)!;
     expect(
       RegExp(r'position\s*:\s*absolute').hasMatch(body),
       isTrue,
-      reason: 'glossary <rt> must be position:absolute so it leaves the inline '
-          'flow and stops dictating the ruby base box width (BUG-345)',
+      reason: 'the glossary reading box must be position:absolute so it leaves '
+          'the inline flow and stops dictating the ruby base box width (BUG-345)',
     );
     expect(
       RegExp(r'top\s*:\s*0\b').hasMatch(body),
       isTrue,
-      reason: 'glossary <rt> must anchor to the unit top (top:0) inside the em '
-          'padding-top reserve, so its position scales cleanly with the popup '
-          'zoom instead of drifting (BUG-363)',
+      reason: 'the glossary reading box must anchor to the unit top (top:0) '
+          'inside the em padding-top reserve, so its position scales cleanly '
+          'with the popup zoom instead of drifting (BUG-363)',
     );
   });
 

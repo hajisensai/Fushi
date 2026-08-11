@@ -103,7 +103,8 @@ void main() {
   });
 
   // C++ 行为测试在 native/galgame_hook/tests/luna_text_replay_test.cpp，但那套 ctest
-  // 只在 voice-hook-helper workflow（workflow_dispatch + push develop）里跑，**PR 时不是门**。
+  // 只在 build-multiplatform.yml 的 windows job 里跑（PR + paths 含 native/**），那是个几十分钟
+  // 的重量级 job，反馈慢。
   // 下面这组结构守卫扫真实 C++ 源码，把「改回错误判据」这件事挡在 PR 的 flutter test 门上。
   // 切片锚点（含 `// ── Luna_Start` 这种注释锚点）在原始源码上取，取到函数体后一律先
   // [maskComments] 再断言——否则把 NoteFace 之类的调用降级成注释也照样命中 contains。

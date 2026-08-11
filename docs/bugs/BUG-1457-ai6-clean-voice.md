@@ -1,6 +1,6 @@
 ## BUG-1457 · AI6 制卡误用混合 BGM
 - **报告**：2026-08-02（用户：AI6WIN 文本可抓，但制卡音频是 BGM 而非角色语音）
-- **真实性**：✅ 真 bug。旧链路没有 AI6 `voice.arc` 资源适配器，只能使用 PCM/系统 Loopback；这两条降级链不能证明取得了未混音的角色语音。缺口位于 `native/galgame_hook/hook/adapters/elf_ai6_adapter.inc` 的资源采集与稳定配对边界。
-- **[x] ① 已修复** — 新增 `elf_ai6` profile 与有界 `voice.arc` 候选解析器；只跟踪与程序旁目标归档相同的文件身份，回调复制句柄并排队，worker 从同一文件对象提取结构完整的 Ogg，按选定线程的稳定文本事件 ID 发布。写盘或排队失败不会再谎报捕获成功。实现状态保持 `implemented_unverified`。
-- **[x] ② 已加自动化测试** — native 测试覆盖索引上限、反序记录、重叠/越界/畸形项、稳定文本事件配对和跨线程/过期负例；Hibiki 生产选择器测试覆盖 AI6 资源事件 ID 优先于混合 Loopback。
-- **备注**：本轮没有可复核的 AI6 原始安装、进程/模块/文件哈希台账，也没有同一真实会话的“文本 → 对应资源 → 配对 → 截图 → 真卡写入”证据。合成 replay、候选格式和双架构离线构建均不等于 E2E；下一门是在用户原始 Windows 启动路径完成该台账和真卡验收。
+- **真实性**：✅ 真 bug。该样本的 DirectSound 只暴露一条 44.1 kHz 双声道软件混音流；旧链路没有 AI6 `voice.arc` 资源适配器，只能落到 PCM/系统 Loopback，因此无法靠“改音轨”分离 BGM。缺口位于 `native/galgame_hook/hook/adapter_registry.inc` 的引擎注册表和 `hook/adapters/` 的资源采集实现；修复入口见 `native/galgame_hook/hook/adapters/elf_ai6_adapter.inc:1`。
+- **[x] ① 已修复** — 新增 `elf_ai6` profile 与有界 `voice.arc` 解析器，hook `CreateFileA/W`、`ReadFile`、`CloseHandle`，回调只排队，worker 按 `u32le count + count×272` 索引定位完整 Ogg，并经现有 `WriteVoiceOggAt` 发布；宿主同步识别新增诊断位。2026-08-02 x86 原始路径实测 `hookio=0x1f800000`，Hibiki `TextOutA 0x7525c690` 台词显示 `game_resource`。
+- **[x] ② 已加自动化测试** — `native/galgame_hook/tests/elf_ai6_adapter_test.cpp` 覆盖合法索引、读取区间、越界与畸形头；`resource_audio_ready_test.cpp` 覆盖新增就绪位；`fushi/test/mining/elf_ai6_pairing_test.dart` 固定“资源 Ogg 优先于混合 Loopback”的回放契约。定向 x86 两个 CTest、adapter structure 12 项均通过；按用户要求未跑全量测试/全量编译。
+- **备注**：样本 `AI6WIN.exe` SHA-256 `2373B7C70005C02A1F1666ADC4DE6413400A6C15481BFDE6EFE7FA11F8C3FC86`。制卡使用 `voice.arc` entry 3 `ozjk98773sji`（offset `3175862`，`35669` bytes），捕获 Ogg 与归档 entry 的 SHA-256 均为 `0717927C9DDD28C114A3DF5C5DC33D44D975FD297579912E4552B9D09242EAF8`。Anki note `1785683571806` 的 SentenceAudio 为 44.1 kHz 单声道 AAC、`1.260157s`，Hibiki 行状态为“已制卡 / 音频已提取”。支持矩阵仍保持 `implemented_unverified`，因为本次明确跳过完整 x86/x64 release gate。

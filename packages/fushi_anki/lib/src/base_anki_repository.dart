@@ -248,6 +248,12 @@ abstract class BaseAnkiRepository {
   /// 本后端能否做媒体字节级去重。需要**本机可直读** collection.media +
   /// 全库检索 + 字段/模板改写；默认 false，仅 AnkiConnect（Anki 与 Hibiki
   /// 同机）支持。
+  ///
+  /// **后端不对称（有意）**：AnkiDroid（`AnkiRepository`）与 AnkiMobile 都不覆写
+  /// 这一对成员——它们**根本不跑媒体去重**，所以 AnkiConnect 那边的批量化
+  /// （见 `kAnkiMediaDedupBatchSize`）在这里没有对应实现，也不存在「逐条删除」
+  /// 的对称缺口需要补。AnkiDroid 的 ContentProvider 确实有 `bulkInsert`，但那是
+  /// 写卡路径的能力，与本功能无关。
   bool get supportsMediaMaintenance => false;
 
   /// 跑一轮媒体字节级去重：找出字节完全相同的文件组 → 把笔记字段与卡模板/
@@ -266,6 +272,22 @@ abstract class BaseAnkiRepository {
     bool Function()? shouldCancel,
   }) async =>
       null;
+
+  /// BUG-1549：按设置解析**当前制卡目标牌组**（id 优先、name 兜底）的单一真相。
+  /// 此前这段两级 firstWhereOrNull 在 AnkiConnect / AnkiDroid / AnkiMobile 三个
+  /// mine 路径各复制一份；解析结果的 `name` 现在还要随 [MineOutcome.success] 带回
+  /// 成功 toast（toast 不再从 `selectedDeckName` 字段猜——旧存档只有 id 时它是
+  /// null，但按 id 照样落卡成功，表现为「已添加到『』」空引号）。
+  @protected
+  AnkiDeck? resolveSelectedDeck(AnkiSettings settings) =>
+      settings.availableDecks.firstWhereOrNull(
+        (AnkiDeck d) => d.id == settings.selectedDeckId,
+      ) ??
+      (settings.selectedDeckName != null
+          ? settings.availableDecks.firstWhereOrNull(
+              (AnkiDeck d) => d.name == settings.selectedDeckName,
+            )
+          : null);
 
   @protected
   AnkiDeck selectDeckAfterFetch(List<AnkiDeck> decks, AnkiSettings current) =>

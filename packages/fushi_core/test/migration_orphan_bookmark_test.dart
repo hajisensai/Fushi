@@ -107,7 +107,11 @@ CREATE TABLE bookmarks (
         raw.execute('''
 CREATE TABLE preferences (
   key TEXT NOT NULL PRIMARY KEY,
-  value TEXT NOT NULL
+  value TEXT NOT NULL,
+  -- v84（BUG-1502）：本 fixture 刻意 seed 成 CURRENT 版本让 onUpgrade 不跑，
+  -- 所以这张表必须与当前 schema 同形——少一列会让 drift 的类型化行映射对缺失
+  -- 列做 null 断言而炸，与被测的 pre-v16 排干逻辑毫无关系。
+  updated_at INTEGER NOT NULL DEFAULT 0
 )''');
         raw.execute(
           "INSERT INTO preferences (key, value) VALUES (?, ?), (?, ?), (?, ?)",

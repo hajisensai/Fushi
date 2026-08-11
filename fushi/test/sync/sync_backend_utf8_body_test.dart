@@ -104,7 +104,8 @@ class _CapturingLibraryService implements FushiLibraryHostService {
       throw UnimplementedError('not used');
 
   @override
-  Future<void> importBook(File epubFile) async {}
+  Future<void> importBook(File epubFile,
+      {String? displayTitle, int displayTitleAt = 0}) async {}
 
   @override
   Future<void> deleteBook(String title) async {}

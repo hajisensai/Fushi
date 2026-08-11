@@ -15,6 +15,7 @@ import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:fushi/src/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi/src/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi/src/utils/net/app_http.dart';
 
 final Uri kGoogleLensEndpoint =
     Uri.parse('https://lensfrontend-pa.googleapis.com/v1/crupload');
@@ -45,7 +46,7 @@ class HttpGoogleLensTransport implements GoogleLensTransport {
     HttpClient? client,
     this.timeout = const Duration(seconds: 60),
   })  : endpoint = endpoint ?? kGoogleLensEndpoint,
-        _client = client ?? HttpClient() {
+        _client = client ?? createAppHttpClient() {
     _client.connectionTimeout = timeout;
     _client.userAgent = _kChromiumUserAgent;
     _client.maxConnectionsPerHost = 2;

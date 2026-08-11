@@ -67,7 +67,9 @@ List<RemoteContinueCandidate> remoteContinueCandidates({
     out.add(RemoteContinueCandidate(
       kind: b.kind,
       id: b.downloadId,
-      title: b.title,
+      // BUG-1488：[title] 是 display-only（去重/封面缓存键走 [id]），所以取 host
+      // 下发的显示名——母设备改过的书名在子设备首页「继续」上也得跟着变。
+      title: b.displayName,
       recentMs: b.progressUpdatedAtMs,
       percent: b.progressPercent,
       coverUrl: b.coverUrl,

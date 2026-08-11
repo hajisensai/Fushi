@@ -84,9 +84,12 @@ void main() {
     // 迁移终点跟随当前代码的 schemaVersion（v48 时代写下，此后 develop 已继续升级）。
     expect(version.read<int>('user_version'), db.schemaVersion);
     expect(await _columnNames(db, 'epub_books'), contains('completed_at'));
+    // 断的是**迁移终点**（阶梯一路跑到当前 schemaVersion），不是 v48 当时的形状：
+    // v82 把 revealed_images 的书键从 title 派生的 `book_key` 改成本机稳定的
+    // `book_uid`（`EpubBooks.uid`，带数据搬迁），这里跟着改名走。
     expect(
       await _columnNames(db, 'revealed_images'),
-      containsAll(<String>['book_key', 'image_key', 'revealed_at']),
+      containsAll(<String>['book_uid', 'image_key', 'revealed_at']),
     );
   });
 
@@ -98,7 +101,7 @@ void main() {
     expect(await _columnNames(db, 'epub_books'), contains('completed_at'));
     expect(
       await _columnNames(db, 'revealed_images'),
-      containsAll(<String>['book_key', 'image_key', 'revealed_at']),
+      containsAll(<String>['book_uid', 'image_key', 'revealed_at']),
     );
     expect(
       await _indexNames(db),

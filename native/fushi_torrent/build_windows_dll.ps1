@@ -5,7 +5,8 @@
 # 为什么不在 flutter build 时现编：libtorrent 经 vcpkg 首次源码编译约 40min
 # （boost+openssl+libtorrent），CI/多数开发机不该被迫装 vcpkg。故本脚本单独
 # 产出 4 个 DLL（bridge + torrent-rasterbar + ssl + crypto），flutter windows
-# 构建只做「有则拷、无则跳」，不依赖 vcpkg（阶段4 决策：vendored 预编译）。
+# Debug 构建可「有则拷、无则跳」；Profile/Release 会校验 4 个 DLL，禁止产出
+# 无法下载的残缺安装包。Flutter 构建本身不依赖 vcpkg（阶段4 决策：vendored 预编译）。
 #
 # 用法（需先 vcpkg install libtorrent:x64-windows）：
 #   pwsh -File native/fushi_torrent/build_windows_dll.ps1 -VcpkgRoot D:\APP\vcpkg

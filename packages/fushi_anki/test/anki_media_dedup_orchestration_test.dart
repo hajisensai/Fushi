@@ -77,6 +77,72 @@ class _FakeAnkiConnectService extends AnkiConnectService {
   Future<Map<String, String>?> notesInfo(int noteId) async => notes[noteId];
 
   @override
+  Future<Map<int, Map<String, String>>> notesInfoMany(List<int> noteIds) async {
+    roundTrips.add('notesInfo');
+    return <int, Map<String, String>>{
+      for (final int id in noteIds)
+        if (notes[id] != null) id: notes[id]!,
+    };
+  }
+
+  /// 一次 `multi` = **一次真实网络往返**。去重的批量化不变量就钉在这个计数器
+  /// 上：N 个副本不该产生 N 次往返。
+  final List<String> roundTrips = <String>[];
+
+  int roundTripsFor(String action) =>
+      roundTrips.where((String a) => a == action).length;
+
+  /// 假 AnkiConnect 的 `multi`：把每条子 action 派回本类已有的单条实现，于是
+  /// 「打包/拆包」那一层（`AnkiConnectService` 的 typed 批量入口）是被真的跑
+  /// 过的，只有 HTTP 被换掉。
+  @override
+  Future<List<AnkiConnectBatchResult>> requestMulti(
+      List<AnkiConnectAction> actions) async {
+    if (actions.isEmpty) return const <AnkiConnectBatchResult>[];
+    roundTrips.add(actions.first.action);
+    final List<AnkiConnectBatchResult> out = <AnkiConnectBatchResult>[];
+    for (final AnkiConnectAction a in actions) {
+      out.add(await _dispatch(a));
+    }
+    return out;
+  }
+
+  Future<AnkiConnectBatchResult> _dispatch(AnkiConnectAction a) async {
+    final Map<String, dynamic> params = a.params ?? const <String, dynamic>{};
+    switch (a.action) {
+      case 'findNotes':
+        if (failFindNotesFor.contains(params['query'])) {
+          return const AnkiConnectBatchResult(error: 'search failed');
+        }
+        return AnkiConnectBatchResult(
+            result: await findNotesByQuery(params['query'] as String));
+      case 'updateNoteFields':
+        final Map<String, dynamic> note =
+            params['note'] as Map<String, dynamic>;
+        final int id = note['id'] as int;
+        if (failNoteUpdatesFor.contains(id)) {
+          return const AnkiConnectBatchResult(error: 'note was not found');
+        }
+        await updateNoteFields(id, note['fields'] as Map<String, String>);
+        return const AnkiConnectBatchResult();
+      case 'deleteMediaFile':
+        final String filename = params['filename'] as String;
+        if (failDeletesFor.contains(filename)) {
+          return const AnkiConnectBatchResult(error: 'cannot delete');
+        }
+        await deleteMediaFile(filename);
+        return const AnkiConnectBatchResult();
+      default:
+        return const AnkiConnectBatchResult(error: 'unsupported action');
+    }
+  }
+
+  /// 批内单条失败注入（文件名 / noteId / 查询式）。
+  final Set<String> failDeletesFor = <String>{};
+  final Set<int> failNoteUpdatesFor = <int>{};
+  final Set<String> failFindNotesFor = <String>{};
+
+  @override
   Future<void> updateNoteFields(int noteId, Map<String, String> fields) async {
     notes[noteId]!.addAll(fields);
   }
@@ -454,19 +520,24 @@ void main() {
     expect(service.notes[1]!['Front'], '<img src="bbbb.jpg">');
   });
 
-  test('BUG-1263：取消在副本边界干净生效，部分结果如实报告', () async {
-    // 两个独立重复组（大小不同不会混组）。第一份删完后请求取消：第二份必须
-    // 原封不动，报告 cancelled = true 且数字只覆盖已完成部分。
-    writeMedia('a.jpg', <int>[1, 2, 3]);
-    writeMedia('bbbb.jpg', <int>[1, 2, 3]);
-    writeMedia('c.png', <int>[5, 6, 7, 8]);
-    writeMedia('dddd.png', <int>[5, 6, 7, 8]);
+  test('BUG-1263：取消在批边界干净生效，部分结果如实报告', () async {
+    // 批量化之后取消的粒度是 [kAnkiMediaDedupBatchSize] 个副本一批（见该常量
+    // 的取舍说明），不再是单个副本。这条测试钉的是「取消干净」这个语义本身：
+    // 已完成的那一批全部落地、未开始的那一批**一个字节都没动**、报告如实。
+    //
+    // 造 batchSize + 1 个独立重复组（各组字节长度不同 → 不会混组），于是恰好
+    // 两批：第一批删完后请求取消，第二批必须原封不动。
+    const int groups = kAnkiMediaDedupBatchSize + 1;
+    final Map<int, Map<String, String>> notes = <int, Map<String, String>>{};
+    for (int i = 0; i < groups; i++) {
+      final List<int> bytes = List<int>.filled(8 + i, i % 251);
+      writeMedia('g${i}a.mp3', bytes);
+      writeMedia('g${i}bbbb.mp3', bytes);
+      notes[1000 + i] = <String, String>{'Front': '[sound:g${i}bbbb.mp3]'};
+    }
     final _FakeAnkiConnectService service = _FakeAnkiConnectService(
       mediaDirPath: mediaDir.path,
-      notes: <int, Map<String, String>>{
-        1: <String, String>{'Front': '<img src="bbbb.jpg">'},
-        2: <String, String>{'Front': '<img src="dddd.png">'},
-      },
+      notes: notes,
     );
     final AnkiConnectRepository repo = AnkiConnectRepository(service: service);
 
@@ -475,14 +546,23 @@ void main() {
     );
 
     expect(report!.cancelled, isTrue);
-    expect(report.deletions, hasLength(1));
-    expect(service.deleted, hasLength(1));
-    // 两份副本恰好一份被删、一份完好（组处理顺序是文件名确定序，但断言不
-    // 依赖它）。
-    final int survivors =
-        <String>['bbbb.jpg', 'dddd.png'].where(mediaExists).length;
-    expect(survivors, 1);
-    expect(report.bytesSaved, report.deletions.single.bytes);
+    // 整整一批完成，剩下的一个副本连笔记字段都没被碰过。
+    expect(report.deletions, hasLength(kAnkiMediaDedupBatchSize));
+    expect(service.deleted, hasLength(kAnkiMediaDedupBatchSize));
+    final int survivors = <String>[
+      for (int i = 0; i < groups; i++) 'g${i}bbbb.mp3',
+    ].where(mediaExists).length;
+    expect(survivors, groups - kAnkiMediaDedupBatchSize);
+    expect(
+      report.bytesSaved,
+      report.deletions
+          .fold<int>(0, (int sum, MediaDedupDeletion d) => sum + d.bytes),
+    );
+    // 未处理批次的笔记字段仍指向副本（没有被提前改写）。
+    final int untouched = notes.values
+        .where((Map<String, String> f) => f['Front']!.contains('bbbb.mp3'))
+        .length;
+    expect(untouched, groups - kAnkiMediaDedupBatchSize);
   });
 
   test('BUG-1263：进度按 scanning → hashing → resolving 推进且计数自洽', () async {

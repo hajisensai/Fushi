@@ -420,8 +420,9 @@ class VideoDiscoveryResourceSearchPage extends StatelessWidget {
       );
 }
 
-class VideoDiscoverySubscriptionDialog extends StatelessWidget {
-  const VideoDiscoverySubscriptionDialog({
+/// 发现详情的订阅创建使用独立路由，与资源搜索共享同一块全尺寸 surface。
+class VideoDiscoverySubscriptionPage extends StatelessWidget {
+  const VideoDiscoverySubscriptionPage({
     required this.item,
     required this.registry,
     required this.sources,
@@ -437,18 +438,18 @@ class VideoDiscoverySubscriptionDialog extends StatelessWidget {
   final VideoDiscoverySubscriptionSubmit onSubmit;
 
   @override
-  Widget build(BuildContext context) => FushiDialogFrame(
-        maxWidth: 760,
-        maxHeightFactor: 0.88,
-        scrollable: false,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        child: VideoResourceSearchSurface(
-          initialItem: item,
-          registry: registry,
-          sources: sources,
-          defaultSourceId: defaultSourceId,
-          onSubscriptionSubmit: onSubmit,
-          onClose: () => Navigator.pop(context),
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: Text(t.video_discovery_subscribe)),
+        body: SafeArea(
+          child: VideoResourceSearchSurface(
+            initialItem: item,
+            registry: registry,
+            sources: sources,
+            defaultSourceId: defaultSourceId,
+            onSubscriptionSubmit: onSubmit,
+            onClose: () => Navigator.of(context).pop(),
+            pageMode: true,
+          ),
         ),
       );
 }
@@ -545,6 +546,12 @@ class _VideoResourceSearchSurfaceState
   }
 
   bool get _manualIdentityReady => _media != null;
+
+  /// 手动身份未满足时搜索按钮必须禁用（设计如此，不造 `manual` 假身份），
+  /// 但禁用原因要在 tooltip 里说清，而不是继续显示「搜索」误导用户。
+  String get _manualSearchTooltip => _manualIdentityReady
+      ? t.dialog_search
+      : t.video_discovery_manual_identity_hint;
 
   void _invalidateManualSearch() {
     setState(() {
@@ -759,7 +766,7 @@ class _VideoResourceSearchSurfaceState
                           Expanded(child: category),
                           SizedBox(width: tokens.spacing.gap),
                           IconButton.filledTonal(
-                            tooltip: t.dialog_search,
+                            tooltip: _manualSearchTooltip,
                             onPressed: _loading || !_manualIdentityReady
                                 ? null
                                 : () => unawaited(_search()),
@@ -777,7 +784,7 @@ class _VideoResourceSearchSurfaceState
                     SizedBox(width: 160, child: category),
                     SizedBox(width: tokens.spacing.gap),
                     IconButton.filledTonal(
-                      tooltip: t.dialog_search,
+                      tooltip: _manualSearchTooltip,
                       onPressed: _loading || !_manualIdentityReady
                           ? null
                           : () => unawaited(_search()),
@@ -889,6 +896,16 @@ class _VideoResourceSearchSurfaceState
                 );
               },
             ),
+            if (!_manualIdentityReady) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              Text(
+                t.video_discovery_manual_identity_hint,
+                key: const ValueKey<String>('video-resource-identity-hint'),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
             SizedBox(height: tokens.spacing.gap),
           ],
           if (_result?.isPartial == true)
@@ -1108,9 +1125,9 @@ class _VideoResourceSearchSurfaceState
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
                 labelText: t.video_jimaku_episode,
-                helperText: t.download_subscription_after_episode(
+                helperText: t.download_subscription_start_episode(
                   episode: _startAfterController.text.trim().isEmpty
-                      ? '0'
+                      ? '1'
                       : _startAfterController.text.trim(),
                 ),
               ),

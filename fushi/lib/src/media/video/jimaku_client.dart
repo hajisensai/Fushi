@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi/src/utils/net/app_http.dart';
 
 /// Jimaku（jimaku.cc）字幕条目：一个番剧/作品。
 class JimakuEntry {
@@ -364,7 +365,7 @@ Uri buildListFilesUri(String base, int entryId, {int? episode}) {
 /// （列文件）、文件 `url` 直接下载。鉴权头 `Authorization: <apiKey>`。
 class JimakuClient {
   JimakuClient({required this.apiKey, http.Client? client})
-      : _client = client ?? http.Client();
+      : _client = client ?? createAppHttpIoClient();
 
   final String apiKey;
   final http.Client _client;

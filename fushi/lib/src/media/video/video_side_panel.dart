@@ -28,9 +28,9 @@ class VideoTranslucentSidePanel extends StatelessWidget {
     final double minPanelWidth = maxPanelWidth < 280.0 ? maxPanelWidth : 280.0;
     final double panelWidth =
         width.clamp(minPanelWidth, maxPanelWidth).toDouble();
-    final BorderRadiusDirectional borderRadius = alignment.x < 0
-        ? const BorderRadiusDirectional.horizontal(end: Radius.circular(8))
-        : const BorderRadiusDirectional.horizontal(start: Radius.circular(8));
+    // 侧栏与窗口四边都留有安全间距，因此外侧两个角也应完整露出；旧实现只给
+    // 靠画面一侧加圆角，右侧栏的右上 / 右下仍是直角，看起来像贴边抽屉。
+    const BorderRadius borderRadius = BorderRadius.all(Radius.circular(12));
 
     return Align(
       alignment: alignment,

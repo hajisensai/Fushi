@@ -25,11 +25,22 @@ import 'package:fushi_core/fushi_core.dart';
 /// - **视频**：直改 `video_books.title` 列——**无覆盖层是正确设计**，raw 即显示名。
 /// - **游戏**：[GalgameEntry.displayName]（customData.name > nameCn > name）。
 ///
-/// # 已知待拍板（P4 刻意不扩大范围）
+/// # 跨端下发（BUG-1488 已拍板：显示名跟着书走）
 ///
-/// - 互联 host 对端书名（`app_model_library_host_service.dart` 的
-///   `resolveBookDisplayTitle` 语境）：override 是**本地偏好**，是否应跨端下发
-///   显示名尚未拍板，P4 维持现状不改。
+/// 「母设备改过名的书，同步到子设备仍显示原书名」——因为改名只落本机偏好，
+/// 而三条出境通道全把它当设备设置。现在三条都通了，且**只搬显示名，绝不搬身份**：
+///
+/// - 互联清单：`AppModelLibraryHostService.listBooks` 填 `RemoteBookInfo.displayTitle`
+///   （additive wire 键，与 raw title 相同时不写；旧 host/旧 peer 天然回落 raw）。
+///   消费恒走 `RemoteBookInfo.displayName`；`downloadId` / `bookKey` 仍是 raw。
+/// - 下载落地：peer 导入后把 host 的显示名写成本机 override（本机已有 override
+///   则保留本机的）。
+/// - 备份：`override_title://` 行改归「内容」——备份导出的 settings 谓词不再 strip
+///   它，合并导入 `BackupMergeEngine._mergeOverrideTitlePrefs` 按 insert-if-absent 并入。
+///
+/// 仍存的能力缺口：override 偏好**没有时刻列**，做不了 LWW ⇒ 对端**第二次**改名
+/// 无法覆盖本机已有的 override。补它需要给 override 一个 `updatedAt` 载体
+/// （对照 `book_custom_css`），属独立 schema 变更。
 
 /// 书（EPUB / SRT / 有声书）的显示名解析。
 ///

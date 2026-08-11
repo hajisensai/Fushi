@@ -138,6 +138,16 @@ void Gamepads::init() {
   GameInputCreate(&g_gameInput);
 
   if (g_gameInput != nullptr) {
+    // BUG-1541: the reaper must be running BEFORE the device callback is
+    // registered - from that moment on, on_gamepad_disconnected can only hand
+    // entries over to it (it must never join on GameInput's callback thread).
+    {
+      std::lock_guard<std::mutex> lock(reaper_mutex);
+      reaper_stop = false;
+    }
+    if (!reaper_thread.joinable()) {
+      reaper_thread = std::thread([this]() { reap_loop(); });
+    }
     // Register listener for gamepad events. Pass &deviceCallbackToken (a value
     // member) as the out-token — the upstream code passed an uninitialized raw
     // pointer here, so GameInput wrote the token to a wild address (BUG-116).
@@ -176,6 +186,50 @@ void Gamepads::join_and_destroy(GamepadData* gamepad) {
   delete gamepad;
 }
 
+void Gamepads::retire(GamepadData* gamepad) {
+  // Runs on the GameInput device-callback thread (disconnect / stale replace)
+  // and on the platform thread (stop). Must not block: see the reaper comment
+  // in gamepad.h (BUG-1541).
+  gamepad->stop_thread.store(true);
+  {
+    std::lock_guard<std::mutex> lock(reaper_mutex);
+    retired.push_back(gamepad);
+  }
+  reaper_cv.notify_one();
+}
+
+void Gamepads::reap_loop() {
+  for (;;) {
+    std::list<GamepadData*> batch;
+    {
+      std::unique_lock<std::mutex> lock(reaper_mutex);
+      reaper_cv.wait(lock,
+                     [this]() { return !retired.empty() || reaper_stop; });
+      batch.swap(retired);
+    }
+    // Woken with nothing left to reap: stop() is asking us to finish. Anything
+    // queued before that flag was set has already been drained by an earlier
+    // iteration, so exiting here cannot leak a thread.
+    if (batch.empty()) {
+      return;
+    }
+    for (auto gp : batch) {
+      join_and_destroy(gp);
+    }
+  }
+}
+
+void Gamepads::drain_retired() {
+  std::list<GamepadData*> batch;
+  {
+    std::lock_guard<std::mutex> lock(reaper_mutex);
+    batch.swap(retired);
+  }
+  for (auto gp : batch) {
+    join_and_destroy(gp);
+  }
+}
+
 void Gamepads::stop() {
   // Unregister FIRST so no new connect/disconnect callbacks (and thus no new
   // polling threads) can race with teardown. UnregisterCallback waits for any
@@ -193,11 +247,23 @@ void Gamepads::stop() {
     pending.swap(this->gamepads);
   }
   for (auto gp : pending) {
-    gp->stop_thread.store(true);
+    retire(gp);
   }
-  for (auto gp : pending) {
-    join_and_destroy(gp);
+
+  // Let the reaper finish the queue it already owns, then wind it down. This
+  // runs on the platform thread, so blocking here is fine (unlike the device
+  // callback thread - BUG-1541).
+  {
+    std::lock_guard<std::mutex> lock(reaper_mutex);
+    reaper_stop = true;
   }
+  reaper_cv.notify_all();
+  if (reaper_thread.joinable()) {
+    reaper_thread.join();
+  }
+  // Fallback for the case where the reaper never started (init() found no
+  // GameInput): nothing may outlive stop() unjoined.
+  drain_retired();
 
   // Only now, with every polling thread joined, is it safe to release the COM
   // object — and we null it so nothing can ever touch a released pointer.
@@ -238,39 +304,92 @@ void Gamepads::on_gamepad_connected(IGameInputDevice* device) {
   std::cout << "Gamepad connected: " << gp->id << " : " << gp->name
             << std::endl;
 
-  // Own the thread handle (no detach) so it can be joined on disconnect/stop.
-  gp->thread = std::thread([this, gp, device]() { read_gamepad(gp, device); });
-
-  std::lock_guard<std::mutex> lock(gamepads_mutex);
-  this->gamepads.push_back(gp);
+  // BUG-1541: a Bluetooth pad that idles out and wakes up can hand us a
+  // "connected" callback without a matching "disconnected" one (dropped, or
+  // bailed out because GetDeviceInfo returned null). Without this sweep the old
+  // entry - and its thread, still polling a device object the system already
+  // tore down - would linger forever next to the new one. Same deviceId or same
+  // device object means the same physical controller: retire the old entry.
+  std::list<GamepadData*> stale;
+  {
+    std::lock_guard<std::mutex> lock(gamepads_mutex);
+    for (auto it = this->gamepads.begin(); it != this->gamepads.end();) {
+      if ((*it)->id == gp->id || (*it)->device == device) {
+        stale.push_back(*it);
+        it = this->gamepads.erase(it);
+      } else {
+        ++it;
+      }
+    }
+    // Own the thread handle (no detach) so it can be joined on disconnect/stop.
+    // Started under the lock so a disconnect callback can never observe (and
+    // free) this entry before its thread handle exists.
+    gp->thread = std::thread([this, gp, device]() { read_gamepad(gp, device); });
+    this->gamepads.push_back(gp);
+  }
+  for (auto stale_gp : stale) {
+    retire(stale_gp);
+  }
 }
 
 void Gamepads::on_gamepad_disconnected(IGameInputDevice* device) {
   auto info = device->GetDeviceInfo();
-  if (info == nullptr) {
-    std::cerr << "Gamepad disconnected but failed to read info" << std::endl;
-    return;
+  // BUG-1541: GetDeviceInfo can fail once the system has torn the device down,
+  // which is precisely the Bluetooth-idle case. Bailing out here (the old
+  // behaviour) left the entry and its polling thread in the registry forever,
+  // spinning on a dead device object. Fall back to matching the device pointer
+  // we AddRef'd at connect time so a removal can never be dropped.
+  std::string removeId;
+  if (info != nullptr) {
+    removeId = AppLocalDeviceIdToString(info->deviceId);
+    std::cout << "Gamepad disconnected: " << removeId << std::endl;
+  } else {
+    std::cerr << "Gamepad disconnected but failed to read info; matching by "
+                 "device pointer"
+              << std::endl;
   }
-  std::string removeId = AppLocalDeviceIdToString(info->deviceId);
-  std::cout << "Gamepad disconnected: " << removeId << std::endl;
 
-  GamepadData* removeGp = nullptr;
+  std::list<GamepadData*> removed;
   {
     std::lock_guard<std::mutex> lock(gamepads_mutex);
-    for (auto gp : this->gamepads) {
-      if (gp->id == removeId) {
-        removeGp = gp;
-        break;
+    for (auto it = this->gamepads.begin(); it != this->gamepads.end();) {
+      const bool matches = (*it)->device == device ||
+                           (!removeId.empty() && (*it)->id == removeId);
+      if (matches) {
+        removed.push_back(*it);
+        it = this->gamepads.erase(it);
+      } else {
+        ++it;
       }
     }
-    if (removeGp != nullptr) {
-      this->gamepads.remove(removeGp);
+  }
+  // We are on GameInput's device-callback thread. Hand the join off to the
+  // reaper - joining here parks this thread on a polling thread that is itself
+  // inside g_gameInput->GetCurrentReading(), which stalls GameInput's callback
+  // dispatch and swallows the "connected" callback the pad fires when it wakes
+  // back up (BUG-1541: pad dead until the app restarts).
+  for (auto gp : removed) {
+    retire(gp);
+  }
+}
+
+void Gamepads::neutralize_inputs(GamepadData* gamepad,
+                                 GameInputGamepadState& state) {
+  const GameInputGamepadState neutral = {
+      GameInputGamepadNone, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  if (!are_states_different(state, neutral)) {
+    return;
+  }
+  // BUG-1541: a controller that vanishes mid-press never delivers the release
+  // frame, so the Dart-side GamepadFrameState would keep the button latched
+  // (endless auto-repeat / stick pinned to an edge) even after a clean
+  // reconnect. Synthesize the missing releases so every press still has one.
+  for (const auto& event : diff_states(state, neutral)) {
+    if (event_emitter.has_value()) {
+      (*event_emitter)(gamepad, event);
     }
   }
-  // Stop + join + free outside the lock (join must not hold gamepads_mutex).
-  if (removeGp != nullptr) {
-    join_and_destroy(removeGp);
-  }
+  state = neutral;
 }
 
 void Gamepads::read_gamepad(GamepadData* gamepad, IGameInputDevice* device) {
@@ -280,6 +399,20 @@ void Gamepads::read_gamepad(GamepadData* gamepad, IGameInputDevice* device) {
   // stop_thread then join() before releasing it, so we never poll a released
   // object. The device is AddRef'd by the owner for the same reason.
   while (!gamepad->stop_thread.load()) {
+    // BUG-1541: a Bluetooth pad going idle drops the device out of the
+    // Connected state. Keeping GetCurrentReading pointed at a device the system
+    // is tearing down burns a core for nothing and is the one call that can
+    // park this thread inside GameInput's own locks - which used to wedge the
+    // callback thread that was joining us. Release whatever was held and idle
+    // down instead; if the same device object comes back, polling resumes with
+    // no bookkeeping at all.
+    if ((device->GetDeviceStatus() & GameInputDeviceConnected) ==
+        GameInputDeviceNoStatus) {
+      neutralize_inputs(gamepad, previous_state);
+      Sleep(64);
+      continue;
+    }
+
     IGameInputReading* reading = nullptr;
     GameInputGamepadState state;
     g_gameInput->GetCurrentReading(GameInputKindGamepad, device, &reading);
@@ -300,6 +433,9 @@ void Gamepads::read_gamepad(GamepadData* gamepad, IGameInputDevice* device) {
 
     Sleep(8);
   }
+
+  // Teardown/disconnect: same missing-release problem as the idle branch above.
+  neutralize_inputs(gamepad, previous_state);
 
   std::cout << "Gamepad thread exit " << gamepad->id << std::endl;
   // NOTE: the thread no longer frees `gamepad` — the owner joins this thread

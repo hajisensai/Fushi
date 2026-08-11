@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:fushi/src/utils/net/app_http.dart';
 
 class BangumiApiException implements Exception {
   const BangumiApiException({
@@ -280,7 +281,7 @@ class BangumiApiClient implements BangumiTrackingApi {
     http.Client? client,
   })  : _accessToken = accessToken.trim(),
         _userAgent = userAgent,
-        _client = client ?? http.Client();
+        _client = client ?? createAppHttpIoClient();
 
   static const String apiBase = 'https://api.bgm.tv';
   static const String accessTokenUrl = 'https://next.bgm.tv/demo/access-token';

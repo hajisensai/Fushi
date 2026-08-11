@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
+import 'package:fushi/src/utils/net/app_http.dart';
 
 class VideoMetadataDownloadedAsset {
   const VideoMetadataDownloadedAsset({
@@ -28,7 +29,7 @@ class VideoMetadataAssetDownloader {
     this.baseBackoff = const Duration(milliseconds: 500),
     this.maxRetryDelay = const Duration(seconds: 30),
     Future<void> Function(Duration)? sleep,
-  })  : _client = client ?? http.Client(),
+  })  : _client = client ?? createAppHttpIoClient(),
         _ownsClient = client == null,
         _sleep = sleep ?? Future<void>.delayed;
 

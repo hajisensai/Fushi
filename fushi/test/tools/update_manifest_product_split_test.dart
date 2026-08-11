@@ -86,10 +86,16 @@ void main() {
       // 只看真正的清单名赋值，不做全文 grep——否则脚本里解释性的注释会把守卫喂饱。
       // 限定 `latest-` 开头是为了排除把变量原样透传给子进程的
       // `MANIFEST_FILE="$MANIFEST_FILE"`，那不是在定义文件名。
-      final List<String> assigned = RegExp(r'MANIFEST_FILE="(latest-[^"]+)"')
-          .allMatches(script)
-          .map((RegExpMatch m) => m.group(1)!)
-          .toList();
+      //
+      // 左边界必须显式排掉 `LEGACY_MANIFEST_FILE=`（BUG-1516 ①b 新增）：那是**故意**
+      // 不带族后缀的老清单名，用于把桌面产物镜像回 hibiki 族。没有左边界时子串会把它
+      // 当成本条要管的「广告用清单名」判红——本条守的是「客户端读哪个文件」，
+      // 镜像写入由下面 `desktopMirror` 一组单独立规矩。
+      final List<String> assigned =
+          RegExp(r'(?<![A-Z_])MANIFEST_FILE="(latest-[^"]+)"')
+              .allMatches(script)
+              .map((RegExpMatch m) => m.group(1)!)
+              .toList();
       expect(
         assigned.length,
         greaterThanOrEqualTo(3),
@@ -116,6 +122,55 @@ void main() {
           reason: '清单名 $name 没带产品族后缀——两族会写同一个文件',
         );
       }
+    });
+
+    test('BUG-1516 ①b：跨族镜像只准加桌面资产，绝不写顶层、绝不带 APK', () {
+      // 拆族的隔离方向是**按平台**的，不是按整份清单：
+      //  * Android 必须隔离——跨包名装不上（INSTALL_FAILED_UPDATE_INCOMPATIBLE）。
+      //  * Windows/macOS 必须放行——它们换包名靠安装器覆盖安装，Hibiki 桌面客户端
+      //    选中 fushi-*-windows-setup.exe 装下去**就是**迁移本身，桌面没有桥。
+      // 一刀切按文件拆的后果是 BUG-1516：桌面槽位冻在拆族前的包上，被 prune 后 404。
+      final String script =
+          File(p.join(repoRoot.path, 'tool', 'publish_update_manifest.sh'))
+              .readAsStringSync();
+
+      final Iterable<RegExpMatch> legacyNames =
+          RegExp(r'LEGACY_MANIFEST_FILE="(latest-[^"]+)"').allMatches(script);
+      expect(legacyNames.length, greaterThanOrEqualTo(3),
+          reason: '三个通道都该有对应的老清单名，才谈得上镜像');
+      for (final RegExpMatch m in legacyNames) {
+        expect(
+          m.group(1)!.endsWith('$kFushiManifestSuffix.json'),
+          isFalse,
+          reason: '老清单名 ${m.group(1)} 带了本体族后缀——那就不是老客户端读的那个文件了',
+        );
+      }
+
+      // 顶层归桥。抬顶层会让安卓客户端读到本体的 version，而它唯一能选的 APK 还是
+      // 桥的旧包——正是 BUG-1481 修掉的跨族错位。
+      expect(
+        script.contains('ADVERTISE_TOP_LEVEL="false"'),
+        isTrue,
+        reason: '镜像必须以「只贡献资产」模式写入；一旦漏掉这个开关，'
+            '本体的 seq 会把桥清单的顶层顶掉',
+      );
+      expect(
+        RegExp(r'ADVERTISE_TOP_LEVEL="true"').hasMatch(script),
+        isFalse,
+        reason: '脚本里不该出现让镜像写顶层的分支',
+      );
+
+      // 镜像资产集必须是桌面白名单，且显式排除 APK/IPA。
+      // 钉**整个元组**（右括号收尾），不是子串：`contains('… "-macos.zip"')` 在
+      // `(… "-macos.zip", ".apk")` 下照样为真，那种写法拦不住往白名单里加东西——
+      // 实测过，加 `.apk` 后子串版一声不吭。
+      expect(
+        RegExp(r'suffixes = \("-windows-setup\.exe", "-macos\.zip"\)')
+            .hasMatch(script),
+        isTrue,
+        reason: '镜像的资产白名单必须恰好是 Windows/macOS 两种桌面安装包；'
+            '放进 APK 就把安卓装不上的包塞给了桥的客户端',
+      );
     });
 
     test('debug rolling tag 按产品族分，不再共用历史 tag', () {

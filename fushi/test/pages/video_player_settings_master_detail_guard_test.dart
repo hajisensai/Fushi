@@ -250,7 +250,7 @@ void main() {
             'mpv advanced heading must not float outside its settings group');
   });
 
-  test('embedded shader detail keeps section titles inside video surfaces', () {
+  test('embedded shader detail flattens groups inside the video surface', () {
     // 阶段B：_buildShadersDetail 移出 sheet，改为 video_settings_actions.dart 的
     // buildVideoShaderManager（SettingsCustomItem builder）；守卫改锁新位置。
     final String actionsSource =
@@ -266,9 +266,9 @@ void main() {
         reason: 'video settings should embed the shader manager detail');
     expect(
       shaderDetail,
-      contains('titlePlacement: SettingsSectionTitlePlacement.inside'),
+      contains('embedded: true'),
       reason:
-          'embedded shader detail headings must be part of the video section surfaces',
+          'embedded shader detail must reuse the schema surface instead of nesting cards',
     );
 
     final String shaderSource =
@@ -286,13 +286,7 @@ void main() {
       'class _MpvShaderPickerDialog extends StatefulWidget {',
     );
     final int titledShaderSections =
-        RegExp(r'AdaptiveSettingsSection\(\s*title:')
-            .allMatches(buildMethod)
-            .length;
-    final int placementForwarders =
-        RegExp(r'titlePlacement:\s*widget\.titlePlacement')
-            .allMatches(buildMethod)
-            .length;
+        RegExp(r'_shaderSection\(\s*title:').allMatches(buildMethod).length;
 
     expect(managerWidget,
         contains('this.titlePlacement = SettingsSectionTitlePlacement.outside'),
@@ -300,12 +294,18 @@ void main() {
             'standalone shader manager callers should keep the current outside-title default');
     expect(managerWidget,
         contains('final SettingsSectionTitlePlacement titlePlacement;'));
+    expect(managerWidget, contains('this.embedded = false'));
+    expect(managerWidget, contains('final bool embedded;'));
     expect(titledShaderSections, 3,
         reason:
             'shader detail is expected to expose quality, advanced, and installed sections');
-    expect(placementForwarders, titledShaderSections,
+    expect(buildMethod, contains('if (!widget.embedded)'));
+    expect(buildMethod, contains('_EmbeddedShaderSection('));
+    expect(buildMethod, contains('AdaptiveSettingsSection('),
+        reason: 'standalone shader manager still uses grouped settings cards');
+    expect(buildMethod, contains('titlePlacement: widget.titlePlacement'),
         reason:
-            'all titled shader sections must honor the caller-selected title placement');
+            'standalone group cards still honor the selected title placement');
   });
 
   test('video settings side panel owns UI scale and hover lifetime', () {
@@ -388,10 +388,8 @@ void main() {
     expect(
         hoverExitMethod, isNot(contains('_videoControlsVisible.value = false')),
         reason: '鼠标移出不应在 Hibiki 侧直接收起可见性（交给 media_kit onExit 推送，TODO-364）');
-    expect(
-        syntheticHoverMethod,
-        contains(
-            'event.device == _VideoFushiPageState._syntheticHoverDevice'));
+    expect(syntheticHoverMethod,
+        contains('event.device == _VideoFushiPageState._syntheticHoverDevice'));
     expect(
         hoverHandlerMethod, contains('if (!_isSyntheticControlsHover(event))'));
     // TODO-364：真实 hover 不再乐观翻镜像（可见性由 media_kit onHover 推送）。
@@ -415,7 +413,7 @@ void main() {
       '/// 从本机 mpv 发现的着色器多选导入对话框',
     );
 
-    expect(buildMethod, contains('AdaptiveSettingsSection('),
+    expect(buildMethod, contains('_shaderSection('),
         reason: '着色器详情应按画质档位 / 进阶 / 列表分组');
     // TODO-041 方案甲'：顶部是五档单选器（无/低/中/高/极高），不再一堆陌生动作堆叠。
     expect(buildMethod, contains('video_shader_quality_tier'),

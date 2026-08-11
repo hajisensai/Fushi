@@ -13,6 +13,7 @@ import 'package:fushi/src/mining/immersion_mining_request.dart'
 import 'package:http/http.dart' as http;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:meta/meta.dart';
+import 'package:fushi/src/utils/net/app_http.dart';
 
 // resolveFfmpegExecutable 已移到 ffmpeg_backend.dart（执行配置的自然归宿）；
 // 从这里 re-export 让既有 importer 与测试仍从本文件解析它。
@@ -116,7 +117,7 @@ Future<String?> materializeRemoteAudioViaRangeDownload({
   FfmpegFailureReporter? onFailure,
 }) async {
   if (!_isRemoteFfmpegInput(audioUrl)) return null;
-  final http.Client client = httpClient ?? http.Client();
+  final http.Client client = httpClient ?? createAppHttpIoClient();
   final File output = File(outputPath);
   try {
     await output.parent.create(recursive: true);

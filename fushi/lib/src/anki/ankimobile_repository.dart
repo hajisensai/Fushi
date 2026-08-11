@@ -192,12 +192,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
     required AnkiMiningContext context,
   }) async {
     final settings = await loadSettings();
-    final deck = settings.availableDecks
-            .firstWhereOrNull((d) => d.id == settings.selectedDeckId) ??
-        (settings.selectedDeckName != null
-            ? settings.availableDecks
-                .firstWhereOrNull((d) => d.name == settings.selectedDeckName)
-            : null);
+    final AnkiDeck? deck = resolveSelectedDeck(settings);
     if (deck == null) return const MineOutcome.notConfigured();
 
     final noteType = settings.availableNoteTypes
@@ -328,7 +323,11 @@ class AnkiMobileRepository extends BaseAnkiRepository {
           'Could not open AnkiMobile. Install AnkiMobile and try again.',
         );
       }
-      return MineOutcome.success(audioWarning: rendered.audioWarning);
+      // BUG-1549：实际落卡的牌组名随成功结果带回（与其余后端对称）。
+      return MineOutcome.success(
+        deckName: deck.name,
+        audioWarning: rendered.audioWarning,
+      );
     } catch (_) {
       await closeMediaServerKeepAlive();
       rethrow;

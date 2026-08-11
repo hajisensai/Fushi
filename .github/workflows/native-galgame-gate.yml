@@ -2,7 +2,8 @@
 #
 # 补的缺口：这组守卫（engine-support 生成物 / luna profile 生成物 / vendored
 # LunaHook DLL 完整性 / manifest schema / adapter 结构 / evidence 契约 /
-# workflow 契约）此前**只**挂在 voice-hook-helper.yml 上，而那个 workflow 的
+# workflow 契约）此前**只**挂在 voice-hook-helper.yml 上（该 workflow 已于 2026-08-11 随
+# helper 在线发布通道一并删除），而那个 workflow 的
 # 触发是 `workflow_dispatch` + `push: develop`。也就是说：改 engine-support.yaml、
 # adapter 骨架或 luna profile 的 PR，在合进 develop 之前从未被这些守卫检查过，
 # 红了要等 push 之后才知道 —— 那时已经进主干。
@@ -10,7 +11,8 @@
 # 注意：C++ 编译与双架构 ctest **不在**本 workflow 的职责内，它们已经由
 # build-multiplatform.yml 的 windows job 在 PR 上跑（`pull_request` + paths 含
 # `native/**` -> `build_distribution.ps1 -RunTests`）。这里只补那条真正缺失的、
-# 且成本近乎为零的静态守卫链，不重复跑已有覆盖。
+# 且成本近乎为零的静态守卫链，不重复跑已有覆盖。发布 workflow 删除后，本文件与
+# build-multiplatform.yml 的 windows job 就是 galgame_hook 仅有的两道 CI 门。
 #
 # 平台范围：galgame 相关一律只做 Windows 端（仓库硬规则）。本 workflow 跑在
 # ubuntu-latest 只是因为这七条守卫全是平台无关的静态校验（Python stdlib +

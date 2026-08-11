@@ -29,11 +29,61 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1391 条。点号进各自文件。
+> 共 1441 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1554](bugs/BUG-1554-lan-discovery-browser-orphan.md) | ✅ | ✅ | LAN 发现 startDiscovery 无幂等/无 dispose 守卫，重扫与关页竞态留下孤儿 Bonsoir browser |
+| [BUG-1553](bugs/BUG-1553-interconnect-pair-failure-reason-lost.md) | ✅ | ✅ | 配对失败原因被压平：限速 429 / TLS 指纹不符 / 超时全说成「配对失败」且不留日志 |
+| [BUG-1552](bugs/BUG-1552-sync-channel-failure-cascades.md) | ✅ | ✅ | 云备份通道抛异常直接终止通道循环，互联通道整轮不跑（「并存互不干扰」不成立） |
+| [BUG-1551](bugs/BUG-1551-interconnect-server-start-race.md) | ✅ | ✅ | 互联服务开关竞态：并发 start 抢同一端口、catch 清掉别人的句柄，host 在跑却显示已停止且关不掉 |
+| [BUG-1550](bugs/BUG-1550-interconnect-peer-token-single-slot.md) | ✅ | ✅ | 互联配对第二台对端后整体瘫痪：per-peer token 只有一个全局槽 + 401 株连全部候选 |
+| [BUG-1549](bugs/BUG-1549-anki-toast-empty-deckname.md) | ✅ | ✅ | AnkiConnect 制卡成功 toast 牌组名为空——成功结果不带实际落卡牌组名，调用点事后从 selectedDeckName 猜 |
+| [BUG-1548](bugs/BUG-1548-resource-search-wrong-season-ranking.md) | ✅ | ✅ | 资源搜索结果错季混排：结果只按 seeders 排序，无标题/季号相关度 |
+| [BUG-1547](bugs/BUG-1547-tmdb-unconfigured-scrape-all-fails.md) | ✅ | ✅ | TMDB 未配置时全部刮削整批失败：resolver 不回退到零密钥的 Bangumi/AniList，且错误是英文裸串 |
+| [BUG-1546](bugs/BUG-1546-settings-width-text-truncation.md) | ✅ | ✅ | 设置页限宽与描述/集标题截断显示不全 |
+| [BUG-1545](bugs/BUG-1545-kon-collection-detail-crash.md) | ✅ | ✅ | 视频起播时 hwdec=auto 抢先下发，CUDA 硬解初始化崩溃整个进程（Windows/NVIDIA） |
+| [BUG-1544](bugs/BUG-1544-episode-number-follow-parsed.md) | ✅ | ✅ | 选集卡片序号用导入顺位号而非文件名解析出的真实集数 |
+| [BUG-1543](bugs/BUG-1543-season-split-not-splitting.md) | ✅ | ✅ | 合集分季识别吃不下「标题 2 - 集号」形态，多季全挤进第 1 季 |
+| [BUG-1542](bugs/BUG-1542-collection-continue-wrong-episode.md) | ✅ | ✅ | 合集继续播放选错集：选条目层只按位置取最靠后有痕迹成员，忽略最近播放时刻 |
+| [BUG-1541](bugs/BUG-1541-gamepad-bt-idle-dead.md) | ✅ | ✅ | 蓝牙手柄待机断连后按键永久失效，必须重启 app |
+| [BUG-1540](bugs/BUG-1540-download-task-error-detail.md) | ✅ | ✅ | 下载任务卡错误展示：英文裸串整句铺开、无点击详情、chip 未本地化 |
+| [BUG-1539](bugs/BUG-1539-resource-search-button-dead.md) | ✅ | ✅ | 下载资源页手动搜索按钮禁用但无任何原因提示 |
+| [BUG-1538](bugs/BUG-1538-download-proxy-default-direct.md) | ✅ | ✅ | 下载域默认走系统代理而非直连，发现聚合来源需钉死不随代理分叉 |
+| [BUG-1537](bugs/BUG-1537-settings-subtitle-ellipsis-single-line.md) | ✅ | ✅ | 设置行说明文字被压成单行省略号（ellipsis + maxLines:null） |
+| [BUG-1536](bugs/BUG-1536-horizontal-row-steals-vertical-wheel.md) | ✅ | ✅ | 视频首页横滚行抢走整页纵向滚动（应 Shift+滚轮才横滚） |
+| [BUG-1516](bugs/BUG-1516-update-manifest-dead-asset-404.md) | ✅ | ✅ | 更新清单保留已被 prune 的资产条目，客户端下载必 404 |
+| [BUG-1515](bugs/BUG-1515-parent-extras-split-series.md) | ✅ | ✅ | 父作品短篇被错误拆成独立系列卡 |
+| [BUG-1514](bugs/BUG-1514-subscription-episode-selection-order.md) | ✅ | ✅ | 订阅选集季号错误、重复下载且顺序按完成时间乱序 |
+| [BUG-1513](bugs/BUG-1513-subscription-first-episode-skipped.md) | ✅ | ✅ | 发现订阅跳过所选首集 |
+| [BUG-1512](bugs/BUG-1512-download-task-empty-overlay-metrics.md) | ✅ | ✅ | 下载任务空态遮挡且缺少实时指标 |
+| [BUG-1511](bugs/BUG-1511-subscription-embedded-backend-missing.md) | ✅ | ✅ | 订阅创建后因内置下载引擎缺失而全部卡在需处理 |
+| [BUG-1510](bugs/BUG-1510-migration-import-completion-pref-on-closed-db.md) | 🚧 | 🚧 | 导入完成标志写已关闭的 drift 连接：合并其实成功却谎报『校验未通过已保留待重传』，而批次文件已被删 |
+| [BUG-1509](bugs/BUG-1509-jimaku-dialog-size-search-jank.md) | ✅ | ✅ | Jimaku 字幕框偏小且搜索首帧卡顿 |
+| [BUG-1508](bugs/BUG-1508-migration-v79-legacy-video-tag-column.md) | ✅ | ✅ | v79 标签迁移不兼容旧 video_book_uid 列导致启动失败 |
+| [BUG-1507](bugs/BUG-1507-video-shader-nested-cards.md) | ✅ | ✅ | 视频画质增强嵌入设置重复嵌套卡片 |
+| [BUG-1506](bugs/BUG-1506-video-drag-seek-guard-stale-anchor.md) | ✅ | ✅ | 视频横滑 seek 守卫锚点在 BUG-1485 后失效 |
+| [BUG-1505](bugs/BUG-1505-migration-import-failure-force-restart.md) | 🚧 | 🚧 | 迁移导入失败被强制重启带走：页面与失败原因一起消失，错误日志 0 条 |
+| [BUG-1504](bugs/BUG-1504-subtitle-drop-attach-silent-failure.md) | ✅ | ✅ | 拖放字幕到视频卡失败无任何提示 |
+| [BUG-1503](bugs/BUG-1503-sync-push-book-no-display-title.md) | ✅ | ✅ | 本端把书 push 给 host 时不带显示名（裸 epub 上传无元数据） |
+| [BUG-1502](bugs/BUG-1502-sync-override-title-lww.md) | ✅ | ✅ | 书改名跨端合并无时刻列做不了 LWW（第二次改名传不到子设备） |
+| [BUG-1501](bugs/BUG-1501-video-episode-click-outside-close.md) | ✅ | ✅ | 选集横轨只能点 X 关闭，点击视频区域无效 |
+| [BUG-1500](bugs/BUG-1500-dict-concurrent-import-temp-race.md) | ✅ | ✅ | 词典手动下载与静默自动更新无互斥，共用 import_temp 互相删除 |
+| [BUG-1499](bugs/BUG-1499-dict-download-no-cancel-no-background.md) | ✅ | ✅ | 词典下载进度框无法取消也无法后台化 |
+| [BUG-1498](bugs/BUG-1498-outbound-links-bypass-app-proxy.md) | ✅ | ✅ | 多条出站链路绕过统一代理层 |
+| [BUG-1497](bugs/BUG-1497-remote-download-progress-fake-importer-no-db-row.md) | ✅ | ✅ | 远端书下载进度回填测试假 importer 不落库，v82 uid 闸门后回填永不发生 |
+| [BUG-1496](bugs/BUG-1496-collection-member-entrykey-uid-test-stale.md) | ✅ | ✅ | 合集详情焦点测试用 bookKey 加成员，v83 entryKey 切 uid 后合集行不渲染 |
+| [BUG-1495](bugs/BUG-1495-dashboard-drift-watch-teardown-timer.md) | ✅ | ✅ | 首页 dashboard widget 测试全挂：drift .watch() 隔离清单漏了新增消费方 |
+| [BUG-1494](bugs/BUG-1494-mining-guards-stale-addminingcount.md) | ✅ | ✅ | 制卡记账守卫仍钉 addMiningCount，P4 写侧收敛后把红带进 develop |
+| [BUG-1493](bugs/BUG-1493-dict-download-no-proxy-no-progress.md) | ✅ | ✅ | 词典下载不走系统代理、无超时，且下载/导入阶段无可归因进度 |
+| [BUG-1492](bugs/BUG-1492-dict-update-stale-lookup-cache.md) | ✅ | ✅ | 词典覆盖导入/在线更新后查词缓存不失效，更新完的词典查不到词 |
+| [BUG-1491](bugs/BUG-1491-anki-dedup-serial-delete.md) | ✅ | ✅ | Anki 媒体去重逐个删除过慢 |
+| [BUG-1490](bugs/BUG-1490-desktop-non-utf8-subtitle-unsupported.md) | ✅ | ✅ | 桌面端非 UTF-8 字幕全被误报为不支持 |
+| [BUG-1489](bugs/BUG-1489-media-kind-guard-frozen-migration.md) | ✅ | ✅ | MediaKind 复合键守卫误判迁移冻结字面量 |
+| [BUG-1488](bugs/BUG-1488-sync-book-rename-display-title.md) | ✅ | ✅ | 母设备重命名的书同步到子设备仍显示原书名 |
+| [BUG-1487](bugs/BUG-1487-ios-popup-furigana-webkit.md) | ✅ | ✅ | iOS 查词弹窗振假名渲染异常 |
 | [BUG-1486](bugs/BUG-1486-waveform-align-strip-list-out-of-sync.md) | ✅ | ✅ | 波形对轴面板上下字幕不一致 |
+| [BUG-1485](bugs/BUG-1485-mobile-video-drag-seek-sensitivity.md) | ✅ | ✅ | 移动端视频横滑 seek 灵敏度过高 |
 | [BUG-1484](bugs/BUG-1484-subtitle-list-follow-nearest-cue.md) | ✅ | ✅ | 字幕列表打开时未定位到最近字幕 |
 | [BUG-1483](bugs/BUG-1483-webview2-userdata-readonly-install.md) | ✅ | ✅ | Windows 装进不可写目录后 WebView2 数据目录建不出来（启动必弹错 + 更新失败） |
 | [BUG-1482](bugs/BUG-1482-video-resource-dropdown-overflow.md) | ✅ | ✅ | 资源搜索对话框下拉框横向溢出 |

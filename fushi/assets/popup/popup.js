@@ -3401,9 +3401,26 @@ function postProcessRuby(container) {
                 sib = sib.nextSibling;
             }
             if (sib && isEl(sib, 'RT')) {
-                unit.appendChild(sib);
-                // BUG-850: reserve horizontal room equal to the reading. The <rt>
-                // is position:absolute (no inline width), so a reading wider than
+                // BUG-1487: the positioned annotation box is a NEUTRAL span, not
+                // the <rt>. WebKit (iOS/macOS WKWebView) force-resets `position`
+                // to static on <rt> at the renderer level — measured on a real
+                // WKWebView: getComputedStyle(rt).position === 'static' even
+                // with display:block forced — so the whole absolute-anchor
+                // scheme silently collapsed there and the reading rendered
+                // inline to the RIGHT of its kanji (将しょう棋ぎ) while the
+                // padding-top reserve stayed empty. Blink honoured it, which is
+                // why this only ever showed up on iOS. No engine special-cases a
+                // bare <span>, so .ruby-rt carries the position and the <rt>
+                // survives as a semantic in-flow child — keeping ruby lookup
+                // selection (selection.js closest('rt, rp'),
+                // BUG-110/123/125/129) and dictionary `rt {}` custom CSS intact.
+                const rtBox = document.createElement('span');
+                rtBox.className = 'ruby-rt';
+                unit.appendChild(rtBox);
+                rtBox.appendChild(sib);
+                // BUG-850: reserve horizontal room equal to the reading. The
+                // reading box (.ruby-rt) is position:absolute (no inline width),
+                // so a reading wider than
                 // its kanji would overhang and collide with the next base's
                 // reading. This zero-height, in-flow twin of the reading text
                 // grows the per-base unit's shrink-to-fit width to the reading

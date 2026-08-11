@@ -208,7 +208,7 @@ class MatchScorer {
   static Set<int> _detectSeasons(ScrapeCandidate candidate) {
     final Set<int> seasons = <int>{};
     for (final String name in <String>[candidate.title, ...candidate.aliases]) {
-      seasons.addAll(_detectSeasonsInText(name));
+      seasons.addAll(detectSeasonsInText(name));
     }
     return seasons;
   }
@@ -249,7 +249,11 @@ class MatchScorer {
   /// 识别单个标题串里的季度记号：
   /// `第N季/第N期/第N部` / `2nd Season` / `Season 2` / `Part 2` /
   /// `S2` / 罗马数字 Ⅱ Ⅲ（独立 token）。
-  static Set<int> _detectSeasonsInText(String rawName) {
+  ///
+  /// 先归一化再扫，所以**不受括号块影响**——这正是它和 [FilenameParser] 的分工：
+  /// 后者按位置剥块，`(Season 3)` 这种整块会被当噪音丢掉。资源搜索的相关度排序
+  /// （`video_resource_relevance.dart`）复用本函数，不要再抄一份季号正则。
+  static Set<int> detectSeasonsInText(String rawName) {
     final String text = TitleNormalizer.normalize(rawName);
     final Set<int> seasons = <int>{};
     // 第N季 / 第N期 / 第N部（阿拉伯或中文数字）。

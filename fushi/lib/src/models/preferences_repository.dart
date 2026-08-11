@@ -1,9 +1,6 @@
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:fushi_core/fushi_core.dart';
-
-import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/torznab_client.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
@@ -22,6 +19,7 @@ import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
     show MiningMediaCompression;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/update_check_cache.dart';
+import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 
 enum DesktopClipboardWindowMode {
   normal('normal'),
@@ -2107,10 +2105,11 @@ class PreferencesRepository extends ChangeNotifier {
   // 副本，不迁移到任何游戏；旧 Profile apply/JSON import 也会拒绝它复活。全局值
   // 无法映射成「每个游戏各自开不开」，新结构仍一律从关闭起步，用户按游戏自己开。
 
-  /// AniList/Nyaa/Jimaku requests: auto (env > enabled system proxy > direct),
-  /// explicit direct, or a user-provided host:port proxy.
+  /// AniList/Nyaa/Jimaku requests: direct (default, BUG-1538 —— 下载域默认不走
+  /// 代理), auto (env > enabled system proxy > direct), or a user-provided
+  /// host:port proxy. 已显式存过 'auto' 的用户不受默认值变更影响。
   String get downloadNetworkProxyMode =>
-      getPref('download_network_proxy_mode', defaultValue: 'auto') as String;
+      getPref('download_network_proxy_mode', defaultValue: 'direct') as String;
 
   Future<void> setDownloadNetworkProxyMode(String value) async {
     await setPref('download_network_proxy_mode', value);

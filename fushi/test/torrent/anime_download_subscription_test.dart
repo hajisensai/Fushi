@@ -189,11 +189,12 @@ void main() {
         _torrent(hash: 'weak', episode: 2, seeders: 2),
         _torrent(hash: 'best', episode: 2, seeders: 20),
         _torrent(hash: 'next', episode: 4),
+        _torrent(hash: 'dimensions', episode: 5, resolution: '1920x1080'),
       ],
     );
 
     expect(selected.map((NyaaTorrent torrent) => torrent.infoHash),
-        <String>['best', 'next']);
+        <String>['best', 'next', 'dimensions']);
   });
 
   test('subscription JSON remains round-trippable', () {

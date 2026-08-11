@@ -266,8 +266,7 @@ class FushiSyncServer {
   /// `fushi_paired_peers` 表）。注入而非直连 DB，保持 server 存储层无依赖、可单测。
   /// null（未接线，如纯协议单测）时 confirm 回退派发共享 [_token]，不落 per-peer 行
   /// ——既有 pair_v2 行为零变化（Never break userspace）。
-  Future<void> Function(FushiPairedPeerRegistration registration)?
-      onPeerPaired;
+  Future<void> Function(FushiPairedPeerRegistration registration)? onPeerPaired;
 
   /// TODO-961 M1b: 供给当前全部未吊销的 per-peer token（auth 校验入站请求时，除共享
   /// [_token] 外接受任一 peer token）。注入而非直连 DB。首次 auth 时惰性加载并缓存；
@@ -1413,7 +1412,18 @@ class FushiSyncServer {
       tempPrefix: 'hibiki_book_in',
       tempExtension: '.epub',
       export: () => svc.exportBook(bookId),
-      import: svc.importBook,
+      // BUG-1503：body 是裸 .epub，推送方用户改的书名走 header 随行（视频推送的
+      // `X-Hibiki-Video-Title` 同一先例）。旧 client 不发 → 两参 null/0 → 与
+      // 原来的 `svc.importBook` tear-off 逐字同行为，故不必动
+      // [_serveAssetPackage] 的四域共用签名。
+      import: (File epubFile) => svc.importBook(
+        epubFile,
+        displayTitle: _decodeHeaderValue(request, kBookDisplayTitleHeader),
+        displayTitleAt: int.tryParse(
+              request.headers[kBookDisplayTitleAtHeader] ?? '',
+            ) ??
+            0,
+      ),
       delete: () => svc.deleteBook(bookId),
     );
   }

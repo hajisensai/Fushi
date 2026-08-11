@@ -30,6 +30,17 @@ The fix is a MONOTONIC, PER-PLATFORM merge keyed on releaseSequence:
     late older SAME-platform job is rejected. This keeps a lagging platform
     asset present so the client selectUpdateReleaseForCurrentPlatform never
     returns null.
+  * Liveness filter (BUG-1516): "keep the lagging platform's asset" is only
+    safe while that asset still EXISTS. The rolling release prunes old
+    assets per platform, so a platform that stops publishing eventually has
+    its retained entry point at a deleted file -- the client then downloads
+    a hard 404 with no in-app recovery (real report: an old Hibiki debug
+    client stuck on hibiki-1.3.2-debug.10182-windows-setup.exe after that
+    asset was pruned, while the manifest advertised 1.3.3-debug.10192 up
+    top). Retained entries are therefore intersected with the release's
+    CURRENT asset names when the caller can supply them. Dropping the slot
+    makes the client report "no build for your platform" instead of a
+    broken download -- an honest miss beats a guaranteed 404.
 
 releaseSequence used to be write-only; it is now the primary comparison key
 and is persisted PER ASSET so a later merge can compare platforms sitting at
@@ -53,6 +64,13 @@ Required env:
   NOTES                release notes
   RELEASE_SEQUENCE     monotonic int (git rev-list count)
   PLATFORM_ASSETS_JSON JSON array of {name, browser_download_url} for THIS run
+
+Optional env:
+  LIVE_ASSET_NAMES_JSON  JSON array of asset names that STILL EXIST on the
+                         rolling release right now (BUG-1516). Retained
+                         entries whose file has been pruned are dropped.
+                         Absent / empty / unparseable => no filtering, so a
+                         failed `gh release view` can never wipe the manifest.
 """
 
 from __future__ import annotations
@@ -150,19 +168,50 @@ def merge_manifest(
     notes: str,
     release_sequence: int,
     new_assets: list[dict[str, str]],
+    live_asset_names: Optional[set[str]] = None,
+    advertise_top_level: bool = True,
 ) -> dict[str, Any]:
     """Pure, monotonic, per-platform merge (see module docstring).
 
     Never downgrades the advertised top-level release; keeps every platform
     highest-sequence asset set; idempotent and safe on legacy manifests that
     lack releaseSequence.
+
+    [live_asset_names] is the set of asset names that still exist on the
+    release. When given, retained entries not in it are dropped (BUG-1516).
+    `None` means "caller could not tell" and disables the filter entirely --
+    never confuse it with an empty set, which legitimately means "the release
+    has no assets at all" and clears every retained entry.
+
+    [advertise_top_level] = False is the cross-family DESKTOP MIRROR mode
+    (BUG-1516 ①b): contribute assets, leave tag/version/prerelease/notes/
+    releaseSequence exactly as they are. Needed because the hibiki-family
+    manifest's top level belongs to the Android bridge, while its desktop
+    slots must carry Fushi installers -- Windows/macOS migrate by installer
+    overwrite (`platform_updater.dart`, Phase 5), Android cannot cross package
+    names at all. Letting the mirror move the top level would hand Android
+    clients a version whose only selectable APK is the older bridge build --
+    exactly the cross-family mismatch BUG-1481 fixed.
     """
     release_sequence = int(release_sequence)
+
+    # Mirror mode never CREATES a manifest: with no existing top level there is
+    # nothing to preserve, and inventing one would resurrect a retired family's
+    # channel carrying the other family's metadata. Hand the file back untouched
+    # so the caller sees "no change" and skips the commit.
+    if not advertise_top_level and not (
+        isinstance(existing.get("version"), str) and existing.get("version")
+    ):
+        return existing
 
     incoming: list[dict[str, Any]] = [
         _stamp(a, seq=release_sequence, tag=tag, version=version)
         for a in new_assets
     ]
+    # This run just uploaded its own assets, so they are live by construction
+    # even if the caller's snapshot was taken before the upload. Only RETAINED
+    # entries are ever filtered.
+    incoming_names: set[str] = {a["name"] for a in incoming}
 
     existing_seq = _coerce_int(existing.get("releaseSequence"))
     if existing_seq is None:
@@ -174,6 +223,14 @@ def merge_manifest(
 
     normalized_existing: list[dict[str, Any]] = []
     for a in _valid_assets(existing.get("assets")):
+        if (
+            live_asset_names is not None
+            and a["name"] not in live_asset_names
+            and a["name"] not in incoming_names
+        ):
+            # Pruned off the release -> its URL is a 404. Drop it rather than
+            # hand the client a download that cannot succeed (BUG-1516).
+            continue
         atag = (
             a.get("tag")
             if (isinstance(a.get("tag"), str) and a.get("tag"))
@@ -235,8 +292,14 @@ def merge_manifest(
     # Monotonic guard on the advertised top-level release. If the manifest
     # already advertises a NEWER sequence than this run, keep it; this older run
     # still contributed assets for its own platform above.
-    if existing_seq is not None and existing_seq > release_sequence:
-        top_seq: int = existing_seq
+    #
+    # `not advertise_top_level` takes the SAME branch unconditionally: the
+    # desktop mirror contributes assets and nothing else, whichever direction
+    # the sequences happen to run.
+    if not advertise_top_level or (
+        existing_seq is not None and existing_seq > release_sequence
+    ):
+        top_seq: int = existing_seq if existing_seq is not None else release_sequence
         top_tag = existing_tag or tag
         top_version = existing_version or version
         top_notes = (
@@ -283,9 +346,35 @@ def _load_existing(path: str) -> dict[str, Any]:
         return {}
 
 
+def _live_asset_names_from_env() -> Optional[set[str]]:
+    """Parse LIVE_ASSET_NAMES_JSON; anything unusable disables the filter.
+
+    Fail-open on purpose: the caller gets this list from `gh release view`,
+    which can fail for reasons that have nothing to do with the manifest
+    (rate limit, transient 5xx, tag not created yet). Treating that as
+    "nothing is live" would delete every retained asset and strand every
+    platform that did not publish in this run -- a far worse outage than the
+    stale entry the filter exists to remove.
+    """
+    raw = os.environ.get("LIVE_ASSET_NAMES_JSON", "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(parsed, list):
+        return None
+    return {x for x in parsed if isinstance(x, str) and x}
+
+
 def main() -> None:
     path = os.environ["MANIFEST_FILE"]
     new_assets = _valid_assets(json.loads(os.environ["PLATFORM_ASSETS_JSON"]))
+    live_asset_names = _live_asset_names_from_env()
+    advertise_top_level = (
+        os.environ.get("ADVERTISE_TOP_LEVEL", "true").strip().lower() != "false"
+    )
 
     manifest = merge_manifest(
         _load_existing(path),
@@ -296,7 +385,16 @@ def main() -> None:
         notes=os.environ["NOTES"],
         release_sequence=int(os.environ["RELEASE_SEQUENCE"]),
         new_assets=new_assets,
+        live_asset_names=live_asset_names,
+        advertise_top_level=advertise_top_level,
     )
+
+    if not manifest:
+        # Mirror mode with nothing to mirror into. Writing "{}" here would
+        # CREATE the retired family's manifest as an empty file, which its
+        # clients would then parse as a valid (asset-less) release.
+        print("Nothing to mirror into " + path + "; left untouched.")
+        return
 
     with open(path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)

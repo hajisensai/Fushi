@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:fushi_anki/fushi_anki.dart';
 
+import 'package:fushi/src/media/override_title_key.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
 
@@ -106,7 +107,11 @@ class ProfileKeys {
   /// matched as a substring — it covers both shapes, and excluding them from
   /// profile snapshots keeps a rename visible across profile switches instead
   /// of being pruned/reverted.
-  static const String _overrideTitleMarker = 'override_title://';
+  ///
+  /// BUG-1488：前缀字面量收敛到 [kOverrideTitleKeyMarker] 单点——同一批 key 现在
+  /// 还被互联 host 清单、备份导出谓词、备份合并导入认作「内容」，四处各写一份
+  /// 字符串迟早漂开。
+  static const String _overrideTitleMarker = kOverrideTitleKeyMarker;
 
   static bool isExcludedPref(String key) {
     // 凭据 / 设备本地 key 绝不进 Profile 快照（[PrefRedactionPolicy] 是这条判定

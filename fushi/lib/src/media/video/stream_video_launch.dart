@@ -4,6 +4,7 @@ import 'package:fushi/src/media/video/youtube_stream_cache.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
+import 'package:fushi/src/utils/net/app_http.dart';
 
 /// 流媒体书判据（TODO-1157）：`videoPath` 是可播 http/https 流 URL。
 ///
@@ -24,7 +25,7 @@ typedef StreamLivenessCheck = Future<bool> Function(
 /// （宁可重解析拿新 URL，也不把可能已死的 URL 交给播放器）。
 Future<bool> _defaultStreamLiveness(
     String streamUrl, Map<String, String> headers) async {
-  final http.Client client = http.Client();
+  final http.Client client = createAppHttpIoClient();
   try {
     final Map<String, String> h = <String, String>{
       ...headers,

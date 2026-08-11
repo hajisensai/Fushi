@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/collections/collection_season_groups.dart';
 import 'package:fushi/src/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
@@ -333,6 +334,34 @@ class VideoBookRepository {
     );
   }
 
+  /// Deterministically repairs the episode order of a collection populated by
+  /// independent automatic download jobs. Manual playlist imports deliberately
+  /// keep their authored order; only the download pipeline calls this method.
+  Future<void> reorderDownloadedCollectionEpisodes(int collectionId) async {
+    final List<MediaCollectionItemRow> items =
+        await _db.getCollectionItems(collectionId);
+    final List<VideoBookRow> members = <VideoBookRow>[];
+    for (final MediaCollectionItemRow item in items) {
+      if (item.mediaType != MediaKind.video.dbValue) continue;
+      final VideoBookRow? book = await _db.getVideoBookByBookUid(item.entryKey);
+      if (book != null) members.add(book);
+    }
+    if (members.length < 2) return;
+    final CollectionSeasonRegroup<VideoBookRow> regroup =
+        regroupMembersBySeason<VideoBookRow>(
+      members: members,
+      filenameOf: (VideoBookRow row) => row.videoPath,
+      titleOf: (VideoBookRow row) => row.title,
+    );
+    await _db.reorderCollectionItemsAutomatically(
+      collectionId,
+      <CollectionMemberKey>[
+        for (final VideoBookRow row in regroup.ordered)
+          (mediaType: MediaKind.video.dbValue, entryKey: row.bookUid),
+      ],
+    );
+  }
+
   /// 统一合集：把**已存在**的 playlist 合集 [collectionId] 的成员对齐到当前 m3u8 清单
   /// [entries]（增删差异同步）。补 [importSplitPlaylist] 只在首次导入落库、之后再没有
   /// 任何路径拿「当前清单」对账成员表的缺口（BUG-830：磁盘上编辑 m3u8 增删某集后，
@@ -509,8 +538,19 @@ class VideoBookRepository {
     return out;
   }
 
-  Future<void> updatePosition(String bookUid, int positionMs) =>
-      _db.updateVideoBookPosition(bookUid, positionMs);
+  /// 写播放断点。[playedAt] 默认取当下（本机播放路径）——断点与「什么时候留下的」
+  /// 同一次落库，合集续播才能按「刚才在看哪一集」选集（BUG-1542）。远端进度回灌
+  /// 显式传对端时刻，别用默认值。
+  Future<void> updatePosition(
+    String bookUid,
+    int positionMs, {
+    int? playedAt,
+  }) =>
+      _db.updateVideoBookPosition(
+        bookUid,
+        positionMs,
+        playedAt: playedAt ?? DateTime.now().millisecondsSinceEpoch,
+      );
 
   /// Updates local file paths after app-owned media is relocated.
   ///

@@ -137,6 +137,7 @@ class AnimeDownloadDialog extends ConsumerStatefulWidget {
     this.embedded = false,
     this.showTasks = true,
     this.tasksOnly = false,
+    this.onTaskPresenceChanged,
     this.onOpenSettings,
     this.initialSearchQuery,
     this.initialMedia,
@@ -154,6 +155,10 @@ class AnimeDownloadDialog extends ConsumerStatefulWidget {
 
   /// Renders only the full-height task list for the Downloads page task tab.
   final bool tasksOnly;
+
+  /// 旧版番剧计划是否有记录。下载中心据此只在确有旧任务时为兼容列表分配高度，
+  /// 避免它的空态与新版持久任务同时出现并遮住半屏。
+  final ValueChanged<bool>? onTaskPresenceChanged;
 
   /// 「后端未配置」横幅上「去设置」的落点：embedded 下由下载页传入
   /// （切到页内设置面板）；null（独立对话框，如视频页入口）则 push 下载设置页。
@@ -1001,11 +1006,15 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   Future<void> _reloadPlans() async {
     final AnimeDownloadPlanStore? store =
         ref.read(appProvider).animeDownloadPlanStore;
-    if (store == null) return;
+    if (store == null) {
+      widget.onTaskPresenceChanged?.call(false);
+      return;
+    }
     final List<AnimeDownloadPlan> plans = await store.loadAll();
     if (!mounted) return;
     // loadAll 按创建时间升序；展示新的在上。
     setState(() => _plans = plans.reversed.toList(growable: false));
+    widget.onTaskPresenceChanged?.call(plans.isNotEmpty);
   }
 
   Future<void> _refreshPlans() async {

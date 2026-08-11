@@ -11,6 +11,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/video/dandanplay_secret.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_danmaku_source.dart';
+import 'package:fushi/src/utils/net/app_http.dart';
 
 const int kDandanplayHashPrefixBytes = 16 * 1024 * 1024;
 
@@ -261,7 +262,7 @@ class DandanplayClient {
     DandanplayConfig? config,
     Duration timeout = const Duration(seconds: 8),
     Duration commentTimeout = const Duration(seconds: 30),
-  })  : _client = httpClient ?? http.Client(),
+  })  : _client = httpClient ?? createAppHttpIoClient(),
         _config = config ?? DandanplayConfig.current,
         _baseUri =
             baseUri ?? (config ?? DandanplayConfig.current).resolvedBaseUri,

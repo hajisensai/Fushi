@@ -66,8 +66,11 @@ class FushiRemoteMiningClient implements RemoteMineSender {
     final List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
         .where((FushiClientUrl u) => u.enabled)
         .toList(growable: false);
-    final String? token = await _repo.getFushiClientToken();
-    return candidates.isNotEmpty && token != null && token.isNotEmpty;
+    // BUG-1550：凭据可能落在地址行上（per-peer token），也可能只有旧的全局键；
+    // 任一候选拿得出凭据就算有目标。
+    final String? fallbackToken = await _repo.getFushiClientToken();
+    return candidates.any(
+        (FushiClientUrl u) => interconnectTokenFor(u, fallbackToken) != null);
   }
 
   /// 转发一次制卡到已配对主机。返回服务端 `{result, message?, detail?}`；

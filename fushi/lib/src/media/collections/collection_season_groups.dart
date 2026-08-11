@@ -1,5 +1,3 @@
-import 'package:path/path.dart' as p;
-
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 
 /// 合集内分季分组的**单一真相源**：键派生规则、多组判定、分节构建、按季重排。
@@ -25,9 +23,12 @@ String collectionSeasonGroupKey({int? season, int? episode}) =>
     episode == null ? kCollectionExtrasGroupKey : 's${season ?? 1}';
 
 /// 从视频文件路径/文件名派生分组键（导入落库与「按季分组」动作同源；解析引擎
-/// 与刮削/排序同一个 [parseVideoFilename]）。
+/// 与刮削/排序同一个 [parseVideoPath]）。
+///
+/// 走**整条路径**而非 basename：季号可能只写在父目录上（`Show/Season 2/01.mkv`），
+/// 见 [parseVideoPath]。传纯文件名同样可用（无父目录段即退化回 basename 口径）。
 String collectionGroupKeyForFilename(String filename) {
-  final VideoNameInfo info = parseVideoFilename(p.basename(filename));
+  final VideoNameInfo info = parseVideoPath(filename);
   return collectionSeasonGroupKey(season: info.season, episode: info.episode);
 }
 
@@ -118,7 +119,7 @@ CollectionSeasonRegroup<T> regroupMembersBySeason<T>({
   required String Function(T member) titleOf,
 }) {
   final Map<T, VideoNameInfo> infoOf = <T, VideoNameInfo>{
-    for (final T m in members) m: parseVideoFilename(p.basename(filenameOf(m))),
+    for (final T m in members) m: parseVideoPath(filenameOf(m)),
   };
   final List<T> ordered = List<T>.of(members)
     ..sort((T a, T b) {

@@ -30,6 +30,14 @@ void main() {
   final RegExp glossaryRubyUnitRule = RegExp(
     r':where\([^)]*\bglossary-group\b[^)]*,[^)]*\bglossary-content\b[^)]*\)\s*\.ruby-unit\s*\{([^}]*)\}',
   );
+  // BUG-1487: the absolute anchor moved off <rt> onto the neutral
+  // `.ruby-rt` wrapper (WebKit force-resets `position` to static on <rt>, so
+  // the whole scheme was dead on iOS/macOS). The invariant this guard protects
+  // — the annotation is absolutely positioned at the unit's top:0, inside the em
+  // padding reserve — is unchanged; only its carrier moved.
+  final RegExp glossaryRtBoxRule = RegExp(
+    r':where\([^)]*\bglossary-group\b[^)]*,[^)]*\bglossary-content\b[^)]*\)\s*\.ruby-rt\s*\{([^}]*)\}',
+  );
   final RegExp glossaryRtRule = RegExp(
     r':where\([^)]*\bglossary-group\b[^)]*,[^)]*\bglossary-content\b[^)]*\)\s*rt\s*\{([^}]*)\}',
   );
@@ -69,31 +77,62 @@ void main() {
   });
 
   test(
-      'glossary rt anchors to the unit top (top:0), not bottom:100% which drifts '
-      'under zoom (BUG-363)', () {
-    final RegExpMatch? match = glossaryRtRule.firstMatch(css);
+      'glossary reading box anchors to the unit top (top:0), not bottom:100% '
+      'which drifts under zoom (BUG-363)', () {
+    final RegExpMatch? match = glossaryRtBoxRule.firstMatch(css);
     expect(match, isNotNull,
-        reason: 'popup.css must scope an rt block to the glossary surfaces');
+        reason: 'popup.css must scope a .ruby-rt block to the glossary '
+            'surfaces — that span is the positioned annotation box (BUG-1487)');
     final String body = match!.group(1)!;
     expect(
       RegExp(r'position\s*:\s*absolute').hasMatch(body),
       isTrue,
-      reason: 'glossary <rt> stays out of the inline flow so it cannot widen '
-          'the ruby base box (BUG-345)',
+      reason: 'the glossary reading box stays out of the inline flow so it '
+          'cannot widen the ruby base box (BUG-345)',
     );
     expect(
       RegExp(r'top\s*:\s*0\b').hasMatch(body),
       isTrue,
-      reason: 'glossary <rt> must anchor to the .ruby-unit top (top:0), '
-          'inside the em padding-top reserve, so its position scales cleanly '
-          'with zoom (BUG-363)',
+      reason: 'the glossary reading box must anchor to the .ruby-unit top '
+          '(top:0), inside the em padding-top reserve, so its position scales '
+          'cleanly with zoom (BUG-363)',
     );
     expect(
       RegExp(r'bottom\s*:\s*100%').hasMatch(body),
       isFalse,
-      reason: 'glossary <rt> must NOT use bottom:100% — that percentage '
-          'resolves against a per-fragment-rounded line box and drifts under '
-          'zoom (BUG-363)',
+      reason: 'the glossary reading box must NOT use bottom:100% — that '
+          'percentage resolves against a per-fragment-rounded line box and '
+          'drifts under zoom (BUG-363)',
+    );
+  });
+
+  test(
+      'the absolute anchor is NOT declared on <rt> itself — WebKit drops it '
+      '(BUG-1487)', () {
+    final RegExpMatch? match = glossaryRtRule.firstMatch(css);
+    expect(match, isNotNull,
+        reason: 'popup.css must still scope an rt block to the glossary '
+            'surfaces (it carries the fallback font-size / line-height)');
+    final String body = match!.group(1)!;
+    // Measured on a real WKWebView (macOS 15.7 + iOS 18.6): WebKit resets
+    // `position` to static on <rt> at the renderer level, so ANY positioning
+    // declared here is silently dropped on both Apple platforms while Blink
+    // honours it — the furigana then rendered inline beside its kanji. Forcing
+    // `display: block` does NOT help (measured: display becomes block, position
+    // stays static, and the reading drops BELOW the kanji instead).
+    expect(
+      RegExp(r'position\s*:').hasMatch(body),
+      isFalse,
+      reason: 'glossary <rt> must not declare `position` — WebKit force-resets '
+          'it to static, so the anchor belongs on the neutral .ruby-rt span '
+          '(BUG-1487)',
+    );
+    expect(
+      RegExp(r'\b(top|left|right|bottom)\s*:').hasMatch(body),
+      isFalse,
+      reason: 'glossary <rt> must not declare box offsets — they only mean '
+          'anything on a positioned box, and <rt> can never be one in WebKit '
+          '(BUG-1487)',
     );
   });
 }

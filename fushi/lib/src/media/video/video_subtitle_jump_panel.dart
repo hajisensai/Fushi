@@ -1271,7 +1271,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       type: MaterialType.transparency,
       child: Container(
         width: widget.width,
-        color: cs.surface.withValues(alpha: 0.92),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: cs.surface.withValues(alpha: 0.92),
+          borderRadius: const BorderRadius.all(Radius.circular(12)),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[

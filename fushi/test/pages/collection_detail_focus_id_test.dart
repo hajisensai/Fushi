@@ -131,7 +131,13 @@ void main() {
       (WidgetTester tester) async {
     await seedEpub('memberKey', '成员书');
     final int cid = await db.createMediaCollection('系列甲');
-    await db.addToCollection(cid, MediaKind.epub, 'memberKey');
+    // v83（P3 Stage 2，2ceccf8bda）：本地 epub 合集成员行的 entryKey 是**稳定 uid**，
+    // 不再是 bookKey（书架侧按 `_epubUidByKey[key] ?? key` 换算后查归属）。这里照旧
+    // 塞 bookKey 会让合集成员数为 0 ⇒ 书架不渲染合集卡 ⇒ 后面 tap「查看全部」找不到
+    // 控件（BUG-1496 就是这么红进 develop 的）。uid 由 insertEpubBook 单点生成。
+    final String? memberUid = await db.resolveEpubBookUid('memberKey');
+    expect(memberUid, isNotNull, reason: 'insertEpubBook 必须给书生成稳定 uid');
+    await db.addToCollection(cid, MediaKind.epub, memberUid!);
     final String mediaId = ReaderFushiSource.mediaIdentifierFor('memberKey');
 
     tester.view.physicalSize = const Size(1400, 1200);

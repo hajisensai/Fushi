@@ -774,6 +774,19 @@ extension _VideoLayout on _VideoFushiPageState {
                 _subtitleJumpSidePanel(controller, visible),
               ],
             ),
+            // BUG-1501：选集横轨打开时，底部面板之外的视频区域就是点外关闭面。
+            // barrier 放在视频之上、横轨之下：点视频只关选集且不穿透播放器手势；
+            // 横轨卡片 / X 位于其后绘制，仍优先命中自身。隐藏态完全不挂，零拦截。
+            if (episodeVisible)
+              Positioned.fill(
+                child: GestureDetector(
+                  key: const ValueKey<String>(
+                    'video-episode-dismiss-barrier',
+                  ),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _closeEpisodeList,
+                ),
+              ),
             _episodeOverlayPanel(episodeVisible),
           ],
         );

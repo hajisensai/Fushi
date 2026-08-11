@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/utils/net/app_http.dart';
 
 const int mihonStoreMaxBytes = 10 * 1024 * 1024;
 const int mihonExtensionApkMaxBytes = 100 * 1024 * 1024;
@@ -97,7 +98,7 @@ class MihonStoreFetchResult {
 
 class MihonExtensionStoreClient {
   MihonExtensionStoreClient({http.Client? client})
-      : _client = client ?? http.Client();
+      : _client = client ?? createAppHttpIoClient();
 
   final http.Client _client;
 

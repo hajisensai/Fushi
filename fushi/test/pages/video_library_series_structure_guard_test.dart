@@ -56,6 +56,12 @@ void main() {
     expect(page, contains('video_home_continue_episode_number'));
     expect(page, contains('video_home_remaining_minutes'));
     expect(page, contains('_videoRowCardTextBlock'));
+    expect(page, contains('getAllVideoMetadataExtras()'));
+    expect(
+      page,
+      contains('_localExtraBookUids.contains(b.bookUid)'),
+      reason: '父作品的短篇/花絮必须从系列墙排除，不能再次拆成独立系列卡',
+    );
   });
 
   test('作品详情同时覆盖合集和独立电影，并包含资料、人物及附件区域', () {
@@ -80,6 +86,9 @@ void main() {
       expect('$route\n$collection', contains(token));
     }
     expect(collection, contains('buildOnlineVideoExtraLaunch'));
+    expect(collection, contains('getVideoMetadataExtras(canonicalWork.id)'));
+    expect(collection, contains('localExtraUids'));
+    expect(collection, contains('_buildExtraRail(t.video_work_extras'));
     expect(collection, contains('VideoFushiPage.neutralized('));
     expect(
       collection,

@@ -1054,14 +1054,28 @@ void main() {
           <String, dynamic>{'name': 'Show 01.mkv', 'size': 1, 'progress': 0.2},
         ];
         final Completer<void> release = Completer<void>();
+        // importer 真的进场了的**确定性**信号。
+        //
+        // 原来这里赌 `Future.delayed(20ms)`：importNow 要先 loadAll、列种子、列文件
+        // 一串异步 IO 才走到 importer，本机 5~10 个 agent 并发跑测试时 20ms 经常不够，
+        // 这条用例就以「期望 1 个得 0 个」偶发变红——零代码改动的伪红。等一个 Completer
+        // 既不会早也不会晚，与机器负载无关。
+        final Completer<void> entered = Completer<void>();
         importerOverride = (AnimeDownloadPlan plan, List<String> videos) async {
+          if (!entered.isCompleted) entered.complete();
           await release.future;
           return const AnimeDownloadImportOutcome(collectionId: 42);
         };
         final AnimeDownloadService service = buildService();
         final Future<bool> first = service.importNow(_kHash);
         final Future<bool> second = service.importNow(_kHash);
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+        // single-flight 的判据本身是同步的：第二次调用在 `_importNowInFlight` 里命中
+        // 同一个 operation，拿回的必须是**同一个** Future，而不是另起一轮。这条比数
+        // importCalls 更贴契约——per-plan 串行锁单独也能把并发 importer 压成 1 次，
+        // 光看「进场次数」区分不出「去重了」和「只是排队了」。
+        expect(identical(first, second), isTrue,
+            reason: '并发 importNow 必须返回同一个在途 Future，而不是排队跑第二轮');
+        await entered.future;
         expect(importCalls, hasLength(1));
         release.complete();
         expect(await Future.wait(<Future<bool>>[first, second]), <bool>[

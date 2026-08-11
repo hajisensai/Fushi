@@ -2371,6 +2371,10 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
         return TRUE;
       }
       return DefWindowProc(hwnd_, message, wparam, lparam);
+    // WM_TIMER 只有 kTopmostGuardTimerId 由本窗口消费；其它 timer 和一切未处理
+    // 消息都从这里继续走默认窗口过程。这条 default 已覆盖 switch 的全部剩余路径，
+    // 所以函数不存在 C4715 无返回路径——switch 之后**不要**再补一条兜底 return，
+    // 那条永远到不了，CI 的 /WX 会把 C4702 unreachable code 直接判成错误。
     default:
       return DefWindowProc(hwnd_, message, wparam, lparam);
   }

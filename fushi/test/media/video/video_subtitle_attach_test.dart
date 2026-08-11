@@ -5,6 +5,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
+import 'package:fushi/src/media/video/video_subtitle_attach_messages.dart';
+import 'package:fushi/src/media/video/video_subtitle_source.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -109,7 +111,7 @@ void main() {
     expect(await repo.loadCues('video/playlist/Show'), isEmpty);
   });
 
-  test('unsupported extension -> unsupported, nothing written', () async {
+  test('unsupported extension -> cueLoadFailed(unsupportedFormat)', () async {
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
@@ -128,11 +130,12 @@ void main() {
       destDirOverride: p.join(tmp.path, 'video_subtitles'),
     );
 
-    expect(result.outcome, SubtitleAttachOutcome.unsupported);
+    expect(result.outcome, SubtitleAttachOutcome.cueLoadFailed);
+    expect(result.cueFailure, SubtitleCueLoadFailure.unsupportedFormat);
     expect((await repo.getByBookUid('video/x'))!.subtitleSource, isNull);
   });
 
-  test('empty/garbage subtitle parses 0 cues -> emptyCues, not persisted',
+  test('empty/garbage subtitle parses 0 cues -> parseFailed, not persisted',
       () async {
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
@@ -153,9 +156,139 @@ void main() {
       destDirOverride: p.join(tmp.path, 'video_subtitles'),
     );
 
-    expect(result.outcome, SubtitleAttachOutcome.emptyCues);
+    expect(result.outcome, SubtitleAttachOutcome.cueLoadFailed);
+    expect(result.cueFailure, SubtitleCueLoadFailure.parseFailed);
     // 不覆盖现有（此处本就空）：源指针仍 null、无 cue。
     expect((await repo.getByBookUid('video/e'))!.subtitleSource, isNull);
     expect(await repo.loadCues('video/e'), isEmpty);
+  });
+
+  // ---------------------------------------------------------------------
+  // BUG-1504：拖放调用方是 fire-and-forget（同步 drop 回调里发起），异步异常没有
+  // 任何调用栈能承接——所以 attachSubtitleToVideoBook 必须是**全函数**：任何失败
+  // 都进返回值。下面三条钉的就是「不抛」，而不只是「有 try」。
+  // ---------------------------------------------------------------------
+
+  test('源文件不存在 -> persistFailed（拷盘先失败），不抛、不落库', () async {
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/m'),
+      title: Value('M'),
+      videoPath: Value('/m.mkv'),
+    ));
+    final book = (await repo.getByBookUid('video/m'))!;
+
+    // 用户拖进来的文件在拷盘后被移走/删除（或干脆是失效的快捷方式）：拷贝这步
+    // 会先抛 → persistFailed；这里直接把源路径指向不存在的文件验证同一条边界。
+    final SubtitleAttachResult result = await attachSubtitleToVideoBook(
+      repo: repo,
+      book: book,
+      subtitlePath: p.join(tmp.path, 'gone.srt'),
+      destDirOverride: p.join(tmp.path, 'video_subtitles'),
+    );
+
+    expect(result.outcome, SubtitleAttachOutcome.persistFailed);
+    expect((await repo.getByBookUid('video/m'))!.subtitleSource, isNull);
+  });
+
+  test('读文件抛异常 -> cueLoadFailed(fileUnreadable)，不作为异步异常逃逸', () async {
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/r'),
+      title: Value('R'),
+      videoPath: Value('/r.mkv'),
+    ));
+    final book = (await repo.getByBookUid('video/r'))!;
+    final File srt = await writeSrt(
+      'ok.srt',
+      '1\n00:00:00,000 --> 00:00:01,000\nhi\n',
+    );
+
+    // 文件在盘上、扩展名合法，但读取阶段抛（权限 / IO 错误 / 卷掉线）。
+    final SubtitleAttachResult result = await attachSubtitleToVideoBook(
+      repo: repo,
+      book: book,
+      subtitlePath: srt.path,
+      destDirOverride: p.join(tmp.path, 'video_subtitles'),
+      contentReader: (File f) =>
+          Future<String>.error(const FileSystemException('read denied')),
+    );
+
+    expect(result.outcome, SubtitleAttachOutcome.cueLoadFailed);
+    expect(result.cueFailure, SubtitleCueLoadFailure.fileUnreadable);
+    expect((await repo.getByBookUid('video/r'))!.subtitleSource, isNull);
+  });
+
+  test('落库抛异常 -> persistFailed，不作为异步异常逃逸', () async {
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
+    final repo = VideoBookRepository(db);
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/s'),
+      title: Value('S'),
+      videoPath: Value('/s.mkv'),
+    ));
+    final book = (await repo.getByBookUid('video/s'))!;
+    final File srt = await writeSrt(
+      'save.srt',
+      '1\n00:00:00,000 --> 00:00:01,000\nhi\n',
+    );
+
+    // 关掉 DB 制造真实的写入失败（Drift 抛 StateError/CouldNotRollBackException）。
+    await db.close();
+
+    final SubtitleAttachResult result = await attachSubtitleToVideoBook(
+      repo: repo,
+      book: book,
+      subtitlePath: srt.path,
+      destDirOverride: p.join(tmp.path, 'video_subtitles'),
+    );
+
+    expect(result.outcome, SubtitleAttachOutcome.persistFailed);
+  });
+
+  test('每种失败都能派生出非空、且互不相同的用户文案', () {
+    // 失败分类若新增取值，subtitleAttachMessage 的穷尽 switch 会编译不过；这条
+    // 只钉「已有取值都真有话说」——避免某个分支返回空串等于没提示。
+    final List<String> messages = <String>[
+      subtitleAttachMessage(
+        const SubtitleAttachResult(
+          outcome: SubtitleAttachOutcome.playlistNeedsPlayer,
+          label: 'a.srt',
+        ),
+        title: 'T',
+      ),
+      subtitleAttachMessage(
+        const SubtitleAttachResult(
+          outcome: SubtitleAttachOutcome.persistFailed,
+          label: 'a.srt',
+        ),
+        title: 'T',
+      ),
+      subtitleAttachMessage(
+        const SubtitleAttachResult(
+          outcome: SubtitleAttachOutcome.cueLoadFailed,
+          cueFailure: SubtitleCueLoadFailure.unsupportedFormat,
+          label: 'a.png',
+        ),
+        title: 'T',
+      ),
+      subtitleAttachMessage(
+        const SubtitleAttachResult(
+          outcome: SubtitleAttachOutcome.cueLoadFailed,
+          cueFailure: SubtitleCueLoadFailure.fileUnreadable,
+          label: 'a.srt',
+        ),
+        title: 'T',
+      ),
+    ];
+    for (final String m in messages) {
+      expect(m.trim(), isNotEmpty);
+    }
+    expect(messages.toSet(), hasLength(messages.length),
+        reason: '四种失败给同一句话 = 用户分不清该换字幕还是查权限（BUG-1490 教训）');
   });
 }

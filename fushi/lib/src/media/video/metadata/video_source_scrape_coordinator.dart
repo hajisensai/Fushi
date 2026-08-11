@@ -181,7 +181,22 @@ class VideoSourceScrapeCoordinator
         totalWorks: works.length,
       );
 
-      for (int index = 0; index < works.length; index++) {
+      // 一个资料源都没有时整批必然全灭。给一条聚合的、可操作的说明就够了，
+      // 别让每个条目各刷一句一模一样的失败原因（用户那次是 27 条同样的
+      // "tmdb is not configured"）。
+      final bool hasProvider = registry.availableProviders.isNotEmpty;
+      if (!hasProvider && works.isNotEmpty) {
+        failed = works.length;
+        errors.add(SourceScrapeIssue(
+          workTitle: source.label,
+          message: describeVideoScrapeFailure(
+            VideoMetadataResolutionStatus.providerUnavailable,
+            null,
+          ),
+        ));
+      }
+
+      for (int index = 0; hasProvider && index < works.length; index++) {
         cancellationToken.throwIfCancelled();
         final VideoSourceScrapeWork localWork = works[index];
         await _publish(
@@ -218,7 +233,10 @@ class VideoSourceScrapeCoordinator
             pending++;
             warnings.add(SourceScrapeIssue(
               workTitle: localWork.title,
-              message: resolved.reason ?? '匹配结果存在歧义，需要人工确认',
+              message: describeVideoScrapeFailure(
+                VideoMetadataResolutionStatus.ambiguous,
+                resolved.reason,
+              ),
             ));
             continue;
           }
@@ -227,7 +245,10 @@ class VideoSourceScrapeCoordinator
             failed++;
             errors.add(SourceScrapeIssue(
               workTitle: localWork.title,
-              message: resolved.reason ?? '没有找到严格匹配的作品',
+              message: describeVideoScrapeFailure(
+                resolved.status,
+                resolved.reason,
+              ),
             ));
             continue;
           }
@@ -426,10 +447,14 @@ class VideoSourceScrapeCoordinator
     VideoMetadataWork? resolvedWork = resolution.work;
     VideoMetadataLookup? resolvedLookup = resolution.lookup;
     if (resolution.status == VideoMetadataResolutionStatus.ambiguous) {
+      // 候选身份必须按**真正给出候选的那个源**去取 id：主源没配时 resolver 会降级
+      // 到 Bangumi/AniList，此处再按 selectedProvider 取 id 只会一个都取不到。
+      final VideoMetadataProviderKind candidateProvider =
+          resolution.providerKind ?? selectedProvider;
       final List<VideoSourceScrapeConfirmationCandidate> options =
           <VideoSourceScrapeConfirmationCandidate>[
         for (final VideoMetadataWork candidate in resolution.candidates)
-          if (_lookupForCandidate(candidate, selectedProvider)
+          if (_lookupForCandidate(candidate, candidateProvider)
               case final VideoMetadataLookup lookup)
             VideoSourceScrapeConfirmationCandidate(
               lookup: lookup,
@@ -437,7 +462,11 @@ class VideoSourceScrapeCoordinator
             ),
       ];
       if (onConfirmation == null || options.isEmpty) {
-        return _ResolvedWork(pending: true, reason: resolution.reason);
+        return _ResolvedWork(
+          pending: true,
+          reason: resolution.reason,
+          status: resolution.status,
+        );
       }
       final VideoSourceScrapeConfirmationCandidate? selected =
           await onConfirmation(VideoSourceScrapeConfirmation(
@@ -447,7 +476,11 @@ class VideoSourceScrapeCoordinator
         candidates: options,
       ));
       if (selected == null) {
-        return _ResolvedWork(pending: true, reason: resolution.reason);
+        return _ResolvedWork(
+          pending: true,
+          reason: resolution.reason,
+          status: resolution.status,
+        );
       }
       resolvedWork = selected.work;
       resolvedLookup = selected.lookup;
@@ -461,7 +494,10 @@ class VideoSourceScrapeCoordinator
       );
     }
     if (resolvedWork == null || resolvedLookup == null) {
-      return _ResolvedWork(reason: resolution.reason);
+      return _ResolvedWork(
+        reason: resolution.reason,
+        status: resolution.status,
+      );
     }
 
     final _HydratedWork primaryHydration = await _hydrateWork(
@@ -1407,14 +1443,38 @@ class _ResolvedWork {
     this.metadata,
     this.pending = false,
     this.reason,
+    this.status,
     this.seasonEpisodesAuthoritative = false,
   });
 
   final VideoMetadataWork? metadata;
   final bool pending;
   final String? reason;
+
+  /// 失败分类。以前只往上传一个英文 `reason` 字符串，UI 因此既分不清「源没配」
+  /// 和「没匹配上」，也无法把文案翻成中文；这里把 resolver 的结构化状态保留下来。
+  final VideoMetadataResolutionStatus? status;
   final bool seasonEpisodesAuthoritative;
 }
+
+/// 把 resolver 的结构化失败状态翻成用户能看懂、能照着做的中文说明。
+///
+/// [fallback] 是 resolver 的英文诊断串，只在状态缺失时兜底。
+String describeVideoScrapeFailure(
+  VideoMetadataResolutionStatus? status,
+  String? fallback,
+) =>
+    switch (status) {
+      VideoMetadataResolutionStatus.providerUnavailable =>
+        '没有可用的资料源：请在「设置 → 视频 → 资料源」填 TMDB API key，'
+            '或把主资料源改成无需密钥的 Bangumi / AniList。',
+      VideoMetadataResolutionStatus.notFound => '没有匹配到作品：标题、类型、年份或季号都没通过严格校验。'
+          '可以改文件名/目录名，或在文件名里写明 tmdbid=/bgm.tv 链接等明确身份。',
+      VideoMetadataResolutionStatus.ambiguous => '匹配结果存在歧义，需要人工确认',
+      VideoMetadataResolutionStatus.matched ||
+      null =>
+        fallback ?? '没有找到严格匹配的作品',
+    };
 
 class _HydratedWork {
   const _HydratedWork({required this.metadata, required this.complete});

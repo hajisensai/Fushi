@@ -9,12 +9,14 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
+import 'package:fushi/src/media/torrent/anime_release_descriptor.dart';
 import 'package:fushi/src/media/torrent/download_network_proxy.dart'
     show kDownloadDiscoveryTimeout;
 import 'package:fushi/src/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/video/jimaku_batch.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/utils/net/app_http.dart';
 
 const Object _notSet = Object();
 
@@ -308,7 +310,8 @@ List<NyaaTorrent> selectSubscriptionReleases(
   final Map<int, NyaaTorrent> bestByEpisode = <int, NyaaTorrent>{};
   for (final NyaaTorrent torrent in results) {
     final int? episode = torrent.episode;
-    final String? group = torrent.releaseGroup;
+    final AnimeReleaseDescriptor release = torrent.releaseDescriptor;
+    final String? group = release.releaseGroup;
     if (episode == null ||
         episode <= subscription.startAfterEpisode ||
         subscription.processedEpisodes.contains(episode) ||
@@ -320,7 +323,7 @@ List<NyaaTorrent> selectSubscriptionReleases(
       continue;
     }
     if (expectedResolution != null &&
-        _normaliseMatchValue(torrent.resolution ?? '') != expectedResolution) {
+        _normaliseMatchValue(release.resolution ?? '') != expectedResolution) {
       continue;
     }
     final NyaaTorrent? previous = bestByEpisode[episode];
@@ -378,7 +381,8 @@ class AnimeDownloadSubscriptionService {
         _search = search,
         _jimakuApiKeyProvider = jimakuApiKeyProvider ?? (() => ''),
         _subtitleFetcher = subtitleFetcher,
-        _httpClientFactory = httpClientFactory ?? (() async => http.Client());
+        _httpClientFactory =
+            httpClientFactory ?? (() async => createAppHttpIoClient());
 
   final AnimeDownloadSubscriptionStore store;
   final AnimeDownloadPlanStore planStore;

@@ -27,6 +27,7 @@ import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
+import 'package:fushi/src/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -284,6 +285,7 @@ void main() {
           final String extractDir =
               p.join(work.path, 'host_extract_${title}_imported');
           await _seedBook(db: hostDb, title: title, extractDir: extractDir);
+          return sanitizeTtuFilename(title);
         },
       );
 
