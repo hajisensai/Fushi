@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 56746 (3338 per locale)
+/// Strings: 56797 (3341 per locale)
 ///
-/// Built on 2026-08-11 at 16:11 UTC
+/// Built on 2026-08-11 at 16:22 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4515,6 +4515,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get collection_split_move_to => 'Move to';
   String get collection_split_new_group => 'New group';
   String collection_split_selected({required Object n}) => '${n} selected';
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -12218,6 +12223,14 @@ class _StringsAr extends _StringsEn {
   String get collection_split_new_group => 'New group';
   @override
   String collection_split_selected({required Object n}) => '${n} selected';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -19988,6 +20001,14 @@ class _StringsDe extends _StringsEn {
   String get collection_split_new_group => 'New group';
   @override
   String collection_split_selected({required Object n}) => '${n} selected';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -27774,6 +27795,14 @@ class _StringsEs extends _StringsEn {
   String get collection_split_new_group => 'New group';
   @override
   String collection_split_selected({required Object n}) => '${n} selected';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -35572,6 +35601,14 @@ class _StringsFr extends _StringsEn {
   String get collection_split_new_group => 'New group';
   @override
   String collection_split_selected({required Object n}) => '${n} selected';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -43298,6 +43335,14 @@ class _StringsId extends _StringsEn {
   String get collection_split_new_group => 'New group';
   @override
   String collection_split_selected({required Object n}) => '${n} selected';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -51070,6 +51115,14 @@ class _StringsIt extends _StringsEn {
   String get collection_split_new_group => 'New group';
   @override
   String collection_split_selected({required Object n}) => '${n} selected';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -58656,6 +58709,14 @@ class _StringsJa extends _StringsEn {
   String get collection_split_new_group => 'New group';
   @override
   String collection_split_selected({required Object n}) => '${n} selected';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -66249,6 +66310,14 @@ class _StringsKo extends _StringsEn {
   String get collection_split_new_group => 'New group';
   @override
   String collection_split_selected({required Object n}) => '${n} selected';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -74001,6 +74070,14 @@ class _StringsNl extends _StringsEn {
   String get collection_split_new_group => 'New group';
   @override
   String collection_split_selected({required Object n}) => '${n} selected';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -81765,6 +81842,14 @@ class _StringsPtBr extends _StringsEn {
   String get collection_split_new_group => 'New group';
   @override
   String collection_split_selected({required Object n}) => '${n} selected';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -89515,6 +89600,14 @@ class _StringsRu extends _StringsEn {
   String get collection_split_new_group => 'New group';
   @override
   String collection_split_selected({required Object n}) => '${n} selected';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -97213,6 +97306,14 @@ class _StringsTh extends _StringsEn {
   String get collection_split_new_group => 'New group';
   @override
   String collection_split_selected({required Object n}) => '${n} selected';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -104942,6 +105043,14 @@ class _StringsTr extends _StringsEn {
   String get collection_split_new_group => 'New group';
   @override
   String collection_split_selected({required Object n}) => '${n} selected';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -112656,6 +112765,14 @@ class _StringsVi extends _StringsEn {
   String get collection_split_new_group => 'New group';
   @override
   String collection_split_selected({required Object n}) => '${n} selected';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -119810,6 +119927,12 @@ class _StringsZhCn extends _StringsEn {
   String get collection_split_new_group => '新建分组';
   @override
   String collection_split_selected({required Object n}) => '已选 ${n} 集';
+  @override
+  String get sync_pair_rate_limited => '尝试次数过多，请等几分钟后重试。';
+  @override
+  String get sync_pair_tls_failed => '证书校验失败：对端证书与已记录的指纹不符。';
+  @override
+  String get sync_pair_timeout => '对端没有及时响应。';
 }
 
 // Path: <root>
@@ -127319,6 +127442,14 @@ class _StringsZhHk extends _StringsEn {
   String get collection_split_new_group => 'New group';
   @override
   String collection_split_selected({required Object n}) => '${n} selected';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 /// Flat map(s) containing all translations.
@@ -134176,6 +134307,12 @@ extension on _StringsEn {
         return 'New group';
       case 'collection_split_selected':
         return ({required Object n}) => '${n} selected';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -141031,6 +141168,12 @@ extension on _StringsAr {
         return 'New group';
       case 'collection_split_selected':
         return ({required Object n}) => '${n} selected';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -147908,6 +148051,12 @@ extension on _StringsDe {
         return 'New group';
       case 'collection_split_selected':
         return ({required Object n}) => '${n} selected';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -154784,6 +154933,12 @@ extension on _StringsEs {
         return 'New group';
       case 'collection_split_selected':
         return ({required Object n}) => '${n} selected';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -161666,6 +161821,12 @@ extension on _StringsFr {
         return 'New group';
       case 'collection_split_selected':
         return ({required Object n}) => '${n} selected';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -168530,6 +168691,12 @@ extension on _StringsId {
         return 'New group';
       case 'collection_split_selected':
         return ({required Object n}) => '${n} selected';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -175408,6 +175575,12 @@ extension on _StringsIt {
         return 'New group';
       case 'collection_split_selected':
         return ({required Object n}) => '${n} selected';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -182248,6 +182421,12 @@ extension on _StringsJa {
         return 'New group';
       case 'collection_split_selected':
         return ({required Object n}) => '${n} selected';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -189092,6 +189271,12 @@ extension on _StringsKo {
         return 'New group';
       case 'collection_split_selected':
         return ({required Object n}) => '${n} selected';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -195964,6 +196149,12 @@ extension on _StringsNl {
         return 'New group';
       case 'collection_split_selected':
         return ({required Object n}) => '${n} selected';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -202833,6 +203024,12 @@ extension on _StringsPtBr {
         return 'New group';
       case 'collection_split_selected':
         return ({required Object n}) => '${n} selected';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -209707,6 +209904,12 @@ extension on _StringsRu {
         return 'New group';
       case 'collection_split_selected':
         return ({required Object n}) => '${n} selected';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -216564,6 +216767,12 @@ extension on _StringsTh {
         return 'New group';
       case 'collection_split_selected':
         return ({required Object n}) => '${n} selected';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -223430,6 +223639,12 @@ extension on _StringsTr {
         return 'New group';
       case 'collection_split_selected':
         return ({required Object n}) => '${n} selected';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -230292,6 +230507,12 @@ extension on _StringsVi {
         return 'New group';
       case 'collection_split_selected':
         return ({required Object n}) => '${n} selected';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -237097,6 +237318,12 @@ extension on _StringsZhCn {
         return '新建分组';
       case 'collection_split_selected':
         return ({required Object n}) => '已选 ${n} 集';
+      case 'sync_pair_rate_limited':
+        return '尝试次数过多，请等几分钟后重试。';
+      case 'sync_pair_tls_failed':
+        return '证书校验失败：对端证书与已记录的指纹不符。';
+      case 'sync_pair_timeout':
+        return '对端没有及时响应。';
       default:
         return null;
     }
@@ -243932,6 +244159,12 @@ extension on _StringsZhHk {
         return 'New group';
       case 'collection_split_selected':
         return ({required Object n}) => '${n} selected';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }

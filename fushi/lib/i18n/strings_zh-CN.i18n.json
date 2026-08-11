@@ -3336,5 +3336,8 @@
   "video_discovery_manual_identity_hint": "填写标题、外部 ID 和年份后才能搜索",
   "collection_split_move_to": "移动到",
   "collection_split_new_group": "新建分组",
-  "collection_split_selected": "已选 $n 集"
+  "collection_split_selected": "已选 $n 集",
+  "sync_pair_rate_limited": "尝试次数过多，请等几分钟后重试。",
+  "sync_pair_tls_failed": "证书校验失败：对端证书与已记录的指纹不符。",
+  "sync_pair_timeout": "对端没有及时响应。"
 }
