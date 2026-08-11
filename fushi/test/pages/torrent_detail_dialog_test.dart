@@ -97,9 +97,10 @@ class _BaseFakeBackend implements TorrentBackend {
 /// 全量详情能力的假后端。
 class _DetailFakeBackend extends _BaseFakeBackend
     implements TorrentDetailBackend {
-  _DetailFakeBackend({this.peerGate});
+  _DetailFakeBackend({this.peerGate, this.trackerUnavailable = false});
 
   final Future<void>? peerGate;
+  final bool trackerUnavailable;
   final Completer<void> peerQueryStarted = Completer<void>();
   int trackerCalls = 0;
   final List<(String, int, TorrentFilePriority)> prioritySets =
@@ -131,6 +132,7 @@ class _DetailFakeBackend extends _BaseFakeBackend
   @override
   Future<List<TorrentTrackerDetail>?> listTrackers(String torrentId) async {
     trackerCalls += 1;
+    if (trackerUnavailable) return null;
     return const <TorrentTrackerDetail>[
       TorrentTrackerDetail(
         url: 'http://tracker.example/announce',
@@ -330,7 +332,7 @@ void main() {
     await _dismiss(tester);
   });
 
-  testWidgets('节点刷新未结束时切到Tracker会排队补刷', (
+  testWidgets('节点刷新未结束时切到Tracker会独立请求并立即渲染', (
     WidgetTester tester,
   ) async {
     final Completer<void> peerGate = Completer<void>();
@@ -344,13 +346,28 @@ void main() {
     await backend.peerQueryStarted.future;
     await tester.tap(find.text('Trackers'));
     await tester.pump(const Duration(milliseconds: 400));
-    expect(backend.trackerCalls, 0);
+    expect(backend.trackerCalls, greaterThan(0));
+    expect(find.text('http://tracker.example/announce'), findsOneWidget);
 
     peerGate.complete();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
+    await _dismiss(tester);
+  });
+
+  testWidgets('Tracker请求返回null会结束加载并显示失败态', (
+    WidgetTester tester,
+  ) async {
+    final _DetailFakeBackend backend = _DetailFakeBackend(
+      trackerUnavailable: true,
+    );
+    await _pump(tester, backend);
+    await tester.tap(find.text('Trackers'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
     expect(backend.trackerCalls, greaterThan(0));
-    expect(find.text('http://tracker.example/announce'), findsOneWidget);
+    expect(find.text('Something went wrong while loading'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
     await _dismiss(tester);
   });
 

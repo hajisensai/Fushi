@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1419 条。点号进各自文件。
+> 共 1420 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1521](bugs/BUG-1521-torrent-tracker-refresh-coupled.md) | ✅ | ✅ | 详情Tracker刷新被其他请求阻塞 |
 | [BUG-1520](bugs/BUG-1520-torrent-detail-dropped-tab-refresh.md) | ✅ | ✅ | 下载详情切换标签时Tracker刷新被丢弃 |
 | [BUG-1519](bugs/BUG-1519-video-download-missing-embedded-recovery.md) | ✅ | ✅ | 内置下载任务丢失后无法重新入队 |
 | [BUG-1518](bugs/BUG-1518-download-task-delete-service-unavailable.md) | ✅ | ✅ | 下载服务未启动时任务删除无效 |

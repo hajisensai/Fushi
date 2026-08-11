@@ -84,8 +84,10 @@ class _TorrentTaskDetailDialogState
   /// 后端是否归本状态所有（注入的测试后端不 close）。
   bool _ownsBackend = true;
   Timer? _timer;
-  bool _refreshing = false;
-  int? _pendingTabRefresh;
+  bool _snapshotRefreshing = false;
+  bool _snapshotRefreshPending = false;
+  final Set<int> _refreshingTabs = <int>{};
+  final Set<int> _pendingTabRefreshes = <int>{};
 
   /// 首轮快照是否已返回（区分「还在加载」与「后端里已没有该任务」）。
   bool _snapshotLoaded = false;
@@ -94,6 +96,8 @@ class _TorrentTaskDetailDialogState
   TorrentPieceStates? _pieces;
   List<TorrentPeerDetail>? _peers;
   List<TorrentTrackerDetail>? _trackers;
+  bool _trackerLoadFinished = false;
+  bool _trackerLoadFailed = false;
   List<TorrentFileEntry>? _files;
   List<TorrentFilePriority>? _filePriorities;
 
@@ -139,16 +143,28 @@ class _TorrentTaskDetailDialogState
     super.dispose();
   }
 
-  /// 刷一轮：快照恒取（总览/状态行/文件进度都吃它），其余按当前 tab 取。
+  /// 刷一轮：任务快照与当前 tab 各走自己的请求通道。
+  ///
+  /// qBittorrent WebUI 的 Tracker 面板直接按 hash 请求
+  /// `/api/v2/torrents/trackers`；它不会等待 peers 或 torrent 列表请求完成。
+  /// 这里保持相同的独立性，避免任一慢请求把另一个 tab 永久挡在 loading。
   Future<void> _refresh() async {
     final TorrentBackend? backend = _backend;
     if (backend == null || !mounted) return;
-    if (_refreshing) {
-      _pendingTabRefresh = _tabController.index;
+    final int tab = _tabController.index;
+    await Future.wait<void>(<Future<void>>[
+      _refreshSnapshot(backend),
+      _refreshTab(backend, tab),
+    ]);
+  }
+
+  Future<void> _refreshSnapshot(TorrentBackend backend) async {
+    if (!mounted) return;
+    if (_snapshotRefreshing) {
+      _snapshotRefreshPending = true;
       return;
     }
-    final int refreshedTab = _tabController.index;
-    _refreshing = true;
+    _snapshotRefreshing = true;
     try {
       final String wantedHash = widget.torrentId.toLowerCase();
       final List<TorrentSnapshot> torrents = await backend.listTorrents();
@@ -159,44 +175,92 @@ class _TorrentTaskDetailDialogState
           break;
         }
       }
-      final TorrentDetailBackend? detail =
-          _detailCapable && backend is TorrentDetailBackend ? backend : null;
-      TorrentSessionStatusInfo? sessionStatus = _sessionStatus;
-      TorrentPieceStates? pieces = _pieces;
-      List<TorrentPeerDetail>? peers = _peers;
-      List<TorrentTrackerDetail>? trackers = _trackers;
-      List<TorrentFileEntry>? files = _files;
-      List<TorrentFilePriority>? priorities = _filePriorities;
-      switch (_tabController.index) {
-        case 0:
-          sessionStatus = await detail?.sessionStatus() ?? sessionStatus;
-          pieces = await detail?.pieceStates(widget.torrentId) ?? pieces;
-        case 1:
-          files = await backend.listFiles(widget.torrentId);
-          priorities =
-              await detail?.filePriorities(widget.torrentId) ?? priorities;
-        case 2:
-          peers = await detail?.listPeers(widget.torrentId) ?? peers;
-        case 3:
-          trackers = await detail?.listTrackers(widget.torrentId) ?? trackers;
-      }
       if (!mounted) return;
       setState(() {
         _snapshotLoaded = true;
         _snapshot = snapshot;
-        _sessionStatus = sessionStatus;
-        _pieces = pieces;
-        _peers = peers;
-        _trackers = trackers;
-        _files = files;
-        _filePriorities = priorities;
       });
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'TorrentTaskDetailDialog.refreshSnapshot',
+        error,
+        stack,
+      );
     } finally {
-      _refreshing = false;
-      final int? pendingTab = _pendingTabRefresh;
-      _pendingTabRefresh = null;
-      if (mounted && pendingTab != null && pendingTab != refreshedTab) {
-        unawaited(_refresh());
+      _snapshotRefreshing = false;
+      final bool rerun = _snapshotRefreshPending;
+      _snapshotRefreshPending = false;
+      if (mounted && rerun) {
+        unawaited(_refreshSnapshot(backend));
+      }
+    }
+  }
+
+  Future<void> _refreshTab(TorrentBackend backend, int tab) async {
+    if (!mounted) return;
+    if (_refreshingTabs.contains(tab)) {
+      _pendingTabRefreshes.add(tab);
+      return;
+    }
+    _refreshingTabs.add(tab);
+    final TorrentDetailBackend? detail =
+        _detailCapable && backend is TorrentDetailBackend ? backend : null;
+    try {
+      switch (tab) {
+        case 0:
+          final TorrentSessionStatusInfo? sessionStatus =
+              await detail?.sessionStatus();
+          final TorrentPieceStates? pieces =
+              await detail?.pieceStates(widget.torrentId);
+          if (!mounted) return;
+          setState(() {
+            if (sessionStatus != null) _sessionStatus = sessionStatus;
+            if (pieces != null) _pieces = pieces;
+          });
+        case 1:
+          final List<TorrentFileEntry> files =
+              await backend.listFiles(widget.torrentId);
+          final List<TorrentFilePriority>? priorities =
+              await detail?.filePriorities(widget.torrentId);
+          if (!mounted) return;
+          setState(() {
+            _files = files;
+            if (priorities != null) _filePriorities = priorities;
+          });
+        case 2:
+          final List<TorrentPeerDetail>? peers =
+              await detail?.listPeers(widget.torrentId);
+          if (!mounted) return;
+          setState(() {
+            if (peers != null) _peers = peers;
+          });
+        case 3:
+          final List<TorrentTrackerDetail>? trackers =
+              await detail?.listTrackers(widget.torrentId);
+          if (!mounted) return;
+          setState(() {
+            _trackerLoadFinished = true;
+            _trackerLoadFailed = trackers == null;
+            _trackers = trackers;
+          });
+      }
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'TorrentTaskDetailDialog.refreshTab.$tab',
+        error,
+        stack,
+      );
+      if (mounted && tab == 3) {
+        setState(() {
+          _trackerLoadFinished = true;
+          _trackerLoadFailed = true;
+        });
+      }
+    } finally {
+      _refreshingTabs.remove(tab);
+      final bool rerun = _pendingTabRefreshes.remove(tab);
+      if (mounted && rerun) {
+        unawaited(_refreshTab(backend, tab));
       }
     }
   }
@@ -693,8 +757,11 @@ class _TorrentTaskDetailDialogState
   Widget _buildTrackersTab(ThemeData theme) {
     if (!_detailCapable) return _buildUnsupported(theme);
     final List<TorrentTrackerDetail>? trackers = _trackers;
-    if (trackers == null) {
+    if (!_trackerLoadFinished) {
       return const Center(child: CircularProgressIndicator());
+    }
+    if (_trackerLoadFailed || trackers == null) {
+      return _buildEmptyNote(theme, t.error_load_failed);
     }
     if (trackers.isEmpty) {
       return _buildEmptyNote(theme, t.download_detail_no_trackers);
