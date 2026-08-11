@@ -676,36 +676,72 @@ Future<ManualSyncResult> runManualFullSync({
       final SyncRunReport merged = SyncRunReport();
       final List<ManualSyncChannelReport> channelReports =
           <ManualSyncChannelReport>[];
+      // BUG-1573：手动路径也**逐通道**隔离。BUG-1552 只修了自动 sweep 那个循环；
+      // 这里原来整体裸奔——云通道恒排第一（见 enabledSyncChannelBackends），它令牌
+      // 失效 / WebDAV 不可达时异常直接冒出 runManualFullSync，于是 **已经跑完的通道**
+      // 的 channelReports 连同它们的冲突/删除弹窗被整体丢弃，用户只看到一句「同步
+      // 失败」。一条通道炸了只该记它自己的账。
+      Object? firstError;
+      StackTrace? firstStack;
       for (final SyncChannel channel
           in await enabledSyncChannelBackends(repo)) {
-        final SyncRunReport? report = await _runSyncChannel(
-          db: db,
-          repo: repo,
-          channel: channel,
-          dictionaryResourceRoot: dictionaryResourceRoot,
-          audioDatabaseRoot: audioDatabaseRoot,
-          tempDir: tempDir,
-          localAudioEntries: localAudioEntries,
-          onLocalAudioImported: onLocalAudioImported,
-          // Publish to the app-wide notifier in addition to the caller's
-          // callback, so any other visible "立即同步" surface reflects the bar.
-          onProgress: (SyncProgress p) {
-            syncProgress.value = p;
-            onProgress?.call(p);
-          },
-        );
-        if (report == null) continue;
-        channelsRun++;
-        logSyncReportErrors(report);
-        await onPostRun?.call(report);
-        merged.mergeFrom(report);
-        channelReports.add(ManualSyncChannelReport(channel.backend, report));
+        try {
+          final SyncRunReport? report = await _runSyncChannel(
+            db: db,
+            repo: repo,
+            channel: channel,
+            dictionaryResourceRoot: dictionaryResourceRoot,
+            audioDatabaseRoot: audioDatabaseRoot,
+            tempDir: tempDir,
+            localAudioEntries: localAudioEntries,
+            onLocalAudioImported: onLocalAudioImported,
+            // Publish to the app-wide notifier in addition to the caller's
+            // callback, so any other visible "立即同步" surface reflects the bar.
+            onProgress: (SyncProgress p) {
+              syncProgress.value = p;
+              onProgress?.call(p);
+            },
+          );
+          if (report == null) continue;
+          channelsRun++;
+          logSyncReportErrors(report);
+          await onPostRun?.call(report);
+          merged.mergeFrom(report);
+          channelReports.add(ManualSyncChannelReport(channel.backend, report));
+        } catch (e, stack) {
+          // 不吞事实：这条通道的失败照样进汇总报告的 errors（鉴权类还会带类型进
+          // authFailures，见 SyncRunReport.noteError），「立即同步」的结果提示因此
+          // 仍会说「N 项失败」+ 可操作的鉴权原因。
+          firstError ??= e;
+          firstStack ??= stack;
+          merged.noteError(
+            'sync channel (interconnect=${channel.isInterconnect})',
+            e,
+          );
+          developer.log(
+            'Manual sync channel failed '
+            '(interconnect=${channel.isInterconnect})',
+            error: e,
+            stackTrace: stack,
+            name: 'SyncAutoTrigger',
+          );
+        }
       }
       if (channelReports.isEmpty) {
+        // 一条都没跑成：把第一个异常原样抛回去，让 UI 层既有的
+        // `on SyncAuthError` 分支照旧登出 + 提示重新登录（TODO-836 / BUG-1323）。
+        // 这条路径上没有任何「已完成通道的结果」会因此丢失——本就一个都没有。
+        if (firstError != null) {
+          reason = SyncOutcomeReason.failed;
+          Error.throwWithStackTrace(
+              firstError, firstStack ?? StackTrace.current);
+        }
         reason = SyncOutcomeReason.noChannels;
         return const ManualSyncResult(ManualSyncOutcome.notConfigured);
       }
-      reason = SyncOutcomeReason.completed;
+      reason = firstError == null
+          ? SyncOutcomeReason.completed
+          : SyncOutcomeReason.failed;
       return ManualSyncResult(
         ManualSyncOutcome.completed,
         merged,

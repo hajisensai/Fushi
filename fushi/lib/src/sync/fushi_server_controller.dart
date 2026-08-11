@@ -152,8 +152,39 @@ class FushiSyncServerController extends ChangeNotifier {
   // peer 顶掉别人正在审批的框）。null=当前无打开的弹窗。
   String? _pairDialogRemoteAddress;
 
+  /// BUG-1573：已 [dispose]。[stop] 是异步的，它尾部的 [notifyListeners] 会在
+  /// `dispose()` 之后才跑到，撞 [ChangeNotifier] 的「dispose 后不得 notify」断言；
+  /// 在飞的 [_start] 同理会在 DB 关闭后继续写库。此标记让两条路径在销毁后各自静默收尾。
+  bool _disposed = false;
+
   bool get isRunning => _server?.isRunning ?? false;
   int? get boundPort => _server?.port;
+
+  @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
+  }
+
+  /// 销毁控制器：**自己**负责拆掉全部常驻资源（LAN 发现浏览器 + 广播 + HTTP server），
+  /// 而不是要求调用方在 dispose 之前先 `await stop()`。
+  ///
+  /// BUG-1573：`dispose()` 是同步的，调用方（AppModel.dispose）只能
+  /// `unawaited(stop()); dispose();` —— stop 恢复执行时控制器早已 dispose，尾部
+  /// notifyListeners 撞断言。顺序不是调用方能修好的，所有权本就在这里：dispose 置
+  /// [_disposed]（notify 变 no-op、在飞的 start 自行收尾）后 fire-and-forget 拆卸。
+  @override
+  void dispose() {
+    _disposed = true;
+    final List<LanDiscoveryService> discoveries =
+        _activeDiscoveries.toList(growable: false);
+    _activeDiscoveries.clear();
+    for (final LanDiscoveryService discovery in discoveries) {
+      unawaited(discovery.dispose());
+    }
+    unawaited(stop());
+    super.dispose();
+  }
 
   /// Register a live LAN discovery browser so [shutdownForExit] can stop it
   /// before the Flutter engine is torn down. Idempotent.
@@ -241,7 +272,63 @@ class FushiSyncServerController extends ChangeNotifier {
     });
   }
 
+  /// BUG-1573：**整段**启动编排都在 try 内。原来只有 `server.start()` 之后那截被罩住，
+  /// 前半段（读端口/口令、首次生成 RSA 自签证书、取设备名、迁移旧同步根）任何一步抛出
+  /// 都让 `start()` 的 future 以**异常**完成——而两个调用点都只处理
+  /// [FushiServerStartOutcome]、都没有 catch：设置页的开关（`await _serverController
+  /// .start()`）停在「已开启」且不弹任何提示，app 初始化那条 `.then(...)` 直接变成未捕获
+  /// 的 async error。对用户而言前段失败和后段失败是同一件事（没起来），就该映射成同一个
+  /// [FushiServerStartError]。
   Future<FushiServerStartOutcome> _start() async {
+    FushiSyncServer? server;
+    try {
+      return await _startOrchestration((FushiSyncServer s) => server = s);
+    } on SyncServerPortInUseException catch (e) {
+      // BUG-1551：只清**自己**这一台。[_server] 是共享句柄，无条件清会把另一条路径
+      // 刚绑成功的 host 抹成 null（实际在跑却关不掉）。
+      await _rollbackFailedStart(server);
+      // Do NOT clear serverEnabled: the bind failure is transient (another
+      // process holds the port).  The intent remains true so the next launch
+      // retries automatically.
+      notifyListeners();
+      return FushiServerPortInUse(e.port);
+    } catch (e) {
+      // BUG-1551：同上，只清自己。此外这个 catch 罩着 `_startBroadcast`——广播失败
+      // 时 socket 已经绑上了，直接把句柄丢掉就是泄漏一个停不掉的监听端口，故先把它
+      // 关干净再报错。
+      await _rollbackFailedStart(server);
+      // Same rationale: a general error at bind time must not permanently erase
+      // the user's hosting preference.
+      notifyListeners();
+      return FushiServerStartError(friendlySyncErrorDetail(e));
+    }
+  }
+
+  /// 失败/中止路径的统一回滚：把这次启动可能已经持有的**两个**资源都收干净。
+  ///
+  /// - HTTP server：`server.start()` 已绑上端口后，`setServerEnabled` / `_startBroadcast`
+  ///   仍可能抛。只把 [_server] 置 null 而不 `stop()`，socket 就还在监听且再无句柄可停，
+  ///   此后每次重试恒 `PortInUse` 直到进程退出（BUG-1573 原报告）。
+  /// - LAN 广播：[_startBroadcast] 先给 [_broadcast] 赋值再 `await start()`，抛在
+  ///   `start()` 里会留下一个从未停过的 Bonsoir 实例；下次成功启动直接覆盖该字段，
+  ///   那个实例的 mDNS 事件源就永远挂在进程上（TODO-036 的崩溃源）。
+  Future<void> _rollbackFailedStart(FushiSyncServer? server) async {
+    if (server != null && identical(_server, server)) {
+      _server = null;
+      await server.stop();
+    }
+    final LanBroadcastService? broadcast = _broadcast;
+    if (broadcast != null) {
+      _broadcast = null;
+      await broadcast.stop();
+    }
+  }
+
+  /// 启动编排本体。[publish] 在 [FushiSyncServer] 构造出来的那一刻把它交给
+  /// [_start]，让失败路径能拿到句柄做回滚（构造之后、绑定成功之前也可能抛）。
+  Future<FushiServerStartOutcome> _startOrchestration(
+    void Function(FushiSyncServer) publish,
+  ) async {
     final SyncRepository repo = _repo;
     final int port = await repo.getServerPort();
     String? token = await repo.getServerPassword();
@@ -297,6 +384,7 @@ class FushiSyncServerController extends ChangeNotifier {
       // 集合。server 不直连 DB，经这两个回调打通存储层（清缓存在 server 内部完成）。
       ..onPeerPaired = _persistPairedPeer
       ..pairedPeerTokensProvider = _loadPairedPeerTokens;
+    publish(server);
     // Fushi 改名迁移（host 侧）：host 的 WebDAV 根映射到 server.syncDataDir，
     // client 的同步根是其下的 `fushi-data/` 子目录。旧安装磁盘上还留着
     // `hibiki-data/` → 本地整目录 rename（同盘原子，不搬数据）。幂等；失败留痕
@@ -306,38 +394,22 @@ class FushiSyncServerController extends ChangeNotifier {
       onError: (Object e, StackTrace st) => ErrorLogService.instance
           .log('FushiServerController.migrateLegacySyncRoot', e, st),
     );
-    try {
-      await server.start();
-      _server = server;
-      await repo.setServerEnabled(true);
-      // Advertise the ACTUAL bound port so peers discover the host even when the
-      // requested port was 0/auto or differs from the configured one.
-      // TODO-961: TXT 带上 tls 标志，发现方按它优先走 https 探测。
-      await _startBroadcast(server.port, tlsEnabled: securityContext != null);
-      notifyListeners();
-      return const FushiServerStarted();
-    } on SyncServerPortInUseException catch (e) {
-      // BUG-1551：只清**自己**这一台。[_server] 是共享句柄，无条件清会把另一条路径
-      // 刚绑成功的 host 抹成 null（实际在跑却关不掉）。
-      if (identical(_server, server)) _server = null;
-      // Do NOT clear serverEnabled: the bind failure is transient (another
-      // process holds the port).  The intent remains true so the next launch
-      // retries automatically.
-      notifyListeners();
-      return FushiServerPortInUse(e.port);
-    } catch (e) {
-      // BUG-1551：同上，只清自己。此外这个 catch 罩着 `_startBroadcast`——广播失败
-      // 时 socket 已经绑上了，直接把句柄丢掉就是泄漏一个停不掉的监听端口，故先把它
-      // 关干净再报错。
-      if (identical(_server, server)) {
-        _server = null;
-        await server.stop();
-      }
-      // Same rationale: a general error at bind time must not permanently erase
-      // the user's hosting preference.
-      notifyListeners();
-      return FushiServerStartError(friendlySyncErrorDetail(e));
+    await server.start();
+    // BUG-1573：dispose 已经发生时，这台刚绑上的 host 已经没有拥有者了——继续往下
+    // 写 `serverEnabled=true` 会打到一个可能已经关掉的 DB 上，广播也没人再拆。收干净
+    // 后按失败返回（该结果没有消费者：控制器已销毁）。
+    if (_disposed) {
+      await server.stop();
+      return const FushiServerStartError('controller disposed');
     }
+    _server = server;
+    await repo.setServerEnabled(true);
+    // Advertise the ACTUAL bound port so peers discover the host even when the
+    // requested port was 0/auto or differs from the configured one.
+    // TODO-961: TXT 带上 tls 标志，发现方按它优先走 https 探测。
+    await _startBroadcast(server.port, tlsEnabled: securityContext != null);
+    notifyListeners();
+    return const FushiServerStarted();
   }
 
   /// 漫画 P3：按注入的 OCR 服务工厂构造远程 OCR 任务管理器；未注入返回 null
@@ -369,10 +441,15 @@ class FushiSyncServerController extends ChangeNotifier {
         // 启动失败本身不该挡住停机路径；下面的拆卸对 null 句柄是幂等的。
       }
     }
-    await _broadcast?.stop();
+    // BUG-1573：**先摘句柄再 await**，让 stop 对并发调用幂等。dispose 自己会拆一次，
+    // 而调用方（AppModel.dispose）还会 `unawaited(stop())` 一次；两次并发拆卸若各自
+    // 先 await 再置空，就会各看到同一个非 null 实例、对它重复 stop。
+    final LanBroadcastService? broadcast = _broadcast;
     _broadcast = null;
-    await _server?.stop();
+    final FushiSyncServer? server = _server;
     _server = null;
+    await broadcast?.stop();
+    await server?.stop();
     if (persistDisabled) await _repo.setServerEnabled(false);
     notifyListeners();
   }

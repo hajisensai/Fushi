@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1449 条。点号进各自文件。
+> 共 1452 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -37,6 +37,9 @@
 | [BUG-1579](bugs/BUG-1579-interconnect-baselines-shared-across-channels.md) | ✅ | ✅ | 合集与删除墓碑因果基线三方共用：对端移出被自己另一条通道撤销 |
 | [BUG-1578](bugs/BUG-1578-interconnect-auth-error-cross-channel-signout.md) | ✅ | ✅ | 互联 401 登出的是云会话：鉴权错误不带通道身份 |
 | [BUG-1576](bugs/BUG-1576-interconnect-folder-cache-cross-backend.md) | ✅ | ✅ | 互联/云双通道共用 folder 缓存：跨后端串味 + 凭据外发到对端主机 |
+| [BUG-1573](bugs/BUG-1573-server-lifecycle-manual-isolation.md) | ✅ | ✅ | 互联 host 启动前段异常逃逸 + dispose 顺序 + 手动同步通道未隔离 |
+| [BUG-1572](bugs/BUG-1572-aggregate-push-tombstone.md) | ✅ | ✅ | 聚合上行快照不过墓碑导致已删统计/收藏复活 |
+| [BUG-1571](bugs/BUG-1571-prompt-queue-cross-channel.md) | ✅ | ✅ | 双通道同步弹窗单飞槽跨通道丢候选 |
 | [BUG-1570](bugs/BUG-1570-remote-lookup-drops-fields.md) | ✅ | ✅ | 远端查词响应的 truncated/headwordCount/kanjiResults 被 client 丢弃 |
 | [BUG-1569](bugs/BUG-1569-sync-auto-trigger-lifecycle.md) | ✅ | ✅ | 互联自动同步触发层三缺口：离线探测零退避·合集观察者关库不卸载·sweep 丢弃退出书同步 |
 | [BUG-1568](bugs/BUG-1568-video-stream-token-unbounded.md) | ✅ | ✅ | 视频流 token 签发侧无上限无过期清理 |
