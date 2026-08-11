@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 56814 (3342 per locale)
+/// Strings: 56746 (3338 per locale)
 ///
-/// Built on 2026-08-11 at 16:09 UTC
+/// Built on 2026-08-11 at 16:11 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4065,8 +4065,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get collection_relation_other => 'Related';
   String get collection_relation_download => 'Download';
   String get collection_relation_bind => 'Bind to existing collection';
-  String get collection_episode_scrape => 'Fetch episode details';
-  String get collection_episode_scrape_unbound => 'Scrape the collection first';
   String get collection_episode_rename => 'Rename episodes from scrape';
   String get collection_episode_rename_title => 'Rename episodes';
   String get collection_episode_rename_empty => 'Nothing to rename';
@@ -4079,11 +4077,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get collection_episode_open_bangumi => 'Open this episode on Bangumi';
   String collection_relation_bound({required Object name}) =>
       'Bound to ${name}';
-  String collection_episode_scrape_result(
-          {required Object updated, required Object skipped}) =>
-      'Updated ${updated} episodes, skipped ${skipped}';
-  String collection_episode_scrape_failed({required Object error}) =>
-      'Episode scrape failed: ${error}';
   String collection_episode_rename_apply({required Object n}) =>
       'Rename ${n} episodes';
   String collection_split_done({required Object n}) =>
@@ -11459,10 +11452,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get collection_relation_bind => 'Bind to existing collection';
   @override
-  String get collection_episode_scrape => 'Fetch episode details';
-  @override
-  String get collection_episode_scrape_unbound => 'Scrape the collection first';
-  @override
   String get collection_episode_rename => 'Rename episodes from scrape';
   @override
   String get collection_episode_rename_title => 'Rename episodes';
@@ -11485,13 +11474,6 @@ class _StringsAr extends _StringsEn {
   @override
   String collection_relation_bound({required Object name}) =>
       'Bound to ${name}';
-  @override
-  String collection_episode_scrape_result(
-          {required Object updated, required Object skipped}) =>
-      'Updated ${updated} episodes, skipped ${skipped}';
-  @override
-  String collection_episode_scrape_failed({required Object error}) =>
-      'Episode scrape failed: ${error}';
   @override
   String collection_episode_rename_apply({required Object n}) =>
       'Rename ${n} episodes';
@@ -19240,10 +19222,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get collection_relation_bind => 'Bind to existing collection';
   @override
-  String get collection_episode_scrape => 'Fetch episode details';
-  @override
-  String get collection_episode_scrape_unbound => 'Scrape the collection first';
-  @override
   String get collection_episode_rename => 'Rename episodes from scrape';
   @override
   String get collection_episode_rename_title => 'Rename episodes';
@@ -19266,13 +19244,6 @@ class _StringsDe extends _StringsEn {
   @override
   String collection_relation_bound({required Object name}) =>
       'Bound to ${name}';
-  @override
-  String collection_episode_scrape_result(
-          {required Object updated, required Object skipped}) =>
-      'Updated ${updated} episodes, skipped ${skipped}';
-  @override
-  String collection_episode_scrape_failed({required Object error}) =>
-      'Episode scrape failed: ${error}';
   @override
   String collection_episode_rename_apply({required Object n}) =>
       'Rename ${n} episodes';
@@ -27037,10 +27008,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get collection_relation_bind => 'Bind to existing collection';
   @override
-  String get collection_episode_scrape => 'Fetch episode details';
-  @override
-  String get collection_episode_scrape_unbound => 'Scrape the collection first';
-  @override
   String get collection_episode_rename => 'Rename episodes from scrape';
   @override
   String get collection_episode_rename_title => 'Rename episodes';
@@ -27063,13 +27030,6 @@ class _StringsEs extends _StringsEn {
   @override
   String collection_relation_bound({required Object name}) =>
       'Bound to ${name}';
-  @override
-  String collection_episode_scrape_result(
-          {required Object updated, required Object skipped}) =>
-      'Updated ${updated} episodes, skipped ${skipped}';
-  @override
-  String collection_episode_scrape_failed({required Object error}) =>
-      'Episode scrape failed: ${error}';
   @override
   String collection_episode_rename_apply({required Object n}) =>
       'Rename ${n} episodes';
@@ -34846,10 +34806,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get collection_relation_bind => 'Bind to existing collection';
   @override
-  String get collection_episode_scrape => 'Fetch episode details';
-  @override
-  String get collection_episode_scrape_unbound => 'Scrape the collection first';
-  @override
   String get collection_episode_rename => 'Rename episodes from scrape';
   @override
   String get collection_episode_rename_title => 'Rename episodes';
@@ -34872,13 +34828,6 @@ class _StringsFr extends _StringsEn {
   @override
   String collection_relation_bound({required Object name}) =>
       'Bound to ${name}';
-  @override
-  String collection_episode_scrape_result(
-          {required Object updated, required Object skipped}) =>
-      'Updated ${updated} episodes, skipped ${skipped}';
-  @override
-  String collection_episode_scrape_failed({required Object error}) =>
-      'Episode scrape failed: ${error}';
   @override
   String collection_episode_rename_apply({required Object n}) =>
       'Rename ${n} episodes';
@@ -42583,10 +42532,6 @@ class _StringsId extends _StringsEn {
   @override
   String get collection_relation_bind => 'Bind to existing collection';
   @override
-  String get collection_episode_scrape => 'Fetch episode details';
-  @override
-  String get collection_episode_scrape_unbound => 'Scrape the collection first';
-  @override
   String get collection_episode_rename => 'Rename episodes from scrape';
   @override
   String get collection_episode_rename_title => 'Rename episodes';
@@ -42609,13 +42554,6 @@ class _StringsId extends _StringsEn {
   @override
   String collection_relation_bound({required Object name}) =>
       'Bound to ${name}';
-  @override
-  String collection_episode_scrape_result(
-          {required Object updated, required Object skipped}) =>
-      'Updated ${updated} episodes, skipped ${skipped}';
-  @override
-  String collection_episode_scrape_failed({required Object error}) =>
-      'Episode scrape failed: ${error}';
   @override
   String collection_episode_rename_apply({required Object n}) =>
       'Rename ${n} episodes';
@@ -50366,10 +50304,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get collection_relation_bind => 'Bind to existing collection';
   @override
-  String get collection_episode_scrape => 'Fetch episode details';
-  @override
-  String get collection_episode_scrape_unbound => 'Scrape the collection first';
-  @override
   String get collection_episode_rename => 'Rename episodes from scrape';
   @override
   String get collection_episode_rename_title => 'Rename episodes';
@@ -50392,13 +50326,6 @@ class _StringsIt extends _StringsEn {
   @override
   String collection_relation_bound({required Object name}) =>
       'Bound to ${name}';
-  @override
-  String collection_episode_scrape_result(
-          {required Object updated, required Object skipped}) =>
-      'Updated ${updated} episodes, skipped ${skipped}';
-  @override
-  String collection_episode_scrape_failed({required Object error}) =>
-      'Episode scrape failed: ${error}';
   @override
   String collection_episode_rename_apply({required Object n}) =>
       'Rename ${n} episodes';
@@ -57963,10 +57890,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get collection_relation_bind => 'Bind to existing collection';
   @override
-  String get collection_episode_scrape => 'Fetch episode details';
-  @override
-  String get collection_episode_scrape_unbound => 'Scrape the collection first';
-  @override
   String get collection_episode_rename => 'Rename episodes from scrape';
   @override
   String get collection_episode_rename_title => 'Rename episodes';
@@ -57989,13 +57912,6 @@ class _StringsJa extends _StringsEn {
   @override
   String collection_relation_bound({required Object name}) =>
       'Bound to ${name}';
-  @override
-  String collection_episode_scrape_result(
-          {required Object updated, required Object skipped}) =>
-      'Updated ${updated} episodes, skipped ${skipped}';
-  @override
-  String collection_episode_scrape_failed({required Object error}) =>
-      'Episode scrape failed: ${error}';
   @override
   String collection_episode_rename_apply({required Object n}) =>
       'Rename ${n} episodes';
@@ -65567,10 +65483,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get collection_relation_bind => 'Bind to existing collection';
   @override
-  String get collection_episode_scrape => 'Fetch episode details';
-  @override
-  String get collection_episode_scrape_unbound => 'Scrape the collection first';
-  @override
   String get collection_episode_rename => 'Rename episodes from scrape';
   @override
   String get collection_episode_rename_title => 'Rename episodes';
@@ -65593,13 +65505,6 @@ class _StringsKo extends _StringsEn {
   @override
   String collection_relation_bound({required Object name}) =>
       'Bound to ${name}';
-  @override
-  String collection_episode_scrape_result(
-          {required Object updated, required Object skipped}) =>
-      'Updated ${updated} episodes, skipped ${skipped}';
-  @override
-  String collection_episode_scrape_failed({required Object error}) =>
-      'Episode scrape failed: ${error}';
   @override
   String collection_episode_rename_apply({required Object n}) =>
       'Rename ${n} episodes';
@@ -73330,10 +73235,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get collection_relation_bind => 'Bind to existing collection';
   @override
-  String get collection_episode_scrape => 'Fetch episode details';
-  @override
-  String get collection_episode_scrape_unbound => 'Scrape the collection first';
-  @override
   String get collection_episode_rename => 'Rename episodes from scrape';
   @override
   String get collection_episode_rename_title => 'Rename episodes';
@@ -73356,13 +73257,6 @@ class _StringsNl extends _StringsEn {
   @override
   String collection_relation_bound({required Object name}) =>
       'Bound to ${name}';
-  @override
-  String collection_episode_scrape_result(
-          {required Object updated, required Object skipped}) =>
-      'Updated ${updated} episodes, skipped ${skipped}';
-  @override
-  String collection_episode_scrape_failed({required Object error}) =>
-      'Episode scrape failed: ${error}';
   @override
   String collection_episode_rename_apply({required Object n}) =>
       'Rename ${n} episodes';
@@ -81105,10 +80999,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get collection_relation_bind => 'Bind to existing collection';
   @override
-  String get collection_episode_scrape => 'Fetch episode details';
-  @override
-  String get collection_episode_scrape_unbound => 'Scrape the collection first';
-  @override
   String get collection_episode_rename => 'Rename episodes from scrape';
   @override
   String get collection_episode_rename_title => 'Rename episodes';
@@ -81131,13 +81021,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String collection_relation_bound({required Object name}) =>
       'Bound to ${name}';
-  @override
-  String collection_episode_scrape_result(
-          {required Object updated, required Object skipped}) =>
-      'Updated ${updated} episodes, skipped ${skipped}';
-  @override
-  String collection_episode_scrape_failed({required Object error}) =>
-      'Episode scrape failed: ${error}';
   @override
   String collection_episode_rename_apply({required Object n}) =>
       'Rename ${n} episodes';
@@ -88866,10 +88749,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get collection_relation_bind => 'Bind to existing collection';
   @override
-  String get collection_episode_scrape => 'Fetch episode details';
-  @override
-  String get collection_episode_scrape_unbound => 'Scrape the collection first';
-  @override
   String get collection_episode_rename => 'Rename episodes from scrape';
   @override
   String get collection_episode_rename_title => 'Rename episodes';
@@ -88892,13 +88771,6 @@ class _StringsRu extends _StringsEn {
   @override
   String collection_relation_bound({required Object name}) =>
       'Bound to ${name}';
-  @override
-  String collection_episode_scrape_result(
-          {required Object updated, required Object skipped}) =>
-      'Updated ${updated} episodes, skipped ${skipped}';
-  @override
-  String collection_episode_scrape_failed({required Object error}) =>
-      'Episode scrape failed: ${error}';
   @override
   String collection_episode_rename_apply({required Object n}) =>
       'Rename ${n} episodes';
@@ -96575,10 +96447,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get collection_relation_bind => 'Bind to existing collection';
   @override
-  String get collection_episode_scrape => 'Fetch episode details';
-  @override
-  String get collection_episode_scrape_unbound => 'Scrape the collection first';
-  @override
   String get collection_episode_rename => 'Rename episodes from scrape';
   @override
   String get collection_episode_rename_title => 'Rename episodes';
@@ -96601,13 +96469,6 @@ class _StringsTh extends _StringsEn {
   @override
   String collection_relation_bound({required Object name}) =>
       'Bound to ${name}';
-  @override
-  String collection_episode_scrape_result(
-          {required Object updated, required Object skipped}) =>
-      'Updated ${updated} episodes, skipped ${skipped}';
-  @override
-  String collection_episode_scrape_failed({required Object error}) =>
-      'Episode scrape failed: ${error}';
   @override
   String collection_episode_rename_apply({required Object n}) =>
       'Rename ${n} episodes';
@@ -104315,10 +104176,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get collection_relation_bind => 'Bind to existing collection';
   @override
-  String get collection_episode_scrape => 'Fetch episode details';
-  @override
-  String get collection_episode_scrape_unbound => 'Scrape the collection first';
-  @override
   String get collection_episode_rename => 'Rename episodes from scrape';
   @override
   String get collection_episode_rename_title => 'Rename episodes';
@@ -104341,13 +104198,6 @@ class _StringsTr extends _StringsEn {
   @override
   String collection_relation_bound({required Object name}) =>
       'Bound to ${name}';
-  @override
-  String collection_episode_scrape_result(
-          {required Object updated, required Object skipped}) =>
-      'Updated ${updated} episodes, skipped ${skipped}';
-  @override
-  String collection_episode_scrape_failed({required Object error}) =>
-      'Episode scrape failed: ${error}';
   @override
   String collection_episode_rename_apply({required Object n}) =>
       'Rename ${n} episodes';
@@ -112040,10 +111890,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get collection_relation_bind => 'Bind to existing collection';
   @override
-  String get collection_episode_scrape => 'Fetch episode details';
-  @override
-  String get collection_episode_scrape_unbound => 'Scrape the collection first';
-  @override
   String get collection_episode_rename => 'Rename episodes from scrape';
   @override
   String get collection_episode_rename_title => 'Rename episodes';
@@ -112066,13 +111912,6 @@ class _StringsVi extends _StringsEn {
   @override
   String collection_relation_bound({required Object name}) =>
       'Bound to ${name}';
-  @override
-  String collection_episode_scrape_result(
-          {required Object updated, required Object skipped}) =>
-      'Updated ${updated} episodes, skipped ${skipped}';
-  @override
-  String collection_episode_scrape_failed({required Object error}) =>
-      'Episode scrape failed: ${error}';
   @override
   String collection_episode_rename_apply({required Object n}) =>
       'Rename ${n} episodes';
@@ -119285,10 +119124,6 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get collection_relation_bind => '绑定到已有合集';
   @override
-  String get collection_episode_scrape => '刮削分集资料';
-  @override
-  String get collection_episode_scrape_unbound => '请先刮削合集资料';
-  @override
   String get collection_episode_rename => '按刮削重命名各集';
   @override
   String get collection_episode_rename_title => '批量重命名各集';
@@ -119310,13 +119145,6 @@ class _StringsZhCn extends _StringsEn {
   String get collection_episode_open_bangumi => '在 Bangumi 打开本集';
   @override
   String collection_relation_bound({required Object name}) => '已绑定到 ${name}';
-  @override
-  String collection_episode_scrape_result(
-          {required Object updated, required Object skipped}) =>
-      '已更新 ${updated} 集 · 跳过 ${skipped} 集';
-  @override
-  String collection_episode_scrape_failed({required Object error}) =>
-      '分集刮削失败：${error}';
   @override
   String collection_episode_rename_apply({required Object n}) => '重命名 ${n} 集';
   @override
@@ -126726,10 +126554,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get collection_relation_bind => 'Bind to existing collection';
   @override
-  String get collection_episode_scrape => 'Fetch episode details';
-  @override
-  String get collection_episode_scrape_unbound => 'Scrape the collection first';
-  @override
   String get collection_episode_rename => 'Rename episodes from scrape';
   @override
   String get collection_episode_rename_title => 'Rename episodes';
@@ -126752,13 +126576,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String collection_relation_bound({required Object name}) =>
       'Bound to ${name}';
-  @override
-  String collection_episode_scrape_result(
-          {required Object updated, required Object skipped}) =>
-      'Updated ${updated} episodes, skipped ${skipped}';
-  @override
-  String collection_episode_scrape_failed({required Object error}) =>
-      'Episode scrape failed: ${error}';
   @override
   String collection_episode_rename_apply({required Object n}) =>
       'Rename ${n} episodes';
@@ -133706,10 +133523,6 @@ extension on _StringsEn {
         return 'Download';
       case 'collection_relation_bind':
         return 'Bind to existing collection';
-      case 'collection_episode_scrape':
-        return 'Fetch episode details';
-      case 'collection_episode_scrape_unbound':
-        return 'Scrape the collection first';
       case 'collection_episode_rename':
         return 'Rename episodes from scrape';
       case 'collection_episode_rename_title':
@@ -133732,11 +133545,6 @@ extension on _StringsEn {
         return 'Open this episode on Bangumi';
       case 'collection_relation_bound':
         return ({required Object name}) => 'Bound to ${name}';
-      case 'collection_episode_scrape_result':
-        return ({required Object updated, required Object skipped}) =>
-            'Updated ${updated} episodes, skipped ${skipped}';
-      case 'collection_episode_scrape_failed':
-        return ({required Object error}) => 'Episode scrape failed: ${error}';
       case 'collection_episode_rename_apply':
         return ({required Object n}) => 'Rename ${n} episodes';
       case 'collection_split_done':
@@ -140568,10 +140376,6 @@ extension on _StringsAr {
         return 'Download';
       case 'collection_relation_bind':
         return 'Bind to existing collection';
-      case 'collection_episode_scrape':
-        return 'Fetch episode details';
-      case 'collection_episode_scrape_unbound':
-        return 'Scrape the collection first';
       case 'collection_episode_rename':
         return 'Rename episodes from scrape';
       case 'collection_episode_rename_title':
@@ -140594,11 +140398,6 @@ extension on _StringsAr {
         return 'Open this episode on Bangumi';
       case 'collection_relation_bound':
         return ({required Object name}) => 'Bound to ${name}';
-      case 'collection_episode_scrape_result':
-        return ({required Object updated, required Object skipped}) =>
-            'Updated ${updated} episodes, skipped ${skipped}';
-      case 'collection_episode_scrape_failed':
-        return ({required Object error}) => 'Episode scrape failed: ${error}';
       case 'collection_episode_rename_apply':
         return ({required Object n}) => 'Rename ${n} episodes';
       case 'collection_split_done':
@@ -147454,10 +147253,6 @@ extension on _StringsDe {
         return 'Download';
       case 'collection_relation_bind':
         return 'Bind to existing collection';
-      case 'collection_episode_scrape':
-        return 'Fetch episode details';
-      case 'collection_episode_scrape_unbound':
-        return 'Scrape the collection first';
       case 'collection_episode_rename':
         return 'Rename episodes from scrape';
       case 'collection_episode_rename_title':
@@ -147480,11 +147275,6 @@ extension on _StringsDe {
         return 'Open this episode on Bangumi';
       case 'collection_relation_bound':
         return ({required Object name}) => 'Bound to ${name}';
-      case 'collection_episode_scrape_result':
-        return ({required Object updated, required Object skipped}) =>
-            'Updated ${updated} episodes, skipped ${skipped}';
-      case 'collection_episode_scrape_failed':
-        return ({required Object error}) => 'Episode scrape failed: ${error}';
       case 'collection_episode_rename_apply':
         return ({required Object n}) => 'Rename ${n} episodes';
       case 'collection_split_done':
@@ -154339,10 +154129,6 @@ extension on _StringsEs {
         return 'Download';
       case 'collection_relation_bind':
         return 'Bind to existing collection';
-      case 'collection_episode_scrape':
-        return 'Fetch episode details';
-      case 'collection_episode_scrape_unbound':
-        return 'Scrape the collection first';
       case 'collection_episode_rename':
         return 'Rename episodes from scrape';
       case 'collection_episode_rename_title':
@@ -154365,11 +154151,6 @@ extension on _StringsEs {
         return 'Open this episode on Bangumi';
       case 'collection_relation_bound':
         return ({required Object name}) => 'Bound to ${name}';
-      case 'collection_episode_scrape_result':
-        return ({required Object updated, required Object skipped}) =>
-            'Updated ${updated} episodes, skipped ${skipped}';
-      case 'collection_episode_scrape_failed':
-        return ({required Object error}) => 'Episode scrape failed: ${error}';
       case 'collection_episode_rename_apply':
         return ({required Object n}) => 'Rename ${n} episodes';
       case 'collection_split_done':
@@ -161230,10 +161011,6 @@ extension on _StringsFr {
         return 'Download';
       case 'collection_relation_bind':
         return 'Bind to existing collection';
-      case 'collection_episode_scrape':
-        return 'Fetch episode details';
-      case 'collection_episode_scrape_unbound':
-        return 'Scrape the collection first';
       case 'collection_episode_rename':
         return 'Rename episodes from scrape';
       case 'collection_episode_rename_title':
@@ -161256,11 +161033,6 @@ extension on _StringsFr {
         return 'Open this episode on Bangumi';
       case 'collection_relation_bound':
         return ({required Object name}) => 'Bound to ${name}';
-      case 'collection_episode_scrape_result':
-        return ({required Object updated, required Object skipped}) =>
-            'Updated ${updated} episodes, skipped ${skipped}';
-      case 'collection_episode_scrape_failed':
-        return ({required Object error}) => 'Episode scrape failed: ${error}';
       case 'collection_episode_rename_apply':
         return ({required Object n}) => 'Rename ${n} episodes';
       case 'collection_split_done':
@@ -168103,10 +167875,6 @@ extension on _StringsId {
         return 'Download';
       case 'collection_relation_bind':
         return 'Bind to existing collection';
-      case 'collection_episode_scrape':
-        return 'Fetch episode details';
-      case 'collection_episode_scrape_unbound':
-        return 'Scrape the collection first';
       case 'collection_episode_rename':
         return 'Rename episodes from scrape';
       case 'collection_episode_rename_title':
@@ -168129,11 +167897,6 @@ extension on _StringsId {
         return 'Open this episode on Bangumi';
       case 'collection_relation_bound':
         return ({required Object name}) => 'Bound to ${name}';
-      case 'collection_episode_scrape_result':
-        return ({required Object updated, required Object skipped}) =>
-            'Updated ${updated} episodes, skipped ${skipped}';
-      case 'collection_episode_scrape_failed':
-        return ({required Object error}) => 'Episode scrape failed: ${error}';
       case 'collection_episode_rename_apply':
         return ({required Object n}) => 'Rename ${n} episodes';
       case 'collection_split_done':
@@ -174990,10 +174753,6 @@ extension on _StringsIt {
         return 'Download';
       case 'collection_relation_bind':
         return 'Bind to existing collection';
-      case 'collection_episode_scrape':
-        return 'Fetch episode details';
-      case 'collection_episode_scrape_unbound':
-        return 'Scrape the collection first';
       case 'collection_episode_rename':
         return 'Rename episodes from scrape';
       case 'collection_episode_rename_title':
@@ -175016,11 +174775,6 @@ extension on _StringsIt {
         return 'Open this episode on Bangumi';
       case 'collection_relation_bound':
         return ({required Object name}) => 'Bound to ${name}';
-      case 'collection_episode_scrape_result':
-        return ({required Object updated, required Object skipped}) =>
-            'Updated ${updated} episodes, skipped ${skipped}';
-      case 'collection_episode_scrape_failed':
-        return ({required Object error}) => 'Episode scrape failed: ${error}';
       case 'collection_episode_rename_apply':
         return ({required Object n}) => 'Rename ${n} episodes';
       case 'collection_split_done':
@@ -181839,10 +181593,6 @@ extension on _StringsJa {
         return 'Download';
       case 'collection_relation_bind':
         return 'Bind to existing collection';
-      case 'collection_episode_scrape':
-        return 'Fetch episode details';
-      case 'collection_episode_scrape_unbound':
-        return 'Scrape the collection first';
       case 'collection_episode_rename':
         return 'Rename episodes from scrape';
       case 'collection_episode_rename_title':
@@ -181865,11 +181615,6 @@ extension on _StringsJa {
         return 'Open this episode on Bangumi';
       case 'collection_relation_bound':
         return ({required Object name}) => 'Bound to ${name}';
-      case 'collection_episode_scrape_result':
-        return ({required Object updated, required Object skipped}) =>
-            'Updated ${updated} episodes, skipped ${skipped}';
-      case 'collection_episode_scrape_failed':
-        return ({required Object error}) => 'Episode scrape failed: ${error}';
       case 'collection_episode_rename_apply':
         return ({required Object n}) => 'Rename ${n} episodes';
       case 'collection_split_done':
@@ -188692,10 +188437,6 @@ extension on _StringsKo {
         return 'Download';
       case 'collection_relation_bind':
         return 'Bind to existing collection';
-      case 'collection_episode_scrape':
-        return 'Fetch episode details';
-      case 'collection_episode_scrape_unbound':
-        return 'Scrape the collection first';
       case 'collection_episode_rename':
         return 'Rename episodes from scrape';
       case 'collection_episode_rename_title':
@@ -188718,11 +188459,6 @@ extension on _StringsKo {
         return 'Open this episode on Bangumi';
       case 'collection_relation_bound':
         return ({required Object name}) => 'Bound to ${name}';
-      case 'collection_episode_scrape_result':
-        return ({required Object updated, required Object skipped}) =>
-            'Updated ${updated} episodes, skipped ${skipped}';
-      case 'collection_episode_scrape_failed':
-        return ({required Object error}) => 'Episode scrape failed: ${error}';
       case 'collection_episode_rename_apply':
         return ({required Object n}) => 'Rename ${n} episodes';
       case 'collection_split_done':
@@ -195573,10 +195309,6 @@ extension on _StringsNl {
         return 'Download';
       case 'collection_relation_bind':
         return 'Bind to existing collection';
-      case 'collection_episode_scrape':
-        return 'Fetch episode details';
-      case 'collection_episode_scrape_unbound':
-        return 'Scrape the collection first';
       case 'collection_episode_rename':
         return 'Rename episodes from scrape';
       case 'collection_episode_rename_title':
@@ -195599,11 +195331,6 @@ extension on _StringsNl {
         return 'Open this episode on Bangumi';
       case 'collection_relation_bound':
         return ({required Object name}) => 'Bound to ${name}';
-      case 'collection_episode_scrape_result':
-        return ({required Object updated, required Object skipped}) =>
-            'Updated ${updated} episodes, skipped ${skipped}';
-      case 'collection_episode_scrape_failed':
-        return ({required Object error}) => 'Episode scrape failed: ${error}';
       case 'collection_episode_rename_apply':
         return ({required Object n}) => 'Rename ${n} episodes';
       case 'collection_split_done':
@@ -202451,10 +202178,6 @@ extension on _StringsPtBr {
         return 'Download';
       case 'collection_relation_bind':
         return 'Bind to existing collection';
-      case 'collection_episode_scrape':
-        return 'Fetch episode details';
-      case 'collection_episode_scrape_unbound':
-        return 'Scrape the collection first';
       case 'collection_episode_rename':
         return 'Rename episodes from scrape';
       case 'collection_episode_rename_title':
@@ -202477,11 +202200,6 @@ extension on _StringsPtBr {
         return 'Open this episode on Bangumi';
       case 'collection_relation_bound':
         return ({required Object name}) => 'Bound to ${name}';
-      case 'collection_episode_scrape_result':
-        return ({required Object updated, required Object skipped}) =>
-            'Updated ${updated} episodes, skipped ${skipped}';
-      case 'collection_episode_scrape_failed':
-        return ({required Object error}) => 'Episode scrape failed: ${error}';
       case 'collection_episode_rename_apply':
         return ({required Object n}) => 'Rename ${n} episodes';
       case 'collection_split_done':
@@ -209334,10 +209052,6 @@ extension on _StringsRu {
         return 'Download';
       case 'collection_relation_bind':
         return 'Bind to existing collection';
-      case 'collection_episode_scrape':
-        return 'Fetch episode details';
-      case 'collection_episode_scrape_unbound':
-        return 'Scrape the collection first';
       case 'collection_episode_rename':
         return 'Rename episodes from scrape';
       case 'collection_episode_rename_title':
@@ -209360,11 +209074,6 @@ extension on _StringsRu {
         return 'Open this episode on Bangumi';
       case 'collection_relation_bound':
         return ({required Object name}) => 'Bound to ${name}';
-      case 'collection_episode_scrape_result':
-        return ({required Object updated, required Object skipped}) =>
-            'Updated ${updated} episodes, skipped ${skipped}';
-      case 'collection_episode_scrape_failed':
-        return ({required Object error}) => 'Episode scrape failed: ${error}';
       case 'collection_episode_rename_apply':
         return ({required Object n}) => 'Rename ${n} episodes';
       case 'collection_split_done':
@@ -216200,10 +215909,6 @@ extension on _StringsTh {
         return 'Download';
       case 'collection_relation_bind':
         return 'Bind to existing collection';
-      case 'collection_episode_scrape':
-        return 'Fetch episode details';
-      case 'collection_episode_scrape_unbound':
-        return 'Scrape the collection first';
       case 'collection_episode_rename':
         return 'Rename episodes from scrape';
       case 'collection_episode_rename_title':
@@ -216226,11 +215931,6 @@ extension on _StringsTh {
         return 'Open this episode on Bangumi';
       case 'collection_relation_bound':
         return ({required Object name}) => 'Bound to ${name}';
-      case 'collection_episode_scrape_result':
-        return ({required Object updated, required Object skipped}) =>
-            'Updated ${updated} episodes, skipped ${skipped}';
-      case 'collection_episode_scrape_failed':
-        return ({required Object error}) => 'Episode scrape failed: ${error}';
       case 'collection_episode_rename_apply':
         return ({required Object n}) => 'Rename ${n} episodes';
       case 'collection_split_done':
@@ -223075,10 +222775,6 @@ extension on _StringsTr {
         return 'Download';
       case 'collection_relation_bind':
         return 'Bind to existing collection';
-      case 'collection_episode_scrape':
-        return 'Fetch episode details';
-      case 'collection_episode_scrape_unbound':
-        return 'Scrape the collection first';
       case 'collection_episode_rename':
         return 'Rename episodes from scrape';
       case 'collection_episode_rename_title':
@@ -223101,11 +222797,6 @@ extension on _StringsTr {
         return 'Open this episode on Bangumi';
       case 'collection_relation_bound':
         return ({required Object name}) => 'Bound to ${name}';
-      case 'collection_episode_scrape_result':
-        return ({required Object updated, required Object skipped}) =>
-            'Updated ${updated} episodes, skipped ${skipped}';
-      case 'collection_episode_scrape_failed':
-        return ({required Object error}) => 'Episode scrape failed: ${error}';
       case 'collection_episode_rename_apply':
         return ({required Object n}) => 'Rename ${n} episodes';
       case 'collection_split_done':
@@ -229946,10 +229637,6 @@ extension on _StringsVi {
         return 'Download';
       case 'collection_relation_bind':
         return 'Bind to existing collection';
-      case 'collection_episode_scrape':
-        return 'Fetch episode details';
-      case 'collection_episode_scrape_unbound':
-        return 'Scrape the collection first';
       case 'collection_episode_rename':
         return 'Rename episodes from scrape';
       case 'collection_episode_rename_title':
@@ -229972,11 +229659,6 @@ extension on _StringsVi {
         return 'Open this episode on Bangumi';
       case 'collection_relation_bound':
         return ({required Object name}) => 'Bound to ${name}';
-      case 'collection_episode_scrape_result':
-        return ({required Object updated, required Object skipped}) =>
-            'Updated ${updated} episodes, skipped ${skipped}';
-      case 'collection_episode_scrape_failed':
-        return ({required Object error}) => 'Episode scrape failed: ${error}';
       case 'collection_episode_rename_apply':
         return ({required Object n}) => 'Rename ${n} episodes';
       case 'collection_split_done':
@@ -236766,10 +236448,6 @@ extension on _StringsZhCn {
         return '去下载';
       case 'collection_relation_bind':
         return '绑定到已有合集';
-      case 'collection_episode_scrape':
-        return '刮削分集资料';
-      case 'collection_episode_scrape_unbound':
-        return '请先刮削合集资料';
       case 'collection_episode_rename':
         return '按刮削重命名各集';
       case 'collection_episode_rename_title':
@@ -236792,11 +236470,6 @@ extension on _StringsZhCn {
         return '在 Bangumi 打开本集';
       case 'collection_relation_bound':
         return ({required Object name}) => '已绑定到 ${name}';
-      case 'collection_episode_scrape_result':
-        return ({required Object updated, required Object skipped}) =>
-            '已更新 ${updated} 集 · 跳过 ${skipped} 集';
-      case 'collection_episode_scrape_failed':
-        return ({required Object error}) => '分集刮削失败：${error}';
       case 'collection_episode_rename_apply':
         return ({required Object n}) => '重命名 ${n} 集';
       case 'collection_split_done':
@@ -243604,10 +243277,6 @@ extension on _StringsZhHk {
         return 'Download';
       case 'collection_relation_bind':
         return 'Bind to existing collection';
-      case 'collection_episode_scrape':
-        return 'Fetch episode details';
-      case 'collection_episode_scrape_unbound':
-        return 'Scrape the collection first';
       case 'collection_episode_rename':
         return 'Rename episodes from scrape';
       case 'collection_episode_rename_title':
@@ -243630,11 +243299,6 @@ extension on _StringsZhHk {
         return 'Open this episode on Bangumi';
       case 'collection_relation_bound':
         return ({required Object name}) => 'Bound to ${name}';
-      case 'collection_episode_scrape_result':
-        return ({required Object updated, required Object skipped}) =>
-            'Updated ${updated} episodes, skipped ${skipped}';
-      case 'collection_episode_scrape_failed':
-        return ({required Object error}) => 'Episode scrape failed: ${error}';
       case 'collection_episode_rename_apply':
         return ({required Object n}) => 'Rename ${n} episodes';
       case 'collection_split_done':

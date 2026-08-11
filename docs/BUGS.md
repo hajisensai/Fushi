@@ -29,11 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1433 条。点号进各自文件。
+> 共 1435 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1549](bugs/BUG-1549-anki-toast-empty-deckname.md) | ✅ | ✅ | AnkiConnect 制卡成功 toast 牌组名为空——成功结果不带实际落卡牌组名，调用点事后从 selectedDeckName 猜 |
+| [BUG-1548](bugs/BUG-1548-resource-search-wrong-season-ranking.md) | ✅ | ✅ | 资源搜索结果错季混排：结果只按 seeders 排序，无标题/季号相关度 |
+| [BUG-1547](bugs/BUG-1547-tmdb-unconfigured-scrape-all-fails.md) | ✅ | ✅ | TMDB 未配置时全部刮削整批失败：resolver 不回退到零密钥的 Bangumi/AniList，且错误是英文裸串 |
 | [BUG-1546](bugs/BUG-1546-settings-width-text-truncation.md) | ✅ | ✅ | 设置页限宽与描述/集标题截断显示不全 |
 | [BUG-1545](bugs/BUG-1545-kon-collection-detail-crash.md) | ✅ | ✅ | 视频起播时 hwdec=auto 抢先下发，CUDA 硬解初始化崩溃整个进程（Windows/NVIDIA） |
 | [BUG-1544](bugs/BUG-1544-episode-number-follow-parsed.md) | ✅ | ✅ | 选集卡片序号用导入顺位号而非文件名解析出的真实集数 |
