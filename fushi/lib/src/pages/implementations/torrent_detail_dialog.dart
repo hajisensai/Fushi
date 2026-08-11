@@ -85,6 +85,7 @@ class _TorrentTaskDetailDialogState
   bool _ownsBackend = true;
   Timer? _timer;
   bool _refreshing = false;
+  int? _pendingTabRefresh;
 
   /// 首轮快照是否已返回（区分「还在加载」与「后端里已没有该任务」）。
   bool _snapshotLoaded = false;
@@ -141,7 +142,12 @@ class _TorrentTaskDetailDialogState
   /// 刷一轮：快照恒取（总览/状态行/文件进度都吃它），其余按当前 tab 取。
   Future<void> _refresh() async {
     final TorrentBackend? backend = _backend;
-    if (backend == null || _refreshing || !mounted) return;
+    if (backend == null || !mounted) return;
+    if (_refreshing) {
+      _pendingTabRefresh = _tabController.index;
+      return;
+    }
+    final int refreshedTab = _tabController.index;
     _refreshing = true;
     try {
       final String wantedHash = widget.torrentId.toLowerCase();
@@ -187,6 +193,11 @@ class _TorrentTaskDetailDialogState
       });
     } finally {
       _refreshing = false;
+      final int? pendingTab = _pendingTabRefresh;
+      _pendingTabRefresh = null;
+      if (mounted && pendingTab != null && pendingTab != refreshedTab) {
+        unawaited(_refresh());
+      }
     }
   }
 

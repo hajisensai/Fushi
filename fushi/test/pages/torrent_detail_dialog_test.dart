@@ -6,6 +6,8 @@
 // - 详情后端 → peers/trackers/优先级下拉/会话状态如实渲染。
 // 后端经 backendOverride 注入（不拉起 AppModel）。
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -95,6 +97,11 @@ class _BaseFakeBackend implements TorrentBackend {
 /// 全量详情能力的假后端。
 class _DetailFakeBackend extends _BaseFakeBackend
     implements TorrentDetailBackend {
+  _DetailFakeBackend({this.peerGate});
+
+  final Future<void>? peerGate;
+  final Completer<void> peerQueryStarted = Completer<void>();
+  int trackerCalls = 0;
   final List<(String, int, TorrentFilePriority)> prioritySets =
       <(String, int, TorrentFilePriority)>[];
 
@@ -102,33 +109,39 @@ class _DetailFakeBackend extends _BaseFakeBackend
   bool get detailAvailable => true;
 
   @override
-  Future<List<TorrentPeerDetail>?> listPeers(String torrentId) async =>
-      const <TorrentPeerDetail>[
-        TorrentPeerDetail(
-          address: '10.0.0.9',
-          port: 6881,
-          client: 'qBittorrent/4.6.5',
-          progress: 0.75,
-          downSpeedBps: 1000,
-          upSpeedBps: 200,
-          downloadedBytes: 300000,
-          uploadedBytes: 5000,
-          flags: 'D U',
-        ),
-      ];
+  Future<List<TorrentPeerDetail>?> listPeers(String torrentId) async {
+    if (!peerQueryStarted.isCompleted) peerQueryStarted.complete();
+    final Future<void>? gate = peerGate;
+    if (gate != null) await gate;
+    return const <TorrentPeerDetail>[
+      TorrentPeerDetail(
+        address: '10.0.0.9',
+        port: 6881,
+        client: 'qBittorrent/4.6.5',
+        progress: 0.75,
+        downSpeedBps: 1000,
+        upSpeedBps: 200,
+        downloadedBytes: 300000,
+        uploadedBytes: 5000,
+        flags: 'D U',
+      ),
+    ];
+  }
 
   @override
-  Future<List<TorrentTrackerDetail>?> listTrackers(String torrentId) async =>
-      const <TorrentTrackerDetail>[
-        TorrentTrackerDetail(
-          url: 'http://tracker.example/announce',
-          tier: 0,
-          status: TorrentTrackerStatus.working,
-          seeds: 30,
-          leeches: 12,
-          downloaded: 100,
-        ),
-      ];
+  Future<List<TorrentTrackerDetail>?> listTrackers(String torrentId) async {
+    trackerCalls += 1;
+    return const <TorrentTrackerDetail>[
+      TorrentTrackerDetail(
+        url: 'http://tracker.example/announce',
+        tier: 0,
+        status: TorrentTrackerStatus.working,
+        seeds: 30,
+        leeches: 12,
+        downloaded: 100,
+      ),
+    ];
+  }
 
   @override
   Future<List<TorrentFilePriority>?> filePriorities(String torrentId) async =>
@@ -314,6 +327,30 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('ep01.mkv'), findsOneWidget);
     expect(find.byType(DropdownButton<TorrentFilePriority>), findsOneWidget);
+    await _dismiss(tester);
+  });
+
+  testWidgets('节点刷新未结束时切到Tracker会排队补刷', (
+    WidgetTester tester,
+  ) async {
+    final Completer<void> peerGate = Completer<void>();
+    final _DetailFakeBackend backend = _DetailFakeBackend(
+      peerGate: peerGate.future,
+    );
+    await _pump(tester, backend);
+
+    await tester.tap(find.text('Peers'));
+    await tester.pump();
+    await backend.peerQueryStarted.future;
+    await tester.tap(find.text('Trackers'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(backend.trackerCalls, 0);
+
+    peerGate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(backend.trackerCalls, greaterThan(0));
+    expect(find.text('http://tracker.example/announce'), findsOneWidget);
     await _dismiss(tester);
   });
 
