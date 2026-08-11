@@ -414,6 +414,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           CollectionMemberProgress(
             positionMs: r.lastPositionMs,
             completed: r.completedAt != null,
+            lastPlayedAt: r.lastPlayedAt,
           ),
       ]);
 
