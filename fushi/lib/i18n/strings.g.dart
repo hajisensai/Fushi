@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 56389 (3317 per locale)
+/// Strings: 56406 (3318 per locale)
 ///
-/// Built on 2026-08-11 at 07:47 UTC
+/// Built on 2026-08-11 at 13:49 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4490,6 +4490,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get tag_add_failed => 'Couldn\'t add the tag. Please try again.';
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -12147,6 +12149,9 @@ class _StringsAr extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -19871,6 +19876,9 @@ class _StringsDe extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -27611,6 +27619,9 @@ class _StringsEs extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -35363,6 +35374,9 @@ class _StringsFr extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -43043,6 +43057,9 @@ class _StringsId extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -50769,6 +50786,9 @@ class _StringsIt extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -58309,6 +58329,9 @@ class _StringsJa extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -65856,6 +65879,9 @@ class _StringsKo extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -73562,6 +73588,9 @@ class _StringsNl extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -81280,6 +81309,9 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -88984,6 +89016,9 @@ class _StringsRu extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -96636,6 +96671,9 @@ class _StringsTh extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -104319,6 +104357,9 @@ class _StringsTr extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -111987,6 +112028,9 @@ class _StringsVi extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -119101,6 +119145,8 @@ class _StringsZhCn extends _StringsEn {
   String get tag_add_failed => '标签添加失败，请重试。';
   @override
   String get tag_reorder_failed => '标签排序保存失败，请重试。';
+  @override
+  String get video_discovery_manual_identity_hint => '填写标题、外部 ID 和年份后才能搜索';
 }
 
 // Path: <root>
@@ -126564,6 +126610,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 /// Flat map(s) containing all translations.
@@ -133380,6 +133429,8 @@ extension on _StringsEn {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -140194,6 +140245,8 @@ extension on _StringsAr {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -147030,6 +147083,8 @@ extension on _StringsDe {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -153865,6 +153920,8 @@ extension on _StringsEs {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -160706,6 +160763,8 @@ extension on _StringsFr {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -167529,6 +167588,8 @@ extension on _StringsId {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -174366,6 +174427,8 @@ extension on _StringsIt {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -181165,6 +181228,8 @@ extension on _StringsJa {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -187968,6 +188033,8 @@ extension on _StringsKo {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -194799,6 +194866,8 @@ extension on _StringsNl {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -201627,6 +201696,8 @@ extension on _StringsPtBr {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -208460,6 +208531,8 @@ extension on _StringsRu {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -215276,6 +215349,8 @@ extension on _StringsTh {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -222101,6 +222176,8 @@ extension on _StringsTr {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -228922,6 +228999,8 @@ extension on _StringsVi {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -235686,6 +235765,8 @@ extension on _StringsZhCn {
         return '标签添加失败，请重试。';
       case 'tag_reorder_failed':
         return '标签排序保存失败，请重试。';
+      case 'video_discovery_manual_identity_hint':
+        return '填写标题、外部 ID 和年份后才能搜索';
       default:
         return null;
     }
@@ -242480,6 +242561,8 @@ extension on _StringsZhHk {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }

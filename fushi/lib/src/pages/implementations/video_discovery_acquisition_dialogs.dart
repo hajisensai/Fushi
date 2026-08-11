@@ -547,6 +547,12 @@ class _VideoResourceSearchSurfaceState
 
   bool get _manualIdentityReady => _media != null;
 
+  /// 手动身份未满足时搜索按钮必须禁用（设计如此，不造 `manual` 假身份），
+  /// 但禁用原因要在 tooltip 里说清，而不是继续显示「搜索」误导用户。
+  String get _manualSearchTooltip => _manualIdentityReady
+      ? t.dialog_search
+      : t.video_discovery_manual_identity_hint;
+
   void _invalidateManualSearch() {
     setState(() {
       _result = null;
@@ -760,7 +766,7 @@ class _VideoResourceSearchSurfaceState
                           Expanded(child: category),
                           SizedBox(width: tokens.spacing.gap),
                           IconButton.filledTonal(
-                            tooltip: t.dialog_search,
+                            tooltip: _manualSearchTooltip,
                             onPressed: _loading || !_manualIdentityReady
                                 ? null
                                 : () => unawaited(_search()),
@@ -778,7 +784,7 @@ class _VideoResourceSearchSurfaceState
                     SizedBox(width: 160, child: category),
                     SizedBox(width: tokens.spacing.gap),
                     IconButton.filledTonal(
-                      tooltip: t.dialog_search,
+                      tooltip: _manualSearchTooltip,
                       onPressed: _loading || !_manualIdentityReady
                           ? null
                           : () => unawaited(_search()),
@@ -890,6 +896,16 @@ class _VideoResourceSearchSurfaceState
                 );
               },
             ),
+            if (!_manualIdentityReady) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              Text(
+                t.video_discovery_manual_identity_hint,
+                key: const ValueKey<String>('video-resource-identity-hint'),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
             SizedBox(height: tokens.spacing.gap),
           ],
           if (_result?.isPartial == true)

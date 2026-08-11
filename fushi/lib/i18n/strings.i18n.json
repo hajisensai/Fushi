@@ -3315,5 +3315,6 @@
   "gal_hook_ingame_lookup_hint": "Show the dictionary card inside the game window itself (KiriKiri engine, Windows only)",
   "drag_drop_failed": "Couldn't handle the dropped files. Please try again.",
   "tag_add_failed": "Couldn't add the tag. Please try again.",
-  "tag_reorder_failed": "Couldn't save the new tag order. Please try again."
+  "tag_reorder_failed": "Couldn't save the new tag order. Please try again.",
+  "video_discovery_manual_identity_hint": "Enter the title, external ID and year above to enable search"
 }
