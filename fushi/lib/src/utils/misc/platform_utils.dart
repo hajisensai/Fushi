@@ -292,6 +292,21 @@ const double kFushiSettingsWideMinHeight = 440.0;
 /// 里的兄弟设置页保持同宽，消除各处重复出现的 `900` 魔法数。
 const double kFushiSettingsDialogMaxWidth = 900.0;
 
+/// 页内快捷设置面板（视频设置侧栏等）的自适应内容宽度：取窗口宽度的一半，
+/// 下限 [kFushiSettingsWideThreshold]（560，即旧固定宽——窄窗行为零变化），
+/// 上限对齐兄弟设置弹窗的 [kFushiSettingsDialogMaxWidth]（900）。
+///
+/// BUG-1546：视频页内设置侧栏此前硬编码 560 固定宽，桌面大窗口下被挤成窄条
+/// （用户实报「视频、小说等设置被限制了宽度」）。宽度跟随窗口自适应后，
+/// ≥1120 逻辑宽的窗口面板随之放宽，≥1800 达到 900 上限；同时下限保住旧值，
+/// 手机 / 窄窗仍由 [VideoTranslucentSidePanel] 的 94% 可用宽钳制兜底。
+double fushiQuickSettingsPanelWidth(double windowWidth) {
+  if (!windowWidth.isFinite) return kFushiSettingsWideThreshold;
+  return (windowWidth * 0.5)
+      .clamp(kFushiSettingsWideThreshold, kFushiSettingsDialogMaxWidth)
+      .toDouble();
+}
+
 class DesktopContentLayout extends StatelessWidget {
   const DesktopContentLayout({
     required this.kind,

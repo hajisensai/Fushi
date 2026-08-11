@@ -230,8 +230,7 @@ class AdaptiveSettingsSurface extends StatelessWidget {
           ),
       ],
     );
-    final bool hasFocusRoot =
-        FushiFocusRoot.maybeControllerOf(context) != null;
+    final bool hasFocusRoot = FushiFocusRoot.maybeControllerOf(context) != null;
     final Widget tappable = cupertino
         ? GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -530,8 +529,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
     );
 
     if (onTap == null) return content;
-    final bool hasFocusRoot =
-        FushiFocusRoot.maybeControllerOf(context) != null;
+    final bool hasFocusRoot = FushiFocusRoot.maybeControllerOf(context) != null;
     if (cupertino) {
       // Cupertino 是隐藏内部能力，维持原有两分支（结构恒定化只做 Material
       // 主路径）。无焦点根时 FushiFocusable 保持方向键可达（GestureDetector
@@ -1947,9 +1945,13 @@ class _SettingsLabel extends StatelessWidget {
                   .bodySmall
                   ?.copyWith(color: subtitleColor),
               // BUG-1184：null = 不钳行数，说明文字整段显示（见
-              // [AdaptiveSettingsRow.subtitleMaxLines]）。仍保留 ellipsis，
-              // 只在调用点显式传有限值时才生效。
-              overflow: TextOverflow.ellipsis,
+              // [AdaptiveSettingsRow.subtitleMaxLines]）。
+              // BUG-1546：ellipsis 不能在 maxLines 为 null 时挂上——引擎对
+              // 「ellipsis 非空 + maxLines 为空」的段落按**单行**布局（见
+              // dart:ui `ParagraphStyle.ellipsis` 文档），BUG-1184 想放开行数
+              // 反而把所有设置行说明钳成了一行省略号。ellipsis 只与有限行数
+              // 成对出现；无限行数时整段换行显示、不需要省略语义。
+              overflow: subtitleMaxLines == null ? null : TextOverflow.ellipsis,
               maxLines: subtitleMaxLines,
             ),
           ),
