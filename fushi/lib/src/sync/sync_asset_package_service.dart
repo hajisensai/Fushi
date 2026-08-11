@@ -6,6 +6,7 @@ import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart';
 import 'package:fushi/src/models/local_audio_source_pref.dart';
 import 'package:fushi/src/utils/misc/safe_file_name.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -23,6 +24,41 @@ class LocalAudioPackageContents {
   final String displayName;
   final bool enabled;
   final List<LocalAudioSourcePref> sources;
+}
+
+/// 有声书资产包缺**必需**资源：manifest 的 `resources` 映射里找不到 [sourcePath]
+/// 对应的包内文件（源文件在导出端就已经不在磁盘上，导出侧把它记进
+/// `manifest.missingResources`）。
+///
+/// 旧实现在这里静默回退成 `<targetDir>/<basename>`，把一个「看着像样但不存在」的
+/// 路径写进 DB（`upsertAudiobook` / `upsertSrtBook`）并报导入成功，用户拿到一本
+/// 「有字幕没声音」的书且没有任何报错（BUG-1577）。导入端必须在写 DB **之前**抛出，
+/// 让调用方（互联下载 / 同步 pull / 备份恢复）能把失败报出来。
+///
+/// 为什么不「跳过缺的那个音频、把剩下的导进来」：cue 的 `audioFileIndex` 是**位置
+/// 索引**，音频列表少一个元素会让缺口之后的每一条 cue 都对到错误的音轨——静默错位
+/// 比明确失败更糟。
+class SyncAssetPackageIncompleteException implements Exception {
+  const SyncAssetPackageIncompleteException({
+    required this.sourcePath,
+    this.missingAtExport = const <String>[],
+  });
+
+  /// 包里没有登记的必需资源在**导出端**的原路径。
+  final String sourcePath;
+
+  /// 导出端记录的完整缺失清单（`manifest.missingResources`）。旧版本产出的包没有
+  /// 这个字段 → 空列表（缺键不算错误，见 [_missingAtExport]）。
+  final List<String> missingAtExport;
+
+  @override
+  String toString() {
+    final String extra = missingAtExport.isEmpty
+        ? ''
+        : '; missing at export: ${missingAtExport.join(', ')}';
+    return 'SyncAssetPackageIncompleteException: package carries no resource '
+        'for "$sourcePath"$extra';
+  }
 }
 
 class SyncAssetPackageService {
@@ -130,7 +166,32 @@ class SyncAssetPackageService {
     final List<AudioCueRow> cues = await _db.getCuesForBook(cueKey);
     // TODO-1165：SRT 书标签名（标签每设备本地，跨设备按名带进 manifest）。
     final List<BookTagRow> srtTags = await _db.getTagsForSrtBook(srtBook.uid);
-    final List<File> files = _audioPackageFiles(audiobook, srtBook);
+
+    // 音频按「播放器真正会播的那一份」解析：files 模式取 audioPathsJson，folder
+    // 模式（audioPathsJson 空、音频在 audioRoot 目录下）枚举目录。旧实现只读
+    // audioPathsJson，folder 模式的书导出时**零个音频文件**却照样报成功。
+    final _EffectiveAudio audiobookAudio = audiobook == null
+        ? const _EffectiveAudio.empty()
+        : await _resolveEffectiveAudio(
+            audiobook.audioPathsJson, audiobook.audioRoot);
+    final _EffectiveAudio srtAudio =
+        await _resolveEffectiveAudio(srtBook.audioPathsJson, srtBook.audioRoot);
+    final List<File> files = _audioPackageFiles(
+      audiobook: audiobook,
+      srtBook: srtBook,
+      audiobookAudioPaths: audiobookAudio.paths,
+      srtAudioPaths: srtAudio.paths,
+    );
+
+    // 「包里缺资源」不得伪装成成功：每一个没能进包的源文件都记进
+    // `manifest.missingResources` 随包 travel，导入端据此报错/给出诊断，而不是
+    // 编一个 basename 路径写进 DB（BUG-1577）。
+    final List<String> missingResources = <String>[
+      // folder 模式目录不存在 / 一个音频文件都没有：没有任何 audioPaths 可登记为
+      // 缺失，只能把 audioRoot 自己记下来，否则这个空包「空得毫无痕迹」。
+      if (audiobookAudio.missingRoot != null) audiobookAudio.missingRoot!,
+      if (srtAudio.missingRoot != null) srtAudio.missingRoot!,
+    ];
 
     // 主 isolate：分配唯一文件名，建立 manifest 的 resources 映射（源路径→名）
     // 与 isolate 的 zip 内路径映射（resources/名→源路径）。
@@ -138,7 +199,11 @@ class SyncAssetPackageService {
     final Map<String, String> archivePathToSource = <String, String>{};
     final Set<String> usedNames = <String>{};
     for (final File file in files) {
-      if (!await file.exists()) continue;
+      if (!await file.exists()) {
+        // 源文件已不在磁盘：旧实现只 continue，包里静默少一个资源。
+        missingResources.add(file.path);
+        continue;
+      }
       final String name = _uniqueFileName(file, usedNames);
       resourceNames[file.path] = name;
       archivePathToSource['resources/$name'] = file.path;
@@ -148,14 +213,20 @@ class SyncAssetPackageService {
       'schemaVersion': 1,
       'kind': 'audioDatabase',
       // 纯 SRT 有声书无 Audiobooks 行 → audiobook 段为 null，导入端据此走纯 SRT 分支。
-      'audiobook': audiobook != null ? _audiobookManifest(audiobook) : null,
+      'audiobook': audiobook != null
+          ? _audiobookManifest(audiobook, audiobookAudio.paths)
+          : null,
       'srtBook': <String, Object?>{
-        ..._srtBookManifest(srtBook),
+        ..._srtBookManifest(srtBook, srtAudio.paths),
         if (srtTags.isNotEmpty)
           'tags': <String>[for (final BookTagRow t in srtTags) t.name],
       },
       'cues': cues.map(_audioCueManifest).toList(),
       'resources': resourceNames,
+      // 只在真有缺失时出现：健康包与旧包同形（旧导入端忽略未知键，向后兼容）。
+      // 导出**不因部分缺失整包失败**——一本书缺 1 个文件不该让整个备份/同步中断，
+      // 拒绝落库的判断留给导入端（它才知道哪些资源是必需的）。
+      if (missingResources.isNotEmpty) 'missingResources': missingResources,
     });
 
     outputFile.parent.createSync(recursive: true);
@@ -191,6 +262,9 @@ class SyncAssetPackageService {
         rawAudiobook is Map ? _typedMap(rawAudiobook) : null;
     final Map<String, Object?> srtBook = _mapValue(manifest, 'srtBook');
     final Map<String, Object?> resources = _mapValue(manifest, 'resources');
+    // 导出端记的缺失清单，只用于把错误信息说清楚；旧包没有这个键 → 空列表
+    // （缺键绝不能让整包导入失败，用户手上有旧包）。
+    final List<String> missingAtExport = _missingAtExport(manifest);
 
     if (audiobook == null) {
       // 纯 SRT（standalone）有声书：bookKey 恒空、身份=uid、cue 走 uid 命名空间。
@@ -200,6 +274,7 @@ class SyncAssetPackageService {
         audioDatabaseRoot: audioDatabaseRoot,
         srtBook: srtBook,
         resources: resources,
+        missingAtExport: missingAtExport,
         cues: _listValue(manifest, 'cues'),
       );
       return;
@@ -214,22 +289,34 @@ class SyncAssetPackageService {
     final Directory targetDir =
         Directory(p.join(audioDatabaseRoot.path, _safeDirName(bookKey)));
 
+    // 先把**必需**资源（对齐文件 / 音频 / 字幕）解析成落地路径：包里没有登记的
+    // 立刻抛 [SyncAssetPackageIncompleteException]，且抛在解压与写 DB **之前**——
+    // 既不往 DB 写不存在的路径，也不留下「解压了一半、DB 无行」的残迹。
+    final String alignmentPath = _requiredResourcePath(
+      targetDir,
+      resources,
+      _stringValue(audiobook, 'alignmentPath'),
+      missingAtExport,
+    );
+    final List<String> audioPaths = _stringList(audiobook, 'audioPaths')
+        .map((String path) =>
+            _requiredResourcePath(targetDir, resources, path, missingAtExport))
+        .toList();
+    final String srtPath = _requiredResourcePath(
+      targetDir,
+      resources,
+      _stringValue(srtBook, 'srtPath'),
+      missingAtExport,
+    );
+    // 封面是装饰性资源：缺了降级为无封面，不阻断整本书导入。
+    final String? coverPath =
+        _optionalResourcePath(targetDir, resources, srtBook, 'coverPath');
+
     await _extractResourcesInIsolate(
       packagePath: packageFile.path,
       targetDirPath: targetDir.path,
       prefix: 'resources',
     );
-
-    final String alignmentPath = p.join(
-      targetDir.path,
-      _resourceName(resources, _stringValue(audiobook, 'alignmentPath')),
-    );
-    final List<String> audioPaths = _stringList(
-      audiobook,
-      'audioPaths',
-    ).map((String path) {
-      return p.join(targetDir.path, _resourceName(resources, path));
-    }).toList();
 
     await _db.upsertAudiobook(AudiobooksCompanion.insert(
       bookKey: bookKey,
@@ -250,16 +337,8 @@ class SyncAssetPackageService {
       author: Value(_nullableString(srtBook, 'author')),
       audioRoot: Value(targetDir.path),
       audioPathsJson: Value(jsonEncode(audioPaths)),
-      srtPath: p.join(
-        targetDir.path,
-        _resourceName(resources, _stringValue(srtBook, 'srtPath')),
-      ),
-      coverPath: Value(_nullablePathIn(
-        targetDir,
-        resources,
-        srtBook,
-        'coverPath',
-      )),
+      srtPath: srtPath,
+      coverPath: Value(coverPath),
       importedAt: _intValue(srtBook, 'importedAt'),
       bookKey: Value(bookKey),
     ));
@@ -308,6 +387,7 @@ class SyncAssetPackageService {
     required Directory audioDatabaseRoot,
     required Map<String, Object?> srtBook,
     required Map<String, Object?> resources,
+    required List<String> missingAtExport,
     required List<Object?> cues,
   }) async {
     final String uid = _stringValue(srtBook, 'uid');
@@ -315,16 +395,25 @@ class SyncAssetPackageService {
     final Directory targetDir =
         Directory(p.join(audioDatabaseRoot.path, _safeDirName(uid)));
 
+    // 同 srt-backed 分支：必需资源先解析（缺则抛），再解压、再写 DB。
+    final List<String> audioPaths = _stringList(srtBook, 'audioPaths')
+        .map((String path) =>
+            _requiredResourcePath(targetDir, resources, path, missingAtExport))
+        .toList();
+    final String srtPath = _requiredResourcePath(
+      targetDir,
+      resources,
+      _stringValue(srtBook, 'srtPath'),
+      missingAtExport,
+    );
+    final String? coverPath =
+        _optionalResourcePath(targetDir, resources, srtBook, 'coverPath');
+
     await _extractResourcesInIsolate(
       packagePath: packageFile.path,
       targetDirPath: targetDir.path,
       prefix: 'resources',
     );
-
-    final List<String> audioPaths = _stringList(srtBook, 'audioPaths')
-        .map((String path) =>
-            p.join(targetDir.path, _resourceName(resources, path)))
-        .toList();
 
     await _db.upsertSrtBook(SrtBooksCompanion.insert(
       uid: uid,
@@ -332,12 +421,8 @@ class SyncAssetPackageService {
       author: Value(_nullableString(srtBook, 'author')),
       audioRoot: Value(targetDir.path),
       audioPathsJson: Value(jsonEncode(audioPaths)),
-      srtPath: p.join(
-        targetDir.path,
-        _resourceName(resources, _stringValue(srtBook, 'srtPath')),
-      ),
-      coverPath:
-          Value(_nullablePathIn(targetDir, resources, srtBook, 'coverPath')),
+      srtPath: srtPath,
+      coverPath: Value(coverPath),
       importedAt: _intValue(srtBook, 'importedAt'),
       bookKey: const Value(''), // standalone：bookKey 恒空（纯 SRT 身份判据）。
     ));
@@ -461,10 +546,14 @@ class SyncAssetPackageService {
     };
   }
 
-  Map<String, Object?> _audiobookManifest(AudiobookRow row) {
+  /// [audioPaths] 是 [_resolveEffectiveAudio] 解出的**真实音频清单**（folder 模式已
+  /// 展开成具体文件），不是裸 `audioPathsJson`：manifest 里的 audioPaths 语义因此统一
+  /// 为「这个包里带了哪些音频」，导入端对它逐个做必需资源校验，folder 模式不再是特例。
+  Map<String, Object?> _audiobookManifest(
+      AudiobookRow row, List<String> audioPaths) {
     return <String, Object?>{
       'bookKey': row.bookKey,
-      'audioPaths': _decodeStringList(row.audioPathsJson),
+      'audioPaths': audioPaths,
       'alignmentFormat': row.alignmentFormat,
       'alignmentPath': row.alignmentPath,
       'healthKindRaw': row.healthKindRaw,
@@ -475,12 +564,14 @@ class SyncAssetPackageService {
     };
   }
 
-  Map<String, Object?> _srtBookManifest(SrtBookRow row) {
+  /// [audioPaths] 同 [_audiobookManifest]：已解析的真实音频清单。
+  Map<String, Object?> _srtBookManifest(
+      SrtBookRow row, List<String> audioPaths) {
     return <String, Object?>{
       'uid': row.uid,
       'title': row.title,
       'author': row.author,
-      'audioPaths': _decodeStringList(row.audioPathsJson),
+      'audioPaths': audioPaths,
       'srtPath': row.srtPath,
       'coverPath': row.coverPath,
       'importedAt': row.importedAt,
@@ -506,16 +597,70 @@ class SyncAssetPackageService {
 /// Filesystem-safe inputs (e.g. `ttu-42`) pass through unchanged.
 String _safeDirName(String id) => safeWindowsFileName(id);
 
-List<File> _audioPackageFiles(AudiobookRow? audiobook, SrtBookRow srtBook) {
+/// 一本书要进包的全部资源文件（按路径去重）。
+///
+/// 音频取已解析的 [audiobookAudioPaths] / [srtAudioPaths]（见 [_resolveEffectiveAudio]），
+/// 不是裸 `audioPathsJson`——folder 模式的书 `audioPathsJson` 为空、音频在 `audioRoot`
+/// 目录下，旧实现因此给这类书打出**零个音频文件**的包（BUG-1577）。
+List<File> _audioPackageFiles({
+  required AudiobookRow? audiobook,
+  required SrtBookRow srtBook,
+  required List<String> audiobookAudioPaths,
+  required List<String> srtAudioPaths,
+}) {
   final List<String> paths = <String>[
     // 纯 SRT 无 Audiobooks 行：不含 audiobook 音频/对齐文件，仅取 SrtBook 自身资源。
-    if (audiobook != null) ..._decodeStringList(audiobook.audioPathsJson),
+    ...audiobookAudioPaths,
     if (audiobook != null) audiobook.alignmentPath,
-    ..._decodeStringList(srtBook.audioPathsJson),
+    ...srtAudioPaths,
     srtBook.srtPath,
     if (srtBook.coverPath != null) srtBook.coverPath!,
   ];
   return paths.toSet().map(File.new).toList();
+}
+
+/// 一本书**真正会播**的音频清单（[paths]）+ folder 模式解析失败时的目录路径
+/// （[missingRoot]，导出侧据此记 `manifest.missingResources`）。
+class _EffectiveAudio {
+  const _EffectiveAudio(this.paths, this.missingRoot);
+  const _EffectiveAudio.empty()
+      : paths = const <String>[],
+        missingRoot = null;
+
+  final List<String> paths;
+
+  /// folder 模式下目录不存在 / 目录里一个音频文件都没有时的 `audioRoot`；
+  /// 其余情况为 null。
+  final String? missingRoot;
+}
+
+/// 与播放端 `AudiobookSessionLauncher._resolveAudioFiles` **同序**解析音频文件：
+/// 优先 `audioPathsJson`（files 模式），为空时枚举 [audioRoot]（folder 模式，
+/// 非递归、只收 [AudiobookStorage.isAudioFile]、按 [compareAudioFilePath] 排序）。
+///
+/// 排序必须与播放端一致：cue 的 `audioFileIndex` 是位置索引，两端顺序不同就整本错位。
+Future<_EffectiveAudio> _resolveEffectiveAudio(
+  String? audioPathsJson,
+  String? audioRoot,
+) async {
+  final List<String> declared = _decodeStringList(audioPathsJson);
+  if (declared.isNotEmpty) return _EffectiveAudio(declared, null);
+  if (audioRoot == null || audioRoot.isEmpty) {
+    return const _EffectiveAudio.empty();
+  }
+  final Directory dir = Directory(audioRoot);
+  if (!await dir.exists()) {
+    return _EffectiveAudio(const <String>[], audioRoot);
+  }
+  final List<String> found = <String>[];
+  await for (final FileSystemEntity entity in dir.list()) {
+    if (entity is File && AudiobookStorage.isAudioFile(entity.path)) {
+      found.add(entity.path);
+    }
+  }
+  if (found.isEmpty) return _EffectiveAudio(const <String>[], audioRoot);
+  found.sort(compareAudioFilePath);
+  return _EffectiveAudio(found, null);
 }
 
 String _uniqueFileName(File file, Set<String> usedNames) {
@@ -530,10 +675,57 @@ String _uniqueFileName(File file, Set<String> usedNames) {
   return candidate;
 }
 
-String _resourceName(Map<String, Object?> resources, String sourcePath) {
+/// manifest `resources` 里登记的包内文件名；没登记返回 null。
+///
+/// **绝不回退成 `p.basename(sourcePath)`**：包里根本没有这个文件，编出来的
+/// `<targetDir>/<basename>` 是一个「看着像样但不存在」的路径（BUG-1577）。
+String? _resourceName(Map<String, Object?> resources, String sourcePath) {
   final Object? name = resources[sourcePath];
-  if (name is String) return name;
-  return p.basename(sourcePath);
+  return name is String ? name : null;
+}
+
+/// 必需资源（音频 / 字幕 / 对齐文件）在 [targetDir] 下的落地路径。
+/// 包里没有登记 → 抛 [SyncAssetPackageIncompleteException]（调用方必须在写 DB 前调用）。
+String _requiredResourcePath(
+  Directory targetDir,
+  Map<String, Object?> resources,
+  String sourcePath,
+  List<String> missingAtExport,
+) {
+  final String? name = _resourceName(resources, sourcePath);
+  if (name == null) {
+    throw SyncAssetPackageIncompleteException(
+      sourcePath: sourcePath,
+      missingAtExport: missingAtExport,
+    );
+  }
+  return p.join(targetDir.path, name);
+}
+
+/// 可选资源（封面）在 [targetDir] 下的落地路径；字段本身为 null 或包里没登记都
+/// 返回 null——封面是装饰，缺了降级为无封面，但同样不编造路径。
+String? _optionalResourcePath(
+  Directory targetDir,
+  Map<String, Object?> resources,
+  Map<String, Object?> map,
+  String key,
+) {
+  final String? value = _nullableString(map, key);
+  if (value == null) return null;
+  final String? name = _resourceName(resources, value);
+  if (name == null) return null;
+  return p.join(targetDir.path, name);
+}
+
+/// 导出端记录的缺失资源清单（`manifest.missingResources`）。
+/// 旧版本产出的包没有这个键 → 空列表：**缺键不是错误**，否则用户手上的旧包全废。
+List<String> _missingAtExport(Map<String, Object?> manifest) {
+  final Object? raw = manifest['missingResources'];
+  if (raw is! List) return const <String>[];
+  return <String>[
+    for (final Object? value in raw)
+      if (value != null) value.toString(),
+  ];
 }
 
 List<String> _decodeStringList(String? json) {
@@ -605,17 +797,6 @@ DateTime? _nullableDate(Map<String, Object?> map, String key) {
   if (value == null) return null;
   if (value is String) return DateTime.parse(value);
   throw FormatException('Expected nullable date value for $key');
-}
-
-String? _nullablePathIn(
-  Directory root,
-  Map<String, Object?> resources,
-  Map<String, Object?> map,
-  String key,
-) {
-  final String? value = _nullableString(map, key);
-  if (value == null) return null;
-  return p.join(root.path, _resourceName(resources, value));
 }
 
 // ── 打包辅助（跑在后台 isolate，纯文件→文件，不依赖 DB / Flutter）─────────

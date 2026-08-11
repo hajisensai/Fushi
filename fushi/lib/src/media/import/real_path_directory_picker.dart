@@ -161,6 +161,14 @@ Future<String?> pickSystemFilePath({
 /// 多选走 file_picker。iOS 上不能使用 file_picker 的 audio 类型，它会打开
 /// `MPMediaPickerController`（资料库）而不是 Files；带扩展名过滤的入口统一由
 /// [_fallbackPickFiles] 处理。
+///
+/// 🔴 **每条返回路径都必须是可增长（growable）的 [List]**，包括「用户取消」「页面已
+/// 销毁」这类空结果。调用方（有声书导入 / 书导入 / 阅读器补音频 / 书架重新定位 SRT
+/// 音频）拿到列表后**先就地 `sort` 再判空**——而 Dart 的编译期常量列表是
+/// `UnmodifiableListMixin`，它的 `sort` **无条件抛 `UnsupportedError`，空列表照抛**
+/// （不是「非空才抛」）。BUG-1574 的用户崩溃就是取消文件选择器时返回不可变空列表，
+/// 在 `_pickSrtAudioFiles` 的 `paths.sort(...)` 处炸掉。
+/// 这里省下的那一次空列表分配，换来的是四个调用点各自加一圈判空补丁——别改回去。
 Future<List<String>> pickRealFilePaths({
   required BuildContext context,
   required AppModel appModel,
@@ -169,7 +177,7 @@ Future<List<String>> pickRealFilePaths({
   if (defaultTargetPlatform == TargetPlatform.android) {
     await appModel.requestExternalStoragePermissions();
   }
-  if (!context.mounted) return const <String>[];
+  if (!context.mounted) return <String>[];
   return _fallbackPickFiles(
     context: context,
     allowedExtensions: allowedExtensions,
@@ -217,9 +225,11 @@ Future<List<String>> _fallbackPickFiles({
     );
   }
 
+  // 取消（`result == null`）时同样返回可增长空列表：调用方会就地 sort（见
+  // [pickRealFilePaths] 的说明）。`.toList()` 本身已是可增长的。
   final List<String> paths =
       result?.files.map((file) => file.path).whereType<String>().toList() ??
-          const <String>[];
+          <String>[];
   if (!filterAfterPick) return paths;
 
   // 页面若在原生文件选择器打开期间被销毁，仍按扩展名做纯过滤返回，只是无法
@@ -239,7 +249,8 @@ Future<List<String>> _fallbackPickFiles({
 }
 
 Set<String> _normalizeExtensions(Set<String>? extensions) {
-  if (extensions == null || extensions.isEmpty) return const <String>{};
+  // 同上：本文件不向外交出不可变集合（零特例，省得下一个消费方 add 时再炸一次）。
+  if (extensions == null || extensions.isEmpty) return <String>{};
   return extensions
       .map((String ext) => ext.toLowerCase().replaceFirst('.', ''))
       .where((String ext) => ext.isNotEmpty)

@@ -2,8 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'audiobook_model.dart';
+import 'audiobook_path_relocator.dart';
 import 'audiobook_repository.dart';
 import 'srt_book_model.dart';
 import 'audiobook_storage.dart';
@@ -14,9 +16,134 @@ class SrtBookRepository {
 
   final FushiDatabase _db;
 
+  /// 书架 / 媒体源列出用的全量读取。列出前顺手自愈被旧数据根遗弃的绝对路径
+  /// （[repairMovedPaths]）——范式同 `VideoBookRepository.listForShelf` 对封面的
+  /// 自愈（TODO-1255）。
   Future<List<SrtBook>> listAll() async {
+    await repairMovedPaths();
     final rows = await _db.getAllSrtBooks();
     return rows.map(_rowToModel).toList();
+  }
+
+  /// BUG-1575 第二步：自愈已经落在用户库里的坏路径。
+  ///
+  /// 合并导入曾把 `srt_books` 四列**逐列原样**插进本机库而不做路径 rebase，于是
+  /// 跨包名迁移（hibiki -> fushi）后行里指着**旧**数据根。修好导入代码救不了已经
+  /// 坏掉的库，只能在读取侧自愈。
+  ///
+  /// 为什么挂在列出路径上，而不是「迁移导入完成后跑一次」或「启动时一次性修复」：
+  /// 前者追不上已经迁移完（中转文件已删、完成标志已写）的设备；后者要多扛一个
+  /// 「跑过了没」的 pref 状态，而且那个标志一旦为真，未来任何一次数据根变动都
+  /// 不再自愈。挂在列出路径上零额外状态、天然幂等，且用户看见症状的那一屏正好
+  /// 就是修复发生的那一屏。
+  ///
+  /// 代价：健康库里每行几次 stat，且**不构造 relocator、不扫目录**（书架本来就
+  /// 要为「重新定位」按钮对同一批路径跑 `AudiobookStorage.hasMissingPaths`）。
+  /// 判据与保守策略见 [AudiobookPathRelocator]。
+  ///
+  /// [audiobooksRoot] 默认惰性取 [AudiobookStorage.audiobooksRootDir]（只在真有
+  /// 断链行时才解析）；解析失败（纯 Dart 单测、无 path_provider）降级为不修，
+  /// **绝不让列书本身失败**。返回真改写了的行数。
+  Future<int> repairMovedPaths({
+    String? audiobooksRoot,
+    bool Function(String path)? exists,
+    List<String> Function(String root)? listEntries,
+  }) async {
+    final List<SrtBookRow> rows = await _db.getAllSrtBooks();
+    final bool Function(String) probe =
+        exists ?? AudiobookPathRelocator.defaultExists;
+    if (!rows.any((SrtBookRow r) => _hasMissingPath(r, probe))) return 0;
+
+    String? root = audiobooksRoot;
+    if (root == null) {
+      try {
+        root = await AudiobookStorage.audiobooksRootDir();
+      } catch (e) {
+        debugPrint(
+            '[fushi-audio] srt path repair skipped (no documents root): $e');
+        return 0;
+      }
+    }
+
+    final AudiobookPathRelocator relocator = AudiobookPathRelocator(
+      audiobooksRoot: root,
+      exists: exists,
+      listEntries: listEntries,
+    );
+    int rowsChanged = 0;
+    for (final SrtBookRow row in rows) {
+      final String? newAudioRoot =
+          row.audioRoot == null ? null : relocator.relocate(row.audioRoot!);
+      final String? newSrtPath = relocator.relocate(row.srtPath);
+      final String? newCover =
+          row.coverPath == null ? null : relocator.relocate(row.coverPath!);
+      final String? newPathsJson =
+          _relocateAudioPathsJson(row.audioPathsJson, relocator, row.uid);
+      if (newAudioRoot == null &&
+          newSrtPath == null &&
+          newCover == null &&
+          newPathsJson == null) {
+        continue;
+      }
+      await _db.updateSrtBookPaths(
+        row.uid,
+        audioRoot: newAudioRoot,
+        audioPathsJson: newPathsJson,
+        srtPath: newSrtPath,
+        coverPath: newCover,
+      );
+      rowsChanged++;
+    }
+    if (!relocator.stats.isEmpty) {
+      debugPrint('[fushi-audio] srt path repair: rows=$rowsChanged '
+          '${relocator.stats} root=$root');
+    }
+    return rowsChanged;
+  }
+
+  /// 返回改写后的 JSON；**null = 保持原值**（无一条需要改，或值本身不是 JSON
+  /// 字符串列表）。坏值不得中断整批自愈。
+  static String? _relocateAudioPathsJson(
+    String? json,
+    AudiobookPathRelocator relocator,
+    String uid,
+  ) {
+    if (json == null) return null;
+    late final List<String> paths;
+    try {
+      final dynamic decoded = jsonDecode(json);
+      if (decoded is! List) return null;
+      paths = decoded.whereType<String>().toList();
+    } catch (e) {
+      debugPrint('[fushi-audio] srt path repair: bad audioPathsJson for '
+          '$uid: $e');
+      return null;
+    }
+    bool changed = false;
+    final List<String> out = paths.map((String path) {
+      final String? fixed = relocator.relocate(path);
+      if (fixed == null) return path;
+      changed = true;
+      return fixed;
+    }).toList();
+    return changed ? jsonEncode(out) : null;
+  }
+
+  static bool _hasMissingPath(SrtBookRow row, bool Function(String) probe) {
+    bool broken(String? path) =>
+        path != null && path.isNotEmpty && !probe(path);
+    if (broken(row.audioRoot) || broken(row.srtPath) || broken(row.coverPath)) {
+      return true;
+    }
+    final String? json = row.audioPathsJson;
+    if (json == null) return false;
+    try {
+      final dynamic decoded = jsonDecode(json);
+      if (decoded is! List) return false;
+      return decoded.whereType<String>().any(broken);
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<SrtBook?> findByUid(String uid) async {

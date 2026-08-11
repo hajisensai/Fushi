@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1441 条。点号进各自文件。
+> 共 1444 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1577](bugs/BUG-1577-audio-package-missing-resource-silent.md) | ✅ | ✅ | 有声书资产包缺资源被两侧静默 fail-open 掩盖（导出跳过 + 导入编 basename 路径） |
+| [BUG-1575](bugs/BUG-1575-srt-path-rebase-missing.md) | ✅ | ✅ | 合并导入不 rebase srt_books 路径：迁移后有声书有字幕没声音 |
+| [BUG-1574](bugs/BUG-1574-srt-audio-picker-const-list.md) | ✅ | ✅ | 书架「重新定位 SRT 音频」取消选择器崩溃：pickRealFilePaths 返回不可变常量空列表，调用方 sort 抛 UnsupportedError |
 | [BUG-1554](bugs/BUG-1554-lan-discovery-browser-orphan.md) | ✅ | ✅ | LAN 发现 startDiscovery 无幂等/无 dispose 守卫，重扫与关页竞态留下孤儿 Bonsoir browser |
 | [BUG-1553](bugs/BUG-1553-interconnect-pair-failure-reason-lost.md) | ✅ | ✅ | 配对失败原因被压平：限速 429 / TLS 指纹不符 / 超时全说成「配对失败」且不留日志 |
 | [BUG-1552](bugs/BUG-1552-sync-channel-failure-cascades.md) | ✅ | ✅ | 云备份通道抛异常直接终止通道循环，互联通道整轮不跑（「并存互不干扰」不成立） |

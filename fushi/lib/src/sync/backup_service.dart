@@ -3881,38 +3881,76 @@ class BackupService {
       }
       if (canAudio) {
         for (final AudiobookRow a in await db.getAllAudiobooks()) {
-          // Rebase each path inside audioPathsJson. A malformed value (corrupt
-          // row, not a JSON string-list) must not abort the whole import — keep
-          // it as-is and move on (review W3).
-          String? rebasedJson = a.audioPathsJson;
-          if (a.audioPathsJson != null) {
-            try {
-              final dynamic decoded = jsonDecode(a.audioPathsJson!);
-              if (decoded is List) {
-                rebasedJson = jsonEncode(decoded
-                    .whereType<String>()
-                    .map((s) => rebasePath(s, oldAudio, newAudiobooksRoot))
-                    .toList());
-              }
-            } catch (e) {
-              debugPrint('BackupService: skipped rebasing audioPathsJson for '
-                  '${a.bookKey}: $e');
-            }
-          }
           await db.updateAudiobookPaths(
             a.bookKey,
             audioRoot: a.audioRoot == null
                 ? null
                 : rebasePath(a.audioRoot!, oldAudio, newAudiobooksRoot),
-            audioPathsJson: rebasedJson,
+            audioPathsJson: _rebaseAudioPathsJson(
+                a.audioPathsJson, oldAudio, newAudiobooksRoot, a.bookKey),
             alignmentPath:
                 rebasePath(a.alignmentPath, oldAudio, newAudiobooksRoot),
+          );
+        }
+        // BUG-1575: srt_books carries its OWN copy of the audio paths and was
+        // never rebased here, while the merge engine inserts its rows column
+        // for column (audio_paths_json / audio_root / srt_path / cover_path all
+        // verbatim from the source device). Result on a cross-root import: the
+        // paired `audiobooks` row resolved but the `srt_book` row still pointed
+        // at the SOURCE root, so the shelf saw a broken audiobook -- subtitles
+        // (parsed cues live in `audio_cues`, no path) but no audio.
+        //
+        // All four columns live under ONE directory `<audiobooksRoot>/<uid>`
+        // (see SyncAssetPackageService.importAudioDatabasePackage and
+        // kPathRebaseColumns), so cover_path is rebased against the AUDIOBOOKS
+        // root first. It still falls back to the books mapping via
+        // _rebaseEither, because an epub-backed srt row (bookKey non-empty) may
+        // have adopted the epub's cover under the books root.
+        for (final SrtBookRow srt in await db.getAllSrtBooks()) {
+          await db.updateSrtBookPaths(
+            srt.uid,
+            audioRoot: srt.audioRoot == null
+                ? null
+                : rebasePath(srt.audioRoot!, oldAudio, newAudiobooksRoot),
+            audioPathsJson: _rebaseAudioPathsJson(
+                srt.audioPathsJson, oldAudio, newAudiobooksRoot, srt.uid),
+            srtPath: rebasePath(srt.srtPath, oldAudio, newAudiobooksRoot),
+            coverPath: srt.coverPath == null
+                ? null
+                : _rebaseEither(srt.coverPath!, oldAudio, newAudiobooksRoot,
+                    oldBooks, newBooksRoot),
           );
         }
       }
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } finally {
       await db.close();
+    }
+  }
+
+  /// Rebases every path inside a persisted `audioPathsJson` string list from
+  /// [oldRoot] onto [newRoot]. A malformed value (corrupt row, not a JSON
+  /// string-list) must not abort the whole import -- it is returned verbatim
+  /// and the failure is logged with [rowKey] (review W3). Shared by the
+  /// `audiobooks` and `srt_books` rebases so the two can never drift.
+  static String? _rebaseAudioPathsJson(
+    String? json,
+    String oldRoot,
+    String newRoot,
+    String rowKey,
+  ) {
+    if (json == null) return null;
+    try {
+      final dynamic decoded = jsonDecode(json);
+      if (decoded is! List) return json;
+      return jsonEncode(decoded
+          .whereType<String>()
+          .map((String s) => rebasePath(s, oldRoot, newRoot))
+          .toList());
+    } catch (e) {
+      debugPrint(
+          'BackupService: skipped rebasing audioPathsJson for $rowKey: $e');
+      return json;
     }
   }
 
@@ -4134,20 +4172,24 @@ class BackupService {
     return targetPath;
   }
 
-  /// Rebases [path] trying the books mapping first, then the audiobooks mapping.
-  /// A cover written under either tree resolves; one not under either is
-  /// returned unchanged.
+  /// Rebases [path] trying the (oldA -> newA) mapping first, then
+  /// (oldB -> newB). A cover written under either tree resolves; one not under
+  /// either is returned unchanged. Either pair may be null (that category was
+  /// not part of the backup) -- a null pair is simply skipped, so callers do
+  /// not need a special case for it.
   static String _rebaseEither(
     String path,
-    String oldBooks,
-    String newBooks,
-    String? oldAudio,
-    String? newAudio,
+    String? oldA,
+    String? newA,
+    String? oldB,
+    String? newB,
   ) {
-    final String viaBooks = rebasePath(path, oldBooks, newBooks);
-    if (viaBooks != path) return viaBooks;
-    if (oldAudio != null && newAudio != null) {
-      return rebasePath(path, oldAudio, newAudio);
+    if (oldA != null && newA != null) {
+      final String viaA = rebasePath(path, oldA, newA);
+      if (viaA != path) return viaA;
+    }
+    if (oldB != null && newB != null) {
+      return rebasePath(path, oldB, newB);
     }
     return path;
   }
