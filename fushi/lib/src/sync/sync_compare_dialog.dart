@@ -453,17 +453,36 @@ Future<void> showSyncCompareDialog(
   Directory? audioDatabaseRoot,
 }) async {
   final repo = SyncRepository(db);
-  final backend = resolveSyncBackend(await repo.getBackendType());
+  // BUG-1566：比较入口原来只按「云备份 backendType」解析出的那一条通道去认证。
+  // 用户只开互联、云后端从没配过时，它拿到的是一个永远认证不了的云后端，
+  // 于是对话框恒报「请先设置同步」，整个互联比较入口不可达。通道枚举改为复用同步真正
+  // 跑的那一份（云通道在前、互联在后 → 云用户行为零变化），取第一条认证通过的后端作为
+  // 比较后端；一条都没有才是「没配过同步」。（此处不写枚举函数名：守卫按函数体扫描，
+  // 注释里出现的标识符会让正向断言被注释满足、真删掉调用也照样绿。）
+  //
   // Rehydrate the saved session first — opening compare straight after a cold
   // start would otherwise read a not-yet-restored auth state and wrongly report
   // "set up sync first" (mobile google_sign_in / desktop refresh) (BUG-047).
   // Do it under the sync mutex so the auth restore (which can reconnect/clear a
   // backend's cache) never races an in-flight sync (BUG-083).
-  final bool authed = await runExclusiveWithSync(() async {
-    await backend.restoreAuth(repo);
-    return backend.isAuthenticated;
+  final SyncBackend? backend =
+      await runExclusiveWithSync<SyncBackend?>(() async {
+    for (final SyncChannel channel in await enabledSyncChannelBackends(repo)) {
+      try {
+        await channel.backend.restoreAuth(repo);
+        if (await channel.backend.isAuthenticated) return channel.backend;
+      } catch (e) {
+        // 单条通道鉴权炸了只算它自己没通过：云盘令牌失效不得挡住互联通道被选中。
+        developer.log(
+          'Compare channel auth failed (interconnect=${channel.isInterconnect})',
+          error: e,
+          name: 'SyncCompare',
+        );
+      }
+    }
+    return null;
   });
-  if (!authed) {
+  if (backend == null) {
     if (!context.mounted) return;
     // The compare precondition is "a sync target is configured" — not an
     // account login. The Hibiki interconnect (and WebDAV/FTP/SFTP) have no

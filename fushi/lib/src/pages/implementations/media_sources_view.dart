@@ -147,6 +147,10 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     _appModel = ref.read(appProvider);
     _db = _appModel.database;
     widget.scrapeTaskController?.addListener(_onScrapeTaskChanged);
+    // BUG-1560：互联总开关的另一个写入口是同步设置页；不订阅这条广播，本视图的
+    // 开关就停在开页那一刻的值（反之亦然）。真值仍从 preferences 重读。
+    SyncRepository.interconnectEnabledRevision
+        .addListener(_onInterconnectEnabledChanged);
     _load();
   }
 
@@ -161,7 +165,21 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   @override
   void dispose() {
     widget.scrapeTaskController?.removeListener(_onScrapeTaskChanged);
+    SyncRepository.interconnectEnabledRevision
+        .removeListener(_onInterconnectEnabledChanged);
     super.dispose();
+  }
+
+  void _onInterconnectEnabledChanged() {
+    unawaited(_reloadInterconnectEnabled());
+  }
+
+  /// 广播只说「变了」，值一律回 preferences 重读——单一真相源仍是那一位偏好，
+  /// 本视图和设置页各自持有的都只是它的缓存（BUG-1560）。
+  Future<void> _reloadInterconnectEnabled() async {
+    final bool value = await SyncRepository(_db).isInterconnectEnabled();
+    if (!mounted || _interconnectEnabled == value) return;
+    setState(() => _interconnectEnabled = value);
   }
 
   Future<void> _load() async {

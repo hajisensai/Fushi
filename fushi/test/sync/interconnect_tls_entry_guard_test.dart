@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
 import 'sync_settings_schema_source_corpus.dart';
 
 /// TODO-961：互联 TLS 用户入口 + 发现配对 v2 化的源码守卫。
@@ -33,9 +34,18 @@ void main() {
       reason: 'TLS 切换缺少「需重新配对」提示',
     );
     // 运行中切换要重启 host socket 才真生效（含 mDNS TXT tls 标志更新）。
+    // BUG-1563 之后重启结果要被消费（失败上屏 + 开关回落），所以判据只钉「在
+    // _setTlsEnabled 里、以 isRunning 为条件、真的调了 restart()」这个不变式，
+    // 不再逐字匹配那一行的写法。
+    final String tls =
+        methodBody(source, '  Future<void> _setTlsEnabled(bool v)');
     expect(
-      source.contains('if (_serverController.isRunning) '
-          'await _serverController.restart();'),
+      containsCodeLine(tls, '_serverController.isRunning'),
+      isTrue,
+      reason: 'TLS 切换未按 host 是否在跑分流',
+    );
+    expect(
+      containsIdentifierCall(tls, '_serverController.restart'),
       isTrue,
       reason: 'TLS 切换未重启运行中的 host（开关变成下次启动才生效的哑开关）',
     );

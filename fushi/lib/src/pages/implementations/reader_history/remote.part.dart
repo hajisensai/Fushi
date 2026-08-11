@@ -282,26 +282,38 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     // 确认文案是给人看的 → 显示名（BUG-1488）；下面的删除仍走 downloadId 身份键。
     final bool? confirmed = await _confirmRemoteDelete(book.displayName);
     if (confirmed != true) return;
-    bool failed = false;
+    // BUG-1565：删除是**两次**远端调用（书 + 有声书），必须分别记账。旧实现只有
+    // 一个 failed 布尔：书删成功、有声书删失败时，它弹「无法在对端设备上删除」并
+    // 直接 return 不刷新 —— 两句都是假的。书其实已经从 host 消失了，列表不刷新就
+    // 留一张点了必 404 的幽灵卡，提示语还告诉用户「没删掉」，与实情正好相反。
+    bool bookDeleted = false;
+    bool audiobookFailed = false;
     try {
       await backend.deleteRemoteBook(book.downloadId);
+      bookDeleted = true;
       if (book.hasAudiobook) {
         await backend.deleteRemoteAudiobook(book.downloadId);
       }
     } catch (e, stack) {
-      failed = true;
+      audiobookFailed = bookDeleted;
       ErrorLogService.instance
           .log('ReaderFushiHistoryPage.deleteRemoteBook', e, stack);
     }
     if (!mounted) return;
-    // 失败必须给可见提示：原实现只写日志就刷新列表，书还在原处、用户以为自己看错了。
-    if (failed) {
+    // 书删掉了就必须刷新（哪怕有声书没删掉），否则幽灵卡留在原地。
+    if (bookDeleted) _forceRefreshRemoteBooks();
+    if (!bookDeleted) {
+      // 书本身没删掉：书还在原处，提示与实情一致。
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(t.remote_delete_failed)),
       );
       return;
     }
-    _forceRefreshRemoteBooks();
+    if (audiobookFailed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_delete_audiobook_partial)),
+      );
+    }
   }
 
   /// 远端书卡左上角类型徽章：有有声书 → 耳机徽章（与本地 _audiobookBadge 同色，

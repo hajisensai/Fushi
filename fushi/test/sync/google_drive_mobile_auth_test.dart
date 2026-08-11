@@ -61,10 +61,14 @@ void main() {
     // The auth-state read must be preceded by a restore so a cold-start open
     // doesn't wrongly report "set up sync first". (BUG-083 moved this restore +
     // read into a runExclusiveWithSync closure so it can't race an in-flight
-    // sync; the restore-before-read ordering it guards is unchanged.)
-    final restoreAt = dialog.indexOf('await backend.restoreAuth(repo);');
-    final readAt = dialog.indexOf('return backend.isAuthenticated;');
-    final gateAt = dialog.indexOf('if (!authed)');
+    // sync; BUG-1566 moved it again into a per-channel loop over
+    // enabledSyncChannelBackends so an interconnect-only user can reach compare
+    // at all. The restore-before-read ordering guarded here is unchanged — only
+    // the anchors moved onto `channel.backend`.)
+    final restoreAt =
+        dialog.indexOf('await channel.backend.restoreAuth(repo);');
+    final readAt = dialog.indexOf('if (await channel.backend.isAuthenticated)');
+    final gateAt = dialog.indexOf('if (backend == null)');
     expect(restoreAt, greaterThanOrEqualTo(0),
         reason: 'showSyncCompareDialog must restoreAuth first (BUG-047).');
     expect(readAt, greaterThan(restoreAt),

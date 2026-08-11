@@ -1143,7 +1143,6 @@
   "interconnect_upload_dictionary": "上传词典",
   "interconnect_upload_dictionary_hint": "把本设备的词典上传同步到互联对端。",
   "interconnect_upload_section": "上传到互联对端",
-  "interconnect_upload_section_footer": "选择本设备要把哪些内容上传到已连接的互联对端。与云备份、以及「启用互联」连接开关互不影响；默认全部关闭。",
   "interconnect_upload_video_files": "上传视频文件",
   "interconnect_upload_video_files_hint": "把本设备的本地视频文件上传同步到互联对端（体积较大）。",
   "invert_audiobook_skip_direction": "反转底栏前进后退按钮",
@@ -3346,5 +3345,7 @@
   "sync_pair_fingerprint_stored_label": "此前已钉扎",
   "sync_pair_fingerprint_new_label": "本次握手所见",
   "sync_pair_fingerprint_retrust": "清除已存指纹并重新信任",
-  "sync_pair_fingerprint_changed_body": "这条地址此前钉扎的是另一张证书。只有在你确知对方重装/重置过设备时才继续，否则连接可能正被中间人拦截。"
+  "sync_pair_fingerprint_changed_body": "这条地址此前钉扎的是另一张证书。只有在你确知对方重装/重置过设备时才继续，否则连接可能正被中间人拦截。",
+  "interconnect_upload_section_footer": "选择本设备要把哪些内容上传给已连接的互联对端。与云备份的同名开关互不影响，且默认全部关闭。本组开关只在「启用互联」打开时生效：关掉互联，这里的上传全部停止。",
+  "remote_delete_audiobook_partial": "书已在对端删除，但它的有声书没能删掉"
 }

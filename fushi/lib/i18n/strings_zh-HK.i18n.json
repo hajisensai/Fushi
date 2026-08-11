@@ -1143,7 +1143,6 @@
   "interconnect_upload_dictionary": "Upload dictionaries",
   "interconnect_upload_dictionary_hint": "Sync this device's dictionaries up to the interconnect peer.",
   "interconnect_upload_section": "Upload to interconnect peer",
-  "interconnect_upload_section_footer": "Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.",
   "interconnect_upload_video_files": "Upload video files",
   "interconnect_upload_video_files_hint": "Sync this device's local video files up to the interconnect peer (large).",
   "invert_audiobook_skip_direction": "Invert bottom-bar skip buttons",
@@ -3346,5 +3345,7 @@
   "sync_pair_fingerprint_stored_label": "Pinned earlier",
   "sync_pair_fingerprint_new_label": "Seen now",
   "sync_pair_fingerprint_retrust": "Clear and trust again",
-  "sync_pair_fingerprint_changed_body": "This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection."
+  "sync_pair_fingerprint_changed_body": "This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.",
+  "interconnect_upload_section_footer": "Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.",
+  "remote_delete_audiobook_partial": "Book deleted, but its audiobook could not be removed on the paired device"
 }
