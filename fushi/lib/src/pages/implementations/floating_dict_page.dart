@@ -95,11 +95,8 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
       rawPayloadJson: jsonEncode(fields),
       context: miningContext,
     );
-    // 牌组名仅 success 需要（避免给失败分支白白 loadSettings）。
-    final String deckName = outcome.result == MineResult.success
-        ? (await repo.loadSettings()).selectedDeckName ?? ''
-        : '';
-    final described = describeMineOutcome(outcome, deckName: deckName);
+    // 牌组名由后端随成功结果带回（outcome.deckName，BUG-1549）。
+    final described = describeMineOutcome(outcome);
     FushiToast.show(
       msg: described.message,
       // 制卡结果的语义已由 describeMineOutcome 算出（added/duplicate/failed），

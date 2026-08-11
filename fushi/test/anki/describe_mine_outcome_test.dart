@@ -14,11 +14,14 @@ import '../pages/video_fushi_page_source_corpus.dart';
 void main() {
   group('describeMineOutcome 单一真相', () {
     test('success: 带牌组名消息 + success=true + record=true', () {
+      // BUG-1549：牌组名唯一来源是 outcome.deckName（后端实际落卡的 deck 名），
+      // 不再由调用方事后从 settings.selectedDeckName 猜。
       final r = describeMineOutcome(
-        const MineOutcome(MineResult.success),
-        deckName: 'Deck1',
+        const MineOutcome.success(deckName: 'Deck1'),
       );
       expect(r.message, t.card_exported(deck: 'Deck1'));
+      expect(r.message, contains('Deck1'),
+          reason: 'BUG-1549：成功 toast 必须包含真实牌组名');
       expect(r.success, isTrue);
       expect(r.record, isTrue);
     });
@@ -26,8 +29,7 @@ void main() {
     test('TODO-779 success + audioWarning: 成功文案后追加音频失败提示', () {
       const reason = 'HTTP 404 for https://dict.example/a.mp3';
       final r = describeMineOutcome(
-        const MineOutcome.success(audioWarning: reason),
-        deckName: 'Deck1',
+        const MineOutcome.success(deckName: 'Deck1', audioWarning: reason),
       );
       // 卡片仍算成功、仍记账（音频缺失不撤销制卡）。
       expect(r.success, isTrue);
@@ -42,8 +44,11 @@ void main() {
     test('TODO-779 overwrite + audioWarning: 覆盖文案后追加音频失败提示', () {
       const reason = 'HTTP 500 for https://dict.example/a.mp3';
       final r = describeMineOutcome(
-        const MineOutcome.success(noteId: 7, audioWarning: reason),
-        deckName: 'Deck1',
+        const MineOutcome.success(
+          noteId: 7,
+          deckName: 'Deck1',
+          audioWarning: reason,
+        ),
         overwrite: true,
       );
       expect(r.success, isTrue);

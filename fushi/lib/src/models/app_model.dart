@@ -6244,16 +6244,13 @@ class AppModel with ChangeNotifier {
             rawPayloadJson: jsonEncode(fields),
             context: const AnkiMiningContext(sentence: ''),
           );
-          // 牌组名仅 success 需要（避免给失败分支白白 loadSettings）。
-          final String deckName = outcome.result == MineResult.success
-              ? (await repo.loadSettings()).selectedDeckName ?? ''
-              : '';
+          // 牌组名由后端随成功结果带回（outcome.deckName，BUG-1549）。
           final ({
             String message,
             bool success,
             bool record,
             MineToastStatus status
-          }) described = describeMineOutcome(outcome, deckName: deckName);
+          }) described = describeMineOutcome(outcome);
           FushiToast.show(
             msg: described.message,
             severity: mineToastSeverity(described.status),
@@ -6387,9 +6384,12 @@ RemoteMineResult remoteMineResultFromOutcome(MineOutcome outcome) {
     case MineResult.success:
       final String? warn = outcome.audioWarning;
       // 部分成功：卡建好了但单词远程音频落空 → 回传警告让扩展区分「真成功 / 没音频」。
-      return warn != null && warn.isNotEmpty
-          ? RemoteMineResult(result: outcome.result.name, message: warn)
-          : RemoteMineResult(result: outcome.result.name);
+      // BUG-1549：实际落卡的牌组名一并回传，供互联客户端的成功 toast 显示。
+      return RemoteMineResult(
+        result: outcome.result.name,
+        message: warn != null && warn.isNotEmpty ? warn : null,
+        deckName: outcome.deckName,
+      );
     case MineResult.duplicate:
     case MineResult.notConfigured:
       return RemoteMineResult(result: outcome.result.name);
