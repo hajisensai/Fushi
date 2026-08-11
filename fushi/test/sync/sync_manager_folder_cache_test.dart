@@ -162,8 +162,9 @@ void main() {
     final SyncRepository repo = SyncRepository(db);
 
     // Seed an on-disk folder cache as a prior successful sync would have.
-    await repo.setRootFolderId('root-1');
-    await repo.setFolderCache(<String, String>{'Book': 'folder-1'});
+    await repo.setRootFolderId(SyncChannelScope.unscoped, 'root-1');
+    await repo.setFolderCache(
+        SyncChannelScope.unscoped, <String, String>{'Book': 'folder-1'});
 
     await db.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: 'Book',
@@ -191,7 +192,8 @@ void main() {
     expect(result.error, isNotNull);
 
     // ...and the PERSISTED cache must survive a transient failure.
-    expect(await repo.getRootFolderId(), 'root-1');
-    expect(await repo.getFolderCache(), containsPair('Book', 'folder-1'));
+    expect(await repo.getRootFolderId(SyncChannelScope.unscoped), 'root-1');
+    expect(await repo.getFolderCache(SyncChannelScope.unscoped),
+        containsPair('Book', 'folder-1'));
   });
 }

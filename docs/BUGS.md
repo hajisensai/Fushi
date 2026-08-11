@@ -29,10 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1441 条。点号进各自文件。
+> 共 1445 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1580](bugs/BUG-1580-interconnect-cooldown-and-hash-shared.md) | ✅ | ✅ | 同步冷却戳与聚合快照哈希共用：一条通道压住另一条 |
+| [BUG-1579](bugs/BUG-1579-interconnect-baselines-shared-across-channels.md) | ✅ | ✅ | 合集与删除墓碑因果基线三方共用：对端移出被自己另一条通道撤销 |
+| [BUG-1578](bugs/BUG-1578-interconnect-auth-error-cross-channel-signout.md) | ✅ | ✅ | 互联 401 登出的是云会话：鉴权错误不带通道身份 |
+| [BUG-1576](bugs/BUG-1576-interconnect-folder-cache-cross-backend.md) | ✅ | ✅ | 互联/云双通道共用 folder 缓存：跨后端串味 + 凭据外发到对端主机 |
 | [BUG-1554](bugs/BUG-1554-lan-discovery-browser-orphan.md) | ✅ | ✅ | LAN 发现 startDiscovery 无幂等/无 dispose 守卫，重扫与关页竞态留下孤儿 Bonsoir browser |
 | [BUG-1553](bugs/BUG-1553-interconnect-pair-failure-reason-lost.md) | ✅ | ✅ | 配对失败原因被压平：限速 429 / TLS 指纹不符 / 超时全说成「配对失败」且不留日志 |
 | [BUG-1552](bugs/BUG-1552-sync-channel-failure-cascades.md) | ✅ | ✅ | 云备份通道抛异常直接终止通道循环，互联通道整轮不跑（「并存互不干扰」不成立） |

@@ -347,7 +347,7 @@ void main() {
 
   group('device-local pref key catalog', () {
     test('includes backend selection, credentials and server config', () {
-      const keys = SyncRepository.deviceLocalPrefKeys;
+      final List<String> keys = SyncRepository.deviceLocalPrefKeys;
       expect(keys, contains('sync_backend_type'));
       expect(keys, contains('sync_webdav_password'));
       expect(keys, contains('sync_sftp_private_key'));
@@ -357,7 +357,7 @@ void main() {
     });
 
     test('excludes behavior flags, folder cache and per-book content', () {
-      const keys = SyncRepository.deviceLocalPrefKeys;
+      final List<String> keys = SyncRepository.deviceLocalPrefKeys;
       expect(keys, isNot(contains('sync_auto_enabled')));
       expect(keys, isNot(contains('sync_stats_enabled')));
       expect(keys, isNot(contains('sync_audiobook_enabled')));
@@ -365,11 +365,16 @@ void main() {
       expect(keys, isNot(contains('sync_content_enabled')));
       expect(keys, isNot(contains('sync_root_folder_id')));
       expect(keys, isNot(contains('sync_folder_cache')));
+      // 分槽后同理：folder 缓存的任何一格都不该跟着备份跨设备（BUG-1576）。
+      expect(keys.where((String k) => k.startsWith('sync_root_folder_id')),
+          isEmpty);
+      expect(
+          keys.where((String k) => k.startsWith('sync_folder_cache')), isEmpty);
       expect(keys.where((String k) => k.startsWith('audiobook_pos_')), isEmpty);
     });
 
     test('carries no removed SMB keys', () {
-      const keys = SyncRepository.deviceLocalPrefKeys;
+      final List<String> keys = SyncRepository.deviceLocalPrefKeys;
       expect(keys.where((String k) => k.startsWith('sync_smb_')), isEmpty);
     });
   });

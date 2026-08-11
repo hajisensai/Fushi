@@ -149,6 +149,34 @@ class SyncChannel {
   /// 不必在别处重抄一遍「云 + 互联」的枚举逻辑（会漂）。
   final SyncBackendType type;
   final bool isInterconnect;
+
+  /// 本通道的持久化槽位（BUG-1576 / BUG-1578 / BUG-1579 / BUG-1580）。刻意从
+  /// [backend] **实例**反查而不是从 [type] 算：真正写这些键的是 SyncManager /
+  /// SyncOrchestrator，它们手上只有后端实例，两处必须是同一个推导，否则「按通道
+  /// 记账」会记到两把不同的锁上。
+  SyncChannelScope get scope => syncChannelScopeOf(backend);
+}
+
+/// 一条同步通道抛出的鉴权失败，**带着它是哪条通道**（BUG-1578）。
+///
+/// 解耦成双通道后，`runManualFullSync` 里任何一条通道的 [SyncAuthError] 都是裸着
+/// 冒到 UI 的，UI 只能拿 `getBackendType()` 猜测「大概是云通道吧」——于是局域网
+/// 互联对端的一次 401 会把用户的 Google Drive 会话登出并清掉云通道的目录缓存。
+/// 副作用要作用在正确的通道上，异常就必须自己带着通道身份。
+class SyncChannelAuthError implements Exception {
+  const SyncChannelAuthError({
+    required this.channel,
+    required this.error,
+  });
+
+  /// 抛出这条错误的通道（后端实例 / 通道类型 / 是不是互联都在里面）。
+  final SyncChannel channel;
+
+  /// 原始鉴权错误（消息、kind、服务端原因一字不变地保留给 UI）。
+  final SyncAuthError error;
+
+  @override
+  String toString() => 'SyncChannelAuthError(${channel.type.name}): $error';
 }
 
 /// 不再 `@visibleForTesting`：`hasDeletionPropagationChannel` 是生产消费方——
@@ -231,8 +259,7 @@ Future<ChannelSyncFlags> resolveChannelSyncFlags(
 Future<SyncRunReport?> _runSyncChannel({
   required FushiDatabase db,
   required SyncRepository repo,
-  required SyncBackend backend,
-  required bool isInterconnect,
+  required SyncChannel channel,
   required Directory dictionaryResourceRoot,
   required Directory audioDatabaseRoot,
   required Directory tempDir,
@@ -241,11 +268,44 @@ Future<SyncRunReport?> _runSyncChannel({
       onLocalAudioImported,
   required void Function(SyncProgress) onProgress,
 }) async {
+  try {
+    return await _runSyncChannelInner(
+      db: db,
+      repo: repo,
+      channel: channel,
+      dictionaryResourceRoot: dictionaryResourceRoot,
+      audioDatabaseRoot: audioDatabaseRoot,
+      tempDir: tempDir,
+      localAudioEntries: localAudioEntries,
+      onLocalAudioImported: onLocalAudioImported,
+      onProgress: onProgress,
+    );
+  } on SyncAuthError catch (e) {
+    // BUG-1578：给这条错误钉上通道身份再放它出去。上层（手动同步 UI）据此把登出
+    // 这类破坏性副作用**只**作用在出错的那条通道上，而不是靠 `getBackendType()`
+    // 猜一个通常猜错的对象。
+    throw SyncChannelAuthError(channel: channel, error: e);
+  }
+}
+
+Future<SyncRunReport?> _runSyncChannelInner({
+  required FushiDatabase db,
+  required SyncRepository repo,
+  required SyncChannel channel,
+  required Directory dictionaryResourceRoot,
+  required Directory audioDatabaseRoot,
+  required Directory tempDir,
+  required List<LocalAudioDbEntry> localAudioEntries,
+  required Future<void> Function(LocalAudioPackageContents)
+      onLocalAudioImported,
+  required void Function(SyncProgress) onProgress,
+}) async {
+  final SyncBackend backend = channel.backend;
   await backend.restoreAuth(repo);
   if (!await backend.isAuthenticated) return null;
   // BUG-988：互联通道读互联专属上传开关，云备份通道读原共享开关（两通道互不牵连）。
-  final ChannelSyncFlags flags =
-      await resolveChannelSyncFlags(repo, isInterconnect: isInterconnect);
+  final ChannelSyncFlags flags = await resolveChannelSyncFlags(repo,
+      isInterconnect: channel.isInterconnect);
   final SyncOrchestrator orchestrator = SyncOrchestrator(
     db: db,
     backend: backend,
@@ -355,12 +415,7 @@ Future<void> _runAutoSyncAll({
         return;
       }
 
-      final lastSync = await repo.getLastSyncMs();
       final now = DateTime.now().millisecondsSinceEpoch;
-      if (lastSync != null && (now - lastSync) < _syncCooldownMs) {
-        reason = SyncOutcomeReason.cooledDown;
-        return;
-      }
 
       // option B 双通道：依次跑云备份通道 + 互联通道（若启用），互不排斥。每条通道
       // 各自认证成功才实际跑；未配置的通道 no-op（_runSyncChannel 返回 null）。
@@ -369,14 +424,23 @@ Future<void> _runAutoSyncAll({
       // 局域网互联通道这一轮**根本不执行**。UI 承诺的「互联与云备份并存、互不干扰」
       // 就此不成立：云盘一坏，互联跟着一起哑。一条通道炸了只该记它自己的账。
       bool anyChannelFailed = false;
+      int cooledChannels = 0;
       for (final SyncChannel channel
           in await enabledSyncChannelBackends(repo)) {
+        // BUG-1580：冷却窗**按通道**判。这个判断原本在循环外，读的是一份全局
+        // lastSyncMs，而两条通道各自在自己整轮结束时都会写它——于是云通道刚跑完
+        // 就把局域网互联通道一起压住 5 分钟；反过来，一条通道失败后想重试，也会被
+        // 另一条通道的成功戳压死。冷却是「这条通道刚同步过」，不是设备的属性。
+        final int? lastSync = await repo.getLastSyncMs(channel.scope);
+        if (lastSync != null && (now - lastSync) < _syncCooldownMs) {
+          cooledChannels++;
+          continue;
+        }
         try {
           final SyncRunReport? report = await _runSyncChannel(
             db: db,
             repo: repo,
-            backend: channel.backend,
-            isInterconnect: channel.isInterconnect,
+            channel: channel,
             dictionaryResourceRoot: dictionaryResourceRoot,
             audioDatabaseRoot: audioDatabaseRoot,
             tempDir: tempDir,
@@ -408,9 +472,13 @@ Future<void> _runAutoSyncAll({
       // 跑完」完全同形（进度条转一会儿消失），用户无从判断到底同没同步。
       if (anyChannelFailed) {
         reason = SyncOutcomeReason.failed;
+      } else if (channelsRun > 0) {
+        reason = SyncOutcomeReason.completed;
       } else {
-        reason = channelsRun > 0
-            ? SyncOutcomeReason.completed
+        // 一条也没跑：区分「都还在冷却窗里」和「一条通道都没配置/没认证过」——
+        // 前者是正常节流，后者是「什么也没同步」，UI 上必须能分开说。
+        reason = cooledChannels > 0
+            ? SyncOutcomeReason.cooledDown
             : SyncOutcomeReason.noChannels;
       }
     });
@@ -492,8 +560,7 @@ Future<ManualSyncResult> runManualFullSync({
         final SyncRunReport? report = await _runSyncChannel(
           db: db,
           repo: repo,
-          backend: channel.backend,
-          isInterconnect: channel.isInterconnect,
+          channel: channel,
           dictionaryResourceRoot: dictionaryResourceRoot,
           audioDatabaseRoot: audioDatabaseRoot,
           tempDir: tempDir,
