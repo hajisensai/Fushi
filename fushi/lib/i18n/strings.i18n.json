@@ -3315,5 +3315,8 @@
   "gal_hook_ingame_lookup_hint": "Show the dictionary card inside the game window itself (KiriKiri engine, Windows only)",
   "drag_drop_failed": "Couldn't handle the dropped files. Please try again.",
   "tag_add_failed": "Couldn't add the tag. Please try again.",
-  "tag_reorder_failed": "Couldn't save the new tag order. Please try again."
+  "tag_reorder_failed": "Couldn't save the new tag order. Please try again.",
+  "collection_split_move_to": "Move to",
+  "collection_split_new_group": "New group",
+  "collection_split_selected": "$n selected"
 }

@@ -174,6 +174,75 @@ void main() {
     });
   });
 
+  group('结尾裸数字季号（BUG-1543）', () {
+    test('「标题 2 - 集号」= 第 2 季，不是标题的一部分', () {
+      final ParsedMediaName p = FilenameParser.parse(
+        'Hibike! Euphonium 2 - 01 (BD 1280x720 x264 AAC).mkv',
+      );
+      expect(p.title, 'Hibike! Euphonium');
+      expect(p.season, 2);
+      expect(p.episode, 1);
+    });
+
+    test('同系列第 1 季（无季号）仍是 season null，两者据此分到不同组', () {
+      final ParsedMediaName p = FilenameParser.parse(
+        'Hibike! Euphonium - 01 (BD 1280x720 x264 AACx3).mkv',
+      );
+      expect(p.title, 'Hibike! Euphonium');
+      expect(p.season, isNull);
+      expect(p.episode, 1);
+    });
+
+    test('第 3 季同理', () {
+      final ParsedMediaName p =
+          FilenameParser.parse('Hibike! Euphonium 3 - 05.mkv');
+      expect(p.title, 'Hibike! Euphonium');
+      expect(p.season, 3);
+      expect(p.episode, 5);
+    });
+
+    test('含感叹号的标题（K-ON!!）不受影响', () {
+      final ParsedMediaName p = FilenameParser.parse('[Group] K-ON!! - 03.mkv');
+      expect(p.title, 'K-ON!!');
+      expect(p.season, isNull);
+      expect(p.episode, 3);
+    });
+
+    test('标题自带 3 位数字（Mob Psycho 100）不被当季号', () {
+      final ParsedMediaName p = FilenameParser.parse('Mob Psycho 100 - 04.mkv');
+      expect(p.title, 'Mob Psycho 100');
+      expect(p.season, isNull);
+      expect(p.episode, 4);
+    });
+
+    test('标题自带 00（Gundam 00）不被当季号', () {
+      final ParsedMediaName p =
+          FilenameParser.parse('Mobile Suit Gundam 00 - 12.mkv');
+      expect(p.title, 'Mobile Suit Gundam 00');
+      expect(p.season, isNull);
+      expect(p.episode, 12);
+    });
+
+    test('数字左边不是空白（Ranma 1/2）不被当季号', () {
+      final ParsedMediaName p = FilenameParser.parse('Ranma 1/2 - 07.mkv');
+      expect(p.season, isNull);
+      expect(p.episode, 7);
+    });
+
+    test('电影续作（无集号）保留数字在片名里，不当季号', () {
+      final ParsedMediaName p = FilenameParser.parse('Ip Man 2.mkv');
+      expect(p.title, 'Ip Man 2');
+      expect(p.season, isNull);
+      expect(p.episode, isNull);
+    });
+
+    test('takeTrailingNumericSeason：纯数字名不算季号', () {
+      expect(FilenameParser.takeTrailingNumericSeason('2'), isNull);
+      expect(FilenameParser.takeTrailingNumericSeason('Show 2')?.season, 2);
+      expect(FilenameParser.takeTrailingNumericSeason('Show 2')?.title, 'Show');
+    });
+  });
+
   group('S01E04 普通命名', () {
     test('空格分隔的 SxxExx', () {
       final ParsedMediaName p = FilenameParser.parse('Spy x Family S01E04.mkv');
