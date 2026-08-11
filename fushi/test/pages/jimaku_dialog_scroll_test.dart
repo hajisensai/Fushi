@@ -262,8 +262,13 @@ void main() {
     return tester.getSize(box.first).width;
   }
 
-  // TODO-835：旧外壳写死 maxWidth:380，大屏永远窄。改用 FushiDialogFrame(maxWidth:720)
-  // 后大屏对话框实际宽应 >380，同时仍由 720 封顶。
+  // TODO-835：旧外壳写死 maxWidth:380，大屏永远窄。改用 FushiDialogFrame 后大屏
+  // 对话框实际宽应 >380，同时仍有上限、不会撑满整屏。
+  //
+  // BUG-1504 起上限不再是固定 720，而是按视口比例（<600 满宽减 32、<1000 取 94%、
+  // 其余 90%），由 [resolveJimakuDialogMaxWidth] 单一真相源给出。所以这里**引用那个
+  // 函数**而不是再钉一个常数——上一次就是实现换了公式、这条还钉着 720，于是本用例
+  // 在 develop 上红着没人认领。
   testWidgets('TODO-835: wide screen dialog is wider than old 380 cap',
       (WidgetTester tester) async {
     await pumpDialog(tester, screen: const Size(1280, 800));
@@ -274,8 +279,8 @@ void main() {
         reason: '大屏候选列表内容宽应比旧 380 上限内容宽更宽（FushiDialogFrame maxWidth:720）');
     final double dialogWidth = measuredDialogWidth(tester);
     expect(dialogWidth, greaterThan(380.0), reason: '大屏对话框实际宽应 >380（旧写死上限）');
-    expect(dialogWidth, lessThanOrEqualTo(720.0),
-        reason: '对话框宽应由 maxWidth:720 封顶');
+    expect(dialogWidth, closeTo(resolveJimakuDialogMaxWidth(1280.0), 0.5),
+        reason: '对话框宽应由 resolveJimakuDialogMaxWidth(视口宽) 封顶（BUG-1504）');
     expect(tester.takeException(), isNull);
   });
 
