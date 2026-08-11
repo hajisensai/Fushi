@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/deletion_propagation_availability.dart';
-import 'package:fushi/src/sync/sync_conflict_prompter.dart' show ConflictSource;
+import 'package:fushi/src/sync/sync_conflict_prompter.dart'
+    show ConflictSource, PromptQueue;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -268,7 +269,7 @@ class _DeletionPromptDialogState extends State<DeletionPromptDialog> {
 /// 决定「删除确认框是否/此刻弹」+ 会话级防骚扰，经全局 navigatorKey 弹出并应用用户
 /// 确认的删除，随后推进删除墓碑消费基线（已复核到 highWaterMs，压制已看过的、放行更新
 /// 的删除）。范式仿 [SyncConflictPrompter]：纯内存单飞 + 随会话失效。
-class DeletionPromptPrompter {
+class DeletionPromptPrompter with PromptQueue {
   bool dialogOpen = false;
   final Set<String> _snoozed = <String>{};
 
@@ -304,7 +305,30 @@ class DeletionPromptPrompter {
   ///
   /// BUG-1579：基线按通道分槽，故这里收的是「槽位 → 时刻」而不是一个标量。用一条
   /// 通道的时刻去推另一条通道的基线，会让后者还没复核过的删除被永久压制。
+  ///
+  /// BUG-1571：双通道 sweep 逐通道调 present，两批候选会在同一次 sweep 内先后到达。
+  /// 经 [PromptQueue] 串行排队呈现——旧实现在第一批弹窗还开着时把第二批直接判掉且
+  /// 不 snooze、不推进基线，那批删除就此静默消失。
   Future<void> present({
+    required GlobalKey<NavigatorState> navigatorKey,
+    required FushiDatabase db,
+    required List<DeletionCandidateView> views,
+    required Map<String, int> highWaterMsByScope,
+    required ApplyDeletions applyDeletions,
+    required ConflictSource source,
+    required bool inBook,
+  }) =>
+      enqueuePrompt(() => _presentNow(
+            navigatorKey: navigatorKey,
+            db: db,
+            views: views,
+            highWaterMsByScope: highWaterMsByScope,
+            applyDeletions: applyDeletions,
+            source: source,
+            inBook: inBook,
+          ));
+
+  Future<void> _presentNow({
     required GlobalKey<NavigatorState> navigatorKey,
     required FushiDatabase db,
     required List<DeletionCandidateView> views,
