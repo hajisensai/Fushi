@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -150,12 +151,39 @@ class InterconnectSyncBackend extends SyncBackend
   /// to WAN is quick when you are away from home.
   static const Duration probeTimeout = Duration(seconds: 2);
 
-  /// Bound for a resolved-host library GET (headers + body). [_ensureResolved]
-  /// only bounds the *probe*; once an address is picked, a host that accepts the
-  /// TCP connection but then stalls the response would hang the future forever
-  /// (observed as the video page's endless spinner). Cap the read so a stalled
-  /// host degrades to "failed" instead of an infinite wait.
-  static const Duration listTimeout = Duration(seconds: 15);
+  /// BUG-1567：小型请求（清单 / 进度 / 断点 / streamurl / 封面 / 服务配置 / 删除等
+  /// 非流式端点）的整体超时，分别封顶「发出请求到收到响应头」（[_sendBounded]）与
+  /// 「读取响应体」（[_readBodyBounded]）两个阶段。此前只有 videos / activity 清单有
+  /// 封顶（旧 listTimeout），其余端点在 host 接受 TCP 连接后停摆时 future 永久悬挂
+  /// ——远端库页无限转圈，且挂死的请求还占住 [RemoteLibraryCache] 的 in-flight 槽。
+  ///
+  /// 15s 沿用旧 listTimeout 的量级（探测已由 2s 的 [probeTimeout] 把关，正常请求给宽
+  /// 松余量）。整体超时同时覆盖底层 socket connect（整体 ≤ 连接阶段），无需再单调
+  /// WebDavOps 的 connectionTimeout。**不适用**于大文件传输：下载走
+  /// [ResumableDownloader] 的 firstByte/stall 超时；流式上传（epub / 视频 / 词典包
+  /// PUT）body 发送时长与文件大小成正比、host 侧收尾（词典导入等）可能分钟级，
+  /// 固定值封顶会砍断合法慢传输，维持原语义。
+  ///
+  /// 实例可变仅供测试注入短超时（生产代码不得改写）。
+  @visibleForTesting
+  Duration requestTimeout = const Duration(seconds: 15);
+
+  /// BUG-1567：把 [req] 发出并在 [requestTimeout] 内等到响应头；超时则中止请求
+  /// （释放底层连接）并抛 [TimeoutException]，让挂死 host 降级为可重试失败。
+  Future<HttpClientResponse> _sendBounded(HttpClientRequest req) {
+    return req.close().timeout(requestTimeout, onTimeout: () {
+      req.abort();
+      throw TimeoutException(
+        'interconnect request timed out after $requestTimeout',
+        requestTimeout,
+      );
+    });
+  }
+
+  /// BUG-1567：在 [requestTimeout] 内读完 [res] 的 UTF-8 响应体（响应头到了但
+  /// body 断流的对称封顶），超时抛 [TimeoutException]。
+  Future<String> _readBodyBounded(HttpClientResponse res) =>
+      res.transform(utf8.decoder).join().timeout(requestTimeout);
 
   /// 下载健壮性（弱网，TODO-819 续）超时：
   /// - [downloadStallTimeout]：数据流两个 chunk 之间的最大空闲。超过即判定连接卡死并
@@ -745,7 +773,7 @@ class InterconnectSyncBackend extends SyncBackend
       'GET',
       '$_apiBase/api/interconnect/service-config',
     );
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await _sendBounded(req);
     if (res.statusCode == 404) {
       await res.drain<void>();
       return null;
@@ -761,7 +789,7 @@ class InterconnectSyncBackend extends SyncBackend
         serverReason: await readSyncErrorBody(res),
       );
     }
-    final String body = await res.transform(utf8.decoder).join();
+    final String body = await _readBodyBounded(res);
     final Object? decoded = jsonDecode(body);
     if (decoded is! Map) {
       throw const FormatException('Invalid service config response');
@@ -780,37 +808,36 @@ class InterconnectSyncBackend extends SyncBackend
   Future<Uint8List> fetchRemoteCover(String coverUrl) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest('GET', coverUrl);
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await _sendBounded(req);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       await res.drain<void>();
       throw SyncBackendError('GET cover -> ${res.statusCode}');
     }
-    return consolidateHttpClientResponseBytes(res);
+    // BUG-1567：封面字节读取同样封顶——header 到了但 body 停摆时不再永久悬挂。
+    return consolidateHttpClientResponseBytes(res).timeout(requestTimeout);
   }
 
   /// 列出对端 host 当前实时词典清单（直打 `/api/library/dictionaries`）。
   /// 互联「列清单」端点的共同骨架：解析会话 → GET → 逐条 fromJson（TODO-2120）。
   ///
-  /// 五个域此前各抄一份 12 行的同构代码。**降级与超时必须逐域按现状显式传入**，
+  /// 五个域此前各抄一份 12 行的同构代码。**降级必须逐域按现状显式传入**，
   /// 不能图省事统一给所有域打开：
   /// - [degradeOn404]：只有 videos / activity 这类**后加的**端点才降级——老 host 没有
   ///   它们，降级成空表是为了「不因老 server 缺端点让整页占位卡消失或转圈」。词典 /
   ///   书 / 本地音频 / 有声书是最老的端点，假定必然存在；给它们也加降级，会把「host
   ///   把库服务关了（404 Library service off）」从可见错误变成静默空列表——那是真实的
   ///   行为回归，不是「更健壮」。
-  /// - [timeout]：只有 videos / activity 有封顶（host 侧这两个清单可能很慢）。
+  /// - 超时（BUG-1567）：所有域统一走 [requestTimeout] 封顶。此前只有 videos /
+  ///   activity 有（旧 listTimeout），其余域在 host 停摆时永久转圈。
   Future<List<T>> _listRemote<T>(
     String path,
     T Function(Map<String, Object?> json) parse, {
-    Duration? timeout,
     bool degradeOn404 = false,
   }) async {
     await _ensureResolved();
     final HttpClientRequest req =
         await _ops!.buildRequest('GET', '$_apiBase$path');
-    final Future<HttpClientResponse> closing = req.close();
-    final HttpClientResponse res =
-        timeout == null ? await closing : await closing.timeout(timeout);
+    final HttpClientResponse res = await _sendBounded(req);
     if (degradeOn404 && res.statusCode == 404) {
       await res.drain<void>();
       return <T>[];
@@ -823,9 +850,7 @@ class InterconnectSyncBackend extends SyncBackend
         serverReason: await readSyncErrorBody(res),
       );
     }
-    final Future<String> reading = res.transform(utf8.decoder).join();
-    final String body =
-        timeout == null ? await reading : await reading.timeout(timeout);
+    final String body = await _readBodyBounded(res);
     final List<dynamic> arr = jsonDecode(body) as List<dynamic>;
     return <T>[
       for (final dynamic e in arr) parse((e as Map).cast<String, Object?>()),
@@ -881,7 +906,7 @@ class InterconnectSyncBackend extends SyncBackend
       'DELETE',
       '$_apiBase/api/library/dictionaries/${Uri.encodeComponent(name)}',
     );
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'DELETE /api/library/dictionaries/$name');
   }
@@ -968,7 +993,7 @@ class InterconnectSyncBackend extends SyncBackend
       'DELETE',
       '$_apiBase/api/library/books/${Uri.encodeComponent(title)}',
     );
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'DELETE /api/library/books/$title');
   }
@@ -983,14 +1008,14 @@ class InterconnectSyncBackend extends SyncBackend
       'GET',
       '$_apiBase/api/library/books/${Uri.encodeComponent(bookKey)}/progress',
     );
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await _sendBounded(req);
     if (res.statusCode == 404) {
       await res.drain<void>();
       return RemoteBookProgress.empty;
     }
     _ops!.checkStatus(
         res.statusCode, 'GET /api/library/books/$bookKey/progress');
-    final String body = await res.transform(utf8.decoder).join();
+    final String body = await _readBodyBounded(res);
     final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
     return RemoteBookProgress.fromJson(json.cast<String, Object?>());
   }
@@ -1009,7 +1034,7 @@ class InterconnectSyncBackend extends SyncBackend
     );
     req.headers.set('Content-Type', 'application/json; charset=utf-8');
     req.add(utf8.encode(jsonEncode(progress.toJson())));
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     _ops!.checkStatus(
         res.statusCode, 'PUT /api/library/books/$bookKey/progress');
@@ -1027,13 +1052,13 @@ class InterconnectSyncBackend extends SyncBackend
       'GET',
       '$_apiBase/api/library/aggregate',
     );
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await _sendBounded(req);
     if (res.statusCode == 404) {
       await res.drain<void>();
       return null; // 老 host 无聚合端点：降级跳过，不崩。
     }
     _ops!.checkStatus(res.statusCode, 'GET /api/library/aggregate');
-    final String body = await res.transform(utf8.decoder).join();
+    final String body = await _readBodyBounded(res);
     final dynamic decoded = jsonDecode(body);
     if (decoded is Map<String, dynamic>) return decoded;
     if (decoded is Map) return Map<String, dynamic>.from(decoded);
@@ -1051,7 +1076,7 @@ class InterconnectSyncBackend extends SyncBackend
     );
     req.headers.set('Content-Type', 'application/json; charset=utf-8');
     req.add(utf8.encode(jsonEncode(json)));
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/aggregate');
   }
@@ -1070,13 +1095,13 @@ class InterconnectSyncBackend extends SyncBackend
       'GET',
       '$_apiBase/api/library/collections',
     );
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await _sendBounded(req);
     if (res.statusCode == 404) {
       await res.drain<void>();
       return null; // 老 host 无合集端点：降级跳过，不崩。
     }
     _ops!.checkStatus(res.statusCode, 'GET /api/library/collections');
-    final String body = await res.transform(utf8.decoder).join();
+    final String body = await _readBodyBounded(res);
     return CollectionManifest.fromJson(jsonDecode(body));
   }
 
@@ -1093,9 +1118,9 @@ class InterconnectSyncBackend extends SyncBackend
     );
     req.headers.set('Content-Type', 'application/json; charset=utf-8');
     req.add(utf8.encode(manifest.canonicalJson()));
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await _sendBounded(req);
     _ops!.checkStatus(res.statusCode, 'POST /api/library/collections');
-    final String body = await res.transform(utf8.decoder).join();
+    final String body = await _readBodyBounded(res);
     return CollectionManifest.fromJson(jsonDecode(body));
   }
 
@@ -1110,13 +1135,13 @@ class InterconnectSyncBackend extends SyncBackend
       'GET',
       '$_apiBase/api/tombstones',
     );
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await _sendBounded(req);
     if (res.statusCode == 404) {
       await res.drain<void>();
       return null; // 老 host 无删除墓碑端点：降级跳过，不崩。
     }
     _ops!.checkStatus(res.statusCode, 'GET /api/tombstones');
-    final String body = await res.transform(utf8.decoder).join();
+    final String body = await _readBodyBounded(res);
     final Object? decoded = jsonDecode(body);
     final List<({String mediaType, String itemKey, int deletedAt})> out =
         <({String mediaType, String itemKey, int deletedAt})>[];
@@ -1184,7 +1209,7 @@ class InterconnectSyncBackend extends SyncBackend
       'DELETE',
       '$_apiBase/api/library/localaudio/${Uri.encodeComponent(displayName)}',
     );
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     _ops!.checkStatus(
         res.statusCode, 'DELETE /api/library/localaudio/$displayName');
@@ -1244,7 +1269,7 @@ class InterconnectSyncBackend extends SyncBackend
       'DELETE',
       '$_apiBase/api/library/audiobooks/${Uri.encodeComponent(bookKey)}',
     );
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     _ops!
         .checkStatus(res.statusCode, 'DELETE /api/library/audiobooks/$bookKey');
@@ -1260,14 +1285,14 @@ class InterconnectSyncBackend extends SyncBackend
       'GET',
       '$_apiBase/api/library/audiobooks/${Uri.encodeComponent(bookKey)}/position',
     );
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await _sendBounded(req);
     if (res.statusCode == 404) {
       await res.drain<void>();
       return (positionMs: 0, updatedAtMs: 0);
     }
     _ops!.checkStatus(
         res.statusCode, 'GET /api/library/audiobooks/$bookKey/position');
-    final String body = await res.transform(utf8.decoder).join();
+    final String body = await _readBodyBounded(res);
     final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
     return (
       positionMs: (json['positionMs'] as num?)?.toInt() ?? 0,
@@ -1292,7 +1317,7 @@ class InterconnectSyncBackend extends SyncBackend
       'positionMs': positionMs,
       'positionUpdatedAtMs': updatedAtMs,
     })));
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     _ops!.checkStatus(
         res.statusCode, 'PUT /api/library/audiobooks/$bookKey/position');
@@ -1305,7 +1330,7 @@ class InterconnectSyncBackend extends SyncBackend
   /// 列出对端 host 当前视频清单（直打 `/api/library/videos`）。老 host 无该端点返回
   /// 404 时优雅降级返回空表（与 [getRemoteAggregate] / [getRemoteCollectionManifest]
   /// 的 404 降级同纪律——绝不因老 server 缺端点抛异常让整页占位卡消失/转圈）。请求
-  /// 用 [listTimeout] 封顶，防止 host 接受连接后卡住响应导致视频页无限等待。
+  /// 用 [requestTimeout] 封顶，防止 host 接受连接后卡住响应导致视频页无限等待。
   /// 拉取 host 最近活动事件（新首页 Activity 面板互联数据源；display-only）。
   /// 老 host 无此端点（404）降级空列表；坏条目逐条跳过不拖垮整表。
   Future<List<RemoteActivityEvent>> listRemoteActivity(
@@ -1313,14 +1338,13 @@ class InterconnectSyncBackend extends SyncBackend
     await _ensureResolved();
     final HttpClientRequest req = await _ops!
         .buildRequest('GET', '$_apiBase/api/library/activity?limit=$limit');
-    final HttpClientResponse res = await req.close().timeout(listTimeout);
+    final HttpClientResponse res = await _sendBounded(req);
     if (res.statusCode == 404) {
       await res.drain<void>();
       return const <RemoteActivityEvent>[]; // 老 host 无活动端点：降级空表。
     }
     _ops!.checkStatus(res.statusCode, 'GET /api/library/activity');
-    final String body =
-        await res.transform(utf8.decoder).join().timeout(listTimeout);
+    final String body = await _readBodyBounded(res);
     final List<dynamic> arr = jsonDecode(body) as List<dynamic>;
     final List<RemoteActivityEvent> events = <RemoteActivityEvent>[];
     for (final dynamic e in arr) {
@@ -1344,7 +1368,6 @@ class InterconnectSyncBackend extends SyncBackend
   Future<List<RemoteVideoInfo>> listRemoteVideos() => _listRemote(
         '/api/library/videos',
         RemoteVideoInfo.fromJson,
-        timeout: listTimeout,
         degradeOn404: true,
       );
 
@@ -1394,7 +1417,7 @@ class InterconnectSyncBackend extends SyncBackend
       'DELETE',
       '$_apiBase/api/library/videos/${_encodeVideoId(id)}',
     );
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     if (res.statusCode == 404 || res.statusCode == 405) return false;
     _ops!.checkStatus(res.statusCode, 'DELETE /api/library/videos/$id');
@@ -1447,9 +1470,9 @@ class InterconnectSyncBackend extends SyncBackend
       'GET',
       '$_apiBase/api/library/videos/$encodedId/streamurl$query',
     );
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await _sendBounded(req);
     _ops!.checkStatus(res.statusCode, 'GET /api/library/videos/$id/streamurl');
-    final String body = await res.transform(utf8.decoder).join();
+    final String body = await _readBodyBounded(res);
     final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
     return RemoteVideoStreamUrls.fromJson(json);
   }
@@ -1604,13 +1627,13 @@ class InterconnectSyncBackend extends SyncBackend
       'GET',
       '$_apiBase/api/library/videos/${_encodeVideoId(id)}/position$query',
     );
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await _sendBounded(req);
     if (res.statusCode == 404) {
       await res.drain<void>();
       return (positionMs: 0, updatedAtMs: 0);
     }
     _ops!.checkStatus(res.statusCode, 'GET /api/library/videos/$id/position');
-    final String body = await res.transform(utf8.decoder).join();
+    final String body = await _readBodyBounded(res);
     final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
     return (
       positionMs: (json['positionMs'] as num?)?.toInt() ?? 0,
@@ -1637,7 +1660,7 @@ class InterconnectSyncBackend extends SyncBackend
       'positionMs': positionMs,
       'positionUpdatedAtMs': updatedAtMs,
     })));
-    final HttpClientResponse res = await req.close();
+    final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id/position');
   }
