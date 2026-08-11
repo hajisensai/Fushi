@@ -4,14 +4,24 @@ import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// 触达一台 Hibiki 同步服务器的一个候选地址。同一台服务器通常可经多条路由
-/// 触达（局域网、外网），它们共享同一个 token，按列表顺序尝试、第一个可达者胜出。
+/// 触达一台 Hibiki 同步服务器的一个候选地址。
+///
+/// 同一台服务器通常可经多条路由触达（局域网、外网），按列表顺序尝试、第一个
+/// 可达者胜出。
+///
+/// BUG-1550：凭据的基数必须与地址的基数一致。host 侧 per-peer token（TODO-961
+/// M1b）按 `clientDeviceId` 逐台派发，而列表里的地址可能属于**不同的 host**
+/// （LAN 发现里点谁配谁，每次都往同一个列表 append）。凭据若只有一个全局槽，
+/// 配对第二台就会把第一台的 token 覆盖掉——之后第一台地址排在前面、依然可达、
+/// 却用着第二台的 token → 401。故 token 落在**地址行上**，[token] 为空的行
+/// （老配置 / 手动加的同 host 备用地址）回落到全局键，行为与升级前逐字一致。
 class FushiClientUrl {
   const FushiClientUrl({
     required this.url,
     this.enabled = true,
     this.fingerprintSha256,
     this.deviceName,
+    this.token,
   });
 
   final String url;
@@ -25,11 +35,20 @@ class FushiClientUrl {
   /// 对端展示名（M0 仅落地，UI/配对在 M1 使用）。
   final String? deviceName;
 
+  /// 本地址专属的访问凭据（BUG-1550）。配对成功时写在这里；null/空 = 老配置或
+  /// 同 host 的备用地址，回落全局 `sync_hibiki_client_token`。
+  ///
+  /// 该字段随 `sync_hibiki_client_urls` 落库，而该键已在
+  /// [SyncRepository.deviceLocalPrefKeys] 的设备本地清单里，故不会随备份/同步
+  /// 携带出设备（与全局 token 键同待遇）。
+  final String? token;
+
   Map<String, dynamic> toJson() => <String, dynamic>{
         'url': url,
         'enabled': enabled,
         if (fingerprintSha256 != null) 'fingerprintSha256': fingerprintSha256,
         if (deviceName != null) 'deviceName': deviceName,
+        if (token != null && token!.isNotEmpty) 'token': token,
       };
 
   factory FushiClientUrl.fromJson(Map<String, dynamic> json) => FushiClientUrl(
@@ -37,6 +56,7 @@ class FushiClientUrl {
         enabled: json['enabled'] as bool? ?? true,
         fingerprintSha256: json['fingerprintSha256'] as String?,
         deviceName: json['deviceName'] as String?,
+        token: json['token'] as String?,
       );
 
   /// 复制并覆盖部分字段（不可变更新）。`null` 入参保留原值；要显式清空请直接构造。
@@ -45,13 +65,29 @@ class FushiClientUrl {
     bool? enabled,
     String? fingerprintSha256,
     String? deviceName,
+    String? token,
   }) =>
       FushiClientUrl(
         url: url ?? this.url,
         enabled: enabled ?? this.enabled,
         fingerprintSha256: fingerprintSha256 ?? this.fingerprintSha256,
         deviceName: deviceName ?? this.deviceName,
+        token: token ?? this.token,
       );
+}
+
+/// BUG-1550：解析某个候选地址该用哪份凭据——地址行自带的 [FushiClientUrl.token]
+/// 优先，为空时回落全局 token（老配置 / 同 host 的备用地址）。两者都空返回 null，
+/// 调用方按「未配置凭据」处理。
+///
+/// 抽成顶层函数而非 [SyncRepository] 方法：全部消费方（sync backend / POST 传输层 /
+/// 漫画 OCR client）都已经各自把候选列表与全局 token 读在手上，这里只做纯选择，
+/// 不再多打一次库。
+String? interconnectTokenFor(FushiClientUrl candidate, String? fallbackToken) {
+  final String? own = candidate.token;
+  if (own != null && own.isNotEmpty) return own;
+  if (fallbackToken != null && fallbackToken.isNotEmpty) return fallbackToken;
+  return null;
 }
 
 /// TODO-961 M1：当一个已记录非空指纹的 https 候选地址再次出现、但带来的新指纹与
@@ -841,6 +877,41 @@ class SyncRepository {
       return;
     }
     await _setString(_keyFushiClientToken, _encodeSecret(v));
+  }
+
+  /// BUG-1550：把配对拿到的 per-peer token 落在**这一条地址**上，并同步写全局键。
+  ///
+  /// 两处都写的理由：地址行上的 token 让「多台对端各自一份凭据」成立（这是本 bug
+  /// 的根因修复）；全局键继续维持，是为了那些 token 为空的行（老配置、用户手动补
+  /// 的同 host 备用地址）仍能鉴权——升级前的行为逐字保留（Never break userspace）。
+  ///
+  /// [url] 不在列表里时只写全局键（配对流程会在此之前把地址 append 进去，正常路径
+  /// 不会走到；防御性处理避免凭据丢失）。
+  Future<void> setFushiClientTokenForUrl(String url, String token) async {
+    final List<FushiClientUrl> urls = await getFushiClientUrls();
+    final int idx = urls.indexWhere((FushiClientUrl u) => u.url == url);
+    if (idx >= 0 && urls[idx].token != token) {
+      final List<FushiClientUrl> updated = <FushiClientUrl>[...urls];
+      updated[idx] = urls[idx].copyWith(token: token);
+      await setFushiClientUrls(updated);
+    }
+    await setFushiClientToken(token);
+  }
+
+  /// BUG-1550：清空所有地址行上的 per-peer token，让全局键重新成为唯一凭据。
+  /// 用户在设置页手贴 token 时调用——那是显式覆盖，不该被残留的行内凭据压过。
+  Future<void> clearFushiClientUrlTokens() async {
+    final List<FushiClientUrl> urls = await getFushiClientUrls();
+    if (!urls.any((FushiClientUrl u) => u.token != null)) return;
+    await setFushiClientUrls(<FushiClientUrl>[
+      for (final FushiClientUrl u in urls)
+        FushiClientUrl(
+          url: u.url,
+          enabled: u.enabled,
+          fingerprintSha256: u.fingerprintSha256,
+          deviceName: u.deviceName,
+        ),
+    ]);
   }
 
   // ── Device-local key catalog ──────────────────────────────────────

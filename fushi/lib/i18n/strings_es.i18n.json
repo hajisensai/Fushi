@@ -3336,5 +3336,8 @@
   "video_discovery_manual_identity_hint": "Enter the title, external ID and year above to enable search",
   "collection_split_move_to": "Move to",
   "collection_split_new_group": "New group",
-  "collection_split_selected": "$n selected"
+  "collection_split_selected": "$n selected",
+  "sync_pair_rate_limited": "Too many attempts. Wait a few minutes and try again.",
+  "sync_pair_tls_failed": "Certificate check failed. The peer's certificate does not match the pinned one.",
+  "sync_pair_timeout": "The peer did not respond in time."
 }
