@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 56746 (3338 per locale)
+/// Strings: 56763 (3339 per locale)
 ///
-/// Built on 2026-08-11 at 13:52 UTC
+/// Built on 2026-08-11 at 16:01 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4517,6 +4517,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get download_task_stage_subtitle => 'Subtitles';
   String get download_task_stage_import => 'Import';
   String get download_task_stage_scrape => 'Scrape';
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -12222,6 +12224,9 @@ class _StringsAr extends _StringsEn {
   String get download_task_stage_import => 'Import';
   @override
   String get download_task_stage_scrape => 'Scrape';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -19994,6 +19999,9 @@ class _StringsDe extends _StringsEn {
   String get download_task_stage_import => 'Import';
   @override
   String get download_task_stage_scrape => 'Scrape';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -27782,6 +27790,9 @@ class _StringsEs extends _StringsEn {
   String get download_task_stage_import => 'Import';
   @override
   String get download_task_stage_scrape => 'Scrape';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -35582,6 +35593,9 @@ class _StringsFr extends _StringsEn {
   String get download_task_stage_import => 'Import';
   @override
   String get download_task_stage_scrape => 'Scrape';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -43310,6 +43324,9 @@ class _StringsId extends _StringsEn {
   String get download_task_stage_import => 'Import';
   @override
   String get download_task_stage_scrape => 'Scrape';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -51084,6 +51101,9 @@ class _StringsIt extends _StringsEn {
   String get download_task_stage_import => 'Import';
   @override
   String get download_task_stage_scrape => 'Scrape';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -58672,6 +58692,9 @@ class _StringsJa extends _StringsEn {
   String get download_task_stage_import => 'Import';
   @override
   String get download_task_stage_scrape => 'Scrape';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -66267,6 +66290,9 @@ class _StringsKo extends _StringsEn {
   String get download_task_stage_import => 'Import';
   @override
   String get download_task_stage_scrape => 'Scrape';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -74021,6 +74047,9 @@ class _StringsNl extends _StringsEn {
   String get download_task_stage_import => 'Import';
   @override
   String get download_task_stage_scrape => 'Scrape';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -81787,6 +81816,9 @@ class _StringsPtBr extends _StringsEn {
   String get download_task_stage_import => 'Import';
   @override
   String get download_task_stage_scrape => 'Scrape';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -89539,6 +89571,9 @@ class _StringsRu extends _StringsEn {
   String get download_task_stage_import => 'Import';
   @override
   String get download_task_stage_scrape => 'Scrape';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -97239,6 +97274,9 @@ class _StringsTh extends _StringsEn {
   String get download_task_stage_import => 'Import';
   @override
   String get download_task_stage_scrape => 'Scrape';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -104970,6 +105008,9 @@ class _StringsTr extends _StringsEn {
   String get download_task_stage_import => 'Import';
   @override
   String get download_task_stage_scrape => 'Scrape';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -112686,6 +112727,9 @@ class _StringsVi extends _StringsEn {
   String get download_task_stage_import => 'Import';
   @override
   String get download_task_stage_scrape => 'Scrape';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 // Path: <root>
@@ -119843,6 +119887,8 @@ class _StringsZhCn extends _StringsEn {
   String get download_task_stage_import => '入库';
   @override
   String get download_task_stage_scrape => '刮削';
+  @override
+  String get video_discovery_manual_identity_hint => '填写标题、外部 ID 和年份后才能搜索';
 }
 
 // Path: <root>
@@ -127354,6 +127400,9 @@ class _StringsZhHk extends _StringsEn {
   String get download_task_stage_import => 'Import';
   @override
   String get download_task_stage_scrape => 'Scrape';
+  @override
+  String get video_discovery_manual_identity_hint =>
+      'Enter the title, external ID and year above to enable search';
 }
 
 /// Flat map(s) containing all translations.
@@ -134212,6 +134261,8 @@ extension on _StringsEn {
         return 'Import';
       case 'download_task_stage_scrape':
         return 'Scrape';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -141068,6 +141119,8 @@ extension on _StringsAr {
         return 'Import';
       case 'download_task_stage_scrape':
         return 'Scrape';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -147946,6 +147999,8 @@ extension on _StringsDe {
         return 'Import';
       case 'download_task_stage_scrape':
         return 'Scrape';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -154823,6 +154878,8 @@ extension on _StringsEs {
         return 'Import';
       case 'download_task_stage_scrape':
         return 'Scrape';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -161706,6 +161763,8 @@ extension on _StringsFr {
         return 'Import';
       case 'download_task_stage_scrape':
         return 'Scrape';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -168571,6 +168630,8 @@ extension on _StringsId {
         return 'Import';
       case 'download_task_stage_scrape':
         return 'Scrape';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -175450,6 +175511,8 @@ extension on _StringsIt {
         return 'Import';
       case 'download_task_stage_scrape':
         return 'Scrape';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -182291,6 +182354,8 @@ extension on _StringsJa {
         return 'Import';
       case 'download_task_stage_scrape':
         return 'Scrape';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -189136,6 +189201,8 @@ extension on _StringsKo {
         return 'Import';
       case 'download_task_stage_scrape':
         return 'Scrape';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -196009,6 +196076,8 @@ extension on _StringsNl {
         return 'Import';
       case 'download_task_stage_scrape':
         return 'Scrape';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -202879,6 +202948,8 @@ extension on _StringsPtBr {
         return 'Import';
       case 'download_task_stage_scrape':
         return 'Scrape';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -209754,6 +209825,8 @@ extension on _StringsRu {
         return 'Import';
       case 'download_task_stage_scrape':
         return 'Scrape';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -216612,6 +216685,8 @@ extension on _StringsTh {
         return 'Import';
       case 'download_task_stage_scrape':
         return 'Scrape';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -223479,6 +223554,8 @@ extension on _StringsTr {
         return 'Import';
       case 'download_task_stage_scrape':
         return 'Scrape';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -230342,6 +230419,8 @@ extension on _StringsVi {
         return 'Import';
       case 'download_task_stage_scrape':
         return 'Scrape';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }
@@ -237148,6 +237227,8 @@ extension on _StringsZhCn {
         return '入库';
       case 'download_task_stage_scrape':
         return '刮削';
+      case 'video_discovery_manual_identity_hint':
+        return '填写标题、外部 ID 和年份后才能搜索';
       default:
         return null;
     }
@@ -243984,6 +244065,8 @@ extension on _StringsZhHk {
         return 'Import';
       case 'download_task_stage_scrape':
         return 'Scrape';
+      case 'video_discovery_manual_identity_hint':
+        return 'Enter the title, external ID and year above to enable search';
       default:
         return null;
     }

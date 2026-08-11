@@ -3336,5 +3336,6 @@
   "download_task_stage_organize": "整理",
   "download_task_stage_subtitle": "字幕",
   "download_task_stage_import": "入库",
-  "download_task_stage_scrape": "刮削"
+  "download_task_stage_scrape": "刮削",
+  "video_discovery_manual_identity_hint": "填写标题、外部 ID 和年份后才能搜索"
 }

@@ -1,0 +1,6 @@
+## BUG-1539 · 下载资源页手动搜索按钮禁用但无任何原因提示
+- **报告**：2026-08-11（用户：截图报告，下载页-资源 tab 填了标题「hibike!」+ 类型「番剧」，点搜索按钮无反应，hover 还显示「搜索」tooltip）
+- **真实性**：✅ 真 bug。根因 `fushi/lib/src/pages/implementations/video_discovery_acquisition_dialogs.dart:764/782`（修复前行号）：手动模式搜索按钮 `onPressed: _loading || !_manualIdentityReady ? null : ...`，而 `_manualIdentityReady` 走 `buildManualVideoMediaReference`（同文件 :240），按设计要求「标题 + 外部 ID（正整数）+ 年份（1800–9999）」齐全才允许搜索（不造 `manual` 假身份，保证后续精确刮削有 provider binding）。用户只填标题时按钮永远禁用，但 UI 零沟通：tooltip 仍写「搜索」、表单没有任何「外部 ID/年份 必填」提示，暗色主题下 filledTonal 禁用态又不明显，看起来就是「按钮点不动」。详情页入口（第二张截图）带 `initialItem` 完整身份，所以那条路能搜出结果——两条路径差异即证据。
+- **[x] ① 已修复** — 保持身份门（设计如此），补齐禁用态沟通：禁用时 tooltip 换成新 i18n key `video_discovery_manual_identity_hint`（「填写标题、外部 ID 和年份后才能搜索」），并在身份表单下方常显同文案内联提示（`video-resource-identity-hint`，触屏无 hover 也可见），身份填齐后提示消失、tooltip 恢复「搜索」。提交 `见本文件所在提交`。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/video_resource_search_manual_gate_test.dart`：只填标题 → 按钮禁用 + tooltip 为原因文案 + 内联提示可见 + tap 不触发 provider.search；填齐标题+外部 ID+年份 → 按钮可点、提示消失、tap 真正触发搜索且身份（anilist/21085/2016）正确带入请求。已做变异实测（tooltip 条件恒真 → 守卫红）。
+- **备注**：`VideoResourceSearchRequest.media` 本身可空，但手动路径的身份门是刻意设计（video_discovery_acquisition_dialogs.dart:238-239 注释），本修复不放宽门，只消灭「禁用无原因」。
