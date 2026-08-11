@@ -460,4 +460,89 @@ void main() {
     expect(find.text(t.download_task_status_completed), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  // 删除确认里的「同时删除文件」行由框架 CheckboxListTile 换成了共享 MD3
+  // `FushiListItem` + 裸 `Checkbox`（MD3 守卫禁用本地 chrome）。换件必须等价：
+  // 勾选框本身可点、整行也可点、默认不删文件、勾选后的取值真的穿到 onDelete。
+  testWidgets('delete confirm passes the delete-files choice through',
+      (WidgetTester tester) async {
+    final _MemoryJobsStore store = _MemoryJobsStore();
+    addTearDown(store.close);
+    final List<bool> deleteCalls = <bool>[];
+    await _pumpPanel(
+      tester,
+      panel: VideoDownloadJobsPanel(
+        store: store,
+        onDelete: (VideoDownloadJobRow job, {required bool deleteFiles}) async {
+          deleteCalls.add(deleteFiles);
+        },
+      ),
+    );
+    store.emit(<VideoDownloadJobRow>[
+      _job(
+        id: 'gone',
+        title: 'Finished task',
+        lifecycle: VideoDownloadJobLifecycle.completed,
+      ),
+    ]);
+    await tester.pump();
+    await tester.pump();
+
+    Future<void> openDialog() async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('video-download-job-delete-gone')),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Finder checkboxRow() => find.byKey(
+          const ValueKey<String>('video-download-job-delete-files-gone'),
+        );
+    bool checked() => tester
+        .widget<Checkbox>(
+          find.descendant(of: checkboxRow(), matching: find.byType(Checkbox)),
+        )
+        .value!;
+
+    // ① 不碰勾选框直接确认 ⇒ 默认保留文件。
+    await openDialog();
+    expect(checked(), isFalse, reason: '删除文件是破坏性选项，默认必须不勾');
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('video-download-job-delete-confirm-gone'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(deleteCalls, <bool>[false]);
+
+    // ② 点勾选框本身翻转。
+    await openDialog();
+    await tester.tap(
+      find.descendant(of: checkboxRow(), matching: find.byType(Checkbox)),
+    );
+    await tester.pump();
+    expect(checked(), isTrue);
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('video-download-job-delete-confirm-gone'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(deleteCalls, <bool>[false, true]);
+
+    // ③ 点整行（标题文字）同样翻转——这是 CheckboxListTile 原有的整行命中区，
+    //    换成 FushiListItem 后靠 onTap 保住，丢了就是可点区域缩水。
+    await openDialog();
+    await tester.tap(find.text(t.download_task_delete_files));
+    await tester.pump();
+    expect(checked(), isTrue, reason: '整行命中区不得随组件替换丢失');
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('video-download-job-delete-confirm-gone'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(deleteCalls, <bool>[false, true, true]);
+    expect(tester.takeException(), isNull);
+  });
 }

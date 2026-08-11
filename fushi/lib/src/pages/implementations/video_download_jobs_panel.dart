@@ -209,17 +209,24 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
             children: <Widget>[
               Text(t.download_task_delete_confirm(title: job.title)),
               const SizedBox(height: 12),
-              CheckboxListTile(
+              // 共享 MD3 行 + 裸 [Checkbox] 作 leading，整行 onTap 翻转——等价旧
+              // CheckboxListTile 的取值/回调/标题，但行高与内边距走设计令牌。
+              FushiListItem(
                 key: ValueKey<String>(
                   'video-download-job-delete-files-${job.jobId}',
                 ),
-                value: deleteFiles,
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-                title: Text(t.download_task_delete_files),
-                onChanged: (bool? value) => setDialogState(
-                  () => deleteFiles = value ?? false,
+                density: FushiListDensity.compact,
+                padding: EdgeInsets.zero,
+                onTap: () => setDialogState(
+                  () => deleteFiles = !deleteFiles,
                 ),
+                leading: Checkbox(
+                  value: deleteFiles,
+                  onChanged: (bool? value) => setDialogState(
+                    () => deleteFiles = value ?? false,
+                  ),
+                ),
+                title: Text(t.download_task_delete_files),
               ),
             ],
           ),

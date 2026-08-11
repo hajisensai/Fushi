@@ -1,124 +1,29 @@
 import 'dart:convert';
-import 'dart:ffi';
-import 'dart:io';
 import 'dart:typed_data';
-
-import 'package:ffi/ffi.dart';
-
-typedef _MultiByteToWideCharNative = Int32 Function(
-  Uint32 codePage,
-  Uint32 flags,
-  Pointer<Uint8> input,
-  Int32 inputLength,
-  Pointer<Uint16> output,
-  Int32 outputLength,
-);
-typedef _MultiByteToWideCharDart = int Function(
-  int codePage,
-  int flags,
-  Pointer<Uint8> input,
-  int inputLength,
-  Pointer<Uint16> output,
-  int outputLength,
-);
-typedef _GetLocaleInfoExNative = Int32 Function(
-  Pointer<Utf16> localeName,
-  Uint32 localeType,
-  Pointer<Utf16> output,
-  Int32 outputLength,
-);
-typedef _GetLocaleInfoExDart = int Function(
-  Pointer<Utf16> localeName,
-  int localeType,
-  Pointer<Utf16> output,
-  int outputLength,
-);
 
 /// Decodes a malloc-owned C ABI payload after its bytes have been copied.
 ///
-/// New native builds guarantee UTF-8 JSON. `allowMalformed` keeps older
-/// bundled Windows DLLs readable when a localized socket error was emitted in
-/// the locale's default ANSI code page instead, even when the system-wide
-/// active code page has separately been switched to UTF-8.
+/// BUG-1522：编码边界在 native 侧，不在这里。`fushi_torrent_ffi.cpp` 的
+/// `append_json_escaped` 是**每个字段**的唯一出口，它先 `is_valid_utf8`，
+/// 只有当这一个字段不是合法 UTF-8 时才在 Windows 上试
+/// `windows_ansi_to_utf8`（libtorrent/WinSock 的 `error_code::message()` 走
+/// 当前 locale 的 ANSI code page），仍不合法的字节才落成 `�`。因此
+/// C ABI 出参契约是「整包永远是合法 UTF-8 JSON」。
+///
+/// Dart 侧因此**不做任何编码猜测**。整包按 ANSI 重解码是错的：payload 里只要
+/// 混进一个本地化错误串，就会把同一包里本来合法的 UTF-8 种子名、保存路径一起
+/// 按 ANSI 解成乱码——CP936 上把 `テスト` 解成汉字垃圾，CP1252 上把 `中文` 解成
+/// `ÖÐÎÄ`。编码是逐字段的属性，不是整包的属性，没有任何单一 code page 能同时
+/// 解对两半。
+///
+/// `allowMalformed` 只是**旧随包 DLL**（还没带上 native 侧修复）的降级网：
+/// 坏字节就地变成 U+FFFD，损坏范围锁在那一个字段内，绝不牵连同包的合法内容，
+/// 也不会让整份 tracker 列表因为一次 `jsonDecode` 失败而消失。
 Object? decodeNativeTorrentJsonBytes(Uint8List bytes) {
-  String text;
-  try {
-    text = utf8.decode(bytes);
-  } on FormatException {
-    text = Platform.isWindows
-        ? (_WindowsAnsiDecoder.decode(bytes) ??
-            utf8.decode(bytes, allowMalformed: true))
-        : utf8.decode(bytes, allowMalformed: true);
-  }
+  final String text = utf8.decode(bytes, allowMalformed: true);
   try {
     return jsonDecode(text);
   } on FormatException {
     return null;
-  }
-}
-
-final class _WindowsAnsiDecoder {
-  static const int _localeDefaultAnsiCodePage = 0x00001004;
-
-  static final DynamicLibrary _kernel32 = DynamicLibrary.open('kernel32.dll');
-
-  static final _MultiByteToWideCharDart _multiByteToWideChar = _kernel32
-      .lookupFunction<_MultiByteToWideCharNative, _MultiByteToWideCharDart>(
-    'MultiByteToWideChar',
-  );
-  static final _GetLocaleInfoExDart _getLocaleInfoEx =
-      _kernel32.lookupFunction<_GetLocaleInfoExNative, _GetLocaleInfoExDart>(
-    'GetLocaleInfoEx',
-  );
-
-  static int _resolveCodePage() {
-    final Pointer<Uint16> output = calloc<Uint16>(16);
-    try {
-      final int written = _getLocaleInfoEx(
-        nullptr.cast<Utf16>(),
-        _localeDefaultAnsiCodePage,
-        output.cast<Utf16>(),
-        16,
-      );
-      if (written <= 1) return 0;
-      return int.tryParse(output.cast<Utf16>().toDartString()) ?? 0;
-    } finally {
-      calloc.free(output);
-    }
-  }
-
-  static String? decode(Uint8List bytes) {
-    if (bytes.isEmpty) return '';
-    final Pointer<Uint8> input = calloc<Uint8>(bytes.length);
-    try {
-      input.asTypedList(bytes.length).setAll(0, bytes);
-      final int codePage = _resolveCodePage();
-      final int requiredUnits = _multiByteToWideChar(
-        codePage,
-        0,
-        input,
-        bytes.length,
-        nullptr.cast<Uint16>(),
-        0,
-      );
-      if (requiredUnits <= 0) return null;
-      final Pointer<Uint16> output = calloc<Uint16>(requiredUnits);
-      try {
-        final int writtenUnits = _multiByteToWideChar(
-          codePage,
-          0,
-          input,
-          bytes.length,
-          output,
-          requiredUnits,
-        );
-        if (writtenUnits <= 0) return null;
-        return output.cast<Utf16>().toDartString(length: writtenUnits);
-      } finally {
-        calloc.free(output);
-      }
-    } finally {
-      calloc.free(input);
-    }
   }
 }

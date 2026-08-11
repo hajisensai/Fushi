@@ -75,22 +75,67 @@ void main() {
                 '（早发只提前可见时刻，剩余词条仍要在宏任务里补建）');
       });
 
-      test('② 尾批回调内保留第二次 _firePopupRendered()（双发收尾）', () {
+      test(
+          '② 尾批在宏任务里补建、终态 finishRemainingEntries 内保留第二次 '
+          '_firePopupRendered()（双发收尾）', () {
         final int idxEarly = js.indexOf('_firePopupRendered(true)');
         expect(idxEarly, greaterThan(-1));
-        final int idxTail = js.indexOf('setTimeout', idxEarly);
-        expect(idxTail, greaterThan(idxEarly));
-        final int idxTailEnd = js.indexOf('}, 0);', idxTail);
-        expect(idxTailEnd, greaterThan(idxTail),
-            reason: '尾批必须是 setTimeout(..., 0) 宏任务');
+        final String afterEarly = js.substring(idxEarly);
 
-        // 守的回归：第二发被删 → Windows global-lookup host（依赖第二发把窗口
+        // 守的回归 A：尾批必须留在宏任务里，不能被搬回首屏同步路径。
+        // 渐进渲染（PR #804）把「一个 setTimeout 建完剩余全部词条」拆成「每个宏
+        // 任务建一个词典块」，调度点统一是 setTimeout(renderNextDictionaryBlock, 0)：
+        // 一处在早发之后立即排首个尾批任务，一处在回调末尾自续下一块。任一处被
+        // 改成同步直调，剩余词条就重新压回首屏关键路径，① 的早发优化整体失效。
+        final RegExp tailSchedule =
+            RegExp(r'setTimeout\(\s*renderNextDictionaryBlock\s*,\s*0\s*\)');
+        expect(
+            tailSchedule.allMatches(afterEarly).length, greaterThanOrEqualTo(2),
+            reason: '早发之后必须有两处 setTimeout(renderNextDictionaryBlock, 0)'
+                '（首个尾批任务的排队 + 回调末尾的自续）；尾批必须是 '
+                'setTimeout(..., 0) 宏任务');
+
+        // 守的回归 B：第二发被删 → Windows global-lookup host（依赖第二发把窗口
         // 量到全部词条的真实高度）窗口永远停在首条高度；且 _renderInProgress
         // 停在 true，updatePopupIncremental 永远走全量回退。
-        final String tailBody = js.substring(idxTail, idxTailEnd);
-        expect(tailBody.contains('_firePopupRendered()'), isTrue,
-            reason: '尾批回调内必须保留第二次无参 _firePopupRendered()（同 token '
-                '双发；无参调用同时把 _renderInProgress 落回 false）');
+        // 渐进渲染下「尾批收尾」收敛成唯一终态函数 finishRemainingEntries——
+        // 正常跑完、被 generation 取消、建块抛错三条路径都从它出信号。
+        final int idxFinish = js.indexOf('const finishRemainingEntries = (');
+        expect(idxFinish, greaterThan(idxEarly),
+            reason: '尾批终态收尾函数 finishRemainingEntries 缺失（早发之后）');
+        final int idxFinishEnd = js.indexOf('\n    };', idxFinish);
+        expect(idxFinishEnd, greaterThan(idxFinish),
+            reason: 'finishRemainingEntries 函数体边界无法定位');
+        final String finishBody = js.substring(idxFinish, idxFinishEnd);
+        expect(finishBody.contains('_firePopupRendered();'), isTrue,
+            reason: 'finishRemainingEntries 内必须保留第二次无参 '
+                '_firePopupRendered()（同 token 双发；无参调用同时把 '
+                '_renderInProgress 落回 false）');
+
+        // 守的回归 C：第二发之前必须把 counts/domIndex 从「仅含首条的临时值」
+        // 写成终值——顺序颠倒＝宿主收到收尾信号时读到的仍是临时视图。
+        final int idxFinalDom = finishBody.indexOf('window._entryDomIndex =');
+        final int idxFinalCounts =
+            finishBody.indexOf('window._renderedGlossaryCounts =');
+        final int idxSecondFire = finishBody.indexOf('_firePopupRendered();');
+        expect(idxFinalDom, greaterThan(-1));
+        expect(idxFinalCounts, greaterThan(-1));
+        expect(idxFinalDom, lessThan(idxSecondFire),
+            reason: '终值 _entryDomIndex 必须先于第二发写入');
+        expect(idxFinalCounts, lessThan(idxSecondFire),
+            reason: '终值 _renderedGlossaryCounts 必须先于第二发写入');
+
+        // 守的回归 D：终态收尾必须真的被走到——逐块循环「还有待建块」时自续下一
+        // 个宏任务并 return，「已无待建块」时才落到 finishRemainingEntries。收尾
+        // 调用被删＝尾批永不收尾，_renderInProgress 永远停在 true，
+        // updatePopupIncremental 从此永远走全量回退，宿主窗口停在首条高度。
+        final int idxSelfContinue = afterEarly.indexOf(RegExp(
+            r'setTimeout\(\s*renderNextDictionaryBlock\s*,\s*0\s*\);\s*\n\s*return;'));
+        expect(idxSelfContinue, greaterThan(-1),
+            reason: '逐块循环缺「还有待建块 → 自续下一个宏任务并 return」');
+        expect(afterEarly.indexOf('finishRemainingEntries(', idxSelfContinue),
+            greaterThan(idxSelfContinue),
+            reason: '自续分支之后必须落到 finishRemainingEntries 收尾');
       });
 
       test('③ updatePopupIncremental 开头必须有 _renderInProgress 回退全量守卫', () {

@@ -165,15 +165,48 @@ void main() {
       source = f.readAsStringSync();
     });
 
-    test('FushiDicts.instance.lookup 的 maxResults 是 effectiveMaxTerms', () {
+    /// 引擎入口现在有两条（源码出现顺序）：
+    ///  1. `AppModel.searchDictionary`（app 内完整查词）→ 预算变量 `effectiveMaxTerms`；
+    ///  2. `_searchDictionaryPopup`（BUG-1525 加的扩展/远端 popupOnly 窄快路径）
+    ///     → 预算变量 `maximumTerms`。
+    ///
+    /// 变量名不同是因为两条路径的预算来源不同（前者还要过 `overrideMaximumTerms`
+    /// 覆盖），但**单位相同**：都是词头数（`buildResultFromLookup` /
+    /// `buildPopupJsonFromLookup` 里按 `lookupHeadwordKey` 计数的那个预算），
+    /// 也都是本次真正会被消费掉的那个数。
+    const List<String> engineBudgets = <String>[
+      'effectiveMaxTerms',
+      'maximumTerms',
+    ];
+
+    test('每个引擎调用点的 maxResults 都是该路径本次消费的词头预算', () {
       final RegExp call = RegExp(
         r'FushiDicts\.instance\.lookup\(\s*searchTerm,\s*maxResults:\s*([A-Za-z0-9_]+)\s*,',
         multiLine: true,
       );
-      final Iterable<RegExpMatch> ms = call.allMatches(source);
-      expect(ms.length, 1, reason: '查词只应有一个引擎调用点');
-      expect(ms.first.group(1), 'effectiveMaxTerms',
+      final List<String> budgets = call
+          .allMatches(source)
+          .map((RegExpMatch m) => m.group(1)!)
+          .toList(growable: false);
+      // 逐点列名（而不是「至少一个」）：新增第三条查词路径必须来这里登记，顺带把
+      // 「传硬编码 200」挡在门外——数字字面量虽然也能被 `[A-Za-z0-9_]+` 捕获，
+      // 但绝不会等于登记表里的任何一个变量名。
+      expect(budgets, engineBudgets,
           reason: 'BUG-1307：上限必须等于本次消费的词头预算，不得是硬编码常量');
+    });
+
+    test('每条路径的 FFI 缓存键上限与它自己的引擎上限同源', () {
+      final RegExp key = RegExp(
+        r'buildFfiLookupCacheKey\(\s*term:\s*searchTerm,\s*maxResults:\s*([A-Za-z0-9_]+),',
+        multiLine: true,
+      );
+      final List<String> budgets = key
+          .allMatches(source)
+          .map((RegExpMatch m) => m.group(1)!)
+          .toList(growable: false);
+      // 键里的上限一旦与引擎上限脱钩，load-more 就会命中首查的短结果集
+      // （下一组用例守的正是这个后果）。两条路径按同样顺序出现，逐条同源。
+      expect(budgets, engineBudgets, reason: '缓存键的上限必须与同一路径交给引擎的上限是同一个变量');
     });
 
     test('不再存在 maximumDictionarySearchResults 这个独立上限常量', () {
