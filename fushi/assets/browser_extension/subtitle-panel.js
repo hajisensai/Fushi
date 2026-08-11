@@ -291,9 +291,32 @@
     return ans;
   }
 
-  function showPanel() {
+  // 侧边栏打不开时给用户的可见出路。chrome.sidePanel.open() 要求瞬态用户激活，而内容脚本
+  // 既没有 sidePanel API，用户激活也不随 runtime 消息传到 service worker——页面内的按键/拖放
+  // 因此永远开不了原生侧边栏。与其静默什么都不发生，不如直说唯一可用入口。
+  var PANEL_OPEN_HINT = '浏览器不允许网页内快捷键打开侧边栏：请点工具栏的 Fushi 图标 →「▤ 打开字幕侧边栏」';
+  var panelHintAt = 0;
+  function hintPanelOpen() {
+    var now = Date.now();
+    if (now - panelHintAt < 3000) return; // 同一次操作只提示一次，避免连点刷屏
+    panelHintAt = now;
+    toast(PANEL_OPEN_HINT);
+  }
+
+  // notify=true：这是用户显式的「打开侧边栏」动作，失败必须给可见提示。
+  // notify 省略：只是顺带刷新（加载外挂字幕、拖放落地），失败不抢占它们自己的 toast。
+  // 返回值 = 是否已经把这次交互「办成了」。内容脚本这一侧永远办不成（原因见上），故恒为 false，
+  // 调用方（video-shortcuts.js）据此不 preventDefault，按键原样放行给站点。
+  function showPanel(notify) {
     refreshHeadless();
-    try { chrome.runtime.sendMessage({ type: 'openSubtitleSidePanel' }); } catch (_) {}
+    try {
+      chrome.runtime.sendMessage({ type: 'openSubtitleSidePanel' }, function (resp) {
+        var failed = true;
+        try { failed = !!chrome.runtime.lastError || !resp || resp.ok !== true; } catch (_) {}
+        if (failed && notify) hintPanelOpen();
+      });
+    } catch (_) { if (notify) hintPanelOpen(); }
+    return false;
   }
 
   // Side Panel 读取的无 DOM 状态刷新。这里保留 live→整集轨自动升级、任意轨偏移和
@@ -503,8 +526,10 @@
       try { chrome.storage.local.set({ netflixSubtitlePanel: true }); } catch (_) {}
       applyEnabled(true);
     }
-    showPanel();
-    return true;
+    // 原实现无条件 return true → video-shortcuts.js 据此 preventDefault：用户按下 Shift+S 后
+    // 按键被吃、站点原生快捷键也没了、屏幕上什么都没发生。showPanel(true) 恒返回 false 并在
+    // 打开失败时 toast 明确出路，这里如实透传：不吞按键 + 有可见反馈。
+    return showPanel(true);
   }
   window.fushiSubtitleShortcut = function (action) {
     if (!videoEl()) return false;

@@ -56,8 +56,19 @@ test('shared popup mouse listeners ignore events outside the dictionary shadow r
 });
 
 test('shared popup yields between remaining dictionary entries', () => {
-  assert.match(POPUP, /const renderNextEntry = \(\) =>/);
-  assert.match(POPUP, /if \(nextEntryIndex < entries\.length\)[\s\S]*?setTimeout\(renderNextEntry, 0\)/);
+  // 真实实现叫 renderNextDictionaryBlock（vendor/popup.js），语义是「每个宏任务最多建
+  // 一个词典块」：首词条首块渲染完就先 _firePopupRendered，余块/余词条全部排进宏任务队列。
+  assert.match(POPUP, /const renderNextDictionaryBlock = \(\) => \{/);
+  // 还有未建的块或词条时必须 setTimeout(..., 0) 让出宏任务，而不是同步 while/for 一次建完。
+  assert.match(
+    POPUP,
+    /if \(activeEntryElement \|\| nextEntryIndex < entries\.length\) \{\s*\n\s*setTimeout\(renderNextDictionaryBlock, 0\);/,
+  );
+  // 两处调度：首批渲染后启动队列 + 每建一块后续跑。少一处就说明某条路径退回同步渲染。
+  const yieldSites = POPUP.match(/setTimeout\(renderNextDictionaryBlock, 0\)/g) || [];
+  assert.strictEqual(yieldSites.length, 2, '渐进渲染的宏任务让出点必须有且仅有 2 处');
+  // 让出点之外不得再有同步续跑的直呼（renderNextDictionaryBlock() 裸调用）。
+  assert.doesNotMatch(POPUP, /(?<!function )renderNextDictionaryBlock\(\)\s*;/);
 });
 
 test('lookup latency is logged by stage and exposed from extension settings', () => {

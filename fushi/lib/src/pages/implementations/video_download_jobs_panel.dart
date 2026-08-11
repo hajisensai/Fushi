@@ -304,7 +304,10 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
               onOpenDetails: widget.onOpenDetails == null
                   ? null
                   : () => _runAction(job, widget.onOpenDetails!),
-              onOpenLocation: widget.locationLoader == null
+              // Mobile has no file-manager reveal contract; the action would
+              // always fail, so it is not offered there.
+              onOpenLocation: widget.locationLoader == null ||
+                      currentVideoDownloadRevealHost() == null
                   ? null
                   : () => _openLocation(job),
               onDelete:
@@ -761,37 +764,113 @@ class _VideoDownloadJobCard extends StatelessWidget {
       };
 }
 
-/// Opens a task path in the platform file manager. Files are selected when the
-/// platform supports it; directories are opened directly.
-Future<bool> revealVideoDownloadPath(String path) async {
-  final FileSystemEntityType type =
-      await FileSystemEntity.type(path, followLinks: false);
-  if (type == FileSystemEntityType.notFound) return false;
-  try {
-    late final ProcessResult result;
-    if (Platform.isWindows) {
+/// Desktop hosts that have a file manager to reveal a task path in.
+enum VideoDownloadRevealHost { windows, macos, linux }
+
+/// The reveal host of the running platform, or null on mobile where no file
+/// manager contract exists and the surface must not offer the action at all.
+VideoDownloadRevealHost? currentVideoDownloadRevealHost() {
+  if (Platform.isWindows) return VideoDownloadRevealHost.windows;
+  if (Platform.isMacOS) return VideoDownloadRevealHost.macos;
+  if (Platform.isLinux) return VideoDownloadRevealHost.linux;
+  return null;
+}
+
+/// A resolved file-manager invocation plus whether its exit code means
+/// anything. See [videoDownloadRevealCommand].
+class VideoDownloadRevealCommand {
+  const VideoDownloadRevealCommand({
+    required this.executable,
+    required this.arguments,
+    required this.exitCodeIsMeaningful,
+  });
+
+  final String executable;
+  final List<String> arguments;
+
+  /// False when the process reports a status that is unrelated to success, so
+  /// spawning it at all is the only signal available.
+  final bool exitCodeIsMeaningful;
+}
+
+/// Builds the file-manager invocation for [host].
+///
+/// Windows specifics, measured on Windows 11 by launching each form and
+/// reading back the opened window through `Shell.Application`:
+/// * `explorer.exe` exits with 1 on every form, including the ones that open
+///   and select correctly, so its exit code carries no success signal.
+/// * `/select,` and the path must stay two separate argv entries. Dart quotes
+///   any argument containing a space, so joining them into `/select,<path>`
+///   yields the command line `explorer "/select,C:\dir\file.mkv"`, which
+///   explorer answers by opening Documents instead - 3/3 runs, with and
+///   without spaces in the path. The split form selected the file in every
+///   run.
+VideoDownloadRevealCommand videoDownloadRevealCommand({
+  required VideoDownloadRevealHost host,
+  required String path,
+  required bool isDirectory,
+}) {
+  switch (host) {
+    case VideoDownloadRevealHost.windows:
       final String windowsPath = p.normalize(path).replaceAll('/', r'\');
-      result = await Process.run(
-        'explorer',
-        type == FileSystemEntityType.directory
+      return VideoDownloadRevealCommand(
+        executable: 'explorer',
+        arguments: isDirectory
             ? <String>[windowsPath]
             : <String>['/select,', windowsPath],
+        exitCodeIsMeaningful: false,
       );
-    } else if (Platform.isMacOS) {
-      result = await Process.run(
-        'open',
-        type == FileSystemEntityType.directory
-            ? <String>[path]
-            : <String>['-R', path],
+    case VideoDownloadRevealHost.macos:
+      return VideoDownloadRevealCommand(
+        executable: 'open',
+        arguments: isDirectory ? <String>[path] : <String>['-R', path],
+        exitCodeIsMeaningful: true,
       );
-    } else {
-      result = await Process.run(
-        'xdg-open',
-        <String>[
-          type == FileSystemEntityType.directory ? path : p.dirname(path),
-        ],
+    case VideoDownloadRevealHost.linux:
+      return VideoDownloadRevealCommand(
+        executable: 'xdg-open',
+        arguments: <String>[isDirectory ? path : p.dirname(path)],
+        exitCodeIsMeaningful: true,
       );
-    }
+  }
+}
+
+/// Opens a task path in the platform file manager. Files are selected when the
+/// platform supports it; directories are opened directly.
+Future<bool> revealVideoDownloadPath(String path) => revealVideoDownloadPathOn(
+      path,
+      host: currentVideoDownloadRevealHost(),
+      typeOf: (String value) =>
+          FileSystemEntity.type(value, followLinks: false),
+      run: Process.run,
+    );
+
+/// Injectable core of [revealVideoDownloadPath] so the per-host argv shape and
+/// the exit-code policy stay testable without a real file manager.
+@visibleForTesting
+Future<bool> revealVideoDownloadPathOn(
+  String path, {
+  required VideoDownloadRevealHost? host,
+  required Future<FileSystemEntityType> Function(String path) typeOf,
+  required Future<ProcessResult> Function(
+    String executable,
+    List<String> arguments,
+  ) run,
+}) async {
+  if (host == null) return false;
+  final FileSystemEntityType type = await typeOf(path);
+  if (type == FileSystemEntityType.notFound) return false;
+  final VideoDownloadRevealCommand command = videoDownloadRevealCommand(
+    host: host,
+    path: path,
+    isDirectory: type == FileSystemEntityType.directory,
+  );
+  try {
+    final ProcessResult result = await run(
+      command.executable,
+      command.arguments,
+    );
+    if (!command.exitCodeIsMeaningful) return true;
     return result.exitCode == 0;
   } on Object {
     return false;

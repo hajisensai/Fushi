@@ -46,6 +46,10 @@ function loadContentAndFireShift(options) {
     clearTimeout() {},
     URL,
     Node: { TEXT_NODE: 3, ELEMENT_NODE: 1 },
+    // content.js 的查词耗时埋点用 performance.now() / performance.timeOrigin；真实内容脚本
+    // 里这个全局一定存在，手写的 sandbox 得补上。给固定值即可——这些用例断言的是行为，
+    // 不是真实耗时，不该依赖真实时钟。
+    performance: { now() { return 1000; }, timeOrigin: 1700000000000 },
     location: {
       hostname: 'example.com',
       href: 'https://example.com/page',

@@ -345,26 +345,38 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
     });
   }
 
-  // 浏览器原生 Side Panel 入口。按钮总是可点；点击同时启用字幕控制器并把当前 tab 的
-  // side_panel 打开。失败时回落给 service worker，仍保持在同一个用户手势链内。
+  // 浏览器原生 Side Panel 入口。**这是全扩展唯一真正能开侧边栏的路径**（popup 在扩展上下文里，
+  // 点击带瞬态用户激活），所以它必须一次都不能失手。
+  //
+  // 原实现把 open() 放进 chrome.tabs.query 的回调、且前面还 await 了 setOptions：回调和 await 的
+  // resolve 都已经是新的任务，click 那一刻的瞬态激活到那时早已过期，必然抛
+  // "sidePanel.open() may only be called in response to a user gesture"。
+  // 改法：① 当前 tab 在 popup 打开时就查好了（下方 genTab），click 时同步拿；② open() 是 click
+  // 同步栈的第一句，前面不放任何 await；③ setOptions / storage.set 都不需要激活，挪到 open() 之后
+  // （manifest 的 side_panel.default_path 已足以让 open() 用对页面）；④ 只有连 tabId 都没拿到时才
+  // 回落给 service worker——SW 侧同样没有激活，那条路只是聊胜于无的兜底。
   const nfToggle = document.getElementById('hp-nf-sublist');
   if (nfToggle) {
     nfToggle.addEventListener('click', () => {
+      const tabId = genTab && Number.isInteger(genTab.id) ? genTab.id : null;
+      let opening = null;
+      if (tabId != null && chrome.sidePanel && typeof chrome.sidePanel.open === 'function') {
+        try { opening = chrome.sidePanel.open({ tabId }); } catch (_) { opening = null; }
+      }
       try { chrome.storage.local.set({ netflixSubtitlePanel: true }); } catch (_) {}
-      try {
-        chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-          const tab = tabs && tabs[0];
-          if (!tab || tab.id == null) return;
-          try {
-            if (!chrome.sidePanel) throw new Error('sidePanel unavailable');
-            await chrome.sidePanel.setOptions({ tabId: tab.id, path: 'side-panel.html', enabled: true });
-            await chrome.sidePanel.open({ tabId: tab.id });
-          } catch (_) {
-            try { chrome.runtime.sendMessage({ type: 'openSubtitleSidePanel', tabId: tab.id }); } catch (_) {}
-          }
-          window.close();
-        });
-      } catch (_) {}
+      if (!opening) {
+        try {
+          const fallback = { type: 'openSubtitleSidePanel' };
+          if (tabId != null) fallback.tabId = tabId;
+          chrome.runtime.sendMessage(fallback, () => { try { void chrome.runtime.lastError; } catch (_) {} });
+        } catch (_) {}
+        window.close();
+        return;
+      }
+      // 等 open() 落地再关 popup：popup 关闭会销毁本上下文，过早 close 有可能把请求一起带走。
+      Promise.resolve(opening).then(
+        () => { try { chrome.sidePanel.setOptions({ tabId, path: 'side-panel.html', enabled: true }); } catch (_) {} },
+        () => {}).then(() => window.close(), () => window.close());
     });
   }
 

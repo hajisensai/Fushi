@@ -1050,7 +1050,7 @@ void main() {
     expect(backend.addCalls, 1);
   });
 
-  test('missing active embedded torrent is rewound without retry exhaustion',
+  test('missing active embedded torrent is rewound and consumes retry budget',
       () async {
     final _PipelineEnvironment environment = await _PipelineEnvironment.create(
       backend: _FakeTorrentBackend(),
@@ -1071,12 +1071,143 @@ void main() {
     );
 
     expect(job.lifecycle, VideoDownloadJobLifecycle.active);
-    expect(job.attemptCount, 0);
     expect(job.backendTaskId, isNull);
-    expect(job.lastError, isNull);
+    // A rewind is a retry: it spends budget and stays diagnosable, so a task
+    // the engine can never hold cannot loop forever while the UI shows an
+    // eternally running job.
+    expect(job.attemptCount, 1);
+    expect(job.lastError, videoDownloadMissingBackendTaskError);
     expect(
         job.nextAttemptAt, greaterThan(DateTime.now().millisecondsSinceEpoch));
   });
+
+  test('an embedded task that never survives a rewind lap ends up failed',
+      () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+      pollInterval: Duration.zero,
+    );
+    addTearDown(environment.close);
+    const String jobId = 'never-holdable-embedded-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.download,
+    );
+
+    environment.service.wake();
+    // Every lap re-adds the torrent successfully and then finds it gone again;
+    // re-entering the download stage must not refund the retry budget.
+    final VideoDownloadJobRow job = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.failed,
+    );
+
+    expect(job.attemptCount, greaterThanOrEqualTo(job.maxAttempts));
+    expect(job.lastError, videoDownloadMissingBackendTaskError);
+    expect(job.nextAttemptAt, isNull);
+    expect(job.claimedBy, isNull);
+    expect(job.backendTaskId, isNull);
+    expect(job.stage, VideoDownloadJobStage.enqueue);
+    expect(environment.backend.addCalls, greaterThan(1));
+  });
+
+  test('delete never follows a backend path out of the observed save path',
+      () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    final Directory savePath =
+        Directory(p.join(environment.root.path, 'downloads'));
+    await savePath.create(recursive: true);
+    final File inside = File(p.join(savePath.path, 'Show S01E01.mkv'));
+    await inside.writeAsString('inside');
+    final File outside = File(p.join(environment.root.path, 'private.mkv'));
+    await outside.writeAsString('outside');
+
+    const String jobId = 'escaping-backend-path-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.download,
+      observedSavePath: savePath.path,
+    );
+    // A backend controls these names verbatim. p.join drops its root for an
+    // absolute second argument, so an unchecked join would delete both.
+    for (final String name in <String>[
+      'Show S01E01.mkv',
+      '../private.mkv',
+      outside.path,
+      p.join(environment.root.path, 'private.mkv').replaceAll('/', r'\'),
+    ]) {
+      await environment.insertBackendFile(jobId: jobId, name: name);
+    }
+
+    final VideoDownloadJobRow job =
+        (await environment.database.getVideoDownloadJob(jobId))!;
+    await deletePersistedVideoDownloadJob(
+      database: environment.database,
+      job: job,
+      deleteFiles: true,
+    );
+
+    expect(await outside.exists(), isTrue);
+    expect(await inside.exists(), isFalse);
+    expect(await environment.database.getVideoDownloadJob(jobId), isNull);
+  });
+
+  test('a locked file leaves the durable job deleted and is reported',
+      () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    final Directory savePath =
+        Directory(p.join(environment.root.path, 'downloads'));
+    await savePath.create(recursive: true);
+    final File locked = File(p.join(savePath.path, 'Locked S01E01.mkv'));
+    await locked.writeAsString('locked');
+    final File free = File(p.join(savePath.path, 'Free S01E02.mkv'));
+    await free.writeAsString('free');
+    final RandomAccessFile handle = await locked.open(mode: FileMode.write);
+    addTearDown(handle.close);
+
+    const String jobId = 'locked-file-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.download,
+      observedSavePath: savePath.path,
+    );
+    await environment.insertBackendFile(
+      jobId: jobId,
+      name: p.basename(locked.path),
+    );
+    await environment.insertBackendFile(
+      jobId: jobId,
+      name: p.basename(free.path),
+    );
+
+    final VideoDownloadJobRow job =
+        (await environment.database.getVideoDownloadJob(jobId))!;
+    await expectLater(
+      deletePersistedVideoDownloadJob(
+        database: environment.database,
+        job: job,
+        deleteFiles: true,
+      ),
+      throwsA(isA<VideoDownloadJobFilesNotDeleted>()),
+    );
+
+    // The durable row must be gone even so, otherwise every retry repeats the
+    // half of the deletion that already succeeded.
+    expect(await environment.database.getVideoDownloadJob(jobId), isNull);
+    expect(await locked.exists(), isTrue);
+    expect(await free.exists(), isFalse);
+  },
+      skip: !Platform.isWindows
+          ? 'holding an open handle only blocks deletion on Windows'
+          : null);
 
   test('cancel pauses the exact backend task and never deletes its files',
       () async {
@@ -1291,6 +1422,7 @@ class _PipelineEnvironment {
     VideoSubtitleProvider? subtitleProvider,
     Future<void> Function(VideoDownloadJobRow job)? onBackendTaskAdded,
     Duration leaseDuration = const Duration(minutes: 1),
+    Duration pollInterval = const Duration(hours: 1),
   }) async {
     final FushiDatabase database =
         FushiDatabase.forTesting(NativeDatabase.memory());
@@ -1332,7 +1464,7 @@ class _PipelineEnvironment {
       scrapeCoordinator: scrapeCoordinator,
       onBackendTaskAdded: onBackendTaskAdded,
       workerId: 'pipeline-test-worker',
-      pollInterval: const Duration(hours: 1),
+      pollInterval: pollInterval,
       leaseDuration: leaseDuration,
     );
     return _PipelineEnvironment._(
@@ -1418,6 +1550,25 @@ class _PipelineEnvironment {
         originalRelativePath: name,
         currentRelativePath: name,
         sizeBytes: Value<int?>(size),
+        status: const Value<String>(VideoDownloadJobFileStatus.downloaded),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+  }
+
+  /// Inserts a file row whose `currentRelativePath` is whatever the backend
+  /// reported, without any index or sanitising, exactly like the pipeline does.
+  Future<void> insertBackendFile({
+    required String jobId,
+    required String name,
+  }) {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    return database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        originalRelativePath: name,
+        currentRelativePath: name,
         status: const Value<String>(VideoDownloadJobFileStatus.downloaded),
         createdAt: now,
         updatedAt: now,

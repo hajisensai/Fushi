@@ -15,7 +15,8 @@ import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dial
 import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart';
 import 'package:fushi/src/pages/implementations/video_download_subscriptions_panel.dart';
 import 'package:fushi/utils.dart';
-import 'package:fushi_core/fushi_core.dart' show MediaSourceRow;
+import 'package:fushi_core/fushi_core.dart'
+    show MediaSourceRow, VideoDownloadJobRow;
 
 /// 独立「下载」页（顶层底栏 tab）＝统一下载中心：番剧下载流程 **直接内联**
 /// 铺在页面上（搜番 → 选种 → 配字幕 → 推送 + 通用磁力 + 下载任务），任务 tab
@@ -264,7 +265,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                                       await appModel.database
                                           .getVideoDownloadJobFiles(job.jobId),
                                     );
-                              if (!mounted) return;
+                              if (!context.mounted) return;
                               final String torrentId =
                                   (job.backendTaskId ?? job.torrentHash ?? '')
                                       .trim();

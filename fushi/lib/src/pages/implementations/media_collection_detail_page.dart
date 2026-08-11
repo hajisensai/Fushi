@@ -1927,7 +1927,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                               if (thumb != null && File(thumb).existsSync())
                                 Image.file(File(thumb), fit: BoxFit.cover)
                               else if (thumb != null)
-                                Image.network(thumb, fit: BoxFit.cover)
+                                Image(
+                                  image: CachedNetworkImageProvider(thumb),
+                                  fit: BoxFit.cover,
+                                )
                               else
                                 const ColoredBox(color: Color(0x1FFFFFFF)),
                               const Center(

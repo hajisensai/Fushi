@@ -10,8 +10,28 @@
   if (window.__fushiYoutubeBridgeInstalled) return;
   window.__fushiYoutubeBridgeInstalled = true;
 
+  // 已抓到的 cue 报文存档，供 content.js 就绪后整批重放。SPA 连刷视频时每个视频最多 12 条轨，
+  // 每条轨是整集 cue 数组（可达数百 KB）——无上限的话一次长会话就能吃掉几百 MB，故 FIFO 限容。
+  var CACHE_LIMIT = 24;
   var cache = new Map();
   var fetchingFor = '';
+  // 取轨失败的退避账本（按 videoId 记）。三路取轨全空是**常态**（无字幕视频），
+  // 而下面是 setInterval(acquire, 1000)：不退避就等于每秒一次带 cookie 的
+  // POST /youtubei/v1/player 无止境打 YouTube 自家 API，直到用户离开页面。
+  var MAX_ATTEMPTS = 6;      // 1s→2s→4s→8s→16s→32s 后彻底放弃（此视频确无可用字幕轨）
+  var backoff = { id: '', attempts: 0, nextAt: 0 };
+
+  function resetBackoff() {
+    backoff = { id: '', attempts: 0, nextAt: 0 };
+  }
+
+  // 一次取轨失败：解锁在途标记，并把下次允许重试的时刻按 2^n 秒推后。
+  function noteAcquireFailure(id) {
+    fetchingFor = '';
+    if (backoff.id !== id) backoff = { id: id, attempts: 0, nextAt: 0 };
+    backoff.attempts += 1;
+    backoff.nextAt = Date.now() + 1000 * Math.pow(2, backoff.attempts);
+  }
 
   function videoId() {
     var path = location.pathname || '';
@@ -173,13 +193,25 @@
       cues: cues,
     };
     var key = message.videoKey + '|' + message.lang;
+    cache.delete(key); // 重设已存在的键不会移动插入顺序，先删再插才能让 FIFO 淘汰真正淘汰最旧项
     cache.set(key, message);
+    while (cache.size > CACHE_LIMIT) {
+      var oldest = cache.keys().next();
+      if (oldest.done) break;
+      cache.delete(oldest.value);
+    }
     try { window.postMessage(message, '/'); } catch (_) {}
   }
 
-  async function acquire() {
+  // force=true 用于用户/页面显式请求（replayCues、yt-navigate-finish）：跳过退避窗口重试一次，
+  // 但仍受在途锁保护。轮询（setInterval）永远 force=false，必须服从退避与放弃上限。
+  async function acquire(force) {
     var id = videoId();
     if (!id || fetchingFor === id) return;
+    if (backoff.id === id) {
+      if (force) backoff.nextAt = 0;
+      else if (backoff.attempts >= MAX_ATTEMPTS || Date.now() < backoff.nextAt) return;
+    }
     fetchingFor = id;
     try {
       var tracks = runtimeTracks(id);
@@ -192,8 +224,9 @@
         tracks = responseTracks();
         applied = tracks.length ? await fetchAndPublish(id, tracks) : 0;
       }
-      if (!applied) fetchingFor = '';
-    } catch (_) { fetchingFor = ''; }
+      if (applied) { if (backoff.id === id) resetBackoff(); }
+      else noteAcquireFailure(id);
+    } catch (_) { noteAcquireFailure(id); }
   }
 
   window.addEventListener('message', function (event) {
@@ -201,13 +234,16 @@
     cache.forEach(function (message) {
       try { window.postMessage(message, '/'); } catch (_) {}
     });
-    acquire();
+    acquire(true);
   });
 
   document.addEventListener('yt-navigate-finish', function () {
     fetchingFor = '';
-    acquire();
+    resetBackoff(); // 换视频 = 换账本：上一个视频的失败次数不该拖累新视频的首次取轨
+    acquire(true);
   }, true);
-  setInterval(acquire, 1000);
-  acquire();
+  // 注意传函数壳而不是 acquire 本身：setInterval 会把「第几次触发」当参数塞进来，
+  // 直接传 acquire 会让它被当成 force=1 从而绕过退避。
+  setInterval(function () { acquire(false); }, 1000);
+  acquire(true);
 })();
