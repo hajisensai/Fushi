@@ -130,6 +130,35 @@ print(json.dumps(out))
 PY
 )"
 
+# BUG-1516: the merge step keeps a lagging platform's asset entry forever, but
+# the rolling release PRUNES old assets per platform. A platform that stops
+# publishing therefore ends up advertised at a URL whose file is gone, and the
+# client's only in-app action downloads a hard 404 (real report: an old Hibiki
+# debug client pinned to hibiki-1.3.2-debug.10182-windows-setup.exe long after
+# it was pruned). Hand the merge step the release's CURRENT asset names so it
+# can drop entries that no longer resolve.
+#
+# Fail-open: any gh failure (rate limit, transient 5xx, tag not created yet)
+# leaves this empty, which the merge step reads as "cannot tell" and skips the
+# filter. Deleting every retained asset because a query flaked would be a far
+# worse outage than the stale entry we are removing.
+# MANIFEST_LIVE_ASSETS_OVERRIDE is the offline test seam (same role as
+# MANIFEST_REMOTE_OVERRIDE below); it is never set in CI. Detection is
+# "is it DEFINED" (`+x`), not "is it non-empty": the offline suite must be able
+# to pin the empty/fail-open case too, and `:-` would send that case off to the
+# network instead.
+if [ -n "${MANIFEST_LIVE_ASSETS_OVERRIDE+x}" ]; then
+  LIVE_ASSET_NAMES_JSON="$MANIFEST_LIVE_ASSETS_OVERRIDE"
+else
+  LIVE_ASSET_NAMES_JSON="$(
+    gh release view "$DOWNLOAD_TAG" --repo "$REPO" \
+      --json assets --jq '[.assets[].name]' 2>/dev/null || true
+  )"
+fi
+if [ -z "$LIVE_ASSET_NAMES_JSON" ]; then
+  echo "Live asset list unavailable for $DOWNLOAD_TAG; skipping the stale-asset filter."
+fi
+
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
@@ -205,6 +234,7 @@ while :; do
     PRERELEASE="$PRERELEASE" NOTES="$NOTES" \
     RELEASE_SEQUENCE="$RELEASE_SEQUENCE" \
     PLATFORM_ASSETS_JSON="$PLATFORM_ASSETS_JSON" \
+    LIVE_ASSET_NAMES_JSON="$LIVE_ASSET_NAMES_JSON" \
     python3 "$MERGE_PY"
   )
 

@@ -185,6 +185,71 @@ void main() {
     expect(assets.length, 2);
   });
 
+  test('BUG-1516: a pruned platform asset is dropped, not advertised as 404',
+      () async {
+    // Reported shape: desktop published, then stopped; Android kept publishing.
+    // The rolling release prunes per platform, so the desktop file was deleted
+    // while the manifest still advertised it. The client's only in-app action
+    // was downloading that URL -> hard 404, no recovery (real case: an old
+    // Hibiki debug client pinned to hibiki-1.3.2-debug.10182-windows-setup.exe
+    // while the manifest's top level already read 1.3.3-debug.10192).
+    final _Fixture fx = await _Fixture.create();
+    addTearDown(fx.dispose);
+
+    final ProcessResult desktop = await fx.publish(
+      label: 'desktop',
+      artifactsSubdir: 'art_desktop',
+      assetGlob: 'fushi-*-windows-setup.exe',
+    );
+    expect(desktop.exitCode, 0, reason: _io(desktop));
+    expect(await fx.finalAssetNames(), contains(fx.exeName),
+        reason: 'precondition: desktop asset advertised before the prune');
+
+    // Android publishes later; by then the desktop asset is gone from the
+    // release, so it must not survive into the merged manifest.
+    final ProcessResult android = await fx.publish(
+      label: 'android',
+      artifactsSubdir: 'art_android',
+      assetGlob: 'fushi-*.apk',
+      liveAssetsJson: json.encode(<String>[fx.apkName]),
+    );
+    expect(android.exitCode, 0, reason: _io(android));
+
+    final List<String> assets = await fx.finalAssetNames();
+    expect(assets, isNot(contains(fx.exeName)),
+        reason: '被 prune 的资产仍留在清单里 → 客户端下载必 404：$assets');
+    expect(assets, contains(fx.apkName), reason: '刚上传的资产不得被存活性过滤误删：$assets');
+  });
+
+  test('BUG-1516: an unavailable live list must not wipe retained assets',
+      () async {
+    // Fail-open half of the same guard. `gh release view` can fail for reasons
+    // unrelated to the manifest (rate limit, 5xx, tag not created yet). Reading
+    // that as "nothing is live" would delete every platform that did not
+    // publish in this run — a much bigger outage than the stale entry.
+    final _Fixture fx = await _Fixture.create();
+    addTearDown(fx.dispose);
+
+    final ProcessResult desktop = await fx.publish(
+      label: 'desktop',
+      artifactsSubdir: 'art_desktop',
+      assetGlob: 'fushi-*-windows-setup.exe',
+    );
+    expect(desktop.exitCode, 0, reason: _io(desktop));
+
+    final ProcessResult android = await fx.publish(
+      label: 'android',
+      artifactsSubdir: 'art_android',
+      assetGlob: 'fushi-*.apk',
+      liveAssetsJson: '', // query failed → filter must switch off entirely
+    );
+    expect(android.exitCode, 0, reason: _io(android));
+
+    final List<String> assets = await fx.finalAssetNames();
+    expect(assets, containsAll(<String>[fx.apkName, fx.exeName]),
+        reason: '存活列表取不到时必须放行全部保留资产（fail-open）：$assets');
+  });
+
   test('production retry backoff stays polite to the real GitHub remote', () {
     // BUG-1178 guard: this suite lowers MANIFEST_RETRY_BACKOFF_MS so a local
     // bare repo is not slept on for 3s per race. That seam must never be used
@@ -226,6 +291,12 @@ class _Fixture {
 
   final String apkName = 'fushi-0.11.1-debug.5633-3cf5905-debug.apk';
   final String exeName = 'fushi-0.11.1-debug.5633-windows-setup.exe';
+  final String oldApkName = 'fushi-0.11.1-debug.5630-08dc73c-debug.apk';
+
+  /// Every asset this fixture can upload — the default "nothing was pruned"
+  /// answer handed to the script's liveness filter (BUG-1516).
+  List<String> get allFixtureAssetNames =>
+      <String>[apkName, exeName, oldApkName];
 
   static Future<_Fixture> create() async {
     final Directory workspace = Directory.current.parent;
@@ -262,6 +333,7 @@ class _Fixture {
     String tag = defaultTag,
     String version = defaultVersion,
     int releaseSequence = defaultSeq,
+    String? liveAssetsJson,
   }) async {
     final Map<String, String> env = <String, String>{
       // The script's 3s production backoff is politeness toward a real GitHub
@@ -280,6 +352,13 @@ class _Fixture {
       'ASSET_GLOB': assetGlob,
       'PLATFORM_LABEL': label,
       'MANIFEST_REMOTE_OVERRIDE': originUrl,
+      // BUG-1516 seam. ALWAYS set, so the script never reaches for `gh release
+      // view` (no network in this suite, and an unauthenticated gh would just
+      // fail into the same empty value anyway — but slowly, once per publish).
+      // Default = "every fixture asset is still on the release", which is the
+      // pre-BUG-1516 behaviour the union guards above assert.
+      'MANIFEST_LIVE_ASSETS_OVERRIDE':
+          liveAssetsJson ?? json.encode(allFixtureAssetNames),
       'GIT_AUTHOR_NAME': 'Test',
       'GIT_AUTHOR_EMAIL': 'test@example.com',
       'GIT_COMMITTER_NAME': 'Test',
