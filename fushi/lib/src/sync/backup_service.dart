@@ -3164,7 +3164,9 @@ class BackupService {
       }
       // The imported DB carries the BACKUP's folder cache (title → source
       // account folder ids), which is wrong for the preserved local backend.
-      await SyncRepository(db).clearFolderCache();
+      // BUG-1576：清**所有**通道那几格（含解耦前的旧全局键）。导入库里带的是备份
+      // 来源机的目录布局，对本机保留下来的后端账号一条都不成立。
+      await SyncRepository(db).clearAllFolderCaches();
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } finally {
       await db.close();

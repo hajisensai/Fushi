@@ -84,7 +84,9 @@ void main() {
 
     test('Google Drive 同步跑过一次（有 rootFolderId）→ 有通道', () async {
       await repo.setBackendType(SyncBackendType.googleDrive);
-      await repo.setRootFolderId('folder-abc/');
+      await repo.setRootFolderId(
+          SyncChannelScope.forBackendType(SyncBackendType.googleDrive),
+          'folder-abc/');
 
       expect(await hasDeletionPropagationChannel(repo), isTrue);
     });

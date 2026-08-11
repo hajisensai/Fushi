@@ -224,7 +224,8 @@ void main() {
     final SyncRepository repo = SyncRepository(db);
 
     // Start: cache maps BookA -> folderX, already persisted (a prior sync ran).
-    await repo.setFolderCache(<String, String>{sanitizedTitle: folderId});
+    await repo.setFolderCache(
+        SyncChannelScope.unscoped, <String, String>{sanitizedTitle: folderId});
 
     final _CacheTrackingBackend backend = _CacheTrackingBackend(
       books: <SyncFileRef>[
@@ -251,7 +252,8 @@ void main() {
 
     // (2) Persisted cache (DB) no longer references it: no stale revival on
     // restart.
-    final Map<String, String> persisted = await repo.getFolderCache();
+    final Map<String, String> persisted =
+        await repo.getFolderCache(SyncChannelScope.unscoped);
     expect(
       persisted.containsValue(folderId),
       isFalse,

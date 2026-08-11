@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi/src/sync/aggregate_merge_service.dart';
 import 'package:fushi/src/sync/aggregate_snapshot.dart';
 import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show
         FavoriteSentence,
@@ -62,9 +63,14 @@ const String _favoriteSentencesPrefKey = 'favorite_sentences';
 /// snapshot is a transient JSON asset, the local state lives in the existing
 /// statistic tables + favorite_sentences pref.
 class AggregateSyncService {
-  AggregateSyncService(this._db);
+  AggregateSyncService(this._db, {this.scope = SyncChannelScope.unscoped});
 
   final FushiDatabase _db;
+
+  /// 本次同步跑的是哪条通道（BUG-1580）。「上次推上去的快照哈希」是**相对某一个
+  /// 远端**的去重记录：共用一份键时，云通道推完写下的哈希会让互联通道以为对端
+  /// 早就有这份快照、就此跳过 PUT。
+  final SyncChannelScope scope;
 
   /// Runs one aggregate sync over [store]. [deviceId] is this device's stable id
   /// (SyncRepository.getOrCreateDeviceId), used to name its own snapshot asset.
@@ -134,17 +140,21 @@ class AggregateSyncService {
     final bool ownAssetPresent =
         children.any((AssetEntry e) => !e.isFolder && e.name == ownAssetName);
     if (ownAssetPresent &&
-        hash == await _db.getPrefTyped<String>(_kLastPushedHashKey, '')) {
+        hash == await _db.getPrefTyped<String>(_lastPushedHashKey, '')) {
       return false;
     }
 
     await store.putJsonAsset(ns, ownAssetName, payload);
-    await _db.setPrefTyped<String>(_kLastPushedHashKey, hash);
+    await _db.setPrefTyped<String>(_lastPushedHashKey, hash);
     return true;
   }
 
   /// 本端上次成功上传的聚合快照内容哈希（设备本地，纯缓存：丢了最多多传一次）。
-  static const String _kLastPushedHashKey = 'sync_aggregate_last_pushed_hash';
+  /// 按通道分槽（BUG-1580）；解耦前的全局键不做迁移——纯缓存，代价上限是升级后
+  /// 每条通道多传一次快照，而快照写入本身是幂等的。
+  static const String _kLastPushedHashBase = 'sync_aggregate_last_pushed_hash';
+
+  String get _lastPushedHashKey => scope.key(_kLastPushedHashBase);
 
   /// FNV-1a（64 位）。不是安全哈希，只用来判「内容变没变」，需要的只有确定性和零
   /// 依赖；碰撞的后果是漏传一次快照，概率 2^-64 量级。

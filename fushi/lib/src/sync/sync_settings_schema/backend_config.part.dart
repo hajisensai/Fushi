@@ -402,7 +402,12 @@ Future<void> applyBackupBackendChange(
   required SyncBackendType next,
 }) async {
   await repo.setBackendType(next);
-  await repo.clearFolderCache();
+  // BUG-1576：清**这次切换涉及的两格**（切走的 + 切到的），不再一刀切清空全局
+  // 单份键。旧行为下「切后端 = 目录缓存归零」这个保证逐字保留（切到的那格里可能
+  // 躺着上一次配这个后端时的布局，服务器地址早改了也说不定）；变化只在于互联
+  // 通道那格不再被无关的云后端切换连累、白白重解析一遍目录。
+  await repo.clearFolderCache(SyncChannelScope.forBackendType(previous));
+  await repo.clearFolderCache(SyncChannelScope.forBackendType(next));
   if (previous == SyncBackendType.ftp && next != SyncBackendType.ftp) {
     await repo.setFtpTlsEnabled(false);
   }

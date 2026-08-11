@@ -593,7 +593,7 @@ class AppModel with ChangeNotifier {
       navigatorKey: navigatorKey,
       db: database,
       views: views,
-      highWaterMs: report.deletionTombstonesHighWaterMs,
+      highWaterMsByScope: report.deletionTombstonesHighWaterMsByScope,
       applyDeletions: _applyConfirmedDeletions,
       source: ConflictSource.auto,
       inBook: isMediaOpen,
@@ -2159,8 +2159,16 @@ class AppModel with ChangeNotifier {
       //    selection to the independent interconnect toggle (interconnect and a
       //    cloud backup backend can now coexist).
       await BackupService.recoverPendingImport(_databaseDirectory.path);
+      //    cloud backup backend can now coexist);
+      // 4) BUG-1576: drop the pre-decoupling GLOBAL folder cache. Two channels
+      //    took turns writing that single pair of keys, so its value can no
+      //    longer be attributed to any one remote — and an interconnect/WebDAV
+      //    folderId is an ABSOLUTE URL, which the other channel would then hit
+      //    (Basic credentials attached). It is a pure cache: every backend
+      //    re-resolves its root/book folders by name on the next sweep.
       await SyncRepository(_database).migrateSmbToWebDav();
       await SyncRepository(_database).migrateInterconnectBackendToToggle();
+      await SyncRepository(_database).migrateFolderCacheToPerChannel();
 
       /// Prepare all repositories (objects created first, then loaded in
       /// parallel to avoid serial await chains).
