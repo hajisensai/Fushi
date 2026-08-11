@@ -6,7 +6,7 @@
 
 ## 1. 边界与开工条件
 
-- native 采集组件在本仓 `native/galgame_hook/`（源码已合仓）。**进程/链接边界不变且是硬规则：绝不链接进 `fushi.exe`**。`tools/build_distribution.ps1` 单独构建 `voice_hook_<arch>.zip`；两架构 zip + `.sha256` 随 Windows 主包进入 `galgame_helper/` 供离线首装，同时由根 `.github/workflows/voice-hook-helper.yml` 发布供旧包与后台更新。app 校验后解压到 `voice_hook/<arch>/`，helper 仍以隔离子进程/DLL 运行。
+- native 采集组件在本仓 `native/galgame_hook/`（源码已合仓）。**进程/链接边界不变且是硬规则：绝不链接进 `fushi.exe`**。`tools/build_distribution.ps1` 单独构建 `voice_hook_<arch>.zip`；两架构 zip 由 `tools/install_into_bundle.ps1` 在**构建期**解压进 `fushi.exe` 同级 `voice_hook/<arch>/`（BUG-1449），与本体同一次构建产出、同一个安装包落地；运行期不下载任何组件（helper 的在线发布通道 `voice-hook-helper` release 已于 2026-08-11 连同其 workflow 一并删除）。helper 仍以隔离子进程/DLL 运行。
 - 合仓的依据：迁出独立仓库的真正根因是「主仓库那份 workflow 不在默认分支、无法 workflow_dispatch」，合仓后 workflow 就在 develop 上，问题消失；而「必被杀软报毒」经实测证伪（Defender 签名 1.455.357.0 对全部文件与 zip 零检出，同轮 EICAR 阳性对照正常报出，见 hibiki-hook#8）。国产杀软未验证，若被拦按误报处理。
 - 消费端（IPC 消费、文本与音频配对、制卡 UI）与 native 采集实现现在同仓，**改 IPC 契约必须两侧在同一个 PR 里落地**——这正是合仓要消除的版本不同步。引擎支持矩阵唯一真相源是 `native/galgame_hook/docs/engine-support.md`（由同目录 `engine-support.yaml` 自动生成），不得另存副本。
 - 一引擎一任务、一独立 worktree；批量引擎任务只负责排队和汇总，不在同一实现任务里交叉试错。worktree 先运行 `tool/setup_worktree.ps1`，并按根 `CLAUDE.md` 登记 ownership。

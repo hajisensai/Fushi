@@ -144,7 +144,7 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
   - `tools/ring_probe.cpp`（`hibiki_voice_ring_probe`，读共享内存做诊断）
   - `tools/luna_symcheck.cpp`（`hibiki_luna_symcheck`，**已是 LunaHost 导出/ABI 守卫**——桥接层从这里长）
   - vendored `third_party/minhook`（含 `NtGetNextThread` 线程枚举兜底，兼容部分游戏令 Toolhelp 快照失败的场景）
-- 发布契约：CI `voice-hook-helper.yml` 反复 upsert 同一 prerelease tag `voice-hook-helper`；每架构 zip
+- 打包契约（2026-08-11 起无独立发布通道，`voice-hook-helper.yml` 与该 release 均已删除）：每架构 zip
   平铺 4 文件 `injector.exe + hook.dll + LunaHook<arch>.dll + LunaHost<arch>.dll` + `.sha256` 侧车；
   x64 另含 `unity_audio_runtime`（net8.0，Unity IL2CPP 音频提取运行时）。app 端 `_extractZip` 只取 basename 平铺。
 
@@ -155,8 +155,8 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
   `LoopbackGalAudioSource`）、`galgame_audio_encode.dart`、`galgame_library.dart`、
   `galgame_system_ui_filter.dart`、`galgame_waveform*.dart`。
 - helper 安装/下载：`hibiki/lib/src/mining/galgame_helper_installer.dart`
-  （主包 `galgame_helper/` 优先、`kGalgameHelperRepo = 'hajisensai/hibiki'` 网络兜底、tag
-  `voice-hook-helper`、`exeIs32Bit` 读 PE COFF Machine 选 x86/x64 组件）。
+  （构建期已解压进 `voice_hook/<arch>/`，归档路径仅作便携/开发构建兜底；网络兜底已于 8cd11846fe 移除；
+  `exeIs32Bit` 读 PE COFF Machine 选 x86/x64 组件）。
 - 文本覆盖：`hibiki/lib/src/platform/gal_hook_text_overlay_channel.dart`。
 - 现成可复用件（design.md 已核实 file:line）：制卡入口 `ImmersionMiningEngine.mine`
   （`immersion_mining_engine.dart:83`）、外部窗口请求 `buildExternalWindowRequest`
@@ -182,7 +182,8 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
 
 ### 【近期相关 bug】
 - BUG-957 galgame dead session controller 残留；BUG-961 helper release 404（已本地补发 4×2 资产 + 守卫，
-  **复发根源未根治**：`voice-hook-helper.yml` 只在 develop 不可 dispatch，需放默认分支——列为后续）；
+  复发根源已随 2026-08-11 删除整条在线发布通道而消失：app 侧不再联网取 helper，`voice-hook-helper.yml`
+  与该 release 均已删除，不存在「release 漏发导致 404」这条路）；
   BUG-952 texthooker 线程下拉值不匹配。
 
 ### 【原始设想里的幽灵引用（写了但仓库没有 → 新建或改指）】
@@ -282,7 +283,7 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
       + `flutter test` 通过。
 - [ ] **[全阶段]** 所有宣称"支持/修好"的真实引擎按仓库规则走原始路径真机验证并留证据；缺样本能力显式标未真机验证。
 - [ ] **[全阶段]** 每阶段独立提交；最终报告含各提交哈希、验证命令、真机证据、未验证项、后续候选
-      （含 BUG-961 复发根源：把 `voice-hook-helper.yml` 放默认分支或改触发方式）。
+      （BUG-961 复发根源已于 2026-08-11 随删除整条在线发布通道消解，不再是后续项）。
 
 ---
 

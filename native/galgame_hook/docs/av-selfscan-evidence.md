@@ -2,7 +2,7 @@
 
 > **为什么这份文件在这里**：native 采集组件已合入本仓，原独立仓 hajisensai/hibiki-hook
 > 于 2026-08-08 删除。本仓多处注释（voice_hook_reader.h / galgame_audio_source.dart /
-> av-selfscan.yml / voice-hook-helper.yml）把 `hibiki-hook#8` 当作「helper 被杀软零检出」
+> av-selfscan.yml / voice-hook-helper.yml，后两者已于 2026-08-11 删除）把 `hibiki-hook#8` 当作「helper 被杀软零检出」
 > 这一判断的**唯一实测证据来源**，删仓前原样归档于此，避免证据随仓库消失。
 >
 > 原始出处：https://github.com/hajisensai/hibiki-hook/pull/8（状态 MERGED，创建于 2026-07-26T11:11:02Z）
