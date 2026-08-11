@@ -27,14 +27,8 @@ import 'package:fushi/src/media/video/scraper/bangumi_client.dart';
 import 'package:fushi/src/media/video/scraper/collection_relations_scrape.dart'
     show CollectionRelationType;
 import 'package:fushi/src/media/video/scraper/collection_scrape_apply.dart';
-import 'package:fushi/src/media/video/scraper/cover_downloader.dart';
-import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/scraper/episode_rename.dart';
-import 'package:fushi/src/media/video/scraper/episode_scrape_service.dart';
 import 'package:fushi/src/media/video/scraper/scraper_types.dart';
-import 'package:fushi/src/media/video/scraper/tmdb_client.dart';
-import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
-import 'package:fushi/src/media/video/video_storage.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/media/video/video_library_overview.dart'
@@ -678,63 +672,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
   }
 
-  /// 「刮削分集资料」（TODO-2491）：EpisodeScrapeService 按合集刮削绑定批量拉
-  /// 每集集名/简介/放送日期（TMDB 还把剧照落为集封面），toast 报成功/跳过统计。
-  /// 前置：合集已刮削（collection_scrape_meta 有行），否则提示先刮合集。
-  /// TMDB key 直读偏好表（本页无 Riverpod）：用户自填优先，其次内置 key，与封面
-  /// 刮削同一取值规则（resolveTmdbApiKey）。
-  Future<void> _scrapeEpisodes() async {
-    final CollectionScrapeMetaRow? meta =
-        await widget.database.getCollectionScrapeMeta(widget.collection.id);
-    if (!mounted) return;
-    if (meta == null) {
-      FushiToast.show(
-        msg: t.collection_episode_scrape_unbound,
-        severity: ToastSeverity.info,
-      );
-      return;
-    }
-    final String tmdbKey = resolveTmdbApiKey(
-      await widget.database.getPref(kVideoScraperTmdbApiKeyPref) ?? '',
-    );
-    final BangumiClient bangumi = BangumiClient();
-    final TmdbClient? tmdb =
-        tmdbKey.isEmpty ? null : TmdbClient(apiKey: tmdbKey);
-    try {
-      final EpisodeScrapeService service = EpisodeScrapeService(
-        db: widget.database,
-        bangumiClient: bangumi,
-        tmdbClient: tmdb,
-        coverDownloader: CoverDownloader(),
-        coverMetaStore: CoverMetaStore(await VideoStorage.coversDir()),
-      );
-      final EpisodeScrapeOutcome outcome =
-          await service.scrapeCollectionEpisodes(widget.collection.id);
-      if (!mounted) return;
-      if (outcome.updated == 0 && outcome.errors.isNotEmpty) {
-        // 源级失败（网络/无 key/movie 无分集）：如实报错，不装作「0 集成功」。
-        FushiToast.show(
-          msg: t.collection_episode_scrape_failed(
-            error: outcome.errors.values.first,
-          ),
-          severity: ToastSeverity.error,
-        );
-        return;
-      }
-      FushiToast.show(
-        msg: t.collection_episode_scrape_result(
-          updated: outcome.updated,
-          skipped: outcome.unmatched,
-        ),
-        severity: ToastSeverity.success,
-      );
-      await _reload();
-      widget.onChanged();
-    } finally {
-      bangumi.close();
-      tmdb?.close();
-    }
-  }
+  // 「刮削分集资料」独立入口已删（TODO-2791）：它硬门「合集已刮削」，而合集刮削
+  // 管线（VideoMetadataDatabaseStore.apply → _writeLegacyProjection）本就会把集名/
+  // 集号投影进 video_scrape_meta，所以这个入口在未刮时只会弹「请先刮削合集资料」、
+  // 在已刮时做重复工作 —— 是个死按钮。集级资料统一由合集刮削产出。
 
   /// 「按刮削重命名各集」（TODO-2491）：dryRun 拿旧名→新名对照表 → 勾选确认
   /// 弹窗 → 对勾选子集逐条写穿 `video_books.title`（与库页手动重命名同一落库
@@ -2316,9 +2257,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       case _CollectionManageAction.subtitles:
         await _fetchCollectionSubtitles();
         return;
-      case _CollectionManageAction.scrapeEpisodes:
-        await _scrapeEpisodes();
-        return;
       case _CollectionManageAction.renameEpisodes:
         await _renameEpisodesFromScrape();
         return;
@@ -2386,12 +2324,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               _CollectionManageAction.subtitles,
               Icons.subtitles_outlined,
               t.video_jimaku_batch_title,
-              enabled: _members.isNotEmpty,
-            ),
-            _manageMenuItem(
-              _CollectionManageAction.scrapeEpisodes,
-              Icons.movie_filter_outlined,
-              t.collection_episode_scrape,
               enabled: _members.isNotEmpty,
             ),
             _manageMenuItem(
@@ -2510,7 +2442,6 @@ enum _EpisodeMenuAction { download, openBangumi, removeFromCollection }
 enum _CollectionManageAction {
   sortBySeason,
   subtitles,
-  scrapeEpisodes,
   renameEpisodes,
   fillMissing,
   splitBySeason,
