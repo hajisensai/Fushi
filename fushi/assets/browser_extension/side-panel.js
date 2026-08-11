@@ -36,8 +36,10 @@
   var fontStep = 1;
   var refreshBusy = false;
   var toastTimer = null;
-  var lookupTimer = null;
   var currentLookupCue = null;
+  var lookupRequestId = 0;
+  var lookupCache = new Map();
+  var LOOKUP_CACHE_LIMIT = 48;
   var FONT_STEPS = [0.85, 1, 1.15, 1.3];
 
   function sendRuntime(message) {
@@ -52,10 +54,19 @@
   }
 
   function closeLookup() {
+    lookupRequestId += 1;
     lookupPaneEl.hidden = true;
     lookupTermEl.textContent = '';
     lookupContainer.textContent = '';
     currentLookupCue = null;
+  }
+
+  function positionLookup(anchorY) {
+    if (!Number.isFinite(anchorY)) return;
+    var atTop = anchorY > window.innerHeight / 2;
+    var available = atTop ? anchorY - 16 : window.innerHeight - anchorY - 16;
+    lookupPaneEl.classList.toggle('is-top', atTop);
+    lookupPaneEl.style.maxHeight = 'min(72vh, ' + Math.max(96, Math.floor(available)) + 'px)';
   }
 
   function applyLookupTheme(theme) {
@@ -73,27 +84,52 @@
     window.__fushiPopupWheelSpeed = isFinite(wheelSpeed) && wheelSpeed > 0 ? wheelSpeed : 1;
   }
 
-  async function lookupTerm(term, cue) {
+  function renderLookupData(value, data) {
+    try { window.lookupEntries = JSON.parse(data.popupJson); }
+    catch (_) { window.lookupEntries = []; }
+    window.audioSources = Array.isArray(data.audioSources) ? data.audioSources : [];
+    window.needsAudio = true;
+    window._noResultsMessage = '没有查到结果';
+    applyLookupTheme(data.theme);
+    if (typeof window.renderPopup === 'function') window.renderPopup();
+    else lookupContainer.innerHTML = '<div class="no-results">词典组件尚未就绪，请重试。</div>';
+  }
+
+  function rememberLookup(value, data) {
+    if (lookupCache.has(value)) lookupCache.delete(value);
+    lookupCache.set(value, data);
+    while (lookupCache.size > LOOKUP_CACHE_LIMIT) {
+      lookupCache.delete(lookupCache.keys().next().value);
+    }
+  }
+
+  async function lookupTerm(term, cue, anchorY) {
     var value = String(term || '').trim();
     if (!value) return;
+    var requestId = ++lookupRequestId;
     currentLookupCue = cue || currentLookupCue;
+    positionLookup(anchorY);
     lookupTermEl.textContent = value;
     lookupPaneEl.hidden = false;
+    // 与 Yomitan 的 click scan 一致：点击路径不进入被动扫描 delay。cue 准备与词典 HTTP
+    // 并行发起，不能让 tabs 消息往返串在查词请求之前；重复词直接复用本面板内的 LRU 结果。
+    sendToTab({ type: 'fushiSubtitleSidePanelPrepareLookup', cue: currentLookupCue });
+    var cached = lookupCache.get(value);
+    if (cached) {
+      lookupCache.delete(value);
+      lookupCache.set(value, cached);
+      renderLookupData(value, cached);
+      return;
+    }
     lookupContainer.innerHTML = '<div class="no-results">正在查词…</div>';
-    await sendToTab({ type: 'fushiSubtitleSidePanelPrepareLookup', cue: currentLookupCue });
     var response = await sendRuntime({ type: 'lookup', term: value });
+    if (requestId !== lookupRequestId) return;
     if (!response || response.ok !== true || !response.data || !response.data.popupJson) {
       lookupContainer.innerHTML = '<div class="no-results">查词失败，请确认 Fushi 查词服务已开启。</div>';
       return;
     }
-    try { window.lookupEntries = JSON.parse(response.data.popupJson); }
-    catch (_) { window.lookupEntries = []; }
-    window.audioSources = Array.isArray(response.data.audioSources) ? response.data.audioSources : [];
-    window.needsAudio = true;
-    window._noResultsMessage = '没有查到结果';
-    applyLookupTheme(response.data.theme);
-    if (typeof window.renderPopup === 'function') window.renderPopup();
-    else lookupContainer.innerHTML = '<div class="no-results">词典组件尚未就绪，请重试。</div>';
+    rememberLookup(value, response.data);
+    renderLookupData(value, response.data);
   }
 
   // popup.js 与 app 内 WebView 共用。Side Panel 自己承接嵌套查词、发音与查重；只有制卡
@@ -103,7 +139,7 @@
       var args = Array.prototype.slice.call(arguments, 1);
       if (name === 'textSelected' || name === 'popupRendered') return Promise.resolve(null);
       if (name === 'onLinkClick') {
-        lookupTerm(args[0], currentLookupCue);
+        lookupTerm(args[0], currentLookupCue, null);
         return Promise.resolve(null);
       }
       if (name === 'tapOutside') return Promise.resolve(null);
@@ -265,24 +301,14 @@
           toast('未识别到可查词文字');
           return;
         }
-        lookupTerm(term, cue);
+        lookupTerm(term, cue, y);
       }
       text.addEventListener('click', function (event) {
-        // 不阻止默认事件、不清空 Selection。延迟跨过系统常见双击窗口；第二击/dblclick
-        // 会取消查词，延迟结束时已有原生选区也直接放弃，保证双击选择优先。
-        if (lookupTimer) { clearTimeout(lookupTimer); lookupTimer = null; }
+        // Yomitan 的 click scan 不等待被动扫描 delay：第一击立即查；第二击 detail>1
+        // 不重复查。词典抽屉会被放到点击点的另一侧，且共享 popup.js 已限定在自己的
+        // Shadow DOM 内，所以后续浏览器原生双击选区不会被遮挡或 removeAllRanges。
         if (event.detail > 1) return;
-        var x = event.clientX;
-        var y = event.clientY;
-        lookupTimer = setTimeout(function () {
-          lookupTimer = null;
-          var selection = window.getSelection && window.getSelection();
-          if (selection && !selection.isCollapsed && String(selection).trim()) return;
-          lookupAt(x, y);
-        }, 650);
-      });
-      text.addEventListener('dblclick', function () {
-        if (lookupTimer) { clearTimeout(lookupTimer); lookupTimer = null; }
+        lookupAt(event.clientX, event.clientY);
       });
       row.appendChild(timestamp);
       row.appendChild(text);

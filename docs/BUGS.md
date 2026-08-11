@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1423 条。点号进各自文件。
+> 共 1424 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1525](bugs/BUG-1525-extension-side-panel-lookup-latency.md) | ✅ | ✅ | 浏览器侧边栏查词存在固定延迟 |
 | [BUG-1524](bugs/BUG-1524-download-task-delete-pause.md) | ✅ | ✅ | Task deletion is blocked when backend pause fails |
 | [BUG-1523](bugs/BUG-1523-download-task-resume.md) | ✅ | ✅ | Cancelled download tasks cannot be resumed |
 | [BUG-1522](bugs/BUG-1522-torrent-tracker-utf8.md) | ✅ | ✅ | Tracker detail JSON rejects localized backend errors |
