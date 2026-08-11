@@ -25,6 +25,7 @@ import 'dart:async';
 
 import 'package:characters/characters.dart';
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/global_lookup_layout.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
@@ -255,6 +256,9 @@ class GalIngameLookupController {
     // `desired == _pushedEnabled` 当场早退，再也不会重推——开关看着是开的，注入侧
     // 却始终是 0。（runner 侧也会在拿到新段时按意图重放，两层各自成立，不互为前提。）
     if (result.ok) _pushedEnabled = desired;
+    // 整条查词管线改道到离屏卡片窗。不改道的话，控制器 showAt/reveal 驱动的仍是
+    // 可见浮窗——桌面弹窗照弹，而被抓帧投进游戏的那个离屏窗里空无一物。
+    GlobalLookupChannel.setTarget(desired ? 'galCard' : '');
     glog('gal-ingame: setEnabled=$desired session=$_sessionActive '
         '-> ${result.error ?? "ok"}');
     if (!desired) await _dismissCurrent();

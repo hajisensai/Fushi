@@ -1299,10 +1299,26 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
                  result) {
         const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
         const std::string& method = call.method_name();
+        // 同一套查词管线要能驱动**两个**窗口：可见的桌面浮窗，以及游戏内查词专用的
+        // 离屏卡片窗（`target: "galCard"`）。
+        //
+        // 🔴 之前离屏窗只被 EnsureGalLookupCardWindow 建出来并预热，**没有任何一处
+        // 往它里面塞过内容**；而 Dart 侧查词走的是可见浮窗。结果就是：桌面弹出浮窗
+        // （用户看到的那个），投进游戏的却是那张 480x360 的空白预热页——"游戏内渲染"
+        // 从头到尾没有内容。渲染器建好却没接上，是本 PR 的核心接线缺失。
+        GlobalLookupWindow* win = global_lookup_window_.get();
+        if (StringFromValue(args, "target", "") == "galCard") {
+          win = EnsureGalLookupCardWindow();
+          if (win == nullptr) {
+            result->Error("gal_card_unavailable",
+                          "in-game lookup card window is not available");
+            return;
+          }
+        }
 
         if (method == "prepare") {
           const std::wstring assets_dir = WideFromValue(args, "assetsDir", L"");
-          global_lookup_window_->SetPopupAssetsDir(assets_dir);
+          win->SetPopupAssetsDir(assets_dir);
           // v14：游戏内查词卡片用同一份 popup 资源，但它懒建于「用户开启游戏内查词」，
           // 那时 Dart 不会再发一次 prepare。留存一份，别让第三个实例拿着空目录起来。
           popup_assets_dir_ = assets_dir;
@@ -1313,7 +1329,7 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           // create-chain race that left the popup blank / self-closed).
           // nullptr owner：与 showAt 同源解耦（无 owner，不拉主窗前台）。prewarm
           // 与 showAt 的 owner 必须一致，否则 ForgetDeadWindow 重建时 owner 漂移。
-          global_lookup_window_->PrewarmWebView(
+          win->PrewarmWebView(
               IntFromValue(args, "width", 420),
               IntFromValue(args, "height", 600), nullptr);
           result->Success();
@@ -1321,7 +1337,7 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           // TODO-1079 — the ready-driven reveal fallback confirms the WebView2
           // finished its initial navigation before revealing (else it defers).
           result->Success(flutter::EncodableValue(
-              global_lookup_window_->IsWebViewReady()));
+              win->IsWebViewReady()));
         } else if (method == "showAt") {
           int x = IntFromValue(args, "x", 0);
           int y = IntFromValue(args, "y", 0);
@@ -1341,7 +1357,7 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           // 用户诉求=悬浮字幕点词等 app 外查词绝不该夺前台（覆盖窗 §5 契约）：
           // 瞬态窗也解耦成无 owner，与面板一致。短命窗（点外/前台切换即经
           // arm_dismiss_hooks 自关），主窗最小化时照样收纳，无孤儿窗回归。
-          const bool ok = global_lookup_window_->ShowAt(
+          const bool ok = win->ShowAt(
               x, y, IntFromValue(args, "width", 420),
               IntFromValue(args, "height", 600), nullptr);
           // TODO-893 (symptom 2) — report the CURSOR MONITOR work area
@@ -1401,28 +1417,42 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           };
           result->Success(flutter::EncodableValue(reply));
         } else if (method == "render") {
-          global_lookup_window_->RenderJson(StringFromValue(args, "json", ""));
+          win->RenderJson(StringFromValue(args, "json", ""));
           result->Success();
         } else if (method == "resize") {
-          global_lookup_window_->ResizeTo(IntFromValue(args, "width", 0),
+          win->ResizeTo(IntFromValue(args, "width", 0),
                                           IntFromValue(args, "height", 0));
           result->Success();
         } else if (method == "reveal") {
-          global_lookup_window_->Reveal(IntFromValue(args, "width", 0),
-                                        IntFromValue(args, "height", 0));
+          // 🔴 游戏内卡片窗**永远不上屏**：reveal 是"把离屏渲染好的窗口挪到屏幕上"
+          // 这一步，对它只保留定尺寸。放过去就等于把桌面浮窗换成另一个桌面浮窗，
+          // 用户要的恰恰是别弹窗。卡片像素由 CaptureBgraAsync 取走后投进游戏图层。
+          if (win == gal_lookup_card_window_.get()) {
+            win->ResizeTo(IntFromValue(args, "width", 0),
+                          IntFromValue(args, "height", 0));
+          } else {
+            win->Reveal(IntFromValue(args, "width", 0),
+                        IntFromValue(args, "height", 0));
+          }
           result->Success();
         } else if (method == "revealStack") {
           // TODO-867 P3c E1 — reveal/resize to the nested-stack union bbox.
-          global_lookup_window_->RevealStack(
-              IntFromValue(args, "dx", 0), IntFromValue(args, "dy", 0),
-              IntFromValue(args, "width", 0), IntFromValue(args, "height", 0),
-              DoubleFromValue(args, "left", 0.0),
-              DoubleFromValue(args, "top", 0.0));
+          if (win == gal_lookup_card_window_.get()) {
+            // 同上：嵌套栈的 reveal 也只定尺寸，不上屏。
+            win->ResizeTo(IntFromValue(args, "width", 0),
+                          IntFromValue(args, "height", 0));
+          } else {
+            win->RevealStack(
+                IntFromValue(args, "dx", 0), IntFromValue(args, "dy", 0),
+                IntFromValue(args, "width", 0), IntFromValue(args, "height", 0),
+                DoubleFromValue(args, "left", 0.0),
+                DoubleFromValue(args, "top", 0.0));
+          }
           result->Success();
         } else if (method == "resolveBridge") {
           // Dart's real reply for a deferred audio handler. "value" is a JSON
           // literal string (jsonEncode'd in Dart): pass it straight through.
-          global_lookup_window_->ResolveBridge(
+          win->ResolveBridge(
               IntFromValue(args, "id", 0),
               StringFromValue(args, "value", "null"));
           result->Success();
@@ -1430,17 +1460,17 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           // TODO-1233 -- notify defaults true (genuine dismiss); the controller
           // passes notify=false for the reset that precedes a fresh lookup so it
           // does not fire overlayHidden between two lookups.
-          global_lookup_window_->Hide(BoolFromValue(args, "notify", true));
+          win->Hide(BoolFromValue(args, "notify", true));
           result->Success();
         } else if (method == "isShowing") {
           result->Success(
-              flutter::EncodableValue(global_lookup_window_->IsShowing()));
+              flutter::EncodableValue(win->IsShowing()));
         } else if (method == "setBlockCapture") {
           // 防截屏 — 与剪贴板面板同口径（WDA_EXCLUDEFROMCAPTURE）：瞬态查词窗
           // 对用户可见但不进截图 / 录屏 / 屏幕共享。GlobalLookupWindow 记住该值，
           // 窗口重建后由 ApplyBlockCapture 自动重加（同一 pref
           // clipboardPanelBlockCapture，默认 true）。
-          global_lookup_window_->SetBlockCapture(
+          win->SetBlockCapture(
               BoolFromValue(args, "block", true));
           result->Success();
         } else {

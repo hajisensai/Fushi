@@ -329,6 +329,28 @@ constexpr uint32_t kLookupDiagFallbackPngRoute = 0x00000010u;  // 降级走 PNG 
 constexpr uint32_t kLookupDiagFramePresented = 0x00000020u;   // 位图真落进游戏 Layer
 constexpr uint32_t kLookupDiagExpressionReady = 0x00000040u;  // TVPExecuteExpression 可用
 constexpr uint32_t kLookupDiagFrameRejected = 0x00000080u;    // 收到过不合契约的帧（已拒）
+// 传感器在游戏事件循环里吞下过异常（TJS 侧 fushiLookupFaults > 0）。
+//
+// 注入进别人的事件循环，异常就绝不允许逃逸——逃出去 KiriKiri 会弹「致命的なエラー」
+// 把玩家这一局打断。但"不逃逸"必须与"看得见"成对出现：只 catch 不计数，查词会安静地
+// 半死不活（命中报不上来、卡片不出现），而现场没有任何痕迹可查。这一位就是那道痕迹。
+constexpr uint32_t kLookupDiagSensorFault = 0x00000100u;
+// ── hover 未命中的原因（真机排查用；采集成功但点不中时唯一能分型的依据）──────
+//
+// 「采到了几何」和「点得中」之间隔着坐标系换算、图层可见性、逐字形命中三道，任何
+// 一道断了，用户看到的都是同一句「点了没反应」。没有这几位就只能靠改一版试一版。
+constexpr uint32_t kLookupDiagHoverBoxMiss = 0x00000200u;   // 光标不在整行包围盒内
+constexpr uint32_t kLookupDiagHoverGlyphMiss = 0x00000400u; // 在包围盒内但无字形命中
+constexpr uint32_t kLookupDiagHoverHidden = 0x00000800u;    // 命中但可见性判定否决
+// 绘制原点在一次采集周期内被绑定多次 = drawCh 的 ox/oy 是**逐字符**位置，不是整行
+// 原点。**这是引擎事实的记录位，不是错误位**：本样本（textrender.dll）实测每字一次，
+// 采集侧据此改为「用 min(ox) 与 min(字形 x) 配对解平移量」，而不是把最后一个字的落
+// 点当行原点（那正是第一版 HoverBoxMiss 的成因）。留着它是为了换引擎时一眼看出该
+// 引擎属于哪一类。
+constexpr uint32_t kLookupDiagOriginPerChar = 0x00001000u;
+// 文字的绘制目标层不在 primaryLayer 的父链上（独立/离屏层），沿父链累加得到的偏移
+// 因此没有意义。
+constexpr uint32_t kLookupDiagLayerDetached = 0x00002000u;
 
 // hook → host：光标命中了哪个字符。单槽 latest-wins；`seq` **最后**写（Interlocked 全栅栏，
 // 保证 payload 对 reader 先可见），与 VoiceClip / LoopbackMarker 同一套纪律。
