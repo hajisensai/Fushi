@@ -3742,6 +3742,7 @@ class AppModel with ChangeNotifier {
       ],
       backendResolver: _resolveVideoDownloadBackend,
       scrapeCoordinator: scrape,
+      onBackendTaskAdded: _checkpointEmbeddedVideoDownload,
     )..start();
     _videoDownloadPipelineService = pipeline;
     _videoDownloadSubscriptionService = VideoDownloadSubscriptionService(
@@ -3850,6 +3851,28 @@ class AppModel with ChangeNotifier {
     };
     _animeDownloadPlanIds = ids;
     return ids;
+  }
+
+  /// The pipeline persists `stage=download` only after this checkpoint. This
+  /// closes the one-minute periodic-save gap where an unclean app exit could
+  /// leave Drift tracking a torrent that the embedded engine cannot restore.
+  Future<void> _checkpointEmbeddedVideoDownload(
+    VideoDownloadJobRow job,
+  ) async {
+    if (job.backendKind != QbConnectionConfig.backendEmbedded) return;
+    final EmbeddedTorrentHost? host = _embeddedTorrentHost;
+    if (host == null) return;
+    try {
+      final AnimeDownloadPlanStore? store = _animeDownloadPlanStore;
+      final Set<String> keepIds = store == null
+          ? legacyEmbeddedTorrentResumeIds(
+              await database.getVideoDownloadJobs(),
+            )
+          : await _refreshAnimeDownloadPlanIds(store);
+      host.saveResumeSnapshot(keepIds, force: true);
+    } catch (e) {
+      debugPrint('[torrent] post-enqueue resume checkpoint failed: $e');
+    }
   }
 
   /// TODO-1961-a：启动时按需恢复上次的内置引擎会话。

@@ -108,6 +108,36 @@ void main() {
     expect(downloading.stageProgress, 0.25);
   });
 
+  test('embedded enqueue checkpoints resume before advancing to download',
+      () async {
+    final _FakeTorrentBackend backend = _FakeTorrentBackend(
+      snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.25)],
+    );
+    VideoDownloadJobRow? jobAtCheckpoint;
+    late final _PipelineEnvironment environment;
+    environment = await _PipelineEnvironment.create(
+      backend: backend,
+      onBackendTaskAdded: (VideoDownloadJobRow job) async {
+        jobAtCheckpoint =
+            await environment.database.getVideoDownloadJob(job.jobId);
+      },
+    );
+    addTearDown(environment.close);
+
+    final String jobId = await environment.service.enqueue(
+      environment.enqueueRequest(),
+    );
+    await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) => row.stage == VideoDownloadJobStage.download,
+    );
+
+    expect(jobAtCheckpoint, isNotNull);
+    expect(jobAtCheckpoint!.stage, VideoDownloadJobStage.enqueue);
+    expect(jobAtCheckpoint!.torrentHash, _torrentHash);
+  });
+
   test('long enqueue renews its lease and cannot be claimed by another worker',
       () async {
     final _FakeTorrentBackend backend = _FakeTorrentBackend(
@@ -987,6 +1017,67 @@ void main() {
     expect(job.completedAt, isNull);
   });
 
+  test('retry rewinds a missing embedded torrent and enqueues it again',
+      () async {
+    final _FakeTorrentBackend backend = _FakeTorrentBackend(pauseAdd: true);
+    final _PipelineEnvironment environment =
+        await _PipelineEnvironment.create(backend: backend);
+    addTearDown(environment.close);
+    const String jobId = 'retry-missing-embedded-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.download,
+    );
+    await environment.database.updateVideoDownloadJob(
+      jobId,
+      const VideoDownloadJobsCompanion(
+        lifecycle: Value<String>(VideoDownloadJobLifecycle.failed),
+        attemptCount: Value<int>(6),
+        lastError: Value<String?>(
+          'Bad state: torrent is not visible in the original backend',
+        ),
+      ),
+    );
+
+    await environment.service.retryJob(jobId);
+    await backend.addEntered.future.timeout(const Duration(seconds: 2));
+    final VideoDownloadJobRow job =
+        (await environment.database.getVideoDownloadJob(jobId))!;
+
+    expect(job.stage, VideoDownloadJobStage.enqueue);
+    expect(job.backendTaskId, isNull);
+    expect(job.torrentHash, _torrentHash);
+    expect(backend.addCalls, 1);
+  });
+
+  test('missing active embedded torrent is rewound without retry exhaustion',
+      () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    const String jobId = 'active-missing-embedded-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.download,
+    );
+
+    environment.service.wake();
+    final VideoDownloadJobRow job = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.stage == VideoDownloadJobStage.enqueue && row.claimedBy == null,
+    );
+
+    expect(job.lifecycle, VideoDownloadJobLifecycle.active);
+    expect(job.attemptCount, 0);
+    expect(job.backendTaskId, isNull);
+    expect(job.lastError, isNull);
+    expect(
+        job.nextAttemptAt, greaterThan(DateTime.now().millisecondsSinceEpoch));
+  });
+
   test('cancel pauses the exact backend task and never deletes its files',
       () async {
     final _FakeTorrentBackend backend = _FakeTorrentBackend();
@@ -1125,6 +1216,7 @@ class _PipelineEnvironment {
     required _FakeTorrentBackend backend,
     VideoDownloadBackendResolver? backendResolver,
     VideoSubtitleProvider? subtitleProvider,
+    Future<void> Function(VideoDownloadJobRow job)? onBackendTaskAdded,
     Duration leaseDuration = const Duration(minutes: 1),
   }) async {
     final FushiDatabase database =
@@ -1165,6 +1257,7 @@ class _PipelineEnvironment {
                 identity: _expectedIdentity,
               ),
       scrapeCoordinator: scrapeCoordinator,
+      onBackendTaskAdded: onBackendTaskAdded,
       workerId: 'pipeline-test-worker',
       pollInterval: const Duration(hours: 1),
       leaseDuration: leaseDuration,

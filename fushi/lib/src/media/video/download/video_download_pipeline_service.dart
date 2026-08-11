@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/metadata/credential_redaction.dart';
+import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/magnet_utils.dart';
 import 'package:fushi/src/media/torrent/torrent_add_coordinator.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
@@ -32,6 +33,9 @@ import 'package:fushi/src/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
 
 enum VideoDownloadSubtitlePolicy { none, bestEffort, required }
+
+const String videoDownloadMissingBackendTaskError =
+    'torrent is not visible in the original backend';
 
 class VideoDownloadEnqueueRequest {
   const VideoDownloadEnqueueRequest({
@@ -356,6 +360,7 @@ class VideoDownloadPipelineService {
     required this.resourceRegistry,
     required this.backendResolver,
     required this.scrapeCoordinator,
+    this.onBackendTaskAdded,
     this.subtitleRegistry,
     Iterable<String> preferredSubtitleLanguages = const <String>[],
     String? workerId,
@@ -372,6 +377,7 @@ class VideoDownloadPipelineService {
   final List<String> preferredSubtitleLanguages;
   final VideoDownloadBackendResolver backendResolver;
   final VideoSourceScrapeCoordinator scrapeCoordinator;
+  final Future<void> Function(VideoDownloadJobRow job)? onBackendTaskAdded;
   final String workerId;
   final Duration pollInterval;
   final Duration leaseDuration;
@@ -506,9 +512,16 @@ class VideoDownloadPipelineService {
         'The selected download job no longer exists',
       );
     }
+    final bool rewindToEnqueue =
+        job.backendKind == QbConnectionConfig.backendEmbedded &&
+            job.stage == VideoDownloadJobStage.download &&
+            (job.lastError ?? '').contains(
+              videoDownloadMissingBackendTaskError,
+            );
     final bool changed = await database.retryVideoDownloadJobByUser(
       jobId: jobId,
       nowAt: DateTime.now().millisecondsSinceEpoch,
+      rewindToEnqueue: rewindToEnqueue,
     );
     if (!changed) {
       throw const VideoDownloadPipelineActionRequired(
@@ -942,6 +955,12 @@ class VideoDownloadPipelineService {
         throw StateError('download backend rejected the torrent');
       }
     }
+    final Future<void> Function(VideoDownloadJobRow job)? checkpoint =
+        onBackendTaskAdded;
+    if (checkpoint != null) {
+      await checkpoint(job);
+      _ensureLeaseHeld();
+    }
     await _advance(
       job,
       VideoDownloadJobStage.download,
@@ -995,7 +1014,19 @@ class VideoDownloadPipelineService {
       }
     }
     if (snapshot == null) {
-      throw StateError('torrent is not visible in the original backend');
+      if (job.backendKind == QbConnectionConfig.backendEmbedded) {
+        final int now = DateTime.now().millisecondsSinceEpoch;
+        await _releaseLeaseWith(
+          () => database.rewindVideoDownloadJobToEnqueue(
+            jobId: job.jobId,
+            workerId: workerId,
+            nowAt: now,
+            nextAttemptAt: now + pollInterval.inMilliseconds,
+          ),
+        );
+        return;
+      }
+      throw StateError(videoDownloadMissingBackendTaskError);
     }
     if (snapshot.isFailure) {
       throw VideoDownloadPipelineActionRequired(
