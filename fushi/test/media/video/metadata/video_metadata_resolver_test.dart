@@ -272,6 +272,134 @@ void main() {
         VideoMetadataResolutionStatus.providerUnavailable,
       );
     });
+
+    // BUG-1547：TMDB 没填 key 时，来源页「全部刮削」整批 27 条全部失败在网络请求
+    // 之前，而 Bangumi / AniList 本来就零密钥可用。主源不可用必须降级，不是全灭。
+    test('未配置的主源降级到已配置的其它源，而不是整条失败', () async {
+      final _FakeProvider tmdb = _FakeProvider(
+        kind: VideoMetadataProviderKind.tmdb,
+        available: false,
+      );
+      final VideoMetadataWork fallbackWork = _work(
+        id: '7',
+        title: 'Fallback Show',
+        provider: VideoMetadataProviderKind.bangumi,
+      );
+      final _FakeProvider bangumi = _FakeProvider(
+        kind: VideoMetadataProviderKind.bangumi,
+        searchResults: <VideoMetadataWork>[fallbackWork],
+        works: <String, VideoMetadataWork>{'7': fallbackWork},
+      );
+
+      final VideoMetadataResolution result = await VideoMetadataResolver(
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+          tmdb,
+          bangumi,
+        ]),
+      ).resolve(VideoMetadataResolveRequest(
+        selectedProvider: VideoMetadataProviderKind.tmdb,
+        mediaKind: VideoMetadataMediaKind.tv,
+        titleCandidates: const <String>['Fallback Show'],
+      ));
+
+      expect(result.status, VideoMetadataResolutionStatus.matched);
+      expect(result.providerKind, VideoMetadataProviderKind.bangumi);
+      expect(result.lookup?.provider, VideoMetadataProviderKind.bangumi);
+      expect(result.lookup?.externalId, '7');
+      expect(tmdb.searchCalls, 0, reason: '未配置的源一次网络请求都不该发');
+      expect(bangumi.searchCalls, greaterThan(0));
+    });
+
+    test('主源可用时不碰其它源（单主源语义不变）', () async {
+      final VideoMetadataWork primaryWork =
+          _work(id: '1', title: 'Primary Show');
+      final VideoMetadataWork otherWork = _work(
+        id: '2',
+        title: 'Primary Show',
+        provider: VideoMetadataProviderKind.bangumi,
+      );
+      final _FakeProvider tmdb = _FakeProvider(
+        kind: VideoMetadataProviderKind.tmdb,
+        searchResults: <VideoMetadataWork>[primaryWork],
+        works: <String, VideoMetadataWork>{'1': primaryWork},
+      );
+      final _FakeProvider bangumi = _FakeProvider(
+        kind: VideoMetadataProviderKind.bangumi,
+        searchResults: <VideoMetadataWork>[otherWork],
+        works: <String, VideoMetadataWork>{'2': otherWork},
+      );
+
+      final VideoMetadataResolution result = await VideoMetadataResolver(
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+          tmdb,
+          bangumi,
+        ]),
+      ).resolve(VideoMetadataResolveRequest(
+        selectedProvider: VideoMetadataProviderKind.tmdb,
+        mediaKind: VideoMetadataMediaKind.tv,
+        titleCandidates: const <String>['Primary Show'],
+      ));
+
+      expect(result.providerKind, VideoMetadataProviderKind.tmdb);
+      expect(bangumi.searchCalls, 0);
+    });
+
+    test('绑定身份所属的源未配置时，降级到标题搜索而不是报「源没配」', () async {
+      final _FakeProvider tmdb = _FakeProvider(
+        kind: VideoMetadataProviderKind.tmdb,
+        available: false,
+        works: <String, VideoMetadataWork>{
+          '42': _work(id: '42', title: 'Bound'),
+        },
+      );
+      final VideoMetadataWork boundWork = _work(
+        id: '9',
+        title: 'Bound',
+        provider: VideoMetadataProviderKind.anilist,
+      );
+      final _FakeProvider anilist = _FakeProvider(
+        kind: VideoMetadataProviderKind.anilist,
+        searchResults: <VideoMetadataWork>[boundWork],
+        works: <String, VideoMetadataWork>{'9': boundWork},
+      );
+
+      final VideoMetadataResolution result = await VideoMetadataResolver(
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+          tmdb,
+          anilist,
+        ]),
+      ).resolve(VideoMetadataResolveRequest(
+        selectedProvider: VideoMetadataProviderKind.tmdb,
+        mediaKind: VideoMetadataMediaKind.tv,
+        titleCandidates: const <String>['Bound'],
+        confirmedLookup: const VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.tmdb,
+          externalId: '42',
+          mediaKind: VideoMetadataMediaKind.tv,
+        ),
+      ));
+
+      expect(result.status, VideoMetadataResolutionStatus.matched);
+      expect(result.providerKind, VideoMetadataProviderKind.anilist);
+    });
+
+    test('一个源都没配时仍报 providerUnavailable，且不再指名某一个源', () async {
+      final VideoMetadataResolution result = await VideoMetadataResolver(
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+          _FakeProvider(
+            kind: VideoMetadataProviderKind.tmdb,
+            available: false,
+          ),
+        ]),
+      ).resolve(VideoMetadataResolveRequest(
+        selectedProvider: VideoMetadataProviderKind.tmdb,
+        mediaKind: VideoMetadataMediaKind.tv,
+        titleCandidates: const <String>['Anything'],
+      ));
+
+      expect(result.status, VideoMetadataResolutionStatus.providerUnavailable);
+      expect(result.reason, isNot(contains('tmdb is not configured')));
+    });
   });
 
   test('parseExplicitVideoMetadataIds recognizes supported URLs and tokens',
@@ -312,15 +440,16 @@ VideoMetadataWork _work({
   int? year,
   VideoMetadataMediaKind mediaKind = VideoMetadataMediaKind.tv,
   List<VideoMetadataSeason> seasons = const <VideoMetadataSeason>[],
+  VideoMetadataProviderKind provider = VideoMetadataProviderKind.tmdb,
 }) =>
     VideoMetadataWork(
-      provider: VideoMetadataProviderKind.tmdb,
+      provider: provider,
       kind: mediaKind,
       title: title,
       aliases: aliases,
       year: year,
       ids: <VideoMetadataId>[
-        VideoMetadataId(type: 'tmdb', value: id, isDefault: true),
+        VideoMetadataId(type: provider.name, value: id, isDefault: true),
       ],
       seasons: seasons,
     );
@@ -330,18 +459,20 @@ class _FakeProvider implements VideoMetadataProvider {
     required this.kind,
     this.searchResults = const <VideoMetadataWork>[],
     this.works = const <String, VideoMetadataWork>{},
+    this.available = true,
   });
 
   final VideoMetadataProviderKind kind;
   final List<VideoMetadataWork> searchResults;
   final Map<String, VideoMetadataWork> works;
+  final bool available;
   int searchCalls = 0;
 
   @override
   VideoMetadataProviderKind get providerKind => kind;
 
   @override
-  bool get isAvailable => true;
+  bool get isAvailable => available;
 
   @override
   Future<List<VideoMetadataWork>> search(

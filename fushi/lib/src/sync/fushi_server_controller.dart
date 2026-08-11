@@ -95,6 +95,19 @@ class FushiSyncServerController extends ChangeNotifier {
 
   FushiSyncServer? _server;
   LanBroadcastService? _broadcast;
+
+  /// BUG-1551：**在飞**的一次 [start]。`isRunning` 只看 [_server]，而 [_server]
+  /// 直到 `server.start()` 真绑上端口才赋值——在那之前还隔着读端口/口令、（首次）
+  /// 生成 RSA 自签证书、取设备名、迁移旧同步根等好几个 await。启动期
+  /// `startIfEnabled()` 与用户进设置页拨开关这两条路径都能在这个窗口里各起一个
+  /// [FushiSyncServer] 去绑同一个端口：先到者绑上并写 [_server]，后到者拿
+  /// `SyncServerPortInUseException`，catch 里却把**共享**的 [_server] 清成 null
+  /// —— host 实际在监听、mDNS 还在广播，UI 却显示已停止，`stop()` 也停不掉
+  /// （句柄丢了），端口被自己占死到进程退出。
+  ///
+  /// 修法是把「同一时刻只允许一次启动编排」变成状态机的一部分：并发调用返回同一个
+  /// future，而不是各干各的。
+  Future<FushiServerStartOutcome>? _starting;
   // Active LAN discovery browsers registered for app-exit teardown. Discovery is
   // owned by the sync-settings page widget (it lives only while that page is
   // open), but its underlying Bonsoir browser posts mDNS events onto the
@@ -214,8 +227,21 @@ class FushiSyncServerController extends ChangeNotifier {
   /// launch will retry automatically (BUG-160 / HBK-AUDIT-167 revised).
   /// The intent is only cleared when the user explicitly disables hosting via
   /// [stop(persistDisabled: true)].
-  Future<FushiServerStartOutcome> start() async {
-    if (isRunning) return const FushiServerStarted();
+  Future<FushiServerStartOutcome> start() {
+    if (isRunning) {
+      return Future<FushiServerStartOutcome>.value(const FushiServerStarted());
+    }
+    // BUG-1551：已有一次启动在飞就并到它上面，绝不并发起第二个 server 去抢端口。
+    final Future<FushiServerStartOutcome>? inFlight = _starting;
+    if (inFlight != null) return inFlight;
+    final Future<FushiServerStartOutcome> started = _start();
+    _starting = started;
+    return started.whenComplete(() {
+      if (identical(_starting, started)) _starting = null;
+    });
+  }
+
+  Future<FushiServerStartOutcome> _start() async {
     final SyncRepository repo = _repo;
     final int port = await repo.getServerPort();
     String? token = await repo.getServerPassword();
@@ -291,14 +317,22 @@ class FushiSyncServerController extends ChangeNotifier {
       notifyListeners();
       return const FushiServerStarted();
     } on SyncServerPortInUseException catch (e) {
-      _server = null;
+      // BUG-1551：只清**自己**这一台。[_server] 是共享句柄，无条件清会把另一条路径
+      // 刚绑成功的 host 抹成 null（实际在跑却关不掉）。
+      if (identical(_server, server)) _server = null;
       // Do NOT clear serverEnabled: the bind failure is transient (another
       // process holds the port).  The intent remains true so the next launch
       // retries automatically.
       notifyListeners();
       return FushiServerPortInUse(e.port);
     } catch (e) {
-      _server = null;
+      // BUG-1551：同上，只清自己。此外这个 catch 罩着 `_startBroadcast`——广播失败
+      // 时 socket 已经绑上了，直接把句柄丢掉就是泄漏一个停不掉的监听端口，故先把它
+      // 关干净再报错。
+      if (identical(_server, server)) {
+        _server = null;
+        await server.stop();
+      }
       // Same rationale: a general error at bind time must not permanently erase
       // the user's hosting preference.
       notifyListeners();
@@ -324,6 +358,17 @@ class FushiSyncServerController extends ChangeNotifier {
   /// toggled it off); an app-exit/transient stop leaves the flag untouched so a
   /// future launch restores hosting.
   Future<void> stop({bool persistDisabled = false}) async {
+    // BUG-1551：先让在飞的那次启动落地，再拆。否则「拨开→立刻拨关」会是：stop 看到
+    // `_server == null` 空转并写 serverEnabled=false，随后 start 落地绑上端口并把
+    // 意图改写回 true —— 开关显示关闭、host 却在跑并对外广播，下次启动还自动开。
+    final Future<FushiServerStartOutcome>? inFlight = _starting;
+    if (inFlight != null) {
+      try {
+        await inFlight;
+      } catch (_) {
+        // 启动失败本身不该挡住停机路径；下面的拆卸对 null 句柄是幂等的。
+      }
+    }
     await _broadcast?.stop();
     _broadcast = null;
     await _server?.stop();

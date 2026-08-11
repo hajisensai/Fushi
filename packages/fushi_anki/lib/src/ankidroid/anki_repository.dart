@@ -162,14 +162,7 @@ class AnkiRepository extends BaseAnkiRepository {
   }) async {
     final settings = await loadSettings();
 
-    final deck = settings.availableDecks.firstWhereOrNull(
-          (d) => d.id == settings.selectedDeckId,
-        ) ??
-        (settings.selectedDeckName != null
-            ? settings.availableDecks.firstWhereOrNull(
-                (d) => d.name == settings.selectedDeckName,
-              )
-            : null);
+    final AnkiDeck? deck = resolveSelectedDeck(settings);
     if (deck == null) return const MineOutcome.notConfigured();
 
     final noteType = settings.availableNoteTypes.firstWhereOrNull(
@@ -266,8 +259,10 @@ class AnkiRepository extends BaseAnkiRepository {
           'tags': tags,
         },
       );
+      // BUG-1549：实际落卡的牌组名随成功结果带回（与 AnkiConnect 后端对称）。
       return MineOutcome.success(
         noteId: _asNoteId(addResult),
+        deckName: deck.name,
         audioWarning: audioWarning,
       );
     } on PlatformException catch (e, stack) {
@@ -410,8 +405,10 @@ class AnkiRepository extends BaseAnkiRepository {
           'fieldValues': fields,
         });
         // TODO-779: 覆盖路径同样把音频下载失败原因带给成功 toast。
+        // BUG-1549：覆写成功 toast 的牌组名与新制同源（按设置解析的目标牌组）。
         return MineOutcome.success(
           noteId: noteId,
+          deckName: resolveSelectedDeck(settings)?.name,
           audioWarning: rendered.audioWarning,
         );
       } on PlatformException catch (e, stack) {

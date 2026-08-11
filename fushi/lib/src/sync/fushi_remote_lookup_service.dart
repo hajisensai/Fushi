@@ -149,9 +149,15 @@ class RemoteMineResult {
     required this.result,
     this.message,
     this.detail,
+    this.deckName,
   });
 
   final String result;
   final String? message;
   final String? detail;
+
+  /// BUG-1549：`success` 时主机**实际落卡**的牌组名（主机侧配置的 deck），随
+  /// `/api/mine/forward` 响应回传给客户端的成功 toast；失败为 `null`。旧客户端
+  /// 忽略此字段即旧行为（向后兼容）。
+  final String? deckName;
 }

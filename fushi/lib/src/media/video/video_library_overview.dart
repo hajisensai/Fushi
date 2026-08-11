@@ -2,9 +2,10 @@
 ///
 /// 数据边界（诚实外显，不造假）：
 /// * `VideoBooks` 无总时长列 → 不推导百分比，hero 只给「已看至 mm:ss」。
-/// * `VideoBooks` 无 lastWatchedAt 列 → 「上次观看」从 `VideoWatchStatistics`
-///   推导（v39 起按 bookUid 键控；迁移前遗留 NULL-uid 行由页面按 title 回退合并
-///   后传入）；无统计行的视频退回 importedAt 排序，且不显示「上次观看」。
+/// * 「上次观看」由调用方经 [lastWatchedByUid] 传入（页面从 `VideoWatchStatistics`
+///   推导：v39 起按 bookUid 键控；迁移前遗留 NULL-uid 行由页面按 title 回退合并后
+///   传入）；无统计行的视频退回 importedAt 排序，且不显示「上次观看」。schema v85
+///   起行上有了 `VideoBooks.lastPlayedAt`，新调用方可直接投影它。
 ///
 /// BUG-848：hero 选集**合集感知**（复用 [continueMemberIndex] 的 Jellyfin Next-Up 语义）。
 /// 旧逻辑逐集独立、排除所有已完成集：看完某集后 hero 反被踢出候选、回退到更旧的在读集。
@@ -134,6 +135,9 @@ VideoLibraryOverview computeVideoLibraryOverview({
         CollectionMemberProgress(
           positionMs: m.lastPositionMs,
           completed: m.completed,
+          // 本函数手里已有逐成员观看时刻，直接当续播锚点用（BUG-1542）：不喂的话
+          // 选集退化成「位置最靠后的有痕迹成员」，用户回头看早期某集就选错。
+          lastPlayedAt: lastWatchedByUid[m.bookUid]?.millisecondsSinceEpoch,
         ),
     ]);
     final VideoOverviewEntry resume = members[idx];

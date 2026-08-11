@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:bonsoir/bonsoir.dart';
+import 'package:meta/meta.dart';
 
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
@@ -92,16 +93,36 @@ class LanDiscoveryService {
   /// Bonsoir browser was actually stopped before the engine was torn down.
   bool get isDisposed => _disposed;
 
+  /// BUG-1554 测试缝：当前是否持有一个活着的原生 Bonsoir browser。守卫用它断言
+  /// 「dispose 之后再 startDiscovery 不会起孤儿 browser」「重复 startDiscovery 不会
+  /// 覆盖丢弃上一个」——这两件事从外部没有别的可观测面（原生 browser 在单测环境
+  /// 里既不抛也不回执）。
+  @visibleForTesting
+  bool get hasActiveBrowser => _discovery != null;
+
   Stream<List<FushiDevice>> get devices => _deviceStream.stream;
   List<FushiDevice> get currentDevices => _discoveredDevices.values.toList();
 
+  /// BUG-1554：幂等。重复调用曾经会把上一台 [BonsoirDiscovery] 连同它的原生
+  /// browser 一起**覆盖丢弃**（`_discovery` / `_sub` 直接改写），泄漏一个没人停得
+  /// 掉的原生浏览器 + 一条仍在派发事件的订阅——正是 TODO-036 / BUG-191 要防的
+  /// 「引擎拆了事件还在派发」崩溃形状。故先把旧的停干净再起新的。
+  ///
+  /// 同时守 [_disposed]：`_init` 是「先 register 再 await startDiscovery」，用户在
+  /// 这个 await 窗口里关掉设置页时 `dispose()` 已经跑完并 unregister 了，此时再起
+  /// 一个原生 browser 就成了既不在 controller 的活跃集合里、也没有 owner 的孤儿。
   Future<void> startDiscovery() async {
+    if (_disposed) return;
+    if (_discovery != null) await stopDiscovery();
     await _refreshLocalAddresses();
+    if (_disposed) return;
     final BonsoirDiscovery discovery = BonsoirDiscovery(type: serviceType);
     _discovery = discovery;
     await discovery.initialize();
     _sub = discovery.eventStream!.listen(_onEvent);
     await discovery.start();
+    // 起完再复核一次：initialize/start 之间也可能被 dispose 抢在前面。
+    if (_disposed) await stopDiscovery();
   }
 
   /// Snapshot this device's own IPv4 addresses so a resolved service pointing
@@ -178,7 +199,8 @@ class LanDiscoveryService {
     await _discovery?.stop();
     _discovery = null;
     _discoveredDevices.clear();
-    _deviceStream.add(<FushiDevice>[]);
+    // 已关闭的 controller 不能再 add（StateError）：dispose 走的正是这条路径。
+    if (!_deviceStream.isClosed) _deviceStream.add(<FushiDevice>[]);
   }
 
   Future<void> dispose() async {

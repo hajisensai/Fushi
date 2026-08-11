@@ -231,6 +231,10 @@ extension _VideoEpisode on _VideoFushiPageState {
       for (final _PlaylistEpisodeRef e in _episodes)
         VideoEpisodeEntry(
           title: e.displayTitle ?? e.title,
+          // 角标集号取**文件名解析值**而非列表下标（BUG-1544）：缺集时下标必然
+          // 说谎。远端集无路径 → 退回按标题解析；再解不出由卡片回落顺位号。
+          episodeNumber:
+              parsedEpisodeNumberOf(e.path.isNotEmpty ? e.path : e.title),
           cover: resolveMediaCoverImage(
                 kind: MediaKind.video,
                 localPath: e.coverPath,

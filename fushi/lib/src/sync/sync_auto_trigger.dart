@@ -364,33 +364,55 @@ Future<void> _runAutoSyncAll({
 
       // option B 双通道：依次跑云备份通道 + 互联通道（若启用），互不排斥。每条通道
       // 各自认证成功才实际跑；未配置的通道 no-op（_runSyncChannel 返回 null）。
+      // BUG-1552：**逐通道**隔离异常。这个 for 原来整体裸奔——云通道（恒排第一，
+      // 见 enabledSyncChannelBackends）令牌失效 / WebDAV 不可达时异常直接冒出循环，
+      // 局域网互联通道这一轮**根本不执行**。UI 承诺的「互联与云备份并存、互不干扰」
+      // 就此不成立：云盘一坏，互联跟着一起哑。一条通道炸了只该记它自己的账。
+      bool anyChannelFailed = false;
       for (final SyncChannel channel
           in await enabledSyncChannelBackends(repo)) {
-        final SyncRunReport? report = await _runSyncChannel(
-          db: db,
-          repo: repo,
-          backend: channel.backend,
-          isInterconnect: channel.isInterconnect,
-          dictionaryResourceRoot: dictionaryResourceRoot,
-          audioDatabaseRoot: audioDatabaseRoot,
-          tempDir: tempDir,
-          localAudioEntries: localAudioEntries,
-          onLocalAudioImported: onLocalAudioImported,
-          // Publish progress globally so a settings "立即同步" row visible during
-          // the app-open sweep shows the live bar instead of a bare toast.
-          onProgress: (SyncProgress p) => syncProgress.value = p,
-        );
-        if (report == null) continue;
-        channelsRun++;
-        logSyncReportErrors(report);
-        await onPostRun?.call(report);
-        onReport?.call(report, channel.backend);
+        try {
+          final SyncRunReport? report = await _runSyncChannel(
+            db: db,
+            repo: repo,
+            backend: channel.backend,
+            isInterconnect: channel.isInterconnect,
+            dictionaryResourceRoot: dictionaryResourceRoot,
+            audioDatabaseRoot: audioDatabaseRoot,
+            tempDir: tempDir,
+            localAudioEntries: localAudioEntries,
+            onLocalAudioImported: onLocalAudioImported,
+            // Publish progress globally so a settings "立即同步" row visible
+            // during the app-open sweep shows the live bar instead of a bare
+            // toast.
+            onProgress: (SyncProgress p) => syncProgress.value = p,
+          );
+          if (report == null) continue;
+          channelsRun++;
+          logSyncReportErrors(report);
+          await onPostRun?.call(report);
+          onReport?.call(report, channel.backend);
+        } catch (e, stack) {
+          // 记账不吞事实：这条通道失败了，其余通道继续跑，最终 reason 也据此如实
+          // 报「失败」而不是伪装成 completed。
+          anyChannelFailed = true;
+          developer.log(
+            'Sync channel failed (interconnect=${channel.isInterconnect})',
+            error: e,
+            stackTrace: stack,
+            name: 'SyncAutoTrigger',
+          );
+        }
       }
       // 一条通道都没跑起来 = 本轮什么也没同步。以前这里静默收尾，界面上与「正常
       // 跑完」完全同形（进度条转一会儿消失），用户无从判断到底同没同步。
-      reason = channelsRun > 0
-          ? SyncOutcomeReason.completed
-          : SyncOutcomeReason.noChannels;
+      if (anyChannelFailed) {
+        reason = SyncOutcomeReason.failed;
+      } else {
+        reason = channelsRun > 0
+            ? SyncOutcomeReason.completed
+            : SyncOutcomeReason.noChannels;
+      }
     });
   } catch (e) {
     developer.log(

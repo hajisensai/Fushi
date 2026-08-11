@@ -2612,6 +2612,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         CollectionMemberProgress(
           positionMs: m.lastPositionMs,
           completed: m.completedAt != null,
+          lastPlayedAt: m.lastPlayedAt,
         ),
     ];
     for (final VideoBookRow m in item.members) {
@@ -2825,6 +2826,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         CollectionMemberProgress(
           positionMs: m.lastPositionMs,
           completed: m.completedAt != null,
+          lastPlayedAt: m.lastPlayedAt,
         ),
     ];
     final int index =

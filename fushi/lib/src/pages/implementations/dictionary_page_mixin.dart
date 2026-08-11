@@ -343,11 +343,8 @@ mixin DictionaryPageMixin {
       rawPayloadJson: jsonEncode(fields),
       context: miningContext,
     );
-    // 牌组名仅 success 需要（避免给失败分支白白 loadSettings）。
-    final String deckName = outcome.result == MineResult.success
-        ? (await repo.loadSettings()).selectedDeckName ?? ''
-        : '';
-    final described = describeMineOutcome(outcome, deckName: deckName);
+    // 牌组名由后端随成功结果带回（outcome.deckName，BUG-1549）。
+    final described = describeMineOutcome(outcome);
     // 制卡成功计入统计（按来源 book/video）。失败不影响制卡结果，吞掉并记日志。
     if (described.record) unawaited(recordMined());
     // TODO-633: also land a mined-sentence history row. This mixin path serves
@@ -390,11 +387,7 @@ mixin DictionaryPageMixin {
       context: miningContext,
     );
     // 覆盖路径走收口的单一真相（overwrite=true → card_overwritten + 不记账）。
-    final String deckName = outcome.result == MineResult.success
-        ? (await repo.loadSettings()).selectedDeckName ?? ''
-        : '';
-    final described =
-        describeMineOutcome(outcome, deckName: deckName, overwrite: true);
+    final described = describeMineOutcome(outcome, overwrite: true);
     // TODO-1325 #6：覆写成功也是 added（绿），失败按状态着色。状态取自单一真相。
     FushiToast.showMine(msg: described.message, status: described.status);
     if (described.success) {

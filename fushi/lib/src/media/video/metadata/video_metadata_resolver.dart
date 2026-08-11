@@ -46,6 +46,7 @@ class VideoMetadataResolution {
     this.method,
     this.work,
     this.lookup,
+    this.providerKind,
     List<VideoMetadataWork> candidates = const <VideoMetadataWork>[],
     this.reason,
   }) : candidates = List<VideoMetadataWork>.unmodifiable(candidates);
@@ -54,6 +55,10 @@ class VideoMetadataResolution {
   final VideoMetadataResolutionMethod? method;
   final VideoMetadataWork? work;
   final VideoMetadataLookup? lookup;
+
+  /// 真正给出这条结果的资料源。主源未配置时会是降级链里的其它源，调用方据此
+  /// 构造候选 lookup —— **不能**再假定它等于 `request.selectedProvider`。
+  final VideoMetadataProviderKind? providerKind;
   final List<VideoMetadataWork> candidates;
   final String? reason;
 }
@@ -89,16 +94,43 @@ class VideoMetadataResolver {
 
   final VideoMetadataProviderRegistry registry;
 
+  /// 主源可用时只用主源（保持严格的单主源语义）；主源**未配置**时按枚举顺序
+  /// 降级到其余已配置的源。
+  ///
+  /// 识别（文件名 → 标题/季/集，`FilenameParser`）与刮削（provider 查询）本就是
+  /// 分离的两步，所以换源不需要重新识别，只是拿同一份识别结果换个源去查。没有
+  /// 这条链时，用户只要没填 TMDB key，整批条目就会全部失败在网络请求之前——
+  /// 而 Bangumi / AniList 本来就零 key 可用。
+  List<VideoMetadataProvider> _resolutionChain(
+    VideoMetadataProviderKind selected,
+  ) {
+    final VideoMetadataProvider? primary = registry.provider(selected);
+    if (primary != null && primary.isAvailable) {
+      return <VideoMetadataProvider>[primary];
+    }
+    return <VideoMetadataProvider>[
+      for (final VideoMetadataProviderKind kind
+          in VideoMetadataProviderKind.values)
+        if (registry.provider(kind) case final VideoMetadataProvider provider)
+          if (provider.isAvailable) provider,
+    ];
+  }
+
   Future<VideoMetadataResolution> resolve(
     VideoMetadataResolveRequest request,
   ) async {
     final VideoMetadataLookup? confirmed = request.confirmedLookup;
     if (confirmed != null) {
-      return _resolveLookup(
+      final VideoMetadataResolution resolved = await _resolveLookup(
         confirmed,
         request,
         VideoMetadataResolutionMethod.confirmed,
       );
+      // 绑定身份所属的源没配置时不整条失败：往下走标题搜索降级链。
+      if (resolved.status !=
+          VideoMetadataResolutionStatus.providerUnavailable) {
+        return resolved;
+      }
     }
 
     final List<String> hints = <String>[
@@ -117,22 +149,47 @@ class VideoMetadataResolver {
             value.provider == request.selectedProvider,
         orElse: () => explicit.first,
       );
-      return _resolveLookup(
+      final VideoMetadataResolution resolved = await _resolveLookup(
         lookup,
         request,
         VideoMetadataResolutionMethod.explicitId,
       );
+      if (resolved.status !=
+          VideoMetadataResolutionStatus.providerUnavailable) {
+        return resolved;
+      }
     }
 
-    final VideoMetadataProvider? provider =
-        registry.provider(request.selectedProvider);
-    if (provider == null || !provider.isAvailable) {
+    final List<VideoMetadataProvider> chain =
+        _resolutionChain(request.selectedProvider);
+    if (chain.isEmpty) {
       return VideoMetadataResolution(
         status: VideoMetadataResolutionStatus.providerUnavailable,
-        reason: '${request.selectedProvider.name} is not configured',
+        reason: 'no video metadata provider is configured',
       );
     }
+    VideoMetadataResolution? ambiguous;
+    for (final VideoMetadataProvider provider in chain) {
+      final VideoMetadataResolution resolved =
+          await _searchWithProvider(provider, request);
+      if (resolved.status == VideoMetadataResolutionStatus.matched) {
+        return resolved;
+      }
+      if (resolved.status == VideoMetadataResolutionStatus.ambiguous) {
+        ambiguous ??= resolved;
+      }
+    }
+    return ambiguous ??
+        VideoMetadataResolution(
+          status: VideoMetadataResolutionStatus.notFound,
+          reason: 'No candidate passed title, type, year and season gates',
+        );
+  }
 
+  Future<VideoMetadataResolution> _searchWithProvider(
+    VideoMetadataProvider provider,
+    VideoMetadataResolveRequest request,
+  ) async {
     final Map<String, VideoMetadataWork> reviewCandidates =
         <String, VideoMetadataWork>{};
     final Map<String, VideoMetadataWork?> fetchedDetails =
@@ -188,6 +245,7 @@ class VideoMetadataResolver {
           method: VideoMetadataResolutionMethod.exactSearch,
           work: work,
           lookup: _lookupForWork(work, provider.providerKind),
+          providerKind: provider.providerKind,
         );
       }
       if (exact.length > 1) {
@@ -195,6 +253,7 @@ class VideoMetadataResolver {
           status: VideoMetadataResolutionStatus.ambiguous,
           method: VideoMetadataResolutionMethod.exactSearch,
           candidates: exact.values.toList(),
+          providerKind: provider.providerKind,
           reason: 'More than one candidate passed the strict match gate',
         );
       }
@@ -204,11 +263,13 @@ class VideoMetadataResolver {
         status: VideoMetadataResolutionStatus.ambiguous,
         method: VideoMetadataResolutionMethod.exactSearch,
         candidates: reviewCandidates.values.toList(growable: false),
+        providerKind: provider.providerKind,
         reason: 'Provider candidates require manual title confirmation',
       );
     }
     return VideoMetadataResolution(
       status: VideoMetadataResolutionStatus.notFound,
+      providerKind: provider.providerKind,
       reason: 'No candidate passed title, type, year and season gates',
     );
   }
@@ -233,6 +294,7 @@ class VideoMetadataResolver {
         status: VideoMetadataResolutionStatus.notFound,
         method: method,
         lookup: lookup,
+        providerKind: provider.providerKind,
         reason: 'Explicit identity does not exist',
       );
     }
@@ -242,6 +304,7 @@ class VideoMetadataResolver {
         status: VideoMetadataResolutionStatus.notFound,
         method: method,
         lookup: lookup,
+        providerKind: provider.providerKind,
         reason: 'Explicit identity failed type or season validation',
       );
     }
@@ -250,6 +313,7 @@ class VideoMetadataResolver {
       method: method,
       work: work,
       lookup: _lookupForWork(work, provider.providerKind) ?? lookup,
+      providerKind: provider.providerKind,
     );
   }
 

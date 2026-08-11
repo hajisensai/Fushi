@@ -191,13 +191,26 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
   static http.Client _defaultPinnedClient(String expectedFingerprint) =>
       createPinnedHttpPackageClient(expectedFingerprint: expectedFingerprint);
 
+  /// BUG-1550：解析 [baseUrl] 这台对端该用哪份凭据——地址行自带的 per-peer token
+  /// 优先，为空回落全局键。列表里找不到该地址（用户中途删了）时只剩全局回落。
+  Future<String?> _tokenForBaseUrl(String baseUrl) async {
+    final String? fallbackToken = await _repo.getFushiClientToken();
+    final List<FushiClientUrl> urls = await _repo.getFushiClientUrls();
+    for (final FushiClientUrl u in urls) {
+      if (u.url == baseUrl) return interconnectTokenFor(u, fallbackToken);
+    }
+    return (fallbackToken != null && fallbackToken.isNotEmpty)
+        ? fallbackToken
+        : null;
+  }
+
   @override
   Future<MangaOcrRemoteTarget?> probe() async {
     final List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
         .where((FushiClientUrl u) => u.enabled)
         .toList(growable: false);
-    final String? token = await _repo.getFushiClientToken();
-    if (candidates.isEmpty || token == null || token.isEmpty) return null;
+    final String? fallbackToken = await _repo.getFushiClientToken();
+    if (candidates.isEmpty) return null;
 
     // 「支持但模型明确未下载」的第一台：所有候选都不可用时才拿它回填，让 UI 有
     // 具体原因可讲。一台可用的都不能被它挡住，所以只记不返。
@@ -205,6 +218,9 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
     for (final FushiClientUrl candidate in candidates) {
       final Uri? uri = _uri(candidate.url, '/api/capabilities');
       if (uri == null) continue;
+      // BUG-1550：凭据按候选取（地址行自带的 per-peer token 优先，回落全局键）。
+      final String? token = interconnectTokenFor(candidate, fallbackToken);
+      if (token == null) continue;
       final (http.Client client, bool closeAfter) =
           _clientFor(candidate.url, fingerprint: candidate.fingerprintSha256);
       try {
@@ -257,7 +273,7 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
       final (http.Client c, bool close) =
           _clientFor(target.baseUrl, fingerprint: target.fingerprintSha256);
       try {
-        final String? token = await _repo.getFushiClientToken();
+        final String? token = await _tokenForBaseUrl(target.baseUrl);
         if (token == null) return;
         final Uri? uri = _uri(target.baseUrl, '/api/ocr/job/$id');
         if (uri == null) return;
@@ -272,7 +288,7 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
     controller.onListen = () {
       unawaited(() async {
         try {
-          final String? token = await _repo.getFushiClientToken();
+          final String? token = await _tokenForBaseUrl(target.baseUrl);
           if (token == null || token.isEmpty) {
             throw const MangaOcrRemoteException('no_host');
           }

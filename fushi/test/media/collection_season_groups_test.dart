@@ -43,6 +43,65 @@ void main() {
     });
   });
 
+  group('collectionGroupKeyForFilename：季标记形态（BUG-1543）', () {
+    test('「标题 2 - 集号」与第 1 季分到不同组（用户实测的 Hibike! Euphonium）', () {
+      expect(
+        collectionGroupKeyForFilename(
+          'Hibike! Euphonium - 01 (BD 1280x720 x264 AACx3).mkv',
+        ),
+        's1',
+      );
+      expect(
+        collectionGroupKeyForFilename(
+          'Hibike! Euphonium 2 - 01 (BD 1280x720 x264 AAC).mkv',
+        ),
+        's2',
+      );
+      expect(
+          collectionGroupKeyForFilename('Hibike! Euphonium 3 - 05.mkv'), 's3');
+    });
+
+    test('多季混排 → isMultiSeasonGrouped 为真（详情页据此出季 tab）', () {
+      expect(
+        isMultiSeasonGrouped(<String>[
+          for (final String f in <String>[
+            'Hibike! Euphonium - 01.mkv',
+            'Hibike! Euphonium - 02.mkv',
+            'Hibike! Euphonium 2 - 01.mkv',
+          ])
+            collectionGroupKeyForFilename(f),
+        ]),
+        true,
+      );
+    });
+
+    test('季号只写在父目录上（Season 2 / S02）时按目录归季', () {
+      expect(
+        collectionGroupKeyForFilename('/media/Show/Season 2/Show - 01.mkv'),
+        's2',
+      );
+      expect(collectionGroupKeyForFilename(r'D:\anime\Show\S03\01.mkv'), 's3');
+      expect(
+        collectionGroupKeyForFilename('/media/Show/Hibike! Euphonium 2/01.mkv'),
+        's2',
+      );
+    });
+
+    test('文件名自带季号时目录不参与（文件名优先）', () {
+      expect(
+        collectionGroupKeyForFilename('/media/Show/Season 2/Show S01E04.mkv'),
+        's1',
+      );
+    });
+
+    test('无集号（PV/特典/电影）时目录季号不生效，仍归 extras', () {
+      expect(
+        collectionGroupKeyForFilename('/media/Ip Man 2/Ip Man 2.mkv'),
+        kCollectionExtrasGroupKey,
+      );
+    });
+  });
+
   group('seasonNumberOfGroupKey', () {
     test('s2 → 2', () => expect(seasonNumberOfGroupKey('s2'), 2));
     test('extras → null',

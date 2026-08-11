@@ -117,6 +117,9 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     try {
       final String token = _tokenController.text.trim();
       await _repo.setFushiClientToken(token.isEmpty ? null : token);
+      // BUG-1550：手贴 token 是用户的显式覆盖动作，必须压过各地址行上残留的
+      // per-peer token（否则那些行仍用旧凭据，用户贴了也不生效、还查不出为什么）。
+      await _repo.clearFushiClientUrlTokens();
     } catch (e, stack) {
       ErrorLogService.instance.log('SyncConfig.saveFushiToken', e, stack);
     }
@@ -648,11 +651,17 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
       ErrorLogService.instance.log('PairV2.fingerprintChanged', e, stack);
       return t.sync_pair_fingerprint_changed;
     }
-    await _pairRepo.setFushiClientToken(token);
+    // BUG-1550：per-peer token 落在**这条地址**上（同时写全局键作老配置回落）。
+    // 只写全局键会让「配对第二台对端」把第一台的凭据覆盖掉，而第一台地址仍排在
+    // 候选前列且可达 → 拿着别人的 token 撞 401 → 整个互联瘫痪。
+    await _pairRepo.setFushiClientTokenForUrl(baseUrl, token);
     _syncSettings(_pairSettingsContext).reloadClientConfig();
     return t.sync_pair_success;
   }
 
+  /// BUG-1553：把 client 的机器可读 reason 翻成人话。此前只认三个 reason，
+  /// 限速 / TLS 指纹不符 / 超时统统落进 default 的「配对失败」——用户被 host 锁了
+  /// 15 分钟却看不出来，只会一遍遍重试；证书不符这种安全事件也说成一样的话。
   String _pairV2FailureMessage(String reason) {
     switch (reason) {
       case 'pin':
@@ -661,6 +670,12 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
         return t.sync_pair_denied;
       case 'unavailable':
         return t.sync_pair_unavailable;
+      case 'rate_limited':
+        return t.sync_pair_rate_limited;
+      case 'tls':
+        return t.sync_pair_tls_failed;
+      case 'timeout':
+        return t.sync_pair_timeout;
       default:
         return t.sync_pair_failed;
     }
@@ -1241,6 +1256,9 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
       _scanning = true;
       _scanFailed = false;
     });
+    // BUG-1554：重扫前先退订上一条，否则每次重扫都留下一条仍在派发的订阅
+    // （设备列表被多份同源事件反复刷、页面关闭时只取消得掉最后一条）。
+    await _devicesSub?.cancel();
     _devicesSub = discovery.devices.listen((List<FushiDevice> devices) {
       if (mounted) setState(() => _devices = devices);
     });
@@ -1334,7 +1352,8 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
         final String? token =
             body is Map<String, dynamic> ? body['token'] as String? : null;
         if (token != null && token.isNotEmpty) {
-          await repo.setFushiClientToken(token);
+          // BUG-1550：v1 老路径同样把凭据落在这条地址上（理由见 _onPairSuccess）。
+          await repo.setFushiClientTokenForUrl(device.webDavUrl, token);
           message = t.sync_pair_success;
         } else {
           message = t.sync_pair_failed;

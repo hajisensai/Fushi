@@ -131,6 +131,8 @@ Future<Map<String, dynamic>> buildRemoteMineResponse(
     'result': r.result,
     if (r.message != null) 'message': r.message,
     if (r.detail != null) 'detail': r.detail,
+    // BUG-1549：成功时回传实际落卡的牌组名（旧客户端/扩展忽略即可，向后兼容）。
+    if (r.deckName != null) 'deckName': r.deckName,
   };
 }
 
@@ -148,6 +150,8 @@ Future<Map<String, dynamic>> buildForwardedMineResponse(
     'result': r.result,
     if (r.message != null) 'message': r.message,
     if (r.detail != null) 'detail': r.detail,
+    // BUG-1549：成功时回传主机实际落卡的牌组名，供客户端成功 toast 显示。
+    if (r.deckName != null) 'deckName': r.deckName,
   };
 }
 

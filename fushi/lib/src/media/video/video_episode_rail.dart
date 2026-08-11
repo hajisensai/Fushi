@@ -11,12 +11,21 @@ class VideoEpisodeEntry {
   const VideoEpisodeEntry({
     required this.title,
     this.cover,
+    this.episodeNumber,
     this.completed = false,
     this.started = false,
   });
 
   final String title;
   final ImageProvider? cover;
+
+  /// 卡片角标显示的**真实集号**（从文件名解析，见 `parsedEpisodeNumberOf`）。
+  /// null = 解析不出（PV / 特典 / 远端无路径），卡片回落列表顺位号。
+  ///
+  /// 顺位号会在「缺集 / 只导入了一部分」时说谎：`S01E05` 排在第 3 位就标成
+  /// `03`（BUG-1544）。集号是文件名里写着的事实，不是下标的函数。
+  final int? episodeNumber;
+
   final bool completed;
   final bool started;
 }
@@ -145,6 +154,9 @@ class _EpisodeRailCard extends StatelessWidget {
   final ColorScheme colorScheme;
   final VoidCallback onTap;
 
+  /// 卡片显示号：解析出的真实集号优先，解析不出才回落顺位号（BUG-1544）。
+  int get _displayNumber => entry.episodeNumber ?? index + 1;
+
   @override
   Widget build(BuildContext context) {
     const BorderRadius radius = FushiBorderRadius.card;
@@ -153,7 +165,7 @@ class _EpisodeRailCard extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      label: '${index + 1}. ${entry.title}',
+      label: '$_displayNumber. ${entry.title}',
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOutCubic,
@@ -214,7 +226,7 @@ class _EpisodeRailCard extends StatelessWidget {
                         Padding(
                           padding: const EdgeInsetsDirectional.only(end: 7),
                           child: Text(
-                            '${index + 1}'.padLeft(2, '0'),
+                            '$_displayNumber'.padLeft(2, '0'),
                             maxLines: 1,
                             softWrap: false,
                             style: TextStyle(
