@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1427 条。点号进各自文件。
+> 共 1428 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1549](bugs/BUG-1549-anki-toast-empty-deckname.md) | ✅ | ✅ | AnkiConnect 制卡成功 toast 牌组名为空——成功结果不带实际落卡牌组名，调用点事后从 selectedDeckName 猜 |
 | [BUG-1545](bugs/BUG-1545-kon-collection-detail-crash.md) | ✅ | ✅ | 视频起播时 hwdec=auto 抢先下发，CUDA 硬解初始化崩溃整个进程（Windows/NVIDIA） |
 | [BUG-1541](bugs/BUG-1541-gamepad-bt-idle-dead.md) | ✅ | ✅ | 蓝牙手柄待机断连后按键永久失效，必须重启 app |
 | [BUG-1538](bugs/BUG-1538-download-proxy-default-direct.md) | ✅ | ✅ | 下载域默认走系统代理而非直连，发现聚合来源需钉死不随代理分叉 |

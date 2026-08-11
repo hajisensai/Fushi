@@ -661,14 +661,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final settings = await loadSettings();
     final service = _serviceForSettings(settings);
 
-    final deck = settings.availableDecks.firstWhereOrNull(
-          (d) => d.id == settings.selectedDeckId,
-        ) ??
-        (settings.selectedDeckName != null
-            ? settings.availableDecks.firstWhereOrNull(
-                (d) => d.name == settings.selectedDeckName,
-              )
-            : null);
+    final AnkiDeck? deck = resolveSelectedDeck(settings);
     if (deck == null) return const MineOutcome.notConfigured();
 
     final noteType = settings.availableNoteTypes.firstWhereOrNull(
@@ -744,7 +737,13 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           duplicateScope: settings.duplicateScope,
         );
         mediaTransaction.commit();
-        return MineOutcome.success(noteId: noteId, audioWarning: audioWarning);
+        // BUG-1549：把实际落卡的牌组名带回成功结果——toast 只认它，不再事后从
+        // settings.selectedDeckName 猜（旧存档只有 id 时那是 null → 空引号）。
+        return MineOutcome.success(
+          noteId: noteId,
+          deckName: deck.name,
+          audioWarning: audioWarning,
+        );
       } on AnkiConnectDuplicateException {
         await mediaTransaction.rollback();
         return const MineOutcome.duplicate();
@@ -926,8 +925,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       try {
         await service.updateNoteFields(noteId, fields);
         // TODO-779: 覆盖路径同样把音频下载失败原因带给成功 toast。
+        // BUG-1549：覆写成功 toast 的牌组名与新制同源（按设置解析的目标牌组）。
         return MineOutcome.success(
           noteId: noteId,
+          deckName: resolveSelectedDeck(settings)?.name,
           audioWarning: rendered.audioWarning,
         );
       } on AnkiConnectException catch (e, stack) {

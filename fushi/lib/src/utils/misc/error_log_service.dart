@@ -576,8 +576,10 @@ String? localizeAnkiMineError(String? code) {
 /// 收口于此后各调用点只决定**怎么展示**（toast / OSD）与**是否记账/返回 bool**。
 ///
 /// - error 分支内调 [logMineFailure]（写日志 + 取简短文案，单一来源）。
-/// - 成功消息所需的牌组名 [deckName] 由调用方仅在 `success` 时预先解析
-///   （仅成功分支需要，避免给失败分支白白 `loadSettings`）。
+/// - 成功消息的牌组名只认 [MineOutcome.deckName]——后端**实际落卡**用的 deck 名
+///   （BUG-1549）。此前由调用方事后 `loadSettings().selectedDeckName` 猜：旧存档/
+///   旧 Profile 快照只有 `selectedDeckId` 没有 name 时，AnkiConnect 按 id 照样落卡
+///   成功，toast 却显示「已添加到『』」空引号。
 /// - [overwrite]=true 表示这是「覆盖已有卡片」（update 路径，非新制）：成功消息用
 ///   `card_overwritten`、且 `record=false`（覆盖不计入制卡统计）。此前 reader/video/
 ///   mixin 的 update 方法各自复制一份与 mine 几乎相同的 switch（只差 card_overwritten
@@ -585,7 +587,6 @@ String? localizeAnkiMineError(String? code) {
 ({String message, bool success, bool record, MineToastStatus status})
     describeMineOutcome(
   MineOutcome outcome, {
-  String deckName = '',
   bool overwrite = false,
 }) {
   switch (outcome.result) {
@@ -594,6 +595,7 @@ String? localizeAnkiMineError(String? code) {
       // 失败原因（含 HTTP 码/URL）追加到成功 toast，终结用户「没音频不知为何」的盲猜。
       // audioWarning 为 null（音频本就没有或下载成功）时维持原成功文案（向后兼容）。
       final String? audioWarning = outcome.audioWarning;
+      final String deckName = outcome.deckName ?? '';
       final String baseMessage = overwrite
           ? t.card_overwritten(deck: deckName)
           : t.card_exported(deck: deckName);

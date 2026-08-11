@@ -633,12 +633,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       return const MinePopupResult();
     }
     final MineOutcome outcome = result.outcome!;
-    final String deckName = outcome.result == MineResult.success
-        ? (await repo.loadSettings()).selectedDeckName ?? ''
-        : '';
     final described = describeMineOutcome(
       outcome,
-      deckName: deckName,
       overwrite: updateNoteId != null,
     );
     if (updateNoteId == null && described.record) {
