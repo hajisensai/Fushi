@@ -514,7 +514,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 84;
+  int get schemaVersion => 85;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -2448,6 +2448,31 @@ class FushiDatabase extends _$FushiDatabase
                 AND EXISTS (SELECT 1 FROM epub_books eb
                             WHERE eb.book_key = substr(cover_source, 6)
                               AND eb.uid != '')''');
+            }
+          }
+          // v85（BUG-1542）：video_books 加 last_played_at，给「有进度」这个事实
+          // 补上时刻维度——合集续播锚点从此是「用户刚才在看哪一集」，不再靠「排序
+          // 位置最靠后的有痕迹成员」瞎猜。
+          //
+          // 存量回填：从 video_watch_statistics 取每个 bookUid 的 max(last_modified)
+          // （v39 起该表按 bookUid 键控）。这是磁盘上唯一可得的历史近似——不回填的话
+          // 老库要等每一集都被重看一遍才恢复正确，而回填后用户现有库当场就对。回填不
+          // 到的成员留 NULL，[continueMemberIndex] 对「全员无时刻」自动退回旧的位置
+          // 口径（逐字节等价旧行为），对「部分有时刻」优先信有时刻的一侧。
+          if (from < 85 &&
+              await _tableExists('video_books') &&
+              !await _columnExists('video_books', 'last_played_at')) {
+            await m.addColumn(videoBooks, videoBooks.lastPlayedAt);
+            if (await _tableExists('video_watch_statistics')) {
+              await customStatement('''
+              UPDATE video_books SET last_played_at = (
+                SELECT MAX(w.last_modified) FROM video_watch_statistics w
+                WHERE w.book_uid = video_books.book_uid
+                  AND w.last_modified > 0)
+              WHERE EXISTS (
+                SELECT 1 FROM video_watch_statistics w
+                WHERE w.book_uid = video_books.book_uid
+                  AND w.last_modified > 0)''');
             }
           }
         },

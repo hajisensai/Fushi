@@ -1816,9 +1816,22 @@ mixin _FushiDbVideoDomain
     });
   }
 
-  Future<void> updateVideoBookPosition(String bookUid, int positionMs) =>
+  /// 写播放断点。[playedAt] = 这个断点是**什么时候**留下的毫秒时刻（本机播放传
+  /// now；远端进度回灌传对端的 `positionUpdatedAtMs`，别传 now——那会把「对方三天
+  /// 前看的」冒充成「本机刚看的」，直接污染合集续播锚点）。
+  ///
+  /// 位置与时刻同一条 UPDATE 落库：不存在「有进度但没时刻」的中间态，
+  /// [VideoBooks.lastPlayedAt] 的不变量由这里唯一保证（BUG-1542）。
+  Future<void> updateVideoBookPosition(
+    String bookUid,
+    int positionMs, {
+    required int playedAt,
+  }) =>
       (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
-          .write(VideoBooksCompanion(lastPositionMs: Value(positionMs)));
+          .write(VideoBooksCompanion(
+        lastPositionMs: Value(positionMs),
+        lastPlayedAt: Value<int?>(playedAt > 0 ? playedAt : null),
+      ));
 
   Future<void> updateVideoBookEpisode(String bookUid, int episodeIndex) =>
       (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
