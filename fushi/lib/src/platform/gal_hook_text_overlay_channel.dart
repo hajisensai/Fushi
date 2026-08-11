@@ -550,6 +550,33 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     return GalLookupCallResult.fromReply(reply);
   }
 
+  /// 只挪高亮：**不重抓卡片画面**。
+  ///
+  /// 悬停换字时卡片内容一个像素都没变，而 [galLookupPresent] 每次都会走完整的
+  /// 「CapturePreview → PNG 编解码 → 全卡 memcpy」——鼠标划过一行就是几十次，真机
+  /// 表现为明显卡顿。高亮本来就画在游戏自己的图层上、不在卡片位图里，所以这条路
+  /// 一个像素都不需要。
+  static Future<GalLookupCallResult> galLookupPresentHighlight({
+    required int seq,
+    required int anchorX,
+    required int anchorY,
+    required int highlightStart,
+    required int highlightLen,
+  }) async {
+    if (!_instance.isSupported) return GalLookupCallResult.unsupported;
+    final Object? reply = await _instance.channel.invokeMethod<Object?>(
+      'galLookupPresentHighlight',
+      <String, Object?>{
+        'seq': seq,
+        'anchorX': anchorX,
+        'anchorY': anchorY,
+        'highlightStart': highlightStart,
+        'highlightLen': highlightLen,
+      },
+    );
+    return GalLookupCallResult.fromReply(reply);
+  }
+
   /// 消场：换行 / 换页 / 会话结束 / 卡片被用户关掉。[seq] 是要撤掉的那次命中。
   static Future<GalLookupCallResult> galLookupDismiss(int seq) async {
     if (!_instance.isSupported) return GalLookupCallResult.unsupported;

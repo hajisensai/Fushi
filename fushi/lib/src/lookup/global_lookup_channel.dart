@@ -55,6 +55,8 @@ abstract final class GlobalLookupChannel {
     int width = 420,
     int height = 600,
     bool atCursor = false,
+    int capWidth = 0,
+    int capHeight = 0,
   }) =>
       _impl.showAt(
         x: x,
@@ -62,6 +64,8 @@ abstract final class GlobalLookupChannel {
         width: width,
         height: height,
         atCursor: atCursor,
+        capWidth: capWidth,
+        capHeight: capHeight,
       );
 
   static Future<void> render(String popupJson) => _impl.render(popupJson);

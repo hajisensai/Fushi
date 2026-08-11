@@ -1114,15 +1114,22 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						// 卡片永远不显示。子类只多提供"卡片内鼠标事件转发"，不该由它决定
 						// 卡片能不能出现：宁可先让卡片可见、暂时不能在卡片里点，也好过
 						// 整张卡片都没有。退路走了就置位，别让降级悄悄发生。
-						try
+						// 用 bootstrap 期自检的结论，不再每帧试错一次。
+						// 🔴 必须挂在 **primary 之下**，不是它的兄弟。
+						//
+						// 两个后果都实测到了：① 兄弟层不在 KAG 的输入分发树里，卡片收
+						// 不到任何鼠标事件（input_count 恒 0 → 卡片内点击/滚轮/嵌套查词
+						// 全部失效，而属性自检显示 hitType=htRect 明明设上了）；
+						// ② anchor 是 primary 坐标系的量，挂在祖父层下连 setPos 都在另一
+						// 个坐标系里。高亮层此前踩的是同一个坑（缩放后偏移）。
+						if(global.fushiLookupCardClassOk)
 						{
 							card = new FushiLookupCardLayer(global.kag,
-								global.kag.primaryLayer.parent);
+								global.kag.primaryLayer);
 						}
-						catch(e)
+						else
 						{
-							card = new Layer(global.kag,
-								global.kag.primaryLayer.parent);
+							card = new Layer(global.kag, global.kag.primaryLayer);
 							global.fushiLookupMark(32);
 						}
 						global.kag.add(card);
@@ -1659,6 +1666,54 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			global.fushiLookupCard = void;
 			global.fushiLookupHighlightLayer = void;
 
+			// 自定义卡片层能不能建，bootstrap 期就试一次并记下来。
+			//
+			// 为什么不留到用时再试：它只在 host 投第一帧时才被触发，而失败原因（引擎
+			// 拒绝子类 / super 调用形式不符 / KAG.add 不收）只有异常原文说得清。放在
+			// 这里，传感器一装好就有结论，且**失败原因直接进日志**，不必靠一版版试。
+			// 结果供 fushiLookupPrepare 复用：能建就用带鼠标事件的子类（卡片内点击、
+			// 滚轮、嵌套查词全靠它），不能建就直接退回普通 Layer，不再每帧抛一次。
+			global.fushiLookupCardClassOk = false;
+			try
+			{
+				var probeLayer = new FushiLookupCardLayer(global.kag,
+					global.kag.primaryLayer);
+				global.fushiLookupCardClassOk = true;
+				// 顺带把 prepare 会设的每个属性都试一遍，逐项记原因。
+				//
+				// 真机实测：子类本身建得出来，抛异常的是**某个属性赋值**——而它被逐项
+				// 隔离后静默跳过，于是卡片能显示、却收不到鼠标事件（input_count 恒 0，
+				// 卡片内点击/滚轮/嵌套查词全部失效）。哪个属性不被接受，只有异常原文
+				// 说得清；放在 bootstrap 里试，一次就有结论。
+				try { global.kag.add(probeLayer); }
+				catch(e) { global.fushiLookupNoteError("probe.kagAdd", e); }
+				try { probeLayer.name = "probe"; }
+				catch(e) { global.fushiLookupNoteError("probe.name", e); }
+				try { probeLayer.fushiLookupIgnore = true; }
+				catch(e) { global.fushiLookupNoteError("probe.ignoreFlag", e); }
+				try { probeLayer.absolute = 2147483000; }
+				catch(e) { global.fushiLookupNoteError("probe.absolute", e); }
+				try { probeLayer.opacity = 255; }
+				catch(e) { global.fushiLookupNoteError("probe.opacity", e); }
+				try { probeLayer.hitType = htRect; }
+				catch(e) { global.fushiLookupNoteError("probe.hitType", e); }
+				try { probeLayer.type = ltAlpha; }
+				catch(e) { global.fushiLookupNoteError("probe.type", e); }
+				try { probeLayer.setImageSize(64, 64); probeLayer.setSizeToImageSize(); }
+				catch(e) { global.fushiLookupNoteError("probe.setImageSize", e); }
+				try { probeLayer.setPos(0, 0); }
+				catch(e) { global.fushiLookupNoteError("probe.setPos", e); }
+				try { probeLayer.visible = false; }
+				catch(e) { global.fushiLookupNoteError("probe.visible", e); }
+				global.fushiLookupNoteError("probe.done",
+					%[message: "card class OK; property probe finished"]);
+				invalidate probeLayer;
+			}
+			catch(e)
+			{
+				global.fushiLookupNoteError("cardClassProbe", e);
+			}
+
 			if(typeof global.TextRender == "Object")
 			{
 				if(typeof global.TextRender.render == "Object")
@@ -1822,6 +1877,10 @@ std::wstring g_lookup_card_path;  // 备路 PNG，恒在 %TEMP%（游戏目录�
 // 既不需要脏矩形，也不需要在层内做偏移——这两样都是"全视口卡片层"那版才需要的。
 int32_t g_lookup_frame_anchor_x = 0;
 int32_t g_lookup_frame_anchor_y = 0;
+// 最近一帧真正投出的卡片尺寸。"只更新高亮"那条路不带像素，也就不带尺寸，但重画
+// 高亮仍要按卡片尺寸算——所以必须记住上一帧的。
+uint32_t g_lookup_frame_width = 0;
+uint32_t g_lookup_frame_height = 0;
 uint64_t g_lookup_presented_seq = 0;
 uint64_t g_lookup_hit_seq = 0;
 int64_t g_lookup_last_notify = -1;
@@ -2092,6 +2151,22 @@ void PresentKirikiriLookupFrame() {
     return;
   }
 
+  // 只更新高亮：卡片像素一个字节都不动，只把高亮挪到新位置。与收卡同理，必须在
+  // IsLookupFrameSane 之前认掉——它按定义不带像素，过不了那道校验。
+  //
+  // 悬停每换一个字就走一次普通 present 的话，等于每次都重抓整张卡（CapturePreview
+  // → PNG 编解码 → 全卡 memcpy），鼠标划过一行就是几十次；真机症状就是"太卡了"。
+  // 而高亮画在游戏自己的图层上、根本不在卡片位图里，这条路因此完全不需要像素。
+  if ((best->flags & fushi_voice_hook::kLookupFrameHighlightOnly) != 0) {
+    if (!g_lookup_card_shown) return;  // 屏上没有卡片，高亮无处可依
+    g_lookup_frame_anchor_x = best->anchor_x;
+    g_lookup_frame_anchor_y = best->anchor_y;
+    ApplyKirikiriLookupCard(best_seq, best->highlight_start,
+                            best->highlight_len, best->anchor_x, best->anchor_y,
+                            g_lookup_frame_width, g_lookup_frame_height, false);
+    return;
+  }
+
   // 跨进程来的 width/height/pitch 全是不可信输入：先过契约校验，再谈拷贝。
   if (!fushi_voice_hook::IsLookupFrameSane(g_header, best) ||
       static_cast<uint32_t>(best_seq % g_header->lookup_frame_count) != best_index) {
@@ -2148,6 +2223,8 @@ void PresentKirikiriLookupFrame() {
     SetLookupDiag(fushi_voice_hook::kLookupDiagFallbackPngRoute);
     g_lookup_frame_anchor_x = anchor_x;
     g_lookup_frame_anchor_y = anchor_y;
+    g_lookup_frame_width = width;
+    g_lookup_frame_height = height;
     g_lookup_card_shown = true;
     // 🔴 降级路要求**有人把卡片写成 PNG 落在这个路径**。实测本仓没有任何一处写过它
     // （g_lookup_card_path 只被声明/判空/赋值/替进脚本），于是 loadImages 必然失败、
@@ -2189,6 +2266,8 @@ void PresentKirikiriLookupFrame() {
 
   g_lookup_frame_anchor_x = anchor_x;
   g_lookup_frame_anchor_y = anchor_y;
+  g_lookup_frame_width = width;
+  g_lookup_frame_height = height;
   g_lookup_card_shown = true;
   ApplyKirikiriLookupCard(best_seq, highlight_start, highlight_len, anchor_x,
                           anchor_y, width, height, false);

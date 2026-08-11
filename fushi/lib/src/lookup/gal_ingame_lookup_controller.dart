@@ -283,8 +283,10 @@ class GalIngameLookupController {
     // runner 的 present 会重取一次当前 popup 画面，所以这条路径不能没有去抖——
     // 上面的「范围没变就丢弃」正是它，一次鼠标划过整行也只走过字数那么多次。
     final ({int x, int y}) anchor = _resolveAnchorForCurrentCard(hit);
+    // 悬停走**不带像素**的那条：卡片内容没变，重抓一次整张卡纯属白付（真机上就是
+    // 鼠标一划就卡）。高亮画在游戏自己的图层上，不需要新位图。
     final GalLookupCallResult result =
-        await GalHookTextOverlayChannel.galLookupPresent(
+        await GalHookTextOverlayChannel.galLookupPresentHighlight(
       seq: hit.seq,
       anchorX: anchor.x,
       anchorY: anchor.y,

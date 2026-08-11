@@ -443,6 +443,13 @@ struct LookupFrame {
 // 收卡是**普通一帧**，靠这个位自述，不靠「width==0 是收卡」这种魔法编码：后者要求每个
 // 读侧都记住这条隐规则，而它和「host 投了张废帧」在字节上完全一样。
 constexpr uint32_t kLookupFrameDismiss = 0x00000001u;
+// 只更新高亮：不带像素，注入侧跳过整张卡片的 memcpy，只把高亮挪到新位置。
+//
+// 悬停时卡片内容一个像素都没变，只是高亮要换字。而普通 present 每次都要走一整轮
+// 「CapturePreview → PNG 编码 → WIC 解码 → 全卡 memcpy」——鼠标划过一行就是几十次，
+// 真机上直接表现为"太卡了"。高亮本来就画在游戏自己的图层上，不在卡片位图里，所以
+// 这条路不需要任何像素。
+constexpr uint32_t kLookupFrameHighlightOnly = 0x00000002u;
 
 // hook → host：落在卡片矩形内、需要喂给离屏 WebView2 的输入事件。
 struct LookupInputSlot {

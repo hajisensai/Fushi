@@ -681,15 +681,27 @@ class GlobalLookupController {
       final int h0 = (_layoutBoundsH * dpr).round();
       // 真机第 5 轮 — 有文字锚点时窗口放在被点文字左下（物理 px），native 以
       // 该点所在显示器算工作区/偏移；无锚点保持 atCursor（+8,+8 光标偏移）。
+      // 布局工作区上限：游戏内查词时可用空间是**游戏视口**，不是显示器工作区。
+      // 不传就会按 2560x1440 排版、排完再被裁（runner 超尺寸是裁不是缩）。
+      final int capW = _physicalCap?.w ?? 0;
+      final int capH = _physicalCap?.h ?? 0;
       final GlobalLookupShowResult shown = anchorScreenRect == null
           ? await GlobalLookupChannel.showAt(
-              x: 0, y: 0, width: w0, height: h0, atCursor: true)
+              x: 0,
+              y: 0,
+              width: w0,
+              height: h0,
+              atCursor: true,
+              capWidth: capW,
+              capHeight: capH)
           : await GlobalLookupChannel.showAt(
               x: (anchorScreenRect.left * dpr).round(),
               y: ((anchorScreenRect.bottom + 4) * dpr).round(),
               width: w0,
               height: h0,
-              atCursor: false);
+              atCursor: false,
+              capWidth: capW,
+              capHeight: capH);
       // TODO-893 / BUG-859 — convert the native physical-px work area to CSS px
       // (the cascade layout domain) with the ANCHOR MONITOR's dpr reported by
       // showAt. The main-window dpr (used for the initial off-screen size
