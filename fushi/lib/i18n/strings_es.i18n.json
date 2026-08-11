@@ -3336,5 +3336,6 @@
   "download_task_stage_organize": "Organize",
   "download_task_stage_subtitle": "Subtitles",
   "download_task_stage_import": "Import",
-  "download_task_stage_scrape": "Scrape"
+  "download_task_stage_scrape": "Scrape",
+  "video_discovery_manual_identity_hint": "Enter the title, external ID and year above to enable search"
 }
