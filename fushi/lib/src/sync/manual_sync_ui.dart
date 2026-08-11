@@ -68,6 +68,25 @@ bool shouldSignOutOnAuthError(SyncAuthError error) => switch (error.kind) {
       SyncAuthFailureKind.browserTimeout => false,
     };
 
+/// 一条**具名通道**的鉴权失败之后，该不该对这条通道执行登出（BUG-1578）。
+///
+/// 两层判据，缺一不可：
+/// 1. 错误本身是不是「会话真的完了」——沿用 [shouldSignOutOnAuthError]。
+/// 2. 这条通道的登出是不是**只**丢会话。互联通道不是：
+///    `InterconnectSyncBackend.signOut` 会清空 `sync_hibiki_client_urls`，把全部
+///    对端地址、TOFU 指纹和 per-peer token 一并抹掉。而 BUG-1550 把凭据做成
+///    per-peer 的全部意义就是「一台对端拒了我，不株连其余对端」——用一台的 401 去
+///    清空整份配对配置，正是那条修复要消灭的行为。互联的凭据失效由配对流程处理，
+///    不在这里代劳。
+///
+/// 这个函数**不**负责「登出谁」：那由异常自带的 [SyncChannelAuthError.channel] 决定。
+/// 在此之前 UI 是拿 `getBackendType()` 猜的，于是互联对端的一次 401 会去登出用户的
+/// Google Drive 会话并清掉云通道的目录缓存 —— 两条通道都被一条错误打坏。
+bool shouldSignOutChannelOnAuthError(SyncChannelAuthError e) {
+  if (e.channel.isInterconnect) return false;
+  return shouldSignOutOnAuthError(e.error);
+}
+
 /// 本地化的同步阶段名（进度行用）。
 String syncPhaseLabel(SyncPhase phase) {
   switch (phase) {
@@ -204,27 +223,32 @@ Future<ManualSyncOutcome> runManualSyncWithFeedback({
         }
     }
     return result.outcome;
-  } on SyncAuthError catch (e) {
-    // TODO-836: insufficient_scope（或任何**凭据类**鉴权错误）—— 存下来的会话
-    // 已经不可用了。先登出，让账号行退回「未登录」（登录按钮重新出现），再提示
-    // 重新登录。登出序列与 account.part.dart 里的手动登出路径一致。
-    //
-    // BUG-1323：403 是例外。凭据**已经被接受**，是服务端按策略拒绝了这一次
-    // 请求（如 host 对明文会话拒发 service config）。把它当凭据失效去 signOut，
-    // 等于用一条服务端策略毁掉用户一个好端端的会话，还要他去重配一个没问题的
-    // token——正是 BUG-1311 里用户抱怨的那个循环。提示照常给，只是不动会话。
-    if (shouldSignOutOnAuthError(e)) {
+  } on SyncChannelAuthError catch (e) {
+    // BUG-1578：副作用**只**作用在抛出这条错误的通道上。以前这里是拿云备份的
+    // backendType 解析出一个后端来猜对象，于是互联对端的一次 401 会去登出云备份
+    // 会话、并清掉云通道的目录缓存——用户没碰过的那条通道被打坏，而真正出问题的
+    // 那条一点没动。
+    if (shouldSignOutChannelOnAuthError(e)) {
       final SyncRepository repo = SyncRepository(appModel.database);
       try {
-        final SyncBackend backend =
-            resolveSyncBackend(await repo.getBackendType());
+        final SyncBackend backend = e.channel.backend;
         await backend.signOut(repo: repo);
         backend.clearCache();
-        await repo.clearFolderCache();
+        await repo.clearFolderCache(e.channel.scope);
       } catch (_) {
         // 尽力登出；绝不因此盖掉原本要给用户的重新登录提示。
       }
     }
+    if (context.mounted) showSyncMessage(context, friendlySyncError(e.error));
+    return ManualSyncOutcome.notConfigured;
+  } on SyncAuthError catch (e) {
+    // 没带通道身份的裸鉴权错误（同步通道抛出的都被上一支的
+    // [SyncChannelAuthError] 接走；这一支留给通道枚举之前/之外的意外来源）。
+    //
+    // **不做任何登出**：走到这里说明这条鉴权错误没带通道身份（同步通道抛出的都
+    // 被 [SyncChannelAuthError] 包过，见 `_runSyncChannel`），既然不知道是谁的会话
+    // 坏了，就绝不能挑一个去毁——猜错的代价是毁掉一个好端端的会话，而猜对也只是
+    // 省了用户一次点击。提示照常给。
     if (context.mounted) showSyncMessage(context, friendlySyncError(e));
     return ManualSyncOutcome.notConfigured;
   } catch (e) {

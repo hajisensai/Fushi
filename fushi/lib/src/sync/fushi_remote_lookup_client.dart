@@ -85,7 +85,12 @@ class FushiRemoteLookupClient {
     final DictionarySearchResult result =
         _parseDictionaryResult(Map<String, dynamic>.from(resultJson));
     result.popupJson = json['popupJson']?.toString();
-    return result.entries.isEmpty ? null : result;
+    // BUG-1570：kanji-only 结果（单字命中汉字词典但无词条）也算有效结果——与本地
+    // 路径的 kanjiOnly 分支同语义。瘦 client（本地无词典）此前会把它当「无结果」
+    // 丢掉转本地兜底，而本地根本没有汉字词典。
+    return (result.entries.isEmpty && result.kanjiResults.isEmpty)
+        ? null
+        : result;
   }
 
   DictionarySearchResult _parseDictionaryResult(Map<String, dynamic> json) {
@@ -100,10 +105,30 @@ class FushiRemoteLookupClient {
         }
       }
     }
+    // BUG-1570：host 发的 `result` 是 DictionarySearchResult.toJson() 全量字段，
+    // 这里此前只取 searchTerm/bestLength/scrollPosition/entries 四个，把
+    // truncated / headwordCount / kanjiResults 静默丢掉。后果（remote-first 语义下
+    // 远端结果直接返回、不再走本地富化）：截断标志恒 false → 「加载更多」永不出现
+    // （BUG-1472 在远端路径整个失效）；headwordCount 恒 0 → 即便分页也拿错基数
+    // （BUG-1478 同理失效）；单字查询的汉字卡（kanjiResults）在远端结果里恒空。
+    // 老 host 不发这些字段时保持原默认值，行为不变。
+    final List<FushiKanjiResult> kanjiResults = <FushiKanjiResult>[];
+    final dynamic kanjiJson = json['kanjiResults'];
+    if (kanjiJson is List) {
+      for (final dynamic kanji in kanjiJson) {
+        if (kanji is Map) {
+          kanjiResults
+              .add(FushiKanjiResult.fromMap(Map<String, dynamic>.from(kanji)));
+        }
+      }
+    }
     return DictionarySearchResult(
       searchTerm: json['searchTerm']?.toString() ?? '',
       bestLength: (json['bestLength'] as num?)?.toInt() ?? 0,
       scrollPosition: (json['scrollPosition'] as num?)?.toInt() ?? 0,
+      truncated: json['truncated'] as bool? ?? false,
+      headwordCount: (json['headwordCount'] as num?)?.toInt() ?? 0,
+      kanjiResults: kanjiResults,
       entries: entries,
     );
   }

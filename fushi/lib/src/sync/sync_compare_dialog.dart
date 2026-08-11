@@ -293,10 +293,14 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     ));
   }
 
+  // BUG-1576：folder 缓存按通道分槽落盘。对比对话框拿的是**某一条**已解析通道的
+  // 后端（冲突提示器注入的就是出冲突那条通道），写回全局单份键会把另一条通道的
+  // 目录布局覆盖掉。
+  final SyncChannelScope scope = syncChannelScopeOf(backend);
   final rootIdNow = backend.cachedRootFolderId;
-  if (rootIdNow != null) await repo.setRootFolderId(rootIdNow);
+  if (rootIdNow != null) await repo.setRootFolderId(scope, rootIdNow);
   final cache = backend.cachedFolderIds;
-  if (cache.isNotEmpty) await repo.setFolderCache(cache);
+  if (cache.isNotEmpty) await repo.setFolderCache(scope, cache);
 
   return entries;
 }
@@ -421,8 +425,11 @@ Future<String> _ensureRoot(
   SyncRepository repo,
 ) async {
   if (backend.cachedRootFolderId != null) return backend.cachedRootFolderId!;
-  final savedRoot = await repo.getRootFolderId();
-  final savedCache = await repo.getFolderCache();
+  // BUG-1576：只读**本通道**那格。读全局键时，互联通道上一轮写下的绝对 URL 会被
+  // 云后端当成 fileId / 被 WebDAV 当成自己的路径直接请求出去。
+  final SyncChannelScope scope = syncChannelScopeOf(backend);
+  final savedRoot = await repo.getRootFolderId(scope);
+  final savedCache = await repo.getFolderCache(scope);
   backend.restoreCache(rootFolderId: savedRoot, titleToFolderId: savedCache);
   return backend.findOrCreateRootFolder();
 }
@@ -446,17 +453,36 @@ Future<void> showSyncCompareDialog(
   Directory? audioDatabaseRoot,
 }) async {
   final repo = SyncRepository(db);
-  final backend = resolveSyncBackend(await repo.getBackendType());
+  // BUG-1566：比较入口原来只按「云备份 backendType」解析出的那一条通道去认证。
+  // 用户只开互联、云后端从没配过时，它拿到的是一个永远认证不了的云后端，
+  // 于是对话框恒报「请先设置同步」，整个互联比较入口不可达。通道枚举改为复用同步真正
+  // 跑的那一份（云通道在前、互联在后 → 云用户行为零变化），取第一条认证通过的后端作为
+  // 比较后端；一条都没有才是「没配过同步」。（此处不写枚举函数名：守卫按函数体扫描，
+  // 注释里出现的标识符会让正向断言被注释满足、真删掉调用也照样绿。）
+  //
   // Rehydrate the saved session first — opening compare straight after a cold
   // start would otherwise read a not-yet-restored auth state and wrongly report
   // "set up sync first" (mobile google_sign_in / desktop refresh) (BUG-047).
   // Do it under the sync mutex so the auth restore (which can reconnect/clear a
   // backend's cache) never races an in-flight sync (BUG-083).
-  final bool authed = await runExclusiveWithSync(() async {
-    await backend.restoreAuth(repo);
-    return backend.isAuthenticated;
+  final SyncBackend? backend =
+      await runExclusiveWithSync<SyncBackend?>(() async {
+    for (final SyncChannel channel in await enabledSyncChannelBackends(repo)) {
+      try {
+        await channel.backend.restoreAuth(repo);
+        if (await channel.backend.isAuthenticated) return channel.backend;
+      } catch (e) {
+        // 单条通道鉴权炸了只算它自己没通过：云盘令牌失效不得挡住互联通道被选中。
+        developer.log(
+          'Compare channel auth failed (interconnect=${channel.isInterconnect})',
+          error: e,
+          name: 'SyncCompare',
+        );
+      }
+    }
+    return null;
   });
-  if (!authed) {
+  if (backend == null) {
     if (!context.mounted) return;
     // The compare precondition is "a sync target is configured" — not an
     // account login. The Hibiki interconnect (and WebDAV/FTP/SFTP) have no
@@ -940,8 +966,8 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         // folderId）会被 ensureBookFolder 命中，上传打向 trashed 文件夹 → 复传石沉
         // （BUG-202）。DB 写不依赖 UI，放在 mounted 检查前以保证一定落盘。
         widget.backend.evictFolderId(id);
-        await SyncRepository(widget.db)
-            .setFolderCache(widget.backend.cachedFolderIds);
+        await SyncRepository(widget.db).setFolderCache(
+            syncChannelScopeOf(widget.backend), widget.backend.cachedFolderIds);
       }
       if (!mounted) return;
       setState(onSuccess);

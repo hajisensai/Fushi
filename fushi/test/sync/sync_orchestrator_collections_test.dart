@@ -210,8 +210,8 @@ void main() {
           ),
         ]).toJson(),
       );
-      await SyncRepository(b.db)
-          .setCollectionsSyncBaselineMs(now + 1000 * 1000 * 1000);
+      await SyncRepository(b.db).setCollectionsSyncBaselineMs(
+          SyncChannelScope.unscoped, now + 1000 * 1000 * 1000);
 
       await b.sync();
       // 无钳制：基线(now+1e9) > publishedAt(now+1e6) → 永远旧闻 → x 复活（同步冻结）。

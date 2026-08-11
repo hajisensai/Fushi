@@ -319,3 +319,37 @@ SyncBackend resolveSyncBackend(SyncBackendType type) {
   // 其余均为云端/第三方存储：包一层字节混淆装饰器防扫盘看到明文内容（TODO-623 A1）。
   return ObfuscatingSyncBackend(raw);
 }
+
+/// [resolveSyncBackend] 的逆：一个后端实例属于哪条通道的持久化槽位
+/// （BUG-1576 / BUG-1578 / BUG-1579 / BUG-1580）。
+///
+/// 为什么是「按实例反查」而不是在 [SyncBackend] 上加一个抽象成员：消费方
+/// （SyncManager / SyncOrchestrator / 对比对话框）手上已经只有后端实例，加抽象成员
+/// 会让二十多个 `implements SyncBackend` 的测试 fake 全部编译失败，却一点信息也没
+/// 多出来。反查表就放在 [resolveSyncBackend] 旁边，两者是同一张表的两个方向；
+/// 「每个 [SyncBackendType] 解析出来的后端都能反查回自己」这条不变式由
+/// `sync_channel_scope_test` 对 `SyncBackendType.values` 逐值钉住，新增后端漏改
+/// 会当场红。
+///
+/// 认不出来的实例（只可能是测试 fake）落 [SyncChannelScope.unscoped]——一格独立
+/// 的槽位，不与任何真实通道共用，绝不会把测试状态写进用户通道的账上。
+SyncChannelScope syncChannelScopeOf(SyncBackend backend) {
+  // 混淆装饰器是纯包装：槽位属于被它包着的那个真后端。
+  final SyncBackend inner =
+      backend is ObfuscatingSyncBackend ? backend.inner : backend;
+  return switch (inner) {
+    GoogleDriveSyncBackend() =>
+      SyncChannelScope.forBackendType(SyncBackendType.googleDrive),
+    InterconnectSyncBackend() =>
+      SyncChannelScope.forBackendType(SyncBackendType.fushiServer),
+    WebDavSyncBackend() =>
+      SyncChannelScope.forBackendType(SyncBackendType.webDav),
+    OneDriveSyncBackend() =>
+      SyncChannelScope.forBackendType(SyncBackendType.oneDrive),
+    DropboxSyncBackend() =>
+      SyncChannelScope.forBackendType(SyncBackendType.dropbox),
+    FtpSyncBackend() => SyncChannelScope.forBackendType(SyncBackendType.ftp),
+    SftpSyncBackend() => SyncChannelScope.forBackendType(SyncBackendType.sftp),
+    _ => SyncChannelScope.unscoped,
+  };
+}

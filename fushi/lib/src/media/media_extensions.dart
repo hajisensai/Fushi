@@ -45,3 +45,15 @@ const Set<String> kVideoExtensions = <String>{
   '.rm',
   '.vob',
 };
+
+/// 播放列表清单扩展名（扩展 M3U）：**文本清单，不是媒体流本体**。app 侧对它的
+/// 唯一正确动作是 `parseM3u8` 拆成各集；直接把本地清单文件喂 ffmpeg 抽帧必然
+/// `Invalid data found when processing input`（BUG-1564：封面回填曾如此反复
+/// 白烧 CPU）。与 [kVideoExtensions] 两两不相交（扫描/拖放分类依赖该不相交性）。
+///
+/// 注意边界：**远端** `http(s)://…/x.m3u8` 是 HLS 流 URL，ffmpeg 能直接吃
+/// （见 `streamImportCoverStrategy.ffmpegFrame`）——本集合只用于判定**本地文件**。
+const Set<String> kPlaylistManifestExtensions = <String>{
+  '.m3u8',
+  '.m3u',
+};

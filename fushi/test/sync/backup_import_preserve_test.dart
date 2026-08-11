@@ -25,7 +25,9 @@ void main() {
     await curRepo.setWebDavUrl('https://local.example/dav');
     await curRepo.setWebDavPassword('localpw'); // base64-stored secret
     await curRepo.setAutoSyncEnabled(true); // behavior flag (local)
-    await curRepo.setRootFolderId('local-root'); // folder cache (local)
+    await curRepo.setRootFolderId(
+        SyncChannelScope.forBackendType(SyncBackendType.webDav),
+        'local-root'); // folder cache (local)
     await curDb.close();
 
     // ── A backup from ANOTHER device with different config + a book ──
@@ -37,7 +39,8 @@ void main() {
     await srcRepo.setWebDavUrl('https://backup.example/dav');
     await srcRepo.setWebDavPassword('backuppw');
     await srcRepo.setAutoSyncEnabled(false); // backup's behavior flag
-    await srcRepo.setRootFolderId('backup-root');
+    await srcRepo.setRootFolderId(
+        SyncChannelScope.forBackendType(SyncBackendType.webDav), 'backup-root');
     await srcDb.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: 'かがみの孤城',
       title: 'かがみの孤城',
@@ -79,7 +82,7 @@ void main() {
     expect(books.single.title, 'かがみの孤城');
 
     // Folder cache cleared (stale, belonged to backup account) → rebuild later:
-    expect(await afterDb.getPref('sync_root_folder_id'), isNull);
+    expect(await afterDb.getPref('sync_root_folder_id__webDav'), isNull);
 
     // Sidecar + pre-restore copy cleaned up (no disk leak):
     expect(File('${currentDir.path}/fushi.db.sync-preserve.json').existsSync(),
@@ -95,7 +98,8 @@ void main() {
 
     // Simulate a DB whose sync config was wiped by a crashed import.
     final db = FushiDatabase(dir.path);
-    await SyncRepository(db).setRootFolderId('stale-root');
+    await SyncRepository(db).setRootFolderId(
+        SyncChannelScope.forBackendType(SyncBackendType.webDav), 'stale-root');
     await db.close();
 
     // Sidecar left behind by the crashed import (raw stored values).
@@ -113,7 +117,7 @@ void main() {
     final repo = SyncRepository(db2);
     expect(await repo.getBackendType(), SyncBackendType.dropbox);
     expect(await repo.getWebDavPassword(), 'recovered');
-    expect(await db2.getPref('sync_root_folder_id'), isNull); // cache cleared
+    expect(await db2.getPref('sync_root_folder_id__webDav'), isNull); // cleared
     expect(
         File('${dir.path}/fushi.db.sync-preserve.json').existsSync(), isFalse);
   });
