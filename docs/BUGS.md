@@ -29,10 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1441 条。点号进各自文件。
+> 共 1446 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1559](bugs/BUG-1559-interconnect-restore-auth-resets-resolved-address.md) | ✅ | ✅ | restoreAuth 把已解析地址打回候选[0] 而 _sessionResolved 仍为 true，不再重探 |
+| [BUG-1558](bugs/BUG-1558-interconnect-paired-peer-list-stale.md) | ✅ | ✅ | 配对成功后已配对设备列表不刷新（controller 落库不通知） |
+| [BUG-1557](bugs/BUG-1557-interconnect-tofu-fingerprint-check-order.md) | ✅ | ✅ | TOFU 指纹比对顺序倒置 + 编辑地址留旧指纹且无清除入口 |
+| [BUG-1556](bugs/BUG-1556-interconnect-pair-session-ttl-before-approval.md) | ✅ | ✅ | 配对会话 TTL 从审批前起算：host 审批慢就必配不上，且过期被报成「对端拒绝」 |
+| [BUG-1555](bugs/BUG-1555-interconnect-v1-pair-pin-bypass.md) | ✅ | ✅ | v1 /api/pair 绕过 PIN 强制：公网入站一次「允许」即拿到权限最大的共享 token |
 | [BUG-1554](bugs/BUG-1554-lan-discovery-browser-orphan.md) | ✅ | ✅ | LAN 发现 startDiscovery 无幂等/无 dispose 守卫，重扫与关页竞态留下孤儿 Bonsoir browser |
 | [BUG-1553](bugs/BUG-1553-interconnect-pair-failure-reason-lost.md) | ✅ | ✅ | 配对失败原因被压平：限速 429 / TLS 指纹不符 / 超时全说成「配对失败」且不留日志 |
 | [BUG-1552](bugs/BUG-1552-sync-channel-failure-cascades.md) | ✅ | ✅ | 云备份通道抛异常直接终止通道循环，互联通道整轮不跑（「并存互不干扰」不成立） |

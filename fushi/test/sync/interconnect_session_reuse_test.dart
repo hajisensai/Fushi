@@ -141,6 +141,61 @@ void main() {
     expect(probes, 1, reason: '展示名是纯 UI 字段，改它不该引发一轮全候选探测');
   });
 
+  // ── BUG-1559：restoreAuth 不得把已解析地址打回候选[0] ──────────
+  //
+  // BUG-1183 只修了一半：「要不要重探」已经改成看配置签名，但 restoreAuth 仍无条件
+  // 重建临时句柄（候选[0]）。于是切一次页面：_ops 滑回候选[0]（常常是一条不可达
+  // 的旧地址），_sessionResolved 却还是 true → [_ensureResolved] 直接 return → 永不重探。
+
+  test('BUG-1559: restoreAuth 保留已解析的可达地址，不打回候选[0]', () async {
+    await repo.setFushiClientUrls(<FushiClientUrl>[
+      const FushiClientUrl(url: 'http://192.168.1.10:8384'), // 不可达
+      const FushiClientUrl(url: 'http://192.168.1.20:8384'), // 可达
+    ]);
+    final InterconnectSyncBackend backend =
+        InterconnectSyncBackend.withProbe((String url, String token) async {
+      return url.contains('192.168.1.20');
+    });
+
+    await backend.authenticate(repo: repo);
+    expect(backend.activeBaseUrl, contains('192.168.1.20'),
+        reason: '首次解析应落在真可达的那台');
+
+    // 切页面 → restoreAuth。配置一字未改。
+    expect(await backend.restoreAuth(repo), isTrue);
+    expect(
+      backend.activeBaseUrl,
+      contains('192.168.1.20'),
+      reason: 'BUG-1559：会话已解析就不能被重建成候选[0]——'
+          '那条不可达，而且 _sessionResolved 仍为 true，永不重探',
+    );
+
+    // 后续网络操作不需重探，且仍然打在可达地址上。
+    await backend.ensureResolved();
+    expect(backend.activeBaseUrl, contains('192.168.1.20'));
+  });
+
+  test('BUG-1559: 配置真变了仍旧重建句柄（不能把修复做成「永不更新」）', () async {
+    await repo.setFushiClientUrls(<FushiClientUrl>[
+      const FushiClientUrl(url: 'http://192.168.1.10:8384'),
+      const FushiClientUrl(url: 'http://192.168.1.20:8384'),
+    ]);
+    final InterconnectSyncBackend backend =
+        InterconnectSyncBackend.withProbe((String url, String token) async {
+      return !url.contains('192.168.1.10');
+    });
+    await backend.authenticate(repo: repo);
+    expect(backend.activeBaseUrl, contains('192.168.1.20'));
+
+    // 换到另一台对端（地址集合变了 → 会话身份变了）。
+    await repo.setFushiClientUrls(<FushiClientUrl>[
+      const FushiClientUrl(url: 'http://192.168.1.30:8384'),
+    ]);
+    expect(await backend.restoreAuth(repo), isTrue);
+    expect(backend.activeBaseUrl, contains('192.168.1.30'),
+        reason: '配置真变了就必须重建，否则会拿旧对端的句柄发请求');
+  });
+
   // ── BUG-1180：换对端必须让远端清单缓存失效 ────────────────────────────
   //
   // 这两条钉的是「换对端后旧清单不得被沿用」。分两半各自可负向验证：

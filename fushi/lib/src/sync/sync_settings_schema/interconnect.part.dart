@@ -207,8 +207,19 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
             (MapEntry<int, FushiClientUrl> e) =>
                 e.key != index && e.value.url == normalizedResult);
         if (!dupElsewhere) {
-          // 编辑保留已有指纹/展示名（copyWith），只换 URL 文本。
-          copy[index] = copy[index].copyWith(url: normalizedResult);
+          final FushiClientUrl edited = copy[index];
+          // BUG-1557：只有「还是同一个端点」（scheme+host+port 未变，只是补斜杠/改
+          // 大小写）才保留已铉扎的指纹；改指另一台机器时旧指纹就是一把开不了
+          // 新锁的旧钥匙，https 握手次次失败而 UI 里无处清除——那条地址就此死掉。
+          // 清指纹后下次配对重新 TOFU；令牌不动（同一台 host 换 IP 时它仍有效）。
+          copy[index] = isSameInterconnectEndpoint(edited.url, normalizedResult)
+              ? edited.copyWith(url: normalizedResult)
+              : FushiClientUrl(
+                  url: normalizedResult,
+                  enabled: edited.enabled,
+                  deviceName: edited.deviceName,
+                  token: edited.token,
+                );
         }
       } else {
         // 新地址才加进列表（去重防重复条目）；已存在则不重复加，但仍会在下方发起配对。
@@ -586,6 +597,12 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     required String? fingerprint,
     String? deviceName,
   }) async {
+    // BUG-1557：**最先**拿已存指纹比。旧顺序是先用新指纹把整套跑完（确认身份 →
+    // 输 PIN → pair/v2 把本机设备名/deviceId 送给对方 → host 都把 peer 行落了库），
+    // 最后才在 [_onPairSuccess] → `addFushiClientUrl` 里发现指纹不符。那时中止已经晚了：
+    // 一个冒充已知 host 的对端已经拿到了我的设备标识。铉扎的意义就是「握手前先判」。
+    if (!await _ensurePinnedFingerprintTrusted(baseUrl, fingerprint)) return;
+
     // 第一重确认：核对要连接的设备身份（展示名 + 证书指纹）。
     final bool confirmed = await _confirmPairIdentity(
       deviceName: deviceName,
@@ -633,6 +650,113 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     if (mounted && message != null) _showSnackBar(context, message);
   }
 
+  /// BUG-1557：握手前的 TOFU 闸。返回 true = 可以继续配对。
+  ///
+  /// - 本地没存过这条地址的指纹（首连）/ 本次是明文 http（无指纹）→ 放行，保持原行为。
+  /// - 存过且相等 → 放行。
+  /// - 存过但不等 → **当场中止**，并给用户一个显式的「清除已存指纹重新信任」出口：
+  ///   host 真的重装 / 重置了证书时，没这个入口那条地址就永远修不好（只能删了重加）；
+  ///   同意后只清指纹、**不**惄悉新指纹，下一步仍走完整双确认（展示新指纹供核对）。
+  Future<bool> _ensurePinnedFingerprintTrusted(
+    String baseUrl,
+    String? fingerprint,
+  ) async {
+    if (fingerprint == null || fingerprint.isEmpty) return true;
+    final String? stored = await _pairRepo.getFushiClientFingerprint(baseUrl);
+    if (!mounted) return false;
+    if (stored == null || stored.isEmpty) return true;
+    if (fingerprintEquals(stored, fingerprint)) return true;
+    final bool retrust = await _confirmFingerprintRetrust(
+      stored: stored,
+      incoming: fingerprint,
+    );
+    if (!mounted) return false;
+    if (!retrust) {
+      _showSnackBar(context, t.sync_pair_fingerprint_changed);
+      return false;
+    }
+    await _pairRepo.clearFushiClientFingerprint(baseUrl);
+    return mounted;
+  }
+
+  /// BUG-1557：指纹不符的告警弹窗 + 唯一的重新信任入口。两个指纹都展示出来供
+  /// 用户与对方屏幕核对；默认动作是取消（安全侧）。
+  Future<bool> _confirmFingerprintRetrust({
+    required String stored,
+    required String incoming,
+  }) async {
+    final bool? ok = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) {
+        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+        final TextStyle? mono = Theme.of(ctx)
+            .textTheme
+            .bodySmall
+            ?.copyWith(fontFamily: 'monospace');
+        return FushiDialogFrame(
+          maxWidth: 460,
+          insetPadding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.card,
+            vertical: tokens.spacing.card,
+          ),
+          scrollable: false,
+          child: FushiModalSheetFrame(
+            title: t.sync_pair_fingerprint_changed_title,
+            scrollable: true,
+            bodyPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              0,
+              tokens.spacing.card,
+              tokens.spacing.gap,
+            ),
+            footerPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              tokens.spacing.gap,
+              tokens.spacing.card,
+              tokens.spacing.card,
+            ),
+            body: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(t.sync_pair_fingerprint_changed_body),
+                SizedBox(height: tokens.spacing.gap),
+                Text(t.sync_pair_fingerprint_stored_label,
+                    style: Theme.of(ctx).textTheme.labelSmall),
+                const SizedBox(height: 4),
+                SelectableText(stored, style: mono),
+                SizedBox(height: tokens.spacing.gap),
+                Text(t.sync_pair_fingerprint_new_label,
+                    style: Theme.of(ctx).textTheme.labelSmall),
+                const SizedBox(height: 4),
+                SelectableText(incoming, style: mono),
+              ],
+            ),
+            footer: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: tokens.spacing.gap,
+              children: <Widget>[
+                adaptiveDialogAction(
+                  context: ctx,
+                  isDefaultAction: true,
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: Text(t.dialog_cancel),
+                ),
+                adaptiveDialogAction(
+                  context: ctx,
+                  isDestructiveAction: true,
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: Text(t.sync_pair_fingerprint_retrust),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    return ok ?? false;
+  }
+
   /// 配对成功收尾：经 TOFU 记录器把 url+指纹+展示名写进候选列表（指纹变更会抛
   /// [FushiFingerprintMismatchException] → 告警，绝不覆盖），落 token，bump
   /// clientConfigRevision（client-config widget 监听后自动重载，单一真相源）。
@@ -676,6 +800,10 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
         return t.sync_pair_tls_failed;
       case 'timeout':
         return t.sync_pair_timeout;
+      case 'expired':
+        // BUG-1556：会话超时与「对端拒绝」不是一回事——前者重试就行，
+        // 后者再试多少次都白搭。
+        return t.sync_pair_expired;
       default:
         return t.sync_pair_failed;
     }
@@ -896,7 +1024,12 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
   }
 
   void _onServerChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    // BUG-1558：controller 在已配对设备表变动时也会通知（新设备配对成功 /
+    // 吊销）。只 setState 重建不够——列表数据在 [_pairedPeers] 里，不重拉就永远
+    // 是进页那一刻的快照，用户在设置页看着对方配对成功却不见新设备。
+    unawaited(_reloadPairedPeers());
   }
 
   Future<void> _loadSettings() async {
@@ -1382,6 +1515,11 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
       final dynamic decoded = jsonDecode(body);
       if (decoded is Map && decoded['reason'] == 'declined') {
         return t.sync_pair_denied;
+      }
+      // BUG-1555：host 对本会话强制 PIN，而 v1 根本没有 PIN 环节 → 直接拒。
+      // 说清楚是「对方需要升级」，别让用户以为是对方手动拒了自己。
+      if (decoded is Map && decoded['reason'] == 'upgrade_required') {
+        return t.sync_pair_upgrade_required;
       }
     } catch (_) {/* older peers reply with a plain-text 403 body */}
     return t.sync_pair_unavailable;
