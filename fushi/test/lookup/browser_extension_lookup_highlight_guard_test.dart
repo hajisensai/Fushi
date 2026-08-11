@@ -18,6 +18,17 @@ void main() {
   final File assetsContent = File('assets/browser_extension/content.js');
   final File toolsContent = File('../tools/browser-extension/content.js');
 
+  /// 截出顶层函数 `function <name>() {` 的完整函数体（到列 0 的 `}` 为止）。
+  /// 不用「起点 + 固定字符数」窗口：函数里多几行注释/新语句就会把要断言的调用
+  /// 挤出窗口，制造与不变式无关的假红——PR #804 往 fushiRemoveContainer 头部插了
+  /// generation 推进与埋点复位，正是这样把 clearSelection() 挤出了旧的 800 字窗口。
+  String topLevelFunctionBody(String src, String header) {
+    final int start = src.indexOf(header);
+    if (start < 0) return '';
+    final int end = src.indexOf('\n}\n', start);
+    return end < 0 ? src.substring(start) : src.substring(start, end);
+  }
+
   group('TODO-1150 扩展查词贴词定位+高亮守卫', () {
     for (final File content in <File>[assetsContent, toolsContent]) {
       group('content.js ${content.path}', () {
@@ -79,11 +90,10 @@ void main() {
           expect(src.contains('window.fushiSelection.clearSelection()'), isTrue,
               reason: '${content.path} 关窗未调用 clearSelection 撤高亮');
           // clearSelection 必须落在 fushiRemoveContainer（统一关窗点）里。
-          final int removeIdx = src.indexOf('function fushiRemoveContainer()');
-          expect(removeIdx, greaterThanOrEqualTo(0),
-              reason: '${content.path} 缺 fushiRemoveContainer');
           final String removeBody =
-              src.substring(removeIdx, (removeIdx + 800).clamp(0, src.length));
+              topLevelFunctionBody(src, 'function fushiRemoveContainer()');
+          expect(removeBody, isNotEmpty,
+              reason: '${content.path} 缺 fushiRemoveContainer');
           expect(removeBody.contains('clearSelection()'), isTrue,
               reason:
                   '${content.path} clearSelection 不在 fushiRemoveContainer 关窗点');
@@ -122,9 +132,8 @@ void main() {
           expect(src.contains('fushiDrawHighlightOverlay(hl.rects)'), isTrue,
               reason: '${content.path} fushiRender 未改画覆盖层高亮');
           // 关窗即撤覆盖层高亮（高亮跟随弹窗生命周期）。
-          final int removeIdx2 = src.indexOf('function fushiRemoveContainer()');
-          final String removeBody2 = src.substring(
-              removeIdx2, (removeIdx2 + 800).clamp(0, src.length));
+          final String removeBody2 =
+              topLevelFunctionBody(src, 'function fushiRemoveContainer()');
           expect(removeBody2.contains('fushiClearHighlightOverlay()'), isTrue,
               reason: '${content.path} 关窗未撤覆盖层高亮（会残留在宿主页上）');
         });
@@ -146,10 +155,13 @@ void main() {
           // mousemove 分支必须以 Shift 为门（松开即复位）。
           expect(src.contains('if (!e[FUSHI_MOD])'), isTrue,
               reason: '${content.path} mousemove 未以 Shift 为门');
-          // 取词后必须真的发出 lookup 查词消息（接线终点）。
+          // 取词后必须真的发出 lookup 查词消息（接线终点）。消息体除 term 外还可
+          // 携带诊断/埋点字段（PR #804 加了 clientSentEpochMs 量 IPC 派发延迟），
+          // 守的是「type:'lookup' + 取到的 term」这条接线本身，不是参数列表长度。
           expect(
-              src.contains(
-                  "chrome.runtime.sendMessage({ type: 'lookup', term }"),
+              RegExp(r"chrome\.runtime\.sendMessage\(\{\s*type:\s*'lookup',"
+                      r'\s*term\b')
+                  .hasMatch(src),
               isTrue,
               reason: '${content.path} 未向 background 发 lookup 查词消息');
           // mousemove 命中后调用 fushiSendLookup（1132 抽取后的分发点）。

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -274,9 +275,20 @@ void main() {
       ),
     );
     expect(poster.image, isA<ResizeImage>());
+    final ImageProvider<Object> remote =
+        (poster.image as ResizeImage).imageProvider;
+    // 远端封面统一走 CachedNetworkImageProvider（自带磁盘缓存，见
+    // test/pages/video_remote_cover_disk_cache_guard_test.dart）；此前这里断言的
+    // NetworkImage 只有内存缓存。本条守的不是 provider 品牌，而是**图源**：
+    // 落盘被安全目录判定拦下时，海报必须仍指向刮削回来的规范远程 URL。
     expect(
-      (poster.image as ResizeImage).imageProvider,
-      isA<NetworkImage>(),
+      remote,
+      isA<CachedNetworkImageProvider>(),
+      reason: '远端封面必须用带磁盘缓存的 provider',
+    );
+    expect(
+      (remote as CachedNetworkImageProvider).url,
+      'https://image.example/poster.jpg',
       reason: '安全目录判定阻止作品根图落盘时，详情页不能退回分集截图',
     );
   });
