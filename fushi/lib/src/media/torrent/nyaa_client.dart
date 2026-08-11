@@ -6,6 +6,7 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
 
+import 'package:fushi/src/media/torrent/anime_release_descriptor.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
 
@@ -40,12 +41,6 @@ const List<String> kNyaaTrackers = <String>[
   'udp://open.tracker.cl:1337/announce',
   'udp://exodus.desync.com:6969/announce',
 ];
-
-/// 分辨率标记：`2160p` / `1080p` / `720p` / `480p`。
-final RegExp _resolution = RegExp(r'2160p|1080p|720p|480p');
-
-/// 标题开头第一个 `[xxx]` 块（通常是字幕组/发布组名）。
-final RegExp _leadingGroup = RegExp(r'^\s*\[([^\]]+)\]');
 
 /// 成对括号块（字幕组 / 画质 / 年份 tag）：`[...]` `(...)`。
 final RegExp _rangeBracketBlock = RegExp(r'\[[^\]]*\]|\([^)]*\)');
@@ -140,11 +135,19 @@ class NyaaTorrent {
       episodeRange != null ||
       (title.toLowerCase().contains('batch') && episode == null);
 
-  /// 标题里的分辨率标记（`2160p`/`1080p`/`720p`/`480p`）；没有为 null。
-  String? get resolution => _resolution.firstMatch(title)?.group(0);
+  /// 标题的结构化资源规格；每次访问都由纯函数解析，不持有额外状态。
+  AnimeReleaseDescriptor get releaseDescriptor =>
+      parseAnimeReleaseDescriptor(title);
+
+  /// 标题里的标准分辨率标记（`1080p`/`2160p` 等）；没有为 null。
+  ///
+  /// 兼容旧调用方，真实解析统一收口在 [releaseDescriptor]。
+  String? get resolution => releaseDescriptor.resolution;
 
   /// 标题开头第一个 `[xxx]` 块的内容（发布组名）；没有为 null。
-  String? get releaseGroup => _leadingGroup.firstMatch(title)?.group(1);
+  ///
+  /// 兼容旧调用方，真实解析统一收口在 [releaseDescriptor]。
+  String? get releaseGroup => releaseDescriptor.releaseGroup;
 }
 
 /// 从标题识别合集集号区间。纯函数，便于单测。

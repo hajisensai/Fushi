@@ -1,8 +1,6 @@
 import 'dart:async' show StreamSubscription, unawaited;
 import 'dart:io';
-
 import 'package:drift/drift.dart' show Value;
-// BUG-994：shellTab 覆写用（切回视频 tab 自动重拉远端，监听收口在基类）。
 import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart' show HomeTab;
 import 'package:file_picker/file_picker.dart';
@@ -11,7 +9,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
-
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi/src/media/drag_drop/card_drop_registry.dart';
@@ -213,7 +210,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   RemoteLibraryCache get _remoteCache => ref.read(remoteLibraryCacheProvider);
 
   /// BUG-793：视频库 uid 集合监听。列表是一次性 FutureBuilder + 保活 tab，无此
-  /// 订阅时非本页发起的导入（外部「用 Hibiki 打开」等直接落库不 _refresh 的路径）
+  /// 订阅时非本页发起的导入（外部「用 Fushi 打开」等直接落库不 _refresh 的路径）
   /// 要等下拉刷新/重启才出现。订阅 videoBooks 表 → 集合一变（插入/删除）就 _refresh。
   StreamSubscription<List<String>>? _videoUidsSub;
 

@@ -29,8 +29,14 @@ void main() {
     expect(source, contains('watchStatus: _watchVideoDiscoveryStatus'));
     expect(source, contains('onPlay: _openLocalVideoDiscoveryWork'));
     expect(source, contains('VideoDiscoveryResourceSearchPage('));
-    expect(source, contains('VideoDiscoverySubscriptionDialog('));
+    expect(source, contains('VideoDiscoverySubscriptionPage('));
     expect(source, contains('VideoDiscoverySubtitleSearchPage('));
+    expect(
+      RegExp(r'on VideoDownloadBackendUnavailable catch \(error\)')
+          .allMatches(source),
+      hasLength(2),
+      reason: '资源搜索和订阅入口都应向用户展示内置引擎缺失的可操作原因',
+    );
     expect(source, contains('Navigator.of(context).push<void>('));
     expect(source, contains('Navigator.of(context).push<String>('));
     expect(source, contains('pipeline.attachSubtitleSelection('));

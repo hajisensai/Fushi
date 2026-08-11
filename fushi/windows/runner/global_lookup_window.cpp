@@ -2374,4 +2374,7 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
     default:
       return DefWindowProc(hwnd_, message, wparam, lparam);
   }
+  // WM_TIMER 只有 kTopmostGuardTimerId 由本窗口消费；其它 timer 必须继续走
+  // 默认窗口过程。显式兜底也保证本函数在 /WX 下不存在 C4715 无返回路径。
+  return DefWindowProc(hwnd_, message, wparam, lparam);
 }

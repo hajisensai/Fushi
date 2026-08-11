@@ -639,7 +639,6 @@
   "display_settings": "إعدادات الطباعة",
   "download_backend_not_configured": "Download backend is not configured yet.",
   "download_clear_finished": "Clear finished",
-  "download_discover_tab": "Discover",
   "download_network_proxy_auto": "Auto",
   "download_network_proxy_auto_hint": "Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.",
   "download_network_proxy_custom": "Custom",
@@ -3312,5 +3311,6 @@
   "dict_download_import_uncancellable": "Importing cannot be interrupted",
   "dict_download_busy": "A dictionary download is already running.",
   "gal_hook_ingame_lookup": "In-game dictionary lookup",
-  "gal_hook_ingame_lookup_hint": "Show the dictionary card inside the game window itself (KiriKiri engine, Windows only)"
+  "gal_hook_ingame_lookup_hint": "Show the dictionary card inside the game window itself (KiriKiri engine, Windows only)",
+  "download_subscription_start_episode": "从第 $episode 集开始"
 }

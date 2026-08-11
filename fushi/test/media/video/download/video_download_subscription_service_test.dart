@@ -127,7 +127,8 @@ VideoDownloadSubscriptionService _service({
 }
 
 void main() {
-  test('Nyaa strict rules, start anchor, and SxxExx item outbox are enforced',
+  test(
+      'Nyaa strict rules include the selected first episode and persist outbox',
       () async {
     final FushiDatabase database = await _openDatabase();
     final int sourceId = await _insertVideoSource(database);
@@ -193,14 +194,14 @@ void main() {
     expect(
       enqueued
           .map((VideoDownloadEnqueueRequest value) => value.resource.remoteId),
-      <String>['episode-2-best', 'episode-3'],
+      <String>['old', 'episode-2-best', 'episode-3'],
     );
     final List<VideoDownloadSubscriptionItemRow> items =
         await database.getVideoDownloadSubscriptionItems('anime');
     expect(
       items.map(
           (VideoDownloadSubscriptionItemRow value) => value.logicalItemKey),
-      <String>['S01E02', 'S01E03'],
+      <String>['S01E01', 'S01E02', 'S01E03'],
     );
     expect(
       items.every(
@@ -216,6 +217,146 @@ void main() {
         row.nextCheckAt, _nowAt + const Duration(minutes: 15).inMilliseconds);
     expect(row.retryCount, 0);
     expect(row.lastError, isNull);
+  });
+
+  test('anime roman numeral title uses the canonical third-season key',
+      () async {
+    final FushiDatabase database = await _openDatabase();
+    final int sourceId = await _insertVideoSource(database);
+    await _insertSubscription(
+      database,
+      id: 'mushoku-iii',
+      sourceId: sourceId,
+      resourceProvider: 'nyaa',
+      mediaKind: 'tv',
+      discoveryCategory: 'anime',
+      startAfterEpisode: 1,
+      filters: <String, Object?>{
+        'strict': true,
+        'releaseGroup': 'Erai-raws',
+        'resolution': '1080p',
+        'trustedOnly': true,
+      },
+    );
+    final List<VideoDownloadEnqueueRequest> enqueued =
+        <VideoDownloadEnqueueRequest>[];
+    final VideoDownloadSubscriptionService service = _service(
+      database: database,
+      provider: _FakeResourceProvider(
+        id: 'nyaa',
+        candidates: <VideoResourceCandidate>[
+          _candidate(
+            remoteId: 'mushoku-iii-02',
+            mediaTitle: '[Erai-raws] Mushoku Tensei III: '
+                'Isekai Ittara Honki Dasu - 02 [1080p]',
+            group: 'Erai-raws',
+          ),
+        ],
+      ),
+      enqueue: (VideoDownloadEnqueueRequest request) async {
+        enqueued.add(request);
+        return _persistFakeJob(database, request, 'mushoku-iii-job');
+      },
+    );
+
+    await service.checkNow();
+
+    expect(enqueued, hasLength(1));
+    expect(enqueued.single.media.season, 3);
+    expect(enqueued.single.media.episode, 2);
+    final VideoDownloadSubscriptionItemRow item =
+        (await database.getVideoDownloadSubscriptionItems('mushoku-iii'))
+            .single;
+    expect(item.logicalItemKey, 'S03E02');
+    expect(item.season, 3);
+    expect(item.episode, 2);
+  });
+
+  test('confirmed local episode is skipped before another release is enqueued',
+      () async {
+    final FushiDatabase database = await _openDatabase();
+    final int sourceId = await _insertVideoSource(database);
+    await _insertSubscription(
+      database,
+      id: 'local-episode',
+      sourceId: sourceId,
+      resourceProvider: 'nyaa',
+      mediaKind: 'tv',
+      discoveryCategory: 'anime',
+      startAfterEpisode: 1,
+      filters: <String, Object?>{
+        'strict': true,
+        'releaseGroup': 'Erai-raws',
+        'resolution': '1080p',
+        'trustedOnly': true,
+      },
+    );
+    final int collectionId = await database.createMediaCollection(
+      'Mushoku Tensei III',
+      collectionType: 'playlist',
+    );
+    await database.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/mushoku-iii-s03e02'),
+        title: const Value<String>('Mushoku Tensei III - S03E02'),
+        videoPath: const Value<String>(r'D:\Videos\Mushoku.S03E02.mkv'),
+        sourceId: Value<int?>(sourceId),
+      ),
+    );
+    await database.addToCollection(
+      collectionId,
+      MediaKind.video,
+      'video/mushoku-iii-s03e02',
+    );
+    final int workId = await database.upsertVideoMetadataWork(
+      VideoMetadataWorksCompanion.insert(
+        collectionId: Value<int?>(collectionId),
+        mediaType: 'tv',
+        title: 'Mushoku Tensei III',
+        updatedAt: _nowAt,
+      ),
+    );
+    await database.replaceVideoMetadataProviderIdentities(
+      workId: workId,
+      identities: <VideoMetadataProviderIdentitiesCompanion>[
+        VideoMetadataProviderIdentitiesCompanion.insert(
+          identityKey: 'work:$workId:anilist',
+          provider: 'anilist',
+          externalId: 'media-local-episode',
+          isPrimary: const Value<bool>(true),
+          updatedAt: _nowAt,
+        ),
+      ],
+    );
+    int enqueueCount = 0;
+    final VideoDownloadSubscriptionService service = _service(
+      database: database,
+      provider: _FakeResourceProvider(
+        id: 'nyaa',
+        candidates: <VideoResourceCandidate>[
+          _candidate(
+            remoteId: 'duplicate-s03e02',
+            mediaTitle: '[Erai-raws] Mushoku Tensei III: '
+                'Isekai Ittara Honki Dasu - 02 [1080p]',
+            group: 'Erai-raws',
+          ),
+        ],
+      ),
+      enqueue: (VideoDownloadEnqueueRequest _) async {
+        enqueueCount++;
+        return 'unexpected-job';
+      },
+    );
+
+    await service.checkNow();
+
+    expect(enqueueCount, 0);
+    final VideoDownloadSubscriptionItemRow item =
+        (await database.getVideoDownloadSubscriptionItems('local-episode'))
+            .single;
+    expect(item.logicalItemKey, 'S03E02');
+    expect(item.status, VideoDownloadSubscriptionItemStatus.skipped);
+    expect(item.jobId, isNull);
   });
 
   test('explicit Nyaa backfill traverses beyond 100 releases continuously',

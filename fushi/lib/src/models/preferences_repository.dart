@@ -1,9 +1,6 @@
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:fushi_core/fushi_core.dart';
-
-import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/torznab_client.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
@@ -22,6 +19,7 @@ import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
     show MiningMediaCompression;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/update_check_cache.dart';
+import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 
 enum DesktopClipboardWindowMode {
   normal('normal'),

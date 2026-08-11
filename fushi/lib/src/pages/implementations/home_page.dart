@@ -1290,6 +1290,11 @@ class _HomePageState extends BasePageState<HomePage>
     final VideoDownloadBackendIdentity identity;
     try {
       identity = await appModelNoUpdate.currentVideoDownloadBackendIdentity();
+    } on VideoDownloadBackendUnavailable catch (error) {
+      if (context.mounted) {
+        _showVideoDiscoveryMessage(context, error.message);
+      }
+      return;
     } on Object {
       if (context.mounted) {
         _showVideoDiscoveryMessage(context, t.download_backend_not_configured);
@@ -1352,6 +1357,11 @@ class _HomePageState extends BasePageState<HomePage>
     final VideoDownloadBackendIdentity identity;
     try {
       identity = await appModelNoUpdate.currentVideoDownloadBackendIdentity();
+    } on VideoDownloadBackendUnavailable catch (error) {
+      if (context.mounted) {
+        _showVideoDiscoveryMessage(context, error.message);
+      }
+      return;
     } on Object {
       if (context.mounted) {
         _showVideoDiscoveryMessage(context, t.download_backend_not_configured);
@@ -1359,63 +1369,65 @@ class _HomePageState extends BasePageState<HomePage>
       return;
     }
     if (!context.mounted) return;
-    await showAppDialog<void>(
-      context: context,
-      builder: (_) => VideoDiscoverySubscriptionDialog(
-        item: item,
-        registry: registry,
-        sources: sources,
-        defaultSourceId: appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
-        onSubmit: (VideoDiscoverySubscriptionSelection selection) async {
-          final int now = DateTime.now().millisecondsSinceEpoch;
-          final String subscriptionId =
-              videoDiscoverySubscriptionId(item.reference);
-          final VideoDownloadSubscriptionRow? previous = await appModelNoUpdate
-              .database
-              .getVideoDownloadSubscription(subscriptionId);
-          final VideoResourceCandidate resource = selection.download.resource;
-          await appModelNoUpdate.database.upsertVideoDownloadSubscription(
-            VideoDownloadSubscriptionsCompanion.insert(
-              subscriptionId: subscriptionId,
-              resourceProvider: persistedVideoResourceProviderId(resource),
-              metadataProvider: Value<String?>(item.reference.providerId),
-              externalId: Value<String?>(item.reference.mediaId),
-              mediaKind: item.reference.mediaKind.name,
-              discoveryCategory:
-                  Value<String?>(item.reference.discoveryCategory.name),
-              title: item.reference.title,
-              year: Value<int?>(item.reference.year),
-              season: Value<int?>(item.reference.season),
-              coverUrl: Value<String?>(item.posterUrl),
-              searchQuery: _videoResourceSearchQuery(item.reference),
-              filterJson: Value<String>(selection.filter.json),
-              mode: Value<String>(
-                item.reference.mediaKind == VideoMetadataMediaKind.movie
-                    ? 'oneShot'
-                    : 'ongoing',
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => VideoDiscoverySubscriptionPage(
+          item: item,
+          registry: registry,
+          sources: sources,
+          defaultSourceId:
+              appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
+          onSubmit: (VideoDiscoverySubscriptionSelection selection) async {
+            final int now = DateTime.now().millisecondsSinceEpoch;
+            final String subscriptionId =
+                videoDiscoverySubscriptionId(item.reference);
+            final VideoDownloadSubscriptionRow? previous =
+                await appModelNoUpdate.database
+                    .getVideoDownloadSubscription(subscriptionId);
+            final VideoResourceCandidate resource = selection.download.resource;
+            await appModelNoUpdate.database.upsertVideoDownloadSubscription(
+              VideoDownloadSubscriptionsCompanion.insert(
+                subscriptionId: subscriptionId,
+                resourceProvider: persistedVideoResourceProviderId(resource),
+                metadataProvider: Value<String?>(item.reference.providerId),
+                externalId: Value<String?>(item.reference.mediaId),
+                mediaKind: item.reference.mediaKind.name,
+                discoveryCategory:
+                    Value<String?>(item.reference.discoveryCategory.name),
+                title: item.reference.title,
+                year: Value<int?>(item.reference.year),
+                season: Value<int?>(item.reference.season),
+                coverUrl: Value<String?>(item.posterUrl),
+                searchQuery: _videoResourceSearchQuery(item.reference),
+                filterJson: Value<String>(selection.filter.json),
+                mode: Value<String>(
+                  item.reference.mediaKind == VideoMetadataMediaKind.movie
+                      ? 'oneShot'
+                      : 'ongoing',
+                ),
+                startAfterEpisode: Value<int?>(selection.startAfterEpisode),
+                backendKind: identity.kind,
+                backendProfileId: Value<String?>(identity.profileId),
+                fingerprint: identity.fingerprint,
+                category: Value<String?>(identity.category),
+                targetSourceId: Value<int?>(selection.download.source.id),
+                organizationPolicy: const Value<String>('library'),
+                subtitlePolicy:
+                    Value<String>(selection.download.subtitlePolicy.name),
+                enabled: const Value<bool>(true),
+                nextCheckAt: Value<int?>(now),
+                claimedBy: const Value<String?>(null),
+                claimExpiresAt: const Value<int?>(null),
+                retryCount: const Value<int>(0),
+                fulfilledAt: const Value<int?>(null),
+                lastError: const Value<String?>(null),
+                createdAt: previous?.createdAt ?? now,
+                updatedAt: now,
               ),
-              startAfterEpisode: Value<int?>(selection.startAfterEpisode),
-              backendKind: identity.kind,
-              backendProfileId: Value<String?>(identity.profileId),
-              fingerprint: identity.fingerprint,
-              category: Value<String?>(identity.category),
-              targetSourceId: Value<int?>(selection.download.source.id),
-              organizationPolicy: const Value<String>('library'),
-              subtitlePolicy:
-                  Value<String>(selection.download.subtitlePolicy.name),
-              enabled: const Value<bool>(true),
-              nextCheckAt: Value<int?>(now),
-              claimedBy: const Value<String?>(null),
-              claimExpiresAt: const Value<int?>(null),
-              retryCount: const Value<int>(0),
-              fulfilledAt: const Value<int?>(null),
-              lastError: const Value<String?>(null),
-              createdAt: previous?.createdAt ?? now,
-              updatedAt: now,
-            ),
-          );
-          await appModelNoUpdate.videoDownloadSubscriptionService?.checkNow();
-        },
+            );
+            await appModelNoUpdate.videoDownloadSubscriptionService?.checkNow();
+          },
+        ),
       ),
     );
   }

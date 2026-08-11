@@ -44,7 +44,12 @@ class DownloadsPage extends ConsumerStatefulWidget {
 class _DownloadsPageState extends ConsumerState<DownloadsPage> {
   late Future<_DownloadsResourceDependencies?> _resourceDependencies;
   VideoDownloadPipelineService? _resourcePipelineSnapshot;
-  Stream<List<VideoDownloadJobRow>>? _videoJobsStream;
+  bool _hasLegacyAnimeTasks = false;
+
+  void _setLegacyAnimeTaskPresence(bool present) {
+    if (!mounted || _hasLegacyAnimeTasks == present) return;
+    setState(() => _hasLegacyAnimeTasks = present);
+  }
 
   @override
   void initState() {
@@ -168,8 +173,9 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
       _resourceDependencies = _loadResourceDependencies(appModel);
     }
     return DefaultTabController(
+        initialIndex:
+            widget.initialShowSettings ? 3 : widget.initialTabIndex.clamp(0, 2),
         length: 4,
-        initialIndex: widget.initialShowSettings ? 3 : 0,
         child: Builder(
           builder: (BuildContext tabContext) => Scaffold(
             // BUG-1003：内联下载流程把 apikey/搜番等输入框全放在页面上半部，下载任务折叠区
@@ -213,26 +219,24 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                 _buildResourceTab(),
                 // 任务 tab：漫画目录卷下载队列（有任务才占位）+ torrent 任务，
                 // 统一下载中心的同屏任务视图。
-                Column(
-                  children: <Widget>[
-                    const MokuroMoeTasksSection(),
-                    // 视频下载队列与漫画卷队列同规：有任务才占位。空态只留
-                    // torrent 任务视图一份，避免同屏叠两条相同的「暂无任务」。
-                    StreamBuilder<List<VideoDownloadJobRow>>(
-                      stream: _videoJobsStream ??= ref
-                          .read(appProvider)
-                          .database
-                          .watchVideoDownloadJobs(),
-                      builder: (
-                        BuildContext context,
-                        AsyncSnapshot<List<VideoDownloadJobRow>> snapshot,
-                      ) {
-                        if (snapshot.data?.isEmpty ?? true) {
-                          return const SizedBox.shrink();
-                        }
-                        return Expanded(
+                //
+                // 「同屏只留一份空态」由**旧计划列表**按需折叠实现（BUG-1484）：
+                // 新版任务面板常驻并自带空态与实时指标，旧 AnimeDownloadDialog
+                // 只在真有旧任务时按比例分高度，没有就整块收成 0 高。
+                LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final double legacyHeight =
+                        (constraints.maxHeight * 0.38).clamp(180, 360);
+                    return Column(
+                      children: <Widget>[
+                        const MokuroMoeTasksSection(),
+                        Expanded(
                           child: VideoDownloadJobsPanel.database(
                             database: ref.read(appProvider).database,
+                            metricsLoader: ref
+                                .read(appProvider)
+                                .videoDownloadPipelineService
+                                ?.loadTaskSnapshots,
                             onRetry: (VideoDownloadJobRow job) async {
                               await ref
                                   .read(appProvider)
@@ -246,33 +250,31 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                                   ?.cancelJob(job.jobId);
                             },
                           ),
-                        );
-                      },
-                    ),
-                    Expanded(
-                      child: AnimeDownloadDialog(
-                        embedded: true,
-                        tasksOnly: true,
-                        showTasks: false,
-                        onOpenSettings: () =>
-                            DefaultTabController.of(tabContext).animateTo(3),
-                      ),
-                    ),
-                  ],
+                        ),
+                        SizedBox(
+                          height: _hasLegacyAnimeTasks ? legacyHeight : 0,
+                          child: Offstage(
+                            offstage: !_hasLegacyAnimeTasks,
+                            child: AnimeDownloadDialog(
+                              embedded: true,
+                              tasksOnly: true,
+                              showTasks: false,
+                              onTaskPresenceChanged:
+                                  _setLegacyAnimeTaskPresence,
+                              onOpenSettings: () => DefaultTabController.of(
+                                tabContext,
+                              ).animateTo(3),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
                 const VideoDownloadSubscriptionsPanel(),
                 ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: <Widget>[
-                    // 桌面宽屏限宽 560 居中（对齐全 app 设置面板口径），不再全宽铺开。
-                    Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: kTorrentSettingsContentMaxWidth,
-                        ),
-                        child: const TorrentSettingsSection(),
-                      ),
-                    ),
+                  children: const <Widget>[
+                    TorrentSettingsSection(constrainWidth: false),
                   ],
                 ),
               ],

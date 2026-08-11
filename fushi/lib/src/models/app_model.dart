@@ -3583,6 +3583,10 @@ class AppModel with ChangeNotifier {
     VideoDownloadBackendIdentity? identity;
     try {
       identity = await _currentVideoDownloadBackendIdentity(config);
+    } on VideoDownloadBackendUnavailable {
+      // Release 包缺少内置引擎时也必须完成迁移并继续启动；新旧任务会在
+      // pipeline 中得到可操作的 needsAttention 原因。
+      identity = null;
     } on ArgumentError {
       // 未配置可用后端时仍要完成 JSON→Drift 的幂等迁移；任务会保留为
       // needsAttention，而不是让整个下载 runtime 因身份无法构造而启动失败。
@@ -3647,6 +3651,8 @@ class AppModel with ChangeNotifier {
       config: config,
       resolvedBackend: resolved,
       embeddedInstallationId: installationId,
+      embeddedAvailable: resolved != QbConnectionConfig.backendEmbedded ||
+          isEmbeddedTorrentReady,
     );
   }
 
@@ -3782,8 +3788,12 @@ class AppModel with ChangeNotifier {
   ) async {
     final QbConnectionConfig config =
         effectiveTorrentConfig(prefsRepo.qbConnectionConfig);
-    final VideoDownloadBackendIdentity identity =
-        await _currentVideoDownloadBackendIdentity(config);
+    final VideoDownloadBackendIdentity identity;
+    try {
+      identity = await _currentVideoDownloadBackendIdentity(config);
+    } on VideoDownloadBackendUnavailable catch (error) {
+      throw VideoDownloadPipelineActionRequired(error.message);
+    }
     final String cacheKey = '${encodeQbConnectionConfig(config)}\u0000'
         '${identity.fingerprint}';
     if (_videoDownloadBackend == null ||

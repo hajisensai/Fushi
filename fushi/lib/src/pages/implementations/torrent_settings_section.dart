@@ -64,8 +64,8 @@ class _TorrentSettingsSectionState
   /// TODO-1961：目录选择/校验进行中（按钮禁用防重入）。
   bool _pickingFolder = false;
 
-  /// 分类输入框：持 controller 是为了失焦回填——清空时存储侧兜底 'hibiki'，
-  /// 失焦把实际生效值写回输入框，所见即所得（不再「显示空、实际 hibiki」）。
+  /// 分类输入框：持 controller 是为了失焦回填——清空时存储侧兜底 'fushi'，
+  /// 失焦把实际生效值写回输入框，所见即所得（不再「显示空、实际 fushi」）。
   late final TextEditingController _categoryCtrl =
       TextEditingController(text: _config.category);
   late final FocusNode _categoryFocus = FocusNode()
@@ -462,7 +462,7 @@ class _TorrentSettingsSectionState
           ),
         ],
 
-        // 分类（两后端通用）。清空时存储侧兜底 'hibiki'，失焦回填生效值
+        // 分类（两后端通用）。清空时存储侧兜底 'fushi'，失焦回填生效值
         // （见 [_onCategoryFocusChanged]），所见即所得。
         _text(
           label: t.video_setting_qb_category,
@@ -470,7 +470,7 @@ class _TorrentSettingsSectionState
           focusNode: _categoryFocus,
           hint: t.video_setting_qb_category_hint,
           onChanged: (String v) => _commit((QbConnectionConfig c) =>
-              c.copyWith(category: v.trim().isEmpty ? 'hibiki' : v.trim())),
+              c.copyWith(category: v.trim().isEmpty ? 'fushi' : v.trim())),
         ),
 
         // 内置引擎资源限制。
