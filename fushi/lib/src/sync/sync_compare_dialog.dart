@@ -293,10 +293,14 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     ));
   }
 
+  // BUG-1576：folder 缓存按通道分槽落盘。对比对话框拿的是**某一条**已解析通道的
+  // 后端（冲突提示器注入的就是出冲突那条通道），写回全局单份键会把另一条通道的
+  // 目录布局覆盖掉。
+  final SyncChannelScope scope = syncChannelScopeOf(backend);
   final rootIdNow = backend.cachedRootFolderId;
-  if (rootIdNow != null) await repo.setRootFolderId(rootIdNow);
+  if (rootIdNow != null) await repo.setRootFolderId(scope, rootIdNow);
   final cache = backend.cachedFolderIds;
-  if (cache.isNotEmpty) await repo.setFolderCache(cache);
+  if (cache.isNotEmpty) await repo.setFolderCache(scope, cache);
 
   return entries;
 }
@@ -421,8 +425,11 @@ Future<String> _ensureRoot(
   SyncRepository repo,
 ) async {
   if (backend.cachedRootFolderId != null) return backend.cachedRootFolderId!;
-  final savedRoot = await repo.getRootFolderId();
-  final savedCache = await repo.getFolderCache();
+  // BUG-1576：只读**本通道**那格。读全局键时，互联通道上一轮写下的绝对 URL 会被
+  // 云后端当成 fileId / 被 WebDAV 当成自己的路径直接请求出去。
+  final SyncChannelScope scope = syncChannelScopeOf(backend);
+  final savedRoot = await repo.getRootFolderId(scope);
+  final savedCache = await repo.getFolderCache(scope);
   backend.restoreCache(rootFolderId: savedRoot, titleToFolderId: savedCache);
   return backend.findOrCreateRootFolder();
 }
@@ -940,8 +947,8 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         // folderId）会被 ensureBookFolder 命中，上传打向 trashed 文件夹 → 复传石沉
         // （BUG-202）。DB 写不依赖 UI，放在 mounted 检查前以保证一定落盘。
         widget.backend.evictFolderId(id);
-        await SyncRepository(widget.db)
-            .setFolderCache(widget.backend.cachedFolderIds);
+        await SyncRepository(widget.db).setFolderCache(
+            syncChannelScopeOf(widget.backend), widget.backend.cachedFolderIds);
       }
       if (!mounted) return;
       setState(onSuccess);

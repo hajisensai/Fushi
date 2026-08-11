@@ -104,7 +104,8 @@ void main() {
     expect(c.mediaType, SyncTombstoneKind.srtbook.dbValue);
     expect(c.itemKey, 'srt/lonely');
     expect(c.direction, DeletionPropagationDirection.deleteLocal);
-    expect(report.deletionTombstonesHighWaterMs, 9000);
+    expect(report.deletionTombstonesHighWaterMsByScope,
+        <String, int>{SyncChannelScope.unscoped.id: 9000});
   });
 
   test('消费：srt-backed 行（bookKey 非空）不算 srtbook 在库键 → 不产候选', () async {
@@ -130,7 +131,8 @@ void main() {
   test('消费：deletedAt 不晚于基线的旧标记不再弹', () async {
     await addSrt('srt/old');
     await putRemoteTombstone('srt/old', 500);
-    await SyncRepository(db).setDeletionTombstonesBaselineMs(1000);
+    await SyncRepository(db)
+        .setDeletionTombstonesBaselineMs(SyncChannelScope.unscoped, 1000);
 
     final SyncRunReport report = SyncRunReport();
     await orchestrator().syncDeletionTombstones(report);

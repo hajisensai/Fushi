@@ -110,6 +110,64 @@ class FushiFingerprintMismatchException implements Exception {
       'incoming=$incomingFingerprint)';
 }
 
+/// 一条同步通道在**持久化偏好键**里的身份（BUG-1576 / BUG-1578 / BUG-1579 / BUG-1580）。
+///
+/// 互联从「互斥的 `backendType` 单选」解耦成「与云备份并存的第二通道」之后，一轮
+/// sweep 会在同一把锁里依次跑两条通道，而一批「一台设备只对一个远端」的状态仍是
+/// **全局单份键**：folder 缓存、合集/删除墓碑因果基线、同步冷却戳、聚合快照哈希。
+/// 后写者覆盖先写者，下一轮先读者读到的就是别人的账。最严重的一例是 folder 缓存
+/// ——互联与 WebDAV 的 folderId 是**绝对 URL**，被另一条通道读回后会把请求连同
+/// 自己的 Basic 凭据直接发往对端主机。
+///
+/// 所以凡是「按远端记账」的持久化状态都必须带上这个槽位标识。槽位取自通道身份：
+/// - [forBackendType]：本机作为 client 跑的一条通道（云备份后端 / 互联）。互联恒
+///   为 [SyncBackendType.fushiServer]，故「云 vs 互联」天然分开；用户把备份后端也
+///   选成互联时两条通道会被去重成一条，槽位同样只有一个，语义仍然自洽。
+/// - [host]：本机作为互联 host 被动接收对端 POST 时记的那本账（不是一条 client
+///   通道，但同样是独立的因果轴）。
+/// - [unscoped]：没有声明通道身份的后端（只可能是测试 fake，见
+///   [syncChannelScopeOf]）。单独一格，绝不与任何真实通道共用。
+class SyncChannelScope {
+  const SyncChannelScope._(this.id);
+
+  /// 本机作为 client 跑的一条通道（云备份后端 / 互联）。
+  factory SyncChannelScope.forBackendType(SyncBackendType type) =>
+      SyncChannelScope._(type.name);
+
+  /// 本机作为互联 host 被动接收对端 POST 时那本账。
+  static const SyncChannelScope host = SyncChannelScope._('host');
+
+  /// 未声明通道身份的后端（测试 fake）。
+  static const SyncChannelScope unscoped = SyncChannelScope._('unscoped');
+
+  /// 从 [id] 还原槽位（跨「报告 → UI」这类只搬得动纯数据的边界时用；id 本身就是
+  /// 这个类产出的，故是无损往返）。
+  factory SyncChannelScope.byId(String id) => SyncChannelScope._(id);
+
+  /// 全部可能的槽位（键目录展开用，见 [SyncRepository.deviceLocalPrefKeys]）。
+  static List<SyncChannelScope> get all => <SyncChannelScope>[
+        for (final SyncBackendType t in SyncBackendType.values)
+          SyncChannelScope.forBackendType(t),
+        host,
+        unscoped,
+      ];
+
+  final String id;
+
+  /// 把一个全局键基名加上本槽位后缀。双下划线分隔：既不会与任何既有的
+  /// snake_case 键撞成同名，也一眼看得出哪部分是基名。
+  String key(String base) => '${base}__$id';
+
+  @override
+  bool operator ==(Object other) => other is SyncChannelScope && other.id == id;
+
+  @override
+  int get hashCode => id.hashCode;
+
+  @override
+  String toString() => 'SyncChannelScope($id)';
+}
+
 /// 同步配置和缓存的持久化层（基于 Preferences 表）。
 ///
 /// 桌面 OAuth 凭据（refresh token, client secret）存储在用户级 SQLite 数据库中，
@@ -170,46 +228,89 @@ class SyncRepository {
   static const String syncAudioBookPreferenceKey = _keySyncAudioBook;
   static const String syncDictionaryPreferenceKey = _keySyncDictionary;
 
-  // ── Folder cache ──────────────────────────────────────────────────
+  // ── Folder cache（按通道分槽，BUG-1576） ───────────────────────────
+  //
+  // 根 folderId 与「书名→folderId」映射描述的是**某一个远端**的目录布局，绝不是
+  // 设备的属性。双通道并存后共用一份全局键 = 后写者覆盖先写者，而互联/WebDAV 的
+  // folderId 是绝对 URL，被另一条通道读回后会连同自己的凭据发往对端主机
+  // （webdav_ops 的 buildRequest 对绝对 URL 直接 open + 附 Authorization）。
+  // 故读写一律带 [SyncChannelScope]。
 
-  Future<String?> getRootFolderId() async {
+  Future<String?> getRootFolderId(SyncChannelScope scope) async {
     final row = await (_db.select(_db.preferences)
-          ..where((t) => t.key.equals(_keyRootFolderId)))
+          ..where((t) => t.key.equals(scope.key(_keyRootFolderId))))
         .getSingleOrNull();
     return row?.value;
   }
 
-  Future<void> setRootFolderId(String? id) async {
+  Future<void> setRootFolderId(SyncChannelScope scope, String? id) async {
+    final String key = scope.key(_keyRootFolderId);
     if (id == null) {
-      await (_db.delete(_db.preferences)
-            ..where((t) => t.key.equals(_keyRootFolderId)))
-          .go();
+      await (_db.delete(_db.preferences)..where((t) => t.key.equals(key))).go();
       return;
     }
     await _db.into(_db.preferences).insertOnConflictUpdate(
-          PreferencesCompanion.insert(key: _keyRootFolderId, value: id),
+          PreferencesCompanion.insert(key: key, value: id),
         );
   }
 
-  Future<Map<String, String>> getFolderCache() async {
+  Future<Map<String, String>> getFolderCache(SyncChannelScope scope) async {
     final row = await (_db.select(_db.preferences)
-          ..where((t) => t.key.equals(_keyFolderCache)))
+          ..where((t) => t.key.equals(scope.key(_keyFolderCache))))
         .getSingleOrNull();
     if (row == null) return {};
     return Map<String, String>.from(
         jsonDecode(row.value) as Map<String, dynamic>);
   }
 
-  Future<void> setFolderCache(Map<String, String> cache) async {
+  Future<void> setFolderCache(
+      SyncChannelScope scope, Map<String, String> cache) async {
     await _db.into(_db.preferences).insertOnConflictUpdate(
           PreferencesCompanion.insert(
-              key: _keyFolderCache, value: jsonEncode(cache)),
+              key: scope.key(_keyFolderCache), value: jsonEncode(cache)),
         );
   }
 
-  Future<void> clearFolderCache() async {
+  Future<void> clearFolderCache(SyncChannelScope scope) async {
     await (_db.delete(_db.preferences)
-          ..where((t) => t.key.isIn([_keyRootFolderId, _keyFolderCache])))
+          ..where((t) => t.key.isIn(<String>[
+                scope.key(_keyRootFolderId),
+                scope.key(_keyFolderCache),
+              ])))
+        .go();
+  }
+
+  /// 清掉**所有**通道的 folder 缓存（含解耦前的旧全局键）。
+  ///
+  /// 备份导入用：导入库里带的是**备份来源机**的目录布局，对本机保留下来的后端账号
+  /// 全部无效，一条通道都不能留。键目录由 [SyncChannelScope.all] 展开，新增后端
+  /// 自动被覆盖。
+  Future<void> clearAllFolderCaches() async {
+    final List<String> keys = <String>[
+      _keyRootFolderId,
+      _keyFolderCache,
+      for (final SyncChannelScope scope in SyncChannelScope.all) ...<String>[
+        scope.key(_keyRootFolderId),
+        scope.key(_keyFolderCache),
+      ],
+    ];
+    await (_db.delete(_db.preferences)..where((t) => t.key.isIn(keys))).go();
+  }
+
+  /// 一次性清理解耦前的**全局** folder 缓存键（BUG-1576 迁移）。
+  ///
+  /// 迁移语义是**丢弃而不是搬运**：这两个键的值此刻已经无法归因到任何一条通道
+  /// （双通道 sweep 里谁最后写的就是谁的，正是本 bug 的成因），把它搬进任何一个
+  /// 槽位都等于把污染固化下来。而它本身是**纯缓存**：根目录由
+  /// `findOrCreateRootFolder` 按名查找/创建、书文件夹由 `ensureBookFolder` 按名
+  /// 解析，丢了只是下一轮同步多几次目录解析，不丢任何用户数据（切后端时本来就
+  /// 会 [clearFolderCache]，见 `applyBackupBackendChange`）。
+  ///
+  /// 幂等：键已不存在时是 no-op。
+  Future<void> migrateFolderCacheToPerChannel() async {
+    await (_db.delete(_db.preferences)
+          ..where(
+              (t) => t.key.isIn(<String>[_keyRootFolderId, _keyFolderCache])))
         .go();
   }
 
@@ -257,37 +358,70 @@ class SyncRepository {
   /// 「与 Hoshi/ッツ 共享 Google Drive」开关。默认关（老用户云端数据留在隐藏
   /// appDataFolder 原地不动）。
 
-  Future<int?> getLastSyncMs() async {
-    final s = await _getStringOrNull(_keyLastSyncMs);
+  /// 某条通道上次**整轮**同步完成的时刻（自动同步冷却窗判据）。
+  ///
+  /// 按通道分槽（BUG-1580）：解耦前是单份全局键，两条通道各写各的、却被
+  /// [sync_auto_trigger] 的一次冷却判定当成同一个闸——云通道刚跑完就把互联通道
+  /// 一起压住 5 分钟，反之亦然；一条通道失败重试也会被另一条的成功戳压制。
+  ///
+  /// 迁移：本槽位无值时回落解耦前的全局键（升级后第一轮不会因为「新键为空」而把
+  /// 刚同步过的通道当成从未同步、立刻再跑一轮）。写侧只写本槽位。
+  Future<int?> getLastSyncMs(SyncChannelScope scope) async {
+    final s = await _getStringOrNull(scope.key(_keyLastSyncMs)) ??
+        await _getStringOrNull(_keyLastSyncMs);
     return s == null ? null : int.tryParse(s);
   }
 
-  Future<void> setLastSyncMs(int ms) =>
-      _setString(_keyLastSyncMs, ms.toString());
+  Future<void> setLastSyncMs(SyncChannelScope scope, int ms) =>
+      _setString(scope.key(_keyLastSyncMs), ms.toString());
 
   /// 本端上次**成功**合集同步的毫秒戳（多端库联合视图 §2.3：合集同步引擎的
   /// 因果基线——removedAt/deletedAt 晚于它的墓碑才是「新闻」，早于它的墓碑视为
   /// 本端已裁决过、成员/合集仍在即代表之后重加/重建）。0 = 从未同步过。
   /// 设备本地（[deviceLocalPrefKeys]）：它描述「本设备见过共享清单到什么时刻」，
   /// 随备份跨设备会让新设备把没见过的墓碑误判为旧闻而复活成员。
-  Future<int> getCollectionsSyncBaselineMs() async {
-    final String? s = await _getStringOrNull(_keyCollectionsBaselineMs);
+  ///
+  /// 按通道分槽（BUG-1579）：云通道、互联 client 通道、以及本机作为互联 host 收到
+  /// 对端 POST 时的合并，三方原先读写**同一个键**。双通道下的具体后果是：互联对端
+  /// 推来的「成员移出墓碑」被云通道刚推进过的基线判成旧闻 → 引擎按「活胜」撤销这
+  /// 次移出 → 再回传给 host，用户的移出操作被自己另一条通道悄悄撤销。因果基线描述
+  /// 的是「本端相对**某一个远端**见过什么」，三条轴必须各记各的。
+  ///
+  /// 迁移：本槽位无值时回落解耦前的全局键作初值（升级后第一轮不会把所有历史墓碑
+  /// 当成新闻重裁一遍）。写侧只写本槽位。
+  Future<int> getCollectionsSyncBaselineMs(SyncChannelScope scope) async {
+    final String? s =
+        await _getStringOrNull(scope.key(_keyCollectionsBaselineMs)) ??
+            await _getStringOrNull(_keyCollectionsBaselineMs);
     return s == null ? 0 : int.tryParse(s) ?? 0;
   }
 
-  Future<void> setCollectionsSyncBaselineMs(int ms) =>
-      _setString(_keyCollectionsBaselineMs, ms.toString());
+  Future<void> setCollectionsSyncBaselineMs(SyncChannelScope scope, int ms) =>
+      _setString(scope.key(_keyCollectionsBaselineMs), ms.toString());
 
   /// 删除墓碑消费的因果基线（毫秒）。远端删除标记 deletedAt 晚于它才弹逐条确认；
   /// 早于它视为本设备已处理过、不再反复弹。0 = 从未消费过。设备本地
   /// （[deviceLocalPrefKeys]），随备份跨设备会让新设备把老墓碑误判为新闻反复骚扰。
-  Future<int> getDeletionTombstonesBaselineMs() async {
-    final String? s = await _getStringOrNull(_keyDeletionTombstonesBaselineMs);
+  ///
+  /// 按通道分槽（BUG-1579）：**推送**基线早就是互联通道专属的独立键（见
+  /// [getDeletionTombstonesPushBaselineMs] 的理由——「两个通道各记各的账」），消费侧
+  /// 却仍是一份全局键，两边不对称。后果：用户在云通道的确认框里处理完一批删除、
+  /// 基线被推到 T，互联对端此前那批 deletedAt < T 的墓碑就此永远不再弹确认——那些
+  /// 条目在本机留了下来，而用户以为「所有设备都删了」。消费轴按通道拆开后与推送轴
+  /// 同形。
+  ///
+  /// 迁移：本槽位无值时回落解耦前的全局键作初值（升级后不会把用户早已复核过的老
+  /// 墓碑重新当成新闻、逐条再弹一遍）。写侧只写本槽位。
+  Future<int> getDeletionTombstonesBaselineMs(SyncChannelScope scope) async {
+    final String? s =
+        await _getStringOrNull(scope.key(_keyDeletionTombstonesBaselineMs)) ??
+            await _getStringOrNull(_keyDeletionTombstonesBaselineMs);
     return s == null ? 0 : int.tryParse(s) ?? 0;
   }
 
-  Future<void> setDeletionTombstonesBaselineMs(int ms) =>
-      _setString(_keyDeletionTombstonesBaselineMs, ms.toString());
+  Future<void> setDeletionTombstonesBaselineMs(
+          SyncChannelScope scope, int ms) =>
+      _setString(scope.key(_keyDeletionTombstonesBaselineMs), ms.toString());
 
   /// 删除墓碑**推送**的因果基线（毫秒，互联通道专用）。本地墓碑 deletedAt 晚于它才
   /// 推给对端 host；早于它视为本设备已推过、不再重复请求。0 = 从未推送过。
@@ -360,8 +494,13 @@ class SyncRepository {
     bool present(String? v) => v != null && v.isNotEmpty;
     switch (type) {
       case SyncBackendType.googleDrive:
+        // BUG-1576：这里读的必须是 **Drive 自己那格** 的根 folderId。用全局键时，
+        // 一台从未登录过 Drive 的设备只要跑过一轮互联同步，全局键里就躺着互联对端
+        // 的 URL，于是「云已配置」为真 → `hasDeletionPropagationChannel` 放行
+        // 「从所有设备删除」→ 用户以为删干净了，实际没有任何云通道去发布墓碑。
         return present(await getDesktopCredentials()) ||
-            present(await getRootFolderId());
+            present(await getRootFolderId(
+                SyncChannelScope.forBackendType(SyncBackendType.googleDrive)));
       case SyncBackendType.webDav:
         return present(await getWebDavUrl());
       case SyncBackendType.ftp:
@@ -926,7 +1065,28 @@ class SyncRepository {
   /// - folder cache `sync_root_folder_id`/`sync_folder_cache` —— 不还原，下次同步重建。
   ///
   /// 这是"哪些 key 属于设备本地"的唯一真相源；备份导入只引用本清单，杜绝两处漂移。
-  static const List<String> deviceLocalPrefKeys = <String>[
+  ///
+  /// BUG-1579：因果基线拆成 per-channel 键后，本清单同步展开成「基名 × 全部槽位」
+  /// （[_perChannelDeviceLocalBases] × [SyncChannelScope.all]）。漏展开的后果不是
+  /// 编译错误而是静默泄漏——基线会随备份跨设备携带，正是拆键前就有的老毛病。
+  static final List<String> deviceLocalPrefKeys = <String>[
+    ..._deviceLocalFixedKeys,
+    for (final String base in _perChannelDeviceLocalBases)
+      for (final SyncChannelScope scope in SyncChannelScope.all)
+        scope.key(base),
+  ];
+
+  /// 按通道分槽、且属设备本地的键基名（展开进 [deviceLocalPrefKeys]）。
+  ///
+  /// 不含 `sync_last_sync_ms`：它解耦前就不在设备本地清单里（冷却戳随备份恢复是
+  /// 既有行为），拆键不改变这一点。不含 folder 缓存：那本来就是「不还原、下次同步
+  /// 重建」的一类（见上面的排除说明）。
+  static const List<String> _perChannelDeviceLocalBases = <String>[
+    _keyCollectionsBaselineMs,
+    _keyDeletionTombstonesBaselineMs,
+  ];
+
+  static const List<String> _deviceLocalFixedKeys = <String>[
     _keyBackendType,
     // （旧键 google_drive_hoshi_compat 已由 fushi_core v72 迁移清行：Hoshi 共享
     // 空间功能删除后它无任何读写方；导入的旧备份库开库时同样被清，故无需再列。）
@@ -957,6 +1117,8 @@ class SyncRepository {
     _keyFushiClientUrl,
     // 合集同步因果基线：描述「本设备见过共享清单到什么时刻」，跨设备携带会让
     // 新设备把没见过的墓碑误判成旧闻而复活成员（见 getCollectionsSyncBaselineMs）。
+    // 这两条是**解耦前的全局键**：现值仍被 per-channel 读作迁移初值，故照旧不能
+    // 跨设备携带；per-channel 槽位由 _perChannelDeviceLocalBases 展开补上。
     _keyCollectionsBaselineMs,
     // 删除墓碑消费基线：同理设备本地，跨设备携带会让新设备反复弹老墓碑确认框。
     _keyDeletionTombstonesBaselineMs,

@@ -70,7 +70,8 @@ void main() {
 
     test('runCollectionsOnly 不写全量 sweep 冷却戳 lastSyncMs', () async {
       await orch(dbA, 'devA').runCollectionsOnly();
-      expect(await SyncRepository(dbA).getLastSyncMs(), isNull,
+      expect(await SyncRepository(dbA).getLastSyncMs(SyncChannelScope.unscoped),
+          isNull,
           reason: '冷却戳属于完整 sweep 语义（TODO-1332），'
               '轻量路径写它会压制下一次 app-open 全量同步');
     });
