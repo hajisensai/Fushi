@@ -27,6 +27,8 @@ library;
 import 'dart:io';
 
 import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/media_extensions.dart'
+    show kPlaylistManifestExtensions;
 import 'package:fushi/src/media/metadata/image_download.dart'
     show looksLikeImageBytes;
 import 'package:fushi/src/media/video/ffmpeg_backend.dart';
@@ -127,6 +129,30 @@ Future<String?> extractEmbeddedVideoCoverViaFfmpeg({
   }
 }
 
+/// 纯函数：[path] 是否是播放列表清单文件（`.m3u8`/`.m3u`，大小写不敏感）。
+///
+/// 清单是**文本列表**不是媒体流本体：本地清单喂 ffmpeg 抽帧必然
+/// `Invalid data found when processing input`。判定只看扩展名（与导入/扫描分类
+/// 同一判据，真相源 [kPlaylistManifestExtensions]），不做 IO。
+bool isPlaylistManifestPath(String path) =>
+    kPlaylistManifestExtensions.contains(p.extension(path).toLowerCase());
+
+/// 纯函数：[videoPath] 是否是「本地可抽帧媒体文件」——封面**回填**队列的候选判据
+/// （BUG-1564）。false 的三类各有正当去处，都不该进 ffmpeg 抽帧队列：
+/// - 空路径：无源可抽；
+/// - `http(s)://` 流 URL：回填不碰网络（流媒体封面走导入期缩略图下载 / host 元数据
+///   产线；注意 ffmpeg 本身**能**吃远端流，导入期 `streamImportCoverStrategy` 仍走
+///   [extractVideoCover]，本谓词只服务回填候选过滤，不是 ffmpeg 能力判定）；
+/// - 本地播放列表清单（[isPlaylistManifestPath]）：文本清单不是媒体流本体，
+///   抽帧永远失败——嵌套 m3u8 条目拆集成的行 `videoPath` 就是 `.m3u8` 自身。
+bool isLocalFrameExtractableVideoSource(String videoPath) {
+  final String path = videoPath.trim();
+  if (path.isEmpty) return false;
+  if (path.startsWith('http://') || path.startsWith('https://')) return false;
+  if (isPlaylistManifestPath(path)) return false;
+  return true;
+}
+
 /// 由 [bookUid] 生成视频封面文件名（无目录），把路径分隔符与 `:` 等非法字符
 /// 归一成 `_`，避免 `video/playlist/...` 这类带 `/` `:` 的 bookUid 当文件名非法
 /// （尤其 Windows）。纯函数，便于单测。
@@ -200,6 +226,14 @@ Future<String?> extractVideoCover({
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给抽帧 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
 }) async {
+  // BUG-1564：**本地**播放列表清单（.m3u8/.m3u）是文本列表不是媒体流，两条 ffmpeg
+  // 路（内嵌封面 / 抽帧）对它都必然失败（`Invalid data found`）——在抽取器层直接
+  // 拒收，所有调用方（回填 / 拆集导入遍历嵌套清单条目 / 外部打开 / host 服务）一并
+  // 免疫，不再各自烧一次 ffmpeg 子进程。远端 `http(s)://…m3u8` 是 HLS 流、ffmpeg
+  // 能直接抽（流媒体导入的 ffmpegFrame 策略依赖这条路），不在拒收之列。
+  final bool isRemoteInput =
+      videoPath.startsWith('http://') || videoPath.startsWith('https://');
+  if (!isRemoteInput && isPlaylistManifestPath(videoPath)) return null;
   // TODO-1236：经 AppPaths 解析封面目录（跟随桌面自定义数据根 →
   // `<dataRoot>/documents/video_covers`；默认根仍是平台 Documents），与 TODO-1226
   // 迁移白名单 `video_covers` 一致，避免自定义数据根下新封面落回平台 Documents。
