@@ -4,15 +4,106 @@ try { importScripts('fushi-defaults.js', 'connection-diagnostics.js', 'self-upda
 const FUSHI_DEFAULTS =
     (self.FUSHI_DEFAULTS) || { host: '127.0.0.1', port: 19633, token: '' };
 
+let connectionConfigPromise = null;
+const LOOKUP_PERF_STORAGE_KEY = 'fushiLookupPerfLogs';
+const LOOKUP_PERF_LIMIT = 80;
+let lookupPerfSequence = 0;
+let lookupPerfLogs = [];
+let lookupPerfFlushTimer = null;
+let lookupPerfStorageEpoch = 0;
+let lookupPerfWritePromise = Promise.resolve();
+const lookupPerfReady = chrome.storage.local.get(LOOKUP_PERF_STORAGE_KEY)
+  .then((saved) => {
+    const items = saved && saved[LOOKUP_PERF_STORAGE_KEY];
+    lookupPerfLogs = Array.isArray(items) ? items.slice(-LOOKUP_PERF_LIMIT) : [];
+  })
+  .catch(() => { lookupPerfLogs = []; });
+
+function nextLookupPerfId() {
+  try {
+    if (crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  } catch (_) {}
+  return Date.now().toString(36) + '-' + (++lookupPerfSequence).toString(36);
+}
+
+function parseLookupServerTiming(header) {
+  if (!header) return {};
+  const names = {
+    'request-json': 'serverRequestJsonMs',
+    'handler-map': 'serverHandlerMapMs',
+    'normalize': 'serverNormalizeMs',
+    'popup-cache': 'serverPopupCacheMs',
+    'full-cache': 'serverFullCacheMs',
+    'ffi-cache': 'serverFfiCacheMs',
+    'ffi-lookup': 'serverFfiLookupMs',
+    'popup-json': 'serverPopupJsonMs',
+    'service-total': 'serverServiceTotalMs',
+    'json-encode': 'serverJsonEncodeMs',
+    'server-total': 'serverTotalMs',
+  };
+  const out = {};
+  for (const part of String(header).split(',')) {
+    const match = /^\s*([a-z-]+)\s*;\s*dur=([0-9]+(?:\.[0-9]+)?)/i.exec(part);
+    if (!match) continue;
+    const key = names[match[1].toLowerCase()];
+    if (!key) continue;
+    const value = Number(match[2]);
+    if (Number.isFinite(value)) out[key] = value;
+  }
+  return out;
+}
+
+function scheduleLookupPerfFlush() {
+  if (lookupPerfFlushTimer !== null) clearTimeout(lookupPerfFlushTimer);
+  const epoch = lookupPerfStorageEpoch;
+  lookupPerfFlushTimer = setTimeout(() => {
+    lookupPerfFlushTimer = null;
+    const snapshot = lookupPerfLogs.slice();
+    lookupPerfWritePromise = lookupPerfWritePromise.then(async () => {
+      if (epoch !== lookupPerfStorageEpoch) return;
+      await chrome.storage.local.set({ [LOOKUP_PERF_STORAGE_KEY]: snapshot });
+    }).catch(() => {});
+  }, 250);
+}
+
+function recordLookupPerf(entry, persist = true) {
+  const source = entry && typeof entry === 'object' ? entry : {};
+  const item = {
+    at: new Date().toISOString(),
+    ...source,
+  };
+  // 阅读/字幕原文属于敏感浏览数据。性能日志只保留字符数，不把词句写入 console、
+  // chrome.storage 或“复制完整日志”；复现者用时间与 lookup id 关联即可。
+  if (typeof item.term === 'string') {
+    item.termLength = Array.from(item.term).length;
+    delete item.term;
+  }
+  lookupPerfReady.then(() => {
+    lookupPerfLogs.push(item);
+    if (lookupPerfLogs.length > LOOKUP_PERF_LIMIT) {
+      lookupPerfLogs.splice(0, lookupPerfLogs.length - LOOKUP_PERF_LIMIT);
+    }
+    if (persist) scheduleLookupPerfFlush();
+  });
+}
 async function cfg() {
-  const saved = await chrome.storage.local.get(['host', 'port', 'token']);
-  const host = (saved.host != null && saved.host !== '')
-      ? saved.host : FUSHI_DEFAULTS.host;
-  const port = (saved.port != null && saved.port !== 0)
-      ? saved.port : FUSHI_DEFAULTS.port;
-  const token = (saved.token != null && saved.token !== '')
-      ? saved.token : FUSHI_DEFAULTS.token;
-  return { base: `http://${host}:${port}`, token };
+  if (!connectionConfigPromise) {
+    // Yomitan 的热路径不会在每次扫描前重新读取扩展存储。连接配置在 service worker
+    // 生命周期内复用；options 写入时由 storage.onChanged 精确失效。
+    connectionConfigPromise = chrome.storage.local.get(['host', 'port', 'token']).then((saved) => {
+      const host = (saved.host != null && saved.host !== '')
+          ? saved.host : FUSHI_DEFAULTS.host;
+      const port = (saved.port != null && saved.port !== 0)
+          ? saved.port : FUSHI_DEFAULTS.port;
+      const token = (saved.token != null && saved.token !== '')
+          ? saved.token : FUSHI_DEFAULTS.token;
+      return { base: `http://${host}:${port}`, token };
+    }).catch((error) => {
+      connectionConfigPromise = null;
+      throw error;
+    });
+  }
+  return connectionConfigPromise;
 }
 function authHeader(token) { return 'Basic ' + btoa('fushi:' + token); }
 
@@ -27,6 +118,15 @@ function statusRequestBody() {
 }
 
 let connectionCache = null;
+try {
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local') return;
+    if (changes.host || changes.port || changes.token) {
+      connectionConfigPromise = null;
+      connectionCache = null;
+    }
+  });
+} catch (_) { /* 非扩展测试壳没有 storage.onChanged。 */ }
 async function responseJson(resp) {
   try { return await resp.json(); } catch (_) { return null; }
 }
@@ -74,6 +174,23 @@ async function diagnoseConnection(force) {
   const value = { state, base, port: Number(new URL(base).port) || 19633 };
   connectionCache = { key: cacheKey, at: now, value };
   return value;
+}
+
+async function diagnoseConnectionCapped(base, timeoutMs = 750) {
+  let timer = null;
+  let port = 19633;
+  try { port = Number(new URL(base).port) || port; } catch (_) {}
+  const fallback = { state: 'offline', base, port };
+  try {
+    return await Promise.race([
+      diagnoseConnection(true).catch(() => fallback),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(fallback), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
 }
 
 // BUG-726：扩展自更新。app 启动时会把 <appSupport> 的已解压副本刷新到当前内置版本，并把
@@ -382,9 +499,84 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     sendResponse({ ok: true });
     return true;
   }
+  // BUG-1525：查词性能诊断不走 cfg()/localhost，避免“记录日志”本身污染被测热路径。
+  // 最近 80 条异步 debounce 到扩展本地存储；设置页可查看/复制/清空，SW 重启后仍在。
+  if (msg && msg.type === 'lookupPerf') {
+    recordLookupPerf(msg.entry);
+    sendResponse({ ok: true });
+    return true;
+  }
+  if (msg && msg.type === 'lookupPerfGet') {
+    lookupPerfReady.then(() => sendResponse({ ok: true, logs: lookupPerfLogs.slice() }));
+    return true;
+  }
+  if (msg && msg.type === 'lookupPerfClear') {
+    lookupPerfReady.then(async () => {
+      try {
+        lookupPerfStorageEpoch += 1;
+        lookupPerfLogs = [];
+        if (lookupPerfFlushTimer !== null) clearTimeout(lookupPerfFlushTimer);
+        lookupPerfFlushTimer = null;
+        // 已经进入 storage.set 的旧写入必须先结束，再 remove；epoch 同时让尚未开始的
+        // 旧快照失效，清空不会被竞态写回“复活”。
+        await lookupPerfWritePromise.catch(() => {});
+        await chrome.storage.local.remove(LOOKUP_PERF_STORAGE_KEY);
+        sendResponse({ ok: true });
+      } catch (error) {
+        sendResponse({ ok: false, error: String(error && error.message || error) });
+      }
+    });
+    return true;
+  }
+  const messageStartedAt = performance.now();
+  const messageStartedEpochMs = performance.timeOrigin + messageStartedAt;
+  const lookupTrace = msg && msg.type === 'lookup' ? {
+    id: nextLookupPerfId(),
+    term: String(msg.term || ''),
+    maximumTerms: Number.isInteger(msg.maximumTerms)
+      ? Math.max(1, Math.min(50, msg.maximumTerms))
+      : 10,
+    clientSentEpochMs: typeof msg.clientSentEpochMs === 'number'
+      ? msg.clientSentEpochMs : null,
+    phase: 'handler-enter',
+    pendingTimers: [],
+  } : null;
+  if (lookupTrace) {
+    // 正常的快速查询不在 in-flight 期间触发 storage 写入；若超过 1 秒，下面的
+    // still-pending 记录会持久化 start + pending，崩溃/永久挂起也有证据。
+    recordLookupPerf({
+      id: lookupTrace.id,
+      surface: 'service-worker',
+      stage: 'request-start',
+      term: lookupTrace.term,
+      maximumTerms: lookupTrace.maximumTerms,
+      ...(lookupTrace.clientSentEpochMs != null ? {
+        dispatchToHandlerMs: Number(
+          Math.max(0, messageStartedEpochMs - lookupTrace.clientSentEpochMs).toFixed(1)),
+      } : {}),
+    }, false);
+    for (const thresholdMs of [1000, 3000]) {
+      lookupTrace.pendingTimers.push(setTimeout(() => recordLookupPerf({
+        id: lookupTrace.id,
+        surface: 'service-worker',
+        stage: 'still-pending',
+        term: lookupTrace.term,
+        maximumTerms: lookupTrace.maximumTerms,
+        phase: lookupTrace.phase,
+        pendingElapsedMs: thresholdMs,
+        actualElapsedMs: Number((performance.now() - messageStartedAt).toFixed(1)),
+      }), thresholdMs));
+    }
+  }
   (async () => {
-    const { base, token } = await cfg();
+    let base = `http://${FUSHI_DEFAULTS.host}:${FUSHI_DEFAULTS.port}`;
+    let token = FUSHI_DEFAULTS.token;
+    let cfgMs = 0;
     try {
+      if (lookupTrace) lookupTrace.phase = 'config';
+      const cfgStartedAt = performance.now();
+      ({ base, token } = await cfg());
+      cfgMs = performance.now() - cfgStartedAt;
       if (msg.type === 'dictMediaConfig') {
         // TODO-1215: content-script dict media image rewrite needs the server
         // base URL + token to build GET /api/media/dictionary. Same source as
@@ -404,6 +596,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         });
         sendResponse({ ok: r.ok, status: r.status });
       } else if (msg.type === 'lookup') {
+        const lookupId = lookupTrace.id;
+        const maximumTerms = lookupTrace.maximumTerms;
+        lookupTrace.phase = 'fetch-headers';
+        const fetchStartedAt = performance.now();
         const r = await fetch(base + '/api/lookup/dictionary', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
@@ -413,15 +609,83 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             // BUG-871: popup HTML already contains the entries; only bestLength is
             // consumed from result, so avoid transferring the full duplicate result.
             popupOnly: true,
+            maximumTerms,
+            lookupTraceId: lookupId,
           }),
         });
-        const data = r.ok ? await r.json() : null;
+        const headersAt = performance.now();
+        const serverTiming = parseLookupServerTiming(r.headers.get('server-timing'));
+        const serverCache = r.headers.get('x-fushi-lookup-cache');
+        const reflectedTraceId = r.headers.get('x-fushi-lookup-id');
+        lookupTrace.phase = 'response-body';
+        const raw = r.ok ? await r.text() : '';
+        const bodyAt = performance.now();
+        let data = null;
+        let parseError = null;
+        const parseStartedAt = performance.now();
+        lookupTrace.phase = 'outer-json-parse';
+        if (r.ok) {
+          try { data = JSON.parse(raw); } catch (error) { parseError = String(error && error.message || error); }
+        }
+        const finishedAt = performance.now();
+        lookupTrace.phase = 'response-ready';
+        for (const timer of lookupTrace.pendingTimers) clearTimeout(timer);
+        lookupTrace.pendingTimers = [];
+        const lookupPerf = {
+          id: lookupId,
+          surface: 'service-worker',
+          stage: 'response',
+          term: String(msg.term || ''),
+          maximumTerms,
+          status: r.status,
+          ok: r.ok && data !== null,
+          ...(lookupTrace.clientSentEpochMs != null ? {
+            dispatchToHandlerMs: Number(
+              Math.max(0, messageStartedEpochMs - lookupTrace.clientSentEpochMs).toFixed(1)),
+          } : {}),
+          cfgMs: Number(cfgMs.toFixed(1)),
+          fetchHeadersMs: Number((headersAt - fetchStartedAt).toFixed(1)),
+          responseBodyMs: Number((bodyAt - headersAt).toFixed(1)),
+          outerJsonParseMs: Number((finishedAt - parseStartedAt).toFixed(1)),
+          totalMs: Number((finishedAt - messageStartedAt).toFixed(1)),
+          slow: finishedAt - messageStartedAt >= 1000,
+          responseChars: raw.length,
+          responseBytes: Number(r.headers.get('content-length')) || null,
+          contentEncoding: r.headers.get('content-encoding') || 'identity',
+          ...(serverCache ? { serverCache } : {}),
+          ...(reflectedTraceId ? { serverTraceMatched: reflectedTraceId === lookupId } : {}),
+          ...serverTiming,
+          ...(parseError ? { parseError } : {}),
+        };
+        let connection = null;
+        if (!r.ok) {
+          // HTTP 失败本身已经终态，先持久化；连接分类另设上限并单独计时，不能让
+          // 一个无 timeout 的诊断把查词回调继续挂住或伪装成 SW/IPC 延迟。
+          recordLookupPerf(lookupPerf);
+          lookupTrace.phase = 'connection-diagnostic';
+          const diagnosticStartedAt = performance.now();
+          connection = await diagnoseConnectionCapped(base);
+          lookupPerf.diagnosticMs = Number(
+            (performance.now() - diagnosticStartedAt).toFixed(1));
+          recordLookupPerf({
+            id: lookupId,
+            surface: 'service-worker',
+            stage: 'connection-diagnostic',
+            term: lookupTrace.term,
+            diagnosticMs: lookupPerf.diagnosticMs,
+            connectionState: connection.state,
+          });
+        }
+        lookupPerf.responseReadyEpochMs = performance.timeOrigin + performance.now();
         sendResponse({
-          ok: r.ok,
+          ok: r.ok && data !== null,
           status: r.status,
           data,
-          ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
+          lookupPerf,
+          ...(!r.ok ? { connection } : {}),
         });
+        // 先把结果交给页面，再异步写环形日志；诊断绝不延长弹框首显。
+        if (r.ok) recordLookupPerf(lookupPerf);
         // BUG-726：先回结果再检查自更新（reload 杀 SW，绝不能挡在 sendResponse 前面）。
         maybeSelfReload(data);
       } else if (msg.type === 'lookupAudio') {
@@ -541,10 +805,46 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: false, error: 'unknown' });
       }
     } catch (e) {
+      let lookupPerf = null;
+      if (lookupTrace) {
+        for (const timer of lookupTrace.pendingTimers) clearTimeout(timer);
+        lookupTrace.pendingTimers = [];
+        lookupPerf = {
+          id: lookupTrace.id,
+          surface: 'service-worker',
+          stage: 'error',
+          term: lookupTrace.term,
+          maximumTerms: lookupTrace.maximumTerms,
+          cfgMs: Number(cfgMs.toFixed(1)),
+          totalMs: Number((performance.now() - messageStartedAt).toFixed(1)),
+          error: String(e && e.message || e),
+        };
+      }
+      // 错误日志先落内存，连接诊断若本身超时也不会把真正失败阶段吞掉。
+      if (lookupPerf) recordLookupPerf(lookupPerf);
+      const diagnosticStartedAt = performance.now();
+      const connection = lookupTrace
+        ? await diagnoseConnectionCapped(base)
+        : await diagnoseConnection(true)
+            .catch(() => ({ state: 'offline', base, port: 19633 }));
+      if (lookupPerf) {
+        lookupPerf.diagnosticMs = Number(
+          (performance.now() - diagnosticStartedAt).toFixed(1));
+        lookupPerf.responseReadyEpochMs = performance.timeOrigin + performance.now();
+        recordLookupPerf({
+          id: lookupTrace.id,
+          surface: 'service-worker',
+          stage: 'connection-diagnostic',
+          term: lookupTrace.term,
+          diagnosticMs: lookupPerf.diagnosticMs,
+          connectionState: connection.state,
+        });
+      }
       sendResponse({
         ok: false,
         error: String(e),
-        connection: await diagnoseConnection(true).catch(() => ({ state: 'offline', base, port: 19633 })),
+        ...(lookupPerf ? { lookupPerf } : {}),
+        connection,
       });
     }
   })();

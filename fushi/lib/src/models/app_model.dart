@@ -6376,6 +6376,7 @@ RemoteMineResult remoteMineError(
 class _AppModelRemoteLookupService
     implements
         FushiRemoteLookupService,
+        FushiRemoteTimedPopupLookupService,
         FushiRemoteMiningService,
         FushiRemoteHistoryService {
   const _AppModelRemoteLookupService(this._appModel);
@@ -6700,14 +6701,185 @@ class _AppModelRemoteLookupService
     required bool wildcards,
     required int maximumTerms,
   }) async {
-    final DictionarySearchResult result = await _appModel.searchDictionary(
+    final DictionarySearchResult source = await _appModel.searchDictionary(
       searchTerm: term,
       searchWithWildcards: wildcards,
       overrideMaximumTerms: maximumTerms,
-      useCache: false,
+      // 浏览器 Shift 与 Side Panel 都会在同一词上反复落点。禁用结果缓存会在 FFI
+      // 原始结果已命中时仍重复构造 DictionaryEntry 和 popupJson（冷后每次仍需数十
+      // 毫秒）；词典/排序/隐藏项设置的所有写路径都会统一清该缓存，因此这里安全复用。
+      useCache: true,
       allowRemoteLookup: false,
     );
-    return result.entries.isEmpty ? null : result;
+    if (source.entries.isEmpty) return null;
+    // scrollPosition 是 DictionarySearchResult 唯一的可变字段。远端传输复用缓存内容，
+    // 但不能把本地历史/页面滚动位置的对象别名暴露给远端 record/full-result 调用方。
+    final DictionarySearchResult result = DictionarySearchResult(
+      searchTerm: source.searchTerm,
+      entries: source.entries,
+      bestLength: source.bestLength,
+      scrollPosition: 0,
+      kanjiResults: source.kanjiResults,
+      truncated: source.truncated,
+      headwordCount: source.headwordCount,
+    );
+    result.popupJson = source.popupJson;
+    return result;
+  }
+
+  @override
+  Future<RemoteDictionaryPopupLookup?> searchDictionaryPopup({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+  }) =>
+      _searchDictionaryPopup(
+        term: term,
+        wildcards: wildcards,
+        maximumTerms: maximumTerms,
+      );
+
+  @override
+  Future<RemoteDictionaryPopupLookup?> searchDictionaryPopupWithTiming({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required RemoteDictionaryPopupTiming timing,
+  }) =>
+      _searchDictionaryPopup(
+        term: term,
+        wildcards: wildcards,
+        maximumTerms: maximumTerms,
+        timing: timing,
+      );
+
+  Future<RemoteDictionaryPopupLookup?> _searchDictionaryPopup({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    RemoteDictionaryPopupTiming? timing,
+  }) async {
+    timing?.reset();
+    final Stopwatch? serviceWatch =
+        timing == null ? null : (Stopwatch()..start());
+    Stopwatch? startPhase() => timing == null ? null : (Stopwatch()..start());
+    int finishPhase(Stopwatch? watch) {
+      watch?.stop();
+      return watch?.elapsedMicroseconds ?? 0;
+    }
+
+    try {
+      // 与 AppModel.searchDictionary 完全相同的规范化与缓存键；wildcards 当前在本地 FFI
+      // 路径没有不同语义，未来若实现本地通配符，须将它纳入两种缓存键。
+      final Stopwatch? normalizeWatch = startPhase();
+      final String searchTerm = normalizeSearchTerm(
+        term,
+        emojiRegex: AppModel._emojiRegex,
+        punctuationRegex: AppModel._punctuationRegex,
+        loneSurrogateRegex: AppModel._loneSurrogateRegex,
+      );
+      if (timing != null) {
+        timing.normalizeMicros = finishPhase(normalizeWatch);
+      }
+      if (searchTerm.trim().isEmpty) return null;
+
+      final String searchCacheKey = buildSearchCacheKey(
+        term: searchTerm,
+        maxTerms: maximumTerms,
+        maxResults: maximumTerms,
+      );
+      final Stopwatch? popupCacheWatch = startPhase();
+      final DictionaryPopupCacheEntry? cachedPopup =
+          _appModel.dictRepo.getCachedPopupSearch(searchCacheKey);
+      if (timing != null) {
+        timing.popupCacheMicros = finishPhase(popupCacheWatch);
+      }
+      if (cachedPopup != null) {
+        if (timing != null) timing.cache = 'popup';
+        return RemoteDictionaryPopupLookup(
+          popupJson: cachedPopup.popupJson,
+          bestLength: cachedPopup.bestLength,
+        );
+      }
+
+      // App 内刚查过同一个词时直接复用完整结果；这里不复制 entries，也不触碰唯一可变的
+      // scrollPosition。把紧凑快照写入专用 LRU，后续扩展请求不再依赖完整结果常驻。
+      final Stopwatch? fullCacheWatch = startPhase();
+      final DictionarySearchResult? cachedFull =
+          _appModel.dictRepo.getCachedSearch(searchCacheKey);
+      if (timing != null) {
+        timing.fullCacheMicros = finishPhase(fullCacheWatch);
+      }
+      if (cachedFull != null &&
+          cachedFull.entries.isNotEmpty &&
+          cachedFull.popupJson != null) {
+        if (timing != null) timing.cache = 'full';
+        final DictionaryPopupCacheEntry entry = (
+          popupJson: cachedFull.popupJson!,
+          bestLength: cachedFull.bestLength,
+        );
+        _appModel.dictRepo.cachePopupSearch(searchCacheKey, entry);
+        return RemoteDictionaryPopupLookup(
+          popupJson: entry.popupJson,
+          bestLength: entry.bestLength,
+        );
+      }
+
+      if (!FushiDicts.isInitialized) return null;
+      final String ffiCacheKey = buildFfiLookupCacheKey(
+        term: searchTerm,
+        maxResults: maximumTerms,
+      );
+      final Stopwatch? ffiCacheWatch = startPhase();
+      List<FushiLookupResult>? ffiResults =
+          _appModel.dictRepo.getCachedFfiLookup(ffiCacheKey);
+      if (timing != null) {
+        timing.ffiCacheMicros = finishPhase(ffiCacheWatch);
+      }
+      if (ffiResults != null && timing != null) timing.cache = 'ffi';
+      if (ffiResults == null) {
+        final Stopwatch? ffiLookupWatch = startPhase();
+        ffiResults = FushiDicts.instance.lookup(
+          searchTerm,
+          maxResults: maximumTerms,
+        );
+        if (timing != null) {
+          timing.ffiLookupMicros = finishPhase(ffiLookupWatch);
+        }
+        if (ffiResults.isNotEmpty) {
+          _appModel.dictRepo.cacheFfiLookup(ffiCacheKey, ffiResults);
+        }
+      }
+      if (ffiResults.isEmpty) return null;
+
+      int bestLength = 0;
+      for (final FushiLookupResult result in ffiResults) {
+        if (result.matched.length > bestLength) {
+          bestLength = result.matched.length;
+        }
+      }
+      final Stopwatch? popupJsonWatch = startPhase();
+      final String popupJson = buildPopupJsonFromLookup(
+        results: ffiResults,
+        maximumTerms: maximumTerms,
+      );
+      if (timing != null) {
+        timing.popupJsonMicros = finishPhase(popupJsonWatch);
+      }
+      final DictionaryPopupCacheEntry entry = (
+        popupJson: popupJson,
+        bestLength: bestLength,
+      );
+      _appModel.dictRepo.cachePopupSearch(searchCacheKey, entry);
+      return RemoteDictionaryPopupLookup(
+        popupJson: entry.popupJson,
+        bestLength: entry.bestLength,
+      );
+    } finally {
+      if (timing != null) {
+        timing.serviceTotalMicros = finishPhase(serviceWatch);
+      }
+    }
   }
 
   @override

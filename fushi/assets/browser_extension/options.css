@@ -329,6 +329,48 @@ summary:focus-visible {
   padding: 8px 2px 20px;
 }
 
+.lookup-perf-body {
+  display: grid;
+  gap: 12px;
+  padding: 4px 2px 20px;
+}
+
+.lookup-perf-body > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.lookup-perf-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.lookup-perf-actions .text-button {
+  min-height: 32px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.lookup-perf-actions .danger-button { color: var(--danger); }
+
+.lookup-perf-output {
+  min-height: 96px;
+  max-height: 320px;
+  margin: 0;
+  overflow: auto;
+  padding: 11px;
+  border: 1px solid var(--outline);
+  border-radius: 9px;
+  color: var(--text);
+  background: var(--surface-muted);
+  font: 11px/1.55 "Cascadia Code", "SFMono-Regular", monospace;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .field {
   display: grid;
   gap: 6px;

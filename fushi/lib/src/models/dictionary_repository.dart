@@ -44,6 +44,10 @@ class DictionaryRepository {
   static const int searchCacheMaxBytesLowMemory = 8 << 20; // 8 MB
   static const int ffiLookupCacheMaxBytes = 32 << 20; // 32 MB
   static const int ffiLookupCacheMaxBytesLowMemory = 8 << 20; // 8 MB
+  // popupJson 已是可直接渲染的紧凑结果；单独给较小预算，避免与完整结果/raw FFI
+  // 两个 32 MB LRU 叠加后放大常驻内存。8 MB 足以覆盖最近几十次常见查词。
+  static const int popupSearchCacheMaxBytes = 8 << 20; // 8 MB
+  static const int popupSearchCacheMaxBytesLowMemory = 2 << 20; // 2 MB
 
   List<Dictionary> _dictionariesCache = [];
   final List<DictionarySearchResult> _dictionaryHistoryResults = [];
@@ -58,6 +62,12 @@ class DictionaryRepository {
     2000,
     maxBytes: ffiLookupCacheMaxBytes,
     sizeOf: estimateFushiLookupResultsBytes,
+  );
+  final LruCache<String, DictionaryPopupCacheEntry> _popupSearchCache =
+      LruCache<String, DictionaryPopupCacheEntry>(
+    2000,
+    maxBytes: popupSearchCacheMaxBytes,
+    sizeOf: estimateDictionaryPopupCacheEntryBytes,
   );
 
   // ── getters ──────────────────────────────────────────────────────────
@@ -273,6 +283,7 @@ class DictionaryRepository {
   void clearDictionaryResultsCache() {
     _dictionarySearchCache.clear();
     _ffiLookupCache.clear();
+    _popupSearchCache.clear();
   }
 
   DictionarySearchResult? getCachedSearch(String searchTerm) =>
@@ -296,6 +307,16 @@ class DictionaryRepository {
         ? ffiLookupCacheMaxBytesLowMemory
         : ffiLookupCacheMaxBytes;
     _ffiLookupCache[cacheKey] = results;
+  }
+
+  DictionaryPopupCacheEntry? getCachedPopupSearch(String cacheKey) =>
+      _popupSearchCache[cacheKey];
+
+  void cachePopupSearch(String cacheKey, DictionaryPopupCacheEntry result) {
+    _popupSearchCache.maxBytes = _isLowMemory()
+        ? popupSearchCacheMaxBytesLowMemory
+        : popupSearchCacheMaxBytes;
+    _popupSearchCache[cacheKey] = result;
   }
 
   // ── dictionary history ───────────────────────────────────────────────
@@ -399,6 +420,7 @@ class DictionaryRepository {
     _dictionaryHistoryResults.clear();
     _dictionarySearchCache.clear();
     _ffiLookupCache.clear();
+    _popupSearchCache.clear();
   }
 }
 
@@ -409,6 +431,11 @@ class DictionaryRepository {
 
 /// 每个 Dart 对象/列表头 + 字段引用的粗估固定开销（字节）。
 const int _kObjectOverheadBytes = 64;
+
+typedef DictionaryPopupCacheEntry = ({String popupJson, int bestLength});
+
+int estimateDictionaryPopupCacheEntryBytes(DictionaryPopupCacheEntry entry) =>
+    entry.popupJson.length * 2 + _kObjectOverheadBytes;
 
 /// 粗估一条 [DictionarySearchResult] 的常驻字节数。大头是 [popupJson]
 /// （实测 54-231KB）与各 entry 的 meaning JSON。

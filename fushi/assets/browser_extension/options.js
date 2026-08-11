@@ -170,6 +170,77 @@ $('showToken').addEventListener('click', () => {
 
 $('check').addEventListener('click', () => refreshConnection(true));
 
+let lookupPerfRawLogs = [];
+
+function formatLookupPerfValue(key, value) {
+  if (typeof value === 'number') {
+    if (key.endsWith('Ms') || key === 'renderMs' || key === 'sinceRequestMs') return value + 'ms';
+    if (key === 'responseChars') return Math.round(value / 1024) + 'K chars';
+    if (key === 'responseBytes') return Math.round(value / 1024) + 'KiB';
+  }
+  return String(value);
+}
+
+function formatLookupPerfLog(item) {
+  const ignored = new Set([
+    'at', 'id', 'surface', 'stage', 'term', 'termLength', 'maximumTerms',
+    'responseReadyEpochMs',
+  ]);
+  const time = item.at ? new Date(item.at).toLocaleTimeString([], { hour12: false }) : '--:--:--';
+  const parts = [];
+  for (const [key, value] of Object.entries(item || {})) {
+    if (ignored.has(key) || value == null || value === '') continue;
+    parts.push(key + '=' + formatLookupPerfValue(key, value));
+  }
+  return time + ' [' + String(item.id || '-') + '] ' +
+    String(item.surface || '-') + '/' + String(item.stage || '-') +
+    (Number.isFinite(item.termLength) ? ' len=' + item.termLength : '') +
+    (parts.length ? '\n  ' + parts.join(' · ') : '');
+}
+
+async function refreshLookupPerfLogs() {
+  const output = $('lookupPerfOutput');
+  const summary = $('lookupPerfSummary');
+  if (output) output.textContent = '正在读取…';
+  const response = await runtimeMessage({ type: 'lookupPerfGet' });
+  lookupPerfRawLogs = response && Array.isArray(response.logs) ? response.logs : [];
+  if (summary) summary.textContent = lookupPerfRawLogs.length
+    ? '已记录最近 ' + lookupPerfRawLogs.length + ' 个阶段'
+    : '复现慢查询后在这里查看';
+  if (!output) return;
+  output.textContent = lookupPerfRawLogs.length
+    ? lookupPerfRawLogs.map(formatLookupPerfLog).join('\n\n')
+    : '暂无查词日志';
+  output.scrollTop = output.scrollHeight;
+}
+
+$('lookupPerfPanel').addEventListener('toggle', () => {
+  if ($('lookupPerfPanel').open) refreshLookupPerfLogs();
+});
+
+$('refreshLookupPerf').addEventListener('click', refreshLookupPerfLogs);
+
+$('copyLookupPerf').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(lookupPerfRawLogs, null, 2));
+    toast('已复制完整查词性能日志');
+  } catch (_) {
+    toast('复制失败，请在日志框中手动复制');
+  }
+});
+
+$('clearLookupPerf').addEventListener('click', async () => {
+  const response = await runtimeMessage({ type: 'lookupPerfClear' });
+  if (!response || response.ok !== true) {
+    toast('清空失败，请重试');
+    return;
+  }
+  lookupPerfRawLogs = [];
+  $('lookupPerfOutput').textContent = '暂无查词日志';
+  $('lookupPerfSummary').textContent = '复现慢查询后在这里查看';
+  toast('已清空查词性能日志');
+});
+
 // 「版本与更新」卡片：把自更新链路状态翻成人话（self-update.js describeUpdateState），
 // 让「扩展怎么更新、现在是不是最新」在设置页一眼可见，不再只有失效时的角标。
 async function refreshUpdateCard() {

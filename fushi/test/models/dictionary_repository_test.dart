@@ -343,12 +343,17 @@ void main() {
       expect(repo.getCachedFfiLookup('猫'), isEmpty);
     });
 
-    test('clearDictionaryResultsCache clears both caches', () {
+    test('clearDictionaryResultsCache clears all lookup caches', () {
       repo.cacheSearchResult('key', _result());
       repo.cacheFfiLookup('term', []);
+      repo.cachePopupSearch(
+        'popup',
+        (popupJson: '[{"expression":"猫"}]', bestLength: 1),
+      );
       repo.clearDictionaryResultsCache();
       expect(repo.getCachedSearch('key'), isNull);
       expect(repo.getCachedFfiLookup('term'), isNull);
+      expect(repo.getCachedPopupSearch('popup'), isNull);
     });
   });
 

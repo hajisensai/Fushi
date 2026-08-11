@@ -32,12 +32,59 @@ let fushiLastAutoLookupKey = '';
 let fushiLastX = -1;
 let fushiLastY = -1;
 let fushiPending = false;
+let fushiLookupPerfSequence = 0;
+let fushiLookupPerfContext = null;
 // BUG-1024：在途闸不能只用裸 bool——MV3 background service worker 若在查词消息在途时
 // 被系统终止，chrome.runtime.sendMessage 的回调会永不触发，fushiPending 永久卡在 true，
 // 此后所有 Shift 悬停被在途闸整条吞掉（弹窗越来越不敏感）。记发起时刻，超过此截止时间
 // 就当上一次已废弃、放行新查词（回调仍会正常复位，此值只是「回调永不来」的安全兜底）。
 let fushiPendingSince = 0;
 const FUSHI_PENDING_TIMEOUT_MS = 1500;
+
+function fushiReportLookupPerf(entry) {
+  try {
+    chrome.runtime.sendMessage({ type: 'lookupPerf', entry }, () => {
+      try { void chrome.runtime.lastError; } catch (_) {}
+    });
+  } catch (_) { /* 扩展重载/页面卸载时静默 */ }
+}
+
+function fushiBindPopupPerfContext(ctx) {
+  // popup.js 捕获本函数后才异步发 IPC；闭包固定本轮 ctx，换词/关窗后的
+  // cancelled/error 终态不会串到新查询。
+  window.__fushiOnPopupPerf = function (metrics) {
+    if (!ctx) return;
+    fushiReportLookupPerf({
+      id: ctx.id,
+      surface: 'page-popup',
+      stage: 'popup-' + String(metrics && metrics.phase || 'unknown'),
+      term: ctx.term,
+      maximumTerms: ctx.maximumTerms,
+      sinceRequestMs: Number((performance.now() - ctx.clientStartedAt).toFixed(1)),
+      ...(metrics || {}),
+    });
+  };
+}
+fushiBindPopupPerfContext(null);
+
+function fushiReportVisibleAfterPaint(ctx, container) {
+  if (!ctx || ctx.visibleReported || ctx.visibleReportScheduled) return;
+  ctx.visibleReportScheduled = true;
+  // 调用点本身在 place() 的 rAF；再等一帧，浏览器至少有一次 paint 机会。
+  requestAnimationFrame(() => {
+    if (!fushiHost || !fushiHost.isConnected || !container ||
+        container.style.visibility !== 'visible') return;
+    ctx.visibleReported = true;
+    fushiReportLookupPerf({
+      id: ctx.id,
+      surface: 'page-popup',
+      stage: 'visible-after-paint',
+      term: ctx.term,
+      maximumTerms: ctx.maximumTerms,
+      sinceRequestMs: Number((performance.now() - ctx.clientStartedAt).toFixed(1)),
+    });
+  });
+}
 
 // 「查词时暂停」取代旧的「悬停字幕时暂停」。新键显式值优先；旧
 // subtitleHoverPause 只作升级兼容读取，避免用户更新扩展后原选择突然丢失。
@@ -1355,10 +1402,7 @@ function fushiEnsureContainer() {
     // 「CSS zoom × 100vw × shadow shrink-to-fit」相互作用干扰。host 宽/高/zoom 由 fushiRender
     // 按查词响应下发的 --fushi-popup-* 设置；#entries-container 在 shadow 内中和为 width:100%。
     fushiHost.style.cssText =
-        'position:fixed;top:0;left:0;z-index:2147483647;overflow-x:hidden;overflow-y:auto;' +
-        // 入场淡入：与 app 内 parkedPopupLayer 及 app 外 .global-lookup-frame-shell 的
-        // 200ms ease-out 对齐。首帧 opacity:0，place() 定位后 reflow 触发 0→1 淡入。
-        'opacity:0;transition:opacity 200ms ease-out;';
+        'position:fixed;top:0;left:0;z-index:2147483647;overflow-x:hidden;overflow-y:auto;';
     fushiInstallSwipeClose(fushiHost); // 水平拖关手势（是否生效由 fushiSwipeCloseEnabled 门控）
     const shadow = fushiHost.attachShadow({ mode: 'open' });
     // 中和 content.css 里 #entries-container 自带的尺寸盒/zoom（那套是给「容器自身即 fixed 元素」
@@ -1494,8 +1538,14 @@ function fushiDrawHighlightOverlay(rects) {
 function fushiRemoveContainer() {
   // BUG-688：移除 shadow 宿主即连带整个 shadow root（弹窗内容）；清 __fushiRoot 让 popup.js
   // 的 helper 回落到 document（下次开窗 fushiEnsureContainer 会重建）。host 引用即刻置空，
-  // 让并发 re-lookup 重建新 host；旧节点先淡出、末尾才从 DOM 移除（高亮/选区仍即时清）。
+  // 让并发 re-lookup 重建新 host；旧节点与高亮/选区都立即撤掉。
   const dying = fushiHost;
+  // popup.js 的尾部词条按宏任务逐条补建；关窗推进 generation，旧批次下一跳立即取消，
+  // 避免在已脱离 DOM 的 ShadowRoot 上继续消耗主线程。
+  if (Number.isInteger(window._renderGeneration)) window._renderGeneration += 1;
+  window._renderInProgress = false;
+  fushiLookupPerfContext = null;
+  fushiBindPopupPerfContext(null);
   fushiHost = null;
   fushiContainer = null;
   window.__fushiRoot = null;
@@ -1507,26 +1557,16 @@ function fushiRemoveContainer() {
       window.fushiSelection.clearSelection();
     }
   } catch (_) { /* no-op */ }
-  // 淡出后再从 DOM 移除 host 节点（与入场淡入及 app 外 .global-lookup-dismissing 的 200ms
-  // ease-out 对齐）。pointer-events:none 避免淡出期误吞点击；transitionend 用 setTimeout
-  // 兜底（reduced-motion / 离屏也能移除）。高亮/选区已在上面即时清，不随淡出延迟残留。
+  // Yomitan 式直接撤掉旧 host：不保留 200ms 淡出节点，也不让下一次查词与旧过渡
+  // 重叠。高亮/选区已在上面同步清理。
   if (dying) {
-    // BUG-1078：随弹窗卸载滚轮监听（挂载见 fushiEnsureContainer）。节点淡出期间
-    // pointer-events:none 已让事件不再命中它，这里显式卸载把契约钉死：弹窗不在场 ⇒
+    // BUG-1078：随弹窗卸载滚轮监听（挂载见 fushiEnsureContainer）。这里显式卸载
+    // 把契约钉死：弹窗不在场 ⇒
     // 页面上不存在任何非 passive wheel 监听。
     if (typeof window.__fushiPopupWheelListener === 'function') {
       dying.removeEventListener('wheel', window.__fushiPopupWheelListener);
     }
-    dying.style.pointerEvents = 'none';
-    dying.style.opacity = '0';
-    let dropped = false;
-    const drop = () => {
-      if (dropped) return;
-      dropped = true;
-      try { dying.remove(); } catch (_) { /* 已脱离文档 */ }
-    };
-    dying.addEventListener('transitionend', drop, { once: true });
-    setTimeout(drop, 260);
+    try { dying.remove(); } catch (_) { /* 已脱离文档 */ }
   }
   // Phase D：关窗即撤拖拽把手 + 清尺寸拖拽状态（把手随弹窗生命周期，下次开窗 place() 重建）。
   if (fushiResizeGrip) {
@@ -1676,17 +1716,69 @@ function fushiSendLookup(term, anchorRect, cueWindow) {
   }
   fushiPending = true;
   fushiPendingSince = Date.now(); // BUG-1024：记发起时刻，供在途闸超时兜底
+  const clientStartedAt = performance.now();
+  const clientSentEpochMs = performance.timeOrigin + clientStartedAt;
   try {
-    chrome.runtime.sendMessage({ type: 'lookup', term }, (resp) => {
+    chrome.runtime.sendMessage({ type: 'lookup', term, clientSentEpochMs }, (resp) => {
       fushiPending = false;
+      const responseAt = performance.now();
+      const responseEpochMs = performance.timeOrigin + responseAt;
       // 回调期间上下文可能已失效：安全读 lastError（读它本身可能抛），有错就静默丢弃。
       try {
         if (chrome.runtime.lastError) return;
       } catch (_) {
         return;
       }
-      if (!resp || !resp.ok) { fushiShowConnectionFailure(resp); return; }
-      if (!resp.data || !resp.data.popupJson) return;
+      if (!resp || !resp.ok) {
+        const failedPerf = resp && resp.lookupPerf || {};
+        fushiReportLookupPerf({
+          id: failedPerf.id || 'page-error-' + Date.now().toString(36) + '-' + (++fushiLookupPerfSequence).toString(36),
+          surface: 'page-popup',
+          stage: 'client-error',
+          term,
+          maximumTerms: failedPerf.maximumTerms || 10,
+          messageRoundTripMs: Number((responseAt - clientStartedAt).toFixed(1)),
+          ...(typeof failedPerf.responseReadyEpochMs === 'number' ? {
+            deliveryAfterReadyMs: Number(
+              Math.max(0, responseEpochMs - failedPerf.responseReadyEpochMs).toFixed(1)),
+          } : {}),
+          error: String(resp && resp.error || 'empty lookup response'),
+        });
+        fushiShowConnectionFailure(resp);
+        return;
+      }
+      if (!resp.data || typeof resp.data.popupJson !== 'string') {
+        fushiReportLookupPerf({
+          id: resp.lookupPerf && resp.lookupPerf.id || 'page-empty-' + Date.now().toString(36),
+          surface: 'page-popup',
+          stage: 'client-error',
+          term,
+          error: 'missing popupJson',
+        });
+        return;
+      }
+      const servicePerf = resp.lookupPerf || {};
+      fushiLookupPerfContext = {
+        id: servicePerf.id || 'page-' + Date.now().toString(36) + '-' + (++fushiLookupPerfSequence).toString(36),
+        term,
+        maximumTerms: servicePerf.maximumTerms || 10,
+        clientStartedAt,
+        visibleReported: false,
+        visibleReportScheduled: false,
+      };
+      fushiReportLookupPerf({
+        id: fushiLookupPerfContext.id,
+        surface: 'page-popup',
+        stage: 'client-response',
+        term,
+        maximumTerms: fushiLookupPerfContext.maximumTerms,
+        messageRoundTripMs: Number((responseAt - clientStartedAt).toFixed(1)),
+        ...(typeof servicePerf.responseReadyEpochMs === 'number' ? {
+          deliveryAfterReadyMs: Number(
+            Math.max(0, responseEpochMs - servicePerf.responseReadyEpochMs).toFixed(1)),
+        } : {}),
+        responseChars: servicePerf.responseChars || resp.data.popupJson.length,
+      });
       // TODO-1150（yomitan 式）：弹窗钉在被查词旁 + 高亮词。匹配长度取服务端 result.bestLength（日语=
       // 去屈折后命中的词长，与 app 阅读器 lookupHighlightCharCount → result.bestLength 同源），只高亮真正
       // 匹配的词而非整个 12 字扫描窗；缺失/为 0 时回落扫描窗长度 term.length。
@@ -1764,18 +1856,73 @@ window.fushiResetAutoLookupDedupe = function () {
 // callHandler('onLinkClick', query) → bridge-shim → 这里。用该词**重发一次 lookup**，在同一
 // #entries-container 重渲染（yomitan 式单弹窗内导航），对齐 app 的「点释义里的词继续查」。
 // BUG-1279：走 fushiRenderNested（只换内容），不再走 fushiRender 的完整首查词路径——弹窗
-// 的位置、尺寸、原文高亮、入场淡入全部原样保持。子词的匹配长度（result.bestLength）在这里
+// 的位置、尺寸、原文高亮与可见状态全部原样保持。子词的匹配长度（result.bestLength）在这里
 // 没有任何用处：它是「原文里命中了几个字」的量，而嵌套查的词根本不在原文里，拿它去截原文
 // 选区正是修复前把原文高亮和弹窗落点一起算错的原因。
 window.__fushiOnLinkClick = function (query) {
   const term = (query || '').trim();
   if (!term) return;
   if (!fushiExtAlive()) return;
+  const clientStartedAt = performance.now();
+  const clientSentEpochMs = performance.timeOrigin + clientStartedAt;
   try {
-    chrome.runtime.sendMessage({ type: 'lookup', term }, (resp) => {
+    chrome.runtime.sendMessage({ type: 'lookup', term, clientSentEpochMs }, (resp) => {
+      const responseAt = performance.now();
+      const responseEpochMs = performance.timeOrigin + responseAt;
       try { if (chrome.runtime.lastError) return; } catch (_) { return; }
-      if (!resp || !resp.ok) { fushiShowConnectionFailure(resp); return; }
-      if (!resp.data || !resp.data.popupJson) return;
+      if (!resp || !resp.ok) {
+        const failedPerf = resp && resp.lookupPerf || {};
+        fushiReportLookupPerf({
+          id: failedPerf.id || 'nested-error-' + Date.now().toString(36) + '-' + (++fushiLookupPerfSequence).toString(36),
+          surface: 'page-popup',
+          stage: 'client-error',
+          term,
+          maximumTerms: failedPerf.maximumTerms || 10,
+          nested: true,
+          messageRoundTripMs: Number((responseAt - clientStartedAt).toFixed(1)),
+          ...(typeof failedPerf.responseReadyEpochMs === 'number' ? {
+            deliveryAfterReadyMs: Number(
+              Math.max(0, responseEpochMs - failedPerf.responseReadyEpochMs).toFixed(1)),
+          } : {}),
+          error: String(resp && resp.error || 'empty lookup response'),
+        });
+        fushiShowConnectionFailure(resp);
+        return;
+      }
+      if (!resp.data || typeof resp.data.popupJson !== 'string') {
+        fushiReportLookupPerf({
+          id: resp.lookupPerf && resp.lookupPerf.id || 'nested-empty-' + Date.now().toString(36),
+          surface: 'page-popup',
+          stage: 'client-error',
+          term,
+          nested: true,
+          error: 'missing popupJson',
+        });
+        return;
+      }
+      const servicePerf = resp.lookupPerf || {};
+      fushiLookupPerfContext = {
+        id: servicePerf.id || 'nested-' + Date.now().toString(36) + '-' + (++fushiLookupPerfSequence).toString(36),
+        term,
+        maximumTerms: servicePerf.maximumTerms || 10,
+        clientStartedAt,
+        visibleReported: false,
+        visibleReportScheduled: false,
+      };
+      fushiReportLookupPerf({
+        id: fushiLookupPerfContext.id,
+        surface: 'page-popup',
+        stage: 'client-response',
+        term,
+        maximumTerms: fushiLookupPerfContext.maximumTerms,
+        nested: true,
+        messageRoundTripMs: Number((responseAt - clientStartedAt).toFixed(1)),
+        ...(typeof servicePerf.responseReadyEpochMs === 'number' ? {
+          deliveryAfterReadyMs: Number(
+            Math.max(0, responseEpochMs - servicePerf.responseReadyEpochMs).toFixed(1)),
+        } : {}),
+        responseChars: servicePerf.responseChars || resp.data.popupJson.length,
+      });
       window.audioSources = Array.isArray(resp.data.audioSources) ? resp.data.audioSources : [];
       window.needsAudio = true;
       // 同词去重状态跟着**弹窗当前显示的词**走：弹窗里已经是子词了，鼠标再回到原文那个父词
@@ -1962,11 +2109,37 @@ function fushiEnsureResizeGrip() {
 // （弹窗内点释义里的词）只该换内容——原文里被查的词一个字都没变，重算它的高亮与落点纯属
 // 无中生有。三个入口共用这一份内容渲染，行为不再各写一遍。
 function fushiRenderEntries(popupJson) {
+  const parseStartedAt = performance.now();
+  let parseError = null;
   try { window.lookupEntries = JSON.parse(popupJson); }
-  catch (_) { window.lookupEntries = []; }
+  catch (error) {
+    window.lookupEntries = [];
+    parseError = String(error && error.message || error);
+  }
+  const parseMs = performance.now() - parseStartedAt;
+  if (fushiLookupPerfContext) {
+    fushiReportLookupPerf({
+      id: fushiLookupPerfContext.id,
+      surface: 'page-popup',
+      stage: 'inner-json-parse',
+      term: fushiLookupPerfContext.term,
+      maximumTerms: fushiLookupPerfContext.maximumTerms,
+      innerJsonParseMs: Number(parseMs.toFixed(1)),
+      parsedEntryCount: Array.isArray(window.lookupEntries) ? window.lookupEntries.length : 0,
+      ...(parseError ? { error: 'inner JSON parse: ' + parseError } : {}),
+    });
+  }
+  if (parseError) {
+    if (fushiContainer) {
+      fushiContainer.innerHTML = '<div class="no-results">词典结果解析失败，请重试。</div>';
+    }
+    return false;
+  }
   window._noResultsMessage = 'No results';
   window.__fushiOnTapOutside = fushiRemoveContainer;
+  fushiBindPopupPerfContext(fushiLookupPerfContext);
   if (typeof window.renderPopup === 'function') window.renderPopup();
+  return true;
 }
 
 // 把查词响应下发的主题变量套到弹窗上。applyBox=false 时只套颜色/行为类变量，**不碰 host 的
@@ -2017,11 +2190,11 @@ function fushiApplyTheme(c, theme, applyBox) {
   }
 }
 
-// BUG-1279：嵌套查词的渲染入口——**只换内容**。不重算原文高亮、不重新 place、不重走入场
-// 淡入、不重写尺寸盒。语义与 yomitan 的单弹窗内导航一致（本实现的既定设计也是「没有前进
+// BUG-1279：嵌套查词的渲染入口——**只换内容**。不重算原文高亮、不重新 place、不重写
+// 尺寸盒。语义与 yomitan 的单弹窗内导航一致（本实现的既定设计也是「没有前进
 // 后退，就是嵌套查词」）：用户视线停在弹窗上，弹窗就不该动；原文里被查的词没变，它的高亮
-// 就不该变。修复前这里走的是下面 fushiRender 的完整路径，代价是弹窗先压成透明、归零到屏
-// 幕左上角、再按**子词长度**截原文选区算出的锚点搬回原文旁边重新淡入——用户看到的就是
+// 就不该变。修复前这里走的是下面 fushiRender 的完整路径，代价是弹窗归零到屏
+// 幕左上角、再按**子词长度**截原文选区算出的锚点搬回原文旁边——用户看到的就是
 // 「点了释义里的词，旧弹窗被关掉了」。
 function fushiRenderNested(popupJson, theme) {
   // 请求在途期间弹窗已被关掉（点完链接又点了页面别处 / 滑动关窗 / 进出全屏重建失败）：直接
@@ -2030,6 +2203,7 @@ function fushiRenderNested(popupJson, theme) {
   if (!fushiHost || !fushiContainer) return;
   fushiApplyTheme(fushiContainer, theme, false);
   fushiRenderEntries(popupJson);
+  fushiReportVisibleAfterPaint(fushiLookupPerfContext, fushiContainer);
 }
 
 function fushiRender(popupJson, termLen, theme, anchorRect) {
@@ -2101,14 +2275,7 @@ function fushiRender(popupJson, termLen, theme, anchorRect) {
       fushiPositionResizeGrip();
     }
     c.style.visibility = 'visible';
-    // 入场淡入：把 host 压到 0 并强制回流提交为过渡基线，再翻 1 触发 200ms ease-out
-    // 淡入（同帧 0→1 无 reflow 会被浏览器合并、跳过过渡）。重复查词复用同一 host 时
-    // 亦从 0 重新淡入，与 app 内每次「隐藏→可见」淡入一致。
-    if (fushiHost) {
-      fushiHost.style.opacity = '0';
-      void fushiHost.offsetWidth;
-      fushiHost.style.opacity = '1';
-    }
+    fushiReportVisibleAfterPaint(fushiLookupPerfContext, c);
   };
   requestAnimationFrame(place);
 }
