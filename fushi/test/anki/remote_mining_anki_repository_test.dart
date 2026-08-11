@@ -67,6 +67,16 @@ class _FakeLocal extends BaseAnkiRepository {
   }
 }
 
+/// BUG-1549：带可配置本地设置的假本地仓库（配置类委派合法，制卡类仍禁止落地）。
+class _FakeLocalWithSettings extends _FakeLocal {
+  _FakeLocalWithSettings(this.settings);
+
+  final AnkiSettings settings;
+
+  @override
+  Future<AnkiSettings> loadSettings() async => settings;
+}
+
 void main() {
   group('RemoteMiningAnkiRepository', () {
     test('mineEntry 采集四类媒体并转发；映射 success', () async {
@@ -160,6 +170,41 @@ void main() {
       expect(await run(<String, dynamic>{'result': 'error', 'message': 'boom'}),
           MineResult.error);
       expect(await run(null), MineResult.error); // 无可达主机
+    });
+
+    test('BUG-1549 主机回传 deckName → 成功 outcome 带主机牌组名', () async {
+      final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+        local: _FakeLocal(),
+        client: _FakeSender(
+            <String, dynamic>{'result': 'success', 'deckName': 'HostDeck'}),
+        fileByteLoader: (String p) async => null,
+        dictMediaLoader: (String d, String p) => null,
+      );
+      final MineOutcome o = await repo.mineEntry(
+        rawPayloadJson: jsonEncode(<String, dynamic>{'expression': '猫'}),
+        context: const AnkiMiningContext(sentence: ''),
+      );
+      expect(o.result, MineResult.success);
+      expect(o.deckName, 'HostDeck');
+    });
+
+    test('BUG-1549 旧主机不回传 deckName → 降级本地设置牌组名', () async {
+      final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+        local: _FakeLocalWithSettings(AnkiSettings(
+          // 旧存档形状：只有 id，没有 selectedDeckName——降级链仍须按 id 解析出名字。
+          selectedDeckId: 1,
+          availableDecks: const <AnkiDeck>[AnkiDeck(id: 1, name: 'LocalDeck')],
+        )),
+        client: _FakeSender(<String, dynamic>{'result': 'success'}),
+        fileByteLoader: (String p) async => null,
+        dictMediaLoader: (String d, String p) => null,
+      );
+      final MineOutcome o = await repo.mineEntry(
+        rawPayloadJson: jsonEncode(<String, dynamic>{'expression': '猫'}),
+        context: const AnkiMiningContext(sentence: ''),
+      );
+      expect(o.result, MineResult.success);
+      expect(o.deckName, 'LocalDeck');
     });
 
     test('鉴权失败 → error outcome', () async {

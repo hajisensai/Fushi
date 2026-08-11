@@ -598,10 +598,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
         rawPayloadJson: jsonEncode(fields),
         context: miningContext,
       );
-      final String deckName = outcome.result == MineResult.success
-          ? (await repo.loadSettings()).selectedDeckName ?? ''
-          : '';
-      final described = describeMineOutcome(outcome, deckName: deckName);
+      final described = describeMineOutcome(outcome);
       if (described.record) {
         unawaited(_recordMinedCount());
       }

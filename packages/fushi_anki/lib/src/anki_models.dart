@@ -1217,6 +1217,7 @@ class MineOutcome {
   const MineOutcome(
     this.result, {
     this.noteId,
+    this.deckName,
     this.audioWarning,
     this.errorDetail,
     this.errorCode,
@@ -1236,7 +1237,12 @@ class MineOutcome {
   /// [BaseAnkiRepository.audioFetchErrorReason] 生成），让主 app 在成功 toast 后追加
   /// 「音频获取失败: …」提示，终结用户「没音频不知为何」的盲猜。默认 `null`（音频本就
   /// 没有、或下载成功）时行为与旧版一致（Never break userspace）。
-  const MineOutcome.success({this.noteId, this.audioWarning})
+  /// BUG-1549：[deckName] 是后端**实际落卡**用的牌组名（本地后端 = 按
+  /// `selectedDeckId`→`selectedDeckName` 解析出的 deck；互联转发 = 主机回传）。
+  /// 成功 toast 的「已添加到『…』」只认它——此前调用点事后用
+  /// `loadSettings().selectedDeckName` 猜，旧存档/旧 Profile 快照只有 id 没有
+  /// name 时（AnkiConnect 按 id 照样落卡成功）toast 显示空引号。
+  const MineOutcome.success({this.noteId, this.deckName, this.audioWarning})
       : result = MineResult.success,
         errorDetail = null,
         errorCode = null,
@@ -1246,6 +1252,7 @@ class MineOutcome {
   const MineOutcome.duplicate()
       : result = MineResult.duplicate,
         noteId = null,
+        deckName = null,
         audioWarning = null,
         errorDetail = null,
         errorCode = null,
@@ -1255,6 +1262,7 @@ class MineOutcome {
   const MineOutcome.notConfigured()
       : result = MineResult.notConfigured,
         noteId = null,
+        deckName = null,
         audioWarning = null,
         errorDetail = null,
         errorCode = null,
@@ -1272,6 +1280,7 @@ class MineOutcome {
     StackTrace? stackTrace,
   })  : result = MineResult.error,
         noteId = null,
+        deckName = null,
         audioWarning = null,
         errorDetail = detail,
         errorCode = errorCode,
@@ -1283,6 +1292,11 @@ class MineOutcome {
   /// 仅在 [result] == [MineResult.success] 时可能非空：后端返回的 note id。
   /// 用于「制卡后更新同一张卡片字段」（[updateMinedNote]）。AnkiDroid 暂为 `null`。
   final int? noteId;
+
+  /// 仅在 [result] == [MineResult.success] 时可能非空：后端实际落卡（或覆写目标
+  /// 所属配置）的牌组名，成功 toast「已添加到『…』」的**唯一**来源（BUG-1549）。
+  /// `null` 仅出现在旧主机互联转发未回传牌组名的降级路径。
+  final String? deckName;
 
   /// 仅在 [result] == [MineResult.success] 时可能非空：单词远程音频下载失败的
   /// **简短人类可读原因**（含 HTTP 码/URL）。卡片仍已建好，只是 `[sound:]` 落空；

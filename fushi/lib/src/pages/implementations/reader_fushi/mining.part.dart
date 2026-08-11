@@ -250,11 +250,8 @@ extension _ReaderMining on _ReaderFushiPageState {
       prepared.cleanup();
     }
 
-    // 牌组名仅 success 需要（避免给失败分支白白 loadSettings）。
-    final String deckName = outcome.result == MineResult.success
-        ? (await repo.loadSettings()).selectedDeckName ?? ''
-        : '';
-    final described = describeMineOutcome(outcome, deckName: deckName);
+    // 牌组名由后端随成功结果带回（outcome.deckName，BUG-1549）。
+    final described = describeMineOutcome(outcome);
     // 制卡成功计入书籍统计（reader 走 BaseSourcePageState.onMineFromPopup，不
     // mixin DictionaryPageMixin，故自调 recordMiningEvent，来源固定 book）。失败吞掉记日志。
     if (described.record) unawaited(_recordMined());
@@ -302,11 +299,7 @@ extension _ReaderMining on _ReaderFushiPageState {
 
     // 覆盖路径走收口的单一真相（overwrite=true → card_overwritten + 不记账）。覆盖已有
     // 卡片不计入统计（不是新制一张），成功仍保留「最新可改」第三态、带回同一 noteId。
-    final String deckName = outcome.result == MineResult.success
-        ? (await repo.loadSettings()).selectedDeckName ?? ''
-        : '';
-    final described =
-        describeMineOutcome(outcome, deckName: deckName, overwrite: true);
+    final described = describeMineOutcome(outcome, overwrite: true);
     FushiToast.show(
         msg: described.message, severity: mineToastSeverity(described.status));
     if (described.success) {

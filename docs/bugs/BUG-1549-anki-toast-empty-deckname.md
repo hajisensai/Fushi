@@ -1,0 +1,9 @@
+## BUG-1549 · AnkiConnect 制卡成功 toast 牌组名为空——成功结果不带实际落卡牌组名，调用点事后从 selectedDeckName 猜
+- **报告**：2026-08-11（用户：AnkiConnect（桌面 Anki）制卡时左上角提示「已添加到『』」，引号里空的；卡片实际落进了配置的牌组）
+- **真实性**：✅ 真 bug。根因是「落卡用的 deck」与「toast 显示的 deck 名」两条独立数据路径：
+  - 后端落卡按 **id 优先** 解析 deck：`packages/fushi_anki/lib/src/ankiconnect/ankiconnect_repository.dart:664`（原 `_mineEntryInner` 的 `firstWhereOrNull(d.id == selectedDeckId)`，AnkiDroid/AnkiMobile 同形）——settings 只要有 `selectedDeckId` 就能落卡成功；
+  - 成功 toast 的牌组名却由 10 处调用点事后读 `loadSettings().selectedDeckName ?? ''` 猜（如 `fushi/lib/src/pages/implementations/dictionary_page_mixin.dart:348`），再经 `describeMineOutcome`（`fushi/lib/src/utils/misc/error_log_service.dart:598`）插进 `card_exported`「已添加到『$deck』」；
+  - 旧存档只有 `selectedDeckId` 没有 `selectedDeckName`（name 字段晚于 id 引入，339c1d415c 才补；旧 Profile 快照 map 缺 `selectedDeckName` 键时 `fushi/lib/src/profile/profile_keys.dart:170` 的 `mapToAnkiSettings` 也会把 name 写回 null）→ 落卡成功、toast 空引号。三后端 + 互联转发均可命中，AnkiConnect 用户（桌面）最常见。
+- **[x] ① 已修复** — `MineOutcome.success` 新增 `deckName` 携带后端**实际落卡**的牌组名（`packages/fushi_anki/lib/src/anki_models.dart`），三本地后端（AnkiConnect / AnkiDroid / AnkiMobile）的 mine/update 成功分支统一经 `BaseAnkiRepository.resolveSelectedDeck`（id 优先、name 兜底的单一真相，收口原三份复制的解析块）填入；互联转发主机侧把 `deckName` 摊进 `/api/mine` 与 `/api/mine/forward` 响应（`fushi/lib/src/sync/fushi_remote_api_handlers.dart`），客户端 `RemoteMiningAnkiRepository` 读回、旧主机缺字段时降级本地设置解析名。`describeMineOutcome` 只认 `outcome.deckName`，删掉全部 10 处调用点的 `loadSettings().selectedDeckName` 猜测块。提交 47f919df86。
+- **[x] ② 已加自动化测试** — `packages/fushi_anki/test/mine_outcome_deck_name_test.dart`（legacy「只有 id、name 为 null」设置下 AnkiConnect mine/update 与 AnkiDroid mine 三路径 `outcome.deckName` 均为真实牌组名）；`fushi/test/anki/remote_mining_anki_repository_test.dart` 补主机回传/旧主机降级两用例；`fushi/test/anki/describe_mine_outcome_test.dart` 改断言牌组名唯一来源是 `outcome.deckName` 且成功文案必含牌组名。提交 47f919df86。
+- **备注**：toast 层不判空掩盖（空引号形状由数据源根治）；`selectedDeckName` 持久化字段保留不追改（存量兼容），仅不再作为成功 toast 的数据源。
