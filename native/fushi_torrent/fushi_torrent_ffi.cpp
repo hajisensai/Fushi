@@ -53,10 +53,55 @@ namespace {
 // ── JSON 输出helpers ────────────────────────────────────────────────
 
 // 把 [s] 以 JSON 字符串字面量（不含引号）追加到 [out]，转义控制字符。
-// 非 ASCII 的 UTF-8 字节原样通过（合法 JSON）。
+// libtorrent/WinSock 的本地化错误文本不保证是 UTF-8；C ABI 契约要求所有
+// 出参都是 UTF-8 JSON，因此无效序列必须在这个统一出口替换，而不能让 Dart
+// 因整包 jsonDecode 失败而丢掉 Tracker 列表。
 void append_json_escaped(std::string& out, const std::string& s) {
-  for (const char c : s) {
-    switch (c) {
+  const auto replacement = [&out]() { out += "\\ufffd"; };
+  for (std::size_t i = 0; i < s.size();) {
+    const unsigned char c = static_cast<unsigned char>(s[i]);
+    if (c >= 0x80) {
+      std::size_t width = 0;
+      if (c >= 0xc2 && c <= 0xdf) {
+        width = 2;
+      } else if (c >= 0xe0 && c <= 0xef) {
+        width = 3;
+      } else if (c >= 0xf0 && c <= 0xf4) {
+        width = 4;
+      }
+      if (width == 0 || i + width > s.size()) {
+        replacement();
+        ++i;
+        continue;
+      }
+      bool valid = true;
+      for (std::size_t j = 1; j < width; ++j) {
+        const unsigned char continuation =
+            static_cast<unsigned char>(s[i + j]);
+        if ((continuation & 0xc0) != 0x80) {
+          valid = false;
+          break;
+        }
+      }
+      const unsigned char second = static_cast<unsigned char>(s[i + 1]);
+      if ((c == 0xe0 && second < 0xa0) ||
+          (c == 0xed && second >= 0xa0) ||
+          (c == 0xf0 && second < 0x90) ||
+          (c == 0xf4 && second >= 0x90)) {
+        valid = false;
+      }
+      if (!valid) {
+        replacement();
+        ++i;
+        continue;
+      }
+      out.append(s, i, width);
+      i += width;
+      continue;
+    }
+    const char ascii = static_cast<char>(c);
+    ++i;
+    switch (ascii) {
       case '"': out += "\\\""; break;
       case '\\': out += "\\\\"; break;
       case '\b': out += "\\b"; break;
@@ -70,7 +115,7 @@ void append_json_escaped(std::string& out, const std::string& s) {
           std::snprintf(buf, sizeof(buf), "\\u%04x", c);
           out += buf;
         } else {
-          out += c;
+          out += ascii;
         }
     }
   }

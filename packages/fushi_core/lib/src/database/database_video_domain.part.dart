@@ -1289,6 +1289,40 @@ mixin _FushiDbVideoDomain
     return changed == 1;
   }
 
+  /// Explicit user resume. A cancelled job is paused durable state, not a
+  /// failed retry: preserve its current stage when the backend task still
+  /// exists, or rewind only when the embedded fast-resume entry disappeared.
+  Future<bool> resumeCancelledVideoDownloadJobByUser({
+    required String jobId,
+    required int nowAt,
+    bool rewindToEnqueue = false,
+  }) async {
+    final int changed = await (update(videoDownloadJobs)
+          ..where(($VideoDownloadJobsTable t) =>
+              t.jobId.equals(jobId) &
+              t.lifecycle.equals(VideoDownloadJobLifecycle.cancelled)))
+        .write(VideoDownloadJobsCompanion(
+      lifecycle: const Value<String>(VideoDownloadJobLifecycle.active),
+      stage: rewindToEnqueue
+          ? const Value<String>(VideoDownloadJobStage.enqueue)
+          : const Value<String>.absent(),
+      stageProgress: rewindToEnqueue
+          ? const Value<double>(0)
+          : const Value<double>.absent(),
+      backendTaskId: rewindToEnqueue
+          ? const Value<String?>(null)
+          : const Value<String?>.absent(),
+      attemptCount: const Value<int>(0),
+      nextAttemptAt: Value<int?>(nowAt),
+      claimedBy: const Value<String?>(null),
+      claimExpiresAt: const Value<int?>(null),
+      lastError: const Value<String?>(null),
+      completedAt: const Value<int?>(null),
+      updatedAt: Value<int>(nowAt),
+    ));
+    return changed == 1;
+  }
+
   /// The embedded engine can lose a task when its fast-resume snapshot is
   /// missing after an unclean process exit. Rewind the claimed durable job so
   /// the original resource selection is resolved and enqueued again.

@@ -143,17 +143,19 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('retry and cancel actions are limited to valid lifecycles',
+  testWidgets('retry, resume and cancel actions match their lifecycles',
       (WidgetTester tester) async {
     final _MemoryJobsStore store = _MemoryJobsStore();
     addTearDown(store.close);
     final List<String> retried = <String>[];
+    final List<String> resumed = <String>[];
     final List<String> cancelled = <String>[];
     await _pumpPanel(
       tester,
       panel: VideoDownloadJobsPanel(
         store: store,
         onRetry: (VideoDownloadJobRow job) async => retried.add(job.jobId),
+        onResume: (VideoDownloadJobRow job) async => resumed.add(job.jobId),
         onCancel: (VideoDownloadJobRow job) async => cancelled.add(job.jobId),
       ),
     );
@@ -168,6 +170,11 @@ void main() {
         id: 'failed',
         title: 'Failed',
         lifecycle: VideoDownloadJobLifecycle.failed,
+      ),
+      _job(
+        id: 'paused',
+        title: 'Paused',
+        lifecycle: VideoDownloadJobLifecycle.cancelled,
       ),
       _job(
         id: 'done',
@@ -195,6 +202,14 @@ void main() {
       find.byKey(const ValueKey<String>('video-download-job-retry-done')),
       findsNothing,
     );
+    expect(
+      find.byKey(const ValueKey<String>('video-download-job-resume-paused')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-download-job-resume-active')),
+      findsNothing,
+    );
 
     await tester.tap(
       find.byKey(const ValueKey<String>('video-download-job-cancel-active')),
@@ -204,9 +219,13 @@ void main() {
         const ValueKey<String>('video-download-job-retry-attention'),
       ),
     );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-download-job-resume-paused')),
+    );
     await tester.pump();
     expect(cancelled, <String>['active']);
     expect(retried, <String>['attention']);
+    expect(resumed, <String>['paused']);
   });
 
   testWidgets('long task content has no overflow at 360 logical pixels',

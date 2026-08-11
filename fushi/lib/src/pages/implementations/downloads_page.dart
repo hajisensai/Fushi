@@ -237,6 +237,12 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                                   .videoDownloadPipelineService
                                   ?.retryJob(job.jobId);
                             },
+                            onResume: (job) async {
+                              await ref
+                                  .read(appProvider)
+                                  .videoDownloadPipelineService
+                                  ?.resumeJob(job.jobId);
+                            },
                             onCancel: (job) async {
                               await ref
                                   .read(appProvider)

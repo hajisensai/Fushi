@@ -67,6 +67,7 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     required this.store,
     super.key,
     this.onRetry,
+    this.onResume,
     this.onCancel,
     this.onOpenDetails,
     this.locationLoader,
@@ -82,6 +83,7 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     required FushiDatabase database,
     Key? key,
     VideoDownloadJobAction? onRetry,
+    VideoDownloadJobAction? onResume,
     VideoDownloadJobAction? onCancel,
     VideoDownloadJobAction? onOpenDetails,
     VideoDownloadJobLocationLoader? locationLoader,
@@ -96,6 +98,7 @@ class VideoDownloadJobsPanel extends StatefulWidget {
         key: key,
         store: DatabaseVideoDownloadJobsPanelStore(database),
         onRetry: onRetry,
+        onResume: onResume,
         onCancel: onCancel,
         onOpenDetails: onOpenDetails,
         locationLoader: locationLoader,
@@ -111,6 +114,7 @@ class VideoDownloadJobsPanel extends StatefulWidget {
 
   final VideoDownloadJobsPanelStore store;
   final VideoDownloadJobAction? onRetry;
+  final VideoDownloadJobAction? onResume;
   final VideoDownloadJobAction? onCancel;
   final VideoDownloadJobAction? onOpenDetails;
   final VideoDownloadJobLocationLoader? locationLoader;
@@ -291,6 +295,9 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
               onRetry: widget.onRetry == null
                   ? null
                   : () => _runAction(job, widget.onRetry!),
+              onResume: widget.onResume == null
+                  ? null
+                  : () => _runAction(job, widget.onResume!),
               onCancel: widget.onCancel == null
                   ? null
                   : () => _runAction(job, widget.onCancel!),
@@ -458,6 +465,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
     required this.selectedSizeBytes,
     required this.busy,
     required this.onRetry,
+    required this.onResume,
     required this.onCancel,
     required this.onOpenDetails,
     required this.onOpenLocation,
@@ -472,6 +480,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
   final int? selectedSizeBytes;
   final bool busy;
   final VoidCallback? onRetry;
+  final VoidCallback? onResume;
   final VoidCallback? onCancel;
   final VoidCallback? onOpenDetails;
   final VoidCallback? onOpenLocation;
@@ -483,6 +492,8 @@ class _VideoDownloadJobCard extends StatelessWidget {
       job.resourceProvider != 'legacy-import-report' &&
       (job.lifecycle == VideoDownloadJobLifecycle.needsAttention ||
           job.lifecycle == VideoDownloadJobLifecycle.failed);
+
+  bool get _canResume => job.lifecycle == VideoDownloadJobLifecycle.cancelled;
 
   bool get _canCancel => job.lifecycle == VideoDownloadJobLifecycle.active;
 
@@ -602,6 +613,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
             ),
           ],
           if ((_canRetry && onRetry != null) ||
+              (_canResume && onResume != null) ||
               (_canCancel && onCancel != null) ||
               onOpenDetails != null ||
               onOpenLocation != null ||
@@ -635,6 +647,20 @@ class _VideoDownloadJobCard extends StatelessWidget {
                             )
                           : const Icon(Icons.refresh, size: 18),
                       label: Text(t.retry),
+                    ),
+                  if (_canResume && onResume != null)
+                    FilledButton.tonalIcon(
+                      key: ValueKey<String>(
+                        'video-download-job-resume-${job.jobId}',
+                      ),
+                      onPressed: busy ? null : onResume,
+                      icon: busy
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.play_arrow, size: 18),
+                      label: Text(t.download_task_resume),
                     ),
                   if (_canCancel && onCancel != null)
                     OutlinedButton.icon(

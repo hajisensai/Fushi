@@ -1100,6 +1100,58 @@ void main() {
     expect(backend.pausedTorrentIds, <String>[_torrentHash]);
   });
 
+  test('resume restarts the exact paused backend task and durable job',
+      () async {
+    final _FakeTorrentBackend backend = _FakeTorrentBackend(
+      snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.4)],
+    );
+    final _PipelineEnvironment environment =
+        await _PipelineEnvironment.create(backend: backend);
+    addTearDown(environment.close);
+    const String jobId = 'resume-user-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.download,
+    );
+    await environment.service.cancelJob(jobId);
+
+    await environment.service.resumeJob(jobId);
+
+    final VideoDownloadJobRow job =
+        (await environment.database.getVideoDownloadJob(jobId))!;
+    expect(job.lifecycle, VideoDownloadJobLifecycle.active);
+    expect(job.stage, VideoDownloadJobStage.download);
+    expect(job.completedAt, isNull);
+    expect(backend.resumeCalls, 1);
+    expect(backend.resumedTorrentIds, <String>[_torrentHash]);
+  });
+
+  test('resume rewinds a paused embedded task missing from fast-resume',
+      () async {
+    final _FakeTorrentBackend backend = _FakeTorrentBackend(pauseAdd: true);
+    final _PipelineEnvironment environment =
+        await _PipelineEnvironment.create(backend: backend);
+    addTearDown(environment.close);
+    const String jobId = 'resume-missing-embedded-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.download,
+    );
+    await environment.service.cancelJob(jobId);
+
+    await environment.service.resumeJob(jobId);
+    await backend.addEntered.future.timeout(const Duration(seconds: 2));
+
+    final VideoDownloadJobRow job =
+        (await environment.database.getVideoDownloadJob(jobId))!;
+    expect(job.lifecycle, VideoDownloadJobLifecycle.active);
+    expect(job.stage, VideoDownloadJobStage.enqueue);
+    expect(job.backendTaskId, isNull);
+    expect(job.torrentHash, _torrentHash);
+    expect(backend.resumeCalls, 0);
+    expect(backend.addCalls, 1);
+  });
+
   test('cancel refuses to touch a task when backend identity changed',
       () async {
     final _FakeTorrentBackend backend = _FakeTorrentBackend();
@@ -1527,10 +1579,12 @@ class _FakeTorrentBackend implements TorrentPauseBackend {
   int listTorrentsCalls = 0;
   int listFilesCalls = 0;
   int pauseCalls = 0;
+  int resumeCalls = 0;
   int moveStorageCalls = 0;
   int renameFileCalls = 0;
   final List<String> moveStoragePaths = <String>[];
   final List<String> pausedTorrentIds = <String>[];
+  final List<String> resumedTorrentIds = <String>[];
 
   @override
   bool get pauseControlAvailable => true;
@@ -1543,7 +1597,11 @@ class _FakeTorrentBackend implements TorrentPauseBackend {
   }
 
   @override
-  Future<bool> resumeTorrent(String torrentId) async => true;
+  Future<bool> resumeTorrent(String torrentId) async {
+    resumeCalls += 1;
+    resumedTorrentIds.add(torrentId);
+    return true;
+  }
 
   void releaseAdd([bool accepted = true]) {
     final Completer<bool>? gate = _addGate;

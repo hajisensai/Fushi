@@ -531,6 +531,76 @@ class VideoDownloadPipelineService {
     wake();
   }
 
+  /// Resumes a user-paused durable job and its exact backend task.
+  ///
+  /// Embedded tasks whose fast-resume entry disappeared are rewound to the
+  /// enqueue stage so the original selected resource is recreated. Other
+  /// backends must still expose the recorded task; silently switching backend
+  /// instances would resume or create the wrong torrent.
+  Future<void> resumeJob(String jobId) async {
+    final VideoDownloadJobRow? job = await database.getVideoDownloadJob(jobId);
+    if (job == null) {
+      throw const VideoDownloadPipelineActionRequired(
+        'The selected download job no longer exists',
+      );
+    }
+    if (job.lifecycle != VideoDownloadJobLifecycle.cancelled) {
+      throw const VideoDownloadPipelineActionRequired(
+        'Only paused download jobs can be resumed',
+      );
+    }
+
+    bool rewindToEnqueue = false;
+    final String torrentId =
+        (job.backendTaskId ?? job.torrentHash ?? '').trim();
+    if (torrentId.isNotEmpty) {
+      final VideoDownloadBackendBinding? binding = await backendResolver(job);
+      _validateBackendBinding(job, binding);
+      final TorrentBackend backend = binding!.backend;
+      final List<TorrentSnapshot> snapshots =
+          await backend.listTorrents(category: job.category);
+      final bool backendTaskExists = snapshots.any(
+        (TorrentSnapshot snapshot) =>
+            snapshot.hash.toLowerCase() == torrentId.toLowerCase(),
+      );
+      if (backendTaskExists) {
+        if (backend is TorrentPauseBackend && backend.pauseControlAvailable) {
+          final bool resumed = await backend.resumeTorrent(torrentId);
+          if (!resumed) {
+            throw const VideoDownloadPipelineActionRequired(
+              'The original download backend could not resume this task',
+            );
+          }
+        }
+      } else if (job.backendKind == QbConnectionConfig.backendEmbedded &&
+          job.stage == VideoDownloadJobStage.download) {
+        rewindToEnqueue = true;
+      } else if (job.stage == VideoDownloadJobStage.download) {
+        throw const VideoDownloadPipelineActionRequired(
+          'The torrent is no longer available in the original backend',
+        );
+      }
+    } else if (job.backendKind == QbConnectionConfig.backendEmbedded &&
+        job.stage == VideoDownloadJobStage.download) {
+      rewindToEnqueue = true;
+    }
+
+    final bool changed = await database.resumeCancelledVideoDownloadJobByUser(
+      jobId: jobId,
+      nowAt: DateTime.now().millisecondsSinceEpoch,
+      rewindToEnqueue: rewindToEnqueue,
+    );
+    if (!changed) {
+      final VideoDownloadJobRow? current =
+          await database.getVideoDownloadJob(jobId);
+      if (current?.lifecycle == VideoDownloadJobLifecycle.active) return;
+      throw const VideoDownloadPipelineActionRequired(
+        'The download job changed while it was being resumed',
+      );
+    }
+    wake();
+  }
+
   /// Cancels Hibiki's durable workflow without deleting downloaded data.
   /// When the original backend supports user pause, its exact task is paused
   /// before the lifecycle CAS so cancellation never leaves an actively
