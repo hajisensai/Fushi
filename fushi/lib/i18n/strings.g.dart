@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 56763 (3339 per locale)
+/// Strings: 56814 (3342 per locale)
 ///
-/// Built on 2026-08-11 at 16:01 UTC
+/// Built on 2026-08-11 at 16:09 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4519,6 +4519,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get download_task_stage_scrape => 'Scrape';
   String get video_discovery_manual_identity_hint =>
       'Enter the title, external ID and year above to enable search';
+  String get collection_split_move_to => 'Move to';
+  String get collection_split_new_group => 'New group';
+  String collection_split_selected({required Object n}) => '${n} selected';
 }
 
 // Path: <root>
@@ -12227,6 +12230,12 @@ class _StringsAr extends _StringsEn {
   @override
   String get video_discovery_manual_identity_hint =>
       'Enter the title, external ID and year above to enable search';
+  @override
+  String get collection_split_move_to => 'Move to';
+  @override
+  String get collection_split_new_group => 'New group';
+  @override
+  String collection_split_selected({required Object n}) => '${n} selected';
 }
 
 // Path: <root>
@@ -20002,6 +20011,12 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_discovery_manual_identity_hint =>
       'Enter the title, external ID and year above to enable search';
+  @override
+  String get collection_split_move_to => 'Move to';
+  @override
+  String get collection_split_new_group => 'New group';
+  @override
+  String collection_split_selected({required Object n}) => '${n} selected';
 }
 
 // Path: <root>
@@ -27793,6 +27808,12 @@ class _StringsEs extends _StringsEn {
   @override
   String get video_discovery_manual_identity_hint =>
       'Enter the title, external ID and year above to enable search';
+  @override
+  String get collection_split_move_to => 'Move to';
+  @override
+  String get collection_split_new_group => 'New group';
+  @override
+  String collection_split_selected({required Object n}) => '${n} selected';
 }
 
 // Path: <root>
@@ -35596,6 +35617,12 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_discovery_manual_identity_hint =>
       'Enter the title, external ID and year above to enable search';
+  @override
+  String get collection_split_move_to => 'Move to';
+  @override
+  String get collection_split_new_group => 'New group';
+  @override
+  String collection_split_selected({required Object n}) => '${n} selected';
 }
 
 // Path: <root>
@@ -43327,6 +43354,12 @@ class _StringsId extends _StringsEn {
   @override
   String get video_discovery_manual_identity_hint =>
       'Enter the title, external ID and year above to enable search';
+  @override
+  String get collection_split_move_to => 'Move to';
+  @override
+  String get collection_split_new_group => 'New group';
+  @override
+  String collection_split_selected({required Object n}) => '${n} selected';
 }
 
 // Path: <root>
@@ -51104,6 +51137,12 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_discovery_manual_identity_hint =>
       'Enter the title, external ID and year above to enable search';
+  @override
+  String get collection_split_move_to => 'Move to';
+  @override
+  String get collection_split_new_group => 'New group';
+  @override
+  String collection_split_selected({required Object n}) => '${n} selected';
 }
 
 // Path: <root>
@@ -58695,6 +58734,12 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_discovery_manual_identity_hint =>
       'Enter the title, external ID and year above to enable search';
+  @override
+  String get collection_split_move_to => 'Move to';
+  @override
+  String get collection_split_new_group => 'New group';
+  @override
+  String collection_split_selected({required Object n}) => '${n} selected';
 }
 
 // Path: <root>
@@ -66293,6 +66338,12 @@ class _StringsKo extends _StringsEn {
   @override
   String get video_discovery_manual_identity_hint =>
       'Enter the title, external ID and year above to enable search';
+  @override
+  String get collection_split_move_to => 'Move to';
+  @override
+  String get collection_split_new_group => 'New group';
+  @override
+  String collection_split_selected({required Object n}) => '${n} selected';
 }
 
 // Path: <root>
@@ -74050,6 +74101,12 @@ class _StringsNl extends _StringsEn {
   @override
   String get video_discovery_manual_identity_hint =>
       'Enter the title, external ID and year above to enable search';
+  @override
+  String get collection_split_move_to => 'Move to';
+  @override
+  String get collection_split_new_group => 'New group';
+  @override
+  String collection_split_selected({required Object n}) => '${n} selected';
 }
 
 // Path: <root>
@@ -81819,6 +81876,12 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_discovery_manual_identity_hint =>
       'Enter the title, external ID and year above to enable search';
+  @override
+  String get collection_split_move_to => 'Move to';
+  @override
+  String get collection_split_new_group => 'New group';
+  @override
+  String collection_split_selected({required Object n}) => '${n} selected';
 }
 
 // Path: <root>
@@ -89574,6 +89637,12 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_discovery_manual_identity_hint =>
       'Enter the title, external ID and year above to enable search';
+  @override
+  String get collection_split_move_to => 'Move to';
+  @override
+  String get collection_split_new_group => 'New group';
+  @override
+  String collection_split_selected({required Object n}) => '${n} selected';
 }
 
 // Path: <root>
@@ -97277,6 +97346,12 @@ class _StringsTh extends _StringsEn {
   @override
   String get video_discovery_manual_identity_hint =>
       'Enter the title, external ID and year above to enable search';
+  @override
+  String get collection_split_move_to => 'Move to';
+  @override
+  String get collection_split_new_group => 'New group';
+  @override
+  String collection_split_selected({required Object n}) => '${n} selected';
 }
 
 // Path: <root>
@@ -105011,6 +105086,12 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_discovery_manual_identity_hint =>
       'Enter the title, external ID and year above to enable search';
+  @override
+  String get collection_split_move_to => 'Move to';
+  @override
+  String get collection_split_new_group => 'New group';
+  @override
+  String collection_split_selected({required Object n}) => '${n} selected';
 }
 
 // Path: <root>
@@ -112730,6 +112811,12 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_discovery_manual_identity_hint =>
       'Enter the title, external ID and year above to enable search';
+  @override
+  String get collection_split_move_to => 'Move to';
+  @override
+  String get collection_split_new_group => 'New group';
+  @override
+  String collection_split_selected({required Object n}) => '${n} selected';
 }
 
 // Path: <root>
@@ -119889,6 +119976,12 @@ class _StringsZhCn extends _StringsEn {
   String get download_task_stage_scrape => '刮削';
   @override
   String get video_discovery_manual_identity_hint => '填写标题、外部 ID 和年份后才能搜索';
+  @override
+  String get collection_split_move_to => '移动到';
+  @override
+  String get collection_split_new_group => '新建分组';
+  @override
+  String collection_split_selected({required Object n}) => '已选 ${n} 集';
 }
 
 // Path: <root>
@@ -127403,6 +127496,12 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_discovery_manual_identity_hint =>
       'Enter the title, external ID and year above to enable search';
+  @override
+  String get collection_split_move_to => 'Move to';
+  @override
+  String get collection_split_new_group => 'New group';
+  @override
+  String collection_split_selected({required Object n}) => '${n} selected';
 }
 
 /// Flat map(s) containing all translations.
@@ -134263,6 +134362,12 @@ extension on _StringsEn {
         return 'Scrape';
       case 'video_discovery_manual_identity_hint':
         return 'Enter the title, external ID and year above to enable search';
+      case 'collection_split_move_to':
+        return 'Move to';
+      case 'collection_split_new_group':
+        return 'New group';
+      case 'collection_split_selected':
+        return ({required Object n}) => '${n} selected';
       default:
         return null;
     }
@@ -141121,6 +141226,12 @@ extension on _StringsAr {
         return 'Scrape';
       case 'video_discovery_manual_identity_hint':
         return 'Enter the title, external ID and year above to enable search';
+      case 'collection_split_move_to':
+        return 'Move to';
+      case 'collection_split_new_group':
+        return 'New group';
+      case 'collection_split_selected':
+        return ({required Object n}) => '${n} selected';
       default:
         return null;
     }
@@ -148001,6 +148112,12 @@ extension on _StringsDe {
         return 'Scrape';
       case 'video_discovery_manual_identity_hint':
         return 'Enter the title, external ID and year above to enable search';
+      case 'collection_split_move_to':
+        return 'Move to';
+      case 'collection_split_new_group':
+        return 'New group';
+      case 'collection_split_selected':
+        return ({required Object n}) => '${n} selected';
       default:
         return null;
     }
@@ -154880,6 +154997,12 @@ extension on _StringsEs {
         return 'Scrape';
       case 'video_discovery_manual_identity_hint':
         return 'Enter the title, external ID and year above to enable search';
+      case 'collection_split_move_to':
+        return 'Move to';
+      case 'collection_split_new_group':
+        return 'New group';
+      case 'collection_split_selected':
+        return ({required Object n}) => '${n} selected';
       default:
         return null;
     }
@@ -161765,6 +161888,12 @@ extension on _StringsFr {
         return 'Scrape';
       case 'video_discovery_manual_identity_hint':
         return 'Enter the title, external ID and year above to enable search';
+      case 'collection_split_move_to':
+        return 'Move to';
+      case 'collection_split_new_group':
+        return 'New group';
+      case 'collection_split_selected':
+        return ({required Object n}) => '${n} selected';
       default:
         return null;
     }
@@ -168632,6 +168761,12 @@ extension on _StringsId {
         return 'Scrape';
       case 'video_discovery_manual_identity_hint':
         return 'Enter the title, external ID and year above to enable search';
+      case 'collection_split_move_to':
+        return 'Move to';
+      case 'collection_split_new_group':
+        return 'New group';
+      case 'collection_split_selected':
+        return ({required Object n}) => '${n} selected';
       default:
         return null;
     }
@@ -175513,6 +175648,12 @@ extension on _StringsIt {
         return 'Scrape';
       case 'video_discovery_manual_identity_hint':
         return 'Enter the title, external ID and year above to enable search';
+      case 'collection_split_move_to':
+        return 'Move to';
+      case 'collection_split_new_group':
+        return 'New group';
+      case 'collection_split_selected':
+        return ({required Object n}) => '${n} selected';
       default:
         return null;
     }
@@ -182356,6 +182497,12 @@ extension on _StringsJa {
         return 'Scrape';
       case 'video_discovery_manual_identity_hint':
         return 'Enter the title, external ID and year above to enable search';
+      case 'collection_split_move_to':
+        return 'Move to';
+      case 'collection_split_new_group':
+        return 'New group';
+      case 'collection_split_selected':
+        return ({required Object n}) => '${n} selected';
       default:
         return null;
     }
@@ -189203,6 +189350,12 @@ extension on _StringsKo {
         return 'Scrape';
       case 'video_discovery_manual_identity_hint':
         return 'Enter the title, external ID and year above to enable search';
+      case 'collection_split_move_to':
+        return 'Move to';
+      case 'collection_split_new_group':
+        return 'New group';
+      case 'collection_split_selected':
+        return ({required Object n}) => '${n} selected';
       default:
         return null;
     }
@@ -196078,6 +196231,12 @@ extension on _StringsNl {
         return 'Scrape';
       case 'video_discovery_manual_identity_hint':
         return 'Enter the title, external ID and year above to enable search';
+      case 'collection_split_move_to':
+        return 'Move to';
+      case 'collection_split_new_group':
+        return 'New group';
+      case 'collection_split_selected':
+        return ({required Object n}) => '${n} selected';
       default:
         return null;
     }
@@ -202950,6 +203109,12 @@ extension on _StringsPtBr {
         return 'Scrape';
       case 'video_discovery_manual_identity_hint':
         return 'Enter the title, external ID and year above to enable search';
+      case 'collection_split_move_to':
+        return 'Move to';
+      case 'collection_split_new_group':
+        return 'New group';
+      case 'collection_split_selected':
+        return ({required Object n}) => '${n} selected';
       default:
         return null;
     }
@@ -209827,6 +209992,12 @@ extension on _StringsRu {
         return 'Scrape';
       case 'video_discovery_manual_identity_hint':
         return 'Enter the title, external ID and year above to enable search';
+      case 'collection_split_move_to':
+        return 'Move to';
+      case 'collection_split_new_group':
+        return 'New group';
+      case 'collection_split_selected':
+        return ({required Object n}) => '${n} selected';
       default:
         return null;
     }
@@ -216687,6 +216858,12 @@ extension on _StringsTh {
         return 'Scrape';
       case 'video_discovery_manual_identity_hint':
         return 'Enter the title, external ID and year above to enable search';
+      case 'collection_split_move_to':
+        return 'Move to';
+      case 'collection_split_new_group':
+        return 'New group';
+      case 'collection_split_selected':
+        return ({required Object n}) => '${n} selected';
       default:
         return null;
     }
@@ -223556,6 +223733,12 @@ extension on _StringsTr {
         return 'Scrape';
       case 'video_discovery_manual_identity_hint':
         return 'Enter the title, external ID and year above to enable search';
+      case 'collection_split_move_to':
+        return 'Move to';
+      case 'collection_split_new_group':
+        return 'New group';
+      case 'collection_split_selected':
+        return ({required Object n}) => '${n} selected';
       default:
         return null;
     }
@@ -230421,6 +230604,12 @@ extension on _StringsVi {
         return 'Scrape';
       case 'video_discovery_manual_identity_hint':
         return 'Enter the title, external ID and year above to enable search';
+      case 'collection_split_move_to':
+        return 'Move to';
+      case 'collection_split_new_group':
+        return 'New group';
+      case 'collection_split_selected':
+        return ({required Object n}) => '${n} selected';
       default:
         return null;
     }
@@ -237229,6 +237418,12 @@ extension on _StringsZhCn {
         return '刮削';
       case 'video_discovery_manual_identity_hint':
         return '填写标题、外部 ID 和年份后才能搜索';
+      case 'collection_split_move_to':
+        return '移动到';
+      case 'collection_split_new_group':
+        return '新建分组';
+      case 'collection_split_selected':
+        return ({required Object n}) => '已选 ${n} 集';
       default:
         return null;
     }
@@ -244067,6 +244262,12 @@ extension on _StringsZhHk {
         return 'Scrape';
       case 'video_discovery_manual_identity_hint':
         return 'Enter the title, external ID and year above to enable search';
+      case 'collection_split_move_to':
+        return 'Move to';
+      case 'collection_split_new_group':
+        return 'New group';
+      case 'collection_split_selected':
+        return ({required Object n}) => '${n} selected';
       default:
         return null;
     }

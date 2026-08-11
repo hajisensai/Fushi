@@ -3337,5 +3337,8 @@
   "download_task_stage_subtitle": "字幕",
   "download_task_stage_import": "入库",
   "download_task_stage_scrape": "刮削",
-  "video_discovery_manual_identity_hint": "填写标题、外部 ID 和年份后才能搜索"
+  "video_discovery_manual_identity_hint": "填写标题、外部 ID 和年份后才能搜索",
+  "collection_split_move_to": "移动到",
+  "collection_split_new_group": "新建分组",
+  "collection_split_selected": "已选 $n 集"
 }

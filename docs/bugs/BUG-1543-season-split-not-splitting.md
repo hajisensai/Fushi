@@ -1,0 +1,9 @@
+## BUG-1543 · 合集分季识别吃不下「标题 2 - 集号」形态，多季全挤进第 1 季
+- **报告**：2026-08-11（用户：合集「Hibike! Euphonium」全 234 话，「第 1 季」tab 里 S1 与 S2 按集号交错；「按季拆分合集」只拆出「第 1 季」+「PV·特典」两组，且只能改组名、无法手动拆）
+- **真实性**：✅ 真 bug。三个独立根因：
+  1. **季识别缺形态**：`fushi/lib/src/media/video/scraper/filename_parser.dart:636-670`（原 ④ 季度模式段）只认 `第N季/期`、`2nd Season`、`Season N`、独立 `S3`、`Part N`、罗马数字六种季标记，**没有「标题尾随阿拉伯数字」**这一日系续作最常见形态。`Hibike! Euphonium 2 - 01` 解成 `title='Hibike! Euphonium 2', season=null, episode=1`，于是 `collection_season_groups.dart:22` 的 `collectionSeasonGroupKey` 把它和第 1 季一起归成 `s1`——分组数=1，`isMultiSeasonGrouped` 为假，季 tab 不出现、「按季拆分」无从拆起，列表按集号排序自然 S1/S2 交错。
+  2. **季目录不参与**：`collectionGroupKeyForFilename` 旧实现只取 `p.basename`，`Show/Season 2/01.mkv` 这类**季号只写在父目录上**的布局同样整部判成第 1 季。
+  3. **拆分对话框无逃生口**：`collection_split_dialog.dart` 的方案数据结构是 `List<String> memberTitles`（只有标题、没有稳定 id），结构上就不可能做「把这几集挪到那一组」——识别一失手，功能整个作废。
+- **[x] ① 已修复** — `filename_parser.dart:495`（`_trailingNumericSeason`，收窄到单个 2–9 + 空白左边界）+ `:138`（`takeTrailingNumericSeason` 单一真相源）+ `:745`（⑩ 规则，门槛是「本文件已解出集号」，避免 `Ip Man 2` 这类电影续作被拆成季）；`video_filename_parser.dart` 新增 `parseVideoPath`（文件名无季号时回落父目录名），`collection_season_groups.dart` 改走它；`collection_split_dialog.dart` 重做成「成员带稳定 id + 勾选 + 移动到某组/新建组」，`media_collection_detail_page.dart::_splitBySeason` 改按用户确认的归属落盘（空组不建合集，关系链按 `isSeason` 连）。分组仍是文件名纯函数、不落库，存量合集零迁移即生效。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/scraper/filename_parser_test.dart`「结尾裸数字季号（BUG-1543）」9 例（含 `Mob Psycho 100` / `Gundam 00` / `Ranma 1/2` / `K-ON!!` / 电影续作等负向例）；`fushi/test/media/collection_season_groups_test.dart`「季标记形态（BUG-1543）」5 例（含季目录回落）；`fushi/test/pages/media_collection_detail_season_tabs_test.dart` 新增「「标题 2 - 集号」命名也出季 tab」；`fushi/test/pages/collection_split_by_season_test.dart` 新增手动移动 + 搬空组两例。
+- **备注**：季识别只在**已解出集号**时才认尾随数字——这是有意的边界，电影续作（`Ip Man 2`）的数字属于片名，不是季号。

@@ -3337,5 +3337,8 @@
   "download_task_stage_subtitle": "Subtitles",
   "download_task_stage_import": "Import",
   "download_task_stage_scrape": "Scrape",
-  "video_discovery_manual_identity_hint": "Enter the title, external ID and year above to enable search"
+  "video_discovery_manual_identity_hint": "Enter the title, external ID and year above to enable search",
+  "collection_split_move_to": "Move to",
+  "collection_split_new_group": "New group",
+  "collection_split_selected": "$n selected"
 }
