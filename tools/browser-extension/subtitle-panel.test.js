@@ -46,7 +46,8 @@ function loadController(options = {}) {
     fushiEpisodeCues: options.store || {},
     addEventListener() {},
     postMessage(message) { posted.push(message); },
-    fushiLookupTermFromSidePanel(term, cue) { sent.push({ lookup: term, cue }); return true; },
+    fushiPrepareLookupFromSidePanel(cue) { sent.push({ prepareLookup: cue }); return true; },
+    fushiMineFromSidePanel(fields, cue) { sent.push({ mine: fields, cue }); return { ok: true }; },
   };
   const documentObject = {
     body,
@@ -149,7 +150,7 @@ test('generic seek changes video time while Netflix seek keeps the DRM bridge', 
   assert.strictEqual(netflix.posted[0].ms, 1000);
 });
 
-test('track selection, offset and lookup are routed through the content controller', () => {
+test('track selection, offset and side-panel cue actions are routed through the content controller', () => {
   const harness = loadController({
     hostname: 'www.netflix.com', pathname: '/watch/81001', store: TRACKS,
   });
@@ -158,9 +159,14 @@ test('track selection, offset and lookup are routed through the content controll
   state = harness.message({ type: 'fushiSubtitleSidePanelOffset', deltaMs: 500 });
   assert.strictEqual(state.cues[0].startMs, 1500);
   assert.strictEqual(TRACKS['81001|ja'][0].startMs, 1000, 'raw store remains unchanged');
-  const response = harness.message({
-    type: 'fushiSubtitleSidePanelLookup', term: '今日', cue: state.cues[0],
+  let response = harness.message({
+    type: 'fushiSubtitleSidePanelPrepareLookup', cue: state.cues[0],
   });
   assert.strictEqual(response.ok, true);
-  assert.ok(harness.sent.some((entry) => entry.lookup === '今日'));
+  assert.ok(harness.sent.some((entry) => entry.prepareLookup === state.cues[0]));
+  response = harness.message({
+    type: 'fushiSubtitleSidePanelMine', fields: { expression: '今日' }, cue: state.cues[0],
+  });
+  assert.strictEqual(response.ok, true);
+  assert.ok(harness.sent.some((entry) => entry.mine && entry.mine.expression === '今日'));
 });

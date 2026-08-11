@@ -13,6 +13,25 @@ function __fushiSel(){ var r = window.__fushiRoot; try { return (r && r.getSelec
    its dispatch so every helper shares ONE composedPath() result. */
 function __fushiComposedPath(e){ if (e.__fushiPathCache !== undefined) return e.__fushiPathCache; var p = null; try { p = (e.composedPath && e.composedPath()) || null; } catch(_){ p = null; } try { e.__fushiPathCache = p; } catch(_){} return p; }
 function __fushiEventTarget(e){ var p = __fushiComposedPath(e); if (p && p.length) return p[0]; return e.target; }
+// 浏览器扩展把 popup.js 与宿主页面/原生 Side Panel 运行在同一 document。共享的
+// document 级鼠标监听必须只消费词典 Shadow DOM 内的事件；否则 click 会清掉字幕区的
+// 原生双击选区，mousemove 也会在宿主文本上启动词典取词。app 内没有 __fushiRoot，
+// 整份 document 就是词典，保持原行为。
+function __fushiEventInsidePopup(e){
+    var root = window.__fushiRoot;
+    if (!root) {
+        var extensionPage = typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id);
+        return !extensionPage;
+    }
+    var host = root.host;
+    if (!host) return false;
+    try {
+        var path = __fushiComposedPath(e);
+        return !!(path && path.indexOf(host) !== -1);
+    } catch (_) {
+        return false;
+    }
+}
 /* BUG-688: the extension floating popup scrolls on the SHADOW HOST
    (#hibiki-popup-host has overflow-y:auto + max-height; #entries-container is
    neutralized to overflow:visible inside the shadow), while the in-app popup
@@ -4446,6 +4465,7 @@ if (typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id)) {
 
 let _popupMouseDownPos = null;
 document.addEventListener('mousedown', (e) => {
+    if (!__fushiEventInsidePopup(e)) return;
     _popupMouseDownPos = { x: e.clientX, y: e.clientY };
 });
 
@@ -4496,6 +4516,7 @@ function handleGlossaryAnchorClick(event, anchor) {
 }
 
 document.addEventListener('click', (e) => {
+    if (!__fushiEventInsidePopup(e)) return;
     if (_popupMouseDownPos) {
         const dx = e.clientX - _popupMouseDownPos.x;
         const dy = e.clientY - _popupMouseDownPos.y;
@@ -4576,6 +4597,7 @@ document.addEventListener('click', (e) => {
 
 var _popupShiftLastX = -1, _popupShiftLastY = -1;
 document.addEventListener('mousemove', function(e) {
+    if (!__fushiEventInsidePopup(e)) return;
     if (!e.shiftKey) { _popupShiftLastX = -1; _popupShiftLastY = -1; return; }
     var dx = e.clientX - _popupShiftLastX, dy = e.clientY - _popupShiftLastY;
     if (dx * dx + dy * dy < 64) return;

@@ -1,15 +1,6 @@
 (function () {
   'use strict';
 
-  // vendor/selection.js 与 app/WebView 共用，selectFromPosition() 在返回命中的词之前会通知
-  // flutter_inappwebview.textSelected。Side Panel 是纯扩展页面，没有 WebView bridge；提供无副作用
-  // 兼容桥，避免选词已经成功却在返回值前抛错。真正的查词仍通过 sendToTab 发给当前视频页。
-  if (!window.flutter_inappwebview) {
-    window.flutter_inappwebview = {
-      callHandler: function () { return Promise.resolve(null); },
-    };
-  }
-
   var listEl = document.getElementById('list');
   var trackEl = document.getElementById('track');
   var offsetEl = document.getElementById('offset');
@@ -18,6 +9,23 @@
   var fileEl = document.getElementById('subtitle-file');
   var autoButton = document.getElementById('auto-scroll');
   var toastEl = document.getElementById('toast');
+  var lookupPaneEl = document.getElementById('lookup-pane');
+  var lookupTermEl = document.getElementById('lookup-term');
+  var lookupHostEl = document.getElementById('lookup-host');
+  var lookupShadow = lookupHostEl.attachShadow({ mode: 'open' });
+  var lookupStyles = document.createElement('link');
+  lookupStyles.rel = 'stylesheet';
+  lookupStyles.href = chrome.runtime.getURL('vendor/content.css');
+  var lookupOverrides = document.createElement('style');
+  lookupOverrides.textContent =
+    '#entries-container{width:100%!important;max-width:none!important;max-height:none!important;' +
+    'overflow:visible!important;padding:8px 10px 12px!important;}';
+  var lookupContainer = document.createElement('div');
+  lookupContainer.id = 'entries-container';
+  lookupShadow.appendChild(lookupStyles);
+  lookupShadow.appendChild(lookupOverrides);
+  lookupShadow.appendChild(lookupContainer);
+  window.__fushiRoot = lookupShadow;
   var currentTabId = null;
   var currentState = null;
   var cues = [];
@@ -29,7 +37,116 @@
   var refreshBusy = false;
   var toastTimer = null;
   var lookupTimer = null;
+  var currentLookupCue = null;
   var FONT_STEPS = [0.85, 1, 1.15, 1.3];
+
+  function sendRuntime(message) {
+    return new Promise(function (resolve) {
+      try {
+        chrome.runtime.sendMessage(message, function (response) {
+          try { if (chrome.runtime.lastError) return resolve(null); } catch (_) { return resolve(null); }
+          resolve(response || null);
+        });
+      } catch (_) { resolve(null); }
+    });
+  }
+
+  function closeLookup() {
+    lookupPaneEl.hidden = true;
+    lookupTermEl.textContent = '';
+    lookupContainer.textContent = '';
+    currentLookupCue = null;
+  }
+
+  function applyLookupTheme(theme) {
+    if (!theme || typeof theme !== 'object') return;
+    Object.keys(theme).forEach(function (key) {
+      if (typeof theme[key] === 'string') lookupContainer.style.setProperty(key, theme[key]);
+    });
+    var scheme = theme['--fushi-color-scheme'];
+    if (scheme === 'dark' || scheme === 'light') lookupContainer.setAttribute('data-theme', scheme);
+    var columns = theme['--dict-columns'];
+    if (typeof columns === 'string' && columns) {
+      document.documentElement.style.setProperty('--dict-columns', columns);
+    }
+    var wheelSpeed = parseFloat(theme['--fushi-wheel-speed']);
+    window.__fushiPopupWheelSpeed = isFinite(wheelSpeed) && wheelSpeed > 0 ? wheelSpeed : 1;
+  }
+
+  async function lookupTerm(term, cue) {
+    var value = String(term || '').trim();
+    if (!value) return;
+    currentLookupCue = cue || currentLookupCue;
+    lookupTermEl.textContent = value;
+    lookupPaneEl.hidden = false;
+    lookupContainer.innerHTML = '<div class="no-results">正在查词…</div>';
+    await sendToTab({ type: 'fushiSubtitleSidePanelPrepareLookup', cue: currentLookupCue });
+    var response = await sendRuntime({ type: 'lookup', term: value });
+    if (!response || response.ok !== true || !response.data || !response.data.popupJson) {
+      lookupContainer.innerHTML = '<div class="no-results">查词失败，请确认 Fushi 查词服务已开启。</div>';
+      return;
+    }
+    try { window.lookupEntries = JSON.parse(response.data.popupJson); }
+    catch (_) { window.lookupEntries = []; }
+    window.audioSources = Array.isArray(response.data.audioSources) ? response.data.audioSources : [];
+    window.needsAudio = true;
+    window._noResultsMessage = '没有查到结果';
+    applyLookupTheme(response.data.theme);
+    if (typeof window.renderPopup === 'function') window.renderPopup();
+    else lookupContainer.innerHTML = '<div class="no-results">词典组件尚未就绪，请重试。</div>';
+  }
+
+  // popup.js 与 app 内 WebView 共用。Side Panel 自己承接嵌套查词、发音与查重；只有制卡
+  // 需要把字段和精确字幕时间窗发给当前视频页，词典 UI 从不回到宿主网页。
+  window.flutter_inappwebview = {
+    callHandler: function (name) {
+      var args = Array.prototype.slice.call(arguments, 1);
+      if (name === 'textSelected' || name === 'popupRendered') return Promise.resolve(null);
+      if (name === 'onLinkClick') {
+        lookupTerm(args[0], currentLookupCue);
+        return Promise.resolve(null);
+      }
+      if (name === 'tapOutside') return Promise.resolve(null);
+      if (name === 'openLink') {
+        try { window.open(args[0], '_blank'); } catch (_) {}
+        return Promise.resolve(null);
+      }
+      if (name === 'duplicateCheck') {
+        var duplicate = args[0] || {};
+        return sendRuntime({
+          type: 'duplicate', expression: duplicate.expression || '', reading: duplicate.reading || '',
+        }).then(function (response) {
+          return !!(response && response.ok && response.data && response.data.duplicate === true);
+        });
+      }
+      if (name === 'resolveWordAudio') {
+        var audio = args[0] || {};
+        return sendRuntime({
+          type: 'lookupAudio', expression: audio.expression || '', reading: audio.reading || '',
+        }).then(function (response) { return response && response.ok ? response.url || null : null; });
+      }
+      if (name === 'mineEntry') {
+        return sendToTab({
+          type: 'fushiSubtitleSidePanelMine', fields: args[0] || {}, cue: currentLookupCue,
+        }).then(function (response) {
+          if (response && response.ok) {
+            toast(response.duplicate ? '✓ 已在制卡队列中' : '✓ 已加入制卡队列');
+            return true;
+          }
+          toast('✗ 制卡失败：当前视频页不可用');
+          return false;
+        });
+      }
+      return Promise.resolve(null);
+    },
+  };
+
+  // 词典图片仍走 Fushi 本地媒体端点，不依赖宿主页面。
+  sendRuntime({ type: 'dictMediaConfig' }).then(function (response) {
+    if (response && response.ok && response.base && response.token) {
+      window.__fushiDictMedia = { base: response.base, token: response.token };
+    }
+  });
 
   function toast(message) {
     toastEl.textContent = String(message || '');
@@ -132,7 +249,7 @@
       var text = document.createElement('div');
       text.className = 'subtitle-text';
       text.textContent = cue.text;
-      text.title = '点击文字查词';
+      text.title = '单击查词；双击选择文本';
       async function lookupAt(x, y) {
         var term = '';
         try {
@@ -148,21 +265,21 @@
           toast('未识别到可查词文字');
           return;
         }
-        var response = await sendToTab({
-          type: 'fushiSubtitleSidePanelLookup', term: term, cue: cue,
-        });
-        if (!response || response.ok !== true) toast('查词失败：请刷新当前视频页后重试');
+        lookupTerm(term, cue);
       }
       text.addEventListener('click', function (event) {
-        // 双击完全交给浏览器原生文本选择；只有确认不是双击后才发单击查词。
+        // 不阻止默认事件、不清空 Selection。延迟跨过系统常见双击窗口；第二击/dblclick
+        // 会取消查词，延迟结束时已有原生选区也直接放弃，保证双击选择优先。
         if (lookupTimer) { clearTimeout(lookupTimer); lookupTimer = null; }
         if (event.detail > 1) return;
         var x = event.clientX;
         var y = event.clientY;
         lookupTimer = setTimeout(function () {
           lookupTimer = null;
+          var selection = window.getSelection && window.getSelection();
+          if (selection && !selection.isCollapsed && String(selection).trim()) return;
           lookupAt(x, y);
-        }, 240);
+        }, 650);
       });
       text.addEventListener('dblclick', function () {
         if (lookupTimer) { clearTimeout(lookupTimer); lookupTimer = null; }
@@ -318,6 +435,7 @@
   document.getElementById('settings').addEventListener('click', function () {
     chrome.runtime.openOptionsPage();
   });
+  document.getElementById('lookup-close').addEventListener('click', closeLookup);
 
   try {
     chrome.tabs.onActivated.addListener(function () { refresh(true); });

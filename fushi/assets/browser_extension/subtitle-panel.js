@@ -8,13 +8,13 @@
 //   · 时间戳点击 → Netflix（DRM）复用 P1 的 nfSeek（postMessage {__fushiNf:'seek',ms}，走
 //     Netflix 官方 player.seek，不触发 M7375，不碰 DRM）；其余站点直接 video.currentTime。
 //   · 文本点击 → side-panel.js 在扩展页面内取词，再用消息调用
-//     window.fushiLookupTermFromSidePanel（content.js 暴露）打开原有查词弹窗。
+//     查词请求与词典 UI 均在原生 Side Panel 内；这里只准备精确 cue 窗并承接制卡入队。
 //   · 制卡入口 = 上述查词弹窗自带的「制卡」按钮（bridge-shim mineEntry → window.fushiEnqueue，
 //     携带真实词 fields + 句子），面板不再另造合成 fields 的行级按钮。行的精确 [startMs,endMs]
 //     窗留给 P3（截图剪裁 + 精确窗覆盖 DOM 采样）。
 //   · 当前句高亮 + 自动滚动：side-panel.js 轮询标签页时间，对当前轨 cues 二分命中当前句
 //     （精确窗，胜过 DOM 文本匹配），高亮对应行并（开启时）滚入视图。
-// 控制器只依赖 window.fushiEpisodeCues / window.fushiLookupTermFromSidePanel / postMessage，
+// 控制器只依赖 window.fushiEpisodeCues / Side Panel cue bridge / postMessage，
 // Netflix DOM 抖动时列表仍由浏览器侧边栏稳定承载。
 (function () {
   'use strict';
@@ -614,11 +614,19 @@
         sendResponse(sidePanelState(true));
         return false;
       }
-      if (msg.type === 'fushiSubtitleSidePanelLookup') {
+      if (msg.type === 'fushiSubtitleSidePanelPrepareLookup') {
         var cue = msg.cue && typeof msg.cue === 'object' ? msg.cue : null;
-        var handled = typeof window.fushiLookupTermFromSidePanel === 'function' &&
-          window.fushiLookupTermFromSidePanel(String(msg.term || ''), cue) === true;
+        var handled = typeof window.fushiPrepareLookupFromSidePanel === 'function' &&
+          window.fushiPrepareLookupFromSidePanel(cue) === true;
         sendResponse({ ok: handled });
+        return false;
+      }
+      if (msg.type === 'fushiSubtitleSidePanelMine') {
+        var mineCue = msg.cue && typeof msg.cue === 'object' ? msg.cue : null;
+        var result = typeof window.fushiMineFromSidePanel === 'function'
+          ? window.fushiMineFromSidePanel(msg.fields || {}, mineCue)
+          : { ok: false, reason: 'no-queue' };
+        sendResponse(result || { ok: false });
         return false;
       }
       return false;

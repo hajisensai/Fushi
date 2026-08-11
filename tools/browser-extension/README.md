@@ -12,7 +12,7 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server�
 | `background.js` | service worker | 唯一网络出口：查词/制卡/字幕等所有 HTTP 请求 + 连接诊断 + 自更新执行 + 心跳 + Netflix 录制编排 |
 | `content.js` | 隔离 | Shift 悬停查词、查词暂停、弹窗渲染/定位、高亮、挖词队列、字幕轨 provider（textTracks 收割 / DOM 采样兜底 / 整集拦截接收端）、Netflix/YouTube 批量制卡驱动 |
 | `subtitle-panel.js` | 隔离 | 字幕轨状态控制器 + 视频覆盖层 + 外挂字幕安装 + 全轨时轴偏移 + 快捷键执行端；不渲染网页列表 |
-| `side-panel.html/js/css` | 扩展页 | 浏览器原生 Side Panel 字幕列表；经 tabs 消息读取当前视频轨并执行跳转/查词/偏移 |
+| `side-panel.html/js/css` | 扩展页 | 浏览器原生 Side Panel 字幕列表与词典抽屉；在侧边栏内完成取词/嵌套查词，经 tabs 消息读取轨道并执行跳转/制卡/偏移，不把列表或查词结果注入网页 |
 | `video-shortcuts.js` | 隔离 | 视频页快捷键判定（纯函数）+ 绑定；每个动作独立开关，动作交 subtitle-panel 执行 |
 | `netflix-bridge.js` | MAIN | Netflix 专用：JSON.parse hook 抓整集字幕 + 官方 player.seek（避开 DRM M7375） |
 | `youtube-bridge.js` | MAIN | YouTube 专用：按 asbplayer 顺序读取播放器运行态 captionTracks（含 POT）→ Android Innertube → player response，并一次下载完整 srv3/json3 轨；只读、不改宿主 DOM |
