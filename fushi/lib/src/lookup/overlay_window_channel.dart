@@ -59,15 +59,35 @@ class GlobalLookupShowResult {
 }
 
 class OverlayWindowChannel {
-  const OverlayWindowChannel(this._channel);
+  const OverlayWindowChannel(this._channel, {this.target = ''});
 
   final MethodChannel _channel;
+
+  /// 目标窗口标识。空 = 该通道自己的默认窗口（桌面浮窗 / 剪贴板面板）。
+  ///
+  /// `'galCard'` 指向游戏内查词专用的**离屏**卡片窗：同一条 MethodChannel、同一套
+  /// 方法契约，只是 native 侧按这个字段解析成另一个 GlobalLookupWindow 实例。
+  /// 这样游戏内查词能整条复用既有渲染管线（查词 → popupJson → 渲染 → 定尺寸），
+  /// 而不必把 1700 行控制器复制一份；也不会像之前那样"渲染器建好却没人往里塞内容"。
+  final String target;
+
+  /// 所有调用的唯一出口：把 [target] 注入参数表。逐个方法手动加，迟早漏一个，
+  /// 而漏掉的那个会静默打到错误的窗口上。
+  Future<T?> _invoke<T>(String method, [Map<String, Object?>? args]) {
+    if (target.isEmpty) {
+      return _invoke<T>(method, args);
+    }
+    return _invoke<T>(method, <String, Object?>{
+      ...?args,
+      'target': target,
+    });
+  }
 
   /// Sets the absolute folder that holds popup.html / popup.js / popup.css and
   /// popup_bridge_adapter.js (flutter_assets/assets/popup at runtime). Must be
   /// called once before the first [showAt].
   Future<void> prepare(String assetsDir) =>
-      _channel.invokeMethod<void>('prepare', <String, Object?>{
+      _invoke<void>('prepare', <String, Object?>{
         'assetsDir': assetsDir,
       });
 
@@ -75,7 +95,7 @@ class OverlayWindowChannel {
   /// to host.html at startup so the first lookup hits a WARM surface.
   /// Idempotent natively (no-op once warm).
   Future<void> prewarmWebView({int width = 420, int height = 600}) =>
-      _channel.invokeMethod<void>('prewarmWebView', <String, Object?>{
+      _invoke<void>('prewarmWebView', <String, Object?>{
         'width': width,
         'height': height,
       });
@@ -83,7 +103,7 @@ class OverlayWindowChannel {
   /// TODO-1079 — whether the overlay WebView2 finished its initial navigation
   /// (host document + popup iframes loaded). False on any non-bool reply.
   Future<bool> isWebViewReady() async =>
-      (await _channel.invokeMethod<bool>('isWebViewReady')) ?? false;
+      (await _invoke<bool>('isWebViewReady')) ?? false;
 
   /// Shows the overlay at screen coordinates (physical pixels) without
   /// stealing focus. Returns the native reply (see [GlobalLookupShowResult]).
@@ -95,7 +115,7 @@ class OverlayWindowChannel {
     bool atCursor = false,
   }) async {
     final Object? reply =
-        await _channel.invokeMethod<Object?>('showAt', <String, Object?>{
+        await _invoke<Object?>('showAt', <String, Object?>{
       'x': x,
       'y': y,
       'width': width,
@@ -123,14 +143,14 @@ class OverlayWindowChannel {
 
   /// Injects [popupJson] and calls window.renderPopup() in the overlay WebView.
   Future<void> render(String popupJson) =>
-      _channel.invokeMethod<void>('render', <String, Object?>{
+      _invoke<void>('render', <String, Object?>{
         'json': popupJson,
       });
 
   /// Resizes the overlay window (physical px), clamped to the work area by
   /// native. Keeps the current top-left anchor.
   Future<void> resize({required int width, required int height}) =>
-      _channel.invokeMethod<void>('resize', <String, Object?>{
+      _invoke<void>('resize', <String, Object?>{
         'width': width,
         'height': height,
       });
@@ -142,7 +162,7 @@ class OverlayWindowChannel {
   /// produces the reply JSON text, the outer jsonEncode turns that into a JS
   /// string literal native can splice in verbatim.
   Future<void> resolveBridge(int id, Object? value) =>
-      _channel.invokeMethod<void>('resolveBridge', <String, Object?>{
+      _invoke<void>('resolveBridge', <String, Object?>{
         'id': id,
         'value': jsonEncode(jsonEncode(value)),
       });
@@ -150,7 +170,7 @@ class OverlayWindowChannel {
   /// Moves the off-screen-rendered overlay to its pending anchor at the final
   /// size and makes it visible.
   Future<void> reveal({required int width, required int height}) =>
-      _channel.invokeMethod<void>('reveal', <String, Object?>{
+      _invoke<void>('reveal', <String, Object?>{
         'width': width,
         'height': height,
       });
@@ -167,7 +187,7 @@ class OverlayWindowChannel {
     double left = 0,
     double top = 0,
   }) =>
-      _channel.invokeMethod<void>('revealStack', <String, Object?>{
+      _invoke<void>('revealStack', <String, Object?>{
         'dx': dx,
         'dy': dy,
         'width': width,
@@ -180,10 +200,10 @@ class OverlayWindowChannel {
   /// fires the native `overlayHidden` callback; false = the programmatic reset
   /// before a fresh lookup (must not look like a user dismissal, TODO-1233).
   Future<void> hide({bool notify = true}) =>
-      _channel.invokeMethod<void>('hide', <String, Object?>{'notify': notify});
+      _invoke<void>('hide', <String, Object?>{'notify': notify});
 
   Future<bool> isShowing() async =>
-      (await _channel.invokeMethod<bool>('isShowing')) ?? false;
+      (await _invoke<bool>('isShowing')) ?? false;
 
   /// spec §6 — asks native for the Win11 acrylic system backdrop behind the
   /// window's transparent pixels. Returns whether the OS accepted it (false on
@@ -192,7 +212,7 @@ class OverlayWindowChannel {
   /// other channels answer notImplemented → false.
   Future<bool> applyBackdrop() async {
     try {
-      return (await _channel.invokeMethod<bool>('applyBackdrop')) ?? false;
+      return (await _invoke<bool>('applyBackdrop')) ?? false;
     } on MissingPluginException {
       return false;
     } on PlatformException {
@@ -203,7 +223,7 @@ class OverlayWindowChannel {
   /// spec 2026-07-10 panel pin — toggles HWND_TOPMOST. Only wired on the
   /// clipboard-panel channel.
   Future<void> setPinned(bool pinned) =>
-      _channel.invokeMethod<void>('setPinned', <String, Object?>{
+      _invoke<void>('setPinned', <String, Object?>{
         'pinned': pinned,
       });
 
@@ -211,7 +231,7 @@ class OverlayWindowChannel {
   /// 但从截图 / 录屏 / 屏幕共享里排除。Wired on BOTH channels（剪贴板面板 +
   /// 瞬态全局查词窗——同一 pref clipboardPanelBlockCapture 保护两块表面）。
   Future<void> setBlockCapture(bool block) =>
-      _channel.invokeMethod<void>('setBlockCapture', <String, Object?>{
+      _invoke<void>('setBlockCapture', <String, Object?>{
         'block': block,
       });
 
@@ -219,7 +239,7 @@ class OverlayWindowChannel {
   /// 焦点）。[topmost]=true（已 pin）直接置顶，false 则顶到非置顶带最上。
   /// Only wired on the clipboard-panel channel.
   Future<void> raise({required bool topmost}) =>
-      _channel.invokeMethod<void>('raise', <String, Object?>{
+      _invoke<void>('raise', <String, Object?>{
         'topmost': topmost,
       });
 
@@ -227,7 +247,7 @@ class OverlayWindowChannel {
   /// 窗口创建前设置则用于创建，已创建则即时更新。Only wired on the
   /// clipboard-panel channel.
   Future<void> setWindowTitle(String title) =>
-      _channel.invokeMethod<void>('setWindowTitle', <String, Object?>{
+      _invoke<void>('setWindowTitle', <String, Object?>{
         'title': title,
       });
 
@@ -236,7 +256,7 @@ class OverlayWindowChannel {
   /// 实测经 windowed WebView2 呈现为不透明且毛玻璃本就不是「看见底下」。
   /// Only wired on the clipboard-panel channel.
   Future<void> setWindowAlpha(int percent) =>
-      _channel.invokeMethod<void>('setWindowAlpha', <String, Object?>{
+      _invoke<void>('setWindowAlpha', <String, Object?>{
         'percent': percent,
       });
 

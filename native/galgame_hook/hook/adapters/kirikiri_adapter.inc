@@ -779,6 +779,30 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			// 这一批必须最先建立：DLL 每帧都会求值 fushiLookupNotify，晚一步就是每帧一次
 			// TJS 异常。
 			global.fushiLookupNotify = 0;
+			// 传感器在引擎回调里吞下的异常次数。**不是可有可无的计数器**：我们注册进
+			// 游戏事件循环的每个入口都必须异常透明（异常逃逸 = 游戏弹致命错误框），
+			// 而「不让它逃逸」和「假装没发生」只差这一个计数。DLL 在 notify 变化的同
+			// 一次求值里读走它并置 kLookupDiagSensorFault，故稳态零额外开销。
+			global.fushiLookupFaults = 0;
+			// 采集是否真的产出过逐字符几何。与「有没有命中」必须分开：命中还依赖坐标
+			// 换算和鼠标位置，两件事挤在一个诊断位里，真机上就分不出「文字没采到」和
+			// 「采到了但点不中」——而这两者的修法完全不同（第一次真机排查就卡在这）。
+			global.fushiLookupGeometry = 0;
+			// hover 未命中的原因位（TJS 侧 1/2/4/8/16，DLL 映射到 kLookupDiagHover*）。
+			global.fushiLookupMiss = 0;
+			// 一次采集周期内 bindOrigin 真正生效的次数。>1 说明 drawCh 的 ox/oy 是逐字符
+			// 位置而非整行原点（本样本实测就是 >1，见 kLookupDiagOriginPerChar）。
+			global.fushiLookupBindTicks = 0;
+			// 按**绘制目标层的父层**分组的 drawCh 落点跨度。
+			//
+			// 这是把「采到的一行」和「它画在哪个层」对起来的唯一可靠判据：本引擎里
+			// drawCh 的 this 与 render 的 this 不是同一个对象（renderer 身份对不上），
+			// 淡入又由持续回调驱动（时序也对不上）。但几何对得上——同一行的 drawCh
+			// 落点集合与 getCharacters 的字形坐标集合只差一个常数平移，**跨度必然相等**。
+			global.fushiLookupBindGroups = [];
+			// 光标换算的暂存（避免在 hover 热路径上每条记录都分配一个字典）。
+			global.fushiLookupOffX = 0;
+			global.fushiLookupOffY = 0;
 			global.fushiLookupHitSeq = 0;
 			global.fushiLookupHitCharIndex = 0;
 			global.fushiLookupHitCharCount = 0;
@@ -823,6 +847,60 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				return void;
 			};
 
+			// 记一个「未命中原因」位。只在 0→1 那一次搭 notify 的车通知 DLL：未命中是
+			// 高频事件（鼠标每动一像素都可能未命中），每次都通知等于把诊断做成性能问题。
+			global.fushiLookupMark = function(bit)
+			{
+				if((global.fushiLookupMiss & bit) != 0) return;
+				global.fushiLookupMiss = global.fushiLookupMiss | bit;
+				global.fushiLookupNotify++;
+			};
+
+			// 把光标位置换算到某个图层的局部坐标系，结果写进 fushiLookupOffX/Y。
+			//
+			// 🔴 **不能问那个图层自己**。`layer.cursorX / layer.imageLeft` 是图像属性，
+			// 要求该层此刻可绘制；而文字的绘制目标层归游戏所有，翻页/换场景后会被
+			// freeImage 或改成非可绘制类型，一读就抛 "Not drawable layer type"。真机上
+			// 的表现是：每次鼠标移动都把这条记录判死淘汰掉，下一次渲染再建、再淘汰，
+			// 命中数永远是 0。
+			//
+			// left/top/parent 是**图层树**属性，与该层有没有图像、是什么类型都无关，
+			// 任何状态下都能读。沿父链累加到 primaryLayer 为止，就得到该层在 primary
+			// 图像坐标系里的原点；再拿 primary 的光标位置一减即可。guard 是防御游戏把
+			// 图层树接成环（不该发生，但这里跑在游戏主线程上，死循环＝游戏卡死）。
+			global.fushiLookupComputeOffset = function(layer)
+			{
+				var ox = 0, oy = 0;
+				var current = layer;
+				var guard = 0;
+				var reached = false;
+				var primary = global.kag.primaryLayer;
+				while(current !== void && current !== null && isvalid current)
+				{
+					if(current === primary) { reached = true; break; }
+					if(++guard > 32) break;
+					ox += current.left;
+					oy += current.top;
+					current = current.parent;
+				}
+				// 没走到 primary = 这层根本不挂在主渲染树上（独立/离屏层），累加出来的
+				// 偏移没有意义。必须能看见，否则表现只是"点不中"，无从判断是坐标算错还
+				// 是模型选错。
+				if(!reached) global.fushiLookupMark(16);
+				global.fushiLookupOffX = ox;
+				global.fushiLookupOffY = oy;
+			};
+
+			// 记一次「在引擎回调里吞下的异常」。只做整数自增，自身不可能再抛。
+			// 顺带 ++notify 是有意的：DLL 只在 notify 变化时才回读，不搭这趟车故障就要等
+			// 到下一次真命中才被看见，而故障恰恰会阻止命中发生。重复的 notify 不会造成
+			// 重复命中——host 按 hit seq 去重。
+			global.fushiLookupFault = function()
+			{
+				global.fushiLookupFaults++;
+				global.fushiLookupNotify++;
+			};
+
 			// 上限 8 + 淘汰最久未用。TJS 没有弱引用，registry 只增不减就等于把每个用过的
 			// renderer 连同它的整行几何永久钉在游戏进程里（prototype 的真实泄漏源）。
 			global.fushiLookupEntryFor = function(renderer)
@@ -837,7 +915,9 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				if(registry.count < 8)
 				{
 					var fresh = %[renderer:renderer, glyphs:[], line:"", used:0,
-						minX:0, minY:0, maxX:0, maxY:0, layer:void, originX:0, originY:0];
+						minX:0, minY:0, maxX:0, maxY:0, layer:void, originX:0, originY:0,
+						baseOx:0, baseOy:0, hasBase:false, imgLeft:0, imgTop:0,
+						passMinOx:0, passMinOy:0, passHas:false, passLayer:void];
 					registry.add(fresh);
 					return fresh;
 				}
@@ -849,6 +929,15 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				reused.layer = void;
 				reused.originX = 0;
 				reused.originY = 0;
+				reused.baseOx = 0;
+				reused.baseOy = 0;
+				reused.hasBase = false;
+				reused.imgLeft = 0;
+				reused.imgTop = 0;
+				reused.passMinOx = 0;
+				reused.passMinOy = 0;
+				reused.passHas = false;
+				reused.passLayer = void;
 				return reused;
 			};
 
@@ -1145,6 +1234,17 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						line += text;
 					}
 					if(glyphs.count == 0) return;
+					// 采集真的产出了几何。只在 0→1 那一次搭 notify 的车通知 DLL，之后
+					// 每行台词都不再有额外开销。
+					if(global.fushiLookupGeometry == 0)
+					{
+						global.fushiLookupGeometry = 1;
+						global.fushiLookupNotify++;
+					}
+					// 这一趟渲染里 bindOrigin 生效了不止一次 = drawCh 的 ox/oy 是逐字符
+					// 位置，我们却把它当整行原点用，整行换算会被最后一个字的位移带跑。
+					if(global.fushiLookupBindTicks > 1) global.fushiLookupMark(8);
+					global.fushiLookupBindTicks = 0;
 					var entry = global.fushiLookupEntryFor(renderer);
 					var changed = entry.line != line;
 					entry.glyphs = glyphs;
@@ -1154,6 +1254,92 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					entry.maxX = maxX;
 					entry.maxY = maxY;
 					entry.used = ++global.fushiLookupClock;
+					// 解出「渲染器局部坐标 → 图层坐标」的平移量。
+					//
+					// 两边都是同一批字符、同一个纯平移，所以最小值必然落在同一个字上：
+					//   平移量 = min(drawCh 的 ox) - min(字形 x)
+					// 这样解还有一个不靠假设的好处——**基线 vs 顶边、内边距、字距**这类
+					// 约定差异是常量，会被减法自动吸收；换成"认定 oy 是基线再补 ascent"
+					// 那种写法，一换引擎/字体就重新错一遍。
+					//
+					// 打字机动画下一趟只画新出现的几个字，本趟 min(ox) 未必是行首。所以
+					// 同一行内取**累计**最小值（换行才重置）：行首字一旦画过，平移量就锁
+					// 定正确，之后不再漂。
+					// 锚点解析只要求「这个 renderer 绑过绘制层」，不要求本趟渲染内绑过：
+					// 淡入是由持续回调驱动的，drawCh 完全可能落在 render() 之外，那时
+					// passHas 为假。把锚点一起门控掉，结果是 entry.layer 永远是 void、
+					// 整条记录被跳过——真机上表现为"什么都不发生"，连未命中都不记。
+					// 用**跨度**把这一行与它的宿主层配对：同一行的 drawCh 落点与字形坐标
+					// 只差一个常数平移，所以 (maxOx-minOx) 必然等于 (maxX-minX)。身份和
+					// 时序在本引擎都不可靠，几何是唯一站得住的判据。
+					var spanX = maxX - minX;
+					var spanY = maxY - minY;
+					var best = void;
+					var bestErr = 0;
+					var groups = global.fushiLookupBindGroups;
+					for(var gi = 0; gi < groups.count; gi++)
+					{
+						var g = groups[gi];
+						if(g.host === void || g.host === null || !isvalid g.host) continue;
+						// 判据是**可见性 + 新近度**，不是字数：采集发生在本行 drawCh 之前，
+						// 分组里存的永远是上一行的字数，拿它比对必然差一行。而 KAG 双缓冲
+						// 页里同一时刻只有一页可见（表/裏），可见的那页就是屏上这行的宿主。
+						if(!global.fushiLookupVisible(g.host)) continue;
+						var err = -g.clock;
+						if(best === void || err < bestErr) { best = g; bestErr = err; }
+					}
+					// 容差按字宽给：半个字以内算同一行，超出就宁可不认——错认比不认更糟，
+					// 卡片会稳定地弹在另一行上。
+					if(best !== void)
+					{
+						// 🔴 锚点必须是 **KAG 的消息层**，不是 drawCh 那条父链。
+						//
+						// 实测：文字子层「表メッセージレイヤ0:テキスト」自报 top=0，父链
+						// 一路 0 到 primary，于是算出文字在画面顶部；而 kag.fore.messages[0]
+						// 报 (0,752)，752+行原点135=887，与实测的 880 吻合。子层的 top 不是
+						// 它的屏幕位置——真相只在 KAG 的消息层上。
+						//
+						// 用**尺寸相等**认领对应的消息层，不靠层名：名字是引擎/插件私有的
+						// （这里还带「表/裏」页面前缀），换个游戏就变；尺寸相等是几何事实。
+						var anchorMsg = void;
+						try
+						{
+							var pages = [global.kag.fore, global.kag.back];
+							for(var pgi = 0; pgi < pages.count && anchorMsg === void; pgi++)
+							{
+								var ms = pages[pgi].messages;
+								for(var mj = 0; mj < ms.count; mj++)
+								{
+									if(ms[mj].width == best.host.width &&
+										ms[mj].height == best.host.height)
+									{
+										anchorMsg = ms[mj];
+										break;
+									}
+								}
+							}
+						}
+						catch(e) {}
+						entry.layer = (anchorMsg !== void && isvalid anchorMsg)
+							? anchorMsg : best.host;
+						entry.baseOx = best.minOx;
+						entry.baseOy = best.minOy;
+						entry.hasBase = true;
+						entry.originX = entry.baseOx - minX;
+						entry.originY = entry.baseOy - minY;
+						try
+						{
+							entry.imgLeft = entry.layer.imageLeft;
+							entry.imgTop = entry.layer.imageTop;
+						}
+						catch(e)
+						{
+							entry.imgLeft = 0;
+							entry.imgTop = 0;
+						}
+
+					}
+					entry.passHas = false;
 					// 台词真的换了才收卡片：同一行重复 render（打字机动画）不该把用户正在读的
 					// 卡片一帧一帧地打掉。
 					if(changed) global.fushiLookupDismiss();
@@ -1171,10 +1357,40 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				if(layer === void || layer === null || !isvalid layer) return;
 				if(typeof originX != "Integer" && typeof originX != "Real") return;
 				if(typeof originY != "Integer" && typeof originY != "Real") return;
-				var entry = global.fushiLookupEntryFor(renderer);
-				entry.layer = layer;
-				entry.originX = originX;
-				entry.originY = originY;
+				global.fushiLookupBindTicks++;
+				// ox/oy 是**这一个字**的落点，不是整行原点（本样本实测每字一次）。所以
+				// 这里只攒极值，真正的平移量由采集侧与最小字形坐标配对解出——把它当整
+				// 行原点直接用，整行判定会被最后一个字的位移整体带跑。
+				//
+				// 🔴 累加器必须挂在 **entry（即 renderer）** 上，不能是全局。屏幕上会
+				// 同时有多行文字各自淡入，多个渲染器的 drawCh 交错到来；用全局累加，
+				// min(ox) 会取到 A 行的 x、min(oy) 取到 B 行的 y，锚点层也会被最后一次
+				// 绑定换成另一行的。真机实测就是这样：base=(468,135) 里 468 是底部那行的
+				// x、135 是顶部那行的 y——一个坐标原点由两行拼出来，必然谁都对不上。
+				// 落点按**父层**分组累加。父层就是这行文字真正的坐标空间（drawCh 给的是
+				// 逐字符淡入层，49x68 只装得下一个字）。
+				var host = layer.parent;
+				if(host === void || host === null || !isvalid host) host = layer;
+				var groups = global.fushiLookupBindGroups;
+				var slot = void;
+				for(var gi = 0; gi < groups.count; gi++)
+				{
+					if(groups[gi].host === host) { slot = groups[gi]; break; }
+				}
+				if(slot === void)
+				{
+					slot = %[host:host, minOx:originX, maxOx:originX,
+						minOy:originY, maxOy:originY, count:0, clock:0];
+					groups.add(slot);
+					// 分组数有上限：淡入层随行创建/销毁，不设限就是又一处只增不减。
+					if(groups.count > 8) groups.erase(0);
+				}
+				if(originX < slot.minOx) slot.minOx = originX;
+				if(originX > slot.maxOx) slot.maxOx = originX;
+				if(originY < slot.minOy) slot.minOy = originY;
+				if(originY > slot.maxOy) slot.maxOy = originY;
+				slot.count++;
+				slot.clock = ++global.fushiLookupClock;
 				global.fushiLookupBoundRenderer = renderer;
 				global.fushiLookupBoundLayer = layer;
 				global.fushiLookupBoundX = originX;
@@ -1194,14 +1410,21 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				global.fushiLookupHitEntry = entry;
 				global.fushiLookupHitOffsetX = offsetX;
 				global.fushiLookupHitOffsetY = offsetY;
-				global.fushiLookupHitCharIndex = index;
-				global.fushiLookupHitCharCount = entry.glyphs.count;
-				global.fushiLookupHitGlyphX = glyph.x + offsetX;
-				global.fushiLookupHitGlyphY = glyph.y + offsetY;
-				global.fushiLookupHitGlyphW = glyph.w;
-				global.fushiLookupHitGlyphH = glyph.h;
-				global.fushiLookupHitViewW = primary.imageWidth;
-				global.fushiLookupHitViewH = primary.imageHeight;
+				// 🔴 全部收敛成 Integer。DLL 侧 EvaluateTjsInteger 只认 TJS 的 Integer
+				// 类型，读到 Real 直接返回 false；而 renderer.getCharacters 给的字形坐标
+				// **是 Real**（诊断里打出来是 "+0.0" 这种带正号的形式）。少一个 int，
+				// 发布函数那一整批求值就整体失败、原地 return——命中永远送不到 host。
+				// 真机上的表现极具迷惑性：高亮照常出现（那是 TJS 自己画的），卡片却永远
+				// 不来，看起来像"host 坏了"，其实是类型不匹配把整条链掐在了注入侧。
+				// IPC 那几个字段本来就是 int32，这里收敛也是契约要求。
+				global.fushiLookupHitCharIndex = int index;
+				global.fushiLookupHitCharCount = int entry.glyphs.count;
+				global.fushiLookupHitGlyphX = int (glyph.x + offsetX);
+				global.fushiLookupHitGlyphY = int (glyph.y + offsetY);
+				global.fushiLookupHitGlyphW = int glyph.w;
+				global.fushiLookupHitGlyphH = int glyph.h;
+				global.fushiLookupHitViewW = int primary.imageWidth;
+				global.fushiLookupHitViewH = int primary.imageHeight;
 				global.fushiLookupHitFlags = submit ? 1 : 0;
 				// **整行**，不截断。制卡要的是完整句子，分词是 host 的事。
 				global.fushiLookupHitLine = entry.line;
@@ -1213,22 +1436,70 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			global.fushiLookupProbe = function(submit)
 			{
 				var primary = global.kag.primaryLayer;
+				// 两套坐标，用途不同，混用就是恒定偏移：
+				//   px/py = primary **图像**坐标，只用于把命中换算成卡片落点（视口尺寸
+				//           取的也是 primary.imageWidth/Height，必须同系）。
+				//   lx/ly = primary **图层**坐标，才是沿父链累加 left/top 的那一系
+				//           （left/top 是图层坐标里的量）。命中判定必须用它。
 				var px = primary.cursorX - primary.imageLeft;
 				var py = primary.cursorY - primary.imageTop;
+				var lx = primary.cursorX;
+				var ly = primary.cursorY;
 				var registry = global.fushiLookupRegistry;
 				for(var i = registry.count - 1; i >= 0; i--)
 				{
 					var entry = registry[i];
 					if(entry.glyphs.count == 0) continue;
 					var layer = entry.layer;
-					if(layer === void || layer === null || !isvalid layer) continue;
-					var rx = layer.cursorX - layer.imageLeft - entry.originX;
-					var ry = layer.cursorY - layer.imageTop - entry.originY;
+					// 坐标换算只用图层树属性（left/top/parent），不碰任何图像属性——
+					// 见 fushiLookupComputeOffset 的注释：问图层自己要 cursorX/imageLeft
+					// 会在它不可绘制时抛异常，而那正是翻页后的常态。
+					//
+					// try 仍然留着，但它不再是主路的一部分：`isvalid` 只保证对象活着，
+					// 图层树本身也可能在游戏拆场景的中途被动到。真抛了就把这条记录判死
+					// ——清空槽位后本条不再被探，槽位（used=0）立刻成为 LRU 首选被复用。
+					// 只 continue 不清空的话，每一次鼠标移动都会在同一条死记录上再抛一次。
+					var rx = 0;
+					var ry = 0;
+					var dead = false;
+					try
+					{
+						// 完整的坐标链，一节都不能少：
+						//   primary 图层坐标 -(父链 left/top)-> 文字层图层坐标
+						//                    -(imageLeft/Top)-> 文字层图像坐标
+						//                    -(平移量)--------> 渲染器局部坐标
+						// imgLeft/imgTop 在 drawCh 里取（那一刻层必然可绘制），平移量由
+						// min(ox) 与 min(字形 x) 配对解出。
+						global.fushiLookupComputeOffset(layer);
+						rx = lx - global.fushiLookupOffX - entry.imgLeft - entry.originX;
+						ry = ly - global.fushiLookupOffY - entry.imgTop - entry.originY;
+					}
+					catch(e)
+					{
+						dead = true;
+					}
+					if(dead)
+					{
+						entry.glyphs = [];
+						entry.layer = void;
+						entry.line = "";
+						entry.used = 0;
+						global.fushiLookupFault();
+						continue;
+					}
 					// 廉价矩形判定挡在前面：整行包围盒不含光标就整条跳过，逐字扫描只在真正
 					// 落在台词上时才发生。
-					if(rx < entry.minX || rx >= entry.maxX) continue;
-					if(ry < entry.minY || ry >= entry.maxY) continue;
-					if(!global.fushiLookupVisible(layer)) continue;
+					if(rx < entry.minX || rx >= entry.maxX ||
+						ry < entry.minY || ry >= entry.maxY)
+					{
+						global.fushiLookupMark(1);
+						continue;
+					}
+					if(!global.fushiLookupVisible(layer))
+					{
+						global.fushiLookupMark(4);
+						continue;
+					}
 					var glyphs = entry.glyphs;
 					for(var g = glyphs.count - 1; g >= 0; g--)
 					{
@@ -1238,6 +1509,9 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						global.fushiLookupReport(entry, g, px - rx, py - ry, submit);
 						return true;
 					}
+					// 走到这里 = 整行包围盒命中、图层可见，却没有任何字形命中。与包围盒
+					// 未命中是两种不同的坐标错误（前者是行内偏移，后者是整层偏移）。
+					global.fushiLookupMark(2);
 				}
 				if(!submit) global.fushiLookupClearHover();
 				return false;
@@ -1264,24 +1538,42 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 
 			global.fushiLookupLeftClickHook = function()
 			{
-				if(global.fushiLookupOverCard()) return true;
-				return global.fushiLookupProbe(true);
+				// 🔴 这三个 hook 挂在 kag 的事件分发上，异常一旦逃逸就会被引擎当成脚本
+				// 致命错误弹框（"致命的なエラーが発生しました"），玩家的这一局当场被打断
+				// ——我们注进去的传感器把别人的游戏搞挂了。C++ 那侧的泵早就守着这条边界
+				// （KiriKiriLookupPumpCallback 的 catch(...)），TJS 这侧必须同样守。
+				// 兜底一律返回 false = **不消费**这次事件：查词坏掉是小事，把玩家的点击
+				// 吞掉、剧情推不动是大事。
+				try
+				{
+					if(global.fushiLookupOverCard()) return true;
+					return global.fushiLookupProbe(true);
+				}
+				catch(e) { global.fushiLookupFault(); return false; }
 			};
 			global.fushiLookupMouseMoveHook = function(x, y)
 			{
-				if(global.fushiLookupOverCard()) return false;
-				global.fushiLookupProbe(false);
+				try
+				{
+					if(global.fushiLookupOverCard()) return false;
+					global.fushiLookupProbe(false);
+				}
+				catch(e) { global.fushiLookupFault(); }
 				return false;
 			};
 			global.fushiLookupKeyDownHook = function(key, shift)
 			{
-				global.fushiLookupShiftDown = (key == 0x10);
-				if(key == 0x1B && global.fushiLookupCardSeq != 0)
+				try
 				{
-					global.fushiLookupDismiss();
-					return true;
+					global.fushiLookupShiftDown = (key == 0x10);
+					if(key == 0x1B && global.fushiLookupCardSeq != 0)
+					{
+						global.fushiLookupDismiss();
+						return true;
+					}
+					if(key == 0x10) return global.fushiLookupProbe(true);
 				}
-				if(key == 0x10) return global.fushiLookupProbe(true);
+				catch(e) { global.fushiLookupFault(); }
 				return false;
 			};
 
@@ -1296,10 +1588,14 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				if(typeof global.TextRender.render == "Object")
 				{
 					global.fushiLookupOriginalRender = global.TextRender.render;
+					// 覆写游戏自己的方法：原函数**先**跑且其返回值原样透出，我们的采集
+					// 只能是尾随的旁路，且不得抛。抛出去等于我们替游戏决定了它的文字
+					// 渲染失败。
 					global.TextRender.render = function(a, b, c, d, e, f)
 					{
 						var result = (global.fushiLookupOriginalRender incontextof this)(...);
-						global.fushiLookupCapture(this);
+						try { global.fushiLookupCapture(this); }
+						catch(e) { global.fushiLookupFault(); }
 						return result;
 					};
 				}
@@ -1309,16 +1605,23 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					global.TextRender.done = function()
 					{
 						var result = (global.fushiLookupOriginalDone incontextof this)(...);
-						global.fushiLookupCapture(this);
+						try { global.fushiLookupCapture(this); }
+						catch(e) { global.fushiLookupFault(); }
 						return result;
 					};
 				}
 				if(typeof global.TextRender.drawCh == "Object")
 				{
 					global.fushiLookupOriginalDrawCh = global.TextRender.drawCh;
+					// 🔴 全文最危险的一处：绑定原点必须发生在原函数**之前**（它要的就是这
+					// 次绘制的落点），于是我们的代码横在了游戏「把这个字画出来」的必经路
+					// 上。这里抛一次异常，这个字就永远画不出来；抛在每个字上，整段台词
+					// 就是空白。try 不是为了掩盖 bind 的 bug，而是保证**无论如何原函数都
+					// 要跑**——采集失败只该让查词失灵，不该让游戏少画一个字。
 					global.TextRender.drawCh = function(layer, ox, oy, ch)
 					{
-						global.fushiLookupBindOrigin(this, layer, ox, oy);
+						try { global.fushiLookupBindOrigin(this, layer, ox, oy); }
+						catch(e) { global.fushiLookupFault(); }
 						return (global.fushiLookupOriginalDrawCh incontextof this)(...);
 					};
 				}
@@ -1875,11 +2178,39 @@ void PumpKirikiriLookup() {
   }
   if (notify != g_lookup_last_notify) {
     g_lookup_last_notify = notify;
+    // 搭 notify 这趟车回读故障计数：稳态下不额外求值，而故障发生时 TJS 侧会主动
+    // ++notify 把车叫来（见 fushiLookupFault）。只置位、不复位——"这一局里传感器
+    // 曾经吞过异常"是一条不该被后续正常帧抹掉的事实。
+    int64_t faults = 0;
+    if (EvaluateTjsInteger(L"global.fushiLookupFaults", &faults) && faults > 0) {
+      SetLookupDiag(fushi_voice_hook::kLookupDiagSensorFault);
+    }
+    // 采集与命中必须分开置位：合在一起时真机上分不出「文字没采到」和「采到了但点
+    // 不中」，而两者修法完全不同。
+    int64_t geometry = 0;
+    if (EvaluateTjsInteger(L"global.fushiLookupGeometry", &geometry) &&
+        geometry > 0) {
+      SetLookupDiag(fushi_voice_hook::kLookupDiagGeometryObserved);
+    }
+    // hover 未命中的分型位。TJS 侧用小整数位（1/2/4/8/16）攒着，只在新增一位时才
+    // ++notify 把车叫来，所以这里的求值频率与"出现了新的失败类型"同阶，不与鼠标动。
+    int64_t miss = 0;
+    if (EvaluateTjsInteger(L"global.fushiLookupMiss", &miss) && miss > 0) {
+      uint32_t bits = 0;
+      if (miss & 1) bits |= fushi_voice_hook::kLookupDiagHoverBoxMiss;
+      if (miss & 2) bits |= fushi_voice_hook::kLookupDiagHoverGlyphMiss;
+      if (miss & 4) bits |= fushi_voice_hook::kLookupDiagHoverHidden;
+      if (miss & 8) bits |= fushi_voice_hook::kLookupDiagOriginPerChar;
+      if (miss & 16) bits |= fushi_voice_hook::kLookupDiagLayerDetached;
+      SetLookupDiag(bits);
+    }
     PublishKirikiriLookupHit();
     DrainKirikiriLookupInput();
   } else if (g_lookup_input_pending) {
     DrainKirikiriLookupInput();
   }
+  // host 投来的卡片位图在这里落进游戏图层。与 notify 无关：帧是 host 主动推的，
+  // 注入侧每帧都要看一眼，否则卡片要等下一次命中才出现。
   PresentKirikiriLookupFrame();
 }
 
