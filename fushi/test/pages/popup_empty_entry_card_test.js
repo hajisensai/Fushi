@@ -261,9 +261,25 @@ function makeElementFromSandbox(sb) {
   return sb.document.createElement('div');
 }
 
-function waitMicroAndTimers() {
-  // renderPopup defers rest-entries via setTimeout(...,0); flush them.
-  return new Promise((resolve) => setTimeout(resolve, 5));
+// renderPopup reveals the first entry's first visible dictionary block
+// synchronously and then appends ONE more block per macrotask, so the number of
+// macrotasks needed to settle grows with entries x dictionaries. Wait on the
+// renderer's own completion signal (`_renderInProgress`, cleared by the terminal
+// _firePopupRendered()) instead of sleeping a fixed number of milliseconds: any
+// fixed sleep silently turns into a false red the moment the deferral chain gets
+// one link longer. Asserting early is not merely flaky — updatePopupIncremental
+// deliberately falls back to a full renderPopup() while a render is in flight,
+// so a premature assertion measures a different code path than the one under test.
+async function waitForRenderSettled(sb, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (sb.window._renderInProgress) {
+    if (Date.now() > deadline) {
+      throw new Error(
+        'renderPopup did not settle within ' + timeoutMs + 'ms ' +
+        '(_renderInProgress still true)');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
 }
 
 (async function run() {
@@ -278,7 +294,7 @@ function waitMicroAndTimers() {
       entry(['Meikyo'], { reading: 'おおがた' }),
     ];
     sb.window.renderPopup();
-    await waitMicroAndTimers();
+    await waitForRenderSettled(sb);
     assert.strictEqual(countEntryCards(sb), 1,
       'an all-hidden entry must not render a shell card; expected 1 card, got '
         + countEntryCards(sb));
@@ -295,7 +311,7 @@ function waitMicroAndTimers() {
     setupContainer(sb);
     sb.window.lookupEntries = [entry(['JMdict'])];
     sb.window.renderPopup();
-    await waitMicroAndTimers();
+    await waitForRenderSettled(sb);
     assert.strictEqual(countEntryCards(sb), 1,
       'a normal single entry must render one card; got ' + countEntryCards(sb));
   }
@@ -309,7 +325,7 @@ function waitMicroAndTimers() {
     sb.window.lookupEntries = [];
     sb.window.kanjiResults = [{ character: '猫', onyomi: 'ビョウ', kunyomi: 'ねこ', meanings: ['cat'] }];
     sb.window.renderPopup();
-    await waitMicroAndTimers();
+    await waitForRenderSettled(sb);
     const container = sb.document.getElementById('entries-container');
     const kanjiSections = container.children.filter(c => hasClass(c, 'kanji-card-section'));
     assert.strictEqual(kanjiSections.length, 1,
@@ -354,7 +370,7 @@ function waitMicroAndTimers() {
     const e2 = entry(['Daijirin'], { reading: 'c' });
     sb.window.lookupEntries = [e0, e1, e2];
     sb.window.renderPopup();
-    await waitMicroAndTimers();
+    await waitForRenderSettled(sb);
     assert.strictEqual(countEntryCards(sb), 2,
       'two visible entries (middle skipped) → 2 cards; got ' + countEntryCards(sb));
 
