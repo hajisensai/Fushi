@@ -44,9 +44,8 @@ test('fushiQueueItemContext shows sentence only when label is a word', () => {
   assert.strictEqual(fushiQueueItemContext({ fields: { expression: '走る' }, sentence: long }), 'あ'.repeat(60) + '…');
 });
 
-// TODO-1219：网飞字幕列表面板开关（扩展弹窗入口，方案 B）读值纯函数守卫。默认关 + 只认 boolean
-// true——与 subtitle-panel.js 的 enabled:false 默认、options.js 的 === true 判据一致，防回归成默认打开。
-test('TODO-1219: fushiReadPanelEnabled only true for boolean true (default off)', () => {
+// 原生侧边栏仍复用旧设置键；严格只认 boolean true。
+test('fushiReadPanelEnabled only true for boolean true (default off)', () => {
   assert.strictEqual(fushiReadPanelEnabled({ netflixSubtitlePanel: true }), true);
   assert.strictEqual(fushiReadPanelEnabled({ netflixSubtitlePanel: false }), false);
   assert.strictEqual(fushiReadPanelEnabled({}), false);

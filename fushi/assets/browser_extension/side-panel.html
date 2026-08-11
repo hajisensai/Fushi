@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Fushi 字幕</title>
+  <link rel="stylesheet" href="side-panel.css">
+</head>
+<body>
+  <header class="panel-header">
+    <div class="title-row">
+      <div>
+        <h1>字幕列表</h1>
+        <p id="video-status">正在连接当前标签页…</p>
+      </div>
+      <div class="toolbar" aria-label="字幕工具">
+        <button id="load" type="button" title="加载外挂字幕">＋</button>
+        <button id="smaller" type="button" title="缩小字号">A−</button>
+        <button id="larger" type="button" title="放大字号">A＋</button>
+        <button id="auto-scroll" class="is-on" type="button" title="自动滚动到当前句">AS</button>
+        <button id="settings" type="button" title="扩展设置">⚙</button>
+      </div>
+    </div>
+    <input id="subtitle-file" type="file" accept=".srt,.ass,.ssa,.vtt" multiple hidden>
+    <select id="track" aria-label="字幕轨" hidden></select>
+    <div id="offset" class="offset-row" hidden>
+      <button type="button" data-offset="-500">−0.5</button>
+      <button type="button" data-offset="-100">−0.1</button>
+      <span id="offset-value">+0.0s</span>
+      <button type="button" data-offset="100">＋0.1</button>
+      <button type="button" data-offset="500">＋0.5</button>
+      <button id="offset-reset" type="button" title="重置时轴偏移">⟲</button>
+    </div>
+  </header>
+  <main id="list" class="subtitle-list" aria-live="polite">
+    <div class="empty">正在读取字幕…</div>
+  </main>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="vendor/selection.js"></script>
+  <script src="side-panel.js"></script>
+</body>
+</html>

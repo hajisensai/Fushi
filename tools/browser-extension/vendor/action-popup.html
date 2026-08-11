@@ -145,12 +145,11 @@
     }
     .hp-update-title { display: block; font-size: 12px; font-weight: 600; }
     .hp-update-detail { display: block; margin-top: 1px; opacity: .7; font-size: 10px; line-height: 1.5; }
-    /* TODO-1219：网飞字幕列表面板开关（扩展弹窗入口，方案 B）。独立页脚区，不属于上方 1270 制卡队列。 */
+    /* 字幕列表使用浏览器原生 Side Panel。独立页脚区，不属于上方制卡队列。 */
     .hp-settings { border-top: 1px solid rgba(128, 128, 128, 0.22); padding: 10px 14px 12px; }
-    .hp-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; }
-    .hp-toggle input { flex: 0 0 auto; margin: 0; }
-    .hp-toggle-text { flex: 1 1 auto; }
-    .hp-toggle-hint { margin: 4px 0 0 24px; font-size: 11px; opacity: 0.55; }
+    .hp-side-panel { width: 100%; padding: 9px 10px; border: 1px solid rgba(128,128,128,.45); border-radius: 8px; background: rgba(128,128,128,.10); color: inherit; font: inherit; font-size: 12px; cursor: pointer; }
+    .hp-side-panel:hover { background: rgba(128,128,128,.20); border-color: rgba(128,128,128,.7); }
+    .hp-toggle-hint { margin: 4px 0 0; font-size: 11px; opacity: 0.55; }
   </style>
 </head>
 <body>
@@ -175,11 +174,8 @@
   <div class="hp-gen-hint" id="hp-gen-hint" hidden></div>
   <div class="hp-list" id="hp-list"></div>
   <div class="hp-settings">
-    <label class="hp-toggle">
-      <input type="checkbox" id="hp-nf-sublist">
-      <span class="hp-toggle-text">字幕列表</span>
-    </label>
-    <div class="hp-toggle-hint">面板在视频播放页侧栏（网飞整集 · 其他站点实时采集）</div>
+    <button class="hp-side-panel" id="hp-nf-sublist" type="button">▤ 打开字幕侧边栏</button>
+    <div class="hp-toggle-hint">使用浏览器原生侧边栏，不向视频网页注入列表或修改布局。</div>
     <!-- 用户反馈「扩展配置根本看不见」：此前通往设置页的唯一入口，是上方连接行里一个无边框、
          无文字、opacity .72 的「⚙」字符，而那一整行本身可点（点击=重检连接），齿轮读起来像
          状态行的装饰而不是按钮——还要靠 stopPropagation 才不被误判成重检。工具栏图标又被

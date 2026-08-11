@@ -407,11 +407,18 @@ try { window.postMessage({ __fushiNf: 'replayCues' }, '/'); } catch (_) {}
 function fushiOnStreamCues(msg) {
   try {
     let cues;
-    if (msg.format === 'ttml') cues = parseTtml(msg.text);
+    if (msg.format === 'cues' && Array.isArray(msg.cues)) {
+      cues = msg.cues.flatMap((cue) => {
+        if (!cue || typeof cue.startMs !== 'number' || typeof cue.endMs !== 'number') return [];
+        const text = String(cue.text || '').trim();
+        return text ? [{ startMs: cue.startMs, endMs: cue.endMs, text }] : [];
+      });
+    } else if (msg.format === 'ttml') cues = parseTtml(msg.text);
     else if (msg.format === 'bbjson') cues = parseBilibiliJson(msg.text);
     else cues = parseWebVtt(msg.text); // webvtt / srt（parseWebVtt 兼容 SRT 块）
     if (!cues || !cues.length) return;
-    const vidKey = (location.hostname + (msg.path || location.pathname)).replace(/\|/g, '_');
+    const vidKey = String(msg.videoKey ||
+      (location.hostname + (msg.path || location.pathname))).replace(/\|/g, '_');
     const lang = String(msg.lang || 'und').replace(/\|/g, '_');
     const key = vidKey + '|' + lang;
     fushiEpisodeCues[key] = cues;
@@ -590,15 +597,31 @@ function fushiApplyYoutubeServerCaptions(resp) {
   return applied;
 }
 let fushiYtCaptionsFetchedFor = null; // 已请求过的 videoId（防重复请求；SPA 切视频后 id 变即重取）
+let fushiYtDirectBridgeStartedAt = 0;
+let fushiYtDirectBridgeVideoId = null;
 function fushiMaybeFetchYoutubeCaptions() {
   if (fushiSite() !== 'youtube') return;
   const id = fushiYoutubeId();
   if (!id || fushiYtCaptionsFetchedFor === id) return;
+  if (fushiYtDirectBridgeVideoId !== id) {
+    fushiYtDirectBridgeVideoId = id;
+    fushiYtDirectBridgeStartedAt = Date.now();
+  }
+  const directKeyPrefix = 'yt-' + id + '|';
+  if (Object.keys(fushiEpisodeCues).some((key) =>
+    key.indexOf(directKeyPrefix) === 0 && key !== directKeyPrefix + FUSHI_LIVE_LANG)) {
+    fushiYtCaptionsFetchedFor = id;
+    return;
+  }
+  // asbplayer 式 MAIN-world bridge 优先：播放器运行态 URL 含 POT，最完整也最快。本地 server
+  // 仅在 bridge 8 秒仍拿不到整轨时兜底，避免同时请求产生重复语言轨。
+  if (Date.now() - fushiYtDirectBridgeStartedAt < 8000) return;
   fushiYtCaptionsFetchedFor = id;
   try {
     chrome.runtime.sendMessage({ type: 'youtubeCaptions', videoId: id }, (resp) => {
       try {
         if (chrome.runtime.lastError) { fushiYtCaptionsFetchedFor = null; return; } // 允许下轮重试
+        if (fushiYoutubeId() !== id) return; // SPA 已切视频，绝不把旧响应写进新视频 store
         if (!fushiApplyYoutubeServerCaptions(resp)) fushiYtCaptionsFetchedFor = null; // 空→可重试
       } catch (_) {}
     });
@@ -818,10 +841,10 @@ async function fushiRunNetflixBatch() {
   // TODO-1216：藏字幕轨（GIF 不烧字幕）+ 藏 Netflix 控制/进度条——逐句 seek 与结尾 pause 会强制
   // Netflix 显控制条，落在录制窗会被录进 clip。多选择器兜底 Netflix 改类名（同下方字幕兜底策略）。
   hideStyle.textContent =
-    // TODO-1219 P2：字幕列表面板 + 重开小片同批隐藏（GIF 不该录进面板）；P3 再补录制前撤推挤 margin。
+    // 原生 Side Panel 不属于标签页录制画面；这里只隐藏仍位于网页内的字幕覆盖层与拖放提示。
     // TODO-1270 Bug B：Fushi 自己的「生成中」浮层(#fushi-toast)也在被 tabCapture 录进 GIF
     // （用户报「底部生成中条送给了网飞」）→ 整场批量期间一并隐藏，进度改由扩展图标红点徽标传达。
-    '.player-timedtext,#fushi-subtitle-panel,#fushi-subtitle-reopen,#fushi-subtitle-overlay,#fushi-subtitle-drop-hint,#fushi-toast{visibility:hidden!important}' +
+    '.player-timedtext,#fushi-subtitle-overlay,#fushi-subtitle-drop-hint,#fushi-toast{visibility:hidden!important}' +
     // TODO-1270 Bug B：Netflix 自己的返回按钮(左上)+举报旗帜(右上)是顶部控制层，逐句 seek/pause
     // 会强制其显示 → 落进录制窗。底部控制条之外再隐藏顶部返回/举报容器（多选择器兜底改类名）。
     '.watch-video--bottom-controls-container,.PlayerControlsNeo__layout,' +
@@ -1346,7 +1369,7 @@ function fushiEnsureContainer() {
         'max-height:none!important;overflow:visible!important;zoom:1!important;}';
     shadow.appendChild(norm);
     // 把弹窗样式注入 shadow：content.css 作为扩展资源经 <link> 加载（web_accessible_resources）。
-    // 其中宿主页级选择器（#fushi-subtitle-panel/高亮层等）在 shadow 内无对应元素、天然失效；
+    // 其中宿主页级选择器（高亮层等）在 shadow 内无对应元素、天然失效；
     // 弹窗选择器（#entries-container/.glossary-group/ruby…）在 shadow 内生效。
     const link = document.createElement('link');
     link.rel = 'stylesheet';
@@ -1716,6 +1739,29 @@ window.fushiLookupAtPoint = function (clientX, clientY, cueWindow, options) {
   }
   fushiLastTerm = term || ''; // 与 mousemove 去重状态对齐，避免点后立刻 hover 同词重查
   fushiSendLookup(term, anchorRect, cueWindow); // TODO-1219 P3：面板行传入精确窗
+};
+// 浏览器原生 Side Panel 属于扩展页面，无法把它的 DOM 坐标交给网页内的 caret 命中逻辑。
+// 侧边栏在自己的 DOM 中完成文字命中后，只把词和精确 cue 窗发回当前标签；查词弹窗仍由
+// content script 锚定在视频右上方渲染，因此不需要把字幕列表注入或推挤宿主网页 DOM。
+window.fushiLookupTermFromSidePanel = function (term, cueWindow) {
+  const value = String(term || '').trim();
+  if (!value) return false;
+  // Side Panel 的选区属于扩展页面，宿主页没有对应 Range。清掉内存中的旧选区引用，避免查词
+  // 响应回来后拿旧 Range 做高亮/包裹，从而干扰网页原生双击选择；不改写任何宿主文本节点。
+  try { if (window.fushiSelection) window.fushiSelection.selection = null; } catch (_) {}
+  let anchorRect = null;
+  try {
+    const video = document.querySelector('video');
+    const rect = video && video.getBoundingClientRect ? video.getBoundingClientRect() : null;
+    if (rect) {
+      const x = Math.max(rect.left + 16, rect.right - 24);
+      const y = Math.max(rect.top + 16, rect.top + Math.min(96, rect.height * 0.2));
+      anchorRect = { left: x, right: x, top: y, bottom: y, width: 0, height: 0 };
+    }
+  } catch (_) { anchorRect = null; }
+  fushiLastTerm = value;
+  fushiSendLookup(value, anchorRect, cueWindow || null);
+  return true;
 };
 window.fushiResetAutoLookupDedupe = function () {
   fushiLastAutoLookupKey = '';

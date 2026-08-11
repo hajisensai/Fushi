@@ -354,6 +354,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     sendResponse({ ok: true });
     return true;
   }
+  // 原生浏览器侧边栏入口。content script 的 Shift+S 会把当前 tab 作为 sender 带来；
+  // action popup 则显式传 tabId。open() 必须沿用户手势链调用，故这里不排队、不延迟。
+  if (msg && msg.type === 'openSubtitleSidePanel') {
+    const tabId = Number.isInteger(msg.tabId)
+      ? msg.tabId
+      : (_sender && _sender.tab && Number.isInteger(_sender.tab.id) ? _sender.tab.id : null);
+    if (tabId == null || !chrome.sidePanel) {
+      sendResponse({ ok: false, error: 'side-panel-unavailable' });
+      return true;
+    }
+    (async () => {
+      try {
+        await chrome.sidePanel.setOptions({ tabId, path: 'side-panel.html', enabled: true });
+        await chrome.sidePanel.open({ tabId });
+        sendResponse({ ok: true });
+      } catch (error) {
+        sendResponse({ ok: false, error: String(error && error.message || error) });
+      }
+    })();
+    return true;
+  }
   // 「打开扩展设置」：content script 里 chrome.runtime.openOptionsPage 不可用（只在扩展页面
   // 上下文存在），故页面侧（字幕面板齿轮、报错 toast）统一发这条消息，由 SW 代开。
   if (msg && msg.type === 'openOptions') {

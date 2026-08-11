@@ -75,6 +75,7 @@ function loadPanel(opts) {
     getBoundingClientRect() { return { left: 100, top: 50, width: 800, height: 450 }; },
   };
   const storageListeners = [];
+  const runtimeListeners = [];
   const documentListeners = {};
   const intervals = [];
   const createdInputs = [];
@@ -115,11 +116,22 @@ function loadPanel(opts) {
       },
       runtime: {
         lastError: null,
-        sendMessage: (msg, cb) => { if (msg && msg.type === 'parseSubtitle' && typeof cb === 'function') cb(captionResp); },
+        sendMessage: (msg, cb) => {
+          if (msg && msg.type === 'parseSubtitle' && typeof cb === 'function') cb(captionResp);
+        },
+        onMessage: { addListener: (fn) => runtimeListeners.push(fn) },
       },
     },
   };
   vm.runInNewContext(src, sandbox, { filename: 'subtitle-panel.js' });
+  function message(payload) {
+    let response;
+    for (const listener of runtimeListeners) {
+      listener(payload, {}, (value) => { response = value; });
+      if (response !== undefined) break;
+    }
+    return response;
+  }
   function fireToggle(v) { for (const fn of storageListeners) fn({ netflixSubtitlePanel: { newValue: v } }, 'local'); }
   return {
     body, video, windowObj, createdInputs, toasts,
@@ -137,18 +149,13 @@ function loadPanel(opts) {
       for (const fn of documentListeners.drop || []) fn(ev);
       return ev;
     },
-    // 驱动加载：点重开片→点＋→喂文件→触发 change。
+    message,
+    // Side Panel 已在扩展自己的 DOM 中读文件并经 server 解析；content 只接收解析后的 cue。
     loadFile: function (name, content) {
-      const chip = findByIdDeep(body, 'fushi-subtitle-reopen');
-      if (chip && chip.handlers.click) chip.handlers.click[0]({ stopPropagation() {} });
-      const panel = findByIdDeep(body, 'fushi-subtitle-panel');
-      const loadBtn = findBtnByTitle(panel, '加载外挂字幕')[0];
-      assert.ok(loadBtn, '缺 ＋ 加载外挂字幕按钮');
-      loadBtn.handlers.click[0]({ stopPropagation() {} });
-      const inp = createdInputs[createdInputs.length - 1];
-      assert.ok(inp, 'openFilePicker 必须创建 file input');
-      inp.files = [{ name, _content: content }];
-      inp.handlers.change[0]();
+      void content;
+      const cues = captionResp && captionResp.data && Array.isArray(captionResp.data.cues)
+        ? captionResp.data.cues : [];
+      return message({ type: 'fushiSubtitleSidePanelInstallTrack', filename: name, cues });
     },
   };
 }
@@ -167,11 +174,10 @@ test('① 选文件→server 解析→外挂轨写进 store 并成为当前轨',
   assert.strictEqual(store[key].length, 2);
   assert.strictEqual(store[key][0].startMs, 1500);
   assert.strictEqual(store[key][0].text, '走り出した');
-  // 面板显示该轨（当前轨 + 行渲染）。
-  const panel = h.panel();
-  assert.ok(panel, '加载后面板必须显示');
-  const rows = findByClassDeep(panel, 'fushi-sub-text');
-  assert.strictEqual(rows.length, 2, '外挂轨两句必须渲染成行');
+  const state = h.message({ type: 'fushiSubtitleSidePanelState', includeCues: true });
+  assert.strictEqual(state.activeLang, '外挂:movie.ja.srt');
+  assert.strictEqual(state.cues.length, 2, 'Side Panel 状态必须返回外挂轨两句');
+  assert.strictEqual(h.panel(), null, '字幕列表不得挂到宿主网页 DOM');
   assert.ok(h.toasts.some((t) => t.indexOf('已加载') >= 0), '必须提示加载成功');
 });
 
@@ -184,33 +190,24 @@ test('② 时轴偏移：读取侧平移（面板/seek 用偏移值，store 保�
   const key = 'example.com/video/1|外挂:x.srt';
   const store = h.windowObj.fushiEpisodeCues;
   assert.strictEqual(store[key][0].startMs, 1000);
-  // 偏移条可见（asb 移植后任意当前轨都显示），点 +0.5s 按钮。
-  const panel = h.panel();
-  const offsetBar = findByClassDeep(panel, 'fushi-sub-offset')[0];
-  assert.ok(offsetBar, '当前轨必须显示时轴偏移条');
-  assert.notStrictEqual(offsetBar.style._props.display, 'none');
-  const plus = findBtnByTitle(offsetBar, '＋0.5')[0];
-  assert.ok(plus, '缺 ＋0.5 偏移按钮');
-  plus.handlers.click[0]({ stopPropagation() {} });
+  const state = h.message({ type: 'fushiSubtitleSidePanelOffset', deltaMs: 500 });
   // asb 移植后偏移在读取侧套用：store 原始 cue 不动（provider 增量刷新不会打架），
   // 面板行 seek 与时间戳用偏移后的值。
   assert.strictEqual(store[key][0].startMs, 1000, 'store 必须保持原始 cue（读取侧偏移）');
   assert.strictEqual(store[key][0].endMs, 2000);
-  const ts = findByClassDeep(h.panel(), 'fushi-sub-ts')[0];
-  assert.ok(ts, '缺行时间戳按钮');
-  ts.handlers.click[0]({ stopPropagation() {} });
+  h.message({ type: 'fushiSubtitleSidePanelSeek', ms: state.cues[0].startMs });
   assert.strictEqual(h.video.currentTime, 1.5, '行点击 seek 必须用偏移后的 1500ms');
 });
 
-test('③ 不支持格式 → 提示、不造轨', () => {
+test('③ 空解析结果 → 提示、不造轨', () => {
   const h = loadPanel({
     hostname: 'example.com', pathname: '/video/1', stored: { netflixSubtitlePanel: true },
     response: { ok: true, status: 200, data: { error: 'unsupported', cues: [] } },
   });
-  h.loadFile('notes.txt', 'dummy');
+  h.loadFile('notes.srt', 'dummy');
   const store = h.windowObj.fushiEpisodeCues;
   assert.strictEqual(Object.keys(store).length, 0, '不支持格式不得造轨');
-  assert.ok(h.toasts.some((t) => t.indexOf('不支持') >= 0), '必须提示格式不支持');
+  assert.ok(h.toasts.some((t) => t.indexOf('字幕为空') >= 0), '必须提示字幕为空');
 });
 
 test('④ 拖放外挂字幕会自动开启列表并加载轨道', () => {
@@ -220,7 +217,7 @@ test('④ 拖放外挂字幕会自动开启列表并加载轨道', () => {
   });
   const ev = h.dropFiles([{ name: 'drop.ja.srt', size: 120, _content: 'dummy' }]);
   assert.strictEqual(ev.prevented, true, '支持的字幕文件 drop 必须被接管');
-  assert.ok(h.panel(), '主动拖放字幕后应自动开启并显示列表');
+  assert.strictEqual(h.panel(), null, '拖放后列表仍不得注入宿主网页 DOM');
   assert.ok(h.windowObj.fushiEpisodeCues['example.com/video/1|外挂:drop.ja.srt']);
 });
 

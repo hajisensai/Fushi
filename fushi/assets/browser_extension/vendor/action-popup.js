@@ -32,8 +32,8 @@ function fushiQueueItemContext(q) {
   return sent.length > 60 ? sent.slice(0, 60) + '…' : sent;
 }
 
-// TODO-1219：网飞字幕列表面板开关的读值纯函数（默认关 + 只认 boolean true）。抽出来供 node 测试，
-// 与 subtitle-panel.js 的 enabled:false 默认、options.js 的 === true 判据一致，防回归成默认打开。
+// 兼容既有 netflixSubtitlePanel 设置的严格读值函数。原生侧边栏入口会把它设为 true；
+// options.js 与字幕控制器继续用同一判据，避免历史字符串值误启用网页内能力。
 function fushiReadPanelEnabled(stored) {
   return !!(stored && stored.netflixSubtitlePanel === true);
 }
@@ -345,27 +345,27 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
     });
   }
 
-  // TODO-1219：网飞字幕列表面板开关（扩展弹窗入口，方案 B）。读写与 options 页同一
-  // chrome.storage.local.netflixSubtitlePanel（缺省即关），改动即时持久化；subtitle-panel.js 经
-  // storage.onChanged 实时生效。这里只加「点扩展图标即可开」的入口，不动上方 1270 制卡队列。
+  // 浏览器原生 Side Panel 入口。按钮总是可点；点击同时启用字幕控制器并把当前 tab 的
+  // side_panel 打开。失败时回落给 service worker，仍保持在同一个用户手势链内。
   const nfToggle = document.getElementById('hp-nf-sublist');
   if (nfToggle) {
-    try {
-      chrome.storage.local.get(['netflixSubtitlePanel'], (r) => {
-        nfToggle.checked = fushiReadPanelEnabled(r);
-      });
-    } catch (_) {}
-    nfToggle.addEventListener('change', () => {
-      try { chrome.storage.local.set({ netflixSubtitlePanel: nfToggle.checked }); } catch (_) {}
+    nfToggle.addEventListener('click', () => {
+      try { chrome.storage.local.set({ netflixSubtitlePanel: true }); } catch (_) {}
+      try {
+        chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+          const tab = tabs && tabs[0];
+          if (!tab || tab.id == null) return;
+          try {
+            if (!chrome.sidePanel) throw new Error('sidePanel unavailable');
+            await chrome.sidePanel.setOptions({ tabId: tab.id, path: 'side-panel.html', enabled: true });
+            await chrome.sidePanel.open({ tabId: tab.id });
+          } catch (_) {
+            try { chrome.runtime.sendMessage({ type: 'openSubtitleSidePanel', tabId: tab.id }); } catch (_) {}
+          }
+          window.close();
+        });
+      } catch (_) {}
     });
-    // options 页或别处改了开关时，popup 若还开着即时反映勾选态（独立监听，不动队列监听）。
-    try {
-      chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === 'local' && changes.netflixSubtitlePanel) {
-          nfToggle.checked = changes.netflixSubtitlePanel.newValue === true;
-        }
-      });
-    } catch (_) {}
   }
 
   // 队列在别处（content 入队 / 生成出队 / 别的标签）变化时，popup 若还开着就实时刷新。

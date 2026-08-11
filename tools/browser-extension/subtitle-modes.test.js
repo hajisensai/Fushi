@@ -75,6 +75,7 @@ function loadPanel(opts) {
     getBoundingClientRect() { return { left: 100, top: 50, width: 800, height: 450 }; },
   };
   const storageListeners = [];
+  const runtimeListeners = [];
   const intervals = [];
   const toasts = [];
   const storageSets = [];
@@ -114,10 +115,22 @@ function loadPanel(opts) {
         },
         onChanged: { addListener: (fn) => storageListeners.push(fn) },
       },
-      runtime: { lastError: null, sendMessage() {} },
+      runtime: {
+        lastError: null,
+        sendMessage() {},
+        onMessage: { addListener: (fn) => runtimeListeners.push(fn) },
+      },
     },
   };
   vm.runInNewContext(src, sandbox, { filename: 'subtitle-panel.js' });
+  function message(payload) {
+    let response;
+    for (const listener of runtimeListeners) {
+      listener(payload, {}, (value) => { response = value; });
+      if (response !== undefined) break;
+    }
+    return response;
+  }
   return {
     body, video, windowObj, toasts, storageSets, clipboard, lookups,
     autoLookupResets: () => autoLookupResets,
@@ -125,6 +138,7 @@ function loadPanel(opts) {
     overlay: () => findByIdDeep(body, 'fushi-subtitle-overlay'),
     tick: () => { const t = intervals.find((it) => it.ms === 200); if (t) t.fn(); },
     shortcut: (a) => windowObj.fushiSubtitleShortcut(a),
+    message,
   };
 }
 
@@ -140,16 +154,11 @@ function jaStore() {
 
 test('检测轨也有时轴偏移：读取侧平移，store 不动', () => {
   const h = loadPanel({ stored: { netflixSubtitlePanel: true }, store: jaStore() });
-  const panel = h.panel();
-  assert.ok(panel, '有轨时面板应显示');
-  const offsetBar = findByClassDeep(panel, 'fushi-sub-offset')[0];
-  assert.ok(offsetBar, '检测轨也必须显示时轴偏移条（asb 全轨偏移）');
-  assert.notStrictEqual(offsetBar.style._props.display, 'none');
-  findBtnByTitle(offsetBar, '＋0.5')[0].fire('click');
+  const state = h.message({ type: 'fushiSubtitleSidePanelOffset', deltaMs: 500 });
   assert.strictEqual(h.windowObj.fushiEpisodeCues['example.com/video/1|ja'][0].startMs, 1000,
     'store 保持原始 cue');
-  const ts = findByClassDeep(h.panel(), 'fushi-sub-ts')[0];
-  ts.fire('click');
+  assert.strictEqual(state.cues[0].startMs, 1500, 'Side Panel 读取偏移后的 cue');
+  h.message({ type: 'fushiSubtitleSidePanelSeek', ms: state.cues[0].startMs });
   assert.strictEqual(h.video.currentTime, 1.5, '行 seek 用偏移后的 1500ms');
 });
 
@@ -209,8 +218,8 @@ test('快捷键执行端：上一句/下一句/重播/复制/偏移', () => {
   // 偏移快捷键：+100ms 两次 → 行 seek 用 1200ms。
   assert.strictEqual(h.shortcut('offset-plus'), true);
   assert.strictEqual(h.shortcut('offset-plus'), true);
-  const ts = findByClassDeep(h.panel(), 'fushi-sub-ts')[0];
-  ts.fire('click');
+  const state = h.message({ type: 'fushiSubtitleSidePanelState', includeCues: true });
+  h.message({ type: 'fushiSubtitleSidePanelSeek', ms: state.cues[0].startMs });
   assert.strictEqual(h.video.currentTime, 1.2);
   assert.ok(h.toasts.some((t) => t.indexOf('+0.2s') >= 0), '偏移量应有 toast 反馈');
 });
