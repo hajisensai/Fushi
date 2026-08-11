@@ -71,7 +71,16 @@ class InterconnectDownloadManager extends ChangeNotifier {
 
   final Map<String, InterconnectDownloadTask> _tasks =
       <String, InterconnectDownloadTask>{};
+
+  /// 已结束（completed/failed）任务的**完成顺序**，用于有界保留（BUG-1561）。
+  /// Dart 的 Map 迭代序是首次插入序，覆写同 key 不会把它挪到末尾，所以顺序得自己记。
+  final List<String> _finishedOrder = <String>[];
   bool _disposed = false;
+
+  /// 已结束任务的保留上限（BUG-1561）。此前 [_tasks] 只增不减：一次会话里下载/重试
+  /// 过的每个条目都永久占一格，进程活多久就攒多久。结束态只对「刚发生的事」有意义
+  /// （失败角标、重试判据），超出这个窗口的最旧结束态直接淘汰。running 任务永不淘汰。
+  static const int maxFinishedTasks = 32;
 
   /// 全部任务的只读视图（含 running/completed/failed）。
   Map<String, InterconnectDownloadTask> get tasks =>
@@ -108,6 +117,8 @@ class InterconnectDownloadManager extends ChangeNotifier {
       progress: null,
     );
     _tasks[id] = started;
+    // 重跑同一个 id（用户重试）= 上一轮的结束态被消费掉了，从保留窗口里摘掉。
+    _finishedOrder.remove(id);
     _notify();
 
     try {
@@ -134,7 +145,22 @@ class InterconnectDownloadManager extends ChangeNotifier {
     final InterconnectDownloadTask? task = _tasks[id];
     if (task == null || task.isRunning) return;
     _tasks.remove(id);
+    _finishedOrder.remove(id);
     _notify();
+  }
+
+  /// 把 [id] 记进结束窗口并淘汰最旧的溢出项（BUG-1561）。
+  void _retainFinished(String id) {
+    _finishedOrder
+      ..remove(id)
+      ..add(id);
+    while (_finishedOrder.length > maxFinishedTasks) {
+      final String evicted = _finishedOrder.removeAt(0);
+      final InterconnectDownloadTask? task = _tasks[evicted];
+      // 理论上不会命中 running（只有结束时才进这个表），但真撞上就留着它的状态槽。
+      if (task != null && task.isRunning) continue;
+      _tasks.remove(evicted);
+    }
   }
 
   void _updateProgress(String id, double progress) {
@@ -157,6 +183,7 @@ class InterconnectDownloadManager extends ChangeNotifier {
       progress: progress,
       error: error,
     );
+    if (status != InterconnectDownloadStatus.running) _retainFinished(id);
     _notify();
   }
 

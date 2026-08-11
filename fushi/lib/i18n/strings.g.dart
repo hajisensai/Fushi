@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 57086 (3358 per locale)
+/// Strings: 57222 (3366 per locale)
 ///
-/// Built on 2026-08-11 at 17:17 UTC
+/// Built on 2026-08-11 at 19:41 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2222,7 +2222,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Sync this device\'s dictionaries up to the interconnect peer.';
   String get interconnect_upload_section => 'Upload to interconnect peer';
   String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
   String get interconnect_upload_video_files => 'Upload video files';
   String get interconnect_upload_video_files_hint =>
       'Sync this device\'s local video files up to the interconnect peer (large).';
@@ -2870,6 +2870,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get remote_book_info => 'Info';
   String get remote_book_info_has_audiobook => 'Includes audiobook';
   String get remote_book_unavailable => 'Paired device unavailable';
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
   String get remote_delete_failed => 'Could not delete it on the paired device';
   String get remote_delete_unsupported =>
       'The paired device is too old to support remote deletion. Update Fushi there first.';
@@ -3409,10 +3411,18 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get sync_pair_enter_pin_body =>
       'Enter the 6-digit PIN shown on the other device.';
   String get sync_pair_enter_pin_title => 'Enter PIN';
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
   String get sync_pair_failed => 'Pairing failed';
   String get sync_pair_fingerprint_changed =>
       'Certificate changed — pairing aborted for safety (possible interception).';
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
   String get sync_pair_fingerprint_label => 'Certificate fingerprint';
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
   String get sync_pair_not_fushi =>
       'No Fushi device found at this address. The address was saved.';
   String get sync_pair_pairing => 'Pairing…';
@@ -3433,6 +3443,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get sync_pair_unavailable =>
       'The other device isn\'t ready or is on an older version. Update it and enable sync, then try again.';
   String get sync_pair_unknown_device => 'Unknown device';
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
   String get sync_paired_peer_remove => 'Remove';
   String get sync_paired_peer_removed => 'Removed paired device';
   String get sync_paired_peer_unknown => 'Unknown device';
@@ -8143,7 +8155,7 @@ class _StringsAr extends _StringsEn {
   String get interconnect_upload_section => 'Upload to interconnect peer';
   @override
   String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -9312,6 +9324,9 @@ class _StringsAr extends _StringsEn {
   @override
   String get remote_book_unavailable => 'الجهاز المقترن غير متاح';
   @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
+  @override
   String get remote_delete_failed => 'Could not delete it on the paired device';
   @override
   String get remote_delete_unsupported =>
@@ -10302,12 +10317,26 @@ class _StringsAr extends _StringsEn {
   @override
   String get sync_pair_enter_pin_title => 'Enter PIN';
   @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
   String get sync_pair_failed => 'فشل الاقتران';
   @override
   String get sync_pair_fingerprint_changed =>
       'Certificate changed — pairing aborted for safety (possible interception).';
   @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
   String get sync_pair_fingerprint_label => 'Certificate fingerprint';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
   @override
   String get sync_pair_not_fushi =>
       'No Fushi device found at this address. The address was saved.';
@@ -10342,6 +10371,9 @@ class _StringsAr extends _StringsEn {
       'الجهاز الآخر غير جاهز أو يعمل بإصدار أقدم. حدّثه وفعّل المزامنة ثم حاول مجددًا.';
   @override
   String get sync_pair_unknown_device => 'جهاز غير معروف';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
   @override
   String get sync_paired_peer_remove => 'Remove';
   @override
@@ -15923,7 +15955,7 @@ class _StringsDe extends _StringsEn {
   String get interconnect_upload_section => 'Upload to interconnect peer';
   @override
   String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -17095,6 +17127,9 @@ class _StringsDe extends _StringsEn {
   @override
   String get remote_book_unavailable => 'Gekoppeltes Gerät nicht verfügbar';
   @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
+  @override
   String get remote_delete_failed => 'Could not delete it on the paired device';
   @override
   String get remote_delete_unsupported =>
@@ -18100,12 +18135,26 @@ class _StringsDe extends _StringsEn {
   @override
   String get sync_pair_enter_pin_title => 'Enter PIN';
   @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
   String get sync_pair_failed => 'Kopplung fehlgeschlagen';
   @override
   String get sync_pair_fingerprint_changed =>
       'Certificate changed — pairing aborted for safety (possible interception).';
   @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
   String get sync_pair_fingerprint_label => 'Certificate fingerprint';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
   @override
   String get sync_pair_not_fushi =>
       'No Fushi device found at this address. The address was saved.';
@@ -18140,6 +18189,9 @@ class _StringsDe extends _StringsEn {
       'Das andere Gerät ist nicht bereit oder hat eine ältere Version. Aktualisiere es, aktiviere die Synchronisierung und versuche es erneut.';
   @override
   String get sync_pair_unknown_device => 'Unbekanntes Gerät';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
   @override
   String get sync_paired_peer_remove => 'Remove';
   @override
@@ -23743,7 +23795,7 @@ class _StringsEs extends _StringsEn {
   String get interconnect_upload_section => 'Upload to interconnect peer';
   @override
   String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -24919,6 +24971,9 @@ class _StringsEs extends _StringsEn {
   @override
   String get remote_book_unavailable => 'Dispositivo emparejado no disponible';
   @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
+  @override
   String get remote_delete_failed => 'Could not delete it on the paired device';
   @override
   String get remote_delete_unsupported =>
@@ -25929,12 +25984,26 @@ class _StringsEs extends _StringsEn {
   @override
   String get sync_pair_enter_pin_title => 'Enter PIN';
   @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
   String get sync_pair_failed => 'Error de emparejamiento';
   @override
   String get sync_pair_fingerprint_changed =>
       'Certificate changed — pairing aborted for safety (possible interception).';
   @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
   String get sync_pair_fingerprint_label => 'Certificate fingerprint';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
   @override
   String get sync_pair_not_fushi =>
       'No Fushi device found at this address. The address was saved.';
@@ -25969,6 +26038,9 @@ class _StringsEs extends _StringsEn {
       'El otro dispositivo no está listo o tiene una versión anterior. Actualízalo y activa la sincronización, luego inténtalo de nuevo.';
   @override
   String get sync_pair_unknown_device => 'Dispositivo desconocido';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
   @override
   String get sync_paired_peer_remove => 'Remove';
   @override
@@ -31586,7 +31658,7 @@ class _StringsFr extends _StringsEn {
   String get interconnect_upload_section => 'Upload to interconnect peer';
   @override
   String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -32761,6 +32833,9 @@ class _StringsFr extends _StringsEn {
   @override
   String get remote_book_unavailable => 'Appareil appairé indisponible';
   @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
+  @override
   String get remote_delete_failed => 'Could not delete it on the paired device';
   @override
   String get remote_delete_unsupported =>
@@ -33776,12 +33851,26 @@ class _StringsFr extends _StringsEn {
   @override
   String get sync_pair_enter_pin_title => 'Enter PIN';
   @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
   String get sync_pair_failed => 'Échec de l\'appairage';
   @override
   String get sync_pair_fingerprint_changed =>
       'Certificate changed — pairing aborted for safety (possible interception).';
   @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
   String get sync_pair_fingerprint_label => 'Certificate fingerprint';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
   @override
   String get sync_pair_not_fushi =>
       'No Fushi device found at this address. The address was saved.';
@@ -33816,6 +33905,9 @@ class _StringsFr extends _StringsEn {
       'L\'autre appareil n\'est pas prêt ou utilise une version plus ancienne. Mettez-le à jour et activez la sync, puis réessayez.';
   @override
   String get sync_pair_unknown_device => 'Appareil inconnu';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
   @override
   String get sync_paired_peer_remove => 'Remove';
   @override
@@ -39395,7 +39487,7 @@ class _StringsId extends _StringsEn {
   String get interconnect_upload_section => 'Upload to interconnect peer';
   @override
   String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -40568,6 +40660,9 @@ class _StringsId extends _StringsEn {
   @override
   String get remote_book_unavailable => 'Perangkat berpasangan tidak tersedia';
   @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
+  @override
   String get remote_delete_failed => 'Could not delete it on the paired device';
   @override
   String get remote_delete_unsupported =>
@@ -41564,12 +41659,26 @@ class _StringsId extends _StringsEn {
   @override
   String get sync_pair_enter_pin_title => 'Enter PIN';
   @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
   String get sync_pair_failed => 'Pemasangan gagal';
   @override
   String get sync_pair_fingerprint_changed =>
       'Certificate changed — pairing aborted for safety (possible interception).';
   @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
   String get sync_pair_fingerprint_label => 'Certificate fingerprint';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
   @override
   String get sync_pair_not_fushi =>
       'No Fushi device found at this address. The address was saved.';
@@ -41604,6 +41713,9 @@ class _StringsId extends _StringsEn {
       'Perangkat lain belum siap atau menggunakan versi lama. Perbarui dan aktifkan sinkronisasi, lalu coba lagi.';
   @override
   String get sync_pair_unknown_device => 'Perangkat tidak dikenal';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
   @override
   String get sync_paired_peer_remove => 'Remove';
   @override
@@ -47192,7 +47304,7 @@ class _StringsIt extends _StringsEn {
   String get interconnect_upload_section => 'Upload to interconnect peer';
   @override
   String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -48367,6 +48479,9 @@ class _StringsIt extends _StringsEn {
   @override
   String get remote_book_unavailable => 'Dispositivo abbinato non disponibile';
   @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
+  @override
   String get remote_delete_failed => 'Could not delete it on the paired device';
   @override
   String get remote_delete_unsupported =>
@@ -49372,12 +49487,26 @@ class _StringsIt extends _StringsEn {
   @override
   String get sync_pair_enter_pin_title => 'Enter PIN';
   @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
   String get sync_pair_failed => 'Associazione non riuscita';
   @override
   String get sync_pair_fingerprint_changed =>
       'Certificate changed — pairing aborted for safety (possible interception).';
   @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
   String get sync_pair_fingerprint_label => 'Certificate fingerprint';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
   @override
   String get sync_pair_not_fushi =>
       'No Fushi device found at this address. The address was saved.';
@@ -49412,6 +49541,9 @@ class _StringsIt extends _StringsEn {
       'L\'altro dispositivo non è pronto o ha una versione precedente. Aggiornalo e abilita la sincronizzazione, poi riprova.';
   @override
   String get sync_pair_unknown_device => 'Dispositivo sconosciuto';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
   @override
   String get sync_paired_peer_remove => 'Remove';
   @override
@@ -54943,7 +55075,7 @@ class _StringsJa extends _StringsEn {
   String get interconnect_upload_section => 'Upload to interconnect peer';
   @override
   String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -56105,6 +56237,9 @@ class _StringsJa extends _StringsEn {
   @override
   String get remote_book_unavailable => 'ペアリング済みデバイスが利用できません';
   @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
+  @override
   String get remote_delete_failed => 'Could not delete it on the paired device';
   @override
   String get remote_delete_unsupported =>
@@ -57063,12 +57198,26 @@ class _StringsJa extends _StringsEn {
   @override
   String get sync_pair_enter_pin_title => 'Enter PIN';
   @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
   String get sync_pair_failed => 'ペアリングに失敗しました';
   @override
   String get sync_pair_fingerprint_changed =>
       'Certificate changed — pairing aborted for safety (possible interception).';
   @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
   String get sync_pair_fingerprint_label => 'Certificate fingerprint';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
   @override
   String get sync_pair_not_fushi =>
       'No Fushi device found at this address. The address was saved.';
@@ -57102,6 +57251,9 @@ class _StringsJa extends _StringsEn {
       '相手のデバイスが準備できていないか、古いバージョンです。アップデートして同期を有効にしてから、もう一度お試しください。';
   @override
   String get sync_pair_unknown_device => '不明なデバイス';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
   @override
   String get sync_paired_peer_remove => 'Remove';
   @override
@@ -62578,7 +62730,7 @@ class _StringsKo extends _StringsEn {
   String get interconnect_upload_section => 'Upload to interconnect peer';
   @override
   String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -63741,6 +63893,9 @@ class _StringsKo extends _StringsEn {
   @override
   String get remote_book_unavailable => '페어링된 기기를 사용할 수 없음';
   @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
+  @override
   String get remote_delete_failed => 'Could not delete it on the paired device';
   @override
   String get remote_delete_unsupported =>
@@ -64698,12 +64853,26 @@ class _StringsKo extends _StringsEn {
   @override
   String get sync_pair_enter_pin_title => 'Enter PIN';
   @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
   String get sync_pair_failed => '페어링 실패';
   @override
   String get sync_pair_fingerprint_changed =>
       'Certificate changed — pairing aborted for safety (possible interception).';
   @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
   String get sync_pair_fingerprint_label => 'Certificate fingerprint';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
   @override
   String get sync_pair_not_fushi =>
       'No Fushi device found at this address. The address was saved.';
@@ -64737,6 +64906,9 @@ class _StringsKo extends _StringsEn {
       '상대 기기가 준비되지 않았거나 이전 버전입니다. 업데이트하고 동기화를 켠 후 다시 시도하세요.';
   @override
   String get sync_pair_unknown_device => '알 수 없는 기기';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
   @override
   String get sync_paired_peer_remove => 'Remove';
   @override
@@ -70279,7 +70451,7 @@ class _StringsNl extends _StringsEn {
   String get interconnect_upload_section => 'Upload to interconnect peer';
   @override
   String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -71450,6 +71622,9 @@ class _StringsNl extends _StringsEn {
   @override
   String get remote_book_unavailable => 'Gekoppeld apparaat niet beschikbaar';
   @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
+  @override
   String get remote_delete_failed => 'Could not delete it on the paired device';
   @override
   String get remote_delete_unsupported =>
@@ -72455,12 +72630,26 @@ class _StringsNl extends _StringsEn {
   @override
   String get sync_pair_enter_pin_title => 'Enter PIN';
   @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
   String get sync_pair_failed => 'Koppelen mislukt';
   @override
   String get sync_pair_fingerprint_changed =>
       'Certificate changed — pairing aborted for safety (possible interception).';
   @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
   String get sync_pair_fingerprint_label => 'Certificate fingerprint';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
   @override
   String get sync_pair_not_fushi =>
       'No Fushi device found at this address. The address was saved.';
@@ -72495,6 +72684,9 @@ class _StringsNl extends _StringsEn {
       'Het andere apparaat is niet klaar of heeft een oudere versie. Werk het bij en schakel synchronisatie in, probeer het dan opnieuw.';
   @override
   String get sync_pair_unknown_device => 'Onbekend apparaat';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
   @override
   String get sync_paired_peer_remove => 'Remove';
   @override
@@ -78086,7 +78278,7 @@ class _StringsPtBr extends _StringsEn {
   String get interconnect_upload_section => 'Upload to interconnect peer';
   @override
   String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -79261,6 +79453,9 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get remote_book_unavailable => 'Dispositivo pareado indisponível';
   @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
+  @override
   String get remote_delete_failed => 'Could not delete it on the paired device';
   @override
   String get remote_delete_unsupported =>
@@ -80261,12 +80456,26 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get sync_pair_enter_pin_title => 'Enter PIN';
   @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
   String get sync_pair_failed => 'Falha no pareamento';
   @override
   String get sync_pair_fingerprint_changed =>
       'Certificate changed — pairing aborted for safety (possible interception).';
   @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
   String get sync_pair_fingerprint_label => 'Certificate fingerprint';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
   @override
   String get sync_pair_not_fushi =>
       'No Fushi device found at this address. The address was saved.';
@@ -80301,6 +80510,9 @@ class _StringsPtBr extends _StringsEn {
       'O outro dispositivo não está pronto ou está em uma versão mais antiga. Atualize-o e ative a sincronização, depois tente novamente.';
   @override
   String get sync_pair_unknown_device => 'Dispositivo desconhecido';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
   @override
   String get sync_paired_peer_remove => 'Remove';
   @override
@@ -85891,7 +86103,7 @@ class _StringsRu extends _StringsEn {
   String get interconnect_upload_section => 'Upload to interconnect peer';
   @override
   String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -87065,6 +87277,9 @@ class _StringsRu extends _StringsEn {
   @override
   String get remote_book_unavailable => 'Сопряжённое устройство недоступно';
   @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
+  @override
   String get remote_delete_failed => 'Could not delete it on the paired device';
   @override
   String get remote_delete_unsupported =>
@@ -88067,12 +88282,26 @@ class _StringsRu extends _StringsEn {
   @override
   String get sync_pair_enter_pin_title => 'Enter PIN';
   @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
   String get sync_pair_failed => 'Сопряжение не удалось';
   @override
   String get sync_pair_fingerprint_changed =>
       'Certificate changed — pairing aborted for safety (possible interception).';
   @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
   String get sync_pair_fingerprint_label => 'Certificate fingerprint';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
   @override
   String get sync_pair_not_fushi =>
       'No Fushi device found at this address. The address was saved.';
@@ -88107,6 +88336,9 @@ class _StringsRu extends _StringsEn {
       'Другое устройство не готово или на нём старая версия. Обновите его, включите синхронизацию и попробуйте снова.';
   @override
   String get sync_pair_unknown_device => 'Неизвестное устройство';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
   @override
   String get sync_paired_peer_remove => 'Remove';
   @override
@@ -93665,7 +93897,7 @@ class _StringsTh extends _StringsEn {
   String get interconnect_upload_section => 'Upload to interconnect peer';
   @override
   String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -94834,6 +95066,9 @@ class _StringsTh extends _StringsEn {
   @override
   String get remote_book_unavailable => 'อุปกรณ์ที่จับคู่ใช้งานไม่ได้';
   @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
+  @override
   String get remote_delete_failed => 'Could not delete it on the paired device';
   @override
   String get remote_delete_unsupported =>
@@ -95826,12 +96061,26 @@ class _StringsTh extends _StringsEn {
   @override
   String get sync_pair_enter_pin_title => 'Enter PIN';
   @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
   String get sync_pair_failed => 'จับคู่ไม่สำเร็จ';
   @override
   String get sync_pair_fingerprint_changed =>
       'Certificate changed — pairing aborted for safety (possible interception).';
   @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
   String get sync_pair_fingerprint_label => 'Certificate fingerprint';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
   @override
   String get sync_pair_not_fushi =>
       'No Fushi device found at this address. The address was saved.';
@@ -95866,6 +96115,9 @@ class _StringsTh extends _StringsEn {
       'อีกอุปกรณ์ยังไม่พร้อมหรือใช้เวอร์ชันเก่ากว่า อัปเดตและเปิดการซิงค์ แล้วลองอีกครั้ง';
   @override
   String get sync_pair_unknown_device => 'อุปกรณ์ที่ไม่รู้จัก';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
   @override
   String get sync_paired_peer_remove => 'Remove';
   @override
@@ -101430,7 +101682,7 @@ class _StringsTr extends _StringsEn {
   String get interconnect_upload_section => 'Upload to interconnect peer';
   @override
   String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -102600,6 +102852,9 @@ class _StringsTr extends _StringsEn {
   @override
   String get remote_book_unavailable => 'Eşleştirilmiş cihaz kullanılamıyor';
   @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
+  @override
   String get remote_delete_failed => 'Could not delete it on the paired device';
   @override
   String get remote_delete_unsupported =>
@@ -103595,12 +103850,26 @@ class _StringsTr extends _StringsEn {
   @override
   String get sync_pair_enter_pin_title => 'Enter PIN';
   @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
   String get sync_pair_failed => 'Eşleştirme başarısız';
   @override
   String get sync_pair_fingerprint_changed =>
       'Certificate changed — pairing aborted for safety (possible interception).';
   @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
   String get sync_pair_fingerprint_label => 'Certificate fingerprint';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
   @override
   String get sync_pair_not_fushi =>
       'No Fushi device found at this address. The address was saved.';
@@ -103635,6 +103904,9 @@ class _StringsTr extends _StringsEn {
       'Diğer cihaz hazır değil veya eski bir sürümde. Güncelleyin ve eşitlemeyi etkinleştirin, ardından tekrar deneyin.';
   @override
   String get sync_pair_unknown_device => 'Bilinmeyen cihaz';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
   @override
   String get sync_paired_peer_remove => 'Remove';
   @override
@@ -109199,7 +109471,7 @@ class _StringsVi extends _StringsEn {
   String get interconnect_upload_section => 'Upload to interconnect peer';
   @override
   String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -110369,6 +110641,9 @@ class _StringsVi extends _StringsEn {
   @override
   String get remote_book_unavailable => 'Thiết bị ghép nối không khả dụng';
   @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
+  @override
   String get remote_delete_failed => 'Could not delete it on the paired device';
   @override
   String get remote_delete_unsupported =>
@@ -111363,12 +111638,26 @@ class _StringsVi extends _StringsEn {
   @override
   String get sync_pair_enter_pin_title => 'Enter PIN';
   @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
   String get sync_pair_failed => 'Ghép nối thất bại';
   @override
   String get sync_pair_fingerprint_changed =>
       'Certificate changed — pairing aborted for safety (possible interception).';
   @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
   String get sync_pair_fingerprint_label => 'Certificate fingerprint';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
   @override
   String get sync_pair_not_fushi =>
       'No Fushi device found at this address. The address was saved.';
@@ -111403,6 +111692,9 @@ class _StringsVi extends _StringsEn {
       'Thiết bị kia chưa sẵn sàng hoặc đang dùng phiên bản cũ. Hãy cập nhật và bật đồng bộ, rồi thử lại.';
   @override
   String get sync_pair_unknown_device => 'Thiết bị không xác định';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
   @override
   String get sync_paired_peer_remove => 'Remove';
   @override
@@ -116698,7 +116990,7 @@ class _StringsZhCn extends _StringsEn {
   String get interconnect_upload_section => '上传到互联对端';
   @override
   String get interconnect_upload_section_footer =>
-      '选择本设备要把哪些内容上传到已连接的互联对端。与云备份、以及「启用互联」连接开关互不影响；默认全部关闭。';
+      '选择本设备要把哪些内容上传给已连接的互联对端。与云备份的同名开关互不影响，且默认全部关闭。本组开关只在「启用互联」打开时生效：关掉互联，这里的上传全部停止。';
   @override
   String get interconnect_upload_video_files => '上传视频文件';
   @override
@@ -117787,6 +118079,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get remote_book_unavailable => '配对设备不可用';
   @override
+  String get remote_delete_audiobook_partial => '书已在对端删除，但它的有声书没能删掉';
+  @override
   String get remote_delete_failed => '无法在对端设备上删除';
   @override
   String get remote_delete_unsupported => '对端设备版本过旧，不支持远端删除，请先升级对端 Fushi';
@@ -118712,11 +119006,24 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get sync_pair_enter_pin_title => '输入 PIN';
   @override
+  String get sync_pair_expired => '配对会话已超时，请重新发起配对。';
+  @override
   String get sync_pair_failed => '配对失败';
   @override
   String get sync_pair_fingerprint_changed => '证书已变更，为安全起见已中止配对（可能存在中间人攻击）。';
   @override
+  String get sync_pair_fingerprint_changed_body =>
+      '这条地址此前钉扎的是另一张证书。只有在你确知对方重装/重置过设备时才继续，否则连接可能正被中间人拦截。';
+  @override
+  String get sync_pair_fingerprint_changed_title => '证书已变更';
+  @override
   String get sync_pair_fingerprint_label => '证书指纹';
+  @override
+  String get sync_pair_fingerprint_new_label => '本次握手所见';
+  @override
+  String get sync_pair_fingerprint_retrust => '清除已存指纹并重新信任';
+  @override
+  String get sync_pair_fingerprint_stored_label => '此前已钉扎';
   @override
   String get sync_pair_not_fushi => '此地址未找到 Fushi 设备，已保存该地址。';
   @override
@@ -118745,6 +119052,9 @@ class _StringsZhCn extends _StringsEn {
   String get sync_pair_unavailable => '对方设备未就绪或版本过旧，请确认对方已更新并开启同步后重试。';
   @override
   String get sync_pair_unknown_device => '未知设备';
+  @override
+  String get sync_pair_upgrade_required =>
+      '对方版本过旧，无法在当前网络下安全配对（需要 PIN）。请更新对方后重新配对。';
   @override
   String get sync_paired_peer_remove => '移除';
   @override
@@ -124079,7 +124389,7 @@ class _StringsZhHk extends _StringsEn {
   String get interconnect_upload_section => 'Upload to interconnect peer';
   @override
   String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -125234,6 +125544,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get remote_book_unavailable => '配對裝置不可用';
   @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
+  @override
   String get remote_delete_failed => 'Could not delete it on the paired device';
   @override
   String get remote_delete_unsupported =>
@@ -126183,12 +126496,26 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get sync_pair_enter_pin_title => 'Enter PIN';
   @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
   String get sync_pair_failed => '配對失敗';
   @override
   String get sync_pair_fingerprint_changed =>
       'Certificate changed — pairing aborted for safety (possible interception).';
   @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
   String get sync_pair_fingerprint_label => 'Certificate fingerprint';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
   @override
   String get sync_pair_not_fushi =>
       'No Fushi device found at this address. The address was saved.';
@@ -126221,6 +126548,9 @@ class _StringsZhHk extends _StringsEn {
   String get sync_pair_unavailable => '對方裝置尚未就緒或版本過舊。請確認對方已更新並啟用同步後再試一次。';
   @override
   String get sync_pair_unknown_device => '未知裝置';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
   @override
   String get sync_paired_peer_remove => 'Remove';
   @override
@@ -131278,7 +131608,7 @@ extension on _StringsEn {
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
       case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -132335,6 +132665,8 @@ extension on _StringsEn {
         return 'Includes audiobook';
       case 'remote_book_unavailable':
         return 'Paired device unavailable';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       case 'remote_delete_failed':
         return 'Could not delete it on the paired device';
       case 'remote_delete_unsupported':
@@ -133253,12 +133585,24 @@ extension on _StringsEn {
         return 'Enter the 6-digit PIN shown on the other device.';
       case 'sync_pair_enter_pin_title':
         return 'Enter PIN';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
       case 'sync_pair_failed':
         return 'Pairing failed';
       case 'sync_pair_fingerprint_changed':
         return 'Certificate changed — pairing aborted for safety (possible interception).';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
       case 'sync_pair_fingerprint_label':
         return 'Certificate fingerprint';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
       case 'sync_pair_not_fushi':
         return 'No Fushi device found at this address. The address was saved.';
       case 'sync_pair_pairing':
@@ -133287,6 +133631,8 @@ extension on _StringsEn {
         return 'The other device isn\'t ready or is on an older version. Update it and enable sync, then try again.';
       case 'sync_pair_unknown_device':
         return 'Unknown device';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
       case 'sync_paired_peer_remove':
         return 'Remove';
       case 'sync_paired_peer_removed':
@@ -138176,7 +138522,7 @@ extension on _StringsAr {
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
       case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -139233,6 +139579,8 @@ extension on _StringsAr {
         return 'يتضمّن كتابًا صوتيًا';
       case 'remote_book_unavailable':
         return 'الجهاز المقترن غير متاح';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       case 'remote_delete_failed':
         return 'Could not delete it on the paired device';
       case 'remote_delete_unsupported':
@@ -140148,12 +140496,24 @@ extension on _StringsAr {
         return 'Enter the 6-digit PIN shown on the other device.';
       case 'sync_pair_enter_pin_title':
         return 'Enter PIN';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
       case 'sync_pair_failed':
         return 'فشل الاقتران';
       case 'sync_pair_fingerprint_changed':
         return 'Certificate changed — pairing aborted for safety (possible interception).';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
       case 'sync_pair_fingerprint_label':
         return 'Certificate fingerprint';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
       case 'sync_pair_not_fushi':
         return 'No Fushi device found at this address. The address was saved.';
       case 'sync_pair_pairing':
@@ -140182,6 +140542,8 @@ extension on _StringsAr {
         return 'الجهاز الآخر غير جاهز أو يعمل بإصدار أقدم. حدّثه وفعّل المزامنة ثم حاول مجددًا.';
       case 'sync_pair_unknown_device':
         return 'جهاز غير معروف';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
       case 'sync_paired_peer_remove':
         return 'Remove';
       case 'sync_paired_peer_removed':
@@ -145082,7 +145444,7 @@ extension on _StringsDe {
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
       case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -146141,6 +146503,8 @@ extension on _StringsDe {
         return 'Enthält Hörbuch';
       case 'remote_book_unavailable':
         return 'Gekoppeltes Gerät nicht verfügbar';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       case 'remote_delete_failed':
         return 'Could not delete it on the paired device';
       case 'remote_delete_unsupported':
@@ -147061,12 +147425,24 @@ extension on _StringsDe {
         return 'Enter the 6-digit PIN shown on the other device.';
       case 'sync_pair_enter_pin_title':
         return 'Enter PIN';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
       case 'sync_pair_failed':
         return 'Kopplung fehlgeschlagen';
       case 'sync_pair_fingerprint_changed':
         return 'Certificate changed — pairing aborted for safety (possible interception).';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
       case 'sync_pair_fingerprint_label':
         return 'Certificate fingerprint';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
       case 'sync_pair_not_fushi':
         return 'No Fushi device found at this address. The address was saved.';
       case 'sync_pair_pairing':
@@ -147095,6 +147471,8 @@ extension on _StringsDe {
         return 'Das andere Gerät ist nicht bereit oder hat eine ältere Version. Aktualisiere es, aktiviere die Synchronisierung und versuche es erneut.';
       case 'sync_pair_unknown_device':
         return 'Unbekanntes Gerät';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
       case 'sync_paired_peer_remove':
         return 'Remove';
       case 'sync_paired_peer_removed':
@@ -152000,7 +152378,7 @@ extension on _StringsEs {
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
       case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -153060,6 +153438,8 @@ extension on _StringsEs {
         return 'Incluye audiolibro';
       case 'remote_book_unavailable':
         return 'Dispositivo emparejado no disponible';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       case 'remote_delete_failed':
         return 'Could not delete it on the paired device';
       case 'remote_delete_unsupported':
@@ -153979,12 +154359,24 @@ extension on _StringsEs {
         return 'Enter the 6-digit PIN shown on the other device.';
       case 'sync_pair_enter_pin_title':
         return 'Enter PIN';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
       case 'sync_pair_failed':
         return 'Error de emparejamiento';
       case 'sync_pair_fingerprint_changed':
         return 'Certificate changed — pairing aborted for safety (possible interception).';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
       case 'sync_pair_fingerprint_label':
         return 'Certificate fingerprint';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
       case 'sync_pair_not_fushi':
         return 'No Fushi device found at this address. The address was saved.';
       case 'sync_pair_pairing':
@@ -154013,6 +154405,8 @@ extension on _StringsEs {
         return 'El otro dispositivo no está listo o tiene una versión anterior. Actualízalo y activa la sincronización, luego inténtalo de nuevo.';
       case 'sync_pair_unknown_device':
         return 'Dispositivo desconocido';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
       case 'sync_paired_peer_remove':
         return 'Remove';
       case 'sync_paired_peer_removed':
@@ -158921,7 +159315,7 @@ extension on _StringsFr {
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
       case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -159981,6 +160375,8 @@ extension on _StringsFr {
         return 'Livre audio inclus';
       case 'remote_book_unavailable':
         return 'Appareil appairé indisponible';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       case 'remote_delete_failed':
         return 'Could not delete it on the paired device';
       case 'remote_delete_unsupported':
@@ -160899,12 +161295,24 @@ extension on _StringsFr {
         return 'Enter the 6-digit PIN shown on the other device.';
       case 'sync_pair_enter_pin_title':
         return 'Enter PIN';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
       case 'sync_pair_failed':
         return 'Échec de l\'appairage';
       case 'sync_pair_fingerprint_changed':
         return 'Certificate changed — pairing aborted for safety (possible interception).';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
       case 'sync_pair_fingerprint_label':
         return 'Certificate fingerprint';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
       case 'sync_pair_not_fushi':
         return 'No Fushi device found at this address. The address was saved.';
       case 'sync_pair_pairing':
@@ -160933,6 +161341,8 @@ extension on _StringsFr {
         return 'L\'autre appareil n\'est pas prêt ou utilise une version plus ancienne. Mettez-le à jour et activez la sync, puis réessayez.';
       case 'sync_pair_unknown_device':
         return 'Appareil inconnu';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
       case 'sync_paired_peer_remove':
         return 'Remove';
       case 'sync_paired_peer_removed':
@@ -165836,7 +166246,7 @@ extension on _StringsId {
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
       case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -166893,6 +167303,8 @@ extension on _StringsId {
         return 'Termasuk buku audio';
       case 'remote_book_unavailable':
         return 'Perangkat berpasangan tidak tersedia';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       case 'remote_delete_failed':
         return 'Could not delete it on the paired device';
       case 'remote_delete_unsupported':
@@ -167811,12 +168223,24 @@ extension on _StringsId {
         return 'Enter the 6-digit PIN shown on the other device.';
       case 'sync_pair_enter_pin_title':
         return 'Enter PIN';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
       case 'sync_pair_failed':
         return 'Pemasangan gagal';
       case 'sync_pair_fingerprint_changed':
         return 'Certificate changed — pairing aborted for safety (possible interception).';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
       case 'sync_pair_fingerprint_label':
         return 'Certificate fingerprint';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
       case 'sync_pair_not_fushi':
         return 'No Fushi device found at this address. The address was saved.';
       case 'sync_pair_pairing':
@@ -167845,6 +168269,8 @@ extension on _StringsId {
         return 'Perangkat lain belum siap atau menggunakan versi lama. Perbarui dan aktifkan sinkronisasi, lalu coba lagi.';
       case 'sync_pair_unknown_device':
         return 'Perangkat tidak dikenal';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
       case 'sync_paired_peer_remove':
         return 'Remove';
       case 'sync_paired_peer_removed':
@@ -172743,7 +173169,7 @@ extension on _StringsIt {
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
       case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -173802,6 +174228,8 @@ extension on _StringsIt {
         return 'Include audiolibro';
       case 'remote_book_unavailable':
         return 'Dispositivo abbinato non disponibile';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       case 'remote_delete_failed':
         return 'Could not delete it on the paired device';
       case 'remote_delete_unsupported':
@@ -174721,12 +175149,24 @@ extension on _StringsIt {
         return 'Enter the 6-digit PIN shown on the other device.';
       case 'sync_pair_enter_pin_title':
         return 'Enter PIN';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
       case 'sync_pair_failed':
         return 'Associazione non riuscita';
       case 'sync_pair_fingerprint_changed':
         return 'Certificate changed — pairing aborted for safety (possible interception).';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
       case 'sync_pair_fingerprint_label':
         return 'Certificate fingerprint';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
       case 'sync_pair_not_fushi':
         return 'No Fushi device found at this address. The address was saved.';
       case 'sync_pair_pairing':
@@ -174755,6 +175195,8 @@ extension on _StringsIt {
         return 'L\'altro dispositivo non è pronto o ha una versione precedente. Aggiornalo e abilita la sincronizzazione, poi riprova.';
       case 'sync_pair_unknown_device':
         return 'Dispositivo sconosciuto';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
       case 'sync_paired_peer_remove':
         return 'Remove';
       case 'sync_paired_peer_removed':
@@ -179646,7 +180088,7 @@ extension on _StringsJa {
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
       case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -180703,6 +181145,8 @@ extension on _StringsJa {
         return 'オーディオブックを含む';
       case 'remote_book_unavailable':
         return 'ペアリング済みデバイスが利用できません';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       case 'remote_delete_failed':
         return 'Could not delete it on the paired device';
       case 'remote_delete_unsupported':
@@ -181617,12 +182061,24 @@ extension on _StringsJa {
         return 'Enter the 6-digit PIN shown on the other device.';
       case 'sync_pair_enter_pin_title':
         return 'Enter PIN';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
       case 'sync_pair_failed':
         return 'ペアリングに失敗しました';
       case 'sync_pair_fingerprint_changed':
         return 'Certificate changed — pairing aborted for safety (possible interception).';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
       case 'sync_pair_fingerprint_label':
         return 'Certificate fingerprint';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
       case 'sync_pair_not_fushi':
         return 'No Fushi device found at this address. The address was saved.';
       case 'sync_pair_pairing':
@@ -181651,6 +182107,8 @@ extension on _StringsJa {
         return '相手のデバイスが準備できていないか、古いバージョンです。アップデートして同期を有効にしてから、もう一度お試しください。';
       case 'sync_pair_unknown_device':
         return '不明なデバイス';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
       case 'sync_paired_peer_remove':
         return 'Remove';
       case 'sync_paired_peer_removed':
@@ -186529,7 +186987,7 @@ extension on _StringsKo {
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
       case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -187586,6 +188044,8 @@ extension on _StringsKo {
         return '오디오북 포함';
       case 'remote_book_unavailable':
         return '페어링된 기기를 사용할 수 없음';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       case 'remote_delete_failed':
         return 'Could not delete it on the paired device';
       case 'remote_delete_unsupported':
@@ -188501,12 +188961,24 @@ extension on _StringsKo {
         return 'Enter the 6-digit PIN shown on the other device.';
       case 'sync_pair_enter_pin_title':
         return 'Enter PIN';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
       case 'sync_pair_failed':
         return '페어링 실패';
       case 'sync_pair_fingerprint_changed':
         return 'Certificate changed — pairing aborted for safety (possible interception).';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
       case 'sync_pair_fingerprint_label':
         return 'Certificate fingerprint';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
       case 'sync_pair_not_fushi':
         return 'No Fushi device found at this address. The address was saved.';
       case 'sync_pair_pairing':
@@ -188535,6 +189007,8 @@ extension on _StringsKo {
         return '상대 기기가 준비되지 않았거나 이전 버전입니다. 업데이트하고 동기화를 켠 후 다시 시도하세요.';
       case 'sync_pair_unknown_device':
         return '알 수 없는 기기';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
       case 'sync_paired_peer_remove':
         return 'Remove';
       case 'sync_paired_peer_removed':
@@ -193428,7 +193902,7 @@ extension on _StringsNl {
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
       case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -194487,6 +194961,8 @@ extension on _StringsNl {
         return 'Bevat luisterboek';
       case 'remote_book_unavailable':
         return 'Gekoppeld apparaat niet beschikbaar';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       case 'remote_delete_failed':
         return 'Could not delete it on the paired device';
       case 'remote_delete_unsupported':
@@ -195405,12 +195881,24 @@ extension on _StringsNl {
         return 'Enter the 6-digit PIN shown on the other device.';
       case 'sync_pair_enter_pin_title':
         return 'Enter PIN';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
       case 'sync_pair_failed':
         return 'Koppelen mislukt';
       case 'sync_pair_fingerprint_changed':
         return 'Certificate changed — pairing aborted for safety (possible interception).';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
       case 'sync_pair_fingerprint_label':
         return 'Certificate fingerprint';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
       case 'sync_pair_not_fushi':
         return 'No Fushi device found at this address. The address was saved.';
       case 'sync_pair_pairing':
@@ -195439,6 +195927,8 @@ extension on _StringsNl {
         return 'Het andere apparaat is niet klaar of heeft een oudere versie. Werk het bij en schakel synchronisatie in, probeer het dan opnieuw.';
       case 'sync_pair_unknown_device':
         return 'Onbekend apparaat';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
       case 'sync_paired_peer_remove':
         return 'Remove';
       case 'sync_paired_peer_removed':
@@ -200341,7 +200831,7 @@ extension on _StringsPtBr {
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
       case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -201400,6 +201890,8 @@ extension on _StringsPtBr {
         return 'Inclui audiolivro';
       case 'remote_book_unavailable':
         return 'Dispositivo pareado indisponível';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       case 'remote_delete_failed':
         return 'Could not delete it on the paired device';
       case 'remote_delete_unsupported':
@@ -202317,12 +202809,24 @@ extension on _StringsPtBr {
         return 'Enter the 6-digit PIN shown on the other device.';
       case 'sync_pair_enter_pin_title':
         return 'Enter PIN';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
       case 'sync_pair_failed':
         return 'Falha no pareamento';
       case 'sync_pair_fingerprint_changed':
         return 'Certificate changed — pairing aborted for safety (possible interception).';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
       case 'sync_pair_fingerprint_label':
         return 'Certificate fingerprint';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
       case 'sync_pair_not_fushi':
         return 'No Fushi device found at this address. The address was saved.';
       case 'sync_pair_pairing':
@@ -202351,6 +202855,8 @@ extension on _StringsPtBr {
         return 'O outro dispositivo não está pronto ou está em uma versão mais antiga. Atualize-o e ative a sincronização, depois tente novamente.';
       case 'sync_pair_unknown_device':
         return 'Dispositivo desconhecido';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
       case 'sync_paired_peer_remove':
         return 'Remove';
       case 'sync_paired_peer_removed':
@@ -207254,7 +207760,7 @@ extension on _StringsRu {
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
       case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -208313,6 +208819,8 @@ extension on _StringsRu {
         return 'Включает аудиокнигу';
       case 'remote_book_unavailable':
         return 'Сопряжённое устройство недоступно';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       case 'remote_delete_failed':
         return 'Could not delete it on the paired device';
       case 'remote_delete_unsupported':
@@ -209231,12 +209739,24 @@ extension on _StringsRu {
         return 'Enter the 6-digit PIN shown on the other device.';
       case 'sync_pair_enter_pin_title':
         return 'Enter PIN';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
       case 'sync_pair_failed':
         return 'Сопряжение не удалось';
       case 'sync_pair_fingerprint_changed':
         return 'Certificate changed — pairing aborted for safety (possible interception).';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
       case 'sync_pair_fingerprint_label':
         return 'Certificate fingerprint';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
       case 'sync_pair_not_fushi':
         return 'No Fushi device found at this address. The address was saved.';
       case 'sync_pair_pairing':
@@ -209265,6 +209785,8 @@ extension on _StringsRu {
         return 'Другое устройство не готово или на нём старая версия. Обновите его, включите синхронизацию и попробуйте снова.';
       case 'sync_pair_unknown_device':
         return 'Неизвестное устройство';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
       case 'sync_paired_peer_remove':
         return 'Remove';
       case 'sync_paired_peer_removed':
@@ -214158,7 +214680,7 @@ extension on _StringsTh {
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
       case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -215215,6 +215737,8 @@ extension on _StringsTh {
         return 'มีหนังสือเสียง';
       case 'remote_book_unavailable':
         return 'อุปกรณ์ที่จับคู่ใช้งานไม่ได้';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       case 'remote_delete_failed':
         return 'Could not delete it on the paired device';
       case 'remote_delete_unsupported':
@@ -216132,12 +216656,24 @@ extension on _StringsTh {
         return 'Enter the 6-digit PIN shown on the other device.';
       case 'sync_pair_enter_pin_title':
         return 'Enter PIN';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
       case 'sync_pair_failed':
         return 'จับคู่ไม่สำเร็จ';
       case 'sync_pair_fingerprint_changed':
         return 'Certificate changed — pairing aborted for safety (possible interception).';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
       case 'sync_pair_fingerprint_label':
         return 'Certificate fingerprint';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
       case 'sync_pair_not_fushi':
         return 'No Fushi device found at this address. The address was saved.';
       case 'sync_pair_pairing':
@@ -216166,6 +216702,8 @@ extension on _StringsTh {
         return 'อีกอุปกรณ์ยังไม่พร้อมหรือใช้เวอร์ชันเก่ากว่า อัปเดตและเปิดการซิงค์ แล้วลองอีกครั้ง';
       case 'sync_pair_unknown_device':
         return 'อุปกรณ์ที่ไม่รู้จัก';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
       case 'sync_paired_peer_remove':
         return 'Remove';
       case 'sync_paired_peer_removed':
@@ -221062,7 +221600,7 @@ extension on _StringsTr {
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
       case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -222119,6 +222657,8 @@ extension on _StringsTr {
         return 'Sesli kitap içerir';
       case 'remote_book_unavailable':
         return 'Eşleştirilmiş cihaz kullanılamıyor';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       case 'remote_delete_failed':
         return 'Could not delete it on the paired device';
       case 'remote_delete_unsupported':
@@ -223036,12 +223576,24 @@ extension on _StringsTr {
         return 'Enter the 6-digit PIN shown on the other device.';
       case 'sync_pair_enter_pin_title':
         return 'Enter PIN';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
       case 'sync_pair_failed':
         return 'Eşleştirme başarısız';
       case 'sync_pair_fingerprint_changed':
         return 'Certificate changed — pairing aborted for safety (possible interception).';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
       case 'sync_pair_fingerprint_label':
         return 'Certificate fingerprint';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
       case 'sync_pair_not_fushi':
         return 'No Fushi device found at this address. The address was saved.';
       case 'sync_pair_pairing':
@@ -223070,6 +223622,8 @@ extension on _StringsTr {
         return 'Diğer cihaz hazır değil veya eski bir sürümde. Güncelleyin ve eşitlemeyi etkinleştirin, ardından tekrar deneyin.';
       case 'sync_pair_unknown_device':
         return 'Bilinmeyen cihaz';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
       case 'sync_paired_peer_remove':
         return 'Remove';
       case 'sync_paired_peer_removed':
@@ -227965,7 +228519,7 @@ extension on _StringsVi {
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
       case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -229024,6 +229578,8 @@ extension on _StringsVi {
         return 'Bao gồm sách nói';
       case 'remote_book_unavailable':
         return 'Thiết bị ghép nối không khả dụng';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       case 'remote_delete_failed':
         return 'Could not delete it on the paired device';
       case 'remote_delete_unsupported':
@@ -229941,12 +230497,24 @@ extension on _StringsVi {
         return 'Enter the 6-digit PIN shown on the other device.';
       case 'sync_pair_enter_pin_title':
         return 'Enter PIN';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
       case 'sync_pair_failed':
         return 'Ghép nối thất bại';
       case 'sync_pair_fingerprint_changed':
         return 'Certificate changed — pairing aborted for safety (possible interception).';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
       case 'sync_pair_fingerprint_label':
         return 'Certificate fingerprint';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
       case 'sync_pair_not_fushi':
         return 'No Fushi device found at this address. The address was saved.';
       case 'sync_pair_pairing':
@@ -229975,6 +230543,8 @@ extension on _StringsVi {
         return 'Thiết bị kia chưa sẵn sàng hoặc đang dùng phiên bản cũ. Hãy cập nhật và bật đồng bộ, rồi thử lại.';
       case 'sync_pair_unknown_device':
         return 'Thiết bị không xác định';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
       case 'sync_paired_peer_remove':
         return 'Remove';
       case 'sync_paired_peer_removed':
@@ -234844,7 +235414,7 @@ extension on _StringsZhCn {
       case 'interconnect_upload_section':
         return '上传到互联对端';
       case 'interconnect_upload_section_footer':
-        return '选择本设备要把哪些内容上传到已连接的互联对端。与云备份、以及「启用互联」连接开关互不影响；默认全部关闭。';
+        return '选择本设备要把哪些内容上传给已连接的互联对端。与云备份的同名开关互不影响，且默认全部关闭。本组开关只在「启用互联」打开时生效：关掉互联，这里的上传全部停止。';
       case 'interconnect_upload_video_files':
         return '上传视频文件';
       case 'interconnect_upload_video_files_hint':
@@ -235898,6 +236468,8 @@ extension on _StringsZhCn {
         return '包含有声书';
       case 'remote_book_unavailable':
         return '配对设备不可用';
+      case 'remote_delete_audiobook_partial':
+        return '书已在对端删除，但它的有声书没能删掉';
       case 'remote_delete_failed':
         return '无法在对端设备上删除';
       case 'remote_delete_unsupported':
@@ -236807,12 +237379,24 @@ extension on _StringsZhCn {
         return '输入另一台设备屏幕上显示的 6 位 PIN。';
       case 'sync_pair_enter_pin_title':
         return '输入 PIN';
+      case 'sync_pair_expired':
+        return '配对会话已超时，请重新发起配对。';
       case 'sync_pair_failed':
         return '配对失败';
       case 'sync_pair_fingerprint_changed':
         return '证书已变更，为安全起见已中止配对（可能存在中间人攻击）。';
+      case 'sync_pair_fingerprint_changed_body':
+        return '这条地址此前钉扎的是另一张证书。只有在你确知对方重装/重置过设备时才继续，否则连接可能正被中间人拦截。';
+      case 'sync_pair_fingerprint_changed_title':
+        return '证书已变更';
       case 'sync_pair_fingerprint_label':
         return '证书指纹';
+      case 'sync_pair_fingerprint_new_label':
+        return '本次握手所见';
+      case 'sync_pair_fingerprint_retrust':
+        return '清除已存指纹并重新信任';
+      case 'sync_pair_fingerprint_stored_label':
+        return '此前已钉扎';
       case 'sync_pair_not_fushi':
         return '此地址未找到 Fushi 设备，已保存该地址。';
       case 'sync_pair_pairing':
@@ -236841,6 +237425,8 @@ extension on _StringsZhCn {
         return '对方设备未就绪或版本过旧，请确认对方已更新并开启同步后重试。';
       case 'sync_pair_unknown_device':
         return '未知设备';
+      case 'sync_pair_upgrade_required':
+        return '对方版本过旧，无法在当前网络下安全配对（需要 PIN）。请更新对方后重新配对。';
       case 'sync_paired_peer_remove':
         return '移除';
       case 'sync_paired_peer_removed':
@@ -241702,7 +242288,7 @@ extension on _StringsZhHk {
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
       case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -242759,6 +243345,8 @@ extension on _StringsZhHk {
         return '包含有聲書';
       case 'remote_book_unavailable':
         return '配對裝置不可用';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       case 'remote_delete_failed':
         return 'Could not delete it on the paired device';
       case 'remote_delete_unsupported':
@@ -243672,12 +244260,24 @@ extension on _StringsZhHk {
         return 'Enter the 6-digit PIN shown on the other device.';
       case 'sync_pair_enter_pin_title':
         return 'Enter PIN';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
       case 'sync_pair_failed':
         return '配對失敗';
       case 'sync_pair_fingerprint_changed':
         return 'Certificate changed — pairing aborted for safety (possible interception).';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
       case 'sync_pair_fingerprint_label':
         return 'Certificate fingerprint';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
       case 'sync_pair_not_fushi':
         return 'No Fushi device found at this address. The address was saved.';
       case 'sync_pair_pairing':
@@ -243706,6 +244306,8 @@ extension on _StringsZhHk {
         return '對方裝置尚未就緒或版本過舊。請確認對方已更新並啟用同步後再試一次。';
       case 'sync_pair_unknown_device':
         return '未知裝置';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
       case 'sync_paired_peer_remove':
         return 'Remove';
       case 'sync_paired_peer_removed':

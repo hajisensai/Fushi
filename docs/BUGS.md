@@ -29,10 +29,33 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1460 条。点号进各自文件。
+> 共 1483 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1580](bugs/BUG-1580-interconnect-cooldown-and-hash-shared.md) | ✅ | ✅ | 同步冷却戳与聚合快照哈希共用：一条通道压住另一条 |
+| [BUG-1579](bugs/BUG-1579-interconnect-baselines-shared-across-channels.md) | ✅ | ✅ | 合集与删除墓碑因果基线三方共用：对端移出被自己另一条通道撤销 |
+| [BUG-1578](bugs/BUG-1578-interconnect-auth-error-cross-channel-signout.md) | ✅ | ✅ | 互联 401 登出的是云会话：鉴权错误不带通道身份 |
+| [BUG-1576](bugs/BUG-1576-interconnect-folder-cache-cross-backend.md) | ✅ | ✅ | 互联/云双通道共用 folder 缓存：跨后端串味 + 凭据外发到对端主机 |
+| [BUG-1573](bugs/BUG-1573-server-lifecycle-manual-isolation.md) | ✅ | ✅ | 互联 host 启动前段异常逃逸 + dispose 顺序 + 手动同步通道未隔离 |
+| [BUG-1572](bugs/BUG-1572-aggregate-push-tombstone.md) | ✅ | ✅ | 聚合上行快照不过墓碑导致已删统计/收藏复活 |
+| [BUG-1571](bugs/BUG-1571-prompt-queue-cross-channel.md) | ✅ | ✅ | 双通道同步弹窗单飞槽跨通道丢候选 |
+| [BUG-1570](bugs/BUG-1570-remote-lookup-drops-fields.md) | ✅ | ✅ | 远端查词响应的 truncated/headwordCount/kanjiResults 被 client 丢弃 |
+| [BUG-1569](bugs/BUG-1569-sync-auto-trigger-lifecycle.md) | ✅ | ✅ | 互联自动同步触发层三缺口：离线探测零退避·合集观察者关库不卸载·sweep 丢弃退出书同步 |
+| [BUG-1568](bugs/BUG-1568-video-stream-token-unbounded.md) | ✅ | ✅ | 视频流 token 签发侧无上限无过期清理 |
+| [BUG-1567](bugs/BUG-1567-interconnect-request-timeouts.md) | ✅ | ✅ | 互联小型请求普遍缺超时且挂死请求占住远端清单缓存槽 |
+| [BUG-1566](bugs/BUG-1566-interconnect-channel-consumers-cloud-only.md) | ✅ | ✅ | 词典删除只传播云通道、比较对话框只解析云后端：只开互联的用户两条路都断 |
+| [BUG-1565](bugs/BUG-1565-remote-book-delete-partial-no-refresh.md) | ✅ | ✅ | 远端书删除半成功不刷新列表：书已删仍留幽灵卡，提示语与实情相反 |
+| [BUG-1564](bugs/BUG-1564-cover-backfill-m3u8-churn.md) | ✅ | ✅ | 封面回填对m3u8清单反复ffmpeg抽帧失败重试白烧CPU |
+| [BUG-1563](bugs/BUG-1563-interconnect-host-failure-swallowed.md) | ✅ | ✅ | 互联 host 换 token/开 TLS 的重启结果被丢弃、设为备份后端无 catch，失败静默把 host 打没 |
+| [BUG-1562](bugs/BUG-1562-interconnect-client-panel-stale-and-race.md) | ✅ | ✅ | 互联客户端面板：已连接状态不刷新、手动配对探测窗口无忙态可并发、弹窗返回后无 mounted 守卫 |
+| [BUG-1561](bugs/BUG-1561-interconnect-download-failure-invisible.md) | ✅ | ✅ | 互联下载失败态只写进内存永不上屏，任务表只增不减、页面 dispose 后零提示 |
+| [BUG-1560](bugs/BUG-1560-interconnect-enable-toggle-stale-cache.md) | ✅ | ✅ | 来源页互联开关绕过设置页状态：模块级缓存永不重读，设置页开关与 section 显隐显示旧值到重启 |
+| [BUG-1559](bugs/BUG-1559-interconnect-restore-auth-resets-resolved-address.md) | ✅ | ✅ | restoreAuth 把已解析地址打回候选[0] 而 _sessionResolved 仍为 true，不再重探 |
+| [BUG-1558](bugs/BUG-1558-interconnect-paired-peer-list-stale.md) | ✅ | ✅ | 配对成功后已配对设备列表不刷新（controller 落库不通知） |
+| [BUG-1557](bugs/BUG-1557-interconnect-tofu-fingerprint-check-order.md) | ✅ | ✅ | TOFU 指纹比对顺序倒置 + 编辑地址留旧指纹且无清除入口 |
+| [BUG-1556](bugs/BUG-1556-interconnect-pair-session-ttl-before-approval.md) | ✅ | ✅ | 配对会话 TTL 从审批前起算：host 审批慢就必配不上，且过期被报成「对端拒绝」 |
+| [BUG-1555](bugs/BUG-1555-interconnect-v1-pair-pin-bypass.md) | ✅ | ✅ | v1 /api/pair 绕过 PIN 强制：公网入站一次「允许」即拿到权限最大的共享 token |
 | [BUG-1554](bugs/BUG-1554-lan-discovery-browser-orphan.md) | ✅ | ✅ | LAN 发现 startDiscovery 无幂等/无 dispose 守卫，重扫与关页竞态留下孤儿 Bonsoir browser |
 | [BUG-1553](bugs/BUG-1553-interconnect-pair-failure-reason-lost.md) | ✅ | ✅ | 配对失败原因被压平：限速 429 / TLS 指纹不符 / 超时全说成「配对失败」且不留日志 |
 | [BUG-1552](bugs/BUG-1552-sync-channel-failure-cascades.md) | ✅ | ✅ | 云备份通道抛异常直接终止通道循环，互联通道整轮不跑（「并存互不干扰」不成立） |

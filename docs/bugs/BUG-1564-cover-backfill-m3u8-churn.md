@@ -1,0 +1,13 @@
+## BUG-1564 · 封面回填对m3u8清单反复ffmpeg抽帧失败重试白烧CPU
+- **报告**：2026-08-12（用户：K-ON 闪退排查时发现错误日志刷屏）
+- **真实性**：✅ 真 bug。两层根因：
+  - ① **候选过滤缺失**：`fushi/lib/src/pages/implementations/home_video_page.dart:695`（修复前 `_maybeBackfillCovers` 的来源判定）只按 `http://`/`https://` 前缀跳过流 URL，**本地 `.m3u8`/`.m3u` 清单文件**照样进抽帧队列——清单是文本列表不是媒体流本体，`extractVideoCover` 的两条 ffmpeg 路（内嵌封面 + 抽帧，`fushi/lib/src/media/video/video_cover_extractor.dart:202`）对它必然 `Invalid data found when processing input`。清单行的来源：m3u8 里嵌套引用其它 `.m3u8` 时，`parseM3u8` 把任何非注释行都当一集（`fushi/lib/src/media/video/m3u8_playlist.dart:193`），拆集导入（`importSplitPlaylist`）便产出 `videoPath = *.m3u8` 的行。
+  - ② **失败不记账**：旧账本是页面 State 字段 `_coverBackfillAttempted`（`home_video_page.dart:262`，per-State `Set<String>`），页面 State 一重建（切库页视图/重进页面/重启）即清零，每轮对同一个抽不出帧的文件重烧一次 ffmpeg（最长 30s×2 条路）+ 刷一条错误日志。
+- **[x] ① 已修复** — commit `d0e9aa29e3`：
+  - 候选过滤收在来源类型/扩展名抽象层：`kPlaylistManifestExtensions`（`media_extensions.dart` 扩展名真相源）+ `isPlaylistManifestPath` / `isLocalFrameExtractableVideoSource`（`video_cover_extractor.dart`）；`extractVideoCover` 在抽取器层直接拒收**本地**清单（远端 `http(s)://…m3u8` 是 HLS 流、ffmpeg 能抽，不拒），所有调用方一并免疫。
+  - 失败记账：新增会话级单例 `CoverBackfillLedger`（`cover_backfill_ledger.dart`），按 `videoPath` 记失败原因 + 失败时 mtime/size；同一文件不变不再重试，文件被替换自动放行；用户显式下拉刷新（`_pullToRefresh`，现有的「重新获取」入口）`clearAll()` 清账允许再试一轮。
+- **[x] ② 已加自动化测试** — 同 commit：
+  - `fushi/test/media/video/video_cover_source_filter_test.dart`：m3u8 条目不进抽帧候选（谓词 + 抽取器拒收 + 视频页接线源码守卫 + 与拖放白名单收敛守卫）；
+  - `fushi/test/media/video/cover_backfill_ledger_test.dart`：失败后同条目不重复抽帧、mtime/size 变化放行、clearAll 放行。
+  - 守卫已变异实测 4 处（删抽取器拒收 / 页面回退旧 http 判定 / 账本恒放行 / 删清账入口），全部击杀。
+- **备注**：不落库持久化记账——失败是可自愈状态（换文件/装 ffmpeg/修数据根），冷启动每个坏条目最多付一次探测成本，换零 schema 迁移；会话内刷屏（真实症状）已全拦。

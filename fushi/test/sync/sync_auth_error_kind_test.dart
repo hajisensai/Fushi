@@ -239,9 +239,25 @@ void main() {
     test('手动同步的 catch 走的是这个判断，不是自己再写一遍', () {
       final String src =
           File('lib/src/sync/manual_sync_ui.dart').readAsStringSync();
-      expect(src, contains('on SyncAuthError catch'));
-      expect(src, contains('if (shouldSignOutOnAuthError(e)) {'));
+      // BUG-1578 起，登出判断多了一层「这条错误是哪条通道的」（互联通道的 signOut
+      // 会清空整份配对配置，不能由一次 401 触发），但那一层**必须**把 kind 的判断
+      // 委托回 shouldSignOutOnAuthError，而不是在 catch 里自己再写一遍。
+      expect(src, contains('on SyncChannelAuthError catch'));
+      expect(src, contains('if (shouldSignOutChannelOnAuthError(e)) {'));
+      expect(src, contains('return shouldSignOutOnAuthError(e.error);'));
       expect(src, contains('await backend.signOut(repo: repo)'));
+    });
+
+    test('登出的对象是**出错那条通道**的后端，不是 getBackendType() 猜的那个', () {
+      final String src =
+          File('lib/src/sync/manual_sync_ui.dart').readAsStringSync();
+      expect(src, contains('e.channel.backend'),
+          reason: 'BUG-1578：互联对端的一次 401 曾去登出用户的云盘会话');
+      expect(
+        src,
+        isNot(contains('resolveSyncBackend(await repo.getBackendType())')),
+        reason: '按 backendType 猜通道 = 双通道下必然猜错一半',
+      );
     });
   });
 
