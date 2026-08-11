@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -93,6 +94,107 @@ Future<void> _pumpPanel(
 }
 
 void main() {
+  group('reveal command', () {
+    test('windows keeps /select, and the path as separate arguments', () {
+      final VideoDownloadRevealCommand command = videoDownloadRevealCommand(
+        host: VideoDownloadRevealHost.windows,
+        path: r'D:\media\Show S01E01.mkv',
+        isDirectory: false,
+      );
+
+      expect(command.executable, 'explorer');
+      // Measured on Windows 11: joining these into one argument makes Dart
+      // quote it ("/select,D:\media\Show S01E01.mkv") and explorer answers by
+      // opening Documents. Split, it selects the file every time.
+      expect(
+          command.arguments, <String>['/select,', r'D:\media\Show S01E01.mkv']);
+    });
+
+    test('windows explorer exit codes carry no success signal', () {
+      expect(
+        videoDownloadRevealCommand(
+          host: VideoDownloadRevealHost.windows,
+          path: r'D:\media\Show S01E01.mkv',
+          isDirectory: false,
+        ).exitCodeIsMeaningful,
+        isFalse,
+      );
+      expect(
+        videoDownloadRevealCommand(
+          host: VideoDownloadRevealHost.macos,
+          path: '/media/Show S01E01.mkv',
+          isDirectory: false,
+        ).exitCodeIsMeaningful,
+        isTrue,
+      );
+    });
+
+    test('windows reveal succeeds although explorer.exe exits with 1',
+        () async {
+      String? executable;
+      List<String>? arguments;
+      final bool revealed = await revealVideoDownloadPathOn(
+        r'D:\media\Show S01E01.mkv',
+        host: VideoDownloadRevealHost.windows,
+        typeOf: (String _) async => FileSystemEntityType.file,
+        run: (String value, List<String> args) async {
+          executable = value;
+          arguments = args;
+          // explorer.exe returns 1 even when it opened and selected the file.
+          return ProcessResult(0, 1, '', '');
+        },
+      );
+
+      expect(revealed, isTrue);
+      expect(executable, 'explorer');
+      expect(arguments, <String>['/select,', r'D:\media\Show S01E01.mkv']);
+    });
+
+    test('a failing exit code still fails where it means something', () async {
+      expect(
+        await revealVideoDownloadPathOn(
+          '/media/Show S01E01.mkv',
+          host: VideoDownloadRevealHost.macos,
+          typeOf: (String _) async => FileSystemEntityType.file,
+          run: (String _, List<String> __) async => ProcessResult(0, 1, '', ''),
+        ),
+        isFalse,
+      );
+    });
+
+    test('a host without a file manager never spawns anything', () async {
+      bool spawned = false;
+      final bool revealed = await revealVideoDownloadPathOn(
+        '/storage/emulated/0/Show S01E01.mkv',
+        host: null,
+        typeOf: (String _) async => FileSystemEntityType.file,
+        run: (String _, List<String> __) async {
+          spawned = true;
+          return ProcessResult(0, 0, '', '');
+        },
+      );
+
+      expect(revealed, isFalse);
+      expect(spawned, isFalse);
+    });
+
+    test('a missing path never spawns anything', () async {
+      bool spawned = false;
+      final bool revealed = await revealVideoDownloadPathOn(
+        r'D:\media\gone.mkv',
+        host: VideoDownloadRevealHost.windows,
+        typeOf: (String _) async => FileSystemEntityType.notFound,
+        run: (String _, List<String> __) async {
+          spawned = true;
+          return ProcessResult(0, 0, '', '');
+        },
+      );
+
+      expect(revealed, isFalse);
+      expect(spawned, isFalse);
+    });
+  });
+
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
   test('classifyVideoDownloadError maps common pipeline diagnostics', () {
@@ -188,17 +290,22 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('retry and cancel actions are limited to valid lifecycles',
+  testWidgets('retry, resume and cancel actions match their lifecycles',
       (WidgetTester tester) async {
     final _MemoryJobsStore store = _MemoryJobsStore();
     addTearDown(store.close);
     final List<String> retried = <String>[];
+    final List<String> resumed = <String>[];
     final List<String> cancelled = <String>[];
     await _pumpPanel(
       tester,
+      // Five cards, and the list builds lazily: the viewport has to be tall
+      // enough for the paused and completed cards to exist at all.
+      size: const Size(800, 1800),
       panel: VideoDownloadJobsPanel(
         store: store,
         onRetry: (VideoDownloadJobRow job) async => retried.add(job.jobId),
+        onResume: (VideoDownloadJobRow job) async => resumed.add(job.jobId),
         onCancel: (VideoDownloadJobRow job) async => cancelled.add(job.jobId),
       ),
     );
@@ -213,6 +320,11 @@ void main() {
         id: 'failed',
         title: 'Failed',
         lifecycle: VideoDownloadJobLifecycle.failed,
+      ),
+      _job(
+        id: 'paused',
+        title: 'Paused',
+        lifecycle: VideoDownloadJobLifecycle.cancelled,
       ),
       _job(
         id: 'done',
@@ -240,6 +352,14 @@ void main() {
       find.byKey(const ValueKey<String>('video-download-job-retry-done')),
       findsNothing,
     );
+    expect(
+      find.byKey(const ValueKey<String>('video-download-job-resume-paused')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-download-job-resume-active')),
+      findsNothing,
+    );
 
     await tester.tap(
       find.byKey(const ValueKey<String>('video-download-job-cancel-active')),
@@ -249,9 +369,13 @@ void main() {
         const ValueKey<String>('video-download-job-retry-attention'),
       ),
     );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-download-job-resume-paused')),
+    );
     await tester.pump();
     expect(cancelled, <String>['active']);
     expect(retried, <String>['attention']);
+    expect(resumed, <String>['paused']);
   });
 
   testWidgets('long task content has no overflow at 360 logical pixels',
@@ -476,6 +600,91 @@ void main() {
 
     expect(find.text('629.2 MB'), findsOneWidget);
     expect(find.text(t.download_task_status_completed), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  // 删除确认里的「同时删除文件」行由框架 CheckboxListTile 换成了共享 MD3
+  // `FushiListItem` + 裸 `Checkbox`（MD3 守卫禁用本地 chrome）。换件必须等价：
+  // 勾选框本身可点、整行也可点、默认不删文件、勾选后的取值真的穿到 onDelete。
+  testWidgets('delete confirm passes the delete-files choice through',
+      (WidgetTester tester) async {
+    final _MemoryJobsStore store = _MemoryJobsStore();
+    addTearDown(store.close);
+    final List<bool> deleteCalls = <bool>[];
+    await _pumpPanel(
+      tester,
+      panel: VideoDownloadJobsPanel(
+        store: store,
+        onDelete: (VideoDownloadJobRow job, {required bool deleteFiles}) async {
+          deleteCalls.add(deleteFiles);
+        },
+      ),
+    );
+    store.emit(<VideoDownloadJobRow>[
+      _job(
+        id: 'gone',
+        title: 'Finished task',
+        lifecycle: VideoDownloadJobLifecycle.completed,
+      ),
+    ]);
+    await tester.pump();
+    await tester.pump();
+
+    Future<void> openDialog() async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('video-download-job-delete-gone')),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Finder checkboxRow() => find.byKey(
+          const ValueKey<String>('video-download-job-delete-files-gone'),
+        );
+    bool checked() => tester
+        .widget<Checkbox>(
+          find.descendant(of: checkboxRow(), matching: find.byType(Checkbox)),
+        )
+        .value!;
+
+    // ① 不碰勾选框直接确认 ⇒ 默认保留文件。
+    await openDialog();
+    expect(checked(), isFalse, reason: '删除文件是破坏性选项，默认必须不勾');
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('video-download-job-delete-confirm-gone'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(deleteCalls, <bool>[false]);
+
+    // ② 点勾选框本身翻转。
+    await openDialog();
+    await tester.tap(
+      find.descendant(of: checkboxRow(), matching: find.byType(Checkbox)),
+    );
+    await tester.pump();
+    expect(checked(), isTrue);
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('video-download-job-delete-confirm-gone'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(deleteCalls, <bool>[false, true]);
+
+    // ③ 点整行（标题文字）同样翻转——这是 CheckboxListTile 原有的整行命中区，
+    //    换成 FushiListItem 后靠 onTap 保住，丢了就是可点区域缩水。
+    await openDialog();
+    await tester.tap(find.text(t.download_task_delete_files));
+    await tester.pump();
+    expect(checked(), isTrue, reason: '整行命中区不得随组件替换丢失');
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('video-download-job-delete-confirm-gone'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(deleteCalls, <bool>[false, true, true]);
     expect(tester.takeException(), isNull);
   });
 }

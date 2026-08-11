@@ -1214,6 +1214,12 @@ mixin _FushiDbVideoDomain
 
   /// CAS 推进到下一业务阶段并释放 lease，让调度器立即领取下一阶段。lifecycle 不随
   /// 阶段切换；只有 completed/failed/cancelled 等生命周期 API 才改它。
+  ///
+  /// [resetAttempts] defaults to true because reaching a new stage is real
+  /// progress. A caller that only regains ground it already held (re-adding a
+  /// backend task that disappeared) passes false, otherwise the retry budget
+  /// is refunded on every lap of a stuck cycle and no attempt limit can ever
+  /// be reached.
   Future<bool> advanceVideoDownloadJobStage({
     required String jobId,
     required String workerId,
@@ -1224,6 +1230,7 @@ mixin _FushiDbVideoDomain
     String? torrentHash,
     String? observedSavePath,
     String? targetRelativeRoot,
+    bool resetAttempts = true,
   }) async {
     final int changed = await (update(videoDownloadJobs)
           ..where(($VideoDownloadJobsTable t) =>
@@ -1247,7 +1254,8 @@ mixin _FushiDbVideoDomain
       targetRelativeRoot: targetRelativeRoot == null
           ? const Value<String?>.absent()
           : Value<String?>(targetRelativeRoot),
-      attemptCount: const Value<int>(0),
+      attemptCount:
+          resetAttempts ? const Value<int>(0) : const Value<int>.absent(),
       nextAttemptAt: Value<int?>(nowAt),
       claimedBy: const Value<String?>(null),
       claimExpiresAt: const Value<int?>(null),
@@ -1285,6 +1293,7 @@ mixin _FushiDbVideoDomain
   Future<bool> retryVideoDownloadJobByUser({
     required String jobId,
     required int nowAt,
+    bool rewindToEnqueue = false,
   }) async {
     final int changed = await (update(videoDownloadJobs)
           ..where(($VideoDownloadJobsTable t) =>
@@ -1295,6 +1304,15 @@ mixin _FushiDbVideoDomain
               ])))
         .write(VideoDownloadJobsCompanion(
       lifecycle: const Value<String>(VideoDownloadJobLifecycle.active),
+      stage: rewindToEnqueue
+          ? const Value<String>(VideoDownloadJobStage.enqueue)
+          : const Value<String>.absent(),
+      stageProgress: rewindToEnqueue
+          ? const Value<double>(0)
+          : const Value<double>.absent(),
+      backendTaskId: rewindToEnqueue
+          ? const Value<String?>(null)
+          : const Value<String?>.absent(),
       attemptCount: const Value<int>(0),
       nextAttemptAt: Value<int?>(nowAt),
       claimedBy: const Value<String?>(null),
@@ -1305,6 +1323,90 @@ mixin _FushiDbVideoDomain
     ));
     return changed == 1;
   }
+
+  /// Explicit user resume. A cancelled job is paused durable state, not a
+  /// failed retry: preserve its current stage when the backend task still
+  /// exists, or rewind only when the embedded fast-resume entry disappeared.
+  Future<bool> resumeCancelledVideoDownloadJobByUser({
+    required String jobId,
+    required int nowAt,
+    bool rewindToEnqueue = false,
+  }) async {
+    final int changed = await (update(videoDownloadJobs)
+          ..where(($VideoDownloadJobsTable t) =>
+              t.jobId.equals(jobId) &
+              t.lifecycle.equals(VideoDownloadJobLifecycle.cancelled)))
+        .write(VideoDownloadJobsCompanion(
+      lifecycle: const Value<String>(VideoDownloadJobLifecycle.active),
+      stage: rewindToEnqueue
+          ? const Value<String>(VideoDownloadJobStage.enqueue)
+          : const Value<String>.absent(),
+      stageProgress: rewindToEnqueue
+          ? const Value<double>(0)
+          : const Value<double>.absent(),
+      backendTaskId: rewindToEnqueue
+          ? const Value<String?>(null)
+          : const Value<String?>.absent(),
+      attemptCount: const Value<int>(0),
+      nextAttemptAt: Value<int?>(nowAt),
+      claimedBy: const Value<String?>(null),
+      claimExpiresAt: const Value<int?>(null),
+      lastError: const Value<String?>(null),
+      completedAt: const Value<int?>(null),
+      updatedAt: Value<int>(nowAt),
+    ));
+    return changed == 1;
+  }
+
+  /// The embedded engine can lose a task when its fast-resume snapshot is
+  /// missing after an unclean process exit. Rewind the claimed durable job so
+  /// the original resource selection is resolved and enqueued again.
+  ///
+  /// A rewind is a retry, not a fresh start: it consumes one attempt and turns
+  /// into [VideoDownloadJobLifecycle.failed] once the budget is exhausted.
+  /// Without that cap a task the engine can never hold (full disk, invalid
+  /// torrent, a fast-resume entry that never survives a round) re-enqueues
+  /// itself forever while the surface reports an eternally running job.
+  /// [error] stays visible as `lastError` so the loop is diagnosable while it
+  /// is still retrying.
+  Future<bool> rewindVideoDownloadJobToEnqueue({
+    required String jobId,
+    required String workerId,
+    required String error,
+    required int nowAt,
+    required int nextAttemptAt,
+  }) =>
+      transaction(() async {
+        final VideoDownloadJobRow? row = await getVideoDownloadJob(jobId);
+        if (row == null ||
+            row.lifecycle != VideoDownloadJobLifecycle.active ||
+            row.claimedBy != workerId) {
+          return false;
+        }
+        final int nextAttemptCount = row.attemptCount + 1;
+        final bool exhausted = nextAttemptCount >= row.maxAttempts;
+        final int changed = await (update(videoDownloadJobs)
+              ..where(($VideoDownloadJobsTable t) =>
+                  t.jobId.equals(jobId) &
+                  t.lifecycle.equals(VideoDownloadJobLifecycle.active) &
+                  t.claimedBy.equals(workerId)))
+            .write(VideoDownloadJobsCompanion(
+          lifecycle: Value<String>(exhausted
+              ? VideoDownloadJobLifecycle.failed
+              : VideoDownloadJobLifecycle.active),
+          stage: const Value<String>(VideoDownloadJobStage.enqueue),
+          stageProgress: const Value<double>(0),
+          backendTaskId: const Value<String?>(null),
+          attemptCount: Value<int>(nextAttemptCount),
+          nextAttemptAt: Value<int?>(exhausted ? null : nextAttemptAt),
+          claimedBy: const Value<String?>(null),
+          claimExpiresAt: const Value<int?>(null),
+          lastError: Value<String?>(error),
+          completedAt: Value<int?>(exhausted ? nowAt : null),
+          updatedAt: Value<int>(nowAt),
+        ));
+        return changed == 1;
+      });
 
   /// Explicit user cancellation. Files and backend tasks are deliberately not
   /// deleted here; the app layer pauses a matching backend task first when the

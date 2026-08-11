@@ -3,7 +3,7 @@
   "name": "Fushi Reader Bridge",
   "version": "0.1.0",
   "description": "Look up words on web pages using Fushi's dictionaries.",
-  "permissions": ["storage", "activeTab", "tabCapture", "offscreen", "scripting", "alarms"],
+  "permissions": ["storage", "activeTab", "tabCapture", "offscreen", "scripting", "alarms", "sidePanel"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": { "service_worker": "background.js" },
   "content_scripts": [
@@ -15,6 +15,12 @@
     {
       "matches": ["*://*.netflix.com/*"],
       "js": ["netflix-bridge.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["youtube-bridge.js"],
       "world": "MAIN",
       "run_at": "document_start"
     },
@@ -41,5 +47,6 @@
     { "resources": ["vendor/content.css"], "matches": ["<all_urls>"] }
   ],
   "options_page": "options.html",
+  "side_panel": { "default_path": "side-panel.html" },
   "action": { "default_title": "Fushi Reader Bridge", "default_popup": "vendor/action-popup.html" }
 }

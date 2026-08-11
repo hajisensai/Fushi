@@ -1,48 +1,35 @@
-// TODO-1219 P2 / TODO-1363：通用字幕列表面板（content script 隔离世界，manifest bundle 里排在
-// content.js 之后加载，随 <all_urls> 注入所有站点）。消费 window.fushiEpisodeCues 里按
+// 通用字幕控制器（content script 隔离世界，manifest bundle 里排在 content.js 之后加载）。
+// 它消费 window.fushiEpisodeCues 里按
 // `${videoKey}|${lang}` 存档的字幕轨——Netflix 走整集拦截、原生 TextTrack 站点走 textTracks 收割、
-// YouTube 等自绘字幕站点走 DOM 采样 live 轨（provider 全在 content.js，面板零站点特例）——渲染成
-// 近似 app 内 VideoSubtitleJumpPanel 的侧栏：头部标题 + 语言/轨切换 + A-/A+ 字号 + 自动滚动
-// 开关 + 关闭；每行时间戳 + 文本 + 当前句高亮。行为：
+// YouTube 优先走 MAIN-world captionTracks 整轨，拿不到时才走 DOM 采样 live 轨
+//（provider 全在 content.js/youtube-bridge.js，控制器零站点特例）。
+// 字幕列表本身由 manifest 的 side_panel 扩展页面渲染，本文件只提供轨数据与视频控制消息；
+// 不再把列表挂到宿主网页 DOM，也不再改播放器宽度。行为：
 //   · 时间戳点击 → Netflix（DRM）复用 P1 的 nfSeek（postMessage {__fushiNf:'seek',ms}，走
 //     Netflix 官方 player.seek，不触发 M7375，不碰 DRM）；其余站点直接 video.currentTime。
-//   · 文本点击 → window.fushiLookupAtPoint（content.js 暴露，复用同一套 fushiSelection 取词
-//     + 查词弹窗 fushiRender）；文本保留真实 DOM，全局 mousemove+Shift 划词照常生效。
+//   · 文本点击 → side-panel.js 在扩展页面内取词，再用消息调用
+//     查词请求与词典 UI 均在原生 Side Panel 内；这里只准备精确 cue 窗并承接制卡入队。
 //   · 制卡入口 = 上述查词弹窗自带的「制卡」按钮（bridge-shim mineEntry → window.fushiEnqueue，
 //     携带真实词 fields + 句子），面板不再另造合成 fields 的行级按钮。行的精确 [startMs,endMs]
 //     窗留给 P3（截图剪裁 + 精确窗覆盖 DOM 采样）。
-//   · 当前句高亮 + 自动滚动：面板自持 200ms 计时器读 <video>.currentTime，对当前轨 cues 二分
-//     命中当前句（精确窗，胜过 DOM 文本匹配），高亮对应行并（开启时）滚入视图。
-// 面板只依赖 window.fushiEpisodeCues / window.fushiLookupAtPoint / postMessage 三个契约，
-// 不跨文件依赖 content.js 的 const 词法作用域，Netflix DOM 抖动时降级为纯覆盖（不推挤）。
+//   · 当前句高亮 + 自动滚动：side-panel.js 轮询标签页时间，对当前轨 cues 二分命中当前句
+//     （精确窗，胜过 DOM 文本匹配），高亮对应行并（开启时）滚入视图。
+// 控制器只依赖 window.fushiEpisodeCues / Side Panel cue bridge / postMessage，
+// Netflix DOM 抖动时列表仍由浏览器侧边栏稳定承载。
 (function () {
   'use strict';
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
-  var PANEL_ID = 'fushi-subtitle-panel';
-  var REOPEN_ID = 'fushi-subtitle-reopen';
-  var PANEL_WIDTH = 320;
-  var FONT_STEPS = [0.85, 1.0, 1.15, 1.3];
-  var PUSH_SELECTORS = [
-    'ytd-app',
-    '.watch-video--player-view', '.watch-video', '.nfp.nf-player-container', '#appMountPoint',
-  ];
-
-  // TODO-1219：面板默认关闭——enabled 由扩展 options 的 netflixSubtitlePanel 开关驱动（默认 false）。
+  // enabled 由扩展 options 的 netflixSubtitlePanel 开关驱动（默认 false）。
   var st = {
-    activeLang: null, videoId: null, cues: [], rowEls: [], rowTextEls: [], rowTsEls: [], currentIndex: -1,
-    autoScroll: true, fontScaleIndex: 1, hidden: false, panel: null, listEl: null,
-    langSelect: null, builtLang: null, builtLen: -1, builtCues: null,
-    pushedEl: null, prevWidth: '', prevWidthPriority: '', tickTimer: null,
-    pushSuspended: false, enabled: false,
-    // B（外挂字幕）：用户主动打开面板（即使暂无轨也不自动拆）。
-    forceOpen: false, offsetBar: null, offsetLabel: null,
-    overlayEnabled: true, dragDropEnabled: true,
+    activeLang: null, videoId: null, cues: [], currentIndex: -1,
+    tickTimer: null, enabled: false,
+    overlayEnabled: true, dragDropEnabled: true, autoScroll: true,
     overlayEl: null, overlayCue: null, dropHint: null,
     // asb 移植：任意轨（检测轨/外挂轨）的读取侧时轴偏移。store 永远存原始 cue，偏移只在
-    // 面板/覆盖层/快捷键**读取时**套用——provider（textTracks 收割 / live 采样 / 整集拦截）
+    // Side Panel/覆盖层/快捷键**读取时**套用——provider（textTracks 收割 / live 采样 / 整集拦截）
     // 增量刷新 store 不会与偏移打架。key = `${videoKey}|${lang}`，会话内记忆。
-    trackOffsets: Object.create(null), builtOffset: 0,
+    trackOffsets: Object.create(null),
     // 覆盖层防剧透模糊 / 全轨覆盖层 / 悬浮字幕自动查词。
     overlayAutoLookup: false,
     overlayBlur: false, overlayAllTracks: false,
@@ -50,11 +37,7 @@
   };
   var EXT_PREFIX = '外挂:';
 
-  // ── TODO-1219/1363：字幕列表面板开关（默认关，全站点）──
-  // 面板不默认打开：只有用户在扩展 options/action-popup 勾选「字幕列表」（chrome.storage.local 的
-  // netflixSubtitlePanel === true，键名保留旧名以兼容既有用户设置，语义已是全站点）时才在有字幕轨
-  // 的视频页显示。键缺省或非 true 一律视为关闭，即什么都不挂（无面板、无重开小按钮）。改动经
-  // chrome.storage.onChanged 实时生效，勾选即出、无需刷新（cue 存档由 bridge replay 兜底）。
+  // 键名保留旧名以兼容既有用户设置，语义已是启用原生 Side Panel 字幕能力。
   var SETTING_KEY = 'netflixSubtitlePanel';
   function readEnabled(cb) {
     try {
@@ -67,9 +50,6 @@
     } catch (_) { cb(false); }
   }
   function teardownAll() {
-    clearPush();
-    if (st.panel && st.panel.parentNode) st.panel.parentNode.removeChild(st.panel);
-    hideReopen();
     hideSubtitleOverlay();
     hideDropHint();
   }
@@ -78,19 +58,9 @@
     sync();
   }
 
-  // TODO-1363：挂载状态单一收敛点——面板/重开小片存在 ⇔ 开关开 && 当前视频有字幕轨。别的视频的
-  // cue 事件、SPA 换页、全屏切换全走这里，消除「空壳面板」挂载路径（TODO-1219 复诉「列表空」）。
   function sync() {
     if (!st.enabled) { teardownAll(); return; }
-    var tracks = [];
-    try { tracks = tracksForVideo(); } catch (_) { tracks = []; }
-    var hasVideo = !!videoEl();
-    // B：有 <video> 就给外挂字幕入口（即使暂无轨）；既无轨又无视频、且用户没主动开 → 拆。
-    if (!tracks.length && !hasVideo && !st.forceOpen) { teardownAll(); return; }
-    if (st.hidden) { showReopen(); return; }
-    // 暂无轨且用户未主动打开：只挂紧凑「字幕」重开小片（点开可加载外挂字幕），不铺空面板。
-    if (!tracks.length && !st.forceOpen) { showReopen(); return; }
-    showPanel();
+    refreshHeadless();
   }
 
   // 当前视频身份 key：与 content.js 各 provider 写 store 用的同一把 key（window.fushiVideoKey
@@ -107,15 +77,6 @@
   function videoTimeMs() {
     var v = videoEl();
     return v && typeof v.currentTime === 'number' ? Math.round(v.currentTime * 1000) : 0;
-  }
-  function fmtTs(ms) {
-    var total = ms < 0 ? 0 : Math.floor(ms / 1000);
-    var h = Math.floor(total / 3600);
-    var m = Math.floor((total % 3600) / 60);
-    var s = total % 60;
-    var ss = s < 10 ? '0' + s : '' + s;
-    if (h > 0) { var mm = m < 10 ? '0' + m : '' + m; return h + ':' + mm + ':' + ss; }
-    return m + ':' + ss;
   }
   function resolveTheme() {
     return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
@@ -192,167 +153,6 @@
     if (v) { try { v.currentTime = ms / 1000; } catch (_) {} }
   }
 
-  function applyPush() {
-    // BUG-1030：面板是独立右栏，不是浮在宿主页上。YouTube 压缩 ytd-app；Netflix 沿用
-    // 已验证的播放器容器；其它站点回退到 video 的直接父容器。录制期间仍恢复全宽。
-    if (st.pushSuspended || st.pushedEl) return;
-    var el = null;
-    for (var i = 0; i < PUSH_SELECTORS.length; i++) {
-      el = document.querySelector(PUSH_SELECTORS[i]);
-      if (el) break;
-    }
-    if (!el) {
-      var video = videoEl();
-      el = video && video.parentElement ? video.parentElement : null;
-    }
-    if (!el || !el.style) return;
-    st.pushedEl = el;
-    try {
-      st.prevWidth = typeof el.style.getPropertyValue === 'function'
-        ? el.style.getPropertyValue('width') : (el.style.width || '');
-      st.prevWidthPriority = typeof el.style.getPropertyPriority === 'function'
-        ? el.style.getPropertyPriority('width') : '';
-      if (typeof el.style.setProperty === 'function') {
-        el.style.setProperty('width', 'calc(100% - ' + PANEL_WIDTH + 'px)', 'important');
-      } else {
-        el.style.width = 'calc(100% - ' + PANEL_WIDTH + 'px)';
-      }
-    } catch (_) {}
-  }
-  function clearPush() {
-    if (!st.pushedEl) return;
-    try {
-      if (typeof st.pushedEl.style.setProperty === 'function') {
-        if (st.prevWidth) {
-          st.pushedEl.style.setProperty('width', st.prevWidth, st.prevWidthPriority);
-        } else if (typeof st.pushedEl.style.removeProperty === 'function') {
-          st.pushedEl.style.removeProperty('width');
-        } else {
-          st.pushedEl.style.width = '';
-        }
-      } else {
-        st.pushedEl.style.width = st.prevWidth;
-      }
-    } catch (_) {}
-    st.pushedEl = null;
-    st.prevWidth = '';
-    st.prevWidthPriority = '';
-  }
-
-  function buildPanel() {
-    var panel = document.createElement('div');
-    panel.id = PANEL_ID;
-    panel.setAttribute('data-theme', resolveTheme());
-    panel.style.width = PANEL_WIDTH + 'px';
-
-    var header = document.createElement('div');
-    header.className = 'fushi-sub-header';
-
-    var titleRow = document.createElement('div');
-    titleRow.className = 'fushi-sub-title-row';
-
-    var title = document.createElement('div');
-    title.className = 'fushi-sub-title';
-    title.textContent = '字幕列表';
-    titleRow.appendChild(title);
-
-    function iconBtn(label, tip, onClick) {
-      var b = document.createElement('button');
-      b.className = 'fushi-sub-iconbtn';
-      b.type = 'button';
-      b.textContent = label;
-      b.title = tip;
-      b.addEventListener('click', function (e) { e.stopPropagation(); onClick(b); });
-      return b;
-    }
-    var loadBtn = iconBtn('＋', '加载外挂字幕文件（srt/ass/vtt）', function () { openFilePicker(); });
-    var smaller = iconBtn('A-', '缩小字号', function () { stepFont(-1); });
-    var larger = iconBtn('A+', '放大字号', function () { stepFont(1); });
-    var autoBtn = iconBtn('AS', '自动滚动到当前句', function () { toggleAutoScroll(autoBtn); });
-    autoBtn.classList.toggle('is-on', st.autoScroll);
-    // 用户反馈「扩展配置根本看不见」：页面上注入的 UI 此前**没有任何**通往设置页的入口，
-    // 而字幕面板是用户在视频页唯一常驻可见的扩展 UI。content script 里没有
-    // chrome.runtime.openOptionsPage，故发消息给 background 代开（见 background.js）。
-    var settingsBtn = iconBtn('⚙', '扩展设置（连接 · 字幕 · 快捷键）', function () {
-      try { chrome.runtime.sendMessage({ type: 'openOptions' }); } catch (_) {}
-    });
-    var closeBtn = iconBtn('X', '关闭', function () { hidePanel(); });
-    titleRow.appendChild(loadBtn);
-    titleRow.appendChild(smaller);
-    titleRow.appendChild(larger);
-    titleRow.appendChild(autoBtn);
-    titleRow.appendChild(settingsBtn);
-    titleRow.appendChild(closeBtn);
-    header.appendChild(titleRow);
-
-    var langSelect = document.createElement('select');
-    langSelect.className = 'fushi-sub-lang';
-    langSelect.addEventListener('change', function () {
-      st.activeLang = langSelect.value;
-      st.builtLang = null;
-      refresh();
-    });
-    st.langSelect = langSelect;
-    header.appendChild(langSelect);
-
-    // asb 移植：字幕时轴偏移条——任意当前轨（检测轨/外挂轨）都可偏移。−/＋ 微调让字幕对齐视频。
-    var offsetBar = document.createElement('div');
-    offsetBar.className = 'fushi-sub-offset';
-    offsetBar.style.display = 'none';
-    function offBtn(label, deltaMs) {
-      var b = document.createElement('button');
-      b.className = 'fushi-sub-iconbtn';
-      b.type = 'button';
-      b.textContent = label;
-      b.title = '字幕时轴偏移 ' + label + ' 秒';
-      b.addEventListener('click', function (e) { e.stopPropagation(); nudgeOffset(deltaMs); });
-      return b;
-    }
-    var offsetLabel = document.createElement('span');
-    offsetLabel.className = 'fushi-sub-offset-val';
-    offsetBar.appendChild(offBtn('−0.5', -500));
-    offsetBar.appendChild(offBtn('−0.1', -100));
-    offsetBar.appendChild(offsetLabel);
-    offsetBar.appendChild(offBtn('＋0.1', 100));
-    offsetBar.appendChild(offBtn('＋0.5', 500));
-    var resetBtn = document.createElement('button');
-    resetBtn.className = 'fushi-sub-iconbtn';
-    resetBtn.type = 'button';
-    resetBtn.textContent = '⟲';
-    resetBtn.title = '重置时轴偏移';
-    resetBtn.addEventListener('click', function (e) { e.stopPropagation(); resetOffset(); });
-    offsetBar.appendChild(resetBtn);
-    st.offsetBar = offsetBar;
-    st.offsetLabel = offsetLabel;
-    header.appendChild(offsetBar);
-
-    panel.appendChild(header);
-
-    var list = document.createElement('div');
-    list.className = 'fushi-sub-list';
-    panel.appendChild(list);
-    st.listEl = list;
-
-    st.panel = panel;
-    applyFontScale();
-    return panel;
-  }
-
-  function stepFont(delta) {
-    var next = Math.max(0, Math.min(FONT_STEPS.length - 1, st.fontScaleIndex + delta));
-    if (next === st.fontScaleIndex) return;
-    st.fontScaleIndex = next;
-    applyFontScale();
-  }
-  function applyFontScale() {
-    if (st.panel) st.panel.style.setProperty('--fushi-sub-font-scale', String(FONT_STEPS[st.fontScaleIndex]));
-  }
-  function toggleAutoScroll(btn) {
-    st.autoScroll = !st.autoScroll;
-    if (btn) btn.classList.toggle('is-on', st.autoScroll);
-    if (st.autoScroll) { st.currentIndex = -1; tick(); }
-  }
-
   function applySubtitlePreferences(c) {
     c = c || {};
     st.overlayEnabled = c.subtitleOverlayEnabled !== false;
@@ -389,132 +189,12 @@
     } catch (_) {}
   }
 
-  function refreshLangSelect(tracks) {
-    var sel = st.langSelect;
-    if (!sel) return;
-    var want = st.activeLang;
-    var haveWant = false;
-    for (var i = 0; i < tracks.length; i++) if (tracks[i].lang === want) haveWant = true;
-    // live 是整集字幕预取失败前的兜底。真轨稍后到达时必须自动升级，不能因为 live 先挂载
-    // 就永久留在逐字采样轨；用户仍可在下拉框里手动切回「实时采集」。
-    var fullTrackArrived = want === LIVE_LANG && tracks.length && tracks[0].lang !== LIVE_LANG;
-    if (!haveWant || fullTrackArrived) { st.activeLang = tracks.length ? tracks[0].lang : null; }
-    var sig = tracks.map(function (t) { return t.lang; }).join(',');
-    if (sel.getAttribute('data-sig') !== sig) {
-      sel.textContent = '';
-      for (var j = 0; j < tracks.length; j++) {
-        var o = document.createElement('option');
-        o.value = tracks[j].lang;
-        o.textContent = tracks[j].lang === LIVE_LANG ? '实时采集' : tracks[j].lang;
-        sel.appendChild(o);
-      }
-      sel.setAttribute('data-sig', sig);
-    }
-    sel.value = st.activeLang || '';
-    sel.style.display = tracks.length > 1 ? '' : 'none';
-  }
-
-  function rebuildList(tracks) {
-    var active = null;
-    for (var i = 0; i < tracks.length; i++) if (tracks[i].lang === st.activeLang) active = tracks[i];
-    // asb 移植：偏移在读取侧套用——store 里 base cues 不动，st.cues 是（必要时）平移后的视图。
-    var base = active ? active.cues : [];
-    var off = trackOffset(active ? active.key : null);
-    st.cues = shiftedCues(base, off);
-    if (st.builtLang === st.activeLang && st.builtLen === base.length &&
-        st.builtCues === base && st.builtOffset === off) {
-      // BUG-1029：live cue 逐字扩长时数组和长度都不变。沿用行节点，只刷新文本/时间戳；
-      // 这样不会重建长列表，也不会把每个中间快照追加成一行。
-      for (var n = 0; n < st.cues.length; n++) {
-        if (st.rowTextEls[n] && st.rowTextEls[n].textContent !== st.cues[n].text) {
-          st.rowTextEls[n].textContent = st.cues[n].text;
-        }
-        var nextTs = fmtTs(st.cues[n].startMs);
-        if (st.rowTsEls[n] && st.rowTsEls[n].textContent !== nextTs) {
-          st.rowTsEls[n].textContent = nextTs;
-        }
-      }
-      return;
-    }
-    var list = st.listEl;
-    if (!list) return;
-    list.textContent = '';
-    st.rowEls = [];
-    st.rowTextEls = [];
-    st.rowTsEls = [];
-    st.currentIndex = -1;
-    if (!st.cues.length) {
-      hideSubtitleOverlay();
-      var empty = document.createElement('div');
-      empty.className = 'fushi-sub-empty';
-      empty.textContent = '暂无字幕（站内开启字幕后自动采集出现）';
-      list.appendChild(empty);
-      st.builtLang = st.activeLang;
-      st.builtLen = 0;
-      st.builtCues = base;
-      st.builtOffset = off;
-      return;
-    }
-    var frag = document.createDocumentFragment();
-    for (var k = 0; k < st.cues.length; k++) {
-      frag.appendChild(buildRow(st.cues[k], k));
-    }
-    list.appendChild(frag);
-    st.builtLang = st.activeLang;
-    st.builtLen = base.length;
-    st.builtCues = base;
-    st.builtOffset = off;
-  }
-
-  function buildRow(cue, idx) {
-    var row = document.createElement('div');
-    row.className = 'fushi-sub-row';
-
-    var ts = document.createElement('button');
-    ts.className = 'fushi-sub-ts';
-    ts.type = 'button';
-    ts.textContent = fmtTs(cue.startMs);
-    ts.title = '跳转到此句';
-    ts.addEventListener('click', function (e) { e.stopPropagation(); seekTo(cue.startMs); });
-    row.appendChild(ts);
-
-    var text = document.createElement('div');
-    text.className = 'fushi-sub-text';
-    text.textContent = cue.text;
-    text.addEventListener('click', function (e) {
-      e.stopPropagation();
-      if (typeof window.fushiLookupAtPoint === 'function') {
-        // TODO-1219 P3：带上该行整集拦截的精确窗，制卡（fushiEnqueue）用它而非 DOM 采样。
-        window.fushiLookupAtPoint(e.clientX, e.clientY, { startMs: cue.startMs, endMs: cue.endMs, text: cue.text });
-      } else {
-        seekTo(cue.startMs);
-      }
-    });
-    row.appendChild(text);
-
-    st.rowEls[idx] = row;
-    st.rowTsEls[idx] = ts;
-    st.rowTextEls[idx] = text;
-    return row;
-  }
-
   function tick() {
     if (!st.cues.length) { hideSubtitleOverlay(); return; }
     var nowMs = videoTimeMs();
     var idx = cueIndexAt(st.cues, nowMs);
     updateSubtitleOverlay(idx >= 0 ? st.cues[idx] : null);
-    if (!st.panel || st.hidden) { st.currentIndex = idx; return; }
-    if (idx === st.currentIndex) return;
-    var prev = st.rowEls[st.currentIndex];
-    if (prev) prev.classList.remove('is-current');
     st.currentIndex = idx;
-    var cur = st.rowEls[idx];
-    if (cur) {
-      cur.classList.add('is-current');
-      if (st.autoScroll) {
-        try { cur.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) { cur.scrollIntoView(); }
-      }
-    }
   }
 
   function ensureSubtitleOverlay() {
@@ -611,59 +291,54 @@
     return ans;
   }
 
-  function ensureMounted() {
-    if (!st.panel) buildPanel();
-    var parent = parentForOverlay();
-    if (st.panel.parentNode !== parent) parent.appendChild(st.panel);
-    st.panel.setAttribute('data-theme', resolveTheme());
-    applyPush();
-    hideReopen();
-  }
-  function showPanel() {
-    st.hidden = false;
-    ensureMounted();
-    refresh();
-  }
-  function hidePanel() {
-    st.hidden = true;
-    clearPush();
-    if (st.panel && st.panel.parentNode) st.panel.parentNode.removeChild(st.panel);
-    showReopen();
+  // 侧边栏打不开时给用户的可见出路。chrome.sidePanel.open() 要求瞬态用户激活，而内容脚本
+  // 既没有 sidePanel API，用户激活也不随 runtime 消息传到 service worker——页面内的按键/拖放
+  // 因此永远开不了原生侧边栏。与其静默什么都不发生，不如直说唯一可用入口。
+  var PANEL_OPEN_HINT = '浏览器不允许网页内快捷键打开侧边栏：请点工具栏的 Fushi 图标 →「▤ 打开字幕侧边栏」';
+  var panelHintAt = 0;
+  function hintPanelOpen() {
+    var now = Date.now();
+    if (now - panelHintAt < 3000) return; // 同一次操作只提示一次，避免连点刷屏
+    panelHintAt = now;
+    toast(PANEL_OPEN_HINT);
   }
 
-  function showReopen() {
-    var chip = document.getElementById(REOPEN_ID);
-    var parent = parentForOverlay();
-    if (!chip) {
-      chip = document.createElement('button');
-      chip.id = REOPEN_ID;
-      chip.type = 'button';
-      chip.textContent = '字幕';
-      chip.title = '打开字幕列表（可加载外挂字幕）';
-      chip.addEventListener('click', function (e) {
-        e.stopPropagation();
-        st.forceOpen = true; // 用户主动开：即使暂无轨也铺面板（含加载外挂字幕入口）
-        showPanel();
+  // notify=true：这是用户显式的「打开侧边栏」动作，失败必须给可见提示。
+  // notify 省略：只是顺带刷新（加载外挂字幕、拖放落地），失败不抢占它们自己的 toast。
+  // 返回值 = 是否已经把这次交互「办成了」。内容脚本这一侧永远办不成（原因见上），故恒为 false，
+  // 调用方（video-shortcuts.js）据此不 preventDefault，按键原样放行给站点。
+  function showPanel(notify) {
+    refreshHeadless();
+    try {
+      chrome.runtime.sendMessage({ type: 'openSubtitleSidePanel' }, function (resp) {
+        var failed = true;
+        try { failed = !!chrome.runtime.lastError || !resp || resp.ok !== true; } catch (_) {}
+        if (failed && notify) hintPanelOpen();
       });
-    }
-    chip.setAttribute('data-theme', resolveTheme());
-    if (chip.parentNode !== parent) parent.appendChild(chip);
-  }
-  function hideReopen() {
-    var chip = document.getElementById(REOPEN_ID);
-    if (chip && chip.parentNode) chip.parentNode.removeChild(chip);
+    } catch (_) { if (notify) hintPanelOpen(); }
+    return false;
   }
 
-  function refresh() {
-    if (st.hidden) return;
+  // Side Panel 读取的无 DOM 状态刷新。这里保留 live→整集轨自动升级、任意轨偏移和
+  // 覆盖字幕逻辑，但不创建列表节点、不修改宿主页面布局。
+  function refreshHeadless() {
     st.videoId = videoKey();
     var tracks = tracksForVideo();
-    ensureMounted();
-    refreshLangSelect(tracks);
-    rebuildList(tracks);
-    updateOffsetBar();
+    var active = null;
+    for (var i = 0; i < tracks.length; i++) {
+      if (tracks[i].lang === st.activeLang) active = tracks[i];
+    }
+    var fullTrackArrived = st.activeLang === LIVE_LANG &&
+      tracks.length && tracks[0].lang !== LIVE_LANG;
+    if (!active || fullTrackArrived) {
+      active = tracks.length ? tracks[0] : null;
+      st.activeLang = active ? active.lang : null;
+    }
+    var off = trackOffset(active ? active.key : null);
+    st.cues = active ? shiftedCues(active.cues, off) : [];
     st.currentIndex = -1;
     tick();
+    return tracks;
   }
 
   // ── B（asb 招牌）：加载用户外挂字幕文件 + 时轴偏移微调 ──
@@ -672,25 +347,6 @@
   }
   function isExternalLang(lang) {
     return typeof lang === 'string' && lang.indexOf(EXT_PREFIX) === 0;
-  }
-  function openFilePicker() {
-    try {
-      var inp = document.createElement('input');
-      inp.type = 'file';
-      inp.accept = '.srt,.ass,.ssa,.vtt';
-      inp.multiple = true;
-      inp.style.display = 'none';
-      inp.addEventListener('change', function () {
-        var files = inp.files || [];
-        for (var i = 0; i < files.length; i++) {
-          if (isSubtitleFile(files[i])) loadSubtitleFile(files[i]);
-          else toast('不支持的格式（用 srt/ass/vtt）');
-        }
-        if (inp.parentNode) inp.parentNode.removeChild(inp);
-      });
-      (st.panel || document.body).appendChild(inp);
-      inp.click();
-    } catch (_) { toast('无法打开文件选择器'); }
   }
   function loadSubtitleFile(file) {
     if (file && typeof file.size === 'number' && file.size > 8 * 1024 * 1024) {
@@ -734,9 +390,6 @@
     store[key] = base;
     delete st.trackOffsets[key];
     st.activeLang = label;
-    st.builtLang = null;
-    st.forceOpen = true;
-    st.hidden = false;
     showPanel();
     toast('已加载外挂字幕：' + base.length + ' 句');
   }
@@ -794,7 +447,6 @@
     hideDropHint();
     if (!files.length) return;
     e.preventDefault();
-    st.forceOpen = true;
     if (!st.enabled) {
       try { chrome.storage.local.set({ netflixSubtitlePanel: true }); } catch (_) {}
       applyEnabled(true);
@@ -803,32 +455,9 @@
     }
     for (var i = 0; i < files.length; i++) loadSubtitleFile(files[i]);
   }, true);
-  // asb 移植：偏移操作对**任意当前轨**生效（读取侧 trackOffsets，见 st 定义处注释）。
-  function nudgeOffset(deltaMs) {
-    var key = activeTrackKey();
-    if (!key) return;
-    st.trackOffsets[key] = (st.trackOffsets[key] || 0) + deltaMs;
-    st.builtLang = null; // 时间戳变了 → 强制列表重建
-    refresh();
-  }
-  function resetOffset() {
-    var key = activeTrackKey();
-    if (!key) return;
-    delete st.trackOffsets[key];
-    st.builtLang = null;
-    refresh();
-  }
-  function updateOffsetBar() {
-    if (!st.offsetBar) return;
-    var key = activeTrackKey();
-    if (!key || !st.cues.length) { st.offsetBar.style.display = 'none'; return; }
-    st.offsetBar.style.display = '';
-    if (st.offsetLabel) st.offsetLabel.textContent = fmtOffset(trackOffset(key));
-  }
-
   // ── asb 移植：快捷键执行端 ──
-  // video-shortcuts.js（同隔离世界、本文件之后加载）判定按键 → 调这里执行。面板持有轨/偏移/
-  // 模式状态，所以动作收敛在本文件；面板未打开（甚至未启用）时快捷键也要能用——此时隐式选
+  // video-shortcuts.js（同隔离世界、本文件之后加载）判定按键 → 调这里执行。控制器持有轨/偏移/
+  // 模式状态，所以动作收敛在本文件；侧边栏未打开（甚至未启用）时快捷键也要能用——此时隐式选
   // 当前视频的第一条轨。返回 true = 已接管（调用方 preventDefault），false = 放行给站点。
   function lastCueStartBefore(ms) {
     var lo = 0, hi = st.cues.length - 1, ans = -1;
@@ -838,7 +467,7 @@
     }
     return ans;
   }
-  // 面板没开时 st.cues 可能为空/过期：从 store 重取当前轨（含读取侧偏移）。
+  // 侧边栏没开时 st.cues 可能为空/过期：从 store 重取当前轨（含读取侧偏移）。
   function recomputeShortcutCues() {
     var tracks = tracksForVideo();
     var active = null;
@@ -875,8 +504,7 @@
     if (!key || !st.cues.length) return false;
     if (deltaMs === 0) delete st.trackOffsets[key];
     else st.trackOffsets[key] = (st.trackOffsets[key] || 0) + deltaMs;
-    if (st.panel && st.panel.parentNode && !st.hidden) { st.builtLang = null; refresh(); }
-    else recomputeShortcutCues();
+    recomputeShortcutCues();
     toast('字幕偏移 ' + fmtOffset(trackOffset(key)));
     return true;
   }
@@ -895,16 +523,13 @@
   }
   function shortcutTogglePanel() {
     if (!st.enabled) {
-      st.forceOpen = true;
       try { chrome.storage.local.set({ netflixSubtitlePanel: true }); } catch (_) {}
       applyEnabled(true);
-    } else if (st.hidden || !st.panel || !st.panel.parentNode) {
-      st.forceOpen = true;
-      showPanel();
-    } else {
-      hidePanel();
     }
-    return true;
+    // 原实现无条件 return true → video-shortcuts.js 据此 preventDefault：用户按下 Shift+S 后
+    // 按键被吃、站点原生快捷键也没了、屏幕上什么都没发生。showPanel(true) 恒返回 false 并在
+    // 打开失败时 toast 明确出路，这里如实透传：不吞按键 + 有可见反馈。
+    return showPanel(true);
   }
   window.fushiSubtitleShortcut = function (action) {
     if (!videoEl()) return false;
@@ -918,8 +543,8 @@
       case 'offset-reset': return shortcutOffset(0);
       case 'copy-cue': return shortcutCopyCue();
       case 'toggle-panel': return shortcutTogglePanel();
-      // 隐藏字幕：状态与 style 注入由 content.js 独占（见那里的「所有权」注释）——面板整体
-      // 受 netflixSubtitlePanel 门控且默认关，状态放这里会导致「没开面板就不能隐藏字幕」。
+      // 隐藏字幕：状态与 style 注入由 content.js 独占（见那里的「所有权」注释）——侧边栏能力
+      // 受 netflixSubtitlePanel 门控且默认关，状态放这里会导致「没开侧边栏就不能隐藏字幕」。
       // 这里只做转发，content.js 未就绪时返回 false（不吞按键，站点行为原样）。
       case 'toggle-subtitle-hide':
         return typeof window.fushiToggleSubtitleHiding === 'function'
@@ -929,35 +554,121 @@
     return false;
   };
 
-  // TODO-1219 P3：Netflix 批量录制（content.js fushiRunNetflixBatch）录整标签页前调用，撤销推挤让
-  // 播放器全宽（录制画面不带面板黑边）；录完调 resume 重挂。挂起期间 applyPush 被 pushSuspended 门控。
-  window.fushiSubtitlePanelSuspendPush = function () {
-    st.pushSuspended = true;
-    clearPush();
-  };
-  window.fushiSubtitlePanelResumePush = function () {
-    st.pushSuspended = false;
-    if (!st.hidden && st.panel && st.panel.parentNode) applyPush();
-  };
+  // 兼容旧 content.js 的批量录制钩子。原生 Side Panel 不属于标签页画面，不再需要改网页宽度。
+  window.fushiSubtitlePanelSuspendPush = function () {};
+  window.fushiSubtitlePanelResumePush = function () {};
 
   window.fushiSubtitlePanelOnCues = function (_key) {
     if (!st.enabled) return;
-    sync();
+    refreshHeadless();
   };
+
+  function trackSignature(track) {
+    var cues = track && track.cues || [];
+    if (!cues.length) return '0';
+    var first = cues[0];
+    var last = cues[cues.length - 1];
+    return [
+      cues.length,
+      first.startMs, first.endMs, first.text,
+      last.startMs, last.endMs, last.text,
+    ].join(':');
+  }
+
+  function sidePanelState(includeCues) {
+    var tracks = refreshHeadless();
+    var activeKey = activeTrackKey();
+    return {
+      ok: true,
+      videoKey: videoKey(),
+      hasVideo: !!videoEl(),
+      activeLang: st.activeLang,
+      currentTimeMs: videoTimeMs(),
+      offsetMs: trackOffset(activeKey),
+      tracks: tracks.map(function (track) {
+        return {
+          lang: track.lang,
+          label: track.lang === LIVE_LANG ? '实时采集' : track.lang,
+          length: track.cues.length,
+          signature: trackSignature(track),
+        };
+      }),
+      cues: includeCues ? st.cues : null,
+    };
+  }
+
+  // 浏览器 Side Panel 与当前标签之间的唯一契约。列表 DOM 完全位于扩展页面；这里仅做
+  // 序列化、seek、偏移、外挂轨安装和查词命令，不向宿主网页挂字幕列表节点。
+  try {
+    chrome.runtime.onMessage.addListener(function (msg, _sender, sendResponse) {
+      if (!msg || typeof msg.type !== 'string') return false;
+      if (msg.type === 'fushiSubtitleSidePanelState') {
+        sendResponse(sidePanelState(msg.includeCues === true));
+        return false;
+      }
+      if (msg.type === 'fushiSubtitleSidePanelSeek') {
+        seekTo(Number(msg.ms) || 0);
+        sendResponse({ ok: true, currentTimeMs: videoTimeMs() });
+        return false;
+      }
+      if (msg.type === 'fushiSubtitleSidePanelSelectTrack') {
+        var wanted = String(msg.lang || '');
+        var available = tracksForVideo();
+        var found = false;
+        for (var i = 0; i < available.length; i++) {
+          if (available[i].lang === wanted) { found = true; break; }
+        }
+        if (found) st.activeLang = wanted;
+        sendResponse(sidePanelState(true));
+        return false;
+      }
+      if (msg.type === 'fushiSubtitleSidePanelOffset') {
+        var key = activeTrackKey();
+        if (key) {
+          if (msg.reset === true) delete st.trackOffsets[key];
+          else st.trackOffsets[key] = (st.trackOffsets[key] || 0) + (Number(msg.deltaMs) || 0);
+        }
+        sendResponse(sidePanelState(true));
+        return false;
+      }
+      if (msg.type === 'fushiSubtitleSidePanelInstallTrack') {
+        applyExternalSubtitle(String(msg.filename || 'subtitle.srt'), {
+          ok: true,
+          data: { cues: Array.isArray(msg.cues) ? msg.cues : [] },
+        });
+        sendResponse(sidePanelState(true));
+        return false;
+      }
+      if (msg.type === 'fushiSubtitleSidePanelPrepareLookup') {
+        var cue = msg.cue && typeof msg.cue === 'object' ? msg.cue : null;
+        var handled = typeof window.fushiPrepareLookupFromSidePanel === 'function' &&
+          window.fushiPrepareLookupFromSidePanel(cue) === true;
+        sendResponse({ ok: handled });
+        return false;
+      }
+      if (msg.type === 'fushiSubtitleSidePanelMine') {
+        var mineCue = msg.cue && typeof msg.cue === 'object' ? msg.cue : null;
+        var result = typeof window.fushiMineFromSidePanel === 'function'
+          ? window.fushiMineFromSidePanel(msg.fields || {}, mineCue)
+          : { ok: false, reason: 'no-queue' };
+        sendResponse(result || { ok: false });
+        return false;
+      }
+      return false;
+    });
+  } catch (_) {}
 
   document.addEventListener('fullscreenchange', function () {
     if (!st.enabled) return;
-    clearPush();
-    sync(); // 面板/重开小片迁到 fullscreenElement 正确父节点（无轨则拆）
+    sync();
   });
 
   var lastPath = location.pathname;
   setInterval(function () {
     if (location.pathname !== lastPath) {
       lastPath = location.pathname;
-      st.builtLang = null; st.builtLen = -1; st.activeLang = null;
-      st.forceOpen = false; // 新视频：不沿用上一个视频的「主动打开」，回到默认收起
-      sync(); // 新页有轨才挂；无轨（含离开视频页）拆干净
+      st.activeLang = null;
+      sync();
     }
   }, 500);
 
@@ -982,7 +693,7 @@
 
   st.tickTimer = setInterval(tick, 200);
 
-  // 默认关：读取开关，仅在开启（且已有整集字幕）时才自动显示面板。
+  // 默认关：读取开关；打开动作只由用户手势或快捷键触发，浏览器原生侧边栏不会自动弹出。
   readSubtitlePreferences();
   readEnabled(applyEnabled);
 })();

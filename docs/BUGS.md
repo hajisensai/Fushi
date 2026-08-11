@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1467 条。点号进各自文件。
+> 共 1486 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -78,6 +78,25 @@
 | [BUG-1538](bugs/BUG-1538-download-proxy-default-direct.md) | ✅ | ✅ | 下载域默认走系统代理而非直连，发现聚合来源需钉死不随代理分叉 |
 | [BUG-1537](bugs/BUG-1537-settings-subtitle-ellipsis-single-line.md) | ✅ | ✅ | 设置行说明文字被压成单行省略号（ellipsis + maxLines:null） |
 | [BUG-1536](bugs/BUG-1536-horizontal-row-steals-vertical-wheel.md) | ✅ | ✅ | 视频首页横滚行抢走整页纵向滚动（应 Shift+滚轮才横滚） |
+| [BUG-1535](bugs/BUG-1535-download-task-details-service-unavailable.md) | ✅ | ✅ | 下载服务未启动时任务详情打不开 |
+| [BUG-1534](bugs/BUG-1534-download-task-detail-path-overflow.md) | ✅ | ✅ | 下载任务详情长路径溢出 |
+| [BUG-1533](bugs/BUG-1533-video-discovery-filter-height.md) | ✅ | ✅ | 视频发现筛选控件高度不一致 |
+| [BUG-1532](bugs/BUG-1532-download-task-details-offline-backend.md) | ✅ | ✅ | 下载任务详情被离线原后端阻断 |
+| [BUG-1531](bugs/BUG-1531-video-discovery-long-anime-movie-dedup.md) | ✅ | ✅ | 发现页同一单集长篇动画电影被重复展示 |
+| [BUG-1530](bugs/BUG-1530-mihon-cover-disk-cache.md) | ✅ | ✅ | Mihon 在线漫画封面刷新重复下载 |
+| [BUG-1529](bugs/BUG-1529-video-discovery-genre-facet-pollution.md) | ✅ | ✅ | 视频发现页类型菜单混入年份日期 |
+| [BUG-1528](bugs/BUG-1528-video-discovery-cover-disk-cache.md) | ✅ | ✅ | 视频发现与系列页封面刷新重复下载 |
+| [BUG-1527](bugs/BUG-1527-video-discovery-card-overflow-year-input.md) | ✅ | ✅ | 视频发现卡片溢出且年份下拉过长 |
+| [BUG-1526](bugs/BUG-1526-extension-side-panel-row-seek.md) | ✅ | ✅ | 浏览器侧边栏字幕行点击不能跳转 |
+| [BUG-1525](bugs/BUG-1525-extension-side-panel-lookup-latency.md) | ✅ | ✅ | 浏览器侧边栏查词存在可感知延迟 |
+| [BUG-1524](bugs/BUG-1524-download-task-delete-pause.md) | ✅ | ✅ | Task deletion is blocked when backend pause fails |
+| [BUG-1523](bugs/BUG-1523-download-task-resume.md) | ✅ | ✅ | Cancelled download tasks cannot be resumed |
+| [BUG-1522](bugs/BUG-1522-torrent-tracker-utf8.md) | ✅ | ✅ | Tracker detail JSON rejects localized backend errors |
+| [BUG-1521](bugs/BUG-1521-torrent-tracker-refresh-coupled.md) | ✅ | ✅ | 详情Tracker刷新被其他请求阻塞 |
+| [BUG-1520](bugs/BUG-1520-torrent-detail-dropped-tab-refresh.md) | ✅ | ✅ | 下载详情切换标签时Tracker刷新被丢弃 |
+| [BUG-1519](bugs/BUG-1519-video-download-missing-embedded-recovery.md) | ✅ | ✅ | 内置下载任务丢失后无法重新入队 |
+| [BUG-1518](bugs/BUG-1518-download-task-delete-service-unavailable.md) | ✅ | ✅ | 下载服务未启动时任务删除无效 |
+| [BUG-1517](bugs/BUG-1517-download-detail-missing-backend-task.md) | ✅ | ✅ | 下载详情未区分后端任务已丢失 |
 | [BUG-1516](bugs/BUG-1516-update-manifest-dead-asset-404.md) | ✅ | ✅ | 更新清单保留已被 prune 的资产条目，客户端下载必 404 |
 | [BUG-1515](bugs/BUG-1515-parent-extras-split-series.md) | ✅ | ✅ | 父作品短篇被错误拆成独立系列卡 |
 | [BUG-1514](bugs/BUG-1514-subscription-episode-selection-order.md) | ✅ | ✅ | 订阅选集季号错误、重复下载且顺序按完成时间乱序 |

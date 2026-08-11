@@ -1,10 +1,10 @@
-import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 
 import 'ffi/fushi_torrent_bindings.dart';
+import 'native_json.dart';
 
 /// 内置 libtorrent 引擎的 Dart 侧薄封装（阶段1b：真实下载管线）。
 ///
@@ -157,9 +157,15 @@ class EmbeddedTorrentEngine {
   Object? _consumeJson(Pointer<Char> p) {
     if (p == nullptr) return null;
     try {
-      return jsonDecode(p.cast<Utf8>().toDartString());
-    } on FormatException {
-      return null;
+      final Pointer<Uint8> bytes = p.cast<Uint8>();
+      int length = 0;
+      while (bytes[length] != 0) {
+        length += 1;
+      }
+      // Old bundled DLLs may surface localized WinSock/libtorrent messages in
+      // the active Windows code page. Keep the ABI consumer tolerant while
+      // the native serializer now guarantees valid UTF-8 for new builds.
+      return decodeNativeTorrentJsonBytes(bytes.asTypedList(length));
     } finally {
       bindings.ht_free_string(p);
     }

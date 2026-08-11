@@ -32,8 +32,8 @@ function fushiQueueItemContext(q) {
   return sent.length > 60 ? sent.slice(0, 60) + '…' : sent;
 }
 
-// TODO-1219：网飞字幕列表面板开关的读值纯函数（默认关 + 只认 boolean true）。抽出来供 node 测试，
-// 与 subtitle-panel.js 的 enabled:false 默认、options.js 的 === true 判据一致，防回归成默认打开。
+// 兼容既有 netflixSubtitlePanel 设置的严格读值函数。原生侧边栏入口会把它设为 true；
+// options.js 与字幕控制器继续用同一判据，避免历史字符串值误启用网页内能力。
 function fushiReadPanelEnabled(stored) {
   return !!(stored && stored.netflixSubtitlePanel === true);
 }
@@ -345,27 +345,39 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
     });
   }
 
-  // TODO-1219：网飞字幕列表面板开关（扩展弹窗入口，方案 B）。读写与 options 页同一
-  // chrome.storage.local.netflixSubtitlePanel（缺省即关），改动即时持久化；subtitle-panel.js 经
-  // storage.onChanged 实时生效。这里只加「点扩展图标即可开」的入口，不动上方 1270 制卡队列。
+  // 浏览器原生 Side Panel 入口。**这是全扩展唯一真正能开侧边栏的路径**（popup 在扩展上下文里，
+  // 点击带瞬态用户激活），所以它必须一次都不能失手。
+  //
+  // 原实现把 open() 放进 chrome.tabs.query 的回调、且前面还 await 了 setOptions：回调和 await 的
+  // resolve 都已经是新的任务，click 那一刻的瞬态激活到那时早已过期，必然抛
+  // "sidePanel.open() may only be called in response to a user gesture"。
+  // 改法：① 当前 tab 在 popup 打开时就查好了（下方 genTab），click 时同步拿；② open() 是 click
+  // 同步栈的第一句，前面不放任何 await；③ setOptions / storage.set 都不需要激活，挪到 open() 之后
+  // （manifest 的 side_panel.default_path 已足以让 open() 用对页面）；④ 只有连 tabId 都没拿到时才
+  // 回落给 service worker——SW 侧同样没有激活，那条路只是聊胜于无的兜底。
   const nfToggle = document.getElementById('hp-nf-sublist');
   if (nfToggle) {
-    try {
-      chrome.storage.local.get(['netflixSubtitlePanel'], (r) => {
-        nfToggle.checked = fushiReadPanelEnabled(r);
-      });
-    } catch (_) {}
-    nfToggle.addEventListener('change', () => {
-      try { chrome.storage.local.set({ netflixSubtitlePanel: nfToggle.checked }); } catch (_) {}
+    nfToggle.addEventListener('click', () => {
+      const tabId = genTab && Number.isInteger(genTab.id) ? genTab.id : null;
+      let opening = null;
+      if (tabId != null && chrome.sidePanel && typeof chrome.sidePanel.open === 'function') {
+        try { opening = chrome.sidePanel.open({ tabId }); } catch (_) { opening = null; }
+      }
+      try { chrome.storage.local.set({ netflixSubtitlePanel: true }); } catch (_) {}
+      if (!opening) {
+        try {
+          const fallback = { type: 'openSubtitleSidePanel' };
+          if (tabId != null) fallback.tabId = tabId;
+          chrome.runtime.sendMessage(fallback, () => { try { void chrome.runtime.lastError; } catch (_) {} });
+        } catch (_) {}
+        window.close();
+        return;
+      }
+      // 等 open() 落地再关 popup：popup 关闭会销毁本上下文，过早 close 有可能把请求一起带走。
+      Promise.resolve(opening).then(
+        () => { try { chrome.sidePanel.setOptions({ tabId, path: 'side-panel.html', enabled: true }); } catch (_) {} },
+        () => {}).then(() => window.close(), () => window.close());
     });
-    // options 页或别处改了开关时，popup 若还开着即时反映勾选态（独立监听，不动队列监听）。
-    try {
-      chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === 'local' && changes.netflixSubtitlePanel) {
-          nfToggle.checked = changes.netflixSubtitlePanel.newValue === true;
-        }
-      });
-    } catch (_) {}
   }
 
   // 队列在别处（content 入队 / 生成出队 / 别的标签）变化时，popup 若还开着就实时刷新。

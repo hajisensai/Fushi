@@ -9,6 +9,7 @@ import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/airing_calendar_page.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
+import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
 import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart';
@@ -20,7 +21,7 @@ import 'package:fushi_core/fushi_core.dart'
 /// 独立「下载」页（顶层底栏 tab）＝统一下载中心：番剧下载流程 **直接内联**
 /// 铺在页面上（搜番 → 选种 → 配字幕 → 推送 + 通用磁力 + 下载任务），任务 tab
 /// 同时列出漫画「在线目录」（mokuro.moe）的卷下载队列；页头另有在线目录入口。
-/// 第四个顶部页签是「下载设置」（后端/限速/上传/做种/内存）。完成后按内容类型
+/// 右上角齿轮切到「下载设置」（后端/限速/上传/做种/内存）。完成后按内容类型
 /// 自动入库（视频→视频库、epub→阅读库，见 AnimeDownloadService；漫画卷→
 /// 书架，见 MokuroMoeDownloadQueue）。
 class DownloadsPage extends ConsumerStatefulWidget {
@@ -83,7 +84,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
     }
   }
 
-  Widget _buildResourceTab() {
+  Widget _buildResourceTab(BuildContext tabContext) {
     return FutureBuilder<_DownloadsResourceDependencies?>(
       future: _resourceDependencies,
       builder: (
@@ -103,7 +104,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                 const SizedBox(height: 12),
                 FilledButton.tonalIcon(
                   onPressed: () =>
-                      DefaultTabController.of(context).animateTo(3),
+                      DefaultTabController.of(tabContext).animateTo(3),
                   icon: const Icon(Icons.settings_outlined),
                   label: Text(t.download_open_settings),
                 ),
@@ -212,11 +213,9 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                 ),
               ],
             ),
-            // 设置与发现/任务/订阅同属顶部平级页签；不再用右上角齿轮把整页切成
-            // 另一种模式，避免页签导航与正文状态互相覆盖。
             body: TabBarView(
               children: <Widget>[
-                _buildResourceTab(),
+                _buildResourceTab(tabContext),
                 // 任务 tab：漫画目录卷下载队列（有任务才占位）+ torrent 任务，
                 // 统一下载中心的同屏任务视图。
                 //
@@ -243,11 +242,77 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                                   .videoDownloadPipelineService
                                   ?.retryJob(job.jobId);
                             },
+                            onResume: (VideoDownloadJobRow job) async {
+                              await ref
+                                  .read(appProvider)
+                                  .videoDownloadPipelineService
+                                  ?.resumeJob(job.jobId);
+                            },
                             onCancel: (VideoDownloadJobRow job) async {
                               await ref
                                   .read(appProvider)
                                   .videoDownloadPipelineService
                                   ?.cancelJob(job.jobId);
+                            },
+                            onOpenDetails: (VideoDownloadJobRow job) async {
+                              final appModel = ref.read(appProvider);
+                              final pipeline =
+                                  appModel.videoDownloadPipelineService;
+                              final details = pipeline != null
+                                  ? await pipeline.loadJobDetails(job.jobId)
+                                  : buildPersistedVideoDownloadJobDetails(
+                                      job,
+                                      await appModel.database
+                                          .getVideoDownloadJobFiles(job.jobId),
+                                    );
+                              if (!context.mounted) return;
+                              final String torrentId =
+                                  (job.backendTaskId ?? job.torrentHash ?? '')
+                                      .trim();
+                              await showAppDialog<void>(
+                                context: context,
+                                builder: (BuildContext dialogContext) =>
+                                    TorrentTaskDetailDialog.task(
+                                  torrentId: torrentId,
+                                  title: job.title,
+                                  torrentTitle:
+                                      job.resourceTitle?.trim().isNotEmpty ==
+                                              true
+                                          ? job.resourceTitle!.trim()
+                                          : job.title,
+                                  backendOverride: details.backend,
+                                  backendTaskMissing: details.backendOnline &&
+                                      details.backend == null,
+                                  initialSnapshot: details.snapshot,
+                                  initialFiles: details.files,
+                                ),
+                              );
+                            },
+                            locationLoader: (VideoDownloadJobRow job) async {
+                              final pipeline = ref
+                                  .read(appProvider)
+                                  .videoDownloadPipelineService;
+                              return pipeline == null
+                                  ? null
+                                  : await pipeline
+                                      .resolveJobLocation(job.jobId);
+                            },
+                            onDelete: (job, {required bool deleteFiles}) async {
+                              final appModel = ref.read(appProvider);
+                              final pipeline =
+                                  appModel.videoDownloadPipelineService;
+                              if (pipeline != null) {
+                                await pipeline.deleteJob(
+                                  job.jobId,
+                                  deleteFiles: deleteFiles,
+                                );
+                              } else {
+                                await deletePersistedVideoDownloadJob(
+                                  database: appModel.database,
+                                  job: job,
+                                  deleteFiles: deleteFiles,
+                                );
+                              }
                             },
                           ),
                         ),

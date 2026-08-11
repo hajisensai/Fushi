@@ -1,6 +1,7 @@
 import 'dart:async' show Timer, unawaited;
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 
@@ -493,7 +494,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       return ResizeImage.resizeIfNeeded(
         decodeWidth,
         null,
-        NetworkImage(source),
+        CachedNetworkImageProvider(source),
       );
     }
     return resolveMediaCoverImage(
@@ -1760,10 +1761,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                 final VideoMetadataCreditSummary credit = credits[index];
                 final String? path = credit.person.profilePath;
                 final String? url = credit.person.profileUrl;
-                final ImageProvider? image =
-                    path != null && File(path).existsSync()
-                        ? FileImage(File(path))
-                        : (url == null ? null : NetworkImage(url));
+                final ImageProvider? image = path != null &&
+                        File(path).existsSync()
+                    ? FileImage(File(path))
+                    : (url == null ? null : CachedNetworkImageProvider(url));
                 return SizedBox(
                   key: ValueKey<String>(
                       'video-work-credit-${credit.person.personKey}-$index'),
@@ -1879,7 +1880,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                               if (thumb != null && File(thumb).existsSync())
                                 Image.file(File(thumb), fit: BoxFit.cover)
                               else if (thumb != null)
-                                Image.network(thumb, fit: BoxFit.cover)
+                                Image(
+                                  image: CachedNetworkImageProvider(thumb),
+                                  fit: BoxFit.cover,
+                                )
                               else
                                 const ColoredBox(color: Color(0x1FFFFFFF)),
                               const Center(

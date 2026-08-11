@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +10,7 @@ import 'package:fushi_core/fushi_core.dart'
         VideoDownloadJobLifecycle,
         VideoDownloadJobRow,
         VideoDownloadJobStage;
+import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/torrent_task_display.dart';
@@ -19,6 +21,16 @@ typedef VideoDownloadJobAction = Future<void> Function(
   VideoDownloadJobRow job,
 );
 
+typedef VideoDownloadJobLocationLoader = Future<String?> Function(
+  VideoDownloadJobRow job,
+);
+
+typedef VideoDownloadJobDeleteAction = Future<void> Function(
+  VideoDownloadJobRow job, {
+  required bool deleteFiles,
+});
+
+typedef VideoDownloadPathRevealer = Future<bool> Function(String path);
 typedef VideoDownloadJobMetricsLoader = Future<Map<String, TorrentSnapshot>>
     Function(
   Iterable<VideoDownloadJobRow> jobs,
@@ -57,7 +69,12 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     required this.store,
     super.key,
     this.onRetry,
+    this.onResume,
     this.onCancel,
+    this.onOpenDetails,
+    this.locationLoader,
+    this.onDelete,
+    this.pathRevealer = revealVideoDownloadPath,
     this.metricsLoader,
     this.selectedSizeLoader,
     this.lifecycleLabel,
@@ -68,7 +85,12 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     required FushiDatabase database,
     Key? key,
     VideoDownloadJobAction? onRetry,
+    VideoDownloadJobAction? onResume,
     VideoDownloadJobAction? onCancel,
+    VideoDownloadJobAction? onOpenDetails,
+    VideoDownloadJobLocationLoader? locationLoader,
+    VideoDownloadJobDeleteAction? onDelete,
+    VideoDownloadPathRevealer pathRevealer = revealVideoDownloadPath,
     VideoDownloadJobMetricsLoader? metricsLoader,
     VideoDownloadJobSelectedSizeLoader? selectedSizeLoader,
     String Function(String lifecycle)? lifecycleLabel,
@@ -78,7 +100,12 @@ class VideoDownloadJobsPanel extends StatefulWidget {
         key: key,
         store: DatabaseVideoDownloadJobsPanelStore(database),
         onRetry: onRetry,
+        onResume: onResume,
         onCancel: onCancel,
+        onOpenDetails: onOpenDetails,
+        locationLoader: locationLoader,
+        onDelete: onDelete,
+        pathRevealer: pathRevealer,
         metricsLoader: metricsLoader,
         selectedSizeLoader: selectedSizeLoader ??
             (Iterable<VideoDownloadJobRow> jobs) =>
@@ -89,7 +116,12 @@ class VideoDownloadJobsPanel extends StatefulWidget {
 
   final VideoDownloadJobsPanelStore store;
   final VideoDownloadJobAction? onRetry;
+  final VideoDownloadJobAction? onResume;
   final VideoDownloadJobAction? onCancel;
+  final VideoDownloadJobAction? onOpenDetails;
+  final VideoDownloadJobLocationLoader? locationLoader;
+  final VideoDownloadJobDeleteAction? onDelete;
+  final VideoDownloadPathRevealer pathRevealer;
   final VideoDownloadJobMetricsLoader? metricsLoader;
   final VideoDownloadJobSelectedSizeLoader? selectedSizeLoader;
 
@@ -128,9 +160,100 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
     setState(() => _busyJobIds.add(job.jobId));
     try {
       await action(job);
+    } on Object catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(t.download_task_action_failed(error: '$error')),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busyJobIds.remove(job.jobId));
     }
+  }
+
+  Future<void> _openLocation(VideoDownloadJobRow job) async {
+    final VideoDownloadJobLocationLoader? loader = widget.locationLoader;
+    if (loader == null) return;
+    await _runAction(job, (VideoDownloadJobRow value) async {
+      final String? path = await loader(value);
+      if (!mounted) return;
+      if (path == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t.download_task_location_missing)),
+        );
+        return;
+      }
+      if (!await widget.pathRevealer(path) && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t.download_task_location_open_failed)),
+        );
+      }
+    });
+  }
+
+  Future<void> _confirmDelete(VideoDownloadJobRow job) async {
+    if (widget.onDelete == null) return;
+    bool deleteFiles = false;
+    final bool? choice = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => StatefulBuilder(
+        builder: (
+          BuildContext context,
+          void Function(void Function()) setDialogState,
+        ) =>
+            AlertDialog(
+          title: Text(t.download_task_delete),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(t.download_task_delete_confirm(title: job.title)),
+              const SizedBox(height: 12),
+              // 共享 MD3 行 + 裸 [Checkbox] 作 leading，整行 onTap 翻转——等价旧
+              // CheckboxListTile 的取值/回调/标题，但行高与内边距走设计令牌。
+              FushiListItem(
+                key: ValueKey<String>(
+                  'video-download-job-delete-files-${job.jobId}',
+                ),
+                density: FushiListDensity.compact,
+                padding: EdgeInsets.zero,
+                onTap: () => setDialogState(
+                  () => deleteFiles = !deleteFiles,
+                ),
+                leading: Checkbox(
+                  value: deleteFiles,
+                  onChanged: (bool? value) => setDialogState(
+                    () => deleteFiles = value ?? false,
+                  ),
+                ),
+                title: Text(t.download_task_delete_files),
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(t.dialog_cancel),
+            ),
+            FilledButton(
+              key: ValueKey<String>(
+                'video-download-job-delete-confirm-${job.jobId}',
+              ),
+              onPressed: () => Navigator.pop(dialogContext, deleteFiles),
+              child: Text(t.dialog_delete),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    await _runAction(
+      job,
+      (VideoDownloadJobRow value) =>
+          widget.onDelete!(value, deleteFiles: choice),
+    );
   }
 
   @override
@@ -181,9 +304,23 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
               onRetry: widget.onRetry == null
                   ? null
                   : () => _runAction(job, widget.onRetry!),
+              onResume: widget.onResume == null
+                  ? null
+                  : () => _runAction(job, widget.onResume!),
               onCancel: widget.onCancel == null
                   ? null
                   : () => _runAction(job, widget.onCancel!),
+              onOpenDetails: widget.onOpenDetails == null
+                  ? null
+                  : () => _runAction(job, widget.onOpenDetails!),
+              // Mobile has no file-manager reveal contract; the action would
+              // always fail, so it is not offered there.
+              onOpenLocation: widget.locationLoader == null ||
+                      currentVideoDownloadRevealHost() == null
+                  ? null
+                  : () => _openLocation(job),
+              onDelete:
+                  widget.onDelete == null ? null : () => _confirmDelete(job),
               lifecycleLabel: widget.lifecycleLabel,
               stageLabel: widget.stageLabel,
             ),
@@ -342,7 +479,11 @@ class _VideoDownloadJobCard extends StatelessWidget {
     required this.selectedSizeBytes,
     required this.busy,
     required this.onRetry,
+    required this.onResume,
     required this.onCancel,
+    required this.onOpenDetails,
+    required this.onOpenLocation,
+    required this.onDelete,
     required this.lifecycleLabel,
     required this.stageLabel,
     super.key,
@@ -353,7 +494,11 @@ class _VideoDownloadJobCard extends StatelessWidget {
   final int? selectedSizeBytes;
   final bool busy;
   final VoidCallback? onRetry;
+  final VoidCallback? onResume;
   final VoidCallback? onCancel;
+  final VoidCallback? onOpenDetails;
+  final VoidCallback? onOpenLocation;
+  final VoidCallback? onDelete;
   final String Function(String lifecycle)? lifecycleLabel;
   final String Function(String stage)? stageLabel;
 
@@ -361,6 +506,8 @@ class _VideoDownloadJobCard extends StatelessWidget {
       job.resourceProvider != 'legacy-import-report' &&
       (job.lifecycle == VideoDownloadJobLifecycle.needsAttention ||
           job.lifecycle == VideoDownloadJobLifecycle.failed);
+
+  bool get _canResume => job.lifecycle == VideoDownloadJobLifecycle.cancelled;
 
   bool get _canCancel => job.lifecycle == VideoDownloadJobLifecycle.active;
 
@@ -377,6 +524,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
     final Color statusColor = _statusColor(colors);
     return FushiCard(
       padding: const EdgeInsets.all(12),
+      onTap: busy ? null : onOpenDetails,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -409,6 +557,14 @@ class _VideoDownloadJobCard extends StatelessWidget {
                   ],
                 ),
               ),
+              if (onOpenDetails != null) ...<Widget>[
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.chevron_right,
+                  color: colors.onSurfaceVariant,
+                  size: 20,
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 10),
@@ -489,7 +645,11 @@ class _VideoDownloadJobCard extends StatelessWidget {
             ),
           ],
           if ((_canRetry && onRetry != null) ||
-              (_canCancel && onCancel != null)) ...<Widget>[
+              (_canResume && onResume != null) ||
+              (_canCancel && onCancel != null) ||
+              onOpenDetails != null ||
+              onOpenLocation != null ||
+              onDelete != null) ...<Widget>[
             const SizedBox(height: 8),
             Align(
               alignment: AlignmentDirectional.centerEnd,
@@ -497,6 +657,15 @@ class _VideoDownloadJobCard extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 6,
                 children: <Widget>[
+                  if (onOpenDetails != null)
+                    OutlinedButton.icon(
+                      key: ValueKey<String>(
+                        'video-download-job-details-${job.jobId}',
+                      ),
+                      onPressed: busy ? null : onOpenDetails,
+                      icon: const Icon(Icons.info_outline, size: 18),
+                      label: Text(t.download_task_details),
+                    ),
                   if (_canRetry && onRetry != null)
                     FilledButton.tonalIcon(
                       key: ValueKey<String>(
@@ -511,6 +680,20 @@ class _VideoDownloadJobCard extends StatelessWidget {
                           : const Icon(Icons.refresh, size: 18),
                       label: Text(t.retry),
                     ),
+                  if (_canResume && onResume != null)
+                    FilledButton.tonalIcon(
+                      key: ValueKey<String>(
+                        'video-download-job-resume-${job.jobId}',
+                      ),
+                      onPressed: busy ? null : onResume,
+                      icon: busy
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.play_arrow, size: 18),
+                      label: Text(t.download_task_resume),
+                    ),
                   if (_canCancel && onCancel != null)
                     OutlinedButton.icon(
                       key: ValueKey<String>(
@@ -524,6 +707,27 @@ class _VideoDownloadJobCard extends StatelessWidget {
                             )
                           : const Icon(Icons.close, size: 18),
                       label: Text(t.cancel),
+                    ),
+                  if (onOpenLocation != null)
+                    OutlinedButton.icon(
+                      key: ValueKey<String>(
+                        'video-download-job-location-${job.jobId}',
+                      ),
+                      onPressed: busy ? null : onOpenLocation,
+                      icon: const Icon(Icons.folder_open_outlined, size: 18),
+                      label: Text(t.download_task_open_location),
+                    ),
+                  if (onDelete != null)
+                    TextButton.icon(
+                      key: ValueKey<String>(
+                        'video-download-job-delete-${job.jobId}',
+                      ),
+                      style: TextButton.styleFrom(
+                        foregroundColor: colors.error,
+                      ),
+                      onPressed: busy ? null : onDelete,
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                      label: Text(t.download_task_delete),
                     ),
                 ],
               ),
@@ -663,6 +867,119 @@ class _VideoDownloadJobCard extends StatelessWidget {
         VideoDownloadJobLifecycle.cancelled => Icons.block,
         _ => Icons.downloading_outlined,
       };
+}
+
+/// Desktop hosts that have a file manager to reveal a task path in.
+enum VideoDownloadRevealHost { windows, macos, linux }
+
+/// The reveal host of the running platform, or null on mobile where no file
+/// manager contract exists and the surface must not offer the action at all.
+VideoDownloadRevealHost? currentVideoDownloadRevealHost() {
+  if (Platform.isWindows) return VideoDownloadRevealHost.windows;
+  if (Platform.isMacOS) return VideoDownloadRevealHost.macos;
+  if (Platform.isLinux) return VideoDownloadRevealHost.linux;
+  return null;
+}
+
+/// A resolved file-manager invocation plus whether its exit code means
+/// anything. See [videoDownloadRevealCommand].
+class VideoDownloadRevealCommand {
+  const VideoDownloadRevealCommand({
+    required this.executable,
+    required this.arguments,
+    required this.exitCodeIsMeaningful,
+  });
+
+  final String executable;
+  final List<String> arguments;
+
+  /// False when the process reports a status that is unrelated to success, so
+  /// spawning it at all is the only signal available.
+  final bool exitCodeIsMeaningful;
+}
+
+/// Builds the file-manager invocation for [host].
+///
+/// Windows specifics, measured on Windows 11 by launching each form and
+/// reading back the opened window through `Shell.Application`:
+/// * `explorer.exe` exits with 1 on every form, including the ones that open
+///   and select correctly, so its exit code carries no success signal.
+/// * `/select,` and the path must stay two separate argv entries. Dart quotes
+///   any argument containing a space, so joining them into `/select,<path>`
+///   yields the command line `explorer "/select,C:\dir\file.mkv"`, which
+///   explorer answers by opening Documents instead - 3/3 runs, with and
+///   without spaces in the path. The split form selected the file in every
+///   run.
+VideoDownloadRevealCommand videoDownloadRevealCommand({
+  required VideoDownloadRevealHost host,
+  required String path,
+  required bool isDirectory,
+}) {
+  switch (host) {
+    case VideoDownloadRevealHost.windows:
+      final String windowsPath = p.normalize(path).replaceAll('/', r'\');
+      return VideoDownloadRevealCommand(
+        executable: 'explorer',
+        arguments: isDirectory
+            ? <String>[windowsPath]
+            : <String>['/select,', windowsPath],
+        exitCodeIsMeaningful: false,
+      );
+    case VideoDownloadRevealHost.macos:
+      return VideoDownloadRevealCommand(
+        executable: 'open',
+        arguments: isDirectory ? <String>[path] : <String>['-R', path],
+        exitCodeIsMeaningful: true,
+      );
+    case VideoDownloadRevealHost.linux:
+      return VideoDownloadRevealCommand(
+        executable: 'xdg-open',
+        arguments: <String>[isDirectory ? path : p.dirname(path)],
+        exitCodeIsMeaningful: true,
+      );
+  }
+}
+
+/// Opens a task path in the platform file manager. Files are selected when the
+/// platform supports it; directories are opened directly.
+Future<bool> revealVideoDownloadPath(String path) => revealVideoDownloadPathOn(
+      path,
+      host: currentVideoDownloadRevealHost(),
+      typeOf: (String value) =>
+          FileSystemEntity.type(value, followLinks: false),
+      run: Process.run,
+    );
+
+/// Injectable core of [revealVideoDownloadPath] so the per-host argv shape and
+/// the exit-code policy stay testable without a real file manager.
+@visibleForTesting
+Future<bool> revealVideoDownloadPathOn(
+  String path, {
+  required VideoDownloadRevealHost? host,
+  required Future<FileSystemEntityType> Function(String path) typeOf,
+  required Future<ProcessResult> Function(
+    String executable,
+    List<String> arguments,
+  ) run,
+}) async {
+  if (host == null) return false;
+  final FileSystemEntityType type = await typeOf(path);
+  if (type == FileSystemEntityType.notFound) return false;
+  final VideoDownloadRevealCommand command = videoDownloadRevealCommand(
+    host: host,
+    path: path,
+    isDirectory: type == FileSystemEntityType.directory,
+  );
+  try {
+    final ProcessResult result = await run(
+      command.executable,
+      command.arguments,
+    );
+    if (!command.exitCodeIsMeaningful) return true;
+    return result.exitCode == 0;
+  } on Object {
+    return false;
+  }
 }
 
 class _TaskMetrics extends StatelessWidget {

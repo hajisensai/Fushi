@@ -15,8 +15,11 @@ import 'package:fushi/src/sync/immersion_mine_payload.dart';
 import 'package:fushi/src/sync/yomitan_api_server.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
-class _FakeLookup implements FushiRemoteLookupService {
+class _FakeLookup
+    implements FushiRemoteLookupService, FushiRemotePopupLookupService {
   String? lastTerm;
+  int fullLookupCount = 0;
+  int popupLookupCount = 0;
   RemoteAudioLookup? audioResult;
   String? lastAudioExpression;
   String? lastAudioReading;
@@ -26,10 +29,25 @@ class _FakeLookup implements FushiRemoteLookupService {
     required bool wildcards,
     required int maximumTerms,
   }) async {
+    fullLookupCount++;
     lastTerm = term;
     final DictionarySearchResult r = DictionarySearchResult(searchTerm: term);
     r.popupJson = '{"html":"<b>$term</b>"}';
     return r;
+  }
+
+  @override
+  Future<RemoteDictionaryPopupLookup?> searchDictionaryPopup({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+  }) async {
+    popupLookupCount++;
+    lastTerm = term;
+    return RemoteDictionaryPopupLookup(
+      popupJson: '{"html":"<b>$term</b>"}',
+      bestLength: 0,
+    );
   }
 
   @override
@@ -204,6 +222,8 @@ void main() {
       ));
       expect(compact['result'], <String, dynamic>{'bestLength': 0});
       expect(compact['popupJson'], contains('見る'));
+      expect(lookup.popupLookupCount, 1);
+      expect(lookup.fullLookupCount, 0);
 
       final Map<String, dynamic> full = await _json(await _post(
         server.port,
@@ -212,6 +232,7 @@ void main() {
         auth: _basic('k123'),
       ));
       expect((full['result'] as Map<String, dynamic>)['searchTerm'], '見る');
+      expect(lookup.fullLookupCount, 1);
     });
 
     test(

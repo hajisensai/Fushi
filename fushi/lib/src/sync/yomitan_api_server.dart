@@ -48,6 +48,9 @@ const Set<String> _kExtensionSeenPaths = <String>{
 };
 
 class YomitanApiServer {
+  static final RegExp _lookupTraceIdPattern =
+      RegExp(r'^[A-Za-z0-9._:-]{1,64}$');
+
   YomitanApiServer({
     required int port,
     required FushiRemoteLookupService lookupService,
@@ -293,16 +296,60 @@ class YomitanApiServer {
 
   /// BUG-530：浏览器扩展查词端点（与 FushiSyncServer 共享契约）。
   Future<shelf.Response> _handleDictionaryLookup(shelf.Request request) async {
+    final Stopwatch serverWatch = Stopwatch()..start();
+    final Stopwatch requestJsonWatch = Stopwatch()..start();
     final Map<String, dynamic>? body = await _readJson(request);
+    requestJsonWatch.stop();
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    return _json(await buildRemoteDictionaryLookupResponse(
+
+    final RemoteDictionaryPopupTiming popupTiming =
+        RemoteDictionaryPopupTiming();
+    final Stopwatch handlerWatch = Stopwatch()..start();
+    final Map<String, dynamic> response =
+        await buildRemoteDictionaryLookupResponse(
       body,
       lookup: _lookup,
       history: _history,
+      popupTiming: popupTiming,
       themeColorsProvider: _themeColorsProvider,
       audioSourcesProvider: _audioSourcesProvider,
       extensionBuildProvider: _extensionBuildProvider,
-    ));
+    );
+    handlerWatch.stop();
+
+    // jsonEncode 必须只做一次。把最终编码阶段放进响应 header，避免为了把耗时写回
+    // JSON body 而二次编码同一份（popupJson 可能数百 KB）。
+    final Stopwatch jsonEncodeWatch = Stopwatch()..start();
+    final String encoded = jsonEncode(response);
+    jsonEncodeWatch.stop();
+    serverWatch.stop();
+
+    final Object? rawTraceId = body['lookupTraceId'];
+    final Match? traceIdMatch = rawTraceId is String
+        ? _lookupTraceIdPattern.firstMatch(rawTraceId)
+        : null;
+    final String? traceId = rawTraceId is String &&
+            traceIdMatch != null &&
+            traceIdMatch.start == 0 &&
+            traceIdMatch.end == rawTraceId.length
+        ? rawTraceId
+        : null;
+    return _jsonRaw(
+      encoded,
+      extraHeaders: <String, String>{
+        'Server-Timing': _dictionaryLookupServerTiming(
+          requestJsonMicros: requestJsonWatch.elapsedMicroseconds,
+          handlerMicros: handlerWatch.elapsedMicroseconds,
+          jsonEncodeMicros: jsonEncodeWatch.elapsedMicroseconds,
+          serverTotalMicros: serverWatch.elapsedMicroseconds,
+          popupTiming: popupTiming,
+        ),
+        if (popupTiming.measured) 'X-Fushi-Lookup-Cache': popupTiming.cache,
+        if (traceId != null) 'X-Fushi-Lookup-Id': traceId,
+        'Access-Control-Expose-Headers':
+            'Server-Timing, X-Fushi-Lookup-Cache, X-Fushi-Lookup-Id',
+      },
+    );
   }
 
   /// BUG-530：浏览器扩展制卡端点（与 FushiSyncServer 共享契约）。未注入挖词 service
@@ -531,12 +578,44 @@ class YomitanApiServer {
     return null;
   }
 
+  String _dictionaryLookupServerTiming({
+    required int requestJsonMicros,
+    required int handlerMicros,
+    required int jsonEncodeMicros,
+    required int serverTotalMicros,
+    required RemoteDictionaryPopupTiming popupTiming,
+  }) {
+    String metric(String name, int micros) =>
+        '$name;dur=${(micros / 1000).toStringAsFixed(3)}';
+
+    return <String>[
+      metric('request-json', requestJsonMicros),
+      metric('handler-map', handlerMicros),
+      if (popupTiming.measured) ...<String>[
+        metric('normalize', popupTiming.normalizeMicros),
+        metric('popup-cache', popupTiming.popupCacheMicros),
+        metric('full-cache', popupTiming.fullCacheMicros),
+        metric('ffi-cache', popupTiming.ffiCacheMicros),
+        metric('ffi-lookup', popupTiming.ffiLookupMicros),
+        metric('popup-json', popupTiming.popupJsonMicros),
+        metric('service-total', popupTiming.serviceTotalMicros),
+      ],
+      metric('json-encode', jsonEncodeMicros),
+      metric('server-total', serverTotalMicros),
+    ].join(', ');
+  }
+
   shelf.Response _json(Object body) => _jsonRaw(jsonEncode(body));
 
-  shelf.Response _jsonRaw(String body) => shelf.Response.ok(
+  shelf.Response _jsonRaw(
+    String body, {
+    Map<String, String> extraHeaders = const <String, String>{},
+  }) =>
+      shelf.Response.ok(
         body,
         headers: <String, String>{
-          'Content-Type': 'application/json; charset=utf-8'
+          ...extraHeaders,
+          'Content-Type': 'application/json; charset=utf-8',
         },
       );
 }

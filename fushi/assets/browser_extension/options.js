@@ -1,5 +1,13 @@
 // Fushi 浏览器扩展设置：自动连接优先，用户覆盖与字幕偏好存 chrome.storage.local。
 const $ = (id) => document.getElementById(id);
+// options.html 与 options.js 任何一次不同步（改版删了控件、或旧 HTML 配新 JS）都会让 $()
+// 返回 null；顶层直接 .addEventListener 一抛，它后面注册的所有卡片（版本与更新等）全部
+// 不执行，整页静默变砖。统一走 on()：控件不在就跳过这一条绑定，其余照常。
+const on = (id, type, handler) => {
+  const el = $(id);
+  if (el) el.addEventListener(type, handler);
+  return el;
+};
 const D = self.FUSHI_DEFAULTS || { host: '127.0.0.1', port: 19633, token: '' };
 const settingDefaults = Object.freeze({
   netflixSubtitlePanel: false,
@@ -141,7 +149,7 @@ async function loadSettings() {
   }
 }
 
-$('connectionForm').addEventListener('submit', async (event) => {
+on('connectionForm', 'submit', async (event) => {
   event.preventDefault();
   await chrome.storage.local.set({
     host: $('host').value.trim(),
@@ -152,7 +160,7 @@ $('connectionForm').addEventListener('submit', async (event) => {
   await refreshConnection(true);
 });
 
-$('reset').addEventListener('click', async () => {
+on('reset', 'click', async () => {
   await chrome.storage.local.set({ host: '', port: 0, token: '' });
   $('host').value = '';
   $('port').value = '';
@@ -161,14 +169,87 @@ $('reset').addEventListener('click', async () => {
   await refreshConnection(true);
 });
 
-$('showToken').addEventListener('click', () => {
+on('showToken', 'click', () => {
   const token = $('token');
   const visible = token.type === 'text';
   token.type = visible ? 'password' : 'text';
   $('showToken').textContent = visible ? '显示' : '隐藏';
 });
 
-$('check').addEventListener('click', () => refreshConnection(true));
+on('check', 'click', () => refreshConnection(true));
+
+let lookupPerfRawLogs = [];
+
+function formatLookupPerfValue(key, value) {
+  if (typeof value === 'number') {
+    if (key.endsWith('Ms') || key === 'renderMs' || key === 'sinceRequestMs') return value + 'ms';
+    if (key === 'responseChars') return Math.round(value / 1024) + 'K chars';
+    if (key === 'responseBytes') return Math.round(value / 1024) + 'KiB';
+  }
+  return String(value);
+}
+
+function formatLookupPerfLog(item) {
+  const ignored = new Set([
+    'at', 'id', 'surface', 'stage', 'term', 'termLength', 'maximumTerms',
+    'responseReadyEpochMs',
+  ]);
+  const time = item.at ? new Date(item.at).toLocaleTimeString([], { hour12: false }) : '--:--:--';
+  const parts = [];
+  for (const [key, value] of Object.entries(item || {})) {
+    if (ignored.has(key) || value == null || value === '') continue;
+    parts.push(key + '=' + formatLookupPerfValue(key, value));
+  }
+  return time + ' [' + String(item.id || '-') + '] ' +
+    String(item.surface || '-') + '/' + String(item.stage || '-') +
+    (Number.isFinite(item.termLength) ? ' len=' + item.termLength : '') +
+    (parts.length ? '\n  ' + parts.join(' · ') : '');
+}
+
+async function refreshLookupPerfLogs() {
+  const output = $('lookupPerfOutput');
+  const summary = $('lookupPerfSummary');
+  if (output) output.textContent = '正在读取…';
+  const response = await runtimeMessage({ type: 'lookupPerfGet' });
+  lookupPerfRawLogs = response && Array.isArray(response.logs) ? response.logs : [];
+  if (summary) summary.textContent = lookupPerfRawLogs.length
+    ? '已记录最近 ' + lookupPerfRawLogs.length + ' 个阶段'
+    : '复现慢查询后在这里查看';
+  if (!output) return;
+  output.textContent = lookupPerfRawLogs.length
+    ? lookupPerfRawLogs.map(formatLookupPerfLog).join('\n\n')
+    : '暂无查词日志';
+  output.scrollTop = output.scrollHeight;
+}
+
+on('lookupPerfPanel', 'toggle', () => {
+  if ($('lookupPerfPanel').open) refreshLookupPerfLogs();
+});
+
+on('refreshLookupPerf', 'click', refreshLookupPerfLogs);
+
+on('copyLookupPerf', 'click', async () => {
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(lookupPerfRawLogs, null, 2));
+    toast('已复制完整查词性能日志');
+  } catch (_) {
+    toast('复制失败，请在日志框中手动复制');
+  }
+});
+
+on('clearLookupPerf', 'click', async () => {
+  const response = await runtimeMessage({ type: 'lookupPerfClear' });
+  if (!response || response.ok !== true) {
+    toast('清空失败，请重试');
+    return;
+  }
+  lookupPerfRawLogs = [];
+  const clearedOutput = $('lookupPerfOutput');
+  if (clearedOutput) clearedOutput.textContent = '暂无查词日志';
+  const clearedSummary = $('lookupPerfSummary');
+  if (clearedSummary) clearedSummary.textContent = '复现慢查询后在这里查看';
+  toast('已清空查词性能日志');
+});
 
 // 「版本与更新」卡片：把自更新链路状态翻成人话（self-update.js describeUpdateState），
 // 让「扩展怎么更新、现在是不是最新」在设置页一眼可见，不再只有失效时的角标。

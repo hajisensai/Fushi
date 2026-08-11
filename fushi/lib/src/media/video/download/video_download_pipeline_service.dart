@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/metadata/credential_redaction.dart';
+import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/magnet_utils.dart';
 import 'package:fushi/src/media/torrent/torrent_add_coordinator.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
@@ -30,8 +31,12 @@ import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 enum VideoDownloadSubtitlePolicy { none, bestEffort, required }
+
+const String videoDownloadMissingBackendTaskError =
+    'torrent is not visible in the original backend';
 
 class VideoDownloadEnqueueRequest {
   const VideoDownloadEnqueueRequest({
@@ -75,6 +80,240 @@ class VideoDownloadBackendBinding {
   /// Kept for source compatibility with callers that configure one mapping.
   VideoDownloadPathMapping? get pathMapping => pathMappings.firstOrNull;
   final List<VideoDownloadPathMapping> pathMappings;
+}
+
+/// Details that remain useful even when the backend recorded by a durable job
+/// is no longer reachable. [backend] is only populated when that exact backend
+/// identity can be resolved; [snapshot] and [files] always have persisted
+/// fallbacks so opening the details dialog never depends on live infrastructure.
+class VideoDownloadJobDetails {
+  const VideoDownloadJobDetails({
+    required this.snapshot,
+    required this.files,
+    this.backend,
+    this.backendOnline = false,
+  });
+
+  final TorrentBackend? backend;
+  final bool backendOnline;
+  final TorrentSnapshot snapshot;
+  final List<TorrentFileEntry> files;
+}
+
+/// Builds the durable half of task details without requiring a running
+/// pipeline service. This keeps completed/history rows inspectable even when
+/// startup deliberately disables downloads because their engine is missing.
+VideoDownloadJobDetails buildPersistedVideoDownloadJobDetails(
+  VideoDownloadJobRow job,
+  List<VideoDownloadJobFileRow> rows,
+) {
+  final String torrentId = (job.backendTaskId ?? job.torrentHash ?? '').trim();
+  final double progress = (job.lifecycle == VideoDownloadJobLifecycle.completed
+          ? 1.0
+          : job.stageProgress)
+      .clamp(0.0, 1.0)
+      .toDouble();
+  final List<TorrentFileEntry> files = <TorrentFileEntry>[
+    for (int index = 0; index < rows.length; index++)
+      TorrentFileEntry(
+        name: rows[index].currentRelativePath.trim().isNotEmpty
+            ? rows[index].currentRelativePath
+            : rows[index].originalRelativePath,
+        size: rows[index].sizeBytes ?? 0,
+        progress: _persistedFileIsComplete(rows[index].status) ? 1.0 : progress,
+        index: rows[index].backendFileIndex ?? index,
+      ),
+  ];
+  final int totalBytes = rows.fold<int>(
+    0,
+    (int total, VideoDownloadJobFileRow row) => total + (row.sizeBytes ?? 0),
+  );
+  final String savePath = job.observedSavePath?.trim() ?? '';
+  String contentPath = '';
+  for (final VideoDownloadJobFileRow row in rows) {
+    final String finalPath = row.finalAbsolutePath?.trim() ?? '';
+    if (finalPath.isNotEmpty) {
+      contentPath = finalPath;
+      break;
+    }
+  }
+  if (contentPath.isEmpty && savePath.isNotEmpty && rows.isNotEmpty) {
+    contentPath = p.join(savePath, rows.first.currentRelativePath);
+  }
+  return VideoDownloadJobDetails(
+    snapshot: TorrentSnapshot(
+      hash: torrentId,
+      name: job.resourceTitle?.trim().isNotEmpty == true
+          ? job.resourceTitle!.trim()
+          : job.title,
+      progress: progress,
+      state: _persistedTorrentState(job),
+      savePath: savePath,
+      contentPath: contentPath,
+      amountLeft: totalBytes > 0 ? (totalBytes * (1 - progress)).round() : -1,
+      totalSizeBytes: totalBytes > 0 ? totalBytes : -1,
+      downloadedBytes: totalBytes > 0 ? (totalBytes * progress).round() : 0,
+    ),
+    files: files,
+  );
+}
+
+bool _persistedFileIsComplete(String status) =>
+    status == VideoDownloadJobFileStatus.downloaded ||
+    status == VideoDownloadJobFileStatus.organized ||
+    status == VideoDownloadJobFileStatus.imported;
+
+String _persistedTorrentState(VideoDownloadJobRow job) {
+  if (job.lifecycle == VideoDownloadJobLifecycle.completed) return 'completed';
+  if (job.lifecycle == VideoDownloadJobLifecycle.cancelled) return 'pausedDL';
+  if (job.lifecycle == VideoDownloadJobLifecycle.failed ||
+      job.lifecycle == VideoDownloadJobLifecycle.needsAttention) {
+    return 'error';
+  }
+  if (job.stage == VideoDownloadJobStage.download) return 'downloading';
+  return job.stage;
+}
+
+/// Splits a backend-reported relative path into trusted path segments.
+///
+/// `TorrentFileEntry.name` is persisted verbatim, so this string is fully
+/// backend controlled. It must never reach [p.join] unchecked: join discards
+/// its root when the second argument is absolute (`/etc/passwd`, `C:\...`),
+/// and `..` segments walk out of the managed root. Either one would let a
+/// hostile or broken backend aim file deletion at arbitrary device paths.
+/// Returns null when the relative path cannot be trusted.
+List<String>? safeManagedRelativeSegments(String relativePath) {
+  final String portable = relativePath.replaceAll(r'\', '/').trim();
+  if (portable.isEmpty ||
+      portable.startsWith('/') ||
+      RegExp(r'^[A-Za-z]:').hasMatch(portable)) {
+    return null;
+  }
+  final List<String> segments = portable.split('/');
+  if (segments.any((String segment) => segment.isEmpty || segment == '..')) {
+    return null;
+  }
+  return segments;
+}
+
+/// Resolves [relativePath] under [root] and proves the result stays inside it.
+/// Returns null when the relative path is untrusted or escapes the root.
+String? resolveManagedPathWithinRoot({
+  required String root,
+  required String relativePath,
+}) {
+  final List<String>? segments = safeManagedRelativeSegments(relativePath);
+  if (segments == null) return null;
+  final String normalizedRoot = p.normalize(p.absolute(root));
+  final String resolved = p.normalize(
+    p.absolute(p.joinAll(<String>[normalizedRoot, ...segments])),
+  );
+  if (!p.isWithin(normalizedRoot, resolved)) return null;
+  return resolved;
+}
+
+/// Thrown when a delete request removed the durable job but could not remove
+/// every managed file: on Windows an open player or the download engine still
+/// holds a handle. The job row and the library rows of the files that really
+/// went away are already committed when this is thrown, so the surface never
+/// gets stuck in a half-deleted state; the caller only reports the remainder.
+class VideoDownloadJobFilesNotDeleted implements Exception {
+  const VideoDownloadJobFilesNotDeleted(this.paths);
+
+  final List<String> paths;
+
+  @override
+  String toString() => '${paths.length} downloaded file(s) could not be '
+      'deleted: ${paths.map(p.basename).join(', ')}';
+}
+
+/// Deletes the durable half of a job independently of the active pipeline.
+/// Only exact file/link paths recorded by this job are removed; directories
+/// are deliberately never deleted recursively, and a backend-reported relative
+/// path is only used when it provably resolves inside the observed save path.
+///
+/// Files are removed before their library rows, and a library row only goes
+/// away once its file is really gone: a file kept alive by an open handle
+/// stays playable instead of leaving an untracked orphan on disk. The durable
+/// job row is always removed, so a partial failure is reportable
+/// ([VideoDownloadJobFilesNotDeleted]) instead of leaving behind a job that
+/// repeats half of the deletion on every retry.
+Future<void> deletePersistedVideoDownloadJob({
+  required FushiDatabase database,
+  required VideoDownloadJobRow job,
+  required bool deleteFiles,
+}) async {
+  final List<String> undeleted = <String>[];
+  if (deleteFiles) {
+    final List<VideoDownloadJobFileRow> files =
+        await database.getVideoDownloadJobFiles(job.jobId);
+    final List<VideoDownloadJobSubtitleRow> subtitles =
+        await database.getVideoDownloadJobSubtitles(job.jobId);
+    final Set<String> managedPaths = <String>{
+      for (final VideoDownloadJobFileRow file in files)
+        if (file.finalAbsolutePath?.trim().isNotEmpty == true)
+          p.normalize(file.finalAbsolutePath!.trim()),
+      for (final VideoDownloadJobSubtitleRow subtitle in subtitles)
+        if (subtitle.finalPath?.trim().isNotEmpty == true)
+          p.normalize(subtitle.finalPath!.trim()),
+      for (final VideoDownloadJobSubtitleRow subtitle in subtitles)
+        if (subtitle.stagedPath?.trim().isNotEmpty == true)
+          p.normalize(subtitle.stagedPath!.trim()),
+    };
+    final String observedSavePath = job.observedSavePath?.trim() ?? '';
+    if (observedSavePath.isNotEmpty) {
+      for (final VideoDownloadJobFileRow file in files) {
+        if (file.currentRelativePath.trim().isEmpty) continue;
+        final String? resolved = resolveManagedPathWithinRoot(
+          root: observedSavePath,
+          relativePath: file.currentRelativePath,
+        );
+        if (resolved == null) {
+          ErrorLogService.instance.log(
+            'VideoDownloadJobDelete',
+            'Refused to delete a backend-reported path that escapes the '
+                'observed save path: ${file.currentRelativePath}',
+          );
+          continue;
+        }
+        managedPaths.add(resolved);
+      }
+    }
+    final Set<String> removedPaths = <String>{};
+    for (final String path in managedPaths) {
+      try {
+        final FileSystemEntityType type =
+            await FileSystemEntity.type(path, followLinks: false);
+        if (type == FileSystemEntityType.directory) continue;
+        if (type == FileSystemEntityType.file) {
+          await File(path).delete();
+        } else if (type == FileSystemEntityType.link) {
+          await Link(path).delete();
+        }
+        removedPaths.add(path);
+      } on Object catch (error, stack) {
+        undeleted.add(path);
+        ErrorLogService.instance.log(
+          'VideoDownloadJobDelete',
+          'Failed to delete $path: $error',
+          stack,
+        );
+      }
+    }
+    final Set<String> removedNormalized =
+        removedPaths.map(normalizeVideoPath).toSet();
+    final VideoBookRepository repository = VideoBookRepository(database);
+    for (final VideoBookRow book in await repository.listAll()) {
+      if (removedNormalized.contains(normalizeVideoPath(book.videoPath))) {
+        await repository.deleteVideoBook(book.bookUid);
+      }
+    }
+    database.notifyVideoLibraryChanged();
+  }
+  await database.deleteVideoDownloadJob(job.jobId);
+  if (undeleted.isNotEmpty) {
+    throw VideoDownloadJobFilesNotDeleted(List<String>.unmodifiable(undeleted));
+  }
 }
 
 typedef VideoDownloadBackendResolver = Future<VideoDownloadBackendBinding?>
@@ -209,6 +448,7 @@ class VideoDownloadPipelineService {
     required this.resourceRegistry,
     required this.backendResolver,
     required this.scrapeCoordinator,
+    this.onBackendTaskAdded,
     this.subtitleRegistry,
     Iterable<String> preferredSubtitleLanguages = const <String>[],
     String? workerId,
@@ -225,6 +465,7 @@ class VideoDownloadPipelineService {
   final List<String> preferredSubtitleLanguages;
   final VideoDownloadBackendResolver backendResolver;
   final VideoSourceScrapeCoordinator scrapeCoordinator;
+  final Future<void> Function(VideoDownloadJobRow job)? onBackendTaskAdded;
   final String workerId;
   final Duration pollInterval;
   final Duration leaseDuration;
@@ -235,6 +476,7 @@ class VideoDownloadPipelineService {
   bool _running = false;
   bool _disposed = false;
   VideoDownloadLeaseGuard? _activeLease;
+  String? _activeJobId;
 
   Future<String> enqueue(VideoDownloadEnqueueRequest request) async {
     final MediaSourceRow? source =
@@ -358,13 +600,90 @@ class VideoDownloadPipelineService {
         'The selected download job no longer exists',
       );
     }
+    final bool rewindToEnqueue =
+        job.backendKind == QbConnectionConfig.backendEmbedded &&
+            job.stage == VideoDownloadJobStage.download &&
+            (job.lastError ?? '').contains(
+              videoDownloadMissingBackendTaskError,
+            );
     final bool changed = await database.retryVideoDownloadJobByUser(
       jobId: jobId,
       nowAt: DateTime.now().millisecondsSinceEpoch,
+      rewindToEnqueue: rewindToEnqueue,
     );
     if (!changed) {
       throw const VideoDownloadPipelineActionRequired(
         'Only failed or actionable download jobs can be retried',
+      );
+    }
+    wake();
+  }
+
+  /// Resumes a user-paused durable job and its exact backend task.
+  ///
+  /// Embedded tasks whose fast-resume entry disappeared are rewound to the
+  /// enqueue stage so the original selected resource is recreated. Other
+  /// backends must still expose the recorded task; silently switching backend
+  /// instances would resume or create the wrong torrent.
+  Future<void> resumeJob(String jobId) async {
+    final VideoDownloadJobRow? job = await database.getVideoDownloadJob(jobId);
+    if (job == null) {
+      throw const VideoDownloadPipelineActionRequired(
+        'The selected download job no longer exists',
+      );
+    }
+    if (job.lifecycle != VideoDownloadJobLifecycle.cancelled) {
+      throw const VideoDownloadPipelineActionRequired(
+        'Only paused download jobs can be resumed',
+      );
+    }
+
+    bool rewindToEnqueue = false;
+    final String torrentId =
+        (job.backendTaskId ?? job.torrentHash ?? '').trim();
+    if (torrentId.isNotEmpty) {
+      final VideoDownloadBackendBinding? binding = await backendResolver(job);
+      _validateBackendBinding(job, binding);
+      final TorrentBackend backend = binding!.backend;
+      final List<TorrentSnapshot> snapshots =
+          await backend.listTorrents(category: job.category);
+      final bool backendTaskExists = snapshots.any(
+        (TorrentSnapshot snapshot) =>
+            snapshot.hash.toLowerCase() == torrentId.toLowerCase(),
+      );
+      if (backendTaskExists) {
+        if (backend is TorrentPauseBackend && backend.pauseControlAvailable) {
+          final bool resumed = await backend.resumeTorrent(torrentId);
+          if (!resumed) {
+            throw const VideoDownloadPipelineActionRequired(
+              'The original download backend could not resume this task',
+            );
+          }
+        }
+      } else if (job.backendKind == QbConnectionConfig.backendEmbedded &&
+          job.stage == VideoDownloadJobStage.download) {
+        rewindToEnqueue = true;
+      } else if (job.stage == VideoDownloadJobStage.download) {
+        throw const VideoDownloadPipelineActionRequired(
+          'The torrent is no longer available in the original backend',
+        );
+      }
+    } else if (job.backendKind == QbConnectionConfig.backendEmbedded &&
+        job.stage == VideoDownloadJobStage.download) {
+      rewindToEnqueue = true;
+    }
+
+    final bool changed = await database.resumeCancelledVideoDownloadJobByUser(
+      jobId: jobId,
+      nowAt: DateTime.now().millisecondsSinceEpoch,
+      rewindToEnqueue: rewindToEnqueue,
+    );
+    if (!changed) {
+      final VideoDownloadJobRow? current =
+          await database.getVideoDownloadJob(jobId);
+      if (current?.lifecycle == VideoDownloadJobLifecycle.active) return;
+      throw const VideoDownloadPipelineActionRequired(
+        'The download job changed while it was being resumed',
       );
     }
     wake();
@@ -412,6 +731,168 @@ class VideoDownloadPipelineService {
       throw const VideoDownloadPipelineActionRequired(
         'The download job changed while it was being cancelled',
       );
+    }
+  }
+
+  /// Returns the most useful existing path for Explorer/Finder integration.
+  /// Final organized files win; an in-progress task falls back to the backend
+  /// content path and then its observed save directory.
+  Future<String?> resolveJobLocation(String jobId) async {
+    final VideoDownloadJobRow? job = await database.getVideoDownloadJob(jobId);
+    if (job == null) return null;
+    final files = await database.getVideoDownloadJobFiles(jobId);
+    final subtitles = await database.getVideoDownloadJobSubtitles(jobId);
+    final List<String?> candidates = <String?>[
+      for (final file in files) file.finalAbsolutePath,
+      for (final subtitle in subtitles) subtitle.finalPath,
+      for (final subtitle in subtitles) subtitle.stagedPath,
+    ];
+
+    try {
+      final TorrentSnapshot? snapshot =
+          (await loadTaskSnapshots(<VideoDownloadJobRow>[job]))[jobId];
+      candidates
+        ..add(snapshot?.contentPath)
+        ..add(snapshot?.savePath);
+    } on Object {
+      // The durable paths below still make the shortcut useful while the
+      // configured torrent backend is offline.
+    }
+
+    final String? savePath = job.observedSavePath?.trim();
+    if (savePath?.isNotEmpty == true) {
+      candidates.addAll(<String?>[
+        for (final file in files)
+          if (file.currentRelativePath.trim().isNotEmpty)
+            p.join(savePath!, file.currentRelativePath),
+        savePath,
+      ]);
+    }
+    for (final String? candidate in candidates) {
+      final String path = candidate?.trim() ?? '';
+      if (path.isEmpty) continue;
+      if (await FileSystemEntity.type(path, followLinks: false) !=
+          FileSystemEntityType.notFound) {
+        return p.normalize(path);
+      }
+    }
+    return null;
+  }
+
+  /// Loads details for a durable job. Live data is preferred when the exact
+  /// recorded backend is available; otherwise the database snapshot remains
+  /// viewable instead of blocking the entire dialog on backend startup.
+  Future<VideoDownloadJobDetails> loadJobDetails(String jobId) async {
+    final VideoDownloadJobRow? job = await database.getVideoDownloadJob(jobId);
+    if (job == null) {
+      throw const VideoDownloadPipelineActionRequired(
+        'The selected download job no longer exists',
+      );
+    }
+    final List<VideoDownloadJobFileRow> rows =
+        await database.getVideoDownloadJobFiles(jobId);
+    final VideoDownloadJobDetails persistedDetails =
+        buildPersistedVideoDownloadJobDetails(job, rows);
+    final String torrentId =
+        (job.backendTaskId ?? job.torrentHash ?? '').trim();
+
+    TorrentBackend? backend;
+    bool backendOnline = false;
+    TorrentSnapshot? liveSnapshot;
+    List<TorrentFileEntry>? liveFiles;
+    if (torrentId.isNotEmpty) {
+      try {
+        final VideoDownloadBackendBinding? binding = await backendResolver(job);
+        _validateBackendBinding(job, binding);
+        backend = binding!.backend;
+        backendOnline = true;
+        final List<TorrentSnapshot> snapshots =
+            await backend.listTorrents(category: job.category);
+        for (final TorrentSnapshot snapshot in snapshots) {
+          if (snapshot.hash.toLowerCase() == torrentId.toLowerCase()) {
+            liveSnapshot = snapshot;
+            break;
+          }
+        }
+        final List<TorrentFileEntry> backendFiles =
+            await backend.listFiles(torrentId);
+        if (backendFiles.isNotEmpty) liveFiles = backendFiles;
+      } on Object {
+        // The exact original backend may be unavailable after an app upgrade,
+        // profile change or incomplete package install. Do not substitute the
+        // current global backend: it could be a different qBittorrent server.
+        backend = null;
+        backendOnline = false;
+      }
+    }
+
+    return VideoDownloadJobDetails(
+      backend: liveSnapshot == null ? null : backend,
+      backendOnline: backendOnline,
+      snapshot: liveSnapshot ?? persistedDetails.snapshot,
+      files: liveFiles ?? persistedDetails.files,
+    );
+  }
+
+  /// Removes a durable task and, when requested, only the files that this task
+  /// explicitly recorded. Directories are never recursively removed here.
+  Future<void> deleteJob(
+    String jobId, {
+    required bool deleteFiles,
+  }) async {
+    VideoDownloadJobRow? job = await database.getVideoDownloadJob(jobId);
+    if (job == null) return;
+    if (job.lifecycle != VideoDownloadJobLifecycle.completed &&
+        job.lifecycle != VideoDownloadJobLifecycle.cancelled) {
+      // Deletion is terminal: stop the durable workflow first, then remove the
+      // backend task below. Reusing cancelJob here would require a successful
+      // backend pause and make stale/missing torrents impossible to delete.
+      final bool stopped = await database.cancelVideoDownloadJobByUser(
+        jobId: jobId,
+        nowAt: DateTime.now().millisecondsSinceEpoch,
+      );
+      final VideoDownloadJobRow? current =
+          await database.getVideoDownloadJob(jobId);
+      if (current == null) return;
+      if (!stopped &&
+          current.lifecycle != VideoDownloadJobLifecycle.completed &&
+          current.lifecycle != VideoDownloadJobLifecycle.cancelled) {
+        throw const VideoDownloadPipelineActionRequired(
+          'The download job changed while it was being deleted',
+        );
+      }
+      job = current;
+    }
+    while (_activeJobId == jobId) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+
+    final String torrentId =
+        (job.backendTaskId ?? job.torrentHash ?? '').trim();
+    if (torrentId.isNotEmpty) {
+      try {
+        final VideoDownloadBackendBinding? binding = await backendResolver(job);
+        _validateBackendBinding(job, binding);
+        final TorrentBackend backend = binding!.backend;
+        if (backend is TorrentRemovalBackend) {
+          await backend.removeTorrent(torrentId, deleteFiles: deleteFiles);
+        }
+      } on Object {
+        // A stale/offline backend must not make a durable UI row impossible to
+        // remove. Exact known files are still handled below when requested.
+      }
+    }
+
+    try {
+      await deletePersistedVideoDownloadJob(
+        database: database,
+        job: job,
+        deleteFiles: deleteFiles,
+      );
+    } finally {
+      // The durable row is gone either way, including when files survived, so
+      // the scheduler must be kicked before the partial-failure report leaves.
+      wake();
     }
   }
 
@@ -512,6 +993,7 @@ class VideoDownloadPipelineService {
         leaseDurationMs: leaseDuration.inMilliseconds,
       ),
     );
+    _activeJobId = job.jobId;
     _activeLease = lease;
     lease.start();
     try {
@@ -521,6 +1003,7 @@ class VideoDownloadPipelineService {
       // persisted stage is the only safe place from which to continue.
     } finally {
       if (identical(_activeLease, lease)) _activeLease = null;
+      if (_activeJobId == job.jobId) _activeJobId = null;
       await lease.stop();
     }
   }
@@ -651,11 +1134,23 @@ class VideoDownloadPipelineService {
         throw StateError('download backend rejected the torrent');
       }
     }
+    final Future<void> Function(VideoDownloadJobRow job)? checkpoint =
+        onBackendTaskAdded;
+    if (checkpoint != null) {
+      await checkpoint(job);
+      _ensureLeaseHeld();
+    }
     await _advance(
       job,
       VideoDownloadJobStage.download,
       backendTaskId: hash,
       torrentHash: hash,
+      // Re-entering the download stage is regained ground, not progress: a job
+      // that keeps losing its backend task would otherwise refund its retry
+      // budget on every lap of enqueue -> download -> rewind and never fail.
+      // The budget is still reset by the next real advance (download ->
+      // organize) and by an explicit user retry.
+      resetAttempts: false,
     );
   }
 
@@ -704,7 +1199,26 @@ class VideoDownloadPipelineService {
       }
     }
     if (snapshot == null) {
-      throw StateError('torrent is not visible in the original backend');
+      if (job.backendKind == QbConnectionConfig.backendEmbedded) {
+        // The embedded engine can legitimately lose a task whose fast-resume
+        // snapshot did not survive an unclean exit, so re-adding it is worth a
+        // try. It consumes retry budget: a task that can never be held (full
+        // disk, invalid torrent, a snapshot that never persists) must reach a
+        // terminal state instead of re-enqueueing itself forever while the UI
+        // shows an eternally "active" job.
+        final int now = DateTime.now().millisecondsSinceEpoch;
+        await _releaseLeaseWith(
+          () => database.rewindVideoDownloadJobToEnqueue(
+            jobId: job.jobId,
+            workerId: workerId,
+            error: videoDownloadMissingBackendTaskError,
+            nowAt: now,
+            nextAttemptAt: now + pollInterval.inMilliseconds,
+          ),
+        );
+        return;
+      }
+      throw StateError(videoDownloadMissingBackendTaskError);
     }
     if (snapshot.isFailure) {
       throw VideoDownloadPipelineActionRequired(
@@ -1800,6 +2314,7 @@ class VideoDownloadPipelineService {
     String? torrentHash,
     String? observedSavePath,
     String? targetRelativeRoot,
+    bool resetAttempts = true,
   }) =>
       _releaseLeaseWith(
         () => database.advanceVideoDownloadJobStage(
@@ -1812,6 +2327,7 @@ class VideoDownloadPipelineService {
           torrentHash: torrentHash,
           observedSavePath: observedSavePath,
           targetRelativeRoot: targetRelativeRoot,
+          resetAttempts: resetAttempts,
         ),
       );
 
@@ -1953,18 +2469,8 @@ class VideoDownloadPipelineService {
     required VideoDownloadPathMapping mapping,
     required String localSaveRoot,
   }) {
-    final String portable = relativePath.replaceAll('\\', '/').trim();
-    if (portable.isEmpty ||
-        portable.startsWith('/') ||
-        RegExp(r'^[A-Za-z]:').hasMatch(portable)) {
-      return null;
-    }
-    final List<String> segments = portable.split('/');
-    if (segments.any(
-      (String segment) => segment.isEmpty || segment == '..',
-    )) {
-      return null;
-    }
+    final List<String>? segments = safeManagedRelativeSegments(relativePath);
+    if (segments == null) return null;
     final String remote = <String>[
       remoteSavePath.replaceAll('\\', '/').replaceFirst(RegExp(r'/+$'), ''),
       ...segments,

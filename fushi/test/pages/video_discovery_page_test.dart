@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/external_provider.dart';
+import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart'
     as discovery;
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
@@ -36,6 +38,8 @@ discovery.VideoDiscoveryItem _item(
   discovery.VideoDiscoveryCategory category =
       discovery.VideoDiscoveryCategory.movie,
   VideoMetadataMediaKind mediaKind = VideoMetadataMediaKind.movie,
+  String? posterUrl,
+  List<String> genres = const <String>['Drama'],
 }) {
   return discovery.VideoDiscoveryItem(
     reference: discovery.VideoMediaReference(
@@ -46,7 +50,8 @@ discovery.VideoDiscoveryItem _item(
       title: title,
       year: 2026,
     ),
-    genres: const <String>['Drama'],
+    posterUrl: posterUrl,
+    genres: genres,
     score: 8.4,
   );
 }
@@ -252,6 +257,34 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('年份、国家、类型和排序筛选控件等高', (WidgetTester tester) async {
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (_) async => _result(<discovery.VideoDiscoveryItem>[
+        _item('aligned-filters', '等高筛选控件'),
+      ]),
+    );
+    await tester.pumpWidget(_harness(controller));
+    await tester.pumpAndSettle();
+
+    final double expectedHeight = tester
+        .getSize(
+          find.byKey(
+            const ValueKey<String>('video-discovery-filter-year'),
+          ),
+        )
+        .height;
+    for (final String key in <String>[
+      'video-discovery-filter-region',
+      'video-discovery-filter-genre',
+      'video-discovery-filter-sort',
+    ]) {
+      expect(
+        tester.getSize(find.byKey(ValueKey<String>(key))).height,
+        expectedHeight,
+      );
+    }
+  });
+
   testWidgets('年份与题材菜单不依赖首批趋势卡片', (WidgetTester tester) async {
     final _FakeDiscoveryController controller = _FakeDiscoveryController(
       (_) async => _result(<discovery.VideoDiscoveryItem>[
@@ -265,12 +298,11 @@ void main() {
         find.byKey(const ValueKey<String>('video-discovery-filter-year'));
     final PopupMenuButton<int> yearMenu =
         tester.widget<PopupMenuButton<int>>(yearFinder);
-    final List<PopupMenuEntry<int>> yearEntries =
-        yearMenu.itemBuilder(tester.element(yearFinder));
-    expect(
-      yearEntries.whereType<PopupMenuItem<int>>().map((entry) => entry.value),
-      contains(1999),
-    );
+    final Iterable<int?> yearValues = yearMenu
+        .itemBuilder(tester.element(yearFinder))
+        .whereType<PopupMenuItem<int>>()
+        .map((PopupMenuItem<int> entry) => entry.value);
+    expect(yearValues, containsAll(<int>[0, 1999, DateTime.now().year + 2]));
     yearMenu.onSelected!(1999);
     await tester.pumpAndSettle();
     expect(controller.requests.last.year, 1999);
@@ -287,6 +319,59 @@ void main() {
           .map((entry) => entry.value),
       contains('Mecha'),
     );
+  });
+
+  testWidgets('题材菜单不接纳来源返回的日期类脏值', (WidgetTester tester) async {
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (_) async => _result(<discovery.VideoDiscoveryItem>[
+        _item(
+          'dirty-genres',
+          '异常题材作品',
+          genres: const <String>[
+            '1993',
+            '1993年1月',
+            '2000-2009',
+            '201707',
+            'Drama',
+          ],
+        ),
+      ]),
+    );
+    await tester.pumpWidget(_harness(controller));
+    await tester.pumpAndSettle();
+
+    final Finder genreFinder =
+        find.byKey(const ValueKey<String>('video-discovery-filter-genre'));
+    final PopupMenuButton<String> genreMenu =
+        tester.widget<PopupMenuButton<String>>(genreFinder);
+    final Iterable<String?> values = genreMenu
+        .itemBuilder(tester.element(genreFinder))
+        .whereType<PopupMenuItem<String>>()
+        .map((PopupMenuItem<String> entry) => entry.value);
+
+    expect(values, contains('Drama'));
+    expect(values, isNot(contains('1993')));
+    expect(values, isNot(contains('1993年1月')));
+    expect(values, isNot(contains('2000-2009')));
+    expect(values, isNot(contains('201707')));
+  });
+
+  testWidgets('远端封面使用磁盘缓存图片 provider', (WidgetTester tester) async {
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (_) async => _result(<discovery.VideoDiscoveryItem>[
+        _item(
+          'cached-cover',
+          '缓存封面作品',
+          posterUrl: 'https://example.com/poster.jpg',
+        ),
+      ]),
+    );
+    await tester.pumpWidget(_harness(controller));
+    await tester.pump();
+
+    final PortraitCoverImage cover = tester
+        .widget<PortraitCoverImage>(find.byType(PortraitCoverImage).first);
+    expect(cover.image, isA<CachedNetworkImageProvider>());
   });
 
   testWidgets('部分来源失败保留结果并展示来源警告', (WidgetTester tester) async {

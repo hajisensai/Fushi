@@ -2,14 +2,14 @@
 // 之后加载）。每个动作在 options 里有独立开关：
 //   ←/→        上一句 / 下一句字幕（仅当前视频有字幕轨时接管，否则放行给站点）
 //   ↑           回当前句句首重播
-//   Shift+S     开关字幕列表面板
+//   Shift+S     打开浏览器原生字幕侧边栏
 //   Shift+H     隐藏/显示字幕（站点原生字幕 + 扩展覆盖层，与 app 内视频页同键）
 //   Ctrl+Enter  制卡（等同点查词弹窗里的「＋」；判定不在本文件，见 vendor/popup.js）
 //   Ctrl+Shift+←/→/↓  字幕时轴偏移 −100ms / ＋100ms / 重置
 //   Ctrl+Shift+Z      复制当前字幕句到剪贴板（配合 Fushi 剪贴板监看即查词）
 //   Ctrl+Shift+[ / ]  播放速度 −0.25x / ＋0.25x
 // 判定是纯函数 decide()（node 可测）；执行端是 subtitle-panel.js 暴露的
-// window.fushiSubtitleShortcut(action)（面板持有轨/偏移/模式状态），播放速度直接操作 <video>。
+// window.fushiSubtitleShortcut(action)（控制器持有轨/偏移/模式状态），播放速度直接操作 <video>。
 // 输入框/可编辑区一律放行；旧 videoShortcutsEnabled 只作为升级时各动作的缺省值。
 (function (root, factory) {
   var api = factory();

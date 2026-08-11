@@ -18,6 +18,73 @@ abstract class FushiRemoteLookupService {
   });
 }
 
+/// 浏览器扩展只渲染弹框时的可选快路径。
+///
+/// [FushiRemoteLookupService.searchDictionary] 必须构造可写历史、可同步的完整
+/// [DictionarySearchResult]；扩展的 `popupOnly` 请求只需要已经面向 popup.js 的 JSON
+/// 与命中长度。实现此能力的 service 可以跳过完整 DictionaryEntry/extra 的物化。
+/// handler 只在 `popupOnly && !record` 时探测本接口，旧实现与完整响应契约不受影响。
+abstract class FushiRemotePopupLookupService {
+  Future<RemoteDictionaryPopupLookup?> searchDictionaryPopup({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+  });
+}
+
+/// [FushiRemotePopupLookupService] 的可选诊断能力。
+///
+/// 保持原 popup 快路径接口不变，只有需要服务端阶段计时的调用方才探测本接口并传入
+/// 一次请求独享的 [RemoteDictionaryPopupTiming]。这样旧实现、完整查词和同步 host 都
+/// 不需要知道性能诊断，也不会被迫承担 Stopwatch 开销。
+abstract class FushiRemoteTimedPopupLookupService
+    implements FushiRemotePopupLookupService {
+  Future<RemoteDictionaryPopupLookup?> searchDictionaryPopupWithTiming({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required RemoteDictionaryPopupTiming timing,
+  });
+}
+
+/// popup 快路径内部阶段计时（微秒）。
+///
+/// 这是每请求可变 collector，不进入查询缓存，也不随 popup JSON 序列化；HTTP 层把它
+/// 转成 `Server-Timing`。即使查询返回 null，collector 仍能保留慢 miss 的 FFI 时间。
+class RemoteDictionaryPopupTiming {
+  bool measured = false;
+  String cache = 'miss';
+  int normalizeMicros = 0;
+  int popupCacheMicros = 0;
+  int fullCacheMicros = 0;
+  int ffiCacheMicros = 0;
+  int ffiLookupMicros = 0;
+  int popupJsonMicros = 0;
+  int serviceTotalMicros = 0;
+
+  void reset() {
+    measured = true;
+    cache = 'miss';
+    normalizeMicros = 0;
+    popupCacheMicros = 0;
+    fullCacheMicros = 0;
+    ffiCacheMicros = 0;
+    ffiLookupMicros = 0;
+    popupJsonMicros = 0;
+    serviceTotalMicros = 0;
+  }
+}
+
+class RemoteDictionaryPopupLookup {
+  const RemoteDictionaryPopupLookup({
+    required this.popupJson,
+    required this.bestLength,
+  });
+
+  final String popupJson;
+  final int bestLength;
+}
+
 /// 浏览器扩展挖词的窄接口（与查词分离，避免 server 直接依赖 AnkiRepository）。
 abstract class FushiRemoteMiningService {
   /// 返回 [RemoteMineResult]（结果名 + 失败/部分成功诊断）。

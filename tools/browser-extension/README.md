@@ -10,10 +10,12 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server�
 |---|---|---|
 | `manifest.json` | — | MV3 清单；content script 注入顺序有语义（先桥后消费者） |
 | `background.js` | service worker | 唯一网络出口：查词/制卡/字幕等所有 HTTP 请求 + 连接诊断 + 自更新执行 + 心跳 + Netflix 录制编排 |
-| `content.js` | 隔离 | Shift 悬停查词、查词暂停、弹窗渲染/定位、高亮、挖词队列、字幕轨 provider（textTracks 收割 / DOM 采样 / 整集拦截接收端）、Netflix/YouTube 批量制卡驱动 |
-| `subtitle-panel.js` | 隔离 | 字幕列表侧栏 + 视频覆盖层 + 外挂字幕加载 + 全轨时轴偏移 + 悬浮字幕自动查词/防剧透模糊 + 快捷键执行端 |
+| `content.js` | 隔离 | Shift 悬停查词、查词暂停、弹窗渲染/定位、高亮、挖词队列、字幕轨 provider（textTracks 收割 / DOM 采样兜底 / 整集拦截接收端）、Netflix/YouTube 批量制卡驱动 |
+| `subtitle-panel.js` | 隔离 | 字幕轨状态控制器 + 视频覆盖层 + 外挂字幕安装 + 全轨时轴偏移 + 快捷键执行端；不渲染网页列表 |
+| `side-panel.html/js/css` | 扩展页 | 浏览器原生 Side Panel 字幕列表与词典抽屉；在侧边栏内完成取词/嵌套查词，经 tabs 消息读取轨道并执行跳转/制卡/偏移，不把列表或查词结果注入网页 |
 | `video-shortcuts.js` | 隔离 | 视频页快捷键判定（纯函数）+ 绑定；每个动作独立开关，动作交 subtitle-panel 执行 |
 | `netflix-bridge.js` | MAIN | Netflix 专用：JSON.parse hook 抓整集字幕 + 官方 player.seek（避开 DRM M7375） |
+| `youtube-bridge.js` | MAIN | YouTube 专用：按 asbplayer 顺序读取播放器运行态 captionTracks（含 POT）→ Android Innertube → player response，并一次下载完整 srv3/json3 轨；只读、不改宿主 DOM |
 | `stream-bridge.js` | MAIN | 通用流媒体字幕桥（asb 移植）：TVer / Bilibili.tv / Hulu JP / Prime Video 整集字幕拦截 |
 | `THIRD_PARTY_LICENSES.md` | — | 随扩展分发的第三方版权与许可文本（当前含 asbplayer MIT） |
 | `subtitle-adapters.js` | 隔离 | 纯函数字幕解析器：WebVTT/SRT、TTML、Bilibili JSON + Netflix 取词/标题 |
@@ -75,12 +77,14 @@ app 升级
 YouTube 整集字幕 `/api/youtube/captions` · 外挂字幕解析 `/api/subtitle/parse`。
 服务端实现：`fushi/lib/src/sync/yomitan_api_server.dart`。
 
-## 字幕轨数据流（面板零站点特例）
+## 字幕轨数据流（原生 Side Panel 零站点特例）
 
 所有来源写同一个 store：`window.fushiEpisodeCues['${videoKey}|${lang}'] = [{startMs,endMs,text}]`，
-新数据到达调 `window.fushiSubtitlePanelOnCues(key)`。来源：
-① Netflix 整集拦截（netflix-bridge）② 通用流媒体桥（stream-bridge，见下表）③ YouTube 服务端
-整集字幕 ④ 原生 `video.textTracks` 收割 ⑤ DOM 字幕采样 live 轨 ⑥ 用户外挂文件（`外挂:` 前缀轨）。
+新数据到达调 `window.fushiSubtitlePanelOnCues(key)`；Side Panel 通过扩展消息按需读取，不访问或
+修改宿主网页 DOM。来源：
+① Netflix 整集拦截（netflix-bridge）② 通用流媒体桥（stream-bridge，见下表）③ YouTube
+播放器运行态完整 captionTracks（youtube-bridge；本地服务端仅作超时兜底）④ 原生
+`video.textTracks` 收割 ⑤ DOM 字幕采样 live 轨兜底 ⑥ 用户外挂文件（`外挂:` 前缀轨）。
 时轴偏移是**读取侧**的（store 永远存原始 cue），任意轨可偏移，会话内记忆。
 
 ## 站点适配状态
@@ -88,7 +92,7 @@ YouTube 整集字幕 `/api/youtube/captions` · 外挂字幕解析 `/api/subtitl
 | 站点 | 机制 | 验证状态 |
 |---|---|---|
 | Netflix | JSON.parse hook + 官方 seek（netflix-bridge） | ✅ 已真站点验证（既有） |
-| YouTube | 服务端 androidVr 解析（/api/youtube/captions）+ live 采样兜底 | ✅ 已真站点验证（既有） |
+| YouTube | MAIN-world 运行态 captionTracks（POT）→ Android Innertube → player response；服务端 `/api/youtube/captions` 与 live 采样末级兜底 | 待本次真站点复验 |
 | TVer | JSON.parse hook（stream-bridge，asb tver-page 移植） | ⚠️ implemented_unverified |
 | Bilibili.tv（国际站） | JSON.parse hook，srt/bbjson | ⚠️ implemented_unverified |
 | Hulu（日本） | XHR 响应旁路（ref_id + tracks） | ⚠️ implemented_unverified |
@@ -110,7 +114,7 @@ hook 安装；② `manifest.json` 的 stream-bridge matches 加域名；③ 新�
 |---|---|
 | ← / → | 上一句 / 下一句字幕（仅当前视频有字幕轨时接管） |
 | ↑ | 回当前句句首重播 |
-| Shift+S | 开关字幕列表面板（当前视频有 Fushi 字幕轨时） |
+| Shift+S | 打开浏览器原生字幕侧边栏（当前视频有 Fushi 字幕轨时） |
 | Shift+H | 隐藏 / 显示字幕（站点原生字幕 + 扩展覆盖层；**不**需要 Fushi 字幕轨） |
 | Ctrl+Shift+← / → / ↓ | 字幕偏移 −100ms / ＋100ms / 重置 |
 | Ctrl+Shift+Z | 复制当前字幕句（配合 Fushi 剪贴板监看即查词） |

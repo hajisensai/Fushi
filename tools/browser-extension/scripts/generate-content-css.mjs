@@ -12,7 +12,7 @@
 //  re-font the host page (TODO-1090). This generator re-roots every such
 //  document-level rule at #entries-container while keeping the class rules
 //  verbatim, then appends the extension-only overlay (content-css-overlay.css:
-//  floating-popup sizing, Netflix subtitle panel, mining queue chip).
+//  floating-popup sizing, subtitle overlay, mining queue chip).
 //
 //  Historically content.css was hand-ported from popup.css and silently drifted
 //  (TODO-1267 / BUG: extension popup looked completely different + ugly + buttons

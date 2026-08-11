@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
@@ -759,5 +760,5 @@ class _RelatedWorkCard extends StatelessWidget {
 
 ImageProvider? _networkImage(String? url) {
   final String value = url?.trim() ?? '';
-  return value.isEmpty ? null : NetworkImage(value);
+  return value.isEmpty ? null : CachedNetworkImageProvider(value);
 }

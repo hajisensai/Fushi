@@ -26,6 +26,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   Map<String, dynamic> body, {
   required FushiRemoteLookupService lookup,
   FushiRemoteHistoryService? history,
+  RemoteDictionaryPopupTiming? popupTiming,
   Map<String, String> Function()? themeColorsProvider,
   List<String> Function()? audioSourcesProvider,
   String? Function()? extensionBuildProvider,
@@ -56,12 +57,43 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   // popupJson 已渲染的全部词条，真实复杂词可让单次 HTTP 响应超过 1 MB。仅在调用方
   // 显式请求时收窄 result；默认仍返回旧契约，避免影响同步端与第三方客户端。
   final bool popupOnly = body['popupOnly'] as bool? ?? false;
+  final bool record = body['record'] as bool? ?? false;
+  // BUG-1525：浏览器扩展只消费 popupJson + bestLength。若实现方提供窄快路径，
+  // 不再先构造完整 DictionaryEntry（其中每条 glossary 都会额外 jsonEncode），再把
+  // 同一份 FFI 结果遍历一次生成 popupJson。record=true 必须保留完整结果供历史使用。
+  if (popupOnly && !record && lookup is FushiRemotePopupLookupService) {
+    final FushiRemotePopupLookupService popupLookup =
+        lookup as FushiRemotePopupLookupService;
+    final RemoteDictionaryPopupLookup? popup =
+        popupTiming != null && popupLookup is FushiRemoteTimedPopupLookupService
+            ? await popupLookup.searchDictionaryPopupWithTiming(
+                term: term,
+                wildcards: wildcards,
+                maximumTerms: maximumTerms,
+                timing: popupTiming,
+              )
+            : await popupLookup.searchDictionaryPopup(
+                term: term,
+                wildcards: wildcards,
+                maximumTerms: maximumTerms,
+              );
+    return <String, dynamic>{
+      'type': 'dictionaryResult',
+      'result': popup == null
+          ? null
+          : <String, dynamic>{'bestLength': popup.bestLength},
+      'popupJson': popup?.popupJson,
+      if (theme != null) 'theme': theme,
+      if (audioSources != null) 'audioSources': audioSources,
+      if (extensionBuild != null) 'extensionBuild': extensionBuild,
+    };
+  }
   final DictionarySearchResult? result = await lookup.searchDictionary(
     term: term,
     wildcards: wildcards,
     maximumTerms: maximumTerms,
   );
-  if (result != null && history != null && (body['record'] as bool? ?? false)) {
+  if (result != null && history != null && record) {
     history.recordHistory(result);
   }
   return <String, dynamic>{

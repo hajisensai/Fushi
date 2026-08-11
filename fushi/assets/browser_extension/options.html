@@ -23,7 +23,7 @@
             <label class="setting-row" for="nfSubList">
               <span class="setting-copy">
                 <strong>字幕列表</strong>
-                <small>在视频页显示可跳转、可查词的整集字幕侧栏。</small>
+                <small>允许从扩展弹窗或 Shift+S 打开浏览器原生字幕侧边栏；不会注入网页列表或修改播放器布局。</small>
               </span>
               <span class="switch"><input id="nfSubList" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
@@ -117,7 +117,7 @@
             </label>
             <label class="setting-row" for="videoShortcutTogglePanel">
               <span class="setting-copy">
-                <strong>打开或关闭字幕列表</strong>
+                <strong>打开字幕侧边栏</strong>
                 <small>Shift+S</small>
               </span>
               <span class="switch"><input id="videoShortcutTogglePanel" type="checkbox"><span aria-hidden="true"></span></span>
@@ -240,6 +240,22 @@
           </form>
         </details>
 
+        <details class="advanced lookup-perf" id="lookupPerfPanel">
+          <summary>
+            <span>查词性能日志</span>
+            <small id="lookupPerfSummary">复现慢查询后在这里查看</small>
+          </summary>
+          <div class="lookup-perf-body">
+            <p>仅保存在本机扩展存储，不记录原词。每次查词会分别记录后端等待、响应读取、JSON 解析和弹框首显耗时。</p>
+            <div class="lookup-perf-actions">
+              <button class="text-button" id="refreshLookupPerf" type="button">刷新</button>
+              <button class="text-button" id="copyLookupPerf" type="button">复制完整日志</button>
+              <button class="text-button danger-button" id="clearLookupPerf" type="button">清空</button>
+            </div>
+            <pre class="lookup-perf-output" id="lookupPerfOutput" tabindex="0">暂无查词日志</pre>
+          </div>
+        </details>
+
         <div class="tip" id="updateCard">
           <strong id="updTitle">版本与更新</strong>
           <p id="updDetail">正在读取扩展版本信息…</p>
@@ -248,7 +264,7 @@
 
         <div class="tip">
           <strong>加载自己的字幕</strong>
-          <p>开启字幕列表后，点侧栏中的“＋”，或直接把字幕文件拖到视频上。</p>
+          <p>打开浏览器原生字幕侧边栏后点“＋”，或直接把字幕文件拖到视频上。</p>
         </div>
       </aside>
     </div>

@@ -13,6 +13,25 @@ function __fushiSel(){ var r = window.__fushiRoot; try { return (r && r.getSelec
    its dispatch so every helper shares ONE composedPath() result. */
 function __fushiComposedPath(e){ if (e.__fushiPathCache !== undefined) return e.__fushiPathCache; var p = null; try { p = (e.composedPath && e.composedPath()) || null; } catch(_){ p = null; } try { e.__fushiPathCache = p; } catch(_){} return p; }
 function __fushiEventTarget(e){ var p = __fushiComposedPath(e); if (p && p.length) return p[0]; return e.target; }
+// 浏览器扩展把 popup.js 与宿主页面/原生 Side Panel 运行在同一 document。共享的
+// document 级鼠标监听必须只消费词典 Shadow DOM 内的事件；否则 click 会清掉字幕区的
+// 原生双击选区，mousemove 也会在宿主文本上启动词典取词。app 内没有 __fushiRoot，
+// 整份 document 就是词典，保持原行为。
+function __fushiEventInsidePopup(e){
+    var root = window.__fushiRoot;
+    if (!root) {
+        var extensionPage = typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id);
+        return !extensionPage;
+    }
+    var host = root.host;
+    if (!host) return false;
+    try {
+        var path = __fushiComposedPath(e);
+        return !!(path && path.indexOf(host) !== -1);
+    } catch (_) {
+        return false;
+    }
+}
 /* BUG-688: the extension floating popup scrolls on the SHADOW HOST
    (#hibiki-popup-host has overflow-y:auto + max-height; #entries-container is
    neutralized to overflow:visible inside the shadow), while the in-app popup
@@ -3283,7 +3302,7 @@ function entryGlossaryWrapperOrNull(entry) {
     return createGlossarySectionWrapper(entry);
 }
 
-function buildEntryElement(entry, idx) {
+function buildEntryElement(entry, idx, maximumDictionaryBlocks = Infinity) {
     // TODO-833: decide first whether this entry has any visible glossary. If the
     // hidden-dictionary filter (BUG-419) removed every dictionary, this term entry
     // would otherwise render as a header-only shell with a redundant frequency
@@ -3323,11 +3342,49 @@ function buildEntryElement(entry, idx) {
 
     const { details, body, grouped, dictNames } = glossaryWrapper;
     entryDiv.appendChild(details);
-    for (let dictIdx = 0; dictIdx < dictNames.length; dictIdx++) {
+    const dictionaryBlockLimit = Number.isFinite(maximumDictionaryBlocks)
+        ? Math.max(0, Math.min(dictNames.length, Math.floor(maximumDictionaryBlocks)))
+        : dictNames.length;
+    for (let dictIdx = 0; dictIdx < dictionaryBlockLimit; dictIdx++) {
         body.appendChild(createGlossarySection(dictNames[dictIdx], grouped[dictNames[dictIdx]], dictIdx, idx, dictNames.length));
     }
 
+    // renderPopup can ask for only the first visible dictionary block, then append
+    // the remainder one block per macrotask. Keep the already-filtered/grouped plan
+    // on the detached entry node so deferred work never reruns the visibility filter
+    // or loses the original dictionary order. Full-build callers retain no state.
+    if (dictionaryBlockLimit < dictNames.length) {
+        entryDiv.__fushiDeferredGlossaryState = {
+            body,
+            grouped,
+            dictNames,
+            entryIdx: idx,
+            nextDictionaryIndex: dictionaryBlockLimit,
+        };
+    }
+
     return entryDiv;
+}
+
+function appendNextDeferredGlossaryBlock(entryDiv) {
+    const state = entryDiv && entryDiv.__fushiDeferredGlossaryState;
+    if (!state || state.nextDictionaryIndex >= state.dictNames.length) return false;
+    const dictIdx = state.nextDictionaryIndex;
+    const dictName = state.dictNames[dictIdx];
+    const section = createGlossarySection(
+        dictName,
+        state.grouped[dictName],
+        dictIdx,
+        state.entryIdx,
+        state.dictNames.length,
+    );
+    state.body.appendChild(section);
+    postProcessRuby(section);
+    state.nextDictionaryIndex++;
+    if (state.nextDictionaryIndex >= state.dictNames.length) {
+        delete entryDiv.__fushiDeferredGlossaryState;
+    }
+    return true;
 }
 
 function postProcessRuby(container) {
@@ -3562,6 +3619,25 @@ function buildKanjiCards() {
 }
 
 window._renderGeneration = 0;
+
+// 浏览器扩展性能诊断钩子。app 内 WebView 没有注入该函数时是零成本 no-op；Side Panel/
+// content script 注入后，把首卡同步 DOM 与尾批完成耗时关联到同一个 lookup id。
+function _emitPopupRenderPerf(phase, startedAt, entryCount, extra) {
+    const callback = window.__fushiOnPopupPerf;
+    if (typeof callback !== 'function') return;
+    const payload = {
+        phase,
+        renderMs: Number((performance.now() - startedAt).toFixed(1)),
+        entryCount: Number(entryCount) || 0,
+        ...(extra || {}),
+    };
+    // callback 会发 chrome.runtime IPC；推到下一个宏任务，绝不把日志调用塞进
+    // 首词条 DOM 构建/宿主 reveal 的同步关键路径。callback 在此处捕获，换词后
+    // 仍归属于发起本轮 render 的 lookup context。
+    setTimeout(() => {
+        try { callback(payload); } catch (_) { /* 诊断绝不阻断词典渲染 */ }
+    }, 0);
+}
 
 // TODO-058 fail-safe: always notify Dart that rendering finished, even when
 // buildEntryElement / postProcessRuby throws. Without this a render exception
@@ -3947,6 +4023,7 @@ window.renderPopup = function() {
         prependSentenceBanner(container);
         window._renderedGlossaryCounts = [];
         _firePopupRendered();
+        _emitPopupRenderPerf('complete', t0, 0, { noResults: true });
         return;
     }
 
@@ -3974,9 +4051,11 @@ window.renderPopup = function() {
         window._renderedGlossaryCounts = [];
         console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=0 kanji=1');
         _firePopupRendered();
+        _emitPopupRenderPerf('complete', t0, 0, { kanjiOnly: true });
         return;
     }
 
+    let firstEntry = null;
     try {
         container.innerHTML = '';
         prependSentenceBanner(container);
@@ -3984,7 +4063,9 @@ window.renderPopup = function() {
         if (kanjiSection) {
             container.appendChild(kanjiSection);
         }
-        const firstEntry = buildEntryElement(entries[0], 0);
+        // Only the first visible dictionary block belongs to the synchronous
+        // reveal path. One entry can still contain many expensive blocks.
+        firstEntry = buildEntryElement(entries[0], 0, 1);
         if (firstEntry) {
             container.appendChild(firstEntry);
             postProcessRuby(firstEntry);
@@ -3995,62 +4076,141 @@ window.renderPopup = function() {
         // 渲染抛错也发信号让 Dart 翻可见（哪怕内容不全），杜绝永久挂起。
         console.error('[popup] renderPopup first-entry render failed', e);
         window.__fushiReportJsError('renderPopup.firstEntry', (e && e.message) || String(e), e && e.stack);
+        try { firstEntry?.remove(); } catch (_) { /* partially appended first card */ }
         window._renderedGlossaryCounts = [];
         window._entryDomIndex = [];
         _firePopupRendered();
+        _emitPopupRenderPerf('error', t0, entries.length, { where: 'first-entry' });
         return;
     }
 
-    if (entries.length === 1) {
-        window._renderedGlossaryCounts = [entries[0].glossaries.length];
+    const firstEntryHasDeferredBlocks =
+        !!firstEntry?.__fushiDeferredGlossaryState;
+    const hasDeferredWork = firstEntryHasDeferredBlocks || entries.length > 1;
+    if (!hasDeferredWork) {
+        window._renderedGlossaryCounts = entries.map(
+            e => (e && Array.isArray(e.glossaries)) ? e.glossaries.length : 0);
         window._entryDomIndex = entryDomIndex;
         console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=1');
         _firePopupRendered();
+        _emitPopupRenderPerf('complete', t0, 1, { firstVisible: true });
         return;
     }
 
-    // 首词条已完整就绪（build + 局部 ruby + CSS），先发一次 popupRendered 让
-    // 宿主立即撤盖板/翻可见，可见时刻不再被尾批词条拖住（此前多词条结果要等
-    // 全部词条 build 完才发信号）。counts/domIndex 先写入仅含首词条的临时一致
-    // 视图；窗口期落进来的 updatePopupIncremental 由 _renderInProgress 强制
-    // 回退全量 renderPopup（换代自动取消下面的尾批，杜绝重复卡片）。
+    // 首词条的 header + 第一个可见词典块已经就绪，先让宿主撤盖板；剩余词典块
+    // （包括 entries.length === 1 的情况）和后续词条都留给下面的宏任务队列。
+    // counts/domIndex 在途值只作占位，最终值由 finishRemainingEntries 写齐。
     window._renderedGlossaryCounts = [entries[0].glossaries.length];
     window._entryDomIndex = [entryDomIndex[0]];
     console.log('[popup-perf] renderPopup first-entry: ' + (performance.now() - t0).toFixed(1) + 'ms entries=' + entries.length);
     _firePopupRendered(true);
+    _emitPopupRenderPerf('first-entry-dom', t0, entries.length);
 
-    setTimeout(() => {
-        if (gen !== window._renderGeneration) return;
+    // 每个宏任务最多创建一个词典块。新词条的 header 与它的首块同任务建立；
+    // 同词条余块逐任务追加。generation 变化立即取消旧队列。
+    let nextEntryIndex = 1;
+    let activeEntryElement = firstEntryHasDeferredBlocks ? firstEntry : null;
+    let activeEntryIndex = activeEntryElement ? 0 : -1;
+    let activeEntrySeparator = null;
+    const finishRemainingEntries = (
+        completedCount = entries.length,
+        terminalPhase = 'complete',
+        terminalExtra = {},
+    ) => {
+        const completed = entries.slice(0, completedCount);
+        window._renderedGlossaryCounts = completed.map(
+            e => (e && Array.isArray(e.glossaries)) ? e.glossaries.length : 0);
+        window._entryDomIndex = entryDomIndex.slice(0, completedCount);
+        console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) +
+            'ms entries=' + completedCount + '/' + entries.length);
+        _firePopupRendered();
+        _emitPopupRenderPerf(terminalPhase, t0, completedCount, {
+            expectedEntryCount: entries.length,
+            ...terminalExtra,
+        });
+    };
+    const activeEntryHasDeferredBlocks = () =>
+        !!activeEntryElement?.__fushiDeferredGlossaryState;
+    const releaseCompletedActiveEntry = () => {
+        if (!activeEntryElement || activeEntryHasDeferredBlocks()) return;
+        activeEntryElement = null;
+        activeEntryIndex = -1;
+        activeEntrySeparator = null;
+    };
+    const rollbackActiveEntry = () => {
+        if (!activeEntryElement || activeEntryIndex < 0) return;
+        try { activeEntryElement.remove(); } catch (_) {}
+        try { activeEntrySeparator?.remove(); } catch (_) {}
+        if (entryDomIndex[activeEntryIndex] >= 0) {
+            entryDomIndex[activeEntryIndex] = -1;
+            renderedDomCount = Math.max(0, renderedDomCount - 1);
+        }
+        activeEntryElement = null;
+        activeEntryIndex = -1;
+        activeEntrySeparator = null;
+    };
+    const renderNextDictionaryBlock = () => {
+        if (gen !== window._renderGeneration) {
+            const completedCount = activeEntryElement
+                ? Math.max(0, activeEntryIndex)
+                : nextEntryIndex;
+            _emitPopupRenderPerf('cancelled', t0, completedCount, {
+                expectedEntryCount: entries.length,
+                reason: 'superseded',
+            });
+            return;
+        }
+        let taskEntryIndex = activeEntryIndex >= 0
+            ? activeEntryIndex
+            : nextEntryIndex;
         try {
-            const fragment = document.createDocumentFragment();
-            for (let idx = 1; idx < entries.length; idx++) {
+            if (activeEntryElement) {
+                appendNextDeferredGlossaryBlock(activeEntryElement);
+            } else if (nextEntryIndex < entries.length) {
+                const idx = nextEntryIndex++;
+                taskEntryIndex = idx;
                 const entry = entries[idx];
-                if (!entry) continue;
-                const element = buildEntryElement(entry, idx);
-                if (!element) continue;
-                // TODO-833: only insert a separator hr when there is already a
-                // rendered card before this one (kanji card or an earlier entry),
-                // never a leading hr nor an hr between two skipped entries.
-                if (renderedDomCount > 0 || kanjiSection) {
-                    fragment.appendChild(document.createElement('hr'));
+                const element = entry ? buildEntryElement(entry, idx, 1) : null;
+                if (element) {
+                    const fragment = document.createDocumentFragment();
+                    let separator = null;
+                    // Only add a separator when a card precedes this one; hidden
+                    // entries never create either a card or a separator.
+                    if (renderedDomCount > 0 || kanjiSection) {
+                        separator = document.createElement('hr');
+                        fragment.appendChild(separator);
+                    }
+                    fragment.appendChild(element);
+                    entryDomIndex[idx] = renderedDomCount++;
+                    container.appendChild(fragment);
+                    activeEntryElement = element;
+                    activeEntryIndex = idx;
+                    activeEntrySeparator = separator;
+                    postProcessRuby(element);
                 }
-                fragment.appendChild(element);
-                entryDomIndex[idx] = renderedDomCount++;
             }
-            container.appendChild(fragment);
-            postProcessRuby(container);
-            window._renderedGlossaryCounts = entries.map(e => e.glossaries.length);
-            window._entryDomIndex = entryDomIndex;
-            console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=' + entries.length);
         } catch (e) {
             console.error('[popup] renderPopup rest-entries render failed', e);
             window.__fushiReportJsError('renderPopup.restEntries', (e && e.message) || String(e), e && e.stack);
+            // Partial cards cannot satisfy the count/map contract. Remove the
+            // current card and publish only the trustworthy completed prefix.
+            rollbackActiveEntry();
+            finishRemainingEntries(
+                Math.max(0, taskEntryIndex),
+                'error',
+                { where: 'dictionary-block' },
+            );
+            return;
         }
-        // 第二次发信号（同 token）：无论尾批成败都收尾（首条早已渲染好）。
-        // Dart 宿主对重复 popupRendered 全幂等；Windows global-lookup host 靠
-        // 这一发把窗口量到全部词条的真实高度。
-        _firePopupRendered();
-    }, 0);
+        releaseCompletedActiveEntry();
+        if (activeEntryElement || nextEntryIndex < entries.length) {
+            setTimeout(renderNextDictionaryBlock, 0);
+            return;
+        }
+        // Second signal with the same token measures the final all-block height.
+        finishRemainingEntries();
+    };
+    setTimeout(renderNextDictionaryBlock, 0);
 };
 
 window.updatePopupIncremental = function() {
@@ -4446,6 +4606,7 @@ if (typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id)) {
 
 let _popupMouseDownPos = null;
 document.addEventListener('mousedown', (e) => {
+    if (!__fushiEventInsidePopup(e)) return;
     _popupMouseDownPos = { x: e.clientX, y: e.clientY };
 });
 
@@ -4496,6 +4657,7 @@ function handleGlossaryAnchorClick(event, anchor) {
 }
 
 document.addEventListener('click', (e) => {
+    if (!__fushiEventInsidePopup(e)) return;
     if (_popupMouseDownPos) {
         const dx = e.clientX - _popupMouseDownPos.x;
         const dy = e.clientY - _popupMouseDownPos.y;
@@ -4576,6 +4738,7 @@ document.addEventListener('click', (e) => {
 
 var _popupShiftLastX = -1, _popupShiftLastY = -1;
 document.addEventListener('mousemove', function(e) {
+    if (!__fushiEventInsidePopup(e)) return;
     if (!e.shiftKey) { _popupShiftLastX = -1; _popupShiftLastY = -1; return; }
     var dx = e.clientX - _popupShiftLastX, dy = e.clientY - _popupShiftLastY;
     if (dx * dx + dy * dy < 64) return;

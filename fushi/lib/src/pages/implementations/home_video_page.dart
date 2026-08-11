@@ -1,5 +1,7 @@
 import 'dart:async' show StreamSubscription, unawaited;
 import 'dart:io';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart' show HomeTab;
@@ -653,7 +655,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             File(localPath).existsSync()) {
           return resizedFileImage(File(localPath));
         }
-        if (row.remoteUrl.isNotEmpty) return NetworkImage(row.remoteUrl);
+        if (row.remoteUrl.isNotEmpty) {
+          return CachedNetworkImageProvider(row.remoteUrl);
+        }
       }
     }
     return null;

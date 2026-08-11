@@ -29,8 +29,8 @@ class VideoDownloadBackendUnavailable implements Exception {
 }
 
 const String videoDownloadEmbeddedBackendUnavailableMessage =
-    'The built-in download engine is unavailable. Reinstall the complete '
-    'Windows package or configure qBittorrent in download settings.';
+    'The built-in download engine runtime is missing. Restore the bundled '
+    'Windows runtime or reinstall the complete Windows package.';
 
 VideoDownloadBackendIdentity buildVideoDownloadBackendIdentity({
   required QbConnectionConfig config,

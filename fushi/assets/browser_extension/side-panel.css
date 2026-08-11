@@ -1,0 +1,175 @@
+:root {
+  color-scheme: light dark;
+  --bg: #fff9f4;
+  --surface: #f5e9dc;
+  --surface-strong: #eed9c3;
+  --text: #332b25;
+  --muted: #776b61;
+  --line: rgba(92, 70, 48, 0.2);
+  --accent: #94620a;
+  --accent-soft: #ffddb0;
+  --subtitle-scale: 1;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1e1b18;
+    --surface: #2b2621;
+    --surface-strong: #3a3129;
+    --text: #f5ece4;
+    --muted: #baaca0;
+    --line: rgba(255, 235, 215, 0.14);
+    --accent: #ffbd62;
+    --accent-soft: #573b17;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 system-ui, "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+}
+
+button, select { color: inherit; font: inherit; }
+
+button {
+  min-width: 34px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+button:hover { background: var(--surface-strong); }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+
+.panel-header {
+  flex: 0 0 auto;
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  padding: 14px 12px 10px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+h1 { margin: 0; font-size: 18px; line-height: 1.3; }
+#video-status { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+.toolbar { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+
+#track {
+  width: 100%;
+  height: 36px;
+  margin-top: 10px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.offset-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(42px, 1fr)) minmax(58px, auto) repeat(3, minmax(42px, 1fr));
+  gap: 5px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+#offset-value { text-align: center; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.subtitle-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 8px 8px 22px;
+  scrollbar-gutter: stable;
+}
+
+.subtitle-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  padding: 10px 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.subtitle-row + .subtitle-row { margin-top: 2px; }
+.subtitle-row:hover { background: var(--surface); }
+.subtitle-row.is-current { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: var(--accent-soft); }
+
+.timestamp {
+  min-width: 0;
+  min-height: 28px;
+  padding: 3px 5px;
+  color: var(--accent);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.subtitle-text {
+  min-width: 0;
+  padding: 2px 0;
+  font-size: calc(15px * var(--subtitle-scale));
+  line-height: 1.55;
+  white-space: pre-wrap;
+  cursor: text;
+  user-select: text;
+}
+
+.lookup-pane {
+  position: fixed;
+  z-index: 4;
+  top: 0;
+  left: 0;
+  width: 400px;
+  max-width: calc(100vw - 16px);
+  max-height: min(360px, 80vh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  visibility: hidden;
+}
+
+.lookup-pane[hidden] { display: none; }
+
+.empty { padding: 48px 20px; color: var(--muted); text-align: center; }
+
+.toast {
+  position: fixed;
+  z-index: 5;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  background: #332b25;
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity .16s ease, transform .16s ease;
+}
+
+.toast.is-visible { opacity: 1; transform: translateY(0); }
+
+@media (max-width: 340px) {
+  .title-row { display: block; }
+  .toolbar { justify-content: flex-start; margin-top: 9px; }
+  .offset-row { grid-template-columns: repeat(3, 1fr); }
+}
