@@ -382,8 +382,19 @@ class InterconnectSyncBackend extends SyncBackend
     if (_candidates.isEmpty || !_hasAnyCredential) {
       _ops?.close();
       _ops = null;
+      _sessionResolved = false;
       return false;
     }
+    // BUG-1559：已经探明可达的会话不得被重建成「候选[0]」。
+    //
+    // [_loadConfig] 已经拿配置签名判完「会话该不该重来」（BUG-1183）：配置真变了
+    // 就会把 [_sessionResolved] 置 false。可旧实现不管那个判决，无条件跑
+    // [_buildProvisionalOps]，把 [_ops] / [_activeFingerprint] / [_activeToken] 打回第一个
+    // 格式合法的候选——而 [_sessionResolved] 仍是 true，[_ensureResolved] 直接 return。
+    // 净效果：切一次页面，会话就从「探明可达的那台」静默地滑回候选[0]（常常
+    // 是一条当前不可达的旧地址），且因为已标「已解析」而**永不重探**，往后每一次
+    // 请求都打到错地址。故会话已解析且句柄还在时，原封不动地保留它。
+    if (_sessionResolved && _ops != null) return true;
     _buildProvisionalOps();
     return _ops != null;
   }

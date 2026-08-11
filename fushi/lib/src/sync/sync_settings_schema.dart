@@ -37,6 +37,8 @@ import 'package:fushi/src/sync/pairing/fushi_pair_v2_client.dart';
 import 'package:fushi/src/sync/pairing/fushi_ping_client.dart';
 import 'package:fushi/src/sync/pairing/discovered_pairing_probe.dart';
 import 'package:fushi/src/sync/sftp_sync_backend.dart';
+import 'package:fushi/src/sync/tls/fushi_pinning_http.dart'
+    show fingerprintEquals;
 import 'package:fushi/src/sync/tls/fushi_tofu_probe.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
