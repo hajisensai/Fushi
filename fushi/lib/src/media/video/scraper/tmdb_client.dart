@@ -18,12 +18,13 @@ import 'package:fushi/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
 import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 import 'package:http/http.dart' as http;
+import 'package:fushi/src/utils/net/app_http.dart';
 
 /// TMDB 搜索客户端。构造注入 `apiKey` 与可选 [http.Client]（默认自建）。
 class TmdbClient {
   TmdbClient({required String apiKey, http.Client? client})
       : _apiKey = apiKey,
-        _client = client ?? http.Client();
+        _client = client ?? createAppHttpIoClient();
 
   final String _apiKey;
   final http.Client _client;

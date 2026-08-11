@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../anki_models.dart';
+import '../anki_remote_media_http.dart';
 import '../base_anki_repository.dart';
 import '../ankiconnect/ankiconnect_repository.dart';
 import '../lapis_note_type.dart';
@@ -669,7 +670,8 @@ class AnkiRepository extends BaseAnkiRepository {
               ? AudioFetchOutcome.stored(localRef)
               : const AudioFetchOutcome.none();
         case AnkiAudioRefKind.remoteUrl:
-          final client = HttpClient();
+          // BUG-1498：任意公网 URL（Forvo / 词典音频源），必须经应用代理出口。
+          final client = createAnkiRemoteMediaHttpClient();
           try {
             final request = await client.getUrl(Uri.parse(url));
             final response = await request.close();

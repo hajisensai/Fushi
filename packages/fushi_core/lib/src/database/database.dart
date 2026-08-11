@@ -514,7 +514,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 83;
+  int get schemaVersion => 84;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -535,6 +535,26 @@ class FushiDatabase extends _$FushiDatabase
               dbVersion: from,
               appSchemaVersion: to,
             );
+          }
+          // v84（BUG-1502）：给 preferences 一列 updated_at，让「是内容的偏好行」
+          // （书改名的 `override_title://` 覆盖行）能跨端 last-write-wins。
+          //
+          // ⚠️ **这一步必须排在整条阶梯最前**，而不是按版本号排在末尾：后面的迁移
+          // 步会用 drift 的**类型化** API 读写 preferences（如
+          // `migrateLegacyBookmarkPreferences` 走 `getAllPrefs()`），而类型化行
+          // 映射按代码里的列集取值——列还没加时它对缺失列做 null 断言，直接把整条
+          // onUpgrade 炸掉。加列是纯 additive 且带 `_columnExists` 幂等守卫，提前
+          // 执行对任何版本的老库都等价。
+          //
+          // 存量行**刻意留 0**（=「时刻未知」），不填迁移时刻：填迁移时刻会让跨端
+          // 「谁赢」由两台设备各自的升级时间决定——后升级的一侧会无条件覆盖先升级
+          // 一侧的所有存量改名，而用户什么操作都没做。取 0 则存量行彼此平局，LWW
+          // 平局规则「保留本机」正好等于升级前的 insert-if-absent 行为（零回归）；
+          // 任一侧真正改过一次名后立刻胜出。取舍全文见 [Preferences.updatedAt]。
+          if (from < 84 &&
+              await _tableExists('preferences') &&
+              !await _columnExists('preferences', 'updated_at')) {
+            await m.addColumn(preferences, preferences.updatedAt);
           }
           if (from < 2) {
             if (!await _columnExists('dictionary_metadata', 'type')) {
@@ -1851,6 +1871,122 @@ class FushiDatabase extends _$FushiDatabase
                   " AND source_type = 'video'",
                 );
               }
+            }
+          }
+          // 分支血统补跑（PR #798）：本地视频分支曾把 v69/v70/v71 三个号
+          // 段用在自己的视频元数据/下载表上，与上游同号的三条改名迁移撞车。
+          // 来自该分支的库停在 69-71 时，`from < 69/70/71` 全部为假，上游那
+          // 三条改名于是被整体跳过（表名、阅读器源命名空间、句子音频键都停在
+          // 旧字面量上）。这里按来源版本精确补跑，不新增 schema 版本——它修的
+          // 是「本该跑却没跑」的既有阶梯，不是新结构。所有操作都有表存在性守卫
+          // 或天然幂等（前缀/值已是新形态时匹配零行），正常上游 69-71 的库重复
+          // 经过也不会改到任何一行。
+          if (from >= 69 && from <= 71) {
+            if (await _tableExists('hibiki_paired_peers') &&
+                !await _tableExists('fushi_paired_peers')) {
+              await customStatement(
+                'ALTER TABLE hibiki_paired_peers '
+                'RENAME TO fushi_paired_peers',
+              );
+            }
+          }
+          if (from >= 70 && from <= 71) {
+            const String oldNs = 'src:reader_ttu:';
+            const String newNs = 'src:reader_fushi:';
+            const String oldLegacyOverride =
+                'src:reader_fushi:override_title://reader_ttu/reader_ttu/';
+            const String newLegacyOverride =
+                'src:reader_fushi:override_title://reader_fushi/reader_fushi/';
+            const String oldShort = 'src:reader_fushi:ttu_';
+            for (final String table in <String>[
+              'preferences',
+              'profile_settings',
+            ]) {
+              if (!await _tableExists(table)) continue;
+              await _rewriteTextPrefix(
+                table: table,
+                column: 'key',
+                from: oldNs,
+                to: newNs,
+              );
+              await _rewriteTextPrefix(
+                table: table,
+                column: 'key',
+                from: oldLegacyOverride,
+                to: newLegacyOverride,
+              );
+              await _rewriteTextPrefix(
+                table: table,
+                column: 'key',
+                from: oldShort,
+                to: newNs,
+              );
+            }
+            if (await _tableExists('profile_settings')) {
+              await _rewriteTextPrefix(
+                table: 'profile_settings',
+                column: 'key',
+                from: 'ttu_',
+                to: '',
+                extraWhere: "category = 'reader'",
+              );
+            }
+            for (final String table in <String>[
+              'preferences',
+              'profile_settings',
+            ]) {
+              if (!await _tableExists(table)) continue;
+              await customStatement(
+                "UPDATE $table SET value = 's:reader_fushi' "
+                "WHERE key LIKE 'current\\_source/%' ESCAPE '\\' "
+                "AND value = 's:reader_ttu'",
+              );
+              await customStatement(
+                "UPDATE $table SET value = 'reader_fushi' "
+                "WHERE key LIKE 'current\\_source/%' ESCAPE '\\' "
+                "AND value = 'reader_ttu'",
+              );
+            }
+            if (await _tableExists('media_items')) {
+              await customStatement(
+                'UPDATE OR REPLACE media_items '
+                "SET media_source_identifier = 'reader_fushi' "
+                "WHERE media_source_identifier = 'reader_ttu'",
+              );
+              await _rewriteTextPrefix(
+                table: 'media_items',
+                column: 'unique_key',
+                from: 'reader_ttu/',
+                to: 'reader_fushi/',
+              );
+            }
+          }
+          if (from == 71) {
+            if (await _tableExists('audio_cues')) {
+              await _rewriteTextPrefix(
+                table: 'audio_cues',
+                column: 'text_fragment_id',
+                from: 'sasayaki://',
+                to: 'fushi-cue://',
+              );
+            }
+            for (final String table in <String>[
+              'preferences',
+              'profile_settings',
+            ]) {
+              if (!await _tableExists(table)) continue;
+              await customStatement(
+                'UPDATE $table '
+                "SET value = REPLACE(value, 'sasayakiColor', "
+                "'sentenceAudioHighlightColor') "
+                "WHERE key = 'custom_themes' "
+                "AND value LIKE '%sasayakiColor%'",
+              );
+              await customStatement(
+                'UPDATE OR REPLACE $table '
+                "SET key = 'custom_theme_sentence_audio_color' "
+                "WHERE key = 'custom_theme_sasayaki_color'",
+              );
             }
           }
           if (from < 77) {

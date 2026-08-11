@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/video_shader_manager.dart';
+import 'package:fushi/src/utils/net/app_http.dart';
 
 /// Anime4K（bloc97/Anime4K）GLSL 着色器一键下载：定义官方推荐预设、生成多镜像
 /// 下载 URL、把一组 `.glsl` 拉到 [mpvShaderDirectory] 供视频页勾选启用。
@@ -327,8 +328,12 @@ Future<String?> downloadShaderFromUrl(
   final String trimmed = url.trim();
   if (trimmed.isEmpty) return null;
   final Directory dir = targetDir ?? await mpvShaderDirectory();
+  // BUG-1498：原先是裸 `Dio(...)`，`findProxy` 为 null，连 HTTPS_PROXY 都不读——注释里
+  // 「app 运行时下载不走本机代理，只能靠镜像兜底」说的就是这个。改经统一装配点后镜像
+  // 表仍在（代理不通时照样逐镜像回退），但用户挂着的代理终于能用上了。
   final Dio client = dio ??
-      Dio(BaseOptions(
+      createAppDio(
+          options: BaseOptions(
         // 连接超时调短（8s）：直链优先，直连不通时尽快回退镜像，不让用户干等。
         connectTimeout: const Duration(seconds: 8),
         receiveTimeout: const Duration(seconds: 60),
@@ -473,8 +478,10 @@ Future<Anime4kDownloadResult> downloadAnime4kFiles(
       onFileProgress,
 }) async {
   final Directory dir = targetDir ?? await mpvShaderDirectory();
+  // BUG-1498：同上，Anime4K 批量下载改经统一装配点。
   final Dio client = dio ??
-      Dio(BaseOptions(
+      createAppDio(
+          options: BaseOptions(
         connectTimeout: const Duration(seconds: 15),
         receiveTimeout: const Duration(minutes: 5),
         followRedirects: true,

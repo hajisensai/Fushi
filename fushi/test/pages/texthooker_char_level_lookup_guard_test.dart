@@ -30,14 +30,28 @@ void main() {
         reason: '单字命中区必须是独立 widget，整词一个 InkWell 就退回原状了');
   });
 
+  // 查询串的构造已从本页提到 sentence_extraction 的共享 lookupQueryFromIndex()
+  // （游戏内查词走同一份，两处必须同语义）。守卫跟着逻辑搬家，两头都钉：调用点必须
+  // 从命中字起算，被调方必须真的从该下标切并截断。只钉一头都能被绕过——只钉调用点，
+  // 共享函数可以偷偷改成传词；只钉共享函数，本页可以绕开它自己切。
   test('查询串从命中的那个字起算，交给引擎最长匹配', () {
     final String body = methodBody(
       page,
       'void _onCharTap(\n    TexthookerLineEntry line,\n    int charIndex,\n    Rect rect,\n  )',
     );
-    expect(body.contains('text.substring(charIndex, end)'), isTrue,
+    expect(body.contains('lookupQueryFromIndex(line.text, charIndex)'), isTrue,
         reason: '查询串必须从命中字起算；传分词器切的那个词就等于没修');
-    expect(body.contains('_kLookupQueryMaxChars'), isTrue,
+
+    final String shared =
+        maskComments(File('lib/src/lookup/sentence_extraction.dart')
+            .readAsStringSync());
+    final String helper = methodBody(
+      shared,
+      'String lookupQueryFromIndex(\n  String text,\n  int charIndex, {\n  int maxChars = kLookupQueryMaxChars,\n})',
+    );
+    expect(helper.contains('text.substring(charIndex, end)'), isTrue,
+        reason: '共享 helper 必须真的从命中字下标起切');
+    expect(helper.contains('maxChars'), isTrue,
         reason: '必须截断，别把整行喂给引擎');
   });
 

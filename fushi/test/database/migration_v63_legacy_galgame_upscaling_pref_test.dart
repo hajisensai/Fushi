@@ -126,8 +126,8 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 83);
-    expect(db.schemaVersion, 83);
+    expect(version.read<int>('user_version'), 84);
+    expect(db.schemaVersion, 84);
 
     final List<QueryRow> preferences = await db
         .customSelect(
@@ -212,6 +212,23 @@ void main() {
                 '（v63 只能删行，不得 ALTER/DROP/rebuild）');
         continue;
       }
+      if (entry.key == 'preferences') {
+        // v84（BUG-1502）在同一条阶梯上给 preferences **合法地** ADD COLUMN
+        // updated_at（跨端改名 LWW 的比较键）。与上面 galgames 的判据同形：摘掉
+        // 那一列的片段后必须与 v62 形状逐字节相同，既容下这一次加列，又仍然钉死
+        // 「v63 不得 ALTER/DROP/rebuild、不得偷改任何其它列」。
+        final String after = schemaAfter[entry.key] ?? '';
+        expect(after, contains('updated_at'),
+            reason: 'v84 必须给 preferences 加出该列');
+        final String stripped = after.replaceAll(
+          RegExp(r',\s*"?updated_at"?[^,)]*'),
+          '',
+        );
+        expect(stripped, entry.value,
+            reason: '除 v84 那一列外，preferences 的形状必须逐字节不变'
+                '（v63 只能删行，不得 ALTER/DROP/rebuild）');
+        continue;
+      }
       expect(schemaAfter[entry.key], entry.value,
           reason: 'v63 只能删行，不得 ALTER/DROP/rebuild 既有表 ${entry.key}');
     }
@@ -270,7 +287,7 @@ void main() {
     expect(await db.getPref('theme'), 's:dark');
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 83);
+    expect(version.read<int>('user_version'), 84);
   });
 
   test(
@@ -301,7 +318,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 83);
+      expect(probe.select('PRAGMA user_version').first.values.first, 84);
       expect(
         probe.select(
           'SELECT 1 FROM profile_settings '

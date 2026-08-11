@@ -280,7 +280,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
       _seriesMatches = const <AniListMedia>[];
       _selectedSeriesId = null;
     });
-    // BUG-1504：先让「按钮禁用 + 结果区 loading」完整绘制一帧，再做偏好写入、
+    // BUG-1509：先让「按钮禁用 + 结果区 loading」完整绘制一帧，再做偏好写入、
     // 代理 client 初始化和联网。旧顺序先 await onApiKeyChanged，慢磁盘/数据库下点击后
     // 首帧没有任何反馈，看起来像整块 UI 卡住；这里与 backup import 的重 IO 遮罩采用
     // 同一条 paint-before-work 约束。
@@ -389,7 +389,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
   Future<http.Client> _createHttpClient() {
     final Future<http.Client> Function()? factory = widget.httpClientFactory;
     return factory == null
-        ? Future<http.Client>.value(http.Client())
+        ? Future<http.Client>.value(createAppHttpIoClient())
         : factory();
   }
 
@@ -737,7 +737,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
     // Flexible 能正确分到剩余空间，候选列表内部普通（非 shrinkWrap）ListView 正常
     // 滚动，保留 BUG-279 不变量。若用 frame 默认 scrollable:true 包
     // SingleChildScrollView 给无界高度，Flexible 会坍缩成 0 高 → 回归 BUG-279，故此
-    // 处必须 scrollable:false。BUG-1504 后续：固定 1040dp 在 2K/4K 上仍显得过窄，
+    // 处必须 scrollable:false。BUG-1509 后续：固定 1040dp 在 2K/4K 上仍显得过窄，
     // 改由 resolveJimakuDialogMaxWidth 按视口取 90%/94%/手机安全边距；左右栏比例也
     // 在 _buildWideBody 内随正文宽变化，不把某个分辨率的手调值硬套到所有屏幕。
     return FushiDialogFrame(

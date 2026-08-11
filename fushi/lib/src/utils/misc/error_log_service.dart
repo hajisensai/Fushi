@@ -81,6 +81,14 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
   @visibleForTesting
   Future<void> get pendingFileWrite => _pendingFileWrite;
 
+  /// BUG-1505：**生产**用的落盘屏障——等在途的 fire-and-forget append 全部写完。
+  ///
+  /// [log] 刻意不 await（热路径），代价是「记完日志立刻结束进程」的调用方会把在途
+  /// 写入一起带走。迁移导入失败路径就是这样：它记了原因、2 秒后 System.exit，于是
+  /// 用户机器上导入失败后诊断页显示「错误日志 (0)」——唯一有价值的那条恰恰丢了。
+  /// 任何「记完就要退出/重启」的路径都必须先 await 本方法。
+  Future<void> flush() => _pendingFileWrite;
+
   /// 导入面包屑文件：在每本词典调 native FFI 前**同步**写入，返回后清空。
   /// native 硬崩溃（访问违例 / 栈溢出）会绕过 Dart try/catch 直接带崩进程，
   /// 异步日志缓冲来不及落盘；这个文件因为同步写入而能存活崩溃，下次启动

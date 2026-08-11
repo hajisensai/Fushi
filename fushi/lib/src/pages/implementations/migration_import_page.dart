@@ -12,7 +12,8 @@ import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show backupImportRestart;
 import 'package:fushi/utils.dart';
-import 'package:fushi_core/fushi_core.dart' show fushiDatabaseFileName;
+import 'package:fushi_core/fushi_core.dart'
+    show fushiDatabaseFileName, PrefCodec;
 import 'package:path/path.dart' as p;
 
 /// 「从 Hibiki 导入」页（改名迁移计划 P2-2/P2-3，Fushi 侧）。
@@ -221,22 +222,39 @@ class _MigrationImportPageState extends State<MigrationImportPage>
             '[Fushi][migration] count verification failed: ${countProblems.join("; ")}');
         ErrorLogService.instance.log('MigrationImportPage.verifyCounts',
             StateError(countProblems.join('; ')), StackTrace.current);
+        // BUG-1505：等落盘写完再交还控制权。ErrorLogService.log 是 fire-and-forget
+        // 异步 append，这条日志此前总是随强制重启一起消失（用户机器实测：导入失败后
+        // 「错误日志 (0)」，一条都没有）。
+        await ErrorLogService.instance.flush();
         // 行数不足：不删中转文件、不置完成标志（绝不进卸载流程），重启后可重试。
         appModel.failBackupImport(
             t.migration_import_counts_failed(detail: countProblems.join('; ')));
-        await Future<void>.delayed(const Duration(seconds: 2));
-        await backupImportRestart(appModel);
+        // BUG-1505：**失败不再自动重启**。遮罩的失败态本来就设计成「由用户读完原因
+        // 手点『立即重启』」（见 main.dart 的 BackupImportOverlayView 注释），这里
+        // 却又补了 2 秒后强制 System.exit，把设计覆盖掉——用户看到的是「报个错，页面
+        // 一下就没了」，连原因都来不及读。成功路径保留自动重启（没有要读的东西）。
         return;
       }
-      // 校验通过：删已导入批文件；问题批保留（重传通道）。
+      // BUG-1510：完成标志必须**直写落地库**，且必须写在删文件**之前**。
+      //
+      // 两个错各修一个：① `appModel.prefsRepo.setPref` 走的是本方法开头就
+      // `closeDatabase()` 掉的 drift 连接，必抛「connection was closed」——用户机器上
+      // 合并明明成功、行数也过了，就炸在这两句上；② 旧顺序先删中转文件再写标志，于是
+      // 那次异常掉进 catch 后弹的是「校验未通过，已保留待重传」，可文件早没了，用户
+      // 既拿不到「成功」也拿不到能重传的东西。现在标志落盘成功之后才删。
+      MigrationImporter.writeCompletionPrefs(
+        dbPath: dbPath,
+        encodedValues: <String, String>{
+          kMigrationImportDonePrefKey: PrefCodec.encode(true),
+          // 清掉随迁移带来的老包只读标志（包名门已挡，这里是 belt+suspenders）。
+          kMigrationReadonlyPrefKey: PrefCodec.encode(false),
+        },
+      );
+      // 标志已落盘：现在删已导入批文件；问题批保留（重传通道）。
       for (final MigrationImportBatch batch in scan.ready) {
         _importer.deleteBatchFiles(transferDir, batch.batch);
       }
       _importer.cleanupTransferDirIfEmpty(transferDir);
-      // 完成标志（重启后 dashboard 出卸载引导）；同时清掉随迁移带来的老包
-      // 只读标志（包名门已挡，这里是 belt+suspenders）。
-      await appModel.prefsRepo.setPref(kMigrationImportDonePrefKey, true);
-      await appModel.prefsRepo.setPref(kMigrationReadonlyPrefKey, false);
       appModel.completeBackupImport(t.migration_import_success);
       await Future<void>.delayed(const Duration(seconds: 1));
       await backupImportRestart(appModel);
@@ -246,10 +264,13 @@ class _MigrationImportPageState extends State<MigrationImportPage>
       // 不到，debug 也抓不到（压根没有日志语句）。实测三次复现都拿不到原因。
       ErrorLogService.instance.log('MigrationImportPage.runImport', e, st);
       debugPrint('[Fushi][migration] import failed: $e\n$st');
+      // BUG-1505：await 落盘。上面那条「必须落日志」的修复其实没生效——log() 只是
+      // 把 append 挂进 fire-and-forget 串行链，2 秒后的 System.exit 会连同在途写入
+      // 一起带走，所以用户机器上导入失败后「错误日志 (0)」。
+      await ErrorLogService.instance.flush();
       appModel.failBackupImport(
           t.migration_import_verify_failed(batch: '', detail: '$e'));
-      await Future<void>.delayed(const Duration(seconds: 2));
-      await backupImportRestart(appModel);
+      // BUG-1505：失败停在遮罩上，重启交给用户点（理由同 verifyCounts 分支）。
     } finally {
       if (mounted) {
         setState(() {

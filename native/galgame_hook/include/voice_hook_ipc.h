@@ -56,7 +56,10 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //       * selected_text_thread_id 从"采集期过滤器"降级为"消费期指定"：native 不再丢弃任何
 //         行，只由消费方（host 的文本消费点、游戏内 kirikiri 配对候选扫描）决定取哪条道。
 //         这同时解开了旧方案的死结——Dart 回写选定线程不再等于让 native 重新开始丢行。
-constexpr uint32_t kSharedVersion = 13;
+// v14：追加**游戏内查词区**（hit / input / frame 三通道，见下方 kLookup* 与 LookupHitSlot）。
+//     纯追加：放在布局最尾，前面所有区偏移逐字节不动；lookup_region_offset==0 即"本会话
+//     没有此区"，旧 host 读到 v14 映射也不会错位（版本号仍会先挡，这只是纵深防御）。
+constexpr uint32_t kSharedVersion = 14;
 constexpr uint32_t kStableIpcVersion = 1;
 
 // 环形缓冲保留时长（秒）。C 阶段语音轨常见 48k 立体声 float32；60s 上界 ≈ 23MB。
@@ -288,6 +291,132 @@ struct LoopbackMarker {
   uint64_t total_written;   // 该时刻的 loopback_total_written（单调）
 };
 
+// ══ v14 游戏内查词区 ═════════════════════════════════════════════════════════════
+// KiriKiri/KAGEX 在**游戏渲染树内部**显示词典卡片。分工是硬的：注入侧只做几何传感、
+// 位图落地和输入转发；分词、查词、排版、卡片像素全部由 host（Hibiki 既有 popup.html +
+// WebView2 离屏合成）负责。
+//
+// 为什么不让注入侧自己查词自己画卡片（这正是 prototype 的做法，已废弃）：
+//   * 卡片要 ruby / 外字图 / 发音 / 制卡 / 主题 / 17 语言——在 TJS 里用 drawText 手写
+//     等于把 Hibiki 的 popup 重写一遍且永远落后一个版本；
+//   * 游戏进程里因此多出 HTTP 客户端、认证 token、手写 JSON 解析器和"拼 TJS 源码再
+//     eval"的注入面。把职责切开之后，跨边界的东西只剩**一块位图**和**一串整数**，
+//     注入面不是"escape 得更严"而是结构上不存在。
+//
+// 三条通道各自单写单读，无锁：
+//   hit   : hook → host，单槽 latest-wins（用户查得再快也只关心最后一次）
+//   input : hook → host，环（落在卡片矩形内的鼠标/滚轮事件，供 host 喂 SendMouseInput）
+//   frame : host → hook，双缓冲（避免 host 写下一帧时撕裂 hook 正在拷的这一帧）
+//
+// **像素格式：BGRA8，直通（非预乘）alpha，自顶向下。** 两端都按直通最省事——host 侧
+// WebView2 取帧经 PNG 解码出来的本来就是直通；注入侧 KiriKiri 的 ltAlpha 也正是直通
+// （预乘对应的是 ltAddAlpha）。任何一侧擅自改成预乘，症状是卡片半透明边缘发暗，不会
+// 报错，只会看起来"有点脏"——所以在这里写死，别靠两边默契。
+constexpr uint32_t kLookupLineBytes = 1024;      // 单行台词 UTF-8 上限（整行，不截断）
+constexpr uint32_t kLookupInputSlotCount = 64;   // 输入转发环槽数
+constexpr uint32_t kLookupFrameCount = 2;        // 位图双缓冲
+// 单缓冲位图上限 3MiB ≈ 880×880 BGRA。x86 游戏进程地址空间有限，故设硬上界；超限由
+// host 负责钳制卡片尺寸，注入侧只做校验和拒绝，绝不按收到的 width/height 盲拷。
+constexpr uint32_t kLookupBitmapBytes = 3u * 1024u * 1024u;
+
+// lookup_diag 位。与 reserved_luna / hook_diagnostics 分开：那两个各自已满，且这里的
+// 阶段语义（传感器装没装 / 像素走哪条路）与引擎探针、helper 启动都不是一回事。
+constexpr uint32_t kLookupDiagSensorInstalled = 0x00000001u;  // TJS 传感器已装
+constexpr uint32_t kLookupDiagGeometryObserved = 0x00000002u;  // 真拿到过逐字符几何
+constexpr uint32_t kLookupDiagHitSubmitted = 0x00000004u;     // 真上报过命中
+constexpr uint32_t kLookupDiagBufferRouteReady = 0x00000008u;  // mainImageBufferForWrite 可用
+constexpr uint32_t kLookupDiagFallbackPngRoute = 0x00000010u;  // 降级走 PNG + loadImages
+constexpr uint32_t kLookupDiagFramePresented = 0x00000020u;   // 位图真落进游戏 Layer
+constexpr uint32_t kLookupDiagExpressionReady = 0x00000040u;  // TVPExecuteExpression 可用
+constexpr uint32_t kLookupDiagFrameRejected = 0x00000080u;    // 收到过不合契约的帧（已拒）
+
+// hook → host：光标命中了哪个字符。单槽 latest-wins；`seq` **最后**写（Interlocked 全栅栏，
+// 保证 payload 对 reader 先可见），与 VoiceClip / LoopbackMarker 同一套纪律。
+struct LookupHitSlot {
+  volatile uint64_t seq;   // 单调；host 据此判新。0=从未命中
+  // 光标落在第几个字符。**单位是 UTF-16 code unit**，不是 UTF-8 字节、不是 code point。
+  //
+  // 为什么是这个单位而不是随便挑一个：两端天然就都是 UTF-16——TJS 的 tjs_char 是 wchar_t
+  // （UTF-16LE），Dart 的 String 下标也是 UTF-16 code unit。选它，两侧各自「就是自己的字符串
+  // 下标」，零转换；选 UTF-8 字节或 code point，两端都要转，而转错的症状是**含非 ASCII 或
+  // 非 BMP 字符的行整体偏移**——日文行必然含非 ASCII，也就是必错，但错得像"命中判定有点飘"
+  // 而不像编码 bug，极难定位。line_utf8 用 UTF-8 只是因为它要跨 C ABI，不影响本字段单位。
+  uint32_t char_index;
+  uint32_t char_count;     // 本行 UTF-16 code unit 数（自洽校验：char_index < char_count）
+  int32_t glyph_x;         // 命中字形矩形，primaryLayer 坐标
+  int32_t glyph_y;
+  int32_t glyph_w;
+  int32_t glyph_h;
+  int32_t view_w;          // primaryLayer 尺寸；host 据此定位与钳制卡片
+  int32_t view_h;
+  uint32_t flags;          // bit0: 1=点击提交，0=悬停预览
+  uint32_t line_bytes;     // line_utf8 有效字节数（<= kLookupLineBytes）
+  // **整行**台词，不截断。prototype 从点击字向后截 48 字，结果是制卡拿不到完整句子；
+  // 分词也不该在注入侧做——host 的分词才是全 app 唯一真值。
+  uint8_t line_utf8[kLookupLineBytes];
+};
+
+constexpr uint32_t kLookupHitFlagSubmit = 0x00000001u;
+
+// host → hook：一帧卡片位图的元数据。
+//
+// **两个序号是两回事，别再压成一个字段。** 早先只有一个 `seq`（既当发布序、又当"回应
+// 哪次 hit"），结果 dismiss 直接死在自己手里：收卡帧复用被撤那张卡的 hit seq，而那个 seq
+// 刚 present 过，注入侧的"丢弃不比已应用的新"过滤把它当陈旧帧扔了——加个 0×0 分支也救不
+// 回来，因为帧压根进不了候选。这不是漏了个分支，是数据结构错了：
+//   * `seq`     = **发布序**。host 每投一帧（present 或 dismiss）都 +1，单调。注入侧用它
+//                 判新与去重，也用它算槽下标。
+//   * `hit_seq` = 这帧**回应哪次 hit**。注入侧用它判"这张卡是不是已经被更新的命中作废了"。
+// 分开之后 dismiss 就是普通一帧，不需要任何特例。
+//
+// **槽下标规则（两侧唯一约定，别各写各的）**：元数据槽下标与像素块下标**同为**
+// `seq % lookup_frame_count`（发布序，不是 hit_seq）。host 不许用自己的轮转计数器放元数据、
+// 再用 seq%N 放像素——那样注入侧会全量拒帧，而症状（卡片永远不出现）和「host 压根没投帧」
+// 完全同形，真机上根本分不开。注入侧按此下标读，不一致即丢帧并置 kLookupDiagFrameRejected。
+//
+// `ready` **最后**写：0=host 正在写，1=可读。hook 拷完必须复查 seq/ready 未变，否则丢弃。
+struct LookupFrame {
+  volatile uint64_t seq;      // 发布序：host 每投一帧 +1，单调。注入侧据此判新/去重/算槽
+  uint64_t hit_seq;           // 这帧回应哪次 hit；比最新 hit 旧即作废
+  uint32_t flags;             // kLookupFrame* 位
+  uint32_t width;             // 像素宽（dismiss 帧为 0）
+  uint32_t height;            // 像素高（dismiss 帧为 0）
+  // 行字节跨距，**恒为正、恒自顶向下**（>= width*4）。这块内存是我们自己的，没有理由
+  // 继承任何一侧的行序怪癖。游戏 Layer 那侧的 mainImageBufferPitch 可能为负（KiriKiri
+  // 自底向上），那是注入侧搬运时的事，不许漏进这个跨进程契约。
+  uint32_t pitch;
+  int32_t anchor_x;           // 卡片左上角，primaryLayer 坐标（host 决定，含避让与钳制）
+  int32_t anchor_y;
+  uint32_t highlight_start;   // 字幕高亮起始字符下标
+  uint32_t highlight_len;     // 高亮字符数（0=不高亮）
+  uint32_t byte_len;          // 位图有效字节数（= pitch*height，<= kLookupBitmapBytes）
+  volatile uint32_t ready;    // 0=写入中，1=可读
+  uint32_t reserved;
+  uint32_t reserved2;
+};
+
+// LookupFrame::flags 位。
+// 收卡是**普通一帧**，靠这个位自述，不靠「width==0 是收卡」这种魔法编码：后者要求每个
+// 读侧都记住这条隐规则，而它和「host 投了张废帧」在字节上完全一样。
+constexpr uint32_t kLookupFrameDismiss = 0x00000001u;
+
+// hook → host：落在卡片矩形内、需要喂给离屏 WebView2 的输入事件。
+struct LookupInputSlot {
+  volatile uint64_t seq;  // 单调；**最后**写
+  int32_t x;              // 卡片局部坐标（已减去 anchor）
+  int32_t y;
+  uint32_t kind;          // kLookupInput*
+  int32_t wheel;          // 滚轮增量（kind==kLookupInputWheel 时有效）
+  uint32_t keys;          // 修饰键位掩码
+  uint32_t reserved;
+};
+
+constexpr uint32_t kLookupInputMove = 0;
+constexpr uint32_t kLookupInputLeftDown = 1;
+constexpr uint32_t kLookupInputLeftUp = 2;
+constexpr uint32_t kLookupInputWheel = 3;
+constexpr uint32_t kLookupInputLeave = 4;
+
 // 共享内存头。injector 创建并清零、填各区偏移；hook DLL 注入后填格式、持续更新计数。
 // volatile 字段跨进程无锁单写单读。绝不在此放指针（跨进程地址无意义）。
 // 内存布局：[SharedHeader][音频环形 ring_capacity][文本区 TextRegionBytes()]
@@ -364,6 +493,19 @@ struct SharedHeader {
   // 等于把要修的病换个地方藏起来。
   volatile uint64_t text_lane_recycle_count;   // 回收了一条最久未写的非选定道
   volatile uint64_t text_lane_overflow_count;  // 连可回收的道都没有，本行被丢弃
+  // ── v14 游戏内查词区（injector 填偏移/容量；追加在布局最尾，前面各区偏移一个不动）──
+  uint32_t lookup_region_offset;      // 查词区起始（header 起算字节偏移；0=本会话无此区）
+  uint32_t lookup_bitmap_bytes;       // 单缓冲位图字节容量（= kLookupBitmapBytes，冗余自洽）
+  uint32_t lookup_frame_count;        // 位图缓冲数（= kLookupFrameCount，冗余自洽）
+  uint32_t lookup_input_slot_count;   // 输入环槽数（= kLookupInputSlotCount，冗余自洽）
+  volatile uint64_t lookup_hit_count;    // hook→host 单调：命中事件数
+  volatile uint64_t lookup_frame_count_written;  // host→hook 单调：已投位图帧数
+  volatile uint64_t lookup_input_count;  // hook→host 单调：已转发的卡片输入事件数
+  // host→hook 开关。取代 prototype 的 FUSHI_KIRIKIRI_LOOKUP_* 环境变量——把认证 token
+  // 塞进游戏进程环境块是安全缺陷（任何拿得到 PROCESS_QUERY_INFORMATION 的进程都能读），
+  // 且环境变量在进程启动后改不了，做不到运行期开关。形态照抄 selected_text_thread_id。
+  volatile uint32_t lookup_enabled;
+  volatile uint32_t lookup_diag;      // kLookupDiag* 位
 };
 #pragma pack(pop)
 
@@ -626,7 +768,142 @@ inline uint64_t WriteTextLaneEvent(SharedHeader* header, uint32_t lane_begin,
   return global_seq;
 }
 
+// ── v14 查词区寻址（写侧/读侧唯一实现，谁都不许自己再算一遍偏移）────────────────
+//
+// 整区布局：[LookupHitSlot][LookupInputSlot × N][LookupFrame × F][位图 × F]
+inline constexpr uint64_t LookupRegionBytes(uint32_t input_slot_count,
+                                            uint32_t frame_count,
+                                            uint32_t bitmap_bytes) {
+  return sizeof(LookupHitSlot) +
+         static_cast<uint64_t>(input_slot_count) * sizeof(LookupInputSlot) +
+         static_cast<uint64_t>(frame_count) * sizeof(LookupFrame) +
+         static_cast<uint64_t>(frame_count) * bitmap_bytes;
+}
+
+inline bool HasLookupRegion(const SharedHeader* header) {
+  return header != nullptr && header->lookup_region_offset != 0 &&
+         header->lookup_frame_count != 0 && header->lookup_bitmap_bytes != 0 &&
+         header->lookup_input_slot_count != 0;
+}
+
+inline LookupHitSlot* LookupHitOf(SharedHeader* header) {
+  if (!HasLookupRegion(header)) return nullptr;
+  return reinterpret_cast<LookupHitSlot*>(reinterpret_cast<uint8_t*>(header) +
+                                          header->lookup_region_offset);
+}
+
+inline const LookupHitSlot* LookupHitOf(const SharedHeader* header) {
+  if (!HasLookupRegion(header)) return nullptr;
+  return reinterpret_cast<const LookupHitSlot*>(
+      reinterpret_cast<const uint8_t*>(header) + header->lookup_region_offset);
+}
+
+inline LookupInputSlot* LookupInputsOf(SharedHeader* header) {
+  if (!HasLookupRegion(header)) return nullptr;
+  return reinterpret_cast<LookupInputSlot*>(
+      reinterpret_cast<uint8_t*>(header) + header->lookup_region_offset +
+      sizeof(LookupHitSlot));
+}
+
+inline const LookupInputSlot* LookupInputsOf(const SharedHeader* header) {
+  if (!HasLookupRegion(header)) return nullptr;
+  return reinterpret_cast<const LookupInputSlot*>(
+      reinterpret_cast<const uint8_t*>(header) + header->lookup_region_offset +
+      sizeof(LookupHitSlot));
+}
+
+// 区内偏移一律用 size_t 而不是 uint64_t：这些值按构造都装得下 uint32_t（header 里的偏移
+// 字段本身就是 uint32_t），而 x86 构建下拿 uint64_t 去做指针算术会被截断并在 /W4 /WX 的
+// runner 上直接变成编译错误。整区**总字节数**仍用 uint64_t（LookupRegionBytes），因为它要
+// 参与 injector 的 total_size 求和，那里确实可能超 4GB 语义上限。
+inline size_t LookupFramesByteOffset(const SharedHeader* header) {
+  return static_cast<size_t>(header->lookup_region_offset) +
+         sizeof(LookupHitSlot) +
+         static_cast<size_t>(header->lookup_input_slot_count) *
+             sizeof(LookupInputSlot);
+}
+
+inline size_t LookupBitmapsByteOffset(const SharedHeader* header) {
+  return LookupFramesByteOffset(header) +
+         static_cast<size_t>(header->lookup_frame_count) * sizeof(LookupFrame);
+}
+
+inline LookupFrame* LookupFrameAt(SharedHeader* header, uint32_t index) {
+  if (!HasLookupRegion(header) || index >= header->lookup_frame_count) {
+    return nullptr;
+  }
+  return reinterpret_cast<LookupFrame*>(reinterpret_cast<uint8_t*>(header) +
+                                        LookupFramesByteOffset(header)) +
+         index;
+}
+
+inline const LookupFrame* LookupFrameAt(const SharedHeader* header,
+                                        uint32_t index) {
+  if (!HasLookupRegion(header) || index >= header->lookup_frame_count) {
+    return nullptr;
+  }
+  return reinterpret_cast<const LookupFrame*>(
+             reinterpret_cast<const uint8_t*>(header) +
+             LookupFramesByteOffset(header)) +
+         index;
+}
+
+inline uint8_t* LookupBitmapAt(SharedHeader* header, uint32_t index) {
+  if (!HasLookupRegion(header) || index >= header->lookup_frame_count) {
+    return nullptr;
+  }
+  return reinterpret_cast<uint8_t*>(header) + LookupBitmapsByteOffset(header) +
+         static_cast<size_t>(index) * header->lookup_bitmap_bytes;
+}
+
+inline const uint8_t* LookupBitmapAt(const SharedHeader* header,
+                                     uint32_t index) {
+  if (!HasLookupRegion(header) || index >= header->lookup_frame_count) {
+    return nullptr;
+  }
+  return reinterpret_cast<const uint8_t*>(header) +
+         LookupBitmapsByteOffset(header) +
+         static_cast<size_t>(index) * header->lookup_bitmap_bytes;
+}
+
+// 「这帧该不该应用」的**唯一判据**。注入侧与 replay 测试共用同一份——判据一旦各写各的，
+// replay 绿了也只证明参照实现自洽，证明不了生产代码对。收卡曾经整条不通就是死在这个判据上
+// （详见 LookupFrame 注释），那种错必须能被离线回归抓住，而不是等真机。
+//
+// ready 位不在这里判：它是「host 写完没有」的内存可见性问题，归调用点，与「这帧是否过期」
+// 是两件事。seq 由调用点原子读出后传进来，同理。
+inline bool ShouldApplyLookupFrame(uint64_t frame_seq, uint64_t frame_hit_seq,
+                                   uint64_t presented_seq,
+                                   uint64_t current_hit_seq) {
+  // 发布序不比已处理的新 → 这帧我处理过了。
+  if (frame_seq <= presented_seq) return false;
+  // 回应的那次查询已被更新的命中作废 → 迟到帧，绝不能顶掉新卡片。
+  if (frame_hit_seq < current_hit_seq) return false;
+  return true;
+}
+
+// 帧自洽校验。**注入侧必须先过这一关再拷贝**：跨进程来的 width/height/pitch 全是不可信
+// 输入，按它们盲拷就是把共享内存越界写进游戏进程。host 侧同样用它自检，避免投出废帧。
+inline bool IsLookupFrameSane(const SharedHeader* header,
+                              const LookupFrame* frame) {
+  if (header == nullptr || frame == nullptr) return false;
+  if (frame->width == 0 || frame->height == 0) return false;
+  if (frame->width > 0x4000u || frame->height > 0x4000u) return false;
+  const uint64_t min_pitch = static_cast<uint64_t>(frame->width) * 4u;
+  if (frame->pitch < min_pitch) return false;
+  const uint64_t needed =
+      static_cast<uint64_t>(frame->pitch) * frame->height;
+  if (needed != frame->byte_len) return false;
+  return needed <= header->lookup_bitmap_bytes;
+}
+
 static_assert(sizeof(SharedHeader) % 8 == 0, "SharedHeader must stay 8-aligned");
+static_assert(sizeof(LookupHitSlot) % 8 == 0, "LookupHitSlot must stay 8-aligned");
+static_assert(sizeof(LookupFrame) % 8 == 0, "LookupFrame must stay 8-aligned");
+static_assert(sizeof(LookupInputSlot) % 8 == 0,
+              "LookupInputSlot must stay 8-aligned");
+// 双缓冲是防撕裂的**结构前提**：单缓冲时 host 写下一帧与 hook 拷当前帧必然重叠。
+static_assert(kLookupFrameCount >= 2, "lookup frames must be double-buffered");
 static_assert(sizeof(TextSlot) % 8 == 0, "TextSlot must stay 8-aligned");
 static_assert(sizeof(TextLane) % 8 == 0, "TextLane must stay 8-aligned");
 // 道数与预览槽数必须同值：两者共用同一套下标与同一套跨进程互斥分区，分开就会有一侧

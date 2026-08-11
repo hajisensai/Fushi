@@ -273,6 +273,26 @@ class Preferences extends Table {
   TextColumn get key => text()();
   TextColumn get value => text()();
 
+  /// 该行最后一次写入的毫秒戳（v84 / BUG-1502）——**跨端 LWW 的比较键**。
+  ///
+  /// 绝大多数偏好是设备设置、从不跨端合并，这一列对它们只是无害的记账。它存在
+  /// 是因为**有些偏好行是内容**：书的改名（`override_title://` 覆盖行，BUG-1488）
+  /// 跟着书走、必须跨端合并，而 `preferences` 原先只有 key/value 两列，合并端
+  /// 无从判断「谁更新」，只能退化成 insert-if-absent —— 母设备**第二次**改名
+  /// 就传不到已有 override 的子设备了。
+  ///
+  /// **默认 0 = 「时刻未知」，是刻意的取舍**：v84 迁移不给存量行填迁移时刻。
+  /// 填迁移时刻会让「谁赢」由两台设备各自的升级时间决定（后升级的一侧无条件
+  /// 覆盖先升级的一侧，用户什么都没做却发生覆盖）；取 0 则存量行彼此平局，
+  /// 而 LWW 的平局规则是「保留本机」——正好等于升级前的 insert-if-absent 行为，
+  /// 零回归；任何一侧**真正改过一次名**之后（时刻 > 0）立刻胜出。同理，旧对端
+  /// 发来的无时刻数据一律按 0 收，永远不会覆盖本机改过的名字。
+  ///
+  /// 写入方：[FushiDatabase.setPref] / `setPrefs` / `compareAndSetPref` 填
+  /// `now`；跨端采纳走 [FushiDatabase.setPrefIfNewer]，**填对端的时刻而不是
+  /// now**（填 now 会让本机永远最新，母设备的下一次改名再也传不进来）。
+  IntColumn get updatedAt => integer().withDefault(const Constant(0))();
+
   @override
   Set<Column> get primaryKey => {key};
 }

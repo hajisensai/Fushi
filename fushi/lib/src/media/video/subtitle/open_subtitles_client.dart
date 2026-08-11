@@ -8,6 +8,7 @@ import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi/src/utils/net/app_http.dart';
 
 const int kMaximumSubtitleDownloadBytes = 64 * 1024 * 1024;
 
@@ -166,7 +167,7 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
     http.Client? client,
     this.requestTimeout = const Duration(seconds: 20),
     bool closesClient = true,
-  })  : _client = client ?? http.Client(),
+  })  : _client = client ?? createAppHttpIoClient(),
         _closesClient = client == null || closesClient;
 
   final OpenSubtitlesConfig config;

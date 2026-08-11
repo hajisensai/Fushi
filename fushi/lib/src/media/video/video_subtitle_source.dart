@@ -990,7 +990,7 @@ Future<SubtitleCueLoadResult> loadSubtitleCueResult(
   if (source.isEmbedded) {
     return _loadEmbeddedCues(source, videoPath, bookUid);
   }
-  return _loadExternalCues(source, bookUid);
+  return loadExternalSubtitleCueResult(source.externalPath!, bookUid);
 }
 
 Future<DefaultEmbeddedSubtitleLoadResult> loadDefaultTextEmbeddedSubtitleCues({
@@ -1108,14 +1108,17 @@ Future<SubtitleCueLoadResult> _loadEmbeddedCues(
 /// [SubtitleCueLoadFailure.fileUnreadable]，解析阶段的异常是
 /// [SubtitleCueLoadFailure.parseFailed]。编码问题不再会出现在这里：
 /// [readTextWithEncoding] 已经保证任何字节都能解出字符串（BUG-1490）。
+///
+/// [contentReader] 仅供测试注入（默认 [readTextWithEncoding]）。
 Future<SubtitleCueLoadResult> _readAndParse(
   File file,
   SubtitleFormat format,
-  String bookUid,
-) async {
+  String bookUid, {
+  Future<String> Function(File file)? contentReader,
+}) async {
   final String text;
   try {
-    text = await readTextWithEncoding(file);
+    text = await (contentReader ?? readTextWithEncoding)(file);
   } catch (e) {
     // 不带栈：读文件失败的异常本身已含路径与 OS errno，栈没有额外信息，
     // 而这条路径（缺失的 sidecar 等）在正常使用中会反复命中。
@@ -1307,18 +1310,30 @@ Duration subtitleExtractTimeoutForBytes(int sizeBytes) {
   return Duration(seconds: seconds);
 }
 
-Future<SubtitleCueLoadResult> _loadExternalCues(
-  SubtitleSource source,
-  String bookUid,
-) async {
-  final String path = source.externalPath!;
+/// 从一个**外挂字幕文件路径**读 cue，保留失败原因（[SubtitleCueLoadFailure]）。不抛。
+///
+/// 这是「本地字幕文件 → cue」的唯一入口：播放页选外挂源（[loadSubtitleCueResult]）
+/// 与主页把字幕拖到视频卡（`attachSubtitleToVideoBook`）共用同一份失败分类，
+/// 不各自 `readAsString` + 解析（那样失败原因会退化成空列表或未捕获异常，BUG-1504）。
+///
+/// [contentReader] 仅供测试注入（默认 [readTextWithEncoding]）。
+Future<SubtitleCueLoadResult> loadExternalSubtitleCueResult(
+  String path,
+  String bookUid, {
+  Future<String> Function(File file)? contentReader,
+}) async {
   final SubtitleFormat? format = subtitleFormatForPath(path);
   if (format == null) {
     return const SubtitleCueLoadResult.failed(
       SubtitleCueLoadFailure.unsupportedFormat,
     );
   }
-  return _readAndParse(File(path), format, bookUid);
+  return _readAndParse(
+    File(path),
+    format,
+    bookUid,
+    contentReader: contentReader,
+  );
 }
 
 /// 临时抽字幕文件的扩展名（让 ffmpeg 按扩展名选输出 muxer）。

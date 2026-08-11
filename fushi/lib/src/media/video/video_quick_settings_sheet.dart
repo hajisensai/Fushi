@@ -17,7 +17,7 @@ import 'package:fushi/utils.dart';
 /// settings_schema_video.dart 的单一声明，按 [VideoPlacement] group/order/section
 /// 经 [buildVideoGroupDestination] 投影渲染（与阅读器面板消费 [ReaderPlacement]
 /// 同款）；控制器绑定行经 [VideoQuickSettingsHost] 门控只在此出现。本文件只剩
-/// 外壳：宽窗「顶部分段选择器 + 下方详情」上下分栏（TODO-556；详情独占整宽
+/// 外壳：宽窗「顶部横向分类 chip 行 + 下方详情」上下分栏（TODO-556；详情独占整宽
 /// 并独立滚动，分类条固定在顶部），窄窗降级单列 push。书籍设置面板仍保持左右
 /// master-detail，互不影响。
 ///
@@ -146,7 +146,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
         final Color dividerColor = isCupertinoPlatform(context)
             ? CupertinoColors.separator.resolveFrom(context)
             : tokens.surfaces.outline;
-        // 顶部分段选择器 padding：水平 + 顶部按 token 留白，底部留 gap/2 与下方
+        // 顶部分类条 padding：水平 + 顶部按 token 留白，底部留 gap/2 与下方
         // 分隔线呼吸（不吃底部键盘 inset，那份留给详情区）。
         final EdgeInsets wideCategoryPadding = EdgeInsets.fromLTRB(
           horizontalInset,
@@ -161,8 +161,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
           horizontal: horizontalInset,
           top: topInset,
         );
-        // TODO-556：大分类「顶部分段选择器（固定）+ 下方全宽详情（独立滚动）」。
-        // 分段选择器钉在 sheet 顶部、随详情滚动不动；详情独占整宽、单独纵向滚动。
+        // TODO-556：大分类「顶部横向分类 chip 行（固定）+ 下方全宽详情（独立滚动）」。
+        // 顶部 chip 行钉在 sheet 顶部、随详情滚动不动；详情独占整宽、单独纵向滚动。
         // 书籍设置仍保持左右 master-detail。
         return SizedBox(
           height: constraints.maxHeight,
@@ -200,7 +200,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
     );
   }
 
-  /// 分类项（宽窗顶部分段选择器 + 窄窗导航行共用；id == [VideoGroup] 枚举名，亦是
+  /// 分类项（宽窗顶部 chip 行 + 窄窗导航行共用；id == [VideoGroup] 枚举名，亦是
   /// [_subPageContent] 的投影入参）。直接由 [VideoGroup.values] 驱动而非手写平行
   /// 列表：新增分组时 [_groupIcon] / [_groupTitle] 的 exhaustive switch 编译期
   /// 报错，面板不可能静默漏掉分组。顺序 = 枚举声明序。
@@ -251,70 +251,40 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
     }
   }
 
-  /// 宽窗顶部分类条（TODO-556 / TODO-1351）：使用单选 [SegmentedButton]，与播放器
-  /// 检查器式分类导航一致。空间足够时显示图标 + 完整文字；空间不足时响应式收成
-  /// 单行图标分段，文字仍由 tooltip / semantics 与详情页标题提供，不产生横向长条。
+  /// 宽窗顶部分类条（TODO-556 / TODO-1351 / BUG：末位分类被裁）：大分类用 chip 行，固定
+  /// 在 sheet 顶部、不随下方详情滚动；选中 chip 高亮，点击切下方详情。
+  ///
+  /// **放不下时换行堆叠**（[Wrap]）而非横向滚动裁断（用户报「弹幕 / 控制 分类被截在视口
+  /// 外、看不全」）。所有 chip 恒可见：一行放不下就自动折到第二行，宽度越窄行数越多，
+  /// 永不裁断（[spacing] 行内间距、[runSpacing] 行间距均走 token，无裸值）。
+  ///
+  /// TODO-1351（用户复诉）：分类 tab 是「图标 + 完整文字」（参考「检查器」式 tab），不得
+  /// 截成省略号、也不得压成纯图标 + tooltip。标签经
+  /// [FushiSelectableChip.allowLabelOverflow] 按固有宽度完整渲染（无 ellipsis）；换行由
+  /// [Wrap] 承载，单个标签永不截断。
   Widget _buildTopCategoryBar(String selectedId) {
-    final List<({String id, IconData icon, String label})> categories =
-        _categories();
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final TextStyle labelStyle = DefaultTextStyle.of(context).style;
-        final double fontSize = labelStyle.fontSize ?? 14;
-        final double textScaleFactor =
-            MediaQuery.textScalerOf(context).scale(fontSize) / fontSize;
-        final double fullWidth = estimateSegmentedStripWidth(
-              segmentLabels: <String>[for (final cat in categories) cat.label],
-              fontSize: fontSize,
-              textScaleFactor: textScaleFactor,
-            ) +
-            categories.length * 32;
-        final bool compact = fullWidth > constraints.maxWidth;
-        return SizedBox(
-          width: constraints.maxWidth,
-          child: adaptiveSegmentedButton<String>(
-            context: context,
-            segments: <ButtonSegment<String>>[
-              for (final ({String id, IconData icon, String label}) cat
-                  in categories)
-                ButtonSegment<String>(
-                  value: cat.id,
-                  icon: compact
-                      ? Tooltip(
-                          key: ValueKey<String>(
-                            'video-settings-cat-${cat.id}',
-                          ),
-                          message: cat.label,
-                          child: Icon(cat.icon),
-                        )
-                      : null,
-                  label: compact
-                      ? null
-                      : Row(
-                          key: ValueKey<String>(
-                            'video-settings-cat-${cat.id}',
-                          ),
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            Icon(cat.icon),
-                            const SizedBox(width: 8),
-                            Text(
-                              cat.label,
-                              softWrap: false,
-                              overflow: TextOverflow.visible,
-                            ),
-                          ],
-                        ),
-                ),
-            ],
-            selected: <String>{selectedId},
-            onSelectionChanged: (Set<String> values) {
-              if (values.isNotEmpty) _selectSubPage(values.first);
-            },
-            style: kSettingsSegmentedStyle,
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Wrap(
+      // 大分类 chip 行整体居中（用户诉求）：一行放不下换行时每行也居中，视觉更聚焦，
+      // 不再左对齐贴边。
+      alignment: WrapAlignment.center,
+      runAlignment: WrapAlignment.center,
+      spacing: tokens.spacing.gap,
+      runSpacing: tokens.spacing.gap / 2,
+      children: <Widget>[
+        for (final ({String id, IconData icon, String label}) cat
+            in _categories())
+          FushiSelectableChip(
+            // 稳定 key：测试 / 焦点驱动靠 id key 命中分类（不依赖标签文案）。
+            key: ValueKey<String>('video-settings-cat-${cat.id}'),
+            label: cat.label,
+            leadingIcon: cat.icon,
+            selected: cat.id == selectedId,
+            // TODO-1351：标签完整渲染、不省略；空间不够由 Wrap 换行兜底（不裁断）。
+            allowLabelOverflow: true,
+            onSelected: (_) => _selectSubPage(cat.id),
           ),
-        );
-      },
+      ],
     );
   }
 

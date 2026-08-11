@@ -4,8 +4,17 @@
 #include <windows.h>
 
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <string>
 #include <vector>
+
+// v14 游戏内查词通道要往 Dart 投 hit / input，并接 Dart 的 galLookup* 调用。
+// 只取三个最小头（MethodChannel 本身留在 .cpp 里），避免把整套通道模板拉进来。
+#include <flutter/binary_messenger.h>
+#include <flutter/encodable_value.h>
+#include <flutter/method_call.h>
+#include <flutter/method_result.h>
 
 // galgame 一键制卡 C 阶段（docs/specs/galgame-mining）—— fushi.exe **读侧** native。
 //
@@ -129,6 +138,84 @@ struct VoiceTrackInfo {
   int clip_count_at_cue = 0;
 };
 
+// ══ v14 游戏内查词通道（KiriKiri/KAGEX，仅 Windows）══════════════════════════════
+//
+// 分工是硬的（docs/specs/2026-08-10-kirikiri-ingame-lookup-plan.md）：注入进游戏的
+// 代码只做几何传感、位图落地、输入转发；分词/查词/排版/卡片像素全部由 host 出。
+// 跨进程边界上因此只剩「一块位图」和「一串整数」——注入面不是"escape 得更严"，
+// 而是结构上不存在。本 reader 是 host 侧那三条通道的读写端：
+//   hit   : hook → host，单槽 latest-wins（[PollLookupHit]）
+//   input : hook → host，环（[PollLookupInputs] + [SetLookupInputSink]）
+//   frame : host → hook，双缓冲（[WriteLookupFrame] / [WriteLookupDismiss]）
+
+// 一次命中：光标落在字幕的哪个字符上。坐标/尺寸都是 primaryLayer 坐标系。
+struct VoiceHookLookupHit {
+  uint64_t seq = 0;       // 单调；host 据此判新，也是回投帧的对号
+  std::string line_utf8;  // **整行**台词，不截断（制卡要整句）
+  // 单位是 **UTF-16 code unit**，不是 UTF-8 字节、不是 code point（契约钉死在
+  // voice_hook_ipc.h 的 LookupHitSlot 上）。两端天然都是 UTF-16——注入侧 TJS 的
+  // tjs_char 是 wchar_t，Dart 的 String 下标也是 UTF-16 code unit——所以本 reader
+  // **原样透传，绝不换算**：在这里做任何"顺手转成字节下标"都会让日文行整体偏移。
+  // line_utf8 用 UTF-8 只是因为它要跨 C ABI，不影响本字段的单位。
+  uint32_t char_index = 0;
+  uint32_t char_count = 0;  // 本行 UTF-16 code unit 数（自洽校验）
+  int32_t glyph_x = 0;      // 命中字形矩形
+  int32_t glyph_y = 0;
+  int32_t glyph_w = 0;
+  int32_t glyph_h = 0;
+  int32_t view_w = 0;   // primaryLayer 尺寸；host 据此定位与钳制卡片
+  int32_t view_h = 0;
+  bool submit = false;  // true=点击提交，false=悬停预览
+};
+
+// 一条落在卡片矩形内、要喂回离屏 WebView2 的输入事件。坐标已是**卡片局部**坐标。
+struct VoiceHookLookupInput {
+  uint64_t seq = 0;
+  int32_t x = 0;
+  int32_t y = 0;
+  uint32_t kind = 0;  // voice_hook_ipc.h 的 kLookupInput*
+  int32_t wheel = 0;
+  uint32_t keys = 0;
+};
+
+// 一帧卡片的**非像素**元数据（像素由 [WriteLookupFrame] 的位图参数带）。
+struct VoiceHookLookupPresent {
+  uint64_t seq = 0;  // 对应哪次 hit；过期帧由注入侧丢弃
+  int32_t anchor_x = 0;  // 卡片左上角，primaryLayer 坐标（避让与钳制由 host 决定）
+  int32_t anchor_y = 0;
+  uint32_t highlight_start = 0;  // 字幕高亮起始字符下标
+  uint32_t highlight_len = 0;    // 高亮字符数（0=不高亮）
+};
+
+// 查词通道的**结构化**失败原因。和 [VoiceHookOpenError] 同一条纪律：原因是在
+// `return` 那一刻丢掉的，下游文案层补不回来。尤其 kNoRegion——它专指「helper 是
+// v14 以前的版本 / 本会话没有查词区」，处置是更新 helper，与"没开开关"完全不同。
+enum class VoiceHookLookupError {
+  kNone = 0,
+  kNotOpen,          // 共享内存没打开（没有 galgame 会话）
+  kNoRegion,         // 映射有效但无查词区（旧 injector；HasLookupRegion 为假）
+  kNotEnabled,       // lookup_enabled==0：host 自己关着，投帧没有消费者
+  kNoCaptureSource,  // 没接像素源（SetLookupCaptureRequest 未接线）
+  kCaptureFailed,    // 离屏 WebView2 取帧失败
+  kFrameRejected,    // 帧不过 IsLookupFrameSane（宽/高/pitch/字节数自相矛盾）
+};
+
+// [VoiceHookLookupError] → 机器可读 token（Dart 侧据此归类，跨语言契约的唯一名字）。
+const char* VoiceHookLookupErrorToken(VoiceHookLookupError error);
+
+// 投帧结局：失败原因 + 真正落进共享内存的尺寸 + 是否被字节预算钳制过。
+// [clamped] 必须一路带到上层：卡片被切掉一截和卡片正常显示在用户眼里差别巨大，
+// 静默钳制会把"卡片下半截没了"变成查不出原因的玄学。
+struct VoiceHookLookupWriteResult {
+  VoiceHookLookupError error = VoiceHookLookupError::kNone;
+  bool clamped = false;
+  uint32_t width = 0;
+  uint32_t height = 0;
+  uint32_t pitch = 0;
+
+  bool ok() const { return error == VoiceHookLookupError::kNone; }
+};
+
 // 单例：整个进程一路引擎-hook 读取。所有方法可从 UI 线程调用，绝不抛异常（全 HRESULT/句柄校验）。
 class VoiceHookReader {
  public:
@@ -200,6 +287,96 @@ class VoiceHookReader {
 
   // 解除映射、释放句柄。幂等。不杀 injector 子进程（那由 Dart 侧管理）。
   void Close();
+
+  // ── v14 游戏内查词通道 ──────────────────────────────────────────────────────
+  //
+  // 取一帧离屏卡片位图（**BGRA8 / 直通非预乘 alpha / 自顶向下 / pitch 恒正**，格式
+  // 真相源是 voice_hook_ipc.h 的 v14 查词区注释）。签名与
+  // [GlobalLookupWindow::BgraFrameCallback] 逐字一致，接线端只需把 max_* 原样转过去，
+  // 不做任何语义转换。
+  using LookupCaptureCallback = std::function<void(
+      bool ok, bool clamped, const std::vector<uint8_t>& bgra, uint32_t width,
+      uint32_t height, uint32_t pitch)>;
+  using LookupCaptureRequest = std::function<void(
+      uint32_t max_width, uint32_t max_height, LookupCaptureCallback done)>;
+  // 把一条游戏侧转发来的输入喂给离屏 WebView2（接
+  // [GlobalLookupWindow::InjectLookupInput]）。
+  using LookupInputSink = std::function<void(uint32_t kind, int32_t x,
+                                             int32_t y, int32_t wheel,
+                                             uint32_t keys)>;
+
+  // 建事件出口（host→Dart）并起轮询泵。**必须在平台线程调用**：泵用的是一个
+  // HWND_MESSAGE 消息窗 + WM_TIMER，它的 WndProc 因此跑在平台线程的消息循环上——
+  // MethodChannel::InvokeMethod 和 WebView2 的 SendMouseInput 都只能在这个线程上调。
+  // 轮询共享内存本身是几百字节的读，放平台线程不会阻塞消息循环（不是"阻塞等待"，
+  // 只是每 16ms 一次的定长扫描）。
+  //
+  // 事件走 **既有的** `app.fushi.reader/gal_hook_text` 通道（Dart 侧
+  // GalHookTextOverlayChannel 已在那条通道上分发 onGalLookupHit / onGalLookupInput）。
+  // 🔴 本方法只建 InvokeMethod 用的通道对象，**绝不 SetMethodCallHandler**：同名通道
+  // 在 messenger 里只有一个 handler 槽位，注册就会顶掉 flutter_window 已有的
+  // gal_hook_text 处理器，把浮窗的全部方法（show/hide/updateText/…）一起弄坏。
+  // Dart→runner 那半边走 [TryHandleLookupMethodCall] 挂到既有处理器的分发链上。
+  //
+  // 幂等：重复 attach 只换 messenger。传 nullptr 等价于 [DetachLookupChannel]。
+  void AttachLookupChannel(flutter::BinaryMessenger* messenger);
+  void DetachLookupChannel();
+
+  // Dart→runner 的四个 galLookup* 方法（setEnabled / present / dismiss / input）。
+  // 由 flutter_window 既有的 gal_hook_text 处理器在自己的分发链**最前面**调一次：
+  //   if (fushi::VoiceHookReader::Instance().TryHandleLookupMethodCall(call, result))
+  //     return;
+  // 返回 true = 本调用已被消费（result 已应答，且已被移走）；false = 不是查词方法，
+  // result 原封不动，按原路继续。
+  bool TryHandleLookupMethodCall(
+      const flutter::MethodCall<flutter::EncodableValue>& call,
+      std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>& result);
+
+  // 接像素源 / 输入落点。两者都在平台线程上被调用。未接线时 galLookupPresent 返回
+  // kNoCaptureSource（而不是投一张空帧假装成功），输入事件仍会上报 Dart。
+  //
+  // 输入注入是 **Dart 驱动**的：泵把 input 上报成 onGalLookupInput，Dart 决定要不要
+  // 喂（卡片没显示时就不该喂），再经 galLookupInput 落到这个 sink。泵**不**自己直接
+  // 喂——两处都喂就是每个事件注入两次，鼠标会被判成双击、滚轮会翻倍。
+  void SetLookupCaptureRequest(LookupCaptureRequest request);
+  void SetLookupInputSink(LookupInputSink sink);
+
+  // 本会话是否真有查词区（HasLookupRegion）。false = 旧 injector / 旧会话；查词
+  // 三个方法一律返回 kNoRegion 而不是崩或静默无效。
+  bool HasLookupChannel();
+
+  // 不做任何写入，只回报「现在投帧会不会成功、不成功是哪一种」。
+  // 取帧要走一整轮 PNG 编解码，为一个根本投不出去的会话做这件事既浪费，又会把真正
+  // 的原因（旧 helper / 开关关着）掩盖成"取帧失败"——所以先探闸再取帧。
+  VoiceHookLookupError PeekLookupGate(bool require_enabled);
+
+  // host→hook 开关（header->lookup_enabled）。开启时同时起/停轮询定时器。
+  VoiceHookLookupError SetLookupEnabled(bool enabled);
+
+  // 有**新** hit（lookup_hit_count 变过且 seq 前进）时填 [out] 并返回 true。
+  // 读法：先读 seq → 读 payload → 复查 seq 未变，变了就重读（单写单读
+  // latest-wins 的标准纪律，与 clip / 线程预览槽同一套）。
+  bool PollLookupHit(VoiceHookLookupHit* out);
+
+  // 取输入环里游标之后的全部事件（被环覆盖的那段直接跳过，不假装补齐）。
+  void PollLookupInputs(std::vector<VoiceHookLookupInput>& out);
+
+  // 把一张已取好的位图（BGRA8 / 直通 alpha / 自顶向下 / pitch 恒正）投进共享内存。
+  //
+  // 槽下标是契约的一部分：元数据槽与像素块**同用** `seq % lookup_frame_count`。
+  // 不许用自己的轮转计数器放元数据、再用 seq%N 放像素——注入侧按同一个下标读，对不上
+  // 就全量拒帧，而症状（卡片永远不出现）和「host 压根没投帧」完全同形，真机上分不开。
+  //
+  // 写序：ready=0 → 像素 → 元数据 → seq → ready=1 → lookup_frame_count_written++。
+  // 字节超预算时**按行裁掉尾部**并置 result.clamped，而不是投一张越界帧出去。
+  VoiceHookLookupWriteResult WriteLookupFrame(
+      const VoiceHookLookupPresent& meta, const uint8_t* bgra, uint32_t width,
+      uint32_t height, uint32_t pitch);
+
+  // 投一帧 width=height=0 的**空帧**让注入侧收卡。空帧是 IsLookupFrameSane 之外的
+  // 显式哨兵（那个函数按定义拒绝 0 宽高），故这里不过它那道闸。
+  // ⚠️ 注入侧当前尚无这条分支，空帧会被两道过滤挡下——细节与 file:line 见 .cpp 实现处。
+  VoiceHookLookupError WriteLookupDismiss(uint64_t seq);
 
  private:
   VoiceHookReader() = default;

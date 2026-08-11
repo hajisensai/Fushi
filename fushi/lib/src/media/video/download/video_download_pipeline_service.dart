@@ -2023,6 +2023,8 @@ class VideoDownloadPipelineService {
       );
       _ensureLeaseHeld();
       collectionId = result.collectionId;
+      await _videoRepository.reorderDownloadedCollectionEpisodes(collectionId);
+      _ensureLeaseHeld();
       for (int index = 0; index < files.length; index++) {
         bookUidByFileId[files[index].id] = result.episodeUids[index];
       }

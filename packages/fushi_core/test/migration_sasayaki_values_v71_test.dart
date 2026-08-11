@@ -17,10 +17,15 @@ FushiDatabase _openMigratedFromV70() {
         // profile_settings -> profiles 外键形同虚设）。
         raw.execute('PRAGMA foreign_keys = ON');
 
+        // 列名必须与**真实 v70 的 audio_cues** 一致：这张表的书键叫 `book_key`
+        // （[AudioCues.bookKey]，至今未改名——改走 uid 的是 reader_positions /
+        // revealed_images 那一族，v82）。seed 写成 `book_uid` 会让迁移阶梯里的
+        // `_ensureIndexes()` 建 `idx_audio_cues_book_key ON audio_cues (book_key)`
+        // 时炸 "no such column"，红的是 seed 不是迁移。
         raw.execute('''
 CREATE TABLE audio_cues (
   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-  book_uid TEXT NOT NULL,
+  book_key TEXT NOT NULL,
   chapter_href TEXT NOT NULL,
   sentence_index INTEGER NOT NULL,
   text_fragment_id TEXT NOT NULL,
@@ -31,7 +36,7 @@ CREATE TABLE audio_cues (
 )''');
         raw.execute(
           "INSERT INTO audio_cues "
-          "(book_uid, chapter_href, sentence_index, text_fragment_id, cue_text, start_ms, end_ms, audio_file_index) "
+          "(book_key, chapter_href, sentence_index, text_fragment_id, cue_text, start_ms, end_ms, audio_file_index) "
           "VALUES "
           // ① 命中 cue：scheme 前缀改写，query 段不动。
           "('BookA', 'c1.xhtml', 0, 'sasayaki://s=1&ns=100&ne=200', 'hi', 0, 1000, 0),"

@@ -662,7 +662,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                 ),
                 mainAxisSpacing: tokens.spacing.gap,
                 crossAxisSpacing: tokens.spacing.gap,
-                // BUG-1505：0.52 在长标题 + 当前 UI scale 下让海报+两行标题+元数据
+                // BUG-1527：0.52 在长标题 + 当前 UI scale 下让海报+两行标题+元数据
                 // 比网格格子高约 2.4px；0.50 留出稳定正文余量且保持海报密度。
                 childAspectRatio: 0.50,
               ),
@@ -831,7 +831,7 @@ class _DiscoveryShelf extends StatelessWidget {
           ),
           SizedBox(height: tokens.spacing.card),
           SizedBox(
-            // BUG-1505：横向卡的 16:9 封面 + 标题/元数据在大字体下会超过 224。
+            // BUG-1527：横向卡的 16:9 封面 + 标题/元数据在大字体下会超过 224。
             height: 240,
             child: HorizontalDragScrollable(
               child: ListView.separated(

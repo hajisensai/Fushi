@@ -7,6 +7,7 @@
 #include <flutter/standard_method_codec.h>
 
 #include <memory>
+#include <string>
 
 #include "floating_lyric_window.h"
 #include "global_lookup_window.h"
@@ -116,6 +117,20 @@ class FlutterWindow : public Win32Window {
       clipboard_panel_channel_;
   std::unique_ptr<GlobalLookupWindow> clipboard_panel_window_;
   void RegisterClipboardPanelChannel();
+
+  // v14 游戏内查词：**第三个** GlobalLookupWindow 实例，专门给 KiriKiri 游戏内那张卡片
+  // 出像素。为什么不复用前两个：
+  //   * global_lookup_window_ 是会真的显示在屏幕上的浮窗，借它取帧等于把它的显隐状态
+  //     和游戏内卡片的生命周期绑死；
+  //   * clipboard_panel_window_ 明确 SetCompositionMode(false)，而 SendMouseInput 只有
+  //     composition 实例才有——游戏内卡片的交互全靠它。
+  // 本实例**永远离屏**（只 PrewarmWebView，从不 ShowAt），只当渲染器用。
+  std::unique_ptr<GlobalLookupWindow> gal_lookup_card_window_;
+  // 懒建：只有用户真开启游戏内查词才付 WebView2 的启动代价。
+  GlobalLookupWindow* EnsureGalLookupCardWindow();
+  // popup 资源目录由 Dart 在 global_lookup 的 "prepare" 里给。游戏内卡片要用同一份
+  // popup.html，但它的建立时机（用户开启游戏内查词）晚于 prepare，故在此留存一份。
+  std::wstring popup_assets_dir_;
 
   // TODO-1030 M0: Windows UIA foreground-selection context capture channel.
   // Dart calls captureContext; the UIA work runs on a worker thread and the

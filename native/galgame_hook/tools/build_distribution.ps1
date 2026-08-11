@@ -3,8 +3,8 @@
   Build and package the x64/x86 galgame helper archives.
 
 .DESCRIPTION
-  The voice-hook-helper release and the Hibiki Windows bundle share this
-  packaging entry point. Output contains only the two zip files and sidecars.
+  The Windows bundle (build-multiplatform.yml / release-desktop.yml) and any
+  manual repack share this entry point. Output contains only the two zip files and sidecars.
 #>
 [CmdletBinding()]
 param(

@@ -1063,10 +1063,41 @@ void FlutterWindow::RegisterGalHookTextChannel() {
             std::make_unique<flutter::EncodableValue>(std::move(map)));
       });
 
+  // ── v14 游戏内查词：把共享内存查词通道接到这条既有通道上 ──────────────────
+  // 通道复用 gal_hook_text 而不是新开一条：查词命中与台词浮窗是同一个 galgame 会话的
+  // 两个面，Dart 侧的 GalHookTextOverlayController 已经守着这条通道。
+  fushi::VoiceHookReader::Instance().AttachLookupChannel(
+      flutter_controller_->engine()->messenger());
+  // 像素源与输入落点都指向懒建的第三个 GlobalLookupWindow 实例。lambda 里每次重新
+  // Ensure：用户可能在会话中途才开启查词，那时才建得起来。
+  fushi::VoiceHookReader::Instance().SetLookupCaptureRequest(
+      [this](uint32_t max_width, uint32_t max_height,
+             fushi::VoiceHookReader::LookupCaptureCallback done) {
+        GlobalLookupWindow* card = EnsureGalLookupCardWindow();
+        if (card == nullptr) {
+          done(false, false, {}, 0, 0, 0);
+          return;
+        }
+        card->CaptureBgraAsync(max_width, max_height, std::move(done));
+      });
+  fushi::VoiceHookReader::Instance().SetLookupInputSink(
+      [this](uint32_t kind, int32_t x, int32_t y, int32_t wheel,
+             uint32_t keys) {
+        GlobalLookupWindow* card = EnsureGalLookupCardWindow();
+        if (card == nullptr) return;
+        card->InjectLookupInput(kind, x, y, wheel, keys);
+      });
+
   gal_hook_text_channel_->SetMethodCallHandler(
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
                  result) {
+        // 查词方法先走一遍：同名通道只有一个 handler 槽位，所以 reader 侧不能自己
+        // 注册（会顶掉本处理器），只能挂在分发链最前面。不认的方法它返回 false。
+        if (fushi::VoiceHookReader::Instance().TryHandleLookupMethodCall(
+                call, result)) {
+          return;
+        }
         const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
         const std::string& method = call.method_name();
         if (method == "canDrawOverlays") {
@@ -1144,6 +1175,61 @@ void FlutterWindow::RegisterGalHookTextChannel() {
       });
 }
 
+// v14 游戏内查词的像素源。懒建：只有用户真开启这个功能才付 WebView2 的启动代价，
+// 没开的用户一分钱不花。返回 nullptr 表示这次拿不到（尚未 prepare 过 popup 资源目录）。
+GlobalLookupWindow* FlutterWindow::EnsureGalLookupCardWindow() {
+  if (gal_lookup_card_window_ != nullptr) return gal_lookup_card_window_.get();
+  // 没有资源目录就起不来（WebView2 会导航到空路径，出一张白卡）。宁可这次失败并让
+  // 上层回 no_capture_source，也不要起一个注定渲染不出东西的实例——后者的症状是
+  // 「卡片出来了但是白的」，比「卡片没出来」难查得多。
+  if (popup_assets_dir_.empty()) return nullptr;
+
+  gal_lookup_card_window_ = std::make_unique<GlobalLookupWindow>();
+  // 交互式卡片全靠 composition controller 的 SendMouseInput；windowed 实例没有它。
+  gal_lookup_card_window_->SetCompositionMode(true);
+  gal_lookup_card_window_->SetPopupAssetsDir(popup_assets_dir_);
+
+  // 外字（image://）走与主浮窗同一个 Dart 处理器：卡片内容本来就是同一份 popup.html，
+  // 没有理由让它有第二套资源解析语义。
+  gal_lookup_card_window_->SetMediaResolver(
+      [this](const std::string& url,
+             std::function<void(std::vector<uint8_t>)> respond) {
+        auto args = std::make_unique<flutter::EncodableValue>(
+            flutter::EncodableMap{
+                {flutter::EncodableValue("url"), flutter::EncodableValue(url)}});
+        auto result = std::make_unique<
+            flutter::MethodResultFunctions<flutter::EncodableValue>>(
+            [respond](const flutter::EncodableValue* ok) {
+              std::vector<uint8_t> bytes;
+              if (ok != nullptr) {
+                if (const auto* b = std::get_if<std::vector<uint8_t>>(ok)) {
+                  bytes = *b;
+                }
+              }
+              respond(std::move(bytes));
+            },
+            [respond](const std::string&, const std::string&,
+                      const flutter::EncodableValue*) { respond({}); },
+            [respond]() { respond({}); });
+        global_lookup_channel_->InvokeMethod("getMedia", std::move(args),
+                                             std::move(result));
+      });
+
+  // WebView2 起不来必须能被看见。否则症状是「游戏内查词永远没反应」，而真因在 native
+  // 环境创建失败——和「hook 没装上」「host 没投帧」三者同形，真机上分不开。
+  gal_lookup_card_window_->SetErrorCallback([this](const std::string& message) {
+    global_lookup_channel_->InvokeMethod(
+        "nativeError",
+        std::make_unique<flutter::EncodableValue>(
+            std::string("gal-lookup-card: ") + message));
+  });
+
+  // 只离屏预热，从不 ShowAt——这个实例的像素只经共享内存进游戏，永远不作为窗口出现。
+  // owner 传 nullptr，与另外两个实例同源解耦，不把主窗拉到前台。
+  gal_lookup_card_window_->PrewarmWebView(480, 360, nullptr);
+  return gal_lookup_card_window_.get();
+}
+
 void FlutterWindow::RegisterGlobalLookupChannel() {
   global_lookup_window_ = std::make_unique<GlobalLookupWindow>();
 
@@ -1215,8 +1301,11 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
         const std::string& method = call.method_name();
 
         if (method == "prepare") {
-          global_lookup_window_->SetPopupAssetsDir(
-              WideFromValue(args, "assetsDir", L""));
+          const std::wstring assets_dir = WideFromValue(args, "assetsDir", L"");
+          global_lookup_window_->SetPopupAssetsDir(assets_dir);
+          // v14：游戏内查词卡片用同一份 popup 资源，但它懒建于「用户开启游戏内查词」，
+          // 那时 Dart 不会再发一次 prepare。留存一份，别让第三个实例拿着空目录起来。
+          popup_assets_dir_ = assets_dir;
           result->Success();
         } else if (method == "prewarmWebView") {
           // TODO-1079 — build the overlay window + WebView2 off-screen at

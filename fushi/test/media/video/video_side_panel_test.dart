@@ -64,20 +64,31 @@ void main() {
       );
     }
 
+    // 面板不再是「贴边抽屉」：它四边都留 10 的安全间距浮在画面上，所以四个角都
+    // 该露出来（PR #800）。旧断言要求只在靠画面那一侧加圆角、外侧留直角——那是
+    // 贴边形态的契约，面板改成浮动卡片后它描述的是已经不存在的外观。
+    //
+    // 镜像这件事因此从「圆角换边」挪到了**位置**上：左对齐贴左、右对齐贴右，两侧
+    // 各留同一个 10 的间距；圆角则两边完全一致。两条一起断，退回半圆角抽屉、或
+    // 左右间距不对称，都当场红。
+    const BorderRadius floatingRadius = BorderRadius.all(Radius.circular(12));
+
     final Material left = await pumpPanel(Alignment.centerLeft);
     expect(
       left.borderRadius,
-      const BorderRadiusDirectional.horizontal(end: Radius.circular(8)),
-      reason: '左侧面板贴左边，内侧应是右边圆角',
+      floatingRadius,
+      reason: '浮动侧栏四边都有间距，四个角都应是圆角（不是贴边抽屉的半圆角）',
     );
-    expect(tester.getTopLeft(find.byType(Material).last).dx, 10);
+    expect(tester.getTopLeft(find.byType(Material).last).dx, 10,
+        reason: '左对齐时面板贴左，留 10 的安全间距');
 
     final Material right = await pumpPanel(Alignment.centerRight);
     expect(
       right.borderRadius,
-      const BorderRadiusDirectional.horizontal(start: Radius.circular(8)),
-      reason: '右侧面板贴右边，内侧应是左边圆角',
+      floatingRadius,
+      reason: '左右两侧圆角必须一致——镜像体现在位置上，不再体现在圆角换边',
     );
-    expect(tester.getTopRight(find.byType(Material).last).dx, 790);
+    expect(tester.getTopRight(find.byType(Material).last).dx, 790,
+        reason: '右对齐时面板贴右，留同样 10 的安全间距（800 - 10）');
   });
 }

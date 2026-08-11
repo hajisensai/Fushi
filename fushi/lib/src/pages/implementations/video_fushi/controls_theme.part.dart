@@ -176,8 +176,11 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // TODO-057: 启用 media_kit 移动控制条内建的「左半区竖滑调亮度 / 右半区竖滑
       // 调音量」手势，指示器由 Hibiki 的左右百分比 HUD 接管。仅移动端有此控制条；桌面走
       // [_desktopControlsTheme]（无此手势，屏幕亮度本就不可控，诚实降级）。横滑 seek
-      // 见下方 [seekGesture]（TODO-916 症状①，按时长比例换算 + 居中 HUD 显目标绝对
-      // 时间；与既有 seek 键 085/090 / 双击全屏语义并存，竞技场先达成者胜）。
+      // 见下方 [seekGesture] + [horizontalSeekResolver]（TODO-916 症状①；换算已在
+      // BUG-1485 改成「拖过整屏 = 固定一段时长」的 [VideoHorizontalSeekGesture]，与
+      // 视频总时长**解耦**——这里原先写着「按时长比例换算」，那正是被换掉的旧公式，
+      // 别照着它推断当前行为。居中 HUD 显目标绝对时间；与既有 seek 键 085/090 /
+      // 双击全屏语义并存，竞技场先达成者胜）。
       // 单击暂停 / 字幕点击查词不受影响：media_kit 的竖直 drag 与 tap 同一手势 arena，
       // 纯点击时 drag 不启动。亮度回调经 [ScreenBrightnessController]（桌面 no-op）。
       volumeGesture: true,

@@ -140,9 +140,13 @@ void main() {
     expect(source, isNot(contains('FushiListItem(')),
         reason: 'wide categories must not render as a left list anymore');
     expect(source, contains('_buildTopCategoryBar('),
-        reason: 'wide categories must render in a top segmented control');
-    expect(source, contains('adaptiveSegmentedButton<String>('),
-        reason: 'top-bar categories must use a segmented selector');
+        reason: 'wide categories must render in a top horizontal chip bar');
+    expect(source, contains('FushiSelectableChip('),
+        reason: 'each top-bar category is a selectable chip');
+    // TODO-1351（用户复诉）：顶栏 chip 恢复「图标 + 完整文字」，标签按固有宽度完整
+    // 渲染（allowLabelOverflow，无 ellipsis）；TODO-640 的纯图标 + tooltip 方案废弃。
+    expect(source, contains('allowLabelOverflow: true'),
+        reason: 'top-bar category chips render full labels (TODO-1351)');
     expect(source, isNot(contains('iconOnly: true')),
         reason:
             'icon-only top-bar chips were rejected by the user (TODO-1351)');
@@ -150,14 +154,20 @@ void main() {
         reason: 'labels are inline now, not tooltip-only (TODO-1351)');
     expect(source, contains('_buildWideDetailTitle('),
         reason: 'the selected category title renders atop the detail pane');
-    // 分段条保持单行；放不下时收成图标分段，不产生横向长条。
+    // BUG（用户复诉「弹幕 / 控制 分类被截在视口外、点不到」）：顶栏分类条放不下时必须
+    // 换行堆叠（Wrap），不得回退横向 SingleChildScrollView 裁断——横滑会把末位分类推到
+    // 视口外、无滚动条提示。守卫只扫 _buildTopCategoryBar 方法体，与
+    // video_quick_settings_sheet_test 的同款守卫互为镜像。
     final String topBarSource = source.substring(
       source.indexOf('Widget _buildTopCategoryBar('),
       source.indexOf('Widget _buildWideDetailTitle('),
     );
-    expect(topBarSource, contains('final bool compact ='));
+    expect(topBarSource, contains('Wrap('),
+        reason: 'the top category bar wraps so no category chip is clipped');
     expect(topBarSource, isNot(contains('scrollDirection: Axis.horizontal')),
-        reason: 'the segmented selector must compact instead of scrolling');
+        reason:
+            'top category bar must wrap, not horizontally scroll (last chip '
+            'was pushed off-screen and unclickable)');
     expect(source, contains('padding: widePrimaryPadding'));
     // 详情按选中 id KeyedSubtree，防 Element 复用副作用。
     expect(source, contains('KeyedSubtree('));

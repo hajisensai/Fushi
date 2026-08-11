@@ -8,57 +8,108 @@ import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dar
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
+/// 用**当前平台**的分隔符拼一条绝对路径。
+///
+/// [classifyLocalVideoExtra] 的目录名判据走 `p.split`（平台上下文）。原来这条用例
+/// 硬编码 `D:\Shows\...`：Windows 上 `p.split` 认得反斜杠、目录段能切出来所以全绿；
+/// Linux CI 上反斜杠只是普通字符，整串被当成**一个**路径段，`Trailers` / `迷你动画`
+/// 这类目录判据一条都命不中，stem 又变成 `d:\shows\title\trailers\official`，
+/// `trailer` 后面跟着 `s` 连兜底正则也不匹配 → 全部返回 null。典型的「本机 Windows
+/// 绿、CI 必红」。判据本身按平台分是对的（本地扫描拿到的就是平台原生路径），所以
+/// 修的是用例的平台假设，不是生产代码。
+String _nativePath(List<String> segments) => p.joinAll(<String>[
+      if (Platform.isWindows) r'D:\' else '/',
+      ...segments,
+    ]);
+
 void main() {
   test('Kodi local extra names are classified without matching normal episodes',
       () {
     expect(
-      classifyLocalVideoExtra(r'D:\Shows\Title\Trailers\official.mkv')?.kind,
+      classifyLocalVideoExtra(
+        _nativePath(<String>['Shows', 'Title', 'Trailers', 'official.mkv']),
+      )?.kind,
       VideoMetadataExtraKind.trailer,
-    );
-    expect(
-      classifyLocalVideoExtra(r'D:\Shows\Title\Behind The Scenes\making-of.mkv')
-          ?.kind,
-      VideoMetadataExtraKind.behindTheScenes,
-    );
-    expect(
-      classifyLocalVideoExtra(r'D:\Movies\Film-trailer.mp4')?.kind,
-      VideoMetadataExtraKind.trailer,
-    );
-    expect(
-      classifyLocalVideoExtra(r'D:\Shows\Title\NCOP2.mkv')?.kind,
-      VideoMetadataExtraKind.clip,
-    );
-    expect(
-      classifyLocalVideoExtra(r'D:\Shows\Title\Title NCED.mkv')?.kind,
-      VideoMetadataExtraKind.clip,
-    );
-    expect(
-      classifyLocalVideoExtra(r'D:\Shows\Title\PV\[Group][Title][PV][01].mkv')
-          ?.kind,
-      VideoMetadataExtraKind.clip,
     );
     expect(
       classifyLocalVideoExtra(
-        r'D:\Shows\Title\NCOP&NCED\[Group][Title][NCOP].mkv',
+        _nativePath(<String>[
+          'Shows',
+          'Title',
+          'Behind The Scenes',
+          'making-of.mkv',
+        ]),
+      )?.kind,
+      VideoMetadataExtraKind.behindTheScenes,
+    );
+    expect(
+      classifyLocalVideoExtra(
+        _nativePath(<String>['Movies', 'Film-trailer.mp4']),
+      )?.kind,
+      VideoMetadataExtraKind.trailer,
+    );
+    expect(
+      classifyLocalVideoExtra(
+        _nativePath(<String>['Shows', 'Title', 'NCOP2.mkv']),
       )?.kind,
       VideoMetadataExtraKind.clip,
     );
     expect(
-      classifyLocalVideoExtra(r'D:\Shows\Title\menu\[Group][Title][01].mkv')
-          ?.kind,
+      classifyLocalVideoExtra(
+        _nativePath(<String>['Shows', 'Title', 'Title NCED.mkv']),
+      )?.kind,
+      VideoMetadataExtraKind.clip,
+    );
+    expect(
+      classifyLocalVideoExtra(
+        _nativePath(<String>[
+          'Shows',
+          'Title',
+          'PV',
+          '[Group][Title][PV][01].mkv',
+        ]),
+      )?.kind,
+      VideoMetadataExtraKind.clip,
+    );
+    expect(
+      classifyLocalVideoExtra(
+        _nativePath(<String>[
+          'Shows',
+          'Title',
+          'NCOP&NCED',
+          '[Group][Title][NCOP].mkv',
+        ]),
+      )?.kind,
+      VideoMetadataExtraKind.clip,
+    );
+    expect(
+      classifyLocalVideoExtra(
+        _nativePath(<String>[
+          'Shows',
+          'Title',
+          'menu',
+          '[Group][Title][01].mkv',
+        ]),
+      )?.kind,
       VideoMetadataExtraKind.extra,
     );
     expect(
-      classifyLocalVideoExtra(r'D:\Shows\Title\迷你动画\short-01.mkv')?.kind,
+      classifyLocalVideoExtra(
+        _nativePath(<String>['Shows', 'Title', '迷你动画', 'short-01.mkv']),
+      )?.kind,
       VideoMetadataExtraKind.short,
     );
-    expect(classifyLocalVideoExtra(r'D:\Shows\Title\Title.S01E01.mkv'), isNull);
+    expect(
+      classifyLocalVideoExtra(
+        _nativePath(<String>['Shows', 'Title', 'Title.S01E01.mkv']),
+      ),
+      isNull,
+    );
   });
 
   test('existing source is backfilled into one idempotent provisional work',
       () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     final Directory root =
         await Directory.systemTemp.createTemp('video-metadata-backfill-');
     addTearDown(() async {

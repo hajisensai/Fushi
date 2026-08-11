@@ -1,9 +1,6 @@
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:fushi_core/fushi_core.dart';
-
-import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/torznab_client.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
@@ -22,6 +19,7 @@ import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
     show MiningMediaCompression;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/update_check_cache.dart';
+import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 
 enum DesktopClipboardWindowMode {
   normal('normal'),
@@ -1769,6 +1767,23 @@ class PreferencesRepository extends ChangeNotifier {
       'gal_hook_text_font_size',
       value.clamp(galHookTextFontSizeMin, galHookTextFontSizeMax).toDouble(),
     );
+    notifyListeners();
+  }
+
+  /// 「游戏内查词」（KiriKiri in-game lookup）默认**关**：它要往游戏进程里投位图，
+  /// 只对有 profile 证据的引擎组合有效，开着对其余游戏纯属白付代价。
+  static const bool galIngameLookupEnabledDefault = false;
+
+  /// 游戏内查词总开关（仅 Windows 生效）。
+  bool get galIngameLookupEnabled =>
+      getPref(
+        'gal_hook_ingame_lookup_enabled',
+        defaultValue: galIngameLookupEnabledDefault,
+      ) ==
+      true;
+
+  Future<void> setGalIngameLookupEnabled(bool value) async {
+    await setPref('gal_hook_ingame_lookup_enabled', value);
     notifyListeners();
   }
 

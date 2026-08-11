@@ -56,6 +56,18 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Game window upscaling': 'test/mining/magpie_upscaling_test.dart + '
       'test/mining/magpie_native_guard_test.dart + '
       'test/mining/magpie_installer_test.dart',
+  // 游戏内查词开关（KiriKiri/KAGEX）。写 prefsRepo（changed=true），生效点整条在
+  // 本进程之外：置 header->lookup_enabled → 注入进游戏进程的 hook 装 TJS 传感器 →
+  // 卡片像素经共享内存回投、由**游戏自己的渲染树**画出来。widget harness 里既没有
+  // 目标游戏进程也没有共享内存，没有任何可探的渲染输入；且 Windows-only，CI（Linux）
+  // 连控件都不该渲染。由四层专项测试咬住：Dart 侧命中→定位→投帧的契约测试、native
+  // 侧 v14 契约测试（区寻址 + 帧闸门 + ShouldApplyLookupFrame 真值表）、会话 replay
+  // （7 个变异体实测全红），以及禁止把查词链路搬回游戏进程的源码扫描守卫。
+  'lookup/In-game dictionary lookup':
+      'test/lookup/gal_ingame_lookup_contract_test.dart + '
+          'native/galgame_hook/tests/lookup_ipc_contract_test.cpp + '
+          'native/galgame_hook/tests/lookup_session_replay_test.cpp + '
+          'native/galgame_hook/tests/kirikiri_lookup_source_guard_test.py',
   // BUG-1095：galgame Hook 台词浮窗字号。写 prefsRepo（changed=true），生效点在
   // runner 自有的 Win32 分层浮窗（Direct2D/DirectWrite 直绘，不是 Flutter widget
   // 树），本进程内没有任何可探的渲染输入，故无适用探针；由三层专项测试咬住：

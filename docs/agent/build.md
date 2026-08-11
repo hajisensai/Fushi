@@ -147,37 +147,38 @@ Flutter 3.44.0 下部分上游依赖未适配，两种补法并存（对个别�
 galgame 一键制卡的引擎-hook 注入器（injector.exe + hook.dll + vendored LunaHook/Host DLL）含
 `CreateRemoteThread`/`WriteProcessMemory`。**源码在本仓 `native/galgame_hook/`**（与
 `native/fushidicts/`、`native/fushi_torrent/` 同级）。helper 绝不链接进 `fushi.exe`，运行时仍是
-隔离子进程/DLL；但两架构的校验 zip 随 Windows 主包进入 `galgame_helper/`，从而离线首装可用。
+隔离子进程/DLL；但两架构产物在**构建期**就解压进 Windows 主包的 `voice_hook/<arch>/`（BUG-1449），
+从而离线首装可用、运行期零网络。
 
 > 历史：这套组件曾整体迁到独立仓库 `hajisensai/hibiki-hook`。迁出的真正根因是 CI——主仓库那份
 > workflow 不在默认分支，GitHub 不暴露 `workflow_dispatch` 入口，release 从没被产出过；合仓后
 > workflow 就在默认分支 `develop` 上，该问题不复存在。另一条写在红线里的理由「必被杀软报毒」
 > 自 C.1 起从未被验证过，**实测已证伪**：Windows Defender（签名 1.455.357.0、实时保护开启、
 > runner 全盘排除项已解除）对 helper 全部 13 个文件与两个 zip 零检出，同一轮 EICAR 阳性对照
-> 正常报出 `Virus:DOS/EICAR_Test_File`，证明扫描器确实在工作（hibiki-hook#8 的 av-selfscan）。
+> 正常报出 `Virus:DOS/EICAR_Test_File`，证明扫描器确实在工作（hibiki-hook#8 的 av-selfscan；证据留在
+> `native/galgame_hook/docs/av-selfscan-evidence.md`，该 workflow 已于 2026-08-11 删除，不再复跑）。
 > 国产杀软（360/火绒等）未验证，若被拦按误报处理。
 
-- **构建/发布**：根 `.github/workflows/voice-hook-helper.yml`（windows-2022）。触发为
-  `workflow_dispatch` + `develop` 上命中 `paths` 白名单（`native/galgame_hook/**` 或该 workflow
-  自身）的 push。**必须是 paths 白名单而不是 paths-ignore**：合仓后沿用 paths-ignore 会让主仓库
-  任何一次非文档提交都去重建并重发 helper。各 run 步骤经 `defaults.run.working-directory:
-  native/galgame_hook` 保持相对路径不变；`softprops/action-gh-release` 的 `files:` 不吃
-  working-directory，必须写仓库根起算的完整路径。
+- **没有独立的 helper 发布通道了**（2026-08-11 起）：helper 只由 Windows 主包的两个 workflow
+  顺带构建并随包落地，不再单独发 release。原先的 `.github/workflows/voice-hook-helper.yml`
+  （upsert 固定 tag `voice-hook-helper` 的 prerelease）与 `av-selfscan.yml`（Defender 实扫该
+  release 资产）**已一并删除**，`voice-hook-helper` release 本体也已删除。删除的前提是
+  `8cd11846fe`（helper/Magpie 全部随包零网络）+ `fb2e2ed685`（BUG-1449 构建期解压随包）之后
+  app 侧**再无任何联网取 helper 的代码路径**——`galgame_helper_installer.dart` 里一个 http 都没有。
+  - ⚠️ **代价是已知且被接受的**：2026-07-20（`3eb73c880c` 引入按需下载）到 2026-07-26 之间
+    发布的 Windows debug 包既没有随包 helper（离线随包 `a3d741778c` 是 07-27 才落地），又把
+    `kGalgameHelperRepo = 'hajisensai/hibiki'` 编进了常量（该仓已改名，URL 重定向到
+    `hajisensai/Fushi`）。这批包里**没更新过的**用户开 galgame 会撞 404「引擎组件下载失败」，
+    症状同 BUG-961，唯一恢复手段是更新到新版。用户 2026-08-11 明确拍板接受此破坏。
+  - 更早的一批客户端把 `hajisensai/hibiki-hook` 编进常量，**那个仓库早已不存在**，与本次删除无关。
+- **构建入口**：`native/galgame_hook/tools/build_distribution.ps1 -RunTests` 是唯一组包入口，
   cmake 编 x64（`-A x64`）+ x86（`-A Win32`），每架构打 `voice_hook_<arch>.zip`（injector/hook/
-  LunaHook/LunaHost）+ `.sha256` 侧车，upsert 到**固定 tag `voice-hook-helper`** 的
-  **prerelease、`make_latest: false`**。发布步骤有 `if: github.ref == 'refs/heads/develop'` 分支守卫
-  ——只有默认分支能 upsert 那个所有用户都会自更新拉取的 release；PR 分支照跑构建与双架构
-  ctest，但不发布。
-- **主包内置**：`native/galgame_hook/tools/build_distribution.ps1 -RunTests` 是固定 release 与
-  Windows 主包共用的唯一组包入口，输出 x64/x86 zip + `.sha256`。`build-multiplatform.yml` 把它们
-  放进 Debug bundle 的 `galgame_helper/` 验证布局；`release-desktop.yml` 放进 Release bundle 的同名
-  目录，Inno Setup 的 `recursesubdirs` 将其纳入安装器。`check_release_policy.ps1` 守卫这条链，禁止
+  LunaHook/LunaHost，x86 另带 Locale Emulator）+ `.sha256` 侧车。`build-multiplatform.yml` 与
+  `release-desktop.yml` 的 windows job 都调它（`pull_request`/`push` + paths 含 `native/**`），
+  所以**双架构编译与 ctest 是 PR 门**；`native-galgame-gate.yml` 另跑那 7 条平台无关的静态守卫。
+  产物由 `tools/install_into_bundle.ps1` 在构建期解压进 bundle 的 `voice_hook/<arch>/`，
+  Inno Setup 的 `recursesubdirs` 将其纳入安装器。`check_release_policy.ps1` 守卫这条链，禁止
   后续“构建仍绿但安装器漏带 helper”。
-- **历史下载 URL**（只服务已经发布的旧客户端；新客户端不再使用）：
-  `https://github.com/hajisensai/Fushi/releases/download/voice-hook-helper/voice_hook_<arch>.zip`（+ `.sha256`）。
-- **老客户端不断供**：已发布版本的 app 把 `hajisensai/hibiki-hook` 编进了常量，会继续从那个仓库取
-  helper。**`hajisensai/hibiki-hook` 仓库与其 `voice-hook-helper` release 必须保留、不得删除**
-  （Never break userspace）；它只作为老客户端的下载宿主冻结，新开发一律在本仓 `native/galgame_hook/`。
 - **app 端安装**：开 galgame 需要注入器却缺失时，`GalgameHelperInstaller`（`fushi/lib/src/mining/
   galgame_helper_installer.dart`）先读取 exe 同级 `galgame_helper/voice_hook_<arch>.zip` 与侧车，校验
   SHA-256 后解压/换入 `voice_hook/<arch>/`，全程零网络、零下载确认；正式 Windows 主包必须命中此路。

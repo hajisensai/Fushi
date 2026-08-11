@@ -2,7 +2,9 @@ import 'dart:io';
 
 import 'package:fushi/src/migration/migration_exporter.dart';
 import 'package:fushi/src/migration/migration_manifest.dart';
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:path/path.dart' as p;
+import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 /// 中转目录里一个待导入批次的解析结果。
 class MigrationImportBatch {
@@ -184,6 +186,63 @@ class MigrationImporter {
       }
     }
     return problems;
+  }
+
+  /// BUG-1510：把导入完成标志**直接写进落地库文件**。
+  ///
+  /// 为什么不能用 `appModel.prefsRepo.setPref`：导入协议在合并之前就 `closeDatabase()`
+  /// 了，而 `setPref` 走的正是那条已经关掉的 drift isolate 连接，必抛
+  /// 「Tried to send Request ... over isolate channel, but the connection was
+  /// closed!」。用户机器上就是这样：合并成功、行数校验也过了，最后写完成标志时炸掉，
+  /// 掉进 catch 谎报「校验未通过，已保留待重传」——而中转文件在上一步就已经被删了。
+  ///
+  /// 语义与 [FushiDatabase.setPref] 对齐：同一事务里 upsert 业务键 + 抬 `prefs_version`
+  /// 跨进程变更信号（只抬一次，且不为版本键自身抬）。[dbPath] 必须是**未被占用**的
+  /// 落地库文件——调用点此时 drift 连接已关，正好满足。
+  static void writeCompletionPrefs({
+    required String dbPath,
+    required Map<String, String> encodedValues,
+    int? nowMs,
+  }) {
+    if (encodedValues.isEmpty) return;
+    // v84 起 preferences 多了 updated_at（跨端 LWW 比较键）。写入方一律填 now，
+    // 且 **DO UPDATE 必须一起更新它**——只更新 value 会让已存在的行保留旧时刻，
+    // 正是 fushi_core 里 setPref 注释点名的坑。
+    final int stamp = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+    final sqlite.Database db = sqlite.sqlite3.open(dbPath);
+    try {
+      db.execute('BEGIN');
+      for (final MapEntry<String, String> e in encodedValues.entries) {
+        db.execute(
+          'INSERT INTO preferences (key, value, updated_at) VALUES (?, ?, ?) '
+          'ON CONFLICT(key) DO UPDATE SET value = excluded.value, '
+          'updated_at = excluded.updated_at',
+          <Object?>[e.key, e.value, stamp],
+        );
+      }
+      final sqlite.ResultSet current = db.select(
+        'SELECT value FROM preferences WHERE key = ?',
+        <Object?>[FushiDatabase.prefsVersionKey],
+      );
+      final int next = current.isEmpty
+          ? 1
+          : (int.tryParse((current.first['value'] as String)
+                      .replaceFirst('i:', '')) ??
+                  0) +
+              1;
+      db.execute(
+        'INSERT INTO preferences (key, value, updated_at) VALUES (?, ?, ?) '
+        'ON CONFLICT(key) DO UPDATE SET value = excluded.value, '
+        'updated_at = excluded.updated_at',
+        <Object?>[FushiDatabase.prefsVersionKey, 'i:$next', stamp],
+      );
+      db.execute('COMMIT');
+    } catch (_) {
+      db.execute('ROLLBACK');
+      rethrow;
+    } finally {
+      db.dispose();
+    }
   }
 
   /// 删除一个已成功导入批次的中转文件（归档 + 清单）。

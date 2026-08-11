@@ -29,6 +29,7 @@ import 'package:fushi/src/epub/book_title_conflict.dart';
 import 'package:fushi/src/media/manga/manga_importer.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi/src/utils/net/app_http.dart';
 
 /// 两次字节进度事件之间至少累积的字节数（避免大 CBZ 每 chunk 一事件淹没 UI）。
 const int kMokuroMoeProgressInterval = 512 * 1024;
@@ -96,8 +97,8 @@ class MokuroMoeVolumeDownloader {
 
   bool _cancelled = false;
 
-  static HttpClient _defaultClient() =>
-      HttpClient()..findProxy = HttpClient.findProxyFromEnvironment;
+  // BUG-1498：同 mokuro_moe_client，改走统一装配点补齐 GUI 系统代理。
+  static HttpClient _defaultClient() => createAppHttpClient();
 
   /// 请求中止当前 run：下载循环在下个 chunk 处、阶段切换处检查并抛
   /// [MokuroMoeDownloadCancelled]；`.part` 保留。

@@ -11,7 +11,7 @@
 | `siglus` | SiglusEngine | `verified` | engine_exact_utf16_hook (implemented_unverified)；luna_hook (implemented_unverified) | resource_audio (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `elf_ai6` | elf AI6 | `implemented_unverified` | luna_textouta_hook (implemented_unverified) | ai6_voice_arc_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `reallive` | RealLive / old VisualArt's | `implemented_unverified` | luna_hook (implemented_unverified) | visual_arts_ovk_resource (implemented_unverified)；xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
-| `kirikiri_z` | KiriKiri2 / KiriKiriZ | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | kirikiri_resource_stream (implemented_unverified)；kirikiri_decoder_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 2 |
+| `kirikiri_z` | KiriKiri2 / KiriKiriZ | `partial` | luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | kirikiri_resource_stream (implemented_unverified)；kirikiri_decoder_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 2 |
 | `xaudio2_directsound` | XAudio2 / DirectSound generic capture | `verified` | — | xaudio2_source_voice_pcm (verified)；directsound_buffer_pcm (verified) | 1 |
 | `renpy_ffmpeg` | Ren'Py / FFmpeg | `implemented_unverified` | luna_auto_or_pc_hooks (implemented_unverified) | ffmpeg_resource_event (implemented_unverified)；ffmpeg54_decoder_pcm (implemented_unverified)；process_loopback (verified) | 1 |
 | `tyrano_nwjs` | TyranoScript / NW.js | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | tyrano_asar_voice_resource (verified)；ffmpeg_resource_event (implemented_unverified)；process_loopback (verified) | 1 |
@@ -160,6 +160,7 @@ Tests：`tests/reallive_adapter_test.cpp`
 文本能力：
 
 - `luna_auto_or_pc_hooks`：`implemented_unverified` — Generic Luna plumbing exists; the P0 baseline does not record a versioned text-thread replay.
+- `ingame_lookup_geometry`：`implemented_unverified` — In-game dictionary lookup (per-glyph geometry sensing plus host-rendered card bitmaps over the v14 shared-memory lookup region) is implemented but unverified: the only runtime observation is a prototype run against a single third-party textrender.dll sample, and no end-to-end 'displayed line -> matching voice -> screenshot -> card written' session exists. Offline coverage only: tests/lookup_ipc_contract_test.cpp, tests/lookup_session_replay_test.cpp, tests/kirikiri_lookup_source_guard_test.py.
 - codepage：game-specific
 - 线程提示：Reject metadata/per-character noise and select the stable dialogue thread manually when auto-selection is ambiguous.
 
@@ -180,10 +181,11 @@ Tests：`tests/reallive_adapter_test.cpp`
 - The verified KiriKiriZ sample software-mixes into one DirectSound output stream, so captured PCM is equivalent to loopback and includes BGM/SE.
 - KiriKiri2 BCB resource and decoder hooks install on the recorded official sample, but a voiced dialogue line has not yet been traversed; clean per-line Ogg is not claimed.
 - The older KiriKiriZ sample executable hash and engine version were not recorded; executable name alone is not a reusable engine signature.
+- In-game dictionary lookup is implemented_unverified. The only runtime observation is one prototype run against a single third-party textrender.dll sample; the geometry sensor is gated on that module plus a runtime probe for global.TextRender.getCharacters, so it does not generalise to KiriKiri as an engine, and no end-to-end mining session has been recorded through it.
 
-Fixtures：尚无（P5 补齐）
+Fixtures：`tests/fixtures/kirikiri_lookup_replay.tsv`
 
-Tests：`tests/resource_audio_ready_test.cpp`
+Tests：`tests/resource_audio_ready_test.cpp`、`tests/lookup_ipc_contract_test.cpp`、`tests/lookup_session_replay_test.cpp`、`tests/kirikiri_lookup_source_guard_test.py`
 
 ### XAudio2 / DirectSound generic capture (`xaudio2_directsound`)
 

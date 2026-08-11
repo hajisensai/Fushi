@@ -479,6 +479,7 @@ class FilenameParser {
 
   /// ` - ` 副标题分隔（集数已在此前被剥离，剩下的 dash 段视为副标题）。
   static final RegExp _dashSplit = RegExp(r'\s[-–—]\s+');
+  static final RegExp _colonSplit = RegExp(r'[:：]\s+');
 
   /// 中文数字 → 整数（一~九十九），失败返回 null。
   static int? _parseCnNumeral(String s) {
@@ -673,11 +674,22 @@ class FilenameParser {
       final String sub = _cleanupTitle(m.group(1)!);
       if (sub.isNotEmpty) st.secondaryTitle ??= sub;
     });
-    // ⑧ ` - xxx` 副标题（xxx 非纯数字时才认）。
-    final RegExpMatch? dash = _dashSplit.firstMatch(text);
-    if (dash != null) {
-      final String head = text.substring(0, dash.start);
-      final String tail = _cleanupTitle(text.substring(dash.end));
+    // ⑧ ` - xxx` 副标题（xxx 非纯数字时才认）。冒号只在其前已经是
+    // 罗马数字季度时才视为副标题分隔，避免破坏 `Re: Zero` 一类正文标题。
+    RegExpMatch? secondaryDivider = _dashSplit.firstMatch(text);
+    if (secondaryDivider == null) {
+      final RegExpMatch? colon = _colonSplit.firstMatch(text);
+      if (colon != null) {
+        final String head = text.substring(0, colon.start).trimRight();
+        if (_asciiRomanTail.hasMatch(head) ||
+            _unicodeRomanTail.hasMatch(head)) {
+          secondaryDivider = colon;
+        }
+      }
+    }
+    if (secondaryDivider != null) {
+      final String head = text.substring(0, secondaryDivider.start);
+      final String tail = _cleanupTitle(text.substring(secondaryDivider.end));
       if (head.trim().isNotEmpty &&
           tail.isNotEmpty &&
           !RegExp(r'^\d+$').hasMatch(tail)) {

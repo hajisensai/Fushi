@@ -13,9 +13,10 @@ import 'package:fushi_audio/fushi_audio.dart'
 import 'package:fushi/src/media/media_source.dart'
     show MediaSource, dbSourcePrefKey;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
-    show ReaderFushiSource, kReaderSourcePersistedKey;
+    show ReaderFushiSource;
 import 'package:fushi/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:fushi/src/sync/aggregate_snapshot.dart';
+import 'package:fushi/src/sync/override_title_lookup.dart';
 import 'package:fushi/src/sync/aggregate_sync_service.dart';
 import 'package:fushi/src/sync/collection_manifest.dart';
 import 'package:fushi/src/sync/collection_sync_engine.dart';
@@ -25,6 +26,8 @@ import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_manager.dart'
     show repackageExtractedEpub, resolveExtractedEpubRoot;
+import 'package:fushi/src/utils/misc/error_log_service.dart'
+    show ErrorLogService;
 import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
     show extractAudioSegmentViaFfmpeg;
 import 'package:fushi_core/fushi_core.dart';
@@ -62,7 +65,7 @@ class AppModelLibraryHostService
     required SyncAssetPackageService packages,
     required Future<void> Function() refreshDictionaryCache,
     required Future<void> Function(Future<void> Function() body) runExclusive,
-    Future<void> Function(File epubFile)? importBookFromFile,
+    Future<String?> Function(File epubFile)? importBookFromFile,
     Future<void> Function(EpubBookRow row)? cleanupBookOnDisk,
     Future<void> Function(VideoBookRow row)? cleanupVideoOnDisk,
     List<LocalAudioDbEntry> localAudioEntries = const <LocalAudioDbEntry>[],
@@ -108,7 +111,9 @@ class AppModelLibraryHostService
 
   /// 书籍导入回调（可选；null 时 importBook 抛 [UnsupportedError]）。
   /// 生产传 `(f) => EpubImporter.importFromPath(db: db, filePath: f.path, fileName: p.basename(f.path))`。
-  final Future<void> Function(File epubFile)? _importBookFromFile;
+  /// BUG-1503：返回落地后的真实 bookKey（重名加 `(2)` 后缀会改变派生键），
+  /// 供 [importBook] 把推送方随行的显示名挂到正确的书上。
+  final Future<String?> Function(File epubFile)? _importBookFromFile;
 
   /// 书籍磁盘清理回调（可选；null 时只执行 DB 删除，跳过 AudiobookStorage/SrtBook 清理）。
   /// 生产传 ReaderFushiSource 实例的磁盘清理部分。
@@ -324,7 +329,8 @@ class AppModelLibraryHostService
         await _primaryCollectionMembership();
     // BUG-1488：host 上用户改过的书名（`preferences` 的 override 覆盖层）随清单
     // 下发，否则 peer 永远只看得到 raw `epub_books.title`。一趟 prefs 读。
-    final Map<String, String> overrideTitles = await _overrideTitleByBookKey();
+    final Map<String, OverrideTitleEntry> overrideTitles =
+        await _overrideTitleByBookKey();
     // 阅读进度内联（首页仪表盘「继续」的互联数据源）：percent 与本地首页同源同算
     // （MediaItems.position/duration），最近阅读时刻取 reader_positions.updatedAt。
     // 各一趟批查；旧 client 忽略这两个 additive 字段。
@@ -350,7 +356,9 @@ class AppModelLibraryHostService
       return RemoteBookInfo(
         title: r.title,
         // BUG-1488：只在真改过名时非 null（toJson 亦只在与 title 不同时写键）。
-        displayTitle: overrideTitles[r.bookKey],
+        displayTitle: overrideTitles[r.bookKey]?.title,
+        // BUG-1502：改名时刻随行，让 client 端做 LWW 而不是 insert-if-absent。
+        displayTitleAt: overrideTitles[r.bookKey]?.updatedAt ?? 0,
         bookKey: r.bookKey,
         hasContent: resolveExtractedEpubRoot(r.extractDir) != null,
         hasEmbeddedCover: coverPath != null,
@@ -394,24 +402,14 @@ class AppModelLibraryHostService
   /// 只认**规范**键形态：BUG-1317 之前的旧键（源键出现两次）由读取期回退在 host
   /// 自己的书架上就地重写成规范键，而改名动作本身恒写规范键，所以旧形态只可能
   /// 属于「BUG-1317 之前改的名 + 此后从未在本机显示过」的书，可忽略。
-  Future<Map<String, String>> _overrideTitleByBookKey() async {
-    final String prefix = dbSourcePrefKey(
-      kReaderSourcePersistedKey,
-      MediaSource.overrideTitleKeyFor(ReaderFushiSource.mediaIdentifierFor('')),
-    );
-    final Map<String, String> out = <String, String>{};
-    for (final MapEntry<String, String> e
-        in (await _db.getAllPrefs()).entries) {
-      if (!e.key.startsWith(prefix)) continue;
-      final String bookKey = e.key.substring(prefix.length);
-      if (bookKey.isEmpty) continue;
-      // 清除改名写的是 null 值行（不是删行），解出来非 String 即「无 override」。
-      final Object? decoded = PrefCodec.decodeUntyped(e.value);
-      if (decoded is! String || decoded.isEmpty) continue;
-      out[bookKey] = decoded;
-    }
-    return out;
-  }
+  /// bookKey → (host 上的显示名, 它的 LWW 毫秒戳)。
+  ///
+  /// BUG-1502：戳来自 `preferences.updated_at`，随清单一起下发，让 client 端能对
+  /// 「本机也改过名」的书做 last-write-wins（此前只能 insert-if-absent，host 的
+  /// **第二次**改名永远传不过去）。实现共享给推书方向（BUG-1503），见
+  /// [readOverrideTitlesByBookKey]。
+  Future<Map<String, OverrideTitleEntry>> _overrideTitleByBookKey() =>
+      readOverrideTitlesByBookKey(_db);
 
   static final RegExp _fushiBookKeyPattern = RegExp(r'^fushi://book/(.+)$');
 
@@ -501,15 +499,66 @@ class AppModelLibraryHostService
   /// 生产使用时需在构造器传入 [importBookFromFile] 回调
   /// （例如 `(f) => EpubImporter.importFromPath(db: db, filePath: f.path, fileName: p.basename(f.path))`）。
   /// 回调为 null 时抛 [UnsupportedError]。
+  ///
+  /// BUG-1503：回调返回**落地后的真实 bookKey**（`EpubImporter.importFromPath` 的
+  /// 返回值），显示名才有地方挂——它不能由 [displayTitle] 或 URL 里的 title 推，
+  /// 重名时 importer 会加 `(2)` 后缀，派生键随之不同。
   @override
-  Future<void> importBook(File epubFile) async {
-    final Future<void> Function(File)? importer = _importBookFromFile;
+  Future<void> importBook(
+    File epubFile, {
+    String? displayTitle,
+    int displayTitleAt = 0,
+  }) async {
+    final Future<String?> Function(File)? importer = _importBookFromFile;
     if (importer == null) {
       throw UnsupportedError(
         'importBook requires importBookFromFile callback to be provided',
       );
     }
-    await _runExclusive(() => importer(epubFile));
+    String? bookKey;
+    await _runExclusive(() async {
+      bookKey = await importer(epubFile);
+    });
+    await _adoptPushedDisplayTitle(
+      bookKey: bookKey,
+      displayTitle: displayTitle,
+      displayTitleAt: displayTitleAt,
+    );
+  }
+
+  /// 把推送方随书带来的显示名落成 host 本机的 override，last-write-wins
+  /// （BUG-1503 + BUG-1502）。
+  ///
+  /// 与 client 端下载后的采纳（`_adoptRemoteBookDisplayTitle`）和备份合并
+  /// （`BackupMergeEngine._mergeOverrideTitlePrefs`）共用同一条裁决规则：严格更新
+  /// 才覆盖、平局保留本机、本机没有该行则无条件采纳。三条通道语义不一致就等于没修。
+  ///
+  /// 走 `MediaSource.adoptOverrideTitleIfNewer` 而不是裸写 DB：host 是个正在跑的
+  /// app，`MediaSource` 有一层内存偏好缓存，只写 DB 的话 host 书架会一直显示旧名
+  /// 直到重启（而且 `getPreference` 的 miss 会把 null 反写进缓存）。
+  Future<void> _adoptPushedDisplayTitle({
+    required String? bookKey,
+    required String? displayTitle,
+    required int displayTitleAt,
+  }) async {
+    if (bookKey == null ||
+        bookKey.isEmpty ||
+        displayTitle == null ||
+        displayTitle.isEmpty) {
+      return;
+    }
+    try {
+      final ReaderFushiSource source = ReaderFushiSource.instance;
+      await source.adoptOverrideTitleIfNewer(
+        item: source.overrideTitleMediaItemForBookKey(bookKey),
+        title: displayTitle,
+        updatedAt: displayTitleAt,
+      );
+    } catch (e, stack) {
+      // 书已经入库了——显示名没落上不该把整个 PUT 变成 HTTP 500。
+      ErrorLogService.instance
+          .log('AppModelLibraryHostService.adoptPushedDisplayTitle', e, stack);
+    }
   }
 
   /// 从 host 书库删除书名为 [title] 的书（DB 行 + 磁盘目录）。

@@ -478,7 +478,9 @@ hello async vtt
       );
       expect(
         _functionBody(
-            source, 'Future<SubtitleCueLoadResult> _loadExternalCues'),
+          source,
+          'Future<SubtitleCueLoadResult> loadExternalSubtitleCueResult',
+        ),
         contains('_readAndParse('),
       );
     });
@@ -1563,7 +1565,25 @@ String _assTimestamp(int millis) {
 String _functionBody(String source, String signature) {
   final int start = source.indexOf(signature);
   if (start < 0) return '';
-  final int open = source.indexOf('{', start);
+  // 先跳过整个参数表：命名可选参数本身就是一对 `{...}`，直接找第一个 `{` 会把
+  // 参数表当函数体截走（守卫会变成永远看不到函数体的假绿）。
+  final int paramsOpen = source.indexOf('(', start);
+  if (paramsOpen < 0) return '';
+  int parenDepth = 0;
+  int paramsClose = -1;
+  for (int i = paramsOpen; i < source.length; i++) {
+    if (source[i] == '(') {
+      parenDepth++;
+    } else if (source[i] == ')') {
+      parenDepth--;
+      if (parenDepth == 0) {
+        paramsClose = i;
+        break;
+      }
+    }
+  }
+  if (paramsClose < 0) return '';
+  final int open = source.indexOf('{', paramsClose);
   if (open < 0) return '';
   int depth = 0;
   for (int i = open; i < source.length; i++) {

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
         FushiDatabase,
+        VideoDownloadJobFileRow,
         VideoDownloadJobLifecycle,
         VideoDownloadJobRow,
         VideoDownloadJobStage;
@@ -28,7 +29,6 @@ typedef VideoDownloadJobDeleteAction = Future<void> Function(
 });
 
 typedef VideoDownloadPathRevealer = Future<bool> Function(String path);
-
 typedef VideoDownloadJobMetricsLoader = Future<Map<String, TorrentSnapshot>>
     Function(
   Iterable<VideoDownloadJobRow> jobs,
@@ -325,10 +325,12 @@ Future<Map<String, int>> _loadSelectedSizes(
 ) async {
   final Map<String, int> result = <String, int>{};
   await Future.wait(jobs.map((VideoDownloadJobRow job) async {
-    final files = await database.getVideoDownloadJobFiles(job.jobId);
+    final List<VideoDownloadJobFileRow> files =
+        await database.getVideoDownloadJobFiles(job.jobId);
     final Iterable<int> sizes = files
-        .where((file) => file.selected && file.sizeBytes != null)
-        .map((file) => file.sizeBytes!);
+        .where((VideoDownloadJobFileRow file) =>
+            file.selected && file.sizeBytes != null)
+        .map((VideoDownloadJobFileRow file) => file.sizeBytes!);
     if (sizes.isNotEmpty) {
       result[job.jobId] = sizes.fold(0, (int sum, int size) => sum + size);
     }

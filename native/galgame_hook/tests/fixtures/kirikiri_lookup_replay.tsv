@@ -1,0 +1,115 @@
+# KiriKiri 游戏内查词（v14 查词区）会话 replay 黄金表。
+#
+# 格式：每行一条事件，`kind` + 若干 `key=value`（空白分隔）；`#` 开头是注释；
+# `expect` 行是**整场回放结束后**才比对的聚合结果，回放过程一个字都不许读它。
+# 与 tests/fixtures/luna_thread_selection.tsv 同一路子：黄金表在这里，判定在 C++ 侧。
+#
+# 事件语义（consumer：tests/lookup_session_replay_test.cpp）：
+#   enabled  value=0|1              host 写 header->lookup_enabled（唯一开关）
+#   hit      ...                    hook 侧发布一次命中（lookup_enabled==0 时必须零写入）
+#   frame    hit=<hit seq> ...      host 发布一帧卡片位图（含**故意不合契约**的帧）
+#   dismiss  hit=<hit seq>          host 发布一张收卡帧（无像素，靠 flags 自述）
+#   poll     -                      hook 的 continuous callback 跑一次：取帧 / 丢帧
+#   input    x= y= kind= wheel=     光标事件；只有落在当前卡片矩形内才进转发环
+#   session_end                     会话结束，注入侧清理查词区
+#
+# 序号有两套，别混：
+#   * hit seq   —— hook 侧的命中序（每次 hit +1）；frame/dismiss 用 `hit=` 指明回应哪一次。
+#   * 发布序    —— host 每投一帧 +1，由 consumer 自己递增；它决定落哪个槽，也是
+#                  `applied_frames` 里记的那个号。收卡帧同样要占一个发布序——这正是
+#                  收卡链曾经整条不通的根因（两个语义挤在一个 seq 里）。
+#
+# 全部数据为合成数据：line 字段是占位标识符，不含任何真实台词或可还原游戏内容。
+
+# ── 会话 1：host 还没开开关 ──────────────────────────────────────────────────
+# 未开启时注入侧必须**一个字节都不写**：既不发布命中，也不转发输入。
+hit	line=SYNTHETIC-A index=2 chars=10 glyph=200,540,24,26 view=1280,720 submit=1
+input	x=300 y=300 kind=0
+poll
+
+# ── 会话 1：开启后的正常时序 hit -> frame -> apply ───────────────────────────
+enabled	value=1
+hit	line=SYNTHETIC-A index=2 chars=10 glyph=200,540,24,26 view=1280,720 submit=1
+frame	hit=1 w=480 h=320 pitch=1920 anchor=200,180 hl=2,1 fill=0x11
+poll
+
+# 卡片矩形 = [200,180) 起的 480x320，即 x∈[200,680)、y∈[180,500)。
+input	x=210 y=190 kind=0
+input	x=100 y=100 kind=0
+input	x=680 y=499 kind=3 wheel=-120
+input	x=679 y=499 kind=3 wheel=-120
+
+# ── 会话 1：新命中之后，回应旧命中的迟到帧必须被丢弃（防串卡）────────────────
+hit	line=SYNTHETIC-B index=5 chars=14 glyph=320,540,24,26 view=1280,720 submit=1
+frame	hit=1 w=480 h=320 pitch=1920 anchor=200,180 hl=2,1 fill=0x99
+poll
+
+# ── 会话 1：不合契约的帧必须被拒（pitch < width*4，按 width 逐行拷会越界）─────
+frame	hit=2 w=480 h=320 pitch=1919 anchor=240,180 hl=5,1 fill=0xEE
+poll
+frame	hit=2 w=480 h=320 pitch=1920 anchor=240,180 hl=5,1 fill=0x22
+poll
+
+# ── 会话 1：收卡。dismiss 帧没有像素、过不了 IsLookupFrameSane，但必须被应用 ──
+dismiss	hit=2
+poll
+# 卡片已经收起来了，原本在卡片内的坐标现在属于游戏自己。
+input	x=210 y=190 kind=0
+
+# ── 会话 1：陈旧的 dismiss 绝不能收掉更新的卡片 ───────────────────────────────
+# 编排是刻意的：让那张 dismiss 落在**下标更小**的槽里、而新卡片落在下标更大的槽，
+# 于是"按扫描顺序取第一个 ready"的实现会先撞上 dismiss。正确实现有两道防线——取
+# 发布序最大的候选，且 hit_seq 比当前命中旧的一律作废。
+hit	line=SYNTHETIC-C index=1 chars=8 glyph=120,540,24,26 view=1280,720 submit=1
+frame	hit=3 w=480 h=320 pitch=1920 anchor=120,180 hl=1,1 fill=0x33
+poll
+# 卡内点词压出子卡 / 改字号 → 同一次命中重新投一帧（现实里很常见，这里顺带占一个发布序）
+frame	hit=3 w=480 h=300 pitch=1920 anchor=120,190 hl=1,2 fill=0x3A
+poll
+dismiss	hit=3
+hit	line=SYNTHETIC-D index=0 chars=6 glyph=100,540,24,26 view=1280,720 submit=1
+frame	hit=4 w=480 h=320 pitch=1920 anchor=100,180 hl=0,1 fill=0x44
+poll
+# 再扫一轮：那张陈旧 dismiss 仍然躺在共享内存里（注入侧不清 ready），它必须继续被拒。
+poll
+
+# ── 会话 1：host 投了张 width=0 的**废帧**（不是收卡）───────────────────────
+# 它和收卡帧在字节上几乎一样，区别只有 flags 那一位。按"width==0 就是收卡"的魔法编码
+# 读，这里就会莫名其妙把卡片 4 收掉；正确读法是它没有收卡位 → 只能被尺寸闸门拒掉。
+frame	hit=4 w=0 h=0 pitch=0 anchor=100,180 hl=0,1 fill=0x00
+poll
+
+# ── 会话 1：留下一帧「已 ready 但没来得及被取走」的残留，然后结束会话 ─────────
+frame	hit=4 w=480 h=320 pitch=1920 anchor=100,180 hl=0,1 fill=0x55
+session_end
+
+# ── 会话 2：上一会话的残留帧绝不能被当成本会话的帧用 ─────────────────────────
+enabled	value=1
+hit	line=SYNTHETIC-E index=0 chars=6 glyph=100,540,24,26 view=1280,720 submit=0
+hit	line=SYNTHETIC-E index=1 chars=6 glyph=124,540,24,26 view=1280,720 submit=0
+hit	line=SYNTHETIC-E index=2 chars=6 glyph=148,540,24,26 view=1280,720 submit=1
+poll
+frame	hit=3 w=320 h=200 pitch=1280 anchor=148,180 hl=2,1 fill=0x66
+poll
+session_end
+
+# ── 聚合黄金值 ──────────────────────────────────────────────────────────────
+expect	card_transcript=show:1,show:2,hide:2,show:3,show:3,show:4,show:3
+expect	applied_frames=1:1,1:4,1:5,1:6,1:7,1:9,2:1
+expect	last_applied_fill=0x66
+expect	hits_published=7
+expect	hits_suppressed_while_disabled=1
+expect	frames_published=12
+expect	dismiss_frames_applied=1
+expect	dismiss_frames_failing_sanity=1
+# 从没贴上去的 5 帧：回应 hit1 的迟到帧、pitch 不合契约的废帧、width=0 的废帧、
+# 陈旧的 dismiss、会话结束前来不及取走的残留帧。
+expect	frames_never_applied=5
+expect	insane_frames_rejected=2
+expect	inputs_forwarded=2
+expect	inputs_ignored=4
+expect	bytes_written_while_disabled=0
+expect	cross_session_frames_applied=0
+expect	v13_regions_untouched=1
+expect	tail_guard_intact=1
+expect	session_clean=1

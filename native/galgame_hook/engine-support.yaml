@@ -374,6 +374,11 @@
             "kind": "luna_auto_or_pc_hooks",
             "status": "implemented_unverified",
             "verification": "Generic Luna plumbing exists; the P0 baseline does not record a versioned text-thread replay."
+          },
+          {
+            "kind": "ingame_lookup_geometry",
+            "status": "implemented_unverified",
+            "verification": "In-game dictionary lookup (per-glyph geometry sensing plus host-rendered card bitmaps over the v14 shared-memory lookup region) is implemented but unverified: the only runtime observation is a prototype run against a single third-party textrender.dll sample, and no end-to-end 'displayed line -> matching voice -> screenshot -> card written' session exists. Offline coverage only: tests/lookup_ipc_contract_test.cpp, tests/lookup_session_replay_test.cpp, tests/kirikiri_lookup_source_guard_test.py."
           }
         ],
         "codepage": "game-specific",
@@ -429,11 +434,17 @@
       "known_limitations": [
         "The verified KiriKiriZ sample software-mixes into one DirectSound output stream, so captured PCM is equivalent to loopback and includes BGM/SE.",
         "KiriKiri2 BCB resource and decoder hooks install on the recorded official sample, but a voiced dialogue line has not yet been traversed; clean per-line Ogg is not claimed.",
-        "The older KiriKiriZ sample executable hash and engine version were not recorded; executable name alone is not a reusable engine signature."
+        "The older KiriKiriZ sample executable hash and engine version were not recorded; executable name alone is not a reusable engine signature.",
+        "In-game dictionary lookup is implemented_unverified. The only runtime observation is one prototype run against a single third-party textrender.dll sample; the geometry sensor is gated on that module plus a runtime probe for global.TextRender.getCharacters, so it does not generalise to KiriKiri as an engine, and no end-to-end mining session has been recorded through it."
       ],
       "adapter_path": "hook/adapters/kirikiri_adapter.inc",
-      "fixture_paths": [],
-      "test_paths": ["tests/resource_audio_ready_test.cpp"]
+      "fixture_paths": ["tests/fixtures/kirikiri_lookup_replay.tsv"],
+      "test_paths": [
+        "tests/resource_audio_ready_test.cpp",
+        "tests/lookup_ipc_contract_test.cpp",
+        "tests/lookup_session_replay_test.cpp",
+        "tests/kirikiri_lookup_source_guard_test.py"
+      ]
     },
     {
       "id": "xaudio2_directsound",

@@ -36,8 +36,13 @@ void main() {
     final String src = wrapper.readAsStringSync();
 
     expect(src.contains('DropDoneDetails detail'), isTrue);
-    expect(src.contains('onDrop(paths, detail.globalPosition)'), isTrue,
+    // 派发多了一跳 [FushiFileDropTarget.runDrop]（异常收口在那里），坐标语义不变：
+    // 进 runDrop 的仍是 detail.globalPosition，runDrop 原样交给 onDrop。两段都断，
+    // 中间那一跳把坐标换成 local 也会当场红。
+    expect(src.contains('runDrop(paths, detail.globalPosition)'), isTrue,
         reason: 'business handlers hit-test cards in Flutter global coords');
+    expect(src.contains('await onDrop(paths, globalPosition)'), isTrue,
+        reason: '必须 await：处理器是 FutureOr，不 await 则 async 抛出漏过 catch');
     expect(src.contains('detail.localPosition'), isTrue,
         reason: 'localPosition should still be logged for diagnostics');
     expect(src.contains('onDrop(paths, detail.localPosition)'), isFalse,
@@ -83,9 +88,11 @@ void main() {
     expect(videoDrop.contains('DropIntent.unsupportedSurface'), isTrue,
         reason: 'recognized files on the wrong surface need visible feedback');
 
+    // 书架落点要先离线程判「这个 .zip 是不是图片包」，故签名是 Future<void>；
+    // 同步解包留在 drop 栈上会把 UI 线程卡死（见 image_archive_probe.dart）。
     final String shelfDrop = functionBody(
       shelf,
-      'void _handleShelfDrop(',
+      'Future<void> _handleShelfDrop(',
       'Future<void> _openBookImportPrefilled(',
     );
     expect(shelfDrop.contains('Offset globalPosition'), isTrue);

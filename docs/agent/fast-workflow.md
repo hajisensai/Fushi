@@ -125,7 +125,7 @@ Get-CimInstance Win32_Process |
 
 **只枚举某个子树**的同样不进（`lib/src/sync` 的空 catch / PIN / TLS 三条、`lib/src/settings` 的旧 pref key、5 个媒体页根的焦点所有权……）：改动落在那个子树时，定向测试本来就会挑到它。
 
-### 清单（35 条，2026-08-02 反向枚举全量得出；TODO-2707 补入三份新语料守卫）
+### 清单（36 条，2026-08-02 反向枚举全量得出；TODO-2707 补入三份新语料守卫；BUG-1498 补入出站装配守卫）
 
 | 测试 | 扫描根 | 守什么 |
 |---|---|---|
@@ -164,8 +164,9 @@ Get-CimInstance Win32_Process |
 | `test/pages/reader_history_source_corpus_test.dart` | `reader_history/` part 目录枚举 | 同上，书架页语料 |
 | `test/pages/video_fushi_page_source_corpus_test.dart` | `video_fushi/` part 目录枚举 | 同上，视频页语料 |
 | `test/sync/sync_settings_schema_source_corpus_test.dart` | `sync_settings_schema/` part 目录枚举 | 同上，同步设置 schema 语料 |
+| `test/tools/outbound_http_discipline_guard_test.dart` | `fushi/lib` + 6 个 `packages/*/lib` | 裸 `HttpClient(`/`http.Client(`/`IOClient(`/`Dio(` 必须经统一装配点，例外须登记（BUG-1498） |
 
-一条命令跑完，**当前基线 239 tests**（2026-08-10，`origin/develop@0203640035` 实测）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
+一条命令跑完，**当前基线 250 tests**（2026-08-11，本条守卫 11 例并入后实测；上一基线 239）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
 
 **N 的演进链要留着，别只写当前值**——「N 应该是多少」本身就是判空转的信号，只写当前值就丢掉了「它为什么变」：
 
@@ -175,7 +176,8 @@ Get-CimInstance Win32_Process |
 | 207 | 35 | PR#756 补入三条合并语料守卫 |
 | 225 | 35 | PR#760 给禁止型判据补 18 条自校验 |
 | 227 | 35 | 期间合入的 PR 又补了 2 条（这一格是**事后补记**：`develop` 上实测 227，没人在改动那刻更新这张表——N 的演进链只有当场记才准） |
-| **239** | **35** | BUG-1489 给 `media_kind_persistence_guard` 补冻结迁移登记出口 + 10 条合成语料自校验 + 2 条登记自校验（3→15，**当前基线**） |
+| 239 | 35 | BUG-1489 给 `media_kind_persistence_guard` 补冻结迁移登记出口 + 10 条合成语料自校验 + 2 条登记自校验（3→15） |
+| **250** | **36** | BUG-1498 新增 `outbound_http_discipline_guard`（11 例：登记制 + 规模哨兵 + 陈旧检测 + 总数常量 + 5 组合成语料自校验，**当前基线**） |
 
 ⚠️ **N 变了不一定是坏事，但必须能说出是哪一行变的**；反过来，**N 没变也不一定是漏跑**——见下面「判 N 之前先问：新增用例落在哪一批里」。
 
@@ -203,7 +205,8 @@ cd fushi && dart run tool/flutter_test_failures.dart --no-pub \
   test/pages/reader_fushi_page_source_corpus_test.dart \
   test/pages/reader_history_source_corpus_test.dart \
   test/pages/video_fushi_page_source_corpus_test.dart \
-  test/sync/sync_settings_schema_source_corpus_test.dart
+  test/sync/sync_settings_schema_source_corpus_test.dart \
+  test/tools/outbound_http_discipline_guard_test.dart
 ```
 
 ### 清单会过期——怎么重新推导

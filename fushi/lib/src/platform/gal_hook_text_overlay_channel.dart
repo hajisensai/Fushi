@@ -50,6 +50,175 @@ typedef GalHookTextLookupHandler = FutureOr<void> Function(
 typedef GalHookTextEventHandler = FutureOr<void> Function();
 typedef GalHookTextLockHandler = FutureOr<void> Function(bool locked);
 
+/// 游戏内查词（KiriKiri in-game lookup）：注入进游戏的 hook 报上来的一次命中。
+///
+/// 坐标全部在**游戏 primaryLayer 像素**域（不是 Windows 屏幕逻辑/物理 px）——卡片
+/// 位图是逐像素 memcpy 进游戏 Layer 的，所以定位只能在这个域里算，Dart 侧绝不乘 dpr。
+/// [charIndex] / [charCount] 是 UTF-16 code unit 下标，与 [line] 的 Dart String 下标
+/// 同坐标系（native 侧以 UTF-16 计数，见 voice_hook_ipc.h 的 LookupHitSlot）。
+@immutable
+class GalLookupHit {
+  const GalLookupHit({
+    required this.seq,
+    required this.line,
+    required this.charIndex,
+    required this.charCount,
+    required this.glyphX,
+    required this.glyphY,
+    required this.glyphW,
+    required this.glyphH,
+    required this.viewW,
+    required this.viewH,
+    required this.submit,
+  });
+
+  /// hook 侧单调递增的命中序号：host 据此判新、hook 据此丢弃过期帧。
+  final int seq;
+
+  /// **整行**台词（不截断——制卡要整句）。
+  final String line;
+
+  /// 光标落在第几个字符（UTF-16 下标）。
+  final int charIndex;
+
+  /// hook 自报的本行字符数，只用于自洽校验（与 [line] 长度不符即判脏数据）。
+  final int charCount;
+
+  final int glyphX;
+  final int glyphY;
+  final int glyphW;
+  final int glyphH;
+
+  /// primaryLayer 尺寸：卡片定位/钳制的「屏幕」。
+  final int viewW;
+  final int viewH;
+
+  /// true = 真查词（点击 / hook 侧判定的悬停即查词）；false = 纯悬停，只更新高亮。
+  final bool submit;
+
+  /// 命中字形矩形（primaryLayer px）。
+  Rect get glyphRect => Rect.fromLTWH(
+        glyphX.toDouble(),
+        glyphY.toDouble(),
+        glyphW.toDouble(),
+        glyphH.toDouble(),
+      );
+
+  /// [charIndex] 是否真的指得到 [line] 里的一个字。**硬门**：指不到就丢弃，不去猜
+  /// ——猜出来的下标会让高亮与查词落在完全无关的字上。
+  bool get isAddressable =>
+      line.isNotEmpty && charIndex >= 0 && charIndex < line.length;
+
+  /// hook 自报的字符数与 UTF-16 长度是否一致。**软门**（只记账不丢弃）：两侧计数单位
+  /// 若哪天漂了（比如 hook 改按字素簇计），硬丢会让整个功能静默死掉且日志上什么都
+  /// 看不到；[isAddressable] 已经挡住了真正危险的越界。
+  bool get hasConsistentCharCount => charCount == line.length;
+
+  static GalLookupHit? fromMap(Map<Object?, Object?> map) {
+    int intOf(String key) => (map[key] as num?)?.toInt() ?? 0;
+    final String line = map['line']?.toString() ?? '';
+    if (line.isEmpty) return null;
+    return GalLookupHit(
+      seq: intOf('seq'),
+      line: line,
+      charIndex: intOf('charIndex'),
+      charCount: intOf('charCount'),
+      glyphX: intOf('glyphX'),
+      glyphY: intOf('glyphY'),
+      glyphW: intOf('glyphW'),
+      glyphH: intOf('glyphH'),
+      viewW: intOf('viewW'),
+      viewH: intOf('viewH'),
+      submit: map['submit'] == true,
+    );
+  }
+}
+
+/// 游戏内查词：落在卡片矩形内、由 hook 转发过来的一次输入事件。
+///
+/// Dart **不解释语义**（不判断这是点了哪个词条、要不要翻页）——原样透传给 runner 的
+/// popup 输入注入口，由已有的 WebView2 `SendMouseInput` 消费。坐标是**卡片本地** px
+/// （hook 已减去 anchor）。
+@immutable
+class GalLookupInput {
+  const GalLookupInput({
+    required this.seq,
+    required this.x,
+    required this.y,
+    required this.kind,
+    required this.wheel,
+    required this.keys,
+  });
+
+  final int seq;
+  final int x;
+  final int y;
+
+  /// 0=move 1=leftDown 2=leftUp 3=wheel 4=leave。
+  final int kind;
+  final int wheel;
+  final int keys;
+
+  static GalLookupInput fromMap(Map<Object?, Object?> map) {
+    int intOf(String key) => (map[key] as num?)?.toInt() ?? 0;
+    return GalLookupInput(
+      seq: intOf('seq'),
+      x: intOf('x'),
+      y: intOf('y'),
+      kind: intOf('kind'),
+      wheel: intOf('wheel'),
+      keys: intOf('keys'),
+    );
+  }
+}
+
+typedef GalLookupHitHandler = FutureOr<void> Function(GalLookupHit hit);
+typedef GalLookupInputHandler = FutureOr<void> Function(GalLookupInput input);
+
+/// 游戏内查词 Dart→runner 调用的应答。
+///
+/// runner 从不抛异常，它把失败**编码成 `{error: <token>}`**（旧 helper 没有 v14 查词
+/// 区、开关没开、取帧失败、卡片超预算…）。所以这些调用绝不能 fire-and-forget 成
+/// 「看起来成功」——阶段证据门要求 ready / 捕获 / 投帧各算各的，吞掉 error token 等于
+/// 拿前一阶段推断后一阶段。
+@immutable
+class GalLookupCallResult {
+  const GalLookupCallResult({
+    this.error,
+    this.width = 0,
+    this.height = 0,
+    this.clamped = false,
+  });
+
+  /// 平台不支持（非 Windows）时的常量结果：不是失败，是「这条链在这个平台不存在」。
+  static const GalLookupCallResult unsupported =
+      GalLookupCallResult(error: 'unsupported_platform');
+
+  /// runner 给的错误 token；null = 成功。
+  final String? error;
+
+  /// 实际写进共享内存的帧尺寸（仅 present 有值）。
+  final int width;
+  final int height;
+
+  /// 卡片被裁过（源画面超维度上界，或字节超预算按行裁）——处置是「把卡片做小点」。
+  final bool clamped;
+
+  bool get ok => error == null;
+
+  static GalLookupCallResult fromReply(Object? reply) {
+    if (reply is! Map) return const GalLookupCallResult();
+    final Map<Object?, Object?> map = reply.cast<Object?, Object?>();
+    final Object? error = map['error'];
+    return GalLookupCallResult(
+      error: error is String && error.isNotEmpty ? error : null,
+      width: (map['width'] as num?)?.toInt() ?? 0,
+      height: (map['height'] as num?)?.toInt() ?? 0,
+      clamped: map['clamped'] == true,
+    );
+  }
+}
+
 /// native 侧穿透态被否决 / 变更时的回传（BUG-951）。native 建不出逃生工具条窗
 /// 时会拒绝进入穿透并把自己摁回 false；Dart 必须跟着退回，否则它的标志卡在
 /// true，用户下一次按 `↗` 会变成一次看不出反应的空点击。
@@ -95,6 +264,8 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
   static GalHookTextLockHandler? _onLockChanged;
   static GalHookTextPassThroughHandler? _onPassThroughChanged;
   static GalHookTextBoundsHandler? _onBoundsChanged;
+  static GalLookupHitHandler? _onGalLookupHit;
+  static GalLookupInputHandler? _onGalLookupInput;
 
   static void setEventHandlers({
     GalHookTextLookupHandler? onLookupText,
@@ -108,6 +279,8 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     GalHookTextLockHandler? onLockChanged,
     GalHookTextPassThroughHandler? onPassThroughChanged,
     GalHookTextBoundsHandler? onBoundsChanged,
+    GalLookupHitHandler? onGalLookupHit,
+    GalLookupInputHandler? onGalLookupInput,
   }) {
     _onLookupText = onLookupText;
     _onToggleFollow = onToggleFollow;
@@ -120,6 +293,8 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     _onLockChanged = onLockChanged;
     _onPassThroughChanged = onPassThroughChanged;
     _onBoundsChanged = onBoundsChanged;
+    _onGalLookupHit = onGalLookupHit;
+    _onGalLookupInput = onGalLookupInput;
     _instance.channel.setMethodCallHandler(_handleNativeCall);
   }
 
@@ -135,6 +310,8 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     _onLockChanged = null;
     _onPassThroughChanged = null;
     _onBoundsChanged = null;
+    _onGalLookupHit = null;
+    _onGalLookupInput = null;
     _instance.channel.setMethodCallHandler(null);
   }
 
@@ -181,6 +358,17 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       case 'windowRectChanged':
         final GalHookTextWindowRect? rect = GalHookTextWindowRect.fromMap(args);
         if (rect != null) await _onBoundsChanged?.call(rect);
+        break;
+      // 游戏内查词：hook → runner → Dart。两条都在 latest-wins 语义下，处理器自己
+      // 负责去抖/丢弃，channel 层只做解析与自洽校验。
+      case 'onGalLookupHit':
+        final GalLookupHit? hit = GalLookupHit.fromMap(args);
+        if (hit != null && hit.isAddressable) {
+          await _onGalLookupHit?.call(hit);
+        }
+        break;
+      case 'onGalLookupInput':
+        await _onGalLookupInput?.call(GalLookupInput.fromMap(args));
         break;
       default:
         break;
@@ -316,6 +504,85 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     await _instance.channel.invokeMethod<void>(
       'setLocked',
       <String, Object?>{'locked': locked},
+    );
+  }
+
+  // ── 游戏内查词（Dart → runner）────────────────────────────────────────────
+  // 三个方法都只搬运整数/布尔：**位图永远不经过 Dart**（离屏 WebView2 出帧 →
+  // runner 取帧 → 共享内存 → hook memcpy 进游戏 Layer），Dart 只说「谁、放哪、
+  // 高亮哪一段」。非 Windows 上全是空操作，不是崩。
+
+  /// 总开关：runner 据此把 `lookup_enabled` 写进共享内存（hook 侧不开启就零写入），
+  /// 并决定离屏 popup 是否进入「出帧给游戏」模式。
+  static Future<GalLookupCallResult> galLookupSetEnabled(bool enabled) async {
+    if (!_instance.isSupported) return GalLookupCallResult.unsupported;
+    return GalLookupCallResult.fromReply(
+      await _instance.channel.invokeMethod<Object?>(
+        'galLookupSetEnabled',
+        <String, Object?>{'enabled': enabled},
+      ),
+    );
+  }
+
+  /// 投帧：把「第 [seq] 次命中的卡片」放到 primaryLayer 的 ([anchorX], [anchorY])，
+  /// 并把台词的 [highlightStart]..+[highlightLen]（UTF-16）标成命中高亮。
+  ///
+  /// 必须在 popup 内容**渲染完成**之后才调——早于内容就绪投帧会抓到上一帧或空白。
+  /// 就绪信号见 [GlobalLookupController.onRevealed]（host 自测量上报的 union bbox）。
+  static Future<GalLookupCallResult> galLookupPresent({
+    required int seq,
+    required int anchorX,
+    required int anchorY,
+    required int highlightStart,
+    required int highlightLen,
+  }) async {
+    if (!_instance.isSupported) return GalLookupCallResult.unsupported;
+    final Object? reply = await _instance.channel.invokeMethod<Object?>(
+      'galLookupPresent',
+      <String, Object?>{
+        'seq': seq,
+        'anchorX': anchorX,
+        'anchorY': anchorY,
+        'highlightStart': highlightStart,
+        'highlightLen': highlightLen,
+      },
+    );
+    return GalLookupCallResult.fromReply(reply);
+  }
+
+  /// 消场：换行 / 换页 / 会话结束 / 卡片被用户关掉。[seq] 是要撤掉的那次命中。
+  static Future<GalLookupCallResult> galLookupDismiss(int seq) async {
+    if (!_instance.isSupported) return GalLookupCallResult.unsupported;
+    return GalLookupCallResult.fromReply(
+      await _instance.channel.invokeMethod<Object?>(
+        'galLookupDismiss',
+        <String, Object?>{'seq': seq},
+      ),
+    );
+  }
+
+  /// 把 hook 转发过来的卡片内输入原样丢回 runner 的既有 popup 输入注入口
+  /// （`global_lookup_window.cpp` 的 `SendMouseInput`）。Dart 不解释语义。
+  ///
+  /// runner 侧 `HandleLookupCall` 的第四个方法（`voice_hook_reader.cpp`）：注入是
+  /// **Dart 驱动**的——泵只上报，不自己喂 WebView2，否则每个事件注入两次（点击变
+  /// 双击、滚轮翻倍）。
+  static Future<GalLookupCallResult> galLookupInput(
+    GalLookupInput input,
+  ) async {
+    if (!_instance.isSupported) return GalLookupCallResult.unsupported;
+    return GalLookupCallResult.fromReply(
+      await _instance.channel.invokeMethod<Object?>(
+        'galLookupInput',
+        <String, Object?>{
+          'seq': input.seq,
+          'x': input.x,
+          'y': input.y,
+          'kind': input.kind,
+          'wheel': input.wheel,
+          'keys': input.keys,
+        },
+      ),
     );
   }
 }

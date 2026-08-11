@@ -1,4 +1,4 @@
-## BUG-1510 · 下载任务空态遮挡且缺少实时指标
+## BUG-1512 · 下载任务空态遮挡且缺少实时指标
 - **报告**：2026-08-10（用户：）
 - **真实性**：✅ 真 bug。`downloads_page.dart` 把新版 `VideoDownloadJobsPanel` 与旧版 `AnimeDownloadDialog(tasksOnly: true)` 同时包成 `Expanded`，两者固定各占半屏；旧计划为空仍绘制“暂无下载任务”。新版卡片又只读取 Drift 工作流字段，后端已经提供的总大小、节点、实时速率、剩余字节和流量全部未接入。可见验收还发现新版 `library` 任务的 embedded resume id 从未进入启动 keep 集合，重启会丢掉做种与实时观测能力。
 - **[x] ① 已修复** — 旧计划列表通过任务存在回调按需分配高度，空时完全折叠；新版任务页每 3 秒按持久任务绑定读取真实 torrent 快照，展示选定大小、真实状态、做种/用户、上下行速度、剩余时间和分享率。qB `total_size` 与内置引擎 `total_wanted` 统一进入 `TorrentSnapshot.totalSizeBytes`；历史任务没有运行时快照时从持久文件行回退真实选定大小。新版 embedded 完成任务继续保留 resume，重启后恢复做种与指标。

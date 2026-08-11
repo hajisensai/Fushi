@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
 import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫：字幕跳转列表走 push-aside（把画面挤窄到左侧），而非 overlay 浮层遮挡
@@ -11,6 +12,10 @@ import 'video_fushi_page_source_corpus.dart';
 ///
 /// 修复：`_toggleSubtitleJumpList` 改驱动 `_subtitleListVisible`（push-aside）；从
 /// `_VideoSidePanelKind` 删除 subtitleList 枚举值。
+///
+/// BUG-1501 之后本函数还多了一层**选集横轨**的点外关闭 barrier（由 `episodeVisible`
+/// 单独门控，与字幕列表互斥）。它与下面 TODO-637 的禁令不冲突：禁的是「跟着字幕列表
+/// 挂的 barrier」，不是 `HitTestBehavior.opaque` 这个词本身。
 ///
 /// TODO-637：字幕列表改回「带 × 的非阻塞侧栏」——画面区**不再叠** opaque barrier
 /// （BUG-256 的「点画面关列表」层罩在画面字幕查词手势上致 TODO-636 画面查不了词），
@@ -81,19 +86,40 @@ void main() {
   test(
       'TODO-637 non-blocking sidebar: video area has NO opaque barrier '
       '(restores picture-subtitle lookup, TODO-636)', () {
-    final int start = src.indexOf('Widget _videoWithSubtitlePanel(');
-    expect(start, greaterThan(-1),
-        reason: 'should have push-aside layout _videoWithSubtitlePanel');
-    final int end = src.indexOf('\n  }', start);
-    final String body = src.substring(start, end);
-    // The video area is bare [video]; it must NOT carry an opaque barrier,
-    // otherwise the barrier covers the picture-subtitle lookup gesture and the
-    // picture subtitle cannot be looked up while the list is open (TODO-636).
+    // 边界由 [methodBody] 做括号配对，不再用 `indexOf('\n  }')` 猜——那个写法把
+    // 「函数体到哪结束」交给缩进巧合，函数里多一层 2 空格闭合就整段截错。
+    final String body = methodBody(src, 'Widget _videoWithSubtitlePanel(');
+    final String code = maskComments(body);
+    // TODO-637 的契约是「**字幕列表** push-aside 时画面区不叠 barrier」，不是
+    // 「本函数里不许出现 opaque 这个词」。BUG-1501 之后同一个 Stack 还要负责选集
+    // 横轨的「点画面关横轨」barrier，它由 `episodeVisible` 单独门控，与字幕列表
+    // 互斥（横轨出现时字幕侧栏宽度必为 0）。旧判据整段扫函数体，横轨 barrier 一
+    // 落地就把它判红，而 TODO-636 真正怕的那层（无门控、跟着字幕列表一起挂的
+    // barrier）它反而分不出来——判据的粒度错了，不是实现错了。
+    //
+    // 改成按**状态归属**切：
+    //  ① 字幕列表那条 Row 所在区间（= `if (episodeVisible)` 之前）绝不许有 barrier；
+    //  ② 全函数只允许存在那**一个** barrier，且必须是选集那一个（按 key 认）。
+    // 两条都要：只有①的话，在横轨分支外再挂一层无门控 barrier 仍能过。
+    final int episodeGate = code.indexOf('if (episodeVisible)');
+    expect(episodeGate, greaterThan(-1),
+        reason: '选集横轨 barrier 必须由 episodeVisible 门控（BUG-1501）；'
+            '门控没了就是画面区常驻一层罩子');
     expect(
-      body.contains('HitTestBehavior.opaque'),
+      code.substring(0, episodeGate).contains('HitTestBehavior.opaque'),
       isFalse,
       reason: 'video area must not have an opaque barrier '
           '(it would eat the picture-subtitle lookup gesture, TODO-636)',
+    );
+    expect(
+      'HitTestBehavior.opaque'.allMatches(code).length,
+      1,
+      reason: '本函数只允许存在选集横轨那一个 barrier；多出来的一定罩在画面上',
+    );
+    expect(
+      code.contains("'video-episode-dismiss-barrier'"),
+      isTrue,
+      reason: '那唯一一个 barrier 必须就是选集横轨的点外关闭面（BUG-1501）',
     );
     // Close is carried by the header X / Esc / subtitle button; this layout
     // function no longer closes the list directly and no longer passes a lock.
@@ -133,7 +159,10 @@ void main() {
           reason: '关闭应隐藏 push-aside 列表');
       expect(body.contains('_pokeControlsVisible()'), isTrue,
           reason: '关闭应唤回控制条（× 路径此前漏此项）');
-      expect(body.contains('_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'), isTrue,
+      expect(
+          body.contains(
+              '_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'),
+          isTrue,
           reason: '关闭应把焦点归还视频（× 路径此前漏此项，否则键盘 / 手柄失焦）');
     });
 

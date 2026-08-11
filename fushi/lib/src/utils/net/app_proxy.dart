@@ -11,21 +11,20 @@
 /// 故本层提取为**独立库**：代理**怎么解析**（`env > GUI 系统代理 > DIRECT`、用户手填优先、
 /// PAC 降级）全应用只有这一份实现，接代理的调用方一律 import 这里，不再各自重写一遍优先级。
 ///
-/// **⚠️ 覆盖面：它是「代理解析」的唯一实现，不等于「全应用出站流量都走代理」。**
-/// 当前真正调用 [applyAppProxy] 的只有三条链路：
-///   1. **云同步的 OAuth / 云盘 API** —— `sync/sync_http.dart` 的 `createSyncHttpClient` /
-///      `obtainSyncHttpClient`（Google Drive / OneDrive / Dropbox / PKCE 共用）；
-///   2. **更新检查与更新包下载** —— `utils/misc/update_checker_net.dart` /
-///      `update_checker_release.dart`；
-///   3. **下载发现（AniList / Nyaa / Jimaku / 放送日历）** —— `media/torrent/
-///      download_network_proxy.dart` 的 `auto` 模式（`direct` / `custom` 是用户显式选定的
-///      固定出口，按设计不经这里）。
+/// **覆盖面（BUG-1498 收敛后）**：出站装配不再是「每个调用点各自记得做」的事。
+///   * 公网出站一律经 `utils/net/app_http.dart` 的 [createAppHttpClient] /
+///     `createAppHttpIoClient` / `createAppDio`（内部调 [applyAppProxySync]）；
+///   * 需要异步现场解析的老调用点（云同步 / 更新检查 / 下载发现）继续用 [applyAppProxy]；
+///   * 词典链路经 `utils/net/dictionary_dio.dart` 的工厂钩子（BUG-1493）；
+///   * **本机 / 局域网 / 自建服务**（AnkiConnect、Yomitan 端口、Mihon sidecar、互联 peer、
+///     qBittorrent WebUI、WebDAV/FTP/SFTP、texthooker WS）**故意不经本层**，并且**即便经了
+///     也不会被代理**——见 [isDirectProxyTarget]。
+///   * 结构上注入不了代理的：`NetworkImage` / `CachedNetworkImageProvider`（Flutter 内部
+///     HttpClient）、media_kit/libmpv 拉流、内置 torrent 引擎（BT peer 不是 HTTP，代理只能
+///     设在 libtorrent session 上）。
 ///
-/// 其余出站点仍是裸 `http.Client()` / `HttpClient()` / `Dio()`，**不经本层**：互联/局域网
-/// peer 与配对探测、WebDAV / FTP / SFTP 后端、日志上传、弹幕（dandanplay）、刮削
-/// （TMDB / Jikan / AniList / Bangumi / VNDB / 封面下载）、词典 / 字体 / shader / OCR 模型
-/// 下载、漫画在线源、youtube_explode。要给其中某条链路接上代理是**另一件事**：得逐条判断
-/// 它到底该不该走代理（局域网互联走代理只会更坏），而不是在本文件里改一行就完事。
+/// 守卫 `test/tools/outbound_http_discipline_guard_test.dart` 钉死这条纪律：新增裸
+/// `HttpClient()` / `http.Client()` / `IOClient()` / `Dio()` 必须登记在案并写明理由。
 library;
 
 import 'dart:convert';
@@ -150,7 +149,8 @@ Future<void> applyAppProxy(HttpClient client, {String? userProxy}) async {
   final String? normalizedUserProxy =
       normalizeUserProxyHostPort(userProxy ?? appUserProxyReader());
   if (normalizedUserProxy != null) {
-    client.findProxy = (Uri uri) => 'PROXY $normalizedUserProxy';
+    client.findProxy = (Uri uri) =>
+        isDirectProxyTarget(uri.host) ? 'DIRECT' : 'PROXY $normalizedUserProxy';
     return;
   }
   final Map<String, String> environment = <String, String>{
@@ -158,25 +158,183 @@ Future<void> applyAppProxy(HttpClient client, {String? userProxy}) async {
   };
   // env 变量优先：用户显式 set 的不该被 GUI 系统代理覆盖。仅当 env 没给代理时才按平台补 GUI
   // 系统代理。三平台共用同一闸门，杜绝优先级不一致（TODO-704）。
-  final bool hasEnvProxy = environment.keys.any((String k) {
-    final String lower = k.toLowerCase();
-    return lower == 'https_proxy' || lower == 'http_proxy';
-  });
-  if (!hasEnvProxy) {
-    final Map<String, String> systemProxy;
-    if (Platform.isWindows) {
-      systemProxy = await resolveWindowsSystemProxyEnvironment();
-    } else if (Platform.isMacOS) {
-      systemProxy = await resolveMacSystemProxyEnvironment();
-    } else if (Platform.isLinux) {
-      systemProxy = await resolveLinuxSystemProxyEnvironment();
-    } else {
-      systemProxy = const <String, String>{};
-    }
-    environment.addAll(systemProxy);
+  if (!_hasEnvProxy(environment)) {
+    environment.addAll(await resolveSystemProxyEnvironment());
   }
-  client.findProxy = (Uri uri) =>
-      HttpClient.findProxyFromEnvironment(uri, environment: environment);
+  client.findProxy = (Uri uri) => _directiveFor(uri, environment);
+}
+
+/// env 里有没有给代理（`https_proxy` / `http_proxy`，大小写不敏感）。
+bool _hasEnvProxy(Map<String, String> environment) =>
+    environment.keys.any((String k) {
+      final String lower = k.toLowerCase();
+      return lower == 'https_proxy' || lower == 'http_proxy';
+    });
+
+/// 统一的「一个 URI 该走什么出口」判定：**先过本机/局域网直连闸门**，再交给
+/// `findProxyFromEnvironment`。同步版与异步版共用，两条路不可能给出不同答案。
+String _directiveFor(Uri uri, Map<String, String> environment) =>
+    isDirectProxyTarget(uri.host)
+        ? 'DIRECT'
+        : HttpClient.findProxyFromEnvironment(uri, environment: environment);
+
+/// 按平台读 GUI 系统代理（Windows 注册表 / macOS scutil / Linux gsettings）。
+/// 其余平台返回空 map。
+Future<Map<String, String>> resolveSystemProxyEnvironment() async {
+  if (Platform.isWindows) return resolveWindowsSystemProxyEnvironment();
+  if (Platform.isMacOS) return resolveMacSystemProxyEnvironment();
+  if (Platform.isLinux) return resolveLinuxSystemProxyEnvironment();
+  return const <String, String>{};
+}
+
+// ---------------------------------------------------------------------------
+// 同步装配路径（BUG-1498）
+// ---------------------------------------------------------------------------
+//
+// 为什么必须有一条同步路：全仓 40+ 个出站点的形态都是构造函数初始化列表里的
+// `client ?? http.Client()`（刮削 / 弹幕 / 字幕 / 封面 / 发音源……）。初始化列表里
+// **不能 await**，而 [applyAppProxy] 是异步的（要跑 `reg query` / `scutil` /
+// `gsettings`）。这正是「代理层存在、却有 40 条链路绕过它」的结构性成因——不是谁忘了，
+// 是那个形状根本接不上。
+//
+// 解法是把「异步的那一半」搬到进程启动时做一次：`AppModel.initialise()` 调
+// [primeAppProxy] 缓存平台 GUI 系统代理解析结果，此后 [applyAppProxySync] 纯同步装配。
+// 系统代理是机器级设置、一次解析足够；用户在设置页改了手填代理不受影响，因为
+// `findProxy` 是**请求时**才调的闭包，每次都重读 [appUserProxyReader]。
+
+/// 平台 GUI 系统代理解析结果的进程级缓存。null = 还没 prime 过。
+Map<String, String>? _cachedSystemProxyEnv;
+
+/// 预解析并缓存平台 GUI 系统代理，供 [applyAppProxySync] 同步取用。
+///
+/// 在 `AppModel.initialise()` 里调一次即可；重复调用会按当前系统设置刷新缓存
+/// （用户改了系统代理后可以再调一次让它生效）。解析失败按各 `resolve*` 的约定
+/// 返回空 map（= 不补代理），绝不抛。
+Future<void> primeAppProxy() async {
+  _cachedSystemProxyEnv = await resolveSystemProxyEnvironment();
+}
+
+/// 重置 GUI 系统代理缓存（测试用；生产上重新 [primeAppProxy] 即可）。
+@visibleForTesting
+void resetAppProxyCacheForTest() {
+  _cachedSystemProxyEnv = null;
+}
+
+/// 覆盖 GUI 系统代理缓存（测试用：本机跑不出目标平台的 GUI 代理，只能注入）。
+@visibleForTesting
+void debugSetCachedSystemProxyEnv(Map<String, String>? env) {
+  _cachedSystemProxyEnv = env == null ? null : Map<String, String>.of(env);
+}
+
+/// **同步版** [applyAppProxy]：装一个请求时才求值的 `findProxy` 闭包。
+///
+/// 优先级与异步版逐字一致（本机/局域网直连 > 用户手填 > env > GUI 系统代理 > DIRECT），
+/// 唯一差别是 GUI 系统代理那一格取自 [primeAppProxy] 缓存而不是现场 `Process.run`。
+/// **没 prime 过时该格为空**，于是退化成 `env > DIRECT`——与本函数存在之前那些裸
+/// `HttpClient()` 相比只多不少，绝不会更坏。
+void applyAppProxySync(HttpClient client) {
+  client.findProxy = resolveAppProxyDirective;
+}
+
+/// **纯查表**：一个 URI 该走什么出口。[applyAppProxySync] 装进 `findProxy` 的就是它。
+///
+/// 公开（非 `@visibleForTesting`）是因为它是这条纪律的可断言表面：守卫与单测要能直接
+/// 问「AnkiConnect / 局域网 peer 会不会被代理」，而不是去 mock 一个 HttpClient。
+String resolveAppProxyDirective(Uri uri) {
+  if (isDirectProxyTarget(uri.host)) return 'DIRECT';
+  final String? normalizedUserProxy =
+      normalizeUserProxyHostPort(appUserProxyReader());
+  if (normalizedUserProxy != null) return 'PROXY $normalizedUserProxy';
+  final Map<String, String> environment = <String, String>{
+    ...Platform.environment,
+  };
+  if (!_hasEnvProxy(environment)) {
+    environment.addAll(_cachedSystemProxyEnv ?? const <String, String>{});
+  }
+  return HttpClient.findProxyFromEnvironment(uri, environment: environment);
+}
+
+/// **本机 / 局域网直连闸门**：这些目标经 HTTP 代理只会更坏，甚至直接把功能打断。
+///
+/// 这不是「优化」，是一条硬正确性约束。实测（`HttpClient.findProxyFromEnvironment`，
+/// environment 里给了 `http_proxy`）：
+/// ```text
+/// http://127.0.0.1:8765/      -> PROXY 1.2.3.4:8080
+/// http://localhost:8765/      -> PROXY 1.2.3.4:8080
+/// http://192.168.1.34:5000/   -> PROXY 1.2.3.4:8080
+/// http://hibiki-pc.local:8080 -> PROXY 1.2.3.4:8080
+/// ```
+/// Dart **不做任何隐式 loopback bypass**（浏览器和 Windows 的 `ProxyOverride`
+/// 默认值 `<local>` 都做），`no_proxy` 也只在用户自己设了才有；而 Windows 系统代理是从
+/// 注册表 `ProxyServer` 读的，`ProxyOverride` 压根没被读进来。用户手填代理那条分支更极端
+/// ——它无条件返回 `PROXY host:port`，连 `no_proxy` 都不过。
+///
+/// 于是「把某条链路接进代理层」在本仓一直是个危险动作：AnkiConnect（`127.0.0.1:8765`）、
+/// Yomitan 本地端口、Mihon sidecar、桌面 OAuth 回环回调（BUG-1348 的原始症状之一）、
+/// 互联局域网 peer、qBittorrent WebUI、自建 WebDAV，任何一条被卷进去都是功能当场坏掉。
+/// 把闸门放在**解析层**而不是每个调用点，这个风险就一次性消失了：接不接代理不再需要
+/// 逐点判断「它会不会打到本机」。
+///
+/// 覆盖（与 Windows `<local>` / 常见 `no_proxy` 默认值对齐）：
+/// * `localhost` / `*.localhost`（RFC 6761）、`*.local`（mDNS——互联 peer 发现用 Bonsoir
+///   广播的正是这种名字）；
+/// * IPv4：`127.0.0.0/8`、`0.0.0.0`、`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`、
+///   `169.254.0.0/16`（link-local）；
+/// * IPv6：`::1`、`::`、`fc00::/7`（ULA）、`fe80::/10`（link-local）。
+///
+/// **不覆盖**用户自填的公网自建服务（自建 dandanplay 镜像、公网 WebDAV）：那些确实该跟着
+/// 全局代理走，与浏览器行为一致。
+bool isDirectProxyTarget(String host) {
+  String h = host.trim().toLowerCase();
+  if (h.isEmpty) return false;
+  // `Uri.host` 对 IPv6 字面量已剥方括号，但调用方也可能直接喂原始 authority。
+  if (h.startsWith('[') && h.endsWith(']')) {
+    h = h.substring(1, h.length - 1);
+  }
+  // IPv6 的 zone id（`fe80::1%eth0`）不参与判定。
+  final int zone = h.indexOf('%');
+  if (zone >= 0) h = h.substring(0, zone);
+  if (h.isEmpty) return false;
+
+  if (h == 'localhost' || h.endsWith('.localhost')) return true;
+  if (h == 'local' || h.endsWith('.local')) return true;
+
+  final List<int>? v4 = _parseIpv4(h);
+  if (v4 != null) {
+    if (v4[0] == 127 || v4[0] == 0) return true; // loopback / 未指定
+    if (v4[0] == 10) return true; // 10.0.0.0/8
+    if (v4[0] == 172 && v4[1] >= 16 && v4[1] <= 31) return true; // 172.16/12
+    if (v4[0] == 192 && v4[1] == 168) return true; // 192.168/16
+    if (v4[0] == 169 && v4[1] == 254) return true; // link-local
+    return false;
+  }
+
+  if (!h.contains(':')) return false; // 普通主机名 → 公网，走代理
+  // 到这里当 IPv6 字面量处理。`::ffff:127.0.0.1` 这类映射地址交给尾部的 IPv4 段判定。
+  final int lastColon = h.lastIndexOf(':');
+  final String tail = h.substring(lastColon + 1);
+  final List<int>? mapped = _parseIpv4(tail);
+  if (mapped != null) return isDirectProxyTarget(tail);
+  if (h == '::1' || h == '::') return true;
+  // fc00::/7（ULA：fc / fd 开头）与 fe80::/10（link-local：fe8 / fe9 / fea / feb）。
+  if (h.startsWith('fc') || h.startsWith('fd')) return true;
+  if (RegExp(r'^fe[89ab]').hasMatch(h)) return true;
+  return false;
+}
+
+/// 把点分四段解析成 0-255 的四元组；非 IPv4 字面量返回 null。
+List<int>? _parseIpv4(String host) {
+  final List<String> parts = host.split('.');
+  if (parts.length != 4) return null;
+  final List<int> out = <int>[];
+  for (final String part in parts) {
+    if (part.isEmpty || part.length > 3) return null;
+    if (!RegExp(r'^\d+$').hasMatch(part)) return null;
+    final int value = int.parse(part);
+    if (value > 255) return null;
+    out.add(value);
+  }
+  return out;
 }
 
 /// 读取 Windows「系统代理」设置（clash/v2ray 系统代理模式写在这里），返回可喂给

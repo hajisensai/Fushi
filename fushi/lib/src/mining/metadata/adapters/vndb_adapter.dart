@@ -15,6 +15,7 @@ import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_rate_limit.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
 import 'package:http/http.dart' as http;
+import 'package:fushi/src/utils/net/app_http.dart';
 
 /// 详情请求要的字段集（契约 §2.3 逐字给定）。
 const String kVndbDetailFields =
@@ -37,7 +38,7 @@ class VndbMetadataAdapter implements GalgameMetadataAdapter {
     GalgameRateLimiter? rateLimiter,
     String baseUrl = 'https://api.vndb.org/kana',
     Duration timeout = const Duration(seconds: 15),
-  })  : _client = client ?? http.Client(),
+  })  : _client = client ?? createAppHttpIoClient(),
         _ownsClient = client == null,
         // VNDB 官方限流约 1 req/s、突发 200；这里取远比它保守的稳态。
         _rateLimiter = rateLimiter ??

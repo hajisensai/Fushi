@@ -24,6 +24,7 @@ import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
+import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/export_directory.dart';
@@ -857,6 +858,14 @@ class AppModel with ChangeNotifier {
     ..onFloatingLyricClosePersist = (() => setShowFloatingLyric(false))
     ..onToggleFloatingLyricFromNotification = toggleFloatingLyricFromControls;
   late DictionaryImportManager _dictImportManager;
+
+  /// BUG-1499 / BUG-1500：词典下载/更新任务的所有权持有者。挂在 [AppModel] 上而不是
+  /// 词典页的 State 上，任务因此不随进度对话框的开关而生死——用户可以把进度框收起来
+  /// 回去用 app，下载照跑；也因此它能成为「手动下载」与「启动静默自动更新」两条流程
+  /// 的**唯一互斥点**（两条流程的导入共用同一个 `import_temp` 暂存目录，并发会互删）。
+  final DictionaryDownloadController dictionaryDownloadController =
+      DictionaryDownloadController();
+
   late FileExportManager _fileExportManager;
   late LocalAudioManager _localAudioManager;
 
@@ -2184,6 +2193,16 @@ class AppModel with ChangeNotifier {
       // 死」。fushi_dictionary 是下游包，反向 import 不了 applyAppProxy，故在这里把它
       // 接进包内的进程级钩子。未接线时钩子是 no-op，行为与接线前逐字等价。
       installDictionaryDioFactory();
+      // BUG-1498：把「平台 GUI 系统代理探测」这一步异步工作提前做掉并缓存，之后
+      // `createAppHttpIoClient()` / `createAppDio()` 就能在构造函数初始化列表里**同步**
+      // 装配出口——那正是全仓 40+ 条裸出站接不上代理层的结构性原因（初始化列表不能
+      // await）。不 await 它：prime 只影响「GUI 系统代理」那一格，没 prime 前解析退化成
+      // `env > DIRECT`，仍不比接线前差，没必要为它拖慢启动。
+      unawaited(primeAppProxy());
+      // BUG-1498：远程发音（Forvo / 词典音频源等公网 URL）的抓取住在 fushi_anki 包里，
+      // 同样反向 import 不了 applyAppProxy。只接**远程媒体**这一条，AnkiConnect 自身
+      // （localhost:8765，也可能是局域网另一台机）绝不经过它。
+      installAnkiRemoteMediaHttpClientFactory();
       _applyMemoryPolicy();
       _mediaTrackingService = MediaTrackingService(
         repository: MediaTrackingRepository(_database),
@@ -4113,16 +4132,21 @@ class AppModel with ChangeNotifier {
 
   DateTime? get lastDictionaryUpdateAt => prefsRepo.lastDictionaryUpdateAt;
 
-  /// 自动更新是否正在进行的再入守卫（与导入并发由 import manager 内部串行，但此处
-  /// 防止启动 hook 与潜在重复触发叠加）。
-  bool _autoUpdateInProgress = false;
-
   /// TODO-861③：启动时 check-due 自动更新词典（前台、静默、不弹错）。先用纯函数
   /// [shouldAutoUpdateDictionaries] 守门（未开 / 未到期 / 无可更新 / 正忙 → 直接
   /// 返回），再逐本拉远端 index 比 revision、有新版才下载 force 重导。**失败不中断
   /// 整批**（逐本 try/catch 收集失败）；整批检查完成（无新版也算完成）才写
   /// `lastDictionaryUpdateAt`，任一本检查/重导失败则不推进时间，留待下次启动重试。
   /// 复用手动更新同款「下载→force 重导（保留 order/hidden/collapsed）」链路。
+  ///
+  /// BUG-1500：整批跑在 [dictionaryDownloadController] 的互斥 `run` 里。此前的再入
+  /// 守卫是本类私有的 `_autoUpdateInProgress`，而手动下载用的是词典页私有的
+  /// `_isDownloading`——两个 bool 互不感知，用户在词典页点「更新」的同时启动 hook 正
+  /// 在静默更新同一本词典时，两条流程会同时使用**同一个** `<资源目录>/import_temp`
+  /// 暂存目录，后者的 `deleteSync(recursive: true)` 直接把前者正在写的暂存删掉；更糟
+  /// 的是两边都会「删旧目录 + 删 meta 再 publish」，交错执行能落成「旧的已删、新的没
+  /// 落地」。收进同一把锁后，谁先谁独占，另一条直接跳过（自动更新本就是 check-due，
+  /// 跳过一轮下次启动重来，零损失）。
   Future<void> maybeAutoUpdateDictionaries() async {
     if (!autoUpdateDictionaries) return;
     final List<Dictionary> updatable =
@@ -4132,69 +4156,84 @@ class AppModel with ChangeNotifier {
       lastUpdate: lastDictionaryUpdateAt,
       interval: dictionaryUpdateInterval,
       hasUpdatable: updatable.isNotEmpty,
-      isBusy: _autoUpdateInProgress,
+      isBusy: dictionaryDownloadController.isBusy,
     )) {
       return;
     }
-    _autoUpdateInProgress = true;
-    int completedCount = 0;
-    try {
-      for (final Dictionary dictionary in updatable) {
-        try {
-          final DictionaryRemoteIndexResult remote =
-              await DictionaryUpdateService.fetchRemoteIndexResult(
-            dictionary.indexUrl,
-          );
-          if (!remote.succeeded) {
-            debugPrint('[Fushi] auto dict update could not check '
-                '${dictionary.name}');
-            continue;
-          }
-          if (!DictionaryUpdateService.needsUpdate(
-              dictionary.revision, remote.revision)) {
+    await dictionaryDownloadController.run(
+      initialMessage: t.dict_update_checking,
+      body: (DictionaryDownloadJob job) async {
+        int completedCount = 0;
+        for (final Dictionary dictionary in updatable) {
+          // 用户在状态行/进度框里按了取消 → 本间边界停整批（当前这本已完整发布）。
+          if (job.isCancelled) break;
+          try {
+            job.markDownloadPhase();
+            job.message.value = t.dict_update_checking;
+            final DictionaryRemoteIndexResult remote =
+                await DictionaryUpdateService.fetchRemoteIndexResult(
+              dictionary.indexUrl,
+            );
+            if (!remote.succeeded) {
+              debugPrint('[Fushi] auto dict update could not check '
+                  '${dictionary.name}');
+              continue;
+            }
+            if (!DictionaryUpdateService.needsUpdate(
+                dictionary.revision, remote.revision)) {
+              completedCount++;
+              continue;
+            }
+            await _autoRedownloadAndReimport(dictionary, job);
             completedCount++;
-            continue;
+          } catch (e, stack) {
+            if (DictionaryDownloadController.isCancellation(e)) break;
+            // 单本失败不中断其余（移植 Hoshi 的 failures-collect 语义）。
+            ErrorLogService.instance
+                .log('AppModel.autoUpdateDictionary', e, stack);
+            debugPrint('[Fushi] auto dict update failed for '
+                '${dictionary.name}: $e');
           }
-          await _autoRedownloadAndReimport(dictionary);
-          completedCount++;
-        } catch (e, stack) {
-          // 单本失败不中断其余（移植 Hoshi 的 failures-collect 语义）。
-          ErrorLogService.instance
-              .log('AppModel.autoUpdateDictionary', e, stack);
-          debugPrint('[Fushi] auto dict update failed for '
-              '${dictionary.name}: $e');
         }
-      }
-      // BUG-1281：检查成功且无需更新也是完整成功；旧逻辑只在真正重导过词典时写
-      // 时间，导致长期没有新版的用户永远显示“从未”并在每次启动重复联网。
-      if (didCompleteDictionaryAutoUpdateBatch(
-        totalCount: updatable.length,
-        completedCount: completedCount,
-      )) {
-        await prefsRepo.setLastDictionaryUpdateAt(DateTime.now());
-      }
-    } finally {
-      _autoUpdateInProgress = false;
-    }
+        // BUG-1281：检查成功且无需更新也是完整成功；旧逻辑只在真正重导过词典时写
+        // 时间，导致长期没有新版的用户永远显示“从未”并在每次启动重复联网。
+        if (didCompleteDictionaryAutoUpdateBatch(
+          totalCount: updatable.length,
+          completedCount: completedCount,
+        )) {
+          await prefsRepo.setLastDictionaryUpdateAt(DateTime.now());
+        }
+        // 静默路径：不弹结果 toast（TODO-861③ 的原语义，失败也不打扰）。
+        return null;
+      },
+    );
   }
 
   /// 静默下载 + force 重导单本词典（复用手动链路语义：保留 order/hidden/collapsed，
-  /// 回填 isUpdatable/URL 来源）。无 UI ValueNotifier，用一次性内部 notifier。
-  Future<void> _autoRedownloadAndReimport(Dictionary dictionary) async {
+  /// 回填 isUpdatable/URL 来源）。进度写进 [job] 的 notifier，让「后台正在更新什么」
+  /// 在词典页状态行 / 进度框里可见且可取消（下载阶段）。
+  Future<void> _autoRedownloadAndReimport(
+    Dictionary dictionary,
+    DictionaryDownloadJob job,
+  ) async {
     final Directory tempDir = Directory(
       path.join(dictionaryResourceDirectory.path, 'auto_update_temp'),
     );
-    final ValueNotifier<String> progressNotifier = ValueNotifier<String>('');
-    final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0);
     try {
+      job.markDownloadPhase();
+      job.progress.value = 0;
+      job.message.value = t.dict_update_updating(name: dictionary.name);
       final File zipFile = await DictionaryDownloader.download(
         url: dictionary.downloadUrl,
         tempDir: tempDir,
-        progressNotifier: downloadProgress,
+        progressNotifier: job.progress,
+        cancelToken: job.cancelToken,
       );
+      job.markImportPhase();
+      job.progress.value = 0;
       await importDictionary(
         file: zipFile,
-        progressNotifier: progressNotifier,
+        progressNotifier: job.message,
         onImportSuccess: () {},
         forceReplaceExisting: true,
         sourceOverride: <String, String>{
@@ -4204,8 +4243,6 @@ class AppModel with ChangeNotifier {
         },
       );
     } finally {
-      progressNotifier.dispose();
-      downloadProgress.dispose();
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
     }
   }
@@ -5320,9 +5357,29 @@ class AppModel with ChangeNotifier {
   FushiDatabase get database => _database;
 
   /// Close the database and notify listeners, without exiting the app.
+  /// BUG-1505：关库**之前**把后台写手停掉。
+  ///
+  /// `closeDatabase()` 只关连接，不停任何人。下载流水线这类常驻 drain 循环仍在跑，
+  /// 于是关库后每次唤醒都撞上 drift 的
+  /// 「Tried to send Request ... over isolate channel, but the connection was
+  /// closed!」——用户机器上实测一次迁移导入刷出 8 条。它至少污染诊断日志（真正的
+  /// 失败原因被淹没），更糟的是合并导入正在直接操作同一个库文件，此时放任第二个
+  /// 写手继续往里写是数据安全问题，不是噪声问题。
+  ///
+  /// 只停「后台自己会写库」的那几个（下载/订阅/漫画队列），不碰查词、TTS 这类只读
+  /// 子系统：closeDatabase 之后调用方一律走重启，停多了没收益、只增加爆炸半径。
+  Future<void> quiesceBackgroundDatabaseWriters() async {
+    _animeDownloadService?.stop();
+    _animeDownloadSubscriptionService?.stop();
+    _mokuroMoeDownloadQueue?.dispose();
+    _mokuroMoeDownloadQueue = null;
+    await _disposeVideoDownloadPipelineRuntime();
+  }
+
   Future<void> closeDatabase() async {
     _isInitialised = false;
     databaseCloseNotifier.notifyListeners();
+    await quiesceBackgroundDatabaseWriters();
     await _database.close();
   }
 
@@ -5367,6 +5424,7 @@ class AppModel with ChangeNotifier {
       themeNotifier.dispose();
       _themeListenerAdded = false;
     }
+    dictionaryDownloadController.dispose();
     dictionaryEntriesNotifier.dispose();
     clipboardHistoryNotifier.dispose();
     dictionarySearchAgainNotifier.dispose();
@@ -6151,6 +6209,12 @@ class AppModel with ChangeNotifier {
   double get galHookTextFontSize => prefsRepo.galHookTextFontSize;
   Future<void> setGalHookTextFontSize(double value) =>
       prefsRepo.setGalHookTextFontSize(value);
+
+  // KiriKiri 游戏内查词总开关（仅 Windows）：开着时命中的字会在**游戏渲染树内部**
+  // 弹出与 app 内逐像素一致的词典卡片。
+  bool get galIngameLookupEnabled => prefsRepo.galIngameLookupEnabled;
+  Future<void> setGalIngameLookupEnabled(bool value) =>
+      prefsRepo.setGalIngameLookupEnabled(value);
 
   // TODO-370: 悬浮字幕透明度（按钮底色 / 文字），0..100 百分比，100=保持现观感。
   int get floatingLyricButtonBgOpacity =>

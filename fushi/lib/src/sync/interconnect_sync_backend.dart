@@ -870,9 +870,20 @@ class InterconnectSyncBackend extends SyncBackend
   }
 
   /// 把本地 [file]（.epub）推送到对端 host，导入书名为 [title] 的书。
+  ///
+  /// [displayTitle] / [displayTitleAt] 是本机用户给这本书改的名字及其 LWW 毫秒戳
+  /// （BUG-1503）。body 是**裸 .epub 字节流**，没有 sidecar 也没有 multipart，所以
+  /// 元数据走自定义 header —— 与本类视频推送的 `X-Hibiki-Video-Title` 同一套先例
+  /// （header 只收 ASCII，日文书名必须 [Uri.encodeComponent]）。
+  ///
+  /// additive：没改过名就一个 header 都不发，旧 host 对未知 header 一律静默忽略
+  /// （`_serveAssetPackage` 的 PUT 分支从头到尾只读 body），所以对旧 host 零影响、
+  /// 不需要任何版本协商。
   Future<void> putRemoteBook(
     String title,
     File file, {
+    String? displayTitle,
+    int displayTitleAt = 0,
     void Function(double progress)? onProgress,
   }) async {
     await _ensureResolved();
@@ -883,6 +894,17 @@ class InterconnectSyncBackend extends SyncBackend
     final int length = await file.length();
     req.headers.set('Content-Type', 'application/epub+zip');
     req.headers.set('Content-Length', '$length');
+    if (displayTitle != null &&
+        displayTitle.isNotEmpty &&
+        displayTitle != title) {
+      req.headers.set(
+        kBookDisplayTitleHeader,
+        Uri.encodeComponent(displayTitle),
+      );
+      if (displayTitleAt > 0) {
+        req.headers.set(kBookDisplayTitleAtHeader, '$displayTitleAt');
+      }
+    }
     int sent = 0;
     await req.addStream(file.openRead().map((List<int> chunk) {
       sent += chunk.length;

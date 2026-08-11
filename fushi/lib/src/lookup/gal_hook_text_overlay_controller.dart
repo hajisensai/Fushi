@@ -6,7 +6,9 @@ import 'dart:ui' show Rect;
 import 'package:flutter/foundation.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
+import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
@@ -46,12 +48,14 @@ class GalHookTextOverlayController extends ChangeNotifier {
     GalHookPreferenceReader? preferenceReader,
     GalHookPreferenceWriter? preferenceWriter,
     GalHookHoverAutoLookupReader? hoverAutoLookupReader,
+    GalIngameLookupController? ingameLookup,
   })  : _session = session ?? GalHookSessionController.instance,
         _miningCoordinator =
             miningCoordinator ?? GalHookMiningCoordinator.instance,
         _preferenceReader = preferenceReader,
         _preferenceWriter = preferenceWriter,
-        _hoverAutoLookupReader = hoverAutoLookupReader;
+        _hoverAutoLookupReader = hoverAutoLookupReader,
+        _ingameLookup = ingameLookup ?? GalIngameLookupController.instance;
 
   static final GalHookTextOverlayController instance =
       GalHookTextOverlayController._();
@@ -63,12 +67,14 @@ class GalHookTextOverlayController extends ChangeNotifier {
     GalHookPreferenceReader? preferenceReader,
     GalHookPreferenceWriter? preferenceWriter,
     GalHookHoverAutoLookupReader? hoverAutoLookupReader,
+    GalIngameLookupController? ingameLookup,
   }) : this._(
           session: session,
           miningCoordinator: miningCoordinator,
           preferenceReader: preferenceReader,
           preferenceWriter: preferenceWriter,
           hoverAutoLookupReader: hoverAutoLookupReader,
+          ingameLookup: ingameLookup,
         );
 
   static const String _rectPreferenceKey = 'gal_hook_text_window_rect';
@@ -85,6 +91,11 @@ class GalHookTextOverlayController extends ChangeNotifier {
   final GalHookPreferenceReader? _preferenceReader;
   final GalHookPreferenceWriter? _preferenceWriter;
   final GalHookHoverAutoLookupReader? _hoverAutoLookupReader;
+
+  /// 游戏内查词编排器（KiriKiri in-game lookup）。本控制器是 galgame hook 在 Dart
+  /// 侧的接线中心（持有 AppModel、会话监听与 gal channel 的 handler 表），所以由它
+  /// 启动并喂养它——不另起第二条会话监听、不复制第二份制卡链。
+  final GalIngameLookupController _ingameLookup;
 
   AppModel? _appModel;
   bool _started = false;
@@ -108,6 +119,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
   bool _pushedHoverAutoLookup = false;
   int? _sessionKey;
   String? _displayedLineId;
+
+  /// 游戏内查词用的「会话最新行」镜像，与 [_displayedLineId]（浮窗显示的那行）分开：
+  /// 浮窗被关掉时仍要能判出换行并让游戏内卡片消场。
+  String? _ingameLatestLineId;
   double _opacity = _defaultOpacity;
   double _lastNonZeroOpacity = _defaultOpacity;
   double _fontSize = kGalHookTextFontSize;
@@ -183,6 +198,11 @@ class GalHookTextOverlayController extends ChangeNotifier {
     // 不抛，且没孤儿时是一次读文件的零成本早退。
     unawaited(magpie.reconcileOrphansOnStartup());
     _loadPreferences(appModel);
+    await _ingameLookup.start(
+      appModel: appModel,
+      miningResolver: _ingameMiningHandlerFor,
+      preferenceReader: _preferenceReader,
+    );
     GalHookTextOverlayChannel.setEventHandlers(
       onLookupText: _onLookupText,
       onToggleFollow: toggleFollowing,
@@ -195,6 +215,9 @@ class GalHookTextOverlayController extends ChangeNotifier {
       onLockChanged: _onLockChanged,
       onPassThroughChanged: _onPassThroughChanged,
       onBoundsChanged: _onBoundsChanged,
+      // 游戏内查词：hook 报命中 / 转发卡片内输入，两条都直通编排器，本控制器不解释。
+      onGalLookupHit: _ingameLookup.handleHit,
+      onGalLookupInput: _ingameLookup.handleInput,
     );
     _session.addListener(_scheduleSync);
     _scheduleSync();
@@ -302,6 +325,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       _passThrough = false;
       _locked = false;
       _displayedLineId = null;
+      _ingameLatestLineId = null;
       // 新会话：上一局的试听计时不能把高亮留在新浮窗上。
       _replayResetTimer?.cancel();
       _replayResetTimer = null;
@@ -317,6 +341,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
         state.phase != GalHookSessionPhase.idle &&
         state.phase != GalHookSessionPhase.stopping &&
         state.phase != GalHookSessionPhase.error;
+    // 游戏内查词的开关跟着**会话**走，不跟着台词浮窗的可见性走：用户把浮窗关了
+    // （`_suppressedForSession`）不代表他不要游戏内查词，两者是各自独立的表面。
+    // 放在下面所有早退之前，会话一结束就一定关得掉。
+    await _ingameLookup.setSessionActive(active);
     if (!active) {
       if (_visible) {
         await GalHookTextOverlayChannel.hide();
@@ -331,9 +359,18 @@ class GalHookTextOverlayController extends ChangeNotifier {
       if (nextSessionKey == null) _sessionKey = null;
       return;
     }
-    if (_suppressedForSession) return;
-
     final List<TexthookerLineEntry> lines = _session.selectedSessionLines;
+    // 换行 / 换页：屏上那句已经不在了，游戏内卡片必须消场。判据取**会话最新行**而
+    // 不是浮窗的 [_displayedLineId]——浮窗可能被用户关掉（[_suppressedForSession]）
+    // 或压根没显示，那时 [_displayedLineId] 根本不动，卡片会一直挂在旧句子的字形
+    // 位置上。
+    final String? latestLineId = lines.isEmpty ? null : lines.last.id;
+    if (latestLineId != _ingameLatestLineId) {
+      _ingameLatestLineId = latestLineId;
+      await _ingameLookup.onLineChanged();
+    }
+
+    if (_suppressedForSession) return;
     if (lines.isEmpty) return;
     final TexthookerLineEntry latest = lines.last;
     if (!_visible) {
@@ -656,6 +693,31 @@ class GalHookTextOverlayController extends ChangeNotifier {
         updateNoteId: updateNoteId,
       ),
     );
+  }
+
+  /// 游戏内查词的制卡 handler：按台词文本回溯本局会话里的那一行，复用浮窗点词
+  /// 完全相同的 [_mineFromLookup]（截图 / 语音 / 标签 / 压缩档全部同源）。
+  ///
+  /// hook 报上来的只有文本，没有行 id。同一句台词一局里可能出现多次（回想、重读），
+  /// 取**最后一条**——屏幕上正在显示的必然是最新那条。回溯不到就返回 null：卡照样
+  /// 能建，只是不带 gal 媒体，绝不因为对不上行就把制卡按钮变成死键。
+  OverlayMiningHandler? _ingameMiningHandlerFor(String line) {
+    final List<TexthookerLineEntry> lines = _session.selectedSessionLines;
+    String? lineId;
+    for (final TexthookerLineEntry entry in lines) {
+      if (entry.text == line) lineId = entry.id;
+    }
+    if (lineId == null) return null;
+    final String resolved = lineId;
+    return ({
+      required Map<String, String> fields,
+      int? updateNoteId,
+    }) =>
+        _mineFromLookup(
+          lineId: resolved,
+          fields: fields,
+          updateNoteId: updateNoteId,
+        );
   }
 
   Future<Map<String, Object?>> _mineFromLookup({
