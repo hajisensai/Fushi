@@ -32,6 +32,11 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   final Map<String, bool> _reachable = <String, bool>{};
   bool _isTesting = false;
   bool _loaded = false;
+  // BUG-1562：「已连接 ✓」那一行的判据是 token 非空，而 token 活在
+  // [_tokenController] 里。build 直接读 controller.text 却没人监听它 —— 手贴/清空
+  // token（[_saveToken] 只落库不 setState）后本行状态原地不动，直到别的原因触发
+  // 重建。改为把「有没有 token」提成 State 字段，由 controller 监听驱动。
+  bool _tokenPresent = false;
   // TODO-963 M2: a manual-IP pairing handshake is in flight (drives a busy
   // indicator + blocks concurrent add/edit while the host approval dialog runs).
   bool _pairingManual = false;
@@ -43,6 +48,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   void initState() {
     super.initState();
     _tokenController = TextEditingController();
+    _tokenController.addListener(_onTokenTextChanged);
     _tokenFocus = FocusNode();
     _load();
     _syncSettings(widget.settingsContext)
@@ -63,12 +69,22 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
         .roleRevision
         .removeListener(_onRoleRevision);
     _tokenFocus.dispose();
+    _tokenController.removeListener(_onTokenTextChanged);
     _tokenController.dispose();
     super.dispose();
   }
 
   void _onRoleRevision() {
     if (mounted) setState(() {});
+  }
+
+  /// token 文本变化 → 只在「有/没有」翻面时重建（BUG-1562）。逐字符 setState 没有
+  /// 意义，而 [_load] / [_reloadFromStore] 在自己的 setState 里已同步过
+  /// [_tokenPresent]，所以那两条路径进到这里时值相同、直接 no-op，不会嵌套 setState。
+  void _onTokenTextChanged() {
+    final bool present = _tokenController.text.trim().isNotEmpty;
+    if (present == _tokenPresent || !mounted) return;
+    setState(() => _tokenPresent = present);
   }
 
   Future<void> _load() async {
@@ -78,6 +94,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     setState(() {
       _urls = urls;
       _tokenController.text = token ?? '';
+      _tokenPresent = _tokenController.text.trim().isNotEmpty;
       _loaded = true;
     });
     _syncSettings(widget.settingsContext)
@@ -100,6 +117,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
       if (!_tokenFocus.hasFocus) {
         _tokenController.text = token ?? '';
       }
+      _tokenPresent = _tokenController.text.trim().isNotEmpty;
     });
     _syncSettings(widget.settingsContext)
         .setHasClientConnection(urls.isNotEmpty);
@@ -185,6 +203,11 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
       },
     );
     controller.dispose();
+    // BUG-1562：弹窗是个 async gap，期间宿主 section 可能被门控藏掉（关互联总开关
+    // → interconnectActive 变 false → 本 widget dispose）。下面就要 setState，
+    // 没有这道守卫就是 dispose 后 setState 崩溃。同文件 [_load]/[_reloadFromStore]
+    // 是现成范式。
+    if (!mounted) return;
     if (result == null || result.isEmpty) return;
     final String normalizedResult;
     try {
@@ -245,44 +268,57 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   /// 流程：normalize URL → /api/ping 探测（https 先 TOFU 捕获指纹核对）→ host 支持
   /// v2 配对则双确认（确认身份 + 输 PIN）→ pair/v2 → 落 token + 指纹（TOFU 记录）。
   Future<void> _attemptManualPair(String rawUrl) async {
+    // BUG-1562：忙态必须覆盖**全程**。此前 [_pairingManual] 只由 [_runPairingV2]
+    // 内部置起，而它前面还有 TOFU 指纹捕获 + /api/ping 探测两次秒级网络往返；那段
+    // 窗口里「添加」和各行「重新配对」按钮都还是亮的，用户多点几下就能并发跑起两条
+    // 配对流程 —— 两条都会走到 [_onPairSuccess] 写 token，后写的覆盖先写的，最终
+    // 落库的凭据可能不是最后成功那台的。入口先自查再置忙，两道一起才封得住窗口
+    // （LAN 发现路径的 [_pairingUrl] 全程覆盖就是现成范式）。
+    if (_pairingManual) return;
     final String baseUrl = WebDavOps.normalizeUrl(rawUrl);
     final Uri? parsed = Uri.tryParse(baseUrl);
     if (parsed == null || parsed.host.isEmpty) return;
     final bool isHttps = parsed.scheme.toLowerCase() == 'https';
+    _setPairV2Busy(true);
+    try {
+      // https 首连：先用一次性 TOFU 探测捕获 host 证书指纹（仅取指纹，不传数据）。
+      String? capturedFingerprint;
+      if (isHttps) {
+        final int port = parsed.hasPort ? parsed.port : 443;
+        capturedFingerprint =
+            await FushiTofuProbe.captureFingerprint(parsed.host, port);
+        if (!mounted) return;
+      }
 
-    // https 首连：先用一次性 TOFU 探测捕获 host 证书指纹（仅取指纹，不传数据）。
-    String? capturedFingerprint;
-    if (isHttps) {
-      final int port = parsed.hasPort ? parsed.port : 443;
-      capturedFingerprint =
-          await FushiTofuProbe.captureFingerprint(parsed.host, port);
+      // /api/ping 探测：确认 hibiki + 支持 v2 + 取展示名/指纹（https 用捕获指纹钉扎读）。
+      final FushiPingResult? ping = await fetchFushiPing(
+        baseUrl,
+        pinnedFingerprint: capturedFingerprint,
+      );
       if (!mounted) return;
-    }
+      if (ping == null || !ping.isFushi || !ping.supportsPairV2) {
+        _showSnackBar(context, t.sync_pair_not_fushi);
+        return;
+      }
+      // https host 的钉扎指纹以 ping 回传为准（与捕获一致），明文 http 无指纹。
+      final String? fingerprint =
+          isHttps ? (ping.fingerprint ?? capturedFingerprint) : null;
+      // https 必须有指纹才能继续（否则无法钉扎，拒绝裸 https）。
+      if (isHttps && (fingerprint == null || fingerprint.isEmpty)) {
+        _showSnackBar(context, t.sync_pair_failed);
+        return;
+      }
 
-    // /api/ping 探测：确认 hibiki + 支持 v2 + 取展示名/指纹（https 用捕获指纹钉扎读）。
-    final FushiPingResult? ping = await fetchFushiPing(
-      baseUrl,
-      pinnedFingerprint: capturedFingerprint,
-    );
-    if (!mounted) return;
-    if (ping == null || !ping.isFushi || !ping.supportsPairV2) {
-      _showSnackBar(context, t.sync_pair_not_fushi);
-      return;
+      // 内层 [_runPairingV2] 自己也会置/清忙态；清完由本函数的 finally 兜底再清一次
+      // （幂等），所以嵌套不会留下悬空忙态。
+      await _runPairingV2(
+        baseUrl: baseUrl,
+        fingerprint: fingerprint,
+        deviceName: ping.deviceName,
+      );
+    } finally {
+      _setPairV2Busy(false);
     }
-    // https host 的钉扎指纹以 ping 回传为准（与捕获一致），明文 http 无指纹。
-    final String? fingerprint =
-        isHttps ? (ping.fingerprint ?? capturedFingerprint) : null;
-    // https 必须有指纹才能继续（否则无法钉扎，拒绝裸 https）。
-    if (isHttps && (fingerprint == null || fingerprint.isEmpty)) {
-      _showSnackBar(context, t.sync_pair_failed);
-      return;
-    }
-
-    await _runPairingV2(
-      baseUrl: baseUrl,
-      fingerprint: fingerprint,
-      deviceName: ping.deviceName,
-    );
   }
 
   Future<void> _toggleUrl(int index) async {
@@ -507,7 +543,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
           // 现在改为：已连接就只显示状态，原始令牌收进「手动填写」折叠项——手动粘贴对端令牌
           // 连接的回退路径仍在，只是不再和 host 端令牌摆成两个对不上的数字。per-peer 签发/
           // 鉴权/按设备吊销等后端安全机制一概不动。
-          if (_tokenController.text.trim().isNotEmpty)
+          if (_tokenPresent)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(
@@ -1059,7 +1095,11 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
       // The app-level controller already starts the host on launch; this is an
       // idempotent belt-and-suspenders for the rare case the page opens before
       // that ran. start() no-ops when already running.
-      if (enabled) await _serverController.startIfEnabled();
+      // BUG-1563：这次启动同样可能失败（端口被别的进程占了）。丢掉 outcome 就会让
+      // 开关停在「已启用」而 host 根本没起来。
+      if (enabled) {
+        _applyStartOutcome(await _serverController.startIfEnabled());
+      }
     }
   }
 
@@ -1085,13 +1125,43 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     }
   }
 
+  /// 消费一次 host 启动/重启的结果（BUG-1563）。
+  ///
+  /// 成功 → 同步角色锁；失败 → 把开关拨回**真实**状态（host 并没有在跑）并把原因
+  /// 上屏。此前只有开关那条路径认真读了 outcome，换 token / 开 TLS / 开页兜底启动
+  /// 三处都把返回值直接丢掉：端口被占或证书生成失败时 host 静默消失，UI 却一直显示
+  /// 「正在运行」，对端连不上而用户完全不知道发生过什么。
+  ///
+  /// 注意只动内存态：`serverEnabled` 这个持久意图由 controller 自己管（瞬时端口冲突
+  /// 不该抹掉用户的选择，见 [FushiSyncServerController.start] 的 BUG-160 说明）。
+  void _applyStartOutcome(FushiServerStartOutcome outcome) {
+    if (!mounted) return;
+    switch (outcome) {
+      case FushiServerStarted():
+        setState(() => _enabled = true);
+        _syncSettings(widget.settingsContext).setServerEnabled(true);
+      case FushiServerPortInUse(:final int port):
+        setState(() => _enabled = false);
+        _syncSettings(widget.settingsContext).setServerEnabled(false);
+        _showSnackBar(context, t.sync_server_port_in_use(port: port));
+      case FushiServerStartError(:final String message):
+        setState(() => _enabled = false);
+        _syncSettings(widget.settingsContext).setServerEnabled(false);
+        _showSnackBar(context, t.sync_error(message: message));
+    }
+  }
+
   Future<void> _regenerateToken() async {
     final newToken = FushiSyncServer.generateToken();
     final repo = SyncRepository(widget.settingsContext.appModel.database);
     await repo.setServerPassword(newToken);
     setState(() => _token = newToken);
     // Bounce the running host so the freshly-persisted token takes effect.
-    if (_serverController.isRunning) await _serverController.restart();
+    // BUG-1563：重启结果必须消费——重启是先 stop 再 start，start 失败就等于用户
+    // 点了「重新生成令牌」把自己的 host 关掉了，静默丢弃返回值毫无道理。
+    if (_serverController.isRunning) {
+      _applyStartOutcome(await _serverController.restart());
+    }
   }
 
   /// TODO-961: 切换互联加密（HTTPS/TLS）。持久化后若 host 正在运行则重启使新
@@ -1101,7 +1171,17 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     setState(() => _tlsEnabled = v);
     await SyncRepository(widget.settingsContext.appModel.database)
         .setServerTlsEnabled(v);
-    if (_serverController.isRunning) await _serverController.restart();
+    if (_serverController.isRunning) {
+      // BUG-1563：开 TLS 要生成/加载自签证书再重新绑端口，是最容易失败的一次重启；
+      // 失败时旧代码照样弹「已配对设备需重新配对」，等于对着一台已经不存在的 host
+      // 给操作建议。失败改走 [_applyStartOutcome]：说清原因 + 开关回落真实状态。
+      final FushiServerStartOutcome outcome = await _serverController.restart();
+      if (!mounted) return;
+      if (outcome is! FushiServerStarted) {
+        _applyStartOutcome(outcome);
+        return;
+      }
+    }
     if (mounted) _showSnackBar(context, t.sync_server_tls_repair_hint);
   }
 
@@ -1158,29 +1238,9 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                       // persists enabled on success and resets it on failure
                       // (HBK-AUDIT-167).
                       setState(() => _enabled = true);
-                      final FushiServerStartOutcome outcome =
-                          await _serverController.start();
-                      if (!mounted) return;
-                      switch (outcome) {
-                        case FushiServerStarted():
-                          _syncSettings(widget.settingsContext)
-                              .setServerEnabled(true);
-                          setState(() {});
-                        case FushiServerPortInUse(:final int port):
-                          setState(() => _enabled = false);
-                          _syncSettings(widget.settingsContext)
-                              .setServerEnabled(false);
-                          // this.context (State.context) is guarded by the
-                          // !mounted early-return above.
-                          _showSnackBar(this.context,
-                              t.sync_server_port_in_use(port: port));
-                        case FushiServerStartError(:final String message):
-                          setState(() => _enabled = false);
-                          _syncSettings(widget.settingsContext)
-                              .setServerEnabled(false);
-                          _showSnackBar(
-                              this.context, t.sync_error(message: message));
-                      }
+                      // BUG-1563：四个启动路径（开关 / 换 token / 开 TLS / 开页
+                      // 兜底）共用同一个 outcome 消费点，不再各写各的 switch。
+                      _applyStartOutcome(await _serverController.start());
                     } else {
                       setState(() => _enabled = false);
                       _syncSettings(widget.settingsContext)
@@ -1654,6 +1714,18 @@ class _InterconnectBackupBackendWidgetState
       if (!mounted) return;
       _showSnackBar(context, t.interconnect_backup_backend_active);
       // 同步分类的后端选择器/凭据区都按 backendType 门控，刷新让它们立刻跟上。
+      widget.settingsContext.refresh();
+    } catch (e, stack) {
+      // BUG-1563：原来只有 try/finally。[applyBackupBackendChange] 会连写多个偏好
+      // （切后端 + 清上一后端的 root/cache），中途抛异常时库里已经半写、内存态却还是
+      // 旧值 —— UI 显示「当前后端：Google Drive」而库里可能已经是互联，且异常逃逸成
+      // unhandled zone error，用户零提示。真值回库里重读，让 UI 与库一致。
+      ErrorLogService.instance.log('Interconnect.useAsBackupBackend', e, stack);
+      state.backendType = await SyncRepository(
+        widget.settingsContext.appModel.database,
+      ).getBackendType();
+      if (!mounted) return;
+      _showSnackBar(context, t.sync_error(message: e.toString()));
       widget.settingsContext.refresh();
     } finally {
       if (mounted) setState(() => _busy = false);

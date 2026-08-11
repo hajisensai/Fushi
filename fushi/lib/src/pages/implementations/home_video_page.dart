@@ -4277,6 +4277,36 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     return t.collection_watched_progress(done: completed, total: total);
   }
 
+  /// 远端占位卡右上角的下载态角标（BUG-1561）：进行中 → 进度环，失败 → 失败角标
+  /// （tooltip 带真实错误文本），其余 → null 不渲染。
+  ///
+  /// 下载任务的所有者是 app 级 [InterconnectDownloadManager]，与本页生命周期无关；
+  /// 失败态此前**只**通过 [_downloadRemote] 里那条 SnackBar 出现，页面已 dispose 时
+  /// 被 `if (!mounted) return;` 吃掉 → 用户永远不知道下载挂了。这里让失败态跟进度
+  /// 一样落在卡片上，重进页面照样看得到；再点一次下载即重试（新任务顶掉旧失败态）。
+  Widget? _remoteDownloadBadge(RemoteVideoInfo video, String safeKey) {
+    final InterconnectDownloadTask? task =
+        ref.watch(interconnectDownloadManagerProvider).taskFor(video.id);
+    if (task == null) return null;
+    switch (task.status) {
+      case InterconnectDownloadStatus.running:
+        return RemoteDownloadProgressBadge(
+          key: ValueKey<String>('remote_video_downloading_$safeKey'),
+          progress: task.progress,
+          tooltip: t.remote_video_downloading,
+        );
+      case InterconnectDownloadStatus.failed:
+        return RemoteDownloadFailedBadge(
+          key: ValueKey<String>('remote_video_download_failed_$safeKey'),
+          tooltip: task.error == null || task.error!.isEmpty
+              ? t.remote_video_download_failed
+              : '${t.remote_video_download_failed}: ${task.error}',
+        );
+      case InterconnectDownloadStatus.completed:
+        return null;
+    }
+  }
+
   /// 多端库联合视图占位卡（spec 2026-07-12 §2.1，撤独立远端分区）：本地视频卡尺寸 +
   /// 远端封面 + 云角标 ☁，混排进视频库主网格散卡区（[_buildLocalVideoSlivers]）。
   /// 短按走现有远端流播 [_openRemote]；右上角下载按钮/进度徽章复用 [_downloadRemote]
@@ -4288,6 +4318,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     VideoCardOrientation orientation = VideoCardOrientation.portrait,
   }) {
     final String safeKey = _safeRemoteKey(video.id);
+    final Widget? downloadBadge = _remoteDownloadBadge(video, safeKey);
     // 不再固定 260 宽：和本地 [_buildCard] 一样让卡片填满网格 cell，宽度由
     // 响应式网格决定（TODO-593）。
     return FushiCard(
@@ -4330,21 +4361,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 // <48dp。下载动作收敛到长按 / 右键面板（[_showRemoteVideoDialog] 的
                 // 「下载」快捷动作，云视频短按卡片本体即下载）。下载进行中仍在原位
                 // 显示纯展示的进度徽章（非交互，无焦点问题）。
-                if (ref
-                    .watch(interconnectDownloadManagerProvider)
-                    .isRunning(video.id))
-                  Positioned(
-                    top: 6,
-                    right: 6,
-                    child: RemoteDownloadProgressBadge(
-                      key:
-                          ValueKey<String>('remote_video_downloading_$safeKey'),
-                      progress: ref
-                          .watch(interconnectDownloadManagerProvider)
-                          .progressFor(video.id),
-                      tooltip: t.remote_video_downloading,
-                    ),
-                  ),
+                // BUG-1561：进行中 → 进度角标；失败 → 失败角标。失败态此前只活在
+                // manager 内存里没有任何出口：唯一的提示是 [_downloadRemote] 里那条
+                // SnackBar，而下载与页面生命周期解耦，失败常发生在用户已离开本页
+                // 之后（`if (!mounted) return;`）→ 用户等半天回来看到的还是一张
+                // 什么都没发生的占位卡。角标是恒定出口，重进页面照样在。
+                if (downloadBadge != null)
+                  Positioned(top: 6, right: 6, child: downloadBadge),
                 // 字幕角标收敛到共享 [CoverBadge]（UI 巡检 PR-4，PR-0 组件）。
                 if (video.hasSubtitle)
                   const Positioned(

@@ -605,6 +605,9 @@ bool _cloudOutboundUnavailable(SettingsContext ctx) =>
 _SyncSettingsState _syncSettings(SettingsContext ctx) {
   final AppModel owner = ctx.appModel;
   if (_activeSyncState == null || !identical(_activeSyncOwner, owner)) {
+    // 换 owner 时先拆掉旧状态挂在 SyncRepository 上的全局监听，否则每换一次
+    // AppModel（测试/多 Profile 重建）就永久多一个监听者（BUG-1560）。
+    _activeSyncState?.dispose();
     _activeSyncOwner = owner;
     _activeSyncState = _SyncSettingsState(ctx)..load();
   }
@@ -617,7 +620,13 @@ void _showSnackBar(BuildContext context, String message) {
 
 class _SyncSettingsState {
   _SyncSettingsState(this._settingsContext)
-      : _repo = SyncRepository(_settingsContext.appModel.database);
+      : _repo = SyncRepository(_settingsContext.appModel.database) {
+    // BUG-1560：互联总开关还有第二个写入口（库页来源视图的互联虚拟来源行）。
+    // 本状态按 AppModel 缓存、[load] 一辈子只跑一次，不订阅就永远停在开页那一刻
+    // 的值——开关本身和互联各 section 的显隐一起显示旧值，直到重启 app。
+    SyncRepository.interconnectEnabledRevision
+        .addListener(_onInterconnectEnabledChanged);
+  }
 
   final SettingsContext _settingsContext;
   final SyncRepository _repo;
@@ -682,6 +691,27 @@ class _SyncSettingsState {
     interconnectEnabled = value;
     await _repo.setInterconnectEnabled(value);
     _settingsContext.refresh();
+  }
+
+  /// 别处（库页来源视图）改了互联总开关：回 preferences 读真值，不同就更新内存态
+  /// 并刷新可见性谓词。**只信真值不信广播载荷**，故本页自己写的那次会在这里读到
+  /// 相同值、直接 no-op（BUG-1560）。
+  void _onInterconnectEnabledChanged() {
+    unawaited(_reloadInterconnectEnabled());
+  }
+
+  Future<void> _reloadInterconnectEnabled() async {
+    final bool value = await _repo.isInterconnectEnabled();
+    if (interconnectEnabled == value) return;
+    interconnectEnabled = value;
+    _settingsContext.refresh();
+  }
+
+  /// 解除全局监听。缓存被换 owner 顶掉时调用；两个 ValueNotifier 仍有 widget 在
+  /// 监听（它们各自在 State.dispose 里摘钩），故这里**不**dispose 它们。
+  void dispose() {
+    SyncRepository.interconnectEnabledRevision
+        .removeListener(_onInterconnectEnabledChanged);
   }
 
   Future<void> load() async {

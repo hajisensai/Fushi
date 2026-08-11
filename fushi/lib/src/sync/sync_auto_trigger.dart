@@ -229,7 +229,10 @@ class ChannelSyncFlags {
 /// 四类——书籍/内容、词典、有声书文件、视频文件——读互联专属上传开关（默认 false，让
 /// 用户独立控制是否上传给互联对端，不被「启用互联连接」裹挟）；false（云备份通道）读
 /// 原共享 sync_*_enabled。位置/统计/本地音频不区分通道（轻量进度，跨设备续读是互联本意）。
-@visibleForTesting
+///
+/// 不再 `@visibleForTesting`：`AppModel._propagateDictionaryDeleteToRemote` 是生产
+/// 消费方——「这条通道该不该同步词典」必须复用同一份分通道门控，各处重抄必漂
+/// （BUG-1566：删词典原来只读云备份的 `isSyncDictionaryEnabled` 一刀切）。
 Future<ChannelSyncFlags> resolveChannelSyncFlags(
   SyncRepository repo, {
   required bool isInterconnect,

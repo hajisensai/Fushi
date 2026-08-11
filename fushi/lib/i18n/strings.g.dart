@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 56916 (3348 per locale)
+/// Strings: 56933 (3349 per locale)
 ///
-/// Built on 2026-08-11 at 17:12 UTC
+/// Built on 2026-08-11 at 18:06 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -1666,8 +1666,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get interconnect_upload_dictionary_hint =>
       'Sync this device\'s dictionaries up to the interconnect peer.';
   String get interconnect_upload_section => 'Upload to interconnect peer';
-  String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
   String get interconnect_upload_video_files => 'Upload video files';
   String get interconnect_upload_video_files_hint =>
       'Sync this device\'s local video files up to the interconnect peer (large).';
@@ -4530,6 +4528,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get sync_pair_fingerprint_retrust => 'Clear and trust again';
   String get sync_pair_fingerprint_changed_body =>
       'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
 }
 
 // Path: <root>
@@ -7185,9 +7187,6 @@ class _StringsAr extends _StringsEn {
       'Sync this device\'s dictionaries up to the interconnect peer.';
   @override
   String get interconnect_upload_section => 'Upload to interconnect peer';
-  @override
-  String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -12258,6 +12257,12 @@ class _StringsAr extends _StringsEn {
   @override
   String get sync_pair_fingerprint_changed_body =>
       'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+  @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
 }
 
 // Path: <root>
@@ -14941,9 +14946,6 @@ class _StringsDe extends _StringsEn {
       'Sync this device\'s dictionaries up to the interconnect peer.';
   @override
   String get interconnect_upload_section => 'Upload to interconnect peer';
-  @override
-  String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -20053,6 +20055,12 @@ class _StringsDe extends _StringsEn {
   @override
   String get sync_pair_fingerprint_changed_body =>
       'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+  @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
 }
 
 // Path: <root>
@@ -22736,9 +22744,6 @@ class _StringsEs extends _StringsEn {
       'Sync this device\'s dictionaries up to the interconnect peer.';
   @override
   String get interconnect_upload_section => 'Upload to interconnect peer';
-  @override
-  String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -27864,6 +27869,12 @@ class _StringsEs extends _StringsEn {
   @override
   String get sync_pair_fingerprint_changed_body =>
       'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+  @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
 }
 
 // Path: <root>
@@ -30556,9 +30567,6 @@ class _StringsFr extends _StringsEn {
       'Sync this device\'s dictionaries up to the interconnect peer.';
   @override
   String get interconnect_upload_section => 'Upload to interconnect peer';
-  @override
-  String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -35687,6 +35695,12 @@ class _StringsFr extends _StringsEn {
   @override
   String get sync_pair_fingerprint_changed_body =>
       'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+  @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
 }
 
 // Path: <root>
@@ -38344,9 +38358,6 @@ class _StringsId extends _StringsEn {
       'Sync this device\'s dictionaries up to the interconnect peer.';
   @override
   String get interconnect_upload_section => 'Upload to interconnect peer';
-  @override
-  String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -43438,6 +43449,12 @@ class _StringsId extends _StringsEn {
   @override
   String get sync_pair_fingerprint_changed_body =>
       'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+  @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
 }
 
 // Path: <root>
@@ -46116,9 +46133,6 @@ class _StringsIt extends _StringsEn {
       'Sync this device\'s dictionaries up to the interconnect peer.';
   @override
   String get interconnect_upload_section => 'Upload to interconnect peer';
-  @override
-  String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -51235,6 +51249,12 @@ class _StringsIt extends _StringsEn {
   @override
   String get sync_pair_fingerprint_changed_body =>
       'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+  @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
 }
 
 // Path: <root>
@@ -53850,9 +53870,6 @@ class _StringsJa extends _StringsEn {
       'Sync this device\'s dictionaries up to the interconnect peer.';
   @override
   String get interconnect_upload_section => 'Upload to interconnect peer';
-  @override
-  String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -58846,6 +58863,12 @@ class _StringsJa extends _StringsEn {
   @override
   String get sync_pair_fingerprint_changed_body =>
       'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+  @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
 }
 
 // Path: <root>
@@ -61462,9 +61485,6 @@ class _StringsKo extends _StringsEn {
       'Sync this device\'s dictionaries up to the interconnect peer.';
   @override
   String get interconnect_upload_section => 'Upload to interconnect peer';
-  @override
-  String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -66464,6 +66484,12 @@ class _StringsKo extends _StringsEn {
   @override
   String get sync_pair_fingerprint_changed_body =>
       'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+  @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
 }
 
 // Path: <root>
@@ -69135,9 +69161,6 @@ class _StringsNl extends _StringsEn {
       'Sync this device\'s dictionaries up to the interconnect peer.';
   @override
   String get interconnect_upload_section => 'Upload to interconnect peer';
-  @override
-  String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -74241,6 +74264,12 @@ class _StringsNl extends _StringsEn {
   @override
   String get sync_pair_fingerprint_changed_body =>
       'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+  @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
 }
 
 // Path: <root>
@@ -76920,9 +76949,6 @@ class _StringsPtBr extends _StringsEn {
       'Sync this device\'s dictionaries up to the interconnect peer.';
   @override
   String get interconnect_upload_section => 'Upload to interconnect peer';
-  @override
-  String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -82030,6 +82056,12 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get sync_pair_fingerprint_changed_body =>
       'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+  @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
 }
 
 // Path: <root>
@@ -84701,9 +84733,6 @@ class _StringsRu extends _StringsEn {
       'Sync this device\'s dictionaries up to the interconnect peer.';
   @override
   String get interconnect_upload_section => 'Upload to interconnect peer';
-  @override
-  String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -89805,6 +89834,12 @@ class _StringsRu extends _StringsEn {
   @override
   String get sync_pair_fingerprint_changed_body =>
       'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+  @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
 }
 
 // Path: <root>
@@ -92453,9 +92488,6 @@ class _StringsTh extends _StringsEn {
       'Sync this device\'s dictionaries up to the interconnect peer.';
   @override
   String get interconnect_upload_section => 'Upload to interconnect peer';
-  @override
-  String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -97528,6 +97560,12 @@ class _StringsTh extends _StringsEn {
   @override
   String get sync_pair_fingerprint_changed_body =>
       'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+  @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
 }
 
 // Path: <root>
@@ -100194,9 +100232,6 @@ class _StringsTr extends _StringsEn {
       'Sync this device\'s dictionaries up to the interconnect peer.';
   @override
   String get interconnect_upload_section => 'Upload to interconnect peer';
-  @override
-  String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -105282,6 +105317,12 @@ class _StringsTr extends _StringsEn {
   @override
   String get sync_pair_fingerprint_changed_body =>
       'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+  @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
 }
 
 // Path: <root>
@@ -107941,9 +107982,6 @@ class _StringsVi extends _StringsEn {
       'Sync this device\'s dictionaries up to the interconnect peer.';
   @override
   String get interconnect_upload_section => 'Upload to interconnect peer';
-  @override
-  String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -113021,6 +113059,12 @@ class _StringsVi extends _StringsEn {
   @override
   String get sync_pair_fingerprint_changed_body =>
       'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+  @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
 }
 
 // Path: <root>
@@ -115496,9 +115540,6 @@ class _StringsZhCn extends _StringsEn {
   String get interconnect_upload_dictionary_hint => '把本设备的词典上传同步到互联对端。';
   @override
   String get interconnect_upload_section => '上传到互联对端';
-  @override
-  String get interconnect_upload_section_footer =>
-      '选择本设备要把哪些内容上传到已连接的互联对端。与云备份、以及「启用互联」连接开关互不影响；默认全部关闭。';
   @override
   String get interconnect_upload_video_files => '上传视频文件';
   @override
@@ -120197,6 +120238,11 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get sync_pair_fingerprint_changed_body =>
       '这条地址此前钉扎的是另一张证书。只有在你确知对方重装/重置过设备时才继续，否则连接可能正被中间人拦截。';
+  @override
+  String get interconnect_upload_section_footer =>
+      '选择本设备要把哪些内容上传给已连接的互联对端。与云备份的同名开关互不影响，且默认全部关闭。本组开关只在「启用互联」打开时生效：关掉互联，这里的上传全部停止。';
+  @override
+  String get remote_delete_audiobook_partial => '书已在对端删除，但它的有声书没能删掉';
 }
 
 // Path: <root>
@@ -122781,9 +122827,6 @@ class _StringsZhHk extends _StringsEn {
       'Sync this device\'s dictionaries up to the interconnect peer.';
   @override
   String get interconnect_upload_section => 'Upload to interconnect peer';
-  @override
-  String get interconnect_upload_section_footer =>
-      'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
   @override
   String get interconnect_upload_video_files => 'Upload video files';
   @override
@@ -127731,6 +127774,12 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get sync_pair_fingerprint_changed_body =>
       'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+  @override
+  String get interconnect_upload_section_footer =>
+      'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+  @override
+  String get remote_delete_audiobook_partial =>
+      'Book deleted, but its audiobook could not be removed on the paired device';
 }
 
 /// Flat map(s) containing all translations.
@@ -130089,8 +130138,6 @@ extension on _StringsEn {
         return 'Sync this device\'s dictionaries up to the interconnect peer.';
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
-      case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -134608,6 +134655,10 @@ extension on _StringsEn {
         return 'Clear and trust again';
       case 'sync_pair_fingerprint_changed_body':
         return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       default:
         return null;
     }
@@ -136966,8 +137017,6 @@ extension on _StringsAr {
         return 'Sync this device\'s dictionaries up to the interconnect peer.';
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
-      case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -141483,6 +141532,10 @@ extension on _StringsAr {
         return 'Clear and trust again';
       case 'sync_pair_fingerprint_changed_body':
         return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       default:
         return null;
     }
@@ -143849,8 +143902,6 @@ extension on _StringsDe {
         return 'Sync this device\'s dictionaries up to the interconnect peer.';
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
-      case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -148380,6 +148431,10 @@ extension on _StringsDe {
         return 'Clear and trust again';
       case 'sync_pair_fingerprint_changed_body':
         return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       default:
         return null;
     }
@@ -150746,8 +150801,6 @@ extension on _StringsEs {
         return 'Sync this device\'s dictionaries up to the interconnect peer.';
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
-      case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -155276,6 +155329,10 @@ extension on _StringsEs {
         return 'Clear and trust again';
       case 'sync_pair_fingerprint_changed_body':
         return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       default:
         return null;
     }
@@ -157646,8 +157703,6 @@ extension on _StringsFr {
         return 'Sync this device\'s dictionaries up to the interconnect peer.';
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
-      case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -162178,6 +162233,10 @@ extension on _StringsFr {
         return 'Clear and trust again';
       case 'sync_pair_fingerprint_changed_body':
         return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       default:
         return null;
     }
@@ -164541,8 +164600,6 @@ extension on _StringsId {
         return 'Sync this device\'s dictionaries up to the interconnect peer.';
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
-      case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -169062,6 +169119,10 @@ extension on _StringsId {
         return 'Clear and trust again';
       case 'sync_pair_fingerprint_changed_body':
         return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       default:
         return null;
     }
@@ -171427,8 +171488,6 @@ extension on _StringsIt {
         return 'Sync this device\'s dictionaries up to the interconnect peer.';
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
-      case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -175960,6 +176019,10 @@ extension on _StringsIt {
         return 'Clear and trust again';
       case 'sync_pair_fingerprint_changed_body':
         return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       default:
         return null;
     }
@@ -178310,8 +178373,6 @@ extension on _StringsJa {
         return 'Sync this device\'s dictionaries up to the interconnect peer.';
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
-      case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -182820,6 +182881,10 @@ extension on _StringsJa {
         return 'Clear and trust again';
       case 'sync_pair_fingerprint_changed_body':
         return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       default:
         return null;
     }
@@ -185172,8 +185237,6 @@ extension on _StringsKo {
         return 'Sync this device\'s dictionaries up to the interconnect peer.';
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
-      case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -189684,6 +189747,10 @@ extension on _StringsKo {
         return 'Clear and trust again';
       case 'sync_pair_fingerprint_changed_body':
         return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       default:
         return null;
     }
@@ -192049,8 +192116,6 @@ extension on _StringsNl {
         return 'Sync this device\'s dictionaries up to the interconnect peer.';
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
-      case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -196576,6 +196641,10 @@ extension on _StringsNl {
         return 'Clear and trust again';
       case 'sync_pair_fingerprint_changed_body':
         return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       default:
         return null;
     }
@@ -198940,8 +199009,6 @@ extension on _StringsPtBr {
         return 'Sync this device\'s dictionaries up to the interconnect peer.';
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
-      case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -203465,6 +203532,10 @@ extension on _StringsPtBr {
         return 'Clear and trust again';
       case 'sync_pair_fingerprint_changed_body':
         return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       default:
         return null;
     }
@@ -205832,8 +205903,6 @@ extension on _StringsRu {
         return 'Sync this device\'s dictionaries up to the interconnect peer.';
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
-      case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -210359,6 +210428,10 @@ extension on _StringsRu {
         return 'Clear and trust again';
       case 'sync_pair_fingerprint_changed_body':
         return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       default:
         return null;
     }
@@ -212716,8 +212789,6 @@ extension on _StringsTh {
         return 'Sync this device\'s dictionaries up to the interconnect peer.';
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
-      case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -217236,6 +217307,10 @@ extension on _StringsTh {
         return 'Clear and trust again';
       case 'sync_pair_fingerprint_changed_body':
         return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       default:
         return null;
     }
@@ -219598,8 +219673,6 @@ extension on _StringsTr {
         return 'Sync this device\'s dictionaries up to the interconnect peer.';
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
-      case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -224122,6 +224195,10 @@ extension on _StringsTr {
         return 'Clear and trust again';
       case 'sync_pair_fingerprint_changed_body':
         return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       default:
         return null;
     }
@@ -226482,8 +226559,6 @@ extension on _StringsVi {
         return 'Sync this device\'s dictionaries up to the interconnect peer.';
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
-      case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -231004,6 +231079,10 @@ extension on _StringsVi {
         return 'Clear and trust again';
       case 'sync_pair_fingerprint_changed_body':
         return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       default:
         return null;
     }
@@ -233344,8 +233423,6 @@ extension on _StringsZhCn {
         return '把本设备的词典上传同步到互联对端。';
       case 'interconnect_upload_section':
         return '上传到互联对端';
-      case 'interconnect_upload_section_footer':
-        return '选择本设备要把哪些内容上传到已连接的互联对端。与云备份、以及「启用互联」连接开关互不影响；默认全部关闭。';
       case 'interconnect_upload_video_files':
         return '上传视频文件';
       case 'interconnect_upload_video_files_hint':
@@ -237829,6 +237906,10 @@ extension on _StringsZhCn {
         return '清除已存指纹并重新信任';
       case 'sync_pair_fingerprint_changed_body':
         return '这条地址此前钉扎的是另一张证书。只有在你确知对方重装/重置过设备时才继续，否则连接可能正被中间人拦截。';
+      case 'interconnect_upload_section_footer':
+        return '选择本设备要把哪些内容上传给已连接的互联对端。与云备份的同名开关互不影响，且默认全部关闭。本组开关只在「启用互联」打开时生效：关掉互联，这里的上传全部停止。';
+      case 'remote_delete_audiobook_partial':
+        return '书已在对端删除，但它的有声书没能删掉';
       default:
         return null;
     }
@@ -240178,8 +240259,6 @@ extension on _StringsZhHk {
         return 'Sync this device\'s dictionaries up to the interconnect peer.';
       case 'interconnect_upload_section':
         return 'Upload to interconnect peer';
-      case 'interconnect_upload_section_footer':
-        return 'Choose what this device uploads to the connected peer. Independent from cloud backup and from the Enable interconnect toggle — off by default.';
       case 'interconnect_upload_video_files':
         return 'Upload video files';
       case 'interconnect_upload_video_files_hint':
@@ -244684,6 +244763,10 @@ extension on _StringsZhHk {
         return 'Clear and trust again';
       case 'sync_pair_fingerprint_changed_body':
         return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
+      case 'interconnect_upload_section_footer':
+        return 'Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.';
+      case 'remote_delete_audiobook_partial':
+        return 'Book deleted, but its audiobook could not be removed on the paired device';
       default:
         return null;
     }
