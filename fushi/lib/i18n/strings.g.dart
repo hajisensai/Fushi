@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 56389 (3317 per locale)
+/// Strings: 56440 (3320 per locale)
 ///
-/// Built on 2026-08-11 at 07:47 UTC
+/// Built on 2026-08-11 at 15:40 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4490,6 +4490,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get tag_add_failed => 'Couldn\'t add the tag. Please try again.';
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -12147,6 +12152,14 @@ class _StringsAr extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -19871,6 +19884,14 @@ class _StringsDe extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -27611,6 +27632,14 @@ class _StringsEs extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -35363,6 +35392,14 @@ class _StringsFr extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -43043,6 +43080,14 @@ class _StringsId extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -50769,6 +50814,14 @@ class _StringsIt extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -58309,6 +58362,14 @@ class _StringsJa extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -65856,6 +65917,14 @@ class _StringsKo extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -73562,6 +73631,14 @@ class _StringsNl extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -81280,6 +81357,14 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -88984,6 +89069,14 @@ class _StringsRu extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -96636,6 +96729,14 @@ class _StringsTh extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -104319,6 +104420,14 @@ class _StringsTr extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -111987,6 +112096,14 @@ class _StringsVi extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 // Path: <root>
@@ -119101,6 +119218,12 @@ class _StringsZhCn extends _StringsEn {
   String get tag_add_failed => '标签添加失败，请重试。';
   @override
   String get tag_reorder_failed => '标签排序保存失败，请重试。';
+  @override
+  String get sync_pair_rate_limited => '尝试次数过多，请等几分钟后重试。';
+  @override
+  String get sync_pair_tls_failed => '证书校验失败：对端证书与已记录的指纹不符。';
+  @override
+  String get sync_pair_timeout => '对端没有及时响应。';
 }
 
 // Path: <root>
@@ -126564,6 +126687,14 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get sync_pair_rate_limited =>
+      'Too many attempts. Wait a few minutes and try again.';
+  @override
+  String get sync_pair_tls_failed =>
+      'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+  @override
+  String get sync_pair_timeout => 'The peer did not respond in time.';
 }
 
 /// Flat map(s) containing all translations.
@@ -133380,6 +133511,12 @@ extension on _StringsEn {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -140194,6 +140331,12 @@ extension on _StringsAr {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -147030,6 +147173,12 @@ extension on _StringsDe {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -153865,6 +154014,12 @@ extension on _StringsEs {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -160706,6 +160861,12 @@ extension on _StringsFr {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -167529,6 +167690,12 @@ extension on _StringsId {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -174366,6 +174533,12 @@ extension on _StringsIt {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -181165,6 +181338,12 @@ extension on _StringsJa {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -187968,6 +188147,12 @@ extension on _StringsKo {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -194799,6 +194984,12 @@ extension on _StringsNl {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -201627,6 +201818,12 @@ extension on _StringsPtBr {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -208460,6 +208657,12 @@ extension on _StringsRu {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -215276,6 +215479,12 @@ extension on _StringsTh {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -222101,6 +222310,12 @@ extension on _StringsTr {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -228922,6 +229137,12 @@ extension on _StringsVi {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
@@ -235686,6 +235907,12 @@ extension on _StringsZhCn {
         return '标签添加失败，请重试。';
       case 'tag_reorder_failed':
         return '标签排序保存失败，请重试。';
+      case 'sync_pair_rate_limited':
+        return '尝试次数过多，请等几分钟后重试。';
+      case 'sync_pair_tls_failed':
+        return '证书校验失败：对端证书与已记录的指纹不符。';
+      case 'sync_pair_timeout':
+        return '对端没有及时响应。';
       default:
         return null;
     }
@@ -242480,6 +242707,12 @@ extension on _StringsZhHk {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'sync_pair_rate_limited':
+        return 'Too many attempts. Wait a few minutes and try again.';
+      case 'sync_pair_tls_failed':
+        return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
+      case 'sync_pair_timeout':
+        return 'The peer did not respond in time.';
       default:
         return null;
     }
