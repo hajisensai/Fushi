@@ -18,7 +18,7 @@ import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
 /// 独立成结果区（宽屏右栏 / 窄屏下段 Flexible）——面板内容再多也只在面板内滚，列表
 /// 永远分得到非 0 高度且可滚。
 void main() {
-  test('BUG-1504: dialog and filter pane scale across viewport widths', () {
+  test('BUG-1509: dialog and filter pane scale across viewport widths', () {
     expect(resolveJimakuDialogMaxWidth(360), 328);
     expect(resolveJimakuDialogMaxWidth(800), closeTo(752, 0.001));
     expect(resolveJimakuDialogMaxWidth(1280), closeTo(1152, 0.001));
@@ -151,10 +151,10 @@ void main() {
     expect(listRect.top, lessThan(queryRect.bottom),
         reason: '两栏应大致同排（列表顶端不低于筛选面板首个输入框底端）');
     expect(tester.getSize(find.byType(Dialog)).width, greaterThan(900),
-        reason: 'BUG-1504：桌面 Jimaku 框不应继续被 720dp 上限压成窄条');
+        reason: 'BUG-1509：桌面 Jimaku 框不应继续被 720dp 上限压成窄条');
   });
 
-  test('BUG-1504: search paints loading frame before persistence and network',
+  test('BUG-1509: search paints loading frame before persistence and network',
       () {
     final String source =
         File('lib/src/pages/implementations/jimaku_subtitle_dialog.dart')

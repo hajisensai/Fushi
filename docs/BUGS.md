@@ -33,13 +33,13 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1509](bugs/BUG-1509-jimaku-dialog-size-search-jank.md) | ✅ | ✅ | Jimaku 字幕框偏小且搜索首帧卡顿 |
+| [BUG-1508](bugs/BUG-1508-migration-v79-legacy-video-tag-column.md) | ✅ | ✅ | v79 标签迁移不兼容旧 video_book_uid 列导致启动失败 |
+| [BUG-1507](bugs/BUG-1507-video-shader-nested-cards.md) | ✅ | ✅ | 视频画质增强嵌入设置重复嵌套卡片 |
 | [BUG-1506](bugs/BUG-1506-video-drag-seek-guard-stale-anchor.md) | ✅ | ✅ | 视频横滑 seek 守卫锚点在 BUG-1485 后失效 |
 | [BUG-1505](bugs/BUG-1505-migration-import-failure-force-restart.md) | 🚧 | 🚧 | 迁移导入失败被强制重启带走：页面与失败原因一起消失，错误日志 0 条 |
 | [BUG-1504](bugs/BUG-1504-subtitle-drop-attach-silent-failure.md) | ✅ | ✅ | 拖放字幕到视频卡失败无任何提示 |
-| [BUG-1504](bugs/BUG-1504-jimaku-dialog-size-search-jank.md) | ✅ | ✅ | Jimaku 字幕框偏小且搜索首帧卡顿 |
 | [BUG-1503](bugs/BUG-1503-sync-push-book-no-display-title.md) | ✅ | ✅ | 本端把书 push 给 host 时不带显示名（裸 epub 上传无元数据） |
-| [BUG-1503](bugs/BUG-1503-migration-v79-legacy-video-tag-column.md) | ✅ | ✅ | v79 标签迁移不兼容旧 video_book_uid 列导致启动失败 |
-| [BUG-1502](bugs/BUG-1502-video-shader-nested-cards.md) | ✅ | ✅ | 视频画质增强嵌入设置重复嵌套卡片 |
 | [BUG-1502](bugs/BUG-1502-sync-override-title-lww.md) | ✅ | ✅ | 书改名跨端合并无时刻列做不了 LWW（第二次改名传不到子设备） |
 | [BUG-1501](bugs/BUG-1501-video-episode-click-outside-close.md) | ✅ | ✅ | 选集横轨只能点 X 关闭，点击视频区域无效 |
 | [BUG-1500](bugs/BUG-1500-dict-concurrent-import-temp-race.md) | ✅ | ✅ | 词典手动下载与静默自动更新无互斥，共用 import_temp 互相删除 |
