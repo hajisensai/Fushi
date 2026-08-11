@@ -1,5 +1,7 @@
 library;
 
+import 'package:flutter/foundation.dart';
+
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_adapters.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
@@ -70,6 +72,16 @@ class VideoDiscoveryService {
       _metadataProviders;
   final bool _closesProviders;
   bool _closed = false;
+
+  /// 聚合来源清单（按 priority 排序后的 provider id）。
+  ///
+  /// BUG-1538 守卫用：发现页无论下载代理是 direct 还是 proxy 模式都走同一份
+  /// 聚合来源——[VideoDiscoveryService.production] 的签名里根本没有代理输入，
+  /// 来源选择结构上不可能随代理开关分叉；本 getter 把这份组成暴露给测试钉死。
+  @visibleForTesting
+  List<String> get providerIdsForTesting => _providers
+      .map((VideoDiscoveryProvider provider) => provider.id)
+      .toList(growable: false);
 
   Future<ProviderBatchResult<VideoDiscoveryPage>> load(
     VideoDiscoveryRequest request,
