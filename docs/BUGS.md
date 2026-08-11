@@ -29,10 +29,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1441 条。点号进各自文件。
+> 共 1447 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1566](bugs/BUG-1566-interconnect-channel-consumers-cloud-only.md) | ✅ | ✅ | 词典删除只传播云通道、比较对话框只解析云后端：只开互联的用户两条路都断 |
+| [BUG-1565](bugs/BUG-1565-remote-book-delete-partial-no-refresh.md) | ✅ | ✅ | 远端书删除半成功不刷新列表：书已删仍留幽灵卡，提示语与实情相反 |
+| [BUG-1563](bugs/BUG-1563-interconnect-host-failure-swallowed.md) | ✅ | ✅ | 互联 host 换 token/开 TLS 的重启结果被丢弃、设为备份后端无 catch，失败静默把 host 打没 |
+| [BUG-1562](bugs/BUG-1562-interconnect-client-panel-stale-and-race.md) | ✅ | ✅ | 互联客户端面板：已连接状态不刷新、手动配对探测窗口无忙态可并发、弹窗返回后无 mounted 守卫 |
+| [BUG-1561](bugs/BUG-1561-interconnect-download-failure-invisible.md) | ✅ | ✅ | 互联下载失败态只写进内存永不上屏，任务表只增不减、页面 dispose 后零提示 |
+| [BUG-1560](bugs/BUG-1560-interconnect-enable-toggle-stale-cache.md) | ✅ | ✅ | 来源页互联开关绕过设置页状态：模块级缓存永不重读，设置页开关与 section 显隐显示旧值到重启 |
 | [BUG-1554](bugs/BUG-1554-lan-discovery-browser-orphan.md) | ✅ | ✅ | LAN 发现 startDiscovery 无幂等/无 dispose 守卫，重扫与关页竞态留下孤儿 Bonsoir browser |
 | [BUG-1553](bugs/BUG-1553-interconnect-pair-failure-reason-lost.md) | ✅ | ✅ | 配对失败原因被压平：限速 429 / TLS 指纹不符 / 超时全说成「配对失败」且不留日志 |
 | [BUG-1552](bugs/BUG-1552-sync-channel-failure-cascades.md) | ✅ | ✅ | 云备份通道抛异常直接终止通道循环，互联通道整轮不跑（「并存互不干扰」不成立） |

@@ -40,3 +40,40 @@ class RemoteDownloadProgressBadge extends StatelessWidget {
     );
   }
 }
+
+/// 远端下载**失败**角标（BUG-1561）。
+///
+/// 下载任务活在 app 级 [InterconnectDownloadManager] 里、与页面生命周期无关，所以
+/// 失败很可能发生在用户已经离开该页之后——那条 SnackBar 根本没人看得见。占位卡上
+/// 的这个角标是失败态唯一恒定的出口：重进页面照样看得到，tooltip 给出真实错误文本，
+/// 再点一次下载即可重试（重试会把上一轮的失败态顶掉）。
+class RemoteDownloadFailedBadge extends StatelessWidget {
+  const RemoteDownloadFailedBadge({
+    required this.tooltip,
+    super.key,
+  });
+
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: colors.errorContainer,
+          shape: BoxShape.circle,
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          Icons.error_outline,
+          size: 18,
+          color: colors.onErrorContainer,
+        ),
+      ),
+    );
+  }
+}

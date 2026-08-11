@@ -1,0 +1,8 @@
+## BUG-1563 · 互联 host 换 token/开 TLS 的重启结果被丢弃、设为备份后端无 catch，失败静默把 host 打没
+- **报告**：2026-08-12（用户：互联 UI 层审计）
+- **真实性**：✅ 真 bug，两处（`fushi/lib/src/sync/sync_settings_schema/interconnect.part.dart`）：
+  - ① `FushiServerStartOutcome` 被丢弃：旧 `:914`（`_regenerateToken` 里的 `await _serverController.restart();`）、旧 `:946`（`_setTlsEnabled` 同）、旧 `:929`（`_loadSettings` 的 `await _serverController.startIfEnabled();`）三处只有开关那条路径认真 switch 了 outcome。`restart()` 是先 stop 再 start（`fushi/lib/src/sync/fushi_server_controller.dart:381`），start 失败（端口被占 `FushiServerPortInUse` / TLS 证书加载失败 `FushiServerStartError`）就等于用户点一下按钮把自己的 host 关掉，UI 却仍显示「正在运行」、对端连不上且零提示；开 TLS 失败时旧代码还照弹「已配对设备需重新配对」，对着一台已不存在的 host 给操作建议。
+  - ② `_useInterconnectAsBackend`（旧 `:1504-1523`）只有 `try/finally`：`applyBackupBackendChange` 连写多个偏好，中途抛异常时库里已半写、内存 `state.backendType` 还是旧值（UI 与库不一致），异常逃逸成 unhandled zone error，用户零提示。
+- **[x] ① 已修复** — ① 四个启动/重启调用点共用唯一的 outcome 消费点 `_applyStartOutcome`（`interconnect.part.dart:1004`）：成功同步角色锁，失败把开关拨回真实状态并把原因上屏；`_regenerateToken:1021` / `_setTlsEnabled:1037`（失败不再弹重新配对提示）/ `_loadSettings:968` / 开关路径全部接入，同时消掉开关路径里那段重复 switch。持久意图 `serverEnabled` 仍由 controller 管（瞬时端口冲突不抹用户选择，BUG-160）。② `_useInterconnectAsBackend`（`:1564`）补 `catch`：记日志 + 回 `getBackendType()` 重读真值让 UI 与库一致 + 错误上屏。随本轮 `fix(interconnect)` 提交。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/interconnect_host_failure_surface_guard_test.dart`：`_applyStartOutcome` 三分支齐全 + 上屏 + 回落；语料里不许再出现裸 `await _serverController.restart();` / `startIfEnabled();`；TLS 失败分支先于 repair hint；备份后端有 catch + 重读 + 上屏 + 日志。
+- **备注**：开 TLS 失败后 TLS 偏好本身不回滚（那是用户意图，与 host 是否起得来正交），但 UI 会如实显示 host 已停。

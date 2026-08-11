@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -690,8 +691,25 @@ class SyncRepository {
   /// [migrateInterconnectBackendToToggle] 迁移到本独立布尔开关。默认 false。
   Future<bool> isInterconnectEnabled() =>
       _db.getPrefTyped<bool>(_keyInterconnectEnabled, false);
-  Future<void> setInterconnectEnabled(bool v) =>
-      _db.setPrefTyped<bool>(_keyInterconnectEnabled, v);
+
+  /// 互联总开关的进程内「已变更」广播（BUG-1560）。
+  ///
+  /// 这个开关有两个写入口——同步设置页的「启用互联」开关和库页来源视图里的互联
+  /// 虚拟来源行——而两边各自还缓存着一份内存态（设置页的 `_SyncSettingsState` 按
+  /// AppModel 缓存、`load()` 一辈子只跑一次；来源视图在 initState 读一次）。谁写
+  /// 完都不通知对方，另一边就一直显示旧值、互联各 section 的显隐也跟着错，直到
+  /// 重启 app。
+  ///
+  /// 真值只有一个——preferences 里那一位；本 notifier 只是它的变更广播。bump 放在
+  /// **唯一的写方法** [setInterconnectEnabled] 里，所以再多写入口也不可能漏发通知
+  /// （消费方 re-read 真值，不信广播里的载荷，故没有第二份真相）。
+  static final ValueNotifier<int> interconnectEnabledRevision =
+      ValueNotifier<int>(0);
+
+  Future<void> setInterconnectEnabled(bool v) async {
+    await _db.setPrefTyped<bool>(_keyInterconnectEnabled, v);
+    interconnectEnabledRevision.value++;
+  }
 
   Future<bool> isServerEnabled() =>
       _db.getPrefTyped<bool>(_keyServerEnabled, false);
