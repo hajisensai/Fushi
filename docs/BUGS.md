@@ -29,10 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1424 条。点号进各自文件。
+> 共 1429 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1554](bugs/BUG-1554-lan-discovery-browser-orphan.md) | ✅ | ✅ | LAN 发现 startDiscovery 无幂等/无 dispose 守卫，重扫与关页竞态留下孤儿 Bonsoir browser |
+| [BUG-1553](bugs/BUG-1553-interconnect-pair-failure-reason-lost.md) | ✅ | ✅ | 配对失败原因被压平：限速 429 / TLS 指纹不符 / 超时全说成「配对失败」且不留日志 |
+| [BUG-1552](bugs/BUG-1552-sync-channel-failure-cascades.md) | ✅ | ✅ | 云备份通道抛异常直接终止通道循环，互联通道整轮不跑（「并存互不干扰」不成立） |
+| [BUG-1551](bugs/BUG-1551-interconnect-server-start-race.md) | ✅ | ✅ | 互联服务开关竞态：并发 start 抢同一端口、catch 清掉别人的句柄，host 在跑却显示已停止且关不掉 |
+| [BUG-1550](bugs/BUG-1550-interconnect-peer-token-single-slot.md) | ✅ | ✅ | 互联配对第二台对端后整体瘫痪：per-peer token 只有一个全局槽 + 401 株连全部候选 |
 | [BUG-1537](bugs/BUG-1537-settings-subtitle-ellipsis-single-line.md) | ✅ | ✅ | 设置行说明文字被压成单行省略号（ellipsis + maxLines:null） |
 | [BUG-1536](bugs/BUG-1536-horizontal-row-steals-vertical-wheel.md) | ✅ | ✅ | 视频首页横滚行抢走整页纵向滚动（应 Shift+滚轮才横滚） |
 | [BUG-1516](bugs/BUG-1516-update-manifest-dead-asset-404.md) | ✅ | ✅ | 更新清单保留已被 prune 的资产条目，客户端下载必 404 |

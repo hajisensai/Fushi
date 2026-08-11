@@ -45,9 +45,11 @@ class InterconnectPostTransport {
 
   /// 向所有已启用候选按序 POST [body] 到 [path]，返回第一个拿到的可用 JSON 响应。
   ///
-  /// 候选级语义（与抽出前逐字一致）：
-  /// - 401 → 抛 [SyncAuthError]（消息由 [authErrorMessage] 给，各调用方保留自己的文案）；
-  ///   所有候选共用一个 token，一次拒绝即全部失败，不再试下一个。
+  /// 候选级语义：
+  /// - 401 → 记下该候选的鉴权拒绝并**换下一个候选**（BUG-1550：每台对端有自己的
+  ///   per-peer 凭据，一台拒绝不代表其余都拒绝）；全部候选都试完仍无可用结果时才抛
+  ///   [SyncAuthError]（消息由 [authErrorMessage] 给，各调用方保留自己的文案）。
+  ///   只有一台候选时与升级前逐字同行为。
   /// - 404 / 405 → 该候选是旧版 host（无此端点），换下一个候选。
   /// - 其它非 2xx、响应体不是 JSON 对象 → 换下一个候选。
   /// - 传输层失败（连接拒绝 / 超时 / DNS）→ 换下一个候选。
@@ -64,17 +66,22 @@ class InterconnectPostTransport {
     final List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
         .where((FushiClientUrl u) => u.enabled)
         .toList(growable: false);
-    final String? token = await _repo.getFushiClientToken();
-    if (candidates.isEmpty || token == null || token.isEmpty) {
-      // 未配对/未启用/无 token：不是「设备不可达」，按「无结果」处理。
+    final String? fallbackToken = await _repo.getFushiClientToken();
+    if (candidates.isEmpty) {
+      // 未配对/未启用：不是「设备不可达」，按「无结果」处理。
       return (json: null, allUnreachable: false);
     }
 
     bool attempted = false;
     bool anyResponse = false;
+    // BUG-1550：某台对端拒了我的凭据不该株连其余对端；记下来，全部试完还没结果才抛。
+    SyncAuthError? authError;
     for (final FushiClientUrl candidate in candidates) {
       final Uri? uri = interconnectEndpointUri(candidate.url, path);
       if (uri == null) continue;
+      // BUG-1550：凭据按候选取——地址行自带的 per-peer token 优先，为空回落全局键。
+      final String? token = interconnectTokenFor(candidate, fallbackToken);
+      if (token == null) continue;
       // TODO-961 M1/gap①: https 带指纹的候选**始终**走钉扎 client，与是否注入了
       // 外部 client 无关（注入的 keep-alive client 只服务明文 http 候选）。
       final String? fp = candidate.fingerprintSha256;
@@ -99,7 +106,8 @@ class InterconnectPostTransport {
         // 传输层失败（连接拒绝/超时/DNS）根本走不到这一行，落在 catch 里。
         anyResponse = true;
         if (response.statusCode == 401) {
-          throw SyncAuthError(authErrorMessage);
+          authError = SyncAuthError(authErrorMessage);
+          continue;
         }
         if (response.statusCode == 404 || response.statusCode == 405) {
           continue;
@@ -117,8 +125,6 @@ class InterconnectPostTransport {
             allUnreachable: false,
           );
         }
-      } on SyncAuthError {
-        rethrow;
       } catch (_) {
         continue;
       } finally {
@@ -127,8 +133,11 @@ class InterconnectPostTransport {
         if (usePinned) client.close();
       }
     }
-    // 走到这里没有任何候选给出可用结果；只有「试过且一个响应都没拿到」才算
-    // 全部不可达（传输层失败），可达但无结果仍是普通 null。
+    // 走到这里没有任何候选给出可用结果。凭据被拒过（且没有别的候选救回来）就把
+    // 401 语义还给调用方——它们据此区分「没查成」与「查过了没有」（BUG-1185）。
+    if (authError != null) throw authError;
+    // 只有「试过且一个响应都没拿到」才算全部不可达（传输层失败），可达但无结果
+    // 仍是普通 null。
     return (json: null, allUnreachable: attempted && !anyResponse);
   }
 }

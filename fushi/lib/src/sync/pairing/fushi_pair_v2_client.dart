@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:fushi/src/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi/src/sync/tls/fushi_pinning_http.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:http/http.dart' as http;
 
 /// TODO-961 M1: v2 配对的 client 侧驱动（与 server 的 `/api/pair/v2`
@@ -23,8 +26,21 @@ class FushiPairV2Success extends FushiPairV2Outcome {
   final String? hostFingerprint;
 }
 
-/// 配对失败：machine-readable [reason]（'pin' = PIN 错；'declined' = host 拒绝；
-/// 'unavailable' = host 无审批 UI；'error' = 传输/解析失败）。
+/// 配对失败：machine-readable [reason]。
+///
+/// - `'pin'`：PIN 校验未通过。
+/// - `'declined'`：host 上的人点了拒绝。
+/// - `'unavailable'`：host 没有审批 UI（旧版本 / headless）。
+/// - `'rate_limited'`：PIN 连错太多次，该来源被 host 退避锁定（BUG-1553）。
+/// - `'tls'`：TLS 握手失败——证书指纹对不上或链路被拦（BUG-1553）。
+/// - `'timeout'`：请求超时（BUG-1553）。
+/// - `'cancelled'`：用户在 PIN 输入框点了取消。
+/// - `'error'`：其余传输 / 解析失败。
+///
+/// BUG-1553：前面这些分型此前全被压成 `'error'`——server 精心设计的 429
+/// `rate_limited` 机器可读原因在 client 一端整个丢掉，用户被锁 15 分钟却只看到
+/// 「配对失败」，于是反复重试（每次还要 host 再审批一遍）；TLS 指纹不符这种安全
+/// 事件也被降级成同一句话，且一行日志都不留，报障时无从定位。
 class FushiPairV2Failure extends FushiPairV2Outcome {
   const FushiPairV2Failure(this.reason);
   final String reason;
@@ -87,6 +103,9 @@ class FushiPairV2Client {
       if (startResp.statusCode == 403) {
         return FushiPairV2Failure(_reasonOf(startResp.body, 'unavailable'));
       }
+      if (startResp.statusCode == 429) {
+        return FushiPairV2Failure(_reasonOf(startResp.body, 'rate_limited'));
+      }
       if (startResp.statusCode != 200) {
         return const FushiPairV2Failure('error');
       }
@@ -131,6 +150,11 @@ class FushiPairV2Client {
       if (confirmResp.statusCode == 403) {
         return FushiPairV2Failure(_reasonOf(confirmResp.body, 'declined'));
       }
+      // BUG-1553：429 = host 的 PIN 爆破限速把这个来源锁了，与「PIN 打错一次」是
+      // 两回事——不分开用户会一直重试，而重试期间每一次都必然失败。
+      if (confirmResp.statusCode == 429) {
+        return FushiPairV2Failure(_reasonOf(confirmResp.body, 'rate_limited'));
+      }
       if (confirmResp.statusCode != 200) {
         return const FushiPairV2Failure('error');
       }
@@ -144,11 +168,26 @@ class FushiPairV2Client {
         token: token,
         hostFingerprint: confirmJson['hostFingerprint'] as String?,
       );
-    } catch (_) {
-      return const FushiPairV2Failure('error');
+    } catch (e, stack) {
+      // BUG-1553：分型并留痕。吞掉全部异常又不记日志，会把「证书指纹对不上」
+      // （安全事件）和「对方关机了」呈现成同一句「配对失败」，且事后查不到任何线索。
+      ErrorLogService.instance.log('PairV2Client:$baseUrl', e, stack);
+      return FushiPairV2Failure(_classifyTransportFailure(e));
     } finally {
       if (_ownsClient) client.close();
     }
+  }
+
+  /// BUG-1553：把传输层异常映射成机器可读 reason，供 UI 说人话。
+  ///
+  /// [TlsException] 是 dart:io 里证书类失败的共同接口（[HandshakeException] /
+  /// [CertificateException] 都 implements 它）——钉扎判据不符时
+  /// `badCertificateCallback` 返回 false，握手就以它收场。package:http 的 IOClient
+  /// 只把 `SocketException`/`HttpException` 转成 `ClientException`，TLS 异常原样穿透。
+  static String _classifyTransportFailure(Object e) {
+    if (e is TlsException) return 'tls';
+    if (e is TimeoutException) return 'timeout';
+    return 'error';
   }
 
   static String _reasonOf(String body, String fallback) {

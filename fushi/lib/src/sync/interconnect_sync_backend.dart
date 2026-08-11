@@ -29,24 +29,40 @@ typedef FushiProbe = Future<bool> Function(String url, String token);
 
 /// TODO-961 M1: 按顺序探测 [candidates]（跳过 disabled），返回第一个可达的
 /// [FushiClientUrl]（而非裸 URL），让调用方能取到该地址的钉扎指纹（https 走 pinned
-/// client）。探测中的 [SyncAuthError] 立即向上传播——所有候选共用一个 token，一次拒绝
-/// 即全部失败；无可达候选时抛可重试的 [SyncBackendError]。指纹是地址身份的一部分，
-/// 故必须随选中地址一起流出。
+/// client）。指纹是地址身份的一部分，故必须随选中地址一起流出。
+///
+/// BUG-1550：每个候选用**自己那份**凭据（[FushiClientUrl.token]，为空回落
+/// [fallbackToken]）。因此一个候选的 [SyncAuthError] 不再株连其余候选——它只说明
+/// 「这台的 token 过期/被吊销了」，换下一台继续探。全部候选都试完仍无可达者时：
+/// 只要出现过鉴权拒绝就抛 [SyncAuthError]（让 UI 说「凭据被拒，请重新配对」），
+/// 否则抛可重试的 [SyncBackendError]。
+///
+/// 升级前的行为（单一全局 token、第一台 401 即整体失败）在**只有一台对端**时逐字
+/// 不变：唯一候选 401 → 循环结束 → 抛 SyncAuthError，与旧的立即 rethrow 等效。
 Future<FushiClientUrl> resolveReachableFushiCandidate(
   List<FushiClientUrl> candidates,
-  String token,
+  String fallbackToken,
   FushiProbe probe,
 ) async {
+  SyncAuthError? authError;
   for (final FushiClientUrl candidate in candidates) {
     if (!candidate.enabled) continue;
+    final String? token = interconnectTokenFor(candidate, fallbackToken);
+    if (token == null) continue;
     final String? fp = candidate.fingerprintSha256;
-    // https 端点（带指纹）的可达性必须用 pinned client 探测——裸 [probe] 会因自签
-    // TLS 握手失败把它误判不可达。明文 http（无指纹）仍走可注入的 [probe] 测试缝。
-    final bool reachable = (fp != null && fp.isNotEmpty)
-        ? await _pinnedReachabilityProbe(candidate.url, token, fp)
-        : await probe(candidate.url, token);
-    if (reachable) return candidate;
+    try {
+      // https 端点（带指纹）的可达性必须用 pinned client 探测——裸 [probe] 会因自签
+      // TLS 握手失败把它误判不可达。明文 http（无指纹）仍走可注入的 [probe] 测试缝。
+      final bool reachable = (fp != null && fp.isNotEmpty)
+          ? await _pinnedReachabilityProbe(candidate.url, token, fp)
+          : await probe(candidate.url, token);
+      if (reachable) return candidate;
+    } on SyncAuthError catch (e) {
+      // 这台拒了我的凭据 —— 记下原因，继续问下一台。
+      authError = e;
+    }
   }
+  if (authError != null) throw authError;
   throw SyncBackendError(
     'No reachable Fushi server address',
     isRetryable: true,
@@ -55,7 +71,8 @@ Future<FushiClientUrl> resolveReachableFushiCandidate(
 
 /// TODO-961 M1: https 候选地址的固定 pinned 可达性探测（不经可注入的测试缝，因为
 /// 它必须真正建立 pinned TLS 连接才有意义）。语义同 [_defaultFushiProbe]：可达 →
-/// true，鉴权失败 → 抛 [SyncAuthError]（停止尝试其余地址），其余失败 → false。
+/// true，鉴权失败 → 抛 [SyncAuthError]（BUG-1550 起由调用方记下并继续问下一台，
+/// 不再株连其余地址），其余失败 → false。
 Future<bool> _pinnedReachabilityProbe(
     String url, String token, String fingerprint) async {
   WebDavOps? ops;
@@ -81,7 +98,9 @@ Future<bool> _pinnedReachabilityProbe(
 
 /// Default probe: a short-timeout WebDAV connection test. Connectivity
 /// failures and timeouts map to `false` (unreachable); a rejected token
-/// surfaces as [SyncAuthError] so the resolver stops trying other addresses.
+/// surfaces as [SyncAuthError] so the resolver can tell "this peer revoked my
+/// credential" apart from "this address is down" (BUG-1550: it moves on to the
+/// next candidate either way, and only reports auth failure if none worked).
 Future<bool> _defaultFushiProbe(String url, String token) async {
   WebDavOps? ops;
   try {
@@ -182,6 +201,10 @@ class InterconnectSyncBackend extends SyncBackend
   // TODO-961 M1: 当前选中地址的钉扎指纹（https 走 pinned client；http=null）。
   String? _activeFingerprint;
 
+  /// BUG-1550：当前 [_ops] 里烧进 Basic 头的那份凭据。[WebDavOps] 只留 auth header、
+  /// 不回吐口令，故在此镜像一份，用于判断「换了一台对端 = 要重建 ops」。
+  String? _activeToken;
+
   // 文件夹缓存收敛进 [SyncFolderCache] mixin；路径式定位符覆写归一化钩子保持
   // 「缓存的 folderId 必以 `/` 结尾」不变量（BUG-845）。
   @override
@@ -236,6 +259,10 @@ class InterconnectSyncBackend extends SyncBackend
 
   /// 会话身份指纹：只包含影响「该连哪个地址、用什么凭据」的字段。`deviceName`
   /// 是纯展示名，改它不该触发全候选重探测，故不进签名。
+  ///
+  /// BUG-1550：每候选自带的 token 也进签名——重新配对某一台只改那一行的凭据，
+  /// 全局键可能一字未动，不入签名就检测不到「对端身份变了」，已解析会话会带着
+  /// 旧凭据继续用。
   static String _sessionSignature(
     List<FushiClientUrl> candidates,
     String? token,
@@ -247,7 +274,9 @@ class InterconnectSyncBackend extends SyncBackend
         ..write('\n')
         ..write(candidate.url)
         ..write('\n')
-        ..write(candidate.fingerprintSha256 ?? '');
+        ..write(candidate.fingerprintSha256 ?? '')
+        ..write('\n')
+        ..write(candidate.token ?? '');
     }
     return buffer.toString();
   }
@@ -258,16 +287,22 @@ class InterconnectSyncBackend extends SyncBackend
   void _buildProvisionalOps() {
     _ops?.close();
     _ops = null;
-    if (_token == null) return;
+    _activeToken = null;
     for (final FushiClientUrl candidate in _candidates) {
+      // BUG-1550：凭据按候选取（自带优先、回落全局），两者都空就跳过这一条。
+      final String? token = interconnectTokenFor(candidate, _token);
+      if (token == null) continue;
       try {
         _ops = WebDavOps(
           baseUrl: WebDavOps.normalizeUrl(candidate.url),
           username: 'hibiki',
-          password: _token!,
+          password: token,
           pinnedFingerprint: candidate.fingerprintSha256,
         );
         _activeFingerprint = candidate.fingerprintSha256;
+        // 与 [_ensureResolved] 的判据保持同一真相：暂定句柄用的是哪份凭据必须记下，
+        // 否则解析阶段会把「凭据没变」误判成「换了一台」而白白 clearCache()。
+        _activeToken = token;
         return;
       } on SyncBackendError {
         continue; // malformed URL — keep looking for a usable handle
@@ -280,15 +315,18 @@ class InterconnectSyncBackend extends SyncBackend
   /// folder cache, whose paths embed the previous base URL.
   Future<void> _ensureResolved() async {
     if (_sessionResolved) return;
-    final String? token = _token;
-    if (token == null) {
+    if (!_hasAnyCredential) {
       throw SyncAuthError('Fushi server credentials not configured');
     }
     final FushiClientUrl chosen =
-        await resolveReachableFushiCandidate(_candidates, token, _probe);
+        await resolveReachableFushiCandidate(_candidates, _token ?? '', _probe);
+    // BUG-1550：连接用的是**选中那台**的凭据（自带优先），不再是唯一全局 token。
+    // resolveReachableFushiCandidate 已保证选中的候选必有可用凭据。
+    final String token = interconnectTokenFor(chosen, _token)!;
     final String normalized = WebDavOps.normalizeUrl(chosen.url);
     if (_ops == null ||
         _ops!.baseUrl != normalized ||
+        _activeToken != token ||
         _activeFingerprint != chosen.fingerprintSha256) {
       _ops?.close();
       _ops = WebDavOps(
@@ -298,15 +336,22 @@ class InterconnectSyncBackend extends SyncBackend
         pinnedFingerprint: chosen.fingerprintSha256,
       );
       _activeFingerprint = chosen.fingerprintSha256;
+      _activeToken = token;
       clearCache();
     }
     _sessionResolved = true;
   }
 
+  /// BUG-1550：是否至少有一个已启用候选拿得出凭据（自带 token 或全局回落）。
+  /// 取代旧的「全局 token 非空」判据——per-peer token 时代全局键可能为空，而各
+  /// 地址行上仍有各自有效的凭据。
+  bool get _hasAnyCredential => _candidates
+      .any((FushiClientUrl u) => interconnectTokenFor(u, _token) != null);
+
   @override
   Future<void> authenticate({required SyncRepository repo}) async {
     await _loadConfig(repo);
-    if (_candidates.isEmpty || _token == null) {
+    if (_candidates.isEmpty || !_hasAnyCredential) {
       throw SyncAuthError('Fushi server credentials not configured');
     }
     // Probes + selects a reachable address (or throws), confirming the token
@@ -334,7 +379,7 @@ class InterconnectSyncBackend extends SyncBackend
   @override
   Future<bool> restoreAuth(SyncRepository repo) async {
     await _loadConfig(repo);
-    if (_candidates.isEmpty || _token == null) {
+    if (_candidates.isEmpty || !_hasAnyCredential) {
       _ops?.close();
       _ops = null;
       return false;

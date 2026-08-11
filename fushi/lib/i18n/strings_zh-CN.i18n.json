@@ -3315,5 +3315,8 @@
   "gal_hook_ingame_lookup_hint": "在游戏画面内直接显示词典卡片（KiriKiri 引擎，仅 Windows）",
   "drag_drop_failed": "拖入的文件处理失败，请重试。",
   "tag_add_failed": "标签添加失败，请重试。",
-  "tag_reorder_failed": "标签排序保存失败，请重试。"
+  "tag_reorder_failed": "标签排序保存失败，请重试。",
+  "sync_pair_rate_limited": "尝试次数过多，请等几分钟后重试。",
+  "sync_pair_tls_failed": "证书校验失败：对端证书与已记录的指纹不符。",
+  "sync_pair_timeout": "对端没有及时响应。"
 }
