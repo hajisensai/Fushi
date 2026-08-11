@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1441 条。点号进各自文件。
+> 共 1444 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1573](bugs/BUG-1573-server-lifecycle-manual-isolation.md) | ✅ | ✅ | 互联 host 启动前段异常逃逸 + dispose 顺序 + 手动同步通道未隔离 |
+| [BUG-1572](bugs/BUG-1572-aggregate-push-tombstone.md) | ✅ | ✅ | 聚合上行快照不过墓碑导致已删统计/收藏复活 |
+| [BUG-1571](bugs/BUG-1571-prompt-queue-cross-channel.md) | ✅ | ✅ | 双通道同步弹窗单飞槽跨通道丢候选 |
 | [BUG-1554](bugs/BUG-1554-lan-discovery-browser-orphan.md) | ✅ | ✅ | LAN 发现 startDiscovery 无幂等/无 dispose 守卫，重扫与关页竞态留下孤儿 Bonsoir browser |
 | [BUG-1553](bugs/BUG-1553-interconnect-pair-failure-reason-lost.md) | ✅ | ✅ | 配对失败原因被压平：限速 429 / TLS 指纹不符 / 超时全说成「配对失败」且不留日志 |
 | [BUG-1552](bugs/BUG-1552-sync-channel-failure-cascades.md) | ✅ | ✅ | 云备份通道抛异常直接终止通道循环，互联通道整轮不跑（「并存互不干扰」不成立） |

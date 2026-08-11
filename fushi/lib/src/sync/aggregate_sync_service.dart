@@ -119,9 +119,15 @@ class AggregateSyncService {
     }
 
     // 5) Upload this device's now-merged snapshot so peers converge next sync.
+    //    BUG-1572：上行前先过墓碑。merged 是 local ∪ peer，peer 那份仍带着本机**已
+    //    删掉**的统计/收藏词/收藏句——applySnapshotToLocal 只在写回本地时跳过它们，
+    //    推出去的却是未裁剪的 merged，等于本机把自己删掉的东西又发布回云/host。对端
+    //    没有本机的墓碑，照单落库；本机下轮再拉回来（或本地墓碑被 clearStatisticsTombstone
+    //    清掉后拉回来）= 数据复活。裁剪规则与 applySnapshotToLocal 同源（filterTombstoned）。
     //    Nothing to share on a device with an empty merged state and no peers:
     //    skip the write so a fresh device does not litter an empty asset.
-    if (merged.isEmpty) return false;
+    final AggregateSnapshot outgoing = await filterTombstoned(merged);
+    if (outgoing.isEmpty) return false;
 
     // 内容与本端上次上传的完全一致时不再重传：远端那份就是这份，重写一遍除了让
     // 所有对端误以为「本端又改了远端」之外没有任何作用。
@@ -129,7 +135,7 @@ class AggregateSyncService {
     // 判据同时要求**远端确实还存在**本端那份资产（`children` 里已经列到了，免费）：
     // 只信本地记录的话，远端那份被删掉后本端会永远拒绝重传，peers 再也拿不到本端
     // 的数据。
-    final Map<String, dynamic> payload = merged.toJson();
+    final Map<String, dynamic> payload = outgoing.toJson();
     final String hash = _stableHash(jsonEncode(payload));
     final bool ownAssetPresent =
         children.any((AssetEntry e) => !e.isFolder && e.name == ownAssetName);
@@ -197,8 +203,13 @@ class AggregateSyncService {
     //    degrade to push-only (still share our state; skip the local fold).
     final Object? remoteJson = await fetchRemote();
     if (remoteJson == null) {
-      if (localSnapshot.isEmpty) return; // Nothing to share, nothing to fold.
-      await pushMerged(localSnapshot.toJson());
+      // BUG-1572：即便这条退化路径推的是纯本地快照，也走同一道裁剪——本地
+      // materialise 与墓碑之间没有强制不变量（例如收藏句 pref 与墓碑表分居两处），
+      // 让「推出去的东西必过墓碑」在**每条**上行路径上都成立，而不是靠推理。
+      final AggregateSnapshot localOutgoing =
+          await filterTombstoned(localSnapshot);
+      if (localOutgoing.isEmpty) return; // Nothing to share, nothing to fold.
+      await pushMerged(localOutgoing.toJson());
       return;
     }
 
@@ -213,9 +224,79 @@ class AggregateSyncService {
     }
 
     // 5) Push the merged snapshot back so the host converges to the union.
+    //    BUG-1572：与云通道同律，上行前按本机墓碑裁剪，否则 host 会把本机已删的
+    //    统计/收藏落库并在下轮回灌本机（复活）。
     //    Nothing to share on an all-empty merge: skip the write.
-    if (merged.isEmpty) return;
-    await pushMerged(merged.toJson());
+    final AggregateSnapshot outgoing = await filterTombstoned(merged);
+    if (outgoing.isEmpty) return;
+    await pushMerged(outgoing.toJson());
+  }
+
+  /// 按本机删除墓碑裁剪一份**将要上行**的快照，规则与 [applySnapshotToLocal] 写回
+  /// 本地时的跳过规则逐条同源（BUG-1572）：
+  ///   - 阅读统计：命中 `(title, statSourceBook)` 统计墓碑 → 剔除；
+  ///   - 视频统计：命中 `(title, statSourceVideo)` → 剔除；
+  ///   - 查词/制卡计数：命中 `(title, sourceType)` → 剔除；
+  ///   - 收藏词：命中 `favoriteword` 删除墓碑（按 [FushiDatabase.favoriteWordItemKey]）→ 剔除；
+  ///   - 收藏句：命中 `favoritesentence` 删除墓碑 → 剔除。
+  ///
+  /// 逐时桶（readingHourly / readingHourlyByFormat / videoHourly）与 miningStats 的
+  /// wire 键里**没有 title**，无法归因到被删的书/视频，故与 apply 侧一样原样保留——
+  /// 两侧同样处理，才谈得上「推出去的 == 会写回来的」。
+  ///
+  /// 无任何墓碑时返回入参本身（零拷贝，且 `identical` 仍成立）。
+  @visibleForTesting
+  Future<AggregateSnapshot> filterTombstoned(AggregateSnapshot snapshot) async {
+    final Set<(String, String)> statTombstoned =
+        await _db.getStatisticsTombstoneKeys();
+    final Set<String> favWordTombstoned = <String>{
+      for (final SyncDeletionTombstoneRow row
+          in await _db.getSyncDeletionTombstonesOfType('favoriteword'))
+        row.itemKey,
+    };
+    final Set<String> favSentenceTombstoned = <String>{
+      for (final SyncDeletionTombstoneRow row in await _db
+          .getSyncDeletionTombstonesOfType(kFavoriteSentenceTombstoneType))
+        row.itemKey,
+    };
+    if (statTombstoned.isEmpty &&
+        favWordTombstoned.isEmpty &&
+        favSentenceTombstoned.isEmpty) {
+      return snapshot;
+    }
+    return AggregateSnapshot(
+      readingStats: <ReadingStatRecord>[
+        for (final ReadingStatRecord r in snapshot.readingStats)
+          if (!statTombstoned.contains((r.title, FushiDatabase.statSourceBook)))
+            r,
+      ],
+      videoStats: <VideoStatRecord>[
+        for (final VideoStatRecord r in snapshot.videoStats)
+          if (!statTombstoned
+              .contains((r.title, FushiDatabase.statSourceVideo)))
+            r,
+      ],
+      readingHourly: snapshot.readingHourly,
+      readingHourlyByFormat: snapshot.readingHourlyByFormat,
+      videoHourly: snapshot.videoHourly,
+      miningStats: snapshot.miningStats,
+      lookupMiningCounters: <LookupMiningRecord>[
+        for (final LookupMiningRecord r in snapshot.lookupMiningCounters)
+          if (!statTombstoned.contains((r.title, r.sourceType))) r,
+      ],
+      favoriteWords: <FavoriteWordRecord>[
+        for (final FavoriteWordRecord r in snapshot.favoriteWords)
+          if (!favWordTombstoned.contains(FushiDatabase.favoriteWordItemKey(
+              r.expression, r.reading, r.sourceType)))
+            r,
+      ],
+      favoriteSentences: <FavoriteSentence>[
+        for (final FavoriteSentence s in snapshot.favoriteSentences)
+          if (!favSentenceTombstoned
+              .contains(FavoriteSentenceRepository.itemKeyOf(s)))
+            s,
+      ],
+    );
   }
 
   /// Pure fold of two snapshots through [AggregateMergeService] - the single

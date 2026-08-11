@@ -5382,6 +5382,11 @@ class AppModel with ChangeNotifier {
       // syncServerController 是 late final 带初始化器（读即构造）：仅在已 init（即已被
       // startIfEnabled 构造）时读它，避免「从未 init 却只为销毁而构造」。它既是常驻
       // 服务又是 ChangeNotifier，故 stop() 后还需 dispose()。
+      // BUG-1573：dispose() 现在**自己**拆掉广播 / server / LAN 发现浏览器，并在
+      // `_disposed` 后把 notifyListeners 变成 no-op —— 原来这两行的顺序（同步的
+      // dispose 之后 stop 才恢复执行）必然让 stop 尾部的 notify 撞
+      // 「dispose 后不得 notify」断言。stop 现在对并发调用幂等，这一行保留只是让
+      // 关停在 dispose 之前就开始。
       unawaited(syncServerController.stop());
       syncServerController.dispose();
     }
