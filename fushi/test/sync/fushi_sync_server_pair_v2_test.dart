@@ -337,8 +337,25 @@ void main() {
         'unavailable');
   });
 
-  test('legacy api pair unchanged backward compat', () async {
+  // BUG-1555 前这条断言的是「lanRequiresPin=true 时 v1 仍照常发 token」——那正是
+  // 漏洞本身：本会话明明已被判定必须 PIN，改发 v1 就能绕过去。现在分两半：
+  // 要 PIN 的会话拒 v1，免 PIN 的 LAN 会话 v1 行为逐字不变。
+  test('legacy api pair refused when this session must use a PIN (BUG-1555)',
+      () async {
     await startServer(lanRequiresPin: true);
+    final http.Response resp = await http.post(
+      Uri.parse('http://127.0.0.1:${server.port}/api/pair'),
+      headers: <String, String>{'Content-Type': 'application/json'},
+      body: jsonEncode(<String, String>{'name': 'legacy'}),
+    );
+    expect(resp.statusCode, 403);
+    expect((jsonDecode(resp.body) as Map<String, dynamic>)['reason'],
+        'upgrade_required');
+  });
+
+  test('legacy api pair unchanged backward compat (pin-free LAN session)',
+      () async {
+    await startServer(lanRequiresPin: false);
     final http.Response resp = await http.post(
       Uri.parse('http://127.0.0.1:${server.port}/api/pair'),
       headers: <String, String>{'Content-Type': 'application/json'},

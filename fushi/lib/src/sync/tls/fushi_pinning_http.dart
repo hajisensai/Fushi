@@ -19,6 +19,14 @@ String fingerprintOfDer(List<int> der) {
 String _normalizeFingerprint(String fp) =>
     fp.replaceAll(':', '').replaceAll(RegExp(r'\s'), '').toLowerCase();
 
+/// 两个指纹串是否指同一张证书（归一化后相等）。
+///
+/// 指纹在仓里有两种写法（`aa:bb:..` 与裸 hex、大小写不一），比对必须先归一化；
+/// 这是铉扎判据（[certificateMatchesFingerprint]）与 TOFU 存盘比对的**同一份**实现，
+/// 避免两处各写一份归一化而漂出「铉扎说相等、TOFU 说不符」这种内部矛盾。
+bool fingerprintEquals(String a, String b) =>
+    _normalizeFingerprint(a) == _normalizeFingerprint(b);
+
 /// 唯一接受自签证书的判据：证书 DER 的 SHA-256 是否等于钉扎指纹。
 ///
 /// 这是 [HttpClient.badCertificateCallback] 的全部逻辑。**绝不无条件

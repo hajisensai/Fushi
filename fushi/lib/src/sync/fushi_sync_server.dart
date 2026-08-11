@@ -684,6 +684,24 @@ class FushiSyncServer {
     // No UI wired to approve → never hand out the token unattended. A distinct
     // reason lets the client say "peer not ready" instead of "peer declined".
     if (approve == null) return _pairDenied('unavailable');
+    // BUG-1555：v1 没有 PIN 概念——它只靠 host 点一下「允许」就发权限最大的**共享**
+    // token（不可逐台吊销）。v2 为公网 / 跨网段入站强制 PIN + HMAC，而 v1 同一条
+    // 入站链路完全绕开这套：攻击者只需改发 /api/pair，host 屏上弹的就是一个普通
+    // 「某设备请求配对」框，误点一次即永久失守。故用与 v2 **同一判据**
+    // ([FushiPairingProtocol.computePinRequired]) 前置拦截：本会话必须 PIN 时直接
+    // 拒 v1（reason='upgrade_required'，让 client 提示升级），压根不弹审批框。
+    //
+    // 兼容性：LAN 内且 host 未开「LAN 也要 PIN」时（默认）v1 行为逐字不变，
+    // 旧客户端继续可配对；变的只是「本就该要 PIN 的会话」——那些会话以前能拿到
+    // 共享 token 本身就是漏洞，现在必须走 v2（Hibiki 自己的 client 早已先试 v2，
+    // 只在对端不支持 v2 时才回落 v1）。
+    final String? pairRemote = _remoteAddress(request);
+    final bool v1PinRequired = FushiPairingProtocol.computePinRequired(
+      isLanPeer: FushiPairingProtocol.isPrivateLanAddress(pairRemote),
+      lanRequiresPin:
+          await (lanRequiresPinProvider?.call() ?? Future<bool>.value(false)),
+    );
+    if (v1PinRequired) return _pairDenied('upgrade_required');
     String? name;
     final Map<String, dynamic>? body = await _readJsonObject(request);
     final String? reported = body?['name']?.toString().trim();
@@ -697,16 +715,18 @@ class FushiSyncServer {
     }
     final bool approved = await approve(FushiPairRequest(
       deviceName: name,
-      remoteAddress: _remoteAddress(request),
+      remoteAddress: pairRemote,
     ));
     if (!approved) return _pairDenied('declined');
     return _jsonResponse(<String, dynamic>{'token': _token});
   }
 
-  /// A 403 carrying a machine-readable [reason] ('declined' | 'unavailable') so
-  /// the client can distinguish a real refusal from a peer that has no approval
-  /// handler wired. Older peers reply with a plain-text body instead, which the
-  /// client treats as 'unavailable'.
+  /// A 403 carrying a machine-readable [reason] ('declined' | 'unavailable' |
+  /// 'upgrade_required' | 'expired') so the client can distinguish a real
+  /// refusal from a peer that has no approval handler wired, from a v1 client
+  /// that this host refuses to pair without a PIN (BUG-1555), and from a
+  /// pairing session that timed out (BUG-1556). Older peers reply with a
+  /// plain-text body instead, which the client treats as 'unavailable'.
   shelf.Response _pairDenied(String reason) => shelf.Response(
         403,
         body: jsonEncode(<String, String>{'reason': reason}),
@@ -775,17 +795,6 @@ class FushiSyncServer {
     // host UI 供给器返回真正显示给用户的 PIN（同值用于 confirm 重算比对）。未接线
     // 时保留随机兜底 PIN——它不显示给任何人，故 pinRequired 会话无法被 confirm（拒）。
     final String shownPin = onPairPinGenerated?.call(session) ?? session.pin;
-    final FushiPairSession stored = FushiPairSession(
-      sessionId: sessionId,
-      clientNonce: clientNonce,
-      hostNonce: hostNonce,
-      pin: shownPin,
-      pinRequired: pinRequired,
-      deviceName: deviceName,
-      remoteAddress: remote,
-      createdAt: session.createdAt,
-      clientDeviceId: clientDeviceId,
-    );
 
     // TODO-1296 / BUG-592: pinRequired（公网 / 跨网段 / host 要求 PIN）会话在 CREATE
     // 阶段就弹 host 审批——审批弹窗会显示本会话 PIN，让 client 被要求输入前 host 屏上
@@ -804,6 +813,23 @@ class FushiSyncServer {
       if (!approved) return _pairDenied('declined');
     }
 
+    // BUG-1556：TTL 从**会话真正开始可用的那一刻**起算，而不是请求入口。
+    // 上面那句 `await onPairRequest!` 是人手审批（host 手机在口袋里 / 用户正在
+    // 忙），完全可能超过整个 90s TTL；若沿用请求入口的时刻，会话会在被写进
+    // [_pairSessions] 的那一刻就已经过期，client 紧接着的 confirm 必被 prune 掉，
+    // 且当时还被报成「对端拒绝」——host 分明刚点了允许。client 真正能开始
+    // 输 PIN 的起点就是审批通过，故 TTL 从此刻起算。
+    final FushiPairSession stored = FushiPairSession(
+      sessionId: sessionId,
+      clientNonce: clientNonce,
+      hostNonce: hostNonce,
+      pin: shownPin,
+      pinRequired: pinRequired,
+      deviceName: deviceName,
+      remoteAddress: remote,
+      createdAt: _now(),
+      clientDeviceId: clientDeviceId,
+    );
     _pairSessions[sessionId] = stored;
 
     // 响应只含 sessionId / pinRequired / hostNonce —— 绝不含 PIN 明文。
@@ -826,12 +852,28 @@ class FushiSyncServer {
     if (sessionId == null || sessionId.trim().isEmpty) {
       return shelf.Response(400, body: 'Missing sessionId');
     }
-    // 先清掉过期会话，使「pair/v2 后超 TTL 才 confirm」被当作未知会话拒绝。
+    // BUG-1556：先**查**再 prune——过期与未知是两回事。旧实现先 prune 再查，
+    // 超时的会话在查之前就没了，于是一律报 'declined'（对端拒绝）——用户
+    // 去查「对方为什么拒绝我」，而真相是「你输 PIN 太慢，会话过期了」，排查
+    // 方向全错。现在过期返回专用 reason='expired'，client 据此说人话。
+    final FushiPairSession? found = _pairSessions[sessionId];
+    if (found != null &&
+        found.createdAt.isBefore(_now().subtract(_pairSessionTtl))) {
+      _pairSessions.remove(sessionId);
+      // 过期会话同样消耗掉它的 PIN：host 屏上那个常驻 PIN 弹窗该收起，
+      // 否则用户盯着一个已经没用的 PIN 继续等（对齐 pinRequired 成功路径）。
+      if (found.pinRequired) onPairSessionResolved?.call();
+      _prunePairSessions();
+      _pinRateLimiter.prune(_now());
+      return _pairDenied('expired');
+    }
+    // 再清掉其余过期会话（不靠后续 create 触发）。
     _prunePairSessions();
     // 同步回收已冷却的 PIN 失败记录（锁定中的保留到期满），防限速器内存泄漏。
     _pinRateLimiter.prune(_now());
     final FushiPairSession? session = _pairSessions[sessionId];
-    // 未知会话（过期/伪造）或已被消费过（重放）→ 拒。consumed 防同 nonce 二次提交。
+    // 未知会话（伪造 / 已被早前的 prune 清走）或已被消费过（重放）→ 拒。
+    // consumed 防同 nonce 二次提交。
     if (session == null || session.consumed) {
       return _pairDenied('declined');
     }

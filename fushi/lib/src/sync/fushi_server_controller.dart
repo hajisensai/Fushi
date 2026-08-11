@@ -144,6 +144,10 @@ class FushiSyncServerController extends ChangeNotifier {
   // _pendingPairPin / _pendingPairPinDismiss 单值字段。仅在等待收起旧常驻弹窗期间非 null。
   Completer<void>? _pairDialogClosed;
 
+  // 取代旧弹窗时等它 teardown 的预算。到点仍未 teardown = 异常态，本次配对
+  // 按失败收尾（见 [_promptPairApproval]），不拖着悬挂状态往下走。
+  static const Duration _pairSupersedeCloseTimeout = Duration(seconds: 2);
+
   // BUG-987：当前打开的审批弹窗对应的来源地址（remoteAddress）。用于「同源重试
   // supersede 未决弹窗」——第一次配对被 client 放弃（超时/断网/取消）后，host 那个仍
   // 处于「审批未决」的申请框会驻留至 60s autoDeny，期间同一 client「重新刷新」重发的
@@ -502,6 +506,10 @@ class FushiSyncServerController extends ChangeNotifier {
       deviceName: Value<String?>(registration.deviceName),
       lastSeenIp: Value<String?>(registration.remoteAddress),
     ));
+    // BUG-1558：已配对设备表变了就得告诉视图。新设备的审批发生在 server 线程上，
+    // 设置页只在 initState / 吊销后重拉列表；不通知就是「刚配对成功、host 屏上
+    // 已配对设备列表里压根没这台」，用户以为没配上又配一遍。
+    notifyListeners();
   }
 
   /// TODO-961 M1b: 供给 server auth 校验用的全部有效（未吊销）per-peer token 集合。
@@ -519,9 +527,22 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 删后清 server 端 token 缓存 → 该设备下一次请求即被 401（吊销即时生效）。
   Future<bool> revokePeer(String peerId) async {
     final int deleted = await _database().revokePairedPeer(peerId);
-    if (deleted > 0) _server?.invalidatePeerTokenCache();
+    if (deleted > 0) {
+      _server?.invalidatePeerTokenCache();
+      // 与 [_persistPairedPeer] 同一契约：配对表的**任何**变动都从这里广播，
+      // 视图不必各自记得手动重拉（BUG-1558）。
+      notifyListeners();
+    }
     return deleted > 0;
   }
+
+  /// 测试缝（BUG-1558）：直接驱动 server 的 [FushiSyncServer.onPeerPaired] 落库回调。
+  /// 真实路径上它由 `/api/pair/v2/confirm` 成功时触发，单测里不必起一整套 HTTP。
+  @visibleForTesting
+  Future<void> debugPersistPairedPeer(
+    FushiPairedPeerRegistration registration,
+  ) =>
+      _persistPairedPeer(registration);
 
   /// TODO-1330 / BUG：client 提交 confirm 后收起 host 那个常驻显示 PIN 的审批弹窗
   /// （见 [_promptPairApproval]）。作为 server 的 [FushiSyncServer.onPairSessionResolved]
@@ -572,7 +593,20 @@ class FushiSyncServerController extends ChangeNotifier {
       final Completer<void> closed = Completer<void>();
       _pairDialogClosed = closed;
       _pendingPairPinDismiss?.call();
-      await closed.future.timeout(const Duration(seconds: 2), onTimeout: () {});
+      bool closedInTime = true;
+      await closed.future.timeout(
+        _pairSupersedeCloseTimeout,
+        onTimeout: () => closedInTime = false,
+      );
+      // 超时兑现：旧弹窗没在预算内 teardown（它的 whenComplete 才是清共享单值态
+      // 的唯一地方）。旧实现仍继续往下走：把新会话的 PIN 写进仍属于旧弹窗的
+      // [_pendingPairPin]（旧弹窗随后 teardown 会把它清掉），并把这个永不会被完成的
+      // [_pairDialogClosed] 留在字段里——下一个要取代的请求会把它覆盖，而旧弹窗
+      // 真正 teardown 时又去 complete 别人的 completer。此路径一律按失败收尾：
+      // 先把自己的 completer 从共享字段摘掉，再直接拒绝本次配对（client 重试即可，
+      // 那时旧弹窗已收），不开新框、不碰共享单值态。
+      if (identical(_pairDialogClosed, closed)) _pairDialogClosed = null;
+      if (!closedInTime) return false;
       _pendingPairPin = incomingPin;
     }
     return _showPairApprovalDialog(request);

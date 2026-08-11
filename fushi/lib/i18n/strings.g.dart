@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 56797 (3341 per locale)
+/// Strings: 56916 (3348 per locale)
 ///
-/// Built on 2026-08-11 at 16:22 UTC
+/// Built on 2026-08-11 at 17:12 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4520,6 +4520,16 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get sync_pair_tls_failed =>
       'Certificate check failed. The peer\'s certificate does not match the pinned one.';
   String get sync_pair_timeout => 'The peer did not respond in time.';
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
 }
 
 // Path: <root>
@@ -12231,6 +12241,23 @@ class _StringsAr extends _StringsEn {
       'Certificate check failed. The peer\'s certificate does not match the pinned one.';
   @override
   String get sync_pair_timeout => 'The peer did not respond in time.';
+  @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
 }
 
 // Path: <root>
@@ -20009,6 +20036,23 @@ class _StringsDe extends _StringsEn {
       'Certificate check failed. The peer\'s certificate does not match the pinned one.';
   @override
   String get sync_pair_timeout => 'The peer did not respond in time.';
+  @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
 }
 
 // Path: <root>
@@ -27803,6 +27847,23 @@ class _StringsEs extends _StringsEn {
       'Certificate check failed. The peer\'s certificate does not match the pinned one.';
   @override
   String get sync_pair_timeout => 'The peer did not respond in time.';
+  @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
 }
 
 // Path: <root>
@@ -35609,6 +35670,23 @@ class _StringsFr extends _StringsEn {
       'Certificate check failed. The peer\'s certificate does not match the pinned one.';
   @override
   String get sync_pair_timeout => 'The peer did not respond in time.';
+  @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
 }
 
 // Path: <root>
@@ -43343,6 +43421,23 @@ class _StringsId extends _StringsEn {
       'Certificate check failed. The peer\'s certificate does not match the pinned one.';
   @override
   String get sync_pair_timeout => 'The peer did not respond in time.';
+  @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
 }
 
 // Path: <root>
@@ -51123,6 +51218,23 @@ class _StringsIt extends _StringsEn {
       'Certificate check failed. The peer\'s certificate does not match the pinned one.';
   @override
   String get sync_pair_timeout => 'The peer did not respond in time.';
+  @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
 }
 
 // Path: <root>
@@ -58717,6 +58829,23 @@ class _StringsJa extends _StringsEn {
       'Certificate check failed. The peer\'s certificate does not match the pinned one.';
   @override
   String get sync_pair_timeout => 'The peer did not respond in time.';
+  @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
 }
 
 // Path: <root>
@@ -66318,6 +66447,23 @@ class _StringsKo extends _StringsEn {
       'Certificate check failed. The peer\'s certificate does not match the pinned one.';
   @override
   String get sync_pair_timeout => 'The peer did not respond in time.';
+  @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
 }
 
 // Path: <root>
@@ -74078,6 +74224,23 @@ class _StringsNl extends _StringsEn {
       'Certificate check failed. The peer\'s certificate does not match the pinned one.';
   @override
   String get sync_pair_timeout => 'The peer did not respond in time.';
+  @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
 }
 
 // Path: <root>
@@ -81850,6 +82013,23 @@ class _StringsPtBr extends _StringsEn {
       'Certificate check failed. The peer\'s certificate does not match the pinned one.';
   @override
   String get sync_pair_timeout => 'The peer did not respond in time.';
+  @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
 }
 
 // Path: <root>
@@ -89608,6 +89788,23 @@ class _StringsRu extends _StringsEn {
       'Certificate check failed. The peer\'s certificate does not match the pinned one.';
   @override
   String get sync_pair_timeout => 'The peer did not respond in time.';
+  @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
 }
 
 // Path: <root>
@@ -97314,6 +97511,23 @@ class _StringsTh extends _StringsEn {
       'Certificate check failed. The peer\'s certificate does not match the pinned one.';
   @override
   String get sync_pair_timeout => 'The peer did not respond in time.';
+  @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
 }
 
 // Path: <root>
@@ -105051,6 +105265,23 @@ class _StringsTr extends _StringsEn {
       'Certificate check failed. The peer\'s certificate does not match the pinned one.';
   @override
   String get sync_pair_timeout => 'The peer did not respond in time.';
+  @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
 }
 
 // Path: <root>
@@ -112773,6 +113004,23 @@ class _StringsVi extends _StringsEn {
       'Certificate check failed. The peer\'s certificate does not match the pinned one.';
   @override
   String get sync_pair_timeout => 'The peer did not respond in time.';
+  @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
 }
 
 // Path: <root>
@@ -119933,6 +120181,22 @@ class _StringsZhCn extends _StringsEn {
   String get sync_pair_tls_failed => '证书校验失败：对端证书与已记录的指纹不符。';
   @override
   String get sync_pair_timeout => '对端没有及时响应。';
+  @override
+  String get sync_pair_expired => '配对会话已超时，请重新发起配对。';
+  @override
+  String get sync_pair_upgrade_required =>
+      '对方版本过旧，无法在当前网络下安全配对（需要 PIN）。请更新对方后重新配对。';
+  @override
+  String get sync_pair_fingerprint_changed_title => '证书已变更';
+  @override
+  String get sync_pair_fingerprint_stored_label => '此前已钉扎';
+  @override
+  String get sync_pair_fingerprint_new_label => '本次握手所见';
+  @override
+  String get sync_pair_fingerprint_retrust => '清除已存指纹并重新信任';
+  @override
+  String get sync_pair_fingerprint_changed_body =>
+      '这条地址此前钉扎的是另一张证书。只有在你确知对方重装/重置过设备时才继续，否则连接可能正被中间人拦截。';
 }
 
 // Path: <root>
@@ -127450,6 +127714,23 @@ class _StringsZhHk extends _StringsEn {
       'Certificate check failed. The peer\'s certificate does not match the pinned one.';
   @override
   String get sync_pair_timeout => 'The peer did not respond in time.';
+  @override
+  String get sync_pair_expired =>
+      'Pairing timed out. Start pairing again from this device.';
+  @override
+  String get sync_pair_upgrade_required =>
+      'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+  @override
+  String get sync_pair_fingerprint_changed_title => 'Certificate changed';
+  @override
+  String get sync_pair_fingerprint_stored_label => 'Pinned earlier';
+  @override
+  String get sync_pair_fingerprint_new_label => 'Seen now';
+  @override
+  String get sync_pair_fingerprint_retrust => 'Clear and trust again';
+  @override
+  String get sync_pair_fingerprint_changed_body =>
+      'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
 }
 
 /// Flat map(s) containing all translations.
@@ -134313,6 +134594,20 @@ extension on _StringsEn {
         return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
       case 'sync_pair_timeout':
         return 'The peer did not respond in time.';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
       default:
         return null;
     }
@@ -141174,6 +141469,20 @@ extension on _StringsAr {
         return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
       case 'sync_pair_timeout':
         return 'The peer did not respond in time.';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
       default:
         return null;
     }
@@ -148057,6 +148366,20 @@ extension on _StringsDe {
         return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
       case 'sync_pair_timeout':
         return 'The peer did not respond in time.';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
       default:
         return null;
     }
@@ -154939,6 +155262,20 @@ extension on _StringsEs {
         return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
       case 'sync_pair_timeout':
         return 'The peer did not respond in time.';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
       default:
         return null;
     }
@@ -161827,6 +162164,20 @@ extension on _StringsFr {
         return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
       case 'sync_pair_timeout':
         return 'The peer did not respond in time.';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
       default:
         return null;
     }
@@ -168697,6 +169048,20 @@ extension on _StringsId {
         return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
       case 'sync_pair_timeout':
         return 'The peer did not respond in time.';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
       default:
         return null;
     }
@@ -175581,6 +175946,20 @@ extension on _StringsIt {
         return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
       case 'sync_pair_timeout':
         return 'The peer did not respond in time.';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
       default:
         return null;
     }
@@ -182427,6 +182806,20 @@ extension on _StringsJa {
         return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
       case 'sync_pair_timeout':
         return 'The peer did not respond in time.';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
       default:
         return null;
     }
@@ -189277,6 +189670,20 @@ extension on _StringsKo {
         return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
       case 'sync_pair_timeout':
         return 'The peer did not respond in time.';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
       default:
         return null;
     }
@@ -196155,6 +196562,20 @@ extension on _StringsNl {
         return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
       case 'sync_pair_timeout':
         return 'The peer did not respond in time.';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
       default:
         return null;
     }
@@ -203030,6 +203451,20 @@ extension on _StringsPtBr {
         return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
       case 'sync_pair_timeout':
         return 'The peer did not respond in time.';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
       default:
         return null;
     }
@@ -209910,6 +210345,20 @@ extension on _StringsRu {
         return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
       case 'sync_pair_timeout':
         return 'The peer did not respond in time.';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
       default:
         return null;
     }
@@ -216773,6 +217222,20 @@ extension on _StringsTh {
         return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
       case 'sync_pair_timeout':
         return 'The peer did not respond in time.';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
       default:
         return null;
     }
@@ -223645,6 +224108,20 @@ extension on _StringsTr {
         return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
       case 'sync_pair_timeout':
         return 'The peer did not respond in time.';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
       default:
         return null;
     }
@@ -230513,6 +230990,20 @@ extension on _StringsVi {
         return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
       case 'sync_pair_timeout':
         return 'The peer did not respond in time.';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
       default:
         return null;
     }
@@ -237324,6 +237815,20 @@ extension on _StringsZhCn {
         return '证书校验失败：对端证书与已记录的指纹不符。';
       case 'sync_pair_timeout':
         return '对端没有及时响应。';
+      case 'sync_pair_expired':
+        return '配对会话已超时，请重新发起配对。';
+      case 'sync_pair_upgrade_required':
+        return '对方版本过旧，无法在当前网络下安全配对（需要 PIN）。请更新对方后重新配对。';
+      case 'sync_pair_fingerprint_changed_title':
+        return '证书已变更';
+      case 'sync_pair_fingerprint_stored_label':
+        return '此前已钉扎';
+      case 'sync_pair_fingerprint_new_label':
+        return '本次握手所见';
+      case 'sync_pair_fingerprint_retrust':
+        return '清除已存指纹并重新信任';
+      case 'sync_pair_fingerprint_changed_body':
+        return '这条地址此前钉扎的是另一张证书。只有在你确知对方重装/重置过设备时才继续，否则连接可能正被中间人拦截。';
       default:
         return null;
     }
@@ -244165,6 +244670,20 @@ extension on _StringsZhHk {
         return 'Certificate check failed. The peer\'s certificate does not match the pinned one.';
       case 'sync_pair_timeout':
         return 'The peer did not respond in time.';
+      case 'sync_pair_expired':
+        return 'Pairing timed out. Start pairing again from this device.';
+      case 'sync_pair_upgrade_required':
+        return 'The other device runs an older version that cannot pair securely from this network. Update it, then pair again.';
+      case 'sync_pair_fingerprint_changed_title':
+        return 'Certificate changed';
+      case 'sync_pair_fingerprint_stored_label':
+        return 'Pinned earlier';
+      case 'sync_pair_fingerprint_new_label':
+        return 'Seen now';
+      case 'sync_pair_fingerprint_retrust':
+        return 'Clear and trust again';
+      case 'sync_pair_fingerprint_changed_body':
+        return 'This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.';
       default:
         return null;
     }
