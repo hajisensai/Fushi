@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
         FushiDatabase,
@@ -11,6 +12,7 @@ import 'package:fushi_core/fushi_core.dart'
 
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/torrent_task_display.dart';
+import 'package:fushi/src/media/video/download/video_download_error_presentation.dart';
 import 'package:fushi/utils.dart';
 
 typedef VideoDownloadJobAction = Future<void> Function(
@@ -417,13 +419,14 @@ class _VideoDownloadJobCard extends StatelessWidget {
               FushiTagChip(
                 label: _torrentStatusLabel ??
                     lifecycleLabel?.call(job.lifecycle) ??
-                    job.lifecycle,
+                    _defaultLifecycleLabel(job.lifecycle),
                 color: statusColor,
                 selected: true,
                 tone: FushiTagChipTone.surface,
               ),
               FushiTagChip(
-                label: stageLabel?.call(job.stage) ?? job.stage,
+                label: stageLabel?.call(job.stage) ??
+                    _defaultStageLabel(job.stage),
                 tone: FushiTagChipTone.surface,
               ),
             ],
@@ -450,22 +453,39 @@ class _VideoDownloadJobCard extends StatelessWidget {
           ),
           if (job.lastError?.trim().isNotEmpty ?? false) ...<Widget>[
             const SizedBox(height: 10),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Icon(Icons.info_outline, size: 17, color: colors.error),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: Text(
-                    job.lastError!.trim(),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colors.error,
+            // 摘要一行 + 点击出详情：原始引擎/后端英文诊断串不再整句铺进卡片
+            // （BUG-1540），只展示分类后的本地化摘要；完整原文进对话框可复制。
+            InkWell(
+              key: ValueKey<String>('video-download-job-error-${job.jobId}'),
+              borderRadius: BorderRadius.circular(6),
+              onTap: () => _showErrorDetail(context),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: <Widget>[
+                    Icon(Icons.info_outline, size: 17, color: colors.error),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        videoDownloadErrorSummary(job.lastError!.trim()),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.error,
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 7),
+                    Text(
+                      t.download_task_error_view_detail,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colors.error,
+                      ),
+                    ),
+                    Icon(Icons.chevron_right, size: 16, color: colors.error),
+                  ],
                 ),
-              ],
+              ),
             ),
           ],
           if ((_canRetry && onRetry != null) ||
@@ -513,6 +533,84 @@ class _VideoDownloadJobCard extends StatelessWidget {
       ),
     );
   }
+
+  /// Shows the untouched raw `lastError` diagnostics in a copyable dialog.
+  Future<void> _showErrorDetail(BuildContext context) async {
+    final String raw = job.lastError?.trim() ?? '';
+    if (raw.isEmpty) return;
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final ThemeData theme = Theme.of(dialogContext);
+        return AlertDialog(
+          key: const ValueKey<String>('video-download-job-error-detail-dialog'),
+          title: Text(t.download_task_error_detail_title),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    videoDownloadErrorSummary(raw),
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  SelectableText(
+                    raw,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: <Widget>[
+            TextButton.icon(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: raw));
+                if (dialogContext.mounted) {
+                  ScaffoldMessenger.maybeOf(dialogContext)?.showSnackBar(
+                    SnackBar(content: Text(t.download_task_error_copied)),
+                  );
+                }
+              },
+              icon: const Icon(Icons.copy, size: 18),
+              label: Text(t.copy),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(t.dialog_close),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  static String _defaultLifecycleLabel(String lifecycle) => switch (lifecycle) {
+        VideoDownloadJobLifecycle.active => t.download_task_lifecycle_active,
+        VideoDownloadJobLifecycle.needsAttention =>
+          t.download_task_lifecycle_needs_attention,
+        VideoDownloadJobLifecycle.completed =>
+          t.download_task_lifecycle_completed,
+        VideoDownloadJobLifecycle.failed => t.download_task_lifecycle_failed,
+        VideoDownloadJobLifecycle.cancelled =>
+          t.download_task_lifecycle_cancelled,
+        _ => lifecycle,
+      };
+
+  static String _defaultStageLabel(String stage) => switch (stage) {
+        VideoDownloadJobStage.enqueue => t.download_task_stage_enqueue,
+        VideoDownloadJobStage.download => t.download_task_stage_download,
+        VideoDownloadJobStage.organize => t.download_task_stage_organize,
+        VideoDownloadJobStage.subtitle => t.download_task_stage_subtitle,
+        VideoDownloadJobStage.import => t.download_task_stage_import,
+        VideoDownloadJobStage.scrape => t.download_task_stage_scrape,
+        _ => stage,
+      };
 
   String get _details => <String>[
         job.mediaKind,
