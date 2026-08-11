@@ -361,6 +361,18 @@ constexpr uint32_t kLookupDiagOriginPerChar = 0x00001000u;
 // 文字的绘制目标层不在 primaryLayer 的父链上（独立/离屏层），沿父链累加得到的偏移
 // 因此没有意义。
 constexpr uint32_t kLookupDiagLayerDetached = 0x00002000u;
+// ── 投帧失败分型（真机上"卡片就是不出现"的唯一分辨依据）────────────────────
+//
+// 之前 FramePresented 在降级路上是**无条件置位**的：只证明"我让 TJS 去加载 PNG 了"，
+// 不证明卡片显示了。而那条降级路要求有人把卡片写成 PNG 落盘——实测**没有任何一处
+// 写过那个文件**，于是 loadImages 必然失败、被 TJS 的 catch 吞掉，所有诊断却都报成功。
+// 诊断位声称的比它知道的多，是最难查的一类缺陷，这几位专门用来消除它。
+constexpr uint32_t kLookupDiagCardLayerMissing = 0x00004000u;   // 卡片层建不出来
+constexpr uint32_t kLookupDiagWriteBufferNull = 0x00008000u;    // 层在，但拿不到写指针
+constexpr uint32_t kLookupDiagFallbackPngMissing = 0x00010000u; // 降级路的 PNG 文件不存在
+// 卡片层退回了普通 Layer（自定义子类建不出来）。卡片能显示，但卡片内的鼠标事件
+// 转发失效——降级发生了就要看得见，不许悄悄发生。
+constexpr uint32_t kLookupDiagCardPlainFallback = 0x00020000u;
 
 // hook → host：光标命中了哪个字符。单槽 latest-wins；`seq` **最后**写（Interlocked 全栅栏，
 // 保证 payload 对 reader 先可见），与 VoiceClip / LoopbackMarker 同一套纪律。

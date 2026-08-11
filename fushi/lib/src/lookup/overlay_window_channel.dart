@@ -74,10 +74,15 @@ class OverlayWindowChannel {
   /// 所有调用的唯一出口：把 [target] 注入参数表。逐个方法手动加，迟早漏一个，
   /// 而漏掉的那个会静默打到错误的窗口上。
   Future<T?> _invoke<T>(String method, [Map<String, Object?>? args]) {
+    // 🔴 这里必须调 `_channel.invokeMethod`，**不能**调 `_invoke` —— 它就是 _invoke
+    // 本身。（本文件的调用点是用整文件替换从 `_channel.invokeMethod<` 改成 `_invoke<`
+    // 的，那次替换把这个 helper 自己体内的两处也换掉了，结果是无限自递归、栈溢出，
+    // 且异常被 main.dart 的 `catch { debugPrint }` 吞掉——release 下整条桌面查词
+    // 启动链静默中断，表现为"galgame 查词就是不工作"。）
     if (target.isEmpty) {
-      return _invoke<T>(method, args);
+      return _channel.invokeMethod<T>(method, args);
     }
-    return _invoke<T>(method, <String, Object?>{
+    return _channel.invokeMethod<T>(method, <String, Object?>{
       ...?args,
       'target': target,
     });

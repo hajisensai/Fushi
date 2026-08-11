@@ -800,6 +800,13 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			// 淡入又由持续回调驱动（时序也对不上）。但几何对得上——同一行的 drawCh
 			// 落点集合与 getCharacters 的字形坐标集合只差一个常数平移，**跨度必然相等**。
 			global.fushiLookupBindGroups = [];
+			// 建卡片层走到第几步。非 0 = 上一次 prepare 在这一步抛了异常；DLL 把它
+			// 搬进共享内存，真机上一眼看出是哪一行，不必再靠猜和往返。
+			global.fushiLookupStep = 0;
+			// 被 catch 掉的异常**原文**（含出错点标签）。位只说得出"成没成"，说不出
+			// "为什么"；DLL 每轮把它读走写进 %TEMP%ushi_galhook.log。
+			global.fushiLookupLastError = "";
+			global.fushiLookupErrorSeq = 0;
 			// 光标换算的暂存（避免在 hover 热路径上每条记录都分配一个字典）。
 			global.fushiLookupOffX = 0;
 			global.fushiLookupOffY = 0;
@@ -889,6 +896,21 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				if(!reached) global.fushiLookupMark(16);
 				global.fushiLookupOffX = ox;
 				global.fushiLookupOffY = oy;
+			};
+
+			// 记下被吞掉的异常原文。site 标明出错点，e.message 是引擎给的真实原因。
+			global.fushiLookupNoteError = function(site, e)
+			{
+				try
+				{
+					global.fushiLookupLastError = site + ": " + e.message;
+				}
+				catch(e2)
+				{
+					global.fushiLookupLastError = site + ": <no message>";
+				}
+				global.fushiLookupErrorSeq++;
+				global.fushiLookupNotify++;
 			};
 
 			// 记一次「在引擎回调里吞下的异常」。只做整数自增，自身不可能再抛。
@@ -1085,26 +1107,65 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					var card = global.fushiLookupCard;
 					if(card === void || !isvalid card)
 					{
-						card = new FushiLookupCardLayer(global.kag,
-							global.kag.primaryLayer.parent);
+						// 先试带鼠标事件的子类；建不出来就退回普通 Layer。
+						//
+						// 真机实测：普通 `new Layer(...)` 建得出来（高亮层就是这么建的、
+						// 用户看得见），而自定义子类建不出来 —— CardLayerMissing 因此常亮，
+						// 卡片永远不显示。子类只多提供"卡片内鼠标事件转发"，不该由它决定
+						// 卡片能不能出现：宁可先让卡片可见、暂时不能在卡片里点，也好过
+						// 整张卡片都没有。退路走了就置位，别让降级悄悄发生。
+						try
+						{
+							card = new FushiLookupCardLayer(global.kag,
+								global.kag.primaryLayer.parent);
+						}
+						catch(e)
+						{
+							card = new Layer(global.kag,
+								global.kag.primaryLayer.parent);
+							global.fushiLookupMark(32);
+						}
 						global.kag.add(card);
-						card.name = "Hibiki in-game lookup card";
-						card.fushiLookupIgnore = true;
+						// 🔴 装饰性属性逐项隔离。它们都不该有权决定卡片能不能存在：
+						// 真机实测 prepare 整体抛异常、卡片层永远建不出来，而退回普通
+						// Layer 的那条路并没有被触发——说明抛的不是构造，是下面这些赋值
+						// 里的某一个（引擎对 hitType/absolute 之类的取值范围各有脾气）。
+						// 一个可选属性不被接受就把整张卡片废掉，是把小毛病放大成功能全灭。
+						global.fushiLookupStep = 1;
+						try { card.name = "Hibiki in-game lookup card"; } catch(e) {}
+						global.fushiLookupStep = 2;
+						try { card.fushiLookupIgnore = true; } catch(e) {}
+						global.fushiLookupStep = 3;
+						try { card.absolute = 2147483000; } catch(e) {}
+						global.fushiLookupStep = 4;
+						try { card.opacity = 255; } catch(e) {}
+						global.fushiLookupStep = 5;
+						try { card.hitType = htRect; } catch(e) {}
+						global.fushiLookupStep = 6;
+						// type 与 visible 是**必需**的（直通 alpha + 先隐藏），不隔离：
+						// 它们失败就等于卡片没法正确显示，应该让外层如实记账。
 						card.type = ltAlpha;
-						card.absolute = 2147483000;
-						card.opacity = 255;
-						card.hitType = htRect;
 						card.visible = false;
 						global.fushiLookupCard = card;
+						global.fushiLookupStep = 7;
 					}
+					global.fushiLookupStep = 8;
 					if(card.imageWidth != cardW || card.imageHeight != cardH)
 					{
 						card.setImageSize(cardW, cardH);
 						card.setSizeToImageSize();
 					}
+					global.fushiLookupStep = 9;
 					card.setPos(anchorX, anchorY);
+					global.fushiLookupStep = 0;
 				}
-				catch(e) {}
+				catch(e)
+				{
+					// 建/调卡片层失败必须留痕，且要留**原因**：CardLayerMissing 只说得出
+					// "层不在"，说不出为什么不在，那正是要靠一版版试才能收敛的东西。
+					global.fushiLookupNoteError("prepare@step" + global.fushiLookupStep, e);
+					global.fushiLookupFault();
+				}
 			};
 
 )TJS" LR"TJS(
@@ -1153,7 +1214,10 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					card.setPos(anchorX, anchorY);
 					card.type = ltAlpha;
 				}
-				catch(e) {}
+				catch(e)
+				{
+					global.fushiLookupNoteError("applyPng", e);
+				}
 				global.fushiLookupApply(seq, highlightStart, highlightLen, anchorX, anchorY,
 					cardW, cardH);
 			};
@@ -1714,6 +1778,44 @@ TjsVariantLayout g_lookup_variant = {0u, 8u};
 bool g_lookup_variant_ready = false;
 int g_lookup_variant_attempts = 0;
 
+// 注入侧日志出口：把 TJS 里被 catch 掉的异常**原文**落到 %TEMP%\fushi_galhook.log。
+//
+// 为什么需要它：hook 跑在游戏进程里，没有控制台、没有 Flutter 日志，唯一的出口是共享
+// 内存——于是所有诊断都被压成"位"。位只能回答"成没成"，回答不了"为什么不成"，真机上
+// 每问一次"为什么"就要改一版、重启一次游戏。而 catch 里本来就握着异常文本，把它写出来
+// 一次就够。今天这条链上四个 bug（_invoke 自递归、PNG 死路、卡片层建不出来、类型不匹配）
+// 全被 `catch(e) {}` + 乐观诊断位藏着，都是这么一轮轮试出来的。
+void HookLogLine(const wchar_t* text) {
+  if (text == nullptr || *text == L'\0') return;
+  wchar_t dir[MAX_PATH] = {};
+  const DWORD n = GetTempPathW(MAX_PATH, dir);
+  if (n == 0 || n >= MAX_PATH) return;
+  std::wstring path = dir;
+  path += L"fushi_galhook.log";
+  HANDLE file = CreateFileW(path.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ,
+                            nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) return;
+  SYSTEMTIME st = {};
+  GetLocalTime(&st);
+  wchar_t stamp[64] = {};
+  _snwprintf_s(stamp, _TRUNCATE, L"%02u:%02u:%02u.%03u pid=%lu ", st.wHour,
+               st.wMinute, st.wSecond, st.wMilliseconds, GetCurrentProcessId());
+  std::wstring line = stamp;
+  line += text;
+  line += L"\r\n";
+  const int bytes = WideCharToMultiByte(CP_UTF8, 0, line.c_str(), -1, nullptr, 0,
+                                        nullptr, nullptr);
+  if (bytes > 1) {
+    std::string utf8(static_cast<size_t>(bytes - 1), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, line.c_str(), -1, utf8.data(), bytes, nullptr,
+                        nullptr);
+    DWORD written = 0;
+    WriteFile(file, utf8.data(), static_cast<DWORD>(utf8.size()), &written,
+              nullptr);
+  }
+  CloseHandle(file);
+}
+
 std::wstring g_lookup_card_path;  // 备路 PNG，恒在 %TEMP%（游戏目录一个字节都不写）
 
 // 卡片层就是卡片本身（cardW×cardH，摆在 anchor 上），所以目标缓冲整块都归本帧所有：
@@ -2020,12 +2122,24 @@ void PresentKirikiriLookupFrame() {
   int64_t stride64 = 0;
   // 写指针**每帧重取**：copy-on-write 与 layer 尺寸变化都会让上一帧的指针失效，缓存它就是
   // 往已经不属于该层的内存里写。pitch 必须在取写指针之后读——取写指针可能换掉整块缓冲。
-  const bool geometry =
+  // 逐段求值而不是一串 &&：一串短路只能告诉你"主路不行"，分不出是卡片层压根没建
+  // 出来，还是层在但拿不到写指针——两者修法完全不同（前者查 fushiLookupPrepare，
+  // 后者查层类型/引擎能力）。真机上这一处分型省下的是整整一轮往返。
+  const bool layer_alive =
       EvaluateTjsInteger(L"global.fushiLookupCard.imageWidth", &layer_w) &&
-      EvaluateTjsInteger(L"global.fushiLookupCard.imageHeight", &layer_h) &&
+      EvaluateTjsInteger(L"global.fushiLookupCard.imageHeight", &layer_h);
+  if (!layer_alive) {
+    SetLookupDiag(fushi_voice_hook::kLookupDiagCardLayerMissing);
+  }
+  const bool buffer_ok =
+      layer_alive &&
       EvaluateTjsInteger(L"global.fushiLookupCard.mainImageBufferForWrite", &buffer) &&
       EvaluateTjsInteger(L"global.fushiLookupCard.mainImageBufferPitch", &stride64) &&
       buffer != 0;
+  if (layer_alive && !buffer_ok) {
+    SetLookupDiag(fushi_voice_hook::kLookupDiagWriteBufferNull);
+  }
+  const bool geometry = buffer_ok;
 
   if (!geometry) {
     // 备路：主路不可用时由 host 把这张 cardW×cardH 的卡片写成 PNG 落 %TEMP%，
@@ -2035,6 +2149,14 @@ void PresentKirikiriLookupFrame() {
     g_lookup_frame_anchor_x = anchor_x;
     g_lookup_frame_anchor_y = anchor_y;
     g_lookup_card_shown = true;
+    // 🔴 降级路要求**有人把卡片写成 PNG 落在这个路径**。实测本仓没有任何一处写过它
+    // （g_lookup_card_path 只被声明/判空/赋值/替进脚本），于是 loadImages 必然失败、
+    // 被 TJS 的 catch 吞掉，而这里以前还无条件置 FramePresented——三层一起撒谎，
+    // 真机表现为"所有诊断都绿、卡片就是不出现"。文件不在就如实记，不许声称投出去了。
+    if (GetFileAttributesW(g_lookup_card_path.c_str()) == INVALID_FILE_ATTRIBUTES) {
+      SetLookupDiag(fushi_voice_hook::kLookupDiagFallbackPngMissing);
+      return;
+    }
     ApplyKirikiriLookupCard(best_seq, highlight_start, highlight_len, anchor_x,
                             anchor_y, width, height, true);
     SetLookupDiag(fushi_voice_hook::kLookupDiagFramePresented);
@@ -2206,6 +2328,18 @@ void PumpKirikiriLookup() {
     }
     // hover 未命中的分型位。TJS 侧用小整数位（1/2/4/8/16）攒着，只在新增一位时才
     // ++notify 把车叫来，所以这里的求值频率与"出现了新的失败类型"同阶，不与鼠标动。
+    // 把 TJS 侧新攒下的异常原文搬进日志。只在 seq 变化时读字符串，稳态零额外开销。
+    static int64_t last_error_seq = 0;
+    int64_t error_seq = 0;
+    if (EvaluateTjsInteger(L"global.fushiLookupErrorSeq", &error_seq) &&
+        error_seq != last_error_seq) {
+      last_error_seq = error_seq;
+      static wchar_t error_text[kKirikiriLookupLineChars];
+      if (EvaluateTjsString(L"global.fushiLookupLastError", error_text,
+                            kKirikiriLookupLineChars)) {
+        HookLogLine(error_text);
+      }
+    }
     int64_t miss = 0;
     if (EvaluateTjsInteger(L"global.fushiLookupMiss", &miss) && miss > 0) {
       uint32_t bits = 0;
@@ -2214,6 +2348,7 @@ void PumpKirikiriLookup() {
       if (miss & 4) bits |= fushi_voice_hook::kLookupDiagHoverHidden;
       if (miss & 8) bits |= fushi_voice_hook::kLookupDiagOriginPerChar;
       if (miss & 16) bits |= fushi_voice_hook::kLookupDiagLayerDetached;
+      if (miss & 32) bits |= fushi_voice_hook::kLookupDiagCardPlainFallback;
       SetLookupDiag(bits);
     }
     PublishKirikiriLookupHit();
