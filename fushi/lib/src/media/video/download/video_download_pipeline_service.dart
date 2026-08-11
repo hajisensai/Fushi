@@ -756,8 +756,24 @@ class VideoDownloadPipelineService {
     if (job == null) return;
     if (job.lifecycle != VideoDownloadJobLifecycle.completed &&
         job.lifecycle != VideoDownloadJobLifecycle.cancelled) {
-      await cancelJob(jobId);
-      job = await database.getVideoDownloadJob(jobId) ?? job;
+      // Deletion is terminal: stop the durable workflow first, then remove the
+      // backend task below. Reusing cancelJob here would require a successful
+      // backend pause and make stale/missing torrents impossible to delete.
+      final bool stopped = await database.cancelVideoDownloadJobByUser(
+        jobId: jobId,
+        nowAt: DateTime.now().millisecondsSinceEpoch,
+      );
+      final VideoDownloadJobRow? current =
+          await database.getVideoDownloadJob(jobId);
+      if (current == null) return;
+      if (!stopped &&
+          current.lifecycle != VideoDownloadJobLifecycle.completed &&
+          current.lifecycle != VideoDownloadJobLifecycle.cancelled) {
+        throw const VideoDownloadPipelineActionRequired(
+          'The download job changed while it was being deleted',
+        );
+      }
+      job = current;
     }
     while (_activeJobId == jobId) {
       await Future<void>.delayed(const Duration(milliseconds: 20));

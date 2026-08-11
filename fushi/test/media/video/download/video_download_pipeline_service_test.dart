@@ -1185,6 +1185,27 @@ void main() {
     expect(backend.pauseCalls, 0);
   });
 
+  test('delete removes a stale task even when its backend cannot pause it',
+      () async {
+    final _FakeTorrentBackend backend = _FakeTorrentBackend(
+      pauseResult: false,
+    );
+    final _PipelineEnvironment environment =
+        await _PipelineEnvironment.create(backend: backend);
+    addTearDown(environment.close);
+    const String jobId = 'delete-stale-backend-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.organize,
+      lifecycle: VideoDownloadJobLifecycle.needsAttention,
+    );
+
+    await environment.service.deleteJob(jobId, deleteFiles: false);
+
+    expect(await environment.database.getVideoDownloadJob(jobId), isNull);
+    expect(backend.pauseCalls, 0);
+  });
+
   test('retry rejects a job that is already active', () async {
     final _PipelineEnvironment environment = await _PipelineEnvironment.create(
       backend: _FakeTorrentBackend(),
@@ -1566,11 +1587,13 @@ class _FakeTorrentBackend implements TorrentPauseBackend {
   _FakeTorrentBackend({
     this.snapshots = const <TorrentSnapshot>[],
     this.files = const <TorrentFileEntry>[],
+    this.pauseResult = true,
     bool pauseAdd = false,
   }) : _addGate = pauseAdd ? Completer<bool>() : null;
 
   final List<TorrentSnapshot> snapshots;
   final List<TorrentFileEntry> files;
+  final bool pauseResult;
   final Completer<bool>? _addGate;
   final Completer<void> addEntered = Completer<void>();
   Future<void> Function()? beforeAdd;
@@ -1593,7 +1616,7 @@ class _FakeTorrentBackend implements TorrentPauseBackend {
   Future<bool> pauseTorrent(String torrentId) async {
     pauseCalls += 1;
     pausedTorrentIds.add(torrentId);
-    return true;
+    return pauseResult;
   }
 
   @override
