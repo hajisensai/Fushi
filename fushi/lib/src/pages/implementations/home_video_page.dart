@@ -63,6 +63,7 @@ import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/collections/collection_drag.dart';
 import 'package:fushi/src/media/selection/media_selection_controller.dart';
 import 'package:fushi/src/media/selection/selection_gestures.dart';
+import 'package:fushi/src/media/tags/tag_drop.dart';
 import 'package:fushi/src/media/collections/collection_shelf_row.dart';
 import 'package:fushi/src/pages/implementations/jimaku_batch_dialog.dart';
 import 'package:fushi/src/pages/implementations/video_work_detail_page.dart';
@@ -1935,20 +1936,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (mounted) _refreshAfterTagChange();
   }
 
+  /// 「查重 → 幂等提示 → 落库 → 失败提示」收口在 [addTagToTarget]（永不抛）；这里
+  /// 只留 widget 层该管的两件事：真写进去了才刷新，`mounted` 才报成功。
   Future<void> _addTagToVideoBook(String bookUid, BookTagRow tag) async {
     final Map<String, List<BookTagRow>>? existing =
         ref.read(videoBookTagMapProvider).valueOrNull;
     final bool alreadyHas =
-        existing?[bookUid]?.any((BookTagRow t) => t.id == tag.id) ?? false;
-    if (alreadyHas) {
-      FushiToast.show(
-        msg: t.tag_already_on_book(name: tag.name),
-        severity: ToastSeverity.warning,
-      );
-      return;
-    }
-
-    await ref.read(appProvider).database.addTagToVideoBook(bookUid, tag.id);
+        existing?[bookUid]?.any((BookTagRow row) => row.id == tag.id) ?? false;
+    final TagAddOutcome outcome = await addTagToTarget(
+      tag: tag,
+      isAlreadyTagged: () async => alreadyHas,
+      addToDb: () =>
+          ref.read(appProvider).database.addTagToVideoBook(bookUid, tag.id),
+      alreadyTaggedMessage: t.tag_already_on_book(name: tag.name),
+    );
+    if (outcome != TagAddOutcome.added) return;
     ref.invalidate(videoBookTagMapProvider);
     ref.invalidate(filteredVideoBookUidsProvider);
     if (mounted) {
@@ -1967,16 +1969,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Future<void> _addTagToVideoCollection(
       int collectionId, BookTagRow tag) async {
     final FushiDatabase db = ref.read(appProvider).database;
-    final List<BookTagRow> existing =
-        await db.getTagsForCollection(collectionId);
-    if (existing.any((BookTagRow t) => t.id == tag.id)) {
-      FushiToast.show(
-        msg: t.tag_already_on_collection(name: tag.name),
-        severity: ToastSeverity.warning,
-      );
-      return;
-    }
-    await db.addTagToCollection(collectionId, tag.id);
+    final TagAddOutcome outcome = await addTagToTarget(
+      tag: tag,
+      isAlreadyTagged: () async => (await db.getTagsForCollection(collectionId))
+          .any((BookTagRow row) => row.id == tag.id),
+      addToDb: () => db.addTagToCollection(collectionId, tag.id),
+      alreadyTaggedMessage: t.tag_already_on_collection(name: tag.name),
+    );
+    if (outcome != TagAddOutcome.added) return;
     ref.invalidate(collectionTagMapProvider);
     ref.invalidate(filteredCollectionIdsProvider);
     if (mounted) {
@@ -4907,7 +4907,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final BookTagRow item = reordered.removeAt(oldIndex);
     reordered.insert(newIndex, item);
     final List<int> orderedIds = reordered.map((BookTagRow t) => t.id).toList();
-    await ref.read(appProvider).database.reorderTags(orderedIds);
+    final bool ok = await reorderTagsSafely(
+      write: () => ref.read(appProvider).database.reorderTags(orderedIds),
+    );
+    if (!ok) return;
     ref.invalidate(allTagsProvider);
   }
 

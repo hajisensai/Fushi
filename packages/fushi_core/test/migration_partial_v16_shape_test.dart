@@ -240,7 +240,9 @@ void main() {
         reason: 'legacy int id epub_books re-keyed to sanitized title');
 
     // ── reader_positions: ALREADY v16 -> untouched, original data kept ───
-    final pos = await db.getReaderPosition(kBookKey);
+    // v82 之后 reader_positions 的键是本机稳定的 `EpubBooks.uid`（不是 bookKey），
+    // 故按书行 uid 查；断言意图不变——已是 v16 形状的表不该被再动一次。
+    final pos = await db.getReaderPosition(books.single.uid);
     expect(pos, isNotNull);
     expect(pos!.normCharOffset, 4242,
         reason: 'already-v16 reader_positions skipped (no JOIN), data intact');
@@ -259,13 +261,13 @@ void main() {
         reason:
             'skipped v16 book_tag_mappings is a usable table post-migration');
 
-    // ── bookmarks: LEGACY ttu_book_id -> re-keyed to book_key ────────────
+    // ── bookmarks: LEGACY ttu_book_id -> re-keyed（v16 到 book_key，v82 到 uid）─
     final QueryRow bm = await db.customSelect(
-      "SELECT label FROM bookmarks WHERE book_key = ?",
-      variables: [Variable<String>(kBookKey)],
+      'SELECT label FROM bookmarks WHERE book_uid = ?',
+      variables: [Variable<String>(books.single.uid)],
     ).getSingle();
     expect(bm.read<String>('label'), 'bm1',
-        reason: 'legacy ttu_book_id bookmark re-keyed to book_key');
+        reason: 'legacy ttu_book_id bookmark re-keyed all the way to book_uid');
 
     // ── audiobooks + cues: LEGACY book_uid -> re-keyed to book_key ───────
     expect(await db.getAudiobookByBookKey(kBookKey), isNotNull,
