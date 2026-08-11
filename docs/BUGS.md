@@ -29,10 +29,27 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1443 条。点号进各自文件。
+> 共 1460 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1554](bugs/BUG-1554-lan-discovery-browser-orphan.md) | ✅ | ✅ | LAN 发现 startDiscovery 无幂等/无 dispose 守卫，重扫与关页竞态留下孤儿 Bonsoir browser |
+| [BUG-1553](bugs/BUG-1553-interconnect-pair-failure-reason-lost.md) | ✅ | ✅ | 配对失败原因被压平：限速 429 / TLS 指纹不符 / 超时全说成「配对失败」且不留日志 |
+| [BUG-1552](bugs/BUG-1552-sync-channel-failure-cascades.md) | ✅ | ✅ | 云备份通道抛异常直接终止通道循环，互联通道整轮不跑（「并存互不干扰」不成立） |
+| [BUG-1551](bugs/BUG-1551-interconnect-server-start-race.md) | ✅ | ✅ | 互联服务开关竞态：并发 start 抢同一端口、catch 清掉别人的句柄，host 在跑却显示已停止且关不掉 |
+| [BUG-1550](bugs/BUG-1550-interconnect-peer-token-single-slot.md) | ✅ | ✅ | 互联配对第二台对端后整体瘫痪：per-peer token 只有一个全局槽 + 401 株连全部候选 |
+| [BUG-1549](bugs/BUG-1549-anki-toast-empty-deckname.md) | ✅ | ✅ | AnkiConnect 制卡成功 toast 牌组名为空——成功结果不带实际落卡牌组名，调用点事后从 selectedDeckName 猜 |
+| [BUG-1548](bugs/BUG-1548-resource-search-wrong-season-ranking.md) | ✅ | ✅ | 资源搜索结果错季混排：结果只按 seeders 排序，无标题/季号相关度 |
+| [BUG-1547](bugs/BUG-1547-tmdb-unconfigured-scrape-all-fails.md) | ✅ | ✅ | TMDB 未配置时全部刮削整批失败：resolver 不回退到零密钥的 Bangumi/AniList，且错误是英文裸串 |
+| [BUG-1546](bugs/BUG-1546-settings-width-text-truncation.md) | ✅ | ✅ | 设置页限宽与描述/集标题截断显示不全 |
+| [BUG-1545](bugs/BUG-1545-kon-collection-detail-crash.md) | ✅ | ✅ | 视频起播时 hwdec=auto 抢先下发，CUDA 硬解初始化崩溃整个进程（Windows/NVIDIA） |
+| [BUG-1544](bugs/BUG-1544-episode-number-follow-parsed.md) | ✅ | ✅ | 选集卡片序号用导入顺位号而非文件名解析出的真实集数 |
+| [BUG-1543](bugs/BUG-1543-season-split-not-splitting.md) | ✅ | ✅ | 合集分季识别吃不下「标题 2 - 集号」形态，多季全挤进第 1 季 |
+| [BUG-1542](bugs/BUG-1542-collection-continue-wrong-episode.md) | ✅ | ✅ | 合集继续播放选错集：选条目层只按位置取最靠后有痕迹成员，忽略最近播放时刻 |
+| [BUG-1541](bugs/BUG-1541-gamepad-bt-idle-dead.md) | ✅ | ✅ | 蓝牙手柄待机断连后按键永久失效，必须重启 app |
+| [BUG-1540](bugs/BUG-1540-download-task-error-detail.md) | ✅ | ✅ | 下载任务卡错误展示：英文裸串整句铺开、无点击详情、chip 未本地化 |
+| [BUG-1539](bugs/BUG-1539-resource-search-button-dead.md) | ✅ | ✅ | 下载资源页手动搜索按钮禁用但无任何原因提示 |
+| [BUG-1538](bugs/BUG-1538-download-proxy-default-direct.md) | ✅ | ✅ | 下载域默认走系统代理而非直连，发现聚合来源需钉死不随代理分叉 |
 | [BUG-1537](bugs/BUG-1537-settings-subtitle-ellipsis-single-line.md) | ✅ | ✅ | 设置行说明文字被压成单行省略号（ellipsis + maxLines:null） |
 | [BUG-1536](bugs/BUG-1536-horizontal-row-steals-vertical-wheel.md) | ✅ | ✅ | 视频首页横滚行抢走整页纵向滚动（应 Shift+滚轮才横滚） |
 | [BUG-1535](bugs/BUG-1535-download-task-details-service-unavailable.md) | ✅ | ✅ | 下载服务未启动时任务详情打不开 |

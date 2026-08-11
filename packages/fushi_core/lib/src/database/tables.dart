@@ -565,6 +565,21 @@ class VideoBooks extends Table {
   TextColumn get coverPath => text().nullable()();
   IntColumn get lastPositionMs => integer().withDefault(const Constant(0))();
 
+  /// 最近一次播放的毫秒时刻（schema v85，BUG-1542）；null = 从未播放 / v85 前旧行
+  /// 回填不到。与 [lastPositionMs] **成对写入**（同一个 `updateVideoBookPosition`
+  /// 事务），使「这一行有进度」和「这进度是什么时候留下的」不可能失配。
+  ///
+  /// 有了它，合集续播的锚点才能是「用户刚才在看哪一集」。此前 `VideoBooks` 只有
+  /// 位置没有时刻，`continueMemberIndex` 只能拿「排序位置最靠后的有痕迹成员」当
+  /// 代理——等价于假设用户永远按集号单调前进，用户回头看 PV/补看早期某集后就选错
+  /// （BUG-1542：刚退出 PV 第 1 集，头部显示「继续看 第233集」）。
+  ///
+  /// 为什么不复用 `video_watch_statistics.lastModified`：那是**按天聚合**行的
+  /// mtime，且云聚合合并（`setVideoWatchStatistic`）会改写它 → 不是「本机最近播放
+  /// 这一集」的可靠事实；远端进度经 sync 写进 [lastPositionMs] 时也根本不产生统计
+  /// 行。v85 迁移仍从它回填存量库（唯一可得的历史近似），新写入一律走本列。
+  IntColumn get lastPlayedAt => integer().nullable()();
+
   /// 导入时间（毫秒戳，同 [EpubBooks].importedAt / [SrtBooks].importedAt int
   /// 范式）；null = 旧数据无导入时间。v57 前是 drift DateTime（Unix 秒存储），
   /// v57 迁移统一为 int 毫秒。

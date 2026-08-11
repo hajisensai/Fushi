@@ -764,12 +764,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
       return result.toPopupReply();
     }
     final MineOutcome outcome = result.outcome!;
-    final String deckName = outcome.result == MineResult.success
-        ? (await repo.loadSettings()).selectedDeckName ?? ''
-        : '';
     final described = describeMineOutcome(
       outcome,
-      deckName: deckName,
       overwrite: updateNoteId != null,
     );
     FushiToast.showMine(msg: described.message, status: described.status);

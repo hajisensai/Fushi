@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
+import 'package:fushi/src/media/torrent/video_resource_relevance.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 
 class VideoResourceSelection {
@@ -64,7 +65,13 @@ class VideoResourceRegistry {
     final ProviderBatchResult<VideoResourceCandidate> merged =
         ProviderBatchResult.merge(results);
     return ProviderBatchResult<VideoResourceCandidate>(
-      items: deduplicateVideoResources(merged.items),
+      // 先去重（identityKey + providerPriority），再按季号/标题贴合度重排。
+      // Nyaa 只做模糊词匹配，不重排的话搜 "xxx 2" 会被做种更多的 S1/S3 压在前面。
+      items: rankVideoResourcesByRelevance(
+        deduplicateVideoResources(merged.items),
+        query: request.effectiveQuery,
+        season: request.effectiveSeason,
+      ),
       failures: merged.failures,
       successfulProviderCount: merged.successfulProviderCount,
     );

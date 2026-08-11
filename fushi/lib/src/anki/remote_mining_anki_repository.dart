@@ -86,7 +86,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     );
     try {
       final Map<String, dynamic>? json = await _client.mineForward(payload);
-      return _outcomeFromResponse(json);
+      return _withLocalDeckNameFallback(_outcomeFromResponse(json));
     } on SyncAuthError {
       return MineOutcome.failure(
         tokenRejectedMessage,
@@ -218,7 +218,12 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     final String? message = json['message'] as String?;
     final String? detail = json['detail'] as String?;
     if (result == MineResult.success.name) {
-      return MineOutcome.success(audioWarning: message);
+      // BUG-1549：主机回传它实际落卡的牌组名（主机侧配置的 deck）；旧版本主机
+      // 无此字段 → null，由 [_withLocalDeckNameFallback] 降级到本地设置名。
+      return MineOutcome.success(
+        deckName: json['deckName'] as String?,
+        audioWarning: message,
+      );
     }
     if (result == MineResult.duplicate.name) {
       return const MineOutcome.duplicate();
@@ -229,6 +234,30 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     return MineOutcome.failure(
       message ?? detail ?? 'The paired device failed to create the card.',
     );
+  }
+
+  /// BUG-1549：旧版本主机的转发响应不带 `deckName`——降级用**本地**设置解析的
+  /// 牌组名补上（与旧行为一致：此前成功 toast 本来就显示本地
+  /// `loadSettings().selectedDeckName`）。新主机回传后此降级不再触发。
+  Future<MineOutcome> _withLocalDeckNameFallback(MineOutcome outcome) async {
+    if (outcome.result != MineResult.success) return outcome;
+    if (outcome.deckName != null && outcome.deckName!.isNotEmpty) {
+      return outcome;
+    }
+    // 补名只是给 toast 用的装饰——本地设置读不到（存储异常等）时绝不能把一次
+    // 已成功的远端制卡变成失败，原样返回（toast 无牌组名，与旧降级一致）。
+    try {
+      final AnkiSettings settings = await _local.loadSettings();
+      final String? localDeckName =
+          resolveSelectedDeck(settings)?.name ?? settings.selectedDeckName;
+      return MineOutcome.success(
+        noteId: outcome.noteId,
+        deckName: localDeckName,
+        audioWarning: outcome.audioWarning,
+      );
+    } catch (_) {
+      return outcome;
+    }
   }
 
   // ---- 配置类：委派本地仓库，保持设置页可配置本地 Anki ----

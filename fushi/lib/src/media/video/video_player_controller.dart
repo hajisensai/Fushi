@@ -1101,7 +1101,28 @@ class VideoPlayerController extends ChangeNotifier
     final Player player = _player ?? Player();
     if (_player == null) {
       _player = player;
-      _videoController = VideoController(player);
+      // BUG-1545：**必须**把本次 load 的 hwdec 策略随 configuration 传进
+      // [VideoController]。media_kit_video 的 `NativeVideoController.create` 把
+      // `configuration.hwdec == null` 兜底成 **`'auto'`**，并在建控制器时立刻
+      // `setProperties({'vo', 'hwdec', 'vid'})` 下发到 libmpv（vendored
+      // `third_party/media_kit_video/lib/src/video_controller/native_video_controller/
+      // real.dart:121,159`）。而本类下发用户策略的 [applyMpvConfigToPlayer] 排在
+      // `player.open` **之后**（见本方法末尾），于是首个文件的视频解码链是拿 `auto`
+      // 初始化的——`auto` 是 mpv 的**全量**硬解列表（含非 copy 的 `cuda` / `nvdec`），
+      // 而 [VideoMpvConfig] 的合法值域只有 `{no, auto-safe, auto-copy}`
+      // （`video_mpv_config.dart` 的 `hwdecs` 白名单），**从不允许 `auto`**。
+      // Windows + NVIDIA 上这条 CUDA 分支会在解码链初始化时调 `cuInit()` /
+      // `cuCtxCreate_v2()`，在 nvcuda64.dll 内部空指针解引用，**整个进程 0xC0000005
+      // 闪退**（三份 minidump 栈完全一致）。传 configuration 让策略在**第一次属性
+      // 下发**就生效，`auto` 再也不会到达 libmpv——消除时间窗本身，而不是事后覆盖。
+      // 与 [buildMpvProperties] 用同一个 [resolveAndroidHwdec] 解析，两处取值恒一致
+      // （Android 仍是 copy 变体，BUG-465 不回归）。
+      _videoController = VideoController(
+        player,
+        configuration: VideoControllerConfiguration(
+          hwdec: resolveAndroidHwdec(mpvConfig.hwdec),
+        ),
+      );
       // TODO-1212：登记文件句柄释放（幂等，只在首次建 Player 时登记一次）。
       _mediaHandleRegistration ??=
           MediaHandleRegistry.instance.register(_releaseMediaHandles);

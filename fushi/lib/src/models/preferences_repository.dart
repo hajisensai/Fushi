@@ -2100,10 +2100,11 @@ class PreferencesRepository extends ChangeNotifier {
   // 副本，不迁移到任何游戏；旧 Profile apply/JSON import 也会拒绝它复活。全局值
   // 无法映射成「每个游戏各自开不开」，新结构仍一律从关闭起步，用户按游戏自己开。
 
-  /// AniList/Nyaa/Jimaku requests: auto (env > enabled system proxy > direct),
-  /// explicit direct, or a user-provided host:port proxy.
+  /// AniList/Nyaa/Jimaku requests: direct (default, BUG-1538 —— 下载域默认不走
+  /// 代理), auto (env > enabled system proxy > direct), or a user-provided
+  /// host:port proxy. 已显式存过 'auto' 的用户不受默认值变更影响。
   String get downloadNetworkProxyMode =>
-      getPref('download_network_proxy_mode', defaultValue: 'auto') as String;
+      getPref('download_network_proxy_mode', defaultValue: 'direct') as String;
 
   Future<void> setDownloadNetworkProxyMode(String value) async {
     await setPref('download_network_proxy_mode', value);

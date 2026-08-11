@@ -15,6 +15,14 @@ library;
 import 'package:fushi/src/media/media_extensions.dart';
 import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 
+/// [FilenameParser.takeTrailingNumericSeason] 的结果：剥出的季号 + 去掉季号后的标题。
+class TrailingSeason {
+  const TrailingSeason({required this.season, required this.title});
+
+  final int season;
+  final String title;
+}
+
 /// 一个被摘出的括号块：内容 + 它前面的括号外文本（用于判断「标题之后」）。
 class _Block {
   const _Block(this.content, this.outsideBefore);
@@ -118,6 +126,21 @@ class FilenameParser {
       out.add(fileParsed);
     }
     return out;
+  }
+
+  /// 「标题尾部裸数字季号」的**单一真相源**（BUG-1543）：`Hibike! Euphonium 2`
+  /// → `(season: 2, title: 'Hibike! Euphonium')`；尾部不是季号则返回 null。
+  ///
+  /// 只在**已知这是剧集**的上下文调用（[_parseTitleText] ⑩ 的「已解出集号」门、
+  /// 季目录名回落 `parseVideoPath`）——脱离该上下文，`Ip Man 2` 的 `2` 是片名的
+  /// 一部分而非季号。判据收窄见 [_trailingNumericSeason]，另要求剩余头部含文字
+  /// （纯数字名 `2` 不是「第 2 季」）。
+  static TrailingSeason? takeTrailingNumericSeason(String text) {
+    final RegExpMatch? m = _trailingNumericSeason.firstMatch(text);
+    if (m == null) return null;
+    final String head = text.substring(0, m.start);
+    if (!_hasTitleChars(head)) return null;
+    return TrailingSeason(season: int.parse(m.group(1)!), title: head.trim());
   }
 
   // ─────────────────────────── 扩展名 / 括号块扫描 ───────────────────────────
@@ -461,6 +484,16 @@ class FilenameParser {
   /// 排除 Ⅰ——单独的「一」季无意义且易误伤）。
   static final RegExp _unicodeRomanTail = RegExp(r'([Ⅱ-Ⅹ])\s*$');
 
+  /// 结尾裸阿拉伯数字季号：`Hibike! Euphonium 2 - 01` / `Yuru Camp△ 2 - 03`
+  /// 里的那个 `2`（BUG-1543）。这是日系续作最常见的季标记，此前引擎只认
+  /// `S2` / `2nd Season` / `第2季` / 罗马数字四种，纯数字形态整批掉进第 1 季。
+  ///
+  /// 收窄到**单个 2–9**且要求空白左边界，是为了不误吞标题里本就带数字的作品：
+  /// `Mob Psycho 100`（3 位）、`Gundam 00`（2 位）、`Steins;Gate 0`（0）、
+  /// `Ranma 1/2`（`2` 左边是 `/` 不是空白）全都不命中。另有「必须已解出集号」
+  /// 的调用侧门（见 [_parseTitleText] ⑩），把 `Ip Man 2` 这类电影续作挡在外面。
+  static final RegExp _trailingNumericSeason = RegExp(r'(?:^|\s)([2-9])\s*$');
+
   /// 电影提示（括号外）：`剧场版` 等子串直接剥离；`映画` 只认独立 token
   /// （避免误伤《映画大好きポンポさん》这类标题本身含「映画」的作品）。
   static final RegExp _cjkMovieInline = RegExp(r'剧场版|劇場版|总集篇|總集篇|総集編');
@@ -708,6 +741,17 @@ class FilenameParser {
         st.season =
             const <String, int>{'II': 2, 'III': 3, 'IV': 4}[m.group(1)!];
       });
+    }
+    // ⑩ 结尾裸数字季号（`Hibike! Euphonium 2` → 系列名 + 第 2 季，BUG-1543）。
+    // 门槛是「本文件已解出集号」：只有**剧集文件**才有季的语义，`Ip Man 2` /
+    // `Toy Story 3` 这类电影续作解不出集号，数字留在标题里当作品名的一部分——
+    // 这正是电影刮削要的（按 `Ip Man 2` 搜，而不是搜 `Ip Man` 的第 2 季）。
+    if (st.season == null && st.episode != null) {
+      final TrailingSeason? numeric = takeTrailingNumericSeason(text);
+      if (numeric != null) {
+        st.season = numeric.season;
+        text = numeric.title;
+      }
     }
     final String title = _cleanupTitle(text);
     if (_looksLikeNonTitle(title)) return '';

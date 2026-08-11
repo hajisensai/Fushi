@@ -2,6 +2,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
@@ -110,6 +111,39 @@ void main() {
       findsOneWidget,
       reason: 'e2 无集级刮削 → 回落文件名标题',
     );
+  });
+
+  testWidgets('BUG-1546：超长文件名标题两行换行显示，不再单行截断', (WidgetTester tester) async {
+    useSurface(tester, const Size(700, 1600));
+    const String longTitle =
+        '[VCB-Studio] Gekijouban Hibike! Euphonium Todoketai Melody '
+        '[IV][Ma10p_1080p][x265_flac] 特典映像';
+    // 覆写第 1 集标题（首卡必在视口内；追加第 3 集会落在懒加载网格视口外）。
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value('video/e1'),
+      title: const Value(longTitle),
+      videoPath: const Value('/v/Show 01.mkv'),
+    ));
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    // 限定在集卡内找标题——页面 hero（继续看行等）也会渲染同一条目标题。
+    final RenderParagraph title = tester.renderObject<RenderParagraph>(
+      find.descendant(
+        of: cardOf('video/e1'),
+        matching: find.textContaining('Todoketai Melody'),
+      ),
+    );
+    final TextStyle style = title.text.style!;
+    final double lineHeight = (style.fontSize ?? 14) * (style.height ?? 1.5);
+    expect(
+      title.size.height,
+      greaterThan(lineHeight * 1.5),
+      reason: '窄单列下这条发布名必然超过一行；只有一行高说明集卡标题又被 '
+          'maxLines:1 单行截断（BUG-1546 回归），集号/规格被省略号吃掉',
+    );
+    expect(tester.takeException(), isNull,
+        reason: '两行标题 + 状态行必须仍在 128 卡高内，不得 RenderFlex 溢出');
   });
 
   testWidgets('宽屏（≥900）两列：两张集卡同一行', (WidgetTester tester) async {

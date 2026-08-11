@@ -28,14 +28,8 @@ import 'package:fushi/src/media/video/scraper/bangumi_client.dart';
 import 'package:fushi/src/media/video/scraper/collection_relations_scrape.dart'
     show CollectionRelationType;
 import 'package:fushi/src/media/video/scraper/collection_scrape_apply.dart';
-import 'package:fushi/src/media/video/scraper/cover_downloader.dart';
-import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/scraper/episode_rename.dart';
-import 'package:fushi/src/media/video/scraper/episode_scrape_service.dart';
 import 'package:fushi/src/media/video/scraper/scraper_types.dart';
-import 'package:fushi/src/media/video/scraper/tmdb_client.dart';
-import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
-import 'package:fushi/src/media/video/video_storage.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/media/video/video_library_overview.dart'
@@ -415,6 +409,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           CollectionMemberProgress(
             positionMs: r.lastPositionMs,
             completed: r.completedAt != null,
+            lastPlayedAt: r.lastPlayedAt,
           ),
       ]);
 
@@ -452,6 +447,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 集卡展示名：优先集级刮削集名，回落条目标题（文件名）。
   String _episodeDisplayTitle(VideoBookRow row) =>
       _scrapedEpisodeTitle(row) ?? row.title;
+
+  /// 集卡**序号**：文件名解析出的真实集号优先，解析不出才回落列表顺位号
+  /// （BUG-1544）。缺集 / 只导入了一部分时顺位号必然与真实集号错位——用户看到
+  /// 「03」点开却是 E05。集号是文件名里写着的事实，不是列表下标的函数。
+  int _episodeDisplayNumber(VideoBookRow row, int index) =>
+      parsedEpisodeNumberOf(row.videoPath) ?? index + 1;
 
   /// 集简介（集级刮削 summary；无 → null 不占位）。
   String? _episodeSummary(VideoBookRow row) {
@@ -679,63 +680,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
   }
 
-  /// 「刮削分集资料」（TODO-2491）：EpisodeScrapeService 按合集刮削绑定批量拉
-  /// 每集集名/简介/放送日期（TMDB 还把剧照落为集封面），toast 报成功/跳过统计。
-  /// 前置：合集已刮削（collection_scrape_meta 有行），否则提示先刮合集。
-  /// TMDB key 直读偏好表（本页无 Riverpod）：用户自填优先，其次内置 key，与封面
-  /// 刮削同一取值规则（resolveTmdbApiKey）。
-  Future<void> _scrapeEpisodes() async {
-    final CollectionScrapeMetaRow? meta =
-        await widget.database.getCollectionScrapeMeta(widget.collection.id);
-    if (!mounted) return;
-    if (meta == null) {
-      FushiToast.show(
-        msg: t.collection_episode_scrape_unbound,
-        severity: ToastSeverity.info,
-      );
-      return;
-    }
-    final String tmdbKey = resolveTmdbApiKey(
-      await widget.database.getPref(kVideoScraperTmdbApiKeyPref) ?? '',
-    );
-    final BangumiClient bangumi = BangumiClient();
-    final TmdbClient? tmdb =
-        tmdbKey.isEmpty ? null : TmdbClient(apiKey: tmdbKey);
-    try {
-      final EpisodeScrapeService service = EpisodeScrapeService(
-        db: widget.database,
-        bangumiClient: bangumi,
-        tmdbClient: tmdb,
-        coverDownloader: CoverDownloader(),
-        coverMetaStore: CoverMetaStore(await VideoStorage.coversDir()),
-      );
-      final EpisodeScrapeOutcome outcome =
-          await service.scrapeCollectionEpisodes(widget.collection.id);
-      if (!mounted) return;
-      if (outcome.updated == 0 && outcome.errors.isNotEmpty) {
-        // 源级失败（网络/无 key/movie 无分集）：如实报错，不装作「0 集成功」。
-        FushiToast.show(
-          msg: t.collection_episode_scrape_failed(
-            error: outcome.errors.values.first,
-          ),
-          severity: ToastSeverity.error,
-        );
-        return;
-      }
-      FushiToast.show(
-        msg: t.collection_episode_scrape_result(
-          updated: outcome.updated,
-          skipped: outcome.unmatched,
-        ),
-        severity: ToastSeverity.success,
-      );
-      await _reload();
-      widget.onChanged();
-    } finally {
-      bangumi.close();
-      tmdb?.close();
-    }
-  }
+  // 「刮削分集资料」独立入口已删（TODO-2791）：它硬门「合集已刮削」，而合集刮削
+  // 管线（VideoMetadataDatabaseStore.apply → _writeLegacyProjection）本就会把集名/
+  // 集号投影进 video_scrape_meta，所以这个入口在未刮时只会弹「请先刮削合集资料」、
+  // 在已刮时做重复工作 —— 是个死按钮。集级资料统一由合集刮削产出。
 
   /// 「按刮削重命名各集」（TODO-2491）：dryRun 拿旧名→新名对照表 → 勾选确认
   /// 弹窗 → 对勾选子集逐条写穿 `video_books.title`（与库页手动重命名同一落库
@@ -1002,24 +950,29 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         for (final CollectionSeasonSection<VideoBookRow> section in sections)
           CollectionSplitPlanSection(
             defaultName: '$_name ${_groupLabel(section.groupKey)}',
-            memberTitles: <String>[
+            members: <CollectionSplitMember>[
               for (final VideoBookRow row in section.items)
-                _episodeDisplayTitle(row),
+                CollectionSplitMember(
+                  id: row.bookUid,
+                  title: _episodeDisplayTitle(row),
+                ),
             ],
+            isSeason: seasonNumberOfGroupKey(section.groupKey) != null,
           ),
       ],
     );
-    if (choice == null || !mounted) return;
+    if (choice == null || !mounted || choice.groups.isEmpty) return;
+    // 手动移动后组与 sections 不再一一对应（可能空掉/新增），一律按 choice 落盘。
+    final List<CollectionSplitGroupChoice> groups = choice.groups;
     final List<int> newIds = <int>[];
     await widget.database.transaction(() async {
-      for (int i = 0; i < sections.length; i++) {
+      for (final CollectionSplitGroupChoice group in groups) {
         final int id = await widget.database.createMediaCollection(
-          choice.names[i],
+          group.name,
           collectionType: 'playlist',
         );
-        for (final VideoBookRow row in sections[i].items) {
-          await widget.database
-              .addToCollection(id, MediaKind.video, row.bookUid);
+        for (final String uid in group.memberIds) {
+          await widget.database.addToCollection(id, MediaKind.video, uid);
         }
         newIds.add(id);
       }
@@ -1027,8 +980,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       // 'local'（本地拆分产生的边，非刮削源），subjectId 用 'collection:<目标id>'
       // ——与唯一键 (collectionId, source, subjectId) 天然兼容且稳定可重入。
       final List<int> seasonIndexes = <int>[
-        for (int i = 0; i < sections.length; i++)
-          if (seasonNumberOfGroupKey(sections[i].groupKey) != null) i,
+        for (int i = 0; i < groups.length; i++)
+          if (groups[i].isSeason) i,
       ];
       for (int k = 0; k < seasonIndexes.length; k++) {
         final int i = seasonIndexes[k];
@@ -1040,7 +993,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             collectionId: newIds[i],
             type: CollectionRelationType.prequel,
             targetCollectionId: newIds[prev],
-            title: choice.names[prev],
+            title: groups[prev].name,
             sortIndex: edges.length,
           ));
         }
@@ -1050,7 +1003,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             collectionId: newIds[i],
             type: CollectionRelationType.sequel,
             targetCollectionId: newIds[next],
-            title: choice.names[next],
+            title: groups[next].name,
             sortIndex: edges.length,
           ));
         }
@@ -2159,8 +2112,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
                         Text(
-                          '${index + 1}. ${_episodeDisplayTitle(episode)}',
-                          maxLines: 1,
+                          // BUG-1544：序号跟随文件名解析出的真实集数（缺集时
+                          // 不再用顺位号冒充）；解析不出时回退顺位号。
+                          '${_episodeDisplayNumber(episode, index)}. '
+                          '${_episodeDisplayTitle(episode)}',
+                          // BUG-1546：无刮削集名时标题是整条发布文件名（VCB-Studio
+                          // 一类动辄 80+ 字符），单行省略后关键的集号/规格全被吃掉，
+                          // 用户分不清 PV/特典各条目。放两行再省略；卡高 128 下
+                          // 「两行标题 + 两行简介 + 状态行」仍在 Spacer 余量内。
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
@@ -2320,9 +2280,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       case _CollectionManageAction.subtitles:
         await _fetchCollectionSubtitles();
         return;
-      case _CollectionManageAction.scrapeEpisodes:
-        await _scrapeEpisodes();
-        return;
       case _CollectionManageAction.renameEpisodes:
         await _renameEpisodesFromScrape();
         return;
@@ -2390,12 +2347,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               _CollectionManageAction.subtitles,
               Icons.subtitles_outlined,
               t.video_jimaku_batch_title,
-              enabled: _members.isNotEmpty,
-            ),
-            _manageMenuItem(
-              _CollectionManageAction.scrapeEpisodes,
-              Icons.movie_filter_outlined,
-              t.collection_episode_scrape,
               enabled: _members.isNotEmpty,
             ),
             _manageMenuItem(
@@ -2514,7 +2465,6 @@ enum _EpisodeMenuAction { download, openBangumi, removeFromCollection }
 enum _CollectionManageAction {
   sortBySeason,
   subtitles,
-  scrapeEpisodes,
   renameEpisodes,
   fillMissing,
   splitBySeason,

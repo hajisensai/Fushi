@@ -468,15 +468,11 @@ extension _VideoLookupMining on _VideoFushiPageState {
         ? MinePopupResult(ankiConnect: true, noteId: outcome.noteId)
         : const MinePopupResult();
     if (!context.mounted) return result;
-    // 牌组名仅 success 需要（避免给失败分支白白 loadSettings）。
-    final String deckName = outcome.result == MineResult.success
-        ? (await repo.loadSettings()).selectedDeckName ?? ''
-        : '';
+    // 牌组名由后端随成功结果带回（outcome.deckName，BUG-1549）。
     // overwrite=true（updateNoteId 非空）→ 收口产 card_overwritten + record=false；
     // 新制 → card_exported + record=true（消息/记账判定统一在 describeMineOutcome）。
     final described = describeMineOutcome(
       outcome,
-      deckName: deckName,
       overwrite: updateNoteId != null,
     );
     // 新制成功计入视频统计（dictionarySourceType=video）；覆盖 record=false 故不记账。
