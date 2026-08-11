@@ -33,7 +33,9 @@ class _FushiSettingsDialogPageState extends BasePageState
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     return FushiDialogFrame(
-      maxWidth: 560,
+      // BUG-1546：560 窄弹窗与兄弟快捷设置弹窗（阅读器外观 sheet 等）不同宽，
+      // 桌面大窗口下挤成窄条；统一对齐 kFushiSettingsDialogMaxWidth（900）。
+      maxWidth: kFushiSettingsDialogMaxWidth,
       maxHeightFactor: 0.86,
       insetPadding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.card,

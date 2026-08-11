@@ -2156,7 +2156,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                       children: <Widget>[
                         Text(
                           '${index + 1}. ${_episodeDisplayTitle(episode)}',
-                          maxLines: 1,
+                          // BUG-1546：无刮削集名时标题是整条发布文件名（VCB-Studio
+                          // 一类动辄 80+ 字符），单行省略后关键的集号/规格全被吃掉，
+                          // 用户分不清 PV/特典各条目。放两行再省略；卡高 128 下
+                          // 「两行标题 + 两行简介 + 状态行」仍在 Spacer 余量内。
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
