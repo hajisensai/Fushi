@@ -248,9 +248,13 @@ class GalIngameLookupController {
   Future<void> _syncEnabled() async {
     final bool desired = _enabledNow;
     if (desired == _pushedEnabled) return;
-    _pushedEnabled = desired;
     final GalLookupCallResult result =
         await GalHookTextOverlayChannel.galLookupSetEnabled(desired);
+    // 🔴 只有**推成功**才记账。先记后推的写法把「我打算推」当成了「已经生效」：
+    // 游戏还没起来时没有共享内存段，这一推必然失败，而缓存已经变成 true，之后
+    // `desired == _pushedEnabled` 当场早退，再也不会重推——开关看着是开的，注入侧
+    // 却始终是 0。（runner 侧也会在拿到新段时按意图重放，两层各自成立，不互为前提。）
+    if (result.ok) _pushedEnabled = desired;
     glog('gal-ingame: setEnabled=$desired session=$_sessionActive '
         '-> ${result.error ?? "ok"}');
     if (!desired) await _dismissCurrent();

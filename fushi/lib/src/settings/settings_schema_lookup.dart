@@ -8,7 +8,6 @@ import 'package:fushi/pages.dart';
 import 'package:fushi/src/lookup/clipboard_panel_controller.dart';
 import 'package:fushi/src/lookup/clipboard_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
-import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
@@ -1050,26 +1049,6 @@ SettingsDestination buildLookupDestination() {
               // native 浮窗，否则字号只落了盘，浮窗要等下次改透明度才顺带刷新。
               await GalHookTextOverlayController.instance
                   .applyFontSizeFromPreferences();
-              settingsContext.refresh();
-            },
-          ),
-          // KiriKiri 游戏内查词：命中的字直接在**游戏渲染树内部**弹出词典卡片
-          // （不抢焦点、不 alt-tab、跟随全屏与窗口变换）。默认关——它只对有 profile
-          // 证据的引擎组合有效，其余游戏开着是白付代价。
-          SettingsSwitchItem(
-            id: 'lookup.gal_hook_ingame_lookup',
-            title: t.gal_hook_ingame_lookup,
-            subtitle: t.gal_hook_ingame_lookup_hint,
-            icon: Icons.crop_free,
-            visible: (_) => Platform.isWindows,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galIngameLookupEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setGalIngameLookupEnabled(value);
-              // 与上面的字号同款纪律：写完 pref 立刻推给编排器，否则开关只落了盘，
-              // 本局游戏里不生效（要退出重进一局）。
-              await GalIngameLookupController.instance
-                  .applyEnabledFromPreferences();
               settingsContext.refresh();
             },
           ),

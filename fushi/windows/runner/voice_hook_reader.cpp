@@ -50,6 +50,14 @@ struct ReaderState {
   // 合一时收卡帧会复用刚 present 过的 seq，被注入侧的"这帧我处理过了"过滤当场丢掉，
   // 卡片永远挂在屏幕上。见 voice_hook_ipc.h 的 LookupFrame 注释。
   uint64_t lookup_publish_seq = 0;
+  // 用户的开关**意图**，与共享内存段的身份无关。
+  //
+  // 🔴 段会被换掉：退出一局再开一局 = 注入器建一段全新的共享内存，`lookup_enabled`
+  // 从 0 开始。而 Dart 侧缓存着「我已经推过 true 了」，`desired == _pushedEnabled`
+  // 当场早退，于是新段永远停在 0——传感器一个 hook 都不装，用户点字毫无反应，且
+  // 表面上开关还是开着的。段的身份只有这一层知道（Open 是唯一的映射点），所以重放
+  // 的责任也只能在这里，不能指望上层记得。
+  bool lookup_enabled_desired = false;
 };
 
 ReaderState& State() {
@@ -621,9 +629,13 @@ const char* VoiceHookOpenErrorToken(VoiceHookOpenError error) {
 }
 
 VoiceHookOpenResult VoiceHookReader::Open(uint32_t pid) {
+  VoiceHookOpenResult out;
+  // 新段上是否要把查词开关重放回去（连带把泵拉起来）。SetTimer 要进内核，按本文件
+  // 既有纪律不在持锁时做，所以在锁外收尾。
+  bool reapply_lookup_enabled = false;
+  {
   ReaderState& st = State();
   std::lock_guard<std::mutex> lock(st.mutex);
-  VoiceHookOpenResult out;
   if (pid == 0) {
     out.error = VoiceHookOpenError::kInvalidPid;
     out.detail = "pid=0";
@@ -683,7 +695,19 @@ VoiceHookOpenResult VoiceHookReader::Open(uint32_t pid) {
   // v14：查词游标对齐到「现在」。不这么做，会话重开时注入侧遗留的旧 hit 会被当成
   // 新命中重放，用户会看到一张莫名其妙的卡片弹出来。
   ResetLookupCursorsLocked(st, header);
+  // 段换了就把开关意图重放进新段（见 ReaderState::lookup_enabled_desired）。
+  // 走与 SetLookupEnabled 同一道闸：新段没有查词区时什么都不做，绝不盲写。
+  if (st.lookup_enabled_desired &&
+      LookupGateLocked(header, false) == VoiceHookLookupError::kNone) {
+    InterlockedExchange(
+        reinterpret_cast<volatile LONG*>(&header->lookup_enabled), 1);
+    reapply_lookup_enabled = true;
+  }
   out.status = StatusFromHeaderLocked(header);
+  }
+  if (reapply_lookup_enabled) {
+    StartLookupPump();
+  }
   return out;
 }
 
@@ -1288,6 +1312,10 @@ VoiceHookLookupError VoiceHookReader::SetLookupEnabled(bool enabled) {
     ReaderState& st = State();
     std::lock_guard<std::mutex> lock(st.mutex);
     SharedHeader* h = st.header;
+    // 意图先记，且**在闸门之前**记：用户可以在游戏还没起来时就打开开关，此时没有段、
+    // 写不进去，但这依然是一个有效意图——等 Open 拿到段时按它重放。把它记在闸门后面
+    // 就等于「开关只在游戏已经在跑时才算数」，而那正是用户最容易踩的顺序。
+    st.lookup_enabled_desired = enabled;
     const VoiceHookLookupError gate = LookupGateLocked(h, false);
     if (gate != VoiceHookLookupError::kNone) {
       return gate;
