@@ -317,7 +317,17 @@ constexpr uint32_t kLookupInputSlotCount = 64;   // 输入转发环槽数
 constexpr uint32_t kLookupFrameCount = 2;        // 位图双缓冲
 // 单缓冲位图上限 3MiB ≈ 880×880 BGRA。x86 游戏进程地址空间有限，故设硬上界；超限由
 // host 负责钳制卡片尺寸，注入侧只做校验和拒绝，绝不按收到的 width/height 盲拷。
-constexpr uint32_t kLookupBitmapBytes = 3u * 1024u * 1024u;
+// 单张卡片位图的字节预算（双缓冲，共享内存占 2 倍）。
+//
+// 超预算时 runner 只能**裁**（DecodePngStreamToStraightBgra 直接改小 width/height
+// 按左上角取块），不是缩——也就是说预算定小了，用户看到的是被切掉半张的卡片。
+// 原来的 3 MiB 只够 786432 像素，1920x1440 视口下取 0.6 就已经逼近；抬到 8 MiB
+// 后可容 2097152 像素（约 1600x1200 / 1920x1092），正常卡片不可能撞到。
+//
+// 抬这个数**不需要升 kSharedVersion**：区域寻址、IsLookupFrameSane、runner 的预算
+// 校验一律读 header->lookup_bitmap_bytes，没有一处硬用本常量。旧 helper 建的段就
+// 报 3 MiB，host 照它办，两侧仍自洽。代价只是共享内存多 10 MiB。
+constexpr uint32_t kLookupBitmapBytes = 8u * 1024u * 1024u;
 
 // lookup_diag 位。与 reserved_luna / hook_diagnostics 分开：那两个各自已满，且这里的
 // 阶段语义（传感器装没装 / 像素走哪条路）与引擎探针、helper 启动都不是一回事。

@@ -13,6 +13,7 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
@@ -266,7 +267,8 @@ class GlobalLookupController {
     try {
       final double dpr = _devicePixelRatio();
       // 弹窗尺寸精细化：app 外覆盖窗默认跟随 app 内，解锁后用 overlay 自己的键。
-      final LookupSize overlaySize = model.overlayLookupEffectiveSize;
+      final LookupSize overlaySize =
+          _clampToPhysicalCap(model.overlayLookupEffectiveSize, model, dpr);
       final int w = (overlaySize.width * model.appUiScale * dpr).round();
       final int h = (overlaySize.height * model.appUiScale * dpr).round();
       await GlobalLookupChannel.prewarmWebView(width: w, height: h);
@@ -464,6 +466,35 @@ class GlobalLookupController {
   /// 这里比面板更保守（面板会把新句刷进横幅）：瞬态卡是锚在被点词旁的一次性卡片，
   /// 把横幅换成一句无关的新台词既看不懂，又会把制卡 `{sentence}` 上下文
   /// （[_currentSentence]）换成用户根本没在看的那句，做出错卡。
+  /// 游戏内查词的**物理像素**尺寸上限（宽, 高）。null = 不限（桌面浮窗）。
+  ///
+  /// 为什么必须有：游戏内卡片要塞进两个硬约束——游戏视口，以及共享内存的位图预算
+  /// （3 MiB / 4 字节 = 786432 像素）。不夹的话卡片按桌面工作区排版，真机上量到
+  /// 2555x2160（22 MB），既超预算，又让 anchor 的 `clamp(0, viewW - cardW)` 上界
+  /// 变负、整个塌成 (0,0)——卡片钉在左上角不跟着字走，正是这个原因。
+  ({int w, int h})? _physicalCap;
+
+  /// 设置/清除物理像素上限。游戏内会话开始时按视口与位图预算设，结束时清。
+  void setPhysicalCap({int? width, int? height}) {
+    _physicalCap = (width == null || height == null || width <= 0 || height <= 0)
+        ? null
+        : (w: width, h: height);
+  }
+
+  /// 把逻辑尺寸夹到 [_physicalCap]。等比缩小而不是各轴独立裁剪：独立裁剪会改变
+  /// 卡片的宽高比，排版跟着变形；等比缩小只是变小。
+  LookupSize _clampToPhysicalCap(LookupSize size, AppModel model, double dpr) {
+    final ({int w, int h})? cap = _physicalCap;
+    if (cap == null) return size;
+    final double factor = model.appUiScale * dpr;
+    if (factor <= 0) return size;
+    final double physW = size.width * factor;
+    final double physH = size.height * factor;
+    if (physW <= cap.w && physH <= cap.h) return size;
+    final double scale = math.min(cap.w / physW, cap.h / physH);
+    return LookupSize(size.width * scale, size.height * scale);
+  }
+
   Future<bool> lookupText(
     String text, {
     String sentence = '',
@@ -640,7 +671,8 @@ class GlobalLookupController {
       // the window-local origin clamped into the work area (TODO-1231
       // computeRootShellOffset), so a single-frame lookup still reveals exactly
       // at the card size after the bbox trims the bounds — no regression.
-      final LookupSize overlaySize = model.overlayLookupEffectiveSize;
+      final LookupSize overlaySize =
+          _clampToPhysicalCap(model.overlayLookupEffectiveSize, model, dpr);
       final double cardW = overlaySize.width * model.appUiScale;
       final double cardH = overlaySize.height * model.appUiScale;
       _layoutBoundsW = cardW * kGlobalLookupLayoutBoundsWidthFactor;

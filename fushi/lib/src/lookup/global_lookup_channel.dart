@@ -17,7 +17,6 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:fushi/src/lookup/overlay_window_channel.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 

@@ -961,7 +961,13 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				var layer = global.fushiLookupHighlightLayer;
 				if(layer === void || !isvalid layer)
 				{
-					layer = new Layer(global.kag, primary.parent);
+					// 🔴 必须挂在 **primary 之下**，不是它的兄弟。
+					//
+					// 高亮是按 primary 的坐标算出来的；建成兄弟层时它的原点是 primary
+					// **父层**的原点，两者相差 primary 自身的 left/top 与 imageLeft/Top。
+					// 窗口一缩放这个差就变 —— 真机症状正是「缩放后高亮偏移」。挂到
+					// primary 下之后，两边同系，缩放时一起走。
+					layer = new Layer(global.kag, primary);
 					global.kag.add(layer);
 					layer.name = "Hibiki subtitle highlight";
 					layer.fushiLookupIgnore = true;
@@ -1399,7 +1405,12 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 
 )TJS" LR"TJS(
 
-			global.fushiLookupReport = function(entry, index, offsetX, offsetY, submit)
+			// offsetX/offsetY 是 primary **图像**坐标（与 viewW/viewH 同系，用于算卡片
+			// 落点）；paintX/paintY 是 primary **图层**坐标（高亮层挂在 primary 下，画
+			// 图用这一套）。两者只差 primary.imageLeft/Top，但那个差会随缩放变化——
+			// 一个值当两种坐标用，就是之前高亮漂移的原因。
+			global.fushiLookupReport = function(entry, index, offsetX, offsetY, submit,
+				paintX, paintY)
 			{
 				var key = entry.line + "#" + index;
 				// 命中字符没变就什么都不做：既不重绘高亮，也不惊动 host。
@@ -1430,7 +1441,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				global.fushiLookupHitLine = entry.line;
 				global.fushiLookupHitSeq++;
 				global.fushiLookupNotify++;
-				global.fushiLookupPaintHighlight(entry, offsetX, offsetY, index, 1);
+				global.fushiLookupPaintHighlight(entry, paintX, paintY, index, 1);
 			};
 
 			global.fushiLookupProbe = function(submit)
@@ -1506,7 +1517,8 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						var glyph = glyphs[g];
 						if(rx < glyph.x || rx >= glyph.x + glyph.w) continue;
 						if(ry < glyph.y || ry >= glyph.y + glyph.h) continue;
-						global.fushiLookupReport(entry, g, px - rx, py - ry, submit);
+						global.fushiLookupReport(entry, g, px - rx, py - ry, submit,
+							lx - rx, ly - ry);
 						return true;
 					}
 					// 走到这里 = 整行包围盒命中、图层可见，却没有任何字形命中。与包围盒

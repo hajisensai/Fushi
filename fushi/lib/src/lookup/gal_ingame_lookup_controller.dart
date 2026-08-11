@@ -22,6 +22,7 @@
 // dpr——dpr 只属于 Windows 窗口那一侧。
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:characters/characters.dart';
 import 'package:flutter/foundation.dart';
@@ -301,6 +302,35 @@ class GalIngameLookupController {
   /// 查询串做最长匹配并回报 `bestLength`，所以点「永」命中「永遠」、点「遠」能单独
   /// 查到「遠」。整行原样当作 `sentence`（制卡 `{sentence}` 与卡片句子横幅都用它）
   /// ——与台词浮窗点词（`_onLookupText`）逐字同形，hook 侧也正是为此不截断整行。
+  /// 游戏内卡片的位图预算，**必须与 `voice_hook_ipc.h` 的 `kLookupBitmapBytes`
+  /// 一致**（3 MiB）。超出即帧被 `IsLookupFrameSane` 拒收，用户看到的是"卡片不出现"。
+  static const int _kCardBitmapBytes = 8 * 1024 * 1024;
+
+  /// 卡片最多占游戏视口的比例。占满整屏就把台词自己盖住了，查词也就没意义。
+  static const double _kCardViewportFraction = 0.6;
+
+  /// 按「游戏视口 × 位图预算」两个硬约束夹住卡片的物理像素尺寸。
+  ///
+  /// 面积约束不能只靠逐轴裁剪：宽高各自合规、乘起来仍可能超预算（1920×1440 两轴都
+  /// 不算大，面积却是预算的 3.5 倍）。所以先按视口比例定轴上限，再按面积等比缩。
+  void _applyCardSizeCap(GalLookupHit hit) {
+    if (hit.viewW <= 0 || hit.viewH <= 0) {
+      GlobalLookupController.instance.setPhysicalCap();
+      return;
+    }
+    double w = hit.viewW * _kCardViewportFraction;
+    double h = hit.viewH * _kCardViewportFraction;
+    const int budgetPixels = _kCardBitmapBytes ~/ 4; // BGRA8
+    final double area = w * h;
+    if (area > budgetPixels) {
+      final double shrink = math.sqrt(budgetPixels / area);
+      w *= shrink;
+      h *= shrink;
+    }
+    GlobalLookupController.instance
+        .setPhysicalCap(width: w.floor(), height: h.floor());
+  }
+
   Future<void> _runLookup(GalLookupHit hit) async {
     final String query = lookupQueryFromIndex(hit.line, hit.charIndex);
     if (query.isEmpty) {
@@ -321,6 +351,10 @@ class GalIngameLookupController {
     // 把上一张卡的位置又投一遍）。
     _presentedAnchorX = null;
     _presentedAnchorY = null;
+    // 卡片必须同时塞进**游戏视口**和**共享内存位图预算**。不夹的话它按桌面工作区
+    // 排版，真机量到 2555x2160（22 MB）——既超预算，又让 anchor 的
+    // `clamp(0, viewW - cardW)` 上界变负、整个塌成 (0,0)，卡片钉死在左上角不跟着字。
+    _applyCardSizeCap(hit);
     glog('gal-ingame: lookup seq=${hit.seq} idx=${hit.charIndex} '
         'query="$query"');
     final bool taken = await GlobalLookupController.instance.lookupText(
