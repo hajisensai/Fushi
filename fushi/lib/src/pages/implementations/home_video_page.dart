@@ -32,6 +32,9 @@ import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_client.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/video/cover_backfill_ledger.dart';
+import 'package:fushi/src/media/video/video_cover_extractor.dart'
+    show isLocalFrameExtractableVideoSource;
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
@@ -258,9 +261,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// `_lastRemoteState`）。失败态不覆盖缓存。
   _RemoteVideoState? _lastRemoteState;
 
-  /// 统一合集：本会话已尝试后台抽封面的 bookUid（避免每次刷新对同一行重试 ffmpeg）。
-  final Set<String> _coverBackfillAttempted = <String>{};
-
   /// 条目自动刮削调度器（懒建，随页面 dispose 停）。见 [_maybeAutoScrape]。
   VideoScrapeAutoService? _autoScrape;
 
@@ -472,6 +472,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       });
     }
     _loadLibraryMaps();
+    // BUG-1564：显式下拉 = 用户要「重新获取」——封面回填的失败记账在此清空，
+    // 本轮对此前失败的条目允许再试一次（自动路径仍被记账拦住，不会刷屏烧 CPU）。
+    // BUG-1564：显式下拉 = 用户要「重新获取」——封面回填的失败记账在此清空，
+    // 本轮对此前失败的条目允许再试一次（自动路径仍被记账拦住，不会刷屏烧 CPU）。
+    CoverBackfillLedger.instance.clearAll();
     _maybeBackfillCovers();
     final _RemoteVideoState? state = await remote;
     if (!mounted) return;
@@ -675,9 +680,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// `cover_path` 为空——但每集本是**独立视频**，理应各自有封面（对齐 Jellyfin 每集
   /// 缩略图）。ffmpeg 抽帧慢（最长 30s/次），绝不能挡列表加载：列表已就绪后**后台逐个
   /// 补**，每抽好一张 [VideoBookRepository.updateCover] 回写并刷新一次（渐进出现）。
-  /// 本会话记 [_coverBackfillAttempted] 避免每次刷新对同一行重试（移动端无 ffmpeg 抽帧
-  /// 返 null 时也只试一次）；[_backfillingCovers] 防并发重入。流 URL 行跳过（无本地帧可
-  /// 抽，host 元数据封面另走）。
+  /// 候选过滤 + 失败记账（BUG-1564）：
+  /// - 候选只收「本地可抽帧媒体文件」（[isLocalFrameExtractableVideoSource]）——
+  ///   流 URL 行（host 元数据封面另走）与本地 m3u8/m3u 清单行（文本清单不是媒体流，
+  ///   抽帧必失败）都不进队列；
+  /// - 抽帧失败记进会话级 [CoverBackfillLedger]（跨页面 State 存活；移动端无
+  ///   ffmpeg 返 null 同样记账），同一文件（mtime/size 不变）不再重试，文件被替换
+  ///   自动放行；用户显式下拉刷新（[_pullToRefresh]）清账重试。
+  /// [_backfillingCovers] 防并发重入。
   Future<void> _maybeBackfillCovers() async {
     if (_backfillingCovers) return;
     _backfillingCovers = true;
@@ -685,21 +695,27 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       final List<VideoBookRow> rows = await widget.repo.listAll();
       for (final VideoBookRow row in rows) {
         if (!mounted) return;
-        if (_coverBackfillAttempted.contains(row.bookUid)) continue;
         final String? cover = row.coverPath;
         if (cover != null && cover.isNotEmpty && File(cover).existsSync()) {
           continue; // 已有封面。
         }
         final String path = row.videoPath;
-        if (path.isEmpty ||
-            path.startsWith('http://') ||
-            path.startsWith('https://')) {
-          continue; // 流 URL：无本地帧可抽。
+        if (!isLocalFrameExtractableVideoSource(path)) {
+          continue; // 空 / 流 URL / 播放列表清单：无本地帧可抽。
         }
-        _coverBackfillAttempted.add(row.bookUid);
+        if (!CoverBackfillLedger.instance.shouldAttempt(path)) {
+          continue; // 此前失败且文件未变：不再白烧 ffmpeg。
+        }
         final String? extracted =
             await extractVideoCover(videoPath: path, bookUid: row.bookUid);
-        if (extracted == null) continue;
+        if (extracted == null) {
+          CoverBackfillLedger.instance.recordFailure(
+            path,
+            reason: File(path).existsSync() ? 'extract-failed' : 'file-missing',
+          );
+          continue;
+        }
+        CoverBackfillLedger.instance.clear(path);
         await widget.repo.updateCover(row.bookUid, extracted);
         if (!mounted) return;
         setState(() => _future = widget.repo.listForShelf());
@@ -4277,6 +4293,36 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     return t.collection_watched_progress(done: completed, total: total);
   }
 
+  /// 远端占位卡右上角的下载态角标（BUG-1561）：进行中 → 进度环，失败 → 失败角标
+  /// （tooltip 带真实错误文本），其余 → null 不渲染。
+  ///
+  /// 下载任务的所有者是 app 级 [InterconnectDownloadManager]，与本页生命周期无关；
+  /// 失败态此前**只**通过 [_downloadRemote] 里那条 SnackBar 出现，页面已 dispose 时
+  /// 被 `if (!mounted) return;` 吃掉 → 用户永远不知道下载挂了。这里让失败态跟进度
+  /// 一样落在卡片上，重进页面照样看得到；再点一次下载即重试（新任务顶掉旧失败态）。
+  Widget? _remoteDownloadBadge(RemoteVideoInfo video, String safeKey) {
+    final InterconnectDownloadTask? task =
+        ref.watch(interconnectDownloadManagerProvider).taskFor(video.id);
+    if (task == null) return null;
+    switch (task.status) {
+      case InterconnectDownloadStatus.running:
+        return RemoteDownloadProgressBadge(
+          key: ValueKey<String>('remote_video_downloading_$safeKey'),
+          progress: task.progress,
+          tooltip: t.remote_video_downloading,
+        );
+      case InterconnectDownloadStatus.failed:
+        return RemoteDownloadFailedBadge(
+          key: ValueKey<String>('remote_video_download_failed_$safeKey'),
+          tooltip: task.error == null || task.error!.isEmpty
+              ? t.remote_video_download_failed
+              : '${t.remote_video_download_failed}: ${task.error}',
+        );
+      case InterconnectDownloadStatus.completed:
+        return null;
+    }
+  }
+
   /// 多端库联合视图占位卡（spec 2026-07-12 §2.1，撤独立远端分区）：本地视频卡尺寸 +
   /// 远端封面 + 云角标 ☁，混排进视频库主网格散卡区（[_buildLocalVideoSlivers]）。
   /// 短按走现有远端流播 [_openRemote]；右上角下载按钮/进度徽章复用 [_downloadRemote]
@@ -4288,6 +4334,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     VideoCardOrientation orientation = VideoCardOrientation.portrait,
   }) {
     final String safeKey = _safeRemoteKey(video.id);
+    final Widget? downloadBadge = _remoteDownloadBadge(video, safeKey);
     // 不再固定 260 宽：和本地 [_buildCard] 一样让卡片填满网格 cell，宽度由
     // 响应式网格决定（TODO-593）。
     return FushiCard(
@@ -4330,21 +4377,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 // <48dp。下载动作收敛到长按 / 右键面板（[_showRemoteVideoDialog] 的
                 // 「下载」快捷动作，云视频短按卡片本体即下载）。下载进行中仍在原位
                 // 显示纯展示的进度徽章（非交互，无焦点问题）。
-                if (ref
-                    .watch(interconnectDownloadManagerProvider)
-                    .isRunning(video.id))
-                  Positioned(
-                    top: 6,
-                    right: 6,
-                    child: RemoteDownloadProgressBadge(
-                      key:
-                          ValueKey<String>('remote_video_downloading_$safeKey'),
-                      progress: ref
-                          .watch(interconnectDownloadManagerProvider)
-                          .progressFor(video.id),
-                      tooltip: t.remote_video_downloading,
-                    ),
-                  ),
+                // BUG-1561：进行中 → 进度角标；失败 → 失败角标。失败态此前只活在
+                // manager 内存里没有任何出口：唯一的提示是 [_downloadRemote] 里那条
+                // SnackBar，而下载与页面生命周期解耦，失败常发生在用户已离开本页
+                // 之后（`if (!mounted) return;`）→ 用户等半天回来看到的还是一张
+                // 什么都没发生的占位卡。角标是恒定出口，重进页面照样在。
+                if (downloadBadge != null)
+                  Positioned(top: 6, right: 6, child: downloadBadge),
                 // 字幕角标收敛到共享 [CoverBadge]（UI 巡检 PR-4，PR-0 组件）。
                 if (video.hasSubtitle)
                   const Positioned(

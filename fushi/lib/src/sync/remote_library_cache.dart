@@ -43,6 +43,7 @@ import 'package:fushi/src/sync/remote_library_source.dart';
 class RemoteLibraryCache {
   RemoteLibraryCache({
     this.defaultTtl = const Duration(seconds: 60),
+    this.inFlightTtl = const Duration(seconds: 60),
     int Function()? nowMs,
   }) : _nowMs = nowMs ?? _wallClockMs;
 
@@ -52,6 +53,14 @@ class RemoteLibraryCache {
   /// 而「对端刚加了一本书」的可见延迟上限一分钟，仍在用户可接受范围，且下拉刷新随时
   /// 可以强制穿透。
   final Duration defaultTtl;
+
+  /// 在途请求的最大信任时长（BUG-1567 防御纵深）。取数闭包正常都带整体超时
+  /// （[InterconnectSyncBackend.requestTimeout]，15s），future 必然落定并释放槽；
+  /// 但任何一条**漏了超时**的取数路径一旦永久悬挂，同槽的所有后续 [read] 都会
+  /// 复用这个死 future——远端库页从此永远转圈、永不自愈。超过本时长的在途请求
+  /// 视为挂死：不再复用，直接发起新取数（generation 自增使死 future 迟到的写回
+  /// 被丢弃）。取值必须显著大于最慢的合法小型请求（15s），60s 留足余量。
+  final Duration inFlightTtl;
 
   final int Function() _nowMs;
   final Map<String, _CacheSlot> _slots = <String, _CacheSlot>{};
@@ -82,7 +91,10 @@ class RemoteLibraryCache {
 
     if (!forceRefresh) {
       final Future<Object?>? inFlight = slot.inFlight;
-      if (inFlight != null) {
+      // BUG-1567：只复用「还在信任期内」的在途请求；超过 [inFlightTtl] 的视为挂死，
+      // 落到下面重新取数（自愈），死 future 的迟到写回被 generation 比对丢弃。
+      if (inFlight != null &&
+          _nowMs() - slot.inFlightStartedAtMs < inFlightTtl.inMilliseconds) {
         return inFlight.then((Object? value) => value as T);
       }
       if (slot.hasValue &&
@@ -101,6 +113,7 @@ class RemoteLibraryCache {
     final Future<Object?> shared = future.then<Object?>((T value) => value);
     unawaited(shared.catchError((Object _) => null));
     slot.inFlight = shared;
+    slot.inFlightStartedAtMs = _nowMs();
 
     return future.then<T>((T value) {
       // 期间发生过 forceRefresh / invalidate → 本次结果已过时，丢弃写入但仍返回给
@@ -162,6 +175,10 @@ class _CacheSlot {
   /// 每次取数自增；写回时比对，拦截「旧请求后到覆盖新结果」。
   int generation = 0;
   Future<Object?>? inFlight;
+
+  /// 当前在途请求的发起时刻（BUG-1567）：超过 [RemoteLibraryCache.inFlightTtl]
+  /// 的在途请求视为挂死，不再被后续 [RemoteLibraryCache.read] 复用。
+  int inFlightStartedAtMs = 0;
 }
 
 /// app 级单例 provider：书架 / 漫画书架 / 视频页 / 首页 dashboard 共享同一份缓存，

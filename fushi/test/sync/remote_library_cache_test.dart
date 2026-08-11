@@ -403,4 +403,65 @@ void main() {
     expect(scoped.isFresh(ic, RemoteLibraryCacheKeys.books), isFalse,
         reason: 'BUG-1180：换对端后不得再拿上一台 host 的清单渲染');
   });
+
+  group('BUG-1567 in-flight TTL 自愈', () {
+    test('信任期内复用在途请求（原有去重语义不变）', () async {
+      int calls = 0;
+      final Completer<List<String>> gate = Completer<List<String>>();
+      Future<List<String>> fetch() {
+        calls++;
+        return gate.future;
+      }
+
+      final Future<List<String>> first =
+          cache.read(sourceId: ic, key: 'books', fetch: fetch);
+      now += 30 * 1000; // 60s 信任期内
+      final Future<List<String>> second =
+          cache.read(sourceId: ic, key: 'books', fetch: fetch);
+      expect(calls, 1, reason: '信任期内的在途请求必须被复用');
+      gate.complete(<String>['a']);
+      expect(await first, <String>['a']);
+      expect(await second, <String>['a']);
+    });
+
+    test('挂死的在途请求超过 inFlightTtl 后不再被复用（槽自愈）', () async {
+      int calls = 0;
+      final Completer<List<String>> hung = Completer<List<String>>();
+      final Future<List<String>> hungRead = cache.read(
+        sourceId: ic,
+        key: 'books',
+        fetch: () {
+          calls++;
+          return hung.future;
+        },
+      );
+      expect(calls, 1);
+
+      // 超过 60s 信任期：这条在途请求视为挂死，新读必须发起新取数。
+      now += 61 * 1000;
+      final List<String> fresh = await cache.read(
+        sourceId: ic,
+        key: 'books',
+        fetch: () async {
+          calls++;
+          return <String>['fresh'];
+        },
+      );
+      expect(calls, 2,
+          reason: '超过 inFlightTtl 的在途请求不得再被复用——'
+              '否则一条漏了超时的挂死请求会让该槽永远转圈（BUG-1567）');
+      expect(fresh, <String>['fresh']);
+
+      // 死 future 事后复活：迟到写回必须被 generation 比对丢弃，不得覆盖新值。
+      hung.complete(<String>['stale']);
+      expect(await hungRead, <String>['stale'],
+          reason: '发起挂死那次读的调用方仍拿到自己那次的结果（语义不变）');
+      final List<String> after = await cache.read(
+        sourceId: ic,
+        key: 'books',
+        fetch: () async => <String>['should-not-run'],
+      );
+      expect(after, <String>['fresh'], reason: '死 future 迟到的写回不得污染缓存');
+    });
+  });
 }

@@ -1,0 +1,11 @@
+## BUG-1560 · 来源页互联开关绕过设置页状态：模块级缓存永不重读，设置页开关与 section 显隐显示旧值到重启
+- **报告**：2026-08-12（用户：互联 UI 层审计）
+- **真实性**：✅ 真 bug。互联总开关有两个写入口，各自缓存一份内存态，谁写完都不通知对方：
+  - 写入口甲（库页来源视图）`fushi/lib/src/pages/implementations/media_sources_view.dart:369` 直接 `SyncRepository(_db).setInterconnectEnabled(value)`，绕过设置页状态；本视图自己的值在 `:171` 的 `_load()` 里只读一次。
+  - 写入口乙（同步设置页）`fushi/lib/src/sync/sync_settings_schema.dart:406` → `_SyncSettingsState.setInterconnectEnabled`（同文件 `:678`）。
+  - 缓存本体：`fushi/lib/src/sync/sync_settings_schema.dart:582` 的模块级 `_activeSyncState` 按 AppModel 身份缓存，而 `load()`（`:686`）有 `_loaded` 短路、**一辈子只跑一次**。
+  - 后果：在来源页开/关互联后回设置页，「启用互联」开关与被 `interconnectActive` 门控的四个 section（client 配置、上传区、交给已配对设备、host 模式）全部显示旧值，直到重启 app；反向同理。
+  - 同一档顺带修的文案矛盾：i18n `interconnect_upload_section_footer` 原文自称「与『启用互联』连接开关互不影响」，而该 section 的 visible 谓词就是 `interconnectActive(ctx) && !_isHostingInterconnect(ctx)`（`sync_settings_schema.dart:437-438`），通道枚举 `enabledSyncChannelBackends`（`sync_auto_trigger.dart:169`）也只在互联启用时才追加互联通道——两处都证伪该说法。
+- **[x] ① 已修复** — 真值只有 preferences 里那一位；把「已变更」广播放进**唯一的写方法**，写入口再多也漏不掉：`SyncRepository.interconnectEnabledRevision`（`fushi/lib/src/sync/sync_repository.dart:706`）在 `setInterconnectEnabled`（`:709`）里 bump；`_SyncSettingsState` 构造时订阅、收到广播回库重读真值（`sync_settings_schema.dart:626/697`），换 owner 时摘钩（`:608`）；来源视图同样订阅 + 重读（`media_sources_view.dart:153/173`）。消费方一律 re-read、不信广播载荷，故不产生第二份真相。文案按行为改写（`i18n_sync --remove/--add` 落全 17 语言 + `dart run slang`）。随本轮 `fix(interconnect)` 提交。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/interconnect_enable_toggle_sync_test.dart`：真 DB 行为（写必 bump、revision 单调）、真 widget 行为（pump `MediaSourcesView`，别处写入后开关实时跟随）、源码守卫（订阅 + 重读 + 摘钩）、i18n 文案与 17 语言 key 齐全。
+- **备注**：广播是进程内 `ValueNotifier<int>`，与 DB 无关；测试用真 Drift 内存库跑通写入路径。
