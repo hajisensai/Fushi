@@ -220,7 +220,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                 // 任务 tab：漫画目录卷下载队列（有任务才占位）+ torrent 任务，
                 // 统一下载中心的同屏任务视图。
                 //
-                // 「同屏只留一份空态」由**旧计划列表**按需折叠实现（BUG-1484）：
+                // 「同屏只留一份空态」由**旧计划列表**按需折叠实现（BUG-1512）：
                 // 新版任务面板常驻并自带空态与实时指标，旧 AnimeDownloadDialog
                 // 只在真有旧任务时按比例分高度，没有就整块收成 0 高。
                 LayoutBuilder(
