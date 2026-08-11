@@ -273,6 +273,22 @@ abstract class BaseAnkiRepository {
   }) async =>
       null;
 
+  /// BUG-1549：按设置解析**当前制卡目标牌组**（id 优先、name 兜底）的单一真相。
+  /// 此前这段两级 firstWhereOrNull 在 AnkiConnect / AnkiDroid / AnkiMobile 三个
+  /// mine 路径各复制一份；解析结果的 `name` 现在还要随 [MineOutcome.success] 带回
+  /// 成功 toast（toast 不再从 `selectedDeckName` 字段猜——旧存档只有 id 时它是
+  /// null，但按 id 照样落卡成功，表现为「已添加到『』」空引号）。
+  @protected
+  AnkiDeck? resolveSelectedDeck(AnkiSettings settings) =>
+      settings.availableDecks.firstWhereOrNull(
+        (AnkiDeck d) => d.id == settings.selectedDeckId,
+      ) ??
+      (settings.selectedDeckName != null
+          ? settings.availableDecks.firstWhereOrNull(
+              (AnkiDeck d) => d.name == settings.selectedDeckName,
+            )
+          : null);
+
   @protected
   AnkiDeck selectDeckAfterFetch(List<AnkiDeck> decks, AnkiSettings current) =>
       decks.firstWhereOrNull((d) => d.id == current.selectedDeckId) ??
