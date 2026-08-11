@@ -510,6 +510,32 @@ mixin _FushiDbContentMisc
         ),
       );
 
+  /// Rewrites a standalone SRT/有声书行的落盘路径（备份恢复 / 合并导入把绝对路径
+  /// rebase 到本机根）。与 [updateAudiobookPaths] 同范式：只写传入的列，null =
+  /// 不动该列。
+  ///
+  /// 键是 **uid**（唯一列）而不是 `bookKey`：独立字幕书的 `bookKey` 是空串
+  /// 哨兵且可重复，拿它做 WHERE 会一次改写全部独立字幕书。
+  Future<void> updateSrtBookPaths(
+    String uid, {
+    String? audioRoot,
+    String? audioPathsJson,
+    String? srtPath,
+    String? coverPath,
+  }) =>
+      (update(srtBooks)..where((t) => t.uid.equals(uid))).write(
+        SrtBooksCompanion(
+          audioRoot:
+              audioRoot == null ? const Value.absent() : Value(audioRoot),
+          audioPathsJson: audioPathsJson == null
+              ? const Value.absent()
+              : Value(audioPathsJson),
+          srtPath: srtPath == null ? const Value.absent() : Value(srtPath),
+          coverPath:
+              coverPath == null ? const Value.absent() : Value(coverPath),
+        ),
+      );
+
   /// Deletes a book and all of its dependent rows in one transaction. When
   /// [tombstone] is true (a user-initiated shelf/library delete), a
   /// `book_tombstones` row is recorded so a later backup MERGE import never

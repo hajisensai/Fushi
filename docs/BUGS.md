@@ -29,14 +29,17 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1464 条。点号进各自文件。
+> 共 1467 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1580](bugs/BUG-1580-interconnect-cooldown-and-hash-shared.md) | ✅ | ✅ | 同步冷却戳与聚合快照哈希共用：一条通道压住另一条 |
 | [BUG-1579](bugs/BUG-1579-interconnect-baselines-shared-across-channels.md) | ✅ | ✅ | 合集与删除墓碑因果基线三方共用：对端移出被自己另一条通道撤销 |
 | [BUG-1578](bugs/BUG-1578-interconnect-auth-error-cross-channel-signout.md) | ✅ | ✅ | 互联 401 登出的是云会话：鉴权错误不带通道身份 |
+| [BUG-1577](bugs/BUG-1577-audio-package-missing-resource-silent.md) | ✅ | ✅ | 有声书资产包缺资源被两侧静默 fail-open 掩盖（导出跳过 + 导入编 basename 路径） |
 | [BUG-1576](bugs/BUG-1576-interconnect-folder-cache-cross-backend.md) | ✅ | ✅ | 互联/云双通道共用 folder 缓存：跨后端串味 + 凭据外发到对端主机 |
+| [BUG-1575](bugs/BUG-1575-srt-path-rebase-missing.md) | ✅ | ✅ | 合并导入不 rebase srt_books 路径：迁移后有声书有字幕没声音 |
+| [BUG-1574](bugs/BUG-1574-srt-audio-picker-const-list.md) | ✅ | ✅ | 书架「重新定位 SRT 音频」取消选择器崩溃：pickRealFilePaths 返回不可变常量空列表，调用方 sort 抛 UnsupportedError |
 | [BUG-1573](bugs/BUG-1573-server-lifecycle-manual-isolation.md) | ✅ | ✅ | 互联 host 启动前段异常逃逸 + dispose 顺序 + 手动同步通道未隔离 |
 | [BUG-1572](bugs/BUG-1572-aggregate-push-tombstone.md) | ✅ | ✅ | 聚合上行快照不过墓碑导致已删统计/收藏复活 |
 | [BUG-1571](bugs/BUG-1571-prompt-queue-cross-channel.md) | ✅ | ✅ | 双通道同步弹窗单飞槽跨通道丢候选 |
