@@ -5,7 +5,7 @@
   - **② 已监听 server 泄漏（原 P2-8）**：BUG-1551 已经把 `_server = null` 之后补上了 `await server.stop()`，**这一半已修**；剩下的缺口是 `_startBroadcast` —— 它先给 `_broadcast` 赋值再 `await start()`，抛在 `start()` 里就留下一个从未停过的 Bonsoir 实例，下次成功启动直接覆盖该字段，那个实例的 mDNS 事件源永远挂在进程上（TODO-036 的崩溃源）。
   - **③ dispose 顺序（原 P2-10）**：`app_model.dart:5385-5386` `unawaited(syncServerController.stop()); syncServerController.dispose();` —— `dispose()` 是同步的，`stop()` 恢复执行时控制器早已 dispose，其尾部 `notifyListeners()` 撞 `ChangeNotifier` 的「dispose 后不得 notify」断言；在飞的 `_start()` 还会在 DB 可能已关之后继续 `repo.setServerEnabled(true)` 写库；`_activeDiscoveries` 也没人清。
   - **④ 手动同步通道未隔离（原 P0-1 手动路径对账结论：BUG-1552 **只**修了自动 sweep）**：`fushi/lib/src/sync/sync_auto_trigger.dart` 的 `runManualFullSync` 通道循环（旧 `:490-515`）整体裸奔，只有 `try/finally` 无 `catch`。云通道恒排第一（`enabledSyncChannelBackends`），它令牌失效 / WebDAV 不可达时异常直接冒出函数，**已经跑完的通道**的 `channelReports` 连同它们的冲突/删除弹窗被整体丢弃。
-- **[x] ① 已修复** — 提交 `2d1cba4d5f`：
+- **[x] ① 已修复** — 提交 `e53681ead0`：
   - `_start()` 拆成薄壳 + `_startOrchestration()`：**整段**编排都在 try 内，前段失败与后段失败一律映射成 `FushiServerStartError`（对用户是同一件事：没起来）。失败/中止路径统一走新的 `_rollbackFailedStart()`，同时收 server 句柄**和**半启动的 `_broadcast`。
   - 控制器新增 `_disposed`：`notifyListeners()` 在销毁后 no-op；`dispose()` 自己拆掉 LAN 发现浏览器（清 `_activeDiscoveries`）+ 广播 + server（所有权本就在这里，顺序不是调用方能修好的）；在飞的 `_start()` 在 `server.start()` 落地后若已 `_disposed` 则直接 `server.stop()` 返回，绝不再写库或广播。`stop()` 改成**先摘句柄再 await**，对并发调用幂等。
   - `runManualFullSync` 通道循环加 per-channel `catch`：失败通道进 `merged.noteError(...)`（字符串进 `errors`，鉴权类还带类型进 `authFailures`），其余通道照常完成并返回 `channelReports`；**一条都没跑成**时用 `Error.throwWithStackTrace` 把原异常原样抛回，保住 `manual_sync_ui.dart` 既有的 `on SyncAuthError` 登出 + 重新登录分支（TODO-836 / BUG-1323）——那条路径上本来就没有「已完成通道的结果」会丢失。
