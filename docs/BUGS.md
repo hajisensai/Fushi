@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1423 条。点号进各自文件。
+> 共 1425 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1548](bugs/BUG-1548-resource-search-wrong-season-ranking.md) | ✅ | ✅ | 资源搜索结果错季混排：结果只按 seeders 排序，无标题/季号相关度 |
+| [BUG-1547](bugs/BUG-1547-tmdb-unconfigured-scrape-all-fails.md) | ✅ | ✅ | TMDB 未配置时全部刮削整批失败：resolver 不回退到零密钥的 Bangumi/AniList，且错误是英文裸串 |
 | [BUG-1536](bugs/BUG-1536-horizontal-row-steals-vertical-wheel.md) | ✅ | ✅ | 视频首页横滚行抢走整页纵向滚动（应 Shift+滚轮才横滚） |
 | [BUG-1516](bugs/BUG-1516-update-manifest-dead-asset-404.md) | ✅ | ✅ | 更新清单保留已被 prune 的资产条目，客户端下载必 404 |
 | [BUG-1515](bugs/BUG-1515-parent-extras-split-series.md) | ✅ | ✅ | 父作品短篇被错误拆成独立系列卡 |
