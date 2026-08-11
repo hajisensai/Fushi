@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1421 条。点号进各自文件。
+> 共 1422 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1516](bugs/BUG-1516-update-manifest-dead-asset-404.md) | ✅ | ✅ | 更新清单保留已被 prune 的资产条目，客户端下载必 404 |
 | [BUG-1515](bugs/BUG-1515-parent-extras-split-series.md) | ✅ | ✅ | 父作品短篇被错误拆成独立系列卡 |
 | [BUG-1514](bugs/BUG-1514-subscription-episode-selection-order.md) | ✅ | ✅ | 订阅选集季号错误、重复下载且顺序按完成时间乱序 |
 | [BUG-1513](bugs/BUG-1513-subscription-first-episode-skipped.md) | ✅ | ✅ | 发现订阅跳过所选首集 |
