@@ -3312,5 +3312,8 @@
   "dict_download_import_uncancellable": "Importing cannot be interrupted",
   "dict_download_busy": "A dictionary download is already running.",
   "gal_hook_ingame_lookup": "In-game dictionary lookup",
-  "gal_hook_ingame_lookup_hint": "Show the dictionary card inside the game window itself (KiriKiri engine, Windows only)"
+  "gal_hook_ingame_lookup_hint": "Show the dictionary card inside the game window itself (KiriKiri engine, Windows only)",
+  "drag_drop_failed": "Couldn't handle the dropped files. Please try again.",
+  "tag_add_failed": "Couldn't add the tag. Please try again.",
+  "tag_reorder_failed": "Couldn't save the new tag order. Please try again."
 }

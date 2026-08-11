@@ -3312,5 +3312,8 @@
   "dict_download_import_uncancellable": "导入阶段无法中断",
   "dict_download_busy": "已有词典下载正在进行。",
   "gal_hook_ingame_lookup": "游戏内查词",
-  "gal_hook_ingame_lookup_hint": "在游戏画面内直接显示词典卡片（KiriKiri 引擎，仅 Windows）"
+  "gal_hook_ingame_lookup_hint": "在游戏画面内直接显示词典卡片（KiriKiri 引擎，仅 Windows）",
+  "drag_drop_failed": "拖入的文件处理失败，请重试。",
+  "tag_add_failed": "标签添加失败，请重试。",
+  "tag_reorder_failed": "标签排序保存失败，请重试。"
 }

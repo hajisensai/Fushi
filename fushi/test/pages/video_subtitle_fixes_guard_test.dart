@@ -170,7 +170,7 @@ void main() {
         reason: '播放页在上层时，视频库页不能继续弹 need-card-target SnackBar');
 
     final String shelfDrop = region(
-      'void _handleShelfDrop(',
+      'Future<void> _handleShelfDrop(',
       'Future<void> _openBookImportPrefilled(',
       source: shelfSrc,
     );

@@ -322,25 +322,30 @@ void main() {
         books.firstWhere((b) => b.bookKey == 'Book A (2)');
     expect(bookA2.extractDir, '/books/2');
 
-    // ── reader positions by bookKey ───────────────────────────────────
-    final p1 = await db.getReaderPosition('Book A');
+    // ── reader positions by book uid ──────────────────────────────────
+    // v16 把阅读数据重新键到 bookKey；v82 又把 reader_positions 的书键换成本机
+    // 稳定的 `EpubBooks.uid`（标题改名不丢位置）。所以这里查的是**书行的 uid**，
+    // 不再是 bookKey——两级 re-key 之后数据仍在，这才是本用例要守的「无损」。
+    final p1 = await db.getReaderPosition(bookA.uid);
     expect(p1, isNotNull);
     expect(p1!.normCharOffset, 5000);
-    final p2 = await db.getReaderPosition('Book A (2)');
+    final p2 = await db.getReaderPosition(bookA2.uid);
     expect(p2, isNotNull);
     expect(
         p2!.charOffset, -1); // BUG-162: v24 删 ttu_char_offset，char_offset 默认 -1
 
-    // ── bookmarks by bookKey ──────────────────────────────────────────
+    // ── bookmarks by book uid（v82 起 bookmarks 也改走 uid，同 reader_positions）─
     final bmA = await db
         .customSelect(
-          "SELECT COUNT(*) AS c FROM bookmarks WHERE book_key = 'Book A'",
+          'SELECT COUNT(*) AS c FROM bookmarks WHERE book_uid = ?',
+          variables: <Variable<Object>>[Variable<String>(bookA.uid)],
         )
         .getSingle();
     expect(bmA.read<int>('c'), 2);
     final bmA2 = await db
         .customSelect(
-          "SELECT COUNT(*) AS c FROM bookmarks WHERE book_key = 'Book A (2)'",
+          'SELECT COUNT(*) AS c FROM bookmarks WHERE book_uid = ?',
+          variables: <Variable<Object>>[Variable<String>(bookA2.uid)],
         )
         .getSingle();
     expect(bmA2.read<int>('c'), 1);
@@ -411,17 +416,18 @@ void main() {
 
     // ── FK cascade: deleting a book clears its reading data ───────────
     await db.deleteEpubBook('Book A');
-    expect(await db.getReaderPosition('Book A'), isNull);
+    expect(await db.getReaderPosition(bookA.uid), isNull);
     expect(await db.getAudiobookByBookKey('Book A'), isNull);
     expect(await db.getCuesForBook('Book A'), isEmpty);
     final bmAfter = await db
         .customSelect(
-          "SELECT COUNT(*) AS c FROM bookmarks WHERE book_key = 'Book A'",
+          'SELECT COUNT(*) AS c FROM bookmarks WHERE book_uid = ?',
+          variables: <Variable<Object>>[Variable<String>(bookA.uid)],
         )
         .getSingle();
     expect(bmAfter.read<int>('c'), 0);
     expect((await db.getTagsForBook('Book A')), isEmpty);
     // The other book is untouched.
-    expect(await db.getReaderPosition('Book A (2)'), isNotNull);
+    expect(await db.getReaderPosition(bookA2.uid), isNotNull);
   });
 }

@@ -17,13 +17,14 @@ import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/drag_drop/card_drop_registry.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
+import 'package:fushi/src/media/drag_drop/image_archive_probe.dart';
+import 'package:fushi/src/media/tags/tag_drop.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/manga/book_format_convert.dart';
 import 'package:fushi/src/media/manga/book_format_rebuild.dart';
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
-import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_feature_flags.dart';
@@ -955,7 +956,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     final item = reordered.removeAt(oldIndex);
     reordered.insert(newIndex, item);
     final orderedIds = reordered.map((t) => t.id).toList();
-    await ref.read(appProvider).database.reorderTags(orderedIds);
+    final bool ok = await reorderTagsSafely(
+      write: () => ref.read(appProvider).database.reorderTags(orderedIds),
+    );
+    if (!ok) return;
     ref.invalidate(allTagsProvider);
   }
 
@@ -963,6 +967,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 失效相关 provider → 成功提示。三种媒体只差「标签表 provider / DB 方法 / filtered
   /// provider / 成功文案」，作参数注入（[alreadyHas] 由各调用方按自己的标签 map 算好，
   /// [successMsg] 区分书籍 `tag_added_to_book` vs 视频 `tag_added_to_video`）。
+  ///
+  /// 「查重 → 幂等提示 → 落库 → 失败提示」收口在 [addTagToTarget]（永不抛）；这里
+  /// 只留 widget 层该管的两件事：拿到 [TagAddOutcome.added] 才刷新，`mounted` 才报成功。
   Future<void> _addTagToMedia({
     required bool alreadyHas,
     required BookTagRow tag,
@@ -970,13 +977,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     required List<ProviderOrFamily> invalidate,
     required String successMsg,
   }) async {
-    if (alreadyHas) {
-      FushiToast.show(
-          msg: t.tag_already_on_book(name: tag.name),
-          severity: ToastSeverity.warning);
-      return;
-    }
-    await addToDb();
+    final TagAddOutcome outcome = await addTagToTarget(
+      tag: tag,
+      isAlreadyTagged: () async => alreadyHas,
+      addToDb: addToDb,
+      alreadyTaggedMessage: t.tag_already_on_book(name: tag.name),
+    );
+    if (outcome != TagAddOutcome.added) return;
     for (final ProviderOrFamily p in invalidate) {
       ref.invalidate(p);
     }
@@ -1019,17 +1026,19 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 不复用 [_addTagToMedia]：它的「已存在」提示固定是 `tag_already_on_book`，对合集
   /// 文案不对。`addTagToCollection` 幂等，这里先查现有标签给合集专属提示，成功后失效
   /// [filteredCollectionIdsProvider] 让标签过滤下合集卡显隐立即刷新。
+  ///
+  /// 查重 + 落库 + 失败提示同样收口在 [addTagToTarget]——与 [_addTagToMedia] 的差别
+  /// 只剩「已存在」文案，不是另一套流程。
   Future<void> _addTagToCollection(int collectionId, BookTagRow tag) async {
     final FushiDatabase db = ref.read(appProvider).database;
-    final List<BookTagRow> existing =
-        await db.getTagsForCollection(collectionId);
-    if (existing.any((BookTagRow t) => t.id == tag.id)) {
-      FushiToast.show(
-          msg: t.tag_already_on_collection(name: tag.name),
-          severity: ToastSeverity.warning);
-      return;
-    }
-    await db.addTagToCollection(collectionId, tag.id);
+    final TagAddOutcome outcome = await addTagToTarget(
+      tag: tag,
+      isAlreadyTagged: () async => (await db.getTagsForCollection(collectionId))
+          .any((BookTagRow row) => row.id == tag.id),
+      addToDb: () => db.addTagToCollection(collectionId, tag.id),
+      alreadyTaggedMessage: t.tag_already_on_collection(name: tag.name),
+    );
+    if (outcome != TagAddOutcome.added) return;
     ref.invalidate(collectionTagMapProvider);
     ref.invalidate(filteredCollectionIdsProvider);
     if (mounted) {
