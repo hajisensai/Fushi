@@ -34,8 +34,12 @@ void main() {
 
       final int countsIndex = importPage.indexOf('countProblems.isNotEmpty');
       expect(countsIndex, isNot(-1));
-      final String countsBlock =
-          importPage.substring(countsIndex, importPage.indexOf('校验通过'));
+      // 切片终点用**代码符号**而不是中文注释：上一版拿「校验通过」这句注释当锚点，
+      // BUG-1510 顺手改了那行注释，守卫就 indexOf 返回 -1 直接炸。
+      final int countsEnd =
+          importPage.indexOf('MigrationImporter.writeCompletionPrefs(');
+      expect(countsEnd, greaterThan(countsIndex));
+      final String countsBlock = importPage.substring(countsIndex, countsEnd);
       expect(countsBlock.contains('backupImportRestart'), isFalse,
           reason: '行数校验失败同理：不许把页面和原因一起带走');
 
@@ -62,7 +66,8 @@ void main() {
       // 断言必须收在 closeDatabase **方法体内**：变异实测发现，跨方法找下一处
       // `await _database.close();` 会匹配到 closeForPopup 那句，于是把顺序颠倒过来
       // 守卫照样绿——这条断言本身就是被变异测试咬出来的洞。
-      final int start = appModel.indexOf('Future<void> closeDatabase() async {');
+      final int start =
+          appModel.indexOf('Future<void> closeDatabase() async {');
       expect(start, isNot(-1));
       final int end = appModel.indexOf('\n  }', start);
       expect(end, greaterThan(start));

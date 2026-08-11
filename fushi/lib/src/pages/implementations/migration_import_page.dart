@@ -12,7 +12,8 @@ import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show backupImportRestart;
 import 'package:fushi/utils.dart';
-import 'package:fushi_core/fushi_core.dart' show fushiDatabaseFileName;
+import 'package:fushi_core/fushi_core.dart'
+    show fushiDatabaseFileName, PrefCodec;
 import 'package:path/path.dart' as p;
 
 /// 「从 Hibiki 导入」页（改名迁移计划 P2-2/P2-3，Fushi 侧）。
@@ -234,15 +235,26 @@ class _MigrationImportPageState extends State<MigrationImportPage>
         // 一下就没了」，连原因都来不及读。成功路径保留自动重启（没有要读的东西）。
         return;
       }
-      // 校验通过：删已导入批文件；问题批保留（重传通道）。
+      // BUG-1510：完成标志必须**直写落地库**，且必须写在删文件**之前**。
+      //
+      // 两个错各修一个：① `appModel.prefsRepo.setPref` 走的是本方法开头就
+      // `closeDatabase()` 掉的 drift 连接，必抛「connection was closed」——用户机器上
+      // 合并明明成功、行数也过了，就炸在这两句上；② 旧顺序先删中转文件再写标志，于是
+      // 那次异常掉进 catch 后弹的是「校验未通过，已保留待重传」，可文件早没了，用户
+      // 既拿不到「成功」也拿不到能重传的东西。现在标志落盘成功之后才删。
+      MigrationImporter.writeCompletionPrefs(
+        dbPath: dbPath,
+        encodedValues: <String, String>{
+          kMigrationImportDonePrefKey: PrefCodec.encode(true),
+          // 清掉随迁移带来的老包只读标志（包名门已挡，这里是 belt+suspenders）。
+          kMigrationReadonlyPrefKey: PrefCodec.encode(false),
+        },
+      );
+      // 标志已落盘：现在删已导入批文件；问题批保留（重传通道）。
       for (final MigrationImportBatch batch in scan.ready) {
         _importer.deleteBatchFiles(transferDir, batch.batch);
       }
       _importer.cleanupTransferDirIfEmpty(transferDir);
-      // 完成标志（重启后 dashboard 出卸载引导）；同时清掉随迁移带来的老包
-      // 只读标志（包名门已挡，这里是 belt+suspenders）。
-      await appModel.prefsRepo.setPref(kMigrationImportDonePrefKey, true);
-      await appModel.prefsRepo.setPref(kMigrationReadonlyPrefKey, false);
       appModel.completeBackupImport(t.migration_import_success);
       await Future<void>.delayed(const Duration(seconds: 1));
       await backupImportRestart(appModel);

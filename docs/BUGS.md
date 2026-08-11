@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1420 条。点号进各自文件。
+> 共 1421 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -38,6 +38,7 @@
 | [BUG-1513](bugs/BUG-1513-subscription-first-episode-skipped.md) | ✅ | ✅ | 发现订阅跳过所选首集 |
 | [BUG-1512](bugs/BUG-1512-download-task-empty-overlay-metrics.md) | ✅ | ✅ | 下载任务空态遮挡且缺少实时指标 |
 | [BUG-1511](bugs/BUG-1511-subscription-embedded-backend-missing.md) | ✅ | ✅ | 订阅创建后因内置下载引擎缺失而全部卡在需处理 |
+| [BUG-1510](bugs/BUG-1510-migration-import-completion-pref-on-closed-db.md) | 🚧 | 🚧 | 导入完成标志写已关闭的 drift 连接：合并其实成功却谎报『校验未通过已保留待重传』，而批次文件已被删 |
 | [BUG-1509](bugs/BUG-1509-jimaku-dialog-size-search-jank.md) | ✅ | ✅ | Jimaku 字幕框偏小且搜索首帧卡顿 |
 | [BUG-1508](bugs/BUG-1508-migration-v79-legacy-video-tag-column.md) | ✅ | ✅ | v79 标签迁移不兼容旧 video_book_uid 列导致启动失败 |
 | [BUG-1507](bugs/BUG-1507-video-shader-nested-cards.md) | ✅ | ✅ | 视频画质增强嵌入设置重复嵌套卡片 |
