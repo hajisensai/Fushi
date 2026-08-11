@@ -1,0 +1,18 @@
+## BUG-1542 · 合集继续播放选错集：选条目层只按位置取最靠后有痕迹成员，忽略最近播放时刻
+- **报告**：2026-08-11（用户：TODO-2797）
+- **真实性**：✅ 真 bug。用户 234 集合集里刚退出 PV 第 1 集（列表显示「看到 0:24」），头部却显示「继续看 第233集 · 00019」，点播放去的不是刚退出那集。
+  - **算法层根因**：`fushi/lib/src/media/collections/collection_continue.dart:29`（修前）`continueMemberIndex` 取「排序位置**最靠后**的有痕迹成员」（`_hasTrace = completed || positionMs > 0`），锚点里根本没有时间维度。等价于假设「用户永远按集号单调前进」——234 集里任何一集留下过一点残留进度，只要它位置靠后，就永久压过用户刚刚退出的那一集。
+  - **数据结构层根因（真正的病灶）**：`packages/fushi_core/lib/src/database/tables.dart:566` `VideoBooks` 只有 `lastPositionMs`，**没有配对的时刻列**。所以选条目层压根拿不到「用户刚才在看哪一集」，只能拿位置当代理。`fushi/lib/src/media/video/video_library_overview.dart:5`（修前）的文件头注释白纸黑字写着「`VideoBooks` 无 lastWatchedAt 列」，这个数据边界是已知的，只是此前被绕过而不是被修掉。
+  - **爆炸半径**：同一个 `continueMemberIndex` 是 5 处共用的唯一选条目器——合集详情页头部（`media_collection_detail_page.dart:412`）、首页 dashboard 继续区（`home_dashboard_page.dart:1330`）、视频页 hero 与「继续看·第 N 集」落地（`home_video_page.dart:2605` / `:2818`）、首页作品续播（`home_page.dart:1765`）。五处同错。
+- **[x] ① 已修复** — commit `d4cb47681`
+  - schema **v84 → v85**：`VideoBooks.lastPlayedAt`（int 毫秒，nullable）。与 `lastPositionMs` 在**同一条 UPDATE** 里成对落库（`database_video_domain.part.dart:updateVideoBookPosition` 新增 `required int playedAt`），使「有进度但没时刻」这个中间态不可能存在。
+  - 迁移**回填存量库**：从 `video_watch_statistics` 取每个 bookUid 的 `MAX(last_modified)`（只认 v39 起有 bookUid 的行；NULL-uid 遗留行按 title 键控会跨视频互串，不参与）。用户现有库升级后当场就对，不用把每集重看一遍。
+  - `continueMemberIndex` 锚点改为「`lastPlayedAt` 最大的成员」（并列取位置靠后者，贴连播方向）；锚点已完成且有下一集 → 下一集（收尾语义保留）。**全员无时刻时逐字节退回旧的位置口径**，老库零回归。
+  - 远端进度回灌（`sync_orchestrator.dart:1781`）传的是**对端** `updatedAtMs` 而不是 now——传 now 会把对方三天前的进度冒充成本机刚看的，把锚点拽到用户根本没在看的那一集。
+  - 不复用 `video_watch_statistics.lastModified` 当真相源的理由记在 `tables.dart` 的 `lastPlayedAt` doc 里：它是按天聚合行的 mtime，云聚合合并会改写它，且远端进度经 sync 写进 `lastPositionMs` 时根本不产生统计行。
+- **[x] ② 已加自动化测试** — commit `d4cb47681`
+  - `fushi/test/database/collection_continue_resume_target_test.dart`（新增，DB 层，`PRAGMA foreign_keys = ON`）：从**唯一写入口** `updateVideoBookPosition` 真的往库里写多条播放记录，读回行再跑真选择器。含用户实报形状（8 集，末集有陈旧痕迹 + 刚退出靠前那集）、收尾推进、远端回灌用对端时刻、从没播过。
+  - `fushi/test/media/collection_continue_test.dart`（扩充 8 条）：最近播放锚点、收尾推进、时刻并列、部分成员有时刻、时刻本身算痕迹、**全员无时刻退回旧口径**（向后兼容）。
+  - `fushi/test/database/migration_v85_video_last_played_at_test.dart`（新增）：v84→v85 加列无损、MAX 回填、无统计行留 NULL、NULL-uid 行不参与回填。
+  - **变异实测**：把锚点强制退回旧的位置口径后，6 条守卫红，其中 DB 层「用户实报形状」返回 7（末集）——精确复现原症状；旧的 6 条位置口径断言仍绿。
+- **备注**：`computeVideoLibraryOverview` 手里本来就有逐成员观看时刻（`lastWatchedByUid`），此前只用于跨单元排序和 hero 外显、不喂给选集，一并接上。该函数当前只有测试在调用（无生产调用方），修它是为了不留一个语义已经漂掉的公共纯函数。

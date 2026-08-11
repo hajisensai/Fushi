@@ -538,8 +538,19 @@ class VideoBookRepository {
     return out;
   }
 
-  Future<void> updatePosition(String bookUid, int positionMs) =>
-      _db.updateVideoBookPosition(bookUid, positionMs);
+  /// 写播放断点。[playedAt] 默认取当下（本机播放路径）——断点与「什么时候留下的」
+  /// 同一次落库，合集续播才能按「刚才在看哪一集」选集（BUG-1542）。远端进度回灌
+  /// 显式传对端时刻，别用默认值。
+  Future<void> updatePosition(
+    String bookUid,
+    int positionMs, {
+    int? playedAt,
+  }) =>
+      _db.updateVideoBookPosition(
+        bookUid,
+        positionMs,
+        playedAt: playedAt ?? DateTime.now().millisecondsSinceEpoch,
+      );
 
   /// Updates local file paths after app-owned media is relocated.
   ///

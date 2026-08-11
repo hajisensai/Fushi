@@ -105,7 +105,7 @@ void main() {
     );
     addTearDown(db.close);
 
-    expect(db.schemaVersion, 84);
+    expect(db.schemaVersion, 85);
     expect(await _userVersion(db), 84);
 
     // v63 真跑了：两处废弃偏好都没了。

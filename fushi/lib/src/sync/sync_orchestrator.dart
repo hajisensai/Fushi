@@ -1778,7 +1778,11 @@ class SyncOrchestrator {
         await _db.setPrefTyped<int>(
             videoRemotePositionAtPrefKey(uid), updatedAtMs);
         if (rowPositionByUid.containsKey(uid)) {
-          await _db.updateVideoBookPosition(uid, positionMs);
+          // 时刻用**对端的** updatedAtMs（不是 now）：这是「对方在那个时刻看到这
+          // 里」的事实。传 now 会把三天前的远端进度冒充成本机刚看的，直接把合集
+          // 续播锚点（BUG-1542）钉在一集用户根本没在看的集上。
+          await _db.updateVideoBookPosition(uid, positionMs,
+              playedAt: updatedAtMs);
         }
       },
     );
