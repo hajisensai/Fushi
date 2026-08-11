@@ -169,6 +169,7 @@ def merge_manifest(
     release_sequence: int,
     new_assets: list[dict[str, str]],
     live_asset_names: Optional[set[str]] = None,
+    advertise_top_level: bool = True,
 ) -> dict[str, Any]:
     """Pure, monotonic, per-platform merge (see module docstring).
 
@@ -181,8 +182,27 @@ def merge_manifest(
     `None` means "caller could not tell" and disables the filter entirely --
     never confuse it with an empty set, which legitimately means "the release
     has no assets at all" and clears every retained entry.
+
+    [advertise_top_level] = False is the cross-family DESKTOP MIRROR mode
+    (BUG-1516 ①b): contribute assets, leave tag/version/prerelease/notes/
+    releaseSequence exactly as they are. Needed because the hibiki-family
+    manifest's top level belongs to the Android bridge, while its desktop
+    slots must carry Fushi installers -- Windows/macOS migrate by installer
+    overwrite (`platform_updater.dart`, Phase 5), Android cannot cross package
+    names at all. Letting the mirror move the top level would hand Android
+    clients a version whose only selectable APK is the older bridge build --
+    exactly the cross-family mismatch BUG-1481 fixed.
     """
     release_sequence = int(release_sequence)
+
+    # Mirror mode never CREATES a manifest: with no existing top level there is
+    # nothing to preserve, and inventing one would resurrect a retired family's
+    # channel carrying the other family's metadata. Hand the file back untouched
+    # so the caller sees "no change" and skips the commit.
+    if not advertise_top_level and not (
+        isinstance(existing.get("version"), str) and existing.get("version")
+    ):
+        return existing
 
     incoming: list[dict[str, Any]] = [
         _stamp(a, seq=release_sequence, tag=tag, version=version)
@@ -272,8 +292,14 @@ def merge_manifest(
     # Monotonic guard on the advertised top-level release. If the manifest
     # already advertises a NEWER sequence than this run, keep it; this older run
     # still contributed assets for its own platform above.
-    if existing_seq is not None and existing_seq > release_sequence:
-        top_seq: int = existing_seq
+    #
+    # `not advertise_top_level` takes the SAME branch unconditionally: the
+    # desktop mirror contributes assets and nothing else, whichever direction
+    # the sequences happen to run.
+    if not advertise_top_level or (
+        existing_seq is not None and existing_seq > release_sequence
+    ):
+        top_seq: int = existing_seq if existing_seq is not None else release_sequence
         top_tag = existing_tag or tag
         top_version = existing_version or version
         top_notes = (
@@ -346,6 +372,9 @@ def main() -> None:
     path = os.environ["MANIFEST_FILE"]
     new_assets = _valid_assets(json.loads(os.environ["PLATFORM_ASSETS_JSON"]))
     live_asset_names = _live_asset_names_from_env()
+    advertise_top_level = (
+        os.environ.get("ADVERTISE_TOP_LEVEL", "true").strip().lower() != "false"
+    )
 
     manifest = merge_manifest(
         _load_existing(path),
@@ -357,7 +386,15 @@ def main() -> None:
         release_sequence=int(os.environ["RELEASE_SEQUENCE"]),
         new_assets=new_assets,
         live_asset_names=live_asset_names,
+        advertise_top_level=advertise_top_level,
     )
+
+    if not manifest:
+        # Mirror mode with nothing to mirror into. Writing "{}" here would
+        # CREATE the retired family's manifest as an empty file, which its
+        # clients would then parse as a valid (asset-less) release.
+        print("Nothing to mirror into " + path + "; left untouched.")
+        return
 
     with open(path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)

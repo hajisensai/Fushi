@@ -291,22 +291,22 @@ class _CollectionRelationsSectionState
               SizedBox(height: tokens.spacing.rowVertical),
               SizedBox(
                 height: _coverHeight + _textHeight,
-                // 滚轮桥 + 鼠标拖动横滚两件套（home_video 合集行同款，BUG-1214）。
-                child: WheelToHorizontalScroll(
-                  controller: _controller,
-                  child: HorizontalDragScrollable(
-                    child: ListView.separated(
-                      controller: _controller,
-                      scrollDirection: Axis.horizontal,
-                      physics: desktopAwareScrollPhysics(),
-                      padding: EdgeInsets.symmetric(
-                        horizontal: tokens.spacing.page,
-                      ),
-                      itemCount: relations.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: _gap),
-                      itemBuilder: (BuildContext context, int index) =>
-                          _buildCard(context, relations[index]),
+                // 鼠标拖动横滚（home_video 横滚行同款）。**裸滚轮刻意不横滚**：
+                // 本区嵌在合集详情页的纵向滚动里，投轴会把整页滚动吃掉
+                // （BUG-1536）；Shift + 滚轮的横滚由 Flutter 内建翻轴提供，
+                // 行为守卫见 test/pages/collection_relations_section_test.dart。
+                child: HorizontalDragScrollable(
+                  child: ListView.separated(
+                    controller: _controller,
+                    scrollDirection: Axis.horizontal,
+                    physics: desktopAwareScrollPhysics(),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: tokens.spacing.page,
                     ),
+                    itemCount: relations.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: _gap),
+                    itemBuilder: (BuildContext context, int index) =>
+                        _buildCard(context, relations[index]),
                   ),
                 ),
               ),

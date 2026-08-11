@@ -248,6 +248,69 @@ def test_empty_live_list_clears_retained():
     check(apk in _names(m2), "incoming asset unaffected by empty live set")
 
 
+# ── BUG-1516 ①b: cross-family desktop mirror ───────────────────────────────
+#
+# The hibiki-family manifest's TOP LEVEL belongs to the Android bridge, but its
+# desktop slots must carry Fushi installers (Windows/macOS migrate by installer
+# overwrite; Android cannot cross package names). So the mirror contributes
+# assets and must not touch anything else.
+
+
+def _mirror(existing, platform_fn, seq):
+    tag, version, assets, name = platform_fn(seq)
+    out = merge_manifest(
+        existing,
+        tag=tag,
+        channel="debug",
+        version=version,
+        prerelease=True,
+        notes="fushi notes " + str(seq),
+        release_sequence=seq,
+        new_assets=assets,
+        advertise_top_level=False,
+    )
+    return json.loads(json.dumps(out)), name
+
+
+def test_mirror_adds_asset_without_moving_top_level():
+    bridge, apk = _publish({}, _android, 10192)
+    mirrored, exe = _mirror(bridge, _desktop, 10405)
+
+    check(exe in _names(mirrored), "mirror contributes the desktop asset")
+    check(apk in _names(mirrored), "mirror keeps the bridge APK")
+    # The whole point: a bridge client must keep reading the bridge's release.
+    check(
+        mirrored["version"] == bridge["version"],
+        "mirror leaves top-level version alone",
+    )
+    check(mirrored["tag"] == bridge["tag"], "mirror leaves top-level tag alone")
+    check(
+        mirrored["releaseSequence"] == bridge["releaseSequence"],
+        "mirror leaves top-level releaseSequence alone (BUG-1481 mismatch guard)",
+    )
+    check(mirrored["notes"] == bridge["notes"], "mirror leaves notes alone")
+
+
+def test_mirror_supersedes_the_stale_desktop_slot():
+    # The pre-split desktop entry is what went 404. A higher-sequence mirror must
+    # replace it outright, without any liveness filter being involved.
+    stale, old_exe = _publish({}, _desktop, 10182)
+    bridge, apk = _publish(stale, _android, 10192)
+    check(old_exe in _names(bridge), "precondition: stale desktop entry present")
+
+    mirrored, new_exe = _mirror(bridge, _desktop, 10405)
+    check(old_exe not in _names(mirrored), "stale desktop entry superseded")
+    check(new_exe in _names(mirrored), "current desktop asset takes the slot")
+    check(apk in _names(mirrored), "bridge APK untouched by the desktop mirror")
+
+
+def test_mirror_never_creates_a_manifest():
+    # No existing hibiki-family manifest => nothing to mirror into. Creating one
+    # would resurrect a retired channel carrying the other family's metadata.
+    out, _ = _mirror({}, _desktop, 10405)
+    check(out == {}, "mirror is a no-op when there is no manifest to augment")
+
+
 def main():
     for fn in [
         test_first_publish,
@@ -264,6 +327,9 @@ def main():
         test_incoming_survives_stale_live_snapshot,
         test_unavailable_live_list_disables_filter,
         test_empty_live_list_clears_retained,
+        test_mirror_adds_asset_without_moving_top_level,
+        test_mirror_supersedes_the_stale_desktop_slot,
+        test_mirror_never_creates_a_manifest,
     ]:
         print("== " + fn.__name__ + " ==")
         fn()

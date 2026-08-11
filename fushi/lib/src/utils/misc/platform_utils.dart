@@ -118,6 +118,13 @@ class HorizontalDragScrollable extends StatelessWidget {
 /// 事件派发是内层优先：内层 `Scrollable` 若已表态（如触控板给了 dx、或 Shift 已
 /// 翻轴），它先登记、本件的登记自动变 no-op，不会双份滚动。内容没超出视口时本件
 /// 不登记，滚轮照常冒泡给外层（弹窗纵向滚动不被吞）。
+///
+/// **什么时候不要用**（BUG-1536）：横向区**嵌在纵向滚动页面里**时不要包本件——
+/// 内容超出视口时它会一直登记，指针停在这一行上整页就纵向滚不动了（用户实报的
+/// 视频首页横滚行症状）。那种场景把本件撤掉即可：未按 Shift 时横向 `Scrollable`
+/// 取 `dx`（物理滚轮恒 0）不登记，滚轮冒泡给外层纵滚；按住 Shift 时 Flutter 自己
+/// 就翻轴横滚。本件只留给**自身占满一屏、外面没有纵向滚动可抢**的横向面板（如
+/// 波形对轴弹窗的时间轴，那里用户明确要过裸滚轮平移）。
 class WheelToHorizontalScroll extends StatelessWidget {
   const WheelToHorizontalScroll({
     required this.controller,
