@@ -112,12 +112,20 @@ class OverlayWindowChannel {
 
   /// Shows the overlay at screen coordinates (physical pixels) without
   /// stealing focus. Returns the native reply (see [GlobalLookupShowResult]).
+  /// [capWidth]/[capHeight]：**布局工作区**的物理像素上限（0 = 不限，用显示器工作区）。
+  ///
+  /// 游戏内查词必须传：卡片最终是画在游戏画面里的，可用空间是**游戏视口**而不是
+  /// 显示器工作区。不传的话弹窗按 2560x1440 排版、排完再被缩到卡片尺寸，而 runner
+  /// 超尺寸时是**裁不是缩**——真机表现就是工具栏和第三栏词典被切在画面外，看起来
+  /// 像"少了很多功能"，其实只是没进画面。
   Future<GlobalLookupShowResult> showAt({
     required int x,
     required int y,
     int width = 420,
     int height = 600,
     bool atCursor = false,
+    int capWidth = 0,
+    int capHeight = 0,
   }) async {
     final Object? reply =
         await _invoke<Object?>('showAt', <String, Object?>{
@@ -126,6 +134,8 @@ class OverlayWindowChannel {
       'width': width,
       'height': height,
       'atCursor': atCursor,
+      'capW': capWidth,
+      'capH': capHeight,
     });
     if (reply is Map) {
       double num2(Object? v) => (v is num) ? v.toDouble() : 0;

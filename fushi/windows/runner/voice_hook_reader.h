@@ -376,6 +376,10 @@ class VoiceHookReader {
   // 投一帧 width=height=0 的**空帧**让注入侧收卡。空帧是 IsLookupFrameSane 之外的
   // 显式哨兵（那个函数按定义拒绝 0 宽高），故这里不过它那道闸。
   // ⚠️ 注入侧当前尚无这条分支，空帧会被两道过滤挡下——细节与 file:line 见 .cpp 实现处。
+  /// 只更新高亮的无像素帧：卡片内容不变时（悬停换字）走这条，跳过整轮抓帧与
+  /// 全卡 memcpy。见实现处注释。
+  VoiceHookLookupError WriteLookupHighlight(const VoiceHookLookupPresent& meta);
+
   VoiceHookLookupError WriteLookupDismiss(uint64_t seq);
 
  private:

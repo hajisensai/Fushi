@@ -581,6 +581,27 @@ bool HandleLookupCall(const flutter::MethodCall<flutter::EncodableValue>& call,
         {flutter::EncodableValue("ok"), flutter::EncodableValue(true)}}));
     return true;
   }
+  if (method == "galLookupPresentHighlight") {
+    // 悬停只挪高亮：不抓帧、不拷像素。
+    VoiceHookLookupPresent meta;
+    meta.seq = static_cast<uint64_t>(ReadLookupInt(call, "seq"));
+    meta.anchor_x = static_cast<int32_t>(ReadLookupInt(call, "anchorX"));
+    meta.anchor_y = static_cast<int32_t>(ReadLookupInt(call, "anchorY"));
+    meta.highlight_start =
+        static_cast<uint32_t>(ReadLookupInt(call, "highlightStart"));
+    meta.highlight_len =
+        static_cast<uint32_t>(ReadLookupInt(call, "highlightLen"));
+    const VoiceHookLookupError error =
+        VoiceHookReader::Instance().WriteLookupHighlight(meta);
+    if (error != VoiceHookLookupError::kNone) {
+      result->Success(LookupErrorMap(error));
+      return true;
+    }
+    result->Success(flutter::EncodableValue(flutter::EncodableMap{
+        {flutter::EncodableValue("ok"), flutter::EncodableValue(true)}}));
+    return true;
+  }
+
   if (method == "galLookupPresent") {
     HandleLookupPresent(call, std::move(result));
     return true;
@@ -1546,6 +1567,49 @@ VoiceHookLookupWriteResult VoiceHookReader::WriteLookupFrame(
   out.height = rows;
   out.pitch = pitch;
   return out;
+}
+
+VoiceHookLookupError VoiceHookReader::WriteLookupHighlight(
+    const VoiceHookLookupPresent& meta) {
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  SharedHeader* h = st.header;
+  const VoiceHookLookupError gate = LookupGateLocked(h, true);
+  if (gate != VoiceHookLookupError::kNone) {
+    return gate;
+  }
+  // 只更新高亮：与收卡同构的"无像素帧"，区别只在 flags。
+  //
+  // 为什么值得单开一条路：悬停换一个字，卡片内容一个像素都没变，但普通 present 会
+  // 走完整的「CapturePreview → PNG 编码 → WIC 解码 → 全卡 memcpy」。鼠标划过一行就是
+  // 几十次，真机症状就是"太卡了"。高亮画在游戏自己的图层上、不在卡片位图里，所以这条
+  // 路一个像素都不需要。
+  const uint64_t publish_seq = ++st.lookup_publish_seq;
+  const uint32_t index =
+      static_cast<uint32_t>(publish_seq % h->lookup_frame_count);
+  fushi_voice_hook::LookupFrame* frame =
+      fushi_voice_hook::LookupFrameAt(h, index);
+  if (frame == nullptr) {
+    return VoiceHookLookupError::kNoRegion;
+  }
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&frame->ready), 0);
+  frame->width = 0;
+  frame->height = 0;
+  frame->pitch = 0;
+  frame->anchor_x = meta.anchor_x;
+  frame->anchor_y = meta.anchor_y;
+  frame->highlight_start = meta.highlight_start;
+  frame->highlight_len = meta.highlight_len;
+  frame->byte_len = 0;
+  frame->hit_seq = meta.seq;
+  frame->flags = fushi_voice_hook::kLookupFrameHighlightOnly;
+  frame->reserved = 0;
+  frame->reserved2 = 0;
+  fushi_voice_hook::AtomicStorePreview64(&frame->seq, publish_seq);
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&frame->ready), 1);
+  InterlockedIncrement64(
+      reinterpret_cast<volatile LONGLONG*>(&h->lookup_frame_count_written));
+  return VoiceHookLookupError::kNone;
 }
 
 VoiceHookLookupError VoiceHookReader::WriteLookupDismiss(uint64_t seq) {

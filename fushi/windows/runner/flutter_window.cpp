@@ -1402,6 +1402,20 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
             cursor_work_y = y - mi.rcWork.top;
             monitor_dpr = FlutterDesktopGetDpiForMonitor(monitor) / 96.0;
           }
+          // 🔴 布局工作区上限（游戏内查词专用）。卡片最终画在**游戏画面**里，可用
+          // 空间是游戏视口，不是这块显示器的工作区。不覆盖的话弹窗按 2560x1440 排版，
+          // 排完再被缩到卡片尺寸，而取帧超尺寸时是**裁不是缩**——真机表现为工具栏与
+          // 第三栏词典被切在画面外，看起来像"少了很多功能"，其实只是没进画面。
+          const int cap_w = IntFromValue(args, "capW", 0);
+          const int cap_h = IntFromValue(args, "capH", 0);
+          if (cap_w > 0 && cap_h > 0) {
+            work_w = cap_w;
+            work_h = cap_h;
+            // 卡片在游戏里的落点由 hook 按 anchor 决定，与 Windows 光标所在显示器
+            // 无关；工作区原点因此就是卡片原点。
+            cursor_work_x = 0;
+            cursor_work_y = 0;
+          }
           flutter::EncodableMap reply = {
               {flutter::EncodableValue("ok"), flutter::EncodableValue(ok)},
               {flutter::EncodableValue("workW"),
