@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1463 条。点号进各自文件。
+> 共 1464 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -46,6 +46,7 @@
 | [BUG-1567](bugs/BUG-1567-interconnect-request-timeouts.md) | ✅ | ✅ | 互联小型请求普遍缺超时且挂死请求占住远端清单缓存槽 |
 | [BUG-1566](bugs/BUG-1566-interconnect-channel-consumers-cloud-only.md) | ✅ | ✅ | 词典删除只传播云通道、比较对话框只解析云后端：只开互联的用户两条路都断 |
 | [BUG-1565](bugs/BUG-1565-remote-book-delete-partial-no-refresh.md) | ✅ | ✅ | 远端书删除半成功不刷新列表：书已删仍留幽灵卡，提示语与实情相反 |
+| [BUG-1564](bugs/BUG-1564-cover-backfill-m3u8-churn.md) | ✅ | ✅ | 封面回填对m3u8清单反复ffmpeg抽帧失败重试白烧CPU |
 | [BUG-1563](bugs/BUG-1563-interconnect-host-failure-swallowed.md) | ✅ | ✅ | 互联 host 换 token/开 TLS 的重启结果被丢弃、设为备份后端无 catch，失败静默把 host 打没 |
 | [BUG-1562](bugs/BUG-1562-interconnect-client-panel-stale-and-race.md) | ✅ | ✅ | 互联客户端面板：已连接状态不刷新、手动配对探测窗口无忙态可并发、弹窗返回后无 mounted 守卫 |
 | [BUG-1561](bugs/BUG-1561-interconnect-download-failure-invisible.md) | ✅ | ✅ | 互联下载失败态只写进内存永不上屏，任务表只增不减、页面 dispose 后零提示 |
