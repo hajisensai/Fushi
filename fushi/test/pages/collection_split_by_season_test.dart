@@ -170,6 +170,62 @@ void main() {
     expect(await collectionByName('Show 第 1 季'), isNotNull);
   });
 
+  testWidgets('手动调整：勾选集 → 移动到另一组 → 按调整后的归属落盘（BUG-1543）',
+      (WidgetTester tester) async {
+    await pumpWide(tester);
+    await openSplitDialog(tester);
+
+    // 自动分季把 S01E02 放进第 1 季；用户把它挪到第 2 季。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('collection-split-member-video/s1e2')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(t.collection_split_selected(n: 1)), findsOneWidget);
+
+    await tester
+        .tap(find.byKey(const ValueKey<String>('collection-split-move-to')));
+    await tester.pumpAndSettle();
+    // 弹出菜单项与组名输入框同文本，菜单在最上层 → 取 last。
+    await tester.tap(find.text('Show 第 2 季').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(t.collection_split_confirm));
+    await tester.pumpAndSettle();
+
+    final MediaCollectionRow? s1 = await collectionByName('Show 第 1 季');
+    final MediaCollectionRow? s2 = await collectionByName('Show 第 2 季');
+    expect(await membersOf(s1!.id), <String>['video/s1e1'],
+        reason: '被挪走的集不能还留在原组');
+    expect(await membersOf(s2!.id), <String>['video/s2e1', 'video/s1e2'],
+        reason: '手动移动的集追加到目标组尾部');
+  });
+
+  testWidgets('手动调整：整组被搬空 → 该组不建合集（空合集在数据模型上不存在）', (WidgetTester tester) async {
+    await pumpWide(tester);
+    await openSplitDialog(tester);
+
+    // 把第 2 季唯一一集挪进第 1 季，第 2 季组被搬空。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('collection-split-member-video/s2e1')),
+    );
+    await tester.pumpAndSettle();
+    await tester
+        .tap(find.byKey(const ValueKey<String>('collection-split-move-to')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Show 第 1 季').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(t.collection_split_confirm));
+    await tester.pumpAndSettle();
+
+    expect(await collectionByName('Show 第 2 季'), isNull, reason: '空组不该建出合集');
+    final MediaCollectionRow? s1 = await collectionByName('Show 第 1 季');
+    expect(await membersOf(s1!.id),
+        <String>['video/s1e1', 'video/s1e2', 'video/s2e1']);
+    // 只剩一个真实季 → 无前传/续作可连。
+    expect(await db.getCollectionRelations(s1.id), isEmpty);
+  });
+
   testWidgets('单季合集：拆分菜单灰显', (WidgetTester tester) async {
     // 重建单季数据：只留 S01 两集。
     await db.removeFromCollection(collectionId, MediaKind.video, 'video/s2e1');

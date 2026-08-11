@@ -143,6 +143,36 @@ void main() {
         reason: '加入顺序乱序，tab 仍按季升序排列、PV/特典殿后');
   });
 
+  testWidgets('「标题 2 - 集号」命名也出季 tab，两季不再交错（BUG-1543）',
+      (WidgetTester tester) async {
+    useTallSurface(tester);
+    // 用户实测命名：第 2 季的季号只体现为标题尾随的「2」。
+    await seed(const <(String, String)>[
+      ('video/s1e1', 'Hibike! Euphonium - 01 (BD 1280x720 x264 AACx3)'),
+      ('video/s2e1', 'Hibike! Euphonium 2 - 01 (BD 1280x720 x264 AAC)'),
+      ('video/s1e2', 'Hibike! Euphonium - 02 (BD 1280x720 x264 AACx3)'),
+      ('video/s2e2', 'Hibike! Euphonium 2 - 02 (BD 1280x720 x264 AAC)'),
+    ]);
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final Finder tabs =
+        find.byKey(const ValueKey<String>('collection-season-tabs'));
+    expect(tabs, findsOneWidget, reason: '两季必须出 tab，此前全被判成第 1 季');
+    final List<String> labels = tester
+        .widgetList<Tab>(find.descendant(of: tabs, matching: find.byType(Tab)))
+        .map((Tab tab) => tab.text ?? '')
+        .toList();
+    expect(labels, <String>['第 1 季', '第 2 季']);
+
+    // 第 1 季 tab 里只有第 1 季的集（此前 S1/S2 按集号交错混排）。
+    await tester.tap(find.text('第 1 季'));
+    await tester.pumpAndSettle();
+    expect(railText('Hibike! Euphonium - 01'), findsOneWidget);
+    expect(railText('Hibike! Euphonium - 02'), findsOneWidget);
+    expect(railText('Hibike! Euphonium 2 - 01'), findsNothing);
+  });
+
   testWidgets('多季合集：切 tab 换成该季剧集', (WidgetTester tester) async {
     useTallSurface(tester);
     await seedMultiSeason();

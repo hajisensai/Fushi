@@ -73,6 +73,52 @@ VideoNameInfo parseVideoFilename(String filename) {
   );
 }
 
+/// 解析**完整路径** → [VideoNameInfo]：文件名照旧走 [parseVideoFilename]，只在
+/// 「解出了集号、但没解出季号」时把季号回落到父目录名（BUG-1543）。纯函数，无 IO。
+///
+/// `Show/Season 2/Show - 01.mkv`、`Show/S02/01.mkv` 这类**季目录**布局里，季号只
+/// 写在目录上、文件名一个字都没有；只看 basename 的旧口径把整部番全判成第 1 季，
+/// 分季 tab 和「按季拆分」自然什么也分不出来。
+///
+/// 回落只在剧集文件上生效（`info.episode != null`）：电影目录 `Ip Man 2/xxx.mkv`
+/// 没有集号，季语义不成立，保持原样不动。目录名先走同一个规则引擎（认
+/// `Season 2` / `S02` / `第2季` / `2nd Season`），引擎不认时再试尾部裸数字
+/// （`Hibike! Euphonium 2/`），两者同源于 [FilenameParser]。
+VideoNameInfo parseVideoPath(String path) {
+  final List<String> segments = _pathSegments(path);
+  final String filename = segments.isEmpty ? path : segments.last;
+  final VideoNameInfo info = parseVideoFilename(filename);
+  if (info.season != null || info.episode == null || segments.length < 2) {
+    return info;
+  }
+  final ParsedMediaName dir =
+      FilenameParser.parse(segments[segments.length - 2]);
+  final int? dirSeason =
+      dir.season ?? FilenameParser.takeTrailingNumericSeason(dir.title)?.season;
+  if (dirSeason == null) return info;
+  return VideoNameInfo(
+    series: info.series,
+    season: dirSeason,
+    episode: info.episode,
+  );
+}
+
+/// 剧集卡片的**显示集号**（BUG-1544）：从路径/文件名解析出的**真实**集号；
+/// 解析不出返回 null，由调用方回落到列表顺位号。
+///
+/// 顺位号在「前面几集没导入 / 缺集」时必然说谎——`S01E05` 排在列表第 3 位就被
+/// 标成 `03`。集号是文件名里写着的事实，不是列表下标的函数，故一律现场解析。
+int? parsedEpisodeNumberOf(String pathOrName) =>
+    parseVideoPath(pathOrName).episode;
+
+/// 路径切段（平台无关：同时认 `/` 与 `\`，与 [FilenameParser.candidatesForPath]
+/// 同口径）。`p.basename` 在 Linux 上不认 `\`，而库里存的可能是 Windows 路径。
+List<String> _pathSegments(String path) => path
+    .split(RegExp(r'[\\/]+'))
+    .map((String s) => s.trim())
+    .where((String s) => s.isNotEmpty)
+    .toList(growable: false);
+
 /// 引擎解不出标题（纯日期/设备命名、全括号无标题块、纯集数名等）时的系列名
 /// 兜底：剥视频扩展名后的原始 stem（下划线转空格、折叠空白），保证「series
 /// 永不为空、按单片分组」的既有契约。

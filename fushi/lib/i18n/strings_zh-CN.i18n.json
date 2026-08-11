@@ -3315,5 +3315,8 @@
   "gal_hook_ingame_lookup_hint": "在游戏画面内直接显示词典卡片（KiriKiri 引擎，仅 Windows）",
   "drag_drop_failed": "拖入的文件处理失败，请重试。",
   "tag_add_failed": "标签添加失败，请重试。",
-  "tag_reorder_failed": "标签排序保存失败，请重试。"
+  "tag_reorder_failed": "标签排序保存失败，请重试。",
+  "collection_split_move_to": "移动到",
+  "collection_split_new_group": "新建分组",
+  "collection_split_selected": "已选 $n 集"
 }
