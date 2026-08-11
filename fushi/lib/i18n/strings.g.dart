@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 56389 (3317 per locale)
+/// Strings: 56746 (3338 per locale)
 ///
-/// Built on 2026-08-11 at 07:47 UTC
+/// Built on 2026-08-11 at 13:52 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4490,6 +4490,33 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get tag_add_failed => 'Couldn\'t add the tag. Please try again.';
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  String get download_task_error_summary_source_missing =>
+      'Managed video source is missing or inaccessible';
+  String get download_task_error_summary_backend_unconfirmed =>
+      'Torrent could not be confirmed by hash, title, and category';
+  String get download_task_error_summary_subtitle =>
+      'Subtitles are unavailable or could not be installed';
+  String get download_task_error_summary_backend_unavailable =>
+      'Download backend is unavailable or no longer matches';
+  String get download_task_error_summary_legacy =>
+      'Legacy import needs manual attention';
+  String get download_task_error_summary_torrent_info =>
+      'Torrent identity is missing or unverifiable';
+  String get download_task_error_summary_generic => 'The task hit an error';
+  String get download_task_error_view_detail => 'View details';
+  String get download_task_error_detail_title => 'Error details';
+  String get download_task_error_copied => 'Error details copied';
+  String get download_task_lifecycle_active => 'In progress';
+  String get download_task_lifecycle_needs_attention => 'Needs attention';
+  String get download_task_lifecycle_completed => 'Completed';
+  String get download_task_lifecycle_failed => 'Failed';
+  String get download_task_lifecycle_cancelled => 'Cancelled';
+  String get download_task_stage_enqueue => 'Enqueue';
+  String get download_task_stage_download => 'Download';
+  String get download_task_stage_organize => 'Organize';
+  String get download_task_stage_subtitle => 'Subtitles';
+  String get download_task_stage_import => 'Import';
+  String get download_task_stage_scrape => 'Scrape';
 }
 
 // Path: <root>
@@ -12147,6 +12174,54 @@ class _StringsAr extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get download_task_error_summary_source_missing =>
+      'Managed video source is missing or inaccessible';
+  @override
+  String get download_task_error_summary_backend_unconfirmed =>
+      'Torrent could not be confirmed by hash, title, and category';
+  @override
+  String get download_task_error_summary_subtitle =>
+      'Subtitles are unavailable or could not be installed';
+  @override
+  String get download_task_error_summary_backend_unavailable =>
+      'Download backend is unavailable or no longer matches';
+  @override
+  String get download_task_error_summary_legacy =>
+      'Legacy import needs manual attention';
+  @override
+  String get download_task_error_summary_torrent_info =>
+      'Torrent identity is missing or unverifiable';
+  @override
+  String get download_task_error_summary_generic => 'The task hit an error';
+  @override
+  String get download_task_error_view_detail => 'View details';
+  @override
+  String get download_task_error_detail_title => 'Error details';
+  @override
+  String get download_task_error_copied => 'Error details copied';
+  @override
+  String get download_task_lifecycle_active => 'In progress';
+  @override
+  String get download_task_lifecycle_needs_attention => 'Needs attention';
+  @override
+  String get download_task_lifecycle_completed => 'Completed';
+  @override
+  String get download_task_lifecycle_failed => 'Failed';
+  @override
+  String get download_task_lifecycle_cancelled => 'Cancelled';
+  @override
+  String get download_task_stage_enqueue => 'Enqueue';
+  @override
+  String get download_task_stage_download => 'Download';
+  @override
+  String get download_task_stage_organize => 'Organize';
+  @override
+  String get download_task_stage_subtitle => 'Subtitles';
+  @override
+  String get download_task_stage_import => 'Import';
+  @override
+  String get download_task_stage_scrape => 'Scrape';
 }
 
 // Path: <root>
@@ -19871,6 +19946,54 @@ class _StringsDe extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get download_task_error_summary_source_missing =>
+      'Managed video source is missing or inaccessible';
+  @override
+  String get download_task_error_summary_backend_unconfirmed =>
+      'Torrent could not be confirmed by hash, title, and category';
+  @override
+  String get download_task_error_summary_subtitle =>
+      'Subtitles are unavailable or could not be installed';
+  @override
+  String get download_task_error_summary_backend_unavailable =>
+      'Download backend is unavailable or no longer matches';
+  @override
+  String get download_task_error_summary_legacy =>
+      'Legacy import needs manual attention';
+  @override
+  String get download_task_error_summary_torrent_info =>
+      'Torrent identity is missing or unverifiable';
+  @override
+  String get download_task_error_summary_generic => 'The task hit an error';
+  @override
+  String get download_task_error_view_detail => 'View details';
+  @override
+  String get download_task_error_detail_title => 'Error details';
+  @override
+  String get download_task_error_copied => 'Error details copied';
+  @override
+  String get download_task_lifecycle_active => 'In progress';
+  @override
+  String get download_task_lifecycle_needs_attention => 'Needs attention';
+  @override
+  String get download_task_lifecycle_completed => 'Completed';
+  @override
+  String get download_task_lifecycle_failed => 'Failed';
+  @override
+  String get download_task_lifecycle_cancelled => 'Cancelled';
+  @override
+  String get download_task_stage_enqueue => 'Enqueue';
+  @override
+  String get download_task_stage_download => 'Download';
+  @override
+  String get download_task_stage_organize => 'Organize';
+  @override
+  String get download_task_stage_subtitle => 'Subtitles';
+  @override
+  String get download_task_stage_import => 'Import';
+  @override
+  String get download_task_stage_scrape => 'Scrape';
 }
 
 // Path: <root>
@@ -27611,6 +27734,54 @@ class _StringsEs extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get download_task_error_summary_source_missing =>
+      'Managed video source is missing or inaccessible';
+  @override
+  String get download_task_error_summary_backend_unconfirmed =>
+      'Torrent could not be confirmed by hash, title, and category';
+  @override
+  String get download_task_error_summary_subtitle =>
+      'Subtitles are unavailable or could not be installed';
+  @override
+  String get download_task_error_summary_backend_unavailable =>
+      'Download backend is unavailable or no longer matches';
+  @override
+  String get download_task_error_summary_legacy =>
+      'Legacy import needs manual attention';
+  @override
+  String get download_task_error_summary_torrent_info =>
+      'Torrent identity is missing or unverifiable';
+  @override
+  String get download_task_error_summary_generic => 'The task hit an error';
+  @override
+  String get download_task_error_view_detail => 'View details';
+  @override
+  String get download_task_error_detail_title => 'Error details';
+  @override
+  String get download_task_error_copied => 'Error details copied';
+  @override
+  String get download_task_lifecycle_active => 'In progress';
+  @override
+  String get download_task_lifecycle_needs_attention => 'Needs attention';
+  @override
+  String get download_task_lifecycle_completed => 'Completed';
+  @override
+  String get download_task_lifecycle_failed => 'Failed';
+  @override
+  String get download_task_lifecycle_cancelled => 'Cancelled';
+  @override
+  String get download_task_stage_enqueue => 'Enqueue';
+  @override
+  String get download_task_stage_download => 'Download';
+  @override
+  String get download_task_stage_organize => 'Organize';
+  @override
+  String get download_task_stage_subtitle => 'Subtitles';
+  @override
+  String get download_task_stage_import => 'Import';
+  @override
+  String get download_task_stage_scrape => 'Scrape';
 }
 
 // Path: <root>
@@ -35363,6 +35534,54 @@ class _StringsFr extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get download_task_error_summary_source_missing =>
+      'Managed video source is missing or inaccessible';
+  @override
+  String get download_task_error_summary_backend_unconfirmed =>
+      'Torrent could not be confirmed by hash, title, and category';
+  @override
+  String get download_task_error_summary_subtitle =>
+      'Subtitles are unavailable or could not be installed';
+  @override
+  String get download_task_error_summary_backend_unavailable =>
+      'Download backend is unavailable or no longer matches';
+  @override
+  String get download_task_error_summary_legacy =>
+      'Legacy import needs manual attention';
+  @override
+  String get download_task_error_summary_torrent_info =>
+      'Torrent identity is missing or unverifiable';
+  @override
+  String get download_task_error_summary_generic => 'The task hit an error';
+  @override
+  String get download_task_error_view_detail => 'View details';
+  @override
+  String get download_task_error_detail_title => 'Error details';
+  @override
+  String get download_task_error_copied => 'Error details copied';
+  @override
+  String get download_task_lifecycle_active => 'In progress';
+  @override
+  String get download_task_lifecycle_needs_attention => 'Needs attention';
+  @override
+  String get download_task_lifecycle_completed => 'Completed';
+  @override
+  String get download_task_lifecycle_failed => 'Failed';
+  @override
+  String get download_task_lifecycle_cancelled => 'Cancelled';
+  @override
+  String get download_task_stage_enqueue => 'Enqueue';
+  @override
+  String get download_task_stage_download => 'Download';
+  @override
+  String get download_task_stage_organize => 'Organize';
+  @override
+  String get download_task_stage_subtitle => 'Subtitles';
+  @override
+  String get download_task_stage_import => 'Import';
+  @override
+  String get download_task_stage_scrape => 'Scrape';
 }
 
 // Path: <root>
@@ -43043,6 +43262,54 @@ class _StringsId extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get download_task_error_summary_source_missing =>
+      'Managed video source is missing or inaccessible';
+  @override
+  String get download_task_error_summary_backend_unconfirmed =>
+      'Torrent could not be confirmed by hash, title, and category';
+  @override
+  String get download_task_error_summary_subtitle =>
+      'Subtitles are unavailable or could not be installed';
+  @override
+  String get download_task_error_summary_backend_unavailable =>
+      'Download backend is unavailable or no longer matches';
+  @override
+  String get download_task_error_summary_legacy =>
+      'Legacy import needs manual attention';
+  @override
+  String get download_task_error_summary_torrent_info =>
+      'Torrent identity is missing or unverifiable';
+  @override
+  String get download_task_error_summary_generic => 'The task hit an error';
+  @override
+  String get download_task_error_view_detail => 'View details';
+  @override
+  String get download_task_error_detail_title => 'Error details';
+  @override
+  String get download_task_error_copied => 'Error details copied';
+  @override
+  String get download_task_lifecycle_active => 'In progress';
+  @override
+  String get download_task_lifecycle_needs_attention => 'Needs attention';
+  @override
+  String get download_task_lifecycle_completed => 'Completed';
+  @override
+  String get download_task_lifecycle_failed => 'Failed';
+  @override
+  String get download_task_lifecycle_cancelled => 'Cancelled';
+  @override
+  String get download_task_stage_enqueue => 'Enqueue';
+  @override
+  String get download_task_stage_download => 'Download';
+  @override
+  String get download_task_stage_organize => 'Organize';
+  @override
+  String get download_task_stage_subtitle => 'Subtitles';
+  @override
+  String get download_task_stage_import => 'Import';
+  @override
+  String get download_task_stage_scrape => 'Scrape';
 }
 
 // Path: <root>
@@ -50769,6 +51036,54 @@ class _StringsIt extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get download_task_error_summary_source_missing =>
+      'Managed video source is missing or inaccessible';
+  @override
+  String get download_task_error_summary_backend_unconfirmed =>
+      'Torrent could not be confirmed by hash, title, and category';
+  @override
+  String get download_task_error_summary_subtitle =>
+      'Subtitles are unavailable or could not be installed';
+  @override
+  String get download_task_error_summary_backend_unavailable =>
+      'Download backend is unavailable or no longer matches';
+  @override
+  String get download_task_error_summary_legacy =>
+      'Legacy import needs manual attention';
+  @override
+  String get download_task_error_summary_torrent_info =>
+      'Torrent identity is missing or unverifiable';
+  @override
+  String get download_task_error_summary_generic => 'The task hit an error';
+  @override
+  String get download_task_error_view_detail => 'View details';
+  @override
+  String get download_task_error_detail_title => 'Error details';
+  @override
+  String get download_task_error_copied => 'Error details copied';
+  @override
+  String get download_task_lifecycle_active => 'In progress';
+  @override
+  String get download_task_lifecycle_needs_attention => 'Needs attention';
+  @override
+  String get download_task_lifecycle_completed => 'Completed';
+  @override
+  String get download_task_lifecycle_failed => 'Failed';
+  @override
+  String get download_task_lifecycle_cancelled => 'Cancelled';
+  @override
+  String get download_task_stage_enqueue => 'Enqueue';
+  @override
+  String get download_task_stage_download => 'Download';
+  @override
+  String get download_task_stage_organize => 'Organize';
+  @override
+  String get download_task_stage_subtitle => 'Subtitles';
+  @override
+  String get download_task_stage_import => 'Import';
+  @override
+  String get download_task_stage_scrape => 'Scrape';
 }
 
 // Path: <root>
@@ -58309,6 +58624,54 @@ class _StringsJa extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get download_task_error_summary_source_missing =>
+      'Managed video source is missing or inaccessible';
+  @override
+  String get download_task_error_summary_backend_unconfirmed =>
+      'Torrent could not be confirmed by hash, title, and category';
+  @override
+  String get download_task_error_summary_subtitle =>
+      'Subtitles are unavailable or could not be installed';
+  @override
+  String get download_task_error_summary_backend_unavailable =>
+      'Download backend is unavailable or no longer matches';
+  @override
+  String get download_task_error_summary_legacy =>
+      'Legacy import needs manual attention';
+  @override
+  String get download_task_error_summary_torrent_info =>
+      'Torrent identity is missing or unverifiable';
+  @override
+  String get download_task_error_summary_generic => 'The task hit an error';
+  @override
+  String get download_task_error_view_detail => 'View details';
+  @override
+  String get download_task_error_detail_title => 'Error details';
+  @override
+  String get download_task_error_copied => 'Error details copied';
+  @override
+  String get download_task_lifecycle_active => 'In progress';
+  @override
+  String get download_task_lifecycle_needs_attention => 'Needs attention';
+  @override
+  String get download_task_lifecycle_completed => 'Completed';
+  @override
+  String get download_task_lifecycle_failed => 'Failed';
+  @override
+  String get download_task_lifecycle_cancelled => 'Cancelled';
+  @override
+  String get download_task_stage_enqueue => 'Enqueue';
+  @override
+  String get download_task_stage_download => 'Download';
+  @override
+  String get download_task_stage_organize => 'Organize';
+  @override
+  String get download_task_stage_subtitle => 'Subtitles';
+  @override
+  String get download_task_stage_import => 'Import';
+  @override
+  String get download_task_stage_scrape => 'Scrape';
 }
 
 // Path: <root>
@@ -65856,6 +66219,54 @@ class _StringsKo extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get download_task_error_summary_source_missing =>
+      'Managed video source is missing or inaccessible';
+  @override
+  String get download_task_error_summary_backend_unconfirmed =>
+      'Torrent could not be confirmed by hash, title, and category';
+  @override
+  String get download_task_error_summary_subtitle =>
+      'Subtitles are unavailable or could not be installed';
+  @override
+  String get download_task_error_summary_backend_unavailable =>
+      'Download backend is unavailable or no longer matches';
+  @override
+  String get download_task_error_summary_legacy =>
+      'Legacy import needs manual attention';
+  @override
+  String get download_task_error_summary_torrent_info =>
+      'Torrent identity is missing or unverifiable';
+  @override
+  String get download_task_error_summary_generic => 'The task hit an error';
+  @override
+  String get download_task_error_view_detail => 'View details';
+  @override
+  String get download_task_error_detail_title => 'Error details';
+  @override
+  String get download_task_error_copied => 'Error details copied';
+  @override
+  String get download_task_lifecycle_active => 'In progress';
+  @override
+  String get download_task_lifecycle_needs_attention => 'Needs attention';
+  @override
+  String get download_task_lifecycle_completed => 'Completed';
+  @override
+  String get download_task_lifecycle_failed => 'Failed';
+  @override
+  String get download_task_lifecycle_cancelled => 'Cancelled';
+  @override
+  String get download_task_stage_enqueue => 'Enqueue';
+  @override
+  String get download_task_stage_download => 'Download';
+  @override
+  String get download_task_stage_organize => 'Organize';
+  @override
+  String get download_task_stage_subtitle => 'Subtitles';
+  @override
+  String get download_task_stage_import => 'Import';
+  @override
+  String get download_task_stage_scrape => 'Scrape';
 }
 
 // Path: <root>
@@ -73562,6 +73973,54 @@ class _StringsNl extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get download_task_error_summary_source_missing =>
+      'Managed video source is missing or inaccessible';
+  @override
+  String get download_task_error_summary_backend_unconfirmed =>
+      'Torrent could not be confirmed by hash, title, and category';
+  @override
+  String get download_task_error_summary_subtitle =>
+      'Subtitles are unavailable or could not be installed';
+  @override
+  String get download_task_error_summary_backend_unavailable =>
+      'Download backend is unavailable or no longer matches';
+  @override
+  String get download_task_error_summary_legacy =>
+      'Legacy import needs manual attention';
+  @override
+  String get download_task_error_summary_torrent_info =>
+      'Torrent identity is missing or unverifiable';
+  @override
+  String get download_task_error_summary_generic => 'The task hit an error';
+  @override
+  String get download_task_error_view_detail => 'View details';
+  @override
+  String get download_task_error_detail_title => 'Error details';
+  @override
+  String get download_task_error_copied => 'Error details copied';
+  @override
+  String get download_task_lifecycle_active => 'In progress';
+  @override
+  String get download_task_lifecycle_needs_attention => 'Needs attention';
+  @override
+  String get download_task_lifecycle_completed => 'Completed';
+  @override
+  String get download_task_lifecycle_failed => 'Failed';
+  @override
+  String get download_task_lifecycle_cancelled => 'Cancelled';
+  @override
+  String get download_task_stage_enqueue => 'Enqueue';
+  @override
+  String get download_task_stage_download => 'Download';
+  @override
+  String get download_task_stage_organize => 'Organize';
+  @override
+  String get download_task_stage_subtitle => 'Subtitles';
+  @override
+  String get download_task_stage_import => 'Import';
+  @override
+  String get download_task_stage_scrape => 'Scrape';
 }
 
 // Path: <root>
@@ -81280,6 +81739,54 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get download_task_error_summary_source_missing =>
+      'Managed video source is missing or inaccessible';
+  @override
+  String get download_task_error_summary_backend_unconfirmed =>
+      'Torrent could not be confirmed by hash, title, and category';
+  @override
+  String get download_task_error_summary_subtitle =>
+      'Subtitles are unavailable or could not be installed';
+  @override
+  String get download_task_error_summary_backend_unavailable =>
+      'Download backend is unavailable or no longer matches';
+  @override
+  String get download_task_error_summary_legacy =>
+      'Legacy import needs manual attention';
+  @override
+  String get download_task_error_summary_torrent_info =>
+      'Torrent identity is missing or unverifiable';
+  @override
+  String get download_task_error_summary_generic => 'The task hit an error';
+  @override
+  String get download_task_error_view_detail => 'View details';
+  @override
+  String get download_task_error_detail_title => 'Error details';
+  @override
+  String get download_task_error_copied => 'Error details copied';
+  @override
+  String get download_task_lifecycle_active => 'In progress';
+  @override
+  String get download_task_lifecycle_needs_attention => 'Needs attention';
+  @override
+  String get download_task_lifecycle_completed => 'Completed';
+  @override
+  String get download_task_lifecycle_failed => 'Failed';
+  @override
+  String get download_task_lifecycle_cancelled => 'Cancelled';
+  @override
+  String get download_task_stage_enqueue => 'Enqueue';
+  @override
+  String get download_task_stage_download => 'Download';
+  @override
+  String get download_task_stage_organize => 'Organize';
+  @override
+  String get download_task_stage_subtitle => 'Subtitles';
+  @override
+  String get download_task_stage_import => 'Import';
+  @override
+  String get download_task_stage_scrape => 'Scrape';
 }
 
 // Path: <root>
@@ -88984,6 +89491,54 @@ class _StringsRu extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get download_task_error_summary_source_missing =>
+      'Managed video source is missing or inaccessible';
+  @override
+  String get download_task_error_summary_backend_unconfirmed =>
+      'Torrent could not be confirmed by hash, title, and category';
+  @override
+  String get download_task_error_summary_subtitle =>
+      'Subtitles are unavailable or could not be installed';
+  @override
+  String get download_task_error_summary_backend_unavailable =>
+      'Download backend is unavailable or no longer matches';
+  @override
+  String get download_task_error_summary_legacy =>
+      'Legacy import needs manual attention';
+  @override
+  String get download_task_error_summary_torrent_info =>
+      'Torrent identity is missing or unverifiable';
+  @override
+  String get download_task_error_summary_generic => 'The task hit an error';
+  @override
+  String get download_task_error_view_detail => 'View details';
+  @override
+  String get download_task_error_detail_title => 'Error details';
+  @override
+  String get download_task_error_copied => 'Error details copied';
+  @override
+  String get download_task_lifecycle_active => 'In progress';
+  @override
+  String get download_task_lifecycle_needs_attention => 'Needs attention';
+  @override
+  String get download_task_lifecycle_completed => 'Completed';
+  @override
+  String get download_task_lifecycle_failed => 'Failed';
+  @override
+  String get download_task_lifecycle_cancelled => 'Cancelled';
+  @override
+  String get download_task_stage_enqueue => 'Enqueue';
+  @override
+  String get download_task_stage_download => 'Download';
+  @override
+  String get download_task_stage_organize => 'Organize';
+  @override
+  String get download_task_stage_subtitle => 'Subtitles';
+  @override
+  String get download_task_stage_import => 'Import';
+  @override
+  String get download_task_stage_scrape => 'Scrape';
 }
 
 // Path: <root>
@@ -96636,6 +97191,54 @@ class _StringsTh extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get download_task_error_summary_source_missing =>
+      'Managed video source is missing or inaccessible';
+  @override
+  String get download_task_error_summary_backend_unconfirmed =>
+      'Torrent could not be confirmed by hash, title, and category';
+  @override
+  String get download_task_error_summary_subtitle =>
+      'Subtitles are unavailable or could not be installed';
+  @override
+  String get download_task_error_summary_backend_unavailable =>
+      'Download backend is unavailable or no longer matches';
+  @override
+  String get download_task_error_summary_legacy =>
+      'Legacy import needs manual attention';
+  @override
+  String get download_task_error_summary_torrent_info =>
+      'Torrent identity is missing or unverifiable';
+  @override
+  String get download_task_error_summary_generic => 'The task hit an error';
+  @override
+  String get download_task_error_view_detail => 'View details';
+  @override
+  String get download_task_error_detail_title => 'Error details';
+  @override
+  String get download_task_error_copied => 'Error details copied';
+  @override
+  String get download_task_lifecycle_active => 'In progress';
+  @override
+  String get download_task_lifecycle_needs_attention => 'Needs attention';
+  @override
+  String get download_task_lifecycle_completed => 'Completed';
+  @override
+  String get download_task_lifecycle_failed => 'Failed';
+  @override
+  String get download_task_lifecycle_cancelled => 'Cancelled';
+  @override
+  String get download_task_stage_enqueue => 'Enqueue';
+  @override
+  String get download_task_stage_download => 'Download';
+  @override
+  String get download_task_stage_organize => 'Organize';
+  @override
+  String get download_task_stage_subtitle => 'Subtitles';
+  @override
+  String get download_task_stage_import => 'Import';
+  @override
+  String get download_task_stage_scrape => 'Scrape';
 }
 
 // Path: <root>
@@ -104319,6 +104922,54 @@ class _StringsTr extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get download_task_error_summary_source_missing =>
+      'Managed video source is missing or inaccessible';
+  @override
+  String get download_task_error_summary_backend_unconfirmed =>
+      'Torrent could not be confirmed by hash, title, and category';
+  @override
+  String get download_task_error_summary_subtitle =>
+      'Subtitles are unavailable or could not be installed';
+  @override
+  String get download_task_error_summary_backend_unavailable =>
+      'Download backend is unavailable or no longer matches';
+  @override
+  String get download_task_error_summary_legacy =>
+      'Legacy import needs manual attention';
+  @override
+  String get download_task_error_summary_torrent_info =>
+      'Torrent identity is missing or unverifiable';
+  @override
+  String get download_task_error_summary_generic => 'The task hit an error';
+  @override
+  String get download_task_error_view_detail => 'View details';
+  @override
+  String get download_task_error_detail_title => 'Error details';
+  @override
+  String get download_task_error_copied => 'Error details copied';
+  @override
+  String get download_task_lifecycle_active => 'In progress';
+  @override
+  String get download_task_lifecycle_needs_attention => 'Needs attention';
+  @override
+  String get download_task_lifecycle_completed => 'Completed';
+  @override
+  String get download_task_lifecycle_failed => 'Failed';
+  @override
+  String get download_task_lifecycle_cancelled => 'Cancelled';
+  @override
+  String get download_task_stage_enqueue => 'Enqueue';
+  @override
+  String get download_task_stage_download => 'Download';
+  @override
+  String get download_task_stage_organize => 'Organize';
+  @override
+  String get download_task_stage_subtitle => 'Subtitles';
+  @override
+  String get download_task_stage_import => 'Import';
+  @override
+  String get download_task_stage_scrape => 'Scrape';
 }
 
 // Path: <root>
@@ -111987,6 +112638,54 @@ class _StringsVi extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get download_task_error_summary_source_missing =>
+      'Managed video source is missing or inaccessible';
+  @override
+  String get download_task_error_summary_backend_unconfirmed =>
+      'Torrent could not be confirmed by hash, title, and category';
+  @override
+  String get download_task_error_summary_subtitle =>
+      'Subtitles are unavailable or could not be installed';
+  @override
+  String get download_task_error_summary_backend_unavailable =>
+      'Download backend is unavailable or no longer matches';
+  @override
+  String get download_task_error_summary_legacy =>
+      'Legacy import needs manual attention';
+  @override
+  String get download_task_error_summary_torrent_info =>
+      'Torrent identity is missing or unverifiable';
+  @override
+  String get download_task_error_summary_generic => 'The task hit an error';
+  @override
+  String get download_task_error_view_detail => 'View details';
+  @override
+  String get download_task_error_detail_title => 'Error details';
+  @override
+  String get download_task_error_copied => 'Error details copied';
+  @override
+  String get download_task_lifecycle_active => 'In progress';
+  @override
+  String get download_task_lifecycle_needs_attention => 'Needs attention';
+  @override
+  String get download_task_lifecycle_completed => 'Completed';
+  @override
+  String get download_task_lifecycle_failed => 'Failed';
+  @override
+  String get download_task_lifecycle_cancelled => 'Cancelled';
+  @override
+  String get download_task_stage_enqueue => 'Enqueue';
+  @override
+  String get download_task_stage_download => 'Download';
+  @override
+  String get download_task_stage_organize => 'Organize';
+  @override
+  String get download_task_stage_subtitle => 'Subtitles';
+  @override
+  String get download_task_stage_import => 'Import';
+  @override
+  String get download_task_stage_scrape => 'Scrape';
 }
 
 // Path: <root>
@@ -119101,6 +119800,49 @@ class _StringsZhCn extends _StringsEn {
   String get tag_add_failed => '标签添加失败，请重试。';
   @override
   String get tag_reorder_failed => '标签排序保存失败，请重试。';
+  @override
+  String get download_task_error_summary_source_missing => '受管视频来源不存在或不可访问';
+  @override
+  String get download_task_error_summary_backend_unconfirmed =>
+      '种子未能按哈希、标题、分类确认';
+  @override
+  String get download_task_error_summary_subtitle => '字幕不可用或未能安装';
+  @override
+  String get download_task_error_summary_backend_unavailable => '下载后端不可用或不再匹配';
+  @override
+  String get download_task_error_summary_legacy => '旧版导入数据需要处理';
+  @override
+  String get download_task_error_summary_torrent_info => '种子信息缺失或无法校验';
+  @override
+  String get download_task_error_summary_generic => '任务出错';
+  @override
+  String get download_task_error_view_detail => '查看详情';
+  @override
+  String get download_task_error_detail_title => '错误详情';
+  @override
+  String get download_task_error_copied => '错误详情已复制';
+  @override
+  String get download_task_lifecycle_active => '进行中';
+  @override
+  String get download_task_lifecycle_needs_attention => '需要处理';
+  @override
+  String get download_task_lifecycle_completed => '已完成';
+  @override
+  String get download_task_lifecycle_failed => '已失败';
+  @override
+  String get download_task_lifecycle_cancelled => '已取消';
+  @override
+  String get download_task_stage_enqueue => '入队';
+  @override
+  String get download_task_stage_download => '下载';
+  @override
+  String get download_task_stage_organize => '整理';
+  @override
+  String get download_task_stage_subtitle => '字幕';
+  @override
+  String get download_task_stage_import => '入库';
+  @override
+  String get download_task_stage_scrape => '刮削';
 }
 
 // Path: <root>
@@ -126564,6 +127306,54 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get tag_reorder_failed =>
       'Couldn\'t save the new tag order. Please try again.';
+  @override
+  String get download_task_error_summary_source_missing =>
+      'Managed video source is missing or inaccessible';
+  @override
+  String get download_task_error_summary_backend_unconfirmed =>
+      'Torrent could not be confirmed by hash, title, and category';
+  @override
+  String get download_task_error_summary_subtitle =>
+      'Subtitles are unavailable or could not be installed';
+  @override
+  String get download_task_error_summary_backend_unavailable =>
+      'Download backend is unavailable or no longer matches';
+  @override
+  String get download_task_error_summary_legacy =>
+      'Legacy import needs manual attention';
+  @override
+  String get download_task_error_summary_torrent_info =>
+      'Torrent identity is missing or unverifiable';
+  @override
+  String get download_task_error_summary_generic => 'The task hit an error';
+  @override
+  String get download_task_error_view_detail => 'View details';
+  @override
+  String get download_task_error_detail_title => 'Error details';
+  @override
+  String get download_task_error_copied => 'Error details copied';
+  @override
+  String get download_task_lifecycle_active => 'In progress';
+  @override
+  String get download_task_lifecycle_needs_attention => 'Needs attention';
+  @override
+  String get download_task_lifecycle_completed => 'Completed';
+  @override
+  String get download_task_lifecycle_failed => 'Failed';
+  @override
+  String get download_task_lifecycle_cancelled => 'Cancelled';
+  @override
+  String get download_task_stage_enqueue => 'Enqueue';
+  @override
+  String get download_task_stage_download => 'Download';
+  @override
+  String get download_task_stage_organize => 'Organize';
+  @override
+  String get download_task_stage_subtitle => 'Subtitles';
+  @override
+  String get download_task_stage_import => 'Import';
+  @override
+  String get download_task_stage_scrape => 'Scrape';
 }
 
 /// Flat map(s) containing all translations.
@@ -133380,6 +134170,48 @@ extension on _StringsEn {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'download_task_error_summary_source_missing':
+        return 'Managed video source is missing or inaccessible';
+      case 'download_task_error_summary_backend_unconfirmed':
+        return 'Torrent could not be confirmed by hash, title, and category';
+      case 'download_task_error_summary_subtitle':
+        return 'Subtitles are unavailable or could not be installed';
+      case 'download_task_error_summary_backend_unavailable':
+        return 'Download backend is unavailable or no longer matches';
+      case 'download_task_error_summary_legacy':
+        return 'Legacy import needs manual attention';
+      case 'download_task_error_summary_torrent_info':
+        return 'Torrent identity is missing or unverifiable';
+      case 'download_task_error_summary_generic':
+        return 'The task hit an error';
+      case 'download_task_error_view_detail':
+        return 'View details';
+      case 'download_task_error_detail_title':
+        return 'Error details';
+      case 'download_task_error_copied':
+        return 'Error details copied';
+      case 'download_task_lifecycle_active':
+        return 'In progress';
+      case 'download_task_lifecycle_needs_attention':
+        return 'Needs attention';
+      case 'download_task_lifecycle_completed':
+        return 'Completed';
+      case 'download_task_lifecycle_failed':
+        return 'Failed';
+      case 'download_task_lifecycle_cancelled':
+        return 'Cancelled';
+      case 'download_task_stage_enqueue':
+        return 'Enqueue';
+      case 'download_task_stage_download':
+        return 'Download';
+      case 'download_task_stage_organize':
+        return 'Organize';
+      case 'download_task_stage_subtitle':
+        return 'Subtitles';
+      case 'download_task_stage_import':
+        return 'Import';
+      case 'download_task_stage_scrape':
+        return 'Scrape';
       default:
         return null;
     }
@@ -140194,6 +141026,48 @@ extension on _StringsAr {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'download_task_error_summary_source_missing':
+        return 'Managed video source is missing or inaccessible';
+      case 'download_task_error_summary_backend_unconfirmed':
+        return 'Torrent could not be confirmed by hash, title, and category';
+      case 'download_task_error_summary_subtitle':
+        return 'Subtitles are unavailable or could not be installed';
+      case 'download_task_error_summary_backend_unavailable':
+        return 'Download backend is unavailable or no longer matches';
+      case 'download_task_error_summary_legacy':
+        return 'Legacy import needs manual attention';
+      case 'download_task_error_summary_torrent_info':
+        return 'Torrent identity is missing or unverifiable';
+      case 'download_task_error_summary_generic':
+        return 'The task hit an error';
+      case 'download_task_error_view_detail':
+        return 'View details';
+      case 'download_task_error_detail_title':
+        return 'Error details';
+      case 'download_task_error_copied':
+        return 'Error details copied';
+      case 'download_task_lifecycle_active':
+        return 'In progress';
+      case 'download_task_lifecycle_needs_attention':
+        return 'Needs attention';
+      case 'download_task_lifecycle_completed':
+        return 'Completed';
+      case 'download_task_lifecycle_failed':
+        return 'Failed';
+      case 'download_task_lifecycle_cancelled':
+        return 'Cancelled';
+      case 'download_task_stage_enqueue':
+        return 'Enqueue';
+      case 'download_task_stage_download':
+        return 'Download';
+      case 'download_task_stage_organize':
+        return 'Organize';
+      case 'download_task_stage_subtitle':
+        return 'Subtitles';
+      case 'download_task_stage_import':
+        return 'Import';
+      case 'download_task_stage_scrape':
+        return 'Scrape';
       default:
         return null;
     }
@@ -147030,6 +147904,48 @@ extension on _StringsDe {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'download_task_error_summary_source_missing':
+        return 'Managed video source is missing or inaccessible';
+      case 'download_task_error_summary_backend_unconfirmed':
+        return 'Torrent could not be confirmed by hash, title, and category';
+      case 'download_task_error_summary_subtitle':
+        return 'Subtitles are unavailable or could not be installed';
+      case 'download_task_error_summary_backend_unavailable':
+        return 'Download backend is unavailable or no longer matches';
+      case 'download_task_error_summary_legacy':
+        return 'Legacy import needs manual attention';
+      case 'download_task_error_summary_torrent_info':
+        return 'Torrent identity is missing or unverifiable';
+      case 'download_task_error_summary_generic':
+        return 'The task hit an error';
+      case 'download_task_error_view_detail':
+        return 'View details';
+      case 'download_task_error_detail_title':
+        return 'Error details';
+      case 'download_task_error_copied':
+        return 'Error details copied';
+      case 'download_task_lifecycle_active':
+        return 'In progress';
+      case 'download_task_lifecycle_needs_attention':
+        return 'Needs attention';
+      case 'download_task_lifecycle_completed':
+        return 'Completed';
+      case 'download_task_lifecycle_failed':
+        return 'Failed';
+      case 'download_task_lifecycle_cancelled':
+        return 'Cancelled';
+      case 'download_task_stage_enqueue':
+        return 'Enqueue';
+      case 'download_task_stage_download':
+        return 'Download';
+      case 'download_task_stage_organize':
+        return 'Organize';
+      case 'download_task_stage_subtitle':
+        return 'Subtitles';
+      case 'download_task_stage_import':
+        return 'Import';
+      case 'download_task_stage_scrape':
+        return 'Scrape';
       default:
         return null;
     }
@@ -153865,6 +154781,48 @@ extension on _StringsEs {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'download_task_error_summary_source_missing':
+        return 'Managed video source is missing or inaccessible';
+      case 'download_task_error_summary_backend_unconfirmed':
+        return 'Torrent could not be confirmed by hash, title, and category';
+      case 'download_task_error_summary_subtitle':
+        return 'Subtitles are unavailable or could not be installed';
+      case 'download_task_error_summary_backend_unavailable':
+        return 'Download backend is unavailable or no longer matches';
+      case 'download_task_error_summary_legacy':
+        return 'Legacy import needs manual attention';
+      case 'download_task_error_summary_torrent_info':
+        return 'Torrent identity is missing or unverifiable';
+      case 'download_task_error_summary_generic':
+        return 'The task hit an error';
+      case 'download_task_error_view_detail':
+        return 'View details';
+      case 'download_task_error_detail_title':
+        return 'Error details';
+      case 'download_task_error_copied':
+        return 'Error details copied';
+      case 'download_task_lifecycle_active':
+        return 'In progress';
+      case 'download_task_lifecycle_needs_attention':
+        return 'Needs attention';
+      case 'download_task_lifecycle_completed':
+        return 'Completed';
+      case 'download_task_lifecycle_failed':
+        return 'Failed';
+      case 'download_task_lifecycle_cancelled':
+        return 'Cancelled';
+      case 'download_task_stage_enqueue':
+        return 'Enqueue';
+      case 'download_task_stage_download':
+        return 'Download';
+      case 'download_task_stage_organize':
+        return 'Organize';
+      case 'download_task_stage_subtitle':
+        return 'Subtitles';
+      case 'download_task_stage_import':
+        return 'Import';
+      case 'download_task_stage_scrape':
+        return 'Scrape';
       default:
         return null;
     }
@@ -160706,6 +161664,48 @@ extension on _StringsFr {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'download_task_error_summary_source_missing':
+        return 'Managed video source is missing or inaccessible';
+      case 'download_task_error_summary_backend_unconfirmed':
+        return 'Torrent could not be confirmed by hash, title, and category';
+      case 'download_task_error_summary_subtitle':
+        return 'Subtitles are unavailable or could not be installed';
+      case 'download_task_error_summary_backend_unavailable':
+        return 'Download backend is unavailable or no longer matches';
+      case 'download_task_error_summary_legacy':
+        return 'Legacy import needs manual attention';
+      case 'download_task_error_summary_torrent_info':
+        return 'Torrent identity is missing or unverifiable';
+      case 'download_task_error_summary_generic':
+        return 'The task hit an error';
+      case 'download_task_error_view_detail':
+        return 'View details';
+      case 'download_task_error_detail_title':
+        return 'Error details';
+      case 'download_task_error_copied':
+        return 'Error details copied';
+      case 'download_task_lifecycle_active':
+        return 'In progress';
+      case 'download_task_lifecycle_needs_attention':
+        return 'Needs attention';
+      case 'download_task_lifecycle_completed':
+        return 'Completed';
+      case 'download_task_lifecycle_failed':
+        return 'Failed';
+      case 'download_task_lifecycle_cancelled':
+        return 'Cancelled';
+      case 'download_task_stage_enqueue':
+        return 'Enqueue';
+      case 'download_task_stage_download':
+        return 'Download';
+      case 'download_task_stage_organize':
+        return 'Organize';
+      case 'download_task_stage_subtitle':
+        return 'Subtitles';
+      case 'download_task_stage_import':
+        return 'Import';
+      case 'download_task_stage_scrape':
+        return 'Scrape';
       default:
         return null;
     }
@@ -167529,6 +168529,48 @@ extension on _StringsId {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'download_task_error_summary_source_missing':
+        return 'Managed video source is missing or inaccessible';
+      case 'download_task_error_summary_backend_unconfirmed':
+        return 'Torrent could not be confirmed by hash, title, and category';
+      case 'download_task_error_summary_subtitle':
+        return 'Subtitles are unavailable or could not be installed';
+      case 'download_task_error_summary_backend_unavailable':
+        return 'Download backend is unavailable or no longer matches';
+      case 'download_task_error_summary_legacy':
+        return 'Legacy import needs manual attention';
+      case 'download_task_error_summary_torrent_info':
+        return 'Torrent identity is missing or unverifiable';
+      case 'download_task_error_summary_generic':
+        return 'The task hit an error';
+      case 'download_task_error_view_detail':
+        return 'View details';
+      case 'download_task_error_detail_title':
+        return 'Error details';
+      case 'download_task_error_copied':
+        return 'Error details copied';
+      case 'download_task_lifecycle_active':
+        return 'In progress';
+      case 'download_task_lifecycle_needs_attention':
+        return 'Needs attention';
+      case 'download_task_lifecycle_completed':
+        return 'Completed';
+      case 'download_task_lifecycle_failed':
+        return 'Failed';
+      case 'download_task_lifecycle_cancelled':
+        return 'Cancelled';
+      case 'download_task_stage_enqueue':
+        return 'Enqueue';
+      case 'download_task_stage_download':
+        return 'Download';
+      case 'download_task_stage_organize':
+        return 'Organize';
+      case 'download_task_stage_subtitle':
+        return 'Subtitles';
+      case 'download_task_stage_import':
+        return 'Import';
+      case 'download_task_stage_scrape':
+        return 'Scrape';
       default:
         return null;
     }
@@ -174366,6 +175408,48 @@ extension on _StringsIt {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'download_task_error_summary_source_missing':
+        return 'Managed video source is missing or inaccessible';
+      case 'download_task_error_summary_backend_unconfirmed':
+        return 'Torrent could not be confirmed by hash, title, and category';
+      case 'download_task_error_summary_subtitle':
+        return 'Subtitles are unavailable or could not be installed';
+      case 'download_task_error_summary_backend_unavailable':
+        return 'Download backend is unavailable or no longer matches';
+      case 'download_task_error_summary_legacy':
+        return 'Legacy import needs manual attention';
+      case 'download_task_error_summary_torrent_info':
+        return 'Torrent identity is missing or unverifiable';
+      case 'download_task_error_summary_generic':
+        return 'The task hit an error';
+      case 'download_task_error_view_detail':
+        return 'View details';
+      case 'download_task_error_detail_title':
+        return 'Error details';
+      case 'download_task_error_copied':
+        return 'Error details copied';
+      case 'download_task_lifecycle_active':
+        return 'In progress';
+      case 'download_task_lifecycle_needs_attention':
+        return 'Needs attention';
+      case 'download_task_lifecycle_completed':
+        return 'Completed';
+      case 'download_task_lifecycle_failed':
+        return 'Failed';
+      case 'download_task_lifecycle_cancelled':
+        return 'Cancelled';
+      case 'download_task_stage_enqueue':
+        return 'Enqueue';
+      case 'download_task_stage_download':
+        return 'Download';
+      case 'download_task_stage_organize':
+        return 'Organize';
+      case 'download_task_stage_subtitle':
+        return 'Subtitles';
+      case 'download_task_stage_import':
+        return 'Import';
+      case 'download_task_stage_scrape':
+        return 'Scrape';
       default:
         return null;
     }
@@ -181165,6 +182249,48 @@ extension on _StringsJa {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'download_task_error_summary_source_missing':
+        return 'Managed video source is missing or inaccessible';
+      case 'download_task_error_summary_backend_unconfirmed':
+        return 'Torrent could not be confirmed by hash, title, and category';
+      case 'download_task_error_summary_subtitle':
+        return 'Subtitles are unavailable or could not be installed';
+      case 'download_task_error_summary_backend_unavailable':
+        return 'Download backend is unavailable or no longer matches';
+      case 'download_task_error_summary_legacy':
+        return 'Legacy import needs manual attention';
+      case 'download_task_error_summary_torrent_info':
+        return 'Torrent identity is missing or unverifiable';
+      case 'download_task_error_summary_generic':
+        return 'The task hit an error';
+      case 'download_task_error_view_detail':
+        return 'View details';
+      case 'download_task_error_detail_title':
+        return 'Error details';
+      case 'download_task_error_copied':
+        return 'Error details copied';
+      case 'download_task_lifecycle_active':
+        return 'In progress';
+      case 'download_task_lifecycle_needs_attention':
+        return 'Needs attention';
+      case 'download_task_lifecycle_completed':
+        return 'Completed';
+      case 'download_task_lifecycle_failed':
+        return 'Failed';
+      case 'download_task_lifecycle_cancelled':
+        return 'Cancelled';
+      case 'download_task_stage_enqueue':
+        return 'Enqueue';
+      case 'download_task_stage_download':
+        return 'Download';
+      case 'download_task_stage_organize':
+        return 'Organize';
+      case 'download_task_stage_subtitle':
+        return 'Subtitles';
+      case 'download_task_stage_import':
+        return 'Import';
+      case 'download_task_stage_scrape':
+        return 'Scrape';
       default:
         return null;
     }
@@ -187968,6 +189094,48 @@ extension on _StringsKo {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'download_task_error_summary_source_missing':
+        return 'Managed video source is missing or inaccessible';
+      case 'download_task_error_summary_backend_unconfirmed':
+        return 'Torrent could not be confirmed by hash, title, and category';
+      case 'download_task_error_summary_subtitle':
+        return 'Subtitles are unavailable or could not be installed';
+      case 'download_task_error_summary_backend_unavailable':
+        return 'Download backend is unavailable or no longer matches';
+      case 'download_task_error_summary_legacy':
+        return 'Legacy import needs manual attention';
+      case 'download_task_error_summary_torrent_info':
+        return 'Torrent identity is missing or unverifiable';
+      case 'download_task_error_summary_generic':
+        return 'The task hit an error';
+      case 'download_task_error_view_detail':
+        return 'View details';
+      case 'download_task_error_detail_title':
+        return 'Error details';
+      case 'download_task_error_copied':
+        return 'Error details copied';
+      case 'download_task_lifecycle_active':
+        return 'In progress';
+      case 'download_task_lifecycle_needs_attention':
+        return 'Needs attention';
+      case 'download_task_lifecycle_completed':
+        return 'Completed';
+      case 'download_task_lifecycle_failed':
+        return 'Failed';
+      case 'download_task_lifecycle_cancelled':
+        return 'Cancelled';
+      case 'download_task_stage_enqueue':
+        return 'Enqueue';
+      case 'download_task_stage_download':
+        return 'Download';
+      case 'download_task_stage_organize':
+        return 'Organize';
+      case 'download_task_stage_subtitle':
+        return 'Subtitles';
+      case 'download_task_stage_import':
+        return 'Import';
+      case 'download_task_stage_scrape':
+        return 'Scrape';
       default:
         return null;
     }
@@ -194799,6 +195967,48 @@ extension on _StringsNl {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'download_task_error_summary_source_missing':
+        return 'Managed video source is missing or inaccessible';
+      case 'download_task_error_summary_backend_unconfirmed':
+        return 'Torrent could not be confirmed by hash, title, and category';
+      case 'download_task_error_summary_subtitle':
+        return 'Subtitles are unavailable or could not be installed';
+      case 'download_task_error_summary_backend_unavailable':
+        return 'Download backend is unavailable or no longer matches';
+      case 'download_task_error_summary_legacy':
+        return 'Legacy import needs manual attention';
+      case 'download_task_error_summary_torrent_info':
+        return 'Torrent identity is missing or unverifiable';
+      case 'download_task_error_summary_generic':
+        return 'The task hit an error';
+      case 'download_task_error_view_detail':
+        return 'View details';
+      case 'download_task_error_detail_title':
+        return 'Error details';
+      case 'download_task_error_copied':
+        return 'Error details copied';
+      case 'download_task_lifecycle_active':
+        return 'In progress';
+      case 'download_task_lifecycle_needs_attention':
+        return 'Needs attention';
+      case 'download_task_lifecycle_completed':
+        return 'Completed';
+      case 'download_task_lifecycle_failed':
+        return 'Failed';
+      case 'download_task_lifecycle_cancelled':
+        return 'Cancelled';
+      case 'download_task_stage_enqueue':
+        return 'Enqueue';
+      case 'download_task_stage_download':
+        return 'Download';
+      case 'download_task_stage_organize':
+        return 'Organize';
+      case 'download_task_stage_subtitle':
+        return 'Subtitles';
+      case 'download_task_stage_import':
+        return 'Import';
+      case 'download_task_stage_scrape':
+        return 'Scrape';
       default:
         return null;
     }
@@ -201627,6 +202837,48 @@ extension on _StringsPtBr {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'download_task_error_summary_source_missing':
+        return 'Managed video source is missing or inaccessible';
+      case 'download_task_error_summary_backend_unconfirmed':
+        return 'Torrent could not be confirmed by hash, title, and category';
+      case 'download_task_error_summary_subtitle':
+        return 'Subtitles are unavailable or could not be installed';
+      case 'download_task_error_summary_backend_unavailable':
+        return 'Download backend is unavailable or no longer matches';
+      case 'download_task_error_summary_legacy':
+        return 'Legacy import needs manual attention';
+      case 'download_task_error_summary_torrent_info':
+        return 'Torrent identity is missing or unverifiable';
+      case 'download_task_error_summary_generic':
+        return 'The task hit an error';
+      case 'download_task_error_view_detail':
+        return 'View details';
+      case 'download_task_error_detail_title':
+        return 'Error details';
+      case 'download_task_error_copied':
+        return 'Error details copied';
+      case 'download_task_lifecycle_active':
+        return 'In progress';
+      case 'download_task_lifecycle_needs_attention':
+        return 'Needs attention';
+      case 'download_task_lifecycle_completed':
+        return 'Completed';
+      case 'download_task_lifecycle_failed':
+        return 'Failed';
+      case 'download_task_lifecycle_cancelled':
+        return 'Cancelled';
+      case 'download_task_stage_enqueue':
+        return 'Enqueue';
+      case 'download_task_stage_download':
+        return 'Download';
+      case 'download_task_stage_organize':
+        return 'Organize';
+      case 'download_task_stage_subtitle':
+        return 'Subtitles';
+      case 'download_task_stage_import':
+        return 'Import';
+      case 'download_task_stage_scrape':
+        return 'Scrape';
       default:
         return null;
     }
@@ -208460,6 +209712,48 @@ extension on _StringsRu {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'download_task_error_summary_source_missing':
+        return 'Managed video source is missing or inaccessible';
+      case 'download_task_error_summary_backend_unconfirmed':
+        return 'Torrent could not be confirmed by hash, title, and category';
+      case 'download_task_error_summary_subtitle':
+        return 'Subtitles are unavailable or could not be installed';
+      case 'download_task_error_summary_backend_unavailable':
+        return 'Download backend is unavailable or no longer matches';
+      case 'download_task_error_summary_legacy':
+        return 'Legacy import needs manual attention';
+      case 'download_task_error_summary_torrent_info':
+        return 'Torrent identity is missing or unverifiable';
+      case 'download_task_error_summary_generic':
+        return 'The task hit an error';
+      case 'download_task_error_view_detail':
+        return 'View details';
+      case 'download_task_error_detail_title':
+        return 'Error details';
+      case 'download_task_error_copied':
+        return 'Error details copied';
+      case 'download_task_lifecycle_active':
+        return 'In progress';
+      case 'download_task_lifecycle_needs_attention':
+        return 'Needs attention';
+      case 'download_task_lifecycle_completed':
+        return 'Completed';
+      case 'download_task_lifecycle_failed':
+        return 'Failed';
+      case 'download_task_lifecycle_cancelled':
+        return 'Cancelled';
+      case 'download_task_stage_enqueue':
+        return 'Enqueue';
+      case 'download_task_stage_download':
+        return 'Download';
+      case 'download_task_stage_organize':
+        return 'Organize';
+      case 'download_task_stage_subtitle':
+        return 'Subtitles';
+      case 'download_task_stage_import':
+        return 'Import';
+      case 'download_task_stage_scrape':
+        return 'Scrape';
       default:
         return null;
     }
@@ -215276,6 +216570,48 @@ extension on _StringsTh {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'download_task_error_summary_source_missing':
+        return 'Managed video source is missing or inaccessible';
+      case 'download_task_error_summary_backend_unconfirmed':
+        return 'Torrent could not be confirmed by hash, title, and category';
+      case 'download_task_error_summary_subtitle':
+        return 'Subtitles are unavailable or could not be installed';
+      case 'download_task_error_summary_backend_unavailable':
+        return 'Download backend is unavailable or no longer matches';
+      case 'download_task_error_summary_legacy':
+        return 'Legacy import needs manual attention';
+      case 'download_task_error_summary_torrent_info':
+        return 'Torrent identity is missing or unverifiable';
+      case 'download_task_error_summary_generic':
+        return 'The task hit an error';
+      case 'download_task_error_view_detail':
+        return 'View details';
+      case 'download_task_error_detail_title':
+        return 'Error details';
+      case 'download_task_error_copied':
+        return 'Error details copied';
+      case 'download_task_lifecycle_active':
+        return 'In progress';
+      case 'download_task_lifecycle_needs_attention':
+        return 'Needs attention';
+      case 'download_task_lifecycle_completed':
+        return 'Completed';
+      case 'download_task_lifecycle_failed':
+        return 'Failed';
+      case 'download_task_lifecycle_cancelled':
+        return 'Cancelled';
+      case 'download_task_stage_enqueue':
+        return 'Enqueue';
+      case 'download_task_stage_download':
+        return 'Download';
+      case 'download_task_stage_organize':
+        return 'Organize';
+      case 'download_task_stage_subtitle':
+        return 'Subtitles';
+      case 'download_task_stage_import':
+        return 'Import';
+      case 'download_task_stage_scrape':
+        return 'Scrape';
       default:
         return null;
     }
@@ -222101,6 +223437,48 @@ extension on _StringsTr {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'download_task_error_summary_source_missing':
+        return 'Managed video source is missing or inaccessible';
+      case 'download_task_error_summary_backend_unconfirmed':
+        return 'Torrent could not be confirmed by hash, title, and category';
+      case 'download_task_error_summary_subtitle':
+        return 'Subtitles are unavailable or could not be installed';
+      case 'download_task_error_summary_backend_unavailable':
+        return 'Download backend is unavailable or no longer matches';
+      case 'download_task_error_summary_legacy':
+        return 'Legacy import needs manual attention';
+      case 'download_task_error_summary_torrent_info':
+        return 'Torrent identity is missing or unverifiable';
+      case 'download_task_error_summary_generic':
+        return 'The task hit an error';
+      case 'download_task_error_view_detail':
+        return 'View details';
+      case 'download_task_error_detail_title':
+        return 'Error details';
+      case 'download_task_error_copied':
+        return 'Error details copied';
+      case 'download_task_lifecycle_active':
+        return 'In progress';
+      case 'download_task_lifecycle_needs_attention':
+        return 'Needs attention';
+      case 'download_task_lifecycle_completed':
+        return 'Completed';
+      case 'download_task_lifecycle_failed':
+        return 'Failed';
+      case 'download_task_lifecycle_cancelled':
+        return 'Cancelled';
+      case 'download_task_stage_enqueue':
+        return 'Enqueue';
+      case 'download_task_stage_download':
+        return 'Download';
+      case 'download_task_stage_organize':
+        return 'Organize';
+      case 'download_task_stage_subtitle':
+        return 'Subtitles';
+      case 'download_task_stage_import':
+        return 'Import';
+      case 'download_task_stage_scrape':
+        return 'Scrape';
       default:
         return null;
     }
@@ -228922,6 +230300,48 @@ extension on _StringsVi {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'download_task_error_summary_source_missing':
+        return 'Managed video source is missing or inaccessible';
+      case 'download_task_error_summary_backend_unconfirmed':
+        return 'Torrent could not be confirmed by hash, title, and category';
+      case 'download_task_error_summary_subtitle':
+        return 'Subtitles are unavailable or could not be installed';
+      case 'download_task_error_summary_backend_unavailable':
+        return 'Download backend is unavailable or no longer matches';
+      case 'download_task_error_summary_legacy':
+        return 'Legacy import needs manual attention';
+      case 'download_task_error_summary_torrent_info':
+        return 'Torrent identity is missing or unverifiable';
+      case 'download_task_error_summary_generic':
+        return 'The task hit an error';
+      case 'download_task_error_view_detail':
+        return 'View details';
+      case 'download_task_error_detail_title':
+        return 'Error details';
+      case 'download_task_error_copied':
+        return 'Error details copied';
+      case 'download_task_lifecycle_active':
+        return 'In progress';
+      case 'download_task_lifecycle_needs_attention':
+        return 'Needs attention';
+      case 'download_task_lifecycle_completed':
+        return 'Completed';
+      case 'download_task_lifecycle_failed':
+        return 'Failed';
+      case 'download_task_lifecycle_cancelled':
+        return 'Cancelled';
+      case 'download_task_stage_enqueue':
+        return 'Enqueue';
+      case 'download_task_stage_download':
+        return 'Download';
+      case 'download_task_stage_organize':
+        return 'Organize';
+      case 'download_task_stage_subtitle':
+        return 'Subtitles';
+      case 'download_task_stage_import':
+        return 'Import';
+      case 'download_task_stage_scrape':
+        return 'Scrape';
       default:
         return null;
     }
@@ -235686,6 +237106,48 @@ extension on _StringsZhCn {
         return '标签添加失败，请重试。';
       case 'tag_reorder_failed':
         return '标签排序保存失败，请重试。';
+      case 'download_task_error_summary_source_missing':
+        return '受管视频来源不存在或不可访问';
+      case 'download_task_error_summary_backend_unconfirmed':
+        return '种子未能按哈希、标题、分类确认';
+      case 'download_task_error_summary_subtitle':
+        return '字幕不可用或未能安装';
+      case 'download_task_error_summary_backend_unavailable':
+        return '下载后端不可用或不再匹配';
+      case 'download_task_error_summary_legacy':
+        return '旧版导入数据需要处理';
+      case 'download_task_error_summary_torrent_info':
+        return '种子信息缺失或无法校验';
+      case 'download_task_error_summary_generic':
+        return '任务出错';
+      case 'download_task_error_view_detail':
+        return '查看详情';
+      case 'download_task_error_detail_title':
+        return '错误详情';
+      case 'download_task_error_copied':
+        return '错误详情已复制';
+      case 'download_task_lifecycle_active':
+        return '进行中';
+      case 'download_task_lifecycle_needs_attention':
+        return '需要处理';
+      case 'download_task_lifecycle_completed':
+        return '已完成';
+      case 'download_task_lifecycle_failed':
+        return '已失败';
+      case 'download_task_lifecycle_cancelled':
+        return '已取消';
+      case 'download_task_stage_enqueue':
+        return '入队';
+      case 'download_task_stage_download':
+        return '下载';
+      case 'download_task_stage_organize':
+        return '整理';
+      case 'download_task_stage_subtitle':
+        return '字幕';
+      case 'download_task_stage_import':
+        return '入库';
+      case 'download_task_stage_scrape':
+        return '刮削';
       default:
         return null;
     }
@@ -242480,6 +243942,48 @@ extension on _StringsZhHk {
         return 'Couldn\'t add the tag. Please try again.';
       case 'tag_reorder_failed':
         return 'Couldn\'t save the new tag order. Please try again.';
+      case 'download_task_error_summary_source_missing':
+        return 'Managed video source is missing or inaccessible';
+      case 'download_task_error_summary_backend_unconfirmed':
+        return 'Torrent could not be confirmed by hash, title, and category';
+      case 'download_task_error_summary_subtitle':
+        return 'Subtitles are unavailable or could not be installed';
+      case 'download_task_error_summary_backend_unavailable':
+        return 'Download backend is unavailable or no longer matches';
+      case 'download_task_error_summary_legacy':
+        return 'Legacy import needs manual attention';
+      case 'download_task_error_summary_torrent_info':
+        return 'Torrent identity is missing or unverifiable';
+      case 'download_task_error_summary_generic':
+        return 'The task hit an error';
+      case 'download_task_error_view_detail':
+        return 'View details';
+      case 'download_task_error_detail_title':
+        return 'Error details';
+      case 'download_task_error_copied':
+        return 'Error details copied';
+      case 'download_task_lifecycle_active':
+        return 'In progress';
+      case 'download_task_lifecycle_needs_attention':
+        return 'Needs attention';
+      case 'download_task_lifecycle_completed':
+        return 'Completed';
+      case 'download_task_lifecycle_failed':
+        return 'Failed';
+      case 'download_task_lifecycle_cancelled':
+        return 'Cancelled';
+      case 'download_task_stage_enqueue':
+        return 'Enqueue';
+      case 'download_task_stage_download':
+        return 'Download';
+      case 'download_task_stage_organize':
+        return 'Organize';
+      case 'download_task_stage_subtitle':
+        return 'Subtitles';
+      case 'download_task_stage_import':
+        return 'Import';
+      case 'download_task_stage_scrape':
+        return 'Scrape';
       default:
         return null;
     }
