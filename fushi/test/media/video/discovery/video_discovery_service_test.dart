@@ -884,6 +884,132 @@ void main() {
       expect(result, hasLength(2));
     });
 
+    test('a shared strong id merges even when one side omits the episode count',
+        () {
+      // 非对称字段：AniList 详情带 episodeCount，Bangumi/TMDB 搜索摘要不带。
+      // 标题与年份都对不上，只有共享的 anilist id 能把两条并成一张卡 ——
+      // 缺字段一侧推导出的聚合类型不得抢在强 ID 之前否决合并。
+      final VideoMetadataWork anilistWork = VideoMetadataWork(
+        provider: VideoMetadataProviderKind.anilist,
+        kind: VideoMetadataMediaKind.tv,
+        title: 'Solo Episode ONA',
+        year: 2026,
+        episodeCount: 1,
+        ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'anilist', value: '77', isDefault: true),
+        ],
+      );
+      final VideoDiscoveryItem anilist = VideoDiscoveryItem.fromMetadataWork(
+        work: anilistWork,
+        discoveryCategory: VideoDiscoveryCategory.anime,
+      );
+      final VideoMetadataWork bangumiWork = VideoMetadataWork(
+        provider: VideoMetadataProviderKind.bangumi,
+        kind: VideoMetadataMediaKind.tv,
+        title: '完全不同的中文标题',
+        ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'bangumi', value: '888', isDefault: true),
+          VideoMetadataId(type: 'anilist', value: '77'),
+        ],
+      );
+      final VideoDiscoveryItem bangumi = VideoDiscoveryItem.fromMetadataWork(
+        work: bangumiWork,
+        discoveryCategory: VideoDiscoveryCategory.anime,
+      );
+
+      final List<VideoDiscoveryItem> result = mergeVideoDiscoveryItems(
+        <VideoDiscoveryItem>[anilist, bangumi],
+        request: const VideoDiscoveryRequest(query: 'Solo Episode ONA'),
+      );
+
+      expect(result, hasLength(1));
+      expect(result.single.reference.anilistId, 77);
+      expect(result.single.reference.bangumiId, 888);
+    });
+
+    test('a shared strong id merges even when aggregation kinds disagree', () {
+      // 强 ID 已经对上时，集数这类可选字段推导出的聚合类型无权把卡片拆成两张。
+      final VideoMetadataWork anilistWork = VideoMetadataWork(
+        provider: VideoMetadataProviderKind.anilist,
+        kind: VideoMetadataMediaKind.tv,
+        title: 'Long Runner',
+        year: 2026,
+        episodeCount: 12,
+        ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'anilist', value: '55', isDefault: true),
+        ],
+      );
+      final VideoDiscoveryItem anilist = VideoDiscoveryItem.fromMetadataWork(
+        work: anilistWork,
+        discoveryCategory: VideoDiscoveryCategory.anime,
+      );
+      final VideoDiscoveryItem tmdb = VideoDiscoveryItem(
+        reference: VideoMediaReference(
+          providerId: 'tmdb',
+          mediaId: '4321',
+          mediaKind: VideoMetadataMediaKind.movie,
+          discoveryCategory: VideoDiscoveryCategory.movie,
+          title: 'Long Runner',
+          year: 2026,
+          tmdbId: 4321,
+          anilistId: 55,
+        ),
+      );
+
+      final List<VideoDiscoveryItem> result = mergeVideoDiscoveryItems(
+        <VideoDiscoveryItem>[anilist, tmdb],
+        request: const VideoDiscoveryRequest(query: 'Long Runner'),
+      );
+
+      expect(result, hasLength(1));
+      expect(result.single.reference.anilistId, 55);
+      expect(result.single.reference.tmdbId, 4321);
+      // 混合身份组保留电影身份作为主项。
+      expect(result.single.reference.mediaKind, VideoMetadataMediaKind.movie);
+    });
+
+    test('an unknown episode count does not veto the weak title merge', () {
+      // 只有一侧填了 episodeCount=1（判为电影），另一侧的番剧摘要没有集数：
+      // 未知不能默认成 TV，否则同一部单集作品会被重新拆成两张卡（BUG-1531）。
+      final VideoMetadataWork anilistWork = VideoMetadataWork(
+        provider: VideoMetadataProviderKind.anilist,
+        kind: VideoMetadataMediaKind.tv,
+        title: 'Single Episode Special',
+        year: 2026,
+        episodeCount: 1,
+        ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'anilist', value: '31', isDefault: true),
+        ],
+      );
+      final VideoMetadataWork bangumiWork = VideoMetadataWork(
+        provider: VideoMetadataProviderKind.bangumi,
+        kind: VideoMetadataMediaKind.tv,
+        title: 'Single Episode Special',
+        year: 2026,
+        ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'bangumi', value: '32', isDefault: true),
+        ],
+      );
+
+      final List<VideoDiscoveryItem> result = mergeVideoDiscoveryItems(
+        <VideoDiscoveryItem>[
+          VideoDiscoveryItem.fromMetadataWork(
+            work: anilistWork,
+            discoveryCategory: VideoDiscoveryCategory.anime,
+          ),
+          VideoDiscoveryItem.fromMetadataWork(
+            work: bangumiWork,
+            discoveryCategory: VideoDiscoveryCategory.anime,
+          ),
+        ],
+        request: const VideoDiscoveryRequest(query: 'Single Episode Special'),
+      );
+
+      expect(result, hasLength(1));
+      expect(result.single.reference.anilistId, 31);
+      expect(result.single.reference.bangumiId, 32);
+    });
+
     test('a transitive match cannot bypass another namespace conflict', () {
       final VideoDiscoveryItem tmdb = VideoDiscoveryItem(
         reference: VideoMediaReference(

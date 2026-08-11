@@ -89,16 +89,23 @@ class _TorrentTaskDetailDialogState
   final Set<int> _refreshingTabs = <int>{};
   final Set<int> _pendingTabRefreshes = <int>{};
 
-  /// 首轮快照是否已返回（区分「还在加载」与「后端里已没有该任务」）。
-  bool _snapshotLoaded = false;
-  TorrentSnapshot? _snapshot;
+  /// 四路会「转圈等结果」的数据统一走 [_LoadState]（BUG-1532 / BUG-1535）：
+  /// 加载中 / 失败 / 后端答「没有」三态由同一个状态模型和同一条渲染路径
+  /// （[_buildMissingData]）决定，不再是「只有 Trackers 记得写失败态，其余
+  /// 三个 tab 在后端持续报错时永久转圈」。
+  _LoadState<TorrentSnapshot> _snapshot =
+      const _LoadState<TorrentSnapshot>.initial();
+  _LoadState<List<TorrentPeerDetail>> _peers =
+      const _LoadState<List<TorrentPeerDetail>>.initial();
+  _LoadState<List<TorrentTrackerDetail>> _trackers =
+      const _LoadState<List<TorrentTrackerDetail>>.initial();
+  _LoadState<List<TorrentFileEntry>> _files =
+      const _LoadState<List<TorrentFileEntry>>.initial();
+
+  /// 总览的装饰行（会话状态 / piece 图）：没有也只是少几行，不参与
+  /// loading 判定，故不进 [_LoadState]。
   TorrentSessionStatusInfo? _sessionStatus;
   TorrentPieceStates? _pieces;
-  List<TorrentPeerDetail>? _peers;
-  List<TorrentTrackerDetail>? _trackers;
-  bool _trackerLoadFinished = false;
-  bool _trackerLoadFailed = false;
-  List<TorrentFileEntry>? _files;
   List<TorrentFilePriority>? _filePriorities;
 
   @override
@@ -111,9 +118,11 @@ class _TorrentTaskDetailDialogState
         unawaited(_refresh());
       }
     });
-    _snapshot = widget.initialSnapshot;
-    _snapshotLoaded = widget.initialSnapshot != null;
-    _files = widget.initialFiles;
+    final TorrentSnapshot? initialSnapshot = widget.initialSnapshot;
+    if (initialSnapshot != null)
+      _snapshot = _snapshot.withData(initialSnapshot);
+    final List<TorrentFileEntry>? initialFiles = widget.initialFiles;
+    if (initialFiles != null) _files = _files.withData(initialFiles);
     final TorrentBackend? override = widget.backendOverride;
     if (override != null) {
       _backend = override;
@@ -177,8 +186,9 @@ class _TorrentTaskDetailDialogState
       }
       if (!mounted) return;
       setState(() {
-        _snapshotLoaded = true;
-        _snapshot = snapshot;
+        _snapshot = snapshot == null
+            ? _snapshot.withAbsent()
+            : _snapshot.withData(snapshot);
       });
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
@@ -186,6 +196,9 @@ class _TorrentTaskDetailDialogState
         error,
         stack,
       );
+      // 后端持续报错时总览必须给出失败态：只记日志会让「已尝试」永远为
+      // false，总览退化成永久转圈（BUG-1532）。
+      if (mounted) setState(() => _snapshot = _snapshot.withFailure());
     } finally {
       _snapshotRefreshing = false;
       final bool rerun = _snapshotRefreshPending;
@@ -208,10 +221,13 @@ class _TorrentTaskDetailDialogState
     try {
       switch (tab) {
         case 0:
+          // 详情能力缺失时这两项本就没有来源，UI 走「当前后端不支持」，
+          // 不能记成失败态。
+          if (detail == null) return;
           final TorrentSessionStatusInfo? sessionStatus =
-              await detail?.sessionStatus();
+              await detail.sessionStatus();
           final TorrentPieceStates? pieces =
-              await detail?.pieceStates(widget.torrentId);
+              await detail.pieceStates(widget.torrentId);
           if (!mounted) return;
           setState(() {
             if (sessionStatus != null) _sessionStatus = sessionStatus;
@@ -224,24 +240,28 @@ class _TorrentTaskDetailDialogState
               await detail?.filePriorities(widget.torrentId);
           if (!mounted) return;
           setState(() {
-            _files = files;
+            _files = _files.withData(files);
             if (priorities != null) _filePriorities = priorities;
           });
         case 2:
+          if (detail == null) return;
           final List<TorrentPeerDetail>? peers =
-              await detail?.listPeers(widget.torrentId);
+              await detail.listPeers(widget.torrentId);
           if (!mounted) return;
+          // null = 后端明确答不上来（同 Trackers），是失败而不是「还在加载」。
           setState(() {
-            if (peers != null) _peers = peers;
+            _peers =
+                peers == null ? _peers.withFailure() : _peers.withData(peers);
           });
         case 3:
+          if (detail == null) return;
           final List<TorrentTrackerDetail>? trackers =
-              await detail?.listTrackers(widget.torrentId);
+              await detail.listTrackers(widget.torrentId);
           if (!mounted) return;
           setState(() {
-            _trackerLoadFinished = true;
-            _trackerLoadFailed = trackers == null;
-            _trackers = trackers;
+            _trackers = trackers == null
+                ? _trackers.withFailure()
+                : _trackers.withData(trackers);
           });
       }
     } on Object catch (error, stack) {
@@ -250,18 +270,34 @@ class _TorrentTaskDetailDialogState
         error,
         stack,
       );
-      if (mounted && tab == 3) {
-        setState(() {
-          _trackerLoadFinished = true;
-          _trackerLoadFailed = true;
-        });
-      }
+      if (!mounted) return;
+      setState(() => _markTabFailed(tab));
     } finally {
       _refreshingTabs.remove(tab);
       final bool rerun = _pendingTabRefreshes.remove(tab);
-      if (mounted && rerun) {
+      // 用户可能在等待期间切走了：只给仍然可见的 tab 补跑，遵守类头
+      // 「不给不可见的 tab 白拉数据」。切回来时 TabController 监听器和 2s
+      // 轮询都会重新拉。
+      if (mounted && rerun && _tabController.index == tab) {
         unawaited(_refreshTab(backend, tab));
       }
+    }
+  }
+
+  /// 请求抛异常时把该 tab 的数据标成失败：四个 tab 共用一条写入路径，
+  /// 避免再出现「某个 tab 忘了写失败态 → 永久转圈」（BUG-1535）。
+  /// 已有的旧数据由 [_LoadState.withFailure] 保留，2s 轮询偶发一次失败
+  /// 不会把已渲染的列表闪成失败态再闪回来。
+  void _markTabFailed(int tab) {
+    switch (tab) {
+      case 1:
+        _files = _files.withFailure();
+      case 2:
+        _peers = _peers.withFailure();
+      case 3:
+        _trackers = _trackers.withFailure();
+      // 总览的快照走独立的 [_refreshSnapshot] 通道（自带失败态）；本 tab
+      // 这一路只拉会话状态 / piece 图这类装饰行，失败沿用上一次的值。
     }
   }
 
@@ -340,6 +376,30 @@ class _TorrentTaskDetailDialogState
           ? t.download_detail_backend_offline
           : t.download_detail_backend_unsupported;
 
+  /// 四路数据共用的「没有数据时显示什么」——**唯一**会显示转圈的路径：
+  /// 后端整体不可用 → 说明后端；还没有过任何结果 → 转圈；最近一次尝试
+  /// 失败 → 明确失败态；后端答「没有」→ [absentMessage]（不给就按失败处理，
+  /// 因为除快照外的三路成功时必定返回非 null 列表）。
+  ///
+  /// 只要 [_LoadState.attempted] 为真就不可能再回到转圈，这是「离线/持续
+  /// 报错不再永久 loading」在四个 tab 上同时成立的结构保证。
+  Widget _buildMissingData(
+    ThemeData theme,
+    _LoadState<Object> state, {
+    String? absentMessage,
+  }) {
+    if (_backend == null) {
+      return _buildEmptyNote(theme, _backendUnavailableMessage);
+    }
+    if (!state.attempted) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (state.failed || absentMessage == null) {
+      return _buildEmptyNote(theme, t.error_load_failed);
+    }
+    return _buildEmptyNote(theme, absentMessage);
+  }
+
   Widget _buildEmptyNote(ThemeData theme, String text) {
     return Center(
       child: Padding(
@@ -408,11 +468,13 @@ class _TorrentTaskDetailDialogState
   }
 
   Widget _buildOverviewTab(ThemeData theme) {
-    final TorrentSnapshot? snapshot = _snapshot;
+    final TorrentSnapshot? snapshot = _snapshot.value;
     if (snapshot == null) {
-      return _snapshotLoaded
-          ? _buildEmptyNote(theme, t.download_detail_task_gone)
-          : const Center(child: CircularProgressIndicator());
+      return _buildMissingData(
+        theme,
+        _snapshot,
+        absentMessage: t.download_detail_task_gone,
+      );
     }
     final String? eta = formatTorrentEta(
       amountLeft: snapshot.amountLeft,
@@ -628,9 +690,9 @@ class _TorrentTaskDetailDialogState
   }
 
   Widget _buildFilesTab(ThemeData theme) {
-    final List<TorrentFileEntry>? files = _files;
+    final List<TorrentFileEntry>? files = _files.value;
     if (files == null) {
-      return const Center(child: CircularProgressIndicator());
+      return _buildMissingData(theme, _files);
     }
     if (files.isEmpty) {
       return _buildEmptyNote(theme, t.download_task_status_metadata);
@@ -696,9 +758,9 @@ class _TorrentTaskDetailDialogState
 
   Widget _buildPeersTab(ThemeData theme) {
     if (!_detailCapable) return _buildUnsupported(theme);
-    final List<TorrentPeerDetail>? peers = _peers;
+    final List<TorrentPeerDetail>? peers = _peers.value;
     if (peers == null) {
-      return const Center(child: CircularProgressIndicator());
+      return _buildMissingData(theme, _peers);
     }
     if (peers.isEmpty) {
       return _buildEmptyNote(theme, t.download_detail_no_peers);
@@ -756,12 +818,9 @@ class _TorrentTaskDetailDialogState
 
   Widget _buildTrackersTab(ThemeData theme) {
     if (!_detailCapable) return _buildUnsupported(theme);
-    final List<TorrentTrackerDetail>? trackers = _trackers;
-    if (!_trackerLoadFinished) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_trackerLoadFailed || trackers == null) {
-      return _buildEmptyNote(theme, t.error_load_failed);
+    final List<TorrentTrackerDetail>? trackers = _trackers.value;
+    if (trackers == null) {
+      return _buildMissingData(theme, _trackers);
     }
     if (trackers.isEmpty) {
       return _buildEmptyNote(theme, t.download_detail_no_trackers);
@@ -801,6 +860,44 @@ class _TorrentTaskDetailDialogState
       },
     );
   }
+}
+
+/// 一路异步数据的加载状态（BUG-1532 / BUG-1535 的统一状态模型）。
+///
+/// 三条互斥解读，四个 tab 共用：
+/// * `!attempted` —— 还没有过任何结果 → 转圈；
+/// * `attempted && failed` —— 最近一次尝试抛异常 / 后端明确答不上来 → 失败态；
+/// * `attempted && !failed && value == null` —— 后端答「确实没有」→ 空态。
+///
+/// [withFailure] 刻意**保留**上一次成功的 [value]：2s 轮询里偶发一次失败不该
+/// 把已经渲染出来的列表闪成失败态再闪回来。
+@immutable
+class _LoadState<T extends Object> {
+  const _LoadState.initial()
+      : value = null,
+        attempted = false,
+        failed = false;
+
+  const _LoadState._(
+    this.value, {
+    required this.attempted,
+    required this.failed,
+  });
+
+  final T? value;
+  final bool attempted;
+  final bool failed;
+
+  _LoadState<T> withData(T value) =>
+      _LoadState<T>._(value, attempted: true, failed: false);
+
+  /// 请求成功但后端里确实没有这项（例如任务已从后端消失）：清空旧值，
+  /// 让总览如实说「任务已不在后端」而不是继续展示过期快照。
+  _LoadState<T> withAbsent() =>
+      _LoadState<T>._(null, attempted: true, failed: false);
+
+  _LoadState<T> withFailure() =>
+      _LoadState<T>._(value, attempted: true, failed: true);
 }
 
 /// piece 位图条：按可用宽度把 piece 折进桶里，桶色 = 缺→有 的插值

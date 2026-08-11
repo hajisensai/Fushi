@@ -107,8 +107,12 @@ void main() {
 
       test('[$root] content.css keeps the extension-only overlay', () {
         final String content = read('$root/vendor/content.css');
-        expect(content.contains('#fushi-subtitle-panel'), isTrue,
-            reason: '$root/vendor/content.css lost the Netflix subtitle panel');
+        // PR #804：字幕列表面板迁到浏览器原生 Side Panel，它那 194 行样式
+        // 已从注入用 content.css 中移除（现在住在 side-panel.css）。这里反向钉住：
+        // 再出现就意味着有人把固定面板塞回了宙主页。
+        expect(content.contains('#fushi-subtitle-panel'), isFalse,
+            reason:
+                '$root/vendor/content.css must not restyle an in-page subtitle panel');
         expect(content.contains('--fushi-popup-max-width'), isTrue,
             reason:
                 '$root/vendor/content.css lost the floating-popup sizing overlay');

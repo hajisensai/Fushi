@@ -1,5 +1,13 @@
 // Fushi 浏览器扩展设置：自动连接优先，用户覆盖与字幕偏好存 chrome.storage.local。
 const $ = (id) => document.getElementById(id);
+// options.html 与 options.js 任何一次不同步（改版删了控件、或旧 HTML 配新 JS）都会让 $()
+// 返回 null；顶层直接 .addEventListener 一抛，它后面注册的所有卡片（版本与更新等）全部
+// 不执行，整页静默变砖。统一走 on()：控件不在就跳过这一条绑定，其余照常。
+const on = (id, type, handler) => {
+  const el = $(id);
+  if (el) el.addEventListener(type, handler);
+  return el;
+};
 const D = self.FUSHI_DEFAULTS || { host: '127.0.0.1', port: 19633, token: '' };
 const settingDefaults = Object.freeze({
   netflixSubtitlePanel: false,
@@ -141,7 +149,7 @@ async function loadSettings() {
   }
 }
 
-$('connectionForm').addEventListener('submit', async (event) => {
+on('connectionForm', 'submit', async (event) => {
   event.preventDefault();
   await chrome.storage.local.set({
     host: $('host').value.trim(),
@@ -152,7 +160,7 @@ $('connectionForm').addEventListener('submit', async (event) => {
   await refreshConnection(true);
 });
 
-$('reset').addEventListener('click', async () => {
+on('reset', 'click', async () => {
   await chrome.storage.local.set({ host: '', port: 0, token: '' });
   $('host').value = '';
   $('port').value = '';
@@ -161,14 +169,14 @@ $('reset').addEventListener('click', async () => {
   await refreshConnection(true);
 });
 
-$('showToken').addEventListener('click', () => {
+on('showToken', 'click', () => {
   const token = $('token');
   const visible = token.type === 'text';
   token.type = visible ? 'password' : 'text';
   $('showToken').textContent = visible ? '显示' : '隐藏';
 });
 
-$('check').addEventListener('click', () => refreshConnection(true));
+on('check', 'click', () => refreshConnection(true));
 
 let lookupPerfRawLogs = [];
 
@@ -214,13 +222,13 @@ async function refreshLookupPerfLogs() {
   output.scrollTop = output.scrollHeight;
 }
 
-$('lookupPerfPanel').addEventListener('toggle', () => {
+on('lookupPerfPanel', 'toggle', () => {
   if ($('lookupPerfPanel').open) refreshLookupPerfLogs();
 });
 
-$('refreshLookupPerf').addEventListener('click', refreshLookupPerfLogs);
+on('refreshLookupPerf', 'click', refreshLookupPerfLogs);
 
-$('copyLookupPerf').addEventListener('click', async () => {
+on('copyLookupPerf', 'click', async () => {
   try {
     await navigator.clipboard.writeText(JSON.stringify(lookupPerfRawLogs, null, 2));
     toast('已复制完整查词性能日志');
@@ -229,15 +237,17 @@ $('copyLookupPerf').addEventListener('click', async () => {
   }
 });
 
-$('clearLookupPerf').addEventListener('click', async () => {
+on('clearLookupPerf', 'click', async () => {
   const response = await runtimeMessage({ type: 'lookupPerfClear' });
   if (!response || response.ok !== true) {
     toast('清空失败，请重试');
     return;
   }
   lookupPerfRawLogs = [];
-  $('lookupPerfOutput').textContent = '暂无查词日志';
-  $('lookupPerfSummary').textContent = '复现慢查询后在这里查看';
+  const clearedOutput = $('lookupPerfOutput');
+  if (clearedOutput) clearedOutput.textContent = '暂无查词日志';
+  const clearedSummary = $('lookupPerfSummary');
+  if (clearedSummary) clearedSummary.textContent = '复现慢查询后在这里查看';
   toast('已清空查词性能日志');
 });
 

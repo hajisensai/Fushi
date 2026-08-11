@@ -327,10 +327,11 @@ class VideoDiscoveryService {
   }
 }
 
-/// 跨来源身份合并。强 ID 优先；没有共享 ID 时，只有聚合媒体类型、规范化标题和
-/// 非空年份三者完全一致才合并。AniList/Bangumi 会把部分单集 ONA 标成 TV，而
-/// TMDB 将同一作品标成电影；搜索摘要不保证携带时长，因此可验证的单集动画按电影
-/// 聚合。任何共同命名空间出现冲突值都会否决本次合并。
+/// 跨来源身份合并。强 ID 严格优先：同一命名空间取值冲突直接否决，取值相同直接
+/// 合并；只有在双方没有任何共享 ID 时，才退到「聚合媒体类型不冲突 + 规范化标题
+/// 相交 + 非空年份相同」的弱匹配。AniList/Bangumi 会把部分单集 ONA 标成 TV，而
+/// TMDB 将同一作品标成电影；搜索摘要不保证携带集数，集数缺失时聚合类型判为未知，
+/// 未知与任何类型都不算冲突（见 [_aggregationKind]）。
 List<VideoDiscoveryItem> mergeVideoDiscoveryItems(
   Iterable<VideoDiscoveryItem> items, {
   required VideoDiscoveryRequest request,
@@ -369,21 +370,33 @@ class _MergedDiscoveryItem {
 
   final List<VideoDiscoveryItem> _items;
 
+  /// 按证据强度从强到弱判断：
+  /// 1. 任一共同命名空间取值冲突 -> 否决（强 ID 说「不是同一个作品」）。
+  /// 2. 任一共同命名空间取值相同 -> 合并（强 ID 说「就是同一个作品」）。此时
+  ///    不再过任何基于可选字段的启发式闸门 —— 集数、时长这类字段各 adapter
+  ///    填充不对称，没有资格推翻已经对上的 ID。
+  /// 3. 没有共享 ID 时才退到弱匹配：聚合媒体类型不冲突 + 非空年份相同 +
+  ///    规范化标题相交。
   bool canMerge(VideoDiscoveryItem candidate) {
-    bool matched = false;
-    for (final VideoDiscoveryItem existing in _items) {
-      if (_aggregationKind(existing) != _aggregationKind(candidate)) {
-        return false;
-      }
-      final Map<String, String> left = _strongIdentities(existing.reference);
-      final Map<String, String> right = _strongIdentities(candidate.reference);
+    final Map<String, String> right = _strongIdentities(candidate.reference);
+    final List<Map<String, String>> lefts = <Map<String, String>>[
+      for (final VideoDiscoveryItem existing in _items)
+        _strongIdentities(existing.reference),
+    ];
+    for (final Map<String, String> left in lefts) {
       if (_hasNamespaceConflict(left, right)) return false;
+    }
+    for (final Map<String, String> left in lefts) {
       if (left.keys.any(
         (String namespace) => right[namespace] == left[namespace],
       )) {
-        matched = true;
-        continue;
+        return true;
       }
+    }
+    for (final VideoDiscoveryItem existing in _items) {
+      if (_conflictingAggregationKinds(existing, candidate)) return false;
+    }
+    for (final VideoDiscoveryItem existing in _items) {
       final int? leftYear = existing.reference.year;
       final int? rightYear = candidate.reference.year;
       if (leftYear == null || rightYear == null || leftYear != rightYear) {
@@ -391,9 +404,9 @@ class _MergedDiscoveryItem {
       }
       final Set<String> leftTitles = _normalizedTitles(existing);
       final Set<String> rightTitles = _normalizedTitles(candidate);
-      if (leftTitles.any(rightTitles.contains)) matched = true;
+      if (leftTitles.any(rightTitles.contains)) return true;
     }
-    return matched;
+    return false;
   }
 
   void add(VideoDiscoveryItem item) => _items.add(item);
@@ -403,18 +416,21 @@ class _MergedDiscoveryItem {
       (VideoDiscoveryItem item) =>
           item.reference.discoveryCategory == VideoDiscoveryCategory.anime,
     );
-    final VideoMetadataMediaKind aggregationKind =
-        _aggregationKind(_items.first);
+    // 组内只要有一条被判定为电影身份，整组就按电影排序（不依赖 _items 的顺序）。
+    final bool movieAggregation = _items.any(
+      (VideoDiscoveryItem item) =>
+          _aggregationKind(item) == VideoMetadataMediaKind.movie,
+    );
     final List<VideoDiscoveryItem> ranked = List<VideoDiscoveryItem>.of(_items)
       ..sort((VideoDiscoveryItem a, VideoDiscoveryItem b) {
         // When an anime provider calls a single long-form work TV/ONA while a
         // movie database calls it a movie, keep the movie identity as primary.
         // This makes the merged card open/scrape as a movie, matching the
         // MoviePilot-style result users see, while retaining the anime ids.
-        if (aggregationKind == VideoMetadataMediaKind.movie) {
-          final int kindRank =
-              (a.reference.mediaKind == aggregationKind ? 0 : 1)
-                  .compareTo(b.reference.mediaKind == aggregationKind ? 0 : 1);
+        if (movieAggregation) {
+          const VideoMetadataMediaKind movie = VideoMetadataMediaKind.movie;
+          final int kindRank = (a.reference.mediaKind == movie ? 0 : 1)
+              .compareTo(b.reference.mediaKind == movie ? 0 : 1);
           if (kindRank != 0) return kindRank;
         }
         return _primaryRank(a.reference.providerId, anime: anime)
@@ -524,16 +540,33 @@ class _MergedDiscoveryItem {
   }
 }
 
-VideoMetadataMediaKind _aggregationKind(VideoDiscoveryItem item) {
+/// 条目在聚合层的媒体类型；`null` 表示**未知**。
+///
+/// AniList/Bangumi 会把单集 ONA/OVA 标成 TV，TMDB 把同一作品标成电影，只有拿到
+/// 集数才能判定谁对。而集数是可选字段、各 adapter 填充不对称（搜索摘要普遍不带
+/// 集数），所以集数缺失时必须承认「不知道」，不能默认成 TV —— 默认成 TV 会把本该
+/// 合并的单集作品重新拆成两张卡（BUG-1531 的反面）。未知与任何类型都不算冲突。
+VideoMetadataMediaKind? _aggregationKind(VideoDiscoveryItem item) {
   if (item.reference.mediaKind == VideoMetadataMediaKind.movie) {
     return VideoMetadataMediaKind.movie;
   }
-  final VideoMetadataWork? work = item.metadataWork;
-  if (item.reference.discoveryCategory == VideoDiscoveryCategory.anime &&
-      work?.episodeCount == 1) {
-    return VideoMetadataMediaKind.movie;
+  if (item.reference.discoveryCategory == VideoDiscoveryCategory.anime) {
+    final int? episodeCount = item.metadataWork?.episodeCount;
+    if (episodeCount == null) return null;
+    if (episodeCount == 1) return VideoMetadataMediaKind.movie;
   }
   return item.reference.mediaKind;
+}
+
+/// 只有双方聚合类型都已知且不同才算冲突；任一侧未知都不足以否决弱匹配。
+bool _conflictingAggregationKinds(
+  VideoDiscoveryItem left,
+  VideoDiscoveryItem right,
+) {
+  final VideoMetadataMediaKind? leftKind = _aggregationKind(left);
+  final VideoMetadataMediaKind? rightKind = _aggregationKind(right);
+  if (leftKind == null || rightKind == null) return false;
+  return leftKind != rightKind;
 }
 
 Map<String, String> _strongIdentities(VideoMediaReference reference) {

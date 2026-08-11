@@ -471,25 +471,40 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     sendResponse({ ok: true });
     return true;
   }
-  // 原生浏览器侧边栏入口。content script 的 Shift+S 会把当前 tab 作为 sender 带来；
-  // action popup 则显式传 tabId。open() 必须沿用户手势链调用，故这里不排队、不延迟。
+  // 原生浏览器侧边栏入口（**尽力而为的兜底路径**，不是主路径）。
+  //
+  // chrome.sidePanel.open() 要求「瞬态用户激活」，而扩展消息**不传递**用户激活：内容脚本里
+  // Shift+S 那个真实按键的激活，跨 runtime.sendMessage 到达 service worker 时已经没有了。
+  // 内容脚本自己又调不到 sidePanel API（该命名空间只存在于扩展页面/SW 上下文）。所以页面内
+  // 的任何手势都开不了侧边栏——唯一可靠入口是扩展图标 popup，它本身就在扩展上下文里，
+  // vendor/action-popup.js 已改成在 click 的同步栈第一句直接调 open()，不再绕这条消息。
+  //
+  // 这里保留本分支的意义有两条：① 若将来 Chrome 放宽（或 popup 兜底转发到这里）能直接生效；
+  // ② **把失败原样回报给调用方**，让页面侧给用户可见提示，而不是静默什么都不发生。
+  // 另外：open() 必须是拿到激活后的第一句——原实现先 `await setOptions(...)`，其 resolve 落在
+  // 新的宏任务里，激活早已过期，等于自己把仅有的机会也丢掉了。setOptions 不需要激活，挪到
+  // open() 之后补（manifest 的 side_panel.default_path 已足以让 open() 用对页面）。
   if (msg && msg.type === 'openSubtitleSidePanel') {
     const tabId = Number.isInteger(msg.tabId)
       ? msg.tabId
       : (_sender && _sender.tab && Number.isInteger(_sender.tab.id) ? _sender.tab.id : null);
-    if (tabId == null || !chrome.sidePanel) {
+    if (tabId == null || !chrome.sidePanel || typeof chrome.sidePanel.open !== 'function') {
       sendResponse({ ok: false, error: 'side-panel-unavailable' });
       return true;
     }
-    (async () => {
-      try {
-        await chrome.sidePanel.setOptions({ tabId, path: 'side-panel.html', enabled: true });
-        await chrome.sidePanel.open({ tabId });
+    let opening = null;
+    try {
+      opening = chrome.sidePanel.open({ tabId });
+    } catch (error) {
+      sendResponse({ ok: false, error: String(error && error.message || error) });
+      return true;
+    }
+    Promise.resolve(opening).then(
+      () => {
+        try { chrome.sidePanel.setOptions({ tabId, path: 'side-panel.html', enabled: true }); } catch (_) {}
         sendResponse({ ok: true });
-      } catch (error) {
-        sendResponse({ ok: false, error: String(error && error.message || error) });
-      }
-    })();
+      },
+      (error) => { sendResponse({ ok: false, error: String(error && error.message || error) }); });
     return true;
   }
   // 「打开扩展设置」：content script 里 chrome.runtime.openOptionsPage 不可用（只在扩展页面

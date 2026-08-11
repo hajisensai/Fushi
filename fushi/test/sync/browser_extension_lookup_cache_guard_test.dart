@@ -12,16 +12,26 @@ void main() {
       () {
     final String source =
         File('lib/src/models/app_model.dart').readAsStringSync();
-    expect(
-      source,
-      matches(RegExp(
-        r'searchWithWildcards:\s*wildcards,\s*'
-        r'overrideMaximumTerms:\s*maximumTerms,\s*'
-        r'useCache:\s*true,\s*'
-        r'allowRemoteLookup:\s*false,',
-      )),
-      reason: '扩展本机查词不得绕过 AppModel 的已物化结果缓存',
+    // 原写法用一条只允许空白的正则串联四个参数，而实现里这四行中间夹着三行
+    // 中文注释，`\s` 匹配不到 `//` —— 断言恒为假，既永久红又零防护。改成与下方
+    // 第二条同形的「先取方法切片再逐项 contains」，注释怎么改都不影响判据。
+    final int remoteStart = source.indexOf(
+      'Future<DictionarySearchResult?> searchDictionary({',
     );
+    expect(remoteStart, greaterThanOrEqualTo(0),
+        reason: '找不到扩展本机查词的 searchDictionary 实现');
+    final int remoteEnd = source.indexOf('\n  @override', remoteStart + 1);
+    expect(remoteEnd, greaterThan(remoteStart));
+    final String remoteSearch = source.substring(remoteStart, remoteEnd);
+    for (final String needle in const <String>[
+      'searchWithWildcards: wildcards,',
+      'overrideMaximumTerms: maximumTerms,',
+      'useCache: true,',
+      'allowRemoteLookup: false,',
+    ]) {
+      expect(remoteSearch, contains(needle),
+          reason: '扩展本机查词不得绕过 AppModel 的已物化结果缓存（缺 $needle）');
+    }
     expect(source, contains('scrollPosition: 0,'),
         reason: '远端快照必须重置唯一可变的滚动位置，不能泄漏缓存对象别名');
     expect(source, contains('result.popupJson = source.popupJson;'),

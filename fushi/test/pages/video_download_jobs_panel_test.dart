@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -92,6 +93,107 @@ Future<void> _pumpPanel(
 }
 
 void main() {
+  group('reveal command', () {
+    test('windows keeps /select, and the path as separate arguments', () {
+      final VideoDownloadRevealCommand command = videoDownloadRevealCommand(
+        host: VideoDownloadRevealHost.windows,
+        path: r'D:\media\Show S01E01.mkv',
+        isDirectory: false,
+      );
+
+      expect(command.executable, 'explorer');
+      // Measured on Windows 11: joining these into one argument makes Dart
+      // quote it ("/select,D:\media\Show S01E01.mkv") and explorer answers by
+      // opening Documents. Split, it selects the file every time.
+      expect(
+          command.arguments, <String>['/select,', r'D:\media\Show S01E01.mkv']);
+    });
+
+    test('windows explorer exit codes carry no success signal', () {
+      expect(
+        videoDownloadRevealCommand(
+          host: VideoDownloadRevealHost.windows,
+          path: r'D:\media\Show S01E01.mkv',
+          isDirectory: false,
+        ).exitCodeIsMeaningful,
+        isFalse,
+      );
+      expect(
+        videoDownloadRevealCommand(
+          host: VideoDownloadRevealHost.macos,
+          path: '/media/Show S01E01.mkv',
+          isDirectory: false,
+        ).exitCodeIsMeaningful,
+        isTrue,
+      );
+    });
+
+    test('windows reveal succeeds although explorer.exe exits with 1',
+        () async {
+      String? executable;
+      List<String>? arguments;
+      final bool revealed = await revealVideoDownloadPathOn(
+        r'D:\media\Show S01E01.mkv',
+        host: VideoDownloadRevealHost.windows,
+        typeOf: (String _) async => FileSystemEntityType.file,
+        run: (String value, List<String> args) async {
+          executable = value;
+          arguments = args;
+          // explorer.exe returns 1 even when it opened and selected the file.
+          return ProcessResult(0, 1, '', '');
+        },
+      );
+
+      expect(revealed, isTrue);
+      expect(executable, 'explorer');
+      expect(arguments, <String>['/select,', r'D:\media\Show S01E01.mkv']);
+    });
+
+    test('a failing exit code still fails where it means something', () async {
+      expect(
+        await revealVideoDownloadPathOn(
+          '/media/Show S01E01.mkv',
+          host: VideoDownloadRevealHost.macos,
+          typeOf: (String _) async => FileSystemEntityType.file,
+          run: (String _, List<String> __) async => ProcessResult(0, 1, '', ''),
+        ),
+        isFalse,
+      );
+    });
+
+    test('a host without a file manager never spawns anything', () async {
+      bool spawned = false;
+      final bool revealed = await revealVideoDownloadPathOn(
+        '/storage/emulated/0/Show S01E01.mkv',
+        host: null,
+        typeOf: (String _) async => FileSystemEntityType.file,
+        run: (String _, List<String> __) async {
+          spawned = true;
+          return ProcessResult(0, 0, '', '');
+        },
+      );
+
+      expect(revealed, isFalse);
+      expect(spawned, isFalse);
+    });
+
+    test('a missing path never spawns anything', () async {
+      bool spawned = false;
+      final bool revealed = await revealVideoDownloadPathOn(
+        r'D:\media\gone.mkv',
+        host: VideoDownloadRevealHost.windows,
+        typeOf: (String _) async => FileSystemEntityType.notFound,
+        run: (String _, List<String> __) async {
+          spawned = true;
+          return ProcessResult(0, 0, '', '');
+        },
+      );
+
+      expect(revealed, isFalse);
+      expect(spawned, isFalse);
+    });
+  });
+
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
   testWidgets('watches lifecycle, stage, progress and safe error text',
@@ -152,6 +254,9 @@ void main() {
     final List<String> cancelled = <String>[];
     await _pumpPanel(
       tester,
+      // Five cards, and the list builds lazily: the viewport has to be tall
+      // enough for the paused and completed cards to exist at all.
+      size: const Size(800, 1800),
       panel: VideoDownloadJobsPanel(
         store: store,
         onRetry: (VideoDownloadJobRow job) async => retried.add(job.jobId),

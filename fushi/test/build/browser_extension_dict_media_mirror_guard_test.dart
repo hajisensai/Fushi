@@ -86,11 +86,14 @@ void main() {
       });
 
       // TODO-1219 P2：字幕列表面板存在性守卫（面板文件 + content.js 契约 + manifest bundle + CSS）。
-      test('[$name] subtitle-panel.js builds the Netflix subtitle list panel',
-          () {
+      // PR #804：字幕列表迁到浏览器原生 Side Panel。subtitle-panel.js 退化成页面侧
+      // 控制器——只喂 cue、只转发 seek，绝不再往宿主页插列表容器（那层 100vh 固定
+      // 面板正是「干扰网页布局 / 吃掉双击选词」的来源）。守卫方向随之反转。
+      test('[$name] subtitle-panel.js drives the native side panel', () {
         final String src = File('$root/subtitle-panel.js').readAsStringSync();
-        expect(src.contains("'fushi-subtitle-panel'"), isTrue,
-            reason: '$root subtitle-panel.js missing panel element id');
+        expect(src.contains("'fushi-subtitle-panel'"), isFalse,
+            reason:
+                '$root subtitle-panel.js must not re-inject the in-page list panel');
         expect(src.contains('window.fushiEpisodeCues'), isTrue,
             reason: '$root subtitle-panel.js must consume fushiEpisodeCues');
         expect(src.contains("__fushiNf: 'seek'"), isTrue,
@@ -99,11 +102,32 @@ void main() {
             reason: '$root subtitle-panel.js missing cues-update subscription');
       });
 
+      // Side Panel 三件套必须齐全，否则 manifest 指过去是空页。
+      test('[$name] side panel ships html/css/js and is declared in manifest',
+          () {
+        final String manifest = File('$root/manifest.json').readAsStringSync();
+        expect(manifest.contains('"side_panel"'), isTrue,
+            reason: '$root manifest.json missing side_panel declaration');
+        expect(manifest.contains('"default_path": "side-panel.html"'), isTrue,
+            reason:
+                '$root manifest.json side_panel must point at side-panel.html');
+        expect(manifest.contains('"sidePanel"'), isTrue,
+            reason: '$root manifest.json missing the sidePanel permission');
+        final String html = File('$root/side-panel.html').readAsStringSync();
+        expect(html.contains('side-panel.css'), isTrue,
+            reason: '$root side-panel.html must load side-panel.css');
+        expect(html.contains('side-panel.js'), isTrue,
+            reason: '$root side-panel.html must load side-panel.js');
+        final String css = File('$root/side-panel.css').readAsStringSync();
+        expect(css.contains('.subtitle-row'), isTrue,
+            reason: '$root side-panel.css missing the subtitle row styles');
+      });
+
       test('[$name] content.js exposes cues store + lookup entry for the panel',
           () {
         final String src = File('$root/content.js').readAsStringSync();
-        expect(src.contains('window.fushiEpisodeCues = fushiEpisodeCues'),
-            isTrue,
+        expect(
+            src.contains('window.fushiEpisodeCues = fushiEpisodeCues'), isTrue,
             reason: '$root content.js must expose fushiEpisodeCues on window');
         expect(src.contains('window.fushiLookupAtPoint'), isTrue,
             reason:
@@ -121,10 +145,14 @@ void main() {
                 '$root manifest.json must list subtitle-panel.js after content.js in the isolated bundle');
       });
 
-      test('[$name] content.css styles the subtitle panel', () {
+      // PR #804：列表面板不再注入宿主页，它的样式必须从注入用的 content.css 里彻底
+      // 消失（留着就意味着有人又把面板塞回了网页），改由 side-panel.css 承载。
+      test('[$name] content.css no longer ships the in-page subtitle panel',
+          () {
         final String src = File('$root/vendor/content.css').readAsStringSync();
-        expect(src.contains('#fushi-subtitle-panel'), isTrue,
-            reason: '$root vendor/content.css missing subtitle panel styles');
+        expect(src.contains('#fushi-subtitle-panel'), isFalse,
+            reason:
+                '$root vendor/content.css must not restyle an in-page subtitle panel');
       });
 
       // TODO-1219 P3：精确窗制卡——面板行制卡用该行整集拦截的精确 [startMs,endMs] 覆盖 DOM 采样窗。
@@ -166,26 +194,29 @@ void main() {
                 '$root content.js must suspend push before capture and resume after');
       });
 
+      // PR #804：宿主页不再有被面板挤开的播放器，applyPush / st.pushSuspended 一并消失，
+      // SuspendPush / ResumePush 只留作 content.js 批量抓取的空壳兼容入口。这里守两件
+      // 仍然有意义的事：兼容入口不能消失（content.js 仍在调），以及悬浮字幕查词必须
+      // 继续携带该行精确 [startMs,endMs]（丢了就退化成 DOM 采样窗，制卡剪错句）。
       test(
-          '[$name] subtitle-panel.js exposes push suspend/resume + precise row window',
+          '[$name] subtitle-panel.js keeps the batch-capture hooks + precise window',
           () {
         final String src = File('$root/subtitle-panel.js').readAsStringSync();
         expect(src.contains('window.fushiSubtitlePanelSuspendPush'), isTrue,
             reason:
-                '$root subtitle-panel.js must expose SuspendPush for batch capture');
+                '$root subtitle-panel.js must keep the SuspendPush hook content.js calls');
         expect(src.contains('window.fushiSubtitlePanelResumePush'), isTrue,
             reason:
-                '$root subtitle-panel.js must expose ResumePush for batch capture');
-        expect(src.contains('st.pushSuspended'), isTrue,
+                '$root subtitle-panel.js must keep the ResumePush hook content.js calls');
+        expect(src.contains("'fushi-subtitle-panel'"), isFalse,
             reason:
-                '$root subtitle-panel.js applyPush must be gated while suspended');
-        // 行文本查词把该行精确 [startMs,endMs] 传进 fushiLookupAtPoint。
+                '$root subtitle-panel.js must not resurrect the in-page panel push layout');
         expect(
             src.contains(
-                'window.fushiLookupAtPoint(e.clientX, e.clientY, { startMs: cue.startMs, endMs: cue.endMs, text: cue.text })'),
+                'startMs: cue.startMs, endMs: cue.endMs, text: cue.text'),
             isTrue,
             reason:
-                '$root subtitle-panel.js row lookup must carry the precise cue window');
+                '$root subtitle-panel.js overlay lookup must carry the precise cue window');
       });
 
       // TODO-1219 用户诉求②：字幕列表面板默认关闭，由扩展 options 的开关（netflixSubtitlePanel）
@@ -254,8 +285,15 @@ void main() {
 
       test('[$name] subtitle-panel accepts and renders user subtitles', () {
         final String src = File('$root/subtitle-panel.js').readAsStringSync();
-        expect(src.contains("inp.accept = '.srt,.ass,.ssa,.vtt'"), isTrue,
-            reason: '$root subtitle-panel.js missing supported file picker');
+        // PR #804：选文件的入口迁到 Side Panel 自己的 <input type=file>（还加了 multiple），
+        // 页面侧只保留拖放。两条入口都不许丢。
+        final String sidePanelHtml =
+            File('$root/side-panel.html').readAsStringSync();
+        expect(
+            sidePanelHtml.contains(
+                '<input id="subtitle-file" type="file" accept=".srt,.ass,.ssa,.vtt"'),
+            isTrue,
+            reason: '$root side-panel.html missing supported file picker');
         expect(src.contains("document.addEventListener('drop'"), isTrue,
             reason: '$root subtitle-panel.js missing drag-and-drop loading');
         expect(src.contains("'fushi-subtitle-overlay'"), isTrue,
@@ -264,7 +302,8 @@ void main() {
             reason:
                 '$root subtitle-panel.js missing floating-subtitle auto lookup');
         expect(src.contains('applyPlaybackMode'), isFalse,
-            reason: '$root subtitle-panel.js must remove legacy playback modes');
+            reason:
+                '$root subtitle-panel.js must remove legacy playback modes');
       });
 
       test('[$name] video shortcuts are configured per action', () {
@@ -288,7 +327,8 @@ void main() {
               reason: '$root options.js must persist independent shortcut $id');
         }
         expect(html.contains('id="videoShortcutsEnabled"'), isFalse,
-            reason: '$root options must not retain the all-in-one shortcut row');
+            reason:
+                '$root options must not retain the all-in-one shortcut row');
       });
 
       test('[$name] background diagnoses Hibiki/Yomitan port ownership', () {
@@ -307,28 +347,24 @@ void main() {
 
       // TODO-1219 方案 B：字幕列表面板开关也放进扩展 action-popup（点扩展图标即可开），读写同一
       // chrome.storage.local.netflixSubtitlePanel。守卫两镜像的 popup 里都有这个开关且读写正确。
-      test('[$name] action-popup exposes the Netflix subtitle-list toggle', () {
+      // PR #804：弹窗里的「字幕列表」从「往网页注入面板的开关」改成「打开浏览器原生
+      // 侧边栏的按钮」。入口本身不得丢（丢了用户就再也打不开字幕列表），且必须走 sidePanel API。
+      test('[$name] action-popup opens the native subtitle side panel', () {
         final String html =
             File('$root/vendor/action-popup.html').readAsStringSync();
         final String js =
             File('$root/vendor/action-popup.js').readAsStringSync();
         expect(html.contains('id="hp-nf-sublist"'), isTrue,
-            reason: '$root action-popup.html missing the subtitle-list toggle');
-        expect(html.contains('面板在视频播放页侧栏'), isTrue,
-            reason: '$root action-popup.html missing the toggle hint text');
-        expect(js.contains('fushiReadPanelEnabled'), isTrue,
             reason:
-                '$root action-popup.js must read the panel setting via fushiReadPanelEnabled');
-        expect(js.contains("chrome.storage.local.get(['netflixSubtitlePanel']"),
-            isTrue,
+                '$root action-popup.html missing the subtitle side-panel entry');
+        expect(html.contains('type="checkbox" id="hp-nf-sublist"'), isFalse,
             reason:
-                '$root action-popup.js must backfill the checkbox from netflixSubtitlePanel');
-        expect(
-            js.contains(
-                'chrome.storage.local.set({ netflixSubtitlePanel: nfToggle.checked })'),
-            isTrue,
+                '$root action-popup.html must not go back to an in-page panel checkbox');
+        expect(js.contains('chrome.sidePanel'), isTrue,
+            reason: '$root action-popup.js must open the native side panel');
+        expect(js.contains('netflixSubtitlePanel'), isTrue,
             reason:
-                '$root action-popup.js must persist the toggle to netflixSubtitlePanel');
+                '$root action-popup.js must still enable the subtitle controller setting');
       });
 
       // TODO-1219 用户诉求①：整集字幕拦截必须与语言无关——harvest 遍历清单里的**每一条**

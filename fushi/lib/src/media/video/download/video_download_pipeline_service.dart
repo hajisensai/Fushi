@@ -31,6 +31,7 @@ import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 enum VideoDownloadSubtitlePolicy { none, bestEffort, required }
 
@@ -173,14 +174,76 @@ String _persistedTorrentState(VideoDownloadJobRow job) {
   return job.stage;
 }
 
+/// Splits a backend-reported relative path into trusted path segments.
+///
+/// `TorrentFileEntry.name` is persisted verbatim, so this string is fully
+/// backend controlled. It must never reach [p.join] unchecked: join discards
+/// its root when the second argument is absolute (`/etc/passwd`, `C:\...`),
+/// and `..` segments walk out of the managed root. Either one would let a
+/// hostile or broken backend aim file deletion at arbitrary device paths.
+/// Returns null when the relative path cannot be trusted.
+List<String>? safeManagedRelativeSegments(String relativePath) {
+  final String portable = relativePath.replaceAll(r'\', '/').trim();
+  if (portable.isEmpty ||
+      portable.startsWith('/') ||
+      RegExp(r'^[A-Za-z]:').hasMatch(portable)) {
+    return null;
+  }
+  final List<String> segments = portable.split('/');
+  if (segments.any((String segment) => segment.isEmpty || segment == '..')) {
+    return null;
+  }
+  return segments;
+}
+
+/// Resolves [relativePath] under [root] and proves the result stays inside it.
+/// Returns null when the relative path is untrusted or escapes the root.
+String? resolveManagedPathWithinRoot({
+  required String root,
+  required String relativePath,
+}) {
+  final List<String>? segments = safeManagedRelativeSegments(relativePath);
+  if (segments == null) return null;
+  final String normalizedRoot = p.normalize(p.absolute(root));
+  final String resolved = p.normalize(
+    p.absolute(p.joinAll(<String>[normalizedRoot, ...segments])),
+  );
+  if (!p.isWithin(normalizedRoot, resolved)) return null;
+  return resolved;
+}
+
+/// Thrown when a delete request removed the durable job but could not remove
+/// every managed file: on Windows an open player or the download engine still
+/// holds a handle. The job row and the library rows of the files that really
+/// went away are already committed when this is thrown, so the surface never
+/// gets stuck in a half-deleted state; the caller only reports the remainder.
+class VideoDownloadJobFilesNotDeleted implements Exception {
+  const VideoDownloadJobFilesNotDeleted(this.paths);
+
+  final List<String> paths;
+
+  @override
+  String toString() => '${paths.length} downloaded file(s) could not be '
+      'deleted: ${paths.map(p.basename).join(', ')}';
+}
+
 /// Deletes the durable half of a job independently of the active pipeline.
 /// Only exact file/link paths recorded by this job are removed; directories
-/// are deliberately never deleted recursively.
+/// are deliberately never deleted recursively, and a backend-reported relative
+/// path is only used when it provably resolves inside the observed save path.
+///
+/// Files are removed before their library rows, and a library row only goes
+/// away once its file is really gone: a file kept alive by an open handle
+/// stays playable instead of leaving an untracked orphan on disk. The durable
+/// job row is always removed, so a partial failure is reportable
+/// ([VideoDownloadJobFilesNotDeleted]) instead of leaving behind a job that
+/// repeats half of the deletion on every retry.
 Future<void> deletePersistedVideoDownloadJob({
   required FushiDatabase database,
   required VideoDownloadJobRow job,
   required bool deleteFiles,
 }) async {
+  final List<String> undeleted = <String>[];
   if (deleteFiles) {
     final List<VideoDownloadJobFileRow> files =
         await database.getVideoDownloadJobFiles(job.jobId);
@@ -196,36 +259,61 @@ Future<void> deletePersistedVideoDownloadJob({
       for (final VideoDownloadJobSubtitleRow subtitle in subtitles)
         if (subtitle.stagedPath?.trim().isNotEmpty == true)
           p.normalize(subtitle.stagedPath!.trim()),
-      if (job.observedSavePath?.trim().isNotEmpty == true)
-        for (final VideoDownloadJobFileRow file in files)
-          if (file.currentRelativePath.trim().isNotEmpty)
-            p.normalize(
-              p.join(
-                job.observedSavePath!.trim(),
-                file.currentRelativePath,
-              ),
-            ),
     };
-    final Set<String> normalizedManagedPaths =
-        managedPaths.map(normalizeVideoPath).toSet();
-    final VideoBookRepository repository = VideoBookRepository(database);
-    for (final VideoBookRow book in await repository.listAll()) {
-      if (normalizedManagedPaths.contains(normalizeVideoPath(book.videoPath))) {
-        await repository.deleteVideoBook(book.bookUid);
+    final String observedSavePath = job.observedSavePath?.trim() ?? '';
+    if (observedSavePath.isNotEmpty) {
+      for (final VideoDownloadJobFileRow file in files) {
+        if (file.currentRelativePath.trim().isEmpty) continue;
+        final String? resolved = resolveManagedPathWithinRoot(
+          root: observedSavePath,
+          relativePath: file.currentRelativePath,
+        );
+        if (resolved == null) {
+          ErrorLogService.instance.log(
+            'VideoDownloadJobDelete',
+            'Refused to delete a backend-reported path that escapes the '
+                'observed save path: ${file.currentRelativePath}',
+          );
+          continue;
+        }
+        managedPaths.add(resolved);
       }
     }
+    final Set<String> removedPaths = <String>{};
     for (final String path in managedPaths) {
-      final FileSystemEntityType type =
-          await FileSystemEntity.type(path, followLinks: false);
-      if (type == FileSystemEntityType.file) {
-        await File(path).delete();
-      } else if (type == FileSystemEntityType.link) {
-        await Link(path).delete();
+      try {
+        final FileSystemEntityType type =
+            await FileSystemEntity.type(path, followLinks: false);
+        if (type == FileSystemEntityType.directory) continue;
+        if (type == FileSystemEntityType.file) {
+          await File(path).delete();
+        } else if (type == FileSystemEntityType.link) {
+          await Link(path).delete();
+        }
+        removedPaths.add(path);
+      } on Object catch (error, stack) {
+        undeleted.add(path);
+        ErrorLogService.instance.log(
+          'VideoDownloadJobDelete',
+          'Failed to delete $path: $error',
+          stack,
+        );
+      }
+    }
+    final Set<String> removedNormalized =
+        removedPaths.map(normalizeVideoPath).toSet();
+    final VideoBookRepository repository = VideoBookRepository(database);
+    for (final VideoBookRow book in await repository.listAll()) {
+      if (removedNormalized.contains(normalizeVideoPath(book.videoPath))) {
+        await repository.deleteVideoBook(book.bookUid);
       }
     }
     database.notifyVideoLibraryChanged();
   }
   await database.deleteVideoDownloadJob(job.jobId);
+  if (undeleted.isNotEmpty) {
+    throw VideoDownloadJobFilesNotDeleted(List<String>.unmodifiable(undeleted));
+  }
 }
 
 typedef VideoDownloadBackendResolver = Future<VideoDownloadBackendBinding?>
@@ -795,12 +883,17 @@ class VideoDownloadPipelineService {
       }
     }
 
-    await deletePersistedVideoDownloadJob(
-      database: database,
-      job: job,
-      deleteFiles: deleteFiles,
-    );
-    wake();
+    try {
+      await deletePersistedVideoDownloadJob(
+        database: database,
+        job: job,
+        deleteFiles: deleteFiles,
+      );
+    } finally {
+      // The durable row is gone either way, including when files survived, so
+      // the scheduler must be kicked before the partial-failure report leaves.
+      wake();
+    }
   }
 
   /// 读取任务页所需的真实后端快照。
@@ -1052,6 +1145,12 @@ class VideoDownloadPipelineService {
       VideoDownloadJobStage.download,
       backendTaskId: hash,
       torrentHash: hash,
+      // Re-entering the download stage is regained ground, not progress: a job
+      // that keeps losing its backend task would otherwise refund its retry
+      // budget on every lap of enqueue -> download -> rewind and never fail.
+      // The budget is still reset by the next real advance (download ->
+      // organize) and by an explicit user retry.
+      resetAttempts: false,
     );
   }
 
@@ -1101,11 +1200,18 @@ class VideoDownloadPipelineService {
     }
     if (snapshot == null) {
       if (job.backendKind == QbConnectionConfig.backendEmbedded) {
+        // The embedded engine can legitimately lose a task whose fast-resume
+        // snapshot did not survive an unclean exit, so re-adding it is worth a
+        // try. It consumes retry budget: a task that can never be held (full
+        // disk, invalid torrent, a snapshot that never persists) must reach a
+        // terminal state instead of re-enqueueing itself forever while the UI
+        // shows an eternally "active" job.
         final int now = DateTime.now().millisecondsSinceEpoch;
         await _releaseLeaseWith(
           () => database.rewindVideoDownloadJobToEnqueue(
             jobId: job.jobId,
             workerId: workerId,
+            error: videoDownloadMissingBackendTaskError,
             nowAt: now,
             nextAttemptAt: now + pollInterval.inMilliseconds,
           ),
@@ -2208,6 +2314,7 @@ class VideoDownloadPipelineService {
     String? torrentHash,
     String? observedSavePath,
     String? targetRelativeRoot,
+    bool resetAttempts = true,
   }) =>
       _releaseLeaseWith(
         () => database.advanceVideoDownloadJobStage(
@@ -2220,6 +2327,7 @@ class VideoDownloadPipelineService {
           torrentHash: torrentHash,
           observedSavePath: observedSavePath,
           targetRelativeRoot: targetRelativeRoot,
+          resetAttempts: resetAttempts,
         ),
       );
 
@@ -2361,18 +2469,8 @@ class VideoDownloadPipelineService {
     required VideoDownloadPathMapping mapping,
     required String localSaveRoot,
   }) {
-    final String portable = relativePath.replaceAll('\\', '/').trim();
-    if (portable.isEmpty ||
-        portable.startsWith('/') ||
-        RegExp(r'^[A-Za-z]:').hasMatch(portable)) {
-      return null;
-    }
-    final List<String> segments = portable.split('/');
-    if (segments.any(
-      (String segment) => segment.isEmpty || segment == '..',
-    )) {
-      return null;
-    }
+    final List<String>? segments = safeManagedRelativeSegments(relativePath);
+    if (segments == null) return null;
     final String remote = <String>[
       remoteSavePath.replaceAll('\\', '/').replaceFirst(RegExp(r'/+$'), ''),
       ...segments,
