@@ -250,6 +250,62 @@ void main() {
         reason: '存活列表取不到时必须放行全部保留资产（fail-open）：$assets');
   });
 
+  test('BUG-1516: a desktop publish mirrors into the hibiki-family manifest',
+      () async {
+    // Desktop is the ONLY platform where the rename migrates by self-update:
+    // Windows/macOS overwrite in place, so a Hibiki client selecting
+    // fushi-*-windows-setup.exe and installing it IS the migration. BUG-1481
+    // split the manifest per FILE, which cut that path off; the desktop assets
+    // have to reach latest-debug.json again.
+    final _Fixture fx = await _Fixture.create();
+    addTearDown(fx.dispose);
+    await fx.seedLegacyBridgeManifest();
+
+    final ProcessResult desktop = await fx.publish(
+      label: 'desktop',
+      artifactsSubdir: 'art_desktop',
+      assetGlob: 'fushi-*-windows-setup.exe',
+    );
+    expect(desktop.exitCode, 0, reason: _io(desktop));
+
+    final List<String> legacy = await fx.legacyAssetNames();
+    expect(legacy, contains(fx.exeName),
+        reason: 'Hibiki 桌面客户端拿不到 Fushi 安装包，迁移路径仍然是断的：$legacy');
+    expect(legacy, contains(fx.legacyBridgeApkName),
+        reason: '镜像不得动桥自己的 APK（那是 Android 的迁移路径）：$legacy');
+
+    // The top level belongs to the bridge. Moving it would show Android clients
+    // a version whose only selectable APK is the older bridge build — the exact
+    // cross-family mismatch BUG-1481 fixed.
+    final Map<String, dynamic> m = await fx.legacyManifest();
+    expect(m['version'], _Fixture.legacyBridgeVersion);
+    expect(m['tag'], _Fixture.legacyBridgeTag);
+    expect(m['releaseSequence'], _Fixture.legacyBridgeSeq);
+  });
+
+  test('BUG-1516: an Android publish never mirrors its APK across families',
+      () async {
+    // The other half of the asymmetry: Android genuinely cannot install across
+    // package names (INSTALL_FAILED_UPDATE_INCOMPATIBLE), so a Fushi APK must
+    // never appear in the hibiki-family manifest.
+    final _Fixture fx = await _Fixture.create();
+    addTearDown(fx.dispose);
+    await fx.seedLegacyBridgeManifest();
+
+    final ProcessResult android = await fx.publish(
+      label: 'android',
+      artifactsSubdir: 'art_android',
+      assetGlob: 'fushi-*.apk',
+    );
+    expect(android.exitCode, 0, reason: _io(android));
+
+    final List<String> legacy = await fx.legacyAssetNames();
+    expect(legacy, isNot(contains(fx.apkName)),
+        reason: 'Fushi 的 APK 混进了桥的清单，安卓客户端会装不上：$legacy');
+    expect(legacy, <String>[fx.legacyBridgeApkName],
+        reason: '安卓发布不该改动桥清单的任何条目：$legacy');
+  });
+
   test('production retry backoff stays polite to the real GitHub remote', () {
     // BUG-1178 guard: this suite lowers MANIFEST_RETRY_BACKOFF_MS so a local
     // bare repo is not slept on for 3s per race. That seam must never be used
@@ -297,6 +353,19 @@ class _Fixture {
   /// answer handed to the script's liveness filter (BUG-1516).
   List<String> get allFixtureAssetNames =>
       <String>[apkName, exeName, oldApkName];
+
+  // The retired hibiki-family manifest, as the Android bridge leaves it.
+  //
+  // The bridge sequence is deliberately LOWER than this fixture's publish seq
+  // (5633). That is the real shape — the bridge stopped at 10192 while Fushi
+  // runs at 10405 — and it is also what makes the "mirror must not move the top
+  // level" assertions discriminating: seed it HIGHER and the monotonic guard
+  // pins the top level anyway, so the guard passes even with mirror mode off.
+  static const String legacyBridgeVersion = '1.3.3-debug.5600';
+  static const String legacyBridgeTag = 'v1.3.3-debug.5600+ec51ef7';
+  static const int legacyBridgeSeq = 5600;
+  final String legacyBridgeApkName =
+      'hibiki-1.3.3-debug.5600-ec51ef7-debug.apk';
 
   static Future<_Fixture> create() async {
     final Directory workspace = Directory.current.parent;
@@ -400,6 +469,73 @@ class _Fixture {
     expect(show.exitCode, 0,
         reason: 'could not read final manifest: ${show.stderr}');
     return json.decode(show.stdout as String) as Map<String, dynamic>;
+  }
+
+  /// Seed the retired hibiki-family manifest (`latest-debug.json`) on the
+  /// branch, the way the Android bridge's own publish would have left it:
+  /// bridge metadata up top, bridge APK as its only asset.
+  Future<void> seedLegacyBridgeManifest() async {
+    final Directory seed = Directory(p.join(root.path, 'seed'))
+      ..createSync(recursive: true);
+    await _git(seed, <String>['init', '-q', '.']);
+    await _git(seed, <String>['checkout', '-q', '--orphan', 'update-manifest']);
+    File(p.join(seed.path, 'latest-debug.json')).writeAsStringSync(
+      const JsonEncoder.withIndent('  ').convert(<String, dynamic>{
+        'schemaVersion': 1,
+        'version': legacyBridgeVersion,
+        'tag': legacyBridgeTag,
+        'channel': 'debug',
+        'prerelease': true,
+        'releaseSequence': legacyBridgeSeq,
+        'notes': 'bridge build',
+        'assets': <Map<String, String>>[
+          <String, String>{
+            'name': legacyBridgeApkName,
+            'browser_download_url':
+                'https://github.com/owner/repo/releases/download/'
+                    'debug-rolling/$legacyBridgeApkName',
+          },
+        ],
+      }),
+    );
+    await _git(seed, <String>['add', 'latest-debug.json']);
+    await _git(seed, <String>[
+      '-c',
+      'user.name=Test',
+      '-c',
+      'user.email=test@example.com',
+      'commit',
+      '-q',
+      '-m',
+      'seed bridge manifest',
+    ]);
+    await _git(seed, <String>['remote', 'add', 'origin', originUrl]);
+    await _git(seed, <String>['push', '-q', 'origin', 'update-manifest']);
+  }
+
+  Future<Map<String, dynamic>> legacyManifest() async {
+    final ProcessResult show = await Process.run(
+      'git',
+      <String>[
+        '-C',
+        p.join(root.path, 'origin.git'),
+        'show',
+        'update-manifest:latest-debug.json',
+      ],
+      stdoutEncoding: utf8,
+      stderrEncoding: utf8,
+    );
+    expect(show.exitCode, 0,
+        reason: 'could not read legacy manifest: ${show.stderr}');
+    return json.decode(show.stdout as String) as Map<String, dynamic>;
+  }
+
+  Future<List<String>> legacyAssetNames() async {
+    final Map<String, dynamic> m = await legacyManifest();
+    return (m['assets'] as List<dynamic>)
+        .map((dynamic a) => (a as Map<String, dynamic>)['name'] as String)
+        .toList()
+      ..sort();
   }
 
   Future<List<String>> finalAssetNames() async {

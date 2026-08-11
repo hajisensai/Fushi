@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1441 条。点号进各自文件。
+> 共 1443 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1537](bugs/BUG-1537-settings-subtitle-ellipsis-single-line.md) | ✅ | ✅ | 设置行说明文字被压成单行省略号（ellipsis + maxLines:null） |
+| [BUG-1536](bugs/BUG-1536-horizontal-row-steals-vertical-wheel.md) | ✅ | ✅ | 视频首页横滚行抢走整页纵向滚动（应 Shift+滚轮才横滚） |
 | [BUG-1535](bugs/BUG-1535-download-task-details-service-unavailable.md) | ✅ | ✅ | 下载服务未启动时任务详情打不开 |
 | [BUG-1534](bugs/BUG-1534-download-task-detail-path-overflow.md) | ✅ | ✅ | 下载任务详情长路径溢出 |
 | [BUG-1533](bugs/BUG-1533-video-discovery-filter-height.md) | ✅ | ✅ | 视频发现筛选控件高度不一致 |

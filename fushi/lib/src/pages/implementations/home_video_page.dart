@@ -331,7 +331,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   final PageController _heroPageController = PageController();
   int _heroPage = 0;
 
-  /// TODO-2486：横滚行控制器（WheelToHorizontalScroll 滚轮桥需要显式 controller）。
+  /// TODO-2486：横滚行控制器（每行独立，横向偏移在 rebuild 间不串行）。
   final ScrollController _continueRowController = ScrollController();
   final ScrollController _nextRowController = ScrollController();
   final ScrollController _recentRowController = ScrollController();
@@ -3101,9 +3101,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 横滚行骨架：区块标题 + 定高横向 ListView。桌面滚轮经共享
-  /// [WheelToHorizontalScroll] 桥成横滚（BUG-1214 同款）、鼠标拖拽经
+  /// 横滚行骨架：区块标题 + 定高横向 ListView。鼠标拖拽经
   /// [HorizontalDragScrollable] 放开；触屏行为不变。
+  ///
+  /// **裸滚轮不横滚，Shift + 滚轮才横滚**（BUG-1536，用户实报「视频主页的横向
+  /// 滚动要按住 shift+滚轮才行，不然会把上下滚动行为抢走」）：本行嵌在首页的
+  /// 纵向 `CustomScrollView` 里，指针停在行上时若把滚轮的 `dy` 投到横轴（旧的
+  /// [WheelToHorizontalScroll] 桥），整页纵向滚动就被这一行吃掉。撤掉桥后
+  /// 未按 Shift 时横向 `Scrollable` 只取 `scrollDelta.dx`（物理滚轮恒 0）→ 不
+  /// 向 `PointerSignalResolver` 登记 → 事件冒泡给外层纵向滚动；按住 Shift 时
+  /// Flutter 自己就会对物理鼠标翻轴（`ScrollBehavior.pointerAxisModifiers`
+  /// 默认 Shift，见 `scrollable.dart` 的 `_pointerSignalEventDelta`），横滚由
+  /// 框架提供，无需任何自有代码。行为守卫见
+  /// `test/pages/collection_relations_section_test.dart`。
   Widget _buildHorizontalCardRow({
     required String title,
     required ScrollController controller,
@@ -3122,19 +3132,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           ),
           SizedBox(
             height: coverHeight + _videoRowCardTextBlock(context),
-            child: WheelToHorizontalScroll(
-              controller: controller,
-              child: HorizontalDragScrollable(
-                child: ListView.separated(
-                  controller: controller,
-                  scrollDirection: Axis.horizontal,
-                  physics: desktopAwareScrollPhysics(),
-                  itemCount: items.length,
-                  separatorBuilder: (BuildContext _, int __) =>
-                      SizedBox(width: tokens.spacing.gap),
-                  itemBuilder: (BuildContext context, int i) =>
-                      items[i].build(),
-                ),
+            child: HorizontalDragScrollable(
+              child: ListView.separated(
+                controller: controller,
+                scrollDirection: Axis.horizontal,
+                physics: desktopAwareScrollPhysics(),
+                itemCount: items.length,
+                separatorBuilder: (BuildContext _, int __) =>
+                    SizedBox(width: tokens.spacing.gap),
+                itemBuilder: (BuildContext context, int i) => items[i].build(),
               ),
             ),
           ),

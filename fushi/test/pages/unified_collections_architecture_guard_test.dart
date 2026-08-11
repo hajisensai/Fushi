@@ -111,11 +111,16 @@ void main() {
         reason: '必须有「继续观看」横滚行');
     expect(homeSrc.contains('_buildRecentlyAddedRow'), isTrue,
         reason: '必须有「最近添加」横滚行');
-    // 横滚行双包装：滚轮桥 + 鼠标拖拽放开（缺一桌面横滚行就废一半）。
-    expect(homeSrc.contains('WheelToHorizontalScroll('), isTrue,
-        reason: '横滚行必须包 WheelToHorizontalScroll（桌面滚轮横滚，BUG-1214）');
+    // 横滚行放开鼠标拖拽（桌面默认 dragDevices 不含鼠标）。
     expect(homeSrc.contains('HorizontalDragScrollable('), isTrue,
         reason: '横滚行必须包 HorizontalDragScrollable（桌面鼠标拖拽）');
+    // BUG-1536：横滚行**不得**再包滚轮投轴桥——它会把整页纵向滚动吃掉（用户
+    // 实报「不然会把上下滚动行为抢走」）。Shift + 滚轮的横滚由 Flutter 内建
+    // 翻轴提供，不需要自有代码；行为守卫见
+    // test/pages/collection_relations_section_test.dart。
+    expect(homeSrc.contains('WheelToHorizontalScroll('), isFalse,
+        reason: '视频首页横滚行不得包 WheelToHorizontalScroll（会抢走整页纵滚，'
+            'BUG-1536）；Shift+滚轮横滚由 Flutter 内建提供');
     // 媒体库墙：行高固定、宽随封面朝向的流式换行（Wrap），不得回退单一网格。
     expect(homeSrc.contains('_buildVideoWallSliver'), isTrue,
         reason: '媒体库墙必须走 _buildVideoWallSliver（Wrap 流式混排）');
