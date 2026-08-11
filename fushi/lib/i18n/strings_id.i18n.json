@@ -3310,5 +3310,7 @@
   "dict_download_progress_show": "View progress",
   "dict_download_cancelled": "Download cancelled.",
   "dict_download_import_uncancellable": "Importing cannot be interrupted",
-  "dict_download_busy": "A dictionary download is already running."
+  "dict_download_busy": "A dictionary download is already running.",
+  "gal_hook_ingame_lookup": "In-game dictionary lookup",
+  "gal_hook_ingame_lookup_hint": "Show the dictionary card inside the game window itself (KiriKiri engine, Windows only)"
 }

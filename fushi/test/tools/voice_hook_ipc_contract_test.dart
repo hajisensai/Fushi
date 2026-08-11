@@ -35,7 +35,8 @@ void main() {
       expect(source, contains('constexpr uint32_t $bit ='),
           reason: '$bit 没在契约头里定义');
     }
-    expect(source, contains('constexpr uint32_t kSharedVersion = 13;'));
+    // v14：追加游戏内查词区（hit / input / frame 三通道）。纯追加，前面各区偏移不动。
+    expect(source, contains('constexpr uint32_t kSharedVersion = 14;'));
   });
 
   test('host and native share the v12 thread preview seqlock contract', () {

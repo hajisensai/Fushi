@@ -1351,10 +1351,15 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   const uint64_t thread_preview_bytes =
       static_cast<uint64_t>(fushi_voice_hook::kThreadPreviewCount) *
       sizeof(fushi_voice_hook::ThreadPreviewSlot);
+  // v14：游戏内查词区（hit 槽 + 输入环 + 位图双缓冲）。同样追加在最尾。
+  const uint64_t lookup_region_bytes = fushi_voice_hook::LookupRegionBytes(
+      fushi_voice_hook::kLookupInputSlotCount,
+      fushi_voice_hook::kLookupFrameCount,
+      fushi_voice_hook::kLookupBitmapBytes);
   const uint64_t total_size = sizeof(SharedHeader) + ring_capacity +
                               text_region_bytes + clip_region_bytes +
                               loopback_capacity + loopback_marker_bytes +
-                              thread_preview_bytes;
+                              thread_preview_bytes + lookup_region_bytes;
   const bool legacy_hibiki_ipc =
       fushi_voice_hook::ComponentUsesLegacyHibikiIpc(dll_path);
   const std::wstring shm = SharedMemoryName(pid, legacy_hibiki_ipc);
@@ -1420,6 +1425,13 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     header->thread_preview_offset = static_cast<uint32_t>(
         header->loopback_marker_offset + loopback_marker_bytes);
     header->thread_preview_slot_count = fushi_voice_hook::kThreadPreviewCount;
+    // v14：查词区紧随预览区，同样在布局最尾。lookup_enabled 保持 0——由 host 在用户
+    // 真正开启游戏内查词时置 1，注入侧在此之前一个字节都不写、一个 hook 都不装。
+    header->lookup_region_offset = static_cast<uint32_t>(
+        header->thread_preview_offset + thread_preview_bytes);
+    header->lookup_bitmap_bytes = fushi_voice_hook::kLookupBitmapBytes;
+    header->lookup_frame_count = fushi_voice_hook::kLookupFrameCount;
+    header->lookup_input_slot_count = fushi_voice_hook::kLookupInputSlotCount;
   } else {
     fprintf(stderr,
             "[session] reusing live hook mapping pid=%lu text=%u audioBytes=%llu\n",

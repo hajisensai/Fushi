@@ -206,6 +206,54 @@ class GlobalLookupWindow {
   // SetLayeredWindowAttributes is called, so the call always follows).
   void SetWindowAlpha(int percent);
 
+  // ── v14 游戏内查词（KiriKiri/KAGEX）：本窗当卡片的**像素来源** ──────────────────
+  //
+  // 词典卡片在游戏渲染树里显示，但像素仍由本窗出：注入侧只做几何传感与位图落地，
+  // 分词/查词/排版/主题/17 语言全部留在这一份既有实现里（见
+  // docs/specs/2026-08-10-kirikiri-ingame-lookup-plan.md §4.1）。所以这里加的不是
+  // 第二个 WebView2，而是给**已有的离屏合成实例**开两个出口：取像素、喂输入。
+  //
+  // [ok]=false 时其余参数无意义。[clamped]=true 表示源画面比 max_width/max_height 大、
+  // 已按左上角裁剪——上层据此知道卡片被切过，而不是默默投一张残帧出去。
+  //
+  // 为什么是 continuation 而不是 `bool CaptureBgra(out…)` 这种同步签名：
+  // `ICoreWebView2::CapturePreview` 是异步 API，它的完成回调排在**本线程**的消息队列上。
+  // 想同步等它就只有两条路——阻塞等待（队列永远派发不到那个回调，直接死锁）或就地泵
+  // 消息（重入 WndProc / WebView2 内部状态机）。MediaResolver 当初就是为同一个理由做成
+  // 异步的，这里照抄那套纪律。
+  using BgraFrameCallback = std::function<void(
+      bool ok, bool clamped, const std::vector<uint8_t>& bgra, uint32_t width,
+      uint32_t height, uint32_t pitch)>;
+
+  // 把当前离屏 WebView2 的内容取成契约规定的位图格式：
+  // **BGRA8 / 直通（非预乘）alpha / 自顶向下 / pitch 恒为正**
+  // （真相源是 voice_hook_ipc.h 的 v14 查词区注释）。写成预乘不会报错，只会让卡片
+  // 半透明边缘发暗——所以格式不由这里"看着办"，由契约钉死。
+  //
+  // MVP 路径：`CapturePreview`（PNG 流）+ WIC 解码成 32bppBGRA。够 P1 静态卡片
+  // （一次查词一帧，编解码 ~10-20ms 落在 host 线程，不占游戏主线程）。
+  // 升级路径（P2 交互式高帧率才需要）：自持
+  // `IDXGIFactory2::CreateSwapChainForComposition` 作 WebView2 的
+  // root visual target，然后 `ID3D11DeviceContext::CopyResource` 到 D3D11_USAGE_STAGING
+  // 纹理、`Map(D3D11_MAP_READ)` 直接读回 BGRA——省掉整条 PNG 编解码，代价是要自己管
+  // swap chain 生命周期与 DPI/尺寸变化。**不要**在没有实测帧率不足前先做它。
+  //
+  // 必须在平台线程（本窗的消息循环线程）调用；continuation 也在该线程回调。
+  void CaptureBgraAsync(uint32_t max_width, uint32_t max_height,
+                        BgraFrameCallback done);
+
+  // 把游戏侧转发来的一条 LookupInputSlot 喂给已有的 composition controller。
+  // [kind] 取 voice_hook_ipc.h 的 kLookupInput*（0=move 1=leftDown 2=leftUp
+  // 3=wheel 4=leave）；.cpp 里有 static_assert 钉住这组取值，契约改了编译期就红。
+  // [x]/[y] 是**卡片局部坐标**（注入侧已减去 anchor），正好等于 WebView 客户区坐标。
+  // [keys] 是 MK_* 位掩码。
+  //
+  // 只有 composition 实例能收：windowed WebView2 没有 SendMouseInput（输入靠它自己的
+  // 子 HWND），而游戏内卡片根本没有对应的子窗口。所以游戏内查词的像素源实例**必须**
+  // 先 SetCompositionMode(true)；否则本方法一律返回 false 而不是假装喂进去了。
+  bool InjectLookupInput(uint32_t kind, int32_t x, int32_t y, int32_t wheel,
+                         uint32_t keys);
+
  private:
   static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam,
                                   LPARAM lparam) noexcept;

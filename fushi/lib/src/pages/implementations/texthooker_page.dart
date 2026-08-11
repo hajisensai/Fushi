@@ -11,6 +11,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
+import 'package:fushi/src/lookup/sentence_extraction.dart';
 import 'package:fushi/src/mining/gal_hook_failure_text.dart';
 import 'package:fushi/src/mining/magpie_upscaling_service.dart';
 import 'package:fushi/src/mining/magpie_upscaling_text.dart';
@@ -1144,7 +1145,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   /// 从命中的那个字起做查词（BUG-1478）。
   ///
-  /// 查询串是「该字到行尾」截断到 [_kLookupQueryMaxChars] 的一段，**不是**分词器
+  /// 查询串是「该字到行尾」截断到 [kLookupQueryMaxChars] 的一段（共享
+  /// [lookupQueryFromIndex]，游戏内查词走同一份），**不是**分词器
   /// 切出来的那个词：引擎本来就按查询串做最长匹配并回报 `bestLength`（弹窗据此高亮
   /// 整词跨度），所以点「永」照样命中「永遠」，而点「遠」能单独查到「遠」——
   /// 老实现把整词当查询串，后者根本无从下手。
@@ -1153,13 +1155,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     int charIndex,
     Rect rect,
   ) {
-    final String text = line.text;
-    if (charIndex < 0 || charIndex >= text.length) return;
-    final int end = charIndex + _kLookupQueryMaxChars > text.length
-        ? text.length
-        : charIndex + _kLookupQueryMaxChars;
-    final String word = text.substring(charIndex, end);
-    if (word.trim().isEmpty) return;
+    final String word = lookupQueryFromIndex(line.text, charIndex);
+    if (word.isEmpty) return;
     _selectLine(line);
     // BUG-1028：顶层查词复用常驻热槽（reuseWarmSlot:true）而非 replaceStack 冷建，
     // 复用已预热的弹窗 WebView，消除冷启动延迟（对齐 home_dictionary_page.dart:752）。
@@ -3019,12 +3016,6 @@ class _LineAudioChip extends StatelessWidget {
     );
   }
 }
-
-/// 逐字查词时喂给引擎的查询串上限（UTF-16 code unit）。
-///
-/// 引擎按查询串做最长匹配，所以只要「足够长到装得下最长的复合词 + 屈折尾巴」即可；
-/// 给整行会让每次点击都多传几十上百个用不到的字符。日语最长实用复合词远短于 24。
-const int _kLookupQueryMaxChars = 24;
 
 /// 给分词结果补上每个词首字在整行里的 UTF-16 偏移。
 ///

@@ -40,6 +40,31 @@ class SentenceExtractionResult {
   final int selLen;
 }
 
+/// 逐字查词时喂给引擎的查询串上限（UTF-16 code unit）。
+///
+/// 引擎按查询串做**最长匹配**并回报 `bestLength`，所以只要「足够长到装得下最长的
+/// 复合词 + 屈折尾巴」即可；给整行会让每次点击都多传几十上百个用不到的字符。日语
+/// 最长实用复合词远短于 24。（BUG-1478：原先只在 texthooker_page 里当私有常量。）
+const int kLookupQueryMaxChars = 24;
+
+/// 从命中字 [charIndex] 起截一段查询串（UTF-16 下标域，与 Dart String 下标一致）。
+///
+/// 这是全 app「给定整句 + 光标字符偏移 → 查词」的统一入口形状：**不做分词**，把
+/// 「从这个字到后面 [maxChars] 个字」整段交给引擎做最长匹配。点「永」照样命中
+/// 「永遠」，点「遠」能单独查到「遠」——把分词器切出的整词当查询串则后者无从下手
+/// （BUG-1478）。越界 / 空白返回空串，调用方据此放弃本次查词。
+String lookupQueryFromIndex(
+  String text,
+  int charIndex, {
+  int maxChars = kLookupQueryMaxChars,
+}) {
+  if (charIndex < 0 || charIndex >= text.length) return '';
+  final int end =
+      charIndex + maxChars > text.length ? text.length : charIndex + maxChars;
+  final String query = text.substring(charIndex, end);
+  return query.trim().isEmpty ? '' : query;
+}
+
 /// Sentence-terminating delimiters. Byte-identical to
 /// `fushiSelection.sentenceDelimiters` in reader_selection_scripts.dart
 /// ('。！？.!?\n\r'): the char AFTER one of these starts a new sentence.

@@ -6177,6 +6177,12 @@ class AppModel with ChangeNotifier {
   Future<void> setGalHookTextFontSize(double value) =>
       prefsRepo.setGalHookTextFontSize(value);
 
+  // KiriKiri 游戏内查词总开关（仅 Windows）：开着时命中的字会在**游戏渲染树内部**
+  // 弹出与 app 内逐像素一致的词典卡片。
+  bool get galIngameLookupEnabled => prefsRepo.galIngameLookupEnabled;
+  Future<void> setGalIngameLookupEnabled(bool value) =>
+      prefsRepo.setGalIngameLookupEnabled(value);
+
   // TODO-370: 悬浮字幕透明度（按钮底色 / 文字），0..100 百分比，100=保持现观感。
   int get floatingLyricButtonBgOpacity =>
       prefsRepo.floatingLyricButtonBgOpacity;
