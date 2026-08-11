@@ -140,13 +140,9 @@ void main() {
     expect(source, isNot(contains('FushiListItem(')),
         reason: 'wide categories must not render as a left list anymore');
     expect(source, contains('_buildTopCategoryBar('),
-        reason: 'wide categories must render in a top horizontal chip bar');
-    expect(source, contains('FushiSelectableChip('),
-        reason: 'each top-bar category is a selectable chip');
-    // TODO-1351（用户复诉）：顶栏 chip 恢复「图标 + 完整文字」，标签按固有宽度完整
-    // 渲染（allowLabelOverflow，无 ellipsis）；TODO-640 的纯图标 + tooltip 方案废弃。
-    expect(source, contains('allowLabelOverflow: true'),
-        reason: 'top-bar category chips render full labels (TODO-1351)');
+        reason: 'wide categories must render in a top segmented control');
+    expect(source, contains('adaptiveSegmentedButton<String>('),
+        reason: 'top-bar categories must use a segmented selector');
     expect(source, isNot(contains('iconOnly: true')),
         reason:
             'icon-only top-bar chips were rejected by the user (TODO-1351)');
@@ -154,20 +150,14 @@ void main() {
         reason: 'labels are inline now, not tooltip-only (TODO-1351)');
     expect(source, contains('_buildWideDetailTitle('),
         reason: 'the selected category title renders atop the detail pane');
-    // BUG（用户复诉「弹幕 / 控制 分类被截在视口外、点不到」）：顶栏分类条放不下时必须
-    // 换行堆叠（Wrap），不得回退横向 SingleChildScrollView 裁断——横滑会把末位分类推到
-    // 视口外、无滚动条提示。守卫只扫 _buildTopCategoryBar 方法体，与
-    // video_quick_settings_sheet_test 的同款守卫互为镜像。
+    // 分段条保持单行；放不下时收成图标分段，不产生横向长条。
     final String topBarSource = source.substring(
       source.indexOf('Widget _buildTopCategoryBar('),
       source.indexOf('Widget _buildWideDetailTitle('),
     );
-    expect(topBarSource, contains('Wrap('),
-        reason: 'the top category bar wraps so no category chip is clipped');
+    expect(topBarSource, contains('final bool compact ='));
     expect(topBarSource, isNot(contains('scrollDirection: Axis.horizontal')),
-        reason:
-            'top category bar must wrap, not horizontally scroll (last chip '
-            'was pushed off-screen and unclickable)');
+        reason: 'the segmented selector must compact instead of scrolling');
     expect(source, contains('padding: widePrimaryPadding'));
     // 详情按选中 id KeyedSubtree，防 Element 复用副作用。
     expect(source, contains('KeyedSubtree('));
@@ -250,7 +240,7 @@ void main() {
             'mpv advanced heading must not float outside its settings group');
   });
 
-  test('embedded shader detail keeps section titles inside video surfaces', () {
+  test('embedded shader detail flattens groups inside the video surface', () {
     // 阶段B：_buildShadersDetail 移出 sheet，改为 video_settings_actions.dart 的
     // buildVideoShaderManager（SettingsCustomItem builder）；守卫改锁新位置。
     final String actionsSource =
@@ -266,9 +256,9 @@ void main() {
         reason: 'video settings should embed the shader manager detail');
     expect(
       shaderDetail,
-      contains('titlePlacement: SettingsSectionTitlePlacement.inside'),
+      contains('embedded: true'),
       reason:
-          'embedded shader detail headings must be part of the video section surfaces',
+          'embedded shader detail must reuse the schema surface instead of nesting cards',
     );
 
     final String shaderSource =
@@ -286,13 +276,7 @@ void main() {
       'class _MpvShaderPickerDialog extends StatefulWidget {',
     );
     final int titledShaderSections =
-        RegExp(r'AdaptiveSettingsSection\(\s*title:')
-            .allMatches(buildMethod)
-            .length;
-    final int placementForwarders =
-        RegExp(r'titlePlacement:\s*widget\.titlePlacement')
-            .allMatches(buildMethod)
-            .length;
+        RegExp(r'_shaderSection\(\s*title:').allMatches(buildMethod).length;
 
     expect(managerWidget,
         contains('this.titlePlacement = SettingsSectionTitlePlacement.outside'),
@@ -300,12 +284,18 @@ void main() {
             'standalone shader manager callers should keep the current outside-title default');
     expect(managerWidget,
         contains('final SettingsSectionTitlePlacement titlePlacement;'));
+    expect(managerWidget, contains('this.embedded = false'));
+    expect(managerWidget, contains('final bool embedded;'));
     expect(titledShaderSections, 3,
         reason:
             'shader detail is expected to expose quality, advanced, and installed sections');
-    expect(placementForwarders, titledShaderSections,
+    expect(buildMethod, contains('if (!widget.embedded)'));
+    expect(buildMethod, contains('_EmbeddedShaderSection('));
+    expect(buildMethod, contains('AdaptiveSettingsSection('),
+        reason: 'standalone shader manager still uses grouped settings cards');
+    expect(buildMethod, contains('titlePlacement: widget.titlePlacement'),
         reason:
-            'all titled shader sections must honor the caller-selected title placement');
+            'standalone group cards still honor the selected title placement');
   });
 
   test('video settings side panel owns UI scale and hover lifetime', () {
@@ -388,10 +378,8 @@ void main() {
     expect(
         hoverExitMethod, isNot(contains('_videoControlsVisible.value = false')),
         reason: '鼠标移出不应在 Hibiki 侧直接收起可见性（交给 media_kit onExit 推送，TODO-364）');
-    expect(
-        syntheticHoverMethod,
-        contains(
-            'event.device == _VideoFushiPageState._syntheticHoverDevice'));
+    expect(syntheticHoverMethod,
+        contains('event.device == _VideoFushiPageState._syntheticHoverDevice'));
     expect(
         hoverHandlerMethod, contains('if (!_isSyntheticControlsHover(event))'));
     // TODO-364：真实 hover 不再乐观翻镜像（可见性由 media_kit onHover 推送）。
@@ -415,7 +403,7 @@ void main() {
       '/// 从本机 mpv 发现的着色器多选导入对话框',
     );
 
-    expect(buildMethod, contains('AdaptiveSettingsSection('),
+    expect(buildMethod, contains('_shaderSection('),
         reason: '着色器详情应按画质档位 / 进阶 / 列表分组');
     // TODO-041 方案甲'：顶部是五档单选器（无/低/中/高/极高），不再一堆陌生动作堆叠。
     expect(buildMethod, contains('video_shader_quality_tier'),

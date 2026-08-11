@@ -122,8 +122,8 @@ void _expectNoFlutterErrors(WidgetTester tester) {
   expect(exceptions, isEmpty);
 }
 
-/// 宽窗顶栏分类 chip 的稳定 key（与 video_quick_settings_sheet.dart 同步）：测试 /
-/// 焦点驱动统一靠 id key 命中，不依赖标签文案（TODO-1351 起 chip 为「图标 + 完整文字」）。
+/// 宽窗顶栏分段项的稳定 key（与 video_quick_settings_sheet.dart 同步）：测试 /
+/// 焦点驱动统一靠 id key 命中，不依赖标签文案。
 Finder _categoryChip(String id) =>
     find.byKey(ValueKey<String>('video-settings-cat-$id'));
 
@@ -372,12 +372,11 @@ void main() {
     // 上下分栏无 push：无返回箭头。
     expect(find.byIcon(Icons.arrow_back), findsNothing);
 
-    // TODO-556：大分类从左栏 master-detail 改成顶部横滑 chip 行（入口置顶）。
+    // TODO-556：大分类从左栏 master-detail 改成顶部分段选择器（入口置顶）。
     // 不再有左右 master-detail（无 MaterialSupportingPaneLayout / 左栏 FushiListItem）。
     expect(find.byType(MaterialSupportingPaneLayout), findsNothing);
     expect(find.byType(FushiListItem), findsNothing);
-    // 每个分类一个 FushiSelectableChip（六分类 → 至少 6 个）。
-    expect(find.byType(FushiSelectableChip), findsAtLeastNWidgets(6));
+    expect(find.byType(SegmentedButton<String>), findsOneWidget);
 
     // 分类 chip 在上、详情在下（顶栏）：分类条的 dy 必须小于详情的 dy。
     final double categoryY = tester.getTopLeft(_categoryChip('subtitle')).dy;
@@ -1641,7 +1640,7 @@ void main() {
     // 顶部分类 chip 条外层 Padding：水平 inset = page+gap=28，顶部 card=20（不再贴死），
     // 底部留 gap/2=4 与下方分隔线呼吸。chip 条本身是横向 scroll（无 padding 属性），
     // 故 padding 落在它外层那个 Padding widget 上，按值精确定位。
-    final Finder firstCategoryChip = find.byType(FushiSelectableChip).first;
+    final Finder firstCategoryChip = _categoryChip('playback');
     final Iterable<Padding> categoryPads = tester.widgetList<Padding>(
       find.ancestor(
         of: firstCategoryChip,
@@ -2315,30 +2314,24 @@ void main() {
           reason: '视频设置宽窗不得再回退到左右 master-detail（书籍设置才用它）');
       expect(src, isNot(contains('_buildWidePane(')),
           reason: '旧左栏构建器 _buildWidePane 必须删除');
-      // TODO-1351（用户复诉）：顶栏 chip 恢复「图标 + 完整文字」标签，按固有宽度完整
-      // 渲染（allowLabelOverflow，无 ellipsis），放不下由横滑条兜底；TODO-640 的
-      // 纯图标 + tooltip 方案废弃，不得回退。
-      expect(src, contains('allowLabelOverflow: true'),
-          reason: '顶栏分类 chip 标签须完整渲染不省略（TODO-1351）');
+      expect(src, contains('adaptiveSegmentedButton<String>('),
+          reason: '顶栏分类须使用分段选择器');
       expect(src, isNot(contains('iconOnly: true')),
           reason: '顶栏分类 chip 不得退回仅图标模式（TODO-1351 用户复诉）');
       expect(src, contains('_buildWideDetailTitle('),
           reason: '宽窗详情顶部须渲染当前分类标题（详情区页头）');
-      // BUG（末位分类被裁）：顶栏须用 Wrap 换行堆叠，不得回退横向 SingleChildScrollView
-      // 裁断（旧实现把「弹幕 / 控制」推到视口外，用户看不全也点不到）。
+      // 分段条保持单行；空间不足时响应式收成图标分段。
       final String barSrc = src.substring(
         src.indexOf('Widget _buildTopCategoryBar('),
         src.indexOf('Widget _buildWideDetailTitle('),
       );
-      expect(barSrc, contains('Wrap('),
-          reason: '顶栏分类条须用 Wrap 换行堆叠（放不下自动折行，不裁断）');
+      expect(barSrc, contains('final bool compact ='));
       expect(barSrc, isNot(contains('scrollDirection: Axis.horizontal')),
-          reason: '顶栏分类条不得回退横向滚动（会把末位分类裁到视口外）');
+          reason: '分段选择器须自适应收紧，不得形成横向长条');
     });
 
-    testWidgets('BUG（顶栏末位分类被裁）：窄宽窗顶栏 chip 换行堆叠，7 个分类全部可见不被右裁', (tester) async {
-      // 宽窗阈值 560×440；取 620 宽——进宽窗分支，但 7 个「图标 + 完整文字」chip 一行
-      // 装不下。旧横向滚动实现会把末位「弹幕 / 控制」推到视口右侧外裁掉；Wrap 换行后全可见。
+    testWidgets('窄宽窗顶栏分段选择器响应式收成一行图标', (tester) async {
+      // 宽窗阈值 560×440；取 620 宽，让七段控件走紧凑分支。
       await tester.binding.setSurfaceSize(const Size(620, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await _pumpSheet(tester);
@@ -2353,21 +2346,16 @@ void main() {
         'controls',
       ];
       for (final String id in ids) {
-        expect(_categoryChip(id), findsOneWidget, reason: '$id chip 必须在顶栏渲染');
+        expect(_categoryChip(id), findsOneWidget, reason: '$id 分段项必须渲染');
       }
 
-      // 末位分类「控制」的右缘不得超出面板宽度（不被横向裁到视口外）。
       final Rect controls = tester.getRect(_categoryChip('controls'));
-      expect(controls.right, lessThanOrEqualTo(620.0),
-          reason: '末位分类 chip 不得被裁到视口右侧外（须换行，而非横向滚动裁断）');
-
-      // 一行放不下 → 换行：末位「控制」应落到比首位「播放」更低的行（dy 更大）。
+      expect(controls.right, lessThanOrEqualTo(620.0));
       final double playbackTop =
           tester.getTopLeft(_categoryChip('playback')).dy;
       final double controlsTop =
           tester.getTopLeft(_categoryChip('controls')).dy;
-      expect(controlsTop, greaterThan(playbackTop),
-          reason: '装不下时顶栏必须换行堆叠（Wrap），末位分类落到下一行');
+      expect(controlsTop, closeTo(playbackTop, 0.5));
 
       _expectNoFlutterErrors(tester);
     });

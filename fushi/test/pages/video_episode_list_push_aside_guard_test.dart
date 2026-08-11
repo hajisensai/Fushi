@@ -171,6 +171,15 @@ void main() {
       isTrue,
       reason: 'Stack 应渲染底部 _episodeOverlayPanel',
     );
+    final int barrier = body.indexOf("'video-episode-dismiss-barrier'");
+    final int panel = body.indexOf('_episodeOverlayPanel(episodeVisible)');
+    expect(barrier, greaterThan(-1), reason: '选集打开时应在视频区挂点外关闭 barrier');
+    expect(panel, greaterThan(barrier),
+        reason: '选集横轨必须绘制在 barrier 之上，保证卡片与 X 仍可点击');
+    expect(body.contains('if (episodeVisible)'), isTrue,
+        reason: '选集隐藏时 barrier 必须从树中移除，不能拦截普通视频点击');
+    expect(body.contains('onTap: _closeEpisodeList'), isTrue,
+        reason: '点击视频区应复用选集关闭的单一真相源');
     expect(
       body.contains('_episodeSidePanel('),
       isFalse,
@@ -180,6 +189,24 @@ void main() {
       src.contains('child: VideoEpisodePanel('),
       isTrue,
       reason: '剧集轨道应渲染 VideoEpisodePanel widget',
+    );
+  });
+
+  test('BUG-1501：选集可见时页面 pointer-up 早返回，不触发播放器双击手势', () {
+    final int start = src.indexOf('void _handleVideoPointerUp(');
+    expect(start, greaterThan(-1));
+    final int end = src.indexOf('\n  /// TODO-1058', start);
+    expect(end, greaterThan(start));
+    final String body = src.substring(start, end);
+    final int episodeGuard = body.indexOf('if (_episodeListVisible.value)');
+    final int doubleClick = body.indexOf('final DateTime now = DateTime.now()');
+    expect(episodeGuard, greaterThan(-1));
+    expect(doubleClick, greaterThan(episodeGuard),
+        reason: '选集可见门控必须先于双击 / 暂停 / 全屏判定');
+    expect(
+      body.substring(episodeGuard, doubleClick),
+      contains('return;'),
+      reason: 'barrier 点击的 pointer-up 必须被消费，只留下 onTap 关闭选集',
     );
   });
 

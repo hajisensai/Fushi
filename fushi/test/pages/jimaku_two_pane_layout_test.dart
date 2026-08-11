@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -16,6 +18,16 @@ import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
 /// 独立成结果区（宽屏右栏 / 窄屏下段 Flexible）——面板内容再多也只在面板内滚，列表
 /// 永远分得到非 0 高度且可滚。
 void main() {
+  test('BUG-1504: dialog and filter pane scale across viewport widths', () {
+    expect(resolveJimakuDialogMaxWidth(360), 328);
+    expect(resolveJimakuDialogMaxWidth(800), closeTo(752, 0.001));
+    expect(resolveJimakuDialogMaxWidth(1280), closeTo(1152, 0.001));
+    expect(resolveJimakuDialogMaxWidth(2048), closeTo(1843.2, 0.001));
+    expect(resolveJimakuFilterPaneWidth(700), 300);
+    expect(resolveJimakuFilterPaneWidth(1280), closeTo(358.4, 0.001));
+    expect(resolveJimakuFilterPaneWidth(1800), 420);
+  });
+
   List<JimakuCandidate> makeCandidates(int n) {
     return List<JimakuCandidate>.generate(
       n,
@@ -138,6 +150,32 @@ void main() {
         reason: '宽屏下结果列表应在筛选面板右侧（两栏并排）');
     expect(listRect.top, lessThan(queryRect.bottom),
         reason: '两栏应大致同排（列表顶端不低于筛选面板首个输入框底端）');
+    expect(tester.getSize(find.byType(Dialog)).width, greaterThan(900),
+        reason: 'BUG-1504：桌面 Jimaku 框不应继续被 720dp 上限压成窄条');
+  });
+
+  test('BUG-1504: search paints loading frame before persistence and network',
+      () {
+    final String source =
+        File('lib/src/pages/implementations/jimaku_subtitle_dialog.dart')
+            .readAsStringSync();
+    final int methodStart = source.indexOf('Future<void> _search() async {');
+    final int methodEnd = source.indexOf(
+      'Future<void> _selectSeries(',
+      methodStart,
+    );
+    final String search = source.substring(methodStart, methodEnd);
+
+    final int searchingState = search.indexOf('_searching = true;');
+    final int paintFrame =
+        search.indexOf('await WidgetsBinding.instance.endOfFrame;');
+    final int persistKey =
+        search.indexOf('await widget.onApiKeyChanged(apiKey);');
+    final int createClient = search.indexOf('AniListClient(');
+    expect(searchingState, greaterThanOrEqualTo(0));
+    expect(paintFrame, greaterThan(searchingState));
+    expect(persistKey, greaterThan(paintFrame));
+    expect(createClient, greaterThan(persistKey));
   });
 
   testWidgets('narrow screen: single column (list below filter pane)',

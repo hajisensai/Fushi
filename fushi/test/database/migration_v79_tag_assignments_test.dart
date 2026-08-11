@@ -10,7 +10,9 @@ import 'package:fushi_core/fushi_core.dart';
 ///  - collection：id 字符串化；game：id 原样；三者旧表无 added_at 落 0；
 ///  - 五张旧表 DROP。
 void main() {
-  Future<FushiDatabase> openV78Db() async {
+  Future<FushiDatabase> openV78Db({bool legacyVideoUidColumn = false}) async {
+    final String videoUidColumn =
+        legacyVideoUidColumn ? 'video_book_uid' : 'book_uid';
     final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
         setup: (rawDb) {
@@ -54,10 +56,10 @@ CREATE TABLE srt_book_tag_mappings (
           rawDb.execute('''
 CREATE TABLE video_book_tag_mappings (
   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-  book_uid TEXT NOT NULL,
+  $videoUidColumn TEXT NOT NULL,
   tag_id INTEGER NOT NULL,
   added_at INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (book_uid, tag_id)
+  UNIQUE ($videoUidColumn, tag_id)
 )
 ''');
           rawDb.execute('''
@@ -91,8 +93,8 @@ CREATE TABLE galgame_tag_mappings (
           rawDb.execute(
               'INSERT INTO srt_book_tag_mappings (srt_book_id, tag_id) '
               'VALUES (99, 1)');
-          rawDb.execute(
-              'INSERT INTO video_book_tag_mappings (book_uid, tag_id, added_at) '
+          rawDb.execute('INSERT INTO video_book_tag_mappings '
+              '($videoUidColumn, tag_id, added_at) '
               "VALUES ('video/v1', 1, 222)");
           rawDb.execute(
               'INSERT INTO collection_tag_mappings (collection_id, tag_id) '
@@ -140,6 +142,24 @@ CREATE TABLE galgame_tag_mappings (
           variables: [Variable<String>(old)]).get();
       expect(rows, isEmpty, reason: '旧表 $old 已 DROP');
     }
+  });
+
+  test('v79：兼容未落 v57 改名、仍使用 video_book_uid 的真实旧库', () async {
+    final FushiDatabase db = await openV78Db(legacyVideoUidColumn: true);
+
+    final List<TagAssignmentRow> rows = await db.getAllTagAssignments();
+    final TagAssignmentRow video = rows.singleWhere(
+      (TagAssignmentRow row) => row.mediaKind == 'video',
+    );
+    expect(video.entryKey, 'video/v1');
+    expect(video.addedAt, 222);
+    final oldTable = await db
+        .customSelect(
+          "SELECT name FROM sqlite_master WHERE type='table' "
+          "AND name='video_book_tag_mappings'",
+        )
+        .get();
+    expect(oldTable, isEmpty, reason: '旧列数据搬完后才能 DROP 遗留映射表');
   });
 
   test('v79 后：五 kind 走同一张表读写，跨 kind 互不串', () async {

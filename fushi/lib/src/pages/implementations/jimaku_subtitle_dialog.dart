@@ -29,6 +29,19 @@ class JimakuCandidate {
   String get format => file.extension;
 }
 
+/// Jimaku 字幕框按视口宽度自适应：手机接近满宽，中等窗口稍留边距，桌面/2K/4K
+/// 稳定占 90%，不再被固定 dp 上限压成屏幕中央的一条窄框。
+double resolveJimakuDialogMaxWidth(double viewportWidth) {
+  if (!viewportWidth.isFinite || viewportWidth <= 0) return 1040;
+  if (viewportWidth < 600) return (viewportWidth - 32).clamp(0, viewportWidth);
+  if (viewportWidth < 1000) return viewportWidth * 0.94;
+  return viewportWidth * 0.90;
+}
+
+/// 两栏模式下左筛选栏随可用正文宽增长，同时限制在适合表单阅读的范围内。
+double resolveJimakuFilterPaneWidth(double contentWidth) =>
+    (contentWidth * 0.28).clamp(300, 420);
+
 /// 给候选排序，消除 Jimaku 返回的乱序（用户报「集数是乱的」的根因是全程无排序）。
 ///
 /// 排序键（稳定，越靠前越优先）：
@@ -258,8 +271,8 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
     if (query.isEmpty) return;
     // 集数：空或非法 → null（不传 episode = 现状列全部），保底逻辑见 §1.2。
     final int? episode = int.tryParse(_episodeCtrl.text.trim());
-    await widget.onApiKeyChanged(apiKey);
 
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _searching = true;
       _searched = false;
@@ -267,6 +280,13 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
       _seriesMatches = const <AniListMedia>[];
       _selectedSeriesId = null;
     });
+    // BUG-1504：先让「按钮禁用 + 结果区 loading」完整绘制一帧，再做偏好写入、
+    // 代理 client 初始化和联网。旧顺序先 await onApiKeyChanged，慢磁盘/数据库下点击后
+    // 首帧没有任何反馈，看起来像整块 UI 卡住；这里与 backup import 的重 IO 遮罩采用
+    // 同一条 paint-before-work 约束。
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    await widget.onApiKeyChanged(apiKey);
 
     AniListClient? anilist;
     try {
@@ -300,6 +320,8 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
       _searching = true;
       _candidates = const <JimakuCandidate>[];
     });
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
     try {
       await _fetchCandidates(
         anilistId: media.id,
@@ -553,9 +575,6 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
   /// 宽 ~296 必单栏；横屏手机（640+）正好用两栏吃掉「矮而宽」。
   static const double _twoPaneMinWidth = 560;
 
-  /// 宽屏左侧筛选面板宽（dp）。
-  static const double _filterPaneWidth = 252;
-
   /// 筛选面板（宽屏左栏 / 窄屏上段），配置项按操作顺序分组：① API key（可折叠）
   /// ② 搜索（番名/集数/搜索按钮）③ 系列消歧 ④ 结果筛选（语言/关键词，有结果才显示）。
   ///
@@ -668,16 +687,25 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
   /// 宽屏（≥[_twoPaneMinWidth]）两栏：左筛选面板（定宽、面板内滚动）+ 竖分隔线 +
   /// 右结果区吃满剩余宽度。stretch 让两栏同高，列表拿到有界高度正常滚动。
   Widget _buildWideBody(ThemeData theme) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        SizedBox(width: _filterPaneWidth, child: _buildFilterPane(theme)),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 12),
-          child: VerticalDivider(width: 1),
-        ),
-        Expanded(child: _buildResultsArea(theme)),
-      ],
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double filterPaneWidth =
+            resolveJimakuFilterPaneWidth(constraints.maxWidth);
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            SizedBox(
+              width: filterPaneWidth,
+              child: _buildFilterPane(theme),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: VerticalDivider(width: 1),
+            ),
+            Expanded(child: _buildResultsArea(theme)),
+          ],
+        );
+      },
     );
   }
 
@@ -702,17 +730,19 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final double viewportWidth = MediaQuery.sizeOf(context).width;
 
     // 外壳用仓库标准 FushiDialogFrame（内部仍是 Dialog）：scrollable:false 仍由
     // maxHeight 给整个对话框有界高度天花板，于是 Column(min) 拿到有界高度，正文的
     // Flexible 能正确分到剩余空间，候选列表内部普通（非 shrinkWrap）ListView 正常
     // 滚动，保留 BUG-279 不变量。若用 frame 默认 scrollable:true 包
     // SingleChildScrollView 给无界高度，Flexible 会坍缩成 0 高 → 回归 BUG-279，故此
-    // 处必须 scrollable:false。maxWidth 720 让大屏走两栏；insetPadding 保留
-    // horizontal:16（手机宽=屏宽-32，大屏由 720 封顶居中）。
+    // 处必须 scrollable:false。BUG-1504 后续：固定 1040dp 在 2K/4K 上仍显得过窄，
+    // 改由 resolveJimakuDialogMaxWidth 按视口取 90%/94%/手机安全边距；左右栏比例也
+    // 在 _buildWideBody 内随正文宽变化，不把某个分辨率的手调值硬套到所有屏幕。
     return FushiDialogFrame(
-      maxWidth: 720,
-      maxHeightFactor: 0.86,
+      maxWidth: resolveJimakuDialogMaxWidth(viewportWidth),
+      maxHeightFactor: 0.92,
       scrollable: false,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
