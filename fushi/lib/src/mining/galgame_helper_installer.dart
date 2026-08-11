@@ -29,8 +29,8 @@ const String kGalgameHelperBundledDirectoryName = 'galgame_helper';
 /// 按目标游戏位数选注入器架构目录名：32 位游戏→x86，否则→x64（注入 DLL 位数必须匹配目标进程）。
 String galgameHelperArch({required bool is32Bit}) => is32Bit ? 'x86' : 'x64';
 
-/// helper 发布包根目录清单。必须与
-/// `.github/workflows/voice-hook-helper.yml` 保持一致。
+/// helper 分发包根目录清单。必须与打包脚本
+/// `native/galgame_hook/tools/build_distribution.ps1` 的 `$expected` 清单保持一致。
 List<String> galgameHelperRequiredFiles(String arch) {
   switch (arch) {
     case 'x86':
