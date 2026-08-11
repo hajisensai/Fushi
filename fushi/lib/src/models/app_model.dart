@@ -5363,6 +5363,11 @@ class AppModel with ChangeNotifier {
 
   Future<void> closeDatabase() async {
     _isInitialised = false;
+    // BUG-1569②：合集观察者持有本库的表订阅 + 未决防抖 Timer，关库前必须撤——
+    // 否则防抖到点后 _runCollectionsSync 会对已关闭的 db 发起查询（drift「connection
+    // was closed」异常）。initialise 装载（installCollectionsSyncWatcher），此前只有
+    // 测试 teardown 调过 uninstall，生产三条关库路径全都不撤订阅。
+    uninstallCollectionsSyncWatcher();
     databaseCloseNotifier.notifyListeners();
     await quiesceBackgroundDatabaseWriters();
     await _database.close();
@@ -5375,6 +5380,9 @@ class AppModel with ChangeNotifier {
   }
 
   Future<void> closeForPopup() async {
+    // BUG-1569②：与 [closeDatabase] 同理——撤合集观察者，防止防抖 Timer 对已
+    // 关闭的 db 跑轻量同步。
+    uninstallCollectionsSyncWatcher();
     _prefsRepo?.removeListener(notifyListeners);
     databaseCloseNotifier.notifyListeners();
     await _database.close();
@@ -5393,6 +5401,9 @@ class AppModel with ChangeNotifier {
       unawaited(syncServerController.stop());
       syncServerController.dispose();
     }
+    // BUG-1569②：合集观察者是模块级全局（幂等，未装载时 no-op），dispose 路径
+    // 也对称撤掉，防止未决防抖 Timer 在 AppModel 销毁后仍去摸 db。
+    uninstallCollectionsSyncWatcher();
     // 其余三个 stop 都 null 安全 / 单例安全，未启动也可调，无需 _isInitialised 守卫。
     unawaited(TexthookerWsClientManager.instance.stop());
     unawaited(stopYomitanApiServer());

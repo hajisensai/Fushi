@@ -385,7 +385,115 @@ void triggerAutoSyncOnAppOpen({
   );
 }
 
+/// BUG-1569① 测试入口：以可 await 的方式跑一轮自动全量 sweep（生产入口
+/// [triggerAutoSyncOnAppOpen] 是 fire-and-forget 的 void，测试无从等它落定）。
+@visibleForTesting
+Future<void> runAutoSyncAllForTest({
+  required FushiDatabase db,
+  required Directory dictionaryResourceRoot,
+  required Directory audioDatabaseRoot,
+  required Directory tempDir,
+  List<LocalAudioDbEntry> localAudioEntries = const <LocalAudioDbEntry>[],
+  Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported,
+}) =>
+    _runAutoSyncAll(
+      db: db,
+      dictionaryResourceRoot: dictionaryResourceRoot,
+      audioDatabaseRoot: audioDatabaseRoot,
+      tempDir: tempDir,
+      localAudioEntries: localAudioEntries,
+      onLocalAudioImported:
+          onLocalAudioImported ?? (LocalAudioPackageContents _) async {},
+    );
+
 const _syncCooldownMs = 5 * 60 * 1000;
+
+/// BUG-1569①：整轮自动 sweep 以「失败」结局收场后的退避截止时刻（内存态，不落盘）。
+///
+/// 根因：成功冷却戳 `lastSyncMs` 由 [SyncOrchestrator.run] 在整轮**完整跑完**后才写
+/// （TODO-1332 有意如此，半截 sweep 不得压制下次重试）；而通道异常（典型：只配互联
+/// 且对端离线，`findOrCreateRootFolder` 的全候选探测超时抛错）发生在写戳之前——冷却
+/// 闸于是永远不推进，首页的每分钟定时 tick（`_periodicSyncInterval`）每次都重新跑一遍
+/// 全候选串行探测（2s × 候选数 × 每分钟），零退避。
+///
+/// 语义（固定退避）：
+/// - 任一自动 sweep 以 [SyncOutcomeReason.failed] 收场 → 记「now + [_syncCooldownMs]」
+///   为退避截止；截止前的自动 sweep 直接判 [SyncOutcomeReason.cooledDown] 跳过。
+/// - 成功（completed）→ 清零退避（对端活了，恢复正常节奏）；手动同步成功同样清零。
+/// - autoDisabled / cooledDown / noChannels 不触碰退避戳。
+/// - **不写** `lastSyncMs`（那是「完整跑成」的语义，键结构不动，与并行的按后端拆冷却
+///   戳工作正交）；**不落盘**：app 重启后戳归零，「启动即同步」不受上一进程失败影响，
+///   保持 TODO-1332 的跨启动重试语义。手动「立即同步」不经此闸（显式意图恒放行）。
+int? _autoSweepFailureBackoffUntilMs;
+
+/// BUG-1569① 测试观察点/复位（模块级状态在测试间必须可复位）。
+@visibleForTesting
+int? get autoSweepFailureBackoffUntilMsForTest =>
+    _autoSweepFailureBackoffUntilMs;
+
+@visibleForTesting
+void resetAutoSweepFailureBackoffForTest() =>
+    _autoSweepFailureBackoffUntilMs = null;
+
+/// BUG-1569①：自动 sweep 是否处于失败退避窗内（生产与测试共用同一判据）。
+@visibleForTesting
+bool isAutoSweepBackedOff({required int nowMs}) {
+  final int? until = _autoSweepFailureBackoffUntilMs;
+  return until != null && nowMs < until;
+}
+
+/// BUG-1569①：按本轮结局推进/清除失败退避戳（生产与测试共用同一状态机）。
+@visibleForTesting
+void noteAutoSweepOutcomeForBackoff(
+  SyncOutcomeReason reason, {
+  required int nowMs,
+}) {
+  if (reason == SyncOutcomeReason.failed) {
+    _autoSweepFailureBackoffUntilMs = nowMs + _syncCooldownMs;
+  } else if (reason == SyncOutcomeReason.completed) {
+    _autoSweepFailureBackoffUntilMs = null;
+  }
+}
+
+/// BUG-1569③：整轮 sweep 进行中到达的 per-book 退出书同步请求记账（按
+/// mediaIdentifier 去重，后到覆盖先到）。此前 [_runAutoSync] 撞上 `__all__` 直接
+/// `return` 丢弃——sweep 那几十秒里退出书的进度就悄悄不同步，下一个触发点才补上。
+/// 现在 sweep 收尾统一补跑（见 [_drainPendingBookSyncsAfterSweep]）。
+final Map<String, ({FushiDatabase db, SyncReportCallback? onReport})>
+    _pendingBookSyncsDuringSweep =
+    <String, ({FushiDatabase db, SyncReportCallback? onReport})>{};
+
+@visibleForTesting
+int get pendingBookSyncCountForTest => _pendingBookSyncsDuringSweep.length;
+
+/// BUG-1569③ 测试缝：模拟「整轮 sweep 进行中」。active=true 占住 `__all__`，
+/// false 释放。仅测试可用——生产的 `__all__` 归 sweep 两条路径自己管。
+@visibleForTesting
+bool debugMarkSweepInProgress(bool active) =>
+    active ? _syncingIds.add('__all__') : _syncingIds.remove('__all__');
+
+/// BUG-1569③：sweep 收尾补跑期间记账的 per-book 同步（fire-and-forget，与
+/// [triggerAutoSyncOnBackground] 同语义：messenger 为 null，冲突经 onReport 上浮）。
+/// 快照后清账：补跑本身若又撞上新 sweep 会重新记账，不丢也不死循环。
+@visibleForTesting
+void drainPendingBookSyncsAfterSweep() {
+  if (_pendingBookSyncsDuringSweep.isEmpty) return;
+  final Map<String, ({FushiDatabase db, SyncReportCallback? onReport})>
+      pending =
+      Map<String, ({FushiDatabase db, SyncReportCallback? onReport})>.of(
+          _pendingBookSyncsDuringSweep);
+  _pendingBookSyncsDuringSweep.clear();
+  for (final MapEntry<String,
+          ({FushiDatabase db, SyncReportCallback? onReport})> entry
+      in pending.entries) {
+    unawaited(_runAutoSync(
+      db: entry.value.db,
+      mediaIdentifier: entry.key,
+      messenger: null,
+      onReport: entry.value.onReport,
+    ));
+  }
+}
 
 Future<void> _runAutoSyncAll({
   required FushiDatabase db,
@@ -416,6 +524,14 @@ Future<void> _runAutoSyncAll({
       }
 
       final now = DateTime.now().millisecondsSinceEpoch;
+      // BUG-1569①：成功冷却戳只在整轮跑成后写（TODO-1332），失败轮不推进它——
+      // 只配互联且对端离线时，每分钟 tick 都会全额重付候选串行探测。失败退避戳
+      // 补上「失败也要有节奏」这一半：退避窗内直接跳过，语义见戳的文档。
+      // （成功冷却已按通道拆维度、移进下方通道循环内逐通道判，BUG-1580。）
+      if (isAutoSweepBackedOff(nowMs: now)) {
+        reason = SyncOutcomeReason.cooledDown;
+        return;
+      }
 
       // option B 双通道：依次跑云备份通道 + 互联通道（若启用），互不排斥。每条通道
       // 各自认证成功才实际跑；未配置的通道 no-op（_runSyncChannel 返回 null）。
@@ -490,12 +606,17 @@ Future<void> _runAutoSyncAll({
     );
   } finally {
     _syncingIds.remove('__all__');
+    final int finishedAt = DateTime.now().millisecondsSinceEpoch;
+    // BUG-1569①：失败 → 推进退避戳；成功 → 清零。cooledDown/noChannels 不触碰。
+    noteAutoSweepOutcomeForBackoff(reason, nowMs: finishedAt);
     _endSyncActivity(SyncRunOutcome(
       kind: SyncActivityKind.fullSweep,
       reason: reason,
       channelsRun: channelsRun,
-      finishedAt: DateTime.now().millisecondsSinceEpoch,
+      finishedAt: finishedAt,
     ));
+    // BUG-1569③：sweep 期间被挡下的退出书同步在此补跑（去重后逐本）。
+    drainPendingBookSyncsAfterSweep();
   }
 }
 
@@ -593,12 +714,19 @@ Future<ManualSyncResult> runManualFullSync({
     });
   } finally {
     _syncingIds.remove('__all__');
+    final int finishedAt = DateTime.now().millisecondsSinceEpoch;
+    // BUG-1569①：手动同步不受退避闸约束（显式意图恒放行），但结局同样喂给退避
+    // 状态机——跑成清零（对端被证实活着），失败推进（避免手动失败后紧跟的定时
+    // tick 又立刻全额探测一遍）。
+    noteAutoSweepOutcomeForBackoff(reason, nowMs: finishedAt);
     _endSyncActivity(SyncRunOutcome(
       kind: SyncActivityKind.fullSweep,
       reason: reason,
       channelsRun: channelsRun,
-      finishedAt: DateTime.now().millisecondsSinceEpoch,
+      finishedAt: finishedAt,
     ));
+    // BUG-1569③：手动全量 sweep 期间被挡下的退出书同步同样在此补跑。
+    drainPendingBookSyncsAfterSweep();
   }
 }
 
@@ -734,7 +862,14 @@ Future<void> _runAutoSync({
 }) async {
   final String? bookKey = ReaderFushiSource.parseBookKey(mediaIdentifier);
   if (bookKey == null || !_bookKeyPattern.hasMatch(mediaIdentifier)) return;
-  if (_syncingIds.contains('__all__')) return;
+  if (_syncingIds.contains('__all__')) {
+    // BUG-1569③：整轮 sweep 进行中不再静默丢弃——记账，sweep 收尾统一补跑
+    // （见 [drainPendingBookSyncsAfterSweep]）。此前直接 return，sweep 那几十秒里
+    // 退出的书进度就悄悄不同步，且用户无从感知。
+    _pendingBookSyncsDuringSweep[mediaIdentifier] =
+        (db: db, onReport: onReport);
+    return;
+  }
   if (!_syncingIds.add(mediaIdentifier)) return;
 
   _beginSyncActivity(const SyncActivity(SyncActivityKind.singleBook));

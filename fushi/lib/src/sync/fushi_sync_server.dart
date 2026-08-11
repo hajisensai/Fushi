@@ -209,6 +209,12 @@ class FushiSyncServer {
   final Map<String, _VideoStreamToken> _videoStreamTokens =
       <String, _VideoStreamToken>{};
 
+  /// BUG-1568（BUG-908(a) 的视频同形问题）：视频流 token 的数量上限。签发侧
+  /// （GET /streamurl）先按 TTL prune、再淘汰最旧者收束到上限内。此前 prune 只挂在
+  /// GET /stream 消费侧——只 GET /streamurl 却从不取流的调用者会让
+  /// [_videoStreamTokens] 无界堆积（6 小时 TTL 内每次签发都是净增长）。
+  static const int _maxVideoStreamTokens = 128;
+
   /// BUG-908(d)：WebDAV 写操作（PUT / MKCOL / DELETE）的按路径串行闸门。key 是目标
   /// 文件系统绝对路径，value 是该路径上最近一次写的完成 future。新的写先 await 同一
   /// 路径上前一次写的 future 再执行——同一路径的写串行、不同路径可并行。读操作
@@ -1711,6 +1717,11 @@ class FushiSyncServer {
       final File? file =
           await svc.resolveVideoFile(streamUrlId, episodeIndex: episodeIndex);
       if (file == null) return shelf.Response.notFound('Video not found');
+      // BUG-1568：签发前先按 TTL 清过期，再把数量收束到 [_maxVideoStreamTokens] 内
+      // （淘汰最旧者）。对照 audio token 的 BUG-908(a) 修法：消费侧（GET /stream）的
+      // prune 等不到「只签发不取流」的调用者，上限必须在签发侧强制。
+      _pruneVideoTokens();
+      _enforceVideoTokenCap();
       final String tokenValue = _generateVideoToken();
       _videoStreamTokens[tokenValue] = _VideoStreamToken(
         videoId: streamUrlId,
@@ -2146,6 +2157,29 @@ class FushiSyncServer {
       (String _, _VideoStreamToken token) => token.createdAt.isBefore(cutoff),
     );
   }
+
+  /// BUG-1568：守住视频流 token 上限。TTL prune 之后仍达到 [_maxVideoStreamTokens]
+  /// 时，按 createdAt 淘汰最旧者直到回到上限内（对照 [_enforceAudioTokenCap]）。
+  /// 签发前调用，使插入新 token 后总数 <= [_maxVideoStreamTokens]。
+  void _enforceVideoTokenCap() {
+    while (_videoStreamTokens.length >= _maxVideoStreamTokens) {
+      String? oldestKey;
+      DateTime? oldestAt;
+      for (final MapEntry<String, _VideoStreamToken> e
+          in _videoStreamTokens.entries) {
+        if (oldestAt == null || e.value.createdAt.isBefore(oldestAt)) {
+          oldestAt = e.value.createdAt;
+          oldestKey = e.key;
+        }
+      }
+      if (oldestKey == null) break;
+      _videoStreamTokens.remove(oldestKey);
+    }
+  }
+
+  /// BUG-1568 测试钩子：当前驻留的视频流 token 数（验证签发侧 cap 逐出行为）。
+  @visibleForTesting
+  int get videoStreamTokenCount => _videoStreamTokens.length;
 
   /// 聚合（统计 + 收藏）跨设备 live 端点（TODO-1056 phase C）。
   ///
