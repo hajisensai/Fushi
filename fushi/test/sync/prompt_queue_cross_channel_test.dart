@@ -8,6 +8,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/sync_conflict_prompter.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -32,6 +33,12 @@ DeletionCandidateView _view(String key, String title) => DeletionCandidateView(
       ),
       title: title,
     );
+
+// BUG-1579 合流：基线按通道分槽，测试用两条真实通道的槽位。
+final String _cloudScopeId =
+    SyncChannelScope.forBackendType(SyncBackendType.googleDrive).id;
+final String _liveScopeId =
+    SyncChannelScope.forBackendType(SyncBackendType.fushiServer).id;
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
@@ -69,7 +76,7 @@ void main() {
       navigatorKey: navKey,
       db: db,
       views: <DeletionCandidateView>[_view('cloud-1', 'Cloud Book')],
-      highWaterMs: 100,
+      highWaterMsByScope: <String, int>{_cloudScopeId: 100},
       applyDeletions: apply,
       source: ConflictSource.auto,
       inBook: false,
@@ -78,7 +85,7 @@ void main() {
       navigatorKey: navKey,
       db: db,
       views: <DeletionCandidateView>[_view('live-1', 'Live Book')],
-      highWaterMs: 200,
+      highWaterMsByScope: <String, int>{_liveScopeId: 200},
       applyDeletions: apply,
       source: ConflictSource.auto,
       inBook: false,
@@ -104,8 +111,16 @@ void main() {
     await live;
 
     expect(applied, <String>['cloud-1', 'live-1']);
-    // 两批都被用户复核过 → 基线推进到两者中的更高水位。
-    expect(await SyncRepository(db).getDeletionTombstonesBaselineMs(), 200);
+    // 两批都被用户复核过 → 各自通道的基线推进到各自的水位（BUG-1579 分槽）。
+    final SyncRepository repo = SyncRepository(db);
+    expect(
+        await repo.getDeletionTombstonesBaselineMs(
+            SyncChannelScope.byId(_cloudScopeId)),
+        100);
+    expect(
+        await repo.getDeletionTombstonesBaselineMs(
+            SyncChannelScope.byId(_liveScopeId)),
+        200);
   });
 
   testWidgets('第二批被用户取消：只 snooze 自己，不推进基线到它的水位', (WidgetTester tester) async {
@@ -121,7 +136,7 @@ void main() {
       navigatorKey: navKey,
       db: db,
       views: <DeletionCandidateView>[_view('cloud-1', 'Cloud Book')],
-      highWaterMs: 100,
+      highWaterMsByScope: <String, int>{_cloudScopeId: 100},
       applyDeletions: apply,
       source: ConflictSource.auto,
       inBook: false,
@@ -130,7 +145,7 @@ void main() {
       navigatorKey: navKey,
       db: db,
       views: <DeletionCandidateView>[_view('live-1', 'Live Book')],
-      highWaterMs: 999,
+      highWaterMsByScope: <String, int>{_liveScopeId: 999},
       applyDeletions: apply,
       source: ConflictSource.auto,
       inBook: false,
@@ -148,8 +163,16 @@ void main() {
     await tester.pumpAndSettle();
     await live;
 
-    // 取消的那批不推进基线：下次会话还会再问。
-    expect(await SyncRepository(db).getDeletionTombstonesBaselineMs(), 100);
+    // 取消的那批不推进自己通道的基线：下次会话还会再问。
+    final SyncRepository repo = SyncRepository(db);
+    expect(
+        await repo.getDeletionTombstonesBaselineMs(
+            SyncChannelScope.byId(_cloudScopeId)),
+        100);
+    expect(
+        await repo.getDeletionTombstonesBaselineMs(
+            SyncChannelScope.byId(_liveScopeId)),
+        0);
   });
 
   testWidgets('队列不因前一个弹窗抛异常而断链', (WidgetTester tester) async {
@@ -163,7 +186,7 @@ void main() {
       navigatorKey: navKey,
       db: db,
       views: <DeletionCandidateView>[_view('cloud-1', 'Cloud Book')],
-      highWaterMs: 100,
+      highWaterMsByScope: <String, int>{_cloudScopeId: 100},
       applyDeletions: (List<DeletionPropagationCandidate> _) async =>
           throw StateError('apply failed'),
       source: ConflictSource.auto,
@@ -173,7 +196,7 @@ void main() {
       navigatorKey: navKey,
       db: db,
       views: <DeletionCandidateView>[_view('live-1', 'Live Book')],
-      highWaterMs: 200,
+      highWaterMsByScope: <String, int>{_liveScopeId: 200},
       applyDeletions: (List<DeletionPropagationCandidate> _) async {},
       source: ConflictSource.auto,
       inBook: false,
