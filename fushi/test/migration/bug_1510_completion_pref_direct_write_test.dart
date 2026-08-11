@@ -28,8 +28,8 @@ void main() {
     tmp = Directory.systemTemp.createTempSync('bug1510');
     dbPath = p.join(tmp.path, 'fushi.db');
     final sqlite.Database db = sqlite.sqlite3.open(dbPath);
-    db.execute(
-        'CREATE TABLE preferences (key TEXT NOT NULL PRIMARY KEY, value TEXT NOT NULL)');
+    db.execute('CREATE TABLE preferences (key TEXT NOT NULL PRIMARY KEY, '
+        'value TEXT NOT NULL, updated_at INTEGER NOT NULL DEFAULT 0)');
     db.dispose();
   });
 

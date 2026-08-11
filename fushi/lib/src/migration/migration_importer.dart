@@ -202,16 +202,22 @@ class MigrationImporter {
   static void writeCompletionPrefs({
     required String dbPath,
     required Map<String, String> encodedValues,
+    int? nowMs,
   }) {
     if (encodedValues.isEmpty) return;
+    // v84 起 preferences 多了 updated_at（跨端 LWW 比较键）。写入方一律填 now，
+    // 且 **DO UPDATE 必须一起更新它**——只更新 value 会让已存在的行保留旧时刻，
+    // 正是 fushi_core 里 setPref 注释点名的坑。
+    final int stamp = nowMs ?? DateTime.now().millisecondsSinceEpoch;
     final sqlite.Database db = sqlite.sqlite3.open(dbPath);
     try {
       db.execute('BEGIN');
       for (final MapEntry<String, String> e in encodedValues.entries) {
         db.execute(
-          'INSERT INTO preferences (key, value) VALUES (?, ?) '
-          'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-          <Object?>[e.key, e.value],
+          'INSERT INTO preferences (key, value, updated_at) VALUES (?, ?, ?) '
+          'ON CONFLICT(key) DO UPDATE SET value = excluded.value, '
+          'updated_at = excluded.updated_at',
+          <Object?>[e.key, e.value, stamp],
         );
       }
       final sqlite.ResultSet current = db.select(
@@ -225,9 +231,10 @@ class MigrationImporter {
                   0) +
               1;
       db.execute(
-        'INSERT INTO preferences (key, value) VALUES (?, ?) '
-        'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-        <Object?>[FushiDatabase.prefsVersionKey, 'i:$next'],
+        'INSERT INTO preferences (key, value, updated_at) VALUES (?, ?, ?) '
+        'ON CONFLICT(key) DO UPDATE SET value = excluded.value, '
+        'updated_at = excluded.updated_at',
+        <Object?>[FushiDatabase.prefsVersionKey, 'i:$next', stamp],
       );
       db.execute('COMMIT');
     } catch (_) {
