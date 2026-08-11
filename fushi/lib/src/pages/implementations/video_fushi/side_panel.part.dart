@@ -95,7 +95,9 @@ extension _VideoSidePanel on _VideoFushiPageState {
   double _videoSidePanelWidth(_VideoSidePanelKind kind) {
     switch (kind) {
       case _VideoSidePanelKind.settings:
-        return 560;
+        // BUG-1546：设置侧栏不再固定 560——桌面大窗口下随窗口宽度自适应放宽
+        // （560..900），窄窗仍是旧值；上限与快捷设置弹窗同源。
+        return fushiQuickSettingsPanelWidth(MediaQuery.sizeOf(context).width);
       case _VideoSidePanelKind.chapters:
         return 420;
       case _VideoSidePanelKind.danmakuMatch:
