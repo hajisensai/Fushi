@@ -119,8 +119,9 @@ class _TorrentTaskDetailDialogState
       }
     });
     final TorrentSnapshot? initialSnapshot = widget.initialSnapshot;
-    if (initialSnapshot != null)
+    if (initialSnapshot != null) {
       _snapshot = _snapshot.withData(initialSnapshot);
+    }
     final List<TorrentFileEntry>? initialFiles = widget.initialFiles;
     if (initialFiles != null) _files = _files.withData(initialFiles);
     final TorrentBackend? override = widget.backendOverride;
