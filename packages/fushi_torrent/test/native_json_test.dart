@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fushi_torrent/src/native_json.dart';
@@ -27,5 +28,12 @@ void main() {
     final Map<String, Object?> json = decoded! as Map<String, Object?>;
     expect(json['ok'], isTrue);
     expect(json['trackers'], hasLength(1));
+    final List<Object?> trackers = json['trackers']! as List<Object?>;
+    final Map<String, Object?> tracker =
+        trackers.single! as Map<String, Object?>;
+    expect(
+      tracker['last_error'],
+      Platform.isWindows ? '中文' : contains('\uFFFD'),
+    );
   });
 }

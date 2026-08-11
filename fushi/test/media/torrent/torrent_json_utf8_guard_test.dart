@@ -28,6 +28,13 @@ void main() {
     expect(serializer, contains('(continuation & 0xc0) != 0x80'));
     expect(serializer, contains('c == 0xed && second >= 0xa0'));
     expect(serializer, contains('c == 0xf4 && second >= 0x90'));
-    expect(serializer, contains('out.append(s, i, width)'));
+    expect(serializer, contains('windows_ansi_to_utf8(s)'));
+    expect(serializer, contains('out.append(*input, i, width)'));
+    expect(source, contains('MultiByteToWideChar('));
+    expect(source, contains('WideCharToMultiByte('));
+    expect(source, contains('CP_ACP'));
+    expect(source, contains('CP_UTF8'));
+    expect(source, contains('LOCALE_IDEFAULTANSICODEPAGE'));
+    expect(source, contains('GetLocaleInfoEx('));
   });
 }

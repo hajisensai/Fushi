@@ -41,12 +41,17 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <cwchar>
 #include <filesystem>
 #include <fstream>
 #include <map>
 #include <string>
 #include <utility>
 #include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace {
 
@@ -56,10 +61,79 @@ namespace {
 // libtorrent/WinSock 的本地化错误文本不保证是 UTF-8；C ABI 契约要求所有
 // 出参都是 UTF-8 JSON，因此无效序列必须在这个统一出口替换，而不能让 Dart
 // 因整包 jsonDecode 失败而丢掉 Tracker 列表。
-void append_json_escaped(std::string& out, const std::string& s) {
-  const auto replacement = [&out]() { out += "\\ufffd"; };
+bool is_valid_utf8(const std::string& s) {
   for (std::size_t i = 0; i < s.size();) {
     const unsigned char c = static_cast<unsigned char>(s[i]);
+    if (c < 0x80) {
+      ++i;
+      continue;
+    }
+    std::size_t width = 0;
+    if (c >= 0xc2 && c <= 0xdf) width = 2;
+    else if (c >= 0xe0 && c <= 0xef) width = 3;
+    else if (c >= 0xf0 && c <= 0xf4) width = 4;
+    if (width == 0 || i + width > s.size()) return false;
+    for (std::size_t j = 1; j < width; ++j) {
+      if ((static_cast<unsigned char>(s[i + j]) & 0xc0) != 0x80) return false;
+    }
+    const unsigned char second = static_cast<unsigned char>(s[i + 1]);
+    if ((c == 0xe0 && second < 0xa0) ||
+        (c == 0xed && second >= 0xa0) ||
+        (c == 0xf0 && second < 0x90) ||
+        (c == 0xf4 && second >= 0x90)) {
+      return false;
+    }
+    i += width;
+  }
+  return true;
+}
+
+#ifdef _WIN32
+UINT windows_locale_ansi_code_page() {
+  wchar_t code_page[16] = {};
+  if (GetLocaleInfoEx(nullptr, LOCALE_IDEFAULTANSICODEPAGE, code_page,
+                      16) <= 1) {
+    return CP_ACP;
+  }
+  const long parsed = std::wcstol(code_page, nullptr, 10);
+  return parsed > 0 ? static_cast<UINT>(parsed) : CP_ACP;
+}
+
+std::string windows_ansi_to_utf8(const std::string& s) {
+  if (s.empty()) return {};
+  const UINT code_page = windows_locale_ansi_code_page();
+  const int wide_size = MultiByteToWideChar(
+      code_page, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
+  if (wide_size <= 0) return {};
+  std::wstring wide(static_cast<std::size_t>(wide_size), L'\0');
+  if (MultiByteToWideChar(code_page, 0, s.data(), static_cast<int>(s.size()),
+                          wide.data(), wide_size) <= 0) {
+    return {};
+  }
+  const int utf8_size = WideCharToMultiByte(
+      CP_UTF8, 0, wide.data(), wide_size, nullptr, 0, nullptr, nullptr);
+  if (utf8_size <= 0) return {};
+  std::string utf8(static_cast<std::size_t>(utf8_size), '\0');
+  if (WideCharToMultiByte(CP_UTF8, 0, wide.data(), wide_size, utf8.data(),
+                          utf8_size, nullptr, nullptr) <= 0) {
+    return {};
+  }
+  return utf8;
+}
+#endif
+
+void append_json_escaped(std::string& out, const std::string& s) {
+  const std::string* input = &s;
+#ifdef _WIN32
+  std::string normalized;
+  if (!is_valid_utf8(s)) {
+    normalized = windows_ansi_to_utf8(s);
+    if (!normalized.empty()) input = &normalized;
+  }
+#endif
+  const auto replacement = [&out]() { out += "\\ufffd"; };
+  for (std::size_t i = 0; i < input->size();) {
+    const unsigned char c = static_cast<unsigned char>((*input)[i]);
     if (c >= 0x80) {
       std::size_t width = 0;
       if (c >= 0xc2 && c <= 0xdf) {
@@ -69,7 +143,7 @@ void append_json_escaped(std::string& out, const std::string& s) {
       } else if (c >= 0xf0 && c <= 0xf4) {
         width = 4;
       }
-      if (width == 0 || i + width > s.size()) {
+      if (width == 0 || i + width > input->size()) {
         replacement();
         ++i;
         continue;
@@ -77,13 +151,13 @@ void append_json_escaped(std::string& out, const std::string& s) {
       bool valid = true;
       for (std::size_t j = 1; j < width; ++j) {
         const unsigned char continuation =
-            static_cast<unsigned char>(s[i + j]);
+            static_cast<unsigned char>((*input)[i + j]);
         if ((continuation & 0xc0) != 0x80) {
           valid = false;
           break;
         }
       }
-      const unsigned char second = static_cast<unsigned char>(s[i + 1]);
+      const unsigned char second = static_cast<unsigned char>((*input)[i + 1]);
       if ((c == 0xe0 && second < 0xa0) ||
           (c == 0xed && second >= 0xa0) ||
           (c == 0xf0 && second < 0x90) ||
@@ -95,7 +169,7 @@ void append_json_escaped(std::string& out, const std::string& s) {
         ++i;
         continue;
       }
-      out.append(s, i, width);
+      out.append(*input, i, width);
       i += width;
       continue;
     }
