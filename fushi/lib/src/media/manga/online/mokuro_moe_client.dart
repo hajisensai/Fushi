@@ -15,6 +15,7 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'package:fushi/src/utils/net/app_http.dart';
 
 /// 默认目录站点（偏好 `manga_online_catalog_base_url` 空值时的回退）。
 const String kMokuroMoeDefaultBaseUrl = 'https://mokuro.moe';
@@ -127,8 +128,8 @@ class MokuroMoeClient {
 
   final HttpClient Function() _createClient;
 
-  static HttpClient _defaultClient() =>
-      HttpClient()..findProxy = HttpClient.findProxyFromEnvironment;
+  // BUG-1498：原先只读 env 代理变量，读不到 GUI 系统代理；统一装配点补齐。
+  static HttpClient _defaultClient() => createAppHttpClient();
 
   /// 拉全量目录（约千余系列，几百 KB JSON）。
   Future<List<MokuroMoeSeries>> fetchLibrary() async {

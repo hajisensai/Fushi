@@ -203,7 +203,8 @@ class _FakeLibraryService implements FushiLibraryHostService {
       throw UnimplementedError('not used in video test');
 
   @override
-  Future<void> importBook(File epubFile) async {}
+  Future<void> importBook(File epubFile,
+      {String? displayTitle, int displayTitleAt = 0}) async {}
 
   @override
   Future<void> deleteBook(String title) async {}

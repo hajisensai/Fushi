@@ -673,6 +673,70 @@ abstract class MediaSource {
     );
   }
 
+  /// 采纳**另一台设备**改的显示名，last-write-wins（BUG-1502）。返回是否真写入。
+  ///
+  /// 与 [setOverrideTitleFromMediaItem] 的差别就是「谁的时刻」：本地改名戳 `now`，
+  /// 跨端采纳戳 **[updatedAt]（对端的时刻）**。戳 now 会让本机副本永远最新，对端
+  /// 的下一次改名再也进不来——这正是 BUG-1488 留下的缺口。
+  ///
+  /// 裁决在 DB 层单点完成（`setPrefIfNewer`）：严格更新才写、平局保留本机、本机
+  /// 无该行则无条件采纳。所以 [updatedAt] = 0（旧对端不带时刻 / v84 前的存量改名）
+  /// 退化成原来的 insert-if-absent，绝不覆盖本机用户刚改的名字。
+  Future<bool> adoptOverrideTitleIfNewer({
+    required MediaItem item,
+    required String title,
+    required int updatedAt,
+  }) async {
+    if (!item.canEdit || title.isEmpty) return false;
+    final FushiDatabase? db = _sharedDb;
+    if (db == null) return false;
+    final MediaSource store = overrideStore;
+    final String shortKey = getOverrideTitleKey(item);
+    final String dbKey = store._dbPrefKey(shortKey);
+    // BUG-1317 存量：本机的名字可能还躺在旧键上，规范键行不存在。不先收敛的话
+    // 下面的 LWW 会把「本机没改过名」误判成真，无条件采纳对端 → 本机改名静默丢失。
+    await _convergeLegacyOverrideTitleRow(item: item, canonicalDbKey: dbKey);
+    final bool written = await db.setPrefIfNewer(
+      dbKey,
+      PrefCodec.encode(title),
+      updatedAt: updatedAt,
+    );
+    // 写穿内存缓存只在真写入时做——DB 拒绝了本机就该继续显示自己的名字。
+    if (written) store._preferences[shortKey] = title;
+    return written;
+  }
+
+  /// [adoptOverrideTitleIfNewer] 的前置步骤：把还留在 BUG-1317 旧键上的本机改名
+  /// 就地搬到规范键，**戳 0（=「时刻未知」）**。
+  ///
+  /// 戳 0 而不是 `now` 是关键：搬家不是一次改名。戳 now 会让本机凭空「变新」，
+  /// 把对端真正更晚的改名挡在门外；戳 0 则与对端的旧数据平局（保留本机）、输给
+  /// 对端的真实新改名，恰好是这行数据应有的历史地位。
+  Future<void> _convergeLegacyOverrideTitleRow({
+    required MediaItem item,
+    required String canonicalDbKey,
+  }) async {
+    final FushiDatabase? db = _sharedDb;
+    if (db == null) return;
+    for (final MediaSource legacy in legacyOverrideStores) {
+      final String legacyShortKey = legacyOverrideTitleKey(
+        sourceId: legacy.uniqueKey,
+        mediaIdentifier: item.mediaIdentifier,
+      );
+      final String? value = legacy.getPreference<String?>(
+          key: legacyShortKey, defaultValue: null);
+      if (value == null || value.isEmpty) continue;
+      await db.setPrefIfNewer(
+        canonicalDbKey,
+        PrefCodec.encode(value),
+        updatedAt: 0,
+      );
+      overrideStore._preferences[getOverrideTitleKey(item)] = value;
+      await legacy.deletePreference(key: legacyShortKey);
+      return;
+    }
+  }
+
   /// Whether this source lets the user edit a [MediaItem]'s author in the edit
   /// dialog (BUG-220). Default false: the author field is hidden and
   /// [setAuthorFromMediaItem] is a no-op. Sources backing an editable author

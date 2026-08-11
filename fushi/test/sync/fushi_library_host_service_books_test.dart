@@ -68,8 +68,12 @@ AppModelLibraryHostService _buildSvc({
     packages: SyncAssetPackageService(db: db),
     refreshDictionaryCache: () async {},
     runExclusive: (Future<void> Function() body) => body(),
-    importBookFromFile:
-        importedFiles == null ? null : (File f) async => importedFiles.add(f),
+    importBookFromFile: importedFiles == null
+        ? null
+        : (File f) async {
+            importedFiles.add(f);
+            return null;
+          },
     cleanupBookOnDisk: deletedRows == null
         ? null
         : (EpubBookRow row) async => deletedRows.add(row),

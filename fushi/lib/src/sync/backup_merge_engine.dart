@@ -1233,19 +1233,33 @@ class BackupMergeEngine {
   /// 的书合并到子设备后，子设备显示的仍是导入时的原始书名。它和 `audiobook_pos_%`
   /// 一样是**内容**（跟着书走，不是这台设备的偏好），必须合并。
   ///
-  /// UNION push-only（insert-if-absent），与 [_mergeAudiobookPositionPrefs] 同律：
-  /// 本机已给这本书起过名就保留本机的（merge 从不 clobber 本地）。
+  /// 裁决 last-write-wins（BUG-1502），与 [_mergeReaderPositions] /
+  /// [_mergeRevealedImages] 同形：insert-missing + update-strictly-newer 两条语句。
+  /// 比较键是 v84 新增的 `preferences.updated_at`。
   ///
-  /// ⚠️ 已知能力缺口，不是遗漏：override pref **没有时刻列**（`preferences` 只有
-  /// key/value 两列），所以这里做不了 LWW。母设备**第二次**改名传不到已有 override
-  /// 的子设备上——要修得先给 override 一个 `updatedAt` 载体（对照 `book_custom_css`
-  /// 的做法），那是独立的 schema 变更。
+  /// 平局（`>` 不成立）保留本机。旧备份的行经 merge 前的 schema 迁移拿到
+  /// `updated_at = 0`（备份库先被开一次升到当前 schema，见
+  /// `BackupService.mergeRestoreBackup` 的第 2 步），于是与本机存量行平局 →
+  /// 行为逐字等于本轮之前的 insert-if-absent，零回归；而任一侧真正改过一次名
+  /// （戳 > 0）之后立刻胜出，母设备的第二次改名终于能并进来。
   Future<void> _mergeOverrideTitlePrefs() async {
     await _db.customStatement(
-      'INSERT INTO preferences ("key", "value") '
-      'SELECT s."key", s."value" FROM $_srcAlias.preferences AS s '
+      'INSERT INTO preferences ("key", "value", "updated_at") '
+      'SELECT s."key", s."value", s."updated_at" '
+      'FROM $_srcAlias.preferences AS s '
       "WHERE instr(s.\"key\", '$kOverrideTitleKeyMarker') > 0 "
       'AND NOT EXISTS (SELECT 1 FROM preferences AS t WHERE t."key" = s."key")',
+    );
+    await _db.customStatement(
+      'UPDATE preferences SET '
+      '"value" = (SELECT s."value" FROM $_srcAlias.preferences AS s '
+      'WHERE s."key" = preferences."key"), '
+      '"updated_at" = (SELECT s."updated_at" FROM $_srcAlias.preferences AS s '
+      'WHERE s."key" = preferences."key") '
+      "WHERE instr(preferences.\"key\", '$kOverrideTitleKeyMarker') > 0 "
+      'AND EXISTS (SELECT 1 FROM $_srcAlias.preferences AS s '
+      'WHERE s."key" = preferences."key" '
+      'AND s."updated_at" > preferences."updated_at")',
     );
   }
 

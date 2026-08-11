@@ -15,6 +15,7 @@ import 'package:fushi/src/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/video/jimaku_batch.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/utils/net/app_http.dart';
 
 const Object _notSet = Object();
 
@@ -378,7 +379,8 @@ class AnimeDownloadSubscriptionService {
         _search = search,
         _jimakuApiKeyProvider = jimakuApiKeyProvider ?? (() => ''),
         _subtitleFetcher = subtitleFetcher,
-        _httpClientFactory = httpClientFactory ?? (() async => http.Client());
+        _httpClientFactory =
+            httpClientFactory ?? (() async => createAppHttpIoClient());
 
   final AnimeDownloadSubscriptionStore store;
   final AnimeDownloadPlanStore planStore;
