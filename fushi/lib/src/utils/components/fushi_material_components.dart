@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+// SelectedContent 住在 rendering 层（selection.dart），material 不转出它。
+import 'package:flutter/rendering.dart' show SelectedContent;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:macos_ui/macos_ui.dart'
     show MacosTextField, MacosIcon, OverlayVisibilityMode;
@@ -2509,6 +2511,57 @@ class _FushiLogPanelState extends State<FushiLogPanel> {
   late final _LogSelectionScrollController _scrollController =
       _LogSelectionScrollController();
 
+  // BUG-1582 / flutter#119355：拿到 SelectionArea 的 state 以便主动清选区。
+  // `SelectionAreaState.selectableRegion` 是公开 getter，不必把 SelectionArea
+  // 换成裸 SelectableRegion（那会连带重写 selectionControls / magnifier 的平台
+  // 分流，风险远大于收益）。
+  final GlobalKey<SelectionAreaState> _selectionAreaKey =
+      GlobalKey<SelectionAreaState>();
+
+  // 当前是否真的有选区。只作清理前的短路判据，不参与渲染，故不进 setState。
+  bool _hasSelection = false;
+
+  /// BUG-1582：用户主动滚动后丢弃选区。
+  ///
+  /// 根因在框架（flutter#119355）：`SelectionArea` 套 `Scrollable` 时，选区端点
+  /// 所在的行被 `ListView.builder` 回收/detach 后，`_ScrollableSelectionContainerDelegate`
+  /// 仍持有指向它的 `currentSelectionEndIndex`；下一次长按走
+  /// `handleSelectWord` → `_updateDragLocationsFromGeometries()`（该方法**无条件**
+  /// 执行，同文件 `handleSelectAll` 却有 `currentSelectionStartIndex != -1` 守卫）
+  /// → 读到 `SelectionGeometry.endSelectionPoint == null` → `!` 抛空断言。
+  /// release 下 `assert(geometry.hasSelection)` 不执行，所以只在真机上炸。
+  ///
+  /// 为什么「清掉」是正解而不是掩盖：本面板的选区**本就是视口内有界的**——
+  /// `ListView.builder` 不构造视口外行，`SelectionArea` 拿不到它们的 Selectable，
+  /// 这正是「复制全部」存在的理由（见下方 `Positioned` 注释）。用户滚走之后那份
+  /// 选区已经不可用，框架只是崩溃而非优雅降级。把它清掉让模型诚实：选区活在
+  /// 你划它的那一屏里。
+  ///
+  /// 边缘自动滚动（拖拽选区拖到视口边缘）必须放行，否则一拖就自毁选区。
+  ///
+  /// 判据不能只看「指针是否按下」——本面板对**任何主键按下**都置
+  /// [_LogSelectionScrollController.pointerSelectionActive]（它服务的是
+  /// `logSelectionScrollDecision` 的拽回拦截，故意粗），拖列表滚动同样会置位。
+  /// 真正能分开两者的是 [ScrollUpdateNotification.dragDetails]：
+  ///
+  /// | 场景 | dragDetails | 指针按下 | 处置 |
+  /// |---|---|---|---|
+  /// | 滚轮 / 键盘滚动 | null | 否 | 清 |
+  /// | 用户拖列表滚动 | 非 null | 是 | 清 |
+  /// | 拖后惯性滑动 | null | 否 | 清 |
+  /// | **拖选区时的边缘自动滚动** | null（animateTo 驱动） | **是** | **放行** |
+  ///
+  /// 即只有「非拖拽产生的滚动 + 指针仍按着」这一格才是边缘自动滚动。
+  void _dropStaleSelectionOnUserScroll(ScrollUpdateNotification notification) {
+    if (!_hasSelection) return;
+    final bool edgeAutoScrollDuringDragSelect =
+        notification.dragDetails == null &&
+            _scrollController.pointerSelectionActive;
+    if (edgeAutoScrollDuringDragSelect) return;
+    _hasSelection = false;
+    _selectionAreaKey.currentState?.selectableRegion.clearSelection();
+  }
+
   // 整段 log 按行预切一次（不在 build 里反复 split），仅 widget.log 变化时重切。
   // ListView.builder 按 [_lines] 索引懒构造每行，只渲染视口内行。
   late List<String> _lines = _splitLines(widget.log);
@@ -2642,43 +2695,60 @@ class _FushiLogPanelState extends State<FushiLogPanel> {
                     onPointerCancel: (_) =>
                         _scrollController.endPointerSelection(),
                     child: SelectionArea(
+                      key: _selectionAreaKey,
                       contextMenuBuilder: _buildContextMenu,
-                      child: ListView.builder(
-                        controller: _scrollController,
-                        padding: EdgeInsets.all(tokens.spacing.card),
-                        itemCount: _lines.length,
-                        itemBuilder: (BuildContext context, int index) {
-                          // TODO-806/TODO-822：单行不换行（softWrap:false）。
-                          // 换行会把一行日志拆成多视觉行 → SelectionArea 的单行
-                          // 选区命中要对每段 wrap 后的子矩形逐一求交，命中成本随
-                          // 行长放大（TODO-806 框选坐标错位、TODO-822 拖拽卡顿的
-                          // 放大器）。日志是 monospace，超视口宽的长行在屏幕右侧
-                          // 裁切（本列表只纵向滚动、无横向滚动层），看全整段走
-                          // 下方常驻「复制全部」（拿 widget.log 未裁剪全量）。
-                          //
-                          // BUG-925：仅 softWrap:false 时，行 Text 的布局宽度 =
-                          // 整行无界单行宽（ListView 只纵向滚动，水平方向没有约束
-                          // 收口它）。SelectionArea 对这种无界宽度的 Selectable 做
-                          // 命中测试 / getBoxesForSelection 时（单击 / 框选触发），
-                          // 会对超出视口的极端横坐标求交，触发越界（与 BUG-413/423
-                          // 同族坐标错位）→ 点一下调试日志文字就崩。把每行 Text 的
-                          // 布局宽度钉死在视口可用宽度内（ConstrainedBox + ClipRect），
-                          // Selectable 的矩形不再越界，同时保留逐行选择能力——超视口
-                          // 的长行仍按原设计在右侧裁切（看全整段走「复制全部」）。
-                          return ClipRect(
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth: constraints.maxWidth,
-                              ),
-                              child: Text(
-                                _lines[index],
-                                style: lineStyle,
-                                softWrap: false,
-                                overflow: TextOverflow.clip,
-                              ),
-                            ),
-                          );
+                      // BUG-1582：记住「当前有没有选区」，供
+                      // [_dropStaleSelectionOnUserScroll] 短路。不进 setState——
+                      // 它不参与渲染，且选区变化本就每帧可发生。
+                      onSelectionChanged: (SelectedContent? content) {
+                        _hasSelection =
+                            content != null && content.plainText.isNotEmpty;
+                      },
+                      child: NotificationListener<ScrollUpdateNotification>(
+                        // BUG-1582：挂在 SelectionArea 与 ListView 之间——滚动
+                        // 通知自下而上冒泡，这里既拿得到，又不会拦住外层。
+                        onNotification:
+                            (ScrollUpdateNotification notification) {
+                          _dropStaleSelectionOnUserScroll(notification);
+                          return false;
                         },
+                        child: ListView.builder(
+                          controller: _scrollController,
+                          padding: EdgeInsets.all(tokens.spacing.card),
+                          itemCount: _lines.length,
+                          itemBuilder: (BuildContext context, int index) {
+                            // TODO-806/TODO-822：单行不换行（softWrap:false）。
+                            // 换行会把一行日志拆成多视觉行 → SelectionArea 的单行
+                            // 选区命中要对每段 wrap 后的子矩形逐一求交，命中成本随
+                            // 行长放大（TODO-806 框选坐标错位、TODO-822 拖拽卡顿的
+                            // 放大器）。日志是 monospace，超视口宽的长行在屏幕右侧
+                            // 裁切（本列表只纵向滚动、无横向滚动层），看全整段走
+                            // 下方常驻「复制全部」（拿 widget.log 未裁剪全量）。
+                            //
+                            // BUG-925：仅 softWrap:false 时，行 Text 的布局宽度 =
+                            // 整行无界单行宽（ListView 只纵向滚动，水平方向没有约束
+                            // 收口它）。SelectionArea 对这种无界宽度的 Selectable 做
+                            // 命中测试 / getBoxesForSelection 时（单击 / 框选触发），
+                            // 会对超出视口的极端横坐标求交，触发越界（与 BUG-413/423
+                            // 同族坐标错位）→ 点一下调试日志文字就崩。把每行 Text 的
+                            // 布局宽度钉死在视口可用宽度内（ConstrainedBox + ClipRect），
+                            // Selectable 的矩形不再越界，同时保留逐行选择能力——超视口
+                            // 的长行仍按原设计在右侧裁切（看全整段走「复制全部」）。
+                            return ClipRect(
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: constraints.maxWidth,
+                                ),
+                                child: Text(
+                                  _lines[index],
+                                  style: lineStyle,
+                                  softWrap: false,
+                                  overflow: TextOverflow.clip,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                       ),
                     ),
                   ),
@@ -2764,6 +2834,10 @@ class _LogSelectionScrollController extends ScrollController {
   void endPointerSelection() {
     _pointerSelectionActive = false;
   }
+
+  /// 拖拽选区是否正在进行。面板据此区分「用户主动滚动」与「拖拽选区期间的边缘
+  /// 自动滚动」——只有前者才丢弃失效选区（BUG-1582）。
+  bool get pointerSelectionActive => _pointerSelectionActive;
 
   // [animated]=true 表示来自 animateTo（边缘自动滚动），false 表示来自 jumpTo
   // （键盘拽回）。判据据此放行边缘自动滚动、仅拦掉拽回（TODO-934）。

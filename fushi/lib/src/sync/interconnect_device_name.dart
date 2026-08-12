@@ -2,7 +2,16 @@ import 'package:fushi_platform/fushi_platform.dart';
 
 /// Generic, brand-only device label used when no meaningful hardware name is
 /// available. Better than advertising "localhost".
-const String kGenericInterconnectDeviceName = 'Hibiki';
+///
+/// 改名 Fushi 后本设备对外播报的品牌词。这是**运行期播报值**，不是持久化键，
+/// 改它不破坏任何存量数据。
+///
+/// 注意存量已配对记录不会自动变：`fushi_paired_peers.device_name` 只在配对成功
+/// 那一刻由 `FushiServerController._persistPairedPeer` 写入对方当时自报的字符串，
+/// 之后没有任何刷新路径。所以对端升到 Fushi 之前（或升级后未重新配对前），host
+/// 的已配对设备列表里仍会显示 `Hibiki · <model>` —— 那是配对当时的真实自报值，
+/// 不是本常量的残留。
+const String kGenericInterconnectDeviceName = 'Fushi';
 
 /// Values that are never a meaningful, human-facing device name.
 ///

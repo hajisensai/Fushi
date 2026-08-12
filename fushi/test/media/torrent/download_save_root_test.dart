@@ -182,7 +182,7 @@ void main() {
 
     test('探针文件用完即删，不给用户留垃圾', () async {
       expect(await checkDownloadSaveRoot(tempDir.path), isNull);
-      expect(File(p.join(tempDir.path, '.hibiki_write_probe')).existsSync(),
+      expect(File(p.join(tempDir.path, '.fushi_write_probe')).existsSync(),
           isFalse);
     });
 
