@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 
 import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
+import 'package:fushi/src/platform/desktop/windows_process_query.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/mac_update_handoff.dart';
 import 'package:fushi/src/utils/misc/update_handoff.dart';
@@ -887,22 +888,30 @@ Future<List<WindowsDetectedInstallLocation>>
     queryWindowsRegisteredInstallLocations() async {
   if (!Platform.isWindows) return const <WindowsDetectedInstallLocation>[];
   const String appId = r'{8F2C1A3E-7B4D-4E9A-9C21-0A1B2C3D4E5F}_is1';
-  const List<String> keys = <String>[
-    r'HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\' + appId,
-    r'HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\' + appId,
+  const String uninstallSubKey =
+      r'Software\Microsoft\Windows\CurrentVersion\Uninstall\' + appId;
+  const List<(WindowsRegistryRoot, String)> keys =
+      <(WindowsRegistryRoot, String)>[
+    (WindowsRegistryRoot.currentUser, uninstallSubKey),
+    (WindowsRegistryRoot.localMachine, uninstallSubKey),
   ];
   final List<WindowsDetectedInstallLocation> result =
       <WindowsDetectedInstallLocation>[];
-  for (final String key in keys) {
+  for (final (WindowsRegistryRoot root, String subKey) in keys) {
     try {
-      final ProcessResult query = await Process.run(
-        'reg',
-        <String>['query', key],
-      );
-      if (query.exitCode != 0) continue;
       result.addAll(
-        parseWindowsRegistryInstallLocations(
-          query.stdout is String ? query.stdout as String : '',
+        windowsRegistryInstallLocations(
+          installLocation: readWindowsRegistryString(
+                root,
+                subKey,
+                'InstallLocation',
+              ) ??
+              readWindowsRegistryString(
+                root,
+                subKey,
+                'Inno Setup: App Path',
+              ),
+          displayIcon: readWindowsRegistryString(root, subKey, 'DisplayIcon'),
         ),
       );
     } catch (_) {
@@ -912,14 +921,16 @@ Future<List<WindowsDetectedInstallLocation>>
   return _dedupeInstallLocations(result);
 }
 
-List<WindowsDetectedInstallLocation> parseWindowsRegistryInstallLocations(
-  String output,
-) {
+/// **纯函数**：把已读出的注册表值折成安装位置列表。
+///
+/// 取值方式（原先是 `reg query` 子进程，现在是 `RegQueryValueExW`）与折算规则
+/// 分离，规则这层因此始终可单测，不依赖 Windows。
+List<WindowsDetectedInstallLocation> windowsRegistryInstallLocations({
+  required String? installLocation,
+  required String? displayIcon,
+}) {
   final List<WindowsDetectedInstallLocation> result =
       <WindowsDetectedInstallLocation>[];
-  final String? installLocation =
-      _registryValueAfterType(output, 'InstallLocation') ??
-          _registryValueAfterType(output, 'Inno Setup: App Path');
   if (installLocation != null && installLocation.isNotEmpty) {
     result.add(
       WindowsDetectedInstallLocation(
@@ -929,7 +940,6 @@ List<WindowsDetectedInstallLocation> parseWindowsRegistryInstallLocations(
     );
   }
 
-  final String? displayIcon = _registryValueAfterType(output, 'DisplayIcon');
   if (displayIcon != null && displayIcon.isNotEmpty) {
     final String path = _stripDisplayIconSuffix(displayIcon);
     // fushi.exe 是改名后的主 exe；\hibiki.exe 保留识别旧版注册表残留安装。
@@ -986,20 +996,23 @@ String? windowsInstallPathMismatchWarning({
       '$details';
 }
 
+/// 我们自己的 image 名（含改名前的旧包，老安装仍在跑 hibiki.exe）。
+const Set<String> kFushiImageNames = <String>{'fushi.exe', 'hibiki.exe'};
+
+/// 走 Win32 快照，**不生成 powershell 子进程**（AV 行为检测把
+/// 「进程 spawn powershell 查全机进程」算成高权重恶意信号，见
+/// `windows_process_query.dart` 文件头）。语义与原 `Get-CimInstance
+/// Win32_Process -Filter "Name = 'fushi.exe' OR Name = 'hibiki.exe'"` 等价。
 Future<List<WindowsProcessInfo>> queryWindowsFushiProcesses() async {
   if (!Platform.isWindows) return const <WindowsProcessInfo>[];
-  const String command =
-      "Get-CimInstance Win32_Process -Filter \"Name = 'fushi.exe' OR Name = 'hibiki.exe'\" | "
-      'Select-Object ProcessId,Name,ExecutablePath | ConvertTo-Json -Compress';
   try {
-    final ProcessResult result = await Process.run(
-      'powershell',
-      <String>['-NoProfile', '-NonInteractive', '-Command', command],
-    );
-    if (result.exitCode != 0) return const <WindowsProcessInfo>[];
-    return parseWindowsProcessJson(
-      result.stdout is String ? result.stdout as String : '',
-    );
+    return windowsProcessesByNames(kFushiImageNames)
+        .map((WindowsProcessEntry entry) => WindowsProcessInfo(
+              pid: entry.pid,
+              name: entry.name,
+              path: entry.path,
+            ))
+        .toList(growable: false);
   } catch (_) {
     return const <WindowsProcessInfo>[];
   }
@@ -1032,6 +1045,8 @@ Future<List<WindowsProcessInfo>> queryWindowsLibmpvModuleHolders() async {
   }
 }
 
+/// 走 Win32 快照，**不生成 powershell 子进程**（理由同
+/// [queryWindowsFushiProcesses]）。
 Future<Map<int, WindowsProcessInfo>> queryWindowsProcessInfoForPids(
   Iterable<int> pids,
 ) async {
@@ -1040,49 +1055,15 @@ Future<Map<int, WindowsProcessInfo>> queryWindowsProcessInfoForPids(
   if (!Platform.isWindows || uniquePids.isEmpty) {
     return const <int, WindowsProcessInfo>{};
   }
-  final String filter =
-      uniquePids.map((int pid) => 'ProcessId = $pid').join(' OR ');
-  final String command = 'Get-CimInstance Win32_Process -Filter "$filter" | '
-      'Select-Object ProcessId,Name,ExecutablePath | ConvertTo-Json -Compress';
   try {
-    final ProcessResult result = await Process.run(
-      'powershell',
-      <String>['-NoProfile', '-NonInteractive', '-Command', command],
+    return windowsProcessesByIds(uniquePids).map(
+      (int pid, WindowsProcessEntry entry) => MapEntry<int, WindowsProcessInfo>(
+        pid,
+        WindowsProcessInfo(pid: entry.pid, name: entry.name, path: entry.path),
+      ),
     );
-    if (result.exitCode != 0) return const <int, WindowsProcessInfo>{};
-    final List<WindowsProcessInfo> processes = parseWindowsProcessJson(
-      result.stdout is String ? result.stdout as String : '',
-    );
-    return <int, WindowsProcessInfo>{
-      for (final WindowsProcessInfo process in processes) process.pid: process,
-    };
   } catch (_) {
     return const <int, WindowsProcessInfo>{};
-  }
-}
-
-List<WindowsProcessInfo> parseWindowsProcessJson(String output) {
-  if (output.trim().isEmpty) return const <WindowsProcessInfo>[];
-  try {
-    final Object? decoded = jsonDecode(output);
-    final List<dynamic> rows = decoded is List
-        ? decoded
-        : decoded is Map<String, dynamic>
-            ? <dynamic>[decoded]
-            : const <dynamic>[];
-    return rows
-        .whereType<Map<String, dynamic>>()
-        .map((Map<String, dynamic> row) {
-          return WindowsProcessInfo(
-            pid: _objectToInt(row['ProcessId']) ?? 0,
-            name: row['Name'] as String?,
-            path: row['ExecutablePath'] as String?,
-          );
-        })
-        .where((WindowsProcessInfo process) => process.pid > 0)
-        .toList(growable: false);
-  } catch (_) {
-    return const <WindowsProcessInfo>[];
   }
 }
 
@@ -1118,18 +1099,6 @@ List<WindowsDetectedInstallLocation> _dedupeInstallLocations(
     result.add(location);
   }
   return result;
-}
-
-String? _registryValueAfterType(String output, String valueName) {
-  for (final String rawLine in const LineSplitter().convert(output)) {
-    final String line = rawLine.trim();
-    if (!line.startsWith(valueName)) continue;
-    final RegExpMatch? match =
-        RegExp(r'^' + RegExp.escape(valueName) + r'\s+REG_\w+\s+(.+)$')
-            .firstMatch(line);
-    if (match != null) return match.group(1)!.trim();
-  }
-  return null;
 }
 
 String _stripDisplayIconSuffix(String value) {
@@ -1177,13 +1146,6 @@ String _normalizeWindowsPath(String path) {
       .replaceAll('/', r'\')
       .replaceFirst(RegExp(r'\\+$'), '')
       .toLowerCase();
-}
-
-int? _objectToInt(Object? value) {
-  if (value is int) return value;
-  if (value is num) return value.toInt();
-  if (value is String) return int.tryParse(value.trim());
-  return null;
 }
 
 Future<void> ensureWindowsInstallTargetWritable(Directory installDir) async {
