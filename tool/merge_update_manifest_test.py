@@ -42,7 +42,7 @@ def _desktop(seq: int):
     return tag, version, assets, name
 
 
-def _publish(existing, platform_fn, seq):
+def _publish(existing, platform_fn, seq, live=None):
     tag, version, assets, name = platform_fn(seq)
     out = merge_manifest(
         existing,
@@ -53,6 +53,7 @@ def _publish(existing, platform_fn, seq):
         notes="notes for " + str(seq),
         release_sequence=seq,
         new_assets=assets,
+        live_asset_names=live,
     )
     # Round-trip through JSON to mirror what publish_update_manifest.sh persists.
     return json.loads(json.dumps(out)), name
@@ -188,6 +189,65 @@ def test_idempotent():
     check(m1 == m2, "re-publishing the same run is idempotent")
 
 
+# ── BUG-1516: retained entries must not outlive the file they point at ──────
+#
+# Shape of the real outage: desktop published at seq 10182 and then stopped;
+# Android kept publishing. The rolling release pruned the 10182 desktop asset,
+# but the merge kept advertising it, so the only in-app action an old Windows
+# client had was downloading a 404.
+
+
+def _android_name(seq):
+    return _android(seq)[3]
+
+
+def test_pruned_retained_asset_is_dropped():
+    m, exe = _publish({}, _desktop, 10182)
+    check(exe in _names(m), "precondition: desktop asset advertised at 10182")
+
+    # Android publishes later; the release no longer carries the desktop asset.
+    m2, apk = _publish(m, _android, 10192, live={_android_name(10192)})
+    check(exe not in _names(m2), "pruned desktop asset dropped from manifest")
+    check(apk in _names(m2), "the just-uploaded APK survives the filter")
+
+
+def test_live_retained_asset_is_kept():
+    # Same publish order, but the desktop asset is still on the release: the
+    # cross-platform union must behave exactly as before the filter existed.
+    m, exe = _publish({}, _desktop, 10182)
+    m2, apk = _publish(m, _android, 10192, live={_android_name(10192), exe})
+    check(exe in _names(m2), "live desktop asset still retained")
+    check(apk in _names(m2), "APK present alongside it")
+
+
+def test_incoming_survives_stale_live_snapshot():
+    # The live list is queried before this run's upload finishes, so it can miss
+    # the asset we are publishing right now. Incoming must never be filtered --
+    # otherwise a publish would delete its own asset from the manifest.
+    m, exe = _publish({}, _desktop, 10182)
+    m2, apk = _publish(m, _android, 10192, live={exe})
+    check(apk in _names(m2), "incoming asset kept despite absent from live set")
+    check(exe in _names(m2), "live desktop asset kept")
+
+
+def test_unavailable_live_list_disables_filter():
+    # `gh release view` failing must not be read as "nothing is live" — that
+    # would strand every platform that did not publish in this run.
+    m, exe = _publish({}, _desktop, 10182)
+    m2, apk = _publish(m, _android, 10192, live=None)
+    check(exe in _names(m2), "None live list keeps retained assets (fail-open)")
+    check(apk in _names(m2), "and still adds the incoming asset")
+
+
+def test_empty_live_list_clears_retained():
+    # An empty SET is different from None: the release genuinely has no assets
+    # besides what this run uploads, so every retained entry is dead.
+    m, exe = _publish({}, _desktop, 10182)
+    m2, apk = _publish(m, _android, 10192, live=set())
+    check(exe not in _names(m2), "empty live set drops retained assets")
+    check(apk in _names(m2), "incoming asset unaffected by empty live set")
+
+
 def main():
     for fn in [
         test_first_publish,
@@ -199,6 +259,11 @@ def main():
         test_backward_compat_legacy_no_seq,
         test_backward_compat_no_seq_unparseable,
         test_idempotent,
+        test_pruned_retained_asset_is_dropped,
+        test_live_retained_asset_is_kept,
+        test_incoming_survives_stale_live_snapshot,
+        test_unavailable_live_list_disables_filter,
+        test_empty_live_list_clears_retained,
     ]:
         print("== " + fn.__name__ + " ==")
         fn()
