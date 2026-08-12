@@ -78,4 +78,32 @@ void main() {
           lessThan(block.indexOf('"-force_load"')));
     }
   });
+
+  test('iOS Runner keeps global symbols through the archive strip pass', () {
+    final String project = read('ios/Runner.xcodeproj/project.pbxproj');
+
+    // Runner 目标的三套配置 = 唯一 force_load FushiDicts 归档的 buildSettings 块。
+    final List<String> runnerSettingsBlocks = RegExp(
+      r'buildSettings = \{([\s\S]*?)\n\t\t\t\};',
+    )
+        .allMatches(project)
+        .map((RegExpMatch match) => match.group(1)!)
+        .where((String block) => block.contains('FUSHIDICTS_MERGED_ARCHIVE'))
+        .toList();
+
+    expect(runnerSettingsBlocks, hasLength(3));
+    for (final String block in runnerSettingsBlocks) {
+      expect(block, contains('STRIP_STYLE = "non-global";'),
+          reason: 'BUG-1584：`flutter build ios --release` 用 ACTION=build，'
+              'DEPLOYMENT_POSTPROCESSING=NO，不跑 Strip 阶段，所以符号还在；但'
+              '`xcodebuild archive`（Xcode 的 Product > Archive，也就是 '
+              'TestFlight / App Store 包的真实产出路径）会置 '
+              'DEPLOYMENT_POSTPROCESSING=YES + STRIP_INSTALLED_PRODUCT=YES，'
+              '默认 STRIP_STYLE=all 跑 `strip -D` 把主可执行的全局符号连同导出 '
+              'trie 一起抹掉。-Wl,-export_dynamic 只管链接期，拦不住链接后的 '
+              'strip。于是上架包一启动就 dlsym(RTLD_DEFAULT, "fushidicts_import") '
+              '失败 → Initialisation failed。non-global 只剥局部/调试符号，保留 '
+              '全局导出（实测代价 +30KB）。');
+    }
+  });
 }
