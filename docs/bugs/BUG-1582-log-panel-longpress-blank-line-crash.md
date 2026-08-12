@@ -3,10 +3,12 @@
 - **真实性**：✅ 真 bug，触发链完整且确定性；崩溃点在框架
   `packages/flutter/lib/src/widgets/scrollable.dart:1361`
   （`final SelectionPoint end = geometry.endSelectionPoint!;`）
-- **[ ] ① 未修复** — 已补 widget 复现测试，但 4 个候选触发点**全部未复现**，
-  根因假设被证伪（见下）。**不据未证实假设改代码。**
+- **[x] ① 已修复** — 真根因见下（上游 flutter#119355：既有选区的端点行被
+  `ListView.builder` 回收后再长按）。修在 `FushiLogPanel`：用户主动滚动即丢弃
+  已失效的选区，边缘自动滚动放行。
 - **[x] ② 已加自动化测试** — `fushi/test/widgets/log_panel_longpress_no_selection_crash_test.dart`
-  （4 条，钉「长按面板任何位置都不得抛异常」；当前全绿，作回归网）
+  （6 条；⑤⑥ 是真复现，修复前红、修复后绿；①〜④ 为否定结论留作回归网）。
+  变异实测：把清理判据改成永远跳过 → ⑤⑥ 重新变红，反向替换还原 → 27 tests 全绿。
 - **备注**：与已修的 **BUG-694 同根不同调用点**。BUG-694 绕开的是「右键菜单锚点」
   那条路（app 自持 pointer-down 坐标）；本条走的是框架自己的
   `_ScrollableSelectionContainerDelegate`，app 够不着，必须消除触发条件。
@@ -22,7 +24,48 @@ FlutterError: Null check operator used on a null value
 #12 SelectableRegionState._handleTouchLongPressStart (selectable_region.dart:1003)
 ```
 
-### 2026-08-12 复核：下面那条「空行」根因链**已被证伪**，勿再据此改代码
+### 真根因（2026-08-12 复现并修复）
+
+**上游 bug：[flutter/flutter#119355](https://github.com/flutter/flutter/issues/119355)**
+—— "SelectionArea 包 scrollable 时选文字抛空断言"。它给出了我第一轮漏掉的那一步：
+
+> SelectionArea 包 scrollable → **先选中文字** → **滚动到别处** → **再长按**
+
+序列成立时：选区端点所在的行被 `ListView.builder` 回收 / detach，而
+`_ScrollableSelectionContainerDelegate` 仍持有指向它的 `currentSelectionEndIndex`；
+下一次长按走 `handleSelectWord` → `_updateDragLocationsFromGeometries()`（该方法
+**无条件**执行，同文件 `handleSelectAll` 却有 `currentSelectionStartIndex != -1` 守卫）
+→ 读到 `SelectionGeometry.endSelectionPoint == null` → `!` 抛空断言。
+release 下 `assert(geometry.hasSelection)` 不执行，所以只在真机炸。
+
+与本仓 BUG-694 注释记录的机制同源（那条绕的是右键菜单锚点，app 自持坐标即可；
+本条走的是框架自己的 scrollable delegate，app 够不着，只能消除触发条件）。
+
+### 修复：用户主动滚动即丢弃失效选区
+
+`FushiLogPanel` 的选区**本就是视口内有界的**——`ListView.builder` 不构造视口外行，
+`SelectionArea` 拿不到它们的 Selectable，这正是「复制全部」存在的理由。用户滚走
+之后那份选区已经不可用，框架只是崩溃而非优雅降级。清掉它让模型诚实：
+**选区活在你划它的那一屏里**。
+
+判据不能只看「指针是否按下」——面板对**任何主键按下**都置
+`pointerSelectionActive`（它服务的是拽回拦截，故意粗），拖列表滚动同样置位。
+真正能分开的是 `ScrollUpdateNotification.dragDetails`：
+
+| 场景 | dragDetails | 指针按下 | 处置 |
+|---|---|---|---|
+| 滚轮 / 键盘滚动 | null | 否 | 清 |
+| 用户拖列表滚动 | 非 null | 是 | 清 |
+| 拖后惯性滑动 | null | 否 | 清 |
+| **拖选区时的边缘自动滚动** | null（animateTo 驱动） | **是** | **放行** |
+
+只有「非拖拽产生的滚动 + 指针仍按着」这一格是边缘自动滚动，必须放行，否则一拖
+就自毁选区。清选区经 `SelectionAreaState.selectableRegion.clearSelection()`
+（公开 getter，不必把 `SelectionArea` 换成裸 `SelectableRegion`）。
+
+### 第一轮走的弯路（保留，避免重蹈）
+
+下面那条「空行」根因链**被实测证伪**，勿再据此改代码。
 
 写了 widget 复现测试
 （`fushi/test/widgets/log_panel_longpress_no_selection_crash_test.dart`）逐个试了 4 个

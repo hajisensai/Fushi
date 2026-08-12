@@ -98,4 +98,58 @@ void main() {
 
     expect(tester.takeException(), isNull);
   });
+
+  // ── 上游 flutter/flutter#119355 给出的真实复现序列 ──────────────────────
+  // 「SelectionArea 包 scrollable → 先选中文字 → 滚动到别处 → 再长按」。
+  // 前 4 条候选都漏了「先有既有选区」这一步，所以永远碰不到：delegate 的
+  // currentSelectionEndIndex 还指着旧选区那一行，而 ListView.builder 已经把它
+  // 回收/detach（框架 getSelectionGeometry 明说 detached/off-screen 时端点可为
+  // null），下一次 handleSelectWord 读它的 geometry 就是 null 端点。
+  // 与本仓 BUG-694 注释记录的机制同源。
+  testWidgets('候选⑤：先选中 → 滚走（端点行被回收）→ 再长按', (WidgetTester tester) async {
+    await tester.pumpWidget(buildSubject(longLog()));
+    await tester.pumpAndSettle();
+
+    // ① 先在顶部建立一个真实选区。
+    final Rect listRect = tester.getRect(find.byType(ListView));
+    await tester.longPressAt(Offset(listRect.center.dx, listRect.top + 40));
+    await tester.pumpAndSettle();
+
+    // ② 滚很远，让①的端点行被 ListView.builder 回收。
+    await tester.drag(find.byType(ListView), const Offset(0, -6000));
+    await tester.pumpAndSettle();
+
+    // ③ 在新位置再长按一次 —— 崩溃就发生在这一步。
+    await tester.longPressAt(Offset(listRect.center.dx, listRect.center.dy));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: '既有选区的端点行被回收后再长按，触发了框架的选区端点空断言'
+          '（BUG-1582 / flutter#119355）',
+    );
+  });
+
+  testWidgets('候选⑥：全选 → 滚走 → 再长按（上游原始序列）', (WidgetTester tester) async {
+    await tester.pumpWidget(buildSubject(longLog()));
+    await tester.pumpAndSettle();
+
+    final Rect listRect = tester.getRect(find.byType(ListView));
+    // ① 全选（上游 issue 用的是右键菜单「全选」，等价于对 region 发 selectAll）。
+    final SelectableRegionState region =
+        tester.state<SelectableRegionState>(find.byType(SelectableRegion));
+    region.selectAll();
+    await tester.pumpAndSettle();
+
+    // ② 滚到远处。
+    await tester.drag(find.byType(ListView), const Offset(0, -6000));
+    await tester.pumpAndSettle();
+
+    // ③ 长按已高亮的片段。
+    await tester.longPressAt(Offset(listRect.center.dx, listRect.center.dy));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+  });
 }
