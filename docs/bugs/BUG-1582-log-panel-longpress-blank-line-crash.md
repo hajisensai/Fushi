@@ -3,9 +3,10 @@
 - **真实性**：✅ 真 bug，触发链完整且确定性；崩溃点在框架
   `packages/flutter/lib/src/widgets/scrollable.dart:1361`
   （`final SelectionPoint end = geometry.endSelectionPoint!;`）
-- **[ ] ① 未修复** — 需先补 widget 复现测试再改，不做补丁式绕过
-- **[ ] ② 未加自动化测试** — 计划：widget 测试构造含空行的日志 → 对空行长按 →
-  断言不抛
+- **[ ] ① 未修复** — 已补 widget 复现测试，但 4 个候选触发点**全部未复现**，
+  根因假设被证伪（见下）。**不据未证实假设改代码。**
+- **[x] ② 已加自动化测试** — `fushi/test/widgets/log_panel_longpress_no_selection_crash_test.dart`
+  （4 条，钉「长按面板任何位置都不得抛异常」；当前全绿，作回归网）
 - **备注**：与已修的 **BUG-694 同根不同调用点**。BUG-694 绕开的是「右键菜单锚点」
   那条路（app 自持 pointer-down 坐标）；本条走的是框架自己的
   `_ScrollableSelectionContainerDelegate`，app 够不着，必须消除触发条件。
@@ -21,7 +22,39 @@ FlutterError: Null check operator used on a null value
 #12 SelectableRegionState._handleTouchLongPressStart (selectable_region.dart:1003)
 ```
 
-### 根因链
+### 2026-08-12 复核：下面那条「空行」根因链**已被证伪**，勿再据此改代码
+
+写了 widget 复现测试
+（`fushi/test/widgets/log_panel_longpress_no_selection_crash_test.dart`）逐个试了 4 个
+候选长按点，**4 条全绿、一条都没复现**：
+
+| 候选 | 结果 |
+|---|---|
+| 夹在两条可见行之间的空行 | 未复现 |
+| 最后一行下方的空白区（无子节点包含该点） | 未复现 |
+| 被视口裁掉一半的行（滚动后顶边只露一条缝） | 未复现 |
+| 超视口长行的右端（ClipRect 外，BUG-925 同族坐标） | 未复现 |
+
+**这个否定结论是硬的**：widget 测试跑在 **debug 模式**，框架那句
+`assert(geometry.hasSelection)` 会真执行——只要条件成立就必然炸测试。没炸 =
+这四条路上端点都不为 null。
+
+**所以「多余空行 → `Text('')` 不注册 Selectable」这条推断只对了前半段**：多余空行
+确实存在（`buf.writeln(stackTrace)` 给本已以 `
+` 结尾的堆栈再补一个换行，仍是个
+可独立清理的小瑕疵），但它**不是**崩溃触发条件。
+
+**尚未排除的差异**（用户环境 vs 测试环境），下轮从这里查：
+- 用户是 **Windows 桌面 + 触屏**；widget 测试默认 `TargetPlatform.android`。
+- app 有**界面缩放**（浏览器式 zoom）——缩放层会改选区几何的变换矩阵，是端点求解
+  失败的高嫌疑来源。
+- 真实面板嵌在完整页面里（`error_log_page.dart`），祖先链比测试里的
+  `MaterialApp/Scaffold` 复杂得多。
+
+那 4 条测试**保留**：它们钉的是「长按日志面板任何位置都不得抛异常」这个不变式，
+是真回归网，只是目前抓不到本 bug。
+
+### 原始（已证伪）推断链
 
 1. `error_log_service.dart` 的 `ErrorLogEntry.format()`：
    ```dart
