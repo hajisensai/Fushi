@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1487 条。点号进各自文件。
+> 共 1488 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1582](bugs/BUG-1582-log-panel-longpress-blank-line-crash.md) | 🚧 | 🚧 | 错误日志面板长按空行崩溃（选区端点空断言） |
 | [BUG-1581](bugs/BUG-1581-fushi-rename-residual-brand-labels.md) | ✅ | ✅ | 互联设备名与下载文件名仍播报 Hibiki 品牌词 |
 | [BUG-1580](bugs/BUG-1580-interconnect-cooldown-and-hash-shared.md) | ✅ | ✅ | 同步冷却戳与聚合快照哈希共用：一条通道压住另一条 |
 | [BUG-1579](bugs/BUG-1579-interconnect-baselines-shared-across-channels.md) | ✅ | ✅ | 合集与删除墓碑因果基线三方共用：对端移出被自己另一条通道撤销 |
