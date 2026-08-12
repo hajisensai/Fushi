@@ -21,23 +21,51 @@ import 'package:fushi/src/lookup/overlay_window_channel.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 export 'package:fushi/src/lookup/overlay_window_channel.dart'
-    show GlobalLookupShowResult;
+    show GlobalLookupRoute, GlobalLookupShowResult, OverlayReverseEvent;
 
 abstract final class GlobalLookupChannel {
-  static OverlayWindowChannel _impl =
-      const OverlayWindowChannel(FushiChannels.globalLookup);
+  static final Object _routeZoneKey = Object();
+  static const GlobalLookupRoute _defaultRoute = GlobalLookupRoute.desktop();
+  static final Map<String, int> _invalidatedLookupHighWater = <String, int>{};
 
-  /// 把整条查词管线改道到游戏内查词的**离屏**卡片窗（`'galCard'`），或改回桌面浮窗
-  /// （空串）。
-  ///
-  /// 为什么是整条管线改道、而不是只改渲染那一步：桌面浮窗之所以会弹出来，正是因为
-  /// 控制器在 showAt/reveal 里驱动的是可见窗。游戏内查词的语义就是"这次查词不要桌面
-  /// 浮窗"，所以在游戏内会话期间让**同一个控制器**整体指向离屏窗，既消除了浮窗弹出，
-  /// 也让内容真正进到被抓帧的那个窗口——两个症状本来就是同一个原因。
-  static void setTarget(String target) {
-    if (_impl.target == target) return;
-    _impl = OverlayWindowChannel(FushiChannels.globalLookup, target: target);
+  static String _routeFamily(GlobalLookupRoute route) =>
+      '${route.source}:${route.routeEpoch}';
+
+  static GlobalLookupRoute get currentRoute =>
+      Zone.current[_routeZoneKey] as GlobalLookupRoute? ?? _defaultRoute;
+
+  static OverlayWindowChannel get _impl {
+    final route = currentRoute;
+    return OverlayWindowChannel(
+      FushiChannels.globalLookup,
+      target: route.target,
+      routeEpoch: route.routeEpoch,
+      lookupEpoch: route.lookupEpoch,
+      routeIsValid: () => isRouteValid(route),
+    );
   }
+
+  /// Runs the complete lookup (including callbacks, Futures and Timers) on an
+  /// immutable route. Dart zones preserve this value across async boundaries.
+  static T runWithRoute<T>(GlobalLookupRoute route, T Function() body) =>
+      runZoned(body, zoneValues: <Object, Object>{_routeZoneKey: route});
+
+  /// Permanently retires one immutable route token. Futures and Timers already
+  /// queued in that route's zone are then rejected at the channel boundary,
+  /// and reverse callbacks stamped with it are ignored by the controller.
+  /// Callers must mint monotonically new epochs; an invalidated token is never
+  /// reactivated (otherwise a stale continuation could revive itself).
+  static void invalidateRoute(GlobalLookupRoute route) {
+    final String family = _routeFamily(route);
+    final int previous = _invalidatedLookupHighWater[family] ?? -1;
+    if (route.lookupEpoch > previous) {
+      _invalidatedLookupHighWater[family] = route.lookupEpoch;
+    }
+  }
+
+  static bool isRouteValid(GlobalLookupRoute route) =>
+      route.lookupEpoch >
+      (_invalidatedLookupHighWater[_routeFamily(route)] ?? -1);
 
   @visibleForTesting
   static String get debugTarget => _impl.target;
@@ -108,10 +136,14 @@ abstract final class GlobalLookupChannel {
     required Future<Uint8List> Function(String url) onGetMedia,
     required void Function(Map<String, Object?> message) onJsMessage,
     void Function()? onOverlayHidden,
+    void Function(OverlayReverseEvent event)? onRoutedJsMessage,
+    void Function(OverlayReverseEvent event)? onRoutedOverlayHidden,
   }) =>
       _impl.setHandlers(
         onGetMedia: onGetMedia,
         onJsMessage: onJsMessage,
         onOverlayHidden: onOverlayHidden,
+        onRoutedJsMessage: onRoutedJsMessage,
+        onRoutedOverlayHidden: onRoutedOverlayHidden,
       );
 }

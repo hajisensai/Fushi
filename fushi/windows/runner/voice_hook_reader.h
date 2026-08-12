@@ -140,10 +140,8 @@ struct VoiceTrackInfo {
 
 // ══ v14 游戏内查词通道（KiriKiri/KAGEX，仅 Windows）══════════════════════════════
 //
-// 分工是硬的（docs/specs/2026-08-10-kirikiri-ingame-lookup-plan.md）：注入进游戏的
-// 代码只做几何传感、位图落地、输入转发；分词/查词/排版/卡片像素全部由 host 出。
-// 跨进程边界上因此只剩「一块位图」和「一串整数」——注入面不是"escape 得更严"，
-// 而是结构上不存在。本 reader 是 host 侧那三条通道的读写端：
+// 注入进游戏的代码只做几何传感、位图落地、输入转发；分词/查词/排版/
+// 卡片像素全部由 host 的 Fushi popup 离屏合成。本 reader 是 host 侧三条通道的读写端：
 //   hit   : hook → host，单槽 latest-wins（[PollLookupHit]）
 //   input : hook → host，环（[PollLookupInputs] + [SetLookupInputSink]）
 //   frame : host → hook，双缓冲（[WriteLookupFrame] / [WriteLookupDismiss]）
@@ -288,7 +286,7 @@ class VoiceHookReader {
   // 解除映射、释放句柄。幂等。不杀 injector 子进程（那由 Dart 侧管理）。
   void Close();
 
-  // ── v14 游戏内查词通道 ──────────────────────────────────────────────────────
+  // ── v14 游戏内查词通道 ─────────────────────────────────────────────────────
   //
   // 取一帧离屏卡片位图（**BGRA8 / 直通非预乘 alpha / 自顶向下 / pitch 恒正**，格式
   // 真相源是 voice_hook_ipc.h 的 v14 查词区注释）。签名与
@@ -322,7 +320,8 @@ class VoiceHookReader {
   void AttachLookupChannel(flutter::BinaryMessenger* messenger);
   void DetachLookupChannel();
 
-  // Dart→runner 的四个 galLookup* 方法（setEnabled / present / dismiss / input）。
+  // Dart→runner 的 galLookup* 方法（setEnabled / bitmap present / highlight /
+  // dismiss / input）。
   // 由 flutter_window 既有的 gal_hook_text 处理器在自己的分发链**最前面**调一次：
   //   if (fushi::VoiceHookReader::Instance().TryHandleLookupMethodCall(call, result))
   //     return;

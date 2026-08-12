@@ -168,15 +168,71 @@
   // capture blocked (shield bright); toggled off dims the shield (panel-block-off).
   var panelBlockCaptureVisual = true;
 
+  // Route identity for the lookup currently being rendered. Desktop callers
+  // predating the routed galgame card contract omit this value and therefore
+  // retain the legacy desktop/0/0 identity.
+  var activeRoute = {
+    source: 'desktop',
+    routeEpoch: 0,
+    lookupEpoch: 0,
+  };
+
+  function normalizeRoute(route, routeEpoch, lookupEpoch) {
+    var source = 'desktop';
+    var rawRouteEpoch = routeEpoch;
+    var rawLookupEpoch = lookupEpoch;
+    if (route && typeof route === 'object') {
+      source = route.source === 'galCard' ? 'galCard' : 'desktop';
+      rawRouteEpoch = route.routeEpoch;
+      rawLookupEpoch = route.lookupEpoch;
+    } else if (route === 'galCard') {
+      source = 'galCard';
+    }
+    return {
+      source: source,
+      routeEpoch: (typeof rawRouteEpoch === 'number' && isFinite(rawRouteEpoch))
+          ? Math.trunc(rawRouteEpoch)
+          : 0,
+      lookupEpoch: (typeof rawLookupEpoch === 'number' && isFinite(rawLookupEpoch))
+          ? Math.trunc(rawLookupEpoch)
+          : 0,
+    };
+  }
+
+  function cloneRoute(route) {
+    return normalizeRoute(route);
+  }
+
+  function routeKey(route) {
+    var value = normalizeRoute(route);
+    return value.source + ':' + value.routeEpoch + ':' + value.lookupEpoch;
+  }
+
+  function sameRoute(a, b) {
+    return routeKey(a) === routeKey(b);
+  }
+
+  function stampRoute(message, route) {
+    var value = normalizeRoute(route);
+    message.__source = value.source;
+    message.__routeEpoch = value.routeEpoch;
+    message.__lookupEpoch = value.lookupEpoch;
+    return message;
+  }
+
   // Post a message to C++ (and on to Dart) via the TOP-LEVEL chrome.webview
   // bridge. Mirrors the adapter envelope { handler, args } so _onJsMessage routes
   // it identically to popup.js-originated messages. Read-only host messages need
   // no __bridgeId.
-  function postToHost(handler, args) {
+  function postToHost(handler, args, routeSnapshot) {
+    var route = cloneRoute(routeSnapshot || activeRoute);
     try {
       if (window.chrome && window.chrome.webview &&
           typeof window.chrome.webview.postMessage === 'function') {
-        window.chrome.webview.postMessage({ handler: handler, args: args || [] });
+        window.chrome.webview.postMessage(stampRoute({
+          handler: handler,
+          args: args || [],
+        }, route));
       }
     } catch (e) {
       // No bridge (node harness) -> swallow; tests stub postToHost.
@@ -215,39 +271,41 @@
   // (falling back to a microtask, then to a synchronous call when neither timer
   // API exists, e.g. the node harness). measureAndReport itself de-dupes on the
   // bbox key, so the worst case is a single redundant measure, never a loop.
-  var measureScheduled = false;
-  function scheduleMeasure() {
-    if (measureScheduled) {
+  var measureSchedules = new Map();
+  function scheduleMeasure(routeSnapshot) {
+    var route = cloneRoute(routeSnapshot || activeRoute);
+    var key = routeKey(route);
+    if (measureSchedules.has(key)) {
       return;
     }
     var raf = (typeof window.requestAnimationFrame === 'function')
         ? window.requestAnimationFrame
         : null;
     var runner = function () {
-      measureScheduled = false;
-      measureAndReport();
+      measureSchedules.delete(key);
+      measureAndReport(route);
     };
     if (raf) {
-      measureScheduled = true;
+      measureSchedules.set(key, true);
       try {
         raf(runner);
         return;
       } catch (e) {
-        measureScheduled = false;
+        measureSchedules.delete(key);
       }
     }
     if (typeof window.queueMicrotask === 'function') {
-      measureScheduled = true;
+      measureSchedules.set(key, true);
       try {
         window.queueMicrotask(runner);
         return;
       } catch (e) {
-        measureScheduled = false;
+        measureSchedules.delete(key);
       }
     }
     // No deferral primitive (node harness): measure synchronously. De-dup on the
     // bbox key in measureAndReport keeps this from over-posting.
-    measureAndReport();
+    measureAndReport(route);
   }
 
   // Insertion-order index of a frame id (0 = root). -1 when unknown.
@@ -737,6 +795,12 @@
       topPost = native.bind(win.chrome.webview);
     }
     win.chrome.webview.postMessage = function (message) {
+      // A Promise continuation unblocked by an older bridge reply runs as a
+      // microtask after __fushiBridgeResolve. installBridgeRouter temporarily
+      // exposes that reply's original route in this iframe so a follow-up post
+      // cannot be mislabeled with the record's newer render route.
+      var messageRoute = cloneRoute(
+          win.__fushiBridgeReplyRoute || record.route);
       // TODO-1067 (子3) — DRIVE THE REVEAL GATE OFF popup.js's authoritative
       // render signal instead of the body-height heuristic. popup.js calls
       // flutter_inappwebview.callHandler('popupRendered', scrollHeight) EXACTLY
@@ -754,16 +818,22 @@
       try {
         if (message && typeof message === 'object' &&
             message.handler === 'popupRendered') {
-          markContentReady(record);
+          markContentReady(record, messageRoute);
         }
       } catch (e) {
         // Never let the reveal hook break the message forwarding below.
       }
       var out = message;
       try {
-        out = transformFrameMessage(record, message);
+        out = transformFrameMessage(record, message, messageRoute);
       } catch (e) {
-        out = message;
+        if (message && typeof message === 'object') {
+          out = stampRoute(Object.assign({}, message, {
+            __frameId: record.id,
+          }), messageRoute);
+        } else {
+          out = message;
+        }
       }
       topPost(out);
     };
@@ -773,16 +843,17 @@
   // Re-anchor + frame-stamp a message posted from record iframe. Pure given the
   // record current shell geometry; returns a NEW object. Non-onLinkClick messages
   // are passed through with only __frameId stamped.
-  function transformFrameMessage(record, message) {
+  function transformFrameMessage(record, message, routeSnapshot) {
     if (!message || typeof message !== 'object') {
       return message;
     }
     var handler = message.handler;
-    var out = {
+    var route = cloneRoute(routeSnapshot || (record && record.route));
+    var out = stampRoute({
       handler: handler,
       args: message.args,
       __frameId: record.id,
-    };
+    }, route);
     // TODO-1188 — rewrite the frame-LOCAL bridge id to a host-GLOBAL id and
     // remember the route (globalId -> {frameId, localId}) so the native reply
     // (which reaches only the top-level document) is forwarded back to the SOURCE
@@ -793,6 +864,7 @@
       bridgeRoutes.set(globalBridgeId, {
         frameId: record.id,
         localId: message.__bridgeId,
+        route: route,
       });
       out.__bridgeId = globalBridgeId;
     }
@@ -866,7 +938,8 @@
       }
       var index = layerIndexOf(frameId);
       if (index >= 0) {
-        postToHost('dismissPopupAt', [index]);
+        var record = frames.get(frameId);
+        postToHost('dismissPopupAt', [index], record && record.route);
       }
     };
     if (typeof btn.addEventListener === 'function') {
@@ -1176,6 +1249,7 @@
       observer: null,
       contentSafetyTimer: null,
       revealSafetyTimer: null,
+      route: cloneRoute(activeRoute),
     };
     frameSources.set(iframe, descriptor.id);
 
@@ -1186,8 +1260,8 @@
       // TODO-1231 P1 — seed the has-child flag on cold load (mirrors the in-app
       // cold-load _setHasChildPopupJs); renderPayload keeps it in sync after.
       applyHasChildPopup(record);
-      observeContent(record);
-      scheduleMeasure();
+      observeContent(record, record.route);
+      scheduleMeasure(record.route);
     });
     return record;
   }
@@ -1232,8 +1306,12 @@
   // (re-checked there), so it first appears already in-position — no clipped-then-
   // jump. A one-shot safety flips it regardless after REVEAL_READY_SAFETY_MS so a
   // never-arriving commitLayerShift can never leave a card stuck hidden.
-  function maybeFlipRevealReady(record) {
+  function maybeFlipRevealReady(record, routeSnapshot) {
     if (!record) {
+      return;
+    }
+    var route = cloneRoute(routeSnapshot || record.route);
+    if (!sameRoute(record.route, route)) {
       return;
     }
     if (record.revealReady) {
@@ -1252,14 +1330,25 @@
       return;
     }
     if (record.revealSafetyTimer == null) {
-      record.revealSafetyTimer = setTimerSafe(function () {
-        record.revealSafetyTimer = null;
+      var revealTimer = setTimerSafe(function () {
+        if (!sameRoute(record.route, route)) {
+          return;
+        }
+        if (record.revealSafetyTimer === revealTimer) {
+          record.revealSafetyTimer = null;
+        }
         setGateFlag(record, ATTR_REVEAL_READY, 'revealReady');
       }, REVEAL_READY_SAFETY_MS);
+      record.revealSafetyTimer = revealTimer;
     }
   }
 
-  function markContentReady(record) {
+  function markContentReady(record, routeSnapshot) {
+    var route = cloneRoute(routeSnapshot || record.route);
+    if (!sameRoute(record.route, route)) {
+      scheduleMeasure(route);
+      return;
+    }
     if (record.contentSafetyTimer != null) {
       clearTimerSafe(record.contentSafetyTimer);
       record.contentSafetyTimer = null;
@@ -1275,7 +1364,7 @@
     setGateFlag(record, ATTR_CONTENT_READY, 'contentReady');
     // Content height just changed -> the union bbox may grow. Re-measure
     // (coalesced) so Dart resizes the window to fit the filled card.
-    scheduleMeasure();
+    scheduleMeasure(route);
   }
 
   // D1 — observe the SAME-ORIGIN iframe contentDocument.body for real content:
@@ -1283,12 +1372,16 @@
   // non-zero height). No popup.js change needed (host reads the same-origin DOM
   // directly). Degrades gracefully where MutationObserver is unavailable (node
   // harness): fall back to the safety timer / an immediate content check.
-  function observeContent(record) {
+  function observeContent(record, routeSnapshot) {
+    var route = cloneRoute(routeSnapshot || record.route);
+    if (!sameRoute(record.route, route)) {
+      return;
+    }
     if (record.contentReady) {
       return;
     }
     if (hasContent(record)) {
-      markContentReady(record);
+      markContentReady(record, route);
       return;
     }
     var body = null;
@@ -1302,7 +1395,7 @@
       try {
         record.observer = new window.MutationObserver(function () {
           if (hasContent(record)) {
-            markContentReady(record);
+            markContentReady(record, route);
           }
         });
         record.observer.observe(body, {
@@ -1316,10 +1409,17 @@
     }
     // Safety: force content-ready after a budget so a render failure never
     // leaves the card invisible (mirrors the Dart reveal safety).
-    record.contentSafetyTimer = setTimerSafe(function () {
-      record.contentSafetyTimer = null;
-      markContentReady(record);
+    var contentTimer = setTimerSafe(function () {
+      if (!sameRoute(record.route, route)) {
+        scheduleMeasure(route);
+        return;
+      }
+      if (record.contentSafetyTimer === contentTimer) {
+        record.contentSafetyTimer = null;
+      }
+      markContentReady(record, route);
     }, CONTENT_READY_SAFETY_MS);
+    record.contentSafetyTimer = contentTimer;
   }
 
   // TODO-1067 (子3) — True once popup.js has PAINTED a real card: a rendered
@@ -1400,6 +1500,40 @@
     }
   }
 
+  // Reusing the stable root iframe across lookups must not let an observer or
+  // safety timer from the previous lookup mutate the new route's reveal gates.
+  // Tear those callbacks down before swapping the record's route identity; any
+  // callback already queued carries its own old snapshot and will be ignored by
+  // markContentReady/maybeFlipRevealReady.
+  function bindRecordRoute(record, routeSnapshot) {
+    var route = cloneRoute(routeSnapshot || activeRoute);
+    if (sameRoute(record.route, route)) {
+      record.route = route;
+      return;
+    }
+    if (record.observer && typeof record.observer.disconnect === 'function') {
+      try {
+        record.observer.disconnect();
+      } catch (e) {
+        // no-op
+      }
+      record.observer = null;
+    }
+    if (record.contentSafetyTimer != null) {
+      clearTimerSafe(record.contentSafetyTimer);
+      record.contentSafetyTimer = null;
+    }
+    if (record.revealSafetyTimer != null) {
+      clearTimerSafe(record.revealSafetyTimer);
+      record.revealSafetyTimer = null;
+    }
+    record.route = route;
+    record.contentReady = false;
+    if (record.shell && typeof record.shell.setAttribute === 'function') {
+      record.shell.setAttribute(ATTR_CONTENT_READY, 'false');
+    }
+  }
+
   function renderPayload(layer, descriptor) {
     var record = frames.get(descriptor.id);
     if (!record) {
@@ -1409,6 +1543,7 @@
       record.parentIndex = descriptor.parentIndex;
       record.descriptor = descriptor;
     }
+    bindRecordRoute(record, activeRoute);
     applyShellStyle(record.shell, descriptor);
     // D1 / TODO-1231 v3 — geometry is placed for this layer, so reveal-ready is
     // eligible. The shell still stays hidden until content-ready also flips (the
@@ -1416,7 +1551,7 @@
     // origin already covers the shell (root / down-right child); an up/left child
     // whose window has not yet moved to reach it is HELD so it never paints clipped
     // — commitLayerShift flips it once the origin catches up.
-    maybeFlipRevealReady(record);
+    maybeFlipRevealReady(record, record.route);
     if (record.loaded) {
       wrapFrameBridge(record);
       // TODO-1231 P1 — only re-run the FULL body (which ends in renderPopup() = a
@@ -1427,7 +1562,7 @@
       // Skip it; the one thing that changed rides applyHasChildPopup.
       if (record.injectedSettingsJs !== descriptor.settingsJs) {
         injectContent(record);
-        observeContent(record);
+        observeContent(record, record.route);
       } else if (hasContent(record)) {
         // TODO-1231 (BUG-583) — the body did not change (same-word re-lookup, or
         // a nested render re-sending the parent's identical body) AND the frame
@@ -1440,7 +1575,7 @@
         // (whose body genuinely has not rendered yet) still follows the
         // observeContent gate. markContentReady is a no-op when already satisfied
         // (nested open of a live parent).
-        markContentReady(record);
+        markContentReady(record, record.route);
       }
       applyHasChildPopup(record);
     }
@@ -1507,7 +1642,8 @@
   //      window revealed before the fresh iframe card had actually rendered).
   // reveal-ready is left intact (geometry is re-placed by the following
   // renderStack); only the CONTENT half of the two-flag gate is re-armed.
-  function beginLookup(rootId) {
+  function beginLookup(rootId, route, routeEpoch, lookupEpoch) {
+    activeRoute = normalizeRoute(route, routeEpoch, lookupEpoch);
     lastBBoxKey = '';
     // BUG-749 — native cleared its shell rects on Hide(); force a re-post even
     // when the fresh card's rects CSV equals the previous lookup's.
@@ -1661,7 +1797,7 @@
       lastShellRectsKey = '';
     }
     removeMissing(ids);
-    scheduleMeasure();
+    scheduleMeasure(activeRoute);
   }
 
   // D2 — measure every live frame same-origin content height and report the UNION
@@ -1669,7 +1805,9 @@
   // whole stack. Height refined to the iframe content (capped to planned shell
   // height). devicePixelRatio sent so C++ converts CSS-px box to physical-px
   // window geometry. De-duped on the box key.
-  function measureAndReport() {
+  function measureAndReport(routeSnapshot) {
+    var route = cloneRoute(routeSnapshot || activeRoute);
+    var routePrefix = routeKey(route) + '|';
     if (!frames.size) {
       return;
     }
@@ -1681,7 +1819,9 @@
     // so flip it here directly.
     if (layoutMode === 'panel') {
       frames.forEach(function (record) {
-        setGateFlag(record, ATTR_REVEAL_READY, 'revealReady');
+        if (sameRoute(record.route, route)) {
+          setGateFlag(record, ATTR_REVEAL_READY, 'revealReady');
+        }
       });
       return;
     }
@@ -1718,7 +1858,12 @@
     var maxRight = -Infinity;
     var maxBottom = -Infinity;
     var shellRects = [];
+    var routedFrameCount = 0;
     frames.forEach(function (record) {
+      if (!sameRoute(record.route, route)) {
+        return;
+      }
+      routedFrameCount++;
       var left = parseFloat(record.shell.style.left) || 0;
       var top = parseFloat(record.shell.style.top) || 0;
       var width = parseFloat(record.shell.style.width) || 0;
@@ -1743,6 +1888,9 @@
         if (top < minTop) minTop = top;
       }
     });
+    if (!routedFrameCount) {
+      return;
+    }
     // No content-ready shell yet (bootstrap first reveal): follow all placed
     // shells so the reveal geometry is identical to the pre-fix behaviour.
     if (!isFinite(minLeft) || !isFinite(minTop)) {
@@ -1797,9 +1945,10 @@
         return Math.round(v * 100) / 100;
       }).join(',');
     }).join(';');
-    if (rectsCsv !== lastShellRectsKey) {
-      lastShellRectsKey = rectsCsv;
-      postToHost('shellRects', [rectsCsv]);
+    var rectsKey = routePrefix + rectsCsv;
+    if (rectsKey !== lastShellRectsKey) {
+      lastShellRectsKey = rectsKey;
+      postToHost('shellRects', [rectsCsv], route);
     }
     var dpr = (typeof window.devicePixelRatio === 'number' &&
                window.devicePixelRatio > 0) ? window.devicePixelRatio : 1;
@@ -1810,15 +1959,15 @@
       height: maxBottom - minTop,
       dpr: dpr,
     };
-    var key = box.left + ',' + box.top + ',' + box.width + ',' + box.height +
-        ',' + dpr;
+    var key = routePrefix + box.left + ',' + box.top + ',' + box.width + ',' +
+        box.height + ',' + dpr;
     if (key === lastBBoxKey) {
       return;
     }
     lastBBoxKey = key;
     // overlaySize args: [dpr, box]. Dart reveal/resize the window to this CSS-px
     // box (times dpr at the C++ window boundary).
-    postToHost('overlaySize', [dpr, box]);
+    postToHost('overlaySize', [dpr, box], route);
   }
 
   // BUG-1139 ③ — 卡片 iframe 的 documentElement 上挂着 CSS `zoom`
@@ -1915,11 +2064,12 @@
       }
     });
     var record = rootId !== null ? frames.get(rootId) : null;
+    var route = cloneRoute((record && record.route) || activeRoute);
     var shell = record && record.shell;
     if (!shell || typeof shell.setAttribute !== 'function' ||
         !shell.classList || typeof shell.classList.add !== 'function') {
       // No animatable shell (node harness fake DOM without classList): post now.
-      postToHost('dismissPopupAt', [0]);
+      postToHost('dismissPopupAt', [0], route);
       return;
     }
     dismissingRoot = true;
@@ -1930,7 +2080,7 @@
       }
       posted = true;
       dismissingRoot = false;
-      postToHost('dismissPopupAt', [0]);
+      postToHost('dismissPopupAt', [0], route);
     };
     if (typeof shell.addEventListener === 'function') {
       shell.addEventListener('transitionend', function onEnd(e) {
@@ -2209,7 +2359,20 @@
         var win = frameWindowOf(frames.get(route.frameId));
         if (win && typeof win.__fushiBridgeResolve === 'function') {
           try {
+            // Keep the originating route visible through the Promise microtask
+            // scheduled by the frame adapter's resolve(). Clearing on the next
+            // macrotask means chained popup.js callHandler posts retain the old
+            // route even if a newer lookup has already rebound the stable frame.
+            win.__fushiBridgeReplyRoute = cloneRoute(route.route);
             win.__fushiBridgeResolve(route.localId, jsonValue);
+            var replyWindow = win;
+            setTimerSafe(function () {
+              try {
+                delete replyWindow.__fushiBridgeReplyRoute;
+              } catch (e) {
+                replyWindow.__fushiBridgeReplyRoute = null;
+              }
+            }, 0);
           } catch (e) {
             // Never let one frame's resolve throw break the router.
           }
@@ -2310,6 +2473,7 @@
   // contract).
   function playWordAudioInFrame(frameId, url, token) {
     const record = frames.get(frameId);
+    const route = cloneRoute((record && record.route) || activeRoute);
     let win = null;
     if (record?.loaded) {
       try {
@@ -2319,7 +2483,7 @@
       }
     }
     if (!win || typeof win.eval !== 'function') {
-      postToHost('wordAudioPlayed', [token, false, 'FrameNotLoaded']);
+      postToHost('wordAudioPlayed', [token, false, 'FrameNotLoaded'], route);
       return false;
     }
     try {
@@ -2352,7 +2516,7 @@
       window.console?.debug?.(
           '[global-lookup] word audio frame eval failed', error);
       postToHost('wordAudioPlayed',
-          [token, false, (error && error.name) || 'FrameEvalFailed']);
+          [token, false, (error && error.name) || 'FrameEvalFailed'], route);
       return false;
     }
   }

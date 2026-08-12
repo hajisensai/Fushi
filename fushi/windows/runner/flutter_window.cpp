@@ -606,6 +606,18 @@ int IntFromValue(const flutter::EncodableMap* args, const char* key,
   return static_cast<int>(it->second.TryGetLongValue().value_or(fallback));
 }
 
+int64_t Int64FromValue(const flutter::EncodableMap* args, const char* key,
+                       int64_t fallback) {
+  if (args == nullptr) {
+    return fallback;
+  }
+  const auto it = args->find(flutter::EncodableValue(key));
+  if (it == args->end()) {
+    return fallback;
+  }
+  return it->second.TryGetLongValue().value_or(fallback);
+}
+
 bool BoolFromValue(const flutter::EncodableMap* args, const char* key,
                    bool fallback) {
   if (args == nullptr) {
@@ -656,6 +668,47 @@ std::string StringFromValue(const flutter::EncodableMap* args, const char* key,
   }
   const auto* s = std::get_if<std::string>(&it->second);
   return s != nullptr ? *s : fallback;
+}
+
+void BindRouteContext(GlobalLookupWindow* window,
+                      const flutter::EncodableMap* args,
+                      const std::string& fallback_source) {
+  if (window == nullptr) {
+    return;
+  }
+  std::string source = StringFromValue(args, "source", fallback_source);
+  if (source != "desktop" && source != "galCard") {
+    source = fallback_source;
+  }
+  window->SetRouteContext(std::move(source),
+                          Int64FromValue(args, "routeEpoch", 0),
+                          Int64FromValue(args, "lookupEpoch", 0));
+}
+
+std::unique_ptr<flutter::EncodableValue> RoutedPayloadEnvelope(
+    const std::string& payload,
+    const GlobalLookupWindow::RouteContext& route) {
+  return std::make_unique<flutter::EncodableValue>(flutter::EncodableMap{
+      {flutter::EncodableValue("payload"), flutter::EncodableValue(payload)},
+      {flutter::EncodableValue("source"),
+       flutter::EncodableValue(route.source)},
+      {flutter::EncodableValue("routeEpoch"),
+       flutter::EncodableValue(route.route_epoch)},
+      {flutter::EncodableValue("lookupEpoch"),
+       flutter::EncodableValue(route.lookup_epoch)},
+  });
+}
+
+std::unique_ptr<flutter::EncodableValue> RoutedHiddenEnvelope(
+    const GlobalLookupWindow::RouteContext& route) {
+  return std::make_unique<flutter::EncodableValue>(flutter::EncodableMap{
+      {flutter::EncodableValue("source"),
+       flutter::EncodableValue(route.source)},
+      {flutter::EncodableValue("routeEpoch"),
+       flutter::EncodableValue(route.route_epoch)},
+      {flutter::EncodableValue("lookupEpoch"),
+       flutter::EncodableValue(route.lookup_epoch)},
+  });
 }
 
 // 解包可选的注音区间列表（`[{start, length, ruby}, ...]`）。
@@ -1215,6 +1268,22 @@ GlobalLookupWindow* FlutterWindow::EnsureGalLookupCardWindow() {
                                              std::move(result));
       });
 
+  // The embedded card reuses the complete Fushi popup, not just its pixels.
+  // Route its JS bridge through the same Dart controller so audio, mining,
+  // nested lookup, and popup dismissal retain their normal semantics while the
+  // HWND itself remains off-screen.
+  gal_lookup_card_window_->SetMessageCallback(
+      [this](const std::string& json,
+             const GlobalLookupWindow::RouteContext& route) {
+        global_lookup_channel_->InvokeMethod(
+            "jsMessage", RoutedPayloadEnvelope(json, route));
+      });
+  gal_lookup_card_window_->SetHiddenCallback(
+      [this](const GlobalLookupWindow::RouteContext& route) {
+        global_lookup_channel_->InvokeMethod(
+            "overlayHidden", RoutedHiddenEnvelope(route));
+      });
+
   // WebView2 起不来必须能被看见。否则症状是「游戏内查词永远没反应」，而真因在 native
   // 环境创建失败——和「hook 没装上」「host 没投帧」三者同形，真机上分不开。
   gal_lookup_card_window_->SetErrorCallback([this](const std::string& message) {
@@ -1224,8 +1293,8 @@ GlobalLookupWindow* FlutterWindow::EnsureGalLookupCardWindow() {
             std::string("gal-lookup-card: ") + message));
   });
 
-  // 只离屏预热，从不 ShowAt——这个实例的像素只经共享内存进游戏，永远不作为窗口出现。
-  // owner 传 nullptr，与另外两个实例同源解耦，不把主窗拉到前台。
+  // 先离屏预热；真正查词时同一实例仍只走 ShowAt/ResizeOffscreen 进行布局和取帧，
+  // 从不 Reveal 到桌面。owner 传 nullptr，与另外两个实例同源解耦，不把主窗拉到前台。
   gal_lookup_card_window_->PrewarmWebView(480, 360, nullptr);
   return gal_lookup_card_window_.get();
 }
@@ -1268,10 +1337,12 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
       });
 
   // JS postMessage (dismiss / audio handlers) -> Dart.
-  global_lookup_window_->SetMessageCallback([this](const std::string& json) {
-    global_lookup_channel_->InvokeMethod(
-        "jsMessage", std::make_unique<flutter::EncodableValue>(json));
-  });
+  global_lookup_window_->SetMessageCallback(
+      [this](const std::string& json,
+             const GlobalLookupWindow::RouteContext& route) {
+        global_lookup_channel_->InvokeMethod(
+            "jsMessage", RoutedPayloadEnvelope(json, route));
+      });
 
   // TODO-1153 -- native overlay bring-up errors (WebView2 environment/controller
   // create failure) -> Dart, so ErrorLogService surfaces "app-external lookup
@@ -1288,10 +1359,11 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
   // the controller's own reveal-state reset can hang off it. Not fired for the
   // programmatic reset Hide(false) before a fresh lookup (see the "hide" method
   // below + GlobalLookupWindow::Hide). Fires on the platform thread.
-  global_lookup_window_->SetHiddenCallback([this]() {
-    global_lookup_channel_->InvokeMethod(
-        "overlayHidden", std::make_unique<flutter::EncodableValue>());
-  });
+  global_lookup_window_->SetHiddenCallback(
+      [this](const GlobalLookupWindow::RouteContext& route) {
+        global_lookup_channel_->InvokeMethod(
+            "overlayHidden", RoutedHiddenEnvelope(route));
+      });
 
   global_lookup_channel_->SetMethodCallHandler(
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
@@ -1315,6 +1387,9 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
             return;
           }
         }
+        BindRouteContext(win, args,
+                         win == gal_lookup_card_window_.get() ? "galCard"
+                                                             : "desktop");
 
         if (method == "prepare") {
           const std::wstring assets_dir = WideFromValue(args, "assetsDir", L"");
@@ -1434,16 +1509,21 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           win->RenderJson(StringFromValue(args, "json", ""));
           result->Success();
         } else if (method == "resize") {
-          win->ResizeTo(IntFromValue(args, "width", 0),
-                                          IntFromValue(args, "height", 0));
+          if (win == gal_lookup_card_window_.get()) {
+            win->ResizeOffscreen(IntFromValue(args, "width", 0),
+                                 IntFromValue(args, "height", 0));
+          } else {
+            win->ResizeTo(IntFromValue(args, "width", 0),
+                          IntFromValue(args, "height", 0));
+          }
           result->Success();
         } else if (method == "reveal") {
           // 🔴 游戏内卡片窗**永远不上屏**：reveal 是"把离屏渲染好的窗口挪到屏幕上"
           // 这一步，对它只保留定尺寸。放过去就等于把桌面浮窗换成另一个桌面浮窗，
           // 用户要的恰恰是别弹窗。卡片像素由 CaptureBgraAsync 取走后投进游戏图层。
           if (win == gal_lookup_card_window_.get()) {
-            win->ResizeTo(IntFromValue(args, "width", 0),
-                          IntFromValue(args, "height", 0));
+            win->ResizeOffscreen(IntFromValue(args, "width", 0),
+                                 IntFromValue(args, "height", 0));
           } else {
             win->Reveal(IntFromValue(args, "width", 0),
                         IntFromValue(args, "height", 0));
@@ -1452,9 +1532,12 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
         } else if (method == "revealStack") {
           // TODO-867 P3c E1 — reveal/resize to the nested-stack union bbox.
           if (win == gal_lookup_card_window_.get()) {
-            // 同上：嵌套栈的 reveal 也只定尺寸，不上屏。
-            win->ResizeTo(IntFromValue(args, "width", 0),
-                          IntFromValue(args, "height", 0));
+            // 同上：嵌套栈只更新离屏尺寸与 host layer 位移，不上屏。
+            win->ResizeStackOffscreen(
+                IntFromValue(args, "width", 0),
+                IntFromValue(args, "height", 0),
+                DoubleFromValue(args, "left", 0.0),
+                DoubleFromValue(args, "top", 0.0));
           } else {
             win->RevealStack(
                 IntFromValue(args, "dx", 0), IntFromValue(args, "dy", 0),
@@ -1555,20 +1638,23 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
                                                std::move(result));
       });
 
-  clipboard_panel_window_->SetMessageCallback([this](const std::string& json) {
-    clipboard_panel_channel_->InvokeMethod(
-        "jsMessage", std::make_unique<flutter::EncodableValue>(json));
-  });
+  clipboard_panel_window_->SetMessageCallback(
+      [this](const std::string& json,
+             const GlobalLookupWindow::RouteContext&) {
+        clipboard_panel_channel_->InvokeMethod(
+            "jsMessage", std::make_unique<flutter::EncodableValue>(json));
+      });
 
   clipboard_panel_window_->SetErrorCallback([this](const std::string& message) {
     clipboard_panel_channel_->InvokeMethod(
         "nativeError", std::make_unique<flutter::EncodableValue>(message));
   });
 
-  clipboard_panel_window_->SetHiddenCallback([this]() {
-    clipboard_panel_channel_->InvokeMethod(
-        "overlayHidden", std::make_unique<flutter::EncodableValue>());
-  });
+  clipboard_panel_window_->SetHiddenCallback(
+      [this](const GlobalLookupWindow::RouteContext&) {
+        clipboard_panel_channel_->InvokeMethod(
+            "overlayHidden", std::make_unique<flutter::EncodableValue>());
+      });
 
   clipboard_panel_channel_->SetMethodCallHandler(
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
@@ -1576,6 +1662,7 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
                  result) {
         const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
         const std::string& method = call.method_name();
+        BindRouteContext(clipboard_panel_window_.get(), args, "desktop");
 
         if (method == "prepare") {
           clipboard_panel_window_->SetPopupAssetsDir(

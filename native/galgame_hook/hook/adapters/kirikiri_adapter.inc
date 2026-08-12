@@ -111,6 +111,13 @@ uint64_t ReadKirikiriSharedU64(volatile uint64_t* value) {
                    reinterpret_cast<volatile LONGLONG*>(value), 0, 0));
 }
 
+uint32_t ReadKirikiriSharedU32(volatile uint32_t* value) {
+  return value == nullptr
+             ? 0
+             : static_cast<uint32_t>(InterlockedCompareExchange(
+                   reinterpret_cast<volatile LONG*>(value), 0, 0));
+}
+
 KiriKiriVoicePairingContext CaptureKirikiriVoicePairingContext(
     bool stable_pairing_eligible) {
   KiriKiriVoicePairingContext context;
@@ -721,9 +728,10 @@ volatile LONG g_lookup_bootstrap_state = 0;  // 0=off, 1=registered, 2=running, 
 // 在生产路径上并行跑四份没人读的排版计算。
 constexpr bool kKirikiriLookupProbePaths = false;
 
-// TJS 传感器。职责边界只有四件事：采字符几何、做命中测试、把 host 给的位图端到游戏渲染树
-// 里、把落在卡片上的输入转发出去。分词、查词、卡片排版、外字、发音、制卡全部在 Hibiki
-// 进程；这里没有网络客户端、没有认证凭据、没有 JSON、也不 eval 任何拼出来的源码。
+// TJS 传感器。职责边界是：采字符几何、做命中测试、在游戏 Layer 上即时绘制选词高亮，
+// 并承载 host 回投的 Fushi popup BGRA 位图与卡片输入。分词、查词、排版、背景和文字
+// 都只由 Hibiki/Fushi 现有 popup 实现；TJS 不维护第二套词典卡渲染器。这里没有网络
+// 客户端、认证凭据或 JSON。
 //
 // 三条通道都由 DLL 在游戏主线程的连续帧回调里驱动：
 //   hook→host   TJS 把值写进 global，DLL 用 TVPExecuteExpression 读走再落进共享内存。
@@ -807,6 +815,13 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			// "为什么"；DLL 每轮把它读走写进 %TEMP%ushi_galhook.log。
 			global.fushiLookupLastError = "";
 			global.fushiLookupErrorSeq = 0;
+			// 一次 submit 的坐标链快照。它与异常出口完全分开：异常不能被诊断覆盖，坐标
+			// trace 也不能伪装成异常。每个游戏进程最多记 4 次人工提交，每次 registry 最多
+			// 8 项且只含数值/枚举，不记录台词、字形、图层名或其他游戏内容。
+			global.fushiLookupCoordTrace = "";
+			global.fushiLookupCoordTraceSeq = 0;
+			global.fushiLookupCoordTraceBudget = 4;
+			global.fushiLookupOffsetReachedPrimary = 0;
 			// 光标换算的暂存（避免在 hover 热路径上每条记录都分配一个字典）。
 			global.fushiLookupOffX = 0;
 			global.fushiLookupOffY = 0;
@@ -821,6 +836,20 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			global.fushiLookupHitViewH = 0;
 			global.fushiLookupHitFlags = 0;
 			global.fushiLookupHitLine = "";
+			global.fushiLookupVisualSeq = 0;
+			global.fushiLookupSubmitSeq = 0;
+			// Esc 只取消当时已经存在的 submit。这个单调 fence 留在游戏侧，因而即使
+			// host 已经开始查词、结构帧尚未回到游戏，取消也不会被在途结果反弹覆盖。
+			global.fushiLookupDismissedSubmitSeq = 0;
+			global.fushiLookupSubmitCharIndex = 0;
+			global.fushiLookupSubmitCharCount = 0;
+			global.fushiLookupSubmitGlyphX = 0;
+			global.fushiLookupSubmitGlyphY = 0;
+			global.fushiLookupSubmitGlyphW = 0;
+			global.fushiLookupSubmitGlyphH = 0;
+			global.fushiLookupSubmitViewW = 0;
+			global.fushiLookupSubmitViewH = 0;
+			global.fushiLookupSubmitLine = "";
 			global.fushiLookupInputQueue = [];
 			global.fushiLookupShiftDown = false;
 			global.fushiLookupProbeMode = __FUSHI_PROBE_MODE__;
@@ -872,30 +901,112 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			// 命中数永远是 0。
 			//
 			// left/top/parent 是**图层树**属性，与该层有没有图像、是什么类型都无关，
-			// 任何状态下都能读。沿父链累加到 primaryLayer 为止，就得到该层在 primary
-			// 图像坐标系里的原点；再拿 primary 的光标位置一减即可。guard 是防御游戏把
-			// 图层树接成环（不该发生，但这里跑在游戏主线程上，死循环＝游戏卡死）。
+			// 任何状态下都能读。KAG 的 fore.messages[] 是 primary 的子树，而
+			// back.messages[] 是它的兄弟子树；所以既不能把 message.left/top 直接当成
+			// primary 坐标，也不能因为父链没经过 primary 就把合法 back 页判成离屏层。
+			// 分别累加 layer 与 primary 到共同根的绝对图层坐标，二者相减才是严格的
+			// layer→primary 偏移。guard 防御游戏把图层树接成环（这里跑在游戏主线程，
+			// 死循环就会直接卡死游戏）。
 			global.fushiLookupComputeOffset = function(layer)
 			{
-				var ox = 0, oy = 0;
+				var primary = global.kag.primaryLayer;
+				global.fushiLookupOffX = 0;
+				global.fushiLookupOffY = 0;
+				global.fushiLookupOffsetReachedPrimary = 0;
+				var layerX = 0, layerY = 0;
+				var layerRoot = void;
 				var current = layer;
 				var guard = 0;
-				var reached = false;
-				var primary = global.kag.primaryLayer;
 				while(current !== void && current !== null && isvalid current)
 				{
-					if(current === primary) { reached = true; break; }
-					if(++guard > 32) break;
-					ox += current.left;
-					oy += current.top;
+					if(current === primary)
+						global.fushiLookupOffsetReachedPrimary = 1;
+					if(++guard > 32)
+					{
+						global.fushiLookupMark(16);
+						return false;
+					}
+					layerRoot = current;
+					layerX += current.left;
+					layerY += current.top;
 					current = current.parent;
 				}
-				// 没走到 primary = 这层根本不挂在主渲染树上（独立/离屏层），累加出来的
-				// 偏移没有意义。必须能看见，否则表现只是"点不中"，无从判断是坐标算错还
-				// 是模型选错。
-				if(!reached) global.fushiLookupMark(16);
-				global.fushiLookupOffX = ox;
-				global.fushiLookupOffY = oy;
+
+				var primaryX = 0, primaryY = 0;
+				var primaryRoot = void;
+				current = primary;
+				guard = 0;
+				while(current !== void && current !== null && isvalid current)
+				{
+					if(++guard > 32)
+					{
+						global.fushiLookupMark(16);
+						return false;
+					}
+					primaryRoot = current;
+					primaryX += current.left;
+					primaryY += current.top;
+					current = current.parent;
+				}
+
+				if(layerRoot === void || primaryRoot === void ||
+					layerRoot !== primaryRoot)
+				{
+					global.fushiLookupMark(16);
+					return false;
+				}
+				global.fushiLookupOffX = layerX - primaryX;
+				global.fushiLookupOffY = layerY - primaryY;
+				return true;
+			};
+
+			// 只做 bounded trace 的发布，不复用 LastError/ErrorSeq。字符串在调用前已由固定
+			// 标签和数字组成；这里再统一扣预算，保证每个进程最多写四行。
+			global.fushiLookupPublishCoordTrace = function(trace)
+			{
+				if(global.fushiLookupCoordTraceBudget <= 0) return;
+				global.fushiLookupCoordTrace = trace;
+				global.fushiLookupCoordTraceBudget--;
+				global.fushiLookupCoordTraceSeq++;
+				global.fushiLookupNotify++;
+			};
+
+			// KAG 双缓冲页的脱敏身份：0=未知、1=fore、2=back。只比较对象身份，不读取
+			// name，也不把任何游戏文本送进日志。
+			global.fushiLookupPageOf = function(layer)
+			{
+				try
+				{
+					var foreBase = global.kag.fore.base;
+					var backBase = global.kag.back.base;
+					var current = layer;
+					var guard = 0;
+					while(current !== void && current !== null && isvalid current)
+					{
+						if(current === foreBase) return 1;
+						if(current === backBase) return 2;
+						if(++guard > 32) break;
+						current = current.parent;
+					}
+				}
+				catch(e) {}
+				return 0;
+			};
+
+			// 每条 registry 记录的固定格式。state/glyphIndex 仅由 probe 的常量分支传入；
+			// formatter 不读取 entry.line，调用方也不传 glyph.ch，避免诊断日志落入游戏内容。
+			global.fushiLookupCoordEntry = function(index, entry, offsetOk, rx, ry,
+				state, glyphIndex)
+			{
+				return "|i=" + index + ",hp=" + entry.hostPage + ",ap=" +
+					entry.anchorPage + ",ak=" + entry.anchorKind + ",ai=" +
+					entry.anchorIndex + ",rp=" +
+					global.fushiLookupOffsetReachedPrimary +
+					",ok=" + offsetOk + ",o=" + global.fushiLookupOffX + "," +
+					global.fushiLookupOffY + ",im=" + entry.imgLeft + "," + entry.imgTop +
+					",or=" + entry.originX + "," + entry.originY + ",b=" + entry.minX +
+					"," + entry.minY + "," + entry.maxX + "," + entry.maxY + ",r=" +
+					rx + "," + ry + ",z=" + state + ",g=" + glyphIndex;
 			};
 
 			// 记下被吞掉的异常原文。site 标明出错点，e.message 是引擎给的真实原因。
@@ -939,7 +1050,8 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					var fresh = %[renderer:renderer, glyphs:[], line:"", used:0,
 						minX:0, minY:0, maxX:0, maxY:0, layer:void, originX:0, originY:0,
 						baseOx:0, baseOy:0, hasBase:false, imgLeft:0, imgTop:0,
-						passMinOx:0, passMinOy:0, passHas:false, passLayer:void];
+						passMinOx:0, passMinOy:0, passHas:false, passLayer:void,
+						hostPage:0, anchorPage:0, anchorKind:0, anchorIndex:-1];
 					registry.add(fresh);
 					return fresh;
 				}
@@ -960,6 +1072,10 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				reused.passMinOy = 0;
 				reused.passHas = false;
 				reused.passLayer = void;
+				reused.hostPage = 0;
+				reused.anchorPage = 0;
+				reused.anchorKind = 0;
+				reused.anchorIndex = -1;
 				return reused;
 			};
 
@@ -1097,6 +1213,30 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				global.fushiLookupClearHover();
 			};
 
+			// 只给人工 Esc 使用；generic dismiss 还承担 host 收卡/禁用/失败回滚，不能让
+			// 那些路径推进人工取消 fence 或制造 notify 回环。没有可见卡时仍取消在途 submit，
+			// 但返回 false，让游戏自己的 Esc 行为继续执行。
+			global.fushiLookupCancelCurrent = function()
+			{
+				var hadVisibleCard = false;
+				try
+				{
+					var card = global.fushiLookupCard;
+					hadVisibleCard = global.fushiLookupCardSeq != 0 ||
+						(card !== void && isvalid card && card.visible);
+				}
+				catch(e) {}
+				var submitSeq = global.fushiLookupSubmitSeq;
+				if(submitSeq > global.fushiLookupDismissedSubmitSeq)
+				{
+					// fence 先提交、notify 最后唤醒 DLL；这与 SubmitSeq 的 seqlock 发布顺序一致。
+					global.fushiLookupDismissedSubmitSeq = submitSeq;
+					global.fushiLookupNotify++;
+				}
+				global.fushiLookupDismiss();
+				return hadVisibleCard;
+			};
+
 			// DLL 写像素**之前**调：把卡片层建/调到 anchor + cardW×cardH。第一次真要显示
 			// 时才建层——没查词的时候游戏渲染树里根本没有这个对象。
 			global.fushiLookupPrepare = function(anchorX, anchorY, cardW, cardH)
@@ -1177,7 +1317,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 
 )TJS" LR"TJS(
 
-			// DLL 写完像素之后调。seq==0 或空尺寸 = 收起卡片（host 关开关 / 投空帧）。
+			// DLL 写完像素之后调（旧位图兼容路）。seq==0 或空尺寸 = 收起卡片。
 			// 几何随帧一起传进来，这里当**不变量**用：与 prepare 时的层不一致就说明写像素
 			// 与本次显示之间层被动过，露出来只会是半张错位的卡片，宁可等下一帧。
 			global.fushiLookupApply = function(seq, highlightStart, highlightLen,
@@ -1194,9 +1334,28 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					if(card === void || !isvalid card) return;
 					if(card.imageWidth != cardW || card.imageHeight != cardH ||
 						card.left != anchorX || card.top != anchorY) return;
-					global.fushiLookupCardSeq = seq;
 					card.visible = true;
 					card.update();
+					var entry = global.fushiLookupHitEntry;
+					if(entry !== void && highlightLen > 0)
+						global.fushiLookupPaintHighlight(entry, global.fushiLookupHitOffsetX,
+							global.fushiLookupHitOffsetY, highlightStart, highlightLen);
+					// success token 最后提交。C++ 只认这个值；在 visible/update/highlight
+					// 之前写会把半途异常误报成“已经完整绘制”。
+					global.fushiLookupCardSeq = seq;
+				}
+				catch(e) {}
+			};
+
+			// 兼容旧 host 的无像素高亮帧。绝不 prepare、改尺寸、改位置或把隐藏的卡重新
+			// visible；新主路的 hover 已由 fushiLookupReport 在游戏线程同步完成。
+			global.fushiLookupApplyHighlight = function(highlightStart, highlightLen)
+			{
+				try
+				{
+					var card = global.fushiLookupCard;
+					if(card === void || !isvalid card || !card.visible ||
+						global.fushiLookupCardSeq == 0) return;
 					var entry = global.fushiLookupHitEntry;
 					if(entry !== void && highlightLen > 0)
 						global.fushiLookupPaintHighlight(entry, global.fushiLookupHitOffsetX,
@@ -1369,6 +1528,9 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					// 卡片会稳定地弹在另一行上。
 					if(best !== void)
 					{
+
+)TJS" LR"TJS(
+
 						// 🔴 锚点必须是 **KAG 的消息层**，不是 drawCh 那条父链。
 						//
 						// 实测：文字子层「表メッセージレイヤ0:テキスト」自报 top=0，父链
@@ -1376,29 +1538,81 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						// 报 (0,752)，752+行原点135=887，与实测的 880 吻合。子层的 top 不是
 						// 它的屏幕位置——真相只在 KAG 的消息层上。
 						//
-						// 用**尺寸相等**认领对应的消息层，不靠层名：名字是引擎/插件私有的
-						// （这里还带「表/裏」页面前缀），换个游戏就变；尺寸相等是几何事实。
+						// 尺寸不能拿来认领身份：同一页可以有多个同尺寸消息层，“取第一个”会
+						// 稳定拿到 top=0 的闲置层。KAG 自己维护的身份真值是 currentNum；页交换
+						// 后 currentPage 会变，但 fore/back.messages[currentNum] 仍是同一逻辑消息
+						// 层。先按绘制宿主页投影 currentNum；旧/定制 KAG 若不暴露 currentNum，
+						// 再从 current 的对象身份找数组下标并投影到宿主页。绝不跨页按尺寸首取。
 						var anchorMsg = void;
+						var anchorPage = 0;
+						var anchorKind = 0;
+						var anchorIndex = -1;
+						var hostPage = global.fushiLookupPageOf(best.host);
+						var hostMessages = void;
 						try
 						{
-							var pages = [global.kag.fore, global.kag.back];
-							for(var pgi = 0; pgi < pages.count && anchorMsg === void; pgi++)
+							hostMessages = (hostPage == 1) ? global.kag.fore.messages :
+								((hostPage == 2) ? global.kag.back.messages : void);
+						}
+						catch(e) { hostMessages = void; }
+						var currentNum = global.fushiLookupField(global.kag, "currentNum");
+						if(hostMessages !== void && typeof currentNum == "Integer" &&
+							currentNum >= 0 && currentNum < hostMessages.count)
+						{
+							try
 							{
-								var ms = pages[pgi].messages;
-								for(var mj = 0; mj < ms.count; mj++)
+								var indexedMsg = hostMessages[currentNum];
+								if(indexedMsg !== void && indexedMsg !== null && isvalid indexedMsg)
 								{
-									if(ms[mj].width == best.host.width &&
-										ms[mj].height == best.host.height)
+									anchorMsg = indexedMsg;
+									anchorKind = 1;
+									anchorIndex = currentNum;
+								}
+							}
+							catch(e) {}
+						}
+						var currentMsg = global.fushiLookupField(global.kag, "current");
+						if(anchorMsg === void && hostMessages !== void && currentMsg !== void &&
+							currentMsg !== null && isvalid currentMsg)
+						{
+							var identityIndex = -1;
+							try
+							{
+								var identityPages = [global.kag.fore.messages,
+									global.kag.back.messages];
+								for(var pgi = 0; pgi < identityPages.count && identityIndex < 0; pgi++)
+								{
+									var identityMessages = identityPages[pgi];
+									for(var mj = 0; mj < identityMessages.count; mj++)
 									{
-										anchorMsg = ms[mj];
-										break;
+										if(identityMessages[mj] === currentMsg)
+										{
+											identityIndex = mj;
+											break;
+										}
+									}
+								}
+								if(identityIndex >= 0 && identityIndex < hostMessages.count)
+								{
+									var identityMsg = hostMessages[identityIndex];
+									if(identityMsg !== void && identityMsg !== null && isvalid identityMsg)
+									{
+										anchorMsg = identityMsg;
+										anchorKind = 2;
+										anchorIndex = identityIndex;
 									}
 								}
 							}
+							catch(e) {}
 						}
-						catch(e) {}
+						if(anchorMsg !== void && isvalid anchorMsg)
+							anchorPage = global.fushiLookupPageOf(anchorMsg);
 						entry.layer = (anchorMsg !== void && isvalid anchorMsg)
 							? anchorMsg : best.host;
+						entry.hostPage = hostPage;
+						entry.anchorPage = anchorPage;
+						entry.anchorKind = anchorKind;
+						entry.anchorIndex = anchorIndex;
 						entry.baseOx = best.minOx;
 						entry.baseOy = best.minOy;
 						entry.hasBase = true;
@@ -1511,6 +1725,22 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				// **整行**，不截断。制卡要的是完整句子，分词是 host 的事。
 				global.fushiLookupHitLine = entry.line;
 				global.fushiLookupHitSeq++;
+				global.fushiLookupVisualSeq = global.fushiLookupHitSeq;
+				if(submit)
+				{
+					// submit 是耐久快照；hover 只更新上面的 visual 命中，绝不能覆盖一笔
+					// 尚未被 host 消费的点击。SubmitSeq 最后写，作为 TJS 内部 seqlock。
+					global.fushiLookupSubmitCharIndex = int index;
+					global.fushiLookupSubmitCharCount = int entry.glyphs.count;
+					global.fushiLookupSubmitGlyphX = int (glyph.x + offsetX);
+					global.fushiLookupSubmitGlyphY = int (glyph.y + offsetY);
+					global.fushiLookupSubmitGlyphW = int glyph.w;
+					global.fushiLookupSubmitGlyphH = int glyph.h;
+					global.fushiLookupSubmitViewW = int primary.imageWidth;
+					global.fushiLookupSubmitViewH = int primary.imageHeight;
+					global.fushiLookupSubmitLine = entry.line;
+					global.fushiLookupSubmitSeq = global.fushiLookupHitSeq;
+				}
 				global.fushiLookupNotify++;
 				global.fushiLookupPaintHighlight(entry, paintX, paintY, index, 1);
 			};
@@ -1528,6 +1758,12 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				var lx = primary.cursorX;
 				var ly = primary.cursorY;
 				var registry = global.fushiLookupRegistry;
+				var traceOn = submit && global.fushiLookupCoordTraceBudget > 0;
+				var trace = "";
+				var traced = 0;
+				if(traceOn)
+					trace = "lookup.coord.v1 L=" + lx + "," + ly + ",I=" + px + "," +
+						py + ",N=" + registry.count;
 				for(var i = registry.count - 1; i >= 0; i--)
 				{
 					var entry = registry[i];
@@ -1543,6 +1779,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					// 只 continue 不清空的话，每一次鼠标移动都会在同一条死记录上再抛一次。
 					var rx = 0;
 					var ry = 0;
+					var offsetOk = 0;
 					var dead = false;
 					try
 					{
@@ -1552,7 +1789,16 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						//                    -(平移量)--------> 渲染器局部坐标
 						// imgLeft/imgTop 在 drawCh 里取（那一刻层必然可绘制），平移量由
 						// min(ox) 与 min(字形 x) 配对解出。
-						global.fushiLookupComputeOffset(layer);
+						if(!global.fushiLookupComputeOffset(layer))
+						{
+							if(traceOn && traced < 8)
+							{
+								trace += global.fushiLookupCoordEntry(i, entry, 0, 0, 0, "D", -1);
+								traced++;
+							}
+							continue;
+						}
+						offsetOk = 1;
 						rx = lx - global.fushiLookupOffX - entry.imgLeft - entry.originX;
 						ry = ly - global.fushiLookupOffY - entry.imgTop - entry.originY;
 					}
@@ -1562,6 +1808,12 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					}
 					if(dead)
 					{
+						if(traceOn && traced < 8)
+						{
+							trace += global.fushiLookupCoordEntry(i, entry, offsetOk, rx, ry,
+								"X", -1);
+							traced++;
+						}
 						entry.glyphs = [];
 						entry.layer = void;
 						entry.line = "";
@@ -1574,11 +1826,23 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					if(rx < entry.minX || rx >= entry.maxX ||
 						ry < entry.minY || ry >= entry.maxY)
 					{
+						if(traceOn && traced < 8)
+						{
+							trace += global.fushiLookupCoordEntry(i, entry, offsetOk, rx, ry,
+								"B", -1);
+							traced++;
+						}
 						global.fushiLookupMark(1);
 						continue;
 					}
 					if(!global.fushiLookupVisible(layer))
 					{
+						if(traceOn && traced < 8)
+						{
+							trace += global.fushiLookupCoordEntry(i, entry, offsetOk, rx, ry,
+								"V", -1);
+							traced++;
+						}
 						global.fushiLookupMark(4);
 						continue;
 					}
@@ -1588,14 +1852,28 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						var glyph = glyphs[g];
 						if(rx < glyph.x || rx >= glyph.x + glyph.w) continue;
 						if(ry < glyph.y || ry >= glyph.y + glyph.h) continue;
+						if(traceOn && traced < 8)
+						{
+							trace += global.fushiLookupCoordEntry(i, entry, offsetOk, rx, ry,
+								"H", g);
+							traced++;
+						}
+						if(traceOn) global.fushiLookupPublishCoordTrace(trace);
 						global.fushiLookupReport(entry, g, px - rx, py - ry, submit,
 							lx - rx, ly - ry);
 						return true;
 					}
 					// 走到这里 = 整行包围盒命中、图层可见，却没有任何字形命中。与包围盒
 					// 未命中是两种不同的坐标错误（前者是行内偏移，后者是整层偏移）。
+					if(traceOn && traced < 8)
+					{
+						trace += global.fushiLookupCoordEntry(i, entry, offsetOk, rx, ry,
+							"G", -1);
+						traced++;
+					}
 					global.fushiLookupMark(2);
 				}
+				if(traceOn) global.fushiLookupPublishCoordTrace(trace);
 				if(!submit) global.fushiLookupClearHover();
 				return false;
 			};
@@ -1649,10 +1927,9 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				try
 				{
 					global.fushiLookupShiftDown = (key == 0x10);
-					if(key == 0x1B && global.fushiLookupCardSeq != 0)
+					if(key == 0x1B)
 					{
-						global.fushiLookupDismiss();
-						return true;
+						if(global.fushiLookupCancelCurrent()) return true;
 					}
 					if(key == 0x10) return global.fushiLookupProbe(true);
 				}
@@ -1881,13 +2158,40 @@ int32_t g_lookup_frame_anchor_y = 0;
 // 高亮仍要按卡片尺寸算——所以必须记住上一帧的。
 uint32_t g_lookup_frame_width = 0;
 uint32_t g_lookup_frame_height = 0;
+// 结构帧与兼容用 highlight-only 帧分开去重；高亮发布序绝不能越过尚未落屏的卡片。
 uint64_t g_lookup_presented_seq = 0;
+uint64_t g_lookup_highlight_presented_seq = 0;
+uint64_t g_lookup_dropped_seq = 0;
+uint64_t g_lookup_retry_seq = 0;
+uint32_t g_lookup_retry_count = 0;
+// hover 只在游戏线程即时绘制高亮，不跨 IPC；hook→host 单槽只发布 submit。
+// g_lookup_hit_seq 仍跟踪最新任意命中，用来避免迟到卡片覆盖新的本地高亮；
+// submit fence 保存最近一次真正的查词意图。
 uint64_t g_lookup_hit_seq = 0;
+uint64_t g_lookup_submit_hit_seq = 0;
+// 游戏侧 Esc 取消 submit 的单调 fence。它不复用 generic hide：收卡/禁用/失败回滚
+// 都不应取消未来或在途的用户查询；只有 fushiLookupCancelCurrent 会推进它。
+uint64_t g_lookup_dismissed_submit_seq = 0;
+uint64_t g_lookup_processed_submit_seq = 0;
+uint64_t g_lookup_submit_retry_seq = 0;
+uint32_t g_lookup_submit_retry_count = 0;
+uint32_t g_lookup_submit_read_failures = 0;
+uint32_t g_lookup_submit_retry_backoff = 0;
+bool g_lookup_dismiss_fence_pending = false;
+uint32_t g_lookup_dismiss_read_failures = 0;
+uint32_t g_lookup_dismiss_read_backoff = 0;
+bool g_lookup_hit_pending = false;
 int64_t g_lookup_last_notify = -1;
 bool g_lookup_card_shown = false;
+bool g_lookup_enabled_last = false;
 bool g_lookup_sensor_live = false;
 bool g_lookup_input_pending = false;  // 上一帧撞到每帧搬运上限，队列里还有剩
 uint32_t g_lookup_sensor_idle_ticks = 0;
+uint32_t g_lookup_sensor_eval_failures = 0;
+uint32_t g_lookup_sensor_eval_backoff = 0;
+
+constexpr uint32_t kKirikiriLookupFrameRetryLimit = 3;
+constexpr uint32_t kKirikiriLookupHitRetryLimit = 3;
 
 void WriteKirikiriSharedU64(volatile uint64_t* value, uint64_t next) {
   if (value == nullptr) return;
@@ -2046,9 +2350,18 @@ void ExecuteTjsScriptGuarded(const wchar_t* script) {
   if (text != nullptr) g_lookup_release_string(text);
 }
 
-// 回执脚本。七个实参**全部**是 std::to_wstring 出来的整数，脚本里不存在任何来自 host、
-// 游戏或用户的字符串——注入面不是"escape 得更严"，而是结构上没有可注入的位置。参数个数
-// 不是约束点：约束点是"不许把动态字符串拼进会被 eval 的文本"。
+void ApplyKirikiriLookupHighlight(uint32_t highlight_start,
+                                  uint32_t highlight_len) {
+  std::wstring script = L"global.fushiLookupApplyHighlight(";
+  script += std::to_wstring(highlight_start);
+  script += L",";
+  script += std::to_wstring(highlight_len);
+  script += L");";
+  ExecuteTjsScriptGuarded(script.c_str());
+}
+
+// 位图回执脚本。七个实参全部是 std::to_wstring 出来的整数，脚本里不存在任何来自
+// host、游戏或用户的字符串。
 void ApplyKirikiriLookupCard(uint64_t seq, uint32_t highlight_start,
                              uint32_t highlight_len, int32_t anchor_x,
                              int32_t anchor_y, uint32_t card_w, uint32_t card_h,
@@ -2089,8 +2402,9 @@ void PrepareKirikiriLookupCard(int32_t anchor_x, int32_t anchor_y, uint32_t card
 }
 
 void HideKirikiriLookupCard() {
-  if (!g_lookup_card_shown) return;
   g_lookup_card_shown = false;
+  // 即使 C++ 状态认为已经隐藏，也强制把 TJS 层收起：Esc 是游戏线程本地处理的，
+  // 两侧状态可能短暂不同步，hide 本身必须幂等。
   ApplyKirikiriLookupCard(0, 0, 0, 0, 0, 0, 0, false);
 }
 
@@ -2113,41 +2427,196 @@ bool BlitLookupFrameGuarded(uint8_t* base, int32_t stride, uint32_t width,
   }
 }
 
+// 双缓冲槽仍可能在扫描后被 host 复用。所有分支（包括无 payload 的 dismiss/highlight）
+// 先取同一份稳定元数据快照，不能在分支里继续混读 live frame。
+bool SnapshotKirikiriLookupFrame(fushi_voice_hook::LookupFrame* source,
+                                 fushi_voice_hook::LookupFrame* out) {
+  if (source == nullptr || out == nullptr ||
+      ReadKirikiriSharedU32(&source->ready) == 0) {
+    return false;
+  }
+  const uint64_t seq = ReadKirikiriSharedU64(&source->seq);
+  if (seq == 0) return false;
+  fushi_voice_hook::LookupFrame staged{};
+  staged.seq = seq;
+  staged.hit_seq = source->hit_seq;
+  staged.flags = source->flags;
+  staged.width = source->width;
+  staged.height = source->height;
+  staged.pitch = source->pitch;
+  staged.anchor_x = source->anchor_x;
+  staged.anchor_y = source->anchor_y;
+  staged.highlight_start = source->highlight_start;
+  staged.highlight_len = source->highlight_len;
+  staged.byte_len = source->byte_len;
+  staged.reserved = source->reserved;
+  staged.reserved2 = source->reserved2;
+  staged.ready = 1;
+  if (ReadKirikiriSharedU32(&source->ready) == 0 ||
+      ReadKirikiriSharedU64(&source->seq) != seq) {
+    return false;
+  }
+  *out = staged;
+  return true;
+}
+
+bool KirikiriLookupFrameStillPublished(fushi_voice_hook::LookupFrame* source,
+                                       uint64_t seq) {
+  return source != nullptr && ReadKirikiriSharedU32(&source->ready) != 0 &&
+         ReadKirikiriSharedU64(&source->seq) == seq;
+}
+
+void ResetKirikiriLookupFrameRetry(uint64_t seq) {
+  if (g_lookup_retry_seq != seq) return;
+  g_lookup_retry_seq = 0;
+  g_lookup_retry_count = 0;
+}
+
+void MarkKirikiriLookupFramePresented(uint64_t seq) {
+  g_lookup_presented_seq = seq;
+  ResetKirikiriLookupFrameRetry(seq);
+}
+
+void DropKirikiriLookupFrame(fushi_voice_hook::LookupFrame* source,
+                              uint64_t seq, uint64_t staged_hit_seq) {
+  if (!KirikiriLookupFrameStillPublished(source, seq)) return;
+  if (seq > g_lookup_dropped_seq) g_lookup_dropped_seq = seq;
+  ResetKirikiriLookupFrameRetry(seq);
+  // 当前 submit 的卡片失败后，旧卡不能继续冒充这次查询的结果。
+  // hit_seq 必须来自已二次验证过的 staging；StillPublished 之后再读 live payload 会把
+  // 已复用槽的新 hit 身份误套到旧 seq 的 drop 上。
+  if (staged_hit_seq == g_lookup_submit_hit_seq) HideKirikiriLookupCard();
+  SetLookupDiag(fushi_voice_hook::kLookupDiagFrameRejected);
+}
+
+void RetryOrDropKirikiriLookupFrame(fushi_voice_hook::LookupFrame* source,
+                                     uint64_t seq, uint64_t staged_hit_seq) {
+  if (!KirikiriLookupFrameStillPublished(source, seq)) return;
+  if (g_lookup_retry_seq != seq) {
+    g_lookup_retry_seq = seq;
+    g_lookup_retry_count = 0;
+  }
+  ++g_lookup_retry_count;
+  SetLookupDiag(fushi_voice_hook::kLookupDiagFrameRejected);
+  if (g_lookup_retry_count >= kKirikiriLookupFrameRetryLimit) {
+    DropKirikiriLookupFrame(source, seq, staged_hit_seq);
+  }
+}
+
+bool RefreshKirikiriLookupDismissFence() {
+  int64_t dismissed = 0;
+  if (!EvaluateTjsInteger(L"global.fushiLookupDismissedSubmitSeq", &dismissed)) {
+    return false;
+  }
+  if (dismissed > 0) {
+    const uint64_t seq = static_cast<uint64_t>(dismissed);
+    if (seq > g_lookup_dismissed_submit_seq) {
+      g_lookup_dismissed_submit_seq = seq;
+      if (seq > g_lookup_processed_submit_seq) {
+        g_lookup_processed_submit_seq = seq;
+      }
+      if (g_lookup_submit_retry_seq == seq) {
+        g_lookup_submit_retry_seq = 0;
+        g_lookup_submit_retry_count = 0;
+      }
+      g_lookup_card_shown = false;
+    }
+  }
+  g_lookup_dismiss_read_failures = 0;
+  g_lookup_dismiss_read_backoff = 0;
+  g_lookup_dismiss_fence_pending = false;
+  return true;
+}
+
 void PresentKirikiriLookupFrame() {
   if (g_header == nullptr) return;
-  fushi_voice_hook::LookupHitSlot* hit = fushi_voice_hook::LookupHitOf(g_header);
-  const uint64_t hit_seq = hit == nullptr ? 0 : ReadKirikiriSharedU64(&hit->seq);
-
   fushi_voice_hook::LookupFrame* best = nullptr;
+  fushi_voice_hook::LookupFrame best_frame{};
   uint32_t best_index = 0;
   uint64_t best_seq = 0;
+  fushi_voice_hook::LookupFrame* best_highlight = nullptr;
+  fushi_voice_hook::LookupFrame best_highlight_frame{};
+  uint64_t best_highlight_seq = 0;
   for (uint32_t i = 0; i < g_header->lookup_frame_count; ++i) {
     fushi_voice_hook::LookupFrame* frame = fushi_voice_hook::LookupFrameAt(g_header, i);
-    if (frame == nullptr || frame->ready == 0) continue;
+    fushi_voice_hook::LookupFrame staged{};
+    if (!SnapshotKirikiriLookupFrame(frame, &staged)) continue;
     // 判据只有一份，在契约头（ShouldApplyLookupFrame），replay 测试跑的是同一个函数。
-    // seq 是**发布序**（host 每投一帧 +1），hit_seq 才是"回应哪次查询"；两者分开之后
-    // 收卡帧就是普通一帧，不会再被自己刚 present 过的那个 seq 挡在门外——那正是收卡
-    // 一直不生效的根因。
-    const uint64_t seq = ReadKirikiriSharedU64(&frame->seq);
-    if (seq <= best_seq) continue;  // 本轮已找到更新的候选
-    if (!fushi_voice_hook::ShouldApplyLookupFrame(seq, frame->hit_seq,
-                                                  g_lookup_presented_seq,
-                                                  hit_seq)) {
+    // hover 与 submit 身份分离；无像素高亮也用独立处理游标，不能抢过卡片结构帧。
+    const bool highlight_only =
+        staged.flags == fushi_voice_hook::kLookupFrameHighlightOnly;
+    const uint64_t processed =
+        highlight_only
+            ? g_lookup_highlight_presented_seq
+            : (g_lookup_presented_seq > g_lookup_dropped_seq
+                   ? g_lookup_presented_seq
+                   : g_lookup_dropped_seq);
+    if (!highlight_only && staged.hit_seq != 0 &&
+        staged.hit_seq <= g_lookup_dismissed_submit_seq) {
+      // Esc 已在游戏侧取消这笔 submit。把 host 已在途/已发布的结构帧记为消费，避免
+      // 单槽保持 ready 时每个游戏帧重新扫描；新 submit 的 hit_seq 单调更大，自动放行。
+      if (KirikiriLookupFrameStillPublished(frame, staged.seq)) {
+        if (staged.seq > g_lookup_dropped_seq) g_lookup_dropped_seq = staged.seq;
+        ResetKirikiriLookupFrameRetry(staged.seq);
+        SetLookupDiag(fushi_voice_hook::kLookupDiagFrameRejected);
+      }
       continue;
     }
-    best = frame;
-    best_index = i;
-    best_seq = seq;
+    if (!fushi_voice_hook::ShouldApplyLookupFrame(
+            staged.seq, staged.hit_seq, staged.flags, processed,
+            g_lookup_hit_seq, g_lookup_submit_hit_seq)) {
+      continue;
+    }
+    if (highlight_only) {
+      if (staged.seq <= best_highlight_seq) continue;
+      best_highlight = frame;
+      best_highlight_frame = staged;
+      best_highlight_seq = staged.seq;
+    } else {
+      if (staged.seq <= best_seq) continue;
+      best = frame;
+      best_frame = staged;
+      best_index = i;
+      best_seq = staged.seq;
+    }
   }
-  if (best == nullptr) return;
-  g_lookup_presented_seq = best_seq;
+  // 结构帧永远优先。新主路不再投 hover 帧；这里仅兼容旧 host，且专用 TJS 函数绝不
+  // prepare/visible 卡片，所以 Esc 收起后不会被一张排队中的 hover 重新弹出。
+  if (best == nullptr) {
+    if (best_highlight == nullptr ||
+        !KirikiriLookupFrameStillPublished(best_highlight,
+                                            best_highlight_seq)) {
+      return;
+    }
+    if (g_lookup_card_shown) {
+      ApplyKirikiriLookupHighlight(best_highlight_frame.highlight_start,
+                                   best_highlight_frame.highlight_len);
+    }
+    g_lookup_highlight_presented_seq = best_highlight_seq;
+    return;
+  }
+
+  const fushi_voice_hook::LookupFrame& staged = best_frame;
+
+  // Esc 的 TJS hook 与当前函数同在游戏线程，但 notify 读取可能因传感器退避而稍后发生。
+  // 真正要落一张结构帧时额外直读一次单调 fence，堵住“Esc 已隐藏、在途结果同帧重开”。
+  if (!RefreshKirikiriLookupDismissFence()) {
+    RetryOrDropKirikiriLookupFrame(best, best_seq, staged.hit_seq);
+    return;
+  }
+  if (staged.hit_seq != 0 &&
+      staged.hit_seq <= g_lookup_dismissed_submit_seq) {
+    DropKirikiriLookupFrame(best, best_seq, staged.hit_seq);
+    return;
+  }
 
   // 收卡由 flags 自述，不靠"width==0 就是收卡"的魔法编码——后者要求每个读侧都记住这条
   // 隐规则，而它和"host 投了张废帧"在字节上完全一样。必须在 IsLookupFrameSane 之前认掉：
   // 收卡帧按定义没有像素，过不了那道校验。
-  if ((best->flags & fushi_voice_hook::kLookupFrameDismiss) != 0) {
-    g_lookup_card_shown = true;  // 强制发一次收起，别让"以为已经隐藏"把信号吞掉
+  if (staged.flags == fushi_voice_hook::kLookupFrameDismiss) {
+    if (!KirikiriLookupFrameStillPublished(best, best_seq)) return;
     HideKirikiriLookupCard();
+    MarkKirikiriLookupFramePresented(best_seq);
     return;
   }
 
@@ -2157,35 +2626,31 @@ void PresentKirikiriLookupFrame() {
   // 悬停每换一个字就走一次普通 present 的话，等于每次都重抓整张卡（CapturePreview
   // → PNG 编解码 → 全卡 memcpy），鼠标划过一行就是几十次；真机症状就是"太卡了"。
   // 而高亮画在游戏自己的图层上、根本不在卡片位图里，这条路因此完全不需要像素。
-  if ((best->flags & fushi_voice_hook::kLookupFrameHighlightOnly) != 0) {
-    if (!g_lookup_card_shown) return;  // 屏上没有卡片，高亮无处可依
-    g_lookup_frame_anchor_x = best->anchor_x;
-    g_lookup_frame_anchor_y = best->anchor_y;
-    ApplyKirikiriLookupCard(best_seq, best->highlight_start,
-                            best->highlight_len, best->anchor_x, best->anchor_y,
-                            g_lookup_frame_width, g_lookup_frame_height, false);
+  // 跨进程来的 width/height/pitch 全是不可信输入：先过契约校验，再谈拷贝。
+  if (staged.flags != 0) {
+    // 未知/组合 flag 是永久不合法输入；消费掉避免每个游戏帧重复热循环。
+    DropKirikiriLookupFrame(best, best_seq, staged.hit_seq);
     return;
   }
-
-  // 跨进程来的 width/height/pitch 全是不可信输入：先过契约校验，再谈拷贝。
-  if (!fushi_voice_hook::IsLookupFrameSane(g_header, best) ||
+  if (!fushi_voice_hook::IsLookupFrameSane(g_header, &staged) ||
       static_cast<uint32_t>(best_seq % g_header->lookup_frame_count) != best_index) {
-    SetLookupDiag(fushi_voice_hook::kLookupDiagFrameRejected);
+    DropKirikiriLookupFrame(best, best_seq, staged.hit_seq);
     return;
   }
   const uint8_t* pixels = fushi_voice_hook::LookupBitmapAt(g_header, best_index);
   if (pixels == nullptr) {
-    SetLookupDiag(fushi_voice_hook::kLookupDiagFrameRejected);
+    RetryOrDropKirikiriLookupFrame(best, best_seq, staged.hit_seq);
     return;
   }
 
-  const uint32_t highlight_start = best->highlight_start;
-  const uint32_t highlight_len = best->highlight_len;
-  const int32_t anchor_x = best->anchor_x;
-  const int32_t anchor_y = best->anchor_y;
-  const uint32_t width = best->width;
-  const uint32_t height = best->height;
-  const uint32_t source_pitch = best->pitch;
+  const uint32_t highlight_start = staged.highlight_start;
+  const uint32_t highlight_len =
+      staged.hit_seq == g_lookup_hit_seq ? staged.highlight_len : 0;
+  const int32_t anchor_x = staged.anchor_x;
+  const int32_t anchor_y = staged.anchor_y;
+  const uint32_t width = staged.width;
+  const uint32_t height = staged.height;
+  const uint32_t source_pitch = staged.pitch;
 
   // 建/调卡片层必须在取写指针**之前**：层是按本帧 cardW×cardH 建的，尺寸变化会重新分配
   // 缓冲，先取指针再改尺寸就是往已经释放的内存里写。
@@ -2217,26 +2682,11 @@ void PresentKirikiriLookupFrame() {
   const bool geometry = buffer_ok;
 
   if (!geometry) {
-    // 备路：主路不可用时由 host 把这张 cardW×cardH 的卡片写成 PNG 落 %TEMP%，
-    // TJS loadImages 进来。慢一个数量级，但零新 ABI，且同样不碰游戏目录（.sig 校验）。
-    if (g_lookup_card_path.empty()) return;
+    // 仓内没有 PNG producer。旧固定路径可能命中 PID 复用后的残留图，绝不能把它当作
+    // 当前帧 loadImages 后再伪报成功；保留诊断位，但明确走有界失败。
     SetLookupDiag(fushi_voice_hook::kLookupDiagFallbackPngRoute);
-    g_lookup_frame_anchor_x = anchor_x;
-    g_lookup_frame_anchor_y = anchor_y;
-    g_lookup_frame_width = width;
-    g_lookup_frame_height = height;
-    g_lookup_card_shown = true;
-    // 🔴 降级路要求**有人把卡片写成 PNG 落在这个路径**。实测本仓没有任何一处写过它
-    // （g_lookup_card_path 只被声明/判空/赋值/替进脚本），于是 loadImages 必然失败、
-    // 被 TJS 的 catch 吞掉，而这里以前还无条件置 FramePresented——三层一起撒谎，
-    // 真机表现为"所有诊断都绿、卡片就是不出现"。文件不在就如实记，不许声称投出去了。
-    if (GetFileAttributesW(g_lookup_card_path.c_str()) == INVALID_FILE_ATTRIBUTES) {
-      SetLookupDiag(fushi_voice_hook::kLookupDiagFallbackPngMissing);
-      return;
-    }
-    ApplyKirikiriLookupCard(best_seq, highlight_start, highlight_len, anchor_x,
-                            anchor_y, width, height, true);
-    SetLookupDiag(fushi_voice_hook::kLookupDiagFramePresented);
+    SetLookupDiag(fushi_voice_hook::kLookupDiagFallbackPngMissing);
+    RetryOrDropKirikiriLookupFrame(best, best_seq, staged.hit_seq);
     return;
   }
   SetLookupDiag(fushi_voice_hook::kLookupDiagBufferRouteReady);
@@ -2249,37 +2699,153 @@ void PresentKirikiriLookupFrame() {
   if (layer_w != static_cast<int64_t>(width) ||
       layer_h != static_cast<int64_t>(height) ||
       stride_abs < static_cast<int32_t>(width) * 4) {
-    SetLookupDiag(fushi_voice_hook::kLookupDiagFrameRejected);
+    RetryOrDropKirikiriLookupFrame(best, best_seq, staged.hit_seq);
     return;
   }
 
   if (!BlitLookupFrameGuarded(
           reinterpret_cast<uint8_t*>(static_cast<uintptr_t>(buffer)), stride, width,
           height, source_pitch, pixels)) {
-    SetLookupDiag(fushi_voice_hook::kLookupDiagFrameRejected);
+    RetryOrDropKirikiriLookupFrame(best, best_seq, staged.hit_seq);
     return;
   }
 
   // 拷完复查 seq/ready：host 若在拷贝中途改写了这一格，画面就是撕裂的半张卡，宁可不显示
   // 让下一帧重来。
-  if (ReadKirikiriSharedU64(&best->seq) != best_seq || best->ready == 0) return;
+  if (!KirikiriLookupFrameStillPublished(best, best_seq)) return;
 
   g_lookup_frame_anchor_x = anchor_x;
   g_lookup_frame_anchor_y = anchor_y;
   g_lookup_frame_width = width;
   g_lookup_frame_height = height;
-  g_lookup_card_shown = true;
   ApplyKirikiriLookupCard(best_seq, highlight_start, highlight_len, anchor_x,
                           anchor_y, width, height, false);
+  int64_t applied_seq = 0;
+  if (!EvaluateTjsInteger(L"global.fushiLookupCardSeq", &applied_seq) ||
+      applied_seq != static_cast<int64_t>(best_seq)) {
+    g_lookup_card_shown = false;
+    RetryOrDropKirikiriLookupFrame(best, best_seq, staged.hit_seq);
+    return;
+  }
+  g_lookup_card_shown = true;
+  MarkKirikiriLookupFramePresented(best_seq);
   SetLookupDiag(fushi_voice_hook::kLookupDiagFramePresented);
 }
 
-void PublishKirikiriLookupHit() {
+void ResetKirikiriLookupHitRetry(uint64_t seq) {
+  if (g_lookup_submit_retry_seq != seq) return;
+  g_lookup_submit_retry_seq = 0;
+  g_lookup_submit_retry_count = 0;
+}
+
+bool RetryOrDropKirikiriLookupHit(uint64_t seq) {
+  if (g_lookup_submit_retry_seq != seq) {
+    g_lookup_submit_retry_seq = seq;
+    g_lookup_submit_retry_count = 0;
+  }
+  ++g_lookup_submit_retry_count;
+  if (g_lookup_submit_retry_count < kKirikiriLookupHitRetryLimit) return false;
+  // 同一个耐久 submit 连续失败后有界放弃；否则 continuous handler 会在游戏主线程
+  // 永远重试。旧卡的异步结果已被 submit fence 作废，失败时也要收掉旧卡。
+  g_lookup_processed_submit_seq = seq;
+  ResetKirikiriLookupHitRetry(seq);
+  if (seq == g_lookup_submit_hit_seq) HideKirikiriLookupCard();
+  SetLookupDiag(fushi_voice_hook::kLookupDiagSensorFault);
+  return true;
+}
+
+bool ObserveKirikiriLookupSubmitSeq(uint64_t seq) {
+  if (seq == 0 || seq <= g_lookup_submit_hit_seq) return false;
+  g_lookup_submit_hit_seq = seq;
+  if (seq > g_lookup_hit_seq) g_lookup_hit_seq = seq;
+  // 只有一个真正更新的耐久 submit 才能换代 retry epoch。hover、诊断和 input 的 notify
+  // 不改 SubmitSeq，因而不能借 notify 清掉同一坏快照的有界失败计数或退避。
+  g_lookup_submit_retry_seq = seq;
+  g_lookup_submit_retry_count = 0;
+  g_lookup_submit_read_failures = 0;
+  g_lookup_submit_retry_backoff = 0;
+  return true;
+}
+
+void BackoffKirikiriLookupUnknownSubmit() {
+  if (++g_lookup_submit_read_failures < kKirikiriLookupHitRetryLimit) return;
+  g_lookup_submit_read_failures = 0;
+  g_lookup_submit_retry_backoff = 30;
+  SetLookupDiag(fushi_voice_hook::kLookupDiagSensorFault);
+}
+
+bool RetryKirikiriLookupSubmitTransient(uint64_t failed_seq) {
+  int64_t latest = 0;
+  if (!EvaluateTjsInteger(L"global.fushiLookupSubmitSeq", &latest)) {
+    // 连事务游标也读不到时无法证明哪个 submit 损坏：允许退避后重读，但绝不确认/丢弃。
+    BackoffKirikiriLookupUnknownSubmit();
+    return false;
+  }
+  if (latest > 0 && static_cast<uint64_t>(latest) > failed_seq) {
+    const uint64_t latest_seq = static_cast<uint64_t>(latest);
+    ObserveKirikiriLookupSubmitSeq(latest_seq);
+    return false;
+  }
+  // 辅助复读仍是同一（或不可能倒退的更小）seq，故这是“已知坏快照”，与非法几何/
+  // 空行共用三次上限，最终 processed/drop；不能每 30 帧再来一轮无限 burst。
+  return RetryOrDropKirikiriLookupHit(failed_seq);
+}
+
+void ObserveKirikiriLookupDismissFence() {
+  if (!g_lookup_dismiss_fence_pending) return;
+  if (g_lookup_dismiss_read_backoff > 0) {
+    --g_lookup_dismiss_read_backoff;
+    return;
+  }
+  if (!RefreshKirikiriLookupDismissFence()) {
+    if (++g_lookup_dismiss_read_failures >= kKirikiriLookupHitRetryLimit) {
+      g_lookup_dismiss_read_failures = 0;
+      g_lookup_dismiss_read_backoff = 30;
+      SetLookupDiag(fushi_voice_hook::kLookupDiagSensorFault);
+    }
+    return;
+  }
+}
+
+bool PublishKirikiriLookupHit(bool new_notification) {
   fushi_voice_hook::LookupHitSlot* slot = fushi_voice_hook::LookupHitOf(g_header);
-  if (slot == nullptr) return;
-  int64_t seq = 0;
-  if (!EvaluateTjsInteger(L"global.fushiLookupHitSeq", &seq)) return;
-  if (seq <= 0 || static_cast<uint64_t>(seq) == g_lookup_hit_seq) return;
+  if (slot == nullptr) return false;
+  int64_t submit_seq_value = 0;
+  bool have_submit_seq = false;
+  if (g_lookup_submit_retry_backoff > 0) {
+    // 退避期间仅新 notify 值得一次廉价游标探测；hover 的 SubmitSeq 不变，所以保持
+    // cooldown。真正的新点击会给出更大的 SubmitSeq，并立即换代 epoch，不增加输入延迟。
+    if (new_notification &&
+        EvaluateTjsInteger(L"global.fushiLookupSubmitSeq", &submit_seq_value) &&
+        submit_seq_value > 0 &&
+        ObserveKirikiriLookupSubmitSeq(
+            static_cast<uint64_t>(submit_seq_value))) {
+      have_submit_seq = true;
+    } else {
+      --g_lookup_submit_retry_backoff;
+      return false;
+    }
+  }
+
+  // visual seq 是游戏线程即时高亮的身份；它只负责防止迟到卡片覆盖更新的本地高亮，
+  // 不参与共享 submit 单槽。读失败不该阻断耐久点击快照。
+  int64_t visual_seq = 0;
+  if (EvaluateTjsInteger(L"global.fushiLookupVisualSeq", &visual_seq) &&
+      visual_seq > 0) {
+    const uint64_t visual = static_cast<uint64_t>(visual_seq);
+    if (visual > g_lookup_hit_seq) g_lookup_hit_seq = visual;
+  }
+
+  if (!have_submit_seq &&
+      !EvaluateTjsInteger(L"global.fushiLookupSubmitSeq", &submit_seq_value)) {
+    // 连续失败时退避，但不确认/丢弃未知 submit；稍后仍会读取同一耐久快照。
+    BackoffKirikiriLookupUnknownSubmit();
+    return false;
+  }
+  if (submit_seq_value <= 0) return true;
+  const uint64_t hit_seq = static_cast<uint64_t>(submit_seq_value);
+  ObserveKirikiriLookupSubmitSeq(hit_seq);
+  if (hit_seq <= g_lookup_processed_submit_seq) return true;
 
   int64_t char_index = 0;
   int64_t char_count = 0;
@@ -2289,29 +2855,51 @@ void PublishKirikiriLookupHit() {
   int64_t glyph_h = 0;
   int64_t view_w = 0;
   int64_t view_h = 0;
-  int64_t flags = 0;
-  if (!EvaluateTjsInteger(L"global.fushiLookupHitCharIndex", &char_index) ||
-      !EvaluateTjsInteger(L"global.fushiLookupHitCharCount", &char_count) ||
-      !EvaluateTjsInteger(L"global.fushiLookupHitGlyphX", &glyph_x) ||
-      !EvaluateTjsInteger(L"global.fushiLookupHitGlyphY", &glyph_y) ||
-      !EvaluateTjsInteger(L"global.fushiLookupHitGlyphW", &glyph_w) ||
-      !EvaluateTjsInteger(L"global.fushiLookupHitGlyphH", &glyph_h) ||
-      !EvaluateTjsInteger(L"global.fushiLookupHitViewW", &view_w) ||
-      !EvaluateTjsInteger(L"global.fushiLookupHitViewH", &view_h) ||
-      !EvaluateTjsInteger(L"global.fushiLookupHitFlags", &flags)) {
-    return;
+  if (!EvaluateTjsInteger(L"global.fushiLookupSubmitCharIndex", &char_index) ||
+      !EvaluateTjsInteger(L"global.fushiLookupSubmitCharCount", &char_count) ||
+      !EvaluateTjsInteger(L"global.fushiLookupSubmitGlyphX", &glyph_x) ||
+      !EvaluateTjsInteger(L"global.fushiLookupSubmitGlyphY", &glyph_y) ||
+      !EvaluateTjsInteger(L"global.fushiLookupSubmitGlyphW", &glyph_w) ||
+      !EvaluateTjsInteger(L"global.fushiLookupSubmitGlyphH", &glyph_h) ||
+      !EvaluateTjsInteger(L"global.fushiLookupSubmitViewW", &view_w) ||
+      !EvaluateTjsInteger(L"global.fushiLookupSubmitViewH", &view_h)) {
+    return RetryKirikiriLookupSubmitTransient(hit_seq);
   }
-  if (char_count <= 0 || char_index < 0 || char_index >= char_count) return;
-
-  // 只在游戏主线程用；放静态区避免每次命中往栈上压 2.4KB。
+  if (char_count <= 0 || char_index < 0 || char_index >= char_count) {
+    return RetryOrDropKirikiriLookupHit(hit_seq);
+  }
+  // 只在游戏主线程用；放静态区避免每次命中往栈上压两份 2.4KB。
   static wchar_t line[kKirikiriLookupLineChars];
-  if (!EvaluateTjsString(L"global.fushiLookupHitLine", line,
+  static uint8_t encoded_line[fushi_voice_hook::kLookupLineBytes];
+  if (!EvaluateTjsString(L"global.fushiLookupSubmitLine", line,
                          kKirikiriLookupLineChars)) {
-    return;
+    return RetryKirikiriLookupSubmitTransient(hit_seq);
   }
   const uint32_t line_bytes = EncodeLookupLineUtf8(
-      line, slot->line_utf8, fushi_voice_hook::kLookupLineBytes);
-  if (line_bytes == 0) return;
+      line, encoded_line, fushi_voice_hook::kLookupLineBytes);
+  if (line_bytes == 0) return RetryOrDropKirikiriLookupHit(hit_seq);
+
+  // SubmitSeq 最后发布。全部字段/字符串读完后复读一次；若期间又点击了新词，当前
+  // staging 直接作废且不计失败，下一帧只处理更新的快照。
+  int64_t verified_seq_value = 0;
+  if (!EvaluateTjsInteger(L"global.fushiLookupSubmitSeq", &verified_seq_value)) {
+    return RetryKirikiriLookupSubmitTransient(hit_seq);
+  }
+  if (verified_seq_value <= 0 ||
+      static_cast<uint64_t>(verified_seq_value) != hit_seq) {
+    if (verified_seq_value > 0 &&
+        static_cast<uint64_t>(verified_seq_value) > hit_seq) {
+      const uint64_t verified = static_cast<uint64_t>(verified_seq_value);
+      ObserveKirikiriLookupSubmitSeq(verified);
+      return false;
+    }
+    return RetryKirikiriLookupSubmitTransient(hit_seq);
+  }
+
+  // 单槽 seqlock：本地 staging 完成后，先把旧发布序清成 0，再触碰共享 payload。
+  // 否则快速连续 submit 时 host 可能看见“旧 seq + 新 payload”，两次复读仍相等，
+  // 最终把错行当成旧命中。lookup_hit_count 只在最终发布后递增，故 0 只表示写入中。
+  WriteKirikiriSharedU64(&slot->seq, 0);
 
   slot->char_index = static_cast<uint32_t>(char_index);
   slot->char_count = static_cast<uint32_t>(char_count);
@@ -2321,15 +2909,18 @@ void PublishKirikiriLookupHit() {
   slot->glyph_h = static_cast<int32_t>(glyph_h);
   slot->view_w = static_cast<int32_t>(view_w);
   slot->view_h = static_cast<int32_t>(view_h);
-  slot->flags = static_cast<uint32_t>(flags) & fushi_voice_hook::kLookupHitFlagSubmit;
+  slot->flags = fushi_voice_hook::kLookupHitFlagSubmit;
+  memcpy(slot->line_utf8, encoded_line, line_bytes);
   slot->line_bytes = line_bytes;
   // seq **最后**写：Interlocked 是全栅栏，保证上面的 payload 对 host 先可见。
-  WriteKirikiriSharedU64(&slot->seq, static_cast<uint64_t>(seq));
-  g_lookup_hit_seq = static_cast<uint64_t>(seq);
+  WriteKirikiriSharedU64(&slot->seq, hit_seq);
+  g_lookup_processed_submit_seq = hit_seq;
+  ResetKirikiriLookupHitRetry(hit_seq);
   InterlockedIncrement64(
       reinterpret_cast<volatile LONGLONG*>(&g_header->lookup_hit_count));
   SetLookupDiag(fushi_voice_hook::kLookupDiagGeometryObserved |
                 fushi_voice_hook::kLookupDiagHitSubmitted);
+  return true;
 }
 
 void DrainKirikiriLookupInput() {
@@ -2367,10 +2958,14 @@ void DrainKirikiriLookupInput() {
 // 游戏主线程的每帧入口。开关关着、查词区不存在、传感器还没建立时，这里一个字节都不写。
 void PumpKirikiriLookup() {
   if (g_stop || !fushi_voice_hook::HasLookupRegion(g_header)) return;
-  if (LookupEnabledNow() == 0) {
-    HideKirikiriLookupCard();
+  const bool enabled_now = LookupEnabledNow() != 0;
+  if (!enabled_now) {
+    // 禁用边沿强制对齐一次 TJS/C++ 可见状态；禁用稳态不再每帧执行一段 TJS。
+    if (g_lookup_enabled_last || g_lookup_card_shown) HideKirikiriLookupCard();
+    g_lookup_enabled_last = false;
     return;
   }
+  g_lookup_enabled_last = true;
   if (!g_lookup_variant_ready) {
     if (!ProbeTjsVariantLayout()) return;
     g_lookup_variant_ready = true;
@@ -2379,18 +2974,40 @@ void PumpKirikiriLookup() {
   if (!g_lookup_sensor_live) {
     // TJS bootstrap 由 System.addContinuousHandler 驱动，可能比这里晚若干帧；在它建立
     // 之前每帧求值都会走一次 TJS 异常，故退避到每 30 帧探一次。
-    if (++g_lookup_sensor_idle_ticks < 30) return;
+    if (++g_lookup_sensor_idle_ticks < 30) {
+      PresentKirikiriLookupFrame();
+      return;
+    }
     g_lookup_sensor_idle_ticks = 0;
   }
   int64_t notify = 0;
   // 稳态下每帧只有这一次求值：notify 不变就一行 TJS 都不再跑。
-  if (!EvaluateTjsInteger(L"global.fushiLookupNotify", &notify)) return;
+  if (g_lookup_sensor_eval_backoff > 0) {
+    --g_lookup_sensor_eval_backoff;
+    PresentKirikiriLookupFrame();
+    return;
+  }
+  if (!EvaluateTjsInteger(L"global.fushiLookupNotify", &notify)) {
+    if (++g_lookup_sensor_eval_failures >= kKirikiriLookupHitRetryLimit) {
+      g_lookup_sensor_eval_failures = 0;
+      g_lookup_sensor_eval_backoff = 30;
+      SetLookupDiag(fushi_voice_hook::kLookupDiagSensorFault);
+    }
+    PresentKirikiriLookupFrame();
+    return;
+  }
+  g_lookup_sensor_eval_failures = 0;
   if (!g_lookup_sensor_live) {
     g_lookup_sensor_live = true;
     SetLookupDiag(fushi_voice_hook::kLookupDiagSensorInstalled);
   }
-  if (notify != g_lookup_last_notify) {
+  const bool new_notification = notify != g_lookup_last_notify;
+  if (new_notification) {
+    // notify 只是唤醒提示，不是“submit 已完成”的事务游标。耐久 Submit* 快照独立重试，
+    // 因此这里必须立即确认，否则一次字段求值失败会让整批诊断每个游戏帧重跑。
     g_lookup_last_notify = notify;
+    g_lookup_hit_pending = true;
+    g_lookup_dismiss_fence_pending = true;
     // 搭 notify 这趟车回读故障计数：稳态下不额外求值，而故障发生时 TJS 侧会主动
     // ++notify 把车叫来（见 fushiLookupFault）。只置位、不复位——"这一局里传感器
     // 曾经吞过异常"是一条不该被后续正常帧抹掉的事实。
@@ -2419,6 +3036,19 @@ void PumpKirikiriLookup() {
         HookLogLine(error_text);
       }
     }
+    // 一次人工 submit 的脱敏坐标快照。与异常 seq 分道，避免诊断覆盖同一帧真正的 TJS
+    // 错误；TJS 侧预算最多四次，因此这里的字符串求值也是严格有界的。
+    static int64_t last_coord_trace_seq = 0;
+    int64_t coord_trace_seq = 0;
+    if (EvaluateTjsInteger(L"global.fushiLookupCoordTraceSeq", &coord_trace_seq) &&
+        coord_trace_seq != last_coord_trace_seq) {
+      last_coord_trace_seq = coord_trace_seq;
+      static wchar_t coord_trace[4096];
+      if (EvaluateTjsString(L"global.fushiLookupCoordTrace", coord_trace,
+                            sizeof(coord_trace) / sizeof(coord_trace[0]))) {
+        HookLogLine(coord_trace);
+      }
+    }
     int64_t miss = 0;
     if (EvaluateTjsInteger(L"global.fushiLookupMiss", &miss) && miss > 0) {
       uint32_t bits = 0;
@@ -2430,12 +3060,19 @@ void PumpKirikiriLookup() {
       if (miss & 32) bits |= fushi_voice_hook::kLookupDiagCardPlainFallback;
       SetLookupDiag(bits);
     }
-    PublishKirikiriLookupHit();
-    DrainKirikiriLookupInput();
-  } else if (g_lookup_input_pending) {
     DrainKirikiriLookupInput();
   }
-  // host 投来的卡片位图在这里落进游戏图层。与 notify 无关：帧是 host 主动推的，
+  // 先同步 game-side Esc fence，再扫描 host 帧；否则同一帧里旧结构结果可能抢在取消前
+  // 被画出来。失败时保持 pending 并有界退避，不让诊断/hover notify 清掉失败状态。
+  ObserveKirikiriLookupDismissFence();
+  if (g_lookup_hit_pending) {
+    g_lookup_hit_pending = !PublishKirikiriLookupHit(new_notification);
+  }
+  if (!new_notification && g_lookup_input_pending) {
+    DrainKirikiriLookupInput();
+  }
+  // host 投来的 BGRA 卡片帧在这里落进游戏图层。查词、排版与 popup 像素由 Fushi
+  // 的既有离屏 WebView 负责。与 notify 无关：帧是 host 主动推的，
   // 注入侧每帧都要看一眼，否则卡片要等下一次命中才出现。
   PresentKirikiriLookupFrame();
 }

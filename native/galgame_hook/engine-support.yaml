@@ -378,7 +378,7 @@
           {
             "kind": "ingame_lookup_geometry",
             "status": "implemented_unverified",
-            "verification": "In-game dictionary lookup (per-glyph geometry sensing plus host-rendered card bitmaps over the v14 shared-memory lookup region) is implemented but unverified: the only runtime observation is a prototype run against a single third-party textrender.dll sample, and no end-to-end 'displayed line -> matching voice -> screenshot -> card written' session exists. Offline coverage only: tests/lookup_ipc_contract_test.cpp, tests/lookup_session_replay_test.cpp, tests/kirikiri_lookup_source_guard_test.py."
+            "verification": "In-game dictionary lookup is implemented but unverified: the KiriKiri sensor supplies per-glyph geometry and paints the selection highlight, while Hibiki reuses its existing popup in a dedicated off-screen galCard WebView2 surface, captures BGRA, and presents that bitmap through the v14 shared-memory frame route into a game Layer. Embedded mode suppresses only the popup sentence banner; dictionary, audio, mining, theme, and nested-card rendering remain shared with the normal Fushi popup. Coordinate conversion, KAG message-layer identity, submit/hover fencing, and off-screen resize handling have source-level guards, but the required automated verification was skipped for this update and no fresh same-session bitmap-card E2E has been recorded."
           }
         ],
         "codepage": "game-specific",
@@ -435,7 +435,7 @@
         "The verified KiriKiriZ sample software-mixes into one DirectSound output stream, so captured PCM is equivalent to loopback and includes BGM/SE.",
         "KiriKiri2 BCB resource and decoder hooks install on the recorded official sample, but a voiced dialogue line has not yet been traversed; clean per-line Ogg is not claimed.",
         "The older KiriKiriZ sample executable hash and engine version were not recorded; executable name alone is not a reusable engine signature.",
-        "In-game dictionary lookup is implemented_unverified. The only runtime observation is one prototype run against a single third-party textrender.dll sample; the geometry sensor is gated on that module plus a runtime probe for global.TextRender.getCharacters, so it does not generalise to KiriKiri as an engine, and no end-to-end mining session has been recorded through it."
+        "In-game dictionary lookup remains implemented_unverified. The production route reuses the Fushi popup in an off-screen galCard WebView2, captures a bounded BGRA frame, and displays it through the v14 KiriKiri Layer route; the game-side sensor still owns glyph hit-testing and selection highlighting. The geometry sensor is gated on a third-party textrender.dll plus a runtime probe for global.TextRender.getCharacters, so it does not generalise to KiriKiri as an engine. No fresh same-session bitmap-card E2E or required offline verification has been recorded."
       ],
       "adapter_path": "hook/adapters/kirikiri_adapter.inc",
       "fixture_paths": ["tests/fixtures/kirikiri_lookup_replay.tsv"],

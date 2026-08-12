@@ -79,6 +79,7 @@ class GlobalLookupController {
   // (the 872 prerequisite) so a future mining-preserving switch can hook it. Not
   // fired for the between-lookups reset (that hide passes notify=false).
   void Function()? onHidden;
+  void Function(GlobalLookupRoute route)? onRoutedHidden;
   // KiriKiri 游戏内查词 — 卡片「内容已渲染、尺寸已定」的**唯一可靠**信号。
   //
   // 真值来自 host 自测量回报的 union bbox（_applyOverlayBox）：那一刻 popup.js 已
@@ -91,6 +92,13 @@ class GlobalLookupController {
   // 卡片会跟着内容长大，而不是停在首帧尺寸。READY-SAFETY 兜底 reveal 也会回调——
   // 那是「真渲染失败」的最后一招，此时投的确实可能是空白卡，但比卡在不可见强。
   void Function(int physicalWidth, int physicalHeight)? onRevealed;
+  void Function(
+    GlobalLookupRoute route,
+    int physicalWidth,
+    int physicalHeight,
+  )? onRoutedRevealed;
+  GlobalLookupRoute? _activeRoute;
+  int _desktopLookupEpoch = 0;
   // Last physical size pushed to the overlay; used to converge the page's
   // resize -> re-measure loop (see _onJsMessage 'overlaySize'). Reset per
   // lookup so a new card re-sizes from scratch.
@@ -217,6 +225,8 @@ class GlobalLookupController {
       onGetMedia: _resolveMedia,
       onJsMessage: _onJsMessage,
       onOverlayHidden: _onOverlayHidden,
+      onRoutedJsMessage: _onRoutedJsMessage,
+      onRoutedOverlayHidden: _onRoutedOverlayHidden,
     );
 
     // 防截屏初值 — 瞬态覆盖窗与剪贴板面板同一 pref（clipboardPanelBlockCapture，
@@ -385,6 +395,17 @@ class GlobalLookupController {
       );
 
   Future<void> _onHotKey() async {
+    final GlobalLookupRoute route = GlobalLookupRoute.desktop(
+      lookupEpoch: ++_desktopLookupEpoch,
+    );
+    return GlobalLookupChannel.runWithRoute(
+      route,
+      () => _onHotKeyRouted(route),
+    );
+  }
+
+  Future<void> _onHotKeyRouted(GlobalLookupRoute route) async {
+    _activateRoute(route);
     glog('hotkey: FIRED');
     try {
       // Re-press ALWAYS does a fresh lookup of the current selection (no
@@ -415,6 +436,7 @@ class GlobalLookupController {
       if (model.globalContextCaptureEnabled) {
         final ForegroundSelectionContext? ctx =
             await SelectionCapture.captureForegroundContext();
+        if (!_isCurrentRoute) return;
         if (ctx != null) {
           text = ctx.selectedText.trim();
           sentence = ctx.sentence;
@@ -424,6 +446,7 @@ class GlobalLookupController {
         // No context (or feature off): fall back to the clipboard selection.
         text =
             (await SelectionCapture.captureForegroundSelection() ?? '').trim();
+        if (!_isCurrentRoute) return;
         sentence = '';
       }
       if (text.isEmpty) {
@@ -476,9 +499,10 @@ class GlobalLookupController {
 
   /// 设置/清除物理像素上限。游戏内会话开始时按视口与位图预算设，结束时清。
   void setPhysicalCap({int? width, int? height}) {
-    _physicalCap = (width == null || height == null || width <= 0 || height <= 0)
-        ? null
-        : (w: width, h: height);
+    _physicalCap =
+        (width == null || height == null || width <= 0 || height <= 0)
+            ? null
+            : (w: width, h: height);
   }
 
   /// 把逻辑尺寸夹到 [_physicalCap]。等比缩小而不是各轴独立裁剪：独立裁剪会改变
@@ -504,6 +528,33 @@ class GlobalLookupController {
     bool autoRead = true,
     OverlayMiningHandler? miningHandler,
   }) async {
+    final GlobalLookupRoute inherited = GlobalLookupChannel.currentRoute;
+    final GlobalLookupRoute route = inherited.source == 'galCard'
+        ? inherited
+        : GlobalLookupRoute.desktop(lookupEpoch: ++_desktopLookupEpoch);
+    return GlobalLookupChannel.runWithRoute(
+      route,
+      () => _lookupTextRouted(
+        text,
+        sentence: sentence,
+        anchorScreenRect: anchorScreenRect,
+        showSentenceBanner: showSentenceBanner,
+        passiveStream: passiveStream,
+        autoRead: autoRead,
+        miningHandler: miningHandler,
+      ),
+    );
+  }
+
+  Future<bool> _lookupTextRouted(
+    String text, {
+    required String sentence,
+    required Rect? anchorScreenRect,
+    required bool showSentenceBanner,
+    required bool passiveStream,
+    required bool autoRead,
+    required OverlayMiningHandler? miningHandler,
+  }) async {
     final String term = text.trim();
     if (!isSupported || !_started || _appModel == null || term.isEmpty) {
       return false;
@@ -516,6 +567,7 @@ class GlobalLookupController {
       glog('lookupText: passive stream dropped (user-owned card kept)');
       return true;
     }
+    _activateRoute(GlobalLookupChannel.currentRoute);
     // 显式意图开的卡归用户所有；被动流开的卡不归（下一条流可以正常替换它）。
     _userOwnedCard = !passiveStream;
     glog('lookupText: "$term" passive=$passiveStream');
@@ -532,6 +584,7 @@ class GlobalLookupController {
     // fallback ("点击悬浮字幕文字没有出现查词窗口"). notify:false so this
     // between-lookups reset is not seen as a user dismissal (TODO-1233).
     await GlobalLookupChannel.hide(notify: false);
+    if (!_isCurrentRoute) return false;
     await _lookupExternal(term,
         sentence: sentence,
         anchorScreenRect: anchorScreenRect,
@@ -539,6 +592,36 @@ class GlobalLookupController {
         autoRead: autoRead,
         miningHandler: miningHandler);
     return true;
+  }
+
+  void _activateRoute(GlobalLookupRoute route) {
+    final GlobalLookupRoute? previous = _activeRoute;
+    if (previous == route) {
+      return;
+    }
+    if (previous != null) {
+      GlobalLookupChannel.invalidateRoute(previous);
+    }
+    _activeRoute = route;
+  }
+
+  bool get _isCurrentRoute {
+    final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
+    return route == _activeRoute && GlobalLookupChannel.isRouteValid(route);
+  }
+
+  void _notifyRevealed(int width, int height) {
+    final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
+    if (!_isCurrentRoute) {
+      return;
+    }
+    // The legacy callback predates routed surfaces and is a desktop-only
+    // compatibility hook. Broadcasting a galCard reveal through it reintroduces
+    // the exact cross-surface ambiguity immutable route tokens remove.
+    if (route.source == 'desktop') {
+      onRevealed?.call(width, height);
+    }
+    onRoutedRevealed?.call(route, width, height);
   }
 
   /// 瞬态 root 卡🕘：从 DB 重载复制历史（主进程采集写入，覆盖窗进程只读）后注入
@@ -623,6 +706,7 @@ class GlobalLookupController {
         searchTerm: text,
         searchWithWildcards: false,
       );
+      if (!_isCurrentRoute) return;
       glog('lookup: searched "$text" -> entries=${result.entries.length}');
       // New card: forget the previous size + reveal state so the overlay
       // re-measures and reveals from scratch.
@@ -653,8 +737,16 @@ class GlobalLookupController {
       // lookup's popupRendered, not the previous card's already-satisfied gate).
       // Sent through the existing render channel (ExecuteScript) so no new native
       // method is needed; the host guard makes it inert until host.js installs.
+      final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
       await GlobalLookupChannel.render(
-          buildBeginLookupScript(kGlobalLookupRootFrameId));
+        buildBeginLookupScript(
+          kGlobalLookupRootFrameId,
+          source: route.source,
+          routeEpoch: route.routeEpoch,
+          lookupEpoch: route.lookupEpoch,
+        ),
+      );
+      if (!_isCurrentRoute) return;
 
       // Render OFF-SCREEN at the reader-faithful size (popupMax* × appUiScale ×
       // dpr) so the page measures at the correct width straight away; the card
@@ -702,6 +794,7 @@ class GlobalLookupController {
               atCursor: false,
               capWidth: capW,
               capHeight: capH);
+      if (!_isCurrentRoute) return;
       // TODO-893 / BUG-859 — convert the native physical-px work area to CSS px
       // (the cascade layout domain) with the ANCHOR MONITOR's dpr reported by
       // showAt. The main-window dpr (used for the initial off-screen size
@@ -740,6 +833,7 @@ class GlobalLookupController {
       _originFloorLeft = floor.left;
       _originFloorTop = floor.top;
       await _renderStack();
+      if (!_isCurrentRoute) return;
       glog('lookup: showAt(atCursor)=${shown.ok} off-screen w0=$w0 h0=$h0 '
           'workCss=${_screenWorkW}x$_screenWorkH rendered');
       if (autoRead) {
@@ -774,7 +868,7 @@ class GlobalLookupController {
       {required int attempt}) {
     _revealSafety?.cancel();
     _revealSafety = Timer(_kReadySafetyStep, () async {
-      if (_revealed) {
+      if (!_isCurrentRoute || _revealed) {
         return;
       }
       bool ready;
@@ -783,7 +877,7 @@ class GlobalLookupController {
       } catch (_) {
         ready = false;
       }
-      if (_revealed) {
+      if (!_isCurrentRoute || _revealed) {
         return; // Host revealed while we awaited the readiness check.
       }
       if (ready || attempt >= _kReadySafetyMaxAttempts) {
@@ -791,7 +885,7 @@ class GlobalLookupController {
         glog('reveal: READY-SAFETY (ready=$ready attempt=$attempt) '
             'w=$width h=$height');
         unawaited(GlobalLookupChannel.reveal(width: width, height: height));
-        onRevealed?.call(width, height);
+        _notifyRevealed(width, height);
         return;
       }
       // Surface still loading — defer instead of revealing blank.
@@ -837,6 +931,44 @@ class GlobalLookupController {
     }
   }
 
+  bool _acceptsRoute(GlobalLookupRoute route) {
+    final GlobalLookupRoute? active = _activeRoute;
+    if (active == null || !GlobalLookupChannel.isRouteValid(active)) {
+      return false;
+    }
+    if (route == active) {
+      return true;
+    }
+    // Older native builds sent raw desktop callbacks without an envelope.
+    // Keep that legacy surface usable, but never let an unstamped callback
+    // cross into a galCard session.
+    return route.source == 'desktop' &&
+        route.routeEpoch == 0 &&
+        route.lookupEpoch == 0 &&
+        active.source == 'desktop';
+  }
+
+  void _onRoutedJsMessage(OverlayReverseEvent event) {
+    if (!_acceptsRoute(event.route) || event.message == null) {
+      return;
+    }
+    final GlobalLookupRoute route =
+        event.route.lookupEpoch == 0 ? _activeRoute! : event.route;
+    GlobalLookupChannel.runWithRoute(
+      route,
+      () => _onJsMessage(event.message!),
+    );
+  }
+
+  void _onRoutedOverlayHidden(OverlayReverseEvent event) {
+    if (!_acceptsRoute(event.route)) {
+      return;
+    }
+    final GlobalLookupRoute route =
+        event.route.lookupEpoch == 0 ? _activeRoute! : event.route;
+    GlobalLookupChannel.runWithRoute(route, () => _onOverlayHidden(route));
+  }
+
   /// TODO-1233 — the native overlay was GENUINELY dismissed (foreground hook /
   /// click-outside / JS 'dismiss'/'tapOutside'). Resets this controller's
   /// reveal/measurement state so the next lookup starts clean (the reveal-safety
@@ -845,7 +977,9 @@ class GlobalLookupController {
   /// optional [onHidden] consumer (resume-on-dismiss). NOT called for the
   /// between-lookups reset (that hide passes notify:false, so native suppresses
   /// the callback) — only for a real user dismissal.
-  void _onOverlayHidden() {
+  void _onOverlayHidden([GlobalLookupRoute? routed]) {
+    final GlobalLookupRoute route =
+        routed ?? _activeRoute ?? const GlobalLookupRoute.desktop();
     _revealSafety?.cancel();
     _revealed = false;
     // BUG-1099：用户真把卡关了 = 放弃这次查词，所有权随之释放，下一条被动剪贴板
@@ -865,7 +999,23 @@ class GlobalLookupController {
     _originFloorTop = 0;
     _currentMiningHandler = null;
     glog('overlayHidden: dismissed — reveal state reset');
-    onHidden?.call();
+    try {
+      // Notify the route owner while its token is still valid. Galgame's owner
+      // uses that validity check to accept the genuine-dismiss event and clear
+      // the corresponding in-game card.
+      onRoutedHidden?.call(route);
+      if (route.source == 'desktop') {
+        onHidden?.call();
+      }
+    } finally {
+      // A genuine dismissal ends this immutable lookup. Retiring it here makes
+      // every already-queued Future/Timer/JS callback inert immediately instead
+      // of leaving a hidden surface eligible to reveal itself again.
+      if (_activeRoute == route) {
+        GlobalLookupChannel.invalidateRoute(route);
+        _activeRoute = null;
+      }
+    }
   }
 
   /// Phase C（弹窗尺寸精细化 2026-07-13）— 覆盖窗拖角 resize 落库。native（模态
@@ -1171,6 +1321,7 @@ class GlobalLookupController {
         searchTerm: query,
         searchWithWildcards: false,
       );
+      if (!_isCurrentRoute) return;
       _lastSentWidth = -1;
       _lastSentHeight = -1;
       // TODO-867 P3c: push a CHILD frame onto the stack (parent = current
@@ -1454,7 +1605,7 @@ class GlobalLookupController {
           height: h,
           left: ratcheted.left,
           top: ratcheted.top));
-      onRevealed?.call(w, h);
+      _notifyRevealed(w, h);
     } else if (w != _lastSentWidth ||
         h != _lastSentHeight ||
         dx != _lastSentDx ||
@@ -1473,7 +1624,7 @@ class GlobalLookupController {
           height: h,
           left: ratcheted.left,
           top: ratcheted.top));
-      onRevealed?.call(w, h);
+      _notifyRevealed(w, h);
     }
   }
 
@@ -1493,13 +1644,13 @@ class GlobalLookupController {
       _lastSentHeight = height;
       glog('reveal(scalar): dpr=$dpr physH=$physH -> w=$width h=$height');
       unawaited(GlobalLookupChannel.reveal(width: width, height: height));
-      onRevealed?.call(width, height);
+      _notifyRevealed(width, height);
     } else if (width != _lastSentWidth || height != _lastSentHeight) {
       _lastSentWidth = width;
       _lastSentHeight = height;
       glog('resize(scalar): dpr=$dpr physH=$physH -> w=$width h=$height');
       unawaited(GlobalLookupChannel.resize(width: width, height: height));
-      onRevealed?.call(width, height);
+      _notifyRevealed(width, height);
     }
   }
 }

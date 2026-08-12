@@ -13,6 +13,7 @@
 #include "../../../native/galgame_hook/include/voice_hook_ipc.h"
 
 #include <cmath>
+#include <charconv>
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -70,6 +71,216 @@ std::string WideToUtf8(const std::wstring& value) {
                       static_cast<int>(value.size()), result.data(), size,
                       nullptr, nullptr);
   return result;
+}
+
+bool IsJsonWhitespace(char value) {
+  return value == ' ' || value == '\t' || value == '\r' || value == '\n';
+}
+
+size_t SkipJsonWhitespace(const std::string& json, size_t cursor) {
+  while (cursor < json.size() && IsJsonWhitespace(json[cursor])) {
+    ++cursor;
+  }
+  return cursor;
+}
+
+bool SkipJsonString(const std::string& json, size_t* cursor) {
+  if (cursor == nullptr || *cursor >= json.size() || json[*cursor] != '"') {
+    return false;
+  }
+  size_t current = *cursor + 1;
+  while (current < json.size()) {
+    const char value = json[current++];
+    if (value == '"') {
+      *cursor = current;
+      return true;
+    }
+    if (value == '\\') {
+      if (current >= json.size()) {
+        return false;
+      }
+      const char escaped = json[current++];
+      if (escaped == 'u') {
+        if (json.size() - current < 4) {
+          return false;
+        }
+        current += 4;
+      }
+    }
+  }
+  return false;
+}
+
+bool ParseJsonString(const std::string& json, size_t* cursor,
+                     std::string* result) {
+  if (cursor == nullptr || result == nullptr || *cursor >= json.size() ||
+      json[*cursor] != '"') {
+    return false;
+  }
+  result->clear();
+  size_t current = *cursor + 1;
+  while (current < json.size()) {
+    const char value = json[current++];
+    if (value == '"') {
+      *cursor = current;
+      return true;
+    }
+    if (value != '\\') {
+      result->push_back(value);
+      continue;
+    }
+    if (current >= json.size()) {
+      return false;
+    }
+    const char escaped = json[current++];
+    switch (escaped) {
+      case '"':
+      case '\\':
+      case '/':
+        result->push_back(escaped);
+        break;
+      case 'b':
+        result->push_back('\b');
+        break;
+      case 'f':
+        result->push_back('\f');
+        break;
+      case 'n':
+        result->push_back('\n');
+        break;
+      case 'r':
+        result->push_back('\r');
+        break;
+      case 't':
+        result->push_back('\t');
+        break;
+      default:
+        // Route keys and source values are ASCII literals emitted by our host.
+        // Treat any other escape as malformed instead of guessing its value.
+        return false;
+    }
+  }
+  return false;
+}
+
+bool SkipJsonValue(const std::string& json, size_t* cursor) {
+  if (cursor == nullptr) {
+    return false;
+  }
+  size_t current = SkipJsonWhitespace(json, *cursor);
+  if (current >= json.size()) {
+    return false;
+  }
+  if (json[current] == '"') {
+    if (!SkipJsonString(json, &current)) {
+      return false;
+    }
+    *cursor = current;
+    return true;
+  }
+  if (json[current] == '{' || json[current] == '[') {
+    std::vector<char> closings;
+    while (current < json.size()) {
+      if (json[current] == '"') {
+        if (!SkipJsonString(json, &current)) {
+          return false;
+        }
+        continue;
+      }
+      if (json[current] == '{') {
+        closings.push_back('}');
+      } else if (json[current] == '[') {
+        closings.push_back(']');
+      } else if (json[current] == '}' || json[current] == ']') {
+        if (closings.empty() || closings.back() != json[current]) {
+          return false;
+        }
+        closings.pop_back();
+        if (closings.empty()) {
+          *cursor = current + 1;
+          return true;
+        }
+      }
+      ++current;
+    }
+    return false;
+  }
+  while (current < json.size() && json[current] != ',' &&
+         json[current] != '}') {
+    ++current;
+  }
+  *cursor = current;
+  return true;
+}
+
+bool FindTopLevelJsonValue(const std::string& json, const char* field,
+                           size_t* value_cursor) {
+  if (field == nullptr || value_cursor == nullptr) {
+    return false;
+  }
+  size_t current = SkipJsonWhitespace(json, 0);
+  if (current >= json.size() || json[current] != '{') {
+    return false;
+  }
+  ++current;
+  while (current < json.size()) {
+    current = SkipJsonWhitespace(json, current);
+    if (current < json.size() && json[current] == ',') {
+      current = SkipJsonWhitespace(json, current + 1);
+    }
+    if (current >= json.size() || json[current] == '}') {
+      return false;
+    }
+    std::string key;
+    if (!ParseJsonString(json, &current, &key)) {
+      return false;
+    }
+    current = SkipJsonWhitespace(json, current);
+    if (current >= json.size() || json[current] != ':') {
+      return false;
+    }
+    current = SkipJsonWhitespace(json, current + 1);
+    if (key == field) {
+      *value_cursor = current;
+      return true;
+    }
+    if (!SkipJsonValue(json, &current)) {
+      return false;
+    }
+  }
+  return false;
+}
+
+bool ReadTopLevelJsonString(const std::string& json, const char* field,
+                            std::string* value) {
+  size_t cursor = 0;
+  return FindTopLevelJsonValue(json, field, &cursor) &&
+         ParseJsonString(json, &cursor, value);
+}
+
+bool ReadTopLevelJsonInt64(const std::string& json, const char* field,
+                           int64_t* value) {
+  if (value == nullptr) {
+    return false;
+  }
+  size_t cursor = 0;
+  if (!FindTopLevelJsonValue(json, field, &cursor)) {
+    return false;
+  }
+  const char* begin = json.data() + cursor;
+  const char* end = json.data() + json.size();
+  int64_t parsed = 0;
+  const auto converted = std::from_chars(begin, end, parsed);
+  if (converted.ec != std::errc() || converted.ptr == begin) {
+    return false;
+  }
+  const size_t next = SkipJsonWhitespace(
+      json, static_cast<size_t>(converted.ptr - json.data()));
+  if (next < json.size() && json[next] != ',' && json[next] != '}') {
+    return false;
+  }
+  *value = parsed;
+  return true;
 }
 
 // Picks the HTTP Content-Type header for a resolved custom-scheme resource,
@@ -396,6 +607,56 @@ void GlobalLookupWindow::ForwardGlobalWheelToHost(
 
 GlobalLookupWindow::GlobalLookupWindow() = default;
 
+void GlobalLookupWindow::SetRouteContext(std::string source,
+                                         int64_t route_epoch,
+                                         int64_t lookup_epoch) {
+  if (source != "desktop" && source != "galCard") {
+    source = "desktop";
+  }
+  if (route_epoch < 0) {
+    route_epoch = 0;
+  }
+  if (lookup_epoch < 0) {
+    lookup_epoch = 0;
+  }
+
+  if (route_context_bound_) {
+    if (route_epoch < route_context_.route_epoch ||
+        (route_epoch == route_context_.route_epoch &&
+         lookup_epoch < route_context_.lookup_epoch)) {
+      return;
+    }
+    // A physical window has exactly one route source. Equal epochs are repeated
+    // commands for that same route, never authority to relabel the window.
+    if (route_epoch == route_context_.route_epoch &&
+        lookup_epoch == route_context_.lookup_epoch &&
+        source != route_context_.source) {
+      return;
+    }
+  }
+
+  route_context_ = {std::move(source), route_epoch, lookup_epoch};
+  route_context_bound_ = true;
+}
+
+GlobalLookupWindow::RouteContext GlobalLookupWindow::RouteForMessage(
+    const std::string& json) const {
+  RouteContext route = route_context_;
+  std::string source;
+  if (ReadTopLevelJsonString(json, "__source", &source) &&
+      (source == "desktop" || source == "galCard")) {
+    route.source = std::move(source);
+  }
+  int64_t epoch = 0;
+  if (ReadTopLevelJsonInt64(json, "__routeEpoch", &epoch) && epoch >= 0) {
+    route.route_epoch = epoch;
+  }
+  if (ReadTopLevelJsonInt64(json, "__lookupEpoch", &epoch) && epoch >= 0) {
+    route.lookup_epoch = epoch;
+  }
+  return route;
+}
+
 GlobalLookupWindow::~GlobalLookupWindow() {
   ReleaseDismissHooks();
   if (controller_) {
@@ -508,6 +769,7 @@ void GlobalLookupWindow::ForgetDeadWindow() {
   recovering_ = false;
   visible_ = false;
   revealed_ = false;
+  offscreen_active_ = false;
   shell_rects_css_.clear();  // BUG-749 — stale rects must not clip a rebuild.
 }
 
@@ -555,6 +817,7 @@ bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
   // "visible_" — the click-outside hooks stay disarmed until Reveal().
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
   visible_ = false;
+  offscreen_active_ = false;
   return true;
 }
 
@@ -595,6 +858,7 @@ void GlobalLookupWindow::PrewarmWebView(int width, int height, HWND owner) {
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
   visible_ = false;
   revealed_ = false;
+  offscreen_active_ = false;
 }
 
 void GlobalLookupWindow::Reveal(int width, int height) {
@@ -630,6 +894,7 @@ void GlobalLookupWindow::Reveal(int width, int height) {
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
   revealed_ = true;
   visible_ = true;
+  offscreen_active_ = false;
   // BUG-1479：只设一次不够——同置顶带里「最后一次 SetWindowPos 的赢」，
   // 而大量 galgame 会周期性重申自己的置顶。
   StartTopmostGuard();
@@ -686,6 +951,7 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
   revealed_ = true;
   visible_ = true;
+  offscreen_active_ = false;
   // BUG-1479：只设一次不够——同置顶带里「最后一次 SetWindowPos 的赢」，
   // 而大量 galgame 会周期性重申自己的置顶。
   StartTopmostGuard();
@@ -765,6 +1031,42 @@ void GlobalLookupWindow::ResizeTo(int width, int height) {
   }
   SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width, height,
                SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+}
+
+void GlobalLookupWindow::ResizeOffscreen(int width, int height) {
+  if (hwnd_ == nullptr || width <= 0 || height <= 0) {
+    return;
+  }
+  // ResizeTo deliberately clamps its current rectangle into the nearest
+  // monitor's work area. That is correct for desktop overlays, but it moves the
+  // galgame capture surface from OffscreenX() back onto the desktop. Keep this
+  // HWND shown (WebView2 must continue laying out and painting for capture),
+  // while parking it outside the virtual desktop and keeping reveal semantics
+  // explicitly false.
+  SetWindowPos(hwnd_, HWND_TOPMOST, OffscreenX(), 0, width, height,
+               SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+  visible_ = false;
+  revealed_ = false;
+  offscreen_active_ = true;
+}
+
+void GlobalLookupWindow::ResizeStackOffscreen(int width, int height,
+                                              double bbox_left,
+                                              double bbox_top) {
+  ResizeOffscreen(width, height);
+  if (hwnd_ == nullptr || width <= 0 || height <= 0 || webview_ == nullptr) {
+    return;
+  }
+  // Nested cards share the normal popup renderer. Its union bbox may extend to
+  // the left or above the root card, so the host layer still needs the same
+  // compensating translation as an on-screen RevealStack. The off-screen HWND
+  // itself stays at OffscreenX(); there is no monitor-clamp delta to fold in.
+  std::wstring shift_script =
+      L"window.__globalLookupHost && "
+      L"window.__globalLookupHost.commitLayerShift(" +
+      std::to_wstring(bbox_left) + L", " + std::to_wstring(bbox_top) +
+      L");";
+  webview_->ExecuteScript(shift_script.c_str(), nullptr);
 }
 
 namespace {
@@ -976,9 +1278,11 @@ void GlobalLookupWindow::Hide(bool notify) {
   // Capture BEFORE clearing: the HiddenCallback must only fire on a transition
   // FROM on-screen (was_showing) so a double dismiss (mouse hook then foreground
   // hook, both fire on one click-outside) does not double-notify Dart.
-  const bool was_showing = visible_;
+  const bool was_showing = visible_ || offscreen_active_;
+  const RouteContext hidden_route = route_context_;
   visible_ = false;
   revealed_ = false;
+  offscreen_active_ = false;
   // BUG-749 — drop the per-shell region rects: the next lookup renders a new
   // cascade and re-posts fresh rects (the host resets its de-dup key in
   // beginLookup), so a stale region can never clip the next card.
@@ -998,7 +1302,7 @@ void GlobalLookupWindow::Hide(bool notify) {
   // post to the creating thread's loop; the JS path is already there), so the
   // channel InvokeMethod wired to this callback is safe.
   if (notify && was_showing && hidden_cb_) {
-    hidden_cb_();
+    hidden_cb_(hidden_route);
   }
 }
 
@@ -1793,7 +2097,7 @@ void GlobalLookupWindow::ConfigureWebView() {
                 return S_OK;
               }
               if (message_cb_) {
-                message_cb_(body);
+                message_cb_(body, RouteForMessage(body));
               }
               // Resolve the callHandler promise so popup.js await-points never
               // hang. Most handlers are read-only here and get an immediate
@@ -2322,12 +2626,14 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
         GetWindowRect(hwnd_, &r);
         // Phase C（2026-07-14）— 追加拖拽起始尺寸 [startW, startH]，Dart 用「结束−起始」
         // 增量折算 overlay 尺寸（面板实例读 [0..3] 绝对 rect，忽略 [4][5]，向后兼容）。
-        message_cb_(std::string("{\"handler\":\"windowMoved\",\"args\":[") +
-                    std::to_string(r.left) + "," + std::to_string(r.top) +
-                    "," + std::to_string(r.right - r.left) + "," +
-                    std::to_string(r.bottom - r.top) + "," +
-                    std::to_string(resize_start_w_) + "," +
-                    std::to_string(resize_start_h_) + "]}");
+        const std::string body =
+            std::string("{\"handler\":\"windowMoved\",\"args\":[") +
+            std::to_string(r.left) + "," + std::to_string(r.top) + "," +
+            std::to_string(r.right - r.left) + "," +
+            std::to_string(r.bottom - r.top) + "," +
+            std::to_string(resize_start_w_) + "," +
+            std::to_string(resize_start_h_) + "]}";
+        message_cb_(body, RouteForMessage(body));
       }
       return 0;
     }

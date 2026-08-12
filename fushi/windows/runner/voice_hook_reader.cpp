@@ -190,6 +190,7 @@ void ResetLookupCursorsLocked(ReaderState& st, const SharedHeader* h) {
   st.lookup_hit_count = 0;
   st.lookup_hit_seq = 0;
   st.lookup_input_seq = 0;
+  st.lookup_publish_seq = 0;
   if (!fushi_voice_hook::HasLookupRegion(h)) {
     return;
   }
@@ -202,6 +203,16 @@ void ResetLookupCursorsLocked(ReaderState& st, const SharedHeader* h) {
   }
   st.lookup_input_seq =
       fushi_voice_hook::AtomicLoadPreview64(&h->lookup_input_count);
+  // Fushi 可在游戏进程不退出时重启/重连。hook 端的 presented cursor 仍保留在 DLL，
+  // 所以新 host 必须从现有双槽最大发布序继续，而不是从 1 重新开始并被全判为陈旧帧。
+  for (uint32_t i = 0; i < h->lookup_frame_count; ++i) {
+    const fushi_voice_hook::LookupFrame* frame =
+        fushi_voice_hook::LookupFrameAt(h, i);
+    if (frame == nullptr) continue;
+    const uint64_t seq =
+        fushi_voice_hook::AtomicLoadPreview64(&frame->seq);
+    if (seq > st.lookup_publish_seq) st.lookup_publish_seq = seq;
+  }
 }
 
 // 解除映射、清句柄。调用方持锁。
@@ -548,6 +559,7 @@ bool HandleLookupCall(const flutter::MethodCall<flutter::EncodableValue>& call,
                       std::unique_ptr<LookupResult>& out_result) {
   const std::string& method = call.method_name();
   if (method != "galLookupSetEnabled" && method != "galLookupPresent" &&
+      method != "galLookupPresentHighlight" &&
       method != "galLookupDismiss" && method != "galLookupInput") {
     return false;
   }

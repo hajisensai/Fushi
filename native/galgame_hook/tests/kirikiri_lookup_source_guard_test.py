@@ -23,6 +23,16 @@
    供换游戏时判断"文本到底走哪条路"。所以这条规则有配套的第二问——那个开关必须默认
    false，否则豁免立刻退化成"全局补丁常驻"。
 
+4. 字形层与 `kag.primaryLayer` 的坐标不能假定共享父子链。KAG 的 fore/back 页可以是
+   同一窗口根下的兄弟子树；必须分别沿父链累加到**同一个根**，再以两个绝对图层坐标相减。
+   任一父链成环、断根或根不同都必须失败，Probe 也必须在失败时跳过该记录，不能复用上一次
+   的 `fushiLookupOffX/Y`。否则同一套代码在 fore 页看似可用，换到 back 页就恒定点不中。
+
+5. KAG 消息层锚点不能靠尺寸认领。必须先取 drawCh 宿主的 `hostPage`，再把
+   `kag.currentNum` 投影到该宿主页的 `messages[currentNum]`。旧/定制 KAG 没有
+   `currentNum` 时，只能用 `kag.current` 的对象身份从 fore/back 找到逻辑下标，再投影到
+   宿主页同一位置；不能依赖 `current.comp` / `id`，更不能跨页按尺寸取第一个候选。
+
 变异实测纪律：本文件把每条规则实现成一个独立的 `find_*` 函数，`RealAdapterTest` 用它
 扫真文件，`MutationSelfTest` 用它扫**合成的脏输入**并要求非空。两组都在，这守卫才不
 可能是「永远绿的空守卫」。
@@ -61,6 +71,12 @@ GLOBAL_PATCH_RE = re.compile(r"global\.(?:Layer|MessageLayer)\.\w+\s*=(?!=)")
 # 默认关闭的探测分支。全局补丁只允许活在它里面：换游戏、TextRender 一条都不命中时才开，
 # 用来判断文本到底走哪条路。
 PROBE_GATE_RE = re.compile(r"if\s*\(\s*global\.fushiLookupProbeMode\s*\)")
+
+# 生产 bootstrap 为了规避 MSVC raw-literal 长度/编辑风险，被拆成多个相邻的
+# `LR"TJS(...)TJS"`。C++ 的 MaskedSource 会把每一整段 raw literal 隐掉；bootstrap 内守卫
+# 若扫 `source.masked` 就永远看不到真正执行的 TJS。因此先按 C++ 拼接顺序取出 payload，
+# 再在拼接后的 TJS 上做第二轮注释/字符串掩码和函数级结构分析。
+TJS_RAW_RE = re.compile(r'(?:L|u8|u|U)?R"TJS\((.*?)\)TJS"', re.S)
 
 
 def _iter_find(haystack: str, needle: str) -> Iterator[int]:
@@ -462,6 +478,544 @@ def find_unguarded_bitmap_copies(source: MaskedSource) -> list[str]:
     return unguarded
 
 
+def _joined_tjs_payload(source: MaskedSource) -> MaskedSource:
+    """按 C++ 相邻 raw literal 的顺序还原最终交给引擎的 TJS。"""
+    return MaskedSource(
+        "\n".join(match.group(1) for match in TJS_RAW_RE.finditer(source.text))
+    )
+
+
+def _assigned_tjs_functions(
+    source: MaskedSource, name: str
+) -> list[tuple[str, str]]:
+    """返回 `global.<name> = function(<参数>) { <函数体> }` 的参数与掩码后函数体。"""
+    pattern = re.compile(
+        rf"\bglobal\.{re.escape(name)}\s*=\s*function\s*\(([^)]*)\)\s*"
+    )
+    by_open = {start: (start, end) for start, end in source.blocks()}
+    found: list[tuple[str, str]] = []
+    for match in pattern.finditer(source.masked):
+        open_index = source.masked.find("{", match.end())
+        if open_index < 0 or source.masked[match.end() : open_index].strip():
+            continue
+        span = by_open.get(open_index)
+        if span is None:
+            continue
+        found.append((match.group(1), source.masked[open_index + 1 : span[1] - 1]))
+    return found
+
+
+def _compact_tjs(text: str) -> str:
+    return re.sub(r"\s+", "", text)
+
+
+def _braced_spans_after(text: str, marker: str) -> list[tuple[int, int]]:
+    """从已压紧的 TJS 中取每个 `marker { ... }` 的函数体区间，支持块内嵌套。"""
+    spans: list[tuple[int, int]] = []
+    start = 0
+    while True:
+        marker_index = text.find(marker, start)
+        if marker_index < 0:
+            return spans
+        open_index = marker_index + len(marker)
+        if open_index >= len(text) or text[open_index] != "{":
+            start = marker_index + len(marker)
+            continue
+        depth = 0
+        for index in range(open_index, len(text)):
+            if text[index] == "{":
+                depth += 1
+            elif text[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    spans.append((open_index + 1, index))
+                    start = index + 1
+                    break
+        else:
+            return spans
+
+
+def _braced_bodies_after(text: str, marker: str) -> list[str]:
+    return [text[start:end] for start, end in _braced_spans_after(text, marker)]
+
+
+def _ends_with_top_level_continue(text: str) -> bool:
+    """块末必须是无条件的顶层 `continue;`，不能藏进 `if` 或更深的块。"""
+    index = text.rfind("continue;")
+    if index < 0 or index + len("continue;") != len(text):
+        return False
+    depth = 0
+    for ch in text[:index]:
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+    if depth != 0:
+        return False
+    return index == 0 or text[index - 1] in ";}"
+
+
+def _brace_depth_at(text: str, index: int) -> int:
+    """返回已掩码/压紧 TJS 在 index 前的大括号深度。"""
+    depth = 0
+    for ch in text[: max(index, 0)]:
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+    return depth
+
+
+def find_invalid_kag_anchor_identity_selection(
+    source: MaskedSource,
+) -> list[str]:
+    """守住 KAG 消息层锚点的宿主页投影契约。
+
+    fore/back 是同一组逻辑消息层的双缓冲页。稳定身份是 `currentNum`；旧 KAG 没有这个
+    字段时，才允许以 `current` 的对象身份找逻辑下标。宽高不是身份，`current.comp` 和
+    `id` 也不是必需契约。这里钉住 hostPage、宿主页数组、currentNum 主路径、对象身份
+    兜底及发布顺序；把这些片段散落在函数里不能过。
+    """
+    violations: list[str] = []
+    if not TJS_RAW_RE.search(source.text):
+        return [f'{ADAPTER.name}: 没有找到 LR"TJS(...)TJS" bootstrap']
+
+    tjs = _joined_tjs_payload(source)
+    captures = _assigned_tjs_functions(tjs, "fushiLookupCapture")
+    if len(captures) != 1:
+        return [
+            f"{ADAPTER.name}: fushiLookupCapture 定义数应为 1，实际 {len(captures)}"
+        ]
+
+    _, capture_body = captures[0]
+    capture = _compact_tjs(capture_body)
+
+    # 这是已被真机证伪的旧实现形状。单独点名，避免它只因新结构缺失而间接变红：
+    # mutation 必须能证明守卫本身认得出「跨页按尺寸首个命中」。
+    legacy_pages = re.compile(
+        r"(?:var)?pages=\[(?:global\.kag\.)?fore(?:\.messages)?,"
+        r"(?:global\.kag\.)?back(?:\.messages)?\]"
+    )
+    if legacy_pages.search(capture):
+        violations.append(
+            f"{ADAPTER.name}: 禁止旧 pages=[fore,back] 跨页按尺寸首个命中后 break"
+        )
+
+    host_page = "varhostPage=global.fushiLookupPageOf(best.host);"
+    host_messages_decl = "varhostMessages=void;"
+    host_messages_select = (
+        "hostMessages=(hostPage==1)?global.kag.fore.messages:"
+        "((hostPage==2)?global.kag.back.messages:void);"
+    )
+    entry_layer = (
+        "entry.layer=(anchorMsg!==void&&isvalidanchorMsg)?anchorMsg:best.host;"
+    )
+    entry_host_page = "entry.hostPage=hostPage;"
+    for needle, message in (
+        (host_page, "hostPage 必须由 drawCh 宿主 best.host 求得"),
+        (host_messages_decl, "必须先声明宿主页消息数组"),
+        (host_messages_select, "宿主页消息数组必须由 hostPage 唯一选择"),
+        (entry_layer, "选定的 KAG 消息层必须写入 entry.layer"),
+        (entry_host_page, "hostPage 必须随记录写入 entry.hostPage"),
+    ):
+        count = capture.count(needle)
+        if count != 1:
+            violations.append(f"{ADAPTER.name}: {message}（出现 {count} 次）")
+
+    slot = _SLOT_RE.pattern
+    current_num_decl_re = re.compile(
+        rf"varcurrentNum=global\.fushiLookupField\(global\.kag,(?P<field>{slot})\);"
+    )
+    current_decl_re = re.compile(
+        rf"varcurrentMsg=global\.fushiLookupField\(global\.kag,(?P<field>{slot})\);"
+    )
+    current_num_decls = list(current_num_decl_re.finditer(capture))
+    current_decls = list(current_decl_re.finditer(capture))
+
+    def field_literal_is(match: re.Match[str], expected: str) -> bool:
+        token = match.group("field")
+        literal = tjs.literals[int(token[1:-1])]
+        return (
+            len(literal) >= 2
+            and literal[0] == literal[-1]
+            and literal[0] in {'"', "'"}
+            and literal[1:-1] == expected
+        )
+
+    if len(current_num_decls) != 1 or not field_literal_is(
+        current_num_decls[0], "currentNum"
+    ):
+        violations.append(
+            f"{ADAPTER.name}: currentNum 主路径必须唯一读取 kag.currentNum"
+        )
+    if len(current_decls) != 1 or not field_literal_is(current_decls[0], "current"):
+        violations.append(
+            f"{ADAPTER.name}: identity 兜底必须唯一读取 kag.current"
+        )
+
+    current_num_gate_re = re.compile(
+        rf"if\(hostMessages!==void&&typeofcurrentNum==(?P<type>{slot})&&"
+        r"currentNum>=0&&currentNum<hostMessages\.count\)"
+    )
+    current_num_gates = list(current_num_gate_re.finditer(capture))
+    current_num_spans: list[tuple[int, int]] = []
+    if len(current_num_gates) != 1:
+        violations.append(
+            f"{ADAPTER.name}: currentNum 主路径必须有唯一的整数/上下界门"
+        )
+    else:
+        type_token = current_num_gates[0].group("type")
+        type_literal = tjs.literals[int(type_token[1:-1])]
+        if type_literal not in {'"Integer"', "'Integer'"}:
+            violations.append(
+                f"{ADAPTER.name}: currentNum 主路径必须先确认 Integer"
+            )
+        current_num_spans = _braced_spans_after(
+            capture, current_num_gates[0].group(0)
+        )
+
+    fallback_gate = (
+        "if(anchorMsg===void&&hostMessages!==void&&currentMsg!==void&&"
+        "currentMsg!==null&&isvalidcurrentMsg)"
+    )
+    fallback_spans = _braced_spans_after(capture, fallback_gate)
+    if len(current_num_spans) != 1:
+        violations.append(
+            f"{ADAPTER.name}: currentNum 整数/上下界门必须包住唯一主路径"
+        )
+    else:
+        current_num_body = capture[
+            current_num_spans[0][0] : current_num_spans[0][1]
+        ]
+        indexed_decl = "varindexedMsg=hostMessages[currentNum];"
+        indexed_gate = "if(indexedMsg!==void&&indexedMsg!==null&&isvalidindexedMsg)"
+        indexed_spans = _braced_spans_after(current_num_body, indexed_gate)
+        if current_num_body.count(indexed_decl) != 1 or len(indexed_spans) != 1:
+            violations.append(
+                f"{ADAPTER.name}: currentNum 必须索引宿主页并校验所得消息层"
+            )
+        else:
+            indexed_body = current_num_body[
+                indexed_spans[0][0] : indexed_spans[0][1]
+            ]
+            if indexed_body.count("anchorMsg=indexedMsg;") != 1:
+                violations.append(
+                    f"{ADAPTER.name}: currentNum 主路径必须发布宿主页同下标消息层"
+                )
+
+    if len(fallback_spans) != 1:
+        violations.append(
+            f"{ADAPTER.name}: 对象身份兜底只能在 currentNum 主路径未选中时进入"
+        )
+    else:
+        fallback_body = capture[fallback_spans[0][0] : fallback_spans[0][1]]
+        identity_pages = (
+            "varidentityPages=[global.kag.fore.messages,"
+            "global.kag.back.messages];"
+        )
+        page_loop = "for(varpgi=0;pgi<identityPages.count&&identityIndex<0;pgi++)"
+        message_loop = "for(varmj=0;mj<identityMessages.count;mj++)"
+        identity_gate = "if(identityMessages[mj]===currentMsg)"
+        projection_gate = "if(identityIndex>=0&&identityIndex<hostMessages.count)"
+        page_spans = _braced_spans_after(fallback_body, page_loop)
+        projection_spans = _braced_spans_after(fallback_body, projection_gate)
+        if fallback_body.count("varidentityIndex=-1;") != 1:
+            violations.append(
+                f"{ADAPTER.name}: 对象身份兜底必须以未命中下标开始"
+            )
+        if fallback_body.count(identity_pages) != 1:
+            violations.append(
+                f"{ADAPTER.name}: 对象身份兜底必须覆盖 fore/back 两个消息数组"
+            )
+        if len(page_spans) != 1:
+            violations.append(f"{ADAPTER.name}: 必须只遍历一次 identityPages")
+        else:
+            page_body = fallback_body[page_spans[0][0] : page_spans[0][1]]
+            message_spans = _braced_spans_after(page_body, message_loop)
+            if (
+                page_body.count("varidentityMessages=identityPages[pgi];") != 1
+                or len(message_spans) != 1
+            ):
+                violations.append(
+                    f"{ADAPTER.name}: 每个 identity 页必须只遍历一次消息数组"
+                )
+            else:
+                message_body = page_body[
+                    message_spans[0][0] : message_spans[0][1]
+                ]
+                identity_spans = _braced_spans_after(message_body, identity_gate)
+                if len(identity_spans) != 1:
+                    violations.append(
+                        f"{ADAPTER.name}: current 只能用对象严格身份匹配逻辑下标"
+                    )
+                else:
+                    identity_body = message_body[
+                        identity_spans[0][0] : identity_spans[0][1]
+                    ]
+                    index_pos = identity_body.find("identityIndex=mj;")
+                    break_pos = identity_body.find("break;")
+                    if not (
+                        identity_body.count("identityIndex=mj;") == 1
+                        and identity_body.count("break;") == 1
+                        and 0 <= index_pos < break_pos
+                        and identity_body.endswith("break;")
+                    ):
+                        violations.append(
+                            f"{ADAPTER.name}: 对象身份命中后必须保存下标并结束当前页遍历"
+                        )
+
+        if len(projection_spans) != 1:
+            violations.append(
+                f"{ADAPTER.name}: identity 下标投影必须通过宿主页上界门"
+            )
+        else:
+            projection_body = fallback_body[
+                projection_spans[0][0] : projection_spans[0][1]
+            ]
+            projected_decl = "varidentityMsg=hostMessages[identityIndex];"
+            projected_gate = "if(identityMsg!==void&&identityMsg!==null&&isvalididentityMsg)"
+            projected_spans = _braced_spans_after(projection_body, projected_gate)
+            if (
+                projection_body.count(projected_decl) != 1
+                or len(projected_spans) != 1
+            ):
+                violations.append(
+                    f"{ADAPTER.name}: identity 下标必须投影到宿主页并校验消息层"
+                )
+            else:
+                projected_body = projection_body[
+                    projected_spans[0][0] : projected_spans[0][1]
+                ]
+                if projected_body.count("anchorMsg=identityMsg;") != 1:
+                    violations.append(
+                        f"{ADAPTER.name}: identity 兜底必须发布宿主页同下标消息层"
+                    )
+
+    selection_start = capture.find(host_page)
+    selection_end = capture.find(entry_layer)
+    selection = (
+        capture[selection_start:selection_end]
+        if 0 <= selection_start < selection_end
+        else capture
+    )
+    if re.search(
+        r"(?:\.width|\.height)(?:==|!=|<=|>=)|"
+        r"(?:==|!=|<=|>=)[^;{}]{0,80}(?:\.width|\.height)",
+        selection,
+    ):
+        violations.append(f"{ADAPTER.name}: 锚点身份门不得比较消息层宽高")
+
+    current_num_decl_pos = (
+        current_num_decls[0].start() if len(current_num_decls) == 1 else -1
+    )
+    current_decl_pos = current_decls[0].start() if len(current_decls) == 1 else -1
+    current_num_gate_pos = (
+        current_num_gates[0].start() if len(current_num_gates) == 1 else -1
+    )
+    ordered = (
+        capture.find(host_page),
+        capture.find(host_messages_decl),
+        capture.find(host_messages_select),
+        current_num_decl_pos,
+        current_num_gate_pos,
+        current_decl_pos,
+        capture.find(fallback_gate),
+        capture.find(entry_layer),
+        capture.find(entry_host_page),
+    )
+    if any(index < 0 for index in ordered) or list(ordered) != sorted(ordered):
+        violations.append(
+            f"{ADAPTER.name}: 锚点必须按 hostPage→宿主页→currentNum→identity 兜底→entry 的顺序选择"
+        )
+    elif (
+        len(current_num_spans) != 1
+        or len(fallback_spans) != 1
+        or not (
+            current_num_spans[0][1]
+            < ordered[5]
+            < ordered[6]
+            < fallback_spans[0][1]
+            < ordered[7]
+        )
+        or not (
+            _brace_depth_at(capture, ordered[0])
+            == _brace_depth_at(capture, ordered[7])
+            == _brace_depth_at(capture, ordered[8])
+        )
+    ):
+        violations.append(
+            f"{ADAPTER.name}: currentNum 与 identity 兜底必须是同一选择块中互不嵌套的两级路径"
+        )
+    return violations
+
+
+def find_invalid_common_root_coordinate_conversion(
+    source: MaskedSource,
+) -> list[str]:
+    """守住字形层与 primaryLayer 之间的共同根坐标换算。
+
+    fore/back 消息页可以是同一窗口根下的兄弟子树。只沿 `layer` 父链找 primary、或把
+    `message.left/top` 直接当 primary 坐标，都会在换页后产生恒定偏移。这里钉的是完整
+    数据契约：两条父链分别累加、同根才相减、所有失败都停止消费，以及 Probe 不复用旧的
+    OffX/OffY。实现细节可以换行或加注释，但少一节就必须红。
+    """
+    violations: list[str] = []
+    raw_segments = list(TJS_RAW_RE.finditer(source.text))
+    if not raw_segments:
+        return [f"{ADAPTER.name}: 没有找到 LR\"TJS(...)TJS\" bootstrap"]
+
+    tjs = _joined_tjs_payload(source)
+    computes = _assigned_tjs_functions(tjs, "fushiLookupComputeOffset")
+    probes = _assigned_tjs_functions(tjs, "fushiLookupProbe")
+    if len(computes) != 1:
+        violations.append(
+            f"{ADAPTER.name}: fushiLookupComputeOffset 定义数应为 1，实际 {len(computes)}"
+        )
+    if len(probes) != 1:
+        violations.append(
+            f"{ADAPTER.name}: fushiLookupProbe 定义数应为 1，实际 {len(probes)}"
+        )
+    if len(computes) != 1 or len(probes) != 1:
+        return violations
+
+    parameters, compute_body = computes[0]
+    compute = _compact_tjs(compute_body)
+    if _compact_tjs(parameters) != "layer":
+        violations.append(f"{ADAPTER.name}: ComputeOffset 必须只接收 layer")
+
+    required_once = {
+        "varprimary=global.kag.primaryLayer;": "必须从 kag.primaryLayer 取得比较坐标系",
+        "varlayerX=0,layerY=0;": "缺少 layer 绝对坐标累加器",
+        "varlayerRoot=void;": "缺少 layer 根身份",
+        "varcurrent=layer;": "第一条父链必须从 layer 开始",
+        "varprimaryX=0,primaryY=0;": "缺少 primary 绝对坐标累加器",
+        "varprimaryRoot=void;": "缺少 primary 根身份",
+        "current=primary;": "第二条父链必须从 primary 开始",
+        "global.fushiLookupOffX=layerX-primaryX;": "X 偏移必须是共同根绝对坐标之差",
+        "global.fushiLookupOffY=layerY-primaryY;": "Y 偏移必须是共同根绝对坐标之差",
+        "returntrue;": "成功路径必须显式返回 true",
+    }
+    for needle, message in required_once.items():
+        count = compute.count(needle)
+        if count != 1:
+            violations.append(f"{ADAPTER.name}: {message}（出现 {count} 次）")
+
+    chain_marker = "while(current!==void&&current!==null&&isvalidcurrent)"
+    chain_spans = _braced_spans_after(compute, chain_marker)
+    chains = [compute[start:end] for start, end in chain_spans]
+    if len(chain_spans) != 2:
+        violations.append(
+            f"{ADAPTER.name}: layer/primary 必须各有一条受界父链，实际 {len(chains)} 条"
+        )
+    else:
+        loop_guard = "if(++guard>32){global.fushiLookupMark(16);returnfalse;}"
+        first_required = (
+            loop_guard,
+            "layerRoot=current;",
+            "layerX+=current.left;",
+            "layerY+=current.top;",
+            "current=current.parent;",
+        )
+        second_required = (
+            loop_guard,
+            "primaryRoot=current;",
+            "primaryX+=current.left;",
+            "primaryY+=current.top;",
+            "current=current.parent;",
+        )
+        for label, body, required in (
+            ("layer", chains[0], first_required),
+            ("primary", chains[1], second_required),
+        ):
+            for needle in required:
+                if body.count(needle) != 1:
+                    violations.append(
+                        f"{ADAPTER.name}: {label} 父链缺失或重复 `{needle}`"
+                    )
+
+    root_gate = (
+        "if(layerRoot===void||primaryRoot===void||layerRoot!==primaryRoot)"
+        "{global.fushiLookupMark(16);returnfalse;}"
+    )
+    if compute.count(root_gate) != 1:
+        violations.append(
+            f"{ADAPTER.name}: 根缺失或根不同必须标记诊断并返回 false"
+        )
+    first_chain = compute.find(chain_marker)
+    second_chain = compute.find(chain_marker, first_chain + len(chain_marker))
+    first_chain_end = chain_spans[0][1] if len(chain_spans) == 2 else -1
+    second_chain_end = chain_spans[1][1] if len(chain_spans) == 2 else -1
+    layer_start = compute.find("varcurrent=layer;")
+    primary_start = compute.find("current=primary;")
+    root_gate_start = compute.find(root_gate)
+    off_x_start = compute.find("global.fushiLookupOffX=layerX-primaryX;")
+    off_y_start = compute.find("global.fushiLookupOffY=layerY-primaryY;")
+    success_start = compute.rfind("returntrue;")
+    if not (
+        0
+        <= layer_start
+        < first_chain
+        < first_chain_end
+        < primary_start
+        < second_chain
+        < second_chain_end
+        < root_gate_start
+        < off_x_start
+        < off_y_start
+        < success_start
+    ):
+        violations.append(
+            f"{ADAPTER.name}: 必须依次完成 layer/primary 父链、同根门、X/Y 差值和成功返回"
+        )
+    if not compute.endswith("returntrue;"):
+        violations.append(f"{ADAPTER.name}: ComputeOffset 只能在全部校验和写入后成功返回")
+    if compute.count("guard=0;") != 2 or not compute.startswith(
+        "guard=0;", primary_start + len("current=primary;")
+    ):
+        violations.append(
+            f"{ADAPTER.name}: primary 父链开始前必须把 32 层环保护计数归零"
+        )
+
+    _, probe_body = probes[0]
+    probe = _compact_tjs(probe_body)
+    checked_condition = "if(!global.fushiLookupComputeOffset(layer))"
+    checked_index = probe.find(checked_condition)
+    checked_end = checked_index + len(checked_condition)
+    checked = False
+    if checked_index >= 0 and probe.count(checked_condition) == 1:
+        if probe.startswith("continue;", checked_end):
+            checked = True
+        elif probe.startswith("{", checked_end):
+            bodies = _braced_bodies_after(probe, checked_condition)
+            checked = (
+                len(bodies) == 1
+                and bodies[0].count("continue;") == 1
+                and _ends_with_top_level_continue(bodies[0])
+            )
+    if not checked:
+        violations.append(
+            f"{ADAPTER.name}: Probe 必须检查 ComputeOffset 失败并跳过当前记录"
+        )
+    all_tjs = _compact_tjs(tjs.masked)
+    if all_tjs.count("global.fushiLookupComputeOffset(layer)") != 1:
+        violations.append(
+            f"{ADAPTER.name}: ComputeOffset 只能由受检的 Probe 调用一次"
+        )
+    for needle, message in (
+        (
+            "rx=lx-global.fushiLookupOffX-entry.imgLeft-entry.originX;",
+            "rx 必须消费共同根 X 偏移",
+        ),
+        (
+            "ry=ly-global.fushiLookupOffY-entry.imgTop-entry.originY;",
+            "ry 必须消费共同根 Y 偏移",
+        ),
+    ):
+        if probe.count(needle) != 1:
+            violations.append(f"{ADAPTER.name}: {message}")
+    return violations
+
+
 # ── 扫真文件 ────────────────────────────────────────────────────────────────
 
 
@@ -484,7 +1038,7 @@ class RealAdapterTest(unittest.TestCase):
         self.assertEqual(
             [],
             find_network_debris(self.source),
-            "游戏进程里不得有 HTTP 客户端或认证凭据；开关与数据一律走 v14 共享内存查词区。",
+            "游戏进程里不得有 HTTP 客户端或认证凭据；开关与 BGRA 数据一律走 v14 共享内存查词区。",
         )
 
     def test_does_not_monkey_patch_engine_globals_outside_the_probe_branch(
@@ -519,6 +1073,22 @@ class RealAdapterTest(unittest.TestCase):
             find_unguarded_bitmap_copies(self.source),
             "读写查词位图缓冲之前必须先过 IsLookupFrameSane —— 它是「按跨进程不可信的 "
             "width/height 盲拷」这条越界写路径上的唯一闸门。",
+        )
+
+    def test_glyph_coordinates_use_a_bounded_common_root_conversion(self) -> None:
+        self.assertEqual(
+            [],
+            find_invalid_common_root_coordinate_conversion(self.source),
+            "字形层和 primaryLayer 可能位于共同窗口根下的兄弟子树；必须分别累加到同一根"
+            "后相减，任一父链失败都要停止命中计算，不能复用旧的 OffX/OffY。",
+        )
+
+    def test_kag_anchor_uses_host_page_identity_and_priority(self) -> None:
+        self.assertEqual(
+            [],
+            find_invalid_kag_anchor_identity_selection(self.source),
+            "KAG 消息层必须按 hostPage 下的 currentNum→对象 identity 下标兜底选择；"
+            "禁止 pages=[fore,back] 跨页按尺寸首个命中。",
         )
 
 
@@ -579,6 +1149,181 @@ if(global.fushiLookupProbeMode)
 """
 
 
+# 故意拆成两个相邻 raw literal：生产 bootstrap 也是这样拼出来的。共同根守卫若错误地扫
+# C++ 的 masked 文本，或只看某一段 raw literal，这个 clean 样本就无法通过。
+COORDINATE_CLEAN_SAMPLE = r'''
+static const wchar_t kCoordinateBootstrap[] = LR"TJS(
+global.fushiLookupComputeOffset = function(layer)
+{
+  var primary = global.kag.primaryLayer;
+  var layerX = 0, layerY = 0;
+  var layerRoot = void;
+  var current = layer;
+  var guard = 0;
+  while(current !== void && current !== null && isvalid current)
+  {
+    if(++guard > 32)
+    {
+      global.fushiLookupMark(16);
+      return false;
+    }
+    layerRoot = current;
+    layerX += current.left;
+    layerY += current.top;
+    current = current.parent;
+  }
+
+  var primaryX = 0, primaryY = 0;
+  var primaryRoot = void;
+)TJS" LR"TJS(
+  current = primary;
+  guard = 0;
+  while(current !== void && current !== null && isvalid current)
+  {
+    if(++guard > 32)
+    {
+      global.fushiLookupMark(16);
+      return false;
+    }
+    primaryRoot = current;
+    primaryX += current.left;
+    primaryY += current.top;
+    current = current.parent;
+  }
+
+  if(layerRoot === void || primaryRoot === void ||
+    layerRoot !== primaryRoot)
+  {
+    global.fushiLookupMark(16);
+    return false;
+  }
+  global.fushiLookupOffX = layerX - primaryX;
+  global.fushiLookupOffY = layerY - primaryY;
+  return true;
+};
+
+global.fushiLookupProbe = function(submit)
+{
+  var lx = global.kag.primaryLayer.cursorX;
+  var ly = global.kag.primaryLayer.cursorY;
+  var layer = global.fushiLookupHitEntry.layer;
+  var entry = global.fushiLookupHitEntry;
+  for(var i = 0; i < 1; i++)
+  {
+    var rx = 0;
+    var ry = 0;
+    if(!global.fushiLookupComputeOffset(layer))
+    {
+      global.fushiLookupMark(32);
+      continue;
+    }
+    rx = lx - global.fushiLookupOffX - entry.imgLeft - entry.originX;
+    ry = ly - global.fushiLookupOffY - entry.imgTop - entry.originY;
+  }
+};
+)TJS";
+'''
+
+
+# 生产锚点选择位于 fushiLookupCapture 内，且与其它 bootstrap 一样可能被分成
+# 相邻 raw literal。clean 样本保留这个形状，防止守卫退回去扫 C++ masked 文本。
+ANCHOR_IDENTITY_CLEAN_SAMPLE = r'''
+static const wchar_t kAnchorBootstrap[] = LR"TJS(
+global.fushiLookupCapture = function(renderer)
+{
+  var anchorMsg = void;
+  var hostPage = global.fushiLookupPageOf(best.host);
+  var hostMessages = void;
+  try
+  {
+    hostMessages = (hostPage == 1) ? global.kag.fore.messages :
+      ((hostPage == 2) ? global.kag.back.messages : void);
+  }
+  catch(e) { hostMessages = void; }
+  var currentNum = global.fushiLookupField(global.kag, "currentNum");
+  if(hostMessages !== void && typeof currentNum == "Integer" &&
+    currentNum >= 0 && currentNum < hostMessages.count)
+  {
+    try
+    {
+      var indexedMsg = hostMessages[currentNum];
+      if(indexedMsg !== void && indexedMsg !== null && isvalid indexedMsg)
+      {
+        anchorMsg = indexedMsg;
+      }
+    }
+    catch(e) {}
+  }
+)TJS" LR"TJS(
+  var currentMsg = global.fushiLookupField(global.kag, "current");
+  if(anchorMsg === void && hostMessages !== void && currentMsg !== void &&
+    currentMsg !== null && isvalid currentMsg)
+  {
+    var identityIndex = -1;
+    try
+    {
+      var identityPages = [global.kag.fore.messages,
+        global.kag.back.messages];
+      for(var pgi = 0; pgi < identityPages.count && identityIndex < 0; pgi++)
+      {
+        var identityMessages = identityPages[pgi];
+        for(var mj = 0; mj < identityMessages.count; mj++)
+        {
+          if(identityMessages[mj] === currentMsg)
+          {
+            identityIndex = mj;
+            break;
+          }
+        }
+      }
+      if(identityIndex >= 0 && identityIndex < hostMessages.count)
+      {
+        var identityMsg = hostMessages[identityIndex];
+        if(identityMsg !== void && identityMsg !== null && isvalid identityMsg)
+        {
+          anchorMsg = identityMsg;
+        }
+      }
+    }
+    catch(e) {}
+  }
+  entry.layer = (anchorMsg !== void && isvalid anchorMsg)
+    ? anchorMsg : best.host;
+  entry.hostPage = hostPage;
+};
+)TJS";
+'''
+
+
+# 旧 prototype 的负样本：跨 fore/back 页扫描，只看尺寸，遇到第一个就结束。
+# 这是单独的点名变异，不能只靠“新结构不完整”的附带报错证明守卫有效。
+LEGACY_CROSS_PAGE_ANCHOR_SAMPLE = r'''
+static const wchar_t kAnchorBootstrap[] = LR"TJS(
+global.fushiLookupCapture = function(renderer)
+{
+  var anchorMsg = void;
+  var pages = [global.kag.fore, global.kag.back];
+  for(var pgi = 0; pgi < pages.count && anchorMsg === void; pgi++)
+  {
+    var messages = pages[pgi].messages;
+    for(var mj = 0; mj < messages.count; mj++)
+    {
+      var candidate = messages[mj];
+      if(candidate.width == best.host.width &&
+        candidate.height == best.host.height)
+      {
+        anchorMsg = candidate;
+        break;
+      }
+    }
+  }
+  entry.layer = (anchorMsg !== void && isvalid anchorMsg)
+    ? anchorMsg : best.host;
+};
+)TJS";
+'''
+
+
 class MutationSelfTest(unittest.TestCase):
     """把每条规则要抓的东西真的塞进合成源码，确认规则会红。"""
 
@@ -586,11 +1331,41 @@ class MutationSelfTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.clean = MaskedSource(CLEAN_SAMPLE)
+        self.coordinate_clean = MaskedSource(COORDINATE_CLEAN_SAMPLE)
+        self.anchor_clean = MaskedSource(ANCHOR_IDENTITY_CLEAN_SAMPLE)
 
     def _mutate(self, old: str, new: str) -> MaskedSource:
         self.assertIn(old, CLEAN_SAMPLE, "变异锚点必须真的存在于干净样本里")
         dirty = CLEAN_SAMPLE.replace(old, new, 1)
         self.assertNotEqual(dirty, CLEAN_SAMPLE, "变异样本必须真的与干净样本不同")
+        return MaskedSource(dirty)
+
+    def _mutate_coordinate(self, old: str, new: str) -> MaskedSource:
+        self.assertIn(
+            old,
+            COORDINATE_CLEAN_SAMPLE,
+            "共同根变异锚点必须真的存在于干净样本里",
+        )
+        dirty = COORDINATE_CLEAN_SAMPLE.replace(old, new, 1)
+        self.assertNotEqual(
+            dirty,
+            COORDINATE_CLEAN_SAMPLE,
+            "共同根变异样本必须真的与干净样本不同",
+        )
+        return MaskedSource(dirty)
+
+    def _mutate_anchor(self, old: str, new: str) -> MaskedSource:
+        self.assertIn(
+            old,
+            ANCHOR_IDENTITY_CLEAN_SAMPLE,
+            "锚点身份变异锚点必须真的存在于干净样本里",
+        )
+        dirty = ANCHOR_IDENTITY_CLEAN_SAMPLE.replace(old, new, 1)
+        self.assertNotEqual(
+            dirty,
+            ANCHOR_IDENTITY_CLEAN_SAMPLE,
+            "锚点身份变异样本必须真的与干净样本不同",
+        )
         return MaskedSource(dirty)
 
     def test_clean_sample_passes_every_rule(self) -> None:
@@ -610,6 +1385,28 @@ class MutationSelfTest(unittest.TestCase):
         # 干净样本里确实有一个被豁免的探测分支补丁——否则"豁免"这条根本没被走到。
         self.assertIsNotNone(GLOBAL_PATCH_RE.search(CLEAN_SAMPLE))
         self.assertNotEqual([], _probe_block_spans(CLEAN_SAMPLE))
+
+    def test_split_raw_tjs_common_root_sample_is_green(self) -> None:
+        self.assertEqual(
+            2,
+            len(TJS_RAW_RE.findall(COORDINATE_CLEAN_SAMPLE)),
+            "clean 样本必须跨 raw literal，才能覆盖生产 bootstrap 的真实拼接形态",
+        )
+        self.assertEqual(
+            [],
+            find_invalid_common_root_coordinate_conversion(self.coordinate_clean),
+        )
+
+    def test_split_raw_tjs_anchor_identity_sample_is_green(self) -> None:
+        self.assertEqual(
+            2,
+            len(TJS_RAW_RE.findall(ANCHOR_IDENTITY_CLEAN_SAMPLE)),
+            "clean 锚点样本必须跨 raw literal，覆盖生产 bootstrap 的拼接形态",
+        )
+        self.assertEqual(
+            [],
+            find_invalid_kag_anchor_identity_selection(self.anchor_clean),
+        )
 
     def test_string_variable_interpolated_into_tjs_source_is_red(self) -> None:
         dirty = self._mutate(
@@ -699,6 +1496,340 @@ class MutationSelfTest(unittest.TestCase):
             "  if (!IsLookupFrameSane(header, frame)) return false;\n", ""
         )
         self.assertNotEqual([], find_unguarded_bitmap_copies(dirty))
+
+    def test_anchor_host_page_not_derived_from_draw_host_is_red(self) -> None:
+        dirty = self._mutate_anchor(
+            "  var hostPage = global.fushiLookupPageOf(best.host);",
+            "  var hostPage = global.fushiLookupPageOf(global.kag.current);",
+        )
+        self.assertNotEqual(
+            [], find_invalid_kag_anchor_identity_selection(dirty)
+        )
+
+    def test_host_messages_hardcoded_to_fore_is_red(self) -> None:
+        dirty = self._mutate_anchor(
+            "    hostMessages = (hostPage == 1) ? global.kag.fore.messages :\n"
+            "      ((hostPage == 2) ? global.kag.back.messages : void);",
+            "    hostMessages = global.kag.fore.messages;",
+        )
+        self.assertNotEqual(
+            [], find_invalid_kag_anchor_identity_selection(dirty)
+        )
+
+    def test_current_num_read_is_red_when_removed(self) -> None:
+        dirty = self._mutate_anchor(
+            '  var currentNum = global.fushiLookupField(global.kag, "currentNum");\n',
+            "",
+        )
+        self.assertNotEqual(
+            [], find_invalid_kag_anchor_identity_selection(dirty)
+        )
+
+    def test_current_num_without_integer_gate_is_red(self) -> None:
+        dirty = self._mutate_anchor(
+            '  if(hostMessages !== void && typeof currentNum == "Integer" &&\n',
+            "  if(hostMessages !== void &&\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_kag_anchor_identity_selection(dirty)
+        )
+
+    def test_current_num_without_upper_bound_is_red(self) -> None:
+        dirty = self._mutate_anchor(
+            "    currentNum >= 0 && currentNum < hostMessages.count)\n",
+            "    currentNum >= 0)\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_kag_anchor_identity_selection(dirty)
+        )
+
+    def test_current_num_indexing_fore_directly_is_red(self) -> None:
+        dirty = self._mutate_anchor(
+            "      var indexedMsg = hostMessages[currentNum];",
+            "      var indexedMsg = global.kag.fore.messages[currentNum];",
+        )
+        self.assertNotEqual(
+            [], find_invalid_kag_anchor_identity_selection(dirty)
+        )
+
+    def test_identity_fallback_allowed_to_override_current_num_is_red(self) -> None:
+        dirty = self._mutate_anchor(
+            "  if(anchorMsg === void && hostMessages !== void && currentMsg !== void &&\n"
+            "    currentMsg !== null && isvalid currentMsg)\n",
+            "  if(hostMessages !== void && currentMsg !== void &&\n"
+            "    currentMsg !== null && isvalid currentMsg)\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_kag_anchor_identity_selection(dirty)
+        )
+
+    def test_identity_fallback_omitting_back_page_is_red(self) -> None:
+        dirty = self._mutate_anchor(
+            "      var identityPages = [global.kag.fore.messages,\n"
+            "        global.kag.back.messages];",
+            "      var identityPages = [global.kag.fore.messages];",
+        )
+        self.assertNotEqual(
+            [], find_invalid_kag_anchor_identity_selection(dirty)
+        )
+
+    def test_identity_fallback_using_id_instead_of_object_is_red(self) -> None:
+        dirty = self._mutate_anchor(
+            "          if(identityMessages[mj] === currentMsg)\n",
+            "          if(identityMessages[mj].id == currentMsg.id)\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_kag_anchor_identity_selection(dirty)
+        )
+
+    def test_identity_fallback_not_projected_to_host_page_is_red(self) -> None:
+        dirty = self._mutate_anchor(
+            "        var identityMsg = hostMessages[identityIndex];",
+            "        var identityMsg = identityMessages[identityIndex];",
+        )
+        self.assertNotEqual(
+            [], find_invalid_kag_anchor_identity_selection(dirty)
+        )
+
+    def test_size_comparison_reintroduced_as_identity_gate_is_red(self) -> None:
+        dirty = self._mutate_anchor(
+            "        if(identityMsg !== void && identityMsg !== null && isvalid identityMsg)\n",
+            "        if(identityMsg !== void && identityMsg !== null && "
+            "isvalid identityMsg && identityMsg.width == best.host.width)\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_kag_anchor_identity_selection(dirty)
+        )
+
+    def test_current_comp_reintroduced_instead_of_identity_projection_is_red(self) -> None:
+        dirty = self._mutate_anchor(
+            "        var identityMsg = hostMessages[identityIndex];",
+            "        var identityMsg = currentMsg.comp;",
+        )
+        self.assertNotEqual(
+            [], find_invalid_kag_anchor_identity_selection(dirty)
+        )
+
+    def test_not_persisting_host_page_is_red(self) -> None:
+        dirty = self._mutate_anchor("  entry.hostPage = hostPage;\n", "")
+        self.assertNotEqual(
+            [], find_invalid_kag_anchor_identity_selection(dirty)
+        )
+
+    def test_legacy_cross_page_first_same_size_anchor_is_explicitly_red(
+        self,
+    ) -> None:
+        found = find_invalid_kag_anchor_identity_selection(
+            MaskedSource(LEGACY_CROSS_PAGE_ANCHOR_SAMPLE)
+        )
+        self.assertTrue(
+            any("pages=[fore,back]" in violation for violation in found),
+            "旧跨页首个同尺寸 break 必须有自己的定向诊断，不能只靠其它缺项带红",
+        )
+
+    def test_primary_chain_starting_from_layer_is_red(self) -> None:
+        dirty = self._mutate_coordinate(
+            "  current = primary;\n  guard = 0;",
+            "  current = layer;\n  guard = 0;",
+        )
+        self.assertNotEqual(
+            [], find_invalid_common_root_coordinate_conversion(dirty)
+        )
+
+    def test_missing_primary_parent_chain_is_red(self) -> None:
+        dirty = self._mutate_coordinate(
+            "  while(current !== void && current !== null && isvalid current)\n"
+            "  {\n"
+            "    if(++guard > 32)\n"
+            "    {\n"
+            "      global.fushiLookupMark(16);\n"
+            "      return false;\n"
+            "    }\n"
+            "    primaryRoot = current;\n"
+            "    primaryX += current.left;\n"
+            "    primaryY += current.top;\n"
+            "    current = current.parent;\n"
+            "  }\n",
+            "",
+        )
+        self.assertNotEqual(
+            [], find_invalid_common_root_coordinate_conversion(dirty)
+        )
+
+    def test_primary_chain_start_assignment_moved_after_loop_is_red(self) -> None:
+        before = (
+            "  current = primary;\n"
+            "  guard = 0;\n"
+            "  while(current !== void && current !== null && isvalid current)"
+        )
+        after = (
+            "  guard = 0;\n"
+            "  while(current !== void && current !== null && isvalid current)"
+        )
+        self.assertIn(before, COORDINATE_CLEAN_SAMPLE)
+        moved = COORDINATE_CLEAN_SAMPLE.replace(before, after, 1)
+        move_anchor = (
+            "    current = current.parent;\n"
+            "  }\n\n"
+            "  if(layerRoot === void || primaryRoot === void ||"
+        )
+        self.assertIn(move_anchor, moved)
+        moved = moved.replace(
+            move_anchor,
+            "    current = current.parent;\n"
+            "  }\n"
+            "  current = primary;\n\n"
+            "  if(layerRoot === void || primaryRoot === void ||",
+            1,
+        )
+        self.assertNotEqual(
+            [],
+            find_invalid_common_root_coordinate_conversion(MaskedSource(moved)),
+        )
+
+    def test_primary_chain_start_assignment_inside_first_loop_is_red(self) -> None:
+        assignment = "  current = primary;\n"
+        self.assertIn(assignment, COORDINATE_CLEAN_SAMPLE)
+        moved = COORDINATE_CLEAN_SAMPLE.replace(assignment, "", 1)
+        first_parent_step = "    current = current.parent;\n"
+        self.assertIn(first_parent_step, moved)
+        moved = moved.replace(
+            first_parent_step,
+            first_parent_step + "    current = primary;\n",
+            1,
+        )
+        self.assertNotEqual(
+            [],
+            find_invalid_common_root_coordinate_conversion(MaskedSource(moved)),
+        )
+
+    def test_primary_chain_without_guard_reset_is_red(self) -> None:
+        dirty = self._mutate_coordinate(
+            "  current = primary;\n  guard = 0;",
+            "  current = primary;",
+        )
+        self.assertNotEqual(
+            [], find_invalid_common_root_coordinate_conversion(dirty)
+        )
+
+    def test_accepting_different_roots_is_red(self) -> None:
+        dirty = self._mutate_coordinate(
+            "    layerRoot !== primaryRoot)",
+            "    layerRoot === primaryRoot)",
+        )
+        self.assertNotEqual(
+            [], find_invalid_common_root_coordinate_conversion(dirty)
+        )
+
+    def test_adding_root_x_coordinates_is_red(self) -> None:
+        dirty = self._mutate_coordinate(
+            "  global.fushiLookupOffX = layerX - primaryX;",
+            "  global.fushiLookupOffX = layerX + primaryX;",
+        )
+        self.assertNotEqual(
+            [], find_invalid_common_root_coordinate_conversion(dirty)
+        )
+
+    def test_adding_root_y_coordinates_is_red(self) -> None:
+        dirty = self._mutate_coordinate(
+            "  global.fushiLookupOffY = layerY - primaryY;",
+            "  global.fushiLookupOffY = layerY + primaryY;",
+        )
+        self.assertNotEqual(
+            [], find_invalid_common_root_coordinate_conversion(dirty)
+        )
+
+    def test_publishing_offsets_before_the_common_root_gate_is_red(self) -> None:
+        assignments = (
+            "  global.fushiLookupOffX = layerX - primaryX;\n"
+            "  global.fushiLookupOffY = layerY - primaryY;\n"
+        )
+        self.assertIn(assignments, COORDINATE_CLEAN_SAMPLE)
+        moved = COORDINATE_CLEAN_SAMPLE.replace(assignments, "", 1)
+        gate = (
+            "  if(layerRoot === void || primaryRoot === void ||\n"
+            "    layerRoot !== primaryRoot)"
+        )
+        self.assertIn(gate, moved)
+        moved = moved.replace(gate, assignments + gate, 1)
+        self.assertNotEqual(
+            [],
+            find_invalid_common_root_coordinate_conversion(MaskedSource(moved)),
+        )
+
+    def test_dropping_a_parent_chain_cycle_guard_is_red(self) -> None:
+        dirty = self._mutate_coordinate(
+            "    if(++guard > 32)\n"
+            "    {\n"
+            "      global.fushiLookupMark(16);\n"
+            "      return false;\n"
+            "    }\n",
+            "",
+        )
+        self.assertNotEqual(
+            [], find_invalid_common_root_coordinate_conversion(dirty)
+        )
+
+    def test_different_root_failure_returning_true_is_red(self) -> None:
+        dirty = self._mutate_coordinate(
+            "  if(layerRoot === void || primaryRoot === void ||\n"
+            "    layerRoot !== primaryRoot)\n"
+            "  {\n"
+            "    global.fushiLookupMark(16);\n"
+            "    return false;\n"
+            "  }",
+            "  if(layerRoot === void || primaryRoot === void ||\n"
+            "    layerRoot !== primaryRoot)\n"
+            "  {\n"
+            "    global.fushiLookupMark(16);\n"
+            "    return true;\n"
+            "  }",
+        )
+        self.assertNotEqual(
+            [], find_invalid_common_root_coordinate_conversion(dirty)
+        )
+
+    def test_unchecked_common_root_call_is_red(self) -> None:
+        dirty = self._mutate_coordinate(
+            "    if(!global.fushiLookupComputeOffset(layer))\n"
+            "    {\n"
+            "      global.fushiLookupMark(32);\n"
+            "      continue;\n"
+            "    }",
+            "    global.fushiLookupComputeOffset(layer);",
+        )
+        self.assertNotEqual(
+            [], find_invalid_common_root_coordinate_conversion(dirty)
+        )
+
+    def test_conditionally_skipping_after_common_root_failure_is_red(self) -> None:
+        dirty = self._mutate_coordinate(
+            "      global.fushiLookupMark(32);\n"
+            "      continue;",
+            "      global.fushiLookupMark(32);\n"
+            "      if(submit) continue;",
+        )
+        self.assertNotEqual(
+            [], find_invalid_common_root_coordinate_conversion(dirty)
+        )
+
+    def test_probe_ignoring_common_root_x_offset_is_red(self) -> None:
+        dirty = self._mutate_coordinate(
+            "    rx = lx - global.fushiLookupOffX - entry.imgLeft - entry.originX;",
+            "    rx = lx - entry.imgLeft - entry.originX;",
+        )
+        self.assertNotEqual(
+            [], find_invalid_common_root_coordinate_conversion(dirty)
+        )
+
+    def test_probe_ignoring_common_root_y_offset_is_red(self) -> None:
+        dirty = self._mutate_coordinate(
+            "    ry = ly - global.fushiLookupOffY - entry.imgTop - entry.originY;",
+            "    ry = ly - entry.imgTop - entry.originY;",
+        )
+        self.assertNotEqual(
+            [], find_invalid_common_root_coordinate_conversion(dirty)
+        )
 
     def test_masking_keeps_line_numbers_and_hides_literal_content(self) -> None:
         self.assertEqual(len(self.clean.masked), len(CLEAN_SAMPLE))

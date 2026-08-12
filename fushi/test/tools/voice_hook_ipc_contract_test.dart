@@ -41,12 +41,12 @@ void main() {
 
   test('卡片位图预算：Dart 侧镜像常量必须等于契约头', () {
     // 漂了不会报错，只会**静默裁卡片**：Dart 按自己的数排版，runner 按头里的数裁，
-    // Dart 的数大一点，超出的部分就被 DecodePngStreamToStraightBgra 直接切掉
-    // （它改小 width/height 按左上角取块，不是等比缩）。用户看到半张卡，日志里只有
-    // 一行 CLAMPED——这正是最难倒推回"两个常量不一致"的那类症状。
+    // Dart 的数大一点，超出的部分就被 BGRA 解码链直接切掉。用户看到半张卡，日志里
+    // 只有一行 CLAMPED——这正是最难倒推回"两个常量不一致"的那类症状。
     final String header = File(kIpcHeaderPath).readAsStringSync();
-    final RegExp headerRe =
-        RegExp(r'constexpr uint32_t kLookupBitmapBytes = (\d+)u \* 1024u \* 1024u;');
+    final RegExp headerRe = RegExp(
+      r'constexpr uint32_t kLookupBitmapBytes = (\d+)u \* 1024u \* 1024u;',
+    );
     final RegExpMatch? headerMatch = headerRe.firstMatch(header);
     expect(headerMatch, isNotNull,
         reason: '扫不到契约头的 kLookupBitmapBytes —— 判红，别让空集假绿');
@@ -54,11 +54,9 @@ void main() {
     final String dart = File(
       'lib/src/lookup/gal_ingame_lookup_controller.dart',
     ).readAsStringSync();
-    final RegExp dartRe =
-        RegExp(r'_kCardBitmapBytes = (\d+) \* 1024 \* 1024;');
+    final RegExp dartRe = RegExp(r'_kCardBitmapBytes = (\d+) \* 1024 \* 1024;');
     final RegExpMatch? dartMatch = dartRe.firstMatch(dart);
-    expect(dartMatch, isNotNull,
-        reason: '扫不到 Dart 侧镜像常量 —— 判红');
+    expect(dartMatch, isNotNull, reason: '扫不到 Dart 侧镜像常量 —— 判红');
 
     expect(dartMatch!.group(1), headerMatch!.group(1),
         reason: '两侧位图预算必须一致（单位 MiB）；改一处就要改另一处');

@@ -291,20 +291,13 @@ struct LoopbackMarker {
   uint64_t total_written;   // 该时刻的 loopback_total_written（单调）
 };
 
-// ══ v14 游戏内查词区 ═════════════════════════════════════════════════════════════
-// KiriKiri/KAGEX 在**游戏渲染树内部**显示词典卡片。分工是硬的：注入侧只做几何传感、
-// 位图落地和输入转发；分词、查词、排版、卡片像素全部由 host（Hibiki 既有 popup.html +
-// WebView2 离屏合成）负责。
-//
-// 为什么不让注入侧自己查词自己画卡片（这正是 prototype 的做法，已废弃）：
-//   * 卡片要 ruby / 外字图 / 发音 / 制卡 / 主题 / 17 语言——在 TJS 里用 drawText 手写
-//     等于把 Hibiki 的 popup 重写一遍且永远落后一个版本；
-//   * 游戏进程里因此多出 HTTP 客户端、认证 token、手写 JSON 解析器和"拼 TJS 源码再
-//     eval"的注入面。把职责切开之后，跨边界的东西只剩**一块位图**和**一串整数**，
-//     注入面不是"escape 得更严"而是结构上不存在。
+// ══ v14 游戏内查词区 ════════════════════════════════════════════════════
+// KiriKiri/KAGEX 在**游戏渲染树内部**显示词典卡片。注入侧只做几何传感、
+// 位图落地和输入转发；分词、查词、排版、卡片像素全部由 host（Hibiki 既有
+// popup.html + WebView2 离屏合成）负责。跨进程边界上因此只有一块位图和一串整数。
 //
 // 三条通道各自单写单读，无锁：
-//   hit   : hook → host，单槽 latest-wins（用户查得再快也只关心最后一次）
+//   hit   : hook → host，单槽 latest-wins，仅发布 submit；hover 在游戏线程即时高亮
 //   input : hook → host，环（落在卡片矩形内的鼠标/滚轮事件，供 host 喂 SendMouseInput）
 //   frame : host → hook，双缓冲（避免 host 写下一帧时撕裂 hook 正在拷的这一帧）
 //
@@ -373,9 +366,9 @@ constexpr uint32_t kLookupDiagFallbackPngMissing = 0x00010000u; // 降级路的 
 // 卡片层退回了普通 Layer（自定义子类建不出来）。卡片能显示，但卡片内的鼠标事件
 // 转发失效——降级发生了就要看得见，不许悄悄发生。
 constexpr uint32_t kLookupDiagCardPlainFallback = 0x00020000u;
-
-// hook → host：光标命中了哪个字符。单槽 latest-wins；`seq` **最后**写（Interlocked 全栅栏，
-// 保证 payload 对 reader 先可见），与 VoiceClip / LoopbackMarker 同一套纪律。
+// hook → host：用户真正提交查词时命中了哪个字符。hover 由游戏线程即时画高亮，不写这个
+// 单槽，避免后到 hover 覆盖尚未被 host 消费的 submit。写侧先把 `seq` 清 0，再写 payload，
+// 最后用 Interlocked 发布新 `seq`，与 VoiceClip / LoopbackMarker 同一套纪律。
 struct LookupHitSlot {
   volatile uint64_t seq;   // 单调；host 据此判新。0=从未命中
   // 光标落在第几个字符。**单位是 UTF-16 code unit**，不是 UTF-8 字节、不是 code point。
@@ -450,7 +443,6 @@ constexpr uint32_t kLookupFrameDismiss = 0x00000001u;
 // 真机上直接表现为"太卡了"。高亮本来就画在游戏自己的图层上，不在卡片位图里，所以
 // 这条路不需要任何像素。
 constexpr uint32_t kLookupFrameHighlightOnly = 0x00000002u;
-
 // hook → host：落在卡片矩形内、需要喂给离屏 WebView2 的输入事件。
 struct LookupInputSlot {
   volatile uint64_t seq;  // 单调；**最后**写
@@ -544,7 +536,7 @@ struct SharedHeader {
   // 等于把要修的病换个地方藏起来。
   volatile uint64_t text_lane_recycle_count;   // 回收了一条最久未写的非选定道
   volatile uint64_t text_lane_overflow_count;  // 连可回收的道都没有，本行被丢弃
-  // ── v14 游戏内查词区（injector 填偏移/容量；追加在布局最尾，前面各区偏移一个不动）──
+  // ── v14 游戏内查词区（injector 填偏移/容量；追加在布局最尾，前面各区偏移不动）────
   uint32_t lookup_region_offset;      // 查词区起始（header 起算字节偏移；0=本会话无此区）
   uint32_t lookup_bitmap_bytes;       // 单缓冲位图字节容量（= kLookupBitmapBytes，冗余自洽）
   uint32_t lookup_frame_count;        // 位图缓冲数（= kLookupFrameCount，冗余自洽）
@@ -924,13 +916,19 @@ inline const uint8_t* LookupBitmapAt(const SharedHeader* header,
 // ready 位不在这里判：它是「host 写完没有」的内存可见性问题，归调用点，与「这帧是否过期」
 // 是两件事。seq 由调用点原子读出后传进来，同理。
 inline bool ShouldApplyLookupFrame(uint64_t frame_seq, uint64_t frame_hit_seq,
+                                   uint32_t frame_flags,
                                    uint64_t presented_seq,
-                                   uint64_t current_hit_seq) {
+                                   uint64_t current_any_hit_seq,
+                                   uint64_t current_submit_hit_seq) {
   // 发布序不比已处理的新 → 这帧我处理过了。
   if (frame_seq <= presented_seq) return false;
-  // 回应的那次查询已被更新的命中作废 → 迟到帧，绝不能顶掉新卡片。
-  if (frame_hit_seq < current_hit_seq) return false;
-  return true;
+  // hover 只控制游戏线程即时绘制的字形高亮；卡片内容、收卡与 dismiss 都属于最近一次
+  // submit。两种身份混用会让查词期间经过的 hover 把正确结果判成陈旧帧。
+  const uint64_t fence = frame_flags == kLookupFrameHighlightOnly
+                             ? current_any_hit_seq
+                             : current_submit_hit_seq;
+  // 只接受精确身份。大于 fence 的 frame 同样没有合法来源，不能把“host 抢跑”当成功。
+  return frame_hit_seq == fence;
 }
 
 // 帧自洽校验。**注入侧必须先过这一关再拷贝**：跨进程来的 width/height/pitch 全是不可信

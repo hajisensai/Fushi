@@ -15,6 +15,44 @@ import 'package:flutter/services.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
+/// Immutable identity of one lookup render.  It is deliberately carried on
+/// every forward call instead of being read from a process-wide mutable
+/// target: Futures and Timers created by an older lookup therefore keep their
+/// original destination.
+class GlobalLookupRoute {
+  const GlobalLookupRoute.desktop({this.routeEpoch = 0, this.lookupEpoch = 0})
+      : source = 'desktop',
+        target = '';
+
+  const GlobalLookupRoute.galCard({
+    required this.routeEpoch,
+    required this.lookupEpoch,
+  })  : source = 'galCard',
+        target = 'galCard';
+
+  final String source;
+  final String target;
+  final int routeEpoch;
+  final int lookupEpoch;
+
+  @override
+  bool operator ==(Object other) =>
+      other is GlobalLookupRoute &&
+      other.source == source &&
+      other.routeEpoch == routeEpoch &&
+      other.lookupEpoch == lookupEpoch;
+
+  @override
+  int get hashCode => Object.hash(source, routeEpoch, lookupEpoch);
+}
+
+class OverlayReverseEvent {
+  const OverlayReverseEvent({required this.route, this.message});
+
+  final GlobalLookupRoute route;
+  final Map<String, Object?>? message;
+}
+
 /// Native reply for [OverlayWindowChannel.showAt]: window-created flag plus the
 /// anchor monitor's work area in PHYSICAL px (0 when unavailable). Divide the
 /// work dimensions by the device pixel ratio to get CSS px for the cascade
@@ -59,7 +97,13 @@ class GlobalLookupShowResult {
 }
 
 class OverlayWindowChannel {
-  const OverlayWindowChannel(this._channel, {this.target = ''});
+  const OverlayWindowChannel(
+    this._channel, {
+    this.target = '',
+    this.routeEpoch = 0,
+    this.lookupEpoch = 0,
+    bool Function()? routeIsValid,
+  }) : _routeIsValid = routeIsValid;
 
   final MethodChannel _channel;
 
@@ -70,21 +114,30 @@ class OverlayWindowChannel {
   /// 这样游戏内查词能整条复用既有渲染管线（查词 → popupJson → 渲染 → 定尺寸），
   /// 而不必把 1700 行控制器复制一份；也不会像之前那样"渲染器建好却没人往里塞内容"。
   final String target;
+  final int routeEpoch;
+  final int lookupEpoch;
+  final bool Function()? _routeIsValid;
 
   /// 所有调用的唯一出口：把 [target] 注入参数表。逐个方法手动加，迟早漏一个，
   /// 而漏掉的那个会静默打到错误的窗口上。
   Future<T?> _invoke<T>(String method, [Map<String, Object?>? args]) {
+    // An invalidated lookup may still have Futures/Timers queued in its zone.
+    // Drop those forward calls before they can resurrect an old desktop/gal
+    // surface after a newer lookup (or a gal session shutdown) took ownership.
+    if (_routeIsValid?.call() == false) {
+      return Future<T?>.value();
+    }
     // 🔴 这里必须调 `_channel.invokeMethod`，**不能**调 `_invoke` —— 它就是 _invoke
     // 本身。（本文件的调用点是用整文件替换从 `_channel.invokeMethod<` 改成 `_invoke<`
     // 的，那次替换把这个 helper 自己体内的两处也换掉了，结果是无限自递归、栈溢出，
     // 且异常被 main.dart 的 `catch { debugPrint }` 吞掉——release 下整条桌面查词
     // 启动链静默中断，表现为"galgame 查词就是不工作"。）
-    if (target.isEmpty) {
-      return _channel.invokeMethod<T>(method, args);
-    }
     return _channel.invokeMethod<T>(method, <String, Object?>{
       ...?args,
-      'target': target,
+      if (target.isNotEmpty) 'target': target,
+      'source': target == 'galCard' ? 'galCard' : 'desktop',
+      'routeEpoch': routeEpoch,
+      'lookupEpoch': lookupEpoch,
     });
   }
 
@@ -127,8 +180,7 @@ class OverlayWindowChannel {
     int capWidth = 0,
     int capHeight = 0,
   }) async {
-    final Object? reply =
-        await _invoke<Object?>('showAt', <String, Object?>{
+    final Object? reply = await _invoke<Object?>('showAt', <String, Object?>{
       'x': x,
       'y': y,
       'width': width,
@@ -217,8 +269,7 @@ class OverlayWindowChannel {
   Future<void> hide({bool notify = true}) =>
       _invoke<void>('hide', <String, Object?>{'notify': notify});
 
-  Future<bool> isShowing() async =>
-      (await _invoke<bool>('isShowing')) ?? false;
+  Future<bool> isShowing() async => (await _invoke<bool>('isShowing')) ?? false;
 
   /// spec §6 — asks native for the Win11 acrylic system backdrop behind the
   /// window's transparent pixels. Returns whether the OS accepted it (false on
@@ -282,6 +333,8 @@ class OverlayWindowChannel {
     required Future<Uint8List> Function(String url) onGetMedia,
     required void Function(Map<String, Object?> message) onJsMessage,
     void Function()? onOverlayHidden,
+    void Function(OverlayReverseEvent event)? onRoutedJsMessage,
+    void Function(OverlayReverseEvent event)? onRoutedOverlayHidden,
   }) {
     _channel.setMethodCallHandler((MethodCall call) async {
       switch (call.method) {
@@ -291,11 +344,40 @@ class OverlayWindowChannel {
           final String url = args['url'] as String;
           return await onGetMedia(url);
         case 'jsMessage':
-          final Object? raw = call.arguments;
+          final Object? arguments = call.arguments;
+          final Map<Object?, Object?>? envelope =
+              arguments is Map<Object?, Object?> ? arguments : null;
+          final Object? raw = envelope?['payload'] ?? arguments;
           if (raw is String) {
             final Object? decoded = jsonDecode(raw);
             if (decoded is Map) {
-              onJsMessage(decoded.cast<String, Object?>());
+              final message = decoded.cast<String, Object?>();
+              final String source = (envelope?['source'] as String?) ??
+                  (message['__source'] as String?) ??
+                  'desktop';
+              final int route = (envelope?['routeEpoch'] as num?)?.toInt() ??
+                  (message['__routeEpoch'] as num?)?.toInt() ??
+                  0;
+              final int lookup = (envelope?['lookupEpoch'] as num?)?.toInt() ??
+                  (message['__lookupEpoch'] as num?)?.toInt() ??
+                  0;
+              final event = OverlayReverseEvent(
+                route: source == 'galCard'
+                    ? GlobalLookupRoute.galCard(
+                        routeEpoch: route,
+                        lookupEpoch: lookup,
+                      )
+                    : GlobalLookupRoute.desktop(
+                        routeEpoch: route,
+                        lookupEpoch: lookup,
+                      ),
+                message: message,
+              );
+              if (onRoutedJsMessage != null) {
+                onRoutedJsMessage(event);
+              } else {
+                onJsMessage(message);
+              }
             }
           }
           return null;
@@ -315,7 +397,27 @@ class OverlayWindowChannel {
         case 'overlayHidden':
           // TODO-1233 -- genuine native dismissal (foreground hook /
           // click-outside / JS dismiss).
-          onOverlayHidden?.call();
+          final Object? arguments = call.arguments;
+          if (onRoutedOverlayHidden != null) {
+            final Map<Object?, Object?>? envelope =
+                arguments is Map<Object?, Object?> ? arguments : null;
+            final source = envelope?['source'] as String? ?? 'desktop';
+            final route = (envelope?['routeEpoch'] as num?)?.toInt() ?? 0;
+            final lookup = (envelope?['lookupEpoch'] as num?)?.toInt() ?? 0;
+            onRoutedOverlayHidden(OverlayReverseEvent(
+              route: source == 'galCard'
+                  ? GlobalLookupRoute.galCard(
+                      routeEpoch: route,
+                      lookupEpoch: lookup,
+                    )
+                  : GlobalLookupRoute.desktop(
+                      routeEpoch: route,
+                      lookupEpoch: lookup,
+                    ),
+            ));
+          } else {
+            onOverlayHidden?.call();
+          }
           return null;
         default:
           return null;

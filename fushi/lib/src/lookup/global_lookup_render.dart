@@ -192,10 +192,20 @@ const String kGlobalLookupRootFrameId = 'global-lookup-root';
 /// gate (the mislevelled-ready root cause: reveal fired before the fresh iframe
 /// card actually rendered = "audio plays but the popup is blank/absent"). Inert
 /// when the host is not installed (guarded, mirroring buildStackRenderScript).
-String buildBeginLookupScript(String rootId) {
+String buildBeginLookupScript(
+  String rootId, {
+  String source = 'desktop',
+  int routeEpoch = 0,
+  int lookupEpoch = 0,
+}) {
   final String encodedId = jsonEncode(rootId);
+  final String encodedRoute = jsonEncode(<String, Object>{
+    'source': source,
+    'routeEpoch': routeEpoch,
+    'lookupEpoch': lookupEpoch,
+  });
   return 'window.__globalLookupHost && '
-      'window.__globalLookupHost.beginLookup($encodedId);';
+      'window.__globalLookupHost.beginLookup($encodedId, $encodedRoute);';
 }
 
 /// TODO-1190 — builds the host `highlightFrame(frameIndex, count)` script that
