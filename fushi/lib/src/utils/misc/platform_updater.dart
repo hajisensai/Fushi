@@ -994,7 +994,7 @@ Future<List<WindowsProcessInfo>> queryWindowsFushiProcesses() async {
   try {
     final ProcessResult result = await Process.run(
       'powershell',
-      <String>['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command],
+      <String>['-NoProfile', '-NonInteractive', '-Command', command],
     );
     if (result.exitCode != 0) return const <WindowsProcessInfo>[];
     return parseWindowsProcessJson(
@@ -1047,7 +1047,7 @@ Future<Map<int, WindowsProcessInfo>> queryWindowsProcessInfoForPids(
   try {
     final ProcessResult result = await Process.run(
       'powershell',
-      <String>['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command],
+      <String>['-NoProfile', '-NonInteractive', '-Command', command],
     );
     if (result.exitCode != 0) return const <int, WindowsProcessInfo>{};
     final List<WindowsProcessInfo> processes = parseWindowsProcessJson(
