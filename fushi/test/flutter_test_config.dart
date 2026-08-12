@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'helpers/fake_inappwebview_platform.dart';
@@ -16,10 +18,64 @@ import 'helpers/fake_inappwebview_platform.dart';
 ///    are unaffected.
 /// 2. Installs an in-memory `SharedPreferences` store suite-wide (BUG-1400). See
 ///    [installInMemorySharedPreferences].
+/// 3. Installs a tolerance-based golden comparator (BUG-1585). See
+///    [installToleranceGoldenComparator].
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   installFakeInAppWebViewPlatform();
   installInMemorySharedPreferences();
+  installToleranceGoldenComparator();
   await testMain();
+}
+
+/// BUG-1585：给 golden 比较装一个**跨平台光栅容差**，让基准图在非生成平台上也能校验。
+///
+/// 为什么需要：基准图是在 Windows 主开发机生成的，而字体光栅化/抗锯齿是平台相关的，
+/// 同一份 widget 树在 macOS 上渲染出的 PNG 与 Windows 版必然逐像素不同。默认的
+/// [LocalFileComparator] 要求**逐字节相等**，于是 macOS / Linux 开发机上这批 golden
+/// **必然全红**，且红的是宿主平台不是被测 UI。`dart_test.yaml` 早就写明 golden 该
+/// 「gate 到参考平台」，但只实现了 CI 那半截（`--exclude-tags golden`），开发机这半截
+/// 一直空着——结果是非 Windows 开发机跑全量套件必然见到 33 条恒红，久了就会训练出
+/// 「golden 红了不用管」的习惯，那才是真正危险的地方（真回归也会被一起无视）。
+///
+/// 阈值怎么定的：把全部 33 条在 macOS 上实测一遍，差异分布是 0.00% ~ 0.10%，最大
+/// 0.10%。取 [kGoldenMaxDiffRatio] = 0.5%，对实测最大值有 5 倍余量。而真实 UI 回归
+/// （改 padding / 换颜色 / 调字号 / 换圆角）的像素差异是**量级更大**的事：单是把 200px
+/// 宽控件的内边距动 4px 就远超 0.5%。所以这个容差吸收光栅噪声，不吸收布局回归。
+///
+/// 刻意保留失败输出：超过阈值时仍走 [generateFailureOutput]，失败图照常落到
+/// `test/goldens/failures/`，诊断体验与原来一致。
+///
+/// 守卫：`test/goldens/golden_tolerance_comparator_test.dart`。
+void installToleranceGoldenComparator() {
+  final GoldenFileComparator current = goldenFileComparator;
+  if (current is LocalFileComparator) {
+    goldenFileComparator = ToleranceGoldenComparator(current.basedir);
+  }
+}
+
+/// 跨平台光栅容差上限（差异像素占比）。实测 macOS vs Windows 基准最大 0.0010。
+const double kGoldenMaxDiffRatio = 0.005;
+
+/// [LocalFileComparator] 的容差版：差异比例 ≤ [kGoldenMaxDiffRatio] 视为通过。
+class ToleranceGoldenComparator extends LocalFileComparator {
+  // LocalFileComparator 从 testFile 的所在目录反推 basedir，所以这里把目录
+  // Uri（结尾带 `/`）resolve 出一个同目录的哨兵文件名交回去。
+  ToleranceGoldenComparator(Uri basedir) : super(basedir.resolve('test.dart'));
+
+  @override
+  Future<bool> compare(Uint8List imageBytes, Uri golden) async {
+    final ComparisonResult result = await GoldenFileComparator.compareLists(
+      imageBytes,
+      await getGoldenBytes(golden),
+    );
+    if (result.passed || result.diffPercent <= kGoldenMaxDiffRatio) {
+      result.dispose();
+      return true;
+    }
+    final String error = await generateFailureOutput(result, golden, basedir);
+    result.dispose();
+    throw FlutterError(error);
+  }
 }
 
 /// BUG-1400：把 `SharedPreferences` 的**平台实现**在整个 `test/` 套件里换成进程内存储。

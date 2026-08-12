@@ -87,10 +87,19 @@ void main() {
     }
   });
 
-  MangaOcrServiceImpl service(_FakeRunner runner) => MangaOcrServiceImpl(
+  /// [platformSupported] 显式钉死平台闸门，让 `ocrFolder` 的编排断言在任何宿主
+  /// 上都跑同一条分支。真实 `isSupportedPlatform` 只在 Windows / Linux 为真
+  /// （`isLocalOnnxRuntimeAvailable` 把 macOS / iOS 排除），照默认值跑的话这组
+  /// 编排测试在 macOS 开发机上必然全红——红的是宿主，不是被测逻辑。
+  MangaOcrServiceImpl service(
+    _FakeRunner runner, {
+    bool platformSupported = true,
+  }) =>
+      MangaOcrServiceImpl(
         modelsDirProvider: () async => modelsDir,
         manifest: _tinyManifest,
         jobRunner: runner,
+        platformSupport: () => platformSupported,
       );
 
   void writeAllModels() {
@@ -152,6 +161,31 @@ void main() {
         throwsA(isA<StateError>()),
       );
       expect(runner.requests, isEmpty);
+    });
+
+    test('平台不支持：error 结束流，任务不启动，且不去碰模型目录', () async {
+      writeAllModels(); // 模型齐全，排除「未就绪」这条先决路径干扰。
+      final _FakeRunner runner = _FakeRunner();
+      final MangaOcrServiceImpl impl =
+          service(runner, platformSupported: false);
+      expect(impl.isSupportedPlatform, isFalse);
+      await expectLater(
+        impl.ocrFolder(imageDirPath: 'D:/vol1').toList(),
+        throwsA(isA<StateError>().having((StateError e) => e.message, 'message',
+            contains('manga OCR is not supported on'))),
+      );
+      expect(runner.requests, isEmpty);
+    });
+
+    test('默认构造走真实平台闸门（不被注入桩悄悄替换）', () {
+      expect(
+        MangaOcrServiceImpl(
+          modelsDirProvider: () async => modelsDir,
+          manifest: _tinyManifest,
+          jobRunner: _FakeRunner(),
+        ).isSupportedPlatform,
+        MangaOcrServiceImpl.defaultPlatformSupport(),
+      );
     });
 
     test('happy path：逐页事件转发 + finished 携带 manga.json 路径', () async {
@@ -230,7 +264,9 @@ void main() {
       runner.lastOnAcceleration!(const MangaOcrAcceleration(
         detection: OcrExecutionProvider.cpu,
         recognition: OcrExecutionProvider.cpu,
-        degradeReasons: <String>['detector: directml -> cpu (INVALID_PROVIDER)'],
+        degradeReasons: <String>[
+          'detector: directml -> cpu (INVALID_PROVIDER)'
+        ],
       ));
       runner.lastOnProgress!(2, 2);
       runner.lastJob!.completer.complete('D:/vol1/manga_ocr_out/manga.json');

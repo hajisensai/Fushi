@@ -408,27 +408,32 @@ class MangaOcrServiceImpl implements MangaOcrService {
     MangaOcrModelDownloader? downloader,
     List<MangaOcrModelFile>? manifest,
     MangaOcrVolumeJobRunner? jobRunner,
+    bool Function()? platformSupport,
   })  : _modelsDirProvider = modelsDirProvider ?? defaultMangaOcrModelsDir,
         _downloader = downloader ?? MangaOcrModelDownloader(),
         _manifest = manifest ?? kMangaOcrModelManifest,
-        _jobRunner = jobRunner ?? const IsolateMangaOcrVolumeJobRunner();
+        _jobRunner = jobRunner ?? const IsolateMangaOcrVolumeJobRunner(),
+        _platformSupport = platformSupport ?? defaultPlatformSupport;
 
   final Future<Directory> Function() _modelsDirProvider;
   final MangaOcrModelDownloader _downloader;
   final List<MangaOcrModelFile> _manifest;
   final MangaOcrVolumeJobRunner _jobRunner;
+  final bool Function() _platformSupport;
 
   /// 默认模型目录：`<appSupport>/ocr_models/manga`（经 [AppPaths] 数据根
   /// 单一入口，不硬编码平台路径）。指纹层与本类共用同一个解析函数。
   static Future<Directory> defaultMangaOcrModelsDir() =>
       model_fp.defaultMangaOcrModelsDir();
 
-  @override
-  bool get isSupportedPlatform =>
-      // 整卷本地 OCR 仅桌面（重活）；macOS 已随 flutter_onnxruntime gate 出 Apple
-      // （见 ocr_inference_ort.dart isLocalOnnxRuntimeAvailable），退回互联 host /
-      // 云端 OCR。Windows / Linux 上闸门恒真，等价于旧的 Windows||Linux。
+  /// 整卷本地 OCR 仅桌面（重活）；macOS 已随 flutter_onnxruntime gate 出 Apple
+  /// （见 ocr_inference_ort.dart isLocalOnnxRuntimeAvailable），退回互联 host /
+  /// 云端 OCR。Windows / Linux 上闸门恒真，等价于旧的 Windows||Linux。
+  static bool defaultPlatformSupport() =>
       (Platform.isWindows || Platform.isLinux) && isLocalOnnxRuntimeAvailable;
+
+  @override
+  bool get isSupportedPlatform => _platformSupport();
 
   @override
   Future<MangaOcrModelStatus> modelStatus() async {
