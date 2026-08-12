@@ -25,6 +25,7 @@ void main() {
       expect(windowsProcessById(1), isNull);
       expect(windowsProcessesByNames(<String>{'x.exe'}), isEmpty);
       expect(windowsProcessesByIds(<int>[1]), isEmpty);
+      expect(windowsProcessesHoldingFile('/tmp/x'), isEmpty);
       expect(
         readWindowsRegistryString(
             WindowsRegistryRoot.localMachine, 'SOFTWARE', 'X'),
@@ -135,6 +136,53 @@ void main() {
     test('空名字集合 / 空 PID 集合返回空，不做无谓枚举', () {
       expect(windowsProcessesByNames(<String>{}), isEmpty);
       expect(windowsProcessesByIds(<int>[]), isEmpty);
+    });
+  });
+
+  group('文件占用者查询 / Restart Manager（真实系统）', () {
+    test('当前进程必然被报为自己 exe 文件的占用者', () {
+      // 这是本组的核心断言：RM_PROCESS_INFO 的字段顺序 / 定长数组尺寸写错，
+      // 不会抛异常，只会读出垃圾 PID 或空列表。运行中的进程一定持有自己的
+      // image 文件，是唯一不依赖环境的已知真值。
+      final List<WindowsProcessEntry> holders =
+          windowsProcessesHoldingFile(Platform.resolvedExecutable);
+      expect(
+        holders.map((WindowsProcessEntry e) => e.pid),
+        contains(pid),
+        reason: 'RM 没把当前进程报成自己 exe 的占用者——'
+            'RM_PROCESS_INFO 布局（256/64 定长数组）可能写错了，实际拿到 $holders',
+      );
+    });
+
+    test('报出的占用者带正确的 image 名与路径', () {
+      final WindowsProcessEntry me =
+          windowsProcessesHoldingFile(Platform.resolvedExecutable)
+              .firstWhere((WindowsProcessEntry e) => e.pid == pid);
+      expect(me.name.toLowerCase(), _ownExeName().toLowerCase());
+      expect(
+        me.path!.toLowerCase().replaceAll('/', r'\'),
+        Platform.resolvedExecutable.toLowerCase().replaceAll('/', r'\'),
+      );
+    });
+
+    test('无人占用的普通文件 → 空列表', () {
+      final Directory tmp =
+          Directory.systemTemp.createTempSync('fushi_rm_probe_');
+      try {
+        final File idle = File('${tmp.path}\\idle.bin')
+          ..writeAsBytesSync(<int>[1, 2, 3]);
+        expect(windowsProcessesHoldingFile(idle.path), isEmpty);
+      } finally {
+        tmp.deleteSync(recursive: true);
+      }
+    });
+
+    test('不存在的文件 / 空路径 → 空列表，不抛异常', () {
+      expect(
+        windowsProcessesHoldingFile(r'C:\NoSuchDir\NoSuchFile.dll'),
+        isEmpty,
+      );
+      expect(windowsProcessesHoldingFile(''), isEmpty);
     });
   });
 

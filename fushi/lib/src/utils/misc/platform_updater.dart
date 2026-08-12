@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
@@ -790,34 +789,20 @@ class WindowsInstaller {
   static List<WindowsProcessInfo> _blockingWindowsInstallProcesses(
     WindowsInstallerDiagnostics diagnostics,
   ) {
-    final String? targetInstallDir = diagnostics.targetInstallDir;
     final Map<int, WindowsProcessInfo> blockers = <int, WindowsProcessInfo>{};
     for (final WindowsProcessInfo process
         in diagnostics.runningFushiProcesses) {
       blockers[process.pid] = process;
     }
+    // libmpvModuleHolders 现在由 Restart Manager 按**目标目录里那个文件**给出
+    // （见 [queryWindowsLibmpvModuleHolders]），每一个都已经是货真价实的占用者，
+    // 无需再按 exe 路径 / 进程名过滤——旧的那层过滤是为了把 `tasklist /M` 的
+    // 全机同名 DLL 结果收窄回来，同时也把「exe 在别处却持有我们这份 libmpv」
+    // 的外部进程一并漏掉了。特殊情况就此消失。
     for (final WindowsProcessInfo process in diagnostics.libmpvModuleHolders) {
-      if (_processIsInTargetInstallDir(process, targetInstallDir) ||
-          (process.name ?? '').toLowerCase() == 'fushi.exe' ||
-          (process.name ?? '').toLowerCase() == 'hibiki.exe') {
-        blockers[process.pid] = process;
-      }
+      blockers[process.pid] = process;
     }
     return blockers.values.toList(growable: false);
-  }
-
-  static bool _processIsInTargetInstallDir(
-    WindowsProcessInfo process,
-    String? targetInstallDir,
-  ) {
-    final String? processPath = process.path;
-    if (targetInstallDir == null ||
-        targetInstallDir.isEmpty ||
-        processPath == null ||
-        processPath.isEmpty) {
-      return false;
-    }
-    return _windowsPathEquals(File(processPath).parent.path, targetInstallDir);
   }
 
   static Future<void> _markLaunchFailed(
@@ -865,7 +850,7 @@ Future<WindowsInstallerDiagnostics> collectWindowsInstallerDiagnostics({
               currentProcessId == null || process.pid != currentProcessId)
           .toList(growable: false);
   final List<WindowsProcessInfo> libmpvModuleHolders =
-      (await queryWindowsLibmpvModuleHolders())
+      (await queryWindowsLibmpvModuleHolders(targetInstallDir))
           .where((WindowsProcessInfo process) =>
               currentProcessId == null || process.pid != currentProcessId)
           .toList(growable: false);
@@ -1018,28 +1003,33 @@ Future<List<WindowsProcessInfo>> queryWindowsFushiProcesses() async {
   }
 }
 
-Future<List<WindowsProcessInfo>> queryWindowsLibmpvModuleHolders() async {
-  if (!Platform.isWindows) return const <WindowsProcessInfo>[];
+/// 目标安装目录里那个 `libmpv-2.dll` 现在被谁占着。
+///
+/// 原实现是 `tasklist /M libmpv-2.dll`：扫**全机每个进程的模块表**找同名 DLL，
+/// 再由 [WindowsInstaller._blockingWindowsInstallProcesses] 按 exe 路径过滤回来。
+/// 那是本次 AV 行为检测告警里权重最高的剩余动作（全机模块枚举），而且**答非所问**
+/// ——它按 DLL 名匹配任意路径下的副本，却漏掉「exe 在别处、但正持有我们这一份
+/// libmpv 的外部进程」，而那恰恰是硬中止分支要拦的情况（漏了的后果就是放行安装、
+/// 然后 Inno 在拷贝阶段 `DeleteFile code 5` 失败，即 BUG-1459 的症状）。
+///
+/// 改用 Restart Manager 直接问「谁持有这个路径的文件」：不枚举无关进程，且返回的
+/// 每一个都是货真价实的占用者，无需再按路径过滤。这也是安装器判占用的标准做法。
+Future<List<WindowsProcessInfo>> queryWindowsLibmpvModuleHolders(
+  String targetInstallDir,
+) async {
+  if (!Platform.isWindows || targetInstallDir.isEmpty) {
+    return const <WindowsProcessInfo>[];
+  }
   try {
-    final ProcessResult result = await Process.run(
-      'tasklist',
-      <String>['/M', 'libmpv-2.dll', '/FO', 'CSV', '/NH'],
-    );
-    if (result.exitCode != 0) return const <WindowsProcessInfo>[];
-    final List<WindowsProcessInfo> holders = parseWindowsTasklistModuleHolders(
-      result.stdout is String ? result.stdout as String : '',
-    );
-    final Map<int, WindowsProcessInfo> hydrated =
-        await queryWindowsProcessInfoForPids(
-      holders.map((WindowsProcessInfo process) => process.pid),
-    );
-    return holders.map((WindowsProcessInfo process) {
-      final WindowsProcessInfo? info = hydrated[process.pid];
-      return process.copyWith(
-        name: info?.name,
-        path: info?.path,
-      );
-    }).toList(growable: false);
+    final String libmpv =
+        '$targetInstallDir${Platform.pathSeparator}libmpv-2.dll';
+    return windowsProcessesHoldingFile(libmpv)
+        .map((WindowsProcessEntry entry) => WindowsProcessInfo(
+              pid: entry.pid,
+              name: entry.name,
+              path: entry.path,
+            ))
+        .toList(growable: false);
   } catch (_) {
     return const <WindowsProcessInfo>[];
   }
@@ -1067,25 +1057,6 @@ Future<Map<int, WindowsProcessInfo>> queryWindowsProcessInfoForPids(
   }
 }
 
-List<WindowsProcessInfo> parseWindowsTasklistModuleHolders(String output) {
-  final List<WindowsProcessInfo> holders = <WindowsProcessInfo>[];
-  for (final String rawLine in const LineSplitter().convert(output)) {
-    final String line = rawLine.trim();
-    if (line.isEmpty || line.startsWith('INFO:')) continue;
-    final List<String> fields = _parseCsvLine(line);
-    if (fields.length < 2) continue;
-    final int? parsedPid = int.tryParse(fields[1].replaceAll(',', '').trim());
-    if (parsedPid == null) continue;
-    holders.add(
-      WindowsProcessInfo(
-        pid: parsedPid,
-        name: fields[0].trim(),
-      ),
-    );
-  }
-  return holders;
-}
-
 List<WindowsDetectedInstallLocation> _dedupeInstallLocations(
   Iterable<WindowsDetectedInstallLocation> locations,
 ) {
@@ -1108,32 +1079,6 @@ String _stripDisplayIconSuffix(String value) {
     if (closing > 0) path = path.substring(1, closing);
   }
   return path.replaceFirst(RegExp(r',\d+$'), '').trim();
-}
-
-List<String> _parseCsvLine(String line) {
-  final List<String> fields = <String>[];
-  final StringBuffer current = StringBuffer();
-  bool inQuotes = false;
-  for (int i = 0; i < line.length; i++) {
-    final String char = line[i];
-    if (char == '"') {
-      if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
-        current.write('"');
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-    if (char == ',' && !inQuotes) {
-      fields.add(current.toString());
-      current.clear();
-      continue;
-    }
-    current.write(char);
-  }
-  fields.add(current.toString());
-  return fields;
 }
 
 bool _windowsPathEquals(String a, String b) {

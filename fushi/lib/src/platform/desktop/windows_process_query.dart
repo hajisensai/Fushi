@@ -136,6 +136,25 @@ Map<int, WindowsProcessEntry> windowsProcessesByIds(Iterable<int> pids) {
   };
 }
 
+/// 谁正占用着 [filePath] 这个**具体文件**（Restart Manager）。
+///
+/// 取代 `tasklist /M <dll名>`。两者的差别不只是「有没有子进程」，语义也更准：
+/// - `tasklist /M libmpv-2.dll` 匹配的是**任意路径**下同名 DLL 的加载者，要扫全机
+///   每个进程的模块表，再由调用方按 exe 路径过滤回来；
+/// - Restart Manager 直接问系统「谁持有这个路径的文件」，不枚举任何无关进程。
+///
+/// 而我们真正要判的就是后者——「安装器能不能换掉这个文件」。这也正是 MSI / Inno
+/// 等安装器判占用时用的 API，属于安装场景里最正常不过的调用。
+///
+/// 文件不存在 / 无人占用 / 会话建不起来 → 空列表（与「没有占用者」同义）。
+List<WindowsProcessEntry> windowsProcessesHoldingFile(String filePath) {
+  if (!Platform.isWindows || filePath.isEmpty) {
+    return const <WindowsProcessEntry>[];
+  }
+  return _Win32.instance?.processesHoldingFile(filePath) ??
+      const <WindowsProcessEntry>[];
+}
+
 /// 读注册表字符串值（`REG_SZ` / `REG_EXPAND_SZ`）；不存在或类型不符返回 null。
 String? readWindowsRegistryString(
   WindowsRegistryRoot root,
@@ -186,7 +205,17 @@ class _Win32 {
             _RegQueryValueExDart>('RegQueryValueExW'),
         _regCloseKey =
             _advapi32.lookupFunction<_RegCloseKeyNative, _RegCloseKeyDart>(
-                'RegCloseKey');
+                'RegCloseKey'),
+        _rmStartSession = _rstrtmgr.lookupFunction<_RmStartSessionNative,
+            _RmStartSessionDart>('RmStartSession'),
+        _rmRegisterResources = _rstrtmgr.lookupFunction<
+            _RmRegisterResourcesNative,
+            _RmRegisterResourcesDart>('RmRegisterResources'),
+        _rmGetList = _rstrtmgr
+            .lookupFunction<_RmGetListNative, _RmGetListDart>('RmGetList'),
+        _rmEndSession =
+            _rstrtmgr.lookupFunction<_RmEndSessionNative, _RmEndSessionDart>(
+                'RmEndSession');
 
   static _Win32? _cached;
   static bool _initialised = false;
@@ -205,6 +234,7 @@ class _Win32 {
 
   static final DynamicLibrary _kernel32 = DynamicLibrary.open('kernel32.dll');
   static final DynamicLibrary _advapi32 = DynamicLibrary.open('advapi32.dll');
+  static final DynamicLibrary _rstrtmgr = DynamicLibrary.open('rstrtmgr.dll');
 
   static const int _processQueryLimitedInformation = 0x1000;
   static const int _th32csSnapProcess = 0x00000002;
@@ -225,6 +255,109 @@ class _Win32 {
   final _RegOpenKeyExDart _regOpenKeyEx;
   final _RegQueryValueExDart _regQueryValueEx;
   final _RegCloseKeyDart _regCloseKey;
+  final _RmStartSessionDart _rmStartSession;
+  final _RmRegisterResourcesDart _rmRegisterResources;
+  final _RmGetListDart _rmGetList;
+  final _RmEndSessionDart _rmEndSession;
+
+  /// `RmGetList` 一次要到的最多进程数。占用同一个文件的进程通常是个位数；
+  /// 上限只为给缓冲区封顶，超出部分丢弃（诊断用途，不需要绝对完整）。
+  static const int _rmMaxProcessInfo = 64;
+
+  /// `CCH_RM_SESSION_KEY + 1`（会话键是 GUID 串，32 字符 + NUL）。
+  static const int _rmSessionKeyLength = 33;
+
+  static const int _errorMoreData = 234;
+
+  List<WindowsProcessEntry> processesHoldingFile(String filePath) {
+    final Pointer<Uint32> session = calloc<Uint32>();
+    // RmStartSession 要求调用方提供已清零的 CCH_RM_SESSION_KEY+1 缓冲区。
+    final Pointer<Uint16> sessionKey = calloc<Uint16>(_rmSessionKeyLength);
+    bool started = false;
+    try {
+      if (_rmStartSession(session, 0, sessionKey.cast<Utf16>()) !=
+          _errorSuccess) {
+        return const <WindowsProcessEntry>[];
+      }
+      started = true;
+
+      final Pointer<Utf16> path = filePath.toNativeUtf16();
+      final Pointer<Pointer<Utf16>> files = calloc<Pointer<Utf16>>();
+      try {
+        files[0] = path;
+        if (_rmRegisterResources(
+              session.value,
+              1,
+              files,
+              0,
+              nullptr,
+              0,
+              nullptr,
+            ) !=
+            _errorSuccess) {
+          return const <WindowsProcessEntry>[];
+        }
+      } finally {
+        calloc.free(files);
+        calloc.free(path);
+      }
+
+      final Pointer<Uint32> needed = calloc<Uint32>();
+      final Pointer<Uint32> count = calloc<Uint32>()..value = _rmMaxProcessInfo;
+      final Pointer<_RmProcessInfo> infos =
+          calloc<_RmProcessInfo>(_rmMaxProcessInfo);
+      final Pointer<Uint32> reasons = calloc<Uint32>();
+      try {
+        final int rc = _rmGetList(session.value, needed, count, infos, reasons);
+        // ERROR_MORE_DATA：占用者多于缓冲区容量，已填满的部分仍然有效。
+        if (rc != _errorSuccess && rc != _errorMoreData) {
+          return const <WindowsProcessEntry>[];
+        }
+        final int filled =
+            count.value > _rmMaxProcessInfo ? _rmMaxProcessInfo : count.value;
+        final List<WindowsProcessEntry> result = <WindowsProcessEntry>[];
+        for (int i = 0; i < filled; i++) {
+          final int holderPid = infos[i].Process.dwProcessId;
+          if (holderPid <= 0) continue;
+          // strAppName 是 RM 给的显示名，未必等于 image 名；image 名/路径统一
+          // 用我们自己的 Win32 查询补齐，保证与其它入口同源同格式。
+          final String? imagePath = processImagePath(holderPid);
+          result.add(
+            WindowsProcessEntry(
+              pid: holderPid,
+              name: imagePath == null
+                  ? _appNameFrom(infos[i].strAppName)
+                  : imagePath.split(r'\').last,
+              path: imagePath,
+            ),
+          );
+        }
+        return result;
+      } finally {
+        calloc.free(reasons);
+        calloc.free(infos);
+        calloc.free(count);
+        calloc.free(needed);
+      }
+    } on Object {
+      return const <WindowsProcessEntry>[];
+    } finally {
+      if (started) _rmEndSession(session.value);
+      calloc.free(sessionKey);
+      calloc.free(session);
+    }
+  }
+
+  /// `strAppName` 是定长 256 的 UTF-16 数组，读到 NUL 为止。
+  String _appNameFrom(Array<Uint16> raw) {
+    final StringBuffer buffer = StringBuffer();
+    for (int i = 0; i < 256; i++) {
+      final int unit = raw[i];
+      if (unit == 0) break;
+      buffer.writeCharCode(unit);
+    }
+    return buffer.toString();
+  }
 
   List<WindowsProcessEntry> enumerateProcesses() {
     final List<WindowsProcessEntry> result = <WindowsProcessEntry>[];
@@ -486,3 +619,93 @@ typedef _RegQueryValueExDart = int Function(
 
 typedef _RegCloseKeyNative = Int32 Function(IntPtr key);
 typedef _RegCloseKeyDart = int Function(int key);
+
+// ── Restart Manager（rstrtmgr.dll）─────────────────────────────────────────────
+
+/// `RM_UNIQUE_PROCESS`：PID + 进程启动时刻（`FILETIME` 拆成两个 DWORD）。
+/// 启动时刻用于消歧 PID 复用，我们只读 PID。
+final class _RmUniqueProcess extends Struct {
+  @Uint32()
+  external int dwProcessId;
+
+  @Uint32()
+  external int startTimeLow;
+
+  @Uint32()
+  external int startTimeHigh;
+}
+
+/// `RM_PROCESS_INFO`。字段顺序与定长数组尺寸不能动：
+/// `CCH_RM_MAX_APP_NAME + 1` = 256、`CCH_RM_MAX_SVC_NAME + 1` = 64。
+/// 写错不会报错，只会读出乱码 PID —— 由 `windows_process_query_test.dart`
+/// 拿「当前进程必然持有自己的 exe 文件」这条已知真值挡住。
+final class _RmProcessInfo extends Struct {
+  // ignore: non_constant_identifier_names — 与 Win32 结构体字段同名，便于对照文档
+  external _RmUniqueProcess Process;
+
+  @Array(256)
+  external Array<Uint16> strAppName;
+
+  @Array(64)
+  external Array<Uint16> strServiceShortName;
+
+  @Int32()
+  external int applicationType;
+
+  @Uint32()
+  external int appStatus;
+
+  @Uint32()
+  external int tsSessionId;
+
+  @Int32()
+  external int bRestartable;
+}
+
+typedef _RmStartSessionNative = Int32 Function(
+  Pointer<Uint32> sessionHandle,
+  Uint32 sessionFlags,
+  Pointer<Utf16> sessionKey,
+);
+typedef _RmStartSessionDart = int Function(
+  Pointer<Uint32> sessionHandle,
+  int sessionFlags,
+  Pointer<Utf16> sessionKey,
+);
+
+typedef _RmRegisterResourcesNative = Int32 Function(
+  Uint32 sessionHandle,
+  Uint32 nFiles,
+  Pointer<Pointer<Utf16>> rgsFileNames,
+  Uint32 nApplications,
+  Pointer<_RmUniqueProcess> rgApplications,
+  Uint32 nServices,
+  Pointer<Pointer<Utf16>> rgsServiceNames,
+);
+typedef _RmRegisterResourcesDart = int Function(
+  int sessionHandle,
+  int nFiles,
+  Pointer<Pointer<Utf16>> rgsFileNames,
+  int nApplications,
+  Pointer<_RmUniqueProcess> rgApplications,
+  int nServices,
+  Pointer<Pointer<Utf16>> rgsServiceNames,
+);
+
+typedef _RmGetListNative = Int32 Function(
+  Uint32 sessionHandle,
+  Pointer<Uint32> procInfoNeeded,
+  Pointer<Uint32> procInfo,
+  Pointer<_RmProcessInfo> affectedApps,
+  Pointer<Uint32> rebootReasons,
+);
+typedef _RmGetListDart = int Function(
+  int sessionHandle,
+  Pointer<Uint32> procInfoNeeded,
+  Pointer<Uint32> procInfo,
+  Pointer<_RmProcessInfo> affectedApps,
+  Pointer<Uint32> rebootReasons,
+);
+
+typedef _RmEndSessionNative = Int32 Function(Uint32 sessionHandle);
+typedef _RmEndSessionDart = int Function(int sessionHandle);
