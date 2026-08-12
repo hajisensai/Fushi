@@ -142,7 +142,7 @@ Future<DownloadSaveRootIssue?> checkDownloadSaveRoot(String path) async {
   } on FileSystemException {
     return DownloadSaveRootIssue.createFailed;
   }
-  final File probe = File(p.join(trimmed, '.hibiki_write_probe'));
+  final File probe = File(p.join(trimmed, '.fushi_write_probe'));
   try {
     await probe.writeAsString('fushi', flush: true);
   } on FileSystemException {

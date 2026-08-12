@@ -59,17 +59,24 @@ void main() {
       expect(name.toLowerCase(), isNot(contains('localhost')));
     });
 
-    test('real hardware model becomes "Hibiki · <model>"', () async {
+    test('real hardware model becomes "Fushi · <model>"', () async {
       expect(
         await resolveInterconnectDeviceName(_FakeDeviceInfo('Pixel 7')),
-        'Hibiki · Pixel 7',
+        'Fushi · Pixel 7',
       );
+    });
+
+    // 改名守卫：播报的品牌词必须是 Fushi。这条钉的是常量的**值**，不是格式——
+    // 只断言 'Fushi · Pixel 7' 的话，把常量改回 'Hibiki' 会让上面那条红，但
+    // 单独钉一次值能让失败信息直接指向"品牌词回退了"。
+    test('advertised brand word is Fushi, never the old Hibiki name', () {
+      expect(kGenericInterconnectDeviceName, 'Fushi');
     });
 
     test('desktop hostname flows through as the device name', () async {
       expect(
         await resolveInterconnectDeviceName(_FakeDeviceInfo('DESKTOP-A1B2C3')),
-        'Hibiki · DESKTOP-A1B2C3',
+        'Fushi · DESKTOP-A1B2C3',
       );
     });
 

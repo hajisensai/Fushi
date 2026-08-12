@@ -147,7 +147,7 @@ String safeUpdateAssetFileName(String name) {
   final String sanitized = safeWindowsFileName(leaf)
       .replaceAll(RegExp(r'-{2,}'), '-')
       .replaceAll(RegExp(r'^[. ]+|[. ]+$'), '');
-  return sanitized.isEmpty ? 'hibiki-update.bin' : sanitized;
+  return sanitized.isEmpty ? 'fushi-update.bin' : sanitized;
 }
 
 /// updates 目录下一个待清理判定的条目（纯数据，便于纯函数测试）。
@@ -1536,7 +1536,7 @@ String _fileNameFromUrl(String url) {
   } catch (_) {
     // Fall through to the generic fallback.
   }
-  return 'hibiki-update.bin';
+  return 'fushi-update.bin';
 }
 
 String _leafName(String path) => path.replaceAll(r'\', '/').split('/').last;
