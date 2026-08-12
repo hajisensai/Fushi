@@ -100,7 +100,7 @@ jobs:
           echo "::error title=Invalid pubspec build number::Expected numeric +build in $PUBSPEC_VERSION"
           exit 1
         fi
-        RELEASE_SEQUENCE=$(git rev-list --count HEAD)
+        RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)
         if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
           echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
           exit 1

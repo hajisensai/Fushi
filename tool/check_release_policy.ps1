@@ -60,9 +60,14 @@ foreach ($relativePath in $workflowPaths) {
   Require-Text $relativePath $content 'group: fushi-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}' 'same tag/commit publishes serialize instead of racing separate releases'
   Require-Text $relativePath $content 'cancel-in-progress: false' 'Android and desktop publishers both need to complete'
   Require-Text $relativePath $content 'fetch-depth: 0' 'release sequence uses full git history'
-  Require-Text $relativePath $content 'RELEASE_SEQUENCE=$(git rev-list --count HEAD)' 'release sequence must be shared by Android and desktop workflows'
+  Require-Text $relativePath $content 'RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)' 'release sequence must be shared by Android and desktop workflows'
+  # 2026-08-12: 序号不再在 workflow 里算。重写历史会让 rev-list 计数倒退，所以算式加一次性地板，
+  # 收进 tool/release_sequence.sh 单一真相源（六处 workflow 不再抄魔数）。
   Require-Text $relativePath $content 'release_sequence=$RELEASE_SEQUENCE' 'build steps must consume the shared release sequence'
 
+  # 裸算式绕过地板：新增一处 rev-list 赋值就足以把序号打回倒退态，
+  # 而症状要到用户装不上包、或永远收不到更新时才暴露。
+  Forbid-Pattern $relativePath $content 'RELEASE_SEQUENCE=\$\(git rev-list' 'release sequence must go through tool/release_sequence.sh (the one-time floor); a bare rev-list count regresses after any history rewrite'
   Forbid-Pattern $relativePath $content '\bGITHUB_RUN_NUMBER\b' 'workflow-local run_number splits same-version Android and desktop releases'
   Forbid-Pattern $relativePath $content 'github\.run_number' 'workflow-local run_number splits build numbers across release workflows'
 

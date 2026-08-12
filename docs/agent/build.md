@@ -78,8 +78,11 @@ Flutter 版本号以 `fushi/pubspec.yaml` 的 `version: X.Y.Z+build` 为准。�
   - 一批功能完成 / 大模块 / 用户可见大改：升 minor 并重置 patch（如 `0.9.29` -> `0.10.0`）。
   - 一批修复 / 小功能阶段性收口：升 patch（如 `0.10.0` -> `0.10.1`）。
   - 单个零散 commit 通常**只 +build**；攒到一批 / 里程碑再升 `X.Y.Z`（届时 `+build` 也照常 +1）。
-- Android `versionCode` 的单调递增由 CI 的 `git rev-list --count HEAD`（每个 commit +1）经 `--build-number` 喂给 `build.gradle` 的 `versionCodeBase + 100 × <seq> + abiOffset` 保证；`build.gradle` 还带 2.1e9 上限断言，越界即 fail-fast（TODO-414）。**不依赖 pubspec `+build`**。
+- Android `versionCode` 的单调递增由 CI 的 `git rev-list --count HEAD`（每个 commit +1）**加一次性地板**经 `--build-number` 喂给 `build.gradle` 的 `versionCodeBase + 100 × <seq> + abiOffset` 保证；`build.gradle` 还带 2.1e9 上限断言，越界即 fail-fast（TODO-414）。**不依赖 pubspec `+build`**。
 - 纯文档、PM 元数据、不影响分发行为的 CI 维护不强制 bump；发布、安装包或运行行为变化应 bump。
+- **序号算式收在 `tool/release_sequence.sh` 一个文件里**，六处 workflow 一律 `RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)`，不得在 workflow 里写裸 `git rev-list --count HEAD` 赋值（守卫会红）。算式 = 提交计数 + `RELEASE_SEQUENCE_FLOOR`。
+- **为什么有地板**：提交计数只在「历史只增不减」时单调，**重写历史会让它倒退**。2026-08-12 develop 被强推成重写后的历史，计数从 10546 掉到 9466，而已发布并装到用户机器上的最大序号是 10405。序号倒退会同时锁死三处单调比较——Android `versionCode`（系统安装器拒装）、app 内更新器的 `releaseSequence` 全序比较（永远提示已是最新）、`tool/merge_update_manifest.py` 的「Never downgrades the advertised top-level release」（新包写不进清单）。这三处都没错，错的是序号倒退，所以修在源头加地板，而不是去放宽任何一处守卫。
+- **什么时候要再抬地板**：只有再次重写历史、且新的 `计数 + FLOOR` 不再高于「已发布过的最大序号」时。抬之前先去 GitHub Release 资产名里查真实的 `-debug.<seq>` / `-beta.<seq>` 最大值，别凭感觉加。守卫：`fushi/test/build/release_sequence_floor_guard_test.dart`。
 - 发布 workflow 修改后必须运行 `tool/check_release_policy.ps1`（Windows：`powershell -NoProfile -ExecutionPolicy Bypass -File tool/check_release_policy.ps1`；GitHub Actions 用 `pwsh`）。该守卫会拒绝重新引入 workflow-local run number、缺失完整历史 checkout、缺失同 tag/commit 发布并发锁，或文档缺少 cross-workflow release sequence / single GitHub Release 规则。
 
 ## CI 缓存配额（TODO-2721）

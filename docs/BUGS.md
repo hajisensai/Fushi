@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1491 条。点号进各自文件。
+> 共 1492 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1586](bugs/BUG-1586-release-seq-floor-after-history-rewrite.md) | ✅ | ✅ | 历史重写让发布序号倒退，全部已装用户永久收不到更新 |
 | [BUG-1585](bugs/BUG-1585-golden-cross-platform-raster-false-red.md) | ✅ | ✅ | golden 基准图跨平台光栅必红：非 Windows 开发机全量套件恒 33 条伪红 |
 | [BUG-1584](bugs/BUG-1584-ios-archive-strip-drops-ffi-exports.md) | ✅ | ✅ | iOS archive 的 STRIP_STYLE=all 抹掉 fushidicts FFI 导出符号，上架包启动即 Initialisation failed |
 | [BUG-1583](bugs/BUG-1583-manga-ocr-test-platform-gate.md) | ✅ | ✅ | manga OCR 编排测试硬读 Platform，macOS/iOS 宿主上结构性必红 |
