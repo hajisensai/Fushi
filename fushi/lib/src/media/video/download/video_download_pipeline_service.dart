@@ -643,6 +643,19 @@ class VideoDownloadPipelineService {
     return subtitleId;
   }
 
+  /// 用户显式调整排队优先级。数值越大越先被取走（DAO 侧 `priority DESC`）。
+  ///
+  /// 写完立刻 [wake]：优先级只在「下一次取任务」时才起作用，不唤醒的话用户会看到
+  /// 调了没反应，直到下一个轮询周期——那和没生效在观感上没区别。
+  Future<void> setJobPriority(String jobId, int priority) async {
+    await database.setVideoDownloadJobPriority(
+      jobId: jobId,
+      priority: priority,
+      nowAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    wake();
+  }
+
   Future<void> retryJob(String jobId) async {
     final VideoDownloadJobRow? job = await database.getVideoDownloadJob(jobId);
     if (job == null) {
