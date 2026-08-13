@@ -239,7 +239,12 @@ class DictionaryImportManager {
         final name = _sanitizeTitle(result.title);
         progressNotifier.value = t.import_name(name: name);
 
-        final UpdateDecision decision = _decideUpdate(name, force: false);
+        // 目录导入是普通批量入口，没有「被点击的词典」→ 无显式替换目标。
+        final UpdateDecision decision = _decideUpdate(
+          name,
+          force: false,
+          hasReplaceTarget: false,
+        );
         if (decision == UpdateDecision.alreadyUpToDate) {
           progressNotifier.value = t.import_duplicate(name: name);
           await Future.delayed(const Duration(seconds: 2));
@@ -249,23 +254,12 @@ class DictionaryImportManager {
           return;
         }
 
-        final int order;
-        Dictionary? preservedSettings;
-        if (decision == UpdateDecision.replaceOldVersion ||
-            decision == UpdateDecision.replaceExact) {
-          final Dictionary existing = decision == UpdateDecision.replaceExact
-              ? _dictRepo.dictionaries
-                  .firstWhere((Dictionary d) => d.name == name)
-              : _dictRepo.findUpdatable(name)!;
-          order = existing.order;
-          preservedSettings = existing;
-          final oldDir =
-              Directory(path.join(_resourceDirectory.path, existing.name));
-          if (oldDir.existsSync()) oldDir.deleteSync(recursive: true);
-          await _dictRepo.deleteDictionaryMeta(existing.name);
-        } else {
-          order = _nextOrder();
-        }
+        final Dictionary? preservedSettings = await resolveAndRemoveReplaced(
+          newName: name,
+          decision: decision,
+          replaceTarget: null,
+        );
+        final int order = preservedSettings?.order ?? _nextOrder();
 
         final innerDataDir = Directory(path.join(tempOutputDir.path, name));
         final finalDir = Directory(path.join(_resourceDirectory.path, name));
@@ -331,6 +325,12 @@ class DictionaryImportManager {
     // 与 readSourceMetadataFromIndex 合并落进 Dictionary.metadata；index.json 的
     // 真值优先覆盖，缺失字段由本 override 补上。默认 null（本地导入不带来源）。
     Map<String, String>? sourceOverride,
+    // BUG-1595：显式替换目标（更新入口被点击的那本词典）。非空时替换语义由目标
+    // 本身决定：不再让新包 title 走 decideUpdate 分派（新包标题带版本号变化时会
+    // 误判 newDictionary、把「更新」做成「追加」），导入成功后删除该目标的磁盘
+    // 目录 + meta，新词典继承其 order/hiddenLanguages/collapsedLanguages（与
+    // replaceOldVersion 分支同待遇）。普通导入入口不传，行为不变。
+    Dictionary? replaceTarget,
   }) async {
     _dictRepo.clearDictionaryResultsCache();
 
@@ -367,8 +367,11 @@ class DictionaryImportManager {
       final name = _sanitizeTitle(result.title);
       progressNotifier.value = t.import_name(name: name);
 
-      final UpdateDecision decision =
-          _decideUpdate(name, force: forceReplaceExisting);
+      final UpdateDecision decision = _decideUpdate(
+        name,
+        force: forceReplaceExisting,
+        hasReplaceTarget: replaceTarget != null,
+      );
       if (decision == UpdateDecision.alreadyUpToDate) {
         progressNotifier.value = t.import_duplicate(name: name);
         await Future.delayed(const Duration(seconds: 2));
@@ -378,23 +381,12 @@ class DictionaryImportManager {
         return;
       }
 
-      final int order;
-      Dictionary? preservedSettings;
-      if (decision == UpdateDecision.replaceOldVersion ||
-          decision == UpdateDecision.replaceExact) {
-        final Dictionary existing = decision == UpdateDecision.replaceExact
-            ? _dictRepo.dictionaries
-                .firstWhere((Dictionary d) => d.name == name)
-            : _dictRepo.findUpdatable(name)!;
-        order = existing.order;
-        preservedSettings = existing;
-        final oldDir =
-            Directory(path.join(_resourceDirectory.path, existing.name));
-        if (oldDir.existsSync()) oldDir.deleteSync(recursive: true);
-        await _dictRepo.deleteDictionaryMeta(existing.name);
-      } else {
-        order = _nextOrder();
-      }
+      final Dictionary? preservedSettings = await resolveAndRemoveReplaced(
+        newName: name,
+        decision: decision,
+        replaceTarget: replaceTarget,
+      );
+      final int order = preservedSettings?.order ?? _nextOrder();
 
       final innerDataDir = Directory(path.join(tempOutputDir.path, name));
       final finalDir = Directory(path.join(_resourceDirectory.path, name));
@@ -680,26 +672,40 @@ class DictionaryImportManager {
     return DictPublishMethod.renamed; // 不可达：循环内必返回或抛出
   }
 
-  UpdateDecision _decideUpdate(String newName, {required bool force}) {
+  UpdateDecision _decideUpdate(
+    String newName, {
+    required bool force,
+    required bool hasReplaceTarget,
+  }) {
     return decideUpdate(
       hasExactName: _dictRepo.hasDictionaryNamed(newName),
       hasUpdatableVersion: _dictRepo.findUpdatable(newName) != null,
       force: force,
+      hasReplaceTarget: hasReplaceTarget,
     );
   }
 
   /// [_decideUpdate] 的纯逻辑核心（依赖全部入参注入，便于测试）。
   ///
-  /// 完全同名优先：命中则按 [force] 区分 [UpdateDecision.replaceExact]（强制更新
-  /// 重导）/ [UpdateDecision.alreadyUpToDate]（普通导入跳过，TODO-609 前的现有语义）。
-  /// 否则若存在同 base 名的不同日期版本 → [UpdateDecision.replaceOldVersion]（与
-  /// [force] 无关，旧行为）。都不命中 → [UpdateDecision.newDictionary]。
+  /// BUG-1595：[hasReplaceTarget]（更新入口显式指定被替换词典）压过一切按 title
+  /// 的判定 → 恒 [UpdateDecision.replaceExact]。按 title 判定对「标题里携带版本号」
+  /// 的包（如「… V2026.08.11」→「… V2026.08.13」，不匹配 [YYYY-MM-DD] 尾缀）会
+  /// 落到 newDictionary，把「更新」做成「追加」、两版并存——显式目标下 title 只是
+  /// 展示名，不再承载替换语义。
+  ///
+  /// 无显式目标时维持 TODO-609 语义：完全同名优先，命中则按 [force] 区分
+  /// [UpdateDecision.replaceExact]（强制更新重导）/ [UpdateDecision.alreadyUpToDate]
+  /// （普通导入跳过）。否则若存在同 base 名的不同日期版本 →
+  /// [UpdateDecision.replaceOldVersion]（与 [force] 无关，旧行为）。都不命中 →
+  /// [UpdateDecision.newDictionary]。
   @visibleForTesting
   static UpdateDecision decideUpdate({
     required bool hasExactName,
     required bool hasUpdatableVersion,
     required bool force,
+    bool hasReplaceTarget = false,
   }) {
+    if (hasReplaceTarget) return UpdateDecision.replaceExact;
     if (hasExactName) {
       return force
           ? UpdateDecision.replaceExact
@@ -707,6 +713,51 @@ class DictionaryImportManager {
     }
     if (hasUpdatableVersion) return UpdateDecision.replaceOldVersion;
     return UpdateDecision.newDictionary;
+  }
+
+  /// BUG-1595：解析本次导入要顶替的旧本并删除其磁盘目录 + meta，返回被继承设置
+  /// （order/hiddenLanguages/collapsedLanguages）的旧本；非替换类决策返回 null、
+  /// 不删任何东西。
+  ///
+  /// [replaceTarget] 非空（更新入口显式指定被点击的词典）时以它为准；否则按
+  /// [decision] 用新包 title 反查（replaceExact 精确同名 / replaceOldVersion 走
+  /// [DictionaryRepository.findUpdatable]，TODO-609 的既有语义，行为不变）。
+  ///
+  /// 撞名收尾：显式替换目标异名时，新包 title 可能恰好等于**另一本**已存词典——
+  /// 后续发布会覆盖那本的磁盘目录、persistDictionary 会按名 upsert 覆盖它的
+  /// meta。按同样待遇先删干净（meta 删除即触发引擎重载，不留指向被覆盖目录的
+  /// 索引窗口，BUG-1492）。该分支在无 replaceTarget 的旧路径上结构性不可达：
+  /// replaceExact 时 existing.name == newName；replaceOldVersion 时精确同名不存在
+  /// （否则 decideUpdate 早已走 exact 分支）。
+  @visibleForTesting
+  Future<Dictionary?> resolveAndRemoveReplaced({
+    required String newName,
+    required UpdateDecision decision,
+    required Dictionary? replaceTarget,
+  }) async {
+    if (decision != UpdateDecision.replaceExact &&
+        decision != UpdateDecision.replaceOldVersion) {
+      return null;
+    }
+    final Dictionary existing = replaceTarget ??
+        (decision == UpdateDecision.replaceExact
+            ? _dictRepo.dictionaries
+                .firstWhere((Dictionary d) => d.name == newName)
+            : _dictRepo.findUpdatable(newName)!);
+    await _removeDictionaryDirAndMeta(existing.name);
+    if (existing.name != newName && _dictRepo.hasDictionaryNamed(newName)) {
+      await _removeDictionaryDirAndMeta(newName);
+    }
+    return existing;
+  }
+
+  /// 删除一本词典的磁盘目录与 meta（替换/覆盖导入的旧本清理共用）。目录不存在
+  /// 时只删 meta；[DictionaryRepository.deleteDictionaryMeta] 本身幂等。
+  Future<void> _removeDictionaryDirAndMeta(String name) async {
+    final Directory oldDir =
+        Directory(path.join(_resourceDirectory.path, name));
+    if (oldDir.existsSync()) oldDir.deleteSync(recursive: true);
+    await _dictRepo.deleteDictionaryMeta(name);
   }
 
   /// TODO-609 / W-2：合并词典来源元数据。[fromIndex] 是导入包内 index.json 提取的

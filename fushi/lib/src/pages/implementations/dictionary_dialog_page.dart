@@ -1726,15 +1726,16 @@ class _DictionaryDialogPageState extends BasePageState {
 
   // ── TODO-609：在线 revision 比对手动更新 ──────────────────────────────
 
-  /// 下载 [downloadUrl] 处的词典包并**强制重导**（force=true）替换同名旧版，保留
+  /// 下载 [dictionary] 来源处的新包并以它为**显式替换目标**重导（BUG-1595：即便
+  /// 远端包改了标题也替换这本，而非按 title 误判成新增），保留
   /// order/hidden/collapsed，落上新来源（[sourceOverride] 至少带回 downloadUrl）。
   /// 复用现有下载进度 UI（[DictionaryDownloadProgressDialog]）。成功返 true。
   Future<bool> _redownloadAndReimport({
-    required String name,
-    required String downloadUrl,
+    required Dictionary dictionary,
     required DictionaryDownloadJob job,
     required Map<String, String> sourceOverride,
   }) async {
+    final String name = dictionary.name;
     final ValueNotifier<String> progressNotifier = job.message;
     final ValueNotifier<double> downloadProgress = job.progress;
     final Directory tempDir = Directory(
@@ -1745,7 +1746,7 @@ class _DictionaryDialogPageState extends BasePageState {
       progressNotifier.value = t.dict_update_updating(name: name);
       downloadProgress.value = 0;
       final File zipFile = await DictionaryDownloader.download(
-        url: downloadUrl,
+        url: dictionary.downloadUrl,
         tempDir: tempDir,
         progressNotifier: downloadProgress,
         cancelToken: job.cancelToken,
@@ -1763,7 +1764,7 @@ class _DictionaryDialogPageState extends BasePageState {
         file: zipFile,
         progressNotifier: progressNotifier,
         onImportSuccess: () {},
-        forceReplaceExisting: true,
+        replaceTarget: dictionary,
         sourceOverride: sourceOverride,
       );
       return true;
@@ -1795,8 +1796,7 @@ class _DictionaryDialogPageState extends BasePageState {
             );
           }
           await _redownloadAndReimport(
-            name: dictionary.name,
-            downloadUrl: dictionary.downloadUrl,
+            dictionary: dictionary,
             job: job,
             // W-2：更新即知本词典可更新——显式回填 isUpdatable:'true' + 两 URL，使
             // 即便重导包内 index.json 不声明 isUpdatable，更新后仍保持可更新（不丢按钮）。
@@ -1831,14 +1831,15 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   /// TODO-839：本地导入 / 旧词典（isUpdatable=false，无在线来源）的「从文件重选覆盖
-  /// 更新」。让用户重选一个词典包，force 覆盖原词典（保留 order/hidden/collapsed），
-  /// 失败不丢原词典（复用 importFromFile 的 import_temp 暂存→成功才删旧）。
+  /// 更新」。让用户重选一个词典包，以被点击词典为显式替换目标覆盖它（保留
+  /// order/hidden/collapsed），失败不丢原词典（复用 importFromFile 的 import_temp
+  /// 暂存→成功才删旧）。
   ///
-  /// 异名陷阱处理：decideUpdate 按**新包 index.json 的 title** 决策，而非用户点的那本
-  /// 词典。新包异名（base 名都不同）时它会 newDictionary 把新包当全新词典追加、原词典
-  /// 原封不动留着——用户以为「更新了」实则多出一本、原词典没变。故导入前先廉价探出新
-  /// 包 title（仅 yomitan zip 可探），与被更新词典名不同则弹确认（dsl/mdx 探不到 title
-  /// → 退化为纯 force，量极低可接受）。
+  /// 异名处理（BUG-1595 已根治旧陷阱）：导入以 `replaceTarget` 显式指定被点击的
+  /// 词典，替换语义不再由新包 index.json 的 title 决定——新包异名（含标题携带版本
+  /// 号变化）也照样替换原词典，不会再被 decideUpdate 判成 newDictionary 追加成两版
+  /// 并存。异名确认框保留：标题变了用户应当知情（仅 yomitan zip 可廉价探出 title；
+  /// dsl/mdx 探不到 → 不弹确认直接替换，量极低可接受），确认后执行的是**替换**。
   Future<void> _updateDictionaryFromFile(Dictionary dictionary) async {
     if (_isDownloading) return;
 
@@ -1889,7 +1890,8 @@ class _DictionaryDialogPageState extends BasePageState {
             file: file,
             progressNotifier: job.message,
             onImportSuccess: () {},
-            forceReplaceExisting: true,
+            // BUG-1595：显式替换被点击的词典。新包异名时不再按 title 判成新增。
+            replaceTarget: dictionary,
           );
           // 覆盖导入没抛异常即成功。
           return DictionaryDownloadOutcome(
@@ -1981,8 +1983,7 @@ class _DictionaryDialogPageState extends BasePageState {
               continue;
             }
             await _redownloadAndReimport(
-              name: d.name,
-              downloadUrl: d.downloadUrl,
+              dictionary: d,
               job: job,
               sourceOverride: <String, String>{
                 'isUpdatable': 'true',
