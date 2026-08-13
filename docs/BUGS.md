@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1492 条。点号进各自文件。
+> 共 1493 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1591](bugs/BUG-1591-download-priority-has-no-write-entry.md) | ✅ | ✅ | priority 列参与排序却无写入口，排队退化成先来后到 |
 | [BUG-1590](bugs/BUG-1590-subscription-candidate-list-not-aggregated.md) | ✅ | ✅ | 订阅候选列表按发布逐条列，与订阅生效单位不一致 |
 | [BUG-1585](bugs/BUG-1585-golden-cross-platform-raster-false-red.md) | ✅ | ✅ | golden 基准图跨平台光栅必红：非 Windows 开发机全量套件恒 33 条伪红 |
 | [BUG-1584](bugs/BUG-1584-ios-archive-strip-drops-ffi-exports.md) | ✅ | ✅ | iOS archive 的 STRIP_STYLE=all 抹掉 fushidicts FFI 导出符号，上架包启动即 Initialisation failed |

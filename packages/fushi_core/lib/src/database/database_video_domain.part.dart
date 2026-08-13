@@ -1324,6 +1324,30 @@ mixin _FushiDbVideoDomain
     return changed == 1;
   }
 
+  /// 用户显式调整单个任务的排队优先级。
+  ///
+  /// `priority` 早就参与取任务的排序（三处 `OrderingTerm.desc(t.priority)` +
+  /// 索引 `(lifecycle, next_attempt_at, priority DESC, created_at)`），但在此之前
+  /// **没有任何写入口**：它只在建任务时从请求里带一次，而请求方从不传非默认值。
+  /// 于是这一列一直恒为 0，「排队顺序」实际退化成纯粹的 created_at 先来后到，
+  /// 用户报障「没办法设置每个任务的优先权」说的就是这个。
+  ///
+  /// 只改 priority 与 updatedAt：优先级是排队意图，不该顺带改动生命周期、阶段
+  /// 或重试预算——那些各有各的入口。
+  Future<bool> setVideoDownloadJobPriority({
+    required String jobId,
+    required int priority,
+    required int nowAt,
+  }) async {
+    final int changed = await (update(videoDownloadJobs)
+          ..where(($VideoDownloadJobsTable t) => t.jobId.equals(jobId)))
+        .write(VideoDownloadJobsCompanion(
+      priority: Value<int>(priority),
+      updatedAt: Value<int>(nowAt),
+    ));
+    return changed == 1;
+  }
+
   /// Explicit user resume. A cancelled job is paused durable state, not a
   /// failed retry: preserve its current stage when the backend task still
   /// exists, or rewind only when the embedded fast-resume entry disappeared.
