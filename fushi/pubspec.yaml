@@ -26,6 +26,8 @@ dependencies:
   dynamic_color: ^1.7.0
   external_app_launcher: ^4.0.3
   external_path: ^2.2.0
+  # 分段条溢出滚动的渐隐边缘（vendored，见 dependency_overrides）。
+  fading_edge_scrollview: ^3.0.0
   file_picker: ^8.0.0
   float_column: ^4.0.3
   # Cross-platform game controllers (GameInput / GameController / evdev).
