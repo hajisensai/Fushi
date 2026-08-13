@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
 
 const String _hash = 'aa11bb22cc33dd44ee55ff66aa77bb88cc99dd00';
@@ -259,7 +260,8 @@ Future<void> _dismiss(WidgetTester tester) async {
 
 Future<void> _pumpPersistedFallback(
   WidgetTester tester, {
-  bool backendTaskMissing = false,
+  VideoDownloadLiveDataAbsence liveDataAbsence =
+      VideoDownloadLiveDataAbsence.none,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -270,7 +272,7 @@ Future<void> _pumpPersistedFallback(
             title: 'Persisted Series',
             torrentTitle: 'Persisted release title',
             backendOverride: null,
-            backendTaskMissing: backendTaskMissing,
+            liveDataAbsence: liveDataAbsence,
             initialSnapshot: const TorrentSnapshot(
               hash: _hash,
               name: 'Persisted Series',
@@ -303,7 +305,10 @@ void main() {
   testWidgets('后端在线但任务已不存在时明确说明节点无法恢复', (
     WidgetTester tester,
   ) async {
-    await _pumpPersistedFallback(tester, backendTaskMissing: true);
+    await _pumpPersistedFallback(
+      tester,
+      liveDataAbsence: VideoDownloadLiveDataAbsence.missingFromBackend,
+    );
     final Finder missingNote =
         find.textContaining('this torrent is no longer present');
     await _scrollUntilFound(tester, missingNote);
@@ -312,6 +317,28 @@ void main() {
     expect(
       find.textContaining('Live peers and trackers cannot be recovered'),
       findsOneWidget,
+    );
+    await _dismiss(tester);
+  });
+
+  // BUG：排队等槽位的任务原来被报成「该 torrent 已不在引擎中」。用户报障原话
+  // 「明明只是因为其他东西在下载」。这条钉住：排队态必须说排队，且**绝不**
+  // 出现丢失文案——两条一起断言，只断言前者的话把两句都显示出来也会绿。
+  testWidgets('还没交给下载器（排队等槽位）时说排队，不谎报 torrent 丢失', (
+    WidgetTester tester,
+  ) async {
+    await _pumpPersistedFallback(
+      tester,
+      liveDataAbsence: VideoDownloadLiveDataAbsence.notHandedOff,
+    );
+    final Finder queuedNote =
+        find.textContaining('waiting for other downloads to free a slot');
+    await _scrollUntilFound(tester, queuedNote);
+    expect(queuedNote, findsOneWidget);
+    expect(
+      find.textContaining('this torrent is no longer present'),
+      findsNothing,
+      reason: '排队中的任务不是丢失，出现丢失文案就是回归到误诊。',
     );
     await _dismiss(tester);
   });

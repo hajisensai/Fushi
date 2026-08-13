@@ -281,8 +281,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                                           ? job.resourceTitle!.trim()
                                           : job.title,
                                   backendOverride: details.backend,
-                                  backendTaskMissing: details.backendOnline &&
-                                      details.backend == null,
+                                  liveDataAbsence: details.liveDataAbsence,
                                   initialSnapshot: details.snapshot,
                                   initialFiles: details.files,
                                 ),

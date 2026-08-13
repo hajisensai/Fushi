@@ -82,6 +82,31 @@ class VideoDownloadBackendBinding {
   final List<VideoDownloadPathMapping> pathMappings;
 }
 
+/// 详情对话框拿不到**实时**数据时，究竟是为什么。
+///
+/// 这一层存在的理由：UI 侧原来只有 `backendOnline && backend == null` 一个
+/// 布尔量，于是把三种完全不同的状态折叠成同一句「该 torrent 已不在引擎中」。
+/// 其中最常见的一种根本不是异常——任务还排在队里等前面的下载让出槽位，
+/// 压根**还没被交给下载器**，却被报成「引擎里丢了」（用户报障：「明明只是
+/// 因为其他东西在下载」）。
+///
+/// 判据只有服务层拿得到（它持有 job 行，知道 stage 和有没有 backendTaskId），
+/// 所以由这里定性、UI 只负责渲染，杜绝 UI 二次猜测。
+enum VideoDownloadLiveDataAbsence {
+  /// 有实时数据，不缺。
+  none,
+
+  /// 还没交给下载器：任务仍在 `enqueue` 阶段（排队等槽位），或还没有拿到
+  /// 后端任务 id。**这是正常状态，不是故障**。
+  notHandedOff,
+
+  /// 交给过下载器，但现在引擎里找不到这个 hash——真丢了。
+  missingFromBackend,
+
+  /// 记录在案的那个后端此刻连不上（换机 / profile 变更 / 装包不全）。
+  backendOffline,
+}
+
 /// Details that remain useful even when the backend recorded by a durable job
 /// is no longer reachable. [backend] is only populated when that exact backend
 /// identity can be resolved; [snapshot] and [files] always have persisted
@@ -92,12 +117,37 @@ class VideoDownloadJobDetails {
     required this.files,
     this.backend,
     this.backendOnline = false,
+    this.liveDataAbsence = VideoDownloadLiveDataAbsence.none,
   });
 
   final TorrentBackend? backend;
   final bool backendOnline;
   final TorrentSnapshot snapshot;
   final List<TorrentFileEntry> files;
+
+  /// 没有实时数据的原因；[VideoDownloadLiveDataAbsence.none] 表示有。
+  final VideoDownloadLiveDataAbsence liveDataAbsence;
+}
+
+/// 定性「为什么没有实时数据」。纯函数，便于直接单测三条分支。
+///
+/// 顺序是**有意**的：先问「该不该在引擎里」，再问「引擎答没答」。反过来问就
+/// 会把排队中的任务判成丢失——那正是本函数要消灭的误诊。
+VideoDownloadLiveDataAbsence resolveLiveDataAbsence({
+  required VideoDownloadJobRow job,
+  required String torrentId,
+  required bool hasLiveSnapshot,
+  required bool backendOnline,
+}) {
+  if (hasLiveSnapshot) return VideoDownloadLiveDataAbsence.none;
+  // 还没有后端任务 id，或仍停在入队阶段 = 还没轮到它进下载器。前面的任务占着
+  // 并发槽时这条最常见，它是正常排队，不是任何形式的故障。
+  if (torrentId.isEmpty || job.stage == VideoDownloadJobStage.enqueue) {
+    return VideoDownloadLiveDataAbsence.notHandedOff;
+  }
+  return backendOnline
+      ? VideoDownloadLiveDataAbsence.missingFromBackend
+      : VideoDownloadLiveDataAbsence.backendOffline;
 }
 
 /// Builds the durable half of task details without requiring a running
@@ -831,6 +881,12 @@ class VideoDownloadPipelineService {
       backendOnline: backendOnline,
       snapshot: liveSnapshot ?? persistedDetails.snapshot,
       files: liveFiles ?? persistedDetails.files,
+      liveDataAbsence: resolveLiveDataAbsence(
+        job: job,
+        torrentId: torrentId,
+        hasLiveSnapshot: liveSnapshot != null,
+        backendOnline: backendOnline,
+      ),
     );
   }
 

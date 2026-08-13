@@ -1,0 +1,14 @@
+## BUG-1587 · 排队等槽位的下载任务被误报成「torrent 已不在引擎中」
+- **报告**：2026-08-13（用户截图：任务停在 `0.0% · enqueue`，详情「网络」区却写「原下载后端在线，但该 torrent 已不在引擎中」。用户原话：「那句话不对，明明只是因为其他东西在下载」）
+- **真实性**：✅ 真 bug。根因链：
+  - `fushi/lib/src/media/video/download/video_download_pipeline_service.dart` `loadJobDetails()` 返回 `backend: liveSnapshot == null ? null : backend`——只要在 `backend.listTorrents()` 里没按 hash 找到快照，就把 backend 抹成 null；
+  - `fushi/lib/src/pages/implementations/downloads_page.dart:284` 据此算 `backendTaskMissing = details.backendOnline && details.backend == null`；
+  - `fushi/lib/src/pages/implementations/torrent_detail_dialog.dart:374` 把这个布尔量翻译成 `download_detail_task_missing`（「该 torrent 已不在引擎中」）。
+  - **三种完全不同的状态被折叠成同一个布尔量**：①还没交给下载器（`stage == enqueue`，排在别的下载后面等并发槽位）②交给过但引擎里没了（真丢失）③记录在案的后端连不上。其中①是**正常状态**，却走进了②的文案。截图里 `stage=enqueue` 且已有信息哈希，正是①。
+- **[x] ① 已修复** — 定性下沉到服务层（它持有 job 行，才知道 stage 与 backendTaskId），UI 不再自己猜：
+  - 新增 `VideoDownloadLiveDataAbsence{none, notHandedOff, missingFromBackend, backendOffline}` 与纯函数 `resolveLiveDataAbsence()`；判定顺序**先问「该不该已经在引擎里」再问「引擎答没答」**，反序即回归成误诊；
+  - `VideoDownloadJobDetails` 增 `liveDataAbsence` 字段，`loadJobDetails()` 填充；
+  - `downloads_page.dart` 改为透传该字段，`torrent_detail_dialog.dart` 按四态 switch 出文案；
+  - 新增 i18n `download_detail_task_queued`（17 语言经 `i18n_sync.dart --add` + `dart run slang`）：「排队中：正在等其他下载让出槽位。任务还没交给下载器，所以暂时没有实时节点和 Tracker 数据。」
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/download/live_data_absence_test.dart`（5 条，直测纯函数四条分支 + 有快照）；`fushi/test/pages/torrent_detail_dialog_test.dart` 新增「排队态说排队且**不出现**丢失文案」（两条一起断言，只断言前者的话两句都显示也会绿）。变异实测：把判定顺序颠倒成先问引擎 → 单测与 widget 测试各红一条；反向替换还原 → 34 条全绿。
+- **备注**：本次只修「说错话」。用户同批还提的「没有自动重试」「没法设置每任务优先级」是相邻但独立的缺口——`VideoDownloadJobs.priority` 列已存在（`tables.dart:1983`，默认 0，`pipeline_service.dart:516` 已写入）但**无任何 UI 可设**；`retryJob` / 指数退避也已存在，缺的是「真丢失后自动重挂」这条路径。另开。

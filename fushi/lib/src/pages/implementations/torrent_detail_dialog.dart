@@ -7,6 +7,7 @@ import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/torrent_task_display.dart';
+import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/download_actions.dart';
 import 'package:fushi/utils.dart';
@@ -33,7 +34,7 @@ class TorrentTaskDetailDialog extends ConsumerStatefulWidget {
         torrentTitle = plan.torrentTitle,
         initialSnapshot = null,
         initialFiles = null,
-        backendTaskMissing = false,
+        liveDataAbsence = VideoDownloadLiveDataAbsence.none,
         resolveBackendFromAppModel = true;
 
   /// Durable download jobs use the same real backend detail surface without
@@ -45,7 +46,7 @@ class TorrentTaskDetailDialog extends ConsumerStatefulWidget {
     required this.backendOverride,
     required this.initialSnapshot,
     required this.initialFiles,
-    required this.backendTaskMissing,
+    required this.liveDataAbsence,
     super.key,
   }) : resolveBackendFromAppModel = false;
 
@@ -58,7 +59,9 @@ class TorrentTaskDetailDialog extends ConsumerStatefulWidget {
   final TorrentBackend? backendOverride;
   final TorrentSnapshot? initialSnapshot;
   final List<TorrentFileEntry>? initialFiles;
-  final bool backendTaskMissing;
+
+  /// 没有实时数据时的**定性结论**（由管线服务给出，UI 不再自己猜）。
+  final VideoDownloadLiveDataAbsence liveDataAbsence;
 
   /// Legacy plan dialogs may resolve the currently configured backend. Durable
   /// job dialogs must never do that because their persisted backend identity
@@ -371,11 +374,20 @@ class _TorrentTaskDetailDialogState
     return _buildEmptyNote(theme, _backendUnavailableMessage);
   }
 
-  String get _backendUnavailableMessage => widget.backendTaskMissing
-      ? t.download_detail_task_missing
-      : !widget.resolveBackendFromAppModel && _backend == null
-          ? t.download_detail_backend_offline
-          : t.download_detail_backend_unsupported;
+  String get _backendUnavailableMessage => switch (widget.liveDataAbsence) {
+        // 排队等槽位是正常状态，不能报成故障（用户报障：「明明只是因为其他
+        // 东西在下载」）。
+        VideoDownloadLiveDataAbsence.notHandedOff =>
+          t.download_detail_task_queued,
+        VideoDownloadLiveDataAbsence.missingFromBackend =>
+          t.download_detail_task_missing,
+        VideoDownloadLiveDataAbsence.backendOffline =>
+          t.download_detail_backend_offline,
+        VideoDownloadLiveDataAbsence.none =>
+          !widget.resolveBackendFromAppModel && _backend == null
+              ? t.download_detail_backend_offline
+              : t.download_detail_backend_unsupported,
+      };
 
   /// 四路数据共用的「没有数据时显示什么」——**唯一**会显示转圈的路径：
   /// 后端整体不可用 → 说明后端；还没有过任何结果 → 转圈；最近一次尝试
