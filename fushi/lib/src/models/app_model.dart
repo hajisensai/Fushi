@@ -4105,6 +4105,9 @@ class AppModel with ChangeNotifier {
     // 下载/index URL 回填来源）。默认 null/false，本地导入向后兼容、行为不变。
     bool forceReplaceExisting = false,
     Map<String, String>? sourceOverride,
+    // BUG-1595：更新入口传入被点击的词典作显式替换目标——新包标题变化（如标题
+    // 携带版本号）时仍替换该目标而非按 title 误判成新增。普通导入不传，行为不变。
+    Dictionary? replaceTarget,
   }) async {
     try {
       await _dictImportManager.importFromFile(
@@ -4117,6 +4120,7 @@ class AppModel with ChangeNotifier {
         onMemoryError: onMemoryError,
         forceReplaceExisting: forceReplaceExisting,
         sourceOverride: sourceOverride,
+        replaceTarget: replaceTarget,
       );
     } finally {
       // BUG-1492：词典集合变了，已经渲染在屏上的查词结果还停在旧集合上。缓存失效由
@@ -4244,6 +4248,9 @@ class AppModel with ChangeNotifier {
         progressNotifier: job.message,
         onImportSuccess: () {},
         forceReplaceExisting: true,
+        // BUG-1595：自动更新替换的就是这本——远端包哪怕改了标题（title 携带版本
+        // 号等）也不允许按 title 误判成新增、旧本残留。
+        replaceTarget: dictionary,
         sourceOverride: <String, String>{
           'isUpdatable': 'true',
           'downloadUrl': dictionary.downloadUrl,
