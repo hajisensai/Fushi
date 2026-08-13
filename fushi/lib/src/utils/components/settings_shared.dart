@@ -1,3 +1,4 @@
+import 'package:fading_edge_scrollview/fading_edge_scrollview.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1118,26 +1119,144 @@ class FushiSegmentedStrip<T extends Object> extends StatelessWidget {
       style: style,
     );
 
+    // 分段条自然宽是纯 build 期可算量（只依赖标签/字号/缩放，不依赖布局）。
+    // 先算出来：页头（[FushiHeaderCrampScope]）用它判定「左边是否摆得下」，
+    // LayoutBuilder 里再用同一个值决定滚动兜底。
+    final double estimated = estimateSegmentedStripWidth(
+      segmentLabels: segmentLabels,
+      fontSize: fontSize,
+      textScaleFactor: textScale,
+    );
+    FushiHeaderCrampScope.maybeOf(context)?.reportTitleNaturalWidth(estimated);
+    final int selectedIndex =
+        segments.indexWhere((ButtonSegment<T> s) => s.value == selected);
+
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final double available = constraints.maxWidth;
-        final double estimated = estimateSegmentedStripWidth(
-          segmentLabels: segmentLabels,
-          fontSize: fontSize,
-          textScaleFactor: textScale,
-        );
         final bool fits = available.isFinite && estimated <= available;
         if (fits) return Align(alignment: alignment, child: strip);
         // 与上面 [_SegmentedStripHost] 同一契约：装不下就横向滚动，且桌面端要能用
         // 鼠标左键拖着滚（默认 dragDevices 不含 mouse，否则只有滚轮能动）。段内
         // 只有点击目标、没有横拖手势，不存在竞技场之争。
+        // 滚动兜底带两侧渐隐 + 选中段自动滚入可视区（可发现性：此前被截断的
+        // 尾部分段没有任何「还有更多」的提示，用户以为 tab 没了）。
         return HorizontalDragScrollable(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: strip,
+          child: _SegmentedStripScroller(
+            strip: strip,
+            segmentLabels: segmentLabels,
+            selectedIndex: selectedIndex,
+            fontSize: fontSize,
+            textScale: textScale,
           ),
         );
       },
+    );
+  }
+}
+
+/// 分段条溢出滚动器：横向滚动 + 两侧渐隐边缘 + 选中段自动滚入可视区。
+///
+/// 渐隐边缘明示「这排还有更多段」——此前的硬截断没有任何提示，手机窄屏上用户
+/// 以为尾部 tab 不存在。选中段偏移用与 [estimateSegmentedStripWidth] 同一套
+/// 每段估宽累加（纯 build 期可算，不需要真实测量），误差被余量吸收。
+class _SegmentedStripScroller extends StatefulWidget {
+  const _SegmentedStripScroller({
+    required this.strip,
+    required this.segmentLabels,
+    required this.selectedIndex,
+    required this.fontSize,
+    required this.textScale,
+  });
+
+  final Widget strip;
+  final List<String?> segmentLabels;
+  final int selectedIndex;
+  final double fontSize;
+  final double textScale;
+
+  @override
+  State<_SegmentedStripScroller> createState() =>
+      _SegmentedStripScrollerState();
+}
+
+class _SegmentedStripScrollerState extends State<_SegmentedStripScroller> {
+  final ScrollController _controller = ScrollController();
+
+  /// 让相邻段露出一截的余量：既是视觉提示（还有前/后段），也抵消估宽误差。
+  static const double _kRevealMargin = 24.0;
+
+  @override
+  void initState() {
+    super.initState();
+    // 首帧后定位（jump 不动画）：打开页面时选中段就在可视区内。
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _ensureSelectedVisible(animate: false),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _SegmentedStripScroller oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedIndex != widget.selectedIndex) {
+      _ensureSelectedVisible(animate: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  double _segmentWidth(String? label) {
+    final double content = (label == null || label.isEmpty)
+        ? _kSegmentIconOnlyWidth
+        : label.characters.length *
+            widget.fontSize *
+            widget.textScale *
+            _kSegmentGlyphWidthFactor;
+    return content + _kSegmentHorizontalChrome;
+  }
+
+  void _ensureSelectedVisible({required bool animate}) {
+    if (!mounted || !_controller.hasClients) return;
+    final int index = widget.selectedIndex;
+    if (index < 0 || index >= widget.segmentLabels.length) return;
+    double start = 0;
+    for (int i = 0; i < index; i++) {
+      start += _segmentWidth(widget.segmentLabels[i]);
+    }
+    final double end = start + _segmentWidth(widget.segmentLabels[index]);
+    final ScrollPosition position = _controller.position;
+    final double viewport = position.viewportDimension;
+    double? target;
+    if (start - _kRevealMargin < position.pixels) {
+      target = start - _kRevealMargin;
+    } else if (end + _kRevealMargin > position.pixels + viewport) {
+      target = end + _kRevealMargin - viewport;
+    }
+    if (target == null) return;
+    final double clamped = target.clamp(0.0, position.maxScrollExtent);
+    if (animate) {
+      _controller.animateTo(
+        clamped,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOutCubic,
+      );
+    } else {
+      _controller.jumpTo(clamped);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadingEdgeScrollView.fromSingleChildScrollView(
+      child: SingleChildScrollView(
+        controller: _controller,
+        scrollDirection: Axis.horizontal,
+        child: widget.strip,
+      ),
     );
   }
 }

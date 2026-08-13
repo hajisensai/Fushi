@@ -1838,7 +1838,11 @@ class FushiPageHeader extends StatelessWidget {
             tokens: tokens,
             leading: leading,
             title: resolvedTitle,
-            actions: actions.isEmpty ? null : _buildActionRow(tokens),
+            actionItems: actions,
+            // 只有 customTitle（标题位是分段导航等自报宽度的组件）才启用
+            // 「左边摆不下就把动作收进 ⋯ 菜单」；纯文字标题自身可省略号收缩，
+            // 维持既有行为。
+            collapseWhenCramped: titleWidget != null,
             centerVertically: titleWidget != null,
           ),
           if (bottom != null)
@@ -1850,19 +1854,34 @@ class FushiPageHeader extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _buildActionRow(FushiDesignTokens tokens) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        for (int index = 0; index < actions.length; index++) ...<Widget>[
-          if (index > 0) SizedBox(width: tokens.spacing.gap / 2),
-          actions[index],
-        ],
-      ],
-    );
-  }
+/// 页头下发给标题位组件的「自报自然宽」通道。
+///
+/// 动因（2026-08-13 手机顶栏显示不全）：页头一行同时放分段导航（标题位）和一排
+/// 动作按钮，两边都想要宽度；窄屏上动作区按自然宽优先拿，分段条被挤到只剩一小截。
+/// 「动作何时该收进 ⋯ 菜单」的正确判据是**标题位的自然宽 + 动作自然宽 > 行宽**，
+/// 而标题位是任意 widget，页头无法自行估宽——由标题位里的分段条（自然宽是纯
+/// build 期可算量）经本作用域上报。没有上报（纯文字标题等）就永不收纳。
+///
+/// 上报发生在子组件 build 期，回调内部经 post-frame 才 setState，且同值去重——
+/// 估宽只依赖标签/字号/缩放，不依赖布局结果，不会形成布局反馈振荡。
+class FushiHeaderCrampScope extends InheritedWidget {
+  const FushiHeaderCrampScope({
+    required this.reportTitleNaturalWidth,
+    required super.child,
+    super.key,
+  });
+
+  /// 标题位组件在 build 期上报自己的自然宽（逻辑像素）。
+  final void Function(double width) reportTitleNaturalWidth;
+
+  /// 静态查找（不建立依赖：回调每次 build 重建，依赖会造成无谓的子树重建）。
+  static FushiHeaderCrampScope? maybeOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<FushiHeaderCrampScope>();
+
+  @override
+  bool updateShouldNotify(FushiHeaderCrampScope oldWidget) => false;
 }
 
 /// TODO-1126 / BUG-541: [FushiPageHeader] 的标题 + 动作行。
@@ -1881,29 +1900,144 @@ class FushiPageHeader extends StatelessWidget {
 /// [SingleChildScrollView] 收缩 + 可横滚兜底，消除 RenderFlex overflow，滚动起始边在
 /// 左、最左侧动作（回归态被裁的 [Icons.add]）默认可见。三个 home tab（视频/书架/词典）
 /// 页头均无 leading + actions 并存，故不必为 leading 额外预留。
-class _FushiPageHeaderRow extends StatelessWidget {
+class _FushiPageHeaderRow extends StatefulWidget {
   const _FushiPageHeaderRow({
     required this.tokens,
     required this.title,
     required this.leading,
-    required this.actions,
+    required this.actionItems,
+    required this.collapseWhenCramped,
     required this.centerVertically,
   });
 
   final FushiDesignTokens tokens;
   final Widget title;
   final Widget? leading;
-  final Widget? actions;
+  final List<Widget> actionItems;
+
+  /// true（customTitle 模式）时，若标题位上报的自然宽 + 动作自然宽超过行宽，
+  /// 把可收纳的动作（[FushiIconButton]）折进一个 ⋯ 菜单，把宽度还给标题位。
+  final bool collapseWhenCramped;
   final bool centerVertically;
+
+  @override
+  State<_FushiPageHeaderRow> createState() => _FushiPageHeaderRowState();
+}
+
+class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
+  FushiDesignTokens get tokens => widget.tokens;
+
+  /// 标题位（经 [FushiHeaderCrampScope]）最近一次上报的自然宽；null = 从未上报
+  /// （纯文字标题等），永不收纳。
+  double? _titleNaturalWidth;
+
+  void _onTitleWidthReported(double width) {
+    if (_titleNaturalWidth == width) return;
+    // 上报发生在子组件 build 期，不能同帧 setState；post-frame 再落。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _titleNaturalWidth == width) return;
+      setState(() => _titleNaturalWidth = width);
+    });
+  }
+
+  /// 动作区自然宽估算（图标形态）：[FushiIconButton] = 图标 + 内边距；其它
+  /// widget 给一个按钮级的保守值。只在非展开标签（<840）的窄行场景使用。
+  double _estimateActionsWidth(List<Widget> items) {
+    double total = 0;
+    for (int index = 0; index < items.length; index++) {
+      if (index > 0) total += tokens.spacing.gap / 2;
+      final Widget item = items[index];
+      if (item is FushiIconButton) {
+        final double icon = item.size ?? 24.0;
+        final EdgeInsets padding =
+            item.padding ?? EdgeInsets.all(tokens.spacing.gap);
+        total += icon + padding.horizontal;
+      } else {
+        total += 48.0;
+      }
+    }
+    return total;
+  }
+
+  Widget _buildActionRow(List<Widget> items) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        for (int index = 0; index < items.length; index++) ...<Widget>[
+          if (index > 0) SizedBox(width: tokens.spacing.gap / 2),
+          items[index],
+        ],
+      ],
+    );
+  }
+
+  /// ⋯ 溢出按钮：菜单项由被收纳的 [FushiIconButton] 的图标 + 文案（label 优先、
+  /// 回退 tooltip）就地派生，动作行为共享同一个 onTap，不复制第二份实现。
+  Widget _buildOverflowMenuButton(List<FushiIconButton> collapsed) {
+    return Builder(
+      builder: (BuildContext anchorContext) => FushiIconButton(
+        icon: Icons.more_vert,
+        tooltip: t.common_more_actions,
+        onTap: () => _showOverflowMenu(anchorContext, collapsed),
+      ),
+    );
+  }
+
+  Future<void> _showOverflowMenu(
+    BuildContext anchorContext,
+    List<FushiIconButton> collapsed,
+  ) async {
+    final RenderBox button = anchorContext.findRenderObject()! as RenderBox;
+    final RenderBox overlay = Navigator.of(anchorContext)
+        .overlay!
+        .context
+        .findRenderObject()! as RenderBox;
+    final RelativeRect position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        button.localToGlobal(Offset.zero, ancestor: overlay),
+        button.localToGlobal(
+          button.size.bottomRight(Offset.zero),
+          ancestor: overlay,
+        ),
+      ),
+      Offset.zero & overlay.size,
+    );
+    final FushiIconButton? choice = await showMenu<FushiIconButton>(
+      context: anchorContext,
+      position: position,
+      items: <PopupMenuEntry<FushiIconButton>>[
+        for (final FushiIconButton action in collapsed)
+          PopupMenuItem<FushiIconButton>(
+            value: action,
+            enabled: action.enabled && action.onTap != null,
+            child: Row(
+              children: <Widget>[
+                Icon(action.icon, size: 20),
+                const SizedBox(width: 12),
+                Expanded(child: Text(action.label ?? action.tooltip)),
+              ],
+            ),
+          ),
+      ],
+    );
+    await choice?.onTap?.call();
+  }
 
   @override
   Widget build(BuildContext context) {
     final double leadingGap = tokens.spacing.gap + 4;
     final double actionsGap = tokens.spacing.gap;
+    final Widget? leading = widget.leading;
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final Widget titleChild = Expanded(child: title);
+        final Widget titleChild = Expanded(
+          child: FushiHeaderCrampScope(
+            reportTitleNaturalWidth: _onTitleWidthReported,
+            child: widget.title,
+          ),
+        );
 
         final List<Widget> children = <Widget>[];
         if (leading != null) {
@@ -1918,7 +2052,7 @@ class _FushiPageHeaderRow extends StatelessWidget {
           );
         }
         children.add(titleChild);
-        if (actions != null) {
+        if (widget.actionItems.isNotEmpty) {
           // 动作区可用宽上界：整行宽减去动作前 gap，**再减去留给标题的保底宽**。
           // leading（含右 gap）作为非弹性子项另行占位，不计入此上界——它在 Row 里已被
           // 独立扣除；这里只需保证「gap + 动作区」不超过整行宽即可避免 overflow。
@@ -1949,6 +2083,33 @@ class _FushiPageHeaderRow extends StatelessWidget {
                     FushiAppUiScale.of(context),
                   ) ==
                   WindowSizeClass.expanded;
+
+          // 2026-08-13 手机顶栏显示不全：标题位是分段导航时（customTitle），
+          // 「标题自然宽 + 动作自然宽」超过行宽才把可收纳动作折进 ⋯ 菜单——
+          // 摆得下就一个不收（用户定案：仅在左边位置不够时才变）。宽窗药丸
+          // 形态（expandLabels）永不收纳。可收纳 <2 个时收了也省不出宽度，
+          // 维持原样让滚动兜底。
+          List<Widget> resolvedItems = widget.actionItems;
+          if (widget.collapseWhenCramped &&
+              !expandLabels &&
+              _titleNaturalWidth != null &&
+              constraints.maxWidth.isFinite) {
+            final double needed = _titleNaturalWidth! +
+                actionsGap +
+                _estimateActionsWidth(widget.actionItems);
+            final List<FushiIconButton> collapsible = widget.actionItems
+                .whereType<FushiIconButton>()
+                .where((FushiIconButton b) => b.onTap != null)
+                .toList(growable: false);
+            if (needed > constraints.maxWidth && collapsible.length >= 2) {
+              resolvedItems = <Widget>[
+                for (final Widget item in widget.actionItems)
+                  if (item is! FushiIconButton || item.onTap == null) item,
+                _buildOverflowMenuButton(collapsible),
+              ];
+            }
+          }
+
           children
             ..add(SizedBox(width: actionsGap))
             ..add(
@@ -1960,7 +2121,7 @@ class _FushiPageHeaderRow extends StatelessWidget {
                     physics: const ClampingScrollPhysics(),
                     child: FushiHeaderLabelScope(
                       expandLabels: expandLabels,
-                      child: actions!,
+                      child: _buildActionRow(resolvedItems),
                     ),
                   ),
                 ),
@@ -1969,7 +2130,7 @@ class _FushiPageHeaderRow extends StatelessWidget {
         }
 
         return Row(
-          crossAxisAlignment: centerVertically
+          crossAxisAlignment: widget.centerVertically
               ? CrossAxisAlignment.center
               : CrossAxisAlignment.start,
           children: children,
