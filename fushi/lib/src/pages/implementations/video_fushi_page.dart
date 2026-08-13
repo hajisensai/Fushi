@@ -1696,6 +1696,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 音画延迟（毫秒）：字幕 cue 同步偏移，跨重启保留；换集复用同一值。
   int _delayMs = 0;
 
+  /// 副字幕独立调轴（毫秒，TODO-2837 主副字幕分开调轴）：null = 未单独设置 =
+  /// 跟随 [_delayMs]（v86 前「主副共用一个 offset」行为）；非 null = 副轨独立偏移
+  /// （主副字幕轴不同源时各调各的）。两层持久化镜像 [_delayMs]（per-book
+  /// `VideoBooks.secondaryDelayMs` + 合集级 `MediaCollections.secondarySubtitleDelayMs`），
+  /// 换集复用同一值。远端播放恒 null（host 不下发副轨偏移，副字幕也不参与远端流）。
+  int? _secondaryDelayMs;
+
   /// 播放倍速：用户在设置面板调，跨重启保留；换集复用同一值（速度记忆）。
   double _playbackSpeed = 1.0;
   double? _longPressPreviousSpeed;
@@ -2051,6 +2058,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _currentSecondarySubtitleSource = row.secondarySubtitleSource;
     _currentAudioTrackId = row.audioTrackId;
     _delayMs = row.delayMs;
+    // TODO-2837：副字幕独立调轴（null = 跟随主字幕）。
+    _secondaryDelayMs = row.secondaryDelayMs;
     _playbackSpeed = _readPersistedSpeed();
     _playbackVolume = _readPersistedVolume();
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
@@ -2073,6 +2082,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _currentAudioTrackId =
           effectiveSeriesAudioTrackId(col?.audioTrackId, row.audioTrackId);
       _delayMs = effectiveSeriesDelayMs(col?.subtitleDelayMs, row.delayMs);
+      // TODO-2837：副轨调轴同款系列级优先（两层都 null = 跟随主字幕）。
+      _secondaryDelayMs = effectiveSeriesSecondaryDelayMs(
+          col?.secondarySubtitleDelayMs, row.secondaryDelayMs);
       final List<MediaCollectionItemRow> members =
           await widget.repo.getCollectionItems(collectionId);
       // v68 Jellyfin 对齐：剧集面板要 ①集级刮削集名 ②合集横图回退链 ③看完/在看
@@ -2133,6 +2145,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // BUG-996：远端播放跟随 host 下发的字幕时序偏移（此前恒 0，字幕调轴不同步）。
     // 通道已就绪——_applyLoad 里 controller.setDelayMs(_delayMs) 会应用它。
     _delayMs = info.delayMs;
+    // TODO-2837：远端无副字幕流，副轨独立调轴恒复位为「跟随主字幕」。
+    _secondaryDelayMs = null;
     _playbackSpeed = _readPersistedSpeed();
     _playbackVolume = _readPersistedVolume();
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
@@ -2933,6 +2947,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     // 应用持久化的音画延迟（换集复用同一值；load 不重置 delay）。
     controller.setDelayMs(_delayMs);
+    // TODO-2837：副字幕独立调轴同步应用（null = 跟随主字幕，controller 侧回退）。
+    controller.setSecondaryDelayMs(_secondaryDelayMs);
     controller.setPauseAtSubtitleEnd(_asbConfig.pauseAtSubtitleEnd);
     // TODO-559: 远端断点保存——远端无 DB 行，按 bookUid 落 prefs（原为 null 不存）。
     controller.onPositionWrite =
@@ -4420,7 +4436,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       }),
       // 字幕对轴/匹配（用户请求）：Shift+A 一键弹波形对轴放大视图；z/x 整体平移字幕延迟
       // ±_kSubtitleDelayNudgeMs（走 _setDelayMs 写穿 delayMs 落盘 + OSD）。都过沉浸门控，
-      // 与顶部快速设置面板同源、零第二套状态。
+      // 与顶部快速设置面板同源、零第二套状态。TODO-2837：z/x 保持只调**主字幕轨**；
+      // 副字幕独立调轴本轮只走快速设置面板（_setSecondaryDelayMs），不占新键位——
+      // 加副轨微调快捷键前须查 docs/agent/shortcuts-inventory.md 撞键并走注册表新动作。
       openSubtitleAlign: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_openSubtitleWaveformAlign()),
       ),
@@ -5787,6 +5805,44 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (mounted) setState(() {});
   }
 
+  /// 设置**副字幕**独立调轴（毫秒，TODO-2837）：null = 清除独立值、回到跟随主字幕
+  /// [_delayMs]。即时调 controller（副字幕活动集立即按新轴重算）+ 两层持久化镜像
+  /// [_setDelayMs]（合集内写系列级、否则写 per-book）+ 左上角 OSD 即时反馈。
+  ///
+  /// 「重置为跟随」在合集内**两层都清**（系列级 + 本集 per-book）：决议是
+  /// `系列级 ?? per-book`，只清系列级会让本集在单集时代留下的旧独立值复活——
+  /// 「跟随」的语义是两层皆 null，一次写干净，不留特例。
+  Future<void> _setSecondaryDelayMs(int? delayMs) async {
+    final int? clamped = delayMs?.clamp(-600000, 600000);
+    if (clamped == _secondaryDelayMs) return;
+    _secondaryDelayMs = clamped;
+    _controller?.setSecondaryDelayMs(clamped);
+    if (clamped == null) {
+      _showOsd(
+        t.video_subtitle_secondary_delay_follow_osd,
+        icon: Icons.sync_outlined,
+      );
+    } else {
+      final String signed = clamped >= 0 ? '+$clamped' : '$clamped';
+      _showOsd(
+        t.video_subtitle_secondary_delay_osd(ms: signed),
+        icon: Icons.sync_outlined,
+      );
+    }
+    final int? collectionId = widget.playlistCollectionId;
+    if (collectionId != null) {
+      await widget.repo
+          .updateCollectionSecondarySubtitleDelayMs(collectionId, clamped);
+      if (clamped == null) {
+        // 重置为跟随：连本集 per-book 旧值一起清（见 doc，消除回退复活特例）。
+        await widget.repo.updateSecondaryDelayMs(widget.bookUid, null);
+      }
+    } else {
+      await widget.repo.updateSecondaryDelayMs(widget.bookUid, clamped);
+    }
+    if (mounted) setState(() {});
+  }
+
   /// TODO-099: 进入视频页时锁横屏（移动端）。只锁本页，不动全 app
   /// 默认方向策略（保护竖排小说能竖屏）；退出由 [_restoreOrientationOnExit] 还原。
   /// 桌面门控 no-op（桌面窗口不走设备方向）。
@@ -6150,6 +6206,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       danmakuStyle: () => _danmakuStyle,
       controlLayout: () => _controlLayout,
       onSetDelay: _setDelayMs,
+      // TODO-2837：副字幕独立调轴（null = 跟随主字幕）。行只在副字幕轨激活
+      // （secondaryCues 非空）时显示——hasSecondarySubtitle 是活值 getter，
+      // 面板内切换副字幕轨后经 controller 通知即时显隐。
+      secondaryDelayMs: () => _secondaryDelayMs,
+      onSetSecondaryDelay: _setSecondaryDelayMs,
+      hasSecondarySubtitle: () =>
+          _controller?.secondaryCues.isNotEmpty ?? false,
       // TODO-701 阶段1：仅当当前有字幕 cue + 视频本地路径时给自动对轴按钮（否则
       // 无可对齐对象/无音频源），否则置 null 让面板不显示该按钮。
       onAutoAlign: (_controller?.cues.isNotEmpty ?? false) &&

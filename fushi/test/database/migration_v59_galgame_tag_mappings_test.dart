@@ -85,7 +85,7 @@ CREATE TABLE galgame_sessions (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 85,
+    expect(db.schemaVersion, 86,
         reason: 'v59 新建 galgame_tag_mappings（BUG-1113 游戏接入共享标签池）');
 
     final GalgameRow? legacy = await db.getGalgame('legacy_game');

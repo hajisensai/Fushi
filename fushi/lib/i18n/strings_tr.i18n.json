@@ -3378,5 +3378,11 @@
   "book_import_folder_as_source_hint": "Keep scanning this folder for new books",
   "book_import_folder_once": "Import once only",
   "library_empty_go_import": "Go to import",
-  "game_import_drop_hint": "You can also drag .exe files into the game library"
+  "game_import_drop_hint": "You can also drag .exe files into the game library",
+  "library_view_sources": "Sources",
+  "video_setting_secondary_av_delay": "Secondary subtitle sync",
+  "video_setting_secondary_av_delay_hint": "Adjust the secondary subtitle offset independently. It follows the primary offset until set here.",
+  "video_setting_secondary_delay_follow": "Follow primary",
+  "video_subtitle_secondary_delay_osd": "Secondary subtitle sync: $ms ms",
+  "video_subtitle_secondary_delay_follow_osd": "Secondary subtitle sync: follow primary"
 }

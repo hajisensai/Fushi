@@ -446,6 +446,16 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
         MediaCollectionsCompanion(subtitleDelayMs: Value<int?>(delayMs)),
       );
 
+  /// 更新系列（合集）级**副字幕**独立调轴（毫秒，schema v86，TODO-2837，同系列
+  /// 副轨调轴记忆）。[delayMs] 为 null 时清除（加载回退各集 per-book；两层都
+  /// null = 副字幕跟随主字幕调轴）。
+  Future<void> updateMediaCollectionSecondarySubtitleDelayMs(
+          int id, int? delayMs) =>
+      (update(mediaCollections)..where((t) => t.id.equals(id))).write(
+        MediaCollectionsCompanion(
+            secondarySubtitleDelayMs: Value<int?>(delayMs)),
+      );
+
   /// 新建合集，返回自增 id。sortOrder 默认排末尾（现有最大 +1，空表 0）。同事务清
   /// 同自然键的合集级删除墓碑（重建 = 撤销删除，仿插书清书墓碑 [insertEpubBook]
   /// 一律；不清成员墓碑——成员重加走 [addToCollection] 逐键清）。

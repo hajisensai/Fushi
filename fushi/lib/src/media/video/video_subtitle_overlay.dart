@@ -1658,7 +1658,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     double? rot = markup.rotationDeg ??
         ((styleAngle != null && styleAngle != 0) ? styleAngle : null);
     // \t(\frz) 旋转动画：从基线折叠到目标（逐帧，_syncFadeTicker 驱动）。
-    final int? posMs = widget.controller.effectivePositionMs;
+    // TODO-2837：等效位置按 cue 所属流取轴（副字幕独立调轴后主副轴可不同）。
+    final int? posMs = widget.controller.effectivePositionMsForCue(cue);
     final int elapsed = (posMs ?? cue.startMs) - cue.startMs;
     final int durMs = cue.endMs - cue.startMs;
     for (final SubtitleTransition tr in markup.transitions) {
@@ -1731,8 +1732,9 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
 
   /// 本条 cue 的 `\fad`/`\fade` 不透明度（0..1）。无位置信息（未 load）时恒 1（不淡）。
   /// elapsed = 音画延迟校正后的等效位置 − cue 起点；duration = cue 时长。
+  /// TODO-2837：等效位置按 cue 所属流取轴（副字幕独立调轴后主副轴可不同）。
   double _fadeOpacityFor(SubtitleFade fade, AudioCue cue) {
-    final int? pos = widget.controller.effectivePositionMs;
+    final int? pos = widget.controller.effectivePositionMsForCue(cue);
     if (pos == null) return 1.0;
     return fade.opacityAt(pos - cue.startMs, cue.endMs - cue.startMs);
   }
@@ -1759,7 +1761,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   Widget _buildSubtitleChar(
       String char, int i, SubtitleMarkup? markup, AudioCue cue) {
     // \t 动画 / 卡拉 OK 需要 cue 内已播放时长（逐帧重算由 _syncFadeTicker 驱动）。
-    final int? posMs = widget.controller.effectivePositionMs;
+    // TODO-2837：等效位置按 cue 所属流取轴（副字幕独立调轴后主副轴可不同）。
+    final int? posMs = widget.controller.effectivePositionMsForCue(cue);
     final int elapsedMs = (posMs ?? cue.startMs) - cue.startMs;
     final int durMs = cue.endMs - cue.startMs;
     final TextStyle fillStyle =
@@ -2424,7 +2427,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // build 里对带 move 的活动 cue 启动，故每帧重算。
     final SubtitleMove? move = widget.respectAssStyle ? markup?.move : null;
     if (pf == null && move != null && cue != null) {
-      final int? posMs = widget.controller.effectivePositionMs;
+      // TODO-2837：等效位置按 cue 所属流取轴（副字幕独立调轴后主副轴可不同）。
+      final int? posMs = widget.controller.effectivePositionMsForCue(cue);
       final int elapsed = (posMs ?? cue.startMs) - cue.startMs;
       pf = move.posAt(elapsed, cue.endMs - cue.startMs);
     }

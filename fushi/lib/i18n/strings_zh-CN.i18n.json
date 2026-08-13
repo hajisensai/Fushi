@@ -3378,5 +3378,11 @@
   "book_import_folder_as_source_hint": "以后自动扫描此文件夹里的新书",
   "book_import_folder_once": "仅导入这一次",
   "library_empty_go_import": "去导入",
-  "game_import_drop_hint": "也可以把 .exe 文件直接拖进游戏库添加"
+  "game_import_drop_hint": "也可以把 .exe 文件直接拖进游戏库添加",
+  "library_view_sources": "来源",
+  "video_setting_secondary_av_delay": "副字幕调轴",
+  "video_setting_secondary_av_delay_hint": "副字幕独立偏移；未单独设置时跟随主字幕调轴。",
+  "video_setting_secondary_delay_follow": "跟随主字幕",
+  "video_subtitle_secondary_delay_osd": "副字幕同步：$ms ms",
+  "video_subtitle_secondary_delay_follow_osd": "副字幕同步：跟随主字幕"
 }

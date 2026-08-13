@@ -24,3 +24,12 @@ String? effectiveSeriesAudioTrackId(
 /// 系列级非 null 优先，否则回退 per-book。
 int effectiveSeriesDelayMs(int? collectionValue, int perBookValue) =>
     collectionValue ?? perBookValue;
+
+/// 解析生效的**副字幕**独立调轴（毫秒，schema v86，TODO-2837 主副字幕分开调轴）。
+/// [collectionValue] 系列（合集）级副轨调轴（`MediaCollections.secondarySubtitleDelayMs`）；
+/// [perBookValue] 本集自己行的 `VideoBooks.secondaryDelayMs`。两列都 nullable：
+/// 系列级非 null 优先，否则回退 per-book；**两者皆 null → null = 副字幕跟随主字幕
+/// 调轴**（v86 前「主副共用一个 offset」的行为，Never break userspace）。与
+/// [effectiveSeriesDelayMs] 同一优先级语义，仅回退终点不同（null=跟随而非 0）。
+int? effectiveSeriesSecondaryDelayMs(int? collectionValue, int? perBookValue) =>
+    collectionValue ?? perBookValue;
