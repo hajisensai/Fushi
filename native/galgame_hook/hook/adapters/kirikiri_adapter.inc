@@ -802,6 +802,9 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			global.fushiLookupClock = 0;
 			global.fushiLookupHoverKey = "";
 			global.fushiLookupHitEntry = void;
+			// 当前**卡片**依附的 entry（BUG-1606）。与 fushiLookupHitEntry 分开：后者是最后
+			// 一次命中（含纯悬停），前者只在卡片真正显示那一刻定下，是收卡的唯一归属判据。
+			global.fushiLookupCardEntry = void;
 			global.fushiLookupHitOffsetX = 0;
 			global.fushiLookupHitOffsetY = 0;
 			global.fushiLookupHighlightRect = void;
@@ -977,6 +980,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				}
 				catch(e) {}
 				global.fushiLookupCardSeq = 0;
+				global.fushiLookupCardEntry = void;
 				global.fushiLookupClearHover();
 			};
 
@@ -1035,6 +1039,8 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					card.visible = true;
 					card.update();
 					var entry = global.fushiLookupHitEntry;
+					// 卡片归属在这一刻定下（BUG-1606）：之后只有**这条**台词重绘才收卡。
+					global.fushiLookupCardEntry = entry;
 					if(entry !== void && highlightLen > 0)
 						global.fushiLookupPaintHighlight(entry, global.fushiLookupHitOffsetX,
 							global.fushiLookupHitOffsetY, highlightStart, highlightLen);
@@ -1156,7 +1162,27 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					entry.used = ++global.fushiLookupClock;
 					// 台词真的换了才收卡片：同一行重复 render（打字机动画）不该把用户正在读的
 					// 卡片一帧一帧地打掉。
-					if(changed) global.fushiLookupDismiss();
+					//
+					// BUG-1606：判据必须落在**这张卡自己依附的那条台词**（fushiLookupCardEntry
+					// 是卡片真正显示那一刻记下的 entry）上。旧判据是「任意 renderer 上的行文本变
+					// 了」，于是同一句里说话人切换（多角色同时说话时名字层 / 第二消息层逐字重绘）
+					// 每多一个字就把用户正在读的卡片打掉一次，鼠标一动又被 hover 拉回来——表现
+					// 就是卡片反复闪没。名字层、选项层、历史层与这张卡无关，它们的重绘不该收卡。
+					//
+					// 收窄不会漏收：真的换台词时 host 侧「会话最新行变了」会走
+					// GalIngameLookupController.onLineChanged() → dismiss，那条判据看的是文本
+					// hook 的行流，与这里是哪个 renderer 无关。
+					//
+					// 卡片与悬停高亮的归属是两件事：高亮跟着最后一次命中的 entry
+					// （fushiLookupHitEntry）走，它的字形几何一旦重排就必须清，但那不该顺手把
+					// 另一条台词上的卡片一起收掉。
+					if(changed)
+					{
+						if(global.fushiLookupCardEntry === entry)
+							global.fushiLookupDismiss();
+						else if(global.fushiLookupHitEntry === entry)
+							global.fushiLookupClearHover();
+					}
 				}
 				catch(e) {}
 			};

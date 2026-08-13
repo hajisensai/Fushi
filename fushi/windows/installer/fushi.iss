@@ -220,7 +220,7 @@ var
 begin
   EscapedDir := Dir;
   StringChangeEx(EscapedDir, '''', '''''', True);
-  Cmd := '-NoProfile -ExecutionPolicy Bypass -Command "$d = ''' + EscapedDir + '''; ' +
+  Cmd := '-NoProfile -NonInteractive -Command "$d = ''' + EscapedDir + '''; ' +
     'if (-not $d.EndsWith(''\'')) { $d += ''\'' }; ' +
     'Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($d, [System.StringComparison]::OrdinalIgnoreCase) } | ' +
     'Stop-Process -Force -ErrorAction SilentlyContinue"';

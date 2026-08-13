@@ -1,9 +1,9 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
 
 import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
+import 'package:fushi/src/platform/desktop/windows_process_query.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/mac_update_handoff.dart';
 import 'package:fushi/src/utils/misc/update_handoff.dart';
@@ -820,34 +820,20 @@ class WindowsInstaller {
   static List<WindowsProcessInfo> _blockingWindowsInstallProcesses(
     WindowsInstallerDiagnostics diagnostics,
   ) {
-    final String? targetInstallDir = diagnostics.targetInstallDir;
     final Map<int, WindowsProcessInfo> blockers = <int, WindowsProcessInfo>{};
     for (final WindowsProcessInfo process
         in diagnostics.runningFushiProcesses) {
       blockers[process.pid] = process;
     }
+    // libmpvModuleHolders 现在由 Restart Manager 按**目标目录里那个文件**给出
+    // （见 [queryWindowsLibmpvModuleHolders]），每一个都已经是货真价实的占用者，
+    // 无需再按 exe 路径 / 进程名过滤——旧的那层过滤是为了把 `tasklist /M` 的
+    // 全机同名 DLL 结果收窄回来，同时也把「exe 在别处却持有我们这份 libmpv」
+    // 的外部进程一并漏掉了。特殊情况就此消失。
     for (final WindowsProcessInfo process in diagnostics.libmpvModuleHolders) {
-      if (_processIsInTargetInstallDir(process, targetInstallDir) ||
-          (process.name ?? '').toLowerCase() == 'fushi.exe' ||
-          (process.name ?? '').toLowerCase() == 'hibiki.exe') {
-        blockers[process.pid] = process;
-      }
+      blockers[process.pid] = process;
     }
     return blockers.values.toList(growable: false);
-  }
-
-  static bool _processIsInTargetInstallDir(
-    WindowsProcessInfo process,
-    String? targetInstallDir,
-  ) {
-    final String? processPath = process.path;
-    if (targetInstallDir == null ||
-        targetInstallDir.isEmpty ||
-        processPath == null ||
-        processPath.isEmpty) {
-      return false;
-    }
-    return _windowsPathEquals(File(processPath).parent.path, targetInstallDir);
   }
 
   static Future<void> _markLaunchFailed(
@@ -895,7 +881,7 @@ Future<WindowsInstallerDiagnostics> collectWindowsInstallerDiagnostics({
               currentProcessId == null || process.pid != currentProcessId)
           .toList(growable: false);
   final List<WindowsProcessInfo> libmpvModuleHolders =
-      (await queryWindowsLibmpvModuleHolders())
+      (await queryWindowsLibmpvModuleHolders(targetInstallDir))
           .where((WindowsProcessInfo process) =>
               currentProcessId == null || process.pid != currentProcessId)
           .toList(growable: false);
@@ -918,22 +904,30 @@ Future<List<WindowsDetectedInstallLocation>>
     queryWindowsRegisteredInstallLocations() async {
   if (!Platform.isWindows) return const <WindowsDetectedInstallLocation>[];
   const String appId = r'{8F2C1A3E-7B4D-4E9A-9C21-0A1B2C3D4E5F}_is1';
-  const List<String> keys = <String>[
-    r'HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\' + appId,
-    r'HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\' + appId,
+  const String uninstallSubKey =
+      r'Software\Microsoft\Windows\CurrentVersion\Uninstall\' + appId;
+  const List<(WindowsRegistryRoot, String)> keys =
+      <(WindowsRegistryRoot, String)>[
+    (WindowsRegistryRoot.currentUser, uninstallSubKey),
+    (WindowsRegistryRoot.localMachine, uninstallSubKey),
   ];
   final List<WindowsDetectedInstallLocation> result =
       <WindowsDetectedInstallLocation>[];
-  for (final String key in keys) {
+  for (final (WindowsRegistryRoot root, String subKey) in keys) {
     try {
-      final ProcessResult query = await Process.run(
-        'reg',
-        <String>['query', key],
-      );
-      if (query.exitCode != 0) continue;
       result.addAll(
-        parseWindowsRegistryInstallLocations(
-          query.stdout is String ? query.stdout as String : '',
+        windowsRegistryInstallLocations(
+          installLocation: readWindowsRegistryString(
+                root,
+                subKey,
+                'InstallLocation',
+              ) ??
+              readWindowsRegistryString(
+                root,
+                subKey,
+                'Inno Setup: App Path',
+              ),
+          displayIcon: readWindowsRegistryString(root, subKey, 'DisplayIcon'),
         ),
       );
     } catch (_) {
@@ -943,14 +937,16 @@ Future<List<WindowsDetectedInstallLocation>>
   return _dedupeInstallLocations(result);
 }
 
-List<WindowsDetectedInstallLocation> parseWindowsRegistryInstallLocations(
-  String output,
-) {
+/// **纯函数**：把已读出的注册表值折成安装位置列表。
+///
+/// 取值方式（原先是 `reg query` 子进程，现在是 `RegQueryValueExW`）与折算规则
+/// 分离，规则这层因此始终可单测，不依赖 Windows。
+List<WindowsDetectedInstallLocation> windowsRegistryInstallLocations({
+  required String? installLocation,
+  required String? displayIcon,
+}) {
   final List<WindowsDetectedInstallLocation> result =
       <WindowsDetectedInstallLocation>[];
-  final String? installLocation =
-      _registryValueAfterType(output, 'InstallLocation') ??
-          _registryValueAfterType(output, 'Inno Setup: App Path');
   if (installLocation != null && installLocation.isNotEmpty) {
     result.add(
       WindowsDetectedInstallLocation(
@@ -960,7 +956,6 @@ List<WindowsDetectedInstallLocation> parseWindowsRegistryInstallLocations(
     );
   }
 
-  final String? displayIcon = _registryValueAfterType(output, 'DisplayIcon');
   if (displayIcon != null && displayIcon.isNotEmpty) {
     final String path = _stripDisplayIconSuffix(displayIcon);
     // fushi.exe 是改名后的主 exe；\hibiki.exe 保留识别旧版注册表残留安装。
@@ -1017,52 +1012,62 @@ String? windowsInstallPathMismatchWarning({
       '$details';
 }
 
+/// 我们自己的 image 名（含改名前的旧包，老安装仍在跑 hibiki.exe）。
+const Set<String> kFushiImageNames = <String>{'fushi.exe', 'hibiki.exe'};
+
+/// 走 Win32 快照，**不生成 powershell 子进程**（AV 行为检测把
+/// 「进程 spawn powershell 查全机进程」算成高权重恶意信号，见
+/// `windows_process_query.dart` 文件头）。语义与原 `Get-CimInstance
+/// Win32_Process -Filter "Name = 'fushi.exe' OR Name = 'hibiki.exe'"` 等价。
 Future<List<WindowsProcessInfo>> queryWindowsFushiProcesses() async {
   if (!Platform.isWindows) return const <WindowsProcessInfo>[];
-  const String command =
-      "Get-CimInstance Win32_Process -Filter \"Name = 'fushi.exe' OR Name = 'hibiki.exe'\" | "
-      'Select-Object ProcessId,Name,ExecutablePath | ConvertTo-Json -Compress';
   try {
-    final ProcessResult result = await Process.run(
-      'powershell',
-      <String>['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command],
-    );
-    if (result.exitCode != 0) return const <WindowsProcessInfo>[];
-    return parseWindowsProcessJson(
-      result.stdout is String ? result.stdout as String : '',
-    );
+    return windowsProcessesByNames(kFushiImageNames)
+        .map((WindowsProcessEntry entry) => WindowsProcessInfo(
+              pid: entry.pid,
+              name: entry.name,
+              path: entry.path,
+            ))
+        .toList(growable: false);
   } catch (_) {
     return const <WindowsProcessInfo>[];
   }
 }
 
-Future<List<WindowsProcessInfo>> queryWindowsLibmpvModuleHolders() async {
-  if (!Platform.isWindows) return const <WindowsProcessInfo>[];
+/// 目标安装目录里那个 `libmpv-2.dll` 现在被谁占着。
+///
+/// 原实现是 `tasklist /M libmpv-2.dll`：扫**全机每个进程的模块表**找同名 DLL，
+/// 再由 [WindowsInstaller._blockingWindowsInstallProcesses] 按 exe 路径过滤回来。
+/// 那是本次 AV 行为检测告警里权重最高的剩余动作（全机模块枚举），而且**答非所问**
+/// ——它按 DLL 名匹配任意路径下的副本，却漏掉「exe 在别处、但正持有我们这一份
+/// libmpv 的外部进程」，而那恰恰是硬中止分支要拦的情况（漏了的后果就是放行安装、
+/// 然后 Inno 在拷贝阶段 `DeleteFile code 5` 失败，即 BUG-1459 的症状）。
+///
+/// 改用 Restart Manager 直接问「谁持有这个路径的文件」：不枚举无关进程，且返回的
+/// 每一个都是货真价实的占用者，无需再按路径过滤。这也是安装器判占用的标准做法。
+Future<List<WindowsProcessInfo>> queryWindowsLibmpvModuleHolders(
+  String targetInstallDir,
+) async {
+  if (!Platform.isWindows || targetInstallDir.isEmpty) {
+    return const <WindowsProcessInfo>[];
+  }
   try {
-    final ProcessResult result = await Process.run(
-      'tasklist',
-      <String>['/M', 'libmpv-2.dll', '/FO', 'CSV', '/NH'],
-    );
-    if (result.exitCode != 0) return const <WindowsProcessInfo>[];
-    final List<WindowsProcessInfo> holders = parseWindowsTasklistModuleHolders(
-      result.stdout is String ? result.stdout as String : '',
-    );
-    final Map<int, WindowsProcessInfo> hydrated =
-        await queryWindowsProcessInfoForPids(
-      holders.map((WindowsProcessInfo process) => process.pid),
-    );
-    return holders.map((WindowsProcessInfo process) {
-      final WindowsProcessInfo? info = hydrated[process.pid];
-      return process.copyWith(
-        name: info?.name,
-        path: info?.path,
-      );
-    }).toList(growable: false);
+    final String libmpv =
+        '$targetInstallDir${Platform.pathSeparator}libmpv-2.dll';
+    return windowsProcessesHoldingFile(libmpv)
+        .map((WindowsProcessEntry entry) => WindowsProcessInfo(
+              pid: entry.pid,
+              name: entry.name,
+              path: entry.path,
+            ))
+        .toList(growable: false);
   } catch (_) {
     return const <WindowsProcessInfo>[];
   }
 }
 
+/// 走 Win32 快照，**不生成 powershell 子进程**（理由同
+/// [queryWindowsFushiProcesses]）。
 Future<Map<int, WindowsProcessInfo>> queryWindowsProcessInfoForPids(
   Iterable<int> pids,
 ) async {
@@ -1071,69 +1076,16 @@ Future<Map<int, WindowsProcessInfo>> queryWindowsProcessInfoForPids(
   if (!Platform.isWindows || uniquePids.isEmpty) {
     return const <int, WindowsProcessInfo>{};
   }
-  final String filter =
-      uniquePids.map((int pid) => 'ProcessId = $pid').join(' OR ');
-  final String command = 'Get-CimInstance Win32_Process -Filter "$filter" | '
-      'Select-Object ProcessId,Name,ExecutablePath | ConvertTo-Json -Compress';
   try {
-    final ProcessResult result = await Process.run(
-      'powershell',
-      <String>['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command],
+    return windowsProcessesByIds(uniquePids).map(
+      (int pid, WindowsProcessEntry entry) => MapEntry<int, WindowsProcessInfo>(
+        pid,
+        WindowsProcessInfo(pid: entry.pid, name: entry.name, path: entry.path),
+      ),
     );
-    if (result.exitCode != 0) return const <int, WindowsProcessInfo>{};
-    final List<WindowsProcessInfo> processes = parseWindowsProcessJson(
-      result.stdout is String ? result.stdout as String : '',
-    );
-    return <int, WindowsProcessInfo>{
-      for (final WindowsProcessInfo process in processes) process.pid: process,
-    };
   } catch (_) {
     return const <int, WindowsProcessInfo>{};
   }
-}
-
-List<WindowsProcessInfo> parseWindowsProcessJson(String output) {
-  if (output.trim().isEmpty) return const <WindowsProcessInfo>[];
-  try {
-    final Object? decoded = jsonDecode(output);
-    final List<dynamic> rows = decoded is List
-        ? decoded
-        : decoded is Map<String, dynamic>
-            ? <dynamic>[decoded]
-            : const <dynamic>[];
-    return rows
-        .whereType<Map<String, dynamic>>()
-        .map((Map<String, dynamic> row) {
-          return WindowsProcessInfo(
-            pid: _objectToInt(row['ProcessId']) ?? 0,
-            name: row['Name'] as String?,
-            path: row['ExecutablePath'] as String?,
-          );
-        })
-        .where((WindowsProcessInfo process) => process.pid > 0)
-        .toList(growable: false);
-  } catch (_) {
-    return const <WindowsProcessInfo>[];
-  }
-}
-
-List<WindowsProcessInfo> parseWindowsTasklistModuleHolders(String output) {
-  final List<WindowsProcessInfo> holders = <WindowsProcessInfo>[];
-  for (final String rawLine in const LineSplitter().convert(output)) {
-    final String line = rawLine.trim();
-    if (line.isEmpty || line.startsWith('INFO:')) continue;
-    final List<String> fields = _parseCsvLine(line);
-    if (fields.length < 2) continue;
-    final int? parsedPid = int.tryParse(fields[1].replaceAll(',', '').trim());
-    if (parsedPid == null) continue;
-    holders.add(
-      WindowsProcessInfo(
-        pid: parsedPid,
-        name: fields[0].trim(),
-      ),
-    );
-  }
-  return holders;
 }
 
 List<WindowsDetectedInstallLocation> _dedupeInstallLocations(
@@ -1151,18 +1103,6 @@ List<WindowsDetectedInstallLocation> _dedupeInstallLocations(
   return result;
 }
 
-String? _registryValueAfterType(String output, String valueName) {
-  for (final String rawLine in const LineSplitter().convert(output)) {
-    final String line = rawLine.trim();
-    if (!line.startsWith(valueName)) continue;
-    final RegExpMatch? match =
-        RegExp(r'^' + RegExp.escape(valueName) + r'\s+REG_\w+\s+(.+)$')
-            .firstMatch(line);
-    if (match != null) return match.group(1)!.trim();
-  }
-  return null;
-}
-
 String _stripDisplayIconSuffix(String value) {
   String path = value.trim();
   if (path.startsWith('"')) {
@@ -1170,32 +1110,6 @@ String _stripDisplayIconSuffix(String value) {
     if (closing > 0) path = path.substring(1, closing);
   }
   return path.replaceFirst(RegExp(r',\d+$'), '').trim();
-}
-
-List<String> _parseCsvLine(String line) {
-  final List<String> fields = <String>[];
-  final StringBuffer current = StringBuffer();
-  bool inQuotes = false;
-  for (int i = 0; i < line.length; i++) {
-    final String char = line[i];
-    if (char == '"') {
-      if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
-        current.write('"');
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-    if (char == ',' && !inQuotes) {
-      fields.add(current.toString());
-      current.clear();
-      continue;
-    }
-    current.write(char);
-  }
-  fields.add(current.toString());
-  return fields;
 }
 
 bool _windowsPathEquals(String a, String b) {
@@ -1208,13 +1122,6 @@ String _normalizeWindowsPath(String path) {
       .replaceAll('/', r'\')
       .replaceFirst(RegExp(r'\\+$'), '')
       .toLowerCase();
-}
-
-int? _objectToInt(Object? value) {
-  if (value is int) return value;
-  if (value is num) return value.toInt();
-  if (value is String) return int.tryParse(value.trim());
-  return null;
 }
 
 Future<void> ensureWindowsInstallTargetWritable(Directory installDir) async {

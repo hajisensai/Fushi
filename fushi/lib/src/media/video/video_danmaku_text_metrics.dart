@@ -7,6 +7,19 @@ import 'package:flutter/material.dart';
 /// 两份真相导致弹幕没滑出屏幕就被判过期而突然截断消失。
 const double kVideoDanmakuBaseFontSize = 20.0;
 
+/// 描边阴影的偏移与模糊半径（px）。单独抽出来是因为它们不只是外观：阴影会画到字形
+/// 之外，滚动弹幕的行程必须把这一段也走完（见 [kVideoDanmakuShadowOverflow]）。
+const double _kVideoDanmakuShadowOffset = 1.0;
+const double _kVideoDanmakuShadowBlur = 3.0;
+
+/// 阴影相对文本框向外溢出的最大距离（px）。
+///
+/// 文本框右边缘刚压到视口左边界时，阴影还在屏内留着一道 [kVideoDanmakuShadowOverflow]
+/// 宽的残影——那一帧过后弹幕离开活动集，这道残影就是被「抹掉」而不是「走出去」的。
+/// 滚动行程多走这一段，退场才真的发生在屏幕之外。
+const double kVideoDanmakuShadowOverflow =
+    _kVideoDanmakuShadowOffset + _kVideoDanmakuShadowBlur;
+
 /// 弹幕文本样式。渲染与测量必须走这同一个构造函数——测量用的字号/字重一旦与渲染
 /// 不一致，出屏时刻就会算错。[color] 不影响几何，测量时传任意值即可。
 ///
@@ -24,8 +37,17 @@ TextStyle videoDanmakuTextStyle({
     fontSize: kVideoDanmakuBaseFontSize * fontScale,
     fontWeight: FontWeight.w700,
     shadows: const <Shadow>[
-      Shadow(color: Colors.black, blurRadius: 3, offset: Offset(1, 1)),
-      Shadow(color: Colors.black, blurRadius: 3, offset: Offset(-1, -1)),
+      Shadow(
+        color: Colors.black,
+        blurRadius: _kVideoDanmakuShadowBlur,
+        offset: Offset(_kVideoDanmakuShadowOffset, _kVideoDanmakuShadowOffset),
+      ),
+      Shadow(
+        color: Colors.black,
+        blurRadius: _kVideoDanmakuShadowBlur,
+        offset:
+            Offset(-_kVideoDanmakuShadowOffset, -_kVideoDanmakuShadowOffset),
+      ),
     ],
   );
 }
@@ -48,6 +70,9 @@ class VideoDanmakuTextMetrics {
   final int maxEntries;
 
   final Map<String, double> _cache = <String, double>{};
+
+  /// 单行高度只随 [fontScale] 变，与文本无关，单独缓存（键极少，不参与整体清空）。
+  final Map<double, double> _lineHeightCache = <double, double>{};
 
   final TextPainter _painter = TextPainter(
     textDirection: TextDirection.ltr,
@@ -76,6 +101,30 @@ class VideoDanmakuTextMetrics {
     return width;
   }
 
+  /// [fontScale] 下弹幕单行的真实渲染高度（px）。
+  ///
+  /// 它是行距的下限：行比字还矮，上下两行就直接糊在一起。样本混排汉字与拉丁字母，
+  /// 取字体实际报告的行高，而不是「字号 × 拍脑袋系数」。
+  double lineHeight(double fontScale) {
+    final double? cached = _lineHeightCache[fontScale];
+    if (cached != null) return cached;
+    _painter
+      ..text = TextSpan(
+        text: 'あA',
+        style: videoDanmakuTextStyle(
+          color: const Color(0xFFFFFFFF),
+          fontScale: fontScale,
+        ),
+      )
+      ..layout();
+    final double height = _painter.height;
+    _lineHeightCache[fontScale] = height;
+    return height;
+  }
+
   @visibleForTesting
-  void clearCache() => _cache.clear();
+  void clearCache() {
+    _cache.clear();
+    _lineHeightCache.clear();
+  }
 }

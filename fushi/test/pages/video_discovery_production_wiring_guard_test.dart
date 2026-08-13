@@ -50,7 +50,10 @@ void main() {
       'lib/src/pages/implementations/downloads_page.dart',
     ).readAsStringSync();
 
-    expect(source, contains('Tab(text: t.download_resources_tab)'));
+    // PR#820 起下载页门头是 FushiSegmentedStrip（与库页同构），首段承载形态
+    // 由 `Tab(text: …)` 变为 `ButtonSegment(value: 0, label: Text(…))`；本条守的
+    // 行为不变：第一段必须是「资源」，不是第二个 discovery 页。
+    expect(source, contains('label: Text(t.download_resources_tab)'));
     expect(source, contains('VideoResourceSearchSurface('));
     expect(source, contains('VideoDownloadJobsPanel.database('));
     expect(source, contains('VideoDownloadSubscriptionsPanel()'));

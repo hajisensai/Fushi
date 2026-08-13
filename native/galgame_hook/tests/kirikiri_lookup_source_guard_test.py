@@ -462,6 +462,66 @@ def find_unguarded_bitmap_copies(source: MaskedSource) -> list[str]:
     return unguarded
 
 
+def _strip_line_comments(text: str) -> str:
+    """去掉 `//` 行注释，长度不变（换成空格）。
+
+    判据必须落在**可执行代码**上：注释里写一句"归属见 fushiLookupCardEntry"不该让守卫
+    转绿，否则改坏判据只要留着注释就能蒙混过去。
+    """
+    return re.sub(r"//[^\n]*", lambda m: " " * len(m.group(0)), text)
+
+
+def _tjs_function_body(text: str, name: str) -> tuple[int, int] | None:
+    """TJS `global.<name> = function(...) { ... }` 的函数体区间（含两端大括号）。"""
+    match = re.search(rf"global\.{re.escape(name)}\s*=\s*function", text)
+    if match is None:
+        return None
+    start = text.find("{", match.end())
+    if start < 0:
+        return None
+    depth = 0
+    for index in range(start, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return (start, index + 1)
+    return None
+
+
+# 收卡归属：卡片是在 fushiLookupApply 那一刻绑到某条 entry 上的，只有**那条**台词重绘
+# 才轮得到收卡。窗口取得比一条 if 语句宽一些（判据可能写成多行），但必须在去注释后的
+# 文本上找。
+CARD_OWNER_MARKER = "fushiLookupCardEntry"
+_CARD_OWNER_WINDOW = 300
+
+
+def find_ownerless_card_dismissals(source: MaskedSource) -> list[str]:
+    """`fushiLookupCapture` 里的收卡必须带归属判据（BUG-1606）。
+
+    捕获回调对**每一个** TextRender renderer 触发：名字层、第二消息层、选项层、历史层
+    都会走进来。旧判据是「这个 renderer 上的行文本变了就收卡」，于是同一句里说话人切换
+    时另一个文本层逐字重绘，每多一个字就把用户正在读的查词卡片打掉一次（鼠标一动 hover
+    又把它拉回来）——表现就是卡片反复闪没。归属判据是这条路径上唯一的关卡：真正的换行
+    由 host 侧「会话最新行变了」兜底，与这里是哪个 renderer 无关。
+    """
+    span = _tjs_function_body(source.text, "fushiLookupCapture")
+    if span is None:
+        return [f"{ADAPTER.name} 找不到 TJS 的 fushiLookupCapture 函数体"]
+    body = _strip_line_comments(source.text[span[0] : span[1]])
+    offenders: list[str] = []
+    for index in _iter_find(body, "fushiLookupDismiss("):
+        window = body[max(0, index - _CARD_OWNER_WINDOW) : index]
+        if CARD_OWNER_MARKER in window:
+            continue
+        offenders.append(
+            f"{ADAPTER.name}:{source.line_of(span[0] + index)} "
+            f"收卡处附近没有 {CARD_OWNER_MARKER} 归属判据"
+        )
+    return offenders
+
+
 # ── 扫真文件 ────────────────────────────────────────────────────────────────
 
 
@@ -521,6 +581,15 @@ class RealAdapterTest(unittest.TestCase):
             "width/height 盲拷」这条越界写路径上的唯一闸门。",
         )
 
+    def test_card_dismissal_is_scoped_to_the_owning_line(self) -> None:
+        self.assertEqual(
+            [],
+            find_ownerless_card_dismissals(self.source),
+            "fushiLookupCapture 对每个 TextRender renderer 都触发（名字层 / 第二消息层 / "
+            "选项层 / 历史层都在内）；收卡必须只认卡片自己依附的那条台词，否则说话人切换"
+            "时另一个文本层逐字重绘会把用户正在读的卡片反复打掉（BUG-1606）。",
+        )
+
 
 # ── 变异自测：证明上面每条规则真的会红 ──────────────────────────────────────
 
@@ -575,8 +644,26 @@ if(global.fushiLookupProbeMode)
 	global.fushiLookupProbeOriginalDrawText = global.Layer.drawText;
 	global.Layer.drawText = function(x, y, text) { return 0; };
 }
+global.fushiLookupCapture = function(renderer)
+{
+    var entry = global.fushiLookupEntryFor(renderer);
+    var changed = entry.line != renderer.line;
+    entry.line = renderer.line;
+    if(changed)
+    {
+        if(global.fushiLookupCardEntry === entry) global.fushiLookupDismiss();
+        else if(global.fushiLookupHitEntry === entry) global.fushiLookupClearHover();
+    }
+};
 )TJS";
 """
+
+# 干净样本里那条带归属的收卡判据（变异自测的锚点）。
+OWNED_DISMISS_SAMPLE = (
+    "        if(global.fushiLookupCardEntry === entry) global.fushiLookupDismiss();\n"
+    "        else if(global.fushiLookupHitEntry === entry) "
+    "global.fushiLookupClearHover();"
+)
 
 
 class MutationSelfTest(unittest.TestCase):
@@ -600,6 +687,10 @@ class MutationSelfTest(unittest.TestCase):
         self.assertEqual([], find_default_on_probe_switches(self.clean))
         self.assertEqual([], find_unvalidated_placeholder_values(self.clean))
         self.assertEqual([], find_unguarded_bitmap_copies(self.clean))
+        self.assertEqual([], find_ownerless_card_dismissals(self.clean))
+        # 干净样本里确实有一次收卡，否则归属这条规则根本没被走到。
+        self.assertIsNotNone(_tjs_function_body(CLEAN_SAMPLE, "fushiLookupCapture"))
+        self.assertIn("fushiLookupDismiss(", CLEAN_SAMPLE)
         # 干净样本里确实有一处运行期占位符替换，否则这条规则根本没被走到。
         self.assertTrue(
             any(
@@ -699,6 +790,35 @@ class MutationSelfTest(unittest.TestCase):
             "  if (!IsLookupFrameSane(header, frame)) return false;\n", ""
         )
         self.assertNotEqual([], find_unguarded_bitmap_copies(dirty))
+
+    def test_ownerless_card_dismissal_is_red(self) -> None:
+        # 退回旧判据：任意 renderer 的行文本变了就收卡。
+        dirty = self._mutate(OWNED_DISMISS_SAMPLE, "        global.fushiLookupDismiss();")
+        self.assertNotEqual([], find_ownerless_card_dismissals(dirty))
+
+    def test_owner_marker_only_in_a_comment_is_still_red(self) -> None:
+        # 判据被改坏、只在注释里留个名字——守卫必须照红（否则它形同虚设）。
+        dirty = self._mutate(
+            OWNED_DISMISS_SAMPLE,
+            "        // 归属见 global.fushiLookupCardEntry\n"
+            "        global.fushiLookupDismiss();",
+        )
+        self.assertNotEqual([], find_ownerless_card_dismissals(dirty))
+
+    def test_equivalent_owner_check_stays_green(self) -> None:
+        # 反向变异：判据换个等价写法，守卫不该跟着红（否则它是在守写法不是守行为）。
+        dirty = self._mutate(
+            OWNED_DISMISS_SAMPLE,
+            "        if(entry === global.fushiLookupCardEntry) "
+            "global.fushiLookupDismiss();",
+        )
+        self.assertEqual([], find_ownerless_card_dismissals(dirty))
+
+    def test_missing_capture_function_is_red(self) -> None:
+        dirty = MaskedSource(
+            CLEAN_SAMPLE.replace("global.fushiLookupCapture = function", "// gone", 1)
+        )
+        self.assertNotEqual([], find_ownerless_card_dismissals(dirty))
 
     def test_masking_keeps_line_numbers_and_hides_literal_content(self) -> None:
         self.assertEqual(len(self.clean.masked), len(CLEAN_SAMPLE))

@@ -319,8 +319,8 @@ final profileViewModelProvider =
         ref.read(platformServicesProvider);
     final AnkiSettings ankiSettings =
         await ref.read(ankiRepositoryProvider).loadSettings();
-    platformServices.setUseAnkiConnectOnAndroid(
-      ankiSettings.useAnkiConnectOnAndroid,
+    platformServices.setUseAnkiConnectOnMobile(
+      ankiSettings.useAnkiConnectOnMobile,
       apiKey: ankiSettings.ankiConnectApiKey,
     );
     ref.invalidate(ankiRepositoryProvider);

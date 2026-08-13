@@ -172,7 +172,7 @@ class AnkiSettings {
     this.ankiConnectPort = 8765,
     this.ankiConnectApiKey = '',
     this.ankiConnectUseHttps = false,
-    this.useAnkiConnectOnAndroid = false,
+    this.useAnkiConnectOnMobile = false,
     this.lapisFontScalePercent = 100,
     this.lapisCustomCss = '',
     this.lapisAppliedCssSha,
@@ -217,7 +217,10 @@ class AnkiSettings {
         ankiConnectPort: json['ankiConnectPort'] as int? ?? 8765,
         ankiConnectApiKey: json['ankiConnectApiKey'] as String? ?? '',
         ankiConnectUseHttps: json['ankiConnectUseHttps'] as bool? ?? false,
-        useAnkiConnectOnAndroid:
+        // 持久化键名冻结成 `useAnkiConnectOnAndroid`（存量偏好键不追改）。这个
+        // 选项现在对 Android 与 iOS 同义，Dart 侧已改名 useAnkiConnectOnMobile；
+        // 改键名会让所有老装置的选择在升级后静默丢失。
+        useAnkiConnectOnMobile:
             json['useAnkiConnectOnAndroid'] as bool? ?? false,
         lapisFontScalePercent: json['lapisFontScalePercent'] as int? ?? 100,
         lapisCustomCss: json['lapisCustomCss'] as String? ?? '',
@@ -263,11 +266,25 @@ class AnkiSettings {
   final String ankiConnectApiKey;
   final bool ankiConnectUseHttps;
 
-  /// Android normally talks to AnkiDroid through its Content Provider. Users
-  /// who deliberately run AnkiConnect on another reachable machine can opt in
-  /// to the HTTP backend instead. Missing keys stay false so upgrades preserve
-  /// the existing AnkiDroid route.
-  final bool useAnkiConnectOnAndroid;
+  /// 移动端是否改用 AnkiConnect（HTTP）而不是平台原生后端。
+  ///
+  /// 两个移动平台的原生后端都受限：Android 的 AnkiDroid Content Provider 改不了
+  /// 已存在的 note type，iOS 的 AnkiMobile 只有加卡的 URL scheme。用户在另一台
+  /// 可达的机器上跑 AnkiConnect 时可以显式切过去，Lapis 样式客制化等能力随之可用。
+  /// 缺键恒 false，升级不会凭空改道。
+  ///
+  /// 这是**用户意图**，不是「此刻能不能用」——后者见 [ankiConnectUsableOnMobile]。
+  /// 持久化键名仍是 `useAnkiConnectOnAndroid`（存量偏好键冻结，见 fromJson/toJson）。
+  final bool useAnkiConnectOnMobile;
+
+  /// 移动端此刻**真能不能**走 AnkiConnect 的唯一判据：开关打开 **且** API key 非空。
+  ///
+  /// 移动端的 AnkiConnect 走局域网明文 HTTP，所以强制要求 API key（见设置页文案）。
+  /// 判据必须只有这一份：UI 门控、[PlatformServices] 的运行时后端选择、启动期的
+  /// 存量状态修复三处各写一遍必然漂开，而漂开的表现就是「设置里显示开着、运行时
+  /// 却回落原生后端」这种用户无从察觉的静默不一致（BUG-1608）。
+  bool get ankiConnectUsableOnMobile =>
+      useAnkiConnectOnMobile && ankiConnectApiKey.trim().isNotEmpty;
 
   /// Lapis 卡片字号整体缩放百分比（100 = 原样）。只影响 Hibiki 推送的
   /// styling 用户区段，不写卡片数据。
@@ -358,7 +375,7 @@ class AnkiSettings {
     int? ankiConnectPort,
     String? ankiConnectApiKey,
     bool? ankiConnectUseHttps,
-    bool? useAnkiConnectOnAndroid,
+    bool? useAnkiConnectOnMobile,
     int? lapisFontScalePercent,
     String? lapisCustomCss,
     String? lapisAppliedCssSha,
@@ -399,8 +416,8 @@ class AnkiSettings {
         ankiConnectPort: ankiConnectPort ?? this.ankiConnectPort,
         ankiConnectApiKey: ankiConnectApiKey ?? this.ankiConnectApiKey,
         ankiConnectUseHttps: ankiConnectUseHttps ?? this.ankiConnectUseHttps,
-        useAnkiConnectOnAndroid:
-            useAnkiConnectOnAndroid ?? this.useAnkiConnectOnAndroid,
+        useAnkiConnectOnMobile:
+            useAnkiConnectOnMobile ?? this.useAnkiConnectOnMobile,
         lapisFontScalePercent:
             lapisFontScalePercent ?? this.lapisFontScalePercent,
         lapisCustomCss: lapisCustomCss ?? this.lapisCustomCss,
@@ -444,7 +461,9 @@ class AnkiSettings {
         'ankiConnectPort': ankiConnectPort,
         'ankiConnectApiKey': ankiConnectApiKey,
         'ankiConnectUseHttps': ankiConnectUseHttps,
-        'useAnkiConnectOnAndroid': useAnkiConnectOnAndroid,
+        // 键名冻结（见 fromJson 的说明）：Dart 侧是 useAnkiConnectOnMobile，
+        // 落盘仍写 `useAnkiConnectOnAndroid`，老装置升级后选择不丢。
+        'useAnkiConnectOnAndroid': useAnkiConnectOnMobile,
         'lapisFontScalePercent': lapisFontScalePercent,
         'lapisCustomCss': lapisCustomCss,
         'lapisAppliedCssSha': lapisAppliedCssSha,

@@ -210,7 +210,7 @@ void main() {
         ankiConnectPort: 9876,
         ankiConnectApiKey: 'device-secret',
         ankiConnectUseHttps: true,
-        useAnkiConnectOnAndroid: true,
+        useAnkiConnectOnMobile: true,
       );
 
       final AnkiSettings result = ProfileKeys.mapToAnkiSettings(
@@ -228,7 +228,7 @@ void main() {
       expect(result.ankiConnectPort, 9876);
       expect(result.ankiConnectApiKey, 'device-secret');
       expect(result.ankiConnectUseHttps, isTrue);
-      expect(result.useAnkiConnectOnAndroid, isTrue);
+      expect(result.useAnkiConnectOnMobile, isTrue);
     });
   });
 

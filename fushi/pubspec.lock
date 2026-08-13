@@ -520,7 +520,7 @@ packages:
     source: hosted
     version: "2.2.0"
   fading_edge_scrollview:
-    dependency: "direct overridden"
+    dependency: "direct main"
     description:
       path: "../third_party/fading_edge_scrollview"
       relative: true
