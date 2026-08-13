@@ -3364,5 +3364,6 @@
   "sync_pair_fingerprint_retrust": "清除已存指纹并重新信任",
   "sync_pair_fingerprint_changed_body": "这条地址此前钉扎的是另一张证书。只有在你确知对方重装/重置过设备时才继续，否则连接可能正被中间人拦截。",
   "interconnect_upload_section_footer": "选择本设备要把哪些内容上传给已连接的互联对端。与云备份的同名开关互不影响，且默认全部关闭。本组开关只在「启用互联」打开时生效：关掉互联，这里的上传全部停止。",
-  "remote_delete_audiobook_partial": "书已在对端删除，但它的有声书没能删掉"
+  "remote_delete_audiobook_partial": "书已在对端删除，但它的有声书没能删掉",
+  "download_detail_task_queued": "排队中：正在等其他下载让出槽位。任务还没交给下载器，所以暂时没有实时节点和 Tracker 数据。"
 }
