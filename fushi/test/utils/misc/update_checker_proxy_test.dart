@@ -5,26 +5,17 @@ import 'package:flutter_test/flutter_test.dart';
 // 出口，而 part 没法被外部 import）。测试跟着搬 import，断言逐字不变。
 import 'package:fushi/src/utils/net/app_proxy.dart';
 
-/// 构造一条 `reg query ... /v ProxyEnable` 的典型输出。
-String _regEnable(String value) {
-  const String key =
-      r'HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings';
-  return '\r\n$key\r\n    ProxyEnable    REG_DWORD    $value\r\n';
-}
-
-/// 构造一条 `reg query ... /v ProxyServer` 的典型输出。
-String _regServer(String value) {
-  const String key =
-      r'HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings';
-  return '\r\n$key\r\n    ProxyServer    REG_SZ    $value\r\n';
-}
-
 void main() {
-  group('parseWindowsRegistryProxy（解析 Windows 系统代理注册表输出，纯函数）', () {
+  // 取值方式已从 `reg query` 子进程换成 `RegQueryValueExW`（AV 行为检测把
+  // 「进程 spawn reg/powershell 问系统要信息」算高权重信号，见
+  // `windows_process_query.dart` 文件头）。于是本纯函数的入参从「reg 的 stdout
+  // 文本」变成「已读出的 DWORD / 字符串值」——注册表输出的**文本解析**不再由我们
+  // 做，那几条用例随之消失；折算规则（启用判据 / 分协议串取段）这层断言逐字不变。
+  group('parseWindowsRegistryProxy（把已读出的注册表值折成代理 env，纯函数）', () {
     test('系统代理启用 + 全局 host:port → 填 https_proxy/http_proxy', () {
       final Map<String, String> env = parseWindowsRegistryProxy(
-        proxyEnableOutput: _regEnable('0x1'),
-        proxyServerOutput: _regServer('127.0.0.1:34151'),
+        proxyEnable: 1,
+        proxyServer: '127.0.0.1:34151',
       );
       expect(env['https_proxy'], '127.0.0.1:34151');
       expect(env['http_proxy'], '127.0.0.1:34151');
@@ -32,34 +23,33 @@ void main() {
 
     test('系统代理未启用（0x0）→ 空 map（不补代理，回退直连）', () {
       final Map<String, String> env = parseWindowsRegistryProxy(
-        proxyEnableOutput: _regEnable('0x0'),
-        proxyServerOutput: _regServer('127.0.0.1:34151'),
+        proxyEnable: 0,
+        proxyServer: '127.0.0.1:34151',
       );
       expect(env, isEmpty);
     });
 
     test('ProxyEnable 缺失 → 空 map', () {
       final Map<String, String> env = parseWindowsRegistryProxy(
-        proxyEnableOutput: 'ERROR: registry value not found.',
-        proxyServerOutput: _regServer('127.0.0.1:34151'),
+        proxyEnable: null,
+        proxyServer: '127.0.0.1:34151',
       );
       expect(env, isEmpty);
     });
 
     test('启用但 ProxyServer 缺失/为空 → 空 map', () {
       final Map<String, String> env = parseWindowsRegistryProxy(
-        proxyEnableOutput: _regEnable('0x1'),
-        proxyServerOutput: 'ERROR: registry value not found.',
+        proxyEnable: 1,
+        proxyServer: null,
       );
       expect(env, isEmpty);
     });
 
     test('分协议串（http=/https=）分别取对应段', () {
       final Map<String, String> env = parseWindowsRegistryProxy(
-        proxyEnableOutput: _regEnable('0x1'),
-        proxyServerOutput: _regServer(
-          'http=127.0.0.1:7890;https=127.0.0.1:7891;ftp=127.0.0.1:7892',
-        ),
+        proxyEnable: 1,
+        proxyServer:
+            'http=127.0.0.1:7890;https=127.0.0.1:7891;ftp=127.0.0.1:7892',
       );
       expect(env['https_proxy'], '127.0.0.1:7891');
       expect(env['http_proxy'], '127.0.0.1:7890');
@@ -67,8 +57,8 @@ void main() {
 
     test('分协议串只给 https → http_proxy 回退到 https 段', () {
       final Map<String, String> env = parseWindowsRegistryProxy(
-        proxyEnableOutput: _regEnable('0x1'),
-        proxyServerOutput: _regServer('https=127.0.0.1:7891'),
+        proxyEnable: 1,
+        proxyServer: 'https=127.0.0.1:7891',
       );
       expect(env['https_proxy'], '127.0.0.1:7891');
       expect(env['http_proxy'], '127.0.0.1:7891');
@@ -76,25 +66,39 @@ void main() {
 
     test('分协议串只给 http → https_proxy 回退到 http 段', () {
       final Map<String, String> env = parseWindowsRegistryProxy(
-        proxyEnableOutput: _regEnable('0x1'),
-        proxyServerOutput: _regServer('http=127.0.0.1:7890'),
+        proxyEnable: 1,
+        proxyServer: 'http=127.0.0.1:7890',
       );
       expect(env['http_proxy'], '127.0.0.1:7890');
       expect(env['https_proxy'], '127.0.0.1:7890');
     });
 
-    test('ProxyEnable 大小写不敏感（0X1）仍视为启用', () {
-      final Map<String, String> env = parseWindowsRegistryProxy(
-        proxyEnableOutput: _regEnable('0X1'),
-        proxyServerOutput: _regServer('127.0.0.1:34151'),
+    test('ProxyEnable 为 1 以外的任何值都视为未启用（fail-closed）', () {
+      // 原用例断言的是「0X1 大小写不敏感」——那是 reg 输出的**文本**形态问题，
+      // 换成 REG_DWORD 直读后不复存在。真正要钉的判据是「只有 1 算启用」。
+      for (final int? enable in <int?>[0, 2, -1, null]) {
+        expect(
+          parseWindowsRegistryProxy(
+            proxyEnable: enable,
+            proxyServer: '127.0.0.1:34151',
+          ),
+          isEmpty,
+          reason: 'ProxyEnable=$enable 不应被当成已启用',
+        );
+      }
+      expect(
+        parseWindowsRegistryProxy(
+          proxyEnable: 1,
+          proxyServer: '127.0.0.1:34151',
+        )['https_proxy'],
+        '127.0.0.1:34151',
       );
-      expect(env['https_proxy'], '127.0.0.1:34151');
     });
 
     test('解析结果可直接喂给 HttpClient.findProxyFromEnvironment 得到 PROXY 指令', () {
       final Map<String, String> env = parseWindowsRegistryProxy(
-        proxyEnableOutput: _regEnable('0x1'),
-        proxyServerOutput: _regServer('127.0.0.1:34151'),
+        proxyEnable: 1,
+        proxyServer: '127.0.0.1:34151',
       );
       // 不实际建连，只验证生成的 environment 能被 findProxyFromEnvironment 识别为代理。
       final String directive = HttpClient.findProxyFromEnvironment(
@@ -411,8 +415,8 @@ void main() {
       final String? normalized = normalizeUserProxyHostPort('127.0.0.1:7890');
       expect(normalized, '127.0.0.1:7890');
       final Map<String, String> env = parseWindowsRegistryProxy(
-        proxyEnableOutput: _regEnable('0x1'),
-        proxyServerOutput: _regServer(normalized!),
+        proxyEnable: 1,
+        proxyServer: normalized!,
       );
       final String directive = HttpClient.findProxyFromEnvironment(
         Uri.parse('https://api.github.com/repos/x/y/releases/latest'),

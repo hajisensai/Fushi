@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:fushi/src/platform/desktop/windows_process_query.dart';
+
 /// 监听某端口的进程信息（用于「端口被占用 → 一键结束占用进程」）。
 class PortListenerInfo {
   const PortListenerInfo({
@@ -120,12 +122,9 @@ class PortProcessTerminator {
     final String fallback = 'PID $targetPid';
     try {
       if (Platform.isWindows) {
-        final ProcessResult result = await Process.run(
-          'tasklist',
-          <String>['/FI', 'PID eq $targetPid', '/FO', 'CSV', '/NH'],
-        );
-        if (result.exitCode != 0) return fallback;
-        return parseTasklistProcessName('${result.stdout}') ?? fallback;
+        // Win32 快照，不生成 tasklist 子进程（AV 行为检测把
+        // 「进程 spawn LOLBin 查进程表」算高权重信号，见 windows_process_query.dart）。
+        return windowsProcessById(targetPid)?.name ?? fallback;
       }
       final ProcessResult result =
           await Process.run('ps', <String>['-p', '$targetPid', '-o', 'comm=']);
@@ -144,15 +143,8 @@ class PortProcessTerminator {
   static Future<String?> _executablePath(int targetPid) async {
     try {
       if (Platform.isWindows) {
-        final ProcessResult result = await Process.run('powershell', <String>[
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          '(Get-Process -Id $targetPid -ErrorAction SilentlyContinue).Path',
-        ]);
-        if (result.exitCode != 0) return null;
-        final String out = '${result.stdout}'.trim();
-        return out.isEmpty ? null : out;
+        // 同上：`QueryFullProcessImageNameW` 直接取，不生成 powershell 子进程。
+        return windowsProcessImagePath(targetPid);
       }
       if (Platform.isLinux) {
         // /proc/<pid>/exe 是指向真实可执行文件的符号链接。
