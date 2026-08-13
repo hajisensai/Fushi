@@ -8,25 +8,25 @@
   "notes": "Automated desktop debug-channel build from develop @ 37da23e. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-1.4.0-debug.11509-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11509-ios.ipa",
-      "releaseSequence": 11509,
-      "tag": "v1.4.0-debug.11509+6ba0be0",
-      "version": "1.4.0-debug.11509"
-    },
-    {
-      "name": "fushi-1.4.0-debug.11509-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11509-macos.zip",
-      "releaseSequence": 11509,
-      "tag": "v1.4.0-debug.11509+6ba0be0",
-      "version": "1.4.0-debug.11509"
-    },
-    {
       "name": "fushi-1.4.0-debug.11516-188d78a-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11516-188d78a-debug.apk",
       "releaseSequence": 11516,
       "tag": "v1.4.0-debug.11516+188d78a",
       "version": "1.4.0-debug.11516"
+    },
+    {
+      "name": "fushi-1.4.0-debug.11524-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11524-ios.ipa",
+      "releaseSequence": 11524,
+      "tag": "v1.4.0-debug.11524+37da23e",
+      "version": "1.4.0-debug.11524"
+    },
+    {
+      "name": "fushi-1.4.0-debug.11524-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11524-macos.zip",
+      "releaseSequence": 11524,
+      "tag": "v1.4.0-debug.11524+37da23e",
+      "version": "1.4.0-debug.11524"
     },
     {
       "name": "fushi-1.4.0-debug.11524-windows-setup.exe",
