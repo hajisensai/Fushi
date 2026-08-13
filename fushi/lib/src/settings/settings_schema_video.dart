@@ -1003,6 +1003,43 @@ SettingsDestination buildVideoDestination() {
               );
             },
           ),
+          // 主字幕垂直锚定（TODO-2838）：底部（默认，历史行为）/ 顶部。顶锚时下面的
+          // 「垂直位置」量纲变为**离顶距离**（镜像副字幕置顶的既有消费路径）；ASS 自带
+          // 位置（respectAssStyle 开）仍各遵其位，优先级见 resolveLayerForcedAnchor。
+          SettingsSegmentedItem<String>(
+            id: 'video.subtitle.anchor',
+            title: t.video_setting_subtitle_anchor,
+            icon: Icons.vertical_align_top_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 138,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: SubtitleLayerVAnchor.bottom.name,
+                label: t.video_subtitle_anchor_bottom,
+                icon: Icons.vertical_align_bottom_outlined,
+              ),
+              SettingsSegmentOption<String>(
+                value: SubtitleLayerVAnchor.top.name,
+                label: t.video_subtitle_anchor_top,
+                icon: Icons.vertical_align_top_outlined,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                currentVideoSubtitleStyle(settingsContext).mainAnchor.name,
+            onChanged: (SettingsContext settingsContext, String v) async {
+              await commitVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(
+                  mainAnchor: v == SubtitleLayerVAnchor.top.name
+                      ? SubtitleLayerVAnchor.top
+                      : SubtitleLayerVAnchor.bottom,
+                ),
+              );
+            },
+          ),
           SettingsSliderItem(
             id: 'video.subtitle.position',
             title: t.video_setting_subtitle_position,
@@ -1013,12 +1050,14 @@ SettingsDestination buildVideoDestination() {
               section: t.video_setting_subtitle_appearance,
             ),
             min: 0,
-            max: 240,
-            divisions: 24,
+            // TODO-2838：上限 240 → 400（kVideoSubtitleMaxPadding，与存储 clamp 同源）。
+            // 旧上限让字幕最高只能到画面下 1/3，用户想放到上 1/6 够不着。
+            max: kVideoSubtitleMaxPadding,
+            divisions: 40,
             value: (SettingsContext settingsContext) =>
                 currentVideoSubtitleStyle(settingsContext)
                     .bottomPadding
-                    .clamp(0, 240),
+                    .clamp(0, kVideoSubtitleMaxPadding),
             onChanged: (SettingsContext settingsContext, double v) {
               previewVideoSubtitleStyle(
                 settingsContext,
@@ -1046,13 +1085,14 @@ SettingsDestination buildVideoDestination() {
               section: t.video_setting_subtitle_appearance,
             ),
             min: 0,
-            max: 240,
-            divisions: 24,
+            // TODO-2838：与主字幕位置同步拉高上限（kVideoSubtitleMaxPadding）。
+            max: kVideoSubtitleMaxPadding,
+            divisions: 40,
             value: (SettingsContext settingsContext) {
               final VideoSubtitleStyle s =
                   currentVideoSubtitleStyle(settingsContext);
               return (s.secondaryBottomPadding ?? s.bottomPadding)
-                  .clamp(0, 240);
+                  .clamp(0, kVideoSubtitleMaxPadding);
             },
             onChanged: (SettingsContext settingsContext, double v) {
               previewVideoSubtitleStyle(
@@ -1065,6 +1105,29 @@ SettingsDestination buildVideoDestination() {
                 settingsContext,
                 (VideoSubtitleStyle s) => s.copyWith(secondaryBottomPadding: v),
               );
+            },
+          ),
+          // 拖拽调整字幕位置入口（TODO-2838）：进入播放器内可视化拖拽模式——字幕盒
+          // 显示可拖边框、竖直拖动实时预览、落点自动定锚（上半屏顶锚/下半屏底锚）、
+          // 松手写回偏好。仅播放中有意义（要有真字幕 overlay 可拖），全局设置页隐藏；
+          // 入口放位置滑条旁而非长按字幕：字级查词已占用字幕的 tap 指针面（BUG-553/838
+          // 竞技场纪律），再叠长按手势会与查词/显形抢竞技场，按钮进入零冲突。
+          SettingsActionItem(
+            id: 'video.subtitle.drag_adjust',
+            title: t.video_setting_subtitle_drag_adjust,
+            subtitle: t.video_subtitle_drag_adjust_hint,
+            icon: Icons.open_with_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 148,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            visible: (SettingsContext c) =>
+                videoQuickSettingsHostOf(c)?.onEnterSubtitleDragAdjust != null,
+            onTap: (SettingsContext settingsContext) async {
+              videoQuickSettingsHostOf(settingsContext)
+                  ?.onEnterSubtitleDragAdjust
+                  ?.call();
             },
           ),
           // ── Jimaku（在线字幕源）───────────────────────────────────────────

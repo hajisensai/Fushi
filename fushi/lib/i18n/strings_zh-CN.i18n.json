@@ -3384,5 +3384,10 @@
   "video_setting_secondary_av_delay_hint": "副字幕独立偏移；未单独设置时跟随主字幕调轴。",
   "video_setting_secondary_delay_follow": "跟随主字幕",
   "video_subtitle_secondary_delay_osd": "副字幕同步：$ms ms",
-  "video_subtitle_secondary_delay_follow_osd": "副字幕同步：跟随主字幕"
+  "video_subtitle_secondary_delay_follow_osd": "副字幕同步：跟随主字幕",
+  "video_setting_subtitle_anchor": "主字幕锚定",
+  "video_subtitle_anchor_bottom": "底部",
+  "video_subtitle_anchor_top": "顶部",
+  "video_setting_subtitle_drag_adjust": "拖拽调整位置",
+  "video_subtitle_drag_adjust_hint": "上下拖动字幕调整位置"
 }

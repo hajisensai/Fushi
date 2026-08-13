@@ -199,6 +199,52 @@ double subtitleScreenScaleFactor(
   return raw.clamp(minFactor, maxFactor).toDouble();
 }
 
+/// 字幕层的**用户垂直锚定**（TODO-2838）：决定该层 padding 基线量的是「离底距离」
+/// （[bottom]，历史默认）还是「离顶距离」（[top]）。
+///
+/// 此前顶部锚定只来自两处非用户源：ASS `\an`/`\pos` 标记（respectAssStyle 开时）与
+/// 纯 SRT 副字幕的自动置顶。用户想把**主字幕**放到画面顶部（动画字幕常在上 1/6 处）
+/// 没有任何入口。本枚举把「锚定边」提升成用户可选的一等状态：顶锚时
+/// [VideoSubtitleStyle.bottomPadding]（持久化名冻结）语义 = 离顶距离，镜像副字幕
+/// forceTop 的既有消费方式（`_paddingFor` 顶分支），不新造第二个距离字段。
+enum SubtitleLayerVAnchor { bottom, top }
+
+/// 字幕垂直位置（距锚定边的距离）的统一上限（逻辑像素，TODO-2838）：持久化 clamp、
+/// 设置滑条 max、拖拽落点 clamp 三处同一真相源。历史上滑条上限 240 < 存储上限 400，
+/// 用户想把字幕放到画面上 1/6 够不着；统一拉到 400（存储上限本就允许）。
+const double kVideoSubtitleMaxPadding = 400;
+
+/// 统一「层锚定解析」纯函数（TODO-2838）：返回该层要**强制**的垂直锚定边；null =
+/// 不强制（遵 cue 自带 ASS 位置，或主层历史底部基线路径）。
+///
+/// 优先级（高 → 低）：
+/// 1. cue 自带非底位置（`\pos` / `\move` / 非底 `\an`，[ownNonBottom]）——它只在
+///    「尊重 .ass 自带样式」开启时才存在（纯字幕模式 markup 恒空），代表作者明示的
+///    定位意图；用户已显式选择尊重 ASS，则各遵其位。**默认纯字幕模式下 markup 恒空，
+///    用户锚定事实上最高优先**。若让用户锚定越过 ASS 位置，多组异位 cue（\pos 招牌 +
+///    对白）会被折到同一顶部盒互相叠印——锚定是「层默认位置」，不是「压平一切」。
+/// 2. 用户显式锚定 [userAnchor]：主层只有选了顶部才算显式（底部即历史默认）；副层
+///    任何非 null 值（拖拽落点写入）都算显式。
+/// 3. 副字幕自动锚定：无显式选择时取主层锚定的**对侧**（[mainUserAnchor] 底 → 副顶，
+///    历史行为；主顶 → 副底）。双层各占一边，消除「主字幕顶锚后与自动置顶的副字幕
+///    同点叠印」的新特例——对侧规则让碰撞在结构上不可能。
+/// 4. 主层默认：null（不强制，底部基线路径，历史像素级不变）。
+SubtitleLayerVAnchor? resolveLayerForcedAnchor({
+  required bool isSecondary,
+  required SubtitleLayerVAnchor? userAnchor,
+  required SubtitleLayerVAnchor mainUserAnchor,
+  required bool ownNonBottom,
+}) {
+  if (ownNonBottom) return null;
+  if (userAnchor != null) return userAnchor;
+  if (isSecondary) {
+    return mainUserAnchor == SubtitleLayerVAnchor.top
+        ? SubtitleLayerVAnchor.bottom
+        : SubtitleLayerVAnchor.top;
+  }
+  return null;
+}
+
 /// 字幕背景盒的**默认底色**（TODO-1059 方案A）：固定半透明黑，而非跟随
 /// `ColorScheme.surface`。
 ///
@@ -237,6 +283,8 @@ class VideoSubtitleStyle {
     required this.backgroundOpacity,
     required this.bottomPadding,
     this.secondaryBottomPadding,
+    this.mainAnchor = SubtitleLayerVAnchor.bottom,
+    this.secondaryAnchor,
   });
 
   static const int defaultFontWeight = 700;
@@ -308,6 +356,17 @@ class VideoSubtitleStyle {
   /// 位置（Never break userspace：老用户外观像素级不变）。
   final double? secondaryBottomPadding;
 
+  /// 主字幕层的用户垂直锚定（TODO-2838）。默认 [SubtitleLayerVAnchor.bottom] =
+  /// 历史行为（底距基线）；[SubtitleLayerVAnchor.top] 时 [bottomPadding] 语义变为
+  /// **离顶距离**（镜像副字幕 forceTop 的既有消费路径）。旧 JSON 无本字段 → 底锚，
+  /// 零迁移零破坏。
+  final SubtitleLayerVAnchor mainAnchor;
+
+  /// 副字幕层的用户垂直锚定（TODO-2838）。null = 自动（历史行为：取主层锚定的对侧，
+  /// 主底 → 副顶）；非 null = 用户显式选择（播放器内拖拽落点写入），从此不再自动跟随。
+  /// 锚定解析优先级见 [resolveLayerForcedAnchor]。
+  final SubtitleLayerVAnchor? secondaryAnchor;
+
   VideoSubtitleStyle copyWith({
     double? fontSize,
     Color? textColor,
@@ -320,6 +379,11 @@ class VideoSubtitleStyle {
     // null = 不改（保持当前值，含「仍跟随主字幕」的 null 态）。设置面板拖动副字幕位置
     // 时才传具体值；无「改回跟随」的入口，故不需要 backgroundColor 那样的 reset 标志。
     double? secondaryBottomPadding,
+    // null = 不改。锚定选择器 / 拖拽落点才传具体值。
+    SubtitleLayerVAnchor? mainAnchor,
+    // null = 不改（保持当前值，含「仍自动对侧」的 null 态）。仅拖拽副字幕落点写入；
+    // 无「改回自动」的入口，与 secondaryBottomPadding 同款单向语义。
+    SubtitleLayerVAnchor? secondaryAnchor,
     // [backgroundColor] 与 null 语义冲突：`null` 既是「不改」又是「显式清空跟随默认黑」。
     // 用显式 [resetBackgroundColor] 标志区分——true 时把 [backgroundColor] 强制清成 null
     // （回到 [kDefaultSubtitleBackgroundColor] 固定默认），供设置面板「默认（黑）」选项用。
@@ -338,6 +402,8 @@ class VideoSubtitleStyle {
       bottomPadding: bottomPadding ?? this.bottomPadding,
       secondaryBottomPadding:
           secondaryBottomPadding ?? this.secondaryBottomPadding,
+      mainAnchor: mainAnchor ?? this.mainAnchor,
+      secondaryAnchor: secondaryAnchor ?? this.secondaryAnchor,
     );
   }
 
@@ -374,6 +440,10 @@ class VideoSubtitleStyle {
         'bottomPadding': s.bottomPadding,
         // null（从未单独调过副字幕位置）也照写：decode 侧 null → 继续跟随主字幕。
         'secondaryBottomPadding': s.secondaryBottomPadding,
+        // 锚定（TODO-2838）：主层枚举名字符串（'bottom'/'top'）；副层 null（自动
+        // 对侧）也照写，decode 侧 null → 继续自动。
+        'mainAnchor': s.mainAnchor.name,
+        'secondaryAnchor': s.secondaryAnchor?.name,
       });
 
   static VideoSubtitleStyle decode(String? json) {
@@ -431,20 +501,32 @@ class VideoSubtitleStyle {
           d['backgroundOpacity'],
           defaults.backgroundOpacity,
         ).clamp(0.0, 1.0),
-        bottomPadding:
-            num2d(d['bottomPadding'], defaults.bottomPadding).clamp(0, 400),
+        bottomPadding: num2d(d['bottomPadding'], defaults.bottomPadding)
+            .clamp(0, kVideoSubtitleMaxPadding),
         // 缺字段（旧数据）/ 非数字 → null = 副字幕继续跟随主字幕位置（旧外观不变）。
         secondaryBottomPadding: d['secondaryBottomPadding'] is num
             ? (d['secondaryBottomPadding'] as num)
                 .toDouble()
-                .clamp(0, 400)
+                .clamp(0, kVideoSubtitleMaxPadding)
                 .toDouble()
             : null,
+        // 锚定（TODO-2838）：缺字段（旧数据）/ 未知值 → 主层底锚、副层自动（对侧），
+        // 旧外观像素级不变。
+        mainAnchor:
+            _decodeAnchor(d['mainAnchor']) ?? SubtitleLayerVAnchor.bottom,
+        secondaryAnchor: _decodeAnchor(d['secondaryAnchor']),
       );
     } catch (_) {
       return defaults;
     }
   }
+
+  /// JSON 里的锚定字符串 → 枚举；未知/非字符串返回 null（调用方决定回退语义）。
+  static SubtitleLayerVAnchor? _decodeAnchor(Object? v) => switch (v) {
+        'top' => SubtitleLayerVAnchor.top,
+        'bottom' => SubtitleLayerVAnchor.bottom,
+        _ => null,
+      };
 
   static double _normalizeUiScale(double uiScale) {
     return FushiAppUiScale.normalize(uiScale);

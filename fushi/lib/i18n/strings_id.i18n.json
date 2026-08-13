@@ -3384,5 +3384,10 @@
   "video_setting_secondary_av_delay_hint": "Adjust the secondary subtitle offset independently. It follows the primary offset until set here.",
   "video_setting_secondary_delay_follow": "Follow primary",
   "video_subtitle_secondary_delay_osd": "Secondary subtitle sync: $ms ms",
-  "video_subtitle_secondary_delay_follow_osd": "Secondary subtitle sync: follow primary"
+  "video_subtitle_secondary_delay_follow_osd": "Secondary subtitle sync: follow primary",
+  "video_setting_subtitle_anchor": "Main subtitle anchor",
+  "video_subtitle_anchor_bottom": "Bottom",
+  "video_subtitle_anchor_top": "Top",
+  "video_setting_subtitle_drag_adjust": "Drag to adjust position",
+  "video_subtitle_drag_adjust_hint": "Drag a subtitle up or down to reposition it"
 }
