@@ -8,22 +8,22 @@
   "notes": "Automated desktop debug-channel build from develop @ ca929aa. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-1.4.0-debug.11538-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11538-ios.ipa",
-      "releaseSequence": 11538,
-      "tag": "v1.4.0-debug.11538+8630a2b",
-      "version": "1.4.0-debug.11538"
-    },
-    {
-      "name": "fushi-1.4.0-debug.11538-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11538-macos.zip",
-      "releaseSequence": 11538,
-      "tag": "v1.4.0-debug.11538+8630a2b",
-      "version": "1.4.0-debug.11538"
-    },
-    {
       "name": "fushi-1.4.0-debug.11539-ca929aa-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11539-ca929aa-debug.apk",
+      "releaseSequence": 11539,
+      "tag": "v1.4.0-debug.11539+ca929aa",
+      "version": "1.4.0-debug.11539"
+    },
+    {
+      "name": "fushi-1.4.0-debug.11539-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11539-ios.ipa",
+      "releaseSequence": 11539,
+      "tag": "v1.4.0-debug.11539+ca929aa",
+      "version": "1.4.0-debug.11539"
+    },
+    {
+      "name": "fushi-1.4.0-debug.11539-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11539-macos.zip",
       "releaseSequence": 11539,
       "tag": "v1.4.0-debug.11539+ca929aa",
       "version": "1.4.0-debug.11539"
