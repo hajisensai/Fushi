@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1505 条。点号进各自文件。
+> 共 1506 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1610](bugs/BUG-1610-bangumi-search-rating-null.md) | ✅ | ✅ | Bangumi 搜索候选评分恒空：映射器读扁平 score，真实响应只有嵌套 rating.score |
 | [BUG-1606](bugs/BUG-1606-gal-ingame-lookup-card-dismissed-by-other-text-layer.md) | ✅ | ✅ | gal 游戏内查词卡片被无关文本层重绘打掉（说话人切换时闪没） |
 | [BUG-1605](bugs/BUG-1605-gal-multi-voice-resources-single-pick.md) | ✅ | ✅ | gal 制卡：同句多个语音资源只取一个（多角色同时说话丢声） |
 | [BUG-1603](bugs/BUG-1603-srt-subtitle-shadow-directional-offset.md) | ✅ | ✅ | SRT 字幕柔和投影方向性偏下，真机上观感为阴影错位 |
