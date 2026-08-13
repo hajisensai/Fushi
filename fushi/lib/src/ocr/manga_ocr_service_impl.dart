@@ -426,11 +426,36 @@ class MangaOcrServiceImpl implements MangaOcrService {
   static Future<Directory> defaultMangaOcrModelsDir() =>
       model_fp.defaultMangaOcrModelsDir();
 
-  /// 整卷本地 OCR 仅桌面（重活）；macOS 已随 flutter_onnxruntime gate 出 Apple
-  /// （见 ocr_inference_ort.dart isLocalOnnxRuntimeAvailable），退回互联 host /
-  /// 云端 OCR。Windows / Linux 上闸门恒真，等价于旧的 Windows||Linux。
+  /// 整卷本地 OCR 的平台闸门 = **桌面三端 + iOS**，且本机确有 ORT native
+  /// （[isLocalOnnxRuntimeAvailable]）。
+  ///
+  /// macOS 是 2026-08 随 flutter_onnxruntime fork 重新接上 Apple native 后开的：
+  /// 它就是桌面，和 Windows / Linux 同一档重活预算。
+  ///
+  /// iOS 一并开——整卷是重活，但 iPhone/iPad 上既没有外部 mokuro CLI 也没有桌面
+  /// 可用，不开就等于「iOS 永远没有本地整卷 OCR」。
+  ///
+  /// **真机实测（2026-08-14，`integration_test/manga_ocr_volume_e2e_itest.dart`，
+  /// 4 块竖排气泡的 1200×1700 页，识别逐字 100% 正确）**：
+  ///
+  /// | 设备 | 每页 | 构成 |
+  /// |---|---|---|
+  /// | macOS 26.6（M 系列） | 2.7s | 检测 148ms + 识别 4 块 |
+  /// | iPhone SE 2（A13, iOS 26.6） | 13.9s | 检测 381ms + 识别 4 块 |
+  ///
+  /// A13 是当前最低档的在役 iPhone；识别耗时**随页内文字块数线性增长**，真实漫画
+  /// 一页 10~15 块，A13 上折合约 35~50s/页。也就是说整卷在老机型上是「挂着跑几
+  /// 小时」的量级——能用，但别当交互操作。新机型（A17/A18）大致快 3~4 倍。
+  /// 用户不接受这个量级时，向导里的「已配对主机代跑」和 Google Lens 仍在。
+  ///
+  /// **Android 仍不开**：与本次改动无关，其闸门从来就不是 ORT 可用性决定的
+  /// （Android native 一直正常注册），而是低端机的重活预算问题，另案评估。
   static bool defaultPlatformSupport() =>
-      (Platform.isWindows || Platform.isLinux) && isLocalOnnxRuntimeAvailable;
+      (Platform.isWindows ||
+          Platform.isLinux ||
+          Platform.isMacOS ||
+          Platform.isIOS) &&
+      isLocalOnnxRuntimeAvailable;
 
   @override
   bool get isSupportedPlatform => _platformSupport();

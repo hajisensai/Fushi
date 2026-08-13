@@ -64,13 +64,6 @@ class _FakeRunner implements MangaBoxRescanRunner {
   }
 }
 
-/// Apple 没有内置 ONNX Runtime native，[MangaBoxRescanService.rescan] 在那里是
-/// 显式不可用（抛 StateError）。凡真正走 rescan 闸门的用例在 Apple 上跳过，其余
-/// 纯函数/isolate/就绪判定用例全平台照跑。
-final String? _appleSkip = isLocalOnnxRuntimeAvailable
-    ? null
-    : 'Apple 无内置 ONNX Runtime native，本地框选识别显式不可用';
-
 Directory _tempDir(String prefix) {
   final Directory dir = Directory.systemTemp.createTempSync(prefix);
   addTearDown(() {
@@ -219,6 +212,20 @@ void main() {
   });
 
   group('MangaBoxRescanService', () {
+    test('本地框选识别在本宿主平台可用（五端都接上了 ORT native）', () async {
+      // 2026-08-14 前这里是「Apple 上跳过」：vendored fork 把 ios/macos 从
+      // flutter.plugin.platforms 删了，Apple 上 rescan 显式不可用。fork 改回
+      // 五端后闸门恒真，本组用例不再有平台跳过——这条断言就是防止将来有人
+      // 再把某端摘掉时，那些用例静默变成「跳过 = 绿」。
+      expect(isLocalOnnxRuntimeAvailable, isTrue,
+          reason: '${Platform.operatingSystem} 上 ORT native 应可用');
+      final MangaBoxRescanService service = MangaBoxRescanService(
+        modelsDirProvider: () async => _tempDir('manga_rescan_gate_'),
+      );
+      addTearDown(service.dispose);
+      expect(service.isLocalRescanSupported, isTrue);
+    });
+
     test('就绪判定只看识别三件套（无检测器也就绪）', () async {
       final Directory ready = _readyModelsDir();
       final MangaBoxRescanService service = MangaBoxRescanService(
@@ -269,7 +276,7 @@ void main() {
 
       await service.dispose();
       expect(runner.disposed, isTrue);
-    }, skip: _appleSkip);
+    });
 
     test('竖排判据与整卷流水线同源（阈值 1.25，不另立一套）', () async {
       final Directory ready = _readyModelsDir();
@@ -286,7 +293,7 @@ void main() {
       );
       expect(kVerticalAspectThreshold, 1.25);
       expect(tilted.vertical, isTrue);
-    }, skip: _appleSkip);
+    });
 
     test('模型未就绪时 rescan 抛 StateError（不建 runner）', () async {
       final Directory empty = _tempDir('manga_rescan_gate_');
