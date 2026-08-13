@@ -333,6 +333,14 @@ constexpr uint32_t kLookupDiagFrameRejected = 0x00000080u;    // 收到过不合
 // 逐字几何只能从原生绘字方法取。与 kLookupDiagGeometryObserved 分开——那位只说"拿到过
 // 几何"，这位说"几何是从哪条面来的"，真机排障时决定该去看 TextRender 还是 drawText。
 constexpr uint32_t kLookupDiagClassicTextSource = 0x00000100u;
+// 经典采集面**真的捕到过字形**。与上一位分开是因为真机上这两件事会分离：补丁装上了、
+// bootstrap 也跑完了，但一个字都没经过它——那说明游戏的文字根本不走这个原生方法，而不是
+// 安装失败。两者症状同形（都没有卡片），合成一位就永远分不出该去修哪边。
+constexpr uint32_t kLookupDiagClassicGeometry = 0x00000200u;
+// 经典采集面走的是 MessageLayer.processCh（TJS 类）而不是 Layer.drawText（原生类）。
+// 两者必须分开自证：真机实测 KiriKiri2 上给原生类成员赋值**拦不住实例调用**，只有 TJS
+// 层的类才拦得住。合成一位就会把"装上了但永远不触发"误读成"这条路能用"。
+constexpr uint32_t kLookupDiagClassicProcessCh = 0x00000400u;
 
 // hook → host：光标命中了哪个字符。单槽 latest-wins；`seq` **最后**写（Interlocked 全栅栏，
 // 保证 payload 对 reader 先可见），与 VoiceClip / LoopbackMarker 同一套纪律。

@@ -1279,7 +1279,22 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					entry.originX = 0;
 					entry.originY = 0;
 					entry.used = ++global.fushiLookupClock;
-					global.fushiLookupClassicSource = 1;
+					// 位 1 = drawText 真捕到过字形（位 0 = 补丁装上了）。
+					global.fushiLookupClassicSource = global.fushiLookupClassicSource | 2;
+				}
+				catch(e) {}
+			};
+
+			// MessageLayer.processCh 探针。**只自证是否触发**，不产出几何：KAG3 的 MessageLayer
+			// 把字符位置放在自己的行对象里，字段名各游戏改得千差万别，没有真机确认之前编造
+			// 字段名只会造出一条看起来在跑、实际全是 void 的假采集面。先用真机判「字到底走不
+			// 走这里」，再按实测到的结构补几何。
+			global.fushiLookupCaptureProcessCh = function(layer, ch)
+			{
+				try
+				{
+					if(typeof ch != "String" || ch == "") return;
+					global.fushiLookupClassicSource = global.fushiLookupClassicSource | 4;
 				}
 				catch(e) {}
 			};
@@ -1448,7 +1463,21 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			}
 			else
 			{
-				// 没有 KAGEX TextRender 的经典 KAG3 游戏：逐字几何只从原生 Layer.drawText 经过。
+				// ⚠️ 真机实测结论（2026-08-14，务必先读再改）：
+				//   Fate/stay night[Realta Nua]（KiriKiri2、无 textrender.dll）——传感器装上、
+				//   查词开关打开、连推 7 句台词，**drawText 与 processCh 两条包装一次都没被
+				//   调用**（classic_patch_installed 亮，classic_geometry_captured 与
+				//   classic_processch_fired 全灭），同期 LunaHook 正常收到 7 行文本。
+				//   フタマタ恋愛（KiriKiri、KAGParser.dll）——TJS exporter 始终没拿到，整个
+				//   传感器（含原有 KAGEX 路径）根本没装起来，lookup_diag 恒为 0。
+				//
+				// 也就是说：给**原生类** Layer 的成员赋值，在 TJS 里拦不住实例上的调用；而
+				// MessageLayer 在这些游戏里也不是可覆写的全局 TJS 类。下面两条目前只作为
+				// **自证探针**存在——它们不产出可用几何，只回答"这台游戏的字走不走这里"。
+				// 想让经典 KAG3 真能用，得先在真机上找到这些游戏实际的绘字边界（候选：引擎
+				// 内部 TVPDrawText 的原生 detour），而不是继续在 TJS 层加包装。
+				//
+				// 没有 KAGEX TextRender 的经典 KAG3 游戏：逐字几何原以为只从原生 Layer.drawText 经过。
 				// 这是**有条件**的全局补丁——装了 textrender.dll 的游戏走上面那条，一行都不多绕，
 				// 所以"全局类补丁让所有 UI 绘制多绕一层"的代价只落在别无来源的游戏上；而在那些
 				// 游戏里，不绕就等于游戏内查词整个不存在。
@@ -1462,6 +1491,23 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					global.fushiLookupCaptureDrawText(this, x, y, text);
 					return result;
 				};
+				// 位 0 = 补丁真的装上了（这一行跑到就说明 else 分支没有中途抛异常）。
+				global.fushiLookupClassicSource = global.fushiLookupClassicSource | 1;
+				// MessageLayer 是 KAG3 的 **TJS 类**，Layer 是引擎的**原生类**。给原生类的
+				// 成员赋值在 TJS 里拦不住实例上的调用（Fate/stay night[Realta Nua] 实测：补丁
+				// 装上、游戏连画 4 句台词，包装一次都没被调用），TJS 类才拦得住。两条同时挂、
+				// 各自自证，真机一轮就能判出这台游戏的字到底从哪儿过。
+				if(typeof global.MessageLayer == "Object")
+				{
+					global.fushiLookupOriginalProcessCh = global.MessageLayer.processCh;
+					global.MessageLayer.processCh = function(ch, steptime)
+					{
+						var result =
+							(global.fushiLookupOriginalProcessCh incontextof this)(...);
+						global.fushiLookupCaptureProcessCh(this, ch);
+						return result;
+					} incontextof global.MessageLayer;
+				}
 			}
 
 )TJS" LR"TJS(
@@ -1550,8 +1596,9 @@ uint64_t g_lookup_hit_seq = 0;
 int64_t g_lookup_last_notify = -1;
 bool g_lookup_card_shown = false;
 bool g_lookup_sensor_live = false;
-// 经典 KAG3 采集面已自证（置位后不再求值）。
+// 经典 KAG3 采集面已自证（读到"真捕到字形"后不再求值）。
 bool g_lookup_classic_source_known = false;
+int g_lookup_classic_poll_ticks = 0;
 bool g_lookup_input_pending = false;  // 上一帧撞到每帧搬运上限，队列里还有剩
 uint32_t g_lookup_sensor_idle_ticks = 0;
 
@@ -2015,18 +2062,27 @@ void PumpKirikiriLookup() {
     g_lookup_sensor_live = true;
     SetLookupDiag(fushi_voice_hook::kLookupDiagSensorInstalled);
   }
-  if (notify != g_lookup_last_notify) {
-    g_lookup_last_notify = notify;
-    // 采集面自证：经典 KAG3 的标志要等第一次真捕获到几何才置 1，所以在这里查（notify 变
-    // 化 = 用户真悬停到字上），查到就不再查。稳态下这条求值一次都不跑。
-    if (!g_lookup_classic_source_known) {
-      int64_t classic = 0;
-      if (EvaluateTjsInteger(L"global.fushiLookupClassicSource", &classic) &&
-          classic != 0) {
-        g_lookup_classic_source_known = true;
+  // 采集面自证。**不能**挂在 notify 变化上：notify 只有用户真悬停到字上才动，而这两位
+  // 恰恰是用来诊断「一个字都没采到」的——那种情况下 notify 永远不动，挂上去就等于永远读
+  // 不到。改为低频轮询（约每 60 帧一次），读到 2（真捕到字形）就彻底停。
+  if (!g_lookup_classic_source_known && ++g_lookup_classic_poll_ticks >= 60) {
+    g_lookup_classic_poll_ticks = 0;
+    int64_t classic = 0;
+    if (EvaluateTjsInteger(L"global.fushiLookupClassicSource", &classic)) {
+      if ((classic & 1) != 0) {
         SetLookupDiag(fushi_voice_hook::kLookupDiagClassicTextSource);
       }
+      if ((classic & 2) != 0) {
+        SetLookupDiag(fushi_voice_hook::kLookupDiagClassicGeometry);
+        g_lookup_classic_source_known = true;
+      }
+      if ((classic & 4) != 0) {
+        SetLookupDiag(fushi_voice_hook::kLookupDiagClassicProcessCh);
+      }
     }
+  }
+  if (notify != g_lookup_last_notify) {
+    g_lookup_last_notify = notify;
     PublishKirikiriLookupHit();
     DrainKirikiriLookupInput();
   } else if (g_lookup_input_pending) {

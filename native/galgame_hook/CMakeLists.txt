@@ -334,6 +334,15 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8)
   )
   target_include_directories(fushi_voice_ring_probe PRIVATE "include")
   target_compile_definitions(fushi_voice_ring_probe PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+
+  # 游戏内查词诊断读取器。与 ring probe 同理由只出 x64。它是唯一会写共享内存的诊断工具，
+  # 但只写 `lookup_enabled` 这一个 host→hook 开关（契约里本就归 host 写），目的是把注入侧
+  # 的传感器单独拎出来验——否则「传感器没装」与「host 没投帧」在现象上完全同形。
+  add_executable(fushi_voice_lookup_probe
+    "tools/lookup_probe.cpp"
+  )
+  target_include_directories(fushi_voice_lookup_probe PRIVATE "include")
+  target_compile_definitions(fushi_voice_lookup_probe PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
 # LunaHost 符号解析校验器（纯查符号，不注入、不跑游戏）。x64/x86 各出一份，运行期从自身目录
