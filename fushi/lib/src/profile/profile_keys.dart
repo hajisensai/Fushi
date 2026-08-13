@@ -205,7 +205,7 @@ class ProfileKeys {
       ankiConnectPort: current.ankiConnectPort,
       ankiConnectApiKey: current.ankiConnectApiKey,
       ankiConnectUseHttps: current.ankiConnectUseHttps,
-      useAnkiConnectOnAndroid: current.useAnkiConnectOnAndroid,
+      useAnkiConnectOnMobile: current.useAnkiConnectOnMobile,
     );
   }
 
