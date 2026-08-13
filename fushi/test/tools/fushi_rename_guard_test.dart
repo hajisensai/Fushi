@@ -297,6 +297,18 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     regex: RegExp('hibiki-reader'),
   ),
   _ForbiddenPattern(
+    // 用户可见的**导出文件名**（备份包 / 日志分享）已是 fushi-*。这些是纯写侧
+    // 建议名：读侧从不按文件名识别（备份导入只过滤 `zip` 扩展名，归档内容识别走
+    // `_findDbEntry` 的 fushi.db/hibiki.db 双认），所以没有兼容读入口需要白名单，
+    // 任何地方再冒出旧名都是残留——而且是用户直接看得见的那种。
+    //
+    // 只圈用户看得见的形态：`hibiki-backup`（连字符=文件名形态）与两个日志名。
+    // **不**含 `hibiki_backup_` 这类 systemTemp 目录前缀——那是进程内不可见的
+    // 临时名，全仓还有 ~20 个同族前缀，混进来这条规则就名不副实了。
+    name: 'hibiki-* 用户可见导出文件名',
+    regex: RegExp(r'hibiki-backup|hibiki_(?:debug|error)_log'),
+  ),
+  _ForbiddenPattern(
     // 类名族清算：Hibiki* → Fushi*（HibikiDatabase/HibikiToast/_HibikiCardState
     // 等词首形态，含 _$Hibiki* 生成类）。
     name: 'Hibiki*-类名族',
