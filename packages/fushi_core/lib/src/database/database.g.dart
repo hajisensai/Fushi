@@ -8674,6 +8674,12 @@ class $VideoBooksTable extends VideoBooks
       type: DriftSqlType.int,
       requiredDuringInsert: false,
       defaultValue: const Constant(0));
+  static const VerificationMeta _secondaryDelayMsMeta =
+      const VerificationMeta('secondaryDelayMs');
+  @override
+  late final GeneratedColumn<int> secondaryDelayMs = GeneratedColumn<int>(
+      'secondary_delay_ms', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
   static const VerificationMeta _completedAtMeta =
       const VerificationMeta('completedAt');
   @override
@@ -8712,6 +8718,7 @@ class $VideoBooksTable extends VideoBooks
         currentEpisode,
         audioTrackId,
         delayMs,
+        secondaryDelayMs,
         completedAt,
         sourceId,
         streamSpecJson
@@ -8813,6 +8820,12 @@ class $VideoBooksTable extends VideoBooks
       context.handle(_delayMsMeta,
           delayMs.isAcceptableOrUnknown(data['delay_ms']!, _delayMsMeta));
     }
+    if (data.containsKey('secondary_delay_ms')) {
+      context.handle(
+          _secondaryDelayMsMeta,
+          secondaryDelayMs.isAcceptableOrUnknown(
+              data['secondary_delay_ms']!, _secondaryDelayMsMeta));
+    }
     if (data.containsKey('completed_at')) {
       context.handle(
           _completedAtMeta,
@@ -8869,6 +8882,8 @@ class $VideoBooksTable extends VideoBooks
           .read(DriftSqlType.string, data['${effectivePrefix}audio_track_id']),
       delayMs: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}delay_ms'])!,
+      secondaryDelayMs: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}secondary_delay_ms']),
       completedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}completed_at']),
       sourceId: attachedDatabase.typeMapping
@@ -8892,7 +8907,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
 
   /// 副字幕源（TODO-857 视频双字幕 Path A）：与 [subtitleSource] 同款四态编码
   /// （外挂存绝对路径；内嵌存 `embedded:<n>`；关闭存 `off:`；无副字幕存 null）。
-  /// 副字幕由 libmpv `secondary-sid` 自渲染，不进 Dart cue 流，不可查词。
+  /// TODO-1312 起副字幕走独立 Dart cue 流（Flutter overlay 副层渲染，可逐字符
+  /// 查词），**不再**由 libmpv `secondary-sid` 自渲染；持久化编码沿用不变。
   final String? secondarySubtitleSource;
   final String? subtitleFormat;
   final int? embeddedSubtitleTrack;
@@ -8933,6 +8949,13 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   /// 跨重启保留；多集播放列表换集时复用同一值（手动校准一次全片受用）。
   final int delayMs;
 
+  /// 副字幕独立调轴（毫秒，schema v86，TODO-2837 主副字幕分开调轴）。**nullable**
+  /// （区别于 [delayMs] 的 withDefault(0)）：NULL = 未单独设置 = 副字幕跟随
+  /// [delayMs]（与 v86 前「主副共用一个 offset」逐字节一致，Never break
+  /// userspace——旧库升级后全 NULL，行为零变化）；非 NULL = 副字幕独立于主字幕
+  /// 调轴（主副字幕轴不同源时各调各的）。含义与 [delayMs] 同向（正值=字幕延后）。
+  final int? secondaryDelayMs;
+
   /// 视频首次播放进度 ≥ 90% 的时间戳（完成标记）；null = 未完成。统计去重计数用。
   final DateTime? completedAt;
 
@@ -8963,6 +8986,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       required this.currentEpisode,
       this.audioTrackId,
       required this.delayMs,
+      this.secondaryDelayMs,
       this.completedAt,
       this.sourceId,
       this.streamSpecJson});
@@ -9003,6 +9027,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       map['audio_track_id'] = Variable<String>(audioTrackId);
     }
     map['delay_ms'] = Variable<int>(delayMs);
+    if (!nullToAbsent || secondaryDelayMs != null) {
+      map['secondary_delay_ms'] = Variable<int>(secondaryDelayMs);
+    }
     if (!nullToAbsent || completedAt != null) {
       map['completed_at'] = Variable<DateTime>(completedAt);
     }
@@ -9050,6 +9077,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           ? const Value.absent()
           : Value(audioTrackId),
       delayMs: Value(delayMs),
+      secondaryDelayMs: secondaryDelayMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(secondaryDelayMs),
       completedAt: completedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(completedAt),
@@ -9083,6 +9113,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       currentEpisode: serializer.fromJson<int>(json['currentEpisode']),
       audioTrackId: serializer.fromJson<String?>(json['audioTrackId']),
       delayMs: serializer.fromJson<int>(json['delayMs']),
+      secondaryDelayMs: serializer.fromJson<int?>(json['secondaryDelayMs']),
       completedAt: serializer.fromJson<DateTime?>(json['completedAt']),
       sourceId: serializer.fromJson<int?>(json['sourceId']),
       streamSpecJson: serializer.fromJson<String?>(json['streamSpecJson']),
@@ -9108,6 +9139,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       'currentEpisode': serializer.toJson<int>(currentEpisode),
       'audioTrackId': serializer.toJson<String?>(audioTrackId),
       'delayMs': serializer.toJson<int>(delayMs),
+      'secondaryDelayMs': serializer.toJson<int?>(secondaryDelayMs),
       'completedAt': serializer.toJson<DateTime?>(completedAt),
       'sourceId': serializer.toJson<int?>(sourceId),
       'streamSpecJson': serializer.toJson<String?>(streamSpecJson),
@@ -9130,6 +9162,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           int? currentEpisode,
           Value<String?> audioTrackId = const Value.absent(),
           int? delayMs,
+          Value<int?> secondaryDelayMs = const Value.absent(),
           Value<DateTime?> completedAt = const Value.absent(),
           Value<int?> sourceId = const Value.absent(),
           Value<String?> streamSpecJson = const Value.absent()}) =>
@@ -9158,6 +9191,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
         audioTrackId:
             audioTrackId.present ? audioTrackId.value : this.audioTrackId,
         delayMs: delayMs ?? this.delayMs,
+        secondaryDelayMs: secondaryDelayMs.present
+            ? secondaryDelayMs.value
+            : this.secondaryDelayMs,
         completedAt: completedAt.present ? completedAt.value : this.completedAt,
         sourceId: sourceId.present ? sourceId.value : this.sourceId,
         streamSpecJson:
@@ -9199,6 +9235,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           ? data.audioTrackId.value
           : this.audioTrackId,
       delayMs: data.delayMs.present ? data.delayMs.value : this.delayMs,
+      secondaryDelayMs: data.secondaryDelayMs.present
+          ? data.secondaryDelayMs.value
+          : this.secondaryDelayMs,
       completedAt:
           data.completedAt.present ? data.completedAt.value : this.completedAt,
       sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
@@ -9226,6 +9265,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           ..write('currentEpisode: $currentEpisode, ')
           ..write('audioTrackId: $audioTrackId, ')
           ..write('delayMs: $delayMs, ')
+          ..write('secondaryDelayMs: $secondaryDelayMs, ')
           ..write('completedAt: $completedAt, ')
           ..write('sourceId: $sourceId, ')
           ..write('streamSpecJson: $streamSpecJson')
@@ -9250,6 +9290,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       currentEpisode,
       audioTrackId,
       delayMs,
+      secondaryDelayMs,
       completedAt,
       sourceId,
       streamSpecJson);
@@ -9272,6 +9313,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           other.currentEpisode == this.currentEpisode &&
           other.audioTrackId == this.audioTrackId &&
           other.delayMs == this.delayMs &&
+          other.secondaryDelayMs == this.secondaryDelayMs &&
           other.completedAt == this.completedAt &&
           other.sourceId == this.sourceId &&
           other.streamSpecJson == this.streamSpecJson);
@@ -9293,6 +9335,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
   final Value<int> currentEpisode;
   final Value<String?> audioTrackId;
   final Value<int> delayMs;
+  final Value<int?> secondaryDelayMs;
   final Value<DateTime?> completedAt;
   final Value<int?> sourceId;
   final Value<String?> streamSpecJson;
@@ -9313,6 +9356,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.currentEpisode = const Value.absent(),
     this.audioTrackId = const Value.absent(),
     this.delayMs = const Value.absent(),
+    this.secondaryDelayMs = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.sourceId = const Value.absent(),
     this.streamSpecJson = const Value.absent(),
@@ -9334,6 +9378,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.currentEpisode = const Value.absent(),
     this.audioTrackId = const Value.absent(),
     this.delayMs = const Value.absent(),
+    this.secondaryDelayMs = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.sourceId = const Value.absent(),
     this.streamSpecJson = const Value.absent(),
@@ -9357,6 +9402,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     Expression<int>? currentEpisode,
     Expression<String>? audioTrackId,
     Expression<int>? delayMs,
+    Expression<int>? secondaryDelayMs,
     Expression<DateTime>? completedAt,
     Expression<int>? sourceId,
     Expression<String>? streamSpecJson,
@@ -9380,6 +9426,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       if (currentEpisode != null) 'current_episode': currentEpisode,
       if (audioTrackId != null) 'audio_track_id': audioTrackId,
       if (delayMs != null) 'delay_ms': delayMs,
+      if (secondaryDelayMs != null) 'secondary_delay_ms': secondaryDelayMs,
       if (completedAt != null) 'completed_at': completedAt,
       if (sourceId != null) 'source_id': sourceId,
       if (streamSpecJson != null) 'stream_spec_json': streamSpecJson,
@@ -9403,6 +9450,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       Value<int>? currentEpisode,
       Value<String?>? audioTrackId,
       Value<int>? delayMs,
+      Value<int?>? secondaryDelayMs,
       Value<DateTime?>? completedAt,
       Value<int?>? sourceId,
       Value<String?>? streamSpecJson,
@@ -9425,6 +9473,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       currentEpisode: currentEpisode ?? this.currentEpisode,
       audioTrackId: audioTrackId ?? this.audioTrackId,
       delayMs: delayMs ?? this.delayMs,
+      secondaryDelayMs: secondaryDelayMs ?? this.secondaryDelayMs,
       completedAt: completedAt ?? this.completedAt,
       sourceId: sourceId ?? this.sourceId,
       streamSpecJson: streamSpecJson ?? this.streamSpecJson,
@@ -9482,6 +9531,9 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     if (delayMs.present) {
       map['delay_ms'] = Variable<int>(delayMs.value);
     }
+    if (secondaryDelayMs.present) {
+      map['secondary_delay_ms'] = Variable<int>(secondaryDelayMs.value);
+    }
     if (completedAt.present) {
       map['completed_at'] = Variable<DateTime>(completedAt.value);
     }
@@ -9515,6 +9567,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
           ..write('currentEpisode: $currentEpisode, ')
           ..write('audioTrackId: $audioTrackId, ')
           ..write('delayMs: $delayMs, ')
+          ..write('secondaryDelayMs: $secondaryDelayMs, ')
           ..write('completedAt: $completedAt, ')
           ..write('sourceId: $sourceId, ')
           ..write('streamSpecJson: $streamSpecJson, ')
@@ -12332,6 +12385,12 @@ class $MediaCollectionsTable extends MediaCollections
   late final GeneratedColumn<int> subtitleDelayMs = GeneratedColumn<int>(
       'subtitle_delay_ms', aliasedName, true,
       type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _secondarySubtitleDelayMsMeta =
+      const VerificationMeta('secondarySubtitleDelayMs');
+  @override
+  late final GeneratedColumn<int> secondarySubtitleDelayMs =
+      GeneratedColumn<int>('secondary_subtitle_delay_ms', aliasedName, true,
+          type: DriftSqlType.int, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -12344,7 +12403,8 @@ class $MediaCollectionsTable extends MediaCollections
         orderUpdatedAt,
         anilistId,
         audioTrackId,
-        subtitleDelayMs
+        subtitleDelayMs,
+        secondarySubtitleDelayMs
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -12413,6 +12473,13 @@ class $MediaCollectionsTable extends MediaCollections
           subtitleDelayMs.isAcceptableOrUnknown(
               data['subtitle_delay_ms']!, _subtitleDelayMsMeta));
     }
+    if (data.containsKey('secondary_subtitle_delay_ms')) {
+      context.handle(
+          _secondarySubtitleDelayMsMeta,
+          secondarySubtitleDelayMs.isAcceptableOrUnknown(
+              data['secondary_subtitle_delay_ms']!,
+              _secondarySubtitleDelayMsMeta));
+    }
     return context;
   }
 
@@ -12444,6 +12511,9 @@ class $MediaCollectionsTable extends MediaCollections
           .read(DriftSqlType.string, data['${effectivePrefix}audio_track_id']),
       subtitleDelayMs: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}subtitle_delay_ms']),
+      secondarySubtitleDelayMs: attachedDatabase.typeMapping.read(
+          DriftSqlType.int,
+          data['${effectivePrefix}secondary_subtitle_delay_ms']),
     );
   }
 
@@ -12520,6 +12590,13 @@ class MediaCollectionRow extends DataClass
   /// 与「显式调成 0」区分，避免 0 哨兵歧义。无损迁移：nullable 无 default → 旧库既有行全
   /// NULL = 行为与旧版一致（Never break userspace）。
   final int? subtitleDelayMs;
+
+  /// 系列级**副字幕**独立调轴（毫秒，schema v86，TODO-2837）。与 [subtitleDelayMs]
+  /// 同款「系列共享」语义：合集内任一集调副轨轴即写这里，任一集加载优先读这里
+  /// （回退各集自己行的 [VideoBooks.secondaryDelayMs]）。两层都 NULL = 副字幕跟随
+  /// 主字幕调轴（v86 前行为）。无损迁移：nullable 无 default → 旧库既有行全 NULL =
+  /// 行为与旧版一致（Never break userspace）。
+  final int? secondarySubtitleDelayMs;
   const MediaCollectionRow(
       {required this.id,
       required this.name,
@@ -12531,7 +12608,8 @@ class MediaCollectionRow extends DataClass
       required this.orderUpdatedAt,
       this.anilistId,
       this.audioTrackId,
-      this.subtitleDelayMs});
+      this.subtitleDelayMs,
+      this.secondarySubtitleDelayMs});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -12555,6 +12633,10 @@ class MediaCollectionRow extends DataClass
     }
     if (!nullToAbsent || subtitleDelayMs != null) {
       map['subtitle_delay_ms'] = Variable<int>(subtitleDelayMs);
+    }
+    if (!nullToAbsent || secondarySubtitleDelayMs != null) {
+      map['secondary_subtitle_delay_ms'] =
+          Variable<int>(secondarySubtitleDelayMs);
     }
     return map;
   }
@@ -12582,6 +12664,9 @@ class MediaCollectionRow extends DataClass
       subtitleDelayMs: subtitleDelayMs == null && nullToAbsent
           ? const Value.absent()
           : Value(subtitleDelayMs),
+      secondarySubtitleDelayMs: secondarySubtitleDelayMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(secondarySubtitleDelayMs),
     );
   }
 
@@ -12600,6 +12685,8 @@ class MediaCollectionRow extends DataClass
       anilistId: serializer.fromJson<int?>(json['anilistId']),
       audioTrackId: serializer.fromJson<String?>(json['audioTrackId']),
       subtitleDelayMs: serializer.fromJson<int?>(json['subtitleDelayMs']),
+      secondarySubtitleDelayMs:
+          serializer.fromJson<int?>(json['secondarySubtitleDelayMs']),
     );
   }
   @override
@@ -12617,6 +12704,8 @@ class MediaCollectionRow extends DataClass
       'anilistId': serializer.toJson<int?>(anilistId),
       'audioTrackId': serializer.toJson<String?>(audioTrackId),
       'subtitleDelayMs': serializer.toJson<int?>(subtitleDelayMs),
+      'secondarySubtitleDelayMs':
+          serializer.toJson<int?>(secondarySubtitleDelayMs),
     };
   }
 
@@ -12631,7 +12720,8 @@ class MediaCollectionRow extends DataClass
           int? orderUpdatedAt,
           Value<int?> anilistId = const Value.absent(),
           Value<String?> audioTrackId = const Value.absent(),
-          Value<int?> subtitleDelayMs = const Value.absent()}) =>
+          Value<int?> subtitleDelayMs = const Value.absent(),
+          Value<int?> secondarySubtitleDelayMs = const Value.absent()}) =>
       MediaCollectionRow(
         id: id ?? this.id,
         name: name ?? this.name,
@@ -12647,6 +12737,9 @@ class MediaCollectionRow extends DataClass
         subtitleDelayMs: subtitleDelayMs.present
             ? subtitleDelayMs.value
             : this.subtitleDelayMs,
+        secondarySubtitleDelayMs: secondarySubtitleDelayMs.present
+            ? secondarySubtitleDelayMs.value
+            : this.secondarySubtitleDelayMs,
       );
   MediaCollectionRow copyWithCompanion(MediaCollectionsCompanion data) {
     return MediaCollectionRow(
@@ -12670,6 +12763,9 @@ class MediaCollectionRow extends DataClass
       subtitleDelayMs: data.subtitleDelayMs.present
           ? data.subtitleDelayMs.value
           : this.subtitleDelayMs,
+      secondarySubtitleDelayMs: data.secondarySubtitleDelayMs.present
+          ? data.secondarySubtitleDelayMs.value
+          : this.secondarySubtitleDelayMs,
     );
   }
 
@@ -12686,7 +12782,8 @@ class MediaCollectionRow extends DataClass
           ..write('orderUpdatedAt: $orderUpdatedAt, ')
           ..write('anilistId: $anilistId, ')
           ..write('audioTrackId: $audioTrackId, ')
-          ..write('subtitleDelayMs: $subtitleDelayMs')
+          ..write('subtitleDelayMs: $subtitleDelayMs, ')
+          ..write('secondarySubtitleDelayMs: $secondarySubtitleDelayMs')
           ..write(')'))
         .toString();
   }
@@ -12703,7 +12800,8 @@ class MediaCollectionRow extends DataClass
       orderUpdatedAt,
       anilistId,
       audioTrackId,
-      subtitleDelayMs);
+      subtitleDelayMs,
+      secondarySubtitleDelayMs);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -12718,7 +12816,8 @@ class MediaCollectionRow extends DataClass
           other.orderUpdatedAt == this.orderUpdatedAt &&
           other.anilistId == this.anilistId &&
           other.audioTrackId == this.audioTrackId &&
-          other.subtitleDelayMs == this.subtitleDelayMs);
+          other.subtitleDelayMs == this.subtitleDelayMs &&
+          other.secondarySubtitleDelayMs == this.secondarySubtitleDelayMs);
 }
 
 class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
@@ -12733,6 +12832,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
   final Value<int?> anilistId;
   final Value<String?> audioTrackId;
   final Value<int?> subtitleDelayMs;
+  final Value<int?> secondarySubtitleDelayMs;
   const MediaCollectionsCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
@@ -12745,6 +12845,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     this.anilistId = const Value.absent(),
     this.audioTrackId = const Value.absent(),
     this.subtitleDelayMs = const Value.absent(),
+    this.secondarySubtitleDelayMs = const Value.absent(),
   });
   MediaCollectionsCompanion.insert({
     this.id = const Value.absent(),
@@ -12758,6 +12859,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     this.anilistId = const Value.absent(),
     this.audioTrackId = const Value.absent(),
     this.subtitleDelayMs = const Value.absent(),
+    this.secondarySubtitleDelayMs = const Value.absent(),
   })  : name = Value(name),
         createdAt = Value(createdAt);
   static Insertable<MediaCollectionRow> custom({
@@ -12772,6 +12874,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     Expression<int>? anilistId,
     Expression<String>? audioTrackId,
     Expression<int>? subtitleDelayMs,
+    Expression<int>? secondarySubtitleDelayMs,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -12785,6 +12888,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       if (anilistId != null) 'anilist_id': anilistId,
       if (audioTrackId != null) 'audio_track_id': audioTrackId,
       if (subtitleDelayMs != null) 'subtitle_delay_ms': subtitleDelayMs,
+      if (secondarySubtitleDelayMs != null)
+        'secondary_subtitle_delay_ms': secondarySubtitleDelayMs,
     });
   }
 
@@ -12799,7 +12904,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       Value<int>? orderUpdatedAt,
       Value<int?>? anilistId,
       Value<String?>? audioTrackId,
-      Value<int?>? subtitleDelayMs}) {
+      Value<int?>? subtitleDelayMs,
+      Value<int?>? secondarySubtitleDelayMs}) {
     return MediaCollectionsCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
@@ -12812,6 +12918,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       anilistId: anilistId ?? this.anilistId,
       audioTrackId: audioTrackId ?? this.audioTrackId,
       subtitleDelayMs: subtitleDelayMs ?? this.subtitleDelayMs,
+      secondarySubtitleDelayMs:
+          secondarySubtitleDelayMs ?? this.secondarySubtitleDelayMs,
     );
   }
 
@@ -12851,6 +12959,10 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     if (subtitleDelayMs.present) {
       map['subtitle_delay_ms'] = Variable<int>(subtitleDelayMs.value);
     }
+    if (secondarySubtitleDelayMs.present) {
+      map['secondary_subtitle_delay_ms'] =
+          Variable<int>(secondarySubtitleDelayMs.value);
+    }
     return map;
   }
 
@@ -12867,7 +12979,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
           ..write('orderUpdatedAt: $orderUpdatedAt, ')
           ..write('anilistId: $anilistId, ')
           ..write('audioTrackId: $audioTrackId, ')
-          ..write('subtitleDelayMs: $subtitleDelayMs')
+          ..write('subtitleDelayMs: $subtitleDelayMs, ')
+          ..write('secondarySubtitleDelayMs: $secondarySubtitleDelayMs')
           ..write(')'))
         .toString();
   }
@@ -45124,6 +45237,7 @@ typedef $$VideoBooksTableCreateCompanionBuilder = VideoBooksCompanion Function({
   Value<int> currentEpisode,
   Value<String?> audioTrackId,
   Value<int> delayMs,
+  Value<int?> secondaryDelayMs,
   Value<DateTime?> completedAt,
   Value<int?> sourceId,
   Value<String?> streamSpecJson,
@@ -45145,6 +45259,7 @@ typedef $$VideoBooksTableUpdateCompanionBuilder = VideoBooksCompanion Function({
   Value<int> currentEpisode,
   Value<String?> audioTrackId,
   Value<int> delayMs,
+  Value<int?> secondaryDelayMs,
   Value<DateTime?> completedAt,
   Value<int?> sourceId,
   Value<String?> streamSpecJson,
@@ -45317,6 +45432,10 @@ class $$VideoBooksTableFilterComposer
 
   ColumnFilters<int> get delayMs => $composableBuilder(
       column: $table.delayMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get secondaryDelayMs => $composableBuilder(
+      column: $table.secondaryDelayMs,
+      builder: (column) => ColumnFilters(column));
 
   ColumnFilters<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => ColumnFilters(column));
@@ -45516,6 +45635,10 @@ class $$VideoBooksTableOrderingComposer
   ColumnOrderings<int> get delayMs => $composableBuilder(
       column: $table.delayMs, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<int> get secondaryDelayMs => $composableBuilder(
+      column: $table.secondaryDelayMs,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => ColumnOrderings(column));
 
@@ -45597,6 +45720,9 @@ class $$VideoBooksTableAnnotationComposer
 
   GeneratedColumn<int> get delayMs =>
       $composableBuilder(column: $table.delayMs, builder: (column) => column);
+
+  GeneratedColumn<int> get secondaryDelayMs => $composableBuilder(
+      column: $table.secondaryDelayMs, builder: (column) => column);
 
   GeneratedColumn<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => column);
@@ -45779,6 +45905,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             Value<int> currentEpisode = const Value.absent(),
             Value<String?> audioTrackId = const Value.absent(),
             Value<int> delayMs = const Value.absent(),
+            Value<int?> secondaryDelayMs = const Value.absent(),
             Value<DateTime?> completedAt = const Value.absent(),
             Value<int?> sourceId = const Value.absent(),
             Value<String?> streamSpecJson = const Value.absent(),
@@ -45800,6 +45927,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             currentEpisode: currentEpisode,
             audioTrackId: audioTrackId,
             delayMs: delayMs,
+            secondaryDelayMs: secondaryDelayMs,
             completedAt: completedAt,
             sourceId: sourceId,
             streamSpecJson: streamSpecJson,
@@ -45821,6 +45949,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             Value<int> currentEpisode = const Value.absent(),
             Value<String?> audioTrackId = const Value.absent(),
             Value<int> delayMs = const Value.absent(),
+            Value<int?> secondaryDelayMs = const Value.absent(),
             Value<DateTime?> completedAt = const Value.absent(),
             Value<int?> sourceId = const Value.absent(),
             Value<String?> streamSpecJson = const Value.absent(),
@@ -45842,6 +45971,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             currentEpisode: currentEpisode,
             audioTrackId: audioTrackId,
             delayMs: delayMs,
+            secondaryDelayMs: secondaryDelayMs,
             completedAt: completedAt,
             sourceId: sourceId,
             streamSpecJson: streamSpecJson,
@@ -47569,6 +47699,7 @@ typedef $$MediaCollectionsTableCreateCompanionBuilder
   Value<int?> anilistId,
   Value<String?> audioTrackId,
   Value<int?> subtitleDelayMs,
+  Value<int?> secondarySubtitleDelayMs,
 });
 typedef $$MediaCollectionsTableUpdateCompanionBuilder
     = MediaCollectionsCompanion Function({
@@ -47583,6 +47714,7 @@ typedef $$MediaCollectionsTableUpdateCompanionBuilder
   Value<int?> anilistId,
   Value<String?> audioTrackId,
   Value<int?> subtitleDelayMs,
+  Value<int?> secondarySubtitleDelayMs,
 });
 
 final class $$MediaCollectionsTableReferences extends BaseReferences<
@@ -47740,6 +47872,10 @@ class $$MediaCollectionsTableFilterComposer
 
   ColumnFilters<int> get subtitleDelayMs => $composableBuilder(
       column: $table.subtitleDelayMs,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get secondarySubtitleDelayMs => $composableBuilder(
+      column: $table.secondarySubtitleDelayMs,
       builder: (column) => ColumnFilters(column));
 
   Expression<bool> mediaCollectionItemsRefs(
@@ -47919,6 +48055,10 @@ class $$MediaCollectionsTableOrderingComposer
   ColumnOrderings<int> get subtitleDelayMs => $composableBuilder(
       column: $table.subtitleDelayMs,
       builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get secondarySubtitleDelayMs => $composableBuilder(
+      column: $table.secondarySubtitleDelayMs,
+      builder: (column) => ColumnOrderings(column));
 }
 
 class $$MediaCollectionsTableAnnotationComposer
@@ -47962,6 +48102,9 @@ class $$MediaCollectionsTableAnnotationComposer
 
   GeneratedColumn<int> get subtitleDelayMs => $composableBuilder(
       column: $table.subtitleDelayMs, builder: (column) => column);
+
+  GeneratedColumn<int> get secondarySubtitleDelayMs => $composableBuilder(
+      column: $table.secondarySubtitleDelayMs, builder: (column) => column);
 
   Expression<T> mediaCollectionItemsRefs<T extends Object>(
       Expression<T> Function($$MediaCollectionItemsTableAnnotationComposer a)
@@ -48140,6 +48283,7 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             Value<int?> anilistId = const Value.absent(),
             Value<String?> audioTrackId = const Value.absent(),
             Value<int?> subtitleDelayMs = const Value.absent(),
+            Value<int?> secondarySubtitleDelayMs = const Value.absent(),
           }) =>
               MediaCollectionsCompanion(
             id: id,
@@ -48153,6 +48297,7 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             anilistId: anilistId,
             audioTrackId: audioTrackId,
             subtitleDelayMs: subtitleDelayMs,
+            secondarySubtitleDelayMs: secondarySubtitleDelayMs,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
@@ -48166,6 +48311,7 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             Value<int?> anilistId = const Value.absent(),
             Value<String?> audioTrackId = const Value.absent(),
             Value<int?> subtitleDelayMs = const Value.absent(),
+            Value<int?> secondarySubtitleDelayMs = const Value.absent(),
           }) =>
               MediaCollectionsCompanion.insert(
             id: id,
@@ -48179,6 +48325,7 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             anilistId: anilistId,
             audioTrackId: audioTrackId,
             subtitleDelayMs: subtitleDelayMs,
+            secondarySubtitleDelayMs: secondarySubtitleDelayMs,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (

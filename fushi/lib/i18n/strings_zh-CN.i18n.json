@@ -3370,5 +3370,10 @@
   "download_task_priority": "排队优先级",
   "download_task_priority_high": "高",
   "download_task_priority_normal": "普通",
-  "download_task_priority_low": "低"
+  "download_task_priority_low": "低",
+  "video_setting_secondary_av_delay": "副字幕调轴",
+  "video_setting_secondary_av_delay_hint": "副字幕独立偏移；未单独设置时跟随主字幕调轴。",
+  "video_setting_secondary_delay_follow": "跟随主字幕",
+  "video_subtitle_secondary_delay_osd": "副字幕同步：$ms ms",
+  "video_subtitle_secondary_delay_follow_osd": "副字幕同步：跟随主字幕"
 }

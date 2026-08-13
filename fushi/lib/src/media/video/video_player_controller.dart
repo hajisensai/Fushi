@@ -297,6 +297,12 @@ class VideoPlayerController extends ChangeNotifier
   /// 音画延迟（毫秒）：正值表示"视频比文字先播"，查 cue 时把位置往回拨。
   int _delayMs = 0;
 
+  /// 副字幕独立调轴（毫秒，TODO-2837 主副字幕分开调轴）。**null = 未单独设置 =
+  /// 跟随 [_delayMs]**（与历史「主副共用一个 offset」行为一致）；非 null = 副字幕
+  /// cue 流按此值独立求活动集（主副字幕轴不同源时各调各的）。副字幕恒为 Dart 文本
+  /// cue 流（无图形轨形态），不涉及 libmpv `sub-delay`。
+  int? _secondaryDelayMs;
+
   /// 当前字幕是否走 libmpv 画面渲染的**图形内封轨**（PGS/DVD 等位图，
   /// [selectEmbeddedGraphicTrack]）。图形字幕没有文本 cue，[_delayMs] 的 Dart 侧 cue
   /// 偏移对它无效，调轴必须下发到 libmpv `sub-delay`（BUG-301）。
@@ -929,6 +935,54 @@ class VideoPlayerController extends ChangeNotifier
     _secondaryCues = <AudioCue>[];
     _activeSecondaryCueIndices = const <int>[];
     notifyListeners();
+  }
+
+  /// 设置副字幕独立调轴（毫秒，TODO-2837）。null = 清除独立值、回到跟随主字幕
+  /// [_delayMs]；非 null clamp 到 ±600000（与 [setDelayMs] 同界）。
+  ///
+  /// 与 [setDelayMs] 的 BUG-373 同理：改完**立即按当前位置重算活动集并通知**，
+  /// 暂停定格微调也即时反馈、不等 125ms tick。副字幕恒为 Dart 文本 cue 流，无
+  /// libmpv `sub-delay` 参与（图形轨只存在于主字幕），故无需碰 player。
+  void setSecondaryDelayMs(int? delayMs) {
+    _secondaryDelayMs = delayMs?.clamp(-600000, 600000);
+    final int? pos = positionMs;
+    if (pos == null) return;
+    _syncCueForPosition(pos, persistPosition: false);
+  }
+
+  /// 副字幕独立调轴原始值；null = 跟随主字幕（未单独设置）。
+  int? get secondaryDelayMs => _secondaryDelayMs;
+
+  /// 副字幕**生效**调轴（毫秒）：独立值优先，未设置时跟随主字幕 [_delayMs]。
+  /// 副字幕活动集求解 / 制卡逆变换 / 片段字幕导出的共享真相源。
+  int get effectiveSecondaryDelayMs => _secondaryDelayMs ?? _delayMs;
+
+  /// [miningCues]（BUG-1592 有效 cue 流）对应的生效调轴：主流非空用主轨
+  /// [_delayMs]，主流为空落副字幕流时用 [effectiveSecondaryDelayMs]。制卡按位置
+  /// 解析锚点 / 裁剪逆变换必须与该流的 cue 命中同一根时间轴（TODO-2837）。
+  int get miningDelayMs =>
+      _cues.isNotEmpty ? _delayMs : effectiveSecondaryDelayMs;
+
+  /// [cue] 所属流的生效调轴（按身份判定，镜像 [cueStreamOwning]）：主流 cue 用
+  /// [_delayMs]、副流 cue 用 [effectiveSecondaryDelayMs]；两条流都不含它（列表
+  /// 面板的合成 cue / 已换集的陈旧 cue）时回 [miningDelayMs]（与
+  /// [cueStreamOwning] 的兜底同一口径）。
+  int delayMsForCue(AudioCue cue) {
+    if (_cues.any((AudioCue c) => identical(c, cue))) return _delayMs;
+    if (_secondaryCues.any((AudioCue c) => identical(c, cue))) {
+      return effectiveSecondaryDelayMs;
+    }
+    return miningDelayMs;
+  }
+
+  /// [cue] 所属流的**调轴校正后等效位置**（毫秒；未 [load] / 无位置时 null）。
+  /// 字幕 overlay 的 ASS 动画（`\fad`/`\move`/`\t`）求「cue 内已播放时长」用——
+  /// 副字幕独立调轴后主副两条流的等效时间轴可以不同，按 cue 分流取轴
+  /// （TODO-2837；主轨等价于旧 [effectivePositionMs]）。
+  int? effectivePositionMsForCue(AudioCue cue) {
+    final int? pos = positionMs;
+    if (pos == null) return null;
+    return effectiveSubtitlePositionMs(pos, delayMsForCue(cue));
   }
 
   /// 设置音画延迟（毫秒），clamp 到 ±600000（±10 分钟）。
@@ -1622,13 +1676,16 @@ class VideoPlayerController extends ChangeNotifier
     }
     final int effectiveMs = effectiveSubtitlePositionMs(posMs, _delayMs);
 
-    // TODO-1312：副字幕活动集（与主字幕独立、同一 effective 位置各自求；空副字幕恒空集）。
+    // TODO-1312：副字幕活动集（与主字幕独立求；空副字幕恒空集）。TODO-2837：副字幕
+    // 用**自己的生效调轴**（[effectiveSecondaryDelayMs]，未单独设置时 == _delayMs，
+    // 等价旧「同一 effective 位置」行为）求活动集——主副字幕轴不同源时各调各的。
     // 无论主字幕有无都要更新（副字幕可在无主字幕时单独显示），故放在主 cues 空判之前。
     final List<int> nextSecondary = _secondaryCues.isEmpty
         ? const <int>[]
         : JsonAlignmentParser.findActiveCueIndices(
             cues: _secondaryCues,
-            positionMs: effectiveMs,
+            positionMs:
+                effectiveSubtitlePositionMs(posMs, effectiveSecondaryDelayMs),
             // 渲染集半开区间：相邻对白边界不产生「幻影重叠」→ 堆叠不弹跳（见
             // [JsonAlignmentParser.findActiveCueIndices] 的 endInclusive 说明）。
             endInclusive: false);

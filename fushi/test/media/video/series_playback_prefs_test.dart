@@ -44,4 +44,32 @@ void main() {
       expect(effectiveSeriesDelayMs(-1200, 0), -1200);
     });
   });
+
+  // TODO-2837（schema v86）：副字幕独立调轴的两层决议。与主轨同一优先级语义，
+  // 仅回退终点不同：两层皆 null → null = 跟随主字幕（v86 前行为）。
+  group('effectiveSeriesSecondaryDelayMs — 同系列副字幕调轴记忆', () {
+    test('系列级非 null 时优先于 per-book', () {
+      expect(effectiveSeriesSecondaryDelayMs(1500, 300), 1500);
+    });
+
+    test('系列级显式 0 优先（区别于「系列没设过」的 null）', () {
+      expect(effectiveSeriesSecondaryDelayMs(0, 800), 0);
+    });
+
+    test('系列级为 null 时回退 per-book', () {
+      expect(effectiveSeriesSecondaryDelayMs(null, 800), 800);
+    });
+
+    test('per-book 显式 0 是独立值，不塌成跟随', () {
+      expect(effectiveSeriesSecondaryDelayMs(null, 0), 0);
+    });
+
+    test('两层皆 null → null = 副字幕跟随主字幕调轴（升级后行为不变的关键）', () {
+      expect(effectiveSeriesSecondaryDelayMs(null, null), isNull);
+    });
+
+    test('负值正确透传', () {
+      expect(effectiveSeriesSecondaryDelayMs(-1200, null), -1200);
+    });
+  });
 }

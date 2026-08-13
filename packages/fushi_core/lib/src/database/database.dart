@@ -514,7 +514,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 85;
+  int get schemaVersion => 86;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -2473,6 +2473,26 @@ class FushiDatabase extends _$FushiDatabase
                 SELECT 1 FROM video_watch_statistics w
                 WHERE w.book_uid = video_books.book_uid
                   AND w.last_modified > 0)''');
+            }
+          }
+          if (from < 86) {
+            // v86（TODO-2837 主副字幕分开调轴）：video_books 加 secondary_delay_ms、
+            // media_collections 加 secondary_subtitle_delay_ms，给副字幕一套独立于
+            // 主字幕的两层调轴（per-book + 系列级，镜像 v52 的 delay_ms /
+            // subtitle_delay_ms 结构）。无损迁移：两列 nullable 无 default → 旧库
+            // 既有行全 NULL = 副字幕继续跟随主字幕调轴（v86 前主副共用一个 offset
+            // 的行为逐字节保留，Never break userspace）；用户单独调过副轨后才落
+            // 非 NULL 值。守卫幂等（fresh DB 已由 onCreate 建好，重复升级
+            // _columnExists 短路 no-op）。
+            if (await _tableExists('video_books') &&
+                !await _columnExists('video_books', 'secondary_delay_ms')) {
+              await m.addColumn(videoBooks, videoBooks.secondaryDelayMs);
+            }
+            if (await _tableExists('media_collections') &&
+                !await _columnExists(
+                    'media_collections', 'secondary_subtitle_delay_ms')) {
+              await m.addColumn(
+                  mediaCollections, mediaCollections.secondarySubtitleDelayMs);
             }
           }
         },

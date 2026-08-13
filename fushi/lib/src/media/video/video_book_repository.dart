@@ -642,6 +642,11 @@ class VideoBookRepository {
   Future<void> updateDelayMs(String bookUid, int delayMs) =>
       _db.updateVideoBookDelayMs(bookUid, delayMs);
 
+  /// 更新副字幕独立调轴（毫秒，schema v86，TODO-2837）。[secondaryDelayMs] 为
+  /// null = 清除独立值（副字幕回到跟随主字幕 [updateDelayMs] 的值）。
+  Future<void> updateSecondaryDelayMs(String bookUid, int? secondaryDelayMs) =>
+      _db.updateVideoBookSecondaryDelayMs(bookUid, secondaryDelayMs);
+
   /// 更新用户选中的字幕源（外挂存绝对路径；内嵌存 `embedded:<n>`；用户显式关闭存
   /// `off:` 哨兵 `SubtitleSource.offSentinel`，TODO-818；null=无偏好/从未选过，按
   /// 「自动选默认」恢复，与「显式关闭」区分，勿混用）。
@@ -679,6 +684,14 @@ class VideoBookRepository {
     int? delayMs,
   ) =>
       _db.updateMediaCollectionSubtitleDelayMs(collectionId, delayMs);
+
+  /// 更新系列（合集）级**副字幕**独立调轴（毫秒，schema v86，TODO-2837，同系列
+  /// 副轨调轴记忆）。null=清除（加载回退各集 per-book；两层都 null = 跟随主字幕）。
+  Future<void> updateCollectionSecondarySubtitleDelayMs(
+    int collectionId,
+    int? delayMs,
+  ) =>
+      _db.updateMediaCollectionSecondarySubtitleDelayMs(collectionId, delayMs);
 
   /// 更新视频封面图绝对路径（书架/视频库长按菜单手动设置封面）。
   Future<void> updateCover(String bookUid, String coverPath) =>

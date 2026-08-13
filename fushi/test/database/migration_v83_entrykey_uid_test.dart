@@ -128,7 +128,7 @@ CREATE TABLE media_collection_items (
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 85,
+    expect(db.schemaVersion, 86,
         reason: 'v83 = shelf_entries / media_collection_items epub 键切 uid');
 
     // ── shelf_entries：epub 命中换 uid、透传照抄、非 epub 照抄、零丢行 ──

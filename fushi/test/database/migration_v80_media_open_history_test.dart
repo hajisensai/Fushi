@@ -61,7 +61,7 @@ CREATE TABLE media_items (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 85);
+    expect(db.schemaVersion, 86);
 
     final rows = await db.getAllMediaOpenHistory();
     expect(rows, hasLength(2), reason: '迁移零丢行');

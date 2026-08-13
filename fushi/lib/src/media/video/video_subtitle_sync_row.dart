@@ -57,10 +57,34 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
   /// 一键自动对轴进行中（TODO-701）：按钮显示 spinner 并禁用，防重入。
   bool _autoAligning = false;
 
+  // ── 副字幕独立调轴（TODO-2837）────────────────────────────────────────────
+  // 本地权威镜像：null = 跟随主字幕（[_delayMs]）；非 null = 副轨独立偏移。
+  // 仅副字幕轨激活（host.hasSecondarySubtitle）时渲染本段，避免死 UI。
+  late int? _secondaryDelayMs = widget.host.secondaryDelayMs?.call();
+
+  /// 拖动副轨滑条时的临时预览值（仅本地回显，松手才提交）；null = 未在拖动。
+  int? _secondaryDragMs;
+
+  /// 副轨数值输入框控制器（未单独设置时回显主轨生效值）。
+  late final TextEditingController _secondaryDelayController =
+      TextEditingController(text: '${_secondaryDelayMs ?? _delayMs}');
+
+  /// 副轨数值输入框「边键入边生效」去抖（与主轨同款，BUG-918 范式）。
+  late final SubtitleDelayInputDebounce _secondaryDelayInput =
+      SubtitleDelayInputDebounce(
+    controller: _secondaryDelayController,
+    isMounted: () => mounted,
+    currentDelayMs: () => _secondaryDelayMs ?? _delayMs,
+    commit: (int delayMs, {bool syncField = true}) =>
+        _commitSecondaryDelay(delayMs, syncField: syncField),
+  );
+
   @override
   void dispose() {
     _delayInput.dispose();
     _delayController.dispose();
+    _secondaryDelayInput.dispose();
+    _secondaryDelayController.dispose();
     super.dispose();
   }
 
@@ -77,6 +101,24 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
       _delayController.text = '$clamped';
     }
     await widget.host.onSetDelay(clamped);
+  }
+
+  /// 副轨调轴权威提交（TODO-2837）：滑条 / ± 按钮 / 数值输入 / 「跟随主字幕」重置
+  /// 四处共享。[next] 为 null = 重置为跟随主字幕；非 null clamp 后经
+  /// [VideoQuickSettingsHost.onSetSecondaryDelay] 落盘 + 实时生效。
+  Future<void> _commitSecondaryDelay(int? next, {bool syncField = true}) async {
+    final Future<void> Function(int? delayMs)? onSet =
+        widget.host.onSetSecondaryDelay;
+    if (onSet == null) return;
+    final int? clamped =
+        next?.clamp(-_subtitleSyncClampMs, _subtitleSyncClampMs);
+    if (syncField) _secondaryDelayInput.cancelPending();
+    setState(() => _secondaryDelayMs = clamped);
+    final String fieldText = '${clamped ?? _delayMs}';
+    if (syncField && _secondaryDelayController.text != fieldText) {
+      _secondaryDelayController.text = fieldText;
+    }
+    await onSet(clamped);
   }
 
   /// TODO-701 阶段1：触发一键自动对轴。回调内部抽音频能量包络、与字幕 cue 互相关求整体
@@ -251,8 +293,150 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
               currentPositionMs: host.currentSubtitlePositionMs,
             ),
           ],
+          // TODO-2837：副字幕独立调轴段。仅副字幕轨激活时渲染（无副字幕不加死 UI）；
+          // 激活态是活值（面板内切换副字幕轨即变），经 controller（
+          // subtitlePositionListenable）的通知即时显隐。
+          if (host.onSetSecondaryDelay != null &&
+              host.secondaryDelayMs != null) ...<Widget>[
+            if (host.subtitlePositionListenable != null)
+              ListenableBuilder(
+                listenable: host.subtitlePositionListenable!,
+                builder: (BuildContext ctx, Widget? _) =>
+                    _buildSecondarySection(ctx),
+              )
+            else
+              _buildSecondarySection(context),
+          ],
         ],
       ),
+    );
+  }
+
+  /// 副字幕独立调轴段（TODO-2837）：标题 + 滑条 + ±50/±1000 微调 + 数值输入 +
+  /// 「跟随主字幕」重置。未单独设置（null=跟随）时滑条/数值回显主轨生效值、数值
+  /// 染次要色；显式设置后染主色并出现重置按钮。副字幕轨未激活时整段收起。
+  Widget _buildSecondarySection(BuildContext context) {
+    if (!(widget.host.hasSecondarySubtitle?.call() ?? false)) {
+      return const SizedBox.shrink();
+    }
+    final ThemeData theme = Theme.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool following =
+        _secondaryDelayMs == null && _secondaryDragMs == null;
+    final int shownMs = _secondaryDragMs ?? _secondaryDelayMs ?? _delayMs;
+    final String label = following
+        ? t.video_setting_secondary_delay_follow
+        : '${shownMs >= 0 ? '+' : ''}$shownMs ms';
+    final double sliderValue = shownMs
+        .clamp(-_subtitleSyncSliderRangeMs, _subtitleSyncSliderRangeMs)
+        .toDouble();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        SizedBox(height: tokens.spacing.gap),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                t.video_setting_secondary_av_delay,
+                style: theme.textTheme.titleSmall,
+              ),
+            ),
+            // 显式设置过才给「跟随主字幕」重置入口（跟随态本身无可重置）。
+            if (_secondaryDelayMs != null)
+              TextButton(
+                onPressed: () => _commitSecondaryDelay(null),
+                child: Text(t.video_setting_secondary_delay_follow),
+              ),
+          ],
+        ),
+        Text(
+          t.video_setting_secondary_av_delay_hint,
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+        adaptiveSlider(
+          context: context,
+          value: sliderValue,
+          min: -_subtitleSyncSliderRangeMs.toDouble(),
+          max: _subtitleSyncSliderRangeMs.toDouble(),
+          divisions: _subtitleSyncSliderRangeMs ~/ 50, // 50ms 一档
+          label: label,
+          onChanged: (double v) => setState(() => _secondaryDragMs = v.round()),
+          onChangeEnd: (double v) {
+            setState(() => _secondaryDragMs = null);
+            _commitSecondaryDelay(v.round());
+          },
+        ),
+        SizedBox(height: tokens.spacing.gap / 2),
+        Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: tokens.spacing.gap / 2,
+          runSpacing: tokens.spacing.gap / 2,
+          children: <Widget>[
+            FushiIconButton(
+              icon: Icons.keyboard_double_arrow_left,
+              tooltip: '-1000ms',
+              padding: EdgeInsets.all(tokens.spacing.gap / 2),
+              // 跟随态微调以主轨生效值为基准起步（首次微调 = 主轨值 ± 步进）。
+              onTap: () =>
+                  _commitSecondaryDelay((_secondaryDelayMs ?? _delayMs) - 1000),
+            ),
+            FushiIconButton(
+              icon: Icons.chevron_left,
+              tooltip: '-50ms',
+              padding: EdgeInsets.all(tokens.spacing.gap / 2),
+              onTap: () =>
+                  _commitSecondaryDelay((_secondaryDelayMs ?? _delayMs) - 50),
+            ),
+            FushiFocusable(
+              onTap: shownMs == 0 && !following
+                  ? null
+                  : () => _commitSecondaryDelay(0),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 84, maxWidth: 160),
+                child: Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: following
+                        ? theme.colorScheme.onSurfaceVariant
+                        : theme.colorScheme.primary,
+                  ),
+                ),
+              ),
+            ),
+            FushiIconButton(
+              icon: Icons.chevron_right,
+              tooltip: '+50ms',
+              padding: EdgeInsets.all(tokens.spacing.gap / 2),
+              onTap: () =>
+                  _commitSecondaryDelay((_secondaryDelayMs ?? _delayMs) + 50),
+            ),
+            FushiIconButton(
+              icon: Icons.keyboard_double_arrow_right,
+              tooltip: '+1000ms',
+              padding: EdgeInsets.all(tokens.spacing.gap / 2),
+              onTap: () =>
+                  _commitSecondaryDelay((_secondaryDelayMs ?? _delayMs) + 1000),
+            ),
+          ],
+        ),
+        SizedBox(height: tokens.spacing.gap / 2),
+        AdaptiveSettingsTextField(
+          controller: _secondaryDelayController,
+          labelText: t.video_setting_subtitle_sync_input,
+          keyboardType: const TextInputType.numberWithOptions(signed: true),
+          textInputAction: TextInputAction.done,
+          onChanged: _secondaryDelayInput.onChanged,
+          onSubmitted: _secondaryDelayInput.onSubmitted,
+        ),
+      ],
     );
   }
 }

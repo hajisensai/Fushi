@@ -3370,5 +3370,10 @@
   "download_task_priority": "Queue priority",
   "download_task_priority_high": "High",
   "download_task_priority_normal": "Normal",
-  "download_task_priority_low": "Low"
+  "download_task_priority_low": "Low",
+  "video_setting_secondary_av_delay": "Secondary subtitle sync",
+  "video_setting_secondary_av_delay_hint": "Adjust the secondary subtitle offset independently. It follows the primary offset until set here.",
+  "video_setting_secondary_delay_follow": "Follow primary",
+  "video_subtitle_secondary_delay_osd": "Secondary subtitle sync: $ms ms",
+  "video_subtitle_secondary_delay_follow_osd": "Secondary subtitle sync: follow primary"
 }

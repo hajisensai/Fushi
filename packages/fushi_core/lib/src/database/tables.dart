@@ -558,7 +558,8 @@ class VideoBooks extends Table {
 
   /// 副字幕源（TODO-857 视频双字幕 Path A）：与 [subtitleSource] 同款四态编码
   /// （外挂存绝对路径；内嵌存 `embedded:<n>`；关闭存 `off:`；无副字幕存 null）。
-  /// 副字幕由 libmpv `secondary-sid` 自渲染，不进 Dart cue 流，不可查词。
+  /// TODO-1312 起副字幕走独立 Dart cue 流（Flutter overlay 副层渲染，可逐字符
+  /// 查词），**不再**由 libmpv `secondary-sid` 自渲染；持久化编码沿用不变。
   TextColumn get secondarySubtitleSource => text().nullable()();
   TextColumn get subtitleFormat => text().nullable()();
   IntColumn get embeddedSubtitleTrack => integer().nullable()();
@@ -598,6 +599,13 @@ class VideoBooks extends Table {
   /// 音画延迟（毫秒）：正值=画面先于文字，查 cue 时把位置往回拨，让字幕与画面对齐。
   /// 跨重启保留；多集播放列表换集时复用同一值（手动校准一次全片受用）。
   IntColumn get delayMs => integer().withDefault(const Constant(0))();
+
+  /// 副字幕独立调轴（毫秒，schema v86，TODO-2837 主副字幕分开调轴）。**nullable**
+  /// （区别于 [delayMs] 的 withDefault(0)）：NULL = 未单独设置 = 副字幕跟随
+  /// [delayMs]（与 v86 前「主副共用一个 offset」逐字节一致，Never break
+  /// userspace——旧库升级后全 NULL，行为零变化）；非 NULL = 副字幕独立于主字幕
+  /// 调轴（主副字幕轴不同源时各调各的）。含义与 [delayMs] 同向（正值=字幕延后）。
+  IntColumn get secondaryDelayMs => integer().nullable()();
 
   /// 视频首次播放进度 ≥ 90% 的时间戳（完成标记）；null = 未完成。统计去重计数用。
   DateTimeColumn get completedAt => dateTime().nullable()();
@@ -930,6 +938,13 @@ class MediaCollections extends Table {
   /// 与「显式调成 0」区分，避免 0 哨兵歧义。无损迁移：nullable 无 default → 旧库既有行全
   /// NULL = 行为与旧版一致（Never break userspace）。
   IntColumn get subtitleDelayMs => integer().nullable()();
+
+  /// 系列级**副字幕**独立调轴（毫秒，schema v86，TODO-2837）。与 [subtitleDelayMs]
+  /// 同款「系列共享」语义：合集内任一集调副轨轴即写这里，任一集加载优先读这里
+  /// （回退各集自己行的 [VideoBooks.secondaryDelayMs]）。两层都 NULL = 副字幕跟随
+  /// 主字幕调轴（v86 前行为）。无损迁移：nullable 无 default → 旧库既有行全 NULL =
+  /// 行为与旧版一致（Never break userspace）。
+  IntColumn get secondarySubtitleDelayMs => integer().nullable()();
 }
 
 // ── media_collection_items (合集成员引用 = Jellyfin LinkedChildren) ────

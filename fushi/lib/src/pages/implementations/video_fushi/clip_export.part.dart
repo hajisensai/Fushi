@@ -182,18 +182,19 @@ extension _VideoClipExport on _VideoFushiPageState {
     required int startMs,
     required int endMs,
   }) {
-    final int delayMs = controller.delayMs;
     final String? primary = buildClipSrtContent(
       cues: controller.cues,
       startMs: startMs,
       endMs: endMs,
-      delayMs: delayMs,
+      delayMs: controller.delayMs,
     );
     final String? secondary = buildClipSrtContent(
       cues: controller.secondaryCues,
       startMs: startMs,
       endMs: endMs,
-      delayMs: delayMs,
+      // TODO-2837：主副字幕分开调轴后，副轨 SRT 按副轨生效轴换算（未单独设置时
+      // == 主轨，行为与旧版一致），导出的字幕才等于屏幕上看到的那条。
+      delayMs: controller.effectiveSecondaryDelayMs,
     );
     return <String>[
       if (primary != null) primary,

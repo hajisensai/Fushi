@@ -1974,6 +1974,13 @@ mixin _FushiDbVideoDomain
       (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
           .write(VideoBooksCompanion(delayMs: Value(delayMs)));
 
+  /// 更新副字幕独立调轴（毫秒，schema v86，TODO-2837）。[secondaryDelayMs] 为
+  /// null = 清除独立值（副字幕回到跟随主字幕 [VideoBooks.delayMs]）。
+  Future<void> updateVideoBookSecondaryDelayMs(
+          String bookUid, int? secondaryDelayMs) =>
+      (update(videoBooks)..where((t) => t.bookUid.equals(bookUid))).write(
+          VideoBooksCompanion(secondaryDelayMs: Value<int?>(secondaryDelayMs)));
+
   /// 更新用户选中的字幕源（外挂存路径；内嵌存 `embedded:<n>`；关闭存 null）。
   Future<void> updateVideoBookSubtitleSource(
           String bookUid, String? subtitleSource) =>

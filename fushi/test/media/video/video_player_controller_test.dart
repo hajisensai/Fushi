@@ -106,6 +106,120 @@ void main() {
     });
   });
 
+  // TODO-2837：主副字幕分开调轴。副轨 null = 跟随主轨（v86 前行为逐字节保留）；
+  // 非 null = 主副各自求活动集，互不影响。
+  group('VideoPlayerController secondary delay (TODO-2837)', () {
+    test('未单独设置（null）：副字幕跟随主轨 delay（历史行为不变）', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues([_cue(0, 0, 1000)]);
+      c.setSecondaryCues([_cue(10, 0, 1000)]);
+      c.setDelayMs(600);
+      expect(c.secondaryDelayMs, isNull);
+      expect(c.effectiveSecondaryDelayMs, 600, reason: '跟随主轨');
+      // 1500-600=900：主副同轴同时命中。
+      c.debugUpdateCueForPosition(1500);
+      expect(c.currentCueIndex, 0);
+      expect(c.secondaryActiveCues.map((AudioCue x) => x.text), ['line10']);
+    });
+
+    test('独立设置后主副各自求活动集（轴不同源各调各的）', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues([_cue(0, 0, 1000)]);
+      c.setSecondaryCues([_cue(10, 2000, 3000)]);
+      // 副轨独立 -1500：位置 500 → 主 effective 500 命中 cue0；
+      // 副 effective 500-(-1500)=2000 命中副轨 cue。
+      c.setSecondaryDelayMs(-1500);
+      expect(c.effectiveSecondaryDelayMs, -1500);
+      c.debugUpdateCueForPosition(500);
+      expect(c.currentCueIndex, 0);
+      expect(c.secondaryActiveCues.map((AudioCue x) => x.text), ['line10']);
+    });
+
+    test('显式 0 独立于主轨（改主轨不再牵动副轨）', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues([_cue(0, 0, 1000)]);
+      c.setSecondaryCues([_cue(10, 0, 1000)]);
+      c.setSecondaryDelayMs(0); // 显式 0，区别于「跟随」的 null
+      c.setDelayMs(600);
+      expect(c.effectiveSecondaryDelayMs, 0);
+      // 位置 1500：主 effective 900 命中；副 effective 1500 已出窗（不跟随平移）。
+      c.debugUpdateCueForPosition(1500);
+      expect(c.currentCueIndex, 0);
+      expect(c.secondaryActiveCues, isEmpty);
+    });
+
+    test('传 null 重置为跟随主轨', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues([_cue(0, 0, 1000)]);
+      c.setSecondaryCues([_cue(10, 0, 1000)]);
+      c.setSecondaryDelayMs(250);
+      c.setSecondaryDelayMs(null);
+      c.setDelayMs(600);
+      expect(c.secondaryDelayMs, isNull);
+      expect(c.effectiveSecondaryDelayMs, 600);
+      c.debugUpdateCueForPosition(1500);
+      expect(c.secondaryActiveCues.map((AudioCue x) => x.text), ['line10']);
+    });
+
+    test('setSecondaryDelayMs 立即按当前位置重算（BUG-373 同理，不等 tick）', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setSecondaryCues([_cue(10, 2000, 3000)]);
+      c.debugSetPositionForTesting(500);
+      expect(c.secondaryActiveCues, isEmpty);
+      c.setSecondaryDelayMs(-1500); // effective 500+1500=2000 → 应即时命中
+      expect(c.secondaryActiveCues.map((AudioCue x) => x.text), ['line10']);
+    });
+
+    test('clamp 到 ±600000（与主轨同界）', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setSecondaryDelayMs(900000);
+      expect(c.secondaryDelayMs, 600000);
+      c.setSecondaryDelayMs(-900000);
+      expect(c.secondaryDelayMs, -600000);
+    });
+
+    test('delayMsForCue / miningDelayMs 按流分轴（制卡逆变换真相源）', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      final AudioCue main0 = _cue(0, 0, 1000);
+      final AudioCue sec0 = _cue(10, 0, 1000);
+      c.setCues([main0]);
+      c.setSecondaryCues([sec0]);
+      c.setDelayMs(600);
+      c.setSecondaryDelayMs(-200);
+      // setCues/setSecondaryCues 内部会拷贝列表但保留元素身份，按身份取回。
+      final AudioCue mainCue = c.cues.single;
+      final AudioCue secCue = c.secondaryCues.single;
+      expect(c.delayMsForCue(mainCue), 600);
+      expect(c.delayMsForCue(secCue), -200);
+      // 主流非空 → miningDelayMs 用主轨；陌生 cue 兜底同口径。
+      expect(c.miningDelayMs, 600);
+      expect(c.delayMsForCue(_cue(99, 0, 1)), 600);
+      // 主流清空（只开副字幕，BUG-1592 形态）→ 有效流轴切到副轨生效值。
+      c.setCues(const <AudioCue>[]);
+      expect(c.miningDelayMs, -200);
+      expect(c.delayMsForCue(_cue(99, 0, 1)), -200);
+    });
+
+    test('effectivePositionMsForCue 按 cue 所属流取轴（overlay ASS 动画用）', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues([_cue(0, 0, 1000)]);
+      c.setSecondaryCues([_cue(10, 0, 1000)]);
+      c.setDelayMs(600);
+      c.setSecondaryDelayMs(100);
+      c.debugSetPositionForTesting(1500);
+      expect(c.effectivePositionMsForCue(c.cues.single), 900);
+      expect(c.effectivePositionMsForCue(c.secondaryCues.single), 1400);
+    });
+  });
+
   group('VideoPlayerController completed stream auto-advance hook', () {
     test('completed=false is ignored; completed=true fires once per load', () {
       final c = VideoPlayerController();
