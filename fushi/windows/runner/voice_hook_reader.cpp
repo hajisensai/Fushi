@@ -22,6 +22,7 @@
 // 直接退回整机混音。副本已删除，改为直接 include 真相源——两侧编同一组常量与同一份结构布局，
 // 版本漂移在结构上不再可能（守卫见 test/mining/gal_ipc_contract_single_source_test.dart）。
 #include "../../../native/galgame_hook/include/voice_hook_ipc.h"
+#include "../../../native/galgame_hook/include/voice_hook_utterance_window.h"
 
 // galgame 一键制卡 C 阶段 —— 引擎-hook 共享内存读侧实现。见 voice_hook_reader.h。
 // 纯 Win32 文件映射，无 COM、无异常（runner 以 _HAS_EXCEPTIONS=0 编译，全程句柄/契约校验）。
@@ -1035,11 +1036,17 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
     // any_energy=false（非 16-bit）：无法能量选源，退化为拼所有源（filter_by_src 保持 false）。
   }
 
-  // 拼接选定源在 [ts-200, ts+forward_ms] 的段；静音判据用该源峰值能量的 8%。
+  // 拼接选定源在 [下界, ts+forward_ms] 的段；静音判据用该源峰值能量的 8%。
   //
   // BUG-1475：forward_ms 缺省仍是 6000（旧行为逐字等价）。调用方给出 end_ts_ms
   // （下一句的时间戳）时收窄到那里——封口 grab 要拿回已进环、时间戳**严格早于**
   // 下一句的那点尾巴，同时保住 BUG-1109「不把下一句的段拼进上一句」的不变量。
+  //
+  // BUG-1593：下界**不再**是写死的 ts-200。clip 的时间戳是**提交**时刻不是播放时刻，
+  // 流式引擎按缓冲深度提前提交（KiriKiri 每句新建 DirectSound buffer 并一次性灌满整个
+  // 缓冲，实测比文本 hook 早 219ms 灌进 1500ms 音频），固定 200ms 回看会把整句的开头
+  // 整块丢掉。判据见 voice_hook_utterance_window.h：只对「明显快于实时写入」的段回退，
+  // 实时写入的混音 / BGM 源逐字节维持旧行为。
   int64_t forward_ms = 6000;
   if (end_ts_ms != 0 && end_ts_ms > ts_ms) {
     forward_ms = std::min<int64_t>(
@@ -1048,6 +1055,26 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
     // 下一句时间戳不晚于本句：拿不到任何合法的前向窗口，退化为只取本句时刻附近。
     forward_ms = 0;
   }
+  // 选定源的段（按提交顺序）喂给下界推算：valid 本身就是 seq 升序。
+  std::vector<fushi_voice_hook::UtteranceClipTiming> timings;
+  timings.reserve(valid.size());
+  for (const auto* c : valid) {
+    if (filter_by_src && c->source_ptr != sel_src) {
+      continue;
+    }
+    const uint32_t block = c->channels * (c->bits_per_sample / 8);
+    const int64_t dur =
+        (block == 0 || c->sample_rate == 0)
+            ? 0
+            : static_cast<int64_t>(static_cast<int64_t>(c->byte_len) * 1000 /
+                                   (static_cast<int64_t>(block) *
+                                    static_cast<int64_t>(c->sample_rate)));
+    timings.push_back(fushi_voice_hook::UtteranceClipTiming{
+        static_cast<int64_t>(c->timestamp_ms), dur});
+  }
+  const int64_t lower_ts = fushi_voice_hook::UtteranceLowerBoundMs(
+      timings.data(), timings.size(), static_cast<int64_t>(ts_ms));
+
   std::vector<uint8_t> pcm;
   const fushi_voice_hook::VoiceClip* fmt = nullptr;
   double peak = 1.0;
@@ -1057,7 +1084,7 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
     }
     const int64_t d = static_cast<int64_t>(c->timestamp_ms) -
                       static_cast<int64_t>(ts_ms);
-    if (d < -200 || d > forward_ms) {
+    if (static_cast<int64_t>(c->timestamp_ms) < lower_ts || d > forward_ms) {
       continue;
     }
     const double e = ClipEnergy16Locked(h, ring, c);
