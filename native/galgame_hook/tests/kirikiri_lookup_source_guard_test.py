@@ -62,6 +62,15 @@ GLOBAL_PATCH_RE = re.compile(r"global\.(?:Layer|MessageLayer)\.\w+\s*=(?!=)")
 # 用来判断文本到底走哪条路。
 PROBE_GATE_RE = re.compile(r"if\s*\(\s*global\.fushiLookupProbeMode\s*\)")
 
+# KAGEX 缺席门：`if(typeof global.TextRender == "Object") { ... } else { ... }`。
+# 经典 KAG3 游戏（Fate/stay night[Realta Nua]、PRETTY×CATION2、フタマタ恋愛）整个
+# global.TextRender 都不存在，逐字几何只从原生 Layer.drawText 经过——全局补丁在**这个
+# else 里**是唯一可行采集面，不是又一条兜底。装了 textrender.dll 的游戏走 if 分支，
+# 一行都不多绕，所以"全局补丁让所有 UI 绘制多绕一层"的代价只落在别无来源的游戏上。
+KAGEX_GATE_RE = re.compile(
+    r'if\s*\(\s*typeof\s+global\.TextRender\s*==\s*"Object"\s*\)'
+)
+
 
 def _iter_find(haystack: str, needle: str) -> Iterator[int]:
     start = 0
@@ -350,14 +359,61 @@ def _probe_block_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
+def _brace_span(text: str, open_index: int) -> int:
+    """从 `open_index` 处的 `{` 起做大括号配对，返回闭合 `}` 的下一个下标（-1=没配上）。"""
+    depth = 0
+    for j in range(open_index, len(text)):
+        if text[j] == "{":
+            depth += 1
+        elif text[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return j + 1
+    return -1
+
+
+def _classic_fallback_spans(text: str) -> list[tuple[int, int]]:
+    """KAGEX 缺席门的 `else { ... }` 区间。
+
+    只认真正挂在 `typeof global.TextRender == "Object"` 之后的 else——把补丁从这个
+    else 里挪出去（或把门本身删掉）会让区间消失，补丁随即落到 find_global_monkey_patches
+    的红区里。
+    """
+    spans: list[tuple[int, int]] = []
+    for gate in KAGEX_GATE_RE.finditer(text):
+        open_index = text.find("{", gate.end())
+        if open_index < 0:
+            continue
+        close = _brace_span(text, open_index)
+        if close < 0:
+            continue
+        tail = text[close:]
+        stripped = tail.lstrip()
+        if not stripped.startswith("else"):
+            continue
+        else_open = text.find("{", close + (len(tail) - len(stripped)) + len("else"))
+        if else_open < 0:
+            continue
+        else_close = _brace_span(text, else_open)
+        if else_close < 0:
+            continue
+        spans.append((else_open, else_close))
+    return spans
+
+
 def find_global_monkey_patches(source: MaskedSource) -> list[str]:
     """引擎全局类的补丁只允许出现在默认关闭的探测分支里。
 
     `global.Layer.drawText` 挂上包装之后，游戏**所有** UI 绘制都要多绕一层；游戏内
-    渲染下这直接变成掉帧。运行日志已经证伪了这条捕获路径（只有 TextRender 命中），
-    所以它只能作为换游戏时的探针存在，且默认关闭。
+    渲染下这直接变成掉帧。所以补丁只允许出现在两处**有门的**位置：
+
+    1. 默认关闭的探测分支（换游戏时数次数用）；
+    2. KAGEX 缺席门的 else——那类游戏没有 global.TextRender，逐字几何只从原生
+       Layer.drawText 经过，不绕就等于游戏内查词整个不存在。
+
+    两处之外的补丁一律红：那是"所有游戏都多绕一层"，代价没有对价。
     """
-    spans = _probe_block_spans(source.text)
+    spans = _probe_block_spans(source.text) + _classic_fallback_spans(source.text)
     hits: list[str] = []
     for m in GLOBAL_PATCH_RE.finditer(source.text):
         if any(start <= m.start() < end for start, end in spans):
@@ -644,6 +700,15 @@ if(global.fushiLookupProbeMode)
 	global.fushiLookupProbeOriginalDrawText = global.Layer.drawText;
 	global.Layer.drawText = function(x, y, text) { return 0; };
 }
+if(typeof global.TextRender == "Object")
+{
+	global.TextRender.render = function() { return 0; };
+}
+else
+{
+	global.fushiLookupOriginalDrawText = global.Layer.drawText;
+	global.Layer.drawText = function(x, y, text) { return 0; };
+}
 global.fushiLookupCapture = function(renderer)
 {
     var entry = global.fushiLookupEntryFor(renderer);
@@ -688,6 +753,9 @@ class MutationSelfTest(unittest.TestCase):
         self.assertEqual([], find_unvalidated_placeholder_values(self.clean))
         self.assertEqual([], find_unguarded_bitmap_copies(self.clean))
         self.assertEqual([], find_ownerless_card_dismissals(self.clean))
+        # 干净样本里确实有一个 KAGEX 缺席门 else，否则放行 classic 采集面这条分支
+        # 在自测里根本没被走到（放行规则会变成永远走不到的死代码而无人察觉）。
+        self.assertNotEqual([], _classic_fallback_spans(CLEAN_SAMPLE))
         # 干净样本里确实有一次收卡，否则归属这条规则根本没被走到。
         self.assertIsNotNone(_tjs_function_body(CLEAN_SAMPLE, "fushiLookupCapture"))
         self.assertIn("fushiLookupDismiss(", CLEAN_SAMPLE)
@@ -719,6 +787,32 @@ class MutationSelfTest(unittest.TestCase):
     def test_compound_append_of_a_variable_is_red(self) -> None:
         dirty = self._mutate("script += std::to_wstring(seq)", "script += word")
         self.assertNotEqual([], find_dynamic_tjs_concatenations(dirty))
+
+    def test_global_patch_outside_every_gate_is_red(self) -> None:
+        # 补丁挪到无门位置（既不在探测分支、也不在 KAGEX 缺席门里）：所有游戏都要
+        # 多绕一层，代价没有对价，必须红。
+        dirty = self._mutate(
+            "global.fushiLookupCapture = function(renderer)",
+            "global.Layer.drawText = function(renderer)",
+        )
+        self.assertNotEqual([], find_global_monkey_patches(dirty))
+
+    def test_removing_the_kagex_gate_turns_the_classic_patch_red(self) -> None:
+        # 门被改成恒真（typeof global.TextRender 判据没了）：else 区间随之消失，
+        # 门内补丁立刻落进红区——这正是"别的游戏也跟着多绕一层"那一刻。
+        dirty = self._mutate(
+            'if(typeof global.TextRender == "Object")',
+            "if(global.fushiLookupAlways)",
+        )
+        self.assertEqual([], _classic_fallback_spans(dirty.text))
+        self.assertNotEqual([], find_global_monkey_patches(dirty))
+
+    def test_gate_without_else_does_not_open_a_span(self) -> None:
+        # 只有真正的 else 才代表"这台游戏没有 KAGEX"。把 else 换成新的无条件块，
+        # 区间必须消失，块里的补丁必须红。
+        dirty = self._mutate("else", "if(1)")
+        self.assertEqual([], _classic_fallback_spans(dirty.text))
+        self.assertNotEqual([], find_global_monkey_patches(dirty))
 
     def test_unrelated_string_concatenation_stays_green(self) -> None:
         # 反向变异：非 TJS 语句里加更多字符串拼接，守卫必须仍然绿（否则它一改就红）。

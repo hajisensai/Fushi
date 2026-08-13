@@ -329,6 +329,10 @@ constexpr uint32_t kLookupDiagFallbackPngRoute = 0x00000010u;  // 降级走 PNG 
 constexpr uint32_t kLookupDiagFramePresented = 0x00000020u;   // 位图真落进游戏 Layer
 constexpr uint32_t kLookupDiagExpressionReady = 0x00000040u;  // TVPExecuteExpression 可用
 constexpr uint32_t kLookupDiagFrameRejected = 0x00000080u;    // 收到过不合契约的帧（已拒）
+// 经典 KAG3 采集面（原生 Layer.drawText）已生效：该游戏没有 KAGEX 的 global.TextRender，
+// 逐字几何只能从原生绘字方法取。与 kLookupDiagGeometryObserved 分开——那位只说"拿到过
+// 几何"，这位说"几何是从哪条面来的"，真机排障时决定该去看 TextRender 还是 drawText。
+constexpr uint32_t kLookupDiagClassicTextSource = 0x00000100u;
 
 // hook → host：光标命中了哪个字符。单槽 latest-wins；`seq` **最后**写（Interlocked 全栅栏，
 // 保证 payload 对 reader 先可见），与 VoiceClip / LoopbackMarker 同一套纪律。
