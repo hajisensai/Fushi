@@ -378,6 +378,26 @@ jobs:
         elif [ ! -f "$dst" ]; then
           cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
         fi
+    # BUG-1588: tmdb_default_key.dart 入库的是空占位（key = ''）。**发布 workflow
+    # 一度整个漏了这步注入**，于是验证构建（main / build-multiplatform）有 key、
+    # 发出去的包没有 —— TMDB 在用户机器上恒 isAvailable=false，表现成「连不上」。
+    # 只重写 const 那一行，文件注释、pref-key const 和 resolveTmdbApiKey() 全保留。
+    - name: Provide gitignored TMDB API key stub
+      shell: bash
+      env:
+        TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+      run: |
+        dst=fushi/lib/src/media/video/scraper/tmdb_default_key.dart
+        if [ ! -f "$dst" ]; then
+          cp fushi/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
+        fi
+        if [ -n "$TMDB_API_KEY" ]; then
+          # -i.bak（后缀紧贴 -i）是 GNU sed 与 BSD/macOS sed 都接受的唯一就地
+          # 编辑写法；裸 -i 只在 GNU sed 下成立，会让 macos/ios 作业固定报
+          # `extra characters at the end of h command`。
+          sed -i.bak "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
+          rm -f "$dst.bak"
+        fi
 
     # TODO-2721: 只缓存 Gradle 的下载物（modules-2 / wrapper dists），不缓存
     # <ver>/transforms 这类可从 modules-2 重算的派生产物。三个 workflow
@@ -855,6 +875,26 @@ jobs:
             > "$dst"
         elif [ ! -f "$dst" ]; then
           cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
+        fi
+    # BUG-1588: tmdb_default_key.dart 入库的是空占位（key = ''）。**发布 workflow
+    # 一度整个漏了这步注入**，于是验证构建（main / build-multiplatform）有 key、
+    # 发出去的包没有 —— TMDB 在用户机器上恒 isAvailable=false，表现成「连不上」。
+    # 只重写 const 那一行，文件注释、pref-key const 和 resolveTmdbApiKey() 全保留。
+    - name: Provide gitignored TMDB API key stub
+      shell: bash
+      env:
+        TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+      run: |
+        dst=fushi/lib/src/media/video/scraper/tmdb_default_key.dart
+        if [ ! -f "$dst" ]; then
+          cp fushi/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
+        fi
+        if [ -n "$TMDB_API_KEY" ]; then
+          # -i.bak（后缀紧贴 -i）是 GNU sed 与 BSD/macOS sed 都接受的唯一就地
+          # 编辑写法；裸 -i 只在 GNU sed 下成立，会让 macos/ios 作业固定报
+          # `extra characters at the end of h command`。
+          sed -i.bak "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
+          rm -f "$dst.bak"
         fi
 
     - name: Flutter pub get

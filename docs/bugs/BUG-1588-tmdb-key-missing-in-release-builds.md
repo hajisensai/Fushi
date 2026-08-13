@@ -1,0 +1,14 @@
+## BUG-1588 · 发布 workflow 漏注入 TMDB key，发出去的包 TMDB 恒未配置
+- **报告**：2026-08-13（用户：「tmdb 连不上修复一下」；追问「tmdb key 不是默认填了吗」——正是这句把根因逼出来的）
+- **真实性**：✅ 真 bug。根因在 CI，不在网络也不在客户端代码。
+  - `fushi/lib/src/media/video/scraper/tmdb_default_key.dart` 入库的是**空占位** `kBuiltinTmdbApiKey = ''`，真值由 CI 从 `secrets.TMDB_API_KEY` 用 sed 注入（`resolveTmdbApiKey(userKey)` = 用户填了用用户的，否则用内置的）。
+  - 注入步骤 `Provide gitignored TMDB API key stub` **只存在于验证构建**：`build-multiplatform.yml`（20 处 `TMDB_API_KEY`）、`main.yml`（4 处）。
+  - 两条**发布** workflow —— `release.yml`（出 Android 包）与 `release-desktop.yml`（出 Windows/macOS/iOS 包）—— `TMDB_API_KEY` 出现 **0 次**。两者都有 dandanplay / Google OAuth / 日志上传三个同类密钥桩，唯独漏了 TMDB。
+  - 于是发布包里 `kBuiltinTmdbApiKey == ''` → `TmdbVideoMetadataProvider.isAvailable == false` → `_requireAvailable()` 抛 `VideoMetadataProviderUnavailable('TMDB API key or read access token is not configured')`。用户没配自己的 key 时，TMDB 永远不可用，表现成「连不上」。
+  - **验证构建有 key、发布包没有**，所以 CI 全绿、只有用户侧坏——没有任何构建期症状。
+  - 实机佐证：本机装的 `1.4.0-debug.10405` 出自 `release-desktop.yml`；生产库 `preferences` 表无任何 TMDB 键（用户没配自己的 key）；网络侧 `api.themoviedb.org` 返回 401（缺 key，主机可达）、`image.tmdb.org` 返回 404（可达），排除网络。
+- **[x] ① 已修复** — 把 `Provide gitignored TMDB API key stub` 按 `build-multiplatform.yml` 的规范写法（含 `-i.bak` 的 BSD/GNU sed 兼容注释）补进两条发布 workflow 的每个构建 job，紧跟 dandanplay 桩：`release.yml` 的 `build` / `tests`，`release-desktop.yml` 的 `windows` / `macos` / `ios`，共 5 处。YAML 用 PyYAML 解析复核，5 个 job 全部 dandanplay=1 / tmdb=1。
+- **[x] ② 已加自动化测试** — `fushi/test/build/baked_secret_stub_parity_guard_test.dart`：凡注入 dandanplay 桩的 workflow，必须**同样数量地**注入 TMDB 桩。用 dandanplay 当「这个 job 在构建 app」的判据，因为两者是同一种东西（入库空占位 + CI 注入真值 + 缺了静默降级），新增构建 job 抄了一个就会被抓出漏掉的另一个。变异实测：抹掉 `release.yml` 一处步骤 → 红（`dandanplay 桩 2 个，TMDB 桩 1 个`）；还原 → 绿。
+- **备注**：
+  - 变异实测第一轮**没抓住**——原实现按子串计数，而 `- name: X` 是 `- name: X MUTANT` 的前缀，改了名的步骤照旧被算进去。已改成整行比对。
+  - 结构性隐患仍在：**验证构建与发布构建是两份各自维护的构建代码**，本 bug 就是其中一份漏改。用户已指示「删掉验证构建，直接构建，不要维护两份代码」——合并动作另开，本 bug 先把发出去的包修好。
