@@ -3370,5 +3370,10 @@
   "download_task_priority": "排队优先级",
   "download_task_priority_high": "高",
   "download_task_priority_normal": "普通",
-  "download_task_priority_low": "低"
+  "download_task_priority_low": "低",
+  "video_setting_subtitle_anchor": "主字幕锚定",
+  "video_subtitle_anchor_bottom": "底部",
+  "video_subtitle_anchor_top": "顶部",
+  "video_setting_subtitle_drag_adjust": "拖拽调整位置",
+  "video_subtitle_drag_adjust_hint": "上下拖动字幕调整位置"
 }

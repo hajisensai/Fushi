@@ -317,6 +317,10 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.backgroundOpacity = 0,
     this.bottomPadding = 75,
     this.secondaryBottomPadding,
+    this.mainAnchor = SubtitleLayerVAnchor.bottom,
+    this.secondaryAnchor,
+    this.dragAdjustEnabled = false,
+    this.onDragAdjustEnd,
     this.controlsVisible,
     this.controlsBottomReserve = kVideoControlsBottomReserve,
     this.controlsTopReserve = kVideoControlsTopReserve,
@@ -423,6 +427,30 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 恒用 [bottomPadding]，两层不再互相牵动（此前共用一个字段，调主字幕位置会把副字幕
   /// 一起挪走）。控制条 / 顶栏避让照旧对各自基线取下限（max），语义不变。
   final double? secondaryBottomPadding;
+
+  /// 主字幕层的用户垂直锚定（TODO-2838，[VideoSubtitleStyle.mainAnchor]）。
+  /// [SubtitleLayerVAnchor.bottom]（默认）= 历史底部基线路径；[SubtitleLayerVAnchor.top]
+  /// 时主字幕强制置顶、[bottomPadding] 语义变为离顶距离（镜像副字幕 forceTop 路径）。
+  /// 与 ASS 自带位置的优先级见 [resolveLayerForcedAnchor]。
+  final SubtitleLayerVAnchor mainAnchor;
+
+  /// 副字幕层的用户垂直锚定（[VideoSubtitleStyle.secondaryAnchor]）。null = 自动取主层
+  /// 对侧（主底 → 副顶，历史行为）；非 null = 用户拖拽落点显式指定。
+  final SubtitleLayerVAnchor? secondaryAnchor;
+
+  /// 「拖拽调整字幕位置」模式（TODO-2838）。为 true 时：字幕盒显示可拖边框指示、竖直
+  /// 拖动实时预览位置（落点在上半屏 = 顶锚 + 离顶距离、下半屏 = 底锚 + 离底距离），
+  /// 松手经 [onDragAdjustEnd] 回报；模式内**不再**触发查词点击 / Shift-悬停查词 / 听力
+  /// 沉浸显形（指针面整体让给拖拽），退出后全部恢复。默认 false = 外观与交互零变化。
+  final bool dragAdjustEnabled;
+
+  /// 拖拽调整松手回调：[isSecondary] 层、落点解析出的 [anchor] 与距锚定边的 [padding]
+  /// （已 clamp 0..400）。页面侧据此写回 [VideoSubtitleStyle] 并持久化（主副各自独立）。
+  final void Function({
+    required bool isSecondary,
+    required SubtitleLayerVAnchor anchor,
+    required double padding,
+  })? onDragAdjustEnd;
 
   /// media_kit 控制条当前是否可见（TODO-129/161）。非 null 时驱动字幕动态避让：可见时
   /// 字幕底部 padding 取 `max([bottomPadding], [controlsBottomReserve])`（字幕底缘骑到
@@ -558,6 +586,20 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 副字幕模糊态的独立显形标志（TODO-1382）：主/副字幕各有自己的 reveal，悬停/点击
   /// 副字幕层只显形副字幕、不误显形主字幕（两层可同时开模糊）。
   bool _secondaryRevealed = false;
+
+  /// 拖拽调整模式的**逐层实时预览**（TODO-2838）：非 null 时该层的用户锚定/基线以本值
+  /// 为准（覆盖 widget 传入的持久化值），拖动中逐帧更新、松手经
+  /// [VideoSubtitleOverlay.onDragAdjustEnd] 提交后**保留**（避免「预览清了、新 style 还
+  /// 没传回来」的一帧回跳），[didUpdateWidget] 检测到拖拽模式关闭时统一清除。
+  ({SubtitleLayerVAnchor anchor, double padding})? _dragPreviewMain;
+  ({SubtitleLayerVAnchor anchor, double padding})? _dragPreviewSecondary;
+
+  /// 当前一次拖拽的起始几何（pan start 采样）：被抓字幕盒的全局顶缘 / 盒高 / 指针起始
+  /// 全局 y。update 时用「盒顶 + 指针位移」重算盒位置，与手指严格同步（不是把盒中心
+  /// 吸到指针上——抓哪儿跟哪儿）。
+  double _dragBoxTopGlobal = 0;
+  double _dragBoxHeight = 0;
+  double _dragStartPointerY = 0;
 
   /// `\fad`/`\fade` 淡入淡出逐帧刷新驱动（TODO-1373）：活动集里有带 fade 的 cue（且开
   /// respectAssStyle）时启动，每帧 setState 重读 [VideoPlayerController.effectivePositionMs]
@@ -802,6 +844,12 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     if (!widget.blurEnabled && _revealed) _revealed = false;
     if (!widget.secondaryBlurEnabled && _secondaryRevealed) {
       _secondaryRevealed = false;
+    }
+    // 退出拖拽调整模式：清掉逐层预览，位置回归 widget 传入的持久化值（提交过的拖拽
+    // 已写进 style，两者一致；未提交的中途退出则丢弃预览=取消语义）。
+    if (!widget.dragAdjustEnabled && oldWidget.dragAdjustEnabled) {
+      _dragPreviewMain = null;
+      _dragPreviewSecondary = null;
     }
   }
 
@@ -1307,13 +1355,18 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final SubtitlePos? ownPos = ownMarkup?.posFraction;
     final SubtitleAnchor? ownAnchor = ownMarkup?.anchor;
     final bool ownNonBottom = ownPos != null ||
-        ownMarkup?.move != null || // \move 自带绝对位置，不被强制置顶（TODO-1374）
+        ownMarkup?.move != null || // \move 自带绝对位置，不被强制锚定（TODO-1374）
         (ownAnchor != null && ownAnchor.vertical != SubtitleVAlign.bottom);
-    final bool forceTop = isSecondary && !ownNonBottom;
-    final SubtitleMarkup? posMarkup = forceTop ? null : ownMarkup;
+    // TODO-2838：锚定解析收敛成统一函数（[resolveLayerForcedAnchor]）——用户锚定（含
+    // 拖拽预览）、副字幕自动对侧、ASS 自带位置的优先级都在那一处，此处不再叠 if。
+    // 旧 `forceTop = isSecondary && !ownNonBottom` 是它在「主恒底锚」时代的特例投影。
+    final SubtitleLayerVAnchor? forcedAnchor = _layerForcedAnchor(
+        isSecondary: isSecondary, ownNonBottom: ownNonBottom);
+    final bool forceTop = forcedAnchor == SubtitleLayerVAnchor.top;
+    final SubtitleMarkup? posMarkup = forcedAnchor != null ? null : ownMarkup;
     // 本组生效的竖直锚：决定堆叠增长方向（槽位远端在哪一侧）。
-    final SubtitleVAlign effectiveV = forceTop
-        ? SubtitleVAlign.top
+    final SubtitleVAlign effectiveV = forcedAnchor != null
+        ? (forceTop ? SubtitleVAlign.top : SubtitleVAlign.bottom)
         : (ownAnchor?.vertical ?? SubtitleVAlign.bottom);
 
     // TODO-1372/BUG-698：组内跨帧稳定槽位（锚点侧在前，不变量见 [_groupSlots]）。Column
@@ -1400,6 +1453,12 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     required bool isSecondary,
     required bool blurred,
   }) {
+    // 拖拽调整模式（TODO-2838）：该层指针面整体让给拖拽——不挂查词点击 / glyph 吸收 /
+    // 模糊显形 / hover 通道（模式内字幕保持清晰便于对位），套可拖指示边框 + 竖直拖动。
+    // 模式关闭（didUpdateWidget 清预览）后走下方原路径，查词 / 悬停 / 模糊全部恢复。
+    if (widget.dragAdjustEnabled) {
+      return _wrapDragAdjust(content, isSecondary: isSecondary);
+    }
     if (widget.onCharTap != null) {
       content = RawGestureDetector(
         behavior: HitTestBehavior.translucent,
@@ -1493,6 +1552,87 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         _lastShiftHoverEntry = -1;
       },
       child: content,
+    );
+  }
+
+  /// 拖拽调整模式下一组字幕盒的交互包装（TODO-2838）：可拖指示边框（foregroundDecoration
+  /// 画在字幕之上、不改布局几何）+ 竖直 pan 手势。抓哪儿跟哪儿：pan start 采样被抓盒的
+  /// 全局顶缘与指针 y，update 用指针位移平移盒位置，经 [resolveDragAdjustDrop] 解析成
+  /// 锚定边 + 距边 padding 写进该层预览（[_dragPreviewMain]/[_dragPreviewSecondary]），
+  /// 松手经 [VideoSubtitleOverlay.onDragAdjustEnd] 提交（主副各自独立）。
+  /// [HitTestBehavior.opaque]：模式内盒面点击不再下探 media_kit（不误唤控制条显隐）。
+  Widget _wrapDragAdjust(Widget content, {required bool isSecondary}) {
+    return Builder(
+      builder: (BuildContext boxContext) {
+        final Color accent = Theme.of(boxContext).colorScheme.primary;
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onPanStart: (DragStartDetails d) =>
+              _handleDragAdjustStart(d, boxContext, isSecondary: isSecondary),
+          onPanUpdate: (DragUpdateDetails d) =>
+              _handleDragAdjustUpdate(d, isSecondary: isSecondary),
+          onPanEnd: (DragEndDetails d) =>
+              _handleDragAdjustEnd(isSecondary: isSecondary),
+          onPanCancel: () => _handleDragAdjustEnd(isSecondary: isSecondary),
+          child: Container(
+            foregroundDecoration: BoxDecoration(
+              border: Border.all(color: accent, width: 2),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: content,
+          ),
+        );
+      },
+    );
+  }
+
+  /// pan start：采样被抓字幕盒的全局顶缘 / 盒高与指针起始 y（[_wrapDragAdjust] 注释）。
+  void _handleDragAdjustStart(DragStartDetails d, BuildContext boxContext,
+      {required bool isSecondary}) {
+    final RenderObject? ro = boxContext.findRenderObject();
+    if (ro is! RenderBox || !ro.hasSize) return;
+    _dragBoxTopGlobal = ro.localToGlobal(Offset.zero).dy;
+    _dragBoxHeight = ro.size.height;
+    _dragStartPointerY = d.globalPosition.dy;
+  }
+
+  /// pan update：盒顶 = 起始盒顶 + 指针位移，折成 overlay 局部坐标后经
+  /// [resolveDragAdjustDrop] 解析锚定边 + padding，写该层预览实时跟手。
+  void _handleDragAdjustUpdate(DragUpdateDetails d,
+      {required bool isSecondary}) {
+    if (_dragBoxHeight <= 0) return; // start 未采样成功（无 RenderBox）
+    final RenderObject? overlayRo = context.findRenderObject();
+    if (overlayRo is! RenderBox || !overlayRo.hasSize) return;
+    final double overlayTop = overlayRo.localToGlobal(Offset.zero).dy;
+    final double boxTop = _dragBoxTopGlobal +
+        (d.globalPosition.dy - _dragStartPointerY) -
+        overlayTop;
+    final ({SubtitleLayerVAnchor anchor, double padding}) preview =
+        resolveDragAdjustDrop(
+      boxTop: boxTop,
+      boxHeight: _dragBoxHeight,
+      containerHeight: overlayRo.size.height,
+    );
+    setState(() {
+      if (isSecondary) {
+        _dragPreviewSecondary = preview;
+      } else {
+        _dragPreviewMain = preview;
+      }
+    });
+  }
+
+  /// pan end / cancel：把该层预览经 [VideoSubtitleOverlay.onDragAdjustEnd] 提交给页面
+  /// 写回 style 偏好。预览**保留**（与提交值一致，避免 style 回传前的一帧回跳），退出
+  /// 模式时由 [didUpdateWidget] 统一清除。
+  void _handleDragAdjustEnd({required bool isSecondary}) {
+    final ({SubtitleLayerVAnchor anchor, double padding})? preview =
+        _dragPreviewFor(isSecondary);
+    if (preview == null) return;
+    widget.onDragAdjustEnd?.call(
+      isSecondary: isSecondary,
+      anchor: preview.anchor,
+      padding: preview.padding,
     );
   }
 
@@ -2467,10 +2607,48 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 单独调过（[VideoSubtitleOverlay.secondaryBottomPadding] 非 null）时用自己的值、否则
   /// 跟随主字幕（历史行为）。位置计算全部经此取值，不再有第二处直读 `widget.bottomPadding`
   /// 的层无关分支——这正是「调主字幕位置把副字幕一起挪走」的根因。
-  double _layerBaseline(bool isSecondary) =>
-      isSecondary && widget.secondaryBottomPadding != null
-          ? widget.secondaryBottomPadding!
-          : widget.bottomPadding;
+  /// 拖拽调整模式内（TODO-2838）该层的拖拽预览值优先——预览与提交同一条消费路径，
+  /// 「预览即所得」。
+  double _layerBaseline(bool isSecondary) {
+    final ({SubtitleLayerVAnchor anchor, double padding})? preview =
+        _dragPreviewFor(isSecondary);
+    if (preview != null) return preview.padding;
+    return isSecondary && widget.secondaryBottomPadding != null
+        ? widget.secondaryBottomPadding!
+        : widget.bottomPadding;
+  }
+
+  /// 该层的拖拽预览态（TODO-2838）；null = 无预览（用 widget 持久化值）。
+  ({SubtitleLayerVAnchor anchor, double padding})? _dragPreviewFor(
+          bool isSecondary) =>
+      isSecondary ? _dragPreviewSecondary : _dragPreviewMain;
+
+  /// 该层的**用户显式锚定**输入（喂给 [resolveLayerForcedAnchor] 的 `userAnchor`）：
+  /// 拖拽预览优先；否则主层只有选了顶部才算显式（底部 = 历史默认、不构成对 ASS 位置的
+  /// 覆盖），副层直接透传（null = 自动对侧）。
+  SubtitleLayerVAnchor? _layerUserAnchor(bool isSecondary) {
+    final ({SubtitleLayerVAnchor anchor, double padding})? preview =
+        _dragPreviewFor(isSecondary);
+    if (preview != null) return preview.anchor;
+    if (isSecondary) return widget.secondaryAnchor;
+    return widget.mainAnchor == SubtitleLayerVAnchor.top
+        ? SubtitleLayerVAnchor.top
+        : null;
+  }
+
+  /// 该层对一组 cue 的**强制锚定边**（统一锚定解析的实例入口，TODO-2838）：
+  /// null = 不强制（遵 cue 自带 ASS 位置 / 主层历史底部路径）。纯逻辑在
+  /// [resolveLayerForcedAnchor]（可单测），此处只是把 widget 状态折成其输入。
+  SubtitleLayerVAnchor? _layerForcedAnchor(
+          {required bool isSecondary, required bool ownNonBottom}) =>
+      resolveLayerForcedAnchor(
+        isSecondary: isSecondary,
+        userAnchor: _layerUserAnchor(isSecondary),
+        // 副层自动对侧要跟的是主层**当前生效**的锚定：拖拽主字幕的预览期也实时对侧，
+        // 预览与提交后行为一致。
+        mainUserAnchor: _dragPreviewMain?.anchor ?? widget.mainAnchor,
+        ownNonBottom: ownNonBottom,
+      );
 
   /// 顶部锚点用顶部 padding、中部不加、底部按 [controlsVisible] 取避让下限。
   ///
@@ -2683,6 +2861,29 @@ bool isBaselineBucketMarginV({
   required double? rawMarginV,
 }) =>
     rawMarginV == null || rawMarginV <= 0 || rawMarginV <= userBase;
+
+/// 拖拽调整落点解析（TODO-2838，纯函数）：给定字幕盒当前顶缘（overlay 局部坐标）、盒高
+/// 与 overlay 高度，返回锚定边 + 距锚定边的 padding。
+///
+/// 盒**中心**落在上半屏 = 顶锚 + 离顶距离（盒顶到顶边），下半屏 = 底锚 + 离底距离
+/// （盒底到底边）——锚定自动跟随落点，消除「先选锚再拖」的两步特例。两分支在屏幕中线
+/// 处数值连续（盒中心恰在中线时顶距 == 底距），拖过中线不跳变。padding 夹进
+/// [0, [kVideoSubtitleMaxPadding]]，与滑条 / 持久化同一上限；controls reserve 避让在
+/// 渲染侧照旧对结果取下限（[_paddingFor]），本函数不参与。
+@visibleForTesting
+({SubtitleLayerVAnchor anchor, double padding}) resolveDragAdjustDrop({
+  required double boxTop,
+  required double boxHeight,
+  required double containerHeight,
+}) {
+  final double center = boxTop + boxHeight / 2;
+  final bool top = center < containerHeight / 2;
+  final double raw = top ? boxTop : containerHeight - (boxTop + boxHeight);
+  return (
+    anchor: top ? SubtitleLayerVAnchor.top : SubtitleLayerVAnchor.bottom,
+    padding: raw.clamp(0.0, kVideoSubtitleMaxPadding).toDouble(),
+  );
+}
 
 /// ASS/GDI 字体名是否声明了**竖排书写**（`@` 前缀约定，BUG-1331）。
 ///

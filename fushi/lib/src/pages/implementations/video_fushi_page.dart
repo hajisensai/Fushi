@@ -1721,6 +1721,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 当前字幕外观（全局偏好快照；设置面板改动后刷新）。
   VideoSubtitleStyle _subtitleStyle = VideoSubtitleStyle.defaults;
+
+  /// 「拖拽调整字幕位置」模式开关（TODO-2838）：设置面板入口进入、画面顶部横幅
+  /// 「完成」退出。开启时字幕 overlay 让出查词指针面、改挂竖直拖拽（见
+  /// [VideoSubtitleOverlay.dragAdjustEnabled]），松手经 [_handleSubtitleDragAdjustEnd]
+  /// 写回 [_subtitleStyle] 并持久化。
+  bool _subtitleDragAdjustActive = false;
   VideoAsbplayerConfig _asbConfig = VideoAsbplayerConfig.defaults;
 
   /// Live 9-slot control button layout (TODO-274/312 phase 2). This is loaded
@@ -6208,6 +6214,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         if (mounted) setState(() => _subtitleStyle = s);
       },
       onSubtitleStyleCommit: _persistSubtitleStyle,
+      // TODO-2838：进入「拖拽调整字幕位置」模式（关设置侧栏 + 开拖拽，见 layout.part）。
+      onEnterSubtitleDragAdjust: _enterSubtitleDragAdjust,
       // TODO-1105：尊重 .ass 自带样式切换回调（持久化 + 重建让 overlay 即时生效）。
       onRespectAssStyleChanged: _setVideoRespectAssStyle,
       // 着色器/mpv 配置面板内嵌（不弹独立对话框）：着色器勾选 → 持久化启用集 +

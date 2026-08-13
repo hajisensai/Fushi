@@ -394,6 +394,12 @@ extension _VideoLayout on _VideoFushiPageState {
                           // 主字幕位置滑杆不再把副字幕一起挪走。
                           secondaryBottomPadding:
                               _subtitleStyle.secondaryBottomPadding,
+                          // TODO-2838：主/副字幕用户垂直锚定（底/顶）+ 拖拽调整模式。
+                          // 拖拽松手把落点锚定 + 距边距离写回 style 偏好并持久化。
+                          mainAnchor: _subtitleStyle.mainAnchor,
+                          secondaryAnchor: _subtitleStyle.secondaryAnchor,
+                          dragAdjustEnabled: _subtitleDragAdjustActive,
+                          onDragAdjustEnd: _handleSubtitleDragAdjustEnd,
                           // 控制条可见性驱动动态避让（TODO-129）：进度条出现时字幕底缘对
                           // 进度条上缘取下限（max，非加法——BUG-226 防顶飞）、隐藏落回。全屏
                           // 复用同一 builder + ValueNotifier，故窗口与全屏都跟随（BUG-120 同源）。
@@ -424,6 +430,9 @@ extension _VideoLayout on _VideoFushiPageState {
                       // IgnorePointer；隐藏态零尺寸）。挂在 auto-advance 之后、
                       // level HUD 之前，与其它 chrome overlay 同源。
                       _buildBlackFlickerNoticeOverlay(),
+                      // TODO-2838：拖拽调整字幕位置模式的顶部横幅（提示 + 「完成」退出）。
+                      // 非模式态零尺寸。
+                      _buildSubtitleDragAdjustBanner(),
                       _buildLevelHudOverlay(),
                       _buildVideoSideActionRail(controller),
                       _buildVideoSidePanelOverlay(controller),
@@ -884,6 +893,77 @@ extension _VideoLayout on _VideoFushiPageState {
                 },
               );
             },
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── 拖拽调整字幕位置（TODO-2838）─────────────────────────────────────────
+
+  /// 进入拖拽调整模式（设置面板「拖拽调整位置」入口，经
+  /// [VideoQuickSettingsHost.onEnterSubtitleDragAdjust] 调到这里）：先关设置侧栏
+  /// （面板盖着画面没法拖），再打开模式让字幕 overlay 切换到拖拽指针面。
+  void _enterSubtitleDragAdjust() {
+    _hideVideoSidePanel();
+    _rebuild(() => _subtitleDragAdjustActive = true);
+  }
+
+  /// 拖拽松手回调（[VideoSubtitleOverlay.onDragAdjustEnd]）：把落点解析出的锚定边 +
+  /// 距边距离写回 [_subtitleStyle] 对应层的字段并持久化（复用 [_persistSubtitleStyle]
+  /// 的「更新页面快照 + 落 pref + setState」全链路）。主副各自独立：拖主字幕写
+  /// mainAnchor/bottomPadding，拖副字幕写 secondaryAnchor/secondaryBottomPadding。
+  void _handleSubtitleDragAdjustEnd({
+    required bool isSecondary,
+    required SubtitleLayerVAnchor anchor,
+    required double padding,
+  }) {
+    final VideoSubtitleStyle next = isSecondary
+        ? _subtitleStyle.copyWith(
+            secondaryAnchor: anchor,
+            secondaryBottomPadding: padding,
+          )
+        : _subtitleStyle.copyWith(
+            mainAnchor: anchor,
+            bottomPadding: padding,
+          );
+    unawaited(_persistSubtitleStyle(next));
+  }
+
+  /// 拖拽调整模式的顶部横幅：提示文案 + 「完成」按钮退出。非模式态返回零尺寸盒。
+  /// 挂在 chrome 层（OSD 之后），不参与字幕 overlay 的指针面。圆角走
+  /// [FushiBorderRadius] 共享 token、面色用非分档 surfaceContainer（MD3 守卫纪律）。
+  Widget _buildSubtitleDragAdjustBanner() {
+    if (!_subtitleDragAdjustActive) return const SizedBox.shrink();
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    final TextStyle? labelStyle =
+        Theme.of(context).textTheme.labelLarge?.copyWith(color: cs.onSurface);
+    return SafeArea(
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Material(
+            color: cs.surfaceContainer.withValues(alpha: 0.92),
+            borderRadius: FushiBorderRadius.dialog,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(Icons.open_with_outlined, size: 18, color: cs.primary),
+                  const SizedBox(width: 8),
+                  Text(t.video_subtitle_drag_adjust_hint, style: labelStyle),
+                  const SizedBox(width: 12),
+                  FilledButton(
+                    key: const Key('video-subtitle-drag-adjust-done'),
+                    onPressed: () =>
+                        _rebuild(() => _subtitleDragAdjustActive = false),
+                    child: Text(t.dialog_done),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

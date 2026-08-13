@@ -47,6 +47,7 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     required this.subtitleStyle,
     required this.onSubtitleStylePreview,
     required this.onSubtitleStyleCommit,
+    this.onEnterSubtitleDragAdjust,
     this.onRespectAssStyleChanged,
     required this.onAsbConfigChanged,
     required this.onMpvConfigChanged,
@@ -112,6 +113,11 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   final VideoSubtitleStyle Function() subtitleStyle;
   final void Function(VideoSubtitleStyle style) onSubtitleStylePreview;
   final Future<void> Function(VideoSubtitleStyle style) onSubtitleStyleCommit;
+
+  /// 进入「拖拽调整字幕位置」模式（TODO-2838）：页面关设置侧栏 + 打开拖拽模式，
+  /// 字幕 overlay 显示可拖指示、竖直拖动写回位置偏好。null = 面板不显示该入口
+  /// （全局设置页 / 无播放器场景）。
+  final VoidCallback? onEnterSubtitleDragAdjust;
   final Future<void> Function(bool value)? onRespectAssStyleChanged;
 
   // ── 手势/播放行为 JSON pref（页面持久化 + 即时生效）──────────────────────

@@ -318,6 +318,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Background opacity': 'test/media/video/video_subtitle_style_test.dart',
   'video/Vertical position':
       'test/media/video/video_subtitle_style_test.dart + test/pages/video_subtitle_push_up_guard_test.dart',
+  // TODO-2838：主字幕垂直锚定（底/顶）。写 videoSubtitleStyle blob（changed=true），
+  // 生效点在 VideoSubtitleOverlay 的统一锚定解析（resolveLayerForcedAnchor →
+  // _positionCueGroup 强制置顶 + padding 语义变离顶距离），本 harness 的 video 分组
+  // 无适用探针（与主/副字幕位置滑杆同理）。由专项测试咬住：解析纯函数优先级 /
+  // overlay 顶锚真几何 / top reserve 避让 / 持久化 round-trip + 旧 blob 兼容。
+  'video/Main subtitle anchor':
+      'test/media/video/video_subtitle_anchor_drag_test.dart',
   // PR#610「主/副字幕垂直位置分开调节」新增的副字幕位置滑杆（与上面主字幕
   // 'Vertical position' 同量纲、各自独立）。写 prefsRepo（changed=true），生效点在
   // VideoSubtitleOverlay 副字幕层的真几何（_layerBaseline），需真播放器 + media_kit，
@@ -556,8 +563,7 @@ void main() {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
-    final ReaderSettings? prevReaderSettings =
-        ReaderFushiSource.readerSettings;
+    final ReaderSettings? prevReaderSettings = ReaderFushiSource.readerSettings;
     final ReaderSettings readerSettings = ReaderSettings(db);
     await readerSettings.refreshFromDb();
     ReaderFushiSource.readerSettings = readerSettings;
