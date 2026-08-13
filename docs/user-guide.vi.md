@@ -1,8 +1,8 @@
-# Hướng dẫn hibiki mà đến Yui Hirasawa cũng cài đặt xong trong 5 phút
+# Hướng dẫn Fushi mà đến Yui Hirasawa cũng cài đặt xong trong 5 phút
 
 [English](user-guide.md) | [简体中文](https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb) | [繁體中文](user-guide.zh-Hant.md) | [日本語](user-guide.ja.md) | [한국어](user-guide.ko.md) | [Español](user-guide.es.md) | [Français](user-guide.fr.md) | [Deutsch](user-guide.de.md) | [Português](user-guide.pt-BR.md) | [Русский](user-guide.ru.md) | **Tiếng Việt** | [ภาษาไทย](user-guide.th.md) | [Bahasa Indonesia](user-guide.id.md) | [Italiano](user-guide.it.md) | [Nederlands](user-guide.nl.md) | [Türkçe](user-guide.tr.md) | [العربية](user-guide.ar.md)
 
-> Hướng dẫn tiếng Trung giản thể được lưu trữ trên Feishu (liên kết ở trên). Hướng dẫn tiếng Anh cũng có sẵn [trên GitHub](https://github.com/hajisensai/hibiki/blob/main/docs/user-guide.md).
+> Hướng dẫn tiếng Trung giản thể được lưu trữ trên Feishu (liên kết ở trên). Hướng dẫn tiếng Anh cũng có sẵn [trên GitHub](https://github.com/hajisensai/Fushi/blob/main/docs/user-guide.md).
 
 ## Giới thiệu
 
@@ -10,13 +10,13 @@
 
 ### URL dự án
 
-https://github.com/hajisensai/hibiki
+https://github.com/hajisensai/Fushi
 
-Đang được phát triển tích cực — phản hồi của bạn sẽ được xử lý nhanh chóng. Hoan nghênh các báo cáo lỗi và yêu cầu tính năng. Nếu bạn thấy Hibiki hữu ích, chúng tôi rất cảm kích nếu bạn chia sẻ nó với người khác hoặc để lại một ⭐ cho kho lưu trữ.
+Đang được phát triển tích cực — phản hồi của bạn sẽ được xử lý nhanh chóng. Hoan nghênh các báo cáo lỗi và yêu cầu tính năng. Nếu bạn thấy Fushi hữu ích, chúng tôi rất cảm kích nếu bạn chia sẻ nó với người khác hoặc để lại một ⭐ cho kho lưu trữ.
 
 ### Tải xuống
 
-https://github.com/hajisensai/hibiki/releases/latest
+https://github.com/hajisensai/Fushi/releases/latest
 
 Android: chọn **arm64**. Windows: chọn tệp **.exe**.
 
@@ -24,7 +24,7 @@ Android: chọn **arm64**. Windows: chọn tệp **.exe**.
 
 ### 1. Nhập các từ điển được đề xuất (từ điển từ vựng + trọng âm cao độ + tần suất) và âm thanh cục bộ (cơ sở dữ liệu âm thanh tiếng Nhật và tiếng Anh) (Rất khuyến khích cho người mới!!! · tùy chọn)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Tải xuống qua Cloudflare (9,3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Tải xuống qua Cloudflare (9,5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 Trong ứng dụng: Cài đặt -> Đồng bộ & Sao lưu -> nhấn **Nhập bản sao lưu**.
 
@@ -51,8 +51,8 @@ Anki tích hợp sẵn [FSRS](https://github.com/open-spaced-repetition/fsrs4ank
 ##### Android
 
 1. Cài đặt và mở Anki.
-2. Quay lại hibiki, vào Cài đặt -> Tạo thẻ.
-3. Nhấn **Làm mới bộ thẻ và loại ghi chú** (được đánh dấu "1" trong hình); hibiki sẽ yêu cầu quyền — nhấn Cho phép.
+2. Quay lại Fushi, vào Cài đặt -> Tạo thẻ.
+3. Nhấn **Làm mới bộ thẻ và loại ghi chú** (được đánh dấu "1" trong hình); Fushi sẽ yêu cầu quyền — nhấn Cho phép.
 4. Nhấn **Tạo bộ thẻ Lapis** (được đánh dấu "2" trong hình).
 5. Nếu không có cảnh báo hay lỗi màu đỏ, thiết lập đã thành công.
 
@@ -66,7 +66,7 @@ Anki tích hợp sẵn [FSRS](https://github.com/open-spaced-repetition/fsrs4ank
 ![Menu Công cụ của Anki trên Windows](static-assets/user-guide/anki-windows-tools-menu.png)
 
 3. Dán mã tiện ích bổ sung Anki bên dưới để cài đặt: `2055492159`
-4. Quay lại hibiki, vào Cài đặt -> Tạo thẻ.
+4. Quay lại Fushi, vào Cài đặt -> Tạo thẻ.
 5. Nhấn **Làm mới bộ thẻ và loại ghi chú** (đánh dấu "1").
 6. Nhấn **Tạo bộ thẻ Lapis** (đánh dấu "2").
 7. Nếu không có cảnh báo hay lỗi màu đỏ, thiết lập đã thành công.

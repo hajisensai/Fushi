@@ -1,10 +1,10 @@
 <div align="center">
 
-# hibiki
+# Fushi
 
-<img src="../static-assets/hibiki-logo.png" alt="โลโก้ hibiki" width="160">
+<img src="../static-assets/fushi-logo.png" alt="โลโก้ Fushi" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -14,14 +14,14 @@
 
 **ไม่ต้องตั้งค่ายุ่งยาก** — นำเข้าพจนานุกรมและเสียงที่แนะนำได้ในขั้นตอนเดียว
 
-[![ดาวน์โหลดเวอร์ชันล่าสุด](https://img.shields.io/badge/%E2%AC%87%20%E0%B8%94%E0%B8%B2%E0%B8%A7%E0%B8%99%E0%B9%8C%E0%B9%82%E0%B8%AB%E0%B8%A5%E0%B8%94%E0%B9%80%E0%B8%A7%E0%B8%AD%E0%B8%A3%E0%B9%8C%E0%B8%8A%E0%B8%B1%E0%B8%99%E0%B8%A5%E0%B9%88%E0%B8%B2%E0%B8%AA%E0%B8%B8%E0%B8%94-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
+[![ดาวน์โหลดเวอร์ชันล่าสุด](https://img.shields.io/badge/%E2%AC%87%20%E0%B8%94%E0%B8%B2%E0%B8%A7%E0%B8%99%E0%B9%8C%E0%B9%82%E0%B8%AB%E0%B8%A5%E0%B8%94%E0%B9%80%E0%B8%A7%E0%B8%AD%E0%B8%A3%E0%B9%8C%E0%B8%8A%E0%B8%B1%E0%B8%99%E0%B8%A5%E0%B9%88%E0%B8%B2%E0%B8%AA%E0%B8%B8%E0%B8%94-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
 [![เข้าร่วม Discord](https://img.shields.io/badge/%E0%B9%80%E0%B8%82%E0%B9%89%E0%B8%B2%E0%B8%A3%E0%B9%88%E0%B8%A7%E0%B8%A1%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **ดูสิ่งที่อยากดู แล้วเรียนรู้ภาษาไปในตัว**
 
-hibiki เปลี่ยนนิยายที่คุณอ่าน ซีรีส์ที่คุณติดตาม และหนังสือเสียงที่คุณฟัง ให้กลายเป็นอินพุตทางภาษาของคุณ — แตะคำที่ไม่รู้จักเพื่อค้นหา แล้วแตะอีกครั้งเดียวเพื่อทำเป็นการ์ด Anki พร้อมบริบทต้นฉบับ มันไม่ได้บังคับให้คุณท่องรายการคำที่กำหนดไว้ล่วงหน้า แต่ช่วยให้คุณคว้าคำที่คุณ**ได้อ่านและได้ยินจริง ๆ**
+Fushi เปลี่ยนนิยายที่คุณอ่าน ซีรีส์ที่คุณติดตาม และหนังสือเสียงที่คุณฟัง ให้กลายเป็นอินพุตทางภาษาของคุณ — แตะคำที่ไม่รู้จักเพื่อค้นหา แล้วแตะอีกครั้งเดียวเพื่อทำเป็นการ์ด Anki พร้อมบริบทต้นฉบับ มันไม่ได้บังคับให้คุณท่องรายการคำที่กำหนดไว้ล่วงหน้า แต่ช่วยให้คุณคว้าคำที่คุณ**ได้อ่านและได้ยินจริง ๆ**
 
-วิธีเรียนภาษาที่ได้ผลที่สุดคือการสัมผัสเนื้อหาจริงในปริมาณมาก ไม่ใช่ท่องคำโดด ๆ จากหนังสือคำศัพท์ แต่ "การดื่มด่ำ" มักมีสองเรื่องน่ารำคาญเสมอ คือ การค้นคำทำให้สมาธิขาดตอน และพอละสายตาก็ลืม hibiki เชื่อมต่อวงจรนี้เข้าด้วยกัน —
+วิธีเรียนภาษาที่ได้ผลที่สุดคือการสัมผัสเนื้อหาจริงในปริมาณมาก ไม่ใช่ท่องคำโดด ๆ จากหนังสือคำศัพท์ แต่ "การดื่มด่ำ" มักมีสองเรื่องน่ารำคาญเสมอ คือ การค้นคำทำให้สมาธิขาดตอน และพอละสายตาก็ลืม Fushi เชื่อมต่อวงจรนี้เข้าด้วยกัน —
 
 📖 **อ่าน**: แตะคำในโปรแกรมอ่าน EPUB เพื่อค้นหา โดยไม่ต้องออกจากหน้าปัจจุบัน<br>
 🎧 **ฟัง**: หนังสือเสียงไฮไลต์ตามทีละประโยคและพลิกหน้าให้อัตโนมัติ<br>
@@ -32,19 +32,19 @@ hibiki เปลี่ยนนิยายที่คุณอ่าน ซี
 
 <table>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-bookshelf-en.png" alt="ชั้นหนังสือ" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-library-en.png" alt="คลังวิดีโอ" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="ชั้นหนังสือ" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-library-en.png" alt="คลังวิดีโอ" width="100%"></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/hibiki-readme-reader-vertical-lookup.png" alt="การอ่านแนวตั้งบนเดสก์ท็อปพร้อมป๊อปอัปค้นคำ" width="100%"></td>
+    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="การอ่านแนวตั้งบนเดสก์ท็อปพร้อมป๊อปอัปค้นคำ" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="การค้นคำในวิดีโอ (ป๊อปอัปซ้อน)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="การค้นคำในวิดีโอ (รายการคำบรรยาย)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="การค้นคำในวิดีโอ (ป๊อปอัปซ้อน)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="การค้นคำในวิดีโอ (รายการคำบรรยาย)" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="การค้นคำด้วยการเลือกข้อความนอกแอป (มือถือ)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="การค้นคำด้วยการเลือกข้อความนอกแอป (เดสก์ท็อป)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="การค้นคำด้วยการเลือกข้อความนอกแอป (มือถือ)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="การค้นคำด้วยการเลือกข้อความนอกแอป (เดสก์ท็อป)" width="100%"></td>
   </tr>
 </table>
 
@@ -55,9 +55,9 @@ hibiki เปลี่ยนนิยายที่คุณอ่าน ซี
      conventional workaround. To restore a real inline player, upload the mp4 in
      the GitHub web editor and replace the img below with the generated
      https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/hibiki-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
+<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
 
-<sub>[ดูเดโมการสร้างการ์ดในคลิกเดียว ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)</sub>
+<sub>[ดูเดโมการสร้างการ์ดในคลิกเดียว ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
 ## คุณสมบัติ
@@ -117,7 +117,7 @@ hibiki เปลี่ยนนิยายที่คุณอ่าน ซี
 
 ### การซิงก์ข้อมูล
 
-- แบ็กเอนด์การซิงก์เจ็ดแบบ: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP และ Hibiki P2P
+- แบ็กเอนด์การซิงก์เจ็ดแบบ: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP และ Fushi Interconnect
 - ซิงก์ความคืบหน้าการอ่าน สถิติ และหนังสือ
 
 ### อื่น ๆ
@@ -130,7 +130,10 @@ hibiki เปลี่ยนนิยายที่คุณอ่าน ซี
 | แพลตฟอร์ม | สถานะ | การเรนเดอร์ / UI |
 |---|---|---|
 | Android | ✅ | Material Design 3 |
-| Windows | ✅ | Material |
+| Windows | ✅ | Material Design 3 |
+| macOS | ✅ | Material Design 3 |
+| Linux | ✅ | Material Design 3 |
+| iOS | ✅ | Material Design 3 |
 
 > รองรับต่ำสุด Android 7.0 (API 24) ภาษาที่ใช้ค้นคำในพจนานุกรมจะถูกกำหนดโดยพจนานุกรมที่นำเข้าและตารางการแปลงรูปของ Yomitan โดยไม่ขึ้นกับภาษาของส่วนติดต่อผู้ใช้
 
@@ -146,7 +149,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 # จากรากของ repository
 bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
 
-cd hibiki
+cd fushi
 # Android
 flutter build apk --release --target-platform android-arm64 --split-per-abi
 # Windows desktop
@@ -161,11 +164,11 @@ flutter build windows --release
 | ชั้น | เทคโนโลยี |
 |---|---|
 | เฟรมเวิร์ก | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| แพลตฟอร์ม | Android / Windows (Material Design 3) |
+| แพลตฟอร์ม | Android / Windows / macOS / Linux / iOS (Material Design 3) |
 | โปรแกรมอ่าน | เครื่องมือแบ่งหน้าด้วย WebView (พัฒนาจากตระกูล Hoshi Reader) |
 | วิดีโอ | media_kit (แกนหลัก libmpv) |
-| ที่จัดเก็บข้อมูล | Drift (SQLite, WAL) + hoshidicts (เครื่องมือพจนานุกรม C++ FFI) |
-| NLP | ตารางการแปลงรูปของ Yomitan (การหารูปฐานแบบหลายภาษา) + kana_kit (การแปลงคานะ) การแบ่งคำผ่าน hoshidicts FFI |
+| ที่จัดเก็บข้อมูล | Drift (SQLite, WAL) + fushidicts (เครื่องมือพจนานุกรม C++ FFI) |
+| NLP | ตารางการแปลงรูปของ Yomitan (การหารูปฐานแบบหลายภาษา) + kana_kit (การแปลงคานะ) การแบ่งคำผ่าน fushidicts FFI |
 | การสร้างการ์ด | AnkiDroid API + AnkiConnect |
 | i18n | Slang (17 ภาษา) |
 
@@ -175,7 +178,7 @@ flutter build windows --release
 <summary><b>โครงสร้างโปรเจกต์</b></summary>
 
 ```
-hibiki/                      # Repository root (Melos workspace: fushi_workspace)
+Fushi/                      # Repository root (Melos workspace: fushi_workspace)
 ├── fushi/                  # Flutter app main directory
 │   ├── lib/
 │   │   ├── i18n/            # Internationalization (17 languages, Slang)
@@ -185,9 +188,9 @@ hibiki/                      # Repository root (Melos workspace: fushi_workspace
 │   │   │   ├── media/       # Audiobook, subtitle parsing, reader source
 │   │   │   └── models/      # Data models and state management (AppModel)
 │   │   └── main.dart
-│   └── android/             # Android project (manifest, native hoshidicts)
+│   └── android/             # Android project (manifest, native fushidicts)
 ├── packages/                # Internal packages + flutter_inappwebview_windows (fork) + gamepads_android_stub
-├── native/                  # hoshidicts C++ dictionary engine (FFI)
+├── native/                  # fushidicts C++ dictionary engine (FFI)
 ├── third_party/             # Vendored patched packages (dependency_overrides)
 ├── ci/                      # Build patches and integration test scripts
 ├── tool/                    # bootstrap / i18n_sync and other scripts
@@ -198,13 +201,13 @@ hibiki/                      # Repository root (Melos workspace: fushi_workspace
 
 ## ความเป็นส่วนตัวและข้อมูล
 
-hibiki จัดเก็บหนังสือ พจนานุกรม แบบอักษร ข้อมูลหนังสือเสียง วิดีโอ ความคืบหน้าการอ่าน ไฮไลต์ สถิติ และการตั้งค่าที่นำเข้าไว้ในที่จัดเก็บข้อมูลในเครื่องของแอป
+Fushi จัดเก็บหนังสือ พจนานุกรม แบบอักษร ข้อมูลหนังสือเสียง วิดีโอ ความคืบหน้าการอ่าน ไฮไลต์ สถิติ และการตั้งค่าที่นำเข้าไว้ในที่จัดเก็บข้อมูลในเครื่องของแอป
 
-การซิงก์บนคลาวด์ (Google Drive / OneDrive / Dropbox) ใช้ข้อมูลรับรอง OAuth ที่ผู้ใช้กำหนดค่าเอง WebDAV / FTP / SFTP ใช้ที่อยู่เซิร์ฟเวอร์และข้อมูลรับรองที่ผู้ใช้ระบุ Hibiki P2P เชื่อมต่อโดยตรงผ่านที่อยู่ที่ผู้ใช้กำหนดค่า การสร้างการ์ด Anki จะสื่อสารกับ AnkiDroid หรือที่อยู่ AnkiConnect ที่กำหนดค่าไว้
+การซิงก์บนคลาวด์ (Google Drive / OneDrive / Dropbox) ใช้ข้อมูลรับรอง OAuth ที่ผู้ใช้กำหนดค่าเอง WebDAV / FTP / SFTP ใช้ที่อยู่เซิร์ฟเวอร์และข้อมูลรับรองที่ผู้ใช้ระบุ Fushi Interconnect เชื่อมต่อโดยตรงผ่านที่อยู่ที่ผู้ใช้กำหนดค่า การสร้างการ์ด Anki จะสื่อสารกับ AnkiDroid หรือที่อยู่ AnkiConnect ที่กำหนดค่าไว้
 
 ## กิตติกรรมประกาศ
 
-hibiki ต่อยอดจากโปรเจกต์และระบบนิเวศต่อไปนี้:
+Fushi ต่อยอดจากโปรเจกต์และระบบนิเวศต่อไปนี้:
 
 | โปรเจกต์ | คำอธิบาย |
 |---|---|

@@ -1,8 +1,8 @@
-# Yui Hirasawa'nın bile 5 dakikada kurabildiği hibiki kılavuzu
+# Yui Hirasawa'nın bile 5 dakikada kurabildiği Fushi kılavuzu
 
 [English](user-guide.md) | [简体中文](https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb) | [繁體中文](user-guide.zh-Hant.md) | [日本語](user-guide.ja.md) | [한국어](user-guide.ko.md) | [Español](user-guide.es.md) | [Français](user-guide.fr.md) | [Deutsch](user-guide.de.md) | [Português](user-guide.pt-BR.md) | [Русский](user-guide.ru.md) | [Tiếng Việt](user-guide.vi.md) | [ภาษาไทย](user-guide.th.md) | [Bahasa Indonesia](user-guide.id.md) | [Italiano](user-guide.it.md) | [Nederlands](user-guide.nl.md) | **Türkçe** | [العربية](user-guide.ar.md)
 
-> Basitleştirilmiş Çince kılavuz Feishu'da barındırılmaktadır (yukarıdaki bağlantı). İngilizce kılavuz ayrıca [GitHub'da](https://github.com/hajisensai/hibiki/blob/main/docs/user-guide.md) mevcuttur.
+> Basitleştirilmiş Çince kılavuz Feishu'da barındırılmaktadır (yukarıdaki bağlantı). İngilizce kılavuz ayrıca [GitHub'da](https://github.com/hajisensai/Fushi/blob/main/docs/user-guide.md) mevcuttur.
 
 ## Giriş
 
@@ -10,13 +10,13 @@ Bu, Android / Windows için ücretsiz bir yazılımdır (iOS / macOS planlanıyo
 
 ### Proje URL'si
 
-https://github.com/hajisensai/hibiki
+https://github.com/hajisensai/Fushi
 
-Aktif olarak geliştiriliyor — geri bildirimleriniz hızla ele alınacaktır. Hata raporları ve özellik istekleri memnuniyetle karşılanır. Hibiki'yi faydalı bulursanız, başkalarıyla paylaşmanız ya da depoya bir ⭐ bırakmanız bizi mutlu eder.
+Aktif olarak geliştiriliyor — geri bildirimleriniz hızla ele alınacaktır. Hata raporları ve özellik istekleri memnuniyetle karşılanır. Fushi'yi faydalı bulursanız, başkalarıyla paylaşmanız ya da depoya bir ⭐ bırakmanız bizi mutlu eder.
 
 ### İndir
 
-https://github.com/hajisensai/hibiki/releases/latest
+https://github.com/hajisensai/Fushi/releases/latest
 
 Android: **arm64** seçin. Windows: **.exe** dosyasını seçin.
 
@@ -24,7 +24,7 @@ Android: **arm64** seçin. Windows: **.exe** dosyasını seçin.
 
 ### 1. Önerilen sözlükleri (kelime + vurgu + sıklık sözlükleri) ve yerel sesi (Japonca ve İngilizce ses veritabanları) içe aktarma (Yeni başlayanlara şiddetle önerilir!!! · isteğe bağlı)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare üzerinden indirme (9,3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare üzerinden indirme (9,5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 Uygulamada: Ayarlar -> Eşitleme ve Yedekleme -> **Yedeği İçe Aktar** öğesine dokunun.
 
@@ -51,8 +51,8 @@ Anki, dünyanın en iyi aralıklı tekrar algoritmalarından biri olan [FSRS](ht
 ##### Android
 
 1. Anki'yi yükleyip açın.
-2. hibiki'ye dönün, Ayarlar -> Kart Oluşturma bölümüne gidin.
-3. **Desteleri ve not türlerini yenile** öğesine dokunun (görselde "1" ile işaretli); hibiki izin isteyecektir — İzin Ver'e dokunun.
+2. Fushi'ye dönün, Ayarlar -> Kart Oluşturma bölümüne gidin.
+3. **Desteleri ve not türlerini yenile** öğesine dokunun (görselde "1" ile işaretli); Fushi izin isteyecektir — İzin Ver'e dokunun.
 4. **Lapis destesi oluştur** öğesine dokunun (görselde "2" ile işaretli).
 5. Kırmızı bir uyarı veya hata yoksa kurulum başarılı olmuştur.
 
@@ -66,7 +66,7 @@ Anki, dünyanın en iyi aralıklı tekrar algoritmalarından biri olan [FSRS](ht
 ![Windows'ta Anki Araçlar menüsü](static-assets/user-guide/anki-windows-tools-menu.png)
 
 3. Yüklemek için aşağıdaki Anki eklenti kodunu yapıştırın: `2055492159`
-4. hibiki'ye dönün, Ayarlar -> Kart Oluşturma bölümüne gidin.
+4. Fushi'ye dönün, Ayarlar -> Kart Oluşturma bölümüne gidin.
 5. **Desteleri ve not türlerini yenile** öğesine dokunun ("1" ile işaretli).
 6. **Lapis destesi oluştur** öğesine dokunun ("2" ile işaretli).
 7. Kırmızı bir uyarı veya hata yoksa kurulum başarılı olmuştur.

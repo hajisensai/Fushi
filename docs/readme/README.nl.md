@@ -1,10 +1,10 @@
 <div align="center">
 
-# hibiki
+# Fushi
 
-<img src="../static-assets/hibiki-logo.png" alt="hibiki-logo" width="160">
+<img src="../static-assets/fushi-logo.png" alt="fushi-logo" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -14,14 +14,14 @@
 
 **Geen omslachtige configuratie** — importeer de aanbevolen woordenboeken en audio in één stap.
 
-[![Nieuwste versie downloaden](https://img.shields.io/badge/%E2%AC%87%20Nieuwste%20versie%20downloaden-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
+[![Nieuwste versie downloaden](https://img.shields.io/badge/%E2%AC%87%20Nieuwste%20versie%20downloaden-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
 [![Word lid van Discord](https://img.shields.io/badge/Word%20lid%20van%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **Kijk waar je zin in hebt en pik de taal onderweg op.**
 
-hibiki maakt van de romans die je leest, de series die je volgt en de audioboeken die je luistert jouw taalinput: tik op elk onbekend woord om het op te zoeken en maak er met één tik een Anki-kaart met originele context van. Het laat je geen vooraf samengestelde woordenlijst stampen, maar helpt je juist de woorden te grijpen die je **echt leest en hoort**.
+Fushi maakt van de romans die je leest, de series die je volgt en de audioboeken die je luistert jouw taalinput: tik op elk onbekend woord om het op te zoeken en maak er met één tik een Anki-kaart met originele context van. Het laat je geen vooraf samengestelde woordenlijst stampen, maar helpt je juist de woorden te grijpen die je **echt leest en hoort**.
 
-De effectiefste manier om een taal te leren is veelvuldige blootstelling aan echte content, niet het uit je hoofd leren van losse woorden uit een woordenboekje. Maar "onderdompeling" had altijd twee ergernissen: een woord opzoeken onderbreekt je flow, en je vergeet het zodra je wegkijkt. hibiki sluit die cirkel:
+De effectiefste manier om een taal te leren is veelvuldige blootstelling aan echte content, niet het uit je hoofd leren van losse woorden uit een woordenboekje. Maar "onderdompeling" had altijd twee ergernissen: een woord opzoeken onderbreekt je flow, en je vergeet het zodra je wegkijkt. Fushi sluit die cirkel:
 
 📖 **Lezen**: tik op een woord in de EPUB-lezer om het op te zoeken, zonder de huidige pagina te verlaten.<br>
 🎧 **Luisteren**: audioboeken markeren zin voor zin mee en slaan automatisch de pagina om.<br>
@@ -32,19 +32,19 @@ Alle situaties delen dezelfde woordenboeken, statistieken en herhalingsworkflow.
 
 <table>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-bookshelf-en.png" alt="Boekenplank" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-library-en.png" alt="Videobibliotheek" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="Boekenplank" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-library-en.png" alt="Videobibliotheek" width="100%"></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/hibiki-readme-reader-vertical-lookup.png" alt="Verticaal lezen op desktop met opzoek-pop-up" width="100%"></td>
+    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="Verticaal lezen op desktop met opzoek-pop-up" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="Opzoeken in video (geneste pop-ups)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="Opzoeken in video (ondertitellijst)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="Opzoeken in video (geneste pop-ups)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="Opzoeken in video (ondertitellijst)" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="Opzoeken via tekstselectie buiten de app (mobiel)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="Opzoeken via tekstselectie buiten de app (desktop)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="Opzoeken via tekstselectie buiten de app (mobiel)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="Opzoeken via tekstselectie buiten de app (desktop)" width="100%"></td>
   </tr>
 </table>
 
@@ -55,9 +55,9 @@ Alle situaties delen dezelfde woordenboeken, statistieken en herhalingsworkflow.
      conventional workaround. To restore a real inline player, upload the mp4 in
      the GitHub web editor and replace the img below with the generated
      https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/hibiki-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
+<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
 
-<sub>[Bekijk de demo voor het maken van kaarten met één klik ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)</sub>
+<sub>[Bekijk de demo voor het maken van kaarten met één klik ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
 ## Functies
@@ -117,7 +117,7 @@ Alle situaties delen dezelfde woordenboeken, statistieken en herhalingsworkflow.
 
 ### Gegevenssynchronisatie
 
-- Zeven sync-backends: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP en Hibiki P2P.
+- Zeven sync-backends: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP en Fushi Interconnect.
 - Synchroniseer leesvoortgang, statistieken en boeken.
 
 ### Meer
@@ -130,7 +130,10 @@ Alle situaties delen dezelfde woordenboeken, statistieken en herhalingsworkflow.
 | Platform | Status | Rendering / UI |
 |---|---|---|
 | Android | ✅ | Material Design 3 |
-| Windows | ✅ | Material |
+| Windows | ✅ | Material Design 3 |
+| macOS | ✅ | Material Design 3 |
+| Linux | ✅ | Material Design 3 |
+| iOS | ✅ | Material Design 3 |
 
 > Minimaal Android 7.0 (API 24). Welke talen beschikbaar zijn om op te zoeken, wordt bepaald door de geïmporteerde woordenboeken en de Yomitan-transformatietabellen, onafhankelijk van de interfacetaal.
 
@@ -146,7 +149,7 @@ Voorbereiding met één commando (`flutter pub get` + patches toepassen), dan bo
 # Vanuit de hoofdmap van de repository
 bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
 
-cd hibiki
+cd fushi
 # Android
 flutter build apk --release --target-platform android-arm64 --split-per-abi
 # Windows-desktop
@@ -161,11 +164,11 @@ flutter build windows --release
 | Laag | Technologie |
 |---|---|
 | Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Platforms | Android / Windows (Material Design 3) |
+| Platforms | Android / Windows / macOS / Linux / iOS (Material Design 3) |
 | Reader | WebView-paginamotor (afgeleid van de Hoshi Reader-familie) |
 | Video | media_kit (libmpv-kern) |
-| Opslag | Drift (SQLite, WAL) + hoshidicts (C++-FFI-woordenboekengine) |
-| NLP | Yomitan-transformatietabellen (meertalige lemmatisering) + kana_kit (kana-conversie); tokenisatie via hoshidicts-FFI |
+| Opslag | Drift (SQLite, WAL) + fushidicts (C++-FFI-woordenboekengine) |
+| NLP | Yomitan-transformatietabellen (meertalige lemmatisering) + kana_kit (kana-conversie); tokenisatie via fushidicts-FFI |
 | Kaarten maken | AnkiDroid API + AnkiConnect |
 | i18n | Slang (17 talen) |
 
@@ -175,7 +178,7 @@ flutter build windows --release
 <summary><b>Projectstructuur</b></summary>
 
 ```
-hibiki/                      # Hoofdmap van de repository (Melos-workspace: fushi_workspace)
+Fushi/                      # Hoofdmap van de repository (Melos-workspace: fushi_workspace)
 ├── fushi/                  # Hoofdmap van de Flutter-app
 │   ├── lib/
 │   │   ├── i18n/            # Internationalisatie (17 talen, Slang)
@@ -185,9 +188,9 @@ hibiki/                      # Hoofdmap van de repository (Melos-workspace: fush
 │   │   │   ├── media/       # Audioboek, ondertitel-parsing, reader-bron
 │   │   │   └── models/      # Datamodellen en toestandsbeheer (AppModel)
 │   │   └── main.dart
-│   └── android/             # Android-project (manifest, native hoshidicts)
+│   └── android/             # Android-project (manifest, native fushidicts)
 ├── packages/                # Interne pakketten + flutter_inappwebview_windows (fork) + gamepads_android_stub
-├── native/                  # hoshidicts C++-woordenboekengine (FFI)
+├── native/                  # fushidicts C++-woordenboekengine (FFI)
 ├── third_party/             # Meegeleverde gepatchte pakketten (dependency_overrides)
 ├── ci/                      # Build-patches en integratietestscripts
 ├── tool/                    # bootstrap / i18n_sync en andere scripts
@@ -198,13 +201,13 @@ hibiki/                      # Hoofdmap van de repository (Melos-workspace: fush
 
 ## Privacy & Gegevens
 
-hibiki slaat geïmporteerde boeken, woordenboeken, lettertypen, audioboekgegevens, video's, leesvoortgang, markeringen, statistieken en instellingen op in de lokale opslag van de app.
+Fushi slaat geïmporteerde boeken, woordenboeken, lettertypen, audioboekgegevens, video's, leesvoortgang, markeringen, statistieken en instellingen op in de lokale opslag van de app.
 
-Cloud-synchronisatie (Google Drive / OneDrive / Dropbox) gebruikt door de gebruiker geconfigureerde OAuth-referenties; WebDAV / FTP / SFTP gebruikt door de gebruiker opgegeven serveradressen en referenties; Hibiki P2P verbindt rechtstreeks via een door de gebruiker geconfigureerd adres. Het maken van Anki-kaarten communiceert met AnkiDroid of een geconfigureerd AnkiConnect-adres.
+Cloud-synchronisatie (Google Drive / OneDrive / Dropbox) gebruikt door de gebruiker geconfigureerde OAuth-referenties; WebDAV / FTP / SFTP gebruikt door de gebruiker opgegeven serveradressen en referenties; Fushi Interconnect verbindt rechtstreeks via een door de gebruiker geconfigureerd adres. Het maken van Anki-kaarten communiceert met AnkiDroid of een geconfigureerd AnkiConnect-adres.
 
 ## Dankbetuigingen
 
-hibiki bouwt voort op de volgende projecten en het volgende ecosysteem:
+Fushi bouwt voort op de volgende projecten en het volgende ecosysteem:
 
 | Project | Beschrijving |
 |---|---|

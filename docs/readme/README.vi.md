@@ -1,10 +1,10 @@
 <div align="center">
 
-# hibiki
+# Fushi
 
-<img src="../static-assets/hibiki-logo.png" alt="logo hibiki" width="160">
+<img src="../static-assets/fushi-logo.png" alt="logo Fushi" width="160">
 
-![Nền tảng](https://img.shields.io/badge/platform-Android%20%7C%20Windows-lightgrey)
+![Nền tảng](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
 ![Giấy phép](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -14,14 +14,14 @@
 
 **Không cần cấu hình rườm rà** — nhập từ điển và âm thanh được đề xuất chỉ trong một bước.
 
-[![Tải bản mới nhất](https://img.shields.io/badge/%E2%AC%87%20T%E1%BA%A3i%20b%E1%BA%A3n%20m%E1%BB%9Bi%20nh%E1%BA%A5t-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
+[![Tải bản mới nhất](https://img.shields.io/badge/%E2%AC%87%20T%E1%BA%A3i%20b%E1%BA%A3n%20m%E1%BB%9Bi%20nh%E1%BA%A5t-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
 [![Tham gia Discord](https://img.shields.io/badge/Tham%20gia%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **Xem thứ bạn muốn xem, rồi tự nhiên học được ngôn ngữ.**
 
-hibiki biến những cuốn tiểu thuyết bạn đọc, những bộ phim bạn theo dõi và những cuốn sách nói bạn nghe thành nguồn tiếp nhận ngôn ngữ của bạn — chạm vào bất kỳ từ lạ nào để tra, rồi chỉ với một chạm biến nó thành thẻ Anki kèm ngữ cảnh gốc. Nó không bắt bạn học thuộc một danh sách từ định sẵn, mà chỉ giúp bạn nắm bắt những từ bạn **thực sự đọc và nghe**.
+Fushi biến những cuốn tiểu thuyết bạn đọc, những bộ phim bạn theo dõi và những cuốn sách nói bạn nghe thành nguồn tiếp nhận ngôn ngữ của bạn — chạm vào bất kỳ từ lạ nào để tra, rồi chỉ với một chạm biến nó thành thẻ Anki kèm ngữ cảnh gốc. Nó không bắt bạn học thuộc một danh sách từ định sẵn, mà chỉ giúp bạn nắm bắt những từ bạn **thực sự đọc và nghe**.
 
-Cách học ngôn ngữ hiệu quả nhất là tiếp xúc thật nhiều với nội dung thực tế, chứ không phải học thuộc những từ rời rạc trong sách từ vựng. Nhưng "đắm chìm" luôn có hai phiền toái: tra một từ làm gián đoạn mạch tập trung, và vừa rời mắt là quên ngay. hibiki nối liền vòng tròn đó:
+Cách học ngôn ngữ hiệu quả nhất là tiếp xúc thật nhiều với nội dung thực tế, chứ không phải học thuộc những từ rời rạc trong sách từ vựng. Nhưng "đắm chìm" luôn có hai phiền toái: tra một từ làm gián đoạn mạch tập trung, và vừa rời mắt là quên ngay. Fushi nối liền vòng tròn đó:
 
 📖 **Đọc**: chạm vào một từ trong trình đọc EPUB để tra, mà không rời khỏi trang hiện tại.<br>
 🎧 **Nghe**: sách nói tô sáng theo từng câu và tự động lật trang.<br>
@@ -32,19 +32,19 @@ Mọi tình huống đều dùng chung một bộ từ điển, thống kê và 
 
 <table>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-bookshelf-en.png" alt="Kệ sách" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-library-en.png" alt="Thư viện video" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="Kệ sách" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-library-en.png" alt="Thư viện video" width="100%"></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/hibiki-readme-reader-vertical-lookup.png" alt="Đọc dọc trên máy tính với cửa sổ tra từ" width="100%"></td>
+    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="Đọc dọc trên máy tính với cửa sổ tra từ" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="Tra từ trên video (cửa sổ lồng nhau)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="Tra từ trên video (danh sách phụ đề)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="Tra từ trên video (cửa sổ lồng nhau)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="Tra từ trên video (danh sách phụ đề)" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="Tra từ bằng cách chọn văn bản ngoài ứng dụng (điện thoại)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="Tra từ bằng cách chọn văn bản ngoài ứng dụng (máy tính)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="Tra từ bằng cách chọn văn bản ngoài ứng dụng (điện thoại)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="Tra từ bằng cách chọn văn bản ngoài ứng dụng (máy tính)" width="100%"></td>
   </tr>
 </table>
 
@@ -55,9 +55,9 @@ Mọi tình huống đều dùng chung một bộ từ điển, thống kê và 
      conventional workaround. To restore a real inline player, upload the mp4 in
      the GitHub web editor and replace the img below with the generated
      https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/hibiki-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
+<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
 
-<sub>[Xem demo tạo thẻ một chạm ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)</sub>
+<sub>[Xem demo tạo thẻ một chạm ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
 ## Tính năng
@@ -117,7 +117,7 @@ Mọi tình huống đều dùng chung một bộ từ điển, thống kê và 
 
 ### Đồng bộ dữ liệu
 
-- Bảy backend đồng bộ: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP và Hibiki P2P.
+- Bảy backend đồng bộ: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP và Fushi Interconnect.
 - Đồng bộ tiến độ đọc, thống kê và sách.
 
 ### Khác
@@ -130,7 +130,10 @@ Mọi tình huống đều dùng chung một bộ từ điển, thống kê và 
 | Nền tảng | Trạng thái | Hiển thị / UI |
 |---|---|---|
 | Android | ✅ | Material Design 3 |
-| Windows | ✅ | Material |
+| Windows | ✅ | Material Design 3 |
+| macOS | ✅ | Material Design 3 |
+| Linux | ✅ | Material Design 3 |
+| iOS | ✅ | Material Design 3 |
 
 > Tối thiểu Android 7.0 (API 24). Các ngôn ngữ khả dụng để tra từ điển do các từ điển đã nhập và bảng biến đổi Yomitan quyết định, độc lập với ngôn ngữ giao diện.
 
@@ -146,7 +149,7 @@ Chuẩn bị bằng một lệnh (`flutter pub get` + áp dụng bản vá), sau
 # tại thư mục gốc của kho
 bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
 
-cd hibiki
+cd fushi
 # Android
 flutter build apk --release --target-platform android-arm64 --split-per-abi
 # Windows desktop
@@ -161,11 +164,11 @@ flutter build windows --release
 | Tầng | Công nghệ |
 |---|---|
 | Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Nền tảng | Android / Windows (Material Design 3) |
+| Nền tảng | Android / Windows / macOS / Linux / iOS (Material Design 3) |
 | Trình đọc | Engine phân trang WebView (phái sinh từ dòng Hoshi Reader) |
 | Video | media_kit (lõi libmpv) |
-| Lưu trữ | Drift (SQLite, WAL) + hoshidicts (engine từ điển C++ FFI) |
-| NLP | Bảng biến đổi Yomitan (chuyển dạng từ vựng đa ngôn ngữ) + kana_kit (chuyển đổi kana); phân tách từ qua hoshidicts FFI |
+| Lưu trữ | Drift (SQLite, WAL) + fushidicts (engine từ điển C++ FFI) |
+| NLP | Bảng biến đổi Yomitan (chuyển dạng từ vựng đa ngôn ngữ) + kana_kit (chuyển đổi kana); phân tách từ qua fushidicts FFI |
 | Tạo thẻ | AnkiDroid API + AnkiConnect |
 | i18n | Slang (17 ngôn ngữ) |
 
@@ -175,7 +178,7 @@ flutter build windows --release
 <summary><b>Cấu trúc dự án</b></summary>
 
 ```
-hibiki/                      # Gốc kho (Melos workspace: fushi_workspace)
+Fushi/                      # Gốc kho (Melos workspace: fushi_workspace)
 ├── fushi/                  # Thư mục chính ứng dụng Flutter
 │   ├── lib/
 │   │   ├── i18n/            # Quốc tế hóa (17 ngôn ngữ, Slang)
@@ -185,9 +188,9 @@ hibiki/                      # Gốc kho (Melos workspace: fushi_workspace)
 │   │   │   ├── media/       # Sách nói, phân tích phụ đề, reader source
 │   │   │   └── models/      # Mô hình dữ liệu và quản lý trạng thái (AppModel)
 │   │   └── main.dart
-│   └── android/             # Dự án Android (manifest, native hoshidicts)
+│   └── android/             # Dự án Android (manifest, native fushidicts)
 ├── packages/                # Package nội bộ + flutter_inappwebview_windows (fork) + gamepads_android_stub
-├── native/                  # Engine từ điển C++ hoshidicts (FFI)
+├── native/                  # Engine từ điển C++ fushidicts (FFI)
 ├── third_party/             # Gói vá vendored (dependency_overrides)
 ├── ci/                      # Bản vá biên dịch và script kiểm thử tích hợp
 ├── tool/                    # Script bootstrap / i18n_sync, v.v.
@@ -198,13 +201,13 @@ hibiki/                      # Gốc kho (Melos workspace: fushi_workspace)
 
 ## Quyền riêng tư và dữ liệu
 
-hibiki lưu trữ sách, từ điển, phông chữ, dữ liệu sách nói, video, tiến độ đọc, vùng tô sáng, thống kê và cài đặt đã nhập trong bộ nhớ cục bộ của ứng dụng.
+Fushi lưu trữ sách, từ điển, phông chữ, dữ liệu sách nói, video, tiến độ đọc, vùng tô sáng, thống kê và cài đặt đã nhập trong bộ nhớ cục bộ của ứng dụng.
 
-Đồng bộ đám mây (Google Drive / OneDrive / Dropbox) sử dụng thông tin xác thực OAuth do người dùng cấu hình; WebDAV / FTP / SFTP sử dụng địa chỉ máy chủ và thông tin xác thực do người dùng cung cấp; Hibiki P2P kết nối trực tiếp qua địa chỉ do người dùng cấu hình. Việc tạo thẻ Anki giao tiếp với AnkiDroid hoặc địa chỉ AnkiConnect đã cấu hình.
+Đồng bộ đám mây (Google Drive / OneDrive / Dropbox) sử dụng thông tin xác thực OAuth do người dùng cấu hình; WebDAV / FTP / SFTP sử dụng địa chỉ máy chủ và thông tin xác thực do người dùng cung cấp; Fushi Interconnect kết nối trực tiếp qua địa chỉ do người dùng cấu hình. Việc tạo thẻ Anki giao tiếp với AnkiDroid hoặc địa chỉ AnkiConnect đã cấu hình.
 
 ## Lời cảm ơn
 
-hibiki được xây dựng dựa trên các dự án và hệ sinh thái sau:
+Fushi được xây dựng dựa trên các dự án và hệ sinh thái sau:
 
 | Dự án | Mô tả |
 |---|---|

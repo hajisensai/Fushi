@@ -1,10 +1,10 @@
 <div align="center">
 
-# hibiki
+# Fushi
 
-<img src="../static-assets/hibiki-logo.png" alt="логотип hibiki" width="160">
+<img src="../static-assets/fushi-logo.png" alt="логотип Fushi" width="160">
 
-![Платформа](https://img.shields.io/badge/platform-Android%20%7C%20Windows-lightgrey)
+![Платформа](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
 ![Лицензия](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -14,14 +14,14 @@
 
 **Без сложной настройки** — импортируйте рекомендованные словари и аудио за один шаг.
 
-[![Скачать последнюю версию](https://img.shields.io/badge/%E2%AC%87%20%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C%20%D0%BF%D0%BE%D1%81%D0%BB%D0%B5%D0%B4%D0%BD%D1%8E%D1%8E%20%D0%B2%D0%B5%D1%80%D1%81%D0%B8%D1%8E-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
+[![Скачать последнюю версию](https://img.shields.io/badge/%E2%AC%87%20%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C%20%D0%BF%D0%BE%D1%81%D0%BB%D0%B5%D0%B4%D0%BD%D1%8E%D1%8E%20%D0%B2%D0%B5%D1%80%D1%81%D0%B8%D1%8E-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
 [![Присоединиться к Discord](https://img.shields.io/badge/%D0%9F%D1%80%D0%B8%D1%81%D0%BE%D0%B5%D0%B4%D0%B8%D0%BD%D0%B8%D1%82%D1%8C%D1%81%D1%8F%20%D0%BA%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **Смотрите то, что хочется, — и язык подтянется сам собой.**
 
-hibiki превращает романы, которые вы читаете, сериалы, за которыми следите, и аудиокниги, которые слушаете, в ваш языковой ввод: нажмите на любое незнакомое слово, чтобы найти его, и одним нажатием превратите в карточку Anki с исходным контекстом. Он не заставляет зубрить заранее составленный список слов, а лишь помогает уловить слова, которые вы **действительно читаете и слышите**.
+Fushi превращает романы, которые вы читаете, сериалы, за которыми следите, и аудиокниги, которые слушаете, в ваш языковой ввод: нажмите на любое незнакомое слово, чтобы найти его, и одним нажатием превратите в карточку Anki с исходным контекстом. Он не заставляет зубрить заранее составленный список слов, а лишь помогает уловить слова, которые вы **действительно читаете и слышите**.
 
-Самый эффективный способ выучить язык — это обильное погружение в настоящий контент, а не заучивание изолированных слов из словарика. Но у «погружения» всегда было два неудобства: поиск слова сбивает поток, а стоит отвести взгляд — и слово забыто. hibiki замыкает этот круг:
+Самый эффективный способ выучить язык — это обильное погружение в настоящий контент, а не заучивание изолированных слов из словарика. Но у «погружения» всегда было два неудобства: поиск слова сбивает поток, а стоит отвести взгляд — и слово забыто. Fushi замыкает этот круг:
 
 📖 **Чтение**: нажмите на слово в EPUB-читалке, чтобы найти его, не покидая текущую страницу.<br>
 🎧 **Прослушивание**: аудиокниги подсвечивают текст фраза за фразой и автоматически перелистывают страницы.<br>
@@ -32,19 +32,19 @@ hibiki превращает романы, которые вы читаете, с
 
 <table>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-bookshelf-en.png" alt="Книжная полка" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-library-en.png" alt="Видеотека" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="Книжная полка" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-library-en.png" alt="Видеотека" width="100%"></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/hibiki-readme-reader-vertical-lookup.png" alt="Вертикальное чтение на десктопе со всплывающим окном поиска" width="100%"></td>
+    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="Вертикальное чтение на десктопе со всплывающим окном поиска" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="Поиск слов в видео (вложенные всплывающие окна)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="Поиск слов в видео (список субтитров)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="Поиск слов в видео (вложенные всплывающие окна)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="Поиск слов в видео (список субтитров)" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="Поиск по выделению текста вне приложения (мобильный)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="Поиск по выделению текста вне приложения (десктоп)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="Поиск по выделению текста вне приложения (мобильный)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="Поиск по выделению текста вне приложения (десктоп)" width="100%"></td>
   </tr>
 </table>
 
@@ -55,9 +55,9 @@ hibiki превращает романы, которые вы читаете, с
      conventional workaround. To restore a real inline player, upload the mp4 in
      the GitHub web editor and replace the img below with the generated
      https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/hibiki-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
+<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
 
-<sub>[Посмотреть демо создания карточек в один клик ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)</sub>
+<sub>[Посмотреть демо создания карточек в один клик ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
 ## Возможности
@@ -117,7 +117,7 @@ hibiki превращает романы, которые вы читаете, с
 
 ### Синхронизация данных
 
-- Семь бэкендов синхронизации: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP и Hibiki P2P.
+- Семь бэкендов синхронизации: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP и Fushi Interconnect.
 - Синхронизация прогресса чтения, статистики и книг.
 
 ### Ещё
@@ -130,7 +130,10 @@ hibiki превращает романы, которые вы читаете, с
 | Платформа | Статус | Рендеринг / UI |
 |---|---|---|
 | Android | ✅ | Material Design 3 |
-| Windows | ✅ | Material |
+| Windows | ✅ | Material Design 3 |
+| macOS | ✅ | Material Design 3 |
+| Linux | ✅ | Material Design 3 |
+| iOS | ✅ | Material Design 3 |
 
 > Минимум Android 7.0 (API 24). Языки, доступные для поиска по словарю, определяются импортированными словарями и таблицами трансформации Yomitan, независимо от языка интерфейса.
 
@@ -146,7 +149,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 # из корня репозитория
 bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
 
-cd hibiki
+cd fushi
 # Android
 flutter build apk --release --target-platform android-arm64 --split-per-abi
 # Windows desktop
@@ -161,11 +164,11 @@ flutter build windows --release
 | Уровень | Технология |
 |---|---|
 | Фреймворк | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Платформы | Android / Windows (Material Design 3) |
+| Платформы | Android / Windows / macOS / Linux / iOS (Material Design 3) |
 | Читалка | Постраничный движок на WebView (на основе семейства Hoshi Reader) |
 | Видео | media_kit (ядро libmpv) |
-| Хранение | Drift (SQLite, WAL) + hoshidicts (движок словарей C++ FFI) |
-| NLP | Таблицы трансформации Yomitan (многоязычная лемматизация) + kana_kit (конвертация кана); сегментация через hoshidicts FFI |
+| Хранение | Drift (SQLite, WAL) + fushidicts (движок словарей C++ FFI) |
+| NLP | Таблицы трансформации Yomitan (многоязычная лемматизация) + kana_kit (конвертация кана); сегментация через fushidicts FFI |
 | Создание карточек | AnkiDroid API + AnkiConnect |
 | i18n | Slang (17 языков) |
 
@@ -175,7 +178,7 @@ flutter build windows --release
 <summary><b>Структура проекта</b></summary>
 
 ```
-hibiki/                      # Корень репозитория (Melos workspace: fushi_workspace)
+Fushi/                      # Корень репозитория (Melos workspace: fushi_workspace)
 ├── fushi/                  # Основной каталог Flutter-приложения
 │   ├── lib/
 │   │   ├── i18n/            # Интернационализация (17 языков, Slang)
@@ -185,9 +188,9 @@ hibiki/                      # Корень репозитория (Melos worksp
 │   │   │   ├── media/       # Аудиокниги, разбор субтитров, reader source
 │   │   │   └── models/      # Модели данных и управление состоянием (AppModel)
 │   │   └── main.dart
-│   └── android/             # Android-проект (manifest, native hoshidicts)
+│   └── android/             # Android-проект (manifest, native fushidicts)
 ├── packages/                # Внутренние пакеты + flutter_inappwebview_windows (fork) + gamepads_android_stub
-├── native/                  # Движок словарей C++ hoshidicts (FFI)
+├── native/                  # Движок словарей C++ fushidicts (FFI)
 ├── third_party/             # Vendored патч-пакеты (dependency_overrides)
 ├── ci/                      # Патчи сборки и скрипты интеграционных тестов
 ├── tool/                    # Скрипты bootstrap / i18n_sync и др.
@@ -198,13 +201,13 @@ hibiki/                      # Корень репозитория (Melos worksp
 
 ## Конфиденциальность и данные
 
-hibiki хранит импортированные книги, словари, шрифты, данные аудиокниг, видео, прогресс чтения, подсветки, статистику и настройки в локальном хранилище приложения.
+Fushi хранит импортированные книги, словари, шрифты, данные аудиокниг, видео, прогресс чтения, подсветки, статистику и настройки в локальном хранилище приложения.
 
-Облачная синхронизация (Google Drive / OneDrive / Dropbox) использует настроенные пользователем учётные данные OAuth; WebDAV / FTP / SFTP использует предоставленные пользователем адреса серверов и учётные данные; Hibiki P2P подключается напрямую по настроенному пользователем адресу. Создание карточек Anki взаимодействует с AnkiDroid или настроенным адресом AnkiConnect.
+Облачная синхронизация (Google Drive / OneDrive / Dropbox) использует настроенные пользователем учётные данные OAuth; WebDAV / FTP / SFTP использует предоставленные пользователем адреса серверов и учётные данные; Fushi Interconnect подключается напрямую по настроенному пользователем адресу. Создание карточек Anki взаимодействует с AnkiDroid или настроенным адресом AnkiConnect.
 
 ## Благодарности
 
-hibiki опирается на следующие проекты и экосистему:
+Fushi опирается на следующие проекты и экосистему:
 
 | Проект | Описание |
 |---|---|

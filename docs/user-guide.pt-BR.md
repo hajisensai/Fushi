@@ -1,8 +1,8 @@
-# O guia do hibiki que até a Yui Hirasawa configura em 5 minutos
+# O guia do Fushi que até a Yui Hirasawa configura em 5 minutos
 
 [English](user-guide.md) | [简体中文](https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb) | [繁體中文](user-guide.zh-Hant.md) | [日本語](user-guide.ja.md) | [한국어](user-guide.ko.md) | [Español](user-guide.es.md) | [Français](user-guide.fr.md) | [Deutsch](user-guide.de.md) | **Português** | [Русский](user-guide.ru.md) | [Tiếng Việt](user-guide.vi.md) | [ภาษาไทย](user-guide.th.md) | [Bahasa Indonesia](user-guide.id.md) | [Italiano](user-guide.it.md) | [Nederlands](user-guide.nl.md) | [Türkçe](user-guide.tr.md) | [العربية](user-guide.ar.md)
 
-> O guia em chinês simplificado está hospedado no Feishu (link acima). O guia em inglês também está disponível [no GitHub](https://github.com/hajisensai/hibiki/blob/main/docs/user-guide.md).
+> O guia em chinês simplificado está hospedado no Feishu (link acima). O guia em inglês também está disponível [no GitHub](https://github.com/hajisensai/Fushi/blob/main/docs/user-guide.md).
 
 ## Introdução
 
@@ -10,13 +10,13 @@ Este é um software gratuito para Android / Windows (iOS / macOS planejados) —
 
 ### URL do projeto
 
-https://github.com/hajisensai/hibiki
+https://github.com/hajisensai/Fushi
 
-Em desenvolvimento ativo — seu feedback será tratado prontamente. Relatórios de bugs e pedidos de recursos são bem-vindos. Se o Hibiki for útil para você, agradecemos se compartilhá-lo com outras pessoas ou deixar uma ⭐ no repositório.
+Em desenvolvimento ativo — seu feedback será tratado prontamente. Relatórios de bugs e pedidos de recursos são bem-vindos. Se o Fushi for útil para você, agradecemos se compartilhá-lo com outras pessoas ou deixar uma ⭐ no repositório.
 
 ### Download
 
-https://github.com/hajisensai/hibiki/releases/latest
+https://github.com/hajisensai/Fushi/releases/latest
 
 Android: escolha **arm64**. Windows: escolha o arquivo **.exe**.
 
@@ -24,7 +24,7 @@ Android: escolha **arm64**. Windows: escolha o arquivo **.exe**.
 
 ### 1. Importar os dicionários recomendados (dicionários de palavras + acento tonal + frequência) e o áudio local (bancos de dados de áudio em japonês e inglês) (Altamente recomendado para iniciantes!!! · opcional)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Download pelo Cloudflare (9,3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Download pelo Cloudflare (9,5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 No aplicativo: Configurações -> Sincronização e backup -> toque em **Importar backup**.
 
@@ -51,8 +51,8 @@ O Anki tem o [FSRS](https://github.com/open-spaced-repetition/fsrs4anki) embutid
 ##### Android
 
 1. Instale e abra o Anki.
-2. Volte ao hibiki e vá em Configurações -> Criação de cartões.
-3. Toque em **Atualizar baralhos e tipos de nota** (marcado com "1" na imagem); o hibiki solicitará permissão — toque em Permitir.
+2. Volte ao Fushi e vá em Configurações -> Criação de cartões.
+3. Toque em **Atualizar baralhos e tipos de nota** (marcado com "1" na imagem); o Fushi solicitará permissão — toque em Permitir.
 4. Toque em **Criar baralho Lapis** (marcado com "2" na imagem).
 5. Se não houver nenhum aviso ou erro em vermelho, a configuração foi bem-sucedida.
 
@@ -66,7 +66,7 @@ O Anki tem o [FSRS](https://github.com/open-spaced-repetition/fsrs4anki) embutid
 ![Menu Ferramentas do Anki no Windows](static-assets/user-guide/anki-windows-tools-menu.png)
 
 3. Cole o código do complemento do Anki abaixo para instalá-lo: `2055492159`
-4. Volte ao hibiki e vá em Configurações -> Criação de cartões.
+4. Volte ao Fushi e vá em Configurações -> Criação de cartões.
 5. Toque em **Atualizar baralhos e tipos de nota** (marcado com "1").
 6. Toque em **Criar baralho Lapis** (marcado com "2").
 7. Se não houver nenhum aviso ou erro em vermelho, a configuração foi bem-sucedida.
