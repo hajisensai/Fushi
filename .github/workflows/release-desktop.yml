@@ -226,92 +226,19 @@ jobs:
             echo "$BODY"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
-      # google_oauth_secret.dart is gitignored (the real client secret lives only
-      # on dev hosts); CI lacks it, so google_drive_auth.dart's import fails to
-      # compile. When the GOOGLE_OAUTH_CLIENT_SECRET repo secret is set, bake the
-      # REAL value in so the desktop release can actually sign in to Google Drive
-      # (otherwise sign-in hits invalid_client 401, TODO-045). When it is not
-      # set, fall back to the committed example (placeholder value, no GOCSPX-
-      # prefix, so the no_hardcoded_google_secret guard stays green).
-      - name: Provide gitignored Google OAuth secret stub
-        shell: bash
-        env:
-          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-        run: |
-          dst=fushi/lib/src/sync/google_oauth_secret.dart
-          if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
-            oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
-            printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
-              "$oauth_secret_literal" \
-              > "$dst"
-          elif [ ! -f "$dst" ]; then
-            cp fushi/lib/src/sync/google_oauth_secret.example.dart "$dst"
-          fi
-      # log_upload_secret.dart ships a committed empty placeholder (endpoint = '')
-      # so a fresh clone compiles and the log-upload button stays hidden (it is
-      # gated by a non-empty endpoint, not by platform - see log_upload_config
-      # showUploadLogAction). When the LOG_UPLOAD_ENDPOINT / LOG_UPLOAD_TOKEN repo
-      # secrets are set, bake the real values in so CI/release builds (incl.
-      # Windows) actually show and can use the "upload log to cloud" button
-      # (TODO-385). When unset, leave the committed empty placeholder so the
-      # button stays hidden and no endpoint is exposed.
-      - name: Provide gitignored log upload secret stub
-        shell: bash
-        env:
-          LOG_UPLOAD_ENDPOINT: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
-          LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}
-        run: |
-          dst=fushi/lib/src/utils/misc/log_upload_secret.dart
-          if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
-            log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
-            log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
-            printf 'const String kLogUploadEndpoint = %s;\nconst String kLogUploadToken = %s;\n' \
-              "$log_endpoint_literal" \
-              "$log_token_literal" \
-              > "$dst"
-          elif [ ! -f "$dst" ]; then
-            cp fushi/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
-          fi
-      # dandanplay_secret.dart ships a committed empty placeholder (AppId/AppSecret
-      # = '') so a fresh clone compiles and online danmaku degrades to unsigned.
-      # When the DANDANPLAY_APP_ID / DANDANPLAY_APP_SECRET repo secrets are set,
-      # bake the real values in so CI/release builds sign dandanplay open-API
-      # requests and online danmaku works out of the box (no manual API entry).
-      - name: Provide gitignored dandanplay secret stub
-        shell: bash
-        env:
-          DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
-          DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
-        run: |
-          dst=fushi/lib/src/media/video/dandanplay_secret.dart
-          if [ -n "$DANDANPLAY_APP_ID" ]; then
-            printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
-              "$DANDANPLAY_APP_ID" \
-              "$DANDANPLAY_APP_SECRET" \
-              > "$dst"
-          elif [ ! -f "$dst" ]; then
-            cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
-          fi
-      # BUG-1588: tmdb_default_key.dart 入库的是空占位（key = ''）。**发布 workflow
-      # 一度整个漏了这步注入**，于是验证构建（main / build-multiplatform）有 key、
-      # 发出去的包没有 —— TMDB 在用户机器上恒 isAvailable=false，表现成「连不上」。
-      # 只重写 const 那一行，文件注释、pref-key const 和 resolveTmdbApiKey() 全保留。
-      - name: Provide gitignored TMDB API key stub
-        shell: bash
-        env:
-          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
-        run: |
-          dst=fushi/lib/src/media/video/scraper/tmdb_default_key.dart
-          if [ ! -f "$dst" ]; then
-            cp fushi/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
-          fi
-          if [ -n "$TMDB_API_KEY" ]; then
-            # -i.bak（后缀紧贴 -i）是 GNU sed 与 BSD/macOS sed 都接受的唯一就地
-            # 编辑写法；裸 -i 只在 GNU sed 下成立，会让 macos/ios 作业固定报
-            # `extra characters at the end of h command`。
-            sed -i.bak "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
-            rm -f "$dst.bak"
-          fi
+
+      # 烘进包里的密钥统一由 composite action 注入 —— 这批注入曾被逐字抄进 11 个
+      # job，抄到最后 TMDB 有 3 个变体、两条发布 workflow 一处都没有，导致发出去
+      # 的包里 TMDB 恒「未配置」而 CI 全绿（BUG-1588）。真相源只留一份。
+      - name: Provide baked-in secret stubs
+        uses: ./.github/actions/provide-baked-secrets
+        with:
+          google-oauth-client-secret: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          log-upload-endpoint: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
+          log-upload-token: ${{ secrets.LOG_UPLOAD_TOKEN }}
+          dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
+          dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
+          tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
       # TODO-1208: cache media_kit's pre-built libmpv + ANGLE .7z archives it
       # downloads from GitHub into the CMake binary dir (fushi/build/windows/x64).
       # media_kit's download_and_verify skips the download when the archive exists
@@ -863,77 +790,19 @@ jobs:
             echo "$BODY"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
-      - name: Provide gitignored Google OAuth secret stub
-        shell: bash
-        env:
-          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-        run: |
-          dst=fushi/lib/src/sync/google_oauth_secret.dart
-          if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
-            oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
-            printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
-              "$oauth_secret_literal" \
-              > "$dst"
-          elif [ ! -f "$dst" ]; then
-            cp fushi/lib/src/sync/google_oauth_secret.example.dart "$dst"
-          fi
-      - name: Provide gitignored log upload secret stub
-        shell: bash
-        env:
-          LOG_UPLOAD_ENDPOINT: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
-          LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}
-        run: |
-          dst=fushi/lib/src/utils/misc/log_upload_secret.dart
-          if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
-            log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
-            log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
-            printf 'const String kLogUploadEndpoint = %s;\nconst String kLogUploadToken = %s;\n' \
-              "$log_endpoint_literal" \
-              "$log_token_literal" \
-              > "$dst"
-          elif [ ! -f "$dst" ]; then
-            cp fushi/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
-          fi
-      # dandanplay_secret.dart ships a committed empty placeholder (AppId/AppSecret
-      # = '') so a fresh clone compiles and online danmaku degrades to unsigned.
-      # When the DANDANPLAY_APP_ID / DANDANPLAY_APP_SECRET repo secrets are set,
-      # bake the real values in so CI/release builds sign dandanplay open-API
-      # requests and online danmaku works out of the box (no manual API entry).
-      - name: Provide gitignored dandanplay secret stub
-        shell: bash
-        env:
-          DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
-          DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
-        run: |
-          dst=fushi/lib/src/media/video/dandanplay_secret.dart
-          if [ -n "$DANDANPLAY_APP_ID" ]; then
-            printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
-              "$DANDANPLAY_APP_ID" \
-              "$DANDANPLAY_APP_SECRET" \
-              > "$dst"
-          elif [ ! -f "$dst" ]; then
-            cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
-          fi
-      # BUG-1588: tmdb_default_key.dart 入库的是空占位（key = ''）。**发布 workflow
-      # 一度整个漏了这步注入**，于是验证构建（main / build-multiplatform）有 key、
-      # 发出去的包没有 —— TMDB 在用户机器上恒 isAvailable=false，表现成「连不上」。
-      # 只重写 const 那一行，文件注释、pref-key const 和 resolveTmdbApiKey() 全保留。
-      - name: Provide gitignored TMDB API key stub
-        shell: bash
-        env:
-          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
-        run: |
-          dst=fushi/lib/src/media/video/scraper/tmdb_default_key.dart
-          if [ ! -f "$dst" ]; then
-            cp fushi/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
-          fi
-          if [ -n "$TMDB_API_KEY" ]; then
-            # -i.bak（后缀紧贴 -i）是 GNU sed 与 BSD/macOS sed 都接受的唯一就地
-            # 编辑写法；裸 -i 只在 GNU sed 下成立，会让 macos/ios 作业固定报
-            # `extra characters at the end of h command`。
-            sed -i.bak "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
-            rm -f "$dst.bak"
-          fi
+
+      # 烘进包里的密钥统一由 composite action 注入 —— 这批注入曾被逐字抄进 11 个
+      # job，抄到最后 TMDB 有 3 个变体、两条发布 workflow 一处都没有，导致发出去
+      # 的包里 TMDB 恒「未配置」而 CI 全绿（BUG-1588）。真相源只留一份。
+      - name: Provide baked-in secret stubs
+        uses: ./.github/actions/provide-baked-secrets
+        with:
+          google-oauth-client-secret: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          log-upload-endpoint: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
+          log-upload-token: ${{ secrets.LOG_UPLOAD_TOKEN }}
+          dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
+          dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
+          tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
       # TODO-1208: cache CocoaPods spec repos + downloaded pod source and the
       # generated Pods dirs. Keyed on the Podfile.lock/pubspec.lock so a pod bump
       # invalidates it; CocoaPods re-installs on a mismatch, and a miss just
@@ -1393,77 +1262,19 @@ jobs:
             echo "$BODY"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
-      - name: Provide gitignored Google OAuth secret stub
-        shell: bash
-        env:
-          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-        run: |
-          dst=fushi/lib/src/sync/google_oauth_secret.dart
-          if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
-            oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
-            printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
-              "$oauth_secret_literal" \
-              > "$dst"
-          elif [ ! -f "$dst" ]; then
-            cp fushi/lib/src/sync/google_oauth_secret.example.dart "$dst"
-          fi
-      - name: Provide gitignored log upload secret stub
-        shell: bash
-        env:
-          LOG_UPLOAD_ENDPOINT: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
-          LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}
-        run: |
-          dst=fushi/lib/src/utils/misc/log_upload_secret.dart
-          if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
-            log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
-            log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
-            printf 'const String kLogUploadEndpoint = %s;\nconst String kLogUploadToken = %s;\n' \
-              "$log_endpoint_literal" \
-              "$log_token_literal" \
-              > "$dst"
-          elif [ ! -f "$dst" ]; then
-            cp fushi/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
-          fi
-      # dandanplay_secret.dart ships a committed empty placeholder (AppId/AppSecret
-      # = '') so a fresh clone compiles and online danmaku degrades to unsigned.
-      # When the DANDANPLAY_APP_ID / DANDANPLAY_APP_SECRET repo secrets are set,
-      # bake the real values in so CI/release builds sign dandanplay open-API
-      # requests and online danmaku works out of the box (no manual API entry).
-      - name: Provide gitignored dandanplay secret stub
-        shell: bash
-        env:
-          DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
-          DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
-        run: |
-          dst=fushi/lib/src/media/video/dandanplay_secret.dart
-          if [ -n "$DANDANPLAY_APP_ID" ]; then
-            printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
-              "$DANDANPLAY_APP_ID" \
-              "$DANDANPLAY_APP_SECRET" \
-              > "$dst"
-          elif [ ! -f "$dst" ]; then
-            cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
-          fi
-      # BUG-1588: tmdb_default_key.dart 入库的是空占位（key = ''）。**发布 workflow
-      # 一度整个漏了这步注入**，于是验证构建（main / build-multiplatform）有 key、
-      # 发出去的包没有 —— TMDB 在用户机器上恒 isAvailable=false，表现成「连不上」。
-      # 只重写 const 那一行，文件注释、pref-key const 和 resolveTmdbApiKey() 全保留。
-      - name: Provide gitignored TMDB API key stub
-        shell: bash
-        env:
-          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
-        run: |
-          dst=fushi/lib/src/media/video/scraper/tmdb_default_key.dart
-          if [ ! -f "$dst" ]; then
-            cp fushi/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
-          fi
-          if [ -n "$TMDB_API_KEY" ]; then
-            # -i.bak（后缀紧贴 -i）是 GNU sed 与 BSD/macOS sed 都接受的唯一就地
-            # 编辑写法；裸 -i 只在 GNU sed 下成立，会让 macos/ios 作业固定报
-            # `extra characters at the end of h command`。
-            sed -i.bak "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
-            rm -f "$dst.bak"
-          fi
+
+      # 烘进包里的密钥统一由 composite action 注入 —— 这批注入曾被逐字抄进 11 个
+      # job，抄到最后 TMDB 有 3 个变体、两条发布 workflow 一处都没有，导致发出去
+      # 的包里 TMDB 恒「未配置」而 CI 全绿（BUG-1588）。真相源只留一份。
+      - name: Provide baked-in secret stubs
+        uses: ./.github/actions/provide-baked-secrets
+        with:
+          google-oauth-client-secret: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          log-upload-endpoint: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
+          log-upload-token: ${{ secrets.LOG_UPLOAD_TOKEN }}
+          dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
+          dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
+          tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
       # TODO-1208: cache CocoaPods spec repos + downloaded pod source and the
       # generated Pods dirs. Keyed on the Podfile.lock/pubspec.lock so a pod bump
       # invalidates it; CocoaPods re-installs on a mismatch, and a miss just

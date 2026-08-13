@@ -87,15 +87,21 @@ void main() {
         reason: 'expected ${workflowsDir.absolute.path}');
   });
 
-  final List<File> workflows = workflowsDir.existsSync()
-      ? (workflowsDir
-          .listSync()
-          .whereType<File>()
-          .where(
-              (File f) => f.path.endsWith('.yml') || f.path.endsWith('.yaml'))
-          .toList()
-        ..sort((File a, File b) => a.path.compareTo(b.path)))
-      : <File>[];
+  /// 扫描面 = `.github/workflows/*.yml` **+** `.github/actions/**/action.yml`。
+  ///
+  /// composite action 里跑的是同样的 shell，`sed -i` 的 BSD/GNU 差异一字不差地
+  /// 适用。BUG-1588 把四段密钥注入从 11 个 job 收进了一个 composite action，
+  /// TMDB 那段（本守卫的主要对象）随之搬家——只扫 workflows 目录会让这条守卫
+  /// 静默跑空。是它自己的反向锚 `injectionSites > 0` 把这次搬家抓了出来。
+  final Directory actionsDir = Directory('../.github/actions');
+  final List<File> workflows = <File>[
+    if (workflowsDir.existsSync())
+      ...workflowsDir.listSync().whereType<File>().where(
+          (File f) => f.path.endsWith('.yml') || f.path.endsWith('.yaml')),
+    if (actionsDir.existsSync())
+      ...actionsDir.listSync(recursive: true).whereType<File>().where(
+          (File f) => f.path.endsWith('.yml') || f.path.endsWith('.yaml')),
+  ]..sort((File a, File b) => a.path.compareTo(b.path));
 
   for (final File workflow in workflows) {
     final String name = workflow.uri.pathSegments.last;
