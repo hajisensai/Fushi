@@ -250,6 +250,10 @@ class YomitanApiServer {
         return _handleMine(request);
       case '/api/mine/forward':
         return _handleMineForward(request);
+      case '/api/anki/note-type/read':
+      case '/api/anki/note-type/styling':
+      case '/api/anki/note-type/templates':
+        return _handleAnkiNoteType(request, path);
       case '/api/duplicate':
         return _handleDuplicate(request);
       case '/api/extension/popup-size':
@@ -377,6 +381,34 @@ class YomitanApiServer {
       return _json(await buildForwardedMineResponse(body, mining: mining));
     } on FormatException {
       return shelf.Response(400, body: 'Missing rawPayloadJson');
+    }
+  }
+
+  /// 互联 Lapis 客制化端点（与 FushiSyncServer 共享契约 buildAnkiNoteType*Response）。
+  /// 手机端经互联读写主机 Anki 的 note type。未注入挖词 service → 404；
+  /// modelName/css/templates 缺失或类型错 → 400。
+  Future<shelf.Response> _handleAnkiNoteType(
+    shelf.Request request,
+    String path,
+  ) async {
+    final FushiRemoteMiningService? mining = _mining;
+    if (mining == null) return shelf.Response.notFound('Mining off');
+    final Map<String, dynamic>? body = await _readJson(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    try {
+      switch (path) {
+        case '/api/anki/note-type/read':
+          return _json(
+              await buildAnkiNoteTypeReadResponse(body, mining: mining));
+        case '/api/anki/note-type/styling':
+          return _json(
+              await buildAnkiNoteTypeStylingResponse(body, mining: mining));
+        default:
+          return _json(
+              await buildAnkiNoteTypeTemplatesResponse(body, mining: mining));
+      }
+    } on FormatException catch (e) {
+      return shelf.Response(400, body: e.message);
     }
   }
 

@@ -2,6 +2,7 @@ import 'package:fushi/src/sync/forwarded_mine_payload.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 import 'package:http/http.dart' as http;
 
 /// BUG-1185：远端查重的三态结果。查重是「用户据此决定要不要再制一张卡」的信息，
@@ -34,6 +35,25 @@ abstract class RemoteMineSender {
     required String expression,
     required String reading,
   });
+
+  // ── 互联 Lapis 客制化：主机端 note type 模板读写 ──────────────────────
+  // 三个方法与 `BaseAnkiRepository` 同名同契约（RemoteMiningAnkiRepository 直接
+  // 转发），区别只在错误语义：token 被拒抛 [SyncAuthError]；全部候选传输层不可达
+  // 抛 [StateError]（客制化是显式用户操作，必须报「设备不可达」而不是谎报
+  // 「模型不存在/不支持」）。
+
+  /// 读主机端 [modelName] 的完整定义。主机后端不支持、模型不存在或主机版本
+  /// 过旧（无此端点）返回 null。
+  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(String modelName);
+
+  /// 覆写主机端 [modelName] 的 styling。false = 主机不支持/版本过旧。
+  Future<bool> updateNoteTypeStyling(String modelName, String css);
+
+  /// 覆写主机端 [modelName] 的全部卡模板。false = 主机不支持/版本过旧。
+  Future<bool> updateNoteTypeTemplates(
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  );
 }
 
 /// 互联「制卡到服务端」的客户端发送器。传输走共享的 [InterconnectPostTransport]
@@ -47,6 +67,7 @@ class FushiRemoteMiningClient implements RemoteMineSender {
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,
     Duration mineTimeout = const Duration(seconds: 60),
     Duration duplicateTimeout = const Duration(seconds: 5),
+    Duration noteTypeTimeout = const Duration(seconds: 15),
   })  : _repo = repo,
         _transport = InterconnectPostTransport(
           repo: repo,
@@ -54,12 +75,17 @@ class FushiRemoteMiningClient implements RemoteMineSender {
           pinnedClientFactory: pinnedClientFactory,
         ),
         _mineTimeout = mineTimeout,
-        _duplicateTimeout = duplicateTimeout;
+        _duplicateTimeout = duplicateTimeout,
+        _noteTypeTimeout = noteTypeTimeout;
 
   final SyncRepository _repo;
   final InterconnectPostTransport _transport;
   final Duration _mineTimeout;
   final Duration _duplicateTimeout;
+
+  /// Lapis 模板读写的超时：请求体是纯文本（CSS/模板最多几百 KB），LAN 上比制卡
+  /// （媒体字节几 MB）快得多，但仍留出比查重宽裕的窗口。
+  final Duration _noteTypeTimeout;
 
   /// 是否已配置可达的已配对主机（enabled 候选 + token）。用于设置页/开关判断能否远端制卡。
   Future<bool> hasTarget() async {
@@ -109,6 +135,65 @@ class FushiRemoteMiningClient implements RemoteMineSender {
     } catch (_) {
       return RemoteDuplicateCheck.notDuplicate;
     }
+  }
+
+  /// 主机端 Lapis note type 读取。null 的三种来源统一表示「主机侧没有可用定义」：
+  /// 主机后端不支持模板读写 / 模型不存在 / 主机版本过旧（404，无此端点）。
+  /// 全部候选传输层不可达抛 [StateError]——客制化是显式用户操作，「设备不可达」
+  /// 必须原样报给用户，压成 null 会被 UI 误报成「Lapis 卡型不存在」。
+  @override
+  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
+      String modelName) async {
+    final Map<String, dynamic>? json = await _postNoteType(
+      path: '/api/anki/note-type/read',
+      body: <String, dynamic>{'modelName': modelName},
+    );
+    final Object? noteType = json?['noteType'];
+    if (noteType is! Map) return null;
+    return AnkiNoteTypeDefinition.fromJson(Map<String, dynamic>.from(noteType));
+  }
+
+  @override
+  Future<bool> updateNoteTypeStyling(String modelName, String css) async {
+    final Map<String, dynamic>? json = await _postNoteType(
+      path: '/api/anki/note-type/styling',
+      body: <String, dynamic>{'modelName': modelName, 'css': css},
+    );
+    return json?['ok'] == true;
+  }
+
+  @override
+  Future<bool> updateNoteTypeTemplates(
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  ) async {
+    final Map<String, dynamic>? json = await _postNoteType(
+      path: '/api/anki/note-type/templates',
+      body: <String, dynamic>{
+        'modelName': modelName,
+        'templates': templates.map((AnkiCardTemplate t) => t.toJson()).toList(),
+      },
+    );
+    return json?['ok'] == true;
+  }
+
+  /// note type 端点与制卡侧 [_post] 的唯一差别：消费 `allUnreachable`，把
+  /// 「配对主机全部不可达」升格成异常（见 [readNoteTypeDefinition]）。
+  Future<Map<String, dynamic>?> _postNoteType({
+    required String path,
+    required Map<String, dynamic> body,
+  }) async {
+    final InterconnectPostOutcome outcome = await _transport.post(
+      path: path,
+      body: body,
+      timeout: _noteTypeTimeout,
+      authErrorMessage: 'Fushi server rejected remote mining token',
+    );
+    if (outcome.json == null && outcome.allUnreachable) {
+      throw StateError(
+          'No paired device is reachable for Lapis template editing.');
+    }
+    return outcome.json;
   }
 
   /// 制卡侧不消费 `allUnreachable`（没有失败冷却机制），只取响应体——「全不可达」

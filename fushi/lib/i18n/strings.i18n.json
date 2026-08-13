@@ -3198,10 +3198,10 @@
   "game_capture_setup_hint": "Choose the dialogue thread first. Fushi can only pair audio with lines from the selected thread.",
   "game_audio_requires_thread": "The audio capture source may be ready, but sentence audio does not exist until a thread is selected and a line is received.",
   "game_session_waiting_thread": "Waiting for a dialogue thread",
-  "anki_connect_use_on_android": "Use AnkiConnect on Android",
-  "anki_connect_use_on_android_hint": "Use only on a trusted network. AnkiConnect uses cleartext HTTP; configure a matching API key, then refresh decks and note types after switching.",
+  "anki_connect_use_on_mobile": "Use AnkiConnect instead",
+  "anki_connect_use_on_mobile_hint": "Use only on a trusted network. AnkiConnect uses cleartext HTTP; configure a matching API key, then refresh decks and note types after switching.",
   "anki_connect_api_key_hint": "Required for remote AnkiConnect; must match the key configured in the add-on",
-  "anki_connect_android_api_key_required": "Configure a matching AnkiConnect API key before enabling the Android backend.",
+  "anki_connect_mobile_api_key_required": "Configure a matching AnkiConnect API key before switching to the AnkiConnect backend.",
   "anki_connect_backend_switch_failed": "Could not switch Anki backend: $error",
   "migration_settings_entry": "Migrate to Fushi",
   "migration_settings_entry_subtitle": "Move all data to the new Fushi app",
@@ -3389,5 +3389,6 @@
   "video_subtitle_anchor_bottom": "Bottom",
   "video_subtitle_anchor_top": "Top",
   "video_setting_subtitle_drag_adjust": "Drag to adjust position",
-  "video_subtitle_drag_adjust_hint": "Drag a subtitle up or down to reposition it"
+  "video_subtitle_drag_adjust_hint": "Drag a subtitle up or down to reposition it",
+  "anki_connect_mobile_disabled_key_cleared": "AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again."
 }

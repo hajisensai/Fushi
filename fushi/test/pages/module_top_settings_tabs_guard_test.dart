@@ -9,8 +9,16 @@ String _code(String source) => maskCommentsAndStrings(source);
 bool _containsCode(String source, String needle) =>
     containsCodeLine(_code(source), needle);
 
-bool _hasSettingsTab(String source) => RegExp(
-      r'\bTab\s*\(\s*text:\s*t\.settings\s*\)',
+/// 下载页的「设置」顶部段。
+///
+/// PR#820 把下载页门头从 `AppBar + TabBar` 换成与库页同构的
+/// `FushiPageHeader.customTitle` + `FushiSegmentedStrip`，承载形态从
+/// `Tab(text: …)` 变成 `ButtonSegment(value: …, label: Text(…))`。守卫要守的
+/// **行为**没变（设置是常驻的第四个顶部段，不是临时齿轮模式），锚点跟着搬到
+/// 新形态即可——别因为形态换了就把断言删掉。
+bool _hasSettingsSegment(String source) => RegExp(
+      r'\bButtonSegment<int>\s*\(\s*value:\s*3\s*,\s*'
+      r'label:\s*Text\s*\(\s*t\.settings\s*\)\s*\)',
     ).hasMatch(_code(source));
 
 bool _hasFullWidthTorrentSettings(String source) => RegExp(
@@ -25,7 +33,7 @@ void main() {
 // kind: MediaLibraryViewKind.settings
 /* value: GameSection.settings
 value: VideoLibrarySection.settings
-Tab(text: t.settings)
+ButtonSegment<int>(value: 3, label: Text(t.settings))
 TorrentSettingsSection(constrainWidth: false)
 */
 ''';
@@ -44,7 +52,7 @@ TorrentSettingsSection(constrainWidth: false)
       _containsCode(commentsOnly, 'value: VideoLibrarySection.settings'),
       isFalse,
     );
-    expect(_hasSettingsTab(commentsOnly), isFalse);
+    expect(_hasSettingsSegment(commentsOnly), isFalse);
     expect(_hasFullWidthTorrentSettings(commentsOnly), isFalse);
   });
 
@@ -54,7 +62,7 @@ const String decoy = '''
 kind: MediaLibraryViewKind.settings
 value: GameSection.settings
 value: VideoLibrarySection.settings
-Tab(text: t.settings)
+ButtonSegment<int>(value: 3, label: Text(t.settings))
 TorrentSettingsSection(constrainWidth: false)
 ''';
 """;
@@ -70,7 +78,7 @@ TorrentSettingsSection(constrainWidth: false)
       _containsCode(stringsOnly, 'value: VideoLibrarySection.settings'),
       isFalse,
     );
-    expect(_hasSettingsTab(stringsOnly), isFalse);
+    expect(_hasSettingsSegment(stringsOnly), isFalse);
     expect(_hasFullWidthTorrentSettings(stringsOnly), isFalse);
   });
 
@@ -109,16 +117,16 @@ TorrentSettingsSection(constrainWidth: false)
     final String downloads = source(
       'lib/src/pages/implementations/downloads_page.dart',
     );
-    expect(_hasSettingsTab(downloads), isTrue);
+    expect(_hasSettingsSegment(downloads), isTrue);
     expect(_hasFullWidthTorrentSettings(downloads), isTrue);
     expect(containsIdentifier(downloads, '_showSettings'), isFalse);
 
     final String downloadsCode = _code(downloads);
     final int subscriptions = downloadsCode.indexOf(
-      'Tab(text: t.download_subscriptions_tab)',
+      'Text(t.download_subscriptions_tab)',
     );
     final Match? settings = RegExp(
-      r'\bTab\s*\(\s*text:\s*t\.settings\s*\)',
+      r'label:\s*Text\s*\(\s*t\.settings\s*\)',
     ).firstMatch(downloadsCode);
     expect(subscriptions, greaterThanOrEqualTo(0));
     expect(settings, isNotNull);

@@ -62,14 +62,17 @@ void main() {
 
     VideoDanmakuLayoutEntry entryAt(String text, int positionMs,
         {double fontScale = 1.0}) {
-      return VideoDanmakuLayout.layout(
-        items: <VideoDanmakuItem>[_item(0, text)],
-        positionMs: positionMs,
-        viewportSize: viewport,
-        maxActive: 10,
-        maxLanes: 4,
-        fontScale: fontScale,
-      ).entries.single;
+      return VideoDanmakuLayout()
+          .layout(
+            items: <VideoDanmakuItem>[_item(0, text)],
+            positionMs: positionMs,
+            viewportSize: viewport,
+            maxActive: 10,
+            maxLanes: 4,
+            fontScale: fontScale,
+          )
+          .entries
+          .single;
     }
 
     test('scroll danmaku is fully off-screen on the last frame it renders', () {
@@ -118,13 +121,17 @@ void main() {
     test('fixed danmaku keeps the tail fade-out', () {
       // 固定弹幕不移动，不淡出就是凭空消失——淡出只属于它们。
       double opacityAt(int positionMs, VideoDanmakuMode mode) =>
-          VideoDanmakuLayout.layout(
-            items: <VideoDanmakuItem>[_itemMode(0, 'ピン留め', mode)],
-            positionMs: positionMs,
-            viewportSize: viewport,
-            maxActive: 10,
-            maxLanes: 4,
-          ).entries.single.opacity;
+          VideoDanmakuLayout()
+              .layout(
+                items: <VideoDanmakuItem>[_itemMode(0, 'ピン留め', mode)],
+                positionMs: positionMs,
+                viewportSize: viewport,
+                maxActive: 10,
+                maxLanes: 4,
+              )
+              .entries
+              .single
+              .opacity;
       for (final VideoDanmakuMode mode in <VideoDanmakuMode>[
         VideoDanmakuMode.top,
         VideoDanmakuMode.bottom,
@@ -147,7 +154,7 @@ void main() {
 
   group('VideoDanmakuLayout', () {
     test('does not place simultaneous active comments on the same lane', () {
-      final VideoDanmakuLayoutSnapshot snapshot = VideoDanmakuLayout.layout(
+      final VideoDanmakuLayoutSnapshot snapshot = VideoDanmakuLayout().layout(
         items: <VideoDanmakuItem>[
           _item(0, 'a'),
           _item(100, 'b'),
@@ -178,7 +185,7 @@ void main() {
         for (int i = 0; i < 50; i++) _item(i * 10, 'c$i'),
       ];
 
-      final VideoDanmakuLayoutSnapshot snapshot = VideoDanmakuLayout.layout(
+      final VideoDanmakuLayoutSnapshot snapshot = VideoDanmakuLayout().layout(
         items: items,
         positionMs: 1000,
         viewportSize: const Size(500, 240),
@@ -197,7 +204,7 @@ void main() {
         _item(10000, 'after seek'),
       ];
 
-      final VideoDanmakuLayoutSnapshot beforeSeek = VideoDanmakuLayout.layout(
+      final VideoDanmakuLayoutSnapshot beforeSeek = VideoDanmakuLayout().layout(
         items: items,
         positionMs: 1000,
         viewportSize: const Size(400, 160),
@@ -209,7 +216,7 @@ void main() {
         <String>['opening'],
       );
 
-      final VideoDanmakuLayoutSnapshot afterSeek = VideoDanmakuLayout.layout(
+      final VideoDanmakuLayoutSnapshot afterSeek = VideoDanmakuLayout().layout(
         items: items,
         positionMs: 10500,
         viewportSize: const Size(400, 160),
@@ -226,7 +233,8 @@ void main() {
       final List<VideoDanmakuItem> items = <VideoDanmakuItem>[
         for (int i = 0; i < 4; i++) _item(i, 'c$i'),
       ];
-      double maxYFor(double frac) => VideoDanmakuLayout.layout(
+      double maxYFor(double frac) => VideoDanmakuLayout()
+          .layout(
             items: items,
             positionMs: 100,
             viewportSize: const Size(400, 200),
@@ -234,9 +242,9 @@ void main() {
             maxLanes: 4,
             areaFraction: frac,
           )
-              .entries
-              .map((VideoDanmakuLayoutEntry e) => e.position.dy)
-              .reduce((double a, double b) => a > b ? a : b);
+          .entries
+          .map((VideoDanmakuLayoutEntry e) => e.position.dy)
+          .reduce((double a, double b) => a > b ? a : b);
       final double full = maxYFor(1.0);
       final double half = maxYFor(0.5);
       expect(half, lessThan(full), reason: '缩小显示区域把弹幕挤进更小的顶部带（最低一行的 y 更小）');
@@ -244,14 +252,19 @@ void main() {
 
     test('fontScale widens scrolling danmaku so mid-flight x shifts left', () {
       final VideoDanmakuItem scroll = _item(0, 'wide wide wide');
-      double xFor(double fontScale) => VideoDanmakuLayout.layout(
+      double xFor(double fontScale) => VideoDanmakuLayout()
+          .layout(
             items: <VideoDanmakuItem>[scroll],
             positionMs: 2000,
             viewportSize: const Size(400, 200),
             maxActive: 10,
             maxLanes: 4,
             fontScale: fontScale,
-          ).entries.single.position.dx;
+          )
+          .entries
+          .single
+          .position
+          .dx;
       expect(xFor(2.0), lessThan(xFor(1.0)), reason: '大字号弹幕更宽，飞行途中 x 更靠左');
     });
 
@@ -266,13 +279,17 @@ void main() {
       List<VideoDanmakuItem> items,
       int positionMs,
     ) =>
-        VideoDanmakuLayout.layout(
-          items: items,
-          positionMs: positionMs,
-          viewportSize: const Size(800, 400),
-          maxActive: kMaxVideoDanmakuActive,
-          maxLanes: 200,
-        ).entries.map((VideoDanmakuLayoutEntry e) => e.item).toList();
+        VideoDanmakuLayout()
+            .layout(
+              items: items,
+              positionMs: positionMs,
+              viewportSize: const Size(800, 400),
+              maxActive: kMaxVideoDanmakuActive,
+              maxLanes: 200,
+            )
+            .entries
+            .map((VideoDanmakuLayoutEntry e) => e.item)
+            .toList();
 
     test('binary-search active set equals full-scan reference across sweep',
         () {

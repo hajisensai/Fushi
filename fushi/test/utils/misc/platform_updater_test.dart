@@ -226,8 +226,7 @@ void main() {
       final Iterable<String> logArgs =
           args.where((String arg) => arg.startsWith('/LOG='));
       expect(logArgs, hasLength(1));
-      expect(
-          logArgs.single, contains('fushi-0.4.2-windows-setup.install.log'));
+      expect(logArgs.single, contains('fushi-0.4.2-windows-setup.install.log'));
     });
 
     test('pins the installer target to the current executable directory', () {
@@ -510,21 +509,23 @@ void main() {
       expect(failures.single.path, r'C:\Program Files\Hibiki\libmpv-2.dll');
     });
 
-    test('parses tasklist module holders without terminating them', () {
-      final List<WindowsProcessInfo> holders =
-          parseWindowsTasklistModuleHolders(
-        [
-          '"hibiki.exe","4321","Console","1","120,000 K"',
-          '"mpv-helper.exe","8765","Console","1","80,000 K"',
-        ].join('\n'),
-      );
-
-      expect(holders.map((WindowsProcessInfo p) => p.pid), <int>[4321, 8765]);
+    // 原用例还断言了 `tasklist /M` 的 CSV 解析。占用者查询已改走 Restart Manager
+    // （直接问系统「谁持有目标目录里那个 libmpv-2.dll」，不再扫全机模块表，见
+    // `windows_process_query.dart`），那个解析器随之删除，用例也不再有对象。
+    // 但同一个用例里搭着的**不变式**依然要守：更新器只观察占用者，永不杀进程。
+    test('更新器只观察占用者，永不终结任何进程', () {
       final String source =
           File('lib/src/utils/misc/platform_updater.dart').readAsStringSync();
       expect(source, isNot(contains('kill')));
       expect(source, isNot(contains('taskkill')));
       expect(source, isNot(contains('TerminateProcess')));
+      // 占用者查询本身也不得越权：RM 只做只读查询，不注册 restart/shutdown。
+      final String query =
+          File('lib/src/platform/desktop/windows_process_query.dart')
+              .readAsStringSync();
+      expect(query, isNot(contains('RmShutdown')));
+      expect(query, isNot(contains('RmRestart')));
+      expect(query, isNot(contains('TerminateProcess')));
     });
   });
 

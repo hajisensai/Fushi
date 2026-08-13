@@ -25,6 +25,11 @@ typedef RemoteMiningAuthReporter = void Function(String message);
 /// （[fetchConfiguration]/[createDeck]/[createNoteType]）委派给包装的本地仓库 [_local]，
 /// 以便设置页在开关开启时仍能正常配置本地 Anki（供开关关闭时使用）。
 ///
+/// **Lapis 模板读写例外**（[readNoteTypeDefinition]/[updateNoteTypeStyling]/
+/// [updateNoteTypeTemplates]）：跟随制卡落点经互联作用于**主机端**卡型——卡落在
+/// 主机上，样式客制化就必须改主机的模板；这同时让手机端（AnkiDroid 无模板 API）
+/// 第一次拥有可视化配置 Lapis 的通道。
+///
 /// 覆盖/查看类方法（[updateMinedNote]/[findOverwriteTargetNoteId]/[findMatchingNotes]/
 /// [noteFields]/[openNoteInAnki]）保留基类降级默认（不委派本地——那会在远端制卡时错误地
 /// 操作**本机** Anki 的卡片；远端 note id 本就为 null，本会话覆写第三态不激活，与 AnkiDroid
@@ -272,23 +277,33 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   Future<bool> createNoteType(AnkiNoteTypeTemplate template) =>
       _local.createNoteType(template);
 
-  // Lapis 模板读写也是配置类：委派本地仓库（设置页在「制卡到已配对设备」
-  // 开启时仍配置/备份/客制化本机 Anki 的模板，与 createNoteType 同语义）。
+  // ---- Lapis 模板读写：跟随制卡落点，经互联作用于**主机端**卡型 ----
+  //
+  // 开关开启时卡片落在已配对主机的 Anki 上，样式客制化/备份/恢复必须作用于
+  // 同一个 Anki——委派本地会在手机上把整个 Lapis 区隐藏（AnkiDroid 无模板
+  // API，这正是「可视化配置 Lapis 不支持手机端」的根因），在桌面上则改到
+  // 一个根本不落卡的本机 Anki。这也是手机端唯一的模板编辑通道（平台边界：
+  // AnkiDroid / AnkiMobile 均无改已存在模板的 API）。
+  //
+  // 主机版本过旧（无 `/api/anki/note-type/*` 端点）时：读返回 null（UI 按
+  // 「未找到 Lapis」提示），写返回 false（服务层转「后端不支持」失败）；
+  // 主机不可达/token 被拒由 client 抛出，原样透传给 UI 显示。
+
   @override
-  bool get supportsNoteTypeEditing => _local.supportsNoteTypeEditing;
+  bool get supportsNoteTypeEditing => true;
 
   @override
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(String modelName) =>
-      _local.readNoteTypeDefinition(modelName);
+      _client.readNoteTypeDefinition(modelName);
 
   @override
   Future<bool> updateNoteTypeStyling(String modelName, String css) =>
-      _local.updateNoteTypeStyling(modelName, css);
+      _client.updateNoteTypeStyling(modelName, css);
 
   @override
   Future<bool> updateNoteTypeTemplates(
           String modelName, List<AnkiCardTemplate> templates) =>
-      _local.updateNoteTypeTemplates(modelName, templates);
+      _client.updateNoteTypeTemplates(modelName, templates);
 
   // 媒体去重同为配置/维护类：作用于本机 Anki，委派本地仓库。
   @override
