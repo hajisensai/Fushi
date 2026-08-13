@@ -382,12 +382,32 @@ jobs:
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libtorrent:x64-windows
           if ($LASTEXITCODE -ne 0) { throw "vcpkg install libtorrent failed" }
           powershell -ExecutionPolicy Bypass -File native/fushi_torrent/build_windows_dll.ps1 -VcpkgRoot "$env:VCPKG_INSTALLATION_ROOT"
+      # BUG-1589：这一步在 develop 上固定红，而错误**看不见**——MSBuild 把自定义
+      # 生成步骤的真实报错折叠成 `Target dart_build failed` + `MSB8066`，日志里
+      # 只剩这两行。本机用 -v 跑同一条命令才拿到真正的 CMake/hook 报错。
+      #
+      # 注意验证构建（build-multiplatform.yml）跑的是 `--debug`，**不走 AOT**，
+      # 所以它绿不代表这条 release 路径绿——「CI 全绿」从来没覆盖过发布构建。
+      #
+      # -v 的日志量（本机实测约 2500 行）远小于「红了但不知道为什么」的代价。
       - name: Build Windows release
         working-directory: fushi
         run: >-
-          flutter build windows --release
+          flutter build windows --release -v
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
+      # 失败时把 CMake 自己的日志捞出来：-v 打的是 flutter 侧，CMake 配置期的
+      # 报错只在这两个文件里。artifact 而不是 echo，避免再被日志截断吃掉。
+      - name: Upload Windows build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-release-build-logs
+          path: |
+            fushi/build/windows/x64/CMakeFiles/CMakeOutput.log
+            fushi/build/windows/x64/CMakeFiles/CMakeError.log
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Bundle pinned Mihon desktop runtime
         shell: pwsh
         run: |

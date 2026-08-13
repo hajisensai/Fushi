@@ -1,0 +1,11 @@
+## BUG-1589 · Windows 发布构建固定红，且真错误被 MSBuild 折叠得看不见
+- **报告**：2026-08-13（排查 BUG-1586 时发现：`v1.4.0-beta.9473` 只有 ipa+zip，没有 Windows setup）
+- **真实性**：✅ 真 bug（两条，第二条是第一条查不下去的原因）。
+  - **红**：`release-desktop.yml` 的 `windows` job 在 develop `62d5d8679` 上失败（run 31619461990），单独重跑 windows job（attempt 3）**同样失败**——不是并发伪红。连锁后果：同 run 的 `Publish mirror update manifest` 报 `No files matched fushi-*-windows-setup.exe` 而挂，于是 `latest-beta.json` 从未写出、`v1.4.0-beta.9473` 成了只有 ipa+zip 的半成品发布。
+  - **看不见**：日志里只有两行——`Target dart_build failed : error : Building native assets failed.` 和 `error MSB8066: Custom build ... exited with code`。MSBuild 把自定义生成步骤的真实报错整个折叠掉了。
+  - **本机复现不出来**：本机 `flutter build windows --release -v` **顺利通过 native assets**（`fushidicts_ffi.dll` 已产出并安装），失败在更后面的 `cmake_install.cmake:429`「Missing required Windows download runtime: fushi_torrent_ffi.dll」——那是每 worktree 需先跑 `native/fushi_torrent/build_windows_dll.ps1` 的本地前置条件，与 CI 那条不是同一处。
+  - **为什么「CI 全绿」从没暴露它**：验证构建 `build-multiplatform.yml` 的 windows job 跑的是 `flutter build windows --debug`（**不走 AOT**），发布构建跑 `--release`。两者根本不是同一种构建。这与 BUG-1588（TMDB key 只注入验证构建）是同一种病：**把验证构建的绿当成发布构建的绿**。
+  - 另注：`editbin /STACK` 那个 gen_snapshot 栈溢出 workaround 只存在于本机 SDK，仓库/CI 里**一处都没有**（`grep -rn "editbin\|/STACK\|gen_snapshot" .github/ tool/ ci/ docs/` 全空）。它是否是本红的成因待 `-v` 日志确认，不先下结论。
+- **[x] ① 已修复（可见性这一半）** — `release-desktop.yml` 的 Windows 发布构建加 `-v`（本机正是靠它拿到被折叠的真错误），并新增 `if: failure()` 步骤把 `CMakeOutput.log` / `CMakeError.log` 传成 artifact（`-v` 打的是 flutter 侧，CMake 配置期报错只在这两个文件里）。**红本身尚未修**：根因必须等下一次 CI 跑出 `-v` 日志才能定，盲改等于赌。
+- **[x] ② 已加自动化测试** — `fushi/test/build/release_build_diagnosability_guard_test.dart`（4 条）：发布构建必须带 `-v`；失败时必须上传 CMake 日志且挂 `if: failure()`；并把「验证构建是 debug、发布构建是 release」这一**当前事实**钉住——谁改动其中一边，这条会红，逼他回来确认「验证绿 ≠ 发布绿」这个前提是否还成立。变异实测：去掉 `-v` → 红；还原 → 4 条全绿。
+- **备注**：修完可见性后需要一次 `workflow_dispatch`（`channel=debug`）跑出真日志。该动作会产出一个 debug 通道预发布，属于对外动作，等用户点头再发。
