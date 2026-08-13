@@ -124,16 +124,35 @@ abstract class PlatformUpdater {
 bool platformSupportsInAppInstall() =>
     Platform.isAndroid || Platform.isWindows || Platform.isMacOS;
 
-/// Flutter `--split-per-abi` 产出的 Android ABI 标签（CI 的 `app-<abi>-release.apk`
-/// 即据此重命名为 `hibiki-<version>-<abi>.apk`，见 `.github/workflows/release.yml`）。
-/// 作为「stable release 资产命名」单一真相源的一部分，供 [synthesizeStableAssetNames]
-/// 在没有 GitHub API 资产清单时（TODO-404：纯 GFW 下检查只能拿到 302 跳转里的 tag）
-/// 重建候选资产名。
+/// Flutter `--split-per-abi` 产出的 Android ABI 标签。**beta / debug** 通道的 APK 资产
+/// 仍按 `fushi-<version>-<abi>.apk` 命名（见 `.github/workflows/release.yml`），在野的
+/// 旧 Fushi 客户端编进包里的判据就是这套 ABI 全名子串，改它会让它们挑错架构。
 const List<String> kAndroidReleaseAbis = <String>[
   'arm64-v8a',
   'armeabi-v7a',
   'x86_64',
 ];
+
+/// **formal（正式版）通道**的 Android APK 资产名 ABI 记号：`fushi-<version>-<记号>.apk`。
+///
+/// 为什么 formal 不能用 ABI 全名（这是发 2.0 的硬约束，别「统一」回去）：已出货的
+/// Hibiki `v1.2.0` 二进制永远改不了，它的挑包判据是
+/// 「`.apk` 结尾 + 名字含设备 `SUPPORTED_ABIS` 任一项」，**完全不认产品族**（本体这侧
+/// 的产品族过滤 [assetBelongsToThisProduct] 是 BUG-1481 之后才有的）。2.0 正式版 release
+/// 上同时挂着给老用户的迁移桥包 `hibiki-<version>-<abi>.apk`（旧包名 `app.hibiki.reader`、
+/// 旧签名，带迁移导出器）和本体 `fushi-*`；若本体也带 ABI 全名，老客户端会命中**字母序
+/// 更靠前**的 `fushi-*`（实测 GitHub API 按文件名升序返回资产），把跨包名的 Fushi 装成
+/// 并存的第二个空 app —— 用户以为换代完成、卸掉 Hibiki，私有目录里的全部数据即刻永久丢失。
+///
+/// 记号必须**不包含任何设备 ABI 串**，桥包才能独占 ABI 命中。老客户端在无 ABI 命中时
+/// 会退化成「随便拿列表里第一个 apk」（`fallback ??= asset`），所以只靠改名躲不掉，
+/// 必须由桥包把 ABI 命中接走 —— 两者缺一不可。守卫见
+/// `test/utils/misc/formal_asset_naming_legacy_contract_test.dart`。
+const Map<String, String> kAndroidStableAbiTokens = <String, String>{
+  'arm64-v8a': 'a64',
+  'armeabi-v7a': 'a32',
+  'x86_64': 'x64',
+};
 
 /// **纯函数**：按 release 资产命名规则，为某个 stable [version]（已 normalize、不带前导
 /// `v`）合成「本应存在于该 release 的可安装资产名」列表。
@@ -142,7 +161,7 @@ const List<String> kAndroidReleaseAbis = <String>[
 /// 必被镜像 403，唯一可成功的是 `github.com/.../releases/latest` 的 302 网页跳转——但
 /// 它只给得到 tag，给不到 GitHub API 的 `assets` 清单。下载阶段又必须知道精确资产名才
 /// 能拼出 `releases/download/<tag>/<name>`。命名规则本就是确定的（CI 固定生成），故这里
-/// 据 [kAndroidReleaseAbis] + Windows setup 命名把候选资产名重建出来，喂回现有
+/// 据 [kAndroidStableAbiTokens] + Windows setup 命名把候选资产名重建出来，喂回现有
 /// `selectAsset`（Android 仍按设备真实 ABI 自行挑、Windows 直接命中 setup），不在
 /// update_checker 里硬编码命名、不绕过既有挑包逻辑。
 ///
@@ -153,12 +172,16 @@ const List<String> kAndroidReleaseAbis = <String>[
 List<String> synthesizeStableAssetNames(String version) {
   final List<String> names = <String>[
     // 终态全 fushi（2026-08-07 用户拍板）。Windows 走「更新桥」（Phase 5）：
-    // 本行已切 fushi——从本提交发布的最后一个 hibiki-* 名安装包即桥版本，
-    // 老用户升到桥后即可识别后续 fushi-* 资产。Android 无更新桥（跨包名不能
-    // 就地更新，迁移链即通道），其 APK 行保持旧名直到老包停止发布。
+    // 从最后一个 hibiki-* 名安装包即桥版本，老用户升到桥后即可识别后续 fushi-* 资产。
     'fushi-$version-windows-setup.exe',
     'fushi-$version-macos.zip',
-    for (final String abi in kAndroidReleaseAbis) 'fushi-$version-$abi.apk',
+    // APK 用 formal 记号而非 ABI 全名：ABI 命中要留给同一个 release 上的迁移桥包
+    // `hibiki-<version>-<abi>.apk`，理由见 [kAndroidStableAbiTokens]。这里合成的名字
+    // 必须与 CI `.github/workflows/release.yml` 的 formal 分支逐字一致，否则 GFW 下
+    // 走 302 回退的客户端会拼出 404 的下载链接；两侧由
+    // `test/utils/misc/formal_asset_naming_legacy_contract_test.dart` 钉死。
+    for (final String token in kAndroidStableAbiTokens.values)
+      'fushi-$version-$token.apk',
   ];
   return List<String>.unmodifiable(names);
 }
@@ -219,6 +242,18 @@ bool _androidAssetMatchesChannel(String name, UpdateChannel channel) {
   };
 }
 
+/// **纯函数**：资产名是否是给 [abi] 这个设备架构的 APK。
+///
+/// 两套命名并存、都必须认：
+/// * formal 通道用 [kAndroidStableAbiTokens] 的短记号，**锚定在结尾** `-<记号>.apk`。
+///   短记号绝不做子串匹配——`a32`/`x64` 这种三字符串混进版本号或提交哈希里就会误命中。
+/// * beta / debug 通道仍是 ABI 全名子串（[kAndroidReleaseAbis]），与在野旧客户端同判据。
+bool androidAssetMatchesAbi(String name, String abi) {
+  final String? token = kAndroidStableAbiTokens[abi];
+  if (token != null && name.endsWith('-$token.apk')) return true;
+  return name.contains(abi.replaceAll('_', '-'));
+}
+
 bool _isDebugWindowsSetupAsset(String name) =>
     name.endsWith('-windows-setup.exe') && name.contains('-debug.');
 
@@ -273,17 +308,24 @@ class AndroidUpdater extends PlatformUpdater {
     List<Map<String, dynamic>> assets, {
     UpdateChannel channel = UpdateChannel.stable,
   }) async {
+    final List<UpdateAsset> candidates = <UpdateAsset>[
+      for (final UpdateAsset asset in _downloadable(assets))
+        if (_androidAssetMatchesChannel(asset.name, channel)) asset,
+    ];
+    if (candidates.isEmpty) return null;
     final List<String> abis = await _abiProvider();
-    final List<String> abiTags =
-        abis.map((String a) => a.replaceAll('_', '-')).toList();
-    UpdateAsset? fallback;
-    for (final UpdateAsset asset in _downloadable(assets)) {
-      final String name = asset.name;
-      if (!_androidAssetMatchesChannel(name, channel)) continue;
-      if (abiTags.any(name.contains)) return asset;
-      fallback ??= asset;
+    // 设备 ABI 偏好顺序是 outer 循环，资产列表是 inner：先满足设备最优架构，拿不到
+    // 再退让到次优。**资产顺序不参与架构决策**——GitHub API 按文件名升序返回资产，
+    // 让它决定就成了「字母序选架构」：formal 记号里 `-a32` 恰好排在 `-a64` 前面，
+    // 64 位设备会被喂 32 位包（ABI 全名时代靠 `arm64-v8a` < `armeabi-v7a` 的字母序
+    // 侥幸没暴露，那是运气不是设计）。
+    for (final String abi in abis) {
+      for (final UpdateAsset asset in candidates) {
+        if (androidAssetMatchesAbi(asset.name, abi)) return asset;
+      }
     }
-    return fallback;
+    // 无架构命中：universal 单包（debug 通道就是一个不带 ABI 的整包）走这里。
+    return candidates.first;
   }
 
   @override

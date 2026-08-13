@@ -53,11 +53,15 @@ void main() {
   });
 
   group('synthesizeStableAssetNames (资产命名重建，纯函数)', () {
-    test('合成 Windows setup + 全 Android ABI 的 apk 名', () {
+    test('合成 Windows setup + 全 Android 架构的 apk 名', () {
       final List<String> names = synthesizeStableAssetNames('0.4.1');
       expect(names, contains('fushi-0.4.1-windows-setup.exe'));
+      // formal 通道的 APK 用短记号而非 ABI 全名——ABI 命中要留给同一个 release 上的
+      // 迁移桥包，理由与守卫见 `formal_asset_naming_legacy_contract_test.dart`。
       for (final String abi in kAndroidReleaseAbis) {
-        expect(names, contains('fushi-0.4.1-$abi.apk'));
+        final String token = kAndroidStableAbiTokens[abi]!;
+        expect(names, contains('fushi-0.4.1-$token.apk'));
+        expect(names, isNot(contains('fushi-0.4.1-$abi.apk')));
       }
     });
 
@@ -147,7 +151,7 @@ void main() {
       ).selectAsset(assets);
       expect(
         asset?.url,
-        'https://github.com/hajisensai/fushi/releases/download/v0.4.1/fushi-0.4.1-arm64-v8a.apk',
+        'https://github.com/hajisensai/fushi/releases/download/v0.4.1/fushi-0.4.1-a64.apk',
       );
     });
   });
