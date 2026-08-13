@@ -328,6 +328,25 @@ jobs:
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libtorrent:x64-windows
           if ($LASTEXITCODE -ne 0) { throw "vcpkg install libtorrent failed" }
           powershell -ExecutionPolicy Bypass -File native/fushi_torrent/build_windows_dll.ps1 -VcpkgRoot "$env:VCPKG_INSTALLATION_ROOT"
+      # BUG-1589 根因（run 31700342531 的 -v 日志确证）：`aot_elf_release` 阶段
+      # gen_snapshot.exe 以 -1073741571 = 0xC00000FD（栈溢出）退出——本仓 AOT 规模
+      # 超出其默认栈保留。本机 SDK 早已用 `editbin /STACK:128M` 打过同款补丁
+      # （flutter upgrade 会冲掉需重打），CI 每次全新 SDK 自然没有，于是发布构建
+      # 固定红。gen_snapshot 不暴露栈大小参数，这是上游工具链限制，只能改二进制
+      # 头；上游抬默认栈或 AOT 深度下降后本步可移除。
+      - name: Raise gen_snapshot stack reserve (BUG-1589)
+        shell: pwsh
+        run: |
+          flutter precache --windows
+          $editbin = Get-ChildItem 'C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\HostX64\x64\editbin.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $editbin) { throw 'editbin.exe not found in the VS 2022 toolchain' }
+          $snapshots = Get-ChildItem "$env:FLUTTER_ROOT\bin\cache\artifacts\engine" -Recurse -Filter gen_snapshot.exe
+          if (-not $snapshots) { throw 'gen_snapshot.exe not found under engine artifacts' }
+          foreach ($snap in $snapshots) {
+            & $editbin.FullName /STACK:134217728 $snap.FullName
+            if ($LASTEXITCODE -ne 0) { throw "editbin failed on $($snap.FullName)" }
+            Write-Host "Raised stack reserve to 128MB: $($snap.FullName)"
+          }
       # BUG-1589：这一步在 develop 上固定红，而错误**看不见**——MSBuild 把自定义
       # 生成步骤的真实报错折叠成 `Target dart_build failed` + `MSB8066`，日志里
       # 只剩这两行。本机用 -v 跑同一条命令才拿到真正的 CMake/hook 报错。

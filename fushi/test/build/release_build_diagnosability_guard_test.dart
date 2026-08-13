@@ -55,6 +55,27 @@ void main() {
         reason: '日志上传步骤必须挂 if: failure()，否则成功时白传一份。');
   });
 
+  test('Windows 发布构建前必须抬高 gen_snapshot 栈保留（BUG-1589 根因）', () {
+    // -v 落地后第一轮 CI（run 31700342531）拿到的真错误：`aot_elf_release` 阶段
+    // gen_snapshot.exe 以 -1073741571 = 0xC00000FD（栈溢出）退出。本仓 AOT 规模
+    // 超出其默认栈保留；gen_snapshot 不暴露栈参数，只能 editbin 改二进制头。
+    // 本机 SDK 打过同款补丁（flutter upgrade 会冲掉），CI 每次全新 SDK 没有——
+    // 所以补丁必须以 workflow 步骤形式存在，且在 release 构建**之前**执行。
+    const String stackPatch = '/STACK:134217728';
+    expect(releaseText, contains(stackPatch),
+        reason: 'release-desktop.yml 里找不到 editbin $stackPatch——'
+            'gen_snapshot 栈补丁步骤没了，Windows 发布构建会在 aot_elf_release '
+            '阶段以 0xC00000FD 固定红（BUG-1589）。');
+    expect(releaseText, contains('gen_snapshot.exe'),
+        reason: '栈补丁必须打在 engine artifacts 的 gen_snapshot.exe 上。');
+    expect(
+      releaseText.indexOf(stackPatch),
+      lessThan(releaseText.indexOf('flutter build windows --release')),
+      reason: '栈补丁步骤必须排在 Windows release 构建之前，否则首轮构建仍然'
+          '用未打补丁的 gen_snapshot。',
+    );
+  });
+
   test('验证构建是 debug、发布构建是 release —— 别把前者的绿当后者的绿', () {
     // 这条不是要求「必须不同」，而是把**当前事实**钉在测试里：一旦有人把验证
     // 构建也改成 --release（或反过来），这条会红，逼着改的人回来读上面那段
