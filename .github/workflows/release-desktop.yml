@@ -86,7 +86,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//')
-          RELEASE_SEQUENCE=$(git rev-list --count HEAD)
+          RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)
           if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
             echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
             exit 1
@@ -712,7 +712,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//')
-          RELEASE_SEQUENCE=$(git rev-list --count HEAD)
+          RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)
           if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
             echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
             exit 1
@@ -1222,7 +1222,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//')
-          RELEASE_SEQUENCE=$(git rev-list --count HEAD)
+          RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)
           if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
             echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
             exit 1
@@ -1698,7 +1698,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//')
-          RELEASE_SEQUENCE=$(git rev-list --count HEAD)
+          RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)
           if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
             echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
             exit 1

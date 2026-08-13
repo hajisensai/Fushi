@@ -46,7 +46,7 @@ void main() {
     );
     expect(
       workflow,
-      contains(r'RELEASE_SEQUENCE=$(git rev-list --count HEAD)'),
+      contains(r'RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)'),
     );
     expect(
       workflow,
@@ -102,7 +102,7 @@ void main() {
     );
     expect(
       workflow,
-      contains(r'RELEASE_SEQUENCE=$(git rev-list --count HEAD)'),
+      contains(r'RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)'),
     );
     expect(workflow, contains('CHANNEL=debug'));
     expect(workflow, contains('PUBLISH_MANAGED_RELEASE=true'));

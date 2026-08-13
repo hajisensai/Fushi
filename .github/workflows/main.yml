@@ -44,13 +44,16 @@ jobs:
         # `git rev-list --count HEAD` report a truncated (smaller) sequence,
         # producing a versionCode that disagrees with release.yml's. Keep this in
         # lockstep with release.yml's `fetch-depth: 0`.
+        # 2026-08-12: 序号统一由 tool/release_sequence.sh 算（计数 + 一次性地板）。
+        # 地板只补「历史重写导致计数倒退」，补不了「浅克隆导致计数截断」——
+        # 后者每次 checkout 都可能不同，仍然只能靠 fetch-depth: 0 兜住。
         fetch-depth: 0
 
     - name: Resolve shared release sequence
       shell: bash
       run: |
         set -euo pipefail
-        RELEASE_SEQUENCE=$(git rev-list --count HEAD)
+        RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)
         if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
           echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
           exit 1
