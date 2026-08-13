@@ -6,45 +6,68 @@ Vendored from pub.dev `flutter_onnxruntime` **1.8.3**. Referenced via
 
 ## Why vendored
 
-Upstream declares `ios` and `macos` under `flutter.plugin.platforms`, and its
-Apple podspecs (`ios/flutter_onnxruntime.podspec`,
-`macos/flutter_onnxruntime.podspec`) pin **`onnxruntime-objc` 1.23.0**, which
-forces the deployment target to **macOS 14.0 / iOS 16.0**. Because it is a
-federated MethodChannel plugin declaring `macos`, Flutter registers it into the
-macOS Swift Package (`FlutterGeneratedPluginSwiftPackage`), which then fails the
-whole macOS build:
+All five native platforms (Android / iOS / Linux / macOS / Windows) are enabled
+— Hibiki's built-in manga OCR runs locally on every one of them. The fork exists
+only to keep the **Apple deployment floor** at the true `onnxruntime-objc`
+minimum instead of upstream's conservative declaration.
+
+Upstream ships a `Package.swift` next to each Apple podspec. When those exist,
+Flutter builds the plugin through **Swift Package Manager**, which pulls
+`masicai/onnxruntime-swift-package-manager` — and that package's manifest
+declares `platforms: [.iOS(.v15), .macOS(.v14)]`. Because Hibiki's macOS Runner
+already uses `FlutterGeneratedPluginSwiftPackage`, the macOS 14 floor propagates
+to the whole app:
 
 ```
 error: package 'flutter-onnxruntime' requires minimum platform version 14.0
 ```
 
-Hibiki's project targets **macOS 10.15** and a lower iOS deployment target
-(`fushi/macos/Podfile` + `Runner.xcodeproj`), and must not drop older Apple
-users (Never break userspace). Hibiki's built-in ONNX manga OCR is only wired
-for **Windows / Linux / Android** anyway — on Apple the manga reader degrades to
-the interconnect-host OCR or the Gemini cloud OCR path (see
-`fushi/lib/src/ocr/ocr_inference_ort.dart` `isLocalOnnxRuntimeAvailable`).
+Upstream's podspecs then mirror that with `s.platform = :ios, '16.0'` /
+`:osx, '14.0'`. But the **pod** those podspecs actually depend on,
+`onnxruntime-objc` 1.23.0, declares only:
+
+| | onnxruntime-objc 1.23.0 | upstream plugin declares | this fork |
+|---|---|---|---|
+| iOS | 15.1 | 16.0 | **15.1** |
+| macOS | 13.4 | 14.0 | **13.4** |
+
+So routing Apple through CocoaPods instead of SwiftPM buys back iOS 15.1–16.0
+and macOS 13.4–14.0 for free, with no change to the ORT binary or the Dart API.
 
 ## Delta vs upstream 1.8.3
 
-1. `pubspec.yaml`: removed the `ios` and `macos` entries from
-   `flutter.plugin.platforms`. Kept `android`, `linux`, `web`, `windows`. With
-   no `macos`/`ios` declaration, Flutter never adds the plugin to the Apple
-   native build, so the deployment target stays at 10.15 / the project's iOS
-   floor.
-2. Deleted the `ios/` and `macos/` native source trees (belt-and-suspenders;
-   they are unreferenced once the platform declarations are gone) plus the
-   `example/` and `doc/` folders (build-irrelevant, reduce vendored size).
-3. `environment.sdk` widened `^3.7.0` -> `>=3.5.0 <4.0.0` to match the Hibiki
+1. Deleted `ios/flutter_onnxruntime/Package.swift` and
+   `macos/flutter_onnxruntime/Package.swift`. With no Swift package manifest,
+   Flutter falls back to the podspecs on both Apple platforms. The Swift/ObjC++
+   sources stay where they are (`<platform>/flutter_onnxruntime/Sources/...`) —
+   the podspecs already glob that SPM-shaped layout, so nothing else moves.
+2. `ios/flutter_onnxruntime.podspec`: `s.platform = :ios, '16.0'` -> `'15.1'`.
+3. `macos/flutter_onnxruntime.podspec`: `s.platform = :osx, '14.0'` -> `'13.4'`.
+4. Deleted the `example/` and `doc/` folders (build-irrelevant, reduce vendored
+   size).
+5. `environment.sdk` widened `^3.7.0` -> `>=3.5.0 <4.0.0` to match the Hibiki
    workspace floor (per the other `third_party/` vendored packages).
 
-**The Dart API under `lib/` is byte-for-byte upstream** — no ORT wrapper logic
-changed. `onnxruntime` native for Android/Windows/Linux is untouched, so OCR on
-those platforms works exactly as before.
+**The Dart API under `lib/` is byte-for-byte upstream**, and so are all five
+native source trees — no ORT wrapper logic changed anywhere.
+
+## Deployment targets this fork requires
+
+The app projects must stay at or above the podspec floors, or `pod install`
+fails outright:
+
+- `fushi/ios/Podfile` — `platform :ios, '15.1'`
+- `fushi/ios/Runner.xcodeproj` — `IPHONEOS_DEPLOYMENT_TARGET = 15.1` (3 configs)
+- `fushi/macos/Podfile` — `platform :osx, '13.4'`
+- `fushi/macos/Runner.xcodeproj` — `MACOSX_DEPLOYMENT_TARGET = 13.4` (3 configs)
+
+Guard: `fushi/test/tools/onnxruntime_apple_gate_guard_test.dart` pins all four
+plus the podspec floors, so a re-vendor cannot silently reintroduce the SwiftPM
+path or drift the floors apart.
 
 ## Re-vendoring on upgrade
 
-Copy the new upstream version over this folder, then re-apply delta #1 (drop
-`ios`/`macos` from plugin platforms), #2 (delete `ios/ macos/ example/ doc/`),
-and #3 (SDK bound). Only bump the Apple support back if the project's macOS
-deployment target is raised to >= 14.0 and iOS to >= 16.0 first.
+Copy the new upstream version over this folder, then re-apply deltas #1–#5.
+Before bumping the `onnxruntime-objc` pin, check the new version's podspec
+platforms (`pod spec cat onnxruntime-objc --version=X.Y.Z`) — if the floor moved,
+the four project deployment targets and the guard test move with it.

@@ -295,4 +295,77 @@ void main() {
     final double after = scrollLeft(tester, 'x');
     expect(after, greaterThan(before), reason: 'seek 回退是真正的位置跳变，弹幕对齐真值（更靠右）');
   });
+
+  testWidgets('a danmaku leaving the screen never re-rows the survivors',
+      (WidgetTester tester) async {
+    // BUG-1607 的真实渲染层守卫：逐帧推进播放，记录每条弹幕**第一次渲染时**的
+    // Positioned.top，之后任何一帧都不许变。旧实现每帧按当前活动集重排行号，第一条
+    // 一过期，后面每条的 top 就整体上移一格。
+    int clock = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 400,
+            height: 200,
+            child: VideoDanmakuOverlay(
+              items: <VideoDanmakuItem>[
+                for (int i = 0; i < 8; i++) _item(i * 500, 'コメント$i'),
+              ],
+              enabled: true,
+              maxActive: 20,
+              maxLanes: 4,
+              positionMs: () => clock,
+              isPlaying: () => true,
+              speed: () => 1.0,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    double topOf(String text) => tester
+        .widget<Positioned>(
+          find
+              .ancestor(of: find.text(text), matching: find.byType(Positioned))
+              .first,
+        )
+        .top!;
+
+    final Map<String, double> firstTop = <String, double>{};
+    final Set<String> retired = <String>{};
+    bool sawRetirementWithSurvivors = false;
+    for (int step = 0; step <= 120; step++) {
+      clock = step * 100;
+      await tester.pump(const Duration(milliseconds: 100));
+      final Set<String> onScreen = <String>{};
+      for (int i = 0; i < 8; i++) {
+        final String text = 'コメント$i';
+        if (find.text(text).evaluate().isEmpty) continue;
+        onScreen.add(text);
+        expect(retired.contains(text), isFalse,
+            reason: '$text 退场后又在 clock=$clock 冒出来了');
+        final double top = topOf(text);
+        final double? seen = firstTop[text];
+        if (seen == null) {
+          firstTop[text] = top;
+        } else {
+          expect(top, seen, reason: '$text 在 clock=$clock 换了行（出生时 top=$seen）');
+        }
+      }
+      for (final String text in firstTop.keys) {
+        if (!onScreen.contains(text)) retired.add(text);
+      }
+      if (retired.isNotEmpty && onScreen.isNotEmpty) {
+        sawRetirementWithSurvivors = true;
+      }
+    }
+
+    expect(firstTop, hasLength(8), reason: '8 条弹幕都应该真的渲染过');
+    expect(sawRetirementWithSurvivors, isTrue,
+        reason: '必须真的出现「有弹幕退场、同时还有弹幕在场」的帧，否则守卫是空转');
+    expect(firstTop.values.toSet().length, lessThan(8),
+        reason: '必须真的发生行复用，否则测不到退场引发的重排');
+  });
 }

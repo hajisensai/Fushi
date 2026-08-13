@@ -88,9 +88,9 @@ void main() {
   });
 
   /// [platformSupported] 显式钉死平台闸门，让 `ocrFolder` 的编排断言在任何宿主
-  /// 上都跑同一条分支。真实 `isSupportedPlatform` 只在 Windows / Linux 为真
-  /// （`isLocalOnnxRuntimeAvailable` 把 macOS / iOS 排除），照默认值跑的话这组
-  /// 编排测试在 macOS 开发机上必然全红——红的是宿主，不是被测逻辑。
+  /// 上都跑同一条分支。真实 `isSupportedPlatform` 是 Windows / Linux / macOS /
+  /// iOS 为真、Android 为假，照默认值跑的话这组编排测试在 Android 宿主上会整组
+  /// 走「平台不支持」分支而全红——红的是宿主，不是被测逻辑。
   MangaOcrServiceImpl service(
     _FakeRunner runner, {
     bool platformSupported = true,
@@ -175,6 +175,19 @@ void main() {
             contains('manga OCR is not supported on'))),
       );
       expect(runner.requests, isEmpty);
+    });
+
+    test('平台闸门 = 桌面三端 + iOS（Android 仍不开整卷本地 OCR）', () {
+      // 2026-08-14：macOS/iOS 随 flutter_onnxruntime fork 重接 Apple native 后
+      // 打开。这条按宿主断言，所以 macOS 开发机与 macOS CI 上它真的在验证
+      // 「macOS 为真」这条新行为，而不是空转。
+      final bool expected = Platform.isWindows ||
+          Platform.isLinux ||
+          Platform.isMacOS ||
+          Platform.isIOS;
+      expect(MangaOcrServiceImpl.defaultPlatformSupport(), expected,
+          reason: '${Platform.operatingSystem} 上的整卷本地 OCR 闸门与预期不符；'
+              '改闸门必须同时改这里，别让它静默漂移');
     });
 
     test('默认构造走真实平台闸门（不被注入桩悄悄替换）', () {
@@ -364,26 +377,23 @@ void main() {
       );
     });
 
-    test('macOS：检测 CoreML→CPU，识别纯 CPU', () {
-      expect(
-        selectOcrExecutionProviders(
-          kind: OcrModelKind.detection,
-          platform: resolveOcrPlatform('macos'),
-          cudaAvailable: false,
-        ),
-        <OcrExecutionProvider>[
-          OcrExecutionProvider.coreml,
-          OcrExecutionProvider.cpu,
-        ],
-      );
-      expect(
-        selectOcrExecutionProviders(
-          kind: OcrModelKind.recognition,
-          platform: resolveOcrPlatform('macos'),
-          cudaAvailable: false,
-        ),
-        <OcrExecutionProvider>[OcrExecutionProvider.cpu],
-      );
+    test('BUG-1613 macOS / iOS：检测与识别都是纯 CPU，绝不选 CoreML', () {
+      // 这条测试**改之前钉的正好是相反的结论**（Apple 检测走 CoreML）——实现和
+      // 测试同源于一个从未被执行过的假设（当时 Apple 的 ORT native 整个被 gate
+      // 掉，这段分支不可达）。真机对拍后才知道：iOS 上 CoreML EP 把 int8 检测
+      // 模型交给 ANE 会**静默返回空结果**，而且两端都比 CPU 慢。
+      for (final String os in <String>['macos', 'ios']) {
+        for (final OcrModelKind kind in OcrModelKind.values) {
+          final List<OcrExecutionProvider> got = selectOcrExecutionProviders(
+            kind: kind,
+            platform: resolveOcrPlatform(os),
+            cudaAvailable: false,
+          );
+          expect(got, <OcrExecutionProvider>[OcrExecutionProvider.cpu],
+              reason: '$os/$kind 不应再出现 CoreML（BUG-1613）');
+          expect(got, isNot(contains(OcrExecutionProvider.coreml)));
+        }
+      }
     });
 
     test('Linux / Android：纯 CPU', () {
