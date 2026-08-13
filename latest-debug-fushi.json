@@ -15,6 +15,20 @@
       "version": "1.4.0-debug.11508"
     },
     {
+      "name": "fushi-1.4.0-debug.11508-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11508-ios.ipa",
+      "releaseSequence": 11508,
+      "tag": "v1.4.0-debug.11508+23f8b39",
+      "version": "1.4.0-debug.11508"
+    },
+    {
+      "name": "fushi-1.4.0-debug.11508-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11508-macos.zip",
+      "releaseSequence": 11508,
+      "tag": "v1.4.0-debug.11508+23f8b39",
+      "version": "1.4.0-debug.11508"
+    },
+    {
       "name": "fushi-1.4.0-debug.11508-windows-setup.exe",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11508-windows-setup.exe",
       "releaseSequence": 11508,
