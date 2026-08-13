@@ -48,9 +48,13 @@ extension _VideoLookupMining on _VideoFushiPageState {
     );
   }
 
-  /// 以当前查词 cue（[_lastLookupCue]）为锚，在 [VideoPlayerController.cues]（按 startMs
-  /// 升序）里取它之前 [prevCount] 条、之后 [nextCount] 条作上下文，整体设进草稿（覆盖
-  /// 上次选择，不累积）。无 cue / 无控制器时清空上下文返回 0。
+  /// 以当前查词 cue（[_lastLookupCue]）为锚，在**锚点所属的那条字幕流**
+  /// （[VideoPlayerController.cueStreamOwning]，按 startMs 升序）里取它之前 [prevCount] 条、
+  /// 之后 [nextCount] 条作上下文，整体设进草稿（覆盖上次选择，不累积）。无 cue / 无控制器
+  /// 时清空上下文返回 0。
+  ///
+  /// BUG-1592：以前硬取主字幕流 [VideoPlayerController.cues]。副字幕上查词时锚点不在主流里，
+  /// `indexOf` 恒 -1 → 上下 N 句**静默失效**（用户只看到上下文没生效，没有任何报错）。
   Future<int> _setSentenceContextToDraft(int prevCount, int nextCount) async {
     final VideoPlayerController? controller = _controller;
     final AudioCue? anchor = _lastLookupCue;
@@ -58,7 +62,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       _miningDraft.setContext();
       return _miningDraft.length;
     }
-    final List<AudioCue> cues = controller.cues;
+    final List<AudioCue> cues = controller.cueStreamOwning(anchor);
     final int idx = cues.indexOf(anchor);
     if (idx < 0) {
       _miningDraft.setContext();
@@ -144,10 +148,13 @@ extension _VideoLookupMining on _VideoFushiPageState {
     }
 
     // 查词窗口多句合一（TODO-270 E）。当前 cue 多段兜底（含 gap，BUG-188）。
+    // BUG-1592：按位置兜底走**有效流**（主字幕流为空即副字幕流）。命中项已带 cue 的入口
+    // （点击 / hover / 手柄光标 / 列表）走 [_lastLookupCue]，这条只服务「没有命中项」的
+    // 入口（如无查词直接制卡）——它以前硬认主流，主字幕关闭时恒 null → 区间 `0..0`。
     final AudioCue? cue = _lastLookupCue ??
         controller.currentCue ??
         resolveMiningCueForPosition(
-          cues: controller.cues,
+          cues: controller.miningCues,
           positionMs: controller.positionMs ?? 0,
           delayMs: controller.delayMs,
         );

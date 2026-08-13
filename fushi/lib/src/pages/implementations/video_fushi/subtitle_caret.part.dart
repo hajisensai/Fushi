@@ -303,7 +303,8 @@ extension _VideoSubtitleCaret on _VideoFushiPageState {
         if (hit == null) return;
         // 与点击查词完全同链路（含沉浸门控）：弹窗渲染完成后
         // [onNestedPopupRendered] 会把光标 transfer 进弹窗。
-        _handleSubtitleLookupTap(hit.sentence, hit.graphemeIndex, hit.charRect);
+        _handleSubtitleLookupTap(
+            hit.sentence, hit.graphemeIndex, hit.charRect, hit.cue);
         return;
       case CaretAction.longPress:
       case CaretAction.jumpDictNext:

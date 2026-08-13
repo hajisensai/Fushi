@@ -16,9 +16,21 @@ import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
-/// 命中字幕某字符的结果：整条字幕、被点 grapheme 下标、该字符的全局屏幕矩形。
-/// 与 [VideoSubtitleOverlay.onCharTap] 的回调三元组同构。
-typedef SubtitleCharHit = ({String sentence, int graphemeIndex, Rect charRect});
+/// 命中字幕某字符的结果：整条字幕、被点 grapheme 下标、该字符的全局屏幕矩形、
+/// **该字符所属的那条 cue**。与 [VideoSubtitleOverlay.onCharTap] 的回调四元组同构。
+///
+/// BUG-1592：[cue] 是新增的第四元。此前命中只回传文本，页面侧只能拿 `sentence` 反过来
+/// 去**主字幕流**里按播放位置猜锚点 cue（[resolveVideoLookupAnchorCue]）——主字幕关掉、
+/// 只开副字幕时主流为空，锚点恒 null，制卡区间塌成 `0..0`：句子音频空、封面回退到
+/// `atSeconds=0.0` 抽出片头黑帧（用户报「制卡黑屏」）。命中项本来就诞生在「按 cue 渲染」
+/// 的循环里，把 cue 一并带出即消灭「猜锚点」这一整类特殊情况：点哪条锚哪条，主 / 副 /
+/// 重叠一视同仁（顺带修主副同开时点副字幕却锚到主字幕 cue 的错锚）。
+typedef SubtitleCharHit = ({
+  String sentence,
+  int graphemeIndex,
+  Rect charRect,
+  AudioCue cue,
+});
 
 /// 给上层（查词浮层的 dismiss barrier）按全局坐标反查「点到的是哪个字幕字符」用的
 /// 句柄。[VideoSubtitleOverlay] 在 build 时把自己的命中实现绑进来；上层持有同一个
@@ -316,8 +328,10 @@ class VideoSubtitleOverlay extends StatefulWidget {
   final VideoPlayerController controller;
 
   /// 点击字幕第 [graphemeIndex] 个字符时回调，[sentence] 为整条字幕文本，
-  /// [charRect] 为被点字符在全局坐标系下的矩形（弹窗定位用）。
-  final void Function(String sentence, int graphemeIndex, Rect charRect)?
+  /// [charRect] 为被点字符在全局坐标系下的矩形（弹窗定位用），[cue] 为该字符所属的
+  /// 那条 cue（BUG-1592：制卡区间/句子音频的锚点，主副字幕同一口径，见 [SubtitleCharHit]）。
+  final void Function(
+          String sentence, int graphemeIndex, Rect charRect, AudioCue cue)?
       onCharTap;
 
   /// 桌面 Shift-鼠标悬停查词（TODO-756a，与阅读器 `onShiftHover` 同语义）。按住 Shift 时鼠标
@@ -326,7 +340,8 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 查词行为一致、零重写。命中节流（8px 阈值 + 同一字符不重复触发）由本组件内部承载，避免每帧
   /// hover 都查词。非 Shift 悬停 / 模糊态 / 空句不触发（与点击不查词一致）。null（移动端 / 测试 /
   /// 无控制条场景）= 不挂 Shift-悬停通道，外观与历史一致。
-  final void Function(String sentence, int graphemeIndex, Rect charRect)?
+  final void Function(
+          String sentence, int graphemeIndex, Rect charRect, AudioCue cue)?
       onCharHover;
 
   /// TODO-756b：是否“鼠标悬停即自动查词”。true 时 [_handleShiftHover] 不再要求按住
@@ -653,6 +668,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       sentence: e.sentence,
       graphemeIndex: e.graphemeIndex,
       charRect: _globalRectOf(e.context),
+      cue: e.cue,
     );
   }
 
@@ -669,6 +685,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       sentence: e.sentence,
       graphemeIndex: e.graphemeIndex,
       charRect: r,
+      cue: e.cue,
     );
   }
 
@@ -707,7 +724,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 命中复用 [_charHitTest]（模糊态 / 空句返回 null → 不查词，与点击一致）。[PointerHoverEvent]
   /// 的 `position` 已是全局坐标，与 [_charHitTest] 的全局命中契约一致。
   void _handleShiftHover(PointerHoverEvent event) {
-    final void Function(String, int, Rect)? onCharHover = widget.onCharHover;
+    final void Function(String, int, Rect, AudioCue)? onCharHover =
+        widget.onCharHover;
     if (onCharHover == null) return;
     // TODO-756b：开了“悬停即查词”则纯悬停即触发，无需 Shift；否则退回 756a 的
     // Shift 门控。两路都共用同一节流锚与命中链路（onCharHover），仅门控判据不同。
@@ -733,7 +751,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     }
     _lastShiftHoverPos = event.position;
     _lastShiftHoverEntry = entryIndex;
-    onCharHover(e.sentence, e.graphemeIndex, _globalRectOf(e.context));
+    onCharHover(e.sentence, e.graphemeIndex, _globalRectOf(e.context), e.cue);
   }
 
   @override
@@ -1403,7 +1421,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
                   _pendingTapEntry = -1;
                   if (hit != null) {
                     widget.onCharTap!(
-                        hit.sentence, hit.graphemeIndex, hit.charRect);
+                        hit.sentence, hit.graphemeIndex, hit.charRect, hit.cue);
                   }
                 }
                 ..onTapCancel = () {
@@ -1517,6 +1535,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
               context: charContext,
               blurred: blurred,
               isSecondary: isSecondary,
+              cue: cue,
             ));
           }
           final Widget ch = _applyVerticalGlyphRotation(
@@ -2838,10 +2857,16 @@ class _SubtitleCharEntry {
     required this.context,
     required this.blurred,
     required this.isSecondary,
+    required this.cue,
   });
 
   /// 该字符所属的整条 cue 文本（查词 / 制卡取整句用）。
   final String sentence;
+
+  /// 该字符所属的那条 cue 本身（BUG-1592：制卡区间/句子音频的锚点）。[sentence] 是它的
+  /// 文本，但制卡还要它的 `startMs`/`endMs`——主字幕关闭、只开副字幕时页面侧无从从主流
+  /// 反推，必须由命中项直接带出。
+  final AudioCue cue;
 
   /// 该字符在其所属 cue 内的 grapheme 下标（从该位置起最长匹配取词）。
   final int graphemeIndex;

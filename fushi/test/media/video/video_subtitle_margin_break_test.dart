@@ -41,7 +41,7 @@ Future<void> _mount(WidgetTester tester, VideoPlayerController c) async {
         child: VideoSubtitleOverlay(
           controller: c,
           respectAssStyle: true,
-          onCharTap: (_, __, ___) {},
+          onCharTap: (_, __, ___, ____) {},
         ),
       ),
     ),

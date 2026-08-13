@@ -36,7 +36,7 @@ void main() {
       // 放大避让位移，确保 up 落点显著偏离 down 命中字符（验证锁 down 不依赖 up 反查）。
       controlsBottomReserve: 400,
       bottomPadding: 10,
-      onCharTap: (String s, int i, Rect rect) {
+      onCharTap: (String s, int i, Rect rect, AudioCue cueArg) {
         tappedSentence = s;
         tappedIndex = i;
       },

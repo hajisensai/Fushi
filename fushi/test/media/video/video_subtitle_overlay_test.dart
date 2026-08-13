@@ -476,7 +476,8 @@ void main() {
       final VideoPlayerController c = _controllerWithCue('テスト');
       await _pump(
         tester,
-        VideoSubtitleOverlay(controller: c, onCharTap: (_, __, ___) {}),
+        VideoSubtitleOverlay(
+            controller: c, onCharTap: (_, __, ___, AudioCue cueArg) {}),
       );
       final Iterable<GestureDetector> detectors =
           tester.widgetList<GestureDetector>(find.byType(GestureDetector));
@@ -509,7 +510,7 @@ void main() {
         tester,
         VideoSubtitleOverlay(
           controller: c,
-          onCharTap: (String s, int i, Rect _) {
+          onCharTap: (String s, int i, Rect _, AudioCue cueArg) {
             tappedSentence = s;
             tappedIndex = i;
           },

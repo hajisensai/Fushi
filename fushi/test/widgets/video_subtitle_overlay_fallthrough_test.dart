@@ -28,7 +28,8 @@ void main() {
   Future<void> pumpOverlayOverCounter(
     WidgetTester tester, {
     required VideoPlayerController controller,
-    required void Function(String sentence, int graphemeIndex, Rect rect)
+    required void Function(
+            String sentence, int graphemeIndex, Rect rect, AudioCue cue)
         onCharTap,
     required VoidCallback onUnderlyingTap,
   }) async {
@@ -65,7 +66,8 @@ void main() {
     await pumpOverlayOverCounter(
       tester,
       controller: c,
-      onCharTap: (String s, int i, Rect r) => tappedSentence = s,
+      onCharTap: (String s, int i, Rect r, AudioCue cueArg) =>
+          tappedSentence = s,
       onUnderlyingTap: () => underlyingTaps++,
     );
 
@@ -91,7 +93,8 @@ void main() {
     await pumpOverlayOverCounter(
       tester,
       controller: c,
-      onCharTap: (String s, int i, Rect r) => tappedSentence = s,
+      onCharTap: (String s, int i, Rect r, AudioCue cueArg) =>
+          tappedSentence = s,
       onUnderlyingTap: () => underlyingTaps++,
     );
 

@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1497 条。点号进各自文件。
+> 共 1498 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1592](bugs/BUG-1592-secondary-subtitle-mining-black-cover.md) | ✅ | ✅ | 只开副字幕时制卡：无区间→封面抽片头黑帧 |
 | [BUG-1591](bugs/BUG-1591-download-priority-has-no-write-entry.md) | ✅ | ✅ | priority 列参与排序却无写入口，排队退化成先来后到 |
 | [BUG-1590](bugs/BUG-1590-subscription-candidate-list-not-aggregated.md) | ✅ | ✅ | 订阅候选列表按发布逐条列，与订阅生效单位不一致 |
 | [BUG-1589](bugs/BUG-1589-windows-release-build-red-and-invisible.md) | ✅ | ✅ | Windows 发布构建固定红，且真错误被 MSBuild 折叠得看不见 |

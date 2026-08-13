@@ -49,7 +49,7 @@ void main() {
         tester,
         VideoSubtitleOverlay(
           controller: c,
-          onCharHover: (String s, int i, Rect r) =>
+          onCharHover: (String s, int i, Rect r, AudioCue cueArg) =>
               hovers.add((sentence: s, graphemeIndex: i, charRect: r)),
         ),
       );
@@ -81,7 +81,7 @@ void main() {
         tester,
         VideoSubtitleOverlay(
           controller: c,
-          onCharHover: (String s, int i, Rect r) =>
+          onCharHover: (String s, int i, Rect r, AudioCue cueArg) =>
               hovers.add((sentence: s, graphemeIndex: i, charRect: r)),
         ),
       );
@@ -106,7 +106,7 @@ void main() {
         tester,
         VideoSubtitleOverlay(
           controller: c,
-          onCharHover: (String s, int i, Rect r) =>
+          onCharHover: (String s, int i, Rect r, AudioCue cueArg) =>
               hovers.add((sentence: s, graphemeIndex: i, charRect: r)),
         ),
       );
@@ -153,7 +153,7 @@ void main() {
         VideoSubtitleOverlay(
           controller: c,
           blurEnabled: true,
-          onCharHover: (String s, int i, Rect r) =>
+          onCharHover: (String s, int i, Rect r, AudioCue cueArg) =>
               hovers.add((sentence: s, graphemeIndex: i, charRect: r)),
         ),
       );
@@ -183,7 +183,8 @@ void main() {
       final VideoPlayerController c2 = _controllerWithCue('A');
       await _pump(
         tester,
-        VideoSubtitleOverlay(controller: c2, onCharHover: (_, __, ___) {}),
+        VideoSubtitleOverlay(
+            controller: c2, onCharHover: (_, __, ___, AudioCue cueArg) {}),
       );
       final int withHover = find.byType(MouseRegion).evaluate().length;
 
@@ -200,9 +201,9 @@ void main() {
         tester,
         VideoSubtitleOverlay(
           controller: c,
-          onCharTap: (String s, int i, Rect r) =>
+          onCharTap: (String s, int i, Rect r, AudioCue cueArg) =>
               taps.add((sentence: s, graphemeIndex: i, charRect: r)),
-          onCharHover: (String s, int i, Rect r) =>
+          onCharHover: (String s, int i, Rect r, AudioCue cueArg) =>
               hovers.add((sentence: s, graphemeIndex: i, charRect: r)),
         ),
       );

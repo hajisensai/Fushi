@@ -34,7 +34,8 @@ void main() {
   Future<void> pumpOverlayOverSeekListener(
     WidgetTester tester, {
     required VideoPlayerController controller,
-    required void Function(String sentence, int graphemeIndex, Rect rect)
+    required void Function(
+            String sentence, int graphemeIndex, Rect rect, AudioCue cue)
         onCharTap,
     required VoidCallback onSeekPointerUp,
   }) async {
@@ -73,7 +74,8 @@ void main() {
     await pumpOverlayOverSeekListener(
       tester,
       controller: c,
-      onCharTap: (String s, int i, Rect r) => tappedSentence = s,
+      onCharTap: (String s, int i, Rect r, AudioCue cueArg) =>
+          tappedSentence = s,
       onSeekPointerUp: () => seekPointerUps++,
     );
 
@@ -99,7 +101,8 @@ void main() {
     await pumpOverlayOverSeekListener(
       tester,
       controller: c,
-      onCharTap: (String s, int i, Rect r) => tappedSentence = s,
+      onCharTap: (String s, int i, Rect r, AudioCue cueArg) =>
+          tappedSentence = s,
       onSeekPointerUp: () => seekPointerUps++,
     );
 

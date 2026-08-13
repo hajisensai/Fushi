@@ -120,7 +120,7 @@ void main() {
         tester,
         VideoSubtitleOverlay(
           controller: c,
-          onCharTap: (String s, int i, Rect _) {
+          onCharTap: (String s, int i, Rect _, AudioCue __) {
             tapped = s;
             tappedIndex = i;
           },
@@ -144,7 +144,7 @@ void main() {
         tester,
         VideoSubtitleOverlay(
           controller: c,
-          onCharTap: (String s, int i, Rect _) => tapped = s,
+          onCharTap: (String s, int i, Rect _, AudioCue __) => tapped = s,
         ),
       );
       await tester.tapAt(tester.getCenter(find.text('主').first));

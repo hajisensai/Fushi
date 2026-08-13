@@ -73,7 +73,7 @@ void main() {
             controller: c,
             respectAssStyle: true,
             hitTester: hitTester,
-            onCharTap: (_, __, ___) {},
+            onCharTap: (_, __, ___, ____) {},
           ),
         ),
       ),
