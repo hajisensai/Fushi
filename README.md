@@ -1,10 +1,10 @@
 <div align="center">
 
-# hibiki
+# Fushi
 
-<img src="docs/static-assets/hibiki-logo.png" alt="hibiki logo" width="160">
+<img src="docs/static-assets/fushi-logo.png" alt="Fushi logo" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -14,37 +14,37 @@
 
 **No fiddly setup** — import the recommended dictionaries and audio in one step.
 
-[![Download Latest](https://img.shields.io/badge/%E2%AC%87%20Download%20Latest-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
+[![Download Latest](https://img.shields.io/badge/%E2%AC%87%20Download%20Latest-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
 [![Join our Discord](https://img.shields.io/badge/Join%20our%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **Watch what you want to watch, and pick up the language along the way.**
 
-hibiki turns the novels you read, the shows you follow, and the audiobooks you listen to into your language input — tap any unknown word to look it up, then turn it into an Anki card with original context in one tap. It doesn't hand you a preset word list; it just helps you catch the words you **actually read and hear**.
+Fushi turns the novels you read, the shows you follow, and the audiobooks you listen to into your language input — tap any unknown word to look it up, then turn it into an Anki card with original context in one tap. It doesn't hand you a preset word list; it just helps you catch the words you **actually read and hear**.
 
-The most effective way to learn a language is heavy exposure to real content, not memorizing isolated words from a vocabulary book. But "immersion" has always had two annoyances: looking up a word breaks your flow, and you forget it the moment you look away. hibiki closes that loop —
+The most effective way to learn a language is heavy exposure to real content, not memorizing isolated words from a vocabulary book. But "immersion" has always had two annoyances: looking up a word breaks your flow, and you forget it the moment you look away. Fushi closes that loop —
 
 📖 **Read**: tap a word in the EPUB reader to look it up, without leaving the current page.<br>
 🎧 **Listen**: audiobooks highlight along sentence by sentence and turn pages automatically.<br>
 🎬 **Watch**: look up words and make cards right on the video subtitles — following a show *is* input.<br>
 🃏 **Retain**: send any word you looked up, anywhere, straight to Anki, and review only the words you actually met.
 
-Every scenario shares the same dictionaries, statistics, and review workflow. It works for any language (Japanese, English, …), and is especially suited to immersion learners who believe in **heavy input + only self-made cards**. Available for Android and Windows (iOS and macOS planned).
+Every scenario shares the same dictionaries, statistics, and review workflow. It works for any language (Japanese, English, …), and is especially suited to immersion learners who believe in **heavy input + only self-made cards**. Available for Android, Windows, macOS, Linux, and iOS.
 
 <table>
   <tr>
-    <td><img src="docs/static-assets/screenshots/hibiki-readme-bookshelf-en.png" alt="Bookshelf" width="100%"></td>
-    <td><img src="docs/static-assets/screenshots/hibiki-readme-video-library-en.png" alt="Video Library" width="100%"></td>
+    <td><img src="docs/static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="Bookshelf" width="100%"></td>
+    <td><img src="docs/static-assets/screenshots/fushi-readme-video-library-en.png" alt="Video Library" width="100%"></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="docs/static-assets/screenshots/hibiki-readme-reader-vertical-lookup.png" alt="Desktop vertical reading with lookup popup" width="100%"></td>
+    <td colspan="2"><img src="docs/static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="Desktop vertical reading with lookup popup" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="docs/static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="Video lookup (nested popups)" width="100%"></td>
-    <td><img src="docs/static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="Video lookup (subtitle list)" width="100%"></td>
+    <td><img src="docs/static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="Video lookup (nested popups)" width="100%"></td>
+    <td><img src="docs/static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="Video lookup (subtitle list)" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="docs/static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="Out-of-app text-selection lookup (mobile)" width="100%"></td>
-    <td><img src="docs/static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="Out-of-app text-selection lookup (desktop)" width="100%"></td>
+    <td><img src="docs/static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="Out-of-app text-selection lookup (mobile)" width="100%"></td>
+    <td><img src="docs/static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="Out-of-app text-selection lookup (desktop)" width="100%"></td>
   </tr>
 </table>
 
@@ -55,9 +55,9 @@ Every scenario shares the same dictionaries, statistics, and review workflow. It
      conventional workaround. To restore a real inline player, upload the mp4 in
      the GitHub web editor and replace the img below with the generated
      https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
+<img src="docs/static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
 
-<sub>[Watch the HD video version ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)</sub>
+<sub>[Watch the HD video version ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 
 </div>
 
@@ -118,25 +118,43 @@ Every scenario shares the same dictionaries, statistics, and review workflow. It
 
 ### Data Sync
 
-- Seven sync backends: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP, and Hibiki P2P.
+- Seven sync backends: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP, and Fushi Interconnect.
 - Sync reading progress, statistics, and books.
+- **Fushi Interconnect** pairs your own devices directly over the LAN — no cloud account in between. One device hosts, the other reads its library remotely, and card creation can be delegated to the paired host's Anki.
+
+### Manga
+
+- Read manga alongside the other formats, with page and strip reading modes.
+- Look up words straight off the page via OCR — either the built-in engine or an external mokuro setup.
+
+### Downloads
+
+- Built-in torrent engine (libtorrent), plus Nyaa search and subscriptions for new episodes.
+- A downloads page that tracks jobs and subscriptions; renames and moves happen through the download engine so seeding is never interrupted.
+
+### Galgame Voice Mining (Windows)
+
+- Hook a running visual novel to capture the current line's text **and** its original voice clip, then mine both into a card.
+- A dedicated game library with per-title statistics.
+- The native voice-hook helper lives in this repository (`native/galgame_hook/`) and is built and bundled alongside the app — nothing is downloaded at runtime.
 
 ### More
 
 - **17 interface languages**, fully localized across all platforms.
 - Share text from other apps to look up words directly.
-- **Galgame voice mining** (Windows) uses an optional native voice-hook helper, distributed separately at [hajisensai/hibiki-hook](https://github.com/hajisensai/hibiki-hook).
+- Out-of-app text-selection lookup on both mobile and desktop, plus a browser extension.
 
 ## Platform Support
 
 | Platform | Status | Rendering / UI |
 |---|---|---|
 | Android | ✅ | Material Design 3 |
-| Windows | ✅ | Material |
-| iOS | Planned | Cupertino |
-| macOS | Planned | Material |
+| Windows | ✅ | Material Design 3 |
+| macOS | ✅ | Material Design 3 |
+| Linux | ✅ | Material Design 3 |
+| iOS | ✅ | Material Design 3 |
 
-> Minimum Android 7.0 (API 24). The languages available for dictionary lookup are determined by the imported dictionaries and Yomitan transformation tables, independently of the interface language.
+> Minimum Android 7.0 (API 24). Galgame voice mining is Windows-only. The languages available for dictionary lookup are determined by the imported dictionaries and Yomitan transformation tables, independently of the interface language.
 
 ### Interface Languages (17)
 
@@ -144,7 +162,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## Installation
 
-Download the latest release from [GitHub Releases](https://github.com/hajisensai/hibiki/releases) — Android APK and Windows installer are available.
+Download the latest release from [GitHub Releases](https://github.com/hajisensai/Fushi/releases) — Android APK, Windows installer, macOS, Linux, and iOS builds are available.
 
 <details open>
 <summary>📖 <b>No fiddly setup</b> — import the recommended dictionaries and audio in one step.</summary>
@@ -163,11 +181,15 @@ One-command prep (`flutter pub get` + apply patches), then build:
 # From the repository root
 bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
 
-cd hibiki
+cd fushi
 # Android
 flutter build apk --release --target-platform android-arm64 --split-per-abi
-# Windows desktop
+# Desktop
 flutter build windows --release
+flutter build macos --release
+flutter build linux --release
+# iOS
+flutter build ipa --release
 ```
 
 `tool/bootstrap.sh` / `tool/bootstrap.ps1` collapse `flutter pub get` and `ci/apply-patches.sh` into a single command. This project is locked to Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`); some upstream dependencies are vendored under `third_party/` or patched by `ci/apply-patches.sh` — see [docs/agent/build.md](docs/agent/build.md) for details.
@@ -178,11 +200,12 @@ flutter build windows --release
 | Layer | Technology |
 |---|---|
 | Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Platforms | Android / Windows (Material Design 3) |
+| Platforms | Android / Windows / macOS / Linux / iOS (Material Design 3) |
 | Reader | WebView paging engine (derived from the Hoshi Reader family) |
 | Video | media_kit (libmpv core) |
-| Storage | Drift (SQLite, WAL) + hoshidicts (C++ FFI dictionary engine) |
-| NLP | Yomitan transformation tables (multilingual lemmatization) + kana_kit (kana conversion); tokenization via hoshidicts FFI |
+| Storage | Drift (SQLite, WAL) + fushidicts (C++ FFI dictionary engine) |
+| NLP | Yomitan transformation tables (multilingual lemmatization) + kana_kit (kana conversion); tokenization via fushidicts FFI |
+| Downloads | libtorrent 2.x via a C-ABI FFI bridge |
 | Card Creation | AnkiDroid API + AnkiConnect |
 | i18n | Slang (17 languages) |
 
@@ -192,7 +215,7 @@ flutter build windows --release
 <summary><b>Project Structure</b></summary>
 
 ```
-hibiki/                      # Repository root (Melos workspace: fushi_workspace)
+Fushi/                      # Repository root (Melos workspace: fushi_workspace)
 ├── fushi/                  # Flutter app main directory
 │   ├── lib/
 │   │   ├── i18n/            # Internationalization (17 languages, Slang)
@@ -202,9 +225,9 @@ hibiki/                      # Repository root (Melos workspace: fushi_workspace
 │   │   │   ├── media/       # Audiobook, subtitle parsing, reader source
 │   │   │   └── models/      # Data models and state management (AppModel)
 │   │   └── main.dart
-│   └── android/             # Android project (manifest, native hoshidicts)
+│   └── android/             # Android project (manifest, native fushidicts)
 ├── packages/                # Internal packages + flutter_inappwebview_windows (fork) + gamepads_android_stub
-├── native/                  # hoshidicts C++ dictionary engine (FFI)
+├── native/                  # C++ sources: fushidicts (dictionary engine), fushi_torrent, galgame_hook
 ├── third_party/             # Vendored patched packages (dependency_overrides)
 ├── ci/                      # Build patches and integration test scripts
 ├── tool/                    # bootstrap / i18n_sync and other scripts
@@ -215,21 +238,21 @@ hibiki/                      # Repository root (Melos workspace: fushi_workspace
 
 ## Privacy & Data
 
-hibiki stores imported books, dictionaries, fonts, audiobook data, videos, reading progress, highlights, statistics, and settings in the app's local storage.
+Fushi stores imported books, dictionaries, fonts, audiobook data, videos, reading progress, highlights, statistics, and settings in the app's local storage.
 
-Cloud sync (Google Drive / OneDrive / Dropbox) uses user-configured OAuth credentials; WebDAV / FTP / SFTP uses user-provided server addresses and credentials; Hibiki P2P connects directly via a user-configured address. Anki card creation communicates with AnkiDroid or a configured AnkiConnect address.
+Cloud sync (Google Drive / OneDrive / Dropbox) uses user-configured OAuth credentials; WebDAV / FTP / SFTP uses user-provided server addresses and credentials; Fushi Interconnect connects directly to a user-configured address on your own network. Anki card creation communicates with AnkiDroid or a configured AnkiConnect address.
 
 ## Star History
 
-[![GitHub stars](https://img.shields.io/github/stars/hajisensai/hibiki?style=flat&logo=github&label=Stars)](https://github.com/hajisensai/hibiki/stargazers)
+[![GitHub stars](https://img.shields.io/github/stars/hajisensai/Fushi?style=flat&logo=github&label=Stars)](https://github.com/hajisensai/Fushi/stargazers)
 
-[![Star History](docs/assets/star-history.svg)](https://github.com/hajisensai/hibiki/stargazers)
+[![Star History](docs/assets/star-history.svg)](https://github.com/hajisensai/Fushi/stargazers)
 
 > The chart above is generated inside this repository (no third-party service) and refreshed daily by the [Update Star History](.github/workflows/star-history.yml) workflow.
 
 ## Acknowledgments
 
-hibiki builds on the following projects and ecosystem:
+Fushi builds on the following projects and ecosystem:
 
 | Project | Description |
 |---|---|

@@ -1,8 +1,8 @@
-# De hibiki-handleiding die zelfs Yui Hirasawa in 5 minuten instelt
+# De Fushi-handleiding die zelfs Yui Hirasawa in 5 minuten instelt
 
 [English](user-guide.md) | [简体中文](https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb) | [繁體中文](user-guide.zh-Hant.md) | [日本語](user-guide.ja.md) | [한국어](user-guide.ko.md) | [Español](user-guide.es.md) | [Français](user-guide.fr.md) | [Deutsch](user-guide.de.md) | [Português](user-guide.pt-BR.md) | [Русский](user-guide.ru.md) | [Tiếng Việt](user-guide.vi.md) | [ภาษาไทย](user-guide.th.md) | [Bahasa Indonesia](user-guide.id.md) | [Italiano](user-guide.it.md) | **Nederlands** | [Türkçe](user-guide.tr.md) | [العربية](user-guide.ar.md)
 
-> De handleiding in Vereenvoudigd Chinees wordt gehost op Feishu (link hierboven). De Engelse handleiding is ook beschikbaar [op GitHub](https://github.com/hajisensai/hibiki/blob/main/docs/user-guide.md).
+> De handleiding in Vereenvoudigd Chinees wordt gehost op Feishu (link hierboven). De Engelse handleiding is ook beschikbaar [op GitHub](https://github.com/hajisensai/Fushi/blob/main/docs/user-guide.md).
 
 ## Inleiding
 
@@ -10,13 +10,13 @@ Dit is gratis software voor Android / Windows (iOS / macOS gepland) — een baan
 
 ### Project-URL
 
-https://github.com/hajisensai/hibiki
+https://github.com/hajisensai/Fushi
 
-Actief in ontwikkeling — je feedback wordt snel afgehandeld. Bugmeldingen en functieverzoeken zijn welkom. Als je Hibiki nuttig vindt, stellen we het op prijs als je het met anderen deelt of een ⭐ aan de repository geeft.
+Actief in ontwikkeling — je feedback wordt snel afgehandeld. Bugmeldingen en functieverzoeken zijn welkom. Als je Fushi nuttig vindt, stellen we het op prijs als je het met anderen deelt of een ⭐ aan de repository geeft.
 
 ### Downloaden
 
-https://github.com/hajisensai/hibiki/releases/latest
+https://github.com/hajisensai/Fushi/releases/latest
 
 Android: kies **arm64**. Windows: kies het **.exe**-bestand.
 
@@ -24,7 +24,7 @@ Android: kies **arm64**. Windows: kies het **.exe**-bestand.
 
 ### 1. Aanbevolen woordenboeken (woord- + toonhoogteaccent- + frequentiewoordenboeken) en lokale audio (Japanse en Engelse audiodatabases) importeren (Sterk aanbevolen voor beginners!!! · optioneel)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare-download (9,3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare-download (9,5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 In de app: Instellingen -> Synchronisatie en back-up -> tik op **Back-up importeren**.
 
@@ -51,8 +51,8 @@ Anki heeft [FSRS](https://github.com/open-spaced-repetition/fsrs4anki) ingebouwd
 ##### Android
 
 1. Installeer en open Anki.
-2. Ga terug naar hibiki en ga naar Instellingen -> Kaarten maken.
-3. Tik op **Decks en notitietypen vernieuwen** (gemarkeerd met "1" in de afbeelding); hibiki vraagt om toestemming — tik op Toestaan.
+2. Ga terug naar Fushi en ga naar Instellingen -> Kaarten maken.
+3. Tik op **Decks en notitietypen vernieuwen** (gemarkeerd met "1" in de afbeelding); Fushi vraagt om toestemming — tik op Toestaan.
 4. Tik op **Lapis-deck maken** (gemarkeerd met "2" in de afbeelding).
 5. Als er geen rode waarschuwing of fout verschijnt, is de installatie geslaagd.
 
@@ -66,7 +66,7 @@ Anki heeft [FSRS](https://github.com/open-spaced-repetition/fsrs4anki) ingebouwd
 ![Anki-menu Hulpmiddelen op Windows](static-assets/user-guide/anki-windows-tools-menu.png)
 
 3. Plak de onderstaande Anki-add-oncode om deze te installeren: `2055492159`
-4. Ga terug naar hibiki en ga naar Instellingen -> Kaarten maken.
+4. Ga terug naar Fushi en ga naar Instellingen -> Kaarten maken.
 5. Tik op **Decks en notitietypen vernieuwen** (gemarkeerd met "1").
 6. Tik op **Lapis-deck maken** (gemarkeerd met "2").
 7. Als er geen rode waarschuwing of fout verschijnt, is de installatie geslaagd.

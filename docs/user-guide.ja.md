@@ -1,8 +1,8 @@
-# 平沢唯でも5分で設定できる hibiki ユーザーガイド
+# 平沢唯でも5分で設定できる Fushi ユーザーガイド
 
 [English](user-guide.md) | [简体中文](https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb) | [繁體中文](user-guide.zh-Hant.md) | **日本語** | [한국어](user-guide.ko.md) | [Español](user-guide.es.md) | [Français](user-guide.fr.md) | [Deutsch](user-guide.de.md) | [Português](user-guide.pt-BR.md) | [Русский](user-guide.ru.md) | [Tiếng Việt](user-guide.vi.md) | [ภาษาไทย](user-guide.th.md) | [Bahasa Indonesia](user-guide.id.md) | [Italiano](user-guide.it.md) | [Nederlands](user-guide.nl.md) | [Türkçe](user-guide.tr.md) | [العربية](user-guide.ar.md)
 
-> 簡体字中国語版のガイドは Feishu でホストされています（上記リンク）。英語版は [GitHub 版](https://github.com/hajisensai/hibiki/blob/main/docs/user-guide.md) でも利用できます。
+> 簡体字中国語版のガイドは Feishu でホストされています（上記リンク）。英語版は [GitHub 版](https://github.com/hajisensai/Fushi/blob/main/docs/user-guide.md) でも利用できます。
 
 ## はじめに
 
@@ -10,13 +10,13 @@
 
 ### プロジェクト URL
 
-https://github.com/hajisensai/hibiki
+https://github.com/hajisensai/Fushi
 
-活発に開発中です——あなたのフィードバックには迅速に対応します。バグ報告や機能リクエストを歓迎します。Hibiki が役に立つと感じたら、ほかの人にシェアしたり、リポジトリに ⭐ を付けていただけると嬉しいです。
+活発に開発中です——あなたのフィードバックには迅速に対応します。バグ報告や機能リクエストを歓迎します。Fushi が役に立つと感じたら、ほかの人にシェアしたり、リポジトリに ⭐ を付けていただけると嬉しいです。
 
 ### ダウンロード
 
-https://github.com/hajisensai/hibiki/releases/latest
+https://github.com/hajisensai/Fushi/releases/latest
 
 Android：**arm64** を選んでください。Windows：**.exe** ファイルを選んでください。
 
@@ -24,7 +24,7 @@ Android：**arm64** を選んでください。Windows：**.exe** ファイル�
 
 ### 1. 推奨辞書（語彙＋アクセント＋頻度辞書）とローカル音声（日本語・英語の音声データベース）をインポートする（初心者に強くおすすめ！！！・任意）
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare からダウンロード（9.3 GB）](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare からダウンロード（9.5 GB）](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 アプリ内で：設定 -> 同期とバックアップ -> **バックアップをインポート** をタップします。
 
@@ -51,8 +51,8 @@ Anki には [FSRS](https://github.com/open-spaced-repetition/fsrs4anki) が組�
 ##### Android
 
 1. Anki をインストールして開きます。
-2. hibiki に戻り、設定 -> カード作成 を開きます。
-3. **デッキとノートタイプを更新**（画像の「1」）をタップします。hibiki が権限を要求するので——「許可」をタップします。
+2. Fushi に戻り、設定 -> カード作成 を開きます。
+3. **デッキとノートタイプを更新**（画像の「1」）をタップします。Fushi が権限を要求するので——「許可」をタップします。
 4. **Lapis デッキを作成**（画像の「2」）をタップします。
 5. 赤い警告やエラーが出なければ、セットアップは成功です。
 
@@ -66,7 +66,7 @@ Anki には [FSRS](https://github.com/open-spaced-repetition/fsrs4anki) が組�
 ![Windows の Anki ツールメニュー](static-assets/user-guide/anki-windows-tools-menu.png)
 
 3. 下記の Anki アドオンコードを貼り付けてインストールします：`2055492159`
-4. hibiki に戻り、設定 -> カード作成 を開きます。
+4. Fushi に戻り、設定 -> カード作成 を開きます。
 5. **デッキとノートタイプを更新**（「1」）をタップします。
 6. **Lapis デッキを作成**（「2」）をタップします。
 7. 赤い警告やエラーが出なければ、セットアップは成功です。

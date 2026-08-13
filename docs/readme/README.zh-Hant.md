@@ -1,10 +1,10 @@
 <div align="center">
 
-# hibiki
+# Fushi
 
-<img src="../static-assets/hibiki-logo.png" alt="hibiki logo" width="160">
+<img src="../static-assets/fushi-logo.png" alt="Fushi logo" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -14,14 +14,14 @@
 
 **無需繁瑣設定**，推薦詞典與本機音訊一鍵匯入即用。
 
-[![下載最新版本](https://img.shields.io/badge/%E2%AC%87%20%E4%B8%8B%E8%BC%89%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
+[![下載最新版本](https://img.shields.io/badge/%E2%AC%87%20%E4%B8%8B%E8%BC%89%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
 [![加入 Discord 社群](https://img.shields.io/badge/%E5%8A%A0%E5%85%A5%20Discord%20%E7%A4%BE%E7%BE%A4-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **看你想看的，語言順手就學會了。**
 
-hibiki 把你正在讀的小說、追的番、聽的有聲書，變成你的語言輸入——遇到生詞點一下就查，查完一鍵做成帶原文語境的 Anki 卡片。它不給你背預設詞表，只幫你抓住你**真正讀到、聽到**的詞。
+Fushi 把你正在讀的小說、追的番、聽的有聲書，變成你的語言輸入——遇到生詞點一下就查，查完一鍵做成帶原文語境的 Anki 卡片。它不給你背預設詞表，只幫你抓住你**真正讀到、聽到**的詞。
 
-學語言最有效的方式是大量接觸真實內容，而不是抱著單字書背孤立的詞。但「沉浸」一直有兩個麻煩：看到生詞查起來打斷心流，查完轉頭就忘。hibiki 把這條鏈路打通了——
+學語言最有效的方式是大量接觸真實內容，而不是抱著單字書背孤立的詞。但「沉浸」一直有兩個麻煩：看到生詞查起來打斷心流，查完轉頭就忘。Fushi 把這條鏈路打通了——
 
 📖 **讀**：EPUB 閱讀器點詞即查，不跳出當前頁。<br>
 🎧 **聽**：有聲書逐句高亮跟讀，自動翻頁。<br>
@@ -32,19 +32,19 @@ hibiki 把你正在讀的小說、追的番、聽的有聲書，變成你的語�
 
 <table>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-bookshelf-zh.png" alt="書架" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-library-zh.png" alt="影片庫" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-zh.png" alt="書架" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-library-zh.png" alt="影片庫" width="100%"></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/hibiki-readme-reader-vertical-lookup.png" alt="桌面直排閱讀 · 劃詞查詞彈窗" width="100%"></td>
+    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="桌面直排閱讀 · 劃詞查詞彈窗" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="影片查詞（巢狀彈窗）" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="影片查詞（字幕列表）" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="影片查詞（巢狀彈窗）" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="影片查詞（字幕列表）" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="App 外選詞查詞（手機）" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="App 外選詞查詞（電腦）" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="App 外選詞查詞（手機）" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="App 外選詞查詞（電腦）" width="100%"></td>
   </tr>
 </table>
 
@@ -55,9 +55,9 @@ hibiki 把你正在讀的小說、追的番、聽的有聲書，變成你的語�
      conventional workaround. To restore a real inline player, upload the mp4 in
      the GitHub web editor and replace the img below with the generated
      https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/hibiki-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
+<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
 
-<sub>[點此查看一鍵製卡示範 ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)</sub>
+<sub>[點此查看一鍵製卡示範 ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
 ## 功能
@@ -117,7 +117,7 @@ hibiki 把你正在讀的小說、追的番、聽的有聲書，變成你的語�
 
 ### 資料同步
 
-- 支援 Google Drive、OneDrive、Dropbox、WebDAV、FTP、SFTP 和 Hibiki P2P 七種同步後端。
+- 支援 Google Drive、OneDrive、Dropbox、WebDAV、FTP、SFTP 和 Fushi Interconnect 七種同步後端。
 - 同步閱讀進度、統計和書籍。
 
 ### 更多
@@ -130,7 +130,10 @@ hibiki 把你正在讀的小說、追的番、聽的有聲書，變成你的語�
 | 平台 | 狀態 | 渲染 / UI |
 |---|---|---|
 | Android | ✅ | Material Design 3 |
-| Windows | ✅ | Material |
+| Windows | ✅ | Material Design 3 |
+| macOS | ✅ | Material Design 3 |
+| Linux | ✅ | Material Design 3 |
+| iOS | ✅ | Material Design 3 |
 
 > 最低 Android 7.0（API 24）。詞典查詞的語言由匯入的詞典與 Yomitan 變換表決定，與介面語言相互獨立。
 
@@ -140,7 +143,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## 安裝
 
-從 [GitHub Releases](https://github.com/hajisensai/hibiki/releases) 下載最新版本，支援 Android APK 和 Windows 安裝包。
+從 [GitHub Releases](https://github.com/hajisensai/Fushi/releases) 下載最新版本，支援 Android APK 和 Windows 安裝包。
 
 > 最低 Android 7.0（API 24）。
 
@@ -152,7 +155,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 # 在倉庫根目錄
 bash tool/bootstrap.sh          # Windows PowerShell：.\tool\bootstrap.ps1
 
-cd hibiki
+cd fushi
 # Android
 flutter build apk --release --target-platform android-arm64 --split-per-abi
 # Windows 桌面
@@ -167,11 +170,11 @@ flutter build windows --release
 | 層 | 技術 |
 |---|---|
 | 框架 | Flutter 3.44.0（Dart SDK `>=3.5.0 <4.0.0`） |
-| 平台 | Android / Windows（Material Design 3） |
+| 平台 | Android / Windows / macOS / Linux / iOS（Material Design 3） |
 | 閱讀器 | WebView 分頁引擎（衍生自 Hoshi Reader 系列） |
 | 影片 | media_kit（libmpv 核心） |
-| 儲存 | Drift（SQLite，WAL）+ hoshidicts（C++ FFI 詞典引擎） |
-| NLP | Yomitan 變換表（多語言詞形還原）+ kana_kit（假名轉換）；分詞走 hoshidicts FFI |
+| 儲存 | Drift（SQLite，WAL）+ fushidicts（C++ FFI 詞典引擎） |
+| NLP | Yomitan 變換表（多語言詞形還原）+ kana_kit（假名轉換）；分詞走 fushidicts FFI |
 | 製卡 | AnkiDroid API + AnkiConnect |
 | 國際化 | Slang（17 種語言） |
 
@@ -181,7 +184,7 @@ flutter build windows --release
 <summary><b>專案結構</b></summary>
 
 ```
-hibiki/                      # 倉庫根（Melos workspace: fushi_workspace）
+Fushi/                      # 倉庫根（Melos workspace: fushi_workspace）
 ├── fushi/                  # Flutter 應用程式主目錄
 │   ├── lib/
 │   │   ├── i18n/            # 國際化（17 種語言，Slang）
@@ -191,9 +194,9 @@ hibiki/                      # 倉庫根（Melos workspace: fushi_workspace）
 │   │   │   ├── media/       # 有聲書、字幕解析、reader source
 │   │   │   └── models/      # 資料模型與狀態管理（AppModel）
 │   │   └── main.dart
-│   └── android/             # Android 工程（manifest、native hoshidicts）
+│   └── android/             # Android 工程（manifest、native fushidicts）
 ├── packages/                # 內部 package + flutter_inappwebview_windows(fork) + gamepads_android_stub
-├── native/                  # hoshidicts C++ 詞典引擎（FFI）
+├── native/                  # fushidicts C++ 詞典引擎（FFI）
 ├── third_party/             # vendored 補丁套件（dependency_overrides 指向）
 ├── ci/                      # 建置補丁與整合測試腳本
 ├── tool/                    # bootstrap / i18n_sync 等腳本
@@ -204,13 +207,13 @@ hibiki/                      # 倉庫根（Melos workspace: fushi_workspace）
 
 ## 隱私與資料
 
-hibiki 將匯入的書籍、詞典、字型、有聲書資料、影片、閱讀進度、高亮、統計和設定儲存在 App 本機儲存中。
+Fushi 將匯入的書籍、詞典、字型、有聲書資料、影片、閱讀進度、高亮、統計和設定儲存在 App 本機儲存中。
 
-雲端同步（Google Drive / OneDrive / Dropbox）使用由使用者設定的 OAuth 憑據；WebDAV / FTP / SFTP 使用使用者提供的伺服器位址與憑據；Hibiki P2P 透過使用者設定的位址直連。Anki 製卡會與 AnkiDroid 或已設定的 AnkiConnect 位址通訊。
+雲端同步（Google Drive / OneDrive / Dropbox）使用由使用者設定的 OAuth 憑據；WebDAV / FTP / SFTP 使用使用者提供的伺服器位址與憑據；Fushi Interconnect 透過使用者設定的位址直連。Anki 製卡會與 AnkiDroid 或已設定的 AnkiConnect 位址通訊。
 
 ## 致謝
 
-hibiki 基於以下專案與生態：
+Fushi 基於以下專案與生態：
 
 | 專案 | 說明 |
 |---|---|

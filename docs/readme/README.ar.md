@@ -1,10 +1,10 @@
 <div align="center">
 
-# hibiki
+# Fushi
 
-<img src="../static-assets/hibiki-logo.png" alt="شعار hibiki" width="160">
+<img src="../static-assets/fushi-logo.png" alt="شعار Fushi" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -14,14 +14,14 @@
 
 **بدون إعداد معقّد** — استورد القواميس والصوت المُوصى بها في خطوة واحدة.
 
-[![تنزيل أحدث إصدار](https://img.shields.io/badge/%E2%AC%87%20%D8%AA%D9%86%D8%B2%D9%8A%D9%84%20%D8%A3%D8%AD%D8%AF%D8%AB%20%D8%A5%D8%B5%D8%AF%D8%A7%D8%B1-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
+[![تنزيل أحدث إصدار](https://img.shields.io/badge/%E2%AC%87%20%D8%AA%D9%86%D8%B2%D9%8A%D9%84%20%D8%A3%D8%AD%D8%AF%D8%AB%20%D8%A5%D8%B5%D8%AF%D8%A7%D8%B1-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
 [![انضم إلى Discord](https://img.shields.io/badge/%D8%A7%D9%86%D8%B6%D9%85%20%D8%A5%D9%84%D9%89%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **شاهِد ما تحبّ مشاهدته، وستتعلّم اللغة في الطريق.**
 
-يحوّل hibiki الروايات التي تقرؤها، والمسلسلات التي تتابعها، والكتب الصوتية التي تستمع إليها إلى مُدخَلات لغتك — انقر على أي كلمة لا تعرفها للبحث عنها، ثم حوّلها بنقرة واحدة إلى بطاقة Anki مع سياقها الأصلي. لا يفرض عليك حفظ قائمة كلمات مُعدّة مسبقًا، بل يساعدك فقط على التقاط الكلمات التي **تقرؤها وتسمعها فعلًا**.
+يحوّل Fushi الروايات التي تقرؤها، والمسلسلات التي تتابعها، والكتب الصوتية التي تستمع إليها إلى مُدخَلات لغتك — انقر على أي كلمة لا تعرفها للبحث عنها، ثم حوّلها بنقرة واحدة إلى بطاقة Anki مع سياقها الأصلي. لا يفرض عليك حفظ قائمة كلمات مُعدّة مسبقًا، بل يساعدك فقط على التقاط الكلمات التي **تقرؤها وتسمعها فعلًا**.
 
-أكثر الطرق فاعلية لتعلّم لغة هي التعرّض بكثرة لمحتوى حقيقي، لا حفظ كلمات منعزلة من كتاب مفردات. لكن "الانغماس" كانت له دائمًا مشكلتان: البحث عن كلمة يقطع تدفّق التركيز، وتنساها بمجرد أن تُشيح بنظرك. يغلق hibiki هذه الحلقة:
+أكثر الطرق فاعلية لتعلّم لغة هي التعرّض بكثرة لمحتوى حقيقي، لا حفظ كلمات منعزلة من كتاب مفردات. لكن "الانغماس" كانت له دائمًا مشكلتان: البحث عن كلمة يقطع تدفّق التركيز، وتنساها بمجرد أن تُشيح بنظرك. يغلق Fushi هذه الحلقة:
 
 📖 **اقرأ**: انقر على كلمة في قارئ EPUB للبحث عنها، دون مغادرة الصفحة الحالية.<br>
 🎧 **استمع**: تُبرز الكتب الصوتية النص جملةً جملةً وتقلّب الصفحات تلقائيًا.<br>
@@ -32,19 +32,19 @@
 
 <table>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-bookshelf-en.png" alt="رفّ الكتب" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-library-en.png" alt="مكتبة الفيديو" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="رفّ الكتب" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-library-en.png" alt="مكتبة الفيديو" width="100%"></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/hibiki-readme-reader-vertical-lookup.png" alt="القراءة العمودية على سطح المكتب مع نافذة بحث منبثقة" width="100%"></td>
+    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="القراءة العمودية على سطح المكتب مع نافذة بحث منبثقة" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="البحث في الفيديو (نوافذ منبثقة متداخلة)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="البحث في الفيديو (قائمة الترجمات)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="البحث في الفيديو (نوافذ منبثقة متداخلة)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="البحث في الفيديو (قائمة الترجمات)" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="البحث بتحديد النص خارج التطبيق (الهاتف)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="البحث بتحديد النص خارج التطبيق (سطح المكتب)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="البحث بتحديد النص خارج التطبيق (الهاتف)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="البحث بتحديد النص خارج التطبيق (سطح المكتب)" width="100%"></td>
   </tr>
 </table>
 
@@ -55,9 +55,9 @@
      conventional workaround. To restore a real inline player, upload the mp4 in
      the GitHub web editor and replace the img below with the generated
      https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/hibiki-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
+<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
 
-<sub>[شاهد عرض إنشاء البطاقات بنقرة واحدة ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)</sub>
+<sub>[شاهد عرض إنشاء البطاقات بنقرة واحدة ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
 ## الميزات
@@ -117,7 +117,7 @@
 
 ### مزامنة البيانات
 
-- سبعة خوادم مزامنة خلفية: Google Drive، وOneDrive، وDropbox، وWebDAV، وFTP، وSFTP، وHibiki P2P.
+- سبعة خوادم مزامنة خلفية: Google Drive، وOneDrive، وDropbox، وWebDAV، وFTP، وSFTP، وFushi Interconnect.
 - مزامنة تقدّم القراءة، والإحصاءات، والكتب.
 
 ### المزيد
@@ -130,7 +130,10 @@
 | المنصّة | الحالة | العرض / الواجهة |
 |---|---|---|
 | Android | ✅ | Material Design 3 |
-| Windows | ✅ | Material |
+| Windows | ✅ | Material Design 3 |
+| macOS | ✅ | Material Design 3 |
+| Linux | ✅ | Material Design 3 |
+| iOS | ✅ | Material Design 3 |
 
 > الحدّ الأدنى Android 7.0 (API 24). تُحدَّد اللغات المتاحة للبحث في القاموس بناءً على القواميس المُستورَدة وجداول تحويل Yomitan، بشكل مستقلّ عن لغة الواجهة.
 
@@ -146,7 +149,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 # From the repository root
 bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
 
-cd hibiki
+cd fushi
 # Android
 flutter build apk --release --target-platform android-arm64 --split-per-abi
 # Windows desktop
@@ -161,11 +164,11 @@ flutter build windows --release
 | الطبقة | التقنية |
 |---|---|
 | إطار العمل | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| المنصّات | Android / Windows (Material Design 3) |
+| المنصّات | Android / Windows / macOS / Linux / iOS (Material Design 3) |
 | القارئ | محرّك ترقيم صفحات WebView (مُشتقّ من عائلة Hoshi Reader) |
 | الفيديو | media_kit (نواة libmpv) |
-| التخزين | Drift (SQLite, WAL) + hoshidicts (محرّك قاموس C++ FFI) |
-| معالجة اللغة الطبيعية | جداول تحويل Yomitan (التأصيل متعدّد اللغات) + kana_kit (تحويل الكانا)؛ التقسيم إلى وحدات عبر hoshidicts FFI |
+| التخزين | Drift (SQLite, WAL) + fushidicts (محرّك قاموس C++ FFI) |
+| معالجة اللغة الطبيعية | جداول تحويل Yomitan (التأصيل متعدّد اللغات) + kana_kit (تحويل الكانا)؛ التقسيم إلى وحدات عبر fushidicts FFI |
 | إنشاء البطاقات | AnkiDroid API + AnkiConnect |
 | التدويل | Slang (17 لغة) |
 
@@ -175,7 +178,7 @@ flutter build windows --release
 <summary><b>بنية المشروع</b></summary>
 
 ```
-hibiki/                      # Repository root (Melos workspace: fushi_workspace)
+Fushi/                      # Repository root (Melos workspace: fushi_workspace)
 ├── fushi/                  # Flutter app main directory
 │   ├── lib/
 │   │   ├── i18n/            # Internationalization (17 languages, Slang)
@@ -185,9 +188,9 @@ hibiki/                      # Repository root (Melos workspace: fushi_workspace
 │   │   │   ├── media/       # Audiobook, subtitle parsing, reader source
 │   │   │   └── models/      # Data models and state management (AppModel)
 │   │   └── main.dart
-│   └── android/             # Android project (manifest, native hoshidicts)
+│   └── android/             # Android project (manifest, native fushidicts)
 ├── packages/                # Internal packages + flutter_inappwebview_windows (fork) + gamepads_android_stub
-├── native/                  # hoshidicts C++ dictionary engine (FFI)
+├── native/                  # fushidicts C++ dictionary engine (FFI)
 ├── third_party/             # Vendored patched packages (dependency_overrides)
 ├── ci/                      # Build patches and integration test scripts
 ├── tool/                    # bootstrap / i18n_sync and other scripts
@@ -198,13 +201,13 @@ hibiki/                      # Repository root (Melos workspace: fushi_workspace
 
 ## الخصوصية والبيانات
 
-يُخزّن hibiki الكتب والقواميس والخطوط وبيانات الكتب الصوتية ومقاطع الفيديو وتقدّم القراءة والإبرازات والإحصاءات والإعدادات المُستورَدة في التخزين المحلّي للتطبيق.
+يُخزّن Fushi الكتب والقواميس والخطوط وبيانات الكتب الصوتية ومقاطع الفيديو وتقدّم القراءة والإبرازات والإحصاءات والإعدادات المُستورَدة في التخزين المحلّي للتطبيق.
 
-تستخدم المزامنة السحابية (Google Drive / OneDrive / Dropbox) بيانات اعتماد OAuth التي يُهيّئها المستخدم؛ ويستخدم WebDAV / FTP / SFTP عناوين الخوادم وبيانات الاعتماد التي يُقدّمها المستخدم؛ ويتّصل Hibiki P2P مباشرةً عبر عنوان يُهيّئه المستخدم. يتواصل إنشاء بطاقات Anki مع AnkiDroid أو عنوان AnkiConnect المُهيّأ.
+تستخدم المزامنة السحابية (Google Drive / OneDrive / Dropbox) بيانات اعتماد OAuth التي يُهيّئها المستخدم؛ ويستخدم WebDAV / FTP / SFTP عناوين الخوادم وبيانات الاعتماد التي يُقدّمها المستخدم؛ ويتّصل Fushi Interconnect مباشرةً عبر عنوان يُهيّئه المستخدم. يتواصل إنشاء بطاقات Anki مع AnkiDroid أو عنوان AnkiConnect المُهيّأ.
 
 ## شكر وتقدير
 
-يُبنى hibiki على المشاريع والمنظومة التالية:
+يُبنى Fushi على المشاريع والمنظومة التالية:
 
 | المشروع | الوصف |
 |---|---|

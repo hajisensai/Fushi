@@ -1,8 +1,8 @@
-# Le guide hibiki que même Yui Hirasawa configure en 5 minutes
+# Le guide Fushi que même Yui Hirasawa configure en 5 minutes
 
 [English](user-guide.md) | [简体中文](https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb) | [繁體中文](user-guide.zh-Hant.md) | [日本語](user-guide.ja.md) | [한국어](user-guide.ko.md) | [Español](user-guide.es.md) | **Français** | [Deutsch](user-guide.de.md) | [Português](user-guide.pt-BR.md) | [Русский](user-guide.ru.md) | [Tiếng Việt](user-guide.vi.md) | [ภาษาไทย](user-guide.th.md) | [Bahasa Indonesia](user-guide.id.md) | [Italiano](user-guide.it.md) | [Nederlands](user-guide.nl.md) | [Türkçe](user-guide.tr.md) | [العربية](user-guide.ar.md)
 
-> Le guide en chinois simplifié est hébergé sur Feishu (lien ci-dessus). Le guide en anglais est également disponible [sur GitHub](https://github.com/hajisensai/hibiki/blob/main/docs/user-guide.md).
+> Le guide en chinois simplifié est hébergé sur Feishu (lien ci-dessus). Le guide en anglais est également disponible [sur GitHub](https://github.com/hajisensai/Fushi/blob/main/docs/user-guide.md).
 
 ## Introduction
 
@@ -10,13 +10,13 @@ Il s'agit d'un logiciel gratuit pour Android / Windows (iOS / macOS prévus) : u
 
 ### URL du projet
 
-https://github.com/hajisensai/hibiki
+https://github.com/hajisensai/Fushi
 
-En développement actif : vos retours seront traités rapidement. Les rapports de bugs et les demandes de fonctionnalités sont les bienvenus. Si Hibiki vous est utile, n'hésitez pas à le partager ou à laisser une ⭐ sur le dépôt.
+En développement actif : vos retours seront traités rapidement. Les rapports de bugs et les demandes de fonctionnalités sont les bienvenus. Si Fushi vous est utile, n'hésitez pas à le partager ou à laisser une ⭐ sur le dépôt.
 
 ### Téléchargement
 
-https://github.com/hajisensai/hibiki/releases/latest
+https://github.com/hajisensai/Fushi/releases/latest
 
 Android : choisissez **arm64**. Windows : choisissez le fichier **.exe**.
 
@@ -24,7 +24,7 @@ Android : choisissez **arm64**. Windows : choisissez le fichier **.exe**.
 
 ### 1. Importer les dictionnaires recommandés (dictionnaires de mots + accent de hauteur + fréquence) et l'audio local (bases de données audio japonaise et anglaise) (Fortement recommandé pour les débutants!!! · facultatif)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Téléchargement Cloudflare (9,3 Go)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Téléchargement Cloudflare (9,5 Go)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 Dans l'application : Paramètres -> Synchronisation et sauvegarde -> appuyez sur **Importer une sauvegarde**.
 
@@ -51,8 +51,8 @@ Anki intègre [FSRS](https://github.com/open-spaced-repetition/fsrs4anki), l'un 
 ##### Android
 
 1. Installez et ouvrez Anki.
-2. Revenez à hibiki, allez dans Paramètres -> Création de cartes.
-3. Appuyez sur **Actualiser les paquets et les types de notes** (repère « 1 » sur l'image) ; hibiki demandera une autorisation : appuyez sur Autoriser.
+2. Revenez à Fushi, allez dans Paramètres -> Création de cartes.
+3. Appuyez sur **Actualiser les paquets et les types de notes** (repère « 1 » sur l'image) ; Fushi demandera une autorisation : appuyez sur Autoriser.
 4. Appuyez sur **Créer un paquet Lapis** (repère « 2 » sur l'image).
 5. S'il n'y a aucun avertissement ni erreur en rouge, la configuration a réussi.
 
@@ -66,7 +66,7 @@ Anki intègre [FSRS](https://github.com/open-spaced-repetition/fsrs4anki), l'un 
 ![Menu Outils d'Anki sous Windows](static-assets/user-guide/anki-windows-tools-menu.png)
 
 3. Collez le code de module complémentaire Anki ci-dessous pour l'installer : `2055492159`
-4. Revenez à hibiki, allez dans Paramètres -> Création de cartes.
+4. Revenez à Fushi, allez dans Paramètres -> Création de cartes.
 5. Appuyez sur **Actualiser les paquets et les types de notes** (repère « 1 »).
 6. Appuyez sur **Créer un paquet Lapis** (repère « 2 »).
 7. S'il n'y a aucun avertissement ni erreur en rouge, la configuration a réussi.

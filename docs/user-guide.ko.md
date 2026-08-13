@@ -1,8 +1,8 @@
-# 히라사와 유이도 5분이면 설정하는 hibiki 사용 설명서
+# 히라사와 유이도 5분이면 설정하는 Fushi 사용 설명서
 
 [English](user-guide.md) | [简体中文](https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb) | [繁體中文](user-guide.zh-Hant.md) | [日本語](user-guide.ja.md) | **한국어** | [Español](user-guide.es.md) | [Français](user-guide.fr.md) | [Deutsch](user-guide.de.md) | [Português](user-guide.pt-BR.md) | [Русский](user-guide.ru.md) | [Tiếng Việt](user-guide.vi.md) | [ภาษาไทย](user-guide.th.md) | [Bahasa Indonesia](user-guide.id.md) | [Italiano](user-guide.it.md) | [Nederlands](user-guide.nl.md) | [Türkçe](user-guide.tr.md) | [العربية](user-guide.ar.md)
 
-> 간체 중국어 가이드는 Feishu에 호스팅되어 있습니다(위 링크). 영어 가이드는 [GitHub](https://github.com/hajisensai/hibiki/blob/main/docs/user-guide.md)에서도 볼 수 있습니다.
+> 간체 중국어 가이드는 Feishu에 호스팅되어 있습니다(위 링크). 영어 가이드는 [GitHub](https://github.com/hajisensai/Fushi/blob/main/docs/user-guide.md)에서도 볼 수 있습니다.
 
 ## 소개
 
@@ -10,13 +10,13 @@
 
 ### 프로젝트 URL
 
-https://github.com/hajisensai/hibiki
+https://github.com/hajisensai/Fushi
 
-활발히 개발 중입니다——여러분의 피드백은 신속하게 처리됩니다. 버그 신고와 기능 요청을 환영합니다. Hibiki가 유용하다고 느끼신다면 다른 사람에게 공유하거나 저장소에 ⭐를 남겨 주시면 감사하겠습니다.
+활발히 개발 중입니다——여러분의 피드백은 신속하게 처리됩니다. 버그 신고와 기능 요청을 환영합니다. Fushi가 유용하다고 느끼신다면 다른 사람에게 공유하거나 저장소에 ⭐를 남겨 주시면 감사하겠습니다.
 
 ### 다운로드
 
-https://github.com/hajisensai/hibiki/releases/latest
+https://github.com/hajisensai/Fushi/releases/latest
 
 Android: **arm64**를 선택하세요. Windows: **.exe** 파일을 선택하세요.
 
@@ -24,7 +24,7 @@ Android: **arm64**를 선택하세요. Windows: **.exe** 파일을 선택하세�
 
 ### 1. 추천 사전(단어 + 고저 악센트 + 빈도 사전)과 로컬 오디오(일본어 및 영어 오디오 데이터베이스) 가져오기(초보자에게 강력 추천!!! · 선택 사항)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare 다운로드(9.3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare 다운로드(9.5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 앱에서: 설정 -> 동기화 및 백업 -> **백업 가져오기**를 탭합니다.
 
@@ -51,8 +51,8 @@ Anki에는 [FSRS](https://github.com/open-spaced-repetition/fsrs4anki)가 내장
 ##### Android
 
 1. Anki를 설치하고 엽니다.
-2. hibiki로 돌아가 설정 -> 카드 만들기로 이동합니다.
-3. **덱 및 노트 유형 새로 고침**(이미지의 "1")을 탭합니다. hibiki가 권한을 요청하면——「허용」을 탭합니다.
+2. Fushi로 돌아가 설정 -> 카드 만들기로 이동합니다.
+3. **덱 및 노트 유형 새로 고침**(이미지의 "1")을 탭합니다. Fushi가 권한을 요청하면——「허용」을 탭합니다.
 4. **Lapis 덱 만들기**(이미지의 "2")를 탭합니다.
 5. 빨간색 경고나 오류가 없으면 설정에 성공한 것입니다.
 
@@ -66,7 +66,7 @@ Anki에는 [FSRS](https://github.com/open-spaced-repetition/fsrs4anki)가 내장
 ![Windows의 Anki 도구 메뉴](static-assets/user-guide/anki-windows-tools-menu.png)
 
 3. 아래 Anki 애드온 코드를 붙여넣어 설치합니다: `2055492159`
-4. hibiki로 돌아가 설정 -> 카드 만들기로 이동합니다.
+4. Fushi로 돌아가 설정 -> 카드 만들기로 이동합니다.
 5. **덱 및 노트 유형 새로 고침**("1")을 탭합니다.
 6. **Lapis 덱 만들기**("2")를 탭합니다.
 7. 빨간색 경고나 오류가 없으면 설정에 성공한 것입니다.
