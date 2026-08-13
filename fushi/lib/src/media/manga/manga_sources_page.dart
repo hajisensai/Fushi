@@ -4,6 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/media.dart';
+import 'package:fushi/src/media/import/quick_import_section.dart';
+import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
@@ -71,6 +75,20 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
 
   void _changed() {
     if (mounted) setState(() {});
+  }
+
+  /// 单卷 / 单文件漫画导入：与旧漫画库页头按钮同一个对话框（目录 / `.mokuro` /
+  /// `.cbz` / 图片包 + OCR 向导）。落库成功后失效书架 provider 刷新漫画库。
+  Future<void> _importManga() async {
+    final FushiDatabase db = ref.read(appProvider).database;
+    final bool? imported = await showAppDialog<bool>(
+      context: context,
+      builder: (_) => MangaImportDialog(db: db),
+    );
+    if (imported == true && mounted) {
+      ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+      ref.invalidate(srtBooksProvider);
+    }
   }
 
   Future<void> _clearSourceData(MangaOnlineSourceRow source) async {
@@ -196,6 +214,18 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: <Widget>[
+                            // 快速导入区：单卷 / 单文件入口（与书 / 视频「导入」
+                            // 视图同构同位；对话框内含文件 / 文件夹 / OCR 向导）。
+                            QuickImportSection(
+                              actions: <QuickImportAction>[
+                                QuickImportAction(
+                                  icon: Icons.auto_stories_outlined,
+                                  label: t.manga_import_action,
+                                  onTap: _importManga,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 28),
                             _sectionTitle(t.media_source_local_roots),
                             const SizedBox(height: 8),
                             MediaSourcesView(

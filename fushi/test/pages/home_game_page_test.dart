@@ -177,6 +177,19 @@ void main() {
     expect(controller.primaryFocusIsManagedTarget, isTrue);
     await driver.adjust(steps: 1);
 
+    // 2026-08-13 入库入口统一：捕获工作台与设置之间插入「导入」分段（与书 /
+    // 漫画 / 视频库页的「导入在设置前一位」同构）。
+    expect(find.byKey(HomeGamePage.importKey), findsOneWidget);
+    expect(
+      controller.requestById(
+        const FushiFocusId('game-import-tab-sections'),
+      ),
+      isTrue,
+      reason: '切到导入页后，新的稳定分段 ID 必须可聚焦',
+    );
+    await tester.pump();
+    await driver.adjust(steps: 1);
+
     expect(find.byKey(HomeGamePage.settingsKey), findsOneWidget);
     expect(find.text('game-settings'), findsOneWidget);
     expect(find.text(t.game_diagnostics), findsNothing,

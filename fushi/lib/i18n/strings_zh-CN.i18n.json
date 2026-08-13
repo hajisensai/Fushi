@@ -2729,7 +2729,6 @@
   "media_source_count_manga": "$n 卷",
   "library_view_shelf": "书架",
   "library_view_browse": "浏览",
-  "library_view_sources": "来源",
   "library_view_media": "媒体库",
   "scrape_failure_detail_show": "显示详情",
   "scrape_failure_detail_hide": "隐藏详情",
@@ -3370,5 +3369,14 @@
   "download_task_priority": "排队优先级",
   "download_task_priority_high": "高",
   "download_task_priority_normal": "普通",
-  "download_task_priority_low": "低"
+  "download_task_priority_low": "低",
+  "library_view_import": "导入",
+  "quick_import_title": "快速导入",
+  "media_source_section_title": "常驻来源",
+  "book_import_folder": "导入文件夹",
+  "book_import_folder_as_source": "设为常驻来源",
+  "book_import_folder_as_source_hint": "以后自动扫描此文件夹里的新书",
+  "book_import_folder_once": "仅导入这一次",
+  "library_empty_go_import": "去导入",
+  "game_import_drop_hint": "也可以把 .exe 文件直接拖进游戏库添加"
 }

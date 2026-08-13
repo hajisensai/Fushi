@@ -12,8 +12,16 @@ import 'package:fushi/utils.dart';
 /// 直接上屏（camelCase 英文暴露给 17 语言用户）。
 
 /// 游戏页子区。[dashboard] 是游戏模块的默认首屏（游戏首页/仪表盘），排在最前，
-/// 库/工作台/诊断顺延——枚举顺序即 [HomeGamePage] 的 IndexedStack 索引顺序。
-enum GameSection { dashboard, library, monitor, diagnostics, settings }
+/// 库/工作台/诊断顺延——枚举顺序即 [HomeGamePage] 的 IndexedStack 索引顺序
+/// （[importGames] 后补，只能追加在尾部，显示顺序由 [GameSectionTabs] 决定）。
+enum GameSection {
+  dashboard,
+  library,
+  monitor,
+  diagnostics,
+  settings,
+  importGames
+}
 
 /// App 级游戏页子区导航。默认停在游戏首页（[GameSection.dashboard]）；原生 Hook
 /// 浮窗可在主窗最小化时请求回到捕获工作台（写 [GameSection.monitor]）。
@@ -150,10 +158,13 @@ class GameSectionTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 「导入」紧挨「设置」之前——与书 / 漫画 / 视频库页的分段顺序一致
+    // （三者的「导入」视图都在「设置」前一位），肌肉记忆全 app 同构。
     const List<GameSection> values = <GameSection>[
       GameSection.dashboard,
       GameSection.library,
       GameSection.monitor,
+      GameSection.importGames,
       GameSection.settings,
     ];
     void select(GameSection section) {
@@ -164,6 +175,9 @@ class GameSectionTabs extends StatelessWidget {
           return;
         case GameSection.library:
           onSelectLibrary();
+          return;
+        case GameSection.importGames:
+          gameSectionNotifier.value = GameSection.importGames;
           return;
         case GameSection.monitor:
           onSelectMonitor();
@@ -197,6 +211,12 @@ class GameSectionTabs extends StatelessWidget {
           ButtonSegment<GameSection>(
             value: GameSection.monitor,
             label: Text(t.game_capture_workbench),
+          ),
+          // 「导入」段与书 / 漫画 / 视频库页的「导入」视图同名同位（2026-08-13
+          // 入库入口统一定案）：游戏的单件入口（选 exe）收敛在这里，不再用 FAB。
+          ButtonSegment<GameSection>(
+            value: GameSection.importGames,
+            label: Text(t.library_view_import),
           ),
           ButtonSegment<GameSection>(
             value: GameSection.settings,

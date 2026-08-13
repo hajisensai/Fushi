@@ -95,7 +95,7 @@ void main() {
     expect(collectionsIdx, lessThan(statsIdx), reason: '视频收藏夹按钮应在统计之前');
   });
 
-  test('视频空库只提供前往来源的目录 CTA，不提供单视频导入', () {
+  test('视频空库只提供前往「导入」视图的 CTA，不提供单视频导入', () {
     final String body = methodBody(
       videoSrc.readAsStringSync(),
       'Widget _buildEmpty()',
@@ -104,8 +104,9 @@ void main() {
     expect(body, isNot(contains('home_video_empty_import')));
     expect(body, isNot(contains('t.video_import_action')));
     expect(body, contains('widget.onOpenSources'));
-    expect(body, contains('t.media_source_add'));
-    expect(body, contains('Icons.create_new_folder_outlined'));
+    // 2026-08-13 入库入口统一：空态引导词与书 / 漫画 / 游戏一致（去导入）。
+    expect(body, contains('t.library_empty_go_import'));
+    expect(body, contains('Icons.library_add_outlined'));
   });
 
   test('播放器顶栏片段导出按钮紧挨截图按钮', () {

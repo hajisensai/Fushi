@@ -633,7 +633,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     // 视频来源只有本地文件夹这一种合法入口，直接选择并立即登记/扫描，避免再弹一层
     // 只有一个选项的对话框。书籍仍保留本地/网络选择，漫画 UX 保持不变。
     if (widget.mediaKind == 'video') {
-      await _addLocalFolder();
+      await addLocalFolder();
       return;
     }
     final _AddSourceChoice? choice = await showAppDialog<_AddSourceChoice>(
@@ -683,13 +683,17 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     if (!mounted || choice == null) return;
     switch (choice) {
       case _AddSourceChoice.local:
-        await _addLocalFolder();
+        await addLocalFolder();
       case _AddSourceChoice.network:
         await _addNetworkSource();
     }
   }
 
-  Future<void> _addLocalFolder() async {
+  /// 添加本地文件夹为常驻来源（选目录 → 去重 → 落库 → 立即扫描）。
+  ///
+  /// 公开：除 [addSource] 的本地分支外，「导入」视图快速导入区的「导入文件夹 →
+  /// 设为常驻来源」也直接调它，跳过对话框里那层本地/网络二选一。
+  Future<void> addLocalFolder() async {
     // 扫描根是**长期存储并反复复扫**的路径，必须是 `dart:io` 真读得动的绝对路径：
     // 安卓上裸 `getDirectoryPath()` 只是把 tree URI 拼成路径串（映射不出 volume 时
     // 还会退化成 `/`），而 SAF 授的是 URI 权限不是路径权限——没有全文件访问，扫描
@@ -726,6 +730,80 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     // 插入后立即扫描新行（拿回带 scanResult 的最新行刷新统计）。
     final SourceLibraryRow? fresh = await _db.getMediaSourceById(newId);
     if (fresh != null) await _rescan(fresh);
+  }
+
+  /// 「导入文件夹（仅此一次）」：与常驻来源共用**同一条**扫描-导入管线，但登记的
+  /// 来源行只作为这一次扫描的载体，扫完即删——已导入媒体保留（FK setNull 把
+  /// sourceId 归 NULL，等价于手动单件导入），不留下常驻扫描根。
+  ///
+  /// 这样一次性批量导入不需要第二套导入实现：导入管线只有 scanner 一份，
+  /// 去重（[DuplicatePolicy.skip]）、字幕/音频 sidecar 关联等行为与来源扫描
+  /// 逐字一致。
+  Future<void> importLocalFolderOnce() async {
+    if (isBusy) return;
+    final String? picked = await pickRealDirectoryPath(
+      context: context,
+      appModel: _appModel,
+      dialogTitle: t.book_import_folder,
+    );
+    if (!mounted || picked == null || picked.isEmpty) return;
+
+    final String norm = normalizeSourceRootPath(picked, transport: 'local');
+    // 该根已是常驻来源：不再造同根的一次性影子，直接重扫那一行。
+    final List<SourceLibraryRow> existing = _rows ?? const <SourceLibraryRow>[];
+    for (final SourceLibraryRow row in existing) {
+      if (row.transport == 'local' && row.rootPath == norm) {
+        await _rescan(row);
+        return;
+      }
+    }
+
+    final VoidCallback? onLibraryChanged = widget.onLibraryChanged;
+    final int tempId = await _db.insertMediaSource(
+      MediaSourcesCompanion(
+        label: Value(defaultLabelFromRoot(norm, transport: 'local')),
+        mediaKind: Value(widget.mediaKind),
+        transport: const Value('local'),
+        rootPath: Value(norm),
+        recursive: const Value(true),
+        sortOrder: Value(_nextSortOrder()),
+        createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+    final SourceLibraryRow? temp = await _db.getMediaSourceById(tempId);
+    if (temp == null) return;
+    SourceScanSummary? summary;
+    // 临时行不进 _rows（中途不 _load），但计入 _scanning 让 isBusy 生效，
+    // 与常驻来源扫描共享同一套忙态与重入保护。
+    setState(() => _scanning.add(tempId));
+    try {
+      summary = await SourceLibraryScanner(_db).scan(temp);
+    } finally {
+      await _db.deleteMediaSource(tempId);
+      if (mounted) {
+        setState(() => _scanning.remove(tempId));
+        // summary == null 只发生在 scan 意外抛出（scanner 常规失败会把错误写进
+        // summary.error）；此时不播成功，让异常沿 unawaited 链路进错误日志。
+        if (summary != null) {
+          final String? error = summary.error;
+          if (error != null) {
+            FushiToast.show(msg: error, severity: ToastSeverity.error);
+          } else {
+            FushiToast.show(
+              msg: switch (widget.mediaKind) {
+                'book' =>
+                  t.media_source_count_book(n: summary.importedMediaCount),
+                'manga' =>
+                  t.media_source_count_manga(n: summary.importedMediaCount),
+                _ => t.media_source_count_video(n: summary.importedMediaCount),
+              },
+              severity: ToastSeverity.success,
+            );
+          }
+        }
+      }
+      onLibraryChanged?.call();
+    }
   }
 
   /// 添加网络来源：弹连接表单（SFTP/FTP）→ 落库连接参数 + 单独存凭据 → 立即扫描。

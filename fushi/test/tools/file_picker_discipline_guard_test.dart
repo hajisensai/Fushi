@@ -79,7 +79,8 @@ const Map<String, String> kFilePickerAllowlist = <String, String>{
   'lib/src/media/manga/mihon/mihon_extensions_page.dart':
       'Mihon 扩展 APK：选中即 readAsBytes 拷进 app 存储的 tmp/extension-<sha>.apk.part 再校验安装，原路径不入库',
   // (a) 长期引用，但**仅 Windows** 路径可达，安卓那条腿根本跑不到：
-  'lib/src/pages/implementations/games_library_page.dart':
+  // （2026-08-13 选 exe 逻辑从 games_library_page 收敛到共享动作 galgame_add_flow）
+  'lib/src/mining/galgame_add_flow.dart':
       'galgame exe：Windows 专属（见 galgame SOP），安卓无此入口',
   'lib/src/pages/implementations/texthooker_page.dart':
       'galgame exe / LunaHook tsv：Windows 专属（见 galgame SOP）',

@@ -41,7 +41,7 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
         ),
         MediaLibraryViewSpec(
           kind: MediaLibraryViewKind.sources,
-          label: t.library_view_sources,
+          label: t.library_view_import,
           builder: (BuildContext context, Widget navigation) =>
               MediaSourcesPage(mediaKind: 'book', navigation: navigation),
         ),
